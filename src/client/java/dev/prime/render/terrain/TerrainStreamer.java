@@ -1,0 +1,447 @@
+package dev.prime.render.terrain;
+
+import dev.prime.PrimeClient;
+import dev.prime.render.vulkan.StagingArena;
+import dev.prime.render.vulkan.VulkanContext;
+import it.unimi.dsi.fastutil.longs.Long2LongOpenHashMap;
+import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
+import java.util.ArrayDeque;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.List;
+import java.util.PriorityQueue;
+import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.ThreadFactory;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.multiplayer.ClientLevel;
+import net.minecraft.client.renderer.block.BlockStateModelSet;
+import net.minecraft.client.renderer.chunk.RenderRegionCache;
+import net.minecraft.client.renderer.chunk.RenderSectionRegion;
+import net.minecraft.core.SectionPos;
+import net.minecraft.world.level.chunk.status.ChunkStatus;
+
+public final class TerrainStreamer implements AutoCloseable {
+    private static final int MAX_SNAPSHOTS_PER_FRAME = 4;
+    private static final int MAX_UPLOADS_PER_FRAME = 8;
+    private static final long MAX_UPLOAD_BYTES_PER_FRAME = 16L * 1024L * 1024L;
+    private static final int MAX_UNLOADED_PROBES_PER_FRAME = 32;
+    private static final CpuSectionMesh EMPTY_MESH = new CpuSectionMesh(new float[0], new int[0], 0, 0);
+
+    private final TerrainScene scene;
+    private final ThreadPoolExecutor workers;
+    private final int maximumInFlight;
+    private final ConcurrentLinkedQueue<CompletedSection> completed = new ConcurrentLinkedQueue<>();
+    private final ConcurrentLinkedQueue<Long> externalDirty = new ConcurrentLinkedQueue<>();
+    private final AtomicBoolean externalFullInvalidation = new AtomicBoolean();
+    private final LongOpenHashSet desired = new LongOpenHashSet();
+    private final LongOpenHashSet empty = new LongOpenHashSet();
+    private final LongOpenHashSet pendingEvictions = new LongOpenHashSet();
+    private final SectionGenerationTracker generations = new SectionGenerationTracker();
+    private final Long2LongOpenHashMap queuedGeneration = new Long2LongOpenHashMap();
+    private final Long2LongOpenHashMap inFlightGeneration = new Long2LongOpenHashMap();
+    private final PriorityQueue<SectionRequest> requests = new PriorityQueue<>(Comparator
+            .comparingInt(SectionRequest::priority)
+            .thenComparingLong(SectionRequest::distanceSquared)
+            .thenComparingLong(SectionRequest::key));
+    private final ArrayDeque<CompletedSection> readyForUpload = new ArrayDeque<>();
+
+    private ClientLevel world;
+    private int centerSectionX = Integer.MIN_VALUE;
+    private int centerSectionY = Integer.MIN_VALUE;
+    private int centerSectionZ = Integer.MIN_VALUE;
+    private int renderDistance = -1;
+    private int minimumSectionY;
+    private int maximumSectionY;
+
+    public TerrainStreamer(VulkanContext context, StagingArena stagingArena) {
+        this.scene = new TerrainScene(context, stagingArena);
+        int threadCount = Math.max(1, Math.min(4, Runtime.getRuntime().availableProcessors() - 2));
+        this.maximumInFlight = threadCount * 2;
+        AtomicInteger threadNumber = new AtomicInteger();
+        ThreadFactory threadFactory = task -> {
+            Thread thread = new Thread(task, "Prime terrain worker " + threadNumber.incrementAndGet());
+            thread.setDaemon(true);
+            thread.setUncaughtExceptionHandler((ignored, failure) ->
+                    PrimeClient.LOGGER.error("Uncaught Prime terrain worker failure", failure));
+            return thread;
+        };
+        this.workers = new ThreadPoolExecutor(
+                threadCount,
+                threadCount,
+                0L,
+                TimeUnit.MILLISECONDS,
+                new ArrayBlockingQueue<>(threadCount),
+                threadFactory,
+                new ThreadPoolExecutor.AbortPolicy());
+    }
+
+    public void update(Minecraft minecraft, double cameraX, double cameraY, double cameraZ) {
+        ClientLevel currentWorld = minecraft.level;
+        if (currentWorld == null || minecraft.player == null) {
+            if (this.world != null) {
+                this.clearWorld(cameraX, cameraY, cameraZ);
+            }
+            return;
+        }
+        if (this.world != currentWorld) {
+            this.clearWorld(cameraX, cameraY, cameraZ);
+            this.world = currentWorld;
+            this.externalFullInvalidation.set(true);
+        }
+
+        int playerSectionX = (int) Math.floor(cameraX) >> 4;
+        int playerSectionY = (int) Math.floor(cameraY) >> 4;
+        int playerSectionZ = (int) Math.floor(cameraZ) >> 4;
+        int viewDistance = minecraft.options.getEffectiveRenderDistance();
+        int minSectionY = currentWorld.getMinY() >> 4;
+        int maxSectionY = currentWorld.getMinY() + currentWorld.getHeight() - 1 >> 4;
+        if (playerSectionX != this.centerSectionX
+                || playerSectionY != this.centerSectionY
+                || playerSectionZ != this.centerSectionZ
+                || viewDistance != this.renderDistance
+                || minSectionY != this.minimumSectionY
+                || maxSectionY != this.maximumSectionY) {
+            this.synchronizeWindow(
+                    playerSectionX,
+                    playerSectionY,
+                    playerSectionZ,
+                    viewDistance,
+                    minSectionY,
+                    maxSectionY);
+        }
+
+        this.drainInvalidations();
+        this.drainCompleted();
+        this.uploadReady(cameraX, cameraY, cameraZ);
+        this.dispatchSnapshots(minecraft, currentWorld);
+    }
+
+    public TerrainScene.SceneView sceneView() {
+        return this.scene.view();
+    }
+
+    public boolean isNearCameraReady() {
+        if (this.world == null || this.centerSectionX == Integer.MIN_VALUE) {
+            return false;
+        }
+        for (int z = this.centerSectionZ - 1; z <= this.centerSectionZ + 1; z++) {
+            for (int y = Math.max(this.minimumSectionY, this.centerSectionY - 1);
+                    y <= Math.min(this.maximumSectionY, this.centerSectionY + 1);
+                    y++) {
+                for (int x = this.centerSectionX - 1; x <= this.centerSectionX + 1; x++) {
+                    long key = SectionPos.asLong(x, y, z);
+                    if (!this.scene.contains(key) && !this.empty.contains(key)) {
+                        return false;
+                    }
+                }
+            }
+        }
+        return this.scene.view() != null;
+    }
+
+    public void invalidateSection(int sectionX, int sectionY, int sectionZ) {
+        this.externalDirty.add(SectionPos.asLong(sectionX, sectionY, sectionZ));
+    }
+
+    public void invalidateAll() {
+        this.externalFullInvalidation.set(true);
+    }
+
+    @Override
+    public void close() {
+        this.workers.shutdownNow();
+        try {
+            if (!this.workers.awaitTermination(5L, TimeUnit.SECONDS)) {
+                PrimeClient.LOGGER.warn("Prime terrain workers did not stop within five seconds");
+            }
+        } catch (InterruptedException exception) {
+            Thread.currentThread().interrupt();
+        }
+        this.scene.close();
+        this.completed.clear();
+        this.readyForUpload.clear();
+    }
+
+    private void synchronizeWindow(
+            int centerX,
+            int centerY,
+            int centerZ,
+            int distance,
+            int minSectionY,
+            int maxSectionY) {
+        this.centerSectionX = centerX;
+        this.centerSectionY = centerY;
+        this.centerSectionZ = centerZ;
+        this.renderDistance = distance;
+        this.minimumSectionY = minSectionY;
+        this.maximumSectionY = maxSectionY;
+
+        LongOpenHashSet replacement = new LongOpenHashSet();
+        int diameter = distance * 2 + 1;
+        int verticalCount = maxSectionY - minSectionY + 1;
+        replacement.ensureCapacity(diameter * diameter * verticalCount);
+        for (int z = centerZ - distance; z <= centerZ + distance; z++) {
+            for (int x = centerX - distance; x <= centerX + distance; x++) {
+                int deltaX = x - centerX;
+                int deltaZ = z - centerZ;
+                if (deltaX * deltaX + deltaZ * deltaZ > distance * distance) {
+                    continue;
+                }
+                for (int y = minSectionY; y <= maxSectionY; y++) {
+                    replacement.add(SectionPos.asLong(x, y, z));
+                }
+            }
+        }
+
+        for (long key : this.scene.residentKeys()) {
+            if (!replacement.contains(key)) {
+                this.pendingEvictions.add(key);
+            }
+        }
+        this.pendingEvictions.removeIf(replacement::contains);
+        this.empty.removeIf(key -> !replacement.contains(key));
+        this.desired.clear();
+        this.desired.addAll(replacement);
+        this.rebuildRequestQueue(1);
+    }
+
+    private void drainInvalidations() {
+        if (this.externalFullInvalidation.getAndSet(false)) {
+            this.empty.clear();
+            this.rebuildRequestQueue(0);
+        }
+        LongOpenHashSet dirtySections = new LongOpenHashSet();
+        Long key;
+        while ((key = this.externalDirty.poll()) != null) {
+            dirtySections.add(key.longValue());
+        }
+        for (long sectionKey : dirtySections) {
+            if (!this.desired.contains(sectionKey)) {
+                continue;
+            }
+            this.empty.remove(sectionKey);
+            long nextGeneration = this.generations.advance(sectionKey);
+            this.enqueue(sectionKey, 0, nextGeneration);
+        }
+    }
+
+    private void rebuildRequestQueue(int priority) {
+        this.requests.clear();
+        this.queuedGeneration.clear();
+        for (long key : this.desired) {
+            if (!this.scene.contains(key) || priority == 0) {
+                long nextGeneration = priority == 0
+                        ? this.generations.advance(key)
+                        : this.generations.current(key);
+                this.enqueue(key, priority, nextGeneration);
+            }
+        }
+    }
+
+    private void enqueue(long key, int priority, long token) {
+        if (this.queuedGeneration.getOrDefault(key, Long.MIN_VALUE) == token) {
+            return;
+        }
+        int x = SectionPos.x(key);
+        int y = SectionPos.y(key);
+        int z = SectionPos.z(key);
+        long dx = x - this.centerSectionX;
+        long dy = y - this.centerSectionY;
+        long dz = z - this.centerSectionZ;
+        long distanceSquared = ((dx * dx + dz * dz) << 8) | Math.min(255L, Math.abs(dy));
+        this.queuedGeneration.put(key, token);
+        this.requests.add(new SectionRequest(key, token, priority, distanceSquared));
+    }
+
+    private void dispatchSnapshots(Minecraft minecraft, ClientLevel level) {
+        int slots = this.maximumInFlight - this.inFlightGeneration.size();
+        int dispatchBudget = Math.min(MAX_SNAPSHOTS_PER_FRAME, Math.max(0, slots));
+        if (dispatchBudget == 0 || this.requests.isEmpty()) {
+            return;
+        }
+        RenderRegionCache regionCache = new RenderRegionCache();
+        BlockStateModelSet models = minecraft.getModelManager().getBlockStateModelSet();
+        List<SectionRequest> unloaded = new ArrayList<>();
+        List<SectionRequest> blocked = new ArrayList<>();
+        int examined = 0;
+        int dispatched = 0;
+        while (dispatched < dispatchBudget
+                && examined < MAX_UNLOADED_PROBES_PER_FRAME
+                && !this.requests.isEmpty()) {
+            SectionRequest request = this.requests.poll();
+            examined++;
+            if (this.queuedGeneration.getOrDefault(request.key(), Long.MIN_VALUE) != request.generation()) {
+                continue;
+            }
+            if (!this.desired.contains(request.key())
+                    || !this.generations.isCurrent(request.key(), request.generation())) {
+                this.queuedGeneration.remove(request.key());
+                continue;
+            }
+            if (this.inFlightGeneration.containsKey(request.key())) {
+                blocked.add(request);
+                continue;
+            }
+            this.queuedGeneration.remove(request.key());
+            int sectionX = SectionPos.x(request.key());
+            int sectionY = SectionPos.y(request.key());
+            int sectionZ = SectionPos.z(request.key());
+            if (level.getChunkSource().getChunk(sectionX, sectionZ, ChunkStatus.FULL, false) == null) {
+                unloaded.add(request);
+                continue;
+            }
+            RenderSectionRegion region = regionCache.createRegion(level, request.key());
+            TintSnapshot tints = TintSnapshot.capture(
+                    region,
+                    minecraft.getBlockColors(),
+                    sectionX,
+                    sectionY,
+                    sectionZ);
+            this.inFlightGeneration.put(request.key(), request.generation());
+            long worldEpoch = this.generations.worldEpoch();
+            try {
+            this.workers.execute(() -> {
+                    CpuSectionMesh mesh = EMPTY_MESH;
+                    Throwable failure = null;
+                    try {
+                        mesh = TerrainMesher.mesh(region, models, tints, sectionX, sectionY, sectionZ);
+                    } catch (Throwable throwable) {
+                        failure = throwable;
+                    }
+                    TerrainStreamer.this.completed.add(new CompletedSection(
+                            worldEpoch,
+                            request.key(),
+                            request.generation(),
+                            sectionX,
+                            sectionY,
+                            sectionZ,
+                            mesh,
+                            failure));
+                });
+            } catch (RejectedExecutionException exception) {
+                this.inFlightGeneration.remove(request.key());
+                this.enqueue(request.key(), request.priority(), request.generation());
+                PrimeClient.LOGGER.debug("Terrain executor is temporarily saturated", exception);
+                break;
+            }
+            dispatched++;
+        }
+        this.requests.addAll(blocked);
+        for (SectionRequest request : unloaded) {
+            this.enqueue(request.key(), request.priority(), request.generation());
+        }
+    }
+
+    private void drainCompleted() {
+        CompletedSection result;
+        while ((result = this.completed.poll()) != null) {
+            if (result.worldEpoch() != this.generations.worldEpoch()) {
+                continue;
+            }
+            if (this.inFlightGeneration.getOrDefault(result.key(), Long.MIN_VALUE) == result.generation()) {
+                this.inFlightGeneration.remove(result.key());
+            }
+            if (!this.desired.contains(result.key())
+                    || !this.generations.isCurrent(result.key(), result.generation())) {
+                continue;
+            }
+            if (result.failure() != null) {
+                PrimeClient.LOGGER.warn("Terrain extraction failed for section {}", result.key(), result.failure());
+                this.enqueue(result.key(), 0, result.generation());
+                continue;
+            }
+            this.readyForUpload.addLast(result);
+        }
+    }
+
+    private void uploadReady(double cameraX, double cameraY, double cameraZ) {
+        List<SectionUpload> uploads = new ArrayList<>(MAX_UPLOADS_PER_FRAME);
+        long uploadBytes = 0L;
+        while (uploads.size() < MAX_UPLOADS_PER_FRAME && !this.readyForUpload.isEmpty()) {
+            CompletedSection next = this.readyForUpload.peekFirst();
+            if (!this.generations.isCurrent(next.key(), next.generation()) || !this.desired.contains(next.key())) {
+                this.readyForUpload.removeFirst();
+                continue;
+            }
+            long nextBytes = next.mesh().byteSize();
+            if (!uploads.isEmpty() && uploadBytes + nextBytes > MAX_UPLOAD_BYTES_PER_FRAME) {
+                break;
+            }
+            if (nextBytes > MAX_UPLOAD_BYTES_PER_FRAME) {
+                throw new IllegalStateException(
+                        "Section " + next.key() + " exceeds Prime's 16 MiB per-section upload limit");
+            }
+            this.readyForUpload.removeFirst();
+            uploadBytes += next.mesh().byteSize();
+            uploads.add(new SectionUpload(
+                    next.key(), next.sectionX(), next.sectionY(), next.sectionZ(), next.mesh()));
+        }
+        long[] evictions = this.pendingEvictions.toLongArray();
+        boolean updated = this.scene.update(uploads, evictions, cameraX, cameraY, cameraZ);
+        if (!updated) {
+            for (int index = uploads.size() - 1; index >= 0; index--) {
+                SectionUpload upload = uploads.get(index);
+                this.readyForUpload.addFirst(new CompletedSection(
+                        this.generations.worldEpoch(),
+                        upload.key(),
+                        this.generations.current(upload.key()),
+                        upload.sectionX(),
+                        upload.sectionY(),
+                        upload.sectionZ(),
+                        upload.mesh(),
+                        null));
+            }
+            return;
+        }
+        this.pendingEvictions.clear();
+        for (long key : evictions) {
+            this.empty.remove(key);
+        }
+        for (SectionUpload upload : uploads) {
+            if (upload.mesh().isEmpty()) {
+                this.empty.add(upload.key());
+            } else {
+                this.empty.remove(upload.key());
+            }
+        }
+    }
+
+    private void clearWorld(double cameraX, double cameraY, double cameraZ) {
+        this.scene.update(List.of(), this.scene.residentKeys(), cameraX, cameraY, cameraZ);
+        this.world = null;
+        this.desired.clear();
+        this.empty.clear();
+        this.pendingEvictions.clear();
+        this.generations.resetWorld();
+        this.queuedGeneration.clear();
+        this.inFlightGeneration.clear();
+        this.requests.clear();
+        this.externalDirty.clear();
+        this.externalFullInvalidation.set(false);
+        this.readyForUpload.clear();
+        this.centerSectionX = Integer.MIN_VALUE;
+        this.centerSectionY = Integer.MIN_VALUE;
+        this.centerSectionZ = Integer.MIN_VALUE;
+        this.renderDistance = -1;
+    }
+
+    private record SectionRequest(long key, long generation, int priority, long distanceSquared) {
+    }
+
+    private record CompletedSection(
+            long worldEpoch,
+            long key,
+            long generation,
+            int sectionX,
+            int sectionY,
+            int sectionZ,
+            CpuSectionMesh mesh,
+            Throwable failure) {
+    }
+}

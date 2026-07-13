@@ -6,79 +6,310 @@ plugins {
 version = project.mod_version
 group = project.maven_group
 
+base {
+	archivesName = project.archives_base_name
+}
+
 repositories {
-	// Add repositories to retrieve artifacts from in here.
-	// You should only use this when depending on other mods because
-	// Loom adds the essential maven repositories to download Minecraft and libraries from automatically.
-	// See https://docs.gradle.org/current/userguide/declaring_repositories.html
-	// for more information about repositories.
+	mavenCentral()
 }
 
 loom {
 	splitEnvironmentSourceSets()
 
 	mods {
-		"modid" {
+		prime {
 			sourceSet sourceSets.main
 			sourceSet sourceSets.client
+		}
+	}
+
+	runs {
+		client {
+			client()
+			setConfigName('Prime Vulkan Client')
+			ideConfigGenerated = true
+			runDir = 'run'
+			programArgs '--graphicsBackend', 'vulkan', '--vulkanValidation'
 		}
 	}
 }
 
 dependencies {
-	// To change the versions see the gradle.properties file
 	minecraft "com.mojang:minecraft:${project.minecraft_version}"
 	implementation "net.fabricmc:fabric-loader:${project.loader_version}"
-
-	// Fabric API. This is technically optional, but you probably want it anyway.
 	implementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_api_version}"
+
+	testImplementation platform('org.junit:junit-bom:6.0.3')
+	testImplementation 'org.junit.jupiter:junit-jupiter'
+	testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+def shaderAbiJavaRoot = layout.buildDirectory.dir('generated/sources/shaderAbi/java')
+def shaderAbiIncludeRoot = layout.buildDirectory.dir('generated/sources/shaderAbi/glsl')
+def compiledShaderRoot = layout.buildDirectory.dir('generated/resources/shaders')
+
+abstract class GenerateShaderAbi extends DefaultTask {
+	@InputFile
+	abstract RegularFileProperty getSchemaFile()
+
+	@OutputDirectory
+	abstract DirectoryProperty getJavaOutputDirectory()
+
+	@OutputDirectory
+	abstract DirectoryProperty getGlslOutputDirectory()
+
+	@TaskAction
+	void generate() {
+		def schema = new groovy.json.JsonSlurper().parse(schemaFile.get().asFile)
+		def primitive = schema.structs.primitiveRecord
+		def section = schema.structs.sectionRecord
+		def push = schema.structs.pushConstants
+
+		if (primitive.size != 32 || section.size != 16 || push.size != 96) {
+			throw new GradleException('Prime shader ABI sizes must remain 32/16/96 bytes')
+		}
+		def typeLayout = [
+			uint: [size: 4, alignment: 4],
+			uint64_t: [size: 8, alignment: 8],
+			mat4: [size: 64, alignment: 16],
+			vec3: [size: 12, alignment: 16],
+			uvec2: [size: 8, alignment: 8]
+		]
+		def validateStruct = { String name, def definition ->
+			int cursor = 0
+			int maximumAlignment = 1
+			definition.fields.each { field ->
+				def layout = typeLayout[field.type]
+				if (layout == null) {
+					throw new GradleException("Unsupported ABI field type ${field.type}")
+				}
+				cursor = (cursor + layout.alignment - 1).intdiv(layout.alignment) * layout.alignment
+				if (field.offset != cursor) {
+					throw new GradleException("${name}.${field.name} must have offset ${cursor}, found ${field.offset}")
+				}
+				cursor += layout.size
+				maximumAlignment = Math.max(maximumAlignment, layout.alignment)
+			}
+			cursor = (cursor + maximumAlignment - 1).intdiv(maximumAlignment) * maximumAlignment
+			if (definition.size != cursor) {
+				throw new GradleException("${name} must have size ${cursor}, found ${definition.size}")
+			}
+		}
+		validateStruct('PrimitiveRecord', primitive)
+		validateStruct('SectionRecord', section)
+		validateStruct('PushConstants', push)
+
+		def constantName = { String value ->
+			value.replaceAll('([a-z0-9])([A-Z])', '$1_$2').toUpperCase(java.util.Locale.ROOT)
+		}
+		def javaOffsets = new StringBuilder()
+		[
+			PRIMITIVE: primitive,
+			SECTION: section,
+			PUSH: push
+		].each { prefix, definition ->
+			definition.fields.each { field ->
+				javaOffsets.append("    public static final int ${prefix}_${constantName(field.name)}_OFFSET = ${field.offset};\n")
+			}
+		}
+		def glslStructFields = { def definition ->
+			definition.fields.collect { field -> "    ${field.type} ${field.name};" }.join('\n')
+		}
+		def glslPushFields = push.fields.collect { field ->
+			"    layout(offset = ${field.offset}) ${field.type} ${field.name};"
+		}.join('\n')
+
+		def javaPackageDir = new File(javaOutputDirectory.get().asFile, 'dev/prime/render/shader')
+		javaPackageDir.mkdirs()
+		new File(javaPackageDir, 'ShaderAbi.java').text = """\
+package dev.prime.render.shader;
+
+/** Generated from shaders/abi.json. Do not edit by hand. */
+public final class ShaderAbi {
+    public static final int PRIMITIVE_RECORD_SIZE = ${primitive.size};
+    public static final int SECTION_RECORD_SIZE = ${section.size};
+    public static final int PUSH_CONSTANT_SIZE = ${push.size};
+    public static final int DESCRIPTOR_TLAS = ${schema.descriptors.tlas};
+    public static final int DESCRIPTOR_OUTPUT_IMAGE = ${schema.descriptors.outputImage};
+    public static final int DESCRIPTOR_BLOCK_ATLAS = ${schema.descriptors.blockAtlas};
+    public static final float CUTOUT_ALPHA_THRESHOLD = ${schema.cutoutAlphaThreshold}f;
+${javaOffsets}
+
+    private ShaderAbi() {
+    }
+}
+"""
+
+		def glslDir = glslOutputDirectory.get().asFile
+		glslDir.mkdirs()
+		new File(glslDir, 'prime_abi.glsl').text = """\
+#ifndef PRIME_ABI_GLSL
+#define PRIME_ABI_GLSL
+
+#extension GL_EXT_ray_tracing : require
+#extension GL_EXT_buffer_reference2 : require
+#extension GL_EXT_shader_explicit_arithmetic_types_int64 : require
+
+#define PRIME_PRIMITIVE_RECORD_SIZE ${primitive.size}
+#define PRIME_SECTION_RECORD_SIZE ${section.size}
+#define PRIME_PUSH_CONSTANT_SIZE ${push.size}
+#define PRIME_CUTOUT_ALPHA_THRESHOLD ${schema.cutoutAlphaThreshold}
+
+struct PrimitiveRecord {
+${glslStructFields(primitive)}
+};
+
+struct SectionRecord {
+${glslStructFields(section)}
+};
+
+layout(buffer_reference, buffer_reference_align = 8) readonly buffer PrimitiveBuffer {
+    PrimitiveRecord records[];
+};
+
+layout(buffer_reference, buffer_reference_align = 8) readonly buffer SectionTable {
+    SectionRecord sections[];
+};
+
+layout(push_constant) uniform PrimePushConstants {
+${glslPushFields}
+} primePush;
+
+layout(set = 0, binding = ${schema.descriptors.tlas}) uniform accelerationStructureEXT primeScene;
+layout(set = 0, binding = ${schema.descriptors.outputImage}, rgba8) uniform image2D primeOutput;
+layout(set = 0, binding = ${schema.descriptors.blockAtlas}) uniform sampler2D primeBlockAtlas;
+
+#endif
+"""
+	}
+}
+
+abstract class CompilePrimeShaders extends DefaultTask {
+	@InputDirectory
+	abstract DirectoryProperty getSourceDirectory()
+
+	@InputDirectory
+	abstract DirectoryProperty getIncludeDirectory()
+
+	@OutputDirectory
+	abstract DirectoryProperty getOutputDirectory()
+
+	@Input
+	abstract Property<String> getGlslangValidator()
+
+	@Input
+	abstract Property<String> getSpirvValidator()
+
+	@javax.inject.Inject
+	abstract org.gradle.process.ExecOperations getExecOperations()
+
+	@javax.inject.Inject
+	abstract org.gradle.api.file.FileSystemOperations getFileSystemOperations()
+
+	@TaskAction
+	void compile() {
+		def sources = sourceDirectory.get().asFileTree.matching {
+			include '**/*.rgen', '**/*.rmiss', '**/*.rchit', '**/*.rahit'
+		}.files.sort { it.absolutePath }
+		if (sources.empty) {
+			throw new GradleException('No Prime ray tracing shaders were found')
+		}
+
+		def scratch = new File(temporaryDir, 'spv')
+		fileSystemOperations.delete { delete scratch }
+		scratch.mkdirs()
+		sources.each { source ->
+			def output = new File(scratch, source.name + '.spv')
+			execOperations.exec {
+				commandLine glslangValidator.get(), '-V', '--target-env', 'vulkan1.2', '-g',
+						"-I${includeDirectory.get().asFile.absolutePath}", source.absolutePath,
+						'-o', output.absolutePath
+			}
+			execOperations.exec {
+				commandLine spirvValidator.get(), '--target-env', 'vulkan1.2', output.absolutePath
+			}
+		}
+
+		def published = new File(outputDirectory.get().asFile, 'prime/shaders')
+		fileSystemOperations.delete { delete published }
+		published.mkdirs()
+		scratch.listFiles().each { source ->
+			java.nio.file.Files.move(source.toPath(), new File(published, source.name).toPath(),
+					java.nio.file.StandardCopyOption.REPLACE_EXISTING)
+		}
+	}
+}
+
+def resolveVulkanTool = { String name ->
+	def extension = System.getProperty('os.name').toLowerCase(java.util.Locale.ROOT).contains('win') ? '.exe' : ''
+	def sdk = System.getenv('VULKAN_SDK')
+	if (sdk) {
+		def candidate = file("${sdk}/Bin/${name}${extension}")
+		if (candidate.exists()) {
+			return candidate.absolutePath
+		}
+	}
+	return "${name}${extension}"
+}
+
+def generateShaderAbi = tasks.register('generateShaderAbi', GenerateShaderAbi) {
+	schemaFile = file('shaders/abi.json')
+	javaOutputDirectory = shaderAbiJavaRoot
+	glslOutputDirectory = shaderAbiIncludeRoot
+}
+
+def compileShaders = tasks.register('compileShaders', CompilePrimeShaders) {
+	dependsOn generateShaderAbi
+	sourceDirectory = file('shaders')
+	includeDirectory = shaderAbiIncludeRoot
+	outputDirectory = compiledShaderRoot
+	glslangValidator = resolveVulkanTool('glslangValidator')
+	spirvValidator = resolveVulkanTool('spirv-val')
+}
+
+sourceSets.client.java.srcDir(files(shaderAbiJavaRoot).builtBy(generateShaderAbi))
+sourceSets.client.resources.srcDir(files(compiledShaderRoot).builtBy(compileShaders))
+sourceSets.test.compileClasspath += sourceSets.client.output
+sourceSets.test.runtimeClasspath += sourceSets.client.output
+
+tasks.named('compileTestJava') {
+	dependsOn tasks.named('compileClientJava')
 }
 
 processResources {
-	def version = project.version
-	inputs.property "version", version
-
-	filesMatching("fabric.mod.json") {
-		expand "version": version
+	inputs.property 'version', project.version
+	filesMatching('fabric.mod.json') {
+		expand version: inputs.properties.version
 	}
 }
 
 tasks.withType(JavaCompile).configureEach {
-	it.options.release = 25
+	options.release = 25
+	options.compilerArgs += ['-Xlint:all', '-Werror']
+}
+
+tasks.withType(Test).configureEach {
+	useJUnitPlatform()
 }
 
 java {
-	// Loom will automatically attach sourcesJar to a RemapSourcesJar task and to the "build" task
-	// if it is present.
-	// If you remove this line, sources will not be generated.
 	withSourcesJar()
-
 	sourceCompatibility = JavaVersion.VERSION_25
 	targetCompatibility = JavaVersion.VERSION_25
 }
 
+def licenseArchiveSuffix = project.name
 jar {
-	def projectName = project.name
-	inputs.property "projectName", projectName
-
-	from("LICENSE") {
-		rename { "${it}_$projectName"}
+	from('LICENSE') {
+		rename { "${it}_${licenseArchiveSuffix}" }
 	}
 }
 
-// configure the maven publication
 publishing {
 	publications {
-		create("mavenJava", MavenPublication) {
+		create('mavenJava', MavenPublication) {
 			from components.java
 		}
-	}
-
-	// See https://docs.gradle.org/current/userguide/publishing_maven.html for information on how to set up publishing.
-	repositories {
-		// Add repositories to publish to here.
-		// Notice: This block does NOT have the same function as the block in the top level.
-		// The repositories here will be used for publishing your artifact, not for
-		// retrieving dependencies.
 	}
 }

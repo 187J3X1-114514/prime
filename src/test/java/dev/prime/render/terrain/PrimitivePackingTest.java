@@ -1,0 +1,62 @@
+package dev.prime.render.terrain;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import org.junit.jupiter.api.Test;
+
+final class PrimitivePackingTest {
+    @Test
+    void packsTwoHalfPrecisionCoordinatesInLittleWordOrder() {
+        int packed = PrimitivePacking.packHalf2(0.25F, 0.75F);
+        float x = Float.float16ToFloat((short) (packed & 0xffff));
+        float y = Float.float16ToFloat((short) (packed >>> 16));
+        assertEquals(0.25F, x);
+        assertEquals(0.75F, y);
+    }
+
+    @Test
+    void convertsArgbTintToRgba8() {
+        assertEquals(0x80102040, PrimitivePacking.packTint(0x80402010));
+        assertEquals(0xffffffff, PrimitivePacking.packTint(-1));
+    }
+
+    @Test
+    void octahedralEncodingPreservesNormalDirection() {
+        assertNormalDirection(1.0F, 0.0F, 0.0F);
+        assertNormalDirection(0.0F, -1.0F, 0.0F);
+        assertNormalDirection(0.0F, 0.0F, -1.0F);
+        assertNormalDirection(0.25F, -0.5F, 0.75F);
+    }
+
+    @Test
+    void meshLayoutRejectsMismatchedArrayLengths() {
+        CpuSectionMesh mesh = new CpuSectionMesh(new float[9], new int[8], 1, 0);
+        assertEquals(68L, mesh.byteSize());
+        assertThrows(IllegalArgumentException.class, () -> new CpuSectionMesh(new float[8], new int[8], 1, 0));
+        assertThrows(IllegalArgumentException.class, () -> new CpuSectionMesh(new float[9], new int[7], 1, 0));
+    }
+
+    private static void assertNormalDirection(float x, float y, float z) {
+        float inverseLength = 1.0F / (float) Math.sqrt(x * x + y * y + z * z);
+        x *= inverseLength;
+        y *= inverseLength;
+        z *= inverseLength;
+        int packed = PrimitivePacking.packOctahedralNormal(x, y, z);
+        float decodedX = Math.max(-1.0F, (short) packed / 32767.0F);
+        float decodedY = Math.max(-1.0F, (short) (packed >>> 16) / 32767.0F);
+        float decodedZ = 1.0F - Math.abs(decodedX) - Math.abs(decodedY);
+        if (decodedZ < 0.0F) {
+            float oldX = decodedX;
+            decodedX = (1.0F - Math.abs(decodedY)) * Math.copySign(1.0F, oldX);
+            decodedY = (1.0F - Math.abs(oldX)) * Math.copySign(1.0F, decodedY);
+        }
+        float decodedInverseLength = 1.0F / (float) Math.sqrt(
+                decodedX * decodedX + decodedY * decodedY + decodedZ * decodedZ);
+        float dot = x * decodedX * decodedInverseLength
+                + y * decodedY * decodedInverseLength
+                + z * decodedZ * decodedInverseLength;
+        assertTrue(dot > 0.9999F, () -> "Decoded normal dot product was " + dot);
+    }
+}

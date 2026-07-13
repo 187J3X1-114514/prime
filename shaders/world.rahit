@@ -1,0 +1,11 @@
+#version 460
+#extension GL_GOOGLE_include_directive : require
+#include "hit_common.glsl"
+
+void main() {
+    PrimitiveRecord primitive = primePrimitive();
+    float alpha = textureLod(primeBlockAtlas, primeInterpolateUv(primitive), 0.0).a;
+    if (alpha < PRIME_CUTOUT_ALPHA_THRESHOLD) {
+        ignoreIntersectionEXT;
+    }
+}

@@ -1,0 +1,41 @@
+{
+  "structs": {
+    "primitiveRecord": {
+      "size": 32,
+      "fields": [
+        { "name": "uv0", "type": "uint", "offset": 0 },
+        { "name": "uv1", "type": "uint", "offset": 4 },
+        { "name": "uv2", "type": "uint", "offset": 8 },
+        { "name": "tint", "type": "uint", "offset": 12 },
+        { "name": "normal", "type": "uint", "offset": 16 },
+        { "name": "flags", "type": "uint", "offset": 20 },
+        { "name": "reserved0", "type": "uint", "offset": 24 },
+        { "name": "reserved1", "type": "uint", "offset": 28 }
+      ]
+    },
+    "sectionRecord": {
+      "size": 16,
+      "fields": [
+        { "name": "primitiveAddress", "type": "uint64_t", "offset": 0 },
+        { "name": "opaqueBase", "type": "uint", "offset": 8 },
+        { "name": "cutoutBase", "type": "uint", "offset": 12 }
+      ]
+    },
+    "pushConstants": {
+      "size": 96,
+      "fields": [
+        { "name": "inverseViewProjection", "type": "mat4", "offset": 0 },
+        { "name": "cameraPosition", "type": "vec3", "offset": 64 },
+        { "name": "_padding0", "type": "uint", "offset": 76 },
+        { "name": "sectionTableAddress", "type": "uint64_t", "offset": 80 },
+        { "name": "outputExtent", "type": "uvec2", "offset": 88 }
+      ]
+    }
+  },
+  "descriptors": {
+    "tlas": 0,
+    "outputImage": 1,
+    "blockAtlas": 2
+  },
+  "cutoutAlphaThreshold": 0.5
+}

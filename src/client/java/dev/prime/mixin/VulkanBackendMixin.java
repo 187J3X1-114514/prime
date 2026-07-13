@@ -1,0 +1,59 @@
+package dev.prime.mixin;
+
+import com.mojang.blaze3d.shaders.GpuDebugOptions;
+import com.mojang.blaze3d.shaders.ShaderSource;
+import com.mojang.blaze3d.systems.GpuDevice;
+import com.mojang.blaze3d.systems.GpuDeviceBackend;
+import com.mojang.blaze3d.vulkan.VulkanBackend;
+import com.mojang.blaze3d.vulkan.VulkanDevice;
+import com.mojang.blaze3d.vulkan.VulkanPhysicalDevice;
+import com.mojang.blaze3d.vulkan.init.VulkanFeature;
+import dev.prime.PrimeClient;
+import dev.prime.render.vulkan.VulkanBootstrap;
+import dev.prime.render.vulkan.VulkanCapabilities;
+import dev.prime.render.vulkan.VulkanDeviceNegotiator;
+import java.util.Collection;
+import java.util.Set;
+import org.spongepowered.asm.mixin.Mixin;
+import org.spongepowered.asm.mixin.injection.At;
+import org.spongepowered.asm.mixin.injection.Inject;
+import org.spongepowered.asm.mixin.injection.ModifyArgs;
+import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
+import org.spongepowered.asm.mixin.injection.invoke.arg.Args;
+
+@Mixin(VulkanBackend.class)
+public abstract class VulkanBackendMixin {
+    private static final String CREATE_DEVICE_DESCRIPTOR =
+            "createDevice(JLcom/mojang/blaze3d/shaders/ShaderSource;Lcom/mojang/blaze3d/shaders/GpuDebugOptions;Ljava/lang/Runnable;)Lcom/mojang/blaze3d/systems/GpuDevice;";
+
+    @ModifyArgs(
+            method = CREATE_DEVICE_DESCRIPTOR,
+            at = @At(
+                    value = "INVOKE",
+                    target = "Lcom/mojang/blaze3d/vulkan/VulkanBackend;createDevice(Ljava/util/Collection;Lcom/mojang/blaze3d/vulkan/VulkanPhysicalDevice;Ljava/util/Set;)Lorg/lwjgl/vulkan/VkDevice;"))
+    private void prime$negotiateRayTracing(Args args) {
+        Collection<String> extensions = args.get(0);
+        VulkanPhysicalDevice physicalDevice = args.get(1);
+        Set<VulkanFeature> features = args.get(2);
+        VulkanCapabilities capabilities = VulkanDeviceNegotiator.negotiate(physicalDevice, extensions, features);
+        VulkanBootstrap.recordNegotiation(capabilities);
+        if (capabilities.available()) {
+            PrimeClient.LOGGER.info("Enabled Vulkan ray tracing on {}", capabilities.deviceName());
+        } else {
+            PrimeClient.LOGGER.warn("Prime ray tracing unavailable on {}: {}", capabilities.deviceName(), capabilities.unavailableReason());
+        }
+    }
+
+    @Inject(method = CREATE_DEVICE_DESCRIPTOR, at = @At("RETURN"))
+    private void prime$captureVulkanDevice(
+            long window,
+            ShaderSource shaderSource,
+            GpuDebugOptions debugOptions,
+            Runnable criticalShaderLoader,
+            CallbackInfoReturnable<GpuDevice> cir) {
+        GpuDeviceBackend backend = ((GpuDeviceAccessor) (Object) cir.getReturnValue()).prime$getBackend();
+        if (backend instanceof VulkanDevice vulkanDevice) {
+            VulkanBootstrap.attachDevice(vulkanDevice);
+        }
+    }
+}

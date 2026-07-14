@@ -15,7 +15,7 @@
 
 namespace
 {
-    constexpr uint32_t PRIME_NRD_ABI_VERSION = 4;
+    constexpr uint32_t PRIME_NRD_ABI_VERSION = 5;
     constexpr nrd::Identifier PRIME_NRD_DENOISER_ID = 0;
 
     struct PrimeNrdCreateDesc
@@ -260,7 +260,9 @@ PRIME_NRD_EXPORT int32_t primeNrdCreate(
     if (context == nullptr)
         return -2;
 
-    const nrd::DenoiserDesc denoiser = {PRIME_NRD_DENOISER_ID, nrd::Denoiser::REBLUR_DIFFUSE};
+    const nrd::DenoiserDesc denoiser = {
+        PRIME_NRD_DENOISER_ID,
+        nrd::Denoiser::REBLUR_DIFFUSE_SPECULAR};
     const nrd::InstanceCreationDesc creation = {{}, &denoiser, 1};
     nrd::Result result = nrd::CreateInstance(creation, context->instance);
     if (result != nrd::Result::SUCCESS || !BuildDescription(*context))
@@ -272,6 +274,7 @@ PRIME_NRD_EXPORT int32_t primeNrdCreate(
     nrd::ReblurSettings settings = {};
     settings.hitDistanceReconstructionMode = nrd::HitDistanceReconstructionMode::AREA_3X3;
     settings.diffusePrepassBlurRadius = 30.0f;
+    settings.specularPrepassBlurRadius = 50.0f;
     result = nrd::SetDenoiserSettings(*context->instance, PRIME_NRD_DENOISER_ID, &settings);
     if (result != nrd::Result::SUCCESS)
     {

@@ -7,7 +7,7 @@ Prime 是一个面向 Minecraft 的客户端 Shader Mod，基于 Minecraft Vulka
 ## 当前积分器基线
 
 - 完整使用 Vulkan KHR ray tracing pipeline。raygen 以迭代 mega-kernel 推进路径，miss、closest-hit 和 any-hit 只返回遍历结果；管线递归深度保持为 1。
-- 每像素每帧追踪一个样本。主表面的漫反射光传输被解调后交给随包提供的 NRD 4.17.4 `REBLUR_DIFFUSE`；镜面、发光面、相机直见天空等不属于该信号的稳定分量继续保存在独立 RGBA32F 历史中，最终在线性空间重新组合。这是当前的低成本降噪边界，不把 NRD 侵入积分器或 Vulkan 资源所有权。
+- 每像素每帧追踪一个样本。主表面的漫反射与镜面光传输分别去调制后交给随包提供的 NRD 4.17.4 `REBLUR_DIFFUSE_SPECULAR`，发光面和相机直见天空等确定性分量保存在独立 RGBA32F 历史中，最终在线性空间重新调制并组合。这是当前的低成本降噪边界，不把 NRD 侵入积分器或 Vulkan 资源所有权。
 - NRD 使用主表面的世界空间法线、线性粗糙度、view-Z、命中距离和统一的低偏差帧抖动进行重投影。运动采用 NRD 推荐的非抖动 2.5D 屏幕空间约定：`old = new + MV`，其中 XY 指向上一帧 UV，Z 为上一帧与当前帧 view-Z 之差。窗口尺寸变化会整体重建与尺寸相关的 NRD 图像和历史，不复用不兼容资源。
 - 当前缺省材质是由方块纹理与生物群系 tint 驱动的粗糙介质边界与漫反射基底；光源来自光谱大气、太阳和从原版发光等级/纹理估计的方块面光源。它们仍是可替换的内部适配层，不定义最终产品材质或灯光模型。
 - 积分器、材质、光源、路径吞吐和 RGBA32F 累积统一使用 D65 白点的线性 Rec.2020 工作空间。Minecraft 方块纹理与 tint 在材质边界从 sRGB 解码并转换。累积完成后，独立的显示变换边界将 HDR 工作空间映射到目标显示设备；当前 sRGB Rec.709 默认采用 Oklab DRT，高光压缩前的曝光乘数硬编码为 `1.0`。显示变换只作用于一次性 RGBA8_UNORM 输出，不写回累积历史。该工作空间是积分器 ABI 契约，而不是可由单个 shader 局部修改的显示选项。
@@ -71,7 +71,7 @@ $env:Path = "$env:JAVA_HOME\bin;$env:VULKAN_SDK\Bin;$env:Path"
 
 进入世界后按 `F9` 会依次切换以下画面，聊天栏会显示当前模式；再次循环到 `off` 即恢复正常合成：
 
-1. `NRD validation`：NRD 自带的 4×4 验证视口。视口从左上角的 0 开始编号，重点观察标号 3 的运动向量误差、标号 4 的世界网格/相机抖动，以及标号 8 的漫反射历史长度。
+1. `NRD validation`：NRD 自带的 4×4 验证视口。视口从左上角的 0 开始编号，重点观察标号 3 的运动向量误差、标号 4 的世界网格/相机抖动，以及标号 8/11 的漫反射/镜面历史长度。
 2. `reprojection error`：用 raygen 保存的实际主命中点独立复投影，并与提交给 NRD 的运动向量比较。黑色表示吻合；红/青表示正/负 X 误差，绿/品红表示正/负 Y 误差，白色表示深度误差。满色约等于 4 像素或 4 个世界单位的偏差。
 3. `motion vectors`：直接显示提交给 NRD 的运动。XY 使用与上一项相同的有符号配色，白色为 view-Z 变化；满色约等于 4 像素或 4 个世界单位的运动。
 
@@ -83,7 +83,7 @@ $env:Path = "$env:JAVA_HOME\bin;$env:VULKAN_SDK\Bin;$env:Path"
 .\gradlew.bat test compileShaders build
 ```
 
-自动测试覆盖 ABI 大小和偏移、NRD 原生 ABI/版本/SPIR-V/调度描述、颜色空间契约与往返转换、Oklab 显示变换参考检查点、显示范围和累积边界、SBT 对齐、UV/tint/法线编码、Section generation token、CPU 网格布局、渲染原点重定位、采样流、MIS 正反向权重、Russian roulette 吞吐补偿、累积历史状态，以及漫反射在常量环境下的统计收敛。构建以 Java 25 的全部编译警告为错误。
+自动测试覆盖 ABI 大小和偏移、NRD 原生 ABI/版本/SPIR-V/漫反射与镜面调度描述、颜色空间契约与往返转换、Oklab 显示变换参考检查点、显示范围和累积边界、SBT 对齐、UV/tint/法线编码、Section generation token、CPU 网格布局、渲染原点重定位、采样流、MIS 正反向权重、Russian roulette 吞吐补偿、累积历史状态，以及漫反射在常量环境下的统计收敛。构建以 Java 25 的全部编译警告为错误。
 
 ## 许可
 

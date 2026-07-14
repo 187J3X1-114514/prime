@@ -147,10 +147,12 @@ public final class RayTracingPipeline implements Destroyable {
                         atmosphere.aerialRadiance().view(),
                         atmosphere.aerialTransmittance().view(),
                         nrd.noisyDiffuse().view(),
+                        nrd.noisySpecular().view(),
                         nrd.normalRoughness().view(),
                         nrd.viewZ().view(),
                         nrd.motion().view(),
                         nrd.material().view(),
+                        nrd.specularMaterial().view(),
                         nrd.primaryPosition().view())) {
             return;
         }
@@ -260,7 +262,7 @@ public final class RayTracingPipeline implements Destroyable {
     }
 
     private static long createDescriptorSetLayout(VulkanContext context, MemoryStack stack) {
-        VkDescriptorSetLayoutBinding.Buffer bindings = VkDescriptorSetLayoutBinding.calloc(15, stack);
+        VkDescriptorSetLayoutBinding.Buffer bindings = VkDescriptorSetLayoutBinding.calloc(17, stack);
         bindings.get(0)
                 .binding(ShaderAbi.DESCRIPTOR_TLAS)
                 .descriptorType(KHRAccelerationStructure.VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR)
@@ -299,10 +301,12 @@ public final class RayTracingPipeline implements Destroyable {
         }
         int[] nrdBindings = new int[] {
             ShaderAbi.DESCRIPTOR_NRD_NOISY_DIFFUSE,
+            ShaderAbi.DESCRIPTOR_NRD_NOISY_SPECULAR,
             ShaderAbi.DESCRIPTOR_NRD_NORMAL_ROUGHNESS,
             ShaderAbi.DESCRIPTOR_NRD_VIEW_Z,
             ShaderAbi.DESCRIPTOR_NRD_MOTION,
             ShaderAbi.DESCRIPTOR_NRD_MATERIAL,
+            ShaderAbi.DESCRIPTOR_NRD_SPECULAR_MATERIAL,
             ShaderAbi.DESCRIPTOR_NRD_PRIMARY_POSITION
         };
         for (int index = 0; index < nrdBindings.length; index++) {
@@ -458,10 +462,12 @@ public final class RayTracingPipeline implements Destroyable {
         private final long aerialRadiance;
         private final long aerialTransmittance;
         private final long nrdNoisyDiffuse;
+        private final long nrdNoisySpecular;
         private final long nrdNormalRoughness;
         private final long nrdViewZ;
         private final long nrdMotion;
         private final long nrdMaterial;
+        private final long nrdSpecularMaterial;
         private final long nrdPrimaryPosition;
         private boolean destroyed;
 
@@ -480,10 +486,12 @@ public final class RayTracingPipeline implements Destroyable {
                 long aerialRadiance,
                 long aerialTransmittance,
                 long nrdNoisyDiffuse,
+                long nrdNoisySpecular,
                 long nrdNormalRoughness,
                 long nrdViewZ,
                 long nrdMotion,
                 long nrdMaterial,
+                long nrdSpecularMaterial,
                 long nrdPrimaryPosition) {
             this.context = context;
             this.descriptorPool = descriptorPool;
@@ -499,10 +507,12 @@ public final class RayTracingPipeline implements Destroyable {
             this.aerialRadiance = aerialRadiance;
             this.aerialTransmittance = aerialTransmittance;
             this.nrdNoisyDiffuse = nrdNoisyDiffuse;
+            this.nrdNoisySpecular = nrdNoisySpecular;
             this.nrdNormalRoughness = nrdNormalRoughness;
             this.nrdViewZ = nrdViewZ;
             this.nrdMotion = nrdMotion;
             this.nrdMaterial = nrdMaterial;
+            this.nrdSpecularMaterial = nrdSpecularMaterial;
             this.nrdPrimaryPosition = nrdPrimaryPosition;
         }
 
@@ -519,7 +529,7 @@ public final class RayTracingPipeline implements Destroyable {
             try (MemoryStack stack = MemoryStack.stackPush()) {
                 VkDescriptorPoolSize.Buffer sizes = VkDescriptorPoolSize.calloc(3, stack);
                 sizes.get(0).type(KHRAccelerationStructure.VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR).descriptorCount(1);
-                sizes.get(1).type(VK12.VK_DESCRIPTOR_TYPE_STORAGE_IMAGE).descriptorCount(13);
+                sizes.get(1).type(VK12.VK_DESCRIPTOR_TYPE_STORAGE_IMAGE).descriptorCount(15);
                 sizes.get(2).type(VK12.VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER).descriptorCount(1);
                 VkDescriptorPoolCreateInfo poolCreateInfo = VkDescriptorPoolCreateInfo.calloc(stack)
                         .sType$Default()
@@ -545,7 +555,7 @@ public final class RayTracingPipeline implements Destroyable {
                             VkWriteDescriptorSetAccelerationStructureKHR.calloc(stack)
                                     .sType$Default()
                                     .pAccelerationStructures(stack.longs(tlas));
-                    VkDescriptorImageInfo.Buffer imageInfos = VkDescriptorImageInfo.calloc(14, stack);
+                    VkDescriptorImageInfo.Buffer imageInfos = VkDescriptorImageInfo.calloc(16, stack);
                     imageInfos.get(0)
                             .imageView(output.view())
                             .imageLayout(VK12.VK_IMAGE_LAYOUT_GENERAL);
@@ -570,10 +580,12 @@ public final class RayTracingPipeline implements Destroyable {
                     }
                     VulkanImage[] nrdImages = new VulkanImage[] {
                         nrd.noisyDiffuse(),
+                        nrd.noisySpecular(),
                         nrd.normalRoughness(),
                         nrd.viewZ(),
                         nrd.motion(),
                         nrd.material(),
+                        nrd.specularMaterial(),
                         nrd.primaryPosition()
                     };
                     for (int index = 0; index < nrdImages.length; index++) {
@@ -581,7 +593,7 @@ public final class RayTracingPipeline implements Destroyable {
                                 .imageView(nrdImages[index].view())
                                 .imageLayout(VK12.VK_IMAGE_LAYOUT_GENERAL);
                     }
-                    VkWriteDescriptorSet.Buffer writes = VkWriteDescriptorSet.calloc(15, stack);
+                    VkWriteDescriptorSet.Buffer writes = VkWriteDescriptorSet.calloc(17, stack);
                     writes.get(0)
                             .sType$Default()
                             .pNext(acceleration.address())
@@ -629,10 +641,12 @@ public final class RayTracingPipeline implements Destroyable {
                     }
                     int[] nrdBindings = new int[] {
                         ShaderAbi.DESCRIPTOR_NRD_NOISY_DIFFUSE,
+                        ShaderAbi.DESCRIPTOR_NRD_NOISY_SPECULAR,
                         ShaderAbi.DESCRIPTOR_NRD_NORMAL_ROUGHNESS,
                         ShaderAbi.DESCRIPTOR_NRD_VIEW_Z,
                         ShaderAbi.DESCRIPTOR_NRD_MOTION,
                         ShaderAbi.DESCRIPTOR_NRD_MATERIAL,
+                        ShaderAbi.DESCRIPTOR_NRD_SPECULAR_MATERIAL,
                         ShaderAbi.DESCRIPTOR_NRD_PRIMARY_POSITION
                     };
                     for (int index = 0; index < nrdBindings.length; index++) {
@@ -661,10 +675,12 @@ public final class RayTracingPipeline implements Destroyable {
                             atmosphere.aerialRadiance().view(),
                             atmosphere.aerialTransmittance().view(),
                             nrd.noisyDiffuse().view(),
+                            nrd.noisySpecular().view(),
                             nrd.normalRoughness().view(),
                             nrd.viewZ().view(),
                             nrd.motion().view(),
                             nrd.material().view(),
+                            nrd.specularMaterial().view(),
                             nrd.primaryPosition().view());
                 } catch (RuntimeException exception) {
                     VK12.vkDestroyDescriptorPool(context.vkDevice(), pool, null);
@@ -685,10 +701,12 @@ public final class RayTracingPipeline implements Destroyable {
                 long aerialRadiance,
                 long aerialTransmittance,
                 long nrdNoisyDiffuse,
+                long nrdNoisySpecular,
                 long nrdNormalRoughness,
                 long nrdViewZ,
                 long nrdMotion,
                 long nrdMaterial,
+                long nrdSpecularMaterial,
                 long nrdPrimaryPosition) {
             return this.tlas == tlas
                     && this.outputView == outputView
@@ -701,10 +719,12 @@ public final class RayTracingPipeline implements Destroyable {
                     && this.aerialRadiance == aerialRadiance
                     && this.aerialTransmittance == aerialTransmittance
                     && this.nrdNoisyDiffuse == nrdNoisyDiffuse
+                    && this.nrdNoisySpecular == nrdNoisySpecular
                     && this.nrdNormalRoughness == nrdNormalRoughness
                     && this.nrdViewZ == nrdViewZ
                     && this.nrdMotion == nrdMotion
                     && this.nrdMaterial == nrdMaterial
+                    && this.nrdSpecularMaterial == nrdSpecularMaterial
                     && this.nrdPrimaryPosition == nrdPrimaryPosition;
         }
 

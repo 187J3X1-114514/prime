@@ -14,9 +14,12 @@ final class NrdSignalContractTest {
         String rayGeneration = Files.readString(shaderRoot.resolve("world.rgen"));
         String composite = Files.readString(shaderRoot.resolve("nrd_composite.comp"));
 
-        assertTrue(rayGeneration.contains("vec4(materialFactor, sampleResult.primaryDistance)"));
+        assertTrue(rayGeneration.contains(
+                "vec4(diffuseMaterialFactor, sampleResult.primaryDistance)"));
+        assertTrue(rayGeneration.contains("primeNrdNoisySpecular"));
         assertTrue(composite.contains("if (material.a < 0.0)"));
         assertTrue(composite.contains("return vec3(0.0);"));
-        assertTrue(composite.contains("primeCompositeSurfaceDiffuse("));
+        assertTrue(composite.contains("primeCompositeSurfaceSignal("));
+        assertTrue(composite.contains("primeDenoisedSpecular"));
     }
 }

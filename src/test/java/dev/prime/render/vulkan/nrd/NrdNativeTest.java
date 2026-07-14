@@ -14,7 +14,7 @@ import org.junit.jupiter.api.Test;
 
 final class NrdNativeTest {
     @Test
-    void bundledBridgeCreatesReblurDiffuseDispatches() {
+    void bundledBridgeCreatesReblurDiffuseSpecularDispatches() {
         try (NrdNative.Instance instance = NrdNative.create(64, 48)) {
             NrdNative.Description description = instance.description();
             assertEquals(NrdNative.EXPECTED_NRD_VERSION, description.nrdVersion());
@@ -98,9 +98,15 @@ final class NrdNativeTest {
             assertTrue(dispatches.stream().allMatch(dispatch -> dispatch.gridWidth() > 0));
             assertTrue(dispatches.stream().allMatch(dispatch -> dispatch.gridHeight() > 0));
             assertTrue(dispatches.stream().allMatch(dispatch -> !dispatch.resources().isEmpty()));
-            assertTrue(dispatches.stream()
+            Set<Integer> resourceTypes = new HashSet<>();
+            dispatches.stream()
                     .flatMap(dispatch -> dispatch.resources().stream())
-                    .anyMatch(resource -> resource.resourceType() == NrdNative.RESOURCE_OUT_VALIDATION));
+                    .forEach(resource -> resourceTypes.add(resource.resourceType()));
+            assertTrue(resourceTypes.contains(NrdNative.RESOURCE_IN_DIFF_RADIANCE_HITDIST));
+            assertTrue(resourceTypes.contains(NrdNative.RESOURCE_IN_SPEC_RADIANCE_HITDIST));
+            assertTrue(resourceTypes.contains(NrdNative.RESOURCE_OUT_DIFF_RADIANCE_HITDIST));
+            assertTrue(resourceTypes.contains(NrdNative.RESOURCE_OUT_SPEC_RADIANCE_HITDIST));
+            assertTrue(resourceTypes.contains(NrdNative.RESOURCE_OUT_VALIDATION));
         }
     }
 

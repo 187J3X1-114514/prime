@@ -29,7 +29,7 @@ import org.lwjgl.system.SharedLibrary;
  * arrays and is versioned independently from NRD's C++ structures.
  */
 public final class NrdNative {
-    static final int ABI_VERSION = 4;
+    static final int ABI_VERSION = 5;
     static final int EXPECTED_NRD_VERSION = 4 << 24 | 17 << 16 | 4;
 
     public static final int DESCRIPTOR_TEXTURE = 0;
@@ -39,7 +39,9 @@ public final class NrdNative {
     public static final int RESOURCE_IN_NORMAL_ROUGHNESS = 1;
     public static final int RESOURCE_IN_VIEWZ = 2;
     public static final int RESOURCE_IN_DIFF_RADIANCE_HITDIST = 6;
+    public static final int RESOURCE_IN_SPEC_RADIANCE_HITDIST = 7;
     public static final int RESOURCE_OUT_DIFF_RADIANCE_HITDIST = 18;
+    public static final int RESOURCE_OUT_SPEC_RADIANCE_HITDIST = 19;
     public static final int RESOURCE_OUT_VALIDATION = 29;
     public static final int RESOURCE_TRANSIENT_POOL = 30;
     public static final int RESOURCE_PERMANENT_POOL = 31;

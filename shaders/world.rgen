@@ -56,19 +56,41 @@ void main() {
     float viewZ = sampleResult.primaryDistance < 0.0
             ? PRIME_NRD_FP16_MAX
             : sampleResult.primaryDistance * dot(path.rayDirection, cameraForward);
-    vec3 materialFactor = sampleResult.primaryHitKind == PRIME_HIT_NONE
-            ? vec3(1.0)
-            : primeNrdMaterialFactor(sampleResult.primaryBaseColor);
-    vec3 demodulatedDiffuse = sampleResult.diffuseRadiance / materialFactor;
-    float normalizedHitDistance = sampleResult.diffuseHitDistance <= 0.0
+    vec3 diffuseMaterialFactor = vec3(1.0);
+    vec3 specularMaterialFactor = vec3(1.0);
+    if (sampleResult.primaryHitKind != PRIME_HIT_NONE) {
+        primeNrdMaterialFactors(
+                sampleResult.primaryNormal,
+                -path.rayDirection,
+                sampleResult.primaryBaseColor,
+                vec3(PRIME_DEFAULT_DIELECTRIC_F0),
+                PRIME_NRD_LINEAR_ROUGHNESS,
+                diffuseMaterialFactor,
+                specularMaterialFactor);
+    }
+    vec3 demodulatedDiffuse = sampleResult.diffuseRadiance / diffuseMaterialFactor;
+    vec3 demodulatedSpecular = sampleResult.specularRadiance / specularMaterialFactor;
+    float normalizedDiffuseHitDistance = sampleResult.diffuseHitDistance <= 0.0
             ? 0.0
-            : primeNrdNormalizedDiffuseHitDistance(
-                    sampleResult.diffuseHitDistance, viewZ);
+            : primeNrdNormalizedHitDistance(
+                    sampleResult.diffuseHitDistance, viewZ, 1.0);
+    float normalizedSpecularHitDistance = sampleResult.specularHitDistance <= 0.0
+            ? 0.0
+            : primeNrdNormalizedHitDistance(
+                    sampleResult.specularHitDistance,
+                    viewZ,
+                    PRIME_NRD_LINEAR_ROUGHNESS);
 
     imageStore(
             primeNrdNoisyDiffuse,
             ivec2(pixel),
-            primeNrdPackDiffuseSignal(demodulatedDiffuse, normalizedHitDistance));
+            primeNrdPackRadianceAndHitDistance(
+                    demodulatedDiffuse, normalizedDiffuseHitDistance));
+    imageStore(
+            primeNrdNoisySpecular,
+            ivec2(pixel),
+            primeNrdPackRadianceAndHitDistance(
+                    demodulatedSpecular, normalizedSpecularHitDistance));
     imageStore(
             primeNrdNormalRoughness,
             ivec2(pixel),
@@ -89,7 +111,11 @@ void main() {
     imageStore(
             primeNrdMaterial,
             ivec2(pixel),
-            vec4(materialFactor, sampleResult.primaryDistance));
+            vec4(diffuseMaterialFactor, sampleResult.primaryDistance));
+    imageStore(
+            primeNrdSpecularMaterial,
+            ivec2(pixel),
+            vec4(specularMaterialFactor, 0.0));
 
     vec3 stable = sampleResult.stableRadiance;
     if (path.sampleIndex != 0u) {

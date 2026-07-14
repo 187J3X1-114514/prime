@@ -13,7 +13,7 @@ cmake -S native/nrd -B build/native/nrd -G "Visual Studio 18 2026" -A x64 `
 cmake --build build/native/nrd --config Release --target prime_nrd --parallel
 ```
 
-The build is deliberately pinned to NRD 4.17.4, SPIR-V only, `REBLUR_DIFFUSE`, no NRI and no
+The build is deliberately pinned to NRD 4.17.4, SPIR-V only, `REBLUR_DIFFUSE_SPECULAR`, no NRI and no
 quad-intrinsics extension. Copy the resulting `build/native/nrd/bin/Release/prime_nrd.dll` to
 `src/client/resources/prime/natives/windows-x86_64/prime_nrd.dll` and run the full Gradle build.
 

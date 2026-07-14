@@ -56,7 +56,7 @@ public final class NrdDenoiser implements Destroyable {
     private static final int IMAGE_USAGE = VK12.VK_IMAGE_USAGE_STORAGE_BIT | VK12.VK_IMAGE_USAGE_SAMPLED_BIT;
     private static final int MOTION_BINDING_COUNT = 4;
     private static final int MOTION_PUSH_SIZE = 192;
-    private static final int COMPOSITE_BINDING_COUNT = 9;
+    private static final int COMPOSITE_BINDING_COUNT = 11;
     private static final int COMPOSITE_PUSH_SIZE = 12;
     // world.rgen writes 65504 for a sky view-Z. Keep the valid range below that sentinel while
     // remaining far beyond Minecraft's usable terrain and Prime's 16,000-block aerial volume.
@@ -172,6 +172,14 @@ public final class NrdDenoiser implements Destroyable {
 
     public VulkanImage noisyDiffuse() {
         return this.images.noisyDiffuse;
+    }
+
+    public VulkanImage noisySpecular() {
+        return this.images.noisySpecular;
+    }
+
+    public VulkanImage specularMaterial() {
+        return this.images.specularMaterial;
     }
 
     public VulkanImage normalRoughness() {
@@ -371,14 +379,17 @@ public final class NrdDenoiser implements Destroyable {
             case NrdNative.RESOURCE_IN_NORMAL_ROUGHNESS -> this.images.normalRoughness;
             case NrdNative.RESOURCE_IN_VIEWZ -> this.images.viewZ;
             case NrdNative.RESOURCE_IN_DIFF_RADIANCE_HITDIST -> this.images.noisyDiffuse;
+            case NrdNative.RESOURCE_IN_SPEC_RADIANCE_HITDIST -> this.images.noisySpecular;
             case NrdNative.RESOURCE_OUT_DIFF_RADIANCE_HITDIST -> this.images.denoisedDiffuse;
+            case NrdNative.RESOURCE_OUT_SPEC_RADIANCE_HITDIST -> this.images.denoisedSpecular;
             case NrdNative.RESOURCE_OUT_VALIDATION -> this.images.validation;
             case NrdNative.RESOURCE_TRANSIENT_POOL -> checkedPoolImage(
                     this.images.transientPool, resource.indexInPool(), "transient");
             case NrdNative.RESOURCE_PERMANENT_POOL -> checkedPoolImage(
                     this.images.permanentPool, resource.indexInPool(), "permanent");
             default -> throw new IllegalStateException(
-                    "REBLUR_DIFFUSE requested unsupported resource type " + resource.resourceType());
+                    "REBLUR_DIFFUSE_SPECULAR requested unsupported resource type "
+                            + resource.resourceType());
         };
     }
 
@@ -676,39 +687,48 @@ public final class NrdDenoiser implements Destroyable {
 
     private static final class Images implements Destroyable {
         private final VulkanImage noisyDiffuse;
+        private final VulkanImage noisySpecular;
         private final VulkanImage normalRoughness;
         private final VulkanImage viewZ;
         private final VulkanImage motion;
         private final VulkanImage material;
+        private final VulkanImage specularMaterial;
         private final VulkanImage primaryPosition;
         private final VulkanImage reprojectionError;
         private final VulkanImage validation;
         private final VulkanImage denoisedDiffuse;
+        private final VulkanImage denoisedSpecular;
         private final VulkanImage[] permanentPool;
         private final VulkanImage[] transientPool;
         private boolean destroyed;
 
         private Images(
                 VulkanImage noisyDiffuse,
+                VulkanImage noisySpecular,
                 VulkanImage normalRoughness,
                 VulkanImage viewZ,
                 VulkanImage motion,
                 VulkanImage material,
+                VulkanImage specularMaterial,
                 VulkanImage primaryPosition,
                 VulkanImage reprojectionError,
                 VulkanImage validation,
                 VulkanImage denoisedDiffuse,
+                VulkanImage denoisedSpecular,
                 VulkanImage[] permanentPool,
                 VulkanImage[] transientPool) {
             this.noisyDiffuse = noisyDiffuse;
+            this.noisySpecular = noisySpecular;
             this.normalRoughness = normalRoughness;
             this.viewZ = viewZ;
             this.motion = motion;
             this.material = material;
+            this.specularMaterial = specularMaterial;
             this.primaryPosition = primaryPosition;
             this.reprojectionError = reprojectionError;
             this.validation = validation;
             this.denoisedDiffuse = denoisedDiffuse;
+            this.denoisedSpecular = denoisedSpecular;
             this.permanentPool = permanentPool;
             this.transientPool = transientPool;
         }
@@ -722,6 +742,8 @@ public final class NrdDenoiser implements Destroyable {
             try {
                 VulkanImage noisy = createImage(
                         context, created, width, height, VK12.VK_FORMAT_R16G16B16A16_SFLOAT, "Prime NRD noisy diffuse");
+                VulkanImage noisySpecular = createImage(
+                        context, created, width, height, VK12.VK_FORMAT_R16G16B16A16_SFLOAT, "Prime NRD noisy specular");
                 VulkanImage normal = createImage(
                         context, created, width, height, VK12.VK_FORMAT_A2B10G10R10_UNORM_PACK32, "Prime NRD normal roughness");
                 VulkanImage viewZ = createImage(
@@ -730,6 +752,8 @@ public final class NrdDenoiser implements Destroyable {
                         context, created, width, height, VK12.VK_FORMAT_R16G16B16A16_SFLOAT, "Prime NRD 2.5D screen motion");
                 VulkanImage material = createImage(
                         context, created, width, height, VK12.VK_FORMAT_R16G16B16A16_SFLOAT, "Prime NRD material factor");
+                VulkanImage specularMaterial = createImage(
+                        context, created, width, height, VK12.VK_FORMAT_R16G16B16A16_SFLOAT, "Prime NRD specular material factor");
                 VulkanImage primaryPosition = createImage(
                         context, created, width, height, VK12.VK_FORMAT_R32G32B32A32_SFLOAT, "Prime NRD diagnostic primary position");
                 VulkanImage reprojectionError = createImage(
@@ -738,20 +762,25 @@ public final class NrdDenoiser implements Destroyable {
                         context, created, width, height, VK12.VK_FORMAT_R8G8B8A8_UNORM, "Prime NRD validation output");
                 VulkanImage denoised = createImage(
                         context, created, width, height, VK12.VK_FORMAT_R16G16B16A16_SFLOAT, "Prime NRD denoised diffuse");
+                VulkanImage denoisedSpecular = createImage(
+                        context, created, width, height, VK12.VK_FORMAT_R16G16B16A16_SFLOAT, "Prime NRD denoised specular");
                 VulkanImage[] permanent = createPool(
                         context, created, width, height, description.permanentPool(), "permanent");
                 VulkanImage[] transientImages = createPool(
                         context, created, width, height, description.transientPool(), "transient");
                 return new Images(
                         noisy,
+                        noisySpecular,
                         normal,
                         viewZ,
                         motion,
                         material,
+                        specularMaterial,
                         primaryPosition,
                         reprojectionError,
                         validation,
                         denoised,
+                        denoisedSpecular,
                         permanent,
                         transientImages);
             } catch (RuntimeException exception) {
@@ -802,22 +831,25 @@ public final class NrdDenoiser implements Destroyable {
         }
 
         private VulkanImage[] allImages() {
-            VulkanImage[] result = new VulkanImage[9 + this.permanentPool.length + this.transientPool.length];
+            VulkanImage[] result = new VulkanImage[12 + this.permanentPool.length + this.transientPool.length];
             result[0] = this.noisyDiffuse;
-            result[1] = this.normalRoughness;
-            result[2] = this.viewZ;
-            result[3] = this.motion;
-            result[4] = this.material;
-            result[5] = this.denoisedDiffuse;
-            result[6] = this.primaryPosition;
-            result[7] = this.reprojectionError;
-            result[8] = this.validation;
-            System.arraycopy(this.permanentPool, 0, result, 9, this.permanentPool.length);
+            result[1] = this.noisySpecular;
+            result[2] = this.normalRoughness;
+            result[3] = this.viewZ;
+            result[4] = this.motion;
+            result[5] = this.material;
+            result[6] = this.specularMaterial;
+            result[7] = this.denoisedDiffuse;
+            result[8] = this.denoisedSpecular;
+            result[9] = this.primaryPosition;
+            result[10] = this.reprojectionError;
+            result[11] = this.validation;
+            System.arraycopy(this.permanentPool, 0, result, 12, this.permanentPool.length);
             System.arraycopy(
                     this.transientPool,
                     0,
                     result,
-                    9 + this.permanentPool.length,
+                    12 + this.permanentPool.length,
                     this.transientPool.length);
             return result;
         }
@@ -837,11 +869,14 @@ public final class NrdDenoiser implements Destroyable {
             this.validation.destroy();
             this.reprojectionError.destroy();
             this.primaryPosition.destroy();
+            this.denoisedSpecular.destroy();
             this.denoisedDiffuse.destroy();
+            this.specularMaterial.destroy();
             this.material.destroy();
             this.motion.destroy();
             this.viewZ.destroy();
             this.normalRoughness.destroy();
+            this.noisySpecular.destroy();
             this.noisyDiffuse.destroy();
         }
     }
@@ -1619,7 +1654,9 @@ public final class NrdDenoiser implements Destroyable {
                 VulkanImage[] descriptorImages = new VulkanImage[] {
                     output,
                     images.denoisedDiffuse,
+                    images.denoisedSpecular,
                     images.material,
+                    images.specularMaterial,
                     stableAccumulation,
                     atmosphere.aerialRadiance(),
                     atmosphere.aerialTransmittance(),

@@ -150,11 +150,13 @@
     "nrdViewZ": 11,
     "nrdMotion": 12,
     "nrdMaterial": 13,
-    "nrdPrimaryPosition": 14
+    "nrdPrimaryPosition": 14,
+    "nrdNoisySpecular": 15,
+    "nrdSpecularMaterial": 16
   },
   "nrdContract": {
     "version": "4.17.4",
-    "denoiser": "reblur-diffuse",
+    "denoiser": "reblur-diffuse-specular",
     "normalEncoding": "r10g10b10a2-unorm",
     "roughnessEncoding": "linear",
     "motionSpace": "screen-2.5d",

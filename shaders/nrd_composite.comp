@@ -14,13 +14,15 @@ layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
 
 layout(set = 0, binding = 0, rgba8) uniform writeonly image2D primeCompositeOutput;
 layout(set = 0, binding = 1, rgba16f) uniform readonly image2D primeDenoisedDiffuse;
-layout(set = 0, binding = 2, rgba16f) uniform readonly image2D primeCompositeMaterial;
-layout(set = 0, binding = 3, rgba32f) uniform readonly image2D primeStableAccumulation;
-layout(set = 0, binding = 4, rgba16f) uniform readonly image3D primeCompositeAerialRadiance;
-layout(set = 0, binding = 5, rgba16f) uniform readonly image3D primeCompositeAerialTransmittance;
-layout(set = 0, binding = 6, rgba8) uniform readonly image2D primeNrdValidation;
-layout(set = 0, binding = 7, rgba16f) uniform readonly image2D primeReprojectionError;
-layout(set = 0, binding = 8, rgba16f) uniform readonly image2D primeMotionDiagnostic;
+layout(set = 0, binding = 2, rgba16f) uniform readonly image2D primeDenoisedSpecular;
+layout(set = 0, binding = 3, rgba16f) uniform readonly image2D primeCompositeMaterial;
+layout(set = 0, binding = 4, rgba16f) uniform readonly image2D primeCompositeSpecularMaterial;
+layout(set = 0, binding = 5, rgba32f) uniform readonly image2D primeStableAccumulation;
+layout(set = 0, binding = 6, rgba16f) uniform readonly image3D primeCompositeAerialRadiance;
+layout(set = 0, binding = 7, rgba16f) uniform readonly image3D primeCompositeAerialTransmittance;
+layout(set = 0, binding = 8, rgba8) uniform readonly image2D primeNrdValidation;
+layout(set = 0, binding = 9, rgba16f) uniform readonly image2D primeReprojectionError;
+layout(set = 0, binding = 10, rgba16f) uniform readonly image2D primeMotionDiagnostic;
 
 layout(push_constant) uniform PrimeCompositePushConstants {
     uvec2 outputExtent;
@@ -35,14 +37,22 @@ const uint PRIME_DIAGNOSTIC_MOTION = 3u;
 ATM_DECLARE_SAMPLE_3D(primeCompositeSampleAerialRadiance, primeCompositeAerialRadiance)
 ATM_DECLARE_SAMPLE_3D(primeCompositeSampleAerialTransmittance, primeCompositeAerialTransmittance)
 
-vec3 primeCompositeSurfaceDiffuse(vec4 material, vec3 denoisedSignal) {
+vec3 primeCompositeSurfaceSignal(
+        uvec2 pixel,
+        vec4 material,
+        vec3 diffuseSignal,
+        vec3 specularSignal) {
     // A negative primary distance is raygen's immutable miss marker. Sky radiance lives entirely
     // in primeStableAccumulation and must never consume REBLUR output: NRD treats its out-of-range
     // view-Z as invalid and is not required to erase surface history when a pixel becomes sky.
     if (material.a < 0.0) {
         return vec3(0.0);
     }
-    return primeNrdYCoCgToLinear(denoisedSignal) * material.rgb;
+    vec3 diffuse = primeNrdYCoCgToLinear(diffuseSignal) * material.rgb;
+    vec3 specularFactor = imageLoad(
+            primeCompositeSpecularMaterial, ivec2(pixel)).rgb;
+    vec3 specular = primeNrdYCoCgToLinear(specularSignal) * specularFactor;
+    return diffuse + specular;
 }
 
 void primeCompositeApplyAerial(uvec2 pixel, float primaryDistance, inout vec3 radiance) {
@@ -105,10 +115,12 @@ void main() {
         return;
     }
     vec4 material = imageLoad(primeCompositeMaterial, ivec2(pixel));
-    vec3 diffuse = primeCompositeSurfaceDiffuse(
+    vec3 surface = primeCompositeSurfaceSignal(
+            pixel,
             material,
-            imageLoad(primeDenoisedDiffuse, ivec2(pixel)).rgb);
-    vec3 radiance = diffuse + imageLoad(primeStableAccumulation, ivec2(pixel)).rgb;
+            imageLoad(primeDenoisedDiffuse, ivec2(pixel)).rgb,
+            imageLoad(primeDenoisedSpecular, ivec2(pixel)).rgb);
+    vec3 radiance = surface + imageLoad(primeStableAccumulation, ivec2(pixel)).rgb;
     primeCompositeApplyAerial(pixel, material.a, radiance);
     if (any(isnan(radiance)) || any(isinf(radiance))) {
         radiance = vec3(0.0);

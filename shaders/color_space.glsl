@@ -3,7 +3,8 @@
 
 #if !defined(PRIME_COLOR_WORKING_SPACE_LINEAR_REC2020_D65) \
         || !defined(PRIME_COLOR_TEXTURE_ENCODING_SRGB) \
-        || !defined(PRIME_COLOR_DISPLAY_ENCODING_SRGB)
+        || !defined(PRIME_COLOR_DISPLAY_ENCODING_SRGB) \
+        || !defined(PRIME_COLOR_DISPLAY_SPACE_REC709_D65)
 #error "Prime shader ABI does not declare the required color contract"
 #endif
 
@@ -48,15 +49,14 @@ vec3 primeLinearSrgbToLinearRec2020(vec3 color) {
             dot(vec3(0.0163914, 0.0880133, 0.8955953), color));
 }
 
-vec3 primeLinearRec2020ToLinearSrgb(vec3 color) {
+vec3 primeLinearRec2020ToLinearBt709(vec3 color) {
+    // Keep the high-precision inverse of Prime's canonical BT.709 -> Rec.2020 matrix. The
+    // reference DRT rounds this matrix more aggressively, which adds avoidable gamut round-trip
+    // error without changing the Oklab curve.
     return vec3(
             dot(vec3(1.6604910, -0.5876411, -0.0728499), color),
             dot(vec3(-0.1245505, 1.1328999, -0.0083494), color),
             dot(vec3(-0.0181508, -0.1005789, 1.1187297), color));
-}
-
-vec3 primeWorkingToDisplaySrgb(vec3 linearRec2020) {
-    return primeEncodeSrgb(primeLinearRec2020ToLinearSrgb(linearRec2020));
 }
 
 #endif

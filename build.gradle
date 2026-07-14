@@ -10,6 +10,8 @@ base {
 	archivesName = project.archives_base_name
 }
 
+def developmentGraphicsBackend = providers.gradleProperty('primeBackend').orElse('vulkan')
+
 repositories {
 	mavenCentral()
 }
@@ -30,7 +32,14 @@ loom {
 			setConfigName('Prime Vulkan Client')
 			ideConfigGenerated = true
 			runDir = 'run'
-			programArgs '--graphicsBackend', 'vulkan', '--vulkanValidation'
+			def selectedBackend = developmentGraphicsBackend.get().toLowerCase(java.util.Locale.ROOT)
+			if (selectedBackend != 'vulkan' && selectedBackend != 'opengl') {
+				throw new GradleException("primeBackend must be either 'vulkan' or 'opengl'")
+			}
+			programArgs '--graphicsBackend', selectedBackend
+			if (selectedBackend == 'vulkan') {
+				programArgs '--vulkanValidation'
+			}
 		}
 	}
 }
@@ -78,9 +87,11 @@ abstract class GenerateShaderAbi extends DefaultTask {
 		}
 		if (colorContract.workingSpace != 'linear-rec2020-d65'
 				|| colorContract.textureEncoding != 'srgb'
-				|| colorContract.displayEncoding != 'srgb') {
+				|| colorContract.displayEncoding != 'srgb'
+				|| colorContract.displayColorSpace != 'rec709-d65'
+				|| colorContract.defaultDisplayTransform != 'oklab-drt') {
 			throw new GradleException(
-					'Prime color contract must remain sRGB input -> linear Rec.2020 D65 -> sRGB display')
+					'Prime color contract must remain sRGB input -> linear Rec.2020 D65 -> Oklab DRT -> sRGB Rec.709 display')
 		}
 		def typeLayout = [
 			float: [size: 4, alignment: 4],
@@ -166,6 +177,8 @@ public final class ShaderAbi {
     public static final String WORKING_COLOR_SPACE = "${colorContract.workingSpace}";
     public static final String TEXTURE_COLOR_ENCODING = "${colorContract.textureEncoding}";
     public static final String DISPLAY_COLOR_ENCODING = "${colorContract.displayEncoding}";
+    public static final String DISPLAY_COLOR_SPACE = "${colorContract.displayColorSpace}";
+    public static final String DEFAULT_DISPLAY_TRANSFORM = "${colorContract.defaultDisplayTransform}";
 ${javaOffsets}
 
     private ShaderAbi() {
@@ -194,6 +207,8 @@ ${javaOffsets}
 #define PRIME_COLOR_WORKING_SPACE_LINEAR_REC2020_D65 1
 #define PRIME_COLOR_TEXTURE_ENCODING_SRGB 1
 #define PRIME_COLOR_DISPLAY_ENCODING_SRGB 1
+#define PRIME_COLOR_DISPLAY_SPACE_REC709_D65 1
+#define PRIME_COLOR_DISPLAY_TRANSFORM_OKLAB_DRT 1
 
 struct PrimitiveRecord {
 ${glslStructFields(primitive)}

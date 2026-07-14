@@ -4,9 +4,22 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import dev.prime.render.shader.ShaderAbi;
+import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
 import org.junit.jupiter.api.Test;
 
 final class IntegratorSettingsTest {
+    @Test
+    void staticValidationSunUsesTheRequestedFiveTimesIntensity() {
+        ByteBuffer record = ByteBuffer.allocateDirect(ShaderAbi.INTEGRATOR_RECORD_SIZE)
+                .order(ByteOrder.nativeOrder());
+        IntegratorSettings.writeStaticRecord(record);
+        assertEquals(
+                4.0F,
+                record.getFloat(ShaderAbi.INTEGRATOR_SUN_DIRECTION_INTENSITY_OFFSET + 3 * Float.BYTES));
+    }
+
     @Test
     void reciprocalMisWeightsFormACompletePartition() {
         float forward = IntegratorSettings.powerHeuristic(0.3F, 0.7F);

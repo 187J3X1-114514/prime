@@ -1,7 +1,7 @@
 #version 460
 #extension GL_GOOGLE_include_directive : require
 #include "common.glsl"
-#include "color_space.glsl"
+#include "display_transform.glsl"
 
 layout(location = 0) rayPayloadEXT TracePayload primePayload;
 
@@ -48,9 +48,10 @@ void main() {
         accumulated = previous + (sampleRadiance - previous) / float(path.sampleIndex + 1u);
     }
     imageStore(primeAccumulation, ivec2(pixel), vec4(accumulated, 1.0));
-    // Accumulation remains linear Rec.2020. Only the disposable presentation image crosses back
-    // to display-encoded sRGB because Minecraft blits its RGBA8_UNORM main target directly to an
-    // SRGB_NONLINEAR swapchain. Moving this conversion earlier would bias filtering and averaging.
-    vec3 displaySrgb = primeWorkingToDisplaySrgb(accumulated);
+    // Accumulation remains linear Rec.2020 HDR. Only the disposable presentation image crosses
+    // the selected display transform into sRGB Rec.709 because Minecraft blits its RGBA8_UNORM
+    // main target to an SRGB_NONLINEAR swapchain. Moving exposure or the Oklab curve earlier would
+    // change the estimator and bias temporal averaging.
+    vec3 displaySrgb = primeDisplayTransformToSrgb(accumulated);
     imageStore(primeOutput, ivec2(pixel), vec4(displaySrgb, 1.0));
 }

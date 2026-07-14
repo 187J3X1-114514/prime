@@ -60,12 +60,26 @@ final class ColorContractTest {
     void shaderBoundariesCannotBypassTheDeclaredWorkingSpace() throws IOException {
         Path shaderRoot = Path.of(System.getProperty("user.dir"), "shaders");
         String material = Files.readString(shaderRoot.resolve("material.glsl"));
+        String displayTransform = Files.readString(shaderRoot.resolve("display_transform.glsl"));
         String rayGeneration = Files.readString(shaderRoot.resolve("world.rgen"));
 
         assertTrue(material.contains("primeDecodeSrgb(textureSample.rgb)"));
         assertTrue(material.contains("primeLinearSrgbToLinearRec2020(linearSrgbAlbedo)"));
+        assertTrue(displayTransform.contains("primeLinearRec2020ToLinearBt709(exposedRec2020)"));
+        assertTrue(displayTransform.contains("PRIME_OKLAB_DISPLAY_EXPOSURE = 1.0"));
         assertTrue(rayGeneration.contains("imageStore(primeAccumulation"));
-        assertTrue(rayGeneration.contains("primeWorkingToDisplaySrgb(accumulated)"));
+        assertTrue(rayGeneration.contains("primeDisplayTransformToSrgb(accumulated)"));
+        assertTrue(
+                rayGeneration.indexOf("imageStore(primeAccumulation")
+                        < rayGeneration.indexOf("primeDisplayTransformToSrgb(accumulated)"));
+    }
+
+    @Test
+    void generatedAbiSelectsTheSrgbRec709OklabDisplayContract() {
+        assertEquals("linear-rec2020-d65", ShaderAbi.WORKING_COLOR_SPACE);
+        assertEquals("srgb", ShaderAbi.DISPLAY_COLOR_ENCODING);
+        assertEquals("rec709-d65", ShaderAbi.DISPLAY_COLOR_SPACE);
+        assertEquals("oklab-drt", ShaderAbi.DEFAULT_DISPLAY_TRANSFORM);
     }
 
     private static double decodeSrgb(double encoded) {

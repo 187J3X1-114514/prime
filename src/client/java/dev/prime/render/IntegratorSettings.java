@@ -17,7 +17,8 @@ final class IntegratorSettings {
     private static final float SUN_X = 0.349_563_3F;
     private static final float SUN_Y = 0.848_939_5F;
     private static final float SUN_Z = 0.399_500_9F;
-    private static final float SUN_INTENSITY = 0.8F;
+    // Temporary validation light: five times the previous 0.8 intensity, as a fixed product input.
+    private static final float SUN_INTENSITY = 4.0F;
     private static final float ENVIRONMENT_RED = 0.035F;
     private static final float ENVIRONMENT_GREEN = 0.045F;
     private static final float ENVIRONMENT_BLUE = 0.065F;

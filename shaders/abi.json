@@ -92,7 +92,9 @@
   "colorContract": {
     "workingSpace": "linear-rec2020-d65",
     "textureEncoding": "srgb",
-    "displayEncoding": "srgb"
+    "displayEncoding": "srgb",
+    "displayColorSpace": "rec709-d65",
+    "defaultDisplayTransform": "oklab-drt"
   },
   "cutoutAlphaThreshold": 0.5
 }

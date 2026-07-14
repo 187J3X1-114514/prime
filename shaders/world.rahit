@@ -4,8 +4,8 @@
 
 void main() {
     PrimitiveRecord primitive = primePrimitive();
-    float alpha = textureLod(primeBlockAtlas, primeInterpolateUv(primitive), 0.0).a;
-    if (alpha < PRIME_CUTOUT_ALPHA_THRESHOLD) {
+    float opacity = primeEvaluateOpacity(primeInterpolateUv(primitive));
+    if (opacity < PRIME_CUTOUT_ALPHA_THRESHOLD) {
         ignoreIntersectionEXT;
     }
 }

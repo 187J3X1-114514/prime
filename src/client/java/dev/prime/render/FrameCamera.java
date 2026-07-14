@@ -1,6 +1,7 @@
 package dev.prime.render;
 
 import org.joml.Matrix4f;
+import org.joml.Matrix4fc;
 
 /**
  * Camera data shared by the Minecraft integration and the ray-generation shader.
@@ -17,4 +18,23 @@ import org.joml.Matrix4f;
  * generation must preserve both conventions.
  */
 public record FrameCamera(Matrix4f inverseViewProjection, double x, double y, double z) {
+    static FrameCamera tryCreate(
+            Matrix4fc projection,
+            Matrix4fc viewRotation,
+            double x,
+            double y,
+            double z) {
+        if (!Double.isFinite(x) || !Double.isFinite(y) || !Double.isFinite(z)) {
+            return null;
+        }
+        Matrix4f viewProjection = new Matrix4f(projection).mul(viewRotation);
+        float determinant = viewProjection.determinant();
+        if (!viewProjection.isFinite()
+                || !Float.isFinite(determinant)
+                || Math.abs(determinant) < 1.0e-20F) {
+            return null;
+        }
+        Matrix4f inverse = viewProjection.invert();
+        return inverse.isFinite() ? new FrameCamera(inverse, x, y, z) : null;
+    }
 }

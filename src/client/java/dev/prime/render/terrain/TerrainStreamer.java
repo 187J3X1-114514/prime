@@ -11,7 +11,6 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.PriorityQueue;
 import java.util.concurrent.ArrayBlockingQueue;
-import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.ThreadPoolExecutor;
@@ -25,20 +24,24 @@ import net.minecraft.client.renderer.chunk.RenderRegionCache;
 import net.minecraft.client.renderer.chunk.RenderSectionRegion;
 import net.minecraft.core.SectionPos;
 import net.minecraft.world.level.chunk.status.ChunkStatus;
+import net.minecraft.world.level.chunk.LevelChunk;
 
 public final class TerrainStreamer implements AutoCloseable {
     private static final int MAX_SNAPSHOTS_PER_FRAME = 4;
     private static final int MAX_UPLOADS_PER_FRAME = 8;
     private static final long MAX_UPLOAD_BYTES_PER_FRAME = 16L * 1024L * 1024L;
     private static final int MAX_UNLOADED_PROBES_PER_FRAME = 32;
+    private static final int MAX_READY_FOR_UPLOAD = 64;
+    private static final int MAX_EXTERNAL_DIRTY_SECTIONS = 16_384;
     private static final CpuSectionMesh EMPTY_MESH = new CpuSectionMesh(new float[0], new int[0], 0, 0);
 
     private final TerrainScene scene;
     private final ThreadPoolExecutor workers;
     private final int maximumInFlight;
-    private final ConcurrentLinkedQueue<CompletedSection> completed = new ConcurrentLinkedQueue<>();
-    private final ConcurrentLinkedQueue<Long> externalDirty = new ConcurrentLinkedQueue<>();
-    private final AtomicBoolean externalFullInvalidation = new AtomicBoolean();
+    private final ArrayBlockingQueue<CompletedSection> completed;
+    private final AtomicBoolean completionOverflow = new AtomicBoolean();
+    private final BoundedDirtySections externalDirty =
+            new BoundedDirtySections(MAX_EXTERNAL_DIRTY_SECTIONS);
     private final LongOpenHashSet desired = new LongOpenHashSet();
     private final LongOpenHashSet empty = new LongOpenHashSet();
     private final LongOpenHashSet pendingEvictions = new LongOpenHashSet();
@@ -63,6 +66,7 @@ public final class TerrainStreamer implements AutoCloseable {
         this.scene = new TerrainScene(context, stagingArena);
         int threadCount = Math.max(1, Math.min(4, Runtime.getRuntime().availableProcessors() - 2));
         this.maximumInFlight = threadCount * 2;
+        this.completed = new ArrayBlockingQueue<>(this.maximumInFlight * 2);
         AtomicInteger threadNumber = new AtomicInteger();
         ThreadFactory threadFactory = task -> {
             Thread thread = new Thread(task, "Prime terrain worker " + threadNumber.incrementAndGet());
@@ -92,7 +96,7 @@ public final class TerrainStreamer implements AutoCloseable {
         if (this.world != currentWorld) {
             this.clearWorld(cameraX, cameraY, cameraZ);
             this.world = currentWorld;
-            this.externalFullInvalidation.set(true);
+            this.externalDirty.invalidateAll();
         }
 
         int playerSectionX = (int) Math.floor(cameraX) >> 4;
@@ -150,7 +154,7 @@ public final class TerrainStreamer implements AutoCloseable {
     }
 
     public void invalidateAll() {
-        this.externalFullInvalidation.set(true);
+        this.externalDirty.invalidateAll();
     }
 
     @Override
@@ -165,6 +169,7 @@ public final class TerrainStreamer implements AutoCloseable {
         }
         this.scene.close();
         this.completed.clear();
+        this.externalDirty.clear();
         this.readyForUpload.clear();
     }
 
@@ -212,16 +217,12 @@ public final class TerrainStreamer implements AutoCloseable {
     }
 
     private void drainInvalidations() {
-        if (this.externalFullInvalidation.getAndSet(false)) {
+        BoundedDirtySections.Batch batch = this.externalDirty.drain();
+        if (batch.fullInvalidation()) {
             this.empty.clear();
             this.rebuildRequestQueue(0);
         }
-        LongOpenHashSet dirtySections = new LongOpenHashSet();
-        Long key;
-        while ((key = this.externalDirty.poll()) != null) {
-            dirtySections.add(key.longValue());
-        }
-        for (long sectionKey : dirtySections) {
+        for (long sectionKey : batch.keys()) {
             if (!this.desired.contains(sectionKey)) {
                 continue;
             }
@@ -257,6 +258,7 @@ public final class TerrainStreamer implements AutoCloseable {
         long distanceSquared = ((dx * dx + dz * dz) << 8) | Math.min(255L, Math.abs(dy));
         this.queuedGeneration.put(key, token);
         this.requests.add(new SectionRequest(key, token, priority, distanceSquared));
+        this.compactRequestQueueIfNeeded();
     }
 
     private void dispatchSnapshots(Minecraft minecraft, ClientLevel level) {
@@ -292,8 +294,29 @@ public final class TerrainStreamer implements AutoCloseable {
             int sectionX = SectionPos.x(request.key());
             int sectionY = SectionPos.y(request.key());
             int sectionZ = SectionPos.z(request.key());
-            if (level.getChunkSource().getChunk(sectionX, sectionZ, ChunkStatus.FULL, false) == null) {
+            LevelChunk chunk = level.getChunkSource().getChunk(sectionX, sectionZ, ChunkStatus.FULL, false);
+            if (chunk == null) {
                 unloaded.add(request);
+                continue;
+            }
+            if (chunk.getSection(chunk.getSectionIndexFromSectionY(sectionY)).hasOnlyAir()) {
+                if (this.scene.contains(request.key())) {
+                    if (this.readyForUpload.size() >= MAX_READY_FOR_UPLOAD) {
+                        this.enqueue(request.key(), request.priority(), request.generation());
+                    } else {
+                        this.readyForUpload.addLast(new CompletedSection(
+                                this.generations.worldEpoch(),
+                                request.key(),
+                                request.generation(),
+                                sectionX,
+                                sectionY,
+                                sectionZ,
+                                EMPTY_MESH,
+                                null));
+                    }
+                } else {
+                    this.empty.add(request.key());
+                }
                 continue;
             }
             RenderSectionRegion region = regionCache.createRegion(level, request.key());
@@ -306,7 +329,7 @@ public final class TerrainStreamer implements AutoCloseable {
             this.inFlightGeneration.put(request.key(), request.generation());
             long worldEpoch = this.generations.worldEpoch();
             try {
-            this.workers.execute(() -> {
+                this.workers.execute(() -> {
                     CpuSectionMesh mesh = EMPTY_MESH;
                     Throwable failure = null;
                     try {
@@ -314,7 +337,7 @@ public final class TerrainStreamer implements AutoCloseable {
                     } catch (Throwable throwable) {
                         failure = throwable;
                     }
-                    TerrainStreamer.this.completed.add(new CompletedSection(
+                    CompletedSection completedSection = new CompletedSection(
                             worldEpoch,
                             request.key(),
                             request.generation(),
@@ -322,12 +345,15 @@ public final class TerrainStreamer implements AutoCloseable {
                             sectionY,
                             sectionZ,
                             mesh,
-                            failure));
+                            failure);
+                    if (!TerrainStreamer.this.completed.offer(completedSection)) {
+                        TerrainStreamer.this.completionOverflow.set(true);
+                    }
                 });
-            } catch (RejectedExecutionException exception) {
+            } catch (RejectedExecutionException ignored) {
                 this.inFlightGeneration.remove(request.key());
                 this.enqueue(request.key(), request.priority(), request.generation());
-                PrimeClient.LOGGER.debug("Terrain executor is temporarily saturated", exception);
+                PrimeClient.LOGGER.debug("Terrain executor is temporarily saturated");
                 break;
             }
             dispatched++;
@@ -339,6 +365,14 @@ public final class TerrainStreamer implements AutoCloseable {
     }
 
     private void drainCompleted() {
+        if (this.completionOverflow.getAndSet(false)) {
+            this.completed.clear();
+            this.readyForUpload.clear();
+            this.inFlightGeneration.clear();
+            this.rebuildRequestQueue(0);
+            PrimeClient.LOGGER.warn("Terrain completion queue overflowed; rebuilding the bounded work set");
+            return;
+        }
         CompletedSection result;
         while ((result = this.completed.poll()) != null) {
             if (result.worldEpoch() != this.generations.worldEpoch()) {
@@ -353,6 +387,10 @@ public final class TerrainStreamer implements AutoCloseable {
             }
             if (result.failure() != null) {
                 PrimeClient.LOGGER.warn("Terrain extraction failed for section {}", result.key(), result.failure());
+                this.enqueue(result.key(), 0, result.generation());
+                continue;
+            }
+            if (this.readyForUpload.size() >= MAX_READY_FOR_UPLOAD) {
                 this.enqueue(result.key(), 0, result.generation());
                 continue;
             }
@@ -423,12 +461,24 @@ public final class TerrainStreamer implements AutoCloseable {
         this.inFlightGeneration.clear();
         this.requests.clear();
         this.externalDirty.clear();
-        this.externalFullInvalidation.set(false);
+        this.completionOverflow.set(false);
         this.readyForUpload.clear();
         this.centerSectionX = Integer.MIN_VALUE;
         this.centerSectionY = Integer.MIN_VALUE;
         this.centerSectionZ = Integer.MIN_VALUE;
         this.renderDistance = -1;
+    }
+
+    private void compactRequestQueueIfNeeded() {
+        long desiredLimit = Math.max(1024L, (long) this.desired.size() * 2L);
+        if (this.requests.size() <= desiredLimit) {
+            return;
+        }
+        this.requests.removeIf(request ->
+                !this.desired.contains(request.key())
+                        || !this.generations.isCurrent(request.key(), request.generation())
+                        || this.queuedGeneration.getOrDefault(request.key(), Long.MIN_VALUE)
+                                != request.generation());
     }
 
     private record SectionRequest(long key, long generation, int priority, long distanceSquared) {

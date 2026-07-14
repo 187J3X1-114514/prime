@@ -121,10 +121,16 @@ public final class RayTracingPipeline implements Destroyable {
     public void ensureDescriptors(
             long tlas,
             VulkanImage output,
+            VulkanImage accumulation,
             VulkanGpuTextureView atlasView,
             VulkanGpuSampler atlasSampler) {
         if (this.descriptorBindings != null
-                && this.descriptorBindings.matches(tlas, output.view(), atlasView.vkImageView(), atlasSampler.vkSampler())) {
+                && this.descriptorBindings.matches(
+                        tlas,
+                        output.view(),
+                        accumulation.view(),
+                        atlasView.vkImageView(),
+                        atlasSampler.vkSampler())) {
             return;
         }
         DescriptorBindings replacement = DescriptorBindings.create(
@@ -132,6 +138,7 @@ public final class RayTracingPipeline implements Destroyable {
                 this.descriptorSetLayout,
                 tlas,
                 output,
+                accumulation,
                 atlasView,
                 atlasSampler);
         DescriptorBindings previous = this.descriptorBindings;
@@ -226,7 +233,7 @@ public final class RayTracingPipeline implements Destroyable {
     }
 
     private static long createDescriptorSetLayout(VulkanContext context, MemoryStack stack) {
-        VkDescriptorSetLayoutBinding.Buffer bindings = VkDescriptorSetLayoutBinding.calloc(3, stack);
+        VkDescriptorSetLayoutBinding.Buffer bindings = VkDescriptorSetLayoutBinding.calloc(4, stack);
         bindings.get(0)
                 .binding(ShaderAbi.DESCRIPTOR_TLAS)
                 .descriptorType(KHRAccelerationStructure.VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR)
@@ -243,6 +250,11 @@ public final class RayTracingPipeline implements Destroyable {
                 .descriptorCount(1)
                 .stageFlags(KHRRayTracingPipeline.VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR
                         | KHRRayTracingPipeline.VK_SHADER_STAGE_ANY_HIT_BIT_KHR);
+        bindings.get(3)
+                .binding(ShaderAbi.DESCRIPTOR_ACCUMULATION_IMAGE)
+                .descriptorType(VK12.VK_DESCRIPTOR_TYPE_STORAGE_IMAGE)
+                .descriptorCount(1)
+                .stageFlags(KHRRayTracingPipeline.VK_SHADER_STAGE_RAYGEN_BIT_KHR);
         VkDescriptorSetLayoutCreateInfo createInfo = VkDescriptorSetLayoutCreateInfo.calloc(stack)
                 .sType$Default()
                 .pBindings(bindings);
@@ -377,6 +389,7 @@ public final class RayTracingPipeline implements Destroyable {
         private final long descriptorSet;
         private final long tlas;
         private final long outputView;
+        private final long accumulationView;
         private final long atlasView;
         private final long atlasSampler;
         private boolean destroyed;
@@ -387,6 +400,7 @@ public final class RayTracingPipeline implements Destroyable {
                 long descriptorSet,
                 long tlas,
                 long outputView,
+                long accumulationView,
                 long atlasView,
                 long atlasSampler) {
             this.context = context;
@@ -394,6 +408,7 @@ public final class RayTracingPipeline implements Destroyable {
             this.descriptorSet = descriptorSet;
             this.tlas = tlas;
             this.outputView = outputView;
+            this.accumulationView = accumulationView;
             this.atlasView = atlasView;
             this.atlasSampler = atlasSampler;
         }
@@ -403,12 +418,13 @@ public final class RayTracingPipeline implements Destroyable {
                 long descriptorSetLayout,
                 long tlas,
                 VulkanImage output,
+                VulkanImage accumulation,
                 VulkanGpuTextureView atlasView,
                 VulkanGpuSampler atlasSampler) {
             try (MemoryStack stack = MemoryStack.stackPush()) {
                 VkDescriptorPoolSize.Buffer sizes = VkDescriptorPoolSize.calloc(3, stack);
                 sizes.get(0).type(KHRAccelerationStructure.VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR).descriptorCount(1);
-                sizes.get(1).type(VK12.VK_DESCRIPTOR_TYPE_STORAGE_IMAGE).descriptorCount(1);
+                sizes.get(1).type(VK12.VK_DESCRIPTOR_TYPE_STORAGE_IMAGE).descriptorCount(2);
                 sizes.get(2).type(VK12.VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER).descriptorCount(1);
                 VkDescriptorPoolCreateInfo poolCreateInfo = VkDescriptorPoolCreateInfo.calloc(stack)
                         .sType$Default()
@@ -434,15 +450,18 @@ public final class RayTracingPipeline implements Destroyable {
                             VkWriteDescriptorSetAccelerationStructureKHR.calloc(stack)
                                     .sType$Default()
                                     .pAccelerationStructures(stack.longs(tlas));
-                    VkDescriptorImageInfo.Buffer imageInfos = VkDescriptorImageInfo.calloc(2, stack);
+                    VkDescriptorImageInfo.Buffer imageInfos = VkDescriptorImageInfo.calloc(3, stack);
                     imageInfos.get(0)
                             .imageView(output.view())
                             .imageLayout(VK12.VK_IMAGE_LAYOUT_GENERAL);
                     imageInfos.get(1)
+                            .imageView(accumulation.view())
+                            .imageLayout(VK12.VK_IMAGE_LAYOUT_GENERAL);
+                    imageInfos.get(2)
                             .sampler(atlasSampler.vkSampler())
                             .imageView(atlasView.vkImageView())
                             .imageLayout(VK12.VK_IMAGE_LAYOUT_GENERAL);
-                    VkWriteDescriptorSet.Buffer writes = VkWriteDescriptorSet.calloc(3, stack);
+                    VkWriteDescriptorSet.Buffer writes = VkWriteDescriptorSet.calloc(4, stack);
                     writes.get(0)
                             .sType$Default()
                             .pNext(acceleration.address())
@@ -460,10 +479,17 @@ public final class RayTracingPipeline implements Destroyable {
                     writes.get(2)
                             .sType$Default()
                             .dstSet(descriptorSet)
+                            .dstBinding(ShaderAbi.DESCRIPTOR_ACCUMULATION_IMAGE)
+                            .descriptorCount(1)
+                            .descriptorType(VK12.VK_DESCRIPTOR_TYPE_STORAGE_IMAGE)
+                            .pImageInfo(VkDescriptorImageInfo.create(imageInfos.get(1).address(), 1));
+                    writes.get(3)
+                            .sType$Default()
+                            .dstSet(descriptorSet)
                             .dstBinding(ShaderAbi.DESCRIPTOR_BLOCK_ATLAS)
                             .descriptorCount(1)
                             .descriptorType(VK12.VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER)
-                            .pImageInfo(VkDescriptorImageInfo.create(imageInfos.get(1).address(), 1));
+                            .pImageInfo(VkDescriptorImageInfo.create(imageInfos.get(2).address(), 1));
                     VK12.vkUpdateDescriptorSets(context.vkDevice(), writes, null);
                     return new DescriptorBindings(
                             context,
@@ -471,6 +497,7 @@ public final class RayTracingPipeline implements Destroyable {
                             descriptorSet,
                             tlas,
                             output.view(),
+                            accumulation.view(),
                             atlasView.vkImageView(),
                             atlasSampler.vkSampler());
                 } catch (RuntimeException exception) {
@@ -480,9 +507,15 @@ public final class RayTracingPipeline implements Destroyable {
             }
         }
 
-        private boolean matches(long tlas, long outputView, long atlasView, long atlasSampler) {
+        private boolean matches(
+                long tlas,
+                long outputView,
+                long accumulationView,
+                long atlasView,
+                long atlasSampler) {
             return this.tlas == tlas
                     && this.outputView == outputView
+                    && this.accumulationView == accumulationView
                     && this.atlasView == atlasView
                     && this.atlasSampler == atlasSampler;
         }

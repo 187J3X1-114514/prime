@@ -64,17 +64,33 @@ abstract class GenerateShaderAbi extends DefaultTask {
 		def schema = new groovy.json.JsonSlurper().parse(schemaFile.get().asFile)
 		def primitive = schema.structs.primitiveRecord
 		def section = schema.structs.sectionRecord
+		def integrator = schema.structs.integratorRecord
+		def pathState = schema.structs.pathState
+		def tracePayload = schema.structs.tracePayload
+		def surfaceInteraction = schema.structs.surfaceInteraction
 		def push = schema.structs.pushConstants
+		def colorContract = schema.colorContract
 
-		if (primitive.size != 32 || section.size != 16 || push.size != 96) {
-			throw new GradleException('Prime shader ABI sizes must remain 32/16/96 bytes')
+		if (primitive.size != 32 || section.size != 16 || integrator.size != 32
+				|| pathState.size != 96 || tracePayload.size != 48
+				|| surfaceInteraction.size != 48 || push.size != 128) {
+			throw new GradleException('Prime shader ABI sizes must remain 32/16/32/96/48/48/128 bytes')
+		}
+		if (colorContract.workingSpace != 'linear-rec2020-d65'
+				|| colorContract.textureEncoding != 'srgb'
+				|| colorContract.displayEncoding != 'srgb') {
+			throw new GradleException(
+					'Prime color contract must remain sRGB input -> linear Rec.2020 D65 -> sRGB display')
 		}
 		def typeLayout = [
+			float: [size: 4, alignment: 4],
 			uint: [size: 4, alignment: 4],
 			uint64_t: [size: 8, alignment: 8],
 			mat4: [size: 64, alignment: 16],
 			vec3: [size: 12, alignment: 16],
-			uvec2: [size: 8, alignment: 8]
+			vec4: [size: 16, alignment: 16],
+			uvec2: [size: 8, alignment: 8],
+			uvec4: [size: 16, alignment: 16]
 		]
 		def validateStruct = { String name, def definition ->
 			int cursor = 0
@@ -98,6 +114,10 @@ abstract class GenerateShaderAbi extends DefaultTask {
 		}
 		validateStruct('PrimitiveRecord', primitive)
 		validateStruct('SectionRecord', section)
+		validateStruct('IntegratorRecord', integrator)
+		validateStruct('PathState', pathState)
+		validateStruct('TracePayload', tracePayload)
+		validateStruct('SurfaceInteraction', surfaceInteraction)
 		validateStruct('PushConstants', push)
 
 		def constantName = { String value ->
@@ -107,6 +127,10 @@ abstract class GenerateShaderAbi extends DefaultTask {
 		[
 			PRIMITIVE: primitive,
 			SECTION: section,
+			INTEGRATOR: integrator,
+			PATH_STATE: pathState,
+			TRACE_PAYLOAD: tracePayload,
+			SURFACE: surfaceInteraction,
 			PUSH: push
 		].each { prefix, definition ->
 			definition.fields.each { field ->
@@ -129,11 +153,19 @@ package dev.prime.render.shader;
 public final class ShaderAbi {
     public static final int PRIMITIVE_RECORD_SIZE = ${primitive.size};
     public static final int SECTION_RECORD_SIZE = ${section.size};
+    public static final int INTEGRATOR_RECORD_SIZE = ${integrator.size};
+    public static final int PATH_STATE_SIZE = ${pathState.size};
+    public static final int TRACE_PAYLOAD_SIZE = ${tracePayload.size};
+    public static final int SURFACE_INTERACTION_SIZE = ${surfaceInteraction.size};
     public static final int PUSH_CONSTANT_SIZE = ${push.size};
     public static final int DESCRIPTOR_TLAS = ${schema.descriptors.tlas};
     public static final int DESCRIPTOR_OUTPUT_IMAGE = ${schema.descriptors.outputImage};
     public static final int DESCRIPTOR_BLOCK_ATLAS = ${schema.descriptors.blockAtlas};
+    public static final int DESCRIPTOR_ACCUMULATION_IMAGE = ${schema.descriptors.accumulationImage};
     public static final float CUTOUT_ALPHA_THRESHOLD = ${schema.cutoutAlphaThreshold}f;
+    public static final String WORKING_COLOR_SPACE = "${colorContract.workingSpace}";
+    public static final String TEXTURE_COLOR_ENCODING = "${colorContract.textureEncoding}";
+    public static final String DISPLAY_COLOR_ENCODING = "${colorContract.displayEncoding}";
 ${javaOffsets}
 
     private ShaderAbi() {
@@ -153,8 +185,15 @@ ${javaOffsets}
 
 #define PRIME_PRIMITIVE_RECORD_SIZE ${primitive.size}
 #define PRIME_SECTION_RECORD_SIZE ${section.size}
+#define PRIME_INTEGRATOR_RECORD_SIZE ${integrator.size}
+#define PRIME_PATH_STATE_SIZE ${pathState.size}
+#define PRIME_TRACE_PAYLOAD_SIZE ${tracePayload.size}
+#define PRIME_SURFACE_INTERACTION_SIZE ${surfaceInteraction.size}
 #define PRIME_PUSH_CONSTANT_SIZE ${push.size}
 #define PRIME_CUTOUT_ALPHA_THRESHOLD ${schema.cutoutAlphaThreshold}
+#define PRIME_COLOR_WORKING_SPACE_LINEAR_REC2020_D65 1
+#define PRIME_COLOR_TEXTURE_ENCODING_SRGB 1
+#define PRIME_COLOR_DISPLAY_ENCODING_SRGB 1
 
 struct PrimitiveRecord {
 ${glslStructFields(primitive)}
@@ -162,6 +201,26 @@ ${glslStructFields(primitive)}
 
 struct SectionRecord {
 ${glslStructFields(section)}
+};
+
+// These explicit records deliberately contain no execution-local state. They can be moved to
+// storage-buffer queues by a future wavefront scheduler without changing integrator semantics.
+// Every color or radiance field in these records is linear Rec.2020 D65. This is part of the
+// estimator ABI, not a presentation choice; changing it requires a coordinated ABI migration.
+struct IntegratorRecord {
+${glslStructFields(integrator)}
+};
+
+struct PathState {
+${glslStructFields(pathState)}
+};
+
+struct TracePayload {
+${glslStructFields(tracePayload)}
+};
+
+struct SurfaceInteraction {
+${glslStructFields(surfaceInteraction)}
 };
 
 layout(buffer_reference, buffer_reference_align = 8) readonly buffer PrimitiveBuffer {
@@ -172,6 +231,10 @@ layout(buffer_reference, buffer_reference_align = 8) readonly buffer SectionTabl
     SectionRecord sections[];
 };
 
+layout(buffer_reference, buffer_reference_align = 16) readonly buffer IntegratorBuffer {
+    IntegratorRecord record;
+};
+
 layout(push_constant) uniform PrimePushConstants {
 ${glslPushFields}
 } primePush;
@@ -179,6 +242,7 @@ ${glslPushFields}
 layout(set = 0, binding = ${schema.descriptors.tlas}) uniform accelerationStructureEXT primeScene;
 layout(set = 0, binding = ${schema.descriptors.outputImage}, rgba8) uniform image2D primeOutput;
 layout(set = 0, binding = ${schema.descriptors.blockAtlas}) uniform sampler2D primeBlockAtlas;
+layout(set = 0, binding = ${schema.descriptors.accumulationImage}, rgba32f) uniform image2D primeAccumulation;
 
 #endif
 """

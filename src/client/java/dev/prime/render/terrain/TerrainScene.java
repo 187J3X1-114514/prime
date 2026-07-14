@@ -34,6 +34,8 @@ public final class TerrainScene implements AutoCloseable {
     private int originX;
     private int originY;
     private int originZ;
+    private long revision;
+    private long resetRevision;
 
     public TerrainScene(VulkanContext context, StagingArena stagingArena) {
         this.context = context;
@@ -46,9 +48,10 @@ public final class TerrainScene implements AutoCloseable {
             double cameraX,
             double cameraY,
             double cameraZ) {
-        boolean contentChanged = !uploads.isEmpty() || evictions.length > 0;
+        boolean contentChanged = this.hasActualContentChange(uploads, evictions);
         boolean needsRebase = this.currentTlas == null
-                || RenderOrigin.needsRebase(
+                ? contentChanged
+                : RenderOrigin.needsRebase(
                         cameraX,
                         cameraY,
                         cameraZ,
@@ -59,6 +62,8 @@ public final class TerrainScene implements AutoCloseable {
         if (!contentChanged && !needsRebase) {
             return true;
         }
+        boolean requiresHistoryReset = this.changesExistingScene(uploads, evictions)
+                || this.currentTlas != null && needsRebase;
 
         int finalSectionCount = this.estimateFinalSectionCount(uploads, evictions);
         TopLevelAccelerationStructure replacementTlas = null;
@@ -197,7 +202,7 @@ public final class TerrainScene implements AutoCloseable {
             for (GpuSection replacement : replacements) {
                 replacement.blas().retireScratch();
             }
-            this.commit(uploads, evictions, replacements, replacementTlas);
+            this.commit(uploads, evictions, replacements, replacementTlas, requiresHistoryReset);
             return true;
         } catch (RuntimeException exception) {
             for (GpuSection replacement : replacements) {
@@ -234,7 +239,9 @@ public final class TerrainScene implements AutoCloseable {
                 this.currentTlas.sectionTableAddress(),
                 this.originX,
                 this.originY,
-                this.originZ);
+                this.originZ,
+                this.revision,
+                this.resetRevision);
     }
 
     public boolean contains(long key) {
@@ -277,6 +284,34 @@ public final class TerrainScene implements AutoCloseable {
         return finalKeys.size();
     }
 
+    private boolean hasActualContentChange(List<SectionUpload> uploads, long[] evictions) {
+        for (long key : evictions) {
+            if (this.resident.containsKey(key)) {
+                return true;
+            }
+        }
+        for (SectionUpload upload : uploads) {
+            if (!upload.mesh().isEmpty() || this.resident.containsKey(upload.key())) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private boolean changesExistingScene(List<SectionUpload> uploads, long[] evictions) {
+        for (long key : evictions) {
+            if (this.resident.containsKey(key)) {
+                return true;
+            }
+        }
+        for (SectionUpload upload : uploads) {
+            if (this.resident.containsKey(upload.key())) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     private List<GpuSection> buildFinalSectionList(
             List<SectionUpload> uploads,
             long[] evictions,
@@ -300,7 +335,8 @@ public final class TerrainScene implements AutoCloseable {
             List<SectionUpload> uploads,
             long[] evictions,
             List<GpuSection> replacements,
-            TopLevelAccelerationStructure replacementTlas) {
+            TopLevelAccelerationStructure replacementTlas,
+            boolean requiresHistoryReset) {
         List<GpuSection> retired = new ArrayList<>();
         for (long key : evictions) {
             GpuSection removed = this.resident.remove(key);
@@ -323,6 +359,10 @@ public final class TerrainScene implements AutoCloseable {
 
         TopLevelAccelerationStructure previousTlas = this.currentTlas;
         this.currentTlas = replacementTlas;
+        this.revision++;
+        if (requiresHistoryReset) {
+            this.resetRevision++;
+        }
         if (previousTlas != null) {
             this.context.defer(previousTlas::release);
         }
@@ -390,6 +430,13 @@ public final class TerrainScene implements AutoCloseable {
         }
     }
 
-    public record SceneView(long tlas, long sectionTableAddress, int originX, int originY, int originZ) {
+    public record SceneView(
+            long tlas,
+            long sectionTableAddress,
+            int originX,
+            int originY,
+            int originZ,
+            long revision,
+            long resetRevision) {
     }
 }

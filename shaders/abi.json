@@ -21,21 +21,78 @@
         { "name": "cutoutBase", "type": "uint", "offset": 12 }
       ]
     },
-    "pushConstants": {
+    "integratorRecord": {
+      "size": 32,
+      "fields": [
+        { "name": "sunDirectionIntensity", "type": "vec4", "offset": 0 },
+        { "name": "environmentRadiance", "type": "vec4", "offset": 16 }
+      ]
+    },
+    "pathState": {
       "size": 96,
+      "fields": [
+        { "name": "physicalOrigin", "type": "vec3", "offset": 0 },
+        { "name": "bounce", "type": "uint", "offset": 12 },
+        { "name": "traceOrigin", "type": "vec3", "offset": 16 },
+        { "name": "sampleDimension", "type": "uint", "offset": 28 },
+        { "name": "rayDirection", "type": "vec3", "offset": 32 },
+        { "name": "flags", "type": "uint", "offset": 44 },
+        { "name": "throughput", "type": "vec3", "offset": 48 },
+        { "name": "previousBsdfPdf", "type": "float", "offset": 60 },
+        { "name": "radiance", "type": "vec3", "offset": 64 },
+        { "name": "previousLightPdf", "type": "float", "offset": 76 },
+        { "name": "pixel", "type": "uvec2", "offset": 80 },
+        { "name": "sampleIndex", "type": "uint", "offset": 88 },
+        { "name": "sampleEpoch", "type": "uint", "offset": 92 }
+      ]
+    },
+    "tracePayload": {
+      "size": 48,
+      "fields": [
+        { "name": "position", "type": "vec3", "offset": 0 },
+        { "name": "t", "type": "float", "offset": 12 },
+        { "name": "geometricNormal", "type": "vec3", "offset": 16 },
+        { "name": "hitKind", "type": "uint", "offset": 28 },
+        { "name": "baseColor", "type": "vec3", "offset": 32 },
+        { "name": "traceKind", "type": "uint", "offset": 44 }
+      ]
+    },
+    "surfaceInteraction": {
+      "size": 48,
+      "fields": [
+        { "name": "position", "type": "vec3", "offset": 0 },
+        { "name": "t", "type": "float", "offset": 12 },
+        { "name": "geometricNormal", "type": "vec3", "offset": 16 },
+        { "name": "hitKind", "type": "uint", "offset": 28 },
+        { "name": "baseColor", "type": "vec3", "offset": 32 },
+        { "name": "materialFlags", "type": "uint", "offset": 44 }
+      ]
+    },
+    "pushConstants": {
+      "size": 128,
       "fields": [
         { "name": "inverseViewProjection", "type": "mat4", "offset": 0 },
         { "name": "cameraPosition", "type": "vec3", "offset": 64 },
         { "name": "_padding0", "type": "uint", "offset": 76 },
         { "name": "sectionTableAddress", "type": "uint64_t", "offset": 80 },
-        { "name": "outputExtent", "type": "uvec2", "offset": 88 }
+        { "name": "outputExtent", "type": "uvec2", "offset": 88 },
+        { "name": "integratorAddress", "type": "uint64_t", "offset": 96 },
+        { "name": "_padding1", "type": "uint", "offset": 104 },
+        { "name": "_padding2", "type": "uint", "offset": 108 },
+        { "name": "path", "type": "uvec4", "offset": 112 }
       ]
     }
   },
   "descriptors": {
     "tlas": 0,
     "outputImage": 1,
-    "blockAtlas": 2
+    "blockAtlas": 2,
+    "accumulationImage": 3
+  },
+  "colorContract": {
+    "workingSpace": "linear-rec2020-d65",
+    "textureEncoding": "srgb",
+    "displayEncoding": "srgb"
   },
   "cutoutAlphaThreshold": 0.5
 }

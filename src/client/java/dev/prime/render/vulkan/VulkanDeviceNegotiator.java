@@ -21,6 +21,7 @@ import org.lwjgl.vulkan.VkPhysicalDeviceProperties2;
 import org.lwjgl.vulkan.VkPhysicalDeviceRayTracingPipelineFeaturesKHR;
 import org.lwjgl.vulkan.VkPhysicalDeviceRayTracingPipelinePropertiesKHR;
 import org.lwjgl.vulkan.VkPhysicalDeviceVulkan12Features;
+import org.lwjgl.vulkan.VkFormatProperties;
 
 public final class VulkanDeviceNegotiator {
     private static final List<String> REQUIRED_EXTENSIONS = List.of(
@@ -107,6 +108,16 @@ public final class VulkanDeviceNegotiator {
 
             if (rayProperties.maxRayRecursionDepth() < 1) {
                 return VulkanCapabilities.unavailable(deviceName, "Ray tracing recursion depth 1 is not supported");
+            }
+            VkFormatProperties accumulationFormat = VkFormatProperties.calloc(stack);
+            VK12.vkGetPhysicalDeviceFormatProperties(
+                    physicalDevice.vkPhysicalDevice(),
+                    VK12.VK_FORMAT_R32G32B32A32_SFLOAT,
+                    accumulationFormat);
+            if ((accumulationFormat.optimalTilingFeatures() & VK12.VK_FORMAT_FEATURE_STORAGE_IMAGE_BIT) == 0) {
+                return VulkanCapabilities.unavailable(
+                        deviceName,
+                        "RGBA32F storage images required for path accumulation are not supported");
             }
             if (rayProperties.shaderGroupHandleSize() <= 0
                     || rayProperties.maxShaderGroupStride() == 0

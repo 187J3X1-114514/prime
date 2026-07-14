@@ -108,16 +108,37 @@ public final class VulkanContext implements AutoCloseable {
     }
 
     public VulkanImage createOutputImage(int width, int height) {
+        return this.createImage(
+                width,
+                height,
+                VK12.VK_FORMAT_R8G8B8A8_UNORM,
+                VK12.VK_IMAGE_USAGE_STORAGE_BIT | VK12.VK_IMAGE_USAGE_TRANSFER_SRC_BIT,
+                "Prime output");
+    }
+
+    public VulkanImage createAccumulationImage(int width, int height) {
+        return this.createImage(
+                width,
+                height,
+                VK12.VK_FORMAT_R32G32B32A32_SFLOAT,
+                VK12.VK_IMAGE_USAGE_STORAGE_BIT,
+                "Prime accumulation");
+    }
+
+    private VulkanImage createImage(int width, int height, int format, int usage, String label) {
+        if (width <= 0 || height <= 0) {
+            throw new IllegalArgumentException("Vulkan image dimensions must be positive");
+        }
         try (MemoryStack stack = MemoryStack.stackPush()) {
             VkImageCreateInfo imageCreateInfo = VkImageCreateInfo.calloc(stack)
                     .sType$Default()
                     .imageType(VK12.VK_IMAGE_TYPE_2D)
-                    .format(VK12.VK_FORMAT_R8G8B8A8_UNORM)
+                    .format(format)
                     .mipLevels(1)
                     .arrayLayers(1)
                     .samples(VK12.VK_SAMPLE_COUNT_1_BIT)
                     .tiling(VK12.VK_IMAGE_TILING_OPTIMAL)
-                    .usage(VK12.VK_IMAGE_USAGE_STORAGE_BIT | VK12.VK_IMAGE_USAGE_TRANSFER_SRC_BIT)
+                    .usage(usage)
                     .sharingMode(VK12.VK_SHARING_MODE_EXCLUSIVE)
                     .initialLayout(VK12.VK_IMAGE_LAYOUT_UNDEFINED);
             imageCreateInfo.extent().set(width, height, 1);
@@ -131,7 +152,7 @@ public final class VulkanContext implements AutoCloseable {
                     allocationCreateInfo,
                     imagePointer,
                     allocationPointer,
-                    null), "create ray tracing output image");
+                    null), "create " + label + " image");
             long image = imagePointer.get(0);
             long view = 0L;
             try {
@@ -139,7 +160,7 @@ public final class VulkanContext implements AutoCloseable {
                         .sType$Default()
                         .image(image)
                         .viewType(VK12.VK_IMAGE_VIEW_TYPE_2D)
-                        .format(VK12.VK_FORMAT_R8G8B8A8_UNORM);
+                        .format(format);
                 viewCreateInfo.subresourceRange()
                         .aspectMask(VK12.VK_IMAGE_ASPECT_COLOR_BIT)
                         .baseMipLevel(0)
@@ -149,12 +170,12 @@ public final class VulkanContext implements AutoCloseable {
                 LongBuffer viewPointer = stack.mallocLong(1);
                 check(
                         VK12.vkCreateImageView(this.device.vkDevice(), viewCreateInfo, null, viewPointer),
-                        "create ray tracing output view");
+                        "create " + label + " view");
                 view = viewPointer.get(0);
                 this.device.instance().debug().setObjectName(
-                        this.device.vkDevice(), VK12.VK_OBJECT_TYPE_IMAGE, image, "Prime output");
+                        this.device.vkDevice(), VK12.VK_OBJECT_TYPE_IMAGE, image, label);
                 this.device.instance().debug().setObjectName(
-                        this.device.vkDevice(), VK12.VK_OBJECT_TYPE_IMAGE_VIEW, view, "Prime output view");
+                        this.device.vkDevice(), VK12.VK_OBJECT_TYPE_IMAGE_VIEW, view, label + " view");
                 return new VulkanImage(
                         this.allocator,
                         this.device.vkDevice(),

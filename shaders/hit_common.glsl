@@ -3,6 +3,7 @@
 
 #extension GL_GOOGLE_include_directive : require
 #include "common.glsl"
+#include "material.glsl"
 
 hitAttributeEXT vec2 primeBarycentrics;
 

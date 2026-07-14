@@ -1,22 +1,56 @@
 #version 460
 #extension GL_GOOGLE_include_directive : require
 #include "common.glsl"
+#include "color_space.glsl"
 
-layout(location = 0) rayPayloadEXT vec4 primePayload;
+layout(location = 0) rayPayloadEXT TracePayload primePayload;
+
+#include "sampling.glsl"
+#include "bsdf.glsl"
+#include "lights.glsl"
+#include "integrator.glsl"
 
 void main() {
     uvec2 pixel = gl_LaunchIDEXT.xy;
-    vec2 uv = (vec2(pixel) + vec2(0.5)) / vec2(primePush.outputExtent);
+    IntegratorRecord integrator = IntegratorBuffer(primePush.integratorAddress).record;
+    PathState path;
+    path.physicalOrigin = primePush.cameraPosition;
+    path.bounce = 0u;
+    path.traceOrigin = primePush.cameraPosition;
+    path.sampleDimension = 0u;
+    path.rayDirection = vec3(0.0);
+    path.flags = PRIME_PATH_PREVIOUS_DELTA;
+    path.throughput = vec3(1.0);
+    path.previousBsdfPdf = 0.0;
+    path.radiance = vec3(0.0);
+    path.previousLightPdf = 0.0;
+    path.pixel = pixel;
+    path.sampleIndex = primePush.path.x;
+    path.sampleEpoch = primePush.path.y;
+
+    vec2 uv = (vec2(pixel) + vec2(primeRandom(path), primeRandom(path)))
+            / vec2(primePush.outputExtent);
     // Minecraft renders to a positive-height Vulkan viewport and flips that image during present,
     // so row zero of this internal target corresponds to NDC y = -1. Its perspective projection
     // also uses reversed-Z in Vulkan's [0, 1] depth range: the near plane is 1 and the far plane is 0.
     vec2 ndc = vec2(uv.x * 2.0 - 1.0, uv.y * 2.0 - 1.0);
     vec4 nearPoint = primePush.inverseViewProjection * vec4(ndc, 1.0, 1.0);
     vec4 farPoint = primePush.inverseViewProjection * vec4(ndc, 0.0, 1.0);
-    vec3 direction = normalize(farPoint.xyz / farPoint.w - nearPoint.xyz / nearPoint.w);
+    path.rayDirection = normalize(farPoint.xyz / farPoint.w - nearPoint.xyz / nearPoint.w);
 
-    primePayload = vec4(0.0, 0.0, 0.0, 1.0);
-    traceRayEXT(primeScene, gl_RayFlagsNoneEXT, 0xff, 0, 1, 0,
-            primePush.cameraPosition, 0.01, direction, 1000000.0, 0);
-    imageStore(primeOutput, ivec2(pixel), primePayload);
+    vec3 sampleRadiance = primeIntegrate(path, integrator);
+    if (any(isnan(sampleRadiance)) || any(isinf(sampleRadiance))) {
+        sampleRadiance = vec3(0.0);
+    }
+    vec3 accumulated = sampleRadiance;
+    if (path.sampleIndex != 0u) {
+        vec3 previous = imageLoad(primeAccumulation, ivec2(pixel)).rgb;
+        accumulated = previous + (sampleRadiance - previous) / float(path.sampleIndex + 1u);
+    }
+    imageStore(primeAccumulation, ivec2(pixel), vec4(accumulated, 1.0));
+    // Accumulation remains linear Rec.2020. Only the disposable presentation image crosses back
+    // to display-encoded sRGB because Minecraft blits its RGBA8_UNORM main target directly to an
+    // SRGB_NONLINEAR swapchain. Moving this conversion earlier would bias filtering and averaging.
+    vec3 displaySrgb = primeWorkingToDisplaySrgb(accumulated);
+    imageStore(primeOutput, ivec2(pixel), vec4(displaySrgb, 1.0));
 }

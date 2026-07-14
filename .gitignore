@@ -38,3 +38,11 @@ hs_err_*.log
 replay_*.log
 *.hprof
 *.jfr
+
+# prime project
+
+*.log
+*.zip
+*.7z
+*.rar
+*.jar

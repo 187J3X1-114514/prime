@@ -1,6 +1,7 @@
 package dev.prime.render.shader;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.IOException;
@@ -52,14 +53,16 @@ final class DisplayTransformTest {
         Path shaderRoot = Path.of(System.getProperty("user.dir"), "shaders");
         String displayTransform = Files.readString(shaderRoot.resolve("display_transform.glsl"));
         String rayGeneration = Files.readString(shaderRoot.resolve("world.rgen"));
+        String composite = Files.readString(shaderRoot.resolve("nrd_composite.comp"));
 
         assertTrue(displayTransform.contains("const float PRIME_OKLAB_DISPLAY_EXPOSURE = 1.0"));
         assertTrue(displayTransform.contains("vec3 primeDisplayTransformToSrgb(vec3 hdrRec2020)"));
         assertTrue(displayTransform.contains("primeOklabTonemapCurve(linearBt709)"));
         assertTrue(rayGeneration.contains("imageStore(primeAccumulation"));
+        assertFalse(rayGeneration.contains("primeDisplayTransformToSrgb"));
         assertTrue(
-                rayGeneration.indexOf("imageStore(primeAccumulation")
-                        < rayGeneration.indexOf("primeDisplayTransformToSrgb(accumulated)"));
+                composite.indexOf("vec3 radiance = diffuse + imageLoad(primeStableAccumulation")
+                        < composite.indexOf("primeDisplayTransformToSrgb(max(radiance, vec3(0.0)))"));
     }
 
     private static double[] display(double[] hdrRec2020) {

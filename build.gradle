@@ -84,6 +84,7 @@ abstract class GenerateShaderAbi extends DefaultTask {
 		def push = schema.structs.pushConstants
 		def colorContract = schema.colorContract
 		def atmosphereContract = schema.atmosphereContract
+		def nrdContract = schema.nrdContract
 
 		if (primitive.size != 32 || section.size != 64 || lightNode.size != 48
 				|| lightEmitter.size != 96 || lightCell.size != 16 || sectionLightHeader.size != 32
@@ -107,6 +108,14 @@ abstract class GenerateShaderAbi extends DefaultTask {
 			throw new GradleException(
 					'Prime atmosphere contract must remain the eight-wave Rec.2020 model, '
 							+ 'the -64 sea level / 0.004 km world scale, and a 10-unit space sun')
+		}
+		if (nrdContract.version != '4.17.4'
+				|| nrdContract.denoiser != 'reblur-diffuse'
+				|| nrdContract.normalEncoding != 'r10g10b10a2-unorm'
+				|| nrdContract.roughnessEncoding != 'linear'
+				|| nrdContract.motionSpace != 'world'
+				|| nrdContract.signalSpace != 'demodulated-linear-rec2020-d65') {
+			throw new GradleException('Prime NRD signal and native-library contracts changed without a coordinated migration')
 		}
 		def typeLayout = [
 			float: [size: 4, alignment: 4],
@@ -205,12 +214,23 @@ public final class ShaderAbi {
     public static final int DESCRIPTOR_TRANSMITTANCE_HIGH = ${schema.descriptors.transmittanceHigh};
     public static final int DESCRIPTOR_AERIAL_RADIANCE = ${schema.descriptors.aerialRadiance};
     public static final int DESCRIPTOR_AERIAL_TRANSMITTANCE = ${schema.descriptors.aerialTransmittance};
+    public static final int DESCRIPTOR_NRD_NOISY_DIFFUSE = ${schema.descriptors.nrdNoisyDiffuse};
+    public static final int DESCRIPTOR_NRD_NORMAL_ROUGHNESS = ${schema.descriptors.nrdNormalRoughness};
+    public static final int DESCRIPTOR_NRD_VIEW_Z = ${schema.descriptors.nrdViewZ};
+    public static final int DESCRIPTOR_NRD_MOTION = ${schema.descriptors.nrdMotion};
+    public static final int DESCRIPTOR_NRD_MATERIAL = ${schema.descriptors.nrdMaterial};
     public static final float CUTOUT_ALPHA_THRESHOLD = ${schema.cutoutAlphaThreshold}f;
     public static final String WORKING_COLOR_SPACE = "${colorContract.workingSpace}";
     public static final String TEXTURE_COLOR_ENCODING = "${colorContract.textureEncoding}";
     public static final String DISPLAY_COLOR_ENCODING = "${colorContract.displayEncoding}";
     public static final String DISPLAY_COLOR_SPACE = "${colorContract.displayColorSpace}";
     public static final String DEFAULT_DISPLAY_TRANSFORM = "${colorContract.defaultDisplayTransform}";
+    public static final String NRD_VERSION = "${nrdContract.version}";
+    public static final String NRD_DENOISER = "${nrdContract.denoiser}";
+    public static final String NRD_NORMAL_ENCODING = "${nrdContract.normalEncoding}";
+    public static final String NRD_ROUGHNESS_ENCODING = "${nrdContract.roughnessEncoding}";
+    public static final String NRD_MOTION_SPACE = "${nrdContract.motionSpace}";
+    public static final String NRD_SIGNAL_SPACE = "${nrdContract.signalSpace}";
     public static final String ATMOSPHERE_SPECTRAL_MODEL = "${atmosphereContract.spectralModel}";
     public static final float ATMOSPHERE_BOTTOM_RADIUS_KM = ${atmosphereContract.bottomRadiusKm}f;
     public static final float ATMOSPHERE_TOP_RADIUS_KM = ${atmosphereContract.topRadiusKm}f;
@@ -339,6 +359,14 @@ layout(set = 0, binding = ${schema.descriptors.transmittanceLow}, rgba16f) unifo
 layout(set = 0, binding = ${schema.descriptors.transmittanceHigh}, rgba16f) uniform readonly image2D primeTransmittanceHigh;
 layout(set = 0, binding = ${schema.descriptors.aerialRadiance}, rgba16f) uniform readonly image3D primeAerialRadiance;
 layout(set = 0, binding = ${schema.descriptors.aerialTransmittance}, rgba16f) uniform readonly image3D primeAerialTransmittance;
+// NRD is part of the integrator boundary: raygen writes demodulated scene-linear Rec.2020
+// radiance and matching primary guides. Reinterpreting these as display RGB, alpha coverage or
+// screen-space motion silently invalidates temporal reprojection and spatial edge stopping.
+layout(set = 0, binding = ${schema.descriptors.nrdNoisyDiffuse}, rgba16f) uniform image2D primeNrdNoisyDiffuse;
+layout(set = 0, binding = ${schema.descriptors.nrdNormalRoughness}, rgb10_a2) uniform image2D primeNrdNormalRoughness;
+layout(set = 0, binding = ${schema.descriptors.nrdViewZ}, r32f) uniform image2D primeNrdViewZ;
+layout(set = 0, binding = ${schema.descriptors.nrdMotion}, rgba16f) uniform image2D primeNrdMotion;
+layout(set = 0, binding = ${schema.descriptors.nrdMaterial}, rgba16f) uniform image2D primeNrdMaterial;
 
 #endif
 """
@@ -478,6 +506,9 @@ def licenseArchiveSuffix = project.name
 jar {
 	from('LICENSE') {
 		rename { "${it}_${licenseArchiveSuffix}" }
+	}
+	from('THIRD_PARTY_LICENSES') {
+		into 'META-INF/licenses'
 	}
 }
 

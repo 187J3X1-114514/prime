@@ -8,6 +8,22 @@ const uint PRIME_HIT_NONE = 0u;
 const uint PRIME_HIT_SURFACE = 1u;
 const uint PRIME_PATH_PREVIOUS_DELTA = 1u;
 
+struct PrimeDirectLightingSplit {
+    vec3 diffuse;
+    vec3 specular;
+};
+
+struct PrimeIntegrationResult {
+    vec3 diffuseRadiance;
+    float primaryDistance;
+    vec3 stableRadiance;
+    float diffuseHitDistance;
+    vec3 primaryBaseColor;
+    uint primaryHitKind;
+    vec3 primaryNormal;
+    uint reserved;
+};
+
 vec3 primeOffsetRayOrigin(vec3 physicalPosition, vec3 normal, vec3 direction) {
     // The physical shading point remains unchanged for BSDF/light/PDF evaluation. Only the
     // traversal origin receives this offset, preventing a geometric epsilon from changing the
@@ -44,8 +60,6 @@ SurfaceInteraction primeTraceSurface(vec3 origin, vec3 direction) {
 }
 
 bool primeVisible(vec3 physicalPosition, vec3 normal, LightSample light) {
-    // Shadow traversal uses a one-word payload and never invokes closest-hit. Cutout any-hit still
-    // runs and may ignore transparent texels; an accepted intersection leaves the sentinel set.
     primeShadowOccluded = 1u;
     vec3 traceOrigin = primeOffsetRayOrigin(physicalPosition, normal, light.direction);
     traceRayEXT(
@@ -63,6 +77,57 @@ bool primeVisible(vec3 physicalPosition, vec3 normal, LightSample light) {
     return primeShadowOccluded == 0u;
 }
 
+PrimeDirectLightingSplit primeEvaluateDirectSplit(
+        SurfaceInteraction surface,
+        vec3 viewDirection,
+        LightSample light,
+        float bsdfPdf) {
+    PrimeDirectLightingSplit result;
+    result.diffuse = vec3(0.0);
+    result.specular = vec3(0.0);
+    float cosine = max(dot(surface.geometricNormal, light.direction), 0.0);
+    if (cosine <= 0.0 || light.pdf <= 0.0
+            || all(lessThanEqual(light.radiance, vec3(0.0)))
+            || !primeVisible(surface.position, surface.geometricNormal, light)) {
+        return result;
+    }
+    PrimeDefaultBsdfComponents components = primeEvaluateDefaultBsdfComponents(
+            surface.baseColor, surface.geometricNormal, viewDirection, light.direction);
+    float misWeight = primePowerHeuristic(light.pdf, bsdfPdf);
+    vec3 scale = light.radiance * (cosine * misWeight / light.pdf);
+    result.diffuse = scale * components.diffuse.value;
+    result.specular = scale * components.specular.value;
+    return result;
+}
+
+PrimeDirectLightingSplit primeEstimatePrimaryDirectSun(
+        IntegratorRecord integrator,
+        SurfaceInteraction surface,
+        vec3 viewDirection,
+        vec2 sampleValue) {
+    LightSample light = primeSampleSun(integrator, surface.position, sampleValue);
+    PrimeDefaultBsdfComponents components = primeEvaluateDefaultBsdfComponents(
+            surface.baseColor, surface.geometricNormal, viewDirection, light.direction);
+    float specularProbability = primeNrdSpecularSampleProbability(
+            viewDirection, surface.geometricNormal);
+    float bsdfPdf = mix(components.diffuse.pdf, components.specular.pdf, specularProbability);
+    return primeEvaluateDirectSplit(surface, viewDirection, light, bsdfPdf);
+}
+
+PrimeDirectLightingSplit primeEstimatePrimaryDirectAreaLight(
+        SurfaceInteraction surface,
+        vec3 viewDirection,
+        vec3 treeSample,
+        vec2 positionSample) {
+    LightSample light = primeSampleAreaLight(surface.position, treeSample, positionSample);
+    PrimeDefaultBsdfComponents components = primeEvaluateDefaultBsdfComponents(
+            surface.baseColor, surface.geometricNormal, viewDirection, light.direction);
+    float specularProbability = primeNrdSpecularSampleProbability(
+            viewDirection, surface.geometricNormal);
+    float bsdfPdf = mix(components.diffuse.pdf, components.specular.pdf, specularProbability);
+    return primeEvaluateDirectSplit(surface, viewDirection, light, bsdfPdf);
+}
+
 vec3 primeEstimateDirectSun(
         IntegratorRecord integrator,
         SurfaceInteraction surface,
@@ -71,13 +136,9 @@ vec3 primeEstimateDirectSun(
     LightSample light = primeSampleSun(integrator, surface.position, sampleValue);
     BsdfEvaluation bsdf = primeEvaluateDefaultBsdf(
             surface.baseColor, surface.geometricNormal, viewDirection, light.direction);
-    float cosine = max(dot(surface.geometricNormal, light.direction), 0.0);
-    if (cosine <= 0.0 || light.pdf <= 0.0
-            || !primeVisible(surface.position, surface.geometricNormal, light)) {
-        return vec3(0.0);
-    }
-    float misWeight = primePowerHeuristic(light.pdf, bsdf.pdf);
-    return light.radiance * bsdf.value * (cosine * misWeight / light.pdf);
+    PrimeDirectLightingSplit split = primeEvaluateDirectSplit(
+            surface, viewDirection, light, bsdf.pdf);
+    return split.diffuse + split.specular;
 }
 
 vec3 primeEstimateDirectAreaLight(
@@ -86,18 +147,11 @@ vec3 primeEstimateDirectAreaLight(
         vec3 treeSample,
         vec2 positionSample) {
     LightSample light = primeSampleAreaLight(surface.position, treeSample, positionSample);
-    if (!(light.pdf > 0.0) || all(lessThanEqual(light.radiance, vec3(0.0)))) {
-        return vec3(0.0);
-    }
     BsdfEvaluation bsdf = primeEvaluateDefaultBsdf(
             surface.baseColor, surface.geometricNormal, viewDirection, light.direction);
-    float cosine = max(dot(surface.geometricNormal, light.direction), 0.0);
-    if (cosine <= 0.0
-            || !primeVisible(surface.position, surface.geometricNormal, light)) {
-        return vec3(0.0);
-    }
-    float misWeight = primePowerHeuristic(light.pdf, bsdf.pdf);
-    return light.radiance * bsdf.value * (cosine * misWeight / light.pdf);
+    PrimeDirectLightingSplit split = primeEvaluateDirectSplit(
+            surface, viewDirection, light, bsdf.pdf);
+    return split.diffuse + split.specular;
 }
 
 bool primeRussianRoulette(inout PathState path, uint firstBounce, float sampleValue) {
@@ -113,14 +167,42 @@ bool primeRussianRoulette(inout PathState path, uint firstBounce, float sampleVa
     return true;
 }
 
-vec3 primeIntegrate(PathState path, IntegratorRecord integrator, out float primaryDistance) {
-    primaryDistance = -1.0;
+void primeAccumulateAfterPrimary(
+        inout PrimeIntegrationResult result,
+        bool diffusePath,
+        vec3 contribution) {
+    if (diffusePath) {
+        result.diffuseRadiance += contribution;
+    } else {
+        result.stableRadiance += contribution;
+    }
+}
+
+PrimeIntegrationResult primeIntegrate(PathState path, IntegratorRecord integrator) {
+    PrimeIntegrationResult result;
+    result.diffuseRadiance = vec3(0.0);
+    result.primaryDistance = -1.0;
+    result.stableRadiance = vec3(0.0);
+    result.diffuseHitDistance = 0.0;
+    result.primaryBaseColor = vec3(0.0);
+    result.primaryHitKind = PRIME_HIT_NONE;
+    result.primaryNormal = vec3(0.0, 1.0, 0.0);
+    result.reserved = 0u;
+    bool diffusePath = false;
     uint maximumBounces = min(primePush.path.z, 256u);
     uint rouletteStart = primePush.path.w;
     for (path.bounce = 0u; path.bounce < maximumBounces; ++path.bounce) {
         SurfaceInteraction surface = primeTraceSurface(path.traceOrigin, path.rayDirection);
         if (path.bounce == 0u && surface.hitKind != PRIME_HIT_NONE) {
-            primaryDistance = surface.t;
+            result.primaryDistance = surface.t;
+            result.primaryBaseColor = surface.baseColor;
+            result.primaryNormal = surface.geometricNormal;
+            result.primaryHitKind = surface.hitKind;
+        }
+        if (path.bounce == 1u && diffusePath) {
+            result.diffuseHitDistance = surface.hitKind == PRIME_HIT_NONE
+                    ? PRIME_NRD_FP16_MAX
+                    : max(surface.t, 0.0);
         }
         if (surface.hitKind == PRIME_HIT_NONE) {
             LightEvaluation sun = primeEvaluateSun(
@@ -130,9 +212,14 @@ vec3 primeIntegrate(PathState path, IntegratorRecord integrator, out float prima
             float sunWeight = cannotUseMis
                     ? 1.0
                     : primePowerHeuristic(path.previousBsdfPdf, sun.pdf);
-            path.radiance += path.throughput
+            vec3 contribution = path.throughput
                     * (primeEnvironmentRadiance(integrator, path.rayDirection)
                     + sun.radiance * sunWeight);
+            if (path.bounce == 0u) {
+                result.stableRadiance += contribution;
+            } else {
+                primeAccumulateAfterPrimary(result, diffusePath, contribution);
+            }
             break;
         }
 
@@ -143,7 +230,12 @@ vec3 primeIntegrate(PathState path, IntegratorRecord integrator, out float prima
         float hitAreaWeight = cannotUseHitMis
                 ? 1.0
                 : primePowerHeuristic(path.previousBsdfPdf, hitAreaLight.pdf);
-        path.radiance += path.throughput * hitAreaLight.radiance * hitAreaWeight;
+        vec3 emitted = path.throughput * hitAreaLight.radiance * hitAreaWeight;
+        if (path.bounce == 0u) {
+            result.stableRadiance += emitted;
+        } else {
+            primeAccumulateAfterPrimary(result, diffusePath, emitted);
+        }
 
         PrimeSampleBase bounceSample = primeMakeSampleBase(path, path.bounce + 1u);
         vec2 sunSample = primeSobolSample2D(
@@ -162,16 +254,37 @@ vec3 primeIntegrate(PathState path, IntegratorRecord integrator, out float prima
                 bounceSample,
                 PRIME_SAMPLE_EFFECT_SCATTER_BSDF,
                 PRIME_SAMPLE_DIMENSION_PRIMARY);
-
         vec3 viewDirection = -path.rayDirection;
 
-        path.radiance += path.throughput
-                * primeEstimateDirectSun(integrator, surface, viewDirection, sunSample);
-        path.radiance += path.throughput * primeEstimateDirectAreaLight(
-                surface, viewDirection, areaTreeSample, areaPositionSample);
+        if (path.bounce == 0u) {
+            PrimeDirectLightingSplit sunSplit = primeEstimatePrimaryDirectSun(
+                    integrator, surface, viewDirection, sunSample);
+            PrimeDirectLightingSplit areaSplit = primeEstimatePrimaryDirectAreaLight(
+                    surface, viewDirection, areaTreeSample, areaPositionSample);
+            result.diffuseRadiance += sunSplit.diffuse + areaSplit.diffuse;
+            result.stableRadiance += sunSplit.specular + areaSplit.specular;
+        } else {
+            vec3 direct = path.throughput
+                    * (primeEstimateDirectSun(integrator, surface, viewDirection, sunSample)
+                    + primeEstimateDirectAreaLight(
+                            surface, viewDirection, areaTreeSample, areaPositionSample));
+            primeAccumulateAfterPrimary(result, diffusePath, direct);
+        }
 
-        BsdfSample bsdf = primeSampleDefaultBsdf(
-                surface.baseColor, surface.geometricNormal, viewDirection, scatterSample);
+        BsdfSample bsdf;
+        if (path.bounce == 0u) {
+            uint selectedLobe;
+            bsdf = primeSampleDefaultBsdfSeparated(
+                    surface.baseColor,
+                    surface.geometricNormal,
+                    viewDirection,
+                    scatterSample,
+                    selectedLobe);
+            diffusePath = selectedLobe == PRIME_DEFAULT_LOBE_DIFFUSE;
+        } else {
+            bsdf = primeSampleDefaultBsdf(
+                    surface.baseColor, surface.geometricNormal, viewDirection, scatterSample);
+        }
         if (bsdf.pdf <= 0.0 || all(lessThanEqual(bsdf.weight, vec3(0.0)))) {
             break;
         }
@@ -192,7 +305,7 @@ vec3 primeIntegrate(PathState path, IntegratorRecord integrator, out float prima
             break;
         }
     }
-    return path.radiance;
+    return result;
 }
 
 #endif

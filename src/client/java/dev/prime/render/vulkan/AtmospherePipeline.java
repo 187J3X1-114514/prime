@@ -247,7 +247,7 @@ public final class AtmospherePipeline implements Destroyable {
                     : prepareSky
                             ? new VulkanImage[] {this.skyView}
                             : new VulkanImage[] {this.aerialRadiance, this.aerialTransmittance};
-            rayReadToComputeWriteBarrier(commandBuffer, overwritten);
+            shaderReadToComputeWriteBarrier(commandBuffer, overwritten);
         }
 
         try (MemoryStack stack = MemoryStack.stackPush()) {
@@ -271,7 +271,11 @@ public final class AtmospherePipeline implements Destroyable {
         computeWriteBarrier(
                 commandBuffer,
                 written,
-                KHRRayTracingPipeline.VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR);
+                // Raygen consumes sky/transmittance while the post-NRD composite consumes the
+                // aerial-perspective volumes. Keep both destinations explicit: atmosphere and
+                // display composition deliberately straddle the denoiser boundary.
+                KHRRayTracingPipeline.VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR
+                        | VK12.VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
         this.staticPrepared = true;
         this.skyEyeRadiusBits = eyeRadiusBits;
         this.skySunElevationBits = sunElevationBits;
@@ -348,7 +352,7 @@ public final class AtmospherePipeline implements Destroyable {
         }
     }
 
-    private static void rayReadToComputeWriteBarrier(
+    private static void shaderReadToComputeWriteBarrier(
             VkCommandBuffer commandBuffer,
             VulkanImage[] images) {
         try (MemoryStack stack = MemoryStack.stackPush()) {
@@ -359,7 +363,11 @@ public final class AtmospherePipeline implements Destroyable {
                         images[index],
                         VK12.VK_IMAGE_LAYOUT_GENERAL,
                         VK12.VK_IMAGE_LAYOUT_GENERAL,
-                        KHRRayTracingPipeline.VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR,
+                        // Raygen reads all atmosphere tables; the post-NRD composite also reads
+                        // aerial volumes. A new atmosphere dispatch must wait for both consumers
+                        // from the previous submission before overwriting either image.
+                        KHRRayTracingPipeline.VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR
+                                | VK12.VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
                         VK12.VK_ACCESS_SHADER_READ_BIT,
                         VK12.VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
                         VK12.VK_ACCESS_SHADER_WRITE_BIT);

@@ -11,6 +11,7 @@ public final class VulkanImage implements Destroyable {
     private final long image;
     private final long allocation;
     private final long view;
+    private final int format;
     private final int width;
     private final int height;
     private final int depth;
@@ -23,6 +24,7 @@ public final class VulkanImage implements Destroyable {
             long image,
             long allocation,
             long view,
+            int format,
             int width,
             int height,
             int depth) {
@@ -31,6 +33,7 @@ public final class VulkanImage implements Destroyable {
         this.image = image;
         this.allocation = allocation;
         this.view = view;
+        this.format = format;
         this.width = width;
         this.height = height;
         this.depth = depth;
@@ -46,6 +49,10 @@ public final class VulkanImage implements Destroyable {
 
     public int width() {
         return this.width;
+    }
+
+    public int format() {
+        return this.format;
     }
 
     public int height() {

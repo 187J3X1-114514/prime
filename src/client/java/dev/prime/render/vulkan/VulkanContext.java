@@ -21,11 +21,13 @@ import org.lwjgl.vulkan.VkBufferDeviceAddressInfo;
 import org.lwjgl.vulkan.VkDevice;
 import org.lwjgl.vulkan.VkImageCreateInfo;
 import org.lwjgl.vulkan.VkImageViewCreateInfo;
+import org.lwjgl.vulkan.VkPhysicalDeviceProperties;
 
 public final class VulkanContext implements AutoCloseable {
     private final VulkanDevice device;
     private final VulkanCapabilities capabilities;
     private final long allocator;
+    private final long uniformBufferOffsetAlignment;
     private final Set<Destroyable> deferred = Collections.newSetFromMap(new IdentityHashMap<>());
     private boolean closed;
 
@@ -46,6 +48,11 @@ public final class VulkanContext implements AutoCloseable {
             check(Vma.vmaCreateAllocator(createInfo, pointer), "create ray tracing VMA allocator");
             this.allocator = pointer.get(0);
         }
+        try (MemoryStack stack = MemoryStack.stackPush()) {
+            VkPhysicalDeviceProperties properties = VkPhysicalDeviceProperties.calloc(stack);
+            VK12.vkGetPhysicalDeviceProperties(device.vkDevice().getPhysicalDevice(), properties);
+            this.uniformBufferOffsetAlignment = properties.limits().minUniformBufferOffsetAlignment();
+        }
     }
 
     public VulkanDevice device() {
@@ -62,6 +69,10 @@ public final class VulkanContext implements AutoCloseable {
 
     public VulkanCommandEncoder commandEncoder() {
         return this.device.createCommandEncoder();
+    }
+
+    public long uniformBufferOffsetAlignment() {
+        return this.uniformBufferOffsetAlignment;
     }
 
     public VulkanBuffer createBuffer(long size, int usage, boolean hostVisible, String label) {
@@ -147,6 +158,10 @@ public final class VulkanContext implements AutoCloseable {
                 label);
     }
 
+    public VulkanImage createImage2D(int width, int height, int format, int usage, String label) {
+        return this.createImage(width, height, 1, format, usage, label);
+    }
+
     private VulkanImage createImage(
             int width,
             int height,
@@ -210,6 +225,7 @@ public final class VulkanContext implements AutoCloseable {
                         image,
                         allocationPointer.get(0),
                         view,
+                        format,
                         width,
                         height,
                         depth);
@@ -246,6 +262,14 @@ public final class VulkanContext implements AutoCloseable {
             }
             throw exception;
         }
+    }
+
+    /** Runs only after all commands submitted before this call have completed on the real queue timeline. */
+    public void afterSubmission(Runnable callback) {
+        if (this.closed) {
+            throw new IllegalStateException("Cannot register a completion callback after the Vulkan context has closed");
+        }
+        this.commandEncoder().queueForDestroy(callback::run);
     }
 
     public void awaitIdle() {

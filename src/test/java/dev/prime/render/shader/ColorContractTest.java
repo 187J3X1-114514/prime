@@ -2,6 +2,7 @@ package dev.prime.render.shader;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.IOException;
@@ -62,16 +63,18 @@ final class ColorContractTest {
         String material = Files.readString(shaderRoot.resolve("material.glsl"));
         String displayTransform = Files.readString(shaderRoot.resolve("display_transform.glsl"));
         String rayGeneration = Files.readString(shaderRoot.resolve("world.rgen"));
+        String composite = Files.readString(shaderRoot.resolve("nrd_composite.comp"));
 
         assertTrue(material.contains("primeDecodeSrgb(textureSample.rgb)"));
         assertTrue(material.contains("primeLinearSrgbToLinearRec2020(linearSrgbAlbedo)"));
         assertTrue(displayTransform.contains("primeLinearRec2020ToLinearBt709(exposedRec2020)"));
         assertTrue(displayTransform.contains("PRIME_OKLAB_DISPLAY_EXPOSURE = 1.0"));
         assertTrue(rayGeneration.contains("imageStore(primeAccumulation"));
-        assertTrue(rayGeneration.contains("primeDisplayTransformToSrgb(accumulated)"));
+        assertFalse(rayGeneration.contains("primeDisplayTransformToSrgb"));
+        assertTrue(composite.contains("primeDisplayTransformToSrgb(max(radiance, vec3(0.0)))"));
         assertTrue(
-                rayGeneration.indexOf("imageStore(primeAccumulation")
-                        < rayGeneration.indexOf("primeDisplayTransformToSrgb(accumulated)"));
+                composite.indexOf("vec3 radiance = diffuse + imageLoad(primeStableAccumulation")
+                        < composite.indexOf("primeDisplayTransformToSrgb(max(radiance, vec3(0.0)))"));
     }
 
     @Test

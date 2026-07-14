@@ -40,6 +40,18 @@ public final class VulkanDeviceNegotiator {
             VulkanBackend.VK10_FEATURES_STRUCT,
             "shaderInt64",
             VkPhysicalDeviceFeatures.SHADERINT64);
+    private static final VulkanFeature STORAGE_IMAGE_EXTENDED_FORMATS = new VulkanFeature(
+            VulkanBackend.VK10_FEATURES_STRUCT,
+            "shaderStorageImageExtendedFormats",
+            VkPhysicalDeviceFeatures.SHADERSTORAGEIMAGEEXTENDEDFORMATS);
+    private static final VulkanFeature STORAGE_IMAGE_READ_WITHOUT_FORMAT = new VulkanFeature(
+            VulkanBackend.VK10_FEATURES_STRUCT,
+            "shaderStorageImageReadWithoutFormat",
+            VkPhysicalDeviceFeatures.SHADERSTORAGEIMAGEREADWITHOUTFORMAT);
+    private static final VulkanFeature STORAGE_IMAGE_WRITE_WITHOUT_FORMAT = new VulkanFeature(
+            VulkanBackend.VK10_FEATURES_STRUCT,
+            "shaderStorageImageWriteWithoutFormat",
+            VkPhysicalDeviceFeatures.SHADERSTORAGEIMAGEWRITEWITHOUTFORMAT);
     private static final VulkanFeature BUFFER_DEVICE_ADDRESS = new VulkanFeature(
             VulkanBackend.VK12_FEATURES_STRUCT,
             "bufferDeviceAddress",
@@ -83,6 +95,15 @@ public final class VulkanDeviceNegotiator {
             if (!features.features().shaderInt64()) {
                 missing.add("shaderInt64");
             }
+            if (!features.features().shaderStorageImageExtendedFormats()) {
+                missing.add("shaderStorageImageExtendedFormats");
+            }
+            if (!features.features().shaderStorageImageReadWithoutFormat()) {
+                missing.add("shaderStorageImageReadWithoutFormat");
+            }
+            if (!features.features().shaderStorageImageWriteWithoutFormat()) {
+                missing.add("shaderStorageImageWriteWithoutFormat");
+            }
             if (!vulkan12.bufferDeviceAddress()) {
                 missing.add("bufferDeviceAddress");
             }
@@ -119,6 +140,19 @@ public final class VulkanDeviceNegotiator {
                         deviceName,
                         "RGBA32F storage images required for path accumulation are not supported");
             }
+            VkFormatProperties nrdNormalFormat = VkFormatProperties.calloc(stack);
+            VK12.vkGetPhysicalDeviceFormatProperties(
+                    physicalDevice.vkPhysicalDevice(),
+                    VK12.VK_FORMAT_A2B10G10R10_UNORM_PACK32,
+                    nrdNormalFormat);
+            int requiredNrdNormalFeatures =
+                    VK12.VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT | VK12.VK_FORMAT_FEATURE_STORAGE_IMAGE_BIT;
+            if ((nrdNormalFormat.optimalTilingFeatures() & requiredNrdNormalFeatures)
+                    != requiredNrdNormalFeatures) {
+                return VulkanCapabilities.unavailable(
+                        deviceName,
+                        "A2B10G10R10 UNORM sampled/storage images required for NRD normals are not supported");
+            }
             if (rayProperties.shaderGroupHandleSize() <= 0
                     || rayProperties.maxShaderGroupStride() == 0
                     || rayProperties.maxRayDispatchInvocationCount() == 0
@@ -130,6 +164,9 @@ public final class VulkanDeviceNegotiator {
 
             enabledExtensions.addAll(REQUIRED_EXTENSIONS);
             enabledFeatures.add(SHADER_INT64);
+            enabledFeatures.add(STORAGE_IMAGE_EXTENDED_FORMATS);
+            enabledFeatures.add(STORAGE_IMAGE_READ_WITHOUT_FORMAT);
+            enabledFeatures.add(STORAGE_IMAGE_WRITE_WITHOUT_FORMAT);
             enabledFeatures.add(BUFFER_DEVICE_ADDRESS);
             enabledFeatures.add(ACCELERATION_STRUCTURE);
             enabledFeatures.add(RAY_TRACING_PIPELINE);

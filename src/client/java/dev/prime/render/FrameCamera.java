@@ -17,7 +17,17 @@ import org.joml.Matrix4fc;
  * is flipped once during presentation, so internal image row zero maps to NDC y = -1. Ray
  * generation must preserve both conventions.
  */
-public record FrameCamera(Matrix4f inverseViewProjection, double x, double y, double z) {
+public record FrameCamera(
+        Matrix4f projection,
+        Matrix4f viewRotation,
+        Matrix4f inverseViewProjection,
+        double x,
+        double y,
+        double z) {
+    FrameCamera(Matrix4f inverseViewProjection, double x, double y, double z) {
+        this(new Matrix4f(), new Matrix4f(), inverseViewProjection, x, y, z);
+    }
+
     static FrameCamera tryCreate(
             Matrix4fc projection,
             Matrix4fc viewRotation,
@@ -27,7 +37,9 @@ public record FrameCamera(Matrix4f inverseViewProjection, double x, double y, do
         if (!Double.isFinite(x) || !Double.isFinite(y) || !Double.isFinite(z)) {
             return null;
         }
-        Matrix4f viewProjection = new Matrix4f(projection).mul(viewRotation);
+        Matrix4f projectionCopy = new Matrix4f(projection);
+        Matrix4f viewRotationCopy = new Matrix4f(viewRotation);
+        Matrix4f viewProjection = new Matrix4f(projectionCopy).mul(viewRotationCopy);
         float determinant = viewProjection.determinant();
         if (!viewProjection.isFinite()
                 || !Float.isFinite(determinant)
@@ -35,6 +47,8 @@ public record FrameCamera(Matrix4f inverseViewProjection, double x, double y, do
             return null;
         }
         Matrix4f inverse = viewProjection.invert();
-        return inverse.isFinite() ? new FrameCamera(inverse, x, y, z) : null;
+        return inverse.isFinite()
+                ? new FrameCamera(projectionCopy, viewRotationCopy, inverse, x, y, z)
+                : null;
     }
 }

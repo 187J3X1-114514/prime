@@ -15,7 +15,7 @@
 
 namespace
 {
-    constexpr uint32_t PRIME_NRD_ABI_VERSION = 3;
+    constexpr uint32_t PRIME_NRD_ABI_VERSION = 4;
     constexpr nrd::Identifier PRIME_NRD_DENOISER_ID = 0;
 
     struct PrimeNrdCreateDesc
@@ -89,6 +89,7 @@ namespace
         uint32_t restart;
         float timeDeltaMilliseconds;
         float denoisingRange;
+        uint32_t enableValidation;
     };
 
     struct PrimeNrdResourceInfo
@@ -237,7 +238,7 @@ static_assert(sizeof(PrimeNrdTextureInfo) == 8);
 static_assert(sizeof(PrimeNrdPipelineRangeInfo) == 8);
 static_assert(sizeof(PrimeNrdPipelineInfo) == 288);
 static_assert(sizeof(PrimeNrdDescription) == 136);
-static_assert(sizeof(PrimeNrdFrameSettings) == 304);
+static_assert(sizeof(PrimeNrdFrameSettings) == 308);
 static_assert(sizeof(PrimeNrdResourceInfo) == 16);
 static_assert(sizeof(PrimeNrdDispatchInfo) == 48);
 static_assert(sizeof(PrimeNrdDispatchList) == 16);
@@ -323,7 +324,8 @@ PRIME_NRD_EXPORT int32_t primeNrdSetFrameSettings(
     settings.accumulationMode = input->restart != 0
         ? nrd::AccumulationMode::RESTART
         : nrd::AccumulationMode::CONTINUE;
-    settings.isMotionVectorInWorldSpace = true;
+    settings.isMotionVectorInWorldSpace = false;
+    settings.enableValidation = input->enableValidation != 0;
 
     return static_cast<int32_t>(nrd::SetCommonSettings(*context->instance, settings));
 }

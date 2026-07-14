@@ -27,9 +27,11 @@ final class ShaderAbiTest {
         assertEquals(6, ShaderAbi.DESCRIPTOR_TRANSMITTANCE_HIGH);
         assertEquals(7, ShaderAbi.DESCRIPTOR_AERIAL_RADIANCE);
         assertEquals(8, ShaderAbi.DESCRIPTOR_AERIAL_TRANSMITTANCE);
+        assertEquals(14, ShaderAbi.DESCRIPTOR_NRD_PRIMARY_POSITION);
         assertEquals("linear-rec2020-d65", ShaderAbi.WORKING_COLOR_SPACE);
         assertEquals("srgb", ShaderAbi.TEXTURE_COLOR_ENCODING);
         assertEquals("srgb", ShaderAbi.DISPLAY_COLOR_ENCODING);
+        assertEquals("screen-2.5d", ShaderAbi.NRD_MOTION_SPACE);
         assertEquals("hillaire-8wave-rec2020-d65", ShaderAbi.ATMOSPHERE_SPECTRAL_MODEL);
         assertEquals(10.0F, ShaderAbi.ATMOSPHERE_SPACE_SUN_INTENSITY);
         assertEquals(0.00471F, ShaderAbi.ATMOSPHERE_SUN_ANGULAR_RADIUS_RADIANS);

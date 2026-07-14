@@ -14,62 +14,60 @@ final class AccumulationStateTest {
     void stableFramesAdvanceWithoutReset() {
         AccumulationState state = new AccumulationState();
         FrameCamera camera = camera(1.0);
-        assertTrue(state.prepare(camera, 7L, 3L, 11L, 13L, NOON, false));
+        assertTrue(state.prepare(camera, 3L, 11L, 13L, NOON, false));
         int epoch = state.epoch();
         state.submitted(camera, 11L, 13L, NOON);
         assertEquals(1, state.sampleIndex());
-        assertFalse(state.prepare(camera, 7L, 3L, 11L, 13L, NOON, false));
+        assertFalse(state.prepare(camera, 3L, 11L, 13L, NOON, false));
         assertEquals(epoch, state.epoch());
     }
 
     @Test
-    void sceneCameraAtlasAndExplicitInvalidationResetHistory() {
+    void worldCameraAtlasAndExplicitInvalidationResetHistory() {
         AccumulationState state = new AccumulationState();
         FrameCamera camera = camera(1.0);
-        state.prepare(camera, 1L, 1L, 2L, 3L, NOON, false);
+        state.prepare(camera, 1L, 2L, 3L, NOON, false);
         state.submitted(camera, 2L, 3L, NOON);
-        assertTrue(state.prepare(camera, 2L, 2L, 2L, 3L, NOON, false));
+        assertTrue(state.prepare(camera, 2L, 2L, 3L, NOON, false));
         state.submitted(camera, 2L, 3L, NOON);
-        assertTrue(state.prepare(camera(2.0), 2L, 2L, 2L, 3L, NOON, false));
+        assertTrue(state.prepare(camera(2.0), 2L, 2L, 3L, NOON, false));
         state.submitted(camera(2.0), 2L, 3L, NOON);
-        assertTrue(state.prepare(camera(2.0), 2L, 2L, 4L, 3L, NOON, false));
+        assertTrue(state.prepare(camera(2.0), 2L, 4L, 3L, NOON, false));
         state.submitted(camera(2.0), 4L, 3L, NOON);
-        assertTrue(state.prepare(camera(2.0), 2L, 2L, 4L, 3L, NOON, true));
+        assertTrue(state.prepare(camera(2.0), 2L, 4L, 3L, NOON, true));
         assertEquals(0, state.sampleIndex());
     }
 
     @Test
-    void streamingAdditionsUseBoundedHistoryThenRestartAfterQuiescence() {
+    void gradualSunMotionUsesBoundedHistoryWithoutRestarting() {
         AccumulationState state = new AccumulationState();
         FrameCamera camera = camera(1.0);
-        state.prepare(camera, 1L, 1L, 2L, 3L, NOON, false);
+        state.prepare(camera, 1L, 2L, 3L, NOON, false);
         state.submitted(camera, 2L, 3L, NOON);
-        for (long revision = 2L; revision <= 20L; revision++) {
-            assertFalse(state.prepare(camera, revision, 1L, 2L, 3L, NOON, false));
-            state.submitted(camera, 2L, 3L, NOON);
+        SunDirection movingSun = NOON;
+        for (int step = 1; step <= 20; step++) {
+            movingSun = SunDirection.fromVanillaAngle((float) Math.toRadians(step * 0.01));
+            assertFalse(state.prepare(camera, 1L, 2L, 3L, movingSun, false));
+            state.submitted(camera, 2L, 3L, movingSun);
             assertTrue(state.sampleIndex() < 8);
         }
 
-        boolean reset = false;
         for (int frame = 0; frame < 8; frame++) {
-            reset = state.prepare(camera, 20L, 1L, 2L, 3L, NOON, false);
-            if (!reset) {
-                state.submitted(camera, 2L, 3L, NOON);
-            }
+            assertFalse(state.prepare(camera, 1L, 2L, 3L, movingSun, false));
+            state.submitted(camera, 2L, 3L, movingSun);
         }
-        assertTrue(reset);
-        assertEquals(0, state.sampleIndex());
+        assertTrue(state.sampleIndex() >= 8);
     }
 
     @Test
     void changingSunDirectionInvalidatesAccumulatedRadiance() {
         AccumulationState state = new AccumulationState();
         FrameCamera camera = camera(1.0);
-        state.prepare(camera, 1L, 1L, 2L, 3L, NOON, false);
+        state.prepare(camera, 1L, 2L, 3L, NOON, false);
         state.submitted(camera, 2L, 3L, NOON);
 
         SunDirection sunset = SunDirection.fromVanillaAngle((float) (Math.PI * 0.5));
-        assertTrue(state.prepare(camera, 1L, 1L, 2L, 3L, sunset, false));
+        assertTrue(state.prepare(camera, 1L, 2L, 3L, sunset, false));
         assertEquals(0, state.sampleIndex());
     }
 

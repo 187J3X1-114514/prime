@@ -55,7 +55,7 @@ void main() {
             centerFar.xyz / centerFar.w - centerNear.xyz / centerNear.w);
     float viewZ = sampleResult.primaryDistance < 0.0
             ? PRIME_NRD_FP16_MAX
-            : -sampleResult.primaryDistance * dot(path.rayDirection, cameraForward);
+            : sampleResult.primaryDistance * dot(path.rayDirection, cameraForward);
     vec3 materialFactor = sampleResult.primaryHitKind == PRIME_HIT_NONE
             ? vec3(1.0)
             : primeNrdMaterialFactor(sampleResult.primaryBaseColor);
@@ -75,9 +75,17 @@ void main() {
             primeNrdPackNormalRoughness(
                     sampleResult.primaryNormal, PRIME_NRD_LINEAR_ROUGHNESS));
     imageStore(primeNrdViewZ, ivec2(pixel), vec4(viewZ, 0.0, 0.0, 0.0));
-    // Terrain and its acceleration structures are static within a submitted frame. Zero world
-    // motion is therefore exact; NRD derives camera motion from the current/previous matrices.
-    imageStore(primeNrdMotion, ivec2(pixel), vec4(0.0));
+    // Diagnostic-only exact primary hit relative to the effective camera pinhole. Keeping this
+    // separate from view-Z reconstruction lets the reprojection probe detect a self-consistent
+    // but wrong camera transform instead of repeating the motion generator's assumptions.
+    imageStore(
+            primeNrdPrimaryPosition,
+            ivec2(pixel),
+            sampleResult.primaryDistance < 0.0
+                    ? vec4(0.0)
+                    : vec4(
+                            path.rayDirection * sampleResult.primaryDistance,
+                            uintBitsToFloat(packHalf2x16(cameraSample))));
     imageStore(
             primeNrdMaterial,
             ivec2(pixel),

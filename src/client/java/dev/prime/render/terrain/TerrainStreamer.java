@@ -150,8 +150,15 @@ public final class TerrainStreamer implements AutoCloseable {
         return this.scene.view() != null;
     }
 
-    public void invalidateSection(int sectionX, int sectionY, int sectionZ) {
-        this.externalDirty.add(SectionPos.asLong(sectionX, sectionY, sectionZ));
+    public void invalidateBlocks(
+            int minimumX,
+            int minimumY,
+            int minimumZ,
+            int maximumX,
+            int maximumY,
+            int maximumZ) {
+        this.externalDirty.addExpandedBlockRange(
+                minimumX, minimumY, minimumZ, maximumX, maximumY, maximumZ);
     }
 
     public void invalidateAll() {
@@ -452,6 +459,7 @@ public final class TerrainStreamer implements AutoCloseable {
     }
 
     private void clearWorld(double cameraX, double cameraY, double cameraZ) {
+        this.scene.beginUnrelatedWorld();
         this.scene.update(List.of(), this.scene.residentKeys(), cameraX, cameraY, cameraZ);
         this.world = null;
         this.desired.clear();

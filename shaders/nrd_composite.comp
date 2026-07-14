@@ -18,13 +18,32 @@ layout(set = 0, binding = 2, rgba16f) uniform readonly image2D primeCompositeMat
 layout(set = 0, binding = 3, rgba32f) uniform readonly image2D primeStableAccumulation;
 layout(set = 0, binding = 4, rgba16f) uniform readonly image3D primeCompositeAerialRadiance;
 layout(set = 0, binding = 5, rgba16f) uniform readonly image3D primeCompositeAerialTransmittance;
+layout(set = 0, binding = 6, rgba8) uniform readonly image2D primeNrdValidation;
+layout(set = 0, binding = 7, rgba16f) uniform readonly image2D primeReprojectionError;
+layout(set = 0, binding = 8, rgba16f) uniform readonly image2D primeMotionDiagnostic;
 
 layout(push_constant) uniform PrimeCompositePushConstants {
     uvec2 outputExtent;
+    uint diagnosticMode;
 } primeCompositePush;
+
+const uint PRIME_DIAGNOSTIC_OFF = 0u;
+const uint PRIME_DIAGNOSTIC_NRD_VALIDATION = 1u;
+const uint PRIME_DIAGNOSTIC_REPROJECTION_ERROR = 2u;
+const uint PRIME_DIAGNOSTIC_MOTION = 3u;
 
 ATM_DECLARE_SAMPLE_3D(primeCompositeSampleAerialRadiance, primeCompositeAerialRadiance)
 ATM_DECLARE_SAMPLE_3D(primeCompositeSampleAerialTransmittance, primeCompositeAerialTransmittance)
+
+vec3 primeCompositeSurfaceDiffuse(vec4 material, vec3 denoisedSignal) {
+    // A negative primary distance is raygen's immutable miss marker. Sky radiance lives entirely
+    // in primeStableAccumulation and must never consume REBLUR output: NRD treats its out-of-range
+    // view-Z as invalid and is not required to erase surface history when a pixel becomes sky.
+    if (material.a < 0.0) {
+        return vec3(0.0);
+    }
+    return primeNrdYCoCgToLinear(denoisedSignal) * material.rgb;
+}
 
 void primeCompositeApplyAerial(uvec2 pixel, float primaryDistance, inout vec3 radiance) {
     if (primaryDistance < 0.0) {
@@ -57,9 +76,38 @@ void main() {
     if (any(greaterThanEqual(pixel, primeCompositePush.outputExtent))) {
         return;
     }
+    if (primeCompositePush.diagnosticMode == PRIME_DIAGNOSTIC_NRD_VALIDATION) {
+        imageStore(
+                primeCompositeOutput,
+                ivec2(pixel),
+                vec4(imageLoad(primeNrdValidation, ivec2(pixel)).rgb, 1.0));
+        return;
+    }
+    if (primeCompositePush.diagnosticMode == PRIME_DIAGNOSTIC_REPROJECTION_ERROR) {
+        imageStore(
+                primeCompositeOutput,
+                ivec2(pixel),
+                vec4(imageLoad(primeReprojectionError, ivec2(pixel)).rgb, 1.0));
+        return;
+    }
+    if (primeCompositePush.diagnosticMode == PRIME_DIAGNOSTIC_MOTION) {
+        vec3 motion = imageLoad(primeMotionDiagnostic, ivec2(pixel)).xyz;
+        vec2 motionPixels = motion.xy * vec2(primeCompositePush.outputExtent);
+        vec3 positiveColor = max(motionPixels.x, 0.0) * vec3(1.0, 0.0, 0.0)
+                + max(motionPixels.y, 0.0) * vec3(0.0, 1.0, 0.0);
+        vec3 negativeColor = max(-motionPixels.x, 0.0) * vec3(0.0, 1.0, 1.0)
+                + max(-motionPixels.y, 0.0) * vec3(1.0, 0.0, 1.0);
+        vec3 motionColor = (positiveColor + negativeColor + abs(motion.z)) * 0.25;
+        imageStore(
+                primeCompositeOutput,
+                ivec2(pixel),
+                vec4(clamp(motionColor, vec3(0.0), vec3(1.0)), 1.0));
+        return;
+    }
     vec4 material = imageLoad(primeCompositeMaterial, ivec2(pixel));
-    vec3 diffuse = primeNrdYCoCgToLinear(
-            imageLoad(primeDenoisedDiffuse, ivec2(pixel)).rgb) * material.rgb;
+    vec3 diffuse = primeCompositeSurfaceDiffuse(
+            material,
+            imageLoad(primeDenoisedDiffuse, ivec2(pixel)).rgb);
     vec3 radiance = diffuse + imageLoad(primeStableAccumulation, ivec2(pixel)).rgb;
     primeCompositeApplyAerial(pixel, material.a, radiance);
     if (any(isnan(radiance)) || any(isinf(radiance))) {

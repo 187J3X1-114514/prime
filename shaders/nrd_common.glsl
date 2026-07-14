@@ -3,8 +3,9 @@
 
 // These encoders are the shader half of the immutable NRD 4.17 contract declared in abi.json.
 // Every radiance value is demodulated linear Rec.2020 D65. Normals remain in Prime's world axes,
-// roughness is linear, motion vectors are world-space previous-minus-current, and view Z is in
-// Minecraft block units. Changing any one side requires rebuilding the bundled native library.
+// roughness is linear, motion is non-jittered 2.5D screen-space previous-minus-current, and view Z
+// is positive in Minecraft block units. Changing any one side requires rebuilding the bundled
+// native library.
 
 const float PRIME_NRD_FP16_MAX = 65504.0;
 const vec3 PRIME_NRD_HIT_DISTANCE_PARAMETERS = vec3(3.0, 0.1, 20.0);

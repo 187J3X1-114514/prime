@@ -149,14 +149,15 @@
     "nrdNormalRoughness": 10,
     "nrdViewZ": 11,
     "nrdMotion": 12,
-    "nrdMaterial": 13
+    "nrdMaterial": 13,
+    "nrdPrimaryPosition": 14
   },
   "nrdContract": {
     "version": "4.17.4",
     "denoiser": "reblur-diffuse",
     "normalEncoding": "r10g10b10a2-unorm",
     "roughnessEncoding": "linear",
-    "motionSpace": "world",
+    "motionSpace": "screen-2.5d",
     "signalSpace": "demodulated-linear-rec2020-d65"
   },
   "colorContract": {

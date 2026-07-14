@@ -39,6 +39,7 @@ public abstract class GameRendererMixin {
         var camera = this.gameRenderState().levelRenderState.cameraRenderState;
         RayTracingRuntime.instance().captureCamera(
                 projection,
+                camera.projectionMatrix,
                 camera.viewRotationMatrix,
                 camera.pos.x,
                 camera.pos.y,

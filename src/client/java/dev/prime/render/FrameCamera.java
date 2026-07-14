@@ -2,20 +2,28 @@ package dev.prime.render;
 
 import org.joml.Matrix4f;
 import org.joml.Matrix4fc;
+import org.joml.Vector3f;
 
 /**
- * Camera data shared by the Minecraft integration and the ray-generation shader.
+ * Canonical camera data shared by ray generation and temporal reconstruction.
  *
- * <p>Prime keeps Minecraft world axes unchanged: +X, +Y, and +Z in terrain data remain +X, +Y,
- * and +Z in the acceleration structures. {@code inverseViewProjection} is the inverse of
- * {@code projection * worldToViewRotation}; camera translation is supplied separately because
- * both the TLAS and ray origin are relative to the current render origin. JOML and GLSL both
- * consume the matrix in column-major, column-vector form, so no transpose is applied.
+ * <p>Minecraft renders the world with {@code renderedProjection * cameraViewRotation}, but view
+ * bob and hurt effects are appended to the projection even though they are affine camera-space
+ * transforms. NRD requires a non-jittered projection and a world-to-view matrix. For rigid camera
+ * effects Prime therefore decomposes the exact rendered transform into:
  *
- * <p>Minecraft 26.2's Vulkan projection uses an NDC depth range of [0, 1] with reversed-Z:
- * near is 1 and far is 0. Its internal Vulkan render target uses a positive-height viewport and
- * is flipped once during presentation, so internal image row zero maps to NDC y = -1. Ray
- * generation must preserve both conventions.
+ * <ul>
+ *   <li>{@code projection}: Minecraft's untouched perspective projection;</li>
+ *   <li>{@code viewRotation}: an orthonormal world-to-view rotation with no translation;</li>
+ *   <li>{@code renderX/Y/Z}: the effective pinhole, including the affine view-effect offset.</li>
+ * </ul>
+ *
+ * <p>{@code x/y/z} remain the physical Minecraft camera position for terrain streaming and
+ * atmospheric altitude. {@code inverseViewProjection} remains the inverse of the exact Mojang
+ * transform, so ray directions are bit-for-bit based on the matrix used for world rendering.
+ * JOML, GLSL and NRD all use column vectors and column-major storage; no transpose is applied.
+ * Minecraft Vulkan depth is [0, 1] reversed-Z (near=1, far=0), and its internal target maps image
+ * row zero to NDC y=-1 before the presentation flip.
  */
 public record FrameCamera(
         Matrix4f projection,
@@ -23,32 +31,111 @@ public record FrameCamera(
         Matrix4f inverseViewProjection,
         double x,
         double y,
-        double z) {
+        double z,
+        double renderX,
+        double renderY,
+        double renderZ) {
     FrameCamera(Matrix4f inverseViewProjection, double x, double y, double z) {
-        this(new Matrix4f(), new Matrix4f(), inverseViewProjection, x, y, z);
+        this(new Matrix4f(), new Matrix4f(), inverseViewProjection, x, y, z, x, y, z);
     }
 
     static FrameCamera tryCreate(
-            Matrix4fc projection,
-            Matrix4fc viewRotation,
+            Matrix4fc renderedProjection,
+            Matrix4fc baseProjection,
+            Matrix4fc cameraViewRotation,
             double x,
             double y,
             double z) {
         if (!Double.isFinite(x) || !Double.isFinite(y) || !Double.isFinite(z)) {
             return null;
         }
-        Matrix4f projectionCopy = new Matrix4f(projection);
-        Matrix4f viewRotationCopy = new Matrix4f(viewRotation);
-        Matrix4f viewProjection = new Matrix4f(projectionCopy).mul(viewRotationCopy);
-        float determinant = viewProjection.determinant();
-        if (!viewProjection.isFinite()
-                || !Float.isFinite(determinant)
-                || Math.abs(determinant) < 1.0e-20F) {
+        Matrix4f renderedProjectionCopy = new Matrix4f(renderedProjection);
+        Matrix4f projectionCopy = new Matrix4f(baseProjection);
+        Matrix4f minecraftViewRotation = new Matrix4f(cameraViewRotation);
+        Matrix4f exactViewProjection = new Matrix4f(renderedProjectionCopy).mul(minecraftViewRotation);
+        if (!isInvertible(exactViewProjection) || !isInvertible(projectionCopy)) {
             return null;
         }
-        Matrix4f inverse = viewProjection.invert();
+
+        Matrix4f cameraEffect = new Matrix4f(projectionCopy)
+                .invert()
+                .mul(renderedProjectionCopy);
+        Matrix4f effectedWorldToView = cameraEffect.mul(minecraftViewRotation);
+        Matrix4f canonicalWorldToView = new Matrix4f(effectedWorldToView);
+        double effectiveX = x;
+        double effectiveY = y;
+        double effectiveZ = z;
+        if (isRigid(effectedWorldToView)) {
+            Vector3f cameraOffset = new Matrix4f(effectedWorldToView)
+                    .invert()
+                    .transformPosition(new Vector3f());
+            if (!cameraOffset.isFinite()) {
+                return null;
+            }
+            effectiveX += cameraOffset.x;
+            effectiveY += cameraOffset.y;
+            effectiveZ += cameraOffset.z;
+            canonicalWorldToView.m30(0.0F).m31(0.0F).m32(0.0F);
+        } else {
+            // Portal/nausea scaling is not an orthonormal camera. Preserve Mojang's exact rays and
+            // the previous NRD fallback rather than pretending the scale is a rigid transform.
+            projectionCopy.set(renderedProjectionCopy);
+            canonicalWorldToView.set(minecraftViewRotation);
+        }
+
+        Matrix4f inverse = exactViewProjection.invert();
         return inverse.isFinite()
-                ? new FrameCamera(projectionCopy, viewRotationCopy, inverse, x, y, z)
+                ? new FrameCamera(
+                        projectionCopy,
+                        canonicalWorldToView,
+                        inverse,
+                        x,
+                        y,
+                        z,
+                        effectiveX,
+                        effectiveY,
+                        effectiveZ)
                 : null;
+    }
+
+    private static boolean isInvertible(Matrix4fc matrix) {
+        float determinant = matrix.determinant();
+        return matrix.isFinite()
+                && Float.isFinite(determinant)
+                && Math.abs(determinant) >= 1.0e-20F;
+    }
+
+    private static boolean isRigid(Matrix4fc matrix) {
+        float tolerance = 1.0e-3F;
+        if (Math.abs(matrix.m03()) > tolerance
+                || Math.abs(matrix.m13()) > tolerance
+                || Math.abs(matrix.m23()) > tolerance
+                || Math.abs(matrix.m33() - 1.0F) > tolerance) {
+            return false;
+        }
+        float xLengthSquared = matrix.m00() * matrix.m00()
+                + matrix.m01() * matrix.m01()
+                + matrix.m02() * matrix.m02();
+        float yLengthSquared = matrix.m10() * matrix.m10()
+                + matrix.m11() * matrix.m11()
+                + matrix.m12() * matrix.m12();
+        float zLengthSquared = matrix.m20() * matrix.m20()
+                + matrix.m21() * matrix.m21()
+                + matrix.m22() * matrix.m22();
+        float xy = matrix.m00() * matrix.m10()
+                + matrix.m01() * matrix.m11()
+                + matrix.m02() * matrix.m12();
+        float xz = matrix.m00() * matrix.m20()
+                + matrix.m01() * matrix.m21()
+                + matrix.m02() * matrix.m22();
+        float yz = matrix.m10() * matrix.m20()
+                + matrix.m11() * matrix.m21()
+                + matrix.m12() * matrix.m22();
+        return Math.abs(xLengthSquared - 1.0F) <= tolerance
+                && Math.abs(yLengthSquared - 1.0F) <= tolerance
+                && Math.abs(zLengthSquared - 1.0F) <= tolerance
+                && Math.abs(xy) <= tolerance
+                && Math.abs(xz) <= tolerance
+                && Math.abs(yz) <= tolerance;
     }
 }

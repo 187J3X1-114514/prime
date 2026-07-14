@@ -63,9 +63,6 @@ public final class TerrainScene implements AutoCloseable {
         if (!contentChanged && !needsRebase) {
             return true;
         }
-        boolean requiresHistoryReset = this.changesExistingScene(uploads, evictions)
-                || this.currentTlas != null && needsRebase;
-
         int finalSectionCount = this.estimateFinalSectionCount(uploads, evictions);
         TopLevelAccelerationStructure replacementTlas = null;
         if (finalSectionCount > 0) {
@@ -231,8 +228,7 @@ public final class TerrainScene implements AutoCloseable {
                     evictions,
                     replacements,
                     replacementTlas,
-                    replacementWorldLights,
-                    requiresHistoryReset);
+                    replacementWorldLights);
             replacementWorldLights = null;
             return true;
         } catch (RuntimeException exception) {
@@ -290,6 +286,11 @@ public final class TerrainScene implements AutoCloseable {
         return this.resident.containsKey(key);
     }
 
+    /** Marks every temporal consumer as unrelated to its previous world. */
+    void beginUnrelatedWorld() {
+        this.resetRevision++;
+    }
+
     public int residentCount() {
         return this.resident.size();
     }
@@ -344,20 +345,6 @@ public final class TerrainScene implements AutoCloseable {
         return false;
     }
 
-    private boolean changesExistingScene(List<SectionUpload> uploads, long[] evictions) {
-        for (long key : evictions) {
-            if (this.resident.containsKey(key)) {
-                return true;
-            }
-        }
-        for (SectionUpload upload : uploads) {
-            if (this.resident.containsKey(upload.key())) {
-                return true;
-            }
-        }
-        return false;
-    }
-
     private List<GpuSection> buildFinalSectionList(
             List<SectionUpload> uploads,
             long[] evictions,
@@ -382,8 +369,7 @@ public final class TerrainScene implements AutoCloseable {
             long[] evictions,
             List<GpuSection> replacements,
             TopLevelAccelerationStructure replacementTlas,
-            VulkanBuffer replacementWorldLights,
-            boolean requiresHistoryReset) {
+            VulkanBuffer replacementWorldLights) {
         List<GpuSection> retired = new ArrayList<>();
         for (long key : evictions) {
             GpuSection removed = this.resident.remove(key);
@@ -409,9 +395,6 @@ public final class TerrainScene implements AutoCloseable {
         this.currentTlas = replacementTlas;
         this.currentWorldLights = replacementWorldLights;
         this.revision++;
-        if (requiresHistoryReset) {
-            this.resetRevision++;
-        }
         if (previousTlas != null) {
             this.context.defer(previousTlas::release);
         }

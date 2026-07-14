@@ -54,8 +54,10 @@ import org.lwjgl.vulkan.VkWriteDescriptorSet;
 public final class NrdDenoiser implements Destroyable {
     private static final int COMPUTE_STAGE = VK12.VK_SHADER_STAGE_COMPUTE_BIT;
     private static final int IMAGE_USAGE = VK12.VK_IMAGE_USAGE_STORAGE_BIT | VK12.VK_IMAGE_USAGE_SAMPLED_BIT;
-    private static final int COMPOSITE_BINDING_COUNT = 6;
-    private static final int COMPOSITE_PUSH_SIZE = 8;
+    private static final int MOTION_BINDING_COUNT = 4;
+    private static final int MOTION_PUSH_SIZE = 192;
+    private static final int COMPOSITE_BINDING_COUNT = 9;
+    private static final int COMPOSITE_PUSH_SIZE = 12;
     // world.rgen writes 65504 for a sky view-Z. Keep the valid range below that sentinel while
     // remaining far beyond Minecraft's usable terrain and Prime's 16,000-block aerial volume.
     private static final float DENOISING_RANGE = 60_000.0f;
@@ -71,6 +73,7 @@ public final class NrdDenoiser implements Destroyable {
     private final long nearestSampler;
     private final long linearSampler;
     private final ComputePipeline[] pipelines;
+    private final MotionPipeline motionPipeline;
     private final CompositePipeline composite;
     private final ArrayDeque<FrameBindings> freeBindings = new ArrayDeque<>();
     private final Set<FrameBindings> allBindings =
@@ -95,6 +98,7 @@ public final class NrdDenoiser implements Destroyable {
             long nearestSampler,
             long linearSampler,
             ComputePipeline[] pipelines,
+            MotionPipeline motionPipeline,
             CompositePipeline composite) {
         this.context = context;
         this.width = width;
@@ -105,6 +109,7 @@ public final class NrdDenoiser implements Destroyable {
         this.nearestSampler = nearestSampler;
         this.linearSampler = linearSampler;
         this.pipelines = pipelines;
+        this.motionPipeline = motionPipeline;
         this.composite = composite;
     }
 
@@ -120,6 +125,7 @@ public final class NrdDenoiser implements Destroyable {
         long nearestSampler = 0L;
         long linearSampler = 0L;
         ComputePipeline[] pipelines = null;
+        MotionPipeline motionPipeline = null;
         CompositePipeline composite = null;
         try {
             NrdNative.Description description = nativeInstance.description();
@@ -128,6 +134,7 @@ public final class NrdDenoiser implements Destroyable {
             nearestSampler = createSampler(context, false, "Prime NRD nearest-clamp sampler");
             linearSampler = createSampler(context, true, "Prime NRD linear-clamp sampler");
             pipelines = createPipelines(context, description, nearestSampler, linearSampler);
+            motionPipeline = MotionPipeline.create(context, images);
             composite = CompositePipeline.create(
                     context, output, stableAccumulation, images, atmosphere);
             return new NrdDenoiser(
@@ -139,10 +146,14 @@ public final class NrdDenoiser implements Destroyable {
                     nearestSampler,
                     linearSampler,
                     pipelines,
+                    motionPipeline,
                     composite);
         } catch (RuntimeException exception) {
             if (composite != null) {
                 composite.destroy();
+            }
+            if (motionPipeline != null) {
+                motionPipeline.destroy();
             }
             destroyPipelines(pipelines);
             if (linearSampler != 0L) {
@@ -177,6 +188,10 @@ public final class NrdDenoiser implements Destroyable {
 
     public VulkanImage material() {
         return this.images.material;
+    }
+
+    public VulkanImage primaryPosition() {
+        return this.images.primaryPosition;
     }
 
     /**
@@ -233,6 +248,7 @@ public final class NrdDenoiser implements Destroyable {
                 || atlasSampler != this.previousAtlasSampler
                 || sunDirectionDiscontinuous(sunDirection, this.previousSunDirection);
         FrameCamera historyCamera = restart ? camera : this.previousCamera;
+        NrdDiagnostics.Mode diagnosticMode = NrdDiagnostics.mode();
         float[] cameraJitter = new float[] {cameraJitterX, cameraJitterY};
         float[] historyCameraJitter = restart ? cameraJitter : this.previousCameraJitter;
         int currentFrameIndex = restart ? 0 : this.frameIndex;
@@ -249,12 +265,16 @@ public final class NrdDenoiser implements Destroyable {
                 this.height,
                 currentFrameIndex,
                 restart,
-                deltaMilliseconds));
+                deltaMilliseconds,
+                diagnosticMode.enablesNrdValidation()));
         List<NrdNative.Dispatch> dispatches = this.nativeInstance.getDispatches();
         FrameBindings bindings = this.acquireBindings();
         try {
             bindings.prepare(dispatches, this);
             rayTraceToComputeBarrier(commandBuffer);
+            this.motionPipeline.record(
+                    commandBuffer, camera, historyCamera, this.width, this.height);
+            computeToComputeBarrier(commandBuffer);
             for (int dispatchIndex = 0; dispatchIndex < dispatches.size(); dispatchIndex++) {
                 if (dispatchIndex != 0) {
                     computeToComputeBarrier(commandBuffer);
@@ -283,7 +303,8 @@ public final class NrdDenoiser implements Destroyable {
                         1);
             }
             computeToComputeBarrier(commandBuffer);
-            this.composite.record(commandBuffer, this.width, this.height);
+            this.composite.record(
+                    commandBuffer, this.width, this.height, diagnosticMode.shaderValue());
             return new FrameToken(
                     this,
                     bindings,
@@ -351,6 +372,7 @@ public final class NrdDenoiser implements Destroyable {
             case NrdNative.RESOURCE_IN_VIEWZ -> this.images.viewZ;
             case NrdNative.RESOURCE_IN_DIFF_RADIANCE_HITDIST -> this.images.noisyDiffuse;
             case NrdNative.RESOURCE_OUT_DIFF_RADIANCE_HITDIST -> this.images.denoisedDiffuse;
+            case NrdNative.RESOURCE_OUT_VALIDATION -> this.images.validation;
             case NrdNative.RESOURCE_TRANSIENT_POOL -> checkedPoolImage(
                     this.images.transientPool, resource.indexInPool(), "transient");
             case NrdNative.RESOURCE_PERMANENT_POOL -> checkedPoolImage(
@@ -396,6 +418,7 @@ public final class NrdDenoiser implements Destroyable {
             this.freeBindings.clear();
         }
         this.composite.destroy();
+        this.motionPipeline.destroy();
         destroyPipelines(this.pipelines);
         VK12.vkDestroySampler(this.context.vkDevice(), this.linearSampler, null);
         VK12.vkDestroySampler(this.context.vkDevice(), this.nearestSampler, null);
@@ -434,15 +457,14 @@ public final class NrdDenoiser implements Destroyable {
             int height,
             int frameIndex,
             boolean restart,
-            float deltaMilliseconds) {
-        Matrix4f previousWorldToView = new Matrix4f(previous.viewRotation())
-                .translate(
-                        (float) (camera.x() - previous.x()),
-                        (float) (camera.y() - previous.y()),
-                        (float) (camera.z() - previous.z()));
+            float deltaMilliseconds,
+            boolean enableValidation) {
+        Matrix4f currentProjection = NrdCameraTransform.projectionForNrd(camera.projection());
+        Matrix4f previousProjection = NrdCameraTransform.projectionForNrd(previous.projection());
+        Matrix4f previousWorldToView = NrdCameraTransform.previousWorldToView(camera, previous);
         return new NrdNative.FrameSettings(
-                camera.projection().get(new float[16]),
-                previous.projection().get(new float[16]),
+                currentProjection.get(new float[16]),
+                previousProjection.get(new float[16]),
                 camera.viewRotation().get(new float[16]),
                 previousWorldToView.get(new float[16]),
                 cameraJitter,
@@ -454,7 +476,8 @@ public final class NrdDenoiser implements Destroyable {
                 frameIndex,
                 restart,
                 deltaMilliseconds,
-                DENOISING_RANGE);
+                DENOISING_RANGE,
+                enableValidation);
     }
 
     private static long createSampler(VulkanContext context, boolean linear, String label) {
@@ -657,6 +680,9 @@ public final class NrdDenoiser implements Destroyable {
         private final VulkanImage viewZ;
         private final VulkanImage motion;
         private final VulkanImage material;
+        private final VulkanImage primaryPosition;
+        private final VulkanImage reprojectionError;
+        private final VulkanImage validation;
         private final VulkanImage denoisedDiffuse;
         private final VulkanImage[] permanentPool;
         private final VulkanImage[] transientPool;
@@ -668,6 +694,9 @@ public final class NrdDenoiser implements Destroyable {
                 VulkanImage viewZ,
                 VulkanImage motion,
                 VulkanImage material,
+                VulkanImage primaryPosition,
+                VulkanImage reprojectionError,
+                VulkanImage validation,
                 VulkanImage denoisedDiffuse,
                 VulkanImage[] permanentPool,
                 VulkanImage[] transientPool) {
@@ -676,6 +705,9 @@ public final class NrdDenoiser implements Destroyable {
             this.viewZ = viewZ;
             this.motion = motion;
             this.material = material;
+            this.primaryPosition = primaryPosition;
+            this.reprojectionError = reprojectionError;
+            this.validation = validation;
             this.denoisedDiffuse = denoisedDiffuse;
             this.permanentPool = permanentPool;
             this.transientPool = transientPool;
@@ -695,16 +727,33 @@ public final class NrdDenoiser implements Destroyable {
                 VulkanImage viewZ = createImage(
                         context, created, width, height, VK12.VK_FORMAT_R32_SFLOAT, "Prime NRD view Z");
                 VulkanImage motion = createImage(
-                        context, created, width, height, VK12.VK_FORMAT_R16G16B16A16_SFLOAT, "Prime NRD world motion");
+                        context, created, width, height, VK12.VK_FORMAT_R16G16B16A16_SFLOAT, "Prime NRD 2.5D screen motion");
                 VulkanImage material = createImage(
                         context, created, width, height, VK12.VK_FORMAT_R16G16B16A16_SFLOAT, "Prime NRD material factor");
+                VulkanImage primaryPosition = createImage(
+                        context, created, width, height, VK12.VK_FORMAT_R32G32B32A32_SFLOAT, "Prime NRD diagnostic primary position");
+                VulkanImage reprojectionError = createImage(
+                        context, created, width, height, VK12.VK_FORMAT_R16G16B16A16_SFLOAT, "Prime NRD diagnostic reprojection error");
+                VulkanImage validation = createImage(
+                        context, created, width, height, VK12.VK_FORMAT_R8G8B8A8_UNORM, "Prime NRD validation output");
                 VulkanImage denoised = createImage(
                         context, created, width, height, VK12.VK_FORMAT_R16G16B16A16_SFLOAT, "Prime NRD denoised diffuse");
                 VulkanImage[] permanent = createPool(
                         context, created, width, height, description.permanentPool(), "permanent");
                 VulkanImage[] transientImages = createPool(
                         context, created, width, height, description.transientPool(), "transient");
-                return new Images(noisy, normal, viewZ, motion, material, denoised, permanent, transientImages);
+                return new Images(
+                        noisy,
+                        normal,
+                        viewZ,
+                        motion,
+                        material,
+                        primaryPosition,
+                        reprojectionError,
+                        validation,
+                        denoised,
+                        permanent,
+                        transientImages);
             } catch (RuntimeException exception) {
                 for (int index = created.size() - 1; index >= 0; index--) {
                     created.get(index).destroy();
@@ -753,19 +802,22 @@ public final class NrdDenoiser implements Destroyable {
         }
 
         private VulkanImage[] allImages() {
-            VulkanImage[] result = new VulkanImage[6 + this.permanentPool.length + this.transientPool.length];
+            VulkanImage[] result = new VulkanImage[9 + this.permanentPool.length + this.transientPool.length];
             result[0] = this.noisyDiffuse;
             result[1] = this.normalRoughness;
             result[2] = this.viewZ;
             result[3] = this.motion;
             result[4] = this.material;
             result[5] = this.denoisedDiffuse;
-            System.arraycopy(this.permanentPool, 0, result, 6, this.permanentPool.length);
+            result[6] = this.primaryPosition;
+            result[7] = this.reprojectionError;
+            result[8] = this.validation;
+            System.arraycopy(this.permanentPool, 0, result, 9, this.permanentPool.length);
             System.arraycopy(
                     this.transientPool,
                     0,
                     result,
-                    6 + this.permanentPool.length,
+                    9 + this.permanentPool.length,
                     this.transientPool.length);
             return result;
         }
@@ -782,6 +834,9 @@ public final class NrdDenoiser implements Destroyable {
             for (int index = this.permanentPool.length - 1; index >= 0; index--) {
                 this.permanentPool[index].destroy();
             }
+            this.validation.destroy();
+            this.reprojectionError.destroy();
+            this.primaryPosition.destroy();
             this.denoisedDiffuse.destroy();
             this.material.destroy();
             this.motion.destroy();
@@ -1233,6 +1288,221 @@ public final class NrdDenoiser implements Destroyable {
         }
     }
 
+    private static final class MotionPipeline implements Destroyable {
+        private final VulkanContext context;
+        private final long descriptorSetLayout;
+        private final long descriptorPool;
+        private final long descriptorSet;
+        private final long pipelineLayout;
+        private final long pipeline;
+        private boolean destroyed;
+
+        private MotionPipeline(
+                VulkanContext context,
+                long descriptorSetLayout,
+                long descriptorPool,
+                long descriptorSet,
+                long pipelineLayout,
+                long pipeline) {
+            this.context = context;
+            this.descriptorSetLayout = descriptorSetLayout;
+            this.descriptorPool = descriptorPool;
+            this.descriptorSet = descriptorSet;
+            this.pipelineLayout = pipelineLayout;
+            this.pipeline = pipeline;
+        }
+
+        private static MotionPipeline create(VulkanContext context, Images images) {
+            long descriptorSetLayout = 0L;
+            long descriptorPool = 0L;
+            long descriptorSet = 0L;
+            long pipelineLayout = 0L;
+            long pipeline = 0L;
+            try (MemoryStack stack = MemoryStack.stackPush()) {
+                VkDescriptorSetLayoutBinding.Buffer bindings =
+                        VkDescriptorSetLayoutBinding.calloc(MOTION_BINDING_COUNT, stack);
+                for (int index = 0; index < MOTION_BINDING_COUNT; index++) {
+                    bindings.get(index)
+                            .binding(index)
+                            .descriptorType(VK12.VK_DESCRIPTOR_TYPE_STORAGE_IMAGE)
+                            .descriptorCount(1)
+                            .stageFlags(COMPUTE_STAGE);
+                }
+                VkDescriptorSetLayoutCreateInfo setLayoutInfo = VkDescriptorSetLayoutCreateInfo.calloc(stack)
+                        .sType$Default()
+                        .pBindings(bindings);
+                LongBuffer pointer = stack.mallocLong(1);
+                VulkanContext.check(
+                        VK12.vkCreateDescriptorSetLayout(
+                                context.vkDevice(), setLayoutInfo, null, pointer),
+                        "create Prime NRD motion descriptor layout");
+                descriptorSetLayout = pointer.get(0);
+
+                VkPushConstantRange.Buffer pushRange = VkPushConstantRange.calloc(1, stack)
+                        .stageFlags(COMPUTE_STAGE)
+                        .offset(0)
+                        .size(MOTION_PUSH_SIZE);
+                VkPipelineLayoutCreateInfo pipelineLayoutInfo = VkPipelineLayoutCreateInfo.calloc(stack)
+                        .sType$Default()
+                        .pSetLayouts(stack.longs(descriptorSetLayout))
+                        .pPushConstantRanges(pushRange);
+                pointer.clear();
+                VulkanContext.check(
+                        VK12.vkCreatePipelineLayout(
+                                context.vkDevice(), pipelineLayoutInfo, null, pointer),
+                        "create Prime NRD motion pipeline layout");
+                pipelineLayout = pointer.get(0);
+
+                long shaderModule = createResourceShaderModule(
+                        context, stack, "/prime/shaders/nrd_motion.comp.spv");
+                try {
+                    VkPipelineShaderStageCreateInfo stage = VkPipelineShaderStageCreateInfo.calloc(stack)
+                            .sType$Default()
+                            .stage(COMPUTE_STAGE)
+                            .module(shaderModule)
+                            .pName(stack.UTF8("main"));
+                    VkComputePipelineCreateInfo.Buffer pipelineInfo =
+                            VkComputePipelineCreateInfo.calloc(1, stack);
+                    pipelineInfo.get(0)
+                            .sType$Default()
+                            .stage(stage)
+                            .layout(pipelineLayout);
+                    pointer.clear();
+                    VulkanContext.check(
+                            VK12.vkCreateComputePipelines(
+                                    context.vkDevice(), 0L, pipelineInfo, null, pointer),
+                            "create Prime NRD motion pipeline");
+                    pipeline = pointer.get(0);
+                } finally {
+                    VK12.vkDestroyShaderModule(context.vkDevice(), shaderModule, null);
+                }
+
+                VkDescriptorPoolSize.Buffer poolSize = VkDescriptorPoolSize.calloc(1, stack)
+                        .type(VK12.VK_DESCRIPTOR_TYPE_STORAGE_IMAGE)
+                        .descriptorCount(MOTION_BINDING_COUNT);
+                VkDescriptorPoolCreateInfo poolInfo = VkDescriptorPoolCreateInfo.calloc(stack)
+                        .sType$Default()
+                        .maxSets(1)
+                        .pPoolSizes(poolSize);
+                pointer.clear();
+                VulkanContext.check(
+                        VK12.vkCreateDescriptorPool(context.vkDevice(), poolInfo, null, pointer),
+                        "create Prime NRD motion descriptor pool");
+                descriptorPool = pointer.get(0);
+
+                VkDescriptorSetAllocateInfo allocateInfo = VkDescriptorSetAllocateInfo.calloc(stack)
+                        .sType$Default()
+                        .descriptorPool(descriptorPool)
+                        .pSetLayouts(stack.longs(descriptorSetLayout));
+                pointer.clear();
+                VulkanContext.check(
+                        VK12.vkAllocateDescriptorSets(context.vkDevice(), allocateInfo, pointer),
+                        "allocate Prime NRD motion descriptor set");
+                descriptorSet = pointer.get(0);
+
+                VulkanImage[] descriptorImages = new VulkanImage[] {
+                    images.motion,
+                    images.viewZ,
+                    images.primaryPosition,
+                    images.reprojectionError
+                };
+                VkDescriptorImageInfo.Buffer imageInfos =
+                        VkDescriptorImageInfo.calloc(MOTION_BINDING_COUNT, stack);
+                VkWriteDescriptorSet.Buffer writes =
+                        VkWriteDescriptorSet.calloc(MOTION_BINDING_COUNT, stack);
+                for (int index = 0; index < MOTION_BINDING_COUNT; index++) {
+                    imageInfos.get(index)
+                            .imageView(descriptorImages[index].view())
+                            .imageLayout(VK12.VK_IMAGE_LAYOUT_GENERAL);
+                    writes.get(index)
+                            .sType$Default()
+                            .dstSet(descriptorSet)
+                            .dstBinding(index)
+                            .descriptorCount(1)
+                            .descriptorType(VK12.VK_DESCRIPTOR_TYPE_STORAGE_IMAGE)
+                            .pImageInfo(VkDescriptorImageInfo.create(
+                                    imageInfos.get(index).address(), 1));
+                }
+                VK12.vkUpdateDescriptorSets(context.vkDevice(), writes, null);
+                return new MotionPipeline(
+                        context,
+                        descriptorSetLayout,
+                        descriptorPool,
+                        descriptorSet,
+                        pipelineLayout,
+                        pipeline);
+            } catch (RuntimeException exception) {
+                if (descriptorPool != 0L) {
+                    VK12.vkDestroyDescriptorPool(context.vkDevice(), descriptorPool, null);
+                }
+                if (pipeline != 0L) {
+                    VK12.vkDestroyPipeline(context.vkDevice(), pipeline, null);
+                }
+                if (pipelineLayout != 0L) {
+                    VK12.vkDestroyPipelineLayout(context.vkDevice(), pipelineLayout, null);
+                }
+                if (descriptorSetLayout != 0L) {
+                    VK12.vkDestroyDescriptorSetLayout(
+                            context.vkDevice(), descriptorSetLayout, null);
+                }
+                throw exception;
+            }
+        }
+
+        private void record(
+                VkCommandBuffer commandBuffer,
+                FrameCamera camera,
+                FrameCamera previous,
+                int width,
+                int height) {
+            Matrix4f currentClipToWorld = NrdCameraTransform.currentClipToWorld(camera);
+            Matrix4f previousWorldToClip =
+                    NrdCameraTransform.previousWorldToClip(camera, previous);
+            Matrix4f previousRenderedWorldToClip =
+                    NrdCameraTransform.previousRenderedWorldToClip(camera, previous);
+            float[] currentValues = currentClipToWorld.get(new float[16]);
+            float[] previousValues = previousWorldToClip.get(new float[16]);
+            float[] previousRenderedValues =
+                    previousRenderedWorldToClip.get(new float[16]);
+            try (MemoryStack stack = MemoryStack.stackPush()) {
+                VK12.vkCmdBindPipeline(
+                        commandBuffer, VK12.VK_PIPELINE_BIND_POINT_COMPUTE, this.pipeline);
+                VK12.vkCmdBindDescriptorSets(
+                        commandBuffer,
+                        VK12.VK_PIPELINE_BIND_POINT_COMPUTE,
+                        this.pipelineLayout,
+                        0,
+                        stack.longs(this.descriptorSet),
+                        null);
+                ByteBuffer push = stack.malloc(MOTION_PUSH_SIZE).order(ByteOrder.nativeOrder());
+                for (int index = 0; index < 16; index++) {
+                    push.putFloat(index * Float.BYTES, currentValues[index]);
+                    push.putFloat(64 + index * Float.BYTES, previousValues[index]);
+                    push.putFloat(128 + index * Float.BYTES, previousRenderedValues[index]);
+                }
+                VK12.vkCmdPushConstants(
+                        commandBuffer,
+                        this.pipelineLayout,
+                        COMPUTE_STAGE,
+                        0,
+                        push);
+                VK12.vkCmdDispatch(commandBuffer, (width + 7) / 8, (height + 7) / 8, 1);
+            }
+        }
+
+        @Override
+        public void destroy() {
+            if (!this.destroyed) {
+                this.destroyed = true;
+                VK12.vkDestroyDescriptorPool(this.context.vkDevice(), this.descriptorPool, null);
+                VK12.vkDestroyPipeline(this.context.vkDevice(), this.pipeline, null);
+                VK12.vkDestroyPipelineLayout(this.context.vkDevice(), this.pipelineLayout, null);
+                VK12.vkDestroyDescriptorSetLayout(
+                        this.context.vkDevice(), this.descriptorSetLayout, null);
+            }
+        }
+    }
+
     private static final class CompositePipeline implements Destroyable {
         private final VulkanContext context;
         private final long descriptorSetLayout;
@@ -1352,7 +1622,10 @@ public final class NrdDenoiser implements Destroyable {
                     images.material,
                     stableAccumulation,
                     atmosphere.aerialRadiance(),
-                    atmosphere.aerialTransmittance()
+                    atmosphere.aerialTransmittance(),
+                    images.validation,
+                    images.reprojectionError,
+                    images.motion
                 };
                 VkDescriptorImageInfo.Buffer imageInfos =
                         VkDescriptorImageInfo.calloc(COMPOSITE_BINDING_COUNT, stack);
@@ -1396,7 +1669,11 @@ public final class NrdDenoiser implements Destroyable {
             }
         }
 
-        private void record(VkCommandBuffer commandBuffer, int width, int height) {
+        private void record(
+                VkCommandBuffer commandBuffer,
+                int width,
+                int height,
+                int diagnosticMode) {
             try (MemoryStack stack = MemoryStack.stackPush()) {
                 VK12.vkCmdBindPipeline(
                         commandBuffer, VK12.VK_PIPELINE_BIND_POINT_COMPUTE, this.pipeline);
@@ -1410,6 +1687,7 @@ public final class NrdDenoiser implements Destroyable {
                 ByteBuffer push = stack.malloc(COMPOSITE_PUSH_SIZE).order(ByteOrder.nativeOrder());
                 push.putInt(0, width);
                 push.putInt(4, height);
+                push.putInt(8, diagnosticMode);
                 VK12.vkCmdPushConstants(
                         commandBuffer,
                         this.pipelineLayout,

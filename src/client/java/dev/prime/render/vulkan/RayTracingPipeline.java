@@ -150,7 +150,8 @@ public final class RayTracingPipeline implements Destroyable {
                         nrd.normalRoughness().view(),
                         nrd.viewZ().view(),
                         nrd.motion().view(),
-                        nrd.material().view())) {
+                        nrd.material().view(),
+                        nrd.primaryPosition().view())) {
             return;
         }
         DescriptorBindings replacement = DescriptorBindings.create(
@@ -259,7 +260,7 @@ public final class RayTracingPipeline implements Destroyable {
     }
 
     private static long createDescriptorSetLayout(VulkanContext context, MemoryStack stack) {
-        VkDescriptorSetLayoutBinding.Buffer bindings = VkDescriptorSetLayoutBinding.calloc(14, stack);
+        VkDescriptorSetLayoutBinding.Buffer bindings = VkDescriptorSetLayoutBinding.calloc(15, stack);
         bindings.get(0)
                 .binding(ShaderAbi.DESCRIPTOR_TLAS)
                 .descriptorType(KHRAccelerationStructure.VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR)
@@ -301,7 +302,8 @@ public final class RayTracingPipeline implements Destroyable {
             ShaderAbi.DESCRIPTOR_NRD_NORMAL_ROUGHNESS,
             ShaderAbi.DESCRIPTOR_NRD_VIEW_Z,
             ShaderAbi.DESCRIPTOR_NRD_MOTION,
-            ShaderAbi.DESCRIPTOR_NRD_MATERIAL
+            ShaderAbi.DESCRIPTOR_NRD_MATERIAL,
+            ShaderAbi.DESCRIPTOR_NRD_PRIMARY_POSITION
         };
         for (int index = 0; index < nrdBindings.length; index++) {
             bindings.get(index + 9)
@@ -460,6 +462,7 @@ public final class RayTracingPipeline implements Destroyable {
         private final long nrdViewZ;
         private final long nrdMotion;
         private final long nrdMaterial;
+        private final long nrdPrimaryPosition;
         private boolean destroyed;
 
         private DescriptorBindings(
@@ -480,7 +483,8 @@ public final class RayTracingPipeline implements Destroyable {
                 long nrdNormalRoughness,
                 long nrdViewZ,
                 long nrdMotion,
-                long nrdMaterial) {
+                long nrdMaterial,
+                long nrdPrimaryPosition) {
             this.context = context;
             this.descriptorPool = descriptorPool;
             this.descriptorSet = descriptorSet;
@@ -499,6 +503,7 @@ public final class RayTracingPipeline implements Destroyable {
             this.nrdViewZ = nrdViewZ;
             this.nrdMotion = nrdMotion;
             this.nrdMaterial = nrdMaterial;
+            this.nrdPrimaryPosition = nrdPrimaryPosition;
         }
 
         private static DescriptorBindings create(
@@ -514,7 +519,7 @@ public final class RayTracingPipeline implements Destroyable {
             try (MemoryStack stack = MemoryStack.stackPush()) {
                 VkDescriptorPoolSize.Buffer sizes = VkDescriptorPoolSize.calloc(3, stack);
                 sizes.get(0).type(KHRAccelerationStructure.VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR).descriptorCount(1);
-                sizes.get(1).type(VK12.VK_DESCRIPTOR_TYPE_STORAGE_IMAGE).descriptorCount(12);
+                sizes.get(1).type(VK12.VK_DESCRIPTOR_TYPE_STORAGE_IMAGE).descriptorCount(13);
                 sizes.get(2).type(VK12.VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER).descriptorCount(1);
                 VkDescriptorPoolCreateInfo poolCreateInfo = VkDescriptorPoolCreateInfo.calloc(stack)
                         .sType$Default()
@@ -540,7 +545,7 @@ public final class RayTracingPipeline implements Destroyable {
                             VkWriteDescriptorSetAccelerationStructureKHR.calloc(stack)
                                     .sType$Default()
                                     .pAccelerationStructures(stack.longs(tlas));
-                    VkDescriptorImageInfo.Buffer imageInfos = VkDescriptorImageInfo.calloc(13, stack);
+                    VkDescriptorImageInfo.Buffer imageInfos = VkDescriptorImageInfo.calloc(14, stack);
                     imageInfos.get(0)
                             .imageView(output.view())
                             .imageLayout(VK12.VK_IMAGE_LAYOUT_GENERAL);
@@ -568,14 +573,15 @@ public final class RayTracingPipeline implements Destroyable {
                         nrd.normalRoughness(),
                         nrd.viewZ(),
                         nrd.motion(),
-                        nrd.material()
+                        nrd.material(),
+                        nrd.primaryPosition()
                     };
                     for (int index = 0; index < nrdImages.length; index++) {
                         imageInfos.get(index + 8)
                                 .imageView(nrdImages[index].view())
                                 .imageLayout(VK12.VK_IMAGE_LAYOUT_GENERAL);
                     }
-                    VkWriteDescriptorSet.Buffer writes = VkWriteDescriptorSet.calloc(14, stack);
+                    VkWriteDescriptorSet.Buffer writes = VkWriteDescriptorSet.calloc(15, stack);
                     writes.get(0)
                             .sType$Default()
                             .pNext(acceleration.address())
@@ -626,7 +632,8 @@ public final class RayTracingPipeline implements Destroyable {
                         ShaderAbi.DESCRIPTOR_NRD_NORMAL_ROUGHNESS,
                         ShaderAbi.DESCRIPTOR_NRD_VIEW_Z,
                         ShaderAbi.DESCRIPTOR_NRD_MOTION,
-                        ShaderAbi.DESCRIPTOR_NRD_MATERIAL
+                        ShaderAbi.DESCRIPTOR_NRD_MATERIAL,
+                        ShaderAbi.DESCRIPTOR_NRD_PRIMARY_POSITION
                     };
                     for (int index = 0; index < nrdBindings.length; index++) {
                         writes.get(index + 9)
@@ -657,7 +664,8 @@ public final class RayTracingPipeline implements Destroyable {
                             nrd.normalRoughness().view(),
                             nrd.viewZ().view(),
                             nrd.motion().view(),
-                            nrd.material().view());
+                            nrd.material().view(),
+                            nrd.primaryPosition().view());
                 } catch (RuntimeException exception) {
                     VK12.vkDestroyDescriptorPool(context.vkDevice(), pool, null);
                     throw exception;
@@ -680,7 +688,8 @@ public final class RayTracingPipeline implements Destroyable {
                 long nrdNormalRoughness,
                 long nrdViewZ,
                 long nrdMotion,
-                long nrdMaterial) {
+                long nrdMaterial,
+                long nrdPrimaryPosition) {
             return this.tlas == tlas
                     && this.outputView == outputView
                     && this.accumulationView == accumulationView
@@ -695,7 +704,8 @@ public final class RayTracingPipeline implements Destroyable {
                     && this.nrdNormalRoughness == nrdNormalRoughness
                     && this.nrdViewZ == nrdViewZ
                     && this.nrdMotion == nrdMotion
-                    && this.nrdMaterial == nrdMaterial;
+                    && this.nrdMaterial == nrdMaterial
+                    && this.nrdPrimaryPosition == nrdPrimaryPosition;
         }
 
         @Override

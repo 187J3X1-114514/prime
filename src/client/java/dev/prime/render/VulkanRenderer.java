@@ -96,13 +96,15 @@ public final class VulkanRenderer implements AutoCloseable {
     }
 
     public void captureCamera(
-            Matrix4fc projection,
+            Matrix4fc renderedProjection,
+            Matrix4fc baseProjection,
             Matrix4fc viewRotation,
             double x,
             double y,
             double z,
             float sunAngleRadians) {
-        this.camera = FrameCamera.tryCreate(projection, viewRotation, x, y, z);
+        this.camera = FrameCamera.tryCreate(
+                renderedProjection, baseProjection, viewRotation, x, y, z);
         this.sunDirection = SunDirection.fromVanillaAngle(sunAngleRadians);
     }
 
@@ -159,7 +161,6 @@ public final class VulkanRenderer implements AutoCloseable {
         NrdDenoiser denoiser = images.denoiser;
         this.accumulationState.prepare(
                 frameCamera,
-                scene.revision(),
                 scene.resetRevision(),
                 atlasViewHandle,
                 atlasSamplerHandle,
@@ -243,8 +244,15 @@ public final class VulkanRenderer implements AutoCloseable {
         }
     }
 
-    public void invalidateSection(int sectionX, int sectionY, int sectionZ) {
-        this.terrain.invalidateSection(sectionX, sectionY, sectionZ);
+    public void invalidateBlocks(
+            int minimumX,
+            int minimumY,
+            int minimumZ,
+            int maximumX,
+            int maximumY,
+            int maximumZ) {
+        this.terrain.invalidateBlocks(
+                minimumX, minimumY, minimumZ, maximumX, maximumY, maximumZ);
     }
 
     public void invalidateAll() {
@@ -548,9 +556,9 @@ public final class VulkanRenderer implements AutoCloseable {
             buffer.putFloat(ShaderAbi.PUSH_INVERSE_VIEW_PROJECTION_OFFSET + index * Float.BYTES, matrix[index]);
         }
         int cameraOffset = ShaderAbi.PUSH_CAMERA_POSITION_OFFSET;
-        buffer.putFloat(cameraOffset, (float) (camera.x() - scene.originX()));
-        buffer.putFloat(cameraOffset + Float.BYTES, (float) (camera.y() - scene.originY()));
-        buffer.putFloat(cameraOffset + 2 * Float.BYTES, (float) (camera.z() - scene.originZ()));
+        buffer.putFloat(cameraOffset, (float) (camera.renderX() - scene.originX()));
+        buffer.putFloat(cameraOffset + Float.BYTES, (float) (camera.renderY() - scene.originY()));
+        buffer.putFloat(cameraOffset + 2 * Float.BYTES, (float) (camera.renderZ() - scene.originZ()));
         buffer.putFloat(
                 ShaderAbi.PUSH_ATMOSPHERE_EYE_RADIUS_KM_OFFSET,
                 AtmospherePipeline.eyeRadiusKm(camera.y()));

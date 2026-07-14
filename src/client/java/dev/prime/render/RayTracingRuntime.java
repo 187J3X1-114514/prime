@@ -96,7 +96,8 @@ public final class RayTracingRuntime {
     }
 
     public void captureCamera(
-            Matrix4fc projection,
+            Matrix4fc renderedProjection,
+            Matrix4fc baseProjection,
             Matrix4fc viewRotation,
             double x,
             double y,
@@ -105,7 +106,8 @@ public final class RayTracingRuntime {
         VulkanRenderer activeRenderer = this.renderer;
         if (activeRenderer != null) {
             activeRenderer.captureCamera(
-                    projection,
+                    renderedProjection,
+                    baseProjection,
                     viewRotation,
                     x,
                     y,
@@ -126,10 +128,17 @@ public final class RayTracingRuntime {
         }
     }
 
-    public void invalidateSection(int sectionX, int sectionY, int sectionZ) {
+    public void invalidateBlocks(
+            int minimumX,
+            int minimumY,
+            int minimumZ,
+            int maximumX,
+            int maximumY,
+            int maximumZ) {
         VulkanRenderer activeRenderer = this.renderer;
         if (activeRenderer != null) {
-            activeRenderer.invalidateSection(sectionX, sectionY, sectionZ);
+            activeRenderer.invalidateBlocks(
+                    minimumX, minimumY, minimumZ, maximumX, maximumY, maximumZ);
         }
     }
 

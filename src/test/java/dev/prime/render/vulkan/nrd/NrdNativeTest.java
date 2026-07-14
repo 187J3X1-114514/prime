@@ -91,12 +91,16 @@ final class NrdNativeTest {
                     0,
                     true,
                     16.67f,
-                    1_000.0f));
+                    1_000.0f,
+                    true));
             var dispatches = instance.getDispatches();
             assertTrue(dispatches.size() >= 7);
             assertTrue(dispatches.stream().allMatch(dispatch -> dispatch.gridWidth() > 0));
             assertTrue(dispatches.stream().allMatch(dispatch -> dispatch.gridHeight() > 0));
             assertTrue(dispatches.stream().allMatch(dispatch -> !dispatch.resources().isEmpty()));
+            assertTrue(dispatches.stream()
+                    .flatMap(dispatch -> dispatch.resources().stream())
+                    .anyMatch(resource -> resource.resourceType() == NrdNative.RESOURCE_OUT_VALIDATION));
         }
     }
 

@@ -113,7 +113,7 @@ abstract class GenerateShaderAbi extends DefaultTask {
 				|| nrdContract.denoiser != 'reblur-diffuse'
 				|| nrdContract.normalEncoding != 'r10g10b10a2-unorm'
 				|| nrdContract.roughnessEncoding != 'linear'
-				|| nrdContract.motionSpace != 'world'
+				|| nrdContract.motionSpace != 'screen-2.5d'
 				|| nrdContract.signalSpace != 'demodulated-linear-rec2020-d65') {
 			throw new GradleException('Prime NRD signal and native-library contracts changed without a coordinated migration')
 		}
@@ -219,6 +219,7 @@ public final class ShaderAbi {
     public static final int DESCRIPTOR_NRD_VIEW_Z = ${schema.descriptors.nrdViewZ};
     public static final int DESCRIPTOR_NRD_MOTION = ${schema.descriptors.nrdMotion};
     public static final int DESCRIPTOR_NRD_MATERIAL = ${schema.descriptors.nrdMaterial};
+    public static final int DESCRIPTOR_NRD_PRIMARY_POSITION = ${schema.descriptors.nrdPrimaryPosition};
     public static final float CUTOUT_ALPHA_THRESHOLD = ${schema.cutoutAlphaThreshold}f;
     public static final String WORKING_COLOR_SPACE = "${colorContract.workingSpace}";
     public static final String TEXTURE_COLOR_ENCODING = "${colorContract.textureEncoding}";
@@ -360,13 +361,14 @@ layout(set = 0, binding = ${schema.descriptors.transmittanceHigh}, rgba16f) unif
 layout(set = 0, binding = ${schema.descriptors.aerialRadiance}, rgba16f) uniform readonly image3D primeAerialRadiance;
 layout(set = 0, binding = ${schema.descriptors.aerialTransmittance}, rgba16f) uniform readonly image3D primeAerialTransmittance;
 // NRD is part of the integrator boundary: raygen writes demodulated scene-linear Rec.2020
-// radiance and matching primary guides. Reinterpreting these as display RGB, alpha coverage or
-// screen-space motion silently invalidates temporal reprojection and spatial edge stopping.
+// radiance and matching primary guides. Changing their encoding, units or previous-minus-current
+// motion sign silently invalidates temporal reprojection and spatial edge stopping.
 layout(set = 0, binding = ${schema.descriptors.nrdNoisyDiffuse}, rgba16f) uniform image2D primeNrdNoisyDiffuse;
 layout(set = 0, binding = ${schema.descriptors.nrdNormalRoughness}, rgb10_a2) uniform image2D primeNrdNormalRoughness;
 layout(set = 0, binding = ${schema.descriptors.nrdViewZ}, r32f) uniform image2D primeNrdViewZ;
 layout(set = 0, binding = ${schema.descriptors.nrdMotion}, rgba16f) uniform image2D primeNrdMotion;
 layout(set = 0, binding = ${schema.descriptors.nrdMaterial}, rgba16f) uniform image2D primeNrdMaterial;
+layout(set = 0, binding = ${schema.descriptors.nrdPrimaryPosition}, rgba32f) uniform image2D primeNrdPrimaryPosition;
 
 #endif
 """

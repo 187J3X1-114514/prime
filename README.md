@@ -81,6 +81,10 @@ Prime 自有代码使用 MIT 许可证。见 [LICENSE](LICENSE)。随发行物�
 原生组件仍受 NVIDIA RTX SDKs License 约束，不属于 MIT 许可范围；详情见
 `THIRD_PARTY_LICENSES/NRD-LICENSE.txt`。
 
+默认粗糙介质的 GGX 方向能量特化包含源自 RoboCute 的 Apache 2.0 授权数据与模型；
+归属和许可文本见 `THIRD_PARTY_LICENSES/ROBOCUTE-NOTICE.txt` 与
+`THIRD_PARTY_LICENSES/APACHE-2.0.txt`。
+
 ## Co-Authored-By
 
 - OpenAI Codex

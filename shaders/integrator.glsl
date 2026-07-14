@@ -4,8 +4,6 @@
 // The entire estimator operates in linear Rec.2020 D65. Scheduling changes may move this state
 // between kernels, but they must not reinterpret it as encoded sRGB or another RGB basis.
 
-const uint PRIME_TRACE_RADIANCE = 0u;
-const uint PRIME_TRACE_SHADOW = 1u;
 const uint PRIME_HIT_NONE = 0u;
 const uint PRIME_HIT_SURFACE = 1u;
 const uint PRIME_PATH_PREVIOUS_DELTA = 1u;
@@ -24,7 +22,7 @@ SurfaceInteraction primeTraceSurface(vec3 origin, vec3 direction) {
     primePayload.geometricNormal = vec3(0.0, 1.0, 0.0);
     primePayload.hitKind = PRIME_HIT_NONE;
     primePayload.baseColor = vec3(0.0);
-    primePayload.traceKind = PRIME_TRACE_RADIANCE;
+    primePayload.traceKind = 0u;
     primePayload.sectionIndex = 0u;
     primePayload.emitterIndex = PRIME_NO_LIGHT_INDEX;
     primePayload.reserved0 = 0u;
@@ -46,38 +44,23 @@ SurfaceInteraction primeTraceSurface(vec3 origin, vec3 direction) {
 }
 
 bool primeVisible(vec3 physicalPosition, vec3 normal, LightSample light) {
-    primePayload.position = vec3(0.0);
-    primePayload.t = 0.0;
-    primePayload.geometricNormal = vec3(0.0);
-    primePayload.hitKind = PRIME_HIT_NONE;
-    primePayload.baseColor = vec3(0.0);
-    primePayload.traceKind = PRIME_TRACE_SHADOW;
-    primePayload.sectionIndex = 0u;
-    primePayload.emitterIndex = PRIME_NO_LIGHT_INDEX;
-    primePayload.reserved0 = 0u;
-    primePayload.reserved1 = 0u;
+    // Shadow traversal uses a one-word payload and never invokes closest-hit. Cutout any-hit still
+    // runs and may ignore transparent texels; an accepted intersection leaves the sentinel set.
+    primeShadowOccluded = 1u;
     vec3 traceOrigin = primeOffsetRayOrigin(physicalPosition, normal, light.direction);
-    traceRayEXT(primeScene, gl_RayFlagsTerminateOnFirstHitEXT, 0xff, 0, 1, 0,
-            traceOrigin, 0.0, light.direction, light.distance, 0);
-    return primePayload.hitKind == PRIME_HIT_NONE;
-}
-
-vec3 primeEstimateDirectEnvironment(
-        IntegratorRecord integrator,
-        SurfaceInteraction surface,
-        vec3 viewDirection,
-        vec2 sampleValue) {
-    LightSample light = primeSampleEnvironment(
-            integrator, surface.geometricNormal, sampleValue);
-    BsdfEvaluation bsdf = primeEvaluateDefaultBsdf(
-            surface.baseColor, surface.geometricNormal, viewDirection, light.direction);
-    float cosine = max(dot(surface.geometricNormal, light.direction), 0.0);
-    if (cosine <= 0.0 || light.pdf <= 0.0
-            || !primeVisible(surface.position, surface.geometricNormal, light)) {
-        return vec3(0.0);
-    }
-    float misWeight = primePowerHeuristic(light.pdf, bsdf.pdf);
-    return light.radiance * bsdf.value * (cosine * misWeight / light.pdf);
+    traceRayEXT(
+            primeScene,
+            gl_RayFlagsTerminateOnFirstHitEXT | gl_RayFlagsSkipClosestHitShaderEXT,
+            0xff,
+            0,
+            1,
+            1,
+            traceOrigin,
+            0.0,
+            light.direction,
+            light.distance,
+            1);
+    return primeShadowOccluded == 0u;
 }
 
 vec3 primeEstimateDirectSun(
@@ -140,20 +123,15 @@ vec3 primeIntegrate(PathState path, IntegratorRecord integrator, out float prima
             primaryDistance = surface.t;
         }
         if (surface.hitKind == PRIME_HIT_NONE) {
-            LightEvaluation environment = primeEvaluateEnvironment(
-                    integrator, path.rayDirection, path.previousLightPdf);
             LightEvaluation sun = primeEvaluateSun(
                     integrator, path.physicalOrigin, path.rayDirection);
             bool cannotUseMis = path.bounce == 0u
                     || (path.flags & PRIME_PATH_PREVIOUS_DELTA) != 0u;
-            float environmentWeight = cannotUseMis
-                    ? 1.0
-                    : primePowerHeuristic(path.previousBsdfPdf, environment.pdf);
             float sunWeight = cannotUseMis
                     ? 1.0
                     : primePowerHeuristic(path.previousBsdfPdf, sun.pdf);
             path.radiance += path.throughput
-                    * (environment.radiance * environmentWeight
+                    * (primeEnvironmentRadiance(integrator, path.rayDirection)
                     + sun.radiance * sunWeight);
             break;
         }
@@ -168,10 +146,6 @@ vec3 primeIntegrate(PathState path, IntegratorRecord integrator, out float prima
         path.radiance += path.throughput * hitAreaLight.radiance * hitAreaWeight;
 
         PrimeSampleBase bounceSample = primeMakeSampleBase(path, path.bounce + 1u);
-        vec2 environmentSample = primeSobolSample2D(
-                bounceSample,
-                PRIME_SAMPLE_EFFECT_DIRECT_ENVIRONMENT,
-                PRIME_SAMPLE_DIMENSION_PRIMARY);
         vec2 sunSample = primeSobolSample2D(
                 bounceSample,
                 PRIME_SAMPLE_EFFECT_DIRECT_SUN,
@@ -192,9 +166,7 @@ vec3 primeIntegrate(PathState path, IntegratorRecord integrator, out float prima
         vec3 viewDirection = -path.rayDirection;
 
         path.radiance += path.throughput
-                * (primeEstimateDirectEnvironment(
-                        integrator, surface, viewDirection, environmentSample)
-                + primeEstimateDirectSun(integrator, surface, viewDirection, sunSample));
+                * primeEstimateDirectSun(integrator, surface, viewDirection, sunSample);
         path.radiance += path.throughput * primeEstimateDirectAreaLight(
                 surface, viewDirection, areaTreeSample, areaPositionSample);
 
@@ -209,7 +181,6 @@ vec3 primeIntegrate(PathState path, IntegratorRecord integrator, out float prima
                 path.physicalOrigin, surface.geometricNormal, bsdf.direction);
         path.rayDirection = bsdf.direction;
         path.previousBsdfPdf = bsdf.pdf;
-        path.previousLightPdf = primeEnvironmentPdf(surface.geometricNormal, bsdf.direction);
         path.flags = (bsdf.eventFlags & PRIME_BSDF_EVENT_DELTA) != 0u
                 ? PRIME_PATH_PREVIOUS_DELTA
                 : 0u;

@@ -31,7 +31,8 @@ import org.lwjgl.vulkan.VkWriteDescriptorSet;
 import org.lwjgl.vulkan.VkWriteDescriptorSetAccelerationStructureKHR;
 
 public final class RayTracingPipeline implements Destroyable {
-    private static final int GROUP_COUNT = 4;
+    private static final int GROUP_COUNT = 5;
+    static final int MISS_GROUP_COUNT = 2;
     private static final int HIT_GROUP_COUNT = 2;
     private static final int ALL_RT_STAGES =
             KHRRayTracingPipeline.VK_SHADER_STAGE_RAYGEN_BIT_KHR
@@ -75,6 +76,7 @@ public final class RayTracingPipeline implements Destroyable {
                     handleSize,
                     handleAlignment,
                     baseAlignment,
+                    MISS_GROUP_COUNT,
                     HIT_GROUP_COUNT);
             newShaderBindingTable = context.createBuffer(
                     bufferSize,
@@ -85,6 +87,7 @@ public final class RayTracingPipeline implements Destroyable {
                     handleSize,
                     handleAlignment,
                     baseAlignment,
+                    MISS_GROUP_COUNT,
                     HIT_GROUP_COUNT,
                     newShaderBindingTable.deviceAddress());
             if (layout.recordStride() > context.capabilities().maxShaderGroupStride()) {
@@ -187,7 +190,7 @@ public final class RayTracingPipeline implements Destroyable {
             VkStridedDeviceAddressRegionKHR miss = VkStridedDeviceAddressRegionKHR.calloc(stack)
                     .deviceAddress(this.missAddress)
                     .stride(this.recordStride)
-                    .size(this.recordStride);
+                    .size(this.recordStride * MISS_GROUP_COUNT);
             VkStridedDeviceAddressRegionKHR hit = VkStridedDeviceAddressRegionKHR.calloc(stack)
                     .deviceAddress(this.hitAddress)
                     .stride(this.recordStride)
@@ -232,9 +235,13 @@ public final class RayTracingPipeline implements Destroyable {
             long destination = shaderBindingTable.mappedAddress();
             MemoryUtil.memCopy(source, destination + layout.raygenOffset(), handleSize);
             MemoryUtil.memCopy(source + handleSize, destination + layout.missOffset(), handleSize);
-            MemoryUtil.memCopy(source + 2L * handleSize, destination + layout.hitOffset(), handleSize);
             MemoryUtil.memCopy(
-                    source + 3L * handleSize,
+                    source + 2L * handleSize,
+                    destination + layout.missOffset() + layout.recordStride(),
+                    handleSize);
+            MemoryUtil.memCopy(source + 3L * handleSize, destination + layout.hitOffset(), handleSize);
+            MemoryUtil.memCopy(
+                    source + 4L * handleSize,
                     destination + layout.hitOffset() + layout.recordStride(),
                     handleSize);
             shaderBindingTable.flush(0L, layout.totalSize());
@@ -308,15 +315,17 @@ public final class RayTracingPipeline implements Destroyable {
     }
 
     private static long createPipeline(VulkanContext context, MemoryStack stack, long pipelineLayout) {
-        long[] modules = new long[4];
+        long[] modules = new long[5];
         try {
             modules[0] = createShaderModule(context, "/prime/shaders/world.rgen.spv");
             modules[1] = createShaderModule(context, "/prime/shaders/world.rmiss.spv");
-            modules[2] = createShaderModule(context, "/prime/shaders/world.rchit.spv");
-            modules[3] = createShaderModule(context, "/prime/shaders/world.rahit.spv");
-            VkPipelineShaderStageCreateInfo.Buffer stages = VkPipelineShaderStageCreateInfo.calloc(4, stack);
+            modules[2] = createShaderModule(context, "/prime/shaders/shadow.rmiss.spv");
+            modules[3] = createShaderModule(context, "/prime/shaders/world.rchit.spv");
+            modules[4] = createShaderModule(context, "/prime/shaders/world.rahit.spv");
+            VkPipelineShaderStageCreateInfo.Buffer stages = VkPipelineShaderStageCreateInfo.calloc(5, stack);
             int[] stageFlags = new int[] {
                 KHRRayTracingPipeline.VK_SHADER_STAGE_RAYGEN_BIT_KHR,
+                KHRRayTracingPipeline.VK_SHADER_STAGE_MISS_BIT_KHR,
                 KHRRayTracingPipeline.VK_SHADER_STAGE_MISS_BIT_KHR,
                 KHRRayTracingPipeline.VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR,
                 KHRRayTracingPipeline.VK_SHADER_STAGE_ANY_HIT_BIT_KHR
@@ -334,8 +343,9 @@ public final class RayTracingPipeline implements Destroyable {
                     VkRayTracingShaderGroupCreateInfoKHR.calloc(GROUP_COUNT, stack);
             generalGroup(groups.get(0), 0);
             generalGroup(groups.get(1), 1);
-            triangleGroup(groups.get(2), 2, KHRRayTracingPipeline.VK_SHADER_UNUSED_KHR);
-            triangleGroup(groups.get(3), 2, 3);
+            generalGroup(groups.get(2), 2);
+            triangleGroup(groups.get(3), 3, KHRRayTracingPipeline.VK_SHADER_UNUSED_KHR);
+            triangleGroup(groups.get(4), 3, 4);
 
             VkRayTracingPipelineCreateInfoKHR.Buffer createInfo =
                     VkRayTracingPipelineCreateInfoKHR.calloc(1, stack);

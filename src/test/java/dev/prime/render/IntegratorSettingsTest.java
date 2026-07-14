@@ -63,39 +63,9 @@ final class IntegratorSettingsTest {
     }
 
     @Test
-    void diffuseNeeAndBsdfSamplingConvergeToConstantEnvironmentReference() {
-        float reflectance = 0.6F;
-        float environment = 0.2F;
-        float lightPdf = IntegratorSettings.environmentPdf(1.0F);
-        double total = 0.0;
-        int sampleCount = 200_000;
-        for (int sampleIndex = 0; sampleIndex < sampleCount; sampleIndex++) {
-            float lightCosine = IntegratorSettings.sobolSample2D(
-                    0,
-                    0,
-                    sampleIndex,
-                    1,
-                    1,
-                    IntegratorSettings.SAMPLE_EFFECT_DIRECT_ENVIRONMENT,
-                    0)[0];
-            float lightBsdfPdf = IntegratorSettings.diffusePdf(lightCosine);
-            float lightWeight = IntegratorSettings.powerHeuristic(lightPdf, lightBsdfPdf);
-            double direct = environment * reflectance / Math.PI * lightCosine * lightWeight / lightPdf;
-
-            float bsdfCosine = (float) Math.sqrt(
-                    1.0F - IntegratorSettings.sobolSample2D(
-                            0,
-                            0,
-                            sampleIndex,
-                            1,
-                            1,
-                            IntegratorSettings.SAMPLE_EFFECT_SCATTER_BSDF,
-                            0)[0]);
-            float bsdfPdf = IntegratorSettings.diffusePdf(bsdfCosine);
-            float bsdfWeight = IntegratorSettings.powerHeuristic(bsdfPdf, lightPdf);
-            double escaped = environment * reflectance * bsdfWeight;
-            total += direct + escaped;
-        }
-        assertEquals(environment * reflectance, total / sampleCount, 0.002);
+    void diffusePdfIsDefinedOnlyOnTheVisibleHemisphere() {
+        assertEquals(1.0F / (float) Math.PI, IntegratorSettings.diffusePdf(1.0F), 1.0E-7F);
+        assertEquals(0.0F, IntegratorSettings.diffusePdf(0.0F));
+        assertEquals(0.0F, IntegratorSettings.diffusePdf(-1.0F));
     }
 }

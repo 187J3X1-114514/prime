@@ -11,7 +11,7 @@ final class IntegratorSettings {
     static final int MAXIMUM_BOUNCES = 256;
     static final int RUSSIAN_ROULETTE_START = 2;
     static final int SAMPLE_EFFECT_CAMERA = 0;
-    static final int SAMPLE_EFFECT_DIRECT_ENVIRONMENT = 1;
+    // Effect identity 1 remains retired so removing environment NEE does not reshuffle streams.
     static final int SAMPLE_EFFECT_DIRECT_SUN = 2;
     static final int SAMPLE_EFFECT_SCATTER_BSDF = 3;
     static final int SAMPLE_EFFECT_DIRECT_AREA_LIGHT = 5;
@@ -75,10 +75,6 @@ final class IntegratorSettings {
 
     static float diffusePdf(float cosine) {
         return Math.max(cosine, 0.0F) / (float) Math.PI;
-    }
-
-    static float environmentPdf(float cosine) {
-        return cosine > 0.0F ? 1.0F / (2.0F * (float) Math.PI) : 0.0F;
     }
 
     private static float sobolBurley(int reversedBitIndex, int dimension, int seed) {

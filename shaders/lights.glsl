@@ -18,8 +18,8 @@ struct LightEvaluation {
 
 // All radiance values in this adapter are linear Rec.2020 D65. pdf is the complete f32 sampling
 // density, including light-selection probability when a future registry introduces one. Reverse
-// PDF queries must reuse that exact quantized value. The current environment and sun adapters are
-// evaluated separately and perform no selection.
+// PDF queries must reuse that exact quantized value. The environment is evaluated only when a BSDF
+// path escapes; the sun and area-light adapters are sampled explicitly and perform no selection.
 
 float primePowerHeuristic(float firstPdf, float secondPdf) {
     float first = firstPdf * firstPdf;
@@ -29,36 +29,6 @@ float primePowerHeuristic(float firstPdf, float secondPdf) {
 
 vec3 primeEnvironmentRadiance(IntegratorRecord integrator, vec3 direction) {
     return primeAtmosphereSky(direction, integrator.sunDirectionIntensity.xyz);
-}
-
-LightEvaluation primeEvaluateEnvironment(
-        IntegratorRecord integrator,
-        vec3 direction,
-        float exactSamplingPdf) {
-    LightEvaluation result;
-    result.radiance = primeEnvironmentRadiance(integrator, direction);
-    result.pdf = exactSamplingPdf;
-    return result;
-}
-
-float primeEnvironmentPdf(vec3 normal, vec3 direction) {
-    return dot(normal, direction) > 0.0 ? 1.0 / (2.0 * PRIME_PI) : 0.0;
-}
-
-LightSample primeSampleEnvironment(
-        IntegratorRecord integrator,
-        vec3 normal,
-        vec2 sampleValue) {
-    float z = sampleValue.x;
-    float angle = 2.0 * PRIME_PI * sampleValue.y;
-    float radius = sqrt(max(0.0, 1.0 - z * z));
-    LightSample result;
-    result.direction = primeLocalToWorld(vec3(radius * cos(angle), radius * sin(angle), z), normal);
-    result.distance = 1000000.0;
-    result.radiance = primeEnvironmentRadiance(integrator, result.direction);
-    result.pdf = 1.0 / (2.0 * PRIME_PI);
-    result.isDelta = 0u;
-    return result;
 }
 
 float primeSunCosAngularRadius() {
@@ -248,21 +218,10 @@ float primeLightTreeSelectionPdf(
     return 0.0;
 }
 
-void primeLightCellVertices(uint cellIndex, out vec2 first, out vec2 second, out vec2 third) {
-    uint remaining = cellIndex;
-    uint row = 0u;
-    uint column = 0u;
-    bool upper = false;
-    for (uint candidateRow = 0u; candidateRow < PRIME_LIGHT_CELL_SUBDIVISION; ++candidateRow) {
-        uint rowCount = 2u * (PRIME_LIGHT_CELL_SUBDIVISION - candidateRow) - 1u;
-        if (remaining < rowCount) {
-            row = candidateRow;
-            column = remaining / 2u;
-            upper = (remaining & 1u) != 0u;
-            break;
-        }
-        remaining -= rowCount;
-    }
+void primeLightCellVertices(uint geometry, out vec2 first, out vec2 second, out vec2 third) {
+    uint column = geometry & 0xfu;
+    uint row = (geometry >> 4u) & 0xfu;
+    bool upper = (geometry & 0x100u) != 0u;
     float inverseSubdivision = 1.0 / float(PRIME_LIGHT_CELL_SUBDIVISION);
     float x = float(column) * inverseSubdivision;
     float y = float(row) * inverseSubdivision;
@@ -376,7 +335,7 @@ LightSample primeSampleAreaLight(
     vec2 cellFirst;
     vec2 cellSecond;
     vec2 cellThird;
-    primeLightCellVertices(cellIndex, cellFirst, cellSecond, cellThird);
+    primeLightCellVertices(selectedCell.geometry, cellFirst, cellSecond, cellThird);
     float squareRoot = sqrt(positionSample.x);
     vec3 cellBarycentric = vec3(
             1.0 - squareRoot,

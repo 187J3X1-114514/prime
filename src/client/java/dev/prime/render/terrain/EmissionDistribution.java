@@ -10,13 +10,13 @@ import net.minecraft.client.renderer.texture.TextureAtlasSprite;
 final class EmissionDistribution {
     static final int SUBDIVISION = 16;
     static final int CELL_COUNT = SUBDIVISION * SUBDIVISION;
-    private static final float MINIMUM_CELL_LUMINANCE = 1.0E-5F;
+    private static final float MINIMUM_CELL_IMPORTANCE = 1.0E-5F;
     private static final int STRATIFIED_SAMPLE_COUNT = 4;
 
     private final float[] aliasProbabilities;
     private final int[] aliases;
     private final float[] probabilityMasses;
-    private final float meanLuminance;
+    private final float meanImportance;
 
     private EmissionDistribution(float[] weights) {
         this.aliasProbabilities = new float[CELL_COUNT];
@@ -29,14 +29,14 @@ final class EmissionDistribution {
         if (!(sum > 0.0) || !Double.isFinite(sum)) {
             throw new IllegalArgumentException("Emission importance weights must have positive finite mass");
         }
-        this.meanLuminance = (float) (sum / CELL_COUNT);
+        this.meanImportance = (float) (sum / CELL_COUNT);
         buildAliasTable(weights, sum, this.aliasProbabilities, this.aliases, this.probabilityMasses);
     }
 
     static EmissionDistribution build(Key key) {
         float[] weights = new float[CELL_COUNT];
         try {
-            fillTextureWeights(key, weights);
+            fillTextureImportance(key, weights);
         } catch (RuntimeException exception) {
             // A resource reload can retire SpriteContents while an already-cancelled mesh job is
             // winding down. Uniform support is still unbiased because radiance is read from the
@@ -44,7 +44,7 @@ final class EmissionDistribution {
             java.util.Arrays.fill(weights, 1.0F);
         }
         for (int index = 0; index < weights.length; index++) {
-            weights[index] = Math.max(weights[index], MINIMUM_CELL_LUMINANCE);
+            weights[index] = Math.max(weights[index], MINIMUM_CELL_IMPORTANCE);
         }
         return new EmissionDistribution(weights);
     }
@@ -55,7 +55,7 @@ final class EmissionDistribution {
         return new EmissionDistribution(weights);
     }
 
-    private static void fillTextureWeights(Key key, float[] weights) {
+    private static void fillTextureImportance(Key key, float[] weights) {
         TextureAtlasSprite sprite = key.sprite;
         SpriteContents contents = sprite.contents();
         NativeImage image = ((SpriteContentsAccessor) (Object) contents).prime$originalImage();
@@ -85,9 +85,10 @@ final class EmissionDistribution {
                     float red = decodeSrgb((argb >>> 16 & 0xff) / 255.0F) * tint[0];
                     float green = decodeSrgb((argb >>> 8 & 0xff) / 255.0F) * tint[1];
                     float blue = decodeSrgb((argb & 0xff) / 255.0F) * tint[2];
-                    // A D65 linear-sRGB -> Rec.2020 conversion preserves CIE Y, so these
-                    // coefficients are also the exact importance luminance of the working color.
-                    maximum = Math.max(maximum, 0.2126F * red + 0.7152F * green + 0.0722F * blue);
+                    // Importance uses the largest component in Prime's actual linear Rec.2020
+                    // working space. This controls variance only: emitted RGB and its PDF remain
+                    // separate, so changing this proxy cannot bias the estimator.
+                    maximum = Math.max(maximum, linearSrgbToRec2020Maximum(red, green, blue));
                 }
                 total += maximum;
             }
@@ -115,6 +116,14 @@ final class EmissionDistribution {
         return value <= 0.04045F
                 ? value / 12.92F
                 : (float) Math.pow((value + 0.055F) / 1.055F, 2.4);
+    }
+
+    static float linearSrgbToRec2020Maximum(float red, float green, float blue) {
+        // Keep these coefficients identical to primeLinearSrgbToLinearRec2020 in color_space.glsl.
+        float rec2020Red = 0.6274039F * red + 0.3292830F * green + 0.0433131F * blue;
+        float rec2020Green = 0.0690973F * red + 0.9195404F * green + 0.0113623F * blue;
+        float rec2020Blue = 0.0163914F * red + 0.0880133F * green + 0.8955953F * blue;
+        return Math.max(rec2020Red, Math.max(rec2020Green, rec2020Blue));
     }
 
     private static float interpolate(float first, float second, float third, float[] barycentric) {
@@ -198,8 +207,8 @@ final class EmissionDistribution {
         return this.probabilityMasses[index];
     }
 
-    float meanLuminance() {
-        return this.meanLuminance;
+    float meanImportance() {
+        return this.meanImportance;
     }
 
     record Key(TextureAtlasSprite sprite, int packedUv0, int packedUv1, int packedUv2, int tintArgb, boolean cutout) {
@@ -237,6 +246,10 @@ final class EmissionDistribution {
     }
 
     record Cell(int column, int row, boolean upper) {
+        int packedGeometry() {
+            return this.column | this.row << 4 | (this.upper ? 1 << 8 : 0);
+        }
+
         float[][] vertices() {
             float inverse = 1.0F / SUBDIVISION;
             float x = this.column * inverse;

@@ -54,7 +54,7 @@
         { "name": "aliasProbability", "type": "float", "offset": 0 },
         { "name": "aliasIndex", "type": "uint", "offset": 4 },
         { "name": "probabilityMass", "type": "float", "offset": 8 },
-        { "name": "reserved", "type": "uint", "offset": 12 }
+        { "name": "geometry", "type": "uint", "offset": 12 }
       ]
     },
     "sectionLightHeader": {
@@ -86,7 +86,6 @@
         { "name": "throughput", "type": "vec3", "offset": 48 },
         { "name": "previousBsdfPdf", "type": "float", "offset": 60 },
         { "name": "radiance", "type": "vec3", "offset": 64 },
-        { "name": "previousLightPdf", "type": "float", "offset": 76 },
         { "name": "pixel", "type": "uvec2", "offset": 80 },
         { "name": "sampleIndex", "type": "uint", "offset": 88 },
         { "name": "sampleEpoch", "type": "uint", "offset": 92 }

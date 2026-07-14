@@ -8,9 +8,6 @@ void main() {
     SectionRecord section = primeSection();
     PrimitiveRecord primitive = primePrimitive(section);
     primePayload.hitKind = 1u;
-    if (primePayload.traceKind == 1u) {
-        return;
-    }
     MaterialEvaluation material = primeEvaluateMaterial(primitive, primeInterpolateUv(primitive));
     primePayload.position = gl_WorldRayOriginEXT + gl_HitTEXT * gl_WorldRayDirectionEXT;
     primePayload.t = gl_HitTEXT;

@@ -58,6 +58,7 @@ final class ShaderAbiTest {
         assertEquals(80, ShaderAbi.LIGHT_EMITTER_METADATA_OFFSET);
         assertEquals(0, ShaderAbi.LIGHT_CELL_ALIAS_PROBABILITY_OFFSET);
         assertEquals(8, ShaderAbi.LIGHT_CELL_PROBABILITY_MASS_OFFSET);
+        assertEquals(12, ShaderAbi.LIGHT_CELL_GEOMETRY_OFFSET);
         assertEquals(0, ShaderAbi.SECTION_LIGHT_HEADER_NODE_ADDRESS_OFFSET);
         assertEquals(24, ShaderAbi.SECTION_LIGHT_HEADER_ROOT_OFFSET);
         assertEquals(0, ShaderAbi.INTEGRATOR_SUN_DIRECTION_INTENSITY_OFFSET);

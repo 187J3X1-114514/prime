@@ -5,6 +5,7 @@
 #include "atmosphere_rt.glsl"
 
 layout(location = 0) rayPayloadEXT TracePayload primePayload;
+layout(location = 1) rayPayloadEXT uint primeShadowOccluded;
 
 #include "sampling.glsl"
 #include "bsdf.glsl"
@@ -28,7 +29,6 @@ void main() {
     path.throughput = vec3(1.0);
     path.previousBsdfPdf = 0.0;
     path.radiance = vec3(0.0);
-    path.previousLightPdf = 0.0;
     path.pixel = pixel;
     path.sampleIndex = primePush.path.x;
     path.sampleEpoch = primePush.path.y;

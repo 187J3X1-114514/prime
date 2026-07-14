@@ -25,7 +25,9 @@ final class SamplingContractTest {
         assertTrue(sampling.contains("primeSobolSample3D"));
         assertTrue(sampling.contains("primeSobolSample4D"));
         assertTrue(rayGeneration.contains("PRIME_SAMPLE_EFFECT_CAMERA"));
-        assertTrue(integrator.contains("PRIME_SAMPLE_EFFECT_DIRECT_ENVIRONMENT"));
+        assertFalse(sampling.contains("PRIME_SAMPLE_EFFECT_DIRECT_ENVIRONMENT"));
+        assertFalse(integrator.contains("primeEstimateDirectEnvironment"));
+        assertFalse(allConsumers.contains("primeSampleEnvironment"));
         assertTrue(integrator.contains("PRIME_SAMPLE_EFFECT_DIRECT_SUN"));
         assertTrue(integrator.contains("PRIME_SAMPLE_EFFECT_DIRECT_AREA_LIGHT"));
         assertTrue(integrator.contains("PRIME_SAMPLE_EFFECT_SCATTER_BSDF"));

@@ -129,7 +129,7 @@ public final class TerrainMesher {
             // BlockState is the authoritative dynamic 0..15 source (lamp on/off, candle count,
             // furnace lit, and so on). A model element may request a stronger full-bright value;
             // taking the maximum preserves that authored information without pretending it is a
-            // binary emission mask. Texture luminance supplies the soft mask below this level.
+            // binary emission mask. Texture importance supplies the soft mask below this level.
             int lightEmission = Math.max(this.blockLightEmission, quad.materialInfo().lightEmission());
             this.emitTriangle(destination, x, y, z, quad, FIRST_TRIANGLE, tint, cutout, lightEmission);
             this.emitTriangle(destination, x, y, z, quad, SECOND_TRIANGLE, tint, cutout, lightEmission);

@@ -1,6 +1,7 @@
 package dev.prime.render.terrain;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -46,6 +47,26 @@ final class EmissionLightContractTest {
     }
 
     @Test
+    void packedCellGeometryRoundTripsWithoutShaderSearch() {
+        for (int index = 0; index < EmissionDistribution.CELL_COUNT; index++) {
+            EmissionDistribution.Cell cell = EmissionDistribution.cell(index);
+            int geometry = cell.packedGeometry();
+            assertEquals(cell.column(), geometry & 0xf);
+            assertEquals(cell.row(), geometry >>> 4 & 0xf);
+            assertEquals(cell.upper(), (geometry & 0x100) != 0);
+            assertEquals(0, geometry & ~0x1ff);
+        }
+    }
+
+    @Test
+    void emissionImportanceUsesTheLargestLinearRec2020Component() {
+        assertEquals(1.0F, EmissionDistribution.linearSrgbToRec2020Maximum(1.0F, 1.0F, 1.0F), 1.0E-6F);
+        assertEquals(0.6274039F, EmissionDistribution.linearSrgbToRec2020Maximum(1.0F, 0.0F, 0.0F), 1.0E-6F);
+        assertEquals(0.9195404F, EmissionDistribution.linearSrgbToRec2020Maximum(0.0F, 1.0F, 0.0F), 1.0E-6F);
+        assertEquals(0.8955953F, EmissionDistribution.linearSrgbToRec2020Maximum(0.0F, 0.0F, 1.0F), 1.0E-6F);
+    }
+
+    @Test
     void uniformFallbackKeepsEveryCellInTheSamplingSupport() {
         EmissionDistribution distribution = EmissionDistribution.uniform();
         float total = 0.0F;
@@ -55,6 +76,7 @@ final class EmissionLightContractTest {
             total += distribution.probabilityMass(index);
         }
         assertEquals(1.0F, total, 1.0E-5F);
+        assertEquals(1.0F, distribution.meanImportance(), 1.0E-6F);
     }
 
     @Test
@@ -87,6 +109,8 @@ final class EmissionLightContractTest {
         assertTrue(lights.contains("primeLightTreeSelectionPdf"));
         assertTrue(lights.contains("selectedCell.probabilityMass / cellArea"));
         assertTrue(lights.contains("cell.probabilityMass / cellArea"));
+        assertTrue(lights.contains("primeLightCellVertices(selectedCell.geometry"));
+        assertFalse(lights.contains("candidateRow"));
         assertTrue(integrator.contains("primeSampleAreaLight"));
         assertTrue(integrator.contains("primeEvaluateAreaLight"));
     }

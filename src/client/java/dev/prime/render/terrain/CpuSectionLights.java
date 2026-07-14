@@ -109,7 +109,7 @@ public final class CpuSectionLights {
                 putFloat(result, cursor, distribution.aliasProbability(cell));
                 result[cursor + 1] = distribution.alias(cell);
                 putFloat(result, cursor + 2, distribution.probabilityMass(cell));
-                result[cursor + 3] = 0;
+                result[cursor + 3] = EmissionDistribution.cell(cell).packedGeometry();
             }
         }
         return result;
@@ -206,7 +206,7 @@ public final class CpuSectionLights {
             float scale = emissionScale(lightEmission);
             int flags = cutout ? EMITTER_FLAG_TWO_SIDED : 0;
             float sidedness = cutout ? 2.0F : 1.0F;
-            float power = area * (float) Math.PI * sidedness * scale * distribution.meanLuminance();
+            float power = area * (float) Math.PI * sidedness * scale * distribution.meanImportance();
             if (!(power > 0.0F) || !Float.isFinite(power)) {
                 return 0;
             }

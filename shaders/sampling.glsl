@@ -207,4 +207,12 @@ vec3 primeLocalToWorld(vec3 localDirection, vec3 normal) {
             + normal * localDirection.z);
 }
 
+vec3 primeWorldToLocal(vec3 worldDirection, vec3 normal) {
+    vec3 tangent;
+    vec3 bitangent;
+    primeBasis(normal, tangent, bitangent);
+    return vec3(dot(worldDirection, tangent), dot(worldDirection, bitangent),
+            dot(worldDirection, normal));
+}
+
 #endif

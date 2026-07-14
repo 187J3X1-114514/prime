@@ -53,11 +53,12 @@ bool primeVisible(vec3 physicalPosition, vec3 normal, LightSample light) {
 vec3 primeEstimateDirectEnvironment(
         IntegratorRecord integrator,
         SurfaceInteraction surface,
+        vec3 viewDirection,
         vec2 sampleValue) {
     LightSample light = primeSampleEnvironment(
             integrator, surface.geometricNormal, sampleValue);
-    BsdfEvaluation bsdf = primeEvaluateDiffuse(
-            surface.baseColor, surface.geometricNormal, light.direction);
+    BsdfEvaluation bsdf = primeEvaluateDefaultBsdf(
+            surface.baseColor, surface.geometricNormal, viewDirection, light.direction);
     float cosine = max(dot(surface.geometricNormal, light.direction), 0.0);
     if (cosine <= 0.0 || light.pdf <= 0.0
             || !primeVisible(surface.position, surface.geometricNormal, light)) {
@@ -70,10 +71,11 @@ vec3 primeEstimateDirectEnvironment(
 vec3 primeEstimateDirectSun(
         IntegratorRecord integrator,
         SurfaceInteraction surface,
+        vec3 viewDirection,
         vec2 sampleValue) {
     LightSample light = primeSampleSun(integrator, surface.position, sampleValue);
-    BsdfEvaluation bsdf = primeEvaluateDiffuse(
-            surface.baseColor, surface.geometricNormal, light.direction);
+    BsdfEvaluation bsdf = primeEvaluateDefaultBsdf(
+            surface.baseColor, surface.geometricNormal, viewDirection, light.direction);
     float cosine = max(dot(surface.geometricNormal, light.direction), 0.0);
     if (cosine <= 0.0 || light.pdf <= 0.0
             || !primeVisible(surface.position, surface.geometricNormal, light)) {
@@ -133,17 +135,20 @@ vec3 primeIntegrate(PathState path, IntegratorRecord integrator, out float prima
                 bounceSample,
                 PRIME_SAMPLE_EFFECT_DIRECT_SUN,
                 PRIME_SAMPLE_DIMENSION_PRIMARY);
-        vec2 scatterSample = primeSobolSample2D(
+        vec3 scatterSample = primeSobolSample3D(
                 bounceSample,
                 PRIME_SAMPLE_EFFECT_SCATTER_BSDF,
                 PRIME_SAMPLE_DIMENSION_PRIMARY);
 
-        path.radiance += path.throughput
-                * (primeEstimateDirectEnvironment(integrator, surface, environmentSample)
-                + primeEstimateDirectSun(integrator, surface, sunSample));
+        vec3 viewDirection = -path.rayDirection;
 
-        BsdfSample bsdf = primeSampleDiffuse(
-                surface.baseColor, surface.geometricNormal, scatterSample);
+        path.radiance += path.throughput
+                * (primeEstimateDirectEnvironment(
+                        integrator, surface, viewDirection, environmentSample)
+                + primeEstimateDirectSun(integrator, surface, viewDirection, sunSample));
+
+        BsdfSample bsdf = primeSampleDefaultBsdf(
+                surface.baseColor, surface.geometricNormal, viewDirection, scatterSample);
         if (bsdf.pdf <= 0.0 || all(lessThanEqual(bsdf.weight, vec3(0.0)))) {
             break;
         }
@@ -154,7 +159,9 @@ vec3 primeIntegrate(PathState path, IntegratorRecord integrator, out float prima
         path.rayDirection = bsdf.direction;
         path.previousBsdfPdf = bsdf.pdf;
         path.previousLightPdf = primeEnvironmentPdf(surface.geometricNormal, bsdf.direction);
-        path.flags = bsdf.isDelta != 0u ? PRIME_PATH_PREVIOUS_DELTA : 0u;
+        path.flags = (bsdf.eventFlags & PRIME_BSDF_EVENT_DELTA) != 0u
+                ? PRIME_PATH_PREVIOUS_DELTA
+                : 0u;
         float rouletteSample = primeHashSample1D(
                 bounceSample,
                 PRIME_SAMPLE_EFFECT_RUSSIAN_ROULETTE,

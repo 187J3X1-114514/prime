@@ -58,13 +58,16 @@ void main() {
             : sampleResult.primaryDistance * dot(path.rayDirection, cameraForward);
     vec3 diffuseMaterialFactor = vec3(1.0);
     vec3 specularMaterialFactor = vec3(1.0);
+    float primaryLinearRoughness = PRIME_DEFAULT_REFERENCE_LINEAR_ROUGHNESS;
     if (sampleResult.primaryHitKind != PRIME_HIT_NONE) {
+        primaryLinearRoughness = primeDefaultLinearRoughness(
+                sampleResult.primaryBaseColor);
         primeNrdMaterialFactors(
                 sampleResult.primaryNormal,
                 -path.rayDirection,
                 sampleResult.primaryBaseColor,
                 vec3(PRIME_DEFAULT_DIELECTRIC_F0),
-                PRIME_NRD_LINEAR_ROUGHNESS,
+                primaryLinearRoughness,
                 diffuseMaterialFactor,
                 specularMaterialFactor);
     }
@@ -79,7 +82,7 @@ void main() {
             : primeNrdNormalizedHitDistance(
                     sampleResult.specularHitDistance,
                     viewZ,
-                    PRIME_NRD_LINEAR_ROUGHNESS);
+                    primaryLinearRoughness);
 
     imageStore(
             primeNrdNoisyDiffuse,
@@ -95,7 +98,7 @@ void main() {
             primeNrdNormalRoughness,
             ivec2(pixel),
             primeNrdPackNormalRoughness(
-                    sampleResult.primaryNormal, PRIME_NRD_LINEAR_ROUGHNESS));
+                    sampleResult.primaryNormal, primaryLinearRoughness));
     imageStore(primeNrdViewZ, ivec2(pixel), vec4(viewZ, 0.0, 0.0, 0.0));
     // Diagnostic-only exact primary hit relative to the effective camera pinhole. Keeping this
     // separate from view-Z reconstruction lets the reprojection probe detect a self-consistent

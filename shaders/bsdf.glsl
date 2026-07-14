@@ -31,20 +31,28 @@ struct PrimeLabPbrMaterial {
 };
 
 const float PRIME_DEFAULT_DIELECTRIC_F0 = 0.04;
-// Vanilla textures do not carry LabPBR smoothness. A broad alpha=0.64 highlight adds the missing
-// dielectric response without making unclassified terrain look polished or metallic.
-const float PRIME_DEFAULT_GGX_ALPHA = 0.64;
+// Vanilla textures do not carry LabPBR smoothness. Keep their inferred linear roughness in this
+// bounded, very rough interval: even a white texel remains far from a polished or
+// plastic-looking surface. Luminance is scene-linear Rec.2020 Y, not gamma-encoded RGB luma.
+const float PRIME_DEFAULT_MIN_LINEAR_ROUGHNESS = 0.70;
+const float PRIME_DEFAULT_MAX_LINEAR_ROUGHNESS = 0.90;
+const float PRIME_DEFAULT_REFERENCE_LINEAR_ROUGHNESS = 0.8;
+const vec3 PRIME_REC2020_LUMINANCE = vec3(0.2627, 0.6780, 0.0593);
+// The calibrated directional-energy table is exact at the previous default alpha. A fitted
+// reflective-energy delta below extends it over the small inferred range while preserving the
+// table's total resolved energy and its exact value at alpha=0.64.
+const float PRIME_DEFAULT_GGX_ALPHA = PRIME_DEFAULT_REFERENCE_LINEAR_ROUGHNESS
+        * PRIME_DEFAULT_REFERENCE_LINEAR_ROUGHNESS;
 const uint PRIME_DEFAULT_LOBE_DIFFUSE = 0u;
 const uint PRIME_DEFAULT_LOBE_SPECULAR = 1u;
 
-// Single-scattering directional energies (reflection, transmission) for the fixed default
-// alpha=0.64 and eta=1.5 interface. These are the exact 32 cosine samples selected from RoboCute's
-// Apache-2.0-licensed GGX energy table; linear interpolation is therefore identical to its
-// trilinear lookup for Prime's currently fixed material parameters. The sum is intentionally less
-// than one: it measures energy lost to unresolved multiple microfacet scattering. Never replace
-// this with smooth-surface Fresnel -- doing so incorrectly drives the substrate to black at grazing
-// angles. A future material decoder must replace this specialization with the complete parameterized
-// lookup, not reinterpret these values.
+// Single-scattering directional energies (reflection, transmission) for the calibrated
+// alpha=0.64 and eta=1.5 reference interface. These are the exact 32 cosine samples selected from
+// RoboCute's Apache-2.0-licensed GGX energy table. The sum is intentionally less than one: it
+// measures energy lost to unresolved multiple microfacet scattering. Never replace this with
+// smooth-surface Fresnel -- doing so incorrectly drives the substrate to black at grazing angles.
+// The bounded vanilla-texture heuristic applies only the fitted reflection delta above; a future
+// material decoder must replace this specialization with the complete parameterized lookup.
 const vec2 PRIME_DEFAULT_GGX_DIRECTIONAL_ENERGY[32] = vec2[](
     vec2(0.105050949, 0.141424098),
     vec2(0.101618740, 0.177912561),
@@ -89,31 +97,83 @@ float primeDefaultDielectricIor() {
     return primeIorFromF0(PRIME_DEFAULT_DIELECTRIC_F0);
 }
 
-vec2 primeDefaultGgxDirectionalEnergy(float cosineView) {
+float primeDefaultLinearRoughness(vec3 baseColor) {
+    float luminance = dot(clamp(baseColor, 0.0, 1.0), PRIME_REC2020_LUMINANCE);
+    float brightness = smoothstep(0.08, 0.90, luminance);
+    return mix(
+            PRIME_DEFAULT_MAX_LINEAR_ROUGHNESS,
+            PRIME_DEFAULT_MIN_LINEAR_ROUGHNESS,
+            brightness);
+}
+
+float primeDefaultGgxAlpha(vec3 baseColor) {
+    float linearRoughness = primeDefaultLinearRoughness(baseColor);
+    return linearRoughness * linearRoughness;
+}
+
+float primeDefaultReflectiveDirectionalEnergyFit(float cosineView, float ggxAlpha) {
+    // Rational quadratic fit from RoboCute's reflective GGX directional-albedo model. Applying
+    // only its delta relative to alpha=0.64 keeps Prime's calibrated dielectric table authoritative.
+    float x = clamp(cosineView, 0.0, 1.0);
+    float y = clamp(ggxAlpha, 0.0, 1.0);
+    float x2 = x * x;
+    float y2 = y * y;
+    vec4 fit = vec4(0.1003, 0.9345, 1.0, 1.0)
+            + vec4(-0.6303, -2.323, -1.765, 0.2281) * x
+            + vec4(9.748, 2.229, 8.263, 15.94) * y
+            + vec4(-2.038, -3.748, 11.53, -55.83) * x * y
+            + vec4(29.34, 1.424, 28.96, 13.08) * x2
+            + vec4(-8.245, -0.7684, -7.507, 41.26) * y2
+            + vec4(-26.44, 1.436, -36.11, 54.9) * x2 * y
+            + vec4(19.99, 0.2913, 15.86, 300.2) * x * y2
+            + vec4(-5.448, 0.6286, 33.37, -285.1) * x2 * y2;
+    vec2 coefficients = clamp(fit.xy / fit.zw, 0.0, 1.0);
+    return PRIME_DEFAULT_DIELECTRIC_F0 * coefficients.x + coefficients.y;
+}
+
+vec2 primeDefaultGgxDirectionalEnergy(float cosineView, float ggxAlpha) {
     float coordinate = clamp(cosineView, 0.0, 1.0) * 31.0;
     int lowerIndex = int(floor(coordinate));
     int upperIndex = min(lowerIndex + 1, 31);
-    return mix(
+    vec2 calibrated = mix(
             PRIME_DEFAULT_GGX_DIRECTIONAL_ENERGY[lowerIndex],
             PRIME_DEFAULT_GGX_DIRECTIONAL_ENERGY[upperIndex],
             coordinate - float(lowerIndex));
+    float reflectionDelta = primeDefaultReflectiveDirectionalEnergyFit(
+            cosineView, ggxAlpha)
+            - primeDefaultReflectiveDirectionalEnergyFit(
+                    cosineView, PRIME_DEFAULT_GGX_ALPHA);
+    float totalResolvedEnergy = calibrated.x + calibrated.y;
+    float reflectedEnergy = clamp(
+            calibrated.x + reflectionDelta, 0.0, totalResolvedEnergy);
+    return vec2(reflectedEnergy, totalResolvedEnergy - reflectedEnergy);
 }
 
-float primeDefaultSpecularSampleProbability(vec3 viewDirection, vec3 normal) {
+float primeDefaultSpecularSampleProbability(
+        vec3 baseColor,
+        vec3 viewDirection,
+        vec3 normal) {
     vec2 directionalEnergy = primeDefaultGgxDirectionalEnergy(
-            max(dot(normal, viewDirection), 0.0));
+            max(dot(normal, viewDirection), 0.0),
+            primeDefaultGgxAlpha(baseColor));
     return clamp(
             directionalEnergy.x / max(directionalEnergy.x + directionalEnergy.y, PRIME_BSDF_EPSILON),
             0.05,
             0.95);
 }
 
-float primeNrdSpecularSampleProbability(vec3 viewDirection, vec3 normal) {
+float primeNrdSpecularSampleProbability(
+        vec3 baseColor,
+        vec3 viewDirection,
+        vec3 normal) {
     // The first-bounce split writes only the selected lobe. AREA_3X3 reconstruction therefore
     // requires a diffuse sample to remain common in every small neighborhood. The default
     // dielectric is diffuse-dominant; limiting its specular proposal to 25% keeps both estimators
     // unbiased through probability compensation while satisfying that reconstruction contract.
-    return clamp(primeDefaultSpecularSampleProbability(viewDirection, normal), 0.05, 0.25);
+    return clamp(
+            primeDefaultSpecularSampleProbability(baseColor, viewDirection, normal),
+            0.05,
+            0.25);
 }
 
 PrimeDefaultBsdfComponents primeEvaluateDefaultBsdfComponents(
@@ -129,8 +189,9 @@ PrimeDefaultBsdfComponents primeEvaluateDefaultBsdfComponents(
     }
     components.diffuse = primeEvaluateDiffuseReflection(
             baseColor, normal, viewDirection, scatterDirection);
+    float ggxAlpha = primeDefaultGgxAlpha(baseColor);
     vec2 directionalEnergy = primeDefaultGgxDirectionalEnergy(
-            dot(normal, viewDirection));
+            dot(normal, viewDirection), ggxAlpha);
     float resolvedEnergy = max(
             directionalEnergy.x + directionalEnergy.y, PRIME_BSDF_EPSILON);
     // Match the source weighted-layer model: transmission into the substrate is a directional
@@ -139,7 +200,7 @@ PrimeDefaultBsdfComponents primeEvaluateDefaultBsdfComponents(
     components.diffuse.value *= directionalEnergy.y / resolvedEnergy;
     components.specular = primeEvaluateGgxDielectricReflection(
             primeDefaultDielectricIor(),
-            PRIME_DEFAULT_GGX_ALPHA,
+            ggxAlpha,
             normal,
             viewDirection,
             scatterDirection);
@@ -162,7 +223,8 @@ BsdfEvaluation primeEvaluateDefaultBsdf(
         vec3 scatterDirection) {
     PrimeDefaultBsdfComponents components = primeEvaluateDefaultBsdfComponents(
             baseColor, normal, viewDirection, scatterDirection);
-    float specularProbability = primeDefaultSpecularSampleProbability(viewDirection, normal);
+    float specularProbability = primeDefaultSpecularSampleProbability(
+            baseColor, viewDirection, normal);
     BsdfEvaluation result;
     result.value = components.diffuse.value + components.specular.value;
     result.pdf = mix(components.diffuse.pdf, components.specular.pdf, specularProbability);
@@ -175,7 +237,9 @@ BsdfSample primeSampleDefaultBsdfSeparated(
         vec3 viewDirection,
         vec3 sampleValue,
         out uint selectedLobe) {
-    float specularProbability = primeNrdSpecularSampleProbability(viewDirection, normal);
+    float specularProbability = primeNrdSpecularSampleProbability(
+            baseColor, viewDirection, normal);
+    float ggxAlpha = primeDefaultGgxAlpha(baseColor);
     BsdfSample proposal;
     float selectionProbability;
     if (sampleValue.z < specularProbability) {
@@ -183,7 +247,7 @@ BsdfSample primeSampleDefaultBsdfSeparated(
         selectionProbability = specularProbability;
         proposal = primeSampleGgxDielectricReflection(
                 primeDefaultDielectricIor(),
-                PRIME_DEFAULT_GGX_ALPHA,
+                ggxAlpha,
                 normal,
                 viewDirection,
                 sampleValue.xy);
@@ -217,12 +281,14 @@ BsdfSample primeSampleDefaultBsdf(
         vec3 normal,
         vec3 viewDirection,
         vec3 sampleValue) {
-    float specularProbability = primeDefaultSpecularSampleProbability(viewDirection, normal);
+    float specularProbability = primeDefaultSpecularSampleProbability(
+            baseColor, viewDirection, normal);
+    float ggxAlpha = primeDefaultGgxAlpha(baseColor);
     BsdfSample proposal;
     if (sampleValue.z < specularProbability) {
         proposal = primeSampleGgxDielectricReflection(
                 primeDefaultDielectricIor(),
-                PRIME_DEFAULT_GGX_ALPHA,
+                ggxAlpha,
                 normal,
                 viewDirection,
                 sampleValue.xy);

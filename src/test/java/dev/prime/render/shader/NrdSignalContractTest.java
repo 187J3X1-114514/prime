@@ -17,6 +17,9 @@ final class NrdSignalContractTest {
         assertTrue(rayGeneration.contains(
                 "vec4(diffuseMaterialFactor, sampleResult.primaryDistance)"));
         assertTrue(rayGeneration.contains("primeNrdNoisySpecular"));
+        assertTrue(rayGeneration.contains("primaryLinearRoughness"));
+        assertTrue(rayGeneration.contains(
+                "sampleResult.primaryNormal, primaryLinearRoughness"));
         assertTrue(composite.contains("if (material.a < 0.0)"));
         assertTrue(composite.contains("return vec3(0.0);"));
         assertTrue(composite.contains("primeCompositeSurfaceSignal("));

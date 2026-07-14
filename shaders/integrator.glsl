@@ -111,7 +111,7 @@ PrimeDirectLightingSplit primeEstimatePrimaryDirectSun(
     PrimeDefaultBsdfComponents components = primeEvaluateDefaultBsdfComponents(
             surface.baseColor, surface.geometricNormal, viewDirection, light.direction);
     float specularProbability = primeNrdSpecularSampleProbability(
-            viewDirection, surface.geometricNormal);
+            surface.baseColor, viewDirection, surface.geometricNormal);
     float bsdfPdf = mix(components.diffuse.pdf, components.specular.pdf, specularProbability);
     return primeEvaluateDirectSplit(surface, viewDirection, light, bsdfPdf);
 }
@@ -125,7 +125,7 @@ PrimeDirectLightingSplit primeEstimatePrimaryDirectAreaLight(
     PrimeDefaultBsdfComponents components = primeEvaluateDefaultBsdfComponents(
             surface.baseColor, surface.geometricNormal, viewDirection, light.direction);
     float specularProbability = primeNrdSpecularSampleProbability(
-            viewDirection, surface.geometricNormal);
+            surface.baseColor, viewDirection, surface.geometricNormal);
     float bsdfPdf = mix(components.diffuse.pdf, components.specular.pdf, specularProbability);
     return primeEvaluateDirectSplit(surface, viewDirection, light, bsdfPdf);
 }

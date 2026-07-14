@@ -26,9 +26,9 @@ BsdfEvaluation primeEvaluateDiffuse(vec3 baseColor, vec3 normal, vec3 direction)
     return result;
 }
 
-BsdfSample primeSampleDiffuse(vec3 baseColor, vec3 normal, inout PathState path) {
-    float radius = sqrt(primeRandom(path));
-    float angle = 2.0 * PRIME_PI * primeRandom(path);
+BsdfSample primeSampleDiffuse(vec3 baseColor, vec3 normal, vec2 sampleValue) {
+    float radius = sqrt(sampleValue.x);
+    float angle = 2.0 * PRIME_PI * sampleValue.y;
     vec3 localDirection = vec3(radius * cos(angle), radius * sin(angle),
             sqrt(max(0.0, 1.0 - radius * radius)));
     BsdfSample result;

@@ -33,7 +33,12 @@ void main() {
     path.sampleIndex = primePush.path.x;
     path.sampleEpoch = primePush.path.y;
 
-    vec2 uv = (vec2(pixel) + vec2(primeRandom(path), primeRandom(path)))
+    PrimeSampleBase cameraSampleBase = primeMakeSampleBase(path, 0u);
+    vec2 cameraSample = primeSobolSample2D(
+            cameraSampleBase,
+            PRIME_SAMPLE_EFFECT_CAMERA,
+            PRIME_SAMPLE_DIMENSION_PRIMARY);
+    vec2 uv = (vec2(pixel) + cameraSample)
             / vec2(primePush.outputExtent);
     // Minecraft renders to a positive-height Vulkan viewport and flips that image during present,
     // so row zero of this internal target corresponds to NDC y = -1. Its perspective projection

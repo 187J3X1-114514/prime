@@ -46,9 +46,9 @@ float primeEnvironmentPdf(vec3 normal, vec3 direction) {
 LightSample primeSampleEnvironment(
         IntegratorRecord integrator,
         vec3 normal,
-        inout PathState path) {
-    float z = primeRandom(path);
-    float angle = 2.0 * PRIME_PI * primeRandom(path);
+        vec2 sampleValue) {
+    float z = sampleValue.x;
+    float angle = 2.0 * PRIME_PI * sampleValue.y;
     float radius = sqrt(max(0.0, 1.0 - z * z));
     LightSample result;
     result.direction = primeLocalToWorld(vec3(radius * cos(angle), radius * sin(angle), z), normal);
@@ -103,10 +103,10 @@ LightEvaluation primeEvaluateSun(
 LightSample primeSampleSun(
         IntegratorRecord integrator,
         vec3 surfacePosition,
-        inout PathState path) {
-    float cosine = mix(primeSunCosAngularRadius(), 1.0, primeRandom(path));
+        vec2 sampleValue) {
+    float cosine = mix(primeSunCosAngularRadius(), 1.0, sampleValue.x);
     float sine = sqrt(max(1.0 - cosine * cosine, 0.0));
-    float azimuth = 2.0 * PRIME_PI * primeRandom(path);
+    float azimuth = 2.0 * PRIME_PI * sampleValue.y;
     vec3 localDirection = vec3(sine * cos(azimuth), sine * sin(azimuth), cosine);
     LightSample result;
     result.direction = primeLocalToWorld(

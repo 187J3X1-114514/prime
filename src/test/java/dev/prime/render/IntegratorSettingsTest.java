@@ -1,5 +1,6 @@
 package dev.prime.render;
 
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -32,13 +33,32 @@ final class IntegratorSettingsTest {
     }
 
     @Test
-    void sampleStreamIsStableDimensionedAndStrictlyUnitRange() {
-        float first = IntegratorSettings.sample(17, 29, 3, 5, 7);
-        assertEquals(first, IntegratorSettings.sample(17, 29, 3, 5, 7));
-        assertNotEquals(first, IntegratorSettings.sample(17, 29, 3, 5, 8));
-        for (int dimension = 0; dimension < 10_000; dimension++) {
-            float sample = IntegratorSettings.sample(17, 29, 3, 5, dimension);
-            assertTrue(sample >= 0.0F && sample < 1.0F);
+    void sobolStreamIsStableSeparatedByEffectAndStrictlyUnitRange() {
+        float[] first = IntegratorSettings.sobolSample2D(17, 29, 3, 5, 7, 1, 0);
+        assertArrayEquals(first, IntegratorSettings.sobolSample2D(17, 29, 3, 5, 7, 1, 0));
+        assertNotEquals(first[0], IntegratorSettings.sobolSample2D(17, 29, 4, 5, 7, 1, 0)[0]);
+        assertNotEquals(first[0], IntegratorSettings.sobolSample2D(17, 29, 3, 5, 7, 2, 0)[0]);
+        for (int sampleIndex = 0; sampleIndex < 10_000; sampleIndex++) {
+            float[] sample = IntegratorSettings.sobolSample2D(
+                    17, 29, sampleIndex, 5, 7, 1, 0);
+            assertTrue(sample[0] >= 0.0F && sample[0] < 1.0F);
+            assertTrue(sample[1] >= 0.0F && sample[1] < 1.0F);
+        }
+    }
+
+    @Test
+    void sobolPrefixStratifiesBothAxes() {
+        int[] xBins = new int[16];
+        int[] yBins = new int[16];
+        for (int sampleIndex = 0; sampleIndex < 256; sampleIndex++) {
+            float[] sample = IntegratorSettings.sobolSample2D(
+                    17, 29, sampleIndex, 5, 7, 1, 0);
+            xBins[(int) (sample[0] * 16.0F)]++;
+            yBins[(int) (sample[1] * 16.0F)]++;
+        }
+        for (int bin = 0; bin < 16; bin++) {
+            assertEquals(16, xBins[bin]);
+            assertEquals(16, yBins[bin]);
         }
     }
 
@@ -50,13 +70,27 @@ final class IntegratorSettingsTest {
         double total = 0.0;
         int sampleCount = 200_000;
         for (int sampleIndex = 0; sampleIndex < sampleCount; sampleIndex++) {
-            float lightCosine = IntegratorSettings.sample(0, 0, sampleIndex, 1, 0);
+            float lightCosine = IntegratorSettings.sobolSample2D(
+                    0,
+                    0,
+                    sampleIndex,
+                    1,
+                    1,
+                    IntegratorSettings.SAMPLE_EFFECT_DIRECT_ENVIRONMENT,
+                    0)[0];
             float lightBsdfPdf = IntegratorSettings.diffusePdf(lightCosine);
             float lightWeight = IntegratorSettings.powerHeuristic(lightPdf, lightBsdfPdf);
             double direct = environment * reflectance / Math.PI * lightCosine * lightWeight / lightPdf;
 
             float bsdfCosine = (float) Math.sqrt(
-                    1.0F - IntegratorSettings.sample(0, 0, sampleIndex, 1, 1));
+                    1.0F - IntegratorSettings.sobolSample2D(
+                            0,
+                            0,
+                            sampleIndex,
+                            1,
+                            1,
+                            IntegratorSettings.SAMPLE_EFFECT_SCATTER_BSDF,
+                            0)[0]);
             float bsdfPdf = IntegratorSettings.diffusePdf(bsdfCosine);
             float bsdfWeight = IntegratorSettings.powerHeuristic(bsdfPdf, lightPdf);
             double escaped = environment * reflectance * bsdfWeight;

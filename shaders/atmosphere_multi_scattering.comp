@@ -1,0 +1,127 @@
+#version 460
+#extension GL_GOOGLE_include_directive : require
+#include "atmosphere.glsl"
+
+layout(set = 0, binding = 0, rgba16f) uniform readonly image2D transmittanceLow;
+layout(set = 0, binding = 1, rgba16f) uniform readonly image2D transmittanceHigh;
+layout(set = 0, binding = 2, rgba16f) uniform writeonly image2D multiScatteringLow;
+layout(set = 0, binding = 3, rgba16f) uniform writeonly image2D multiScatteringHigh;
+
+ATM_DECLARE_SAMPLE_2D(sampleTransmittanceLow, transmittanceLow)
+ATM_DECLARE_SAMPLE_2D(sampleTransmittanceHigh, transmittanceHigh)
+
+layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
+
+const int MULTI_RAY_STEPS = 128;
+const int MULTI_SQRT_DIRECTION_SAMPLES = 16;
+const int MULTI_DIRECTION_SAMPLES = 256;
+
+vec4 sampleTransmittance(int group, float sunMu, float normalizedAltitude) {
+    vec2 uv = atmTransmittanceUv(sunMu, normalizedAltitude);
+    return group == 0
+            ? sampleTransmittanceLow(uv)
+            : sampleTransmittanceHigh(uv);
+}
+
+vec3 sphereDirection(int sampleIndex) {
+    float side = float(MULTI_SQRT_DIRECTION_SAMPLES);
+    float x = float(sampleIndex / MULTI_SQRT_DIRECTION_SAMPLES) + 0.5;
+    float y = float(sampleIndex % MULTI_SQRT_DIRECTION_SAMPLES) + 0.5;
+    float theta = 2.0 * ATM_PI * x / side;
+    float phi = acos(1.0 - 2.0 * y / side);
+    float sine = sin(phi);
+    return vec3(cos(theta) * sine, cos(phi), sin(theta) * sine);
+}
+
+void integrateDirection(
+        int group,
+        vec3 origin,
+        vec3 direction,
+        vec3 sunDirection,
+        AtmRaySegment segment,
+        out vec4 radiance,
+        out vec4 transmittance,
+        out vec4 scatteringAsOne) {
+    radiance = vec4(0.0);
+    transmittance = vec4(1.0);
+    scatteringAsOne = vec4(0.0);
+    float stepLength = segment.maximumDistanceKm / float(MULTI_RAY_STEPS);
+    for (int index = 0; index < MULTI_RAY_STEPS; ++index) {
+        float t = (float(index) + 0.3) * stepLength;
+        vec3 point = origin + direction * min(t, segment.maximumDistanceKm);
+        float radius = length(point);
+        vec3 up = point / max(radius, 1.0e-6);
+        float altitude = max(radius - ATM_BOTTOM_RADIUS_KM, 0.0);
+        float normalizedAltitude = altitude / ATM_THICKNESS_KM;
+        float sunMu = dot(up, sunDirection);
+        bool sunOccluded = atmRaySegment(point - up * ATM_PLANET_RADIUS_OFFSET_KM,
+                sunDirection).hitsGround;
+        vec4 sunTransmittance = sunOccluded
+                ? vec4(0.0)
+                : sampleTransmittance(group, sunMu, normalizedAltitude);
+        AtmCoefficients coefficients = atmCoefficients(group, altitude);
+        vec4 scattering = coefficients.aerosolScattering + coefficients.molecularScattering;
+        vec4 source = sunTransmittance * scattering * ATM_INV_4PI;
+        vec4 stepTransmittance = exp(-stepLength * coefficients.extinction);
+        vec4 safeExtinction = max(coefficients.extinction, vec4(1.0e-7));
+        radiance += transmittance * (source - source * stepTransmittance) / safeExtinction;
+        scatteringAsOne += transmittance
+                * (scattering - scattering * stepTransmittance) / safeExtinction;
+        transmittance *= stepTransmittance;
+    }
+    if (segment.hitsGround) {
+        vec3 ground = origin + direction * segment.groundDistanceKm;
+        vec3 normal = normalize(ground);
+        float cosine = max(dot(normal, sunDirection), 0.0);
+        if (cosine > 0.0) {
+            vec4 groundLight = sampleTransmittance(group, cosine, 0.0)
+                    * vec4(0.18) * cosine * ATM_INV_PI;
+            radiance += transmittance * groundLight;
+        }
+    }
+}
+
+void main() {
+    ivec2 pixel = ivec2(gl_GlobalInvocationID.xy);
+    int group = int(gl_GlobalInvocationID.z);
+    ivec2 dimensions = imageSize(multiScatteringLow);
+    if (any(greaterThanEqual(pixel, dimensions)) || group >= 2) {
+        return;
+    }
+    vec2 uv = (vec2(pixel) + vec2(0.5)) / vec2(dimensions);
+    uv = clamp(vec2(atmFromSubUvToUnit(uv.x, float(dimensions.x)),
+            atmFromSubUvToUnit(uv.y, float(dimensions.y))), 0.0, 1.0);
+    float sunMu = atmMultiSunMuFromU(uv.x);
+    float normalizedAltitude = atmMultiNormalizedAltitudeFromV(uv.y);
+    vec3 sunDirection = normalize(vec3(sqrt(max(1.0 - sunMu * sunMu, 0.0)), sunMu, 0.0));
+    vec3 origin = vec3(0.0,
+            ATM_BOTTOM_RADIUS_KM + normalizedAltitude * ATM_THICKNESS_KM, 0.0);
+    vec4 inScattered = vec4(0.0);
+    vec4 scattering = vec4(0.0);
+    vec4 groundFeedback = vec4(0.0);
+    for (int index = 0; index < MULTI_DIRECTION_SAMPLES; ++index) {
+        vec3 direction = sphereDirection(index);
+        AtmRaySegment segment = atmRaySegment(origin, direction);
+        if (segment.maximumDistanceKm < 0.0) {
+            continue;
+        }
+        vec4 radiance;
+        vec4 transmittance;
+        vec4 scatteringAsOne;
+        integrateDirection(group, origin, direction, sunDirection, segment,
+                radiance, transmittance, scatteringAsOne);
+        inScattered += radiance;
+        scattering += scatteringAsOne;
+        if (segment.hitsGround) groundFeedback += transmittance * vec4(0.18);
+    }
+    float integrationWeight = 4.0 * ATM_PI
+            / float(MULTI_DIRECTION_SAMPLES) * ATM_INV_4PI;
+    vec4 feedback = min((scattering + groundFeedback) * integrationWeight, vec4(0.9));
+    vec4 transfer = inScattered * integrationWeight
+            / max(vec4(1.0) - feedback, vec4(0.1));
+    if (group == 0) {
+        imageStore(multiScatteringLow, pixel, max(transfer, vec4(0.0)));
+    } else {
+        imageStore(multiScatteringHigh, pixel, max(transfer, vec4(0.0)));
+    }
+}

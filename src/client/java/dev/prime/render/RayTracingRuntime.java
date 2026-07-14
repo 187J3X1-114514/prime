@@ -95,10 +95,22 @@ public final class RayTracingRuntime {
         }
     }
 
-    public void captureCamera(Matrix4fc projection, Matrix4fc viewRotation, double x, double y, double z) {
+    public void captureCamera(
+            Matrix4fc projection,
+            Matrix4fc viewRotation,
+            double x,
+            double y,
+            double z,
+            float sunAngleRadians) {
         VulkanRenderer activeRenderer = this.renderer;
         if (activeRenderer != null) {
-            activeRenderer.captureCamera(projection, viewRotation, x, y, z);
+            activeRenderer.captureCamera(
+                    projection,
+                    viewRotation,
+                    x,
+                    y,
+                    z,
+                    sunAngleRadians);
         }
     }
 

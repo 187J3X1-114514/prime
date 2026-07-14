@@ -18,9 +18,20 @@ final class ShaderAbiTest {
         assertEquals(1, ShaderAbi.DESCRIPTOR_OUTPUT_IMAGE);
         assertEquals(2, ShaderAbi.DESCRIPTOR_BLOCK_ATLAS);
         assertEquals(3, ShaderAbi.DESCRIPTOR_ACCUMULATION_IMAGE);
+        assertEquals(4, ShaderAbi.DESCRIPTOR_SKY_VIEW);
+        assertEquals(5, ShaderAbi.DESCRIPTOR_TRANSMITTANCE_LOW);
+        assertEquals(6, ShaderAbi.DESCRIPTOR_TRANSMITTANCE_HIGH);
+        assertEquals(7, ShaderAbi.DESCRIPTOR_AERIAL_RADIANCE);
+        assertEquals(8, ShaderAbi.DESCRIPTOR_AERIAL_TRANSMITTANCE);
         assertEquals("linear-rec2020-d65", ShaderAbi.WORKING_COLOR_SPACE);
         assertEquals("srgb", ShaderAbi.TEXTURE_COLOR_ENCODING);
         assertEquals("srgb", ShaderAbi.DISPLAY_COLOR_ENCODING);
+        assertEquals("hillaire-8wave-rec2020-d65", ShaderAbi.ATMOSPHERE_SPECTRAL_MODEL);
+        assertEquals(10.0F, ShaderAbi.ATMOSPHERE_SPACE_SUN_INTENSITY);
+        assertEquals(0.00471F, ShaderAbi.ATMOSPHERE_SUN_ANGULAR_RADIUS_RADIANS);
+        assertEquals(-64.0F, ShaderAbi.ATMOSPHERE_WORLD_SEA_LEVEL_Y);
+        assertEquals(0.004F, ShaderAbi.ATMOSPHERE_WORLD_UNIT_SCALE_KM);
+        assertEquals(64.0F, ShaderAbi.ATMOSPHERE_AERIAL_MAX_DISTANCE_KM);
     }
 
     @Test
@@ -46,9 +57,10 @@ final class ShaderAbiTest {
         assertEquals(44, ShaderAbi.SURFACE_MATERIAL_FLAGS_OFFSET);
         assertEquals(0, ShaderAbi.PUSH_INVERSE_VIEW_PROJECTION_OFFSET);
         assertEquals(64, ShaderAbi.PUSH_CAMERA_POSITION_OFFSET);
+        assertEquals(76, ShaderAbi.PUSH_ATMOSPHERE_EYE_RADIUS_KM_OFFSET);
         assertEquals(80, ShaderAbi.PUSH_SECTION_TABLE_ADDRESS_OFFSET);
         assertEquals(88, ShaderAbi.PUSH_OUTPUT_EXTENT_OFFSET);
-        assertEquals(96, ShaderAbi.PUSH_INTEGRATOR_ADDRESS_OFFSET);
+        assertEquals(96, ShaderAbi.PUSH_SUN_DIRECTION_OFFSET);
         assertEquals(112, ShaderAbi.PUSH_PATH_OFFSET);
     }
 }

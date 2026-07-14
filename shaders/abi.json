@@ -73,12 +73,11 @@
       "fields": [
         { "name": "inverseViewProjection", "type": "mat4", "offset": 0 },
         { "name": "cameraPosition", "type": "vec3", "offset": 64 },
-        { "name": "_padding0", "type": "uint", "offset": 76 },
+        { "name": "atmosphereEyeRadiusKm", "type": "float", "offset": 76 },
         { "name": "sectionTableAddress", "type": "uint64_t", "offset": 80 },
         { "name": "outputExtent", "type": "uvec2", "offset": 88 },
-        { "name": "integratorAddress", "type": "uint64_t", "offset": 96 },
-        { "name": "_padding1", "type": "uint", "offset": 104 },
-        { "name": "_padding2", "type": "uint", "offset": 108 },
+        { "name": "sunDirection", "type": "vec3", "offset": 96 },
+        { "name": "_padding0", "type": "uint", "offset": 108 },
         { "name": "path", "type": "uvec4", "offset": 112 }
       ]
     }
@@ -87,7 +86,12 @@
     "tlas": 0,
     "outputImage": 1,
     "blockAtlas": 2,
-    "accumulationImage": 3
+    "accumulationImage": 3,
+    "skyView": 4,
+    "transmittanceLow": 5,
+    "transmittanceHigh": 6,
+    "aerialRadiance": 7,
+    "aerialTransmittance": 8
   },
   "colorContract": {
     "workingSpace": "linear-rec2020-d65",
@@ -95,6 +99,16 @@
     "displayEncoding": "srgb",
     "displayColorSpace": "rec709-d65",
     "defaultDisplayTransform": "oklab-drt"
+  },
+  "atmosphereContract": {
+    "spectralModel": "hillaire-8wave-rec2020-d65",
+    "bottomRadiusKm": 6360.0,
+    "topRadiusKm": 6460.0,
+    "worldSeaLevelY": -64.0,
+    "worldUnitScaleKm": 0.004,
+    "spaceSunIntensity": 10.0,
+    "sunAngularRadiusRadians": 0.00471,
+    "aerialMaxDistanceKm": 64.0
   },
   "cutoutAlphaThreshold": 0.5
 }

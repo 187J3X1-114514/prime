@@ -2,6 +2,7 @@
 #extension GL_GOOGLE_include_directive : require
 #include "common.glsl"
 #include "display_transform.glsl"
+#include "atmosphere_rt.glsl"
 
 layout(location = 0) rayPayloadEXT TracePayload primePayload;
 
@@ -12,7 +13,11 @@ layout(location = 0) rayPayloadEXT TracePayload primePayload;
 
 void main() {
     uvec2 pixel = gl_LaunchIDEXT.xy;
-    IntegratorRecord integrator = IntegratorBuffer(primePush.integratorAddress).record;
+    IntegratorRecord integrator;
+    integrator.sunDirectionIntensity = vec4(
+            primePush.sunDirection,
+            ATM_SPACE_SUN_INTENSITY);
+    integrator.environmentRadiance = vec4(0.0);
     PathState path;
     path.physicalOrigin = primePush.cameraPosition;
     path.bounce = 0u;
@@ -38,7 +43,9 @@ void main() {
     vec4 farPoint = primePush.inverseViewProjection * vec4(ndc, 0.0, 1.0);
     path.rayDirection = normalize(farPoint.xyz / farPoint.w - nearPoint.xyz / nearPoint.w);
 
-    vec3 sampleRadiance = primeIntegrate(path, integrator);
+    float primaryDistance;
+    vec3 sampleRadiance = primeIntegrate(path, integrator, primaryDistance);
+    primeApplyAerialPerspective(pixel, primaryDistance, sampleRadiance);
     if (any(isnan(sampleRadiance)) || any(isinf(sampleRadiance))) {
         sampleRadiance = vec3(0.0);
     }

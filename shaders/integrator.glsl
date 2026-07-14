@@ -66,16 +66,20 @@ vec3 primeEstimateDirectEnvironment(
     return light.radiance * bsdf.value * (cosine * misWeight / light.pdf);
 }
 
-vec3 primeEstimateDirectSun(IntegratorRecord integrator, SurfaceInteraction surface) {
-    LightSample light = primeSampleSun(integrator);
+vec3 primeEstimateDirectSun(
+        IntegratorRecord integrator,
+        SurfaceInteraction surface,
+        inout PathState path) {
+    LightSample light = primeSampleSun(integrator, surface.position, path);
     BsdfEvaluation bsdf = primeEvaluateDiffuse(
             surface.baseColor, surface.geometricNormal, light.direction);
     float cosine = max(dot(surface.geometricNormal, light.direction), 0.0);
-    if (cosine <= 0.0 || !primeVisible(surface.position, surface.geometricNormal, light)) {
+    if (cosine <= 0.0 || light.pdf <= 0.0
+            || !primeVisible(surface.position, surface.geometricNormal, light)) {
         return vec3(0.0);
     }
-    // The sun adapter is delta-distributed, so it has no competing BSDF-sampling density.
-    return light.radiance * bsdf.value * cosine;
+    float misWeight = primePowerHeuristic(light.pdf, bsdf.pdf);
+    return light.radiance * bsdf.value * (cosine * misWeight / light.pdf);
 }
 
 bool primeRussianRoulette(inout PathState path, uint firstBounce) {
@@ -91,25 +95,37 @@ bool primeRussianRoulette(inout PathState path, uint firstBounce) {
     return true;
 }
 
-vec3 primeIntegrate(PathState path, IntegratorRecord integrator) {
+vec3 primeIntegrate(PathState path, IntegratorRecord integrator, out float primaryDistance) {
+    primaryDistance = -1.0;
     uint maximumBounces = min(primePush.path.z, 256u);
     uint rouletteStart = primePush.path.w;
     for (path.bounce = 0u; path.bounce < maximumBounces; ++path.bounce) {
         SurfaceInteraction surface = primeTraceSurface(path.traceOrigin, path.rayDirection);
+        if (path.bounce == 0u && surface.hitKind != PRIME_HIT_NONE) {
+            primaryDistance = surface.t;
+        }
         if (surface.hitKind == PRIME_HIT_NONE) {
             LightEvaluation environment = primeEvaluateEnvironment(
                     integrator, path.rayDirection, path.previousLightPdf);
-            float weight = (path.bounce == 0u || (path.flags & PRIME_PATH_PREVIOUS_DELTA) != 0u)
+            LightEvaluation sun = primeEvaluateSun(
+                    integrator, path.physicalOrigin, path.rayDirection);
+            bool cannotUseMis = path.bounce == 0u
+                    || (path.flags & PRIME_PATH_PREVIOUS_DELTA) != 0u;
+            float environmentWeight = cannotUseMis
                     ? 1.0
                     : primePowerHeuristic(path.previousBsdfPdf, environment.pdf);
+            float sunWeight = cannotUseMis
+                    ? 1.0
+                    : primePowerHeuristic(path.previousBsdfPdf, sun.pdf);
             path.radiance += path.throughput
-                    * environment.radiance * weight;
+                    * (environment.radiance * environmentWeight
+                    + sun.radiance * sunWeight);
             break;
         }
 
         path.radiance += path.throughput
                 * (primeEstimateDirectEnvironment(integrator, surface, path)
-                + primeEstimateDirectSun(integrator, surface));
+                + primeEstimateDirectSun(integrator, surface, path));
 
         BsdfSample bsdf = primeSampleDiffuse(
                 surface.baseColor, surface.geometricNormal, path);

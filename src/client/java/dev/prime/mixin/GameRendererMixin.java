@@ -42,7 +42,8 @@ public abstract class GameRendererMixin {
                 camera.viewRotationMatrix,
                 camera.pos.x,
                 camera.pos.y,
-                camera.pos.z);
+                camera.pos.z,
+                this.gameRenderState().levelRenderState.skyRenderState.sunAngle);
         return projection;
     }
 

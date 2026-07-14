@@ -1,8 +1,5 @@
 package dev.prime.render;
 
-import dev.prime.render.shader.ShaderAbi;
-import java.nio.ByteBuffer;
-
 /**
  * Internal, deliberately small adapter between Minecraft's world and the path integrator.
  *
@@ -14,33 +11,7 @@ final class IntegratorSettings {
     static final int MAXIMUM_BOUNCES = 256;
     static final int RUSSIAN_ROULETTE_START = 2;
 
-    private static final float SUN_X = 0.349_563_3F;
-    private static final float SUN_Y = 0.848_939_5F;
-    private static final float SUN_Z = 0.399_500_9F;
-    // Temporary validation light: five times the previous 0.8 intensity, as a fixed product input.
-    private static final float SUN_INTENSITY = 4.0F;
-    private static final float ENVIRONMENT_RED = 0.035F;
-    private static final float ENVIRONMENT_GREEN = 0.045F;
-    private static final float ENVIRONMENT_BLUE = 0.065F;
-
     private IntegratorSettings() {
-    }
-
-    static void writeStaticRecord(ByteBuffer destination) {
-        if (destination.capacity() < ShaderAbi.INTEGRATOR_RECORD_SIZE) {
-            throw new IllegalArgumentException("Integrator record buffer is too small");
-        }
-        int sun = ShaderAbi.INTEGRATOR_SUN_DIRECTION_INTENSITY_OFFSET;
-        destination.putFloat(sun, SUN_X);
-        destination.putFloat(sun + Float.BYTES, SUN_Y);
-        destination.putFloat(sun + 2 * Float.BYTES, SUN_Z);
-        destination.putFloat(sun + 3 * Float.BYTES, SUN_INTENSITY);
-        int environment = ShaderAbi.INTEGRATOR_ENVIRONMENT_RADIANCE_OFFSET;
-        destination.putFloat(environment, ENVIRONMENT_RED);
-        destination.putFloat(environment + Float.BYTES, ENVIRONMENT_GREEN);
-        destination.putFloat(environment + 2 * Float.BYTES, ENVIRONMENT_BLUE);
-        destination.putFloat(environment + 3 * Float.BYTES, 0.0F);
-        destination.position(0).limit(ShaderAbi.INTEGRATOR_RECORD_SIZE);
     }
 
     static float powerHeuristic(float firstPdf, float secondPdf) {

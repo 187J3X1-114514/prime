@@ -12,6 +12,7 @@ final class AccumulationState {
     private long resetRevision = Long.MIN_VALUE;
     private long atlasView;
     private long atlasSampler;
+    private SunDirection sunDirection;
     private int sampleIndex;
     private int epoch;
     private int sceneStableFrames;
@@ -23,6 +24,7 @@ final class AccumulationState {
         long nextResetRevision,
         long nextAtlasView,
         long nextAtlasSampler,
+        SunDirection nextSunDirection,
         boolean forceReset
     ) {
         boolean immediateReset =
@@ -31,6 +33,7 @@ final class AccumulationState {
             nextResetRevision != this.resetRevision ||
             nextAtlasView != this.atlasView ||
             nextAtlasSampler != this.atlasSampler ||
+            !nextSunDirection.equals(this.sunDirection) ||
             this.sampleIndex == MAXIMUM_EXACT_FLOAT_SAMPLE_INDEX;
         if (immediateReset) {
             this.invalidate();
@@ -63,7 +66,8 @@ final class AccumulationState {
     void submitted(
         FrameCamera submittedCamera,
         long submittedAtlasView,
-        long submittedAtlasSampler
+        long submittedAtlasSampler,
+        SunDirection submittedSunDirection
     ) {
         this.sampleIndex = this.sceneHistoryMixed
             ? Math.min(
@@ -74,6 +78,7 @@ final class AccumulationState {
         this.camera = submittedCamera;
         this.atlasView = submittedAtlasView;
         this.atlasSampler = submittedAtlasSampler;
+        this.sunDirection = submittedSunDirection;
     }
 
     void invalidate() {

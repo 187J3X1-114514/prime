@@ -111,6 +111,7 @@ public final class VulkanContext implements AutoCloseable {
         return this.createImage(
                 width,
                 height,
+                1,
                 VK12.VK_FORMAT_R8G8B8A8_UNORM,
                 VK12.VK_IMAGE_USAGE_STORAGE_BIT | VK12.VK_IMAGE_USAGE_TRANSFER_SRC_BIT,
                 "Prime output");
@@ -120,19 +121,46 @@ public final class VulkanContext implements AutoCloseable {
         return this.createImage(
                 width,
                 height,
+                1,
                 VK12.VK_FORMAT_R32G32B32A32_SFLOAT,
                 VK12.VK_IMAGE_USAGE_STORAGE_BIT,
                 "Prime accumulation");
     }
 
-    private VulkanImage createImage(int width, int height, int format, int usage, String label) {
-        if (width <= 0 || height <= 0) {
+    public VulkanImage createAtmosphereImage2D(int width, int height, String label) {
+        return this.createImage(
+                width,
+                height,
+                1,
+                VK12.VK_FORMAT_R16G16B16A16_SFLOAT,
+                VK12.VK_IMAGE_USAGE_STORAGE_BIT,
+                label);
+    }
+
+    public VulkanImage createAtmosphereImage3D(int width, int height, int depth, String label) {
+        return this.createImage(
+                width,
+                height,
+                depth,
+                VK12.VK_FORMAT_R16G16B16A16_SFLOAT,
+                VK12.VK_IMAGE_USAGE_STORAGE_BIT,
+                label);
+    }
+
+    private VulkanImage createImage(
+            int width,
+            int height,
+            int depth,
+            int format,
+            int usage,
+            String label) {
+        if (width <= 0 || height <= 0 || depth <= 0) {
             throw new IllegalArgumentException("Vulkan image dimensions must be positive");
         }
         try (MemoryStack stack = MemoryStack.stackPush()) {
             VkImageCreateInfo imageCreateInfo = VkImageCreateInfo.calloc(stack)
                     .sType$Default()
-                    .imageType(VK12.VK_IMAGE_TYPE_2D)
+                    .imageType(depth == 1 ? VK12.VK_IMAGE_TYPE_2D : VK12.VK_IMAGE_TYPE_3D)
                     .format(format)
                     .mipLevels(1)
                     .arrayLayers(1)
@@ -141,7 +169,7 @@ public final class VulkanContext implements AutoCloseable {
                     .usage(usage)
                     .sharingMode(VK12.VK_SHARING_MODE_EXCLUSIVE)
                     .initialLayout(VK12.VK_IMAGE_LAYOUT_UNDEFINED);
-            imageCreateInfo.extent().set(width, height, 1);
+            imageCreateInfo.extent().set(width, height, depth);
             VmaAllocationCreateInfo allocationCreateInfo = VmaAllocationCreateInfo.calloc(stack)
                     .usage(Vma.VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE);
             LongBuffer imagePointer = stack.mallocLong(1);
@@ -159,7 +187,7 @@ public final class VulkanContext implements AutoCloseable {
                 VkImageViewCreateInfo viewCreateInfo = VkImageViewCreateInfo.calloc(stack)
                         .sType$Default()
                         .image(image)
-                        .viewType(VK12.VK_IMAGE_VIEW_TYPE_2D)
+                        .viewType(depth == 1 ? VK12.VK_IMAGE_VIEW_TYPE_2D : VK12.VK_IMAGE_VIEW_TYPE_3D)
                         .format(format);
                 viewCreateInfo.subresourceRange()
                         .aspectMask(VK12.VK_IMAGE_ASPECT_COLOR_BIT)
@@ -183,7 +211,8 @@ public final class VulkanContext implements AutoCloseable {
                         allocationPointer.get(0),
                         view,
                         width,
-                        height);
+                        height,
+                        depth);
             } catch (RuntimeException exception) {
                 if (view != 0L) {
                     VK12.vkDestroyImageView(this.device.vkDevice(), view, null);

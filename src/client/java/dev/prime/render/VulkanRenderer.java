@@ -10,9 +10,9 @@ import dev.prime.PrimeClient;
 import dev.prime.render.terrain.TerrainScene;
 import dev.prime.render.terrain.TerrainStreamer;
 import dev.prime.render.shader.ShaderAbi;
+import dev.prime.render.vulkan.AtmospherePipeline;
 import dev.prime.render.vulkan.RayTracingPipeline;
 import dev.prime.render.vulkan.StagingArena;
-import dev.prime.render.vulkan.VulkanBuffer;
 import dev.prime.render.vulkan.VulkanCapabilities;
 import dev.prime.render.vulkan.VulkanContext;
 import dev.prime.render.vulkan.VulkanImage;
@@ -35,38 +35,30 @@ public final class VulkanRenderer implements AutoCloseable {
     private final VulkanContext context;
     private final StagingArena stagingArena;
     private final TerrainStreamer terrain;
-    private final VulkanBuffer integratorSettings;
     private final AccumulationState accumulationState = new AccumulationState();
     private RayTracingPipeline pipeline;
+    private AtmospherePipeline atmosphere;
     private RenderImages renderImages;
     private FrameCamera camera;
+    private SunDirection sunDirection;
     private boolean shaderReloadRequested;
     private boolean closed;
 
     public VulkanRenderer(com.mojang.blaze3d.vulkan.VulkanDevice device, VulkanCapabilities capabilities) {
         VulkanContext newContext = new VulkanContext(device, capabilities);
         StagingArena newStagingArena = null;
-        VulkanBuffer newIntegratorSettings = null;
+        AtmospherePipeline newAtmosphere = null;
         RayTracingPipeline newPipeline = null;
         TerrainStreamer newTerrain = null;
         try {
             newStagingArena = new StagingArena(newContext);
-            newIntegratorSettings = newContext.createBuffer(
-                    ShaderAbi.INTEGRATOR_RECORD_SIZE,
-                    VK12.VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
-                    true,
-                    "Prime integrator settings");
-            try (MemoryStack stack = MemoryStack.stackPush()) {
-                ByteBuffer record = stack.malloc(ShaderAbi.INTEGRATOR_RECORD_SIZE).order(ByteOrder.nativeOrder());
-                IntegratorSettings.writeStaticRecord(record);
-                newIntegratorSettings.put(0L, record);
-            }
+            newAtmosphere = new AtmospherePipeline(newContext);
             newPipeline = new RayTracingPipeline(newContext);
             newTerrain = new TerrainStreamer(newContext, newStagingArena);
             this.context = newContext;
             this.stagingArena = newStagingArena;
-            this.integratorSettings = newIntegratorSettings;
             this.pipeline = newPipeline;
+            this.atmosphere = newAtmosphere;
             this.terrain = newTerrain;
         } catch (RuntimeException exception) {
             if (newTerrain != null) {
@@ -75,8 +67,8 @@ public final class VulkanRenderer implements AutoCloseable {
             if (newPipeline != null) {
                 newPipeline.destroy();
             }
-            if (newIntegratorSettings != null) {
-                newIntegratorSettings.destroy();
+            if (newAtmosphere != null) {
+                newAtmosphere.destroy();
             }
             if (newStagingArena != null) {
                 newStagingArena.close();
@@ -102,8 +94,15 @@ public final class VulkanRenderer implements AutoCloseable {
         }
     }
 
-    public void captureCamera(Matrix4fc projection, Matrix4fc viewRotation, double x, double y, double z) {
+    public void captureCamera(
+            Matrix4fc projection,
+            Matrix4fc viewRotation,
+            double x,
+            double y,
+            double z,
+            float sunAngleRadians) {
         this.camera = FrameCamera.tryCreate(projection, viewRotation, x, y, z);
+        this.sunDirection = SunDirection.fromVanillaAngle(sunAngleRadians);
     }
 
     public boolean isReady() {
@@ -113,7 +112,8 @@ public final class VulkanRenderer implements AutoCloseable {
     public void render(RenderTarget mainTarget) {
         TerrainScene.SceneView scene = this.terrain.sceneView();
         FrameCamera frameCamera = this.camera;
-        if (scene == null || frameCamera == null) {
+        SunDirection frameSunDirection = this.sunDirection;
+        if (scene == null || frameCamera == null || frameSunDirection == null) {
             return;
         }
         if (!(mainTarget.getColorTexture() instanceof VulkanGpuTexture mainColor)) {
@@ -161,11 +161,13 @@ public final class VulkanRenderer implements AutoCloseable {
                 scene.resetRevision(),
                 atlasViewHandle,
                 atlasSamplerHandle,
+                frameSunDirection,
                 resized);
 
         var encoder = this.context.commandEncoder();
         VkCommandBuffer commandBuffer = encoder.allocateAndBeginTransientCommandBuffer();
         this.context.device().instance().debug().beginDebugGroup(commandBuffer, () -> "Prime primary rays");
+        this.atmosphere.prepare(commandBuffer, frameCamera, frameSunDirection);
         this.prepareOutputForTrace(commandBuffer, target);
         this.prepareAccumulationForTrace(commandBuffer, history);
         this.prepareAtlasForTrace(commandBuffer, atlasView.texture());
@@ -175,7 +177,8 @@ public final class VulkanRenderer implements AutoCloseable {
                     frameCamera,
                     scene,
                     width,
-                    height);
+                    height,
+                    frameSunDirection);
             this.pipeline.trace(commandBuffer, pushConstants, width, height);
             this.finishAtlasRead(commandBuffer, atlasView.texture());
             this.prepareImagesForCopy(commandBuffer, target, mainColor);
@@ -206,7 +209,8 @@ public final class VulkanRenderer implements AutoCloseable {
         this.accumulationState.submitted(
                 frameCamera,
                 atlasViewHandle,
-                atlasSamplerHandle);
+                atlasSamplerHandle,
+                frameSunDirection);
         int accumulatedSampleCount = this.accumulationState.sampleIndex();
         if (accumulatedSampleCount >= 16
                 && (accumulatedSampleCount & (accumulatedSampleCount - 1)) == 0) {
@@ -239,11 +243,11 @@ public final class VulkanRenderer implements AutoCloseable {
         this.context.drainDeferredAfterIdle();
         this.terrain.close();
         this.pipeline.destroy();
+        this.atmosphere.destroy();
         if (this.renderImages != null) {
             this.renderImages.destroy();
             this.renderImages = null;
         }
-        this.integratorSettings.destroy();
         this.stagingArena.close();
         this.context.close();
     }
@@ -253,16 +257,29 @@ public final class VulkanRenderer implements AutoCloseable {
             return;
         }
         this.shaderReloadRequested = false;
+        AtmospherePipeline replacementAtmosphere = null;
+        RayTracingPipeline replacementPipeline = null;
         try {
-            RayTracingPipeline replacement = new RayTracingPipeline(this.context);
-            RayTracingPipeline previous = this.pipeline;
-            this.pipeline = replacement;
-            this.context.defer(previous);
-            this.accumulationState.invalidate();
-            PrimeClient.LOGGER.info("Reloaded Prime ray tracing shaders");
+            replacementAtmosphere = new AtmospherePipeline(this.context);
+            replacementPipeline = new RayTracingPipeline(this.context);
         } catch (RuntimeException exception) {
+            if (replacementPipeline != null) {
+                replacementPipeline.destroy();
+            }
+            if (replacementAtmosphere != null) {
+                replacementAtmosphere.destroy();
+            }
             PrimeClient.LOGGER.error("Prime shader reload failed; keeping the previous pipeline", exception);
+            return;
         }
+        RayTracingPipeline previousPipeline = this.pipeline;
+        AtmospherePipeline previousAtmosphere = this.atmosphere;
+        this.pipeline = replacementPipeline;
+        this.atmosphere = replacementAtmosphere;
+        this.context.defer(previousPipeline);
+        this.context.defer(previousAtmosphere);
+        this.accumulationState.invalidate();
+        PrimeClient.LOGGER.info("Reloaded Prime ray tracing and atmosphere shaders");
     }
 
     private boolean ensureRenderImages(
@@ -273,7 +290,13 @@ public final class VulkanRenderer implements AutoCloseable {
             VulkanGpuSampler atlasSampler) {
         RenderImages current = this.renderImages;
         if (current != null && current.matches(width, height)) {
-            this.pipeline.ensureDescriptors(tlas, current.output, current.accumulation, atlasView, atlasSampler);
+            this.pipeline.ensureDescriptors(
+                    tlas,
+                    current.output,
+                    current.accumulation,
+                    atlasView,
+                    atlasSampler,
+                    this.atmosphere);
             return false;
         }
         VulkanImage replacementOutput = null;
@@ -292,7 +315,13 @@ public final class VulkanRenderer implements AutoCloseable {
         }
         RenderImages replacement = new RenderImages(replacementOutput, replacementAccumulation);
         try {
-            this.pipeline.ensureDescriptors(tlas, replacement.output, replacement.accumulation, atlasView, atlasSampler);
+            this.pipeline.ensureDescriptors(
+                    tlas,
+                    replacement.output,
+                    replacement.accumulation,
+                    atlasView,
+                    atlasSampler,
+                    this.atmosphere);
         } catch (RuntimeException exception) {
             replacement.destroy();
             throw exception;
@@ -447,7 +476,8 @@ public final class VulkanRenderer implements AutoCloseable {
             FrameCamera camera,
             TerrainScene.SceneView scene,
             int width,
-            int height) {
+            int height,
+            SunDirection sunDirection) {
         ByteBuffer buffer = stack.calloc(ShaderAbi.PUSH_CONSTANT_SIZE).order(ByteOrder.nativeOrder());
         float[] matrix = new float[16];
         camera.inverseViewProjection().get(matrix);
@@ -458,10 +488,16 @@ public final class VulkanRenderer implements AutoCloseable {
         buffer.putFloat(cameraOffset, (float) (camera.x() - scene.originX()));
         buffer.putFloat(cameraOffset + Float.BYTES, (float) (camera.y() - scene.originY()));
         buffer.putFloat(cameraOffset + 2 * Float.BYTES, (float) (camera.z() - scene.originZ()));
+        buffer.putFloat(
+                ShaderAbi.PUSH_ATMOSPHERE_EYE_RADIUS_KM_OFFSET,
+                AtmospherePipeline.eyeRadiusKm(camera.y()));
         buffer.putLong(ShaderAbi.PUSH_SECTION_TABLE_ADDRESS_OFFSET, scene.sectionTableAddress());
         buffer.putInt(ShaderAbi.PUSH_OUTPUT_EXTENT_OFFSET, width);
         buffer.putInt(ShaderAbi.PUSH_OUTPUT_EXTENT_OFFSET + Integer.BYTES, height);
-        buffer.putLong(ShaderAbi.PUSH_INTEGRATOR_ADDRESS_OFFSET, this.integratorSettings.deviceAddress());
+        int sunOffset = ShaderAbi.PUSH_SUN_DIRECTION_OFFSET;
+        buffer.putFloat(sunOffset, sunDirection.x());
+        buffer.putFloat(sunOffset + Float.BYTES, sunDirection.y());
+        buffer.putFloat(sunOffset + 2 * Float.BYTES, sunDirection.z());
         int pathOffset = ShaderAbi.PUSH_PATH_OFFSET;
         buffer.putInt(pathOffset, this.accumulationState.sampleIndex());
         buffer.putInt(pathOffset + Integer.BYTES, this.accumulationState.epoch());

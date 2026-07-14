@@ -1,0 +1,126 @@
+#version 460
+#extension GL_GOOGLE_include_directive : require
+#include "atmosphere.glsl"
+#include "atmosphere_phase.glsl"
+
+layout(set = 0, binding = 0, rgba16f) uniform readonly image2D transmittanceLow;
+layout(set = 0, binding = 1, rgba16f) uniform readonly image2D transmittanceHigh;
+layout(set = 0, binding = 2, rgba16f) uniform readonly image2D multiScatteringLow;
+layout(set = 0, binding = 3, rgba16f) uniform readonly image2D multiScatteringHigh;
+layout(set = 0, binding = 5, rgba16f) uniform writeonly image3D aerialRadiance;
+layout(set = 0, binding = 6, rgba16f) uniform writeonly image3D aerialTransmittance;
+
+ATM_DECLARE_SAMPLE_2D(sampleTransmittanceLow, transmittanceLow)
+ATM_DECLARE_SAMPLE_2D(sampleTransmittanceHigh, transmittanceHigh)
+ATM_DECLARE_SAMPLE_2D(sampleMultiScatteringLow, multiScatteringLow)
+ATM_DECLARE_SAMPLE_2D(sampleMultiScatteringHigh, multiScatteringHigh)
+
+layout(push_constant) uniform AtmospherePushConstants {
+    mat4 inverseViewProjection;
+    float eyeRadiusKm;
+    float maximumAerialDistanceKm;
+    vec2 padding;
+    vec4 sunDirectionIntensity;
+} atmospherePush;
+
+layout(local_size_x = 4, local_size_y = 4, local_size_z = 4) in;
+
+const int AERIAL_STEPS = 16;
+
+vec4 aerialTransmittanceToSun(int group, float sunMu, float normalizedAltitude) {
+    vec2 uv = atmTransmittanceUv(sunMu, normalizedAltitude);
+    return group == 0
+            ? sampleTransmittanceLow(uv)
+            : sampleTransmittanceHigh(uv);
+}
+
+vec4 aerialMultiScattering(int group, float sunMu, float normalizedAltitude) {
+    vec2 dimensions = vec2(imageSize(multiScatteringLow));
+    vec2 uv = atmMultiUv(sunMu, normalizedAltitude, dimensions);
+    return group == 0
+            ? sampleMultiScatteringLow(uv)
+            : sampleMultiScatteringHigh(uv);
+}
+
+void integrateAerialGroup(
+        int group,
+        vec3 origin,
+        vec3 direction,
+        float maximumDistance,
+        out vec4 radiance,
+        out vec4 transmittance) {
+    vec3 sunDirection = atmospherePush.sunDirectionIntensity.xyz;
+    float phaseCosine = dot(-direction, sunDirection);
+    float molecularPhase = atmRayleighPhase(phaseCosine);
+    radiance = vec4(0.0);
+    transmittance = vec4(1.0);
+    for (int index = 0; index < AERIAL_STEPS; ++index) {
+        float u0 = float(index) / float(AERIAL_STEPS);
+        float u1 = float(index + 1) / float(AERIAL_STEPS);
+        float t0 = u0 * u0 * maximumDistance;
+        float t1 = u1 * u1 * maximumDistance;
+        float t = mix(t0, t1, 0.3);
+        float stepLength = max(t1 - t0, 0.0);
+        vec3 point = origin + direction * t;
+        float radius = length(point);
+        vec3 up = point / max(radius, 1.0e-6);
+        float altitude = max(radius - ATM_BOTTOM_RADIUS_KM, 0.0);
+        float normalizedAltitude = altitude / ATM_THICKNESS_KM;
+        float sunMu = dot(up, sunDirection);
+        bool sunOccluded = atmRaySegment(point - up * ATM_PLANET_RADIUS_OFFSET_KM,
+                sunDirection).hitsGround;
+        AtmCoefficients coefficients = atmCoefficients(group, altitude);
+        vec4 direct = sunOccluded ? vec4(0.0)
+                : aerialTransmittanceToSun(group, sunMu, normalizedAltitude)
+                * (coefficients.molecularScattering * molecularPhase
+                + atmAerosolPhaseScattering(group, altitude, phaseCosine));
+        vec4 multiple = aerialMultiScattering(group, sunMu, normalizedAltitude)
+                * (coefficients.aerosolScattering + coefficients.molecularScattering);
+        vec4 source = atmSolarSpectrum(group) * (direct + multiple);
+        vec4 stepTransmittance = exp(-stepLength * coefficients.extinction);
+        vec4 safeExtinction = max(coefficients.extinction, vec4(1.0e-7));
+        radiance += transmittance * (source - source * stepTransmittance) / safeExtinction;
+        transmittance *= stepTransmittance;
+    }
+}
+
+vec3 aerialDirection(ivec3 voxel, ivec3 dimensions) {
+    vec2 uv = (vec2(voxel.xy) + vec2(0.5)) / vec2(dimensions.xy);
+    vec2 ndc = uv * 2.0 - 1.0;
+    vec4 nearPoint = atmospherePush.inverseViewProjection * vec4(ndc, 1.0, 1.0);
+    vec4 farPoint = atmospherePush.inverseViewProjection * vec4(ndc, 0.0, 1.0);
+    return normalize(farPoint.xyz / farPoint.w - nearPoint.xyz / nearPoint.w);
+}
+
+void main() {
+    ivec3 voxel = ivec3(gl_GlobalInvocationID.xyz);
+    ivec3 dimensions = imageSize(aerialRadiance);
+    if (any(greaterThanEqual(voxel, dimensions))) {
+        return;
+    }
+    vec3 direction = aerialDirection(voxel, dimensions);
+    vec3 origin = atmMoveToTop(vec3(0.0, atmospherePush.eyeRadiusKm, 0.0), direction);
+    AtmRaySegment segment = atmRaySegment(origin, direction);
+    float normalizedDepth = (float(voxel.z) + 0.5) / float(dimensions.z);
+    float requestedDistance = atmospherePush.maximumAerialDistanceKm
+            * normalizedDepth * normalizedDepth;
+    float maximumDistance = min(requestedDistance, segment.maximumDistanceKm);
+    if (segment.maximumDistanceKm < 0.0 || maximumDistance <= 0.0) {
+        imageStore(aerialRadiance, voxel, vec4(0.0));
+        imageStore(aerialTransmittance, voxel, vec4(1.0));
+        return;
+    }
+    vec4 radianceLow;
+    vec4 transmittanceLowValue;
+    vec4 radianceHigh;
+    vec4 transmittanceHighValue;
+    integrateAerialGroup(0, origin, direction, maximumDistance,
+            radianceLow, transmittanceLowValue);
+    integrateAerialGroup(1, origin, direction, maximumDistance,
+            radianceHigh, transmittanceHighValue);
+    vec3 rec2020 = max(atmLinearRec2020FromSpectral(radianceLow, radianceHigh), vec3(0.0));
+    vec3 transmittance = atmRec2020Transmittance(
+            transmittanceLowValue, transmittanceHighValue);
+    imageStore(aerialRadiance, voxel, vec4(rec2020, 1.0));
+    imageStore(aerialTransmittance, voxel, vec4(transmittance, 1.0));
+}

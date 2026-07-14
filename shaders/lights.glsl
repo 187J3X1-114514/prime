@@ -26,7 +26,7 @@ float primePowerHeuristic(float firstPdf, float secondPdf) {
 }
 
 vec3 primeEnvironmentRadiance(IntegratorRecord integrator, vec3 direction) {
-    return integrator.environmentRadiance.rgb;
+    return primeAtmosphereSky(direction, integrator.sunDirectionIntensity.xyz);
 }
 
 LightEvaluation primeEvaluateEnvironment(
@@ -59,13 +59,63 @@ LightSample primeSampleEnvironment(
     return result;
 }
 
-LightSample primeSampleSun(IntegratorRecord integrator) {
+float primeSunCosAngularRadius() {
+    return cos(ATM_SUN_ANGULAR_RADIUS_RADIANS);
+}
+
+float primeSunSolidAngle() {
+    // 4*pi*sin(radius/2)^2 is algebraically identical to 2*pi*(1-cos(radius))
+    // but avoids subtracting two nearly equal f32 values for the real solar radius.
+    float sineHalfRadius = sin(0.5 * ATM_SUN_ANGULAR_RADIUS_RADIANS);
+    return 4.0 * PRIME_PI * sineHalfRadius * sineHalfRadius;
+}
+
+float primeSunPdf() {
+    return 1.0 / max(primeSunSolidAngle(), 1.0e-12);
+}
+
+bool primeSunContainsDirection(IntegratorRecord integrator, vec3 direction) {
+    return dot(normalize(direction), normalize(integrator.sunDirectionIntensity.xyz))
+            >= primeSunCosAngularRadius();
+}
+
+vec3 primeSunRadiance(
+        IntegratorRecord integrator,
+        vec3 surfacePosition,
+        vec3 direction) {
+    return vec3(max(integrator.sunDirectionIntensity.w, 0.0) / primeSunSolidAngle())
+            * primeAtmosphereSunTransmittance(surfacePosition, direction);
+}
+
+LightEvaluation primeEvaluateSun(
+        IntegratorRecord integrator,
+        vec3 surfacePosition,
+        vec3 direction) {
+    LightEvaluation result;
+    bool containsDirection = primeSunContainsDirection(integrator, direction);
+    result.radiance = containsDirection
+            ? primeSunRadiance(integrator, surfacePosition, direction)
+            : vec3(0.0);
+    result.pdf = containsDirection ? primeSunPdf() : 0.0;
+    return result;
+}
+
+LightSample primeSampleSun(
+        IntegratorRecord integrator,
+        vec3 surfacePosition,
+        inout PathState path) {
+    float cosine = mix(primeSunCosAngularRadius(), 1.0, primeRandom(path));
+    float sine = sqrt(max(1.0 - cosine * cosine, 0.0));
+    float azimuth = 2.0 * PRIME_PI * primeRandom(path);
+    vec3 localDirection = vec3(sine * cos(azimuth), sine * sin(azimuth), cosine);
     LightSample result;
-    result.direction = normalize(integrator.sunDirectionIntensity.xyz);
+    result.direction = primeLocalToWorld(
+            localDirection,
+            normalize(integrator.sunDirectionIntensity.xyz));
     result.distance = 1000000.0;
-    result.radiance = vec3(max(integrator.sunDirectionIntensity.w, 0.0));
-    result.pdf = 1.0;
-    result.isDelta = 1u;
+    result.radiance = primeSunRadiance(integrator, surfacePosition, result.direction);
+    result.pdf = primeSunPdf();
+    result.isDelta = 0u;
     return result;
 }
 

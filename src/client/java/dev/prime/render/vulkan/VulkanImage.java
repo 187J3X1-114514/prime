@@ -13,10 +13,19 @@ public final class VulkanImage implements Destroyable {
     private final long view;
     private final int width;
     private final int height;
+    private final int depth;
     private boolean initialized;
     private boolean destroyed;
 
-    VulkanImage(long allocator, VkDevice device, long image, long allocation, long view, int width, int height) {
+    VulkanImage(
+            long allocator,
+            VkDevice device,
+            long image,
+            long allocation,
+            long view,
+            int width,
+            int height,
+            int depth) {
         this.allocator = allocator;
         this.device = device;
         this.image = image;
@@ -24,6 +33,7 @@ public final class VulkanImage implements Destroyable {
         this.view = view;
         this.width = width;
         this.height = height;
+        this.depth = depth;
     }
 
     public long image() {
@@ -40,6 +50,10 @@ public final class VulkanImage implements Destroyable {
 
     public int height() {
         return this.height;
+    }
+
+    public int depth() {
+        return this.depth;
     }
 
     public boolean initialized() {

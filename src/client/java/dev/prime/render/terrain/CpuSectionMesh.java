@@ -4,7 +4,8 @@ public record CpuSectionMesh(
         float[] positions,
         int[] primitiveRecords,
         int opaqueTriangleCount,
-        int cutoutTriangleCount) {
+        int cutoutTriangleCount,
+        CpuSectionLights lights) {
 
     public CpuSectionMesh {
         int triangleCount = opaqueTriangleCount + cutoutTriangleCount;
@@ -14,6 +15,9 @@ public record CpuSectionMesh(
         if (primitiveRecords.length != triangleCount * 8) {
             throw new IllegalArgumentException("Primitive array does not match triangle count");
         }
+        if (lights == null) {
+            throw new IllegalArgumentException("Section light data must not be null");
+        }
     }
 
     public boolean isEmpty() {
@@ -22,6 +26,7 @@ public record CpuSectionMesh(
 
     public long byteSize() {
         return (long) this.positions.length * Float.BYTES
-                + (long) this.primitiveRecords.length * Integer.BYTES;
+                + (long) this.primitiveRecords.length * Integer.BYTES
+                + this.lights.byteSize();
     }
 }

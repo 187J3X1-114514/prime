@@ -7,12 +7,19 @@
 
 hitAttributeEXT vec2 primeBarycentrics;
 
-PrimitiveRecord primePrimitive() {
+SectionRecord primeSection() {
     SectionTable sections = SectionTable(primePush.sectionTableAddress);
-    SectionRecord section = sections.sections[gl_InstanceCustomIndexEXT];
+    return sections.sections[gl_InstanceCustomIndexEXT];
+}
+
+PrimitiveRecord primePrimitive(SectionRecord section) {
     uint base = gl_GeometryIndexEXT == 0 ? section.opaqueBase : section.cutoutBase;
     PrimitiveBuffer primitives = PrimitiveBuffer(section.primitiveAddress);
     return primitives.records[base + gl_PrimitiveID];
+}
+
+PrimitiveRecord primePrimitive() {
+    return primePrimitive(primeSection());
 }
 
 vec2 primeInterpolateUv(PrimitiveRecord primitive) {

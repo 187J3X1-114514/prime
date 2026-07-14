@@ -73,6 +73,10 @@ abstract class GenerateShaderAbi extends DefaultTask {
 		def schema = new groovy.json.JsonSlurper().parse(schemaFile.get().asFile)
 		def primitive = schema.structs.primitiveRecord
 		def section = schema.structs.sectionRecord
+		def lightNode = schema.structs.lightNode
+		def lightEmitter = schema.structs.lightEmitter
+		def lightCell = schema.structs.lightCell
+		def sectionLightHeader = schema.structs.sectionLightHeader
 		def integrator = schema.structs.integratorRecord
 		def pathState = schema.structs.pathState
 		def tracePayload = schema.structs.tracePayload
@@ -81,10 +85,11 @@ abstract class GenerateShaderAbi extends DefaultTask {
 		def colorContract = schema.colorContract
 		def atmosphereContract = schema.atmosphereContract
 
-		if (primitive.size != 32 || section.size != 16 || integrator.size != 32
-				|| pathState.size != 96 || tracePayload.size != 48
-				|| surfaceInteraction.size != 48 || push.size != 128) {
-			throw new GradleException('Prime shader ABI sizes must remain 32/16/32/96/48/48/128 bytes')
+		if (primitive.size != 32 || section.size != 64 || lightNode.size != 48
+				|| lightEmitter.size != 96 || lightCell.size != 16 || sectionLightHeader.size != 32
+				|| integrator.size != 32 || pathState.size != 96 || tracePayload.size != 64
+				|| surfaceInteraction.size != 64 || push.size != 128) {
+			throw new GradleException('Prime shader ABI sizes changed without a coordinated migration')
 		}
 		if (colorContract.workingSpace != 'linear-rec2020-d65'
 				|| colorContract.textureEncoding != 'srgb'
@@ -135,6 +140,10 @@ abstract class GenerateShaderAbi extends DefaultTask {
 		}
 		validateStruct('PrimitiveRecord', primitive)
 		validateStruct('SectionRecord', section)
+		validateStruct('LightNode', lightNode)
+		validateStruct('LightEmitter', lightEmitter)
+		validateStruct('LightCell', lightCell)
+		validateStruct('SectionLightHeader', sectionLightHeader)
 		validateStruct('IntegratorRecord', integrator)
 		validateStruct('PathState', pathState)
 		validateStruct('TracePayload', tracePayload)
@@ -148,6 +157,10 @@ abstract class GenerateShaderAbi extends DefaultTask {
 		[
 			PRIMITIVE: primitive,
 			SECTION: section,
+			LIGHT_NODE: lightNode,
+			LIGHT_EMITTER: lightEmitter,
+			LIGHT_CELL: lightCell,
+			SECTION_LIGHT_HEADER: sectionLightHeader,
 			INTEGRATOR: integrator,
 			PATH_STATE: pathState,
 			TRACE_PAYLOAD: tracePayload,
@@ -174,6 +187,10 @@ package dev.prime.render.shader;
 public final class ShaderAbi {
     public static final int PRIMITIVE_RECORD_SIZE = ${primitive.size};
     public static final int SECTION_RECORD_SIZE = ${section.size};
+    public static final int LIGHT_NODE_SIZE = ${lightNode.size};
+    public static final int LIGHT_EMITTER_SIZE = ${lightEmitter.size};
+    public static final int LIGHT_CELL_SIZE = ${lightCell.size};
+    public static final int SECTION_LIGHT_HEADER_SIZE = ${sectionLightHeader.size};
     public static final int INTEGRATOR_RECORD_SIZE = ${integrator.size};
     public static final int PATH_STATE_SIZE = ${pathState.size};
     public static final int TRACE_PAYLOAD_SIZE = ${tracePayload.size};
@@ -221,6 +238,10 @@ ${javaOffsets}
 
 #define PRIME_PRIMITIVE_RECORD_SIZE ${primitive.size}
 #define PRIME_SECTION_RECORD_SIZE ${section.size}
+#define PRIME_LIGHT_NODE_SIZE ${lightNode.size}
+#define PRIME_LIGHT_EMITTER_SIZE ${lightEmitter.size}
+#define PRIME_LIGHT_CELL_SIZE ${lightCell.size}
+#define PRIME_SECTION_LIGHT_HEADER_SIZE ${sectionLightHeader.size}
 #define PRIME_INTEGRATOR_RECORD_SIZE ${integrator.size}
 #define PRIME_PATH_STATE_SIZE ${pathState.size}
 #define PRIME_TRACE_PAYLOAD_SIZE ${tracePayload.size}
@@ -239,6 +260,22 @@ ${glslStructFields(primitive)}
 
 struct SectionRecord {
 ${glslStructFields(section)}
+};
+
+struct LightNode {
+${glslStructFields(lightNode)}
+};
+
+struct LightEmitter {
+${glslStructFields(lightEmitter)}
+};
+
+struct LightCell {
+${glslStructFields(lightCell)}
+};
+
+struct SectionLightHeader {
+${glslStructFields(sectionLightHeader)}
 };
 
 // These explicit records deliberately contain no execution-local state. They can be moved to
@@ -267,6 +304,22 @@ layout(buffer_reference, buffer_reference_align = 8) readonly buffer PrimitiveBu
 
 layout(buffer_reference, buffer_reference_align = 8) readonly buffer SectionTable {
     SectionRecord sections[];
+};
+
+layout(buffer_reference, buffer_reference_align = 16) readonly buffer LightNodeBuffer {
+    LightNode nodes[];
+};
+
+layout(buffer_reference, buffer_reference_align = 16) readonly buffer LightEmitterBuffer {
+    LightEmitter emitters[];
+};
+
+layout(buffer_reference, buffer_reference_align = 16) readonly buffer LightCellBuffer {
+    LightCell cells[];
+};
+
+layout(buffer_reference, buffer_reference_align = 8) readonly buffer SectionLightHeaderBuffer {
+    SectionLightHeader header;
 };
 
 layout(buffer_reference, buffer_reference_align = 16) readonly buffer IntegratorBuffer {

@@ -14,11 +14,57 @@
       ]
     },
     "sectionRecord": {
-      "size": 16,
+      "size": 64,
       "fields": [
         { "name": "primitiveAddress", "type": "uint64_t", "offset": 0 },
-        { "name": "opaqueBase", "type": "uint", "offset": 8 },
-        { "name": "cutoutBase", "type": "uint", "offset": 12 }
+        { "name": "lightAddress", "type": "uint64_t", "offset": 8 },
+        { "name": "worldLightAddress", "type": "uint64_t", "offset": 16 },
+        { "name": "opaqueBase", "type": "uint", "offset": 24 },
+        { "name": "cutoutBase", "type": "uint", "offset": 28 },
+        { "name": "worldLeafNode", "type": "uint", "offset": 32 },
+        { "name": "lightCount", "type": "uint", "offset": 36 },
+        { "name": "reserved0", "type": "uint", "offset": 40 },
+        { "name": "reserved1", "type": "uint", "offset": 44 },
+        { "name": "translation", "type": "vec3", "offset": 48 },
+        { "name": "reserved2", "type": "uint", "offset": 60 }
+      ]
+    },
+    "lightNode": {
+      "size": 48,
+      "fields": [
+        { "name": "boundsMinPower", "type": "vec4", "offset": 0 },
+        { "name": "boundsMaxSoftening", "type": "vec4", "offset": 16 },
+        { "name": "links", "type": "uvec4", "offset": 32 }
+      ]
+    },
+    "lightEmitter": {
+      "size": 96,
+      "fields": [
+        { "name": "cornerArea", "type": "vec4", "offset": 0 },
+        { "name": "edgeOneScale", "type": "vec4", "offset": 16 },
+        { "name": "edgeTwoPower", "type": "vec4", "offset": 32 },
+        { "name": "normalPadding", "type": "vec4", "offset": 48 },
+        { "name": "uvsTint", "type": "uvec4", "offset": 64 },
+        { "name": "metadata", "type": "uvec4", "offset": 80 }
+      ]
+    },
+    "lightCell": {
+      "size": 16,
+      "fields": [
+        { "name": "aliasProbability", "type": "float", "offset": 0 },
+        { "name": "aliasIndex", "type": "uint", "offset": 4 },
+        { "name": "probabilityMass", "type": "float", "offset": 8 },
+        { "name": "reserved", "type": "uint", "offset": 12 }
+      ]
+    },
+    "sectionLightHeader": {
+      "size": 32,
+      "fields": [
+        { "name": "nodeAddress", "type": "uint64_t", "offset": 0 },
+        { "name": "emitterAddress", "type": "uint64_t", "offset": 8 },
+        { "name": "cellAddress", "type": "uint64_t", "offset": 16 },
+        { "name": "root", "type": "uint", "offset": 24 },
+        { "name": "emitterCount", "type": "uint", "offset": 28 }
       ]
     },
     "integratorRecord": {
@@ -47,25 +93,33 @@
       ]
     },
     "tracePayload": {
-      "size": 48,
+      "size": 64,
       "fields": [
         { "name": "position", "type": "vec3", "offset": 0 },
         { "name": "t", "type": "float", "offset": 12 },
         { "name": "geometricNormal", "type": "vec3", "offset": 16 },
         { "name": "hitKind", "type": "uint", "offset": 28 },
         { "name": "baseColor", "type": "vec3", "offset": 32 },
-        { "name": "traceKind", "type": "uint", "offset": 44 }
+        { "name": "traceKind", "type": "uint", "offset": 44 },
+        { "name": "sectionIndex", "type": "uint", "offset": 48 },
+        { "name": "emitterIndex", "type": "uint", "offset": 52 },
+        { "name": "reserved0", "type": "uint", "offset": 56 },
+        { "name": "reserved1", "type": "uint", "offset": 60 }
       ]
     },
     "surfaceInteraction": {
-      "size": 48,
+      "size": 64,
       "fields": [
         { "name": "position", "type": "vec3", "offset": 0 },
         { "name": "t", "type": "float", "offset": 12 },
         { "name": "geometricNormal", "type": "vec3", "offset": 16 },
         { "name": "hitKind", "type": "uint", "offset": 28 },
         { "name": "baseColor", "type": "vec3", "offset": 32 },
-        { "name": "materialFlags", "type": "uint", "offset": 44 }
+        { "name": "materialFlags", "type": "uint", "offset": 44 },
+        { "name": "sectionIndex", "type": "uint", "offset": 48 },
+        { "name": "emitterIndex", "type": "uint", "offset": 52 },
+        { "name": "reserved0", "type": "uint", "offset": 56 },
+        { "name": "reserved1", "type": "uint", "offset": 60 }
       ]
     },
     "pushConstants": {

@@ -31,6 +31,7 @@ public final class TerrainScene implements AutoCloseable {
     private final Long2ObjectOpenHashMap<GpuSection> resident = new Long2ObjectOpenHashMap<>();
     private final List<TopLevelAccelerationStructure> tlasSlots = new ArrayList<>(TLAS_SLOT_COUNT);
     private TopLevelAccelerationStructure currentTlas;
+    private VulkanBuffer currentWorldLights;
     private int originX;
     private int originY;
     private int originZ;
@@ -80,8 +81,27 @@ public final class TerrainScene implements AutoCloseable {
                 nonEmptyUploadCount++;
             }
         }
-        StagingArena.Batch stagingBatch = nonEmptyUploadCount == 0 ? null : this.stagingArena.tryBeginBatch();
-        if (nonEmptyUploadCount > 0 && stagingBatch == null) {
+        boolean hasPotentialLights = this.resident.values().stream()
+                        .anyMatch(section -> !section.lights().isEmpty())
+                || uploads.stream().anyMatch(upload -> !upload.mesh().lights().isEmpty());
+        boolean needsSectionStaging = nonEmptyUploadCount > 0;
+        boolean needsWorldStaging = finalSectionCount > 0 && hasPotentialLights;
+        StagingArena.Batch sectionStagingBatch = needsSectionStaging
+                ? this.stagingArena.tryBeginBatch()
+                : null;
+        if (needsSectionStaging && sectionStagingBatch == null) {
+            if (replacementTlas != null) {
+                replacementTlas.release();
+            }
+            return false;
+        }
+        StagingArena.Batch worldStagingBatch = needsWorldStaging
+                ? this.stagingArena.tryBeginBatch()
+                : null;
+        if (needsWorldStaging && worldStagingBatch == null) {
+            if (sectionStagingBatch != null) {
+                sectionStagingBatch.close();
+            }
             if (replacementTlas != null) {
                 replacementTlas.release();
             }
@@ -89,6 +109,7 @@ public final class TerrainScene implements AutoCloseable {
         }
 
         List<GpuSection> replacements = new ArrayList<>(nonEmptyUploadCount);
+        VulkanBuffer replacementWorldLights = null;
         VkCommandBuffer commandBuffer = null;
         boolean submitted = false;
         try {
@@ -97,44 +118,38 @@ public final class TerrainScene implements AutoCloseable {
                 this.context.device().instance().debug().beginDebugGroup(commandBuffer, () -> "Prime terrain scene update");
             }
 
-            if (stagingBatch != null) {
+            if (sectionStagingBatch != null) {
                 for (SectionUpload upload : uploads) {
                     CpuSectionMesh mesh = upload.mesh();
                     if (mesh.isEmpty()) {
                         continue;
                     }
-                    VulkanBuffer positions = this.context.createBuffer(
-                            (long) mesh.positions().length * Float.BYTES,
-                            VK12.VK_BUFFER_USAGE_TRANSFER_DST_BIT
-                                    | KHRAccelerationStructure.VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR,
-                            false,
-                            "Prime section " + upload.key() + " positions");
-                    VulkanBuffer primitives = this.context.createBuffer(
-                            (long) mesh.primitiveRecords().length * Integer.BYTES,
-                            VK12.VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK12.VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
-                            false,
-                            "Prime section " + upload.key() + " primitives");
-                    StagingArena.Slice positionSlice = stagingBatch.write(mesh.positions(), Float.BYTES);
-                    StagingArena.Slice primitiveSlice = stagingBatch.write(mesh.primitiveRecords(), Integer.BYTES);
-                    copyBuffer(commandBuffer, positionSlice, positions);
-                    copyBuffer(commandBuffer, primitiveSlice, primitives);
-                    PreparedBlas blas;
-                    try {
-                        blas = PreparedBlas.create(
-                                this.context,
-                                positions,
-                                primitives,
-                                mesh.opaqueTriangleCount(),
-                                mesh.cutoutTriangleCount(),
-                                "Prime section " + upload.key() + " BLAS");
-                    } catch (RuntimeException exception) {
-                        positions.destroy();
-                        primitives.destroy();
-                        throw exception;
-                    }
-                    replacements.add(new GpuSection(
-                            upload.key(), upload.sectionX(), upload.sectionY(), upload.sectionZ(), blas));
+                    replacements.add(this.prepareSection(
+                            upload, mesh, sectionStagingBatch, commandBuffer));
                 }
+            }
+
+            List<GpuSection> finalSections = this.buildFinalSectionList(uploads, evictions, replacements);
+            int nextOriginX = needsRebase ? RenderOrigin.alignToSection(cameraX) : this.originX;
+            int nextOriginY = needsRebase ? RenderOrigin.alignToSection(cameraY) : this.originY;
+            int nextOriginZ = needsRebase ? RenderOrigin.alignToSection(cameraZ) : this.originZ;
+            CpuWorldLightTree.Result worldLightTree = CpuWorldLightTree.build(
+                    finalSections, nextOriginX, nextOriginY, nextOriginZ);
+            if (!worldLightTree.isEmpty()) {
+                if (worldStagingBatch == null || commandBuffer == null) {
+                    throw new IllegalStateException("World light tree requires an upload batch");
+                }
+                replacementWorldLights = this.context.createBuffer(
+                        (long) worldLightTree.nodeWords().length * Integer.BYTES,
+                        VK12.VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK12.VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+                        false,
+                        "Prime world light tree");
+                StagingArena.Slice worldLightSlice = worldStagingBatch.write(
+                        worldLightTree.nodeWords(), 16L);
+                copyBuffer(commandBuffer, worldLightSlice, replacementWorldLights);
+            }
+
+            if (!replacements.isEmpty() || replacementWorldLights != null) {
                 memoryBarrier(
                         commandBuffer,
                         VK12.VK_PIPELINE_STAGE_TRANSFER_BIT,
@@ -146,25 +161,31 @@ public final class TerrainScene implements AutoCloseable {
                 for (GpuSection section : replacements) {
                     section.blas().recordBuild(commandBuffer);
                 }
-                memoryBarrier(
-                        commandBuffer,
-                        KHRAccelerationStructure.VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR,
-                        KHRAccelerationStructure.VK_ACCESS_ACCELERATION_STRUCTURE_WRITE_BIT_KHR,
-                        KHRAccelerationStructure.VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR,
-                        KHRAccelerationStructure.VK_ACCESS_ACCELERATION_STRUCTURE_READ_BIT_KHR);
+                if (!replacements.isEmpty()) {
+                    memoryBarrier(
+                            commandBuffer,
+                            KHRAccelerationStructure.VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR,
+                            KHRAccelerationStructure.VK_ACCESS_ACCELERATION_STRUCTURE_WRITE_BIT_KHR,
+                            KHRAccelerationStructure.VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR,
+                            KHRAccelerationStructure.VK_ACCESS_ACCELERATION_STRUCTURE_READ_BIT_KHR);
+                }
             }
 
-            List<GpuSection> finalSections = this.buildFinalSectionList(uploads, evictions, replacements);
             if (replacementTlas != null) {
-                int nextOriginX = needsRebase ? RenderOrigin.alignToSection(cameraX) : this.originX;
-                int nextOriginY = needsRebase ? RenderOrigin.alignToSection(cameraY) : this.originY;
-                int nextOriginZ = needsRebase ? RenderOrigin.alignToSection(cameraZ) : this.originZ;
                 List<TopLevelAccelerationStructure.Instance> instances = new ArrayList<>(finalSections.size());
-                for (GpuSection section : finalSections) {
+                long worldLightAddress = replacementWorldLights == null
+                        ? 0L
+                        : replacementWorldLights.deviceAddress();
+                for (int sectionIndex = 0; sectionIndex < finalSections.size(); sectionIndex++) {
+                    GpuSection section = finalSections.get(sectionIndex);
                     instances.add(new TopLevelAccelerationStructure.Instance(
                             section.blas().accelerationStructure().deviceAddress(),
                             section.blas().primitives().deviceAddress(),
+                            section.lightAddress(),
+                            worldLightAddress,
                             section.blas().opaqueTriangleCount(),
+                            worldLightTree.leafNode(sectionIndex),
+                            section.lights().emitterCount(),
                             (section.sectionX() << 4) - nextOriginX,
                             (section.sectionY() << 4) - nextOriginY,
                             (section.sectionZ() << 4) - nextOriginZ));
@@ -193,8 +214,11 @@ public final class TerrainScene implements AutoCloseable {
             if (commandBuffer != null) {
                 this.context.device().instance().debug().endDebugGroup(commandBuffer);
                 VulkanContext.check(VK12.vkEndCommandBuffer(commandBuffer), "end Prime terrain command buffer");
-                if (stagingBatch != null) {
-                    stagingBatch.submitForRetirement();
+                if (sectionStagingBatch != null) {
+                    sectionStagingBatch.submitForRetirement();
+                }
+                if (worldStagingBatch != null) {
+                    worldStagingBatch.submitForRetirement();
                 }
                 this.context.commandEncoder().execute(commandBuffer);
                 submitted = true;
@@ -202,14 +226,21 @@ public final class TerrainScene implements AutoCloseable {
             for (GpuSection replacement : replacements) {
                 replacement.blas().retireScratch();
             }
-            this.commit(uploads, evictions, replacements, replacementTlas, requiresHistoryReset);
+            this.commit(
+                    uploads,
+                    evictions,
+                    replacements,
+                    replacementTlas,
+                    replacementWorldLights,
+                    requiresHistoryReset);
+            replacementWorldLights = null;
             return true;
         } catch (RuntimeException exception) {
             for (GpuSection replacement : replacements) {
                 if (submitted) {
-                    this.context.defer(replacement.blas()::destroyAllResources);
+                    this.context.defer(replacement::destroyAllResources);
                 } else {
-                    replacement.blas().destroyAllResources();
+                    replacement.destroyAllResources();
                 }
             }
             if (replacementTlas != null) {
@@ -219,10 +250,21 @@ public final class TerrainScene implements AutoCloseable {
                     replacementTlas.release();
                 }
             }
+            if (replacementWorldLights != null) {
+                if (submitted) {
+                    VulkanBuffer failedWorldLights = replacementWorldLights;
+                    this.context.defer(failedWorldLights::destroy);
+                } else {
+                    replacementWorldLights.destroy();
+                }
+            }
             throw exception;
         } finally {
-            if (stagingBatch != null) {
-                stagingBatch.close();
+            if (sectionStagingBatch != null) {
+                sectionStagingBatch.close();
+            }
+            if (worldStagingBatch != null) {
+                worldStagingBatch.close();
             }
             if (commandBuffer != null && !submitted) {
                 // The command pool owns command buffers. A failed recording is reclaimed when the pool resets.
@@ -267,6 +309,10 @@ public final class TerrainScene implements AutoCloseable {
         }
         this.tlasSlots.clear();
         this.currentTlas = null;
+        if (this.currentWorldLights != null) {
+            this.currentWorldLights.destroy();
+            this.currentWorldLights = null;
+        }
     }
 
     private int estimateFinalSectionCount(List<SectionUpload> uploads, long[] evictions) {
@@ -336,6 +382,7 @@ public final class TerrainScene implements AutoCloseable {
             long[] evictions,
             List<GpuSection> replacements,
             TopLevelAccelerationStructure replacementTlas,
+            VulkanBuffer replacementWorldLights,
             boolean requiresHistoryReset) {
         List<GpuSection> retired = new ArrayList<>();
         for (long key : evictions) {
@@ -358,13 +405,18 @@ public final class TerrainScene implements AutoCloseable {
         }
 
         TopLevelAccelerationStructure previousTlas = this.currentTlas;
+        VulkanBuffer previousWorldLights = this.currentWorldLights;
         this.currentTlas = replacementTlas;
+        this.currentWorldLights = replacementWorldLights;
         this.revision++;
         if (requiresHistoryReset) {
             this.resetRevision++;
         }
         if (previousTlas != null) {
             this.context.defer(previousTlas::release);
+        }
+        if (previousWorldLights != null) {
+            this.context.defer(previousWorldLights::destroy);
         }
     }
 
@@ -397,6 +449,81 @@ public final class TerrainScene implements AutoCloseable {
         }
         this.tlasSlots.add(slot);
         return slot;
+    }
+
+    private GpuSection prepareSection(
+            SectionUpload upload,
+            CpuSectionMesh mesh,
+            StagingArena.Batch stagingBatch,
+            VkCommandBuffer commandBuffer) {
+        VulkanBuffer positions = null;
+        VulkanBuffer primitives = null;
+        VulkanBuffer lights = null;
+        PreparedBlas blas = null;
+        try {
+            positions = this.context.createBuffer(
+                    (long) mesh.positions().length * Float.BYTES,
+                    VK12.VK_BUFFER_USAGE_TRANSFER_DST_BIT
+                            | KHRAccelerationStructure.VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR,
+                    false,
+                    "Prime section " + upload.key() + " positions");
+            primitives = this.context.createBuffer(
+                    (long) mesh.primitiveRecords().length * Integer.BYTES,
+                    VK12.VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK12.VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+                    false,
+                    "Prime section " + upload.key() + " primitives");
+            if (!mesh.lights().isEmpty()) {
+                lights = this.context.createBuffer(
+                        mesh.lights().byteSize(),
+                        VK12.VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK12.VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+                        false,
+                        "Prime section " + upload.key() + " lights");
+            }
+            copyBuffer(
+                    commandBuffer,
+                    stagingBatch.write(mesh.positions(), Float.BYTES),
+                    positions);
+            copyBuffer(
+                    commandBuffer,
+                    stagingBatch.write(mesh.primitiveRecords(), Integer.BYTES),
+                    primitives);
+            if (lights != null) {
+                copyBuffer(
+                        commandBuffer,
+                        stagingBatch.write(mesh.lights().pack(lights.deviceAddress()), 16L),
+                        lights);
+            }
+            blas = PreparedBlas.create(
+                    this.context,
+                    positions,
+                    primitives,
+                    mesh.opaqueTriangleCount(),
+                    mesh.cutoutTriangleCount(),
+                    "Prime section " + upload.key() + " BLAS");
+            return new GpuSection(
+                    upload.key(),
+                    upload.sectionX(),
+                    upload.sectionY(),
+                    upload.sectionZ(),
+                    blas,
+                    lights,
+                    mesh.lights());
+        } catch (RuntimeException exception) {
+            if (blas != null) {
+                blas.destroyAllResources();
+            } else {
+                if (positions != null) {
+                    positions.destroy();
+                }
+                if (primitives != null) {
+                    primitives.destroy();
+                }
+            }
+            if (lights != null) {
+                lights.destroy();
+            }
+            throw exception;
+        }
     }
 
     private static void copyBuffer(VkCommandBuffer commandBuffer, StagingArena.Slice source, VulkanBuffer destination) {

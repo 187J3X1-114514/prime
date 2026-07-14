@@ -27,6 +27,7 @@ final class SamplingContractTest {
         assertTrue(rayGeneration.contains("PRIME_SAMPLE_EFFECT_CAMERA"));
         assertTrue(integrator.contains("PRIME_SAMPLE_EFFECT_DIRECT_ENVIRONMENT"));
         assertTrue(integrator.contains("PRIME_SAMPLE_EFFECT_DIRECT_SUN"));
+        assertTrue(integrator.contains("PRIME_SAMPLE_EFFECT_DIRECT_AREA_LIGHT"));
         assertTrue(integrator.contains("PRIME_SAMPLE_EFFECT_SCATTER_BSDF"));
         assertTrue(integrator.contains("PRIME_SAMPLE_EFFECT_RUSSIAN_ROULETTE"));
         assertFalse(allConsumers.contains("primeRandom"));

@@ -1,5 +1,6 @@
 package dev.prime.render.vulkan;
 
+import dev.prime.render.shader.ShaderAbi;
 import java.nio.LongBuffer;
 import java.util.List;
 import org.lwjgl.PointerBuffer;
@@ -57,7 +58,7 @@ public final class TopLevelAccelerationStructure {
                     true,
                     label + " instances");
             sectionTable = context.createBuffer(
-                    (long) capacity * 16L,
+                    (long) capacity * ShaderAbi.SECTION_RECORD_SIZE,
                     VK12.VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
                     true,
                     label + " section table");
@@ -187,14 +188,43 @@ public final class TopLevelAccelerationStructure {
                         this.instances.mappedAddress() + (long) index * VkAccelerationStructureInstanceKHR.SIZEOF,
                         VkAccelerationStructureInstanceKHR.SIZEOF);
 
-                long sectionAddress = this.sectionTable.mappedAddress() + (long) index * 16L;
-                MemoryUtil.memPutLong(sectionAddress, value.primitiveAddress());
-                MemoryUtil.memPutInt(sectionAddress + 8L, 0);
-                MemoryUtil.memPutInt(sectionAddress + 12L, value.opaqueTriangleCount());
+                long sectionAddress = this.sectionTable.mappedAddress()
+                        + (long) index * ShaderAbi.SECTION_RECORD_SIZE;
+                MemoryUtil.memPutLong(
+                        sectionAddress + ShaderAbi.SECTION_PRIMITIVE_ADDRESS_OFFSET,
+                        value.primitiveAddress());
+                MemoryUtil.memPutLong(
+                        sectionAddress + ShaderAbi.SECTION_LIGHT_ADDRESS_OFFSET,
+                        value.lightAddress());
+                MemoryUtil.memPutLong(
+                        sectionAddress + ShaderAbi.SECTION_WORLD_LIGHT_ADDRESS_OFFSET,
+                        value.worldLightAddress());
+                MemoryUtil.memPutInt(sectionAddress + ShaderAbi.SECTION_OPAQUE_BASE_OFFSET, 0);
+                MemoryUtil.memPutInt(
+                        sectionAddress + ShaderAbi.SECTION_CUTOUT_BASE_OFFSET,
+                        value.opaqueTriangleCount());
+                MemoryUtil.memPutInt(
+                        sectionAddress + ShaderAbi.SECTION_WORLD_LEAF_NODE_OFFSET,
+                        value.worldLeafNode());
+                MemoryUtil.memPutInt(
+                        sectionAddress + ShaderAbi.SECTION_LIGHT_COUNT_OFFSET,
+                        value.lightCount());
+                MemoryUtil.memPutInt(sectionAddress + ShaderAbi.SECTION_RESERVED0_OFFSET, 0);
+                MemoryUtil.memPutInt(sectionAddress + ShaderAbi.SECTION_RESERVED1_OFFSET, 0);
+                MemoryUtil.memPutFloat(
+                        sectionAddress + ShaderAbi.SECTION_TRANSLATION_OFFSET,
+                        value.translateX());
+                MemoryUtil.memPutFloat(
+                        sectionAddress + ShaderAbi.SECTION_TRANSLATION_OFFSET + Float.BYTES,
+                        value.translateY());
+                MemoryUtil.memPutFloat(
+                        sectionAddress + ShaderAbi.SECTION_TRANSLATION_OFFSET + 2L * Float.BYTES,
+                        value.translateZ());
+                MemoryUtil.memPutInt(sectionAddress + ShaderAbi.SECTION_RESERVED2_OFFSET, 0);
             }
         }
         this.instances.flush(0L, (long) source.size() * VkAccelerationStructureInstanceKHR.SIZEOF);
-        this.sectionTable.flush(0L, (long) source.size() * 16L);
+        this.sectionTable.flush(0L, (long) source.size() * ShaderAbi.SECTION_RECORD_SIZE);
     }
 
     public void recordBuild(VkCommandBuffer commandBuffer) {
@@ -260,7 +290,11 @@ public final class TopLevelAccelerationStructure {
     public record Instance(
             long blasAddress,
             long primitiveAddress,
+            long lightAddress,
+            long worldLightAddress,
             int opaqueTriangleCount,
+            int worldLeafNode,
+            int lightCount,
             float translateX,
             float translateY,
             float translateZ) {

@@ -14,6 +14,7 @@ final class IntegratorSettings {
     static final int SAMPLE_EFFECT_DIRECT_ENVIRONMENT = 1;
     static final int SAMPLE_EFFECT_DIRECT_SUN = 2;
     static final int SAMPLE_EFFECT_SCATTER_BSDF = 3;
+    static final int SAMPLE_EFFECT_DIRECT_AREA_LIGHT = 5;
 
     private static final int SOBOL_INDEX_MASK = 0xffff_0000;
     private static final float UINT32_TO_FLOAT_EXCLUSIVE_SCALE = 1.0F / 4_294_967_808.0F;

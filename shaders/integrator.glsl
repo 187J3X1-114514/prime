@@ -25,6 +25,10 @@ SurfaceInteraction primeTraceSurface(vec3 origin, vec3 direction) {
     primePayload.hitKind = PRIME_HIT_NONE;
     primePayload.baseColor = vec3(0.0);
     primePayload.traceKind = PRIME_TRACE_RADIANCE;
+    primePayload.sectionIndex = 0u;
+    primePayload.emitterIndex = PRIME_NO_LIGHT_INDEX;
+    primePayload.reserved0 = 0u;
+    primePayload.reserved1 = 0u;
     traceRayEXT(primeScene, gl_RayFlagsNoneEXT, 0xff, 0, 1, 0,
             origin, 0.0, direction, 1000000.0, 0);
     SurfaceInteraction surface;
@@ -34,6 +38,10 @@ SurfaceInteraction primeTraceSurface(vec3 origin, vec3 direction) {
     surface.hitKind = primePayload.hitKind;
     surface.baseColor = primePayload.baseColor;
     surface.materialFlags = primePayload.traceKind;
+    surface.sectionIndex = primePayload.sectionIndex;
+    surface.emitterIndex = primePayload.emitterIndex;
+    surface.reserved0 = 0u;
+    surface.reserved1 = 0u;
     return surface;
 }
 
@@ -44,6 +52,10 @@ bool primeVisible(vec3 physicalPosition, vec3 normal, LightSample light) {
     primePayload.hitKind = PRIME_HIT_NONE;
     primePayload.baseColor = vec3(0.0);
     primePayload.traceKind = PRIME_TRACE_SHADOW;
+    primePayload.sectionIndex = 0u;
+    primePayload.emitterIndex = PRIME_NO_LIGHT_INDEX;
+    primePayload.reserved0 = 0u;
+    primePayload.reserved1 = 0u;
     vec3 traceOrigin = primeOffsetRayOrigin(physicalPosition, normal, light.direction);
     traceRayEXT(primeScene, gl_RayFlagsTerminateOnFirstHitEXT, 0xff, 0, 1, 0,
             traceOrigin, 0.0, light.direction, light.distance, 0);
@@ -78,6 +90,26 @@ vec3 primeEstimateDirectSun(
             surface.baseColor, surface.geometricNormal, viewDirection, light.direction);
     float cosine = max(dot(surface.geometricNormal, light.direction), 0.0);
     if (cosine <= 0.0 || light.pdf <= 0.0
+            || !primeVisible(surface.position, surface.geometricNormal, light)) {
+        return vec3(0.0);
+    }
+    float misWeight = primePowerHeuristic(light.pdf, bsdf.pdf);
+    return light.radiance * bsdf.value * (cosine * misWeight / light.pdf);
+}
+
+vec3 primeEstimateDirectAreaLight(
+        SurfaceInteraction surface,
+        vec3 viewDirection,
+        vec3 treeSample,
+        vec2 positionSample) {
+    LightSample light = primeSampleAreaLight(surface.position, treeSample, positionSample);
+    if (!(light.pdf > 0.0) || all(lessThanEqual(light.radiance, vec3(0.0)))) {
+        return vec3(0.0);
+    }
+    BsdfEvaluation bsdf = primeEvaluateDefaultBsdf(
+            surface.baseColor, surface.geometricNormal, viewDirection, light.direction);
+    float cosine = max(dot(surface.geometricNormal, light.direction), 0.0);
+    if (cosine <= 0.0
             || !primeVisible(surface.position, surface.geometricNormal, light)) {
         return vec3(0.0);
     }
@@ -126,6 +158,15 @@ vec3 primeIntegrate(PathState path, IntegratorRecord integrator, out float prima
             break;
         }
 
+        LightEvaluation hitAreaLight = primeEvaluateAreaLight(
+                surface, path.physicalOrigin, path.rayDirection);
+        bool cannotUseHitMis = path.bounce == 0u
+                || (path.flags & PRIME_PATH_PREVIOUS_DELTA) != 0u;
+        float hitAreaWeight = cannotUseHitMis
+                ? 1.0
+                : primePowerHeuristic(path.previousBsdfPdf, hitAreaLight.pdf);
+        path.radiance += path.throughput * hitAreaLight.radiance * hitAreaWeight;
+
         PrimeSampleBase bounceSample = primeMakeSampleBase(path, path.bounce + 1u);
         vec2 environmentSample = primeSobolSample2D(
                 bounceSample,
@@ -135,6 +176,14 @@ vec3 primeIntegrate(PathState path, IntegratorRecord integrator, out float prima
                 bounceSample,
                 PRIME_SAMPLE_EFFECT_DIRECT_SUN,
                 PRIME_SAMPLE_DIMENSION_PRIMARY);
+        vec3 areaTreeSample = primeSobolSample3D(
+                bounceSample,
+                PRIME_SAMPLE_EFFECT_DIRECT_AREA_LIGHT,
+                PRIME_SAMPLE_DIMENSION_PRIMARY);
+        vec2 areaPositionSample = primeSobolSample2D(
+                bounceSample,
+                PRIME_SAMPLE_EFFECT_DIRECT_AREA_LIGHT,
+                PRIME_SAMPLE_DIMENSION_SECONDARY);
         vec3 scatterSample = primeSobolSample3D(
                 bounceSample,
                 PRIME_SAMPLE_EFFECT_SCATTER_BSDF,
@@ -146,6 +195,8 @@ vec3 primeIntegrate(PathState path, IntegratorRecord integrator, out float prima
                 * (primeEstimateDirectEnvironment(
                         integrator, surface, viewDirection, environmentSample)
                 + primeEstimateDirectSun(integrator, surface, viewDirection, sunSample));
+        path.radiance += path.throughput * primeEstimateDirectAreaLight(
+                surface, viewDirection, areaTreeSample, areaPositionSample);
 
         BsdfSample bsdf = primeSampleDefaultBsdf(
                 surface.baseColor, surface.geometricNormal, viewDirection, scatterSample);

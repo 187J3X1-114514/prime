@@ -38,6 +38,10 @@ public final class RayTracingPipeline implements Destroyable {
                     | KHRRayTracingPipeline.VK_SHADER_STAGE_MISS_BIT_KHR
                     | KHRRayTracingPipeline.VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR
                     | KHRRayTracingPipeline.VK_SHADER_STAGE_ANY_HIT_BIT_KHR;
+    static final int BLOCK_ATLAS_STAGES =
+            KHRRayTracingPipeline.VK_SHADER_STAGE_RAYGEN_BIT_KHR
+                    | KHRRayTracingPipeline.VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR
+                    | KHRRayTracingPipeline.VK_SHADER_STAGE_ANY_HIT_BIT_KHR;
 
     private final VulkanContext context;
     private final long descriptorSetLayout;
@@ -255,8 +259,9 @@ public final class RayTracingPipeline implements Destroyable {
                 .binding(ShaderAbi.DESCRIPTOR_BLOCK_ATLAS)
                 .descriptorType(VK12.VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER)
                 .descriptorCount(1)
-                .stageFlags(KHRRayTracingPipeline.VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR
-                        | KHRRayTracingPipeline.VK_SHADER_STAGE_ANY_HIT_BIT_KHR);
+                // Raygen evaluates sampled area lights, closest-hit shades visible surfaces, and
+                // any-hit tests cutout opacity. All three therefore read the block atlas.
+                .stageFlags(BLOCK_ATLAS_STAGES);
         bindings.get(3)
                 .binding(ShaderAbi.DESCRIPTOR_ACCUMULATION_IMAGE)
                 .descriptorType(VK12.VK_DESCRIPTOR_TYPE_STORAGE_IMAGE)

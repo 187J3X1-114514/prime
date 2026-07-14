@@ -5,7 +5,8 @@
 layout(location = 0) rayPayloadInEXT TracePayload primePayload;
 
 void main() {
-    PrimitiveRecord primitive = primePrimitive();
+    SectionRecord section = primeSection();
+    PrimitiveRecord primitive = primePrimitive(section);
     primePayload.hitKind = 1u;
     if (primePayload.traceKind == 1u) {
         return;
@@ -20,4 +21,8 @@ void main() {
     primePayload.geometricNormal = normal;
     primePayload.baseColor = material.baseColor;
     primePayload.traceKind = material.flags;
+    primePayload.sectionIndex = gl_InstanceCustomIndexEXT;
+    primePayload.emitterIndex = primitive.reserved0 == 0u
+            ? 0xffffffffu
+            : primitive.reserved0 - 1u;
 }

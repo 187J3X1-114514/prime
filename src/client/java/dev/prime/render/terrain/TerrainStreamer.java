@@ -33,7 +33,8 @@ public final class TerrainStreamer implements AutoCloseable {
     private static final int MAX_UNLOADED_PROBES_PER_FRAME = 32;
     private static final int MAX_READY_FOR_UPLOAD = 64;
     private static final int MAX_EXTERNAL_DIRTY_SECTIONS = 16_384;
-    private static final CpuSectionMesh EMPTY_MESH = new CpuSectionMesh(new float[0], new int[0], 0, 0);
+    private static final CpuSectionMesh EMPTY_MESH = new CpuSectionMesh(
+            new float[0], new int[0], 0, 0, CpuSectionLights.EMPTY);
 
     private final TerrainScene scene;
     private final ThreadPoolExecutor workers;

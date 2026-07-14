@@ -9,6 +9,7 @@
     "LevelExtractorMixin",
     "LevelRendererMixin",
     "MinecraftMixin",
+    "SpriteContentsAccessor",
     "VulkanBackendMixin"
   ],
   "injectors": {

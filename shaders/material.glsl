@@ -11,18 +11,35 @@ struct MaterialEvaluation {
     uint flags;
 };
 
-MaterialEvaluation primeEvaluateMaterial(PrimitiveRecord primitive, vec2 uv) {
+vec3 primeAtlasBaseColor(uint packedTint, vec2 uv, out float opacity) {
     vec4 textureSample = textureLod(primeBlockAtlas, uv, 0.0);
-    vec4 tint = primeUnpackTint(primitive.tint);
+    vec4 tint = primeUnpackTint(packedTint);
+    opacity = textureSample.a;
+    vec3 linearSrgbAlbedo = primeDecodeSrgb(textureSample.rgb) * primeDecodeSrgb(tint.rgb);
+    return primeLinearSrgbToLinearRec2020(linearSrgbAlbedo);
+}
+
+MaterialEvaluation primeEvaluateMaterial(PrimitiveRecord primitive, vec2 uv) {
     MaterialEvaluation result;
     // Minecraft stores both atlas texels and tint RGB as display-encoded sRGB in UNORM values.
     // Decode both before multiplication, then cross the single material boundary into the
     // integrator's linear Rec.2020 working space. Alpha is coverage and is never color-decoded.
-    vec3 linearSrgbAlbedo = primeDecodeSrgb(textureSample.rgb) * primeDecodeSrgb(tint.rgb);
-    result.baseColor = primeLinearSrgbToLinearRec2020(linearSrgbAlbedo);
-    result.opacity = textureSample.a;
+    result.baseColor = primeAtlasBaseColor(primitive.tint, uv, result.opacity);
     result.flags = primitive.flags;
     return result;
+}
+
+vec3 primeEvaluateEmitterRadiance(LightEmitter emitter, vec2 uv) {
+    float opacity;
+    vec3 color = primeAtlasBaseColor(emitter.uvsTint.w, uv, opacity);
+    bool cutout = (emitter.metadata.z & 1u) != 0u;
+    if (cutout && opacity < PRIME_CUTOUT_ALPHA_THRESHOLD) {
+        return vec3(0.0);
+    }
+    // Minecraft's 0..15 block-light value is an ordinal influence radius, not radiometry. Prime's
+    // documented fallback maps it to level^2/15 so a white level-15 texel has radiance 15. The
+    // path geometry term supplies the actual inverse-square falloff; never add it here as well.
+    return color * max(emitter.edgeOneScale.w, 0.0);
 }
 
 float primeEvaluateOpacity(vec2 uv) {

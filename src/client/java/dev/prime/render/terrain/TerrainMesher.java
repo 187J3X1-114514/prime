@@ -29,7 +29,8 @@ public final class TerrainMesher {
             int sectionZ) {
         MeshBuilder opaque = new MeshBuilder();
         MeshBuilder cutout = new MeshBuilder();
-        QuadCapture capture = new QuadCapture(opaque, cutout, tints);
+        CpuSectionLights.Builder lights = new CpuSectionLights.Builder();
+        QuadCapture capture = new QuadCapture(opaque, cutout, lights, tints);
         ModelBlockRenderer renderer = new ModelBlockRenderer(false, true, new BlockColors());
         MutableBlockPos position = new MutableBlockPos();
         int originX = sectionX << 4;
@@ -43,7 +44,7 @@ public final class TerrainMesher {
                     if (state.getRenderShape() != RenderShape.MODEL) {
                         continue;
                     }
-                    capture.setBlock(localX, localY, localZ);
+                    capture.setBlock(localX, localY, localZ, state.getLightEmission());
                     try {
                         renderer.tesselateBlock(
                                 capture,
@@ -63,7 +64,12 @@ public final class TerrainMesher {
         }
         float[] positions = concatenate(opaque.positions.toArray(), cutout.positions.toArray());
         int[] primitives = concatenate(opaque.primitives.toArray(), cutout.primitives.toArray());
-        return new CpuSectionMesh(positions, primitives, opaque.triangleCount, cutout.triangleCount);
+        return new CpuSectionMesh(
+                positions,
+                primitives,
+                opaque.triangleCount,
+                cutout.triangleCount,
+                lights.build());
     }
 
     private static float[] concatenate(float[] first, float[] second) {
@@ -84,21 +90,29 @@ public final class TerrainMesher {
 
         private final MeshBuilder opaque;
         private final MeshBuilder cutout;
+        private final CpuSectionLights.Builder lights;
         private final TintSnapshot tints;
         private int localX;
         private int localY;
         private int localZ;
+        private int blockLightEmission;
 
-        private QuadCapture(MeshBuilder opaque, MeshBuilder cutout, TintSnapshot tints) {
+        private QuadCapture(
+                MeshBuilder opaque,
+                MeshBuilder cutout,
+                CpuSectionLights.Builder lights,
+                TintSnapshot tints) {
             this.opaque = opaque;
             this.cutout = cutout;
+            this.lights = lights;
             this.tints = tints;
         }
 
-        private void setBlock(int x, int y, int z) {
+        private void setBlock(int x, int y, int z, int lightEmission) {
             this.localX = x;
             this.localY = y;
             this.localZ = z;
+            this.blockLightEmission = lightEmission;
         }
 
         @Override
@@ -111,11 +125,17 @@ public final class TerrainMesher {
             int tint = quad.materialInfo().tintIndex() < 0
                     ? -1
                     : this.tints.color(this.localX, this.localY, this.localZ, quad.materialInfo().tintIndex());
-            emitTriangle(destination, x, y, z, quad, FIRST_TRIANGLE, tint, layer == ChunkSectionLayer.CUTOUT);
-            emitTriangle(destination, x, y, z, quad, SECOND_TRIANGLE, tint, layer == ChunkSectionLayer.CUTOUT);
+            boolean cutout = layer == ChunkSectionLayer.CUTOUT;
+            // BlockState is the authoritative dynamic 0..15 source (lamp on/off, candle count,
+            // furnace lit, and so on). A model element may request a stronger full-bright value;
+            // taking the maximum preserves that authored information without pretending it is a
+            // binary emission mask. Texture luminance supplies the soft mask below this level.
+            int lightEmission = Math.max(this.blockLightEmission, quad.materialInfo().lightEmission());
+            this.emitTriangle(destination, x, y, z, quad, FIRST_TRIANGLE, tint, cutout, lightEmission);
+            this.emitTriangle(destination, x, y, z, quad, SECOND_TRIANGLE, tint, cutout, lightEmission);
         }
 
-        private static void emitTriangle(
+        private void emitTriangle(
                 MeshBuilder destination,
                 float x,
                 float y,
@@ -123,24 +143,38 @@ public final class TerrainMesher {
                 BakedQuad quad,
                 int[] indices,
                 int tint,
-                boolean cutout) {
+                boolean cutout,
+                int lightEmission) {
             Vector3fc first = quad.position(indices[0]);
             Vector3fc second = quad.position(indices[1]);
             Vector3fc third = quad.position(indices[2]);
-            destination.positions.add(first.x() + x);
-            destination.positions.add(first.y() + y);
-            destination.positions.add(first.z() + z);
-            destination.positions.add(second.x() + x);
-            destination.positions.add(second.y() + y);
-            destination.positions.add(second.z() + z);
-            destination.positions.add(third.x() + x);
-            destination.positions.add(third.y() + y);
-            destination.positions.add(third.z() + z);
+            float firstX = first.x() + x;
+            float firstY = first.y() + y;
+            float firstZ = first.z() + z;
+            float secondX = second.x() + x;
+            float secondY = second.y() + y;
+            float secondZ = second.z() + z;
+            float thirdX = third.x() + x;
+            float thirdY = third.y() + y;
+            float thirdZ = third.z() + z;
+            destination.positions.add(firstX);
+            destination.positions.add(firstY);
+            destination.positions.add(firstZ);
+            destination.positions.add(secondX);
+            destination.positions.add(secondY);
+            destination.positions.add(secondZ);
+            destination.positions.add(thirdX);
+            destination.positions.add(thirdY);
+            destination.positions.add(thirdZ);
 
-            destination.primitives.add(packUv(quad.packedUV(indices[0])));
-            destination.primitives.add(packUv(quad.packedUV(indices[1])));
-            destination.primitives.add(packUv(quad.packedUV(indices[2])));
-            destination.primitives.add(PrimitivePacking.packTint(tint));
+            int packedUv0 = packUv(quad.packedUV(indices[0]));
+            int packedUv1 = packUv(quad.packedUV(indices[1]));
+            int packedUv2 = packUv(quad.packedUV(indices[2]));
+            int packedTint = PrimitivePacking.packTint(tint);
+            destination.primitives.add(packedUv0);
+            destination.primitives.add(packedUv1);
+            destination.primitives.add(packedUv2);
+            destination.primitives.add(packedTint);
 
             float edge1X = second.x() - first.x();
             float edge1Y = second.y() - first.y();
@@ -159,7 +193,24 @@ public final class TerrainMesher {
                     normalY * inverseLength,
                     normalZ * inverseLength));
             destination.primitives.add(cutout ? 1 : 0);
-            destination.primitives.add(0);
+            destination.primitives.add(this.lights.addTriangle(
+                    firstX,
+                    firstY,
+                    firstZ,
+                    secondX,
+                    secondY,
+                    secondZ,
+                    thirdX,
+                    thirdY,
+                    thirdZ,
+                    packedUv0,
+                    packedUv1,
+                    packedUv2,
+                    tint,
+                    packedTint,
+                    cutout,
+                    lightEmission,
+                    quad.materialInfo().sprite()));
             destination.primitives.add(0);
             destination.triangleCount++;
         }

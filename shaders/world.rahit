@@ -4,7 +4,9 @@
 
 void main() {
     PrimitiveRecord primitive = primePrimitive();
-    float opacity = primeEvaluateOpacity(primeInterpolateUv(primitive));
+    vec3 normal = primeUnpackOctahedralNormal(primitive.normal);
+    float textureLodValue = primeRayConeTextureLod(primitive, normal);
+    float opacity = primeEvaluateOpacity(primeInterpolateUv(primitive), textureLodValue);
     if (opacity < PRIME_CUTOUT_ALPHA_THRESHOLD) {
         ignoreIntersectionEXT;
     }

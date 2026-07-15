@@ -57,6 +57,7 @@ dependencies {
 def shaderAbiJavaRoot = layout.buildDirectory.dir('generated/sources/shaderAbi/java')
 def shaderAbiIncludeRoot = layout.buildDirectory.dir('generated/sources/shaderAbi/glsl')
 def compiledShaderRoot = layout.buildDirectory.dir('generated/resources/shaders')
+def compiledFsrShaderRoot = layout.buildDirectory.dir('generated/resources/fsrShaders')
 
 abstract class GenerateShaderAbi extends DefaultTask {
 	@InputFile
@@ -450,6 +451,80 @@ abstract class CompilePrimeShaders extends DefaultTask {
 	}
 }
 
+abstract class CompileFsrShaders extends DefaultTask {
+	@InputDirectory
+	abstract DirectoryProperty getVendorDirectory()
+
+	@OutputDirectory
+	abstract DirectoryProperty getOutputDirectory()
+
+	@Input
+	abstract Property<String> getGlslangValidator()
+
+	@Input
+	abstract Property<String> getSpirvValidator()
+
+	@javax.inject.Inject
+	abstract org.gradle.process.ExecOperations getExecOperations()
+
+	@javax.inject.Inject
+	abstract org.gradle.api.file.FileSystemOperations getFileSystemOperations()
+
+	@TaskAction
+	void compile() {
+		def root = vendorDirectory.get().asFile
+		def passes = new File(root, 'passes').listFiles({ file ->
+			file.name.endsWith('_pass.glsl')
+		} as FileFilter).sort { it.name }
+		if (passes.size() != 8) {
+			throw new GradleException("Prime requires the eight FSR 3.1.4 upscaler passes, found ${passes.size()}")
+		}
+
+		// Prime intentionally uses the portable FP32 path. These switches are part of the FSR
+		// integration contract: no frame interpolation, vendor extension, or FP16 variant is silently
+		// selected by the developer machine that happens to build the jar. RCAS is the final, weak
+		// presentation-resolution upscaler stage and is compiled explicitly here.
+		def definitions = [
+			'-DFFX_GPU=1',
+			'-DFFX_GLSL=1',
+			'-DFFX_FSR3UPSCALER_OPTION_UPSAMPLE_SAMPLERS_USE_DATA_HALF=0',
+			'-DFFX_FSR3UPSCALER_OPTION_ACCUMULATE_SAMPLERS_USE_DATA_HALF=0',
+			'-DFFX_FSR3UPSCALER_OPTION_REPROJECT_SAMPLERS_USE_DATA_HALF=1',
+			'-DFFX_FSR3UPSCALER_OPTION_POSTPROCESSLOCKSTATUS_SAMPLERS_USE_DATA_HALF=0',
+			'-DFFX_FSR3UPSCALER_OPTION_UPSAMPLE_USE_LANCZOS_TYPE=2',
+			'-DFFX_FSR3UPSCALER_OPTION_REPROJECT_USE_LANCZOS_TYPE=0',
+			'-DFFX_FSR3UPSCALER_OPTION_HDR_COLOR_INPUT=1',
+			'-DFFX_FSR3UPSCALER_OPTION_LOW_RESOLUTION_MOTION_VECTORS=1',
+			'-DFFX_FSR3UPSCALER_OPTION_JITTERED_MOTION_VECTORS=0',
+			'-DFFX_FSR3UPSCALER_OPTION_INVERTED_DEPTH=1',
+			'-DFFX_FSR3UPSCALER_OPTION_APPLY_SHARPENING=1'
+		]
+		def scratch = new File(temporaryDir, 'spv')
+		fileSystemOperations.delete { delete scratch }
+		scratch.mkdirs()
+		passes.each { source ->
+			def stem = source.name.substring(0, source.name.length() - '_pass.glsl'.length())
+			def output = new File(scratch, stem + '.comp.spv')
+			execOperations.exec {
+				commandLine([glslangValidator.get(), '-V', '--target-env', 'vulkan1.2', '-S', 'comp', '-g',
+						"-I${new File(root, 'FidelityFX/gpu').absolutePath}",
+						"-I${root.absolutePath}"] + definitions + [source.absolutePath, '-o', output.absolutePath])
+			}
+			execOperations.exec {
+				commandLine spirvValidator.get(), '--target-env', 'vulkan1.2', output.absolutePath
+			}
+		}
+
+		def published = new File(outputDirectory.get().asFile, 'prime/shaders/fsr3')
+		fileSystemOperations.delete { delete published }
+		published.mkdirs()
+		scratch.listFiles().each { source ->
+			java.nio.file.Files.move(source.toPath(), new File(published, source.name).toPath(),
+					java.nio.file.StandardCopyOption.REPLACE_EXISTING)
+		}
+	}
+}
+
 def resolveVulkanTool = { String name ->
 	def extension = System.getProperty('os.name').toLowerCase(java.util.Locale.ROOT).contains('win') ? '.exe' : ''
 	def sdk = System.getenv('VULKAN_SDK')
@@ -477,8 +552,16 @@ def compileShaders = tasks.register('compileShaders', CompilePrimeShaders) {
 	spirvValidator = resolveVulkanTool('spirv-val')
 }
 
+def compileFsrShaders = tasks.register('compileFsrShaders', CompileFsrShaders) {
+	vendorDirectory = file('shaders/vendor/fidelityfx')
+	outputDirectory = compiledFsrShaderRoot
+	glslangValidator = resolveVulkanTool('glslangValidator')
+	spirvValidator = resolveVulkanTool('spirv-val')
+}
+
 sourceSets.client.java.srcDir(files(shaderAbiJavaRoot).builtBy(generateShaderAbi))
 sourceSets.client.resources.srcDir(files(compiledShaderRoot).builtBy(compileShaders))
+sourceSets.client.resources.srcDir(files(compiledFsrShaderRoot).builtBy(compileFsrShaders))
 sourceSets.test.compileClasspath += sourceSets.client.output
 sourceSets.test.runtimeClasspath += sourceSets.client.output
 

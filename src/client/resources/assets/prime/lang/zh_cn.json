@@ -1,0 +1,10 @@
+{
+  "prime.options.header": "Prime 光线追踪",
+  "prime.options.fsr.quality": "FSR 质量",
+  "prime.options.fsr.quality.tooltip": "控制路径追踪的内部分辨率。较高质量可保留更多远处细节，较高性能可提高帧率。切换时 Prime 会安全地重建渲染历史。",
+  "prime.options.fsr.quality.native_aa": "原生抗锯齿（1.0x）",
+  "prime.options.fsr.quality.quality": "质量（1.5x）",
+  "prime.options.fsr.quality.balanced": "均衡（1.7x）",
+  "prime.options.fsr.quality.performance": "性能（2.0x）",
+  "prime.options.fsr.quality.ultra_performance": "超高性能（3.0x）"
+}

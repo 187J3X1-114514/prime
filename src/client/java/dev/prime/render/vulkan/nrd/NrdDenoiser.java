@@ -54,7 +54,7 @@ import org.lwjgl.vulkan.VkWriteDescriptorSet;
 public final class NrdDenoiser implements Destroyable {
     private static final int COMPUTE_STAGE = VK12.VK_SHADER_STAGE_COMPUTE_BIT;
     private static final int IMAGE_USAGE = VK12.VK_IMAGE_USAGE_STORAGE_BIT | VK12.VK_IMAGE_USAGE_SAMPLED_BIT;
-    private static final int MOTION_BINDING_COUNT = 4;
+    private static final int MOTION_BINDING_COUNT = 5;
     private static final int MOTION_PUSH_SIZE = 192;
     private static final int COMPOSITE_BINDING_COUNT = 11;
     private static final int COMPOSITE_PUSH_SIZE = 12;
@@ -192,6 +192,10 @@ public final class NrdDenoiser implements Destroyable {
 
     public VulkanImage motion() {
         return this.images.motion;
+    }
+
+    public VulkanImage fsrDepth() {
+        return this.images.fsrDepth;
     }
 
     public VulkanImage material() {
@@ -691,6 +695,7 @@ public final class NrdDenoiser implements Destroyable {
         private final VulkanImage normalRoughness;
         private final VulkanImage viewZ;
         private final VulkanImage motion;
+        private final VulkanImage fsrDepth;
         private final VulkanImage material;
         private final VulkanImage specularMaterial;
         private final VulkanImage primaryPosition;
@@ -708,6 +713,7 @@ public final class NrdDenoiser implements Destroyable {
                 VulkanImage normalRoughness,
                 VulkanImage viewZ,
                 VulkanImage motion,
+                VulkanImage fsrDepth,
                 VulkanImage material,
                 VulkanImage specularMaterial,
                 VulkanImage primaryPosition,
@@ -722,6 +728,7 @@ public final class NrdDenoiser implements Destroyable {
             this.normalRoughness = normalRoughness;
             this.viewZ = viewZ;
             this.motion = motion;
+            this.fsrDepth = fsrDepth;
             this.material = material;
             this.specularMaterial = specularMaterial;
             this.primaryPosition = primaryPosition;
@@ -750,6 +757,8 @@ public final class NrdDenoiser implements Destroyable {
                         context, created, width, height, VK12.VK_FORMAT_R32_SFLOAT, "Prime NRD view Z");
                 VulkanImage motion = createImage(
                         context, created, width, height, VK12.VK_FORMAT_R16G16B16A16_SFLOAT, "Prime NRD 2.5D screen motion");
+                VulkanImage fsrDepth = createImage(
+                        context, created, width, height, VK12.VK_FORMAT_R32_SFLOAT, "Prime FSR reversed depth");
                 VulkanImage material = createImage(
                         context, created, width, height, VK12.VK_FORMAT_R16G16B16A16_SFLOAT, "Prime NRD material factor");
                 VulkanImage specularMaterial = createImage(
@@ -774,6 +783,7 @@ public final class NrdDenoiser implements Destroyable {
                         normal,
                         viewZ,
                         motion,
+                        fsrDepth,
                         material,
                         specularMaterial,
                         primaryPosition,
@@ -831,7 +841,7 @@ public final class NrdDenoiser implements Destroyable {
         }
 
         private VulkanImage[] allImages() {
-            VulkanImage[] result = new VulkanImage[12 + this.permanentPool.length + this.transientPool.length];
+            VulkanImage[] result = new VulkanImage[13 + this.permanentPool.length + this.transientPool.length];
             result[0] = this.noisyDiffuse;
             result[1] = this.noisySpecular;
             result[2] = this.normalRoughness;
@@ -844,12 +854,13 @@ public final class NrdDenoiser implements Destroyable {
             result[9] = this.primaryPosition;
             result[10] = this.reprojectionError;
             result[11] = this.validation;
-            System.arraycopy(this.permanentPool, 0, result, 12, this.permanentPool.length);
+            result[12] = this.fsrDepth;
+            System.arraycopy(this.permanentPool, 0, result, 13, this.permanentPool.length);
             System.arraycopy(
                     this.transientPool,
                     0,
                     result,
-                    12 + this.permanentPool.length,
+                    13 + this.permanentPool.length,
                     this.transientPool.length);
             return result;
         }
@@ -874,6 +885,7 @@ public final class NrdDenoiser implements Destroyable {
             this.specularMaterial.destroy();
             this.material.destroy();
             this.motion.destroy();
+            this.fsrDepth.destroy();
             this.viewZ.destroy();
             this.normalRoughness.destroy();
             this.noisySpecular.destroy();
@@ -1440,6 +1452,7 @@ public final class NrdDenoiser implements Destroyable {
                     images.viewZ,
                     images.primaryPosition,
                     images.reprojectionError
+                    , images.fsrDepth
                 };
                 VkDescriptorImageInfo.Buffer imageInfos =
                         VkDescriptorImageInfo.calloc(MOTION_BINDING_COUNT, stack);

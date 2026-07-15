@@ -7,8 +7,10 @@ import com.mojang.blaze3d.vulkan.VulkanGpuSampler;
 import com.mojang.blaze3d.vulkan.VulkanGpuTexture;
 import com.mojang.blaze3d.vulkan.VulkanGpuTextureView;
 import dev.prime.PrimeClient;
+import dev.prime.render.fsr.FsrQualityMode;
 import dev.prime.render.terrain.TerrainScene;
 import dev.prime.render.terrain.TerrainStreamer;
+import dev.prime.render.fsr.FsrSettings;
 import dev.prime.render.shader.ShaderAbi;
 import dev.prime.render.vulkan.AtmospherePipeline;
 import dev.prime.render.vulkan.RayTracingPipeline;
@@ -17,6 +19,7 @@ import dev.prime.render.vulkan.VulkanCapabilities;
 import dev.prime.render.vulkan.VulkanContext;
 import dev.prime.render.vulkan.VulkanImage;
 import dev.prime.render.vulkan.nrd.NrdDenoiser;
+import dev.prime.render.vulkan.fsr.Fsr3Upscaler;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import net.minecraft.client.Minecraft;
@@ -133,7 +136,11 @@ public final class VulkanRenderer implements AutoCloseable {
                 || mainTarget.height != height) {
             return;
         }
-        long invocationCount = (long) width * height;
+        FsrQualityMode requestedQualityMode = FsrSettings.qualityMode();
+        FsrSettings.Extent renderExtent = requestedQualityMode.renderExtent(width, height);
+        int renderWidth = renderExtent.width();
+        int renderHeight = renderExtent.height();
+        long invocationCount = (long) renderWidth * renderHeight;
         if (invocationCount > Integer.toUnsignedLong(this.context.capabilities().maxRayDispatchInvocationCount())) {
             throw new IllegalStateException("Window dimensions exceed the Vulkan ray dispatch limit");
         }
@@ -149,6 +156,9 @@ public final class VulkanRenderer implements AutoCloseable {
         boolean resized = this.ensureRenderImages(
                 width,
                 height,
+                renderWidth,
+                renderHeight,
+                requestedQualityMode,
                 scene.tlas(),
                 atlasView,
                 atlasSampler);
@@ -158,7 +168,9 @@ public final class VulkanRenderer implements AutoCloseable {
         }
         VulkanImage target = images.output;
         VulkanImage history = images.accumulation;
+        VulkanImage sceneColor = images.sceneColor;
         NrdDenoiser denoiser = images.denoiser;
+        Fsr3Upscaler upscaler = images.upscaler;
         this.accumulationState.prepare(
                 frameCamera,
                 scene.resetRevision(),
@@ -166,20 +178,15 @@ public final class VulkanRenderer implements AutoCloseable {
                 atlasSamplerHandle,
                 frameSunDirection,
                 resized);
-        float[] cameraSample = IntegratorSettings.sobolSample2D(
-                0,
-                0,
-                this.accumulationState.sampleIndex(),
-                this.accumulationState.epoch(),
-                0,
-                IntegratorSettings.SAMPLE_EFFECT_CAMERA,
-                0);
+        FsrSettings.Jitter cameraJitter = upscaler.jitter();
 
         var encoder = this.context.commandEncoder();
         VkCommandBuffer commandBuffer = encoder.allocateAndBeginTransientCommandBuffer();
-        this.context.device().instance().debug().beginDebugGroup(commandBuffer, () -> "Prime path tracing and NRD");
+        this.context.device().instance().debug().beginDebugGroup(
+                commandBuffer, () -> "Prime path tracing, NRD, and FSR 3.1.4");
         this.atmosphere.prepare(commandBuffer, frameCamera, frameSunDirection);
         this.prepareOutputForComposite(commandBuffer, target);
+        this.prepareSceneColorForComposite(commandBuffer, sceneColor);
         this.prepareAccumulationForTrace(commandBuffer, history);
         denoiser.prepareForRayTrace(commandBuffer);
         this.prepareAtlasForTrace(commandBuffer, atlasView.texture());
@@ -189,10 +196,12 @@ public final class VulkanRenderer implements AutoCloseable {
                     stack,
                     frameCamera,
                     scene,
-                    width,
-                    height,
-                    frameSunDirection);
-            this.pipeline.trace(commandBuffer, pushConstants, width, height);
+                    renderWidth,
+                    renderHeight,
+                    frameSunDirection,
+                    images.qualityMode,
+                    upscaler.frameIndex());
+            this.pipeline.trace(commandBuffer, pushConstants, renderWidth, renderHeight);
             this.finishAtlasRead(commandBuffer, atlasView.texture());
             nrdFrame = denoiser.record(
                     commandBuffer,
@@ -201,8 +210,9 @@ public final class VulkanRenderer implements AutoCloseable {
                     atlasViewHandle,
                     atlasSamplerHandle,
                     frameSunDirection,
-                    cameraSample[0] - 0.5f,
-                    cameraSample[1] - 0.5f);
+                    cameraJitter.x(),
+                    cameraJitter.y());
+            upscaler.record(commandBuffer, frameCamera);
             this.prepareImagesForCopy(commandBuffer, target, mainColor);
             VkImageCopy.Buffer copy = VkImageCopy.calloc(1, stack);
             copy.get(0).srcSubresource()
@@ -257,6 +267,9 @@ public final class VulkanRenderer implements AutoCloseable {
 
     public void invalidateAll() {
         this.terrain.invalidateAll();
+        if (this.renderImages != null) {
+            this.renderImages.upscaler.requestReset();
+        }
     }
 
     public void requestShaderReload() {
@@ -290,6 +303,7 @@ public final class VulkanRenderer implements AutoCloseable {
         AtmospherePipeline replacementAtmosphere = null;
         RayTracingPipeline replacementPipeline = null;
         NrdDenoiser replacementDenoiser = null;
+        Fsr3Upscaler replacementUpscaler = null;
         try {
             replacementAtmosphere = new AtmospherePipeline(this.context);
             replacementPipeline = new RayTracingPipeline(this.context);
@@ -297,13 +311,27 @@ public final class VulkanRenderer implements AutoCloseable {
             if (currentImages != null) {
                 replacementDenoiser = NrdDenoiser.create(
                         this.context,
-                        currentImages.output.width(),
-                        currentImages.output.height(),
-                        currentImages.output,
+                        currentImages.sceneColor.width(),
+                        currentImages.sceneColor.height(),
+                        currentImages.sceneColor,
                         currentImages.accumulation,
                         replacementAtmosphere);
+                replacementUpscaler = Fsr3Upscaler.create(
+                        this.context,
+                        currentImages.sceneColor.width(),
+                        currentImages.sceneColor.height(),
+                        currentImages.output.width(),
+                        currentImages.output.height(),
+                        currentImages.qualityMode,
+                        currentImages.sceneColor,
+                        replacementDenoiser.motion(),
+                        replacementDenoiser.fsrDepth(),
+                        currentImages.output);
             }
         } catch (RuntimeException exception) {
+            if (replacementUpscaler != null) {
+                replacementUpscaler.destroy();
+            }
             if (replacementDenoiser != null) {
                 replacementDenoiser.destroy();
             }
@@ -320,13 +348,16 @@ public final class VulkanRenderer implements AutoCloseable {
         AtmospherePipeline previousAtmosphere = this.atmosphere;
         RenderImages currentImages = this.renderImages;
         NrdDenoiser previousDenoiser = currentImages == null ? null : currentImages.denoiser;
+        Fsr3Upscaler previousUpscaler = currentImages == null ? null : currentImages.upscaler;
         this.pipeline = replacementPipeline;
         this.atmosphere = replacementAtmosphere;
         if (currentImages != null) {
             currentImages.denoiser = replacementDenoiser;
+            currentImages.upscaler = replacementUpscaler;
         }
         this.context.defer(previousPipeline);
         if (previousDenoiser != null) {
+            this.context.defer(previousUpscaler);
             this.context.defer(previousDenoiser);
         }
         this.context.defer(previousAtmosphere);
@@ -335,13 +366,17 @@ public final class VulkanRenderer implements AutoCloseable {
     }
 
     private boolean ensureRenderImages(
-            int width,
-            int height,
+            int displayWidth,
+            int displayHeight,
+            int renderWidth,
+            int renderHeight,
+            FsrQualityMode qualityMode,
             long tlas,
             VulkanGpuTextureView atlasView,
             VulkanGpuSampler atlasSampler) {
         RenderImages current = this.renderImages;
-        if (current != null && current.matches(width, height)) {
+        if (current != null && current.matches(
+                displayWidth, displayHeight, renderWidth, renderHeight, qualityMode)) {
             this.pipeline.ensureDescriptors(
                     tlas,
                     current.output,
@@ -354,20 +389,45 @@ public final class VulkanRenderer implements AutoCloseable {
         }
         VulkanImage replacementOutput = null;
         VulkanImage replacementAccumulation = null;
+        VulkanImage replacementSceneColor = null;
         NrdDenoiser replacementDenoiser = null;
+        Fsr3Upscaler replacementUpscaler = null;
         try {
-            replacementOutput = this.context.createOutputImage(width, height);
-            replacementAccumulation = this.context.createAccumulationImage(width, height);
+            replacementOutput = this.context.createOutputImage(displayWidth, displayHeight);
+            replacementAccumulation = this.context.createAccumulationImage(renderWidth, renderHeight);
+            replacementSceneColor = this.context.createImage2D(
+                    renderWidth,
+                    renderHeight,
+                    VK12.VK_FORMAT_R16G16B16A16_SFLOAT,
+                    VK12.VK_IMAGE_USAGE_STORAGE_BIT | VK12.VK_IMAGE_USAGE_SAMPLED_BIT,
+                    "Prime linear HDR scene color");
             replacementDenoiser = NrdDenoiser.create(
                     this.context,
-                    width,
-                    height,
-                    replacementOutput,
+                    renderWidth,
+                    renderHeight,
+                    replacementSceneColor,
                     replacementAccumulation,
                     this.atmosphere);
+            replacementUpscaler = Fsr3Upscaler.create(
+                    this.context,
+                    renderWidth,
+                    renderHeight,
+                    displayWidth,
+                    displayHeight,
+                    qualityMode,
+                    replacementSceneColor,
+                    replacementDenoiser.motion(),
+                    replacementDenoiser.fsrDepth(),
+                    replacementOutput);
         } catch (RuntimeException exception) {
+            if (replacementUpscaler != null) {
+                replacementUpscaler.destroy();
+            }
             if (replacementDenoiser != null) {
                 replacementDenoiser.destroy();
+            }
+            if (replacementSceneColor != null) {
+                replacementSceneColor.destroy();
             }
             if (replacementAccumulation != null) {
                 replacementAccumulation.destroy();
@@ -378,7 +438,12 @@ public final class VulkanRenderer implements AutoCloseable {
             throw exception;
         }
         RenderImages replacement = new RenderImages(
-                replacementOutput, replacementAccumulation, replacementDenoiser);
+                replacementOutput,
+                replacementAccumulation,
+                replacementSceneColor,
+                replacementDenoiser,
+                replacementUpscaler,
+                qualityMode);
         try {
             this.pipeline.ensureDescriptors(
                     tlas,
@@ -398,10 +463,13 @@ public final class VulkanRenderer implements AutoCloseable {
             this.context.defer(current);
         }
         PrimeClient.LOGGER.debug(
-                "Recreated Prime render images at {}x{} "
+                "Recreated Prime render images at display {}x{}, render {}x{}, FSR {} "
                         + "(output image={}, view={}; accumulation image={}, view={}; atlas image={}, view={}, sampler={})",
-                width,
-                height,
+                displayWidth,
+                displayHeight,
+                renderWidth,
+                renderHeight,
+                qualityMode.id(),
                 hex(replacement.output.image()),
                 hex(replacement.output.view()),
                 hex(replacement.accumulation.image()),
@@ -486,6 +554,26 @@ public final class VulkanRenderer implements AutoCloseable {
         image.markInitialized();
     }
 
+    private void prepareSceneColorForComposite(VkCommandBuffer commandBuffer, VulkanImage image) {
+        int oldLayout = image.initialized()
+                ? VK12.VK_IMAGE_LAYOUT_GENERAL
+                : VK12.VK_IMAGE_LAYOUT_UNDEFINED;
+        imageBarrier(
+                commandBuffer,
+                image.image(),
+                oldLayout,
+                VK12.VK_IMAGE_LAYOUT_GENERAL,
+                image.initialized()
+                        ? VK12.VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT
+                        : VK12.VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+                image.initialized()
+                        ? VK12.VK_ACCESS_SHADER_READ_BIT | VK12.VK_ACCESS_SHADER_WRITE_BIT
+                        : 0L,
+                VK12.VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                VK12.VK_ACCESS_SHADER_WRITE_BIT);
+        image.markInitialized();
+    }
+
     private void prepareImagesForCopy(VkCommandBuffer commandBuffer, VulkanImage source, VulkanGpuTexture destination) {
         try (MemoryStack stack = MemoryStack.stackPush()) {
             VkImageMemoryBarrier2.Buffer barriers = VkImageMemoryBarrier2.calloc(2, stack);
@@ -548,7 +636,9 @@ public final class VulkanRenderer implements AutoCloseable {
             TerrainScene.SceneView scene,
             int width,
             int height,
-            SunDirection sunDirection) {
+            SunDirection sunDirection,
+            FsrQualityMode qualityMode,
+            int fsrFrameIndex) {
         ByteBuffer buffer = stack.calloc(ShaderAbi.PUSH_CONSTANT_SIZE).order(ByteOrder.nativeOrder());
         float[] matrix = new float[16];
         camera.inverseViewProjection().get(matrix);
@@ -569,11 +659,18 @@ public final class VulkanRenderer implements AutoCloseable {
         buffer.putFloat(sunOffset, sunDirection.x());
         buffer.putFloat(sunOffset + Float.BYTES, sunDirection.y());
         buffer.putFloat(sunOffset + 2 * Float.BYTES, sunDirection.z());
+        buffer.putInt(
+                ShaderAbi.PUSH_RAY_CONE_OFFSET,
+                qualityMode.packedRayCone(
+                        camera.projection().m00(), camera.projection().m11(), width, height));
         int pathOffset = ShaderAbi.PUSH_PATH_OFFSET;
         buffer.putInt(pathOffset, this.accumulationState.sampleIndex());
         buffer.putInt(pathOffset + Integer.BYTES, this.accumulationState.epoch());
-        buffer.putInt(pathOffset + 2 * Integer.BYTES, IntegratorSettings.MAXIMUM_BOUNCES);
-        buffer.putInt(pathOffset + 3 * Integer.BYTES, IntegratorSettings.RUSSIAN_ROULETTE_START);
+        buffer.putInt(
+                pathOffset + 2 * Integer.BYTES,
+                (qualityMode.jitterPhaseCount() << 16)
+                        | (IntegratorSettings.MAXIMUM_BOUNCES & 0xffff));
+        buffer.putInt(pathOffset + 3 * Integer.BYTES, fsrFrameIndex);
         return buffer.position(0).limit(ShaderAbi.PUSH_CONSTANT_SIZE);
     }
 
@@ -638,30 +735,49 @@ public final class VulkanRenderer implements AutoCloseable {
     private static final class RenderImages implements Destroyable {
         private final VulkanImage output;
         private final VulkanImage accumulation;
+        private final VulkanImage sceneColor;
+        private final FsrQualityMode qualityMode;
         private NrdDenoiser denoiser;
+        private Fsr3Upscaler upscaler;
         private boolean destroyed;
 
         private RenderImages(
                 VulkanImage output,
                 VulkanImage accumulation,
-                NrdDenoiser denoiser) {
+                VulkanImage sceneColor,
+                NrdDenoiser denoiser,
+                Fsr3Upscaler upscaler,
+                FsrQualityMode qualityMode) {
             this.output = output;
             this.accumulation = accumulation;
+            this.sceneColor = sceneColor;
             this.denoiser = denoiser;
+            this.upscaler = upscaler;
+            this.qualityMode = qualityMode;
         }
 
-        private boolean matches(int width, int height) {
-            return this.output.width() == width
-                    && this.output.height() == height
-                    && this.accumulation.width() == width
-                    && this.accumulation.height() == height;
+        private boolean matches(
+                int displayWidth,
+                int displayHeight,
+                int renderWidth,
+                int renderHeight,
+                FsrQualityMode qualityMode) {
+            return this.output.width() == displayWidth
+                    && this.output.height() == displayHeight
+                    && this.accumulation.width() == renderWidth
+                    && this.accumulation.height() == renderHeight
+                    && this.sceneColor.width() == renderWidth
+                    && this.sceneColor.height() == renderHeight
+                    && this.qualityMode == qualityMode;
         }
 
         @Override
         public void destroy() {
             if (!this.destroyed) {
                 this.destroyed = true;
+                this.upscaler.destroy();
                 this.denoiser.destroy();
+                this.sceneColor.destroy();
                 this.accumulation.destroy();
                 this.output.destroy();
             }

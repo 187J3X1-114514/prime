@@ -1,5 +1,6 @@
 package dev.prime;
 
+import dev.prime.config.PrimeConfig;
 import dev.prime.render.RayTracingRuntime;
 import dev.prime.render.vulkan.nrd.NrdDiagnostics;
 import net.fabricmc.api.ClientModInitializer;
@@ -23,6 +24,7 @@ public final class PrimeClient implements ClientModInitializer {
 
     @Override
     public void onInitializeClient() {
+        PrimeConfig.load();
         LOGGER.info("Initializing Prime ray tracing framework");
         RayTracingRuntime.instance().initialize();
         ResourceLoader resourceLoader = ResourceLoader.get(PackType.CLIENT_RESOURCES);

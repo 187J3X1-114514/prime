@@ -33,15 +33,29 @@ void main() {
     path.sampleIndex = primePush.path.x;
     path.sampleEpoch = primePush.path.y;
 
-    PrimeSampleBase cameraSampleBase = primeMakeSampleBase(path, 0u);
-    // NRD describes one camera jitter for the whole frame. Keeping the low-discrepancy sample
-    // independent of pixel identity makes the ray projection and NRD's reprojection contract
-    // exactly agree; per-pixel lens jitter cannot be represented by its CommonSettings API.
-    cameraSampleBase.pixel = uvec2(0u);
-    vec2 cameraSample = primeSobolSample2D(
-            cameraSampleBase,
-            PRIME_SAMPLE_EFFECT_CAMERA,
-            PRIME_SAMPLE_DIMENSION_PRIMARY);
+    // FSR 3.1.4's canonical base-2/base-3 Halton sequence is the sole camera jitter source.
+    // path.w is a dedicated, monotonically advancing FSR frame index; NRD and the FSR constants
+    // receive the identical pixel offset from Java. Do not replace this with a per-pixel sample:
+    // temporal reconstruction can only describe one camera projection for the complete frame.
+    uint jitterSequenceLength = max(primePush.path.z >> 16u, 1u);
+    uint jitterPhase = (primePush.path.w % jitterSequenceLength) + 1u;
+    float halton2 = 0.0;
+    float halton3 = 0.0;
+    float fraction2 = 1.0;
+    float fraction3 = 1.0;
+    uint index2 = jitterPhase;
+    uint index3 = jitterPhase;
+    while (index2 > 0u) {
+        fraction2 *= 0.5;
+        halton2 += fraction2 * float(index2 % 2u);
+        index2 /= 2u;
+    }
+    while (index3 > 0u) {
+        fraction3 /= 3.0;
+        halton3 += fraction3 * float(index3 % 3u);
+        index3 /= 3u;
+    }
+    vec2 cameraSample = vec2(halton2, halton3);
     vec2 uv = (vec2(pixel) + cameraSample) / vec2(primePush.outputExtent);
     vec2 ndc = vec2(uv.x * 2.0 - 1.0, uv.y * 2.0 - 1.0);
     vec4 nearPoint = primePush.inverseViewProjection * vec4(ndc, 1.0, 1.0);
@@ -120,10 +134,8 @@ void main() {
             ivec2(pixel),
             vec4(specularMaterialFactor, 0.0));
 
-    vec3 stable = sampleResult.stableRadiance;
-    if (path.sampleIndex != 0u) {
-        vec3 previous = imageLoad(primeAccumulation, ivec2(pixel)).rgb;
-        stable = previous + (stable - previous) / float(path.sampleIndex + 1u);
-    }
-    imageStore(primeAccumulation, ivec2(pixel), vec4(stable, 1.0));
+    // Directly visible sky/emission is a current-frame deterministic signal. FSR owns temporal
+    // coverage reconstruction, so averaging a second independent history here would create stale
+    // silhouettes and make its lock/disocclusion logic impossible to reason about.
+    imageStore(primeAccumulation, ivec2(pixel), vec4(sampleResult.stableRadiance, 1.0));
 }

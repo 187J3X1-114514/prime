@@ -8,10 +8,12 @@ void main() {
     SectionRecord section = primeSection();
     PrimitiveRecord primitive = primePrimitive(section);
     primePayload.hitKind = 1u;
-    MaterialEvaluation material = primeEvaluateMaterial(primitive, primeInterpolateUv(primitive));
+    vec3 normal = primeUnpackOctahedralNormal(primitive.normal);
+    float textureLodValue = primeRayConeTextureLod(primitive, normal);
+    MaterialEvaluation material = primeEvaluateMaterial(
+            primitive, primeInterpolateUv(primitive), textureLodValue);
     primePayload.position = gl_WorldRayOriginEXT + gl_HitTEXT * gl_WorldRayDirectionEXT;
     primePayload.t = gl_HitTEXT;
-    vec3 normal = primeUnpackOctahedralNormal(primitive.normal);
     if (dot(normal, -gl_WorldRayDirectionEXT) < 0.0) {
         normal = -normal;
     }
@@ -22,4 +24,5 @@ void main() {
     primePayload.emitterIndex = primitive.reserved0 == 0u
             ? 0xffffffffu
             : primitive.reserved0 - 1u;
+    primePayload.reserved0 = floatBitsToUint(textureLodValue);
 }

@@ -11,27 +11,27 @@ struct MaterialEvaluation {
     uint flags;
 };
 
-vec3 primeAtlasBaseColor(uint packedTint, vec2 uv, out float opacity) {
-    vec4 textureSample = textureLod(primeBlockAtlas, uv, 0.0);
+vec3 primeAtlasBaseColor(uint packedTint, vec2 uv, float textureLodValue, out float opacity) {
+    vec4 textureSample = textureLod(primeBlockAtlas, uv, textureLodValue);
     vec4 tint = primeUnpackTint(packedTint);
     opacity = textureSample.a;
     vec3 linearSrgbAlbedo = primeDecodeSrgb(textureSample.rgb) * primeDecodeSrgb(tint.rgb);
     return primeLinearSrgbToLinearRec2020(linearSrgbAlbedo);
 }
 
-MaterialEvaluation primeEvaluateMaterial(PrimitiveRecord primitive, vec2 uv) {
+MaterialEvaluation primeEvaluateMaterial(PrimitiveRecord primitive, vec2 uv, float textureLodValue) {
     MaterialEvaluation result;
     // Minecraft stores both atlas texels and tint RGB as display-encoded sRGB in UNORM values.
     // Decode both before multiplication, then cross the single material boundary into the
     // integrator's linear Rec.2020 working space. Alpha is coverage and is never color-decoded.
-    result.baseColor = primeAtlasBaseColor(primitive.tint, uv, result.opacity);
+    result.baseColor = primeAtlasBaseColor(primitive.tint, uv, textureLodValue, result.opacity);
     result.flags = primitive.flags;
     return result;
 }
 
-vec3 primeEvaluateEmitterRadiance(LightEmitter emitter, vec2 uv) {
+vec3 primeEvaluateEmitterRadiance(LightEmitter emitter, vec2 uv, float textureLodValue) {
     float opacity;
-    vec3 color = primeAtlasBaseColor(emitter.uvsTint.w, uv, opacity);
+    vec3 color = primeAtlasBaseColor(emitter.uvsTint.w, uv, textureLodValue, opacity);
     bool cutout = (emitter.metadata.z & 1u) != 0u;
     if (cutout && opacity < PRIME_CUTOUT_ALPHA_THRESHOLD) {
         return vec3(0.0);
@@ -42,8 +42,14 @@ vec3 primeEvaluateEmitterRadiance(LightEmitter emitter, vec2 uv) {
     return color * max(emitter.edgeOneScale.w, 0.0);
 }
 
-float primeEvaluateOpacity(vec2 uv) {
-    return textureLod(primeBlockAtlas, uv, 0.0).a;
+vec3 primeEvaluateEmitterRadiance(LightEmitter emitter, vec2 uv) {
+    // A sampled light point has no screen-space ray footprint. The distribution was constructed
+    // from mip 0, so evaluating that same radiometric function preserves its PDF contract.
+    return primeEvaluateEmitterRadiance(emitter, uv, 0.0);
+}
+
+float primeEvaluateOpacity(vec2 uv, float textureLodValue) {
+    return textureLod(primeBlockAtlas, uv, textureLodValue).a;
 }
 
 #endif

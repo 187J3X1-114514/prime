@@ -9,8 +9,10 @@
     "LevelExtractorMixin",
     "LevelRendererMixin",
     "MinecraftMixin",
+    "OptionsSubScreenAccessor",
     "SpriteContentsAccessor",
-    "VulkanBackendMixin"
+    "VulkanBackendMixin",
+    "VideoSettingsScreenMixin"
   ],
   "injectors": {
     "defaultRequire": 1

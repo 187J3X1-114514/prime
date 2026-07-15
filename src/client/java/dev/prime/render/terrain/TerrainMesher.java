@@ -167,9 +167,18 @@ public final class TerrainMesher {
             destination.positions.add(thirdY);
             destination.positions.add(thirdZ);
 
-            int packedUv0 = packUv(quad.packedUV(indices[0]));
-            int packedUv1 = packUv(quad.packedUV(indices[1]));
-            int packedUv2 = packUv(quad.packedUV(indices[2]));
+            long rawUv0 = quad.packedUV(indices[0]);
+            long rawUv1 = quad.packedUV(indices[1]);
+            long rawUv2 = quad.packedUV(indices[2]);
+            float uv0U = UVPair.unpackU(rawUv0);
+            float uv0V = UVPair.unpackV(rawUv0);
+            float uv1U = UVPair.unpackU(rawUv1);
+            float uv1V = UVPair.unpackV(rawUv1);
+            float uv2U = UVPair.unpackU(rawUv2);
+            float uv2V = UVPair.unpackV(rawUv2);
+            int packedUv0 = packUv(rawUv0);
+            int packedUv1 = packUv(rawUv1);
+            int packedUv2 = packUv(rawUv2);
             int packedTint = PrimitivePacking.packTint(tint);
             destination.primitives.add(packedUv0);
             destination.primitives.add(packedUv1);
@@ -185,6 +194,17 @@ public final class TerrainMesher {
             float normalX = edge1Y * edge2Z - edge1Z * edge2Y;
             float normalY = edge1Z * edge2X - edge1X * edge2Z;
             float normalZ = edge1X * edge2Y - edge1Y * edge2X;
+            int packedUvDensity = PrimitivePacking.packUvDensity(
+                    edge1X,
+                    edge1Y,
+                    edge1Z,
+                    edge2X,
+                    edge2Y,
+                    edge2Z,
+                    uv1U - uv0U,
+                    uv1V - uv0V,
+                    uv2U - uv0U,
+                    uv2V - uv0V);
             float inverseLength = 1.0F / Math.max(
                     1.0e-20F,
                     (float) Math.sqrt(normalX * normalX + normalY * normalY + normalZ * normalZ));
@@ -211,7 +231,7 @@ public final class TerrainMesher {
                     cutout,
                     lightEmission,
                     quad.materialInfo().sprite()));
-            destination.primitives.add(0);
+            destination.primitives.add(packedUvDensity);
             destination.triangleCount++;
         }
 

@@ -31,6 +31,21 @@ final class PrimitivePackingTest {
     }
 
     @Test
+    void uvDensityUsesTheLargestWorldToUvSingularValue() {
+        int packed = PrimitivePacking.packUvDensity(
+                1.0F, 0.0F, 0.0F,
+                0.0F, 1.0F, 0.0F,
+                0.25F, 0.0F,
+                0.0F, 0.5F);
+        assertEquals(0.5F, Float.intBitsToFloat(packed), 1.0e-7F);
+        assertEquals(0.0F, Float.intBitsToFloat(PrimitivePacking.packUvDensity(
+                1.0F, 0.0F, 0.0F,
+                2.0F, 0.0F, 0.0F,
+                1.0F, 0.0F,
+                2.0F, 0.0F)));
+    }
+
+    @Test
     void meshLayoutRejectsMismatchedArrayLengths() {
         CpuSectionMesh mesh = new CpuSectionMesh(
                 new float[9], new int[8], 1, 0, CpuSectionLights.EMPTY);

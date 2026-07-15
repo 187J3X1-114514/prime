@@ -1,18 +1,15 @@
 #version 460
 #extension GL_GOOGLE_include_directive : require
 
-#define PRIME_COLOR_WORKING_SPACE_LINEAR_REC2020_D65 1
-#define PRIME_COLOR_TEXTURE_ENCODING_SRGB 1
-#define PRIME_COLOR_DISPLAY_ENCODING_SRGB 1
-#define PRIME_COLOR_DISPLAY_SPACE_REC709_D65 1
-#define PRIME_COLOR_DISPLAY_TRANSFORM_OKLAB_DRT 1
-#include "display_transform.glsl"
 #include "atmosphere.glsl"
 #include "nrd_common.glsl"
 
 layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
 
-layout(set = 0, binding = 0, rgba8) uniform writeonly image2D primeCompositeOutput;
+// FSR consumes scene-referred linear Rec.2020 HDR. The Oklab display transform belongs strictly
+// after upscaling; applying it here would make temporal interpolation operate on non-linear,
+// display-referred values and violate both the integrator and FSR signal contracts.
+layout(set = 0, binding = 0, rgba16f) uniform writeonly image2D primeCompositeOutput;
 layout(set = 0, binding = 1, rgba16f) uniform readonly image2D primeDenoisedDiffuse;
 layout(set = 0, binding = 2, rgba16f) uniform readonly image2D primeDenoisedSpecular;
 layout(set = 0, binding = 3, rgba16f) uniform readonly image2D primeCompositeMaterial;
@@ -128,5 +125,5 @@ void main() {
     imageStore(
             primeCompositeOutput,
             ivec2(pixel),
-            vec4(primeDisplayTransformToSrgb(max(radiance, vec3(0.0))), 1.0));
+            vec4(max(radiance, vec3(0.0)), 1.0));
 }

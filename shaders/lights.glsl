@@ -444,12 +444,16 @@ LightEvaluation primeEvaluateAreaLight(
             rayOrigin - section.translation);
     if (!(worldPdf > 0.0) || !(sectionPdf > 0.0)) {
         result.radiance = primeEvaluateEmitterRadiance(
-                emitter, primeEmitterUv(emitter, parentBarycentric));
+                emitter,
+                primeEmitterUv(emitter, parentBarycentric),
+                uintBitsToFloat(surface.reserved0));
         return result;
     }
     float areaPdf = worldPdf * sectionPdf * cell.probabilityMass / cellArea;
     result.radiance = primeEvaluateEmitterRadiance(
-            emitter, primeEmitterUv(emitter, parentBarycentric));
+            emitter,
+            primeEmitterUv(emitter, parentBarycentric),
+            uintBitsToFloat(surface.reserved0));
     result.pdf = primeAreaSolidAnglePdf(
             rayOrigin, surface.position, lightCosine, areaPdf);
     return result;

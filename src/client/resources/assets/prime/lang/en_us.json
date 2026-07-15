@@ -1,0 +1,10 @@
+{
+  "prime.options.header": "Prime Ray Tracing",
+  "prime.options.fsr.quality": "FSR Quality",
+  "prime.options.fsr.quality.tooltip": "Controls the internal path-tracing resolution. Higher quality preserves more distant detail; higher performance improves frame rate. Changing this safely rebuilds Prime's render history.",
+  "prime.options.fsr.quality.native_aa": "Native AA (1.0x)",
+  "prime.options.fsr.quality.quality": "Quality (1.5x)",
+  "prime.options.fsr.quality.balanced": "Balanced (1.7x)",
+  "prime.options.fsr.quality.performance": "Performance (2.0x)",
+  "prime.options.fsr.quality.ultra_performance": "Ultra Performance (3.0x)"
+}

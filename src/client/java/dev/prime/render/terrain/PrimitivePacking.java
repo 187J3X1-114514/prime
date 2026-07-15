@@ -33,6 +33,56 @@ public final class PrimitivePacking {
         return packedX & 0xffff | packedY << 16;
     }
 
+    /**
+     * Packs the largest normalized-atlas UV change per world-space unit as one float.
+     *
+     * <p>This is the largest singular value of the triangle's world-to-UV differential. The hit
+     * shader combines it with the actual atlas extent and the ray-cone footprint, so arbitrary
+     * baked-model scaling is handled without storing triangle positions in the shader record.
+     */
+    public static int packUvDensity(
+            float edge1X,
+            float edge1Y,
+            float edge1Z,
+            float edge2X,
+            float edge2Y,
+            float edge2Z,
+            float deltaU1,
+            float deltaV1,
+            float deltaU2,
+            float deltaV2) {
+        float normalX = edge1Y * edge2Z - edge1Z * edge2Y;
+        float normalY = edge1Z * edge2X - edge1X * edge2Z;
+        float normalZ = edge1X * edge2Y - edge1Y * edge2X;
+        float denominator = normalX * normalX + normalY * normalY + normalZ * normalZ;
+        if (!(denominator > 1.0e-20F) || !Float.isFinite(denominator)) {
+            return Float.floatToRawIntBits(0.0F);
+        }
+
+        // cross(edge2, normal) and cross(normal, edge1) are the reciprocal tangent basis.
+        float firstBasisX = edge2Y * normalZ - edge2Z * normalY;
+        float firstBasisY = edge2Z * normalX - edge2X * normalZ;
+        float firstBasisZ = edge2X * normalY - edge2Y * normalX;
+        float secondBasisX = normalY * edge1Z - normalZ * edge1Y;
+        float secondBasisY = normalZ * edge1X - normalX * edge1Z;
+        float secondBasisZ = normalX * edge1Y - normalY * edge1X;
+        float inverseDenominator = 1.0F / denominator;
+        float gradientUx = (deltaU1 * firstBasisX + deltaU2 * secondBasisX) * inverseDenominator;
+        float gradientUy = (deltaU1 * firstBasisY + deltaU2 * secondBasisY) * inverseDenominator;
+        float gradientUz = (deltaU1 * firstBasisZ + deltaU2 * secondBasisZ) * inverseDenominator;
+        float gradientVx = (deltaV1 * firstBasisX + deltaV2 * secondBasisX) * inverseDenominator;
+        float gradientVy = (deltaV1 * firstBasisY + deltaV2 * secondBasisY) * inverseDenominator;
+        float gradientVz = (deltaV1 * firstBasisZ + deltaV2 * secondBasisZ) * inverseDenominator;
+
+        float uu = gradientUx * gradientUx + gradientUy * gradientUy + gradientUz * gradientUz;
+        float vv = gradientVx * gradientVx + gradientVy * gradientVy + gradientVz * gradientVz;
+        float uv = gradientUx * gradientVx + gradientUy * gradientVy + gradientUz * gradientVz;
+        float discriminant = (uu - vv) * (uu - vv) + 4.0F * uv * uv;
+        float largestEigenvalue = 0.5F * (uu + vv + (float) Math.sqrt(Math.max(discriminant, 0.0F)));
+        float density = (float) Math.sqrt(Math.max(largestEigenvalue, 0.0F));
+        return Float.floatToRawIntBits(Float.isFinite(density) ? density : 0.0F);
+    }
+
     private static int packSnorm16(float value) {
         float clamped = Math.max(-1.0F, Math.min(1.0F, value));
         return Math.round(clamped * 32767.0F) & 0xffff;

@@ -24,8 +24,11 @@ final class SamplingContractTest {
         assertTrue(sampling.contains("primeSobolSample2D"));
         assertTrue(sampling.contains("primeSobolSample3D"));
         assertTrue(sampling.contains("primeSobolSample4D"));
-        assertTrue(rayGeneration.contains("PRIME_SAMPLE_EFFECT_CAMERA"));
-        assertTrue(rayGeneration.contains("cameraSampleBase.pixel = uvec2(0u)"));
+        assertTrue(rayGeneration.contains("primePush.path.z >> 16u"));
+        assertTrue(rayGeneration.contains(
+                "uint jitterPhase = (primePush.path.w % jitterSequenceLength) + 1u"));
+        assertTrue(rayGeneration.contains("vec2 cameraSample = vec2(halton2, halton3)"));
+        assertFalse(rayGeneration.contains("cameraSampleBase.pixel"));
         assertFalse(sampling.contains("PRIME_SAMPLE_EFFECT_DIRECT_ENVIRONMENT"));
         assertFalse(integrator.contains("primeEstimateDirectEnvironment"));
         assertFalse(allConsumers.contains("primeSampleEnvironment"));

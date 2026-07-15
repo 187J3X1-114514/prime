@@ -56,7 +56,7 @@ SurfaceInteraction primeTraceSurface(vec3 origin, vec3 direction) {
     surface.materialFlags = primePayload.traceKind;
     surface.sectionIndex = primePayload.sectionIndex;
     surface.emitterIndex = primePayload.emitterIndex;
-    surface.reserved0 = 0u;
+    surface.reserved0 = primePayload.reserved0;
     surface.reserved1 = 0u;
     return surface;
 }
@@ -193,8 +193,12 @@ PrimeIntegrationResult primeIntegrate(PathState path, IntegratorRecord integrato
     result.primaryNormal = vec3(0.0, 1.0, 0.0);
     result.reserved = 0u;
     bool diffusePath = false;
-    uint maximumBounces = min(primePush.path.z, 256u);
-    uint rouletteStart = primePush.path.w;
+    // path.z packs two independently generated Java contracts without growing the guaranteed
+    // 128-byte push range: low 16 bits are the bounce cap, high 16 bits the FSR jitter period.
+    uint maximumBounces = min(primePush.path.z & 0xffffu, 256u);
+    // Push path.w is reserved for FSR's camera-jitter frame index. Russian roulette remains an
+    // estimator contract and is deliberately fixed here instead of sharing temporal state.
+    uint rouletteStart = 5u;
     for (path.bounce = 0u; path.bounce < maximumBounces; ++path.bounce) {
         SurfaceInteraction surface = primeTraceSurface(path.traceOrigin, path.rayDirection);
         if (path.bounce == 0u && surface.hitKind != PRIME_HIT_NONE) {

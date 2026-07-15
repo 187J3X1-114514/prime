@@ -123,6 +123,7 @@ public final class VulkanContext implements AutoCloseable {
                 width,
                 height,
                 1,
+                1,
                 VK12.VK_FORMAT_R8G8B8A8_UNORM,
                 VK12.VK_IMAGE_USAGE_STORAGE_BIT | VK12.VK_IMAGE_USAGE_TRANSFER_SRC_BIT,
                 "Prime output");
@@ -132,6 +133,7 @@ public final class VulkanContext implements AutoCloseable {
         return this.createImage(
                 width,
                 height,
+                1,
                 1,
                 VK12.VK_FORMAT_R32G32B32A32_SFLOAT,
                 VK12.VK_IMAGE_USAGE_STORAGE_BIT,
@@ -143,6 +145,7 @@ public final class VulkanContext implements AutoCloseable {
                 width,
                 height,
                 1,
+                1,
                 VK12.VK_FORMAT_R16G16B16A16_SFLOAT,
                 VK12.VK_IMAGE_USAGE_STORAGE_BIT,
                 label);
@@ -153,19 +156,39 @@ public final class VulkanContext implements AutoCloseable {
                 width,
                 height,
                 depth,
+                1,
                 VK12.VK_FORMAT_R16G16B16A16_SFLOAT,
                 VK12.VK_IMAGE_USAGE_STORAGE_BIT,
                 label);
     }
 
     public VulkanImage createImage2D(int width, int height, int format, int usage, String label) {
-        return this.createImage(width, height, 1, format, usage, label);
+        return this.createImage(width, height, 1, 1, format, usage, label);
+    }
+
+    /** Creates one sampled full-chain view plus one storage view per mip level. */
+    public VulkanImage createMipmappedImage2D(
+            int width,
+            int height,
+            int mipLevels,
+            int format,
+            int usage,
+            String label) {
+        if (mipLevels <= 0) {
+            throw new IllegalArgumentException("Vulkan mip count must be positive");
+        }
+        int maximumMipLevels = 32 - Integer.numberOfLeadingZeros(Math.max(width, height));
+        if (mipLevels > maximumMipLevels) {
+            throw new IllegalArgumentException("Vulkan mip count exceeds the image extent");
+        }
+        return this.createImage(width, height, 1, mipLevels, format, usage, label);
     }
 
     private VulkanImage createImage(
             int width,
             int height,
             int depth,
+            int mipLevels,
             int format,
             int usage,
             String label) {
@@ -177,7 +200,7 @@ public final class VulkanContext implements AutoCloseable {
                     .sType$Default()
                     .imageType(depth == 1 ? VK12.VK_IMAGE_TYPE_2D : VK12.VK_IMAGE_TYPE_3D)
                     .format(format)
-                    .mipLevels(1)
+                    .mipLevels(mipLevels)
                     .arrayLayers(1)
                     .samples(VK12.VK_SAMPLE_COUNT_1_BIT)
                     .tiling(VK12.VK_IMAGE_TILING_OPTIMAL)
@@ -198,6 +221,8 @@ public final class VulkanContext implements AutoCloseable {
                     null), "create " + label + " image");
             long image = imagePointer.get(0);
             long view = 0L;
+            long[] mipViews = new long[mipLevels];
+            int createdMipViews = 0;
             try {
                 VkImageViewCreateInfo viewCreateInfo = VkImageViewCreateInfo.calloc(stack)
                         .sType$Default()
@@ -207,7 +232,7 @@ public final class VulkanContext implements AutoCloseable {
                 viewCreateInfo.subresourceRange()
                         .aspectMask(VK12.VK_IMAGE_ASPECT_COLOR_BIT)
                         .baseMipLevel(0)
-                        .levelCount(1)
+                        .levelCount(mipLevels)
                         .baseArrayLayer(0)
                         .layerCount(1);
                 LongBuffer viewPointer = stack.mallocLong(1);
@@ -215,6 +240,34 @@ public final class VulkanContext implements AutoCloseable {
                         VK12.vkCreateImageView(this.device.vkDevice(), viewCreateInfo, null, viewPointer),
                         "create " + label + " view");
                 view = viewPointer.get(0);
+                if (mipLevels == 1) {
+                    mipViews[0] = view;
+                }
+                for (int level = 0; level < (mipLevels == 1 ? 0 : mipLevels); level++) {
+                    VkImageViewCreateInfo mipViewCreateInfo = VkImageViewCreateInfo.calloc(stack)
+                            .sType$Default()
+                            .image(image)
+                            .viewType(VK12.VK_IMAGE_VIEW_TYPE_2D)
+                            .format(format);
+                    mipViewCreateInfo.subresourceRange()
+                            .aspectMask(VK12.VK_IMAGE_ASPECT_COLOR_BIT)
+                            .baseMipLevel(level)
+                            .levelCount(1)
+                            .baseArrayLayer(0)
+                            .layerCount(1);
+                    viewPointer.clear();
+                    check(
+                            VK12.vkCreateImageView(
+                                    this.device.vkDevice(), mipViewCreateInfo, null, viewPointer),
+                            "create " + label + " mip " + level + " view");
+                    mipViews[level] = viewPointer.get(0);
+                    createdMipViews++;
+                    this.device.instance().debug().setObjectName(
+                            this.device.vkDevice(),
+                            VK12.VK_OBJECT_TYPE_IMAGE_VIEW,
+                            mipViews[level],
+                            label + " mip " + level + " view");
+                }
                 this.device.instance().debug().setObjectName(
                         this.device.vkDevice(), VK12.VK_OBJECT_TYPE_IMAGE, image, label);
                 this.device.instance().debug().setObjectName(
@@ -225,11 +278,15 @@ public final class VulkanContext implements AutoCloseable {
                         image,
                         allocationPointer.get(0),
                         view,
+                        mipViews,
                         format,
                         width,
                         height,
                         depth);
             } catch (RuntimeException exception) {
+                for (int level = createdMipViews - 1; level >= 0; level--) {
+                    VK12.vkDestroyImageView(this.device.vkDevice(), mipViews[level], null);
+                }
                 if (view != 0L) {
                     VK12.vkDestroyImageView(this.device.vkDevice(), view, null);
                 }

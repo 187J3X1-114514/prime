@@ -54,15 +54,16 @@ final class DisplayTransformTest {
         String displayTransform = Files.readString(shaderRoot.resolve("display_transform.glsl"));
         String rayGeneration = Files.readString(shaderRoot.resolve("world.rgen"));
         String composite = Files.readString(shaderRoot.resolve("nrd_composite.comp"));
+        String fsrDisplay = Files.readString(shaderRoot.resolve("fsr_display.comp"));
 
         assertTrue(displayTransform.contains("const float PRIME_OKLAB_DISPLAY_EXPOSURE = 1.0"));
         assertTrue(displayTransform.contains("vec3 primeDisplayTransformToSrgb(vec3 hdrRec2020)"));
         assertTrue(displayTransform.contains("primeOklabTonemapCurve(linearBt709)"));
         assertTrue(rayGeneration.contains("imageStore(primeAccumulation"));
         assertFalse(rayGeneration.contains("primeDisplayTransformToSrgb"));
-        assertTrue(
-                composite.indexOf("vec3 radiance = diffuse + imageLoad(primeStableAccumulation")
-                        < composite.indexOf("primeDisplayTransformToSrgb(max(radiance, vec3(0.0)))"));
+        assertTrue(composite.contains("vec3 radiance = surface + imageLoad(primeStableAccumulation"));
+        assertFalse(composite.contains("primeDisplayTransformToSrgb"));
+        assertTrue(fsrDisplay.contains("primeDisplayTransformToSrgb(max(radiance, vec3(0.0)))"));
     }
 
     private static double[] display(double[] hdrRec2020) {

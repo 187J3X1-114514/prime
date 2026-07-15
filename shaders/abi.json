@@ -10,7 +10,7 @@
         { "name": "normal", "type": "uint", "offset": 16 },
         { "name": "flags", "type": "uint", "offset": 20 },
         { "name": "reserved0", "type": "uint", "offset": 24 },
-        { "name": "reserved1", "type": "uint", "offset": 28 }
+        { "name": "uvDensity", "type": "uint", "offset": 28 }
       ]
     },
     "sectionRecord": {
@@ -130,7 +130,7 @@
         { "name": "sectionTableAddress", "type": "uint64_t", "offset": 80 },
         { "name": "outputExtent", "type": "uvec2", "offset": 88 },
         { "name": "sunDirection", "type": "vec3", "offset": 96 },
-        { "name": "_padding0", "type": "uint", "offset": 108 },
+        { "name": "rayCone", "type": "uint", "offset": 108 },
         { "name": "path", "type": "uvec4", "offset": 112 }
       ]
     }

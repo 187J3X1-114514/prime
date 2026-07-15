@@ -48,7 +48,7 @@ final class ShaderAbiTest {
         assertEquals(0, ShaderAbi.PRIMITIVE_UV0_OFFSET);
         assertEquals(12, ShaderAbi.PRIMITIVE_TINT_OFFSET);
         assertEquals(16, ShaderAbi.PRIMITIVE_NORMAL_OFFSET);
-        assertEquals(28, ShaderAbi.PRIMITIVE_RESERVED1_OFFSET);
+        assertEquals(28, ShaderAbi.PRIMITIVE_UV_DENSITY_OFFSET);
         assertEquals(0, ShaderAbi.SECTION_PRIMITIVE_ADDRESS_OFFSET);
         assertEquals(8, ShaderAbi.SECTION_LIGHT_ADDRESS_OFFSET);
         assertEquals(16, ShaderAbi.SECTION_WORLD_LIGHT_ADDRESS_OFFSET);
@@ -88,6 +88,7 @@ final class ShaderAbiTest {
         assertEquals(80, ShaderAbi.PUSH_SECTION_TABLE_ADDRESS_OFFSET);
         assertEquals(88, ShaderAbi.PUSH_OUTPUT_EXTENT_OFFSET);
         assertEquals(96, ShaderAbi.PUSH_SUN_DIRECTION_OFFSET);
+        assertEquals(108, ShaderAbi.PUSH_RAY_CONE_OFFSET);
         assertEquals(112, ShaderAbi.PUSH_PATH_OFFSET);
     }
 }

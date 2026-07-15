@@ -75,6 +75,8 @@ abstract class GenerateShaderAbi extends DefaultTask {
 		def primitive = schema.structs.primitiveRecord
 		def section = schema.structs.sectionRecord
 		def lightNode = schema.structs.lightNode
+		def lightNodeForward = schema.structs.lightNodeForward
+		def lightNodeReverse = schema.structs.lightNodeReverse
 		def lightEmitter = schema.structs.lightEmitter
 		def lightCell = schema.structs.lightCell
 		def sectionLightHeader = schema.structs.sectionLightHeader
@@ -87,8 +89,10 @@ abstract class GenerateShaderAbi extends DefaultTask {
 		def atmosphereContract = schema.atmosphereContract
 		def nrdContract = schema.nrdContract
 
-		if (primitive.size != 32 || section.size != 64 || lightNode.size != 48
-				|| lightEmitter.size != 96 || lightCell.size != 16 || sectionLightHeader.size != 32
+		if (primitive.size != 32 || section.size != 64 || lightNode.size != 32
+				|| lightNodeForward.size != 4 || lightNodeReverse.size != 4
+				|| lightEmitter.size != 96 || lightCell.size != 16
+				|| sectionLightHeader.size != 48
 				|| integrator.size != 32 || pathState.size != 96 || tracePayload.size != 64
 				|| surfaceInteraction.size != 64 || push.size != 128) {
 			throw new GradleException('Prime shader ABI sizes changed without a coordinated migration')
@@ -152,6 +156,8 @@ abstract class GenerateShaderAbi extends DefaultTask {
 		validateStruct('PrimitiveRecord', primitive)
 		validateStruct('SectionRecord', section)
 		validateStruct('LightNode', lightNode)
+		validateStruct('LightNodeForward', lightNodeForward)
+		validateStruct('LightNodeReverse', lightNodeReverse)
 		validateStruct('LightEmitter', lightEmitter)
 		validateStruct('LightCell', lightCell)
 		validateStruct('SectionLightHeader', sectionLightHeader)
@@ -169,6 +175,8 @@ abstract class GenerateShaderAbi extends DefaultTask {
 			PRIMITIVE: primitive,
 			SECTION: section,
 			LIGHT_NODE: lightNode,
+			LIGHT_NODE_FORWARD: lightNodeForward,
+			LIGHT_NODE_REVERSE: lightNodeReverse,
 			LIGHT_EMITTER: lightEmitter,
 			LIGHT_CELL: lightCell,
 			SECTION_LIGHT_HEADER: sectionLightHeader,
@@ -199,6 +207,8 @@ public final class ShaderAbi {
     public static final int PRIMITIVE_RECORD_SIZE = ${primitive.size};
     public static final int SECTION_RECORD_SIZE = ${section.size};
     public static final int LIGHT_NODE_SIZE = ${lightNode.size};
+    public static final int LIGHT_NODE_FORWARD_SIZE = ${lightNodeForward.size};
+    public static final int LIGHT_NODE_REVERSE_SIZE = ${lightNodeReverse.size};
     public static final int LIGHT_EMITTER_SIZE = ${lightEmitter.size};
     public static final int LIGHT_CELL_SIZE = ${lightCell.size};
     public static final int SECTION_LIGHT_HEADER_SIZE = ${sectionLightHeader.size};
@@ -267,6 +277,8 @@ ${javaOffsets}
 #define PRIME_PRIMITIVE_RECORD_SIZE ${primitive.size}
 #define PRIME_SECTION_RECORD_SIZE ${section.size}
 #define PRIME_LIGHT_NODE_SIZE ${lightNode.size}
+#define PRIME_LIGHT_NODE_FORWARD_SIZE ${lightNodeForward.size}
+#define PRIME_LIGHT_NODE_REVERSE_SIZE ${lightNodeReverse.size}
 #define PRIME_LIGHT_EMITTER_SIZE ${lightEmitter.size}
 #define PRIME_LIGHT_CELL_SIZE ${lightCell.size}
 #define PRIME_SECTION_LIGHT_HEADER_SIZE ${sectionLightHeader.size}
@@ -286,6 +298,14 @@ ${glslStructFields(section)}
 
 struct LightNode {
 ${glslStructFields(lightNode)}
+};
+
+struct LightNodeForward {
+${glslStructFields(lightNodeForward)}
+};
+
+struct LightNodeReverse {
+${glslStructFields(lightNodeReverse)}
 };
 
 struct LightEmitter {
@@ -330,6 +350,14 @@ layout(buffer_reference, buffer_reference_align = 8) readonly buffer SectionTabl
 
 layout(buffer_reference, buffer_reference_align = 16) readonly buffer LightNodeBuffer {
     LightNode nodes[];
+};
+
+layout(buffer_reference, buffer_reference_align = 4) readonly buffer LightNodeForwardBuffer {
+    LightNodeForward nodes[];
+};
+
+layout(buffer_reference, buffer_reference_align = 4) readonly buffer LightNodeReverseBuffer {
+    LightNodeReverse nodes[];
 };
 
 layout(buffer_reference, buffer_reference_align = 16) readonly buffer LightEmitterBuffer {

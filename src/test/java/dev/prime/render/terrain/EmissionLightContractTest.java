@@ -1,5 +1,6 @@
 package dev.prime.render.terrain;
 
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
@@ -80,7 +81,7 @@ final class EmissionLightContractTest {
     }
 
     @Test
-    void treeStoresForwardChildrenAndReverseParentSiblingLinks() {
+    void treePacksConsecutiveSiblingsAndSeparateForwardReverseMetadata() {
         List<CpuLightTree.Leaf> leaves = List.of(
                 leaf(0.0F, 1.0F, 0),
                 leaf(4.0F, 2.0F, 1),
@@ -89,15 +90,47 @@ final class EmissionLightContractTest {
                 leaves, leaves.size(), CpuLightTree.SECTION_SOFTENING_SCALE);
         assertEquals(5, tree.nodeCount());
         assertEquals(6.0F, tree.power(), 1.0E-6F);
-        int[] words = tree.packNodes();
+        int[] bounds = tree.packNodeBounds();
+        int[] forward = tree.packNodeForward();
+        int[] reverse = tree.packNodeReverse();
+        assertEquals(tree.nodeCount() * 8, bounds.length);
+        assertEquals(tree.nodeCount(), forward.length);
+        assertEquals(tree.nodeCount(), reverse.length);
+        assertEquals(CpuLightTree.NO_INDEX, reverse[0]);
+        for (int node = 0; node < tree.nodeCount(); node++) {
+            int childOrLeaf = forward[node];
+            if ((childOrLeaf & CpuLightTree.LEAF_FLAG) == 0) {
+                int left = childOrLeaf;
+                int right = left + 1;
+                assertEquals(1, left & 1);
+                assertEquals(0, right & 1);
+                assertEquals(node, reverse[left]);
+                assertEquals(node, reverse[right]);
+            }
+        }
         for (int leaf = 0; leaf < leaves.size(); leaf++) {
             int node = tree.leafNode(leaf);
-            int word = node * 12;
-            assertEquals(leaf, words[word + 8]);
-            assertEquals(CpuLightTree.NO_INDEX, words[word + 9]);
-            assertNotEquals(CpuLightTree.NO_INDEX, words[word + 10]);
-            assertNotEquals(CpuLightTree.NO_INDEX, words[word + 11]);
+            assertNotEquals(0, forward[node] & CpuLightTree.LEAF_FLAG);
+            assertEquals(leaf, forward[node] & CpuLightTree.INDEX_MASK);
+            assertNotEquals(CpuLightTree.NO_INDEX, reverse[node]);
         }
+    }
+
+    @Test
+    void worldTreePacksBoundsForwardAndReverseStreamsInAddressOrder() {
+        int[] bounds = new int[16];
+        int[] forward = {3, CpuLightTree.LEAF_FLAG};
+        int[] reverse = {CpuLightTree.NO_INDEX, 0};
+        CpuWorldLightTree.Result tree = new CpuWorldLightTree.Result(
+                bounds, forward, reverse, new int[] {1});
+        int[] packed = tree.pack();
+
+        assertEquals(2, tree.nodeCount());
+        assertEquals(64L, tree.forwardByteOffset());
+        assertEquals(72L, tree.reverseByteOffset());
+        assertArrayEquals(bounds, java.util.Arrays.copyOfRange(packed, 0, 16));
+        assertArrayEquals(forward, java.util.Arrays.copyOfRange(packed, 16, 18));
+        assertArrayEquals(reverse, java.util.Arrays.copyOfRange(packed, 18, 20));
     }
 
     @Test
@@ -111,6 +144,17 @@ final class EmissionLightContractTest {
         assertTrue(lights.contains("cell.probabilityMass / cellArea"));
         assertTrue(lights.contains("primeLightCellVertices(selectedCell.geometry"));
         assertFalse(lights.contains("candidateRow"));
+        String forwardTraversal = lights.substring(
+                lights.indexOf("LightTreePick primePickLightTree"),
+                lights.indexOf("float primeLightTreeSelectionPdf"));
+        assertTrue(forwardTraversal.contains("LightNode node = nodes.nodes[root]"));
+        assertTrue(forwardTraversal.contains(
+                "uint childOrLeaf = forwardNodes.nodes[nodeIndex].childOrLeaf"));
+        assertTrue(forwardTraversal.contains("uint rightIndex = leftIndex + 1u"));
+        assertTrue(forwardTraversal.contains("node = left"));
+        assertTrue(forwardTraversal.contains("node = right"));
+        assertFalse(forwardTraversal.contains("nodes.nodes[nodeIndex]"));
+        assertFalse(forwardTraversal.contains("reverseNodes"));
         assertTrue(integrator.contains("primeSampleAreaLight"));
         assertTrue(integrator.contains("primeEvaluateAreaLight"));
     }

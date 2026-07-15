@@ -8,17 +8,23 @@ import java.util.List;
 /**
  * Pure CPU builder for both levels of Prime's light tree.
  *
- * <p>Selection uses the same quantized node power and bounds in both directions on the GPU. The
- * tree therefore stores parent and sibling links as well as child links; reverse MIS never tries
- * to reconstruct a probability from higher precision CPU state.
+ * <p>Selection uses the same packed node power and bounds in both directions on the GPU. Bounds
+ * and traversal metadata are emitted as separate streams: forward sampling reads both child bounds
+ * and one compact child-or-leaf word for each visited node. Reverse MIS reads a separate exact
+ * parent stream and derives the sibling from the consecutive-pair invariant instead of
+ * reconstructing probabilities from higher-precision CPU state.
  */
 final class CpuLightTree {
     static final int NO_INDEX = -1;
     static final float SECTION_SOFTENING_SCALE = 1.0F / 128.0F;
     static final float WORLD_SOFTENING_SCALE = 1.0F / 64.0F;
     static final float MINIMUM_SOFTENING_DISTANCE_SQUARED = 0.25F;
+    static final int LEAF_FLAG = Integer.MIN_VALUE;
+    static final int INDEX_MASK = Integer.MAX_VALUE;
     private static final int SAH_BIN_COUNT = 16;
-    private static final int WORDS_PER_NODE = 12;
+    private static final int BOUNDS_WORDS_PER_NODE = 8;
+    private static final int FORWARD_WORDS_PER_NODE = 1;
+    private static final int REVERSE_WORDS_PER_NODE = 1;
 
     private CpuLightTree() {
     }
@@ -34,19 +40,24 @@ final class CpuLightTree {
         List<Node> nodes = new ArrayList<>(leaves.size() * 2 - 1);
         int[] leafNodes = new int[indexCapacity];
         Arrays.fill(leafNodes, NO_INDEX);
-        int root = buildRange(leaves, 0, leaves.size(), NO_INDEX, softeningScale, nodes, leafNodes);
-        if (root != 0) {
-            throw new IllegalStateException("Light tree root must be node zero");
-        }
-        Node rootNode = nodes.getFirst();
+        Node rootNode = createNode(leaves, 0, leaves.size(), NO_INDEX, softeningScale);
+        nodes.add(rootNode);
+        populateNode(leaves, 0, leaves.size(), 0, softeningScale, nodes, leafNodes);
         return new Result(List.copyOf(nodes), leafNodes, rootNode.bounds, rootNode.power);
     }
 
-    private static int buildRange(
+    /**
+     * Populates a node whose aggregate data has already been allocated.
+     *
+     * <p>Both direct children are appended before either subtree is populated. Every sibling pair
+     * is therefore consecutive in the packed arrays, so a traversal's mandatory two-child read is
+     * spatially coherent without changing the SAH partition or any sampling probability.
+     */
+    private static void populateNode(
             List<Leaf> leaves,
             int start,
             int end,
-            int parent,
+            int nodeIndex,
             float softeningScale,
             List<Node> nodes,
             int[] leafNodes) {
@@ -54,11 +65,7 @@ final class CpuLightTree {
         if (count <= 0) {
             throw new IllegalStateException("Empty light tree range");
         }
-        Bounds bounds = boundsOf(leaves, start, end);
-        float power = powerOf(leaves, start, end);
-        int nodeIndex = nodes.size();
-        Node node = new Node(bounds, power, soften(bounds, softeningScale), parent);
-        nodes.add(node);
+        Node node = nodes.get(nodeIndex);
         if (count == 1) {
             Leaf leaf = leaves.get(start);
             if (leaf.index < 0 || leaf.index >= leafNodes.length || leafNodes[leaf.index] != NO_INDEX) {
@@ -66,17 +73,32 @@ final class CpuLightTree {
             }
             node.firstChildOrLeaf = leaf.index;
             leafNodes[leaf.index] = nodeIndex;
-            return nodeIndex;
+            return;
         }
 
         int middle = partition(leaves, start, end);
-        int left = buildRange(leaves, start, middle, nodeIndex, softeningScale, nodes, leafNodes);
-        int right = buildRange(leaves, middle, end, nodeIndex, softeningScale, nodes, leafNodes);
+        int left = nodes.size();
+        nodes.add(createNode(leaves, start, middle, nodeIndex, softeningScale));
+        int right = nodes.size();
+        nodes.add(createNode(leaves, middle, end, nodeIndex, softeningScale));
         node.firstChildOrLeaf = left;
         node.secondChild = right;
-        nodes.get(left).sibling = right;
-        nodes.get(right).sibling = left;
-        return nodeIndex;
+        populateNode(leaves, start, middle, left, softeningScale, nodes, leafNodes);
+        populateNode(leaves, middle, end, right, softeningScale, nodes, leafNodes);
+    }
+
+    private static Node createNode(
+            List<Leaf> leaves,
+            int start,
+            int end,
+            int parent,
+            float softeningScale) {
+        Bounds bounds = boundsOf(leaves, start, end);
+        return new Node(
+                bounds,
+                powerOf(leaves, start, end),
+                soften(bounds, softeningScale),
+                parent);
     }
 
     private static int partition(List<Leaf> leaves, int start, int end) {
@@ -306,8 +328,8 @@ final class CpuLightTree {
             this.power = power;
         }
 
-        int[] packNodes() {
-            int[] result = new int[this.nodes.size() * WORDS_PER_NODE];
+        int[] packNodeBounds() {
+            int[] result = new int[this.nodes.size() * BOUNDS_WORDS_PER_NODE];
             int cursor = 0;
             for (Node node : this.nodes) {
                 result[cursor++] = Float.floatToRawIntBits(node.bounds.minX);
@@ -318,10 +340,34 @@ final class CpuLightTree {
                 result[cursor++] = Float.floatToRawIntBits(node.bounds.maxY);
                 result[cursor++] = Float.floatToRawIntBits(node.bounds.maxZ);
                 result[cursor++] = Float.floatToRawIntBits(node.softeningDistanceSquared);
-                result[cursor++] = node.firstChildOrLeaf;
-                result[cursor++] = node.secondChild;
+            }
+            return result;
+        }
+
+        int[] packNodeForward() {
+            int[] result = new int[this.nodes.size() * FORWARD_WORDS_PER_NODE];
+            int cursor = 0;
+            for (Node node : this.nodes) {
+                if (node.firstChildOrLeaf < 0) {
+                    throw new IllegalStateException("Light tree node was not populated");
+                }
+                if (node.secondChild == NO_INDEX) {
+                    result[cursor++] = node.firstChildOrLeaf | LEAF_FLAG;
+                } else {
+                    if (node.secondChild != node.firstChildOrLeaf + 1) {
+                        throw new IllegalStateException("Light tree siblings must be consecutive");
+                    }
+                    result[cursor++] = node.firstChildOrLeaf;
+                }
+            }
+            return result;
+        }
+
+        int[] packNodeReverse() {
+            int[] result = new int[this.nodes.size() * REVERSE_WORDS_PER_NODE];
+            int cursor = 0;
+            for (Node node : this.nodes) {
                 result[cursor++] = node.parent;
-                result[cursor++] = node.sibling;
             }
             return result;
         }
@@ -348,9 +394,8 @@ final class CpuLightTree {
         private final float power;
         private final float softeningDistanceSquared;
         private final int parent;
-        private int firstChildOrLeaf;
+        private int firstChildOrLeaf = NO_INDEX;
         private int secondChild = NO_INDEX;
-        private int sibling = NO_INDEX;
 
         private Node(Bounds bounds, float power, float softeningDistanceSquared, int parent) {
             this.bounds = bounds;

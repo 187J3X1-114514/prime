@@ -7,7 +7,7 @@ import java.util.List;
 import java.util.Map;
 import net.minecraft.client.renderer.texture.TextureAtlasSprite;
 
-/** Immutable light surfaces, local tree and shared texture distributions for one Section. */
+/** Immutable light surfaces, split local-tree streams and shared texture distributions for one Section. */
 public final class CpuSectionLights {
     public static final CpuSectionLights EMPTY = new CpuSectionLights();
     static final int EMITTER_FLAG_TWO_SIDED = 1;
@@ -43,9 +43,13 @@ public final class CpuSectionLights {
         if (this.isEmpty()) {
             return 0L;
         }
-        return ShaderAbi.SECTION_LIGHT_HEADER_SIZE
-                + (long) this.tree.nodeCount() * ShaderAbi.LIGHT_NODE_SIZE
-                + (long) this.emitters.size() * ShaderAbi.LIGHT_EMITTER_SIZE
+        long emitterOffset = alignUp(
+                ShaderAbi.SECTION_LIGHT_HEADER_SIZE
+                        + (long) this.tree.nodeCount() * ShaderAbi.LIGHT_NODE_SIZE
+                        + (long) this.tree.nodeCount() * ShaderAbi.LIGHT_NODE_FORWARD_SIZE
+                        + (long) this.tree.nodeCount() * ShaderAbi.LIGHT_NODE_REVERSE_SIZE,
+                16L);
+        return emitterOffset + (long) this.emitters.size() * ShaderAbi.LIGHT_EMITTER_SIZE
                 + (long) this.distributions.size()
                         * EmissionDistribution.CELL_COUNT
                         * ShaderAbi.LIGHT_CELL_SIZE;
@@ -56,21 +60,31 @@ public final class CpuSectionLights {
             return new int[0];
         }
         int headerWords = ShaderAbi.SECTION_LIGHT_HEADER_SIZE / Integer.BYTES;
-        int[] nodeWords = this.tree.packNodes();
+        int[] nodeWords = this.tree.packNodeBounds();
+        int[] forwardWords = this.tree.packNodeForward();
+        int[] reverseWords = this.tree.packNodeReverse();
         int emitterWords = ShaderAbi.LIGHT_EMITTER_SIZE / Integer.BYTES;
         int cellWords = ShaderAbi.LIGHT_CELL_SIZE / Integer.BYTES;
         int cellCount = this.distributions.size() * EmissionDistribution.CELL_COUNT;
-        int[] result = new int[headerWords + nodeWords.length
-                + this.emitters.size() * emitterWords + cellCount * cellWords];
         int nodeStart = headerWords;
-        int emitterStart = nodeStart + nodeWords.length;
+        int forwardStart = nodeStart + nodeWords.length;
+        int reverseStart = forwardStart + forwardWords.length;
+        int emitterStart = (int) (alignUp(
+                        (long) (reverseStart + reverseWords.length) * Integer.BYTES,
+                        16L)
+                / Integer.BYTES);
         int cellStart = emitterStart + this.emitters.size() * emitterWords;
+        int[] result = new int[cellStart + cellCount * cellWords];
         putLong(result, 0, bufferAddress + (long) nodeStart * Integer.BYTES);
-        putLong(result, 2, bufferAddress + (long) emitterStart * Integer.BYTES);
-        putLong(result, 4, bufferAddress + (long) cellStart * Integer.BYTES);
-        result[6] = 0;
-        result[7] = this.emitters.size();
+        putLong(result, 2, bufferAddress + (long) forwardStart * Integer.BYTES);
+        putLong(result, 4, bufferAddress + (long) reverseStart * Integer.BYTES);
+        putLong(result, 6, bufferAddress + (long) emitterStart * Integer.BYTES);
+        putLong(result, 8, bufferAddress + (long) cellStart * Integer.BYTES);
+        result[10] = 0;
+        result[11] = this.emitters.size();
         System.arraycopy(nodeWords, 0, result, nodeStart, nodeWords.length);
+        System.arraycopy(forwardWords, 0, result, forwardStart, forwardWords.length);
+        System.arraycopy(reverseWords, 0, result, reverseStart, reverseWords.length);
 
         for (int index = 0; index < this.emitters.size(); index++) {
             Emitter emitter = this.emitters.get(index);
@@ -112,6 +126,9 @@ public final class CpuSectionLights {
                 result[cursor + 3] = EmissionDistribution.cell(cell).packedGeometry();
             }
         }
+        if ((long) result.length * Integer.BYTES != this.byteSize()) {
+            throw new IllegalStateException("Packed Section light layout does not match the shader ABI");
+        }
         return result;
     }
 
@@ -133,6 +150,10 @@ public final class CpuSectionLights {
 
     private static void putFloat(int[] target, int wordOffset, float value) {
         target[wordOffset] = Float.floatToRawIntBits(value);
+    }
+
+    private static long alignUp(long value, long alignment) {
+        return (value + alignment - 1L) / alignment * alignment;
     }
 
     public static final class Builder {

@@ -209,8 +209,9 @@ public final class TopLevelAccelerationStructure {
                 MemoryUtil.memPutInt(
                         sectionAddress + ShaderAbi.SECTION_LIGHT_COUNT_OFFSET,
                         value.lightCount());
-                MemoryUtil.memPutInt(sectionAddress + ShaderAbi.SECTION_RESERVED0_OFFSET, 0);
-                MemoryUtil.memPutInt(sectionAddress + ShaderAbi.SECTION_RESERVED1_OFFSET, 0);
+                MemoryUtil.memPutLong(
+                        sectionAddress + ShaderAbi.SECTION_WORLD_LIGHT_FORWARD_ADDRESS_OFFSET,
+                        value.worldLightForwardAddress());
                 MemoryUtil.memPutFloat(
                         sectionAddress + ShaderAbi.SECTION_TRANSLATION_OFFSET,
                         value.translateX());
@@ -220,7 +221,9 @@ public final class TopLevelAccelerationStructure {
                 MemoryUtil.memPutFloat(
                         sectionAddress + ShaderAbi.SECTION_TRANSLATION_OFFSET + 2L * Float.BYTES,
                         value.translateZ());
-                MemoryUtil.memPutInt(sectionAddress + ShaderAbi.SECTION_RESERVED2_OFFSET, 0);
+                MemoryUtil.memPutInt(
+                        sectionAddress + ShaderAbi.SECTION_WORLD_LIGHT_NODE_COUNT_OFFSET,
+                        value.worldLightNodeCount());
             }
         }
         this.instances.flush(0L, (long) source.size() * VkAccelerationStructureInstanceKHR.SIZEOF);
@@ -292,9 +295,11 @@ public final class TopLevelAccelerationStructure {
             long primitiveAddress,
             long lightAddress,
             long worldLightAddress,
+            long worldLightForwardAddress,
             int opaqueTriangleCount,
             int worldLeafNode,
             int lightCount,
+            int worldLightNodeCount,
             float translateX,
             float translateY,
             float translateZ) {

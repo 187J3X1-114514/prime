@@ -136,13 +136,14 @@ public final class TerrainScene implements AutoCloseable {
                 if (worldStagingBatch == null || commandBuffer == null) {
                     throw new IllegalStateException("World light tree requires an upload batch");
                 }
+                int[] packedWorldLights = worldLightTree.pack();
                 replacementWorldLights = this.context.createBuffer(
-                        (long) worldLightTree.nodeWords().length * Integer.BYTES,
+                        (long) packedWorldLights.length * Integer.BYTES,
                         VK12.VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK12.VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
                         false,
                         "Prime world light tree");
                 StagingArena.Slice worldLightSlice = worldStagingBatch.write(
-                        worldLightTree.nodeWords(), 16L);
+                        packedWorldLights, 16L);
                 copyBuffer(commandBuffer, worldLightSlice, replacementWorldLights);
             }
 
@@ -173,6 +174,12 @@ public final class TerrainScene implements AutoCloseable {
                 long worldLightAddress = replacementWorldLights == null
                         ? 0L
                         : replacementWorldLights.deviceAddress();
+                long worldLightForwardAddress = replacementWorldLights == null
+                        ? 0L
+                        : replacementWorldLights.deviceAddress() + worldLightTree.forwardByteOffset();
+                int worldLightNodeCount = replacementWorldLights == null
+                        ? 0
+                        : worldLightTree.nodeCount();
                 for (int sectionIndex = 0; sectionIndex < finalSections.size(); sectionIndex++) {
                     GpuSection section = finalSections.get(sectionIndex);
                     instances.add(new TopLevelAccelerationStructure.Instance(
@@ -180,9 +187,11 @@ public final class TerrainScene implements AutoCloseable {
                             section.blas().primitives().deviceAddress(),
                             section.lightAddress(),
                             worldLightAddress,
+                            worldLightForwardAddress,
                             section.blas().opaqueTriangleCount(),
                             worldLightTree.leafNode(sectionIndex),
                             section.lights().emitterCount(),
+                            worldLightNodeCount,
                             (section.sectionX() << 4) - nextOriginX,
                             (section.sectionY() << 4) - nextOriginY,
                             (section.sectionZ() << 4) - nextOriginZ));

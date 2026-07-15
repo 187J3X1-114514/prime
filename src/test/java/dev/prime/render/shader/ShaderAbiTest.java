@@ -9,10 +9,12 @@ final class ShaderAbiTest {
     void fixedRecordSizesAndBindingsMatchTheContract() {
         assertEquals(32, ShaderAbi.PRIMITIVE_RECORD_SIZE);
         assertEquals(64, ShaderAbi.SECTION_RECORD_SIZE);
-        assertEquals(48, ShaderAbi.LIGHT_NODE_SIZE);
+        assertEquals(32, ShaderAbi.LIGHT_NODE_SIZE);
+        assertEquals(4, ShaderAbi.LIGHT_NODE_FORWARD_SIZE);
+        assertEquals(4, ShaderAbi.LIGHT_NODE_REVERSE_SIZE);
         assertEquals(96, ShaderAbi.LIGHT_EMITTER_SIZE);
         assertEquals(16, ShaderAbi.LIGHT_CELL_SIZE);
-        assertEquals(32, ShaderAbi.SECTION_LIGHT_HEADER_SIZE);
+        assertEquals(48, ShaderAbi.SECTION_LIGHT_HEADER_SIZE);
         assertEquals(32, ShaderAbi.INTEGRATOR_RECORD_SIZE);
         assertEquals(96, ShaderAbi.PATH_STATE_SIZE);
         assertEquals(64, ShaderAbi.TRACE_PAYLOAD_SIZE);
@@ -55,9 +57,12 @@ final class ShaderAbiTest {
         assertEquals(24, ShaderAbi.SECTION_OPAQUE_BASE_OFFSET);
         assertEquals(28, ShaderAbi.SECTION_CUTOUT_BASE_OFFSET);
         assertEquals(32, ShaderAbi.SECTION_WORLD_LEAF_NODE_OFFSET);
+        assertEquals(40, ShaderAbi.SECTION_WORLD_LIGHT_FORWARD_ADDRESS_OFFSET);
         assertEquals(48, ShaderAbi.SECTION_TRANSLATION_OFFSET);
+        assertEquals(60, ShaderAbi.SECTION_WORLD_LIGHT_NODE_COUNT_OFFSET);
         assertEquals(0, ShaderAbi.LIGHT_NODE_BOUNDS_MIN_POWER_OFFSET);
-        assertEquals(32, ShaderAbi.LIGHT_NODE_LINKS_OFFSET);
+        assertEquals(0, ShaderAbi.LIGHT_NODE_FORWARD_CHILD_OR_LEAF_OFFSET);
+        assertEquals(0, ShaderAbi.LIGHT_NODE_REVERSE_PARENT_OFFSET);
         assertEquals(0, ShaderAbi.LIGHT_EMITTER_CORNER_AREA_OFFSET);
         assertEquals(64, ShaderAbi.LIGHT_EMITTER_UVS_TINT_OFFSET);
         assertEquals(80, ShaderAbi.LIGHT_EMITTER_METADATA_OFFSET);
@@ -65,7 +70,12 @@ final class ShaderAbiTest {
         assertEquals(8, ShaderAbi.LIGHT_CELL_PROBABILITY_MASS_OFFSET);
         assertEquals(12, ShaderAbi.LIGHT_CELL_GEOMETRY_OFFSET);
         assertEquals(0, ShaderAbi.SECTION_LIGHT_HEADER_NODE_ADDRESS_OFFSET);
-        assertEquals(24, ShaderAbi.SECTION_LIGHT_HEADER_ROOT_OFFSET);
+        assertEquals(8, ShaderAbi.SECTION_LIGHT_HEADER_FORWARD_ADDRESS_OFFSET);
+        assertEquals(16, ShaderAbi.SECTION_LIGHT_HEADER_REVERSE_ADDRESS_OFFSET);
+        assertEquals(24, ShaderAbi.SECTION_LIGHT_HEADER_EMITTER_ADDRESS_OFFSET);
+        assertEquals(32, ShaderAbi.SECTION_LIGHT_HEADER_CELL_ADDRESS_OFFSET);
+        assertEquals(40, ShaderAbi.SECTION_LIGHT_HEADER_ROOT_OFFSET);
+        assertEquals(44, ShaderAbi.SECTION_LIGHT_HEADER_EMITTER_COUNT_OFFSET);
         assertEquals(0, ShaderAbi.INTEGRATOR_SUN_DIRECTION_INTENSITY_OFFSET);
         assertEquals(16, ShaderAbi.INTEGRATOR_ENVIRONMENT_RADIANCE_OFFSET);
         assertEquals(0, ShaderAbi.PATH_STATE_PHYSICAL_ORIGIN_OFFSET);

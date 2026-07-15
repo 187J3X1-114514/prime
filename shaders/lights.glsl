@@ -110,6 +110,8 @@ LightSample primeSampleSun(
 }
 
 const uint PRIME_NO_LIGHT_INDEX = 0xffffffffu;
+const uint PRIME_LIGHT_LEAF_FLAG = 0x80000000u;
+const uint PRIME_LIGHT_INDEX_MASK = 0x7fffffffu;
 const uint PRIME_LIGHT_TREE_MAX_DEPTH = 64u;
 const uint PRIME_LIGHT_CELL_SUBDIVISION = 16u;
 const uint PRIME_LIGHT_CELL_COUNT = 256u;
@@ -161,26 +163,34 @@ float primeLightBranchProbability(LightNode first, LightNode second, vec3 point)
 
 LightTreePick primePickLightTree(
         LightNodeBuffer nodes,
+        LightNodeForwardBuffer forwardNodes,
         uint root,
         vec3 point,
         float seed) {
+    // Bounds/power and forward metadata are the only hot streams. Parent information is kept in
+    // the reverse-only stream, so ordinary light sampling cannot pull reverse-MIS metadata into
+    // its cache working set.
     uint nodeIndex = root;
+    LightNode node = nodes.nodes[root];
     float pdf = 1.0;
     float value = seed;
     for (uint depth = 0u; depth < PRIME_LIGHT_TREE_MAX_DEPTH; ++depth) {
-        LightNode node = nodes.nodes[nodeIndex];
         if (!(node.boundsMinPower.w > 0.0)) {
             return primeInvalidLightTreePick();
         }
-        if (node.links.y == PRIME_NO_LIGHT_INDEX) {
+        uint childOrLeaf = forwardNodes.nodes[nodeIndex].childOrLeaf;
+        if ((childOrLeaf & PRIME_LIGHT_LEAF_FLAG) != 0u) {
             LightTreePick result;
-            result.leaf = node.links.x;
+            result.leaf = childOrLeaf & PRIME_LIGHT_INDEX_MASK;
             result.pdf = pdf;
             result.valid = 1u;
             return result;
         }
-        LightNode left = nodes.nodes[node.links.x];
-        LightNode right = nodes.nodes[node.links.y];
+        // CPU linearization guarantees that these mandatory sibling records are consecutive.
+        uint leftIndex = childOrLeaf;
+        uint rightIndex = leftIndex + 1u;
+        LightNode left = nodes.nodes[leftIndex];
+        LightNode right = nodes.nodes[rightIndex];
         float leftProbability = primeLightBranchProbability(left, right, point);
         if (!(leftProbability >= 0.0)) {
             return primeInvalidLightTreePick();
@@ -192,11 +202,13 @@ LightTreePick primePickLightTree(
             }
             pdf *= leftProbability;
             value /= leftProbability;
-            nodeIndex = node.links.x;
+            node = left;
+            nodeIndex = leftIndex;
         } else {
             pdf *= rightProbability;
             value = (value - leftProbability) / rightProbability;
-            nodeIndex = node.links.y;
+            node = right;
+            nodeIndex = rightIndex;
         }
     }
     return primeInvalidLightTreePick();
@@ -204,6 +216,8 @@ LightTreePick primePickLightTree(
 
 float primeLightTreeSelectionPdf(
         LightNodeBuffer nodes,
+        LightNodeForwardBuffer forwardNodes,
+        LightNodeReverseBuffer reverseNodes,
         uint root,
         uint leafNode,
         uint expectedLeaf,
@@ -218,23 +232,30 @@ float primeLightTreeSelectionPdf(
         if (!(node.boundsMinPower.w > 0.0)) {
             return 0.0;
         }
-        if (depth == 0u
-                && (node.links.y != PRIME_NO_LIGHT_INDEX || node.links.x != expectedLeaf)) {
-            return 0.0;
+        if (depth == 0u) {
+            uint childOrLeaf = forwardNodes.nodes[nodeIndex].childOrLeaf;
+            if ((childOrLeaf & PRIME_LIGHT_LEAF_FLAG) == 0u
+                    || (childOrLeaf & PRIME_LIGHT_INDEX_MASK) != expectedLeaf) {
+                return 0.0;
+            }
         }
         if (nodeIndex == root) {
             return pdf;
         }
-        if (node.links.z == PRIME_NO_LIGHT_INDEX || node.links.w == PRIME_NO_LIGHT_INDEX) {
+        uint parent = reverseNodes.nodes[nodeIndex].parent;
+        if (parent == PRIME_NO_LIGHT_INDEX) {
             return 0.0;
         }
-        LightNode sibling = nodes.nodes[node.links.w];
+        // Root is node zero. Every other node was allocated as one member of an odd/even sibling
+        // pair, making the exact sibling index implicit and removing it from the reverse stream.
+        uint siblingIndex = (nodeIndex & 1u) != 0u ? nodeIndex + 1u : nodeIndex - 1u;
+        LightNode sibling = nodes.nodes[siblingIndex];
         float branchProbability = primeLightBranchProbability(node, sibling, point);
         if (!(branchProbability >= 0.0)) {
             return 0.0;
         }
         pdf *= branchProbability;
-        nodeIndex = node.links.z;
+        nodeIndex = parent;
     }
     return 0.0;
 }
@@ -316,12 +337,16 @@ AreaLightSample primeSampleAreaLight(
         vec2 positionSample) {
     SectionTable sections = SectionTable(primePush.sectionTableAddress);
     SectionRecord firstSection = sections.sections[0];
-    if (firstSection.worldLightAddress == uint64_t(0)) {
+    if (firstSection.worldLightAddress == uint64_t(0)
+            || firstSection.worldLightForwardAddress == uint64_t(0)
+            || firstSection.worldLightNodeCount == 0u) {
         return primeInvalidAreaLightSample();
     }
     LightNodeBuffer worldNodes = LightNodeBuffer(firstSection.worldLightAddress);
+    LightNodeForwardBuffer worldForwardNodes = LightNodeForwardBuffer(
+            firstSection.worldLightForwardAddress);
     LightTreePick worldPick = primePickLightTree(
-            worldNodes, 0u, surfacePosition, treeSample.x);
+            worldNodes, worldForwardNodes, 0u, surfacePosition, treeSample.x);
     if (worldPick.valid == 0u) {
         return primeInvalidAreaLightSample();
     }
@@ -332,9 +357,10 @@ AreaLightSample primeSampleAreaLight(
     SectionLightHeaderBuffer sectionBuffer = SectionLightHeaderBuffer(section.lightAddress);
     SectionLightHeader header = sectionBuffer.header;
     LightNodeBuffer sectionNodes = LightNodeBuffer(header.nodeAddress);
+    LightNodeForwardBuffer sectionForwardNodes = LightNodeForwardBuffer(header.forwardAddress);
     vec3 localSurfacePosition = surfacePosition - section.translation;
     LightTreePick sectionPick = primePickLightTree(
-            sectionNodes, header.root, localSurfacePosition, treeSample.y);
+            sectionNodes, sectionForwardNodes, header.root, localSurfacePosition, treeSample.y);
     if (sectionPick.valid == 0u || sectionPick.leaf >= header.emitterCount) {
         return primeInvalidAreaLightSample();
     }
@@ -432,6 +458,8 @@ LightEvaluation primeEvaluateAreaLight(
     SectionRecord section = sections.sections[surface.sectionIndex];
     if (section.lightAddress == uint64_t(0)
             || section.worldLightAddress == uint64_t(0)
+            || section.worldLightForwardAddress == uint64_t(0)
+            || section.worldLightNodeCount == 0u
             || section.worldLeafNode == PRIME_NO_LIGHT_INDEX) {
         return result;
     }
@@ -472,15 +500,26 @@ LightEvaluation primeEvaluateAreaLight(
     }
 
     LightNodeBuffer worldNodes = LightNodeBuffer(section.worldLightAddress);
+    LightNodeForwardBuffer worldForwardNodes = LightNodeForwardBuffer(
+            section.worldLightForwardAddress);
+    uint64_t worldReverseAddress = section.worldLightForwardAddress
+            + uint64_t(section.worldLightNodeCount) * uint64_t(PRIME_LIGHT_NODE_FORWARD_SIZE);
+    LightNodeReverseBuffer worldReverseNodes = LightNodeReverseBuffer(worldReverseAddress);
     float worldPdf = primeLightTreeSelectionPdf(
             worldNodes,
+            worldForwardNodes,
+            worldReverseNodes,
             0u,
             section.worldLeafNode,
             surface.sectionIndex,
             rayOrigin);
     LightNodeBuffer sectionNodes = LightNodeBuffer(header.nodeAddress);
+    LightNodeForwardBuffer sectionForwardNodes = LightNodeForwardBuffer(header.forwardAddress);
+    LightNodeReverseBuffer sectionReverseNodes = LightNodeReverseBuffer(header.reverseAddress);
     float sectionPdf = primeLightTreeSelectionPdf(
             sectionNodes,
+            sectionForwardNodes,
+            sectionReverseNodes,
             header.root,
             emitter.metadata.y,
             surface.emitterIndex,

@@ -23,18 +23,28 @@
         { "name": "cutoutBase", "type": "uint", "offset": 28 },
         { "name": "worldLeafNode", "type": "uint", "offset": 32 },
         { "name": "lightCount", "type": "uint", "offset": 36 },
-        { "name": "reserved0", "type": "uint", "offset": 40 },
-        { "name": "reserved1", "type": "uint", "offset": 44 },
+        { "name": "worldLightForwardAddress", "type": "uint64_t", "offset": 40 },
         { "name": "translation", "type": "vec3", "offset": 48 },
-        { "name": "reserved2", "type": "uint", "offset": 60 }
+        { "name": "worldLightNodeCount", "type": "uint", "offset": 60 }
       ]
     },
     "lightNode": {
-      "size": 48,
+      "size": 32,
       "fields": [
         { "name": "boundsMinPower", "type": "vec4", "offset": 0 },
-        { "name": "boundsMaxSoftening", "type": "vec4", "offset": 16 },
-        { "name": "links", "type": "uvec4", "offset": 32 }
+        { "name": "boundsMaxSoftening", "type": "vec4", "offset": 16 }
+      ]
+    },
+    "lightNodeForward": {
+      "size": 4,
+      "fields": [
+        { "name": "childOrLeaf", "type": "uint", "offset": 0 }
+      ]
+    },
+    "lightNodeReverse": {
+      "size": 4,
+      "fields": [
+        { "name": "parent", "type": "uint", "offset": 0 }
       ]
     },
     "lightEmitter": {
@@ -58,13 +68,15 @@
       ]
     },
     "sectionLightHeader": {
-      "size": 32,
+      "size": 48,
       "fields": [
         { "name": "nodeAddress", "type": "uint64_t", "offset": 0 },
-        { "name": "emitterAddress", "type": "uint64_t", "offset": 8 },
-        { "name": "cellAddress", "type": "uint64_t", "offset": 16 },
-        { "name": "root", "type": "uint", "offset": 24 },
-        { "name": "emitterCount", "type": "uint", "offset": 28 }
+        { "name": "forwardAddress", "type": "uint64_t", "offset": 8 },
+        { "name": "reverseAddress", "type": "uint64_t", "offset": 16 },
+        { "name": "emitterAddress", "type": "uint64_t", "offset": 24 },
+        { "name": "cellAddress", "type": "uint64_t", "offset": 32 },
+        { "name": "root", "type": "uint", "offset": 40 },
+        { "name": "emitterCount", "type": "uint", "offset": 44 }
       ]
     },
     "integratorRecord": {

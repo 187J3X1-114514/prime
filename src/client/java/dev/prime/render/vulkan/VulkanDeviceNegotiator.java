@@ -21,6 +21,7 @@ import org.lwjgl.vulkan.VkPhysicalDeviceProperties2;
 import org.lwjgl.vulkan.VkPhysicalDeviceRayTracingPipelineFeaturesKHR;
 import org.lwjgl.vulkan.VkPhysicalDeviceRayTracingPipelinePropertiesKHR;
 import org.lwjgl.vulkan.VkPhysicalDeviceVulkan12Features;
+import org.lwjgl.vulkan.VkPhysicalDeviceVulkan11Features;
 import org.lwjgl.vulkan.VkFormatProperties;
 
 public final class VulkanDeviceNegotiator {
@@ -40,6 +41,10 @@ public final class VulkanDeviceNegotiator {
             VulkanBackend.VK10_FEATURES_STRUCT,
             "shaderInt64",
             VkPhysicalDeviceFeatures.SHADERINT64);
+    private static final VulkanFeature SHADER_INT16 = new VulkanFeature(
+            VulkanBackend.VK10_FEATURES_STRUCT,
+            "shaderInt16",
+            VkPhysicalDeviceFeatures.SHADERINT16);
     private static final VulkanFeature STORAGE_IMAGE_EXTENDED_FORMATS = new VulkanFeature(
             VulkanBackend.VK10_FEATURES_STRUCT,
             "shaderStorageImageExtendedFormats",
@@ -56,6 +61,18 @@ public final class VulkanDeviceNegotiator {
             VulkanBackend.VK12_FEATURES_STRUCT,
             "bufferDeviceAddress",
             VkPhysicalDeviceVulkan12Features.BUFFERDEVICEADDRESS);
+    private static final VulkanFeature STORAGE_BUFFER_16_BIT_ACCESS = new VulkanFeature(
+            VulkanBackend.VK11_FEATURES_STRUCT,
+            "storageBuffer16BitAccess",
+            VkPhysicalDeviceVulkan11Features.STORAGEBUFFER16BITACCESS);
+    private static final VulkanFeature SHADER_FLOAT16 = new VulkanFeature(
+            VulkanBackend.VK12_FEATURES_STRUCT,
+            "shaderFloat16",
+            VkPhysicalDeviceVulkan12Features.SHADERFLOAT16);
+    private static final VulkanFeature SHADER_SUBGROUP_EXTENDED_TYPES = new VulkanFeature(
+            VulkanBackend.VK12_FEATURES_STRUCT,
+            "shaderSubgroupExtendedTypes",
+            VkPhysicalDeviceVulkan12Features.SHADERSUBGROUPEXTENDEDTYPES);
     private static final VulkanFeature ACCELERATION_STRUCTURE = new VulkanFeature(
             ACCELERATION_STRUCTURE_FEATURES,
             "accelerationStructure",
@@ -82,12 +99,14 @@ public final class VulkanDeviceNegotiator {
 
         try (MemoryStack stack = MemoryStack.stackPush()) {
             VkPhysicalDeviceFeatures2 features = VkPhysicalDeviceFeatures2.calloc(stack).sType$Default();
+            VkPhysicalDeviceVulkan11Features vulkan11 = VkPhysicalDeviceVulkan11Features.calloc(stack).sType$Default();
             VkPhysicalDeviceVulkan12Features vulkan12 = VkPhysicalDeviceVulkan12Features.calloc(stack).sType$Default();
             VkPhysicalDeviceAccelerationStructureFeaturesKHR acceleration =
                     VkPhysicalDeviceAccelerationStructureFeaturesKHR.calloc(stack).sType$Default();
             VkPhysicalDeviceRayTracingPipelineFeaturesKHR rayTracing =
                     VkPhysicalDeviceRayTracingPipelineFeaturesKHR.calloc(stack).sType$Default();
-            features.pNext(vulkan12.address());
+            features.pNext(vulkan11.address());
+            vulkan11.pNext(vulkan12.address());
             vulkan12.pNext(acceleration.address());
             acceleration.pNext(rayTracing.address());
             VK12.vkGetPhysicalDeviceFeatures2(physicalDevice.vkPhysicalDevice(), features);
@@ -171,6 +190,21 @@ public final class VulkanDeviceNegotiator {
             enabledFeatures.add(ACCELERATION_STRUCTURE);
             enabledFeatures.add(RAY_TRACING_PIPELINE);
 
+            // FSR has fully validated FP32 permutations. The FP16 SPIR-V uses Float16 arithmetic,
+            // Int16 addressing helpers and half-valued subgroup operations; AMD's GLSL headers
+            // also declare 16-bit storage. Require the complete conservative feature set instead
+            // of guessing from the vendor. This optional path never affects RT availability.
+            boolean fsrFp16Supported = vulkan11.storageBuffer16BitAccess()
+                    && features.features().shaderInt16()
+                    && vulkan12.shaderFloat16()
+                    && vulkan12.shaderSubgroupExtendedTypes();
+            if (fsrFp16Supported) {
+                enabledFeatures.add(STORAGE_BUFFER_16_BIT_ACCESS);
+                enabledFeatures.add(SHADER_INT16);
+                enabledFeatures.add(SHADER_FLOAT16);
+                enabledFeatures.add(SHADER_SUBGROUP_EXTENDED_TYPES);
+            }
+
             return new VulkanCapabilities(
                     true,
                     deviceName,
@@ -181,7 +215,8 @@ public final class VulkanDeviceNegotiator {
                     rayProperties.maxShaderGroupStride(),
                     rayProperties.maxRayDispatchInvocationCount(),
                     rayProperties.maxRayRecursionDepth(),
-                    accelerationProperties.minAccelerationStructureScratchOffsetAlignment());
+                    accelerationProperties.minAccelerationStructureScratchOffsetAlignment(),
+                    fsrFp16Supported);
         }
     }
 

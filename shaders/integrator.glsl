@@ -23,7 +23,7 @@ struct PrimeIntegrationResult {
     vec3 primaryBaseColor;
     uint primaryHitKind;
     vec3 primaryNormal;
-    uint reserved;
+    uint primaryMaterialFlags;
 };
 
 vec3 primeOffsetRayOrigin(vec3 physicalPosition, vec3 normal, vec3 direction) {
@@ -191,7 +191,7 @@ PrimeIntegrationResult primeIntegrate(PathState path, IntegratorRecord integrato
     result.primaryBaseColor = vec3(0.0);
     result.primaryHitKind = PRIME_HIT_NONE;
     result.primaryNormal = vec3(0.0, 1.0, 0.0);
-    result.reserved = 0u;
+    result.primaryMaterialFlags = 0u;
     bool diffusePath = false;
     // path.z packs two independently generated Java contracts without growing the guaranteed
     // 128-byte push range: low 16 bits are the bounce cap, high 16 bits the FSR jitter period.
@@ -206,6 +206,7 @@ PrimeIntegrationResult primeIntegrate(PathState path, IntegratorRecord integrato
             result.primaryBaseColor = surface.baseColor;
             result.primaryNormal = surface.geometricNormal;
             result.primaryHitKind = surface.hitKind;
+            result.primaryMaterialFlags = surface.materialFlags;
         }
         if (path.bounce == 1u) {
             float firstBounceHitDistance = surface.hitKind == PRIME_HIT_NONE

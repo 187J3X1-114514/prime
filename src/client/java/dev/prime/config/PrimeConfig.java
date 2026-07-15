@@ -2,6 +2,7 @@ package dev.prime.config;
 
 import dev.prime.PrimeClient;
 import dev.prime.render.fsr.FsrQualityMode;
+import dev.prime.render.fsr.FsrDebugView;
 import dev.prime.render.fsr.FsrSettings;
 import java.io.IOException;
 import java.io.Reader;
@@ -16,6 +17,7 @@ import net.fabricmc.loader.api.FabricLoader;
 /** Small, version-tolerant owner for Prime's user-facing settings. */
 public final class PrimeConfig {
     private static final String QUALITY_KEY = "fsr.quality";
+    private static final String DEBUG_VIEW_KEY = "fsr.debug_view";
     private static boolean dirty;
 
     private PrimeConfig() {
@@ -24,6 +26,7 @@ public final class PrimeConfig {
     public static void load() {
         Path path = configPath();
         FsrQualityMode mode = FsrSettings.DEFAULT_QUALITY_MODE;
+        FsrDebugView debugView = FsrDebugView.OFF;
         boolean rewriteNeeded = false;
         if (Files.isRegularFile(path)) {
             try (Reader reader = Files.newBufferedReader(path, StandardCharsets.UTF_8)) {
@@ -44,6 +47,20 @@ public final class PrimeConfig {
                 } else {
                     rewriteNeeded = true;
                 }
+                String debugId = properties.getProperty(DEBUG_VIEW_KEY);
+                if (debugId != null) {
+                    FsrDebugView parsedDebug = FsrDebugView.findById(debugId).orElse(null);
+                    if (parsedDebug == null) {
+                        PrimeClient.LOGGER.warn(
+                                "Unknown Prime FSR debug view '{}'; disabling it",
+                                debugId);
+                        rewriteNeeded = true;
+                    } else {
+                        debugView = parsedDebug;
+                    }
+                } else {
+                    rewriteNeeded = true;
+                }
             } catch (IOException | IllegalArgumentException exception) {
                 PrimeClient.LOGGER.warn(
                         "Could not read {}; using the default Prime settings",
@@ -53,6 +70,7 @@ public final class PrimeConfig {
             }
         }
         FsrSettings.setQualityMode(mode);
+        FsrSettings.setDebugView(debugView);
         dirty = rewriteNeeded;
         PrimeClient.LOGGER.info(
                 "Prime FSR quality mode: {} ({}x)",
@@ -67,6 +85,13 @@ public final class PrimeConfig {
         }
     }
 
+    public static void setFsrDebugView(FsrDebugView mode) {
+        if (mode != FsrSettings.debugView()) {
+            FsrSettings.setDebugView(mode);
+            dirty = true;
+        }
+    }
+
     public static void save() {
         Path path = configPath();
         if (!dirty && Files.isRegularFile(path)) {
@@ -76,7 +101,8 @@ public final class PrimeConfig {
         Path temporary = path.resolveSibling(path.getFileName() + ".tmp");
         try {
             Files.createDirectories(path.getParent());
-            String contents = QUALITY_KEY + "=" + FsrSettings.qualityMode().id() + "\n";
+            String contents = QUALITY_KEY + "=" + FsrSettings.qualityMode().id() + "\n"
+                    + DEBUG_VIEW_KEY + "=" + FsrSettings.debugView().id() + "\n";
             Files.writeString(
                     temporary,
                     contents,

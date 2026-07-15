@@ -23,6 +23,16 @@ final class PrimitivePackingTest {
     }
 
     @Test
+    void materialFlagsKeepCoverageAndAnimationIndependent() {
+        assertEquals(0, PrimitivePacking.packFlags(false, false));
+        assertEquals(PrimitivePacking.FLAG_CUTOUT, PrimitivePacking.packFlags(true, false));
+        assertEquals(
+                PrimitivePacking.FLAG_ANIMATED_TEXTURE,
+                PrimitivePacking.packFlags(false, true));
+        assertEquals(3, PrimitivePacking.packFlags(true, true));
+    }
+
+    @Test
     void octahedralEncodingPreservesNormalDirection() {
         assertNormalDirection(1.0F, 0.0F, 0.0F);
         assertNormalDirection(0.0F, -1.0F, 0.0F);

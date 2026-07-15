@@ -6,5 +6,9 @@
   "prime.options.fsr.quality.quality": "Quality (1.5x)",
   "prime.options.fsr.quality.balanced": "Balanced (1.7x)",
   "prime.options.fsr.quality.performance": "Performance (2.0x)",
-  "prime.options.fsr.quality.ultra_performance": "Ultra Performance (3.0x)"
+  "prime.options.fsr.quality.ultra_performance": "Ultra Performance (3.0x)",
+  "prime.options.fsr.debug_view": "FSR Debug View",
+  "prime.options.fsr.debug_view.tooltip": "Shows FidelityFX's integration overview for motion, protected history, depth, disocclusion, shading change, and reactive detail. Intended for diagnostics, not normal play.",
+  "prime.options.fsr.debug_view.off": "Off",
+  "prime.options.fsr.debug_view.overview": "Integration Overview"
 }

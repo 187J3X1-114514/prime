@@ -167,7 +167,8 @@
     "textureEncoding": "srgb",
     "displayEncoding": "srgb",
     "displayColorSpace": "rec709-d65",
-    "defaultDisplayTransform": "oklab-drt"
+    "defaultDisplayTransform": "oklab-drt",
+    "displayExposure": 1.0
   },
   "atmosphereContract": {
     "spectralModel": "hillaire-8wave-rec2020-d65",

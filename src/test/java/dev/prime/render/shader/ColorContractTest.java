@@ -69,7 +69,7 @@ final class ColorContractTest {
         assertTrue(material.contains("primeDecodeSrgb(textureSample.rgb)"));
         assertTrue(material.contains("primeLinearSrgbToLinearRec2020(linearSrgbAlbedo)"));
         assertTrue(displayTransform.contains("primeLinearRec2020ToLinearBt709(exposedRec2020)"));
-        assertTrue(displayTransform.contains("PRIME_OKLAB_DISPLAY_EXPOSURE = 1.0"));
+        assertTrue(displayTransform.contains("* PRIME_DISPLAY_EXPOSURE"));
         assertTrue(rayGeneration.contains("imageStore(primeAccumulation"));
         assertFalse(rayGeneration.contains("primeDisplayTransformToSrgb"));
         assertTrue(composite.contains("vec3 radiance = surface + imageLoad(primeStableAccumulation"));
@@ -83,6 +83,7 @@ final class ColorContractTest {
         assertEquals("srgb", ShaderAbi.DISPLAY_COLOR_ENCODING);
         assertEquals("rec709-d65", ShaderAbi.DISPLAY_COLOR_SPACE);
         assertEquals("oklab-drt", ShaderAbi.DEFAULT_DISPLAY_TRANSFORM);
+        assertEquals(1.0F, ShaderAbi.DISPLAY_EXPOSURE);
     }
 
     private static double decodeSrgb(double encoded) {

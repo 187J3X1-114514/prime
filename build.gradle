@@ -97,7 +97,8 @@ abstract class GenerateShaderAbi extends DefaultTask {
 				|| colorContract.textureEncoding != 'srgb'
 				|| colorContract.displayEncoding != 'srgb'
 				|| colorContract.displayColorSpace != 'rec709-d65'
-				|| colorContract.defaultDisplayTransform != 'oklab-drt') {
+				|| colorContract.defaultDisplayTransform != 'oklab-drt'
+				|| colorContract.displayExposure != 1.0) {
 			throw new GradleException(
 					'Prime color contract must remain sRGB input -> linear Rec.2020 D65 -> Oklab DRT -> sRGB Rec.709 display')
 		}
@@ -229,6 +230,7 @@ public final class ShaderAbi {
     public static final String DISPLAY_COLOR_ENCODING = "${colorContract.displayEncoding}";
     public static final String DISPLAY_COLOR_SPACE = "${colorContract.displayColorSpace}";
     public static final String DEFAULT_DISPLAY_TRANSFORM = "${colorContract.defaultDisplayTransform}";
+    public static final float DISPLAY_EXPOSURE = ${colorContract.displayExposure}f;
     public static final String NRD_VERSION = "${nrdContract.version}";
     public static final String NRD_DENOISER = "${nrdContract.denoiser}";
     public static final String NRD_NORMAL_ENCODING = "${nrdContract.normalEncoding}";
@@ -260,6 +262,8 @@ ${javaOffsets}
 #extension GL_EXT_buffer_reference2 : require
 #extension GL_EXT_shader_explicit_arithmetic_types_int64 : require
 
+#include "prime_color_contract.glsl"
+
 #define PRIME_PRIMITIVE_RECORD_SIZE ${primitive.size}
 #define PRIME_SECTION_RECORD_SIZE ${section.size}
 #define PRIME_LIGHT_NODE_SIZE ${lightNode.size}
@@ -272,12 +276,6 @@ ${javaOffsets}
 #define PRIME_SURFACE_INTERACTION_SIZE ${surfaceInteraction.size}
 #define PRIME_PUSH_CONSTANT_SIZE ${push.size}
 #define PRIME_CUTOUT_ALPHA_THRESHOLD ${schema.cutoutAlphaThreshold}
-#define PRIME_COLOR_WORKING_SPACE_LINEAR_REC2020_D65 1
-#define PRIME_COLOR_TEXTURE_ENCODING_SRGB 1
-#define PRIME_COLOR_DISPLAY_ENCODING_SRGB 1
-#define PRIME_COLOR_DISPLAY_SPACE_REC709_D65 1
-#define PRIME_COLOR_DISPLAY_TRANSFORM_OKLAB_DRT 1
-
 struct PrimitiveRecord {
 ${glslStructFields(primitive)}
 };
@@ -392,6 +390,20 @@ layout(set = 0, binding = ${schema.descriptors.nrdPrimaryPosition}, rgba32f) uni
 
 #endif
 """
+		new File(glslDir, 'prime_color_contract.glsl').text = """\
+#ifndef PRIME_COLOR_CONTRACT_GLSL
+#define PRIME_COLOR_CONTRACT_GLSL
+
+// Generated from shaders/abi.json. FSR and the display transform must share this exposure.
+#define PRIME_COLOR_WORKING_SPACE_LINEAR_REC2020_D65 1
+#define PRIME_COLOR_TEXTURE_ENCODING_SRGB 1
+#define PRIME_COLOR_DISPLAY_ENCODING_SRGB 1
+#define PRIME_COLOR_DISPLAY_SPACE_REC709_D65 1
+#define PRIME_COLOR_DISPLAY_TRANSFORM_OKLAB_DRT 1
+#define PRIME_DISPLAY_EXPOSURE ${colorContract.displayExposure}
+
+#endif
+"""
 	}
 }
 
@@ -476,14 +488,13 @@ abstract class CompileFsrShaders extends DefaultTask {
 		def passes = new File(root, 'passes').listFiles({ file ->
 			file.name.endsWith('_pass.glsl')
 		} as FileFilter).sort { it.name }
-		if (passes.size() != 8) {
-			throw new GradleException("Prime requires the eight FSR 3.1.4 upscaler passes, found ${passes.size()}")
+		if (passes.size() != 9) {
+			throw new GradleException("Prime requires the eight FSR upscaler passes plus its debug view, found ${passes.size()}")
 		}
 
-		// Prime intentionally uses the portable FP32 path. These switches are part of the FSR
-		// integration contract: no frame interpolation, vendor extension, or FP16 variant is silently
-		// selected by the developer machine that happens to build the jar. RCAS is the final, weak
-		// presentation-resolution upscaler stage and is compiled explicitly here.
+		// Build deterministic FP32 and FP16 permutations into every jar. Runtime capability
+		// negotiation selects FP16 only when Vulkan exposes both shaderFloat16 and 16-bit storage;
+		// neither the build machine nor the GPU vendor can silently alter the fallback path.
 		def definitions = [
 			'-DFFX_GPU=1',
 			'-DFFX_GLSL=1',
@@ -502,25 +513,34 @@ abstract class CompileFsrShaders extends DefaultTask {
 		def scratch = new File(temporaryDir, 'spv')
 		fileSystemOperations.delete { delete scratch }
 		scratch.mkdirs()
-		passes.each { source ->
-			def stem = source.name.substring(0, source.name.length() - '_pass.glsl'.length())
-			def output = new File(scratch, stem + '.comp.spv')
-			execOperations.exec {
-				commandLine([glslangValidator.get(), '-V', '--target-env', 'vulkan1.2', '-S', 'comp', '-g',
-						"-I${new File(root, 'FidelityFX/gpu').absolutePath}",
-						"-I${root.absolutePath}"] + definitions + [source.absolutePath, '-o', output.absolutePath])
-			}
-			execOperations.exec {
-				commandLine spirvValidator.get(), '--target-env', 'vulkan1.2', output.absolutePath
+		['fp32': '0', 'fp16': '1'].each { variant, half ->
+			def variantDirectory = new File(scratch, variant)
+			variantDirectory.mkdirs()
+			passes.each { source ->
+				def stem = source.name.substring(0, source.name.length() - '_pass.glsl'.length())
+				def output = new File(variantDirectory, stem + '.comp.spv')
+				execOperations.exec {
+					commandLine([glslangValidator.get(), '-V', '--target-env', 'vulkan1.2', '-S', 'comp', '-g',
+							"-I${new File(root, 'FidelityFX/gpu').absolutePath}",
+							"-I${root.absolutePath}", "-DFFX_HALF=${half}"] + definitions
+							+ [source.absolutePath, '-o', output.absolutePath])
+				}
+				execOperations.exec {
+					commandLine spirvValidator.get(), '--target-env', 'vulkan1.2', output.absolutePath
+				}
 			}
 		}
 
 		def published = new File(outputDirectory.get().asFile, 'prime/shaders/fsr3')
 		fileSystemOperations.delete { delete published }
 		published.mkdirs()
-		scratch.listFiles().each { source ->
-			java.nio.file.Files.move(source.toPath(), new File(published, source.name).toPath(),
-					java.nio.file.StandardCopyOption.REPLACE_EXISTING)
+		scratch.listFiles().each { variant ->
+			def destination = new File(published, variant.name)
+			destination.mkdirs()
+			variant.listFiles().each { source ->
+				java.nio.file.Files.move(source.toPath(), new File(destination, source.name).toPath(),
+						java.nio.file.StandardCopyOption.REPLACE_EXISTING)
+			}
 		}
 	}
 }

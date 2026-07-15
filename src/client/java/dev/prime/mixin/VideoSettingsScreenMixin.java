@@ -21,7 +21,7 @@ public abstract class VideoSettingsScreenMixin {
         OptionsList list = ((OptionsSubScreenAccessor) this).prime$getList();
         if (list != null) {
             list.addHeader(PRIME$HEADER);
-            list.addSmall(FsrVideoOptions.qualityMode());
+            list.addSmall(FsrVideoOptions.qualityMode(), FsrVideoOptions.debugView());
         }
     }
 

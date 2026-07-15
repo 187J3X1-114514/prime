@@ -20,6 +20,8 @@ layout(set = 0, binding = 7, rgba16f) uniform readonly image3D primeCompositeAer
 layout(set = 0, binding = 8, rgba8) uniform readonly image2D primeNrdValidation;
 layout(set = 0, binding = 9, rgba16f) uniform readonly image2D primeReprojectionError;
 layout(set = 0, binding = 10, rgba16f) uniform readonly image2D primeMotionDiagnostic;
+layout(set = 0, binding = 11, r8) uniform writeonly image2D primeFsrReactiveMask;
+layout(set = 0, binding = 12, r8) uniform writeonly image2D primeFsrTransparencyCompositionMask;
 
 layout(push_constant) uniform PrimeCompositePushConstants {
     uvec2 outputExtent;
@@ -83,6 +85,17 @@ void main() {
     if (any(greaterThanEqual(pixel, primeCompositePush.outputExtent))) {
         return;
     }
+    // Prime currently renders only opaque and alpha-tested terrain. Both have valid depth and
+    // motion, so marking them reactive would unnecessarily discard useful history. The separate
+    // image is intentional: future blended materials can write their true semantic coverage
+    // without changing FSR's descriptor contract.
+    imageStore(primeFsrReactiveMask, ivec2(pixel), vec4(0.0));
+    float transparencyAndComposition = imageLoad(
+            primeCompositeSpecularMaterial, ivec2(pixel)).a;
+    imageStore(
+            primeFsrTransparencyCompositionMask,
+            ivec2(pixel),
+            vec4(clamp(transparencyAndComposition, 0.0, 1.0)));
     if (primeCompositePush.diagnosticMode == PRIME_DIAGNOSTIC_NRD_VALIDATION) {
         imageStore(
                 primeCompositeOutput,

@@ -1,6 +1,7 @@
 #ifndef PRIME_DISPLAY_TRANSFORM_GLSL
 #define PRIME_DISPLAY_TRANSFORM_GLSL
 
+#include "prime_color_contract.glsl"
 #include "color_space.glsl"
 
 #if !defined(PRIME_COLOR_DISPLAY_TRANSFORM_OKLAB_DRT)
@@ -10,7 +11,6 @@
 // This is the only global brightness adjustment at the display boundary. It maps the
 // integrator's linear Rec.2020 HDR result to the configured sRGB Rec.709 display and must never
 // be applied to PathState, light transport, or the RGBA32F accumulation history.
-const float PRIME_OKLAB_DISPLAY_EXPOSURE = 1.0;
 const float PRIME_OKLAB_EPSILON = 0.000001;
 
 vec3 primeLinearBt709ToOklab(vec3 color) {
@@ -84,7 +84,7 @@ vec3 primeOklabTonemapCurve(vec3 color) {
 }
 
 vec3 primeDisplayTransformToSrgb(vec3 hdrRec2020) {
-    vec3 exposedRec2020 = max(hdrRec2020, vec3(0.0)) * PRIME_OKLAB_DISPLAY_EXPOSURE;
+    vec3 exposedRec2020 = max(hdrRec2020, vec3(0.0)) * PRIME_DISPLAY_EXPOSURE;
     vec3 linearBt709 = max(primeLinearRec2020ToLinearBt709(exposedRec2020), vec3(0.0));
     vec3 encodedSrgb = primeEncodeSrgb(primeOklabTonemapCurve(linearBt709));
     return clamp(encodedSrgb, vec3(0.0), vec3(1.0));

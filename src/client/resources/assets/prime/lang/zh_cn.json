@@ -6,5 +6,9 @@
   "prime.options.fsr.quality.quality": "质量（1.5x）",
   "prime.options.fsr.quality.balanced": "均衡（1.7x）",
   "prime.options.fsr.quality.performance": "性能（2.0x）",
-  "prime.options.fsr.quality.ultra_performance": "超高性能（3.0x）"
+  "prime.options.fsr.quality.ultra_performance": "超高性能（3.0x）",
+  "prime.options.fsr.debug_view": "FSR 调试视图",
+  "prime.options.fsr.debug_view.tooltip": "显示 FidelityFX 的接入总览，包括运动、受保护历史、深度、反遮挡、着色变化和 Reactive 细节。仅用于诊断，不适合正常游玩。",
+  "prime.options.fsr.debug_view.off": "关闭",
+  "prime.options.fsr.debug_view.overview": "接入总览"
 }

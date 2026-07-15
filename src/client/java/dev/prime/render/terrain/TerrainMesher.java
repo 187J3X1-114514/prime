@@ -212,7 +212,9 @@ public final class TerrainMesher {
                     normalX * inverseLength,
                     normalY * inverseLength,
                     normalZ * inverseLength));
-            destination.primitives.add(cutout ? 1 : 0);
+            destination.primitives.add(PrimitivePacking.packFlags(
+                    cutout,
+                    quad.materialInfo().sprite().contents().isAnimated()));
             destination.primitives.add(this.lights.addTriangle(
                     firstX,
                     firstY,

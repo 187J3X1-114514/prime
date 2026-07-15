@@ -1,6 +1,9 @@
 package dev.prime.render.terrain;
 
 public final class PrimitivePacking {
+    public static final int FLAG_CUTOUT = 1;
+    public static final int FLAG_ANIMATED_TEXTURE = 1 << 1;
+
     private PrimitivePacking() {
     }
 
@@ -16,6 +19,11 @@ public final class PrimitivePacking {
         int green = argb >>> 8 & 0xff;
         int blue = argb & 0xff;
         return red | green << 8 | blue << 16 | alpha << 24;
+    }
+
+    public static int packFlags(boolean cutout, boolean animatedTexture) {
+        return (cutout ? FLAG_CUTOUT : 0)
+                | (animatedTexture ? FLAG_ANIMATED_TEXTURE : 0);
     }
 
     public static int packOctahedralNormal(float x, float y, float z) {

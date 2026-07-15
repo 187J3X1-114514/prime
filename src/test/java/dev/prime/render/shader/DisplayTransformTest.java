@@ -56,7 +56,8 @@ final class DisplayTransformTest {
         String composite = Files.readString(shaderRoot.resolve("nrd_composite.comp"));
         String fsrDisplay = Files.readString(shaderRoot.resolve("fsr_display.comp"));
 
-        assertTrue(displayTransform.contains("const float PRIME_OKLAB_DISPLAY_EXPOSURE = 1.0"));
+        assertTrue(displayTransform.contains("#include \"prime_color_contract.glsl\""));
+        assertTrue(displayTransform.contains("* PRIME_DISPLAY_EXPOSURE"));
         assertTrue(displayTransform.contains("vec3 primeDisplayTransformToSrgb(vec3 hdrRec2020)"));
         assertTrue(displayTransform.contains("primeOklabTonemapCurve(linearBt709)"));
         assertTrue(rayGeneration.contains("imageStore(primeAccumulation"));

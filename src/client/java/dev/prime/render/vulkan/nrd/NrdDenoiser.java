@@ -56,7 +56,7 @@ public final class NrdDenoiser implements Destroyable {
     private static final int IMAGE_USAGE = VK12.VK_IMAGE_USAGE_STORAGE_BIT | VK12.VK_IMAGE_USAGE_SAMPLED_BIT;
     private static final int MOTION_BINDING_COUNT = 5;
     private static final int MOTION_PUSH_SIZE = 192;
-    private static final int COMPOSITE_BINDING_COUNT = 11;
+    private static final int COMPOSITE_BINDING_COUNT = 13;
     private static final int COMPOSITE_PUSH_SIZE = 12;
     // world.rgen writes 65504 for a sky view-Z. Keep the valid range below that sentinel while
     // remaining far beyond Minecraft's usable terrain and Prime's 16,000-block aerial volume.
@@ -206,6 +206,14 @@ public final class NrdDenoiser implements Destroyable {
         return this.images.primaryPosition;
     }
 
+    public VulkanImage fsrReactiveMask() {
+        return this.images.fsrReactiveMask;
+    }
+
+    public VulkanImage fsrTransparencyCompositionMask() {
+        return this.images.fsrTransparencyCompositionMask;
+    }
+
     /**
      * Makes the signal images writable by raygen and all NRD-owned images available to compute.
      * The GENERAL layout is stable for their complete lifetime; only explicit availability and
@@ -252,9 +260,11 @@ public final class NrdDenoiser implements Destroyable {
             long atlasSampler,
             SunDirection sunDirection,
             float cameraJitterX,
-            float cameraJitterY) {
+            float cameraJitterY,
+            boolean forceRestart) {
         this.requireOpen();
-        boolean restart = this.previousCamera == null
+        boolean restart = forceRestart
+                || this.previousCamera == null
                 || sceneResetRevision != this.previousSceneResetRevision
                 || atlasView != this.previousAtlasView
                 || atlasSampler != this.previousAtlasSampler
@@ -703,6 +713,8 @@ public final class NrdDenoiser implements Destroyable {
         private final VulkanImage validation;
         private final VulkanImage denoisedDiffuse;
         private final VulkanImage denoisedSpecular;
+        private final VulkanImage fsrReactiveMask;
+        private final VulkanImage fsrTransparencyCompositionMask;
         private final VulkanImage[] permanentPool;
         private final VulkanImage[] transientPool;
         private boolean destroyed;
@@ -721,6 +733,8 @@ public final class NrdDenoiser implements Destroyable {
                 VulkanImage validation,
                 VulkanImage denoisedDiffuse,
                 VulkanImage denoisedSpecular,
+                VulkanImage fsrReactiveMask,
+                VulkanImage fsrTransparencyCompositionMask,
                 VulkanImage[] permanentPool,
                 VulkanImage[] transientPool) {
             this.noisyDiffuse = noisyDiffuse;
@@ -736,6 +750,8 @@ public final class NrdDenoiser implements Destroyable {
             this.validation = validation;
             this.denoisedDiffuse = denoisedDiffuse;
             this.denoisedSpecular = denoisedSpecular;
+            this.fsrReactiveMask = fsrReactiveMask;
+            this.fsrTransparencyCompositionMask = fsrTransparencyCompositionMask;
             this.permanentPool = permanentPool;
             this.transientPool = transientPool;
         }
@@ -773,6 +789,10 @@ public final class NrdDenoiser implements Destroyable {
                         context, created, width, height, VK12.VK_FORMAT_R16G16B16A16_SFLOAT, "Prime NRD denoised diffuse");
                 VulkanImage denoisedSpecular = createImage(
                         context, created, width, height, VK12.VK_FORMAT_R16G16B16A16_SFLOAT, "Prime NRD denoised specular");
+                VulkanImage fsrReactiveMask = createImage(
+                        context, created, width, height, VK12.VK_FORMAT_R8_UNORM, "Prime FSR reactive mask");
+                VulkanImage fsrTransparencyCompositionMask = createImage(
+                        context, created, width, height, VK12.VK_FORMAT_R8_UNORM, "Prime FSR transparency and composition mask");
                 VulkanImage[] permanent = createPool(
                         context, created, width, height, description.permanentPool(), "permanent");
                 VulkanImage[] transientImages = createPool(
@@ -791,6 +811,8 @@ public final class NrdDenoiser implements Destroyable {
                         validation,
                         denoised,
                         denoisedSpecular,
+                        fsrReactiveMask,
+                        fsrTransparencyCompositionMask,
                         permanent,
                         transientImages);
             } catch (RuntimeException exception) {
@@ -841,7 +863,7 @@ public final class NrdDenoiser implements Destroyable {
         }
 
         private VulkanImage[] allImages() {
-            VulkanImage[] result = new VulkanImage[13 + this.permanentPool.length + this.transientPool.length];
+            VulkanImage[] result = new VulkanImage[15 + this.permanentPool.length + this.transientPool.length];
             result[0] = this.noisyDiffuse;
             result[1] = this.noisySpecular;
             result[2] = this.normalRoughness;
@@ -855,12 +877,14 @@ public final class NrdDenoiser implements Destroyable {
             result[10] = this.reprojectionError;
             result[11] = this.validation;
             result[12] = this.fsrDepth;
-            System.arraycopy(this.permanentPool, 0, result, 13, this.permanentPool.length);
+            result[13] = this.fsrReactiveMask;
+            result[14] = this.fsrTransparencyCompositionMask;
+            System.arraycopy(this.permanentPool, 0, result, 15, this.permanentPool.length);
             System.arraycopy(
                     this.transientPool,
                     0,
                     result,
-                    13 + this.permanentPool.length,
+                    15 + this.permanentPool.length,
                     this.transientPool.length);
             return result;
         }
@@ -882,6 +906,8 @@ public final class NrdDenoiser implements Destroyable {
             this.primaryPosition.destroy();
             this.denoisedSpecular.destroy();
             this.denoisedDiffuse.destroy();
+            this.fsrTransparencyCompositionMask.destroy();
+            this.fsrReactiveMask.destroy();
             this.specularMaterial.destroy();
             this.material.destroy();
             this.motion.destroy();
@@ -1675,7 +1701,9 @@ public final class NrdDenoiser implements Destroyable {
                     atmosphere.aerialTransmittance(),
                     images.validation,
                     images.reprojectionError,
-                    images.motion
+                    images.motion,
+                    images.fsrReactiveMask,
+                    images.fsrTransparencyCompositionMask
                 };
                 VkDescriptorImageInfo.Buffer imageInfos =
                         VkDescriptorImageInfo.calloc(COMPOSITE_BINDING_COUNT, stack);

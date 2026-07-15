@@ -10,9 +10,10 @@ public record VulkanCapabilities(
         int maxShaderGroupStride,
         int maxRayDispatchInvocationCount,
         int maxRayRecursionDepth,
-        int accelerationStructureScratchAlignment) {
+        int accelerationStructureScratchAlignment,
+        boolean fsrFp16Supported) {
 
     public static VulkanCapabilities unavailable(String deviceName, String reason) {
-        return new VulkanCapabilities(false, deviceName, reason, 0, 0, 0, 0, 0, 0, 0);
+        return new VulkanCapabilities(false, deviceName, reason, 0, 0, 0, 0, 0, 0, 0, false);
     }
 }

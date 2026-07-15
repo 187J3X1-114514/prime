@@ -2,6 +2,9 @@ package dev.prime.render.vulkan.fsr;
 
 import com.mojang.blaze3d.vulkan.Destroyable;
 import dev.prime.render.FrameCamera;
+import dev.prime.render.CameraDiscontinuity;
+import dev.prime.render.fsr.FsrDebugView;
+import dev.prime.render.fsr.FsrDispatchValidator;
 import dev.prime.render.fsr.FsrQualityMode;
 import dev.prime.render.fsr.FsrSettings;
 import dev.prime.render.vulkan.VulkanBuffer;
@@ -43,7 +46,8 @@ import org.lwjgl.vulkan.VkShaderModuleCreateInfo;
 import org.lwjgl.vulkan.VkWriteDescriptorSet;
 
 /**
- * Direct Vulkan realization of FidelityFX SDK 1.1.4's FSR 3.1.4 upscaler.
+ * Direct Vulkan realization of FidelityFX SDK 1.1.4's FSR 3.1 upscaler with the public 3.1.5
+ * RCAS correction backported from SDK 2.0.
  *
  * <p>Only the eight platform-independent upscaler compute passes, including RCAS, are present.
  * Prime owns every resource and records every dispatch on Minecraft's Vulkan queue; there is no FidelityFX native
@@ -76,9 +80,14 @@ public final class Fsr3Upscaler implements Destroyable {
     private final VulkanBuffer rcasConstants;
     private final VulkanBuffer lanczosUpload;
     private final Pass[] passes;
+    private final Pass debugPass;
     private final Pass displayPass;
 
     private FsrSettings.Jitter previousJitter;
+    private FrameCamera previousCamera;
+    private long previousSceneResetRevision = Long.MIN_VALUE;
+    private long previousAtlasView;
+    private long previousAtlasSampler;
     private int frameIndex;
     private long previousFrameNanos;
     private boolean resetRequested = true;
@@ -100,6 +109,7 @@ public final class Fsr3Upscaler implements Destroyable {
             VulkanBuffer rcasConstants,
             VulkanBuffer lanczosUpload,
             Pass[] passes,
+            Pass debugPass,
             Pass displayPass) {
         this.context = context;
         this.renderWidth = renderWidth;
@@ -116,6 +126,7 @@ public final class Fsr3Upscaler implements Destroyable {
         this.rcasConstants = rcasConstants;
         this.lanczosUpload = lanczosUpload;
         this.passes = passes;
+        this.debugPass = debugPass;
         this.displayPass = displayPass;
     }
 
@@ -129,6 +140,8 @@ public final class Fsr3Upscaler implements Destroyable {
             VulkanImage sceneColor,
             VulkanImage inputMotion,
             VulkanImage inputDepth,
+            VulkanImage reactiveMask,
+            VulkanImage transparencyCompositionMask,
             VulkanImage displayOutput) {
         Resources resources = null;
         long pointSampler = 0L;
@@ -138,6 +151,7 @@ public final class Fsr3Upscaler implements Destroyable {
         VulkanBuffer rcasConstants = null;
         VulkanBuffer lanczosUpload = null;
         ArrayList<Pass> createdPasses = new ArrayList<>();
+        Pass debugPass = null;
         try {
             resources = Resources.create(
                     context,
@@ -148,6 +162,8 @@ public final class Fsr3Upscaler implements Destroyable {
                     sceneColor,
                     inputMotion,
                     inputDepth,
+                    reactiveMask,
+                    transparencyCompositionMask,
                     displayOutput);
             pointSampler = createSampler(context, false, "Prime FSR point-clamp sampler");
             linearSampler = createSampler(context, true, "Prime FSR linear-clamp sampler");
@@ -169,7 +185,8 @@ public final class Fsr3Upscaler implements Destroyable {
             writeRcasConstants(rcasConstants);
             lanczosUpload = createLanczosUpload(context);
 
-            for (PassSpec spec : upscalerPassSpecs()) {
+            boolean fp16 = context.capabilities().fsrFp16Supported();
+            for (PassSpec spec : upscalerPassSpecs(fp16)) {
                 createdPasses.add(Pass.create(
                         context,
                         spec,
@@ -180,6 +197,15 @@ public final class Fsr3Upscaler implements Destroyable {
                         spdConstants,
                         rcasConstants));
             }
+            debugPass = Pass.create(
+                    context,
+                    debugPassSpec(fp16),
+                    resources,
+                    pointSampler,
+                    linearSampler,
+                    mainConstants,
+                    spdConstants,
+                    rcasConstants);
             Pass displayPass = Pass.create(
                     context,
                     displayPassSpec(),
@@ -204,8 +230,12 @@ public final class Fsr3Upscaler implements Destroyable {
                     rcasConstants,
                     lanczosUpload,
                     createdPasses.toArray(Pass[]::new),
+                    debugPass,
                     displayPass);
         } catch (RuntimeException exception) {
+            if (debugPass != null) {
+                debugPass.destroy();
+            }
             for (int index = createdPasses.size() - 1; index >= 0; index--) {
                 createdPasses.get(index).destroy();
             }
@@ -244,17 +274,62 @@ public final class Fsr3Upscaler implements Destroyable {
 
     public void requestReset() {
         this.resetRequested = true;
-        this.frameIndex = 0;
     }
 
-    public void record(VkCommandBuffer commandBuffer, FrameCamera camera) {
+    public FrameToken beginFrame(
+            FrameCamera camera,
+            long sceneResetRevision,
+            long atlasView,
+            long atlasSampler) {
         this.requireOpen();
-        boolean reset = this.resetRequested || !this.initialized;
-        FsrSettings.Jitter jitter = this.jitter();
+        Objects.requireNonNull(camera, "camera");
+        boolean cameraCut = this.initialized
+                && CameraDiscontinuity.isCut(this.previousCamera, camera);
+        boolean reset = this.resetRequested
+                || !this.initialized
+                || cameraCut
+                || sceneResetRevision != this.previousSceneResetRevision
+                || atlasView != this.previousAtlasView
+                || atlasSampler != this.previousAtlasSampler;
+        int currentFrameIndex = reset ? 0 : this.frameIndex;
+        FsrSettings.Jitter jitter = this.qualityMode.jitter(currentFrameIndex);
         long now = System.nanoTime();
         float deltaSeconds = this.previousFrameNanos == 0L
                 ? 1.0F / 60.0F
                 : Math.min((now - this.previousFrameNanos) * 1.0e-9F, 1.0F);
+        return new FrameToken(
+                this,
+                camera,
+                sceneResetRevision,
+                atlasView,
+                atlasSampler,
+                currentFrameIndex,
+                jitter,
+                reset ? jitter : this.previousJitter,
+                reset,
+                cameraCut,
+                deltaSeconds,
+                now);
+    }
+
+    public void record(VkCommandBuffer commandBuffer, FrameToken token) {
+        this.requireOpen();
+        if (token.owner != this || token.recorded || token.submitted) {
+            throw new IllegalArgumentException("FSR frame token does not belong to this recording");
+        }
+        token.recorded = true;
+        FrameCamera camera = token.camera;
+        boolean reset = token.reset;
+        FsrSettings.Jitter jitter = token.jitter;
+        FsrDispatchValidator.validate(
+                this.renderWidth,
+                this.renderHeight,
+                this.displayWidth,
+                this.displayHeight,
+                jitter,
+                FsrSettings.EXPOSURE,
+                1.0F,
+                1.0F);
 
         // NRD's composite, motion and reversed-depth images are external inputs written by the
         // immediately preceding compute work. This dependency is separate from FSR's internal
@@ -266,9 +341,9 @@ public final class Fsr3Upscaler implements Destroyable {
                     stack,
                     camera,
                     jitter,
-                    reset ? jitter : this.previousJitter,
-                    reset ? 0 : this.frameIndex,
-                    deltaSeconds);
+                    token.previousJitter,
+                    token.frameIndex,
+                    token.deltaSeconds);
             ByteBuffer spd = createSpdConstants(stack);
             VK12.vkCmdUpdateBuffer(
                     commandBuffer, this.mainConstants.handle(), 0L, main);
@@ -279,7 +354,7 @@ public final class Fsr3Upscaler implements Destroyable {
         this.clearPerFrameResources(commandBuffer, reset);
         transferToComputeBarrier(commandBuffer, this.mainConstants, this.spdConstants);
 
-        int parity = this.frameIndex & 1;
+        int parity = token.frameIndex & 1;
         int sourceX = divideRoundUp(this.renderWidth, 8);
         int sourceY = divideRoundUp(this.renderHeight, 8);
         int spdX = divideRoundUp(this.renderWidth, 64);
@@ -307,19 +382,38 @@ public final class Fsr3Upscaler implements Destroyable {
         computeBarrier(commandBuffer);
         this.passes[7].record(commandBuffer, parity, rcasX, rcasY, null);
         computeBarrier(commandBuffer);
+        FsrDebugView debugView = FsrSettings.debugView();
+        if (debugView == FsrDebugView.OVERVIEW) {
+            this.debugPass.record(commandBuffer, parity, displayX, displayY, null);
+            computeBarrier(commandBuffer);
+        }
         try (MemoryStack stack = MemoryStack.stackPush()) {
-            ByteBuffer displayPush = stack.malloc(8).order(ByteOrder.nativeOrder());
+            ByteBuffer displayPush = stack.malloc(12).order(ByteOrder.nativeOrder());
             displayPush.putInt(0, this.displayWidth);
             displayPush.putInt(4, this.displayHeight);
+            displayPush.putInt(8, debugView == FsrDebugView.OFF ? 0 : 1);
             this.displayPass.record(
                     commandBuffer, 0, displayX, displayY, displayPush);
         }
 
+    }
+
+    /** Must be called immediately after the command buffer containing {@code token} is submitted. */
+    public void submitted(FrameToken token) {
+        this.requireOpen();
+        if (token.owner != this || !token.recorded || token.submitted) {
+            throw new IllegalArgumentException("FSR frame token does not belong to this submission");
+        }
+        token.submitted = true;
         this.initialized = true;
         this.resetRequested = false;
-        this.previousJitter = jitter;
-        this.previousFrameNanos = now;
-        this.frameIndex++;
+        this.previousCamera = token.camera;
+        this.previousSceneResetRevision = token.sceneResetRevision;
+        this.previousAtlasView = token.atlasView;
+        this.previousAtlasSampler = token.atlasSampler;
+        this.previousJitter = token.jitter;
+        this.previousFrameNanos = token.frameNanos;
+        this.frameIndex = token.frameIndex + 1;
     }
 
     private ByteBuffer createMainConstants(
@@ -446,8 +540,16 @@ public final class Fsr3Upscaler implements Destroyable {
                         VK12.VK_IMAGE_LAYOUT_GENERAL,
                         copy);
             }
-            clearFloatImage(commandBuffer, this.resources.zeroMask, 0.0F, 0.0F, 0.0F, 0.0F);
-            clearFloatImage(commandBuffer, this.resources.exposure, 0.0F, 0.0F, 0.0F, 0.0F);
+            // FSR exposure must be the same multiplier used by the later display transform. Prime
+            // deliberately uses fixed exposure 1.0; writing it explicitly avoids relying on FSR's
+            // special zero-means-one fallback and makes that cross-stage contract auditable.
+            clearFloatImage(
+                    commandBuffer,
+                    this.resources.exposure,
+                    FsrSettings.EXPOSURE,
+                    0.0F,
+                    0.0F,
+                    0.0F);
         } else {
             computeToTransferBarrier(commandBuffer);
         }
@@ -655,6 +757,7 @@ public final class Fsr3Upscaler implements Destroyable {
         }
         this.destroyed = true;
         this.displayPass.destroy();
+        this.debugPass.destroy();
         for (int index = this.passes.length - 1; index >= 0; index--) {
             this.passes[index].destroy();
         }
@@ -683,7 +786,8 @@ public final class Fsr3Upscaler implements Destroyable {
         FRAME_INFO,
         FARTHEST_DEPTH_MIP1,
         SHADING_CHANGE,
-        ZERO_MASK,
+        REACTIVE_MASK,
+        TRANSPARENCY_COMPOSITION_MASK,
         EXPOSURE,
         ACCUMULATION_PREVIOUS,
         ACCUMULATION_CURRENT,
@@ -737,8 +841,8 @@ public final class Fsr3Upscaler implements Destroyable {
         return List.of(new SamplerSlot(1000, false), new SamplerSlot(1001, true));
     }
 
-    private static List<PassSpec> upscalerPassSpecs() {
-        String root = "/prime/shaders/fsr3/ffx_fsr3upscaler_";
+    private static List<PassSpec> upscalerPassSpecs(boolean fp16) {
+        String root = shaderRoot(fp16);
         return List.of(
                 new PassSpec(
                         "prepare inputs",
@@ -807,8 +911,8 @@ public final class Fsr3Upscaler implements Destroyable {
                                 ImageSlot.sampled(0, ResourceId.RECONSTRUCTED_DEPTH),
                                 ImageSlot.sampled(1, ResourceId.DILATED_MOTION),
                                 ImageSlot.sampled(2, ResourceId.DILATED_DEPTH),
-                                ImageSlot.sampled(3, ResourceId.ZERO_MASK),
-                                ImageSlot.sampled(4, ResourceId.ZERO_MASK),
+                                ImageSlot.sampled(3, ResourceId.REACTIVE_MASK),
+                                ImageSlot.sampled(4, ResourceId.TRANSPARENCY_COMPOSITION_MASK),
                                 ImageSlot.sampled(5, ResourceId.ACCUMULATION_PREVIOUS),
                                 ImageSlot.sampled(6, ResourceId.SHADING_CHANGE),
                                 ImageSlot.sampled(7, ResourceId.CURRENT_LUMA),
@@ -868,6 +972,27 @@ public final class Fsr3Upscaler implements Destroyable {
                         0));
     }
 
+    private static PassSpec debugPassSpec(boolean fp16) {
+        return new PassSpec(
+                "debug view",
+                shaderRoot(fp16) + "debug_view.comp.spv",
+                List.of(
+                        ImageSlot.sampled(0, ResourceId.DILATED_REACTIVE),
+                        ImageSlot.sampled(1, ResourceId.DILATED_MOTION),
+                        ImageSlot.sampled(2, ResourceId.DILATED_DEPTH),
+                        ImageSlot.sampled(3, ResourceId.INTERNAL_UPSCALED_CURRENT),
+                        ImageSlot.sampled(4, ResourceId.EXPOSURE),
+                        ImageSlot.storage(5, ResourceId.FSR_OUTPUT)),
+                fsrSamplers(),
+                List.of(new BufferSlot(6, BufferId.MAIN)),
+                0);
+    }
+
+    private static String shaderRoot(boolean fp16) {
+        return "/prime/shaders/fsr3/" + (fp16 ? "fp16/" : "fp32/")
+                + "ffx_fsr3upscaler_";
+    }
+
     private static PassSpec displayPassSpec() {
         return new PassSpec(
                 "display transform",
@@ -877,7 +1002,68 @@ public final class Fsr3Upscaler implements Destroyable {
                         ImageSlot.storage(1, ResourceId.DISPLAY_OUTPUT)),
                 List.of(),
                 List.of(),
-                8);
+                12);
+    }
+
+    /** Immutable temporal inputs chosen before ray generation plus submission bookkeeping. */
+    public static final class FrameToken {
+        private final Fsr3Upscaler owner;
+        private final FrameCamera camera;
+        private final long sceneResetRevision;
+        private final long atlasView;
+        private final long atlasSampler;
+        private final int frameIndex;
+        private final FsrSettings.Jitter jitter;
+        private final FsrSettings.Jitter previousJitter;
+        private final boolean reset;
+        private final boolean cameraCut;
+        private final float deltaSeconds;
+        private final long frameNanos;
+        private boolean recorded;
+        private boolean submitted;
+
+        private FrameToken(
+                Fsr3Upscaler owner,
+                FrameCamera camera,
+                long sceneResetRevision,
+                long atlasView,
+                long atlasSampler,
+                int frameIndex,
+                FsrSettings.Jitter jitter,
+                FsrSettings.Jitter previousJitter,
+                boolean reset,
+                boolean cameraCut,
+                float deltaSeconds,
+                long frameNanos) {
+            this.owner = owner;
+            this.camera = camera;
+            this.sceneResetRevision = sceneResetRevision;
+            this.atlasView = atlasView;
+            this.atlasSampler = atlasSampler;
+            this.frameIndex = frameIndex;
+            this.jitter = jitter;
+            this.previousJitter = previousJitter;
+            this.reset = reset;
+            this.cameraCut = cameraCut;
+            this.deltaSeconds = deltaSeconds;
+            this.frameNanos = frameNanos;
+        }
+
+        public int frameIndex() {
+            return this.frameIndex;
+        }
+
+        public FsrSettings.Jitter jitter() {
+            return this.jitter;
+        }
+
+        public boolean reset() {
+            return this.reset;
+        }
+
+        public boolean cameraCut() {
+            return this.cameraCut;
+        }
     }
 
     private static final class Resources implements Destroyable {
@@ -895,7 +1081,8 @@ public final class Fsr3Upscaler implements Destroyable {
         private final VulkanImage frameInfo;
         private final VulkanImage farthestDepthMip1;
         private final VulkanImage shadingChange;
-        private final VulkanImage zeroMask;
+        private final VulkanImage reactiveMask;
+        private final VulkanImage transparencyCompositionMask;
         private final VulkanImage exposure;
         private final VulkanImage[] accumulation;
         private final VulkanImage newLocks;
@@ -922,7 +1109,8 @@ public final class Fsr3Upscaler implements Destroyable {
                 VulkanImage frameInfo,
                 VulkanImage farthestDepthMip1,
                 VulkanImage shadingChange,
-                VulkanImage zeroMask,
+                VulkanImage reactiveMask,
+                VulkanImage transparencyCompositionMask,
                 VulkanImage exposure,
                 VulkanImage[] accumulation,
                 VulkanImage newLocks,
@@ -946,7 +1134,8 @@ public final class Fsr3Upscaler implements Destroyable {
             this.frameInfo = frameInfo;
             this.farthestDepthMip1 = farthestDepthMip1;
             this.shadingChange = shadingChange;
-            this.zeroMask = zeroMask;
+            this.reactiveMask = reactiveMask;
+            this.transparencyCompositionMask = transparencyCompositionMask;
             this.exposure = exposure;
             this.accumulation = accumulation;
             this.newLocks = newLocks;
@@ -967,6 +1156,8 @@ public final class Fsr3Upscaler implements Destroyable {
                 VulkanImage sceneColor,
                 VulkanImage inputMotion,
                 VulkanImage inputDepth,
+                VulkanImage reactiveMask,
+                VulkanImage transparencyCompositionMask,
                 VulkanImage displayOutput) {
             ArrayList<VulkanImage> owned = new ArrayList<>();
             try {
@@ -1009,9 +1200,6 @@ public final class Fsr3Upscaler implements Destroyable {
                 VulkanImage shading = own(owned, context.createImage2D(
                         halfWidth, halfHeight, VK12.VK_FORMAT_R8_UNORM,
                         COMMON_IMAGE_USAGE, "Prime FSR shading change"));
-                VulkanImage zeroMask = own(owned, context.createImage2D(
-                        renderWidth, renderHeight, VK12.VK_FORMAT_R8_UNORM,
-                        SAMPLED_CLEAR_USAGE, "Prime FSR zero reactive mask"));
                 VulkanImage exposure = own(owned, context.createImage2D(
                         1, 1, VK12.VK_FORMAT_R32G32_SFLOAT,
                         SAMPLED_CLEAR_USAGE, "Prime FSR default exposure"));
@@ -1066,7 +1254,8 @@ public final class Fsr3Upscaler implements Destroyable {
                         frameInfo,
                         farthest,
                         shading,
-                        zeroMask,
+                        reactiveMask,
+                        transparencyCompositionMask,
                         exposure,
                         accumulation,
                         newLocks,
@@ -1106,7 +1295,8 @@ public final class Fsr3Upscaler implements Destroyable {
                 case FRAME_INFO -> this.frameInfo;
                 case FARTHEST_DEPTH_MIP1 -> this.farthestDepthMip1;
                 case SHADING_CHANGE -> this.shadingChange;
-                case ZERO_MASK -> this.zeroMask;
+                case REACTIVE_MASK -> this.reactiveMask;
+                case TRANSPARENCY_COMPOSITION_MASK -> this.transparencyCompositionMask;
                 case EXPOSURE -> this.exposure;
                 case ACCUMULATION_PREVIOUS -> this.accumulation[parity];
                 case ACCUMULATION_CURRENT -> this.accumulation[parity ^ 1];

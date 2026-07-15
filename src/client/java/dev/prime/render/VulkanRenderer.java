@@ -178,12 +178,17 @@ public final class VulkanRenderer implements AutoCloseable {
                 atlasSamplerHandle,
                 frameSunDirection,
                 resized);
-        FsrSettings.Jitter cameraJitter = upscaler.jitter();
+        Fsr3Upscaler.FrameToken fsrFrame = upscaler.beginFrame(
+                frameCamera,
+                scene.resetRevision(),
+                atlasViewHandle,
+                atlasSamplerHandle);
+        FsrSettings.Jitter cameraJitter = fsrFrame.jitter();
 
         var encoder = this.context.commandEncoder();
         VkCommandBuffer commandBuffer = encoder.allocateAndBeginTransientCommandBuffer();
         this.context.device().instance().debug().beginDebugGroup(
-                commandBuffer, () -> "Prime path tracing, NRD, and FSR 3.1.4");
+                commandBuffer, () -> "Prime path tracing, NRD, and FSR 3.1.5");
         this.atmosphere.prepare(commandBuffer, frameCamera, frameSunDirection);
         this.prepareOutputForComposite(commandBuffer, target);
         this.prepareSceneColorForComposite(commandBuffer, sceneColor);
@@ -200,7 +205,7 @@ public final class VulkanRenderer implements AutoCloseable {
                     renderHeight,
                     frameSunDirection,
                     images.qualityMode,
-                    upscaler.frameIndex());
+                    fsrFrame.frameIndex());
             this.pipeline.trace(commandBuffer, pushConstants, renderWidth, renderHeight);
             this.finishAtlasRead(commandBuffer, atlasView.texture());
             nrdFrame = denoiser.record(
@@ -211,8 +216,9 @@ public final class VulkanRenderer implements AutoCloseable {
                     atlasSamplerHandle,
                     frameSunDirection,
                     cameraJitter.x(),
-                    cameraJitter.y());
-            upscaler.record(commandBuffer, frameCamera);
+                    cameraJitter.y(),
+                    fsrFrame.reset());
+            upscaler.record(commandBuffer, fsrFrame);
             this.prepareImagesForCopy(commandBuffer, target, mainColor);
             VkImageCopy.Buffer copy = VkImageCopy.calloc(1, stack);
             copy.get(0).srcSubresource()
@@ -239,6 +245,7 @@ public final class VulkanRenderer implements AutoCloseable {
         VulkanContext.check(VK12.vkEndCommandBuffer(commandBuffer), "end Prime ray tracing command buffer");
         encoder.execute(commandBuffer);
         denoiser.submitted(nrdFrame);
+        upscaler.submitted(fsrFrame);
         this.accumulationState.submitted(
                 frameCamera,
                 atlasViewHandle,
@@ -326,6 +333,8 @@ public final class VulkanRenderer implements AutoCloseable {
                         currentImages.sceneColor,
                         replacementDenoiser.motion(),
                         replacementDenoiser.fsrDepth(),
+                        replacementDenoiser.fsrReactiveMask(),
+                        replacementDenoiser.fsrTransparencyCompositionMask(),
                         currentImages.output);
             }
         } catch (RuntimeException exception) {
@@ -418,6 +427,8 @@ public final class VulkanRenderer implements AutoCloseable {
                     replacementSceneColor,
                     replacementDenoiser.motion(),
                     replacementDenoiser.fsrDepth(),
+                    replacementDenoiser.fsrReactiveMask(),
+                    replacementDenoiser.fsrTransparencyCompositionMask(),
                     replacementOutput);
         } catch (RuntimeException exception) {
             if (replacementUpscaler != null) {

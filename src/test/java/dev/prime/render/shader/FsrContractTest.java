@@ -15,6 +15,8 @@ final class FsrContractTest {
         assertTrue(composite.contains("rgba16f) uniform writeonly image2D primeCompositeOutput"));
         assertFalse(composite.contains("primeDisplayTransformToSrgb"));
         assertTrue(display.contains("primeDisplayTransformToSrgb"));
+        assertTrue(Files.readString(Path.of("shaders/display_transform.glsl"))
+                .contains("* PRIME_DISPLAY_EXPOSURE"));
     }
 
     @Test
@@ -25,13 +27,25 @@ final class FsrContractTest {
             passCount = files.filter(path -> path.getFileName().toString().endsWith("_pass.glsl"))
                     .count();
         }
-        assertTrue(passCount == 8);
+        assertTrue(passCount == 9);
         assertTrue(Files.exists(passes.resolve("ffx_fsr3upscaler_rcas_pass.glsl")));
+        assertTrue(Files.exists(passes.resolve("ffx_fsr3upscaler_debug_view_pass.glsl")));
         try (var files = Files.walk(Path.of("shaders/vendor/fidelityfx"))) {
             assertFalse(files.anyMatch(path -> path.getFileName().toString()
                     .toLowerCase(java.util.Locale.ROOT)
                     .contains("frameinterpolation")));
         }
+    }
+
+    @Test
+    void semanticMasksDoNotMisclassifyOpaqueOrCutoutTerrain() throws Exception {
+        String material = Files.readString(Path.of("shaders/material.glsl"));
+        String composite = Files.readString(Path.of("shaders/nrd_composite.comp"));
+        assertTrue(material.contains("PRIME_MATERIAL_FLAG_ANIMATED_TEXTURE"));
+        assertTrue(material.contains("primeFsrTransparencyAndCompositionMask"));
+        assertTrue(composite.contains("primeFsrReactiveMask"));
+        assertTrue(composite.contains("imageStore(primeFsrReactiveMask"));
+        assertTrue(composite.contains("primeFsrTransparencyCompositionMask"));
     }
 
     @Test

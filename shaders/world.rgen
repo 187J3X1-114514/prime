@@ -33,7 +33,7 @@ void main() {
     path.sampleIndex = primePush.path.x;
     path.sampleEpoch = primePush.path.y;
 
-    // FSR 3.1.4's canonical base-2/base-3 Halton sequence is the sole camera jitter source.
+    // FSR 3.1's canonical base-2/base-3 Halton sequence is the sole camera jitter source.
     // path.w is a dedicated, monotonically advancing FSR frame index; NRD and the FSR constants
     // receive the identical pixel offset from Java. Do not replace this with a per-pixel sample:
     // temporal reconstruction can only describe one camera projection for the complete frame.
@@ -132,7 +132,11 @@ void main() {
     imageStore(
             primeNrdSpecularMaterial,
             ivec2(pixel),
-            vec4(specularMaterialFactor, 0.0));
+            vec4(
+                    specularMaterialFactor,
+                    primeFsrTransparencyAndCompositionMask(
+                            sampleResult.primaryMaterialFlags,
+                            primaryLinearRoughness)));
 
     // Directly visible sky/emission is a current-frame deterministic signal. FSR owns temporal
     // coverage reconstruction, so averaging a second independent history here would create stale

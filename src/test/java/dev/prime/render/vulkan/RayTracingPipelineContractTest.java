@@ -38,7 +38,8 @@ final class RayTracingPipelineContractTest {
     void serPermutationReordersOnlySurfaceContinuationsAndKeepsFallback() throws IOException {
         Path root = Path.of(System.getProperty("user.dir"));
         String rayGeneration = Files.readString(root.resolve("shaders/world.rgen"));
-        String integrator = Files.readString(root.resolve("shaders/integrator.glsl"));
+        String integrator = Files.readString(root.resolve("shaders/integrator.glsl"))
+                .replace("\r\n", "\n");
         String pipeline = Files.readString(root.resolve(
                 "src/client/java/dev/prime/render/vulkan/RayTracingPipeline.java"));
 

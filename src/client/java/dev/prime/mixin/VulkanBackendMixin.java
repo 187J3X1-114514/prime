@@ -42,6 +42,11 @@ public abstract class VulkanBackendMixin {
             PrimeClient.LOGGER.info(
                     "Prime FSR arithmetic path: {}",
                     capabilities.fsrFp16Supported() ? "FP16" : "FP32 fallback");
+            PrimeClient.LOGGER.info(
+                    "Prime ray tracing invocation reorder: {}",
+                    capabilities.invocationReorderSupported()
+                            ? "VK_EXT_ray_tracing_invocation_reorder"
+                            : "unavailable (standard mega-kernel)");
         } else {
             PrimeClient.LOGGER.warn("Prime ray tracing unavailable on {}: {}", capabilities.deviceName(), capabilities.unavailableReason());
         }

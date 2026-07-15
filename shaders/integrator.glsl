@@ -45,8 +45,36 @@ SurfaceInteraction primeTraceSurface(vec3 origin, vec3 direction) {
     primePayload.emitterIndex = PRIME_NO_LIGHT_INDEX;
     primePayload.reserved0 = 0u;
     primePayload.reserved1 = 0u;
+#if defined(PRIME_ENABLE_SER)
+    // Hit objects decouple traversal from closest-hit/miss execution. The reorder point groups
+    // those continuations by shader first and by the low section-index bits second, improving
+    // both branch and primitive-buffer locality in incoherent terrain without moving path state
+    // into global queues. Keep this helper narrow: every caller-local value live here becomes
+    // state that the implementation may need to save and restore across invocation repacking.
+    hitObjectEXT hitObject;
+    hitObjectRecordEmptyEXT(hitObject);
+    hitObjectTraceRayEXT(
+            hitObject,
+            primeScene,
+            gl_RayFlagsNoneEXT,
+            0xff,
+            0,
+            1,
+            0,
+            origin,
+            0.0,
+            direction,
+            1000000.0,
+            0);
+    uint coherenceHint = hitObjectIsHitEXT(hitObject)
+            ? uint(hitObjectGetInstanceCustomIndexEXT(hitObject))
+            : 0u;
+    reorderThreadEXT(hitObject, coherenceHint, 8u);
+    hitObjectExecuteShaderEXT(hitObject, 0);
+#else
     traceRayEXT(primeScene, gl_RayFlagsNoneEXT, 0xff, 0, 1, 0,
             origin, 0.0, direction, 1000000.0, 0);
+#endif
     SurfaceInteraction surface;
     surface.position = primePayload.position;
     surface.t = primePayload.t;

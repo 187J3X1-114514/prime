@@ -1,5 +1,9 @@
 #version 460
 #extension GL_GOOGLE_include_directive : require
+#if defined(PRIME_ENABLE_SER)
+#extension GL_EXT_buffer_reference_uvec2 : require
+#extension GL_EXT_shader_invocation_reorder : require
+#endif
 #include "common.glsl"
 #include "atmosphere_rt.glsl"
 #include "nrd_common.glsl"

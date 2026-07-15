@@ -345,7 +345,10 @@ public final class RayTracingPipeline implements Destroyable {
     private static long createPipeline(VulkanContext context, MemoryStack stack, long pipelineLayout) {
         long[] modules = new long[5];
         try {
-            modules[0] = createShaderModule(context, "/prime/shaders/world.rgen.spv");
+            String raygenResource = context.capabilities().invocationReorderSupported()
+                    ? "/prime/shaders/world_ser.rgen.spv"
+                    : "/prime/shaders/world.rgen.spv";
+            modules[0] = createShaderModule(context, raygenResource);
             modules[1] = createShaderModule(context, "/prime/shaders/world.rmiss.spv");
             modules[2] = createShaderModule(context, "/prime/shaders/shadow.rmiss.spv");
             modules[3] = createShaderModule(context, "/prime/shaders/world.rchit.spv");
@@ -390,7 +393,12 @@ public final class RayTracingPipeline implements Destroyable {
                     "create Prime ray tracing pipeline");
             long pipeline = pointer.get(0);
             context.device().instance().debug().setObjectName(
-                    context.vkDevice(), VK12.VK_OBJECT_TYPE_PIPELINE, pipeline, "Prime primary ray pipeline");
+                    context.vkDevice(),
+                    VK12.VK_OBJECT_TYPE_PIPELINE,
+                    pipeline,
+                    context.capabilities().invocationReorderSupported()
+                            ? "Prime SER primary ray pipeline"
+                            : "Prime primary ray pipeline");
             return pipeline;
         } finally {
             for (long module : modules) {

@@ -6,7 +6,7 @@ Prime 是一个面向 Minecraft 的客户端 Shader Mod，基于 Minecraft Vulka
 
 ## 当前积分器基线
 
-- 完整使用 Vulkan KHR ray tracing pipeline。raygen 以迭代 mega-kernel 推进路径，miss、closest-hit 和 any-hit 只返回遍历结果；管线递归深度保持为 1。
+- 完整使用 Vulkan KHR ray tracing pipeline。raygen 以迭代 mega-kernel 推进路径，miss、closest-hit 和 any-hit 只返回遍历结果；管线递归深度保持为 1。支持通用 `VK_EXT_ray_tracing_invocation_reorder` 且报告真实重排模式的设备会在表面遍历后对 shader 续体做可选重排；普通 permutation 保留原始行为。
 - 默认启用 FSR 3.1 Upscaler，并采用 Quality（每轴 1.5×）模式：路径追踪与 NRD 在较低分辨率运行，去噪后的线性 Rec.2020 HDR 场景交给包含弱 RCAS 的八阶段时间超分辨率管线，最后才执行 Oklab 显示变换。算法以 FidelityFX SDK 1.1.4 的公开 GLSL 源码为基础，并回移了 FSR 3.1.5 的 RCAS 负输出修正。主光线使用模型 UV 微分驱动的 ray-cone LOD，并应用当前质量档对应的 mip bias，以减少远处纹理的时域混叠。原版“视频设置”中的 Prime 区域可实时选择 Native AA（1.0×）、Quality（1.5×）、Balanced（1.7×）、Performance（2.0×）或 Ultra Performance（3.0×），也可开启 FidelityFX 接入调试总览；切换质量会成组重建尺寸相关资源和时间历史，并保存到 `config/prime.properties`。构建产物同时包含 FP16 与 FP32 shader，运行时仅在 Vulkan 完整支持所需 16 位功能时选择 FP16，否则自动使用 FP32。该实现直接使用跨平台 Vulkan/GLSL shader，不加载 FidelityFX 平台 DLL，不要求 AMD 专有硬件，也不包含光流、交换链代理或任何插帧路径。
 - 每像素每帧追踪一个样本。主表面的漫反射与镜面光传输分别去调制后交给随包提供的 NRD 4.17.4 `REBLUR_DIFFUSE_SPECULAR`；发光面和相机直见天空等确定性分量作为当前帧信号参与线性 HDR 合成，再由 FSR 统一处理时间覆盖。Prime 不再为这些分量叠加第二套长期历史，以免产生无法由 FSR disocclusion/lock 逻辑识别的旧轮廓。
 - NRD 使用主表面的世界空间法线、线性粗糙度、view-Z、命中距离和 FSR 的统一 Halton 帧抖动进行重投影。运动采用 NRD 推荐的非抖动 2.5D 屏幕空间约定：`old = new + MV`，其中 XY 指向上一帧 UV，Z 为上一帧与当前帧 view-Z 之差；FSR 复用其 XY，并接收独立的 reversed-infinite depth。天空运动只包含视角旋转而忽略平移。窗口尺寸变化会整体重建与尺寸相关的 NRD/FSR 图像和历史，不复用不兼容资源。
@@ -38,19 +38,20 @@ GPU 更新采用替换后提交：旧 Section/BLAS、TLAS、descriptor 和 shade
 需要：
 
 - JDK 25；
-- Vulkan SDK 1.3.290，且 `VULKAN_SDK` 指向安装目录；
+- Vulkan SDK 1.4.350，且 `VULKAN_SDK` 指向安装目录；该版本用于编译并验证通用
+  `VK_EXT_ray_tracing_invocation_reorder` 的可选 SER shader permutation；
 - SDK 中可用的 `glslangValidator` 与 `spirv-val`。
 
 Windows PowerShell 示例：
 
 ```powershell
 $env:JAVA_HOME = 'C:\Program Files\Java\jdk-25.0.2'
-$env:VULKAN_SDK = 'C:\VulkanSDK\1.3.290.0'
+$env:VULKAN_SDK = 'C:\VulkanSDK\1.4.350.0'
 $env:Path = "$env:JAVA_HOME\bin;$env:VULKAN_SDK\Bin;$env:Path"
 .\gradlew.bat clean build
 ```
 
-`compileShaders` 会编译 Prime 自有 shader；`compileFsrShaders` 会以固定 HDR、低分辨率非抖动运动向量配置分别编译 FSR 3.1 的 FP16/FP32 八个阶段（含 RCAS）及官方调试视图。两者都把临时 SPIR-V 写入 `build/` 并执行 `spirv-val`，JAR 包含生成结果，仓库不单独保存二进制 SPIR-V。发行 JAR 另内置 Windows x86-64 的 `prime_nrd.dll`，用户无需另外寻找 NRD。该 DLL 只包含固定版本的 NRD Core、其 SPIR-V 和 Prime 的窄 C ABI；重建方法见 `native/nrd/README.md`。
+`compileShaders` 会编译 Prime 自有 shader，并从同一份 mega-kernel 源码生成普通与 SER 两个 raygen permutation；运行时只在设备报告真实 invocation reorder 能力时加载后者。`compileFsrShaders` 会以固定 HDR、低分辨率非抖动运动向量配置分别编译 FSR 3.1 的 FP16/FP32 八个阶段（含 RCAS）及官方调试视图。两者都把临时 SPIR-V 写入 `build/` 并执行 `spirv-val`，JAR 包含生成结果，仓库不单独保存二进制 SPIR-V。发行 JAR 另内置 Windows x86-64 的 `prime_nrd.dll`，用户无需另外寻找 NRD。该 DLL 只包含固定版本的 NRD Core、其 SPIR-V 和 Prime 的窄 C ABI；重建方法见 `native/nrd/README.md`。
 
 ## 开发运行
 

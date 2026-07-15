@@ -33,4 +33,32 @@ final class RayTracingPipelineContractTest {
         assertTrue(integrator.contains("return primeShadowOccluded == 0u"));
         assertFalse(closestHit.contains("PRIME_TRACE_SHADOW"));
     }
+
+    @Test
+    void serPermutationReordersOnlySurfaceContinuationsAndKeepsFallback() throws IOException {
+        Path root = Path.of(System.getProperty("user.dir"));
+        String rayGeneration = Files.readString(root.resolve("shaders/world.rgen"));
+        String integrator = Files.readString(root.resolve("shaders/integrator.glsl"));
+        String pipeline = Files.readString(root.resolve(
+                "src/client/java/dev/prime/render/vulkan/RayTracingPipeline.java"));
+
+        assertTrue(rayGeneration.contains("GL_EXT_shader_invocation_reorder"));
+        assertTrue(integrator.contains("hitObjectTraceRayEXT"));
+        assertTrue(integrator.contains("reorderThreadEXT(hitObject, coherenceHint, 8u)"));
+        assertTrue(integrator.contains("hitObjectExecuteShaderEXT(hitObject, 0)"));
+        assertTrue(integrator.contains("#else\n    traceRayEXT"));
+        assertEquals(1, countOccurrences(integrator, "hitObjectTraceRayEXT"));
+        assertTrue(pipeline.contains("world_ser.rgen.spv"));
+        assertTrue(pipeline.contains("world.rgen.spv"));
+    }
+
+    private static int countOccurrences(String text, String needle) {
+        int count = 0;
+        int offset = 0;
+        while ((offset = text.indexOf(needle, offset)) >= 0) {
+            count++;
+            offset += needle.length();
+        }
+        return count;
+    }
 }

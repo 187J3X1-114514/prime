@@ -457,6 +457,21 @@ abstract class CompilePrimeShaders extends DefaultTask {
 			if (source.name.endsWith('_validation.comp')) {
 				java.nio.file.Files.delete(output.toPath())
 			}
+			if (source.name == 'world.rgen') {
+				// Keep a baseline module that never declares the optional extension and a separate
+				// SER permutation for devices that negotiate real invocation reordering. Runtime
+				// selection therefore cannot expose unsupported SPIR-V to a fallback device.
+				def serOutput = new File(scratch, 'world_ser.rgen.spv')
+				execOperations.exec {
+					commandLine glslangValidator.get(), '-V', '--target-env', 'vulkan1.2', '-g',
+							'-DPRIME_ENABLE_SER=1',
+							"-I${includeDirectory.get().asFile.absolutePath}", source.absolutePath,
+							'-o', serOutput.absolutePath
+				}
+				execOperations.exec {
+					commandLine spirvValidator.get(), '--target-env', 'vulkan1.2', serOutput.absolutePath
+				}
+			}
 		}
 
 		def published = new File(outputDirectory.get().asFile, 'prime/shaders')

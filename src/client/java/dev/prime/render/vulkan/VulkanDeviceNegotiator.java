@@ -9,15 +9,19 @@ import java.util.Collection;
 import java.util.List;
 import java.util.Set;
 import org.lwjgl.system.MemoryStack;
+import org.lwjgl.vulkan.EXTRayTracingInvocationReorder;
 import org.lwjgl.vulkan.KHRAccelerationStructure;
 import org.lwjgl.vulkan.KHRDeferredHostOperations;
 import org.lwjgl.vulkan.KHRRayTracingPipeline;
+import org.lwjgl.vulkan.NVRayTracingInvocationReorder;
 import org.lwjgl.vulkan.VK12;
 import org.lwjgl.vulkan.VkPhysicalDeviceAccelerationStructureFeaturesKHR;
 import org.lwjgl.vulkan.VkPhysicalDeviceAccelerationStructurePropertiesKHR;
 import org.lwjgl.vulkan.VkPhysicalDeviceFeatures;
 import org.lwjgl.vulkan.VkPhysicalDeviceFeatures2;
 import org.lwjgl.vulkan.VkPhysicalDeviceProperties2;
+import org.lwjgl.vulkan.VkPhysicalDeviceRayTracingInvocationReorderFeaturesEXT;
+import org.lwjgl.vulkan.VkPhysicalDeviceRayTracingInvocationReorderPropertiesEXT;
 import org.lwjgl.vulkan.VkPhysicalDeviceRayTracingPipelineFeaturesKHR;
 import org.lwjgl.vulkan.VkPhysicalDeviceRayTracingPipelinePropertiesKHR;
 import org.lwjgl.vulkan.VkPhysicalDeviceVulkan12Features;
@@ -36,6 +40,10 @@ public final class VulkanDeviceNegotiator {
     private static final VulkanPNextStruct RAY_TRACING_PIPELINE_FEATURES = new VulkanPNextStruct(
             KHRRayTracingPipeline.VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_PIPELINE_FEATURES_KHR,
             VkPhysicalDeviceRayTracingPipelineFeaturesKHR.SIZEOF);
+    private static final VulkanPNextStruct INVOCATION_REORDER_FEATURES = new VulkanPNextStruct(
+            EXTRayTracingInvocationReorder
+                    .VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_INVOCATION_REORDER_FEATURES_EXT,
+            VkPhysicalDeviceRayTracingInvocationReorderFeaturesEXT.SIZEOF);
 
     private static final VulkanFeature SHADER_INT64 = new VulkanFeature(
             VulkanBackend.VK10_FEATURES_STRUCT,
@@ -81,6 +89,10 @@ public final class VulkanDeviceNegotiator {
             RAY_TRACING_PIPELINE_FEATURES,
             "rayTracingPipeline",
             VkPhysicalDeviceRayTracingPipelineFeaturesKHR.RAYTRACINGPIPELINE);
+    private static final VulkanFeature INVOCATION_REORDER = new VulkanFeature(
+            INVOCATION_REORDER_FEATURES,
+            "rayTracingInvocationReorder",
+            VkPhysicalDeviceRayTracingInvocationReorderFeaturesEXT.RAYTRACINGINVOCATIONREORDER);
 
     private VulkanDeviceNegotiator() {
     }
@@ -91,6 +103,9 @@ public final class VulkanDeviceNegotiator {
             Set<VulkanFeature> enabledFeatures) {
         String deviceName = physicalDevice.deviceName();
         List<String> missing = new ArrayList<>();
+        boolean invocationReorderExtension = physicalDevice.hasDeviceExtension(
+                EXTRayTracingInvocationReorder
+                        .VK_EXT_RAY_TRACING_INVOCATION_REORDER_EXTENSION_NAME);
         for (String extension : REQUIRED_EXTENSIONS) {
             if (!physicalDevice.hasDeviceExtension(extension)) {
                 missing.add(extension);
@@ -105,10 +120,16 @@ public final class VulkanDeviceNegotiator {
                     VkPhysicalDeviceAccelerationStructureFeaturesKHR.calloc(stack).sType$Default();
             VkPhysicalDeviceRayTracingPipelineFeaturesKHR rayTracing =
                     VkPhysicalDeviceRayTracingPipelineFeaturesKHR.calloc(stack).sType$Default();
+            VkPhysicalDeviceRayTracingInvocationReorderFeaturesEXT invocationReorder =
+                    VkPhysicalDeviceRayTracingInvocationReorderFeaturesEXT.calloc(stack)
+                            .sType$Default();
             features.pNext(vulkan11.address());
             vulkan11.pNext(vulkan12.address());
             vulkan12.pNext(acceleration.address());
             acceleration.pNext(rayTracing.address());
+            if (invocationReorderExtension) {
+                rayTracing.pNext(invocationReorder.address());
+            }
             VK12.vkGetPhysicalDeviceFeatures2(physicalDevice.vkPhysicalDevice(), features);
 
             if (!features.features().shaderInt64()) {
@@ -142,8 +163,14 @@ public final class VulkanDeviceNegotiator {
                     VkPhysicalDeviceRayTracingPipelinePropertiesKHR.calloc(stack).sType$Default();
             VkPhysicalDeviceAccelerationStructurePropertiesKHR accelerationProperties =
                     VkPhysicalDeviceAccelerationStructurePropertiesKHR.calloc(stack).sType$Default();
+            VkPhysicalDeviceRayTracingInvocationReorderPropertiesEXT invocationReorderProperties =
+                    VkPhysicalDeviceRayTracingInvocationReorderPropertiesEXT.calloc(stack)
+                            .sType$Default();
             properties.pNext(rayProperties.address());
             rayProperties.pNext(accelerationProperties.address());
+            if (invocationReorderExtension) {
+                accelerationProperties.pNext(invocationReorderProperties.address());
+            }
             VK12.vkGetPhysicalDeviceProperties2(physicalDevice.vkPhysicalDevice(), properties);
 
             if (rayProperties.maxRayRecursionDepth() < 1) {
@@ -205,6 +232,25 @@ public final class VulkanDeviceNegotiator {
                 enabledFeatures.add(SHADER_SUBGROUP_EXTENDED_TYPES);
             }
 
+            // EXT deliberately permits hit objects without real reordering. Prime loads its SER
+            // permutation only when the driver advertises both the feature and REORDER mode; a
+            // no-op implementation would add live-state save/restore structure without solving
+            // the divergence this path exists for. Two terrain hit groups require index 1.
+            // LWJGL owns the shared EXT/NV reorder-mode enum alias in its older NV binding class;
+            // Prime does not query or enable VK_NV_ray_tracing_invocation_reorder.
+            boolean invocationReorderSupported = invocationReorderExtension
+                    && invocationReorder.rayTracingInvocationReorder()
+                    && invocationReorderProperties.rayTracingInvocationReorderReorderingHint()
+                            == NVRayTracingInvocationReorder
+                                    .VK_RAY_TRACING_INVOCATION_REORDER_MODE_REORDER_EXT
+                    && supportsSbtRecordIndex(
+                            invocationReorderProperties.maxShaderBindingTableRecordIndex(), 1);
+            if (invocationReorderSupported) {
+                enabledExtensions.add(EXTRayTracingInvocationReorder
+                        .VK_EXT_RAY_TRACING_INVOCATION_REORDER_EXTENSION_NAME);
+                enabledFeatures.add(INVOCATION_REORDER);
+            }
+
             return new VulkanCapabilities(
                     true,
                     deviceName,
@@ -216,11 +262,19 @@ public final class VulkanDeviceNegotiator {
                     rayProperties.maxRayDispatchInvocationCount(),
                     rayProperties.maxRayRecursionDepth(),
                     accelerationProperties.minAccelerationStructureScratchOffsetAlignment(),
+                    invocationReorderSupported,
                     fsrFp16Supported);
         }
     }
 
     private static boolean isPositivePowerOfTwo(int value) {
         return value > 0 && (value & value - 1) == 0;
+    }
+
+    static boolean supportsSbtRecordIndex(int unsignedMaximum, int requiredIndex) {
+        if (requiredIndex < 0) {
+            throw new IllegalArgumentException("SBT record index must be non-negative");
+        }
+        return Integer.compareUnsigned(unsignedMaximum, requiredIndex) >= 0;
     }
 }

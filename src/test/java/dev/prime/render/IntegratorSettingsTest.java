@@ -3,11 +3,28 @@ package dev.prime.render;
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import dev.prime.render.shader.ShaderAbi;
 import org.junit.jupiter.api.Test;
 
 final class IntegratorSettingsTest {
+    @Test
+    void pathControlKeepsCameraMediumSeparateFromJitterAndBounceFields() {
+        int dry = IntegratorSettings.packPathControl(256, 18, false);
+        int submerged = IntegratorSettings.packPathControl(256, 18, true);
+        assertEquals(256, dry & 0xffff);
+        assertEquals(18, (dry >>> 16) & ShaderAbi.PATH_JITTER_PHASE_MASK);
+        assertEquals(0, dry & ShaderAbi.PATH_CAMERA_IN_WATER_MASK);
+        assertEquals(ShaderAbi.PATH_CAMERA_IN_WATER_MASK,
+                submerged & ShaderAbi.PATH_CAMERA_IN_WATER_MASK);
+        assertThrows(IllegalArgumentException.class,
+                () -> IntegratorSettings.packPathControl(256, 0, false));
+        assertThrows(IllegalArgumentException.class,
+                () -> IntegratorSettings.packPathControl(256, 0x8000, false));
+    }
+
     @Test
     void reciprocalMisWeightsFormACompletePartition() {
         float forward = IntegratorSettings.powerHeuristic(0.3F, 0.7F);

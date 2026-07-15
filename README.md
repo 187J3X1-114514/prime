@@ -10,7 +10,7 @@ Prime 是一个面向 Minecraft 的客户端 Shader Mod，基于 Minecraft Vulka
 - 默认启用 FSR 3.1 Upscaler，并采用 Quality（每轴 1.5×）模式：路径追踪与 NRD 在较低分辨率运行，去噪后的线性 Rec.2020 HDR 场景交给包含弱 RCAS 的八阶段时间超分辨率管线，最后才执行 Oklab 显示变换。算法以 FidelityFX SDK 1.1.4 的公开 GLSL 源码为基础，并回移了 FSR 3.1.5 的 RCAS 负输出修正。主光线使用模型 UV 微分驱动的 ray-cone LOD，并应用当前质量档对应的 mip bias，以减少远处纹理的时域混叠。原版“视频设置”中的 Prime 区域可实时选择 Native AA（1.0×）、Quality（1.5×）、Balanced（1.7×）、Performance（2.0×）或 Ultra Performance（3.0×），也可开启 FidelityFX 接入调试总览；切换质量会成组重建尺寸相关资源和时间历史，并保存到 `config/prime.properties`。构建产物同时包含 FP16 与 FP32 shader，运行时仅在 Vulkan 完整支持所需 16 位功能时选择 FP16，否则自动使用 FP32。该实现直接使用跨平台 Vulkan/GLSL shader，不加载 FidelityFX 平台 DLL，不要求 AMD 专有硬件，也不包含光流、交换链代理或任何插帧路径。
 - 每像素每帧追踪一个样本。主表面的漫反射与镜面光传输分别去调制后交给随包提供的 NRD 4.17.4 `REBLUR_DIFFUSE_SPECULAR`；发光面和相机直见天空等确定性分量作为当前帧信号参与线性 HDR 合成，再由 FSR 统一处理时间覆盖。Prime 不再为这些分量叠加第二套长期历史，以免产生无法由 FSR disocclusion/lock 逻辑识别的旧轮廓。
 - NRD 使用主表面的世界空间法线、线性粗糙度、view-Z、命中距离和 FSR 的统一 Halton 帧抖动进行重投影。运动采用 NRD 推荐的非抖动 2.5D 屏幕空间约定：`old = new + MV`，其中 XY 指向上一帧 UV，Z 为上一帧与当前帧 view-Z 之差；FSR 复用其 XY，并接收独立的 reversed-infinite depth。天空运动只包含视角旋转而忽略平移。窗口尺寸变化会整体重建与尺寸相关的 NRD/FSR 图像和历史，不复用不兼容资源。
-- 当前缺省材质是由方块纹理与生物群系 tint 驱动的粗糙介质边界与漫反射基底；在线性 Rec.2020 中以纹理 Y 亮度把线性粗糙度严格限制在 `0.70–0.90`，让亮像素获得更集中的高光，同时让暗像素保持粗糙。光源来自光谱大气、太阳和从原版发光等级/纹理估计的方块面光源。它们仍是可替换的内部适配层，不定义最终产品材质或灯光模型。
+- 当前缺省不透明材质是由方块纹理与生物群系 tint 驱动的粗糙介质边界与漫反射基底；在线性 Rec.2020 中以纹理 Y 亮度把线性粗糙度严格限制在 `0.70–0.90`，让亮像素获得更集中的高光，同时让暗像素保持粗糙。Section 网格同时提取 solid、cutout、translucent 模型层与原版流体（包括 waterlogged 流体）；玻璃类完整方块、薄壁透明模型和水分别进入完整的 RoboCute GGX 介质透射 BSDF，使用运行时 3D 方向能量表、重要性采样、Fresnel/折射以及跨反弹保存的两层体积栈。吸收严格按射线实际经过的介质段应用；摄像机位于真实水面以下时会以水介质初始化体积栈。光源来自光谱大气、太阳和从原版发光等级/纹理估计的方块面光源。它们仍是可替换的内部适配层，不定义最终产品材质或灯光模型。
 - 积分器、材质、光源、路径吞吐和 RGBA32F 累积统一使用 D65 白点的线性 Rec.2020 工作空间。Minecraft 方块纹理与 tint 在材质边界从 sRGB 解码并转换。累积完成后，独立的显示变换边界将 HDR 工作空间映射到目标显示设备；当前 sRGB Rec.709 默认采用 Oklab DRT，高光压缩前的曝光乘数硬编码为 `1.0`。显示变换只作用于一次性 RGBA8_UNORM 输出，不写回累积历史。该工作空间是积分器 ABI 契约，而不是可由单个 shader 局部修改的显示选项。
 - 线性化是光传输正确性的一部分，而非单纯的显示校色。早期实现曾直接在 sRGB 非线性编码值上进行 BSDF、光源和累积运算，导致乘法、求和与平均不再对应辐射度计算，并表现为暗角系统性偏亮；改为在线性 Rec.2020 中积分后该问题才真正消失。
 - 太阳与方块面光源使用下一事件估计和 power-heuristic MIS；路径正常由 miss 或带吞吐补偿的 Russian roulette 结束。256 次反弹保留为异常路径的安全上限。
@@ -21,7 +21,7 @@ Prime 是一个面向 Minecraft 的客户端 Shader Mod，基于 Minecraft Vulka
 
 - `RayTracingRuntime` 是唯一生命周期入口，提供不可用、等待世界、流式构建、已接管和失败回退状态。
 - `render/vulkan` 独占 Vulkan 句柄、VMA 分配、同步、SBT、管线和加速结构所有权。
-- `render/terrain` 负责不可变 Section 快照的异步网格化、有界任务队列、BLAS 驻留和 TLAS 场景替换。
+- `render/terrain` 负责不可变 Section 快照的异步网格化、有界任务队列、BLAS 驻留和 TLAS 场景替换。第二个 BLAS geometry 是“需要 any-hit 的表面”而非单纯 cutout：alpha coverage 与真实透射仍由 primitive flag 严格区分。
 - `shaders/abi.json` 是 Java、GLSL 布局、积分器颜色空间与默认显示设备/变换的唯一契约声明源。构建会生成双方代码，再编译并验证全部 SPIR-V。
 - `shaders/bsdf.glsl`、`material.glsl`、`lights.glsl` 和 `sampling.glsl` 定义可独立替换的积分器语义；`integrator.glsl` 负责当前 mega-kernel 调度。
 - `shaders/nrd_common.glsl` 与 `render/vulkan/nrd` 共同定义 NRD 信号、原生桥接和 Vulkan 调度边界。NRD Core 只返回 SPIR-V 与调度描述，不接触 Minecraft 的 Vulkan 句柄；图像、descriptor、命令记录、同步和按真实提交完成点回收均由 Prime 持有。
@@ -85,7 +85,7 @@ $env:Path = "$env:JAVA_HOME\bin;$env:VULKAN_SDK\Bin;$env:Path"
 .\gradlew.bat test compileShaders compileFsrShaders build
 ```
 
-自动测试覆盖 ABI 大小和偏移、NRD 原生 ABI/版本/SPIR-V/漫反射与镜面调度描述、颜色空间契约与往返转换、Oklab 显示变换参考检查点、显示范围和累积边界、SBT 对齐、UV/tint/法线编码、Section generation token、CPU 网格布局、渲染原点重定位、采样流、MIS 正反向权重、Russian roulette 吞吐补偿、累积历史状态，以及漫反射在常量环境下的统计收敛。构建以 Java 25 的全部编译警告为错误。
+自动测试覆盖 ABI 大小和偏移、NRD 原生 ABI/版本/SPIR-V/漫反射与镜面调度描述、颜色空间契约与往返转换、Oklab 显示变换参考检查点、显示范围和累积边界、SBT 对齐、UV/tint/法线/透明材质标志编码、Section generation token、CPU 网格布局、渲染原点重定位、采样流、MIS 正反向权重、Russian roulette 吞吐补偿、RoboCute 透射查找表与持久体积栈接入、累积历史状态，以及漫反射在常量环境下的统计收敛。构建以 Java 25 的全部编译警告为错误。
 
 ## 许可
 

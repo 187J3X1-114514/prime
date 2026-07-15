@@ -1,37 +1,54 @@
 package dev.prime.render.terrain;
 
 import com.mojang.blaze3d.vertex.QuadInstance;
+import com.mojang.blaze3d.vertex.VertexConsumer;
 import dev.prime.PrimeClient;
 import java.util.Arrays;
 import net.minecraft.client.color.block.BlockColors;
 import net.minecraft.client.model.geom.builders.UVPair;
 import net.minecraft.client.renderer.block.BlockQuadOutput;
 import net.minecraft.client.renderer.block.BlockStateModelSet;
+import net.minecraft.client.renderer.block.FluidModel;
+import net.minecraft.client.renderer.block.FluidRenderer;
+import net.minecraft.client.renderer.block.FluidStateModelSet;
 import net.minecraft.client.renderer.block.ModelBlockRenderer;
 import net.minecraft.client.renderer.chunk.ChunkSectionLayer;
 import net.minecraft.client.renderer.chunk.RenderSectionRegion;
+import net.minecraft.client.renderer.texture.TextureAtlasSprite;
 import net.minecraft.client.resources.model.geometry.BakedQuad;
+import net.minecraft.core.BlockPos;
 import net.minecraft.core.BlockPos.MutableBlockPos;
+import net.minecraft.core.Direction;
+import net.minecraft.tags.FluidTags;
 import net.minecraft.world.level.block.RenderShape;
 import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.material.FluidState;
 import org.joml.Vector3fc;
 
 public final class TerrainMesher {
+    private static final int[] FIRST_TRIANGLE = new int[] {0, 1, 2};
+    private static final int[] SECOND_TRIANGLE = new int[] {0, 2, 3};
+
     private TerrainMesher() {
     }
 
     public static CpuSectionMesh mesh(
             RenderSectionRegion region,
             BlockStateModelSet models,
+            FluidStateModelSet fluidModels,
             TintSnapshot tints,
             int sectionX,
             int sectionY,
             int sectionZ) {
         MeshBuilder opaque = new MeshBuilder();
-        MeshBuilder cutout = new MeshBuilder();
+        // Alpha-tested and transmissive triangles share the non-opaque BLAS geometry. Their
+        // primitive flags keep the two material semantics distinct in any-hit and closest-hit.
+        MeshBuilder nonOpaque = new MeshBuilder();
         CpuSectionLights.Builder lights = new CpuSectionLights.Builder();
-        QuadCapture capture = new QuadCapture(opaque, cutout, lights, tints);
+        QuadCapture capture = new QuadCapture(opaque, nonOpaque, lights, tints);
+        FluidCapture fluidCapture = new FluidCapture(opaque, nonOpaque, lights, region);
         ModelBlockRenderer renderer = new ModelBlockRenderer(false, true, new BlockColors());
+        FluidRenderer fluidRenderer = new FluidRenderer(fluidModels);
         MutableBlockPos position = new MutableBlockPos();
         int originX = sectionX << 4;
         int originY = sectionY << 4;
@@ -41,10 +58,39 @@ public final class TerrainMesher {
                 for (int localX = 0; localX < 16; localX++) {
                     position.set(originX + localX, originY + localY, originZ + localZ);
                     BlockState state = region.getBlockState(position);
+
+                    // Fluids are independent of RenderShape and include waterlogged blocks, so
+                    // they must be extracted before the block-model branch.
+                    FluidState fluid = state.getFluidState();
+                    if (!fluid.isEmpty()) {
+                        try {
+                            FluidModel fluidModel = fluidModels.get(fluid);
+                            fluidCapture.setBlock(
+                                    localX,
+                                    localY,
+                                    localZ,
+                                    position,
+                                    state,
+                                    fluid,
+                                    fluidModel);
+                            fluidRenderer.tesselate(region, position, fluidCapture, state, fluid);
+                        } catch (RuntimeException exception) {
+                            PrimeClient.LOGGER.debug(
+                                    "Skipping fluid model that failed to tessellate at {}",
+                                    position,
+                                    exception);
+                        }
+                    }
+
                     if (state.getRenderShape() != RenderShape.MODEL) {
                         continue;
                     }
-                    capture.setBlock(localX, localY, localZ, state.getLightEmission());
+                    capture.setBlock(
+                            localX,
+                            localY,
+                            localZ,
+                            state.getLightEmission(),
+                            state.getCollisionShape(region, position).isEmpty());
                     try {
                         renderer.tesselateBlock(
                                 capture,
@@ -62,13 +108,13 @@ public final class TerrainMesher {
                 }
             }
         }
-        float[] positions = concatenate(opaque.positions.toArray(), cutout.positions.toArray());
-        int[] primitives = concatenate(opaque.primitives.toArray(), cutout.primitives.toArray());
+        float[] positions = concatenate(opaque.positions.toArray(), nonOpaque.positions.toArray());
+        int[] primitives = concatenate(opaque.primitives.toArray(), nonOpaque.primitives.toArray());
         return new CpuSectionMesh(
                 positions,
                 primitives,
                 opaque.triangleCount,
-                cutout.triangleCount,
+                nonOpaque.triangleCount,
                 lights.build());
     }
 
@@ -84,162 +130,449 @@ public final class TerrainMesher {
         return result;
     }
 
-    private static final class QuadCapture implements BlockQuadOutput {
-        private static final int[] FIRST_TRIANGLE = new int[] {0, 1, 2};
-        private static final int[] SECOND_TRIANGLE = new int[] {0, 2, 3};
+    private static void emitTriangle(
+            MeshBuilder destination,
+            CpuSectionLights.Builder lights,
+            CapturedQuad quad,
+            int[] indices,
+            int tint,
+            boolean cutout,
+            boolean animated,
+            boolean transmissive,
+            boolean thinWalled,
+            boolean water,
+            int lightEmission,
+            TextureAtlasSprite sprite) {
+        int firstIndex = indices[0];
+        int secondIndex = indices[1];
+        int thirdIndex = indices[2];
+        float firstX = quad.x[firstIndex];
+        float firstY = quad.y[firstIndex];
+        float firstZ = quad.z[firstIndex];
+        float secondX = quad.x[secondIndex];
+        float secondY = quad.y[secondIndex];
+        float secondZ = quad.z[secondIndex];
+        float thirdX = quad.x[thirdIndex];
+        float thirdY = quad.y[thirdIndex];
+        float thirdZ = quad.z[thirdIndex];
+        destination.positions.add(firstX);
+        destination.positions.add(firstY);
+        destination.positions.add(firstZ);
+        destination.positions.add(secondX);
+        destination.positions.add(secondY);
+        destination.positions.add(secondZ);
+        destination.positions.add(thirdX);
+        destination.positions.add(thirdY);
+        destination.positions.add(thirdZ);
 
+        float uv0U = quad.u[firstIndex];
+        float uv0V = quad.v[firstIndex];
+        float uv1U = quad.u[secondIndex];
+        float uv1V = quad.v[secondIndex];
+        float uv2U = quad.u[thirdIndex];
+        float uv2V = quad.v[thirdIndex];
+        int packedUv0 = PrimitivePacking.packHalf2(uv0U, uv0V);
+        int packedUv1 = PrimitivePacking.packHalf2(uv1U, uv1V);
+        int packedUv2 = PrimitivePacking.packHalf2(uv2U, uv2V);
+        int packedTint = PrimitivePacking.packTint(tint);
+        destination.primitives.add(packedUv0);
+        destination.primitives.add(packedUv1);
+        destination.primitives.add(packedUv2);
+        destination.primitives.add(packedTint);
+
+        float edge1X = secondX - firstX;
+        float edge1Y = secondY - firstY;
+        float edge1Z = secondZ - firstZ;
+        float edge2X = thirdX - firstX;
+        float edge2Y = thirdY - firstY;
+        float edge2Z = thirdZ - firstZ;
+        float normalX = quad.normalX;
+        float normalY = quad.normalY;
+        float normalZ = quad.normalZ;
+        int packedUvDensity = PrimitivePacking.packUvDensity(
+                edge1X,
+                edge1Y,
+                edge1Z,
+                edge2X,
+                edge2Y,
+                edge2Z,
+                uv1U - uv0U,
+                uv1V - uv0V,
+                uv2U - uv0U,
+                uv2V - uv0V);
+        float inverseLength = 1.0F / Math.max(
+                1.0e-20F,
+                (float) Math.sqrt(normalX * normalX + normalY * normalY + normalZ * normalZ));
+        destination.primitives.add(PrimitivePacking.packOctahedralNormal(
+                normalX * inverseLength,
+                normalY * inverseLength,
+                normalZ * inverseLength));
+        destination.primitives.add(PrimitivePacking.packFlags(
+                cutout, animated, transmissive, thinWalled, water));
+        destination.primitives.add(lights.addTriangle(
+                firstX,
+                firstY,
+                firstZ,
+                secondX,
+                secondY,
+                secondZ,
+                thirdX,
+                thirdY,
+                thirdZ,
+                packedUv0,
+                packedUv1,
+                packedUv2,
+                tint,
+                packedTint,
+                cutout,
+                lightEmission,
+                sprite));
+        destination.primitives.add(packedUvDensity);
+        destination.triangleCount++;
+    }
+
+    private static final class QuadCapture implements BlockQuadOutput {
         private final MeshBuilder opaque;
-        private final MeshBuilder cutout;
+        private final MeshBuilder nonOpaque;
         private final CpuSectionLights.Builder lights;
         private final TintSnapshot tints;
+        private final CapturedQuad captured = new CapturedQuad();
         private int localX;
         private int localY;
         private int localZ;
         private int blockLightEmission;
+        private boolean thinWalled;
 
         private QuadCapture(
                 MeshBuilder opaque,
-                MeshBuilder cutout,
+                MeshBuilder nonOpaque,
                 CpuSectionLights.Builder lights,
                 TintSnapshot tints) {
             this.opaque = opaque;
-            this.cutout = cutout;
+            this.nonOpaque = nonOpaque;
             this.lights = lights;
             this.tints = tints;
         }
 
-        private void setBlock(int x, int y, int z, int lightEmission) {
+        private void setBlock(int x, int y, int z, int lightEmission, boolean thinWalled) {
             this.localX = x;
             this.localY = y;
             this.localZ = z;
             this.blockLightEmission = lightEmission;
+            this.thinWalled = thinWalled;
         }
 
         @Override
         public void put(float x, float y, float z, BakedQuad quad, QuadInstance instance) {
             ChunkSectionLayer layer = quad.materialInfo().layer();
-            if (layer == ChunkSectionLayer.TRANSLUCENT) {
-                return;
-            }
-            MeshBuilder destination = layer == ChunkSectionLayer.SOLID ? this.opaque : this.cutout;
+            boolean cutout = layer == ChunkSectionLayer.CUTOUT;
+            boolean transmissive = layer == ChunkSectionLayer.TRANSLUCENT;
+            // A pane has a narrow but real collision volume, so it must enter and later leave the
+            // medium stack. Reserve the thin-wall closure for truly zero-volume model geometry.
+            boolean thinWalled = transmissive && this.thinWalled;
+            MeshBuilder destination = layer == ChunkSectionLayer.SOLID ? this.opaque : this.nonOpaque;
             int tint = quad.materialInfo().tintIndex() < 0
                     ? -1
                     : this.tints.color(this.localX, this.localY, this.localZ, quad.materialInfo().tintIndex());
-            boolean cutout = layer == ChunkSectionLayer.CUTOUT;
-            // BlockState is the authoritative dynamic 0..15 source (lamp on/off, candle count,
-            // furnace lit, and so on). A model element may request a stronger full-bright value;
-            // taking the maximum preserves that authored information without pretending it is a
-            // binary emission mask. Texture importance supplies the soft mask below this level.
+            TextureAtlasSprite sprite = quad.materialInfo().sprite();
+            Direction direction = quad.direction();
+            this.captured.normalX = direction.getStepX();
+            this.captured.normalY = direction.getStepY();
+            this.captured.normalZ = direction.getStepZ();
+            for (int index = 0; index < 4; index++) {
+                Vector3fc position = quad.position(index);
+                this.captured.x[index] = position.x() + x;
+                this.captured.y[index] = position.y() + y;
+                this.captured.z[index] = position.z() + z;
+                long packedUv = quad.packedUV(index);
+                this.captured.u[index] = UVPair.unpackU(packedUv);
+                this.captured.v[index] = UVPair.unpackV(packedUv);
+            }
             int lightEmission = Math.max(this.blockLightEmission, quad.materialInfo().lightEmission());
-            this.emitTriangle(destination, x, y, z, quad, FIRST_TRIANGLE, tint, cutout, lightEmission);
-            this.emitTriangle(destination, x, y, z, quad, SECOND_TRIANGLE, tint, cutout, lightEmission);
+            boolean animated = sprite.contents().isAnimated();
+            emitTriangle(
+                    destination,
+                    this.lights,
+                    this.captured,
+                    FIRST_TRIANGLE,
+                    tint,
+                    cutout,
+                    animated,
+                    transmissive,
+                    thinWalled,
+                    false,
+                    lightEmission,
+                    sprite);
+            emitTriangle(
+                    destination,
+                    this.lights,
+                    this.captured,
+                    SECOND_TRIANGLE,
+                    tint,
+                    cutout,
+                    animated,
+                    transmissive,
+                    thinWalled,
+                    false,
+                    lightEmission,
+                    sprite);
+        }
+    }
+
+    /**
+     * Captures vanilla fluid quads while removing raster-only duplicate back faces.
+     *
+     * <p>A path-traced triangle is intrinsically two-sided. Keeping the reverse-wound copy emitted
+     * for raster culling would create two coincident dielectric boundaries and corrupt the per-path
+     * volume stack. Faces against full collision shapes are also discarded: glass and ice opt out
+     * of raster occlusion, but their real full-block boundary must replace the adjacent water face
+     * rather than leave a fictitious water-to-air interface at the same location.
+     */
+    private static final class FluidCapture implements VertexConsumer, FluidRenderer.Output {
+        private final MeshBuilder opaque;
+        private final MeshBuilder nonOpaque;
+        private final CpuSectionLights.Builder lights;
+        private final RenderSectionRegion region;
+        private final CapturedQuad captured = new CapturedQuad();
+        private final MutableBlockPos neighborPosition = new MutableBlockPos();
+        private int vertexCount;
+        private int localX;
+        private int localY;
+        private int localZ;
+        private int worldX;
+        private int worldY;
+        private int worldZ;
+        private int tint;
+        private int lightEmission;
+        private boolean transmissive;
+        private boolean water;
+        private boolean fullCeiling;
+        private TextureAtlasSprite stillSprite;
+        private TextureAtlasSprite flowingSprite;
+        private TextureAtlasSprite overlaySprite;
+
+        private FluidCapture(
+                MeshBuilder opaque,
+                MeshBuilder nonOpaque,
+                CpuSectionLights.Builder lights,
+                RenderSectionRegion region) {
+            this.opaque = opaque;
+            this.nonOpaque = nonOpaque;
+            this.lights = lights;
+            this.region = region;
         }
 
-        private void emitTriangle(
-                MeshBuilder destination,
+        private void setBlock(
+                int localX,
+                int localY,
+                int localZ,
+                BlockPos position,
+                BlockState blockState,
+                FluidState fluidState,
+                FluidModel model) {
+            this.vertexCount = 0;
+            this.localX = localX;
+            this.localY = localY;
+            this.localZ = localZ;
+            this.worldX = position.getX();
+            this.worldY = position.getY();
+            this.worldZ = position.getZ();
+            this.water = fluidState.is(FluidTags.WATER);
+            this.transmissive = !fluidState.is(FluidTags.LAVA);
+            // FluidRenderer's emitted vertex color already contains vanilla's cardinal face
+            // shading. Prime must retain only the semantic biome/material tint so the BSDF, not a
+            // raster-era directional multiplier, owns illumination.
+            this.tint = model.tintSource() == null
+                    ? -1
+                    : model.tintSource().colorInWorld(blockState, this.region, position);
+            this.lightEmission = blockState.getLightEmission();
+            this.stillSprite = model.stillMaterial().sprite();
+            this.flowingSprite = model.flowingMaterial().sprite();
+            this.overlaySprite = model.overlayMaterial() == null
+                    ? null
+                    : model.overlayMaterial().sprite();
+            this.neighborPosition.set(this.worldX, this.worldY + 1, this.worldZ);
+            this.fullCeiling = this.region.getBlockState(this.neighborPosition)
+                    .isCollisionShapeFullBlock(this.region, this.neighborPosition);
+        }
+
+        @Override
+        public VertexConsumer getBuilder(ChunkSectionLayer layer) {
+            return this;
+        }
+
+        @Override
+        public void addVertex(
                 float x,
                 float y,
                 float z,
-                BakedQuad quad,
-                int[] indices,
-                int tint,
-                boolean cutout,
-                int lightEmission) {
-            Vector3fc first = quad.position(indices[0]);
-            Vector3fc second = quad.position(indices[1]);
-            Vector3fc third = quad.position(indices[2]);
-            float firstX = first.x() + x;
-            float firstY = first.y() + y;
-            float firstZ = first.z() + z;
-            float secondX = second.x() + x;
-            float secondY = second.y() + y;
-            float secondZ = second.z() + z;
-            float thirdX = third.x() + x;
-            float thirdY = third.y() + y;
-            float thirdZ = third.z() + z;
-            destination.positions.add(firstX);
-            destination.positions.add(firstY);
-            destination.positions.add(firstZ);
-            destination.positions.add(secondX);
-            destination.positions.add(secondY);
-            destination.positions.add(secondZ);
-            destination.positions.add(thirdX);
-            destination.positions.add(thirdY);
-            destination.positions.add(thirdZ);
-
-            long rawUv0 = quad.packedUV(indices[0]);
-            long rawUv1 = quad.packedUV(indices[1]);
-            long rawUv2 = quad.packedUV(indices[2]);
-            float uv0U = UVPair.unpackU(rawUv0);
-            float uv0V = UVPair.unpackV(rawUv0);
-            float uv1U = UVPair.unpackU(rawUv1);
-            float uv1V = UVPair.unpackV(rawUv1);
-            float uv2U = UVPair.unpackU(rawUv2);
-            float uv2V = UVPair.unpackV(rawUv2);
-            int packedUv0 = packUv(rawUv0);
-            int packedUv1 = packUv(rawUv1);
-            int packedUv2 = packUv(rawUv2);
-            int packedTint = PrimitivePacking.packTint(tint);
-            destination.primitives.add(packedUv0);
-            destination.primitives.add(packedUv1);
-            destination.primitives.add(packedUv2);
-            destination.primitives.add(packedTint);
-
-            float edge1X = second.x() - first.x();
-            float edge1Y = second.y() - first.y();
-            float edge1Z = second.z() - first.z();
-            float edge2X = third.x() - first.x();
-            float edge2Y = third.y() - first.y();
-            float edge2Z = third.z() - first.z();
-            float normalX = edge1Y * edge2Z - edge1Z * edge2Y;
-            float normalY = edge1Z * edge2X - edge1X * edge2Z;
-            float normalZ = edge1X * edge2Y - edge1Y * edge2X;
-            int packedUvDensity = PrimitivePacking.packUvDensity(
-                    edge1X,
-                    edge1Y,
-                    edge1Z,
-                    edge2X,
-                    edge2Y,
-                    edge2Z,
-                    uv1U - uv0U,
-                    uv1V - uv0V,
-                    uv2U - uv0U,
-                    uv2V - uv0V);
-            float inverseLength = 1.0F / Math.max(
-                    1.0e-20F,
-                    (float) Math.sqrt(normalX * normalX + normalY * normalY + normalZ * normalZ));
-            destination.primitives.add(PrimitivePacking.packOctahedralNormal(
-                    normalX * inverseLength,
-                    normalY * inverseLength,
-                    normalZ * inverseLength));
-            destination.primitives.add(PrimitivePacking.packFlags(
-                    cutout,
-                    quad.materialInfo().sprite().contents().isAnimated()));
-            destination.primitives.add(this.lights.addTriangle(
-                    firstX,
-                    firstY,
-                    firstZ,
-                    secondX,
-                    secondY,
-                    secondZ,
-                    thirdX,
-                    thirdY,
-                    thirdZ,
-                    packedUv0,
-                    packedUv1,
-                    packedUv2,
-                    tint,
-                    packedTint,
-                    cutout,
-                    lightEmission,
-                    quad.materialInfo().sprite()));
-            destination.primitives.add(packedUvDensity);
-            destination.triangleCount++;
+                int color,
+                float u,
+                float v,
+                int overlay,
+                int light,
+                float normalX,
+                float normalY,
+                float normalZ) {
+            int index = this.vertexCount;
+            this.captured.x[index] = x;
+            // Vanilla leaves a covered source at 8/9 height because its raster top is invisible.
+            // A real dielectric volume must meet a full ceiling without an artificial air slit.
+            this.captured.y[index] = this.fullCeiling && y > this.localY + 0.5F
+                    ? this.localY + 1.0F
+                    : y;
+            this.captured.z[index] = z;
+            this.captured.u[index] = u;
+            this.captured.v[index] = v;
+            this.vertexCount++;
+            if (this.vertexCount == 4) {
+                this.emitQuad();
+                this.vertexCount = 0;
+            }
         }
 
-        private static int packUv(long packedUv) {
-            return PrimitivePacking.packHalf2(UVPair.unpackU(packedUv), UVPair.unpackV(packedUv));
+        private void emitQuad() {
+            float edgeOneX = this.captured.x[1] - this.captured.x[0];
+            float edgeOneY = this.captured.y[1] - this.captured.y[0];
+            float edgeOneZ = this.captured.z[1] - this.captured.z[0];
+            float edgeTwoX = this.captured.x[2] - this.captured.x[0];
+            float edgeTwoY = this.captured.y[2] - this.captured.y[0];
+            float edgeTwoZ = this.captured.z[2] - this.captured.z[0];
+            float normalX = edgeOneY * edgeTwoZ - edgeOneZ * edgeTwoY;
+            float normalY = edgeOneZ * edgeTwoX - edgeOneX * edgeTwoZ;
+            float normalZ = edgeOneX * edgeTwoY - edgeOneY * edgeTwoX;
+            float centerX = 0.25F * (this.captured.x[0]
+                    + this.captured.x[1] + this.captured.x[2] + this.captured.x[3]);
+            float centerY = 0.25F * (this.captured.y[0]
+                    + this.captured.y[1] + this.captured.y[2] + this.captured.y[3]);
+            float centerZ = 0.25F * (this.captured.z[0]
+                    + this.captured.z[1] + this.captured.z[2] + this.captured.z[3]);
+            float outward = normalX * (centerX - this.localX - 0.5F)
+                    + normalY * (centerY - this.localY - 0.5F)
+                    + normalZ * (centerZ - this.localZ - 0.5F);
+            if (!(outward > 1.0e-7F)) {
+                return;
+            }
+
+            float inverseNormalLength = 1.0F / (float) Math.sqrt(
+                    normalX * normalX + normalY * normalY + normalZ * normalZ);
+            this.captured.normalX = normalX * inverseNormalLength;
+            this.captured.normalY = normalY * inverseNormalLength;
+            this.captured.normalZ = normalZ * inverseNormalLength;
+
+            Direction face = Direction.getApproximateNearest(normalX, normalY, normalZ);
+            this.neighborPosition.set(
+                    this.worldX + face.getStepX(),
+                    this.worldY + face.getStepY(),
+                    this.worldZ + face.getStepZ());
+            if (this.region.getBlockState(this.neighborPosition)
+                    .isCollisionShapeFullBlock(this.region, this.neighborPosition)) {
+                return;
+            }
+
+            TextureAtlasSprite sprite = this.selectSprite();
+            boolean animated = this.stillSprite.contents().isAnimated()
+                    || this.flowingSprite.contents().isAnimated();
+            MeshBuilder destination = this.transmissive ? this.nonOpaque : this.opaque;
+            emitTriangle(
+                    destination,
+                    this.lights,
+                    this.captured,
+                    FIRST_TRIANGLE,
+                    this.tint,
+                    false,
+                    animated,
+                    this.transmissive,
+                    false,
+                    this.water,
+                    this.lightEmission,
+                    sprite);
+            emitTriangle(
+                    destination,
+                    this.lights,
+                    this.captured,
+                    SECOND_TRIANGLE,
+                    this.tint,
+                    false,
+                    animated,
+                    this.transmissive,
+                    false,
+                    this.water,
+                    this.lightEmission,
+                    sprite);
         }
+
+        private TextureAtlasSprite selectSprite() {
+            float u = 0.25F * (this.captured.u[0]
+                    + this.captured.u[1] + this.captured.u[2] + this.captured.u[3]);
+            float v = 0.25F * (this.captured.v[0]
+                    + this.captured.v[1] + this.captured.v[2] + this.captured.v[3]);
+            if (contains(this.stillSprite, u, v)) {
+                return this.stillSprite;
+            }
+            if (this.overlaySprite != null && contains(this.overlaySprite, u, v)) {
+                return this.overlaySprite;
+            }
+            return this.flowingSprite;
+        }
+
+        private static boolean contains(TextureAtlasSprite sprite, float u, float v) {
+            return u >= Math.min(sprite.getU0(), sprite.getU1())
+                    && u <= Math.max(sprite.getU0(), sprite.getU1())
+                    && v >= Math.min(sprite.getV0(), sprite.getV1())
+                    && v <= Math.max(sprite.getV0(), sprite.getV1());
+        }
+
+        @Override
+        public VertexConsumer addVertex(float x, float y, float z) {
+            return this;
+        }
+
+        @Override
+        public VertexConsumer setColor(int red, int green, int blue, int alpha) {
+            return this;
+        }
+
+        @Override
+        public VertexConsumer setColor(int color) {
+            return this;
+        }
+
+        @Override
+        public VertexConsumer setUv(float u, float v) {
+            return this;
+        }
+
+        @Override
+        public VertexConsumer setUv1(int u, int v) {
+            return this;
+        }
+
+        @Override
+        public VertexConsumer setUv2(int u, int v) {
+            return this;
+        }
+
+        @Override
+        public VertexConsumer setNormal(float x, float y, float z) {
+            return this;
+        }
+
+        @Override
+        public VertexConsumer setLineWidth(float width) {
+            return this;
+        }
+    }
+
+    private static final class CapturedQuad {
+        private final float[] x = new float[4];
+        private final float[] y = new float[4];
+        private final float[] z = new float[4];
+        private final float[] u = new float[4];
+        private final float[] v = new float[4];
+        private float normalX;
+        private float normalY;
+        private float normalZ;
     }
 
     private static final class MeshBuilder {

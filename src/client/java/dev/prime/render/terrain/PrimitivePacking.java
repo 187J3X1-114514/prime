@@ -3,6 +3,9 @@ package dev.prime.render.terrain;
 public final class PrimitivePacking {
     public static final int FLAG_CUTOUT = 1;
     public static final int FLAG_ANIMATED_TEXTURE = 1 << 1;
+    public static final int FLAG_TRANSMISSIVE = 1 << 2;
+    public static final int FLAG_THIN_WALLED = 1 << 3;
+    public static final int FLAG_WATER = 1 << 4;
 
     private PrimitivePacking() {
     }
@@ -22,8 +25,26 @@ public final class PrimitivePacking {
     }
 
     public static int packFlags(boolean cutout, boolean animatedTexture) {
+        return packFlags(cutout, animatedTexture, false, false, false);
+    }
+
+    public static int packFlags(
+            boolean cutout,
+            boolean animatedTexture,
+            boolean transmissive,
+            boolean thinWalled,
+            boolean water) {
+        if (thinWalled && !transmissive) {
+            throw new IllegalArgumentException("Only transmissive primitives may be thin-walled");
+        }
+        if (water && (!transmissive || thinWalled)) {
+            throw new IllegalArgumentException("Water must be a solid transmissive medium");
+        }
         return (cutout ? FLAG_CUTOUT : 0)
-                | (animatedTexture ? FLAG_ANIMATED_TEXTURE : 0);
+                | (animatedTexture ? FLAG_ANIMATED_TEXTURE : 0)
+                | (transmissive ? FLAG_TRANSMISSIVE : 0)
+                | (thinWalled ? FLAG_THIN_WALLED : 0)
+                | (water ? FLAG_WATER : 0);
     }
 
     public static int packOctahedralNormal(float x, float y, float z) {

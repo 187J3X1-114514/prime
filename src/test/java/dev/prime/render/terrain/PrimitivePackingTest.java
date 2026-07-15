@@ -30,6 +30,18 @@ final class PrimitivePackingTest {
                 PrimitivePacking.FLAG_ANIMATED_TEXTURE,
                 PrimitivePacking.packFlags(false, true));
         assertEquals(3, PrimitivePacking.packFlags(true, true));
+        assertEquals(
+                PrimitivePacking.FLAG_TRANSMISSIVE | PrimitivePacking.FLAG_THIN_WALLED,
+                PrimitivePacking.packFlags(false, false, true, true, false));
+        assertEquals(
+                PrimitivePacking.FLAG_TRANSMISSIVE | PrimitivePacking.FLAG_WATER,
+                PrimitivePacking.packFlags(false, false, true, false, true));
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> PrimitivePacking.packFlags(false, false, false, true, false));
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> PrimitivePacking.packFlags(false, false, true, true, true));
     }
 
     @Test

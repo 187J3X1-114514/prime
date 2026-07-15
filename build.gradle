@@ -234,6 +234,9 @@ public final class ShaderAbi {
     public static final int DESCRIPTOR_NRD_PRIMARY_POSITION = ${schema.descriptors.nrdPrimaryPosition};
     public static final int DESCRIPTOR_NRD_NOISY_SPECULAR = ${schema.descriptors.nrdNoisySpecular};
     public static final int DESCRIPTOR_NRD_SPECULAR_MATERIAL = ${schema.descriptors.nrdSpecularMaterial};
+    public static final int DESCRIPTOR_TRANSMISSION_GGX_ENERGY = ${schema.descriptors.transmissionGgxEnergy};
+    public static final int PATH_CAMERA_IN_WATER_MASK = ${schema.pathControl.cameraInWaterMask};
+    public static final int PATH_JITTER_PHASE_MASK = ${schema.pathControl.jitterPhaseMask};
     public static final float CUTOUT_ALPHA_THRESHOLD = ${schema.cutoutAlphaThreshold}f;
     public static final String WORKING_COLOR_SPACE = "${colorContract.workingSpace}";
     public static final String TEXTURE_COLOR_ENCODING = "${colorContract.textureEncoding}";
@@ -287,6 +290,9 @@ ${javaOffsets}
 #define PRIME_TRACE_PAYLOAD_SIZE ${tracePayload.size}
 #define PRIME_SURFACE_INTERACTION_SIZE ${surfaceInteraction.size}
 #define PRIME_PUSH_CONSTANT_SIZE ${push.size}
+#define PRIME_DESCRIPTOR_TRANSMISSION_GGX_ENERGY ${schema.descriptors.transmissionGgxEnergy}
+#define PRIME_PATH_CAMERA_IN_WATER_MASK ${schema.pathControl.cameraInWaterMask}u
+#define PRIME_PATH_JITTER_PHASE_MASK ${schema.pathControl.jitterPhaseMask}u
 #define PRIME_CUTOUT_ALPHA_THRESHOLD ${schema.cutoutAlphaThreshold}
 struct PrimitiveRecord {
 ${glslStructFields(primitive)}

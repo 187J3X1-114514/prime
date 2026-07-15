@@ -21,6 +21,17 @@ final class RayTracingPipelineContractTest {
     }
 
     @Test
+    void runtimeTransmissionLookupMatchesTheImportedBsdfTable() throws IOException {
+        assertEquals(32, BsdfLookupTable.RESOLUTION);
+        assertEquals(32 * 32 * 32 * 4 * Float.BYTES, BsdfLookupTable.BYTE_SIZE);
+        String pipeline = Files.readString(Path.of(
+                System.getProperty("user.dir"),
+                "src/client/java/dev/prime/render/vulkan/RayTracingPipeline.java"));
+        assertTrue(pipeline.contains("ShaderAbi.DESCRIPTOR_TRANSMISSION_GGX_ENERGY"));
+        assertTrue(pipeline.contains("bsdfLookup.prepare(commandBuffer)"));
+    }
+
+    @Test
     void shadowRaysUseTheirOwnMinimalPayloadAndMissRecord() throws IOException {
         Path shaderRoot = Path.of(System.getProperty("user.dir"), "shaders");
         String integrator = Files.readString(shaderRoot.resolve("integrator.glsl"));

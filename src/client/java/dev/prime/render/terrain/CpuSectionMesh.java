@@ -4,6 +4,9 @@ public record CpuSectionMesh(
         float[] positions,
         int[] primitiveRecords,
         int opaqueTriangleCount,
+        // This is the second BLAS geometry. It contains alpha-tested cutouts and physically
+        // transmissive surfaces because both require an any-hit shader; the historical name is
+        // retained to avoid changing the generated Section ABI.
         int cutoutTriangleCount,
         CpuSectionLights lights) {
 

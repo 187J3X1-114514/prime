@@ -14,9 +14,8 @@ void main() {
             primitive, primeInterpolateUv(primitive), textureLodValue);
     primePayload.position = gl_WorldRayOriginEXT + gl_HitTEXT * gl_WorldRayDirectionEXT;
     primePayload.t = gl_HitTEXT;
-    if (dot(normal, -gl_WorldRayDirectionEXT) < 0.0) {
-        normal = -normal;
-    }
+    // Keep the authored outward normal. Opaque shading orients it at the integrator boundary,
+    // while transmissive BSDFs require its sign to distinguish entering from exiting a medium.
     primePayload.geometricNormal = normal;
     primePayload.baseColor = material.baseColor;
     primePayload.traceKind = material.flags;
@@ -25,4 +24,5 @@ void main() {
             ? 0xffffffffu
             : primitive.reserved0 - 1u;
     primePayload.reserved0 = floatBitsToUint(textureLodValue);
+    primePayload.reserved1 = floatBitsToUint(material.opacity);
 }

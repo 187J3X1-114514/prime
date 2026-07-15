@@ -107,6 +107,29 @@ final class RoboCuteBsdfContractTest {
         }
     }
 
+    @Test
+    void transmissionClosureIsConnectedToTerrainWithPersistentVolumes() throws IOException {
+        String adapter = shader("bsdf.glsl");
+        String integrator = shader("integrator.glsl");
+        String closestHit = shader("world.rchit");
+        String anyHit = shader("world.rahit");
+
+        assertTrue(adapter.contains(
+                "PRIME_RC_TRANSMISSION_GGX_BINDING PRIME_DESCRIPTOR_TRANSMISSION_GGX_ENERGY"));
+        assertTrue(adapter.contains("primeRcTransmissionEvaluate"));
+        assertTrue(adapter.contains("primeRcTransmissionSample"));
+        assertTrue(adapter.contains("result.volumeStack = sampled.volumeStack"));
+        assertTrue(adapter.contains("primeCameraWaterVolumeStack"));
+        assertTrue(integrator.contains("PrimeRcVolumeStack volumeStack"));
+        assertTrue(integrator.contains("volumeStack = transmitted.volumeStack"));
+        assertTrue(integrator.contains("exp(-medium.extinction * max(surface.t, 0.0))"));
+        assertTrue(integrator.contains(
+                "(primePush.path.z & PRIME_PATH_CAMERA_IN_WATER_MASK) != 0u"));
+        assertTrue(closestHit.contains("primePayload.geometricNormal = normal"));
+        assertFalse(closestHit.contains("normal = -normal"));
+        assertTrue(anyHit.contains("primeMaterialIsTransmissive(primitive.flags)"));
+    }
+
     private static String shader(String name) throws IOException {
         return Files.readString(Path.of(System.getProperty("user.dir"), "shaders", name));
     }

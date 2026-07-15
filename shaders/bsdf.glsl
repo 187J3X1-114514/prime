@@ -8,6 +8,9 @@
 #include "bsdf_subsurface.glsl"
 #include "bsdf_emission.glsl"
 #include "default_material.glsl"
+#define PRIME_RC_TRANSMISSION_GGX_SET 0
+#define PRIME_RC_TRANSMISSION_GGX_BINDING PRIME_DESCRIPTOR_TRANSMISSION_GGX_ENERGY
+#include "robocute_bsdf_openpbr.glsl"
 
 // Normalized material parameters are deliberately separate from Minecraft texture decoding.
 // LabPBR's packed channels will eventually populate this record, while every closure below keeps
@@ -296,6 +299,186 @@ BsdfSample primeSampleDefaultBsdf(
     proposal.relativeEta = 1.0;
     proposal.eventFlags &= ~PRIME_BSDF_EVENT_DELTA;
     return proposal;
+}
+
+// Minecraft's translucent render layer is adapted to RoboCute's complete dielectric
+// transmission closure. The imported closure owns Fresnel, rough reflection/refraction,
+// importance sampling and medium transitions; this adapter only supplies the vanilla fallback
+// material parameters and converts its f*|cos| convention to Prime's public BSDF contract.
+struct PrimeTransmissiveBsdfSample {
+    BsdfSample bsdfSample;
+    PrimeRcVolumeStack volumeStack;
+};
+
+PrimeRcVolumeStack primeEmptyVolumeStack() {
+    PrimeRcVolumeStack result;
+    result.values[0].extinction = vec3(0.0);
+    result.values[0].albedo = vec3(0.0);
+    result.values[0].anisotropy = 0.0;
+    result.values[0].ior = 1.0;
+    result.values[1] = result.values[0];
+    result.count = 0u;
+    return result;
+}
+
+PrimeRcMaterial primeMinecraftTransmissionMaterial(
+        vec3 baseColor,
+        float opacity,
+        vec3 outwardNormal,
+        uint materialFlags) {
+    bool water = (materialFlags & PRIME_MATERIAL_FLAG_WATER) != 0u;
+    bool thinWalled = (materialFlags & PRIME_MATERIAL_FLAG_THIN_WALLED) != 0u;
+    float roughness = primeMaterialLinearRoughness(baseColor, materialFlags);
+    PrimeRcMaterial material = primeRcMaterialFromMetallic(
+            vec3(1.0), roughness, 0.0, outwardNormal);
+    material.weight.transmission = 1.0;
+    material.geometry.thinWalled = thinWalled ? 1u : 0u;
+    material.geometry.thickness = thinWalled ? 0.0625 : 1.0;
+    material.specular.ior = water ? 1.333 : 1.5;
+
+    // Minecraft alpha describes raster coverage/composition rather than Beer-Lambert depth.
+    // Mixing the decoded texel toward clear transmission by (1-alpha) preserves colored glass
+    // without interpreting a low-alpha clear texel as a dense black absorber.
+    vec3 transmissionColor = clamp(
+            mix(vec3(1.0), max(baseColor, vec3(0.0)), clamp(opacity, 0.0, 1.0)),
+            vec3(1.0e-3),
+            vec3(1.0));
+    material.transmission.color = transmissionColor;
+    // One block is the authored depth for solid glass-like models. Water uses a longer artistic
+    // reference depth so vanilla biome tint remains visible without becoming opaque after a few
+    // cells. Thin panes use the closure's explicit zero-depth surface tint path.
+    material.transmission.depth = thinWalled ? 0.0 : (water ? 8.0 : 1.0);
+    material.transmission.scatter = vec3(0.0);
+    material.transmission.scatterAnisotropy = 0.0;
+    material.transmission.dispersionScale = 0.0;
+    return material;
+}
+
+PrimeRcVolumeStack primeCameraWaterVolumeStack() {
+    PrimeRcVolumeStack result = primeEmptyVolumeStack();
+    // This is the vanilla default water tint (#3f76e4), decoded from sRGB and transformed to
+    // Prime's linear Rec.2020 working space. It is only the fallback for a ray whose camera starts
+    // below the water surface; ordinary air/water boundaries still use the captured biome tint.
+    const vec3 defaultWaterRec2020 = vec3(0.124443665, 0.178837556, 0.711582356);
+    PrimeRcMaterial material = primeMinecraftTransmissionMaterial(
+            defaultWaterRec2020,
+            1.0,
+            vec3(0.0, 1.0, 0.0),
+            PRIME_MATERIAL_FLAG_TRANSMISSIVE | PRIME_MATERIAL_FLAG_WATER);
+    PrimeRcVolume volume = primeRcVolumeFromTransmission(material.transmission);
+    volume.ior = material.specular.ior;
+    primeRcStackPush(result, volume);
+    return result;
+}
+
+uint primeRcToBsdfEventFlags(uint flags) {
+    uint result = 0u;
+    if (primeRcIsReflective(flags)) {
+        result |= PRIME_BSDF_EVENT_REFLECTION;
+    }
+    if (primeRcIsTransmissive(flags)) {
+        result |= PRIME_BSDF_EVENT_TRANSMISSION;
+    }
+    if (primeRcIsDiffuse(flags)) {
+        result |= PRIME_BSDF_EVENT_DIFFUSE;
+    }
+    if (primeRcIsSpecular(flags)) {
+        result |= PRIME_BSDF_EVENT_GLOSSY;
+    }
+    if (primeRcIsDelta(flags)) {
+        result |= PRIME_BSDF_EVENT_DELTA;
+    }
+    return result;
+}
+
+PrimeRcState primeMinecraftTransmissionState(
+        vec3 baseColor,
+        float opacity,
+        vec3 outwardNormal,
+        uint materialFlags,
+        vec3 viewDirection,
+        float rayT,
+        PrimeRcVolumeStack volumeStack) {
+    PrimeRcMaterial material = primeMinecraftTransmissionMaterial(
+            baseColor, opacity, outwardNormal, materialFlags);
+    vec3 localView = primeRcOnbToLocal(material.geometry.onb, viewDirection);
+    float inverseOutsideIor = primeRcInverseOutsideIor(localView.z, volumeStack);
+    return primeRcTransmissionStateInit(
+            material,
+            inverseOutsideIor,
+            rayT,
+            vec3(630.0, 532.0, 465.0),
+            0u,
+            PRIME_RC_DETAIL_DEFAULT,
+            0u);
+}
+
+BsdfEvaluation primeEvaluateMinecraftTransmission(
+        vec3 baseColor,
+        float opacity,
+        vec3 outwardNormal,
+        uint materialFlags,
+        vec3 viewDirection,
+        vec3 scatterDirection,
+        float rayT,
+        PrimeRcVolumeStack volumeStack) {
+    PrimeRcState state = primeMinecraftTransmissionState(
+            baseColor,
+            opacity,
+            outwardNormal,
+            materialFlags,
+            viewDirection,
+            rayT,
+            volumeStack);
+    vec3 localView = primeRcOnbToLocal(state.material.geometry.onb, viewDirection);
+    vec3 localScatter = primeRcOnbToLocal(state.material.geometry.onb, scatterDirection);
+    PrimeRcEval evaluation = primeRcTransmissionEvaluate(localView, localScatter, state);
+    BsdfEvaluation result = primeInvalidBsdfEvaluation();
+    float cosine = abs(localScatter.z);
+    if (evaluation.pdf > 0.0 && cosine > PRIME_BSDF_EPSILON
+            && evaluation.throughput.flags != PRIME_RC_FLAG_NONE) {
+        result.value = evaluation.throughput.value / cosine;
+        result.pdf = evaluation.pdf;
+    }
+    return result;
+}
+
+PrimeTransmissiveBsdfSample primeSampleMinecraftTransmission(
+        vec3 baseColor,
+        float opacity,
+        vec3 outwardNormal,
+        uint materialFlags,
+        vec3 viewDirection,
+        vec3 sampleValue,
+        float rayT,
+        PrimeRcVolumeStack volumeStack) {
+    PrimeTransmissiveBsdfSample result;
+    result.bsdfSample = primeInvalidBsdfSample();
+    result.volumeStack = volumeStack;
+    PrimeRcState state = primeMinecraftTransmissionState(
+            baseColor,
+            opacity,
+            outwardNormal,
+            materialFlags,
+            viewDirection,
+            rayT,
+            volumeStack);
+    vec3 localView = primeRcOnbToLocal(state.material.geometry.onb, viewDirection);
+    PrimeRcSampleResult sampled = primeRcTransmissionSample(
+            localView, sampleValue, state, volumeStack);
+    if (sampled.bsdfSample.pdf <= 0.0
+            || sampled.bsdfSample.throughput.flags == PRIME_RC_FLAG_NONE) {
+        return result;
+    }
+    result.bsdfSample.direction = primeRcOnbToWorld(
+            state.material.geometry.onb, sampled.bsdfSample.wo);
+    result.bsdfSample.weight = sampled.bsdfSample.throughput.value / sampled.bsdfSample.pdf;
+    result.bsdfSample.pdf = sampled.bsdfSample.pdf;
+    result.bsdfSample.relativeEta = 1.0;
+    result.bsdfSample.eventFlags = primeRcToBsdfEventFlags(
+            sampled.bsdfSample.throughput.flags);
+    result.volumeStack = sampled.volumeStack;
+    return result;
 }
 
 #endif

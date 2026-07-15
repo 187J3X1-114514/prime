@@ -162,6 +162,22 @@ public final class VulkanContext implements AutoCloseable {
                 label);
     }
 
+    public VulkanImage createSampledImage3D(
+            int width,
+            int height,
+            int depth,
+            int format,
+            String label) {
+        return this.createImage(
+                width,
+                height,
+                depth,
+                1,
+                format,
+                VK12.VK_IMAGE_USAGE_SAMPLED_BIT | VK12.VK_IMAGE_USAGE_TRANSFER_DST_BIT,
+                label);
+    }
+
     public VulkanImage createImage2D(int width, int height, int format, int usage, String label) {
         return this.createImage(width, height, 1, 1, format, usage, label);
     }

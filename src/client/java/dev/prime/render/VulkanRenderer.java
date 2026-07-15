@@ -24,7 +24,9 @@ import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.texture.TextureAtlas;
+import net.minecraft.core.BlockPos;
 import net.minecraft.data.AtlasIds;
+import net.minecraft.tags.FluidTags;
 import org.joml.Matrix4fc;
 import org.lwjgl.system.MemoryStack;
 import org.lwjgl.vulkan.KHRRayTracingPipeline;
@@ -45,6 +47,8 @@ public final class VulkanRenderer implements AutoCloseable {
     private RenderImages renderImages;
     private FrameCamera camera;
     private SunDirection sunDirection;
+    private boolean cameraMediumKnown;
+    private boolean cameraInWater;
     private boolean shaderReloadRequested;
     private boolean closed;
 
@@ -171,6 +175,15 @@ public final class VulkanRenderer implements AutoCloseable {
         VulkanImage sceneColor = images.sceneColor;
         NrdDenoiser denoiser = images.denoiser;
         Fsr3Upscaler upscaler = images.upscaler;
+        boolean frameCameraInWater = isCameraInWater(minecraft, frameCamera);
+        if (this.cameraMediumKnown && this.cameraInWater != frameCameraInWater) {
+            // Crossing the water surface changes transport for essentially every visible path.
+            // Treat it as a temporal discontinuity so NRD/FSR do not retain the previous medium.
+            this.accumulationState.invalidate();
+            upscaler.requestReset();
+        }
+        this.cameraMediumKnown = true;
+        this.cameraInWater = frameCameraInWater;
         this.accumulationState.prepare(
                 frameCamera,
                 scene.resetRevision(),
@@ -205,7 +218,8 @@ public final class VulkanRenderer implements AutoCloseable {
                     renderHeight,
                     frameSunDirection,
                     images.qualityMode,
-                    fsrFrame.frameIndex());
+                    fsrFrame.frameIndex(),
+                    frameCameraInWater);
             this.pipeline.trace(commandBuffer, pushConstants, renderWidth, renderHeight);
             this.finishAtlasRead(commandBuffer, atlasView.texture());
             nrdFrame = denoiser.record(
@@ -649,7 +663,8 @@ public final class VulkanRenderer implements AutoCloseable {
             int height,
             SunDirection sunDirection,
             FsrQualityMode qualityMode,
-            int fsrFrameIndex) {
+            int fsrFrameIndex,
+            boolean cameraInWater) {
         ByteBuffer buffer = stack.calloc(ShaderAbi.PUSH_CONSTANT_SIZE).order(ByteOrder.nativeOrder());
         float[] matrix = new float[16];
         camera.inverseViewProjection().get(matrix);
@@ -679,10 +694,24 @@ public final class VulkanRenderer implements AutoCloseable {
         buffer.putInt(pathOffset + Integer.BYTES, this.accumulationState.epoch());
         buffer.putInt(
                 pathOffset + 2 * Integer.BYTES,
-                (qualityMode.jitterPhaseCount() << 16)
-                        | (IntegratorSettings.MAXIMUM_BOUNCES & 0xffff));
+                IntegratorSettings.packPathControl(
+                        IntegratorSettings.MAXIMUM_BOUNCES,
+                        qualityMode.jitterPhaseCount(),
+                        cameraInWater));
         buffer.putInt(pathOffset + 3 * Integer.BYTES, fsrFrameIndex);
         return buffer.position(0).limit(ShaderAbi.PUSH_CONSTANT_SIZE);
+    }
+
+    private static boolean isCameraInWater(Minecraft minecraft, FrameCamera camera) {
+        if (minecraft.level == null) {
+            return false;
+        }
+        BlockPos position = BlockPos.containing(camera.x(), camera.y(), camera.z());
+        var fluid = minecraft.level.getFluidState(position);
+        // Match vanilla's height-aware camera test. A block-only check incorrectly puts the
+        // camera in a medium while the eye is above shallow or flowing water in the same cell.
+        return fluid.is(FluidTags.WATER)
+                && camera.y() < position.getY() + fluid.getHeight(minecraft.level, position);
     }
 
     private static void imageBarrier(

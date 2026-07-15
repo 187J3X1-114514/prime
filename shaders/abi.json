@@ -164,7 +164,12 @@
     "nrdMaterial": 13,
     "nrdPrimaryPosition": 14,
     "nrdNoisySpecular": 15,
-    "nrdSpecularMaterial": 16
+    "nrdSpecularMaterial": 16,
+    "transmissionGgxEnergy": 17
+  },
+  "pathControl": {
+    "cameraInWaterMask": "0x80000000",
+    "jitterPhaseMask": "0x7fff"
   },
   "nrdContract": {
     "version": "4.17.4",

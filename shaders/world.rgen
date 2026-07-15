@@ -41,7 +41,9 @@ void main() {
     // path.w is a dedicated, monotonically advancing FSR frame index; NRD and the FSR constants
     // receive the identical pixel offset from Java. Do not replace this with a per-pixel sample:
     // temporal reconstruction can only describe one camera projection for the complete frame.
-    uint jitterSequenceLength = max(primePush.path.z >> 16u, 1u);
+    uint jitterSequenceLength = max(
+            (primePush.path.z >> 16u) & PRIME_PATH_JITTER_PHASE_MASK,
+            1u);
     uint jitterPhase = (primePush.path.w % jitterSequenceLength) + 1u;
     float halton2 = 0.0;
     float halton3 = 0.0;

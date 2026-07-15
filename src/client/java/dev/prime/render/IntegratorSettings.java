@@ -1,5 +1,7 @@
 package dev.prime.render;
 
+import dev.prime.render.shader.ShaderAbi;
+
 /**
  * Internal, deliberately small adapter between Minecraft's world and the path integrator.
  *
@@ -30,6 +32,18 @@ final class IntegratorSettings {
     };
 
     private IntegratorSettings() {
+    }
+
+    static int packPathControl(int maximumBounces, int jitterPhaseCount, boolean cameraInWater) {
+        if (maximumBounces < 0 || maximumBounces > 0xffff) {
+            throw new IllegalArgumentException("Maximum bounce count does not fit in 16 bits");
+        }
+        if (jitterPhaseCount < 1 || jitterPhaseCount > ShaderAbi.PATH_JITTER_PHASE_MASK) {
+            throw new IllegalArgumentException("Jitter phase count does not fit in 15 bits");
+        }
+        return (cameraInWater ? ShaderAbi.PATH_CAMERA_IN_WATER_MASK : 0)
+                | (jitterPhaseCount << 16)
+                | maximumBounces;
     }
 
     static float powerHeuristic(float firstPdf, float secondPdf) {

@@ -5,9 +5,18 @@
 #include "robocute_bsdf_fresnel.glsl"
 
 // RoboCute's 32^3 RGBA32F transmission table is a required part of the model, not an optional
-// optimization. The validation shader binds it at this isolated set; a future material decoder
-// must bind the same data before connecting refractive closures to the world pipeline.
-layout(set = 7, binding = 0) uniform sampler3D primeRcTransmissionGgxEnergy;
+// optimization. The compile-only validation shader keeps its isolated default set, while the
+// runtime BSDF adapter overrides these macros to the generated Prime descriptor contract.
+#ifndef PRIME_RC_TRANSMISSION_GGX_SET
+#define PRIME_RC_TRANSMISSION_GGX_SET 7
+#endif
+#ifndef PRIME_RC_TRANSMISSION_GGX_BINDING
+#define PRIME_RC_TRANSMISSION_GGX_BINDING 0
+#endif
+layout(
+        set = PRIME_RC_TRANSMISSION_GGX_SET,
+        binding = PRIME_RC_TRANSMISSION_GGX_BINDING)
+uniform sampler3D primeRcTransmissionGgxEnergy;
 
 bool primeRcMicrofacetEffectivelySmooth(PrimeRcMicrofacet microfacet) {
     return primeRcReduceMax(microfacet.alpha) < 1.0e-4;

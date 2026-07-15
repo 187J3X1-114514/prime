@@ -6,6 +6,9 @@
 // both consume it, and neither side may silently derive a different roughness or FSR mask.
 const uint PRIME_MATERIAL_FLAG_CUTOUT = 1u;
 const uint PRIME_MATERIAL_FLAG_ANIMATED_TEXTURE = 2u;
+const uint PRIME_MATERIAL_FLAG_TRANSMISSIVE = 4u;
+const uint PRIME_MATERIAL_FLAG_THIN_WALLED = 8u;
+const uint PRIME_MATERIAL_FLAG_WATER = 16u;
 
 const float PRIME_DEFAULT_DIELECTRIC_F0 = 0.04;
 const float PRIME_DEFAULT_MIN_LINEAR_ROUGHNESS = 0.70;
@@ -22,7 +25,29 @@ float primeDefaultLinearRoughness(vec3 baseColor) {
             brightness);
 }
 
+bool primeMaterialIsTransmissive(uint flags) {
+    return (flags & PRIME_MATERIAL_FLAG_TRANSMISSIVE) != 0u;
+}
+
+float primeMaterialLinearRoughness(vec3 baseColor, uint flags) {
+    if ((flags & PRIME_MATERIAL_FLAG_WATER) != 0u) {
+        return 0.02;
+    }
+    if (primeMaterialIsTransmissive(flags)) {
+        return 0.06;
+    }
+    return primeDefaultLinearRoughness(baseColor);
+}
+
+float primeMaterialDielectricF0(uint flags) {
+    // Water uses eta=1.333; other vanilla translucent models use the ordinary glass boundary.
+    return (flags & PRIME_MATERIAL_FLAG_WATER) != 0u ? 0.02037 : PRIME_DEFAULT_DIELECTRIC_F0;
+}
+
 float primeFsrTransparencyAndCompositionMask(uint flags, float linearRoughness) {
+    if (primeMaterialIsTransmissive(flags)) {
+        return 1.0;
+    }
     float animated = (flags & PRIME_MATERIAL_FLAG_ANIMATED_TEXTURE) != 0u ? 0.75 : 0.0;
     // Reserved for the smooth reflective materials introduced by the future LabPBR decoder. The
     // default Minecraft roughness range is 0.7..0.9, so ordinary terrain correctly evaluates to

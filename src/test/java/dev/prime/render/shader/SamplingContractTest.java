@@ -24,7 +24,8 @@ final class SamplingContractTest {
         assertTrue(sampling.contains("primeSobolSample2D"));
         assertTrue(sampling.contains("primeSobolSample3D"));
         assertTrue(sampling.contains("primeSobolSample4D"));
-        assertTrue(rayGeneration.contains("primePush.path.z >> 16u"));
+        assertTrue(rayGeneration.contains(
+                "(primePush.path.z >> 16u) & PRIME_PATH_JITTER_PHASE_MASK"));
         assertTrue(rayGeneration.contains(
                 "uint jitterPhase = (primePush.path.w % jitterSequenceLength) + 1u"));
         assertTrue(rayGeneration.contains("vec2 cameraSample = vec2(halton2, halton3)"));

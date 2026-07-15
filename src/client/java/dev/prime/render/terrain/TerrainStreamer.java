@@ -20,6 +20,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.client.renderer.block.BlockStateModelSet;
+import net.minecraft.client.renderer.block.FluidStateModelSet;
 import net.minecraft.client.renderer.chunk.RenderRegionCache;
 import net.minecraft.client.renderer.chunk.RenderSectionRegion;
 import net.minecraft.core.SectionPos;
@@ -277,6 +278,7 @@ public final class TerrainStreamer implements AutoCloseable {
         }
         RenderRegionCache regionCache = new RenderRegionCache();
         BlockStateModelSet models = minecraft.getModelManager().getBlockStateModelSet();
+        FluidStateModelSet fluidModels = minecraft.getModelManager().getFluidStateModelSet();
         List<SectionRequest> unloaded = new ArrayList<>();
         List<SectionRequest> blocked = new ArrayList<>();
         int examined = 0;
@@ -341,7 +343,14 @@ public final class TerrainStreamer implements AutoCloseable {
                     CpuSectionMesh mesh = EMPTY_MESH;
                     Throwable failure = null;
                     try {
-                        mesh = TerrainMesher.mesh(region, models, tints, sectionX, sectionY, sectionZ);
+                        mesh = TerrainMesher.mesh(
+                                region,
+                                models,
+                                fluidModels,
+                                tints,
+                                sectionX,
+                                sectionY,
+                                sectionZ);
                     } catch (Throwable throwable) {
                         failure = throwable;
                     }

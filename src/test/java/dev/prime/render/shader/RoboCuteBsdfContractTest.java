@@ -136,6 +136,23 @@ final class RoboCuteBsdfContractTest {
         assertTrue(anyHit.contains("primeMaterialIsTransmissive(primitive.flags)"));
     }
 
+    @Test
+    void foliageUsesAlphaTestedOpenPbrThinWallsWithoutVolumeTransitions() throws IOException {
+        String defaults = shader("default_material.glsl");
+        String adapter = shader("bsdf.glsl");
+        String integrator = shader("integrator.glsl");
+        String anyHit = shader("world.rahit");
+
+        assertTrue(defaults.contains("PRIME_MATERIAL_FLAG_FOLIAGE = 32u"));
+        assertTrue(adapter.contains("PRIME_FOLIAGE_TRANSMISSION_WEIGHT = 0.15"));
+        assertTrue(adapter.contains("material.geometry.thinWalled = 1u"));
+        assertTrue(adapter.contains("primeRcOpenPbrEvaluate"));
+        assertTrue(adapter.contains("primeRcOpenPbrSample"));
+        assertTrue(integrator.contains("primeMaterialIsFoliage(surface.materialFlags)"));
+        assertTrue(integrator.contains("primeSampleMinecraftFoliage"));
+        assertTrue(anyHit.contains("opacity < PRIME_CUTOUT_ALPHA_THRESHOLD"));
+    }
+
     private static String shader(String name) throws IOException {
         return Files.readString(Path.of(System.getProperty("user.dir"), "shaders", name));
     }

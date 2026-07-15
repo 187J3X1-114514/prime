@@ -550,4 +550,108 @@ PrimeTransmissiveBsdfSample primeSampleMinecraftTransmission(
     return result;
 }
 
+// Vanilla grass blades and leaf texels are zero-thickness surfaces rather than dielectric
+// volumes. Keep most of the ordinary rough terrain response and mix a deliberately small amount
+// of colored thin-wall transmission through OpenPBR's energy-aware lobe composition. Unlike
+// glass and water, this closure never pushes or pops the path volume stack.
+const float PRIME_FOLIAGE_TRANSMISSION_WEIGHT = 0.15;
+
+PrimeRcMaterial primeMinecraftFoliageMaterial(vec3 baseColor, vec3 normal) {
+    PrimeRcMaterial material = primeRcMaterialFromMetallic(
+            baseColor,
+            primeDefaultLinearRoughness(baseColor),
+            0.0,
+            normal);
+    material.weight.transmission = PRIME_FOLIAGE_TRANSMISSION_WEIGHT;
+    material.geometry.thinWalled = 1u;
+    material.geometry.thickness = 0.0625;
+    material.specular.ior = 1.45;
+    material.transmission.color = clamp(baseColor, vec3(0.02), vec3(1.0));
+    material.transmission.depth = 0.0;
+    return material;
+}
+
+PrimeRcState primeMinecraftFoliageState(
+        vec3 baseColor,
+        vec3 outwardNormal,
+        vec3 viewDirection,
+        vec3 randomValue,
+        float rayT,
+        PrimeRcVolumeStack volumeStack) {
+    vec3 closureNormal = dot(outwardNormal, viewDirection) < 0.0
+            ? -outwardNormal
+            : outwardNormal;
+    PrimeRcMaterial material = primeMinecraftFoliageMaterial(baseColor, closureNormal);
+    vec3 localView = primeRcOnbToLocal(material.geometry.onb, viewDirection);
+    float inverseOutsideIor = primeRcInverseOutsideIor(localView.z, volumeStack);
+    return primeRcOpenPbrStateInit(
+            material,
+            localView,
+            randomValue,
+            inverseOutsideIor,
+            rayT,
+            vec3(630.0, 532.0, 465.0),
+            0u,
+            PRIME_RC_DETAIL_DEFAULT,
+            0u);
+}
+
+BsdfEvaluation primeEvaluateMinecraftFoliage(
+        vec3 baseColor,
+        vec3 outwardNormal,
+        vec3 viewDirection,
+        vec3 scatterDirection,
+        float rayT,
+        PrimeRcVolumeStack volumeStack) {
+    PrimeRcState state = primeMinecraftFoliageState(
+            baseColor,
+            outwardNormal,
+            viewDirection,
+            vec3(0.5),
+            rayT,
+            volumeStack);
+    vec3 localView = primeRcOnbToLocal(state.material.geometry.onb, viewDirection);
+    vec3 localScatter = primeRcOnbToLocal(state.material.geometry.onb, scatterDirection);
+    PrimeRcEval evaluation = primeRcOpenPbrEvaluate(localView, localScatter, state);
+    BsdfEvaluation result = primeInvalidBsdfEvaluation();
+    float cosine = abs(localScatter.z);
+    if (evaluation.pdf > 0.0 && cosine > PRIME_BSDF_EPSILON
+            && evaluation.throughput.flags != PRIME_RC_FLAG_NONE) {
+        result.value = evaluation.throughput.value / cosine;
+        result.pdf = evaluation.pdf;
+    }
+    return result;
+}
+
+BsdfSample primeSampleMinecraftFoliage(
+        vec3 baseColor,
+        vec3 outwardNormal,
+        vec3 viewDirection,
+        vec3 sampleValue,
+        float rayT,
+        PrimeRcVolumeStack volumeStack) {
+    BsdfSample result = primeInvalidBsdfSample();
+    PrimeRcState state = primeMinecraftFoliageState(
+            baseColor,
+            outwardNormal,
+            viewDirection,
+            sampleValue,
+            rayT,
+            volumeStack);
+    vec3 localView = primeRcOnbToLocal(state.material.geometry.onb, viewDirection);
+    PrimeRcSampleResult sampled = primeRcOpenPbrSample(
+            localView, sampleValue, state, volumeStack);
+    if (sampled.bsdfSample.pdf <= 0.0
+            || sampled.bsdfSample.throughput.flags == PRIME_RC_FLAG_NONE) {
+        return result;
+    }
+    result.direction = primeRcOnbToWorld(
+            state.material.geometry.onb, sampled.bsdfSample.wo);
+    result.weight = sampled.bsdfSample.throughput.value / sampled.bsdfSample.pdf;
+    result.pdf = sampled.bsdfSample.pdf;
+    result.relativeEta = 1.0;
+    result.eventFlags = primeRcToBsdfEventFlags(sampled.bsdfSample.throughput.flags);
+    return result;
+}
+
 #endif

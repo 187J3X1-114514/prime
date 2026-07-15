@@ -32,16 +32,27 @@ final class PrimitivePackingTest {
         assertEquals(3, PrimitivePacking.packFlags(true, true));
         assertEquals(
                 PrimitivePacking.FLAG_TRANSMISSIVE | PrimitivePacking.FLAG_THIN_WALLED,
-                PrimitivePacking.packFlags(false, false, true, true, false));
+                PrimitivePacking.packFlags(false, false, true, true, false, false));
         assertEquals(
                 PrimitivePacking.FLAG_TRANSMISSIVE | PrimitivePacking.FLAG_WATER,
-                PrimitivePacking.packFlags(false, false, true, false, true));
+                PrimitivePacking.packFlags(false, false, true, false, true, false));
+        assertEquals(
+                PrimitivePacking.FLAG_CUTOUT
+                        | PrimitivePacking.FLAG_THIN_WALLED
+                        | PrimitivePacking.FLAG_FOLIAGE,
+                PrimitivePacking.packFlags(true, false, false, true, false, true));
         assertThrows(
                 IllegalArgumentException.class,
-                () -> PrimitivePacking.packFlags(false, false, false, true, false));
+                () -> PrimitivePacking.packFlags(false, false, false, true, false, false));
         assertThrows(
                 IllegalArgumentException.class,
-                () -> PrimitivePacking.packFlags(false, false, true, true, true));
+                () -> PrimitivePacking.packFlags(false, false, true, true, true, false));
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> PrimitivePacking.packFlags(false, false, false, true, false, true));
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> PrimitivePacking.packFlags(true, false, true, true, false, true));
     }
 
     @Test

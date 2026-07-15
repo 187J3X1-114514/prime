@@ -9,6 +9,7 @@ const uint PRIME_MATERIAL_FLAG_ANIMATED_TEXTURE = 2u;
 const uint PRIME_MATERIAL_FLAG_TRANSMISSIVE = 4u;
 const uint PRIME_MATERIAL_FLAG_THIN_WALLED = 8u;
 const uint PRIME_MATERIAL_FLAG_WATER = 16u;
+const uint PRIME_MATERIAL_FLAG_FOLIAGE = 32u;
 
 const float PRIME_DEFAULT_DIELECTRIC_F0 = 0.04;
 const float PRIME_DEFAULT_MIN_LINEAR_ROUGHNESS = 0.70;
@@ -29,6 +30,10 @@ bool primeMaterialIsTransmissive(uint flags) {
     return (flags & PRIME_MATERIAL_FLAG_TRANSMISSIVE) != 0u;
 }
 
+bool primeMaterialIsFoliage(uint flags) {
+    return (flags & PRIME_MATERIAL_FLAG_FOLIAGE) != 0u;
+}
+
 float primeMaterialLinearRoughness(vec3 baseColor, uint flags) {
     if ((flags & PRIME_MATERIAL_FLAG_WATER) != 0u) {
         return 0.02;
@@ -45,7 +50,7 @@ float primeMaterialDielectricF0(uint flags) {
 }
 
 float primeFsrTransparencyAndCompositionMask(uint flags, float linearRoughness) {
-    if (primeMaterialIsTransmissive(flags)) {
+    if (primeMaterialIsTransmissive(flags) || primeMaterialIsFoliage(flags)) {
         return 1.0;
     }
     float animated = (flags & PRIME_MATERIAL_FLAG_ANIMATED_TEXTURE) != 0u ? 0.75 : 0.0;

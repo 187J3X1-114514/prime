@@ -6,6 +6,7 @@ public final class PrimitivePacking {
     public static final int FLAG_TRANSMISSIVE = 1 << 2;
     public static final int FLAG_THIN_WALLED = 1 << 3;
     public static final int FLAG_WATER = 1 << 4;
+    public static final int FLAG_FOLIAGE = 1 << 5;
 
     private PrimitivePacking() {
     }
@@ -25,7 +26,7 @@ public final class PrimitivePacking {
     }
 
     public static int packFlags(boolean cutout, boolean animatedTexture) {
-        return packFlags(cutout, animatedTexture, false, false, false);
+        return packFlags(cutout, animatedTexture, false, false, false, false);
     }
 
     public static int packFlags(
@@ -33,9 +34,15 @@ public final class PrimitivePacking {
             boolean animatedTexture,
             boolean transmissive,
             boolean thinWalled,
-            boolean water) {
-        if (thinWalled && !transmissive) {
-            throw new IllegalArgumentException("Only transmissive primitives may be thin-walled");
+            boolean water,
+            boolean foliage) {
+        if (foliage && (!cutout || !thinWalled || transmissive || water)) {
+            throw new IllegalArgumentException(
+                    "Foliage must be a cutout, non-volume thin-walled primitive");
+        }
+        if (thinWalled && !transmissive && !foliage) {
+            throw new IllegalArgumentException(
+                    "Only transmissive or foliage primitives may be thin-walled");
         }
         if (water && (!transmissive || thinWalled)) {
             throw new IllegalArgumentException("Water must be a solid transmissive medium");
@@ -44,7 +51,8 @@ public final class PrimitivePacking {
                 | (animatedTexture ? FLAG_ANIMATED_TEXTURE : 0)
                 | (transmissive ? FLAG_TRANSMISSIVE : 0)
                 | (thinWalled ? FLAG_THIN_WALLED : 0)
-                | (water ? FLAG_WATER : 0);
+                | (water ? FLAG_WATER : 0)
+                | (foliage ? FLAG_FOLIAGE : 0);
     }
 
     public static int packOctahedralNormal(float x, float y, float z) {

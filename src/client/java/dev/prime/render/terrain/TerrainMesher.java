@@ -19,7 +19,9 @@ import net.minecraft.client.resources.model.geometry.BakedQuad;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.BlockPos.MutableBlockPos;
 import net.minecraft.core.Direction;
+import net.minecraft.tags.BlockTags;
 import net.minecraft.tags.FluidTags;
+import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.RenderShape;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.material.FluidState;
@@ -90,7 +92,10 @@ public final class TerrainMesher {
                             localY,
                             localZ,
                             state.getLightEmission(),
-                            state.getCollisionShape(region, position).isEmpty());
+                            state.getCollisionShape(region, position).isEmpty(),
+                            state.is(BlockTags.LEAVES)
+                                    || state.getBlock() == Blocks.SHORT_GRASS
+                                    || state.getBlock() == Blocks.TALL_GRASS);
                     try {
                         renderer.tesselateBlock(
                                 capture,
@@ -141,6 +146,7 @@ public final class TerrainMesher {
             boolean transmissive,
             boolean thinWalled,
             boolean water,
+            boolean foliage,
             int lightEmission,
             TextureAtlasSprite sprite) {
         int firstIndex = indices[0];
@@ -208,7 +214,7 @@ public final class TerrainMesher {
                 normalY * inverseLength,
                 normalZ * inverseLength));
         destination.primitives.add(PrimitivePacking.packFlags(
-                cutout, animated, transmissive, thinWalled, water));
+                cutout, animated, transmissive, thinWalled, water, foliage));
         destination.primitives.add(lights.addTriangle(
                 firstX,
                 firstY,
@@ -242,6 +248,7 @@ public final class TerrainMesher {
         private int localZ;
         private int blockLightEmission;
         private boolean thinWalled;
+        private boolean foliage;
 
         private QuadCapture(
                 MeshBuilder opaque,
@@ -254,23 +261,35 @@ public final class TerrainMesher {
             this.tints = tints;
         }
 
-        private void setBlock(int x, int y, int z, int lightEmission, boolean thinWalled) {
+        private void setBlock(
+                int x,
+                int y,
+                int z,
+                int lightEmission,
+                boolean thinWalled,
+                boolean foliage) {
             this.localX = x;
             this.localY = y;
             this.localZ = z;
             this.blockLightEmission = lightEmission;
             this.thinWalled = thinWalled;
+            this.foliage = foliage;
         }
 
         @Override
         public void put(float x, float y, float z, BakedQuad quad, QuadInstance instance) {
             ChunkSectionLayer layer = quad.materialInfo().layer();
-            boolean cutout = layer == ChunkSectionLayer.CUTOUT;
+            // Leaves can become SOLID under vanilla's fast-leaves setting, but Prime's foliage
+            // material always needs alpha-tested coverage before its thin-wall BSDF is evaluated.
+            boolean foliage = this.foliage;
+            boolean cutout = layer == ChunkSectionLayer.CUTOUT || foliage;
             boolean transmissive = layer == ChunkSectionLayer.TRANSLUCENT;
             // A pane has a narrow but real collision volume, so it must enter and later leave the
             // medium stack. Reserve the thin-wall closure for truly zero-volume model geometry.
             boolean thinWalled = transmissive && this.thinWalled;
-            MeshBuilder destination = layer == ChunkSectionLayer.SOLID ? this.opaque : this.nonOpaque;
+            MeshBuilder destination = layer == ChunkSectionLayer.SOLID && !foliage
+                    ? this.opaque
+                    : this.nonOpaque;
             int tint = quad.materialInfo().tintIndex() < 0
                     ? -1
                     : this.tints.color(this.localX, this.localY, this.localZ, quad.materialInfo().tintIndex());
@@ -299,8 +318,9 @@ public final class TerrainMesher {
                     cutout,
                     animated,
                     transmissive,
-                    thinWalled,
+                    thinWalled || foliage,
                     false,
+                    foliage,
                     lightEmission,
                     sprite);
             emitTriangle(
@@ -312,8 +332,9 @@ public final class TerrainMesher {
                     cutout,
                     animated,
                     transmissive,
-                    thinWalled,
+                    thinWalled || foliage,
                     false,
+                    foliage,
                     lightEmission,
                     sprite);
         }
@@ -485,6 +506,7 @@ public final class TerrainMesher {
                     this.transmissive,
                     false,
                     this.water,
+                    false,
                     this.lightEmission,
                     sprite);
             emitTriangle(
@@ -498,6 +520,7 @@ public final class TerrainMesher {
                     this.transmissive,
                     false,
                     this.water,
+                    false,
                     this.lightEmission,
                     sprite);
         }

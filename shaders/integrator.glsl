@@ -128,8 +128,9 @@ PrimeDirectLightingSplit primeEvaluateVisibleDirectSplit(
     result.diffuse = vec3(0.0);
     result.specular = vec3(0.0);
     bool transmissive = primeMaterialIsTransmissive(surface.materialFlags);
+    bool foliage = primeMaterialIsFoliage(surface.materialFlags);
     vec3 shadingNormal = primeSurfaceShadingNormal(surface, viewDirection);
-    float cosine = transmissive
+    float cosine = transmissive || foliage
             ? abs(dot(surface.geometricNormal, light.direction))
             : max(dot(shadingNormal, light.direction), 0.0);
     if (cosine <= 0.0 || light.pdf <= 0.0
@@ -150,6 +151,22 @@ PrimeDirectLightingSplit primeEvaluateVisibleDirectSplit(
                 volumeStack);
         float misWeight = primePowerHeuristic(light.pdf, evaluation.pdf);
         result.specular = lightRadiance
+                * evaluation.value * (cosine * misWeight / light.pdf);
+        return result;
+    }
+    if (foliage) {
+        // The foliage closure contains both the dominant rough surface response and its small
+        // thin-wall transmission term. Treat the combined high-roughness signal as diffuse for
+        // the primary NRD split; sampled indirect events still retain their exact lobe flags.
+        BsdfEvaluation evaluation = primeEvaluateMinecraftFoliage(
+                surface.baseColor,
+                surface.geometricNormal,
+                viewDirection,
+                light.direction,
+                0.0,
+                volumeStack);
+        float misWeight = primePowerHeuristic(light.pdf, evaluation.pdf);
+        result.diffuse = lightRadiance
                 * evaluation.value * (cosine * misWeight / light.pdf);
         return result;
     }
@@ -176,6 +193,7 @@ bool primeDirectSampleVisible(
     vec3 shadingNormal = primeSurfaceShadingNormal(surface, viewDirection);
     return light.pdf > 0.0
             && (primeMaterialIsTransmissive(surface.materialFlags)
+                    || primeMaterialIsFoliage(surface.materialFlags)
                     || dot(shadingNormal, light.direction) > 0.0)
             && primeVisible(surface.position, surface.geometricNormal, light);
 }
@@ -409,7 +427,18 @@ PrimeIntegrationResult primeIntegrate(PathState path, IntegratorRecord integrato
         }
 
         BsdfSample bsdf;
-        if (primeMaterialIsTransmissive(surface.materialFlags)) {
+        if (primeMaterialIsFoliage(surface.materialFlags)) {
+            bsdf = primeSampleMinecraftFoliage(
+                    surface.baseColor,
+                    surface.geometricNormal,
+                    viewDirection,
+                    scatterSample,
+                    surface.t,
+                    volumeStack);
+            if (path.bounce == 0u) {
+                diffusePath = (bsdf.eventFlags & PRIME_BSDF_EVENT_DIFFUSE) != 0u;
+            }
+        } else if (primeMaterialIsTransmissive(surface.materialFlags)) {
             PrimeTransmissiveBsdfSample transmitted = primeSampleMinecraftTransmission(
                     surface.baseColor,
                     primeSurfaceOpacity(surface),

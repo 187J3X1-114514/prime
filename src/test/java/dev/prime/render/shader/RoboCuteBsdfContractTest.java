@@ -118,6 +118,12 @@ final class RoboCuteBsdfContractTest {
                 "PRIME_RC_TRANSMISSION_GGX_BINDING PRIME_DESCRIPTOR_TRANSMISSION_GGX_ENERGY"));
         assertTrue(adapter.contains("primeRcTransmissionEvaluate"));
         assertTrue(adapter.contains("primeRcTransmissionSample"));
+        assertTrue(adapter.contains("primeMinecraftMirrorSplit"));
+        assertTrue(adapter.contains("primeRcMicrofacetDirectionalAlbedoTransmission"));
+        assertTrue(adapter.contains("state.samplingFlags = PRIME_RC_FLAG_TRANSMISSION"));
+        assertTrue(adapter.contains("reflect(-viewDirection, outwardNormal)"));
+        assertTrue(adapter.contains(
+                "result.bsdfSample.eventFlags = PRIME_BSDF_EVENT_REFLECTION"));
         assertTrue(adapter.contains("result.volumeStack = sampled.volumeStack"));
         assertTrue(adapter.contains("primeCameraWaterVolumeStack"));
         assertTrue(integrator.contains("PrimeRcVolumeStack volumeStack"));

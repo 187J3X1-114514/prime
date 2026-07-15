@@ -328,7 +328,13 @@ PrimeRcMaterial primeMinecraftTransmissionMaterial(
         uint materialFlags) {
     bool water = (materialFlags & PRIME_MATERIAL_FLAG_WATER) != 0u;
     bool thinWalled = (materialFlags & PRIME_MATERIAL_FLAG_THIN_WALLED) != 0u;
-    float roughness = primeMaterialLinearRoughness(baseColor, materialFlags);
+    // A true zero-volume sheet represents both interfaces at one path vertex and therefore uses
+    // RoboCute's exact smooth thin-wall series. Closed glass/water volumes keep their authored
+    // transmission roughness; their reflected directional energy is remapped to a separate delta
+    // mirror below instead of being emitted as a rough highlight.
+    float roughness = thinWalled
+            ? 0.0
+            : primeMaterialLinearRoughness(baseColor, materialFlags);
     PrimeRcMaterial material = primeRcMaterialFromMetallic(
             vec3(1.0), roughness, 0.0, outwardNormal);
     material.weight.transmission = 1.0;
@@ -346,7 +352,7 @@ PrimeRcMaterial primeMinecraftTransmissionMaterial(
     material.transmission.color = transmissionColor;
     // One block is the authored depth for solid glass-like models. Water uses a longer artistic
     // reference depth so vanilla biome tint remains visible without becoming opaque after a few
-    // cells. Thin panes use the closure's explicit zero-depth surface tint path.
+    // cells. True zero-volume surfaces use the closure's explicit zero-depth tint path.
     material.transmission.depth = thinWalled ? 0.0 : (water ? 8.0 : 1.0);
     material.transmission.scatter = vec3(0.0);
     material.transmission.scatterAnisotropy = 0.0;
@@ -399,8 +405,12 @@ PrimeRcState primeMinecraftTransmissionState(
         vec3 viewDirection,
         float rayT,
         PrimeRcVolumeStack volumeStack) {
+    bool thinWalled = (materialFlags & PRIME_MATERIAL_FLAG_THIN_WALLED) != 0u;
+    vec3 closureNormal = thinWalled && dot(outwardNormal, viewDirection) < 0.0
+            ? -outwardNormal
+            : outwardNormal;
     PrimeRcMaterial material = primeMinecraftTransmissionMaterial(
-            baseColor, opacity, outwardNormal, materialFlags);
+            baseColor, opacity, closureNormal, materialFlags);
     vec3 localView = primeRcOnbToLocal(material.geometry.onb, viewDirection);
     float inverseOutsideIor = primeRcInverseOutsideIor(localView.z, volumeStack);
     return primeRcTransmissionStateInit(
@@ -411,6 +421,29 @@ PrimeRcState primeMinecraftTransmissionState(
             0u,
             PRIME_RC_DETAIL_DEFAULT,
             0u);
+}
+
+struct PrimeMinecraftMirrorSplit {
+    vec3 reflectance;
+    float probability;
+};
+
+PrimeMinecraftMirrorSplit primeMinecraftMirrorSplit(
+        vec3 localView,
+        PrimeRcState state) {
+    PrimeMinecraftMirrorSplit result;
+    vec2 directionalEnergy = primeRcMicrofacetDirectionalAlbedoTransmission(
+            state.specularMicrofacet,
+            localView.z,
+            state.specularFresnel.ior);
+    float resolvedEnergy = max(primeRcReduceSum(directionalEnergy), PRIME_BSDF_EPSILON);
+    float reflectedFraction = clamp(directionalEnergy.x / resolvedEnergy, 0.0, 1.0);
+    // The default Minecraft adapter keeps dielectric reflection achromatic. Retaining the color
+    // term here makes the split remain correct if a future material decoder tints the interface.
+    result.reflectance = reflectedFraction * state.specularFresnel.color;
+    result.probability = clamp(
+            primeRcSpectrumToWeight(result.reflectance), 0.0, 1.0);
+    return result;
 }
 
 BsdfEvaluation primeEvaluateMinecraftTransmission(
@@ -432,13 +465,23 @@ BsdfEvaluation primeEvaluateMinecraftTransmission(
             volumeStack);
     vec3 localView = primeRcOnbToLocal(state.material.geometry.onb, viewDirection);
     vec3 localScatter = primeRcOnbToLocal(state.material.geometry.onb, scatterDirection);
+    if (state.geometryThinWalled == 0u && localView.z * localScatter.z >= 0.0) {
+        // Closed-volume reflection is a delta lobe and has no finite solid-angle evaluation.
+        return primeInvalidBsdfEvaluation();
+    }
+    PrimeMinecraftMirrorSplit mirror = primeMinecraftMirrorSplit(localView, state);
+    if (state.geometryThinWalled == 0u) {
+        state.samplingFlags = PRIME_RC_FLAG_TRANSMISSION;
+    }
     PrimeRcEval evaluation = primeRcTransmissionEvaluate(localView, localScatter, state);
     BsdfEvaluation result = primeInvalidBsdfEvaluation();
     float cosine = abs(localScatter.z);
     if (evaluation.pdf > 0.0 && cosine > PRIME_BSDF_EPSILON
             && evaluation.throughput.flags != PRIME_RC_FLAG_NONE) {
         result.value = evaluation.throughput.value / cosine;
-        result.pdf = evaluation.pdf;
+        result.pdf = evaluation.pdf * (state.geometryThinWalled == 0u
+                ? 1.0 - mirror.probability
+                : 1.0);
     }
     return result;
 }
@@ -464,16 +507,42 @@ PrimeTransmissiveBsdfSample primeSampleMinecraftTransmission(
             rayT,
             volumeStack);
     vec3 localView = primeRcOnbToLocal(state.material.geometry.onb, viewDirection);
+    PrimeMinecraftMirrorSplit mirror = primeMinecraftMirrorSplit(localView, state);
+    if (state.geometryThinWalled == 0u && sampleValue.z < mirror.probability) {
+        result.bsdfSample.direction = reflect(-viewDirection, outwardNormal);
+        result.bsdfSample.weight = mirror.reflectance
+                / max(mirror.probability, PRIME_BSDF_EPSILON);
+        result.bsdfSample.pdf = mirror.probability;
+        result.bsdfSample.relativeEta = 1.0;
+        result.bsdfSample.eventFlags = PRIME_BSDF_EVENT_REFLECTION
+                | PRIME_BSDF_EVENT_DELTA;
+        return result;
+    }
+    float transmissionProbability = state.geometryThinWalled == 0u
+            ? 1.0 - mirror.probability
+            : 1.0;
+    if (transmissionProbability <= PRIME_BSDF_EPSILON) {
+        return result;
+    }
+    vec3 transmissionSample = sampleValue;
+    if (state.geometryThinWalled == 0u) {
+        state.samplingFlags = PRIME_RC_FLAG_TRANSMISSION;
+        transmissionSample.z = clamp(
+                (sampleValue.z - mirror.probability) / transmissionProbability,
+                0.0,
+                0.99999994);
+    }
     PrimeRcSampleResult sampled = primeRcTransmissionSample(
-            localView, sampleValue, state, volumeStack);
+            localView, transmissionSample, state, volumeStack);
     if (sampled.bsdfSample.pdf <= 0.0
             || sampled.bsdfSample.throughput.flags == PRIME_RC_FLAG_NONE) {
         return result;
     }
     result.bsdfSample.direction = primeRcOnbToWorld(
             state.material.geometry.onb, sampled.bsdfSample.wo);
-    result.bsdfSample.weight = sampled.bsdfSample.throughput.value / sampled.bsdfSample.pdf;
-    result.bsdfSample.pdf = sampled.bsdfSample.pdf;
+    result.bsdfSample.weight = sampled.bsdfSample.throughput.value
+            / (sampled.bsdfSample.pdf * transmissionProbability);
+    result.bsdfSample.pdf = sampled.bsdfSample.pdf * transmissionProbability;
     result.bsdfSample.relativeEta = 1.0;
     result.bsdfSample.eventFlags = primeRcToBsdfEventFlags(
             sampled.bsdfSample.throughput.flags);

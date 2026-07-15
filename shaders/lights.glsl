@@ -11,6 +11,16 @@ struct LightSample {
     uint isDelta;
 };
 
+// Area-light geometry selection is deliberately separate from radiance resolution. Most sampled
+// lights are occluded in dense terrain; retaining only stable indices and UVs across traceRayEXT
+// avoids both an atlas read and live emitter state until the visibility test succeeds.
+struct AreaLightSample {
+    LightSample light;
+    uint sectionIndex;
+    uint emitterIndex;
+    vec2 uv;
+};
+
 struct LightEvaluation {
     vec3 radiance;
     float pdf;
@@ -59,6 +69,13 @@ vec3 primeSunRadiance(
             * primeAtmosphereSunTransmittance(surfacePosition, direction);
 }
 
+vec3 primeResolveSampledSunRadiance(
+        IntegratorRecord integrator,
+        vec3 surfacePosition,
+        LightSample light) {
+    return primeSunRadiance(integrator, surfacePosition, light.direction);
+}
+
 LightEvaluation primeEvaluateSun(
         IntegratorRecord integrator,
         vec3 surfacePosition,
@@ -85,7 +102,8 @@ LightSample primeSampleSun(
             localDirection,
             normalize(integrator.sunDirectionIntensity.xyz));
     result.distance = 1000000.0;
-    result.radiance = primeSunRadiance(integrator, surfacePosition, result.direction);
+    // Visibility must be known before evaluating the atmosphere transmittance.
+    result.radiance = vec3(0.0);
     result.pdf = primeSunPdf();
     result.isDelta = 0u;
     return result;
@@ -111,13 +129,16 @@ LightTreePick primeInvalidLightTreePick() {
     return result;
 }
 
-LightSample primeInvalidAreaLightSample() {
-    LightSample result;
-    result.direction = vec3(0.0, 1.0, 0.0);
-    result.distance = 0.0;
-    result.radiance = vec3(0.0);
-    result.pdf = 0.0;
-    result.isDelta = 0u;
+AreaLightSample primeInvalidAreaLightSample() {
+    AreaLightSample result;
+    result.light.direction = vec3(0.0, 1.0, 0.0);
+    result.light.distance = 0.0;
+    result.light.radiance = vec3(0.0);
+    result.light.pdf = 0.0;
+    result.light.isDelta = 0u;
+    result.sectionIndex = PRIME_NO_LIGHT_INDEX;
+    result.emitterIndex = PRIME_NO_LIGHT_INDEX;
+    result.uv = vec2(0.0);
     return result;
 }
 
@@ -289,7 +310,7 @@ float primeAreaSolidAnglePdf(
     return areaPdf * distanceSquared / lightCosine;
 }
 
-LightSample primeSampleAreaLight(
+AreaLightSample primeSampleAreaLight(
         vec3 surfacePosition,
         vec3 treeSample,
         vec2 positionSample) {
@@ -365,14 +386,36 @@ LightSample primeSampleAreaLight(
         return primeInvalidAreaLightSample();
     }
 
-    LightSample result;
-    result.direction = direction;
-    result.distance = max(distance - 0.002, 0.0);
-    result.radiance = primeEvaluateEmitterRadiance(
-            emitter, primeEmitterUv(emitter, parentBarycentric));
-    result.pdf = pdf;
-    result.isDelta = 0u;
+    AreaLightSample result;
+    result.light.direction = direction;
+    result.light.distance = max(distance - 0.002, 0.0);
+    result.light.radiance = vec3(0.0);
+    result.light.pdf = pdf;
+    result.light.isDelta = 0u;
+    result.sectionIndex = worldPick.leaf;
+    result.emitterIndex = sectionPick.leaf;
+    result.uv = primeEmitterUv(emitter, parentBarycentric);
     return result;
+}
+
+vec3 primeResolveSampledAreaLightRadiance(AreaLightSample areaSample) {
+    if (areaSample.sectionIndex == PRIME_NO_LIGHT_INDEX
+            || areaSample.emitterIndex == PRIME_NO_LIGHT_INDEX) {
+        return vec3(0.0);
+    }
+    SectionTable sections = SectionTable(primePush.sectionTableAddress);
+    SectionRecord section = sections.sections[areaSample.sectionIndex];
+    if (section.lightAddress == uint64_t(0)) {
+        return vec3(0.0);
+    }
+    SectionLightHeaderBuffer sectionBuffer = SectionLightHeaderBuffer(section.lightAddress);
+    SectionLightHeader header = sectionBuffer.header;
+    if (areaSample.emitterIndex >= header.emitterCount) {
+        return vec3(0.0);
+    }
+    LightEmitterBuffer emitters = LightEmitterBuffer(header.emitterAddress);
+    return primeEvaluateEmitterRadiance(
+            emitters.emitters[areaSample.emitterIndex], areaSample.uv);
 }
 
 LightEvaluation primeEvaluateAreaLight(

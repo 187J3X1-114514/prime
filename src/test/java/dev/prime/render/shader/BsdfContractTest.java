@@ -122,6 +122,7 @@ final class BsdfContractTest {
         String subsurface = Files.readString(shaderRoot.resolve("bsdf_subsurface.glsl"));
         String emission = Files.readString(shaderRoot.resolve("bsdf_emission.glsl"));
         String composition = Files.readString(shaderRoot.resolve("bsdf.glsl"));
+        String defaults = Files.readString(shaderRoot.resolve("default_material.glsl"));
 
         assertClosurePair(diffuse, "DiffuseReflection");
         assertClosurePair(diffuse, "DiffuseTransmission");
@@ -137,8 +138,8 @@ final class BsdfContractTest {
         assertTrue(emission.contains("primeSampleDiffuseEmission"));
         assertTrue(microfacet.contains("alpha=(1-smoothness)^2"));
         assertTrue(microfacet.contains("btdf /= etaPath * etaPath"));
-        assertTrue(composition.contains("PRIME_DEFAULT_DIELECTRIC_F0 = 0.04"));
-        assertTrue(composition.contains("PRIME_REC2020_LUMINANCE = vec3(0.2627, 0.6780, 0.0593)"));
+        assertTrue(defaults.contains("PRIME_DEFAULT_DIELECTRIC_F0 = 0.04"));
+        assertTrue(defaults.contains("PRIME_REC2020_LUMINANCE = vec3(0.2627, 0.6780, 0.0593)"));
         assertTrue(composition.contains("primeDefaultReflectiveDirectionalEnergyFit"));
         assertTrue(composition.contains("primeEvaluateDefaultBsdf"));
         assertTrue(composition.contains("primeSampleDefaultBsdf"));

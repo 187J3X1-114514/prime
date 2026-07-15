@@ -2,6 +2,7 @@
 #define PRIME_MATERIAL_GLSL
 
 #include "color_space.glsl"
+#include "default_material.glsl"
 
 // Minimal Minecraft adapter. The integrator consumes only this result, so future material
 // models can replace atlas/tint decoding without changing path scheduling or traversal.
@@ -10,21 +11,6 @@ struct MaterialEvaluation {
     float opacity;
     uint flags;
 };
-
-// These bits are part of PrimitiveRecord's generated ABI. Cutout is geometric coverage and does
-// not by itself require an FSR reactive mask. Animated atlas content cannot be explained by the
-// motion field, so it receives the softer transparency-and-composition treatment instead.
-const uint PRIME_MATERIAL_FLAG_CUTOUT = 1u;
-const uint PRIME_MATERIAL_FLAG_ANIMATED_TEXTURE = 2u;
-
-float primeFsrTransparencyAndCompositionMask(uint flags, float linearRoughness) {
-    float animated = (flags & PRIME_MATERIAL_FLAG_ANIMATED_TEXTURE) != 0u ? 0.75 : 0.0;
-    // Reserved for the smooth reflective materials introduced by the future LabPBR decoder. The
-    // default Minecraft roughness range is 0.7..0.9, so ordinary terrain correctly evaluates to
-    // zero and does not lose temporal stability.
-    float hardToTrackReflection = 0.5 * (1.0 - smoothstep(0.20, 0.45, linearRoughness));
-    return max(animated, hardToTrackReflection);
-}
 
 vec3 primeAtlasBaseColor(uint packedTint, vec2 uv, float textureLodValue, out float opacity) {
     vec4 textureSample = textureLod(primeBlockAtlas, uv, textureLodValue);

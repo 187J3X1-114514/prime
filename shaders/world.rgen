@@ -63,57 +63,23 @@ void main() {
     path.rayDirection = normalize(farPoint.xyz / farPoint.w - nearPoint.xyz / nearPoint.w);
 
     PrimeIntegrationResult sampleResult = primeIntegrate(path, integrator);
-    vec4 centerNear = primePush.inverseViewProjection * vec4(0.0, 0.0, 1.0, 1.0);
-    vec4 centerFar = primePush.inverseViewProjection * vec4(0.0, 0.0, 0.0, 1.0);
-    vec3 cameraForward = normalize(
-            centerFar.xyz / centerFar.w - centerNear.xyz / centerNear.w);
-    float viewZ = sampleResult.primaryDistance < 0.0
-            ? PRIME_NRD_FP16_MAX
-            : sampleResult.primaryDistance * dot(path.rayDirection, cameraForward);
-    vec3 diffuseMaterialFactor = vec3(1.0);
-    vec3 specularMaterialFactor = vec3(1.0);
-    float primaryLinearRoughness = PRIME_DEFAULT_REFERENCE_LINEAR_ROUGHNESS;
-    if (sampleResult.primaryHitKind != PRIME_HIT_NONE) {
-        primaryLinearRoughness = primeDefaultLinearRoughness(
-                sampleResult.primaryBaseColor);
-        primeNrdMaterialFactors(
-                sampleResult.primaryNormal,
-                -path.rayDirection,
-                sampleResult.primaryBaseColor,
-                vec3(PRIME_DEFAULT_DIELECTRIC_F0),
-                primaryLinearRoughness,
-                diffuseMaterialFactor,
-                specularMaterialFactor);
-    }
-    vec3 demodulatedDiffuse = sampleResult.diffuseRadiance / diffuseMaterialFactor;
-    vec3 demodulatedSpecular = sampleResult.specularRadiance / specularMaterialFactor;
-    float normalizedDiffuseHitDistance = sampleResult.diffuseHitDistance <= 0.0
-            ? 0.0
-            : primeNrdNormalizedHitDistance(
-                    sampleResult.diffuseHitDistance, viewZ, 1.0);
-    float normalizedSpecularHitDistance = sampleResult.specularHitDistance <= 0.0
-            ? 0.0
-            : primeNrdNormalizedHitDistance(
-                    sampleResult.specularHitDistance,
-                    viewZ,
-                    primaryLinearRoughness);
-
+    // These four images are a private raygen -> NRD-preparation scratch contract. Keeping raw
+    // radiance, hit distance and primary material data here removes demodulation, YCoCg packing,
+    // guide construction and FSR mask work from the register-heavy ray-generation shader. The
+    // existing ray-tracing-to-compute barrier makes every write visible before nrd_motion.comp
+    // converts the images in place to their public NRD meanings.
     imageStore(
             primeNrdNoisyDiffuse,
             ivec2(pixel),
-            primeNrdPackRadianceAndHitDistance(
-                    demodulatedDiffuse, normalizedDiffuseHitDistance));
+            vec4(
+                    primeNrdSanitizeRadiance(sampleResult.diffuseRadiance),
+                    sampleResult.diffuseHitDistance));
     imageStore(
             primeNrdNoisySpecular,
             ivec2(pixel),
-            primeNrdPackRadianceAndHitDistance(
-                    demodulatedSpecular, normalizedSpecularHitDistance));
-    imageStore(
-            primeNrdNormalRoughness,
-            ivec2(pixel),
-            primeNrdPackNormalRoughness(
-                    sampleResult.primaryNormal, primaryLinearRoughness));
-    imageStore(primeNrdViewZ, ivec2(pixel), vec4(viewZ, 0.0, 0.0, 0.0));
+            vec4(
+                    primeNrdSanitizeRadiance(sampleResult.specularRadiance),
+                    sampleResult.specularHitDistance));
     // Diagnostic-only exact primary hit relative to the effective camera pinhole. Keeping this
     // separate from view-Z reconstruction lets the reprojection probe detect a self-consistent
     // but wrong camera transform instead of repeating the motion generator's assumptions.
@@ -128,15 +94,11 @@ void main() {
     imageStore(
             primeNrdMaterial,
             ivec2(pixel),
-            vec4(diffuseMaterialFactor, sampleResult.primaryDistance));
+            vec4(sampleResult.primaryBaseColor, sampleResult.primaryDistance));
     imageStore(
             primeNrdSpecularMaterial,
             ivec2(pixel),
-            vec4(
-                    specularMaterialFactor,
-                    primeFsrTransparencyAndCompositionMask(
-                            sampleResult.primaryMaterialFlags,
-                            primaryLinearRoughness)));
+            vec4(sampleResult.primaryNormal, float(sampleResult.primaryMaterialFlags)));
 
     // Directly visible sky/emission is a current-frame deterministic signal. FSR owns temporal
     // coverage reconstruction, so averaging a second independent history here would create stale

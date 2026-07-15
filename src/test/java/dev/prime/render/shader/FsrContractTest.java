@@ -39,7 +39,7 @@ final class FsrContractTest {
 
     @Test
     void semanticMasksDoNotMisclassifyOpaqueOrCutoutTerrain() throws Exception {
-        String material = Files.readString(Path.of("shaders/material.glsl"));
+        String material = Files.readString(Path.of("shaders/default_material.glsl"));
         String composite = Files.readString(Path.of("shaders/nrd_composite.comp"));
         assertTrue(material.contains("PRIME_MATERIAL_FLAG_ANIMATED_TEXTURE"));
         assertTrue(material.contains("primeFsrTransparencyAndCompositionMask"));

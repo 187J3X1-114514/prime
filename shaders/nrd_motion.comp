@@ -1,12 +1,21 @@
 #version 460
+#extension GL_GOOGLE_include_directive : require
+
+#include "default_material.glsl"
+#include "nrd_common.glsl"
 
 layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
 
 layout(set = 0, binding = 0, rgba16f) uniform writeonly image2D primeMotion;
-layout(set = 0, binding = 1, r32f) uniform readonly image2D primeViewZ;
+layout(set = 0, binding = 1, r32f) uniform image2D primeViewZ;
 layout(set = 0, binding = 2, rgba32f) uniform readonly image2D primePrimaryPosition;
 layout(set = 0, binding = 3, rgba16f) uniform writeonly image2D primeReprojectionError;
 layout(set = 0, binding = 4, r32f) uniform writeonly image2D primeFsrDepth;
+layout(set = 0, binding = 5, rgba16f) uniform image2D primeNoisyDiffuse;
+layout(set = 0, binding = 6, rgba16f) uniform image2D primeNoisySpecular;
+layout(set = 0, binding = 7, rgb10_a2) uniform writeonly image2D primeNormalRoughness;
+layout(set = 0, binding = 8, rgba16f) uniform image2D primeMaterial;
+layout(set = 0, binding = 9, rgba16f) uniform image2D primeSpecularMaterial;
 
 layout(push_constant) uniform PrimeMotionPushConstants {
     mat4 currentClipToWorld;
@@ -33,7 +42,79 @@ void main() {
         return;
     }
 
-    float currentViewZ = imageLoad(primeViewZ, pixel).x;
+    // Raygen leaves raw signals in the eventual NRD images. Resolve the primary guide and convert
+    // them in place before motion generation. This pass is separated from raygen specifically to
+    // shorten the maximum live range in the mega-kernel; its output encoding remains the exact
+    // immutable NRD contract consumed by all following dispatches.
+    vec4 primary = imageLoad(primePrimaryPosition, pixel);
+    vec4 rawMaterial = imageLoad(primeMaterial, pixel);
+    vec4 rawSpecularMaterial = imageLoad(primeSpecularMaterial, pixel);
+    float primaryDistance = rawMaterial.a;
+    vec3 primaryNormal = primaryDistance < 0.0
+            ? vec3(0.0, 0.0, 1.0)
+            : normalize(rawSpecularMaterial.rgb);
+    float primaryLinearRoughness = primaryDistance < 0.0
+            ? PRIME_DEFAULT_REFERENCE_LINEAR_ROUGHNESS
+            : primeDefaultLinearRoughness(rawMaterial.rgb);
+    vec3 diffuseMaterialFactor = vec3(1.0);
+    vec3 specularMaterialFactor = vec3(1.0);
+    float currentViewZ = PRIME_MOTION_SKY_VIEW_Z;
+    if (primaryDistance >= 0.0) {
+        vec3 tracedRayDirection = dot(primary.xyz, primary.xyz) > 1.0e-12
+                ? normalize(primary.xyz)
+                : primeMotionRayDirection(
+                        (vec2(pixel) + vec2(0.5)) / vec2(extent));
+        vec3 cameraForward = primeMotionRayDirection(vec2(0.5));
+        currentViewZ = primaryDistance * dot(tracedRayDirection, cameraForward);
+        primeNrdMaterialFactors(
+                primaryNormal,
+                -tracedRayDirection,
+                rawMaterial.rgb,
+                vec3(PRIME_DEFAULT_DIELECTRIC_F0),
+                primaryLinearRoughness,
+                diffuseMaterialFactor,
+                specularMaterialFactor);
+    }
+
+    vec4 rawDiffuse = imageLoad(primeNoisyDiffuse, pixel);
+    vec4 rawSpecular = imageLoad(primeNoisySpecular, pixel);
+    float normalizedDiffuseHitDistance = rawDiffuse.a <= 0.0
+            ? 0.0
+            : primeNrdNormalizedHitDistance(rawDiffuse.a, currentViewZ, 1.0);
+    float normalizedSpecularHitDistance = rawSpecular.a <= 0.0
+            ? 0.0
+            : primeNrdNormalizedHitDistance(
+                    rawSpecular.a, currentViewZ, primaryLinearRoughness);
+    imageStore(
+            primeNoisyDiffuse,
+            pixel,
+            primeNrdPackRadianceAndHitDistance(
+                    rawDiffuse.rgb / diffuseMaterialFactor,
+                    normalizedDiffuseHitDistance));
+    imageStore(
+            primeNoisySpecular,
+            pixel,
+            primeNrdPackRadianceAndHitDistance(
+                    rawSpecular.rgb / specularMaterialFactor,
+                    normalizedSpecularHitDistance));
+    imageStore(
+            primeNormalRoughness,
+            pixel,
+            primeNrdPackNormalRoughness(primaryNormal, primaryLinearRoughness));
+    imageStore(primeViewZ, pixel, vec4(currentViewZ, 0.0, 0.0, 0.0));
+    imageStore(
+            primeMaterial,
+            pixel,
+            vec4(diffuseMaterialFactor, primaryDistance));
+    uint primaryMaterialFlags = uint(max(round(rawSpecularMaterial.a), 0.0));
+    imageStore(
+            primeSpecularMaterial,
+            pixel,
+            vec4(
+                    specularMaterialFactor,
+                    primeFsrTransparencyAndCompositionMask(
+                            primaryMaterialFlags, primaryLinearRoughness)));
+
     if (!(currentViewZ > 0.0) || currentViewZ >= PRIME_MOTION_SKY_VIEW_Z) {
         // NRD masks sky from its surface denoiser, but FSR consumes this same XY motion texture.
         // A direction projected with w=0 ignores camera translation and preserves rotation, so
@@ -99,7 +180,6 @@ void main() {
     // the actual stochastic primary hit, and its sub-pixel sample is packed into W. Comparing that
     // independent point with the guide-derived motion exposes errors hidden by self-consistent
     // camera matrices and view-Z reconstruction.
-    vec4 primary = imageLoad(primePrimaryPosition, pixel);
     vec2 primarySample = unpackHalf2x16(floatBitsToUint(primary.w));
     vec2 primaryUv = (vec2(pixel) + primarySample) / vec2(extent);
     // This matrix is the inverse of the exact inverse-view-projection consumed by raygen, not the

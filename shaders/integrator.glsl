@@ -79,27 +79,40 @@ bool primeVisible(vec3 physicalPosition, vec3 normal, LightSample light) {
     return primeShadowOccluded == 0u;
 }
 
-PrimeDirectLightingSplit primeEvaluateDirectSplit(
+PrimeDirectLightingSplit primeEvaluateVisibleDirectSplit(
         SurfaceInteraction surface,
         vec3 viewDirection,
         LightSample light,
-        float bsdfPdf) {
+        vec3 lightRadiance,
+        bool primarySplit) {
     PrimeDirectLightingSplit result;
     result.diffuse = vec3(0.0);
     result.specular = vec3(0.0);
     float cosine = max(dot(surface.geometricNormal, light.direction), 0.0);
     if (cosine <= 0.0 || light.pdf <= 0.0
-            || all(lessThanEqual(light.radiance, vec3(0.0)))
-            || !primeVisible(surface.position, surface.geometricNormal, light)) {
+            || all(lessThanEqual(lightRadiance, vec3(0.0)))) {
         return result;
     }
     PrimeDefaultBsdfComponents components = primeEvaluateDefaultBsdfComponents(
             surface.baseColor, surface.geometricNormal, viewDirection, light.direction);
+    float specularProbability = primarySplit
+            ? primeNrdSpecularSampleProbability(
+                    surface.baseColor, viewDirection, surface.geometricNormal)
+            : primeDefaultSpecularSampleProbability(
+                    surface.baseColor, viewDirection, surface.geometricNormal);
+    float bsdfPdf = mix(
+            components.diffuse.pdf, components.specular.pdf, specularProbability);
     float misWeight = primePowerHeuristic(light.pdf, bsdfPdf);
-    vec3 scale = light.radiance * (cosine * misWeight / light.pdf);
+    vec3 scale = lightRadiance * (cosine * misWeight / light.pdf);
     result.diffuse = scale * components.diffuse.value;
     result.specular = scale * components.specular.value;
     return result;
+}
+
+bool primeDirectSampleVisible(SurfaceInteraction surface, LightSample light) {
+    return light.pdf > 0.0
+            && dot(surface.geometricNormal, light.direction) > 0.0
+            && primeVisible(surface.position, surface.geometricNormal, light);
 }
 
 PrimeDirectLightingSplit primeEstimatePrimaryDirectSun(
@@ -108,12 +121,16 @@ PrimeDirectLightingSplit primeEstimatePrimaryDirectSun(
         vec3 viewDirection,
         vec2 sampleValue) {
     LightSample light = primeSampleSun(integrator, surface.position, sampleValue);
-    PrimeDefaultBsdfComponents components = primeEvaluateDefaultBsdfComponents(
-            surface.baseColor, surface.geometricNormal, viewDirection, light.direction);
-    float specularProbability = primeNrdSpecularSampleProbability(
-            surface.baseColor, viewDirection, surface.geometricNormal);
-    float bsdfPdf = mix(components.diffuse.pdf, components.specular.pdf, specularProbability);
-    return primeEvaluateDirectSplit(surface, viewDirection, light, bsdfPdf);
+    if (!primeDirectSampleVisible(surface, light)) {
+        PrimeDirectLightingSplit result;
+        result.diffuse = vec3(0.0);
+        result.specular = vec3(0.0);
+        return result;
+    }
+    vec3 radiance = primeResolveSampledSunRadiance(
+            integrator, surface.position, light);
+    return primeEvaluateVisibleDirectSplit(
+            surface, viewDirection, light, radiance, true);
 }
 
 PrimeDirectLightingSplit primeEstimatePrimaryDirectAreaLight(
@@ -121,13 +138,17 @@ PrimeDirectLightingSplit primeEstimatePrimaryDirectAreaLight(
         vec3 viewDirection,
         vec3 treeSample,
         vec2 positionSample) {
-    LightSample light = primeSampleAreaLight(surface.position, treeSample, positionSample);
-    PrimeDefaultBsdfComponents components = primeEvaluateDefaultBsdfComponents(
-            surface.baseColor, surface.geometricNormal, viewDirection, light.direction);
-    float specularProbability = primeNrdSpecularSampleProbability(
-            surface.baseColor, viewDirection, surface.geometricNormal);
-    float bsdfPdf = mix(components.diffuse.pdf, components.specular.pdf, specularProbability);
-    return primeEvaluateDirectSplit(surface, viewDirection, light, bsdfPdf);
+    AreaLightSample area = primeSampleAreaLight(
+            surface.position, treeSample, positionSample);
+    if (!primeDirectSampleVisible(surface, area.light)) {
+        PrimeDirectLightingSplit result;
+        result.diffuse = vec3(0.0);
+        result.specular = vec3(0.0);
+        return result;
+    }
+    vec3 radiance = primeResolveSampledAreaLightRadiance(area);
+    return primeEvaluateVisibleDirectSplit(
+            surface, viewDirection, area.light, radiance, true);
 }
 
 vec3 primeEstimateDirectSun(
@@ -136,10 +157,13 @@ vec3 primeEstimateDirectSun(
         vec3 viewDirection,
         vec2 sampleValue) {
     LightSample light = primeSampleSun(integrator, surface.position, sampleValue);
-    BsdfEvaluation bsdf = primeEvaluateDefaultBsdf(
-            surface.baseColor, surface.geometricNormal, viewDirection, light.direction);
-    PrimeDirectLightingSplit split = primeEvaluateDirectSplit(
-            surface, viewDirection, light, bsdf.pdf);
+    if (!primeDirectSampleVisible(surface, light)) {
+        return vec3(0.0);
+    }
+    vec3 radiance = primeResolveSampledSunRadiance(
+            integrator, surface.position, light);
+    PrimeDirectLightingSplit split = primeEvaluateVisibleDirectSplit(
+            surface, viewDirection, light, radiance, false);
     return split.diffuse + split.specular;
 }
 
@@ -148,11 +172,14 @@ vec3 primeEstimateDirectAreaLight(
         vec3 viewDirection,
         vec3 treeSample,
         vec2 positionSample) {
-    LightSample light = primeSampleAreaLight(surface.position, treeSample, positionSample);
-    BsdfEvaluation bsdf = primeEvaluateDefaultBsdf(
-            surface.baseColor, surface.geometricNormal, viewDirection, light.direction);
-    PrimeDirectLightingSplit split = primeEvaluateDirectSplit(
-            surface, viewDirection, light, bsdf.pdf);
+    AreaLightSample area = primeSampleAreaLight(
+            surface.position, treeSample, positionSample);
+    if (!primeDirectSampleVisible(surface, area.light)) {
+        return vec3(0.0);
+    }
+    vec3 radiance = primeResolveSampledAreaLightRadiance(area);
+    PrimeDirectLightingSplit split = primeEvaluateVisibleDirectSplit(
+            surface, viewDirection, area.light, radiance, false);
     return split.diffuse + split.specular;
 }
 

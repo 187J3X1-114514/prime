@@ -54,7 +54,7 @@ import org.lwjgl.vulkan.VkWriteDescriptorSet;
 public final class NrdDenoiser implements Destroyable {
     private static final int COMPUTE_STAGE = VK12.VK_SHADER_STAGE_COMPUTE_BIT;
     private static final int IMAGE_USAGE = VK12.VK_IMAGE_USAGE_STORAGE_BIT | VK12.VK_IMAGE_USAGE_SAMPLED_BIT;
-    private static final int MOTION_BINDING_COUNT = 5;
+    private static final int MOTION_BINDING_COUNT = 10;
     private static final int MOTION_PUSH_SIZE = 192;
     private static final int COMPOSITE_BINDING_COUNT = 13;
     private static final int COMPOSITE_PUSH_SIZE = 12;
@@ -215,9 +215,9 @@ public final class NrdDenoiser implements Destroyable {
     }
 
     /**
-     * Makes the signal images writable by raygen and all NRD-owned images available to compute.
-     * The GENERAL layout is stable for their complete lifetime; only explicit availability and
-     * visibility dependencies change between ray tracing, denoising and composition.
+     * Makes the raw signal images writable by raygen and all NRD-owned images available to the
+     * preparation and denoising compute passes. The GENERAL layout is stable for their complete
+     * lifetime; only explicit availability and visibility dependencies change between stages.
      */
     public void prepareForRayTrace(VkCommandBuffer commandBuffer) {
         this.requireOpen();
@@ -1477,8 +1477,13 @@ public final class NrdDenoiser implements Destroyable {
                     images.motion,
                     images.viewZ,
                     images.primaryPosition,
-                    images.reprojectionError
-                    , images.fsrDepth
+                    images.reprojectionError,
+                    images.fsrDepth,
+                    images.noisyDiffuse,
+                    images.noisySpecular,
+                    images.normalRoughness,
+                    images.material,
+                    images.specularMaterial
                 };
                 VkDescriptorImageInfo.Buffer imageInfos =
                         VkDescriptorImageInfo.calloc(MOTION_BINDING_COUNT, stack);
@@ -1534,10 +1539,6 @@ public final class NrdDenoiser implements Destroyable {
                     NrdCameraTransform.previousWorldToClip(camera, previous);
             Matrix4f previousRenderedWorldToClip =
                     NrdCameraTransform.previousRenderedWorldToClip(camera, previous);
-            float[] currentValues = currentClipToWorld.get(new float[16]);
-            float[] previousValues = previousWorldToClip.get(new float[16]);
-            float[] previousRenderedValues =
-                    previousRenderedWorldToClip.get(new float[16]);
             try (MemoryStack stack = MemoryStack.stackPush()) {
                 VK12.vkCmdBindPipeline(
                         commandBuffer, VK12.VK_PIPELINE_BIND_POINT_COMPUTE, this.pipeline);
@@ -1549,11 +1550,9 @@ public final class NrdDenoiser implements Destroyable {
                         stack.longs(this.descriptorSet),
                         null);
                 ByteBuffer push = stack.malloc(MOTION_PUSH_SIZE).order(ByteOrder.nativeOrder());
-                for (int index = 0; index < 16; index++) {
-                    push.putFloat(index * Float.BYTES, currentValues[index]);
-                    push.putFloat(64 + index * Float.BYTES, previousValues[index]);
-                    push.putFloat(128 + index * Float.BYTES, previousRenderedValues[index]);
-                }
+                currentClipToWorld.get(0, push);
+                previousWorldToClip.get(64, push);
+                previousRenderedWorldToClip.get(128, push);
                 VK12.vkCmdPushConstants(
                         commandBuffer,
                         this.pipelineLayout,

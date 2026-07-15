@@ -7,6 +7,7 @@
 #include "bsdf_microfacet.glsl"
 #include "bsdf_subsurface.glsl"
 #include "bsdf_emission.glsl"
+#include "default_material.glsl"
 
 // Normalized material parameters are deliberately separate from Minecraft texture decoding.
 // LabPBR's packed channels will eventually populate this record, while every closure below keeps
@@ -30,14 +31,6 @@ struct PrimeLabPbrMaterial {
     uint thinWalled;
 };
 
-const float PRIME_DEFAULT_DIELECTRIC_F0 = 0.04;
-// Vanilla textures do not carry LabPBR smoothness. Keep their inferred linear roughness in this
-// bounded, very rough interval: even a white texel remains far from a polished or
-// plastic-looking surface. Luminance is scene-linear Rec.2020 Y, not gamma-encoded RGB luma.
-const float PRIME_DEFAULT_MIN_LINEAR_ROUGHNESS = 0.70;
-const float PRIME_DEFAULT_MAX_LINEAR_ROUGHNESS = 0.90;
-const float PRIME_DEFAULT_REFERENCE_LINEAR_ROUGHNESS = 0.8;
-const vec3 PRIME_REC2020_LUMINANCE = vec3(0.2627, 0.6780, 0.0593);
 // The calibrated directional-energy table is exact at the previous default alpha. A fitted
 // reflective-energy delta below extends it over the small inferred range while preserving the
 // table's total resolved energy and its exact value at alpha=0.64.
@@ -95,15 +88,6 @@ struct PrimeDefaultBsdfComponents {
 
 float primeDefaultDielectricIor() {
     return primeIorFromF0(PRIME_DEFAULT_DIELECTRIC_F0);
-}
-
-float primeDefaultLinearRoughness(vec3 baseColor) {
-    float luminance = dot(clamp(baseColor, 0.0, 1.0), PRIME_REC2020_LUMINANCE);
-    float brightness = smoothstep(0.08, 0.90, luminance);
-    return mix(
-            PRIME_DEFAULT_MAX_LINEAR_ROUGHNESS,
-            PRIME_DEFAULT_MIN_LINEAR_ROUGHNESS,
-            brightness);
 }
 
 float primeDefaultGgxAlpha(vec3 baseColor) {

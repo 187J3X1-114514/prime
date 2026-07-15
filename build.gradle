@@ -361,9 +361,10 @@ layout(set = 0, binding = ${schema.descriptors.transmittanceLow}, rgba16f) unifo
 layout(set = 0, binding = ${schema.descriptors.transmittanceHigh}, rgba16f) uniform readonly image2D primeTransmittanceHigh;
 layout(set = 0, binding = ${schema.descriptors.aerialRadiance}, rgba16f) uniform readonly image3D primeAerialRadiance;
 layout(set = 0, binding = ${schema.descriptors.aerialTransmittance}, rgba16f) uniform readonly image3D primeAerialTransmittance;
-// NRD is part of the integrator boundary: raygen writes demodulated scene-linear Rec.2020
-// radiance and matching primary guides. Changing their encoding, units or previous-minus-current
-// motion sign silently invalidates temporal reprojection and spatial edge stopping.
+// NRD is part of the integrator boundary. Raygen first writes private raw signals to a subset of
+// these images; nrd_motion.comp converts them in place to demodulated scene-linear Rec.2020
+// radiance and matching primary guides before NRD reads them. Changing the final encoding, units
+// or previous-minus-current motion sign silently invalidates reprojection and edge stopping.
 layout(set = 0, binding = ${schema.descriptors.nrdNoisyDiffuse}, rgba16f) uniform image2D primeNrdNoisyDiffuse;
 layout(set = 0, binding = ${schema.descriptors.nrdNoisySpecular}, rgba16f) uniform image2D primeNrdNoisySpecular;
 layout(set = 0, binding = ${schema.descriptors.nrdNormalRoughness}, rgb10_a2) uniform image2D primeNrdNormalRoughness;
@@ -450,6 +451,11 @@ abstract class CompilePrimeShaders extends DefaultTask {
 			}
 			execOperations.exec {
 				commandLine spirvValidator.get(), '--target-env', 'vulkan1.2', output.absolutePath
+			}
+			// Conformance-only shaders force otherwise dormant libraries through glslang and
+			// spirv-val, but are never loaded at runtime and must not inflate the distributable jar.
+			if (source.name.endsWith('_validation.comp')) {
+				java.nio.file.Files.delete(output.toPath())
 			}
 		}
 

@@ -1,8 +1,15 @@
-Prime's default rough-dielectric directional-energy specialization is derived
-from the GGX transmission energy data and BSDF layering model distributed by
-the RoboCute project:
+Prime's complete OpenPBR closure library, importance samplers, thin-film model,
+microfacet energy compensation, layering rules, and default rough-dielectric
+specialization are derived from the BSDF implementation distributed by the
+RoboCute project:
 
 https://github.com/RoboCute/RoboCute
+
+BSDF source revision: 5985e989254b4685e3885d876b33f4874d233dcd
+
+The required 32x32x32 RGBA32F transmission-GGX directional-energy table is
+stored in `prime/bsdf/trans_ggx.bytes.gz.b64`; its decoded SHA-256 is
+2d655ae640d7f57da3ad0609d92fde55df1d9de18e9fbc19fa9aa2adbb0d8df4.
 
 Copyright RoboCute contributors. Licensed under the Apache License, Version
 2.0. A copy of that license is included in APACHE-2.0.txt.

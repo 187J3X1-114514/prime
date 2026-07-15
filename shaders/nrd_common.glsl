@@ -105,9 +105,15 @@ float primeNrdNormalizedHitDistance(float hitDistance, float viewZ, float roughn
     return clamp(hitDistance / max(scale, 1.0e-6), 0.0, 1.0);
 }
 
-vec4 primeNrdPackRadianceAndHitDistance(vec3 radiance, float normalizedHitDistance) {
+vec3 primeNrdSanitizeRadiance(vec3 radiance) {
     bool invalid = any(isnan(radiance)) || any(isinf(radiance));
-    vec3 sanitized = invalid ? vec3(0.0) : clamp(radiance, vec3(0.0), vec3(PRIME_NRD_FP16_MAX));
+    return invalid
+            ? vec3(0.0)
+            : clamp(radiance, vec3(0.0), vec3(PRIME_NRD_FP16_MAX));
+}
+
+vec4 primeNrdPackRadianceAndHitDistance(vec3 radiance, float normalizedHitDistance) {
+    vec3 sanitized = primeNrdSanitizeRadiance(radiance);
     return vec4(primeNrdLinearToYCoCg(sanitized), clamp(normalizedHitDistance, 0.0, 1.0));
 }
 

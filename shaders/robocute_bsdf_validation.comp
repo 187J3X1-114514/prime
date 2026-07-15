@@ -1,0 +1,103 @@
+#version 460
+#extension GL_GOOGLE_include_directive : require
+
+#include "robocute_bsdf_openpbr.glsl"
+
+layout(local_size_x = 1, local_size_y = 1, local_size_z = 1) in;
+
+// Compile-only conformance harness. No runtime pipeline loads this module; its purpose is to keep
+// every migrated closure, composition branch and importance sampler under glslang + spirv-val.
+layout(set = 7, binding = 1, std430) buffer PrimeRcValidationBuffer {
+    vec4 values[];
+} primeRcValidation;
+
+void main() {
+    vec4 inputValue = primeRcValidation.values[0];
+    PrimeRcMaterial material = primeRcMaterialFromMetallic(
+            clamp(inputValue.rgb, vec3(0.01), vec3(0.99)),
+            clamp(inputValue.a, 0.02, 1.0),
+            clamp(primeRcValidation.values[1].x, 0.0, 1.0),
+            vec3(0.0, 0.0, 1.0));
+    vec4 weights = clamp(primeRcValidation.values[2], 0.0, 1.0);
+    vec4 layers = clamp(primeRcValidation.values[3], 0.0, 1.0);
+    material.weight.subsurface = weights.x;
+    material.weight.transmission = weights.y;
+    material.weight.coat = weights.z;
+    material.weight.fuzz = weights.w;
+    material.weight.thinFilm = layers.x;
+    material.weight.diffraction = layers.y;
+    material.weight.diffuseRoughness = layers.z;
+    material.specular.roughnessAnisotropy = layers.w;
+    material.geometry.thinWalled = primeRcValidation.values[4].x > 0.5 ? 1u : 0u;
+    material.transmission.depth = max(primeRcValidation.values[4].y, 0.0);
+    material.transmission.dispersionScale = max(primeRcValidation.values[4].z, 0.0);
+    material.diffraction.kind = uint(clamp(primeRcValidation.values[4].w, 0.0, 2.0));
+
+    vec3 wi = normalize(vec3(0.2, -0.1, 1.0));
+    vec3 wo = normalize(vec3(-0.3, 0.2, 1.0));
+    vec3 randomValue = fract(primeRcValidation.values[5].xyz);
+    PrimeRcState state = primeRcOpenPbrStateInit(
+            material,
+            wi,
+            randomValue,
+            1.0,
+            0.25,
+            vec3(460.0, 550.0, 610.0),
+            1u,
+            PRIME_RC_DETAIL_DEFAULT,
+            0u);
+    PrimeRcVolumeStack stack;
+    stack.count = 0u;
+    PrimeRcEval evaluation = primeRcOpenPbrEvaluate(wi, wo, state);
+    PrimeRcSampleResult sampled = primeRcOpenPbrSample(
+            wi, randomValue, state, stack);
+
+    PrimeRcState basicState = primeRcBasicMetallicStateInit(
+            material, wi, 1.0, 0.25, vec3(460.0, 550.0, 610.0),
+            1u, PRIME_RC_DETAIL_DEFAULT, 0u);
+    PrimeRcEval basicEvaluation = primeRcBasicMetallicEvaluate(wi, wo, basicState);
+    PrimeRcSampleResult basicSample = primeRcBasicMetallicSample(
+            wi, randomValue, basicState, stack);
+
+    PrimeRcState subsurfaceState = primeRcSubsurfaceGlossyStateInit(
+            material, wi, 1.0, 0.25, vec3(460.0, 550.0, 610.0),
+            1u, PRIME_RC_DETAIL_DEFAULT, 0u);
+    PrimeRcEval subsurfaceEvaluation = primeRcSubsurfaceGlossyEvaluate(
+            wi, wo, subsurfaceState);
+    PrimeRcSampleResult subsurfaceSample = primeRcSubsurfaceGlossySample(
+            wi, randomValue, subsurfaceState, stack);
+
+    PrimeRcState transmissionState = primeRcTransmissionStateInit(
+            material, 1.0, 0.25, vec3(460.0, 550.0, 610.0),
+            1u, PRIME_RC_DETAIL_DEFAULT, 0u);
+    PrimeRcEval transmissionEvaluation = primeRcTransmissionEvaluate(
+            wi, wo, transmissionState);
+    PrimeRcSampleResult transmissionSample = primeRcTransmissionSample(
+            wi, randomValue, transmissionState, stack);
+
+    primeRcValidation.values[6] = vec4(
+            evaluation.throughput.value + sampled.bsdfSample.throughput.value
+                    + basicEvaluation.throughput.value
+                    + basicSample.bsdfSample.throughput.value
+                    + subsurfaceEvaluation.throughput.value
+                    + subsurfaceSample.bsdfSample.throughput.value
+                    + transmissionEvaluation.throughput.value
+                    + transmissionSample.bsdfSample.throughput.value,
+            evaluation.pdf + sampled.bsdfSample.pdf
+                    + basicEvaluation.pdf + basicSample.bsdfSample.pdf
+                    + subsurfaceEvaluation.pdf + subsurfaceSample.bsdfSample.pdf
+                    + transmissionEvaluation.pdf + transmissionSample.bsdfSample.pdf);
+    primeRcValidation.values[7] = vec4(
+            primeRcBasicMetallicEnergy(wi, basicState)
+                    + primeRcBasicMetallicTintOut(wo, basicState)
+                    + primeRcBasicMetallicTrans(wi, basicState, vec3(1.0))
+                    + primeRcSubsurfaceGlossyEnergy(wi, subsurfaceState)
+                    + primeRcSubsurfaceGlossyTintOut(wo, subsurfaceState)
+                    + primeRcSubsurfaceGlossyTrans(
+                            wi, subsurfaceState, vec3(1.0))
+                    + primeRcTransmissionEnergy(wi, transmissionState)
+                    + primeRcTransmissionTintOut(wo, transmissionState)
+                    + primeRcTransmissionTrans(
+                            wi, transmissionState, vec3(1.0)),
+            float(transmissionSample.volumeStack.count));
+}

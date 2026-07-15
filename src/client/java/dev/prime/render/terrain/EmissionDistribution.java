@@ -62,11 +62,12 @@ final class EmissionDistribution {
         int[] frames = frames(contents);
         int columns = Math.max(image.getWidth() / contents.width(), 1);
         float[] tint = linearTint(key.tintArgb);
+        float[] barycentric = new float[3];
         for (int cellIndex = 0; cellIndex < CELL_COUNT; cellIndex++) {
             Cell cell = cell(cellIndex);
             float total = 0.0F;
             for (int sample = 0; sample < STRATIFIED_SAMPLE_COUNT; sample++) {
-                float[] barycentric = cell.samplePoint(sample);
+                cell.samplePoint(sample, barycentric);
                 float atlasU = interpolate(key.u0(), key.u1(), key.u2(), barycentric);
                 float atlasV = interpolate(key.v0(), key.v1(), key.v2(), barycentric);
                 float localU = clampUnit((atlasU - sprite.getU0()) / (sprite.getU1() - sprite.getU0()));
@@ -257,7 +258,7 @@ final class EmissionDistribution {
             if (this.upper) {
                 return new float[][] {
                     {1.0F - x - inverse - y, x + inverse, y},
-                    {1.0F - x - inverse - y - inverse, x + inverse, y + inverse},
+                    {1.0F - x - 2.0F * inverse - y, x + inverse, y + inverse},
                     {1.0F - x - y - inverse, x, y + inverse}
                 };
             }
@@ -268,22 +269,48 @@ final class EmissionDistribution {
             };
         }
 
-        float[] samplePoint(int sampleIndex) {
-            float[][] vertices = this.vertices();
-            float[] centroid = new float[] {
-                (vertices[0][0] + vertices[1][0] + vertices[2][0]) / 3.0F,
-                (vertices[0][1] + vertices[1][1] + vertices[2][1]) / 3.0F,
-                (vertices[0][2] + vertices[1][2] + vertices[2][2]) / 3.0F
-            };
-            if (sampleIndex == 0) {
-                return centroid;
+        void samplePoint(int sampleIndex, float[] target) {
+            if (sampleIndex < 0 || sampleIndex >= STRATIFIED_SAMPLE_COUNT) {
+                throw new IndexOutOfBoundsException(sampleIndex);
             }
-            float[] vertex = vertices[sampleIndex - 1];
-            return new float[] {
-                (centroid[0] + vertex[0]) * 0.5F,
-                (centroid[1] + vertex[1]) * 0.5F,
-                (centroid[2] + vertex[2]) * 0.5F
-            };
+            if (target.length < 3) {
+                throw new IllegalArgumentException("Barycentric output must contain three elements");
+            }
+            float inverse = 1.0F / SUBDIVISION;
+            float x = this.column * inverse;
+            float y = this.row * inverse;
+            float centroid0;
+            float centroid1;
+            float centroid2;
+            if (this.upper) {
+                centroid0 = 1.0F - x - y - 4.0F * inverse / 3.0F;
+                centroid1 = x + 2.0F * inverse / 3.0F;
+                centroid2 = y + 2.0F * inverse / 3.0F;
+            } else {
+                centroid0 = 1.0F - x - y - 2.0F * inverse / 3.0F;
+                centroid1 = x + inverse / 3.0F;
+                centroid2 = y + inverse / 3.0F;
+            }
+            if (sampleIndex == 0) {
+                target[0] = centroid0;
+                target[1] = centroid1;
+                target[2] = centroid2;
+                return;
+            }
+            int vertex = sampleIndex - 1;
+            float vertex1;
+            float vertex2;
+            if (this.upper) {
+                vertex1 = vertex < 2 ? x + inverse : x;
+                vertex2 = vertex == 0 ? y : y + inverse;
+            } else {
+                vertex1 = vertex == 1 ? x + inverse : x;
+                vertex2 = vertex == 2 ? y + inverse : y;
+            }
+            float vertex0 = 1.0F - vertex1 - vertex2;
+            target[0] = (centroid0 + vertex0) * 0.5F;
+            target[1] = (centroid1 + vertex1) * 0.5F;
+            target[2] = (centroid2 + vertex2) * 0.5F;
         }
     }
 }

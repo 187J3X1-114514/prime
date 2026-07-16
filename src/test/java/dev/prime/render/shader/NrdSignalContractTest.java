@@ -47,6 +47,8 @@ final class NrdSignalContractTest {
         assertTrue(transparent.contains("primeTransparentTransmissionNoisy"));
         assertTrue(transparent.contains("primeTransparentTransmissionSpecular"));
         assertTrue(transparent.contains("result.guidePosition = surface.position"));
+        assertTrue(transparent.contains(
+                "firstInterface.position - primePush.cameraPosition"));
         assertTrue(transparent.contains("vec4(visibleRadiance, -(max(surface.t, 0.0) + 1.0))"));
         assertTrue(transparent.contains("imageStore(primeFsrTransparencyCompositionMask"));
         assertTrue(transparentPreparation.contains("if (metadata.a < 0.0)"));

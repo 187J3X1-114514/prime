@@ -192,11 +192,15 @@ void primeStoreTransparentBranch(
         pathThroughput = vec4(
                 clamp(result.guideThroughput, vec3(0.0), vec3(PRIME_NRD_FP16_MAX)),
                 float(result.guideMaterialFlags));
-        // Keep the camera-distant interface point in FP32. The FP16 companion stores only the
+        // NRD's camera matrices consume positions relative to the current effective pinhole,
+        // whereas traversal positions are relative to Minecraft's movable render origin. This
+        // subtraction is the coordinate-system boundary: omitting it applies camera translation
+        // with the wrong origin and reverses transparent reprojection during lateral motion.
+        // Keep that camera-relative interface point in FP32. The FP16 companion stores only the
         // local segment to the next hit (normally <= 1 block for glass), avoiding the severe
         // position quantization that an absolute half-precision world coordinate would cause.
         position = vec4(
-                firstInterface.position,
+                firstInterface.position - primePush.cameraPosition,
                 uintBitsToFloat(primePackTransparentInterfaceNormal(
                         result.interfaceNormal)));
         interfaceData.xyz = result.guidePosition - firstInterface.position;
@@ -215,7 +219,7 @@ void primeStoreTransparentBranch(
         noisy = vec4(
                 primeNrdSanitizeRadiance(result.stableRadiance), interfaceDistance);
         position = vec4(
-                firstInterface.position,
+                firstInterface.position - primePush.cameraPosition,
                 uintBitsToFloat(primePackTransparentInterfaceNormal(
                         result.interfaceNormal)));
         metadata = vec4(firstInterface.baseColor, 1.0);

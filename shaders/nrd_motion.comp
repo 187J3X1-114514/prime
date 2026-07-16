@@ -21,10 +21,12 @@ layout(push_constant) uniform PrimeMotionPushConstants {
     mat4 currentClipToWorld;
     mat4 previousWorldToClip;
     mat4 previousRenderedWorldToClip;
+    uint diagnosticMode;
 } primeMotionPush;
 
 const float PRIME_MOTION_SKY_VIEW_Z = 65504.0;
 const float PRIME_FSR_NEAR_PLANE = 0.05;
+const uint PRIME_DIAGNOSTIC_REPROJECTION_ERROR = 2u;
 
 vec3 primeMotionRayDirection(vec2 screenUv) {
     // NRD uses D3D screen UVs: y=0 is clip y=+1. The Java boundary has already reflected
@@ -59,13 +61,14 @@ void main() {
             : primeMaterialLinearRoughness(rawMaterial.rgb, primaryMaterialFlags);
     vec3 diffuseMaterialFactor = vec3(1.0);
     vec3 specularMaterialFactor = vec3(1.0);
+    vec3 cameraForward = vec3(0.0);
     float currentViewZ = PRIME_MOTION_SKY_VIEW_Z;
     if (primaryDistance >= 0.0) {
         vec3 tracedRayDirection = dot(primary.xyz, primary.xyz) > 1.0e-12
                 ? normalize(primary.xyz)
                 : primeMotionRayDirection(
                         (vec2(pixel) + vec2(0.5)) / vec2(extent));
-        vec3 cameraForward = primeMotionRayDirection(vec2(0.5));
+        cameraForward = primeMotionRayDirection(vec2(0.5));
         currentViewZ = primaryDistance * dot(tracedRayDirection, cameraForward);
         if (primeMaterialIsTransmissive(primaryMaterialFlags)) {
             // REBLUR's material-factor contract is reflective. Refractive radiance must remain
@@ -140,7 +143,9 @@ void main() {
         }
         imageStore(primeMotion, pixel, vec4(skyMotion, 0.0, 0.0));
         imageStore(primeFsrDepth, pixel, vec4(0.0));
-        imageStore(primeReprojectionError, pixel, vec4(0.0, 0.0, 0.0, 1.0));
+        if (primeMotionPush.diagnosticMode == PRIME_DIAGNOSTIC_REPROJECTION_ERROR) {
+            imageStore(primeReprojectionError, pixel, vec4(0.0, 0.0, 0.0, 1.0));
+        }
         return;
     }
 
@@ -152,12 +157,13 @@ void main() {
     // NRD requires non-jittered motion even though the noisy primary sample is jittered.
     vec2 currentUv = (vec2(pixel) + vec2(0.5)) / vec2(extent);
     vec3 rayDirection = primeMotionRayDirection(currentUv);
-    vec3 cameraForward = primeMotionRayDirection(vec2(0.5));
     float forwardProjection = dot(rayDirection, cameraForward);
     if (!(forwardProjection > 1.0e-6)) {
         imageStore(primeMotion, pixel, vec4(0.0));
         imageStore(primeFsrDepth, pixel, vec4(0.0));
-        imageStore(primeReprojectionError, pixel, vec4(1.0, 1.0, 1.0, 1.0));
+        if (primeMotionPush.diagnosticMode == PRIME_DIAGNOSTIC_REPROJECTION_ERROR) {
+            imageStore(primeReprojectionError, pixel, vec4(1.0, 1.0, 1.0, 1.0));
+        }
         return;
     }
 
@@ -168,7 +174,9 @@ void main() {
             || any(isnan(previousClip))
             || any(isinf(previousClip))) {
         imageStore(primeMotion, pixel, vec4(0.0));
-        imageStore(primeReprojectionError, pixel, vec4(1.0, 1.0, 1.0, 1.0));
+        if (primeMotionPush.diagnosticMode == PRIME_DIAGNOSTIC_REPROJECTION_ERROR) {
+            imageStore(primeReprojectionError, pixel, vec4(1.0, 1.0, 1.0, 1.0));
+        }
         return;
     }
 
@@ -182,6 +190,10 @@ void main() {
             primeMotion,
             pixel,
             vec4(screenMotion, previousViewZ - currentViewZ, 0.0));
+
+    if (primeMotionPush.diagnosticMode != PRIME_DIAGNOSTIC_REPROJECTION_ERROR) {
+        return;
+    }
 
     // This probe deliberately does not reconstruct the primary point from view-Z. Raygen records
     // the actual stochastic primary hit, and its sub-pixel sample is packed into W. Comparing that

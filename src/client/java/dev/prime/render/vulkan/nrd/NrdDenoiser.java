@@ -55,7 +55,7 @@ public final class NrdDenoiser implements Destroyable {
     private static final int COMPUTE_STAGE = VK12.VK_SHADER_STAGE_COMPUTE_BIT;
     private static final int IMAGE_USAGE = VK12.VK_IMAGE_USAGE_STORAGE_BIT | VK12.VK_IMAGE_USAGE_SAMPLED_BIT;
     private static final int MOTION_BINDING_COUNT = 10;
-    private static final int MOTION_PUSH_SIZE = 192;
+    private static final int MOTION_PUSH_SIZE = 196;
     private static final int COMPOSITE_BINDING_COUNT = 13;
     private static final int COMPOSITE_PUSH_SIZE = 12;
     // world.rgen writes 65504 for a sky view-Z. Keep the valid range below that sentinel while
@@ -460,7 +460,8 @@ public final class NrdDenoiser implements Destroyable {
                     cameraJitterX,
                     cameraJitterY,
                     this.width,
-                    this.height);
+                    this.height,
+                    diagnosticMode.shaderValue());
             computeToComputeBarrier(commandBuffer);
             for (int dispatchIndex = 0; dispatchIndex < dispatches.size(); dispatchIndex++) {
                 if (dispatchIndex != 0) {
@@ -1741,7 +1742,8 @@ public final class NrdDenoiser implements Destroyable {
                 float cameraJitterX,
                 float cameraJitterY,
                 int width,
-                int height) {
+                int height,
+                int diagnosticMode) {
             NrdCameraTransform.currentClipToWorld(camera, this.currentClipToWorld);
             NrdCameraTransform.previousWorldToClip(
                     camera, previous, this.previousWorldToClip, this.worldToViewScratch);
@@ -1761,6 +1763,7 @@ public final class NrdDenoiser implements Destroyable {
                 this.currentClipToWorld.get(0, push);
                 this.previousWorldToClip.get(64, push);
                 this.previousRenderedWorldToClip.get(128, push);
+                push.putInt(192, diagnosticMode);
                 if (this.transparentBranch != 0) {
                     // Raygen has already reduced every delta interface to current/previous
                     // virtual positions. Transparent preparation only reuses column one for the

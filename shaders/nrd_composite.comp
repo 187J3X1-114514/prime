@@ -37,8 +37,8 @@ ATM_DECLARE_SAMPLE_3D(primeCompositeSampleAerialRadiance, primeCompositeAerialRa
 ATM_DECLARE_SAMPLE_3D(primeCompositeSampleAerialTransmittance, primeCompositeAerialTransmittance)
 
 vec3 primeCompositeSurfaceSignal(
-        uvec2 pixel,
         vec4 material,
+        vec3 specularFactor,
         vec3 diffuseSignal,
         vec3 specularSignal) {
     // A negative primary distance is raygen's immutable miss marker. Sky radiance lives entirely
@@ -48,8 +48,6 @@ vec3 primeCompositeSurfaceSignal(
         return vec3(0.0);
     }
     vec3 diffuse = primeNrdYCoCgToLinear(diffuseSignal) * material.rgb;
-    vec3 specularFactor = imageLoad(
-            primeCompositeSpecularMaterial, ivec2(pixel)).rgb;
     vec3 specular = primeNrdYCoCgToLinear(specularSignal) * specularFactor;
     return diffuse + specular;
 }
@@ -91,8 +89,9 @@ void main() {
     // intersection is glass/water; keeping that responsibility out of NRD prevents virtual
     // reflection and transmission motion from contaminating the opaque temporal history.
     imageStore(primeFsrReactiveMask, ivec2(pixel), vec4(0.0));
-    float transparencyAndComposition = imageLoad(
-            primeCompositeSpecularMaterial, ivec2(pixel)).a;
+    vec4 specularMaterial = imageLoad(
+            primeCompositeSpecularMaterial, ivec2(pixel));
+    float transparencyAndComposition = specularMaterial.a;
     imageStore(
             primeFsrTransparencyCompositionMask,
             ivec2(pixel),
@@ -127,8 +126,8 @@ void main() {
     }
     vec4 material = imageLoad(primeCompositeMaterial, ivec2(pixel));
     vec3 surface = primeCompositeSurfaceSignal(
-            pixel,
             material,
+            specularMaterial.rgb,
             imageLoad(primeDenoisedDiffuse, ivec2(pixel)).rgb,
             imageLoad(primeDenoisedSpecular, ivec2(pixel)).rgb);
     vec3 radiance = surface + imageLoad(primeStableAccumulation, ivec2(pixel)).rgb;

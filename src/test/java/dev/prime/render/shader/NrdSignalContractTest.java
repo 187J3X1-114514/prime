@@ -1,5 +1,6 @@
 package dev.prime.render.shader;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.IOException;
@@ -30,10 +31,15 @@ final class NrdSignalContractTest {
         assertTrue(preparation.contains("primeNrdPackRadianceAndHitDistance("));
         assertTrue(preparation.contains("primeNrdPackNormalRoughness("));
         assertTrue(preparation.contains("vec4(diffuseMaterialFactor, primaryDistance)"));
+        assertTrue(preparation.contains("uint diagnosticMode;"));
+        assertTrue(preparation.contains(
+                "if (primeMotionPush.diagnosticMode != PRIME_DIAGNOSTIC_REPROJECTION_ERROR)"));
         assertTrue(composite.contains("if (material.a < 0.0)"));
         assertTrue(composite.contains("return vec3(0.0);"));
         assertTrue(composite.contains("primeCompositeSurfaceSignal("));
         assertTrue(composite.contains("primeDenoisedSpecular"));
+        // One declaration and one load: composition alpha and specular RGB share the same fetch.
+        assertEquals(2, occurrences(composite, "primeCompositeSpecularMaterial"));
         assertTrue(opaqueAnyHit.contains("primeMaterialIsTransmissive"));
         assertTrue(integrator.contains("primeTraceSurfaceWithSbtOffset(path.traceOrigin, path.rayDirection, 2u)"));
         assertTrue(transparent.contains("primeTraceFirstInterfaceBranch("));
@@ -78,5 +84,14 @@ final class NrdSignalContractTest {
         assertTrue(transparentComposite.contains("primeTransmissionSpecularDenoised"));
         assertTrue(transparentComposite.contains("metadata.a < 0.0"));
         assertTrue(integrator.contains("primary-surface-replacement contract"));
+    }
+
+    private static int occurrences(String source, String needle) {
+        int count = 0;
+        for (int offset = source.indexOf(needle); offset >= 0;
+                offset = source.indexOf(needle, offset + needle.length())) {
+            count++;
+        }
+        return count;
     }
 }

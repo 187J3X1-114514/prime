@@ -153,10 +153,47 @@ final class EmissionLightContractTest {
         assertTrue(forwardTraversal.contains("uint rightIndex = leftIndex + 1u"));
         assertTrue(forwardTraversal.contains("node = left"));
         assertTrue(forwardTraversal.contains("node = right"));
+        assertTrue(forwardTraversal.contains("float split = lowerBound + pdf * leftProbability"));
+        assertFalse(forwardTraversal.contains("value /= leftProbability"));
+        assertFalse(forwardTraversal.contains("/ rightProbability"));
         assertFalse(forwardTraversal.contains("nodes.nodes[nodeIndex]"));
         assertFalse(forwardTraversal.contains("reverseNodes"));
         assertTrue(integrator.contains("primeSampleAreaLight"));
         assertTrue(integrator.contains("primeEvaluateAreaLight"));
+    }
+
+    @Test
+    void cumulativeIntervalMatchesNormalizedInverseCdfTraversal() {
+        float[] probabilities = {0.17F, 0.83F, 0.31F, 0.62F, 0.48F, 0.91F};
+        float[] seeds = {0.01F, 0.13F, 0.29F, 0.47F, 0.68F, 0.88F, 0.99F};
+        for (float seed : seeds) {
+            float normalized = seed;
+            float normalizedPdf = 1.0F;
+            float lowerBound = 0.0F;
+            float intervalPdf = 1.0F;
+            for (float leftProbability : probabilities) {
+                boolean normalizedLeft = normalized < leftProbability;
+                float rightProbability = 1.0F - leftProbability;
+                if (normalizedLeft) {
+                    normalizedPdf *= leftProbability;
+                    normalized /= leftProbability;
+                } else {
+                    normalizedPdf *= rightProbability;
+                    normalized = (normalized - leftProbability) / rightProbability;
+                }
+
+                float split = lowerBound + intervalPdf * leftProbability;
+                boolean intervalLeft = seed < split;
+                assertEquals(normalizedLeft, intervalLeft);
+                if (intervalLeft) {
+                    intervalPdf *= leftProbability;
+                } else {
+                    intervalPdf *= rightProbability;
+                    lowerBound = split;
+                }
+                assertEquals(normalizedPdf, intervalPdf, 1.0E-7F);
+            }
+        }
     }
 
     private static CpuLightTree.Leaf leaf(float x, float power, int index) {

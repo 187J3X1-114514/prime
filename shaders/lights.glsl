@@ -172,8 +172,8 @@ LightTreePick primePickLightTree(
     // its cache working set.
     uint nodeIndex = root;
     LightNode node = nodes.nodes[root];
+    float lowerBound = 0.0;
     float pdf = 1.0;
-    float value = seed;
     for (uint depth = 0u; depth < PRIME_LIGHT_TREE_MAX_DEPTH; ++depth) {
         if (!(node.boundsMinPower.w > 0.0)) {
             return primeInvalidLightTreePick();
@@ -196,17 +196,20 @@ LightTreePick primePickLightTree(
             return primeInvalidLightTreePick();
         }
         float rightProbability = 1.0 - leftProbability;
-        if (value < leftProbability || rightProbability <= 0.0) {
+        // Keep the original sample in its cumulative interval. This is the same inverse-CDF
+        // traversal as repeatedly remapping value to [0, 1), but replaces one division per tree
+        // level with a multiply-add. pdf is also the current interval width.
+        float split = lowerBound + pdf * leftProbability;
+        if (seed < split || rightProbability <= 0.0) {
             if (leftProbability <= 0.0) {
                 return primeInvalidLightTreePick();
             }
             pdf *= leftProbability;
-            value /= leftProbability;
             node = left;
             nodeIndex = leftIndex;
         } else {
             pdf *= rightProbability;
-            value = (value - leftProbability) / rightProbability;
+            lowerBound = split;
             node = right;
             nodeIndex = rightIndex;
         }
@@ -369,9 +372,10 @@ AreaLightSample primeSampleAreaLight(
     LightCellBuffer cells = LightCellBuffer(header.cellAddress);
     LightEmitter emitter = emitters.emitters[sectionPick.leaf];
     float aliasValue = treeSample.z * float(PRIME_LIGHT_CELL_COUNT);
-    uint column = min(uint(aliasValue), PRIME_LIGHT_CELL_COUNT - 1u);
+    // Sobol conversion is strictly below one, so aliasValue is strictly below CELL_COUNT.
+    uint column = uint(aliasValue);
     LightCell aliasCell = cells.cells[emitter.metadata.x + column];
-    uint cellIndex = fract(aliasValue) < aliasCell.aliasProbability
+    uint cellIndex = aliasValue - float(column) < aliasCell.aliasProbability
             ? column
             : aliasCell.aliasIndex;
     LightCell selectedCell = cells.cells[emitter.metadata.x + cellIndex];

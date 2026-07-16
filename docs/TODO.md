@@ -1,53 +1,42 @@
-# Performance work beyond the current exact-simplification pass
+# 当前等价化简阶段之外的性能工作
 
-This file records worthwhile optimizations intentionally excluded from the current low-risk pass.
-Most change a sampling distribution, numerical result, denoiser input, or other visible behavior
-and therefore need a separate quality and bias decision. The final section lists exact changes that
-are larger lifecycle or architecture projects rather than low-hanging simplifications.
+本文记录有价值、但被刻意排除在当前低风险优化阶段之外的性能改进。多数方案会改变采样分布、
+数值结果、降噪器输入或其他可见行为，因此需要单独评估画质与偏差。最后一节列出数学上等价，
+但属于较大生命周期或架构工程、而不是低垂果实的改动。
 
-- Replace the 256-cell per-emitter area-light alias distribution with a coarser or hierarchical
-  proposal. A consistently updated PDF can keep the estimator unbiased, but the sample sequence
-  and variance change, and the emission distribution would need new validation.
-- Start Russian roulette earlier or make its start depth throughput-dependent. Correct survival
-  compensation can remain unbiased, but it changes variance, path/sample identity and denoiser
-  behavior; it is not an algebraic simplification.
-- Stop the transparent delta-guide relaxation adaptively instead of always running eight forward
-  and reverse sweeps. This does not change raw path radiance, but it changes PSR reprojection and
-  therefore the filtered image. It needs a residual/error study around deep glass and water stacks.
-- Approximate or tabulate the default rough-dielectric directional-energy fit more aggressively.
-  This is a promising ALU reduction, but any replacement must be revalidated with the white-furnace
-  tests because even a small fit error changes the coupled diffuse/specular energy partition.
-- Use reservoir or spatiotemporal direct-light reuse in scenes with many emissive texels. This can
-  greatly reduce light-tree and shadow-ray work, but it is a new estimator with visibility reuse,
-  temporal state and bias questions rather than a simplification of the current one-sample NEE.
-- Replace the light-tree SAH split scan with prefix/suffix aggregates. It reduces CPU work from a
-  quadratic scan over the 16 bins to a linear scan, but changes floating-point summation grouping;
-  near a cost tie that can change tree topology, sampling probabilities and the sample sequence.
-- Store a precomputed inverse emitter Gram matrix (and possibly its UV affine transform) in each
-  light record. Reverse-PDF evaluation would lose several dot products and divisions, but CPU-side
-  precomputation changes f32 rounding and expands or repacks the hot emitter ABI. Measure the
-  bandwidth/ALU trade before accepting it.
-- Give the transparent primary pass a transmissive-only acceleration view and reject candidates
-  behind the opaque primary depth. This could avoid a full mixed-geometry traversal on most
-  pixels, but separate builds/traversal can change intersection tie behavior and require a precise
-  shared-depth contract, so it is not suitable for the exact-simplification branch.
-- Gate the two transparent NRD instances when a GPU-generated frame mask proves that no transparent
-  branch is visible. The raw estimator is unchanged, but pausing and later restarting NRD changes
-  its hidden temporal state; the first reappearing glass/water frame therefore needs an explicit
-  reset policy and visual validation. This can be a large win in ordinary opaque scenes because the
-  current reflection and transmission denoisers are both full-resolution dispatch graphs.
-- Investigate `VK_EXT_opacity_micromap` for cutout-heavy foliage. It may substantially reduce
-  any-hit shader traffic in jungles, but alpha quantization, animated atlas texels, resource-pack
-  reloads and unsupported-device fallback make it a separate representation with potentially
-  different intersection behavior rather than an exact source simplification.
+- 将每个发光体包含 256 个单元的面积光源别名分布，替换为更粗粒度或分层的提议分布。
+  如果始终使用与采样过程一致的 PDF，估计器仍可保持无偏；但这会改变样本序列与方差，
+  发光分布也需要重新验证。
+- 更早开始俄罗斯轮盘，或根据路径吞吐量动态决定开始深度。正确补偿存活概率可以保持无偏，
+  但会改变方差、路径与样本的对应关系以及降噪器行为，因此不属于代数化简。
+- 自适应停止透明 delta 引导的松弛过程，而不是固定执行八轮正向与反向扫描。这不会改变原始路径
+  辐亮度，但会改变 PSR 重投影以及最终滤波图像，需要针对深层玻璃与水体积栈研究残差和误差。
+- 对默认粗糙介质的方向能量拟合进行更激进的近似或查表。这有望显著降低 ALU 开销，但任何替代
+  实现都必须重新通过白炉测试，因为即使很小的拟合误差也会改变漫反射与镜面反射之间的能量分配。
+- 在包含大量发光纹素的场景中使用蓄水池采样或时空直接光复用。这可以大幅减少灯光树和阴影射线
+  工作，但它是包含可见性复用、时间状态与偏差问题的新估计器，而不是当前单样本 NEE 的化简。
+- 使用前缀与后缀聚合替换灯光树的 SAH 分割扫描。它能将 16 个分箱上的 CPU 工作从二次扫描降为
+  线性扫描，但会改变浮点求和顺序；在代价接近时可能改变树结构、采样概率和样本序列。
+- 在每条灯光记录中预存发光体 Gram 矩阵的逆矩阵，并考虑同时预存 UV 仿射变换。反向 PDF 计算
+  可以因此减少若干点积和除法，但 CPU 侧预计算会改变 f32 舍入，并扩大或重新打包热点发光体 ABI。
+  接受该方案前需要测量带宽与 ALU 的取舍。
+- 为透明主射线阶段提供仅包含可透射几何体的加速结构视图，并剔除位于不透明主深度之后的候选项。
+  这可以让多数像素避免遍历混合几何场景，但独立构建和遍历可能改变相交距离相同时的选择行为，
+  而且需要精确定义共享深度契约，因此不适合等价化简分支。
+- 当 GPU 生成的帧掩码证明画面中不存在透明分支时，跳过两套透明 NRD 实例。原始估计器不会改变，
+  但暂停 NRD 后再恢复会改变其内部时间状态，因此玻璃或水重新出现的第一帧需要明确的重置策略
+  和目测验证。普通不透明场景可能从中获得很大收益，因为当前反射与透射降噪器都会执行一套
+  全分辨率调度图。
+- 研究将 `VK_EXT_opacity_micromap` 用于大量 cutout 植被的场景。它可能显著减少丛林中的 any-hit
+  shader 工作，但 alpha 量化、动态图集纹素、资源包重载以及不支持该扩展时的回退，使其成为一种
+  可能产生不同相交行为的独立表示，而不是严格等价的源码化简。
 
-Exact but larger lifecycle/architecture work left outside the current low-risk pass:
+## 数学等价但规模较大的生命周期与架构工作
 
-- Keep a timeline-recycled ring of ray-tracing descriptor bundles. A TLAS swap currently creates a
-  new descriptor pool/set and retires the old one so in-flight command buffers remain valid. A ring
-  can update a set only after its real completion point and avoid driver allocation churn without
-  changing rendering, but it needs the same rigorous ownership protocol as NRD frame bindings.
-- Pack Section geometry and light records directly into staging/native output storage. The current
-  branch removed redundant final copies and long-lived CPU light data, but each completed mesh still
-  owns large Java primitive arrays until upload. Direct bounded storage is exact, yet belongs with
-  the mesh-builder/backpressure rewrite tracked in `docs/FIXME.md`.
+- 维护一个按真实 timeline 完成点循环复用的光追描述符资源环。TLAS 替换目前会创建新的描述符池
+  和描述符集，再退休旧资源，以保证仍在执行的命令缓冲有效。资源环可以只在某个描述符集真正完成
+  后更新它，从而在不改变渲染结果的情况下避免驱动分配抖动，但这需要与 NRD 帧绑定同等严格的
+  所有权协议。
+- 将 Section 几何和灯光记录直接写入 staging 或原生输出存储。当前分支已经删除多余的最终复制，
+  并避免长期保留 CPU 灯光数据，但每个已完成网格在上传前仍持有大型 Java 基本类型数组。使用有界
+  存储直接构建可以保持数学等价，但应当与 `docs/FIXME.md` 中记录的网格构建器和背压机制重写一起完成。

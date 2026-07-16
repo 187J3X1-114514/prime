@@ -43,16 +43,22 @@ final class NrdSignalContractTest {
         assertTrue(transparent.contains("splitSmoothInterface ? 2u : 1u"));
         assertTrue(transparent.contains("if (!splitInterface)"));
         assertTrue(transparent.contains("primeTransparentReflectionNoisy"));
+        assertTrue(transparent.contains("primeTransparentReflectionSpecular"));
         assertTrue(transparent.contains("primeTransparentTransmissionNoisy"));
+        assertTrue(transparent.contains("primeTransparentTransmissionSpecular"));
         assertTrue(transparent.contains("result.guidePosition = surface.position"));
         assertTrue(transparent.contains("vec4(visibleRadiance, -(max(surface.t, 0.0) + 1.0))"));
         assertTrue(transparent.contains("imageStore(primeFsrTransparencyCompositionMask"));
         assertTrue(transparentPreparation.contains("if (metadata.a < 0.0)"));
         assertTrue(transparentPreparation.contains("primeSolvePreviousRefraction("));
-        assertTrue(transparentPreparation.contains("relativeEta * transmittedLength"));
+        assertTrue(transparentPreparation.contains("incidentLength + transmittedLength"));
+        assertTrue(transparentPreparation.contains("primeNrdMaterialFactors("));
         assertTrue(transparentPreparation.contains("primeNrdPackRadianceAndHitDistance("));
         assertTrue(transparentComposite.contains("primeReflectionDenoised"));
+        assertTrue(transparentComposite.contains("primeReflectionSpecularDenoised"));
         assertTrue(transparentComposite.contains("primeTransmissionDenoised"));
+        assertTrue(transparentComposite.contains("primeTransmissionSpecularDenoised"));
         assertTrue(transparentComposite.contains("metadata.a < 0.0"));
+        assertTrue(integrator.contains("primary-surface-replacement contract"));
     }
 }

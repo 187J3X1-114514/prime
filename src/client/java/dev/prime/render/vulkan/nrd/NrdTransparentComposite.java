@@ -27,7 +27,7 @@ import org.lwjgl.vulkan.VkWriteDescriptorSet;
 
 /** Sums two independently denoised transparent branches into the opaque scene before FSR. */
 public final class NrdTransparentComposite implements Destroyable {
-    private static final int BINDING_COUNT = 7;
+    private static final int BINDING_COUNT = 13;
     private static final int PUSH_SIZE = 8;
 
     private final VulkanContext context;
@@ -150,8 +150,14 @@ public final class NrdTransparentComposite implements Destroyable {
                 sceneColor,
                 reflection.denoisedDiffuse(),
                 reflection.material(),
+                reflection.denoisedSpecular(),
+                reflection.specularMaterial(),
+                reflection.transparentThroughput(),
                 transmission.denoisedDiffuse(),
                 transmission.material(),
+                transmission.denoisedSpecular(),
+                transmission.specularMaterial(),
+                transmission.transparentThroughput(),
                 atmosphere.aerialRadiance(),
                 atmosphere.aerialTransmittance()
             };

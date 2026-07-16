@@ -136,9 +136,9 @@ public final class NrdDenoiser implements Destroyable {
     }
 
     /**
-     * Creates an independent diffuse-only REBLUR history for one transparent first-interface
-     * branch. Reflection and transmission must use separate instances: their virtual surfaces,
-     * motion and disocclusion histories are unrelated even when they originate at the same pixel.
+     * Creates an independent diffuse/specular REBLUR history for one transparent PSR branch.
+     * Reflection and transmission must use separate instances: their virtual surfaces, motion and
+     * disocclusion histories are unrelated even when they originate at the same pixel.
      */
     public static NrdDenoiser createTransparentBranch(
             VulkanContext context,
@@ -239,15 +239,22 @@ public final class NrdDenoiser implements Destroyable {
     /**
      * First-interface-to-hit segment and relative IOR for refractive reprojection.
      *
-     * <p>A diffuse-only NRD instance has no specular input, so this deliberately reuses that
-     * otherwise idle descriptor slot. It remains a distinct allocation; aliasing it with the
-     * branch radiance would make raygen race the motion preparation pass.
+     * <p>The full diffuse/specular PSR instance needs both noisy radiance inputs, so the interface
+     * segment has its own allocation instead of reusing the specular channel.
      */
     public VulkanImage transparentInterface() {
         if (this.ownsOpaqueComposite) {
             throw new IllegalStateException("Opaque NRD has no transparent interface image");
         }
-        return this.images.noisySpecular;
+        return this.images.reprojectionError;
+    }
+
+    /** Delta-chain Fresnel, tint and volume attenuation applied after PSR denoising. */
+    public VulkanImage transparentThroughput() {
+        if (this.ownsOpaqueComposite) {
+            throw new IllegalStateException("Opaque NRD has no transparent path throughput image");
+        }
+        return this.images.transparentThroughput;
     }
 
     public enum TransparentBranch {
@@ -265,6 +272,10 @@ public final class NrdDenoiser implements Destroyable {
 
     public VulkanImage denoisedDiffuse() {
         return this.images.denoisedDiffuse;
+    }
+
+    public VulkanImage denoisedSpecular() {
+        return this.images.denoisedSpecular;
     }
 
     public VulkanImage specularMaterial() {
@@ -861,6 +872,7 @@ public final class NrdDenoiser implements Destroyable {
         private final VulkanImage denoisedSpecular;
         private final VulkanImage fsrReactiveMask;
         private final VulkanImage fsrTransparencyCompositionMask;
+        private final VulkanImage transparentThroughput;
         private final VulkanImage[] permanentPool;
         private final VulkanImage[] transientPool;
         private boolean destroyed;
@@ -881,6 +893,7 @@ public final class NrdDenoiser implements Destroyable {
                 VulkanImage denoisedSpecular,
                 VulkanImage fsrReactiveMask,
                 VulkanImage fsrTransparencyCompositionMask,
+                VulkanImage transparentThroughput,
                 VulkanImage[] permanentPool,
                 VulkanImage[] transientPool) {
             this.noisyDiffuse = noisyDiffuse;
@@ -898,6 +911,7 @@ public final class NrdDenoiser implements Destroyable {
             this.denoisedSpecular = denoisedSpecular;
             this.fsrReactiveMask = fsrReactiveMask;
             this.fsrTransparencyCompositionMask = fsrTransparencyCompositionMask;
+            this.transparentThroughput = transparentThroughput;
             this.permanentPool = permanentPool;
             this.transientPool = transientPool;
         }
@@ -908,7 +922,7 @@ public final class NrdDenoiser implements Destroyable {
                 int height,
                 NrdNative.Description description,
                 String debugPrefix,
-                boolean diffuseOnly) {
+                boolean transparentPsr) {
             ArrayList<VulkanImage> created = new ArrayList<>();
             try {
                 VulkanImage noisy = createImage(
@@ -919,16 +933,14 @@ public final class NrdDenoiser implements Destroyable {
                         width,
                         height,
                         VK12.VK_FORMAT_R16G16B16A16_SFLOAT,
-                        diffuseOnly
-                                ? debugPrefix + " interface segment and eta"
-                                : debugPrefix + " noisy specular");
+                        debugPrefix + " noisy specular");
                 VulkanImage normal = createImage(
                         context, created, width, height, VK12.VK_FORMAT_A2B10G10R10_UNORM_PACK32, debugPrefix + " normal roughness");
                 VulkanImage viewZ = createImage(
                         context, created, width, height, VK12.VK_FORMAT_R32_SFLOAT, debugPrefix + " view Z");
                 VulkanImage motion = createImage(
                         context, created, width, height, VK12.VK_FORMAT_R16G16B16A16_SFLOAT, debugPrefix + " 2.5D screen motion");
-                VulkanImage fsrDepth = diffuseOnly
+                VulkanImage fsrDepth = transparentPsr
                         ? viewZ
                         : createImage(
                                 context, created, width, height, VK12.VK_FORMAT_R32_SFLOAT, debugPrefix + " FSR depth");
@@ -938,26 +950,43 @@ public final class NrdDenoiser implements Destroyable {
                         context, created, width, height, VK12.VK_FORMAT_R16G16B16A16_SFLOAT, debugPrefix + " specular material or virtual guide");
                 VulkanImage primaryPosition = createImage(
                         context, created, width, height, VK12.VK_FORMAT_R32G32B32A32_SFLOAT, debugPrefix + " primary or virtual position");
-                VulkanImage reprojectionError = diffuseOnly
-                        ? material
-                        : createImage(
-                                context, created, width, height, VK12.VK_FORMAT_R16G16B16A16_SFLOAT, debugPrefix + " reprojection error");
+                VulkanImage reprojectionError = createImage(
+                        context,
+                        created,
+                        width,
+                        height,
+                        VK12.VK_FORMAT_R16G16B16A16_SFLOAT,
+                        transparentPsr
+                                ? debugPrefix + " first-interface segment and eta"
+                                : debugPrefix + " reprojection error");
                 VulkanImage validation = createImage(
                         context, created, width, height, VK12.VK_FORMAT_R8G8B8A8_UNORM, debugPrefix + " validation output");
                 VulkanImage denoised = createImage(
                         context, created, width, height, VK12.VK_FORMAT_R16G16B16A16_SFLOAT, debugPrefix + " denoised diffuse");
-                VulkanImage denoisedSpecular = diffuseOnly
-                        ? denoised
-                        : createImage(
-                                context, created, width, height, VK12.VK_FORMAT_R16G16B16A16_SFLOAT, debugPrefix + " denoised specular");
-                VulkanImage fsrReactiveMask = diffuseOnly
+                VulkanImage denoisedSpecular = createImage(
+                        context,
+                        created,
+                        width,
+                        height,
+                        VK12.VK_FORMAT_R16G16B16A16_SFLOAT,
+                        debugPrefix + " denoised specular");
+                VulkanImage fsrReactiveMask = transparentPsr
                         ? validation
                         : createImage(
                                 context, created, width, height, VK12.VK_FORMAT_R8_UNORM, debugPrefix + " FSR reactive mask");
-                VulkanImage fsrTransparencyCompositionMask = diffuseOnly
+                VulkanImage fsrTransparencyCompositionMask = transparentPsr
                         ? validation
                         : createImage(
                                 context, created, width, height, VK12.VK_FORMAT_R8_UNORM, debugPrefix + " FSR transparency mask");
+                VulkanImage transparentThroughput = transparentPsr
+                        ? createImage(
+                                context,
+                                created,
+                                width,
+                                height,
+                                VK12.VK_FORMAT_R16G16B16A16_SFLOAT,
+                                debugPrefix + " delta-chain throughput")
+                        : material;
                 VulkanImage[] permanent = createPool(
                         context, created, width, height, description.permanentPool(), debugPrefix + " permanent");
                 VulkanImage[] transientImages = createPool(
@@ -978,6 +1007,7 @@ public final class NrdDenoiser implements Destroyable {
                         denoisedSpecular,
                         fsrReactiveMask,
                         fsrTransparencyCompositionMask,
+                        transparentThroughput,
                         permanent,
                         transientImages);
             } catch (RuntimeException exception) {
@@ -1045,7 +1075,8 @@ public final class NrdDenoiser implements Destroyable {
                 this.validation,
                 this.fsrDepth,
                 this.fsrReactiveMask,
-                this.fsrTransparencyCompositionMask
+                this.fsrTransparencyCompositionMask,
+                this.transparentThroughput
             };
             for (VulkanImage image : fixed) {
                 if (seen.add(image)) {
@@ -1650,7 +1681,7 @@ public final class NrdDenoiser implements Destroyable {
                     images.viewZ,
                     images.primaryPosition,
                     images.reprojectionError,
-                    images.fsrDepth,
+                    transparentBranch == 0 ? images.fsrDepth : images.transparentThroughput,
                     images.noisyDiffuse,
                     images.noisySpecular,
                     images.normalRoughness,

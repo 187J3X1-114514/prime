@@ -116,7 +116,7 @@ abstract class GenerateShaderAbi extends DefaultTask {
 							+ 'the -64 sea level / 0.001 km world scale, and a 10-unit space sun')
 		}
 		if (nrdContract.version != '4.17.4'
-                || nrdContract.denoiser != 'opaque-reblur-diffuse-specular+transparent-dual-reblur-diffuse'
+                || nrdContract.denoiser != 'opaque-reblur-diffuse-specular+transparent-dual-reblur-diffuse-specular-psr'
 				|| nrdContract.normalEncoding != 'r10g10b10a2-unorm'
 				|| nrdContract.roughnessEncoding != 'linear'
 				|| nrdContract.motionSpace != 'screen-2.5d'
@@ -248,6 +248,10 @@ public final class ShaderAbi {
     public static final int DESCRIPTOR_TRANSPARENT_TRANSMISSION_GUIDE = ${schema.descriptors.transparentTransmissionGuide};
     public static final int DESCRIPTOR_TRANSPARENT_REFLECTION_INTERFACE = ${schema.descriptors.transparentReflectionInterface};
     public static final int DESCRIPTOR_TRANSPARENT_TRANSMISSION_INTERFACE = ${schema.descriptors.transparentTransmissionInterface};
+    public static final int DESCRIPTOR_TRANSPARENT_REFLECTION_SPECULAR = ${schema.descriptors.transparentReflectionSpecular};
+    public static final int DESCRIPTOR_TRANSPARENT_TRANSMISSION_SPECULAR = ${schema.descriptors.transparentTransmissionSpecular};
+    public static final int DESCRIPTOR_TRANSPARENT_REFLECTION_THROUGHPUT = ${schema.descriptors.transparentReflectionThroughput};
+    public static final int DESCRIPTOR_TRANSPARENT_TRANSMISSION_THROUGHPUT = ${schema.descriptors.transparentTransmissionThroughput};
     public static final int PATH_CAMERA_IN_WATER_MASK = ${schema.pathControl.cameraInWaterMask};
     public static final int PATH_JITTER_PHASE_MASK = ${schema.pathControl.jitterPhaseMask};
     public static final float CUTOUT_ALPHA_THRESHOLD = ${schema.cutoutAlphaThreshold}f;
@@ -441,6 +445,10 @@ layout(set = 0, binding = ${schema.descriptors.transparentTransmissionGuide}, rg
 // the sampled microfacet normal. This split retains distant-camera precision without two FP32 RGBs.
 layout(set = 0, binding = ${schema.descriptors.transparentReflectionInterface}, rgba16f) uniform image2D primeTransparentReflectionInterface;
 layout(set = 0, binding = ${schema.descriptors.transparentTransmissionInterface}, rgba16f) uniform image2D primeTransparentTransmissionInterface;
+layout(set = 0, binding = ${schema.descriptors.transparentReflectionSpecular}, rgba16f) uniform image2D primeTransparentReflectionSpecular;
+layout(set = 0, binding = ${schema.descriptors.transparentTransmissionSpecular}, rgba16f) uniform image2D primeTransparentTransmissionSpecular;
+layout(set = 0, binding = ${schema.descriptors.transparentReflectionThroughput}, rgba16f) uniform image2D primeTransparentReflectionThroughput;
+layout(set = 0, binding = ${schema.descriptors.transparentTransmissionThroughput}, rgba16f) uniform image2D primeTransparentTransmissionThroughput;
 
 #endif
 """

@@ -111,7 +111,7 @@ final class NrdNativeTest {
     }
 
     @Test
-    void bundledBridgeCreatesIndependentDiffuseOnlyDispatches() {
+    void bundledBridgeCreatesIndependentTransparentPsrDispatches() {
         try (NrdNative.Instance instance = NrdNative.create(
                 64, 48, NrdNative.DenoiserKind.TRANSPARENT_TRANSMISSION)) {
             NrdNative.Description description = instance.description();
@@ -144,8 +144,8 @@ final class NrdNativeTest {
                     .forEach(resource -> resourceTypes.add(resource.resourceType()));
             assertTrue(resourceTypes.contains(NrdNative.RESOURCE_IN_DIFF_RADIANCE_HITDIST));
             assertTrue(resourceTypes.contains(NrdNative.RESOURCE_OUT_DIFF_RADIANCE_HITDIST));
-            assertFalse(resourceTypes.contains(NrdNative.RESOURCE_IN_SPEC_RADIANCE_HITDIST));
-            assertFalse(resourceTypes.contains(NrdNative.RESOURCE_OUT_SPEC_RADIANCE_HITDIST));
+            assertTrue(resourceTypes.contains(NrdNative.RESOURCE_IN_SPEC_RADIANCE_HITDIST));
+            assertTrue(resourceTypes.contains(NrdNative.RESOURCE_OUT_SPEC_RADIANCE_HITDIST));
         }
     }
 

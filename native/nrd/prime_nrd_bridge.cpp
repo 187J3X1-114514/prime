@@ -263,9 +263,10 @@ PRIME_NRD_EXPORT int32_t primeNrdCreate(
     if (context == nullptr)
         return -2;
 
-    const nrd::Denoiser selectedDenoiser = createDesc->denoiserKind == 0
-        ? nrd::Denoiser::REBLUR_DIFFUSE_SPECULAR
-        : nrd::Denoiser::REBLUR_DIFFUSE;
+    // Transparent branches expose a complete primary-surface replacement. They therefore need
+    // the same diffuse/specular separation as an ordinary primary surface; filtering their mixed
+    // radiance as diffuse destroys the replacement surface's texture and glossy response.
+    const nrd::Denoiser selectedDenoiser = nrd::Denoiser::REBLUR_DIFFUSE_SPECULAR;
     const nrd::DenoiserDesc denoiser = {PRIME_NRD_DENOISER_ID, selectedDenoiser};
     context->denoiserProfile = createDesc->denoiserKind;
     const nrd::InstanceCreationDesc creation = {{}, &denoiser, 1};
@@ -282,15 +283,15 @@ PRIME_NRD_EXPORT int32_t primeNrdCreate(
     settings.specularPrepassBlurRadius = 50.0f;
     if (context->denoiserProfile != 0)
     {
-        // Every transparent signal writes one sample per covered pixel. Smooth interfaces use two
-        // deterministic histories; finite-roughness interfaces use one complete BSDF history.
-        // Neither has the missing-pixel pattern that AREA_3X3 reconstruction or the 30-pixel
-        // pre-pass repairs. Reflection and transmission deliberately share the same filter:
-        // their statistical distinction belongs in the material/path policy, not NRD tuning.
-        settings.hitDistanceReconstructionMode = nrd::HitDistanceReconstructionMode::OFF;
+        // The delta interface itself is deterministic, but the promoted PSR selects one ordinary
+        // diffuse/specular continuation. NRD explicitly recommends hit-distance reconstruction
+        // for this probabilistic lobe split. Keep diffuse texture samples untouched; retain a
+        // narrow specular pre-pass only for motion estimation, which is the recommended clean-
+        // signal mode and avoids feeding its spatial blur into the visible result.
+        settings.hitDistanceReconstructionMode = nrd::HitDistanceReconstructionMode::AREA_3X3;
         settings.diffusePrepassBlurRadius = 0.0f;
-        settings.historyFixFrameNum = 2;
-        settings.historyFixBasePixelStride = 8;
+        settings.specularPrepassBlurRadius = 12.0f;
+        settings.usePrepassOnlyForSpecularMotionEstimation = true;
         settings.maxBlurRadius = 12.0f;
     }
     result = nrd::SetDenoiserSettings(*context->instance, PRIME_NRD_DENOISER_ID, &settings);

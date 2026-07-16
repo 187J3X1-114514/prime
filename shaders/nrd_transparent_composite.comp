@@ -9,10 +9,16 @@ layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
 layout(set = 0, binding = 0, rgba16f) uniform image2D primeTransparentSceneColor;
 layout(set = 0, binding = 1, rgba16f) uniform readonly image2D primeReflectionDenoised;
 layout(set = 0, binding = 2, rgba16f) uniform readonly image2D primeReflectionMetadata;
-layout(set = 0, binding = 3, rgba16f) uniform readonly image2D primeTransmissionDenoised;
-layout(set = 0, binding = 4, rgba16f) uniform readonly image2D primeTransmissionMetadata;
-layout(set = 0, binding = 5, rgba16f) uniform readonly image3D primeTransparentAerialRadiance;
-layout(set = 0, binding = 6, rgba16f) uniform readonly image3D primeTransparentAerialTransmittance;
+layout(set = 0, binding = 3, rgba16f) uniform readonly image2D primeReflectionSpecularDenoised;
+layout(set = 0, binding = 4, rgba16f) uniform readonly image2D primeReflectionSpecularMaterial;
+layout(set = 0, binding = 5, rgba16f) uniform readonly image2D primeReflectionThroughput;
+layout(set = 0, binding = 6, rgba16f) uniform readonly image2D primeTransmissionDenoised;
+layout(set = 0, binding = 7, rgba16f) uniform readonly image2D primeTransmissionMetadata;
+layout(set = 0, binding = 8, rgba16f) uniform readonly image2D primeTransmissionSpecularDenoised;
+layout(set = 0, binding = 9, rgba16f) uniform readonly image2D primeTransmissionSpecularMaterial;
+layout(set = 0, binding = 10, rgba16f) uniform readonly image2D primeTransmissionThroughput;
+layout(set = 0, binding = 11, rgba16f) uniform readonly image3D primeTransparentAerialRadiance;
+layout(set = 0, binding = 12, rgba16f) uniform readonly image3D primeTransparentAerialTransmittance;
 
 layout(push_constant) uniform PrimeTransparentCompositePushConstants {
     uvec2 outputExtent;
@@ -33,11 +39,23 @@ vec3 primeResolveTransparentBranch(
             : imageLoad(primeTransmissionMetadata, pixel);
     // Negative alpha denotes an atmosphere/sun miss. It is deterministic for a fixed camera ray
     // and bypasses NRD; finite virtual surfaces consume their own branch's independent history.
-    return metadata.a < 0.0
-            ? metadata.rgb
-            : primeNrdYCoCgToLinear(reflectionBranch
-                    ? imageLoad(primeReflectionDenoised, pixel).rgb
-                    : imageLoad(primeTransmissionDenoised, pixel).rgb);
+    if (metadata.a < 0.0) {
+        return metadata.rgb;
+    }
+    vec3 diffuse = primeNrdYCoCgToLinear(reflectionBranch
+            ? imageLoad(primeReflectionDenoised, pixel).rgb
+            : imageLoad(primeTransmissionDenoised, pixel).rgb) * metadata.rgb;
+    vec4 specularMaterial = reflectionBranch
+            ? imageLoad(primeReflectionSpecularMaterial, pixel)
+            : imageLoad(primeTransmissionSpecularMaterial, pixel);
+    vec3 specular = primeNrdYCoCgToLinear(reflectionBranch
+            ? imageLoad(primeReflectionSpecularDenoised, pixel).rgb
+            : imageLoad(primeTransmissionSpecularDenoised, pixel).rgb)
+            * specularMaterial.rgb;
+    vec3 throughput = (reflectionBranch
+            ? imageLoad(primeReflectionThroughput, pixel)
+            : imageLoad(primeTransmissionThroughput, pixel)).rgb;
+    return throughput * (diffuse + specular);
 }
 
 void primeTransparentCompositeApplyAerial(

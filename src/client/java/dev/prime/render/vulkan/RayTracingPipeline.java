@@ -155,7 +155,11 @@ public final class RayTracingPipeline implements Destroyable {
                         transparentTransmission.material().view(),
                         transparentTransmission.specularMaterial().view(),
                         transparentReflection.transparentInterface().view(),
-                        transparentTransmission.transparentInterface().view())) {
+                        transparentTransmission.transparentInterface().view(),
+                        transparentReflection.noisySpecular().view(),
+                        transparentTransmission.noisySpecular().view(),
+                        transparentReflection.transparentThroughput().view(),
+                        transparentTransmission.transparentThroughput().view())) {
             return;
         }
         DescriptorBindings replacement = DescriptorBindings.create(
@@ -285,7 +289,7 @@ public final class RayTracingPipeline implements Destroyable {
     }
 
     private static long createDescriptorSetLayout(VulkanContext context, MemoryStack stack) {
-        VkDescriptorSetLayoutBinding.Buffer bindings = VkDescriptorSetLayoutBinding.calloc(31, stack);
+        VkDescriptorSetLayoutBinding.Buffer bindings = VkDescriptorSetLayoutBinding.calloc(35, stack);
         bindings.get(0)
                 .binding(ShaderAbi.DESCRIPTOR_TLAS)
                 .descriptorType(KHRAccelerationStructure.VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR)
@@ -366,7 +370,11 @@ public final class RayTracingPipeline implements Destroyable {
             ShaderAbi.DESCRIPTOR_TRANSPARENT_TRANSMISSION_METADATA,
             ShaderAbi.DESCRIPTOR_TRANSPARENT_TRANSMISSION_GUIDE,
             ShaderAbi.DESCRIPTOR_TRANSPARENT_REFLECTION_INTERFACE,
-            ShaderAbi.DESCRIPTOR_TRANSPARENT_TRANSMISSION_INTERFACE
+            ShaderAbi.DESCRIPTOR_TRANSPARENT_TRANSMISSION_INTERFACE,
+            ShaderAbi.DESCRIPTOR_TRANSPARENT_REFLECTION_SPECULAR,
+            ShaderAbi.DESCRIPTOR_TRANSPARENT_TRANSMISSION_SPECULAR,
+            ShaderAbi.DESCRIPTOR_TRANSPARENT_REFLECTION_THROUGHPUT,
+            ShaderAbi.DESCRIPTOR_TRANSPARENT_TRANSMISSION_THROUGHPUT
         };
         for (int index = 0; index < transparentBranchBindings.length; index++) {
             bindings.get(index + 21)
@@ -640,6 +648,10 @@ public final class RayTracingPipeline implements Destroyable {
         private final long transparentTransmissionGuide;
         private final long transparentReflectionInterface;
         private final long transparentTransmissionInterface;
+        private final long transparentReflectionSpecular;
+        private final long transparentTransmissionSpecular;
+        private final long transparentReflectionThroughput;
+        private final long transparentTransmissionThroughput;
         private boolean destroyed;
 
         private DescriptorBindings(
@@ -676,7 +688,11 @@ public final class RayTracingPipeline implements Destroyable {
                 long transparentTransmissionMetadata,
                 long transparentTransmissionGuide,
                 long transparentReflectionInterface,
-                long transparentTransmissionInterface) {
+                long transparentTransmissionInterface,
+                long transparentReflectionSpecular,
+                long transparentTransmissionSpecular,
+                long transparentReflectionThroughput,
+                long transparentTransmissionThroughput) {
             this.context = context;
             this.descriptorPool = descriptorPool;
             this.descriptorSet = descriptorSet;
@@ -711,6 +727,10 @@ public final class RayTracingPipeline implements Destroyable {
             this.transparentTransmissionGuide = transparentTransmissionGuide;
             this.transparentReflectionInterface = transparentReflectionInterface;
             this.transparentTransmissionInterface = transparentTransmissionInterface;
+            this.transparentReflectionSpecular = transparentReflectionSpecular;
+            this.transparentTransmissionSpecular = transparentTransmissionSpecular;
+            this.transparentReflectionThroughput = transparentReflectionThroughput;
+            this.transparentTransmissionThroughput = transparentTransmissionThroughput;
         }
 
         private static DescriptorBindings create(
@@ -730,7 +750,7 @@ public final class RayTracingPipeline implements Destroyable {
             try (MemoryStack stack = MemoryStack.stackPush()) {
                 VkDescriptorPoolSize.Buffer sizes = VkDescriptorPoolSize.calloc(3, stack);
                 sizes.get(0).type(KHRAccelerationStructure.VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR).descriptorCount(1);
-                sizes.get(1).type(VK12.VK_DESCRIPTOR_TYPE_STORAGE_IMAGE).descriptorCount(28);
+                sizes.get(1).type(VK12.VK_DESCRIPTOR_TYPE_STORAGE_IMAGE).descriptorCount(32);
                 sizes.get(2).type(VK12.VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER).descriptorCount(2);
                 VkDescriptorPoolCreateInfo poolCreateInfo = VkDescriptorPoolCreateInfo.calloc(stack)
                         .sType$Default()
@@ -756,7 +776,7 @@ public final class RayTracingPipeline implements Destroyable {
                             VkWriteDescriptorSetAccelerationStructureKHR.calloc(stack)
                                     .sType$Default()
                                     .pAccelerationStructures(stack.longs(tlas));
-                    VkDescriptorImageInfo.Buffer imageInfos = VkDescriptorImageInfo.calloc(30, stack);
+                    VkDescriptorImageInfo.Buffer imageInfos = VkDescriptorImageInfo.calloc(34, stack);
                     imageInfos.get(0)
                             .imageView(output.view())
                             .imageLayout(VK12.VK_IMAGE_LAYOUT_GENERAL);
@@ -817,14 +837,18 @@ public final class RayTracingPipeline implements Destroyable {
                         transparentTransmission.material(),
                         transparentTransmission.specularMaterial(),
                         transparentReflection.transparentInterface(),
-                        transparentTransmission.transparentInterface()
+                        transparentTransmission.transparentInterface(),
+                        transparentReflection.noisySpecular(),
+                        transparentTransmission.noisySpecular(),
+                        transparentReflection.transparentThroughput(),
+                        transparentTransmission.transparentThroughput()
                     };
                     for (int index = 0; index < transparentBranchImages.length; index++) {
                         imageInfos.get(index + 20)
                                 .imageView(transparentBranchImages[index].view())
                                 .imageLayout(VK12.VK_IMAGE_LAYOUT_GENERAL);
                     }
-                    VkWriteDescriptorSet.Buffer writes = VkWriteDescriptorSet.calloc(31, stack);
+                    VkWriteDescriptorSet.Buffer writes = VkWriteDescriptorSet.calloc(35, stack);
                     writes.get(0)
                             .sType$Default()
                             .pNext(acceleration.address())
@@ -922,7 +946,11 @@ public final class RayTracingPipeline implements Destroyable {
                         ShaderAbi.DESCRIPTOR_TRANSPARENT_TRANSMISSION_METADATA,
                         ShaderAbi.DESCRIPTOR_TRANSPARENT_TRANSMISSION_GUIDE,
                         ShaderAbi.DESCRIPTOR_TRANSPARENT_REFLECTION_INTERFACE,
-                        ShaderAbi.DESCRIPTOR_TRANSPARENT_TRANSMISSION_INTERFACE
+                        ShaderAbi.DESCRIPTOR_TRANSPARENT_TRANSMISSION_INTERFACE,
+                        ShaderAbi.DESCRIPTOR_TRANSPARENT_REFLECTION_SPECULAR,
+                        ShaderAbi.DESCRIPTOR_TRANSPARENT_TRANSMISSION_SPECULAR,
+                        ShaderAbi.DESCRIPTOR_TRANSPARENT_REFLECTION_THROUGHPUT,
+                        ShaderAbi.DESCRIPTOR_TRANSPARENT_TRANSMISSION_THROUGHPUT
                     };
                     for (int index = 0; index < transparentBranchBindings.length; index++) {
                         writes.get(index + 21)
@@ -969,7 +997,11 @@ public final class RayTracingPipeline implements Destroyable {
                             transparentTransmission.material().view(),
                             transparentTransmission.specularMaterial().view(),
                             transparentReflection.transparentInterface().view(),
-                            transparentTransmission.transparentInterface().view());
+                            transparentTransmission.transparentInterface().view(),
+                            transparentReflection.noisySpecular().view(),
+                            transparentTransmission.noisySpecular().view(),
+                            transparentReflection.transparentThroughput().view(),
+                            transparentTransmission.transparentThroughput().view());
                 } catch (RuntimeException exception) {
                     VK12.vkDestroyDescriptorPool(context.vkDevice(), pool, null);
                     throw exception;
@@ -1008,7 +1040,11 @@ public final class RayTracingPipeline implements Destroyable {
                 long transparentTransmissionMetadata,
                 long transparentTransmissionGuide,
                 long transparentReflectionInterface,
-                long transparentTransmissionInterface) {
+                long transparentTransmissionInterface,
+                long transparentReflectionSpecular,
+                long transparentTransmissionSpecular,
+                long transparentReflectionThroughput,
+                long transparentTransmissionThroughput) {
             return this.tlas == tlas
                     && this.outputView == outputView
                     && this.accumulationView == accumulationView
@@ -1039,7 +1075,11 @@ public final class RayTracingPipeline implements Destroyable {
                     && this.transparentTransmissionMetadata == transparentTransmissionMetadata
                     && this.transparentTransmissionGuide == transparentTransmissionGuide
                     && this.transparentReflectionInterface == transparentReflectionInterface
-                    && this.transparentTransmissionInterface == transparentTransmissionInterface;
+                    && this.transparentTransmissionInterface == transparentTransmissionInterface
+                    && this.transparentReflectionSpecular == transparentReflectionSpecular
+                    && this.transparentTransmissionSpecular == transparentTransmissionSpecular
+                    && this.transparentReflectionThroughput == transparentReflectionThroughput
+                    && this.transparentTransmissionThroughput == transparentTransmissionThroughput;
         }
 
         @Override

@@ -178,7 +178,11 @@
     "transparentTransmissionMetadata": 27,
     "transparentTransmissionGuide": 28,
     "transparentReflectionInterface": 29,
-    "transparentTransmissionInterface": 30
+    "transparentTransmissionInterface": 30,
+    "transparentReflectionSpecular": 31,
+    "transparentTransmissionSpecular": 32,
+    "transparentReflectionThroughput": 33,
+    "transparentTransmissionThroughput": 34
   },
   "pathControl": {
     "cameraInWaterMask": "0x80000000",
@@ -186,7 +190,7 @@
   },
   "nrdContract": {
     "version": "4.17.4",
-    "denoiser": "opaque-reblur-diffuse-specular+transparent-dual-reblur-diffuse",
+    "denoiser": "opaque-reblur-diffuse-specular+transparent-dual-reblur-diffuse-specular-psr",
     "normalEncoding": "r10g10b10a2-unorm",
     "roughnessEncoding": "linear",
     "motionSpace": "screen-2.5d",

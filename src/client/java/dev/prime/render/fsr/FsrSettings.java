@@ -44,6 +44,18 @@ public final class FsrSettings {
     public record Extent(int width, int height) {
     }
 
+    /**
+     * Centered sub-pixel displacement used by Prime ray generation: sample = pixel center + jitter.
+     */
     public record Jitter(float x, float y) {
+        /**
+         * FSR's public jitterOffset describes the projection displacement. Its shaders recover
+         * the unjittered source position as pixel center - jitterOffset, so a ray displaced by
+         * +jitter must cross that API boundary as -jitter. NRD instead consumes this record
+         * directly because its documented convention is sampleUv = pixelUv + cameraJitter.
+         */
+        public Jitter forFsrDispatch() {
+            return new Jitter(-this.x, -this.y);
+        }
     }
 }

@@ -448,7 +448,12 @@ public final class NrdDenoiser implements Destroyable {
             bindings.prepare(dispatches, this);
             rayTraceToComputeBarrier(commandBuffer);
             this.motionPipeline.record(
-                    commandBuffer, camera, historyCamera, this.width, this.height);
+                    commandBuffer,
+                    camera,
+                    historyCamera,
+                    cameraJitter,
+                    this.width,
+                    this.height);
             computeToComputeBarrier(commandBuffer);
             for (int dispatchIndex = 0; dispatchIndex < dispatches.size(); dispatchIndex++) {
                 if (dispatchIndex != 0) {
@@ -1736,6 +1741,7 @@ public final class NrdDenoiser implements Destroyable {
                 VkCommandBuffer commandBuffer,
                 FrameCamera camera,
                 FrameCamera previous,
+                float[] cameraJitter,
                 int width,
                 int height) {
             Matrix4f currentClipToWorld = NrdCameraTransform.currentClipToWorld(camera);
@@ -1765,6 +1771,11 @@ public final class NrdDenoiser implements Destroyable {
                     push.putFloat(132, (float) (previous.renderY() - camera.renderY()));
                     push.putFloat(136, (float) (previous.renderZ() - camera.renderZ()));
                     push.putFloat(140, this.transparentBranch);
+                    // Column one carries the centered source-pixel jitter used by raygen. The
+                    // transparent virtual point was selected by that exact sub-pixel ray, so its
+                    // current UV must use the same sample before deriving non-jittered motion.
+                    push.putFloat(144, cameraJitter[0]);
+                    push.putFloat(148, cameraJitter[1]);
                 }
                 VK12.vkCmdPushConstants(
                         commandBuffer,

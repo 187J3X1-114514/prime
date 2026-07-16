@@ -52,6 +52,8 @@ final class NrdSignalContractTest {
         assertTrue(transparentPreparation.contains("if (metadata.a < 0.0)"));
         assertTrue(transparentPreparation.contains("primeSolvePreviousRefraction("));
         assertTrue(transparentPreparation.contains("incidentLength + transmittedLength"));
+        assertTrue(transparentPreparation.contains("vec2 currentCameraJitter"));
+        assertTrue(transparentPreparation.contains("previousUv - currentSampleUv"));
         assertTrue(transparentPreparation.contains("primeNrdMaterialFactors("));
         assertTrue(transparentPreparation.contains("primeNrdPackRadianceAndHitDistance("));
         assertTrue(transparentComposite.contains("primeReflectionDenoised"));

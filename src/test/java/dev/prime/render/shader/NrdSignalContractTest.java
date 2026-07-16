@@ -46,6 +46,14 @@ final class NrdSignalContractTest {
         assertTrue(transparent.contains("primeTransparentReflectionSpecular"));
         assertTrue(transparent.contains("primeTransparentTransmissionNoisy"));
         assertTrue(transparent.contains("primeTransparentTransmissionSpecular"));
+        int transparentMain = transparent.indexOf("void main() {");
+        int primaryTrace = transparent.indexOf("primeTraceSurface(", transparentMain);
+        int earlyExit = transparent.indexOf("if (surface.hitKind", primaryTrace);
+        int conditionalClear = transparent.indexOf(
+                "primeClearTransparentBranches(ivec2(pixel))", earlyExit);
+        assertTrue(transparentMain >= 0 && primaryTrace > transparentMain);
+        assertTrue(!transparent.substring(transparentMain, primaryTrace).contains("imageStore("));
+        assertTrue(earlyExit > primaryTrace && conditionalClear > earlyExit);
         assertTrue(transparent.contains("result.guidePosition = surface.position"));
         assertTrue(transparent.contains(
                 "firstInterface.position - primePush.cameraPosition"));

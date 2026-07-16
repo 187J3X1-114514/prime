@@ -158,6 +158,15 @@ final class EmissionLightContractTest {
         assertFalse(forwardTraversal.contains("/ rightProbability"));
         assertFalse(forwardTraversal.contains("nodes.nodes[nodeIndex]"));
         assertFalse(forwardTraversal.contains("reverseNodes"));
+        String areaSampling = lights.substring(
+                lights.indexOf("AreaLightSample primeSampleAreaLight"),
+                lights.indexOf("vec3 primeResolveSampledAreaLightRadiance"));
+        assertTrue(areaSampling.contains("float pdf = areaPdf * distanceSquared / lightCosine"));
+        assertTrue(areaSampling.contains("if (!(lightCosine > 0.0))"));
+        String areaEvaluation = lights.substring(
+                lights.indexOf("LightEvaluation primeEvaluateAreaLight"),
+                lights.indexOf("#endif"));
+        assertEquals(1, areaEvaluation.split("primeEvaluateEmitterRadiance\\(", -1).length - 1);
         assertTrue(integrator.contains("primeSampleAreaLight"));
         assertTrue(integrator.contains("primeEvaluateAreaLight"));
     }

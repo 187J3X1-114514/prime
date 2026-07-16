@@ -407,11 +407,13 @@ AreaLightSample primeSampleAreaLight(
     float distance = sqrt(distanceSquared);
     vec3 direction = toLight / distance;
     float lightCosine = primeEmitterCosine(emitter, direction);
+    if (!(lightCosine > 0.0)) {
+        return primeInvalidAreaLightSample();
+    }
     float cellArea = emitter.cornerArea.w / float(PRIME_LIGHT_CELL_COUNT);
     float areaPdf = worldPick.pdf * sectionPick.pdf
             * selectedCell.probabilityMass / cellArea;
-    float pdf = primeAreaSolidAnglePdf(
-            surfacePosition, lightPosition, lightCosine, areaPdf);
+    float pdf = areaPdf * distanceSquared / lightCosine;
     if (!(pdf > 0.0)) {
         return primeInvalidAreaLightSample();
     }
@@ -528,18 +530,16 @@ LightEvaluation primeEvaluateAreaLight(
             emitter.metadata.y,
             surface.emitterIndex,
             rayOrigin - section.translation);
-    if (!(worldPdf > 0.0) || !(sectionPdf > 0.0)) {
-        result.radiance = primeEvaluateEmitterRadiance(
-                emitter,
-                primeEmitterUv(emitter, parentBarycentric),
-                uintBitsToFloat(surface.reserved0));
-        return result;
-    }
-    float areaPdf = worldPdf * sectionPdf * cell.probabilityMass / cellArea;
-    result.radiance = primeEvaluateEmitterRadiance(
+    vec3 emitterRadiance = primeEvaluateEmitterRadiance(
             emitter,
             primeEmitterUv(emitter, parentBarycentric),
             uintBitsToFloat(surface.reserved0));
+    if (!(worldPdf > 0.0) || !(sectionPdf > 0.0)) {
+        result.radiance = emitterRadiance;
+        return result;
+    }
+    float areaPdf = worldPdf * sectionPdf * cell.probabilityMass / cellArea;
+    result.radiance = emitterRadiance;
     result.pdf = primeAreaSolidAnglePdf(
             rayOrigin, surface.position, lightCosine, areaPdf);
     return result;

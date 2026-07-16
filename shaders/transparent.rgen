@@ -480,30 +480,35 @@ void primeStoreTransparentBranch(
     }
 }
 
+void primeClearTransparentBranches(ivec2 pixel) {
+    imageStore(primeTransparentReflectionNoisy, pixel, vec4(0.0));
+    imageStore(primeTransparentReflectionSpecular, pixel, vec4(0.0));
+    imageStore(primeTransparentReflectionPosition, pixel, vec4(0.0));
+    imageStore(primeTransparentReflectionMetadata, pixel, vec4(0.0, 0.0, 0.0, -1.0));
+    imageStore(primeTransparentReflectionGuide, pixel, vec4(0.0, 1.0, 0.0, 1.0));
+    imageStore(primeTransparentReflectionInterface, pixel, vec4(0.0, 1.0, 0.0, 1.0));
+    imageStore(primeTransparentReflectionThroughput, pixel, vec4(1.0));
+    imageStore(primeTransparentTransmissionNoisy, pixel, vec4(0.0));
+    imageStore(primeTransparentTransmissionSpecular, pixel, vec4(0.0));
+    imageStore(primeTransparentTransmissionPosition, pixel, vec4(0.0));
+    imageStore(primeTransparentTransmissionMetadata, pixel, vec4(0.0, 0.0, 0.0, -1.0));
+    imageStore(primeTransparentTransmissionGuide, pixel, vec4(0.0, 1.0, 0.0, 1.0));
+    imageStore(primeTransparentTransmissionInterface, pixel, vec4(0.0, 1.0, 0.0, 1.0));
+    imageStore(primeTransparentTransmissionThroughput, pixel, vec4(1.0));
+}
+
 void main() {
     uvec2 pixel = gl_LaunchIDEXT.xy;
     vec2 cameraSample = primeCameraSample();
-    // Every pixel is initialized each frame so old virtual surfaces cannot survive when a camera
-    // ray stops seeing transparency. A negative metadata alpha denotes a stable bypass signal.
-    imageStore(primeTransparentReflectionNoisy, ivec2(pixel), vec4(0.0));
-    imageStore(primeTransparentReflectionSpecular, ivec2(pixel), vec4(0.0));
-    imageStore(primeTransparentReflectionPosition, ivec2(pixel), vec4(0.0));
-    imageStore(primeTransparentReflectionMetadata, ivec2(pixel), vec4(0.0, 0.0, 0.0, -1.0));
-    imageStore(primeTransparentReflectionGuide, ivec2(pixel), vec4(0.0, 1.0, 0.0, 1.0));
-    imageStore(primeTransparentReflectionInterface, ivec2(pixel), vec4(0.0, 1.0, 0.0, 1.0));
-    imageStore(primeTransparentReflectionThroughput, ivec2(pixel), vec4(1.0));
-    imageStore(primeTransparentTransmissionNoisy, ivec2(pixel), vec4(0.0));
-    imageStore(primeTransparentTransmissionSpecular, ivec2(pixel), vec4(0.0));
-    imageStore(primeTransparentTransmissionPosition, ivec2(pixel), vec4(0.0));
-    imageStore(primeTransparentTransmissionMetadata, ivec2(pixel), vec4(0.0, 0.0, 0.0, -1.0));
-    imageStore(primeTransparentTransmissionGuide, ivec2(pixel), vec4(0.0, 1.0, 0.0, 1.0));
-    imageStore(primeTransparentTransmissionInterface, ivec2(pixel), vec4(0.0, 1.0, 0.0, 1.0));
-    imageStore(primeTransparentTransmissionThroughput, ivec2(pixel), vec4(1.0));
     PathState cameraPath = primeCameraPath(pixel, 0u, cameraSample);
     SurfaceInteraction surface = primeTraceSurface(
             cameraPath.traceOrigin, cameraPath.rayDirection);
     if (surface.hitKind == PRIME_HIT_NONE
             || !primeMaterialIsTransmissive(surface.materialFlags)) {
+        // Old virtual surfaces must not survive when a camera ray stops seeing transparency.
+        // Transparent pixels skip this clear because both complete branch records below overwrite
+        // every image; clearing those pixels first would double the storage traffic.
+        primeClearTransparentBranches(ivec2(pixel));
         return;
     }
 

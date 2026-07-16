@@ -60,6 +60,10 @@ public final class TerrainStreamer implements AutoCloseable {
             .thenComparingLong(SectionRequest::key));
     private final ArrayDeque<CompletedSection> readyForUpload = new ArrayDeque<>();
     private final ArrayList<SectionUpload> uploadBatch = new ArrayList<>(MAX_UPLOADS_PER_FRAME);
+    private final ArrayList<SectionRequest> unloadedRequests =
+            new ArrayList<>(MAX_UNLOADED_PROBES_PER_FRAME);
+    private final ArrayList<SectionRequest> blockedRequests =
+            new ArrayList<>(MAX_UNLOADED_PROBES_PER_FRAME);
 
     private ClientLevel world;
     private int centerSectionX = Integer.MIN_VALUE;
@@ -284,8 +288,8 @@ public final class TerrainStreamer implements AutoCloseable {
         RenderRegionCache regionCache = new RenderRegionCache();
         BlockStateModelSet models = minecraft.getModelManager().getBlockStateModelSet();
         FluidStateModelSet fluidModels = minecraft.getModelManager().getFluidStateModelSet();
-        List<SectionRequest> unloaded = new ArrayList<>();
-        List<SectionRequest> blocked = new ArrayList<>();
+        this.unloadedRequests.clear();
+        this.blockedRequests.clear();
         int examined = 0;
         int dispatched = 0;
         while (dispatched < dispatchBudget
@@ -302,7 +306,7 @@ public final class TerrainStreamer implements AutoCloseable {
                 continue;
             }
             if (this.inFlightGeneration.containsKey(request.key())) {
-                blocked.add(request);
+                this.blockedRequests.add(request);
                 continue;
             }
             this.queuedGeneration.remove(request.key());
@@ -311,7 +315,7 @@ public final class TerrainStreamer implements AutoCloseable {
             int sectionZ = SectionPos.z(request.key());
             LevelChunk chunk = level.getChunkSource().getChunk(sectionX, sectionZ, ChunkStatus.FULL, false);
             if (chunk == null) {
-                unloaded.add(request);
+                this.unloadedRequests.add(request);
                 continue;
             }
             if (chunk.getSection(chunk.getSectionIndexFromSectionY(sectionY)).hasOnlyAir()) {
@@ -380,10 +384,12 @@ public final class TerrainStreamer implements AutoCloseable {
             }
             dispatched++;
         }
-        this.requests.addAll(blocked);
-        for (SectionRequest request : unloaded) {
+        this.requests.addAll(this.blockedRequests);
+        for (SectionRequest request : this.unloadedRequests) {
             this.enqueue(request.key(), request.priority(), request.generation());
         }
+        this.blockedRequests.clear();
+        this.unloadedRequests.clear();
     }
 
     private void drainCompleted() {

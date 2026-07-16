@@ -64,7 +64,8 @@ public final class TerrainScene implements AutoCloseable {
         if (!contentChanged && !needsRebase) {
             return true;
         }
-        int finalSectionCount = this.estimateFinalSectionCount(uploads, evictions);
+        LongOpenHashSet removedKeys = removedKeys(uploads, evictions);
+        int finalSectionCount = this.estimateFinalSectionCount(uploads, removedKeys);
         TopLevelAccelerationStructure replacementTlas = null;
         if (finalSectionCount > 0) {
             replacementTlas = this.acquireTlas(finalSectionCount);
@@ -139,7 +140,8 @@ public final class TerrainScene implements AutoCloseable {
                 }
             }
 
-            List<GpuSection> finalSections = this.buildFinalSectionList(uploads, evictions, replacements);
+            List<GpuSection> finalSections = this.buildFinalSectionList(
+                    removedKeys, replacements, finalSectionCount);
             int nextOriginX = needsRebase ? RenderOrigin.alignToSection(cameraX) : this.originX;
             int nextOriginY = needsRebase ? RenderOrigin.alignToSection(cameraY) : this.originY;
             int nextOriginZ = needsRebase ? RenderOrigin.alignToSection(cameraZ) : this.originZ;
@@ -329,19 +331,29 @@ public final class TerrainScene implements AutoCloseable {
         }
     }
 
-    private int estimateFinalSectionCount(List<SectionUpload> uploads, long[] evictions) {
-        LongOpenHashSet finalKeys = new LongOpenHashSet(this.resident.keySet());
-        for (long key : evictions) {
-            finalKeys.remove(key);
-        }
+    private static LongOpenHashSet removedKeys(
+            List<SectionUpload> uploads, long[] evictions) {
+        LongOpenHashSet result = new LongOpenHashSet(evictions);
         for (SectionUpload upload : uploads) {
-            if (upload.mesh().isEmpty()) {
-                finalKeys.remove(upload.key());
-            } else {
-                finalKeys.add(upload.key());
+            result.add(upload.key());
+        }
+        return result;
+    }
+
+    private int estimateFinalSectionCount(
+            List<SectionUpload> uploads, LongOpenHashSet removedKeys) {
+        int count = this.resident.size();
+        for (long key : removedKeys) {
+            if (this.resident.containsKey(key)) {
+                count--;
             }
         }
-        return finalKeys.size();
+        for (SectionUpload upload : uploads) {
+            if (!upload.mesh().isEmpty()) {
+                count++;
+            }
+        }
+        return count;
     }
 
     private boolean hasActualContentChange(List<SectionUpload> uploads, long[] evictions) {
@@ -359,16 +371,12 @@ public final class TerrainScene implements AutoCloseable {
     }
 
     private List<GpuSection> buildFinalSectionList(
-            List<SectionUpload> uploads,
-            long[] evictions,
-            List<GpuSection> replacements) {
-        var removed = new LongOpenHashSet(evictions);
-        for (SectionUpload upload : uploads) {
-            removed.add(upload.key());
-        }
-        List<GpuSection> result = new ArrayList<>(this.resident.size() + replacements.size());
+            LongOpenHashSet removedKeys,
+            List<GpuSection> replacements,
+            int finalSectionCount) {
+        List<GpuSection> result = new ArrayList<>(finalSectionCount);
         for (GpuSection section : this.resident.values()) {
-            if (!removed.contains(section.key())) {
+            if (!removedKeys.contains(section.key())) {
                 result.add(section);
             }
         }

@@ -11,7 +11,7 @@ final class CpuWorldLightTree {
     }
 
     static Result build(List<GpuSection> sections, int originX, int originY, int originZ) {
-        List<CpuLightTree.Leaf> leaves = new ArrayList<>(sections.size());
+        ArrayList<CpuLightTree.Leaf> leaves = new ArrayList<>(sections.size());
         for (int index = 0; index < sections.size(); index++) {
             GpuSection section = sections.get(index);
             if (section.lights().isEmpty()) {
@@ -35,13 +35,9 @@ final class CpuWorldLightTree {
             Arrays.fill(leafNodes, CpuLightTree.NO_INDEX);
             return new Result(new int[0], new int[0], new int[0], leafNodes);
         }
-        CpuLightTree.Result tree = CpuLightTree.build(
+        CpuLightTree.Result tree = CpuLightTree.buildOwned(
                 leaves, sections.size(), CpuLightTree.WORLD_SOFTENING_SCALE);
-        int[] leafNodes = new int[sections.size()];
-        for (int index = 0; index < leafNodes.length; index++) {
-            leafNodes[index] = tree.leafNode(index);
-        }
-        return Result.fromTree(tree, leafNodes);
+        return Result.fromTree(tree, tree.leafNodes());
     }
 
     static final class Result {

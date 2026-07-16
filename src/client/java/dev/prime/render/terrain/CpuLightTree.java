@@ -36,13 +36,17 @@ final class CpuLightTree {
     }
 
     static Result build(List<Leaf> source, int indexCapacity, float softeningScale) {
-        if (source.isEmpty()) {
+        return buildOwned(new ArrayList<>(source), indexCapacity, softeningScale);
+    }
+
+    static Result buildOwned(
+            ArrayList<Leaf> leaves, int indexCapacity, float softeningScale) {
+        if (leaves.isEmpty()) {
             throw new IllegalArgumentException("A light tree requires at least one leaf");
         }
         if (indexCapacity < 0) {
             throw new IllegalArgumentException("Negative light leaf index capacity");
         }
-        List<Leaf> leaves = new ArrayList<>(source);
         List<Node> nodes = new ArrayList<>(leaves.size() * 2 - 1);
         int[] leafNodes = new int[indexCapacity];
         Arrays.fill(leafNodes, NO_INDEX);
@@ -448,6 +452,10 @@ final class CpuLightTree {
 
         int leafNode(int leafIndex) {
             return this.leafNodes[leafIndex];
+        }
+
+        int[] leafNodes() {
+            return this.leafNodes;
         }
 
         Bounds bounds() {

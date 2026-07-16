@@ -2,7 +2,7 @@ package dev.prime.render.terrain;
 
 import dev.prime.render.shader.ShaderAbi;
 import java.util.ArrayList;
-import java.util.LinkedHashMap;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import net.minecraft.client.renderer.texture.TextureAtlasSprite;
@@ -26,8 +26,9 @@ public final class CpuSectionLights {
             List<Emitter> emitters,
             List<EmissionDistribution> distributions,
             CpuLightTree.Result tree) {
-        this.emitters = List.copyOf(emitters);
-        this.distributions = List.copyOf(distributions);
+        // Builder ownership ends at build(); neither list is exposed or mutated afterwards.
+        this.emitters = emitters;
+        this.distributions = distributions;
         this.tree = tree;
     }
 
@@ -169,7 +170,7 @@ public final class CpuSectionLights {
         private static final int MAXIMUM_IMPORTANCE_DISTRIBUTIONS = 1024;
 
         private final List<Emitter> emitters = new ArrayList<>();
-        private final Map<EmissionDistribution.Key, Integer> distributionIndices = new LinkedHashMap<>();
+        private final Map<EmissionDistribution.Key, Integer> distributionIndices = new HashMap<>();
         private final List<EmissionDistribution> distributions = new ArrayList<>();
         private int uniformDistributionIndex = -1;
 
@@ -267,7 +268,7 @@ public final class CpuSectionLights {
             if (this.emitters.isEmpty()) {
                 return EMPTY;
             }
-            List<CpuLightTree.Leaf> leaves = new ArrayList<>(this.emitters.size());
+            ArrayList<CpuLightTree.Leaf> leaves = new ArrayList<>(this.emitters.size());
             for (int index = 0; index < this.emitters.size(); index++) {
                 Emitter emitter = this.emitters.get(index);
                 CpuLightTree.Bounds bounds = CpuLightTree.Bounds.empty()
@@ -288,7 +289,7 @@ public final class CpuSectionLights {
                         emitter.power,
                         index));
             }
-            CpuLightTree.Result tree = CpuLightTree.build(
+            CpuLightTree.Result tree = CpuLightTree.buildOwned(
                     leaves, this.emitters.size(), CpuLightTree.SECTION_SOFTENING_SCALE);
             return new CpuSectionLights(this.emitters, this.distributions, tree);
         }

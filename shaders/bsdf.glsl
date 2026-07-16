@@ -89,6 +89,16 @@ struct PrimeDefaultBsdfComponents {
     BsdfEvaluation specular;
 };
 
+// View-dependent quantities shared by evaluation, proposal selection and throughput recovery.
+// Keeping this as an explicit value object lets the integrator build it once per default-material
+// vertex without changing any closure or importance-sampling formula.
+struct PrimeDefaultBsdfContext {
+    float ggxAlpha;
+    float resolvedEnergy;
+    float diffuseEnergyScale;
+    float specularProbability;
+};
+
 float primeDefaultDielectricIor() {
     return primeIorFromF0(PRIME_DEFAULT_DIELECTRIC_F0);
 }
@@ -136,17 +146,27 @@ vec2 primeDefaultGgxDirectionalEnergy(float cosineView, float ggxAlpha) {
     return vec2(reflectedEnergy, totalResolvedEnergy - reflectedEnergy);
 }
 
+PrimeDefaultBsdfContext primeMakeDefaultBsdfContext(
+        vec3 baseColor,
+        vec3 viewDirection,
+        vec3 normal) {
+    PrimeDefaultBsdfContext context;
+    context.ggxAlpha = primeDefaultGgxAlpha(baseColor);
+    vec2 directionalEnergy = primeDefaultGgxDirectionalEnergy(
+            max(dot(normal, viewDirection), 0.0), context.ggxAlpha);
+    context.resolvedEnergy = max(
+            directionalEnergy.x + directionalEnergy.y, PRIME_BSDF_EPSILON);
+    context.diffuseEnergyScale = directionalEnergy.y / context.resolvedEnergy;
+    context.specularProbability = clamp(
+            directionalEnergy.x / context.resolvedEnergy, 0.05, 0.95);
+    return context;
+}
+
 float primeDefaultSpecularSampleProbability(
         vec3 baseColor,
         vec3 viewDirection,
         vec3 normal) {
-    vec2 directionalEnergy = primeDefaultGgxDirectionalEnergy(
-            max(dot(normal, viewDirection), 0.0),
-            primeDefaultGgxAlpha(baseColor));
-    return clamp(
-            directionalEnergy.x / max(directionalEnergy.x + directionalEnergy.y, PRIME_BSDF_EPSILON),
-            0.05,
-            0.95);
+    return primeMakeDefaultBsdfContext(baseColor, viewDirection, normal).specularProbability;
 }
 
 float primeNrdSpecularSampleProbability(
@@ -163,11 +183,16 @@ float primeNrdSpecularSampleProbability(
             0.25);
 }
 
-PrimeDefaultBsdfComponents primeEvaluateDefaultBsdfComponents(
+float primeNrdSpecularSampleProbability(PrimeDefaultBsdfContext context) {
+    return clamp(context.specularProbability, 0.05, 0.25);
+}
+
+PrimeDefaultBsdfComponents primeEvaluateDefaultBsdfComponentsWithContext(
         vec3 baseColor,
         vec3 normal,
         vec3 viewDirection,
-        vec3 scatterDirection) {
+        vec3 scatterDirection,
+        PrimeDefaultBsdfContext context) {
     PrimeDefaultBsdfComponents components;
     components.diffuse = primeInvalidBsdfEvaluation();
     components.specular = primeInvalidBsdfEvaluation();
@@ -176,26 +201,32 @@ PrimeDefaultBsdfComponents primeEvaluateDefaultBsdfComponents(
     }
     components.diffuse = primeEvaluateDiffuseReflection(
             baseColor, normal, viewDirection, scatterDirection);
-    float ggxAlpha = primeDefaultGgxAlpha(baseColor);
-    vec2 directionalEnergy = primeDefaultGgxDirectionalEnergy(
-            dot(normal, viewDirection), ggxAlpha);
-    float resolvedEnergy = max(
-            directionalEnergy.x + directionalEnergy.y, PRIME_BSDF_EPSILON);
     // Match the source weighted-layer model: transmission into the substrate is a directional
     // rough-interface quantity. Its outgoing tint is unity, so a second smooth Fresnel factor is
     // neither part of the model nor energy preserving.
-    components.diffuse.value *= directionalEnergy.y / resolvedEnergy;
+    components.diffuse.value *= context.diffuseEnergyScale;
     components.specular = primeEvaluateGgxDielectricReflection(
             primeDefaultDielectricIor(),
-            ggxAlpha,
+            context.ggxAlpha,
             normal,
             viewDirection,
             scatterDirection);
     // Turquin-style multiple-scattering compensation restores the energy missing from the
     // single-scattering GGX interface. This divisor and the substrate transmission ratio above
     // are a coupled energy partition and must change together.
-    components.specular.value /= resolvedEnergy;
+    components.specular.value /= context.resolvedEnergy;
     return components;
+}
+
+PrimeDefaultBsdfComponents primeEvaluateDefaultBsdfComponents(
+        vec3 baseColor,
+        vec3 normal,
+        vec3 viewDirection,
+        vec3 scatterDirection) {
+    PrimeDefaultBsdfContext context = primeMakeDefaultBsdfContext(
+            baseColor, viewDirection, normal);
+    return primeEvaluateDefaultBsdfComponentsWithContext(
+            baseColor, normal, viewDirection, scatterDirection, context);
 }
 
 // Default Minecraft material: a rough dielectric boundary over a diffuse substrate. The two
@@ -203,30 +234,40 @@ PrimeDefaultBsdfComponents primeEvaluateDefaultBsdfComponents(
 // of reflected specular energy. This is intentionally the only newly connected material subset;
 // conductor, dielectric transmission, thin SSS, volume SSS and EDF closures above remain ready for
 // a later LabPBR decoder without affecting today's atlas contract.
+BsdfEvaluation primeEvaluateDefaultBsdfWithContext(
+        vec3 baseColor,
+        vec3 normal,
+        vec3 viewDirection,
+        vec3 scatterDirection,
+        PrimeDefaultBsdfContext context) {
+    PrimeDefaultBsdfComponents components = primeEvaluateDefaultBsdfComponentsWithContext(
+            baseColor, normal, viewDirection, scatterDirection, context);
+    BsdfEvaluation result;
+    result.value = components.diffuse.value + components.specular.value;
+    result.pdf = mix(
+            components.diffuse.pdf, components.specular.pdf, context.specularProbability);
+    return result;
+}
+
 BsdfEvaluation primeEvaluateDefaultBsdf(
         vec3 baseColor,
         vec3 normal,
         vec3 viewDirection,
         vec3 scatterDirection) {
-    PrimeDefaultBsdfComponents components = primeEvaluateDefaultBsdfComponents(
-            baseColor, normal, viewDirection, scatterDirection);
-    float specularProbability = primeDefaultSpecularSampleProbability(
+    PrimeDefaultBsdfContext context = primeMakeDefaultBsdfContext(
             baseColor, viewDirection, normal);
-    BsdfEvaluation result;
-    result.value = components.diffuse.value + components.specular.value;
-    result.pdf = mix(components.diffuse.pdf, components.specular.pdf, specularProbability);
-    return result;
+    return primeEvaluateDefaultBsdfWithContext(
+            baseColor, normal, viewDirection, scatterDirection, context);
 }
 
-BsdfSample primeSampleDefaultBsdfSeparated(
+BsdfSample primeSampleDefaultBsdfSeparatedWithContext(
         vec3 baseColor,
         vec3 normal,
         vec3 viewDirection,
         vec3 sampleValue,
-        out uint selectedLobe) {
-    float specularProbability = primeNrdSpecularSampleProbability(
-            baseColor, viewDirection, normal);
-    float ggxAlpha = primeDefaultGgxAlpha(baseColor);
+        out uint selectedLobe,
+        PrimeDefaultBsdfContext context) {
+    float specularProbability = primeNrdSpecularSampleProbability(context);
     BsdfSample proposal;
     float selectionProbability;
     if (sampleValue.z < specularProbability) {
@@ -234,7 +275,7 @@ BsdfSample primeSampleDefaultBsdfSeparated(
         selectionProbability = specularProbability;
         proposal = primeSampleGgxDielectricReflection(
                 primeDefaultDielectricIor(),
-                ggxAlpha,
+                context.ggxAlpha,
                 normal,
                 viewDirection,
                 sampleValue.xy);
@@ -247,8 +288,8 @@ BsdfSample primeSampleDefaultBsdfSeparated(
     if (proposal.pdf <= 0.0 || selectionProbability <= 0.0) {
         return primeInvalidBsdfSample();
     }
-    PrimeDefaultBsdfComponents components = primeEvaluateDefaultBsdfComponents(
-            baseColor, normal, viewDirection, proposal.direction);
+    PrimeDefaultBsdfComponents components = primeEvaluateDefaultBsdfComponentsWithContext(
+            baseColor, normal, viewDirection, proposal.direction, context);
     BsdfEvaluation selected = selectedLobe == PRIME_DEFAULT_LOBE_DIFFUSE
             ? components.diffuse
             : components.specular;
@@ -263,19 +304,30 @@ BsdfSample primeSampleDefaultBsdfSeparated(
     return proposal;
 }
 
-BsdfSample primeSampleDefaultBsdf(
+BsdfSample primeSampleDefaultBsdfSeparated(
         vec3 baseColor,
         vec3 normal,
         vec3 viewDirection,
-        vec3 sampleValue) {
-    float specularProbability = primeDefaultSpecularSampleProbability(
+        vec3 sampleValue,
+        out uint selectedLobe) {
+    PrimeDefaultBsdfContext context = primeMakeDefaultBsdfContext(
             baseColor, viewDirection, normal);
-    float ggxAlpha = primeDefaultGgxAlpha(baseColor);
+    return primeSampleDefaultBsdfSeparatedWithContext(
+            baseColor, normal, viewDirection, sampleValue, selectedLobe, context);
+}
+
+BsdfSample primeSampleDefaultBsdfWithContext(
+        vec3 baseColor,
+        vec3 normal,
+        vec3 viewDirection,
+        vec3 sampleValue,
+        PrimeDefaultBsdfContext context) {
+    float specularProbability = context.specularProbability;
     BsdfSample proposal;
     if (sampleValue.z < specularProbability) {
         proposal = primeSampleGgxDielectricReflection(
                 primeDefaultDielectricIor(),
-                ggxAlpha,
+                context.ggxAlpha,
                 normal,
                 viewDirection,
                 sampleValue.xy);
@@ -286,8 +338,8 @@ BsdfSample primeSampleDefaultBsdf(
     if (proposal.pdf <= 0.0) {
         return primeInvalidBsdfSample();
     }
-    BsdfEvaluation combined = primeEvaluateDefaultBsdf(
-            baseColor, normal, viewDirection, proposal.direction);
+    BsdfEvaluation combined = primeEvaluateDefaultBsdfWithContext(
+            baseColor, normal, viewDirection, proposal.direction, context);
     if (combined.pdf <= 0.0) {
         return primeInvalidBsdfSample();
     }
@@ -299,6 +351,17 @@ BsdfSample primeSampleDefaultBsdf(
     proposal.relativeEta = 1.0;
     proposal.eventFlags &= ~PRIME_BSDF_EVENT_DELTA;
     return proposal;
+}
+
+BsdfSample primeSampleDefaultBsdf(
+        vec3 baseColor,
+        vec3 normal,
+        vec3 viewDirection,
+        vec3 sampleValue) {
+    PrimeDefaultBsdfContext context = primeMakeDefaultBsdfContext(
+            baseColor, viewDirection, normal);
+    return primeSampleDefaultBsdfWithContext(
+            baseColor, normal, viewDirection, sampleValue, context);
 }
 
 // Minecraft's translucent render layer is adapted to RoboCute's complete dielectric

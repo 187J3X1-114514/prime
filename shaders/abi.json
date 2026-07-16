@@ -168,7 +168,17 @@
     "transmissionGgxEnergy": 17,
     "sceneColor": 18,
     "fsrReactiveMask": 19,
-    "fsrTransparencyCompositionMask": 20
+    "fsrTransparencyCompositionMask": 20,
+    "transparentReflectionNoisy": 21,
+    "transparentReflectionPosition": 22,
+    "transparentReflectionMetadata": 23,
+    "transparentReflectionGuide": 24,
+    "transparentTransmissionNoisy": 25,
+    "transparentTransmissionPosition": 26,
+    "transparentTransmissionMetadata": 27,
+    "transparentTransmissionGuide": 28,
+    "transparentReflectionInterface": 29,
+    "transparentTransmissionInterface": 30
   },
   "pathControl": {
     "cameraInWaterMask": "0x80000000",
@@ -176,7 +186,7 @@
   },
   "nrdContract": {
     "version": "4.17.4",
-    "denoiser": "reblur-diffuse-specular",
+    "denoiser": "opaque-reblur-diffuse-specular+transparent-dual-reblur-diffuse",
     "normalEncoding": "r10g10b10a2-unorm",
     "roughnessEncoding": "linear",
     "motionSpace": "screen-2.5d",

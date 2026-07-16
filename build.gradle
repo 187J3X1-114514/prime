@@ -116,7 +116,7 @@ abstract class GenerateShaderAbi extends DefaultTask {
 							+ 'the -64 sea level / 0.001 km world scale, and a 10-unit space sun')
 		}
 		if (nrdContract.version != '4.17.4'
-				|| nrdContract.denoiser != 'reblur-diffuse-specular'
+                || nrdContract.denoiser != 'opaque-reblur-diffuse-specular+transparent-dual-reblur-diffuse'
 				|| nrdContract.normalEncoding != 'r10g10b10a2-unorm'
 				|| nrdContract.roughnessEncoding != 'linear'
 				|| nrdContract.motionSpace != 'screen-2.5d'
@@ -238,6 +238,16 @@ public final class ShaderAbi {
     public static final int DESCRIPTOR_SCENE_COLOR = ${schema.descriptors.sceneColor};
     public static final int DESCRIPTOR_FSR_REACTIVE_MASK = ${schema.descriptors.fsrReactiveMask};
     public static final int DESCRIPTOR_FSR_TRANSPARENCY_COMPOSITION_MASK = ${schema.descriptors.fsrTransparencyCompositionMask};
+    public static final int DESCRIPTOR_TRANSPARENT_REFLECTION_NOISY = ${schema.descriptors.transparentReflectionNoisy};
+    public static final int DESCRIPTOR_TRANSPARENT_REFLECTION_POSITION = ${schema.descriptors.transparentReflectionPosition};
+    public static final int DESCRIPTOR_TRANSPARENT_REFLECTION_METADATA = ${schema.descriptors.transparentReflectionMetadata};
+    public static final int DESCRIPTOR_TRANSPARENT_REFLECTION_GUIDE = ${schema.descriptors.transparentReflectionGuide};
+    public static final int DESCRIPTOR_TRANSPARENT_TRANSMISSION_NOISY = ${schema.descriptors.transparentTransmissionNoisy};
+    public static final int DESCRIPTOR_TRANSPARENT_TRANSMISSION_POSITION = ${schema.descriptors.transparentTransmissionPosition};
+    public static final int DESCRIPTOR_TRANSPARENT_TRANSMISSION_METADATA = ${schema.descriptors.transparentTransmissionMetadata};
+    public static final int DESCRIPTOR_TRANSPARENT_TRANSMISSION_GUIDE = ${schema.descriptors.transparentTransmissionGuide};
+    public static final int DESCRIPTOR_TRANSPARENT_REFLECTION_INTERFACE = ${schema.descriptors.transparentReflectionInterface};
+    public static final int DESCRIPTOR_TRANSPARENT_TRANSMISSION_INTERFACE = ${schema.descriptors.transparentTransmissionInterface};
     public static final int PATH_CAMERA_IN_WATER_MASK = ${schema.pathControl.cameraInWaterMask};
     public static final int PATH_JITTER_PHASE_MASK = ${schema.pathControl.jitterPhaseMask};
     public static final float CUTOUT_ALPHA_THRESHOLD = ${schema.cutoutAlphaThreshold}f;
@@ -415,6 +425,22 @@ layout(set = 0, binding = ${schema.descriptors.nrdPrimaryPosition}, rgba32f) uni
 layout(set = 0, binding = ${schema.descriptors.sceneColor}, rgba16f) uniform image2D primeSceneColor;
 layout(set = 0, binding = ${schema.descriptors.fsrReactiveMask}, r8) uniform image2D primeFsrReactiveMask;
 layout(set = 0, binding = ${schema.descriptors.fsrTransparencyCompositionMask}, r8) uniform image2D primeFsrTransparencyCompositionMask;
+// A transparent first interface produces two unrelated virtual surfaces. Each group below belongs
+// to one independent diffuse-only NRD instance. Do not merge or swap them: sharing guide/history
+// state between reflected and transmitted transport creates invalid temporal correspondences.
+layout(set = 0, binding = ${schema.descriptors.transparentReflectionNoisy}, rgba16f) uniform image2D primeTransparentReflectionNoisy;
+layout(set = 0, binding = ${schema.descriptors.transparentReflectionPosition}, rgba32f) uniform image2D primeTransparentReflectionPosition;
+layout(set = 0, binding = ${schema.descriptors.transparentReflectionMetadata}, rgba16f) uniform image2D primeTransparentReflectionMetadata;
+layout(set = 0, binding = ${schema.descriptors.transparentReflectionGuide}, rgba16f) uniform image2D primeTransparentReflectionGuide;
+layout(set = 0, binding = ${schema.descriptors.transparentTransmissionNoisy}, rgba16f) uniform image2D primeTransparentTransmissionNoisy;
+layout(set = 0, binding = ${schema.descriptors.transparentTransmissionPosition}, rgba32f) uniform image2D primeTransparentTransmissionPosition;
+layout(set = 0, binding = ${schema.descriptors.transparentTransmissionMetadata}, rgba16f) uniform image2D primeTransparentTransmissionMetadata;
+layout(set = 0, binding = ${schema.descriptors.transparentTransmissionGuide}, rgba16f) uniform image2D primeTransparentTransmissionGuide;
+// xyz stores the local first-interface-to-next-hit segment and w stores n_transmitted/n_incident.
+// The corresponding rgba32 position stores the exact first-interface point; its w lane bit-packs
+// the sampled microfacet normal. This split retains distant-camera precision without two FP32 RGBs.
+layout(set = 0, binding = ${schema.descriptors.transparentReflectionInterface}, rgba16f) uniform image2D primeTransparentReflectionInterface;
+layout(set = 0, binding = ${schema.descriptors.transparentTransmissionInterface}, rgba16f) uniform image2D primeTransparentTransmissionInterface;
 
 #endif
 """

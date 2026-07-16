@@ -15,13 +15,14 @@
 
 namespace
 {
-    constexpr uint32_t PRIME_NRD_ABI_VERSION = 5;
+    constexpr uint32_t PRIME_NRD_ABI_VERSION = 7;
     constexpr nrd::Identifier PRIME_NRD_DENOISER_ID = 0;
 
     struct PrimeNrdCreateDesc
     {
         uint32_t width;
         uint32_t height;
+        uint32_t denoiserKind;
     };
 
     struct PrimeNrdTextureInfo
@@ -131,6 +132,7 @@ namespace
         std::vector<PrimeNrdPipelineInfo> pipelines;
         std::vector<std::vector<PrimeNrdResourceInfo>> dispatchResources;
         std::vector<PrimeNrdDispatchInfo> dispatches;
+        uint32_t denoiserProfile = 0;
 
         ~PrimeNrdContext()
         {
@@ -233,7 +235,7 @@ namespace
     }
 }
 
-static_assert(sizeof(PrimeNrdCreateDesc) == 8);
+static_assert(sizeof(PrimeNrdCreateDesc) == 12);
 static_assert(sizeof(PrimeNrdTextureInfo) == 8);
 static_assert(sizeof(PrimeNrdPipelineRangeInfo) == 8);
 static_assert(sizeof(PrimeNrdPipelineInfo) == 288);
@@ -252,7 +254,8 @@ PRIME_NRD_EXPORT int32_t primeNrdCreate(
     const PrimeNrdCreateDesc* createDesc,
     PrimeNrdContext** output)
 {
-    if (createDesc == nullptr || output == nullptr || createDesc->width == 0 || createDesc->height == 0)
+    if (createDesc == nullptr || output == nullptr || createDesc->width == 0 || createDesc->height == 0
+        || createDesc->denoiserKind > 2)
         return -1;
 
     *output = nullptr;
@@ -260,9 +263,11 @@ PRIME_NRD_EXPORT int32_t primeNrdCreate(
     if (context == nullptr)
         return -2;
 
-    const nrd::DenoiserDesc denoiser = {
-        PRIME_NRD_DENOISER_ID,
-        nrd::Denoiser::REBLUR_DIFFUSE_SPECULAR};
+    const nrd::Denoiser selectedDenoiser = createDesc->denoiserKind == 0
+        ? nrd::Denoiser::REBLUR_DIFFUSE_SPECULAR
+        : nrd::Denoiser::REBLUR_DIFFUSE;
+    const nrd::DenoiserDesc denoiser = {PRIME_NRD_DENOISER_ID, selectedDenoiser};
+    context->denoiserProfile = createDesc->denoiserKind;
     const nrd::InstanceCreationDesc creation = {{}, &denoiser, 1};
     nrd::Result result = nrd::CreateInstance(creation, context->instance);
     if (result != nrd::Result::SUCCESS || !BuildDescription(*context))
@@ -275,6 +280,19 @@ PRIME_NRD_EXPORT int32_t primeNrdCreate(
     settings.hitDistanceReconstructionMode = nrd::HitDistanceReconstructionMode::AREA_3X3;
     settings.diffusePrepassBlurRadius = 30.0f;
     settings.specularPrepassBlurRadius = 50.0f;
+    if (context->denoiserProfile != 0)
+    {
+        // Every transparent signal writes one sample per covered pixel. Smooth interfaces use two
+        // deterministic histories; finite-roughness interfaces use one complete BSDF history.
+        // Neither has the missing-pixel pattern that AREA_3X3 reconstruction or the 30-pixel
+        // pre-pass repairs. Reflection and transmission deliberately share the same filter:
+        // their statistical distinction belongs in the material/path policy, not NRD tuning.
+        settings.hitDistanceReconstructionMode = nrd::HitDistanceReconstructionMode::OFF;
+        settings.diffusePrepassBlurRadius = 0.0f;
+        settings.historyFixFrameNum = 2;
+        settings.historyFixBasePixelStride = 8;
+        settings.maxBlurRadius = 12.0f;
+    }
     result = nrd::SetDenoiserSettings(*context->instance, PRIME_NRD_DENOISER_ID, &settings);
     if (result != nrd::Result::SUCCESS)
     {
@@ -323,6 +341,13 @@ PRIME_NRD_EXPORT int32_t primeNrdSetFrameSettings(
     settings.rectSizePrev[1] = static_cast<uint16_t>(input->previousHeight);
     settings.timeDeltaBetweenFrames = std::max(input->timeDeltaMilliseconds, 0.0f);
     settings.denoisingRange = std::max(input->denoisingRange, 1.0f);
+    // Each diffuse-only instance contains only transparent primary-surface replacements. NRD's
+    // integration guide recommends a 2x-10x wider disocclusion threshold because the primary
+    // interface curvature is intentionally absent from the virtual G-buffer. Five times the
+    // baseline is conservative and cannot leak history into the unrelated sibling branch because
+    // reflection and transmission own separate instances.
+    if (context->denoiserProfile != 0)
+        settings.disocclusionThreshold = 0.05f;
     settings.frameIndex = input->frameIndex;
     settings.accumulationMode = input->restart != 0
         ? nrd::AccumulationMode::RESTART

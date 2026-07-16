@@ -110,6 +110,7 @@ final class RoboCuteBsdfContractTest {
     @Test
     void transmissionClosureIsConnectedToTerrainWithPersistentVolumes() throws IOException {
         String adapter = shader("bsdf.glsl");
+        String defaultMaterial = shader("default_material.glsl");
         String integrator = shader("integrator.glsl");
         String closestHit = shader("world.rchit");
         String anyHit = shader("world.rahit");
@@ -133,6 +134,9 @@ final class RoboCuteBsdfContractTest {
         assertTrue(adapter.contains("PRIME_GLASS_MINIMUM_TINT_WEIGHT = 0.75"));
         assertTrue(adapter.contains("PRIME_WATER_REFERENCE_DEPTH = 16.0"));
         assertTrue(adapter.contains("decodedColor / peak"));
+        assertTrue(defaultMaterial.contains(
+                "visible interface is split into deterministic reflection and"));
+        assertTrue(defaultMaterial.contains("return 0.0;"));
         assertTrue(integrator.contains("PrimeRcVolumeStack volumeStack"));
         assertTrue(integrator.contains("volumeStack = transmitted.volumeStack"));
         assertTrue(integrator.contains("exp(-medium.extinction * max(surface.t, 0.0))"));

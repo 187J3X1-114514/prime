@@ -29,7 +29,7 @@ import org.lwjgl.system.SharedLibrary;
  * arrays and is versioned independently from NRD's C++ structures.
  */
 public final class NrdNative {
-    static final int ABI_VERSION = 5;
+    static final int ABI_VERSION = 7;
     static final int EXPECTED_NRD_VERSION = 4 << 24 | 17 << 16 | 4;
 
     public static final int DESCRIPTOR_TEXTURE = 0;
@@ -46,6 +46,7 @@ public final class NrdNative {
     public static final int RESOURCE_TRANSIENT_POOL = 30;
     public static final int RESOURCE_PERMANENT_POOL = 31;
 
+    private static final int CREATE_DESCRIPTION_SIZE = 12;
     private static final int DESCRIPTION_SIZE = 136;
     private static final int PIPELINE_SIZE = 288;
     private static final int PIPELINE_RANGE_SIZE = 8;
@@ -79,11 +80,15 @@ public final class NrdNative {
     }
 
     public static Instance create(int width, int height) {
+        return create(width, height, DenoiserKind.DIFFUSE_SPECULAR);
+    }
+
+    static Instance create(int width, int height, DenoiserKind denoiserKind) {
         if (width <= 0 || height <= 0 || width > 65_535 || height > 65_535) {
             throw new IllegalArgumentException("NRD dimensions must be in [1, 65535]");
         }
         try {
-            return Holder.INSTANCE.createInstance(width, height);
+            return Holder.INSTANCE.createInstance(width, height, denoiserKind);
         } catch (LinkageError error) {
             // Static native loading failures are Errors by default and would bypass Prime's
             // RuntimeException-based vanilla fallback. Normalize them at this private boundary.
@@ -91,11 +96,12 @@ public final class NrdNative {
         }
     }
 
-    private Instance createInstance(int width, int height) {
+    private Instance createInstance(int width, int height, DenoiserKind denoiserKind) {
         try (MemoryStack stack = MemoryStack.stackPush()) {
-            ByteBuffer createDesc = stack.calloc(8).order(ByteOrder.nativeOrder());
+            ByteBuffer createDesc = stack.calloc(CREATE_DESCRIPTION_SIZE).order(ByteOrder.nativeOrder());
             createDesc.putInt(0, width);
             createDesc.putInt(4, height);
+            createDesc.putInt(8, denoiserKind.nativeValue);
             ByteBuffer output = stack.calloc(Long.BYTES).order(ByteOrder.nativeOrder());
             checkResult(
                     JNI.invokePPI(
@@ -114,6 +120,18 @@ public final class NrdNative {
                 JNI.invokePV(handle, this.destroyFunction);
                 throw exception;
             }
+        }
+    }
+
+    enum DenoiserKind {
+        DIFFUSE_SPECULAR(0),
+        TRANSPARENT_REFLECTION(1),
+        TRANSPARENT_TRANSMISSION(2);
+
+        private final int nativeValue;
+
+        DenoiserKind(int nativeValue) {
+            this.nativeValue = nativeValue;
         }
     }
 

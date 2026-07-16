@@ -75,6 +75,7 @@ public final class NrdDenoiser implements Destroyable {
     private final ComputePipeline[] pipelines;
     private final MotionPipeline motionPipeline;
     private final CompositePipeline composite;
+    private final boolean ownsOpaqueComposite;
     private final ArrayDeque<FrameBindings> freeBindings = new ArrayDeque<>();
     private final Set<FrameBindings> allBindings =
             Collections.newSetFromMap(new IdentityHashMap<>());
@@ -99,7 +100,8 @@ public final class NrdDenoiser implements Destroyable {
             long linearSampler,
             ComputePipeline[] pipelines,
             MotionPipeline motionPipeline,
-            CompositePipeline composite) {
+            CompositePipeline composite,
+            boolean ownsOpaqueComposite) {
         this.context = context;
         this.width = width;
         this.height = height;
@@ -111,6 +113,7 @@ public final class NrdDenoiser implements Destroyable {
         this.pipelines = pipelines;
         this.motionPipeline = motionPipeline;
         this.composite = composite;
+        this.ownsOpaqueComposite = ownsOpaqueComposite;
     }
 
     public static NrdDenoiser create(
@@ -120,7 +123,52 @@ public final class NrdDenoiser implements Destroyable {
             VulkanImage output,
             VulkanImage stableAccumulation,
             AtmospherePipeline atmosphere) {
-        NrdNative.Instance nativeInstance = NrdNative.create(width, height);
+        return create(
+                context,
+                width,
+                height,
+                NrdNative.DenoiserKind.DIFFUSE_SPECULAR,
+                "Prime NRD opaque",
+                "/prime/shaders/nrd_motion.comp.spv",
+                output,
+                stableAccumulation,
+                atmosphere);
+    }
+
+    /**
+     * Creates an independent diffuse-only REBLUR history for one transparent first-interface
+     * branch. Reflection and transmission must use separate instances: their virtual surfaces,
+     * motion and disocclusion histories are unrelated even when they originate at the same pixel.
+     */
+    public static NrdDenoiser createTransparentBranch(
+            VulkanContext context,
+            int width,
+            int height,
+            TransparentBranch branch) {
+        return create(
+                context,
+                width,
+                height,
+                branch.nativeKind,
+                "Prime NRD transparent " + branch.debugName,
+                "/prime/shaders/nrd_transparent_motion.comp.spv",
+                null,
+                null,
+                null);
+    }
+
+    private static NrdDenoiser create(
+            VulkanContext context,
+            int width,
+            int height,
+            NrdNative.DenoiserKind denoiserKind,
+            String debugPrefix,
+            String motionShader,
+            VulkanImage output,
+            VulkanImage stableAccumulation,
+            AtmospherePipeline atmosphere) {
+        boolean opaqueComposite = output != null;
+        NrdNative.Instance nativeInstance = NrdNative.create(width, height, denoiserKind);
         Images images = null;
         long nearestSampler = 0L;
         long linearSampler = 0L;
@@ -130,13 +178,22 @@ public final class NrdDenoiser implements Destroyable {
         try {
             NrdNative.Description description = nativeInstance.description();
             validateNativeContract(description);
-            images = Images.create(context, width, height, description);
-            nearestSampler = createSampler(context, false, "Prime NRD nearest-clamp sampler");
-            linearSampler = createSampler(context, true, "Prime NRD linear-clamp sampler");
+            images = Images.create(
+                    context,
+                    width,
+                    height,
+                    description,
+                    debugPrefix,
+                    denoiserKind != NrdNative.DenoiserKind.DIFFUSE_SPECULAR);
+            nearestSampler = createSampler(context, false, debugPrefix + " nearest-clamp sampler");
+            linearSampler = createSampler(context, true, debugPrefix + " linear-clamp sampler");
             pipelines = createPipelines(context, description, nearestSampler, linearSampler);
-            motionPipeline = MotionPipeline.create(context, images);
-            composite = CompositePipeline.create(
-                    context, output, stableAccumulation, images, atmosphere);
+            motionPipeline = MotionPipeline.create(
+                    context, images, motionShader, debugPrefix, denoiserKind);
+            if (opaqueComposite) {
+                composite = CompositePipeline.create(
+                        context, output, stableAccumulation, images, atmosphere);
+            }
             return new NrdDenoiser(
                     context,
                     width,
@@ -147,7 +204,8 @@ public final class NrdDenoiser implements Destroyable {
                     linearSampler,
                     pipelines,
                     motionPipeline,
-                    composite);
+                    composite,
+                    opaqueComposite);
         } catch (RuntimeException exception) {
             if (composite != null) {
                 composite.destroy();
@@ -176,6 +234,37 @@ public final class NrdDenoiser implements Destroyable {
 
     public VulkanImage noisySpecular() {
         return this.images.noisySpecular;
+    }
+
+    /**
+     * First-interface-to-hit segment and relative IOR for refractive reprojection.
+     *
+     * <p>A diffuse-only NRD instance has no specular input, so this deliberately reuses that
+     * otherwise idle descriptor slot. It remains a distinct allocation; aliasing it with the
+     * branch radiance would make raygen race the motion preparation pass.
+     */
+    public VulkanImage transparentInterface() {
+        if (this.ownsOpaqueComposite) {
+            throw new IllegalStateException("Opaque NRD has no transparent interface image");
+        }
+        return this.images.noisySpecular;
+    }
+
+    public enum TransparentBranch {
+        REFLECTION(NrdNative.DenoiserKind.TRANSPARENT_REFLECTION, "reflection"),
+        TRANSMISSION(NrdNative.DenoiserKind.TRANSPARENT_TRANSMISSION, "transmission");
+
+        private final NrdNative.DenoiserKind nativeKind;
+        private final String debugName;
+
+        TransparentBranch(NrdNative.DenoiserKind nativeKind, String debugName) {
+            this.nativeKind = nativeKind;
+            this.debugName = debugName;
+        }
+    }
+
+    public VulkanImage denoisedDiffuse() {
+        return this.images.denoisedDiffuse;
     }
 
     public VulkanImage specularMaterial() {
@@ -262,6 +351,59 @@ public final class NrdDenoiser implements Destroyable {
             float cameraJitterX,
             float cameraJitterY,
             boolean forceRestart) {
+        if (!this.ownsOpaqueComposite) {
+            throw new IllegalStateException("Transparent NRD history requires recordBranch");
+        }
+        return this.recordInternal(
+                commandBuffer,
+                camera,
+                sceneResetRevision,
+                atlasView,
+                atlasSampler,
+                sunDirection,
+                cameraJitterX,
+                cameraJitterY,
+                forceRestart,
+                true);
+    }
+
+    public FrameToken recordBranch(
+            VkCommandBuffer commandBuffer,
+            FrameCamera camera,
+            long sceneResetRevision,
+            long atlasView,
+            long atlasSampler,
+            SunDirection sunDirection,
+            float cameraJitterX,
+            float cameraJitterY,
+            boolean forceRestart) {
+        if (this.ownsOpaqueComposite) {
+            throw new IllegalStateException("Opaque NRD history requires record");
+        }
+        return this.recordInternal(
+                commandBuffer,
+                camera,
+                sceneResetRevision,
+                atlasView,
+                atlasSampler,
+                sunDirection,
+                cameraJitterX,
+                cameraJitterY,
+                forceRestart,
+                false);
+    }
+
+    private FrameToken recordInternal(
+            VkCommandBuffer commandBuffer,
+            FrameCamera camera,
+            long sceneResetRevision,
+            long atlasView,
+            long atlasSampler,
+            SunDirection sunDirection,
+            float cameraJitterX,
+            float cameraJitterY,
+            boolean forceRestart,
+            boolean compositeOutput) {
         this.requireOpen();
         boolean restart = forceRestart
                 || this.previousCamera == null
@@ -325,8 +467,10 @@ public final class NrdDenoiser implements Destroyable {
                         1);
             }
             computeToComputeBarrier(commandBuffer);
-            this.composite.record(
-                    commandBuffer, this.width, this.height, diagnosticMode.shaderValue());
+            if (compositeOutput) {
+                this.composite.record(
+                        commandBuffer, this.width, this.height, diagnosticMode.shaderValue());
+            }
             return new FrameToken(
                     this,
                     bindings,
@@ -402,7 +546,7 @@ public final class NrdDenoiser implements Destroyable {
             case NrdNative.RESOURCE_PERMANENT_POOL -> checkedPoolImage(
                     this.images.permanentPool, resource.indexInPool(), "permanent");
             default -> throw new IllegalStateException(
-                    "REBLUR_DIFFUSE_SPECULAR requested unsupported resource type "
+                    "NRD requested unsupported resource type "
                             + resource.resourceType());
         };
     }
@@ -442,7 +586,9 @@ public final class NrdDenoiser implements Destroyable {
             this.allBindings.clear();
             this.freeBindings.clear();
         }
-        this.composite.destroy();
+        if (this.composite != null) {
+            this.composite.destroy();
+        }
         this.motionPipeline.destroy();
         destroyPipelines(this.pipelines);
         VK12.vkDestroySampler(this.context.vkDevice(), this.linearSampler, null);
@@ -760,43 +906,62 @@ public final class NrdDenoiser implements Destroyable {
                 VulkanContext context,
                 int width,
                 int height,
-                NrdNative.Description description) {
+                NrdNative.Description description,
+                String debugPrefix,
+                boolean diffuseOnly) {
             ArrayList<VulkanImage> created = new ArrayList<>();
             try {
                 VulkanImage noisy = createImage(
-                        context, created, width, height, VK12.VK_FORMAT_R16G16B16A16_SFLOAT, "Prime NRD noisy diffuse");
+                        context, created, width, height, VK12.VK_FORMAT_R16G16B16A16_SFLOAT, debugPrefix + " noisy diffuse");
                 VulkanImage noisySpecular = createImage(
-                        context, created, width, height, VK12.VK_FORMAT_R16G16B16A16_SFLOAT, "Prime NRD noisy specular");
+                        context,
+                        created,
+                        width,
+                        height,
+                        VK12.VK_FORMAT_R16G16B16A16_SFLOAT,
+                        diffuseOnly
+                                ? debugPrefix + " interface segment and eta"
+                                : debugPrefix + " noisy specular");
                 VulkanImage normal = createImage(
-                        context, created, width, height, VK12.VK_FORMAT_A2B10G10R10_UNORM_PACK32, "Prime NRD normal roughness");
+                        context, created, width, height, VK12.VK_FORMAT_A2B10G10R10_UNORM_PACK32, debugPrefix + " normal roughness");
                 VulkanImage viewZ = createImage(
-                        context, created, width, height, VK12.VK_FORMAT_R32_SFLOAT, "Prime NRD view Z");
+                        context, created, width, height, VK12.VK_FORMAT_R32_SFLOAT, debugPrefix + " view Z");
                 VulkanImage motion = createImage(
-                        context, created, width, height, VK12.VK_FORMAT_R16G16B16A16_SFLOAT, "Prime NRD 2.5D screen motion");
-                VulkanImage fsrDepth = createImage(
-                        context, created, width, height, VK12.VK_FORMAT_R32_SFLOAT, "Prime FSR reversed depth");
+                        context, created, width, height, VK12.VK_FORMAT_R16G16B16A16_SFLOAT, debugPrefix + " 2.5D screen motion");
+                VulkanImage fsrDepth = diffuseOnly
+                        ? viewZ
+                        : createImage(
+                                context, created, width, height, VK12.VK_FORMAT_R32_SFLOAT, debugPrefix + " FSR depth");
                 VulkanImage material = createImage(
-                        context, created, width, height, VK12.VK_FORMAT_R16G16B16A16_SFLOAT, "Prime NRD material factor");
+                        context, created, width, height, VK12.VK_FORMAT_R16G16B16A16_SFLOAT, debugPrefix + " material metadata");
                 VulkanImage specularMaterial = createImage(
-                        context, created, width, height, VK12.VK_FORMAT_R16G16B16A16_SFLOAT, "Prime NRD specular material factor");
+                        context, created, width, height, VK12.VK_FORMAT_R16G16B16A16_SFLOAT, debugPrefix + " specular material or virtual guide");
                 VulkanImage primaryPosition = createImage(
-                        context, created, width, height, VK12.VK_FORMAT_R32G32B32A32_SFLOAT, "Prime NRD diagnostic primary position");
-                VulkanImage reprojectionError = createImage(
-                        context, created, width, height, VK12.VK_FORMAT_R16G16B16A16_SFLOAT, "Prime NRD diagnostic reprojection error");
+                        context, created, width, height, VK12.VK_FORMAT_R32G32B32A32_SFLOAT, debugPrefix + " primary or virtual position");
+                VulkanImage reprojectionError = diffuseOnly
+                        ? material
+                        : createImage(
+                                context, created, width, height, VK12.VK_FORMAT_R16G16B16A16_SFLOAT, debugPrefix + " reprojection error");
                 VulkanImage validation = createImage(
-                        context, created, width, height, VK12.VK_FORMAT_R8G8B8A8_UNORM, "Prime NRD validation output");
+                        context, created, width, height, VK12.VK_FORMAT_R8G8B8A8_UNORM, debugPrefix + " validation output");
                 VulkanImage denoised = createImage(
-                        context, created, width, height, VK12.VK_FORMAT_R16G16B16A16_SFLOAT, "Prime NRD denoised diffuse");
-                VulkanImage denoisedSpecular = createImage(
-                        context, created, width, height, VK12.VK_FORMAT_R16G16B16A16_SFLOAT, "Prime NRD denoised specular");
-                VulkanImage fsrReactiveMask = createImage(
-                        context, created, width, height, VK12.VK_FORMAT_R8_UNORM, "Prime FSR reactive mask");
-                VulkanImage fsrTransparencyCompositionMask = createImage(
-                        context, created, width, height, VK12.VK_FORMAT_R8_UNORM, "Prime FSR transparency and composition mask");
+                        context, created, width, height, VK12.VK_FORMAT_R16G16B16A16_SFLOAT, debugPrefix + " denoised diffuse");
+                VulkanImage denoisedSpecular = diffuseOnly
+                        ? denoised
+                        : createImage(
+                                context, created, width, height, VK12.VK_FORMAT_R16G16B16A16_SFLOAT, debugPrefix + " denoised specular");
+                VulkanImage fsrReactiveMask = diffuseOnly
+                        ? validation
+                        : createImage(
+                                context, created, width, height, VK12.VK_FORMAT_R8_UNORM, debugPrefix + " FSR reactive mask");
+                VulkanImage fsrTransparencyCompositionMask = diffuseOnly
+                        ? validation
+                        : createImage(
+                                context, created, width, height, VK12.VK_FORMAT_R8_UNORM, debugPrefix + " FSR transparency mask");
                 VulkanImage[] permanent = createPool(
-                        context, created, width, height, description.permanentPool(), "permanent");
+                        context, created, width, height, description.permanentPool(), debugPrefix + " permanent");
                 VulkanImage[] transientImages = createPool(
-                        context, created, width, height, description.transientPool(), "transient");
+                        context, created, width, height, description.transientPool(), debugPrefix + " transient");
                 return new Images(
                         noisy,
                         noisySpecular,
@@ -863,30 +1028,41 @@ public final class NrdDenoiser implements Destroyable {
         }
 
         private VulkanImage[] allImages() {
-            VulkanImage[] result = new VulkanImage[15 + this.permanentPool.length + this.transientPool.length];
-            result[0] = this.noisyDiffuse;
-            result[1] = this.noisySpecular;
-            result[2] = this.normalRoughness;
-            result[3] = this.viewZ;
-            result[4] = this.motion;
-            result[5] = this.material;
-            result[6] = this.specularMaterial;
-            result[7] = this.denoisedDiffuse;
-            result[8] = this.denoisedSpecular;
-            result[9] = this.primaryPosition;
-            result[10] = this.reprojectionError;
-            result[11] = this.validation;
-            result[12] = this.fsrDepth;
-            result[13] = this.fsrReactiveMask;
-            result[14] = this.fsrTransparencyCompositionMask;
-            System.arraycopy(this.permanentPool, 0, result, 15, this.permanentPool.length);
-            System.arraycopy(
-                    this.transientPool,
-                    0,
-                    result,
-                    15 + this.permanentPool.length,
-                    this.transientPool.length);
-            return result;
+            ArrayList<VulkanImage> unique = new ArrayList<>();
+            Set<VulkanImage> seen = Collections.newSetFromMap(new IdentityHashMap<>());
+            VulkanImage[] fixed = new VulkanImage[] {
+                this.noisyDiffuse,
+                this.noisySpecular,
+                this.normalRoughness,
+                this.viewZ,
+                this.motion,
+                this.material,
+                this.specularMaterial,
+                this.denoisedDiffuse,
+                this.denoisedSpecular,
+                this.primaryPosition,
+                this.reprojectionError,
+                this.validation,
+                this.fsrDepth,
+                this.fsrReactiveMask,
+                this.fsrTransparencyCompositionMask
+            };
+            for (VulkanImage image : fixed) {
+                if (seen.add(image)) {
+                    unique.add(image);
+                }
+            }
+            for (VulkanImage image : this.permanentPool) {
+                if (seen.add(image)) {
+                    unique.add(image);
+                }
+            }
+            for (VulkanImage image : this.transientPool) {
+                if (seen.add(image)) {
+                    unique.add(image);
+                }
+            }
+            return unique.toArray(VulkanImage[]::new);
         }
 
         @Override
@@ -895,27 +1071,10 @@ public final class NrdDenoiser implements Destroyable {
                 return;
             }
             this.destroyed = true;
-            for (int index = this.transientPool.length - 1; index >= 0; index--) {
-                this.transientPool[index].destroy();
+            VulkanImage[] owned = this.allImages();
+            for (int index = owned.length - 1; index >= 0; index--) {
+                owned[index].destroy();
             }
-            for (int index = this.permanentPool.length - 1; index >= 0; index--) {
-                this.permanentPool[index].destroy();
-            }
-            this.validation.destroy();
-            this.reprojectionError.destroy();
-            this.primaryPosition.destroy();
-            this.denoisedSpecular.destroy();
-            this.denoisedDiffuse.destroy();
-            this.fsrTransparencyCompositionMask.destroy();
-            this.fsrReactiveMask.destroy();
-            this.specularMaterial.destroy();
-            this.material.destroy();
-            this.motion.destroy();
-            this.fsrDepth.destroy();
-            this.viewZ.destroy();
-            this.normalRoughness.destroy();
-            this.noisySpecular.destroy();
-            this.noisyDiffuse.destroy();
         }
     }
 
@@ -1368,6 +1527,7 @@ public final class NrdDenoiser implements Destroyable {
         private final long descriptorSet;
         private final long pipelineLayout;
         private final long pipeline;
+        private final int transparentBranch;
         private boolean destroyed;
 
         private MotionPipeline(
@@ -1376,16 +1536,28 @@ public final class NrdDenoiser implements Destroyable {
                 long descriptorPool,
                 long descriptorSet,
                 long pipelineLayout,
-                long pipeline) {
+                long pipeline,
+                int transparentBranch) {
             this.context = context;
             this.descriptorSetLayout = descriptorSetLayout;
             this.descriptorPool = descriptorPool;
             this.descriptorSet = descriptorSet;
             this.pipelineLayout = pipelineLayout;
             this.pipeline = pipeline;
+            this.transparentBranch = transparentBranch;
         }
 
-        private static MotionPipeline create(VulkanContext context, Images images) {
+        private static MotionPipeline create(
+                VulkanContext context,
+                Images images,
+                String shaderResource,
+                String debugPrefix,
+                NrdNative.DenoiserKind denoiserKind) {
+            int transparentBranch = switch (denoiserKind) {
+                case DIFFUSE_SPECULAR -> 0;
+                case TRANSPARENT_REFLECTION -> 1;
+                case TRANSPARENT_TRANSMISSION -> 2;
+            };
             long descriptorSetLayout = 0L;
             long descriptorPool = 0L;
             long descriptorSet = 0L;
@@ -1408,7 +1580,7 @@ public final class NrdDenoiser implements Destroyable {
                 VulkanContext.check(
                         VK12.vkCreateDescriptorSetLayout(
                                 context.vkDevice(), setLayoutInfo, null, pointer),
-                        "create Prime NRD motion descriptor layout");
+                        "create " + debugPrefix + " motion descriptor layout");
                 descriptorSetLayout = pointer.get(0);
 
                 VkPushConstantRange.Buffer pushRange = VkPushConstantRange.calloc(1, stack)
@@ -1423,11 +1595,11 @@ public final class NrdDenoiser implements Destroyable {
                 VulkanContext.check(
                         VK12.vkCreatePipelineLayout(
                                 context.vkDevice(), pipelineLayoutInfo, null, pointer),
-                        "create Prime NRD motion pipeline layout");
+                        "create " + debugPrefix + " motion pipeline layout");
                 pipelineLayout = pointer.get(0);
 
                 long shaderModule = createResourceShaderModule(
-                        context, stack, "/prime/shaders/nrd_motion.comp.spv");
+                        context, stack, shaderResource);
                 try {
                     VkPipelineShaderStageCreateInfo stage = VkPipelineShaderStageCreateInfo.calloc(stack)
                             .sType$Default()
@@ -1444,7 +1616,7 @@ public final class NrdDenoiser implements Destroyable {
                     VulkanContext.check(
                             VK12.vkCreateComputePipelines(
                                     context.vkDevice(), 0L, pipelineInfo, null, pointer),
-                            "create Prime NRD motion pipeline");
+                            "create " + debugPrefix + " motion pipeline");
                     pipeline = pointer.get(0);
                 } finally {
                     VK12.vkDestroyShaderModule(context.vkDevice(), shaderModule, null);
@@ -1460,7 +1632,7 @@ public final class NrdDenoiser implements Destroyable {
                 pointer.clear();
                 VulkanContext.check(
                         VK12.vkCreateDescriptorPool(context.vkDevice(), poolInfo, null, pointer),
-                        "create Prime NRD motion descriptor pool");
+                        "create " + debugPrefix + " motion descriptor pool");
                 descriptorPool = pointer.get(0);
 
                 VkDescriptorSetAllocateInfo allocateInfo = VkDescriptorSetAllocateInfo.calloc(stack)
@@ -1470,7 +1642,7 @@ public final class NrdDenoiser implements Destroyable {
                 pointer.clear();
                 VulkanContext.check(
                         VK12.vkAllocateDescriptorSets(context.vkDevice(), allocateInfo, pointer),
-                        "allocate Prime NRD motion descriptor set");
+                        "allocate " + debugPrefix + " motion descriptor set");
                 descriptorSet = pointer.get(0);
 
                 VulkanImage[] descriptorImages = new VulkanImage[] {
@@ -1509,7 +1681,8 @@ public final class NrdDenoiser implements Destroyable {
                         descriptorPool,
                         descriptorSet,
                         pipelineLayout,
-                        pipeline);
+                        pipeline,
+                        transparentBranch);
             } catch (RuntimeException exception) {
                 if (descriptorPool != 0L) {
                     VK12.vkDestroyDescriptorPool(context.vkDevice(), descriptorPool, null);
@@ -1553,6 +1726,15 @@ public final class NrdDenoiser implements Destroyable {
                 currentClipToWorld.get(0, push);
                 previousWorldToClip.get(64, push);
                 previousRenderedWorldToClip.get(128, push);
+                if (this.transparentBranch != 0) {
+                    // The transparent preparation shader does not consume the independent exact
+                    // reprojection diagnostic matrix. Reuse its first column rather than growing
+                    // the already established 192-byte compute push ABI to 208 bytes.
+                    push.putFloat(128, (float) (previous.renderX() - camera.renderX()));
+                    push.putFloat(132, (float) (previous.renderY() - camera.renderY()));
+                    push.putFloat(136, (float) (previous.renderZ() - camera.renderZ()));
+                    push.putFloat(140, this.transparentBranch);
+                }
                 VK12.vkCmdPushConstants(
                         commandBuffer,
                         this.pipelineLayout,

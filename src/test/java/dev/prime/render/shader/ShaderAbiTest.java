@@ -36,13 +36,25 @@ final class ShaderAbiTest {
         assertEquals(18, ShaderAbi.DESCRIPTOR_SCENE_COLOR);
         assertEquals(19, ShaderAbi.DESCRIPTOR_FSR_REACTIVE_MASK);
         assertEquals(20, ShaderAbi.DESCRIPTOR_FSR_TRANSPARENCY_COMPOSITION_MASK);
+        assertEquals(21, ShaderAbi.DESCRIPTOR_TRANSPARENT_REFLECTION_NOISY);
+        assertEquals(22, ShaderAbi.DESCRIPTOR_TRANSPARENT_REFLECTION_POSITION);
+        assertEquals(23, ShaderAbi.DESCRIPTOR_TRANSPARENT_REFLECTION_METADATA);
+        assertEquals(24, ShaderAbi.DESCRIPTOR_TRANSPARENT_REFLECTION_GUIDE);
+        assertEquals(25, ShaderAbi.DESCRIPTOR_TRANSPARENT_TRANSMISSION_NOISY);
+        assertEquals(26, ShaderAbi.DESCRIPTOR_TRANSPARENT_TRANSMISSION_POSITION);
+        assertEquals(27, ShaderAbi.DESCRIPTOR_TRANSPARENT_TRANSMISSION_METADATA);
+        assertEquals(28, ShaderAbi.DESCRIPTOR_TRANSPARENT_TRANSMISSION_GUIDE);
+        assertEquals(29, ShaderAbi.DESCRIPTOR_TRANSPARENT_REFLECTION_INTERFACE);
+        assertEquals(30, ShaderAbi.DESCRIPTOR_TRANSPARENT_TRANSMISSION_INTERFACE);
         assertEquals(0x80000000, ShaderAbi.PATH_CAMERA_IN_WATER_MASK);
         assertEquals(0x7fff, ShaderAbi.PATH_JITTER_PHASE_MASK);
         assertEquals("linear-rec2020-d65", ShaderAbi.WORKING_COLOR_SPACE);
         assertEquals("srgb", ShaderAbi.TEXTURE_COLOR_ENCODING);
         assertEquals("srgb", ShaderAbi.DISPLAY_COLOR_ENCODING);
         assertEquals("screen-2.5d", ShaderAbi.NRD_MOTION_SPACE);
-        assertEquals("reblur-diffuse-specular", ShaderAbi.NRD_DENOISER);
+        assertEquals(
+                "opaque-reblur-diffuse-specular+transparent-dual-reblur-diffuse",
+                ShaderAbi.NRD_DENOISER);
         assertEquals("hillaire-8wave-rec2020-d65", ShaderAbi.ATMOSPHERE_SPECTRAL_MODEL);
         assertEquals(10.0F, ShaderAbi.ATMOSPHERE_SPACE_SUN_INTENSITY);
         assertEquals(0.00471F, ShaderAbi.ATMOSPHERE_SUN_ANGULAR_RADIUS_RADIANS);

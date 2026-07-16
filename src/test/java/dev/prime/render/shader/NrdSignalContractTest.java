@@ -15,6 +15,10 @@ final class NrdSignalContractTest {
         String preparation = Files.readString(shaderRoot.resolve("nrd_motion.comp"));
         String composite = Files.readString(shaderRoot.resolve("nrd_composite.comp"));
         String transparent = Files.readString(shaderRoot.resolve("transparent.rgen"));
+        String transparentPreparation = Files.readString(
+                shaderRoot.resolve("nrd_transparent_motion.comp"));
+        String transparentComposite = Files.readString(
+                shaderRoot.resolve("nrd_transparent_composite.comp"));
         String opaqueAnyHit = Files.readString(shaderRoot.resolve("world_opaque.rahit"));
         String integrator = Files.readString(shaderRoot.resolve("integrator.glsl"));
 
@@ -33,9 +37,22 @@ final class NrdSignalContractTest {
         assertTrue(opaqueAnyHit.contains("primeMaterialIsTransmissive"));
         assertTrue(integrator.contains("primeTraceSurfaceWithSbtOffset(path.traceOrigin, path.rayDirection, 2u)"));
         assertTrue(transparent.contains("primeTraceFirstInterfaceBranch("));
-        assertTrue(transparent.contains("true, 1u"));
-        assertTrue(transparent.contains("false, 2u"));
-        assertTrue(transparent.contains("imageStore(primeSceneColor"));
+        assertTrue(transparent.contains("bool splitSmoothInterface"));
+        assertTrue(transparent.contains("surface.materialFlags) == 0.0"));
+        assertTrue(transparent.contains("if (splitSmoothInterface)"));
+        assertTrue(transparent.contains("splitSmoothInterface ? 2u : 1u"));
+        assertTrue(transparent.contains("if (!splitInterface)"));
+        assertTrue(transparent.contains("primeTransparentReflectionNoisy"));
+        assertTrue(transparent.contains("primeTransparentTransmissionNoisy"));
+        assertTrue(transparent.contains("result.guidePosition = surface.position"));
+        assertTrue(transparent.contains("vec4(visibleRadiance, -(max(surface.t, 0.0) + 1.0))"));
         assertTrue(transparent.contains("imageStore(primeFsrTransparencyCompositionMask"));
+        assertTrue(transparentPreparation.contains("if (metadata.a < 0.0)"));
+        assertTrue(transparentPreparation.contains("primeSolvePreviousRefraction("));
+        assertTrue(transparentPreparation.contains("relativeEta * transmittedLength"));
+        assertTrue(transparentPreparation.contains("primeNrdPackRadianceAndHitDistance("));
+        assertTrue(transparentComposite.contains("primeReflectionDenoised"));
+        assertTrue(transparentComposite.contains("primeTransmissionDenoised"));
+        assertTrue(transparentComposite.contains("metadata.a < 0.0"));
     }
 }

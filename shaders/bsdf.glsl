@@ -331,13 +331,11 @@ PrimeRcMaterial primeMinecraftTransmissionMaterial(
         uint materialFlags) {
     bool water = (materialFlags & PRIME_MATERIAL_FLAG_WATER) != 0u;
     bool thinWalled = (materialFlags & PRIME_MATERIAL_FLAG_THIN_WALLED) != 0u;
-    // A true zero-volume sheet represents both interfaces at one path vertex and therefore uses
-    // RoboCute's exact smooth thin-wall series. Closed glass/water volumes keep their authored
-    // transmission roughness; their reflected directional energy is remapped to a separate delta
-    // mirror below instead of being emitted as a rough highlight.
-    float roughness = thinWalled
-            ? 0.0
-            : primeMaterialLinearRoughness(baseColor, materialFlags);
+    // Vanilla translucent materials have no authored rough interface and are therefore exact
+    // smooth dielectrics. This is a material parameter, not a shortcut inside RoboCute: Fresnel,
+    // eta^2 radiance transport, absorption and the volume stack remain the library's full model.
+    // A future decoder may supply non-zero roughness; raygen must then use one unsplit BSDF path.
+    float roughness = primeMaterialLinearRoughness(baseColor, materialFlags);
     PrimeRcMaterial material = primeRcMaterialFromMetallic(
             vec3(1.0), roughness, 0.0, outwardNormal);
     material.weight.transmission = 1.0;
@@ -561,7 +559,12 @@ PrimeTransmissiveBsdfSample primeSampleMinecraftTransmission(
     result.bsdfSample.weight = sampled.bsdfSample.throughput.value
             / (sampled.bsdfSample.pdf * transmissionProbability);
     result.bsdfSample.pdf = sampled.bsdfSample.pdf * transmissionProbability;
-    result.bsdfSample.relativeEta = 1.0;
+    bool transmitted = primeRcIsTransmissive(sampled.bsdfSample.throughput.flags);
+    result.bsdfSample.relativeEta = transmitted && state.geometryThinWalled == 0u
+            ? (localView.z > 0.0
+                    ? state.specularFresnel.ior
+                    : 1.0 / max(state.specularFresnel.ior, PRIME_BSDF_EPSILON))
+            : 1.0;
     result.bsdfSample.eventFlags = primeRcToBsdfEventFlags(
             sampled.bsdfSample.throughput.flags);
     result.volumeStack = sampled.volumeStack;
@@ -625,7 +628,16 @@ PrimeTransmissiveBsdfSample primeSampleMinecraftTransmissionBranch(
     result.bsdfSample.weight = sampled.bsdfSample.throughput.value
             / sampled.bsdfSample.pdf;
     result.bsdfSample.pdf = sampled.bsdfSample.pdf;
-    result.bsdfSample.relativeEta = 1.0;
+    // RoboCute keeps eta in the closure state rather than its sample record. Prime's transport
+    // ABI defines relativeEta as n_transmitted / n_incident (the inverse of GLSL refract's eta).
+    // Preserve it here: transparent reprojection needs the same interface contract as the BSDF,
+    // and replacing it with 1 silently turns every refractive path into straight-through motion.
+    bool transmitted = primeRcIsTransmissive(sampled.bsdfSample.throughput.flags);
+    result.bsdfSample.relativeEta = transmitted && state.geometryThinWalled == 0u
+            ? (localView.z > 0.0
+                    ? state.specularFresnel.ior
+                    : 1.0 / max(state.specularFresnel.ior, PRIME_BSDF_EPSILON))
+            : 1.0;
     result.bsdfSample.eventFlags = primeRcToBsdfEventFlags(
             sampled.bsdfSample.throughput.flags);
     result.volumeStack = sampled.volumeStack;

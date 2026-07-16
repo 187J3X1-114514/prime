@@ -307,11 +307,30 @@ void primeAccumulateAfterPrimary(
     }
 }
 
-vec3 primeIntegrateContinuation(
+struct PrimeContinuationResult {
+    vec3 radiance;
+    vec3 guidePosition;
+    float guideRayDistance;
+    vec3 guideNormal;
+    float guideLinearRoughness;
+    vec3 guideBaseColor;
+    uint hasGuide;
+    uint stochasticBeforeGuide;
+};
+
+PrimeContinuationResult primeIntegrateContinuation(
         PathState path,
         IntegratorRecord integrator,
         PrimeRcVolumeStack volumeStack) {
-    vec3 radiance = vec3(0.0);
+    PrimeContinuationResult result;
+    result.radiance = vec3(0.0);
+    result.guidePosition = vec3(0.0);
+    result.guideRayDistance = 0.0;
+    result.guideNormal = vec3(0.0, 1.0, 0.0);
+    result.guideLinearRoughness = 1.0;
+    result.guideBaseColor = vec3(1.0);
+    result.hasGuide = 0u;
+    result.stochasticBeforeGuide = 0u;
     uint maximumBounces = min(primePush.path.z & 0xffffu, 256u);
     const uint rouletteStart = 5u;
     for (; path.bounce < maximumBounces; ++path.bounce) {
@@ -323,10 +342,26 @@ vec3 primeIntegrateContinuation(
             float sunWeight = primePreviousCannotUseMis(path)
                     ? 1.0
                     : primePowerHeuristic(path.previousBsdfPdf, sun.pdf);
-            radiance += path.throughput
+            result.radiance += path.throughput
                     * (primeEnvironmentRadiance(integrator, path.rayDirection)
                     + sun.radiance * sunWeight);
             break;
+        }
+
+        if (result.hasGuide == 0u) {
+            // The denoiser guide is the first *actual* surface reached by this conditional path,
+            // including the exit face of a glass volume. Skipping transparent hits produced a
+            // fictitious point on the camera ray and destroyed refractive parallax. This record is
+            // observational only: the complete branch continues below with its own volume stack,
+            // RNG, MIS and roulette state, so the raw estimator is unchanged and remains unbiased.
+            vec3 guideViewDirection = -path.rayDirection;
+            result.guidePosition = surface.position;
+            result.guideRayDistance = max(surface.t, 0.0);
+            result.guideNormal = primeSurfaceShadingNormal(surface, guideViewDirection);
+            result.guideLinearRoughness = primeMaterialLinearRoughness(
+                    surface.baseColor, surface.materialFlags);
+            result.guideBaseColor = surface.baseColor;
+            result.hasGuide = 1u;
         }
 
         if (volumeStack.count > 0u) {
@@ -342,7 +377,7 @@ vec3 primeIntegrateContinuation(
         float hitAreaWeight = primePreviousCannotUseMis(path)
                 ? 1.0
                 : primePowerHeuristic(path.previousBsdfPdf, hitAreaLight.pdf);
-        radiance += path.throughput * hitAreaLight.radiance * hitAreaWeight;
+        result.radiance += path.throughput * hitAreaLight.radiance * hitAreaWeight;
 
         PrimeSampleBase bounceSample = primeMakeSampleBase(path, path.bounce + 1u);
         vec2 sunSample = primeSobolSample2D(
@@ -361,7 +396,7 @@ vec3 primeIntegrateContinuation(
                 bounceSample,
                 PRIME_SAMPLE_EFFECT_SCATTER_BSDF,
                 PRIME_SAMPLE_DIMENSION_PRIMARY);
-        radiance += path.throughput
+        result.radiance += path.throughput
                 * (primeEstimateDirectSun(
                         integrator,
                         surface,
@@ -404,6 +439,10 @@ vec3 primeIntegrateContinuation(
         if (bsdf.pdf <= 0.0 || all(lessThanEqual(bsdf.weight, vec3(0.0)))) {
             break;
         }
+        if (result.hasGuide == 0u
+                && (bsdf.eventFlags & PRIME_BSDF_EVENT_DELTA) == 0u) {
+            result.stochasticBeforeGuide = 1u;
+        }
         path.throughput *= bsdf.weight;
         path.physicalOrigin = surface.position;
         path.traceOrigin = primeOffsetRayOrigin(
@@ -421,7 +460,7 @@ vec3 primeIntegrateContinuation(
             break;
         }
     }
-    return radiance;
+    return result;
 }
 
 PrimeIntegrationResult primeIntegrate(PathState path, IntegratorRecord integrator) {

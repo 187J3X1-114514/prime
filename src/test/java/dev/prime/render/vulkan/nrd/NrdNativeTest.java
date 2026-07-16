@@ -110,6 +110,45 @@ final class NrdNativeTest {
         }
     }
 
+    @Test
+    void bundledBridgeCreatesIndependentDiffuseOnlyDispatches() {
+        try (NrdNative.Instance instance = NrdNative.create(
+                64, 48, NrdNative.DenoiserKind.TRANSPARENT_TRANSMISSION)) {
+            NrdNative.Description description = instance.description();
+            assertEquals(NrdNative.EXPECTED_NRD_VERSION, description.nrdVersion());
+            float[] identity = new float[] {
+                1.0f, 0.0f, 0.0f, 0.0f,
+                0.0f, 1.0f, 0.0f, 0.0f,
+                0.0f, 0.0f, 1.0f, 0.0f,
+                0.0f, 0.0f, 0.0f, 1.0f
+            };
+            instance.setFrameSettings(new NrdNative.FrameSettings(
+                    identity,
+                    identity,
+                    identity,
+                    identity,
+                    new float[] {0.0f, 0.0f},
+                    new float[] {0.0f, 0.0f},
+                    64,
+                    48,
+                    64,
+                    48,
+                    0,
+                    true,
+                    16.67f,
+                    1_000.0f,
+                    true));
+            Set<Integer> resourceTypes = new HashSet<>();
+            instance.getDispatches().stream()
+                    .flatMap(dispatch -> dispatch.resources().stream())
+                    .forEach(resource -> resourceTypes.add(resource.resourceType()));
+            assertTrue(resourceTypes.contains(NrdNative.RESOURCE_IN_DIFF_RADIANCE_HITDIST));
+            assertTrue(resourceTypes.contains(NrdNative.RESOURCE_OUT_DIFF_RADIANCE_HITDIST));
+            assertFalse(resourceTypes.contains(NrdNative.RESOURCE_IN_SPEC_RADIANCE_HITDIST));
+            assertFalse(resourceTypes.contains(NrdNative.RESOURCE_OUT_SPEC_RADIANCE_HITDIST));
+        }
+    }
+
     private static Set<DescriptorBinding> descriptorBindings(byte[] spirv) {
         ByteBuffer words = ByteBuffer.wrap(spirv).order(ByteOrder.LITTLE_ENDIAN);
         Map<Integer, Integer> bindings = new HashMap<>();

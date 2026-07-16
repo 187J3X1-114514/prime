@@ -19,6 +19,7 @@ import dev.prime.render.vulkan.VulkanCapabilities;
 import dev.prime.render.vulkan.VulkanContext;
 import dev.prime.render.vulkan.VulkanImage;
 import dev.prime.render.vulkan.nrd.NrdDenoiser;
+import dev.prime.render.vulkan.nrd.NrdTransparentComposite;
 import dev.prime.render.vulkan.fsr.Fsr3Upscaler;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
@@ -174,6 +175,8 @@ public final class VulkanRenderer implements AutoCloseable {
         VulkanImage history = images.accumulation;
         VulkanImage sceneColor = images.sceneColor;
         NrdDenoiser denoiser = images.denoiser;
+        NrdDenoiser reflectionDenoiser = images.reflectionDenoiser;
+        NrdDenoiser transmissionDenoiser = images.transmissionDenoiser;
         Fsr3Upscaler upscaler = images.upscaler;
         boolean frameCameraInWater = isCameraInWater(minecraft, frameCamera);
         if (this.cameraMediumKnown && this.cameraInWater != frameCameraInWater) {
@@ -207,8 +210,12 @@ public final class VulkanRenderer implements AutoCloseable {
         this.prepareSceneColorForComposite(commandBuffer, sceneColor);
         this.prepareAccumulationForTrace(commandBuffer, history);
         denoiser.prepareForRayTrace(commandBuffer);
+        reflectionDenoiser.prepareForRayTrace(commandBuffer);
+        transmissionDenoiser.prepareForRayTrace(commandBuffer);
         this.prepareAtlasForTrace(commandBuffer, atlasView.texture());
         NrdDenoiser.FrameToken nrdFrame;
+        NrdDenoiser.FrameToken reflectionNrdFrame;
+        NrdDenoiser.FrameToken transmissionNrdFrame;
         try (MemoryStack stack = MemoryStack.stackPush()) {
             ByteBuffer pushConstants = this.createPushConstants(
                     stack,
@@ -234,6 +241,27 @@ public final class VulkanRenderer implements AutoCloseable {
             this.prepareTransparentComposite(commandBuffer, sceneColor, denoiser);
             this.pipeline.traceTransparent(
                     commandBuffer, pushConstants, renderWidth, renderHeight);
+            reflectionNrdFrame = reflectionDenoiser.recordBranch(
+                    commandBuffer,
+                    frameCamera,
+                    scene.resetRevision(),
+                    atlasViewHandle,
+                    atlasSamplerHandle,
+                    frameSunDirection,
+                    cameraJitter.x(),
+                    cameraJitter.y(),
+                    fsrFrame.reset());
+            transmissionNrdFrame = transmissionDenoiser.recordBranch(
+                    commandBuffer,
+                    frameCamera,
+                    scene.resetRevision(),
+                    atlasViewHandle,
+                    atlasSamplerHandle,
+                    frameSunDirection,
+                    cameraJitter.x(),
+                    cameraJitter.y(),
+                    fsrFrame.reset());
+            images.transparentComposite.record(commandBuffer, renderWidth, renderHeight);
             this.finishTransparentComposite(commandBuffer, sceneColor, denoiser);
             this.finishAtlasRead(commandBuffer, atlasView.texture());
             upscaler.record(commandBuffer, fsrFrame);
@@ -263,6 +291,8 @@ public final class VulkanRenderer implements AutoCloseable {
         VulkanContext.check(VK12.vkEndCommandBuffer(commandBuffer), "end Prime ray tracing command buffer");
         encoder.execute(commandBuffer);
         denoiser.submitted(nrdFrame);
+        reflectionDenoiser.submitted(reflectionNrdFrame);
+        transmissionDenoiser.submitted(transmissionNrdFrame);
         upscaler.submitted(fsrFrame);
         this.accumulationState.submitted(
                 frameCamera,
@@ -328,6 +358,9 @@ public final class VulkanRenderer implements AutoCloseable {
         AtmospherePipeline replacementAtmosphere = null;
         RayTracingPipeline replacementPipeline = null;
         NrdDenoiser replacementDenoiser = null;
+        NrdDenoiser replacementReflectionDenoiser = null;
+        NrdDenoiser replacementTransmissionDenoiser = null;
+        NrdTransparentComposite replacementTransparentComposite = null;
         Fsr3Upscaler replacementUpscaler = null;
         try {
             replacementAtmosphere = new AtmospherePipeline(this.context);
@@ -340,6 +373,22 @@ public final class VulkanRenderer implements AutoCloseable {
                         currentImages.sceneColor.height(),
                         currentImages.sceneColor,
                         currentImages.accumulation,
+                        replacementAtmosphere);
+                replacementReflectionDenoiser = NrdDenoiser.createTransparentBranch(
+                        this.context,
+                        currentImages.sceneColor.width(),
+                        currentImages.sceneColor.height(),
+                        NrdDenoiser.TransparentBranch.REFLECTION);
+                replacementTransmissionDenoiser = NrdDenoiser.createTransparentBranch(
+                        this.context,
+                        currentImages.sceneColor.width(),
+                        currentImages.sceneColor.height(),
+                        NrdDenoiser.TransparentBranch.TRANSMISSION);
+                replacementTransparentComposite = NrdTransparentComposite.create(
+                        this.context,
+                        currentImages.sceneColor,
+                        replacementReflectionDenoiser,
+                        replacementTransmissionDenoiser,
                         replacementAtmosphere);
                 replacementUpscaler = Fsr3Upscaler.create(
                         this.context,
@@ -359,6 +408,15 @@ public final class VulkanRenderer implements AutoCloseable {
             if (replacementUpscaler != null) {
                 replacementUpscaler.destroy();
             }
+            if (replacementTransparentComposite != null) {
+                replacementTransparentComposite.destroy();
+            }
+            if (replacementTransmissionDenoiser != null) {
+                replacementTransmissionDenoiser.destroy();
+            }
+            if (replacementReflectionDenoiser != null) {
+                replacementReflectionDenoiser.destroy();
+            }
             if (replacementDenoiser != null) {
                 replacementDenoiser.destroy();
             }
@@ -375,16 +433,28 @@ public final class VulkanRenderer implements AutoCloseable {
         AtmospherePipeline previousAtmosphere = this.atmosphere;
         RenderImages currentImages = this.renderImages;
         NrdDenoiser previousDenoiser = currentImages == null ? null : currentImages.denoiser;
+        NrdDenoiser previousReflectionDenoiser =
+                currentImages == null ? null : currentImages.reflectionDenoiser;
+        NrdDenoiser previousTransmissionDenoiser =
+                currentImages == null ? null : currentImages.transmissionDenoiser;
+        NrdTransparentComposite previousTransparentComposite =
+                currentImages == null ? null : currentImages.transparentComposite;
         Fsr3Upscaler previousUpscaler = currentImages == null ? null : currentImages.upscaler;
         this.pipeline = replacementPipeline;
         this.atmosphere = replacementAtmosphere;
         if (currentImages != null) {
             currentImages.denoiser = replacementDenoiser;
+            currentImages.reflectionDenoiser = replacementReflectionDenoiser;
+            currentImages.transmissionDenoiser = replacementTransmissionDenoiser;
+            currentImages.transparentComposite = replacementTransparentComposite;
             currentImages.upscaler = replacementUpscaler;
         }
         this.context.defer(previousPipeline);
         if (previousDenoiser != null) {
             this.context.defer(previousUpscaler);
+            this.context.defer(previousTransparentComposite);
+            this.context.defer(previousTransmissionDenoiser);
+            this.context.defer(previousReflectionDenoiser);
             this.context.defer(previousDenoiser);
         }
         this.context.defer(previousAtmosphere);
@@ -412,13 +482,18 @@ public final class VulkanRenderer implements AutoCloseable {
                     atlasView,
                     atlasSampler,
                     this.atmosphere,
-                    current.denoiser);
+                    current.denoiser,
+                    current.reflectionDenoiser,
+                    current.transmissionDenoiser);
             return false;
         }
         VulkanImage replacementOutput = null;
         VulkanImage replacementAccumulation = null;
         VulkanImage replacementSceneColor = null;
         NrdDenoiser replacementDenoiser = null;
+        NrdDenoiser replacementReflectionDenoiser = null;
+        NrdDenoiser replacementTransmissionDenoiser = null;
+        NrdTransparentComposite replacementTransparentComposite = null;
         Fsr3Upscaler replacementUpscaler = null;
         try {
             replacementOutput = this.context.createOutputImage(displayWidth, displayHeight);
@@ -436,6 +511,22 @@ public final class VulkanRenderer implements AutoCloseable {
                     replacementSceneColor,
                     replacementAccumulation,
                     this.atmosphere);
+            replacementReflectionDenoiser = NrdDenoiser.createTransparentBranch(
+                    this.context,
+                    renderWidth,
+                    renderHeight,
+                    NrdDenoiser.TransparentBranch.REFLECTION);
+            replacementTransmissionDenoiser = NrdDenoiser.createTransparentBranch(
+                    this.context,
+                    renderWidth,
+                    renderHeight,
+                    NrdDenoiser.TransparentBranch.TRANSMISSION);
+            replacementTransparentComposite = NrdTransparentComposite.create(
+                    this.context,
+                    replacementSceneColor,
+                    replacementReflectionDenoiser,
+                    replacementTransmissionDenoiser,
+                    this.atmosphere);
             replacementUpscaler = Fsr3Upscaler.create(
                     this.context,
                     renderWidth,
@@ -452,6 +543,15 @@ public final class VulkanRenderer implements AutoCloseable {
         } catch (RuntimeException exception) {
             if (replacementUpscaler != null) {
                 replacementUpscaler.destroy();
+            }
+            if (replacementTransparentComposite != null) {
+                replacementTransparentComposite.destroy();
+            }
+            if (replacementTransmissionDenoiser != null) {
+                replacementTransmissionDenoiser.destroy();
+            }
+            if (replacementReflectionDenoiser != null) {
+                replacementReflectionDenoiser.destroy();
             }
             if (replacementDenoiser != null) {
                 replacementDenoiser.destroy();
@@ -472,6 +572,9 @@ public final class VulkanRenderer implements AutoCloseable {
                 replacementAccumulation,
                 replacementSceneColor,
                 replacementDenoiser,
+                replacementReflectionDenoiser,
+                replacementTransmissionDenoiser,
+                replacementTransparentComposite,
                 replacementUpscaler,
                 qualityMode);
         try {
@@ -483,7 +586,9 @@ public final class VulkanRenderer implements AutoCloseable {
                     atlasView,
                     atlasSampler,
                     this.atmosphere,
-                    replacement.denoiser);
+                    replacement.denoiser,
+                    replacement.reflectionDenoiser,
+                    replacement.transmissionDenoiser);
         } catch (RuntimeException exception) {
             replacement.destroy();
             throw exception;
@@ -849,6 +954,9 @@ public final class VulkanRenderer implements AutoCloseable {
         private final VulkanImage sceneColor;
         private final FsrQualityMode qualityMode;
         private NrdDenoiser denoiser;
+        private NrdDenoiser reflectionDenoiser;
+        private NrdDenoiser transmissionDenoiser;
+        private NrdTransparentComposite transparentComposite;
         private Fsr3Upscaler upscaler;
         private boolean destroyed;
 
@@ -857,12 +965,18 @@ public final class VulkanRenderer implements AutoCloseable {
                 VulkanImage accumulation,
                 VulkanImage sceneColor,
                 NrdDenoiser denoiser,
+                NrdDenoiser reflectionDenoiser,
+                NrdDenoiser transmissionDenoiser,
+                NrdTransparentComposite transparentComposite,
                 Fsr3Upscaler upscaler,
                 FsrQualityMode qualityMode) {
             this.output = output;
             this.accumulation = accumulation;
             this.sceneColor = sceneColor;
             this.denoiser = denoiser;
+            this.reflectionDenoiser = reflectionDenoiser;
+            this.transmissionDenoiser = transmissionDenoiser;
+            this.transparentComposite = transparentComposite;
             this.upscaler = upscaler;
             this.qualityMode = qualityMode;
         }
@@ -887,6 +1001,9 @@ public final class VulkanRenderer implements AutoCloseable {
             if (!this.destroyed) {
                 this.destroyed = true;
                 this.upscaler.destroy();
+                this.transparentComposite.destroy();
+                this.transmissionDenoiser.destroy();
+                this.reflectionDenoiser.destroy();
                 this.denoiser.destroy();
                 this.sceneColor.destroy();
                 this.accumulation.destroy();

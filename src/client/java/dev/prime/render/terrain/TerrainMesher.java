@@ -113,8 +113,8 @@ public final class TerrainMesher {
                 }
             }
         }
-        float[] positions = concatenate(opaque.positions.toArray(), nonOpaque.positions.toArray());
-        int[] primitives = concatenate(opaque.primitives.toArray(), nonOpaque.primitives.toArray());
+        float[] positions = concatenate(opaque.positions, nonOpaque.positions);
+        int[] primitives = concatenate(opaque.primitives, nonOpaque.primitives);
         return new CpuSectionMesh(
                 positions,
                 primitives,
@@ -123,15 +123,15 @@ public final class TerrainMesher {
                 lights.build());
     }
 
-    private static float[] concatenate(float[] first, float[] second) {
-        float[] result = Arrays.copyOf(first, first.length + second.length);
-        System.arraycopy(second, 0, result, first.length, second.length);
+    private static float[] concatenate(FloatArrayBuilder first, FloatArrayBuilder second) {
+        float[] result = Arrays.copyOf(first.values, first.size + second.size);
+        System.arraycopy(second.values, 0, result, first.size, second.size);
         return result;
     }
 
-    private static int[] concatenate(int[] first, int[] second) {
-        int[] result = Arrays.copyOf(first, first.length + second.length);
-        System.arraycopy(second, 0, result, first.length, second.length);
+    private static int[] concatenate(IntArrayBuilder first, IntArrayBuilder second) {
+        int[] result = Arrays.copyOf(first.values, first.size + second.size);
+        System.arraycopy(second.values, 0, result, first.size, second.size);
         return result;
     }
 
@@ -614,10 +614,6 @@ public final class TerrainMesher {
             }
             this.values[this.size++] = value;
         }
-
-        private float[] toArray() {
-            return Arrays.copyOf(this.values, this.size);
-        }
     }
 
     private static final class IntArrayBuilder {
@@ -629,10 +625,6 @@ public final class TerrainMesher {
                 this.values = Arrays.copyOf(this.values, this.values.length * 2);
             }
             this.values[this.size++] = value;
-        }
-
-        private int[] toArray() {
-            return Arrays.copyOf(this.values, this.size);
         }
     }
 }

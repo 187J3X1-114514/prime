@@ -183,7 +183,6 @@ public final class TerrainScene implements AutoCloseable {
             }
 
             if (replacementTlas != null) {
-                List<TopLevelAccelerationStructure.Instance> instances = new ArrayList<>(finalSections.size());
                 long worldLightAddress = replacementWorldLights == null
                         ? 0L
                         : replacementWorldLights.deviceAddress();
@@ -193,23 +192,24 @@ public final class TerrainScene implements AutoCloseable {
                 int worldLightNodeCount = replacementWorldLights == null
                         ? 0
                         : worldLightTree.nodeCount();
-                for (int sectionIndex = 0; sectionIndex < finalSections.size(); sectionIndex++) {
-                    GpuSection section = finalSections.get(sectionIndex);
-                    instances.add(new TopLevelAccelerationStructure.Instance(
-                            section.blas().accelerationStructure().deviceAddress(),
-                            section.blas().primitives().deviceAddress(),
-                            section.lightAddress(),
-                            worldLightAddress,
-                            worldLightForwardAddress,
-                            section.blas().opaqueTriangleCount(),
-                            worldLightTree.leafNode(sectionIndex),
-                            section.lights().emitterCount(),
-                            worldLightNodeCount,
-                            (section.sectionX() << 4) - nextOriginX,
-                            (section.sectionY() << 4) - nextOriginY,
-                            (section.sectionZ() << 4) - nextOriginZ));
-                }
-                replacementTlas.populate(instances);
+                replacementTlas.populate(finalSections.size(), writer -> {
+                    for (int sectionIndex = 0; sectionIndex < finalSections.size(); sectionIndex++) {
+                        GpuSection section = finalSections.get(sectionIndex);
+                        writer.write(
+                                section.blas().accelerationStructure().deviceAddress(),
+                                section.blas().primitives().deviceAddress(),
+                                section.lightAddress(),
+                                worldLightAddress,
+                                worldLightForwardAddress,
+                                section.blas().opaqueTriangleCount(),
+                                worldLightTree.leafNode(sectionIndex),
+                                section.lights().emitterCount(),
+                                worldLightNodeCount,
+                                (section.sectionX() << 4) - nextOriginX,
+                                (section.sectionY() << 4) - nextOriginY,
+                                (section.sectionZ() << 4) - nextOriginZ);
+                    }
+                });
                 memoryBarrier(
                         commandBuffer,
                         VK12.VK_PIPELINE_STAGE_HOST_BIT,
@@ -383,7 +383,7 @@ public final class TerrainScene implements AutoCloseable {
             List<GpuSection> replacements,
             TopLevelAccelerationStructure replacementTlas,
             VulkanBuffer replacementWorldLights) {
-        List<GpuSection> retired = new ArrayList<>();
+        List<GpuSection> retired = new ArrayList<>(evictions.length + uploads.size());
         for (long key : evictions) {
             GpuSection removed = this.resident.remove(key);
             if (removed != null) {

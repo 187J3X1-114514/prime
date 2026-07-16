@@ -11,7 +11,7 @@ final class CpuWorldLightTree {
     }
 
     static Result build(List<GpuSection> sections, int originX, int originY, int originZ) {
-        List<CpuLightTree.Leaf> leaves = new ArrayList<>();
+        List<CpuLightTree.Leaf> leaves = new ArrayList<>(sections.size());
         for (int index = 0; index < sections.size(); index++) {
             GpuSection section = sections.get(index);
             if (section.lights().isEmpty()) {

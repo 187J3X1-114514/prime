@@ -32,6 +32,18 @@ final class RayTracingPipelineContractTest {
     }
 
     @Test
+    void transparentDeltaHistoryUsesASynchronizedTemporalCameraBuffer() throws IOException {
+        String pipeline = Files.readString(Path.of(
+                System.getProperty("user.dir"),
+                "src/client/java/dev/prime/render/vulkan/RayTracingPipeline.java"));
+
+        assertTrue(pipeline.contains("ShaderAbi.DESCRIPTOR_TEMPORAL_CAMERA"));
+        assertTrue(pipeline.contains("VK12.vkCmdUpdateBuffer("));
+        assertTrue(pipeline.contains("VkBufferMemoryBarrier2"));
+        assertTrue(pipeline.contains("VK12.VK_ACCESS_UNIFORM_READ_BIT"));
+    }
+
+    @Test
     void shadowRaysUseTheirOwnMinimalPayloadAndMissRecord() throws IOException {
         Path shaderRoot = Path.of(System.getProperty("user.dir"), "shaders");
         String integrator = Files.readString(shaderRoot.resolve("integrator.glsl"));

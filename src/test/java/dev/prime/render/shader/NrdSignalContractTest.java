@@ -52,8 +52,14 @@ final class NrdSignalContractTest {
         assertTrue(transparent.contains("vec4(visibleRadiance, -(max(surface.t, 0.0) + 1.0))"));
         assertTrue(transparent.contains("imageStore(primeFsrTransparencyCompositionMask"));
         assertTrue(transparentPreparation.contains("if (metadata.a < 0.0)"));
-        assertTrue(transparentPreparation.contains("primeSolvePreviousRefraction("));
-        assertTrue(transparentPreparation.contains("incidentLength + transmittedLength"));
+        assertTrue(integrator.contains("struct PrimeDeltaChain"));
+        assertTrue(integrator.contains("PRIME_DELTA_CHAIN_CAPACITY = 8u"));
+        assertTrue(integrator.contains("primeAppendDeltaInterface(deltaChain, surface, bsdf)"));
+        assertTrue(transparent.contains("primeBuildDeltaVirtualGuide("));
+        assertTrue(transparent.contains("primeRelaxPreviousDeltaInterface("));
+        assertTrue(transparent.contains("previousVirtualPosition - result.currentVirtualPosition"));
+        assertTrue(transparentPreparation.contains(
+                "previousVirtualPosition = currentVirtualPosition + interfaceData.xyz"));
         assertTrue(transparentPreparation.contains("vec2 currentCameraJitter"));
         assertTrue(transparentPreparation.contains("previousUv - currentSampleUv"));
         assertTrue(transparentPreparation.contains("primeNrdMaterialFactors("));

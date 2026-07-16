@@ -315,6 +315,7 @@ struct PrimeContinuationResult {
     vec3 stableRadiance;
     vec3 guidePosition;
     vec3 guideNormal;
+    vec3 guideViewDirection;
     float guideLinearRoughness;
     vec3 guideBaseColor;
     vec3 guideThroughput;
@@ -323,10 +324,53 @@ struct PrimeContinuationResult {
     uint stochasticBeforeGuide;
 };
 
+// PSR follows the coherent specular path to the first surface with a finite lobe. The chain is
+// invocation-local on purpose: persisting every interface per pixel would add a large full-frame
+// bandwidth and memory cost. Eight interfaces cover nested panes, water and ordinary glass while
+// keeping register pressure bounded; overflow invalidates temporal history instead of truncating
+// the optical path and manufacturing a wrong motion vector.
+const uint PRIME_DELTA_CHAIN_CAPACITY = 8u;
+
+struct PrimeDeltaChain {
+    // xyz is the render-origin-relative interface point. w is n_out / n_in for transmission and
+    // one for reflection. The paired record stores the geometric plane normal and event flags.
+    vec4 positionEta[PRIME_DELTA_CHAIN_CAPACITY];
+    vec4 normalEvent[PRIME_DELTA_CHAIN_CAPACITY];
+    uint count;
+    uint overflowed;
+};
+
+PrimeDeltaChain primeEmptyDeltaChain() {
+    PrimeDeltaChain chain;
+    chain.count = 0u;
+    chain.overflowed = 0u;
+    return chain;
+}
+
+void primeAppendDeltaInterface(
+        inout PrimeDeltaChain chain,
+        SurfaceInteraction surface,
+        BsdfSample bsdf) {
+    if (chain.count >= PRIME_DELTA_CHAIN_CAPACITY) {
+        chain.overflowed = 1u;
+        return;
+    }
+    bool transmission = (bsdf.eventFlags & PRIME_BSDF_EVENT_TRANSMISSION) != 0u;
+    float relativeEta = transmission
+            ? max(bsdf.relativeEta, PRIME_BSDF_EPSILON)
+            : 1.0;
+    chain.positionEta[chain.count] = vec4(surface.position, relativeEta);
+    chain.normalEvent[chain.count] = vec4(
+            normalize(surface.geometricNormal),
+            uintBitsToFloat(bsdf.eventFlags));
+    chain.count++;
+}
+
 PrimeContinuationResult primeIntegrateContinuation(
         PathState path,
         IntegratorRecord integrator,
-        PrimeRcVolumeStack volumeStack) {
+        PrimeRcVolumeStack volumeStack,
+        inout PrimeDeltaChain deltaChain) {
     PrimeContinuationResult result;
     result.diffuseRadiance = vec3(0.0);
     result.diffuseHitDistance = 0.0;
@@ -335,6 +379,7 @@ PrimeContinuationResult primeIntegrateContinuation(
     result.stableRadiance = vec3(0.0);
     result.guidePosition = vec3(0.0);
     result.guideNormal = vec3(0.0, 1.0, 0.0);
+    result.guideViewDirection = vec3(0.0, 0.0, 1.0);
     result.guideLinearRoughness = 1.0;
     result.guideBaseColor = vec3(1.0);
     result.guideThroughput = vec3(1.0);
@@ -396,6 +441,7 @@ PrimeContinuationResult primeIntegrateContinuation(
         if (primarySurfaceReplacement) {
             result.guidePosition = surface.position;
             result.guideNormal = primeSurfaceShadingNormal(surface, viewDirection);
+            result.guideViewDirection = viewDirection;
             result.guideLinearRoughness = primeMaterialLinearRoughness(
                     surface.baseColor, surface.materialFlags);
             result.guideBaseColor = surface.baseColor;
@@ -518,7 +564,12 @@ PrimeContinuationResult primeIntegrateContinuation(
         if (bsdf.pdf <= 0.0 || all(lessThanEqual(bsdf.weight, vec3(0.0)))) {
             break;
         }
-        if (result.hasGuide == 0u) {
+        if (result.hasGuide == 0u
+                && pureDeltaInterface
+                && (bsdf.eventFlags & PRIME_BSDF_EVENT_DELTA) != 0u) {
+            primeAppendDeltaInterface(deltaChain, surface, bsdf);
+        } else if (result.hasGuide == 0u
+                && (bsdf.eventFlags & PRIME_BSDF_EVENT_DELTA) == 0u) {
             // Any unsplit choice before a coherent replacement surface can change which surface
             // the branch exposes. Keep the marker for the finite-environment fallback path.
             result.stochasticBeforeGuide = 1u;

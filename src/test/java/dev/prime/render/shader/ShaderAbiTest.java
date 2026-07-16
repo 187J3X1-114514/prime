@@ -50,6 +50,7 @@ final class ShaderAbiTest {
         assertEquals(32, ShaderAbi.DESCRIPTOR_TRANSPARENT_TRANSMISSION_SPECULAR);
         assertEquals(33, ShaderAbi.DESCRIPTOR_TRANSPARENT_REFLECTION_THROUGHPUT);
         assertEquals(34, ShaderAbi.DESCRIPTOR_TRANSPARENT_TRANSMISSION_THROUGHPUT);
+        assertEquals(35, ShaderAbi.DESCRIPTOR_TEMPORAL_CAMERA);
         assertEquals(0x80000000, ShaderAbi.PATH_CAMERA_IN_WATER_MASK);
         assertEquals(0x7fff, ShaderAbi.PATH_JITTER_PHASE_MASK);
         assertEquals("linear-rec2020-d65", ShaderAbi.WORKING_COLOR_SPACE);

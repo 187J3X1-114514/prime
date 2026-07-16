@@ -1764,16 +1764,9 @@ public final class NrdDenoiser implements Destroyable {
                 previousWorldToClip.get(64, push);
                 previousRenderedWorldToClip.get(128, push);
                 if (this.transparentBranch != 0) {
-                    // The transparent preparation shader does not consume the independent exact
-                    // reprojection diagnostic matrix. Reuse its first column rather than growing
-                    // the already established 192-byte compute push ABI to 208 bytes.
-                    push.putFloat(128, (float) (previous.renderX() - camera.renderX()));
-                    push.putFloat(132, (float) (previous.renderY() - camera.renderY()));
-                    push.putFloat(136, (float) (previous.renderZ() - camera.renderZ()));
-                    push.putFloat(140, this.transparentBranch);
-                    // Column one carries the centered source-pixel jitter used by raygen. The
-                    // transparent virtual point was selected by that exact sub-pixel ray, so its
-                    // current UV must use the same sample before deriving non-jittered motion.
+                    // Raygen has already reduced every delta interface to current/previous
+                    // virtual positions. Transparent preparation only reuses column one for the
+                    // centered source-pixel jitter that selected the current virtual surface.
                     push.putFloat(144, cameraJitter[0]);
                     push.putFloat(148, cameraJitter[1]);
                 }

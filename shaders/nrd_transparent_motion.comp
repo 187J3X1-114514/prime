@@ -21,21 +21,19 @@ layout(push_constant) uniform PrimeTransparentMotionPushConstants {
     mat4 currentClipToWorld;
     mat4 previousWorldToClip;
     // Opaque preparation uses this slot for its independent reprojection diagnostic matrix.
-    // Transparent preparation reuses column zero: xyz is the previous effective pinhole in
-    // current-camera-relative coordinates, and w is 1 for reflection or 2 for transmission.
-    // Column one xy stores the current centered camera jitter in source pixels. Keeping the
-    // shared 192-byte ABI avoids raising Prime's Vulkan push-constant requirement.
+    // Transparent preparation only needs column one xy for the current centered source-pixel
+    // jitter. Raygen has already solved the complete delta chain into current and previous virtual
+    // positions; keeping this shared 192-byte ABI avoids a second compute pipeline layout.
     mat4 previousRenderedWorldToClipOrTransparentState;
 } primeMotionPush;
 
 const float PRIME_TRANSPARENT_SKY_VIEW_Z = 65504.0;
-const float PRIME_REFLECTION_BRANCH = 1.0;
 
 vec2 primeTransparentSignNotZero(vec2 value) {
     return vec2(value.x >= 0.0 ? 1.0 : -1.0, value.y >= 0.0 ? 1.0 : -1.0);
 }
 
-vec3 primeUnpackTransparentNormal(float packedValue) {
+vec3 primeUnpackTransparentDirection(float packedValue) {
     vec2 encoded = unpackSnorm2x16(floatBitsToUint(packedValue));
     vec3 normal = vec3(encoded, 1.0 - abs(encoded.x) - abs(encoded.y));
     if (normal.z < 0.0) {
@@ -50,74 +48,6 @@ vec3 primeTransparentMotionRayDirection(vec2 screenUv) {
     vec4 nearPoint = primeMotionPush.currentClipToWorld * vec4(clipXY, 1.0, 1.0);
     vec4 farPoint = primeMotionPush.currentClipToWorld * vec4(clipXY, 0.0, 1.0);
     return normalize(farPoint.xyz / farPoint.w - nearPoint.xyz / nearPoint.w);
-}
-
-vec3 primeMirrorPointAcrossPlane(vec3 point, vec3 planePoint, vec3 planeNormal) {
-    return point - 2.0 * planeNormal * dot(point - planePoint, planeNormal);
-}
-
-bool primeSolvePreviousRefraction(
-        vec3 previousCamera,
-        vec3 planePoint,
-        vec3 planeNormal,
-        vec3 target,
-        float relativeEta,
-        out vec3 interfacePoint) {
-    vec3 helper = abs(planeNormal.z) < 0.9
-            ? vec3(0.0, 0.0, 1.0)
-            : vec3(0.0, 1.0, 0.0);
-    vec3 tangent = normalize(cross(helper, planeNormal));
-    vec3 bitangent = cross(planeNormal, tangent);
-    interfacePoint = planePoint;
-
-    // Minimize n_i |X-C| + n_t |Q-X| on the sampled microfacet plane. relativeEta is
-    // n_t / n_i, exactly the convention carried by BsdfSample. This is Fermat/Snell reprojection,
-    // not a screen-space heuristic; four Newton steps are ample for frame-to-frame camera motion.
-    for (uint iteration = 0u; iteration < 4u; ++iteration) {
-        vec3 incidentDelta = interfacePoint - previousCamera;
-        vec3 transmittedDelta = target - interfacePoint;
-        float incidentLength = length(incidentDelta);
-        float transmittedLength = length(transmittedDelta);
-        if (!(incidentLength > 1.0e-5) || !(transmittedLength > 1.0e-5)) {
-            return false;
-        }
-        vec3 incident = incidentDelta / incidentLength;
-        vec3 transmitted = transmittedDelta / transmittedLength;
-        vec3 stationarity = incident - relativeEta * transmitted;
-        vec2 residual = vec2(
-                dot(stationarity, tangent),
-                dot(stationarity, bitangent));
-        mat3 identity = mat3(1.0);
-        mat3 derivative = (identity - outerProduct(incident, incident)) / incidentLength
-                + relativeEta
-                * (identity - outerProduct(transmitted, transmitted)) / transmittedLength;
-        mat2 jacobian = mat2(
-                dot(tangent, derivative * tangent),
-                dot(bitangent, derivative * tangent),
-                dot(tangent, derivative * bitangent),
-                dot(bitangent, derivative * bitangent));
-        float jacobianDeterminant = determinant(jacobian);
-        if (!(abs(jacobianDeterminant) > 1.0e-8)) {
-            return false;
-        }
-        vec2 step = inverse(jacobian) * residual;
-        float stepLength = length(step);
-        if (stepLength > 8.0) {
-            step *= 8.0 / stepLength;
-        }
-        interfacePoint -= tangent * step.x + bitangent * step.y;
-    }
-
-    vec3 incidentDelta = interfacePoint - previousCamera;
-    vec3 transmittedDelta = target - interfacePoint;
-    if (!(length(incidentDelta) > 1.0e-5) || !(length(transmittedDelta) > 1.0e-5)) {
-        return false;
-    }
-    vec3 stationarity = normalize(incidentDelta)
-            - relativeEta * normalize(transmittedDelta);
-    return length(vec2(
-            dot(stationarity, tangent),
-            dot(stationarity, bitangent))) < 2.0e-3;
 }
 
 void primeStoreInvalidTransparentGuide(ivec2 pixel, vec3 rawRadiance) {
@@ -159,17 +89,12 @@ void main() {
         return;
     }
 
-    vec3 planePoint = guidePositionData.xyz;
-    vec3 target = planePoint + interfaceData.xyz;
-    vec3 planeNormal = primeUnpackTransparentNormal(guidePositionData.w);
-    float relativeEta = max(interfaceData.w, 1.0e-4);
+    vec3 currentVirtualPosition = guidePositionData.xyz;
+    vec3 previousVirtualPosition = currentVirtualPosition + interfaceData.xyz;
     vec3 virtualNormal = normalize(guide.rgb);
     vec3 psrNormal = virtualNormal;
+    vec3 psrViewDirection = primeUnpackTransparentDirection(guidePositionData.w);
     float virtualRoughness = clamp(guide.a, 0.0, 1.0);
-    vec3 currentVirtualPosition;
-    vec3 previousVirtualPosition;
-    vec4 transparentState =
-            primeMotionPush.previousRenderedWorldToClipOrTransparentState[0];
     vec2 currentCameraJitter =
             primeMotionPush.previousRenderedWorldToClipOrTransparentState[1].xy;
     // Raygen traces pixel + 0.5 + jitter. Virtual reflection/refraction geometry therefore
@@ -177,53 +102,6 @@ void main() {
     // Halton offset into motion even for a perfectly static camera and scene.
     vec2 currentSampleUv = (vec2(pixel) + vec2(0.5) + currentCameraJitter)
             / vec2(extent);
-    bool reflectionBranch = transparentState.w
-            < 0.5 * (PRIME_REFLECTION_BRANCH + 2.0);
-
-    if (reflectionBranch) {
-        currentVirtualPosition = primeMirrorPointAcrossPlane(
-                target, planePoint, planeNormal);
-        previousVirtualPosition = currentVirtualPosition;
-        virtualNormal = normalize(
-                virtualNormal - 2.0 * planeNormal * dot(virtualNormal, planeNormal));
-    } else {
-        float transmittedLength = length(target - planePoint);
-        if (transmittedLength <= 1.0e-4) {
-            // A stochastic environment continuation has no finite second surface. It is filtered
-            // against the real first interface instead of inventing refractive geometry.
-            currentVirtualPosition = planePoint;
-            previousVirtualPosition = planePoint;
-        } else {
-            float incidentLength = length(planePoint);
-            vec3 currentDirection = planePoint / max(incidentLength, 1.0e-5);
-            // PSR virtual depth is primary geometric path length. Eta belongs only to the
-            // Snell/Fermat solve; weighting this segment by eta makes underwater geometry appear
-            // 1.333x too deep and destabilizes both motion and hit-distance normalization.
-            float currentPathLength = incidentLength + transmittedLength;
-            currentVirtualPosition = currentDirection * currentPathLength;
-
-            vec3 previousCamera = transparentState.xyz;
-            vec3 previousInterface;
-            if (!primeSolvePreviousRefraction(
-                    previousCamera,
-                    planePoint,
-                    planeNormal,
-                    target,
-                    relativeEta,
-                    previousInterface)) {
-                primeStoreInvalidTransparentGuide(
-                        pixel,
-                        (rawDiffuse.rgb + rawSpecular.rgb) * pathThroughput.rgb);
-                return;
-            }
-            vec3 previousDirection = normalize(previousInterface - previousCamera);
-            float previousPathLength = length(previousInterface - previousCamera)
-                    + length(target - previousInterface);
-            previousVirtualPosition = previousCamera
-                    + previousDirection * previousPathLength;
-        }
-    }
-
     vec3 cameraForward = primeTransparentMotionRayDirection(vec2(0.5));
     float currentViewZ = dot(currentVirtualPosition, cameraForward);
     if (!(currentViewZ > 0.0)
@@ -236,9 +114,6 @@ void main() {
         return;
     }
 
-    vec3 psrViewDirection = length(target - planePoint) > 1.0e-5
-            ? normalize(planePoint - target)
-            : -primeTransparentMotionRayDirection(currentSampleUv);
     vec3 diffuseMaterialFactor;
     vec3 specularMaterialFactor;
     primeNrdMaterialFactors(

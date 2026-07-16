@@ -47,6 +47,7 @@ public final class VulkanRenderer implements AutoCloseable {
     private AtmospherePipeline atmosphere;
     private RenderImages renderImages;
     private FrameCamera camera;
+    private FrameCamera previousSubmittedCamera;
     private SunDirection sunDirection;
     private boolean cameraMediumKnown;
     private boolean cameraInWater;
@@ -200,6 +201,12 @@ public final class VulkanRenderer implements AutoCloseable {
                 atlasViewHandle,
                 atlasSamplerHandle);
         FsrSettings.Jitter cameraJitter = fsrFrame.jitter();
+        FrameCamera temporalPreviousCamera = fsrFrame.reset()
+                || this.previousSubmittedCamera == null
+                ? frameCamera
+                : this.previousSubmittedCamera;
+        boolean temporalCameraValid = !fsrFrame.reset()
+                && this.previousSubmittedCamera != null;
 
         var encoder = this.context.commandEncoder();
         VkCommandBuffer commandBuffer = encoder.allocateAndBeginTransientCommandBuffer();
@@ -240,7 +247,14 @@ public final class VulkanRenderer implements AutoCloseable {
                     fsrFrame.reset());
             this.prepareTransparentComposite(commandBuffer, sceneColor, denoiser);
             this.pipeline.traceTransparent(
-                    commandBuffer, pushConstants, renderWidth, renderHeight);
+                    commandBuffer,
+                    pushConstants,
+                    renderWidth,
+                    renderHeight,
+                    (float) (temporalPreviousCamera.renderX() - scene.originX()),
+                    (float) (temporalPreviousCamera.renderY() - scene.originY()),
+                    (float) (temporalPreviousCamera.renderZ() - scene.originZ()),
+                    temporalCameraValid);
             reflectionNrdFrame = reflectionDenoiser.recordBranch(
                     commandBuffer,
                     frameCamera,
@@ -294,6 +308,7 @@ public final class VulkanRenderer implements AutoCloseable {
         reflectionDenoiser.submitted(reflectionNrdFrame);
         transmissionDenoiser.submitted(transmissionNrdFrame);
         upscaler.submitted(fsrFrame);
+        this.previousSubmittedCamera = frameCamera;
         this.accumulationState.submitted(
                 frameCamera,
                 atlasViewHandle,

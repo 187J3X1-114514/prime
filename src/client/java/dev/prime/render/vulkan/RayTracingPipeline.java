@@ -8,13 +8,18 @@ import dev.prime.render.vulkan.nrd.NrdDenoiser;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
 import java.nio.LongBuffer;
 import org.lwjgl.system.MemoryStack;
 import org.lwjgl.system.MemoryUtil;
 import org.lwjgl.vulkan.KHRAccelerationStructure;
 import org.lwjgl.vulkan.KHRRayTracingPipeline;
+import org.lwjgl.vulkan.KHRSynchronization2;
 import org.lwjgl.vulkan.VK12;
+import org.lwjgl.vulkan.VkBufferMemoryBarrier2;
 import org.lwjgl.vulkan.VkCommandBuffer;
+import org.lwjgl.vulkan.VkDependencyInfo;
+import org.lwjgl.vulkan.VkDescriptorBufferInfo;
 import org.lwjgl.vulkan.VkDescriptorImageInfo;
 import org.lwjgl.vulkan.VkDescriptorPoolCreateInfo;
 import org.lwjgl.vulkan.VkDescriptorPoolSize;
@@ -51,6 +56,7 @@ public final class RayTracingPipeline implements Destroyable {
     private final TracePipeline opaquePipeline;
     private final TracePipeline transparentPipeline;
     private final BsdfLookupTable bsdfLookup;
+    private final VulkanBuffer temporalCamera;
     private DescriptorBindings descriptorBindings;
     private boolean destroyed;
 
@@ -61,8 +67,15 @@ public final class RayTracingPipeline implements Destroyable {
         TracePipeline newOpaquePipeline = null;
         TracePipeline newTransparentPipeline = null;
         BsdfLookupTable newBsdfLookup = null;
+        VulkanBuffer newTemporalCamera = null;
         try {
             newBsdfLookup = new BsdfLookupTable(context);
+            newTemporalCamera = context.createBuffer(
+                    4L * Float.BYTES,
+                    VK12.VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT
+                            | VK12.VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+                    false,
+                    "Prime previous temporal camera");
             try (MemoryStack stack = MemoryStack.stackPush()) {
                 newDescriptorSetLayout = createDescriptorSetLayout(context, stack);
                 newPipelineLayout = createPipelineLayout(context, stack, newDescriptorSetLayout);
@@ -92,6 +105,7 @@ public final class RayTracingPipeline implements Destroyable {
             this.opaquePipeline = newOpaquePipeline;
             this.transparentPipeline = newTransparentPipeline;
             this.bsdfLookup = newBsdfLookup;
+            this.temporalCamera = newTemporalCamera;
         } catch (RuntimeException exception) {
             if (newTransparentPipeline != null) {
                 newTransparentPipeline.destroy();
@@ -101,6 +115,9 @@ public final class RayTracingPipeline implements Destroyable {
             }
             if (newBsdfLookup != null) {
                 newBsdfLookup.destroy();
+            }
+            if (newTemporalCamera != null) {
+                newTemporalCamera.destroy();
             }
             if (newPipelineLayout != 0L) {
                 VK12.vkDestroyPipelineLayout(context.vkDevice(), newPipelineLayout, null);
@@ -175,7 +192,8 @@ public final class RayTracingPipeline implements Destroyable {
                 nrd,
                 transparentReflection,
                 transparentTransmission,
-                this.bsdfLookup);
+                this.bsdfLookup,
+                this.temporalCamera);
         DescriptorBindings previous = this.descriptorBindings;
         this.descriptorBindings = replacement;
         if (previous != null) {
@@ -189,8 +207,77 @@ public final class RayTracingPipeline implements Destroyable {
     }
 
     public void traceTransparent(
-            VkCommandBuffer commandBuffer, ByteBuffer pushConstants, int width, int height) {
+            VkCommandBuffer commandBuffer,
+            ByteBuffer pushConstants,
+            int width,
+            int height,
+            float previousCameraX,
+            float previousCameraY,
+            float previousCameraZ,
+            boolean historyValid) {
+        this.updateTemporalCamera(
+                commandBuffer,
+                previousCameraX,
+                previousCameraY,
+                previousCameraZ,
+                historyValid);
         this.trace(commandBuffer, pushConstants, width, height, this.transparentPipeline);
+    }
+
+    private void updateTemporalCamera(
+            VkCommandBuffer commandBuffer,
+            float previousCameraX,
+            float previousCameraY,
+            float previousCameraZ,
+            boolean historyValid) {
+        this.temporalCameraBarrier(
+                commandBuffer,
+                KHRRayTracingPipeline.VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR,
+                VK12.VK_ACCESS_UNIFORM_READ_BIT,
+                VK12.VK_PIPELINE_STAGE_TRANSFER_BIT,
+                VK12.VK_ACCESS_TRANSFER_WRITE_BIT);
+        try (MemoryStack stack = MemoryStack.stackPush()) {
+            ByteBuffer camera = stack.malloc(4 * Float.BYTES).order(ByteOrder.nativeOrder());
+            camera.putFloat(previousCameraX)
+                    .putFloat(previousCameraY)
+                    .putFloat(previousCameraZ)
+                    .putFloat(historyValid ? 1.0F : 0.0F)
+                    .flip();
+            VK12.vkCmdUpdateBuffer(
+                    commandBuffer, this.temporalCamera.handle(), 0L, camera);
+        }
+        this.temporalCameraBarrier(
+                commandBuffer,
+                VK12.VK_PIPELINE_STAGE_TRANSFER_BIT,
+                VK12.VK_ACCESS_TRANSFER_WRITE_BIT,
+                KHRRayTracingPipeline.VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR,
+                VK12.VK_ACCESS_UNIFORM_READ_BIT);
+    }
+
+    private void temporalCameraBarrier(
+            VkCommandBuffer commandBuffer,
+            long sourceStage,
+            long sourceAccess,
+            long destinationStage,
+            long destinationAccess) {
+        try (MemoryStack stack = MemoryStack.stackPush()) {
+            VkBufferMemoryBarrier2.Buffer barrier = VkBufferMemoryBarrier2.calloc(1, stack);
+            barrier.get(0)
+                    .sType$Default()
+                    .srcStageMask(sourceStage)
+                    .srcAccessMask(sourceAccess)
+                    .dstStageMask(destinationStage)
+                    .dstAccessMask(destinationAccess)
+                    .srcQueueFamilyIndex(VK12.VK_QUEUE_FAMILY_IGNORED)
+                    .dstQueueFamilyIndex(VK12.VK_QUEUE_FAMILY_IGNORED)
+                    .buffer(this.temporalCamera.handle())
+                    .offset(0L)
+                    .size(this.temporalCamera.size());
+            VkDependencyInfo dependency = VkDependencyInfo.calloc(stack)
+                    .sType$Default()
+                    .pBufferMemoryBarriers(barrier);
+            KHRSynchronization2.vkCmdPipelineBarrier2KHR(commandBuffer, dependency);
+        }
     }
 
     private void trace(
@@ -248,6 +335,7 @@ public final class RayTracingPipeline implements Destroyable {
             this.opaquePipeline.destroy();
             VK12.vkDestroyPipelineLayout(this.context.vkDevice(), this.pipelineLayout, null);
             VK12.vkDestroyDescriptorSetLayout(this.context.vkDevice(), this.descriptorSetLayout, null);
+            this.temporalCamera.destroy();
             this.bsdfLookup.destroy();
         }
     }
@@ -289,7 +377,7 @@ public final class RayTracingPipeline implements Destroyable {
     }
 
     private static long createDescriptorSetLayout(VulkanContext context, MemoryStack stack) {
-        VkDescriptorSetLayoutBinding.Buffer bindings = VkDescriptorSetLayoutBinding.calloc(35, stack);
+        VkDescriptorSetLayoutBinding.Buffer bindings = VkDescriptorSetLayoutBinding.calloc(36, stack);
         bindings.get(0)
                 .binding(ShaderAbi.DESCRIPTOR_TLAS)
                 .descriptorType(KHRAccelerationStructure.VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR)
@@ -383,6 +471,11 @@ public final class RayTracingPipeline implements Destroyable {
                     .descriptorCount(1)
                     .stageFlags(KHRRayTracingPipeline.VK_SHADER_STAGE_RAYGEN_BIT_KHR);
         }
+        bindings.get(35)
+                .binding(ShaderAbi.DESCRIPTOR_TEMPORAL_CAMERA)
+                .descriptorType(VK12.VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER)
+                .descriptorCount(1)
+                .stageFlags(KHRRayTracingPipeline.VK_SHADER_STAGE_RAYGEN_BIT_KHR);
         VkDescriptorSetLayoutCreateInfo createInfo = VkDescriptorSetLayoutCreateInfo.calloc(stack)
                 .sType$Default()
                 .pBindings(bindings);
@@ -746,12 +839,14 @@ public final class RayTracingPipeline implements Destroyable {
                 NrdDenoiser nrd,
                 NrdDenoiser transparentReflection,
                 NrdDenoiser transparentTransmission,
-                BsdfLookupTable bsdfLookup) {
+                BsdfLookupTable bsdfLookup,
+                VulkanBuffer temporalCamera) {
             try (MemoryStack stack = MemoryStack.stackPush()) {
-                VkDescriptorPoolSize.Buffer sizes = VkDescriptorPoolSize.calloc(3, stack);
+                VkDescriptorPoolSize.Buffer sizes = VkDescriptorPoolSize.calloc(4, stack);
                 sizes.get(0).type(KHRAccelerationStructure.VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR).descriptorCount(1);
                 sizes.get(1).type(VK12.VK_DESCRIPTOR_TYPE_STORAGE_IMAGE).descriptorCount(32);
                 sizes.get(2).type(VK12.VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER).descriptorCount(2);
+                sizes.get(3).type(VK12.VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER).descriptorCount(1);
                 VkDescriptorPoolCreateInfo poolCreateInfo = VkDescriptorPoolCreateInfo.calloc(stack)
                         .sType$Default()
                         .maxSets(1)
@@ -776,6 +871,12 @@ public final class RayTracingPipeline implements Destroyable {
                             VkWriteDescriptorSetAccelerationStructureKHR.calloc(stack)
                                     .sType$Default()
                                     .pAccelerationStructures(stack.longs(tlas));
+                    VkDescriptorBufferInfo.Buffer temporalCameraInfo =
+                            VkDescriptorBufferInfo.calloc(1, stack);
+                    temporalCameraInfo.get(0)
+                            .buffer(temporalCamera.handle())
+                            .offset(0L)
+                            .range(temporalCamera.size());
                     VkDescriptorImageInfo.Buffer imageInfos = VkDescriptorImageInfo.calloc(34, stack);
                     imageInfos.get(0)
                             .imageView(output.view())
@@ -848,7 +949,7 @@ public final class RayTracingPipeline implements Destroyable {
                                 .imageView(transparentBranchImages[index].view())
                                 .imageLayout(VK12.VK_IMAGE_LAYOUT_GENERAL);
                     }
-                    VkWriteDescriptorSet.Buffer writes = VkWriteDescriptorSet.calloc(35, stack);
+                    VkWriteDescriptorSet.Buffer writes = VkWriteDescriptorSet.calloc(36, stack);
                     writes.get(0)
                             .sType$Default()
                             .pNext(acceleration.address())
@@ -962,6 +1063,13 @@ public final class RayTracingPipeline implements Destroyable {
                                 .pImageInfo(VkDescriptorImageInfo.create(
                                         imageInfos.get(index + 20).address(), 1));
                     }
+                    writes.get(35)
+                            .sType$Default()
+                            .dstSet(descriptorSet)
+                            .dstBinding(ShaderAbi.DESCRIPTOR_TEMPORAL_CAMERA)
+                            .descriptorCount(1)
+                            .descriptorType(VK12.VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER)
+                            .pBufferInfo(temporalCameraInfo);
                     VK12.vkUpdateDescriptorSets(context.vkDevice(), writes, null);
                     return new DescriptorBindings(
                             context,

@@ -22,22 +22,25 @@ struct PrimeTransparentBranchResult {
     vec3 stableRadiance;
     vec3 guidePosition;
     vec3 guideNormal;
+    vec3 guideViewDirection;
     float guideLinearRoughness;
     vec3 guideBaseColor;
     vec3 guideThroughput;
     uint guideMaterialFlags;
-    vec3 interfaceNormal;
-    float relativeEta;
+    vec3 currentVirtualPosition;
+    vec3 previousVirtualPosition;
+    vec3 virtualGuideNormal;
+    uint reprojectionValid;
     uint hasGuide;
     uint stochasticBeforeGuide;
 };
 
-uint primePackTransparentInterfaceNormal(vec3 inputNormal) {
-    vec3 normal = normalize(inputNormal);
-    vec2 encoded = normal.xy / max(
-            abs(normal.x) + abs(normal.y) + abs(normal.z),
+uint primePackTransparentDirection(vec3 inputDirection) {
+    vec3 direction = normalize(inputDirection);
+    vec2 encoded = direction.xy / max(
+            abs(direction.x) + abs(direction.y) + abs(direction.z),
             PRIME_BSDF_EPSILON);
-    if (normal.z < 0.0) {
+    if (direction.z < 0.0) {
         encoded = (1.0 - abs(encoded.yx)) * primeSignNotZero(encoded);
     }
     return packSnorm2x16(encoded);
@@ -52,15 +55,214 @@ PrimeTransparentBranchResult primeEmptyTransparentBranchResult() {
     result.stableRadiance = vec3(0.0);
     result.guidePosition = vec3(0.0);
     result.guideNormal = vec3(0.0, 1.0, 0.0);
+    result.guideViewDirection = vec3(0.0, 0.0, 1.0);
     result.guideLinearRoughness = 1.0;
     result.guideBaseColor = vec3(1.0);
     result.guideThroughput = vec3(1.0);
     result.guideMaterialFlags = 0u;
-    result.interfaceNormal = vec3(0.0, 1.0, 0.0);
-    result.relativeEta = 1.0;
+    result.currentVirtualPosition = vec3(0.0);
+    result.previousVirtualPosition = vec3(0.0);
+    result.virtualGuideNormal = vec3(0.0, 1.0, 0.0);
+    result.reprojectionValid = 0u;
     result.hasGuide = 0u;
     result.stochasticBeforeGuide = 0u;
     return result;
+}
+
+bool primeFiniteTransparentVector(vec3 value) {
+    return !any(isnan(value)) && !any(isinf(value));
+}
+
+void primeDeltaTangentBasis(vec3 normal, out vec3 tangent, out vec3 bitangent) {
+    vec3 helper = abs(normal.z) < 0.9
+            ? vec3(0.0, 0.0, 1.0)
+            : vec3(0.0, 1.0, 0.0);
+    tangent = normalize(cross(helper, normal));
+    bitangent = cross(normal, tangent);
+}
+
+bool primeRelaxPreviousDeltaInterface(
+        inout PrimeDeltaChain chain,
+        uint index,
+        vec3 previousCamera,
+        vec3 target) {
+    vec3 interfacePoint = chain.positionEta[index].xyz;
+    vec3 previousPoint = index == 0u
+            ? previousCamera
+            : chain.positionEta[index - 1u].xyz;
+    vec3 nextPoint = index + 1u == chain.count
+            ? target
+            : chain.positionEta[index + 1u].xyz;
+    vec3 incidentDelta = interfacePoint - previousPoint;
+    vec3 outgoingDelta = nextPoint - interfacePoint;
+    float incidentLength = length(incidentDelta);
+    float outgoingLength = length(outgoingDelta);
+    if (!(incidentLength > 1.0e-5) || !(outgoingLength > 1.0e-5)) {
+        return false;
+    }
+
+    vec3 normal = normalize(chain.normalEvent[index].xyz);
+    vec3 tangent;
+    vec3 bitangent;
+    primeDeltaTangentBasis(normal, tangent, bitangent);
+    vec3 incident = incidentDelta / incidentLength;
+    vec3 outgoing = outgoingDelta / outgoingLength;
+    float relativeEta = max(chain.positionEta[index].w, PRIME_BSDF_EPSILON);
+    vec3 stationarity = incident - relativeEta * outgoing;
+    vec2 residual = vec2(
+            dot(stationarity, tangent),
+            dot(stationarity, bitangent));
+    mat3 identity = mat3(1.0);
+    mat3 derivative = (identity - outerProduct(incident, incident)) / incidentLength
+            + relativeEta
+            * (identity - outerProduct(outgoing, outgoing)) / outgoingLength;
+    mat2 jacobian = mat2(
+            dot(tangent, derivative * tangent),
+            dot(bitangent, derivative * tangent),
+            dot(tangent, derivative * bitangent),
+            dot(bitangent, derivative * bitangent));
+    float jacobianDeterminant = determinant(jacobian);
+    if (!(abs(jacobianDeterminant) > 1.0e-8)) {
+        return false;
+    }
+    vec2 step = inverse(jacobian) * residual;
+    float stepLength = length(step);
+    if (stepLength > 8.0) {
+        step *= 8.0 / stepLength;
+    }
+    interfacePoint -= tangent * step.x + bitangent * step.y;
+    if (!primeFiniteTransparentVector(interfacePoint)) {
+        return false;
+    }
+    chain.positionEta[index].xyz = interfacePoint;
+    return true;
+}
+
+float primeDeltaInterfaceResidual(
+        PrimeDeltaChain chain,
+        uint index,
+        vec3 previousCamera,
+        vec3 target) {
+    vec3 interfacePoint = chain.positionEta[index].xyz;
+    vec3 previousPoint = index == 0u
+            ? previousCamera
+            : chain.positionEta[index - 1u].xyz;
+    vec3 nextPoint = index + 1u == chain.count
+            ? target
+            : chain.positionEta[index + 1u].xyz;
+    vec3 incidentDelta = interfacePoint - previousPoint;
+    vec3 outgoingDelta = nextPoint - interfacePoint;
+    if (!(length(incidentDelta) > 1.0e-5) || !(length(outgoingDelta) > 1.0e-5)) {
+        return PRIME_NRD_FP16_MAX;
+    }
+    vec3 normal = normalize(chain.normalEvent[index].xyz);
+    vec3 tangent;
+    vec3 bitangent;
+    primeDeltaTangentBasis(normal, tangent, bitangent);
+    vec3 stationarity = normalize(incidentDelta)
+            - max(chain.positionEta[index].w, PRIME_BSDF_EPSILON)
+            * normalize(outgoingDelta);
+    return length(vec2(
+            dot(stationarity, tangent),
+            dot(stationarity, bitangent)));
+}
+
+bool primeBuildDeltaVirtualGuide(
+        inout PrimeDeltaChain chain,
+        vec3 target,
+        vec3 targetNormal,
+        out vec3 currentVirtualPosition,
+        out vec3 previousVirtualPosition,
+        out vec3 virtualNormal) {
+    if (chain.count == 0u || chain.overflowed != 0u) {
+        return false;
+    }
+
+    vec3 currentCamera = primePush.cameraPosition;
+    vec3 firstDelta = chain.positionEta[0].xyz - currentCamera;
+    float currentPathLength = length(firstDelta);
+    for (uint index = 1u; index < chain.count; ++index) {
+        currentPathLength += length(
+                chain.positionEta[index].xyz - chain.positionEta[index - 1u].xyz);
+    }
+    currentPathLength += length(target - chain.positionEta[chain.count - 1u].xyz);
+    if (!(length(firstDelta) > 1.0e-5) || !(currentPathLength > 1.0e-5)) {
+        return false;
+    }
+    currentVirtualPosition = currentCamera
+            + normalize(firstDelta) * currentPathLength;
+
+    // A mirror is an exact affine replacement, so reflect the final guide normal while walking
+    // back toward the camera. Refraction has no single affine normal transform; preserving the
+    // real terminal normal is the same PSR convention used for a single smooth transmission.
+    virtualNormal = normalize(targetNormal);
+    for (int index = int(chain.count) - 1; index >= 0; --index) {
+        uint eventFlags = floatBitsToUint(chain.normalEvent[index].w);
+        if ((eventFlags & PRIME_BSDF_EVENT_REFLECTION) != 0u) {
+            vec3 interfaceNormal = normalize(chain.normalEvent[index].xyz);
+            virtualNormal = normalize(virtualNormal
+                    - 2.0 * interfaceNormal * dot(virtualNormal, interfaceNormal));
+        }
+    }
+
+    if (primeTemporalCamera.previousCameraValid.w < 0.5) {
+        // NRD discards history on this frame. Keeping both points equal avoids doing an
+        // under-constrained solve during the same reset without changing the estimator.
+        previousVirtualPosition = currentVirtualPosition;
+        return primeFiniteTransparentVector(currentVirtualPosition)
+                && primeFiniteTransparentVector(virtualNormal);
+    }
+
+    vec3 previousCamera = primeTemporalCamera.previousCameraValid.xyz;
+    // This is a block Gauss-Seidel solve of Fermat stationarity on every sampled interface plane.
+    // Forward and backward sweeps prevent the first or last plane from dominating a nested stack.
+    bool converged = false;
+    for (uint iteration = 0u; iteration < 8u; ++iteration) {
+        for (uint index = 0u; index < chain.count; ++index) {
+            if (!primeRelaxPreviousDeltaInterface(
+                    chain, index, previousCamera, target)) {
+                return false;
+            }
+        }
+        for (int index = int(chain.count) - 1; index >= 0; --index) {
+            if (!primeRelaxPreviousDeltaInterface(
+                    chain, uint(index), previousCamera, target)) {
+                return false;
+            }
+        }
+        float maximumResidual = 0.0;
+        for (uint index = 0u; index < chain.count; ++index) {
+            maximumResidual = max(
+                    maximumResidual,
+                    primeDeltaInterfaceResidual(chain, index, previousCamera, target));
+        }
+        if (maximumResidual < 2.0e-3) {
+            converged = true;
+            break;
+        }
+    }
+    if (!converged) {
+        return false;
+    }
+
+    vec3 previousFirstDelta = chain.positionEta[0].xyz - previousCamera;
+    float previousPathLength = length(previousFirstDelta);
+    for (uint index = 1u; index < chain.count; ++index) {
+        previousPathLength += length(
+                chain.positionEta[index].xyz - chain.positionEta[index - 1u].xyz);
+    }
+    previousPathLength += length(target - chain.positionEta[chain.count - 1u].xyz);
+    if (!(length(previousFirstDelta) > 1.0e-5) || !(previousPathLength > 1.0e-5)) {
+        return false;
+    }
+    previousVirtualPosition = previousCamera
+            + normalize(previousFirstDelta) * previousPathLength;
+    vec3 temporalDelta = previousVirtualPosition - currentVirtualPosition;
+    return primeFiniteTransparentVector(currentVirtualPosition)
+            && primeFiniteTransparentVector(previousVirtualPosition)
+            && primeFiniteTransparentVector(virtualNormal)
+            && max(abs(temporalDelta.x), max(abs(temporalDelta.y), abs(temporalDelta.z)))
+                    < PRIME_NRD_FP16_MAX;
 }
 
 PrimeTransparentBranchResult primeTraceFirstInterfaceBranch(
@@ -123,8 +325,13 @@ PrimeTransparentBranchResult primeTraceFirstInterfaceBranch(
     path.flags = (bsdf.eventFlags & PRIME_BSDF_EVENT_DELTA) != 0u
             ? PRIME_PATH_PREVIOUS_DELTA
             : PRIME_PATH_PREVIOUS_NO_NEE;
+    PrimeDeltaChain deltaChain = primeEmptyDeltaChain();
+    if ((bsdf.eventFlags & PRIME_BSDF_EVENT_DELTA) != 0u) {
+        primeAppendDeltaInterface(deltaChain, surface, bsdf);
+    }
     PrimeContinuationResult continuation =
-            primeIntegrateContinuation(path, integrator, branch.volumeStack);
+            primeIntegrateContinuation(
+                    path, integrator, branch.volumeStack, deltaChain);
     PrimeTransparentBranchResult result;
     result.diffuseRadiance = continuation.diffuseRadiance;
     result.diffuseHitDistance = continuation.diffuseHitDistance;
@@ -133,18 +340,31 @@ PrimeTransparentBranchResult primeTraceFirstInterfaceBranch(
     result.stableRadiance = continuation.stableRadiance;
     result.guidePosition = continuation.guidePosition;
     result.guideNormal = continuation.guideNormal;
+    result.guideViewDirection = continuation.guideViewDirection;
     result.guideLinearRoughness = continuation.guideLinearRoughness;
     result.guideBaseColor = continuation.guideBaseColor;
     result.guideThroughput = continuation.guideThroughput;
     result.guideMaterialFlags = continuation.guideMaterialFlags;
     result.hasGuide = continuation.hasGuide;
-    result.relativeEta = max(bsdf.relativeEta, PRIME_BSDF_EPSILON);
-    result.interfaceNormal = normalize(surface.geometricNormal);
+    result.currentVirtualPosition = vec3(0.0);
+    result.previousVirtualPosition = vec3(0.0);
+    result.virtualGuideNormal = continuation.guideNormal;
+    result.reprojectionValid = 0u;
+    if (splitInterface && continuation.hasGuide != 0u) {
+        result.reprojectionValid = primeBuildDeltaVirtualGuide(
+                deltaChain,
+                continuation.guidePosition,
+                continuation.guideNormal,
+                result.currentVirtualPosition,
+                result.previousVirtualPosition,
+                result.virtualGuideNormal) ? 1u : 0u;
+    }
     if (!splitInterface) {
         // The sole rough sample has no deterministic virtual hit. Denoise its incoming radiance
         // at the stable first interface; this guide is observational and does not alter transport.
         result.guidePosition = surface.position;
         result.guideNormal = primeSurfaceShadingNormal(surface, -cameraPath.rayDirection);
+        result.guideViewDirection = -cameraPath.rayDirection;
         result.guideLinearRoughness = primeMaterialLinearRoughness(
                 surface.baseColor, surface.materialFlags);
         result.guideBaseColor = surface.baseColor;
@@ -157,6 +377,10 @@ PrimeTransparentBranchResult primeTraceFirstInterfaceBranch(
                 : PRIME_NRD_FP16_MAX;
         result.diffuseHitDistance = 0.0;
         result.hasGuide = 1u;
+        result.currentVirtualPosition = surface.position;
+        result.previousVirtualPosition = surface.position;
+        result.virtualGuideNormal = result.guideNormal;
+        result.reprojectionValid = 1u;
     }
     result.stochasticBeforeGuide = continuation.stochasticBeforeGuide
             | ((bsdf.eventFlags & PRIME_BSDF_EVENT_DELTA) == 0u ? 1u : 0u);
@@ -174,13 +398,21 @@ void primeStoreTransparentBranch(
     vec4 position = vec4(0.0);
     vec4 metadata = vec4(primeNrdSanitizeRadiance(result.stableRadiance), -1.0);
     vec4 guide = vec4(0.0, 1.0, 0.0, 1.0);
-    vec4 interfaceData = vec4(
-            vec3(0.0), max(result.relativeEta, PRIME_BSDF_EPSILON));
+    vec4 interfaceData = vec4(0.0);
     vec4 pathThroughput = vec4(1.0);
-    if (result.hasGuide != 0u) {
-        // Keep the real conditional-path hit and the complete material guide. The preparation
-        // pass constructs a reflected virtual point or solves the refractive interface; inventing
-        // cameraRay * pathLength here loses both lateral displacement and correct motion.
+    if (result.hasGuide != 0u && result.reprojectionValid == 0u) {
+        // A bounded chain overflow or a failed Fermat solve is a history-validity failure, not a
+        // transport failure. Preserve the unbiased raw sample and bypass NRD for this branch;
+        // truncating the chain would create a plausible-looking but physically wrong ghost.
+        metadata = vec4(
+                primeNrdSanitizeRadiance(
+                        result.diffuseRadiance
+                        + result.specularRadiance
+                        + result.stableRadiance),
+                -1.0);
+    } else if (result.hasGuide != 0u) {
+        // The complete delta chain has already been reduced to the current and previous virtual
+        // surfaces. NRD receives one coherent replacement G-buffer regardless of chain length.
         vec3 safeThroughput = max(result.guideThroughput, vec3(PRIME_NRD_EPSILON));
         noisy = vec4(
                 primeNrdSanitizeRadiance(
@@ -192,23 +424,21 @@ void primeStoreTransparentBranch(
         pathThroughput = vec4(
                 clamp(result.guideThroughput, vec3(0.0), vec3(PRIME_NRD_FP16_MAX)),
                 float(result.guideMaterialFlags));
-        // NRD's camera matrices consume positions relative to the current effective pinhole,
-        // whereas traversal positions are relative to Minecraft's movable render origin. This
-        // subtraction is the coordinate-system boundary: omitting it applies camera translation
-        // with the wrong origin and reverses transparent reprojection during lateral motion.
-        // Keep that camera-relative interface point in FP32. The FP16 companion stores only the
-        // local segment to the next hit (normally <= 1 block for glass), avoiding the severe
-        // position quantization that an absolute half-precision world coordinate would cause.
+        // NRD's matrices consume current-effective-camera-relative positions. Keep the current
+        // virtual point in FP32 and only its normally small previous-minus-current displacement in
+        // FP16. This is both the floating-origin boundary and the persistent transparent PSR ABI.
         position = vec4(
-                firstInterface.position - primePush.cameraPosition,
-                uintBitsToFloat(primePackTransparentInterfaceNormal(
-                        result.interfaceNormal)));
-        interfaceData.xyz = result.guidePosition - firstInterface.position;
+                result.currentVirtualPosition - primePush.cameraPosition,
+                uintBitsToFloat(primePackTransparentDirection(
+                        result.guideViewDirection)));
+        interfaceData = vec4(
+                result.previousVirtualPosition - result.currentVirtualPosition,
+                1.0);
         metadata = vec4(
                 clamp(result.guideBaseColor, vec3(0.0), vec3(65504.0)),
                 1.0);
         guide = vec4(
-                normalize(result.guideNormal),
+                normalize(result.virtualGuideNormal),
                 clamp(result.guideLinearRoughness, 0.0, 1.0));
     } else if (result.stochasticBeforeGuide != 0u) {
         // A glossy transparent continuation can reach the atmosphere without a finite PSR. Its
@@ -220,8 +450,9 @@ void primeStoreTransparentBranch(
                 primeNrdSanitizeRadiance(result.stableRadiance), interfaceDistance);
         position = vec4(
                 firstInterface.position - primePush.cameraPosition,
-                uintBitsToFloat(primePackTransparentInterfaceNormal(
-                        result.interfaceNormal)));
+                uintBitsToFloat(primePackTransparentDirection(
+                        -cameraPath.rayDirection)));
+        interfaceData.w = 1.0;
         metadata = vec4(firstInterface.baseColor, 1.0);
         guide = vec4(
                 primeSurfaceShadingNormal(

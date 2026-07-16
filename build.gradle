@@ -431,7 +431,7 @@ layout(set = 0, binding = ${schema.descriptors.sceneColor}, rgba16f) uniform ima
 layout(set = 0, binding = ${schema.descriptors.fsrReactiveMask}, r8) uniform image2D primeFsrReactiveMask;
 layout(set = 0, binding = ${schema.descriptors.fsrTransparencyCompositionMask}, r8) uniform image2D primeFsrTransparencyCompositionMask;
 // A transparent first interface produces two unrelated virtual surfaces. Each group below belongs
-// to one independent diffuse-only NRD instance. Do not merge or swap them: sharing guide/history
+// to one independent diffuse/specular NRD instance. Do not merge or swap them: sharing guide/history
 // state between reflected and transmitted transport creates invalid temporal correspondences.
 layout(set = 0, binding = ${schema.descriptors.transparentReflectionNoisy}, rgba16f) uniform image2D primeTransparentReflectionNoisy;
 layout(set = 0, binding = ${schema.descriptors.transparentReflectionPosition}, rgba32f) uniform image2D primeTransparentReflectionPosition;
@@ -650,12 +650,16 @@ abstract class CompileFsrShaders extends DefaultTask {
 }
 
 def resolveVulkanTool = { String name ->
-	def extension = System.getProperty('os.name').toLowerCase(java.util.Locale.ROOT).contains('win') ? '.exe' : ''
+	def windows = System.getProperty('os.name').toLowerCase(java.util.Locale.ROOT).contains('win')
+	def extension = windows ? '.exe' : ''
 	def sdk = System.getenv('VULKAN_SDK')
 	if (sdk) {
-		def candidate = file("${sdk}/Bin/${name}${extension}")
-		if (candidate.exists()) {
-			return candidate.absolutePath
+		def binDirectories = windows ? ['Bin', 'bin'] : ['bin', 'Bin']
+		for (def binDirectory : binDirectories) {
+			def candidate = file("${sdk}/${binDirectory}/${name}${extension}")
+			if (candidate.exists()) {
+				return candidate.absolutePath
+			}
 		}
 	}
 	return "${name}${extension}"
@@ -707,6 +711,11 @@ tasks.withType(JavaCompile).configureEach {
 
 tasks.withType(Test).configureEach {
 	useJUnitPlatform()
+	// The NRD ABI tests intentionally load the bundled bridge through LWJGL. Declare native and
+	// LWJGL legacy-memory access explicitly on Java 25, and keep JOML on its supported safe path, so
+	// dependency warnings do not hide actionable test failures.
+	jvmArgs '--enable-native-access=ALL-UNNAMED', '--sun-misc-unsafe-memory-access=allow'
+	systemProperty 'joml.nounsafe', 'true'
 }
 
 java {
@@ -723,6 +732,106 @@ jar {
 	from('THIRD_PARTY_LICENSES') {
 		into 'META-INF/licenses'
 	}
+}
+
+def distributionVersion = project.version.toString()
+def verifyDistributionJar = tasks.register('verifyDistributionJar') {
+	group = 'verification'
+	description = 'Verifies that the distributable jar contains every runtime dependency.'
+	dependsOn tasks.named('jar')
+	def archiveProvider = tasks.named('jar', Jar).flatMap { it.archiveFile }
+	inputs.file(archiveProvider)
+
+	doLast {
+		def archive = archiveProvider.get().asFile
+		def names = new LinkedHashSet<String>()
+		def duplicateNames = new LinkedHashSet<String>()
+		new java.util.zip.ZipFile(archive).withCloseable { zip ->
+			def entries = zip.entries()
+			while (entries.hasMoreElements()) {
+				def name = entries.nextElement().name
+				if (!names.add(name)) {
+					duplicateNames.add(name)
+				}
+			}
+		}
+		if (!duplicateNames.isEmpty()) {
+			throw new GradleException("Distribution jar contains duplicate entries: ${duplicateNames}")
+		}
+
+		def required = [
+			'fabric.mod.json',
+			'prime.mixins.json',
+			'LICENSE_prime',
+			'META-INF/licenses/README.md',
+			'META-INF/licenses/APACHE-2.0.txt',
+			'META-INF/licenses/FIDELITYFX-SDK-LICENSE.txt',
+			'META-INF/licenses/NRD-LICENSE.txt',
+			'META-INF/licenses/ROBOCUTE-NOTICE.txt',
+			'prime/natives/windows-x86_64/prime_nrd.dll',
+			'prime/shaders/world.rgen.spv',
+			'prime/shaders/world_ser.rgen.spv',
+			'prime/shaders/transparent.rgen.spv',
+			'prime/shaders/nrd_motion.comp.spv',
+			'prime/shaders/nrd_transparent_motion.comp.spv',
+			'prime/shaders/fsr_display.comp.spv',
+			'prime/shaders/fsr3/fp16/ffx_fsr3upscaler_accumulate.comp.spv',
+			'prime/shaders/fsr3/fp32/ffx_fsr3upscaler_accumulate.comp.spv'
+		]
+		def missing = required.findAll { !names.contains(it) }
+		if (!missing.isEmpty()) {
+			throw new GradleException("Distribution jar is missing runtime entries: ${missing}")
+		}
+
+		def shaderNames = names.findAll { it.startsWith('prime/shaders/') && it.endsWith('.spv') }
+		def fsrShaderNames = shaderNames.findAll { it.startsWith('prime/shaders/fsr3/') }
+		if (shaderNames.size() != 35 || fsrShaderNames.size() != 18) {
+			throw new GradleException(
+					"Distribution jar must contain 17 Prime and 18 FSR shaders; found "
+							+ "${shaderNames.size() - fsrShaderNames.size()} and ${fsrShaderNames.size()}")
+		}
+
+		new java.util.zip.ZipFile(archive).withCloseable { zip ->
+			def metadataInput = zip.getInputStream(zip.getEntry('fabric.mod.json'))
+			def metadata = metadataInput.withCloseable { new groovy.json.JsonSlurper().parse(it) }
+			if (metadata.id != 'prime'
+					|| metadata.version.toString() != distributionVersion
+					|| metadata.environment != 'client') {
+				throw new GradleException(
+						"Distribution jar has invalid Fabric metadata: id=${metadata.id}, "
+								+ "version=${metadata.version}, environment=${metadata.environment}")
+			}
+
+			def nativeInput = zip.getInputStream(zip.getEntry('prime/natives/windows-x86_64/prime_nrd.dll'))
+			def nativeHeader = nativeInput.withCloseable { it.readNBytes(2) }
+			if (nativeHeader.length != 2 || nativeHeader[0] != (byte) 'M' || nativeHeader[1] != (byte) 'Z') {
+				throw new GradleException('Bundled NRD bridge is not a Windows PE image')
+			}
+
+			def invalidSpirv = shaderNames.findAll { shaderName ->
+				def input = zip.getInputStream(zip.getEntry(shaderName))
+				def header = input.withCloseable { it.readNBytes(Integer.BYTES) }
+				header.length != Integer.BYTES
+						|| java.nio.ByteBuffer.wrap(header)
+								.order(java.nio.ByteOrder.LITTLE_ENDIAN)
+								.getInt() != 0x07230203
+			}
+			if (!invalidSpirv.isEmpty()) {
+				throw new GradleException("Distribution jar contains invalid SPIR-V files: ${invalidSpirv}")
+			}
+		}
+		def forbidden = names.findAll {
+			it.contains('_validation')
+					|| it ==~ /.*\.(glsl|rgen|rchit|rmiss|rahit|comp)$/
+		}
+		if (!forbidden.isEmpty()) {
+			throw new GradleException("Distribution jar contains build-only shader inputs: ${forbidden}")
+		}
+	}
+}
+
+tasks.named('check') {
+	dependsOn verifyDistributionJar
 }
 
 publishing {

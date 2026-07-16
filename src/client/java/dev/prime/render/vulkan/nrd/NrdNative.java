@@ -135,6 +135,18 @@ public final class NrdNative {
         }
     }
 
+    static boolean isSupportedPlatform() {
+        return isSupportedPlatform(
+                System.getProperty("os.name", ""), System.getProperty("os.arch", ""));
+    }
+
+    static boolean isSupportedPlatform(String osName, String architecture) {
+        String normalizedOsName = osName.toLowerCase(Locale.ROOT);
+        String normalizedArchitecture = architecture.toLowerCase(Locale.ROOT);
+        return normalizedOsName.startsWith("windows")
+                && (normalizedArchitecture.equals("amd64") || normalizedArchitecture.equals("x86_64"));
+    }
+
     private Description readDescription(MemoryStack stack, long handle) {
         ByteBuffer output = stack.calloc(DESCRIPTION_SIZE).order(ByteOrder.nativeOrder());
         checkResult(
@@ -285,9 +297,7 @@ public final class NrdNative {
     }
 
     private static SharedLibrary loadLibrary() {
-        String osName = System.getProperty("os.name", "").toLowerCase(Locale.ROOT);
-        String architecture = System.getProperty("os.arch", "").toLowerCase(Locale.ROOT);
-        if (!osName.contains("win") || !(architecture.equals("amd64") || architecture.equals("x86_64"))) {
+        if (!isSupportedPlatform()) {
             throw new IllegalStateException("The bundled NRD native library currently supports Windows x86-64 only");
         }
         byte[] libraryBytes;

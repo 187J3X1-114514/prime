@@ -87,6 +87,8 @@ $env:Path = "$env:JAVA_HOME\bin;$env:VULKAN_SDK\Bin;$env:Path"
 
 自动测试覆盖 ABI 大小和偏移、NRD 原生 ABI/版本/SPIR-V/漫反射与镜面调度描述、颜色空间契约与往返转换、Oklab 显示变换参考检查点、显示范围和累积边界、SBT 对齐、UV/tint/法线/透明材质标志编码、Section generation token、CPU 网格布局、渲染原点重定位、采样流、MIS 正反向权重、Russian roulette 吞吐补偿、RoboCute 透射查找表与持久体积栈接入、累积历史状态，以及漫反射在常量环境下的统计收敛。构建以 Java 25 的全部编译警告为错误。
 
+`build` 还会检查发行 JAR 的完整性：Fabric 元数据、许可证、NRD DLL、Prime shader、FSR 的 FP16/FP32 permutation 必须齐全，验证专用 shader 和 GLSL 源文件不得混入发行物。NRD DLL 的实际加载与调度测试只在 Windows x86-64 上执行；其他构建平台会跳过这两项平台专用测试，但仍验证 DLL 资源存在且具有有效的 PE 文件头。GitHub Actions 使用 Linux 完整编译 Java 和全部 shader、执行其余测试并检查最终 JAR。
+
 ## 许可
 
 Prime 自有代码使用 MIT 许可证。见 [LICENSE](LICENSE)。随发行物提供的 NVIDIA NRD

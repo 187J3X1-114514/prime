@@ -3,6 +3,7 @@ name: build
 on:
   push:
   pull_request:
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -10,6 +11,7 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-24.04
+    timeout-minutes: 45
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
@@ -23,12 +25,28 @@ jobs:
           cache: gradle
       - name: Make Gradle wrapper executable
         run: chmod +x ./gradlew
-      - name: Install shader validation tools
-        run: sudo apt-get update && sudo apt-get install --yes glslang-tools spirv-tools
+      - name: Set up Vulkan shader toolchain
+        uses: humbletim/setup-vulkan-sdk@c25f41106918cde0bf347e6f201277392b3a9e9d # v1.2.1
+        with:
+          vulkan-query-version: 1.4.350.0
+          vulkan-components: Glslang, SPIRV-Tools
+          vulkan-use-cache: true
+      - name: Report shader tool versions
+        run: glslangValidator --version && spirv-val --version
       - name: Build and test
-        run: ./gradlew --no-daemon clean build
+        run: ./gradlew --no-daemon --stacktrace clean build
+      - name: Capture test reports on failure
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: prime-test-reports-${{ github.sha }}
+          path: |
+            build/reports/tests/
+            build/test-results/
+          if-no-files-found: ignore
       - name: Capture build artifacts
         uses: actions/upload-artifact@v7
         with:
           name: prime-${{ github.sha }}
-          path: build/libs/
+          path: build/libs/*.jar
+          if-no-files-found: error

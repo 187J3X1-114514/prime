@@ -32,6 +32,7 @@ public final class TerrainScene implements AutoCloseable {
     private final List<TopLevelAccelerationStructure> tlasSlots = new ArrayList<>(TLAS_SLOT_COUNT);
     private TopLevelAccelerationStructure currentTlas;
     private VulkanBuffer currentWorldLights;
+    private SceneView currentView;
     private int originX;
     private int originY;
     private int originZ;
@@ -78,9 +79,21 @@ public final class TerrainScene implements AutoCloseable {
                 nonEmptyUploadCount++;
             }
         }
-        boolean hasPotentialLights = this.resident.values().stream()
-                        .anyMatch(section -> !section.lights().isEmpty())
-                || uploads.stream().anyMatch(upload -> !upload.mesh().lights().isEmpty());
+        boolean hasPotentialLights = false;
+        for (GpuSection section : this.resident.values()) {
+            if (!section.lights().isEmpty()) {
+                hasPotentialLights = true;
+                break;
+            }
+        }
+        if (!hasPotentialLights) {
+            for (SectionUpload upload : uploads) {
+                if (!upload.mesh().lights().isEmpty()) {
+                    hasPotentialLights = true;
+                    break;
+                }
+            }
+        }
         boolean needsSectionStaging = nonEmptyUploadCount > 0;
         boolean needsWorldStaging = finalSectionCount > 0 && hasPotentialLights;
         StagingArena.Batch sectionStagingBatch = needsSectionStaging
@@ -278,17 +291,7 @@ public final class TerrainScene implements AutoCloseable {
     }
 
     public SceneView view() {
-        if (this.currentTlas == null || this.resident.isEmpty()) {
-            return null;
-        }
-        return new SceneView(
-                this.currentTlas.handle(),
-                this.currentTlas.sectionTableAddress(),
-                this.originX,
-                this.originY,
-                this.originZ,
-                this.revision,
-                this.resetRevision);
+        return this.currentView;
     }
 
     public boolean contains(long key) {
@@ -319,6 +322,7 @@ public final class TerrainScene implements AutoCloseable {
         }
         this.tlasSlots.clear();
         this.currentTlas = null;
+        this.currentView = null;
         if (this.currentWorldLights != null) {
             this.currentWorldLights.destroy();
             this.currentWorldLights = null;
@@ -404,6 +408,16 @@ public final class TerrainScene implements AutoCloseable {
         this.currentTlas = replacementTlas;
         this.currentWorldLights = replacementWorldLights;
         this.revision++;
+        this.currentView = this.currentTlas == null || this.resident.isEmpty()
+                ? null
+                : new SceneView(
+                        this.currentTlas.handle(),
+                        this.currentTlas.sectionTableAddress(),
+                        this.originX,
+                        this.originY,
+                        this.originZ,
+                        this.revision,
+                        this.resetRevision);
         if (previousTlas != null) {
             this.context.defer(previousTlas::release);
         }

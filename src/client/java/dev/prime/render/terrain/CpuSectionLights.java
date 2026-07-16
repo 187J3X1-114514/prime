@@ -60,17 +60,19 @@ public final class CpuSectionLights {
             return new int[0];
         }
         int headerWords = ShaderAbi.SECTION_LIGHT_HEADER_SIZE / Integer.BYTES;
-        int[] nodeWords = this.tree.packNodeBounds();
-        int[] forwardWords = this.tree.packNodeForward();
-        int[] reverseWords = this.tree.packNodeReverse();
+        int nodeWords = this.tree.nodeCount() * (ShaderAbi.LIGHT_NODE_SIZE / Integer.BYTES);
+        int forwardWords = this.tree.nodeCount()
+                * (ShaderAbi.LIGHT_NODE_FORWARD_SIZE / Integer.BYTES);
+        int reverseWords = this.tree.nodeCount()
+                * (ShaderAbi.LIGHT_NODE_REVERSE_SIZE / Integer.BYTES);
         int emitterWords = ShaderAbi.LIGHT_EMITTER_SIZE / Integer.BYTES;
         int cellWords = ShaderAbi.LIGHT_CELL_SIZE / Integer.BYTES;
         int cellCount = this.distributions.size() * EmissionDistribution.CELL_COUNT;
         int nodeStart = headerWords;
-        int forwardStart = nodeStart + nodeWords.length;
-        int reverseStart = forwardStart + forwardWords.length;
+        int forwardStart = nodeStart + nodeWords;
+        int reverseStart = forwardStart + forwardWords;
         int emitterStart = (int) (alignUp(
-                        (long) (reverseStart + reverseWords.length) * Integer.BYTES,
+                        (long) (reverseStart + reverseWords) * Integer.BYTES,
                         16L)
                 / Integer.BYTES);
         int cellStart = emitterStart + this.emitters.size() * emitterWords;
@@ -82,9 +84,7 @@ public final class CpuSectionLights {
         putLong(result, 8, bufferAddress + (long) cellStart * Integer.BYTES);
         result[10] = 0;
         result[11] = this.emitters.size();
-        System.arraycopy(nodeWords, 0, result, nodeStart, nodeWords.length);
-        System.arraycopy(forwardWords, 0, result, forwardStart, forwardWords.length);
-        System.arraycopy(reverseWords, 0, result, reverseStart, reverseWords.length);
+        this.tree.packInto(result, nodeStart, forwardStart, reverseStart);
 
         for (int index = 0; index < this.emitters.size(); index++) {
             Emitter emitter = this.emitters.get(index);

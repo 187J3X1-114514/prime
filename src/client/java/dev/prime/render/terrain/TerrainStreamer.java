@@ -28,6 +28,7 @@ import net.minecraft.world.level.chunk.status.ChunkStatus;
 import net.minecraft.world.level.chunk.LevelChunk;
 
 public final class TerrainStreamer implements AutoCloseable {
+    private static final long[] EMPTY_EVICTIONS = new long[0];
     private static final int SECTION_COUNT_BUDGET_MULTIPLIER = 16;
     private static final int MAX_SNAPSHOTS_PER_FRAME = 4 * SECTION_COUNT_BUDGET_MULTIPLIER;
     private static final int MAX_UPLOADS_PER_FRAME = 8 * SECTION_COUNT_BUDGET_MULTIPLIER;
@@ -58,6 +59,7 @@ public final class TerrainStreamer implements AutoCloseable {
             .thenComparingLong(SectionRequest::distanceSquared)
             .thenComparingLong(SectionRequest::key));
     private final ArrayDeque<CompletedSection> readyForUpload = new ArrayDeque<>();
+    private final ArrayList<SectionUpload> uploadBatch = new ArrayList<>(MAX_UPLOADS_PER_FRAME);
 
     private ClientLevel world;
     private int centerSectionX = Integer.MIN_VALUE;
@@ -419,7 +421,8 @@ public final class TerrainStreamer implements AutoCloseable {
     }
 
     private void uploadReady(double cameraX, double cameraY, double cameraZ) {
-        List<SectionUpload> uploads = new ArrayList<>(MAX_UPLOADS_PER_FRAME);
+        List<SectionUpload> uploads = this.uploadBatch;
+        uploads.clear();
         long uploadBytes = 0L;
         while (uploads.size() < MAX_UPLOADS_PER_FRAME && !this.readyForUpload.isEmpty()) {
             CompletedSection next = this.readyForUpload.peekFirst();
@@ -440,7 +443,9 @@ public final class TerrainStreamer implements AutoCloseable {
             uploads.add(new SectionUpload(
                     next.key(), next.sectionX(), next.sectionY(), next.sectionZ(), next.mesh()));
         }
-        long[] evictions = this.pendingEvictions.toLongArray();
+        long[] evictions = this.pendingEvictions.isEmpty()
+                ? EMPTY_EVICTIONS
+                : this.pendingEvictions.toLongArray();
         boolean updated = this.scene.update(uploads, evictions, cameraX, cameraY, cameraZ);
         if (!updated) {
             for (int index = uploads.size() - 1; index >= 0; index--) {

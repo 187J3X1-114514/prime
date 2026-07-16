@@ -93,6 +93,19 @@ final class EmissionLightContractTest {
         int[] bounds = tree.packNodeBounds();
         int[] forward = tree.packNodeForward();
         int[] reverse = tree.packNodeReverse();
+        int[] combined = new int[bounds.length + forward.length + reverse.length];
+        tree.packInto(combined, 0, bounds.length, bounds.length + forward.length);
+        assertArrayEquals(
+                bounds,
+                java.util.Arrays.copyOfRange(combined, 0, bounds.length));
+        assertArrayEquals(
+                forward,
+                java.util.Arrays.copyOfRange(
+                        combined, bounds.length, bounds.length + forward.length));
+        assertArrayEquals(
+                reverse,
+                java.util.Arrays.copyOfRange(
+                        combined, bounds.length + forward.length, combined.length));
         assertEquals(tree.nodeCount() * 8, bounds.length);
         assertEquals(tree.nodeCount(), forward.length);
         assertEquals(tree.nodeCount(), reverse.length);

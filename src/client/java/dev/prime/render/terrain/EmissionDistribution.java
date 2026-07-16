@@ -12,13 +12,18 @@ final class EmissionDistribution {
     static final int CELL_COUNT = SUBDIVISION * SUBDIVISION;
     private static final float MINIMUM_CELL_IMPORTANCE = 1.0E-5F;
     private static final int STRATIFIED_SAMPLE_COUNT = 4;
+    private static final int[] STATIC_FRAME = {0};
+    private static final Cell[] CELLS = createCells();
+    private static final ThreadLocal<BuildWorkspace> BUILD_WORKSPACE =
+            ThreadLocal.withInitial(BuildWorkspace::new);
+    private static final EmissionDistribution UNIFORM = createUniform();
 
     private final float[] aliasProbabilities;
     private final int[] aliases;
     private final float[] probabilityMasses;
     private final float meanImportance;
 
-    private EmissionDistribution(float[] weights) {
+    private EmissionDistribution(float[] weights, BuildWorkspace workspace) {
         this.aliasProbabilities = new float[CELL_COUNT];
         this.aliases = new int[CELL_COUNT];
         this.probabilityMasses = new float[CELL_COUNT];
@@ -30,13 +35,20 @@ final class EmissionDistribution {
             throw new IllegalArgumentException("Emission importance weights must have positive finite mass");
         }
         this.meanImportance = (float) (sum / CELL_COUNT);
-        buildAliasTable(weights, sum, this.aliasProbabilities, this.aliases, this.probabilityMasses);
+        buildAliasTable(
+                weights,
+                sum,
+                this.aliasProbabilities,
+                this.aliases,
+                this.probabilityMasses,
+                workspace);
     }
 
     static EmissionDistribution build(Key key) {
-        float[] weights = new float[CELL_COUNT];
+        BuildWorkspace workspace = BUILD_WORKSPACE.get();
+        float[] weights = workspace.weights;
         try {
-            fillTextureImportance(key, weights);
+            fillTextureImportance(key, weights, workspace);
         } catch (RuntimeException exception) {
             // A resource reload can retire SpriteContents while an already-cancelled mesh job is
             // winding down. Uniform support is still unbiased because radiance is read from the
@@ -46,23 +58,29 @@ final class EmissionDistribution {
         for (int index = 0; index < weights.length; index++) {
             weights[index] = Math.max(weights[index], MINIMUM_CELL_IMPORTANCE);
         }
-        return new EmissionDistribution(weights);
+        return new EmissionDistribution(weights, workspace);
     }
 
     static EmissionDistribution uniform() {
-        float[] weights = new float[CELL_COUNT];
-        java.util.Arrays.fill(weights, 1.0F);
-        return new EmissionDistribution(weights);
+        return UNIFORM;
     }
 
-    private static void fillTextureImportance(Key key, float[] weights) {
+    private static EmissionDistribution createUniform() {
+        float[] weights = new float[CELL_COUNT];
+        java.util.Arrays.fill(weights, 1.0F);
+        return new EmissionDistribution(weights, new BuildWorkspace());
+    }
+
+    private static void fillTextureImportance(
+            Key key, float[] weights, BuildWorkspace workspace) {
         TextureAtlasSprite sprite = key.sprite;
         SpriteContents contents = sprite.contents();
         NativeImage image = ((SpriteContentsAccessor) (Object) contents).prime$originalImage();
         int[] frames = frames(contents);
         int columns = Math.max(image.getWidth() / contents.width(), 1);
-        float[] tint = linearTint(key.tintArgb);
-        float[] barycentric = new float[3];
+        float[] tint = workspace.tint;
+        fillLinearTint(key.tintArgb, tint);
+        float[] barycentric = workspace.barycentric;
         for (int cellIndex = 0; cellIndex < CELL_COUNT; cellIndex++) {
             Cell cell = cell(cellIndex);
             float total = 0.0F;
@@ -99,18 +117,16 @@ final class EmissionDistribution {
 
     private static int[] frames(SpriteContents contents) {
         if (!contents.isAnimated()) {
-            return new int[] {0};
+            return STATIC_FRAME;
         }
         IntList unique = contents.getUniqueFrames();
         return unique.toIntArray();
     }
 
-    private static float[] linearTint(int argb) {
-        return new float[] {
-            decodeSrgb((argb >>> 16 & 0xff) / 255.0F),
-            decodeSrgb((argb >>> 8 & 0xff) / 255.0F),
-            decodeSrgb((argb & 0xff) / 255.0F)
-        };
+    private static void fillLinearTint(int argb, float[] target) {
+        target[0] = decodeSrgb((argb >>> 16 & 0xff) / 255.0F);
+        target[1] = decodeSrgb((argb >>> 8 & 0xff) / 255.0F);
+        target[2] = decodeSrgb((argb & 0xff) / 255.0F);
     }
 
     private static float decodeSrgb(float value) {
@@ -140,10 +156,11 @@ final class EmissionDistribution {
             double sum,
             float[] probabilities,
             int[] aliases,
-            float[] masses) {
-        double[] scaled = new double[CELL_COUNT];
-        int[] small = new int[CELL_COUNT];
-        int[] large = new int[CELL_COUNT];
+            float[] masses,
+            BuildWorkspace workspace) {
+        double[] scaled = workspace.scaled;
+        int[] small = workspace.small;
+        int[] large = workspace.large;
         int smallSize = 0;
         int largeSize = 0;
         for (int index = 0; index < CELL_COUNT; index++) {
@@ -183,6 +200,18 @@ final class EmissionDistribution {
         if (index < 0 || index >= CELL_COUNT) {
             throw new IndexOutOfBoundsException(index);
         }
+        return CELLS[index];
+    }
+
+    private static Cell[] createCells() {
+        Cell[] result = new Cell[CELL_COUNT];
+        for (int index = 0; index < result.length; index++) {
+            result[index] = decodeCell(index);
+        }
+        return result;
+    }
+
+    private static Cell decodeCell(int index) {
         int remaining = index;
         for (int row = 0; row < SUBDIVISION; row++) {
             int rowCount = 2 * (SUBDIVISION - row) - 1;
@@ -194,6 +223,15 @@ final class EmissionDistribution {
             remaining -= rowCount;
         }
         throw new IllegalStateException("Emission cell index mapping failed");
+    }
+
+    private static final class BuildWorkspace {
+        private final float[] weights = new float[CELL_COUNT];
+        private final double[] scaled = new double[CELL_COUNT];
+        private final int[] small = new int[CELL_COUNT];
+        private final int[] large = new int[CELL_COUNT];
+        private final float[] barycentric = new float[3];
+        private final float[] tint = new float[3];
     }
 
     float aliasProbability(int index) {

@@ -19,3 +19,14 @@ denoiser input, or other visible behavior. Each item needs a separate quality an
 - Use reservoir or spatiotemporal direct-light reuse in scenes with many emissive texels. This can
   greatly reduce light-tree and shadow-ray work, but it is a new estimator with visibility reuse,
   temporal state and bias questions rather than a simplification of the current one-sample NEE.
+- Replace the light-tree SAH split scan with prefix/suffix aggregates. It reduces CPU work from a
+  quadratic scan over the 16 bins to a linear scan, but changes floating-point summation grouping;
+  near a cost tie that can change tree topology, sampling probabilities and the sample sequence.
+- Store a precomputed inverse emitter Gram matrix (and possibly its UV affine transform) in each
+  light record. Reverse-PDF evaluation would lose several dot products and divisions, but CPU-side
+  precomputation changes f32 rounding and expands or repacks the hot emitter ABI. Measure the
+  bandwidth/ALU trade before accepting it.
+- Give the transparent primary pass a transmissive-only acceleration view and reject candidates
+  behind the opaque primary depth. This could avoid a full mixed-geometry traversal on most
+  pixels, but separate builds/traversal can change intersection tie behavior and require a precise
+  shared-depth contract, so it is not suitable for the exact-simplification branch.

@@ -1,0 +1,20 @@
+#version 460
+#extension GL_GOOGLE_include_directive : require
+#include "hit_common.glsl"
+
+void main() {
+    PrimitiveRecord primitive = primePrimitive();
+    if (primeMaterialIsTransmissive(primitive.flags)) {
+        // The first pass must describe one coherent opaque surface to NRD. Transparent transport
+        // is evaluated after denoising, so glass/water is absent from both camera and shadow rays
+        // here. This is a visibility partition, not an approximation of its BSDF.
+        ignoreIntersectionEXT;
+        return;
+    }
+    vec3 normal = primeUnpackOctahedralNormal(primitive.normal);
+    float textureLodValue = primeRayConeTextureLod(primitive, normal);
+    float opacity = primeEvaluateOpacity(primeInterpolateUv(primitive), textureLodValue);
+    if (opacity < PRIME_CUTOUT_ALPHA_THRESHOLD) {
+        ignoreIntersectionEXT;
+    }
+}

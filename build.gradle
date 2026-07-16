@@ -235,6 +235,9 @@ public final class ShaderAbi {
     public static final int DESCRIPTOR_NRD_NOISY_SPECULAR = ${schema.descriptors.nrdNoisySpecular};
     public static final int DESCRIPTOR_NRD_SPECULAR_MATERIAL = ${schema.descriptors.nrdSpecularMaterial};
     public static final int DESCRIPTOR_TRANSMISSION_GGX_ENERGY = ${schema.descriptors.transmissionGgxEnergy};
+    public static final int DESCRIPTOR_SCENE_COLOR = ${schema.descriptors.sceneColor};
+    public static final int DESCRIPTOR_FSR_REACTIVE_MASK = ${schema.descriptors.fsrReactiveMask};
+    public static final int DESCRIPTOR_FSR_TRANSPARENCY_COMPOSITION_MASK = ${schema.descriptors.fsrTransparencyCompositionMask};
     public static final int PATH_CAMERA_IN_WATER_MASK = ${schema.pathControl.cameraInWaterMask};
     public static final int PATH_JITTER_PHASE_MASK = ${schema.pathControl.jitterPhaseMask};
     public static final float CUTOUT_ALPHA_THRESHOLD = ${schema.cutoutAlphaThreshold}f;
@@ -407,6 +410,11 @@ layout(set = 0, binding = ${schema.descriptors.nrdMotion}, rgba16f) uniform imag
 layout(set = 0, binding = ${schema.descriptors.nrdMaterial}, rgba16f) uniform image2D primeNrdMaterial;
 layout(set = 0, binding = ${schema.descriptors.nrdSpecularMaterial}, rgba16f) uniform image2D primeNrdSpecularMaterial;
 layout(set = 0, binding = ${schema.descriptors.nrdPrimaryPosition}, rgba32f) uniform image2D primeNrdPrimaryPosition;
+// Transparent transport is deliberately composed after opaque NRD. These are not NRD signals:
+// they are the scene-referred output and the semantic masks consumed by FSR's temporal stage.
+layout(set = 0, binding = ${schema.descriptors.sceneColor}, rgba16f) uniform image2D primeSceneColor;
+layout(set = 0, binding = ${schema.descriptors.fsrReactiveMask}, r8) uniform image2D primeFsrReactiveMask;
+layout(set = 0, binding = ${schema.descriptors.fsrTransparencyCompositionMask}, r8) uniform image2D primeFsrTransparencyCompositionMask;
 
 #endif
 """

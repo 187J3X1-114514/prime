@@ -85,10 +85,11 @@ void main() {
     if (any(greaterThanEqual(pixel, primeCompositePush.outputExtent))) {
         return;
     }
-    // Prime currently renders only opaque and alpha-tested terrain. Both have valid depth and
-    // motion, so marking them reactive would unnecessarily discard useful history. The separate
-    // image is intentional: future blended materials can write their true semantic coverage
-    // without changing FSR's descriptor contract.
+    // This pass owns only the opaque NRD layer. Both opaque and alpha-tested terrain have valid
+    // depth and motion, so marking them reactive would unnecessarily discard useful history.
+    // The following transparent ray pass overwrites these masks exactly where its nearest camera
+    // intersection is glass/water; keeping that responsibility out of NRD prevents virtual
+    // reflection and transmission motion from contaminating the opaque temporal history.
     imageStore(primeFsrReactiveMask, ivec2(pixel), vec4(0.0));
     float transparencyAndComposition = imageLoad(
             primeCompositeSpecularMaterial, ivec2(pixel)).a;

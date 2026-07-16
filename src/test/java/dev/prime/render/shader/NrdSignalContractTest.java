@@ -14,6 +14,9 @@ final class NrdSignalContractTest {
         String rayGeneration = Files.readString(shaderRoot.resolve("world.rgen"));
         String preparation = Files.readString(shaderRoot.resolve("nrd_motion.comp"));
         String composite = Files.readString(shaderRoot.resolve("nrd_composite.comp"));
+        String transparent = Files.readString(shaderRoot.resolve("transparent.rgen"));
+        String opaqueAnyHit = Files.readString(shaderRoot.resolve("world_opaque.rahit"));
+        String integrator = Files.readString(shaderRoot.resolve("integrator.glsl"));
 
         assertTrue(rayGeneration.contains(
                 "vec4(sampleResult.primaryBaseColor, sampleResult.primaryDistance)"));
@@ -27,5 +30,12 @@ final class NrdSignalContractTest {
         assertTrue(composite.contains("return vec3(0.0);"));
         assertTrue(composite.contains("primeCompositeSurfaceSignal("));
         assertTrue(composite.contains("primeDenoisedSpecular"));
+        assertTrue(opaqueAnyHit.contains("primeMaterialIsTransmissive"));
+        assertTrue(integrator.contains("primeTraceSurfaceWithSbtOffset(path.traceOrigin, path.rayDirection, 2u)"));
+        assertTrue(transparent.contains("primeTraceFirstInterfaceBranch("));
+        assertTrue(transparent.contains("true, 1u"));
+        assertTrue(transparent.contains("false, 2u"));
+        assertTrue(transparent.contains("imageStore(primeSceneColor"));
+        assertTrue(transparent.contains("imageStore(primeFsrTransparencyCompositionMask"));
     }
 }

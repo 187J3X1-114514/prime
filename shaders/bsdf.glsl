@@ -568,6 +568,70 @@ PrimeTransmissiveBsdfSample primeSampleMinecraftTransmission(
     return result;
 }
 
+PrimeTransmissiveBsdfSample primeSampleMinecraftTransmissionBranch(
+        vec3 baseColor,
+        float opacity,
+        vec3 outwardNormal,
+        uint materialFlags,
+        vec3 viewDirection,
+        vec3 sampleValue,
+        bool reflectionBranch,
+        float rayT,
+        PrimeRcVolumeStack volumeStack) {
+    PrimeTransmissiveBsdfSample result;
+    result.bsdfSample = primeInvalidBsdfSample();
+    result.volumeStack = volumeStack;
+    PrimeRcState state = primeMinecraftTransmissionState(
+            baseColor,
+            opacity,
+            outwardNormal,
+            materialFlags,
+            viewDirection,
+            rayT,
+            volumeStack);
+    vec3 localView = primeRcOnbToLocal(state.material.geometry.onb, viewDirection);
+
+    if (state.geometryThinWalled == 0u && reflectionBranch) {
+        // Closed Minecraft glass deliberately models the reflected interface as a delta mirror.
+        // This branch is evaluated, not selected: its multiplier is the physical Fresnel energy
+        // itself and must never be divided by a reflection-selection probability.
+        PrimeMinecraftMirrorSplit mirror = primeMinecraftMirrorSplit(localView, state);
+        if (all(lessThanEqual(mirror.reflectance, vec3(0.0)))) {
+            return result;
+        }
+        result.bsdfSample.direction = reflect(-viewDirection, outwardNormal);
+        result.bsdfSample.weight = mirror.reflectance;
+        result.bsdfSample.pdf = 1.0;
+        result.bsdfSample.relativeEta = 1.0;
+        result.bsdfSample.eventFlags = PRIME_BSDF_EVENT_REFLECTION
+                | PRIME_BSDF_EVENT_DELTA;
+        return result;
+    }
+
+    state.samplingFlags = reflectionBranch
+            ? PRIME_RC_FLAG_REFLECTION
+            : PRIME_RC_FLAG_TRANSMISSION;
+    PrimeRcSampleResult sampled = primeRcTransmissionSample(
+            localView, sampleValue, state, volumeStack);
+    if (sampled.bsdfSample.pdf <= 0.0
+            || sampled.bsdfSample.throughput.flags == PRIME_RC_FLAG_NONE) {
+        return result;
+    }
+    // Forcing a branch renormalizes RoboCute's internal proposal onto that branch. The returned
+    // throughput still contains its complete physical Fresnel/transmission energy, so f/pdf is
+    // already the unbiased conditional estimator. No branch-selection probability belongs here.
+    result.bsdfSample.direction = primeRcOnbToWorld(
+            state.material.geometry.onb, sampled.bsdfSample.wo);
+    result.bsdfSample.weight = sampled.bsdfSample.throughput.value
+            / sampled.bsdfSample.pdf;
+    result.bsdfSample.pdf = sampled.bsdfSample.pdf;
+    result.bsdfSample.relativeEta = 1.0;
+    result.bsdfSample.eventFlags = primeRcToBsdfEventFlags(
+            sampled.bsdfSample.throughput.flags);
+    result.volumeStack = sampled.volumeStack;
+    return result;
+}
+
 // Vanilla grass blades and leaf texels are zero-thickness surfaces rather than dielectric
 // volumes. Keep most of the ordinary rough terrain response and mix a deliberately small amount
 // of colored thin-wall transmission through OpenPBR's energy-aware lobe composition. Unlike

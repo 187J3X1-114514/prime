@@ -7,6 +7,9 @@
 const uint PRIME_HIT_NONE = 0u;
 const uint PRIME_HIT_SURFACE = 1u;
 const uint PRIME_PATH_PREVIOUS_DELTA = 1u;
+// This path vertex deliberately had no next-event estimate. Its first emitter/environment hit
+// therefore has no competing light-sampling technique and must receive MIS weight one.
+const uint PRIME_PATH_PREVIOUS_NO_NEE = 2u;
 
 struct PrimeDirectLightingSplit {
     vec3 diffuse;
@@ -34,7 +37,8 @@ vec3 primeOffsetRayOrigin(vec3 physicalPosition, vec3 normal, vec3 direction) {
     return physicalPosition + normal * (side * 0.001);
 }
 
-SurfaceInteraction primeTraceSurface(vec3 origin, vec3 direction) {
+SurfaceInteraction primeTraceSurfaceWithSbtOffset(
+        vec3 origin, vec3 direction, uint hitGroupOffset) {
     primePayload.position = vec3(0.0);
     primePayload.t = 0.0;
     primePayload.geometricNormal = vec3(0.0, 1.0, 0.0);
@@ -58,7 +62,7 @@ SurfaceInteraction primeTraceSurface(vec3 origin, vec3 direction) {
             primeScene,
             gl_RayFlagsNoneEXT,
             0xff,
-            0,
+            hitGroupOffset,
             1,
             0,
             origin,
@@ -72,7 +76,7 @@ SurfaceInteraction primeTraceSurface(vec3 origin, vec3 direction) {
     reorderThreadEXT(hitObject, coherenceHint, 8u);
     hitObjectExecuteShaderEXT(hitObject, 0);
 #else
-    traceRayEXT(primeScene, gl_RayFlagsNoneEXT, 0xff, 0, 1, 0,
+    traceRayEXT(primeScene, gl_RayFlagsNoneEXT, 0xff, hitGroupOffset, 1, 0,
             origin, 0.0, direction, 1000000.0, 0);
 #endif
     SurfaceInteraction surface;
@@ -87,6 +91,15 @@ SurfaceInteraction primeTraceSurface(vec3 origin, vec3 direction) {
     surface.reserved0 = primePayload.reserved0;
     surface.reserved1 = primePayload.reserved1;
     return surface;
+}
+
+SurfaceInteraction primeTraceSurface(vec3 origin, vec3 direction) {
+    return primeTraceSurfaceWithSbtOffset(origin, direction, 0u);
+}
+
+bool primePreviousCannotUseMis(PathState path) {
+    return path.bounce == 0u
+            || (path.flags & (PRIME_PATH_PREVIOUS_DELTA | PRIME_PATH_PREVIOUS_NO_NEE)) != 0u;
 }
 
 vec3 primeSurfaceShadingNormal(SurfaceInteraction surface, vec3 viewDirection) {
@@ -294,6 +307,123 @@ void primeAccumulateAfterPrimary(
     }
 }
 
+vec3 primeIntegrateContinuation(
+        PathState path,
+        IntegratorRecord integrator,
+        PrimeRcVolumeStack volumeStack) {
+    vec3 radiance = vec3(0.0);
+    uint maximumBounces = min(primePush.path.z & 0xffffu, 256u);
+    const uint rouletteStart = 5u;
+    for (; path.bounce < maximumBounces; ++path.bounce) {
+        SurfaceInteraction surface = primeTraceSurface(path.traceOrigin, path.rayDirection);
+        vec3 viewDirection = -path.rayDirection;
+        if (surface.hitKind == PRIME_HIT_NONE) {
+            LightEvaluation sun = primeEvaluateSun(
+                    integrator, path.physicalOrigin, path.rayDirection);
+            float sunWeight = primePreviousCannotUseMis(path)
+                    ? 1.0
+                    : primePowerHeuristic(path.previousBsdfPdf, sun.pdf);
+            radiance += path.throughput
+                    * (primeEnvironmentRadiance(integrator, path.rayDirection)
+                    + sun.radiance * sunWeight);
+            break;
+        }
+
+        if (volumeStack.count > 0u) {
+            PrimeRcVolume medium = volumeStack.values[volumeStack.count - 1u];
+            path.throughput *= exp(-medium.extinction * max(surface.t, 0.0));
+            if (all(lessThanEqual(path.throughput, vec3(0.0)))) {
+                break;
+            }
+        }
+
+        LightEvaluation hitAreaLight = primeEvaluateAreaLight(
+                surface, path.physicalOrigin, path.rayDirection);
+        float hitAreaWeight = primePreviousCannotUseMis(path)
+                ? 1.0
+                : primePowerHeuristic(path.previousBsdfPdf, hitAreaLight.pdf);
+        radiance += path.throughput * hitAreaLight.radiance * hitAreaWeight;
+
+        PrimeSampleBase bounceSample = primeMakeSampleBase(path, path.bounce + 1u);
+        vec2 sunSample = primeSobolSample2D(
+                bounceSample,
+                PRIME_SAMPLE_EFFECT_DIRECT_SUN,
+                PRIME_SAMPLE_DIMENSION_PRIMARY);
+        vec3 areaTreeSample = primeSobolSample3D(
+                bounceSample,
+                PRIME_SAMPLE_EFFECT_DIRECT_AREA_LIGHT,
+                PRIME_SAMPLE_DIMENSION_PRIMARY);
+        vec2 areaPositionSample = primeSobolSample2D(
+                bounceSample,
+                PRIME_SAMPLE_EFFECT_DIRECT_AREA_LIGHT,
+                PRIME_SAMPLE_DIMENSION_SECONDARY);
+        vec3 scatterSample = primeSobolSample3D(
+                bounceSample,
+                PRIME_SAMPLE_EFFECT_SCATTER_BSDF,
+                PRIME_SAMPLE_DIMENSION_PRIMARY);
+        radiance += path.throughput
+                * (primeEstimateDirectSun(
+                        integrator,
+                        surface,
+                        viewDirection,
+                        sunSample,
+                        volumeStack)
+                + primeEstimateDirectAreaLight(
+                        surface,
+                        viewDirection,
+                        areaTreeSample,
+                        areaPositionSample,
+                        volumeStack));
+
+        BsdfSample bsdf;
+        if (primeMaterialIsFoliage(surface.materialFlags)) {
+            bsdf = primeSampleMinecraftFoliage(
+                    surface.baseColor,
+                    surface.geometricNormal,
+                    viewDirection,
+                    scatterSample,
+                    surface.t,
+                    volumeStack);
+        } else if (primeMaterialIsTransmissive(surface.materialFlags)) {
+            PrimeTransmissiveBsdfSample transmitted = primeSampleMinecraftTransmission(
+                    surface.baseColor,
+                    primeSurfaceOpacity(surface),
+                    surface.geometricNormal,
+                    surface.materialFlags,
+                    viewDirection,
+                    scatterSample,
+                    surface.t,
+                    volumeStack);
+            bsdf = transmitted.bsdfSample;
+            volumeStack = transmitted.volumeStack;
+        } else {
+            vec3 shadingNormal = primeSurfaceShadingNormal(surface, viewDirection);
+            bsdf = primeSampleDefaultBsdf(
+                    surface.baseColor, shadingNormal, viewDirection, scatterSample);
+        }
+        if (bsdf.pdf <= 0.0 || all(lessThanEqual(bsdf.weight, vec3(0.0)))) {
+            break;
+        }
+        path.throughput *= bsdf.weight;
+        path.physicalOrigin = surface.position;
+        path.traceOrigin = primeOffsetRayOrigin(
+                path.physicalOrigin, surface.geometricNormal, bsdf.direction);
+        path.rayDirection = bsdf.direction;
+        path.previousBsdfPdf = bsdf.pdf;
+        path.flags = (bsdf.eventFlags & PRIME_BSDF_EVENT_DELTA) != 0u
+                ? PRIME_PATH_PREVIOUS_DELTA
+                : 0u;
+        float rouletteSample = primeHashSample1D(
+                bounceSample,
+                PRIME_SAMPLE_EFFECT_RUSSIAN_ROULETTE,
+                PRIME_SAMPLE_DIMENSION_PRIMARY);
+        if (!primeRussianRoulette(path, rouletteStart, rouletteSample)) {
+            break;
+        }
+    }
+    return radiance;
+}
+
 PrimeIntegrationResult primeIntegrate(PathState path, IntegratorRecord integrator) {
     PrimeIntegrationResult result;
     result.diffuseRadiance = vec3(0.0);
@@ -321,7 +451,17 @@ PrimeIntegrationResult primeIntegrate(PathState path, IntegratorRecord integrato
     // estimator contract and is deliberately fixed here instead of sharing temporal state.
     uint rouletteStart = 5u;
     for (path.bounce = 0u; path.bounce < maximumBounces; ++path.bounce) {
+#if defined(PRIME_OPAQUE_PRIMARY_PASS)
+        // SBT records 2/3 differ only at the camera vertex: transparent intersections are skipped
+        // so NRD receives a coherent opaque guide. Secondary and shadow rays keep the ordinary
+        // hit groups and therefore retain all transparent transport instead of treating glass as
+        // absent from lighting, which would bias the underlying opaque estimator.
+        SurfaceInteraction surface = path.bounce == 0u
+                ? primeTraceSurfaceWithSbtOffset(path.traceOrigin, path.rayDirection, 2u)
+                : primeTraceSurface(path.traceOrigin, path.rayDirection);
+#else
         SurfaceInteraction surface = primeTraceSurface(path.traceOrigin, path.rayDirection);
+#endif
         vec3 viewDirection = -path.rayDirection;
         if (path.bounce == 0u && surface.hitKind != PRIME_HIT_NONE) {
             result.primaryDistance = surface.t;
@@ -343,8 +483,7 @@ PrimeIntegrationResult primeIntegrate(PathState path, IntegratorRecord integrato
         if (surface.hitKind == PRIME_HIT_NONE) {
             LightEvaluation sun = primeEvaluateSun(
                     integrator, path.physicalOrigin, path.rayDirection);
-            bool cannotUseMis = path.bounce == 0u
-                    || (path.flags & PRIME_PATH_PREVIOUS_DELTA) != 0u;
+            bool cannotUseMis = primePreviousCannotUseMis(path);
             float sunWeight = cannotUseMis
                     ? 1.0
                     : primePowerHeuristic(path.previousBsdfPdf, sun.pdf);
@@ -369,8 +508,7 @@ PrimeIntegrationResult primeIntegrate(PathState path, IntegratorRecord integrato
 
         LightEvaluation hitAreaLight = primeEvaluateAreaLight(
                 surface, path.physicalOrigin, path.rayDirection);
-        bool cannotUseHitMis = path.bounce == 0u
-                || (path.flags & PRIME_PATH_PREVIOUS_DELTA) != 0u;
+        bool cannotUseHitMis = primePreviousCannotUseMis(path);
         float hitAreaWeight = cannotUseHitMis
                 ? 1.0
                 : primePowerHeuristic(path.previousBsdfPdf, hitAreaLight.pdf);

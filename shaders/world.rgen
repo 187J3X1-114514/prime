@@ -14,7 +14,9 @@ layout(location = 1) rayPayloadEXT uint primeShadowOccluded;
 #include "sampling.glsl"
 #include "bsdf.glsl"
 #include "lights.glsl"
+#define PRIME_OPAQUE_PRIMARY_PASS 1
 #include "integrator.glsl"
+#include "camera.glsl"
 
 void main() {
     uvec2 pixel = gl_LaunchIDEXT.xy;
@@ -23,50 +25,8 @@ void main() {
             primePush.sunDirection,
             ATM_SPACE_SUN_INTENSITY);
     integrator.environmentRadiance = vec4(0.0);
-    PathState path;
-    path.physicalOrigin = primePush.cameraPosition;
-    path.bounce = 0u;
-    path.traceOrigin = primePush.cameraPosition;
-    path.sampleDimension = 0u;
-    path.rayDirection = vec3(0.0);
-    path.flags = PRIME_PATH_PREVIOUS_DELTA;
-    path.throughput = vec3(1.0);
-    path.previousBsdfPdf = 0.0;
-    path.radiance = vec3(0.0);
-    path.pixel = pixel;
-    path.sampleIndex = primePush.path.x;
-    path.sampleEpoch = primePush.path.y;
-
-    // FSR 3.1's canonical base-2/base-3 Halton sequence is the sole camera jitter source.
-    // path.w is a dedicated, monotonically advancing FSR frame index; NRD and the FSR constants
-    // receive the identical pixel offset from Java. Do not replace this with a per-pixel sample:
-    // temporal reconstruction can only describe one camera projection for the complete frame.
-    uint jitterSequenceLength = max(
-            (primePush.path.z >> 16u) & PRIME_PATH_JITTER_PHASE_MASK,
-            1u);
-    uint jitterPhase = (primePush.path.w % jitterSequenceLength) + 1u;
-    float halton2 = 0.0;
-    float halton3 = 0.0;
-    float fraction2 = 1.0;
-    float fraction3 = 1.0;
-    uint index2 = jitterPhase;
-    uint index3 = jitterPhase;
-    while (index2 > 0u) {
-        fraction2 *= 0.5;
-        halton2 += fraction2 * float(index2 % 2u);
-        index2 /= 2u;
-    }
-    while (index3 > 0u) {
-        fraction3 /= 3.0;
-        halton3 += fraction3 * float(index3 % 3u);
-        index3 /= 3u;
-    }
-    vec2 cameraSample = vec2(halton2, halton3);
-    vec2 uv = (vec2(pixel) + cameraSample) / vec2(primePush.outputExtent);
-    vec2 ndc = vec2(uv.x * 2.0 - 1.0, uv.y * 2.0 - 1.0);
-    vec4 nearPoint = primePush.inverseViewProjection * vec4(ndc, 1.0, 1.0);
-    vec4 farPoint = primePush.inverseViewProjection * vec4(ndc, 0.0, 1.0);
-    path.rayDirection = normalize(farPoint.xyz / farPoint.w - nearPoint.xyz / nearPoint.w);
+    vec2 cameraSample = primeCameraSample();
+    PathState path = primeCameraPath(pixel, 0u, cameraSample);
 
     PrimeIntegrationResult sampleResult = primeIntegrate(path, integrator);
     // These four images are a private raygen -> NRD-preparation scratch contract. Keeping raw

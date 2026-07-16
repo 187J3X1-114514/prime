@@ -23,6 +23,7 @@ struct PrimeSampleBase {
     uint sampleIndex;
     uint sampleEpoch;
     uint vertexIndex;
+    uint pathIndex;
 };
 
 // Joe-Kuo direction numbers for the first four Sobol dimensions, in reversed-bit order. The
@@ -71,6 +72,7 @@ PrimeSampleBase primeMakeSampleBase(PathState path, uint vertexIndex) {
     result.sampleIndex = path.sampleIndex;
     result.sampleEpoch = path.sampleEpoch;
     result.vertexIndex = vertexIndex;
+    result.pathIndex = path.sampleDimension;
     return result;
 }
 
@@ -100,6 +102,7 @@ uint primeSampleBaseSeed(PrimeSampleBase base) {
     uint seed = primeHash32(base.pixel.x);
     seed = primeHashCombine(seed, base.pixel.y);
     seed = primeHashCombine(seed, base.sampleEpoch);
+    seed = primeHashCombine(seed, base.pathIndex);
     return primeHashCombine(seed, base.vertexIndex);
 }
 

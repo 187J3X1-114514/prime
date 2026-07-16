@@ -119,9 +119,13 @@ final class RoboCuteBsdfContractTest {
         assertTrue(adapter.contains("primeRcTransmissionEvaluate"));
         assertTrue(adapter.contains("primeRcTransmissionSample"));
         assertTrue(adapter.contains("primeMinecraftMirrorSplit"));
+        assertTrue(adapter.contains("primeSampleMinecraftTransmissionBranch"));
         assertTrue(adapter.contains("primeRcMicrofacetDirectionalAlbedoTransmission"));
         assertTrue(adapter.contains("state.samplingFlags = PRIME_RC_FLAG_TRANSMISSION"));
         assertTrue(adapter.contains("reflect(-viewDirection, outwardNormal)"));
+        assertTrue(adapter.contains("result.bsdfSample.weight = mirror.reflectance"));
+        assertTrue(adapter.contains("state.samplingFlags = reflectionBranch"));
+        assertTrue(adapter.contains("/ sampled.bsdfSample.pdf"));
         assertTrue(adapter.contains(
                 "result.bsdfSample.eventFlags = PRIME_BSDF_EVENT_REFLECTION"));
         assertTrue(adapter.contains("result.volumeStack = sampled.volumeStack"));

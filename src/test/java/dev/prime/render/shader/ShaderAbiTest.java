@@ -33,6 +33,9 @@ final class ShaderAbiTest {
         assertEquals(15, ShaderAbi.DESCRIPTOR_NRD_NOISY_SPECULAR);
         assertEquals(16, ShaderAbi.DESCRIPTOR_NRD_SPECULAR_MATERIAL);
         assertEquals(17, ShaderAbi.DESCRIPTOR_TRANSMISSION_GGX_ENERGY);
+        assertEquals(18, ShaderAbi.DESCRIPTOR_SCENE_COLOR);
+        assertEquals(19, ShaderAbi.DESCRIPTOR_FSR_REACTIVE_MASK);
+        assertEquals(20, ShaderAbi.DESCRIPTOR_FSR_TRANSPARENCY_COMPOSITION_MASK);
         assertEquals(0x80000000, ShaderAbi.PATH_CAMERA_IN_WATER_MASK);
         assertEquals(0x7fff, ShaderAbi.PATH_JITTER_PHASE_MASK);
         assertEquals("linear-rec2020-d65", ShaderAbi.WORKING_COLOR_SPACE);

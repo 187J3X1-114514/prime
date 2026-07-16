@@ -39,6 +39,7 @@ final class RayTracingPipelineContractTest {
         String closestHit = Files.readString(shaderRoot.resolve("world.rchit"));
 
         assertEquals(2, RayTracingPipeline.MISS_GROUP_COUNT);
+        assertEquals(4, RayTracingPipeline.HIT_GROUP_COUNT);
         assertTrue(shadowMiss.contains("layout(location = 1) rayPayloadInEXT uint primeShadowOccluded"));
         assertTrue(integrator.contains("gl_RayFlagsSkipClosestHitShaderEXT"));
         assertTrue(integrator.contains("return primeShadowOccluded == 0u"));
@@ -62,6 +63,9 @@ final class RayTracingPipelineContractTest {
         assertEquals(1, countOccurrences(integrator, "hitObjectTraceRayEXT"));
         assertTrue(pipeline.contains("world_ser.rgen.spv"));
         assertTrue(pipeline.contains("world.rgen.spv"));
+        assertTrue(pipeline.contains("transparent.rgen.spv"));
+        assertTrue(pipeline.contains("world_opaque.rahit.spv"));
+        assertTrue(pipeline.contains("traceTransparent"));
     }
 
     private static int countOccurrences(String text, String needle) {

@@ -165,7 +165,10 @@
     "nrdPrimaryPosition": 14,
     "nrdNoisySpecular": 15,
     "nrdSpecularMaterial": 16,
-    "transmissionGgxEnergy": 17
+    "transmissionGgxEnergy": 17,
+    "sceneColor": 18,
+    "fsrReactiveMask": 19,
+    "fsrTransparencyCompositionMask": 20
   },
   "pathControl": {
     "cameraInWaterMask": "0x80000000",

@@ -1,0 +1,110 @@
+#version 460
+#extension GL_GOOGLE_include_directive : require
+
+#include "common.glsl"
+#include "atmosphere_rt.glsl"
+#include "nrd_common.glsl"
+
+layout(location = 0) rayPayloadEXT TracePayload primePayload;
+layout(location = 1) rayPayloadEXT uint primeShadowOccluded;
+
+#include "sampling.glsl"
+#include "bsdf.glsl"
+#include "lights.glsl"
+#include "integrator.glsl"
+#include "camera.glsl"
+
+vec3 primeTraceFirstInterfaceBranch(
+        PathState cameraPath,
+        SurfaceInteraction surface,
+        IntegratorRecord integrator,
+        PrimeRcVolumeStack volumeStack,
+        vec3 prefixThroughput,
+        bool reflectionBranch,
+        uint pathIndex) {
+    PathState path = cameraPath;
+    path.sampleDimension = pathIndex;
+    PrimeSampleBase sampleBase = primeMakeSampleBase(path, 1u);
+    vec3 scatterSample = primeSobolSample3D(
+            sampleBase,
+            PRIME_SAMPLE_EFFECT_SCATTER_BSDF,
+            PRIME_SAMPLE_DIMENSION_PRIMARY);
+    PrimeTransmissiveBsdfSample branch = primeSampleMinecraftTransmissionBranch(
+            surface.baseColor,
+            primeSurfaceOpacity(surface),
+            surface.geometricNormal,
+            surface.materialFlags,
+            -cameraPath.rayDirection,
+            scatterSample,
+            reflectionBranch,
+            surface.t,
+            volumeStack);
+    BsdfSample bsdf = branch.bsdfSample;
+    if (bsdf.pdf <= 0.0 || all(lessThanEqual(bsdf.weight, vec3(0.0)))) {
+        return vec3(0.0);
+    }
+
+    path.bounce = 1u;
+    path.physicalOrigin = surface.position;
+    path.traceOrigin = primeOffsetRayOrigin(
+            surface.position, surface.geometricNormal, bsdf.direction);
+    path.rayDirection = bsdf.direction;
+    path.throughput = prefixThroughput * bsdf.weight;
+    path.previousBsdfPdf = bsdf.pdf;
+    // The first interface is split deterministically and has no NEE. Delta paths already forbid
+    // MIS; a finite forced branch uses NO_NEE so its first light hit is not down-weighted against
+    // a sampling technique that was never executed. Later vertices return to ordinary MIS.
+    path.flags = (bsdf.eventFlags & PRIME_BSDF_EVENT_DELTA) != 0u
+            ? PRIME_PATH_PREVIOUS_DELTA
+            : PRIME_PATH_PREVIOUS_NO_NEE;
+    return primeIntegrateContinuation(path, integrator, branch.volumeStack);
+}
+
+void main() {
+    uvec2 pixel = gl_LaunchIDEXT.xy;
+    vec2 cameraSample = primeCameraSample();
+    PathState cameraPath = primeCameraPath(pixel, 0u, cameraSample);
+    SurfaceInteraction surface = primeTraceSurface(
+            cameraPath.traceOrigin, cameraPath.rayDirection);
+    if (surface.hitKind == PRIME_HIT_NONE
+            || !primeMaterialIsTransmissive(surface.materialFlags)) {
+        return;
+    }
+
+    IntegratorRecord integrator;
+    integrator.sunDirectionIntensity = vec4(
+            primePush.sunDirection,
+            ATM_SPACE_SUN_INTENSITY);
+    integrator.environmentRadiance = vec4(0.0);
+    PrimeRcVolumeStack volumeStack =
+            (primePush.path.z & PRIME_PATH_CAMERA_IN_WATER_MASK) != 0u
+            ? primeCameraWaterVolumeStack()
+            : primeEmptyVolumeStack();
+    vec3 prefixThroughput = vec3(1.0);
+    if (volumeStack.count > 0u) {
+        PrimeRcVolume cameraMedium = volumeStack.values[volumeStack.count - 1u];
+        prefixThroughput *= exp(-cameraMedium.extinction * max(surface.t, 0.0));
+    }
+
+    // NVIDIA's transparent reference traces both first-interface lobes. Prime keeps that split
+    // but intentionally does not replace either continuation with a history/cache lookup: each
+    // is a complete Monte Carlo path, so their sum is the physical BSDF sum without lobe roulette
+    // fireflies or a cache-induced bias. The cost is one extra continuation per transparent pixel.
+    vec3 radiance = primeTraceFirstInterfaceBranch(
+            cameraPath, surface, integrator, volumeStack, prefixThroughput, true, 1u);
+    radiance += primeTraceFirstInterfaceBranch(
+            cameraPath, surface, integrator, volumeStack, prefixThroughput, false, 2u);
+    LightEvaluation visibleEmitter = primeEvaluateAreaLight(
+            surface, cameraPath.physicalOrigin, cameraPath.rayDirection);
+    radiance += prefixThroughput * visibleEmitter.radiance;
+    primeApplyAerialPerspective(pixel, surface.t, radiance);
+
+    // This is representability protection for the FP16 scene target, not a statistical firefly
+    // clamp. The same finite range already defines Prime's NRD signal ABI.
+    radiance = primeNrdSanitizeRadiance(radiance);
+    imageStore(primeSceneColor, ivec2(pixel), vec4(radiance, 1.0));
+    // The full transparent signal remains temporally useful, so do not mark it reactive merely
+    // because it is transparent. The composition mask gives FSR the semantic boundary it needs.
+    imageStore(primeFsrReactiveMask, ivec2(pixel), vec4(0.0));
+    imageStore(primeFsrTransparencyCompositionMask, ivec2(pixel), vec4(1.0));
+}

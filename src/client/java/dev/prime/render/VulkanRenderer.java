@@ -221,7 +221,6 @@ public final class VulkanRenderer implements AutoCloseable {
                     fsrFrame.frameIndex(),
                     frameCameraInWater);
             this.pipeline.trace(commandBuffer, pushConstants, renderWidth, renderHeight);
-            this.finishAtlasRead(commandBuffer, atlasView.texture());
             nrdFrame = denoiser.record(
                     commandBuffer,
                     frameCamera,
@@ -232,6 +231,11 @@ public final class VulkanRenderer implements AutoCloseable {
                     cameraJitter.x(),
                     cameraJitter.y(),
                     fsrFrame.reset());
+            this.prepareTransparentComposite(commandBuffer, sceneColor, denoiser);
+            this.pipeline.traceTransparent(
+                    commandBuffer, pushConstants, renderWidth, renderHeight);
+            this.finishTransparentComposite(commandBuffer, sceneColor, denoiser);
+            this.finishAtlasRead(commandBuffer, atlasView.texture());
             upscaler.record(commandBuffer, fsrFrame);
             this.prepareImagesForCopy(commandBuffer, target, mainColor);
             VkImageCopy.Buffer copy = VkImageCopy.calloc(1, stack);
@@ -404,6 +408,7 @@ public final class VulkanRenderer implements AutoCloseable {
                     tlas,
                     current.output,
                     current.accumulation,
+                    current.sceneColor,
                     atlasView,
                     atlasSampler,
                     this.atmosphere,
@@ -474,6 +479,7 @@ public final class VulkanRenderer implements AutoCloseable {
                     tlas,
                     replacement.output,
                     replacement.accumulation,
+                    replacement.sceneColor,
                     atlasView,
                     atlasSampler,
                     this.atmosphere,
@@ -597,6 +603,71 @@ public final class VulkanRenderer implements AutoCloseable {
                 VK12.VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
                 VK12.VK_ACCESS_SHADER_WRITE_BIT);
         image.markInitialized();
+    }
+
+    private void prepareTransparentComposite(
+            VkCommandBuffer commandBuffer,
+            VulkanImage sceneColor,
+            NrdDenoiser denoiser) {
+        try (MemoryStack stack = MemoryStack.stackPush()) {
+            VkImageMemoryBarrier2.Buffer barriers = VkImageMemoryBarrier2.calloc(3, stack);
+            VulkanImage[] images = new VulkanImage[] {
+                sceneColor,
+                denoiser.fsrReactiveMask(),
+                denoiser.fsrTransparencyCompositionMask()
+            };
+            for (int index = 0; index < images.length; index++) {
+                fillImageBarrier(
+                        barriers.get(index),
+                        images[index].image(),
+                        VK12.VK_IMAGE_LAYOUT_GENERAL,
+                        VK12.VK_IMAGE_LAYOUT_GENERAL,
+                        VK12.VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                        VK12.VK_ACCESS_SHADER_READ_BIT | VK12.VK_ACCESS_SHADER_WRITE_BIT,
+                        KHRRayTracingPipeline.VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR,
+                        VK12.VK_ACCESS_SHADER_WRITE_BIT);
+            }
+            // NRD first produces one coherent opaque image. The transparent ray pass then
+            // overwrites only camera rays whose nearest real surface is glass/water and updates
+            // FSR's semantic masks at the same pixels. This explicit dependency is essential:
+            // queue order does not make the compute writes visible to later storage-image writes.
+            VkDependencyInfo dependency = VkDependencyInfo.calloc(stack)
+                    .sType$Default()
+                    .pImageMemoryBarriers(barriers);
+            KHRSynchronization2.vkCmdPipelineBarrier2KHR(commandBuffer, dependency);
+        }
+    }
+
+    private void finishTransparentComposite(
+            VkCommandBuffer commandBuffer,
+            VulkanImage sceneColor,
+            NrdDenoiser denoiser) {
+        try (MemoryStack stack = MemoryStack.stackPush()) {
+            VkImageMemoryBarrier2.Buffer barriers = VkImageMemoryBarrier2.calloc(3, stack);
+            VulkanImage[] images = new VulkanImage[] {
+                sceneColor,
+                denoiser.fsrReactiveMask(),
+                denoiser.fsrTransparencyCompositionMask()
+            };
+            for (int index = 0; index < images.length; index++) {
+                fillImageBarrier(
+                        barriers.get(index),
+                        images[index].image(),
+                        VK12.VK_IMAGE_LAYOUT_GENERAL,
+                        VK12.VK_IMAGE_LAYOUT_GENERAL,
+                        VK12.VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT
+                                | KHRRayTracingPipeline.VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR,
+                        VK12.VK_ACCESS_SHADER_WRITE_BIT,
+                        VK12.VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                        VK12.VK_ACCESS_SHADER_READ_BIT);
+            }
+            // FSR samples all three images immediately after this point. Keep this barrier paired
+            // with prepareTransparentComposite whenever the transparent stage is rescheduled.
+            VkDependencyInfo dependency = VkDependencyInfo.calloc(stack)
+                    .sType$Default()
+                    .pImageMemoryBarriers(barriers);
+            KHRSynchronization2.vkCmdPipelineBarrier2KHR(commandBuffer, dependency);
+        }
     }
 
     private void prepareImagesForCopy(VkCommandBuffer commandBuffer, VulkanImage source, VulkanGpuTexture destination) {

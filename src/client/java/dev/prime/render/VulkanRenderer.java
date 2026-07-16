@@ -43,6 +43,7 @@ public final class VulkanRenderer implements AutoCloseable {
     private final StagingArena stagingArena;
     private final TerrainStreamer terrain;
     private final AccumulationState accumulationState = new AccumulationState();
+    private final BlockPos.MutableBlockPos cameraBlockPosition = new BlockPos.MutableBlockPos();
     private RayTracingPipeline pipeline;
     private AtmospherePipeline atmosphere;
     private RenderImages renderImages;
@@ -143,9 +144,8 @@ public final class VulkanRenderer implements AutoCloseable {
             return;
         }
         FsrQualityMode requestedQualityMode = FsrSettings.qualityMode();
-        FsrSettings.Extent renderExtent = requestedQualityMode.renderExtent(width, height);
-        int renderWidth = renderExtent.width();
-        int renderHeight = renderExtent.height();
+        int renderWidth = requestedQualityMode.renderWidth(width);
+        int renderHeight = requestedQualityMode.renderHeight(height);
         long invocationCount = (long) renderWidth * renderHeight;
         if (invocationCount > Integer.toUnsignedLong(this.context.capabilities().maxRayDispatchInvocationCount())) {
             throw new IllegalStateException("Window dimensions exceed the Vulkan ray dispatch limit");
@@ -179,7 +179,7 @@ public final class VulkanRenderer implements AutoCloseable {
         NrdDenoiser reflectionDenoiser = images.reflectionDenoiser;
         NrdDenoiser transmissionDenoiser = images.transmissionDenoiser;
         Fsr3Upscaler upscaler = images.upscaler;
-        boolean frameCameraInWater = isCameraInWater(minecraft, frameCamera);
+        boolean frameCameraInWater = this.isCameraInWater(minecraft, frameCamera);
         if (this.cameraMediumKnown && this.cameraInWater != frameCameraInWater) {
             // Crossing the water surface changes transport for essentially every visible path.
             // Treat it as a temporal discontinuity so NRD/FSR do not retain the previous medium.
@@ -905,11 +905,12 @@ public final class VulkanRenderer implements AutoCloseable {
         return buffer.position(0).limit(ShaderAbi.PUSH_CONSTANT_SIZE);
     }
 
-    private static boolean isCameraInWater(Minecraft minecraft, FrameCamera camera) {
+    private boolean isCameraInWater(Minecraft minecraft, FrameCamera camera) {
         if (minecraft.level == null) {
             return false;
         }
-        BlockPos position = BlockPos.containing(camera.x(), camera.y(), camera.z());
+        BlockPos position = this.cameraBlockPosition.set(
+                camera.x(), camera.y(), camera.z());
         var fluid = minecraft.level.getFluidState(position);
         // Match vanilla's height-aware camera test. A block-only check incorrectly puts the
         // camera in a medium while the eye is above shallow or flowing water in the same cell.

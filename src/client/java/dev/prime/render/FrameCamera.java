@@ -35,6 +35,8 @@ public record FrameCamera(
         double renderX,
         double renderY,
         double renderZ) {
+    private static final ThreadLocal<Scratch> SCRATCH = ThreadLocal.withInitial(Scratch::new);
+
     FrameCamera(Matrix4f inverseViewProjection, double x, double y, double z) {
         this(new Matrix4f(), new Matrix4f(), inverseViewProjection, x, y, z, x, y, z);
     }
@@ -55,7 +57,8 @@ public record FrameCamera(
             return null;
         }
 
-        Matrix4f cameraEffect = new Matrix4f(projectionCopy)
+        Scratch scratch = SCRATCH.get();
+        Matrix4f cameraEffect = scratch.cameraEffect.set(projectionCopy)
                 .invert()
                 .mul(renderedProjection);
         Matrix4f effectedWorldToView = cameraEffect.mul(cameraViewRotation);
@@ -64,7 +67,8 @@ public record FrameCamera(
         double effectiveY = y;
         double effectiveZ = z;
         if (isRigid(effectedWorldToView)) {
-            Vector3f cameraOffset = effectedWorldToView.invert().transformPosition(new Vector3f());
+            Vector3f cameraOffset = effectedWorldToView.invert()
+                    .transformPosition(scratch.cameraOffset.zero());
             if (!cameraOffset.isFinite()) {
                 return null;
             }
@@ -133,5 +137,10 @@ public record FrameCamera(
                 && Math.abs(xy) <= tolerance
                 && Math.abs(xz) <= tolerance
                 && Math.abs(yz) <= tolerance;
+    }
+
+    private static final class Scratch {
+        private final Matrix4f cameraEffect = new Matrix4f();
+        private final Vector3f cameraOffset = new Vector3f();
     }
 }

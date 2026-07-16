@@ -26,7 +26,11 @@ final class NrdCameraTransform {
     private NrdCameraTransform() {}
 
     static Matrix4f projectionForNrd(Matrix4fc minecraftProjection) {
-        Matrix4f result = new Matrix4f(minecraftProjection);
+        return projectionForNrd(minecraftProjection, new Matrix4f());
+    }
+
+    static Matrix4f projectionForNrd(Matrix4fc minecraftProjection, Matrix4f result) {
+        result.set(minecraftProjection);
         return result
                 .m01(-result.m01())
                 .m11(-result.m11())
@@ -35,21 +39,38 @@ final class NrdCameraTransform {
     }
 
     static Matrix4f currentClipToWorld(FrameCamera current) {
-        return projectionForNrd(current.projection())
+        return currentClipToWorld(current, new Matrix4f());
+    }
+
+    static Matrix4f currentClipToWorld(FrameCamera current, Matrix4f result) {
+        return projectionForNrd(current.projection(), result)
                 .mul(current.viewRotation())
                 .invert();
     }
 
     static Matrix4f previousWorldToView(FrameCamera current, FrameCamera previous) {
-        return new Matrix4f(previous.viewRotation()).translate(
+        return previousWorldToView(current, previous, new Matrix4f());
+    }
+
+    static Matrix4f previousWorldToView(
+            FrameCamera current, FrameCamera previous, Matrix4f result) {
+        return result.set(previous.viewRotation()).translate(
                 (float) (current.renderX() - previous.renderX()),
                 (float) (current.renderY() - previous.renderY()),
                 (float) (current.renderZ() - previous.renderZ()));
     }
 
     static Matrix4f previousWorldToClip(FrameCamera current, FrameCamera previous) {
-        return projectionForNrd(previous.projection())
-                .mul(previousWorldToView(current, previous));
+        return previousWorldToClip(current, previous, new Matrix4f(), new Matrix4f());
+    }
+
+    static Matrix4f previousWorldToClip(
+            FrameCamera current,
+            FrameCamera previous,
+            Matrix4f result,
+            Matrix4f worldToViewScratch) {
+        return projectionForNrd(previous.projection(), result)
+                .mul(previousWorldToView(current, previous, worldToViewScratch));
     }
 
     /**
@@ -60,7 +81,12 @@ final class NrdCameraTransform {
      * current effective pinhole to previous physical camera translation.
      */
     static Matrix4f previousRenderedWorldToClip(FrameCamera current, FrameCamera previous) {
-        return new Matrix4f(previous.inverseViewProjection())
+        return previousRenderedWorldToClip(current, previous, new Matrix4f());
+    }
+
+    static Matrix4f previousRenderedWorldToClip(
+            FrameCamera current, FrameCamera previous, Matrix4f result) {
+        return result.set(previous.inverseViewProjection())
                 .invert()
                 .translate(
                         (float) (current.renderX() - previous.x()),

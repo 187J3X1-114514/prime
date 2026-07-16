@@ -731,15 +731,22 @@ public final class VulkanRenderer implements AutoCloseable {
             NrdDenoiser denoiser) {
         try (MemoryStack stack = MemoryStack.stackPush()) {
             VkImageMemoryBarrier2.Buffer barriers = VkImageMemoryBarrier2.calloc(3, stack);
-            VulkanImage[] images = new VulkanImage[] {
-                sceneColor,
-                denoiser.fsrReactiveMask(),
-                denoiser.fsrTransparencyCompositionMask()
-            };
-            for (int index = 0; index < images.length; index++) {
+            VulkanImage reactiveMask = denoiser.fsrReactiveMask();
+            VulkanImage transparencyMask = denoiser.fsrTransparencyCompositionMask();
+            fillImageBarrier(
+                    barriers.get(0),
+                    sceneColor.image(),
+                    VK12.VK_IMAGE_LAYOUT_GENERAL,
+                    VK12.VK_IMAGE_LAYOUT_GENERAL,
+                    VK12.VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                    VK12.VK_ACCESS_SHADER_READ_BIT | VK12.VK_ACCESS_SHADER_WRITE_BIT,
+                    KHRRayTracingPipeline.VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR,
+                    VK12.VK_ACCESS_SHADER_WRITE_BIT);
+            for (int index = 1; index < 3; index++) {
+                VulkanImage image = index == 1 ? reactiveMask : transparencyMask;
                 fillImageBarrier(
                         barriers.get(index),
-                        images[index].image(),
+                        image.image(),
                         VK12.VK_IMAGE_LAYOUT_GENERAL,
                         VK12.VK_IMAGE_LAYOUT_GENERAL,
                         VK12.VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
@@ -764,15 +771,23 @@ public final class VulkanRenderer implements AutoCloseable {
             NrdDenoiser denoiser) {
         try (MemoryStack stack = MemoryStack.stackPush()) {
             VkImageMemoryBarrier2.Buffer barriers = VkImageMemoryBarrier2.calloc(3, stack);
-            VulkanImage[] images = new VulkanImage[] {
-                sceneColor,
-                denoiser.fsrReactiveMask(),
-                denoiser.fsrTransparencyCompositionMask()
-            };
-            for (int index = 0; index < images.length; index++) {
+            VulkanImage reactiveMask = denoiser.fsrReactiveMask();
+            VulkanImage transparencyMask = denoiser.fsrTransparencyCompositionMask();
+            fillImageBarrier(
+                    barriers.get(0),
+                    sceneColor.image(),
+                    VK12.VK_IMAGE_LAYOUT_GENERAL,
+                    VK12.VK_IMAGE_LAYOUT_GENERAL,
+                    VK12.VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT
+                            | KHRRayTracingPipeline.VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR,
+                    VK12.VK_ACCESS_SHADER_WRITE_BIT,
+                    VK12.VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                    VK12.VK_ACCESS_SHADER_READ_BIT);
+            for (int index = 1; index < 3; index++) {
+                VulkanImage image = index == 1 ? reactiveMask : transparencyMask;
                 fillImageBarrier(
                         barriers.get(index),
-                        images[index].image(),
+                        image.image(),
                         VK12.VK_IMAGE_LAYOUT_GENERAL,
                         VK12.VK_IMAGE_LAYOUT_GENERAL,
                         VK12.VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT
@@ -857,11 +872,8 @@ public final class VulkanRenderer implements AutoCloseable {
             int fsrFrameIndex,
             boolean cameraInWater) {
         ByteBuffer buffer = stack.calloc(ShaderAbi.PUSH_CONSTANT_SIZE).order(ByteOrder.nativeOrder());
-        float[] matrix = new float[16];
-        camera.inverseViewProjection().get(matrix);
-        for (int index = 0; index < matrix.length; index++) {
-            buffer.putFloat(ShaderAbi.PUSH_INVERSE_VIEW_PROJECTION_OFFSET + index * Float.BYTES, matrix[index]);
-        }
+        camera.inverseViewProjection().get(
+                ShaderAbi.PUSH_INVERSE_VIEW_PROJECTION_OFFSET, buffer);
         int cameraOffset = ShaderAbi.PUSH_CAMERA_POSITION_OFFSET;
         buffer.putFloat(cameraOffset, (float) (camera.renderX() - scene.originX()));
         buffer.putFloat(cameraOffset + Float.BYTES, (float) (camera.renderY() - scene.originY()));

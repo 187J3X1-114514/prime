@@ -14,6 +14,7 @@ import java.util.ArrayList;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.Locale;
+import org.joml.Matrix4fc;
 import org.lwjgl.system.APIUtil;
 import org.lwjgl.system.JNI;
 import org.lwjgl.system.MemoryStack;
@@ -243,44 +244,6 @@ public final class NrdNative {
         return List.copyOf(textures);
     }
 
-    private static List<Dispatch> readDispatches(ByteBuffer output) {
-        long address = output.getLong(0);
-        int count = output.getInt(8);
-        requireArray(address, count, DISPATCH_SIZE, "NRD dispatch array");
-        ArrayList<Dispatch> dispatches = new ArrayList<>(count);
-        for (int dispatchIndex = 0; dispatchIndex < count; dispatchIndex++) {
-            long dispatchAddress = address + (long) dispatchIndex * DISPATCH_SIZE;
-            long resourcesAddress = MemoryUtil.memGetLong(dispatchAddress + 8L);
-            long constantAddress = MemoryUtil.memGetLong(dispatchAddress + 16L);
-            int resourcesNum = MemoryUtil.memGetInt(dispatchAddress + 24L);
-            int constantSize = MemoryUtil.memGetInt(dispatchAddress + 28L);
-            requireArray(resourcesAddress, resourcesNum, RESOURCE_SIZE, "NRD dispatch resources");
-            if (constantSize < 0 || (constantSize != 0 && constantAddress == MemoryUtil.NULL)) {
-                throw new IllegalStateException("NRD returned invalid constant data");
-            }
-            ArrayList<Resource> resources = new ArrayList<>(resourcesNum);
-            for (int resourceIndex = 0; resourceIndex < resourcesNum; resourceIndex++) {
-                long resourceAddress = resourcesAddress + (long) resourceIndex * RESOURCE_SIZE;
-                resources.add(new Resource(
-                        MemoryUtil.memGetInt(resourceAddress),
-                        MemoryUtil.memGetInt(resourceAddress + 4L),
-                        MemoryUtil.memGetInt(resourceAddress + 8L)));
-            }
-            byte[] constants = new byte[constantSize];
-            if (constantSize != 0) {
-                MemoryUtil.memByteBuffer(constantAddress, constantSize).get(constants);
-            }
-            dispatches.add(new Dispatch(
-                    MemoryUtil.memUTF8Safe(MemoryUtil.memGetLong(dispatchAddress)),
-                    List.copyOf(resources),
-                    constants,
-                    MemoryUtil.memGetInt(dispatchAddress + 32L),
-                    MemoryUtil.memGetInt(dispatchAddress + 36L),
-                    MemoryUtil.memGetInt(dispatchAddress + 40L)));
-        }
-        return List.copyOf(dispatches);
-    }
-
     private static void requireArray(long address, int count, int stride, String name) {
         if (count < 0 || count > 65_536 || (count != 0 && address == MemoryUtil.NULL)) {
             throw new IllegalStateException(name + " is invalid");
@@ -368,6 +331,7 @@ public final class NrdNative {
     public static final class Instance implements AutoCloseable {
         private final NrdNative nativeApi;
         private final Description description;
+        private final DispatchList dispatches = new DispatchList();
         private long handle;
 
         private Instance(NrdNative nativeApi, long handle, Description description) {
@@ -388,8 +352,12 @@ public final class NrdNative {
                 putMatrix(input, 64, settings.viewToClipPrevious());
                 putMatrix(input, 128, settings.worldToView());
                 putMatrix(input, 192, settings.worldToViewPrevious());
-                putVector2(input, 256, settings.cameraJitter());
-                putVector2(input, 264, settings.cameraJitterPrevious());
+                putVector2(input, 256, settings.cameraJitterX(), settings.cameraJitterY());
+                putVector2(
+                        input,
+                        264,
+                        settings.previousCameraJitterX(),
+                        settings.previousCameraJitterY());
                 input.putInt(272, settings.width());
                 input.putInt(276, settings.height());
                 input.putInt(280, settings.previousWidth());
@@ -408,7 +376,14 @@ public final class NrdNative {
             }
         }
 
-        public List<Dispatch> getDispatches() {
+        /**
+         * Returns a reusable read-only view of NRD's current native dispatch storage.
+         *
+         * <p>The view remains valid until the next call to this method on the same instance. It is
+         * deliberately not materialized as Java records and lists: this path runs once per frame
+         * for every denoiser, while the native bridge already owns a complete immutable snapshot.
+         */
+        public DispatchList getDispatches() {
             long instance = this.requireOpen();
             try (MemoryStack stack = MemoryStack.stackPush()) {
                 ByteBuffer output = stack.calloc(DISPATCH_LIST_SIZE).order(ByteOrder.nativeOrder());
@@ -418,7 +393,8 @@ public final class NrdNative {
                                 MemoryUtil.memAddress(output),
                                 this.nativeApi.getDispatchesFunction),
                         "get NRD dispatches");
-                return readDispatches(output);
+                this.dispatches.reset(output.getLong(0), output.getInt(8));
+                return this.dispatches;
             }
         }
 
@@ -438,21 +414,13 @@ public final class NrdNative {
             return this.handle;
         }
 
-        private static void putMatrix(ByteBuffer target, int offset, float[] matrix) {
-            if (matrix.length != 16) {
-                throw new IllegalArgumentException("NRD matrices must contain 16 floats");
-            }
-            for (int index = 0; index < matrix.length; index++) {
-                target.putFloat(offset + index * Float.BYTES, matrix[index]);
-            }
+        private static void putMatrix(ByteBuffer target, int offset, Matrix4fc matrix) {
+            matrix.get(offset, target);
         }
 
-        private static void putVector2(ByteBuffer target, int offset, float[] vector) {
-            if (vector.length != 2) {
-                throw new IllegalArgumentException("NRD camera jitter must contain two floats");
-            }
-            target.putFloat(offset, vector[0]);
-            target.putFloat(offset + Float.BYTES, vector[1]);
+        private static void putVector2(ByteBuffer target, int offset, float x, float y) {
+            target.putFloat(offset, x);
+            target.putFloat(offset + Float.BYTES, y);
         }
     }
 
@@ -485,23 +453,104 @@ public final class NrdNative {
 
     public record TextureInfo(int format, int downsampleFactor) {}
 
-    public record Resource(int descriptorType, int resourceType, int indexInPool) {}
+    /** Allocation-free view over the native bridge's current dispatch snapshot. */
+    public static final class DispatchList {
+        private long address;
+        private int size;
 
-    public record Dispatch(
-            String name,
-            List<Resource> resources,
-            byte[] constantData,
-            int pipelineIndex,
-            int gridWidth,
-            int gridHeight) {}
+        private DispatchList() {}
+
+        private void reset(long address, int size) {
+            requireArray(address, size, DISPATCH_SIZE, "NRD dispatch array");
+            this.address = address;
+            this.size = size;
+            for (int dispatchIndex = 0; dispatchIndex < size; dispatchIndex++) {
+                long dispatch = this.dispatchAddress(dispatchIndex);
+                int resourceCount = MemoryUtil.memGetInt(dispatch + 24L);
+                requireArray(
+                        MemoryUtil.memGetLong(dispatch + 8L),
+                        resourceCount,
+                        RESOURCE_SIZE,
+                        "NRD dispatch resources");
+                int constantSize = MemoryUtil.memGetInt(dispatch + 28L);
+                long constantAddress = MemoryUtil.memGetLong(dispatch + 16L);
+                if (constantSize < 0
+                        || (constantSize != 0 && constantAddress == MemoryUtil.NULL)) {
+                    throw new IllegalStateException("NRD returned invalid constant data");
+                }
+            }
+        }
+
+        public int size() {
+            return this.size;
+        }
+
+        public boolean isEmpty() {
+            return this.size == 0;
+        }
+
+        public int pipelineIndex(int dispatchIndex) {
+            return MemoryUtil.memGetInt(this.dispatchAddress(dispatchIndex) + 32L);
+        }
+
+        public int gridWidth(int dispatchIndex) {
+            return MemoryUtil.memGetInt(this.dispatchAddress(dispatchIndex) + 36L);
+        }
+
+        public int gridHeight(int dispatchIndex) {
+            return MemoryUtil.memGetInt(this.dispatchAddress(dispatchIndex) + 40L);
+        }
+
+        public int resourceCount(int dispatchIndex) {
+            return MemoryUtil.memGetInt(this.dispatchAddress(dispatchIndex) + 24L);
+        }
+
+        public int resourceDescriptorType(int dispatchIndex, int resourceIndex) {
+            return MemoryUtil.memGetInt(this.resourceAddress(dispatchIndex, resourceIndex));
+        }
+
+        public int resourceType(int dispatchIndex, int resourceIndex) {
+            return MemoryUtil.memGetInt(this.resourceAddress(dispatchIndex, resourceIndex) + 4L);
+        }
+
+        public int resourceIndexInPool(int dispatchIndex, int resourceIndex) {
+            return MemoryUtil.memGetInt(this.resourceAddress(dispatchIndex, resourceIndex) + 8L);
+        }
+
+        public int constantDataSize(int dispatchIndex) {
+            return MemoryUtil.memGetInt(this.dispatchAddress(dispatchIndex) + 28L);
+        }
+
+        long constantDataAddress(int dispatchIndex) {
+            return MemoryUtil.memGetLong(this.dispatchAddress(dispatchIndex) + 16L);
+        }
+
+        private long dispatchAddress(int dispatchIndex) {
+            if (dispatchIndex < 0 || dispatchIndex >= this.size) {
+                throw new IndexOutOfBoundsException(dispatchIndex);
+            }
+            return this.address + (long) dispatchIndex * DISPATCH_SIZE;
+        }
+
+        private long resourceAddress(int dispatchIndex, int resourceIndex) {
+            long dispatch = this.dispatchAddress(dispatchIndex);
+            int resourceCount = MemoryUtil.memGetInt(dispatch + 24L);
+            if (resourceIndex < 0 || resourceIndex >= resourceCount) {
+                throw new IndexOutOfBoundsException(resourceIndex);
+            }
+            return MemoryUtil.memGetLong(dispatch + 8L) + (long) resourceIndex * RESOURCE_SIZE;
+        }
+    }
 
     public record FrameSettings(
-            float[] viewToClip,
-            float[] viewToClipPrevious,
-            float[] worldToView,
-            float[] worldToViewPrevious,
-            float[] cameraJitter,
-            float[] cameraJitterPrevious,
+            Matrix4fc viewToClip,
+            Matrix4fc viewToClipPrevious,
+            Matrix4fc worldToView,
+            Matrix4fc worldToViewPrevious,
+            float cameraJitterX,
+            float cameraJitterY,
+            float previousCameraJitterX,
+            float previousCameraJitterY,
             int width,
             int height,
             int previousWidth,

@@ -424,8 +424,6 @@ public final class Fsr3Upscaler implements Destroyable {
             int temporalFrameIndex,
             float deltaSeconds) {
         ByteBuffer buffer = stack.calloc(MAIN_CONSTANT_SIZE).order(ByteOrder.nativeOrder());
-        FsrSettings.Jitter fsrJitter = jitter.forFsrDispatch();
-        FsrSettings.Jitter previousFsrJitter = previous.forFsrDispatch();
         putExtent(buffer, 0, this.renderWidth, this.renderHeight);
         putExtent(buffer, 8, this.renderWidth, this.renderHeight);
         putExtent(buffer, 16, this.displayWidth, this.displayHeight);
@@ -444,10 +442,10 @@ public final class Fsr3Upscaler implements Destroyable {
         // opposite projection-space sign because FSR reconstructs source positions as
         // pixelCenter - Jitter(). Keep the conversion at this API boundary; NRD and raygen retain
         // Prime's direct sample-space sign.
-        buffer.putFloat(64, fsrJitter.x());
-        buffer.putFloat(68, fsrJitter.y());
-        buffer.putFloat(72, previousFsrJitter.x());
-        buffer.putFloat(76, previousFsrJitter.y());
+        buffer.putFloat(64, -jitter.x());
+        buffer.putFloat(68, -jitter.y());
+        buffer.putFloat(72, -previous.x());
+        buffer.putFloat(76, -previous.y());
         // Prime's shared motion texture already stores normalized old-current UV, so no pixel-to-
         // UV scale is needed and the vectors deliberately exclude camera jitter.
         buffer.putFloat(80, 1.0F);

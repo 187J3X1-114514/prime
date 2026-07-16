@@ -70,12 +70,6 @@ void main() {
     }
 
     vec4 metadata = imageLoad(primeMetadata, pixel);
-    vec4 rawDiffuse = imageLoad(primeNoisyDiffuse, pixel);
-    vec4 rawSpecular = imageLoad(primeNoisySpecular, pixel);
-    vec4 guidePositionData = imageLoad(primeGuidePosition, pixel);
-    vec4 guide = imageLoad(primeGuideMaterial, pixel);
-    vec4 interfaceData = imageLoad(primeInterface, pixel);
-    vec4 pathThroughput = imageLoad(primePathThroughput, pixel);
     if (metadata.a < 0.0) {
         // Deterministic atmosphere/sun misses bypass NRD and remain directly summable.
         imageStore(primeNoisyDiffuse, pixel, vec4(0.0));
@@ -89,10 +83,15 @@ void main() {
         return;
     }
 
+    vec4 rawDiffuse = imageLoad(primeNoisyDiffuse, pixel);
+    vec4 rawSpecular = imageLoad(primeNoisySpecular, pixel);
+    vec4 guidePositionData = imageLoad(primeGuidePosition, pixel);
+    vec4 guide = imageLoad(primeGuideMaterial, pixel);
+    vec4 interfaceData = imageLoad(primeInterface, pixel);
+    vec4 pathThroughput = imageLoad(primePathThroughput, pixel);
     vec3 currentVirtualPosition = guidePositionData.xyz;
     vec3 previousVirtualPosition = currentVirtualPosition + interfaceData.xyz;
     vec3 virtualNormal = normalize(guide.rgb);
-    vec3 psrNormal = virtualNormal;
     vec3 psrViewDirection = primeUnpackTransparentDirection(guidePositionData.w);
     float virtualRoughness = clamp(guide.a, 0.0, 1.0);
     vec2 currentCameraJitter =
@@ -117,7 +116,7 @@ void main() {
     vec3 diffuseMaterialFactor;
     vec3 specularMaterialFactor;
     primeNrdMaterialFactors(
-            psrNormal,
+            virtualNormal,
             psrViewDirection,
             metadata.rgb,
             vec3(primeMaterialDielectricF0(

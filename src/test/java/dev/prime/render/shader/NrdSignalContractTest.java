@@ -34,6 +34,15 @@ final class NrdSignalContractTest {
         assertTrue(preparation.contains("uint diagnosticMode;"));
         assertTrue(preparation.contains(
                 "if (primeMotionPush.diagnosticMode != PRIME_DIAGNOSTIC_REPROJECTION_ERROR)"));
+        int primaryMaterialLoad = preparation.indexOf(
+                "vec4 rawMaterial = imageLoad(primeMaterial, pixel)");
+        int primaryMiss = preparation.indexOf(
+                "if (primaryDistance < 0.0)", primaryMaterialLoad);
+        int primarySurfaceLoads = preparation.indexOf(
+                "vec4 primary = imageLoad(primePrimaryPosition, pixel)", primaryMiss);
+        assertTrue(primaryMaterialLoad >= 0
+                && primaryMiss > primaryMaterialLoad
+                && primarySurfaceLoads > primaryMiss);
         assertTrue(composite.contains("if (material.a < 0.0)"));
         assertTrue(composite.contains("return vec3(0.0);"));
         assertTrue(composite.contains("primeCompositeSurfaceSignal("));
@@ -66,6 +75,15 @@ final class NrdSignalContractTest {
         assertTrue(transparent.contains("vec4(visibleRadiance, -(max(surface.t, 0.0) + 1.0))"));
         assertTrue(transparent.contains("imageStore(primeFsrTransparencyCompositionMask"));
         assertTrue(transparentPreparation.contains("if (metadata.a < 0.0)"));
+        int transparentMetadataLoad = transparentPreparation.indexOf(
+                "vec4 metadata = imageLoad(primeMetadata, pixel)");
+        int transparentMiss = transparentPreparation.indexOf(
+                "if (metadata.a < 0.0)", transparentMetadataLoad);
+        int transparentSurfaceLoads = transparentPreparation.indexOf(
+                "vec4 rawDiffuse = imageLoad(primeNoisyDiffuse, pixel)", transparentMiss);
+        assertTrue(transparentMetadataLoad >= 0
+                && transparentMiss > transparentMetadataLoad
+                && transparentSurfaceLoads > transparentMiss);
         assertTrue(integrator.contains("struct PrimeDeltaChain"));
         assertTrue(integrator.contains("PRIME_DELTA_CHAIN_CAPACITY = 8u"));
         assertTrue(integrator.contains("primeAppendDeltaInterface(deltaChain, surface, bsdf)"));

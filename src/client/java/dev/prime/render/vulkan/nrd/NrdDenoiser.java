@@ -1332,6 +1332,8 @@ public final class NrdDenoiser implements Destroyable {
         private final VulkanBuffer constantBuffer;
         private long[] resourceDescriptorSets = new long[0];
         private long[] constantsDescriptorSets = new long[0];
+        private int[] allocatedPipelineIndices = new int[0];
+        private int allocatedSetCount;
         private boolean destroyed;
 
         private FrameBindings(
@@ -1413,35 +1415,44 @@ public final class NrdDenoiser implements Destroyable {
             if (dispatches.size() > denoiser.description.setsMaxNum()) {
                 throw new IllegalStateException("NRD dispatch count exceeds its descriptor pool contract");
             }
-            VulkanContext.check(
-                    VK12.vkResetDescriptorPool(denoiser.context.vkDevice(), this.descriptorPool, 0),
-                    "reset Prime NRD descriptor pool");
-            if (this.resourceDescriptorSets.length < dispatches.size()) {
-                this.resourceDescriptorSets = new long[dispatches.size()];
-                this.constantsDescriptorSets = new long[dispatches.size()];
-            }
             if (dispatches.isEmpty()) {
                 return;
             }
+            if (this.resourceDescriptorSets.length < dispatches.size()) {
+                this.resourceDescriptorSets = new long[dispatches.size()];
+                this.constantsDescriptorSets = new long[dispatches.size()];
+                this.allocatedPipelineIndices = new int[dispatches.size()];
+            }
             try (MemoryStack stack = MemoryStack.stackPush()) {
-                LongBuffer layouts = stack.mallocLong(Math.multiplyExact(dispatches.size(), 2));
-                for (int dispatchIndex = 0; dispatchIndex < dispatches.size(); dispatchIndex++) {
-                    ComputePipeline pipeline = denoiser.pipelines[dispatches.pipelineIndex(dispatchIndex)];
-                    layouts.put(pipeline.resourceDescriptorSetLayout);
-                    layouts.put(pipeline.constantsDescriptorSetLayout);
-                }
-                layouts.flip();
-                VkDescriptorSetAllocateInfo allocateInfo = VkDescriptorSetAllocateInfo.calloc(stack)
-                        .sType$Default()
-                        .descriptorPool(this.descriptorPool)
-                        .pSetLayouts(layouts);
-                LongBuffer sets = stack.mallocLong(Math.multiplyExact(dispatches.size(), 2));
-                VulkanContext.check(
-                        VK12.vkAllocateDescriptorSets(denoiser.context.vkDevice(), allocateInfo, sets),
-                        "allocate Prime NRD frame descriptor sets");
-                for (int dispatchIndex = 0; dispatchIndex < dispatches.size(); dispatchIndex++) {
-                    this.resourceDescriptorSets[dispatchIndex] = sets.get();
-                    this.constantsDescriptorSets[dispatchIndex] = sets.get();
+                if (!this.matchesAllocatedLayouts(dispatches)) {
+                    this.allocatedSetCount = 0;
+                    VulkanContext.check(
+                            VK12.vkResetDescriptorPool(
+                                    denoiser.context.vkDevice(), this.descriptorPool, 0),
+                            "reset Prime NRD descriptor pool");
+                    LongBuffer layouts = stack.mallocLong(Math.multiplyExact(dispatches.size(), 2));
+                    for (int dispatchIndex = 0; dispatchIndex < dispatches.size(); dispatchIndex++) {
+                        int pipelineIndex = dispatches.pipelineIndex(dispatchIndex);
+                        ComputePipeline pipeline = denoiser.pipelines[pipelineIndex];
+                        layouts.put(pipeline.resourceDescriptorSetLayout);
+                        layouts.put(pipeline.constantsDescriptorSetLayout);
+                        this.allocatedPipelineIndices[dispatchIndex] = pipelineIndex;
+                    }
+                    layouts.flip();
+                    VkDescriptorSetAllocateInfo allocateInfo = VkDescriptorSetAllocateInfo.calloc(stack)
+                            .sType$Default()
+                            .descriptorPool(this.descriptorPool)
+                            .pSetLayouts(layouts);
+                    LongBuffer sets = stack.mallocLong(Math.multiplyExact(dispatches.size(), 2));
+                    VulkanContext.check(
+                            VK12.vkAllocateDescriptorSets(
+                                    denoiser.context.vkDevice(), allocateInfo, sets),
+                            "allocate Prime NRD frame descriptor sets");
+                    for (int dispatchIndex = 0; dispatchIndex < dispatches.size(); dispatchIndex++) {
+                        this.resourceDescriptorSets[dispatchIndex] = sets.get();
+                        this.constantsDescriptorSets[dispatchIndex] = sets.get();
+                    }
+                    this.allocatedSetCount = dispatches.size();
                 }
 
                 long constantStride = VulkanContext.alignUp(
@@ -1456,6 +1467,19 @@ public final class NrdDenoiser implements Destroyable {
                             denoiser);
                 }
             }
+        }
+
+        private boolean matchesAllocatedLayouts(NrdNative.DispatchList dispatches) {
+            if (this.allocatedSetCount != dispatches.size()) {
+                return false;
+            }
+            for (int dispatchIndex = 0; dispatchIndex < dispatches.size(); dispatchIndex++) {
+                if (this.allocatedPipelineIndices[dispatchIndex]
+                        != dispatches.pipelineIndex(dispatchIndex)) {
+                    return false;
+                }
+            }
+            return true;
         }
 
         private void writeDispatch(

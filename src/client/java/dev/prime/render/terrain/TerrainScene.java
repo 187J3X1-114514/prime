@@ -499,6 +499,7 @@ public final class TerrainScene implements AutoCloseable {
                         stagingBatch.write(mesh.lights().pack(lights.deviceAddress()), 16L),
                         lights);
             }
+            CpuSectionLights.Summary lightSummary = mesh.lights().summary();
             blas = PreparedBlas.create(
                     this.context,
                     positions,
@@ -513,7 +514,7 @@ public final class TerrainScene implements AutoCloseable {
                     upload.sectionZ(),
                     blas,
                     lights,
-                    mesh.lights());
+                    lightSummary);
         } catch (RuntimeException exception) {
             if (blas != null) {
                 blas.destroyAllResources();

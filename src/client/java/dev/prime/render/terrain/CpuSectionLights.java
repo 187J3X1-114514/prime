@@ -143,6 +143,12 @@ public final class CpuSectionLights {
         return this.isEmpty() ? 0.0F : this.tree.power();
     }
 
+    Summary summary() {
+        return this.isEmpty()
+                ? Summary.EMPTY
+                : new Summary(this.emitters.size(), this.tree.bounds(), this.tree.power());
+    }
+
     private static void putLong(int[] target, int wordOffset, long value) {
         target[wordOffset] = (int) value;
         target[wordOffset + 1] = (int) (value >>> 32);
@@ -292,6 +298,14 @@ public final class CpuSectionLights {
     static float emissionScale(int level) {
         int clamped = Math.max(0, Math.min(level, 15));
         return (float) clamped * clamped / 15.0F;
+    }
+
+    record Summary(int emitterCount, CpuLightTree.Bounds bounds, float power) {
+        private static final Summary EMPTY = new Summary(0, null, 0.0F);
+
+        boolean isEmpty() {
+            return this.emitterCount == 0;
+        }
     }
 
     private record Emitter(

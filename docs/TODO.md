@@ -1,8 +1,9 @@
-# Performance ideas outside the exact-simplification branch
+# Performance work beyond the current exact-simplification pass
 
-This file records optimizations that may be useful but are intentionally excluded from
-`codex/equivalent-performance` because they change a sampling distribution, numerical result,
-denoiser input, or other visible behavior. Each item needs a separate quality and bias decision.
+This file records worthwhile optimizations intentionally excluded from the current low-risk pass.
+Most change a sampling distribution, numerical result, denoiser input, or other visible behavior
+and therefore need a separate quality and bias decision. The final section lists exact changes that
+are larger lifecycle or architecture projects rather than low-hanging simplifications.
 
 - Replace the 256-cell per-emitter area-light alias distribution with a coarser or hierarchical
   proposal. A consistently updated PDF can keep the estimator unbiased, but the sample sequence
@@ -30,3 +31,23 @@ denoiser input, or other visible behavior. Each item needs a separate quality an
   behind the opaque primary depth. This could avoid a full mixed-geometry traversal on most
   pixels, but separate builds/traversal can change intersection tie behavior and require a precise
   shared-depth contract, so it is not suitable for the exact-simplification branch.
+- Gate the two transparent NRD instances when a GPU-generated frame mask proves that no transparent
+  branch is visible. The raw estimator is unchanged, but pausing and later restarting NRD changes
+  its hidden temporal state; the first reappearing glass/water frame therefore needs an explicit
+  reset policy and visual validation. This can be a large win in ordinary opaque scenes because the
+  current reflection and transmission denoisers are both full-resolution dispatch graphs.
+- Investigate `VK_EXT_opacity_micromap` for cutout-heavy foliage. It may substantially reduce
+  any-hit shader traffic in jungles, but alpha quantization, animated atlas texels, resource-pack
+  reloads and unsupported-device fallback make it a separate representation with potentially
+  different intersection behavior rather than an exact source simplification.
+
+Exact but larger lifecycle/architecture work left outside the current low-risk pass:
+
+- Keep a timeline-recycled ring of ray-tracing descriptor bundles. A TLAS swap currently creates a
+  new descriptor pool/set and retires the old one so in-flight command buffers remain valid. A ring
+  can update a set only after its real completion point and avoid driver allocation churn without
+  changing rendering, but it needs the same rigorous ownership protocol as NRD frame bindings.
+- Pack Section geometry and light records directly into staging/native output storage. The current
+  branch removed redundant final copies and long-lived CPU light data, but each completed mesh still
+  owns large Java primitive arrays until upload. Direct bounded storage is exact, yet belongs with
+  the mesh-builder/backpressure rewrite tracked in `docs/FIXME.md`.

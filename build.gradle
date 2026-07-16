@@ -108,12 +108,12 @@ abstract class GenerateShaderAbi extends DefaultTask {
 		}
 		if (atmosphereContract.spectralModel != 'hillaire-8wave-rec2020-d65'
 				|| atmosphereContract.worldSeaLevelY != -64.0
-				|| atmosphereContract.worldUnitScaleKm != 0.004
+				|| atmosphereContract.worldUnitScaleKm != 0.001
 				|| atmosphereContract.spaceSunIntensity != 10.0
 				|| atmosphereContract.sunAngularRadiusRadians != 0.00471) {
 			throw new GradleException(
 					'Prime atmosphere contract must remain the eight-wave Rec.2020 model, '
-							+ 'the -64 sea level / 0.004 km world scale, and a 10-unit space sun')
+							+ 'the -64 sea level / 0.001 km world scale, and a 10-unit space sun')
 		}
 		if (nrdContract.version != '4.17.4'
 				|| nrdContract.denoiser != 'reblur-diffuse-specular'

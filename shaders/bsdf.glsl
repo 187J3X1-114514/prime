@@ -310,6 +310,9 @@ struct PrimeTransmissiveBsdfSample {
     PrimeRcVolumeStack volumeStack;
 };
 
+const float PRIME_GLASS_MINIMUM_TINT_WEIGHT = 0.75;
+const float PRIME_WATER_REFERENCE_DEPTH = 16.0;
+
 PrimeRcVolumeStack primeEmptyVolumeStack() {
     PrimeRcVolumeStack result;
     result.values[0].extinction = vec3(0.0);
@@ -342,18 +345,33 @@ PrimeRcMaterial primeMinecraftTransmissionMaterial(
     material.geometry.thickness = thinWalled ? 0.0625 : 1.0;
     material.specular.ior = water ? 1.333 : 1.5;
 
-    // Minecraft alpha describes raster coverage/composition rather than Beer-Lambert depth.
-    // Mixing the decoded texel toward clear transmission by (1-alpha) preserves colored glass
-    // without interpreting a low-alpha clear texel as a dense black absorber.
-    vec3 transmissionColor = clamp(
-            mix(vec3(1.0), max(baseColor, vec3(0.0)), clamp(opacity, 0.0, 1.0)),
-            vec3(1.0e-3),
-            vec3(1.0));
+    vec3 decodedColor = max(baseColor, vec3(0.0));
+    float coverage = clamp(opacity, 0.0, 1.0);
+    vec3 transmissionColor;
+    if (water) {
+        // Water keeps the authored spectral ratio. Its lower density is expressed by the physical
+        // reference distance below, rather than washing the color toward white at every surface.
+        transmissionColor = mix(vec3(1.0), decodedColor, coverage);
+    } else {
+        // Vanilla stained-glass RGB contains display brightness as well as hue. A transmission
+        // filter should preserve the dominant channel and attenuate the others, otherwise low
+        // raster alpha mixes panes and blocks almost back to clear white. Normalizing by the peak
+        // retains energy in that dominant channel while making the authored color legible.
+        float peak = max(decodedColor.r, max(decodedColor.g, decodedColor.b));
+        vec3 filterColor = peak > PRIME_BSDF_EPSILON
+                ? decodedColor / peak
+                : vec3(1.0);
+        float tintWeight = mix(PRIME_GLASS_MINIMUM_TINT_WEIGHT, 1.0, coverage);
+        transmissionColor = mix(vec3(1.0), filterColor, tintWeight);
+    }
+    transmissionColor = clamp(transmissionColor, vec3(1.0e-3), vec3(1.0));
     material.transmission.color = transmissionColor;
     // One block is the authored depth for solid glass-like models. Water uses a longer artistic
     // reference depth so vanilla biome tint remains visible without becoming opaque after a few
     // cells. True zero-volume surfaces use the closure's explicit zero-depth tint path.
-    material.transmission.depth = thinWalled ? 0.0 : (water ? 8.0 : 1.0);
+    material.transmission.depth = thinWalled
+            ? 0.0
+            : (water ? PRIME_WATER_REFERENCE_DEPTH : 1.0);
     material.transmission.scatter = vec3(0.0);
     material.transmission.scatterAnisotropy = 0.0;
     material.transmission.dispersionScale = 0.0;

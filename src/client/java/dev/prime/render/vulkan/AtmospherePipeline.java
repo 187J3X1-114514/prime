@@ -201,8 +201,8 @@ public final class AtmospherePipeline implements Destroyable {
     }
 
     /**
-     * Maps Minecraft height into the deliberately compressed atmosphere used for rendering.
-     * Y=-64 is sea level and every block represents four metres, so Y=320 is 1.536 km high.
+     * Maps Minecraft height into the atmosphere at one metre per block.
+     * Y=-64 is sea level and every block represents one metre, so Y=320 is 0.384 km high.
      */
     public static float worldAltitudeKm(double worldY) {
         return (float) ((worldY - WORLD_SEA_LEVEL_Y) * WORLD_UNIT_SCALE_KM);

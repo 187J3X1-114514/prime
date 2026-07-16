@@ -20,7 +20,7 @@ vec3 primeAtmosphereSunTransmittance(
         vec3 surfacePosition,
         vec3 directionToSun) {
     // The same artistic scale maps both vertical coordinates and travelled distance: one
-    // Minecraft block represents 0.004 atmospheric kilometres. Splitting these scales would make
+    // Minecraft block represents 0.001 atmospheric kilometres. Splitting these scales would make
     // density layers disagree with aerial perspective and break the atmosphere/terrain contract.
     float radius = primePush.atmosphereEyeRadiusKm
             + (surfacePosition.y - primePush.cameraPosition.y) * ATM_WORLD_UNIT_SCALE_KM;

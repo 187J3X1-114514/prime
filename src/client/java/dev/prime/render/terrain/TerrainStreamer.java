@@ -28,11 +28,14 @@ import net.minecraft.world.level.chunk.status.ChunkStatus;
 import net.minecraft.world.level.chunk.LevelChunk;
 
 public final class TerrainStreamer implements AutoCloseable {
-    private static final int MAX_SNAPSHOTS_PER_FRAME = 4;
-    private static final int MAX_UPLOADS_PER_FRAME = 8;
+    private static final int SECTION_COUNT_BUDGET_MULTIPLIER = 16;
+    private static final int MAX_SNAPSHOTS_PER_FRAME = 4 * SECTION_COUNT_BUDGET_MULTIPLIER;
+    private static final int MAX_UPLOADS_PER_FRAME = 8 * SECTION_COUNT_BUDGET_MULTIPLIER;
+    // The count budget may grow independently, but one TerrainScene update is still backed by a
+    // single 16 MiB staging batch. Retaining the byte bound avoids a hidden 256 MiB mapped page.
     private static final long MAX_UPLOAD_BYTES_PER_FRAME = 16L * 1024L * 1024L;
-    private static final int MAX_UNLOADED_PROBES_PER_FRAME = 32;
-    private static final int MAX_READY_FOR_UPLOAD = 64;
+    private static final int MAX_UNLOADED_PROBES_PER_FRAME = 32 * SECTION_COUNT_BUDGET_MULTIPLIER;
+    private static final int MAX_READY_FOR_UPLOAD = 64 * SECTION_COUNT_BUDGET_MULTIPLIER;
     private static final int MAX_EXTERNAL_DIRTY_SECTIONS = 16_384;
     private static final CpuSectionMesh EMPTY_MESH = new CpuSectionMesh(
             new float[0], new int[0], 0, 0, CpuSectionLights.EMPTY);
@@ -67,7 +70,7 @@ public final class TerrainStreamer implements AutoCloseable {
     public TerrainStreamer(VulkanContext context, StagingArena stagingArena) {
         this.scene = new TerrainScene(context, stagingArena);
         int threadCount = Math.max(1, Math.min(4, Runtime.getRuntime().availableProcessors() - 2));
-        this.maximumInFlight = threadCount * 2;
+        this.maximumInFlight = threadCount * 2 * SECTION_COUNT_BUDGET_MULTIPLIER;
         this.completed = new ArrayBlockingQueue<>(this.maximumInFlight * 2);
         AtomicInteger threadNumber = new AtomicInteger();
         ThreadFactory threadFactory = task -> {
@@ -82,7 +85,7 @@ public final class TerrainStreamer implements AutoCloseable {
                 threadCount,
                 0L,
                 TimeUnit.MILLISECONDS,
-                new ArrayBlockingQueue<>(threadCount),
+                new ArrayBlockingQueue<>(this.maximumInFlight - threadCount),
                 threadFactory,
                 new ThreadPoolExecutor.AbortPolicy());
     }

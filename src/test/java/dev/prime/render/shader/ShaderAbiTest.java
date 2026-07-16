@@ -44,7 +44,7 @@ final class ShaderAbiTest {
         assertEquals(10.0F, ShaderAbi.ATMOSPHERE_SPACE_SUN_INTENSITY);
         assertEquals(0.00471F, ShaderAbi.ATMOSPHERE_SUN_ANGULAR_RADIUS_RADIANS);
         assertEquals(-64.0F, ShaderAbi.ATMOSPHERE_WORLD_SEA_LEVEL_Y);
-        assertEquals(0.004F, ShaderAbi.ATMOSPHERE_WORLD_UNIT_SCALE_KM);
+        assertEquals(0.001F, ShaderAbi.ATMOSPHERE_WORLD_UNIT_SCALE_KM);
         assertEquals(64.0F, ShaderAbi.ATMOSPHERE_AERIAL_MAX_DISTANCE_KM);
     }
 

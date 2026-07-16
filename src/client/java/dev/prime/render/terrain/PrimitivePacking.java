@@ -71,6 +71,48 @@ public final class PrimitivePacking {
     }
 
     /**
+     * Packs the true triangle normal, falling back to the baked cardinal direction only for a
+     * degenerate primitive.
+     *
+     * <p>Minecraft's {@code BakedQuad.direction()} is restricted to the six block directions.
+     * Treating it as a geometric normal snaps rotated models such as crossed grass and flowers to
+     * an axis. Besides incorrect shading, that makes ray-cone incidence select excessively coarse
+     * alpha mips and can turn covered cutout texels into light leaks.
+     */
+    public static int packTriangleNormal(
+            float edgeOneX,
+            float edgeOneY,
+            float edgeOneZ,
+            float edgeTwoX,
+            float edgeTwoY,
+            float edgeTwoZ,
+            float fallbackX,
+            float fallbackY,
+            float fallbackZ) {
+        float normalX = edgeOneY * edgeTwoZ - edgeOneZ * edgeTwoY;
+        float normalY = edgeOneZ * edgeTwoX - edgeOneX * edgeTwoZ;
+        float normalZ = edgeOneX * edgeTwoY - edgeOneY * edgeTwoX;
+        float lengthSquared = normalX * normalX + normalY * normalY + normalZ * normalZ;
+        if (!(lengthSquared > 1.0e-20F) || !Float.isFinite(lengthSquared)) {
+            normalX = fallbackX;
+            normalY = fallbackY;
+            normalZ = fallbackZ;
+            lengthSquared = normalX * normalX + normalY * normalY + normalZ * normalZ;
+        } else if (normalX * fallbackX + normalY * fallbackY + normalZ * fallbackZ < 0.0F) {
+            // Vertex winding is normally authoritative, but resource-provided baked quads may
+            // disagree. Preserve the model's outward hemisphere without snapping its direction.
+            normalX = -normalX;
+            normalY = -normalY;
+            normalZ = -normalZ;
+        }
+        float inverseLength = 1.0F / (float) Math.sqrt(Math.max(lengthSquared, 1.0e-20F));
+        return packOctahedralNormal(
+                normalX * inverseLength,
+                normalY * inverseLength,
+                normalZ * inverseLength);
+    }
+
+    /**
      * Packs the largest normalized-atlas UV change per world-space unit as one float.
      *
      * <p>This is the largest singular value of the triangle's world-to-UV differential. The hit

@@ -192,9 +192,6 @@ public final class TerrainMesher {
         float edge2X = thirdX - firstX;
         float edge2Y = thirdY - firstY;
         float edge2Z = thirdZ - firstZ;
-        float normalX = quad.normalX;
-        float normalY = quad.normalY;
-        float normalZ = quad.normalZ;
         int packedUvDensity = PrimitivePacking.packUvDensity(
                 edge1X,
                 edge1Y,
@@ -206,13 +203,16 @@ public final class TerrainMesher {
                 uv1V - uv0V,
                 uv2U - uv0U,
                 uv2V - uv0V);
-        float inverseLength = 1.0F / Math.max(
-                1.0e-20F,
-                (float) Math.sqrt(normalX * normalX + normalY * normalY + normalZ * normalZ));
-        destination.primitives.add(PrimitivePacking.packOctahedralNormal(
-                normalX * inverseLength,
-                normalY * inverseLength,
-                normalZ * inverseLength));
+        destination.primitives.add(PrimitivePacking.packTriangleNormal(
+                edge1X,
+                edge1Y,
+                edge1Z,
+                edge2X,
+                edge2Y,
+                edge2Z,
+                quad.normalX,
+                quad.normalY,
+                quad.normalZ));
         destination.primitives.add(PrimitivePacking.packFlags(
                 cutout, animated, transmissive, thinWalled, water, foliage));
         destination.primitives.add(lights.addTriangle(

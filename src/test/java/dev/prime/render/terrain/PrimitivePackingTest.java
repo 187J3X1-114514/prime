@@ -64,6 +64,27 @@ final class PrimitivePackingTest {
     }
 
     @Test
+    void triangleNormalPreservesRotatedCutoutGeometryInsteadOfCardinalFallback() {
+        int packed = PrimitivePacking.packTriangleNormal(
+                1.0F, 0.0F, 1.0F,
+                0.0F, 1.0F, 0.0F,
+                0.0F, 0.0F, 1.0F);
+        assertPackedNormalDirection(packed, -1.0F, 0.0F, 1.0F);
+
+        int reversedWinding = PrimitivePacking.packTriangleNormal(
+                0.0F, 1.0F, 0.0F,
+                1.0F, 0.0F, 1.0F,
+                0.0F, 0.0F, 1.0F);
+        assertPackedNormalDirection(reversedWinding, -1.0F, 0.0F, 1.0F);
+
+        int degenerate = PrimitivePacking.packTriangleNormal(
+                1.0F, 0.0F, 0.0F,
+                2.0F, 0.0F, 0.0F,
+                0.0F, -1.0F, 0.0F);
+        assertPackedNormalDirection(degenerate, 0.0F, -1.0F, 0.0F);
+    }
+
+    @Test
     void uvDensityUsesTheLargestWorldToUvSingularValue() {
         int packed = PrimitivePacking.packUvDensity(
                 1.0F, 0.0F, 0.0F,
@@ -95,6 +116,14 @@ final class PrimitivePackingTest {
         y *= inverseLength;
         z *= inverseLength;
         int packed = PrimitivePacking.packOctahedralNormal(x, y, z);
+        assertPackedNormalDirection(packed, x, y, z);
+    }
+
+    private static void assertPackedNormalDirection(int packed, float x, float y, float z) {
+        float inverseLength = 1.0F / (float) Math.sqrt(x * x + y * y + z * z);
+        x *= inverseLength;
+        y *= inverseLength;
+        z *= inverseLength;
         float decodedX = Math.max(-1.0F, (short) packed / 32767.0F);
         float decodedY = Math.max(-1.0F, (short) (packed >>> 16) / 32767.0F);
         float decodedZ = 1.0F - Math.abs(decodedX) - Math.abs(decodedY);

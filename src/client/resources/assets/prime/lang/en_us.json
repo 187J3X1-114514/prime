@@ -7,8 +7,19 @@
   "prime.options.fsr.quality.balanced": "Balanced (1.7x)",
   "prime.options.fsr.quality.performance": "Performance (2.0x)",
   "prime.options.fsr.quality.ultra_performance": "Ultra Performance (3.0x)",
+  "prime.options.lighting.sun_ev": "Sun Intensity",
+  "prime.options.lighting.sun_ev.tooltip": "Adjusts direct sunlight, the sky, and atmospheric in-scattering in exact 0.25 EV steps. 0 EV preserves Prime's calibrated default; +1 EV doubles radiance.",
+  "prime.options.lighting.block_light_ev": "Block-light Intensity",
+  "prime.options.lighting.block_light_ev.tooltip": "Adjusts all emissive blocks in exact 0.25 EV steps without changing their light-tree distribution. 0 EV preserves Prime's calibrated default; +1 EV doubles radiance.",
+  "prime.options.nrd.debug_view": "NRD Debug View",
+  "prime.options.nrd.debug_view.tooltip": "Selects a diagnostic view for NRD validation, reprojection, or motion. Leave this off for normal play.",
+  "prime.options.nrd.debug_view.off": "Off",
+  "prime.options.nrd.debug_view.nrd_validation": "NRD Validation",
+  "prime.options.nrd.debug_view.reprojection_error": "Reprojection Error",
+  "prime.options.nrd.debug_view.motion": "Motion Vectors",
   "prime.options.fsr.debug_view": "FSR Debug View",
   "prime.options.fsr.debug_view.tooltip": "Shows FidelityFX's integration overview for motion, protected history, depth, disocclusion, shading change, and reactive detail. Intended for diagnostics, not normal play.",
   "prime.options.fsr.debug_view.off": "Off",
-  "prime.options.fsr.debug_view.overview": "Integration Overview"
+  "prime.options.fsr.debug_view.overview": "Integration Overview",
+  "prime.options.restore_defaults": "Restore Prime Defaults"
 }

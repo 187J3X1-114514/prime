@@ -7,8 +7,19 @@
   "prime.options.fsr.quality.balanced": "均衡（1.7x）",
   "prime.options.fsr.quality.performance": "性能（2.0x）",
   "prime.options.fsr.quality.ultra_performance": "超高性能（3.0x）",
+  "prime.options.lighting.sun_ev": "阳光强度",
+  "prime.options.lighting.sun_ev.tooltip": "以准确的 0.25 EV 档位调节直射阳光、天空和大气内散射。0 EV 保留 Prime 的标定默认值；+1 EV 会使辐射亮度翻倍。",
+  "prime.options.lighting.block_light_ev": "方块灯光强度",
+  "prime.options.lighting.block_light_ev.tooltip": "以准确的 0.25 EV 档位调节全部发光方块，不改变灯光树的采样分布。0 EV 保留 Prime 的标定默认值；+1 EV 会使辐射亮度翻倍。",
+  "prime.options.nrd.debug_view": "NRD 调试视图",
+  "prime.options.nrd.debug_view.tooltip": "选择 NRD 验证、重投影或运动向量诊断视图。正常游玩时应保持关闭。",
+  "prime.options.nrd.debug_view.off": "关闭",
+  "prime.options.nrd.debug_view.nrd_validation": "NRD 验证",
+  "prime.options.nrd.debug_view.reprojection_error": "重投影误差",
+  "prime.options.nrd.debug_view.motion": "运动向量",
   "prime.options.fsr.debug_view": "FSR 调试视图",
   "prime.options.fsr.debug_view.tooltip": "显示 FidelityFX 的接入总览，包括运动、受保护历史、深度、反遮挡、着色变化和 Reactive 细节。仅用于诊断，不适合正常游玩。",
   "prime.options.fsr.debug_view.off": "关闭",
-  "prime.options.fsr.debug_view.overview": "接入总览"
+  "prime.options.fsr.debug_view.overview": "接入总览",
+  "prime.options.restore_defaults": "恢复 Prime 默认设置"
 }

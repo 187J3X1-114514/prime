@@ -1,6 +1,10 @@
 package dev.prime.render.vulkan.nrd;
 
-/** Runtime control for the temporary NRD integration diagnostics. */
+import java.util.Arrays;
+import java.util.Objects;
+import java.util.Optional;
+
+/** Persisted runtime control for NRD integration diagnostics. */
 public final class NrdDiagnostics {
     private static volatile Mode mode = Mode.OFF;
 
@@ -10,33 +14,40 @@ public final class NrdDiagnostics {
         return mode;
     }
 
-    public static Mode cycle() {
-        Mode[] modes = Mode.values();
-        Mode next = modes[(mode.ordinal() + 1) % modes.length];
-        mode = next;
-        return next;
+    public static void setMode(Mode value) {
+        mode = Objects.requireNonNull(value, "value");
     }
 
     public enum Mode {
-        OFF(0, "off"),
-        NRD_VALIDATION(1, "NRD validation"),
-        REPROJECTION_ERROR(2, "reprojection error"),
-        MOTION(3, "motion vectors");
+        OFF("off", 0),
+        NRD_VALIDATION("nrd_validation", 1),
+        REPROJECTION_ERROR("reprojection_error", 2),
+        MOTION("motion", 3);
 
+        private final String id;
         private final int shaderValue;
-        private final String label;
 
-        Mode(int shaderValue, String label) {
+        Mode(String id, int shaderValue) {
+            this.id = id;
             this.shaderValue = shaderValue;
-            this.label = label;
+        }
+
+        public String id() {
+            return this.id;
         }
 
         public int shaderValue() {
             return this.shaderValue;
         }
 
-        public String label() {
-            return this.label;
+        public static Optional<Mode> findById(String id) {
+            return Arrays.stream(values())
+                    .filter(value -> value.id.equals(id))
+                    .findFirst();
+        }
+
+        public static Mode fromId(String id) {
+            return findById(id).orElse(OFF);
         }
 
         boolean enablesNrdValidation() {

@@ -61,7 +61,12 @@ public enum FsrQualityMode {
     }
 
     public FsrSettings.Jitter jitter(int frameIndex) {
-        return this.jitterSequence[Math.floorMod(frameIndex, this.jitterPhaseCount)];
+        return this.jitterSequence[this.jitterPhase(frameIndex) - 1];
+    }
+
+    /** Returns the one-based Halton phase consumed by both ray-generation passes. */
+    public int jitterPhase(int frameIndex) {
+        return Math.floorMod(frameIndex, this.jitterPhaseCount) + 1;
     }
 
     /**

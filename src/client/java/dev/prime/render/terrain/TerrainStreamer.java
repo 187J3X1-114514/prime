@@ -32,9 +32,9 @@ public final class TerrainStreamer implements AutoCloseable {
     private static final int SECTION_COUNT_BUDGET_MULTIPLIER = 16;
     private static final int MAX_SNAPSHOTS_PER_FRAME = 4 * SECTION_COUNT_BUDGET_MULTIPLIER;
     private static final int MAX_UPLOADS_PER_FRAME = 8 * SECTION_COUNT_BUDGET_MULTIPLIER;
-    // The count budget may grow independently, but one TerrainScene update is still backed by a
-    // single 16 MiB staging batch. Retaining the byte bound avoids a hidden 256 MiB mapped page.
-    private static final long MAX_UPLOAD_BYTES_PER_FRAME = 16L * 1024L * 1024L;
+    // The count budget may grow independently, but one TerrainScene update is still backed by one
+    // staging page. Account for allocation alignment exactly instead of summing payload bytes.
+    private static final long MAX_UPLOAD_BYTES_PER_FRAME = StagingArena.PAGE_SIZE;
     private static final int MAX_UNLOADED_PROBES_PER_FRAME = 32 * SECTION_COUNT_BUDGET_MULTIPLIER;
     private static final int MAX_READY_FOR_UPLOAD = 64 * SECTION_COUNT_BUDGET_MULTIPLIER;
     private static final int MAX_EXTERNAL_DIRTY_SECTIONS = 16_384;
@@ -436,16 +436,16 @@ public final class TerrainStreamer implements AutoCloseable {
                 this.readyForUpload.removeFirst();
                 continue;
             }
-            long nextBytes = next.mesh().byteSize();
-            if (!uploads.isEmpty() && uploadBytes + nextBytes > MAX_UPLOAD_BYTES_PER_FRAME) {
+            long nextEndOffset = stagingEndOffset(uploadBytes, next.mesh());
+            if (!uploads.isEmpty() && nextEndOffset > MAX_UPLOAD_BYTES_PER_FRAME) {
                 break;
             }
-            if (nextBytes > MAX_UPLOAD_BYTES_PER_FRAME) {
+            if (nextEndOffset > MAX_UPLOAD_BYTES_PER_FRAME) {
                 throw new IllegalStateException(
                         "Section " + next.key() + " exceeds Prime's 16 MiB per-section upload limit");
             }
             this.readyForUpload.removeFirst();
-            uploadBytes += next.mesh().byteSize();
+            uploadBytes = nextEndOffset;
             uploads.add(new SectionUpload(
                     next.key(), next.sectionX(), next.sectionY(), next.sectionZ(), next.mesh()));
         }
@@ -479,6 +479,29 @@ public final class TerrainStreamer implements AutoCloseable {
                 this.empty.remove(upload.key());
             }
         }
+    }
+
+    static long stagingEndOffset(long cursor, CpuSectionMesh mesh) {
+        if (mesh.isEmpty()) {
+            return cursor;
+        }
+        return stagingEndOffset(
+                cursor,
+                (long) mesh.positions().length * Float.BYTES,
+                (long) mesh.primitiveRecords().length * Integer.BYTES,
+                mesh.lights().byteSize());
+    }
+
+    static long stagingEndOffset(
+            long cursor,
+            long positionBytes,
+            long primitiveBytes,
+            long lightBytes) {
+        long endOffset = StagingArena.requiredEndOffset(cursor, positionBytes, Float.BYTES);
+        endOffset = StagingArena.requiredEndOffset(endOffset, primitiveBytes, Integer.BYTES);
+        return lightBytes == 0L
+                ? endOffset
+                : StagingArena.requiredEndOffset(endOffset, lightBytes, 16L);
     }
 
     private void clearWorld(double cameraX, double cameraY, double cameraZ) {

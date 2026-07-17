@@ -122,6 +122,16 @@ abstract class GenerateShaderAbi extends DefaultTask {
 				|| nrdContract.signalSpace != 'demodulated-linear-rec2020-d65') {
 			throw new GradleException('Prime NRD signal and native-library contracts changed without a coordinated migration')
 		}
+		if (!schema.pathControl.cameraInWaterMask.toString().equalsIgnoreCase('0x80000000')
+				|| !schema.pathControl.jitterPhaseMask.toString().equalsIgnoreCase('0x7fff')
+				|| schema.pathControl.sunEvQuarterShift != 0
+				|| schema.pathControl.blockLightEvQuarterShift != 8
+				|| !schema.pathControl.evQuarterMask.toString().equalsIgnoreCase('0xff')
+				|| schema.pathControl.evQuarterBias != 128
+				|| schema.pathControl.russianRouletteStart != 2) {
+			throw new GradleException(
+					'Prime path controls must preserve the camera, quarter-EV, jitter, and second-bounce roulette ABI')
+		}
 		def typeLayout = [
 			float: [size: 4, alignment: 4],
 			uint: [size: 4, alignment: 4],
@@ -254,6 +264,11 @@ public final class ShaderAbi {
     public static final int DESCRIPTOR_TEMPORAL_CAMERA = ${schema.descriptors.temporalCamera};
     public static final int PATH_CAMERA_IN_WATER_MASK = ${schema.pathControl.cameraInWaterMask};
     public static final int PATH_JITTER_PHASE_MASK = ${schema.pathControl.jitterPhaseMask};
+    public static final int PATH_SUN_EV_QUARTER_SHIFT = ${schema.pathControl.sunEvQuarterShift};
+    public static final int PATH_BLOCK_LIGHT_EV_QUARTER_SHIFT = ${schema.pathControl.blockLightEvQuarterShift};
+    public static final int PATH_EV_QUARTER_MASK = ${schema.pathControl.evQuarterMask};
+    public static final int PATH_EV_QUARTER_BIAS = ${schema.pathControl.evQuarterBias};
+    public static final int RUSSIAN_ROULETTE_START = ${schema.pathControl.russianRouletteStart};
     public static final float CUTOUT_ALPHA_THRESHOLD = ${schema.cutoutAlphaThreshold}f;
     public static final String WORKING_COLOR_SPACE = "${colorContract.workingSpace}";
     public static final String TEXTURE_COLOR_ENCODING = "${colorContract.textureEncoding}";
@@ -310,6 +325,11 @@ ${javaOffsets}
 #define PRIME_DESCRIPTOR_TRANSMISSION_GGX_ENERGY ${schema.descriptors.transmissionGgxEnergy}
 #define PRIME_PATH_CAMERA_IN_WATER_MASK ${schema.pathControl.cameraInWaterMask}u
 #define PRIME_PATH_JITTER_PHASE_MASK ${schema.pathControl.jitterPhaseMask}u
+#define PRIME_PATH_SUN_EV_QUARTER_SHIFT ${schema.pathControl.sunEvQuarterShift}u
+#define PRIME_PATH_BLOCK_LIGHT_EV_QUARTER_SHIFT ${schema.pathControl.blockLightEvQuarterShift}u
+#define PRIME_PATH_EV_QUARTER_MASK ${schema.pathControl.evQuarterMask}u
+#define PRIME_PATH_EV_QUARTER_BIAS ${schema.pathControl.evQuarterBias}
+#define PRIME_RUSSIAN_ROULETTE_START ${schema.pathControl.russianRouletteStart}u
 #define PRIME_CUTOUT_ALPHA_THRESHOLD ${schema.cutoutAlphaThreshold}
 struct PrimitiveRecord {
 ${glslStructFields(primitive)}

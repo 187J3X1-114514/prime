@@ -77,11 +77,12 @@ public final class StagingArena implements AutoCloseable {
         }
 
         private Slice allocate(long size, long alignment) {
-            long offset = VulkanContext.alignUp(this.cursor, alignment);
-            if (offset + size > PAGE_SIZE) {
+            long endOffset = requiredEndOffset(this.cursor, size, alignment);
+            if (endOffset > PAGE_SIZE) {
                 throw new IllegalStateException("Prime staging batch exceeded 16 MiB upload budget");
             }
-            this.cursor = offset + size;
+            long offset = endOffset - size;
+            this.cursor = endOffset;
             return new Slice(this.page.buffer.handle(), offset, size);
         }
 
@@ -106,6 +107,17 @@ public final class StagingArena implements AutoCloseable {
     }
 
     public record Slice(long buffer, long offset, long size) {
+    }
+
+    /**
+     * Computes the exact cursor after one allocation, including the alignment consumed before it.
+     * Upload scheduling uses this same function so its byte budget cannot drift from the arena.
+     */
+    public static long requiredEndOffset(long cursor, long size, long alignment) {
+        if (cursor < 0L || size < 0L) {
+            throw new IllegalArgumentException("Staging offsets and sizes must not be negative");
+        }
+        return Math.addExact(VulkanContext.alignUp(cursor, alignment), size);
     }
 
     private static final class Page {

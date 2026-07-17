@@ -69,9 +69,11 @@ $env:Path = "$env:JAVA_HOME\bin;$env:VULKAN_SDK\Bin;$env:Path"
 
 不要使用 Gradle 的 `--args` 覆盖后端；Loom 会将它与开发配置已有的 Vulkan 参数合并，无法得到可靠的回退测试。
 
-### NRD 运动诊断
+### 视频设置与诊断
 
-进入世界后按 `F9` 会依次切换以下画面，聊天栏会显示当前模式；再次循环到 `off` 即恢复正常合成：
+原版“视频设置”的 Prime 区域集中管理 FSR 质量、阳光强度、方块灯光强度以及 NRD/FSR 调试视图，并提供一个“恢复 Prime 默认设置”按钮。FSR 质量是 Native AA、Quality、Balanced、Performance、Ultra Performance 五档离散滑条；两项灯光强度是相对默认标定的 EV 偏移，每档 `0.25 EV`，按 `2^EV` 精确换算为线性辐射亮度。所有选择都会保存到 `config/prime.properties`，不占用游戏快捷键。
+
+NRD 调试视图包含：
 
 1. `NRD validation`：NRD 自带的 4×4 验证视口。视口从左上角的 0 开始编号，重点观察标号 3 的运动向量误差、标号 4 的世界网格/相机抖动，以及标号 8/11 的漫反射/镜面历史长度。
 2. `reprojection error`：用 raygen 保存的实际主命中点独立复投影，并与提交给 NRD 的运动向量比较。黑色表示吻合；红/青表示正/负 X 误差，绿/品红表示正/负 Y 误差，白色表示深度误差。满色约等于 4 像素或 4 个世界单位的偏差。

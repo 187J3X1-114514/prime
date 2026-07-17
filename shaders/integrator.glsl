@@ -394,7 +394,7 @@ PrimeContinuationResult primeIntegrateContinuation(
     result.hasGuide = 0u;
     result.stochasticBeforeGuide = 0u;
     uint maximumBounces = min(primePush.path.z & 0xffffu, 256u);
-    const uint rouletteStart = 5u;
+    const uint rouletteStart = PRIME_RUSSIAN_ROULETTE_START;
     uint guideBounce = 0u;
     bool diffusePath = false;
     for (; path.bounce < maximumBounces; ++path.bounce) {
@@ -640,12 +640,12 @@ PrimeIntegrationResult primeIntegrate(PathState path, IntegratorRecord integrato
             ? primeCameraWaterVolumeStack()
             : primeEmptyVolumeStack();
     // path.z packs three independently generated Java contracts without growing Vulkan's
-    // guaranteed 128-byte push range: low 16 bits are the bounce cap, bits 16..30 the FSR jitter
-    // period, and bit 31 says that the camera origin already lies inside the water volume.
+    // guaranteed 128-byte push range: low 16 bits are the bounce cap, bits 16..30 the exact
+    // one-based FSR jitter phase, and bit 31 says that the camera lies inside the water volume.
     uint maximumBounces = min(primePush.path.z & 0xffffu, 256u);
-    // Push path.w is reserved for FSR's camera-jitter frame index. Russian roulette remains an
-    // estimator contract and is deliberately fixed here instead of sharing temporal state.
-    uint rouletteStart = 5u;
+    // Roulette is an estimator contract rather than a temporal setting. The generated ABI keeps
+    // both integration paths on the same requested second-bounce start without a hidden literal.
+    const uint rouletteStart = PRIME_RUSSIAN_ROULETTE_START;
     for (path.bounce = 0u; path.bounce < maximumBounces; ++path.bounce) {
 #if defined(PRIME_OPAQUE_PRIMARY_PASS)
         // SBT records 2/3 differ only at the camera vertex: transparent intersections are skipped

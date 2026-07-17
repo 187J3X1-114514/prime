@@ -1,11 +1,14 @@
 package dev.prime.config;
 
 import dev.prime.PrimeClient;
+import dev.prime.render.LightingSettings;
 import dev.prime.render.fsr.FsrQualityMode;
 import dev.prime.render.fsr.FsrDebugView;
 import dev.prime.render.fsr.FsrSettings;
+import dev.prime.render.vulkan.nrd.NrdDiagnostics;
 import java.io.IOException;
 import java.io.Reader;
+import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Files;
@@ -17,7 +20,10 @@ import net.fabricmc.loader.api.FabricLoader;
 /** Small, version-tolerant owner for Prime's user-facing settings. */
 public final class PrimeConfig {
     private static final String QUALITY_KEY = "fsr.quality";
-    private static final String DEBUG_VIEW_KEY = "fsr.debug_view";
+    private static final String FSR_DEBUG_VIEW_KEY = "fsr.debug_view";
+    private static final String NRD_DEBUG_VIEW_KEY = "nrd.debug_view";
+    private static final String SUN_EV_KEY = "lighting.sun_ev";
+    private static final String BLOCK_LIGHT_EV_KEY = "lighting.block_light_ev";
     private static boolean dirty;
 
     private PrimeConfig() {
@@ -26,7 +32,10 @@ public final class PrimeConfig {
     public static void load() {
         Path path = configPath();
         FsrQualityMode mode = FsrSettings.DEFAULT_QUALITY_MODE;
-        FsrDebugView debugView = FsrDebugView.OFF;
+        FsrDebugView fsrDebugView = FsrDebugView.OFF;
+        NrdDiagnostics.Mode nrdDebugView = NrdDiagnostics.Mode.OFF;
+        int sunQuarterSteps = LightingSettings.DEFAULT_SUN_QUARTER_STEPS;
+        int blockLightQuarterSteps = LightingSettings.DEFAULT_BLOCK_LIGHT_QUARTER_STEPS;
         boolean rewriteNeeded = false;
         if (Files.isRegularFile(path)) {
             try (Reader reader = Files.newBufferedReader(path, StandardCharsets.UTF_8)) {
@@ -47,16 +56,57 @@ public final class PrimeConfig {
                 } else {
                     rewriteNeeded = true;
                 }
-                String debugId = properties.getProperty(DEBUG_VIEW_KEY);
-                if (debugId != null) {
-                    FsrDebugView parsedDebug = FsrDebugView.findById(debugId).orElse(null);
+                String fsrDebugId = properties.getProperty(FSR_DEBUG_VIEW_KEY);
+                if (fsrDebugId != null) {
+                    FsrDebugView parsedDebug = FsrDebugView.findById(fsrDebugId).orElse(null);
                     if (parsedDebug == null) {
                         PrimeClient.LOGGER.warn(
                                 "Unknown Prime FSR debug view '{}'; disabling it",
-                                debugId);
+                                fsrDebugId);
                         rewriteNeeded = true;
                     } else {
-                        debugView = parsedDebug;
+                        fsrDebugView = parsedDebug;
+                    }
+                } else {
+                    rewriteNeeded = true;
+                }
+                String nrdDebugId = properties.getProperty(NRD_DEBUG_VIEW_KEY);
+                if (nrdDebugId != null) {
+                    NrdDiagnostics.Mode parsedDebug =
+                            NrdDiagnostics.Mode.findById(nrdDebugId).orElse(null);
+                    if (parsedDebug == null) {
+                        PrimeClient.LOGGER.warn(
+                                "Unknown Prime NRD debug view '{}'; disabling it",
+                                nrdDebugId);
+                        rewriteNeeded = true;
+                    } else {
+                        nrdDebugView = parsedDebug;
+                    }
+                } else {
+                    rewriteNeeded = true;
+                }
+                String sunEv = properties.getProperty(SUN_EV_KEY);
+                if (sunEv != null) {
+                    try {
+                        sunQuarterSteps = parseEvQuarterSteps(sunEv);
+                    } catch (IllegalArgumentException exception) {
+                        PrimeClient.LOGGER.warn(
+                                "Invalid Prime sun exposure '{}'; using 0 EV",
+                                sunEv);
+                        rewriteNeeded = true;
+                    }
+                } else {
+                    rewriteNeeded = true;
+                }
+                String blockLightEv = properties.getProperty(BLOCK_LIGHT_EV_KEY);
+                if (blockLightEv != null) {
+                    try {
+                        blockLightQuarterSteps = parseEvQuarterSteps(blockLightEv);
+                    } catch (IllegalArgumentException exception) {
+                        PrimeClient.LOGGER.warn(
+                                "Invalid Prime block-light exposure '{}'; using 0 EV",
+                                blockLightEv);
+                        rewriteNeeded = true;
                     }
                 } else {
                     rewriteNeeded = true;
@@ -70,12 +120,17 @@ public final class PrimeConfig {
             }
         }
         FsrSettings.setQualityMode(mode);
-        FsrSettings.setDebugView(debugView);
+        FsrSettings.setDebugView(fsrDebugView);
+        NrdDiagnostics.setMode(nrdDebugView);
+        LightingSettings.setSunQuarterSteps(sunQuarterSteps);
+        LightingSettings.setBlockLightQuarterSteps(blockLightQuarterSteps);
         dirty = rewriteNeeded;
         PrimeClient.LOGGER.info(
-                "Prime FSR quality mode: {} ({}x)",
+                "Prime settings: FSR {} ({}x), sun {} EV, block lights {} EV",
                 mode.id(),
-                mode.upscaleRatio());
+                mode.upscaleRatio(),
+                formatEv(sunQuarterSteps),
+                formatEv(blockLightQuarterSteps));
     }
 
     public static void setFsrQualityMode(FsrQualityMode mode) {
@@ -92,6 +147,35 @@ public final class PrimeConfig {
         }
     }
 
+    public static void setNrdDebugView(NrdDiagnostics.Mode mode) {
+        if (mode != NrdDiagnostics.mode()) {
+            NrdDiagnostics.setMode(mode);
+            dirty = true;
+        }
+    }
+
+    public static void setSunQuarterSteps(int quarterSteps) {
+        if (quarterSteps != LightingSettings.sunQuarterSteps()) {
+            LightingSettings.setSunQuarterSteps(quarterSteps);
+            dirty = true;
+        }
+    }
+
+    public static void setBlockLightQuarterSteps(int quarterSteps) {
+        if (quarterSteps != LightingSettings.blockLightQuarterSteps()) {
+            LightingSettings.setBlockLightQuarterSteps(quarterSteps);
+            dirty = true;
+        }
+    }
+
+    public static void restoreDefaults() {
+        setFsrQualityMode(FsrSettings.DEFAULT_QUALITY_MODE);
+        setFsrDebugView(FsrDebugView.OFF);
+        setNrdDebugView(NrdDiagnostics.Mode.OFF);
+        setSunQuarterSteps(LightingSettings.DEFAULT_SUN_QUARTER_STEPS);
+        setBlockLightQuarterSteps(LightingSettings.DEFAULT_BLOCK_LIGHT_QUARTER_STEPS);
+    }
+
     public static void save() {
         Path path = configPath();
         if (!dirty && Files.isRegularFile(path)) {
@@ -102,7 +186,11 @@ public final class PrimeConfig {
         try {
             Files.createDirectories(path.getParent());
             String contents = QUALITY_KEY + "=" + FsrSettings.qualityMode().id() + "\n"
-                    + DEBUG_VIEW_KEY + "=" + FsrSettings.debugView().id() + "\n";
+                    + FSR_DEBUG_VIEW_KEY + "=" + FsrSettings.debugView().id() + "\n"
+                    + NRD_DEBUG_VIEW_KEY + "=" + NrdDiagnostics.mode().id() + "\n"
+                    + SUN_EV_KEY + "=" + formatEv(LightingSettings.sunQuarterSteps()) + "\n"
+                    + BLOCK_LIGHT_EV_KEY + "="
+                    + formatEv(LightingSettings.blockLightQuarterSteps()) + "\n";
             Files.writeString(
                     temporary,
                     contents,
@@ -125,6 +213,25 @@ public final class PrimeConfig {
                 exception.addSuppressed(cleanupException);
             }
         }
+    }
+
+    static int parseEvQuarterSteps(String value) {
+        try {
+            int quarterSteps = new BigDecimal(value)
+                    .multiply(BigDecimal.valueOf(LightingSettings.QUARTER_STEPS_PER_EV))
+                    .intValueExact();
+            LightingSettings.linearMultiplier(quarterSteps);
+            return quarterSteps;
+        } catch (ArithmeticException | NumberFormatException exception) {
+            throw new IllegalArgumentException("EV must be an exact 0.25-EV step", exception);
+        }
+    }
+
+    static String formatEv(int quarterSteps) {
+        LightingSettings.linearMultiplier(quarterSteps);
+        return BigDecimal.valueOf(quarterSteps)
+                .divide(BigDecimal.valueOf(LightingSettings.QUARTER_STEPS_PER_EV))
+                .toPlainString();
     }
 
     private static Path configPath() {

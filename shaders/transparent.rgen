@@ -515,7 +515,7 @@ void main() {
     IntegratorRecord integrator;
     integrator.sunDirectionIntensity = vec4(
             primePush.sunDirection,
-            ATM_SPACE_SUN_INTENSITY);
+            ATM_SPACE_SUN_INTENSITY * primeSunRadianceMultiplier());
     integrator.environmentRadiance = vec4(0.0);
     PrimeRcVolumeStack volumeStack =
             (primePush.path.z & PRIME_PATH_CAMERA_IN_WATER_MASK) != 0u

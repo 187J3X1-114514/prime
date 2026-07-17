@@ -52,6 +52,7 @@ public final class VulkanRenderer implements AutoCloseable {
     private SunDirection sunDirection;
     private boolean cameraMediumKnown;
     private boolean cameraInWater;
+    private long submittedLightingRevision = Long.MIN_VALUE;
     private boolean shaderReloadRequested;
     private boolean closed;
 
@@ -179,6 +180,14 @@ public final class VulkanRenderer implements AutoCloseable {
         NrdDenoiser reflectionDenoiser = images.reflectionDenoiser;
         NrdDenoiser transmissionDenoiser = images.transmissionDenoiser;
         Fsr3Upscaler upscaler = images.upscaler;
+        LightingSettings.Snapshot lighting = LightingSettings.snapshot();
+        boolean lightingChanged = this.submittedLightingRevision != Long.MIN_VALUE
+                && lighting.revision() != this.submittedLightingRevision;
+        if (lightingChanged) {
+            // A radiance-scale change invalidates temporal estimators, but not geometry,
+            // atmosphere transmittance, or light-tree probabilities.
+            upscaler.requestReset();
+        }
         boolean frameCameraInWater = this.isCameraInWater(minecraft, frameCamera);
         if (this.cameraMediumKnown && this.cameraInWater != frameCameraInWater) {
             // Crossing the water surface changes transport for essentially every visible path.
@@ -194,7 +203,7 @@ public final class VulkanRenderer implements AutoCloseable {
                 atlasViewHandle,
                 atlasSamplerHandle,
                 frameSunDirection,
-                resized);
+                resized || lightingChanged);
         Fsr3Upscaler.FrameToken fsrFrame = upscaler.beginFrame(
                 frameCamera,
                 scene.resetRevision(),
@@ -233,7 +242,8 @@ public final class VulkanRenderer implements AutoCloseable {
                     frameSunDirection,
                     images.qualityMode,
                     fsrFrame.frameIndex(),
-                    frameCameraInWater);
+                    frameCameraInWater,
+                    lighting);
             this.pipeline.trace(commandBuffer, pushConstants, renderWidth, renderHeight);
             nrdFrame = denoiser.record(
                     commandBuffer,
@@ -244,6 +254,7 @@ public final class VulkanRenderer implements AutoCloseable {
                     frameSunDirection,
                     cameraJitter.x(),
                     cameraJitter.y(),
+                    lighting.sunMultiplier(),
                     fsrFrame.reset());
             this.prepareTransparentComposite(commandBuffer, sceneColor, denoiser);
             this.pipeline.traceTransparent(
@@ -275,7 +286,11 @@ public final class VulkanRenderer implements AutoCloseable {
                     cameraJitter.x(),
                     cameraJitter.y(),
                     fsrFrame.reset());
-            images.transparentComposite.record(commandBuffer, renderWidth, renderHeight);
+            images.transparentComposite.record(
+                    commandBuffer,
+                    renderWidth,
+                    renderHeight,
+                    lighting.sunMultiplier());
             this.finishTransparentComposite(commandBuffer, sceneColor, denoiser);
             this.finishAtlasRead(commandBuffer, atlasView.texture());
             upscaler.record(commandBuffer, fsrFrame);
@@ -309,6 +324,7 @@ public final class VulkanRenderer implements AutoCloseable {
         transmissionDenoiser.submitted(transmissionNrdFrame);
         upscaler.submitted(fsrFrame);
         this.previousSubmittedCamera = frameCamera;
+        this.submittedLightingRevision = lighting.revision();
         this.accumulationState.submitted(
                 frameCamera,
                 atlasViewHandle,
@@ -870,7 +886,8 @@ public final class VulkanRenderer implements AutoCloseable {
             SunDirection sunDirection,
             FsrQualityMode qualityMode,
             int fsrFrameIndex,
-            boolean cameraInWater) {
+            boolean cameraInWater,
+            LightingSettings.Snapshot lighting) {
         ByteBuffer buffer = stack.calloc(ShaderAbi.PUSH_CONSTANT_SIZE).order(ByteOrder.nativeOrder());
         camera.inverseViewProjection().get(
                 ShaderAbi.PUSH_INVERSE_VIEW_PROJECTION_OFFSET, buffer);
@@ -899,9 +916,13 @@ public final class VulkanRenderer implements AutoCloseable {
                 pathOffset + 2 * Integer.BYTES,
                 IntegratorSettings.packPathControl(
                         IntegratorSettings.MAXIMUM_BOUNCES,
-                        qualityMode.jitterPhaseCount(),
+                        qualityMode.jitterPhase(fsrFrameIndex),
                         cameraInWater));
-        buffer.putInt(pathOffset + 3 * Integer.BYTES, fsrFrameIndex);
+        buffer.putInt(
+                pathOffset + 3 * Integer.BYTES,
+                IntegratorSettings.packLightingControl(
+                        lighting.sunQuarterSteps(),
+                        lighting.blockLightQuarterSteps()));
         return buffer.position(0).limit(ShaderAbi.PUSH_CONSTANT_SIZE);
     }
 

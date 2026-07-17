@@ -57,6 +57,9 @@ final class FsrSettingsTest {
         assertEquals(
                 mode.jitter(0),
                 mode.jitter(mode.jitterPhaseCount()));
+        assertEquals(1, mode.jitterPhase(0));
+        assertEquals(2, mode.jitterPhase(1));
+        assertEquals(1, mode.jitterPhase(mode.jitterPhaseCount()));
     }
 
     @Test

@@ -187,7 +187,12 @@
   },
   "pathControl": {
     "cameraInWaterMask": "0x80000000",
-    "jitterPhaseMask": "0x7fff"
+    "jitterPhaseMask": "0x7fff",
+    "sunEvQuarterShift": 0,
+    "blockLightEvQuarterShift": 8,
+    "evQuarterMask": "0xff",
+    "evQuarterBias": 128,
+    "russianRouletteStart": 2
   },
   "nrdContract": {
     "version": "4.17.4",

@@ -22,6 +22,7 @@ layout(set = 0, binding = 12, rgba16f) uniform readonly image3D primeTransparent
 
 layout(push_constant) uniform PrimeTransparentCompositePushConstants {
     uvec2 outputExtent;
+    float sunRadianceMultiplier;
 } primeTransparentCompositePush;
 
 ATM_DECLARE_SAMPLE_3D(
@@ -87,7 +88,8 @@ void primeTransparentCompositeApplyAerial(
         transmittance = vec3(1.0);
     }
     radiance = radiance * mix(vec3(1.0), transmittance, nearWeight)
-            + inscatter * nearWeight;
+            + inscatter * nearWeight
+                    * primeTransparentCompositePush.sunRadianceMultiplier;
 }
 
 void main() {

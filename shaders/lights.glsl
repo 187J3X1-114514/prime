@@ -38,7 +38,11 @@ float primePowerHeuristic(float firstPdf, float secondPdf) {
 }
 
 vec3 primeEnvironmentRadiance(IntegratorRecord integrator, vec3 direction) {
-    return primeAtmosphereSky(direction, integrator.sunDirectionIntensity.xyz);
+    // Atmosphere LUT construction is linear in its extraterrestrial source. Reusing the calibrated
+    // base LUT and applying the same scale as direct sun is exact for this single-source model.
+    float sunScale = max(integrator.sunDirectionIntensity.w, 0.0)
+            / max(ATM_SPACE_SUN_INTENSITY, 1.0e-30);
+    return primeAtmosphereSky(direction, integrator.sunDirectionIntensity.xyz) * sunScale;
 }
 
 float primeSunCosAngularRadius() {

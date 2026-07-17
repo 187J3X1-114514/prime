@@ -57,7 +57,7 @@ public final class NrdDenoiser implements Destroyable {
     private static final int MOTION_BINDING_COUNT = 10;
     private static final int MOTION_PUSH_SIZE = 196;
     private static final int COMPOSITE_BINDING_COUNT = 13;
-    private static final int COMPOSITE_PUSH_SIZE = 12;
+    private static final int COMPOSITE_PUSH_SIZE = 16;
     // world.rgen writes 65504 for a sky view-Z. Keep the valid range below that sentinel while
     // remaining far beyond Minecraft's usable terrain and Prime's 16,000-block aerial volume.
     private static final float DENOISING_RANGE = 60_000.0f;
@@ -365,6 +365,7 @@ public final class NrdDenoiser implements Destroyable {
             SunDirection sunDirection,
             float cameraJitterX,
             float cameraJitterY,
+            float sunRadianceMultiplier,
             boolean forceRestart) {
         if (!this.ownsOpaqueComposite) {
             throw new IllegalStateException("Transparent NRD history requires recordBranch");
@@ -378,6 +379,7 @@ public final class NrdDenoiser implements Destroyable {
                 sunDirection,
                 cameraJitterX,
                 cameraJitterY,
+                sunRadianceMultiplier,
                 forceRestart,
                 true);
     }
@@ -404,6 +406,7 @@ public final class NrdDenoiser implements Destroyable {
                 sunDirection,
                 cameraJitterX,
                 cameraJitterY,
+                1.0F,
                 forceRestart,
                 false);
     }
@@ -417,6 +420,7 @@ public final class NrdDenoiser implements Destroyable {
             SunDirection sunDirection,
             float cameraJitterX,
             float cameraJitterY,
+            float sunRadianceMultiplier,
             boolean forceRestart,
             boolean compositeOutput) {
         this.requireOpen();
@@ -492,7 +496,11 @@ public final class NrdDenoiser implements Destroyable {
             computeToComputeBarrier(commandBuffer);
             if (compositeOutput) {
                 this.composite.record(
-                        commandBuffer, this.width, this.height, diagnosticMode.shaderValue());
+                        commandBuffer,
+                        this.width,
+                        this.height,
+                        diagnosticMode.shaderValue(),
+                        sunRadianceMultiplier);
             }
             return new FrameToken(
                     this,
@@ -1992,7 +2000,8 @@ public final class NrdDenoiser implements Destroyable {
                 VkCommandBuffer commandBuffer,
                 int width,
                 int height,
-                int diagnosticMode) {
+                int diagnosticMode,
+                float sunRadianceMultiplier) {
             try (MemoryStack stack = MemoryStack.stackPush()) {
                 VK12.vkCmdBindPipeline(
                         commandBuffer, VK12.VK_PIPELINE_BIND_POINT_COMPUTE, this.pipeline);
@@ -2007,6 +2016,7 @@ public final class NrdDenoiser implements Destroyable {
                 push.putInt(0, width);
                 push.putInt(4, height);
                 push.putInt(8, diagnosticMode);
+                push.putFloat(12, sunRadianceMultiplier);
                 VK12.vkCmdPushConstants(
                         commandBuffer,
                         this.pipelineLayout,

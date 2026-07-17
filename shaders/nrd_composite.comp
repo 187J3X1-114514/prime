@@ -26,6 +26,7 @@ layout(set = 0, binding = 12, r8) uniform writeonly image2D primeFsrTransparency
 layout(push_constant) uniform PrimeCompositePushConstants {
     uvec2 outputExtent;
     uint diagnosticMode;
+    float sunRadianceMultiplier;
 } primeCompositePush;
 
 const uint PRIME_DIAGNOSTIC_OFF = 0u;
@@ -75,7 +76,7 @@ void primeCompositeApplyAerial(uvec2 pixel, float primaryDistance, inout vec3 ra
         transmittance = vec3(1.0);
     }
     radiance = radiance * mix(vec3(1.0), transmittance, nearWeight)
-            + inscatter * nearWeight;
+            + inscatter * nearWeight * primeCompositePush.sunRadianceMultiplier;
 }
 
 void main() {

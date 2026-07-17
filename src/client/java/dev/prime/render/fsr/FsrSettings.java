@@ -9,7 +9,7 @@ public final class FsrSettings {
     public static final String UPSCALER_VERSION = "3.1.4";
     public static final boolean DEFAULT_ENABLED = true;
     public static final boolean FRAME_GENERATION_ENABLED = false;
-    public static final FsrQualityMode DEFAULT_QUALITY_MODE = FsrQualityMode.QUALITY;
+    public static final FsrQualityMode DEFAULT_QUALITY_MODE = FsrQualityMode.PERFORMANCE;
     public static final float RCAS_SHARPNESS = 0.2F;
     /** Prime's display transform currently uses a fixed scene-linear exposure multiplier. */
     public static final float EXPOSURE = ShaderAbi.DISPLAY_EXPOSURE;

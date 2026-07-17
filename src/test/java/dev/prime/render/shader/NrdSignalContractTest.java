@@ -63,14 +63,10 @@ final class NrdSignalContractTest {
         assertTrue(transparent.contains("bool splitSmoothInterface"));
         assertTrue(transparent.contains("surface.materialFlags) == 0.0"));
         assertTrue(transparent.contains("if (splitSmoothInterface)"));
-        assertTrue(transparent.contains("primeTransparentFresnelSelector(pixel)"));
-        assertTrue(transparent.contains(
-                "primeSampleMinecraftTransmissionFresnelBranch("));
-        assertTrue(bsdf.contains("result.bsdfSample.weight /= selectionProbability"));
-        assertTrue(bsdf.contains("result.bsdfSample.pdf *= selectionProbability"));
-        assertTrue(transparent.contains(
-                "PrimeTransparentBranchResult selected = primeTraceFirstInterfaceBranch("));
-        assertTrue(!transparent.contains("splitSmoothInterface ? 2u : 1u"));
+        assertTrue(transparent.contains("primeSampleMinecraftTransmissionBranch("));
+        assertTrue(!transparent.contains("primeTransparentFresnelSelector(pixel)"));
+        assertTrue(!bsdf.contains("primeSampleMinecraftTransmissionFresnelBranch("));
+        assertTrue(transparent.contains("splitSmoothInterface ? 2u : 1u"));
         assertTrue(transparent.contains("if (!splitInterface)"));
         assertTrue(transparent.contains("primeTransparentReflectionNoisy"));
         assertTrue(transparent.contains("primeTransparentReflectionSpecular"));
@@ -120,26 +116,21 @@ final class NrdSignalContractTest {
         assertTrue(transparentComposite.contains("primeOpaqueValidation"));
         assertTrue(transparentComposite.contains("primeReflectionValidation"));
         assertTrue(transparentComposite.contains("primeTransmissionValidation"));
-        assertTrue(transparentComposite.contains("primePreviousReflectionHistory"));
-        assertTrue(transparentComposite.contains("primePreviousTransmissionHistory"));
-        assertTrue(transparentComposite.contains("primePreviousCheckerGuide"));
-        assertTrue(transparentComposite.contains("primeResolveCheckerHistory("));
-        assertTrue(transparentComposite.contains("primeResolveCheckerSpatial("));
-        assertTrue(transparentComposite.contains("primeBranchSelectionProbability("));
         assertTrue(transparentComposite.contains(
-                "vec3 radiance = scene.rgb + reflection + transmission"));
+                "radiance += primeResolveTransparentBranch("));
+        assertTrue(!transparentComposite.contains("primeResolveCheckerHistory("));
+        assertTrue(!transparentComposite.contains("primeResolveCheckerSpatial("));
         assertTrue(nativeNrdBridge.contains("settings.diffusePrepassBlurRadius = 12.0f"));
         assertTrue(nativeNrdBridge.contains("settings.specularPrepassBlurRadius = 12.0f"));
-        assertTrue(transparentCompositeJava.contains("BINDING_COUNT = 26"));
-        assertTrue(transparentCompositeJava.contains("PUSH_SIZE = 112"));
-        assertTrue(transparentCompositeJava.contains("VK_FORMAT_R32G32_SFLOAT"));
+        assertTrue(transparentCompositeJava.contains("BINDING_COUNT = 16"));
+        assertTrue(transparentCompositeJava.contains("PUSH_SIZE = 16"));
         assertTrue(transparentCompositeJava.contains("MemoryUtil.memAlloc(bytes.length)"));
         int validationSelection = transparentComposite.indexOf(
                 "if (validationSource != PRIME_VALIDATION_OFF)");
         int completedSceneLoad = transparentComposite.indexOf(
                 "vec4 scene = imageLoad(primeTransparentSceneColor", validationSelection);
         assertTrue(validationSelection >= 0 && completedSceneLoad > validationSelection);
-        assertTrue(transparentComposite.contains("metadata.a < 0.0"));
+        assertTrue(transparentComposite.contains("if (metadata.a < 0.0)"));
         assertTrue(integrator.contains("primary-surface-replacement contract"));
     }
 

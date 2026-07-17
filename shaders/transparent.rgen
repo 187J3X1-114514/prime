@@ -369,10 +369,8 @@ PrimeTransparentBranchResult primeTraceFirstInterfaceBranch(
         PrimeRcVolumeStack volumeStack,
         vec3 prefixThroughput,
         bool splitInterface,
-        float branchSelector,
-        uint pathIndex,
-        out bool reflectionBranch,
-        out float reflectionSelectionProbability) {
+        bool reflectionBranch,
+        uint pathIndex) {
     PathState path = cameraPath;
     path.sampleDimension = pathIndex;
     PrimeSampleBase sampleBase = primeMakeSampleBase(path, 1u);
@@ -381,21 +379,17 @@ PrimeTransparentBranchResult primeTraceFirstInterfaceBranch(
             PRIME_SAMPLE_EFFECT_SCATTER_BSDF,
             PRIME_SAMPLE_DIMENSION_PRIMARY);
     PrimeTransmissiveBsdfSample branch;
-    reflectionBranch = false;
-    reflectionSelectionProbability = 0.0;
     if (splitInterface) {
-        branch = primeSampleMinecraftTransmissionFresnelBranch(
+        branch = primeSampleMinecraftTransmissionBranch(
                 surface.baseColor,
                 primeSurfaceOpacity(surface),
                 surface.geometricNormal,
                 surface.materialFlags,
                 -cameraPath.rayDirection,
                 scatterSample,
-                branchSelector,
-                surface.t,
-                volumeStack,
                 reflectionBranch,
-                reflectionSelectionProbability);
+                surface.t,
+                volumeStack);
     } else {
         // A finite rough lobe is one ordinary BSDF sampling problem. Splitting its reflection and
         // transmission proposals would double the path budget and produce two unrelated noisy
@@ -422,9 +416,9 @@ PrimeTransparentBranchResult primeTraceFirstInterfaceBranch(
     path.rayDirection = bsdf.direction;
     path.throughput = prefixThroughput * bsdf.weight;
     path.previousBsdfPdf = bsdf.pdf;
-    // The selected first-interface branch has no NEE. Delta paths already forbid MIS; a finite
-    // forced branch uses NO_NEE so its first light hit is not down-weighted against a sampling
-    // technique that was never executed. Later vertices return to ordinary MIS.
+    // The first interface is split deterministically and has no NEE. Delta paths already forbid
+    // MIS; a finite forced branch uses NO_NEE so its first light hit is not down-weighted against
+    // a sampling technique that was never executed. Later vertices return to ordinary MIS.
     path.flags = (bsdf.eventFlags & PRIME_BSDF_EVENT_DELTA) != 0u
             ? PRIME_PATH_PREVIOUS_DELTA
             : PRIME_PATH_PREVIOUS_NO_NEE;
@@ -495,38 +489,15 @@ void primeStoreTransparentBranch(
         PrimeTransparentBranchResult result,
         SurfaceInteraction firstInterface,
         PathState cameraPath,
-        bool reflectionBranch,
-        bool sampledBranch,
-        bool checkerMissing,
-        float selectionProbability) {
+        bool reflectionBranch) {
     vec4 noisy = vec4(0.0);
     vec4 noisySpecular = vec4(0.0);
     vec4 position = vec4(0.0);
-    float safeSelectionProbability = clamp(selectionProbability, 0.0, 1.0);
-    vec4 metadata = vec4(
-            primeNrdSanitizeRadiance(result.stableRadiance),
-            sampledBranch
-                    ? -safeSelectionProbability
-                    : (checkerMissing
-                            ? -2.0 - safeSelectionProbability
-                            : -3.0));
+    vec4 metadata = vec4(primeNrdSanitizeRadiance(result.stableRadiance), -1.0);
     vec4 guide = vec4(0.0, 1.0, 0.0, 1.0);
     vec4 interfaceData = vec4(0.0);
     vec4 pathThroughput = vec4(1.0);
-    if (!sampledBranch) {
-        // The untraced branch carries a complete first-interface guide for the dedicated checker
-        // resolver. NRD deliberately treats the negative metadata as invalid; the guide remains
-        // untouched until the post-NRD reconstruction pass consumes it.
-        position = vec4(
-                firstInterface.position - primePush.cameraPosition,
-                uintBitsToFloat(primePackTransparentDirection(-cameraPath.rayDirection)));
-        metadata.rgb = firstInterface.baseColor;
-        guide = vec4(
-                primeSurfaceShadingNormal(firstInterface, -cameraPath.rayDirection),
-                primeMaterialLinearRoughness(
-                        firstInterface.baseColor, firstInterface.materialFlags));
-        pathThroughput.a = float(firstInterface.materialFlags);
-    } else if (result.hasGuide != 0u && result.reprojectionValid == 0u) {
+    if (result.hasGuide != 0u && result.reprojectionValid == 0u) {
         // A bounded chain overflow or a failed Fermat solve is a history-validity failure, not a
         // transport failure. Preserve the unbiased raw sample and bypass NRD for this branch;
         // truncating the chain would create a plausible-looking but physically wrong ghost.
@@ -535,7 +506,7 @@ void primeStoreTransparentBranch(
                         result.diffuseRadiance
                         + result.specularRadiance
                         + result.stableRadiance),
-                -safeSelectionProbability);
+                -1.0);
     } else if (result.hasGuide != 0u) {
         // The complete delta chain has already been reduced to the current and previous virtual
         // surfaces. NRD receives one coherent replacement G-buffer regardless of chain length.
@@ -562,7 +533,7 @@ void primeStoreTransparentBranch(
                 1.0);
         metadata = vec4(
                 clamp(result.guideBaseColor, vec3(0.0), vec3(65504.0)),
-                safeSelectionProbability);
+                1.0);
         guide = vec4(
                 normalize(result.virtualGuideNormal),
                 clamp(result.guideLinearRoughness, 0.0, 1.0));
@@ -653,69 +624,36 @@ void main() {
         prefixThroughput *= exp(-cameraMedium.extinction * max(surface.t, 0.0));
     }
 
-    // A smooth visible interface still has two exact physical lobes, but tracing both doubles the
-    // continuation budget. A Fresnel-guided local low-discrepancy proposal spends most rays on the
-    // energetic branch while retaining bounded 3x3 support for the weaker branch. Any finite
-    // roughness remains one ordinary complete-BSDF sample.
+    // Only an exactly smooth visible interface is worth two deterministic paths. Fresnel energy
+    // is then evaluated into one reflection and one transmission continuation without roulette.
+    // Any finite roughness is sampled as one complete BSDF path, preserving the fixed path budget.
     bool splitSmoothInterface = primeMaterialLinearRoughness(
             surface.baseColor, surface.materialFlags) == 0.0;
     PrimeTransparentBranchResult reflection = primeEmptyTransparentBranchResult();
-    PrimeTransparentBranchResult transmission = primeEmptyTransparentBranchResult();
-    bool reflectionSampled = false;
-    bool transmissionSampled = false;
-    float reflectionSelectionProbability = 0.0;
     if (splitSmoothInterface) {
-        PrimeTransparentBranchResult selected = primeTraceFirstInterfaceBranch(
+        reflection = primeTraceFirstInterfaceBranch(
                 cameraPath,
                 surface,
                 integrator,
                 volumeStack,
                 prefixThroughput,
                 true,
-                primeTransparentFresnelSelector(pixel),
-                1u,
-                reflectionSampled,
-                reflectionSelectionProbability);
-        transmissionSampled = !reflectionSampled;
-        if (reflectionSampled) {
-            reflection = selected;
-        } else {
-            transmission = selected;
-        }
-    } else {
-        transmissionSampled = true;
-        bool ignoredReflectionBranch;
-        float ignoredReflectionProbability;
-        transmission = primeTraceFirstInterfaceBranch(
-                cameraPath,
-                surface,
-                integrator,
-                volumeStack,
-                prefixThroughput,
-                false,
-                0.0,
-                1u,
-                ignoredReflectionBranch,
-                ignoredReflectionProbability);
+                true,
+                1u);
     }
-    primeStoreTransparentBranch(
-            ivec2(pixel),
-            reflection,
-            surface,
+    PrimeTransparentBranchResult transmission = primeTraceFirstInterfaceBranch(
             cameraPath,
-            true,
-            reflectionSampled,
-            splitSmoothInterface && !reflectionSampled,
-            reflectionSelectionProbability);
-    primeStoreTransparentBranch(
-            ivec2(pixel),
-            transmission,
             surface,
-            cameraPath,
+            integrator,
+            volumeStack,
+            prefixThroughput,
+            splitSmoothInterface,
             false,
-            transmissionSampled,
-            splitSmoothInterface && !transmissionSampled,
-            splitSmoothInterface ? 1.0 - reflectionSelectionProbability : 1.0);
+            splitSmoothInterface ? 2u : 1u);
+    primeStoreTransparentBranch(
+            ivec2(pixel), reflection, surface, cameraPath, true);
+    primeStoreTransparentBranch(
+            ivec2(pixel), transmission, surface, cameraPath, false);
     LightEvaluation visibleEmitter = primeEvaluateAreaLight(
             surface, cameraPath.physicalOrigin, cameraPath.rayDirection);
     vec3 visibleRadiance = prefixThroughput * visibleEmitter.radiance;

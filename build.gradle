@@ -133,11 +133,9 @@ abstract class GenerateShaderAbi extends DefaultTask {
 				|| schema.pathControl.blockLightEvQuarterShift != 8
 				|| !schema.pathControl.evQuarterMask.toString().equalsIgnoreCase('0xff')
 				|| schema.pathControl.evQuarterBias != 128
-				|| schema.pathControl.temporalSequenceShift != 16
-				|| !schema.pathControl.temporalSequenceMask.toString().equalsIgnoreCase('0xffff')
 				|| schema.pathControl.russianRouletteStart != 2) {
 			throw new GradleException(
-					'Prime path controls must preserve the camera, quarter-EV, temporal-sequence, jitter, and second-bounce roulette ABI')
+					'Prime path controls must preserve the camera, quarter-EV, jitter, and second-bounce roulette ABI')
 		}
 		def typeLayout = [
 			float: [size: 4, alignment: 4],
@@ -275,8 +273,6 @@ public final class ShaderAbi {
     public static final int PATH_BLOCK_LIGHT_EV_QUARTER_SHIFT = ${schema.pathControl.blockLightEvQuarterShift};
     public static final int PATH_EV_QUARTER_MASK = ${schema.pathControl.evQuarterMask};
     public static final int PATH_EV_QUARTER_BIAS = ${schema.pathControl.evQuarterBias};
-    public static final int PATH_TEMPORAL_SEQUENCE_SHIFT = ${schema.pathControl.temporalSequenceShift};
-    public static final int PATH_TEMPORAL_SEQUENCE_MASK = ${schema.pathControl.temporalSequenceMask};
     public static final int RUSSIAN_ROULETTE_START = ${schema.pathControl.russianRouletteStart};
     public static final float CUTOUT_ALPHA_THRESHOLD = ${schema.cutoutAlphaThreshold}f;
     public static final String WORKING_COLOR_SPACE = "${colorContract.workingSpace}";
@@ -340,8 +336,6 @@ ${javaOffsets}
 #define PRIME_PATH_BLOCK_LIGHT_EV_QUARTER_SHIFT ${schema.pathControl.blockLightEvQuarterShift}u
 #define PRIME_PATH_EV_QUARTER_MASK ${schema.pathControl.evQuarterMask}u
 #define PRIME_PATH_EV_QUARTER_BIAS ${schema.pathControl.evQuarterBias}
-#define PRIME_PATH_TEMPORAL_SEQUENCE_SHIFT ${schema.pathControl.temporalSequenceShift}u
-#define PRIME_PATH_TEMPORAL_SEQUENCE_MASK ${schema.pathControl.temporalSequenceMask}u
 #define PRIME_RUSSIAN_ROULETTE_START ${schema.pathControl.russianRouletteStart}u
 #define PRIME_CUTOUT_ALPHA_THRESHOLD ${schema.cutoutAlphaThreshold}
 struct PrimitiveRecord {

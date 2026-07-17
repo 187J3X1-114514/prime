@@ -26,20 +26,6 @@ struct PrimeSampleBase {
     uint pathIndex;
 };
 
-// Interleaved-gradient noise keeps thresholds well distributed in each local neighborhood while
-// avoiding a fixed Bayer/checker pattern. The display-frame index is independent of accumulation
-// resets, so camera motion does not restart the reflection/transmission allocation sequence.
-float primeTransparentFresnelSelector(uvec2 pixel) {
-    uint temporalIndex = (primePush.path.w >> PRIME_PATH_TEMPORAL_SEQUENCE_SHIFT)
-            & PRIME_PATH_TEMPORAL_SEQUENCE_MASK;
-    float spatial = fract(52.9829189 * fract(dot(
-            vec2(pixel),
-            vec2(0.06711056, 0.00583715))));
-    // A shared golden-ratio rotation preserves the local spatial ordering and gives every pixel a
-    // low-discrepancy temporal selector without restarting when the denoiser rejects history.
-    return fract(spatial + float(temporalIndex) * 0.61803398875);
-}
-
 // Joe-Kuo direction numbers for the first four Sobol dimensions, in reversed-bit order. The
 // Burley construction below Owen-scrambles both the sample index and the resulting dimension.
 const uint PRIME_SOBOL_BURLEY_TABLE[4][32] = uint[4][32](

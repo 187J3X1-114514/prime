@@ -39,9 +39,8 @@ float primeMaterialLinearRoughness(vec3 baseColor, uint flags) {
         // Vanilla glass, panes and water have no authored micro-normal distribution. Treating
         // their visually sharp interface as a tiny non-zero GGX lobe creates stochastic tail
         // samples and fireflies without representing any Minecraft material detail. Zero is a
-        // semantic contract: the visible interface has distinct reflection and transmission
-        // delta lobes. Prime selects one with an unbiased Fresnel-guided local proposal per pixel;
-        // a future explicit material roughness > 0 instead uses one unsplit finite-BSDF path.
+        // semantic contract: the visible interface is split into deterministic reflection and
+        // transmission paths. A future explicit material roughness > 0 uses one unsplit BSDF path.
         return 0.0;
     }
     return primeDefaultLinearRoughness(baseColor);

@@ -46,19 +46,11 @@ final class IntegratorSettings {
                 | maximumBounces;
     }
 
-    static int packLightingAndTemporalControl(
-            int sunQuarterSteps,
-            int blockLightQuarterSteps,
-            int temporalSequenceIndex) {
-        if (temporalSequenceIndex < 0) {
-            throw new IllegalArgumentException("Temporal sequence index must be non-negative");
-        }
+    static int packLightingControl(int sunQuarterSteps, int blockLightQuarterSteps) {
         return packEvQuarterSteps(sunQuarterSteps, ShaderAbi.PATH_SUN_EV_QUARTER_SHIFT)
                 | packEvQuarterSteps(
                         blockLightQuarterSteps,
-                        ShaderAbi.PATH_BLOCK_LIGHT_EV_QUARTER_SHIFT)
-                | ((temporalSequenceIndex & ShaderAbi.PATH_TEMPORAL_SEQUENCE_MASK)
-                        << ShaderAbi.PATH_TEMPORAL_SEQUENCE_SHIFT);
+                        ShaderAbi.PATH_BLOCK_LIGHT_EV_QUARTER_SHIFT);
     }
 
     private static int packEvQuarterSteps(int quarterSteps, int shift) {

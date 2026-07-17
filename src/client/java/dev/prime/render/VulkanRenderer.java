@@ -2,7 +2,6 @@ package dev.prime.render;
 
 import com.mojang.blaze3d.GpuFormat;
 import com.mojang.blaze3d.pipeline.RenderTarget;
-import com.mojang.blaze3d.vulkan.Destroyable;
 import com.mojang.blaze3d.vulkan.VulkanGpuSampler;
 import com.mojang.blaze3d.vulkan.VulkanGpuTexture;
 import com.mojang.blaze3d.vulkan.VulkanGpuTextureView;
@@ -42,11 +41,11 @@ public final class VulkanRenderer implements AutoCloseable {
     private final VulkanContext context;
     private final StagingArena stagingArena;
     private final TerrainStreamer terrain;
-    private final AccumulationState accumulationState = new AccumulationState();
+    private final RealtimeSampleState realtimeSampleState = new RealtimeSampleState();
     private final BlockPos.MutableBlockPos cameraBlockPosition = new BlockPos.MutableBlockPos();
     private RayTracingPipeline pipeline;
     private AtmospherePipeline atmosphere;
-    private RenderImages renderImages;
+    private RealtimeRenderResources realtimeResources;
     private FrameCamera camera;
     private FrameCamera previousSubmittedCamera;
     private SunDirection sunDirection;
@@ -124,6 +123,15 @@ public final class VulkanRenderer implements AutoCloseable {
     }
 
     public void render(RenderTarget mainTarget) {
+        this.renderRealtime(mainTarget);
+    }
+
+    /**
+     * Records Prime's interactive frame graph: path tracing, NRD, transparent composition, FSR,
+     * and the display transform. Keeping this orchestration behind a named render-path boundary
+     * prevents the future offline accumulator from inheriting temporal resources by accident.
+     */
+    private void renderRealtime(RenderTarget mainTarget) {
         TerrainScene.SceneView scene = this.terrain.sceneView();
         FrameCamera frameCamera = this.camera;
         SunDirection frameSunDirection = this.sunDirection;
@@ -160,7 +168,7 @@ public final class VulkanRenderer implements AutoCloseable {
         }
         long atlasViewHandle = atlasView.vkImageView();
         long atlasSamplerHandle = atlasSampler.vkSampler();
-        boolean resized = this.ensureRenderImages(
+        boolean resized = this.ensureRealtimeResources(
                 width,
                 height,
                 renderWidth,
@@ -169,7 +177,7 @@ public final class VulkanRenderer implements AutoCloseable {
                 scene.tlas(),
                 atlasView,
                 atlasSampler);
-        RenderImages images = this.renderImages;
+        RealtimeRenderResources images = this.realtimeResources;
         if (images == null) {
             return;
         }
@@ -192,12 +200,12 @@ public final class VulkanRenderer implements AutoCloseable {
         if (this.cameraMediumKnown && this.cameraInWater != frameCameraInWater) {
             // Crossing the water surface changes transport for essentially every visible path.
             // Treat it as a temporal discontinuity so NRD/FSR do not retain the previous medium.
-            this.accumulationState.invalidate();
+            this.realtimeSampleState.invalidate();
             upscaler.requestReset();
         }
         this.cameraMediumKnown = true;
         this.cameraInWater = frameCameraInWater;
-        this.accumulationState.prepare(
+        this.realtimeSampleState.prepare(
                 frameCamera,
                 scene.resetRevision(),
                 atlasViewHandle,
@@ -325,12 +333,12 @@ public final class VulkanRenderer implements AutoCloseable {
         upscaler.submitted(fsrFrame);
         this.previousSubmittedCamera = frameCamera;
         this.submittedLightingRevision = lighting.revision();
-        this.accumulationState.submitted(
+        this.realtimeSampleState.submitted(
                 frameCamera,
                 atlasViewHandle,
                 atlasSamplerHandle,
                 frameSunDirection);
-        int accumulatedSampleCount = this.accumulationState.sampleIndex();
+        int accumulatedSampleCount = this.realtimeSampleState.sampleIndex();
         if (accumulatedSampleCount >= 16
                 && (accumulatedSampleCount & (accumulatedSampleCount - 1)) == 0) {
             PrimeClient.LOGGER.debug(
@@ -353,8 +361,8 @@ public final class VulkanRenderer implements AutoCloseable {
 
     public void invalidateAll() {
         this.terrain.invalidateAll();
-        if (this.renderImages != null) {
-            this.renderImages.upscaler.requestReset();
+        if (this.realtimeResources != null) {
+            this.realtimeResources.upscaler.requestReset();
         }
     }
 
@@ -372,9 +380,9 @@ public final class VulkanRenderer implements AutoCloseable {
         this.context.drainDeferredAfterIdle();
         this.terrain.close();
         this.pipeline.destroy();
-        if (this.renderImages != null) {
-            this.renderImages.destroy();
-            this.renderImages = null;
+        if (this.realtimeResources != null) {
+            this.realtimeResources.destroy();
+            this.realtimeResources = null;
         }
         this.atmosphere.destroy();
         this.stagingArena.close();
@@ -396,7 +404,7 @@ public final class VulkanRenderer implements AutoCloseable {
         try {
             replacementAtmosphere = new AtmospherePipeline(this.context);
             replacementPipeline = new RayTracingPipeline(this.context);
-            RenderImages currentImages = this.renderImages;
+            RealtimeRenderResources currentImages = this.realtimeResources;
             if (currentImages != null) {
                 replacementDenoiser = NrdDenoiser.create(
                         this.context,
@@ -463,7 +471,7 @@ public final class VulkanRenderer implements AutoCloseable {
         }
         RayTracingPipeline previousPipeline = this.pipeline;
         AtmospherePipeline previousAtmosphere = this.atmosphere;
-        RenderImages currentImages = this.renderImages;
+        RealtimeRenderResources currentImages = this.realtimeResources;
         NrdDenoiser previousDenoiser = currentImages == null ? null : currentImages.denoiser;
         NrdDenoiser previousReflectionDenoiser =
                 currentImages == null ? null : currentImages.reflectionDenoiser;
@@ -490,11 +498,11 @@ public final class VulkanRenderer implements AutoCloseable {
             this.context.defer(previousDenoiser);
         }
         this.context.defer(previousAtmosphere);
-        this.accumulationState.invalidate();
+        this.realtimeSampleState.invalidate();
         PrimeClient.LOGGER.info("Reloaded Prime ray tracing and atmosphere shaders");
     }
 
-    private boolean ensureRenderImages(
+    private boolean ensureRealtimeResources(
             int displayWidth,
             int displayHeight,
             int renderWidth,
@@ -503,7 +511,7 @@ public final class VulkanRenderer implements AutoCloseable {
             long tlas,
             VulkanGpuTextureView atlasView,
             VulkanGpuSampler atlasSampler) {
-        RenderImages current = this.renderImages;
+        RealtimeRenderResources current = this.realtimeResources;
         if (current != null && current.matches(
                 displayWidth, displayHeight, renderWidth, renderHeight, qualityMode)) {
             this.pipeline.ensureDescriptors(
@@ -519,96 +527,13 @@ public final class VulkanRenderer implements AutoCloseable {
                     current.transmissionDenoiser);
             return false;
         }
-        VulkanImage replacementOutput = null;
-        VulkanImage replacementAccumulation = null;
-        VulkanImage replacementSceneColor = null;
-        NrdDenoiser replacementDenoiser = null;
-        NrdDenoiser replacementReflectionDenoiser = null;
-        NrdDenoiser replacementTransmissionDenoiser = null;
-        NrdTransparentComposite replacementTransparentComposite = null;
-        Fsr3Upscaler replacementUpscaler = null;
-        try {
-            replacementOutput = this.context.createOutputImage(displayWidth, displayHeight);
-            replacementAccumulation = this.context.createAccumulationImage(renderWidth, renderHeight);
-            replacementSceneColor = this.context.createImage2D(
-                    renderWidth,
-                    renderHeight,
-                    VK12.VK_FORMAT_R16G16B16A16_SFLOAT,
-                    VK12.VK_IMAGE_USAGE_STORAGE_BIT | VK12.VK_IMAGE_USAGE_SAMPLED_BIT,
-                    "Prime linear HDR scene color");
-            replacementDenoiser = NrdDenoiser.create(
-                    this.context,
-                    renderWidth,
-                    renderHeight,
-                    replacementSceneColor,
-                    replacementAccumulation,
-                    this.atmosphere);
-            replacementReflectionDenoiser = NrdDenoiser.createTransparentBranch(
-                    this.context,
-                    renderWidth,
-                    renderHeight,
-                    NrdDenoiser.TransparentBranch.REFLECTION);
-            replacementTransmissionDenoiser = NrdDenoiser.createTransparentBranch(
-                    this.context,
-                    renderWidth,
-                    renderHeight,
-                    NrdDenoiser.TransparentBranch.TRANSMISSION);
-            replacementTransparentComposite = NrdTransparentComposite.create(
-                    this.context,
-                    replacementSceneColor,
-                    replacementDenoiser,
-                    replacementReflectionDenoiser,
-                    replacementTransmissionDenoiser,
-                    this.atmosphere);
-            replacementUpscaler = Fsr3Upscaler.create(
-                    this.context,
-                    renderWidth,
-                    renderHeight,
-                    displayWidth,
-                    displayHeight,
-                    qualityMode,
-                    replacementSceneColor,
-                    replacementDenoiser.motion(),
-                    replacementDenoiser.fsrDepth(),
-                    replacementDenoiser.fsrReactiveMask(),
-                    replacementDenoiser.fsrTransparencyCompositionMask(),
-                    replacementOutput);
-        } catch (RuntimeException exception) {
-            if (replacementUpscaler != null) {
-                replacementUpscaler.destroy();
-            }
-            if (replacementTransparentComposite != null) {
-                replacementTransparentComposite.destroy();
-            }
-            if (replacementTransmissionDenoiser != null) {
-                replacementTransmissionDenoiser.destroy();
-            }
-            if (replacementReflectionDenoiser != null) {
-                replacementReflectionDenoiser.destroy();
-            }
-            if (replacementDenoiser != null) {
-                replacementDenoiser.destroy();
-            }
-            if (replacementSceneColor != null) {
-                replacementSceneColor.destroy();
-            }
-            if (replacementAccumulation != null) {
-                replacementAccumulation.destroy();
-            }
-            if (replacementOutput != null) {
-                replacementOutput.destroy();
-            }
-            throw exception;
-        }
-        RenderImages replacement = new RenderImages(
-                replacementOutput,
-                replacementAccumulation,
-                replacementSceneColor,
-                replacementDenoiser,
-                replacementReflectionDenoiser,
-                replacementTransmissionDenoiser,
-                replacementTransparentComposite,
-                replacementUpscaler,
+        RealtimeRenderResources replacement = RealtimeRenderResources.create(
+                this.context,
+                this.atmosphere,
+                displayWidth,
+                displayHeight,
+                renderWidth,
+                renderHeight,
                 qualityMode);
         try {
             this.pipeline.ensureDescriptors(
@@ -626,7 +551,7 @@ public final class VulkanRenderer implements AutoCloseable {
             replacement.destroy();
             throw exception;
         }
-        this.renderImages = replacement;
+        this.realtimeResources = replacement;
         if (current != null) {
             // The pipeline retires its old descriptor set before these referenced image views.
             this.context.defer(current);
@@ -912,8 +837,8 @@ public final class VulkanRenderer implements AutoCloseable {
                 qualityMode.packedRayCone(
                         camera.projection().m00(), camera.projection().m11(), width, height));
         int pathOffset = ShaderAbi.PUSH_PATH_OFFSET;
-        buffer.putInt(pathOffset, this.accumulationState.sampleIndex());
-        buffer.putInt(pathOffset + Integer.BYTES, this.accumulationState.epoch());
+        buffer.putInt(pathOffset, this.realtimeSampleState.sampleIndex());
+        buffer.putInt(pathOffset + Integer.BYTES, this.realtimeSampleState.epoch());
         buffer.putInt(
                 pathOffset + 2 * Integer.BYTES,
                 IntegratorSettings.packPathControl(
@@ -999,67 +924,4 @@ public final class VulkanRenderer implements AutoCloseable {
         return "0x" + Long.toUnsignedString(handle, 16);
     }
 
-    private static final class RenderImages implements Destroyable {
-        private final VulkanImage output;
-        private final VulkanImage accumulation;
-        private final VulkanImage sceneColor;
-        private final FsrQualityMode qualityMode;
-        private NrdDenoiser denoiser;
-        private NrdDenoiser reflectionDenoiser;
-        private NrdDenoiser transmissionDenoiser;
-        private NrdTransparentComposite transparentComposite;
-        private Fsr3Upscaler upscaler;
-        private boolean destroyed;
-
-        private RenderImages(
-                VulkanImage output,
-                VulkanImage accumulation,
-                VulkanImage sceneColor,
-                NrdDenoiser denoiser,
-                NrdDenoiser reflectionDenoiser,
-                NrdDenoiser transmissionDenoiser,
-                NrdTransparentComposite transparentComposite,
-                Fsr3Upscaler upscaler,
-                FsrQualityMode qualityMode) {
-            this.output = output;
-            this.accumulation = accumulation;
-            this.sceneColor = sceneColor;
-            this.denoiser = denoiser;
-            this.reflectionDenoiser = reflectionDenoiser;
-            this.transmissionDenoiser = transmissionDenoiser;
-            this.transparentComposite = transparentComposite;
-            this.upscaler = upscaler;
-            this.qualityMode = qualityMode;
-        }
-
-        private boolean matches(
-                int displayWidth,
-                int displayHeight,
-                int renderWidth,
-                int renderHeight,
-                FsrQualityMode qualityMode) {
-            return this.output.width() == displayWidth
-                    && this.output.height() == displayHeight
-                    && this.accumulation.width() == renderWidth
-                    && this.accumulation.height() == renderHeight
-                    && this.sceneColor.width() == renderWidth
-                    && this.sceneColor.height() == renderHeight
-                    && this.qualityMode == qualityMode;
-        }
-
-        @Override
-        public void destroy() {
-            if (!this.destroyed) {
-                this.destroyed = true;
-                this.upscaler.destroy();
-                this.transparentComposite.destroy();
-                this.transmissionDenoiser.destroy();
-                this.reflectionDenoiser.destroy();
-                this.denoiser.destroy();
-                this.sceneColor.destroy();
-                this.accumulation.destroy();
-                this.output.destroy();
-            }
-        }
-    }
 }

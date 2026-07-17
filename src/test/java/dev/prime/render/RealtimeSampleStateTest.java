@@ -7,12 +7,12 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import org.joml.Matrix4f;
 import org.junit.jupiter.api.Test;
 
-final class AccumulationStateTest {
+final class RealtimeSampleStateTest {
     private static final SunDirection NOON = SunDirection.fromVanillaAngle(0.0F);
 
     @Test
     void stableFramesAdvanceWithoutReset() {
-        AccumulationState state = new AccumulationState();
+        RealtimeSampleState state = new RealtimeSampleState();
         FrameCamera camera = camera(1.0);
         assertTrue(state.prepare(camera, 3L, 11L, 13L, NOON, false));
         int epoch = state.epoch();
@@ -24,7 +24,7 @@ final class AccumulationStateTest {
 
     @Test
     void worldCameraAtlasAndExplicitInvalidationResetHistory() {
-        AccumulationState state = new AccumulationState();
+        RealtimeSampleState state = new RealtimeSampleState();
         FrameCamera camera = camera(1.0);
         state.prepare(camera, 1L, 2L, 3L, NOON, false);
         state.submitted(camera, 2L, 3L, NOON);
@@ -40,7 +40,7 @@ final class AccumulationStateTest {
 
     @Test
     void gradualSunMotionUsesBoundedHistoryWithoutRestarting() {
-        AccumulationState state = new AccumulationState();
+        RealtimeSampleState state = new RealtimeSampleState();
         FrameCamera camera = camera(1.0);
         state.prepare(camera, 1L, 2L, 3L, NOON, false);
         state.submitted(camera, 2L, 3L, NOON);
@@ -61,7 +61,7 @@ final class AccumulationStateTest {
 
     @Test
     void changingSunDirectionInvalidatesAccumulatedRadiance() {
-        AccumulationState state = new AccumulationState();
+        RealtimeSampleState state = new RealtimeSampleState();
         FrameCamera camera = camera(1.0);
         state.prepare(camera, 1L, 2L, 3L, NOON, false);
         state.submitted(camera, 2L, 3L, NOON);

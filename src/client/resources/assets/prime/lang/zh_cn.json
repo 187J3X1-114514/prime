@@ -1,5 +1,7 @@
 {
   "prime.options.header": "Prime 路径追踪",
+  "prime.options.screenshot_mode": "截图模式",
+  "prime.options.screenshot_mode.tooltip": "冻结当前相机、太阳、地形和方块动画，以原生分辨率执行不经过 NRD 降噪或 FSR 超分辨率的无偏路径追踪累积。画面会从噪点逐渐收敛，性能较低；完成截图后请关闭以恢复实时游戏。该选项仅对本次游戏会话生效。",
   "prime.options.fsr.quality": "FSR 超分辨率",
   "prime.options.fsr.quality.tooltip": "FSR（FidelityFX Super Resolution）先以较低分辨率进行路径追踪，再放大到窗口分辨率。质量越高，远处细节越清晰；性能越高，帧率通常越高。4K 显示器建议从“质量”开始，帧率不足时再降低。",
   "prime.options.fsr.quality.native_aa": "原生抗锯齿（100%）",

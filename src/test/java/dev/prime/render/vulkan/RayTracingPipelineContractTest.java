@@ -76,8 +76,10 @@ final class RayTracingPipelineContractTest {
         assertTrue(pipeline.contains("world_ser.rgen.spv"));
         assertTrue(pipeline.contains("world.rgen.spv"));
         assertTrue(pipeline.contains("transparent.rgen.spv"));
+        assertTrue(pipeline.contains("screenshot.rgen.spv"));
         assertTrue(pipeline.contains("world_opaque.rahit.spv"));
         assertTrue(pipeline.contains("traceTransparent"));
+        assertTrue(pipeline.contains("traceScreenshot"));
     }
 
     private static int countOccurrences(String text, String needle) {

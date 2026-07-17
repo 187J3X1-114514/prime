@@ -1,0 +1,49 @@
+#version 460
+#extension GL_GOOGLE_include_directive : require
+
+#include "common.glsl"
+#include "atmosphere_rt.glsl"
+#include "nrd_common.glsl"
+
+layout(location = 0) rayPayloadEXT TracePayload primePayload;
+layout(location = 1) rayPayloadEXT uint primeShadowOccluded;
+
+#include "sampling.glsl"
+#include "bsdf.glsl"
+#include "lights.glsl"
+#include "integrator.glsl"
+#define PRIME_SCREENSHOT_MODE 1
+#include "camera.glsl"
+
+void main() {
+    uvec2 pixel = gl_LaunchIDEXT.xy;
+    IntegratorRecord integrator;
+    integrator.sunDirectionIntensity = vec4(
+            primePush.sunDirection,
+            ATM_SPACE_SUN_INTENSITY * primeSunRadianceMultiplier());
+    integrator.environmentRadiance = vec4(0.0);
+    PathState path = primeCameraPath(pixel, 0u, primeCameraSample());
+    PrimeIntegrationResult sampleResult = primeIntegrate(path, integrator);
+
+    // The interactive renderer splits these terms only because NRD needs separate signals.
+    // Screenshot mode consumes the complete one-path estimator before any temporal filtering;
+    // adding the mutually exclusive estimator partitions is mathematically identical to the
+    // unsplit path contribution and retains transparent volume-stack transport.
+    vec3 sampleRadiance = sampleResult.diffuseRadiance
+            + sampleResult.specularRadiance
+            + sampleResult.stableRadiance;
+    primeApplyAerialPerspective(pixel, sampleResult.primaryDistance, sampleRadiance);
+    if (any(isnan(sampleRadiance)) || any(isinf(sampleRadiance))) {
+        // A non-finite numerical failure is not a radiance sample. Preserve both the previous
+        // mean and its count instead of clamping a firefly or biasing the estimator toward black.
+        return;
+    }
+
+    bool firstSample = primePush.path.x == 0u && primePush.path.y == 0u;
+    vec4 previous = firstSample
+            ? vec4(0.0)
+            : imageLoad(primeAccumulation, ivec2(pixel));
+    float sampleCount = previous.a + 1.0;
+    vec3 mean = previous.rgb + (sampleRadiance - previous.rgb) / sampleCount;
+    imageStore(primeAccumulation, ivec2(pixel), vec4(mean, sampleCount));
+}

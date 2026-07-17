@@ -1,11 +1,12 @@
 # Prime
 
-Prime 是一个面向 Minecraft 的客户端 Shader Mod，基于 Minecraft Vulkan 图形后端与 Vulkan KHR 硬件光线追踪 API，定位为无偏路径追踪渲染方案。项目旨在以硬件加速的光线追踪管线重建世界渲染路径，并为后续以一致、清晰且可扩展的方式实现基于物理的光传输计算提供基础。这里的“无偏”采用工程意义：估计器不引入真实场景下可稳定观察或统计区分的系统性明暗、色彩偏差，同时接受有限精度、射线偏移和异常反弹上限等实际渲染器不可避免的近似。
+Prime 是一个面向 Minecraft 的客户端 Shader Mod，基于 Minecraft Vulkan 图形后端与 Vulkan KHR 硬件光线追踪 API。项目以可游玩的实时路径追踪和可收敛的高质量截图渲染为两个明确边界：实时模式允许为帧率采用可解释的近似与时间滤波，截图模式则保留无偏估计器作为一等公民。这里的“无偏”采用工程意义：估计器不引入真实场景下可稳定观察或统计区分的系统性明暗、色彩偏差，同时接受有限精度、射线偏移和异常反弹上限等实际渲染器不可避免的近似。
 
 当前版本是 `0.1.0`，处于积分器基线阶段。当前材质与光源只是用于验证光传输数学和 Minecraft 接入的内部适配层，不定义最终产品的材质、天空、时间或灯光模型。
 
 ## 当前积分器基线
 
+- “视频设置”中的“截图模式”会冻结进入时的相机、太阳、地形、灯光标定、摄像机介质状态与方块动画，在窗口原生分辨率每像素追踪一条完整 BSDF 路径，并直接累积到线性 Rec.2020 RGBA32F 历史。该路径不运行 NRD、透明双分支或 FSR，也不对高亮样本做钳制；显示时只读取当前统计均值并执行同一 Oklab DRT。退出后会恢复地形流送并进行一次完整重同步。窗口纵横比变化会保留冻结的位置与朝向、更新投影并重新开始累积；世界/资源切换则安全退出模式，避免在同一均值中混合不同场景。该开关仅在当前游戏会话有效。
 - 完整使用 Vulkan KHR ray tracing pipeline。raygen 以迭代 mega-kernel 推进路径，miss、closest-hit 和 any-hit 只返回遍历结果；管线递归深度保持为 1。支持通用 `VK_EXT_ray_tracing_invocation_reorder` 且报告真实重排模式的设备会在表面遍历后对 shader 续体做可选重排；普通 permutation 保留原始行为。
 - 默认启用 AMD FidelityFX FSR 3.1.4 Upscaler，并采用 Performance（每轴 2.0×）模式：路径追踪与 NRD 在较低分辨率运行，去噪后的线性 Rec.2020 HDR 场景由 AMD 官方签名的 Vulkan DLL 执行时间超分辨率与弱 RCAS，最后才进入 Prime 的 Oklab 显示变换。主光线使用模型 UV 微分驱动的 ray-cone LOD，并应用当前质量档对应的 mip bias，以减少远处纹理的时域混叠。原版“视频设置”中的 Prime 区域可实时选择 Native AA（1.0×）、Quality（1.5×）、Balanced（1.7×）、Performance（2.0×）或 Ultra Performance（3.0×），也可开启 FidelityFX 接入调试总览；切换质量会成组重建尺寸相关资源和时间历史，并保存到 `config/prime.properties`。DLL 接收 Minecraft 已有的 Vulkan 设备、命令缓冲和外部图像，自行持有完整 FSR 管线及私有时间资源；Prime 仍负责跨边界同步、资源生命周期和颜色管理。该接入不包含光流、交换链代理或任何插帧路径，目前与 NRD 一样随 JAR 提供 Windows x86-64 原生库，但不要求 AMD 显卡。
 - 每像素每帧追踪一个样本。主表面的漫反射与镜面光传输分别去调制后交给随包提供的 NRD 4.17.4 `REBLUR_DIFFUSE_SPECULAR`。首个可见透明界面只有在线性粗糙度严格为零时才确定性分叉反射与透射；每条分支沿 delta 链找到第一个非 delta 命中作为 Primary Surface Replacement（PSR），分别去调制并降噪该替代主表面的漫反射和高光，最后才乘回材质因子与透明路径吞吐。两条分支拥有独立的运动向量和历史；非零粗糙度材质只采样一条完整 BSDF 路径，不分叉。透明结果完成后再与可见表面和稳定的天空/太阳 miss 在线性 HDR 中合成。
@@ -25,7 +26,7 @@ Prime 是一个面向 Minecraft 的客户端 Shader Mod，基于 Minecraft Vulka
 - `shaders/abi.json` 是 Java、GLSL 布局、积分器颜色空间与默认显示设备/变换的唯一契约声明源。构建会生成双方代码，再编译并验证全部 SPIR-V。
 - `shaders/bsdf.glsl`、`material.glsl`、`lights.glsl` 和 `sampling.glsl` 定义可独立替换的积分器语义；`integrator.glsl` 负责当前 mega-kernel 调度。
 - `shaders/nrd_common.glsl` 与 `render/vulkan/nrd` 共同定义 NRD 信号、原生桥接和 Vulkan 调度边界。NRD Core 只返回 SPIR-V 与调度描述，不接触 Minecraft 的 Vulkan 句柄；图像、descriptor、命令记录、同步和按真实提交完成点回收均由 Prime 持有。
-- `shaders/display_transform.glsl` 是工作空间到显示设备的独立语义边界。大气透视在 NRD 后、FSR 前的线性 HDR 合成中加入，避免空间滤波破坏距离相关的介质项；显示变换严格位于 FSR 之后，FSR 历史中不会混入非线性的显示设备编码值。
+- `shaders/display_transform.glsl` 是工作空间到显示设备的独立语义边界。实时路径的大气透视在 NRD 后、FSR 前的线性 HDR 合成中加入，显示变换严格位于 FSR 之后；截图路径则在每个样本进入 RGBA32F 均值前加入固定的大气透视，并从均值直接显示。两条路径的历史都不会混入非线性的显示设备编码值。
 - Mixin 只承担 Minecraft 接入和设备能力协商；地形与 Vulkan 业务对象不持有 Mixin 对象。
 - 所有运行错误均停止接管世界渲染并回到原版路径。设备不支持所需 KHR 扩展时不会请求这些扩展。
 
@@ -71,7 +72,7 @@ $env:Path = "$env:JAVA_HOME\bin;$env:VULKAN_SDK\Bin;$env:Path"
 
 ### 视频设置与诊断
 
-原版“视频设置”的 Prime 区域集中管理 FSR 质量、阳光强度、方块灯光强度以及 NRD/FSR 调试视图，并提供一个“恢复 Prime 默认设置”按钮。FSR 质量是 Native AA、Quality、Balanced、Performance、Ultra Performance 五档离散滑条；两项灯光强度是相对默认标定的 EV 偏移，每档 `0.25 EV`，按 `2^EV` 精确换算为线性辐射亮度。所有选择都会保存到 `config/prime.properties`，不占用游戏快捷键。
+原版“视频设置”的 Prime 区域集中管理截图模式、FSR 质量、阳光强度、方块灯光强度以及 NRD/FSR 调试视图，并提供一个“恢复 Prime 默认设置”按钮。FSR 质量是 Native AA、Quality、Balanced、Performance、Ultra Performance 五档离散滑条；两项灯光强度是相对默认标定的 EV 偏移，每档 `0.25 EV`，按 `2^EV` 精确换算为线性辐射亮度。除仅对当前会话生效的截图模式外，其余选择都会保存到 `config/prime.properties`，且不占用游戏快捷键。
 
 NRD 调试视图包含：
 
@@ -87,7 +88,7 @@ NRD 调试视图包含：
 .\gradlew.bat test compileShaders build
 ```
 
-自动测试覆盖 ABI 大小和偏移、NRD 原生 ABI/版本/SPIR-V/漫反射与镜面调度描述、颜色空间契约与往返转换、Oklab 显示变换参考检查点、显示范围和累积边界、SBT 对齐、UV/tint/法线/透明材质标志编码、Section generation token、CPU 网格布局、渲染原点重定位、采样流、MIS 正反向权重、Russian roulette 吞吐补偿、RoboCute 透射查找表与持久体积栈接入、累积历史状态，以及漫反射在常量环境下的统计收敛。构建以 Java 25 的全部编译警告为错误。
+自动测试覆盖 ABI 大小和偏移、NRD 原生 ABI/版本/SPIR-V/漫反射与镜面调度描述、颜色空间契约与往返转换、Oklab 显示变换参考检查点、显示范围和累积边界、截图模式状态与无降噪完整路径契约、SBT 对齐、UV/tint/法线/透明材质标志编码、Section generation token、CPU 网格布局、渲染原点重定位、采样流、MIS 正反向权重、Russian roulette 吞吐补偿、RoboCute 透射查找表与持久体积栈接入、累积历史状态，以及漫反射在常量环境下的统计收敛。构建以 Java 25 的全部编译警告为错误。
 
 `build` 还会检查发行 JAR 的完整性：Fabric 元数据、许可证、NRD DLL、FidelityFX DLL 和 Prime shader 必须齐全，验证专用 shader 与 GLSL 源文件不得混入发行物。两个 DLL 都会检查 PE 文件头；Windows x86-64 测试还会实际加载它们并验证导出入口，其他构建平台会跳过原生执行测试。GitHub Actions 使用 Linux 完整编译 Java 和 Prime shader、执行其余测试并检查最终 JAR。
 

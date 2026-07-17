@@ -1,5 +1,7 @@
 {
   "prime.options.header": "Prime Path Tracing",
+  "prime.options.screenshot_mode": "Screenshot Mode",
+  "prime.options.screenshot_mode.tooltip": "Freezes the current camera, sun, terrain, and animated block textures, then accumulates unbiased path-traced samples at native resolution without NRD denoising or FSR upscaling. The noisy image gradually converges and runs slowly; turn this off after taking the screenshot to resume real-time play. This setting lasts only for the current game session.",
   "prime.options.fsr.quality": "FSR Upscaling",
   "prime.options.fsr.quality.tooltip": "FSR (FidelityFX Super Resolution) path traces at a lower internal resolution and reconstructs the image at the window resolution. Higher quality preserves distant detail; higher performance usually improves frame rate. For a 4K display, start with Quality and lower it only when more performance is needed.",
   "prime.options.fsr.quality.native_aa": "Native AA (100%)",

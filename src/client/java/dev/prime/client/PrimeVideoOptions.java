@@ -4,6 +4,7 @@ import com.mojang.serialization.Codec;
 import dev.prime.config.PrimeConfig;
 import dev.prime.render.DisplaySettings;
 import dev.prime.render.LightingSettings;
+import dev.prime.render.ScreenshotMode;
 import dev.prime.render.fsr.FsrDebugView;
 import dev.prime.render.fsr.FsrQualityMode;
 import dev.prime.render.fsr.FsrSettings;
@@ -14,7 +15,7 @@ import net.minecraft.client.OptionInstance;
 import net.minecraft.client.Options;
 import net.minecraft.network.chat.Component;
 
-/** Builds Prime's live, persisted controls shown in Minecraft's Video Settings screen. */
+/** Builds Prime's live controls shown in Minecraft's Video Settings screen. */
 public final class PrimeVideoOptions {
     private static final List<FsrQualityMode> QUALITY_MODES = List.of(FsrQualityMode.values());
     private static final List<FsrDebugView> FSR_DEBUG_VIEWS = List.of(FsrDebugView.values());
@@ -22,6 +23,15 @@ public final class PrimeVideoOptions {
             List.of(NrdDiagnostics.Mode.values());
 
     private PrimeVideoOptions() {
+    }
+
+    public static OptionInstance<Boolean> screenshotMode() {
+        return OptionInstance.createBoolean(
+                "prime.options.screenshot_mode",
+                OptionInstance.cachedConstantTooltip(
+                        Component.translatable("prime.options.screenshot_mode.tooltip")),
+                ScreenshotMode.requested(),
+                ScreenshotMode::request);
     }
 
     public static OptionInstance<FsrQualityMode> qualityMode() {

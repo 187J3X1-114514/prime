@@ -4,6 +4,7 @@ import dev.prime.client.PrimeVideoOptions;
 import dev.prime.config.PrimeConfig;
 import dev.prime.render.DisplaySettings;
 import dev.prime.render.LightingSettings;
+import dev.prime.render.ScreenshotMode;
 import dev.prime.render.fsr.FsrDebugView;
 import dev.prime.render.fsr.FsrQualityMode;
 import dev.prime.render.fsr.FsrSettings;
@@ -21,11 +22,12 @@ import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
-/** Adds Prime's live, persisted controls to the vanilla Video Settings screen. */
+/** Adds Prime's live controls to the vanilla Video Settings screen. */
 @Mixin(VideoSettingsScreen.class)
 public abstract class VideoSettingsScreenMixin {
     private static final Component PRIME$HEADER =
             Component.translatable("prime.options.header");
+    @Unique private OptionInstance<Boolean> prime$screenshotMode;
     @Unique private OptionInstance<FsrQualityMode> prime$qualityMode;
     @Unique private OptionInstance<Integer> prime$sunExposure;
     @Unique private OptionInstance<Integer> prime$blockLightExposure;
@@ -37,6 +39,7 @@ public abstract class VideoSettingsScreenMixin {
     private void prime$addOptions(CallbackInfo callbackInfo) {
         OptionsList list = ((OptionsSubScreenAccessor) this).prime$getList();
         if (list != null) {
+            this.prime$screenshotMode = PrimeVideoOptions.screenshotMode();
             this.prime$qualityMode = PrimeVideoOptions.qualityMode();
             this.prime$sunExposure = PrimeVideoOptions.sunExposure();
             this.prime$blockLightExposure = PrimeVideoOptions.blockLightExposure();
@@ -44,6 +47,7 @@ public abstract class VideoSettingsScreenMixin {
             this.prime$nrdDebugView = PrimeVideoOptions.nrdDebugView();
             this.prime$fsrDebugView = PrimeVideoOptions.fsrDebugView();
             list.addHeader(PRIME$HEADER);
+            list.addBig(this.prime$screenshotMode);
             list.addBig(this.prime$qualityMode);
             list.addBig(this.prime$sunExposure);
             list.addBig(this.prime$blockLightExposure);
@@ -59,6 +63,8 @@ public abstract class VideoSettingsScreenMixin {
     @Unique
     private void prime$restoreDefaults() {
         PrimeConfig.restoreDefaults();
+        ScreenshotMode.request(false);
+        this.prime$refresh(this.prime$screenshotMode, false);
         this.prime$refresh(this.prime$qualityMode, FsrSettings.DEFAULT_QUALITY_MODE);
         this.prime$refresh(
                 this.prime$sunExposure,

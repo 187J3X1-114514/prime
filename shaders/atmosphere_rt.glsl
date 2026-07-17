@@ -80,7 +80,11 @@ void primeApplyAerialPerspective(
             transmittance,
             vec3(1.0),
             invalidTransmittance);
-    inscatter *= nearWeight;
+    // Atmosphere LUT construction is linear in the extraterrestrial source. Match sky and direct
+    // sun evaluation by applying the same runtime EV scale before this deterministic term enters
+    // a screenshot sample; otherwise non-zero sun EV would change terrain and sky but leave
+    // aerial in-scattering at the calibrated base intensity.
+    inscatter *= nearWeight * primeSunRadianceMultiplier();
     transmittance = mix(vec3(1.0), transmittance, nearWeight);
     radiance = radiance * transmittance + inscatter;
 }

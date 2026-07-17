@@ -55,6 +55,7 @@ public final class RayTracingPipeline implements Destroyable {
     private final long pipelineLayout;
     private final TracePipeline opaquePipeline;
     private final TracePipeline transparentPipeline;
+    private final TracePipeline screenshotPipeline;
     private final BsdfLookupTable bsdfLookup;
     private final VulkanBuffer temporalCamera;
     private DescriptorBindings descriptorBindings;
@@ -66,6 +67,7 @@ public final class RayTracingPipeline implements Destroyable {
         long newPipelineLayout = 0L;
         TracePipeline newOpaquePipeline = null;
         TracePipeline newTransparentPipeline = null;
+        TracePipeline newScreenshotPipeline = null;
         BsdfLookupTable newBsdfLookup = null;
         VulkanBuffer newTemporalCamera = null;
         try {
@@ -98,15 +100,26 @@ public final class RayTracingPipeline implements Destroyable {
                         "/prime/shaders/transparent.rgen.spv",
                         "Prime transparent composition ray pipeline",
                         "Prime transparent shader binding table");
+                newScreenshotPipeline = TracePipeline.create(
+                        context,
+                        stack,
+                        newPipelineLayout,
+                        "/prime/shaders/screenshot.rgen.spv",
+                        "Prime screenshot accumulation ray pipeline",
+                        "Prime screenshot shader binding table");
             }
 
             this.descriptorSetLayout = newDescriptorSetLayout;
             this.pipelineLayout = newPipelineLayout;
             this.opaquePipeline = newOpaquePipeline;
             this.transparentPipeline = newTransparentPipeline;
+            this.screenshotPipeline = newScreenshotPipeline;
             this.bsdfLookup = newBsdfLookup;
             this.temporalCamera = newTemporalCamera;
         } catch (RuntimeException exception) {
+            if (newScreenshotPipeline != null) {
+                newScreenshotPipeline.destroy();
+            }
             if (newTransparentPipeline != null) {
                 newTransparentPipeline.destroy();
             }
@@ -204,6 +217,13 @@ public final class RayTracingPipeline implements Destroyable {
     public void trace(VkCommandBuffer commandBuffer, ByteBuffer pushConstants, int width, int height) {
         this.bsdfLookup.prepare(commandBuffer);
         this.trace(commandBuffer, pushConstants, width, height, this.opaquePipeline);
+    }
+
+    /** Records one complete, unsplit path sample per pixel for unbiased screenshot accumulation. */
+    public void traceScreenshot(
+            VkCommandBuffer commandBuffer, ByteBuffer pushConstants, int width, int height) {
+        this.bsdfLookup.prepare(commandBuffer);
+        this.trace(commandBuffer, pushConstants, width, height, this.screenshotPipeline);
     }
 
     public void traceTransparent(
@@ -332,6 +352,7 @@ public final class RayTracingPipeline implements Destroyable {
                 this.descriptorBindings = null;
             }
             this.transparentPipeline.destroy();
+            this.screenshotPipeline.destroy();
             this.opaquePipeline.destroy();
             VK12.vkDestroyPipelineLayout(this.context.vkDevice(), this.pipelineLayout, null);
             VK12.vkDestroyDescriptorSetLayout(this.context.vkDevice(), this.descriptorSetLayout, null);

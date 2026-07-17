@@ -5,6 +5,20 @@
 // FSR 3.1's base-2/base-3 Halton sample is screen-constant for a frame; using another jitter or
 // pixel-centre convention in the transparent pass would detach glass edges from opaque depth.
 vec2 primeCameraSample() {
+#if defined(PRIME_SCREENSHOT_MODE)
+    // Screenshot mode is an actual Monte Carlo accumulator, so its primary sample belongs to
+    // the same Owen-scrambled Sobol contract as every later path decision. It deliberately does
+    // not reuse FSR's short, repeating Halton phase: FSR is absent and a finite temporal jitter
+    // cycle would stop improving pixel integration after only a few frames.
+    PrimeSampleBase base;
+    base.pixel = gl_LaunchIDEXT.xy;
+    base.sampleIndex = primePush.path.x;
+    base.sampleEpoch = primePush.path.y;
+    base.vertexIndex = 0u;
+    base.pathIndex = 0u;
+    return primeSobolSample2D(
+            base, PRIME_SAMPLE_EFFECT_CAMERA, PRIME_SAMPLE_DIMENSION_PRIMARY);
+#else
     uint jitterPhase = max(
             (primePush.path.z >> 16u) & PRIME_PATH_JITTER_PHASE_MASK,
             1u);
@@ -25,6 +39,7 @@ vec2 primeCameraSample() {
         index3 /= 3u;
     }
     return vec2(halton2, halton3);
+#endif
 }
 
 vec3 primeCameraRayDirection(uvec2 pixel, vec2 cameraSample) {

@@ -100,6 +100,14 @@ final class NrdSignalContractTest {
         assertTrue(transparentComposite.contains("primeReflectionSpecularDenoised"));
         assertTrue(transparentComposite.contains("primeTransmissionDenoised"));
         assertTrue(transparentComposite.contains("primeTransmissionSpecularDenoised"));
+        assertTrue(transparentComposite.contains("primeOpaqueValidation"));
+        assertTrue(transparentComposite.contains("primeReflectionValidation"));
+        assertTrue(transparentComposite.contains("primeTransmissionValidation"));
+        int validationSelection = transparentComposite.indexOf(
+                "if (validationSource != PRIME_VALIDATION_OFF)");
+        int completedSceneLoad = transparentComposite.indexOf(
+                "vec4 scene = imageLoad(primeTransparentSceneColor", validationSelection);
+        assertTrue(validationSelection >= 0 && completedSceneLoad > validationSelection);
         assertTrue(transparentComposite.contains("metadata.a < 0.0"));
         assertTrue(integrator.contains("primary-surface-replacement contract"));
     }

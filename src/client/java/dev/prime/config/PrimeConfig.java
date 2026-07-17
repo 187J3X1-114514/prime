@@ -1,6 +1,7 @@
 package dev.prime.config;
 
 import dev.prime.PrimeClient;
+import dev.prime.render.DisplaySettings;
 import dev.prime.render.LightingSettings;
 import dev.prime.render.fsr.FsrQualityMode;
 import dev.prime.render.fsr.FsrDebugView;
@@ -24,6 +25,7 @@ public final class PrimeConfig {
     private static final String NRD_DEBUG_VIEW_KEY = "nrd.debug_view";
     private static final String SUN_EV_KEY = "lighting.sun_ev";
     private static final String BLOCK_LIGHT_EV_KEY = "lighting.block_light_ev";
+    private static final String OKLAB_OVEREXPOSURE_KEY = "display.oklab_overexposure";
     private static boolean dirty;
 
     private PrimeConfig() {
@@ -36,6 +38,7 @@ public final class PrimeConfig {
         NrdDiagnostics.Mode nrdDebugView = NrdDiagnostics.Mode.OFF;
         int sunQuarterSteps = LightingSettings.DEFAULT_SUN_QUARTER_STEPS;
         int blockLightQuarterSteps = LightingSettings.DEFAULT_BLOCK_LIGHT_QUARTER_STEPS;
+        int oklabOverexposureSteps = DisplaySettings.DEFAULT_OVEREXPOSURE_STEPS;
         boolean rewriteNeeded = false;
         if (Files.isRegularFile(path)) {
             try (Reader reader = Files.newBufferedReader(path, StandardCharsets.UTF_8)) {
@@ -111,6 +114,19 @@ public final class PrimeConfig {
                 } else {
                     rewriteNeeded = true;
                 }
+                String oklabOverexposure = properties.getProperty(OKLAB_OVEREXPOSURE_KEY);
+                if (oklabOverexposure != null) {
+                    try {
+                        oklabOverexposureSteps = parseOverexposureSteps(oklabOverexposure);
+                    } catch (IllegalArgumentException exception) {
+                        PrimeClient.LOGGER.warn(
+                                "Invalid Prime Oklab DRT overexposure '{}'; using the default",
+                                oklabOverexposure);
+                        rewriteNeeded = true;
+                    }
+                } else {
+                    rewriteNeeded = true;
+                }
             } catch (IOException | IllegalArgumentException exception) {
                 PrimeClient.LOGGER.warn(
                         "Could not read {}; using the default Prime settings",
@@ -124,13 +140,15 @@ public final class PrimeConfig {
         NrdDiagnostics.setMode(nrdDebugView);
         LightingSettings.setSunQuarterSteps(sunQuarterSteps);
         LightingSettings.setBlockLightQuarterSteps(blockLightQuarterSteps);
+        DisplaySettings.setOverexposureSteps(oklabOverexposureSteps);
         dirty = rewriteNeeded;
         PrimeClient.LOGGER.info(
-                "Prime settings: FSR {} ({}x), sun {} EV, block lights {} EV",
+                "Prime settings: FSR {} ({}x), sun {} EV, block lights {} EV, Oklab DRT overexposure {}",
                 mode.id(),
                 mode.upscaleRatio(),
                 formatEv(sunQuarterSteps),
-                formatEv(blockLightQuarterSteps));
+                formatEv(blockLightQuarterSteps),
+                formatOverexposure(oklabOverexposureSteps));
     }
 
     public static void setFsrQualityMode(FsrQualityMode mode) {
@@ -168,12 +186,20 @@ public final class PrimeConfig {
         }
     }
 
+    public static void setOklabOverexposureSteps(int steps) {
+        if (steps != DisplaySettings.overexposureSteps()) {
+            DisplaySettings.setOverexposureSteps(steps);
+            dirty = true;
+        }
+    }
+
     public static void restoreDefaults() {
         setFsrQualityMode(FsrSettings.DEFAULT_QUALITY_MODE);
         setFsrDebugView(FsrDebugView.OFF);
         setNrdDebugView(NrdDiagnostics.Mode.OFF);
         setSunQuarterSteps(LightingSettings.DEFAULT_SUN_QUARTER_STEPS);
         setBlockLightQuarterSteps(LightingSettings.DEFAULT_BLOCK_LIGHT_QUARTER_STEPS);
+        setOklabOverexposureSteps(DisplaySettings.DEFAULT_OVEREXPOSURE_STEPS);
     }
 
     public static void save() {
@@ -190,7 +216,9 @@ public final class PrimeConfig {
                     + NRD_DEBUG_VIEW_KEY + "=" + NrdDiagnostics.mode().id() + "\n"
                     + SUN_EV_KEY + "=" + formatEv(LightingSettings.sunQuarterSteps()) + "\n"
                     + BLOCK_LIGHT_EV_KEY + "="
-                    + formatEv(LightingSettings.blockLightQuarterSteps()) + "\n";
+                    + formatEv(LightingSettings.blockLightQuarterSteps()) + "\n"
+                    + OKLAB_OVEREXPOSURE_KEY + "="
+                    + formatOverexposure(DisplaySettings.overexposureSteps()) + "\n";
             Files.writeString(
                     temporary,
                     contents,
@@ -231,6 +259,27 @@ public final class PrimeConfig {
         LightingSettings.linearMultiplier(quarterSteps);
         return BigDecimal.valueOf(quarterSteps)
                 .divide(BigDecimal.valueOf(LightingSettings.QUARTER_STEPS_PER_EV))
+                .toPlainString();
+    }
+
+    static int parseOverexposureSteps(String value) {
+        try {
+            int steps = new BigDecimal(value)
+                    .multiply(BigDecimal.valueOf(DisplaySettings.STEPS_PER_UNIT))
+                    .intValueExact();
+            DisplaySettings.overexposure(steps);
+            return steps;
+        } catch (ArithmeticException | NumberFormatException exception) {
+            throw new IllegalArgumentException(
+                    "Oklab DRT overexposure must be an exact 1/32 step",
+                    exception);
+        }
+    }
+
+    static String formatOverexposure(int steps) {
+        DisplaySettings.overexposure(steps);
+        return BigDecimal.valueOf(steps)
+                .divide(BigDecimal.valueOf(DisplaySettings.STEPS_PER_UNIT))
                 .toPlainString();
     }
 

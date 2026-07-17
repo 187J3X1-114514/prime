@@ -19,11 +19,20 @@ layout(set = 0, binding = 9, rgba16f) uniform readonly image2D primeTransmission
 layout(set = 0, binding = 10, rgba16f) uniform readonly image2D primeTransmissionThroughput;
 layout(set = 0, binding = 11, rgba16f) uniform readonly image3D primeTransparentAerialRadiance;
 layout(set = 0, binding = 12, rgba16f) uniform readonly image3D primeTransparentAerialTransmittance;
+layout(set = 0, binding = 13, rgba8) uniform readonly image2D primeOpaqueValidation;
+layout(set = 0, binding = 14, rgba8) uniform readonly image2D primeReflectionValidation;
+layout(set = 0, binding = 15, rgba8) uniform readonly image2D primeTransmissionValidation;
 
 layout(push_constant) uniform PrimeTransparentCompositePushConstants {
     uvec2 outputExtent;
     float sunRadianceMultiplier;
+    uint validationSource;
 } primeTransparentCompositePush;
+
+const uint PRIME_VALIDATION_OFF = 0u;
+const uint PRIME_VALIDATION_OPAQUE = 1u;
+const uint PRIME_VALIDATION_REFLECTION = 2u;
+const uint PRIME_VALIDATION_TRANSMISSION = 3u;
 
 ATM_DECLARE_SAMPLE_3D(
         primeTransparentSampleAerialRadiance,
@@ -95,6 +104,21 @@ void primeTransparentCompositeApplyAerial(
 void main() {
     uvec2 pixel = gl_GlobalInvocationID.xy;
     if (any(greaterThanEqual(pixel, primeTransparentCompositePush.outputExtent))) {
+        return;
+    }
+    uint validationSource = primeTransparentCompositePush.validationSource;
+    if (validationSource != PRIME_VALIDATION_OFF) {
+        vec3 validation = validationSource == PRIME_VALIDATION_OPAQUE
+                ? imageLoad(primeOpaqueValidation, ivec2(pixel)).rgb
+                : validationSource == PRIME_VALIDATION_REFLECTION
+                        ? imageLoad(primeReflectionValidation, ivec2(pixel)).rgb
+                        : imageLoad(primeTransmissionValidation, ivec2(pixel)).rgb;
+        // NRD validation is already display-referred RGB. It must replace the completed scene so
+        // neither transparent composition nor the normal display transform changes its meaning.
+        imageStore(
+                primeTransparentSceneColor,
+                ivec2(pixel),
+                vec4(clamp(validation, vec3(0.0), vec3(1.0)), 1.0));
         return;
     }
     vec4 scene = imageLoad(primeTransparentSceneColor, ivec2(pixel));

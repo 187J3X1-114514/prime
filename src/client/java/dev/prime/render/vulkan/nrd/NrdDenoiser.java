@@ -76,6 +76,7 @@ public final class NrdDenoiser implements Destroyable {
     private final MotionPipeline motionPipeline;
     private final CompositePipeline composite;
     private final boolean ownsOpaqueComposite;
+    private final NrdDiagnostics.Mode diagnosticMode;
     private final Matrix4f currentNrdProjection = new Matrix4f();
     private final Matrix4f previousNrdProjection = new Matrix4f();
     private final Matrix4f previousWorldToView = new Matrix4f();
@@ -105,7 +106,8 @@ public final class NrdDenoiser implements Destroyable {
             ComputePipeline[] pipelines,
             MotionPipeline motionPipeline,
             CompositePipeline composite,
-            boolean ownsOpaqueComposite) {
+            boolean ownsOpaqueComposite,
+            NrdDiagnostics.Mode diagnosticMode) {
         this.context = context;
         this.width = width;
         this.height = height;
@@ -118,6 +120,7 @@ public final class NrdDenoiser implements Destroyable {
         this.motionPipeline = motionPipeline;
         this.composite = composite;
         this.ownsOpaqueComposite = ownsOpaqueComposite;
+        this.diagnosticMode = diagnosticMode;
     }
 
     public static NrdDenoiser create(
@@ -136,7 +139,8 @@ public final class NrdDenoiser implements Destroyable {
                 "/prime/shaders/nrd_motion.comp.spv",
                 output,
                 stableAccumulation,
-                atmosphere);
+                atmosphere,
+                NrdDiagnostics.Mode.OPAQUE);
     }
 
     /**
@@ -158,7 +162,10 @@ public final class NrdDenoiser implements Destroyable {
                 "/prime/shaders/nrd_transparent_motion.comp.spv",
                 null,
                 null,
-                null);
+                null,
+                branch == TransparentBranch.REFLECTION
+                        ? NrdDiagnostics.Mode.REFLECTION
+                        : NrdDiagnostics.Mode.TRANSMISSION);
     }
 
     private static NrdDenoiser create(
@@ -170,7 +177,8 @@ public final class NrdDenoiser implements Destroyable {
             String motionShader,
             VulkanImage output,
             VulkanImage stableAccumulation,
-            AtmospherePipeline atmosphere) {
+            AtmospherePipeline atmosphere,
+            NrdDiagnostics.Mode diagnosticMode) {
         boolean opaqueComposite = output != null;
         NrdNative.Instance nativeInstance = NrdNative.create(width, height, denoiserKind);
         Images images = null;
@@ -209,7 +217,8 @@ public final class NrdDenoiser implements Destroyable {
                     pipelines,
                     motionPipeline,
                     composite,
-                    opaqueComposite);
+                    opaqueComposite,
+                    diagnosticMode);
         } catch (RuntimeException exception) {
             if (composite != null) {
                 composite.destroy();
@@ -308,6 +317,10 @@ public final class NrdDenoiser implements Destroyable {
 
     public VulkanImage primaryPosition() {
         return this.images.primaryPosition;
+    }
+
+    VulkanImage validation() {
+        return this.images.validation;
     }
 
     public VulkanImage fsrReactiveMask() {
@@ -431,7 +444,7 @@ public final class NrdDenoiser implements Destroyable {
                 || atlasSampler != this.previousAtlasSampler
                 || sunDirectionDiscontinuous(sunDirection, this.previousSunDirection);
         FrameCamera historyCamera = restart ? camera : this.previousCamera;
-        NrdDiagnostics.Mode diagnosticMode = NrdDiagnostics.mode();
+        NrdDiagnostics.Mode selectedDiagnostic = NrdDiagnostics.mode();
         float historyCameraJitterX = restart ? cameraJitterX : this.previousCameraJitterX;
         float historyCameraJitterY = restart ? cameraJitterY : this.previousCameraJitterY;
         int currentFrameIndex = restart ? 0 : this.frameIndex;
@@ -451,7 +464,7 @@ public final class NrdDenoiser implements Destroyable {
                 currentFrameIndex,
                 restart,
                 deltaMilliseconds,
-                diagnosticMode.enablesNrdValidation()));
+                selectedDiagnostic.enablesValidationFor(this.diagnosticMode)));
         NrdNative.DispatchList dispatches = this.nativeInstance.getDispatches();
         FrameBindings bindings = this.acquireBindings();
         try {
@@ -465,7 +478,7 @@ public final class NrdDenoiser implements Destroyable {
                     cameraJitterY,
                     this.width,
                     this.height,
-                    diagnosticMode.shaderValue());
+                    0);
             computeToComputeBarrier(commandBuffer);
             for (int dispatchIndex = 0; dispatchIndex < dispatches.size(); dispatchIndex++) {
                 if (dispatchIndex != 0) {
@@ -499,7 +512,7 @@ public final class NrdDenoiser implements Destroyable {
                         commandBuffer,
                         this.width,
                         this.height,
-                        diagnosticMode.shaderValue(),
+                        0,
                         sunRadianceMultiplier);
             }
             return new FrameToken(

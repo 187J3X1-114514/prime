@@ -25,10 +25,10 @@ import org.lwjgl.vulkan.VkPushConstantRange;
 import org.lwjgl.vulkan.VkShaderModuleCreateInfo;
 import org.lwjgl.vulkan.VkWriteDescriptorSet;
 
-/** Sums two independently denoised transparent branches into the opaque scene before FSR. */
+/** Resolves transparent NRD branches or the selected final validation layer before FSR. */
 public final class NrdTransparentComposite implements Destroyable {
-    private static final int BINDING_COUNT = 13;
-    private static final int PUSH_SIZE = 12;
+    private static final int BINDING_COUNT = 16;
+    private static final int PUSH_SIZE = 16;
 
     private final VulkanContext context;
     private final long descriptorSetLayout;
@@ -56,6 +56,7 @@ public final class NrdTransparentComposite implements Destroyable {
     public static NrdTransparentComposite create(
             VulkanContext context,
             VulkanImage sceneColor,
+            NrdDenoiser opaque,
             NrdDenoiser reflection,
             NrdDenoiser transmission,
             AtmospherePipeline atmosphere) {
@@ -159,7 +160,10 @@ public final class NrdTransparentComposite implements Destroyable {
                 transmission.specularMaterial(),
                 transmission.transparentThroughput(),
                 atmosphere.aerialRadiance(),
-                atmosphere.aerialTransmittance()
+                atmosphere.aerialTransmittance(),
+                opaque.validation(),
+                reflection.validation(),
+                transmission.validation()
             };
             VkDescriptorImageInfo.Buffer imageInfos =
                     VkDescriptorImageInfo.calloc(BINDING_COUNT, stack);
@@ -225,6 +229,7 @@ public final class NrdTransparentComposite implements Destroyable {
             push.putInt(0, width);
             push.putInt(4, height);
             push.putFloat(8, sunRadianceMultiplier);
+            push.putInt(12, NrdDiagnostics.mode().outputSelector());
             VK12.vkCmdPushConstants(
                     commandBuffer,
                     this.pipelineLayout,

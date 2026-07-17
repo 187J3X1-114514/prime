@@ -418,6 +418,7 @@ public final class VulkanRenderer implements AutoCloseable {
                 replacementTransparentComposite = NrdTransparentComposite.create(
                         this.context,
                         currentImages.sceneColor,
+                        replacementDenoiser,
                         replacementReflectionDenoiser,
                         replacementTransmissionDenoiser,
                         replacementAtmosphere);
@@ -555,6 +556,7 @@ public final class VulkanRenderer implements AutoCloseable {
             replacementTransparentComposite = NrdTransparentComposite.create(
                     this.context,
                     replacementSceneColor,
+                    replacementDenoiser,
                     replacementReflectionDenoiser,
                     replacementTransmissionDenoiser,
                     this.atmosphere);

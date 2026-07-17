@@ -85,6 +85,7 @@ abstract class GenerateShaderAbi extends DefaultTask {
 		def surfaceInteraction = schema.structs.surfaceInteraction
 		def push = schema.structs.pushConstants
 		def colorContract = schema.colorContract
+		def emissionContract = schema.emissionContract
 		def atmosphereContract = schema.atmosphereContract
 		def nrdContract = schema.nrdContract
 
@@ -105,14 +106,18 @@ abstract class GenerateShaderAbi extends DefaultTask {
 			throw new GradleException(
 					'Prime color contract must remain sRGB input -> linear Rec.2020 D65 -> Oklab DRT -> sRGB Rec.709 display')
 		}
+		if (emissionContract.level15BlockIntensity != 25.0) {
+			throw new GradleException(
+					'Prime emission contract must preserve a 25-unit white level-15 block source')
+		}
 		if (atmosphereContract.spectralModel != 'hillaire-8wave-rec2020-d65'
 				|| atmosphereContract.worldSeaLevelY != -64.0
 				|| atmosphereContract.worldUnitScaleKm != 0.001
-				|| atmosphereContract.spaceSunIntensity != 10.0
+				|| atmosphereContract.spaceSunIntensity != 12.5
 				|| atmosphereContract.sunAngularRadiusRadians != 0.00471) {
 			throw new GradleException(
 					'Prime atmosphere contract must remain the eight-wave Rec.2020 model, '
-							+ 'the -64 sea level / 0.001 km world scale, and a 10-unit space sun')
+							+ 'the -64 sea level / 0.001 km world scale, and a 12.5-unit space sun')
 		}
 		if (nrdContract.version != '4.17.4'
                 || nrdContract.denoiser != 'opaque-reblur-diffuse-specular+transparent-dual-reblur-diffuse-specular-psr'
@@ -276,6 +281,7 @@ public final class ShaderAbi {
     public static final String DISPLAY_COLOR_SPACE = "${colorContract.displayColorSpace}";
     public static final String DEFAULT_DISPLAY_TRANSFORM = "${colorContract.defaultDisplayTransform}";
     public static final float DISPLAY_EXPOSURE = ${colorContract.displayExposure}f;
+    public static final float LEVEL_15_BLOCK_INTENSITY = ${emissionContract.level15BlockIntensity}f;
     public static final String NRD_VERSION = "${nrdContract.version}";
     public static final String NRD_DENOISER = "${nrdContract.denoiser}";
     public static final String NRD_NORMAL_ENCODING = "${nrdContract.normalEncoding}";
@@ -309,6 +315,7 @@ ${javaOffsets}
 
 #include "prime_color_contract.glsl"
 
+#define PRIME_LEVEL_15_BLOCK_INTENSITY ${emissionContract.level15BlockIntensity}
 #define PRIME_PRIMITIVE_RECORD_SIZE ${primitive.size}
 #define PRIME_SECTION_RECORD_SIZE ${section.size}
 #define PRIME_LIGHT_NODE_SIZE ${lightNode.size}

@@ -39,16 +39,16 @@ vec3 primeOklabToLinearBt709(vec3 color) {
             -0.0041960863 * l - 0.7034186147 * m + 1.7076147010 * s);
 }
 
-float primeOklabEnhancedReinhard(float value) {
-    return (37.0 / 32.0) * value / (1.0 + value);
+float primeOklabEnhancedReinhard(float value, float overexposure) {
+    return overexposure * value / (1.0 + value);
 }
 
-float primeOklabTonemapLightness(float lightness) {
+float primeOklabTonemapLightness(float lightness, float overexposure) {
     float brightness = lightness * lightness * lightness;
-    return pow(primeOklabEnhancedReinhard(brightness), 1.0 / 3.0);
+    return pow(primeOklabEnhancedReinhard(brightness, overexposure), 1.0 / 3.0);
 }
 
-vec3 primeOklabTonemapCurve(vec3 color) {
+vec3 primeOklabTonemapCurve(vec3 color, float overexposure) {
     const float startCompression = 0.875;
     const vec3 oklabWhite = vec3(1.0, 0.0, 0.0);
     float maxChannel = max(color.r, max(color.g, color.b));
@@ -57,7 +57,7 @@ vec3 primeOklabTonemapCurve(vec3 color) {
     }
 
     vec3 oklab = primeLinearBt709ToOklab(color);
-    float targetLightness = primeOklabTonemapLightness(oklab.x);
+    float targetLightness = primeOklabTonemapLightness(oklab.x, overexposure);
     vec3 rgbTruncate = color / maxChannel;
     vec3 oklabTruncate = primeLinearBt709ToOklab(rgbTruncate);
     vec3 oklabStartCompress = oklabTruncate * startCompression;
@@ -83,10 +83,10 @@ vec3 primeOklabTonemapCurve(vec3 color) {
     return primeOklabToLinearBt709(faded);
 }
 
-vec3 primeDisplayTransformToSrgb(vec3 hdrRec2020) {
+vec3 primeDisplayTransformToSrgb(vec3 hdrRec2020, float overexposure) {
     vec3 exposedRec2020 = max(hdrRec2020, vec3(0.0)) * PRIME_DISPLAY_EXPOSURE;
     vec3 linearBt709 = max(primeLinearRec2020ToLinearBt709(exposedRec2020), vec3(0.0));
-    vec3 encodedSrgb = primeEncodeSrgb(primeOklabTonemapCurve(linearBt709));
+    vec3 encodedSrgb = primeEncodeSrgb(primeOklabTonemapCurve(linearBt709, overexposure));
     return clamp(encodedSrgb, vec3(0.0), vec3(1.0));
 }
 

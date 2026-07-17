@@ -20,29 +20,38 @@ public final class NrdDiagnostics {
 
     public enum Mode {
         OFF("off", 0),
-        NRD_VALIDATION("nrd_validation", 1),
-        REPROJECTION_ERROR("reprojection_error", 2),
-        MOTION("motion", 3);
+        OPAQUE("opaque", 1),
+        REFLECTION("reflection", 2),
+        TRANSMISSION("transmission", 3);
 
         private final String id;
-        private final int shaderValue;
+        private final int outputSelector;
 
-        Mode(String id, int shaderValue) {
+        Mode(String id, int outputSelector) {
             this.id = id;
-            this.shaderValue = shaderValue;
+            this.outputSelector = outputSelector;
         }
 
         public String id() {
             return this.id;
         }
 
-        public int shaderValue() {
-            return this.shaderValue;
+        public int outputSelector() {
+            return this.outputSelector;
         }
 
         public static Optional<Mode> findById(String id) {
+            if (id == null) {
+                return Optional.empty();
+            }
+            // Migrate the three development-only views used before branch validation became a
+            // permanent user feature. All of them inspected the opaque NRD instance.
+            String canonicalId = switch (id) {
+                case "nrd_validation", "reprojection_error", "motion" -> "opaque";
+                default -> id;
+            };
             return Arrays.stream(values())
-                    .filter(value -> value.id.equals(id))
+                    .filter(value -> value.id.equals(canonicalId))
                     .findFirst();
         }
 
@@ -50,8 +59,8 @@ public final class NrdDiagnostics {
             return findById(id).orElse(OFF);
         }
 
-        boolean enablesNrdValidation() {
-            return this == NRD_VALIDATION;
+        boolean enablesValidationFor(Mode denoiser) {
+            return this != OFF && this == denoiser;
         }
     }
 }

@@ -2,6 +2,7 @@ package dev.prime.client;
 
 import com.mojang.serialization.Codec;
 import dev.prime.config.PrimeConfig;
+import dev.prime.render.DisplaySettings;
 import dev.prime.render.LightingSettings;
 import dev.prime.render.fsr.FsrDebugView;
 import dev.prime.render.fsr.FsrQualityMode;
@@ -52,6 +53,21 @@ public final class PrimeVideoOptions {
                 "prime.options.lighting.block_light_ev.tooltip",
                 LightingSettings.blockLightQuarterSteps(),
                 PrimeConfig::setBlockLightQuarterSteps);
+    }
+
+    public static OptionInstance<Integer> oklabOverexposure() {
+        return new OptionInstance<>(
+                "prime.options.display.oklab_overexposure",
+                OptionInstance.cachedConstantTooltip(
+                        Component.translatable("prime.options.display.oklab_overexposure.tooltip")),
+                (caption, steps) -> Options.genericValueLabel(
+                        caption,
+                        Component.literal(formatOverexposure(steps))),
+                new OptionInstance.IntRange(
+                        DisplaySettings.MINIMUM_OVEREXPOSURE_STEPS,
+                        DisplaySettings.MAXIMUM_OVEREXPOSURE_STEPS),
+                DisplaySettings.overexposureSteps(),
+                PrimeConfig::setOklabOverexposureSteps);
     }
 
     public static OptionInstance<NrdDiagnostics.Mode> nrdDebugView() {
@@ -106,5 +122,9 @@ public final class PrimeVideoOptions {
             return "0 EV";
         }
         return String.format(Locale.ROOT, "%+.2f EV", ev);
+    }
+
+    static String formatOverexposure(int steps) {
+        return String.format(Locale.ROOT, "%.5f×", DisplaySettings.overexposure(steps));
     }
 }

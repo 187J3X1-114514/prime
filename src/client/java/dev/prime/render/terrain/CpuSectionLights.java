@@ -295,10 +295,12 @@ public final class CpuSectionLights {
         }
     }
 
-    /** Prime's default source-radiance calibration: a white level-15 texel evaluates to 15. */
+    /** Prime's default source-radiance calibration: a white level-15 texel evaluates to 25. */
     static float emissionScale(int level) {
         int clamped = Math.max(0, Math.min(level, 15));
-        return (float) clamped * clamped / 15.0F;
+        return (float) clamped * clamped
+                * dev.prime.render.shader.ShaderAbi.LEVEL_15_BLOCK_INTENSITY
+                / (15.0F * 15.0F);
     }
 
     record Summary(int emitterCount, CpuLightTree.Bounds bounds, float power) {

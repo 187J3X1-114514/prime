@@ -74,7 +74,7 @@ final class ColorContractTest {
         assertFalse(rayGeneration.contains("primeDisplayTransformToSrgb"));
         assertTrue(composite.contains("vec3 radiance = surface + imageLoad(primeStableAccumulation"));
         assertFalse(composite.contains("primeDisplayTransformToSrgb"));
-        assertTrue(fsrDisplay.contains("primeDisplayTransformToSrgb(max(radiance, vec3(0.0)))"));
+        assertTrue(fsrDisplay.contains("primeFsrDisplayPush.oklabOverexposure"));
     }
 
     @Test

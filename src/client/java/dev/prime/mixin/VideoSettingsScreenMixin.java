@@ -2,6 +2,7 @@ package dev.prime.mixin;
 
 import dev.prime.client.PrimeVideoOptions;
 import dev.prime.config.PrimeConfig;
+import dev.prime.render.DisplaySettings;
 import dev.prime.render.LightingSettings;
 import dev.prime.render.fsr.FsrDebugView;
 import dev.prime.render.fsr.FsrQualityMode;
@@ -28,6 +29,7 @@ public abstract class VideoSettingsScreenMixin {
     @Unique private OptionInstance<FsrQualityMode> prime$qualityMode;
     @Unique private OptionInstance<Integer> prime$sunExposure;
     @Unique private OptionInstance<Integer> prime$blockLightExposure;
+    @Unique private OptionInstance<Integer> prime$oklabOverexposure;
     @Unique private OptionInstance<NrdDiagnostics.Mode> prime$nrdDebugView;
     @Unique private OptionInstance<FsrDebugView> prime$fsrDebugView;
 
@@ -38,11 +40,14 @@ public abstract class VideoSettingsScreenMixin {
             this.prime$qualityMode = PrimeVideoOptions.qualityMode();
             this.prime$sunExposure = PrimeVideoOptions.sunExposure();
             this.prime$blockLightExposure = PrimeVideoOptions.blockLightExposure();
+            this.prime$oklabOverexposure = PrimeVideoOptions.oklabOverexposure();
             this.prime$nrdDebugView = PrimeVideoOptions.nrdDebugView();
             this.prime$fsrDebugView = PrimeVideoOptions.fsrDebugView();
             list.addHeader(PRIME$HEADER);
             list.addBig(this.prime$qualityMode);
-            list.addSmall(this.prime$sunExposure, this.prime$blockLightExposure);
+            list.addBig(this.prime$sunExposure);
+            list.addBig(this.prime$blockLightExposure);
+            list.addBig(this.prime$oklabOverexposure);
             list.addSmall(this.prime$nrdDebugView, this.prime$fsrDebugView);
             list.addBig(Button.builder(
                             Component.translatable("prime.options.restore_defaults"),
@@ -61,6 +66,9 @@ public abstract class VideoSettingsScreenMixin {
         this.prime$refresh(
                 this.prime$blockLightExposure,
                 LightingSettings.DEFAULT_BLOCK_LIGHT_QUARTER_STEPS);
+        this.prime$refresh(
+                this.prime$oklabOverexposure,
+                DisplaySettings.DEFAULT_OVEREXPOSURE_STEPS);
         this.prime$refresh(this.prime$nrdDebugView, NrdDiagnostics.Mode.OFF);
         this.prime$refresh(this.prime$fsrDebugView, FsrDebugView.OFF);
     }

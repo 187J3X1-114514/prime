@@ -3,14 +3,14 @@ package dev.prime.render;
 /**
  * Runtime lighting controls expressed as photographic exposure-value offsets.
  *
- * <p>The zero-EV defaults preserve Prime's calibrated ten-unit extraterrestrial sun and the
- * level-squared Minecraft emitter model. A quarter-EV step is converted only at the rendering
+ * <p>The zero-EV defaults preserve Prime's calibrated 12.5-unit extraterrestrial sun and the
+ * level-squared, 25-unit level-15 Minecraft emitter model. A quarter-EV step is converted only at the rendering
  * boundary as {@code 2^(quarterSteps / 4)}; the stored values never masquerade as linear light.
  */
 public final class LightingSettings {
     public static final int QUARTER_STEPS_PER_EV = 4;
-    public static final int MINIMUM_QUARTER_STEPS = -16;
-    public static final int MAXIMUM_QUARTER_STEPS = 16;
+    public static final int MINIMUM_QUARTER_STEPS = -32;
+    public static final int MAXIMUM_QUARTER_STEPS = 32;
     public static final int DEFAULT_SUN_QUARTER_STEPS = 0;
     public static final int DEFAULT_BLOCK_LIGHT_QUARTER_STEPS = 0;
 

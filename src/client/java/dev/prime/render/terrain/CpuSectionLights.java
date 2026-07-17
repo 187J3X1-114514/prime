@@ -2,7 +2,7 @@ package dev.prime.render.terrain;
 
 import dev.prime.render.shader.ShaderAbi;
 import java.util.ArrayList;
-import java.util.LinkedHashMap;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import net.minecraft.client.renderer.texture.TextureAtlasSprite;
@@ -26,8 +26,9 @@ public final class CpuSectionLights {
             List<Emitter> emitters,
             List<EmissionDistribution> distributions,
             CpuLightTree.Result tree) {
-        this.emitters = List.copyOf(emitters);
-        this.distributions = List.copyOf(distributions);
+        // Builder ownership ends at build(); neither list is exposed or mutated afterwards.
+        this.emitters = emitters;
+        this.distributions = distributions;
         this.tree = tree;
     }
 
@@ -60,17 +61,19 @@ public final class CpuSectionLights {
             return new int[0];
         }
         int headerWords = ShaderAbi.SECTION_LIGHT_HEADER_SIZE / Integer.BYTES;
-        int[] nodeWords = this.tree.packNodeBounds();
-        int[] forwardWords = this.tree.packNodeForward();
-        int[] reverseWords = this.tree.packNodeReverse();
+        int nodeWords = this.tree.nodeCount() * (ShaderAbi.LIGHT_NODE_SIZE / Integer.BYTES);
+        int forwardWords = this.tree.nodeCount()
+                * (ShaderAbi.LIGHT_NODE_FORWARD_SIZE / Integer.BYTES);
+        int reverseWords = this.tree.nodeCount()
+                * (ShaderAbi.LIGHT_NODE_REVERSE_SIZE / Integer.BYTES);
         int emitterWords = ShaderAbi.LIGHT_EMITTER_SIZE / Integer.BYTES;
         int cellWords = ShaderAbi.LIGHT_CELL_SIZE / Integer.BYTES;
         int cellCount = this.distributions.size() * EmissionDistribution.CELL_COUNT;
         int nodeStart = headerWords;
-        int forwardStart = nodeStart + nodeWords.length;
-        int reverseStart = forwardStart + forwardWords.length;
+        int forwardStart = nodeStart + nodeWords;
+        int reverseStart = forwardStart + forwardWords;
         int emitterStart = (int) (alignUp(
-                        (long) (reverseStart + reverseWords.length) * Integer.BYTES,
+                        (long) (reverseStart + reverseWords) * Integer.BYTES,
                         16L)
                 / Integer.BYTES);
         int cellStart = emitterStart + this.emitters.size() * emitterWords;
@@ -82,9 +85,7 @@ public final class CpuSectionLights {
         putLong(result, 8, bufferAddress + (long) cellStart * Integer.BYTES);
         result[10] = 0;
         result[11] = this.emitters.size();
-        System.arraycopy(nodeWords, 0, result, nodeStart, nodeWords.length);
-        System.arraycopy(forwardWords, 0, result, forwardStart, forwardWords.length);
-        System.arraycopy(reverseWords, 0, result, reverseStart, reverseWords.length);
+        this.tree.packInto(result, nodeStart, forwardStart, reverseStart);
 
         for (int index = 0; index < this.emitters.size(); index++) {
             Emitter emitter = this.emitters.get(index);
@@ -143,6 +144,12 @@ public final class CpuSectionLights {
         return this.isEmpty() ? 0.0F : this.tree.power();
     }
 
+    Summary summary() {
+        return this.isEmpty()
+                ? Summary.EMPTY
+                : new Summary(this.emitters.size(), this.tree.bounds(), this.tree.power());
+    }
+
     private static void putLong(int[] target, int wordOffset, long value) {
         target[wordOffset] = (int) value;
         target[wordOffset + 1] = (int) (value >>> 32);
@@ -163,7 +170,7 @@ public final class CpuSectionLights {
         private static final int MAXIMUM_IMPORTANCE_DISTRIBUTIONS = 1024;
 
         private final List<Emitter> emitters = new ArrayList<>();
-        private final Map<EmissionDistribution.Key, Integer> distributionIndices = new LinkedHashMap<>();
+        private final Map<EmissionDistribution.Key, Integer> distributionIndices = new HashMap<>();
         private final List<EmissionDistribution> distributions = new ArrayList<>();
         private int uniformDistributionIndex = -1;
 
@@ -261,7 +268,7 @@ public final class CpuSectionLights {
             if (this.emitters.isEmpty()) {
                 return EMPTY;
             }
-            List<CpuLightTree.Leaf> leaves = new ArrayList<>(this.emitters.size());
+            ArrayList<CpuLightTree.Leaf> leaves = new ArrayList<>(this.emitters.size());
             for (int index = 0; index < this.emitters.size(); index++) {
                 Emitter emitter = this.emitters.get(index);
                 CpuLightTree.Bounds bounds = CpuLightTree.Bounds.empty()
@@ -282,16 +289,26 @@ public final class CpuSectionLights {
                         emitter.power,
                         index));
             }
-            CpuLightTree.Result tree = CpuLightTree.build(
+            CpuLightTree.Result tree = CpuLightTree.buildOwned(
                     leaves, this.emitters.size(), CpuLightTree.SECTION_SOFTENING_SCALE);
             return new CpuSectionLights(this.emitters, this.distributions, tree);
         }
     }
 
-    /** Prime's default source-radiance calibration: a white level-15 texel evaluates to 15. */
+    /** Prime's default source-radiance calibration: a white level-15 texel evaluates to 25. */
     static float emissionScale(int level) {
         int clamped = Math.max(0, Math.min(level, 15));
-        return (float) clamped * clamped / 15.0F;
+        return (float) clamped * clamped
+                * dev.prime.render.shader.ShaderAbi.LEVEL_15_BLOCK_INTENSITY
+                / (15.0F * 15.0F);
+    }
+
+    record Summary(int emitterCount, CpuLightTree.Bounds bounds, float power) {
+        private static final Summary EMPTY = new Summary(0, null, 0.0F);
+
+        boolean isEmpty() {
+            return this.emitterCount == 0;
+        }
     }
 
     private record Emitter(

@@ -10,6 +10,7 @@ import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.LongBuffer;
 import org.lwjgl.system.MemoryStack;
+import org.lwjgl.system.MemoryUtil;
 import org.lwjgl.vulkan.VK12;
 import org.lwjgl.vulkan.VkCommandBuffer;
 import org.lwjgl.vulkan.VkComputePipelineCreateInfo;
@@ -25,10 +26,10 @@ import org.lwjgl.vulkan.VkPushConstantRange;
 import org.lwjgl.vulkan.VkShaderModuleCreateInfo;
 import org.lwjgl.vulkan.VkWriteDescriptorSet;
 
-/** Sums two independently denoised transparent branches into the opaque scene before FSR. */
+/** Resolves transparent NRD branches or the selected final validation layer before FSR. */
 public final class NrdTransparentComposite implements Destroyable {
-    private static final int BINDING_COUNT = 13;
-    private static final int PUSH_SIZE = 8;
+    private static final int BINDING_COUNT = 16;
+    private static final int PUSH_SIZE = 16;
 
     private final VulkanContext context;
     private final long descriptorSetLayout;
@@ -56,6 +57,7 @@ public final class NrdTransparentComposite implements Destroyable {
     public static NrdTransparentComposite create(
             VulkanContext context,
             VulkanImage sceneColor,
+            NrdDenoiser opaque,
             NrdDenoiser reflection,
             NrdDenoiser transmission,
             AtmospherePipeline atmosphere) {
@@ -159,7 +161,10 @@ public final class NrdTransparentComposite implements Destroyable {
                 transmission.specularMaterial(),
                 transmission.transparentThroughput(),
                 atmosphere.aerialRadiance(),
-                atmosphere.aerialTransmittance()
+                atmosphere.aerialTransmittance(),
+                opaque.validation(),
+                reflection.validation(),
+                transmission.validation()
             };
             VkDescriptorImageInfo.Buffer imageInfos =
                     VkDescriptorImageInfo.calloc(BINDING_COUNT, stack);
@@ -203,7 +208,11 @@ public final class NrdTransparentComposite implements Destroyable {
         }
     }
 
-    public void record(VkCommandBuffer commandBuffer, int width, int height) {
+    public void record(
+            VkCommandBuffer commandBuffer,
+            int width,
+            int height,
+            float sunRadianceMultiplier) {
         if (this.destroyed) {
             throw new IllegalStateException("Transparent NRD composite is destroyed");
         }
@@ -220,6 +229,8 @@ public final class NrdTransparentComposite implements Destroyable {
             ByteBuffer push = stack.malloc(PUSH_SIZE).order(ByteOrder.nativeOrder());
             push.putInt(0, width);
             push.putInt(4, height);
+            push.putFloat(8, sunRadianceMultiplier);
+            push.putInt(12, NrdDiagnostics.mode().outputSelector());
             VK12.vkCmdPushConstants(
                     commandBuffer,
                     this.pipelineLayout,
@@ -255,15 +266,22 @@ public final class NrdTransparentComposite implements Destroyable {
         } catch (IOException exception) {
             throw new IllegalStateException("Read shader resource " + resourceName, exception);
         }
-        ByteBuffer code = stack.malloc(bytes.length);
-        code.put(bytes).flip();
-        VkShaderModuleCreateInfo createInfo = VkShaderModuleCreateInfo.calloc(stack)
-                .sType$Default()
-                .pCode(code);
-        LongBuffer pointer = stack.mallocLong(1);
-        VulkanContext.check(
-                VK12.vkCreateShaderModule(context.vkDevice(), createInfo, null, pointer),
-                "create shader module " + resourceName);
-        return pointer.get(0);
+        // Compute shaders can grow beyond LWJGL's deliberately small per-thread MemoryStack.
+        // SPIR-V is transient creation data, so use an explicitly owned native allocation and
+        // release it immediately after vkCreateShaderModule has consumed the bytes.
+        ByteBuffer code = MemoryUtil.memAlloc(bytes.length);
+        try {
+            code.put(bytes).flip();
+            VkShaderModuleCreateInfo createInfo = VkShaderModuleCreateInfo.calloc(stack)
+                    .sType$Default()
+                    .pCode(code);
+            LongBuffer pointer = stack.mallocLong(1);
+            VulkanContext.check(
+                    VK12.vkCreateShaderModule(context.vkDevice(), createInfo, null, pointer),
+                    "create shader module " + resourceName);
+            return pointer.get(0);
+        } finally {
+            MemoryUtil.memFree(code);
+        }
     }
 }

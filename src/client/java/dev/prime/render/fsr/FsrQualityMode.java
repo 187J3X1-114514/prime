@@ -15,12 +15,20 @@ public enum FsrQualityMode {
     private final float upscaleRatio;
     private final int jitterPhaseCount;
     private final float mipBias;
+    private final FsrSettings.Jitter[] jitterSequence;
 
     FsrQualityMode(String id, float upscaleRatio) {
         this.id = id;
         this.upscaleRatio = upscaleRatio;
         this.jitterPhaseCount = Math.max(1, (int) (8.0F * upscaleRatio * upscaleRatio));
         this.mipBias = (float) (Math.log(1.0 / upscaleRatio) / Math.log(2.0) - 1.0);
+        this.jitterSequence = new FsrSettings.Jitter[this.jitterPhaseCount];
+        for (int index = 0; index < this.jitterSequence.length; index++) {
+            int phase = index + 1;
+            this.jitterSequence[index] = new FsrSettings.Jitter(
+                    halton(phase, 2) - 0.5F,
+                    halton(phase, 3) - 0.5F);
+        }
     }
 
     public String id() {
@@ -40,19 +48,25 @@ public enum FsrQualityMode {
     }
 
     public FsrSettings.Extent renderExtent(int displayWidth, int displayHeight) {
-        if (displayWidth <= 0 || displayHeight <= 0) {
-            throw new IllegalArgumentException("FSR display dimensions must be positive");
-        }
         return new FsrSettings.Extent(
-                Math.max(1, (int) (displayWidth / this.upscaleRatio)),
-                Math.max(1, (int) (displayHeight / this.upscaleRatio)));
+                this.renderWidth(displayWidth), this.renderHeight(displayHeight));
+    }
+
+    public int renderWidth(int displayWidth) {
+        return this.renderDimension(displayWidth);
+    }
+
+    public int renderHeight(int displayHeight) {
+        return this.renderDimension(displayHeight);
     }
 
     public FsrSettings.Jitter jitter(int frameIndex) {
-        int phase = Math.floorMod(frameIndex, this.jitterPhaseCount) + 1;
-        return new FsrSettings.Jitter(
-                halton(phase, 2) - 0.5F,
-                halton(phase, 3) - 0.5F);
+        return this.jitterSequence[this.jitterPhase(frameIndex) - 1];
+    }
+
+    /** Returns the one-based Halton phase consumed by both ray-generation passes. */
+    public int jitterPhase(int frameIndex) {
+        return Math.floorMod(frameIndex, this.jitterPhaseCount) + 1;
     }
 
     /**
@@ -100,5 +114,12 @@ public enum FsrQualityMode {
             value /= base;
         }
         return result;
+    }
+
+    private int renderDimension(int displayDimension) {
+        if (displayDimension <= 0) {
+            throw new IllegalArgumentException("FSR display dimensions must be positive");
+        }
+        return Math.max(1, (int) (displayDimension / this.upscaleRatio));
     }
 }

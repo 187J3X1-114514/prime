@@ -164,7 +164,7 @@ vec4 atmSolarSpectrum(int group) {
             ? vec4(1.7477345, 1.7629014, 2.0566432, 1.8146111)
             : vec4(1.8847016, 1.8567868, 1.7294269, 1.5365043);
     // The fitted spectra originally reconstruct a 205-unit extraterrestrial sun. Scaling the
-    // spectra here keeps sky radiance and Prime's explicit 10-unit sun on one energy scale.
+    // spectra here keeps sky radiance and Prime's explicit 12.5-unit sun on one energy scale.
     return reference * (ATM_SPACE_SUN_INTENSITY / ATM_REFERENCE_SUN_INTENSITY);
 }
 

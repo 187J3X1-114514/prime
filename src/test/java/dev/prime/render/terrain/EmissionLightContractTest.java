@@ -16,10 +16,10 @@ final class EmissionLightContractTest {
     @Test
     void minecraftLightLevelUsesSquaredRadiusCalibration() {
         assertEquals(0.0F, CpuSectionLights.emissionScale(0));
-        assertEquals(0.6F, CpuSectionLights.emissionScale(3), 1.0E-6F);
-        assertEquals(49.0F / 15.0F, CpuSectionLights.emissionScale(7), 1.0E-6F);
-        assertEquals(15.0F, CpuSectionLights.emissionScale(15));
-        assertEquals(15.0F, CpuSectionLights.emissionScale(100));
+        assertEquals(1.0F, CpuSectionLights.emissionScale(3), 1.0E-6F);
+        assertEquals(49.0F / 9.0F, CpuSectionLights.emissionScale(7), 1.0E-6F);
+        assertEquals(25.0F, CpuSectionLights.emissionScale(15));
+        assertEquals(25.0F, CpuSectionLights.emissionScale(100));
     }
 
     @Test
@@ -93,6 +93,19 @@ final class EmissionLightContractTest {
         int[] bounds = tree.packNodeBounds();
         int[] forward = tree.packNodeForward();
         int[] reverse = tree.packNodeReverse();
+        int[] combined = new int[bounds.length + forward.length + reverse.length];
+        tree.packInto(combined, 0, bounds.length, bounds.length + forward.length);
+        assertArrayEquals(
+                bounds,
+                java.util.Arrays.copyOfRange(combined, 0, bounds.length));
+        assertArrayEquals(
+                forward,
+                java.util.Arrays.copyOfRange(
+                        combined, bounds.length, bounds.length + forward.length));
+        assertArrayEquals(
+                reverse,
+                java.util.Arrays.copyOfRange(
+                        combined, bounds.length + forward.length, combined.length));
         assertEquals(tree.nodeCount() * 8, bounds.length);
         assertEquals(tree.nodeCount(), forward.length);
         assertEquals(tree.nodeCount(), reverse.length);
@@ -153,10 +166,56 @@ final class EmissionLightContractTest {
         assertTrue(forwardTraversal.contains("uint rightIndex = leftIndex + 1u"));
         assertTrue(forwardTraversal.contains("node = left"));
         assertTrue(forwardTraversal.contains("node = right"));
+        assertTrue(forwardTraversal.contains("float split = lowerBound + pdf * leftProbability"));
+        assertFalse(forwardTraversal.contains("value /= leftProbability"));
+        assertFalse(forwardTraversal.contains("/ rightProbability"));
         assertFalse(forwardTraversal.contains("nodes.nodes[nodeIndex]"));
         assertFalse(forwardTraversal.contains("reverseNodes"));
+        String areaSampling = lights.substring(
+                lights.indexOf("AreaLightSample primeSampleAreaLight"),
+                lights.indexOf("vec3 primeResolveSampledAreaLightRadiance"));
+        assertTrue(areaSampling.contains("float pdf = areaPdf * distanceSquared / lightCosine"));
+        assertTrue(areaSampling.contains("if (!(lightCosine > 0.0))"));
+        String areaEvaluation = lights.substring(
+                lights.indexOf("LightEvaluation primeEvaluateAreaLight"),
+                lights.indexOf("#endif"));
+        assertEquals(1, areaEvaluation.split("primeEvaluateEmitterRadiance\\(", -1).length - 1);
         assertTrue(integrator.contains("primeSampleAreaLight"));
         assertTrue(integrator.contains("primeEvaluateAreaLight"));
+    }
+
+    @Test
+    void cumulativeIntervalMatchesNormalizedInverseCdfTraversal() {
+        float[] probabilities = {0.17F, 0.83F, 0.31F, 0.62F, 0.48F, 0.91F};
+        float[] seeds = {0.01F, 0.13F, 0.29F, 0.47F, 0.68F, 0.88F, 0.99F};
+        for (float seed : seeds) {
+            float normalized = seed;
+            float normalizedPdf = 1.0F;
+            float lowerBound = 0.0F;
+            float intervalPdf = 1.0F;
+            for (float leftProbability : probabilities) {
+                boolean normalizedLeft = normalized < leftProbability;
+                float rightProbability = 1.0F - leftProbability;
+                if (normalizedLeft) {
+                    normalizedPdf *= leftProbability;
+                    normalized /= leftProbability;
+                } else {
+                    normalizedPdf *= rightProbability;
+                    normalized = (normalized - leftProbability) / rightProbability;
+                }
+
+                float split = lowerBound + intervalPdf * leftProbability;
+                boolean intervalLeft = seed < split;
+                assertEquals(normalizedLeft, intervalLeft);
+                if (intervalLeft) {
+                    intervalPdf *= leftProbability;
+                } else {
+                    intervalPdf *= rightProbability;
+                    lowerBound = split;
+                }
+                assertEquals(normalizedPdf, intervalPdf, 1.0E-7F);
+            }
+        }
     }
 
     private static CpuLightTree.Leaf leaf(float x, float power, int index) {

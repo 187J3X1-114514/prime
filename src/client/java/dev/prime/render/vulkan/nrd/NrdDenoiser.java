@@ -55,9 +55,9 @@ public final class NrdDenoiser implements Destroyable {
     private static final int COMPUTE_STAGE = VK12.VK_SHADER_STAGE_COMPUTE_BIT;
     private static final int IMAGE_USAGE = VK12.VK_IMAGE_USAGE_STORAGE_BIT | VK12.VK_IMAGE_USAGE_SAMPLED_BIT;
     private static final int MOTION_BINDING_COUNT = 10;
-    private static final int MOTION_PUSH_SIZE = 192;
+    private static final int MOTION_PUSH_SIZE = 196;
     private static final int COMPOSITE_BINDING_COUNT = 13;
-    private static final int COMPOSITE_PUSH_SIZE = 12;
+    private static final int COMPOSITE_PUSH_SIZE = 16;
     // world.rgen writes 65504 for a sky view-Z. Keep the valid range below that sentinel while
     // remaining far beyond Minecraft's usable terrain and Prime's 16,000-block aerial volume.
     private static final float DENOISING_RANGE = 60_000.0f;
@@ -76,6 +76,10 @@ public final class NrdDenoiser implements Destroyable {
     private final MotionPipeline motionPipeline;
     private final CompositePipeline composite;
     private final boolean ownsOpaqueComposite;
+    private final NrdDiagnostics.Mode diagnosticMode;
+    private final Matrix4f currentNrdProjection = new Matrix4f();
+    private final Matrix4f previousNrdProjection = new Matrix4f();
+    private final Matrix4f previousWorldToView = new Matrix4f();
     private final ArrayDeque<FrameBindings> freeBindings = new ArrayDeque<>();
     private final Set<FrameBindings> allBindings =
             Collections.newSetFromMap(new IdentityHashMap<>());
@@ -85,7 +89,8 @@ public final class NrdDenoiser implements Destroyable {
     private long previousAtlasView;
     private long previousAtlasSampler;
     private SunDirection previousSunDirection;
-    private float[] previousCameraJitter;
+    private float previousCameraJitterX;
+    private float previousCameraJitterY;
     private int frameIndex;
     private long previousSubmissionNanos;
     private boolean destroyed;
@@ -101,7 +106,8 @@ public final class NrdDenoiser implements Destroyable {
             ComputePipeline[] pipelines,
             MotionPipeline motionPipeline,
             CompositePipeline composite,
-            boolean ownsOpaqueComposite) {
+            boolean ownsOpaqueComposite,
+            NrdDiagnostics.Mode diagnosticMode) {
         this.context = context;
         this.width = width;
         this.height = height;
@@ -114,6 +120,7 @@ public final class NrdDenoiser implements Destroyable {
         this.motionPipeline = motionPipeline;
         this.composite = composite;
         this.ownsOpaqueComposite = ownsOpaqueComposite;
+        this.diagnosticMode = diagnosticMode;
     }
 
     public static NrdDenoiser create(
@@ -132,7 +139,8 @@ public final class NrdDenoiser implements Destroyable {
                 "/prime/shaders/nrd_motion.comp.spv",
                 output,
                 stableAccumulation,
-                atmosphere);
+                atmosphere,
+                NrdDiagnostics.Mode.OPAQUE);
     }
 
     /**
@@ -154,7 +162,10 @@ public final class NrdDenoiser implements Destroyable {
                 "/prime/shaders/nrd_transparent_motion.comp.spv",
                 null,
                 null,
-                null);
+                null,
+                branch == TransparentBranch.REFLECTION
+                        ? NrdDiagnostics.Mode.REFLECTION
+                        : NrdDiagnostics.Mode.TRANSMISSION);
     }
 
     private static NrdDenoiser create(
@@ -166,7 +177,8 @@ public final class NrdDenoiser implements Destroyable {
             String motionShader,
             VulkanImage output,
             VulkanImage stableAccumulation,
-            AtmospherePipeline atmosphere) {
+            AtmospherePipeline atmosphere,
+            NrdDiagnostics.Mode diagnosticMode) {
         boolean opaqueComposite = output != null;
         NrdNative.Instance nativeInstance = NrdNative.create(width, height, denoiserKind);
         Images images = null;
@@ -205,7 +217,8 @@ public final class NrdDenoiser implements Destroyable {
                     pipelines,
                     motionPipeline,
                     composite,
-                    opaqueComposite);
+                    opaqueComposite,
+                    diagnosticMode);
         } catch (RuntimeException exception) {
             if (composite != null) {
                 composite.destroy();
@@ -306,6 +319,10 @@ public final class NrdDenoiser implements Destroyable {
         return this.images.primaryPosition;
     }
 
+    VulkanImage validation() {
+        return this.images.validation;
+    }
+
     public VulkanImage fsrReactiveMask() {
         return this.images.fsrReactiveMask;
     }
@@ -361,6 +378,7 @@ public final class NrdDenoiser implements Destroyable {
             SunDirection sunDirection,
             float cameraJitterX,
             float cameraJitterY,
+            float sunRadianceMultiplier,
             boolean forceRestart) {
         if (!this.ownsOpaqueComposite) {
             throw new IllegalStateException("Transparent NRD history requires recordBranch");
@@ -374,6 +392,7 @@ public final class NrdDenoiser implements Destroyable {
                 sunDirection,
                 cameraJitterX,
                 cameraJitterY,
+                sunRadianceMultiplier,
                 forceRestart,
                 true);
     }
@@ -400,6 +419,7 @@ public final class NrdDenoiser implements Destroyable {
                 sunDirection,
                 cameraJitterX,
                 cameraJitterY,
+                1.0F,
                 forceRestart,
                 false);
     }
@@ -413,6 +433,7 @@ public final class NrdDenoiser implements Destroyable {
             SunDirection sunDirection,
             float cameraJitterX,
             float cameraJitterY,
+            float sunRadianceMultiplier,
             boolean forceRestart,
             boolean compositeOutput) {
         this.requireOpen();
@@ -423,9 +444,9 @@ public final class NrdDenoiser implements Destroyable {
                 || atlasSampler != this.previousAtlasSampler
                 || sunDirectionDiscontinuous(sunDirection, this.previousSunDirection);
         FrameCamera historyCamera = restart ? camera : this.previousCamera;
-        NrdDiagnostics.Mode diagnosticMode = NrdDiagnostics.mode();
-        float[] cameraJitter = new float[] {cameraJitterX, cameraJitterY};
-        float[] historyCameraJitter = restart ? cameraJitter : this.previousCameraJitter;
+        NrdDiagnostics.Mode selectedDiagnostic = NrdDiagnostics.mode();
+        float historyCameraJitterX = restart ? cameraJitterX : this.previousCameraJitterX;
+        float historyCameraJitterY = restart ? cameraJitterY : this.previousCameraJitterY;
         int currentFrameIndex = restart ? 0 : this.frameIndex;
         long now = System.nanoTime();
         float deltaMilliseconds = this.previousSubmissionNanos == 0L
@@ -434,15 +455,17 @@ public final class NrdDenoiser implements Destroyable {
         this.nativeInstance.setFrameSettings(createFrameSettings(
                 camera,
                 historyCamera,
-                cameraJitter,
-                historyCameraJitter,
+                cameraJitterX,
+                cameraJitterY,
+                historyCameraJitterX,
+                historyCameraJitterY,
                 this.width,
                 this.height,
                 currentFrameIndex,
                 restart,
                 deltaMilliseconds,
-                diagnosticMode.enablesNrdValidation()));
-        List<NrdNative.Dispatch> dispatches = this.nativeInstance.getDispatches();
+                selectedDiagnostic.enablesValidationFor(this.diagnosticMode)));
+        NrdNative.DispatchList dispatches = this.nativeInstance.getDispatches();
         FrameBindings bindings = this.acquireBindings();
         try {
             bindings.prepare(dispatches, this);
@@ -451,16 +474,17 @@ public final class NrdDenoiser implements Destroyable {
                     commandBuffer,
                     camera,
                     historyCamera,
-                    cameraJitter,
+                    cameraJitterX,
+                    cameraJitterY,
                     this.width,
-                    this.height);
+                    this.height,
+                    0);
             computeToComputeBarrier(commandBuffer);
             for (int dispatchIndex = 0; dispatchIndex < dispatches.size(); dispatchIndex++) {
                 if (dispatchIndex != 0) {
                     computeToComputeBarrier(commandBuffer);
                 }
-                NrdNative.Dispatch dispatch = dispatches.get(dispatchIndex);
-                ComputePipeline pipeline = this.pipelines[dispatch.pipelineIndex()];
+                ComputePipeline pipeline = this.pipelines[dispatches.pipelineIndex(dispatchIndex)];
                 VK12.vkCmdBindPipeline(
                         commandBuffer,
                         VK12.VK_PIPELINE_BIND_POINT_COMPUTE,
@@ -478,14 +502,18 @@ public final class NrdDenoiser implements Destroyable {
                 }
                 VK12.vkCmdDispatch(
                         commandBuffer,
-                        dispatch.gridWidth(),
-                        dispatch.gridHeight(),
+                        dispatches.gridWidth(dispatchIndex),
+                        dispatches.gridHeight(dispatchIndex),
                         1);
             }
             computeToComputeBarrier(commandBuffer);
             if (compositeOutput) {
                 this.composite.record(
-                        commandBuffer, this.width, this.height, diagnosticMode.shaderValue());
+                        commandBuffer,
+                        this.width,
+                        this.height,
+                        0,
+                        sunRadianceMultiplier);
             }
             return new FrameToken(
                     this,
@@ -495,7 +523,8 @@ public final class NrdDenoiser implements Destroyable {
                     atlasView,
                     atlasSampler,
                     sunDirection,
-                    cameraJitter,
+                    cameraJitterX,
+                    cameraJitterY,
                     restart ? 1 : currentFrameIndex + 1,
                     now);
         } catch (RuntimeException exception) {
@@ -516,7 +545,8 @@ public final class NrdDenoiser implements Destroyable {
         this.previousAtlasView = token.atlasView;
         this.previousAtlasSampler = token.atlasSampler;
         this.previousSunDirection = token.sunDirection;
-        this.previousCameraJitter = token.cameraJitter;
+        this.previousCameraJitterX = token.cameraJitterX;
+        this.previousCameraJitterY = token.cameraJitterY;
         this.frameIndex = token.nextFrameIndex;
         this.previousSubmissionNanos = token.submissionNanos;
         this.context.afterSubmission(() -> this.recycle(token.bindings));
@@ -547,8 +577,8 @@ public final class NrdDenoiser implements Destroyable {
         }
     }
 
-    VulkanImage resolveResource(NrdNative.Resource resource) {
-        return switch (resource.resourceType()) {
+    VulkanImage resolveResource(int resourceType, int indexInPool) {
+        return switch (resourceType) {
             case NrdNative.RESOURCE_IN_MV -> this.images.motion;
             case NrdNative.RESOURCE_IN_NORMAL_ROUGHNESS -> this.images.normalRoughness;
             case NrdNative.RESOURCE_IN_VIEWZ -> this.images.viewZ;
@@ -558,12 +588,12 @@ public final class NrdDenoiser implements Destroyable {
             case NrdNative.RESOURCE_OUT_SPEC_RADIANCE_HITDIST -> this.images.denoisedSpecular;
             case NrdNative.RESOURCE_OUT_VALIDATION -> this.images.validation;
             case NrdNative.RESOURCE_TRANSIENT_POOL -> checkedPoolImage(
-                    this.images.transientPool, resource.indexInPool(), "transient");
+                    this.images.transientPool, indexInPool, "transient");
             case NrdNative.RESOURCE_PERMANENT_POOL -> checkedPoolImage(
-                    this.images.permanentPool, resource.indexInPool(), "permanent");
+                    this.images.permanentPool, indexInPool, "permanent");
             default -> throw new IllegalStateException(
                     "NRD requested unsupported resource type "
-                            + resource.resourceType());
+                            + resourceType);
         };
     }
 
@@ -635,27 +665,31 @@ public final class NrdDenoiser implements Destroyable {
         }
     }
 
-    private static NrdNative.FrameSettings createFrameSettings(
+    private NrdNative.FrameSettings createFrameSettings(
             FrameCamera camera,
             FrameCamera previous,
-            float[] cameraJitter,
-            float[] previousCameraJitter,
+            float cameraJitterX,
+            float cameraJitterY,
+            float previousCameraJitterX,
+            float previousCameraJitterY,
             int width,
             int height,
             int frameIndex,
             boolean restart,
             float deltaMilliseconds,
             boolean enableValidation) {
-        Matrix4f currentProjection = NrdCameraTransform.projectionForNrd(camera.projection());
-        Matrix4f previousProjection = NrdCameraTransform.projectionForNrd(previous.projection());
-        Matrix4f previousWorldToView = NrdCameraTransform.previousWorldToView(camera, previous);
+        NrdCameraTransform.projectionForNrd(camera.projection(), this.currentNrdProjection);
+        NrdCameraTransform.projectionForNrd(previous.projection(), this.previousNrdProjection);
+        NrdCameraTransform.previousWorldToView(camera, previous, this.previousWorldToView);
         return new NrdNative.FrameSettings(
-                currentProjection.get(new float[16]),
-                previousProjection.get(new float[16]),
-                camera.viewRotation().get(new float[16]),
-                previousWorldToView.get(new float[16]),
-                cameraJitter,
-                previousCameraJitter,
+                this.currentNrdProjection,
+                this.previousNrdProjection,
+                camera.viewRotation(),
+                this.previousWorldToView,
+                cameraJitterX,
+                cameraJitterY,
+                previousCameraJitterX,
+                previousCameraJitterY,
                 width,
                 height,
                 width,
@@ -832,7 +866,8 @@ public final class NrdDenoiser implements Destroyable {
         private final long atlasView;
         private final long atlasSampler;
         private final SunDirection sunDirection;
-        private final float[] cameraJitter;
+        private final float cameraJitterX;
+        private final float cameraJitterY;
         private final int nextFrameIndex;
         private final long submissionNanos;
         private boolean submitted;
@@ -845,7 +880,8 @@ public final class NrdDenoiser implements Destroyable {
                 long atlasView,
                 long atlasSampler,
                 SunDirection sunDirection,
-                float[] cameraJitter,
+                float cameraJitterX,
+                float cameraJitterY,
                 int nextFrameIndex,
                 long submissionNanos) {
             this.owner = owner;
@@ -855,7 +891,8 @@ public final class NrdDenoiser implements Destroyable {
             this.atlasView = atlasView;
             this.atlasSampler = atlasSampler;
             this.sunDirection = sunDirection;
-            this.cameraJitter = cameraJitter;
+            this.cameraJitterX = cameraJitterX;
+            this.cameraJitterY = cameraJitterY;
             this.nextFrameIndex = nextFrameIndex;
             this.submissionNanos = submissionNanos;
         }
@@ -880,6 +917,7 @@ public final class NrdDenoiser implements Destroyable {
         private final VulkanImage transparentThroughput;
         private final VulkanImage[] permanentPool;
         private final VulkanImage[] transientPool;
+        private final VulkanImage[] ownedImages;
         private boolean destroyed;
 
         private Images(
@@ -900,7 +938,8 @@ public final class NrdDenoiser implements Destroyable {
                 VulkanImage fsrTransparencyCompositionMask,
                 VulkanImage transparentThroughput,
                 VulkanImage[] permanentPool,
-                VulkanImage[] transientPool) {
+                VulkanImage[] transientPool,
+                VulkanImage[] ownedImages) {
             this.noisyDiffuse = noisyDiffuse;
             this.noisySpecular = noisySpecular;
             this.normalRoughness = normalRoughness;
@@ -919,6 +958,7 @@ public final class NrdDenoiser implements Destroyable {
             this.transparentThroughput = transparentThroughput;
             this.permanentPool = permanentPool;
             this.transientPool = transientPool;
+            this.ownedImages = ownedImages;
         }
 
         private static Images create(
@@ -1014,7 +1054,8 @@ public final class NrdDenoiser implements Destroyable {
                         fsrTransparencyCompositionMask,
                         transparentThroughput,
                         permanent,
-                        transientImages);
+                        transientImages,
+                        created.toArray(VulkanImage[]::new));
             } catch (RuntimeException exception) {
                 for (int index = created.size() - 1; index >= 0; index--) {
                     created.get(index).destroy();
@@ -1063,42 +1104,7 @@ public final class NrdDenoiser implements Destroyable {
         }
 
         private VulkanImage[] allImages() {
-            ArrayList<VulkanImage> unique = new ArrayList<>();
-            Set<VulkanImage> seen = Collections.newSetFromMap(new IdentityHashMap<>());
-            VulkanImage[] fixed = new VulkanImage[] {
-                this.noisyDiffuse,
-                this.noisySpecular,
-                this.normalRoughness,
-                this.viewZ,
-                this.motion,
-                this.material,
-                this.specularMaterial,
-                this.denoisedDiffuse,
-                this.denoisedSpecular,
-                this.primaryPosition,
-                this.reprojectionError,
-                this.validation,
-                this.fsrDepth,
-                this.fsrReactiveMask,
-                this.fsrTransparencyCompositionMask,
-                this.transparentThroughput
-            };
-            for (VulkanImage image : fixed) {
-                if (seen.add(image)) {
-                    unique.add(image);
-                }
-            }
-            for (VulkanImage image : this.permanentPool) {
-                if (seen.add(image)) {
-                    unique.add(image);
-                }
-            }
-            for (VulkanImage image : this.transientPool) {
-                if (seen.add(image)) {
-                    unique.add(image);
-                }
-            }
-            return unique.toArray(VulkanImage[]::new);
+            return this.ownedImages;
         }
 
         @Override
@@ -1347,6 +1353,8 @@ public final class NrdDenoiser implements Destroyable {
         private final VulkanBuffer constantBuffer;
         private long[] resourceDescriptorSets = new long[0];
         private long[] constantsDescriptorSets = new long[0];
+        private int[] allocatedPipelineIndices = new int[0];
+        private int allocatedSetCount;
         private boolean destroyed;
 
         private FrameBindings(
@@ -1421,40 +1429,51 @@ public final class NrdDenoiser implements Destroyable {
             }
         }
 
-        private void prepare(List<NrdNative.Dispatch> dispatches, NrdDenoiser denoiser) {
+        private void prepare(NrdNative.DispatchList dispatches, NrdDenoiser denoiser) {
             if (this.destroyed) {
                 throw new IllegalStateException("NRD frame bindings are destroyed");
             }
             if (dispatches.size() > denoiser.description.setsMaxNum()) {
                 throw new IllegalStateException("NRD dispatch count exceeds its descriptor pool contract");
             }
-            VulkanContext.check(
-                    VK12.vkResetDescriptorPool(denoiser.context.vkDevice(), this.descriptorPool, 0),
-                    "reset Prime NRD descriptor pool");
-            this.resourceDescriptorSets = new long[dispatches.size()];
-            this.constantsDescriptorSets = new long[dispatches.size()];
             if (dispatches.isEmpty()) {
                 return;
             }
+            if (this.resourceDescriptorSets.length < dispatches.size()) {
+                this.resourceDescriptorSets = new long[dispatches.size()];
+                this.constantsDescriptorSets = new long[dispatches.size()];
+                this.allocatedPipelineIndices = new int[dispatches.size()];
+            }
             try (MemoryStack stack = MemoryStack.stackPush()) {
-                LongBuffer layouts = stack.mallocLong(Math.multiplyExact(dispatches.size(), 2));
-                for (NrdNative.Dispatch dispatch : dispatches) {
-                    ComputePipeline pipeline = denoiser.pipelines[dispatch.pipelineIndex()];
-                    layouts.put(pipeline.resourceDescriptorSetLayout);
-                    layouts.put(pipeline.constantsDescriptorSetLayout);
-                }
-                layouts.flip();
-                VkDescriptorSetAllocateInfo allocateInfo = VkDescriptorSetAllocateInfo.calloc(stack)
-                        .sType$Default()
-                        .descriptorPool(this.descriptorPool)
-                        .pSetLayouts(layouts);
-                LongBuffer sets = stack.mallocLong(Math.multiplyExact(dispatches.size(), 2));
-                VulkanContext.check(
-                        VK12.vkAllocateDescriptorSets(denoiser.context.vkDevice(), allocateInfo, sets),
-                        "allocate Prime NRD frame descriptor sets");
-                for (int dispatchIndex = 0; dispatchIndex < dispatches.size(); dispatchIndex++) {
-                    this.resourceDescriptorSets[dispatchIndex] = sets.get();
-                    this.constantsDescriptorSets[dispatchIndex] = sets.get();
+                if (!this.matchesAllocatedLayouts(dispatches)) {
+                    this.allocatedSetCount = 0;
+                    VulkanContext.check(
+                            VK12.vkResetDescriptorPool(
+                                    denoiser.context.vkDevice(), this.descriptorPool, 0),
+                            "reset Prime NRD descriptor pool");
+                    LongBuffer layouts = stack.mallocLong(Math.multiplyExact(dispatches.size(), 2));
+                    for (int dispatchIndex = 0; dispatchIndex < dispatches.size(); dispatchIndex++) {
+                        int pipelineIndex = dispatches.pipelineIndex(dispatchIndex);
+                        ComputePipeline pipeline = denoiser.pipelines[pipelineIndex];
+                        layouts.put(pipeline.resourceDescriptorSetLayout);
+                        layouts.put(pipeline.constantsDescriptorSetLayout);
+                        this.allocatedPipelineIndices[dispatchIndex] = pipelineIndex;
+                    }
+                    layouts.flip();
+                    VkDescriptorSetAllocateInfo allocateInfo = VkDescriptorSetAllocateInfo.calloc(stack)
+                            .sType$Default()
+                            .descriptorPool(this.descriptorPool)
+                            .pSetLayouts(layouts);
+                    LongBuffer sets = stack.mallocLong(Math.multiplyExact(dispatches.size(), 2));
+                    VulkanContext.check(
+                            VK12.vkAllocateDescriptorSets(
+                                    denoiser.context.vkDevice(), allocateInfo, sets),
+                            "allocate Prime NRD frame descriptor sets");
+                    for (int dispatchIndex = 0; dispatchIndex < dispatches.size(); dispatchIndex++) {
+                        this.resourceDescriptorSets[dispatchIndex] = sets.get();
+                        this.constantsDescriptorSets[dispatchIndex] = sets.get();
+                    }
+                    this.allocatedSetCount = dispatches.size();
                 }
 
                 long constantStride = VulkanContext.alignUp(
@@ -1464,43 +1483,58 @@ public final class NrdDenoiser implements Destroyable {
                     this.writeDispatch(
                             stack,
                             dispatchIndex,
-                            dispatches.get(dispatchIndex),
+                            dispatches,
                             constantStride,
                             denoiser);
                 }
             }
         }
 
+        private boolean matchesAllocatedLayouts(NrdNative.DispatchList dispatches) {
+            if (this.allocatedSetCount != dispatches.size()) {
+                return false;
+            }
+            for (int dispatchIndex = 0; dispatchIndex < dispatches.size(); dispatchIndex++) {
+                if (this.allocatedPipelineIndices[dispatchIndex]
+                        != dispatches.pipelineIndex(dispatchIndex)) {
+                    return false;
+                }
+            }
+            return true;
+        }
+
         private void writeDispatch(
                 MemoryStack stack,
                 int dispatchIndex,
-                NrdNative.Dispatch dispatch,
+                NrdNative.DispatchList dispatches,
                 long constantStride,
                 NrdDenoiser denoiser) {
             boolean hasConstants = denoiser.description.pipelines()
-                    .get(dispatch.pipelineIndex())
+                    .get(dispatches.pipelineIndex(dispatchIndex))
                     .hasConstantData();
-            if (hasConstants && dispatch.constantData().length == 0) {
+            int constantDataSize = dispatches.constantDataSize(dispatchIndex);
+            if (hasConstants && constantDataSize == 0) {
                 throw new IllegalStateException("NRD pipeline requires missing constant data");
             }
-            if (dispatch.constantData().length > denoiser.description.constantBufferMaxDataSize()) {
+            if (constantDataSize > denoiser.description.constantBufferMaxDataSize()) {
                 throw new IllegalStateException("NRD constant data exceeds its declared maximum");
             }
-            int writeCount = dispatch.resources().size() + (hasConstants ? 1 : 0);
+            int resourceCount = dispatches.resourceCount(dispatchIndex);
+            int writeCount = resourceCount + (hasConstants ? 1 : 0);
             VkWriteDescriptorSet.Buffer writes = VkWriteDescriptorSet.calloc(writeCount, stack);
             VkDescriptorImageInfo.Buffer imageInfos =
-                    VkDescriptorImageInfo.calloc(dispatch.resources().size(), stack);
+                    VkDescriptorImageInfo.calloc(resourceCount, stack);
             int writeIndex = 0;
             if (hasConstants) {
                 long constantOffset = constantStride * dispatchIndex;
-                ByteBuffer source = stack.malloc(dispatch.constantData().length)
-                        .put(dispatch.constantData())
-                        .flip();
-                this.constantBuffer.put(constantOffset, source);
+                this.constantBuffer.put(
+                        constantOffset,
+                        dispatches.constantDataAddress(dispatchIndex),
+                        constantDataSize);
                 VkDescriptorBufferInfo.Buffer bufferInfo = VkDescriptorBufferInfo.calloc(1, stack)
                         .buffer(this.constantBuffer.handle())
                         .offset(constantOffset)
-                        .range(dispatch.constantData().length);
+                        .range(constantDataSize);
                 writes.get(writeIndex++)
                         .sType$Default()
                         .dstSet(this.constantsDescriptorSets[dispatchIndex])
@@ -1512,23 +1546,28 @@ public final class NrdDenoiser implements Destroyable {
             }
             int textureIndex = 0;
             int storageIndex = 0;
-            for (int resourceIndex = 0; resourceIndex < dispatch.resources().size(); resourceIndex++) {
-                NrdNative.Resource resource = dispatch.resources().get(resourceIndex);
-                VulkanImage image = denoiser.resolveResource(resource);
+            for (int resourceIndex = 0; resourceIndex < resourceCount; resourceIndex++) {
+                int resourceType = dispatches.resourceType(dispatchIndex, resourceIndex);
+                VulkanImage image = denoiser.resolveResource(
+                        resourceType,
+                        dispatches.resourceIndexInPool(dispatchIndex, resourceIndex));
                 int binding;
                 int descriptorType;
-                if (resource.descriptorType() == NrdNative.DESCRIPTOR_TEXTURE) {
+                int nativeDescriptorType = dispatches.resourceDescriptorType(
+                        dispatchIndex, resourceIndex);
+                if (nativeDescriptorType == NrdNative.DESCRIPTOR_TEXTURE) {
                     binding = denoiser.description.textureOffset()
                             + denoiser.description.resourcesBaseRegisterIndex()
                             + textureIndex++;
                     descriptorType = VK12.VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
-                } else if (resource.descriptorType() == NrdNative.DESCRIPTOR_STORAGE_TEXTURE) {
+                } else if (nativeDescriptorType == NrdNative.DESCRIPTOR_STORAGE_TEXTURE) {
                     binding = denoiser.description.storageTextureOffset()
                             + denoiser.description.resourcesBaseRegisterIndex()
                             + storageIndex++;
                     descriptorType = VK12.VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
                 } else {
-                    throw new IllegalStateException("Unknown NRD resource descriptor type " + resource.descriptorType());
+                    throw new IllegalStateException(
+                            "Unknown NRD resource descriptor type " + nativeDescriptorType);
                 }
                 imageInfos.get(resourceIndex)
                         .imageView(image.view())
@@ -1564,6 +1603,10 @@ public final class NrdDenoiser implements Destroyable {
         private final long pipelineLayout;
         private final long pipeline;
         private final int transparentBranch;
+        private final Matrix4f currentClipToWorld = new Matrix4f();
+        private final Matrix4f previousWorldToClip = new Matrix4f();
+        private final Matrix4f previousRenderedWorldToClip = new Matrix4f();
+        private final Matrix4f worldToViewScratch = new Matrix4f();
         private boolean destroyed;
 
         private MotionPipeline(
@@ -1741,14 +1784,16 @@ public final class NrdDenoiser implements Destroyable {
                 VkCommandBuffer commandBuffer,
                 FrameCamera camera,
                 FrameCamera previous,
-                float[] cameraJitter,
+                float cameraJitterX,
+                float cameraJitterY,
                 int width,
-                int height) {
-            Matrix4f currentClipToWorld = NrdCameraTransform.currentClipToWorld(camera);
-            Matrix4f previousWorldToClip =
-                    NrdCameraTransform.previousWorldToClip(camera, previous);
-            Matrix4f previousRenderedWorldToClip =
-                    NrdCameraTransform.previousRenderedWorldToClip(camera, previous);
+                int height,
+                int diagnosticMode) {
+            NrdCameraTransform.currentClipToWorld(camera, this.currentClipToWorld);
+            NrdCameraTransform.previousWorldToClip(
+                    camera, previous, this.previousWorldToClip, this.worldToViewScratch);
+            NrdCameraTransform.previousRenderedWorldToClip(
+                    camera, previous, this.previousRenderedWorldToClip);
             try (MemoryStack stack = MemoryStack.stackPush()) {
                 VK12.vkCmdBindPipeline(
                         commandBuffer, VK12.VK_PIPELINE_BIND_POINT_COMPUTE, this.pipeline);
@@ -1760,15 +1805,16 @@ public final class NrdDenoiser implements Destroyable {
                         stack.longs(this.descriptorSet),
                         null);
                 ByteBuffer push = stack.malloc(MOTION_PUSH_SIZE).order(ByteOrder.nativeOrder());
-                currentClipToWorld.get(0, push);
-                previousWorldToClip.get(64, push);
-                previousRenderedWorldToClip.get(128, push);
+                this.currentClipToWorld.get(0, push);
+                this.previousWorldToClip.get(64, push);
+                this.previousRenderedWorldToClip.get(128, push);
+                push.putInt(192, diagnosticMode);
                 if (this.transparentBranch != 0) {
                     // Raygen has already reduced every delta interface to current/previous
                     // virtual positions. Transparent preparation only reuses column one for the
                     // centered source-pixel jitter that selected the current virtual surface.
-                    push.putFloat(144, cameraJitter[0]);
-                    push.putFloat(148, cameraJitter[1]);
+                    push.putFloat(144, cameraJitterX);
+                    push.putFloat(148, cameraJitterY);
                 }
                 VK12.vkCmdPushConstants(
                         commandBuffer,
@@ -1967,7 +2013,8 @@ public final class NrdDenoiser implements Destroyable {
                 VkCommandBuffer commandBuffer,
                 int width,
                 int height,
-                int diagnosticMode) {
+                int diagnosticMode,
+                float sunRadianceMultiplier) {
             try (MemoryStack stack = MemoryStack.stackPush()) {
                 VK12.vkCmdBindPipeline(
                         commandBuffer, VK12.VK_PIPELINE_BIND_POINT_COMPUTE, this.pipeline);
@@ -1982,6 +2029,7 @@ public final class NrdDenoiser implements Destroyable {
                 push.putInt(0, width);
                 push.putInt(4, height);
                 push.putInt(8, diagnosticMode);
+                push.putFloat(12, sunRadianceMultiplier);
                 VK12.vkCmdPushConstants(
                         commandBuffer,
                         this.pipelineLayout,

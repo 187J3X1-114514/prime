@@ -74,9 +74,18 @@ public final class AtmospherePipeline implements Destroyable {
     private final long multiScatteringPipeline;
     private final long skyPipeline;
     private final long aerialPipeline;
+    private final VulkanImage[] images;
+    private final VulkanImage[] transmittanceImages;
+    private final VulkanImage[] multiScatteringImages;
+    private final VulkanImage[] skyImage;
+    private final VulkanImage[] aerialImages;
+    private final VulkanImage[] dynamicImages;
     private int skyEyeRadiusBits;
     private int skySunElevationBits;
-    private int[] aerialKey;
+    private int[] aerialKey = new int[20];
+    private int[] nextAerialKey = new int[20];
+    private final float[] aerialMatrix = new float[16];
+    private boolean aerialKeyValid;
     private boolean staticPrepared;
     private boolean destroyed;
 
@@ -149,6 +158,20 @@ public final class AtmospherePipeline implements Destroyable {
             this.multiScatteringPipeline = newMultiScatteringPipeline;
             this.skyPipeline = newSkyPipeline;
             this.aerialPipeline = newAerialPipeline;
+            this.images = images;
+            this.transmittanceImages = new VulkanImage[] {
+                this.transmittanceLow, this.transmittanceHigh
+            };
+            this.multiScatteringImages = new VulkanImage[] {
+                this.multiScatteringLow, this.multiScatteringHigh
+            };
+            this.skyImage = new VulkanImage[] {this.skyView};
+            this.aerialImages = new VulkanImage[] {
+                this.aerialRadiance, this.aerialTransmittance
+            };
+            this.dynamicImages = new VulkanImage[] {
+                this.skyView, this.aerialRadiance, this.aerialTransmittance
+            };
         } catch (RuntimeException exception) {
             if (newDescriptorPool != 0L) {
                 VK12.vkDestroyDescriptorPool(context.vkDevice(), newDescriptorPool, null);
@@ -215,14 +238,21 @@ public final class AtmospherePipeline implements Destroyable {
         float eyeRadiusKm = AtmospherePipeline.eyeRadiusKm(camera.y());
         int eyeRadiusBits = Float.floatToIntBits(eyeRadiusKm);
         int sunElevationBits = Float.floatToIntBits(sunDirection.y());
-        int[] nextAerialKey = createAerialKey(camera, eyeRadiusBits, sunDirection);
+        fillAerialKey(
+                this.nextAerialKey,
+                this.aerialMatrix,
+                camera,
+                eyeRadiusBits,
+                sunDirection);
         boolean prepareStatic = !this.staticPrepared;
         // Sky-view azimuth is defined relative to the sun's horizontal projection, so rotating
         // that projection around world Y changes only the lookup orientation, not the table data.
         boolean prepareSky = prepareStatic
                 || eyeRadiusBits != this.skyEyeRadiusBits
                 || sunElevationBits != this.skySunElevationBits;
-        boolean prepareAerial = prepareStatic || !Arrays.equals(this.aerialKey, nextAerialKey);
+        boolean prepareAerial = prepareStatic
+                || !this.aerialKeyValid
+                || !Arrays.equals(this.aerialKey, this.nextAerialKey);
         if (!prepareStatic && !prepareSky && !prepareAerial) {
             return;
         }
@@ -230,23 +260,22 @@ public final class AtmospherePipeline implements Destroyable {
         if (prepareStatic) {
             transitionAllToGeneral(commandBuffer);
             dispatch(commandBuffer, this.transmittancePipeline, 32, 8, 1, null);
-            computeWriteBarrier(commandBuffer, new VulkanImage[] {
-                this.transmittanceLow, this.transmittanceHigh
-            }, VK12.VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT
+            computeWriteBarrier(commandBuffer, this.transmittanceImages, VK12.VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT
                     | KHRRayTracingPipeline.VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR);
             // Split the two spectral groups along dispatch Z. This preserves the reference's
             // 256 directions × 128 steps while avoiding one twice-as-long shader invocation,
             // which matters for Windows GPU timeout resilience during the one-time precompute.
             dispatch(commandBuffer, this.multiScatteringPipeline, 8, 8, 2, null);
-            computeWriteBarrier(commandBuffer, new VulkanImage[] {
-                this.multiScatteringLow, this.multiScatteringHigh
-            }, VK12.VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
+            computeWriteBarrier(
+                    commandBuffer,
+                    this.multiScatteringImages,
+                    VK12.VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
         } else {
             VulkanImage[] overwritten = prepareSky && prepareAerial
-                    ? new VulkanImage[] {this.skyView, this.aerialRadiance, this.aerialTransmittance}
+                    ? this.dynamicImages
                     : prepareSky
-                            ? new VulkanImage[] {this.skyView}
-                            : new VulkanImage[] {this.aerialRadiance, this.aerialTransmittance};
+                            ? this.skyImage
+                            : this.aerialImages;
             shaderReadToComputeWriteBarrier(commandBuffer, overwritten);
         }
 
@@ -264,10 +293,10 @@ public final class AtmospherePipeline implements Destroyable {
             }
         }
         VulkanImage[] written = prepareSky && prepareAerial
-                ? new VulkanImage[] {this.skyView, this.aerialRadiance, this.aerialTransmittance}
+                ? this.dynamicImages
                 : prepareSky
-                        ? new VulkanImage[] {this.skyView}
-                        : new VulkanImage[] {this.aerialRadiance, this.aerialTransmittance};
+                        ? this.skyImage
+                        : this.aerialImages;
         computeWriteBarrier(
                 commandBuffer,
                 written,
@@ -279,7 +308,12 @@ public final class AtmospherePipeline implements Destroyable {
         this.staticPrepared = true;
         this.skyEyeRadiusBits = eyeRadiusBits;
         this.skySunElevationBits = sunElevationBits;
-        this.aerialKey = nextAerialKey;
+        if (prepareAerial) {
+            int[] previousKey = this.aerialKey;
+            this.aerialKey = this.nextAerialKey;
+            this.nextAerialKey = previousKey;
+            this.aerialKeyValid = true;
+        }
     }
 
     @Override
@@ -333,7 +367,7 @@ public final class AtmospherePipeline implements Destroyable {
     }
 
     private void transitionAllToGeneral(VkCommandBuffer commandBuffer) {
-        VulkanImage[] images = images();
+        VulkanImage[] images = this.images;
         try (MemoryStack stack = MemoryStack.stackPush()) {
             VkImageMemoryBarrier2.Buffer barriers = VkImageMemoryBarrier2.calloc(images.length, stack);
             for (int index = 0; index < images.length; index++) {
@@ -434,29 +468,13 @@ public final class AtmospherePipeline implements Destroyable {
                 .layerCount(1);
     }
 
-    private VulkanImage[] images() {
-        return new VulkanImage[] {
-            this.transmittanceLow,
-            this.transmittanceHigh,
-            this.multiScatteringLow,
-            this.multiScatteringHigh,
-            this.skyView,
-            this.aerialRadiance,
-            this.aerialTransmittance
-        };
-    }
-
     private static ByteBuffer createPushConstants(
             MemoryStack stack,
             FrameCamera camera,
             float eyeRadiusKm,
             SunDirection sunDirection) {
         ByteBuffer buffer = stack.calloc(PUSH_CONSTANT_SIZE).order(ByteOrder.nativeOrder());
-        float[] matrix = new float[16];
-        camera.inverseViewProjection().get(matrix);
-        for (int index = 0; index < matrix.length; index++) {
-            buffer.putFloat(index * Float.BYTES, matrix[index]);
-        }
+        camera.inverseViewProjection().get(0, buffer);
         buffer.putFloat(64, eyeRadiusKm);
         buffer.putFloat(68, AERIAL_MAX_DISTANCE_KM);
         buffer.putFloat(80, sunDirection.x());
@@ -466,13 +484,13 @@ public final class AtmospherePipeline implements Destroyable {
         return buffer.position(0).limit(PUSH_CONSTANT_SIZE);
     }
 
-    private static int[] createAerialKey(
+    private static void fillAerialKey(
+            int[] key,
+            float[] matrix,
             FrameCamera camera,
             int eyeRadiusBits,
             SunDirection sunDirection) {
-        float[] matrix = new float[16];
         camera.inverseViewProjection().get(matrix);
-        int[] key = new int[20];
         for (int index = 0; index < matrix.length; index++) {
             key[index] = Float.floatToIntBits(matrix[index]);
         }
@@ -480,7 +498,6 @@ public final class AtmospherePipeline implements Destroyable {
         key[17] = Float.floatToIntBits(sunDirection.x());
         key[18] = Float.floatToIntBits(sunDirection.y());
         key[19] = Float.floatToIntBits(sunDirection.z());
-        return key;
     }
 
     private static long createDescriptorSetLayout(VulkanContext context, MemoryStack stack) {

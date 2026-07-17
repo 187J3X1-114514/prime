@@ -81,11 +81,55 @@ void primeDeltaTangentBasis(vec3 normal, out vec3 tangent, out vec3 bitangent) {
     bitangent = cross(normal, tangent);
 }
 
-bool primeRelaxPreviousDeltaInterface(
-        inout PrimeDeltaChain chain,
+const float PRIME_DELTA_RESIDUAL_TOLERANCE = 1.0e-5;
+
+mat2 primeDeltaProjectNormalizedDerivative(
+        vec3 direction,
+        float inverseLength,
+        vec3 rowTangent,
+        vec3 rowBitangent,
+        vec3 columnTangent,
+        vec3 columnBitangent) {
+    // dot(a, (I - vv^T)b) / length, expanded to avoid materializing a 3x3
+    // projection matrix for every row of every Newton iteration.
+    float rowTangentDirection = dot(rowTangent, direction);
+    float rowBitangentDirection = dot(rowBitangent, direction);
+    return inverseLength * mat2(
+            dot(rowTangent, columnTangent)
+                    - rowTangentDirection * dot(direction, columnTangent),
+            dot(rowBitangent, columnTangent)
+                    - rowBitangentDirection * dot(direction, columnTangent),
+            dot(rowTangent, columnBitangent)
+                    - rowTangentDirection * dot(direction, columnBitangent),
+            dot(rowBitangent, columnBitangent)
+                    - rowBitangentDirection * dot(direction, columnBitangent));
+}
+
+mat2 primeDeltaInverseMatrix(mat2 value, float determinantValue) {
+    // GLSL matrices are column-major. The caller already needs the determinant for singularity
+    // rejection, so spelling out the 2x2 adjugate prevents inverse() from calculating it again.
+    return mat2(
+            value[1][1],
+            -value[0][1],
+            -value[1][0],
+            value[0][0]) / determinantValue;
+}
+
+float primeDeltaInterfaceResidual(
+        PrimeDeltaChain chain,
         uint index,
         vec3 previousCamera,
-        vec3 target) {
+        vec3 target);
+
+bool primeDeltaLinearSystemRow(
+        PrimeDeltaChain chain,
+        uint index,
+        vec3 previousCamera,
+        vec3 target,
+        out mat2 lower,
+        out mat2 diagonal,
+        out mat2 upper,
+        out vec2 residual) {
     vec3 interfacePoint = chain.positionEta[index].xyz;
     vec3 previousPoint = index == 0u
             ? previousCamera
@@ -101,41 +145,149 @@ bool primeRelaxPreviousDeltaInterface(
         return false;
     }
 
-    vec3 normal = normalize(chain.normalEvent[index].xyz);
     vec3 tangent;
     vec3 bitangent;
-    primeDeltaTangentBasis(normal, tangent, bitangent);
+    primeDeltaTangentBasis(chain.normalEvent[index].xyz, tangent, bitangent);
     vec3 incident = incidentDelta / incidentLength;
     vec3 outgoing = outgoingDelta / outgoingLength;
     float relativeEta = max(chain.positionEta[index].w, PRIME_BSDF_EPSILON);
     vec3 stationarity = incident - relativeEta * outgoing;
-    vec2 residual = vec2(
-            dot(stationarity, tangent),
-            dot(stationarity, bitangent));
-    mat3 identity = mat3(1.0);
-    mat3 derivative = (identity - outerProduct(incident, incident)) / incidentLength
-            + relativeEta
-            * (identity - outerProduct(outgoing, outgoing)) / outgoingLength;
-    mat2 jacobian = mat2(
-            dot(tangent, derivative * tangent),
-            dot(bitangent, derivative * tangent),
-            dot(tangent, derivative * bitangent),
-            dot(bitangent, derivative * bitangent));
-    float jacobianDeterminant = determinant(jacobian);
-    if (!(abs(jacobianDeterminant) > 1.0e-8)) {
-        return false;
+    residual = vec2(dot(stationarity, tangent), dot(stationarity, bitangent));
+
+    mat2 incidentDiagonal = primeDeltaProjectNormalizedDerivative(
+            incident,
+            1.0 / incidentLength,
+            tangent,
+            bitangent,
+            tangent,
+            bitangent);
+    mat2 outgoingDiagonal = primeDeltaProjectNormalizedDerivative(
+            outgoing,
+            1.0 / outgoingLength,
+            tangent,
+            bitangent,
+            tangent,
+            bitangent);
+    diagonal = incidentDiagonal + relativeEta * outgoingDiagonal;
+    lower = mat2(0.0);
+    upper = mat2(0.0);
+    if (index > 0u) {
+        vec3 previousTangent;
+        vec3 previousBitangent;
+        primeDeltaTangentBasis(
+                chain.normalEvent[index - 1u].xyz,
+                previousTangent,
+                previousBitangent);
+        lower = -primeDeltaProjectNormalizedDerivative(
+                incident,
+                1.0 / incidentLength,
+                tangent,
+                bitangent,
+                previousTangent,
+                previousBitangent);
     }
-    vec2 step = inverse(jacobian) * residual;
-    float stepLength = length(step);
-    if (stepLength > 8.0) {
-        step *= 8.0 / stepLength;
+    if (index + 1u < chain.count) {
+        vec3 nextTangent;
+        vec3 nextBitangent;
+        primeDeltaTangentBasis(
+                chain.normalEvent[index + 1u].xyz,
+                nextTangent,
+                nextBitangent);
+        upper = -relativeEta * primeDeltaProjectNormalizedDerivative(
+                outgoing,
+                1.0 / outgoingLength,
+                tangent,
+                bitangent,
+                nextTangent,
+                nextBitangent);
     }
-    interfacePoint -= tangent * step.x + bitangent * step.y;
-    if (!primeFiniteTransparentVector(interfacePoint)) {
-        return false;
-    }
-    chain.positionEta[index].xyz = interfacePoint;
     return true;
+}
+
+// Solves all sampled interface points as one coupled Fermat problem. Adjacent stationarity
+// equations share an interface point, so their Jacobian is block tridiagonal. Solving that system
+// directly is both cheaper and much more accurate than relaxing one plane at a time: the old
+// 2e-3 angular stopping threshold could turn into several pixels of wrong motion at 4K even for a
+// parallel glass slab. This path must remain an exact Snell/Fermat solve; screen-space motion
+// heuristics here would make transparent history camera-speed dependent.
+bool primeSolvePreviousDeltaPath(
+        inout PrimeDeltaChain chain,
+        vec3 previousCamera,
+        vec3 target) {
+    const uint maximumIterations = 8u;
+    const float maximumStepLength = 8.0;
+    mat2 reducedUpper[PRIME_DELTA_CHAIN_CAPACITY];
+    vec2 reducedStep[PRIME_DELTA_CHAIN_CAPACITY];
+
+    for (uint iteration = 0u; iteration < maximumIterations; ++iteration) {
+        float maximumResidual = 0.0;
+        for (uint index = 0u; index < chain.count; ++index) {
+            mat2 lower;
+            mat2 diagonal;
+            mat2 upper;
+            vec2 residual;
+            if (!primeDeltaLinearSystemRow(
+                    chain,
+                    index,
+                    previousCamera,
+                    target,
+                    lower,
+                    diagonal,
+                    upper,
+                    residual)) {
+                return false;
+            }
+            maximumResidual = max(maximumResidual, length(residual));
+
+            mat2 reducedDiagonal = diagonal;
+            vec2 reducedResidual = residual;
+            if (index > 0u) {
+                reducedDiagonal -= lower * reducedUpper[index - 1u];
+                reducedResidual -= lower * reducedStep[index - 1u];
+            }
+            float reducedDeterminant = determinant(reducedDiagonal);
+            if (!(abs(reducedDeterminant) > 1.0e-8)) {
+                return false;
+            }
+            mat2 inverseDiagonal = primeDeltaInverseMatrix(
+                    reducedDiagonal, reducedDeterminant);
+            reducedUpper[index] = inverseDiagonal * upper;
+            reducedStep[index] = inverseDiagonal * reducedResidual;
+        }
+        if (maximumResidual < PRIME_DELTA_RESIDUAL_TOLERANCE) {
+            return true;
+        }
+
+        for (int index = int(chain.count) - 2; index >= 0; --index) {
+            reducedStep[index] -= reducedUpper[index] * reducedStep[index + 1];
+        }
+        float largestStep = 0.0;
+        for (uint index = 0u; index < chain.count; ++index) {
+            largestStep = max(largestStep, length(reducedStep[index]));
+        }
+        float stepScale = largestStep > maximumStepLength
+                ? maximumStepLength / largestStep
+                : 1.0;
+        for (uint index = 0u; index < chain.count; ++index) {
+            vec3 tangent;
+            vec3 bitangent;
+            primeDeltaTangentBasis(
+                    chain.normalEvent[index].xyz, tangent, bitangent);
+            chain.positionEta[index].xyz -= stepScale
+                    * (tangent * reducedStep[index].x + bitangent * reducedStep[index].y);
+            if (!primeFiniteTransparentVector(chain.positionEta[index].xyz)) {
+                return false;
+            }
+        }
+    }
+
+    float maximumResidual = 0.0;
+    for (uint index = 0u; index < chain.count; ++index) {
+        maximumResidual = max(
+                maximumResidual,
+                primeDeltaInterfaceResidual(chain, index, previousCamera, target));
+    }
+    return maximumResidual < PRIME_DELTA_RESIDUAL_TOLERANCE;
 }
 
 float primeDeltaInterfaceResidual(
@@ -152,19 +304,108 @@ float primeDeltaInterfaceResidual(
             : chain.positionEta[index + 1u].xyz;
     vec3 incidentDelta = interfacePoint - previousPoint;
     vec3 outgoingDelta = nextPoint - interfacePoint;
-    if (!(length(incidentDelta) > 1.0e-5) || !(length(outgoingDelta) > 1.0e-5)) {
+    float incidentLength = length(incidentDelta);
+    float outgoingLength = length(outgoingDelta);
+    if (!(incidentLength > 1.0e-5) || !(outgoingLength > 1.0e-5)) {
         return PRIME_NRD_FP16_MAX;
     }
-    vec3 normal = normalize(chain.normalEvent[index].xyz);
     vec3 tangent;
     vec3 bitangent;
-    primeDeltaTangentBasis(normal, tangent, bitangent);
-    vec3 stationarity = normalize(incidentDelta)
+    primeDeltaTangentBasis(chain.normalEvent[index].xyz, tangent, bitangent);
+    vec3 stationarity = incidentDelta / incidentLength
             - max(chain.positionEta[index].w, PRIME_BSDF_EPSILON)
-            * normalize(outgoingDelta);
+            * outgoingDelta / outgoingLength;
     return length(vec2(
             dot(stationarity, tangent),
             dot(stationarity, bitangent)));
+}
+
+bool primeSolveSingleTransmissionDeltaPath(
+        inout PrimeDeltaChain chain,
+        vec3 previousCamera,
+        vec3 target) {
+    vec3 originalPoint = chain.positionEta[0].xyz;
+    vec3 normal = chain.normalEvent[0].xyz;
+    vec3 cameraProjection = previousCamera
+            - normal * dot(previousCamera - originalPoint, normal);
+    vec3 targetProjection = target - normal * dot(target - originalPoint, normal);
+    vec3 lateralDelta = targetProjection - cameraProjection;
+    float lateralLength = length(lateralDelta);
+    vec3 solvedPoint = cameraProjection;
+
+    if (lateralLength > 1.0e-5) {
+        vec3 lateralDirection = lateralDelta / lateralLength;
+        float cameraNormalDistanceSquared = dot(
+                previousCamera - cameraProjection,
+                previousCamera - cameraProjection);
+        float targetNormalDistanceSquared = dot(
+                target - targetProjection,
+                target - targetProjection);
+        float relativeEta = max(chain.positionEta[0].w, PRIME_BSDF_EPSILON);
+        float lowerBound = 0.0;
+        float upperBound = lateralLength;
+        float coordinate = clamp(
+                dot(originalPoint - cameraProjection, lateralDirection),
+                lowerBound,
+                upperBound);
+        bool converged = false;
+        for (uint iteration = 0u; iteration < 8u; ++iteration) {
+            float targetCoordinate = lateralLength - coordinate;
+            float incidentLength = sqrt(
+                    coordinate * coordinate + cameraNormalDistanceSquared);
+            float outgoingLength = sqrt(
+                    targetCoordinate * targetCoordinate + targetNormalDistanceSquared);
+            if (!(incidentLength > 1.0e-5) || !(outgoingLength > 1.0e-5)) {
+                return false;
+            }
+            float residual = coordinate / incidentLength
+                    - relativeEta * targetCoordinate / outgoingLength;
+            if (abs(residual) < PRIME_DELTA_RESIDUAL_TOLERANCE) {
+                converged = true;
+                break;
+            }
+            if (residual < 0.0) {
+                lowerBound = coordinate;
+            } else {
+                upperBound = coordinate;
+            }
+            float derivative = cameraNormalDistanceSquared
+                            / (incidentLength * incidentLength * incidentLength)
+                    + relativeEta * targetNormalDistanceSquared
+                            / (outgoingLength * outgoingLength * outgoingLength);
+            if (!(derivative > 1.0e-8)) {
+                return false;
+            }
+            float candidate = coordinate - residual / derivative;
+            coordinate = candidate > lowerBound && candidate < upperBound
+                    ? candidate
+                    : 0.5 * (lowerBound + upperBound);
+        }
+        if (!converged) {
+            float targetCoordinate = lateralLength - coordinate;
+            float incidentLength = sqrt(
+                    coordinate * coordinate + cameraNormalDistanceSquared);
+            float outgoingLength = sqrt(
+                    targetCoordinate * targetCoordinate + targetNormalDistanceSquared);
+            float finalResidual = coordinate / max(incidentLength, 1.0e-5)
+                    - relativeEta * targetCoordinate / max(outgoingLength, 1.0e-5);
+            if (abs(finalResidual) >= PRIME_DELTA_RESIDUAL_TOLERANCE) {
+                return false;
+            }
+        }
+        solvedPoint += lateralDirection * coordinate;
+    }
+
+    if (!primeFiniteTransparentVector(solvedPoint)) {
+        return false;
+    }
+    chain.positionEta[0].xyz = solvedPoint;
+    if (primeDeltaInterfaceResidual(chain, 0u, previousCamera, target)
+            < PRIME_DELTA_RESIDUAL_TOLERANCE) {
+        return true;
+    }
+    chain.positionEta[0].xyz = originalPoint;
+    return false;
 }
 
 bool primeBuildDeltaVirtualGuide(
@@ -178,32 +419,46 @@ bool primeBuildDeltaVirtualGuide(
         return false;
     }
 
+    // Unfolding a chain of planar mirrors produces one world-space virtual surface independent of
+    // the camera. Reflect the target and its normal from the last interface back to the first;
+    // both frames then project the same exact point, with no Fermat solve or path-length walk.
+    vec3 unfoldedTarget = target;
+    virtualNormal = normalize(targetNormal);
+    bool reflectionOnly = true;
+    for (int index = int(chain.count) - 1; index >= 0; --index) {
+        uint eventFlags = floatBitsToUint(chain.normalEvent[index].w);
+        if ((eventFlags & PRIME_BSDF_EVENT_REFLECTION) == 0u) {
+            reflectionOnly = false;
+            continue;
+        }
+        vec3 interfaceNormal = chain.normalEvent[index].xyz;
+        vec3 interfacePoint = chain.positionEta[index].xyz;
+        unfoldedTarget -= 2.0 * interfaceNormal
+                * dot(unfoldedTarget - interfacePoint, interfaceNormal);
+        virtualNormal = normalize(virtualNormal
+                - 2.0 * interfaceNormal * dot(virtualNormal, interfaceNormal));
+    }
+    if (reflectionOnly) {
+        currentVirtualPosition = unfoldedTarget;
+        previousVirtualPosition = unfoldedTarget;
+        return primeFiniteTransparentVector(unfoldedTarget)
+                && primeFiniteTransparentVector(virtualNormal);
+    }
+
     vec3 currentCamera = primePush.cameraPosition;
     vec3 firstDelta = chain.positionEta[0].xyz - currentCamera;
-    float currentPathLength = length(firstDelta);
+    float currentFirstLength = length(firstDelta);
+    float currentPathLength = currentFirstLength;
     for (uint index = 1u; index < chain.count; ++index) {
         currentPathLength += length(
                 chain.positionEta[index].xyz - chain.positionEta[index - 1u].xyz);
     }
     currentPathLength += length(target - chain.positionEta[chain.count - 1u].xyz);
-    if (!(length(firstDelta) > 1.0e-5) || !(currentPathLength > 1.0e-5)) {
+    if (!(currentFirstLength > 1.0e-5) || !(currentPathLength > 1.0e-5)) {
         return false;
     }
     currentVirtualPosition = currentCamera
-            + normalize(firstDelta) * currentPathLength;
-
-    // A mirror is an exact affine replacement, so reflect the final guide normal while walking
-    // back toward the camera. Refraction has no single affine normal transform; preserving the
-    // real terminal normal is the same PSR convention used for a single smooth transmission.
-    virtualNormal = normalize(targetNormal);
-    for (int index = int(chain.count) - 1; index >= 0; --index) {
-        uint eventFlags = floatBitsToUint(chain.normalEvent[index].w);
-        if ((eventFlags & PRIME_BSDF_EVENT_REFLECTION) != 0u) {
-            vec3 interfaceNormal = normalize(chain.normalEvent[index].xyz);
-            virtualNormal = normalize(virtualNormal
-                    - 2.0 * interfaceNormal * dot(virtualNormal, interfaceNormal));
-        }
-    }
+            + firstDelta * (currentPathLength / currentFirstLength);
 
     if (primeTemporalCamera.previousCameraValid.w < 0.5) {
         // NRD discards history on this frame. Keeping both points equal avoids doing an
@@ -214,49 +469,37 @@ bool primeBuildDeltaVirtualGuide(
     }
 
     vec3 previousCamera = primeTemporalCamera.previousCameraValid.xyz;
-    // This is a block Gauss-Seidel solve of Fermat stationarity on every sampled interface plane.
-    // Forward and backward sweeps prevent the first or last plane from dominating a nested stack.
-    bool converged = false;
-    for (uint iteration = 0u; iteration < 8u; ++iteration) {
-        for (uint index = 0u; index < chain.count; ++index) {
-            if (!primeRelaxPreviousDeltaInterface(
-                    chain, index, previousCamera, target)) {
-                return false;
-            }
-        }
-        for (int index = int(chain.count) - 1; index >= 0; --index) {
-            if (!primeRelaxPreviousDeltaInterface(
-                    chain, uint(index), previousCamera, target)) {
-                return false;
-            }
-        }
-        float maximumResidual = 0.0;
-        for (uint index = 0u; index < chain.count; ++index) {
-            maximumResidual = max(
-                    maximumResidual,
-                    primeDeltaInterfaceResidual(chain, index, previousCamera, target));
-        }
-        if (maximumResidual < 2.0e-3) {
-            converged = true;
-            break;
-        }
+    // Rotation changes projection but not the physical delta path. Exact position equality is the
+    // only condition used here, so this shortcut cannot hide translational parallax.
+    if (all(equal(previousCamera, currentCamera))) {
+        previousVirtualPosition = currentVirtualPosition;
+        return primeFiniteTransparentVector(currentVirtualPosition)
+                && primeFiniteTransparentVector(virtualNormal);
     }
-    if (!converged) {
+
+    uint singleEventFlags = chain.count == 1u
+            ? floatBitsToUint(chain.normalEvent[0].w)
+            : 0u;
+    bool solved = chain.count == 1u
+            && (singleEventFlags & PRIME_BSDF_EVENT_TRANSMISSION) != 0u
+            && primeSolveSingleTransmissionDeltaPath(chain, previousCamera, target);
+    if (!solved && !primeSolvePreviousDeltaPath(chain, previousCamera, target)) {
         return false;
     }
 
     vec3 previousFirstDelta = chain.positionEta[0].xyz - previousCamera;
-    float previousPathLength = length(previousFirstDelta);
+    float previousFirstLength = length(previousFirstDelta);
+    float previousPathLength = previousFirstLength;
     for (uint index = 1u; index < chain.count; ++index) {
         previousPathLength += length(
                 chain.positionEta[index].xyz - chain.positionEta[index - 1u].xyz);
     }
     previousPathLength += length(target - chain.positionEta[chain.count - 1u].xyz);
-    if (!(length(previousFirstDelta) > 1.0e-5) || !(previousPathLength > 1.0e-5)) {
+    if (!(previousFirstLength > 1.0e-5) || !(previousPathLength > 1.0e-5)) {
         return false;
     }
     previousVirtualPosition = previousCamera
-            + normalize(previousFirstDelta) * previousPathLength;
+            + previousFirstDelta * (previousPathLength / previousFirstLength);
     vec3 temporalDelta = previousVirtualPosition - currentVirtualPosition;
     return primeFiniteTransparentVector(currentVirtualPosition)
             && primeFiniteTransparentVector(previousVirtualPosition)
@@ -276,11 +519,17 @@ PrimeTransparentBranchResult primeTraceFirstInterfaceBranch(
         uint pathIndex) {
     PathState path = cameraPath;
     path.sampleDimension = pathIndex;
-    PrimeSampleBase sampleBase = primeMakeSampleBase(path, 1u);
-    vec3 scatterSample = primeSobolSample3D(
-            sampleBase,
-            PRIME_SAMPLE_EFFECT_SCATTER_BSDF,
-            PRIME_SAMPLE_DIMENSION_PRIMARY);
+    bool closedDeltaReflection = splitInterface
+            && reflectionBranch
+            && (surface.materialFlags & PRIME_MATERIAL_FLAG_THIN_WALLED) == 0u;
+    vec3 scatterSample = vec3(0.0);
+    if (!closedDeltaReflection) {
+        PrimeSampleBase sampleBase = primeMakeSampleBase(path, 1u);
+        scatterSample = primeSobolSample3D(
+                sampleBase,
+                PRIME_SAMPLE_EFFECT_SCATTER_BSDF,
+                PRIME_SAMPLE_DIMENSION_PRIMARY);
+    }
     PrimeTransmissiveBsdfSample branch;
     if (splitInterface) {
         branch = primeSampleMinecraftTransmissionBranch(
@@ -480,37 +729,42 @@ void primeStoreTransparentBranch(
     }
 }
 
+void primeClearTransparentBranches(ivec2 pixel) {
+    imageStore(primeTransparentReflectionNoisy, pixel, vec4(0.0));
+    imageStore(primeTransparentReflectionSpecular, pixel, vec4(0.0));
+    imageStore(primeTransparentReflectionPosition, pixel, vec4(0.0));
+    imageStore(primeTransparentReflectionMetadata, pixel, vec4(0.0, 0.0, 0.0, -1.0));
+    imageStore(primeTransparentReflectionGuide, pixel, vec4(0.0, 1.0, 0.0, 1.0));
+    imageStore(primeTransparentReflectionInterface, pixel, vec4(0.0, 1.0, 0.0, 1.0));
+    imageStore(primeTransparentReflectionThroughput, pixel, vec4(1.0));
+    imageStore(primeTransparentTransmissionNoisy, pixel, vec4(0.0));
+    imageStore(primeTransparentTransmissionSpecular, pixel, vec4(0.0));
+    imageStore(primeTransparentTransmissionPosition, pixel, vec4(0.0));
+    imageStore(primeTransparentTransmissionMetadata, pixel, vec4(0.0, 0.0, 0.0, -1.0));
+    imageStore(primeTransparentTransmissionGuide, pixel, vec4(0.0, 1.0, 0.0, 1.0));
+    imageStore(primeTransparentTransmissionInterface, pixel, vec4(0.0, 1.0, 0.0, 1.0));
+    imageStore(primeTransparentTransmissionThroughput, pixel, vec4(1.0));
+}
+
 void main() {
     uvec2 pixel = gl_LaunchIDEXT.xy;
     vec2 cameraSample = primeCameraSample();
-    // Every pixel is initialized each frame so old virtual surfaces cannot survive when a camera
-    // ray stops seeing transparency. A negative metadata alpha denotes a stable bypass signal.
-    imageStore(primeTransparentReflectionNoisy, ivec2(pixel), vec4(0.0));
-    imageStore(primeTransparentReflectionSpecular, ivec2(pixel), vec4(0.0));
-    imageStore(primeTransparentReflectionPosition, ivec2(pixel), vec4(0.0));
-    imageStore(primeTransparentReflectionMetadata, ivec2(pixel), vec4(0.0, 0.0, 0.0, -1.0));
-    imageStore(primeTransparentReflectionGuide, ivec2(pixel), vec4(0.0, 1.0, 0.0, 1.0));
-    imageStore(primeTransparentReflectionInterface, ivec2(pixel), vec4(0.0, 1.0, 0.0, 1.0));
-    imageStore(primeTransparentReflectionThroughput, ivec2(pixel), vec4(1.0));
-    imageStore(primeTransparentTransmissionNoisy, ivec2(pixel), vec4(0.0));
-    imageStore(primeTransparentTransmissionSpecular, ivec2(pixel), vec4(0.0));
-    imageStore(primeTransparentTransmissionPosition, ivec2(pixel), vec4(0.0));
-    imageStore(primeTransparentTransmissionMetadata, ivec2(pixel), vec4(0.0, 0.0, 0.0, -1.0));
-    imageStore(primeTransparentTransmissionGuide, ivec2(pixel), vec4(0.0, 1.0, 0.0, 1.0));
-    imageStore(primeTransparentTransmissionInterface, ivec2(pixel), vec4(0.0, 1.0, 0.0, 1.0));
-    imageStore(primeTransparentTransmissionThroughput, ivec2(pixel), vec4(1.0));
     PathState cameraPath = primeCameraPath(pixel, 0u, cameraSample);
     SurfaceInteraction surface = primeTraceSurface(
             cameraPath.traceOrigin, cameraPath.rayDirection);
     if (surface.hitKind == PRIME_HIT_NONE
             || !primeMaterialIsTransmissive(surface.materialFlags)) {
+        // Old virtual surfaces must not survive when a camera ray stops seeing transparency.
+        // Transparent pixels skip this clear because both complete branch records below overwrite
+        // every image; clearing those pixels first would double the storage traffic.
+        primeClearTransparentBranches(ivec2(pixel));
         return;
     }
 
     IntegratorRecord integrator;
     integrator.sunDirectionIntensity = vec4(
             primePush.sunDirection,
-            ATM_SPACE_SUN_INTENSITY);
+            ATM_SPACE_SUN_INTENSITY * primeSunRadianceMultiplier());
     integrator.environmentRadiance = vec4(0.0);
     PrimeRcVolumeStack volumeStack =
             (primePush.path.z & PRIME_PATH_CAMERA_IN_WATER_MASK) != 0u
@@ -527,9 +781,8 @@ void main() {
     // Any finite roughness is sampled as one complete BSDF path, preserving the fixed path budget.
     bool splitSmoothInterface = primeMaterialLinearRoughness(
             surface.baseColor, surface.materialFlags) == 0.0;
-    PrimeTransparentBranchResult reflection = primeEmptyTransparentBranchResult();
     if (splitSmoothInterface) {
-        reflection = primeTraceFirstInterfaceBranch(
+        PrimeTransparentBranchResult reflection = primeTraceFirstInterfaceBranch(
                 cameraPath,
                 surface,
                 integrator,
@@ -538,6 +791,15 @@ void main() {
                 true,
                 true,
                 1u);
+        primeStoreTransparentBranch(
+                ivec2(pixel), reflection, surface, cameraPath, true);
+    } else {
+        primeStoreTransparentBranch(
+                ivec2(pixel),
+                primeEmptyTransparentBranchResult(),
+                surface,
+                cameraPath,
+                true);
     }
     PrimeTransparentBranchResult transmission = primeTraceFirstInterfaceBranch(
             cameraPath,
@@ -548,8 +810,6 @@ void main() {
             splitSmoothInterface,
             false,
             splitSmoothInterface ? 2u : 1u);
-    primeStoreTransparentBranch(
-            ivec2(pixel), reflection, surface, cameraPath, true);
     primeStoreTransparentBranch(
             ivec2(pixel), transmission, surface, cameraPath, false);
     LightEvaluation visibleEmitter = primeEvaluateAreaLight(

@@ -26,6 +26,26 @@ final class IntegratorSettingsTest {
     }
 
     @Test
+    void lightingControlStoresIndependentSignedQuarterEvOffsets() {
+        int packed = IntegratorSettings.packLightingControl(-16, 16);
+        int sun = ((packed >>> ShaderAbi.PATH_SUN_EV_QUARTER_SHIFT)
+                & ShaderAbi.PATH_EV_QUARTER_MASK) - ShaderAbi.PATH_EV_QUARTER_BIAS;
+        int block = ((packed >>> ShaderAbi.PATH_BLOCK_LIGHT_EV_QUARTER_SHIFT)
+                & ShaderAbi.PATH_EV_QUARTER_MASK) - ShaderAbi.PATH_EV_QUARTER_BIAS;
+        assertEquals(-16, sun);
+        assertEquals(16, block);
+        assertThrows(IllegalArgumentException.class,
+                () -> IntegratorSettings.packLightingControl(-129, 0));
+        assertThrows(IllegalArgumentException.class,
+                () -> IntegratorSettings.packLightingControl(0, 128));
+    }
+
+    @Test
+    void rouletteStartsAtTheSecondBounceContract() {
+        assertEquals(2, IntegratorSettings.RUSSIAN_ROULETTE_START);
+    }
+
+    @Test
     void reciprocalMisWeightsFormACompletePartition() {
         float forward = IntegratorSettings.powerHeuristic(0.3F, 0.7F);
         float reverse = IntegratorSettings.powerHeuristic(0.7F, 0.3F);

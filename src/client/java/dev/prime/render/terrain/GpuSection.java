@@ -10,7 +10,7 @@ record GpuSection(
         int sectionZ,
         PreparedBlas blas,
         VulkanBuffer lightBuffer,
-        CpuSectionLights lights) {
+        CpuSectionLights.Summary lights) {
     long lightAddress() {
         return this.lightBuffer == null ? 0L : this.lightBuffer.deviceAddress();
     }

@@ -187,7 +187,12 @@
   },
   "pathControl": {
     "cameraInWaterMask": "0x80000000",
-    "jitterPhaseMask": "0x7fff"
+    "jitterPhaseMask": "0x7fff",
+    "sunEvQuarterShift": 0,
+    "blockLightEvQuarterShift": 8,
+    "evQuarterMask": "0xff",
+    "evQuarterBias": 128,
+    "russianRouletteStart": 2
   },
   "nrdContract": {
     "version": "4.17.4",
@@ -205,13 +210,16 @@
     "defaultDisplayTransform": "oklab-drt",
     "displayExposure": 1.0
   },
+  "emissionContract": {
+    "level15BlockIntensity": 25.0
+  },
   "atmosphereContract": {
     "spectralModel": "hillaire-8wave-rec2020-d65",
     "bottomRadiusKm": 6360.0,
     "topRadiusKm": 6460.0,
     "worldSeaLevelY": -64.0,
     "worldUnitScaleKm": 0.001,
-    "spaceSunIntensity": 10.0,
+    "spaceSunIntensity": 12.5,
     "sunAngularRadiusRadians": 0.00471,
     "aerialMaxDistanceKm": 64.0
   },

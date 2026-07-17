@@ -56,6 +56,17 @@ public final class VulkanBuffer implements Destroyable {
         Vma.vmaFlushAllocation(this.allocator, this.allocation, offset, length);
     }
 
+    public void put(long offset, long sourceAddress, long length) {
+        if (sourceAddress == 0L && length != 0L) {
+            throw new IllegalArgumentException("Buffer source address is null");
+        }
+        if (offset < 0L || length < 0L || offset > this.size - length) {
+            throw new IndexOutOfBoundsException("Buffer write exceeds allocation");
+        }
+        MemoryUtil.memCopy(sourceAddress, this.mappedAddress() + offset, length);
+        Vma.vmaFlushAllocation(this.allocator, this.allocation, offset, length);
+    }
+
     public void flush(long offset, long length) {
         Vma.vmaFlushAllocation(this.allocator, this.allocation, offset, length);
     }

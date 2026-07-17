@@ -5,10 +5,9 @@
 // FSR 3.1's base-2/base-3 Halton sample is screen-constant for a frame; using another jitter or
 // pixel-centre convention in the transparent pass would detach glass edges from opaque depth.
 vec2 primeCameraSample() {
-    uint jitterSequenceLength = max(
+    uint jitterPhase = max(
             (primePush.path.z >> 16u) & PRIME_PATH_JITTER_PHASE_MASK,
             1u);
-    uint jitterPhase = (primePush.path.w % jitterSequenceLength) + 1u;
     float halton2 = 0.0;
     float halton3 = 0.0;
     float fraction2 = 1.0;

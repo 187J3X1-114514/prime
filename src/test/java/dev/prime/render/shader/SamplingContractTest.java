@@ -30,8 +30,7 @@ final class SamplingContractTest {
         assertTrue(sampling.contains("primeSobolSample4D"));
         assertTrue(camera.contains(
                 "(primePush.path.z >> 16u) & PRIME_PATH_JITTER_PHASE_MASK"));
-        assertTrue(camera.contains(
-                "uint jitterPhase = (primePush.path.w % jitterSequenceLength) + 1u"));
+        assertFalse(camera.contains("primePush.path.w %"));
         assertTrue(camera.contains("return vec2(halton2, halton3)"));
         assertTrue(rayGeneration.contains("primeCameraPath(pixel, 0u, cameraSample)"));
         assertTrue(transparent.contains("primeCameraPath(pixel, 0u, cameraSample)"));
@@ -44,6 +43,9 @@ final class SamplingContractTest {
         assertTrue(integrator.contains("PRIME_SAMPLE_EFFECT_DIRECT_AREA_LIGHT"));
         assertTrue(integrator.contains("PRIME_SAMPLE_EFFECT_SCATTER_BSDF"));
         assertTrue(integrator.contains("PRIME_SAMPLE_EFFECT_RUSSIAN_ROULETTE"));
+        assertTrue(integrator.contains(
+                "const uint rouletteStart = PRIME_RUSSIAN_ROULETTE_START"));
+        assertFalse(integrator.contains("rouletteStart = 5u"));
         assertFalse(allConsumers.contains("primeRandom"));
     }
 }

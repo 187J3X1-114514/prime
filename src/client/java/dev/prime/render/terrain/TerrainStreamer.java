@@ -28,12 +28,13 @@ import net.minecraft.world.level.chunk.status.ChunkStatus;
 import net.minecraft.world.level.chunk.LevelChunk;
 
 public final class TerrainStreamer implements AutoCloseable {
+    private static final long[] EMPTY_EVICTIONS = new long[0];
     private static final int SECTION_COUNT_BUDGET_MULTIPLIER = 16;
     private static final int MAX_SNAPSHOTS_PER_FRAME = 4 * SECTION_COUNT_BUDGET_MULTIPLIER;
     private static final int MAX_UPLOADS_PER_FRAME = 8 * SECTION_COUNT_BUDGET_MULTIPLIER;
-    // The count budget may grow independently, but one TerrainScene update is still backed by a
-    // single 16 MiB staging batch. Retaining the byte bound avoids a hidden 256 MiB mapped page.
-    private static final long MAX_UPLOAD_BYTES_PER_FRAME = 16L * 1024L * 1024L;
+    // The count budget may grow independently, but one TerrainScene update is still backed by one
+    // staging page. Account for allocation alignment exactly instead of summing payload bytes.
+    private static final long MAX_UPLOAD_BYTES_PER_FRAME = StagingArena.PAGE_SIZE;
     private static final int MAX_UNLOADED_PROBES_PER_FRAME = 32 * SECTION_COUNT_BUDGET_MULTIPLIER;
     private static final int MAX_READY_FOR_UPLOAD = 64 * SECTION_COUNT_BUDGET_MULTIPLIER;
     private static final int MAX_EXTERNAL_DIRTY_SECTIONS = 16_384;
@@ -58,6 +59,11 @@ public final class TerrainStreamer implements AutoCloseable {
             .thenComparingLong(SectionRequest::distanceSquared)
             .thenComparingLong(SectionRequest::key));
     private final ArrayDeque<CompletedSection> readyForUpload = new ArrayDeque<>();
+    private final ArrayList<SectionUpload> uploadBatch = new ArrayList<>(MAX_UPLOADS_PER_FRAME);
+    private final ArrayList<SectionRequest> unloadedRequests =
+            new ArrayList<>(MAX_UNLOADED_PROBES_PER_FRAME);
+    private final ArrayList<SectionRequest> blockedRequests =
+            new ArrayList<>(MAX_UNLOADED_PROBES_PER_FRAME);
 
     private ClientLevel world;
     private int centerSectionX = Integer.MIN_VALUE;
@@ -282,8 +288,8 @@ public final class TerrainStreamer implements AutoCloseable {
         RenderRegionCache regionCache = new RenderRegionCache();
         BlockStateModelSet models = minecraft.getModelManager().getBlockStateModelSet();
         FluidStateModelSet fluidModels = minecraft.getModelManager().getFluidStateModelSet();
-        List<SectionRequest> unloaded = new ArrayList<>();
-        List<SectionRequest> blocked = new ArrayList<>();
+        this.unloadedRequests.clear();
+        this.blockedRequests.clear();
         int examined = 0;
         int dispatched = 0;
         while (dispatched < dispatchBudget
@@ -300,7 +306,7 @@ public final class TerrainStreamer implements AutoCloseable {
                 continue;
             }
             if (this.inFlightGeneration.containsKey(request.key())) {
-                blocked.add(request);
+                this.blockedRequests.add(request);
                 continue;
             }
             this.queuedGeneration.remove(request.key());
@@ -309,7 +315,7 @@ public final class TerrainStreamer implements AutoCloseable {
             int sectionZ = SectionPos.z(request.key());
             LevelChunk chunk = level.getChunkSource().getChunk(sectionX, sectionZ, ChunkStatus.FULL, false);
             if (chunk == null) {
-                unloaded.add(request);
+                this.unloadedRequests.add(request);
                 continue;
             }
             if (chunk.getSection(chunk.getSectionIndexFromSectionY(sectionY)).hasOnlyAir()) {
@@ -378,10 +384,12 @@ public final class TerrainStreamer implements AutoCloseable {
             }
             dispatched++;
         }
-        this.requests.addAll(blocked);
-        for (SectionRequest request : unloaded) {
+        this.requests.addAll(this.blockedRequests);
+        for (SectionRequest request : this.unloadedRequests) {
             this.enqueue(request.key(), request.priority(), request.generation());
         }
+        this.blockedRequests.clear();
+        this.unloadedRequests.clear();
     }
 
     private void drainCompleted() {
@@ -419,7 +427,8 @@ public final class TerrainStreamer implements AutoCloseable {
     }
 
     private void uploadReady(double cameraX, double cameraY, double cameraZ) {
-        List<SectionUpload> uploads = new ArrayList<>(MAX_UPLOADS_PER_FRAME);
+        List<SectionUpload> uploads = this.uploadBatch;
+        uploads.clear();
         long uploadBytes = 0L;
         while (uploads.size() < MAX_UPLOADS_PER_FRAME && !this.readyForUpload.isEmpty()) {
             CompletedSection next = this.readyForUpload.peekFirst();
@@ -427,20 +436,22 @@ public final class TerrainStreamer implements AutoCloseable {
                 this.readyForUpload.removeFirst();
                 continue;
             }
-            long nextBytes = next.mesh().byteSize();
-            if (!uploads.isEmpty() && uploadBytes + nextBytes > MAX_UPLOAD_BYTES_PER_FRAME) {
+            long nextEndOffset = stagingEndOffset(uploadBytes, next.mesh());
+            if (!uploads.isEmpty() && nextEndOffset > MAX_UPLOAD_BYTES_PER_FRAME) {
                 break;
             }
-            if (nextBytes > MAX_UPLOAD_BYTES_PER_FRAME) {
+            if (nextEndOffset > MAX_UPLOAD_BYTES_PER_FRAME) {
                 throw new IllegalStateException(
                         "Section " + next.key() + " exceeds Prime's 16 MiB per-section upload limit");
             }
             this.readyForUpload.removeFirst();
-            uploadBytes += next.mesh().byteSize();
+            uploadBytes = nextEndOffset;
             uploads.add(new SectionUpload(
                     next.key(), next.sectionX(), next.sectionY(), next.sectionZ(), next.mesh()));
         }
-        long[] evictions = this.pendingEvictions.toLongArray();
+        long[] evictions = this.pendingEvictions.isEmpty()
+                ? EMPTY_EVICTIONS
+                : this.pendingEvictions.toLongArray();
         boolean updated = this.scene.update(uploads, evictions, cameraX, cameraY, cameraZ);
         if (!updated) {
             for (int index = uploads.size() - 1; index >= 0; index--) {
@@ -468,6 +479,29 @@ public final class TerrainStreamer implements AutoCloseable {
                 this.empty.remove(upload.key());
             }
         }
+    }
+
+    static long stagingEndOffset(long cursor, CpuSectionMesh mesh) {
+        if (mesh.isEmpty()) {
+            return cursor;
+        }
+        return stagingEndOffset(
+                cursor,
+                (long) mesh.positions().length * Float.BYTES,
+                (long) mesh.primitiveRecords().length * Integer.BYTES,
+                mesh.lights().byteSize());
+    }
+
+    static long stagingEndOffset(
+            long cursor,
+            long positionBytes,
+            long primitiveBytes,
+            long lightBytes) {
+        long endOffset = StagingArena.requiredEndOffset(cursor, positionBytes, Float.BYTES);
+        endOffset = StagingArena.requiredEndOffset(endOffset, primitiveBytes, Integer.BYTES);
+        return lightBytes == 0L
+                ? endOffset
+                : StagingArena.requiredEndOffset(endOffset, lightBytes, 16L);
     }
 
     private void clearWorld(double cameraX, double cameraY, double cameraZ) {

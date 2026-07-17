@@ -12,6 +12,7 @@ import org.junit.jupiter.api.Test;
 final class DisplayTransformTest {
     private static final double EPSILON = 2.0e-6;
     private static final double EXPOSURE = 1.0;
+    private static final double OVEREXPOSURE = 37.0 / 32.0;
 
     @Test
     void oklabTransformMatchesReferenceCheckpoints() {
@@ -58,13 +59,15 @@ final class DisplayTransformTest {
 
         assertTrue(displayTransform.contains("#include \"prime_color_contract.glsl\""));
         assertTrue(displayTransform.contains("* PRIME_DISPLAY_EXPOSURE"));
-        assertTrue(displayTransform.contains("vec3 primeDisplayTransformToSrgb(vec3 hdrRec2020)"));
-        assertTrue(displayTransform.contains("primeOklabTonemapCurve(linearBt709)"));
+        assertTrue(displayTransform.contains(
+                "vec3 primeDisplayTransformToSrgb(vec3 hdrRec2020, float overexposure)"));
+        assertTrue(displayTransform.contains(
+                "primeOklabTonemapCurve(linearBt709, overexposure)"));
         assertTrue(rayGeneration.contains("imageStore(primeAccumulation"));
         assertFalse(rayGeneration.contains("primeDisplayTransformToSrgb"));
         assertTrue(composite.contains("vec3 radiance = surface + imageLoad(primeStableAccumulation"));
         assertFalse(composite.contains("primeDisplayTransformToSrgb"));
-        assertTrue(fsrDisplay.contains("primeDisplayTransformToSrgb(max(radiance, vec3(0.0)))"));
+        assertTrue(fsrDisplay.contains("primeFsrDisplayPush.oklabOverexposure"));
     }
 
     private static double[] display(double[] hdrRec2020) {
@@ -128,7 +131,7 @@ final class DisplayTransformTest {
 
         double[] oklab = rgbToOklab(color);
         double brightness = oklab[0] * oklab[0] * oklab[0];
-        double targetLightness = Math.cbrt((37.0 / 32.0) * brightness / (1.0 + brightness));
+        double targetLightness = Math.cbrt(OVEREXPOSURE * brightness / (1.0 + brightness));
         double[] truncated = rgbToOklab(scale(color, 1.0 / maxChannel));
         double[] start = scale(truncated, 0.875);
         double l0 = start[0];

@@ -121,6 +121,8 @@ final class RoboCuteBsdfContractTest {
         assertTrue(adapter.contains("primeRcTransmissionSample"));
         assertTrue(adapter.contains("primeMinecraftMirrorSplit"));
         assertTrue(adapter.contains("primeSampleMinecraftTransmissionBranch"));
+        assertTrue(adapter.contains("primeSampleMinecraftTransmissionBranchFromState"));
+        assertFalse(adapter.contains("primeSampleMinecraftTransmissionFresnelBranch"));
         assertTrue(adapter.contains("primeRcMicrofacetDirectionalAlbedoTransmission"));
         assertTrue(adapter.contains("state.samplingFlags = PRIME_RC_FLAG_TRANSMISSION"));
         assertTrue(adapter.contains("reflect(-viewDirection, outwardNormal)"));
@@ -132,7 +134,11 @@ final class RoboCuteBsdfContractTest {
         assertTrue(adapter.contains("result.volumeStack = sampled.volumeStack"));
         assertTrue(adapter.contains("primeCameraWaterVolumeStack"));
         assertTrue(adapter.contains("PRIME_GLASS_MINIMUM_TINT_WEIGHT = 0.75"));
-        assertTrue(adapter.contains("PRIME_WATER_REFERENCE_DEPTH = 16.0"));
+        assertTrue(adapter.contains(
+                "PRIME_PURE_WATER_ABSORPTION_M_INV = vec3(0.2916, 0.04444, 0.010182)"));
+        assertTrue(adapter.contains(
+                "transmissionColor = exp(-PRIME_PURE_WATER_ABSORPTION_M_INV)"));
+        assertTrue(adapter.contains("PRIME_REC2020_PRIMARY_WAVELENGTHS_NM"));
         assertTrue(adapter.contains("decodedColor / peak"));
         assertTrue(defaultMaterial.contains(
                 "visible interface is split into deterministic reflection and"));

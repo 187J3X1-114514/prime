@@ -43,6 +43,7 @@ public final class VulkanRenderer implements AutoCloseable {
     private final StagingArena stagingArena;
     private final TerrainStreamer terrain;
     private final AccumulationState accumulationState = new AccumulationState();
+    private final BlockPos.MutableBlockPos cameraBlockPosition = new BlockPos.MutableBlockPos();
     private RayTracingPipeline pipeline;
     private AtmospherePipeline atmosphere;
     private RenderImages renderImages;
@@ -51,6 +52,7 @@ public final class VulkanRenderer implements AutoCloseable {
     private SunDirection sunDirection;
     private boolean cameraMediumKnown;
     private boolean cameraInWater;
+    private long submittedLightingRevision = Long.MIN_VALUE;
     private boolean shaderReloadRequested;
     private boolean closed;
 
@@ -143,9 +145,8 @@ public final class VulkanRenderer implements AutoCloseable {
             return;
         }
         FsrQualityMode requestedQualityMode = FsrSettings.qualityMode();
-        FsrSettings.Extent renderExtent = requestedQualityMode.renderExtent(width, height);
-        int renderWidth = renderExtent.width();
-        int renderHeight = renderExtent.height();
+        int renderWidth = requestedQualityMode.renderWidth(width);
+        int renderHeight = requestedQualityMode.renderHeight(height);
         long invocationCount = (long) renderWidth * renderHeight;
         if (invocationCount > Integer.toUnsignedLong(this.context.capabilities().maxRayDispatchInvocationCount())) {
             throw new IllegalStateException("Window dimensions exceed the Vulkan ray dispatch limit");
@@ -179,7 +180,15 @@ public final class VulkanRenderer implements AutoCloseable {
         NrdDenoiser reflectionDenoiser = images.reflectionDenoiser;
         NrdDenoiser transmissionDenoiser = images.transmissionDenoiser;
         Fsr3Upscaler upscaler = images.upscaler;
-        boolean frameCameraInWater = isCameraInWater(minecraft, frameCamera);
+        LightingSettings.Snapshot lighting = LightingSettings.snapshot();
+        boolean lightingChanged = this.submittedLightingRevision != Long.MIN_VALUE
+                && lighting.revision() != this.submittedLightingRevision;
+        if (lightingChanged) {
+            // A radiance-scale change invalidates temporal estimators, but not geometry,
+            // atmosphere transmittance, or light-tree probabilities.
+            upscaler.requestReset();
+        }
+        boolean frameCameraInWater = this.isCameraInWater(minecraft, frameCamera);
         if (this.cameraMediumKnown && this.cameraInWater != frameCameraInWater) {
             // Crossing the water surface changes transport for essentially every visible path.
             // Treat it as a temporal discontinuity so NRD/FSR do not retain the previous medium.
@@ -194,7 +203,7 @@ public final class VulkanRenderer implements AutoCloseable {
                 atlasViewHandle,
                 atlasSamplerHandle,
                 frameSunDirection,
-                resized);
+                resized || lightingChanged);
         Fsr3Upscaler.FrameToken fsrFrame = upscaler.beginFrame(
                 frameCamera,
                 scene.resetRevision(),
@@ -211,7 +220,7 @@ public final class VulkanRenderer implements AutoCloseable {
         var encoder = this.context.commandEncoder();
         VkCommandBuffer commandBuffer = encoder.allocateAndBeginTransientCommandBuffer();
         this.context.device().instance().debug().beginDebugGroup(
-                commandBuffer, () -> "Prime path tracing, NRD, and FSR 3.1.5");
+                commandBuffer, () -> "Prime path tracing, NRD, and FidelityFX FSR 3.1.4");
         this.atmosphere.prepare(commandBuffer, frameCamera, frameSunDirection);
         this.prepareOutputForComposite(commandBuffer, target);
         this.prepareSceneColorForComposite(commandBuffer, sceneColor);
@@ -233,7 +242,8 @@ public final class VulkanRenderer implements AutoCloseable {
                     frameSunDirection,
                     images.qualityMode,
                     fsrFrame.frameIndex(),
-                    frameCameraInWater);
+                    frameCameraInWater,
+                    lighting);
             this.pipeline.trace(commandBuffer, pushConstants, renderWidth, renderHeight);
             nrdFrame = denoiser.record(
                     commandBuffer,
@@ -244,6 +254,7 @@ public final class VulkanRenderer implements AutoCloseable {
                     frameSunDirection,
                     cameraJitter.x(),
                     cameraJitter.y(),
+                    lighting.sunMultiplier(),
                     fsrFrame.reset());
             this.prepareTransparentComposite(commandBuffer, sceneColor, denoiser);
             this.pipeline.traceTransparent(
@@ -275,7 +286,11 @@ public final class VulkanRenderer implements AutoCloseable {
                     cameraJitter.x(),
                     cameraJitter.y(),
                     fsrFrame.reset());
-            images.transparentComposite.record(commandBuffer, renderWidth, renderHeight);
+            images.transparentComposite.record(
+                    commandBuffer,
+                    renderWidth,
+                    renderHeight,
+                    lighting.sunMultiplier());
             this.finishTransparentComposite(commandBuffer, sceneColor, denoiser);
             this.finishAtlasRead(commandBuffer, atlasView.texture());
             upscaler.record(commandBuffer, fsrFrame);
@@ -309,6 +324,7 @@ public final class VulkanRenderer implements AutoCloseable {
         transmissionDenoiser.submitted(transmissionNrdFrame);
         upscaler.submitted(fsrFrame);
         this.previousSubmittedCamera = frameCamera;
+        this.submittedLightingRevision = lighting.revision();
         this.accumulationState.submitted(
                 frameCamera,
                 atlasViewHandle,
@@ -402,6 +418,7 @@ public final class VulkanRenderer implements AutoCloseable {
                 replacementTransparentComposite = NrdTransparentComposite.create(
                         this.context,
                         currentImages.sceneColor,
+                        replacementDenoiser,
                         replacementReflectionDenoiser,
                         replacementTransmissionDenoiser,
                         replacementAtmosphere);
@@ -539,6 +556,7 @@ public final class VulkanRenderer implements AutoCloseable {
             replacementTransparentComposite = NrdTransparentComposite.create(
                     this.context,
                     replacementSceneColor,
+                    replacementDenoiser,
                     replacementReflectionDenoiser,
                     replacementTransmissionDenoiser,
                     this.atmosphere);
@@ -731,15 +749,22 @@ public final class VulkanRenderer implements AutoCloseable {
             NrdDenoiser denoiser) {
         try (MemoryStack stack = MemoryStack.stackPush()) {
             VkImageMemoryBarrier2.Buffer barriers = VkImageMemoryBarrier2.calloc(3, stack);
-            VulkanImage[] images = new VulkanImage[] {
-                sceneColor,
-                denoiser.fsrReactiveMask(),
-                denoiser.fsrTransparencyCompositionMask()
-            };
-            for (int index = 0; index < images.length; index++) {
+            VulkanImage reactiveMask = denoiser.fsrReactiveMask();
+            VulkanImage transparencyMask = denoiser.fsrTransparencyCompositionMask();
+            fillImageBarrier(
+                    barriers.get(0),
+                    sceneColor.image(),
+                    VK12.VK_IMAGE_LAYOUT_GENERAL,
+                    VK12.VK_IMAGE_LAYOUT_GENERAL,
+                    VK12.VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                    VK12.VK_ACCESS_SHADER_READ_BIT | VK12.VK_ACCESS_SHADER_WRITE_BIT,
+                    KHRRayTracingPipeline.VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR,
+                    VK12.VK_ACCESS_SHADER_WRITE_BIT);
+            for (int index = 1; index < 3; index++) {
+                VulkanImage image = index == 1 ? reactiveMask : transparencyMask;
                 fillImageBarrier(
                         barriers.get(index),
-                        images[index].image(),
+                        image.image(),
                         VK12.VK_IMAGE_LAYOUT_GENERAL,
                         VK12.VK_IMAGE_LAYOUT_GENERAL,
                         VK12.VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
@@ -764,15 +789,23 @@ public final class VulkanRenderer implements AutoCloseable {
             NrdDenoiser denoiser) {
         try (MemoryStack stack = MemoryStack.stackPush()) {
             VkImageMemoryBarrier2.Buffer barriers = VkImageMemoryBarrier2.calloc(3, stack);
-            VulkanImage[] images = new VulkanImage[] {
-                sceneColor,
-                denoiser.fsrReactiveMask(),
-                denoiser.fsrTransparencyCompositionMask()
-            };
-            for (int index = 0; index < images.length; index++) {
+            VulkanImage reactiveMask = denoiser.fsrReactiveMask();
+            VulkanImage transparencyMask = denoiser.fsrTransparencyCompositionMask();
+            fillImageBarrier(
+                    barriers.get(0),
+                    sceneColor.image(),
+                    VK12.VK_IMAGE_LAYOUT_GENERAL,
+                    VK12.VK_IMAGE_LAYOUT_GENERAL,
+                    VK12.VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT
+                            | KHRRayTracingPipeline.VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR,
+                    VK12.VK_ACCESS_SHADER_WRITE_BIT,
+                    VK12.VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                    VK12.VK_ACCESS_SHADER_READ_BIT);
+            for (int index = 1; index < 3; index++) {
+                VulkanImage image = index == 1 ? reactiveMask : transparencyMask;
                 fillImageBarrier(
                         barriers.get(index),
-                        images[index].image(),
+                        image.image(),
                         VK12.VK_IMAGE_LAYOUT_GENERAL,
                         VK12.VK_IMAGE_LAYOUT_GENERAL,
                         VK12.VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT
@@ -855,13 +888,11 @@ public final class VulkanRenderer implements AutoCloseable {
             SunDirection sunDirection,
             FsrQualityMode qualityMode,
             int fsrFrameIndex,
-            boolean cameraInWater) {
+            boolean cameraInWater,
+            LightingSettings.Snapshot lighting) {
         ByteBuffer buffer = stack.calloc(ShaderAbi.PUSH_CONSTANT_SIZE).order(ByteOrder.nativeOrder());
-        float[] matrix = new float[16];
-        camera.inverseViewProjection().get(matrix);
-        for (int index = 0; index < matrix.length; index++) {
-            buffer.putFloat(ShaderAbi.PUSH_INVERSE_VIEW_PROJECTION_OFFSET + index * Float.BYTES, matrix[index]);
-        }
+        camera.inverseViewProjection().get(
+                ShaderAbi.PUSH_INVERSE_VIEW_PROJECTION_OFFSET, buffer);
         int cameraOffset = ShaderAbi.PUSH_CAMERA_POSITION_OFFSET;
         buffer.putFloat(cameraOffset, (float) (camera.renderX() - scene.originX()));
         buffer.putFloat(cameraOffset + Float.BYTES, (float) (camera.renderY() - scene.originY()));
@@ -887,17 +918,22 @@ public final class VulkanRenderer implements AutoCloseable {
                 pathOffset + 2 * Integer.BYTES,
                 IntegratorSettings.packPathControl(
                         IntegratorSettings.MAXIMUM_BOUNCES,
-                        qualityMode.jitterPhaseCount(),
+                        qualityMode.jitterPhase(fsrFrameIndex),
                         cameraInWater));
-        buffer.putInt(pathOffset + 3 * Integer.BYTES, fsrFrameIndex);
+        buffer.putInt(
+                pathOffset + 3 * Integer.BYTES,
+                IntegratorSettings.packLightingControl(
+                        lighting.sunQuarterSteps(),
+                        lighting.blockLightQuarterSteps()));
         return buffer.position(0).limit(ShaderAbi.PUSH_CONSTANT_SIZE);
     }
 
-    private static boolean isCameraInWater(Minecraft minecraft, FrameCamera camera) {
+    private boolean isCameraInWater(Minecraft minecraft, FrameCamera camera) {
         if (minecraft.level == null) {
             return false;
         }
-        BlockPos position = BlockPos.containing(camera.x(), camera.y(), camera.z());
+        BlockPos position = this.cameraBlockPosition.set(
+                camera.x(), camera.y(), camera.z());
         var fluid = minecraft.level.getFluidState(position);
         // Match vanilla's height-aware camera test. A block-only check incorrectly puts the
         // camera in a medium while the eye is above shallow or flowing water in the same cell.

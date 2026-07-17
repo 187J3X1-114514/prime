@@ -89,6 +89,16 @@ struct PrimeDefaultBsdfComponents {
     BsdfEvaluation specular;
 };
 
+// View-dependent quantities shared by evaluation, proposal selection and throughput recovery.
+// Keeping this as an explicit value object lets the integrator build it once per default-material
+// vertex without changing any closure or importance-sampling formula.
+struct PrimeDefaultBsdfContext {
+    float ggxAlpha;
+    float resolvedEnergy;
+    float diffuseEnergyScale;
+    float specularProbability;
+};
+
 float primeDefaultDielectricIor() {
     return primeIorFromF0(PRIME_DEFAULT_DIELECTRIC_F0);
 }
@@ -136,17 +146,27 @@ vec2 primeDefaultGgxDirectionalEnergy(float cosineView, float ggxAlpha) {
     return vec2(reflectedEnergy, totalResolvedEnergy - reflectedEnergy);
 }
 
+PrimeDefaultBsdfContext primeMakeDefaultBsdfContext(
+        vec3 baseColor,
+        vec3 viewDirection,
+        vec3 normal) {
+    PrimeDefaultBsdfContext context;
+    context.ggxAlpha = primeDefaultGgxAlpha(baseColor);
+    vec2 directionalEnergy = primeDefaultGgxDirectionalEnergy(
+            max(dot(normal, viewDirection), 0.0), context.ggxAlpha);
+    context.resolvedEnergy = max(
+            directionalEnergy.x + directionalEnergy.y, PRIME_BSDF_EPSILON);
+    context.diffuseEnergyScale = directionalEnergy.y / context.resolvedEnergy;
+    context.specularProbability = clamp(
+            directionalEnergy.x / context.resolvedEnergy, 0.05, 0.95);
+    return context;
+}
+
 float primeDefaultSpecularSampleProbability(
         vec3 baseColor,
         vec3 viewDirection,
         vec3 normal) {
-    vec2 directionalEnergy = primeDefaultGgxDirectionalEnergy(
-            max(dot(normal, viewDirection), 0.0),
-            primeDefaultGgxAlpha(baseColor));
-    return clamp(
-            directionalEnergy.x / max(directionalEnergy.x + directionalEnergy.y, PRIME_BSDF_EPSILON),
-            0.05,
-            0.95);
+    return primeMakeDefaultBsdfContext(baseColor, viewDirection, normal).specularProbability;
 }
 
 float primeNrdSpecularSampleProbability(
@@ -163,11 +183,16 @@ float primeNrdSpecularSampleProbability(
             0.25);
 }
 
-PrimeDefaultBsdfComponents primeEvaluateDefaultBsdfComponents(
+float primeNrdSpecularSampleProbability(PrimeDefaultBsdfContext context) {
+    return clamp(context.specularProbability, 0.05, 0.25);
+}
+
+PrimeDefaultBsdfComponents primeEvaluateDefaultBsdfComponentsWithContext(
         vec3 baseColor,
         vec3 normal,
         vec3 viewDirection,
-        vec3 scatterDirection) {
+        vec3 scatterDirection,
+        PrimeDefaultBsdfContext context) {
     PrimeDefaultBsdfComponents components;
     components.diffuse = primeInvalidBsdfEvaluation();
     components.specular = primeInvalidBsdfEvaluation();
@@ -176,26 +201,32 @@ PrimeDefaultBsdfComponents primeEvaluateDefaultBsdfComponents(
     }
     components.diffuse = primeEvaluateDiffuseReflection(
             baseColor, normal, viewDirection, scatterDirection);
-    float ggxAlpha = primeDefaultGgxAlpha(baseColor);
-    vec2 directionalEnergy = primeDefaultGgxDirectionalEnergy(
-            dot(normal, viewDirection), ggxAlpha);
-    float resolvedEnergy = max(
-            directionalEnergy.x + directionalEnergy.y, PRIME_BSDF_EPSILON);
     // Match the source weighted-layer model: transmission into the substrate is a directional
     // rough-interface quantity. Its outgoing tint is unity, so a second smooth Fresnel factor is
     // neither part of the model nor energy preserving.
-    components.diffuse.value *= directionalEnergy.y / resolvedEnergy;
+    components.diffuse.value *= context.diffuseEnergyScale;
     components.specular = primeEvaluateGgxDielectricReflection(
             primeDefaultDielectricIor(),
-            ggxAlpha,
+            context.ggxAlpha,
             normal,
             viewDirection,
             scatterDirection);
     // Turquin-style multiple-scattering compensation restores the energy missing from the
     // single-scattering GGX interface. This divisor and the substrate transmission ratio above
     // are a coupled energy partition and must change together.
-    components.specular.value /= resolvedEnergy;
+    components.specular.value /= context.resolvedEnergy;
     return components;
+}
+
+PrimeDefaultBsdfComponents primeEvaluateDefaultBsdfComponents(
+        vec3 baseColor,
+        vec3 normal,
+        vec3 viewDirection,
+        vec3 scatterDirection) {
+    PrimeDefaultBsdfContext context = primeMakeDefaultBsdfContext(
+            baseColor, viewDirection, normal);
+    return primeEvaluateDefaultBsdfComponentsWithContext(
+            baseColor, normal, viewDirection, scatterDirection, context);
 }
 
 // Default Minecraft material: a rough dielectric boundary over a diffuse substrate. The two
@@ -203,30 +234,40 @@ PrimeDefaultBsdfComponents primeEvaluateDefaultBsdfComponents(
 // of reflected specular energy. This is intentionally the only newly connected material subset;
 // conductor, dielectric transmission, thin SSS, volume SSS and EDF closures above remain ready for
 // a later LabPBR decoder without affecting today's atlas contract.
+BsdfEvaluation primeEvaluateDefaultBsdfWithContext(
+        vec3 baseColor,
+        vec3 normal,
+        vec3 viewDirection,
+        vec3 scatterDirection,
+        PrimeDefaultBsdfContext context) {
+    PrimeDefaultBsdfComponents components = primeEvaluateDefaultBsdfComponentsWithContext(
+            baseColor, normal, viewDirection, scatterDirection, context);
+    BsdfEvaluation result;
+    result.value = components.diffuse.value + components.specular.value;
+    result.pdf = mix(
+            components.diffuse.pdf, components.specular.pdf, context.specularProbability);
+    return result;
+}
+
 BsdfEvaluation primeEvaluateDefaultBsdf(
         vec3 baseColor,
         vec3 normal,
         vec3 viewDirection,
         vec3 scatterDirection) {
-    PrimeDefaultBsdfComponents components = primeEvaluateDefaultBsdfComponents(
-            baseColor, normal, viewDirection, scatterDirection);
-    float specularProbability = primeDefaultSpecularSampleProbability(
+    PrimeDefaultBsdfContext context = primeMakeDefaultBsdfContext(
             baseColor, viewDirection, normal);
-    BsdfEvaluation result;
-    result.value = components.diffuse.value + components.specular.value;
-    result.pdf = mix(components.diffuse.pdf, components.specular.pdf, specularProbability);
-    return result;
+    return primeEvaluateDefaultBsdfWithContext(
+            baseColor, normal, viewDirection, scatterDirection, context);
 }
 
-BsdfSample primeSampleDefaultBsdfSeparated(
+BsdfSample primeSampleDefaultBsdfSeparatedWithContext(
         vec3 baseColor,
         vec3 normal,
         vec3 viewDirection,
         vec3 sampleValue,
-        out uint selectedLobe) {
-    float specularProbability = primeNrdSpecularSampleProbability(
-            baseColor, viewDirection, normal);
-    float ggxAlpha = primeDefaultGgxAlpha(baseColor);
+        out uint selectedLobe,
+        PrimeDefaultBsdfContext context) {
+    float specularProbability = primeNrdSpecularSampleProbability(context);
     BsdfSample proposal;
     float selectionProbability;
     if (sampleValue.z < specularProbability) {
@@ -234,7 +275,7 @@ BsdfSample primeSampleDefaultBsdfSeparated(
         selectionProbability = specularProbability;
         proposal = primeSampleGgxDielectricReflection(
                 primeDefaultDielectricIor(),
-                ggxAlpha,
+                context.ggxAlpha,
                 normal,
                 viewDirection,
                 sampleValue.xy);
@@ -247,8 +288,8 @@ BsdfSample primeSampleDefaultBsdfSeparated(
     if (proposal.pdf <= 0.0 || selectionProbability <= 0.0) {
         return primeInvalidBsdfSample();
     }
-    PrimeDefaultBsdfComponents components = primeEvaluateDefaultBsdfComponents(
-            baseColor, normal, viewDirection, proposal.direction);
+    PrimeDefaultBsdfComponents components = primeEvaluateDefaultBsdfComponentsWithContext(
+            baseColor, normal, viewDirection, proposal.direction, context);
     BsdfEvaluation selected = selectedLobe == PRIME_DEFAULT_LOBE_DIFFUSE
             ? components.diffuse
             : components.specular;
@@ -263,19 +304,30 @@ BsdfSample primeSampleDefaultBsdfSeparated(
     return proposal;
 }
 
-BsdfSample primeSampleDefaultBsdf(
+BsdfSample primeSampleDefaultBsdfSeparated(
         vec3 baseColor,
         vec3 normal,
         vec3 viewDirection,
-        vec3 sampleValue) {
-    float specularProbability = primeDefaultSpecularSampleProbability(
+        vec3 sampleValue,
+        out uint selectedLobe) {
+    PrimeDefaultBsdfContext context = primeMakeDefaultBsdfContext(
             baseColor, viewDirection, normal);
-    float ggxAlpha = primeDefaultGgxAlpha(baseColor);
+    return primeSampleDefaultBsdfSeparatedWithContext(
+            baseColor, normal, viewDirection, sampleValue, selectedLobe, context);
+}
+
+BsdfSample primeSampleDefaultBsdfWithContext(
+        vec3 baseColor,
+        vec3 normal,
+        vec3 viewDirection,
+        vec3 sampleValue,
+        PrimeDefaultBsdfContext context) {
+    float specularProbability = context.specularProbability;
     BsdfSample proposal;
     if (sampleValue.z < specularProbability) {
         proposal = primeSampleGgxDielectricReflection(
                 primeDefaultDielectricIor(),
-                ggxAlpha,
+                context.ggxAlpha,
                 normal,
                 viewDirection,
                 sampleValue.xy);
@@ -286,8 +338,8 @@ BsdfSample primeSampleDefaultBsdf(
     if (proposal.pdf <= 0.0) {
         return primeInvalidBsdfSample();
     }
-    BsdfEvaluation combined = primeEvaluateDefaultBsdf(
-            baseColor, normal, viewDirection, proposal.direction);
+    BsdfEvaluation combined = primeEvaluateDefaultBsdfWithContext(
+            baseColor, normal, viewDirection, proposal.direction, context);
     if (combined.pdf <= 0.0) {
         return primeInvalidBsdfSample();
     }
@@ -301,6 +353,17 @@ BsdfSample primeSampleDefaultBsdf(
     return proposal;
 }
 
+BsdfSample primeSampleDefaultBsdf(
+        vec3 baseColor,
+        vec3 normal,
+        vec3 viewDirection,
+        vec3 sampleValue) {
+    PrimeDefaultBsdfContext context = primeMakeDefaultBsdfContext(
+            baseColor, viewDirection, normal);
+    return primeSampleDefaultBsdfWithContext(
+            baseColor, normal, viewDirection, sampleValue, context);
+}
+
 // Minecraft's translucent render layer is adapted to RoboCute's complete dielectric
 // transmission closure. The imported closure owns Fresnel, rough reflection/refraction,
 // importance sampling and medium transitions; this adapter only supplies the vanilla fallback
@@ -311,7 +374,14 @@ struct PrimeTransmissiveBsdfSample {
 };
 
 const float PRIME_GLASS_MINIMUM_TINT_WEIGHT = 0.75;
-const float PRIME_WATER_REFERENCE_DEPTH = 16.0;
+// Rec.2020's near-monochromatic primaries are 630, 532 and 467 nm. Pope and Fry's measured
+// absorption coefficients for pure water at 22 C are 0.2916 m^-1 at 630 nm and, by linear
+// interpolation of their Table 3, 0.04444 m^-1 at 532 nm and 0.010182 m^-1 at 467 nm.
+// Minecraft and Prime's atmosphere both define one world unit as one metre. Do not retint these
+// values with biome color: that would turn a surface-art direction input into fictitious volume
+// absorption and break the Beer-Lambert medium contract.
+const vec3 PRIME_REC2020_PRIMARY_WAVELENGTHS_NM = vec3(630.0, 532.0, 467.0);
+const vec3 PRIME_PURE_WATER_ABSORPTION_M_INV = vec3(0.2916, 0.04444, 0.010182);
 
 PrimeRcVolumeStack primeEmptyVolumeStack() {
     PrimeRcVolumeStack result;
@@ -347,9 +417,10 @@ PrimeRcMaterial primeMinecraftTransmissionMaterial(
     float coverage = clamp(opacity, 0.0, 1.0);
     vec3 transmissionColor;
     if (water) {
-        // Water keeps the authored spectral ratio. Its lower density is expressed by the physical
-        // reference distance below, rather than washing the color toward white at every surface.
-        transmissionColor = mix(vec3(1.0), decodedColor, coverage);
+        // RoboCute's transmission ABI stores transmittance at a reference depth and recovers
+        // extinction as -log(T) / depth. Supplying the measured one-metre transmittance therefore
+        // reconstructs PRIME_PURE_WATER_ABSORPTION_M_INV without changing its volume-stack code.
+        transmissionColor = exp(-PRIME_PURE_WATER_ABSORPTION_M_INV);
     } else {
         // Vanilla stained-glass RGB contains display brightness as well as hue. A transmission
         // filter should preserve the dominant channel and attenuate the others, otherwise low
@@ -364,12 +435,11 @@ PrimeRcMaterial primeMinecraftTransmissionMaterial(
     }
     transmissionColor = clamp(transmissionColor, vec3(1.0e-3), vec3(1.0));
     material.transmission.color = transmissionColor;
-    // One block is the authored depth for solid glass-like models. Water uses a longer artistic
-    // reference depth so vanilla biome tint remains visible without becoming opaque after a few
-    // cells. True zero-volume surfaces use the closure's explicit zero-depth tint path.
+    // One block is one metre for measured water and the authored depth for glass-like models.
+    // True zero-volume surfaces use the closure's explicit zero-depth tint path.
     material.transmission.depth = thinWalled
             ? 0.0
-            : (water ? PRIME_WATER_REFERENCE_DEPTH : 1.0);
+            : 1.0;
     material.transmission.scatter = vec3(0.0);
     material.transmission.scatterAnisotropy = 0.0;
     material.transmission.dispersionScale = 0.0;
@@ -378,12 +448,10 @@ PrimeRcMaterial primeMinecraftTransmissionMaterial(
 
 PrimeRcVolumeStack primeCameraWaterVolumeStack() {
     PrimeRcVolumeStack result = primeEmptyVolumeStack();
-    // This is the vanilla default water tint (#3f76e4), decoded from sRGB and transformed to
-    // Prime's linear Rec.2020 working space. It is only the fallback for a ray whose camera starts
-    // below the water surface; ordinary air/water boundaries still use the captured biome tint.
-    const vec3 defaultWaterRec2020 = vec3(0.124443665, 0.178837556, 0.711582356);
+    // The camera starts without an intersected surface, but pure-water absorption is independent
+    // of the discarded biome surface tint, so a neutral placeholder reconstructs the same medium.
     PrimeRcMaterial material = primeMinecraftTransmissionMaterial(
-            defaultWaterRec2020,
+            vec3(1.0),
             1.0,
             vec3(0.0, 1.0, 0.0),
             PRIME_MATERIAL_FLAG_TRANSMISSIVE | PRIME_MATERIAL_FLAG_WATER);
@@ -433,7 +501,7 @@ PrimeRcState primeMinecraftTransmissionState(
             material,
             inverseOutsideIor,
             rayT,
-            vec3(630.0, 532.0, 465.0),
+            PRIME_REC2020_PRIMARY_WAVELENGTHS_NM,
             0u,
             PRIME_RC_DETAIL_DEFAULT,
             0u);
@@ -571,34 +639,24 @@ PrimeTransmissiveBsdfSample primeSampleMinecraftTransmission(
     return result;
 }
 
-PrimeTransmissiveBsdfSample primeSampleMinecraftTransmissionBranch(
-        vec3 baseColor,
-        float opacity,
+PrimeTransmissiveBsdfSample primeSampleMinecraftTransmissionBranchFromState(
+        PrimeRcState state,
+        PrimeMinecraftMirrorSplit mirror,
         vec3 outwardNormal,
-        uint materialFlags,
         vec3 viewDirection,
         vec3 sampleValue,
         bool reflectionBranch,
-        float rayT,
         PrimeRcVolumeStack volumeStack) {
     PrimeTransmissiveBsdfSample result;
     result.bsdfSample = primeInvalidBsdfSample();
     result.volumeStack = volumeStack;
-    PrimeRcState state = primeMinecraftTransmissionState(
-            baseColor,
-            opacity,
-            outwardNormal,
-            materialFlags,
-            viewDirection,
-            rayT,
-            volumeStack);
     vec3 localView = primeRcOnbToLocal(state.material.geometry.onb, viewDirection);
 
     if (state.geometryThinWalled == 0u && reflectionBranch) {
         // Closed Minecraft glass deliberately models the reflected interface as a delta mirror.
-        // This branch is evaluated, not selected: its multiplier is the physical Fresnel energy
-        // itself and must never be divided by a reflection-selection probability.
-        PrimeMinecraftMirrorSplit mirror = primeMinecraftMirrorSplit(localView, state);
+        // This conditional branch carries the physical Fresnel energy itself. No selection
+        // probability belongs inside this helper; the fixed-proposal caller applies its
+        // separate proposal probability exactly once after the conditional sample is complete.
         if (all(lessThanEqual(mirror.reflectance, vec3(0.0)))) {
             return result;
         }
@@ -644,6 +702,36 @@ PrimeTransmissiveBsdfSample primeSampleMinecraftTransmissionBranch(
     return result;
 }
 
+PrimeTransmissiveBsdfSample primeSampleMinecraftTransmissionBranch(
+        vec3 baseColor,
+        float opacity,
+        vec3 outwardNormal,
+        uint materialFlags,
+        vec3 viewDirection,
+        vec3 sampleValue,
+        bool reflectionBranch,
+        float rayT,
+        PrimeRcVolumeStack volumeStack) {
+    PrimeRcState state = primeMinecraftTransmissionState(
+            baseColor,
+            opacity,
+            outwardNormal,
+            materialFlags,
+            viewDirection,
+            rayT,
+            volumeStack);
+    vec3 localView = primeRcOnbToLocal(state.material.geometry.onb, viewDirection);
+    PrimeMinecraftMirrorSplit mirror = primeMinecraftMirrorSplit(localView, state);
+    return primeSampleMinecraftTransmissionBranchFromState(
+            state,
+            mirror,
+            outwardNormal,
+            viewDirection,
+            sampleValue,
+            reflectionBranch,
+            volumeStack);
+}
+
 // Vanilla grass blades and leaf texels are zero-thickness surfaces rather than dielectric
 // volumes. Keep most of the ordinary rough terrain response and mix a deliberately small amount
 // of colored thin-wall transmission through OpenPBR's energy-aware lobe composition. Unlike
@@ -684,7 +772,7 @@ PrimeRcState primeMinecraftFoliageState(
             randomValue,
             inverseOutsideIor,
             rayT,
-            vec3(630.0, 532.0, 465.0),
+            PRIME_REC2020_PRIMARY_WAVELENGTHS_NM,
             0u,
             PRIME_RC_DETAIL_DEFAULT,
             0u);

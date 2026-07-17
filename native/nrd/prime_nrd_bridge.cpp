@@ -283,13 +283,12 @@ PRIME_NRD_EXPORT int32_t primeNrdCreate(
     settings.specularPrepassBlurRadius = 50.0f;
     if (context->denoiserProfile != 0)
     {
-        // The delta interface itself is deterministic, but the promoted PSR selects one ordinary
-        // diffuse/specular continuation. NRD explicitly recommends hit-distance reconstruction
-        // for this probabilistic lobe split. Keep diffuse texture samples untouched; retain a
-        // narrow specular pre-pass only for motion estimation, which is the recommended clean-
-        // signal mode and avoids feeding its spatial blur into the visible result.
+        // The delta interface is deterministic, while each promoted PSR still contains ordinary
+        // diffuse/specular continuation noise. NRD recommends an enabled pre-pass together with
+        // hit-distance reconstruction for this lobe split. Keep both radii narrow: the separate
+        // branch PSR guides protect edges without paying the default wide transparent blur.
         settings.hitDistanceReconstructionMode = nrd::HitDistanceReconstructionMode::AREA_3X3;
-        settings.diffusePrepassBlurRadius = 0.0f;
+        settings.diffusePrepassBlurRadius = 12.0f;
         settings.specularPrepassBlurRadius = 12.0f;
         settings.usePrepassOnlyForSpecularMotionEstimation = true;
         settings.maxBlurRadius = 12.0f;

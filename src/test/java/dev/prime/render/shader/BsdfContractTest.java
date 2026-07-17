@@ -143,7 +143,8 @@ final class BsdfContractTest {
         assertTrue(composition.contains("primeDefaultReflectiveDirectionalEnergyFit"));
         assertTrue(composition.contains("primeEvaluateDefaultBsdf"));
         assertTrue(composition.contains("primeSampleDefaultBsdf"));
-        assertTrue(composition.contains("BsdfEvaluation combined = primeEvaluateDefaultBsdf"));
+        assertTrue(composition.contains(
+                "BsdfEvaluation combined = primeEvaluateDefaultBsdfWithContext"));
     }
 
     private static void assertClosurePair(String source, String suffix) {

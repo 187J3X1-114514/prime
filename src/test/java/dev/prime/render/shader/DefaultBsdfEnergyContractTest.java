@@ -22,6 +22,8 @@ final class DefaultBsdfEnergyContractTest {
             throws IOException {
         String shader = Files.readString(Path.of(
                 System.getProperty("user.dir"), "shaders", "bsdf.glsl"));
+        String integrator = Files.readString(Path.of(
+                System.getProperty("user.dir"), "shaders", "integrator.glsl"));
         int tableStart = shader.indexOf("PRIME_DEFAULT_GGX_DIRECTIONAL_ENERGY[32]");
         int tableEnd = shader.indexOf(");", tableStart);
         assertTrue(tableStart >= 0 && tableEnd > tableStart);
@@ -42,8 +44,17 @@ final class DefaultBsdfEnergyContractTest {
         double normalReflection = energy.getLast()[0] / normalTotal;
         assertTrue(grazingTransmission > 0.5);
         assertTrue(normalReflection > 0.02 && normalReflection < 0.05);
-        assertTrue(shader.contains("components.diffuse.value *= directionalEnergy.y / resolvedEnergy"));
-        assertTrue(shader.contains("components.specular.value /= resolvedEnergy"));
+        assertTrue(shader.contains("context.diffuseEnergyScale = directionalEnergy.y / context.resolvedEnergy"));
+        assertTrue(shader.contains("components.diffuse.value *= context.diffuseEnergyScale"));
+        assertTrue(shader.contains("components.specular.value /= context.resolvedEnergy"));
+        assertEquals(
+                2,
+                Pattern.compile("defaultContext = primeMakeDefaultBsdfContext")
+                        .matcher(integrator)
+                        .results()
+                        .count());
+        assertTrue(integrator.contains("primeSampleDefaultBsdfWithContext"));
+        assertTrue(integrator.contains("primeEvaluateDefaultBsdfComponentsWithContext"));
         assertFalse(shader.contains("(1.0 - fresnelIn) * (1.0 - fresnelOut)"));
     }
 }

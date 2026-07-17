@@ -38,7 +38,11 @@ float primePowerHeuristic(float firstPdf, float secondPdf) {
 }
 
 vec3 primeEnvironmentRadiance(IntegratorRecord integrator, vec3 direction) {
-    return primeAtmosphereSky(direction, integrator.sunDirectionIntensity.xyz);
+    // Atmosphere LUT construction is linear in its extraterrestrial source. Reusing the calibrated
+    // base LUT and applying the same scale as direct sun is exact for this single-source model.
+    float sunScale = max(integrator.sunDirectionIntensity.w, 0.0)
+            / max(ATM_SPACE_SUN_INTENSITY, 1.0e-30);
+    return primeAtmosphereSky(direction, integrator.sunDirectionIntensity.xyz) * sunScale;
 }
 
 float primeSunCosAngularRadius() {
@@ -172,8 +176,8 @@ LightTreePick primePickLightTree(
     // its cache working set.
     uint nodeIndex = root;
     LightNode node = nodes.nodes[root];
+    float lowerBound = 0.0;
     float pdf = 1.0;
-    float value = seed;
     for (uint depth = 0u; depth < PRIME_LIGHT_TREE_MAX_DEPTH; ++depth) {
         if (!(node.boundsMinPower.w > 0.0)) {
             return primeInvalidLightTreePick();
@@ -196,17 +200,20 @@ LightTreePick primePickLightTree(
             return primeInvalidLightTreePick();
         }
         float rightProbability = 1.0 - leftProbability;
-        if (value < leftProbability || rightProbability <= 0.0) {
+        // Keep the original sample in its cumulative interval. This is the same inverse-CDF
+        // traversal as repeatedly remapping value to [0, 1), but replaces one division per tree
+        // level with a multiply-add. pdf is also the current interval width.
+        float split = lowerBound + pdf * leftProbability;
+        if (seed < split || rightProbability <= 0.0) {
             if (leftProbability <= 0.0) {
                 return primeInvalidLightTreePick();
             }
             pdf *= leftProbability;
-            value /= leftProbability;
             node = left;
             nodeIndex = leftIndex;
         } else {
             pdf *= rightProbability;
-            value = (value - leftProbability) / rightProbability;
+            lowerBound = split;
             node = right;
             nodeIndex = rightIndex;
         }
@@ -369,9 +376,10 @@ AreaLightSample primeSampleAreaLight(
     LightCellBuffer cells = LightCellBuffer(header.cellAddress);
     LightEmitter emitter = emitters.emitters[sectionPick.leaf];
     float aliasValue = treeSample.z * float(PRIME_LIGHT_CELL_COUNT);
-    uint column = min(uint(aliasValue), PRIME_LIGHT_CELL_COUNT - 1u);
+    // Sobol conversion is strictly below one, so aliasValue is strictly below CELL_COUNT.
+    uint column = uint(aliasValue);
     LightCell aliasCell = cells.cells[emitter.metadata.x + column];
-    uint cellIndex = fract(aliasValue) < aliasCell.aliasProbability
+    uint cellIndex = aliasValue - float(column) < aliasCell.aliasProbability
             ? column
             : aliasCell.aliasIndex;
     LightCell selectedCell = cells.cells[emitter.metadata.x + cellIndex];
@@ -403,11 +411,13 @@ AreaLightSample primeSampleAreaLight(
     float distance = sqrt(distanceSquared);
     vec3 direction = toLight / distance;
     float lightCosine = primeEmitterCosine(emitter, direction);
+    if (!(lightCosine > 0.0)) {
+        return primeInvalidAreaLightSample();
+    }
     float cellArea = emitter.cornerArea.w / float(PRIME_LIGHT_CELL_COUNT);
     float areaPdf = worldPick.pdf * sectionPick.pdf
             * selectedCell.probabilityMass / cellArea;
-    float pdf = primeAreaSolidAnglePdf(
-            surfacePosition, lightPosition, lightCosine, areaPdf);
+    float pdf = areaPdf * distanceSquared / lightCosine;
     if (!(pdf > 0.0)) {
         return primeInvalidAreaLightSample();
     }
@@ -524,18 +534,16 @@ LightEvaluation primeEvaluateAreaLight(
             emitter.metadata.y,
             surface.emitterIndex,
             rayOrigin - section.translation);
-    if (!(worldPdf > 0.0) || !(sectionPdf > 0.0)) {
-        result.radiance = primeEvaluateEmitterRadiance(
-                emitter,
-                primeEmitterUv(emitter, parentBarycentric),
-                uintBitsToFloat(surface.reserved0));
-        return result;
-    }
-    float areaPdf = worldPdf * sectionPdf * cell.probabilityMass / cellArea;
-    result.radiance = primeEvaluateEmitterRadiance(
+    vec3 emitterRadiance = primeEvaluateEmitterRadiance(
             emitter,
             primeEmitterUv(emitter, parentBarycentric),
             uintBitsToFloat(surface.reserved0));
+    if (!(worldPdf > 0.0) || !(sectionPdf > 0.0)) {
+        result.radiance = emitterRadiance;
+        return result;
+    }
+    float areaPdf = worldPdf * sectionPdf * cell.probabilityMass / cellArea;
+    result.radiance = emitterRadiance;
     result.pdf = primeAreaSolidAnglePdf(
             rayOrigin, surface.position, lightCosine, areaPdf);
     return result;

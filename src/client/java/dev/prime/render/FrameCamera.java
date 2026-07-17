@@ -35,6 +35,8 @@ public record FrameCamera(
         double renderX,
         double renderY,
         double renderZ) {
+    private static final ThreadLocal<Scratch> SCRATCH = ThreadLocal.withInitial(Scratch::new);
+
     FrameCamera(Matrix4f inverseViewProjection, double x, double y, double z) {
         this(new Matrix4f(), new Matrix4f(), inverseViewProjection, x, y, z, x, y, z);
     }
@@ -49,26 +51,24 @@ public record FrameCamera(
         if (!Double.isFinite(x) || !Double.isFinite(y) || !Double.isFinite(z)) {
             return null;
         }
-        Matrix4f renderedProjectionCopy = new Matrix4f(renderedProjection);
         Matrix4f projectionCopy = new Matrix4f(baseProjection);
-        Matrix4f minecraftViewRotation = new Matrix4f(cameraViewRotation);
-        Matrix4f exactViewProjection = new Matrix4f(renderedProjectionCopy).mul(minecraftViewRotation);
+        Matrix4f exactViewProjection = new Matrix4f(renderedProjection).mul(cameraViewRotation);
         if (!isInvertible(exactViewProjection) || !isInvertible(projectionCopy)) {
             return null;
         }
 
-        Matrix4f cameraEffect = new Matrix4f(projectionCopy)
+        Scratch scratch = SCRATCH.get();
+        Matrix4f cameraEffect = scratch.cameraEffect.set(projectionCopy)
                 .invert()
-                .mul(renderedProjectionCopy);
-        Matrix4f effectedWorldToView = cameraEffect.mul(minecraftViewRotation);
+                .mul(renderedProjection);
+        Matrix4f effectedWorldToView = cameraEffect.mul(cameraViewRotation);
         Matrix4f canonicalWorldToView = new Matrix4f(effectedWorldToView);
         double effectiveX = x;
         double effectiveY = y;
         double effectiveZ = z;
         if (isRigid(effectedWorldToView)) {
-            Vector3f cameraOffset = new Matrix4f(effectedWorldToView)
-                    .invert()
-                    .transformPosition(new Vector3f());
+            Vector3f cameraOffset = effectedWorldToView.invert()
+                    .transformPosition(scratch.cameraOffset.zero());
             if (!cameraOffset.isFinite()) {
                 return null;
             }
@@ -79,8 +79,8 @@ public record FrameCamera(
         } else {
             // Portal/nausea scaling is not an orthonormal camera. Preserve Mojang's exact rays and
             // the previous NRD fallback rather than pretending the scale is a rigid transform.
-            projectionCopy.set(renderedProjectionCopy);
-            canonicalWorldToView.set(minecraftViewRotation);
+            projectionCopy.set(renderedProjection);
+            canonicalWorldToView.set(cameraViewRotation);
         }
 
         Matrix4f inverse = exactViewProjection.invert();
@@ -137,5 +137,10 @@ public record FrameCamera(
                 && Math.abs(xy) <= tolerance
                 && Math.abs(xz) <= tolerance
                 && Math.abs(yz) <= tolerance;
+    }
+
+    private static final class Scratch {
+        private final Matrix4f cameraEffect = new Matrix4f();
+        private final Vector3f cameraOffset = new Vector3f();
     }
 }

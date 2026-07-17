@@ -11,7 +11,7 @@ import dev.prime.render.shader.ShaderAbi;
  */
 final class IntegratorSettings {
     static final int MAXIMUM_BOUNCES = 256;
-    static final int RUSSIAN_ROULETTE_START = 2;
+    static final int RUSSIAN_ROULETTE_START = ShaderAbi.RUSSIAN_ROULETTE_START;
     static final int SAMPLE_EFFECT_CAMERA = 0;
     // Effect identity 1 remains retired so removing environment NEE does not reshuffle streams.
     static final int SAMPLE_EFFECT_DIRECT_SUN = 2;
@@ -34,16 +34,31 @@ final class IntegratorSettings {
     private IntegratorSettings() {
     }
 
-    static int packPathControl(int maximumBounces, int jitterPhaseCount, boolean cameraInWater) {
+    static int packPathControl(int maximumBounces, int jitterPhase, boolean cameraInWater) {
         if (maximumBounces < 0 || maximumBounces > 0xffff) {
             throw new IllegalArgumentException("Maximum bounce count does not fit in 16 bits");
         }
-        if (jitterPhaseCount < 1 || jitterPhaseCount > ShaderAbi.PATH_JITTER_PHASE_MASK) {
-            throw new IllegalArgumentException("Jitter phase count does not fit in 15 bits");
+        if (jitterPhase < 1 || jitterPhase > ShaderAbi.PATH_JITTER_PHASE_MASK) {
+            throw new IllegalArgumentException("Jitter phase does not fit in 15 bits");
         }
         return (cameraInWater ? ShaderAbi.PATH_CAMERA_IN_WATER_MASK : 0)
-                | (jitterPhaseCount << 16)
+                | (jitterPhase << 16)
                 | maximumBounces;
+    }
+
+    static int packLightingControl(int sunQuarterSteps, int blockLightQuarterSteps) {
+        return packEvQuarterSteps(sunQuarterSteps, ShaderAbi.PATH_SUN_EV_QUARTER_SHIFT)
+                | packEvQuarterSteps(
+                        blockLightQuarterSteps,
+                        ShaderAbi.PATH_BLOCK_LIGHT_EV_QUARTER_SHIFT);
+    }
+
+    private static int packEvQuarterSteps(int quarterSteps, int shift) {
+        int encoded = quarterSteps + ShaderAbi.PATH_EV_QUARTER_BIAS;
+        if ((encoded & ~ShaderAbi.PATH_EV_QUARTER_MASK) != 0) {
+            throw new IllegalArgumentException("Lighting EV does not fit in the path-control ABI");
+        }
+        return encoded << shift;
     }
 
     static float powerHeuristic(float firstPdf, float secondPdf) {

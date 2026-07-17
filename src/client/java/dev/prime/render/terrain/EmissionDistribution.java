@@ -12,13 +12,18 @@ final class EmissionDistribution {
     static final int CELL_COUNT = SUBDIVISION * SUBDIVISION;
     private static final float MINIMUM_CELL_IMPORTANCE = 1.0E-5F;
     private static final int STRATIFIED_SAMPLE_COUNT = 4;
+    private static final float[] SRGB_TO_LINEAR = createSrgbToLinearTable();
+    private static final Cell[] CELLS = createCells();
+    private static final ThreadLocal<BuildWorkspace> BUILD_WORKSPACE =
+            ThreadLocal.withInitial(BuildWorkspace::new);
+    private static final EmissionDistribution UNIFORM = createUniform();
 
     private final float[] aliasProbabilities;
     private final int[] aliases;
     private final float[] probabilityMasses;
     private final float meanImportance;
 
-    private EmissionDistribution(float[] weights) {
+    private EmissionDistribution(float[] weights, BuildWorkspace workspace) {
         this.aliasProbabilities = new float[CELL_COUNT];
         this.aliases = new int[CELL_COUNT];
         this.probabilityMasses = new float[CELL_COUNT];
@@ -30,13 +35,20 @@ final class EmissionDistribution {
             throw new IllegalArgumentException("Emission importance weights must have positive finite mass");
         }
         this.meanImportance = (float) (sum / CELL_COUNT);
-        buildAliasTable(weights, sum, this.aliasProbabilities, this.aliases, this.probabilityMasses);
+        buildAliasTable(
+                weights,
+                sum,
+                this.aliasProbabilities,
+                this.aliases,
+                this.probabilityMasses,
+                workspace);
     }
 
     static EmissionDistribution build(Key key) {
-        float[] weights = new float[CELL_COUNT];
+        BuildWorkspace workspace = BUILD_WORKSPACE.get();
+        float[] weights = workspace.weights;
         try {
-            fillTextureImportance(key, weights);
+            fillTextureImportance(key, weights, workspace);
         } catch (RuntimeException exception) {
             // A resource reload can retire SpriteContents while an already-cancelled mesh job is
             // winding down. Uniform support is still unbiased because radiance is read from the
@@ -46,46 +58,68 @@ final class EmissionDistribution {
         for (int index = 0; index < weights.length; index++) {
             weights[index] = Math.max(weights[index], MINIMUM_CELL_IMPORTANCE);
         }
-        return new EmissionDistribution(weights);
+        return new EmissionDistribution(weights, workspace);
     }
 
     static EmissionDistribution uniform() {
-        float[] weights = new float[CELL_COUNT];
-        java.util.Arrays.fill(weights, 1.0F);
-        return new EmissionDistribution(weights);
+        return UNIFORM;
     }
 
-    private static void fillTextureImportance(Key key, float[] weights) {
+    private static EmissionDistribution createUniform() {
+        float[] weights = new float[CELL_COUNT];
+        java.util.Arrays.fill(weights, 1.0F);
+        return new EmissionDistribution(weights, new BuildWorkspace());
+    }
+
+    private static void fillTextureImportance(
+            Key key, float[] weights, BuildWorkspace workspace) {
         TextureAtlasSprite sprite = key.sprite;
         SpriteContents contents = sprite.contents();
         NativeImage image = ((SpriteContentsAccessor) (Object) contents).prime$originalImage();
-        int[] frames = frames(contents);
-        int columns = Math.max(image.getWidth() / contents.width(), 1);
-        float[] tint = linearTint(key.tintArgb);
-        float[] barycentric = new float[3];
+        IntList frames = contents.isAnimated() ? contents.getUniqueFrames() : null;
+        int frameCount = frames == null ? 1 : frames.size();
+        int contentWidth = contents.width();
+        int contentHeight = contents.height();
+        int columns = Math.max(image.getWidth() / contentWidth, 1);
+        float triangleU0 = key.u0();
+        float triangleV0 = key.v0();
+        float triangleU1 = key.u1();
+        float triangleV1 = key.v1();
+        float triangleU2 = key.u2();
+        float triangleV2 = key.v2();
+        float spriteU0 = sprite.getU0();
+        float spriteV0 = sprite.getV0();
+        float spriteUSpan = sprite.getU1() - spriteU0;
+        float spriteVSpan = sprite.getV1() - spriteV0;
+        float[] tint = workspace.tint;
+        fillLinearTint(key.tintArgb, tint);
+        float[] barycentric = workspace.barycentric;
         for (int cellIndex = 0; cellIndex < CELL_COUNT; cellIndex++) {
             Cell cell = cell(cellIndex);
             float total = 0.0F;
             for (int sample = 0; sample < STRATIFIED_SAMPLE_COUNT; sample++) {
                 cell.samplePoint(sample, barycentric);
-                float atlasU = interpolate(key.u0(), key.u1(), key.u2(), barycentric);
-                float atlasV = interpolate(key.v0(), key.v1(), key.v2(), barycentric);
-                float localU = clampUnit((atlasU - sprite.getU0()) / (sprite.getU1() - sprite.getU0()));
-                float localV = clampUnit((atlasV - sprite.getV0()) / (sprite.getV1() - sprite.getV0()));
-                int pixelX = Math.min((int) (localU * contents.width()), contents.width() - 1);
-                int pixelY = Math.min((int) (localV * contents.height()), contents.height() - 1);
+                float atlasU = interpolate(
+                        triangleU0, triangleU1, triangleU2, barycentric);
+                float atlasV = interpolate(
+                        triangleV0, triangleV1, triangleV2, barycentric);
+                float localU = clampUnit((atlasU - spriteU0) / spriteUSpan);
+                float localV = clampUnit((atlasV - spriteV0) / spriteVSpan);
+                int pixelX = Math.min((int) (localU * contentWidth), contentWidth - 1);
+                int pixelY = Math.min((int) (localV * contentHeight), contentHeight - 1);
                 float maximum = 0.0F;
-                for (int frame : frames) {
-                    int sourceX = frame % columns * contents.width() + pixelX;
-                    int sourceY = frame / columns * contents.height() + pixelY;
+                for (int frameIndex = 0; frameIndex < frameCount; frameIndex++) {
+                    int frame = frames == null ? 0 : frames.getInt(frameIndex);
+                    int sourceX = frame % columns * contentWidth + pixelX;
+                    int sourceY = frame / columns * contentHeight + pixelY;
                     int argb = image.getPixel(sourceX, sourceY);
                     int alpha = argb >>> 24;
                     if (key.cutout && alpha < 128) {
                         continue;
                     }
-                    float red = decodeSrgb((argb >>> 16 & 0xff) / 255.0F) * tint[0];
-                    float green = decodeSrgb((argb >>> 8 & 0xff) / 255.0F) * tint[1];
-                    float blue = decodeSrgb((argb & 0xff) / 255.0F) * tint[2];
+                    float red = SRGB_TO_LINEAR[argb >>> 16 & 0xff] * tint[0];
+                    float green = SRGB_TO_LINEAR[argb >>> 8 & 0xff] * tint[1];
+                    float blue = SRGB_TO_LINEAR[argb & 0xff] * tint[2];
                     // Importance uses the largest component in Prime's actual linear Rec.2020
                     // working space. This controls variance only: emitted RGB and its PDF remain
                     // separate, so changing this proxy cannot bias the estimator.
@@ -97,26 +131,24 @@ final class EmissionDistribution {
         }
     }
 
-    private static int[] frames(SpriteContents contents) {
-        if (!contents.isAnimated()) {
-            return new int[] {0};
-        }
-        IntList unique = contents.getUniqueFrames();
-        return unique.toIntArray();
-    }
-
-    private static float[] linearTint(int argb) {
-        return new float[] {
-            decodeSrgb((argb >>> 16 & 0xff) / 255.0F),
-            decodeSrgb((argb >>> 8 & 0xff) / 255.0F),
-            decodeSrgb((argb & 0xff) / 255.0F)
-        };
+    private static void fillLinearTint(int argb, float[] target) {
+        target[0] = SRGB_TO_LINEAR[argb >>> 16 & 0xff];
+        target[1] = SRGB_TO_LINEAR[argb >>> 8 & 0xff];
+        target[2] = SRGB_TO_LINEAR[argb & 0xff];
     }
 
     private static float decodeSrgb(float value) {
         return value <= 0.04045F
                 ? value / 12.92F
                 : (float) Math.pow((value + 0.055F) / 1.055F, 2.4);
+    }
+
+    private static float[] createSrgbToLinearTable() {
+        float[] result = new float[256];
+        for (int index = 0; index < result.length; index++) {
+            result[index] = decodeSrgb(index / 255.0F);
+        }
+        return result;
     }
 
     static float linearSrgbToRec2020Maximum(float red, float green, float blue) {
@@ -140,10 +172,11 @@ final class EmissionDistribution {
             double sum,
             float[] probabilities,
             int[] aliases,
-            float[] masses) {
-        double[] scaled = new double[CELL_COUNT];
-        int[] small = new int[CELL_COUNT];
-        int[] large = new int[CELL_COUNT];
+            float[] masses,
+            BuildWorkspace workspace) {
+        double[] scaled = workspace.scaled;
+        int[] small = workspace.small;
+        int[] large = workspace.large;
         int smallSize = 0;
         int largeSize = 0;
         for (int index = 0; index < CELL_COUNT; index++) {
@@ -183,6 +216,18 @@ final class EmissionDistribution {
         if (index < 0 || index >= CELL_COUNT) {
             throw new IndexOutOfBoundsException(index);
         }
+        return CELLS[index];
+    }
+
+    private static Cell[] createCells() {
+        Cell[] result = new Cell[CELL_COUNT];
+        for (int index = 0; index < result.length; index++) {
+            result[index] = decodeCell(index);
+        }
+        return result;
+    }
+
+    private static Cell decodeCell(int index) {
         int remaining = index;
         for (int row = 0; row < SUBDIVISION; row++) {
             int rowCount = 2 * (SUBDIVISION - row) - 1;
@@ -194,6 +239,15 @@ final class EmissionDistribution {
             remaining -= rowCount;
         }
         throw new IllegalStateException("Emission cell index mapping failed");
+    }
+
+    private static final class BuildWorkspace {
+        private final float[] weights = new float[CELL_COUNT];
+        private final double[] scaled = new double[CELL_COUNT];
+        private final int[] small = new int[CELL_COUNT];
+        private final int[] large = new int[CELL_COUNT];
+        private final float[] barycentric = new float[3];
+        private final float[] tint = new float[3];
     }
 
     float aliasProbability(int index) {

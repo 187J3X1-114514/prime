@@ -25,25 +25,44 @@ final class CpuLightTree {
     private static final int BOUNDS_WORDS_PER_NODE = 8;
     private static final int FORWARD_WORDS_PER_NODE = 1;
     private static final int REVERSE_WORDS_PER_NODE = 1;
+    private static final Comparator<Leaf> X_COMPARATOR =
+            Comparator.comparingDouble(Leaf::centerX);
+    private static final Comparator<Leaf> Y_COMPARATOR =
+            Comparator.comparingDouble(Leaf::centerY);
+    private static final Comparator<Leaf> Z_COMPARATOR =
+            Comparator.comparingDouble(Leaf::centerZ);
 
     private CpuLightTree() {
     }
 
     static Result build(List<Leaf> source, int indexCapacity, float softeningScale) {
-        if (source.isEmpty()) {
+        return buildOwned(new ArrayList<>(source), indexCapacity, softeningScale);
+    }
+
+    static Result buildOwned(
+            ArrayList<Leaf> leaves, int indexCapacity, float softeningScale) {
+        if (leaves.isEmpty()) {
             throw new IllegalArgumentException("A light tree requires at least one leaf");
         }
         if (indexCapacity < 0) {
             throw new IllegalArgumentException("Negative light leaf index capacity");
         }
-        List<Leaf> leaves = new ArrayList<>(source);
         List<Node> nodes = new ArrayList<>(leaves.size() * 2 - 1);
         int[] leafNodes = new int[indexCapacity];
         Arrays.fill(leafNodes, NO_INDEX);
+        Workspace workspace = new Workspace();
         Node rootNode = createNode(leaves, 0, leaves.size(), NO_INDEX, softeningScale);
         nodes.add(rootNode);
-        populateNode(leaves, 0, leaves.size(), 0, softeningScale, nodes, leafNodes);
-        return new Result(List.copyOf(nodes), leafNodes, rootNode.bounds, rootNode.power);
+        populateNode(
+                leaves,
+                0,
+                leaves.size(),
+                0,
+                softeningScale,
+                nodes,
+                leafNodes,
+                workspace);
+        return new Result(nodes, leafNodes, rootNode.bounds, rootNode.power);
     }
 
     /**
@@ -60,7 +79,8 @@ final class CpuLightTree {
             int nodeIndex,
             float softeningScale,
             List<Node> nodes,
-            int[] leafNodes) {
+            int[] leafNodes,
+            Workspace workspace) {
         int count = end - start;
         if (count <= 0) {
             throw new IllegalStateException("Empty light tree range");
@@ -76,15 +96,15 @@ final class CpuLightTree {
             return;
         }
 
-        int middle = partition(leaves, start, end);
+        int middle = partition(leaves, start, end, workspace);
         int left = nodes.size();
         nodes.add(createNode(leaves, start, middle, nodeIndex, softeningScale));
         int right = nodes.size();
         nodes.add(createNode(leaves, middle, end, nodeIndex, softeningScale));
         node.firstChildOrLeaf = left;
         node.secondChild = right;
-        populateNode(leaves, start, middle, left, softeningScale, nodes, leafNodes);
-        populateNode(leaves, middle, end, right, softeningScale, nodes, leafNodes);
+        populateNode(leaves, start, middle, left, softeningScale, nodes, leafNodes, workspace);
+        populateNode(leaves, middle, end, right, softeningScale, nodes, leafNodes, workspace);
     }
 
     private static Node createNode(
@@ -101,7 +121,7 @@ final class CpuLightTree {
                 parent);
     }
 
-    private static int partition(List<Leaf> leaves, int start, int end) {
+    private static int partition(List<Leaf> leaves, int start, int end, Workspace workspace) {
         Bounds centroidBounds = centroidBoundsOf(leaves, start, end);
         float bestCost = Float.POSITIVE_INFINITY;
         int bestAxis = -1;
@@ -112,9 +132,9 @@ final class CpuLightTree {
             if (!(extent > 0.0F)) {
                 continue;
             }
-            Bin[] bins = new Bin[SAH_BIN_COUNT];
-            for (int index = 0; index < bins.length; index++) {
-                bins[index] = new Bin();
+            Bin[] bins = workspace.bins;
+            for (Bin bin : bins) {
+                bin.reset();
             }
             for (int index = start; index < end; index++) {
                 Leaf leaf = leaves.get(index);
@@ -122,22 +142,22 @@ final class CpuLightTree {
                 bins[binIndex].include(leaf);
             }
             for (int split = 0; split < SAH_BIN_COUNT - 1; split++) {
-                Bounds leftBounds = Bounds.empty();
-                Bounds rightBounds = Bounds.empty();
+                MutableBounds leftBounds = workspace.leftBounds.reset();
+                MutableBounds rightBounds = workspace.rightBounds.reset();
                 float leftPower = 0.0F;
                 float rightPower = 0.0F;
                 int leftCount = 0;
                 int rightCount = 0;
                 for (int bin = 0; bin <= split; bin++) {
                     if (bins[bin].count != 0) {
-                        leftBounds = leftBounds.union(bins[bin].bounds);
+                        leftBounds.include(bins[bin]);
                         leftPower += bins[bin].power;
                         leftCount += bins[bin].count;
                     }
                 }
                 for (int bin = split + 1; bin < SAH_BIN_COUNT; bin++) {
                     if (bins[bin].count != 0) {
-                        rightBounds = rightBounds.union(bins[bin].bounds);
+                        rightBounds.include(bins[bin]);
                         rightPower += bins[bin].power;
                         rightCount += bins[bin].count;
                     }
@@ -176,7 +196,12 @@ final class CpuLightTree {
         }
 
         int fallbackAxis = centroidBounds.longestAxis();
-        leaves.subList(start, end).sort(Comparator.comparingDouble(leaf -> leaf.center(fallbackAxis)));
+        Comparator<Leaf> fallbackComparator = switch (fallbackAxis) {
+            case 0 -> X_COMPARATOR;
+            case 1 -> Y_COMPARATOR;
+            default -> Z_COMPARATOR;
+        };
+        leaves.subList(start, end).sort(fallbackComparator);
         return start + (end - start) / 2;
     }
 
@@ -186,20 +211,41 @@ final class CpuLightTree {
     }
 
     private static Bounds boundsOf(List<Leaf> leaves, int start, int end) {
-        Bounds result = Bounds.empty();
+        float minX = Float.POSITIVE_INFINITY;
+        float minY = Float.POSITIVE_INFINITY;
+        float minZ = Float.POSITIVE_INFINITY;
+        float maxX = Float.NEGATIVE_INFINITY;
+        float maxY = Float.NEGATIVE_INFINITY;
+        float maxZ = Float.NEGATIVE_INFINITY;
         for (int index = start; index < end; index++) {
-            result = result.union(leaves.get(index).bounds);
+            Bounds bounds = leaves.get(index).bounds;
+            minX = Math.min(minX, bounds.minX);
+            minY = Math.min(minY, bounds.minY);
+            minZ = Math.min(minZ, bounds.minZ);
+            maxX = Math.max(maxX, bounds.maxX);
+            maxY = Math.max(maxY, bounds.maxY);
+            maxZ = Math.max(maxZ, bounds.maxZ);
         }
-        return result;
+        return new Bounds(minX, minY, minZ, maxX, maxY, maxZ);
     }
 
     private static Bounds centroidBoundsOf(List<Leaf> leaves, int start, int end) {
-        Bounds result = Bounds.empty();
+        float minX = Float.POSITIVE_INFINITY;
+        float minY = Float.POSITIVE_INFINITY;
+        float minZ = Float.POSITIVE_INFINITY;
+        float maxX = Float.NEGATIVE_INFINITY;
+        float maxY = Float.NEGATIVE_INFINITY;
+        float maxZ = Float.NEGATIVE_INFINITY;
         for (int index = start; index < end; index++) {
             Leaf leaf = leaves.get(index);
-            result = result.include(leaf.centerX, leaf.centerY, leaf.centerZ);
+            minX = Math.min(minX, leaf.centerX);
+            minY = Math.min(minY, leaf.centerY);
+            minZ = Math.min(minZ, leaf.centerZ);
+            maxX = Math.max(maxX, leaf.centerX);
+            maxY = Math.max(maxY, leaf.centerY);
+            maxZ = Math.max(maxZ, leaf.centerZ);
         }
-        return result;
+        return new Bounds(minX, minY, minZ, maxX, maxY, maxZ);
     }
 
     private static float powerOf(List<Leaf> leaves, int start, int end) {
@@ -372,8 +418,44 @@ final class CpuLightTree {
             return result;
         }
 
+        void packInto(
+                int[] target,
+                int boundsWordOffset,
+                int forwardWordOffset,
+                int reverseWordOffset) {
+            int boundsCursor = boundsWordOffset;
+            int forwardCursor = forwardWordOffset;
+            int reverseCursor = reverseWordOffset;
+            for (Node node : this.nodes) {
+                target[boundsCursor++] = Float.floatToRawIntBits(node.bounds.minX);
+                target[boundsCursor++] = Float.floatToRawIntBits(node.bounds.minY);
+                target[boundsCursor++] = Float.floatToRawIntBits(node.bounds.minZ);
+                target[boundsCursor++] = Float.floatToRawIntBits(node.power);
+                target[boundsCursor++] = Float.floatToRawIntBits(node.bounds.maxX);
+                target[boundsCursor++] = Float.floatToRawIntBits(node.bounds.maxY);
+                target[boundsCursor++] = Float.floatToRawIntBits(node.bounds.maxZ);
+                target[boundsCursor++] = Float.floatToRawIntBits(node.softeningDistanceSquared);
+                if (node.firstChildOrLeaf < 0) {
+                    throw new IllegalStateException("Light tree node was not populated");
+                }
+                if (node.secondChild == NO_INDEX) {
+                    target[forwardCursor++] = node.firstChildOrLeaf | LEAF_FLAG;
+                } else {
+                    if (node.secondChild != node.firstChildOrLeaf + 1) {
+                        throw new IllegalStateException("Light tree siblings must be consecutive");
+                    }
+                    target[forwardCursor++] = node.firstChildOrLeaf;
+                }
+                target[reverseCursor++] = node.parent;
+            }
+        }
+
         int leafNode(int leafIndex) {
             return this.leafNodes[leafIndex];
+        }
+
+        int[] leafNodes() {
+            return this.leafNodes;
         }
 
         Bounds bounds() {
@@ -406,14 +488,82 @@ final class CpuLightTree {
     }
 
     private static final class Bin {
-        private Bounds bounds = Bounds.empty();
+        private float minX;
+        private float minY;
+        private float minZ;
+        private float maxX;
+        private float maxY;
+        private float maxZ;
         private float power;
         private int count;
 
+        private void reset() {
+            this.minX = Float.POSITIVE_INFINITY;
+            this.minY = Float.POSITIVE_INFINITY;
+            this.minZ = Float.POSITIVE_INFINITY;
+            this.maxX = Float.NEGATIVE_INFINITY;
+            this.maxY = Float.NEGATIVE_INFINITY;
+            this.maxZ = Float.NEGATIVE_INFINITY;
+            this.power = 0.0F;
+            this.count = 0;
+        }
+
         private void include(Leaf leaf) {
-            this.bounds = this.bounds.union(leaf.bounds);
+            this.minX = Math.min(this.minX, leaf.bounds.minX);
+            this.minY = Math.min(this.minY, leaf.bounds.minY);
+            this.minZ = Math.min(this.minZ, leaf.bounds.minZ);
+            this.maxX = Math.max(this.maxX, leaf.bounds.maxX);
+            this.maxY = Math.max(this.maxY, leaf.bounds.maxY);
+            this.maxZ = Math.max(this.maxZ, leaf.bounds.maxZ);
             this.power += leaf.power;
             this.count++;
+        }
+    }
+
+    private static final class MutableBounds {
+        private float minX;
+        private float minY;
+        private float minZ;
+        private float maxX;
+        private float maxY;
+        private float maxZ;
+
+        private MutableBounds reset() {
+            this.minX = Float.POSITIVE_INFINITY;
+            this.minY = Float.POSITIVE_INFINITY;
+            this.minZ = Float.POSITIVE_INFINITY;
+            this.maxX = Float.NEGATIVE_INFINITY;
+            this.maxY = Float.NEGATIVE_INFINITY;
+            this.maxZ = Float.NEGATIVE_INFINITY;
+            return this;
+        }
+
+        private void include(Bin bin) {
+            this.minX = Math.min(this.minX, bin.minX);
+            this.minY = Math.min(this.minY, bin.minY);
+            this.minZ = Math.min(this.minZ, bin.minZ);
+            this.maxX = Math.max(this.maxX, bin.maxX);
+            this.maxY = Math.max(this.maxY, bin.maxY);
+            this.maxZ = Math.max(this.maxZ, bin.maxZ);
+        }
+
+        private float surfaceArea() {
+            float x = Math.max(this.maxX - this.minX, 0.0F);
+            float y = Math.max(this.maxY - this.minY, 0.0F);
+            float z = Math.max(this.maxZ - this.minZ, 0.0F);
+            return 2.0F * (x * y + y * z + z * x);
+        }
+    }
+
+    private static final class Workspace {
+        private final Bin[] bins = new Bin[SAH_BIN_COUNT];
+        private final MutableBounds leftBounds = new MutableBounds();
+        private final MutableBounds rightBounds = new MutableBounds();
+
+        private Workspace() {
+            for (int index = 0; index < this.bins.length; index++) {
+                this.bins[index] = new Bin();
+            }
         }
     }
 }

@@ -53,6 +53,11 @@ final class ShaderAbiTest {
         assertEquals(35, ShaderAbi.DESCRIPTOR_TEMPORAL_CAMERA);
         assertEquals(0x80000000, ShaderAbi.PATH_CAMERA_IN_WATER_MASK);
         assertEquals(0x7fff, ShaderAbi.PATH_JITTER_PHASE_MASK);
+        assertEquals(0, ShaderAbi.PATH_SUN_EV_QUARTER_SHIFT);
+        assertEquals(8, ShaderAbi.PATH_BLOCK_LIGHT_EV_QUARTER_SHIFT);
+        assertEquals(0xff, ShaderAbi.PATH_EV_QUARTER_MASK);
+        assertEquals(128, ShaderAbi.PATH_EV_QUARTER_BIAS);
+        assertEquals(2, ShaderAbi.RUSSIAN_ROULETTE_START);
         assertEquals("linear-rec2020-d65", ShaderAbi.WORKING_COLOR_SPACE);
         assertEquals("srgb", ShaderAbi.TEXTURE_COLOR_ENCODING);
         assertEquals("srgb", ShaderAbi.DISPLAY_COLOR_ENCODING);
@@ -61,7 +66,8 @@ final class ShaderAbiTest {
                 "opaque-reblur-diffuse-specular+transparent-dual-reblur-diffuse-specular-psr",
                 ShaderAbi.NRD_DENOISER);
         assertEquals("hillaire-8wave-rec2020-d65", ShaderAbi.ATMOSPHERE_SPECTRAL_MODEL);
-        assertEquals(10.0F, ShaderAbi.ATMOSPHERE_SPACE_SUN_INTENSITY);
+        assertEquals(12.5F, ShaderAbi.ATMOSPHERE_SPACE_SUN_INTENSITY);
+        assertEquals(25.0F, ShaderAbi.LEVEL_15_BLOCK_INTENSITY);
         assertEquals(0.00471F, ShaderAbi.ATMOSPHERE_SUN_ANGULAR_RADIUS_RADIANS);
         assertEquals(-64.0F, ShaderAbi.ATMOSPHERE_WORLD_SEA_LEVEL_Y);
         assertEquals(0.001F, ShaderAbi.ATMOSPHERE_WORLD_UNIT_SCALE_KM);

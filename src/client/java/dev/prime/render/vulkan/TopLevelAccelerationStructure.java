@@ -2,7 +2,6 @@ package dev.prime.render.vulkan;
 
 import dev.prime.render.shader.ShaderAbi;
 import java.nio.LongBuffer;
-import java.util.List;
 import org.lwjgl.PointerBuffer;
 import org.lwjgl.system.MemoryStack;
 import org.lwjgl.system.MemoryUtil;
@@ -161,73 +160,23 @@ public final class TopLevelAccelerationStructure {
         return count <= this.capacity;
     }
 
-    public void populate(List<Instance> source) {
-        if (source.size() > this.capacity) {
+    public void populate(int count, InstancePopulator populator) {
+        if (count < 0 || count > this.capacity) {
             throw new IllegalArgumentException("TLAS capacity exceeded");
         }
-        this.instanceCount = source.size();
+        this.instanceCount = count;
         try (MemoryStack stack = MemoryStack.stackPush()) {
             VkAccelerationStructureInstanceKHR instance = VkAccelerationStructureInstanceKHR.calloc(stack);
             var matrix = stack.mallocFloat(12);
-            for (int index = 0; index < source.size(); index++) {
-                Instance value = source.get(index);
-                matrix.clear();
-                matrix.put(new float[] {
-                    1.0F, 0.0F, 0.0F, value.translateX(),
-                    0.0F, 1.0F, 0.0F, value.translateY(),
-                    0.0F, 0.0F, 1.0F, value.translateZ()
-                }).flip();
-                instance.transform().matrix(matrix);
-                instance.instanceCustomIndex(index)
-                        .mask(0xff)
-                        .instanceShaderBindingTableRecordOffset(0)
-                        .flags(KHRAccelerationStructure.VK_GEOMETRY_INSTANCE_TRIANGLE_FACING_CULL_DISABLE_BIT_KHR)
-                        .accelerationStructureReference(value.blasAddress());
-                MemoryUtil.memCopy(
-                        instance.address(),
-                        this.instances.mappedAddress() + (long) index * VkAccelerationStructureInstanceKHR.SIZEOF,
-                        VkAccelerationStructureInstanceKHR.SIZEOF);
-
-                long sectionAddress = this.sectionTable.mappedAddress()
-                        + (long) index * ShaderAbi.SECTION_RECORD_SIZE;
-                MemoryUtil.memPutLong(
-                        sectionAddress + ShaderAbi.SECTION_PRIMITIVE_ADDRESS_OFFSET,
-                        value.primitiveAddress());
-                MemoryUtil.memPutLong(
-                        sectionAddress + ShaderAbi.SECTION_LIGHT_ADDRESS_OFFSET,
-                        value.lightAddress());
-                MemoryUtil.memPutLong(
-                        sectionAddress + ShaderAbi.SECTION_WORLD_LIGHT_ADDRESS_OFFSET,
-                        value.worldLightAddress());
-                MemoryUtil.memPutInt(sectionAddress + ShaderAbi.SECTION_OPAQUE_BASE_OFFSET, 0);
-                MemoryUtil.memPutInt(
-                        sectionAddress + ShaderAbi.SECTION_CUTOUT_BASE_OFFSET,
-                        value.opaqueTriangleCount());
-                MemoryUtil.memPutInt(
-                        sectionAddress + ShaderAbi.SECTION_WORLD_LEAF_NODE_OFFSET,
-                        value.worldLeafNode());
-                MemoryUtil.memPutInt(
-                        sectionAddress + ShaderAbi.SECTION_LIGHT_COUNT_OFFSET,
-                        value.lightCount());
-                MemoryUtil.memPutLong(
-                        sectionAddress + ShaderAbi.SECTION_WORLD_LIGHT_FORWARD_ADDRESS_OFFSET,
-                        value.worldLightForwardAddress());
-                MemoryUtil.memPutFloat(
-                        sectionAddress + ShaderAbi.SECTION_TRANSLATION_OFFSET,
-                        value.translateX());
-                MemoryUtil.memPutFloat(
-                        sectionAddress + ShaderAbi.SECTION_TRANSLATION_OFFSET + Float.BYTES,
-                        value.translateY());
-                MemoryUtil.memPutFloat(
-                        sectionAddress + ShaderAbi.SECTION_TRANSLATION_OFFSET + 2L * Float.BYTES,
-                        value.translateZ());
-                MemoryUtil.memPutInt(
-                        sectionAddress + ShaderAbi.SECTION_WORLD_LIGHT_NODE_COUNT_OFFSET,
-                        value.worldLightNodeCount());
+            InstanceWriter writer = new InstanceWriter(this, count, instance, matrix);
+            populator.populate(writer);
+            if (writer.index != count) {
+                throw new IllegalStateException(
+                        "TLAS populator wrote " + writer.index + " of " + count + " instances");
             }
         }
-        this.instances.flush(0L, (long) source.size() * VkAccelerationStructureInstanceKHR.SIZEOF);
-        this.sectionTable.flush(0L, (long) source.size() * ShaderAbi.SECTION_RECORD_SIZE);
+        this.instances.flush(0L, (long) count * VkAccelerationStructureInstanceKHR.SIZEOF);
+        this.sectionTable.flush(0L, (long) count * ShaderAbi.SECTION_RECORD_SIZE);
     }
 
     public void recordBuild(VkCommandBuffer commandBuffer) {
@@ -290,18 +239,100 @@ public final class TopLevelAccelerationStructure {
         return geometry;
     }
 
-    public record Instance(
-            long blasAddress,
-            long primitiveAddress,
-            long lightAddress,
-            long worldLightAddress,
-            long worldLightForwardAddress,
-            int opaqueTriangleCount,
-            int worldLeafNode,
-            int lightCount,
-            int worldLightNodeCount,
-            float translateX,
-            float translateY,
-            float translateZ) {
+    @FunctionalInterface
+    public interface InstancePopulator {
+        void populate(InstanceWriter writer);
+    }
+
+    public static final class InstanceWriter {
+        private final TopLevelAccelerationStructure owner;
+        private final int capacity;
+        private final VkAccelerationStructureInstanceKHR instance;
+        private final java.nio.FloatBuffer matrix;
+        private int index;
+
+        private InstanceWriter(
+                TopLevelAccelerationStructure owner,
+                int capacity,
+                VkAccelerationStructureInstanceKHR instance,
+                java.nio.FloatBuffer matrix) {
+            this.owner = owner;
+            this.capacity = capacity;
+            this.instance = instance;
+            this.matrix = matrix;
+        }
+
+        public void write(
+                long blasAddress,
+                long primitiveAddress,
+                long lightAddress,
+                long worldLightAddress,
+                long worldLightForwardAddress,
+                int opaqueTriangleCount,
+                int worldLeafNode,
+                int lightCount,
+                int worldLightNodeCount,
+                float translateX,
+                float translateY,
+                float translateZ) {
+            if (this.index >= this.capacity) {
+                throw new IllegalStateException("TLAS populator wrote too many instances");
+            }
+            this.matrix.clear();
+            this.matrix
+                    .put(1.0F).put(0.0F).put(0.0F).put(translateX)
+                    .put(0.0F).put(1.0F).put(0.0F).put(translateY)
+                    .put(0.0F).put(0.0F).put(1.0F).put(translateZ)
+                    .flip();
+            this.instance.transform().matrix(this.matrix);
+            this.instance.instanceCustomIndex(this.index)
+                    .mask(0xff)
+                    .instanceShaderBindingTableRecordOffset(0)
+                    .flags(KHRAccelerationStructure.VK_GEOMETRY_INSTANCE_TRIANGLE_FACING_CULL_DISABLE_BIT_KHR)
+                    .accelerationStructureReference(blasAddress);
+            MemoryUtil.memCopy(
+                    this.instance.address(),
+                    this.owner.instances.mappedAddress()
+                            + (long) this.index * VkAccelerationStructureInstanceKHR.SIZEOF,
+                    VkAccelerationStructureInstanceKHR.SIZEOF);
+
+            long sectionAddress = this.owner.sectionTable.mappedAddress()
+                    + (long) this.index * ShaderAbi.SECTION_RECORD_SIZE;
+            MemoryUtil.memPutLong(
+                    sectionAddress + ShaderAbi.SECTION_PRIMITIVE_ADDRESS_OFFSET,
+                    primitiveAddress);
+            MemoryUtil.memPutLong(
+                    sectionAddress + ShaderAbi.SECTION_LIGHT_ADDRESS_OFFSET,
+                    lightAddress);
+            MemoryUtil.memPutLong(
+                    sectionAddress + ShaderAbi.SECTION_WORLD_LIGHT_ADDRESS_OFFSET,
+                    worldLightAddress);
+            MemoryUtil.memPutInt(sectionAddress + ShaderAbi.SECTION_OPAQUE_BASE_OFFSET, 0);
+            MemoryUtil.memPutInt(
+                    sectionAddress + ShaderAbi.SECTION_CUTOUT_BASE_OFFSET,
+                    opaqueTriangleCount);
+            MemoryUtil.memPutInt(
+                    sectionAddress + ShaderAbi.SECTION_WORLD_LEAF_NODE_OFFSET,
+                    worldLeafNode);
+            MemoryUtil.memPutInt(
+                    sectionAddress + ShaderAbi.SECTION_LIGHT_COUNT_OFFSET,
+                    lightCount);
+            MemoryUtil.memPutLong(
+                    sectionAddress + ShaderAbi.SECTION_WORLD_LIGHT_FORWARD_ADDRESS_OFFSET,
+                    worldLightForwardAddress);
+            MemoryUtil.memPutFloat(
+                    sectionAddress + ShaderAbi.SECTION_TRANSLATION_OFFSET,
+                    translateX);
+            MemoryUtil.memPutFloat(
+                    sectionAddress + ShaderAbi.SECTION_TRANSLATION_OFFSET + Float.BYTES,
+                    translateY);
+            MemoryUtil.memPutFloat(
+                    sectionAddress + ShaderAbi.SECTION_TRANSLATION_OFFSET + 2L * Float.BYTES,
+                    translateZ);
+            MemoryUtil.memPutInt(
+                    sectionAddress + ShaderAbi.SECTION_WORLD_LIGHT_NODE_COUNT_OFFSET,
+                    worldLightNodeCount);
+            this.index++;
+        }
     }
 }

@@ -23,7 +23,7 @@ void main() {
     IntegratorRecord integrator;
     integrator.sunDirectionIntensity = vec4(
             primePush.sunDirection,
-            ATM_SPACE_SUN_INTENSITY);
+            ATM_SPACE_SUN_INTENSITY * primeSunRadianceMultiplier());
     integrator.environmentRadiance = vec4(0.0);
     vec2 cameraSample = primeCameraSample();
     PathState path = primeCameraPath(pixel, 0u, cameraSample);

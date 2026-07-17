@@ -66,6 +66,7 @@ final class NrdSignalContractTest {
         assertTrue(transparent.contains("primeSampleMinecraftTransmissionBranch("));
         assertTrue(!transparent.contains("primeTransparentFresnelSelector(pixel)"));
         assertTrue(!bsdf.contains("primeSampleMinecraftTransmissionFresnelBranch("));
+        assertTrue(transparent.contains("bool closedDeltaReflection = splitInterface"));
         assertTrue(transparent.contains("splitSmoothInterface ? 2u : 1u"));
         assertTrue(transparent.contains("if (!splitInterface)"));
         assertTrue(transparent.contains("primeTransparentReflectionNoisy"));
@@ -80,6 +81,13 @@ final class NrdSignalContractTest {
         assertTrue(transparentMain >= 0 && primaryTrace > transparentMain);
         assertTrue(!transparent.substring(transparentMain, primaryTrace).contains("imageStore("));
         assertTrue(earlyExit > primaryTrace && conditionalClear > earlyExit);
+        int splitBranch = transparent.indexOf("if (splitSmoothInterface)", transparentMain);
+        int reflectionStore = transparent.indexOf("primeStoreTransparentBranch(", splitBranch);
+        int transmissionTrace = transparent.indexOf(
+                "PrimeTransparentBranchResult transmission =", reflectionStore);
+        assertTrue(splitBranch >= 0
+                && reflectionStore > splitBranch
+                && transmissionTrace > reflectionStore);
         assertTrue(transparent.contains("result.guidePosition = surface.position"));
         assertTrue(transparent.contains(
                 "firstInterface.position - primePush.cameraPosition"));
@@ -98,9 +106,18 @@ final class NrdSignalContractTest {
         assertTrue(integrator.contains("struct PrimeDeltaChain"));
         assertTrue(integrator.contains("PRIME_DELTA_CHAIN_CAPACITY = 8u"));
         assertTrue(integrator.contains("primeAppendDeltaInterface(deltaChain, surface, bsdf)"));
+        assertTrue(integrator.contains(
+                "(primarySurfaceReplacement || result.hasGuide != 0u) && !pureDeltaInterface"));
+        assertTrue(integrator.contains("if (!pureDeltaInterface)"));
         assertTrue(transparent.contains("primeBuildDeltaVirtualGuide("));
         assertTrue(transparent.contains("primeSolvePreviousDeltaPath("));
-        assertTrue(transparent.contains("const float residualTolerance = 1.0e-5"));
+        assertTrue(transparent.contains("PRIME_DELTA_RESIDUAL_TOLERANCE = 1.0e-5"));
+        assertTrue(transparent.contains("primeSolveSingleTransmissionDeltaPath("));
+        assertTrue(transparent.contains("bool reflectionOnly = true"));
+        assertTrue(transparent.contains("previousVirtualPosition = unfoldedTarget"));
+        assertTrue(transparent.contains("all(equal(previousCamera, currentCamera))"));
+        assertTrue(transparent.contains("primeDeltaProjectNormalizedDerivative("));
+        assertTrue(transparent.contains("primeDeltaInverseMatrix("));
         assertTrue(transparent.contains("reducedDiagonal -= lower * reducedUpper[index - 1u]"));
         assertTrue(transparent.contains("previousVirtualPosition - result.currentVirtualPosition"));
         assertTrue(transparentPreparation.contains(

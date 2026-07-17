@@ -97,11 +97,27 @@ vec3 primeResolveTransparentBranch(
 }
 
 bool primeCheckerMissing(vec4 metadata) {
-    return abs(metadata.a - PRIME_CHECKER_MISSING) < 0.25;
+    return metadata.a < PRIME_CHECKER_MISSING
+            && metadata.a > PRIME_BRANCH_ABSENT;
 }
 
 bool primeBranchSelected(vec4 metadata) {
-    return metadata.a > -1.5;
+    return metadata.a > PRIME_CHECKER_MISSING;
+}
+
+// Metadata alpha is the persistent sparse-branch ABI. A finite selected PSR stores +p, a selected
+// miss stores -p, an untraced branch stores -2-p, and -3 means that the branch does not exist.
+float primeBranchSelectionProbability(vec4 metadata) {
+    if (metadata.a >= 0.0) {
+        return clamp(metadata.a, 0.0, 1.0);
+    }
+    if (metadata.a > PRIME_CHECKER_MISSING) {
+        return clamp(-metadata.a, 0.0, 1.0);
+    }
+    if (metadata.a > PRIME_BRANCH_ABSENT) {
+        return clamp(PRIME_CHECKER_MISSING - metadata.a, 0.0, 1.0);
+    }
+    return 0.0;
 }
 
 vec4 primeLoadBranchMetadata(ivec2 pixel, bool reflectionBranch) {
@@ -176,7 +192,7 @@ uint primeCheckerHistorySignature(PrimeCheckerGuide guide) {
 PrimeCheckerGuide primeLoadCheckerGuide(ivec2 pixel) {
     PrimeCheckerGuide result;
     vec4 reflectionMetadata = imageLoad(primeReflectionMetadata, pixel);
-    bool reflectionCarriesGuide = reflectionMetadata.a < -1.5;
+    bool reflectionCarriesGuide = primeCheckerMissing(reflectionMetadata);
     vec4 metadata = reflectionCarriesGuide
             ? reflectionMetadata
             : imageLoad(primeTransmissionMetadata, pixel);
@@ -194,7 +210,7 @@ PrimeCheckerGuide primeLoadCheckerGuide(ivec2 pixel) {
     result.baseColor = metadata.rgb;
     result.roughness = material.a;
     result.materialFlags = uint(max(round(throughput.a), 0.0));
-    result.valid = metadata.a < -1.5
+    result.valid = primeCheckerMissing(metadata)
             && !any(isnan(result.position))
             && !any(isinf(result.position))
             && !any(isnan(result.normal))
@@ -378,7 +394,8 @@ vec3 primeResolveCheckerSpatial(
         if (!primeCheckerGuideCompatible(centerGuide, neighborGuide)) {
             continue;
         }
-        radiance += primeResolveTransparentBranch(neighbor, reflectionBranch);
+        radiance += primeBranchSelectionProbability(metadata)
+                * primeResolveTransparentBranch(neighbor, reflectionBranch);
         weight += 1.0;
     }
     return weight > 0.0 ? radiance / weight : vec3(0.0);
@@ -394,7 +411,8 @@ vec3 primeResolveCheckerBranch(
     selected = primeBranchSelected(metadata);
     checkerMissing = primeCheckerMissing(metadata);
     if (selected) {
-        return primeResolveTransparentBranch(pixel, reflectionBranch);
+        return primeBranchSelectionProbability(metadata)
+                * primeResolveTransparentBranch(pixel, reflectionBranch);
     }
     if (!checkerMissing) {
         return vec3(0.0);
@@ -521,14 +539,9 @@ void main() {
             vec4(transmissionSelected ? transmission : vec3(0.0), transmissionSelected ? 1.0 : 0.0));
     primeStoreCheckerGuide(ivec2(pixel), checkerGuide);
 
-    vec3 radiance = scene.rgb;
-    if (reflectionMissing || transmissionMissing) {
-        // Both selected field values include the exact 2x proposal compensation. Averaging the
-        // current and reconstructed complementary fields restores their physical sum.
-        radiance += 0.5 * (reflection + transmission);
-    } else {
-        radiance += reflection + transmission;
-    }
+    // Each selected estimator contains 1/p proposal compensation. The branch resolver multiplies
+    // it by p before storing or reconstructing history, so both fields are physical radiance here.
+    vec3 radiance = scene.rgb + reflection + transmission;
     primeTransparentCompositeApplyAerial(pixel, -scene.a - 1.0, radiance);
     imageStore(
             primeTransparentSceneColor,

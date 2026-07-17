@@ -732,16 +732,20 @@ PrimeTransmissiveBsdfSample primeSampleMinecraftTransmissionBranch(
             volumeStack);
 }
 
-PrimeTransmissiveBsdfSample primeSampleMinecraftTransmissionCheckerBranch(
+const float PRIME_TRANSPARENT_MINIMUM_BRANCH_PROBABILITY = 1.0 / 9.0;
+
+PrimeTransmissiveBsdfSample primeSampleMinecraftTransmissionFresnelBranch(
         vec3 baseColor,
         float opacity,
         vec3 outwardNormal,
         uint materialFlags,
         vec3 viewDirection,
         vec3 sampleValue,
-        bool reflectionBranch,
+        float branchSelector,
         float rayT,
-        PrimeRcVolumeStack volumeStack) {
+        PrimeRcVolumeStack volumeStack,
+        out bool reflectionBranch,
+        out float reflectionSelectionProbability) {
     PrimeRcState state = primeMinecraftTransmissionState(
             baseColor,
             opacity,
@@ -752,6 +756,17 @@ PrimeTransmissiveBsdfSample primeSampleMinecraftTransmissionCheckerBranch(
             volumeStack);
     vec3 localView = primeRcOnbToLocal(state.material.geometry.onb, viewDirection);
     PrimeMinecraftMirrorSplit mirror = primeMinecraftMirrorSplit(localView, state);
+    // Fresnel allocates most rays to the energetic branch. The symmetric floor targets at least
+    // one weak-branch sample per 3x3 neighborhood and bounds Monte Carlo amplification to 9x even
+    // at total internal reflection. The low-discrepancy caller supplies the spatial selector.
+    reflectionSelectionProbability = clamp(
+            mirror.probability,
+            PRIME_TRANSPARENT_MINIMUM_BRANCH_PROBABILITY,
+            1.0 - PRIME_TRANSPARENT_MINIMUM_BRANCH_PROBABILITY);
+    reflectionBranch = branchSelector < reflectionSelectionProbability;
+    float selectionProbability = reflectionBranch
+            ? reflectionSelectionProbability
+            : 1.0 - reflectionSelectionProbability;
     PrimeTransmissiveBsdfSample result =
             primeSampleMinecraftTransmissionBranchFromState(
                     state,
@@ -761,11 +776,11 @@ PrimeTransmissiveBsdfSample primeSampleMinecraftTransmissionCheckerBranch(
                     sampleValue,
                     reflectionBranch,
                     volumeStack);
-    // The checker field chooses each exact physical lobe with probability 1/2 independently of
-    // Fresnel. Fresnel remains entirely inside the conditional branch, while this fixed proposal
-    // compensation keeps the raw estimator unbiased and caps amplification at 2x.
-    result.bsdfSample.weight *= 2.0;
-    result.bsdfSample.pdf *= 0.5;
+    // The conditional closure already contains exact Fresnel energy. Apply only the external
+    // branch proposal here; multiplying the resolved field by this same probability after NRD
+    // recovers the physical branch without changing the unfiltered estimator's expectation.
+    result.bsdfSample.weight /= selectionProbability;
+    result.bsdfSample.pdf *= selectionProbability;
     return result;
 }
 

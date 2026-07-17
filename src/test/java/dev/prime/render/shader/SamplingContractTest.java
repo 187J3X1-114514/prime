@@ -29,9 +29,9 @@ final class SamplingContractTest {
         assertTrue(sampling.contains("primeSobolSample2D"));
         assertTrue(sampling.contains("primeSobolSample3D"));
         assertTrue(sampling.contains("primeSobolSample4D"));
-        assertTrue(sampling.contains("primeTransparentCheckerReflection"));
-        assertTrue(sampling.contains("pixel.x + pixel.y + temporalIndex"));
-        assertTrue(sampling.contains("& 1u) == 0u"));
+        assertTrue(sampling.contains("primeTransparentFresnelSelector"));
+        assertTrue(sampling.contains("52.9829189"));
+        assertTrue(sampling.contains("0.61803398875"));
         assertFalse(sampling.contains("primeBayerWeylPrimaryLobeSample"));
         assertTrue(sampling.contains(
                 "primePush.path.w >> PRIME_PATH_TEMPORAL_SEQUENCE_SHIFT"));
@@ -50,8 +50,9 @@ final class SamplingContractTest {
         assertTrue(integrator.contains("PRIME_SAMPLE_EFFECT_DIRECT_AREA_LIGHT"));
         assertTrue(integrator.contains("PRIME_SAMPLE_EFFECT_SCATTER_BSDF"));
         assertTrue(integrator.contains("PRIME_SAMPLE_EFFECT_RUSSIAN_ROULETTE"));
-        assertTrue(bsdf.contains("result.bsdfSample.weight *= 2.0"));
-        assertTrue(bsdf.contains("result.bsdfSample.pdf *= 0.5"));
+        assertTrue(bsdf.contains("PRIME_TRANSPARENT_MINIMUM_BRANCH_PROBABILITY = 1.0 / 9.0"));
+        assertTrue(bsdf.contains("result.bsdfSample.weight /= selectionProbability"));
+        assertTrue(bsdf.contains("result.bsdfSample.pdf *= selectionProbability"));
         assertTrue(integrator.contains(
                 "const uint rouletteStart = PRIME_RUSSIAN_ROULETTE_START"));
         assertFalse(integrator.contains("rouletteStart = 5u"));

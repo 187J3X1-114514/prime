@@ -40,8 +40,8 @@ float primeMaterialLinearRoughness(vec3 baseColor, uint flags) {
         // their visually sharp interface as a tiny non-zero GGX lobe creates stochastic tail
         // samples and fireflies without representing any Minecraft material detail. Zero is a
         // semantic contract: the visible interface has distinct reflection and transmission
-        // delta lobes. Prime selects one with an unbiased two-field checker proposal per pixel; a
-        // future explicit material roughness > 0 instead uses one unsplit finite-BSDF path.
+        // delta lobes. Prime selects one with an unbiased Fresnel-guided local proposal per pixel;
+        // a future explicit material roughness > 0 instead uses one unsplit finite-BSDF path.
         return 0.0;
     }
     return primeDefaultLinearRoughness(baseColor);

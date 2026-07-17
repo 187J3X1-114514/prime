@@ -27,6 +27,9 @@ final class NrdSignalContractTest {
                 System.getProperty("user.dir"),
                 "src", "client", "java", "dev", "prime", "render", "vulkan", "nrd",
                 "NrdTransparentComposite.java"));
+        String nativeNrdBridge = Files.readString(Path.of(
+                System.getProperty("user.dir"),
+                "native", "nrd", "prime_nrd_bridge.cpp"));
 
         assertTrue(rayGeneration.contains(
                 "vec4(sampleResult.primaryBaseColor, sampleResult.primaryDistance)"));
@@ -60,11 +63,11 @@ final class NrdSignalContractTest {
         assertTrue(transparent.contains("bool splitSmoothInterface"));
         assertTrue(transparent.contains("surface.materialFlags) == 0.0"));
         assertTrue(transparent.contains("if (splitSmoothInterface)"));
-        assertTrue(transparent.contains("primeTransparentCheckerReflection(pixel)"));
+        assertTrue(transparent.contains("primeTransparentFresnelSelector(pixel)"));
         assertTrue(transparent.contains(
-                "primeSampleMinecraftTransmissionCheckerBranch("));
-        assertTrue(bsdf.contains("result.bsdfSample.weight *= 2.0"));
-        assertTrue(bsdf.contains("result.bsdfSample.pdf *= 0.5"));
+                "primeSampleMinecraftTransmissionFresnelBranch("));
+        assertTrue(bsdf.contains("result.bsdfSample.weight /= selectionProbability"));
+        assertTrue(bsdf.contains("result.bsdfSample.pdf *= selectionProbability"));
         assertTrue(transparent.contains(
                 "PrimeTransparentBranchResult selected = primeTraceFirstInterfaceBranch("));
         assertTrue(!transparent.contains("splitSmoothInterface ? 2u : 1u"));
@@ -122,7 +125,11 @@ final class NrdSignalContractTest {
         assertTrue(transparentComposite.contains("primePreviousCheckerGuide"));
         assertTrue(transparentComposite.contains("primeResolveCheckerHistory("));
         assertTrue(transparentComposite.contains("primeResolveCheckerSpatial("));
-        assertTrue(transparentComposite.contains("0.5 * (reflection + transmission)"));
+        assertTrue(transparentComposite.contains("primeBranchSelectionProbability("));
+        assertTrue(transparentComposite.contains(
+                "vec3 radiance = scene.rgb + reflection + transmission"));
+        assertTrue(nativeNrdBridge.contains("settings.diffusePrepassBlurRadius = 12.0f"));
+        assertTrue(nativeNrdBridge.contains("settings.specularPrepassBlurRadius = 12.0f"));
         assertTrue(transparentCompositeJava.contains("BINDING_COUNT = 26"));
         assertTrue(transparentCompositeJava.contains("PUSH_SIZE = 112"));
         assertTrue(transparentCompositeJava.contains("VK_FORMAT_R32G32_SFLOAT"));

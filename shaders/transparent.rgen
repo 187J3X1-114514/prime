@@ -369,8 +369,10 @@ PrimeTransparentBranchResult primeTraceFirstInterfaceBranch(
         PrimeRcVolumeStack volumeStack,
         vec3 prefixThroughput,
         bool splitInterface,
-        bool reflectionBranch,
-        uint pathIndex) {
+        float branchSelector,
+        uint pathIndex,
+        out bool reflectionBranch,
+        out float reflectionSelectionProbability) {
     PathState path = cameraPath;
     path.sampleDimension = pathIndex;
     PrimeSampleBase sampleBase = primeMakeSampleBase(path, 1u);
@@ -379,17 +381,21 @@ PrimeTransparentBranchResult primeTraceFirstInterfaceBranch(
             PRIME_SAMPLE_EFFECT_SCATTER_BSDF,
             PRIME_SAMPLE_DIMENSION_PRIMARY);
     PrimeTransmissiveBsdfSample branch;
+    reflectionBranch = false;
+    reflectionSelectionProbability = 0.0;
     if (splitInterface) {
-        branch = primeSampleMinecraftTransmissionCheckerBranch(
+        branch = primeSampleMinecraftTransmissionFresnelBranch(
                 surface.baseColor,
                 primeSurfaceOpacity(surface),
                 surface.geometricNormal,
                 surface.materialFlags,
                 -cameraPath.rayDirection,
                 scatterSample,
-                reflectionBranch,
+                branchSelector,
                 surface.t,
-                volumeStack);
+                volumeStack,
+                reflectionBranch,
+                reflectionSelectionProbability);
     } else {
         // A finite rough lobe is one ordinary BSDF sampling problem. Splitting its reflection and
         // transmission proposals would double the path budget and produce two unrelated noisy
@@ -491,13 +497,19 @@ void primeStoreTransparentBranch(
         PathState cameraPath,
         bool reflectionBranch,
         bool sampledBranch,
-        bool checkerMissing) {
+        bool checkerMissing,
+        float selectionProbability) {
     vec4 noisy = vec4(0.0);
     vec4 noisySpecular = vec4(0.0);
     vec4 position = vec4(0.0);
+    float safeSelectionProbability = clamp(selectionProbability, 0.0, 1.0);
     vec4 metadata = vec4(
             primeNrdSanitizeRadiance(result.stableRadiance),
-            sampledBranch ? -1.0 : (checkerMissing ? -2.0 : -3.0));
+            sampledBranch
+                    ? -safeSelectionProbability
+                    : (checkerMissing
+                            ? -2.0 - safeSelectionProbability
+                            : -3.0));
     vec4 guide = vec4(0.0, 1.0, 0.0, 1.0);
     vec4 interfaceData = vec4(0.0);
     vec4 pathThroughput = vec4(1.0);
@@ -523,7 +535,7 @@ void primeStoreTransparentBranch(
                         result.diffuseRadiance
                         + result.specularRadiance
                         + result.stableRadiance),
-                -1.0);
+                -safeSelectionProbability);
     } else if (result.hasGuide != 0u) {
         // The complete delta chain has already been reduced to the current and previous virtual
         // surfaces. NRD receives one coherent replacement G-buffer regardless of chain length.
@@ -550,7 +562,7 @@ void primeStoreTransparentBranch(
                 1.0);
         metadata = vec4(
                 clamp(result.guideBaseColor, vec3(0.0), vec3(65504.0)),
-                1.0);
+                safeSelectionProbability);
         guide = vec4(
                 normalize(result.virtualGuideNormal),
                 clamp(result.guideLinearRoughness, 0.0, 1.0));
@@ -642,18 +654,17 @@ void main() {
     }
 
     // A smooth visible interface still has two exact physical lobes, but tracing both doubles the
-    // continuation budget. Complementary checker fields trace one lobe each and exchange roles on
-    // the following display frame. A fixed 1/2 proposal avoids Fresnel-dependent sparse outliers;
-    // any finite roughness remains one ordinary complete-BSDF sample.
+    // continuation budget. A Fresnel-guided local low-discrepancy proposal spends most rays on the
+    // energetic branch while retaining bounded 3x3 support for the weaker branch. Any finite
+    // roughness remains one ordinary complete-BSDF sample.
     bool splitSmoothInterface = primeMaterialLinearRoughness(
             surface.baseColor, surface.materialFlags) == 0.0;
     PrimeTransparentBranchResult reflection = primeEmptyTransparentBranchResult();
     PrimeTransparentBranchResult transmission = primeEmptyTransparentBranchResult();
     bool reflectionSampled = false;
     bool transmissionSampled = false;
+    float reflectionSelectionProbability = 0.0;
     if (splitSmoothInterface) {
-        reflectionSampled = primeTransparentCheckerReflection(pixel);
-        transmissionSampled = !reflectionSampled;
         PrimeTransparentBranchResult selected = primeTraceFirstInterfaceBranch(
                 cameraPath,
                 surface,
@@ -661,8 +672,11 @@ void main() {
                 volumeStack,
                 prefixThroughput,
                 true,
+                primeTransparentFresnelSelector(pixel),
+                1u,
                 reflectionSampled,
-                1u);
+                reflectionSelectionProbability);
+        transmissionSampled = !reflectionSampled;
         if (reflectionSampled) {
             reflection = selected;
         } else {
@@ -670,6 +684,8 @@ void main() {
         }
     } else {
         transmissionSampled = true;
+        bool ignoredReflectionBranch;
+        float ignoredReflectionProbability;
         transmission = primeTraceFirstInterfaceBranch(
                 cameraPath,
                 surface,
@@ -677,8 +693,10 @@ void main() {
                 volumeStack,
                 prefixThroughput,
                 false,
-                false,
-                1u);
+                0.0,
+                1u,
+                ignoredReflectionBranch,
+                ignoredReflectionProbability);
     }
     primeStoreTransparentBranch(
             ivec2(pixel),
@@ -687,7 +705,8 @@ void main() {
             cameraPath,
             true,
             reflectionSampled,
-            splitSmoothInterface && !reflectionSampled);
+            splitSmoothInterface && !reflectionSampled,
+            reflectionSelectionProbability);
     primeStoreTransparentBranch(
             ivec2(pixel),
             transmission,
@@ -695,7 +714,8 @@ void main() {
             cameraPath,
             false,
             transmissionSampled,
-            splitSmoothInterface && !transmissionSampled);
+            splitSmoothInterface && !transmissionSampled,
+            splitSmoothInterface ? 1.0 - reflectionSelectionProbability : 1.0);
     LightEvaluation visibleEmitter = primeEvaluateAreaLight(
             surface, cameraPath.physicalOrigin, cameraPath.rayDirection);
     vec3 visibleRadiance = prefixThroughput * visibleEmitter.radiance;

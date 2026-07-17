@@ -374,7 +374,14 @@ struct PrimeTransmissiveBsdfSample {
 };
 
 const float PRIME_GLASS_MINIMUM_TINT_WEIGHT = 0.75;
-const float PRIME_WATER_REFERENCE_DEPTH = 16.0;
+// Rec.2020's near-monochromatic primaries are 630, 532 and 467 nm. Pope and Fry's measured
+// absorption coefficients for pure water at 22 C are 0.2916 m^-1 at 630 nm and, by linear
+// interpolation of their Table 3, 0.04444 m^-1 at 532 nm and 0.010182 m^-1 at 467 nm.
+// Minecraft and Prime's atmosphere both define one world unit as one metre. Do not retint these
+// values with biome color: that would turn a surface-art direction input into fictitious volume
+// absorption and break the Beer-Lambert medium contract.
+const vec3 PRIME_REC2020_PRIMARY_WAVELENGTHS_NM = vec3(630.0, 532.0, 467.0);
+const vec3 PRIME_PURE_WATER_ABSORPTION_M_INV = vec3(0.2916, 0.04444, 0.010182);
 
 PrimeRcVolumeStack primeEmptyVolumeStack() {
     PrimeRcVolumeStack result;
@@ -410,9 +417,10 @@ PrimeRcMaterial primeMinecraftTransmissionMaterial(
     float coverage = clamp(opacity, 0.0, 1.0);
     vec3 transmissionColor;
     if (water) {
-        // Water keeps the authored spectral ratio. Its lower density is expressed by the physical
-        // reference distance below, rather than washing the color toward white at every surface.
-        transmissionColor = mix(vec3(1.0), decodedColor, coverage);
+        // RoboCute's transmission ABI stores transmittance at a reference depth and recovers
+        // extinction as -log(T) / depth. Supplying the measured one-metre transmittance therefore
+        // reconstructs PRIME_PURE_WATER_ABSORPTION_M_INV without changing its volume-stack code.
+        transmissionColor = exp(-PRIME_PURE_WATER_ABSORPTION_M_INV);
     } else {
         // Vanilla stained-glass RGB contains display brightness as well as hue. A transmission
         // filter should preserve the dominant channel and attenuate the others, otherwise low
@@ -427,12 +435,11 @@ PrimeRcMaterial primeMinecraftTransmissionMaterial(
     }
     transmissionColor = clamp(transmissionColor, vec3(1.0e-3), vec3(1.0));
     material.transmission.color = transmissionColor;
-    // One block is the authored depth for solid glass-like models. Water uses a longer artistic
-    // reference depth so vanilla biome tint remains visible without becoming opaque after a few
-    // cells. True zero-volume surfaces use the closure's explicit zero-depth tint path.
+    // One block is one metre for measured water and the authored depth for glass-like models.
+    // True zero-volume surfaces use the closure's explicit zero-depth tint path.
     material.transmission.depth = thinWalled
             ? 0.0
-            : (water ? PRIME_WATER_REFERENCE_DEPTH : 1.0);
+            : 1.0;
     material.transmission.scatter = vec3(0.0);
     material.transmission.scatterAnisotropy = 0.0;
     material.transmission.dispersionScale = 0.0;
@@ -441,12 +448,10 @@ PrimeRcMaterial primeMinecraftTransmissionMaterial(
 
 PrimeRcVolumeStack primeCameraWaterVolumeStack() {
     PrimeRcVolumeStack result = primeEmptyVolumeStack();
-    // This is the vanilla default water tint (#3f76e4), decoded from sRGB and transformed to
-    // Prime's linear Rec.2020 working space. It is only the fallback for a ray whose camera starts
-    // below the water surface; ordinary air/water boundaries still use the captured biome tint.
-    const vec3 defaultWaterRec2020 = vec3(0.124443665, 0.178837556, 0.711582356);
+    // The camera starts without an intersected surface, but pure-water absorption is independent
+    // of the discarded biome surface tint, so a neutral placeholder reconstructs the same medium.
     PrimeRcMaterial material = primeMinecraftTransmissionMaterial(
-            defaultWaterRec2020,
+            vec3(1.0),
             1.0,
             vec3(0.0, 1.0, 0.0),
             PRIME_MATERIAL_FLAG_TRANSMISSIVE | PRIME_MATERIAL_FLAG_WATER);
@@ -496,7 +501,7 @@ PrimeRcState primeMinecraftTransmissionState(
             material,
             inverseOutsideIor,
             rayT,
-            vec3(630.0, 532.0, 465.0),
+            PRIME_REC2020_PRIMARY_WAVELENGTHS_NM,
             0u,
             PRIME_RC_DETAIL_DEFAULT,
             0u);
@@ -804,7 +809,7 @@ PrimeRcState primeMinecraftFoliageState(
             randomValue,
             inverseOutsideIor,
             rayT,
-            vec3(630.0, 532.0, 465.0),
+            PRIME_REC2020_PRIMARY_WAVELENGTHS_NM,
             0u,
             PRIME_RC_DETAIL_DEFAULT,
             0u);

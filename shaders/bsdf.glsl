@@ -634,34 +634,24 @@ PrimeTransmissiveBsdfSample primeSampleMinecraftTransmission(
     return result;
 }
 
-PrimeTransmissiveBsdfSample primeSampleMinecraftTransmissionBranch(
-        vec3 baseColor,
-        float opacity,
+PrimeTransmissiveBsdfSample primeSampleMinecraftTransmissionBranchFromState(
+        PrimeRcState state,
+        PrimeMinecraftMirrorSplit mirror,
         vec3 outwardNormal,
-        uint materialFlags,
         vec3 viewDirection,
         vec3 sampleValue,
         bool reflectionBranch,
-        float rayT,
         PrimeRcVolumeStack volumeStack) {
     PrimeTransmissiveBsdfSample result;
     result.bsdfSample = primeInvalidBsdfSample();
     result.volumeStack = volumeStack;
-    PrimeRcState state = primeMinecraftTransmissionState(
-            baseColor,
-            opacity,
-            outwardNormal,
-            materialFlags,
-            viewDirection,
-            rayT,
-            volumeStack);
     vec3 localView = primeRcOnbToLocal(state.material.geometry.onb, viewDirection);
 
     if (state.geometryThinWalled == 0u && reflectionBranch) {
         // Closed Minecraft glass deliberately models the reflected interface as a delta mirror.
-        // This branch is evaluated, not selected: its multiplier is the physical Fresnel energy
-        // itself and must never be divided by a reflection-selection probability.
-        PrimeMinecraftMirrorSplit mirror = primeMinecraftMirrorSplit(localView, state);
+        // This conditional branch carries the physical Fresnel energy itself. No selection
+        // probability belongs inside this helper; the fixed-proposal caller applies its
+        // separate proposal probability exactly once after the conditional sample is complete.
         if (all(lessThanEqual(mirror.reflectance, vec3(0.0)))) {
             return result;
         }
@@ -704,6 +694,73 @@ PrimeTransmissiveBsdfSample primeSampleMinecraftTransmissionBranch(
     result.bsdfSample.eventFlags = primeRcToBsdfEventFlags(
             sampled.bsdfSample.throughput.flags);
     result.volumeStack = sampled.volumeStack;
+    return result;
+}
+
+PrimeTransmissiveBsdfSample primeSampleMinecraftTransmissionBranch(
+        vec3 baseColor,
+        float opacity,
+        vec3 outwardNormal,
+        uint materialFlags,
+        vec3 viewDirection,
+        vec3 sampleValue,
+        bool reflectionBranch,
+        float rayT,
+        PrimeRcVolumeStack volumeStack) {
+    PrimeRcState state = primeMinecraftTransmissionState(
+            baseColor,
+            opacity,
+            outwardNormal,
+            materialFlags,
+            viewDirection,
+            rayT,
+            volumeStack);
+    vec3 localView = primeRcOnbToLocal(state.material.geometry.onb, viewDirection);
+    PrimeMinecraftMirrorSplit mirror = primeMinecraftMirrorSplit(localView, state);
+    return primeSampleMinecraftTransmissionBranchFromState(
+            state,
+            mirror,
+            outwardNormal,
+            viewDirection,
+            sampleValue,
+            reflectionBranch,
+            volumeStack);
+}
+
+PrimeTransmissiveBsdfSample primeSampleMinecraftTransmissionCheckerBranch(
+        vec3 baseColor,
+        float opacity,
+        vec3 outwardNormal,
+        uint materialFlags,
+        vec3 viewDirection,
+        vec3 sampleValue,
+        bool reflectionBranch,
+        float rayT,
+        PrimeRcVolumeStack volumeStack) {
+    PrimeRcState state = primeMinecraftTransmissionState(
+            baseColor,
+            opacity,
+            outwardNormal,
+            materialFlags,
+            viewDirection,
+            rayT,
+            volumeStack);
+    vec3 localView = primeRcOnbToLocal(state.material.geometry.onb, viewDirection);
+    PrimeMinecraftMirrorSplit mirror = primeMinecraftMirrorSplit(localView, state);
+    PrimeTransmissiveBsdfSample result =
+            primeSampleMinecraftTransmissionBranchFromState(
+                    state,
+                    mirror,
+                    outwardNormal,
+                    viewDirection,
+                    sampleValue,
+                    reflectionBranch,
+                    volumeStack);
+    // The checker field chooses each exact physical lobe with probability 1/2 independently of
+    // Fresnel. Fresnel remains entirely inside the conditional branch, while this fixed proposal
+    // compensation keeps the raw estimator unbiased and caps amplification at 2x.
+    result.bsdfSample.weight *= 2.0;
+    result.bsdfSample.pdf *= 0.5;
     return result;
 }
 

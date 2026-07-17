@@ -232,6 +232,7 @@ public final class VulkanRenderer implements AutoCloseable {
         NrdDenoiser.FrameToken nrdFrame;
         NrdDenoiser.FrameToken reflectionNrdFrame;
         NrdDenoiser.FrameToken transmissionNrdFrame;
+        NrdTransparentComposite.FrameToken transparentCompositeFrame;
         try (MemoryStack stack = MemoryStack.stackPush()) {
             ByteBuffer pushConstants = this.createPushConstants(
                     stack,
@@ -286,11 +287,15 @@ public final class VulkanRenderer implements AutoCloseable {
                     cameraJitter.x(),
                     cameraJitter.y(),
                     fsrFrame.reset());
-            images.transparentComposite.record(
+            transparentCompositeFrame = images.transparentComposite.record(
                     commandBuffer,
+                    frameCamera,
                     renderWidth,
                     renderHeight,
-                    lighting.sunMultiplier());
+                    lighting.sunMultiplier(),
+                    cameraJitter.x(),
+                    cameraJitter.y(),
+                    fsrFrame.reset());
             this.finishTransparentComposite(commandBuffer, sceneColor, denoiser);
             this.finishAtlasRead(commandBuffer, atlasView.texture());
             upscaler.record(commandBuffer, fsrFrame);
@@ -322,6 +327,7 @@ public final class VulkanRenderer implements AutoCloseable {
         denoiser.submitted(nrdFrame);
         reflectionDenoiser.submitted(reflectionNrdFrame);
         transmissionDenoiser.submitted(transmissionNrdFrame);
+        images.transparentComposite.submitted(transparentCompositeFrame);
         upscaler.submitted(fsrFrame);
         this.previousSubmittedCamera = frameCamera;
         this.submittedLightingRevision = lighting.revision();
@@ -922,9 +928,10 @@ public final class VulkanRenderer implements AutoCloseable {
                         cameraInWater));
         buffer.putInt(
                 pathOffset + 3 * Integer.BYTES,
-                IntegratorSettings.packLightingControl(
+                IntegratorSettings.packLightingAndTemporalControl(
                         lighting.sunQuarterSteps(),
-                        lighting.blockLightQuarterSteps()));
+                        lighting.blockLightQuarterSteps(),
+                        fsrFrameIndex));
         return buffer.position(0).limit(ShaderAbi.PUSH_CONSTANT_SIZE);
     }
 

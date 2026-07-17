@@ -22,6 +22,11 @@ final class NrdSignalContractTest {
                 shaderRoot.resolve("nrd_transparent_composite.comp"));
         String opaqueAnyHit = Files.readString(shaderRoot.resolve("world_opaque.rahit"));
         String integrator = Files.readString(shaderRoot.resolve("integrator.glsl"));
+        String bsdf = Files.readString(shaderRoot.resolve("bsdf.glsl"));
+        String transparentCompositeJava = Files.readString(Path.of(
+                System.getProperty("user.dir"),
+                "src", "client", "java", "dev", "prime", "render", "vulkan", "nrd",
+                "NrdTransparentComposite.java"));
 
         assertTrue(rayGeneration.contains(
                 "vec4(sampleResult.primaryBaseColor, sampleResult.primaryDistance)"));
@@ -55,7 +60,14 @@ final class NrdSignalContractTest {
         assertTrue(transparent.contains("bool splitSmoothInterface"));
         assertTrue(transparent.contains("surface.materialFlags) == 0.0"));
         assertTrue(transparent.contains("if (splitSmoothInterface)"));
-        assertTrue(transparent.contains("splitSmoothInterface ? 2u : 1u"));
+        assertTrue(transparent.contains("primeTransparentCheckerReflection(pixel)"));
+        assertTrue(transparent.contains(
+                "primeSampleMinecraftTransmissionCheckerBranch("));
+        assertTrue(bsdf.contains("result.bsdfSample.weight *= 2.0"));
+        assertTrue(bsdf.contains("result.bsdfSample.pdf *= 0.5"));
+        assertTrue(transparent.contains(
+                "PrimeTransparentBranchResult selected = primeTraceFirstInterfaceBranch("));
+        assertTrue(!transparent.contains("splitSmoothInterface ? 2u : 1u"));
         assertTrue(transparent.contains("if (!splitInterface)"));
         assertTrue(transparent.contains("primeTransparentReflectionNoisy"));
         assertTrue(transparent.contains("primeTransparentReflectionSpecular"));
@@ -103,6 +115,16 @@ final class NrdSignalContractTest {
         assertTrue(transparentComposite.contains("primeOpaqueValidation"));
         assertTrue(transparentComposite.contains("primeReflectionValidation"));
         assertTrue(transparentComposite.contains("primeTransmissionValidation"));
+        assertTrue(transparentComposite.contains("primePreviousReflectionHistory"));
+        assertTrue(transparentComposite.contains("primePreviousTransmissionHistory"));
+        assertTrue(transparentComposite.contains("primePreviousCheckerGuide"));
+        assertTrue(transparentComposite.contains("primeResolveCheckerHistory("));
+        assertTrue(transparentComposite.contains("primeResolveCheckerSpatial("));
+        assertTrue(transparentComposite.contains("0.5 * (reflection + transmission)"));
+        assertTrue(transparentCompositeJava.contains("BINDING_COUNT = 26"));
+        assertTrue(transparentCompositeJava.contains("PUSH_SIZE = 112"));
+        assertTrue(transparentCompositeJava.contains("VK_FORMAT_R32G32_SFLOAT"));
+        assertTrue(transparentCompositeJava.contains("MemoryUtil.memAlloc(bytes.length)"));
         int validationSelection = transparentComposite.indexOf(
                 "if (validationSource != PRIME_VALIDATION_OFF)");
         int completedSceneLoad = transparentComposite.indexOf(

@@ -22,17 +22,45 @@ layout(set = 0, binding = 12, rgba16f) uniform readonly image3D primeTransparent
 layout(set = 0, binding = 13, rgba8) uniform readonly image2D primeOpaqueValidation;
 layout(set = 0, binding = 14, rgba8) uniform readonly image2D primeReflectionValidation;
 layout(set = 0, binding = 15, rgba8) uniform readonly image2D primeTransmissionValidation;
+layout(set = 0, binding = 16, rgba32f) uniform readonly image2D primeReflectionPosition;
+layout(set = 0, binding = 17, rgba32f) uniform readonly image2D primeTransmissionPosition;
+layout(set = 0, binding = 18, rgba16f) uniform readonly image2D primeReflectionMotion;
+layout(set = 0, binding = 19, rgba16f) uniform readonly image2D primeTransmissionMotion;
+layout(set = 0, binding = 20, rgba16f) uniform readonly image2D primePreviousReflectionHistory;
+layout(set = 0, binding = 21, rgba16f) uniform writeonly image2D primeCurrentReflectionHistory;
+layout(set = 0, binding = 22, rgba16f) uniform readonly image2D primePreviousTransmissionHistory;
+layout(set = 0, binding = 23, rgba16f) uniform writeonly image2D primeCurrentTransmissionHistory;
+layout(set = 0, binding = 24, rg32f) uniform readonly image2D primePreviousCheckerGuide;
+layout(set = 0, binding = 25, rg32f) uniform writeonly image2D primeCurrentCheckerGuide;
 
 layout(push_constant) uniform PrimeTransparentCompositePushConstants {
+    mat4 previousWorldToClip;
     uvec2 outputExtent;
     float sunRadianceMultiplier;
     uint validationSource;
+    vec4 currentPreviousJitter;
+    // Current-camera-relative coordinates become previous-camera-relative after adding this
+    // translation. Keeping this explicit avoids a second matrix and keeps the push ABI below the
+    // Vulkan-guaranteed 128-byte limit.
+    vec3 currentToPreviousCamera;
+    uint historyValid;
 } primeTransparentCompositePush;
 
 const uint PRIME_VALIDATION_OFF = 0u;
 const uint PRIME_VALIDATION_OPAQUE = 1u;
 const uint PRIME_VALIDATION_REFLECTION = 2u;
 const uint PRIME_VALIDATION_TRANSMISSION = 3u;
+const float PRIME_CHECKER_MISSING = -2.0;
+const float PRIME_BRANCH_ABSENT = -3.0;
+
+struct PrimeCheckerGuide {
+    vec3 position;
+    vec3 normal;
+    vec3 baseColor;
+    float roughness;
+    uint materialFlags;
+    uint valid;
+};
 
 ATM_DECLARE_SAMPLE_3D(
         primeTransparentSampleAerialRadiance,
@@ -66,6 +94,338 @@ vec3 primeResolveTransparentBranch(
             ? imageLoad(primeReflectionThroughput, pixel)
             : imageLoad(primeTransmissionThroughput, pixel)).rgb;
     return throughput * (diffuse + specular);
+}
+
+bool primeCheckerMissing(vec4 metadata) {
+    return abs(metadata.a - PRIME_CHECKER_MISSING) < 0.25;
+}
+
+bool primeBranchSelected(vec4 metadata) {
+    return metadata.a > -1.5;
+}
+
+vec4 primeLoadBranchMetadata(ivec2 pixel, bool reflectionBranch) {
+    return reflectionBranch
+            ? imageLoad(primeReflectionMetadata, pixel)
+            : imageLoad(primeTransmissionMetadata, pixel);
+}
+
+vec4 primeLoadBranchMotion(ivec2 pixel, bool reflectionBranch) {
+    return reflectionBranch
+            ? imageLoad(primeReflectionMotion, pixel)
+            : imageLoad(primeTransmissionMotion, pixel);
+}
+
+vec4 primeLoadPreviousBranchHistory(ivec2 pixel, bool reflectionBranch) {
+    return reflectionBranch
+            ? imageLoad(primePreviousReflectionHistory, pixel)
+            : imageLoad(primePreviousTransmissionHistory, pixel);
+}
+
+void primeStoreCurrentBranchHistory(
+        ivec2 pixel,
+        bool reflectionBranch,
+        vec4 value) {
+    if (reflectionBranch) {
+        imageStore(primeCurrentReflectionHistory, pixel, value);
+    } else {
+        imageStore(primeCurrentTransmissionHistory, pixel, value);
+    }
+}
+
+vec2 primeCheckerEncodeNormal(vec3 inputNormal) {
+    vec3 normal = normalize(inputNormal);
+    vec2 encoded = normal.xy / max(
+            abs(normal.x) + abs(normal.y) + abs(normal.z), 1.0e-6);
+    if (normal.z < 0.0) {
+        encoded = (1.0 - abs(encoded.yx)) * vec2(
+                encoded.x >= 0.0 ? 1.0 : -1.0,
+                encoded.y >= 0.0 ? 1.0 : -1.0);
+    }
+    return encoded;
+}
+
+vec3 primeCheckerDecodeNormal(uint packedGuide) {
+    vec2 encoded = unpackSnorm4x8(packedGuide).xy;
+    vec3 normal = vec3(encoded, 1.0 - abs(encoded.x) - abs(encoded.y));
+    if (normal.z < 0.0) {
+        normal.xy = (1.0 - abs(normal.yx)) * vec2(
+                normal.x >= 0.0 ? 1.0 : -1.0,
+                normal.y >= 0.0 ? 1.0 : -1.0);
+    }
+    return normalize(normal);
+}
+
+uint primeCheckerMaterialSignature(PrimeCheckerGuide guide) {
+    uvec3 color = uvec3(round(clamp(guide.baseColor, vec3(0.0), vec3(1.0)) * 255.0));
+    uint roughness = uint(round(clamp(guide.roughness, 0.0, 1.0) * 255.0));
+    uint hash = guide.materialFlags * 0x9e3779b9u;
+    hash ^= color.x * 0x85ebca6bu;
+    hash ^= color.y * 0xc2b2ae35u;
+    hash ^= color.z * 0x27d4eb2fu;
+    hash ^= roughness * 0x165667b1u;
+    return hash;
+}
+
+uint primeCheckerHistorySignature(PrimeCheckerGuide guide) {
+    // Sixteen bits are sufficient after depth and normal rejection; reserve zero for invalid
+    // history so the persistent guide only needs two 32-bit channels.
+    return (primeCheckerMaterialSignature(guide) & 0xffffu) | 1u;
+}
+
+PrimeCheckerGuide primeLoadCheckerGuide(ivec2 pixel) {
+    PrimeCheckerGuide result;
+    vec4 reflectionMetadata = imageLoad(primeReflectionMetadata, pixel);
+    bool reflectionCarriesGuide = reflectionMetadata.a < -1.5;
+    vec4 metadata = reflectionCarriesGuide
+            ? reflectionMetadata
+            : imageLoad(primeTransmissionMetadata, pixel);
+    vec4 position = reflectionCarriesGuide
+            ? imageLoad(primeReflectionPosition, pixel)
+            : imageLoad(primeTransmissionPosition, pixel);
+    vec4 material = reflectionCarriesGuide
+            ? imageLoad(primeReflectionSpecularMaterial, pixel)
+            : imageLoad(primeTransmissionSpecularMaterial, pixel);
+    vec4 throughput = reflectionCarriesGuide
+            ? imageLoad(primeReflectionThroughput, pixel)
+            : imageLoad(primeTransmissionThroughput, pixel);
+    result.position = position.xyz;
+    result.normal = normalize(material.rgb);
+    result.baseColor = metadata.rgb;
+    result.roughness = material.a;
+    result.materialFlags = uint(max(round(throughput.a), 0.0));
+    result.valid = metadata.a < -1.5
+            && !any(isnan(result.position))
+            && !any(isinf(result.position))
+            && !any(isnan(result.normal))
+            && !any(isinf(result.normal))
+            ? 1u
+            : 0u;
+    return result;
+}
+
+vec2 primeCheckerPreviousPixel(PrimeCheckerGuide guide, out float previousDistance) {
+    vec4 previousClip = primeTransparentCompositePush.previousWorldToClip
+            * vec4(guide.position, 1.0);
+    previousDistance = length(
+            guide.position + primeTransparentCompositePush.currentToPreviousCamera);
+    if (!(abs(previousClip.w) > 1.0e-6) || any(isnan(previousClip)) || any(isinf(previousClip))) {
+        return vec2(-65504.0);
+    }
+    vec2 previousUv = previousClip.xy / previousClip.w
+            * vec2(0.5, -0.5) + vec2(0.5);
+    return previousUv * vec2(primeTransparentCompositePush.outputExtent)
+            - vec2(0.5)
+            - primeTransparentCompositePush.currentPreviousJitter.zw;
+}
+
+vec2 primeCheckerBranchPreviousPixel(
+        ivec2 pixel,
+        bool reflectionBranch,
+        vec2 geometricPreviousPixel) {
+    const ivec2 offsets[4] = ivec2[4](
+            ivec2(-1, 0), ivec2(1, 0), ivec2(0, -1), ivec2(0, 1));
+    vec2 motion = vec2(0.0);
+    float weight = 0.0;
+    ivec2 extent = ivec2(primeTransparentCompositePush.outputExtent);
+    for (uint index = 0u; index < 4u; index++) {
+        ivec2 neighbor = pixel + offsets[index];
+        if (any(lessThan(neighbor, ivec2(0))) || any(greaterThanEqual(neighbor, extent))) {
+            continue;
+        }
+        vec4 metadata = primeLoadBranchMetadata(neighbor, reflectionBranch);
+        // A finite PSR owns a real branch motion vector. Atmosphere misses carry no PSR motion and
+        // deliberately fall back to the common first-interface projection below.
+        if (metadata.a < 0.0) {
+            continue;
+        }
+        vec2 candidate = primeLoadBranchMotion(neighbor, reflectionBranch).xy;
+        if (any(isnan(candidate)) || any(isinf(candidate))) {
+            continue;
+        }
+        motion += candidate;
+        weight += 1.0;
+    }
+    if (weight <= 0.0) {
+        return geometricPreviousPixel;
+    }
+    vec2 currentSampleUv = (vec2(pixel) + vec2(0.5)
+            + primeTransparentCompositePush.currentPreviousJitter.xy)
+            / vec2(primeTransparentCompositePush.outputExtent);
+    vec2 previousSampleUv = currentSampleUv + motion / weight;
+    return previousSampleUv * vec2(primeTransparentCompositePush.outputExtent)
+            - vec2(0.5)
+            - primeTransparentCompositePush.currentPreviousJitter.zw;
+}
+
+float primeCheckerHistoryWeight(
+        ivec2 samplePixel,
+        PrimeCheckerGuide currentGuide,
+        float expectedPreviousViewZ,
+        uint signature,
+        vec2 bilinearWeight,
+        bool reflectionBranch,
+        inout vec3 radiance) {
+    ivec2 extent = ivec2(primeTransparentCompositePush.outputExtent);
+    if (any(lessThan(samplePixel, ivec2(0))) || any(greaterThanEqual(samplePixel, extent))) {
+        return 0.0;
+    }
+    vec4 history = primeLoadPreviousBranchHistory(samplePixel, reflectionBranch);
+    vec4 historyGuide = imageLoad(primePreviousCheckerGuide, samplePixel);
+    uint packedGuide = floatBitsToUint(historyGuide.y);
+    if (history.a < 0.5 || (packedGuide >> 16u) != (signature & 0xffffu)) {
+        return 0.0;
+    }
+    vec3 previousNormal = primeCheckerDecodeNormal(packedGuide);
+    float depthTolerance = max(0.05, expectedPreviousViewZ * 0.01);
+    if (dot(previousNormal, currentGuide.normal) < 0.97
+            || abs(historyGuide.x - expectedPreviousViewZ) > depthTolerance) {
+        return 0.0;
+    }
+    float weight = bilinearWeight.x * bilinearWeight.y;
+    radiance += history.rgb * weight;
+    return weight;
+}
+
+bool primeResolveCheckerHistory(
+        ivec2 pixel,
+        bool reflectionBranch,
+        PrimeCheckerGuide guide,
+        out vec3 radiance) {
+    radiance = vec3(0.0);
+    if (primeTransparentCompositePush.historyValid == 0u || guide.valid == 0u) {
+        return false;
+    }
+    float previousViewZ;
+    vec2 geometricPreviousPixel = primeCheckerPreviousPixel(guide, previousViewZ);
+    vec2 previousPixel = primeCheckerBranchPreviousPixel(
+            pixel, reflectionBranch, geometricPreviousPixel);
+    ivec2 base = ivec2(floor(previousPixel));
+    vec2 fraction = fract(previousPixel);
+    uint signature = primeCheckerHistorySignature(guide);
+    float totalWeight = 0.0;
+    totalWeight += primeCheckerHistoryWeight(
+            base,
+            guide,
+            previousViewZ,
+            signature,
+            vec2(1.0 - fraction.x, 1.0 - fraction.y),
+            reflectionBranch,
+            radiance);
+    totalWeight += primeCheckerHistoryWeight(
+            base + ivec2(1, 0),
+            guide,
+            previousViewZ,
+            signature,
+            vec2(fraction.x, 1.0 - fraction.y),
+            reflectionBranch,
+            radiance);
+    totalWeight += primeCheckerHistoryWeight(
+            base + ivec2(0, 1),
+            guide,
+            previousViewZ,
+            signature,
+            vec2(1.0 - fraction.x, fraction.y),
+            reflectionBranch,
+            radiance);
+    totalWeight += primeCheckerHistoryWeight(
+            base + ivec2(1, 1),
+            guide,
+            previousViewZ,
+            signature,
+            vec2(fraction.x, fraction.y),
+            reflectionBranch,
+            radiance);
+    if (totalWeight < 0.25) {
+        radiance = vec3(0.0);
+        return false;
+    }
+    radiance /= totalWeight;
+    return true;
+}
+
+bool primeCheckerGuideCompatible(
+        PrimeCheckerGuide center,
+        PrimeCheckerGuide neighbor) {
+    if (center.valid == 0u || neighbor.valid == 0u
+            || primeCheckerMaterialSignature(center) != primeCheckerMaterialSignature(neighbor)
+            || dot(center.normal, neighbor.normal) < 0.98) {
+        return false;
+    }
+    float planeDistance = abs(dot(neighbor.position - center.position, center.normal));
+    return planeDistance <= 0.075;
+}
+
+vec3 primeResolveCheckerSpatial(
+        ivec2 pixel,
+        bool reflectionBranch,
+        PrimeCheckerGuide centerGuide) {
+    const ivec2 offsets[4] = ivec2[4](
+            ivec2(-1, 0), ivec2(1, 0), ivec2(0, -1), ivec2(0, 1));
+    ivec2 extent = ivec2(primeTransparentCompositePush.outputExtent);
+    vec3 radiance = vec3(0.0);
+    float weight = 0.0;
+    for (uint index = 0u; index < 4u; index++) {
+        ivec2 neighbor = pixel + offsets[index];
+        if (any(lessThan(neighbor, ivec2(0))) || any(greaterThanEqual(neighbor, extent))) {
+            continue;
+        }
+        vec4 metadata = primeLoadBranchMetadata(neighbor, reflectionBranch);
+        if (!primeBranchSelected(metadata)) {
+            continue;
+        }
+        PrimeCheckerGuide neighborGuide = primeLoadCheckerGuide(neighbor);
+        if (!primeCheckerGuideCompatible(centerGuide, neighborGuide)) {
+            continue;
+        }
+        radiance += primeResolveTransparentBranch(neighbor, reflectionBranch);
+        weight += 1.0;
+    }
+    return weight > 0.0 ? radiance / weight : vec3(0.0);
+}
+
+vec3 primeResolveCheckerBranch(
+        ivec2 pixel,
+        bool reflectionBranch,
+        PrimeCheckerGuide guide,
+        out bool selected,
+        out bool checkerMissing) {
+    vec4 metadata = primeLoadBranchMetadata(pixel, reflectionBranch);
+    selected = primeBranchSelected(metadata);
+    checkerMissing = primeCheckerMissing(metadata);
+    if (selected) {
+        return primeResolveTransparentBranch(pixel, reflectionBranch);
+    }
+    if (!checkerMissing) {
+        return vec3(0.0);
+    }
+    vec3 history;
+    if (primeResolveCheckerHistory(pixel, reflectionBranch, guide, history)) {
+        return history;
+    }
+    return primeResolveCheckerSpatial(pixel, reflectionBranch, guide);
+}
+
+void primeStoreCheckerGuide(ivec2 pixel, PrimeCheckerGuide guide) {
+    if (guide.valid == 0u) {
+        imageStore(primeCurrentCheckerGuide, pixel, vec4(0.0));
+        return;
+    }
+    // Radial distance is rotation-invariant and only needs the explicit camera translation to
+    // predict its previous-frame value. That makes this guide cheaper and less fragile than
+    // reconstructing another view matrix in this late composite pass.
+    float viewZ = length(guide.position);
+    vec2 encodedNormal = primeCheckerEncodeNormal(guide.normal);
+    uint packedNormal = packSnorm4x8(vec4(encodedNormal, 0.0, 0.0)) & 0xffffu;
+    uint packedGuide = packedNormal | (primeCheckerHistorySignature(guide) << 16u);
+    imageStore(
+            primeCurrentCheckerGuide,
+            pixel,
+            vec4(
+                    max(viewZ, 0.0),
+                    uintBitsToFloat(packedGuide),
+                    0.0,
+                    0.0));
 }
 
 void primeTransparentCompositeApplyAerial(
@@ -119,18 +479,56 @@ void main() {
                 primeTransparentSceneColor,
                 ivec2(pixel),
                 vec4(clamp(validation, vec3(0.0), vec3(1.0)), 1.0));
+        // Diagnostic frames still advance the ping-pong pair. Write explicit invalid entries so
+        // leaving a diagnostic cannot expose uninitialized history as radiance.
+        imageStore(primeCurrentReflectionHistory, ivec2(pixel), vec4(0.0));
+        imageStore(primeCurrentTransmissionHistory, ivec2(pixel), vec4(0.0));
+        imageStore(primeCurrentCheckerGuide, ivec2(pixel), vec4(0.0));
         return;
     }
     vec4 scene = imageLoad(primeTransparentSceneColor, ivec2(pixel));
     if (scene.a >= 0.0) {
+        imageStore(primeCurrentReflectionHistory, ivec2(pixel), vec4(0.0));
+        imageStore(primeCurrentTransmissionHistory, ivec2(pixel), vec4(0.0));
+        imageStore(primeCurrentCheckerGuide, ivec2(pixel), vec4(0.0));
         return;
     }
 
+    PrimeCheckerGuide checkerGuide = primeLoadCheckerGuide(ivec2(pixel));
+    bool reflectionSelected;
+    bool reflectionMissing;
+    bool transmissionSelected;
+    bool transmissionMissing;
+    vec3 reflection = primeResolveCheckerBranch(
+            ivec2(pixel),
+            true,
+            checkerGuide,
+            reflectionSelected,
+            reflectionMissing);
+    vec3 transmission = primeResolveCheckerBranch(
+            ivec2(pixel),
+            false,
+            checkerGuide,
+            transmissionSelected,
+            transmissionMissing);
+    primeStoreCurrentBranchHistory(
+            ivec2(pixel),
+            true,
+            vec4(reflectionSelected ? reflection : vec3(0.0), reflectionSelected ? 1.0 : 0.0));
+    primeStoreCurrentBranchHistory(
+            ivec2(pixel),
+            false,
+            vec4(transmissionSelected ? transmission : vec3(0.0), transmissionSelected ? 1.0 : 0.0));
+    primeStoreCheckerGuide(ivec2(pixel), checkerGuide);
+
     vec3 radiance = scene.rgb;
-    radiance += primeResolveTransparentBranch(
-            ivec2(pixel), true);
-    radiance += primeResolveTransparentBranch(
-            ivec2(pixel), false);
+    if (reflectionMissing || transmissionMissing) {
+        // Both selected field values include the exact 2x proposal compensation. Averaging the
+        // current and reconstructed complementary fields restores their physical sum.
+        radiance += 0.5 * (reflection + transmission);
+    } else {
+        radiance += reflection + transmission;
+    }
     primeTransparentCompositeApplyAerial(pixel, -scene.a - 1.0, radiance);
     imageStore(
             primeTransparentSceneColor,

@@ -26,6 +26,16 @@ struct PrimeSampleBase {
     uint pathIndex;
 };
 
+// Reflection and transmission occupy complementary checker fields. The display-frame index is
+// independent of accumulation resets, so every screen pixel alternates fields even while the
+// camera moves. Each field has exactly one half probability; the BSDF adapter applies the matching
+// factor-of-two Monte Carlo compensation.
+bool primeTransparentCheckerReflection(uvec2 pixel) {
+    uint temporalIndex = (primePush.path.w >> PRIME_PATH_TEMPORAL_SEQUENCE_SHIFT)
+            & PRIME_PATH_TEMPORAL_SEQUENCE_MASK;
+    return ((pixel.x + pixel.y + temporalIndex) & 1u) == 0u;
+}
+
 // Joe-Kuo direction numbers for the first four Sobol dimensions, in reversed-bit order. The
 // Burley construction below Owen-scrambles both the sample index and the resulting dimension.
 const uint PRIME_SOBOL_BURLEY_TABLE[4][32] = uint[4][32](

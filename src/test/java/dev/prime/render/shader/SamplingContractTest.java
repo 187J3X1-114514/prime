@@ -17,17 +17,24 @@ final class SamplingContractTest {
         String camera = Files.readString(shaderRoot.resolve("camera.glsl"));
         String transparent = Files.readString(shaderRoot.resolve("transparent.rgen"));
         String integrator = Files.readString(shaderRoot.resolve("integrator.glsl"));
+        String bsdf = Files.readString(shaderRoot.resolve("bsdf.glsl"));
         String allConsumers = rayGeneration
                 + camera
                 + transparent
                 + integrator
-                + Files.readString(shaderRoot.resolve("bsdf.glsl"))
+                + bsdf
                 + Files.readString(shaderRoot.resolve("lights.glsl"));
 
         assertTrue(sampling.contains("primeSobolSample1D"));
         assertTrue(sampling.contains("primeSobolSample2D"));
         assertTrue(sampling.contains("primeSobolSample3D"));
         assertTrue(sampling.contains("primeSobolSample4D"));
+        assertTrue(sampling.contains("primeTransparentCheckerReflection"));
+        assertTrue(sampling.contains("pixel.x + pixel.y + temporalIndex"));
+        assertTrue(sampling.contains("& 1u) == 0u"));
+        assertFalse(sampling.contains("primeBayerWeylPrimaryLobeSample"));
+        assertTrue(sampling.contains(
+                "primePush.path.w >> PRIME_PATH_TEMPORAL_SEQUENCE_SHIFT"));
         assertTrue(camera.contains(
                 "(primePush.path.z >> 16u) & PRIME_PATH_JITTER_PHASE_MASK"));
         assertFalse(camera.contains("primePush.path.w %"));
@@ -43,6 +50,8 @@ final class SamplingContractTest {
         assertTrue(integrator.contains("PRIME_SAMPLE_EFFECT_DIRECT_AREA_LIGHT"));
         assertTrue(integrator.contains("PRIME_SAMPLE_EFFECT_SCATTER_BSDF"));
         assertTrue(integrator.contains("PRIME_SAMPLE_EFFECT_RUSSIAN_ROULETTE"));
+        assertTrue(bsdf.contains("result.bsdfSample.weight *= 2.0"));
+        assertTrue(bsdf.contains("result.bsdfSample.pdf *= 0.5"));
         assertTrue(integrator.contains(
                 "const uint rouletteStart = PRIME_RUSSIAN_ROULETTE_START"));
         assertFalse(integrator.contains("rouletteStart = 5u"));

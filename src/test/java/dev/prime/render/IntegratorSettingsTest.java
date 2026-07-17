@@ -26,18 +26,23 @@ final class IntegratorSettingsTest {
     }
 
     @Test
-    void lightingControlStoresIndependentSignedQuarterEvOffsets() {
-        int packed = IntegratorSettings.packLightingControl(-16, 16);
+    void lightingControlStoresIndependentEvOffsetsAndTemporalSequence() {
+        int packed = IntegratorSettings.packLightingAndTemporalControl(-16, 16, 0x12345);
         int sun = ((packed >>> ShaderAbi.PATH_SUN_EV_QUARTER_SHIFT)
                 & ShaderAbi.PATH_EV_QUARTER_MASK) - ShaderAbi.PATH_EV_QUARTER_BIAS;
         int block = ((packed >>> ShaderAbi.PATH_BLOCK_LIGHT_EV_QUARTER_SHIFT)
                 & ShaderAbi.PATH_EV_QUARTER_MASK) - ShaderAbi.PATH_EV_QUARTER_BIAS;
         assertEquals(-16, sun);
         assertEquals(16, block);
+        assertEquals(0x2345,
+                (packed >>> ShaderAbi.PATH_TEMPORAL_SEQUENCE_SHIFT)
+                        & ShaderAbi.PATH_TEMPORAL_SEQUENCE_MASK);
         assertThrows(IllegalArgumentException.class,
-                () -> IntegratorSettings.packLightingControl(-129, 0));
+                () -> IntegratorSettings.packLightingAndTemporalControl(-129, 0, 0));
         assertThrows(IllegalArgumentException.class,
-                () -> IntegratorSettings.packLightingControl(0, 128));
+                () -> IntegratorSettings.packLightingAndTemporalControl(0, 128, 0));
+        assertThrows(IllegalArgumentException.class,
+                () -> IntegratorSettings.packLightingAndTemporalControl(0, 0, -1));
     }
 
     @Test

@@ -121,6 +121,11 @@ final class RoboCuteBsdfContractTest {
         assertTrue(adapter.contains("primeRcTransmissionSample"));
         assertTrue(adapter.contains("primeMinecraftMirrorSplit"));
         assertTrue(adapter.contains("primeSampleMinecraftTransmissionBranch"));
+        assertTrue(adapter.contains(
+                "primeSampleMinecraftTransmissionCheckerBranch"));
+        assertTrue(adapter.contains("primeSampleMinecraftTransmissionBranchFromState"));
+        assertTrue(adapter.contains("result.bsdfSample.weight *= 2.0"));
+        assertTrue(adapter.contains("result.bsdfSample.pdf *= 0.5"));
         assertTrue(adapter.contains("primeRcMicrofacetDirectionalAlbedoTransmission"));
         assertTrue(adapter.contains("state.samplingFlags = PRIME_RC_FLAG_TRANSMISSION"));
         assertTrue(adapter.contains("reflect(-viewDirection, outwardNormal)"));
@@ -135,7 +140,7 @@ final class RoboCuteBsdfContractTest {
         assertTrue(adapter.contains("PRIME_WATER_REFERENCE_DEPTH = 16.0"));
         assertTrue(adapter.contains("decodedColor / peak"));
         assertTrue(defaultMaterial.contains(
-                "visible interface is split into deterministic reflection and"));
+                "Prime selects one with an unbiased two-field checker proposal per pixel"));
         assertTrue(defaultMaterial.contains("return 0.0;"));
         assertTrue(integrator.contains("PrimeRcVolumeStack volumeStack"));
         assertTrue(integrator.contains("volumeStack = transmitted.volumeStack"));

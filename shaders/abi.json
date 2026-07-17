@@ -192,6 +192,8 @@
     "blockLightEvQuarterShift": 8,
     "evQuarterMask": "0xff",
     "evQuarterBias": 128,
+    "temporalSequenceShift": 16,
+    "temporalSequenceMask": "0xffff",
     "russianRouletteStart": 2
   },
   "nrdContract": {

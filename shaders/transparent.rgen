@@ -81,11 +81,34 @@ void primeDeltaTangentBasis(vec3 normal, out vec3 tangent, out vec3 bitangent) {
     bitangent = cross(normal, tangent);
 }
 
-bool primeRelaxPreviousDeltaInterface(
-        inout PrimeDeltaChain chain,
+mat2 primeDeltaProjectDerivative(
+        mat3 derivative,
+        vec3 rowTangent,
+        vec3 rowBitangent,
+        vec3 columnTangent,
+        vec3 columnBitangent) {
+    return mat2(
+            dot(rowTangent, derivative * columnTangent),
+            dot(rowBitangent, derivative * columnTangent),
+            dot(rowTangent, derivative * columnBitangent),
+            dot(rowBitangent, derivative * columnBitangent));
+}
+
+float primeDeltaInterfaceResidual(
+        PrimeDeltaChain chain,
         uint index,
         vec3 previousCamera,
-        vec3 target) {
+        vec3 target);
+
+bool primeDeltaLinearSystemRow(
+        PrimeDeltaChain chain,
+        uint index,
+        vec3 previousCamera,
+        vec3 target,
+        out mat2 lower,
+        out mat2 diagonal,
+        out mat2 upper,
+        out vec2 residual) {
     vec3 interfacePoint = chain.positionEta[index].xyz;
     vec3 previousPoint = index == 0u
             ? previousCamera
@@ -101,41 +124,142 @@ bool primeRelaxPreviousDeltaInterface(
         return false;
     }
 
-    vec3 normal = normalize(chain.normalEvent[index].xyz);
     vec3 tangent;
     vec3 bitangent;
-    primeDeltaTangentBasis(normal, tangent, bitangent);
+    primeDeltaTangentBasis(normalize(chain.normalEvent[index].xyz), tangent, bitangent);
     vec3 incident = incidentDelta / incidentLength;
     vec3 outgoing = outgoingDelta / outgoingLength;
     float relativeEta = max(chain.positionEta[index].w, PRIME_BSDF_EPSILON);
     vec3 stationarity = incident - relativeEta * outgoing;
-    vec2 residual = vec2(
-            dot(stationarity, tangent),
-            dot(stationarity, bitangent));
-    mat3 identity = mat3(1.0);
-    mat3 derivative = (identity - outerProduct(incident, incident)) / incidentLength
-            + relativeEta
-            * (identity - outerProduct(outgoing, outgoing)) / outgoingLength;
-    mat2 jacobian = mat2(
-            dot(tangent, derivative * tangent),
-            dot(bitangent, derivative * tangent),
-            dot(tangent, derivative * bitangent),
-            dot(bitangent, derivative * bitangent));
-    float jacobianDeterminant = determinant(jacobian);
-    if (!(abs(jacobianDeterminant) > 1.0e-8)) {
-        return false;
+    residual = vec2(dot(stationarity, tangent), dot(stationarity, bitangent));
+
+    mat3 incidentDerivative =
+            (mat3(1.0) - outerProduct(incident, incident)) / incidentLength;
+    mat3 outgoingDerivative =
+            (mat3(1.0) - outerProduct(outgoing, outgoing)) / outgoingLength;
+    diagonal = primeDeltaProjectDerivative(
+            incidentDerivative + relativeEta * outgoingDerivative,
+            tangent,
+            bitangent,
+            tangent,
+            bitangent);
+    lower = mat2(0.0);
+    upper = mat2(0.0);
+    if (index > 0u) {
+        vec3 previousTangent;
+        vec3 previousBitangent;
+        primeDeltaTangentBasis(
+                normalize(chain.normalEvent[index - 1u].xyz),
+                previousTangent,
+                previousBitangent);
+        lower = -primeDeltaProjectDerivative(
+                incidentDerivative,
+                tangent,
+                bitangent,
+                previousTangent,
+                previousBitangent);
     }
-    vec2 step = inverse(jacobian) * residual;
-    float stepLength = length(step);
-    if (stepLength > 8.0) {
-        step *= 8.0 / stepLength;
+    if (index + 1u < chain.count) {
+        vec3 nextTangent;
+        vec3 nextBitangent;
+        primeDeltaTangentBasis(
+                normalize(chain.normalEvent[index + 1u].xyz),
+                nextTangent,
+                nextBitangent);
+        upper = -relativeEta * primeDeltaProjectDerivative(
+                outgoingDerivative,
+                tangent,
+                bitangent,
+                nextTangent,
+                nextBitangent);
     }
-    interfacePoint -= tangent * step.x + bitangent * step.y;
-    if (!primeFiniteTransparentVector(interfacePoint)) {
-        return false;
-    }
-    chain.positionEta[index].xyz = interfacePoint;
     return true;
+}
+
+// Solves all sampled interface points as one coupled Fermat problem. Adjacent stationarity
+// equations share an interface point, so their Jacobian is block tridiagonal. Solving that system
+// directly is both cheaper and much more accurate than relaxing one plane at a time: the old
+// 2e-3 angular stopping threshold could turn into several pixels of wrong motion at 4K even for a
+// parallel glass slab. This path must remain an exact Snell/Fermat solve; screen-space motion
+// heuristics here would make transparent history camera-speed dependent.
+bool primeSolvePreviousDeltaPath(
+        inout PrimeDeltaChain chain,
+        vec3 previousCamera,
+        vec3 target) {
+    const uint maximumIterations = 8u;
+    const float residualTolerance = 1.0e-5;
+    const float maximumStepLength = 8.0;
+    mat2 reducedUpper[PRIME_DELTA_CHAIN_CAPACITY];
+    vec2 reducedStep[PRIME_DELTA_CHAIN_CAPACITY];
+
+    for (uint iteration = 0u; iteration < maximumIterations; ++iteration) {
+        float maximumResidual = 0.0;
+        for (uint index = 0u; index < chain.count; ++index) {
+            mat2 lower;
+            mat2 diagonal;
+            mat2 upper;
+            vec2 residual;
+            if (!primeDeltaLinearSystemRow(
+                    chain,
+                    index,
+                    previousCamera,
+                    target,
+                    lower,
+                    diagonal,
+                    upper,
+                    residual)) {
+                return false;
+            }
+            maximumResidual = max(maximumResidual, length(residual));
+
+            mat2 reducedDiagonal = diagonal;
+            vec2 reducedResidual = residual;
+            if (index > 0u) {
+                reducedDiagonal -= lower * reducedUpper[index - 1u];
+                reducedResidual -= lower * reducedStep[index - 1u];
+            }
+            float reducedDeterminant = determinant(reducedDiagonal);
+            if (!(abs(reducedDeterminant) > 1.0e-8)) {
+                return false;
+            }
+            mat2 inverseDiagonal = inverse(reducedDiagonal);
+            reducedUpper[index] = inverseDiagonal * upper;
+            reducedStep[index] = inverseDiagonal * reducedResidual;
+        }
+        if (maximumResidual < residualTolerance) {
+            return true;
+        }
+
+        for (int index = int(chain.count) - 2; index >= 0; --index) {
+            reducedStep[index] -= reducedUpper[index] * reducedStep[index + 1];
+        }
+        float largestStep = 0.0;
+        for (uint index = 0u; index < chain.count; ++index) {
+            largestStep = max(largestStep, length(reducedStep[index]));
+        }
+        float stepScale = largestStep > maximumStepLength
+                ? maximumStepLength / largestStep
+                : 1.0;
+        for (uint index = 0u; index < chain.count; ++index) {
+            vec3 tangent;
+            vec3 bitangent;
+            primeDeltaTangentBasis(
+                    normalize(chain.normalEvent[index].xyz), tangent, bitangent);
+            chain.positionEta[index].xyz -= stepScale
+                    * (tangent * reducedStep[index].x + bitangent * reducedStep[index].y);
+            if (!primeFiniteTransparentVector(chain.positionEta[index].xyz)) {
+                return false;
+            }
+        }
+    }
+
+    float maximumResidual = 0.0;
+    for (uint index = 0u; index < chain.count; ++index) {
+        maximumResidual = max(
+                maximumResidual,
+                primeDeltaInterfaceResidual(chain, index, previousCamera, target));
+    }
+    return maximumResidual < residualTolerance;
 }
 
 float primeDeltaInterfaceResidual(
@@ -214,34 +338,7 @@ bool primeBuildDeltaVirtualGuide(
     }
 
     vec3 previousCamera = primeTemporalCamera.previousCameraValid.xyz;
-    // This is a block Gauss-Seidel solve of Fermat stationarity on every sampled interface plane.
-    // Forward and backward sweeps prevent the first or last plane from dominating a nested stack.
-    bool converged = false;
-    for (uint iteration = 0u; iteration < 8u; ++iteration) {
-        for (uint index = 0u; index < chain.count; ++index) {
-            if (!primeRelaxPreviousDeltaInterface(
-                    chain, index, previousCamera, target)) {
-                return false;
-            }
-        }
-        for (int index = int(chain.count) - 1; index >= 0; --index) {
-            if (!primeRelaxPreviousDeltaInterface(
-                    chain, uint(index), previousCamera, target)) {
-                return false;
-            }
-        }
-        float maximumResidual = 0.0;
-        for (uint index = 0u; index < chain.count; ++index) {
-            maximumResidual = max(
-                    maximumResidual,
-                    primeDeltaInterfaceResidual(chain, index, previousCamera, target));
-        }
-        if (maximumResidual < 2.0e-3) {
-            converged = true;
-            break;
-        }
-    }
-    if (!converged) {
+    if (!primeSolvePreviousDeltaPath(chain, previousCamera, target)) {
         return false;
     }
 

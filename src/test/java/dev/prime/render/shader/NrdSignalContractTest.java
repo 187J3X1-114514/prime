@@ -100,7 +100,9 @@ final class NrdSignalContractTest {
         assertTrue(integrator.contains("PRIME_DELTA_CHAIN_CAPACITY = 8u"));
         assertTrue(integrator.contains("primeAppendDeltaInterface(deltaChain, surface, bsdf)"));
         assertTrue(transparent.contains("primeBuildDeltaVirtualGuide("));
-        assertTrue(transparent.contains("primeRelaxPreviousDeltaInterface("));
+        assertTrue(transparent.contains("primeSolvePreviousDeltaPath("));
+        assertTrue(transparent.contains("const float residualTolerance = 1.0e-5"));
+        assertTrue(transparent.contains("reducedDiagonal -= lower * reducedUpper[index - 1u]"));
         assertTrue(transparent.contains("previousVirtualPosition - result.currentVirtualPosition"));
         assertTrue(transparentPreparation.contains(
                 "previousVirtualPosition = currentVirtualPosition + interfaceData.xyz"));

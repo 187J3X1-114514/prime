@@ -60,15 +60,24 @@ final class NrdSignalContractTest {
         assertTrue(opaqueAnyHit.contains("primeMaterialIsTransmissive"));
         assertTrue(integrator.contains("primeTraceSurfaceWithSbtOffset(path.traceOrigin, path.rayDirection, 2u)"));
         assertTrue(transparent.contains("primeTraceFirstInterfaceBranch("));
-        assertTrue(transparent.contains("bool splitSmoothInterface"));
-        assertTrue(transparent.contains("surface.materialFlags) == 0.0"));
-        assertTrue(transparent.contains("if (splitSmoothInterface)"));
-        assertTrue(transparent.contains("primeSampleMinecraftTransmissionBranch("));
+        assertTrue(transparent.contains("#define PRIME_REALTIME_STRAIGHT_TRANSMISSION 1"));
+        assertTrue(transparent.contains("primeSampleMinecraftRealtimeStraightBranch("));
+        assertTrue(bsdf.contains(
+                "PrimeTransmissiveBsdfSample primeSampleMinecraftRealtimeStraightBranch("));
+        assertTrue(bsdf.contains("result.bsdfSample.direction = -viewDirection"));
+        assertTrue(bsdf.contains("if (!reflectionBranch && redirectOmittedReflection)"));
+        assertTrue(bsdf.contains("retained.first + retained.second"));
+        assertTrue(bsdf.contains("primeRcStackPush(redirected.volumeStack, volume)"));
+        assertTrue(bsdf.contains("primeRcStackPop(redirected.volumeStack)"));
+        // The complete physical implementation remains available to screenshot mode and the
+        // white-furnace-tested BSDF library; realtime selection must not delete either path.
+        assertTrue(bsdf.contains("PrimeTransmissiveBsdfSample primeSampleMinecraftTransmission("));
+        assertTrue(bsdf.contains(
+                "PrimeTransmissiveBsdfSample primeSampleMinecraftTransmissionBranch("));
         assertTrue(!transparent.contains("primeTransparentFresnelSelector(pixel)"));
         assertTrue(!bsdf.contains("primeSampleMinecraftTransmissionFresnelBranch("));
-        assertTrue(transparent.contains("bool closedDeltaReflection = splitInterface"));
-        assertTrue(transparent.contains("splitSmoothInterface ? 2u : 1u"));
-        assertTrue(transparent.contains("if (!splitInterface)"));
+        assertTrue(transparent.contains("bool closedDeltaReflection = reflectionBranch"));
+        assertTrue(!transparent.contains("splitSmoothInterface"));
         assertTrue(transparent.contains("primeTransparentReflectionNoisy"));
         assertTrue(transparent.contains("primeTransparentReflectionSpecular"));
         assertTrue(transparent.contains("primeTransparentTransmissionNoisy"));
@@ -81,14 +90,16 @@ final class NrdSignalContractTest {
         assertTrue(transparentMain >= 0 && primaryTrace > transparentMain);
         assertTrue(!transparent.substring(transparentMain, primaryTrace).contains("imageStore("));
         assertTrue(earlyExit > primaryTrace && conditionalClear > earlyExit);
-        int splitBranch = transparent.indexOf("if (splitSmoothInterface)", transparentMain);
-        int reflectionStore = transparent.indexOf("primeStoreTransparentBranch(", splitBranch);
+        int reflectionTrace = transparent.indexOf(
+                "PrimeTransparentBranchResult reflection =", transparentMain);
+        int reflectionStore = transparent.indexOf(
+                "primeStoreTransparentBranch(", reflectionTrace);
         int transmissionTrace = transparent.indexOf(
                 "PrimeTransparentBranchResult transmission =", reflectionStore);
-        assertTrue(splitBranch >= 0
-                && reflectionStore > splitBranch
+        assertTrue(reflectionTrace >= 0
+                && reflectionStore > reflectionTrace
                 && transmissionTrace > reflectionStore);
-        assertTrue(transparent.contains("result.guidePosition = surface.position"));
+        assertTrue(transparent.contains("result.guidePosition = continuation.guidePosition"));
         assertTrue(transparent.contains(
                 "firstInterface.position - primePush.cameraPosition"));
         assertTrue(transparent.contains("vec4(visibleRadiance, -(max(surface.t, 0.0) + 1.0))"));
@@ -109,16 +120,15 @@ final class NrdSignalContractTest {
         assertTrue(integrator.contains(
                 "(primarySurfaceReplacement || result.hasGuide != 0u) && !pureDeltaInterface"));
         assertTrue(integrator.contains("if (!pureDeltaInterface)"));
+        assertTrue(integrator.contains("#if defined(PRIME_REALTIME_STRAIGHT_TRANSMISSION)"));
         assertTrue(transparent.contains("primeBuildDeltaVirtualGuide("));
-        assertTrue(transparent.contains("primeSolvePreviousDeltaPath("));
-        assertTrue(transparent.contains("PRIME_DELTA_RESIDUAL_TOLERANCE = 1.0e-5"));
-        assertTrue(transparent.contains("primeSolveSingleTransmissionDeltaPath("));
-        assertTrue(transparent.contains("bool reflectionOnly = true"));
+        assertTrue(!transparent.contains("primeSolvePreviousDeltaPath("));
+        assertTrue(!transparent.contains("primeSolveSingleTransmissionDeltaPath("));
+        assertTrue(!transparent.contains("PRIME_DELTA_RESIDUAL_TOLERANCE"));
         assertTrue(transparent.contains("previousVirtualPosition = unfoldedTarget"));
-        assertTrue(transparent.contains("all(equal(previousCamera, currentCamera))"));
-        assertTrue(transparent.contains("primeDeltaProjectNormalizedDerivative("));
-        assertTrue(transparent.contains("primeDeltaInverseMatrix("));
-        assertTrue(transparent.contains("reducedDiagonal -= lower * reducedUpper[index - 1u]"));
+        assertTrue(transparent.contains("currentVirtualPosition = unfoldedTarget"));
+        assertTrue(transparent.contains(
+                "(eventFlags & PRIME_BSDF_EVENT_REFLECTION) == 0u"));
         assertTrue(transparent.contains("previousVirtualPosition - result.currentVirtualPosition"));
         assertTrue(transparentPreparation.contains(
                 "previousVirtualPosition = currentVirtualPosition + interfaceData.xyz"));

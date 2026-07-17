@@ -444,8 +444,12 @@ PrimeContinuationResult primeIntegrateContinuation(
         // the glass/water interface to this point is primary path length, not NRD hit distance;
         // diffuse/specular hit distance starts with the ray traced *after* this replacement.
         bool pureDeltaInterface = primeMaterialIsTransmissive(surface.materialFlags)
+#if defined(PRIME_REALTIME_STRAIGHT_TRANSMISSION)
+                ;
+#else
                 && primeMaterialLinearRoughness(
                         surface.baseColor, surface.materialFlags) == 0.0;
+#endif
         bool primarySurfaceReplacement = result.hasGuide == 0u && !pureDeltaInterface;
         if (primarySurfaceReplacement) {
             result.guidePosition = surface.position;
@@ -563,6 +567,20 @@ PrimeContinuationResult primeIntegrateContinuation(
                 diffusePath = (bsdf.eventFlags & PRIME_BSDF_EVENT_DIFFUSE) != 0u;
             }
         } else if (primeMaterialIsTransmissive(surface.materialFlags)) {
+#if defined(PRIME_REALTIME_STRAIGHT_TRANSMISSION)
+            PrimeTransmissiveBsdfSample transmitted =
+                    primeSampleMinecraftRealtimeStraightBranch(
+                            surface.baseColor,
+                            primeSurfaceOpacity(surface),
+                            surface.geometricNormal,
+                            surface.materialFlags,
+                            viewDirection,
+                            scatterSample,
+                            false,
+                            true,
+                            surface.t,
+                            volumeStack);
+#else
             PrimeTransmissiveBsdfSample transmitted = primeSampleMinecraftTransmission(
                     surface.baseColor,
                     primeSurfaceOpacity(surface),
@@ -572,6 +590,7 @@ PrimeContinuationResult primeIntegrateContinuation(
                     scatterSample,
                     surface.t,
                     volumeStack);
+#endif
             bsdf = transmitted.bsdfSample;
             volumeStack = transmitted.volumeStack;
             if (primarySurfaceReplacement) {
@@ -601,7 +620,9 @@ PrimeContinuationResult primeIntegrateContinuation(
         if (result.hasGuide == 0u
                 && pureDeltaInterface
                 && (bsdf.eventFlags & PRIME_BSDF_EVENT_DELTA) != 0u) {
+#if !defined(PRIME_REALTIME_STRAIGHT_TRANSMISSION)
             primeAppendDeltaInterface(deltaChain, surface, bsdf);
+#endif
         } else if (result.hasGuide == 0u
                 && (bsdf.eventFlags & PRIME_BSDF_EVENT_DELTA) == 0u) {
             // Any unsplit choice before a coherent replacement surface can change which surface

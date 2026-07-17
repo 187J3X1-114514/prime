@@ -732,6 +732,96 @@ PrimeTransmissiveBsdfSample primeSampleMinecraftTransmissionBranch(
             volumeStack);
 }
 
+// Realtime-only transport proposal used by transparent.rgen. The physical material state still
+// supplies Fresnel energy, tint, absorption and volume-stack transitions, but transmission keeps
+// the incident travel direction instead of refracting it. The unbiased screenshot integrator
+// never calls this approximation.
+PrimeTransmissiveBsdfSample primeSampleMinecraftRealtimeStraightBranch(
+        vec3 baseColor,
+        float opacity,
+        vec3 outwardNormal,
+        uint materialFlags,
+        vec3 viewDirection,
+        vec3 sampleValue,
+        bool reflectionBranch,
+        bool redirectOmittedReflection,
+        float rayT,
+        PrimeRcVolumeStack volumeStack) {
+    PrimeRcState state = primeMinecraftTransmissionState(
+            baseColor,
+            opacity,
+            outwardNormal,
+            materialFlags,
+            viewDirection,
+            rayT,
+            volumeStack);
+    vec3 localView = primeRcOnbToLocal(state.material.geometry.onb, viewDirection);
+    PrimeMinecraftMirrorSplit mirror = primeMinecraftMirrorSplit(localView, state);
+    if (!reflectionBranch && redirectOmittedReflection) {
+        // Past the visible interface realtime mode deliberately has one continuation only. Build
+        // that straight-through event directly instead of asking the refractive closure for a
+        // direction and discarding it: doing so also prevents artificial total-internal-reflection
+        // failures caused by our intentionally unbent ray inside a closed dielectric.
+        PrimeTransmissiveBsdfSample redirected;
+        redirected.bsdfSample = primeInvalidBsdfSample();
+        redirected.volumeStack = volumeStack;
+        if (state.geometryThinWalled != 0u) {
+            PrimeRcVecPair retained = primeRcTransmissionThinWallRt(
+                    abs(localView.z), state);
+            // Reflection is not traced here, so all non-absorbed thin-sheet energy continues.
+            redirected.bsdfSample.weight = retained.first + retained.second;
+        } else {
+            // A closed volume has no surface tint; its color is Beer-Lambert attenuation along
+            // the segment. Preserve the same stack transition as RoboCute without eta^2 because
+            // this approximation does not change solid angle.
+            redirected.bsdfSample.weight = state.transmissionTint;
+            if (localView.z >= 0.0) {
+                PrimeRcVolume volume = state.transmissionVolume;
+                volume.ior = state.originalIor;
+                primeRcStackPush(redirected.volumeStack, volume);
+            } else if (redirected.volumeStack.count == 0u) {
+                redirected.bsdfSample.weight *= exp(
+                        -state.transmissionVolume.extinction * state.rayT);
+            } else {
+                primeRcStackPop(redirected.volumeStack);
+            }
+        }
+        redirected.bsdfSample.direction = -viewDirection;
+        redirected.bsdfSample.pdf = 1.0;
+        redirected.bsdfSample.relativeEta = 1.0;
+        redirected.bsdfSample.eventFlags = PRIME_BSDF_EVENT_TRANSMISSION
+                | PRIME_BSDF_EVENT_DELTA;
+        return redirected;
+    }
+
+    PrimeTransmissiveBsdfSample result =
+            primeSampleMinecraftTransmissionBranchFromState(
+                    state,
+                    mirror,
+                    outwardNormal,
+                    viewDirection,
+                    sampleValue,
+                    reflectionBranch,
+                    volumeStack);
+    if (result.bsdfSample.pdf <= 0.0
+            || all(lessThanEqual(result.bsdfSample.weight, vec3(0.0)))) {
+        return result;
+    }
+    if (reflectionBranch) {
+        return result;
+    }
+
+    // The first visible interface retains its physical Fresnel transmission energy because its
+    // complementary reflected energy is traced by the other deterministic branch. Only the ray
+    // direction changes; the complete physical estimator remains untouched for screenshot mode.
+    result.bsdfSample.direction = -viewDirection;
+    result.bsdfSample.pdf = 1.0;
+    result.bsdfSample.relativeEta = 1.0;
+    result.bsdfSample.eventFlags = PRIME_BSDF_EVENT_TRANSMISSION
+            | PRIME_BSDF_EVENT_DELTA;
+    return result;
+}
+
 // Vanilla grass blades and leaf texels are zero-thickness surfaces rather than dielectric
 // volumes. Keep most of the ordinary rough terrain response and mix a deliberately small amount
 // of colored thin-wall transmission through OpenPBR's energy-aware lobe composition. Unlike

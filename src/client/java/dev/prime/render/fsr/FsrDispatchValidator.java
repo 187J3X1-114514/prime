@@ -32,9 +32,10 @@ public final class FsrDispatchValidator {
         }
         if (!Float.isFinite(motionScaleX)
                 || !Float.isFinite(motionScaleY)
-                || motionScaleX == 0.0F
-                || motionScaleY == 0.0F) {
-            throw new IllegalArgumentException("FSR motion-vector scale must be finite and non-zero");
+                || motionScaleX != (float) renderWidth
+                || motionScaleY != (float) renderHeight) {
+            throw new IllegalArgumentException(
+                    "Normalized UV motion requires the FSR host scale to equal the render extent");
         }
     }
 }

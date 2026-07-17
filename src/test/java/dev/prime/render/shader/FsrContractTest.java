@@ -48,4 +48,13 @@ final class FsrContractTest {
         assertTrue(nativeBinding.contains("description.put(392, (byte) 1)"));
         assertTrue(nativeBinding.contains("FsrSettings.RCAS_SHARPNESS"));
     }
+
+    @Test
+    void normalizedUvMotionUsesThePublicHostApiScale() throws Exception {
+        String nativeBinding = Files.readString(Path.of(
+                "src/client/java/dev/prime/render/vulkan/fsr/FsrNative.java"));
+        assertTrue(nativeBinding.contains(
+                "(float) dispatch.renderWidth(), (float) dispatch.renderHeight()"));
+        assertFalse(nativeBinding.contains("putVector2(description, 368, 1.0F, 1.0F)"));
+    }
 }

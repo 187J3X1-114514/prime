@@ -244,8 +244,12 @@ final class FsrNative {
 
             FsrSettings.Jitter nativeJitter = dispatch.jitter().forFsrDispatch();
             putVector2(description, 360, nativeJitter.x(), nativeJitter.y());
-            // Prime's motion image already stores normalized old-current UV displacement.
-            putVector2(description, 368, 1.0F, 1.0F);
+            // Prime stores current-to-previous motion as normalized UV displacement. The public
+            // FidelityFX host API divides this scale by the motion-vector target extent before
+            // shaders consume it, so passing the render extent produces the required internal
+            // scale of (1, 1). These are deliberately not the old direct-shader constants.
+            putVector2(
+                    description, 368, (float) dispatch.renderWidth(), (float) dispatch.renderHeight());
             putExtent(description, 376, dispatch.renderWidth(), dispatch.renderHeight());
             putExtent(description, 384, dispatch.displayWidth(), dispatch.displayHeight());
             description.put(392, (byte) 1);

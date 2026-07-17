@@ -57,7 +57,6 @@ dependencies {
 def shaderAbiJavaRoot = layout.buildDirectory.dir('generated/sources/shaderAbi/java')
 def shaderAbiIncludeRoot = layout.buildDirectory.dir('generated/sources/shaderAbi/glsl')
 def compiledShaderRoot = layout.buildDirectory.dir('generated/resources/shaders')
-def compiledFsrShaderRoot = layout.buildDirectory.dir('generated/resources/fsrShaders')
 
 abstract class GenerateShaderAbi extends DefaultTask {
 	@InputFile
@@ -567,88 +566,6 @@ abstract class CompilePrimeShaders extends DefaultTask {
 	}
 }
 
-abstract class CompileFsrShaders extends DefaultTask {
-	@InputDirectory
-	abstract DirectoryProperty getVendorDirectory()
-
-	@OutputDirectory
-	abstract DirectoryProperty getOutputDirectory()
-
-	@Input
-	abstract Property<String> getGlslangValidator()
-
-	@Input
-	abstract Property<String> getSpirvValidator()
-
-	@javax.inject.Inject
-	abstract org.gradle.process.ExecOperations getExecOperations()
-
-	@javax.inject.Inject
-	abstract org.gradle.api.file.FileSystemOperations getFileSystemOperations()
-
-	@TaskAction
-	void compile() {
-		def root = vendorDirectory.get().asFile
-		def passes = new File(root, 'passes').listFiles({ file ->
-			file.name.endsWith('_pass.glsl')
-		} as FileFilter).sort { it.name }
-		if (passes.size() != 9) {
-			throw new GradleException("Prime requires the eight FSR upscaler passes plus its debug view, found ${passes.size()}")
-		}
-
-		// Build deterministic FP32 and FP16 permutations into every jar. Runtime capability
-		// negotiation selects FP16 only when Vulkan exposes both shaderFloat16 and 16-bit storage;
-		// neither the build machine nor the GPU vendor can silently alter the fallback path.
-		def definitions = [
-			'-DFFX_GPU=1',
-			'-DFFX_GLSL=1',
-			'-DFFX_FSR3UPSCALER_OPTION_UPSAMPLE_SAMPLERS_USE_DATA_HALF=0',
-			'-DFFX_FSR3UPSCALER_OPTION_ACCUMULATE_SAMPLERS_USE_DATA_HALF=0',
-			'-DFFX_FSR3UPSCALER_OPTION_REPROJECT_SAMPLERS_USE_DATA_HALF=1',
-			'-DFFX_FSR3UPSCALER_OPTION_POSTPROCESSLOCKSTATUS_SAMPLERS_USE_DATA_HALF=0',
-			'-DFFX_FSR3UPSCALER_OPTION_UPSAMPLE_USE_LANCZOS_TYPE=2',
-			'-DFFX_FSR3UPSCALER_OPTION_REPROJECT_USE_LANCZOS_TYPE=0',
-			'-DFFX_FSR3UPSCALER_OPTION_HDR_COLOR_INPUT=1',
-			'-DFFX_FSR3UPSCALER_OPTION_LOW_RESOLUTION_MOTION_VECTORS=1',
-			'-DFFX_FSR3UPSCALER_OPTION_JITTERED_MOTION_VECTORS=0',
-			'-DFFX_FSR3UPSCALER_OPTION_INVERTED_DEPTH=1',
-			'-DFFX_FSR3UPSCALER_OPTION_APPLY_SHARPENING=1'
-		]
-		def scratch = new File(temporaryDir, 'spv')
-		fileSystemOperations.delete { delete scratch }
-		scratch.mkdirs()
-		['fp32': '0', 'fp16': '1'].each { variant, half ->
-			def variantDirectory = new File(scratch, variant)
-			variantDirectory.mkdirs()
-			passes.each { source ->
-				def stem = source.name.substring(0, source.name.length() - '_pass.glsl'.length())
-				def output = new File(variantDirectory, stem + '.comp.spv')
-				execOperations.exec {
-					commandLine([glslangValidator.get(), '-V', '--target-env', 'vulkan1.2', '-S', 'comp', '-g',
-							"-I${new File(root, 'FidelityFX/gpu').absolutePath}",
-							"-I${root.absolutePath}", "-DFFX_HALF=${half}"] + definitions
-							+ [source.absolutePath, '-o', output.absolutePath])
-				}
-				execOperations.exec {
-					commandLine spirvValidator.get(), '--target-env', 'vulkan1.2', output.absolutePath
-				}
-			}
-		}
-
-		def published = new File(outputDirectory.get().asFile, 'prime/shaders/fsr3')
-		fileSystemOperations.delete { delete published }
-		published.mkdirs()
-		scratch.listFiles().each { variant ->
-			def destination = new File(published, variant.name)
-			destination.mkdirs()
-			variant.listFiles().each { source ->
-				java.nio.file.Files.move(source.toPath(), new File(destination, source.name).toPath(),
-						java.nio.file.StandardCopyOption.REPLACE_EXISTING)
-			}
-		}
-	}
-}
-
 def resolveVulkanTool = { String name ->
 	def windows = System.getProperty('os.name').toLowerCase(java.util.Locale.ROOT).contains('win')
 	def extension = windows ? '.exe' : ''
@@ -680,16 +597,8 @@ def compileShaders = tasks.register('compileShaders', CompilePrimeShaders) {
 	spirvValidator = resolveVulkanTool('spirv-val')
 }
 
-def compileFsrShaders = tasks.register('compileFsrShaders', CompileFsrShaders) {
-	vendorDirectory = file('shaders/vendor/fidelityfx')
-	outputDirectory = compiledFsrShaderRoot
-	glslangValidator = resolveVulkanTool('glslangValidator')
-	spirvValidator = resolveVulkanTool('spirv-val')
-}
-
 sourceSets.client.java.srcDir(files(shaderAbiJavaRoot).builtBy(generateShaderAbi))
 sourceSets.client.resources.srcDir(files(compiledShaderRoot).builtBy(compileShaders))
-sourceSets.client.resources.srcDir(files(compiledFsrShaderRoot).builtBy(compileFsrShaders))
 sourceSets.test.compileClasspath += sourceSets.client.output
 sourceSets.test.runtimeClasspath += sourceSets.client.output
 
@@ -769,14 +678,13 @@ def verifyDistributionJar = tasks.register('verifyDistributionJar') {
 			'META-INF/licenses/NRD-LICENSE.txt',
 			'META-INF/licenses/ROBOCUTE-NOTICE.txt',
 			'prime/natives/windows-x86_64/prime_nrd.dll',
+			'prime/natives/windows-x86_64/amd_fidelityfx_vk.dll',
 			'prime/shaders/world.rgen.spv',
 			'prime/shaders/world_ser.rgen.spv',
 			'prime/shaders/transparent.rgen.spv',
 			'prime/shaders/nrd_motion.comp.spv',
 			'prime/shaders/nrd_transparent_motion.comp.spv',
-			'prime/shaders/fsr_display.comp.spv',
-			'prime/shaders/fsr3/fp16/ffx_fsr3upscaler_accumulate.comp.spv',
-			'prime/shaders/fsr3/fp32/ffx_fsr3upscaler_accumulate.comp.spv'
+			'prime/shaders/fsr_display.comp.spv'
 		]
 		def missing = required.findAll { !names.contains(it) }
 		if (!missing.isEmpty()) {
@@ -784,11 +692,9 @@ def verifyDistributionJar = tasks.register('verifyDistributionJar') {
 		}
 
 		def shaderNames = names.findAll { it.startsWith('prime/shaders/') && it.endsWith('.spv') }
-		def fsrShaderNames = shaderNames.findAll { it.startsWith('prime/shaders/fsr3/') }
-		if (shaderNames.size() != 35 || fsrShaderNames.size() != 18) {
+		if (shaderNames.size() != 17) {
 			throw new GradleException(
-					"Distribution jar must contain 17 Prime and 18 FSR shaders; found "
-							+ "${shaderNames.size() - fsrShaderNames.size()} and ${fsrShaderNames.size()}")
+					"Distribution jar must contain 17 Prime shaders; found ${shaderNames.size()}")
 		}
 
 		new java.util.zip.ZipFile(archive).withCloseable { zip ->
@@ -806,6 +712,14 @@ def verifyDistributionJar = tasks.register('verifyDistributionJar') {
 			def nativeHeader = nativeInput.withCloseable { it.readNBytes(2) }
 			if (nativeHeader.length != 2 || nativeHeader[0] != (byte) 'M' || nativeHeader[1] != (byte) 'Z') {
 				throw new GradleException('Bundled NRD bridge is not a Windows PE image')
+			}
+			def fsrNativeInput = zip.getInputStream(
+					zip.getEntry('prime/natives/windows-x86_64/amd_fidelityfx_vk.dll'))
+			def fsrNativeHeader = fsrNativeInput.withCloseable { it.readNBytes(2) }
+			if (fsrNativeHeader.length != 2
+					|| fsrNativeHeader[0] != (byte) 'M'
+					|| fsrNativeHeader[1] != (byte) 'Z') {
+				throw new GradleException('Bundled FidelityFX library is not a Windows PE image')
 			}
 
 			def invalidSpirv = shaderNames.findAll { shaderName ->

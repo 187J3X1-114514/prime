@@ -11,7 +11,9 @@ import java.util.Set;
 import org.lwjgl.system.MemoryStack;
 import org.lwjgl.vulkan.EXTRayTracingInvocationReorder;
 import org.lwjgl.vulkan.KHRAccelerationStructure;
+import org.lwjgl.vulkan.KHRDedicatedAllocation;
 import org.lwjgl.vulkan.KHRDeferredHostOperations;
+import org.lwjgl.vulkan.KHRGetMemoryRequirements2;
 import org.lwjgl.vulkan.KHRRayTracingPipeline;
 import org.lwjgl.vulkan.NVRayTracingInvocationReorder;
 import org.lwjgl.vulkan.VK12;
@@ -33,6 +35,10 @@ public final class VulkanDeviceNegotiator {
             KHRAccelerationStructure.VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME,
             KHRRayTracingPipeline.VK_KHR_RAY_TRACING_PIPELINE_EXTENSION_NAME,
             KHRDeferredHostOperations.VK_KHR_DEFERRED_HOST_OPERATIONS_EXTENSION_NAME);
+
+    private static final List<String> FIDELITY_FX_BACKEND_EXTENSIONS = List.of(
+            KHRGetMemoryRequirements2.VK_KHR_GET_MEMORY_REQUIREMENTS_2_EXTENSION_NAME,
+            KHRDedicatedAllocation.VK_KHR_DEDICATED_ALLOCATION_EXTENSION_NAME);
 
     private static final VulkanPNextStruct ACCELERATION_STRUCTURE_FEATURES = new VulkanPNextStruct(
             KHRAccelerationStructure.VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ACCELERATION_STRUCTURE_FEATURES_KHR,
@@ -209,6 +215,21 @@ public final class VulkanDeviceNegotiator {
             }
 
             enabledExtensions.addAll(REQUIRED_EXTENSIONS);
+
+            // FidelityFX SDK 1.1.4 decides whether to use dedicated allocations from the
+            // physical device's advertised extension list, not the logical device's enabled
+            // extension list. If these promoted Vulkan 1.1 extensions are advertised but not
+            // explicitly enabled, its backend still calls vkGetBufferMemoryRequirements2KHR;
+            // vkGetDeviceProcAddr may legally return null and the signed DLL calls through that
+            // pointer during context creation. Keep the pair enabled together because
+            // VK_KHR_dedicated_allocation depends on VK_KHR_get_memory_requirements2.
+            if (physicalDevice.hasDeviceExtension(
+                            KHRDedicatedAllocation.VK_KHR_DEDICATED_ALLOCATION_EXTENSION_NAME)
+                    && physicalDevice.hasDeviceExtension(
+                            KHRGetMemoryRequirements2
+                                    .VK_KHR_GET_MEMORY_REQUIREMENTS_2_EXTENSION_NAME)) {
+                enabledExtensions.addAll(FIDELITY_FX_BACKEND_EXTENSIONS);
+            }
             enabledFeatures.add(SHADER_INT64);
             enabledFeatures.add(STORAGE_IMAGE_EXTENDED_FORMATS);
             enabledFeatures.add(STORAGE_IMAGE_READ_WITHOUT_FORMAT);
@@ -217,10 +238,10 @@ public final class VulkanDeviceNegotiator {
             enabledFeatures.add(ACCELERATION_STRUCTURE);
             enabledFeatures.add(RAY_TRACING_PIPELINE);
 
-            // FSR has fully validated FP32 permutations. The FP16 SPIR-V uses Float16 arithmetic,
-            // Int16 addressing helpers and half-valued subgroup operations; AMD's GLSL headers
-            // also declare 16-bit storage. Require the complete conservative feature set instead
-            // of guessing from the vendor. This optional path never affects RT availability.
+            // The FidelityFX DLL owns its FP32/FP16 permutations, but it cannot use an optional
+            // physical-device feature unless Minecraft enabled it on the logical device. Expose
+            // the complete conservative 16-bit set only when all members are supported. The DLL
+            // remains free to use FP32, and this optional path never affects RT availability.
             boolean fsrFp16Supported = vulkan11.storageBuffer16BitAccess()
                     && features.features().shaderInt16()
                     && vulkan12.shaderFloat16()

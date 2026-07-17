@@ -20,21 +20,10 @@ final class FsrContractTest {
     }
 
     @Test
-    void vendoredShaderSetContainsUpscalingButNoFrameInterpolation() throws Exception {
-        Path passes = Path.of("shaders/vendor/fidelityfx/passes");
-        long passCount;
-        try (var files = Files.list(passes)) {
-            passCount = files.filter(path -> path.getFileName().toString().endsWith("_pass.glsl"))
-                    .count();
-        }
-        assertTrue(passCount == 9);
-        assertTrue(Files.exists(passes.resolve("ffx_fsr3upscaler_rcas_pass.glsl")));
-        assertTrue(Files.exists(passes.resolve("ffx_fsr3upscaler_debug_view_pass.glsl")));
-        try (var files = Files.walk(Path.of("shaders/vendor/fidelityfx"))) {
-            assertFalse(files.anyMatch(path -> path.getFileName().toString()
-                    .toLowerCase(java.util.Locale.ROOT)
-                    .contains("frameinterpolation")));
-        }
+    void signedNativeUpscalerReplacesTheVendoredShaderPipeline() {
+        assertTrue(Files.exists(Path.of(
+                "src/client/resources/prime/natives/windows-x86_64/amd_fidelityfx_vk.dll")));
+        assertFalse(Files.exists(Path.of("shaders/vendor/fidelityfx")));
     }
 
     @Test
@@ -51,10 +40,12 @@ final class FsrContractTest {
     @Test
     void rayConeLodAndWeakRcasRemainPartOfTheUpscalingContract() throws Exception {
         String hitCommon = Files.readString(Path.of("shaders/hit_common.glsl"));
-        String build = Files.readString(Path.of("build.gradle"));
+        String nativeBinding = Files.readString(Path.of(
+                "src/client/java/dev/prime/render/vulkan/fsr/FsrNative.java"));
         assertTrue(hitCommon.contains("float primeRayConeTextureLod"));
         assertTrue(hitCommon.contains("primitive.uvDensity"));
         assertTrue(hitCommon.contains("+ rayCone.y"));
-        assertTrue(build.contains("FFX_FSR3UPSCALER_OPTION_APPLY_SHARPENING=1"));
+        assertTrue(nativeBinding.contains("description.put(392, (byte) 1)"));
+        assertTrue(nativeBinding.contains("FsrSettings.RCAS_SHARPNESS"));
     }
 }

@@ -9,8 +9,8 @@ import org.junit.jupiter.api.Test;
 
 final class FsrSettingsTest {
     @Test
-    void defaultIsPortableQualityUpscalingWithoutFrameGeneration() {
-        assertEquals("3.1.5", FsrSettings.UPSCALER_VERSION);
+    void defaultUsesQualityUpscalingWithoutFrameGeneration() {
+        assertEquals("3.1.4", FsrSettings.UPSCALER_VERSION);
         assertTrue(FsrSettings.DEFAULT_ENABLED);
         assertFalse(FsrSettings.FRAME_GENERATION_ENABLED);
         assertEquals(FsrQualityMode.QUALITY, FsrSettings.DEFAULT_QUALITY_MODE);
@@ -18,7 +18,6 @@ final class FsrSettingsTest {
                 FsrSettings.DEFAULT_QUALITY_MODE.renderExtent(3840, 2160));
         assertEquals(0.2F, FsrSettings.RCAS_SHARPNESS);
         assertEquals(1.0F, FsrSettings.EXPOSURE);
-        assertEquals((float) Math.pow(2.0, -1.6), FsrSettings.rcasLinearSharpness(), 1.0e-7F);
     }
 
     @Test

@@ -211,7 +211,7 @@ public final class VulkanRenderer implements AutoCloseable {
         var encoder = this.context.commandEncoder();
         VkCommandBuffer commandBuffer = encoder.allocateAndBeginTransientCommandBuffer();
         this.context.device().instance().debug().beginDebugGroup(
-                commandBuffer, () -> "Prime path tracing, NRD, and FSR 3.1.5");
+                commandBuffer, () -> "Prime path tracing, NRD, and FidelityFX FSR 3.1.4");
         this.atmosphere.prepare(commandBuffer, frameCamera, frameSunDirection);
         this.prepareOutputForComposite(commandBuffer, target);
         this.prepareSceneColorForComposite(commandBuffer, sceneColor);

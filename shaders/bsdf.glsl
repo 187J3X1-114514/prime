@@ -9,362 +9,11 @@
 #include "bsdf_emission.glsl"
 #include "default_material.glsl"
 #include "labpbr.glsl"
+#include "material_translation.glsl"
 #include "color_space.glsl"
 #define PRIME_RC_TRANSMISSION_GGX_SET 0
 #define PRIME_RC_TRANSMISSION_GGX_BINDING PRIME_DESCRIPTOR_TRANSMISSION_GGX_ENERGY
 #include "robocute_bsdf_openpbr.glsl"
-
-// Normalized material parameters are deliberately separate from Minecraft texture decoding.
-// LabPBR's packed channels will eventually populate this record, while every closure below keeps
-// a stable physical contract. Alpha is the final GGX slope parameter, never perceptual roughness.
-struct PrimeLabPbrMaterial {
-    vec3 baseColor;
-    float dielectricF0;
-    vec3 conductorF0;
-    vec3 conductorEta;
-    vec3 conductorK;
-    vec3 transmissionColor;
-    vec3 subsurfaceColor;
-    vec3 emissionRadiance;
-    float ggxAlpha;
-    float metalness;
-    float transmissionWeight;
-    float subsurfaceWeight;
-    float subsurfaceAnisotropy;
-    float relativeIor;
-    uint useComplexConductorIor;
-    uint thinWalled;
-};
-
-// The calibrated directional-energy table is exact at the previous default alpha. A fitted
-// reflective-energy delta below extends it over the small inferred range while preserving the
-// table's total resolved energy and its exact value at alpha=0.64.
-const float PRIME_DEFAULT_GGX_ALPHA = PRIME_DEFAULT_REFERENCE_LINEAR_ROUGHNESS
-        * PRIME_DEFAULT_REFERENCE_LINEAR_ROUGHNESS;
-const uint PRIME_DEFAULT_LOBE_DIFFUSE = 0u;
-const uint PRIME_DEFAULT_LOBE_SPECULAR = 1u;
-
-// Single-scattering directional energies (reflection, transmission) for the calibrated
-// alpha=0.64 and eta=1.5 reference interface. These are the exact 32 cosine samples selected from
-// RoboCute's Apache-2.0-licensed GGX energy table. The sum is intentionally less than one: it
-// measures energy lost to unresolved multiple microfacet scattering. Never replace this with
-// smooth-surface Fresnel -- doing so incorrectly drives the substrate to black at grazing angles.
-// The bounded vanilla-texture heuristic applies only the fitted reflection delta above; a future
-// material decoder must replace this specialization with the complete parameterized lookup.
-const vec2 PRIME_DEFAULT_GGX_DIRECTIONAL_ENERGY[32] = vec2[](
-    vec2(0.105050949, 0.141424098),
-    vec2(0.101618740, 0.177912561),
-    vec2(0.092052501, 0.255356359),
-    vec2(0.082015169, 0.326194899),
-    vec2(0.075255580, 0.385283190),
-    vec2(0.069562661, 0.435654352),
-    vec2(0.065026574, 0.481349955),
-    vec2(0.060138182, 0.516639700),
-    vec2(0.055822648, 0.546962264),
-    vec2(0.052415524, 0.571843207),
-    vec2(0.048774748, 0.594311533),
-    vec2(0.046079235, 0.613289194),
-    vec2(0.043347252, 0.628604169),
-    vec2(0.041271370, 0.642250667),
-    vec2(0.038961432, 0.654930494),
-    vec2(0.036981937, 0.664647269),
-    vec2(0.035516171, 0.674041851),
-    vec2(0.033806834, 0.681722658),
-    vec2(0.032365771, 0.688765066),
-    vec2(0.031207238, 0.694330635),
-    vec2(0.029979644, 0.699656529),
-    vec2(0.028958354, 0.703829794),
-    vec2(0.027843981, 0.707299607),
-    vec2(0.027112505, 0.710047934),
-    vec2(0.026286324, 0.712231314),
-    vec2(0.025693271, 0.713452229),
-    vec2(0.025029263, 0.713788850),
-    vec2(0.024538412, 0.713297400),
-    vec2(0.024024045, 0.711565628),
-    vec2(0.023714662, 0.708079364),
-    vec2(0.023220258, 0.701350782),
-    vec2(0.022881333, 0.677331905)
-);
-
-struct PrimeDefaultBsdfComponents {
-    BsdfEvaluation diffuse;
-    BsdfEvaluation specular;
-};
-
-// View-dependent quantities shared by evaluation, proposal selection and throughput recovery.
-// Keeping this as an explicit value object lets the integrator build it once per default-material
-// vertex without changing any closure or importance-sampling formula.
-struct PrimeDefaultBsdfContext {
-    float ggxAlpha;
-    float resolvedEnergy;
-    float diffuseEnergyScale;
-    float specularProbability;
-};
-
-float primeDefaultDielectricIor() {
-    return primeIorFromF0(PRIME_DEFAULT_DIELECTRIC_F0);
-}
-
-float primeDefaultGgxAlpha(vec3 baseColor) {
-    float linearRoughness = primeDefaultLinearRoughness(baseColor);
-    return linearRoughness * linearRoughness;
-}
-
-float primeDefaultReflectiveDirectionalEnergyFit(float cosineView, float ggxAlpha) {
-    // Rational quadratic fit from RoboCute's reflective GGX directional-albedo model. Applying
-    // only its delta relative to alpha=0.64 keeps Prime's calibrated dielectric table authoritative.
-    float x = clamp(cosineView, 0.0, 1.0);
-    float y = clamp(ggxAlpha, 0.0, 1.0);
-    float x2 = x * x;
-    float y2 = y * y;
-    vec4 fit = vec4(0.1003, 0.9345, 1.0, 1.0)
-            + vec4(-0.6303, -2.323, -1.765, 0.2281) * x
-            + vec4(9.748, 2.229, 8.263, 15.94) * y
-            + vec4(-2.038, -3.748, 11.53, -55.83) * x * y
-            + vec4(29.34, 1.424, 28.96, 13.08) * x2
-            + vec4(-8.245, -0.7684, -7.507, 41.26) * y2
-            + vec4(-26.44, 1.436, -36.11, 54.9) * x2 * y
-            + vec4(19.99, 0.2913, 15.86, 300.2) * x * y2
-            + vec4(-5.448, 0.6286, 33.37, -285.1) * x2 * y2;
-    vec2 coefficients = clamp(fit.xy / fit.zw, 0.0, 1.0);
-    return PRIME_DEFAULT_DIELECTRIC_F0 * coefficients.x + coefficients.y;
-}
-
-vec2 primeDefaultGgxDirectionalEnergy(float cosineView, float ggxAlpha) {
-    float coordinate = clamp(cosineView, 0.0, 1.0) * 31.0;
-    int lowerIndex = int(floor(coordinate));
-    int upperIndex = min(lowerIndex + 1, 31);
-    vec2 calibrated = mix(
-            PRIME_DEFAULT_GGX_DIRECTIONAL_ENERGY[lowerIndex],
-            PRIME_DEFAULT_GGX_DIRECTIONAL_ENERGY[upperIndex],
-            coordinate - float(lowerIndex));
-    float reflectionDelta = primeDefaultReflectiveDirectionalEnergyFit(
-            cosineView, ggxAlpha)
-            - primeDefaultReflectiveDirectionalEnergyFit(
-                    cosineView, PRIME_DEFAULT_GGX_ALPHA);
-    float totalResolvedEnergy = calibrated.x + calibrated.y;
-    float reflectedEnergy = clamp(
-            calibrated.x + reflectionDelta, 0.0, totalResolvedEnergy);
-    return vec2(reflectedEnergy, totalResolvedEnergy - reflectedEnergy);
-}
-
-PrimeDefaultBsdfContext primeMakeDefaultBsdfContext(
-        vec3 baseColor,
-        vec3 viewDirection,
-        vec3 normal) {
-    PrimeDefaultBsdfContext context;
-    context.ggxAlpha = primeDefaultGgxAlpha(baseColor);
-    vec2 directionalEnergy = primeDefaultGgxDirectionalEnergy(
-            max(dot(normal, viewDirection), 0.0), context.ggxAlpha);
-    context.resolvedEnergy = max(
-            directionalEnergy.x + directionalEnergy.y, PRIME_BSDF_EPSILON);
-    context.diffuseEnergyScale = directionalEnergy.y / context.resolvedEnergy;
-    context.specularProbability = clamp(
-            directionalEnergy.x / context.resolvedEnergy, 0.05, 0.95);
-    return context;
-}
-
-float primeDefaultSpecularSampleProbability(
-        vec3 baseColor,
-        vec3 viewDirection,
-        vec3 normal) {
-    return primeMakeDefaultBsdfContext(baseColor, viewDirection, normal).specularProbability;
-}
-
-float primeNrdSpecularSampleProbability(
-        vec3 baseColor,
-        vec3 viewDirection,
-        vec3 normal) {
-    // The first-bounce split writes only the selected lobe. AREA_3X3 reconstruction therefore
-    // requires a diffuse sample to remain common in every small neighborhood. The default
-    // dielectric is diffuse-dominant; limiting its specular proposal to 25% keeps both estimators
-    // unbiased through probability compensation while satisfying that reconstruction contract.
-    return clamp(
-            primeDefaultSpecularSampleProbability(baseColor, viewDirection, normal),
-            0.05,
-            0.25);
-}
-
-float primeNrdSpecularSampleProbability(PrimeDefaultBsdfContext context) {
-    return clamp(context.specularProbability, 0.05, 0.25);
-}
-
-PrimeDefaultBsdfComponents primeEvaluateDefaultBsdfComponentsWithContext(
-        vec3 baseColor,
-        vec3 normal,
-        vec3 viewDirection,
-        vec3 scatterDirection,
-        PrimeDefaultBsdfContext context) {
-    PrimeDefaultBsdfComponents components;
-    components.diffuse = primeInvalidBsdfEvaluation();
-    components.specular = primeInvalidBsdfEvaluation();
-    if (dot(normal, viewDirection) <= 0.0 || dot(normal, scatterDirection) <= 0.0) {
-        return components;
-    }
-    components.diffuse = primeEvaluateDiffuseReflection(
-            baseColor, normal, viewDirection, scatterDirection);
-    // Match the source weighted-layer model: transmission into the substrate is a directional
-    // rough-interface quantity. Its outgoing tint is unity, so a second smooth Fresnel factor is
-    // neither part of the model nor energy preserving.
-    components.diffuse.value *= context.diffuseEnergyScale;
-    components.specular = primeEvaluateGgxDielectricReflection(
-            primeDefaultDielectricIor(),
-            context.ggxAlpha,
-            normal,
-            viewDirection,
-            scatterDirection);
-    // Turquin-style multiple-scattering compensation restores the energy missing from the
-    // single-scattering GGX interface. This divisor and the substrate transmission ratio above
-    // are a coupled energy partition and must change together.
-    components.specular.value /= context.resolvedEnergy;
-    return components;
-}
-
-PrimeDefaultBsdfComponents primeEvaluateDefaultBsdfComponents(
-        vec3 baseColor,
-        vec3 normal,
-        vec3 viewDirection,
-        vec3 scatterDirection) {
-    PrimeDefaultBsdfContext context = primeMakeDefaultBsdfContext(
-            baseColor, viewDirection, normal);
-    return primeEvaluateDefaultBsdfComponentsWithContext(
-            baseColor, normal, viewDirection, scatterDirection, context);
-}
-
-// Default Minecraft material: a rough dielectric boundary over a diffuse substrate. The two
-// smooth-interface Fresnel transmission factors prevent diffuse energy from being counted on top
-// of reflected specular energy. This is intentionally the only newly connected material subset;
-// conductor, dielectric transmission, thin SSS, volume SSS and EDF closures above remain ready for
-// a later LabPBR decoder without affecting today's atlas contract.
-BsdfEvaluation primeEvaluateDefaultBsdfWithContext(
-        vec3 baseColor,
-        vec3 normal,
-        vec3 viewDirection,
-        vec3 scatterDirection,
-        PrimeDefaultBsdfContext context) {
-    PrimeDefaultBsdfComponents components = primeEvaluateDefaultBsdfComponentsWithContext(
-            baseColor, normal, viewDirection, scatterDirection, context);
-    BsdfEvaluation result;
-    result.value = components.diffuse.value + components.specular.value;
-    result.pdf = mix(
-            components.diffuse.pdf, components.specular.pdf, context.specularProbability);
-    return result;
-}
-
-BsdfEvaluation primeEvaluateDefaultBsdf(
-        vec3 baseColor,
-        vec3 normal,
-        vec3 viewDirection,
-        vec3 scatterDirection) {
-    PrimeDefaultBsdfContext context = primeMakeDefaultBsdfContext(
-            baseColor, viewDirection, normal);
-    return primeEvaluateDefaultBsdfWithContext(
-            baseColor, normal, viewDirection, scatterDirection, context);
-}
-
-BsdfSample primeSampleDefaultBsdfSeparatedWithContext(
-        vec3 baseColor,
-        vec3 normal,
-        vec3 viewDirection,
-        vec3 sampleValue,
-        out uint selectedLobe,
-        PrimeDefaultBsdfContext context) {
-    float specularProbability = primeNrdSpecularSampleProbability(context);
-    BsdfSample proposal;
-    float selectionProbability;
-    if (sampleValue.z < specularProbability) {
-        selectedLobe = PRIME_DEFAULT_LOBE_SPECULAR;
-        selectionProbability = specularProbability;
-        proposal = primeSampleGgxDielectricReflection(
-                primeDefaultDielectricIor(),
-                context.ggxAlpha,
-                normal,
-                viewDirection,
-                sampleValue.xy);
-    } else {
-        selectedLobe = PRIME_DEFAULT_LOBE_DIFFUSE;
-        selectionProbability = 1.0 - specularProbability;
-        proposal = primeSampleDiffuseReflection(
-                baseColor, normal, viewDirection, sampleValue.xy);
-    }
-    if (proposal.pdf <= 0.0 || selectionProbability <= 0.0) {
-        return primeInvalidBsdfSample();
-    }
-    PrimeDefaultBsdfComponents components = primeEvaluateDefaultBsdfComponentsWithContext(
-            baseColor, normal, viewDirection, proposal.direction, context);
-    BsdfEvaluation selected = selectedLobe == PRIME_DEFAULT_LOBE_DIFFUSE
-            ? components.diffuse
-            : components.specular;
-    proposal.pdf = selected.pdf * selectionProbability;
-    if (proposal.pdf <= 0.0) {
-        return primeInvalidBsdfSample();
-    }
-    proposal.weight = selected.value
-            * (max(dot(normal, proposal.direction), 0.0) / proposal.pdf);
-    proposal.relativeEta = 1.0;
-    proposal.eventFlags &= ~PRIME_BSDF_EVENT_DELTA;
-    return proposal;
-}
-
-BsdfSample primeSampleDefaultBsdfSeparated(
-        vec3 baseColor,
-        vec3 normal,
-        vec3 viewDirection,
-        vec3 sampleValue,
-        out uint selectedLobe) {
-    PrimeDefaultBsdfContext context = primeMakeDefaultBsdfContext(
-            baseColor, viewDirection, normal);
-    return primeSampleDefaultBsdfSeparatedWithContext(
-            baseColor, normal, viewDirection, sampleValue, selectedLobe, context);
-}
-
-BsdfSample primeSampleDefaultBsdfWithContext(
-        vec3 baseColor,
-        vec3 normal,
-        vec3 viewDirection,
-        vec3 sampleValue,
-        PrimeDefaultBsdfContext context) {
-    float specularProbability = context.specularProbability;
-    BsdfSample proposal;
-    if (sampleValue.z < specularProbability) {
-        proposal = primeSampleGgxDielectricReflection(
-                primeDefaultDielectricIor(),
-                context.ggxAlpha,
-                normal,
-                viewDirection,
-                sampleValue.xy);
-    } else {
-        proposal = primeSampleDiffuseReflection(
-                baseColor, normal, viewDirection, sampleValue.xy);
-    }
-    if (proposal.pdf <= 0.0) {
-        return primeInvalidBsdfSample();
-    }
-    BsdfEvaluation combined = primeEvaluateDefaultBsdfWithContext(
-            baseColor, normal, viewDirection, proposal.direction, context);
-    if (combined.pdf <= 0.0) {
-        return primeInvalidBsdfSample();
-    }
-    proposal.pdf = combined.pdf;
-    proposal.weight = combined.value
-            * (max(dot(normal, proposal.direction), 0.0) / combined.pdf);
-    // Both connected lobes are non-delta reflection. Preserve that combined event classification
-    // even when the selected proposal came from the diffuse component.
-    proposal.relativeEta = 1.0;
-    proposal.eventFlags &= ~PRIME_BSDF_EVENT_DELTA;
-    return proposal;
-}
-
-BsdfSample primeSampleDefaultBsdf(
-        vec3 baseColor,
-        vec3 normal,
-        vec3 viewDirection,
-        vec3 sampleValue) {
-    PrimeDefaultBsdfContext context = primeMakeDefaultBsdfContext(
-            baseColor, viewDirection, normal);
-    return primeSampleDefaultBsdfWithContext(
-            baseColor, normal, viewDirection, sampleValue, context);
-}
 
 // Minecraft's translucent render layer is adapted to RoboCute's complete dielectric
 // transmission closure. The imported closure owns Fresnel, rough reflection/refraction,
@@ -408,20 +57,21 @@ PrimeRcMaterial primeMinecraftTransmissionMaterial(
     // Vanilla translucent materials have no authored rough interface and are therefore exact
     // smooth dielectrics. This is a material parameter, not a shortcut inside RoboCute: Fresnel,
     // eta^2 radiance transport, absorption and the volume stack remain the library's full model.
-    PrimeLabPbrSample decoded = primeDecodeLabPbr(
+    PrimeTranslatedLabPbrMaterial translated = primeDecodeAndTranslateLabPbr(
             packedNormal, packedSpecular, materialFlags);
     float roughness = primeHasLabPbrSpecular(materialFlags)
-            ? decoded.perceptualRoughness
+            ? translated.perceptualRoughness
             : 0.0;
     PrimeRcMaterial material = primeRcMaterialFromMetallic(
             vec3(1.0), roughness, 0.0, outwardNormal);
     material.weight.transmission = 1.0;
     material.geometry.thinWalled = thinWalled ? 1u : 0u;
     material.geometry.thickness = thinWalled ? 0.0625 : 1.0;
-    material.specular.ior = water ? 1.333 : 1.5;
-    if (primeHasLabPbrSpecular(materialFlags) && !primeLabPbrIsMetal(decoded)) {
-        material.specular.ior = primeRcF0ToIor(decoded.dielectricF0);
-    }
+    // Water's measured boundary is authoritative. Other transmissive models accept only the
+    // translator's clamped dielectric F0; custom and predefined-metal encodings fall back to 4%.
+    material.specular.ior = water
+            ? 1.333
+            : primeRcF0ToIor(translated.dielectricF0);
 
     vec3 decodedColor = max(baseColor, vec3(0.0));
     float coverage = clamp(opacity, 0.0, 1.0);
@@ -532,7 +182,7 @@ bool primeLabPbrMetalOpticalConstants(uint metalId, out vec3 eta, out vec3 k) {
 
 struct PrimeLabPbrFresnel {
     vec3 f0;
-    vec3 f82;
+    vec3 f82Tint;
 };
 
 PrimeLabPbrFresnel primeLabPbrMetalFresnel(vec3 baseColor, uint metalId) {
@@ -540,62 +190,84 @@ PrimeLabPbrFresnel primeLabPbrMetalFresnel(vec3 baseColor, uint metalId) {
     vec3 sourceTint = clamp(primeLinearRec2020ToLinearBt709(baseColor), 0.0, 1.0);
     vec3 eta;
     vec3 k;
-    const float cosine82Degrees = 0.13917310096006544;
+    // RoboCute names this F82, but deliberately anchors the fitted tint at cos(theta)=1/7.
+    // Use that exact model constant on both sides of the conversion instead of the nearby literal
+    // cosine of 82 degrees, otherwise the reconstructed endpoint is only approximately correct.
+    const float f82AnchorCosine = 1.0 / 7.0;
+    float schlick82Weight = pow(1.0 - f82AnchorCosine, 5.0);
     if (primeLabPbrMetalOpticalConstants(metalId, eta, k)) {
         vec3 sourceF0 = primeFresnelConductor(1.0, eta, k) * sourceTint;
-        vec3 sourceF82 = primeFresnelConductor(cosine82Degrees, eta, k) * sourceTint;
+        vec3 sourceF82 = primeFresnelConductor(f82AnchorCosine, eta, k) * sourceTint;
         result.f0 = clamp(primeLinearSrgbToLinearRec2020(sourceF0), 0.0, 1.0);
-        result.f82 = clamp(primeLinearSrgbToLinearRec2020(sourceF82), 0.0, 1.0);
+        vec3 targetF82 = clamp(
+                primeLinearSrgbToLinearRec2020(sourceF82), 0.0, 1.0);
+        vec3 untintedSchlickF82 = mix(result.f0, vec3(1.0), schlick82Weight);
+        // RoboCute's SchlickF82tintFresnel does not store absolute F(82 degrees): its f82
+        // parameter multiplies the ordinary Schlick value at that angle. Supplying targetF82
+        // directly applies the attenuation twice and makes smooth metals incorrectly black at
+        // grazing angles. Solve the tint in Prime's working basis so the closure reconstructs the
+        // converted physical F82 exactly.
+        result.f82Tint = clamp(
+                targetF82 / max(untintedSchlickF82, vec3(PRIME_BSDF_EPSILON)),
+                0.0,
+                1.0);
+    } else if (primeLabPbrIsCustomMetalId(metalId)) {
+        // LabPBR custom metal stores F0 directly in the albedo texture and has no authored edge
+        // tint. One is RoboCute's neutral F82-tint value and therefore restores ordinary Schlick
+        // grazing behaviour without inventing another material parameter.
+        result.f0 = clamp(baseColor, 0.0, 1.0);
+        result.f82Tint = vec3(1.0);
     } else {
-        // 255 is the standard custom-metal encoding. Values 238..254 are reserved; treating them
-        // identically is the compatibility fallback explicitly permitted for implementations
-        // without a predefined entry, and preserves the artist's authored albedo-as-F0 behavior.
-        float grazing = pow(1.0 - cosine82Degrees, 5.0);
-        vec3 sourceF82 = mix(sourceTint, vec3(1.0), grazing);
-        result.f0 = baseColor;
-        result.f82 = clamp(primeLinearSrgbToLinearRec2020(sourceF82), 0.0, 1.0);
+        // Reserved values remain unreachable through the conservative translator. Keep a neutral
+        // dielectric fallback so a future caller cannot accidentally revive undefined metal IDs.
+        result.f0 = vec3(PRIME_DEFAULT_DIELECTRIC_F0);
+        result.f82Tint = vec3(1.0);
     }
     return result;
 }
 
 float primeLabPbrLinearRoughness(uint packedNormal, uint packedSpecular, uint flags) {
-    return primeDecodeLabPbr(packedNormal, packedSpecular, flags).linearRoughness;
+    return primeDecodeAndTranslateLabPbr(
+            packedNormal, packedSpecular, flags).linearRoughness;
 }
 
 vec3 primeLabPbrSpecularF0(
         vec3 baseColor, uint packedNormal, uint packedSpecular, uint flags) {
-    PrimeLabPbrSample decoded = primeDecodeLabPbr(packedNormal, packedSpecular, flags);
-    if (primeLabPbrIsMetal(decoded)) {
-        return primeLabPbrMetalFresnel(baseColor, decoded.metalId).f0;
+    PrimeTranslatedLabPbrMaterial translated = primeDecodeAndTranslateLabPbr(
+            packedNormal, packedSpecular, flags);
+    if (primeTranslatedLabPbrIsMetal(translated)) {
+        return primeLabPbrMetalFresnel(baseColor, translated.metalId).f0;
     }
-    return vec3(decoded.dielectricF0);
+    return vec3(translated.dielectricF0);
 }
 
-PrimeRcMaterial primeLabPbrOpaqueMaterial(
+PrimeRcMaterial primeOpaqueMaterial(
         vec3 baseColor,
         vec3 normal,
         uint packedNormal,
         uint packedSpecular,
         uint flags) {
-    PrimeLabPbrSample decoded = primeDecodeLabPbr(packedNormal, packedSpecular, flags);
-    bool metal = primeLabPbrIsMetal(decoded);
+    PrimeTranslatedLabPbrMaterial translated = primeDecodeAndTranslateLabPbr(
+            packedNormal, packedSpecular, flags);
+    bool metal = primeTranslatedLabPbrIsMetal(translated);
     PrimeRcMaterial material = primeRcMaterialFromMetallic(
             baseColor,
-            decoded.perceptualRoughness,
+            translated.perceptualRoughness,
             metal ? 1.0 : 0.0,
             normal);
     if (metal) {
-        PrimeLabPbrFresnel fresnel = primeLabPbrMetalFresnel(baseColor, decoded.metalId);
+        PrimeLabPbrFresnel fresnel = primeLabPbrMetalFresnel(
+                baseColor, translated.metalId);
         material.base.color = fresnel.f0;
-        material.specular.color = fresnel.f82;
+        material.specular.color = fresnel.f82Tint;
     } else {
-        material.specular.ior = primeRcF0ToIor(decoded.dielectricF0);
-        // LabPBR supplies an SSS mixing weight but no physical mean-free path. RoboCute's
-        // metre-scale OpenPBR default radius is therefore the stable interpretation boundary;
-        // the authored weight and albedo remain exact and the closure retains white-furnace
-        // energy compensation. A future profile extension may replace only the radius.
-        material.weight.subsurface = decoded.subsurface;
+        material.specular.ior = primeRcF0ToIor(translated.dielectricF0);
+        material.weight.subsurface = translated.subsurfaceWeight;
         material.subsurface.color = baseColor;
+        if (translated.thinWalled != 0u) {
+            material.geometry.thinWalled = 1u;
+            material.geometry.thickness = 0.0625;
+        }
     }
     return material;
 }
@@ -614,7 +286,7 @@ PrimeRcMaterial primeMinecraftTransmissionMaterial(
             packUnorm4x8(vec4(0.0, 4.0 / 255.0, 0.0, 1.0)));
 }
 
-PrimeRcState primeLabPbrOpaqueState(
+PrimeRcState primeOpaqueState(
         vec3 baseColor,
         vec3 normal,
         uint packedNormal,
@@ -624,14 +296,29 @@ PrimeRcState primeLabPbrOpaqueState(
         vec3 randomValue,
         float rayT,
         PrimeRcVolumeStack volumeStack) {
-    PrimeRcMaterial material = primeLabPbrOpaqueMaterial(
+    PrimeRcMaterial material = primeOpaqueMaterial(
             baseColor, normal, packedNormal, packedSpecular, flags);
     vec3 localView = primeRcOnbToLocal(material.geometry.onb, viewDirection);
-    return primeRcOpenPbrStateInit(
+    float inverseOutsideIor = primeRcInverseOutsideIor(localView.z, volumeStack);
+    if (material.weight.subsurface > 0.0) {
+        // Only the conservatively translated alpha-cut SSS semantic needs the complete OpenPBR
+        // graph. Ordinary LabPBR terrain follows RoboCute's active RBC_LITE_PBR_MATERIAL
+        // polymorphic dispatch and therefore uses its white-furnace-tested BasicMetallic closure.
+        return primeRcOpenPbrStateInit(
+                material,
+                localView,
+                randomValue,
+                inverseOutsideIor,
+                rayT,
+                PRIME_REC2020_PRIMARY_WAVELENGTHS_NM,
+                0u,
+                PRIME_RC_DETAIL_DEFAULT,
+                0u);
+    }
+    return primeRcBasicMetallicStateInit(
             material,
             localView,
-            randomValue,
-            primeRcInverseOutsideIor(localView.z, volumeStack),
+            inverseOutsideIor,
             rayT,
             PRIME_REC2020_PRIMARY_WAVELENGTHS_NM,
             0u,
@@ -639,13 +326,13 @@ PrimeRcState primeLabPbrOpaqueState(
             0u);
 }
 
-struct PrimeLabPbrBsdfComponents {
+struct PrimeOpaqueBsdfComponents {
     vec3 diffuseValue;
     vec3 specularValue;
     float pdf;
 };
 
-PrimeLabPbrBsdfComponents primeEvaluateLabPbrOpaqueComponents(
+PrimeOpaqueBsdfComponents primeEvaluateOpaqueComponents(
         vec3 baseColor,
         vec3 normal,
         uint packedNormal,
@@ -655,11 +342,11 @@ PrimeLabPbrBsdfComponents primeEvaluateLabPbrOpaqueComponents(
         vec3 scatterDirection,
         float rayT,
         PrimeRcVolumeStack volumeStack) {
-    PrimeLabPbrBsdfComponents result;
+    PrimeOpaqueBsdfComponents result;
     result.diffuseValue = vec3(0.0);
     result.specularValue = vec3(0.0);
     result.pdf = 0.0;
-    PrimeRcState state = primeLabPbrOpaqueState(
+    PrimeRcState state = primeOpaqueState(
             baseColor,
             normal,
             packedNormal,
@@ -675,20 +362,27 @@ PrimeLabPbrBsdfComponents primeEvaluateLabPbrOpaqueComponents(
     if (cosine <= PRIME_BSDF_EPSILON) {
         return result;
     }
-    PrimeRcEval full = primeRcOpenPbrEvaluate(localView, localScatter, state);
+    bool fullOpenPbr = state.material.weight.subsurface > 0.0;
+    PrimeRcEval full = fullOpenPbr
+            ? primeRcOpenPbrEvaluate(localView, localScatter, state)
+            : primeRcBasicMetallicEvaluate(localView, localScatter, state);
     result.pdf = full.pdf;
     PrimeRcState diffuseState = state;
     diffuseState.samplingFlags = PRIME_RC_FLAG_DIFFUSE;
-    PrimeRcThroughput diffuse = primeRcOpenPbrEval(localView, localScatter, diffuseState);
+    PrimeRcThroughput diffuse = fullOpenPbr
+            ? primeRcOpenPbrEval(localView, localScatter, diffuseState)
+            : primeRcBasicMetallicEval(localView, localScatter, diffuseState);
     PrimeRcState specularState = state;
     specularState.samplingFlags = PRIME_RC_FLAG_SPECULAR | PRIME_RC_FLAG_DELTA;
-    PrimeRcThroughput specular = primeRcOpenPbrEval(localView, localScatter, specularState);
+    PrimeRcThroughput specular = fullOpenPbr
+            ? primeRcOpenPbrEval(localView, localScatter, specularState)
+            : primeRcBasicMetallicEval(localView, localScatter, specularState);
     result.diffuseValue = diffuse.value / cosine;
     result.specularValue = specular.value / cosine;
     return result;
 }
 
-BsdfSample primeSampleLabPbrOpaque(
+BsdfSample primeSampleOpaque(
         vec3 baseColor,
         vec3 normal,
         uint packedNormal,
@@ -699,7 +393,7 @@ BsdfSample primeSampleLabPbrOpaque(
         float rayT,
         PrimeRcVolumeStack volumeStack) {
     BsdfSample result = primeInvalidBsdfSample();
-    PrimeRcState state = primeLabPbrOpaqueState(
+    PrimeRcState state = primeOpaqueState(
             baseColor,
             normal,
             packedNormal,
@@ -710,14 +404,21 @@ BsdfSample primeSampleLabPbrOpaque(
             rayT,
             volumeStack);
     vec3 localView = primeRcOnbToLocal(state.material.geometry.onb, viewDirection);
-    PrimeRcSampleResult sampled = primeRcOpenPbrSample(
-            localView, sampleValue, state, volumeStack);
+    PrimeRcSampleResult sampled = state.material.weight.subsurface > 0.0
+            ? primeRcOpenPbrSample(localView, sampleValue, state, volumeStack)
+            : primeRcBasicMetallicSample(localView, sampleValue, state, volumeStack);
     if (sampled.bsdfSample.pdf <= 0.0
             || sampled.bsdfSample.throughput.flags == PRIME_RC_FLAG_NONE) {
         return result;
     }
     result.direction = primeRcOnbToWorld(
             state.material.geometry.onb, sampled.bsdfSample.wo);
+    if ((sampled.bsdfSample.throughput.flags & PRIME_RC_FLAG_DELTA_REFLECTION) != 0u) {
+        // Avoid a local-to-world round trip exactly where the reflected direction can be only a
+        // few ulps above the tangent plane. This is algebraically the same delta direction, but
+        // preserves the world-space hemisphere at extreme grazing angles.
+        result.direction = normalize(reflect(-viewDirection, normal));
+    }
     result.weight = sampled.bsdfSample.throughput.value / sampled.bsdfSample.pdf;
     result.pdf = sampled.bsdfSample.pdf;
     result.relativeEta = 1.0;
@@ -1112,12 +813,12 @@ PrimeRcMaterial primeMinecraftFoliageMaterial(
         uint materialFlags) {
     PrimeRcMaterial material;
     if (primeHasLabPbrSpecular(materialFlags)) {
-        material = primeLabPbrOpaqueMaterial(
+        material = primeOpaqueMaterial(
                 baseColor, normal, packedNormal, packedSpecular, materialFlags);
     } else {
         material = primeRcMaterialFromMetallic(
                 baseColor,
-                primeDefaultLinearRoughness(baseColor),
+                primeDefaultLinearRoughness(),
                 0.0,
                 normal);
     }

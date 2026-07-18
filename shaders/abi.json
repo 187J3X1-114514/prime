@@ -201,6 +201,9 @@
     "blockLightEvQuarterShift": 8,
     "evQuarterMask": "0xff",
     "evQuarterBias": 128,
+    "materialRoughnessShift": 16,
+    "materialRoughnessMask": "0xff",
+    "materialRoughnessStepsPerUnit": 100,
     "russianRouletteStart": 2
   },
   "nrdContract": {

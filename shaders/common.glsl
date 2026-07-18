@@ -39,6 +39,17 @@ vec3 primeUnpackOctahedralNormal(uint packedValue) {
     return normalize(normal);
 }
 
+float primeConfiguredDefaultLinearRoughness() {
+    uint encoded = (primePush.path.w >> PRIME_PATH_MATERIAL_ROUGHNESS_SHIFT)
+            & PRIME_PATH_MATERIAL_ROUGHNESS_MASK;
+    return float(encoded) / PRIME_PATH_MATERIAL_ROUGHNESS_STEPS_PER_UNIT;
+}
+
+// default_material.glsl is also compiled by standalone NRD compute passes that have a different
+// push-constant ABI. Ray-tracing stages include common.glsl first and therefore replace the
+// compile-time reference only where PrimePushConstants is actually available.
+#define PRIME_RUNTIME_DEFAULT_LINEAR_ROUGHNESS primeConfiguredDefaultLinearRoughness()
+
 uint primePackOctahedralNormal(vec3 value) {
     vec3 normal = normalize(value);
     normal /= max(abs(normal.x) + abs(normal.y) + abs(normal.z), 1.0e-20);

@@ -1,6 +1,7 @@
 package dev.prime.render.shader;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.IOException;
@@ -82,21 +83,6 @@ final class BsdfContractTest {
     }
 
     @Test
-    void inferredVanillaRoughnessIsBoundedAndMonotonic() {
-        assertEquals(0.90, defaultLinearRoughness(0.0), 1.0e-12);
-        assertEquals(0.70, defaultLinearRoughness(1.0), 1.0e-12);
-        double previous = Double.POSITIVE_INFINITY;
-        for (int index = 0; index <= 1000; index++) {
-            double roughness = defaultLinearRoughness(index / 1000.0);
-            assertTrue(roughness <= previous);
-            assertTrue(roughness >= 0.70 && roughness <= 0.90);
-            double alpha = roughness * roughness;
-            assertTrue(alpha >= 0.49 - 1.0e-12 && alpha <= 0.81 + 1.0e-12);
-            previous = roughness;
-        }
-    }
-
-    @Test
     void henyeyGreensteinIsNormalizedAndPreservesMeanCosine() {
         for (double anisotropy : new double[] {-0.6, 0.0, 0.7}) {
             int steps = 200_000;
@@ -139,12 +125,16 @@ final class BsdfContractTest {
         assertTrue(microfacet.contains("alpha=(1-smoothness)^2"));
         assertTrue(microfacet.contains("btdf /= etaPath * etaPath"));
         assertTrue(defaults.contains("PRIME_DEFAULT_DIELECTRIC_F0 = 0.04"));
-        assertTrue(defaults.contains("PRIME_REC2020_LUMINANCE = vec3(0.2627, 0.6780, 0.0593)"));
-        assertTrue(composition.contains("primeDefaultReflectiveDirectionalEnergyFit"));
-        assertTrue(composition.contains("primeEvaluateDefaultBsdf"));
-        assertTrue(composition.contains("primeSampleDefaultBsdf"));
-        assertTrue(composition.contains(
-                "BsdfEvaluation combined = primeEvaluateDefaultBsdfWithContext"));
+        assertTrue(defaults.contains("PRIME_RUNTIME_DEFAULT_LINEAR_ROUGHNESS"));
+        assertTrue(defaults.contains("float primeDefaultLinearRoughness()"));
+        assertTrue(defaults.contains("Missing roughness therefore has one explicit"));
+        assertTrue(composition.contains("primeRcBasicMetallicStateInit"));
+        assertTrue(composition.contains("primeRcBasicMetallicEvaluate"));
+        assertTrue(composition.contains("primeRcBasicMetallicSample"));
+        assertTrue(microfacet.contains(
+                "return a2 / (PRIME_PI * denominator * denominator)"));
+        assertFalse(microfacet.contains(
+                "max(PRIME_PI * denominator * denominator, PRIME_BSDF_EPSILON)"));
     }
 
     private static void assertClosurePair(String source, String suffix) {
@@ -204,12 +194,6 @@ final class BsdfContractTest {
         double tangent2 = Math.max(0.0, 1.0 - cosine * cosine) / (cosine * cosine);
         double lambda = 0.5 * (Math.sqrt(1.0 + alpha * alpha * tangent2) - 1.0);
         return 1.0 / (1.0 + lambda);
-    }
-
-    private static double defaultLinearRoughness(double luminance) {
-        double unit = Math.clamp((luminance - 0.08) / (0.90 - 0.08), 0.0, 1.0);
-        double brightness = unit * unit * (3.0 - 2.0 * unit);
-        return 0.90 + brightness * (0.70 - 0.90);
     }
 
     private static double henyeyGreenstein(double cosine, double anisotropy) {

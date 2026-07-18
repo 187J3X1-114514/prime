@@ -30,4 +30,16 @@ final class PrimeConfigTest {
         assertThrows(IllegalArgumentException.class,
                 () -> PrimeConfig.parseOverexposureSteps("2.03125"));
     }
+
+    @Test
+    void persistedDefaultRoughnessAcceptsOnlyExactHundredths() {
+        assertEquals(0, PrimeConfig.parseRoughnessSteps("0"));
+        assertEquals(80, PrimeConfig.parseRoughnessSteps("0.8"));
+        assertEquals(100, PrimeConfig.parseRoughnessSteps("1"));
+        assertEquals("0.8", PrimeConfig.formatRoughness(80));
+        assertThrows(IllegalArgumentException.class,
+                () -> PrimeConfig.parseRoughnessSteps("0.805"));
+        assertThrows(IllegalArgumentException.class,
+                () -> PrimeConfig.parseRoughnessSteps("1.01"));
+    }
 }

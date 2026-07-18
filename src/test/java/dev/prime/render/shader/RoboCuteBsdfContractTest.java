@@ -108,6 +108,22 @@ final class RoboCuteBsdfContractTest {
     }
 
     @Test
+    void transmissionGgxLookupRestoresItsAnalyticSmoothEndpoint() throws IOException {
+        String microfacet = shader("robocute_bsdf_microfacet.glsl");
+
+        assertTrue(microfacet.contains("float firstCellWeight = clamp("));
+        assertTrue(microfacet.contains("endpointUvw.y = 0.5 / size.y"));
+        assertTrue(microfacet.contains(
+                "primeRcDielectricUnpolarized(ior, cosineTheta)"));
+        assertTrue(microfacet.contains(
+                "result += (exactEndpoint - storedEndpoint) * firstCellWeight"));
+
+        assertEquals(1.0, firstCellWeight(0.0), 0.0);
+        assertEquals(0.0, firstCellWeight(1.0 / 31.0), 1.0e-12);
+        assertTrue(firstCellWeight(5.0 / 255.0) > 0.39);
+    }
+
+    @Test
     void transmissionClosureIsConnectedToTerrainWithPersistentVolumes() throws IOException {
         String adapter = shader("bsdf.glsl");
         String defaultMaterial = shader("default_material.glsl");
@@ -152,6 +168,10 @@ final class RoboCuteBsdfContractTest {
         assertTrue(closestHit.contains("primePayload.geometricNormal = normal"));
         assertFalse(closestHit.contains("normal = -normal"));
         assertTrue(anyHit.contains("primeMaterialIsTransmissive(primitive.flags)"));
+    }
+
+    private static double firstCellWeight(double perceptualRoughness) {
+        return Math.clamp(1.0 - perceptualRoughness * 31.0, 0.0, 1.0);
     }
 
     @Test

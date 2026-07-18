@@ -168,6 +168,8 @@ struct PrimeRcSpecularFresnel {
 
 struct PrimeRcConductorFresnel {
     vec3 f0;
+    // Preserves RoboCute's source field name. This is the relative Schlick tint at its 1/7
+    // cosine anchor, not absolute F(82 degrees); adapters must solve it from a target reflectance.
     vec3 f82;
     vec3 f90;
     float weight;

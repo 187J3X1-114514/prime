@@ -4,6 +4,7 @@ import dev.prime.client.PrimeVideoOptions;
 import dev.prime.config.PrimeConfig;
 import dev.prime.render.DisplaySettings;
 import dev.prime.render.LightingSettings;
+import dev.prime.render.MaterialSettings;
 import dev.prime.render.ScreenshotMode;
 import dev.prime.render.fsr.FsrDebugView;
 import dev.prime.render.fsr.FsrQualityMode;
@@ -32,6 +33,7 @@ public abstract class VideoSettingsScreenMixin {
     @Unique private OptionInstance<Integer> prime$sunExposure;
     @Unique private OptionInstance<Integer> prime$blockLightExposure;
     @Unique private OptionInstance<Integer> prime$oklabOverexposure;
+    @Unique private OptionInstance<Integer> prime$defaultRoughness;
     @Unique private OptionInstance<NrdDiagnostics.Mode> prime$nrdDebugView;
     @Unique private OptionInstance<FsrDebugView> prime$fsrDebugView;
 
@@ -44,6 +46,7 @@ public abstract class VideoSettingsScreenMixin {
             this.prime$sunExposure = PrimeVideoOptions.sunExposure();
             this.prime$blockLightExposure = PrimeVideoOptions.blockLightExposure();
             this.prime$oklabOverexposure = PrimeVideoOptions.oklabOverexposure();
+            this.prime$defaultRoughness = PrimeVideoOptions.defaultRoughness();
             this.prime$nrdDebugView = PrimeVideoOptions.nrdDebugView();
             this.prime$fsrDebugView = PrimeVideoOptions.fsrDebugView();
             list.addHeader(PRIME$HEADER);
@@ -52,6 +55,7 @@ public abstract class VideoSettingsScreenMixin {
             list.addBig(this.prime$sunExposure);
             list.addBig(this.prime$blockLightExposure);
             list.addBig(this.prime$oklabOverexposure);
+            list.addBig(this.prime$defaultRoughness);
             list.addSmall(this.prime$nrdDebugView, this.prime$fsrDebugView);
             list.addBig(Button.builder(
                             Component.translatable("prime.options.restore_defaults"),
@@ -75,6 +79,9 @@ public abstract class VideoSettingsScreenMixin {
         this.prime$refresh(
                 this.prime$oklabOverexposure,
                 DisplaySettings.DEFAULT_OVEREXPOSURE_STEPS);
+        this.prime$refresh(
+                this.prime$defaultRoughness,
+                MaterialSettings.DEFAULT_ROUGHNESS_STEPS);
         this.prime$refresh(this.prime$nrdDebugView, NrdDiagnostics.Mode.OFF);
         this.prime$refresh(this.prime$fsrDebugView, FsrDebugView.OFF);
     }

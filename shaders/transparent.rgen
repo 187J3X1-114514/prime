@@ -422,8 +422,7 @@ void primeStoreTransparentBranch(
         guide = vec4(
                 primeSurfaceShadingNormal(
                         firstInterface, -cameraPath.rayDirection),
-                primeMaterialLinearRoughness(
-                        firstInterface.baseColor, firstInterface.materialFlags));
+                primeMaterialLinearRoughness(firstInterface.materialFlags));
     }
 
     if (reflectionBranch) {

@@ -49,6 +49,7 @@ final class ScreenshotModeContractTest {
         assertTrue(renderer.contains("if (ScreenshotMode.active()) {\n            return;"));
         assertTrue(renderer.contains("this.screenshotScene = this.terrain.sceneView()"));
         assertTrue(renderer.contains("this.screenshotLighting = LightingSettings.snapshot()"));
+        assertTrue(renderer.contains("this.screenshotMaterial = MaterialSettings.snapshot()"));
         assertTrue(renderer.contains("this.terrain.invalidateAll()"));
         assertFalse(screenshotMethod.contains("denoiser.record("));
         assertFalse(screenshotMethod.contains("upscaler.record("));

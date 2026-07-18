@@ -4,6 +4,7 @@ import com.mojang.serialization.Codec;
 import dev.prime.config.PrimeConfig;
 import dev.prime.render.DisplaySettings;
 import dev.prime.render.LightingSettings;
+import dev.prime.render.MaterialSettings;
 import dev.prime.render.ScreenshotMode;
 import dev.prime.render.fsr.FsrDebugView;
 import dev.prime.render.fsr.FsrQualityMode;
@@ -80,6 +81,21 @@ public final class PrimeVideoOptions {
                 PrimeConfig::setOklabOverexposureSteps);
     }
 
+    public static OptionInstance<Integer> defaultRoughness() {
+        return new OptionInstance<>(
+                "prime.options.material.default_roughness",
+                OptionInstance.cachedConstantTooltip(Component.translatable(
+                        "prime.options.material.default_roughness.tooltip")),
+                (caption, steps) -> Options.genericValueLabel(
+                        caption,
+                        Component.literal(formatRoughness(steps))),
+                new OptionInstance.IntRange(
+                        MaterialSettings.MINIMUM_ROUGHNESS_STEPS,
+                        MaterialSettings.MAXIMUM_ROUGHNESS_STEPS),
+                MaterialSettings.roughnessSteps(),
+                PrimeConfig::setDefaultRoughnessSteps);
+    }
+
     public static OptionInstance<NrdDiagnostics.Mode> nrdDebugView() {
         return new OptionInstance<>(
                 "prime.options.nrd.debug_view",
@@ -136,5 +152,9 @@ public final class PrimeVideoOptions {
 
     static String formatOverexposure(int steps) {
         return String.format(Locale.ROOT, "%.5f×", DisplaySettings.overexposure(steps));
+    }
+
+    static String formatRoughness(int steps) {
+        return String.format(Locale.ROOT, "%.2f", MaterialSettings.linearRoughness(steps));
     }
 }

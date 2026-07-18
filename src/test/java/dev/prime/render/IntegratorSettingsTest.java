@@ -26,18 +26,22 @@ final class IntegratorSettingsTest {
     }
 
     @Test
-    void lightingControlStoresIndependentSignedQuarterEvOffsets() {
-        int packed = IntegratorSettings.packLightingControl(-16, 16);
+    void materialLightingControlStoresIndependentEvAndRoughnessFields() {
+        int packed = IntegratorSettings.packMaterialLightingControl(-16, 16, 73);
         int sun = ((packed >>> ShaderAbi.PATH_SUN_EV_QUARTER_SHIFT)
                 & ShaderAbi.PATH_EV_QUARTER_MASK) - ShaderAbi.PATH_EV_QUARTER_BIAS;
         int block = ((packed >>> ShaderAbi.PATH_BLOCK_LIGHT_EV_QUARTER_SHIFT)
                 & ShaderAbi.PATH_EV_QUARTER_MASK) - ShaderAbi.PATH_EV_QUARTER_BIAS;
         assertEquals(-16, sun);
         assertEquals(16, block);
+        assertEquals(73, (packed >>> ShaderAbi.PATH_MATERIAL_ROUGHNESS_SHIFT)
+                & ShaderAbi.PATH_MATERIAL_ROUGHNESS_MASK);
         assertThrows(IllegalArgumentException.class,
-                () -> IntegratorSettings.packLightingControl(-129, 0));
+                () -> IntegratorSettings.packMaterialLightingControl(-129, 0, 80));
         assertThrows(IllegalArgumentException.class,
-                () -> IntegratorSettings.packLightingControl(0, 128));
+                () -> IntegratorSettings.packMaterialLightingControl(0, 128, 80));
+        assertThrows(IllegalArgumentException.class,
+                () -> IntegratorSettings.packMaterialLightingControl(0, 0, 101));
     }
 
     @Test

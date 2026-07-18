@@ -133,9 +133,12 @@ abstract class GenerateShaderAbi extends DefaultTask {
 				|| schema.pathControl.blockLightEvQuarterShift != 8
 				|| !schema.pathControl.evQuarterMask.toString().equalsIgnoreCase('0xff')
 				|| schema.pathControl.evQuarterBias != 128
+				|| schema.pathControl.materialRoughnessShift != 16
+				|| !schema.pathControl.materialRoughnessMask.toString().equalsIgnoreCase('0xff')
+				|| schema.pathControl.materialRoughnessStepsPerUnit != 100
 				|| schema.pathControl.russianRouletteStart != 2) {
 			throw new GradleException(
-					'Prime path controls must preserve the camera, quarter-EV, jitter, and second-bounce roulette ABI')
+					'Prime path controls must preserve the camera, lighting, material, jitter, and second-bounce roulette ABI')
 		}
 		def typeLayout = [
 			float: [size: 4, alignment: 4],
@@ -275,6 +278,9 @@ public final class ShaderAbi {
     public static final int PATH_BLOCK_LIGHT_EV_QUARTER_SHIFT = ${schema.pathControl.blockLightEvQuarterShift};
     public static final int PATH_EV_QUARTER_MASK = ${schema.pathControl.evQuarterMask};
     public static final int PATH_EV_QUARTER_BIAS = ${schema.pathControl.evQuarterBias};
+    public static final int PATH_MATERIAL_ROUGHNESS_SHIFT = ${schema.pathControl.materialRoughnessShift};
+    public static final int PATH_MATERIAL_ROUGHNESS_MASK = ${schema.pathControl.materialRoughnessMask};
+    public static final int PATH_MATERIAL_ROUGHNESS_STEPS_PER_UNIT = ${schema.pathControl.materialRoughnessStepsPerUnit};
     public static final int RUSSIAN_ROULETTE_START = ${schema.pathControl.russianRouletteStart};
     public static final float CUTOUT_ALPHA_THRESHOLD = ${schema.cutoutAlphaThreshold}f;
     public static final String WORKING_COLOR_SPACE = "${colorContract.workingSpace}";
@@ -338,6 +344,9 @@ ${javaOffsets}
 #define PRIME_PATH_BLOCK_LIGHT_EV_QUARTER_SHIFT ${schema.pathControl.blockLightEvQuarterShift}u
 #define PRIME_PATH_EV_QUARTER_MASK ${schema.pathControl.evQuarterMask}u
 #define PRIME_PATH_EV_QUARTER_BIAS ${schema.pathControl.evQuarterBias}
+#define PRIME_PATH_MATERIAL_ROUGHNESS_SHIFT ${schema.pathControl.materialRoughnessShift}u
+#define PRIME_PATH_MATERIAL_ROUGHNESS_MASK ${schema.pathControl.materialRoughnessMask}u
+#define PRIME_PATH_MATERIAL_ROUGHNESS_STEPS_PER_UNIT ${schema.pathControl.materialRoughnessStepsPerUnit}.0
 #define PRIME_RUSSIAN_ROULETTE_START ${schema.pathControl.russianRouletteStart}u
 #define PRIME_CUTOUT_ALPHA_THRESHOLD ${schema.cutoutAlphaThreshold}
 struct PrimitiveRecord {

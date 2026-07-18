@@ -3,6 +3,7 @@ package dev.prime.config;
 import dev.prime.PrimeClient;
 import dev.prime.render.DisplaySettings;
 import dev.prime.render.LightingSettings;
+import dev.prime.render.MaterialSettings;
 import dev.prime.render.fsr.FsrQualityMode;
 import dev.prime.render.fsr.FsrDebugView;
 import dev.prime.render.fsr.FsrSettings;
@@ -26,6 +27,7 @@ public final class PrimeConfig {
     private static final String SUN_EV_KEY = "lighting.sun_ev";
     private static final String BLOCK_LIGHT_EV_KEY = "lighting.block_light_ev";
     private static final String OKLAB_OVEREXPOSURE_KEY = "display.oklab_overexposure";
+    private static final String DEFAULT_ROUGHNESS_KEY = "material.default_roughness";
     private static boolean dirty;
 
     private PrimeConfig() {
@@ -39,6 +41,7 @@ public final class PrimeConfig {
         int sunQuarterSteps = LightingSettings.DEFAULT_SUN_QUARTER_STEPS;
         int blockLightQuarterSteps = LightingSettings.DEFAULT_BLOCK_LIGHT_QUARTER_STEPS;
         int oklabOverexposureSteps = DisplaySettings.DEFAULT_OVEREXPOSURE_STEPS;
+        int defaultRoughnessSteps = MaterialSettings.DEFAULT_ROUGHNESS_STEPS;
         boolean rewriteNeeded = false;
         if (Files.isRegularFile(path)) {
             try (Reader reader = Files.newBufferedReader(path, StandardCharsets.UTF_8)) {
@@ -127,6 +130,19 @@ public final class PrimeConfig {
                 } else {
                     rewriteNeeded = true;
                 }
+                String defaultRoughness = properties.getProperty(DEFAULT_ROUGHNESS_KEY);
+                if (defaultRoughness != null) {
+                    try {
+                        defaultRoughnessSteps = parseRoughnessSteps(defaultRoughness);
+                    } catch (IllegalArgumentException exception) {
+                        PrimeClient.LOGGER.warn(
+                                "Invalid Prime default material roughness '{}'; using the default",
+                                defaultRoughness);
+                        rewriteNeeded = true;
+                    }
+                } else {
+                    rewriteNeeded = true;
+                }
             } catch (IOException | IllegalArgumentException exception) {
                 PrimeClient.LOGGER.warn(
                         "Could not read {}; using the default Prime settings",
@@ -141,14 +157,16 @@ public final class PrimeConfig {
         LightingSettings.setSunQuarterSteps(sunQuarterSteps);
         LightingSettings.setBlockLightQuarterSteps(blockLightQuarterSteps);
         DisplaySettings.setOverexposureSteps(oklabOverexposureSteps);
+        MaterialSettings.setRoughnessSteps(defaultRoughnessSteps);
         dirty = rewriteNeeded;
         PrimeClient.LOGGER.info(
-                "Prime settings: FSR {} ({}x), sun {} EV, block lights {} EV, Oklab DRT overexposure {}",
+                "Prime settings: FSR {} ({}x), sun {} EV, block lights {} EV, Oklab DRT overexposure {}, default roughness {}",
                 mode.id(),
                 mode.upscaleRatio(),
                 formatEv(sunQuarterSteps),
                 formatEv(blockLightQuarterSteps),
-                formatOverexposure(oklabOverexposureSteps));
+                formatOverexposure(oklabOverexposureSteps),
+                formatRoughness(defaultRoughnessSteps));
     }
 
     public static void setFsrQualityMode(FsrQualityMode mode) {
@@ -193,6 +211,13 @@ public final class PrimeConfig {
         }
     }
 
+    public static void setDefaultRoughnessSteps(int steps) {
+        if (steps != MaterialSettings.roughnessSteps()) {
+            MaterialSettings.setRoughnessSteps(steps);
+            dirty = true;
+        }
+    }
+
     public static void restoreDefaults() {
         setFsrQualityMode(FsrSettings.DEFAULT_QUALITY_MODE);
         setFsrDebugView(FsrDebugView.OFF);
@@ -200,6 +225,7 @@ public final class PrimeConfig {
         setSunQuarterSteps(LightingSettings.DEFAULT_SUN_QUARTER_STEPS);
         setBlockLightQuarterSteps(LightingSettings.DEFAULT_BLOCK_LIGHT_QUARTER_STEPS);
         setOklabOverexposureSteps(DisplaySettings.DEFAULT_OVEREXPOSURE_STEPS);
+        setDefaultRoughnessSteps(MaterialSettings.DEFAULT_ROUGHNESS_STEPS);
     }
 
     public static void save() {
@@ -218,7 +244,9 @@ public final class PrimeConfig {
                     + BLOCK_LIGHT_EV_KEY + "="
                     + formatEv(LightingSettings.blockLightQuarterSteps()) + "\n"
                     + OKLAB_OVEREXPOSURE_KEY + "="
-                    + formatOverexposure(DisplaySettings.overexposureSteps()) + "\n";
+                    + formatOverexposure(DisplaySettings.overexposureSteps()) + "\n"
+                    + DEFAULT_ROUGHNESS_KEY + "="
+                    + formatRoughness(MaterialSettings.roughnessSteps()) + "\n";
             Files.writeString(
                     temporary,
                     contents,
@@ -280,6 +308,27 @@ public final class PrimeConfig {
         DisplaySettings.overexposure(steps);
         return BigDecimal.valueOf(steps)
                 .divide(BigDecimal.valueOf(DisplaySettings.STEPS_PER_UNIT))
+                .toPlainString();
+    }
+
+    static int parseRoughnessSteps(String value) {
+        try {
+            int steps = new BigDecimal(value)
+                    .multiply(BigDecimal.valueOf(MaterialSettings.STEPS_PER_UNIT))
+                    .intValueExact();
+            MaterialSettings.linearRoughness(steps);
+            return steps;
+        } catch (ArithmeticException | NumberFormatException exception) {
+            throw new IllegalArgumentException(
+                    "Default material roughness must be an exact 0.01 step",
+                    exception);
+        }
+    }
+
+    static String formatRoughness(int steps) {
+        MaterialSettings.linearRoughness(steps);
+        return BigDecimal.valueOf(steps)
+                .divide(BigDecimal.valueOf(MaterialSettings.STEPS_PER_UNIT))
                 .toPlainString();
     }
 

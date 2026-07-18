@@ -15,6 +15,8 @@
   "prime.options.lighting.block_light_ev.tooltip": "Exposure value (EV) changes illumination from emissive blocks such as torches and glowstone without changing which blocks emit light. Each step is 0.25 EV; adding 1 EV doubles brightness. Start with the default 0 EV.",
   "prime.options.display.oklab_overexposure": "Oklab DRT Highlight Overexposure",
   "prime.options.display.oklab_overexposure.tooltip": "Highlight overexposure controls how much brightness headroom the Oklab display transform gives to bright areas without changing the scene's physical lighting. Higher values make the sun, lamps, and reflections brighter; excessive values can wash out detail. Start at the calibrated default of 1.15625× and adjust only when highlights look overly compressed or bright.",
+  "prime.options.material.default_roughness": "Default Material Roughness",
+  "prime.options.material.default_roughness.tooltip": "Roughness controls whether highlights are sharp or spread out and applies only to blocks without a PBR roughness texture. Lower values look smoother with tighter reflections; higher values look rougher with softer highlights. It never overrides roughness explicitly supplied by a resource pack. Keep the default 0.80 unless ordinary blocks look broadly too glossy or too matte.",
   "prime.options.nrd.debug_view": "NRD Denoising Diagnostics",
   "prime.options.nrd.debug_view.tooltip": "The NRD (NVIDIA Real-time Denoiser) validation grid shows normals, roughness, depth, motion vectors, history length, and hit distance. Select a surface only when diagnosing noise, ghosting, or flicker; Off is recommended for normal play.",
   "prime.options.nrd.debug_view.off": "Off",

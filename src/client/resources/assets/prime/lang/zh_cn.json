@@ -15,6 +15,8 @@
   "prime.options.lighting.block_light_ev.tooltip": "曝光值（EV）会调节火把、荧石等发光方块产生的照明，不会改变哪些方块会发光。每格为 0.25 EV，增加 1 EV 等于亮度翻倍。建议先使用默认的 0 EV。",
   "prime.options.display.oklab_overexposure": "Oklab DRT 高光过曝量",
   "prime.options.display.oklab_overexposure.tooltip": "高光过曝量控制 Oklab 显示变换为明亮区域保留多少亮度余量，不会改变场景中的真实照明。数值越高，太阳、灯光和反射等高光越明亮；过高可能使细节变白。建议从经过标定的默认值 1.15625× 开始，仅在高光显得压抑或过亮时逐档调整。",
+  "prime.options.material.default_roughness": "缺省材质粗糙度",
+  "prime.options.material.default_roughness.tooltip": "粗糙度决定表面高光是清晰还是分散，仅用于没有提供 PBR 粗糙度贴图的方块。数值越低越光滑、反射越集中，数值越高越粗糙、反光越柔和。它不会覆盖材质包明确提供的粗糙度。建议保持默认值 0.80；只有普通方块整体显得过亮像塑料或过于暗哑时再调整。",
   "prime.options.nrd.debug_view": "NRD 降噪诊断",
   "prime.options.nrd.debug_view.tooltip": "NRD（NVIDIA Real-time Denoiser）验证视图会用分屏显示法线、粗糙度、深度、运动向量、历史帧数和命中距离。仅在排查噪点、拖影或闪烁时选择对应表面；正常游玩建议关闭。",
   "prime.options.nrd.debug_view.off": "关闭",

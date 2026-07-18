@@ -153,14 +153,35 @@ vec2 primeRcMicrofacetDirectionalAlbedoTransmission(
         cosineTheta = -cosineTheta;
         ior = 1.0 / ior;
     }
-    vec3 size = vec3(32.0);
+    const vec3 size = vec3(32.0);
+    float perceptualRoughness = pow(primeRcMicrofacetAlpha2(microfacet), 0.25);
     vec3 uvw = vec3(
             cosineTheta,
-            pow(primeRcMicrofacetAlpha2(microfacet), 0.25),
+            perceptualRoughness,
             abs((1.0 - ior) / (1.0 + ior)));
     uvw = uvw * ((size - 1.0) / size) + 0.5 / size;
     vec4 value = textureLod(primeRcTransmissionGgxEnergy, uvw, 0.0);
-    return ior > 1.0 ? value.xy : value.zw;
+    vec2 result = ior > 1.0 ? value.xy : value.zw;
+
+    // The table's roughness-zero slice was estimated over finite Monte Carlo bins. At grazing
+    // angles it consequently does not reach the known delta boundary F + (1-F) = 1, and ordinary
+    // trilinear filtering propagates that endpoint error through the whole first roughness cell.
+    // Replace only that endpoint with exact dielectric Fresnel, retaining the authored table at
+    // and above the next slice. This restores the correct finite-GGX interpolation limit without
+    // changing the sampled microfacet distribution or discarding its multiple-scattering model.
+    float firstCellWeight = clamp(
+            1.0 - perceptualRoughness * (size.y - 1.0), 0.0, 1.0);
+    if (firstCellWeight > 0.0) {
+        vec3 endpointUvw = uvw;
+        endpointUvw.y = 0.5 / size.y;
+        vec4 endpointValue = textureLod(
+                primeRcTransmissionGgxEnergy, endpointUvw, 0.0);
+        vec2 storedEndpoint = ior > 1.0 ? endpointValue.xy : endpointValue.zw;
+        float exactReflection = primeRcDielectricUnpolarized(ior, cosineTheta);
+        vec2 exactEndpoint = vec2(exactReflection, 1.0 - exactReflection);
+        result += (exactEndpoint - storedEndpoint) * firstCellWeight;
+    }
+    return clamp(result, vec2(0.0), vec2(1.0));
 }
 
 float primeRcMicrofacetDirectionalAlbedoUnity(

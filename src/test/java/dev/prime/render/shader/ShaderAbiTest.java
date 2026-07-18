@@ -59,6 +59,9 @@ final class ShaderAbiTest {
         assertEquals(8, ShaderAbi.PATH_BLOCK_LIGHT_EV_QUARTER_SHIFT);
         assertEquals(0xff, ShaderAbi.PATH_EV_QUARTER_MASK);
         assertEquals(128, ShaderAbi.PATH_EV_QUARTER_BIAS);
+        assertEquals(16, ShaderAbi.PATH_MATERIAL_ROUGHNESS_SHIFT);
+        assertEquals(0xff, ShaderAbi.PATH_MATERIAL_ROUGHNESS_MASK);
+        assertEquals(100, ShaderAbi.PATH_MATERIAL_ROUGHNESS_STEPS_PER_UNIT);
         assertEquals(2, ShaderAbi.RUSSIAN_ROULETTE_START);
         assertEquals("linear-rec2020-d65", ShaderAbi.WORKING_COLOR_SPACE);
         assertEquals("srgb", ShaderAbi.TEXTURE_COLOR_ENCODING);

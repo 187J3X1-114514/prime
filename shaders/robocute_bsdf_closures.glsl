@@ -266,8 +266,30 @@ float primeRcSpecularPdf(vec3 wi, vec3 wo, PrimeRcState state) {
 
 vec3 primeRcSpecularTintOut(vec3 wo, PrimeRcState state) { return vec3(1.0); }
 
+vec3 primeRcSmoothSpecularReflectance(vec3 wi, PrimeRcState state, bool includeTint) {
+    // The GGX directional-energy table resolves finite microfacet distributions. Its first
+    // grazing-angle texel is necessarily an average over a finite interval, whereas a delta
+    // interface has an exact analytic Fresnel value. Using that texel to choose between the
+    // delta coat and its substrate makes the sampling probability disagree with the sampled
+    // throughput (most visibly at grazing angles), which breaks the layer's white-furnace
+    // contract. Keep the LUT for every finite lobe and use the closure's own Fresnel for the
+    // measure-zero delta limit.
+    PrimeRcSpecularFresnel fresnel = state.specularFresnel;
+    if (!includeTint) {
+        fresnel.color = vec3(1.0);
+    }
+    return primeRcSpecularFresnelUnpolarized(
+            fresnel,
+            state.wavelengthsNm,
+            state.spectrumed,
+            clamp(wi.z, 0.0, 1.0));
+}
+
 vec3 primeRcSpecularTrans(vec3 wi, PrimeRcState state, vec3 baseEnergy) {
     if (wi.z < 0.0) { return vec3(1.0); }
+    if (primeRcMicrofacetEffectivelySmooth(state.specularMicrofacet)) {
+        return vec3(1.0) - primeRcSmoothSpecularReflectance(wi, state, false);
+    }
     vec2 energy = primeRcMicrofacetDirectionalAlbedoTransmission(
             state.specularMicrofacet, wi.z, state.specularFresnel.energyIor);
     return vec3(energy.y / primeRcReduceSum(energy));
@@ -282,6 +304,9 @@ vec3 primeRcSpecularEnergy(vec3 wi, PrimeRcState state) {
         return vec3(0.0);
     }
     if (!primeRcIsReflective(state.samplingFlags)) { return vec3(0.0); }
+    if (primeRcMicrofacetEffectivelySmooth(state.specularMicrofacet)) {
+        return primeRcSmoothSpecularReflectance(wi, state, true);
+    }
     vec2 energy = primeRcMicrofacetDirectionalAlbedoTransmission(
             state.specularMicrofacet, wi.z, state.specularFresnel.energyIor);
     return state.specularFresnel.color * (energy.x / primeRcReduceSum(energy));

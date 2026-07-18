@@ -27,10 +27,6 @@ bool primeHasLabPbrSpecular(uint flags) {
     return (flags & PRIME_MATERIAL_FLAG_LABPBR_SPECULAR) != 0u;
 }
 
-bool primeLabPbrIsMetal(PrimeLabPbrSample material) {
-    return material.metalId >= 230u;
-}
-
 float primeDecodeLabPbrEmission(uint encoded) {
     return encoded < 255u ? float(encoded) / 254.0 : 0.0;
 }

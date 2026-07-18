@@ -26,7 +26,11 @@ float primeGgxD(float alpha, vec3 microNormal) {
     float a2 = a * a;
     float cosine2 = microNormal.z * microNormal.z;
     float denominator = cosine2 * (a2 - 1.0) + 1.0;
-    return a2 / max(PRIME_PI * denominator * denominator, PRIME_BSDF_EPSILON);
+    // This denominator reaches alpha^4 at the specular peak. PRIME_BSDF_EPSILON is suitable for
+    // geometric divisions but is many orders of magnitude too large here: at perceptual
+    // roughness 0.1 it already clips D by about 3x, and at 0.02 it erases nearly the entire peak.
+    // alpha is bounded above, so the expression remains finite without an unrelated epsilon.
+    return a2 / (PRIME_PI * denominator * denominator);
 }
 
 float primeGgxLambda(float alpha, vec3 direction) {

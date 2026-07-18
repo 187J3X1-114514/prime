@@ -18,18 +18,17 @@ const uint PRIME_MATERIAL_FLAG_TANGENT_NEGATIVE = 256u;
 const uint PRIME_MATERIAL_FLAG_LABPBR_METAL = 512u;
 
 const float PRIME_DEFAULT_DIELECTRIC_F0 = 0.04;
-const float PRIME_DEFAULT_MIN_LINEAR_ROUGHNESS = 0.70;
-const float PRIME_DEFAULT_MAX_LINEAR_ROUGHNESS = 0.90;
+// Standalone preparation shaders do not share the ray-tracing push constants. They use this
+// reference only for invalid/sky fallbacks; ray-tracing stages replace it with the user setting.
 const float PRIME_DEFAULT_REFERENCE_LINEAR_ROUGHNESS = 0.8;
-const vec3 PRIME_REC2020_LUMINANCE = vec3(0.2627, 0.6780, 0.0593);
+#ifndef PRIME_RUNTIME_DEFAULT_LINEAR_ROUGHNESS
+#define PRIME_RUNTIME_DEFAULT_LINEAR_ROUGHNESS PRIME_DEFAULT_REFERENCE_LINEAR_ROUGHNESS
+#endif
 
-float primeDefaultLinearRoughness(vec3 baseColor) {
-    float luminance = dot(clamp(baseColor, 0.0, 1.0), PRIME_REC2020_LUMINANCE);
-    float brightness = smoothstep(0.08, 0.90, luminance);
-    return mix(
-            PRIME_DEFAULT_MAX_LINEAR_ROUGHNESS,
-            PRIME_DEFAULT_MIN_LINEAR_ROUGHNESS,
-            brightness);
+float primeDefaultLinearRoughness() {
+    // Base color is not a material parameter: equally bright texels can represent stone, cloth,
+    // paint, or metal. Missing roughness therefore has one explicit, user-controlled meaning.
+    return clamp(PRIME_RUNTIME_DEFAULT_LINEAR_ROUGHNESS, 0.0, 1.0);
 }
 
 bool primeMaterialIsTransmissive(uint flags) {
@@ -40,7 +39,7 @@ bool primeMaterialIsFoliage(uint flags) {
     return (flags & PRIME_MATERIAL_FLAG_FOLIAGE) != 0u;
 }
 
-float primeMaterialLinearRoughness(vec3 baseColor, uint flags) {
+float primeMaterialLinearRoughness(uint flags) {
     if (primeMaterialIsTransmissive(flags)) {
         // Vanilla glass, panes and water have no authored micro-normal distribution. Treating
         // their visually sharp interface as a tiny non-zero GGX lobe creates stochastic tail
@@ -50,7 +49,7 @@ float primeMaterialLinearRoughness(vec3 baseColor, uint flags) {
         // realtime mode may deliberately replace it with its documented single-refraction model.
         return 0.0;
     }
-    return primeDefaultLinearRoughness(baseColor);
+    return primeDefaultLinearRoughness();
 }
 
 float primeMaterialDielectricF0(uint flags) {
@@ -63,9 +62,8 @@ float primeFsrTransparencyAndCompositionMask(uint flags, float linearRoughness) 
         return 1.0;
     }
     float animated = (flags & PRIME_MATERIAL_FLAG_ANIMATED_TEXTURE) != 0u ? 0.75 : 0.0;
-    // Smooth LabPBR reflections need faster temporal replacement. The default Minecraft
-    // roughness range is 0.7..0.9, so ordinary terrain correctly evaluates to zero and retains
-    // temporal stability.
+    // Smooth LabPBR reflections need faster temporal replacement. Ordinary terrain uses the
+    // configured default roughness, so changing that setting also changes this temporal hint.
     float hardToTrackReflection = 0.5 * (1.0 - smoothstep(0.20, 0.45, linearRoughness));
     return max(animated, hardToTrackReflection);
 }

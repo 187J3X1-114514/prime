@@ -4,6 +4,7 @@
 #include "color_space.glsl"
 #include "default_material.glsl"
 #include "labpbr.glsl"
+#include "material_translation.glsl"
 
 // Minimal Minecraft adapter. The integrator consumes only this result, so future material
 // models can replace atlas/tint decoding without changing path scheduling or traversal.
@@ -42,9 +43,9 @@ MaterialEvaluation primeEvaluateMaterial(PrimitiveRecord primitive, vec2 uv, flo
             : vec4(0.0, 4.0 / 255.0, 0.0, 1.0);
     result.labPbrNormal = packUnorm4x8(normalSample);
     result.labPbrSpecular = packUnorm4x8(specularSample);
-    PrimeLabPbrSample decoded = primeDecodeLabPbr(
+    PrimeTranslatedLabPbrMaterial translated = primeDecodeAndTranslateLabPbr(
             result.labPbrNormal, result.labPbrSpecular, primitive.flags);
-    if (primeLabPbrIsMetal(decoded)) {
+    if (primeTranslatedLabPbrIsMetal(translated)) {
         result.flags |= PRIME_MATERIAL_FLAG_LABPBR_METAL;
     }
     vec3 geometricNormal = primeUnpackOctahedralNormal(primitive.normal);

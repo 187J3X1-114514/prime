@@ -1,6 +1,7 @@
 package dev.prime.render.terrain;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -64,6 +65,37 @@ final class PrimitivePackingTest {
     }
 
     @Test
+    void labPbrAvailabilityAndTangentHandednessUseIndependentBits() {
+        int flags = PrimitivePacking.withLabPbr(
+                PrimitivePacking.FLAG_CUTOUT, true, true, true);
+        assertEquals(
+                PrimitivePacking.FLAG_CUTOUT
+                        | PrimitivePacking.FLAG_LABPBR_NORMAL
+                        | PrimitivePacking.FLAG_LABPBR_SPECULAR
+                        | PrimitivePacking.FLAG_TANGENT_NEGATIVE,
+                flags);
+        assertEquals(0, PrimitivePacking.withLabPbr(0, false, false, true));
+
+        int normal = PrimitivePacking.packOctahedralNormal(0.0F, 0.0F, 1.0F);
+        long positive = PrimitivePacking.packTriangleTangent(
+                1.0F, 0.0F, 0.0F,
+                0.0F, 1.0F, 0.0F,
+                1.0F, 0.0F,
+                0.0F, 1.0F,
+                normal);
+        assertPackedNormalDirection((int) positive, 1.0F, 0.0F, 0.0F);
+        assertFalse((positive & 0x1_0000_0000L) != 0L);
+
+        long negative = PrimitivePacking.packTriangleTangent(
+                1.0F, 0.0F, 0.0F,
+                0.0F, 1.0F, 0.0F,
+                1.0F, 0.0F,
+                0.0F, -1.0F,
+                normal);
+        assertTrue((negative & 0x1_0000_0000L) != 0L);
+    }
+
+    @Test
     void triangleNormalPreservesRotatedCutoutGeometryInsteadOfCardinalFallback() {
         int packed = PrimitivePacking.packTriangleNormal(
                 1.0F, 0.0F, 1.0F,
@@ -102,12 +134,12 @@ final class PrimitivePackingTest {
     @Test
     void meshLayoutRejectsMismatchedArrayLengths() {
         CpuSectionMesh mesh = new CpuSectionMesh(
-                new float[9], new int[8], 1, 0, CpuSectionLights.EMPTY);
-        assertEquals(68L, mesh.byteSize());
+                new float[9], new int[9], 1, 0, CpuSectionLights.EMPTY);
+        assertEquals(72L, mesh.byteSize());
         assertThrows(IllegalArgumentException.class, () -> new CpuSectionMesh(
-                new float[8], new int[8], 1, 0, CpuSectionLights.EMPTY));
+                new float[8], new int[9], 1, 0, CpuSectionLights.EMPTY));
         assertThrows(IllegalArgumentException.class, () -> new CpuSectionMesh(
-                new float[9], new int[7], 1, 0, CpuSectionLights.EMPTY));
+                new float[9], new int[8], 1, 0, CpuSectionLights.EMPTY));
     }
 
     private static void assertNormalDirection(float x, float y, float z) {

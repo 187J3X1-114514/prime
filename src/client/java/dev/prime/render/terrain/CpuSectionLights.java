@@ -11,6 +11,7 @@ import net.minecraft.client.renderer.texture.TextureAtlasSprite;
 public final class CpuSectionLights {
     public static final CpuSectionLights EMPTY = new CpuSectionLights();
     static final int EMITTER_FLAG_TWO_SIDED = 1;
+    static final int EMITTER_FLAG_LABPBR_EMISSION = 2;
 
     private final List<Emitter> emitters;
     private final List<EmissionDistribution> distributions;
@@ -191,8 +192,9 @@ public final class CpuSectionLights {
                 int packedTint,
                 boolean cutout,
                 int lightEmission,
-                TextureAtlasSprite sprite) {
-            if (lightEmission <= 0) {
+                TextureAtlasSprite sprite,
+                LabPbrEmissionMap labPbrEmission) {
+            if (lightEmission <= 0 && labPbrEmission == null) {
                 return 0;
             }
             float edgeOneX = secondX - cornerX;
@@ -213,8 +215,17 @@ public final class CpuSectionLights {
             normalY *= inverseLength;
             normalZ *= inverseLength;
             float area = 0.5F * twiceArea;
+            float scale = emissionScale(lightEmission);
+            float vanillaEmissionFraction = scale / ShaderAbi.LEVEL_15_BLOCK_INTENSITY;
             EmissionDistribution.Key key = new EmissionDistribution.Key(
-                    sprite, packedUv0, packedUv1, packedUv2, tintArgb, cutout);
+                    sprite,
+                    packedUv0,
+                    packedUv1,
+                    packedUv2,
+                    tintArgb,
+                    cutout,
+                    vanillaEmissionFraction,
+                    labPbrEmission);
             Integer cachedDistribution = this.distributionIndices.get(key);
             int distributionIndex;
             if (cachedDistribution != null) {
@@ -231,10 +242,20 @@ public final class CpuSectionLights {
                 distributionIndex = this.uniformDistributionIndex;
             }
             EmissionDistribution distribution = this.distributions.get(distributionIndex);
-            float scale = emissionScale(lightEmission);
-            int flags = cutout ? EMITTER_FLAG_TWO_SIDED : 0;
+            if (!distribution.hasSourceSupport()) {
+                return 0;
+            }
+            int flags = (cutout ? EMITTER_FLAG_TWO_SIDED : 0)
+                    | (labPbrEmission != null ? EMITTER_FLAG_LABPBR_EMISSION : 0);
             float sidedness = cutout ? 2.0F : 1.0F;
-            float power = area * (float) Math.PI * sidedness * scale * distribution.meanImportance();
+            // The distribution already contains either vanilla / level15 or the overriding
+            // authored LabPBR alpha.
+            // Restore the shared radiometric calibration exactly once when estimating tree power.
+            float power = area
+                    * (float) Math.PI
+                    * sidedness
+                    * ShaderAbi.LEVEL_15_BLOCK_INTENSITY
+                    * distribution.meanImportance();
             if (!(power > 0.0F) || !Float.isFinite(power)) {
                 return 0;
             }

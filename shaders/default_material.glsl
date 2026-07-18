@@ -10,6 +10,12 @@ const uint PRIME_MATERIAL_FLAG_TRANSMISSIVE = 4u;
 const uint PRIME_MATERIAL_FLAG_THIN_WALLED = 8u;
 const uint PRIME_MATERIAL_FLAG_WATER = 16u;
 const uint PRIME_MATERIAL_FLAG_FOLIAGE = 32u;
+const uint PRIME_MATERIAL_FLAG_LABPBR_NORMAL = 64u;
+const uint PRIME_MATERIAL_FLAG_LABPBR_SPECULAR = 128u;
+const uint PRIME_MATERIAL_FLAG_TANGENT_NEGATIVE = 256u;
+// Per-texel flag produced by the LabPBR decoder. Unlike the atlas-presence bits above this is
+// never stored in terrain geometry; it follows the sampled green channel into NRD and FSR guides.
+const uint PRIME_MATERIAL_FLAG_LABPBR_METAL = 512u;
 
 const float PRIME_DEFAULT_DIELECTRIC_F0 = 0.04;
 const float PRIME_DEFAULT_MIN_LINEAR_ROUGHNESS = 0.70;
@@ -57,9 +63,9 @@ float primeFsrTransparencyAndCompositionMask(uint flags, float linearRoughness) 
         return 1.0;
     }
     float animated = (flags & PRIME_MATERIAL_FLAG_ANIMATED_TEXTURE) != 0u ? 0.75 : 0.0;
-    // Reserved for the smooth reflective materials introduced by the future LabPBR decoder. The
-    // default Minecraft roughness range is 0.7..0.9, so ordinary terrain correctly evaluates to
-    // zero and does not lose temporal stability.
+    // Smooth LabPBR reflections need faster temporal replacement. The default Minecraft
+    // roughness range is 0.7..0.9, so ordinary terrain correctly evaluates to zero and retains
+    // temporal stability.
     float hardToTrackReflection = 0.5 * (1.0 - smoothstep(0.20, 0.45, linearRoughness));
     return max(animated, hardToTrackReflection);
 }

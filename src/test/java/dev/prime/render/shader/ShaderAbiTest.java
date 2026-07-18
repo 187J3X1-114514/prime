@@ -7,7 +7,7 @@ import org.junit.jupiter.api.Test;
 final class ShaderAbiTest {
     @Test
     void fixedRecordSizesAndBindingsMatchTheContract() {
-        assertEquals(32, ShaderAbi.PRIMITIVE_RECORD_SIZE);
+        assertEquals(36, ShaderAbi.PRIMITIVE_RECORD_SIZE);
         assertEquals(64, ShaderAbi.SECTION_RECORD_SIZE);
         assertEquals(32, ShaderAbi.LIGHT_NODE_SIZE);
         assertEquals(4, ShaderAbi.LIGHT_NODE_FORWARD_SIZE);
@@ -17,8 +17,8 @@ final class ShaderAbiTest {
         assertEquals(48, ShaderAbi.SECTION_LIGHT_HEADER_SIZE);
         assertEquals(32, ShaderAbi.INTEGRATOR_RECORD_SIZE);
         assertEquals(96, ShaderAbi.PATH_STATE_SIZE);
-        assertEquals(64, ShaderAbi.TRACE_PAYLOAD_SIZE);
-        assertEquals(64, ShaderAbi.SURFACE_INTERACTION_SIZE);
+        assertEquals(80, ShaderAbi.TRACE_PAYLOAD_SIZE);
+        assertEquals(80, ShaderAbi.SURFACE_INTERACTION_SIZE);
         assertEquals(128, ShaderAbi.PUSH_CONSTANT_SIZE);
         assertEquals(0, ShaderAbi.DESCRIPTOR_TLAS);
         assertEquals(1, ShaderAbi.DESCRIPTOR_OUTPUT_IMAGE);
@@ -51,6 +51,8 @@ final class ShaderAbiTest {
         assertEquals(33, ShaderAbi.DESCRIPTOR_TRANSPARENT_REFLECTION_THROUGHPUT);
         assertEquals(34, ShaderAbi.DESCRIPTOR_TRANSPARENT_TRANSMISSION_THROUGHPUT);
         assertEquals(35, ShaderAbi.DESCRIPTOR_TEMPORAL_CAMERA);
+        assertEquals(36, ShaderAbi.DESCRIPTOR_LABPBR_NORMAL_ATLAS);
+        assertEquals(37, ShaderAbi.DESCRIPTOR_LABPBR_SPECULAR_ATLAS);
         assertEquals(0x80000000, ShaderAbi.PATH_CAMERA_IN_WATER_MASK);
         assertEquals(0x7fff, ShaderAbi.PATH_JITTER_PHASE_MASK);
         assertEquals(0, ShaderAbi.PATH_SUN_EV_QUARTER_SHIFT);
@@ -80,6 +82,7 @@ final class ShaderAbiTest {
         assertEquals(12, ShaderAbi.PRIMITIVE_TINT_OFFSET);
         assertEquals(16, ShaderAbi.PRIMITIVE_NORMAL_OFFSET);
         assertEquals(28, ShaderAbi.PRIMITIVE_UV_DENSITY_OFFSET);
+        assertEquals(32, ShaderAbi.PRIMITIVE_TANGENT_OFFSET);
         assertEquals(0, ShaderAbi.SECTION_PRIMITIVE_ADDRESS_OFFSET);
         assertEquals(8, ShaderAbi.SECTION_LIGHT_ADDRESS_OFFSET);
         assertEquals(16, ShaderAbi.SECTION_WORLD_LIGHT_ADDRESS_OFFSET);
@@ -116,11 +119,21 @@ final class ShaderAbiTest {
         assertEquals(44, ShaderAbi.TRACE_PAYLOAD_TRACE_KIND_OFFSET);
         assertEquals(48, ShaderAbi.TRACE_PAYLOAD_SECTION_INDEX_OFFSET);
         assertEquals(52, ShaderAbi.TRACE_PAYLOAD_EMITTER_INDEX_OFFSET);
+        assertEquals(56, ShaderAbi.TRACE_PAYLOAD_TEXTURE_LOD_OFFSET);
+        assertEquals(60, ShaderAbi.TRACE_PAYLOAD_OPACITY_OFFSET);
+        assertEquals(64, ShaderAbi.TRACE_PAYLOAD_SHADING_NORMAL_OFFSET);
+        assertEquals(68, ShaderAbi.TRACE_PAYLOAD_LAB_PBR_NORMAL_OFFSET);
+        assertEquals(72, ShaderAbi.TRACE_PAYLOAD_LAB_PBR_SPECULAR_OFFSET);
         assertEquals(0, ShaderAbi.SURFACE_POSITION_OFFSET);
         assertEquals(16, ShaderAbi.SURFACE_GEOMETRIC_NORMAL_OFFSET);
         assertEquals(44, ShaderAbi.SURFACE_MATERIAL_FLAGS_OFFSET);
         assertEquals(48, ShaderAbi.SURFACE_SECTION_INDEX_OFFSET);
         assertEquals(52, ShaderAbi.SURFACE_EMITTER_INDEX_OFFSET);
+        assertEquals(56, ShaderAbi.SURFACE_TEXTURE_LOD_OFFSET);
+        assertEquals(60, ShaderAbi.SURFACE_OPACITY_OFFSET);
+        assertEquals(64, ShaderAbi.SURFACE_SHADING_NORMAL_OFFSET);
+        assertEquals(68, ShaderAbi.SURFACE_LAB_PBR_NORMAL_OFFSET);
+        assertEquals(72, ShaderAbi.SURFACE_LAB_PBR_SPECULAR_OFFSET);
         assertEquals(0, ShaderAbi.PUSH_INVERSE_VIEW_PROJECTION_OFFSET);
         assertEquals(64, ShaderAbi.PUSH_CAMERA_POSITION_OFFSET);
         assertEquals(76, ShaderAbi.PUSH_ATMOSPHERE_EYE_RADIUS_KM_OFFSET);

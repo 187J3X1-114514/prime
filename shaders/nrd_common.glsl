@@ -94,6 +94,19 @@ vec4 primeNrdPackNormalRoughness(vec3 normal, float roughness) {
     return vec4(packed, 0.0);
 }
 
+void primeNrdUnpackNormalRoughness(
+        vec4 packedValue, out vec3 normal, out float roughness) {
+    vec3 packed = packedValue.rgb;
+    vec2 octahedral = vec2(
+            packed.x - packed.y,
+            packed.x + packed.y - 1.0);
+    float signedRoughness = packed.z * 2.0 - 1.0;
+    float z = sign(signedRoughness)
+            * max(1.0 - abs(octahedral.x) - abs(octahedral.y), 0.0);
+    normal = normalize(vec3(octahedral, z));
+    roughness = abs(signedRoughness);
+}
+
 float primeNrdNormalizedHitDistance(float hitDistance, float viewZ, float roughness) {
     // Exact REBLUR_FrontEnd_GetNormHitDist contract. The roughness-dependent scale is essential
     // for specular virtual motion; using the diffuse shortcut here destabilizes highlights.

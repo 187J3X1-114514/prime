@@ -23,6 +23,9 @@ void main() {
     primePayload.emitterIndex = primitive.reserved0 == 0u
             ? 0xffffffffu
             : primitive.reserved0 - 1u;
-    primePayload.reserved0 = floatBitsToUint(textureLodValue);
-    primePayload.reserved1 = floatBitsToUint(material.opacity);
+    primePayload.textureLod = floatBitsToUint(textureLodValue);
+    primePayload.opacity = floatBitsToUint(material.opacity);
+    primePayload.shadingNormal = primePackOctahedralNormal(material.shadingNormal);
+    primePayload.labPbrNormal = material.labPbrNormal;
+    primePayload.labPbrSpecular = material.labPbrSpecular;
 }

@@ -27,6 +27,8 @@ struct PrimeIntegrationResult {
     uint primaryHitKind;
     vec3 primaryNormal;
     uint primaryMaterialFlags;
+    vec3 primarySpecularF0;
+    float primaryLinearRoughness;
 };
 
 vec3 primeOffsetRayOrigin(vec3 physicalPosition, vec3 normal, vec3 direction) {
@@ -47,8 +49,11 @@ SurfaceInteraction primeTraceSurfaceWithSbtOffset(
     primePayload.traceKind = 0u;
     primePayload.sectionIndex = 0u;
     primePayload.emitterIndex = PRIME_NO_LIGHT_INDEX;
-    primePayload.reserved0 = 0u;
-    primePayload.reserved1 = 0u;
+    primePayload.textureLod = 0u;
+    primePayload.opacity = 0u;
+    primePayload.shadingNormal = primePackOctahedralNormal(vec3(0.0, 1.0, 0.0));
+    primePayload.labPbrNormal = packUnorm4x8(vec4(0.5, 0.5, 1.0, 1.0));
+    primePayload.labPbrSpecular = packUnorm4x8(vec4(0.0, 4.0 / 255.0, 0.0, 1.0));
 #if defined(PRIME_ENABLE_SER)
     // Hit objects decouple traversal from closest-hit/miss execution. The reorder point groups
     // those continuations by shader first and by the low section-index bits second, improving
@@ -88,8 +93,11 @@ SurfaceInteraction primeTraceSurfaceWithSbtOffset(
     surface.materialFlags = primePayload.traceKind;
     surface.sectionIndex = primePayload.sectionIndex;
     surface.emitterIndex = primePayload.emitterIndex;
-    surface.reserved0 = primePayload.reserved0;
-    surface.reserved1 = primePayload.reserved1;
+    surface.textureLod = primePayload.textureLod;
+    surface.opacity = primePayload.opacity;
+    surface.shadingNormal = primePayload.shadingNormal;
+    surface.labPbrNormal = primePayload.labPbrNormal;
+    surface.labPbrSpecular = primePayload.labPbrSpecular;
     return surface;
 }
 
@@ -102,14 +110,49 @@ bool primePreviousCannotUseMis(PathState path) {
             || (path.flags & (PRIME_PATH_PREVIOUS_DELTA | PRIME_PATH_PREVIOUS_NO_NEE)) != 0u;
 }
 
+vec3 primeSurfaceOutwardShadingNormal(SurfaceInteraction surface) {
+    vec3 shadingNormal = primeUnpackOctahedralNormal(surface.shadingNormal);
+    return dot(shadingNormal, surface.geometricNormal) >= 0.0
+            ? shadingNormal
+            : -shadingNormal;
+}
+
 vec3 primeSurfaceShadingNormal(SurfaceInteraction surface, vec3 viewDirection) {
+    vec3 shadingNormal = primeSurfaceOutwardShadingNormal(surface);
     return dot(surface.geometricNormal, viewDirection) >= 0.0
-            ? surface.geometricNormal
-            : -surface.geometricNormal;
+            ? shadingNormal
+            : -shadingNormal;
 }
 
 float primeSurfaceOpacity(SurfaceInteraction surface) {
-    return clamp(uintBitsToFloat(surface.reserved1), 0.0, 1.0);
+    return clamp(uintBitsToFloat(surface.opacity), 0.0, 1.0);
+}
+
+bool primeSurfaceUsesLabPbrOpaqueBsdf(SurfaceInteraction surface) {
+    return primeHasLabPbrSpecular(surface.materialFlags)
+            && !primeMaterialIsTransmissive(surface.materialFlags)
+            && !primeMaterialIsFoliage(surface.materialFlags);
+}
+
+float primeSurfaceLinearRoughness(SurfaceInteraction surface) {
+    if (primeHasLabPbrSpecular(surface.materialFlags)) {
+        return primeLabPbrLinearRoughness(
+                surface.labPbrNormal,
+                surface.labPbrSpecular,
+                surface.materialFlags);
+    }
+    return primeMaterialLinearRoughness(surface.baseColor, surface.materialFlags);
+}
+
+vec3 primeSurfaceSpecularF0(SurfaceInteraction surface) {
+    if (primeHasLabPbrSpecular(surface.materialFlags)) {
+        return primeLabPbrSpecularF0(
+                surface.baseColor,
+                surface.labPbrNormal,
+                surface.labPbrSpecular,
+                surface.materialFlags);
+    }
+    return vec3(primeMaterialDielectricF0(surface.materialFlags));
 }
 
 bool primeVisible(vec3 physicalPosition, vec3 normal, LightSample light) {
@@ -145,7 +188,7 @@ PrimeDirectLightingSplit primeEvaluateVisibleDirectSplit(
     bool foliage = primeMaterialIsFoliage(surface.materialFlags);
     vec3 shadingNormal = primeSurfaceShadingNormal(surface, viewDirection);
     float cosine = transmissive || foliage
-            ? abs(dot(surface.geometricNormal, light.direction))
+            ? abs(dot(shadingNormal, light.direction))
             : max(dot(shadingNormal, light.direction), 0.0);
     if (cosine <= 0.0 || light.pdf <= 0.0
             || all(lessThanEqual(lightRadiance, vec3(0.0)))) {
@@ -157,8 +200,10 @@ PrimeDirectLightingSplit primeEvaluateVisibleDirectSplit(
         BsdfEvaluation evaluation = primeEvaluateMinecraftTransmission(
                 surface.baseColor,
                 primeSurfaceOpacity(surface),
-                surface.geometricNormal,
+                primeSurfaceOutwardShadingNormal(surface),
                 surface.materialFlags,
+                surface.labPbrNormal,
+                surface.labPbrSpecular,
                 viewDirection,
                 light.direction,
                 0.0,
@@ -174,7 +219,10 @@ PrimeDirectLightingSplit primeEvaluateVisibleDirectSplit(
         // the primary NRD split; sampled indirect events still retain their exact lobe flags.
         BsdfEvaluation evaluation = primeEvaluateMinecraftFoliage(
                 surface.baseColor,
-                surface.geometricNormal,
+                shadingNormal,
+                surface.labPbrNormal,
+                surface.labPbrSpecular,
+                surface.materialFlags,
                 viewDirection,
                 light.direction,
                 0.0,
@@ -182,6 +230,23 @@ PrimeDirectLightingSplit primeEvaluateVisibleDirectSplit(
         float misWeight = primePowerHeuristic(light.pdf, evaluation.pdf);
         result.diffuse = lightRadiance
                 * evaluation.value * (cosine * misWeight / light.pdf);
+        return result;
+    }
+    if (primeSurfaceUsesLabPbrOpaqueBsdf(surface)) {
+        PrimeLabPbrBsdfComponents components = primeEvaluateLabPbrOpaqueComponents(
+                surface.baseColor,
+                shadingNormal,
+                surface.labPbrNormal,
+                surface.labPbrSpecular,
+                surface.materialFlags,
+                viewDirection,
+                light.direction,
+                0.0,
+                volumeStack);
+        float misWeight = primePowerHeuristic(light.pdf, components.pdf);
+        vec3 scale = lightRadiance * (cosine * misWeight / light.pdf);
+        result.diffuse = scale * components.diffuseValue;
+        result.specular = scale * components.specularValue;
         return result;
     }
     PrimeDefaultBsdfComponents components = primeEvaluateDefaultBsdfComponentsWithContext(
@@ -370,7 +435,7 @@ void primeAppendDeltaInterface(
             : 1.0;
     chain.positionEta[chain.count] = vec4(surface.position, relativeEta);
     chain.normalEvent[chain.count] = vec4(
-            normalize(surface.geometricNormal),
+            primeSurfaceOutwardShadingNormal(surface),
             uintBitsToFloat(bsdf.eventFlags));
     chain.count++;
 }
@@ -447,16 +512,14 @@ PrimeContinuationResult primeIntegrateContinuation(
 #if defined(PRIME_REALTIME_SINGLE_REFRACTION)
                 ;
 #else
-                && primeMaterialLinearRoughness(
-                        surface.baseColor, surface.materialFlags) == 0.0;
+                && primeSurfaceLinearRoughness(surface) == 0.0;
 #endif
         bool primarySurfaceReplacement = result.hasGuide == 0u && !pureDeltaInterface;
         if (primarySurfaceReplacement) {
             result.guidePosition = surface.position;
             result.guideNormal = primeSurfaceShadingNormal(surface, viewDirection);
             result.guideViewDirection = viewDirection;
-            result.guideLinearRoughness = primeMaterialLinearRoughness(
-                    surface.baseColor, surface.materialFlags);
+            result.guideLinearRoughness = primeSurfaceLinearRoughness(surface);
             result.guideBaseColor = surface.baseColor;
             result.guideThroughput = path.throughput;
             result.guideMaterialFlags = surface.materialFlags;
@@ -558,7 +621,10 @@ PrimeContinuationResult primeIntegrateContinuation(
         if (primeMaterialIsFoliage(surface.materialFlags)) {
             bsdf = primeSampleMinecraftFoliage(
                     surface.baseColor,
-                    surface.geometricNormal,
+                    primeSurfaceShadingNormal(surface, viewDirection),
+                    surface.labPbrNormal,
+                    surface.labPbrSpecular,
+                    surface.materialFlags,
                     viewDirection,
                     scatterSample,
                     surface.t,
@@ -572,8 +638,10 @@ PrimeContinuationResult primeIntegrateContinuation(
                     primeSampleMinecraftRealtimeTransmissionBranch(
                             surface.baseColor,
                             primeSurfaceOpacity(surface),
-                            surface.geometricNormal,
+                            primeSurfaceOutwardShadingNormal(surface),
                             surface.materialFlags,
+                            surface.labPbrNormal,
+                            surface.labPbrSpecular,
                             viewDirection,
                             scatterSample,
                             false,
@@ -584,8 +652,10 @@ PrimeContinuationResult primeIntegrateContinuation(
             PrimeTransmissiveBsdfSample transmitted = primeSampleMinecraftTransmission(
                     surface.baseColor,
                     primeSurfaceOpacity(surface),
-                    surface.geometricNormal,
+                    primeSurfaceOutwardShadingNormal(surface),
                     surface.materialFlags,
+                    surface.labPbrNormal,
+                    surface.labPbrSpecular,
                     viewDirection,
                     scatterSample,
                     surface.t,
@@ -595,6 +665,20 @@ PrimeContinuationResult primeIntegrateContinuation(
             volumeStack = transmitted.volumeStack;
             if (primarySurfaceReplacement) {
                 diffusePath = false;
+            }
+        } else if (primeSurfaceUsesLabPbrOpaqueBsdf(surface)) {
+            bsdf = primeSampleLabPbrOpaque(
+                    surface.baseColor,
+                    defaultShadingNormal,
+                    surface.labPbrNormal,
+                    surface.labPbrSpecular,
+                    surface.materialFlags,
+                    viewDirection,
+                    scatterSample,
+                    surface.t,
+                    volumeStack);
+            if (primarySurfaceReplacement) {
+                diffusePath = (bsdf.eventFlags & PRIME_BSDF_EVENT_DIFFUSE) != 0u;
             }
         } else if (primarySurfaceReplacement) {
             uint selectedLobe;
@@ -661,6 +745,8 @@ PrimeIntegrationResult primeIntegrate(PathState path, IntegratorRecord integrato
     result.primaryHitKind = PRIME_HIT_NONE;
     result.primaryNormal = vec3(0.0, 1.0, 0.0);
     result.primaryMaterialFlags = 0u;
+    result.primarySpecularF0 = vec3(PRIME_DEFAULT_DIELECTRIC_F0);
+    result.primaryLinearRoughness = PRIME_DEFAULT_REFERENCE_LINEAR_ROUGHNESS;
     bool diffusePath = false;
     // This stack is path state, not temporary BSDF state. It must survive every surface bounce so
     // nested air/water/glass transitions use the IOR below the current medium and so absorption is
@@ -694,6 +780,8 @@ PrimeIntegrationResult primeIntegrate(PathState path, IntegratorRecord integrato
             result.primaryNormal = primeSurfaceShadingNormal(surface, viewDirection);
             result.primaryHitKind = surface.hitKind;
             result.primaryMaterialFlags = surface.materialFlags;
+            result.primarySpecularF0 = primeSurfaceSpecularF0(surface);
+            result.primaryLinearRoughness = primeSurfaceLinearRoughness(surface);
         }
         if (path.bounce == 1u) {
             float firstBounceHitDistance = surface.hitKind == PRIME_HIT_NONE
@@ -754,8 +842,7 @@ PrimeIntegrationResult primeIntegrate(PathState path, IntegratorRecord integrato
         }
         PrimeSampleBase bounceSample = primeMakeSampleBase(path, path.bounce + 1u);
         bool pureDeltaInterface = primeMaterialIsTransmissive(surface.materialFlags)
-                && primeMaterialLinearRoughness(
-                        surface.baseColor, surface.materialFlags) == 0.0;
+                && primeSurfaceLinearRoughness(surface) == 0.0;
         if (!pureDeltaInterface) {
             vec2 sunSample = primeSobolSample2D(
                     bounceSample,
@@ -815,7 +902,10 @@ PrimeIntegrationResult primeIntegrate(PathState path, IntegratorRecord integrato
         if (primeMaterialIsFoliage(surface.materialFlags)) {
             bsdf = primeSampleMinecraftFoliage(
                     surface.baseColor,
-                    surface.geometricNormal,
+                    primeSurfaceShadingNormal(surface, viewDirection),
+                    surface.labPbrNormal,
+                    surface.labPbrSpecular,
+                    surface.materialFlags,
                     viewDirection,
                     scatterSample,
                     surface.t,
@@ -827,8 +917,10 @@ PrimeIntegrationResult primeIntegrate(PathState path, IntegratorRecord integrato
             PrimeTransmissiveBsdfSample transmitted = primeSampleMinecraftTransmission(
                     surface.baseColor,
                     primeSurfaceOpacity(surface),
-                    surface.geometricNormal,
+                    primeSurfaceOutwardShadingNormal(surface),
                     surface.materialFlags,
+                    surface.labPbrNormal,
+                    surface.labPbrSpecular,
                     viewDirection,
                     scatterSample,
                     surface.t,
@@ -837,6 +929,20 @@ PrimeIntegrationResult primeIntegrate(PathState path, IntegratorRecord integrato
             volumeStack = transmitted.volumeStack;
             if (path.bounce == 0u) {
                 diffusePath = false;
+            }
+        } else if (primeSurfaceUsesLabPbrOpaqueBsdf(surface)) {
+            bsdf = primeSampleLabPbrOpaque(
+                    surface.baseColor,
+                    defaultShadingNormal,
+                    surface.labPbrNormal,
+                    surface.labPbrSpecular,
+                    surface.materialFlags,
+                    viewDirection,
+                    scatterSample,
+                    surface.t,
+                    volumeStack);
+            if (path.bounce == 0u) {
+                diffusePath = (bsdf.eventFlags & PRIME_BSDF_EVENT_DIFFUSE) != 0u;
             }
         } else if (path.bounce == 0u) {
             uint selectedLobe;

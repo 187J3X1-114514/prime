@@ -21,6 +21,14 @@ final class RayTracingPipelineContractTest {
     }
 
     @Test
+    void labPbrSpecularAtlasIsVisibleToSurfaceAndEmissionConsumers() {
+        int expected = KHRRayTracingPipeline.VK_SHADER_STAGE_RAYGEN_BIT_KHR
+                | KHRRayTracingPipeline.VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR;
+
+        assertEquals(expected, RayTracingPipeline.LABPBR_SPECULAR_STAGES);
+    }
+
+    @Test
     void runtimeTransmissionLookupMatchesTheImportedBsdfTable() throws IOException {
         assertEquals(32, BsdfLookupTable.RESOLUTION);
         assertEquals(32 * 32 * 32 * 4 * Float.BYTES, BsdfLookupTable.BYTE_SIZE);

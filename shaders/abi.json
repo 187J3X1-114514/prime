@@ -1,7 +1,7 @@
 {
   "structs": {
     "primitiveRecord": {
-      "size": 32,
+      "size": 36,
       "fields": [
         { "name": "uv0", "type": "uint", "offset": 0 },
         { "name": "uv1", "type": "uint", "offset": 4 },
@@ -10,7 +10,8 @@
         { "name": "normal", "type": "uint", "offset": 16 },
         { "name": "flags", "type": "uint", "offset": 20 },
         { "name": "reserved0", "type": "uint", "offset": 24 },
-        { "name": "uvDensity", "type": "uint", "offset": 28 }
+        { "name": "uvDensity", "type": "uint", "offset": 28 },
+        { "name": "tangent", "type": "uint", "offset": 32 }
       ]
     },
     "sectionRecord": {
@@ -104,7 +105,7 @@
       ]
     },
     "tracePayload": {
-      "size": 64,
+      "size": 80,
       "fields": [
         { "name": "position", "type": "vec3", "offset": 0 },
         { "name": "t", "type": "float", "offset": 12 },
@@ -114,12 +115,15 @@
         { "name": "traceKind", "type": "uint", "offset": 44 },
         { "name": "sectionIndex", "type": "uint", "offset": 48 },
         { "name": "emitterIndex", "type": "uint", "offset": 52 },
-        { "name": "reserved0", "type": "uint", "offset": 56 },
-        { "name": "reserved1", "type": "uint", "offset": 60 }
+        { "name": "textureLod", "type": "uint", "offset": 56 },
+        { "name": "opacity", "type": "uint", "offset": 60 },
+        { "name": "shadingNormal", "type": "uint", "offset": 64 },
+        { "name": "labPbrNormal", "type": "uint", "offset": 68 },
+        { "name": "labPbrSpecular", "type": "uint", "offset": 72 }
       ]
     },
     "surfaceInteraction": {
-      "size": 64,
+      "size": 80,
       "fields": [
         { "name": "position", "type": "vec3", "offset": 0 },
         { "name": "t", "type": "float", "offset": 12 },
@@ -129,8 +133,11 @@
         { "name": "materialFlags", "type": "uint", "offset": 44 },
         { "name": "sectionIndex", "type": "uint", "offset": 48 },
         { "name": "emitterIndex", "type": "uint", "offset": 52 },
-        { "name": "reserved0", "type": "uint", "offset": 56 },
-        { "name": "reserved1", "type": "uint", "offset": 60 }
+        { "name": "textureLod", "type": "uint", "offset": 56 },
+        { "name": "opacity", "type": "uint", "offset": 60 },
+        { "name": "shadingNormal", "type": "uint", "offset": 64 },
+        { "name": "labPbrNormal", "type": "uint", "offset": 68 },
+        { "name": "labPbrSpecular", "type": "uint", "offset": 72 }
       ]
     },
     "pushConstants": {
@@ -183,7 +190,9 @@
     "transparentTransmissionSpecular": 32,
     "transparentReflectionThroughput": 33,
     "transparentTransmissionThroughput": 34,
-    "temporalCamera": 35
+    "temporalCamera": 35,
+    "labPbrNormalAtlas": 36,
+    "labPbrSpecularAtlas": 37
   },
   "pathControl": {
     "cameraInWaterMask": "0x80000000",

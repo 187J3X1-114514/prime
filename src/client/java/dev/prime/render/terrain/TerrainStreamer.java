@@ -72,6 +72,7 @@ public final class TerrainStreamer implements AutoCloseable {
     private int renderDistance = -1;
     private int minimumSectionY;
     private int maximumSectionY;
+    private LabPbrMaterialSet labPbrMaterials = LabPbrMaterialSet.EMPTY;
 
     public TerrainStreamer(VulkanContext context, StagingArena stagingArena) {
         this.scene = new TerrainScene(context, stagingArena);
@@ -139,6 +140,13 @@ public final class TerrainStreamer implements AutoCloseable {
 
     public TerrainScene.SceneView sceneView() {
         return this.scene.view();
+    }
+
+    public void setLabPbrMaterials(LabPbrMaterialSet materials) {
+        if (!this.labPbrMaterials.equals(materials)) {
+            this.labPbrMaterials = materials;
+            this.invalidateAll();
+        }
     }
 
     public boolean isNearCameraReady() {
@@ -345,6 +353,7 @@ public final class TerrainStreamer implements AutoCloseable {
                     sectionX,
                     sectionY,
                     sectionZ);
+            LabPbrMaterialSet materialSnapshot = this.labPbrMaterials;
             this.inFlightGeneration.put(request.key(), request.generation());
             long worldEpoch = this.generations.worldEpoch();
             try {
@@ -357,6 +366,7 @@ public final class TerrainStreamer implements AutoCloseable {
                                 models,
                                 fluidModels,
                                 tints,
+                                materialSnapshot,
                                 sectionX,
                                 sectionY,
                                 sectionZ);

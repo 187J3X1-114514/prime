@@ -15,7 +15,7 @@ public record CpuSectionMesh(
         if (positions.length != triangleCount * 9) {
             throw new IllegalArgumentException("Position array does not match triangle count");
         }
-        if (primitiveRecords.length != triangleCount * 8) {
+        if (primitiveRecords.length != triangleCount * 9) {
             throw new IllegalArgumentException("Primitive array does not match triangle count");
         }
         if (lights == null) {

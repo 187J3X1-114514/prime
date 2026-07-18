@@ -7,6 +7,9 @@ public final class PrimitivePacking {
     public static final int FLAG_THIN_WALLED = 1 << 3;
     public static final int FLAG_WATER = 1 << 4;
     public static final int FLAG_FOLIAGE = 1 << 5;
+    public static final int FLAG_LABPBR_NORMAL = 1 << 6;
+    public static final int FLAG_LABPBR_SPECULAR = 1 << 7;
+    public static final int FLAG_TANGENT_NEGATIVE = 1 << 8;
 
     private PrimitivePacking() {
     }
@@ -53,6 +56,105 @@ public final class PrimitivePacking {
                 | (thinWalled ? FLAG_THIN_WALLED : 0)
                 | (water ? FLAG_WATER : 0)
                 | (foliage ? FLAG_FOLIAGE : 0);
+    }
+
+    public static int withLabPbr(
+            int flags,
+            boolean normalMap,
+            boolean specularMap,
+            boolean tangentNegative) {
+        return flags
+                | (normalMap ? FLAG_LABPBR_NORMAL : 0)
+                | (specularMap ? FLAG_LABPBR_SPECULAR : 0)
+                | (normalMap && tangentNegative ? FLAG_TANGENT_NEGATIVE : 0);
+    }
+
+    /**
+     * Packs the UV tangent into the low 32 bits and reports negative bitangent handedness in bit
+     * 32 of the returned value.
+     * The geometric normal remains a separate field so normal mapping cannot perturb traversal
+     * offsets, medium entry/exit tests, or ray-cone incidence.
+     */
+    public static long packTriangleTangent(
+            float edgeOneX,
+            float edgeOneY,
+            float edgeOneZ,
+            float edgeTwoX,
+            float edgeTwoY,
+            float edgeTwoZ,
+            float deltaU1,
+            float deltaV1,
+            float deltaU2,
+            float deltaV2,
+            int packedNormal) {
+        float determinant = deltaU1 * deltaV2 - deltaU2 * deltaV1;
+        float normalX = unpackOctahedralComponent(packedNormal, true);
+        float normalY = unpackOctahedralComponent(packedNormal, false);
+        float normalZ = 1.0F - Math.abs(normalX) - Math.abs(normalY);
+        if (normalZ < 0.0F) {
+            float oldX = normalX;
+            normalX = (1.0F - Math.abs(normalY)) * Math.copySign(1.0F, oldX);
+            normalY = (1.0F - Math.abs(oldX)) * Math.copySign(1.0F, normalY);
+        }
+        float inverseNormalLength = 1.0F / (float) Math.sqrt(Math.max(
+                normalX * normalX + normalY * normalY + normalZ * normalZ, 1.0e-20F));
+        normalX *= inverseNormalLength;
+        normalY *= inverseNormalLength;
+        normalZ *= inverseNormalLength;
+        float tangentX;
+        float tangentY;
+        float tangentZ;
+        float bitangentX;
+        float bitangentY;
+        float bitangentZ;
+        if (Math.abs(determinant) > 1.0e-20F && Float.isFinite(determinant)) {
+            float inverse = 1.0F / determinant;
+            tangentX = (edgeOneX * deltaV2 - edgeTwoX * deltaV1) * inverse;
+            tangentY = (edgeOneY * deltaV2 - edgeTwoY * deltaV1) * inverse;
+            tangentZ = (edgeOneZ * deltaV2 - edgeTwoZ * deltaV1) * inverse;
+            bitangentX = (edgeTwoX * deltaU1 - edgeOneX * deltaU2) * inverse;
+            bitangentY = (edgeTwoY * deltaU1 - edgeOneY * deltaU2) * inverse;
+            bitangentZ = (edgeTwoZ * deltaU1 - edgeOneZ * deltaU2) * inverse;
+        } else {
+            float axisX = Math.abs(normalX) < 0.9F ? 1.0F : 0.0F;
+            float axisY = axisX == 0.0F ? 1.0F : 0.0F;
+            tangentX = axisY * normalZ;
+            tangentY = -axisX * normalZ;
+            tangentZ = axisX * normalY - axisY * normalX;
+            bitangentX = normalY * tangentZ - normalZ * tangentY;
+            bitangentY = normalZ * tangentX - normalX * tangentZ;
+            bitangentZ = normalX * tangentY - normalY * tangentX;
+        }
+        float normalProjection = tangentX * normalX + tangentY * normalY + tangentZ * normalZ;
+        tangentX -= normalProjection * normalX;
+        tangentY -= normalProjection * normalY;
+        tangentZ -= normalProjection * normalZ;
+        float lengthSquared = tangentX * tangentX + tangentY * tangentY + tangentZ * tangentZ;
+        if (!(lengthSquared > 1.0e-20F) || !Float.isFinite(lengthSquared)) {
+            tangentX = Math.abs(normalX) < 0.9F ? 1.0F : 0.0F;
+            tangentY = tangentX == 0.0F ? 1.0F : 0.0F;
+            tangentZ = 0.0F;
+            normalProjection = tangentX * normalX + tangentY * normalY;
+            tangentX -= normalProjection * normalX;
+            tangentY -= normalProjection * normalY;
+            tangentZ -= normalProjection * normalZ;
+            lengthSquared = tangentX * tangentX + tangentY * tangentY + tangentZ * tangentZ;
+        }
+        float inverseLength = 1.0F / (float) Math.sqrt(Math.max(lengthSquared, 1.0e-20F));
+        tangentX *= inverseLength;
+        tangentY *= inverseLength;
+        tangentZ *= inverseLength;
+        float crossX = normalY * tangentZ - normalZ * tangentY;
+        float crossY = normalZ * tangentX - normalX * tangentZ;
+        float crossZ = normalX * tangentY - normalY * tangentX;
+        boolean negative = crossX * bitangentX + crossY * bitangentY + crossZ * bitangentZ < 0.0F;
+        return Integer.toUnsignedLong(packOctahedralNormal(tangentX, tangentY, tangentZ))
+                | (negative ? 0x1_0000_0000L : 0L);
+    }
+
+    private static float unpackOctahedralComponent(int packed, boolean low) {
+        short value = (short) (low ? packed : packed >>> 16);
+        return Math.max(-1.0F, value / 32767.0F);
     }
 
     public static int packOctahedralNormal(float x, float y, float z) {

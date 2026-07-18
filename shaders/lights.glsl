@@ -537,7 +537,7 @@ LightEvaluation primeEvaluateAreaLight(
     vec3 emitterRadiance = primeEvaluateEmitterRadiance(
             emitter,
             primeEmitterUv(emitter, parentBarycentric),
-            uintBitsToFloat(surface.reserved0));
+            uintBitsToFloat(surface.textureLod));
     if (!(worldPdf > 0.0) || !(sectionPdf > 0.0)) {
         result.radiance = emitterRadiance;
         return result;

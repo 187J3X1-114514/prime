@@ -153,6 +153,7 @@ public final class RayTracingRuntime {
         VulkanRenderer activeRenderer = this.renderer;
         if (activeRenderer != null) {
             activeRenderer.requestShaderReload();
+            activeRenderer.requestResourceReload();
             activeRenderer.invalidateAll();
         }
     }

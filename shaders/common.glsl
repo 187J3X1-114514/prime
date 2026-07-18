@@ -39,4 +39,13 @@ vec3 primeUnpackOctahedralNormal(uint packedValue) {
     return normalize(normal);
 }
 
+uint primePackOctahedralNormal(vec3 value) {
+    vec3 normal = normalize(value);
+    normal /= max(abs(normal.x) + abs(normal.y) + abs(normal.z), 1.0e-20);
+    if (normal.z < 0.0) {
+        normal.xy = (1.0 - abs(normal.yx)) * primeSignNotZero(normal.xy);
+    }
+    return packSnorm2x16(clamp(normal.xy, vec2(-1.0), vec2(1.0)));
+}
+
 #endif

@@ -287,8 +287,10 @@ PrimeTransparentBranchResult primeTraceFirstInterfaceBranch(
             primeSampleMinecraftRealtimeTransmissionBranch(
                     surface.baseColor,
                     primeSurfaceOpacity(surface),
-                    surface.geometricNormal,
+                    primeSurfaceOutwardShadingNormal(surface),
                     surface.materialFlags,
+                    surface.labPbrNormal,
+                    surface.labPbrSpecular,
                     -cameraPath.rayDirection,
                     scatterSample,
                     reflectionBranch,

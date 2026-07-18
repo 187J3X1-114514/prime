@@ -89,12 +89,12 @@ abstract class GenerateShaderAbi extends DefaultTask {
 		def atmosphereContract = schema.atmosphereContract
 		def nrdContract = schema.nrdContract
 
-		if (primitive.size != 32 || section.size != 64 || lightNode.size != 32
+		if (primitive.size != 36 || section.size != 64 || lightNode.size != 32
 				|| lightNodeForward.size != 4 || lightNodeReverse.size != 4
 				|| lightEmitter.size != 96 || lightCell.size != 16
 				|| sectionLightHeader.size != 48
-				|| integrator.size != 32 || pathState.size != 96 || tracePayload.size != 64
-				|| surfaceInteraction.size != 64 || push.size != 128) {
+				|| integrator.size != 32 || pathState.size != 96 || tracePayload.size != 80
+				|| surfaceInteraction.size != 80 || push.size != 128) {
 			throw new GradleException('Prime shader ABI sizes changed without a coordinated migration')
 		}
 		if (colorContract.workingSpace != 'linear-rec2020-d65'
@@ -267,6 +267,8 @@ public final class ShaderAbi {
     public static final int DESCRIPTOR_TRANSPARENT_REFLECTION_THROUGHPUT = ${schema.descriptors.transparentReflectionThroughput};
     public static final int DESCRIPTOR_TRANSPARENT_TRANSMISSION_THROUGHPUT = ${schema.descriptors.transparentTransmissionThroughput};
     public static final int DESCRIPTOR_TEMPORAL_CAMERA = ${schema.descriptors.temporalCamera};
+    public static final int DESCRIPTOR_LABPBR_NORMAL_ATLAS = ${schema.descriptors.labPbrNormalAtlas};
+    public static final int DESCRIPTOR_LABPBR_SPECULAR_ATLAS = ${schema.descriptors.labPbrSpecularAtlas};
     public static final int PATH_CAMERA_IN_WATER_MASK = ${schema.pathControl.cameraInWaterMask};
     public static final int PATH_JITTER_PHASE_MASK = ${schema.pathControl.jitterPhaseMask};
     public static final int PATH_SUN_EV_QUARTER_SHIFT = ${schema.pathControl.sunEvQuarterShift};
@@ -433,6 +435,8 @@ ${glslPushFields}
 layout(set = 0, binding = ${schema.descriptors.tlas}) uniform accelerationStructureEXT primeScene;
 layout(set = 0, binding = ${schema.descriptors.outputImage}, rgba8) uniform image2D primeOutput;
 layout(set = 0, binding = ${schema.descriptors.blockAtlas}) uniform sampler2D primeBlockAtlas;
+layout(set = 0, binding = ${schema.descriptors.labPbrNormalAtlas}) uniform sampler2D primeLabPbrNormalAtlas;
+layout(set = 0, binding = ${schema.descriptors.labPbrSpecularAtlas}) uniform sampler2D primeLabPbrSpecularAtlas;
 layout(set = 0, binding = ${schema.descriptors.accumulationImage}, rgba32f) uniform image2D primeAccumulation;
 layout(set = 0, binding = ${schema.descriptors.skyView}, rgba16f) uniform readonly image2D primeSkyView;
 layout(set = 0, binding = ${schema.descriptors.transmittanceLow}, rgba16f) uniform readonly image2D primeTransmittanceLow;

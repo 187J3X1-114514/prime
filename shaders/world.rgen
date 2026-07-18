@@ -62,9 +62,15 @@ void main() {
             ivec2(pixel),
             vec4(sampleResult.primaryBaseColor, sampleResult.primaryDistance));
     imageStore(
+            primeNrdNormalRoughness,
+            ivec2(pixel),
+            primeNrdPackNormalRoughness(
+                    sampleResult.primaryNormal,
+                    sampleResult.primaryLinearRoughness));
+    imageStore(
             primeNrdSpecularMaterial,
             ivec2(pixel),
-            vec4(sampleResult.primaryNormal, float(sampleResult.primaryMaterialFlags)));
+            vec4(sampleResult.primarySpecularF0, float(sampleResult.primaryMaterialFlags)));
 
     // Directly visible sky/emission is a current-frame deterministic signal. FSR owns temporal
     // coverage reconstruction, so averaging a second independent history here would create stale

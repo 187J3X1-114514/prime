@@ -10,8 +10,11 @@
     "LevelRendererMixin",
     "MinecraftMixin",
     "OptionsSubScreenAccessor",
+    "SpriteAnimationStateAccessor",
     "SpriteContentsAccessor",
+    "TextureAtlasAccessor",
     "TextureAtlasMixin",
+    "TextureAtlasSpriteAccessor",
     "VulkanBackendMixin",
     "VideoSettingsScreenMixin"
   ],

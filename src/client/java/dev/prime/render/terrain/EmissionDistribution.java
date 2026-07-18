@@ -22,8 +22,10 @@ final class EmissionDistribution {
     private final int[] aliases;
     private final float[] probabilityMasses;
     private final float meanImportance;
+    private final boolean hasSourceSupport;
 
-    private EmissionDistribution(float[] weights, BuildWorkspace workspace) {
+    private EmissionDistribution(
+            float[] weights, BuildWorkspace workspace, boolean hasSourceSupport) {
         this.aliasProbabilities = new float[CELL_COUNT];
         this.aliases = new int[CELL_COUNT];
         this.probabilityMasses = new float[CELL_COUNT];
@@ -35,6 +37,7 @@ final class EmissionDistribution {
             throw new IllegalArgumentException("Emission importance weights must have positive finite mass");
         }
         this.meanImportance = (float) (sum / CELL_COUNT);
+        this.hasSourceSupport = hasSourceSupport;
         buildAliasTable(
                 weights,
                 sum,
@@ -47,18 +50,24 @@ final class EmissionDistribution {
     static EmissionDistribution build(Key key) {
         BuildWorkspace workspace = BUILD_WORKSPACE.get();
         float[] weights = workspace.weights;
+        boolean hasSourceSupport;
         try {
             fillTextureImportance(key, weights, workspace);
+            hasSourceSupport = false;
+            for (float weight : weights) {
+                hasSourceSupport |= weight > 0.0F;
+            }
         } catch (RuntimeException exception) {
             // A resource reload can retire SpriteContents while an already-cancelled mesh job is
             // winding down. Uniform support is still unbiased because radiance is read from the
             // live atlas; it only loses the variance reduction of the static importance table.
             java.util.Arrays.fill(weights, 1.0F);
+            hasSourceSupport = true;
         }
         for (int index = 0; index < weights.length; index++) {
             weights[index] = Math.max(weights[index], MINIMUM_CELL_IMPORTANCE);
         }
-        return new EmissionDistribution(weights, workspace);
+        return new EmissionDistribution(weights, workspace, hasSourceSupport);
     }
 
     static EmissionDistribution uniform() {
@@ -68,7 +77,7 @@ final class EmissionDistribution {
     private static EmissionDistribution createUniform() {
         float[] weights = new float[CELL_COUNT];
         java.util.Arrays.fill(weights, 1.0F);
-        return new EmissionDistribution(weights, new BuildWorkspace());
+        return new EmissionDistribution(weights, new BuildWorkspace(), true);
     }
 
     private static void fillTextureImportance(
@@ -120,10 +129,20 @@ final class EmissionDistribution {
                     float red = SRGB_TO_LINEAR[argb >>> 16 & 0xff] * tint[0];
                     float green = SRGB_TO_LINEAR[argb >>> 8 & 0xff] * tint[1];
                     float blue = SRGB_TO_LINEAR[argb & 0xff] * tint[2];
+                    float authoredEmission = key.emission == null
+                            ? 0.0F
+                            : key.emission.sample(frame, localU, localV);
+                    // An authored LabPBR alpha channel replaces Minecraft's ordinal block-light
+                    // value. In particular, alpha 0 can deliberately turn a vanilla emitter off.
+                    float emission = key.emission == null
+                            ? key.vanillaEmissionFraction
+                            : authoredEmission;
                     // Importance uses the largest component in Prime's actual linear Rec.2020
                     // working space. This controls variance only: emitted RGB and its PDF remain
                     // separate, so changing this proxy cannot bias the estimator.
-                    maximum = Math.max(maximum, linearSrgbToRec2020Maximum(red, green, blue));
+                    maximum = Math.max(
+                            maximum,
+                            linearSrgbToRec2020Maximum(red, green, blue) * emission);
                 }
                 total += maximum;
             }
@@ -266,7 +285,19 @@ final class EmissionDistribution {
         return this.meanImportance;
     }
 
-    record Key(TextureAtlasSprite sprite, int packedUv0, int packedUv1, int packedUv2, int tintArgb, boolean cutout) {
+    boolean hasSourceSupport() {
+        return this.hasSourceSupport;
+    }
+
+    record Key(
+            TextureAtlasSprite sprite,
+            int packedUv0,
+            int packedUv1,
+            int packedUv2,
+            int tintArgb,
+            boolean cutout,
+            float vanillaEmissionFraction,
+            LabPbrEmissionMap emission) {
         float u0() {
             return unpackLow(this.packedUv0);
         }

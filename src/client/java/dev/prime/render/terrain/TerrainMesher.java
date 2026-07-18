@@ -39,6 +39,7 @@ public final class TerrainMesher {
             BlockStateModelSet models,
             FluidStateModelSet fluidModels,
             TintSnapshot tints,
+            LabPbrMaterialSet labPbrMaterials,
             int sectionX,
             int sectionY,
             int sectionZ) {
@@ -47,8 +48,9 @@ public final class TerrainMesher {
         // primitive flags keep the two material semantics distinct in any-hit and closest-hit.
         MeshBuilder nonOpaque = new MeshBuilder();
         CpuSectionLights.Builder lights = new CpuSectionLights.Builder();
-        QuadCapture capture = new QuadCapture(opaque, nonOpaque, lights, tints);
-        FluidCapture fluidCapture = new FluidCapture(opaque, nonOpaque, lights, region);
+        QuadCapture capture = new QuadCapture(opaque, nonOpaque, lights, tints, labPbrMaterials);
+        FluidCapture fluidCapture = new FluidCapture(
+                opaque, nonOpaque, lights, region, labPbrMaterials);
         ModelBlockRenderer renderer = new ModelBlockRenderer(false, true, new BlockColors());
         FluidRenderer fluidRenderer = new FluidRenderer(fluidModels);
         MutableBlockPos position = new MutableBlockPos();
@@ -148,7 +150,8 @@ public final class TerrainMesher {
             boolean water,
             boolean foliage,
             int lightEmission,
-            TextureAtlasSprite sprite) {
+            TextureAtlasSprite sprite,
+            LabPbrMaterialSet labPbrMaterials) {
         int firstIndex = indices[0];
         int secondIndex = indices[1];
         int thirdIndex = indices[2];
@@ -203,7 +206,7 @@ public final class TerrainMesher {
                 uv1V - uv0V,
                 uv2U - uv0U,
                 uv2V - uv0V);
-        destination.primitives.add(PrimitivePacking.packTriangleNormal(
+        int packedNormal = PrimitivePacking.packTriangleNormal(
                 edge1X,
                 edge1Y,
                 edge1Z,
@@ -212,9 +215,28 @@ public final class TerrainMesher {
                 edge2Z,
                 quad.normalX,
                 quad.normalY,
-                quad.normalZ));
-        destination.primitives.add(PrimitivePacking.packFlags(
-                cutout, animated, transmissive, thinWalled, water, foliage));
+                quad.normalZ);
+        destination.primitives.add(packedNormal);
+        long packedTangent = PrimitivePacking.packTriangleTangent(
+                edge1X,
+                edge1Y,
+                edge1Z,
+                edge2X,
+                edge2Y,
+                edge2Z,
+                uv1U - uv0U,
+                uv1V - uv0V,
+                uv2U - uv0U,
+                uv2V - uv0V,
+                packedNormal);
+        int flags = PrimitivePacking.packFlags(
+                cutout, animated, transmissive, thinWalled, water, foliage);
+        flags = PrimitivePacking.withLabPbr(
+                flags,
+                labPbrMaterials.hasNormal(sprite.contents().name()),
+                labPbrMaterials.hasSpecular(sprite.contents().name()),
+                (packedTangent & 0x1_0000_0000L) != 0L);
+        destination.primitives.add(flags);
         destination.primitives.add(lights.addTriangle(
                 firstX,
                 firstY,
@@ -232,8 +254,10 @@ public final class TerrainMesher {
                 packedTint,
                 cutout,
                 lightEmission,
-                sprite));
+                sprite,
+                labPbrMaterials.emissionMap(sprite.contents().name())));
         destination.primitives.add(packedUvDensity);
+        destination.primitives.add((int) packedTangent);
         destination.triangleCount++;
     }
 
@@ -242,6 +266,7 @@ public final class TerrainMesher {
         private final MeshBuilder nonOpaque;
         private final CpuSectionLights.Builder lights;
         private final TintSnapshot tints;
+        private final LabPbrMaterialSet labPbrMaterials;
         private final CapturedQuad captured = new CapturedQuad();
         private int localX;
         private int localY;
@@ -254,11 +279,13 @@ public final class TerrainMesher {
                 MeshBuilder opaque,
                 MeshBuilder nonOpaque,
                 CpuSectionLights.Builder lights,
-                TintSnapshot tints) {
+                TintSnapshot tints,
+                LabPbrMaterialSet labPbrMaterials) {
             this.opaque = opaque;
             this.nonOpaque = nonOpaque;
             this.lights = lights;
             this.tints = tints;
+            this.labPbrMaterials = labPbrMaterials;
         }
 
         private void setBlock(
@@ -322,7 +349,8 @@ public final class TerrainMesher {
                     false,
                     foliage,
                     lightEmission,
-                    sprite);
+                    sprite,
+                    this.labPbrMaterials);
             emitTriangle(
                     destination,
                     this.lights,
@@ -336,7 +364,8 @@ public final class TerrainMesher {
                     false,
                     foliage,
                     lightEmission,
-                    sprite);
+                    sprite,
+                    this.labPbrMaterials);
         }
     }
 
@@ -354,6 +383,7 @@ public final class TerrainMesher {
         private final MeshBuilder nonOpaque;
         private final CpuSectionLights.Builder lights;
         private final RenderSectionRegion region;
+        private final LabPbrMaterialSet labPbrMaterials;
         private final CapturedQuad captured = new CapturedQuad();
         private final MutableBlockPos neighborPosition = new MutableBlockPos();
         private int vertexCount;
@@ -376,11 +406,13 @@ public final class TerrainMesher {
                 MeshBuilder opaque,
                 MeshBuilder nonOpaque,
                 CpuSectionLights.Builder lights,
-                RenderSectionRegion region) {
+                RenderSectionRegion region,
+                LabPbrMaterialSet labPbrMaterials) {
             this.opaque = opaque;
             this.nonOpaque = nonOpaque;
             this.lights = lights;
             this.region = region;
+            this.labPbrMaterials = labPbrMaterials;
         }
 
         private void setBlock(
@@ -508,7 +540,8 @@ public final class TerrainMesher {
                     this.water,
                     false,
                     this.lightEmission,
-                    sprite);
+                    sprite,
+                    this.labPbrMaterials);
             emitTriangle(
                     destination,
                     this.lights,
@@ -522,7 +555,8 @@ public final class TerrainMesher {
                     this.water,
                     false,
                     this.lightEmission,
-                    sprite);
+                    sprite,
+                    this.labPbrMaterials);
         }
 
         private TextureAtlasSprite selectSprite() {

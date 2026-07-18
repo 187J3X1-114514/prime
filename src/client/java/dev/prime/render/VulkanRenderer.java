@@ -6,12 +6,14 @@ import com.mojang.blaze3d.vulkan.VulkanGpuSampler;
 import com.mojang.blaze3d.vulkan.VulkanGpuTexture;
 import com.mojang.blaze3d.vulkan.VulkanGpuTextureView;
 import dev.prime.PrimeClient;
+import dev.prime.mixin.TextureAtlasAccessor;
 import dev.prime.render.fsr.FsrQualityMode;
 import dev.prime.render.terrain.TerrainScene;
 import dev.prime.render.terrain.TerrainStreamer;
 import dev.prime.render.fsr.FsrSettings;
 import dev.prime.render.shader.ShaderAbi;
 import dev.prime.render.vulkan.AtmospherePipeline;
+import dev.prime.render.vulkan.LabPbrTextureAtlas;
 import dev.prime.render.vulkan.RayTracingPipeline;
 import dev.prime.render.vulkan.StagingArena;
 import dev.prime.render.vulkan.VulkanCapabilities;
@@ -43,6 +45,7 @@ public final class VulkanRenderer implements AutoCloseable {
     private final VulkanContext context;
     private final StagingArena stagingArena;
     private final TerrainStreamer terrain;
+    private final LabPbrTextureAtlas labPbrAtlas;
     private final RealtimeSampleState realtimeSampleState = new RealtimeSampleState();
     private final BlockPos.MutableBlockPos cameraBlockPosition = new BlockPos.MutableBlockPos();
     private RayTracingPipeline pipeline;
@@ -55,7 +58,7 @@ public final class VulkanRenderer implements AutoCloseable {
     private boolean cameraMediumKnown;
     private boolean cameraInWater;
     private long submittedLightingRevision = Long.MIN_VALUE;
-    private boolean shaderReloadRequested;
+    private volatile boolean shaderReloadRequested;
     private ClientLevel screenshotWorld;
     private TerrainScene.SceneView screenshotScene;
     private FrameCamera screenshotCamera;
@@ -73,17 +76,23 @@ public final class VulkanRenderer implements AutoCloseable {
         AtmospherePipeline newAtmosphere = null;
         RayTracingPipeline newPipeline = null;
         TerrainStreamer newTerrain = null;
+        LabPbrTextureAtlas newLabPbrAtlas = null;
         try {
             newStagingArena = new StagingArena(newContext);
             newAtmosphere = new AtmospherePipeline(newContext);
             newPipeline = new RayTracingPipeline(newContext);
             newTerrain = new TerrainStreamer(newContext, newStagingArena);
+            newLabPbrAtlas = new LabPbrTextureAtlas(newContext, newStagingArena);
             this.context = newContext;
             this.stagingArena = newStagingArena;
             this.pipeline = newPipeline;
             this.atmosphere = newAtmosphere;
             this.terrain = newTerrain;
+            this.labPbrAtlas = newLabPbrAtlas;
         } catch (RuntimeException exception) {
+            if (newLabPbrAtlas != null) {
+                newLabPbrAtlas.close();
+            }
             if (newTerrain != null) {
                 newTerrain.close();
             }
@@ -103,6 +112,7 @@ public final class VulkanRenderer implements AutoCloseable {
 
     public void beginFrame(Minecraft minecraft) {
         this.reloadPipelineIfRequested();
+        this.synchronizeLabPbr(minecraft);
         this.updateScreenshotSession(minecraft);
         if (ScreenshotMode.active()) {
             return;
@@ -118,6 +128,22 @@ public final class VulkanRenderer implements AutoCloseable {
                     minecraft.player.getZ());
         } else {
             this.terrain.update(minecraft, 0.0, 0.0, 0.0);
+        }
+    }
+
+    private void synchronizeLabPbr(Minecraft minecraft) {
+        TextureAtlas atlas = minecraft.getAtlasManager().getAtlasOrThrow(AtlasIds.BLOCKS);
+        // Atlas objects exist before their GPU texture is uploaded. getTextureView() deliberately
+        // throws during that short interval, which is normal startup state rather than a renderer
+        // failure. The stitch map becomes non-empty in the same upload that creates the view.
+        if (((TextureAtlasAccessor) (Object) atlas)
+                .prime$texturesByName()
+                .isEmpty()) {
+            return;
+        }
+        if (atlas.getTextureView() instanceof VulkanGpuTextureView atlasView) {
+            this.terrain.setLabPbrMaterials(
+                    this.labPbrAtlas.ensure(minecraft, atlas, atlasView.vkImageView()));
         }
     }
 
@@ -192,6 +218,8 @@ public final class VulkanRenderer implements AutoCloseable {
         }
         long atlasViewHandle = atlasView.vkImageView();
         long atlasSamplerHandle = atlasSampler.vkSampler();
+        this.terrain.setLabPbrMaterials(
+                this.labPbrAtlas.ensure(minecraft, atlas, atlasViewHandle));
         boolean resized = this.ensureRealtimeResources(
                 width,
                 height,
@@ -261,6 +289,7 @@ public final class VulkanRenderer implements AutoCloseable {
         reflectionDenoiser.prepareForRayTrace(commandBuffer);
         transmissionDenoiser.prepareForRayTrace(commandBuffer);
         this.prepareAtlasForTrace(commandBuffer, atlasView.texture());
+        LabPbrTextureAtlas.FrameToken labPbrFrame = this.labPbrAtlas.prepare(commandBuffer);
         NrdDenoiser.FrameToken nrdFrame;
         NrdDenoiser.FrameToken reflectionNrdFrame;
         NrdDenoiser.FrameToken transmissionNrdFrame;
@@ -357,6 +386,7 @@ public final class VulkanRenderer implements AutoCloseable {
         this.context.device().instance().debug().endDebugGroup(commandBuffer);
         VulkanContext.check(VK12.vkEndCommandBuffer(commandBuffer), "end Prime ray tracing command buffer");
         encoder.execute(commandBuffer);
+        this.labPbrAtlas.submitted(labPbrFrame);
         denoiser.submitted(nrdFrame);
         reflectionDenoiser.submitted(reflectionNrdFrame);
         transmissionDenoiser.submitted(transmissionNrdFrame);
@@ -424,6 +454,8 @@ public final class VulkanRenderer implements AutoCloseable {
         }
         long atlasViewHandle = atlasView.vkImageView();
         long atlasSamplerHandle = atlasSampler.vkSampler();
+        this.terrain.setLabPbrMaterials(
+                this.labPbrAtlas.ensure(minecraft, atlas, atlasViewHandle));
         if (this.screenshotAtlasView == 0L) {
             this.screenshotAtlasView = atlasViewHandle;
             this.screenshotAtlasSampler = atlasSamplerHandle;
@@ -450,6 +482,8 @@ public final class VulkanRenderer implements AutoCloseable {
                 realtime.sceneColor,
                 atlasView,
                 atlasSampler,
+                this.labPbrAtlas.normalAtlas(),
+                this.labPbrAtlas.specularAtlas(),
                 this.atmosphere,
                 realtime.denoiser,
                 realtime.reflectionDenoiser,
@@ -463,6 +497,7 @@ public final class VulkanRenderer implements AutoCloseable {
         this.prepareOutputForComposite(commandBuffer, images.output);
         this.prepareAccumulationForTrace(commandBuffer, images.accumulation);
         this.prepareAtlasForTrace(commandBuffer, atlasView.texture());
+        LabPbrTextureAtlas.FrameToken labPbrFrame = this.labPbrAtlas.prepare(commandBuffer);
         try (MemoryStack stack = MemoryStack.stackPush()) {
             int sampleIndex = (int) (this.screenshotSampleCount & 0xffffL);
             int sampleEpoch = (int) (this.screenshotSampleCount >>> 16);
@@ -514,6 +549,7 @@ public final class VulkanRenderer implements AutoCloseable {
                 VK12.vkEndCommandBuffer(commandBuffer),
                 "end Prime screenshot accumulation command buffer");
         encoder.execute(commandBuffer);
+        this.labPbrAtlas.submitted(labPbrFrame);
         this.screenshotSampleCount++;
         if (this.screenshotSampleCount > 0L
                 && (this.screenshotSampleCount & (this.screenshotSampleCount - 1L)) == 0L) {
@@ -642,6 +678,10 @@ public final class VulkanRenderer implements AutoCloseable {
         this.shaderReloadRequested = true;
     }
 
+    public void requestResourceReload() {
+        this.labPbrAtlas.requestReload();
+    }
+
     @Override
     public void close() {
         if (this.closed) {
@@ -652,6 +692,7 @@ public final class VulkanRenderer implements AutoCloseable {
         this.context.awaitIdle();
         this.context.drainDeferredAfterIdle();
         this.terrain.close();
+        this.labPbrAtlas.close();
         this.pipeline.destroy();
         if (this.realtimeResources != null) {
             this.realtimeResources.destroy();
@@ -798,6 +839,8 @@ public final class VulkanRenderer implements AutoCloseable {
                     current.sceneColor,
                     atlasView,
                     atlasSampler,
+                    this.labPbrAtlas.normalAtlas(),
+                    this.labPbrAtlas.specularAtlas(),
                     this.atmosphere,
                     current.denoiser,
                     current.reflectionDenoiser,
@@ -820,6 +863,8 @@ public final class VulkanRenderer implements AutoCloseable {
                     replacement.sceneColor,
                     atlasView,
                     atlasSampler,
+                    this.labPbrAtlas.normalAtlas(),
+                    this.labPbrAtlas.specularAtlas(),
                     this.atmosphere,
                     replacement.denoiser,
                     replacement.reflectionDenoiser,

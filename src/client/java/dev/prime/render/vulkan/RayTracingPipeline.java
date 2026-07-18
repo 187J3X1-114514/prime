@@ -49,6 +49,9 @@ public final class RayTracingPipeline implements Destroyable {
             KHRRayTracingPipeline.VK_SHADER_STAGE_RAYGEN_BIT_KHR
                     | KHRRayTracingPipeline.VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR
                     | KHRRayTracingPipeline.VK_SHADER_STAGE_ANY_HIT_BIT_KHR;
+    static final int LABPBR_SPECULAR_STAGES =
+            KHRRayTracingPipeline.VK_SHADER_STAGE_RAYGEN_BIT_KHR
+                    | KHRRayTracingPipeline.VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR;
 
     private final VulkanContext context;
     private final long descriptorSetLayout;
@@ -149,6 +152,8 @@ public final class RayTracingPipeline implements Destroyable {
             VulkanImage sceneColor,
             VulkanGpuTextureView atlasView,
             VulkanGpuSampler atlasSampler,
+            VulkanImage labPbrNormalAtlas,
+            VulkanImage labPbrSpecularAtlas,
             AtmospherePipeline atmosphere,
             NrdDenoiser nrd,
             NrdDenoiser transparentReflection,
@@ -161,6 +166,8 @@ public final class RayTracingPipeline implements Destroyable {
                         sceneColor.view(),
                         atlasView.vkImageView(),
                         atlasSampler.vkSampler(),
+                        labPbrNormalAtlas.view(),
+                        labPbrSpecularAtlas.view(),
                         atmosphere.skyView().view(),
                         atmosphere.transmittanceLow().view(),
                         atmosphere.transmittanceHigh().view(),
@@ -201,6 +208,8 @@ public final class RayTracingPipeline implements Destroyable {
                 sceneColor,
                 atlasView,
                 atlasSampler,
+                labPbrNormalAtlas,
+                labPbrSpecularAtlas,
                 atmosphere,
                 nrd,
                 transparentReflection,
@@ -398,7 +407,7 @@ public final class RayTracingPipeline implements Destroyable {
     }
 
     private static long createDescriptorSetLayout(VulkanContext context, MemoryStack stack) {
-        VkDescriptorSetLayoutBinding.Buffer bindings = VkDescriptorSetLayoutBinding.calloc(36, stack);
+        VkDescriptorSetLayoutBinding.Buffer bindings = VkDescriptorSetLayoutBinding.calloc(38, stack);
         bindings.get(0)
                 .binding(ShaderAbi.DESCRIPTOR_TLAS)
                 .descriptorType(KHRAccelerationStructure.VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR)
@@ -497,6 +506,18 @@ public final class RayTracingPipeline implements Destroyable {
                 .descriptorType(VK12.VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER)
                 .descriptorCount(1)
                 .stageFlags(KHRRayTracingPipeline.VK_SHADER_STAGE_RAYGEN_BIT_KHR);
+        bindings.get(36)
+                .binding(ShaderAbi.DESCRIPTOR_LABPBR_NORMAL_ATLAS)
+                .descriptorType(VK12.VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER)
+                .descriptorCount(1)
+                .stageFlags(KHRRayTracingPipeline.VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR);
+        bindings.get(37)
+                .binding(ShaderAbi.DESCRIPTOR_LABPBR_SPECULAR_ATLAS)
+                .descriptorType(VK12.VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER)
+                .descriptorCount(1)
+                // Closest-hit transports material data; raygen evaluates the authored alpha
+                // when an emissive area-light triangle is sampled or directly visible.
+                .stageFlags(LABPBR_SPECULAR_STAGES);
         VkDescriptorSetLayoutCreateInfo createInfo = VkDescriptorSetLayoutCreateInfo.calloc(stack)
                 .sType$Default()
                 .pBindings(bindings);
@@ -737,6 +758,8 @@ public final class RayTracingPipeline implements Destroyable {
         private final long sceneColorView;
         private final long atlasView;
         private final long atlasSampler;
+        private final long labPbrNormalAtlas;
+        private final long labPbrSpecularAtlas;
         private final long skyView;
         private final long transmittanceLow;
         private final long transmittanceHigh;
@@ -778,6 +801,8 @@ public final class RayTracingPipeline implements Destroyable {
                 long sceneColorView,
                 long atlasView,
                 long atlasSampler,
+                long labPbrNormalAtlas,
+                long labPbrSpecularAtlas,
                 long skyView,
                 long transmittanceLow,
                 long transmittanceHigh,
@@ -816,6 +841,8 @@ public final class RayTracingPipeline implements Destroyable {
             this.sceneColorView = sceneColorView;
             this.atlasView = atlasView;
             this.atlasSampler = atlasSampler;
+            this.labPbrNormalAtlas = labPbrNormalAtlas;
+            this.labPbrSpecularAtlas = labPbrSpecularAtlas;
             this.skyView = skyView;
             this.transmittanceLow = transmittanceLow;
             this.transmittanceHigh = transmittanceHigh;
@@ -856,6 +883,8 @@ public final class RayTracingPipeline implements Destroyable {
                 VulkanImage sceneColor,
                 VulkanGpuTextureView atlasView,
                 VulkanGpuSampler atlasSampler,
+                VulkanImage labPbrNormalAtlas,
+                VulkanImage labPbrSpecularAtlas,
                 AtmospherePipeline atmosphere,
                 NrdDenoiser nrd,
                 NrdDenoiser transparentReflection,
@@ -866,7 +895,7 @@ public final class RayTracingPipeline implements Destroyable {
                 VkDescriptorPoolSize.Buffer sizes = VkDescriptorPoolSize.calloc(4, stack);
                 sizes.get(0).type(KHRAccelerationStructure.VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR).descriptorCount(1);
                 sizes.get(1).type(VK12.VK_DESCRIPTOR_TYPE_STORAGE_IMAGE).descriptorCount(32);
-                sizes.get(2).type(VK12.VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER).descriptorCount(2);
+                sizes.get(2).type(VK12.VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER).descriptorCount(4);
                 sizes.get(3).type(VK12.VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER).descriptorCount(1);
                 VkDescriptorPoolCreateInfo poolCreateInfo = VkDescriptorPoolCreateInfo.calloc(stack)
                         .sType$Default()
@@ -898,7 +927,7 @@ public final class RayTracingPipeline implements Destroyable {
                             .buffer(temporalCamera.handle())
                             .offset(0L)
                             .range(temporalCamera.size());
-                    VkDescriptorImageInfo.Buffer imageInfos = VkDescriptorImageInfo.calloc(34, stack);
+                    VkDescriptorImageInfo.Buffer imageInfos = VkDescriptorImageInfo.calloc(36, stack);
                     imageInfos.get(0)
                             .imageView(output.view())
                             .imageLayout(VK12.VK_IMAGE_LAYOUT_GENERAL);
@@ -970,7 +999,15 @@ public final class RayTracingPipeline implements Destroyable {
                                 .imageView(transparentBranchImages[index].view())
                                 .imageLayout(VK12.VK_IMAGE_LAYOUT_GENERAL);
                     }
-                    VkWriteDescriptorSet.Buffer writes = VkWriteDescriptorSet.calloc(36, stack);
+                    imageInfos.get(34)
+                            .sampler(atlasSampler.vkSampler())
+                            .imageView(labPbrNormalAtlas.view())
+                            .imageLayout(VK12.VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+                    imageInfos.get(35)
+                            .sampler(atlasSampler.vkSampler())
+                            .imageView(labPbrSpecularAtlas.view())
+                            .imageLayout(VK12.VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+                    VkWriteDescriptorSet.Buffer writes = VkWriteDescriptorSet.calloc(38, stack);
                     writes.get(0)
                             .sType$Default()
                             .pNext(acceleration.address())
@@ -1091,6 +1128,20 @@ public final class RayTracingPipeline implements Destroyable {
                             .descriptorCount(1)
                             .descriptorType(VK12.VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER)
                             .pBufferInfo(temporalCameraInfo);
+                    writes.get(36)
+                            .sType$Default()
+                            .dstSet(descriptorSet)
+                            .dstBinding(ShaderAbi.DESCRIPTOR_LABPBR_NORMAL_ATLAS)
+                            .descriptorCount(1)
+                            .descriptorType(VK12.VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER)
+                            .pImageInfo(VkDescriptorImageInfo.create(imageInfos.get(34).address(), 1));
+                    writes.get(37)
+                            .sType$Default()
+                            .dstSet(descriptorSet)
+                            .dstBinding(ShaderAbi.DESCRIPTOR_LABPBR_SPECULAR_ATLAS)
+                            .descriptorCount(1)
+                            .descriptorType(VK12.VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER)
+                            .pImageInfo(VkDescriptorImageInfo.create(imageInfos.get(35).address(), 1));
                     VK12.vkUpdateDescriptorSets(context.vkDevice(), writes, null);
                     return new DescriptorBindings(
                             context,
@@ -1102,6 +1153,8 @@ public final class RayTracingPipeline implements Destroyable {
                             sceneColor.view(),
                             atlasView.vkImageView(),
                             atlasSampler.vkSampler(),
+                            labPbrNormalAtlas.view(),
+                            labPbrSpecularAtlas.view(),
                             atmosphere.skyView().view(),
                             atmosphere.transmittanceLow().view(),
                             atmosphere.transmittanceHigh().view(),
@@ -1145,6 +1198,8 @@ public final class RayTracingPipeline implements Destroyable {
                 long sceneColorView,
                 long atlasView,
                 long atlasSampler,
+                long labPbrNormalAtlas,
+                long labPbrSpecularAtlas,
                 long skyView,
                 long transmittanceLow,
                 long transmittanceHigh,
@@ -1180,6 +1235,8 @@ public final class RayTracingPipeline implements Destroyable {
                     && this.sceneColorView == sceneColorView
                     && this.atlasView == atlasView
                     && this.atlasSampler == atlasSampler
+                    && this.labPbrNormalAtlas == labPbrNormalAtlas
+                    && this.labPbrSpecularAtlas == labPbrSpecularAtlas
                     && this.skyView == skyView
                     && this.transmittanceLow == transmittanceLow
                     && this.transmittanceHigh == transmittanceHigh

@@ -1,0 +1,86 @@
+#ifndef PRIME_LABPBR_GLSL
+#define PRIME_LABPBR_GLSL
+
+#include "default_material.glsl"
+
+// LabPBR 1.3 is an integer UNORM transport format. Keep every decoded channel here even when the
+// current renderer does not consume it: tangent normals, AO, height and porosity must not be
+// reinterpreted when their later shading/displacement/weather systems are connected.
+struct PrimeLabPbrSample {
+    vec3 tangentNormal;
+    float ambientOcclusion;
+    float height;
+    float perceptualRoughness;
+    float linearRoughness;
+    float dielectricF0;
+    uint metalId;
+    float porosity;
+    float subsurface;
+    float emission;
+};
+
+bool primeHasLabPbrNormal(uint flags) {
+    return (flags & PRIME_MATERIAL_FLAG_LABPBR_NORMAL) != 0u;
+}
+
+bool primeHasLabPbrSpecular(uint flags) {
+    return (flags & PRIME_MATERIAL_FLAG_LABPBR_SPECULAR) != 0u;
+}
+
+bool primeLabPbrIsMetal(PrimeLabPbrSample material) {
+    return material.metalId >= 230u;
+}
+
+float primeDecodeLabPbrEmission(uint encoded) {
+    return encoded < 255u ? float(encoded) / 254.0 : 0.0;
+}
+
+float primeDecodeLabPbrEmission(float encodedUnorm) {
+    return primeDecodeLabPbrEmission(uint(round(clamp(encodedUnorm, 0.0, 1.0) * 255.0)));
+}
+
+PrimeLabPbrSample primeDecodeLabPbr(uint packedNormal, uint packedSpecular, uint flags) {
+    uvec4 normalBytes = uvec4(round(unpackUnorm4x8(packedNormal) * 255.0));
+    uvec4 specularBytes = uvec4(round(unpackUnorm4x8(packedSpecular) * 255.0));
+    PrimeLabPbrSample result;
+    vec2 normalXY = vec2(normalBytes.xy) * (2.0 / 255.0) - vec2(1.0);
+    float normalZ = sqrt(max(1.0 - dot(normalXY, normalXY), 0.0));
+    result.tangentNormal = normalize(vec3(normalXY, normalZ));
+    result.ambientOcclusion = float(normalBytes.z) / 255.0;
+    result.height = float(normalBytes.w) / 255.0;
+
+    float smoothness = float(specularBytes.x) / 255.0;
+    result.perceptualRoughness = 1.0 - smoothness;
+    // LabPBR 1.3 explicitly defines linear roughness as the square of perceptual roughness.
+    result.linearRoughness = result.perceptualRoughness * result.perceptualRoughness;
+    result.metalId = specularBytes.y >= 230u ? specularBytes.y : 0u;
+    result.dielectricF0 = specularBytes.y < 230u
+            ? float(specularBytes.y) / 255.0
+            : 0.0;
+    result.porosity = specularBytes.z <= 64u
+            ? float(specularBytes.z) / 64.0
+            : 0.0;
+    result.subsurface = specularBytes.z >= 65u
+            ? float(specularBytes.z - 65u) / 190.0
+            : 0.0;
+    // 255 is the standard's "no authored emission" sentinel, not a 100% value.
+    result.emission = primeDecodeLabPbrEmission(specularBytes.w);
+
+    if (!primeHasLabPbrNormal(flags)) {
+        result.tangentNormal = vec3(0.0, 0.0, 1.0);
+        result.ambientOcclusion = 1.0;
+        result.height = 1.0;
+    }
+    if (!primeHasLabPbrSpecular(flags)) {
+        result.perceptualRoughness = PRIME_DEFAULT_REFERENCE_LINEAR_ROUGHNESS;
+        result.linearRoughness = PRIME_DEFAULT_REFERENCE_LINEAR_ROUGHNESS;
+        result.dielectricF0 = PRIME_DEFAULT_DIELECTRIC_F0;
+        result.metalId = 0u;
+        result.porosity = 0.0;
+        result.subsurface = 0.0;
+        result.emission = 0.0;
+    }
+    return result;
+}
+
+#endif

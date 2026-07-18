@@ -13,7 +13,7 @@ layout(set = 0, binding = 3, rgba16f) uniform writeonly image2D primeReprojectio
 layout(set = 0, binding = 4, r32f) uniform writeonly image2D primeFsrDepth;
 layout(set = 0, binding = 5, rgba16f) uniform image2D primeNoisyDiffuse;
 layout(set = 0, binding = 6, rgba16f) uniform image2D primeNoisySpecular;
-layout(set = 0, binding = 7, rgb10_a2) uniform writeonly image2D primeNormalRoughness;
+layout(set = 0, binding = 7, rgb10_a2) uniform image2D primeNormalRoughness;
 layout(set = 0, binding = 8, rgba16f) uniform image2D primeMaterial;
 layout(set = 0, binding = 9, rgba16f) uniform image2D primeSpecularMaterial;
 
@@ -99,9 +99,12 @@ void main() {
     vec4 primary = imageLoad(primePrimaryPosition, pixel);
     vec4 rawSpecularMaterial = imageLoad(primeSpecularMaterial, pixel);
     uint primaryMaterialFlags = uint(max(round(rawSpecularMaterial.a), 0.0));
-    vec3 primaryNormal = normalize(rawSpecularMaterial.rgb);
-    float primaryLinearRoughness = primeMaterialLinearRoughness(
-            rawMaterial.rgb, primaryMaterialFlags);
+    vec3 primaryNormal;
+    float primaryLinearRoughness;
+    primeNrdUnpackNormalRoughness(
+            imageLoad(primeNormalRoughness, pixel),
+            primaryNormal,
+            primaryLinearRoughness);
     vec3 diffuseMaterialFactor = vec3(1.0);
     vec3 specularMaterialFactor = vec3(1.0);
     vec3 tracedRayDirection = dot(primary.xyz, primary.xyz) > 1.0e-12
@@ -120,7 +123,7 @@ void main() {
                 primaryNormal,
                 -tracedRayDirection,
                 rawMaterial.rgb,
-                vec3(primeMaterialDielectricF0(primaryMaterialFlags)),
+                rawSpecularMaterial.rgb,
                 primaryLinearRoughness,
                 diffuseMaterialFactor,
                 specularMaterialFactor);

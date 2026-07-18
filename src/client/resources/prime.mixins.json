@@ -10,7 +10,6 @@
     "LevelRendererMixin",
     "MinecraftMixin",
     "OptionsSubScreenAccessor",
-    "SpriteAnimationStateAccessor",
     "SpriteContentsAccessor",
     "TextureAtlasAccessor",
     "TextureAtlasMixin",

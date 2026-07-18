@@ -128,6 +128,10 @@ final class LabPbrContractTest {
                 "src/client/java/dev/prime/render/vulkan/RayTracingPipeline.java"));
         String runtime = Files.readString(ROOT.resolve(
                 "src/client/java/dev/prime/render/RayTracingRuntime.java"));
+        String renderer = Files.readString(ROOT.resolve(
+                "src/client/java/dev/prime/render/VulkanRenderer.java"));
+        String client = Files.readString(ROOT.resolve(
+                "src/client/java/dev/prime/PrimeClient.java"));
         String atlas = Files.readString(ROOT.resolve(
                 "src/client/java/dev/prime/render/vulkan/LabPbrTextureAtlas.java"));
         String integrator = shader("integrator.glsl");
@@ -138,6 +142,12 @@ final class LabPbrContractTest {
         assertTrue(pipeline.contains("ShaderAbi.DESCRIPTOR_LABPBR_NORMAL_ATLAS"));
         assertTrue(pipeline.contains("ShaderAbi.DESCRIPTOR_LABPBR_SPECULAR_ATLAS"));
         assertTrue(runtime.contains("activeRenderer.requestResourceReload()"));
+        assertTrue(client.contains("beginResourceReload()"));
+        assertTrue(client.contains("finishResourceReload()"));
+        assertEquals(1, occurrences(renderer, "this.labPbrAtlas.ensure("));
+        assertTrue(atlas.contains("AtomicLong requestedGeneration"));
+        assertTrue(atlas.contains("state.animationInfo.frames"));
+        assertFalse(atlas.contains("AnimationMetadataSection"));
         assertTrue(atlas.contains("NORMAL_DEFAULT_ARGB = 0xff8080ff"));
         assertTrue(atlas.contains("writeArgb(target, offset, defaultArgb)"));
         assertTrue(atlas.contains("SUPPORTED_FORMAT = \"lab-pbr/1.3\""));
@@ -149,6 +159,16 @@ final class LabPbrContractTest {
 
     private static String shader(String name) throws IOException {
         return Files.readString(ROOT.resolve("shaders").resolve(name));
+    }
+
+    private static int occurrences(String source, String value) {
+        int count = 0;
+        int offset = 0;
+        while ((offset = source.indexOf(value, offset)) >= 0) {
+            count++;
+            offset += value.length();
+        }
+        return count;
     }
 
     private static double schlickF82Tint(double f0, double f82Tint, double cosine) {

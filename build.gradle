@@ -18,6 +18,7 @@ repositories {
 
 loom {
 	splitEnvironmentSourceSets()
+	accessWidenerPath = file('src/client/resources/prime.accesswidener')
 
 	mods {
 		prime {
@@ -711,6 +712,7 @@ def verifyDistributionJar = tasks.register('verifyDistributionJar') {
 		def required = [
 			'fabric.mod.json',
 			'prime.mixins.json',
+			'prime.accesswidener',
 			'LICENSE_prime',
 			'META-INF/licenses/README.md',
 			'META-INF/licenses/APACHE-2.0.txt',

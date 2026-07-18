@@ -2,7 +2,6 @@ package dev.prime.render.vulkan;
 
 import com.mojang.blaze3d.platform.NativeImage;
 import dev.prime.PrimeClient;
-import dev.prime.mixin.SpriteAnimationStateAccessor;
 import dev.prime.mixin.SpriteContentsAccessor;
 import dev.prime.mixin.TextureAtlasAccessor;
 import dev.prime.mixin.TextureAtlasSpriteAccessor;
@@ -18,12 +17,11 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Properties;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicLong;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.texture.SpriteContents;
 import net.minecraft.client.renderer.texture.TextureAtlas;
 import net.minecraft.client.renderer.texture.TextureAtlasSprite;
-import net.minecraft.client.resources.metadata.animation.AnimationFrame;
-import net.minecraft.client.resources.metadata.animation.AnimationMetadataSection;
 import net.minecraft.resources.Identifier;
 import net.minecraft.server.packs.resources.Resource;
 import net.minecraft.server.packs.resources.ResourceManager;
@@ -54,8 +52,8 @@ public final class LabPbrTextureAtlas implements AutoCloseable {
 
     private final VulkanContext context;
     private final StagingArena stagingArena;
+    private final AtomicLong requestedGeneration = new AtomicLong();
     private Resources resources;
-    private volatile boolean rebuildRequested;
     private boolean closed;
 
     public LabPbrTextureAtlas(VulkanContext context, StagingArena stagingArena) {
@@ -68,17 +66,17 @@ public final class LabPbrTextureAtlas implements AutoCloseable {
         if (this.closed) {
             throw new IllegalStateException("LabPBR atlas is closed");
         }
-        if (!this.rebuildRequested
-                && this.resources != null
+        long generation = this.requestedGeneration.get();
+        if (this.resources != null
+                && this.resources.sourceGeneration == generation
                 && this.resources.vanillaAtlasView == vanillaAtlasView) {
             return this.resources.materials;
         }
-        this.rebuildRequested = false;
         Resources replacement;
         try {
-            replacement = build(minecraft.getResourceManager(), atlas, vanillaAtlasView);
+            replacement = build(
+                    minecraft.getResourceManager(), atlas, vanillaAtlasView, generation);
         } catch (RuntimeException exception) {
-            this.rebuildRequested = true;
             throw exception;
         }
         Resources previous = this.resources;
@@ -95,7 +93,7 @@ public final class LabPbrTextureAtlas implements AutoCloseable {
 
     /** Invalidates source-pack data while leaving GPU ownership changes on the render thread. */
     public void requestReload() {
-        this.rebuildRequested = true;
+        this.requestedGeneration.incrementAndGet();
     }
 
     public VulkanImage normalAtlas() {
@@ -229,7 +227,8 @@ public final class LabPbrTextureAtlas implements AutoCloseable {
     private Resources build(
             ResourceManager resourceManager,
             TextureAtlas atlas,
-            long vanillaAtlasView) {
+            long vanillaAtlasView,
+            long sourceGeneration) {
         TextureAtlasAccessor atlasAccess = (TextureAtlasAccessor) (Object) atlas;
         int atlasWidth = atlasAccess.prime$width();
         int atlasHeight = atlasAccess.prime$height();
@@ -266,8 +265,7 @@ public final class LabPbrTextureAtlas implements AutoCloseable {
                     materialSprites.add(new MaterialSprite(
                             sprite,
                             normal,
-                            specular,
-                            readAnimationTimeline(resourceManager, sprite)));
+                            specular));
                 }
             }
         }
@@ -319,6 +317,7 @@ public final class LabPbrTextureAtlas implements AutoCloseable {
                     "Loaded LabPBR 1.3 material atlas: {} normal maps, {} specular maps, {} emissive maps, {} animated sprites",
                     normalSprites.size(), specularSprites.size(), emissionMaps.size(), animated.size());
             return new Resources(
+                    sourceGeneration,
                     vanillaAtlasView,
                     width,
                     height,
@@ -398,58 +397,6 @@ public final class LabPbrTextureAtlas implements AutoCloseable {
         }
     }
 
-    /**
-     * Reads the public animation metadata rather than reaching through AnimationState's private
-     * AnimatedTexture field. The state supplies only the live cursor; this immutable timeline is
-     * reconstructed with the same validation rules as SpriteContents.
-     */
-    private static AnimationTimeline readAnimationTimeline(
-            ResourceManager manager, TextureAtlasSprite sprite) {
-        if (!sprite.contents().isAnimated()) {
-            return null;
-        }
-        Identifier resourceId = materialResource(sprite.contents().name(), "");
-        Optional<Resource> resource = manager.getResource(resourceId);
-        if (resource.isEmpty()) {
-            PrimeClient.LOGGER.warn("Animated base texture {} is unavailable", resourceId);
-            return null;
-        }
-        try {
-            Optional<AnimationMetadataSection> section = resource.orElseThrow()
-                    .metadata()
-                    .getSection(AnimationMetadataSection.TYPE);
-            if (section.isEmpty()) {
-                PrimeClient.LOGGER.warn("Animated base texture {} has no animation metadata", resourceId);
-                return null;
-            }
-            AnimationMetadataSection metadata = section.orElseThrow();
-            SpriteContents contents = sprite.contents();
-            NativeImage baseImage = ((SpriteContentsAccessor) (Object) contents).prime$originalImage();
-            int columns = Math.max(1, baseImage.getWidth() / contents.width());
-            int rows = Math.max(1, baseImage.getHeight() / contents.height());
-            int frameCount = columns * rows;
-            ArrayList<TimelineFrame> frames = new ArrayList<>();
-            if (metadata.frames().isEmpty()) {
-                for (int index = 0; index < frameCount; index++) {
-                    frames.add(new TimelineFrame(index, metadata.defaultFrameTime()));
-                }
-            } else {
-                for (AnimationFrame frame : metadata.frames().orElseThrow()) {
-                    int time = frame.timeOr(metadata.defaultFrameTime());
-                    if (time > 0 && frame.index() >= 0 && frame.index() < frameCount) {
-                        frames.add(new TimelineFrame(frame.index(), time));
-                    }
-                }
-            }
-            return frames.size() > 1
-                    ? new AnimationTimeline(List.copyOf(frames), metadata.interpolatedFrames())
-                    : null;
-        } catch (IOException | RuntimeException exception) {
-            PrimeClient.LOGGER.warn("Unable to read animation metadata for {}", resourceId, exception);
-            return null;
-        }
-    }
-
     private static void fillAtlas(
             VulkanBuffer upload,
             int atlasWidth,
@@ -504,7 +451,7 @@ public final class LabPbrTextureAtlas implements AutoCloseable {
             }
             MaterialSprite material = byName.get(sprite.contents().name());
             SpriteContents.AnimationState state = states.get(stateIndex++);
-            if (material != null && material.timeline != null) {
+            if (material != null && AnimationFrameAccess.hasMultipleFrames(state)) {
                 // The initial upload contains source frame zero. Force the first submitted frame
                 // to synchronize with vanilla even when the animation was already mid-sequence.
                 result.add(new AnimatedMaterialSprite(material, state, null));
@@ -696,18 +643,15 @@ public final class LabPbrTextureAtlas implements AutoCloseable {
         final TextureAtlasSprite sprite;
         final MaterialSource normal;
         final MaterialSource specular;
-        final AnimationTimeline timeline;
         final int padding;
 
         MaterialSprite(
                 TextureAtlasSprite sprite,
                 MaterialSource normal,
-                MaterialSource specular,
-                AnimationTimeline timeline) {
+                MaterialSource specular) {
             this.sprite = sprite;
             this.normal = normal;
             this.specular = specular;
-            this.timeline = timeline;
             this.padding = ((TextureAtlasSpriteAccessor) (Object) sprite).prime$padding();
         }
 
@@ -773,7 +717,7 @@ public final class LabPbrTextureAtlas implements AutoCloseable {
                 MaterialSprite source,
                 SpriteContents.AnimationState state,
                 AnimationSample lastSample) {
-            super(source.sprite, source.normal, source.specular, source.timeline);
+            super(source.sprite, source.normal, source.specular);
             this.state = state;
             this.lastSample = lastSample;
         }
@@ -971,6 +915,7 @@ public final class LabPbrTextureAtlas implements AutoCloseable {
     }
 
     private static final class Resources implements com.mojang.blaze3d.vulkan.Destroyable {
+        private final long sourceGeneration;
         private final long vanillaAtlasView;
         private final int width;
         private final int height;
@@ -985,6 +930,7 @@ public final class LabPbrTextureAtlas implements AutoCloseable {
         private boolean destroyed;
 
         Resources(
+                long sourceGeneration,
                 long vanillaAtlasView,
                 int width,
                 int height,
@@ -995,6 +941,7 @@ public final class LabPbrTextureAtlas implements AutoCloseable {
                 VulkanBuffer specularUpload,
                 LabPbrMaterialSet materials,
                 List<AnimatedMaterialSprite> animated) {
+            this.sourceGeneration = sourceGeneration;
             this.vanillaAtlasView = vanillaAtlasView;
             this.width = width;
             this.height = height;
@@ -1010,7 +957,7 @@ public final class LabPbrTextureAtlas implements AutoCloseable {
         List<AnimationUpdate> animationChanges() {
             ArrayList<AnimationUpdate> result = new ArrayList<>();
             for (AnimatedMaterialSprite sprite : this.animated) {
-                AnimationSample sample = AnimationFrameAccess.sample(sprite.state, sprite.timeline);
+                AnimationSample sample = AnimationFrameAccess.sample(sprite.state);
                 if (!sample.equals(sprite.lastSample)) {
                     result.add(new AnimationUpdate(sprite, sample));
                 }
@@ -1047,36 +994,32 @@ public final class LabPbrTextureAtlas implements AutoCloseable {
         }
     }
 
-    private record TimelineFrame(int index, int time) {
-    }
-
-    private record AnimationTimeline(List<TimelineFrame> frames, boolean interpolateFrames) {
-    }
-
-    /** Mapped access is limited to the stable live cursor; metadata remains public pack data. */
+    /** Reads Minecraft's authoritative immutable timeline and live animation cursor. */
     private static final class AnimationFrameAccess {
         private AnimationFrameAccess() {
         }
 
-        static AnimationSample sample(
-                SpriteContents.AnimationState state, AnimationTimeline timeline) {
-            if (timeline == null || timeline.frames().isEmpty()) {
+        static boolean hasMultipleFrames(SpriteContents.AnimationState state) {
+            return state.animationInfo.frames.size() > 1;
+        }
+
+        static AnimationSample sample(SpriteContents.AnimationState state) {
+            List<SpriteContents.FrameInfo> frames = state.animationInfo.frames;
+            if (frames.isEmpty()) {
                 return AnimationSample.ZERO;
             }
-            SpriteAnimationStateAccessor stateAccess =
-                    (SpriteAnimationStateAccessor) (Object) state;
-            List<TimelineFrame> frames = timeline.frames();
             int sequenceIndex = Math.max(
-                    0, Math.min(stateAccess.prime$frame(), frames.size() - 1));
-            TimelineFrame frame = frames.get(sequenceIndex);
-            if (!timeline.interpolateFrames()) {
+                    0, Math.min(state.frame, frames.size() - 1));
+            SpriteContents.FrameInfo frame = frames.get(sequenceIndex);
+            if (!state.animationInfo.interpolateFrames) {
                 return new AnimationSample(frame.index(), frame.index(), 0);
             }
-            TimelineFrame nextFrame = frames.get((sequenceIndex + 1) % frames.size());
+            SpriteContents.FrameInfo nextFrame = frames.get(
+                    (sequenceIndex + 1) % frames.size());
             int frameTime = Math.max(1, frame.time());
             int progress = Math.min(
                     999,
-                    (int) ((long) stateAccess.prime$subFrame() * 1000L / frameTime));
+                    (int) ((long) state.subFrame * 1000L / frameTime));
             return new AnimationSample(frame.index(), nextFrame.index(), progress);
         }
     }

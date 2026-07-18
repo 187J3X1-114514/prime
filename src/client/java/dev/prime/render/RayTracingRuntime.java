@@ -22,7 +22,7 @@ public final class RayTracingRuntime {
     private boolean notificationShown;
     private boolean unavailabilityLogged;
     private boolean shuttingDown;
-    private VulkanRenderer renderer;
+    private volatile VulkanRenderer renderer;
     private ClientLevel world;
 
     private RayTracingRuntime() {
@@ -149,11 +149,19 @@ public final class RayTracingRuntime {
         }
     }
 
-    public void reloadShaders() {
+    /** Thread-safe prepare-phase invalidation; GPU ownership remains on the render thread. */
+    public void beginResourceReload() {
+        VulkanRenderer activeRenderer = this.renderer;
+        if (activeRenderer != null) {
+            activeRenderer.requestResourceReload();
+        }
+    }
+
+    /** Applies the completed reload without issuing a second material-atlas invalidation. */
+    public void finishResourceReload() {
         VulkanRenderer activeRenderer = this.renderer;
         if (activeRenderer != null) {
             activeRenderer.requestShaderReload();
-            activeRenderer.requestResourceReload();
             activeRenderer.invalidateAll();
         }
     }

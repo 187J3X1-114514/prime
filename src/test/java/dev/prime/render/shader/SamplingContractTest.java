@@ -44,7 +44,7 @@ final class SamplingContractTest {
         assertTrue(integrator.contains("PRIME_SAMPLE_EFFECT_SCATTER_BSDF"));
         assertTrue(integrator.contains("PRIME_SAMPLE_EFFECT_RUSSIAN_ROULETTE"));
         assertTrue(integrator.contains(
-                "const uint rouletteStart = PRIME_RUSSIAN_ROULETTE_START"));
+                "path, PRIME_RUSSIAN_ROULETTE_START, rouletteSample"));
         assertFalse(integrator.contains("rouletteStart = 5u"));
         assertFalse(allConsumers.contains("primeRandom"));
     }

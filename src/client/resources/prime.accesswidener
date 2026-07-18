@@ -1,0 +1,11 @@
+accessWidener v2 official
+
+# Prime's auxiliary LabPBR atlases follow Minecraft's animation state. These fields are opened
+# read-only in Prime code so Minecraft remains the sole owner of the timeline and live cursor.
+accessible class net/minecraft/client/renderer/texture/SpriteContents$AnimatedTexture
+accessible class net/minecraft/client/renderer/texture/SpriteContents$FrameInfo
+accessible field net/minecraft/client/renderer/texture/SpriteContents$AnimationState frame I
+accessible field net/minecraft/client/renderer/texture/SpriteContents$AnimationState subFrame I
+accessible field net/minecraft/client/renderer/texture/SpriteContents$AnimationState animationInfo Lnet/minecraft/client/renderer/texture/SpriteContents$AnimatedTexture;
+accessible field net/minecraft/client/renderer/texture/SpriteContents$AnimatedTexture frames Ljava/util/List;
+accessible field net/minecraft/client/renderer/texture/SpriteContents$AnimatedTexture interpolateFrames Z

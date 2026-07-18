@@ -2,11 +2,6 @@
 #define PRIME_BSDF_GLSL
 
 #include "bsdf_common.glsl"
-#include "bsdf_fresnel.glsl"
-#include "bsdf_diffuse.glsl"
-#include "bsdf_microfacet.glsl"
-#include "bsdf_subsurface.glsl"
-#include "bsdf_emission.glsl"
 #include "default_material.glsl"
 #include "labpbr.glsl"
 #include "material_translation.glsl"
@@ -147,6 +142,27 @@ uint primeRcToBsdfEventFlags(uint flags) {
 // transport in linear Rec.2020, so reflectance is derived in the standard's source basis, tinted
 // there as required, and only then crossed into the working space. Component-wise multiplication
 // after the matrix conversion would describe a different spectrum.
+vec3 primeLabPbrConductorReflectance(float cosineIncident, vec3 eta, vec3 k) {
+    // This is material decoding, not a second conductor closure: it evaluates two reference
+    // angles once to initialize RoboCute's F0/F82 representation. Actual transport, evaluation
+    // and importance sampling remain exclusively owned by the imported BSDF implementation.
+    float cosine = clamp(abs(cosineIncident), 0.0, 1.0);
+    float cosine2 = cosine * cosine;
+    float sine2 = 1.0 - cosine2;
+    vec3 eta2 = eta * eta;
+    vec3 k2 = k * k;
+    vec3 t0 = eta2 - k2 - vec3(sine2);
+    vec3 a2PlusB2 = sqrt(max(t0 * t0 + 4.0 * eta2 * k2, vec3(0.0)));
+    vec3 a = sqrt(max(0.5 * (a2PlusB2 + t0), vec3(0.0)));
+    vec3 t1 = a2PlusB2 + vec3(cosine2);
+    vec3 t2 = 2.0 * cosine * a;
+    vec3 rs = (t1 - t2) / max(t1 + t2, vec3(PRIME_BSDF_EPSILON));
+    vec3 t3 = cosine2 * a2PlusB2 + vec3(sine2 * sine2);
+    vec3 t4 = t2 * sine2;
+    vec3 rp = rs * (t3 - t4) / max(t3 + t4, vec3(PRIME_BSDF_EPSILON));
+    return clamp(0.5 * (rs + rp), vec3(0.0), vec3(1.0));
+}
+
 bool primeLabPbrMetalOpticalConstants(uint metalId, out vec3 eta, out vec3 k) {
     if (metalId == 230u) {
         eta = vec3(2.9114, 2.9497, 2.5845);
@@ -196,8 +212,9 @@ PrimeLabPbrFresnel primeLabPbrMetalFresnel(vec3 baseColor, uint metalId) {
     const float f82AnchorCosine = 1.0 / 7.0;
     float schlick82Weight = pow(1.0 - f82AnchorCosine, 5.0);
     if (primeLabPbrMetalOpticalConstants(metalId, eta, k)) {
-        vec3 sourceF0 = primeFresnelConductor(1.0, eta, k) * sourceTint;
-        vec3 sourceF82 = primeFresnelConductor(f82AnchorCosine, eta, k) * sourceTint;
+        vec3 sourceF0 = primeLabPbrConductorReflectance(1.0, eta, k) * sourceTint;
+        vec3 sourceF82 = primeLabPbrConductorReflectance(
+                f82AnchorCosine, eta, k) * sourceTint;
         result.f0 = clamp(primeLinearSrgbToLinearRec2020(sourceF0), 0.0, 1.0);
         vec3 targetF82 = clamp(
                 primeLinearSrgbToLinearRec2020(sourceF82), 0.0, 1.0);

@@ -52,6 +52,7 @@ public final class VulkanRenderer implements AutoCloseable {
     private AtmospherePipeline atmosphere;
     private RealtimeRenderResources realtimeResources;
     private ScreenshotRenderResources screenshotResources;
+    private BlockAtlasFrame blockAtlasFrame;
     private FrameCamera camera;
     private FrameCamera previousSubmittedCamera;
     private SunDirection sunDirection;
@@ -141,12 +142,16 @@ public final class VulkanRenderer implements AutoCloseable {
         if (((TextureAtlasAccessor) (Object) atlas)
                 .prime$texturesByName()
                 .isEmpty()) {
+            this.blockAtlasFrame = null;
             return;
         }
-        if (atlas.getTextureView() instanceof VulkanGpuTextureView atlasView) {
-            this.terrain.setLabPbrMaterials(
-                    this.labPbrAtlas.ensure(minecraft, atlas, atlasView.vkImageView()));
+        if (!(atlas.getTextureView() instanceof VulkanGpuTextureView atlasView)
+                || !(atlas.getSampler() instanceof VulkanGpuSampler atlasSampler)) {
+            throw new IllegalStateException("Prime expected Vulkan block atlas resources");
         }
+        this.terrain.setLabPbrMaterials(
+                this.labPbrAtlas.ensure(minecraft, atlas, atlasView.vkImageView()));
+        this.blockAtlasFrame = new BlockAtlasFrame(atlasView, atlasSampler);
     }
 
     public void captureCamera(
@@ -212,16 +217,15 @@ public final class VulkanRenderer implements AutoCloseable {
             throw new IllegalStateException("Window dimensions exceed the Vulkan ray dispatch limit");
         }
 
-        Minecraft minecraft = Minecraft.getInstance();
-        TextureAtlas atlas = minecraft.getAtlasManager().getAtlasOrThrow(AtlasIds.BLOCKS);
-        if (!(atlas.getTextureView() instanceof VulkanGpuTextureView atlasView)
-                || !(atlas.getSampler() instanceof VulkanGpuSampler atlasSampler)) {
-            throw new IllegalStateException("Prime expected Vulkan block atlas resources");
+        BlockAtlasFrame blockAtlas = this.blockAtlasFrame;
+        if (blockAtlas == null) {
+            return;
         }
+        Minecraft minecraft = Minecraft.getInstance();
+        VulkanGpuTextureView atlasView = blockAtlas.view;
+        VulkanGpuSampler atlasSampler = blockAtlas.sampler;
         long atlasViewHandle = atlasView.vkImageView();
         long atlasSamplerHandle = atlasSampler.vkSampler();
-        this.terrain.setLabPbrMaterials(
-                this.labPbrAtlas.ensure(minecraft, atlas, atlasViewHandle));
         boolean resized = this.ensureRealtimeResources(
                 width,
                 height,
@@ -455,16 +459,14 @@ public final class VulkanRenderer implements AutoCloseable {
             throw new IllegalStateException("Window dimensions exceed the Vulkan ray dispatch limit");
         }
 
-        Minecraft minecraft = Minecraft.getInstance();
-        TextureAtlas atlas = minecraft.getAtlasManager().getAtlasOrThrow(AtlasIds.BLOCKS);
-        if (!(atlas.getTextureView() instanceof VulkanGpuTextureView atlasView)
-                || !(atlas.getSampler() instanceof VulkanGpuSampler atlasSampler)) {
-            throw new IllegalStateException("Prime expected Vulkan block atlas resources");
+        BlockAtlasFrame blockAtlas = this.blockAtlasFrame;
+        if (blockAtlas == null) {
+            return;
         }
+        VulkanGpuTextureView atlasView = blockAtlas.view;
+        VulkanGpuSampler atlasSampler = blockAtlas.sampler;
         long atlasViewHandle = atlasView.vkImageView();
         long atlasSamplerHandle = atlasSampler.vkSampler();
-        this.terrain.setLabPbrMaterials(
-                this.labPbrAtlas.ensure(minecraft, atlas, atlasViewHandle));
         if (this.screenshotAtlasView == 0L) {
             this.screenshotAtlasView = atlasViewHandle;
             this.screenshotAtlasSampler = atlasSamplerHandle;
@@ -1305,6 +1307,12 @@ public final class VulkanRenderer implements AutoCloseable {
 
     private static String hex(long handle) {
         return "0x" + Long.toUnsignedString(handle, 16);
+    }
+
+    /** One block-atlas snapshot is resolved and synchronized at the frame boundary. */
+    private record BlockAtlasFrame(
+            VulkanGpuTextureView view,
+            VulkanGpuSampler sampler) {
     }
 
 }

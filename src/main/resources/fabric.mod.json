@@ -9,6 +9,7 @@
   ],
   "license": "MIT",
   "environment": "client",
+  "accessWidener": "prime.accesswidener",
   "entrypoints": {
     "client": [
       "dev.prime.PrimeClient"

@@ -101,45 +101,29 @@ final class BsdfContractTest {
     }
 
     @Test
-    void labPbrClosuresHaveMatchingEvaluationAndSamplingEntrypoints() throws IOException {
+    void rendererUsesOneRoboCuteBsdfImplementationBehindPrimeContract() throws IOException {
         Path shaderRoot = Path.of(System.getProperty("user.dir"), "shaders");
-        String diffuse = Files.readString(shaderRoot.resolve("bsdf_diffuse.glsl"));
-        String microfacet = Files.readString(shaderRoot.resolve("bsdf_microfacet.glsl"));
-        String subsurface = Files.readString(shaderRoot.resolve("bsdf_subsurface.glsl"));
-        String emission = Files.readString(shaderRoot.resolve("bsdf_emission.glsl"));
         String composition = Files.readString(shaderRoot.resolve("bsdf.glsl"));
         String defaults = Files.readString(shaderRoot.resolve("default_material.glsl"));
 
-        assertClosurePair(diffuse, "DiffuseReflection");
-        assertClosurePair(diffuse, "DiffuseTransmission");
-        assertClosurePair(diffuse, "ThinSubsurface");
-        assertClosurePair(microfacet, "GgxDielectricReflection");
-        assertClosurePair(microfacet, "GgxConductorF0");
-        assertClosurePair(microfacet, "GgxConductorComplex");
-        assertClosurePair(microfacet, "GgxDielectricInterface");
-        assertTrue(microfacet.contains("primeSampleThinDielectric"));
-        assertTrue(subsurface.contains("primeEvaluateHenyeyGreenstein"));
-        assertTrue(subsurface.contains("primeSampleHenyeyGreenstein"));
-        assertTrue(emission.contains("primeEvaluateDiffuseEmission"));
-        assertTrue(emission.contains("primeSampleDiffuseEmission"));
-        assertTrue(microfacet.contains("alpha=(1-smoothness)^2"));
-        assertTrue(microfacet.contains("btdf /= etaPath * etaPath"));
         assertTrue(defaults.contains("PRIME_DEFAULT_DIELECTRIC_F0 = 0.04"));
         assertTrue(defaults.contains("PRIME_RUNTIME_DEFAULT_LINEAR_ROUGHNESS"));
         assertTrue(defaults.contains("float primeDefaultLinearRoughness()"));
         assertTrue(defaults.contains("Missing roughness therefore has one explicit"));
+        assertTrue(composition.contains("#include \"bsdf_common.glsl\""));
+        assertTrue(composition.contains("#include \"robocute_bsdf_openpbr.glsl\""));
         assertTrue(composition.contains("primeRcBasicMetallicStateInit"));
         assertTrue(composition.contains("primeRcBasicMetallicEvaluate"));
         assertTrue(composition.contains("primeRcBasicMetallicSample"));
-        assertTrue(microfacet.contains(
-                "return a2 / (PRIME_PI * denominator * denominator)"));
-        assertFalse(microfacet.contains(
-                "max(PRIME_PI * denominator * denominator, PRIME_BSDF_EPSILON)"));
-    }
-
-    private static void assertClosurePair(String source, String suffix) {
-        assertTrue(source.contains("primeEvaluate" + suffix), suffix + " evaluate");
-        assertTrue(source.contains("primeSample" + suffix), suffix + " sample");
+        for (String obsolete : new String[] {
+                "bsdf_fresnel.glsl",
+                "bsdf_diffuse.glsl",
+                "bsdf_microfacet.glsl",
+                "bsdf_subsurface.glsl",
+                "bsdf_emission.glsl"
+        }) {
+            assertFalse(Files.exists(shaderRoot.resolve(obsolete)), obsolete);
+        }
     }
 
     private static double fresnelDielectric(

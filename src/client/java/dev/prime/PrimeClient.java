@@ -25,12 +25,16 @@ public final class PrimeClient implements ClientModInitializer {
         resourceLoader.registerReloadListener(RELOAD_LISTENER_ID, new SimpleReloadListener<Boolean>() {
             @Override
             protected Boolean prepare(PreparableReloadListener.SharedState state) {
+                // Mark the source generation before Minecraft swaps the atlas view. The render
+                // thread can then consume one coherent version instead of rebuilding once for
+                // the new view and a second time for a late boolean invalidation.
+                RayTracingRuntime.instance().beginResourceReload();
                 return Boolean.TRUE;
             }
 
             @Override
             protected void apply(Boolean prepared, PreparableReloadListener.SharedState state) {
-                RayTracingRuntime.instance().reloadShaders();
+                RayTracingRuntime.instance().finishResourceReload();
             }
         });
         resourceLoader.addListenerOrdering(ResourceReloaderKeys.Client.MODELS, RELOAD_LISTENER_ID);

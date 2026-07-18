@@ -413,6 +413,155 @@ void primeAppendDeltaInterface(
     chain.count++;
 }
 
+// Both render paths below use the same estimator primitives. Their orchestration remains
+// separate only because realtime transparent transport must additionally discover NRD's virtual
+// surface and record its delta-interface chain. Keeping segment attenuation, emitter MIS, BSDF
+// dispatch and path advancement here prevents those physical rules from drifting between modes.
+vec3 primeEvaluateEnvironmentContribution(
+        PathState path, IntegratorRecord integrator) {
+    LightEvaluation sun = primeEvaluateSun(
+            integrator, path.physicalOrigin, path.rayDirection);
+    float sunWeight = primePreviousCannotUseMis(path)
+            ? 1.0
+            : primePowerHeuristic(path.previousBsdfPdf, sun.pdf);
+    return path.throughput
+            * (primeEnvironmentRadiance(integrator, path.rayDirection)
+            + sun.radiance * sunWeight);
+}
+
+vec3 primeEvaluateHitEmission(
+        PathState path, SurfaceInteraction surface) {
+    LightEvaluation hitAreaLight = primeEvaluateAreaLight(
+            surface, path.physicalOrigin, path.rayDirection);
+    float hitAreaWeight = primePreviousCannotUseMis(path)
+            ? 1.0
+            : primePowerHeuristic(path.previousBsdfPdf, hitAreaLight.pdf);
+    return path.throughput * hitAreaLight.radiance * hitAreaWeight;
+}
+
+bool primeApplySegmentMedium(
+        inout PathState path,
+        SurfaceInteraction surface,
+        PrimeRcVolumeStack volumeStack) {
+    if (volumeStack.count == 0u) {
+        return true;
+    }
+    PrimeRcVolume medium = volumeStack.values[volumeStack.count - 1u];
+    path.throughput *= exp(-medium.extinction * max(surface.t, 0.0));
+    return !all(lessThanEqual(path.throughput, vec3(0.0)));
+}
+
+bool primeIsPureDeltaInterface(
+        SurfaceInteraction surface, bool realtimeContinuation) {
+    if (!primeMaterialIsTransmissive(surface.materialFlags)) {
+        return false;
+    }
+#if defined(PRIME_REALTIME_SINGLE_REFRACTION)
+    // Realtime continuation deliberately redirects later interfaces into a coherent delta event.
+    // The ordinary and screenshot paths still use the authored roughness rule below.
+    if (realtimeContinuation) {
+        return true;
+    }
+#endif
+    return primeSurfaceLinearRoughness(surface) == 0.0;
+}
+
+struct PrimePathScatter {
+    BsdfSample bsdf;
+    PrimeRcVolumeStack volumeStack;
+};
+
+PrimePathScatter primeSamplePathSurface(
+        SurfaceInteraction surface,
+        vec3 viewDirection,
+        vec3 sampleValue,
+        PrimeRcVolumeStack volumeStack,
+        bool realtimeContinuation) {
+    PrimePathScatter result;
+    result.volumeStack = volumeStack;
+    if (primeMaterialIsFoliage(surface.materialFlags)) {
+        result.bsdf = primeSampleMinecraftFoliage(
+                surface.baseColor,
+                primeSurfaceShadingNormal(surface, viewDirection),
+                surface.labPbrNormal,
+                surface.labPbrSpecular,
+                surface.materialFlags,
+                viewDirection,
+                sampleValue,
+                surface.t,
+                volumeStack);
+    } else if (primeMaterialIsTransmissive(surface.materialFlags)) {
+        PrimeTransmissiveBsdfSample transmitted;
+#if defined(PRIME_REALTIME_SINGLE_REFRACTION)
+        if (realtimeContinuation) {
+            transmitted = primeSampleMinecraftRealtimeTransmissionBranch(
+                    surface.baseColor,
+                    primeSurfaceOpacity(surface),
+                    primeSurfaceOutwardShadingNormal(surface),
+                    surface.materialFlags,
+                    surface.labPbrNormal,
+                    surface.labPbrSpecular,
+                    viewDirection,
+                    sampleValue,
+                    false,
+                    true,
+                    surface.t,
+                    volumeStack);
+        } else {
+#endif
+            transmitted = primeSampleMinecraftTransmission(
+                    surface.baseColor,
+                    primeSurfaceOpacity(surface),
+                    primeSurfaceOutwardShadingNormal(surface),
+                    surface.materialFlags,
+                    surface.labPbrNormal,
+                    surface.labPbrSpecular,
+                    viewDirection,
+                    sampleValue,
+                    surface.t,
+                    volumeStack);
+#if defined(PRIME_REALTIME_SINGLE_REFRACTION)
+        }
+#endif
+        result.bsdf = transmitted.bsdfSample;
+        result.volumeStack = transmitted.volumeStack;
+    } else {
+        result.bsdf = primeSampleOpaque(
+                surface.baseColor,
+                primeSurfaceShadingNormal(surface, viewDirection),
+                surface.labPbrNormal,
+                surface.labPbrSpecular,
+                surface.materialFlags,
+                viewDirection,
+                sampleValue,
+                surface.t,
+                volumeStack);
+    }
+    return result;
+}
+
+bool primeValidScatter(BsdfSample bsdf) {
+    return bsdf.pdf > 0.0 && !all(lessThanEqual(bsdf.weight, vec3(0.0)));
+}
+
+bool primeAdvancePath(
+        inout PathState path,
+        SurfaceInteraction surface,
+        BsdfSample bsdf,
+        float rouletteSample) {
+    path.throughput *= bsdf.weight;
+    path.physicalOrigin = surface.position;
+    path.traceOrigin = primeOffsetRayOrigin(
+            path.physicalOrigin, surface.geometricNormal, bsdf.direction);
+    path.rayDirection = bsdf.direction;
+    path.previousBsdfPdf = bsdf.pdf;
+    path.flags = (bsdf.eventFlags & PRIME_BSDF_EVENT_DELTA) != 0u
+            ? PRIME_PATH_PREVIOUS_DELTA
+            : 0u;
+    return primeRussianRoulette(
+            path, PRIME_RUSSIAN_ROULETTE_START, rouletteSample);
+}
+
 PrimeContinuationResult primeIntegrateContinuation(
         PathState path,
         IntegratorRecord integrator,
@@ -434,7 +583,6 @@ PrimeContinuationResult primeIntegrateContinuation(
     result.hasGuide = 0u;
     result.stochasticBeforeGuide = 0u;
     uint maximumBounces = min(primePush.path.z & 0xffffu, 256u);
-    const uint rouletteStart = PRIME_RUSSIAN_ROULETTE_START;
     uint guideBounce = 0u;
     bool diffusePath = false;
     for (; path.bounce < maximumBounces; ++path.bounce) {
@@ -451,14 +599,7 @@ PrimeContinuationResult primeIntegrateContinuation(
             }
         }
         if (surface.hitKind == PRIME_HIT_NONE) {
-            LightEvaluation sun = primeEvaluateSun(
-                    integrator, path.physicalOrigin, path.rayDirection);
-            float sunWeight = primePreviousCannotUseMis(path)
-                    ? 1.0
-                    : primePowerHeuristic(path.previousBsdfPdf, sun.pdf);
-            vec3 contribution = path.throughput
-                    * (primeEnvironmentRadiance(integrator, path.rayDirection)
-                    + sun.radiance * sunWeight);
+            vec3 contribution = primeEvaluateEnvironmentContribution(path, integrator);
             if (result.hasGuide == 0u) {
                 result.stableRadiance += contribution;
             } else if (diffusePath) {
@@ -469,24 +610,15 @@ PrimeContinuationResult primeIntegrateContinuation(
             break;
         }
 
-        if (volumeStack.count > 0u) {
-            PrimeRcVolume medium = volumeStack.values[volumeStack.count - 1u];
-            path.throughput *= exp(-medium.extinction * max(surface.t, 0.0));
-            if (all(lessThanEqual(path.throughput, vec3(0.0)))) {
-                break;
-            }
+        if (!primeApplySegmentMedium(path, surface, volumeStack)) {
+            break;
         }
 
         // NRD's primary-surface-replacement contract skips a chain of pure delta interfaces and
         // promotes the first surface with a finite lobe to the virtual G-buffer. The distance from
         // the glass/water interface to this point is primary path length, not NRD hit distance;
         // diffuse/specular hit distance starts with the ray traced *after* this replacement.
-        bool pureDeltaInterface = primeMaterialIsTransmissive(surface.materialFlags)
-#if defined(PRIME_REALTIME_SINGLE_REFRACTION)
-                ;
-#else
-                && primeSurfaceLinearRoughness(surface) == 0.0;
-#endif
+        bool pureDeltaInterface = primeIsPureDeltaInterface(surface, true);
         bool primarySurfaceReplacement = result.hasGuide == 0u && !pureDeltaInterface;
         if (primarySurfaceReplacement) {
             result.guidePosition = surface.position;
@@ -500,12 +632,7 @@ PrimeContinuationResult primeIntegrateContinuation(
             guideBounce = path.bounce;
         }
 
-        LightEvaluation hitAreaLight = primeEvaluateAreaLight(
-                surface, path.physicalOrigin, path.rayDirection);
-        float hitAreaWeight = primePreviousCannotUseMis(path)
-                ? 1.0
-                : primePowerHeuristic(path.previousBsdfPdf, hitAreaLight.pdf);
-        vec3 emitted = path.throughput * hitAreaLight.radiance * hitAreaWeight;
+        vec3 emitted = primeEvaluateHitEmission(path, surface);
         if (result.hasGuide == 0u) {
             result.stableRadiance += emitted;
         } else if (primarySurfaceReplacement || diffusePath) {
@@ -517,7 +644,6 @@ PrimeContinuationResult primeIntegrateContinuation(
             result.specularRadiance += emitted;
         }
 
-        vec3 opaqueShadingNormal = primeSurfaceShadingNormal(surface, viewDirection);
         PrimeSampleBase bounceSample = primeMakeSampleBase(path, path.bounce + 1u);
         // A coherent delta interface has no finite lobe and intentionally performs no NEE, both
         // before and after a PSR. Generate sun/tree/position samples only at finite vertices; Sobol
@@ -579,71 +705,14 @@ PrimeContinuationResult primeIntegrateContinuation(
                 PRIME_SAMPLE_EFFECT_SCATTER_BSDF,
                 PRIME_SAMPLE_DIMENSION_PRIMARY);
 
-        BsdfSample bsdf;
-        if (primeMaterialIsFoliage(surface.materialFlags)) {
-            bsdf = primeSampleMinecraftFoliage(
-                    surface.baseColor,
-                    primeSurfaceShadingNormal(surface, viewDirection),
-                    surface.labPbrNormal,
-                    surface.labPbrSpecular,
-                    surface.materialFlags,
-                    viewDirection,
-                    scatterSample,
-                    surface.t,
-                    volumeStack);
-            if (primarySurfaceReplacement) {
-                diffusePath = (bsdf.eventFlags & PRIME_BSDF_EVENT_DIFFUSE) != 0u;
-            }
-        } else if (primeMaterialIsTransmissive(surface.materialFlags)) {
-#if defined(PRIME_REALTIME_SINGLE_REFRACTION)
-            PrimeTransmissiveBsdfSample transmitted =
-                    primeSampleMinecraftRealtimeTransmissionBranch(
-                            surface.baseColor,
-                            primeSurfaceOpacity(surface),
-                            primeSurfaceOutwardShadingNormal(surface),
-                            surface.materialFlags,
-                            surface.labPbrNormal,
-                            surface.labPbrSpecular,
-                            viewDirection,
-                            scatterSample,
-                            false,
-                            true,
-                            surface.t,
-                            volumeStack);
-#else
-            PrimeTransmissiveBsdfSample transmitted = primeSampleMinecraftTransmission(
-                    surface.baseColor,
-                    primeSurfaceOpacity(surface),
-                    primeSurfaceOutwardShadingNormal(surface),
-                    surface.materialFlags,
-                    surface.labPbrNormal,
-                    surface.labPbrSpecular,
-                    viewDirection,
-                    scatterSample,
-                    surface.t,
-                    volumeStack);
-#endif
-            bsdf = transmitted.bsdfSample;
-            volumeStack = transmitted.volumeStack;
-            if (primarySurfaceReplacement) {
-                diffusePath = false;
-            }
-        } else {
-            bsdf = primeSampleOpaque(
-                    surface.baseColor,
-                    opaqueShadingNormal,
-                    surface.labPbrNormal,
-                    surface.labPbrSpecular,
-                    surface.materialFlags,
-                    viewDirection,
-                    scatterSample,
-                    surface.t,
-                    volumeStack);
-            if (primarySurfaceReplacement) {
-                diffusePath = (bsdf.eventFlags & PRIME_BSDF_EVENT_DIFFUSE) != 0u;
-            }
+        PrimePathScatter scatter = primeSamplePathSurface(
+                surface, viewDirection, scatterSample, volumeStack, true);
+        BsdfSample bsdf = scatter.bsdf;
+        volumeStack = scatter.volumeStack;
+        if (primarySurfaceReplacement) {
+            diffusePath = (bsdf.eventFlags & PRIME_BSDF_EVENT_DIFFUSE) != 0u;
         }
-        if (bsdf.pdf <= 0.0 || all(lessThanEqual(bsdf.weight, vec3(0.0)))) {
+        if (!primeValidScatter(bsdf)) {
             break;
         }
         if (result.hasGuide == 0u
@@ -658,20 +727,11 @@ PrimeContinuationResult primeIntegrateContinuation(
             // the branch exposes. Keep the marker for the finite-environment fallback path.
             result.stochasticBeforeGuide = 1u;
         }
-        path.throughput *= bsdf.weight;
-        path.physicalOrigin = surface.position;
-        path.traceOrigin = primeOffsetRayOrigin(
-                path.physicalOrigin, surface.geometricNormal, bsdf.direction);
-        path.rayDirection = bsdf.direction;
-        path.previousBsdfPdf = bsdf.pdf;
-        path.flags = (bsdf.eventFlags & PRIME_BSDF_EVENT_DELTA) != 0u
-                ? PRIME_PATH_PREVIOUS_DELTA
-                : 0u;
         float rouletteSample = primeHashSample1D(
                 bounceSample,
                 PRIME_SAMPLE_EFFECT_RUSSIAN_ROULETTE,
                 PRIME_SAMPLE_DIMENSION_PRIMARY);
-        if (!primeRussianRoulette(path, rouletteStart, rouletteSample)) {
+        if (!primeAdvancePath(path, surface, bsdf, rouletteSample)) {
             break;
         }
     }
@@ -703,9 +763,6 @@ PrimeIntegrationResult primeIntegrate(PathState path, IntegratorRecord integrato
     // guaranteed 128-byte push range: low 16 bits are the bounce cap, bits 16..30 the exact
     // one-based FSR jitter phase, and bit 31 says that the camera lies inside the water volume.
     uint maximumBounces = min(primePush.path.z & 0xffffu, 256u);
-    // Roulette is an estimator contract rather than a temporal setting. The generated ABI keeps
-    // both integration paths on the same requested second-bounce start without a hidden literal.
-    const uint rouletteStart = PRIME_RUSSIAN_ROULETTE_START;
     for (path.bounce = 0u; path.bounce < maximumBounces; ++path.bounce) {
 #if defined(PRIME_OPAQUE_PRIMARY_PASS)
         // SBT records 2/3 differ only at the camera vertex: transparent intersections are skipped
@@ -739,15 +796,7 @@ PrimeIntegrationResult primeIntegrate(PathState path, IntegratorRecord integrato
             }
         }
         if (surface.hitKind == PRIME_HIT_NONE) {
-            LightEvaluation sun = primeEvaluateSun(
-                    integrator, path.physicalOrigin, path.rayDirection);
-            bool cannotUseMis = primePreviousCannotUseMis(path);
-            float sunWeight = cannotUseMis
-                    ? 1.0
-                    : primePowerHeuristic(path.previousBsdfPdf, sun.pdf);
-            vec3 contribution = path.throughput
-                    * (primeEnvironmentRadiance(integrator, path.rayDirection)
-                    + sun.radiance * sunWeight);
+            vec3 contribution = primeEvaluateEnvironmentContribution(path, integrator);
             if (path.bounce == 0u) {
                 result.stableRadiance += contribution;
             } else {
@@ -756,31 +805,19 @@ PrimeIntegrationResult primeIntegrate(PathState path, IntegratorRecord integrato
             break;
         }
 
-        if (volumeStack.count > 0u) {
-            PrimeRcVolume medium = volumeStack.values[volumeStack.count - 1u];
-            path.throughput *= exp(-medium.extinction * max(surface.t, 0.0));
-            if (all(lessThanEqual(path.throughput, vec3(0.0)))) {
-                break;
-            }
+        if (!primeApplySegmentMedium(path, surface, volumeStack)) {
+            break;
         }
 
-        LightEvaluation hitAreaLight = primeEvaluateAreaLight(
-                surface, path.physicalOrigin, path.rayDirection);
-        bool cannotUseHitMis = primePreviousCannotUseMis(path);
-        float hitAreaWeight = cannotUseHitMis
-                ? 1.0
-                : primePowerHeuristic(path.previousBsdfPdf, hitAreaLight.pdf);
-        vec3 emitted = path.throughput * hitAreaLight.radiance * hitAreaWeight;
+        vec3 emitted = primeEvaluateHitEmission(path, surface);
         if (path.bounce == 0u) {
             result.stableRadiance += emitted;
         } else {
             primeAccumulateAfterPrimary(result, diffusePath, emitted);
         }
 
-        vec3 opaqueShadingNormal = primeSurfaceShadingNormal(surface, viewDirection);
         PrimeSampleBase bounceSample = primeMakeSampleBase(path, path.bounce + 1u);
-        bool pureDeltaInterface = primeMaterialIsTransmissive(surface.materialFlags)
-                && primeSurfaceLinearRoughness(surface) == 0.0;
+        bool pureDeltaInterface = primeIsPureDeltaInterface(surface, false);
         if (!pureDeltaInterface) {
             vec2 sunSample = primeSobolSample2D(
                     bounceSample,
@@ -832,70 +869,21 @@ PrimeIntegrationResult primeIntegrate(PathState path, IntegratorRecord integrato
                 PRIME_SAMPLE_EFFECT_SCATTER_BSDF,
                 PRIME_SAMPLE_DIMENSION_PRIMARY);
 
-        BsdfSample bsdf;
-        if (primeMaterialIsFoliage(surface.materialFlags)) {
-            bsdf = primeSampleMinecraftFoliage(
-                    surface.baseColor,
-                    primeSurfaceShadingNormal(surface, viewDirection),
-                    surface.labPbrNormal,
-                    surface.labPbrSpecular,
-                    surface.materialFlags,
-                    viewDirection,
-                    scatterSample,
-                    surface.t,
-                    volumeStack);
-            if (path.bounce == 0u) {
-                diffusePath = (bsdf.eventFlags & PRIME_BSDF_EVENT_DIFFUSE) != 0u;
-            }
-        } else if (primeMaterialIsTransmissive(surface.materialFlags)) {
-            PrimeTransmissiveBsdfSample transmitted = primeSampleMinecraftTransmission(
-                    surface.baseColor,
-                    primeSurfaceOpacity(surface),
-                    primeSurfaceOutwardShadingNormal(surface),
-                    surface.materialFlags,
-                    surface.labPbrNormal,
-                    surface.labPbrSpecular,
-                    viewDirection,
-                    scatterSample,
-                    surface.t,
-                    volumeStack);
-            bsdf = transmitted.bsdfSample;
-            volumeStack = transmitted.volumeStack;
-            if (path.bounce == 0u) {
-                diffusePath = false;
-            }
-        } else {
-            bsdf = primeSampleOpaque(
-                    surface.baseColor,
-                    opaqueShadingNormal,
-                    surface.labPbrNormal,
-                    surface.labPbrSpecular,
-                    surface.materialFlags,
-                    viewDirection,
-                    scatterSample,
-                    surface.t,
-                    volumeStack);
-            if (path.bounce == 0u) {
-                diffusePath = (bsdf.eventFlags & PRIME_BSDF_EVENT_DIFFUSE) != 0u;
-            }
+        PrimePathScatter scatter = primeSamplePathSurface(
+                surface, viewDirection, scatterSample, volumeStack, false);
+        BsdfSample bsdf = scatter.bsdf;
+        volumeStack = scatter.volumeStack;
+        if (path.bounce == 0u) {
+            diffusePath = (bsdf.eventFlags & PRIME_BSDF_EVENT_DIFFUSE) != 0u;
         }
-        if (bsdf.pdf <= 0.0 || all(lessThanEqual(bsdf.weight, vec3(0.0)))) {
+        if (!primeValidScatter(bsdf)) {
             break;
         }
-        path.throughput *= bsdf.weight;
-        path.physicalOrigin = surface.position;
-        path.traceOrigin = primeOffsetRayOrigin(
-                path.physicalOrigin, surface.geometricNormal, bsdf.direction);
-        path.rayDirection = bsdf.direction;
-        path.previousBsdfPdf = bsdf.pdf;
-        path.flags = (bsdf.eventFlags & PRIME_BSDF_EVENT_DELTA) != 0u
-                ? PRIME_PATH_PREVIOUS_DELTA
-                : 0u;
         float rouletteSample = primeHashSample1D(
                 bounceSample,
                 PRIME_SAMPLE_EFFECT_RUSSIAN_ROULETTE,
                 PRIME_SAMPLE_DIMENSION_PRIMARY);
-        if (!primeRussianRoulette(path, rouletteStart, rouletteSample)) {
+        if (!primeAdvancePath(path, surface, bsdf, rouletteSample)) {
             break;
         }
     }

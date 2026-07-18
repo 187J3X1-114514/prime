@@ -23,8 +23,14 @@ final class DefaultBsdfEnergyContractTest {
         assertTrue(composition.contains("primeRcBasicMetallicEvaluate"));
         assertTrue(composition.contains("primeRcBasicMetallicSample"));
         assertEquals(
-                2,
+                1,
                 Pattern.compile("bsdf = primeSampleOpaque")
+                        .matcher(integrator)
+                        .results()
+                        .count());
+        assertEquals(
+                2,
+                Pattern.compile("PrimePathScatter scatter = primeSamplePathSurface")
                         .matcher(integrator)
                         .results()
                         .count());

@@ -444,7 +444,7 @@ PrimeContinuationResult primeIntegrateContinuation(
         // the glass/water interface to this point is primary path length, not NRD hit distance;
         // diffuse/specular hit distance starts with the ray traced *after* this replacement.
         bool pureDeltaInterface = primeMaterialIsTransmissive(surface.materialFlags)
-#if defined(PRIME_REALTIME_STRAIGHT_TRANSMISSION)
+#if defined(PRIME_REALTIME_SINGLE_REFRACTION)
                 ;
 #else
                 && primeMaterialLinearRoughness(
@@ -567,9 +567,9 @@ PrimeContinuationResult primeIntegrateContinuation(
                 diffusePath = (bsdf.eventFlags & PRIME_BSDF_EVENT_DIFFUSE) != 0u;
             }
         } else if (primeMaterialIsTransmissive(surface.materialFlags)) {
-#if defined(PRIME_REALTIME_STRAIGHT_TRANSMISSION)
+#if defined(PRIME_REALTIME_SINGLE_REFRACTION)
             PrimeTransmissiveBsdfSample transmitted =
-                    primeSampleMinecraftRealtimeStraightBranch(
+                    primeSampleMinecraftRealtimeTransmissionBranch(
                             surface.baseColor,
                             primeSurfaceOpacity(surface),
                             surface.geometricNormal,
@@ -620,7 +620,7 @@ PrimeContinuationResult primeIntegrateContinuation(
         if (result.hasGuide == 0u
                 && pureDeltaInterface
                 && (bsdf.eventFlags & PRIME_BSDF_EVENT_DELTA) != 0u) {
-#if !defined(PRIME_REALTIME_STRAIGHT_TRANSMISSION)
+#if !defined(PRIME_REALTIME_SINGLE_REFRACTION)
             primeAppendDeltaInterface(deltaChain, surface, bsdf);
 #endif
         } else if (result.hasGuide == 0u

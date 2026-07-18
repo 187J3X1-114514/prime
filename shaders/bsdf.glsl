@@ -732,11 +732,11 @@ PrimeTransmissiveBsdfSample primeSampleMinecraftTransmissionBranch(
             volumeStack);
 }
 
-// Realtime-only transport proposal used by transparent.rgen. The physical material state still
-// supplies Fresnel energy, tint, absorption and volume-stack transitions, but transmission keeps
-// the incident travel direction instead of refracting it. The unbiased screenshot integrator
-// never calls this approximation.
-PrimeTransmissiveBsdfSample primeSampleMinecraftRealtimeStraightBranch(
+// Realtime-only transport proposal used by transparent.rgen. The first visible interface keeps
+// physical reflection/refraction and Fresnel energy; later transparent interfaces redirect all
+// surviving energy into an unbent continuation while retaining tint, absorption and volume-stack
+// transitions. The unbiased screenshot integrator never calls this approximation.
+PrimeTransmissiveBsdfSample primeSampleMinecraftRealtimeTransmissionBranch(
         vec3 baseColor,
         float opacity,
         vec3 outwardNormal,
@@ -807,18 +807,9 @@ PrimeTransmissiveBsdfSample primeSampleMinecraftRealtimeStraightBranch(
             || all(lessThanEqual(result.bsdfSample.weight, vec3(0.0)))) {
         return result;
     }
-    if (reflectionBranch) {
-        return result;
-    }
-
-    // The first visible interface retains its physical Fresnel transmission energy because its
-    // complementary reflected energy is traced by the other deterministic branch. Only the ray
-    // direction changes; the complete physical estimator remains untouched for screenshot mode.
-    result.bsdfSample.direction = -viewDirection;
-    result.bsdfSample.pdf = 1.0;
-    result.bsdfSample.relativeEta = 1.0;
-    result.bsdfSample.eventFlags = PRIME_BSDF_EVENT_TRANSMISSION
-            | PRIME_BSDF_EVENT_DELTA;
+    // At the first visible interface both deterministic branches keep RoboCute's physical
+    // reflection/refraction directions and Fresnel energy. Only later interfaces take the
+    // realtime straight-through path returned above.
     return result;
 }
 

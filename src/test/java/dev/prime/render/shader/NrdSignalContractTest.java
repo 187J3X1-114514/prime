@@ -60,11 +60,11 @@ final class NrdSignalContractTest {
         assertTrue(opaqueAnyHit.contains("primeMaterialIsTransmissive"));
         assertTrue(integrator.contains("primeTraceSurfaceWithSbtOffset(path.traceOrigin, path.rayDirection, 2u)"));
         assertTrue(transparent.contains("primeTraceFirstInterfaceBranch("));
-        assertTrue(transparent.contains("#define PRIME_REALTIME_STRAIGHT_TRANSMISSION 1"));
-        assertTrue(transparent.contains("primeSampleMinecraftRealtimeStraightBranch("));
+        assertTrue(transparent.contains("#define PRIME_REALTIME_SINGLE_REFRACTION 1"));
+        assertTrue(transparent.contains("primeSampleMinecraftRealtimeTransmissionBranch("));
         assertTrue(bsdf.contains(
-                "PrimeTransmissiveBsdfSample primeSampleMinecraftRealtimeStraightBranch("));
-        assertTrue(bsdf.contains("result.bsdfSample.direction = -viewDirection"));
+                "PrimeTransmissiveBsdfSample primeSampleMinecraftRealtimeTransmissionBranch("));
+        assertTrue(bsdf.contains("redirected.bsdfSample.direction = -viewDirection"));
         assertTrue(bsdf.contains("if (!reflectionBranch && redirectOmittedReflection)"));
         assertTrue(bsdf.contains("retained.first + retained.second"));
         assertTrue(bsdf.contains("primeRcStackPush(redirected.volumeStack, volume)"));
@@ -120,15 +120,19 @@ final class NrdSignalContractTest {
         assertTrue(integrator.contains(
                 "(primarySurfaceReplacement || result.hasGuide != 0u) && !pureDeltaInterface"));
         assertTrue(integrator.contains("if (!pureDeltaInterface)"));
-        assertTrue(integrator.contains("#if defined(PRIME_REALTIME_STRAIGHT_TRANSMISSION)"));
+        assertTrue(integrator.contains("#if defined(PRIME_REALTIME_SINGLE_REFRACTION)"));
         assertTrue(transparent.contains("primeBuildDeltaVirtualGuide("));
         assertTrue(!transparent.contains("primeSolvePreviousDeltaPath("));
         assertTrue(!transparent.contains("primeSolveSingleTransmissionDeltaPath("));
-        assertTrue(!transparent.contains("PRIME_DELTA_RESIDUAL_TOLERANCE"));
+        assertTrue(!transparent.contains("primeDeltaLinearSystemRow("));
+        assertTrue(transparent.contains("primeSolvePreviousSingleRefraction("));
+        assertTrue(transparent.contains("PRIME_SINGLE_REFRACTION_RESIDUAL_TOLERANCE"));
         assertTrue(transparent.contains("previousVirtualPosition = unfoldedTarget"));
         assertTrue(transparent.contains("currentVirtualPosition = unfoldedTarget"));
         assertTrue(transparent.contains(
-                "(eventFlags & PRIME_BSDF_EVENT_REFLECTION) == 0u"));
+                "(eventFlags & PRIME_BSDF_EVENT_REFLECTION) != 0u"));
+        assertTrue(transparent.contains(
+                "(eventFlags & PRIME_BSDF_EVENT_TRANSMISSION) == 0u"));
         assertTrue(transparent.contains("previousVirtualPosition - result.currentVirtualPosition"));
         assertTrue(transparentPreparation.contains(
                 "previousVirtualPosition = currentVirtualPosition + interfaceData.xyz"));

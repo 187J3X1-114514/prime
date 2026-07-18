@@ -41,7 +41,7 @@ float primeMaterialLinearRoughness(vec3 baseColor, uint flags) {
         // samples and fireflies without representing any Minecraft material detail. Zero is a
         // physical-integrator contract: the visible interface can be split into deterministic
         // reflection and transmission paths. Screenshot mode keeps that full transport contract;
-        // realtime mode may deliberately replace it with its documented straight-through model.
+        // realtime mode may deliberately replace it with its documented single-refraction model.
         return 0.0;
     }
     return primeDefaultLinearRoughness(baseColor);

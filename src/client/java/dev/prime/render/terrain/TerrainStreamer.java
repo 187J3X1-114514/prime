@@ -1,6 +1,7 @@
 package dev.prime.render.terrain;
 
 import dev.prime.PrimeClient;
+import dev.prime.render.scene.vanilla.VanillaSceneInterpreter;
 import dev.prime.render.vulkan.StagingArena;
 import dev.prime.render.vulkan.VulkanContext;
 import it.unimi.dsi.fastutil.longs.Long2LongOpenHashMap;
@@ -17,15 +18,20 @@ import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import net.minecraft.client.color.block.BlockColors;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.client.renderer.block.BlockStateModelSet;
 import net.minecraft.client.renderer.block.FluidStateModelSet;
 import net.minecraft.client.renderer.chunk.RenderRegionCache;
 import net.minecraft.client.renderer.chunk.RenderSectionRegion;
+import net.minecraft.client.renderer.texture.TextureAtlas;
 import net.minecraft.core.SectionPos;
+import net.minecraft.data.AtlasIds;
 import net.minecraft.world.level.chunk.status.ChunkStatus;
 import net.minecraft.world.level.chunk.LevelChunk;
+import net.fabricmc.fabric.api.client.renderer.v1.sprite.FabricTextureAtlas;
+import net.fabricmc.fabric.api.client.renderer.v1.sprite.SpriteFinder;
 
 public final class TerrainStreamer implements AutoCloseable {
     private static final long[] EMPTY_EVICTIONS = new long[0];
@@ -42,6 +48,7 @@ public final class TerrainStreamer implements AutoCloseable {
             new float[0], new int[0], 0, 0, CpuSectionLights.EMPTY);
 
     private final TerrainScene scene;
+    private final VanillaSceneInterpreter sceneInterpreter = new VanillaSceneInterpreter();
     private final ThreadPoolExecutor workers;
     private final int maximumInFlight;
     private final ArrayBlockingQueue<CompletedSection> completed;
@@ -193,6 +200,7 @@ public final class TerrainStreamer implements AutoCloseable {
         } catch (InterruptedException exception) {
             Thread.currentThread().interrupt();
         }
+        this.sceneInterpreter.close();
         this.scene.close();
         this.completed.clear();
         this.externalDirty.clear();
@@ -296,6 +304,10 @@ public final class TerrainStreamer implements AutoCloseable {
         RenderRegionCache regionCache = new RenderRegionCache();
         BlockStateModelSet models = minecraft.getModelManager().getBlockStateModelSet();
         FluidStateModelSet fluidModels = minecraft.getModelManager().getFluidStateModelSet();
+        BlockColors blockColors = minecraft.getBlockColors();
+        TextureAtlas blockAtlas = minecraft.getAtlasManager().getAtlasOrThrow(AtlasIds.BLOCKS);
+        SpriteFinder blockSpriteFinder = ((FabricTextureAtlas) (Object) blockAtlas).spriteFinder();
+        boolean cutoutLeaves = minecraft.options.cutoutLeaves().get();
         this.unloadedRequests.clear();
         this.blockedRequests.clear();
         int examined = 0;
@@ -346,13 +358,18 @@ public final class TerrainStreamer implements AutoCloseable {
                 }
                 continue;
             }
+            if (!hasCompleteHorizontalNeighborhood(level, sectionX, sectionZ)) {
+                // RenderSectionRegion snapshots one Section in every direction. Fluid corner
+                // heights in particular inspect diagonal blocks; ClientLevel substitutes empty
+                // chunks when one of those neighbors has not arrived yet. Compiling that temporary
+                // state produces a persistent sloped seam at the real chunk boundary because Prime
+                // has no vanilla render-chunk task to invalidate it when the neighbor later loads.
+                // Keep the request live until the same 3x3 chunk neighborhood used by vanilla's
+                // stable mesh is present. The retry remains bounded by the request queue.
+                this.unloadedRequests.add(request);
+                continue;
+            }
             RenderSectionRegion region = regionCache.createRegion(level, request.key());
-            TintSnapshot tints = TintSnapshot.capture(
-                    region,
-                    minecraft.getBlockColors(),
-                    sectionX,
-                    sectionY,
-                    sectionZ);
             LabPbrMaterialSet materialSnapshot = this.labPbrMaterials;
             this.inFlightGeneration.put(request.key(), request.generation());
             long worldEpoch = this.generations.worldEpoch();
@@ -361,12 +378,14 @@ public final class TerrainStreamer implements AutoCloseable {
                     CpuSectionMesh mesh = EMPTY_MESH;
                     Throwable failure = null;
                     try {
-                        mesh = TerrainMesher.mesh(
+                        mesh = TerrainStreamer.this.sceneInterpreter.compileSection(
                                 region,
                                 models,
                                 fluidModels,
-                                tints,
+                                blockColors,
+                                blockSpriteFinder,
                                 materialSnapshot,
+                                cutoutLeaves,
                                 sectionX,
                                 sectionY,
                                 sectionZ);
@@ -402,6 +421,20 @@ public final class TerrainStreamer implements AutoCloseable {
         this.unloadedRequests.clear();
     }
 
+    private static boolean hasCompleteHorizontalNeighborhood(
+            ClientLevel level,
+            int centerChunkX,
+            int centerChunkZ) {
+        for (int chunkZ = centerChunkZ - 1; chunkZ <= centerChunkZ + 1; chunkZ++) {
+            for (int chunkX = centerChunkX - 1; chunkX <= centerChunkX + 1; chunkX++) {
+                if (level.getChunkSource().getChunk(chunkX, chunkZ, ChunkStatus.FULL, false) == null) {
+                    return false;
+                }
+            }
+        }
+        return true;
+    }
+
     private void drainCompleted() {
         if (this.completionOverflow.getAndSet(false)) {
             this.completed.clear();
@@ -424,9 +457,14 @@ public final class TerrainStreamer implements AutoCloseable {
                 continue;
             }
             if (result.failure() != null) {
-                PrimeClient.LOGGER.warn("Terrain extraction failed for section {}", result.key(), result.failure());
-                this.enqueue(result.key(), 0, result.generation());
-                continue;
+                // A completed job is immutable and retrying the same generation cannot repair a
+                // deterministic compiler/capture failure. Immediate requeue previously left Prime
+                // in STREAMING forever and could emit hundreds of megabytes of identical stacks.
+                // Escalate once on the render thread so the runtime performs its defined FAILED ->
+                // vanilla fallback and presents the actionable reason to the user.
+                throw new IllegalStateException(
+                        "Terrain extraction failed for section " + result.key(),
+                        result.failure());
             }
             if (this.readyForUpload.size() >= MAX_READY_FOR_UPLOAD) {
                 this.enqueue(result.key(), 0, result.generation());

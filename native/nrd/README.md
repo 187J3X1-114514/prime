@@ -15,8 +15,9 @@ cmake --build build/native/nrd --config Release --target prime_nrd --parallel
 
 The build is deliberately pinned to NRD 4.17.4, SPIR-V only, with one
 `REBLUR_DIFFUSE_SPECULAR` instance, no NRI and no quad-intrinsics extension. Realtime rendering
-traces one complete path per pixel. The path loop promotes its first non-delta sample to the NRD
-guide and folds preceding delta throughput into the guide material factors. Hit-distance
+traces one complete path per pixel. The path loop accumulates specular albedo across preceding
+delta samples, multiplies the first non-delta surface's diffuse-plus-specular albedo into that
+guide, and promotes the surface's normal and roughness to NRD. Hit-distance
 reconstruction uses NRD's 5x5 area mode.
 Copy the resulting `build/native/nrd/bin/Release/prime_nrd.dll` to
 `src/client/resources/prime/natives/windows-x86_64/prime_nrd.dll` and run the full Gradle build.

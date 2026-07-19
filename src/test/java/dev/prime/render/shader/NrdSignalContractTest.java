@@ -24,10 +24,13 @@ final class NrdSignalContractTest {
         assertFalse(world.contains("PRIME_OPAQUE_PRIMARY_PASS"));
         assertTrue(integrator.contains("bool hitted_non_delta = false"));
         assertTrue(integrator.contains(
-                "(bsdf.eventFlags & PRIME_BSDF_EVENT_DELTA) == 0u"));
+                "vec3 specular_albedo = vec3(1.0)"));
+        assertTrue(integrator.contains("if (primeIsNonDeltaSample(bsdf))"));
         assertTrue(integrator.contains("hitted_non_delta = true"));
-        assertTrue(integrator.contains(
-                "path.throughput * albedoSum"));
+        assertTrue(integrator.contains("specular_albedo *= albedoSum"));
+        assertTrue(integrator.contains("else if (primeIsDeltaSample(bsdf))"));
+        assertTrue(integrator.contains("specular_albedo *= surfaceSpecularAlbedo"));
+        assertFalse(integrator.contains("path.throughput * albedoSum"));
         assertTrue(integrator.contains(
                 "result.primaryNormal = primeSurfaceShadingNormal(surface, viewDirection)"));
         assertTrue(integrator.contains(

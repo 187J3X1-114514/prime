@@ -448,6 +448,15 @@ bool primeValidScatter(BsdfSample bsdf) {
     return bsdf.pdf > 0.0 && !all(lessThanEqual(bsdf.weight, vec3(0.0)));
 }
 
+bool primeIsDeltaSample(BsdfSample bsdf) {
+    return (bsdf.eventFlags & PRIME_BSDF_EVENT_DELTA) != 0u;
+}
+
+bool primeIsNonDeltaSample(BsdfSample bsdf) {
+    uint nonDeltaFlags = PRIME_BSDF_EVENT_DIFFUSE | PRIME_BSDF_EVENT_GLOSSY;
+    return (bsdf.eventFlags & nonDeltaFlags) != 0u && !primeIsDeltaSample(bsdf);
+}
+
 bool primeAdvancePath(
         inout PathState path,
         SurfaceInteraction surface,
@@ -482,6 +491,7 @@ PrimeIntegrationResult primeIntegrate(PathState path, IntegratorRecord integrato
     result.primaryLinearRoughness = PRIME_DEFAULT_REFERENCE_LINEAR_ROUGHNESS;
     result.primaryPosition = vec3(0.0);
     bool hitted_non_delta = false;
+    vec3 specular_albedo = vec3(1.0);
     bool diffusePath = false;
     uint guideBounce = 0u;
     // This stack is path state, not temporary BSDF state. It must survive every surface bounce so
@@ -587,25 +597,25 @@ PrimeIntegrationResult primeIntegrate(PathState path, IntegratorRecord integrato
                 surface, viewDirection, scatterSample, volumeStack);
         BsdfSample bsdf = scatter.bsdf;
         volumeStack = scatter.volumeStack;
-        if (!hitted_non_delta
-                && (bsdf.eventFlags & PRIME_BSDF_EVENT_DELTA) == 0u) {
-            hitted_non_delta = true;
-            guideBounce = path.bounce;
-            vec3 albedoSum = primeSurfaceSpecularF0(surface) + surface.baseColor;
-            vec3 guideThroughput = max(
-                    vec3(PRIME_NRD_MATERIAL_FACTOR_MIN),
-                    path.throughput * albedoSum);
-            result.primaryDistance = length(surface.position - primePush.cameraPosition);
-            result.primaryPosition = surface.position - primePush.cameraPosition;
-            result.primaryBaseColor = max(
-                    vec3(PRIME_NRD_MATERIAL_FACTOR_MIN),
-                    path.throughput * surface.baseColor);
-            result.primaryNormal = primeSurfaceShadingNormal(surface, viewDirection);
-            result.primaryHitKind = surface.hitKind;
-            result.primaryMaterialFlags = surface.materialFlags;
-            result.primarySpecularF0 = guideThroughput;
-            result.primaryLinearRoughness = primeSurfaceLinearRoughness(surface);
-            diffusePath = (bsdf.eventFlags & PRIME_BSDF_EVENT_DIFFUSE) != 0u;
+        if (!hitted_non_delta) {
+            vec3 surfaceSpecularAlbedo = primeSurfaceSpecularF0(surface);
+            if (primeIsNonDeltaSample(bsdf)) {
+                hitted_non_delta = true;
+                guideBounce = path.bounce;
+                vec3 albedoSum = surfaceSpecularAlbedo + surface.baseColor;
+                specular_albedo *= albedoSum;
+                result.primaryDistance = length(surface.position - primePush.cameraPosition);
+                result.primaryPosition = surface.position - primePush.cameraPosition;
+                result.primaryBaseColor = surface.baseColor;
+                result.primaryNormal = primeSurfaceShadingNormal(surface, viewDirection);
+                result.primaryHitKind = surface.hitKind;
+                result.primaryMaterialFlags = surface.materialFlags;
+                result.primarySpecularF0 = specular_albedo;
+                result.primaryLinearRoughness = primeSurfaceLinearRoughness(surface);
+                diffusePath = (bsdf.eventFlags & PRIME_BSDF_EVENT_DIFFUSE) != 0u;
+            } else if (primeIsDeltaSample(bsdf)) {
+                specular_albedo *= surfaceSpecularAlbedo;
+            }
         }
         if (!primeValidScatter(bsdf)) {
             break;

@@ -53,7 +53,7 @@ $env:Path = "$env:JAVA_HOME\bin;$env:VULKAN_SDK\Bin;$env:Path"
 .\gradlew.bat clean build
 ```
 
-`compileShaders` 会编译 Prime 自有 shader，并从同一份 mega-kernel 源码生成普通与 SER 两个 raygen permutation；运行时只在设备报告真实 invocation reorder 能力时加载后者。临时 SPIR-V 写入 `build/` 并执行 `spirv-val`，JAR 包含生成结果，仓库不单独保存二进制 SPIR-V。FSR 的 shader、管线和私有资源由随包提供的 AMD 官方 `amd_fidelityfx_vk.dll` 持有，不再由 Gradle 编译或打入独立 FSR SPIR-V。发行 JAR 同时内置 Windows x86-64 的 `prime_nrd.dll`；用户无需另外寻找 NRD 或 FidelityFX 文件。NRD DLL 只包含固定版本的 NRD Core、其 SPIR-V 和 Prime 的窄 C ABI；重建方法见 `native/nrd/README.md`。
+`compileShaders` 会编译 Prime 自有 shader，并从同一份 mega-kernel 源码生成普通与 SER 两个 raygen permutation；运行时只在设备报告真实 invocation reorder 能力时加载后者。发布/日常开发构建会剥离 SPIR-V 调试信息、执行保持语义的结构化简并再次运行 `spirv-val`，以降低冷启动时的驱动编译成本；需要在 Nsight 中查看 shader 源码映射时可显式传入 `-PprimeShaderDebug=true`，该模式保留完整调试信息且跳过发布化简。运行时将实时、透明合成和截图三个 raygen group 放在同一个 Vulkan ray tracing pipeline 中，共享 miss/hit 编译结果；截图模式不会在进入游戏后临时编译另一套管线。临时 SPIR-V 写入 `build/`，JAR 包含生成结果，仓库不单独保存二进制 SPIR-V。FSR 的 shader、管线和私有资源由随包提供的 AMD 官方 `amd_fidelityfx_vk.dll` 持有，不再由 Gradle 编译或打入独立 FSR SPIR-V。发行 JAR 同时内置 Windows x86-64 的 `prime_nrd.dll`；用户无需另外寻找 NRD 或 FidelityFX 文件。NRD DLL 只包含固定版本的 NRD Core、其 SPIR-V 和 Prime 的窄 C ABI；重建方法见 `native/nrd/README.md`。
 
 ## 开发运行
 

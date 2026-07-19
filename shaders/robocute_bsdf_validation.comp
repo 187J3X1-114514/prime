@@ -75,6 +75,20 @@ void main() {
     PrimeRcSampleResult transmissionSample = primeRcTransmissionSample(
             wi, randomValue, transmissionState, stack);
 
+    PrimeRcMaterial thinWallMaterial = material;
+    thinWallMaterial.weight.coat = 0.0;
+    thinWallMaterial.weight.fuzz = 0.0;
+    thinWallMaterial.weight.thinFilm = 0.0;
+    thinWallMaterial.weight.diffraction = 0.0;
+    thinWallMaterial.geometry.thinWalled = 1u;
+    PrimeRcState thinWallState = primeRcPrimeThinWallStateInit(
+            thinWallMaterial, wi, 1.0, 0.25, vec3(460.0, 550.0, 610.0),
+            1u, PRIME_RC_DETAIL_DEFAULT, 0u);
+    PrimeRcEval thinWallEvaluation = primeRcPrimeThinWallEvaluate(
+            wi, wo, thinWallState);
+    PrimeRcSampleResult thinWallSample = primeRcPrimeThinWallSample(
+            wi, randomValue, thinWallState, stack);
+
     primeRcValidation.values[6] = vec4(
             evaluation.throughput.value + sampled.bsdfSample.throughput.value
                     + basicEvaluation.throughput.value
@@ -82,11 +96,14 @@ void main() {
                     + subsurfaceEvaluation.throughput.value
                     + subsurfaceSample.bsdfSample.throughput.value
                     + transmissionEvaluation.throughput.value
-                    + transmissionSample.bsdfSample.throughput.value,
+                    + transmissionSample.bsdfSample.throughput.value
+                    + thinWallEvaluation.throughput.value
+                    + thinWallSample.bsdfSample.throughput.value,
             evaluation.pdf + sampled.bsdfSample.pdf
                     + basicEvaluation.pdf + basicSample.bsdfSample.pdf
                     + subsurfaceEvaluation.pdf + subsurfaceSample.bsdfSample.pdf
-                    + transmissionEvaluation.pdf + transmissionSample.bsdfSample.pdf);
+                    + transmissionEvaluation.pdf + transmissionSample.bsdfSample.pdf
+                    + thinWallEvaluation.pdf + thinWallSample.bsdfSample.pdf);
     primeRcValidation.values[7] = vec4(
             primeRcBasicMetallicEnergy(wi, basicState)
                     + primeRcBasicMetallicTintOut(wo, basicState)

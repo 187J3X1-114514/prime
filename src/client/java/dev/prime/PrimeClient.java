@@ -23,6 +23,8 @@ public final class PrimeClient implements ClientModInitializer {
         RayTracingRuntime.instance().initialize();
         ResourceLoader resourceLoader = ResourceLoader.get(PackType.CLIENT_RESOURCES);
         resourceLoader.registerReloadListener(RELOAD_LISTENER_ID, new SimpleReloadListener<Boolean>() {
+            private boolean initialReload = true;
+
             @Override
             protected Boolean prepare(PreparableReloadListener.SharedState state) {
                 // Mark the source generation before Minecraft swaps the atlas view. The render
@@ -34,7 +36,9 @@ public final class PrimeClient implements ClientModInitializer {
 
             @Override
             protected void apply(Boolean prepared, PreparableReloadListener.SharedState state) {
-                RayTracingRuntime.instance().finishResourceReload();
+                boolean reloadShaders = !this.initialReload;
+                this.initialReload = false;
+                RayTracingRuntime.instance().finishResourceReload(reloadShaders);
             }
         });
         resourceLoader.addListenerOrdering(ResourceReloaderKeys.Client.MODELS, RELOAD_LISTENER_ID);

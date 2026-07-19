@@ -158,10 +158,16 @@ public final class RayTracingRuntime {
     }
 
     /** Applies the completed reload without issuing a second material-atlas invalidation. */
-    public void finishResourceReload() {
+    public void finishResourceReload(boolean reloadShaders) {
         VulkanRenderer activeRenderer = this.renderer;
         if (activeRenderer != null) {
-            activeRenderer.requestShaderReload();
+            // Minecraft's initial resource load completes after Prime has already constructed all
+            // pipelines from the packaged SPIR-V. Rebuilding those identical pipelines here made
+            // every cold start pay the driver compilation cost twice. Later explicit resource
+            // reloads still replace every pipeline before rendering resumes.
+            if (reloadShaders) {
+                activeRenderer.requestShaderReload();
+            }
             activeRenderer.invalidateAll();
         }
     }

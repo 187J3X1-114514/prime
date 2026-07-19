@@ -547,6 +547,12 @@ abstract class CompilePrimeShaders extends DefaultTask {
 	@Input
 	abstract Property<String> getSpirvValidator()
 
+	@Input
+	abstract Property<String> getSpirvOptimizer()
+
+	@Input
+	abstract Property<Boolean> getDebugInfo()
+
 	@javax.inject.Inject
 	abstract org.gradle.process.ExecOperations getExecOperations()
 
@@ -565,16 +571,47 @@ abstract class CompilePrimeShaders extends DefaultTask {
 		def scratch = new File(temporaryDir, 'spv')
 		fileSystemOperations.delete { delete scratch }
 		scratch.mkdirs()
-		sources.each { source ->
-			def output = new File(scratch, source.name + '.spv')
+		def compileShader = { File source, File output, List<String> definitions ->
+			def arguments = ['-V', '--target-env', 'vulkan1.2',
+					debugInfo.get() ? '-g' : '-g0']
+			arguments.addAll(definitions)
+			arguments.add("-I${includeDirectory.get().asFile.absolutePath}")
+			arguments.add(source.absolutePath)
+			arguments.addAll(['-o', output.absolutePath])
 			execOperations.exec {
-				commandLine glslangValidator.get(), '-V', '--target-env', 'vulkan1.2', '-g',
-						"-I${includeDirectory.get().asFile.absolutePath}", source.absolutePath,
-						'-o', output.absolutePath
+				commandLine glslangValidator.get(), *arguments
+			}
+			if (!debugInfo.get()) {
+				def optimized = new File(output.parentFile, output.name + '.optimized')
+				// These passes only canonicalize SPIR-V structure and remove redundant operations.
+				// Do not add aggressive inlining here: it greatly increases driver compile time.
+				// Dead functions may be removed after glslang has compiled the complete standalone
+				// RoboCute validation module; runtime modules must not carry unreachable library code.
+				execOperations.exec {
+					commandLine spirvOptimizer.get(),
+							'--remove-duplicates',
+							'--eliminate-local-single-block',
+							'--eliminate-local-single-store',
+							'--ssa-rewrite',
+							'--redundancy-elimination',
+							'--simplify-instructions',
+							'--eliminate-dead-functions',
+							'--merge-blocks',
+							'--compact-ids',
+							output.absolutePath,
+							'-o', optimized.absolutePath
+				}
+				java.nio.file.Files.move(
+						optimized.toPath(), output.toPath(),
+						java.nio.file.StandardCopyOption.REPLACE_EXISTING)
 			}
 			execOperations.exec {
 				commandLine spirvValidator.get(), '--target-env', 'vulkan1.2', output.absolutePath
 			}
+		}
+		sources.each { source ->
+			def output = new File(scratch, source.name + '.spv')
+			compileShader(source, output, [])
 			// Conformance-only shaders force otherwise dormant libraries through glslang and
 			// spirv-val, but are never loaded at runtime and must not inflate the distributable jar.
 			if (source.name.endsWith('_validation.comp')) {
@@ -585,15 +622,7 @@ abstract class CompilePrimeShaders extends DefaultTask {
 				// SER permutation for devices that negotiate real invocation reordering. Runtime
 				// selection therefore cannot expose unsupported SPIR-V to a fallback device.
 				def serOutput = new File(scratch, 'world_ser.rgen.spv')
-				execOperations.exec {
-					commandLine glslangValidator.get(), '-V', '--target-env', 'vulkan1.2', '-g',
-							'-DPRIME_ENABLE_SER=1',
-							"-I${includeDirectory.get().asFile.absolutePath}", source.absolutePath,
-							'-o', serOutput.absolutePath
-				}
-				execOperations.exec {
-					commandLine spirvValidator.get(), '--target-env', 'vulkan1.2', serOutput.absolutePath
-				}
+				compileShader(source, serOutput, ['-DPRIME_ENABLE_SER=1'])
 			}
 		}
 
@@ -636,6 +665,10 @@ def compileShaders = tasks.register('compileShaders', CompilePrimeShaders) {
 	outputDirectory = compiledShaderRoot
 	glslangValidator = resolveVulkanTool('glslangValidator')
 	spirvValidator = resolveVulkanTool('spirv-val')
+	spirvOptimizer = resolveVulkanTool('spirv-opt')
+	debugInfo = providers.gradleProperty('primeShaderDebug')
+			.map { value -> value.toBoolean() }
+			.orElse(false)
 }
 
 sourceSets.client.java.srcDir(files(shaderAbiJavaRoot).builtBy(generateShaderAbi))

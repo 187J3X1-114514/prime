@@ -73,6 +73,9 @@ final class RoboCuteBsdfContractTest {
         assertTrue(validation.contains("primeRcOpenPbrSample"));
         assertTrue(validation.contains("primeRcBasicMetallicStateInit"));
         assertTrue(validation.contains("primeRcSubsurfaceGlossyStateInit"));
+        assertTrue(validation.contains("primeRcPrimeThinWallStateInit"));
+        assertTrue(validation.contains("primeRcPrimeThinWallEvaluate"));
+        assertTrue(validation.contains("primeRcPrimeThinWallSample"));
         assertTrue(validation.contains("primeRcTransmissionStateInit"));
         assertFalse(openPbr.contains("TODO"));
     }
@@ -175,7 +178,8 @@ final class RoboCuteBsdfContractTest {
     }
 
     @Test
-    void foliageUsesAlphaTestedOpenPbrThinWallsWithoutVolumeTransitions() throws IOException {
+    void foliageUsesTheExactPrimeThinWallSpecializationWithoutVolumeTransitions()
+            throws IOException {
         String defaults = shader("default_material.glsl");
         String adapter = shader("bsdf.glsl");
         String integrator = shader("integrator.glsl");
@@ -184,8 +188,9 @@ final class RoboCuteBsdfContractTest {
         assertTrue(defaults.contains("PRIME_MATERIAL_FLAG_FOLIAGE = 32u"));
         assertTrue(adapter.contains("PRIME_FOLIAGE_TRANSMISSION_WEIGHT = 0.15"));
         assertTrue(adapter.contains("material.geometry.thinWalled = 1u"));
-        assertTrue(adapter.contains("primeRcOpenPbrEvaluate"));
-        assertTrue(adapter.contains("primeRcOpenPbrSample"));
+        assertTrue(adapter.contains("primeRcPrimeThinWallEvaluate"));
+        assertTrue(adapter.contains("primeRcPrimeThinWallSample"));
+        assertTrue(adapter.contains("#define PRIME_RC_ENABLE_FULL_OPENPBR 0"));
         assertTrue(integrator.contains("primeMaterialIsFoliage(surface.materialFlags)"));
         assertTrue(integrator.contains("primeSampleMinecraftFoliage"));
         assertTrue(anyHit.contains("opacity < PRIME_CUTOUT_ALPHA_THRESHOLD"));

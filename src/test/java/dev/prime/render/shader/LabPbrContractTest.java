@@ -39,8 +39,13 @@ final class LabPbrContractTest {
         }
         assertTrue(adapter.contains("primeRcF0ToIor(translated.dielectricF0)"));
         assertTrue(adapter.contains("material.weight.subsurface = translated.subsurfaceWeight"));
-        assertTrue(adapter.contains("primeRcOpenPbrEvaluate"));
-        assertTrue(adapter.contains("primeRcOpenPbrSample"));
+        assertTrue(adapter.contains("#define PRIME_RC_ENABLE_FULL_OPENPBR 0"));
+        assertFalse(adapter.contains("primeRcOpenPbrEvaluate"));
+        assertFalse(adapter.contains("primeRcOpenPbrSample"));
+        assertTrue(adapter.contains("primeRcSubsurfaceGlossyEvaluate"));
+        assertTrue(adapter.contains("primeRcSubsurfaceGlossySample"));
+        assertTrue(adapter.contains("primeRcPrimeThinWallEvaluate"));
+        assertTrue(adapter.contains("primeRcPrimeThinWallSample"));
         assertTrue(adapter.contains("primeRcBasicMetallicStateInit"));
         assertTrue(adapter.contains("primeRcBasicMetallicEvaluate"));
         assertTrue(adapter.contains("primeRcBasicMetallicSample"));
@@ -143,7 +148,8 @@ final class LabPbrContractTest {
         assertTrue(pipeline.contains("ShaderAbi.DESCRIPTOR_LABPBR_SPECULAR_ATLAS"));
         assertTrue(runtime.contains("activeRenderer.requestResourceReload()"));
         assertTrue(client.contains("beginResourceReload()"));
-        assertTrue(client.contains("finishResourceReload()"));
+        assertTrue(client.contains("finishResourceReload(reloadShaders)"));
+        assertTrue(client.contains("private boolean initialReload = true"));
         assertEquals(1, occurrences(renderer, "this.labPbrAtlas.ensure("));
         assertTrue(atlas.contains("AtomicLong requestedGeneration"));
         assertTrue(atlas.contains("state.animationInfo.frames"));

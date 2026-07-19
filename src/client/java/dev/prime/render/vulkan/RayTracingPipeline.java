@@ -38,9 +38,13 @@ import org.lwjgl.vulkan.VkWriteDescriptorSet;
 import org.lwjgl.vulkan.VkWriteDescriptorSetAccelerationStructureKHR;
 
 public final class RayTracingPipeline implements Destroyable {
-    private static final int GROUP_COUNT = 9;
+    private static final int OPAQUE_RAYGEN_GROUP = 0;
+    private static final int TRANSPARENT_RAYGEN_GROUP = 1;
+    private static final int SCREENSHOT_RAYGEN_GROUP = 2;
+    static final int RAYGEN_GROUP_COUNT = 3;
     static final int MISS_GROUP_COUNT = 2;
     static final int HIT_GROUP_COUNT = 6;
+    private static final int GROUP_COUNT = RAYGEN_GROUP_COUNT + MISS_GROUP_COUNT + HIT_GROUP_COUNT;
     private static final int ALL_RT_STAGES =
             KHRRayTracingPipeline.VK_SHADER_STAGE_RAYGEN_BIT_KHR
                     | KHRRayTracingPipeline.VK_SHADER_STAGE_MISS_BIT_KHR
@@ -57,9 +61,7 @@ public final class RayTracingPipeline implements Destroyable {
     private final VulkanContext context;
     private final long descriptorSetLayout;
     private final long pipelineLayout;
-    private final TracePipeline opaquePipeline;
-    private final TracePipeline transparentPipeline;
-    private final TracePipeline screenshotPipeline;
+    private final TracePipeline tracePipeline;
     private final BsdfLookupTable bsdfLookup;
     private final VulkanBuffer temporalCamera;
     private DescriptorBindings descriptorBindings;
@@ -69,9 +71,7 @@ public final class RayTracingPipeline implements Destroyable {
         this.context = context;
         long newDescriptorSetLayout = 0L;
         long newPipelineLayout = 0L;
-        TracePipeline newOpaquePipeline = null;
-        TracePipeline newTransparentPipeline = null;
-        TracePipeline newScreenshotPipeline = null;
+        TracePipeline newTracePipeline = null;
         BsdfLookupTable newBsdfLookup = null;
         VulkanBuffer newTemporalCamera = null;
         try {
@@ -88,47 +88,26 @@ public final class RayTracingPipeline implements Destroyable {
                 String opaqueRaygen = context.capabilities().invocationReorderSupported()
                         ? "/prime/shaders/world_ser.rgen.spv"
                         : "/prime/shaders/world.rgen.spv";
-                newOpaquePipeline = TracePipeline.create(
+                // All three render paths share miss/hit stages and the pipeline layout. Keeping
+                // their raygen groups in one pipeline lets the Vulkan driver compile that common
+                // graph once; dispatch selects a base-aligned raygen SBT record.
+                newTracePipeline = TracePipeline.create(
                         context,
                         stack,
                         newPipelineLayout,
                         opaqueRaygen,
-                        context.capabilities().invocationReorderSupported()
-                                ? "Prime SER opaque ray pipeline"
-                                : "Prime opaque ray pipeline",
-                        "Prime opaque shader binding table");
-                newTransparentPipeline = TracePipeline.create(
-                        context,
-                        stack,
-                        newPipelineLayout,
-                        "/prime/shaders/transparent.rgen.spv",
-                        "Prime transparent composition ray pipeline",
-                        "Prime transparent shader binding table");
-                newScreenshotPipeline = TracePipeline.create(
-                        context,
-                        stack,
-                        newPipelineLayout,
-                        "/prime/shaders/screenshot.rgen.spv",
-                        "Prime screenshot accumulation ray pipeline",
-                        "Prime screenshot shader binding table");
+                        "Prime unified ray tracing pipeline",
+                        "Prime unified shader binding table");
             }
 
             this.descriptorSetLayout = newDescriptorSetLayout;
             this.pipelineLayout = newPipelineLayout;
-            this.opaquePipeline = newOpaquePipeline;
-            this.transparentPipeline = newTransparentPipeline;
-            this.screenshotPipeline = newScreenshotPipeline;
+            this.tracePipeline = newTracePipeline;
             this.bsdfLookup = newBsdfLookup;
             this.temporalCamera = newTemporalCamera;
         } catch (RuntimeException exception) {
-            if (newScreenshotPipeline != null) {
-                newScreenshotPipeline.destroy();
-            }
-            if (newTransparentPipeline != null) {
-                newTransparentPipeline.destroy();
-            }
-            if (newOpaquePipeline != null) {
-                newOpaquePipeline.destroy();
+            if (newTracePipeline != null) {
+                newTracePipeline.destroy();
             }
             if (newBsdfLookup != null) {
                 newBsdfLookup.destroy();
@@ -226,14 +205,14 @@ public final class RayTracingPipeline implements Destroyable {
 
     public void trace(VkCommandBuffer commandBuffer, ByteBuffer pushConstants, int width, int height) {
         this.bsdfLookup.prepare(commandBuffer);
-        this.trace(commandBuffer, pushConstants, width, height, this.opaquePipeline);
+        this.trace(commandBuffer, pushConstants, width, height, OPAQUE_RAYGEN_GROUP);
     }
 
     /** Records one complete, unsplit path sample per pixel for unbiased screenshot accumulation. */
     public void traceScreenshot(
             VkCommandBuffer commandBuffer, ByteBuffer pushConstants, int width, int height) {
         this.bsdfLookup.prepare(commandBuffer);
-        this.trace(commandBuffer, pushConstants, width, height, this.screenshotPipeline);
+        this.trace(commandBuffer, pushConstants, width, height, SCREENSHOT_RAYGEN_GROUP);
     }
 
     public void traceTransparent(
@@ -251,7 +230,7 @@ public final class RayTracingPipeline implements Destroyable {
                 previousCameraY,
                 previousCameraZ,
                 historyValid);
-        this.trace(commandBuffer, pushConstants, width, height, this.transparentPipeline);
+        this.trace(commandBuffer, pushConstants, width, height, TRANSPARENT_RAYGEN_GROUP);
     }
 
     private void updateTemporalCamera(
@@ -315,7 +294,7 @@ public final class RayTracingPipeline implements Destroyable {
             ByteBuffer pushConstants,
             int width,
             int height,
-            TracePipeline tracePipeline) {
+            int raygenGroup) {
         if (this.descriptorBindings == null) {
             throw new IllegalStateException("Ray tracing descriptors have not been initialized");
         }
@@ -326,7 +305,7 @@ public final class RayTracingPipeline implements Destroyable {
             VK12.vkCmdBindPipeline(
                     commandBuffer,
                     KHRRayTracingPipeline.VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR,
-                    tracePipeline.pipeline);
+                    this.tracePipeline.pipeline);
             VK12.vkCmdBindDescriptorSets(
                     commandBuffer,
                     KHRRayTracingPipeline.VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR,
@@ -337,17 +316,17 @@ public final class RayTracingPipeline implements Destroyable {
             VK12.vkCmdPushConstants(commandBuffer, this.pipelineLayout, ALL_RT_STAGES, 0, pushConstants);
 
             VkStridedDeviceAddressRegionKHR raygen = VkStridedDeviceAddressRegionKHR.calloc(stack)
-                    .deviceAddress(tracePipeline.raygenAddress)
-                    .stride(tracePipeline.recordStride)
-                    .size(tracePipeline.recordStride);
+                    .deviceAddress(this.tracePipeline.raygenAddress(raygenGroup))
+                    .stride(this.tracePipeline.raygenRecordStride)
+                    .size(this.tracePipeline.raygenRecordStride);
             VkStridedDeviceAddressRegionKHR miss = VkStridedDeviceAddressRegionKHR.calloc(stack)
-                    .deviceAddress(tracePipeline.missAddress)
-                    .stride(tracePipeline.recordStride)
-                    .size(tracePipeline.recordStride * MISS_GROUP_COUNT);
+                    .deviceAddress(this.tracePipeline.missAddress)
+                    .stride(this.tracePipeline.recordStride)
+                    .size(this.tracePipeline.recordStride * MISS_GROUP_COUNT);
             VkStridedDeviceAddressRegionKHR hit = VkStridedDeviceAddressRegionKHR.calloc(stack)
-                    .deviceAddress(tracePipeline.hitAddress)
-                    .stride(tracePipeline.recordStride)
-                    .size(tracePipeline.recordStride * HIT_GROUP_COUNT);
+                    .deviceAddress(this.tracePipeline.hitAddress)
+                    .stride(this.tracePipeline.recordStride)
+                    .size(this.tracePipeline.recordStride * HIT_GROUP_COUNT);
             VkStridedDeviceAddressRegionKHR callable = VkStridedDeviceAddressRegionKHR.calloc(stack);
             KHRRayTracingPipeline.vkCmdTraceRaysKHR(commandBuffer, raygen, miss, hit, callable, width, height, 1);
         }
@@ -361,9 +340,7 @@ public final class RayTracingPipeline implements Destroyable {
                 this.descriptorBindings.destroy();
                 this.descriptorBindings = null;
             }
-            this.transparentPipeline.destroy();
-            this.screenshotPipeline.destroy();
-            this.opaquePipeline.destroy();
+            this.tracePipeline.destroy();
             VK12.vkDestroyPipelineLayout(this.context.vkDevice(), this.pipelineLayout, null);
             VK12.vkDestroyDescriptorSetLayout(this.context.vkDevice(), this.descriptorSetLayout, null);
             this.temporalCamera.destroy();
@@ -389,15 +366,23 @@ public final class RayTracingPipeline implements Destroyable {
                     "read Prime shader group handles");
             long source = MemoryUtil.memAddress(handles);
             long destination = shaderBindingTable.mappedAddress();
-            MemoryUtil.memCopy(source, destination + layout.raygenOffset(), handleSize);
-            MemoryUtil.memCopy(source + handleSize, destination + layout.missOffset(), handleSize);
-            MemoryUtil.memCopy(
-                    source + 2L * handleSize,
-                    destination + layout.missOffset() + layout.recordStride(),
-                    handleSize);
+            for (int raygenIndex = 0; raygenIndex < RAYGEN_GROUP_COUNT; raygenIndex++) {
+                MemoryUtil.memCopy(
+                        source + (long) raygenIndex * handleSize,
+                        destination + layout.raygenOffset()
+                                + raygenIndex * layout.raygenRecordStride(),
+                        handleSize);
+            }
+            for (int missIndex = 0; missIndex < MISS_GROUP_COUNT; missIndex++) {
+                MemoryUtil.memCopy(
+                        source + (long) (RAYGEN_GROUP_COUNT + missIndex) * handleSize,
+                        destination + layout.missOffset() + missIndex * layout.recordStride(),
+                        handleSize);
+            }
             for (int hitIndex = 0; hitIndex < HIT_GROUP_COUNT; hitIndex++) {
                 MemoryUtil.memCopy(
-                        source + (3L + hitIndex) * handleSize,
+                        source + (long) (RAYGEN_GROUP_COUNT + MISS_GROUP_COUNT + hitIndex)
+                                * handleSize,
                         destination + layout.hitOffset() + hitIndex * layout.recordStride(),
                         handleSize);
             }
@@ -549,18 +534,22 @@ public final class RayTracingPipeline implements Destroyable {
             VulkanContext context,
             MemoryStack stack,
             long pipelineLayout,
-            String raygenResource,
+            String opaqueRaygenResource,
             String debugName) {
-        long[] modules = new long[6];
+        long[] modules = new long[8];
         try {
-            modules[0] = createShaderModule(context, raygenResource);
-            modules[1] = createShaderModule(context, "/prime/shaders/world.rmiss.spv");
-            modules[2] = createShaderModule(context, "/prime/shaders/shadow.rmiss.spv");
-            modules[3] = createShaderModule(context, "/prime/shaders/world.rchit.spv");
-            modules[4] = createShaderModule(context, "/prime/shaders/world.rahit.spv");
-            modules[5] = createShaderModule(context, "/prime/shaders/world_opaque.rahit.spv");
-            VkPipelineShaderStageCreateInfo.Buffer stages = VkPipelineShaderStageCreateInfo.calloc(6, stack);
+            modules[0] = createShaderModule(context, opaqueRaygenResource);
+            modules[1] = createShaderModule(context, "/prime/shaders/transparent.rgen.spv");
+            modules[2] = createShaderModule(context, "/prime/shaders/screenshot.rgen.spv");
+            modules[3] = createShaderModule(context, "/prime/shaders/world.rmiss.spv");
+            modules[4] = createShaderModule(context, "/prime/shaders/shadow.rmiss.spv");
+            modules[5] = createShaderModule(context, "/prime/shaders/world.rchit.spv");
+            modules[6] = createShaderModule(context, "/prime/shaders/world.rahit.spv");
+            modules[7] = createShaderModule(context, "/prime/shaders/world_opaque.rahit.spv");
+            VkPipelineShaderStageCreateInfo.Buffer stages = VkPipelineShaderStageCreateInfo.calloc(8, stack);
             int[] stageFlags = new int[] {
+                KHRRayTracingPipeline.VK_SHADER_STAGE_RAYGEN_BIT_KHR,
+                KHRRayTracingPipeline.VK_SHADER_STAGE_RAYGEN_BIT_KHR,
                 KHRRayTracingPipeline.VK_SHADER_STAGE_RAYGEN_BIT_KHR,
                 KHRRayTracingPipeline.VK_SHADER_STAGE_MISS_BIT_KHR,
                 KHRRayTracingPipeline.VK_SHADER_STAGE_MISS_BIT_KHR,
@@ -582,14 +571,16 @@ public final class RayTracingPipeline implements Destroyable {
             generalGroup(groups.get(0), 0);
             generalGroup(groups.get(1), 1);
             generalGroup(groups.get(2), 2);
-            triangleGroup(groups.get(3), 3, KHRRayTracingPipeline.VK_SHADER_UNUSED_KHR);
-            triangleGroup(groups.get(4), 3, 4);
-            triangleGroup(groups.get(5), 3, 4);
-            // Records 3/4/5 are selected only by the opaque camera ray. Cutout coverage remains
+            generalGroup(groups.get(3), 3);
+            generalGroup(groups.get(4), 4);
+            triangleGroup(groups.get(5), 5, KHRRayTracingPipeline.VK_SHADER_UNUSED_KHR);
+            triangleGroup(groups.get(6), 5, 6);
+            triangleGroup(groups.get(7), 5, 6);
+            // Hit records 3/4/5 are selected only by the opaque camera ray. Cutout coverage remains
             // visible while the transmissive partition is explicitly skipped by the filter.
-            triangleGroup(groups.get(6), 3, 5);
-            triangleGroup(groups.get(7), 3, 5);
-            triangleGroup(groups.get(8), 3, 5);
+            triangleGroup(groups.get(8), 5, 7);
+            triangleGroup(groups.get(9), 5, 7);
+            triangleGroup(groups.get(10), 5, 7);
 
             VkRayTracingPipelineCreateInfoKHR.Buffer createInfo =
                     VkRayTracingPipelineCreateInfoKHR.calloc(1, stack);
@@ -675,6 +666,7 @@ public final class RayTracingPipeline implements Destroyable {
         private final long pipeline;
         private final VulkanBuffer shaderBindingTable;
         private final long raygenAddress;
+        private final long raygenRecordStride;
         private final long missAddress;
         private final long hitAddress;
         private final long recordStride;
@@ -689,6 +681,7 @@ public final class RayTracingPipeline implements Destroyable {
             this.pipeline = pipeline;
             this.shaderBindingTable = shaderBindingTable;
             this.raygenAddress = shaderBindingTable.deviceAddress() + layout.raygenOffset();
+            this.raygenRecordStride = layout.raygenRecordStride();
             this.missAddress = shaderBindingTable.deviceAddress() + layout.missOffset();
             this.hitAddress = shaderBindingTable.deviceAddress() + layout.hitOffset();
             this.recordStride = layout.recordStride();
@@ -713,6 +706,7 @@ public final class RayTracingPipeline implements Destroyable {
                         handleSize,
                         handleAlignment,
                         baseAlignment,
+                        RAYGEN_GROUP_COUNT,
                         MISS_GROUP_COUNT,
                         HIT_GROUP_COUNT);
                 shaderBindingTable = context.createBuffer(
@@ -724,10 +718,13 @@ public final class RayTracingPipeline implements Destroyable {
                         handleSize,
                         handleAlignment,
                         baseAlignment,
+                        RAYGEN_GROUP_COUNT,
                         MISS_GROUP_COUNT,
                         HIT_GROUP_COUNT,
                         shaderBindingTable.deviceAddress());
-                if (layout.recordStride() > context.capabilities().maxShaderGroupStride()) {
+                if (layout.recordStride() > context.capabilities().maxShaderGroupStride()
+                        || layout.raygenRecordStride()
+                                > context.capabilities().maxShaderGroupStride()) {
                     throw new IllegalStateException("Prime SBT record stride exceeds the device limit");
                 }
                 writeShaderBindingTable(
@@ -742,6 +739,13 @@ public final class RayTracingPipeline implements Destroyable {
                 }
                 throw exception;
             }
+        }
+
+        private long raygenAddress(int group) {
+            if (group < 0 || group >= RAYGEN_GROUP_COUNT) {
+                throw new IllegalArgumentException("Invalid Prime raygen group " + group);
+            }
+            return this.raygenAddress + group * this.raygenRecordStride;
         }
 
         @Override

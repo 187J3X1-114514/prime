@@ -60,6 +60,7 @@ final class RayTracingPipelineContractTest {
 
         assertEquals(2, RayTracingPipeline.MISS_GROUP_COUNT);
         assertEquals(6, RayTracingPipeline.HIT_GROUP_COUNT);
+        assertEquals(3, RayTracingPipeline.RAYGEN_GROUP_COUNT);
         assertTrue(integrator.contains(
                 "primeTraceSurfaceWithSbtOffset(path.traceOrigin, path.rayDirection, 3u)"));
         assertTrue(shadowMiss.contains("layout(location = 1) rayPayloadInEXT uint primeShadowOccluded"));
@@ -90,6 +91,8 @@ final class RayTracingPipelineContractTest {
         assertTrue(pipeline.contains("world_opaque.rahit.spv"));
         assertTrue(pipeline.contains("traceTransparent"));
         assertTrue(pipeline.contains("traceScreenshot"));
+        assertEquals(1, countOccurrences(pipeline, "vkCreateRayTracingPipelinesKHR("));
+        assertTrue(pipeline.contains("raygenAddress(raygenGroup)"));
     }
 
     private static int countOccurrences(String text, String needle) {

@@ -10,36 +10,44 @@ final class ShaderBindingTableLayoutTest {
     @Test
     void alignsEveryRegionEvenWhenTheBufferAddressIsNotBaseAligned() {
         long bufferAddress = 0x1008L;
-        ShaderBindingTableLayout layout = ShaderBindingTableLayout.create(32, 32, 64, 2, 2, bufferAddress);
+        ShaderBindingTableLayout layout = ShaderBindingTableLayout.create(
+                32, 32, 64, 3, 2, 2, bufferAddress);
         assertEquals(32L, layout.recordStride());
+        assertEquals(64L, layout.raygenRecordStride());
         assertEquals(56L, layout.raygenOffset());
-        assertEquals(120L, layout.missOffset());
-        assertEquals(184L, layout.hitOffset());
-        assertEquals(248L, layout.totalSize());
+        assertEquals(248L, layout.missOffset());
+        assertEquals(312L, layout.hitOffset());
+        assertEquals(376L, layout.totalSize());
         assertEquals(0L, (bufferAddress + layout.raygenOffset()) % 64L);
+        assertEquals(
+                0L,
+                (bufferAddress + layout.raygenOffset() + 2L * layout.raygenRecordStride()) % 64L);
         assertEquals(0L, (bufferAddress + layout.missOffset()) % 64L);
         assertEquals(0L, (bufferAddress + layout.hitOffset()) % 64L);
         assertTrue(layout.hitOffset() >= layout.missOffset() + 2L * layout.recordStride());
-        assertTrue(layout.totalSize() <= ShaderBindingTableLayout.minimumBufferSize(32, 32, 64, 2, 2));
+        assertTrue(layout.totalSize() <= ShaderBindingTableLayout.minimumBufferSize(32, 32, 64, 3, 2, 2));
     }
 
     @Test
     void rejectsNonPowerOfTwoAlignments() {
         assertThrows(
                 IllegalArgumentException.class,
-                () -> ShaderBindingTableLayout.create(32, 24, 64, 2, 2, 0L));
+                () -> ShaderBindingTableLayout.create(32, 24, 64, 3, 2, 2, 0L));
         assertThrows(
                 IllegalArgumentException.class,
-                () -> ShaderBindingTableLayout.create(32, 32, 48, 2, 2, 0L));
+                () -> ShaderBindingTableLayout.create(32, 32, 48, 3, 2, 2, 0L));
     }
 
     @Test
-    void rejectsEmptyMissOrHitRegions() {
+    void rejectsEmptyRaygenMissOrHitRegions() {
         assertThrows(
                 IllegalArgumentException.class,
-                () -> ShaderBindingTableLayout.create(32, 32, 64, 0, 2, 0L));
+                () -> ShaderBindingTableLayout.create(32, 32, 64, 0, 2, 2, 0L));
         assertThrows(
                 IllegalArgumentException.class,
-                () -> ShaderBindingTableLayout.create(32, 32, 64, 2, 0, 0L));
+                () -> ShaderBindingTableLayout.create(32, 32, 64, 3, 0, 2, 0L));
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> ShaderBindingTableLayout.create(32, 32, 64, 3, 2, 0, 0L));
     }
 }

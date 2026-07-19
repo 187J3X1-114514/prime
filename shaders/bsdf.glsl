@@ -8,6 +8,7 @@
 #include "color_space.glsl"
 #define PRIME_RC_TRANSMISSION_GGX_SET 0
 #define PRIME_RC_TRANSMISSION_GGX_BINDING PRIME_DESCRIPTOR_TRANSMISSION_GGX_ENERGY
+#define PRIME_RC_ENABLE_FULL_OPENPBR 0
 #include "robocute_bsdf_openpbr.glsl"
 
 // Minecraft's translucent render layer is adapted to RoboCute's complete dielectric
@@ -310,7 +311,6 @@ PrimeRcState primeOpaqueState(
         uint packedSpecular,
         uint flags,
         vec3 viewDirection,
-        vec3 randomValue,
         float rayT,
         PrimeRcVolumeStack volumeStack) {
     PrimeRcMaterial material = primeOpaqueMaterial(
@@ -318,13 +318,11 @@ PrimeRcState primeOpaqueState(
     vec3 localView = primeRcOnbToLocal(material.geometry.onb, viewDirection);
     float inverseOutsideIor = primeRcInverseOutsideIor(localView.z, volumeStack);
     if (material.weight.subsurface > 0.0) {
-        // Only the conservatively translated alpha-cut SSS semantic needs the complete OpenPBR
-        // graph. Ordinary LabPBR terrain follows RoboCute's active RBC_LITE_PBR_MATERIAL
-        // polymorphic dispatch and therefore uses its white-furnace-tested BasicMetallic closure.
-        return primeRcOpenPbrStateInit(
+        // The conservative alpha-cut SSS translation maps exactly to RoboCute's existing
+        // SubsurfaceGlossy polymorphic specialization; it does not need the generic OpenPBR graph.
+        return primeRcSubsurfaceGlossyStateInit(
                 material,
                 localView,
-                randomValue,
                 inverseOutsideIor,
                 rayT,
                 PRIME_REC2020_PRIMARY_WAVELENGTHS_NM,
@@ -370,7 +368,6 @@ PrimeOpaqueBsdfComponents primeEvaluateOpaqueComponents(
             packedSpecular,
             flags,
             viewDirection,
-            vec3(0.5),
             rayT,
             volumeStack);
     vec3 localView = primeRcOnbToLocal(state.material.geometry.onb, viewDirection);
@@ -379,20 +376,20 @@ PrimeOpaqueBsdfComponents primeEvaluateOpaqueComponents(
     if (cosine <= PRIME_BSDF_EPSILON) {
         return result;
     }
-    bool fullOpenPbr = state.material.weight.subsurface > 0.0;
-    PrimeRcEval full = fullOpenPbr
-            ? primeRcOpenPbrEvaluate(localView, localScatter, state)
+    bool subsurface = state.material.weight.subsurface > 0.0;
+    PrimeRcEval full = subsurface
+            ? primeRcSubsurfaceGlossyEvaluate(localView, localScatter, state)
             : primeRcBasicMetallicEvaluate(localView, localScatter, state);
     result.pdf = full.pdf;
     PrimeRcState diffuseState = state;
     diffuseState.samplingFlags = PRIME_RC_FLAG_DIFFUSE;
-    PrimeRcThroughput diffuse = fullOpenPbr
-            ? primeRcOpenPbrEval(localView, localScatter, diffuseState)
+    PrimeRcThroughput diffuse = subsurface
+            ? primeRcSubsurfaceGlossyEval(localView, localScatter, diffuseState)
             : primeRcBasicMetallicEval(localView, localScatter, diffuseState);
     PrimeRcState specularState = state;
     specularState.samplingFlags = PRIME_RC_FLAG_SPECULAR | PRIME_RC_FLAG_DELTA;
-    PrimeRcThroughput specular = fullOpenPbr
-            ? primeRcOpenPbrEval(localView, localScatter, specularState)
+    PrimeRcThroughput specular = subsurface
+            ? primeRcSubsurfaceGlossyEval(localView, localScatter, specularState)
             : primeRcBasicMetallicEval(localView, localScatter, specularState);
     result.diffuseValue = diffuse.value / cosine;
     result.specularValue = specular.value / cosine;
@@ -417,12 +414,11 @@ BsdfSample primeSampleOpaque(
             packedSpecular,
             flags,
             viewDirection,
-            sampleValue,
             rayT,
             volumeStack);
     vec3 localView = primeRcOnbToLocal(state.material.geometry.onb, viewDirection);
     PrimeRcSampleResult sampled = state.material.weight.subsurface > 0.0
-            ? primeRcOpenPbrSample(localView, sampleValue, state, volumeStack)
+            ? primeRcSubsurfaceGlossySample(localView, sampleValue, state, volumeStack)
             : primeRcBasicMetallicSample(localView, sampleValue, state, volumeStack);
     if (sampled.bsdfSample.pdf <= 0.0
             || sampled.bsdfSample.throughput.flags == PRIME_RC_FLAG_NONE) {
@@ -855,7 +851,6 @@ PrimeRcState primeMinecraftFoliageState(
         uint packedSpecular,
         uint materialFlags,
         vec3 viewDirection,
-        vec3 randomValue,
         float rayT,
         PrimeRcVolumeStack volumeStack) {
     vec3 closureNormal = dot(outwardNormal, viewDirection) < 0.0
@@ -865,10 +860,9 @@ PrimeRcState primeMinecraftFoliageState(
             baseColor, closureNormal, packedNormal, packedSpecular, materialFlags);
     vec3 localView = primeRcOnbToLocal(material.geometry.onb, viewDirection);
     float inverseOutsideIor = primeRcInverseOutsideIor(localView.z, volumeStack);
-    return primeRcOpenPbrStateInit(
+    return primeRcPrimeThinWallStateInit(
             material,
             localView,
-            randomValue,
             inverseOutsideIor,
             rayT,
             PRIME_REC2020_PRIMARY_WAVELENGTHS_NM,
@@ -894,12 +888,11 @@ BsdfEvaluation primeEvaluateMinecraftFoliage(
             packedSpecular,
             materialFlags,
             viewDirection,
-            vec3(0.5),
             rayT,
             volumeStack);
     vec3 localView = primeRcOnbToLocal(state.material.geometry.onb, viewDirection);
     vec3 localScatter = primeRcOnbToLocal(state.material.geometry.onb, scatterDirection);
-    PrimeRcEval evaluation = primeRcOpenPbrEvaluate(localView, localScatter, state);
+    PrimeRcEval evaluation = primeRcPrimeThinWallEvaluate(localView, localScatter, state);
     BsdfEvaluation result = primeInvalidBsdfEvaluation();
     float cosine = abs(localScatter.z);
     if (evaluation.pdf > 0.0 && cosine > PRIME_BSDF_EPSILON
@@ -928,11 +921,10 @@ BsdfSample primeSampleMinecraftFoliage(
             packedSpecular,
             materialFlags,
             viewDirection,
-            sampleValue,
             rayT,
             volumeStack);
     vec3 localView = primeRcOnbToLocal(state.material.geometry.onb, viewDirection);
-    PrimeRcSampleResult sampled = primeRcOpenPbrSample(
+    PrimeRcSampleResult sampled = primeRcPrimeThinWallSample(
             localView, sampleValue, state, volumeStack);
     if (sampled.bsdfSample.pdf <= 0.0
             || sampled.bsdfSample.throughput.flags == PRIME_RC_FLAG_NONE) {

@@ -6,6 +6,10 @@
   "client": [
     "BufferBuilderMixin",
     "ChunkMapMixin",
+    "ChunkTaskPriorityQueueMixin",
+    "DistanceManagerMixin",
+    "FixedPlayerDistanceChunkTrackerAccessor",
+    "FixedPlayerDistanceChunkTrackerMixin",
     "FluidRendererMixin",
     "GameRendererMixin",
     "GpuDeviceAccessor",
@@ -16,6 +20,7 @@
     "ModelBlockRendererMixin",
     "OptionsMixin",
     "OptionsSubScreenAccessor",
+    "PlayerTicketTrackerMixin",
     "SpriteContentsAccessor",
     "TextureAtlasAccessor",
     "TextureAtlasMixin",

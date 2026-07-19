@@ -1,9 +1,9 @@
 #ifndef PRIME_CAMERA_GLSL
 #define PRIME_CAMERA_GLSL
 
-// This is the single camera-sampling contract shared by the opaque and transparent passes.
+// This is the single camera-sampling contract shared by realtime and screenshot paths.
 // FSR 3.1's base-2/base-3 Halton sample is screen-constant for a frame; using another jitter or
-// pixel-centre convention in the transparent pass would detach glass edges from opaque depth.
+// pixel-centre convention in either path would detach the reconstructed edges from traced depth.
 vec2 primeCameraSample() {
 #if defined(PRIME_SCREENSHOT_MODE)
     // Screenshot mode is an actual Monte Carlo accumulator, so its primary sample belongs to

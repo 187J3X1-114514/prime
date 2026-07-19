@@ -14,7 +14,6 @@ layout(location = 1) rayPayloadEXT uint primeShadowOccluded;
 #include "sampling.glsl"
 #include "bsdf.glsl"
 #include "lights.glsl"
-#define PRIME_OPAQUE_PRIMARY_PASS 1
 #include "integrator.glsl"
 #include "camera.glsl"
 
@@ -29,7 +28,7 @@ void main() {
     PathState path = primeCameraPath(pixel, 0u, cameraSample);
 
     PrimeIntegrationResult sampleResult = primeIntegrate(path, integrator);
-    // These four images are a private raygen -> NRD-preparation scratch contract. Keeping raw
+    // These images are a private raygen -> NRD-preparation scratch contract. Keeping raw
     // radiance, hit distance and primary material data here removes demodulation, YCoCg packing,
     // guide construction and FSR mask work from the register-heavy ray-generation shader. The
     // existing ray-tracing-to-compute barrier makes every write visible before nrd_motion.comp
@@ -55,7 +54,7 @@ void main() {
             sampleResult.primaryDistance < 0.0
                     ? vec4(0.0)
                     : vec4(
-                            path.rayDirection * sampleResult.primaryDistance,
+                            sampleResult.primaryPosition,
                             uintBitsToFloat(packHalf2x16(cameraSample))));
     imageStore(
             primeNrdMaterial,

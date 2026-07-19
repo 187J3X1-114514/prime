@@ -142,8 +142,8 @@ final class LabPbrContractTest {
         String integrator = shader("integrator.glsl");
         String motion = shader("nrd_motion.comp");
 
-        assertEquals(36, ShaderAbi.DESCRIPTOR_LABPBR_NORMAL_ATLAS);
-        assertEquals(37, ShaderAbi.DESCRIPTOR_LABPBR_SPECULAR_ATLAS);
+        assertEquals(18, ShaderAbi.DESCRIPTOR_LABPBR_NORMAL_ATLAS);
+        assertEquals(19, ShaderAbi.DESCRIPTOR_LABPBR_SPECULAR_ATLAS);
         assertTrue(pipeline.contains("ShaderAbi.DESCRIPTOR_LABPBR_NORMAL_ATLAS"));
         assertTrue(pipeline.contains("ShaderAbi.DESCRIPTOR_LABPBR_SPECULAR_ATLAS"));
         assertTrue(runtime.contains("activeRenderer.requestResourceReload()"));

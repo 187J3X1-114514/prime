@@ -21,8 +21,6 @@
   "prime.options.nrd.debug_view.tooltip": "NRD（NVIDIA Real-time Denoiser）验证视图会用分屏显示法线、粗糙度、深度、运动向量、历史帧数和命中距离。仅在排查噪点、拖影或闪烁时选择对应表面；正常游玩建议关闭。",
   "prime.options.nrd.debug_view.off": "关闭",
   "prime.options.nrd.debug_view.opaque": "不透明表面",
-  "prime.options.nrd.debug_view.reflection": "透明材质反射",
-  "prime.options.nrd.debug_view.transmission": "透明材质透射/折射",
   "prime.options.fsr.debug_view": "FSR 超分辨率诊断",
   "prime.options.fsr.debug_view.tooltip": "FSR 接入总览会显示时域超分辨率使用的运动向量、深度、反遮挡、着色变化和响应区域。仅在排查放大后的拖影、闪烁或细节丢失时打开；正常游玩建议关闭。",
   "prime.options.fsr.debug_view.off": "关闭",

@@ -81,15 +81,11 @@ public final class NrdNative {
     }
 
     public static Instance create(int width, int height) {
-        return create(width, height, DenoiserKind.DIFFUSE_SPECULAR);
-    }
-
-    static Instance create(int width, int height, DenoiserKind denoiserKind) {
         if (width <= 0 || height <= 0 || width > 65_535 || height > 65_535) {
             throw new IllegalArgumentException("NRD dimensions must be in [1, 65535]");
         }
         try {
-            return Holder.INSTANCE.createInstance(width, height, denoiserKind);
+            return Holder.INSTANCE.createInstance(width, height);
         } catch (LinkageError error) {
             // Static native loading failures are Errors by default and would bypass Prime's
             // RuntimeException-based vanilla fallback. Normalize them at this private boundary.
@@ -97,12 +93,12 @@ public final class NrdNative {
         }
     }
 
-    private Instance createInstance(int width, int height, DenoiserKind denoiserKind) {
+    private Instance createInstance(int width, int height) {
         try (MemoryStack stack = MemoryStack.stackPush()) {
             ByteBuffer createDesc = stack.calloc(CREATE_DESCRIPTION_SIZE).order(ByteOrder.nativeOrder());
             createDesc.putInt(0, width);
             createDesc.putInt(4, height);
-            createDesc.putInt(8, denoiserKind.nativeValue);
+            createDesc.putInt(8, 0);
             ByteBuffer output = stack.calloc(Long.BYTES).order(ByteOrder.nativeOrder());
             checkResult(
                     JNI.invokePPI(
@@ -121,18 +117,6 @@ public final class NrdNative {
                 JNI.invokePV(handle, this.destroyFunction);
                 throw exception;
             }
-        }
-    }
-
-    enum DenoiserKind {
-        DIFFUSE_SPECULAR(0),
-        TRANSPARENT_REFLECTION(1),
-        TRANSPARENT_TRANSMISSION(2);
-
-        private final int nativeValue;
-
-        DenoiserKind(int nativeValue) {
-            this.nativeValue = nativeValue;
         }
     }
 

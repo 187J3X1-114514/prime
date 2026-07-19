@@ -44,9 +44,8 @@ float primeMaterialLinearRoughness(uint flags) {
         // Vanilla glass, panes and water have no authored micro-normal distribution. Treating
         // their visually sharp interface as a tiny non-zero GGX lobe creates stochastic tail
         // samples and fireflies without representing any Minecraft material detail. Zero is a
-        // physical-integrator contract: the visible interface can be split into deterministic
-        // reflection and transmission paths. Screenshot mode keeps that full transport contract;
-        // realtime mode may deliberately replace it with its documented single-refraction model.
+        // physical-integrator contract: the one complete path samples a delta reflection or
+        // transmission event from the exact Fresnel distribution.
         return 0.0;
     }
     return primeDefaultLinearRoughness();

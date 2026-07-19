@@ -1,6 +1,6 @@
 package dev.prime.render.shader;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.IOException;
@@ -10,167 +10,60 @@ import org.junit.jupiter.api.Test;
 
 final class NrdSignalContractTest {
     @Test
-    void primaryMissNeverConsumesSurfaceDenoiserHistory() throws IOException {
-        Path shaderRoot = Path.of(System.getProperty("user.dir"), "shaders");
-        String rayGeneration = Files.readString(shaderRoot.resolve("world.rgen"));
+    void realtimeUsesOneCompletePathAndOneDenoiserHistory() throws IOException {
+        Path root = Path.of(System.getProperty("user.dir"));
+        Path shaderRoot = root.resolve("shaders");
+        String world = Files.readString(shaderRoot.resolve("world.rgen"));
+        String integrator = Files.readString(shaderRoot.resolve("integrator.glsl"));
+        String resources = Files.readString(root.resolve(
+                "src/client/java/dev/prime/render/RealtimeRenderResources.java"));
+        String renderer = Files.readString(root.resolve(
+                "src/client/java/dev/prime/render/VulkanRenderer.java"));
+
+        assertTrue(world.contains("PrimeIntegrationResult sampleResult = primeIntegrate(path, integrator)"));
+        assertFalse(world.contains("PRIME_OPAQUE_PRIMARY_PASS"));
+        assertTrue(integrator.contains("bool hitted_non_delta = false"));
+        assertTrue(integrator.contains(
+                "(bsdf.eventFlags & PRIME_BSDF_EVENT_DELTA) == 0u"));
+        assertTrue(integrator.contains("hitted_non_delta = true"));
+        assertTrue(integrator.contains(
+                "path.throughput * albedoSum"));
+        assertTrue(integrator.contains(
+                "result.primaryNormal = primeSurfaceShadingNormal(surface, viewDirection)"));
+        assertTrue(integrator.contains(
+                "result.primaryLinearRoughness = primeSurfaceLinearRoughness(surface)"));
+        assertFalse(integrator.contains("PrimeContinuationResult"));
+        assertFalse(integrator.contains("PrimeDeltaChain"));
+        assertFalse(resources.contains("reflectionDenoiser"));
+        assertFalse(resources.contains("transmissionDenoiser"));
+        assertFalse(resources.contains("NrdTransparentComposite"));
+        assertFalse(renderer.contains("traceTransparent"));
+        assertFalse(renderer.contains("recordBranch"));
+    }
+
+    @Test
+    void raygenAndPreparationPreserveTheSingleNrdSignalContract() throws IOException {
+        Path root = Path.of(System.getProperty("user.dir"));
+        Path shaderRoot = root.resolve("shaders");
+        String world = Files.readString(shaderRoot.resolve("world.rgen"));
         String preparation = Files.readString(shaderRoot.resolve("nrd_motion.comp"));
         String composite = Files.readString(shaderRoot.resolve("nrd_composite.comp"));
-        String transparent = Files.readString(shaderRoot.resolve("transparent.rgen"));
-        String transparentPreparation = Files.readString(
-                shaderRoot.resolve("nrd_transparent_motion.comp"));
-        String transparentComposite = Files.readString(
-                shaderRoot.resolve("nrd_transparent_composite.comp"));
-        String opaqueAnyHit = Files.readString(shaderRoot.resolve("world_opaque.rahit"));
-        String integrator = Files.readString(shaderRoot.resolve("integrator.glsl"));
-        String bsdf = Files.readString(shaderRoot.resolve("bsdf.glsl"));
-        String transparentCompositeJava = Files.readString(Path.of(
-                System.getProperty("user.dir"),
-                "src", "client", "java", "dev", "prime", "render", "vulkan", "nrd",
-                "NrdTransparentComposite.java"));
-        String nativeNrdBridge = Files.readString(Path.of(
-                System.getProperty("user.dir"),
-                "native", "nrd", "prime_nrd_bridge.cpp"));
 
-        assertTrue(rayGeneration.contains(
-                "vec4(sampleResult.primaryBaseColor, sampleResult.primaryDistance)"));
-        assertTrue(rayGeneration.contains("primeNrdNoisySpecular"));
-        assertTrue(rayGeneration.contains("private raygen -> NRD-preparation scratch contract"));
+        assertTrue(world.contains("primeNrdSanitizeRadiance(sampleResult.diffuseRadiance)"));
+        assertTrue(world.contains("primeNrdSanitizeRadiance(sampleResult.specularRadiance)"));
+        assertTrue(world.contains("sampleResult.primaryPosition"));
         assertTrue(preparation.contains("primeNrdMaterialFactors("));
         assertTrue(preparation.contains("primeNrdPackRadianceAndHitDistance("));
         assertTrue(preparation.contains("primeNrdPackNormalRoughness("));
-        assertTrue(preparation.contains("vec4(diffuseMaterialFactor, primaryDistance)"));
-        assertTrue(preparation.contains("uint diagnosticMode;"));
-        assertTrue(preparation.contains(
-                "if (primeMotionPush.diagnosticMode != PRIME_DIAGNOSTIC_REPROJECTION_ERROR)"));
-        int primaryMaterialLoad = preparation.indexOf(
-                "vec4 rawMaterial = imageLoad(primeMaterial, pixel)");
-        int primaryMiss = preparation.indexOf(
-                "if (primaryDistance < 0.0)", primaryMaterialLoad);
-        int primarySurfaceLoads = preparation.indexOf(
-                "vec4 primary = imageLoad(primePrimaryPosition, pixel)", primaryMiss);
-        assertTrue(primaryMaterialLoad >= 0
-                && primaryMiss > primaryMaterialLoad
-                && primarySurfaceLoads > primaryMiss);
-        assertTrue(composite.contains("if (material.a < 0.0)"));
-        assertTrue(composite.contains("return vec3(0.0);"));
-        assertTrue(composite.contains("primeCompositeSurfaceSignal("));
+        assertTrue(composite.contains("primeDenoisedDiffuse"));
         assertTrue(composite.contains("primeDenoisedSpecular"));
-        // One declaration and one load: composition alpha and specular RGB share the same fetch.
-        assertEquals(2, occurrences(composite, "primeCompositeSpecularMaterial"));
-        assertTrue(opaqueAnyHit.contains("primeMaterialIsTransmissive"));
-        assertTrue(integrator.contains("primeTraceSurfaceWithSbtOffset(path.traceOrigin, path.rayDirection, 3u)"));
-        assertTrue(transparent.contains("primeTraceFirstInterfaceBranch("));
-        assertTrue(transparent.contains("#define PRIME_REALTIME_SINGLE_REFRACTION 1"));
-        assertTrue(transparent.contains("primeSampleMinecraftRealtimeTransmissionBranch("));
-        assertTrue(bsdf.contains(
-                "PrimeTransmissiveBsdfSample primeSampleMinecraftRealtimeTransmissionBranch("));
-        assertTrue(bsdf.contains("redirected.bsdfSample.direction = -viewDirection"));
-        assertTrue(bsdf.contains("if (!reflectionBranch && redirectOmittedReflection)"));
-        assertTrue(bsdf.contains("retained.first + retained.second"));
-        assertTrue(bsdf.contains("primeRcStackPush(redirected.volumeStack, volume)"));
-        assertTrue(bsdf.contains("primeRcStackPop(redirected.volumeStack)"));
-        // The complete physical implementation remains available to screenshot mode and the
-        // white-furnace-tested BSDF library; realtime selection must not delete either path.
-        assertTrue(bsdf.contains("PrimeTransmissiveBsdfSample primeSampleMinecraftTransmission("));
-        assertTrue(bsdf.contains(
-                "PrimeTransmissiveBsdfSample primeSampleMinecraftTransmissionBranch("));
-        assertTrue(!transparent.contains("primeTransparentFresnelSelector(pixel)"));
-        assertTrue(!bsdf.contains("primeSampleMinecraftTransmissionFresnelBranch("));
-        assertTrue(transparent.contains("bool closedDeltaReflection = reflectionBranch"));
-        assertTrue(!transparent.contains("splitSmoothInterface"));
-        assertTrue(transparent.contains("primeTransparentReflectionNoisy"));
-        assertTrue(transparent.contains("primeTransparentReflectionSpecular"));
-        assertTrue(transparent.contains("primeTransparentTransmissionNoisy"));
-        assertTrue(transparent.contains("primeTransparentTransmissionSpecular"));
-        int transparentMain = transparent.indexOf("void main() {");
-        int primaryTrace = transparent.indexOf("primeTraceSurface(", transparentMain);
-        int earlyExit = transparent.indexOf("if (surface.hitKind", primaryTrace);
-        int conditionalClear = transparent.indexOf(
-                "primeClearTransparentBranches(ivec2(pixel))", earlyExit);
-        assertTrue(transparentMain >= 0 && primaryTrace > transparentMain);
-        assertTrue(!transparent.substring(transparentMain, primaryTrace).contains("imageStore("));
-        assertTrue(earlyExit > primaryTrace && conditionalClear > earlyExit);
-        int reflectionTrace = transparent.indexOf(
-                "PrimeTransparentBranchResult reflection =", transparentMain);
-        int reflectionStore = transparent.indexOf(
-                "primeStoreTransparentBranch(", reflectionTrace);
-        int transmissionTrace = transparent.indexOf(
-                "PrimeTransparentBranchResult transmission =", reflectionStore);
-        assertTrue(reflectionTrace >= 0
-                && reflectionStore > reflectionTrace
-                && transmissionTrace > reflectionStore);
-        assertTrue(transparent.contains("result.guidePosition = continuation.guidePosition"));
-        assertTrue(transparent.contains(
-                "firstInterface.position - primePush.cameraPosition"));
-        assertTrue(transparent.contains("vec4(visibleRadiance, -(max(surface.t, 0.0) + 1.0))"));
-        assertTrue(transparent.contains("imageStore(primeFsrTransparencyCompositionMask"));
-        assertTrue(transparentPreparation.contains("if (metadata.a < 0.0)"));
-        int transparentMetadataLoad = transparentPreparation.indexOf(
-                "vec4 metadata = imageLoad(primeMetadata, pixel)");
-        int transparentMiss = transparentPreparation.indexOf(
-                "if (metadata.a < 0.0)", transparentMetadataLoad);
-        int transparentSurfaceLoads = transparentPreparation.indexOf(
-                "vec4 rawDiffuse = imageLoad(primeNoisyDiffuse, pixel)", transparentMiss);
-        assertTrue(transparentMetadataLoad >= 0
-                && transparentMiss > transparentMetadataLoad
-                && transparentSurfaceLoads > transparentMiss);
-        assertTrue(integrator.contains("struct PrimeDeltaChain"));
-        assertTrue(integrator.contains("PRIME_DELTA_CHAIN_CAPACITY = 8u"));
-        assertTrue(integrator.contains("primeAppendDeltaInterface(deltaChain, surface, bsdf)"));
-        assertTrue(integrator.contains(
-                "(primarySurfaceReplacement || result.hasGuide != 0u) && !pureDeltaInterface"));
-        assertTrue(integrator.contains("if (!pureDeltaInterface)"));
-        assertTrue(integrator.contains("#if defined(PRIME_REALTIME_SINGLE_REFRACTION)"));
-        assertTrue(transparent.contains("primeBuildDeltaVirtualGuide("));
-        assertTrue(!transparent.contains("primeSolvePreviousDeltaPath("));
-        assertTrue(!transparent.contains("primeSolveSingleTransmissionDeltaPath("));
-        assertTrue(!transparent.contains("primeDeltaLinearSystemRow("));
-        assertTrue(transparent.contains("primeSolvePreviousSingleRefraction("));
-        assertTrue(transparent.contains("PRIME_SINGLE_REFRACTION_RESIDUAL_TOLERANCE"));
-        assertTrue(transparent.contains("previousVirtualPosition = unfoldedTarget"));
-        assertTrue(transparent.contains("currentVirtualPosition = unfoldedTarget"));
-        assertTrue(transparent.contains(
-                "(eventFlags & PRIME_BSDF_EVENT_REFLECTION) != 0u"));
-        assertTrue(transparent.contains(
-                "(eventFlags & PRIME_BSDF_EVENT_TRANSMISSION) == 0u"));
-        assertTrue(transparent.contains("previousVirtualPosition - result.currentVirtualPosition"));
-        assertTrue(transparentPreparation.contains(
-                "previousVirtualPosition = currentVirtualPosition + interfaceData.xyz"));
-        assertTrue(transparentPreparation.contains("vec2 currentCameraJitter"));
-        assertTrue(transparentPreparation.contains("previousUv - currentSampleUv"));
-        assertTrue(transparentPreparation.contains("primeNrdMaterialFactors("));
-        assertTrue(transparentPreparation.contains("primeNrdPackRadianceAndHitDistance("));
-        assertTrue(transparentComposite.contains("primeReflectionDenoised"));
-        assertTrue(transparentComposite.contains("primeReflectionSpecularDenoised"));
-        assertTrue(transparentComposite.contains("primeTransmissionDenoised"));
-        assertTrue(transparentComposite.contains("primeTransmissionSpecularDenoised"));
-        assertTrue(transparentComposite.contains("primeOpaqueValidation"));
-        assertTrue(transparentComposite.contains("primeReflectionValidation"));
-        assertTrue(transparentComposite.contains("primeTransmissionValidation"));
-        assertTrue(transparentComposite.contains(
-                "radiance += primeResolveTransparentBranch("));
-        assertTrue(!transparentComposite.contains("primeResolveCheckerHistory("));
-        assertTrue(!transparentComposite.contains("primeResolveCheckerSpatial("));
-        assertTrue(nativeNrdBridge.contains("settings.diffusePrepassBlurRadius = 12.0f"));
-        assertTrue(nativeNrdBridge.contains("settings.specularPrepassBlurRadius = 12.0f"));
-        assertTrue(transparentCompositeJava.contains("BINDING_COUNT = 16"));
-        assertTrue(transparentCompositeJava.contains("PUSH_SIZE = 16"));
-        assertTrue(transparentCompositeJava.contains("MemoryUtil.memAlloc(bytes.length)"));
-        int validationSelection = transparentComposite.indexOf(
-                "if (validationSource != PRIME_VALIDATION_OFF)");
-        int completedSceneLoad = transparentComposite.indexOf(
-                "vec4 scene = imageLoad(primeTransparentSceneColor", validationSelection);
-        assertTrue(validationSelection >= 0 && completedSceneLoad > validationSelection);
-        assertTrue(transparentComposite.contains("if (metadata.a < 0.0)"));
-        assertTrue(integrator.contains("primary-surface-replacement contract"));
-    }
+        assertFalse(Files.exists(shaderRoot.resolve("transparent.rgen")));
+        assertFalse(Files.exists(shaderRoot.resolve("nrd_transparent_motion.comp")));
+        assertFalse(Files.exists(shaderRoot.resolve("nrd_transparent_composite.comp")));
 
-    private static int occurrences(String source, String needle) {
-        int count = 0;
-        for (int offset = source.indexOf(needle); offset >= 0;
-                offset = source.indexOf(needle, offset + needle.length())) {
-            count++;
-        }
-        return count;
+        String nativeBridge = Files.readString(
+                root.resolve("native/nrd/prime_nrd_bridge.cpp"));
+        assertTrue(nativeBridge.contains("HitDistanceReconstructionMode::AREA_5X5"));
+        assertFalse(nativeBridge.contains("HitDistanceReconstructionMode::AREA_3X3"));
     }
 }

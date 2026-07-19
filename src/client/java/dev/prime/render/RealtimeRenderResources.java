@@ -7,7 +7,6 @@ import dev.prime.render.vulkan.VulkanContext;
 import dev.prime.render.vulkan.VulkanImage;
 import dev.prime.render.vulkan.fsr.Fsr3Upscaler;
 import dev.prime.render.vulkan.nrd.NrdDenoiser;
-import dev.prime.render.vulkan.nrd.NrdTransparentComposite;
 import org.lwjgl.vulkan.VK12;
 
 /**
@@ -24,9 +23,6 @@ final class RealtimeRenderResources implements Destroyable {
     final VulkanImage sceneColor;
     final FsrQualityMode qualityMode;
     NrdDenoiser denoiser;
-    NrdDenoiser reflectionDenoiser;
-    NrdDenoiser transmissionDenoiser;
-    NrdTransparentComposite transparentComposite;
     Fsr3Upscaler upscaler;
     private boolean destroyed;
 
@@ -35,18 +31,12 @@ final class RealtimeRenderResources implements Destroyable {
             VulkanImage accumulation,
             VulkanImage sceneColor,
             NrdDenoiser denoiser,
-            NrdDenoiser reflectionDenoiser,
-            NrdDenoiser transmissionDenoiser,
-            NrdTransparentComposite transparentComposite,
             Fsr3Upscaler upscaler,
             FsrQualityMode qualityMode) {
         this.output = output;
         this.accumulation = accumulation;
         this.sceneColor = sceneColor;
         this.denoiser = denoiser;
-        this.reflectionDenoiser = reflectionDenoiser;
-        this.transmissionDenoiser = transmissionDenoiser;
-        this.transparentComposite = transparentComposite;
         this.upscaler = upscaler;
         this.qualityMode = qualityMode;
     }
@@ -63,9 +53,6 @@ final class RealtimeRenderResources implements Destroyable {
         VulkanImage accumulation = null;
         VulkanImage sceneColor = null;
         NrdDenoiser denoiser = null;
-        NrdDenoiser reflectionDenoiser = null;
-        NrdDenoiser transmissionDenoiser = null;
-        NrdTransparentComposite transparentComposite = null;
         Fsr3Upscaler upscaler = null;
         try {
             output = context.createOutputImage(displayWidth, displayHeight);
@@ -82,23 +69,6 @@ final class RealtimeRenderResources implements Destroyable {
                     renderHeight,
                     sceneColor,
                     accumulation,
-                    atmosphere);
-            reflectionDenoiser = NrdDenoiser.createTransparentBranch(
-                    context,
-                    renderWidth,
-                    renderHeight,
-                    NrdDenoiser.TransparentBranch.REFLECTION);
-            transmissionDenoiser = NrdDenoiser.createTransparentBranch(
-                    context,
-                    renderWidth,
-                    renderHeight,
-                    NrdDenoiser.TransparentBranch.TRANSMISSION);
-            transparentComposite = NrdTransparentComposite.create(
-                    context,
-                    sceneColor,
-                    denoiser,
-                    reflectionDenoiser,
-                    transmissionDenoiser,
                     atmosphere);
             upscaler = Fsr3Upscaler.create(
                     context,
@@ -118,23 +88,11 @@ final class RealtimeRenderResources implements Destroyable {
                     accumulation,
                     sceneColor,
                     denoiser,
-                    reflectionDenoiser,
-                    transmissionDenoiser,
-                    transparentComposite,
                     upscaler,
                     qualityMode);
         } catch (RuntimeException exception) {
             if (upscaler != null) {
                 upscaler.destroy();
-            }
-            if (transparentComposite != null) {
-                transparentComposite.destroy();
-            }
-            if (transmissionDenoiser != null) {
-                transmissionDenoiser.destroy();
-            }
-            if (reflectionDenoiser != null) {
-                reflectionDenoiser.destroy();
             }
             if (denoiser != null) {
                 denoiser.destroy();
@@ -174,9 +132,6 @@ final class RealtimeRenderResources implements Destroyable {
         }
         this.destroyed = true;
         this.upscaler.destroy();
-        this.transparentComposite.destroy();
-        this.transmissionDenoiser.destroy();
-        this.reflectionDenoiser.destroy();
         this.denoiser.destroy();
         this.sceneColor.destroy();
         this.accumulation.destroy();

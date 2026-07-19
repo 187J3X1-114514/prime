@@ -121,7 +121,7 @@ abstract class GenerateShaderAbi extends DefaultTask {
 							+ 'the -64 sea level / 0.001 km world scale, and a 12.5-unit space sun')
 		}
 		if (nrdContract.version != '4.17.4'
-                || nrdContract.denoiser != 'opaque-reblur-diffuse-specular+transparent-dual-reblur-diffuse-specular-psr'
+                || nrdContract.denoiser != 'reblur-diffuse-specular-first-non-delta'
 				|| nrdContract.normalEncoding != 'r10g10b10a2-unorm'
 				|| nrdContract.roughnessEncoding != 'linear'
 				|| nrdContract.motionSpace != 'screen-2.5d'
@@ -253,24 +253,6 @@ public final class ShaderAbi {
     public static final int DESCRIPTOR_NRD_NOISY_SPECULAR = ${schema.descriptors.nrdNoisySpecular};
     public static final int DESCRIPTOR_NRD_SPECULAR_MATERIAL = ${schema.descriptors.nrdSpecularMaterial};
     public static final int DESCRIPTOR_TRANSMISSION_GGX_ENERGY = ${schema.descriptors.transmissionGgxEnergy};
-    public static final int DESCRIPTOR_SCENE_COLOR = ${schema.descriptors.sceneColor};
-    public static final int DESCRIPTOR_FSR_REACTIVE_MASK = ${schema.descriptors.fsrReactiveMask};
-    public static final int DESCRIPTOR_FSR_TRANSPARENCY_COMPOSITION_MASK = ${schema.descriptors.fsrTransparencyCompositionMask};
-    public static final int DESCRIPTOR_TRANSPARENT_REFLECTION_NOISY = ${schema.descriptors.transparentReflectionNoisy};
-    public static final int DESCRIPTOR_TRANSPARENT_REFLECTION_POSITION = ${schema.descriptors.transparentReflectionPosition};
-    public static final int DESCRIPTOR_TRANSPARENT_REFLECTION_METADATA = ${schema.descriptors.transparentReflectionMetadata};
-    public static final int DESCRIPTOR_TRANSPARENT_REFLECTION_GUIDE = ${schema.descriptors.transparentReflectionGuide};
-    public static final int DESCRIPTOR_TRANSPARENT_TRANSMISSION_NOISY = ${schema.descriptors.transparentTransmissionNoisy};
-    public static final int DESCRIPTOR_TRANSPARENT_TRANSMISSION_POSITION = ${schema.descriptors.transparentTransmissionPosition};
-    public static final int DESCRIPTOR_TRANSPARENT_TRANSMISSION_METADATA = ${schema.descriptors.transparentTransmissionMetadata};
-    public static final int DESCRIPTOR_TRANSPARENT_TRANSMISSION_GUIDE = ${schema.descriptors.transparentTransmissionGuide};
-    public static final int DESCRIPTOR_TRANSPARENT_REFLECTION_INTERFACE = ${schema.descriptors.transparentReflectionInterface};
-    public static final int DESCRIPTOR_TRANSPARENT_TRANSMISSION_INTERFACE = ${schema.descriptors.transparentTransmissionInterface};
-    public static final int DESCRIPTOR_TRANSPARENT_REFLECTION_SPECULAR = ${schema.descriptors.transparentReflectionSpecular};
-    public static final int DESCRIPTOR_TRANSPARENT_TRANSMISSION_SPECULAR = ${schema.descriptors.transparentTransmissionSpecular};
-    public static final int DESCRIPTOR_TRANSPARENT_REFLECTION_THROUGHPUT = ${schema.descriptors.transparentReflectionThroughput};
-    public static final int DESCRIPTOR_TRANSPARENT_TRANSMISSION_THROUGHPUT = ${schema.descriptors.transparentTransmissionThroughput};
-    public static final int DESCRIPTOR_TEMPORAL_CAMERA = ${schema.descriptors.temporalCamera};
     public static final int DESCRIPTOR_LABPBR_NORMAL_ATLAS = ${schema.descriptors.labPbrNormalAtlas};
     public static final int DESCRIPTOR_LABPBR_SPECULAR_ATLAS = ${schema.descriptors.labPbrSpecularAtlas};
     public static final int PATH_CAMERA_IN_WATER_MASK = ${schema.pathControl.cameraInWaterMask};
@@ -465,38 +447,6 @@ layout(set = 0, binding = ${schema.descriptors.nrdMotion}, rgba16f) uniform imag
 layout(set = 0, binding = ${schema.descriptors.nrdMaterial}, rgba16f) uniform image2D primeNrdMaterial;
 layout(set = 0, binding = ${schema.descriptors.nrdSpecularMaterial}, rgba16f) uniform image2D primeNrdSpecularMaterial;
 layout(set = 0, binding = ${schema.descriptors.nrdPrimaryPosition}, rgba32f) uniform image2D primeNrdPrimaryPosition;
-// Transparent transport is deliberately composed after opaque NRD. These are not NRD signals:
-// they are the scene-referred output and the semantic masks consumed by FSR's temporal stage.
-layout(set = 0, binding = ${schema.descriptors.sceneColor}, rgba16f) uniform image2D primeSceneColor;
-layout(set = 0, binding = ${schema.descriptors.fsrReactiveMask}, r8) uniform image2D primeFsrReactiveMask;
-layout(set = 0, binding = ${schema.descriptors.fsrTransparencyCompositionMask}, r8) uniform image2D primeFsrTransparencyCompositionMask;
-// A transparent first interface produces two unrelated virtual surfaces. Each group below belongs
-// to one independent diffuse/specular NRD instance. Do not merge or swap them: sharing guide/history
-// state between reflected and transmitted transport creates invalid temporal correspondences.
-layout(set = 0, binding = ${schema.descriptors.transparentReflectionNoisy}, rgba16f) uniform image2D primeTransparentReflectionNoisy;
-layout(set = 0, binding = ${schema.descriptors.transparentReflectionPosition}, rgba32f) uniform image2D primeTransparentReflectionPosition;
-layout(set = 0, binding = ${schema.descriptors.transparentReflectionMetadata}, rgba16f) uniform image2D primeTransparentReflectionMetadata;
-layout(set = 0, binding = ${schema.descriptors.transparentReflectionGuide}, rgba16f) uniform image2D primeTransparentReflectionGuide;
-layout(set = 0, binding = ${schema.descriptors.transparentTransmissionNoisy}, rgba16f) uniform image2D primeTransparentTransmissionNoisy;
-layout(set = 0, binding = ${schema.descriptors.transparentTransmissionPosition}, rgba32f) uniform image2D primeTransparentTransmissionPosition;
-layout(set = 0, binding = ${schema.descriptors.transparentTransmissionMetadata}, rgba16f) uniform image2D primeTransparentTransmissionMetadata;
-layout(set = 0, binding = ${schema.descriptors.transparentTransmissionGuide}, rgba16f) uniform image2D primeTransparentTransmissionGuide;
-// The rgba32 position stores the current virtual surface relative to the effective camera. The
-// paired rgba16 image stores previous-minus-current virtual position. Raygen reduces the entire
-// delta chain to this pair so the persistent per-pixel ABI stays independent of chain capacity.
-layout(set = 0, binding = ${schema.descriptors.transparentReflectionInterface}, rgba16f) uniform image2D primeTransparentReflectionInterface;
-layout(set = 0, binding = ${schema.descriptors.transparentTransmissionInterface}, rgba16f) uniform image2D primeTransparentTransmissionInterface;
-layout(set = 0, binding = ${schema.descriptors.transparentReflectionSpecular}, rgba16f) uniform image2D primeTransparentReflectionSpecular;
-layout(set = 0, binding = ${schema.descriptors.transparentTransmissionSpecular}, rgba16f) uniform image2D primeTransparentTransmissionSpecular;
-layout(set = 0, binding = ${schema.descriptors.transparentReflectionThroughput}, rgba16f) uniform image2D primeTransparentReflectionThroughput;
-layout(set = 0, binding = ${schema.descriptors.transparentTransmissionThroughput}, rgba16f) uniform image2D primeTransparentTransmissionThroughput;
-// xyz is the previous effective camera in the same render-origin-relative coordinates as ray
-// traversal. w is zero when temporal history is being reset. This buffer cannot be folded into the
-// 128-byte push block without exceeding Prime's minimum-device push-constant contract.
-layout(std140, set = 0, binding = ${schema.descriptors.temporalCamera}) uniform PrimeTemporalCamera {
-    vec4 previousCameraValid;
-} primeTemporalCamera;
-
 #endif
 """
 		new File(glslDir, 'prime_atmosphere_contract.glsl').text = """\
@@ -756,11 +706,9 @@ def verifyDistributionJar = tasks.register('verifyDistributionJar') {
 			'prime/natives/windows-x86_64/amd_fidelityfx_vk.dll',
 			'prime/shaders/world.rgen.spv',
 			'prime/shaders/world_ser.rgen.spv',
-			'prime/shaders/transparent.rgen.spv',
 			'prime/shaders/screenshot.rgen.spv',
 			'prime/shaders/screenshot_display.comp.spv',
 			'prime/shaders/nrd_motion.comp.spv',
-			'prime/shaders/nrd_transparent_motion.comp.spv',
 			'prime/shaders/fsr_display.comp.spv'
 		]
 		def missing = required.findAll { !names.contains(it) }
@@ -769,9 +717,9 @@ def verifyDistributionJar = tasks.register('verifyDistributionJar') {
 		}
 
 		def shaderNames = names.findAll { it.startsWith('prime/shaders/') && it.endsWith('.spv') }
-		if (shaderNames.size() != 19) {
+		if (shaderNames.size() != 15) {
 			throw new GradleException(
-					"Distribution jar must contain 19 Prime shaders; found ${shaderNames.size()}")
+					"Distribution jar must contain 15 Prime shaders; found ${shaderNames.size()}")
 		}
 
 		new java.util.zip.ZipFile(archive).withCloseable { zip ->

@@ -13,12 +13,11 @@ cmake -S native/nrd -B build/native/nrd -G "Visual Studio 18 2026" -A x64 `
 cmake --build build/native/nrd --config Release --target prime_nrd --parallel
 ```
 
-The build is deliberately pinned to NRD 4.17.4, SPIR-V only, with three independent
-`REBLUR_DIFFUSE_SPECULAR` instances, no NRI and no quad-intrinsics extension. Opaque, transparent
-reflection and transparent transmission histories are unrelated. Each transparent branch promotes
-the first non-delta hit to a primary-surface replacement, denoises its demodulated diffuse and
-specular lighting separately, and applies material factors plus delta-chain throughput afterwards.
-Both transparent branches use identical REBLUR settings.
+The build is deliberately pinned to NRD 4.17.4, SPIR-V only, with one
+`REBLUR_DIFFUSE_SPECULAR` instance, no NRI and no quad-intrinsics extension. Realtime rendering
+traces one complete path per pixel. The path loop promotes its first non-delta sample to the NRD
+guide and folds preceding delta throughput into the guide material factors. Hit-distance
+reconstruction uses NRD's 5x5 area mode.
 Copy the resulting `build/native/nrd/bin/Release/prime_nrd.dll` to
 `src/client/resources/prime/natives/windows-x86_64/prime_nrd.dll` and run the full Gradle build.
 

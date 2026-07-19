@@ -248,7 +248,7 @@ public final class Fsr3Upscaler implements Destroyable {
                 (float) this.renderWidth,
                 (float) this.renderHeight);
 
-        // NRD and the transparent composite write every imported input immediately before FSR.
+        // The single NRD composite writes every imported input immediately before FSR.
         // The DLL owns its internal barriers, but this external producer/consumer dependency is
         // Prime's responsibility and must remain explicit.
         computeBarrier(commandBuffer);

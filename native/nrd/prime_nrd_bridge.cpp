@@ -22,7 +22,7 @@ namespace
     {
         uint32_t width;
         uint32_t height;
-        uint32_t denoiserKind;
+        uint32_t reserved;
     };
 
     struct PrimeNrdTextureInfo
@@ -132,7 +132,6 @@ namespace
         std::vector<PrimeNrdPipelineInfo> pipelines;
         std::vector<std::vector<PrimeNrdResourceInfo>> dispatchResources;
         std::vector<PrimeNrdDispatchInfo> dispatches;
-        uint32_t denoiserProfile = 0;
 
         ~PrimeNrdContext()
         {
@@ -254,8 +253,8 @@ PRIME_NRD_EXPORT int32_t primeNrdCreate(
     const PrimeNrdCreateDesc* createDesc,
     PrimeNrdContext** output)
 {
-    if (createDesc == nullptr || output == nullptr || createDesc->width == 0 || createDesc->height == 0
-        || createDesc->denoiserKind > 2)
+    if (createDesc == nullptr || output == nullptr || createDesc->width == 0
+        || createDesc->height == 0 || createDesc->reserved != 0)
         return -1;
 
     *output = nullptr;
@@ -263,12 +262,8 @@ PRIME_NRD_EXPORT int32_t primeNrdCreate(
     if (context == nullptr)
         return -2;
 
-    // Transparent branches expose a complete primary-surface replacement. They therefore need
-    // the same diffuse/specular separation as an ordinary primary surface; filtering their mixed
-    // radiance as diffuse destroys the replacement surface's texture and glossy response.
     const nrd::Denoiser selectedDenoiser = nrd::Denoiser::REBLUR_DIFFUSE_SPECULAR;
     const nrd::DenoiserDesc denoiser = {PRIME_NRD_DENOISER_ID, selectedDenoiser};
-    context->denoiserProfile = createDesc->denoiserKind;
     const nrd::InstanceCreationDesc creation = {{}, &denoiser, 1};
     nrd::Result result = nrd::CreateInstance(creation, context->instance);
     if (result != nrd::Result::SUCCESS || !BuildDescription(*context))
@@ -278,21 +273,9 @@ PRIME_NRD_EXPORT int32_t primeNrdCreate(
     }
 
     nrd::ReblurSettings settings = {};
-    settings.hitDistanceReconstructionMode = nrd::HitDistanceReconstructionMode::AREA_3X3;
+    settings.hitDistanceReconstructionMode = nrd::HitDistanceReconstructionMode::AREA_5X5;
     settings.diffusePrepassBlurRadius = 30.0f;
     settings.specularPrepassBlurRadius = 50.0f;
-    if (context->denoiserProfile != 0)
-    {
-        // The delta interface is deterministic, while each promoted PSR still contains ordinary
-        // diffuse/specular continuation noise. NRD recommends an enabled pre-pass together with
-        // hit-distance reconstruction for this lobe split. Keep both radii narrow: the separate
-        // branch PSR guides protect edges without paying the default wide transparent blur.
-        settings.hitDistanceReconstructionMode = nrd::HitDistanceReconstructionMode::AREA_3X3;
-        settings.diffusePrepassBlurRadius = 12.0f;
-        settings.specularPrepassBlurRadius = 12.0f;
-        settings.usePrepassOnlyForSpecularMotionEstimation = true;
-        settings.maxBlurRadius = 12.0f;
-    }
     result = nrd::SetDenoiserSettings(*context->instance, PRIME_NRD_DENOISER_ID, &settings);
     if (result != nrd::Result::SUCCESS)
     {
@@ -341,13 +324,6 @@ PRIME_NRD_EXPORT int32_t primeNrdSetFrameSettings(
     settings.rectSizePrev[1] = static_cast<uint16_t>(input->previousHeight);
     settings.timeDeltaBetweenFrames = std::max(input->timeDeltaMilliseconds, 0.0f);
     settings.denoisingRange = std::max(input->denoisingRange, 1.0f);
-    // Each diffuse-only instance contains only transparent primary-surface replacements. NRD's
-    // integration guide recommends a 2x-10x wider disocclusion threshold because the primary
-    // interface curvature is intentionally absent from the virtual G-buffer. Five times the
-    // baseline is conservative and cannot leak history into the unrelated sibling branch because
-    // reflection and transmission own separate instances.
-    if (context->denoiserProfile != 0)
-        settings.disocclusionThreshold = 0.05f;
     settings.frameIndex = input->frameIndex;
     settings.accumulationMode = input->restart != 0
         ? nrd::AccumulationMode::RESTART

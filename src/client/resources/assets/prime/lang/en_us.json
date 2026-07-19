@@ -21,8 +21,6 @@
   "prime.options.nrd.debug_view.tooltip": "The NRD (NVIDIA Real-time Denoiser) validation grid shows normals, roughness, depth, motion vectors, history length, and hit distance. Select a surface only when diagnosing noise, ghosting, or flicker; Off is recommended for normal play.",
   "prime.options.nrd.debug_view.off": "Off",
   "prime.options.nrd.debug_view.opaque": "Opaque Surfaces",
-  "prime.options.nrd.debug_view.reflection": "Transparent Reflection",
-  "prime.options.nrd.debug_view.transmission": "Transparent Transmission/Refraction",
   "prime.options.fsr.debug_view": "FSR Upscaling Diagnostics",
   "prime.options.fsr.debug_view.tooltip": "The FSR integration overview shows motion vectors, depth, disocclusion, shading change, and responsive regions used by temporal upscaling. Enable it only when diagnosing upscaling ghosting, flicker, or lost detail; Off is recommended for normal play.",
   "prime.options.fsr.debug_view.off": "Off",

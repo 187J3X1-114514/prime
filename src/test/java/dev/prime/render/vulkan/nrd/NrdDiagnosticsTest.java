@@ -15,7 +15,7 @@ final class NrdDiagnosticsTest {
     @Test
     void modesSelectExactlyOneFinalValidationSource() {
         assertArrayEquals(
-                new int[] {0, 1, 2, 3},
+                new int[] {0, 1},
                 Arrays.stream(NrdDiagnostics.Mode.values())
                         .mapToInt(NrdDiagnostics.Mode::outputSelector)
                         .toArray());
@@ -26,8 +26,8 @@ final class NrdDiagnosticsTest {
             }
         }
         assertFalse(NrdDiagnostics.Mode.OFF.enablesValidationFor(NrdDiagnostics.Mode.OPAQUE));
-        assertTrue(NrdDiagnostics.Mode.TRANSMISSION.enablesValidationFor(
-                NrdDiagnostics.Mode.TRANSMISSION));
+        assertTrue(NrdDiagnostics.Mode.OPAQUE.enablesValidationFor(
+                NrdDiagnostics.Mode.OPAQUE));
     }
 
     @Test

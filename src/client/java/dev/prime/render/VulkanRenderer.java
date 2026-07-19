@@ -20,7 +20,6 @@ import dev.prime.render.vulkan.VulkanCapabilities;
 import dev.prime.render.vulkan.VulkanContext;
 import dev.prime.render.vulkan.VulkanImage;
 import dev.prime.render.vulkan.nrd.NrdDenoiser;
-import dev.prime.render.vulkan.nrd.NrdTransparentComposite;
 import dev.prime.render.vulkan.fsr.Fsr3Upscaler;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
@@ -54,7 +53,6 @@ public final class VulkanRenderer implements AutoCloseable {
     private ScreenshotRenderResources screenshotResources;
     private BlockAtlasFrame blockAtlasFrame;
     private FrameCamera camera;
-    private FrameCamera previousSubmittedCamera;
     private SunDirection sunDirection;
     private boolean cameraMediumKnown;
     private boolean cameraInWater;
@@ -184,7 +182,7 @@ public final class VulkanRenderer implements AutoCloseable {
     }
 
     /**
-     * Records Prime's interactive frame graph: path tracing, NRD, transparent composition, FSR,
+     * Records Prime's interactive frame graph: one path sample, NRD, FSR,
      * and the display transform. Keeping this orchestration behind a named render-path boundary
      * prevents the future offline accumulator from inheriting temporal resources by accident.
      */
@@ -243,8 +241,6 @@ public final class VulkanRenderer implements AutoCloseable {
         VulkanImage history = images.accumulation;
         VulkanImage sceneColor = images.sceneColor;
         NrdDenoiser denoiser = images.denoiser;
-        NrdDenoiser reflectionDenoiser = images.reflectionDenoiser;
-        NrdDenoiser transmissionDenoiser = images.transmissionDenoiser;
         Fsr3Upscaler upscaler = images.upscaler;
         LightingSettings.Snapshot lighting = LightingSettings.snapshot();
         MaterialSettings.Snapshot material = MaterialSettings.snapshot();
@@ -279,29 +275,18 @@ public final class VulkanRenderer implements AutoCloseable {
                 atlasViewHandle,
                 atlasSamplerHandle);
         FsrSettings.Jitter cameraJitter = fsrFrame.jitter();
-        FrameCamera temporalPreviousCamera = fsrFrame.reset()
-                || this.previousSubmittedCamera == null
-                ? frameCamera
-                : this.previousSubmittedCamera;
-        boolean temporalCameraValid = !fsrFrame.reset()
-                && this.previousSubmittedCamera != null;
-
         var encoder = this.context.commandEncoder();
         VkCommandBuffer commandBuffer = encoder.allocateAndBeginTransientCommandBuffer();
         this.context.device().instance().debug().beginDebugGroup(
-                commandBuffer, () -> "Prime path tracing, NRD, and FidelityFX FSR 3.1.4");
+                commandBuffer, () -> "Prime 1spp path tracing, NRD, and FidelityFX FSR 3.1.4");
         this.atmosphere.prepare(commandBuffer, frameCamera, frameSunDirection);
         this.prepareOutputForComposite(commandBuffer, target);
         this.prepareSceneColorForComposite(commandBuffer, sceneColor);
         this.prepareAccumulationForTrace(commandBuffer, history);
         denoiser.prepareForRayTrace(commandBuffer);
-        reflectionDenoiser.prepareForRayTrace(commandBuffer);
-        transmissionDenoiser.prepareForRayTrace(commandBuffer);
         this.prepareAtlasForTrace(commandBuffer, atlasView.texture());
         LabPbrTextureAtlas.FrameToken labPbrFrame = this.labPbrAtlas.prepare(commandBuffer);
         NrdDenoiser.FrameToken nrdFrame;
-        NrdDenoiser.FrameToken reflectionNrdFrame;
-        NrdDenoiser.FrameToken transmissionNrdFrame;
         try (MemoryStack stack = MemoryStack.stackPush()) {
             ByteBuffer pushConstants = this.createPushConstants(
                     stack,
@@ -333,42 +318,6 @@ public final class VulkanRenderer implements AutoCloseable {
                     cameraJitter.y(),
                     lighting.sunMultiplier(),
                     fsrFrame.reset());
-            this.prepareTransparentComposite(commandBuffer, sceneColor, denoiser);
-            this.pipeline.traceTransparent(
-                    commandBuffer,
-                    pushConstants,
-                    renderWidth,
-                    renderHeight,
-                    (float) (temporalPreviousCamera.renderX() - scene.originX()),
-                    (float) (temporalPreviousCamera.renderY() - scene.originY()),
-                    (float) (temporalPreviousCamera.renderZ() - scene.originZ()),
-                    temporalCameraValid);
-            reflectionNrdFrame = reflectionDenoiser.recordBranch(
-                    commandBuffer,
-                    frameCamera,
-                    scene.resetRevision(),
-                    atlasViewHandle,
-                    atlasSamplerHandle,
-                    frameSunDirection,
-                    cameraJitter.x(),
-                    cameraJitter.y(),
-                    fsrFrame.reset());
-            transmissionNrdFrame = transmissionDenoiser.recordBranch(
-                    commandBuffer,
-                    frameCamera,
-                    scene.resetRevision(),
-                    atlasViewHandle,
-                    atlasSamplerHandle,
-                    frameSunDirection,
-                    cameraJitter.x(),
-                    cameraJitter.y(),
-                    fsrFrame.reset());
-            images.transparentComposite.record(
-                    commandBuffer,
-                    renderWidth,
-                    renderHeight,
-                    lighting.sunMultiplier());
-            this.finishTransparentComposite(commandBuffer, sceneColor, denoiser);
             this.finishAtlasRead(commandBuffer, atlasView.texture());
             upscaler.record(commandBuffer, fsrFrame);
             this.prepareImagesForCopy(commandBuffer, target, mainColor);
@@ -398,10 +347,7 @@ public final class VulkanRenderer implements AutoCloseable {
         encoder.execute(commandBuffer);
         this.labPbrAtlas.submitted(labPbrFrame);
         denoiser.submitted(nrdFrame);
-        reflectionDenoiser.submitted(reflectionNrdFrame);
-        transmissionDenoiser.submitted(transmissionNrdFrame);
         upscaler.submitted(fsrFrame);
-        this.previousSubmittedCamera = frameCamera;
         this.submittedLightingRevision = lighting.revision();
         this.submittedMaterialRevision = material.revision();
         this.realtimeSampleState.submitted(
@@ -490,15 +436,12 @@ public final class VulkanRenderer implements AutoCloseable {
                 scene.tlas(),
                 images.output,
                 images.accumulation,
-                realtime.sceneColor,
                 atlasView,
                 atlasSampler,
                 this.labPbrAtlas.normalAtlas(),
                 this.labPbrAtlas.specularAtlas(),
                 this.atmosphere,
-                realtime.denoiser,
-                realtime.reflectionDenoiser,
-                realtime.transmissionDenoiser);
+                realtime.denoiser);
 
         var encoder = this.context.commandEncoder();
         VkCommandBuffer commandBuffer = encoder.allocateAndBeginTransientCommandBuffer();
@@ -627,7 +570,6 @@ public final class VulkanRenderer implements AutoCloseable {
         // block range, without invalidating the frozen screenshot while it is converging.
         this.terrain.invalidateAll();
         this.realtimeSampleState.invalidate();
-        this.previousSubmittedCamera = null;
         if (this.realtimeResources != null) {
             this.realtimeResources.upscaler.requestReset();
         }
@@ -729,9 +671,6 @@ public final class VulkanRenderer implements AutoCloseable {
         AtmospherePipeline replacementAtmosphere = null;
         RayTracingPipeline replacementPipeline = null;
         NrdDenoiser replacementDenoiser = null;
-        NrdDenoiser replacementReflectionDenoiser = null;
-        NrdDenoiser replacementTransmissionDenoiser = null;
-        NrdTransparentComposite replacementTransparentComposite = null;
         Fsr3Upscaler replacementUpscaler = null;
         try {
             replacementAtmosphere = new AtmospherePipeline(this.context);
@@ -744,23 +683,6 @@ public final class VulkanRenderer implements AutoCloseable {
                         currentImages.sceneColor.height(),
                         currentImages.sceneColor,
                         currentImages.accumulation,
-                        replacementAtmosphere);
-                replacementReflectionDenoiser = NrdDenoiser.createTransparentBranch(
-                        this.context,
-                        currentImages.sceneColor.width(),
-                        currentImages.sceneColor.height(),
-                        NrdDenoiser.TransparentBranch.REFLECTION);
-                replacementTransmissionDenoiser = NrdDenoiser.createTransparentBranch(
-                        this.context,
-                        currentImages.sceneColor.width(),
-                        currentImages.sceneColor.height(),
-                        NrdDenoiser.TransparentBranch.TRANSMISSION);
-                replacementTransparentComposite = NrdTransparentComposite.create(
-                        this.context,
-                        currentImages.sceneColor,
-                        replacementDenoiser,
-                        replacementReflectionDenoiser,
-                        replacementTransmissionDenoiser,
                         replacementAtmosphere);
                 replacementUpscaler = Fsr3Upscaler.create(
                         this.context,
@@ -780,15 +702,6 @@ public final class VulkanRenderer implements AutoCloseable {
             if (replacementUpscaler != null) {
                 replacementUpscaler.destroy();
             }
-            if (replacementTransparentComposite != null) {
-                replacementTransparentComposite.destroy();
-            }
-            if (replacementTransmissionDenoiser != null) {
-                replacementTransmissionDenoiser.destroy();
-            }
-            if (replacementReflectionDenoiser != null) {
-                replacementReflectionDenoiser.destroy();
-            }
             if (replacementDenoiser != null) {
                 replacementDenoiser.destroy();
             }
@@ -805,28 +718,16 @@ public final class VulkanRenderer implements AutoCloseable {
         AtmospherePipeline previousAtmosphere = this.atmosphere;
         RealtimeRenderResources currentImages = this.realtimeResources;
         NrdDenoiser previousDenoiser = currentImages == null ? null : currentImages.denoiser;
-        NrdDenoiser previousReflectionDenoiser =
-                currentImages == null ? null : currentImages.reflectionDenoiser;
-        NrdDenoiser previousTransmissionDenoiser =
-                currentImages == null ? null : currentImages.transmissionDenoiser;
-        NrdTransparentComposite previousTransparentComposite =
-                currentImages == null ? null : currentImages.transparentComposite;
         Fsr3Upscaler previousUpscaler = currentImages == null ? null : currentImages.upscaler;
         this.pipeline = replacementPipeline;
         this.atmosphere = replacementAtmosphere;
         if (currentImages != null) {
             currentImages.denoiser = replacementDenoiser;
-            currentImages.reflectionDenoiser = replacementReflectionDenoiser;
-            currentImages.transmissionDenoiser = replacementTransmissionDenoiser;
-            currentImages.transparentComposite = replacementTransparentComposite;
             currentImages.upscaler = replacementUpscaler;
         }
         this.context.defer(previousPipeline);
         if (previousDenoiser != null) {
             this.context.defer(previousUpscaler);
-            this.context.defer(previousTransparentComposite);
-            this.context.defer(previousTransmissionDenoiser);
-            this.context.defer(previousReflectionDenoiser);
             this.context.defer(previousDenoiser);
         }
         this.context.defer(previousAtmosphere);
@@ -850,15 +751,12 @@ public final class VulkanRenderer implements AutoCloseable {
                     tlas,
                     current.output,
                     current.accumulation,
-                    current.sceneColor,
                     atlasView,
                     atlasSampler,
                     this.labPbrAtlas.normalAtlas(),
                     this.labPbrAtlas.specularAtlas(),
                     this.atmosphere,
-                    current.denoiser,
-                    current.reflectionDenoiser,
-                    current.transmissionDenoiser);
+                    current.denoiser);
             return false;
         }
         RealtimeRenderResources replacement = RealtimeRenderResources.create(
@@ -874,15 +772,12 @@ public final class VulkanRenderer implements AutoCloseable {
                     tlas,
                     replacement.output,
                     replacement.accumulation,
-                    replacement.sceneColor,
                     atlasView,
                     atlasSampler,
                     this.labPbrAtlas.normalAtlas(),
                     this.labPbrAtlas.specularAtlas(),
                     this.atmosphere,
-                    replacement.denoiser,
-                    replacement.reflectionDenoiser,
-                    replacement.transmissionDenoiser);
+                    replacement.denoiser);
         } catch (RuntimeException exception) {
             replacement.destroy();
             throw exception;
@@ -1034,86 +929,6 @@ public final class VulkanRenderer implements AutoCloseable {
                 VK12.VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
                 VK12.VK_ACCESS_SHADER_WRITE_BIT);
         image.markInitialized();
-    }
-
-    private void prepareTransparentComposite(
-            VkCommandBuffer commandBuffer,
-            VulkanImage sceneColor,
-            NrdDenoiser denoiser) {
-        try (MemoryStack stack = MemoryStack.stackPush()) {
-            VkImageMemoryBarrier2.Buffer barriers = VkImageMemoryBarrier2.calloc(3, stack);
-            VulkanImage reactiveMask = denoiser.fsrReactiveMask();
-            VulkanImage transparencyMask = denoiser.fsrTransparencyCompositionMask();
-            fillImageBarrier(
-                    barriers.get(0),
-                    sceneColor.image(),
-                    VK12.VK_IMAGE_LAYOUT_GENERAL,
-                    VK12.VK_IMAGE_LAYOUT_GENERAL,
-                    VK12.VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-                    VK12.VK_ACCESS_SHADER_READ_BIT | VK12.VK_ACCESS_SHADER_WRITE_BIT,
-                    KHRRayTracingPipeline.VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR,
-                    VK12.VK_ACCESS_SHADER_WRITE_BIT);
-            for (int index = 1; index < 3; index++) {
-                VulkanImage image = index == 1 ? reactiveMask : transparencyMask;
-                fillImageBarrier(
-                        barriers.get(index),
-                        image.image(),
-                        VK12.VK_IMAGE_LAYOUT_GENERAL,
-                        VK12.VK_IMAGE_LAYOUT_GENERAL,
-                        VK12.VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-                        VK12.VK_ACCESS_SHADER_READ_BIT | VK12.VK_ACCESS_SHADER_WRITE_BIT,
-                        KHRRayTracingPipeline.VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR,
-                        VK12.VK_ACCESS_SHADER_WRITE_BIT);
-            }
-            // NRD first produces one coherent opaque image. The transparent ray pass then
-            // overwrites only camera rays whose nearest real surface is glass/water and updates
-            // FSR's semantic masks at the same pixels. This explicit dependency is essential:
-            // queue order does not make the compute writes visible to later storage-image writes.
-            VkDependencyInfo dependency = VkDependencyInfo.calloc(stack)
-                    .sType$Default()
-                    .pImageMemoryBarriers(barriers);
-            KHRSynchronization2.vkCmdPipelineBarrier2KHR(commandBuffer, dependency);
-        }
-    }
-
-    private void finishTransparentComposite(
-            VkCommandBuffer commandBuffer,
-            VulkanImage sceneColor,
-            NrdDenoiser denoiser) {
-        try (MemoryStack stack = MemoryStack.stackPush()) {
-            VkImageMemoryBarrier2.Buffer barriers = VkImageMemoryBarrier2.calloc(3, stack);
-            VulkanImage reactiveMask = denoiser.fsrReactiveMask();
-            VulkanImage transparencyMask = denoiser.fsrTransparencyCompositionMask();
-            fillImageBarrier(
-                    barriers.get(0),
-                    sceneColor.image(),
-                    VK12.VK_IMAGE_LAYOUT_GENERAL,
-                    VK12.VK_IMAGE_LAYOUT_GENERAL,
-                    VK12.VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT
-                            | KHRRayTracingPipeline.VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR,
-                    VK12.VK_ACCESS_SHADER_WRITE_BIT,
-                    VK12.VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-                    VK12.VK_ACCESS_SHADER_READ_BIT);
-            for (int index = 1; index < 3; index++) {
-                VulkanImage image = index == 1 ? reactiveMask : transparencyMask;
-                fillImageBarrier(
-                        barriers.get(index),
-                        image.image(),
-                        VK12.VK_IMAGE_LAYOUT_GENERAL,
-                        VK12.VK_IMAGE_LAYOUT_GENERAL,
-                        VK12.VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT
-                                | KHRRayTracingPipeline.VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR,
-                        VK12.VK_ACCESS_SHADER_WRITE_BIT,
-                        VK12.VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-                        VK12.VK_ACCESS_SHADER_READ_BIT);
-            }
-            // FSR samples all three images immediately after this point. Keep this barrier paired
-            // with prepareTransparentComposite whenever the transparent stage is rescheduled.
-            VkDependencyInfo dependency = VkDependencyInfo.calloc(stack)
-                    .sType$Default()
-                    .pImageMemoryBarriers(barriers);
-            KHRSynchronization2.vkCmdPipelineBarrier2KHR(commandBuffer, dependency);
-        }
     }
 
     private void prepareImagesForCopy(VkCommandBuffer commandBuffer, VulkanImage source, VulkanGpuTexture destination) {

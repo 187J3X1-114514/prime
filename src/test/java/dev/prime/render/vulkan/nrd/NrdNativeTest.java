@@ -141,48 +141,6 @@ final class NrdNativeTest {
         }
     }
 
-    @Test
-    void bundledBridgeCreatesIndependentTransparentPsrDispatches() {
-        requireNativeRuntime();
-        try (NrdNative.Instance instance = NrdNative.create(
-                64, 48, NrdNative.DenoiserKind.TRANSPARENT_TRANSMISSION)) {
-            NrdNative.Description description = instance.description();
-            assertEquals(NrdNative.EXPECTED_NRD_VERSION, description.nrdVersion());
-            Matrix4f identity = new Matrix4f();
-            instance.setFrameSettings(new NrdNative.FrameSettings(
-                    identity,
-                    identity,
-                    identity,
-                    identity,
-                    0.0f,
-                    0.0f,
-                    0.0f,
-                    0.0f,
-                    64,
-                    48,
-                    64,
-                    48,
-                    0,
-                    true,
-                    16.67f,
-                    1_000.0f,
-                    true));
-            Set<Integer> resourceTypes = new HashSet<>();
-            NrdNative.DispatchList dispatches = instance.getDispatches();
-            for (int dispatchIndex = 0; dispatchIndex < dispatches.size(); dispatchIndex++) {
-                for (int resourceIndex = 0;
-                        resourceIndex < dispatches.resourceCount(dispatchIndex);
-                        resourceIndex++) {
-                    resourceTypes.add(dispatches.resourceType(dispatchIndex, resourceIndex));
-                }
-            }
-            assertTrue(resourceTypes.contains(NrdNative.RESOURCE_IN_DIFF_RADIANCE_HITDIST));
-            assertTrue(resourceTypes.contains(NrdNative.RESOURCE_OUT_DIFF_RADIANCE_HITDIST));
-            assertTrue(resourceTypes.contains(NrdNative.RESOURCE_IN_SPEC_RADIANCE_HITDIST));
-            assertTrue(resourceTypes.contains(NrdNative.RESOURCE_OUT_SPEC_RADIANCE_HITDIST));
-        }
-    }
-
     private static void requireNativeRuntime() {
         assumeTrue(
                 NrdNative.isSupportedPlatform(),

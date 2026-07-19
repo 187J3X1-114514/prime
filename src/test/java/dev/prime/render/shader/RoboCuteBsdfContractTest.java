@@ -160,8 +160,7 @@ final class RoboCuteBsdfContractTest {
         assertTrue(adapter.contains("PRIME_REC2020_PRIMARY_WAVELENGTHS_NM"));
         assertTrue(adapter.contains("decodedColor / peak"));
         assertTrue(defaultMaterial.contains(
-                "visible interface can be split into deterministic"));
-        assertTrue(defaultMaterial.contains("Screenshot mode keeps that full transport contract"));
+                "one complete path samples a delta reflection"));
         assertTrue(defaultMaterial.contains("return 0.0;"));
         assertTrue(integrator.contains("PrimeRcVolumeStack volumeStack"));
         assertTrue(integrator.contains("volumeStack = transmitted.volumeStack"));

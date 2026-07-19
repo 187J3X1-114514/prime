@@ -33,26 +33,8 @@ final class ShaderAbiTest {
         assertEquals(15, ShaderAbi.DESCRIPTOR_NRD_NOISY_SPECULAR);
         assertEquals(16, ShaderAbi.DESCRIPTOR_NRD_SPECULAR_MATERIAL);
         assertEquals(17, ShaderAbi.DESCRIPTOR_TRANSMISSION_GGX_ENERGY);
-        assertEquals(18, ShaderAbi.DESCRIPTOR_SCENE_COLOR);
-        assertEquals(19, ShaderAbi.DESCRIPTOR_FSR_REACTIVE_MASK);
-        assertEquals(20, ShaderAbi.DESCRIPTOR_FSR_TRANSPARENCY_COMPOSITION_MASK);
-        assertEquals(21, ShaderAbi.DESCRIPTOR_TRANSPARENT_REFLECTION_NOISY);
-        assertEquals(22, ShaderAbi.DESCRIPTOR_TRANSPARENT_REFLECTION_POSITION);
-        assertEquals(23, ShaderAbi.DESCRIPTOR_TRANSPARENT_REFLECTION_METADATA);
-        assertEquals(24, ShaderAbi.DESCRIPTOR_TRANSPARENT_REFLECTION_GUIDE);
-        assertEquals(25, ShaderAbi.DESCRIPTOR_TRANSPARENT_TRANSMISSION_NOISY);
-        assertEquals(26, ShaderAbi.DESCRIPTOR_TRANSPARENT_TRANSMISSION_POSITION);
-        assertEquals(27, ShaderAbi.DESCRIPTOR_TRANSPARENT_TRANSMISSION_METADATA);
-        assertEquals(28, ShaderAbi.DESCRIPTOR_TRANSPARENT_TRANSMISSION_GUIDE);
-        assertEquals(29, ShaderAbi.DESCRIPTOR_TRANSPARENT_REFLECTION_INTERFACE);
-        assertEquals(30, ShaderAbi.DESCRIPTOR_TRANSPARENT_TRANSMISSION_INTERFACE);
-        assertEquals(31, ShaderAbi.DESCRIPTOR_TRANSPARENT_REFLECTION_SPECULAR);
-        assertEquals(32, ShaderAbi.DESCRIPTOR_TRANSPARENT_TRANSMISSION_SPECULAR);
-        assertEquals(33, ShaderAbi.DESCRIPTOR_TRANSPARENT_REFLECTION_THROUGHPUT);
-        assertEquals(34, ShaderAbi.DESCRIPTOR_TRANSPARENT_TRANSMISSION_THROUGHPUT);
-        assertEquals(35, ShaderAbi.DESCRIPTOR_TEMPORAL_CAMERA);
-        assertEquals(36, ShaderAbi.DESCRIPTOR_LABPBR_NORMAL_ATLAS);
-        assertEquals(37, ShaderAbi.DESCRIPTOR_LABPBR_SPECULAR_ATLAS);
+        assertEquals(18, ShaderAbi.DESCRIPTOR_LABPBR_NORMAL_ATLAS);
+        assertEquals(19, ShaderAbi.DESCRIPTOR_LABPBR_SPECULAR_ATLAS);
         assertEquals(0x80000000, ShaderAbi.PATH_CAMERA_IN_WATER_MASK);
         assertEquals(0x7fff, ShaderAbi.PATH_JITTER_PHASE_MASK);
         assertEquals(0, ShaderAbi.PATH_SUN_EV_QUARTER_SHIFT);
@@ -68,7 +50,7 @@ final class ShaderAbiTest {
         assertEquals("srgb", ShaderAbi.DISPLAY_COLOR_ENCODING);
         assertEquals("screen-2.5d", ShaderAbi.NRD_MOTION_SPACE);
         assertEquals(
-                "opaque-reblur-diffuse-specular+transparent-dual-reblur-diffuse-specular-psr",
+                "reblur-diffuse-specular-first-non-delta",
                 ShaderAbi.NRD_DENOISER);
         assertEquals("hillaire-8wave-rec2020-d65", ShaderAbi.ATMOSPHERE_SPECTRAL_MODEL);
         assertEquals(12.5F, ShaderAbi.ATMOSPHERE_SPACE_SUN_INTENSITY);

@@ -8,19 +8,15 @@ import dev.prime.render.vulkan.nrd.NrdDenoiser;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.ByteBuffer;
-import java.nio.ByteOrder;
 import java.nio.LongBuffer;
 import org.lwjgl.system.MemoryStack;
 import org.lwjgl.system.MemoryUtil;
 import org.lwjgl.vulkan.KHRAccelerationStructure;
 import org.lwjgl.vulkan.KHRRayTracingPipeline;
 import org.lwjgl.vulkan.EXTOpacityMicromap;
-import org.lwjgl.vulkan.KHRSynchronization2;
 import org.lwjgl.vulkan.VK12;
-import org.lwjgl.vulkan.VkBufferMemoryBarrier2;
 import org.lwjgl.vulkan.VkCommandBuffer;
 import org.lwjgl.vulkan.VkDependencyInfo;
-import org.lwjgl.vulkan.VkDescriptorBufferInfo;
 import org.lwjgl.vulkan.VkDescriptorImageInfo;
 import org.lwjgl.vulkan.VkDescriptorPoolCreateInfo;
 import org.lwjgl.vulkan.VkDescriptorPoolSize;
@@ -39,11 +35,10 @@ import org.lwjgl.vulkan.VkWriteDescriptorSetAccelerationStructureKHR;
 
 public final class RayTracingPipeline implements Destroyable {
     private static final int OPAQUE_RAYGEN_GROUP = 0;
-    private static final int TRANSPARENT_RAYGEN_GROUP = 1;
-    private static final int SCREENSHOT_RAYGEN_GROUP = 2;
-    static final int RAYGEN_GROUP_COUNT = 3;
+    private static final int SCREENSHOT_RAYGEN_GROUP = 1;
+    static final int RAYGEN_GROUP_COUNT = 2;
     static final int MISS_GROUP_COUNT = 2;
-    static final int HIT_GROUP_COUNT = 6;
+    static final int HIT_GROUP_COUNT = 3;
     private static final int GROUP_COUNT = RAYGEN_GROUP_COUNT + MISS_GROUP_COUNT + HIT_GROUP_COUNT;
     private static final int ALL_RT_STAGES =
             KHRRayTracingPipeline.VK_SHADER_STAGE_RAYGEN_BIT_KHR
@@ -63,7 +58,6 @@ public final class RayTracingPipeline implements Destroyable {
     private final long pipelineLayout;
     private final TracePipeline tracePipeline;
     private final BsdfLookupTable bsdfLookup;
-    private final VulkanBuffer temporalCamera;
     private DescriptorBindings descriptorBindings;
     private boolean destroyed;
 
@@ -73,22 +67,15 @@ public final class RayTracingPipeline implements Destroyable {
         long newPipelineLayout = 0L;
         TracePipeline newTracePipeline = null;
         BsdfLookupTable newBsdfLookup = null;
-        VulkanBuffer newTemporalCamera = null;
         try {
             newBsdfLookup = new BsdfLookupTable(context);
-            newTemporalCamera = context.createBuffer(
-                    4L * Float.BYTES,
-                    VK12.VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT
-                            | VK12.VK_BUFFER_USAGE_TRANSFER_DST_BIT,
-                    false,
-                    "Prime previous temporal camera");
             try (MemoryStack stack = MemoryStack.stackPush()) {
                 newDescriptorSetLayout = createDescriptorSetLayout(context, stack);
                 newPipelineLayout = createPipelineLayout(context, stack, newDescriptorSetLayout);
                 String opaqueRaygen = context.capabilities().invocationReorderSupported()
                         ? "/prime/shaders/world_ser.rgen.spv"
                         : "/prime/shaders/world.rgen.spv";
-                // All three render paths share miss/hit stages and the pipeline layout. Keeping
+                // Both render paths share miss/hit stages and the pipeline layout. Keeping
                 // their raygen groups in one pipeline lets the Vulkan driver compile that common
                 // graph once; dispatch selects a base-aligned raygen SBT record.
                 newTracePipeline = TracePipeline.create(
@@ -104,16 +91,12 @@ public final class RayTracingPipeline implements Destroyable {
             this.pipelineLayout = newPipelineLayout;
             this.tracePipeline = newTracePipeline;
             this.bsdfLookup = newBsdfLookup;
-            this.temporalCamera = newTemporalCamera;
         } catch (RuntimeException exception) {
             if (newTracePipeline != null) {
                 newTracePipeline.destroy();
             }
             if (newBsdfLookup != null) {
                 newBsdfLookup.destroy();
-            }
-            if (newTemporalCamera != null) {
-                newTemporalCamera.destroy();
             }
             if (newPipelineLayout != 0L) {
                 VK12.vkDestroyPipelineLayout(context.vkDevice(), newPipelineLayout, null);
@@ -129,21 +112,17 @@ public final class RayTracingPipeline implements Destroyable {
             long tlas,
             VulkanImage output,
             VulkanImage accumulation,
-            VulkanImage sceneColor,
             VulkanGpuTextureView atlasView,
             VulkanGpuSampler atlasSampler,
             VulkanImage labPbrNormalAtlas,
             VulkanImage labPbrSpecularAtlas,
             AtmospherePipeline atmosphere,
-            NrdDenoiser nrd,
-            NrdDenoiser transparentReflection,
-            NrdDenoiser transparentTransmission) {
+            NrdDenoiser nrd) {
         if (this.descriptorBindings != null
                 && this.descriptorBindings.matches(
                         tlas,
                         output.view(),
                         accumulation.view(),
-                        sceneColor.view(),
                         atlasView.vkImageView(),
                         atlasSampler.vkSampler(),
                         labPbrNormalAtlas.view(),
@@ -162,21 +141,7 @@ public final class RayTracingPipeline implements Destroyable {
                         nrd.specularMaterial().view(),
                         nrd.primaryPosition().view(),
                         nrd.fsrReactiveMask().view(),
-                        nrd.fsrTransparencyCompositionMask().view(),
-                        transparentReflection.noisyDiffuse().view(),
-                        transparentReflection.primaryPosition().view(),
-                        transparentReflection.material().view(),
-                        transparentReflection.specularMaterial().view(),
-                        transparentTransmission.noisyDiffuse().view(),
-                        transparentTransmission.primaryPosition().view(),
-                        transparentTransmission.material().view(),
-                        transparentTransmission.specularMaterial().view(),
-                        transparentReflection.transparentInterface().view(),
-                        transparentTransmission.transparentInterface().view(),
-                        transparentReflection.noisySpecular().view(),
-                        transparentTransmission.noisySpecular().view(),
-                        transparentReflection.transparentThroughput().view(),
-                        transparentTransmission.transparentThroughput().view())) {
+                        nrd.fsrTransparencyCompositionMask().view())) {
             return;
         }
         DescriptorBindings replacement = DescriptorBindings.create(
@@ -185,17 +150,13 @@ public final class RayTracingPipeline implements Destroyable {
                 tlas,
                 output,
                 accumulation,
-                sceneColor,
                 atlasView,
                 atlasSampler,
                 labPbrNormalAtlas,
                 labPbrSpecularAtlas,
                 atmosphere,
                 nrd,
-                transparentReflection,
-                transparentTransmission,
-                this.bsdfLookup,
-                this.temporalCamera);
+                this.bsdfLookup);
         DescriptorBindings previous = this.descriptorBindings;
         this.descriptorBindings = replacement;
         if (previous != null) {
@@ -213,80 +174,6 @@ public final class RayTracingPipeline implements Destroyable {
             VkCommandBuffer commandBuffer, ByteBuffer pushConstants, int width, int height) {
         this.bsdfLookup.prepare(commandBuffer);
         this.trace(commandBuffer, pushConstants, width, height, SCREENSHOT_RAYGEN_GROUP);
-    }
-
-    public void traceTransparent(
-            VkCommandBuffer commandBuffer,
-            ByteBuffer pushConstants,
-            int width,
-            int height,
-            float previousCameraX,
-            float previousCameraY,
-            float previousCameraZ,
-            boolean historyValid) {
-        this.updateTemporalCamera(
-                commandBuffer,
-                previousCameraX,
-                previousCameraY,
-                previousCameraZ,
-                historyValid);
-        this.trace(commandBuffer, pushConstants, width, height, TRANSPARENT_RAYGEN_GROUP);
-    }
-
-    private void updateTemporalCamera(
-            VkCommandBuffer commandBuffer,
-            float previousCameraX,
-            float previousCameraY,
-            float previousCameraZ,
-            boolean historyValid) {
-        this.temporalCameraBarrier(
-                commandBuffer,
-                KHRRayTracingPipeline.VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR,
-                VK12.VK_ACCESS_UNIFORM_READ_BIT,
-                VK12.VK_PIPELINE_STAGE_TRANSFER_BIT,
-                VK12.VK_ACCESS_TRANSFER_WRITE_BIT);
-        try (MemoryStack stack = MemoryStack.stackPush()) {
-            ByteBuffer camera = stack.malloc(4 * Float.BYTES).order(ByteOrder.nativeOrder());
-            camera.putFloat(previousCameraX)
-                    .putFloat(previousCameraY)
-                    .putFloat(previousCameraZ)
-                    .putFloat(historyValid ? 1.0F : 0.0F)
-                    .flip();
-            VK12.vkCmdUpdateBuffer(
-                    commandBuffer, this.temporalCamera.handle(), 0L, camera);
-        }
-        this.temporalCameraBarrier(
-                commandBuffer,
-                VK12.VK_PIPELINE_STAGE_TRANSFER_BIT,
-                VK12.VK_ACCESS_TRANSFER_WRITE_BIT,
-                KHRRayTracingPipeline.VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR,
-                VK12.VK_ACCESS_UNIFORM_READ_BIT);
-    }
-
-    private void temporalCameraBarrier(
-            VkCommandBuffer commandBuffer,
-            long sourceStage,
-            long sourceAccess,
-            long destinationStage,
-            long destinationAccess) {
-        try (MemoryStack stack = MemoryStack.stackPush()) {
-            VkBufferMemoryBarrier2.Buffer barrier = VkBufferMemoryBarrier2.calloc(1, stack);
-            barrier.get(0)
-                    .sType$Default()
-                    .srcStageMask(sourceStage)
-                    .srcAccessMask(sourceAccess)
-                    .dstStageMask(destinationStage)
-                    .dstAccessMask(destinationAccess)
-                    .srcQueueFamilyIndex(VK12.VK_QUEUE_FAMILY_IGNORED)
-                    .dstQueueFamilyIndex(VK12.VK_QUEUE_FAMILY_IGNORED)
-                    .buffer(this.temporalCamera.handle())
-                    .offset(0L)
-                    .size(this.temporalCamera.size());
-            VkDependencyInfo dependency = VkDependencyInfo.calloc(stack)
-                    .sType$Default()
-                    .pBufferMemoryBarriers(barrier);
-            KHRSynchronization2.vkCmdPipelineBarrier2KHR(commandBuffer, dependency);
-        }
     }
 
     private void trace(
@@ -343,7 +230,6 @@ public final class RayTracingPipeline implements Destroyable {
             this.tracePipeline.destroy();
             VK12.vkDestroyPipelineLayout(this.context.vkDevice(), this.pipelineLayout, null);
             VK12.vkDestroyDescriptorSetLayout(this.context.vkDevice(), this.descriptorSetLayout, null);
-            this.temporalCamera.destroy();
             this.bsdfLookup.destroy();
         }
     }
@@ -393,7 +279,7 @@ public final class RayTracingPipeline implements Destroyable {
     }
 
     private static long createDescriptorSetLayout(VulkanContext context, MemoryStack stack) {
-        VkDescriptorSetLayoutBinding.Buffer bindings = VkDescriptorSetLayoutBinding.calloc(38, stack);
+        VkDescriptorSetLayoutBinding.Buffer bindings = VkDescriptorSetLayoutBinding.calloc(20, stack);
         bindings.get(0)
                 .binding(ShaderAbi.DESCRIPTOR_TLAS)
                 .descriptorType(KHRAccelerationStructure.VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR)
@@ -452,52 +338,12 @@ public final class RayTracingPipeline implements Destroyable {
                 .descriptorType(VK12.VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER)
                 .descriptorCount(1)
                 .stageFlags(KHRRayTracingPipeline.VK_SHADER_STAGE_RAYGEN_BIT_KHR);
-        int[] transparentOutputBindings = new int[] {
-            ShaderAbi.DESCRIPTOR_SCENE_COLOR,
-            ShaderAbi.DESCRIPTOR_FSR_REACTIVE_MASK,
-            ShaderAbi.DESCRIPTOR_FSR_TRANSPARENCY_COMPOSITION_MASK
-        };
-        for (int index = 0; index < transparentOutputBindings.length; index++) {
-            bindings.get(index + 18)
-                    .binding(transparentOutputBindings[index])
-                    .descriptorType(VK12.VK_DESCRIPTOR_TYPE_STORAGE_IMAGE)
-                    .descriptorCount(1)
-                    .stageFlags(KHRRayTracingPipeline.VK_SHADER_STAGE_RAYGEN_BIT_KHR);
-        }
-        int[] transparentBranchBindings = new int[] {
-            ShaderAbi.DESCRIPTOR_TRANSPARENT_REFLECTION_NOISY,
-            ShaderAbi.DESCRIPTOR_TRANSPARENT_REFLECTION_POSITION,
-            ShaderAbi.DESCRIPTOR_TRANSPARENT_REFLECTION_METADATA,
-            ShaderAbi.DESCRIPTOR_TRANSPARENT_REFLECTION_GUIDE,
-            ShaderAbi.DESCRIPTOR_TRANSPARENT_TRANSMISSION_NOISY,
-            ShaderAbi.DESCRIPTOR_TRANSPARENT_TRANSMISSION_POSITION,
-            ShaderAbi.DESCRIPTOR_TRANSPARENT_TRANSMISSION_METADATA,
-            ShaderAbi.DESCRIPTOR_TRANSPARENT_TRANSMISSION_GUIDE,
-            ShaderAbi.DESCRIPTOR_TRANSPARENT_REFLECTION_INTERFACE,
-            ShaderAbi.DESCRIPTOR_TRANSPARENT_TRANSMISSION_INTERFACE,
-            ShaderAbi.DESCRIPTOR_TRANSPARENT_REFLECTION_SPECULAR,
-            ShaderAbi.DESCRIPTOR_TRANSPARENT_TRANSMISSION_SPECULAR,
-            ShaderAbi.DESCRIPTOR_TRANSPARENT_REFLECTION_THROUGHPUT,
-            ShaderAbi.DESCRIPTOR_TRANSPARENT_TRANSMISSION_THROUGHPUT
-        };
-        for (int index = 0; index < transparentBranchBindings.length; index++) {
-            bindings.get(index + 21)
-                    .binding(transparentBranchBindings[index])
-                    .descriptorType(VK12.VK_DESCRIPTOR_TYPE_STORAGE_IMAGE)
-                    .descriptorCount(1)
-                    .stageFlags(KHRRayTracingPipeline.VK_SHADER_STAGE_RAYGEN_BIT_KHR);
-        }
-        bindings.get(35)
-                .binding(ShaderAbi.DESCRIPTOR_TEMPORAL_CAMERA)
-                .descriptorType(VK12.VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER)
-                .descriptorCount(1)
-                .stageFlags(KHRRayTracingPipeline.VK_SHADER_STAGE_RAYGEN_BIT_KHR);
-        bindings.get(36)
+        bindings.get(18)
                 .binding(ShaderAbi.DESCRIPTOR_LABPBR_NORMAL_ATLAS)
                 .descriptorType(VK12.VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER)
                 .descriptorCount(1)
                 .stageFlags(KHRRayTracingPipeline.VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR);
-        bindings.get(37)
+        bindings.get(19)
                 .binding(ShaderAbi.DESCRIPTOR_LABPBR_SPECULAR_ATLAS)
                 .descriptorType(VK12.VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER)
                 .descriptorCount(1)
@@ -536,25 +382,21 @@ public final class RayTracingPipeline implements Destroyable {
             long pipelineLayout,
             String opaqueRaygenResource,
             String debugName) {
-        long[] modules = new long[8];
+        long[] modules = new long[6];
         try {
             modules[0] = createShaderModule(context, opaqueRaygenResource);
-            modules[1] = createShaderModule(context, "/prime/shaders/transparent.rgen.spv");
-            modules[2] = createShaderModule(context, "/prime/shaders/screenshot.rgen.spv");
-            modules[3] = createShaderModule(context, "/prime/shaders/world.rmiss.spv");
-            modules[4] = createShaderModule(context, "/prime/shaders/shadow.rmiss.spv");
-            modules[5] = createShaderModule(context, "/prime/shaders/world.rchit.spv");
-            modules[6] = createShaderModule(context, "/prime/shaders/world.rahit.spv");
-            modules[7] = createShaderModule(context, "/prime/shaders/world_opaque.rahit.spv");
-            VkPipelineShaderStageCreateInfo.Buffer stages = VkPipelineShaderStageCreateInfo.calloc(8, stack);
+            modules[1] = createShaderModule(context, "/prime/shaders/screenshot.rgen.spv");
+            modules[2] = createShaderModule(context, "/prime/shaders/world.rmiss.spv");
+            modules[3] = createShaderModule(context, "/prime/shaders/shadow.rmiss.spv");
+            modules[4] = createShaderModule(context, "/prime/shaders/world.rchit.spv");
+            modules[5] = createShaderModule(context, "/prime/shaders/world.rahit.spv");
+            VkPipelineShaderStageCreateInfo.Buffer stages = VkPipelineShaderStageCreateInfo.calloc(6, stack);
             int[] stageFlags = new int[] {
-                KHRRayTracingPipeline.VK_SHADER_STAGE_RAYGEN_BIT_KHR,
                 KHRRayTracingPipeline.VK_SHADER_STAGE_RAYGEN_BIT_KHR,
                 KHRRayTracingPipeline.VK_SHADER_STAGE_RAYGEN_BIT_KHR,
                 KHRRayTracingPipeline.VK_SHADER_STAGE_MISS_BIT_KHR,
                 KHRRayTracingPipeline.VK_SHADER_STAGE_MISS_BIT_KHR,
                 KHRRayTracingPipeline.VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR,
-                KHRRayTracingPipeline.VK_SHADER_STAGE_ANY_HIT_BIT_KHR,
                 KHRRayTracingPipeline.VK_SHADER_STAGE_ANY_HIT_BIT_KHR
             };
             ByteBuffer mainName = stack.UTF8("main");
@@ -572,15 +414,9 @@ public final class RayTracingPipeline implements Destroyable {
             generalGroup(groups.get(1), 1);
             generalGroup(groups.get(2), 2);
             generalGroup(groups.get(3), 3);
-            generalGroup(groups.get(4), 4);
-            triangleGroup(groups.get(5), 5, KHRRayTracingPipeline.VK_SHADER_UNUSED_KHR);
-            triangleGroup(groups.get(6), 5, 6);
-            triangleGroup(groups.get(7), 5, 6);
-            // Hit records 3/4/5 are selected only by the opaque camera ray. Cutout coverage remains
-            // visible while the transmissive partition is explicitly skipped by the filter.
-            triangleGroup(groups.get(8), 5, 7);
-            triangleGroup(groups.get(9), 5, 7);
-            triangleGroup(groups.get(10), 5, 7);
+            triangleGroup(groups.get(4), 4, KHRRayTracingPipeline.VK_SHADER_UNUSED_KHR);
+            triangleGroup(groups.get(5), 4, 5);
+            triangleGroup(groups.get(6), 4, 5);
 
             VkRayTracingPipelineCreateInfoKHR.Buffer createInfo =
                     VkRayTracingPipelineCreateInfoKHR.calloc(1, stack);
@@ -765,7 +601,6 @@ public final class RayTracingPipeline implements Destroyable {
         private final long tlas;
         private final long outputView;
         private final long accumulationView;
-        private final long sceneColorView;
         private final long atlasView;
         private final long atlasSampler;
         private final long labPbrNormalAtlas;
@@ -785,20 +620,6 @@ public final class RayTracingPipeline implements Destroyable {
         private final long nrdPrimaryPosition;
         private final long fsrReactiveMask;
         private final long fsrTransparencyCompositionMask;
-        private final long transparentReflectionNoisy;
-        private final long transparentReflectionPosition;
-        private final long transparentReflectionMetadata;
-        private final long transparentReflectionGuide;
-        private final long transparentTransmissionNoisy;
-        private final long transparentTransmissionPosition;
-        private final long transparentTransmissionMetadata;
-        private final long transparentTransmissionGuide;
-        private final long transparentReflectionInterface;
-        private final long transparentTransmissionInterface;
-        private final long transparentReflectionSpecular;
-        private final long transparentTransmissionSpecular;
-        private final long transparentReflectionThroughput;
-        private final long transparentTransmissionThroughput;
         private boolean destroyed;
 
         private DescriptorBindings(
@@ -808,7 +629,6 @@ public final class RayTracingPipeline implements Destroyable {
                 long tlas,
                 long outputView,
                 long accumulationView,
-                long sceneColorView,
                 long atlasView,
                 long atlasSampler,
                 long labPbrNormalAtlas,
@@ -827,28 +647,13 @@ public final class RayTracingPipeline implements Destroyable {
                 long nrdSpecularMaterial,
                 long nrdPrimaryPosition,
                 long fsrReactiveMask,
-                long fsrTransparencyCompositionMask,
-                long transparentReflectionNoisy,
-                long transparentReflectionPosition,
-                long transparentReflectionMetadata,
-                long transparentReflectionGuide,
-                long transparentTransmissionNoisy,
-                long transparentTransmissionPosition,
-                long transparentTransmissionMetadata,
-                long transparentTransmissionGuide,
-                long transparentReflectionInterface,
-                long transparentTransmissionInterface,
-                long transparentReflectionSpecular,
-                long transparentTransmissionSpecular,
-                long transparentReflectionThroughput,
-                long transparentTransmissionThroughput) {
+                long fsrTransparencyCompositionMask) {
             this.context = context;
             this.descriptorPool = descriptorPool;
             this.descriptorSet = descriptorSet;
             this.tlas = tlas;
             this.outputView = outputView;
             this.accumulationView = accumulationView;
-            this.sceneColorView = sceneColorView;
             this.atlasView = atlasView;
             this.atlasSampler = atlasSampler;
             this.labPbrNormalAtlas = labPbrNormalAtlas;
@@ -868,20 +673,6 @@ public final class RayTracingPipeline implements Destroyable {
             this.nrdPrimaryPosition = nrdPrimaryPosition;
             this.fsrReactiveMask = fsrReactiveMask;
             this.fsrTransparencyCompositionMask = fsrTransparencyCompositionMask;
-            this.transparentReflectionNoisy = transparentReflectionNoisy;
-            this.transparentReflectionPosition = transparentReflectionPosition;
-            this.transparentReflectionMetadata = transparentReflectionMetadata;
-            this.transparentReflectionGuide = transparentReflectionGuide;
-            this.transparentTransmissionNoisy = transparentTransmissionNoisy;
-            this.transparentTransmissionPosition = transparentTransmissionPosition;
-            this.transparentTransmissionMetadata = transparentTransmissionMetadata;
-            this.transparentTransmissionGuide = transparentTransmissionGuide;
-            this.transparentReflectionInterface = transparentReflectionInterface;
-            this.transparentTransmissionInterface = transparentTransmissionInterface;
-            this.transparentReflectionSpecular = transparentReflectionSpecular;
-            this.transparentTransmissionSpecular = transparentTransmissionSpecular;
-            this.transparentReflectionThroughput = transparentReflectionThroughput;
-            this.transparentTransmissionThroughput = transparentTransmissionThroughput;
         }
 
         private static DescriptorBindings create(
@@ -890,23 +681,18 @@ public final class RayTracingPipeline implements Destroyable {
                 long tlas,
                 VulkanImage output,
                 VulkanImage accumulation,
-                VulkanImage sceneColor,
                 VulkanGpuTextureView atlasView,
                 VulkanGpuSampler atlasSampler,
                 VulkanImage labPbrNormalAtlas,
                 VulkanImage labPbrSpecularAtlas,
                 AtmospherePipeline atmosphere,
                 NrdDenoiser nrd,
-                NrdDenoiser transparentReflection,
-                NrdDenoiser transparentTransmission,
-                BsdfLookupTable bsdfLookup,
-                VulkanBuffer temporalCamera) {
+                BsdfLookupTable bsdfLookup) {
             try (MemoryStack stack = MemoryStack.stackPush()) {
-                VkDescriptorPoolSize.Buffer sizes = VkDescriptorPoolSize.calloc(4, stack);
+                VkDescriptorPoolSize.Buffer sizes = VkDescriptorPoolSize.calloc(3, stack);
                 sizes.get(0).type(KHRAccelerationStructure.VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR).descriptorCount(1);
-                sizes.get(1).type(VK12.VK_DESCRIPTOR_TYPE_STORAGE_IMAGE).descriptorCount(32);
+                sizes.get(1).type(VK12.VK_DESCRIPTOR_TYPE_STORAGE_IMAGE).descriptorCount(15);
                 sizes.get(2).type(VK12.VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER).descriptorCount(4);
-                sizes.get(3).type(VK12.VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER).descriptorCount(1);
                 VkDescriptorPoolCreateInfo poolCreateInfo = VkDescriptorPoolCreateInfo.calloc(stack)
                         .sType$Default()
                         .maxSets(1)
@@ -931,13 +717,7 @@ public final class RayTracingPipeline implements Destroyable {
                             VkWriteDescriptorSetAccelerationStructureKHR.calloc(stack)
                                     .sType$Default()
                                     .pAccelerationStructures(stack.longs(tlas));
-                    VkDescriptorBufferInfo.Buffer temporalCameraInfo =
-                            VkDescriptorBufferInfo.calloc(1, stack);
-                    temporalCameraInfo.get(0)
-                            .buffer(temporalCamera.handle())
-                            .offset(0L)
-                            .range(temporalCamera.size());
-                    VkDescriptorImageInfo.Buffer imageInfos = VkDescriptorImageInfo.calloc(36, stack);
+                    VkDescriptorImageInfo.Buffer imageInfos = VkDescriptorImageInfo.calloc(19, stack);
                     imageInfos.get(0)
                             .imageView(output.view())
                             .imageLayout(VK12.VK_IMAGE_LAYOUT_GENERAL);
@@ -980,44 +760,14 @@ public final class RayTracingPipeline implements Destroyable {
                             .imageView(bsdfLookup.transmissionGgxEnergy().view())
                             .imageLayout(VK12.VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
                     imageInfos.get(17)
-                            .imageView(sceneColor.view())
-                            .imageLayout(VK12.VK_IMAGE_LAYOUT_GENERAL);
-                    imageInfos.get(18)
-                            .imageView(nrd.fsrReactiveMask().view())
-                            .imageLayout(VK12.VK_IMAGE_LAYOUT_GENERAL);
-                    imageInfos.get(19)
-                            .imageView(nrd.fsrTransparencyCompositionMask().view())
-                            .imageLayout(VK12.VK_IMAGE_LAYOUT_GENERAL);
-                    VulkanImage[] transparentBranchImages = new VulkanImage[] {
-                        transparentReflection.noisyDiffuse(),
-                        transparentReflection.primaryPosition(),
-                        transparentReflection.material(),
-                        transparentReflection.specularMaterial(),
-                        transparentTransmission.noisyDiffuse(),
-                        transparentTransmission.primaryPosition(),
-                        transparentTransmission.material(),
-                        transparentTransmission.specularMaterial(),
-                        transparentReflection.transparentInterface(),
-                        transparentTransmission.transparentInterface(),
-                        transparentReflection.noisySpecular(),
-                        transparentTransmission.noisySpecular(),
-                        transparentReflection.transparentThroughput(),
-                        transparentTransmission.transparentThroughput()
-                    };
-                    for (int index = 0; index < transparentBranchImages.length; index++) {
-                        imageInfos.get(index + 20)
-                                .imageView(transparentBranchImages[index].view())
-                                .imageLayout(VK12.VK_IMAGE_LAYOUT_GENERAL);
-                    }
-                    imageInfos.get(34)
                             .sampler(atlasSampler.vkSampler())
                             .imageView(labPbrNormalAtlas.view())
                             .imageLayout(VK12.VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
-                    imageInfos.get(35)
+                    imageInfos.get(18)
                             .sampler(atlasSampler.vkSampler())
                             .imageView(labPbrSpecularAtlas.view())
                             .imageLayout(VK12.VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
-                    VkWriteDescriptorSet.Buffer writes = VkWriteDescriptorSet.calloc(38, stack);
+                    VkWriteDescriptorSet.Buffer writes = VkWriteDescriptorSet.calloc(20, stack);
                     writes.get(0)
                             .sType$Default()
                             .pNext(acceleration.address())
@@ -1090,68 +840,20 @@ public final class RayTracingPipeline implements Destroyable {
                             .descriptorCount(1)
                             .descriptorType(VK12.VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER)
                             .pImageInfo(VkDescriptorImageInfo.create(imageInfos.get(16).address(), 1));
-                    int[] transparentOutputBindings = new int[] {
-                        ShaderAbi.DESCRIPTOR_SCENE_COLOR,
-                        ShaderAbi.DESCRIPTOR_FSR_REACTIVE_MASK,
-                        ShaderAbi.DESCRIPTOR_FSR_TRANSPARENCY_COMPOSITION_MASK
-                    };
-                    for (int index = 0; index < transparentOutputBindings.length; index++) {
-                        writes.get(index + 18)
-                                .sType$Default()
-                                .dstSet(descriptorSet)
-                                .dstBinding(transparentOutputBindings[index])
-                                .descriptorCount(1)
-                                .descriptorType(VK12.VK_DESCRIPTOR_TYPE_STORAGE_IMAGE)
-                                .pImageInfo(VkDescriptorImageInfo.create(
-                                        imageInfos.get(index + 17).address(), 1));
-                    }
-                    int[] transparentBranchBindings = new int[] {
-                        ShaderAbi.DESCRIPTOR_TRANSPARENT_REFLECTION_NOISY,
-                        ShaderAbi.DESCRIPTOR_TRANSPARENT_REFLECTION_POSITION,
-                        ShaderAbi.DESCRIPTOR_TRANSPARENT_REFLECTION_METADATA,
-                        ShaderAbi.DESCRIPTOR_TRANSPARENT_REFLECTION_GUIDE,
-                        ShaderAbi.DESCRIPTOR_TRANSPARENT_TRANSMISSION_NOISY,
-                        ShaderAbi.DESCRIPTOR_TRANSPARENT_TRANSMISSION_POSITION,
-                        ShaderAbi.DESCRIPTOR_TRANSPARENT_TRANSMISSION_METADATA,
-                        ShaderAbi.DESCRIPTOR_TRANSPARENT_TRANSMISSION_GUIDE,
-                        ShaderAbi.DESCRIPTOR_TRANSPARENT_REFLECTION_INTERFACE,
-                        ShaderAbi.DESCRIPTOR_TRANSPARENT_TRANSMISSION_INTERFACE,
-                        ShaderAbi.DESCRIPTOR_TRANSPARENT_REFLECTION_SPECULAR,
-                        ShaderAbi.DESCRIPTOR_TRANSPARENT_TRANSMISSION_SPECULAR,
-                        ShaderAbi.DESCRIPTOR_TRANSPARENT_REFLECTION_THROUGHPUT,
-                        ShaderAbi.DESCRIPTOR_TRANSPARENT_TRANSMISSION_THROUGHPUT
-                    };
-                    for (int index = 0; index < transparentBranchBindings.length; index++) {
-                        writes.get(index + 21)
-                                .sType$Default()
-                                .dstSet(descriptorSet)
-                                .dstBinding(transparentBranchBindings[index])
-                                .descriptorCount(1)
-                                .descriptorType(VK12.VK_DESCRIPTOR_TYPE_STORAGE_IMAGE)
-                                .pImageInfo(VkDescriptorImageInfo.create(
-                                        imageInfos.get(index + 20).address(), 1));
-                    }
-                    writes.get(35)
-                            .sType$Default()
-                            .dstSet(descriptorSet)
-                            .dstBinding(ShaderAbi.DESCRIPTOR_TEMPORAL_CAMERA)
-                            .descriptorCount(1)
-                            .descriptorType(VK12.VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER)
-                            .pBufferInfo(temporalCameraInfo);
-                    writes.get(36)
+                    writes.get(18)
                             .sType$Default()
                             .dstSet(descriptorSet)
                             .dstBinding(ShaderAbi.DESCRIPTOR_LABPBR_NORMAL_ATLAS)
                             .descriptorCount(1)
                             .descriptorType(VK12.VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER)
-                            .pImageInfo(VkDescriptorImageInfo.create(imageInfos.get(34).address(), 1));
-                    writes.get(37)
+                            .pImageInfo(VkDescriptorImageInfo.create(imageInfos.get(17).address(), 1));
+                    writes.get(19)
                             .sType$Default()
                             .dstSet(descriptorSet)
                             .dstBinding(ShaderAbi.DESCRIPTOR_LABPBR_SPECULAR_ATLAS)
                             .descriptorCount(1)
                             .descriptorType(VK12.VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER)
-                            .pImageInfo(VkDescriptorImageInfo.create(imageInfos.get(35).address(), 1));
+                            .pImageInfo(VkDescriptorImageInfo.create(imageInfos.get(18).address(), 1));
                     VK12.vkUpdateDescriptorSets(context.vkDevice(), writes, null);
                     return new DescriptorBindings(
                             context,
@@ -1160,7 +862,6 @@ public final class RayTracingPipeline implements Destroyable {
                             tlas,
                             output.view(),
                             accumulation.view(),
-                            sceneColor.view(),
                             atlasView.vkImageView(),
                             atlasSampler.vkSampler(),
                             labPbrNormalAtlas.view(),
@@ -1179,21 +880,7 @@ public final class RayTracingPipeline implements Destroyable {
                             nrd.specularMaterial().view(),
                             nrd.primaryPosition().view(),
                             nrd.fsrReactiveMask().view(),
-                            nrd.fsrTransparencyCompositionMask().view(),
-                            transparentReflection.noisyDiffuse().view(),
-                            transparentReflection.primaryPosition().view(),
-                            transparentReflection.material().view(),
-                            transparentReflection.specularMaterial().view(),
-                            transparentTransmission.noisyDiffuse().view(),
-                            transparentTransmission.primaryPosition().view(),
-                            transparentTransmission.material().view(),
-                            transparentTransmission.specularMaterial().view(),
-                            transparentReflection.transparentInterface().view(),
-                            transparentTransmission.transparentInterface().view(),
-                            transparentReflection.noisySpecular().view(),
-                            transparentTransmission.noisySpecular().view(),
-                            transparentReflection.transparentThroughput().view(),
-                            transparentTransmission.transparentThroughput().view());
+                            nrd.fsrTransparencyCompositionMask().view());
                 } catch (RuntimeException exception) {
                     VK12.vkDestroyDescriptorPool(context.vkDevice(), pool, null);
                     throw exception;
@@ -1205,7 +892,6 @@ public final class RayTracingPipeline implements Destroyable {
                 long tlas,
                 long outputView,
                 long accumulationView,
-                long sceneColorView,
                 long atlasView,
                 long atlasSampler,
                 long labPbrNormalAtlas,
@@ -1224,25 +910,10 @@ public final class RayTracingPipeline implements Destroyable {
                 long nrdSpecularMaterial,
                 long nrdPrimaryPosition,
                 long fsrReactiveMask,
-                long fsrTransparencyCompositionMask,
-                long transparentReflectionNoisy,
-                long transparentReflectionPosition,
-                long transparentReflectionMetadata,
-                long transparentReflectionGuide,
-                long transparentTransmissionNoisy,
-                long transparentTransmissionPosition,
-                long transparentTransmissionMetadata,
-                long transparentTransmissionGuide,
-                long transparentReflectionInterface,
-                long transparentTransmissionInterface,
-                long transparentReflectionSpecular,
-                long transparentTransmissionSpecular,
-                long transparentReflectionThroughput,
-                long transparentTransmissionThroughput) {
+                long fsrTransparencyCompositionMask) {
             return this.tlas == tlas
                     && this.outputView == outputView
                     && this.accumulationView == accumulationView
-                    && this.sceneColorView == sceneColorView
                     && this.atlasView == atlasView
                     && this.atlasSampler == atlasSampler
                     && this.labPbrNormalAtlas == labPbrNormalAtlas
@@ -1261,21 +932,7 @@ public final class RayTracingPipeline implements Destroyable {
                     && this.nrdSpecularMaterial == nrdSpecularMaterial
                     && this.nrdPrimaryPosition == nrdPrimaryPosition
                     && this.fsrReactiveMask == fsrReactiveMask
-                    && this.fsrTransparencyCompositionMask == fsrTransparencyCompositionMask
-                    && this.transparentReflectionNoisy == transparentReflectionNoisy
-                    && this.transparentReflectionPosition == transparentReflectionPosition
-                    && this.transparentReflectionMetadata == transparentReflectionMetadata
-                    && this.transparentReflectionGuide == transparentReflectionGuide
-                    && this.transparentTransmissionNoisy == transparentTransmissionNoisy
-                    && this.transparentTransmissionPosition == transparentTransmissionPosition
-                    && this.transparentTransmissionMetadata == transparentTransmissionMetadata
-                    && this.transparentTransmissionGuide == transparentTransmissionGuide
-                    && this.transparentReflectionInterface == transparentReflectionInterface
-                    && this.transparentTransmissionInterface == transparentTransmissionInterface
-                    && this.transparentReflectionSpecular == transparentReflectionSpecular
-                    && this.transparentTransmissionSpecular == transparentTransmissionSpecular
-                    && this.transparentReflectionThroughput == transparentReflectionThroughput
-                    && this.transparentTransmissionThroughput == transparentTransmissionThroughput;
+                    && this.fsrTransparencyCompositionMask == fsrTransparencyCompositionMask;
         }
 
         @Override

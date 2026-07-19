@@ -29,6 +29,7 @@ struct PrimeIntegrationResult {
     uint primaryMaterialFlags;
     vec3 primarySpecularF0;
     float primaryLinearRoughness;
+    vec3 primaryPosition;
 };
 
 vec3 primeOffsetRayOrigin(vec3 physicalPosition, vec3 normal, vec3 direction) {
@@ -39,8 +40,7 @@ vec3 primeOffsetRayOrigin(vec3 physicalPosition, vec3 normal, vec3 direction) {
     return physicalPosition + normal * (side * 0.001);
 }
 
-SurfaceInteraction primeTraceSurfaceWithSbtOffset(
-        vec3 origin, vec3 direction, uint hitGroupOffset) {
+SurfaceInteraction primeTraceSurface(vec3 origin, vec3 direction) {
     primePayload.position = vec3(0.0);
     primePayload.t = 0.0;
     primePayload.geometricNormal = vec3(0.0, 1.0, 0.0);
@@ -67,7 +67,7 @@ SurfaceInteraction primeTraceSurfaceWithSbtOffset(
             primeScene,
             gl_RayFlagsNoneEXT,
             0xff,
-            hitGroupOffset,
+            0,
             1,
             0,
             origin,
@@ -81,7 +81,7 @@ SurfaceInteraction primeTraceSurfaceWithSbtOffset(
     reorderThreadEXT(hitObject, coherenceHint, 8u);
     hitObjectExecuteShaderEXT(hitObject, 0);
 #else
-    traceRayEXT(primeScene, gl_RayFlagsNoneEXT, 0xff, hitGroupOffset, 1, 0,
+    traceRayEXT(primeScene, gl_RayFlagsNoneEXT, 0xff, 0, 1, 0,
             origin, 0.0, direction, 1000000.0, 0);
 #endif
     SurfaceInteraction surface;
@@ -99,10 +99,6 @@ SurfaceInteraction primeTraceSurfaceWithSbtOffset(
     surface.labPbrNormal = primePayload.labPbrNormal;
     surface.labPbrSpecular = primePayload.labPbrSpecular;
     return surface;
-}
-
-SurfaceInteraction primeTraceSurface(vec3 origin, vec3 direction) {
-    return primeTraceSurfaceWithSbtOffset(origin, direction, 0u);
 }
 
 bool primePreviousCannotUseMis(PathState path) {
@@ -352,71 +348,9 @@ void primeAccumulateAfterPrimary(
     }
 }
 
-struct PrimeContinuationResult {
-    vec3 diffuseRadiance;
-    float diffuseHitDistance;
-    vec3 specularRadiance;
-    float specularHitDistance;
-    vec3 stableRadiance;
-    vec3 guidePosition;
-    vec3 guideNormal;
-    vec3 guideViewDirection;
-    float guideLinearRoughness;
-    vec3 guideBaseColor;
-    vec3 guideThroughput;
-    uint guideMaterialFlags;
-    uint hasGuide;
-    uint stochasticBeforeGuide;
-};
-
-// PSR follows the coherent specular path to the first surface with a finite lobe. The chain is
-// invocation-local on purpose: persisting every interface per pixel would add a large full-frame
-// bandwidth and memory cost. Eight interfaces cover nested panes, water and ordinary glass while
-// keeping register pressure bounded; overflow invalidates temporal history instead of truncating
-// the optical path and manufacturing a wrong motion vector.
-const uint PRIME_DELTA_CHAIN_CAPACITY = 8u;
-
-struct PrimeDeltaChain {
-    // xyz is the render-origin-relative interface point. w is n_out / n_in for transmission and
-    // one for reflection. The paired record stores the normalized geometric plane normal and
-    // event flags; reprojection relies on this invariant to avoid normalizing it in every Newton
-    // row and iteration.
-    vec4 positionEta[PRIME_DELTA_CHAIN_CAPACITY];
-    vec4 normalEvent[PRIME_DELTA_CHAIN_CAPACITY];
-    uint count;
-    uint overflowed;
-};
-
-PrimeDeltaChain primeEmptyDeltaChain() {
-    PrimeDeltaChain chain;
-    chain.count = 0u;
-    chain.overflowed = 0u;
-    return chain;
-}
-
-void primeAppendDeltaInterface(
-        inout PrimeDeltaChain chain,
-        SurfaceInteraction surface,
-        BsdfSample bsdf) {
-    if (chain.count >= PRIME_DELTA_CHAIN_CAPACITY) {
-        chain.overflowed = 1u;
-        return;
-    }
-    bool transmission = (bsdf.eventFlags & PRIME_BSDF_EVENT_TRANSMISSION) != 0u;
-    float relativeEta = transmission
-            ? max(bsdf.relativeEta, PRIME_BSDF_EPSILON)
-            : 1.0;
-    chain.positionEta[chain.count] = vec4(surface.position, relativeEta);
-    chain.normalEvent[chain.count] = vec4(
-            primeSurfaceOutwardShadingNormal(surface),
-            uintBitsToFloat(bsdf.eventFlags));
-    chain.count++;
-}
-
-// Both render paths below use the same estimator primitives. Their orchestration remains
-// separate only because realtime transparent transport must additionally discover NRD's virtual
-// surface and record its delta-interface chain. Keeping segment attenuation, emitter MIS, BSDF
-// dispatch and path advancement here prevents those physical rules from drifting between modes.
+// Realtime and screenshot rendering share this one complete path estimator. Keeping segment
+// attenuation, emitter MIS, BSDF dispatch and path advancement here prevents their physical rules
+// from drifting between the two modes.
 vec3 primeEvaluateEnvironmentContribution(
         PathState path, IntegratorRecord integrator) {
     LightEvaluation sun = primeEvaluateSun(
@@ -451,18 +385,10 @@ bool primeApplySegmentMedium(
     return !all(lessThanEqual(path.throughput, vec3(0.0)));
 }
 
-bool primeIsPureDeltaInterface(
-        SurfaceInteraction surface, bool realtimeContinuation) {
+bool primeIsPureDeltaInterface(SurfaceInteraction surface) {
     if (!primeMaterialIsTransmissive(surface.materialFlags)) {
         return false;
     }
-#if defined(PRIME_REALTIME_SINGLE_REFRACTION)
-    // Realtime continuation deliberately redirects later interfaces into a coherent delta event.
-    // The ordinary and screenshot paths still use the authored roughness rule below.
-    if (realtimeContinuation) {
-        return true;
-    }
-#endif
     return primeSurfaceLinearRoughness(surface) == 0.0;
 }
 
@@ -475,8 +401,7 @@ PrimePathScatter primeSamplePathSurface(
         SurfaceInteraction surface,
         vec3 viewDirection,
         vec3 sampleValue,
-        PrimeRcVolumeStack volumeStack,
-        bool realtimeContinuation) {
+        PrimeRcVolumeStack volumeStack) {
     PrimePathScatter result;
     result.volumeStack = volumeStack;
     if (primeMaterialIsFoliage(surface.materialFlags)) {
@@ -491,38 +416,17 @@ PrimePathScatter primeSamplePathSurface(
                 surface.t,
                 volumeStack);
     } else if (primeMaterialIsTransmissive(surface.materialFlags)) {
-        PrimeTransmissiveBsdfSample transmitted;
-#if defined(PRIME_REALTIME_SINGLE_REFRACTION)
-        if (realtimeContinuation) {
-            transmitted = primeSampleMinecraftRealtimeTransmissionBranch(
-                    surface.baseColor,
-                    primeSurfaceOpacity(surface),
-                    primeSurfaceOutwardShadingNormal(surface),
-                    surface.materialFlags,
-                    surface.labPbrNormal,
-                    surface.labPbrSpecular,
-                    viewDirection,
-                    sampleValue,
-                    false,
-                    true,
-                    surface.t,
-                    volumeStack);
-        } else {
-#endif
-            transmitted = primeSampleMinecraftTransmission(
-                    surface.baseColor,
-                    primeSurfaceOpacity(surface),
-                    primeSurfaceOutwardShadingNormal(surface),
-                    surface.materialFlags,
-                    surface.labPbrNormal,
-                    surface.labPbrSpecular,
-                    viewDirection,
-                    sampleValue,
-                    surface.t,
-                    volumeStack);
-#if defined(PRIME_REALTIME_SINGLE_REFRACTION)
-        }
-#endif
+        PrimeTransmissiveBsdfSample transmitted = primeSampleMinecraftTransmission(
+                surface.baseColor,
+                primeSurfaceOpacity(surface),
+                primeSurfaceOutwardShadingNormal(surface),
+                surface.materialFlags,
+                surface.labPbrNormal,
+                surface.labPbrSpecular,
+                viewDirection,
+                sampleValue,
+                surface.t,
+                volumeStack);
         result.bsdf = transmitted.bsdfSample;
         result.volumeStack = transmitted.volumeStack;
     } else {
@@ -562,33 +466,38 @@ bool primeAdvancePath(
             path, PRIME_RUSSIAN_ROULETTE_START, rouletteSample);
 }
 
-PrimeContinuationResult primeIntegrateContinuation(
-        PathState path,
-        IntegratorRecord integrator,
-        PrimeRcVolumeStack volumeStack,
-        inout PrimeDeltaChain deltaChain) {
-    PrimeContinuationResult result;
+PrimeIntegrationResult primeIntegrate(PathState path, IntegratorRecord integrator) {
+    PrimeIntegrationResult result;
     result.diffuseRadiance = vec3(0.0);
-    result.diffuseHitDistance = 0.0;
+    result.primaryDistance = -1.0;
     result.specularRadiance = vec3(0.0);
     result.specularHitDistance = 0.0;
     result.stableRadiance = vec3(0.0);
-    result.guidePosition = vec3(0.0);
-    result.guideNormal = vec3(0.0, 1.0, 0.0);
-    result.guideViewDirection = vec3(0.0, 0.0, 1.0);
-    result.guideLinearRoughness = 1.0;
-    result.guideBaseColor = vec3(1.0);
-    result.guideThroughput = vec3(1.0);
-    result.guideMaterialFlags = 0u;
-    result.hasGuide = 0u;
-    result.stochasticBeforeGuide = 0u;
-    uint maximumBounces = min(primePush.path.z & 0xffffu, 256u);
-    uint guideBounce = 0u;
+    result.diffuseHitDistance = 0.0;
+    result.primaryBaseColor = vec3(0.0);
+    result.primaryHitKind = PRIME_HIT_NONE;
+    result.primaryNormal = vec3(0.0, 1.0, 0.0);
+    result.primaryMaterialFlags = 0u;
+    result.primarySpecularF0 = vec3(PRIME_DEFAULT_DIELECTRIC_F0);
+    result.primaryLinearRoughness = PRIME_DEFAULT_REFERENCE_LINEAR_ROUGHNESS;
+    result.primaryPosition = vec3(0.0);
+    bool hitted_non_delta = false;
     bool diffusePath = false;
-    for (; path.bounce < maximumBounces; ++path.bounce) {
+    uint guideBounce = 0u;
+    // This stack is path state, not temporary BSDF state. It must survive every surface bounce so
+    // nested air/water/glass transitions use the IOR below the current medium and so absorption is
+    // applied exactly once to the segment that was actually travelled.
+    PrimeRcVolumeStack volumeStack = (primePush.path.z & PRIME_PATH_CAMERA_IN_WATER_MASK) != 0u
+            ? primeCameraWaterVolumeStack()
+            : primeEmptyVolumeStack();
+    // path.z packs three independently generated Java contracts without growing Vulkan's
+    // guaranteed 128-byte push range: low 16 bits are the bounce cap, bits 16..30 the exact
+    // one-based FSR jitter phase, and bit 31 says that the camera lies inside the water volume.
+    uint maximumBounces = min(primePush.path.z & 0xffffu, 256u);
+    for (path.bounce = 0u; path.bounce < maximumBounces; ++path.bounce) {
         SurfaceInteraction surface = primeTraceSurface(path.traceOrigin, path.rayDirection);
         vec3 viewDirection = -path.rayDirection;
-        if (result.hasGuide != 0u && path.bounce == guideBounce + 1u) {
+        if (hitted_non_delta && path.bounce == guideBounce + 1u) {
             float firstBounceHitDistance = surface.hitKind == PRIME_HIT_NONE
                     ? PRIME_NRD_FP16_MAX
                     : max(surface.t, 0.0);
@@ -600,12 +509,10 @@ PrimeContinuationResult primeIntegrateContinuation(
         }
         if (surface.hitKind == PRIME_HIT_NONE) {
             vec3 contribution = primeEvaluateEnvironmentContribution(path, integrator);
-            if (result.hasGuide == 0u) {
+            if (!hitted_non_delta) {
                 result.stableRadiance += contribution;
-            } else if (diffusePath) {
-                result.diffuseRadiance += contribution;
             } else {
-                result.specularRadiance += contribution;
+                primeAccumulateAfterPrimary(result, diffusePath, contribution);
             }
             break;
         }
@@ -614,41 +521,16 @@ PrimeContinuationResult primeIntegrateContinuation(
             break;
         }
 
-        // NRD's primary-surface-replacement contract skips a chain of pure delta interfaces and
-        // promotes the first surface with a finite lobe to the virtual G-buffer. The distance from
-        // the glass/water interface to this point is primary path length, not NRD hit distance;
-        // diffuse/specular hit distance starts with the ray traced *after* this replacement.
-        bool pureDeltaInterface = primeIsPureDeltaInterface(surface, true);
-        bool primarySurfaceReplacement = result.hasGuide == 0u && !pureDeltaInterface;
-        if (primarySurfaceReplacement) {
-            result.guidePosition = surface.position;
-            result.guideNormal = primeSurfaceShadingNormal(surface, viewDirection);
-            result.guideViewDirection = viewDirection;
-            result.guideLinearRoughness = primeSurfaceLinearRoughness(surface);
-            result.guideBaseColor = surface.baseColor;
-            result.guideThroughput = path.throughput;
-            result.guideMaterialFlags = surface.materialFlags;
-            result.hasGuide = 1u;
-            guideBounce = path.bounce;
-        }
-
         vec3 emitted = primeEvaluateHitEmission(path, surface);
-        if (result.hasGuide == 0u) {
+        if (!hitted_non_delta) {
             result.stableRadiance += emitted;
-        } else if (primarySurfaceReplacement || diffusePath) {
-            // A visible emitter at the replacement surface is deterministic, but keeping it in
-            // the diffuse channel avoids another full-resolution branch buffer. Ordinary opaque
-            // terrain remains exactly split below and dominates the water-bottom use case.
-            result.diffuseRadiance += emitted;
         } else {
-            result.specularRadiance += emitted;
+            primeAccumulateAfterPrimary(result, diffusePath, emitted);
         }
 
         PrimeSampleBase bounceSample = primeMakeSampleBase(path, path.bounce + 1u);
-        // A coherent delta interface has no finite lobe and intentionally performs no NEE, both
-        // before and after a PSR. Generate sun/tree/position samples only at finite vertices; Sobol
-        // dimensions are stateless, so moving these calls under consumers preserves every value.
-        if ((primarySurfaceReplacement || result.hasGuide != 0u) && !pureDeltaInterface) {
+        bool pureDeltaInterface = primeIsPureDeltaInterface(surface);
+        if (!pureDeltaInterface) {
             vec2 sunSample = primeSobolSample2D(
                     bounceSample,
                     PRIME_SAMPLE_EFFECT_DIRECT_SUN,
@@ -661,7 +543,7 @@ PrimeContinuationResult primeIntegrateContinuation(
                     bounceSample,
                     PRIME_SAMPLE_EFFECT_DIRECT_AREA_LIGHT,
                     PRIME_SAMPLE_DIMENSION_SECONDARY);
-            if (primarySurfaceReplacement) {
+            if (!hitted_non_delta) {
                 PrimeDirectLightingSplit sunSplit = primeEstimatePrimaryDirectSun(
                         integrator,
                         surface,
@@ -692,175 +574,6 @@ PrimeContinuationResult primeIntegrateContinuation(
                                 areaTreeSample,
                                 areaPositionSample,
                                 volumeStack));
-                if (diffusePath) {
-                    result.diffuseRadiance += direct;
-                } else {
-                    result.specularRadiance += direct;
-                }
-            }
-        }
-
-        vec3 scatterSample = primeSobolSample3D(
-                bounceSample,
-                PRIME_SAMPLE_EFFECT_SCATTER_BSDF,
-                PRIME_SAMPLE_DIMENSION_PRIMARY);
-
-        PrimePathScatter scatter = primeSamplePathSurface(
-                surface, viewDirection, scatterSample, volumeStack, true);
-        BsdfSample bsdf = scatter.bsdf;
-        volumeStack = scatter.volumeStack;
-        if (primarySurfaceReplacement) {
-            diffusePath = (bsdf.eventFlags & PRIME_BSDF_EVENT_DIFFUSE) != 0u;
-        }
-        if (!primeValidScatter(bsdf)) {
-            break;
-        }
-        if (result.hasGuide == 0u
-                && pureDeltaInterface
-                && (bsdf.eventFlags & PRIME_BSDF_EVENT_DELTA) != 0u) {
-#if !defined(PRIME_REALTIME_SINGLE_REFRACTION)
-            primeAppendDeltaInterface(deltaChain, surface, bsdf);
-#endif
-        } else if (result.hasGuide == 0u
-                && (bsdf.eventFlags & PRIME_BSDF_EVENT_DELTA) == 0u) {
-            // Any unsplit choice before a coherent replacement surface can change which surface
-            // the branch exposes. Keep the marker for the finite-environment fallback path.
-            result.stochasticBeforeGuide = 1u;
-        }
-        float rouletteSample = primeHashSample1D(
-                bounceSample,
-                PRIME_SAMPLE_EFFECT_RUSSIAN_ROULETTE,
-                PRIME_SAMPLE_DIMENSION_PRIMARY);
-        if (!primeAdvancePath(path, surface, bsdf, rouletteSample)) {
-            break;
-        }
-    }
-    return result;
-}
-
-PrimeIntegrationResult primeIntegrate(PathState path, IntegratorRecord integrator) {
-    PrimeIntegrationResult result;
-    result.diffuseRadiance = vec3(0.0);
-    result.primaryDistance = -1.0;
-    result.specularRadiance = vec3(0.0);
-    result.specularHitDistance = 0.0;
-    result.stableRadiance = vec3(0.0);
-    result.diffuseHitDistance = 0.0;
-    result.primaryBaseColor = vec3(0.0);
-    result.primaryHitKind = PRIME_HIT_NONE;
-    result.primaryNormal = vec3(0.0, 1.0, 0.0);
-    result.primaryMaterialFlags = 0u;
-    result.primarySpecularF0 = vec3(PRIME_DEFAULT_DIELECTRIC_F0);
-    result.primaryLinearRoughness = PRIME_DEFAULT_REFERENCE_LINEAR_ROUGHNESS;
-    bool diffusePath = false;
-    // This stack is path state, not temporary BSDF state. It must survive every surface bounce so
-    // nested air/water/glass transitions use the IOR below the current medium and so absorption is
-    // applied exactly once to the segment that was actually travelled.
-    PrimeRcVolumeStack volumeStack = (primePush.path.z & PRIME_PATH_CAMERA_IN_WATER_MASK) != 0u
-            ? primeCameraWaterVolumeStack()
-            : primeEmptyVolumeStack();
-    // path.z packs three independently generated Java contracts without growing Vulkan's
-    // guaranteed 128-byte push range: low 16 bits are the bounce cap, bits 16..30 the exact
-    // one-based FSR jitter phase, and bit 31 says that the camera lies inside the water volume.
-    uint maximumBounces = min(primePush.path.z & 0xffffu, 256u);
-    for (path.bounce = 0u; path.bounce < maximumBounces; ++path.bounce) {
-#if defined(PRIME_OPAQUE_PRIMARY_PASS)
-        // The second three-record SBT range differs only at the camera vertex: transmissive
-        // intersections are skipped while alpha-tested cutouts retain their coverage, so NRD
-        // receives a coherent opaque guide. Secondary and shadow rays keep the ordinary hit
-        // groups and therefore retain all transparent transport instead of treating glass as
-        // absent from lighting, which would bias the underlying opaque estimator.
-        SurfaceInteraction surface = path.bounce == 0u
-                ? primeTraceSurfaceWithSbtOffset(path.traceOrigin, path.rayDirection, 3u)
-                : primeTraceSurface(path.traceOrigin, path.rayDirection);
-#else
-        SurfaceInteraction surface = primeTraceSurface(path.traceOrigin, path.rayDirection);
-#endif
-        vec3 viewDirection = -path.rayDirection;
-        if (path.bounce == 0u && surface.hitKind != PRIME_HIT_NONE) {
-            result.primaryDistance = surface.t;
-            result.primaryBaseColor = surface.baseColor;
-            result.primaryNormal = primeSurfaceShadingNormal(surface, viewDirection);
-            result.primaryHitKind = surface.hitKind;
-            result.primaryMaterialFlags = surface.materialFlags;
-            result.primarySpecularF0 = primeSurfaceSpecularF0(surface);
-            result.primaryLinearRoughness = primeSurfaceLinearRoughness(surface);
-        }
-        if (path.bounce == 1u) {
-            float firstBounceHitDistance = surface.hitKind == PRIME_HIT_NONE
-                    ? PRIME_NRD_FP16_MAX
-                    : max(surface.t, 0.0);
-            if (diffusePath) {
-                result.diffuseHitDistance = firstBounceHitDistance;
-            } else {
-                result.specularHitDistance = firstBounceHitDistance;
-            }
-        }
-        if (surface.hitKind == PRIME_HIT_NONE) {
-            vec3 contribution = primeEvaluateEnvironmentContribution(path, integrator);
-            if (path.bounce == 0u) {
-                result.stableRadiance += contribution;
-            } else {
-                primeAccumulateAfterPrimary(result, diffusePath, contribution);
-            }
-            break;
-        }
-
-        if (!primeApplySegmentMedium(path, surface, volumeStack)) {
-            break;
-        }
-
-        vec3 emitted = primeEvaluateHitEmission(path, surface);
-        if (path.bounce == 0u) {
-            result.stableRadiance += emitted;
-        } else {
-            primeAccumulateAfterPrimary(result, diffusePath, emitted);
-        }
-
-        PrimeSampleBase bounceSample = primeMakeSampleBase(path, path.bounce + 1u);
-        bool pureDeltaInterface = primeIsPureDeltaInterface(surface, false);
-        if (!pureDeltaInterface) {
-            vec2 sunSample = primeSobolSample2D(
-                    bounceSample,
-                    PRIME_SAMPLE_EFFECT_DIRECT_SUN,
-                    PRIME_SAMPLE_DIMENSION_PRIMARY);
-            vec3 areaTreeSample = primeSobolSample3D(
-                    bounceSample,
-                    PRIME_SAMPLE_EFFECT_DIRECT_AREA_LIGHT,
-                    PRIME_SAMPLE_DIMENSION_PRIMARY);
-            vec2 areaPositionSample = primeSobolSample2D(
-                    bounceSample,
-                    PRIME_SAMPLE_EFFECT_DIRECT_AREA_LIGHT,
-                    PRIME_SAMPLE_DIMENSION_SECONDARY);
-            if (path.bounce == 0u) {
-                PrimeDirectLightingSplit sunSplit = primeEstimatePrimaryDirectSun(
-                        integrator,
-                        surface,
-                        viewDirection,
-                        sunSample,
-                        volumeStack);
-                PrimeDirectLightingSplit areaSplit = primeEstimatePrimaryDirectAreaLight(
-                        surface,
-                        viewDirection,
-                        areaTreeSample,
-                        areaPositionSample,
-                        volumeStack);
-                result.diffuseRadiance += sunSplit.diffuse + areaSplit.diffuse;
-                result.specularRadiance += sunSplit.specular + areaSplit.specular;
-            } else {
-                vec3 direct = path.throughput
-                        * (primeEstimateDirectSun(
-                                integrator,
-                                surface,
-                                viewDirection,
-                                sunSample,
-                                volumeStack)
-                        + primeEstimateDirectAreaLight(
-                                surface,
-                                viewDirection,
-                                areaTreeSample,
-                                areaPositionSample,
-                                volumeStack));
                 primeAccumulateAfterPrimary(result, diffusePath, direct);
             }
         }
@@ -871,10 +584,27 @@ PrimeIntegrationResult primeIntegrate(PathState path, IntegratorRecord integrato
                 PRIME_SAMPLE_DIMENSION_PRIMARY);
 
         PrimePathScatter scatter = primeSamplePathSurface(
-                surface, viewDirection, scatterSample, volumeStack, false);
+                surface, viewDirection, scatterSample, volumeStack);
         BsdfSample bsdf = scatter.bsdf;
         volumeStack = scatter.volumeStack;
-        if (path.bounce == 0u) {
+        if (!hitted_non_delta
+                && (bsdf.eventFlags & PRIME_BSDF_EVENT_DELTA) == 0u) {
+            hitted_non_delta = true;
+            guideBounce = path.bounce;
+            vec3 albedoSum = primeSurfaceSpecularF0(surface) + surface.baseColor;
+            vec3 guideThroughput = max(
+                    vec3(PRIME_NRD_MATERIAL_FACTOR_MIN),
+                    path.throughput * albedoSum);
+            result.primaryDistance = length(surface.position - primePush.cameraPosition);
+            result.primaryPosition = surface.position - primePush.cameraPosition;
+            result.primaryBaseColor = max(
+                    vec3(PRIME_NRD_MATERIAL_FACTOR_MIN),
+                    path.throughput * surface.baseColor);
+            result.primaryNormal = primeSurfaceShadingNormal(surface, viewDirection);
+            result.primaryHitKind = surface.hitKind;
+            result.primaryMaterialFlags = surface.materialFlags;
+            result.primarySpecularF0 = guideThroughput;
+            result.primaryLinearRoughness = primeSurfaceLinearRoughness(surface);
             diffusePath = (bsdf.eventFlags & PRIME_BSDF_EVENT_DIFFUSE) != 0u;
         }
         if (!primeValidScatter(bsdf)) {

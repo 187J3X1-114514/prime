@@ -29,7 +29,7 @@ final class DefaultBsdfEnergyContractTest {
                         .results()
                         .count());
         assertEquals(
-                2,
+                1,
                 Pattern.compile("PrimePathScatter scatter = primeSamplePathSurface")
                         .matcher(integrator)
                         .results()

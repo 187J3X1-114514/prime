@@ -40,18 +40,6 @@ final class RayTracingPipelineContractTest {
     }
 
     @Test
-    void transparentDeltaHistoryUsesASynchronizedTemporalCameraBuffer() throws IOException {
-        String pipeline = Files.readString(Path.of(
-                System.getProperty("user.dir"),
-                "src/client/java/dev/prime/render/vulkan/RayTracingPipeline.java"));
-
-        assertTrue(pipeline.contains("ShaderAbi.DESCRIPTOR_TEMPORAL_CAMERA"));
-        assertTrue(pipeline.contains("VK12.vkCmdUpdateBuffer("));
-        assertTrue(pipeline.contains("VkBufferMemoryBarrier2"));
-        assertTrue(pipeline.contains("VK12.VK_ACCESS_UNIFORM_READ_BIT"));
-    }
-
-    @Test
     void shadowRaysUseTheirOwnMinimalPayloadAndMissRecord() throws IOException {
         Path shaderRoot = Path.of(System.getProperty("user.dir"), "shaders");
         String integrator = Files.readString(shaderRoot.resolve("integrator.glsl"));
@@ -59,10 +47,9 @@ final class RayTracingPipelineContractTest {
         String closestHit = Files.readString(shaderRoot.resolve("world.rchit"));
 
         assertEquals(2, RayTracingPipeline.MISS_GROUP_COUNT);
-        assertEquals(6, RayTracingPipeline.HIT_GROUP_COUNT);
-        assertEquals(3, RayTracingPipeline.RAYGEN_GROUP_COUNT);
-        assertTrue(integrator.contains(
-                "primeTraceSurfaceWithSbtOffset(path.traceOrigin, path.rayDirection, 3u)"));
+        assertEquals(3, RayTracingPipeline.HIT_GROUP_COUNT);
+        assertEquals(2, RayTracingPipeline.RAYGEN_GROUP_COUNT);
+        assertFalse(integrator.contains("primeTraceSurfaceWithSbtOffset("));
         assertTrue(shadowMiss.contains("layout(location = 1) rayPayloadInEXT uint primeShadowOccluded"));
         assertTrue(integrator.contains("gl_RayFlagsSkipClosestHitShaderEXT"));
         assertTrue(integrator.contains("return primeShadowOccluded == 0u"));
@@ -86,10 +73,10 @@ final class RayTracingPipelineContractTest {
         assertEquals(1, countOccurrences(integrator, "hitObjectTraceRayEXT"));
         assertTrue(pipeline.contains("world_ser.rgen.spv"));
         assertTrue(pipeline.contains("world.rgen.spv"));
-        assertTrue(pipeline.contains("transparent.rgen.spv"));
         assertTrue(pipeline.contains("screenshot.rgen.spv"));
-        assertTrue(pipeline.contains("world_opaque.rahit.spv"));
-        assertTrue(pipeline.contains("traceTransparent"));
+        assertFalse(pipeline.contains("transparent.rgen.spv"));
+        assertFalse(pipeline.contains("world_opaque.rahit.spv"));
+        assertFalse(pipeline.contains("traceTransparent"));
         assertTrue(pipeline.contains("traceScreenshot"));
         assertEquals(1, countOccurrences(pipeline, "vkCreateRayTracingPipelinesKHR("));
         assertTrue(pipeline.contains("raygenAddress(raygenGroup)"));

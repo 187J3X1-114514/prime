@@ -20,9 +20,7 @@ public final class NrdDiagnostics {
 
     public enum Mode {
         OFF("off", 0),
-        OPAQUE("opaque", 1),
-        REFLECTION("reflection", 2),
-        TRANSMISSION("transmission", 3);
+        OPAQUE("opaque", 1);
 
         private final String id;
         private final int outputSelector;
@@ -44,8 +42,7 @@ public final class NrdDiagnostics {
             if (id == null) {
                 return Optional.empty();
             }
-            // Migrate the three development-only views used before branch validation became a
-            // permanent user feature. All of them inspected the opaque NRD instance.
+            // Migrate the development-only names used before validation became a user feature.
             String canonicalId = switch (id) {
                 case "nrd_validation", "reprojection_error", "motion" -> "opaque";
                 default -> id;

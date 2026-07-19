@@ -57,6 +57,24 @@ final class PrimitivePackingTest {
     }
 
     @Test
+    void flagsAndEmitterIndexRoundTripAcrossTheWholeAbiRange() {
+        int flags = PrimitivePacking.FLAG_CUTOUT | PrimitivePacking.FLAG_LABPBR_SPECULAR;
+        for (int emitter : new int[] {
+            PrimitivePacking.NO_EMITTER_INDEX, 0, 1, 1024, PrimitivePacking.MAX_EMITTER_INDEX
+        }) {
+            int packed = PrimitivePacking.packFlagsEmitter(flags, emitter);
+            assertEquals(flags, PrimitivePacking.unpackFlags(packed));
+            assertEquals(emitter, PrimitivePacking.unpackEmitterIndex(packed));
+        }
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> PrimitivePacking.packFlagsEmitter(flags, PrimitivePacking.MAX_EMITTER_INDEX + 1));
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> PrimitivePacking.packFlagsEmitter(1 << 9, 0));
+    }
+
+    @Test
     void octahedralEncodingPreservesNormalDirection() {
         assertNormalDirection(1.0F, 0.0F, 0.0F);
         assertNormalDirection(0.0F, -1.0F, 0.0F);
@@ -134,12 +152,12 @@ final class PrimitivePackingTest {
     @Test
     void meshLayoutRejectsMismatchedArrayLengths() {
         CpuSectionMesh mesh = new CpuSectionMesh(
-                new float[9], new int[9], 1, 0, CpuSectionLights.EMPTY);
-        assertEquals(72L, mesh.byteSize());
+                new float[9], new int[CpuSectionMesh.PRIMITIVE_WORDS], 1, 0, CpuSectionLights.EMPTY);
+        assertEquals(68L, mesh.byteSize());
         assertThrows(IllegalArgumentException.class, () -> new CpuSectionMesh(
-                new float[8], new int[9], 1, 0, CpuSectionLights.EMPTY));
+                new float[8], new int[CpuSectionMesh.PRIMITIVE_WORDS], 1, 0, CpuSectionLights.EMPTY));
         assertThrows(IllegalArgumentException.class, () -> new CpuSectionMesh(
-                new float[9], new int[8], 1, 0, CpuSectionLights.EMPTY));
+                new float[9], new int[CpuSectionMesh.PRIMITIVE_WORDS - 1], 1, 0, CpuSectionLights.EMPTY));
     }
 
     private static void assertNormalDirection(float x, float y, float z) {

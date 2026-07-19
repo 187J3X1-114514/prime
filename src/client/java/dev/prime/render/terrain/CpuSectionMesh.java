@@ -10,12 +10,14 @@ public record CpuSectionMesh(
         int cutoutTriangleCount,
         CpuSectionLights lights) {
 
+    public static final int PRIMITIVE_WORDS = 8;
+
     public CpuSectionMesh {
         int triangleCount = opaqueTriangleCount + cutoutTriangleCount;
         if (positions.length != triangleCount * 9) {
             throw new IllegalArgumentException("Position array does not match triangle count");
         }
-        if (primitiveRecords.length != triangleCount * 9) {
+        if (primitiveRecords.length != triangleCount * PRIMITIVE_WORDS) {
             throw new IllegalArgumentException("Primitive array does not match triangle count");
         }
         if (lights == null) {

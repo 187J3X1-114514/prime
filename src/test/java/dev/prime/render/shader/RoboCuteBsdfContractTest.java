@@ -167,7 +167,7 @@ final class RoboCuteBsdfContractTest {
                 "(primePush.path.z & PRIME_PATH_CAMERA_IN_WATER_MASK) != 0u"));
         assertTrue(closestHit.contains("primePayload.geometricNormal = normal"));
         assertFalse(closestHit.contains("normal = -normal"));
-        assertTrue(anyHit.contains("primeMaterialIsTransmissive(primitive.flags)"));
+        assertTrue(anyHit.contains("primeMaterialIsTransmissive(primitive.flagsEmitter & 0x1ffu)"));
     }
 
     private static double firstCellWeight(double perceptualRoughness) {

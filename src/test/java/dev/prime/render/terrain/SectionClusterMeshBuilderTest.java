@@ -23,9 +23,9 @@ final class SectionClusterMeshBuilderTest {
             50, 34, 51, 51, 34, 51, 50, 35, 51
         }, result.positions());
         assertEquals(1, result.primitiveRecords()[0]);
-        assertEquals(2, result.primitiveRecords()[9]);
-        assertEquals(101, result.primitiveRecords()[18]);
-        assertEquals(102, result.primitiveRecords()[27]);
+        assertEquals(2, result.primitiveRecords()[8]);
+        assertEquals(101, result.primitiveRecords()[16]);
+        assertEquals(102, result.primitiveRecords()[24]);
     }
 
     @Test
@@ -46,9 +46,9 @@ final class SectionClusterMeshBuilderTest {
             base + 1, base, base + 1,
             base, base + 1, base + 1
         };
-        int[] primitives = new int[(opaque + cutout) * 9];
+        int[] primitives = new int[(opaque + cutout) * CpuSectionMesh.PRIMITIVE_WORDS];
         primitives[0] = (int) base;
-        primitives[opaque * 9] = (int) base + 100;
+        primitives[opaque * CpuSectionMesh.PRIMITIVE_WORDS] = (int) base + 100;
         return new CpuSectionMesh(
                 positions,
                 primitives,

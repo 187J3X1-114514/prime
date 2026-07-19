@@ -130,8 +130,7 @@ public final class SectionMeshAccumulator {
                 this.labPbrMaterials.hasNormal(surface.sprite().contents().name()),
                 this.labPbrMaterials.hasSpecular(surface.sprite().contents().name()),
                 (packedTangent & 0x1_0000_0000L) != 0L);
-        destination.primitives.add(flags);
-        destination.primitives.add(this.lights.addTriangle(
+        int encodedEmitterIndex = this.lights.addTriangle(
                 firstX,
                 firstY,
                 firstZ,
@@ -149,7 +148,12 @@ public final class SectionMeshAccumulator {
                 surface.cutout(),
                 surface.lightEmission(),
                 surface.sprite(),
-                this.labPbrMaterials.emissionMap(surface.sprite().contents().name())));
+                this.labPbrMaterials.emissionMap(surface.sprite().contents().name()));
+        destination.primitives.add(PrimitivePacking.packFlagsEmitter(
+                flags,
+                encodedEmitterIndex == 0
+                        ? PrimitivePacking.NO_EMITTER_INDEX
+                        : encodedEmitterIndex - 1));
         destination.primitives.add(packedUvDensity);
         destination.primitives.add((int) packedTangent);
         destination.triangleCount++;

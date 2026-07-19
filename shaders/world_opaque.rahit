@@ -4,7 +4,7 @@
 
 void main() {
     PrimitiveRecord primitive = primePrimitive();
-    if (primeMaterialIsTransmissive(primitive.flags)) {
+    if (primeMaterialIsTransmissive(primitive.flagsEmitter & 0x1ffu)) {
         // The first pass must describe one coherent opaque surface to NRD. Transparent transport
         // is evaluated after denoising, so glass/water is absent from both camera and shadow rays
         // here. This is a visibility partition, not an approximation of its BSDF.

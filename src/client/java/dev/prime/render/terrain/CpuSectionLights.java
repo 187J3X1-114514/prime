@@ -123,9 +123,9 @@ public final class CpuSectionLights {
                 int cursor = cellStart
                         + (distributionIndex * EmissionDistribution.CELL_COUNT + cell) * cellWords;
                 putFloat(result, cursor, distribution.aliasProbability(cell));
-                result[cursor + 1] = distribution.alias(cell);
+                result[cursor + 1] = EmissionDistribution.packAliasGeometry(
+                        distribution.alias(cell), cell);
                 putFloat(result, cursor + 2, distribution.probabilityMass(cell));
-                result[cursor + 3] = EmissionDistribution.cell(cell).packedGeometry();
             }
         }
         if ((long) result.length * Integer.BYTES != this.byteSize()) {
@@ -161,15 +161,25 @@ public final class CpuSectionLights {
         }
         ArrayList<Emitter> mergedEmitters = new ArrayList<>(emitterCount);
         ArrayList<EmissionDistribution> mergedDistributions = new ArrayList<>(distributionCount);
+        HashMap<EmissionDistribution, Integer> distributionIndices = new HashMap<>(distributionCount);
         for (Translated source : sources) {
-            int distributionOffset = mergedDistributions.size();
-            mergedDistributions.addAll(source.lights.distributions);
+            int[] remap = new int[source.lights.distributions.size()];
+            for (int index = 0; index < remap.length; index++) {
+                EmissionDistribution distribution = source.lights.distributions.get(index);
+                Integer mergedIndex = distributionIndices.get(distribution);
+                if (mergedIndex == null) {
+                    mergedIndex = mergedDistributions.size();
+                    mergedDistributions.add(distribution);
+                    distributionIndices.put(distribution, mergedIndex);
+                }
+                remap[index] = mergedIndex;
+            }
             for (Emitter emitter : source.lights.emitters) {
                 mergedEmitters.add(emitter.translated(
                         source.x,
                         source.y,
                         source.z,
-                        distributionOffset));
+                        remap[emitter.distributionIndex]));
             }
         }
         return build(mergedEmitters, mergedDistributions);
@@ -195,9 +205,9 @@ public final class CpuSectionLights {
     }
 
     public static final class Builder {
-        // 1024 * 256 * 16 bytes = 4 MiB worst-case importance data per source Section. Additional
-        // layouts share a uniform full-support distribution, preserving correctness while a
-        // virtual cluster concatenates the bounded results of at most 64 source Sections.
+        // 1024 * 256 * 12 bytes = 3 MiB worst-case importance data per source Section. Additional
+        // layouts share a uniform full-support distribution, preserving correctness. Cluster
+        // assembly additionally interns bit-identical GPU tables across its 64 source Sections.
         private static final int MAXIMUM_IMPORTANCE_DISTRIBUTIONS = 1024;
 
         private final List<Emitter> emitters = new ArrayList<>();
@@ -398,7 +408,7 @@ public final class CpuSectionLights {
             int packedTint,
             int distributionIndex,
             int flags) {
-        Emitter translated(float x, float y, float z, int distributionOffset) {
+        Emitter translated(float x, float y, float z, int translatedDistributionIndex) {
             return new Emitter(
                     this.cornerX + x,
                     this.cornerY + y,
@@ -419,7 +429,7 @@ public final class CpuSectionLights {
                     this.packedUv1,
                     this.packedUv2,
                     this.packedTint,
-                    Math.addExact(this.distributionIndex, distributionOffset),
+                    translatedDistributionIndex,
                     this.flags);
         }
     }

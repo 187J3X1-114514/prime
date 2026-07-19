@@ -5,6 +5,7 @@
   "compatibilityLevel": "JAVA_25",
   "client": [
     "BufferBuilderMixin",
+    "ChunkMapMixin",
     "FluidRendererMixin",
     "GameRendererMixin",
     "GpuDeviceAccessor",
@@ -13,6 +14,7 @@
     "LevelRendererMixin",
     "MinecraftMixin",
     "ModelBlockRendererMixin",
+    "OptionsMixin",
     "OptionsSubScreenAccessor",
     "SpriteContentsAccessor",
     "TextureAtlasAccessor",

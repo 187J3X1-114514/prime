@@ -26,6 +26,10 @@ public final class AccelerationStructure implements Destroyable {
         return this.deviceAddress;
     }
 
+    public long backingSize() {
+        return this.backingBuffer.size();
+    }
+
     @Override
     public void destroy() {
         if (!this.destroyed) {

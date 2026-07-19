@@ -1,8 +1,9 @@
 package dev.prime.render.terrain;
 
 import com.mojang.blaze3d.platform.NativeImage;
-import it.unimi.dsi.fastutil.ints.IntList;
 import dev.prime.mixin.SpriteContentsAccessor;
+import it.unimi.dsi.fastutil.ints.IntList;
+import java.util.Arrays;
 import net.minecraft.client.renderer.texture.SpriteContents;
 import net.minecraft.client.renderer.texture.TextureAtlasSprite;
 
@@ -23,6 +24,7 @@ final class EmissionDistribution {
     private final float[] probabilityMasses;
     private final float meanImportance;
     private final boolean hasSourceSupport;
+    private final int gpuTableHash;
 
     private EmissionDistribution(
             float[] weights, BuildWorkspace workspace, boolean hasSourceSupport) {
@@ -45,6 +47,9 @@ final class EmissionDistribution {
                 this.aliases,
                 this.probabilityMasses,
                 workspace);
+        int hash = Arrays.hashCode(this.aliasProbabilities);
+        hash = 31 * hash + Arrays.hashCode(this.aliases);
+        this.gpuTableHash = 31 * hash + Arrays.hashCode(this.probabilityMasses);
     }
 
     static EmissionDistribution build(Key key) {
@@ -277,6 +282,13 @@ final class EmissionDistribution {
         return this.aliases[index];
     }
 
+    static int packAliasGeometry(int alias, int cellIndex) {
+        if (alias < 0 || alias >= CELL_COUNT) {
+            throw new IllegalArgumentException("Emission alias index is outside the 8-bit cell table");
+        }
+        return alias | cell(cellIndex).packedGeometry() << 8;
+    }
+
     float probabilityMass(int index) {
         return this.probabilityMasses[index];
     }
@@ -287,6 +299,21 @@ final class EmissionDistribution {
 
     boolean hasSourceSupport() {
         return this.hasSourceSupport;
+    }
+
+    /** GPU tables with identical bits are interchangeable even when their source sprites differ. */
+    @Override
+    public boolean equals(Object other) {
+        return this == other
+                || other instanceof EmissionDistribution distribution
+                        && Arrays.equals(this.aliasProbabilities, distribution.aliasProbabilities)
+                        && Arrays.equals(this.aliases, distribution.aliases)
+                        && Arrays.equals(this.probabilityMasses, distribution.probabilityMasses);
+    }
+
+    @Override
+    public int hashCode() {
+        return this.gpuTableHash;
     }
 
     record Key(

@@ -20,9 +20,10 @@ void main() {
     primePayload.baseColor = material.baseColor;
     primePayload.traceKind = material.flags;
     primePayload.sectionIndex = gl_InstanceCustomIndexEXT;
-    primePayload.emitterIndex = primitive.reserved0 == 0u
+    uint encodedEmitter = primitive.flagsEmitter >> 9u;
+    primePayload.emitterIndex = encodedEmitter == 0u
             ? 0xffffffffu
-            : primitive.reserved0 - 1u;
+            : encodedEmitter - 1u;
     primePayload.textureLod = floatBitsToUint(textureLodValue);
     primePayload.opacity = floatBitsToUint(material.opacity);
     primePayload.shadingNormal = primePackOctahedralNormal(material.shadingNormal);

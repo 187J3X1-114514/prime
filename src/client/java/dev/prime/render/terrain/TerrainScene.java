@@ -11,7 +11,9 @@ import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
 import java.nio.LongBuffer;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.IdentityHashMap;
 import java.util.List;
+import java.util.Map;
 import org.lwjgl.system.MemoryStack;
 import org.lwjgl.vulkan.KHRAccelerationStructure;
 import org.lwjgl.vulkan.KHRRayTracingPipeline;
@@ -51,6 +53,8 @@ public final class TerrainScene implements AutoCloseable {
             double cameraY,
             double cameraZ) {
         boolean contentChanged = this.hasActualContentChange(uploads, evictions);
+        LongOpenHashSet removedKeys = removedKeys(uploads, evictions);
+        boolean hasReadyCompaction = this.hasReadyCompaction(removedKeys);
         boolean needsRebase = this.currentTlas == null
                 ? contentChanged
                 : RenderOrigin.needsRebase(
@@ -61,10 +65,9 @@ public final class TerrainScene implements AutoCloseable {
                         this.originY,
                         this.originZ,
                         REBASE_DISTANCE);
-        if (!contentChanged && !needsRebase) {
+        if (!contentChanged && !needsRebase && !hasReadyCompaction) {
             return true;
         }
-        LongOpenHashSet removedKeys = removedKeys(uploads, evictions);
         int finalClusterCount = this.estimateFinalClusterCount(uploads, removedKeys);
         TopLevelAccelerationStructure replacementTlas = null;
         if (finalClusterCount > 0) {
@@ -96,7 +99,8 @@ public final class TerrainScene implements AutoCloseable {
             }
         }
         boolean needsClusterStaging = nonEmptyUploadCount > 0;
-        boolean needsWorldStaging = finalClusterCount > 0 && hasPotentialLights;
+        boolean rebuildWorldLights = contentChanged || needsRebase;
+        boolean needsWorldStaging = rebuildWorldLights && finalClusterCount > 0 && hasPotentialLights;
         long clusterStagingBytes = 0L;
         for (ClusterUpload upload : uploads) {
             clusterStagingBytes = TerrainStreamer.stagingEndOffset(
@@ -125,10 +129,31 @@ public final class TerrainScene implements AutoCloseable {
         }
 
         List<GpuCluster> replacements = new ArrayList<>(nonEmptyUploadCount);
+        List<PreparedBlas.Compaction> compactions = new ArrayList<>();
+        Map<PreparedBlas, PreparedBlas.Compaction> compactionByBlas = new IdentityHashMap<>();
         VulkanBuffer replacementWorldLights = null;
         VkCommandBuffer commandBuffer = null;
         boolean submitted = false;
         try {
+            if (hasReadyCompaction) {
+                for (GpuCluster cluster : this.resident.values()) {
+                    if (removedKeys.contains(cluster.key())) {
+                        continue;
+                    }
+                    PreparedBlas.Compaction compaction = cluster.blas().prepareCompaction();
+                    if (compaction != null) {
+                        compactions.add(compaction);
+                        compactionByBlas.put(cluster.blas(), compaction);
+                    }
+                }
+                if (compactions.isEmpty() && !contentChanged && !needsRebase) {
+                    if (replacementTlas != null) {
+                        replacementTlas.release();
+                        replacementTlas = null;
+                    }
+                    return true;
+                }
+            }
             if (nonEmptyUploadCount > 0 || replacementTlas != null) {
                 commandBuffer = this.context.commandEncoder().allocateAndBeginTransientCommandBuffer();
                 this.context.device().instance().debug().beginDebugGroup(commandBuffer, () -> "Prime terrain scene update");
@@ -189,21 +214,42 @@ public final class TerrainScene implements AutoCloseable {
                 }
             }
 
+            for (PreparedBlas.Compaction compaction : compactions) {
+                compaction.recordCopy(commandBuffer);
+            }
+            if (!compactions.isEmpty()) {
+                // A compact BLAS is a new acceleration structure, not an in-place allocation.
+                // Make every GPU copy visible before the replacement TLAS reads its device address;
+                // the old BLAS remains alive until this submission's real timeline point retires.
+                memoryBarrier(
+                        commandBuffer,
+                        KHRAccelerationStructure.VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR,
+                        KHRAccelerationStructure.VK_ACCESS_ACCELERATION_STRUCTURE_WRITE_BIT_KHR,
+                        KHRAccelerationStructure.VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR,
+                        KHRAccelerationStructure.VK_ACCESS_ACCELERATION_STRUCTURE_READ_BIT_KHR);
+            }
+
             if (replacementTlas != null) {
-                long worldLightAddress = replacementWorldLights == null
+                VulkanBuffer effectiveWorldLights = rebuildWorldLights
+                        ? replacementWorldLights
+                        : this.currentWorldLights;
+                long worldLightAddress = effectiveWorldLights == null
                         ? 0L
-                        : replacementWorldLights.deviceAddress();
-                long worldLightForwardAddress = replacementWorldLights == null
+                        : effectiveWorldLights.deviceAddress();
+                long worldLightForwardAddress = effectiveWorldLights == null
                         ? 0L
-                        : replacementWorldLights.deviceAddress() + worldLightTree.forwardByteOffset();
-                int worldLightNodeCount = replacementWorldLights == null
+                        : effectiveWorldLights.deviceAddress() + worldLightTree.forwardByteOffset();
+                int worldLightNodeCount = effectiveWorldLights == null
                         ? 0
                         : worldLightTree.nodeCount();
                 replacementTlas.populate(finalClusters.size(), writer -> {
                     for (int clusterIndex = 0; clusterIndex < finalClusters.size(); clusterIndex++) {
                         GpuCluster cluster = finalClusters.get(clusterIndex);
+                        PreparedBlas.Compaction compaction = compactionByBlas.get(cluster.blas());
                         writer.write(
-                                cluster.blas().accelerationStructure().deviceAddress(),
+                                compaction == null
+                                        ? cluster.blas().accelerationStructure().deviceAddress()
+                                        : compaction.targetDeviceAddress(),
                                 cluster.blas().primitives().deviceAddress(),
                                 cluster.lightAddress(),
                                 worldLightAddress,
@@ -250,17 +296,27 @@ public final class TerrainScene implements AutoCloseable {
                 submitted = true;
             }
             for (GpuCluster replacement : replacements) {
-                replacement.blas().retireScratch();
+                replacement.blas().onBuildSubmitted();
+                replacement.blas().retireBuildResources();
+            }
+            for (PreparedBlas.Compaction compaction : compactions) {
+                compaction.commit();
             }
             this.commit(
                     uploads,
                     evictions,
                     replacements,
                     replacementTlas,
-                    replacementWorldLights);
+                    replacementWorldLights,
+                    rebuildWorldLights);
             replacementWorldLights = null;
             return true;
         } catch (RuntimeException exception) {
+            if (submitted) {
+                for (PreparedBlas.Compaction compaction : compactions) {
+                    compaction.abandonAfterSubmission();
+                }
+            }
             for (GpuCluster replacement : replacements) {
                 if (submitted) {
                     this.context.defer(replacement::destroyAllResources);
@@ -285,6 +341,9 @@ public final class TerrainScene implements AutoCloseable {
             }
             throw exception;
         } finally {
+            for (PreparedBlas.Compaction compaction : compactions) {
+                compaction.close();
+            }
             if (clusterStagingBatch != null) {
                 clusterStagingBatch.close();
             }
@@ -375,6 +434,15 @@ public final class TerrainScene implements AutoCloseable {
         return false;
     }
 
+    private boolean hasReadyCompaction(LongOpenHashSet removedKeys) {
+        for (GpuCluster cluster : this.resident.values()) {
+            if (!removedKeys.contains(cluster.key()) && cluster.blas().hasReadyCompaction()) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     private List<GpuCluster> buildFinalClusterList(
             LongOpenHashSet removedKeys,
             List<GpuCluster> replacements,
@@ -395,7 +463,8 @@ public final class TerrainScene implements AutoCloseable {
             long[] evictions,
             List<GpuCluster> replacements,
             TopLevelAccelerationStructure replacementTlas,
-            VulkanBuffer replacementWorldLights) {
+            VulkanBuffer replacementWorldLights,
+            boolean replaceWorldLights) {
         List<GpuCluster> retired = new ArrayList<>(evictions.length + uploads.size());
         for (long key : evictions) {
             GpuCluster removed = this.resident.remove(key);
@@ -417,9 +486,11 @@ public final class TerrainScene implements AutoCloseable {
         }
 
         TopLevelAccelerationStructure previousTlas = this.currentTlas;
-        VulkanBuffer previousWorldLights = this.currentWorldLights;
+        VulkanBuffer previousWorldLights = replaceWorldLights ? this.currentWorldLights : null;
         this.currentTlas = replacementTlas;
-        this.currentWorldLights = replacementWorldLights;
+        if (replaceWorldLights) {
+            this.currentWorldLights = replacementWorldLights;
+        }
         this.revision++;
         this.currentView = this.currentTlas == null || this.resident.isEmpty()
                 ? null

@@ -7,7 +7,7 @@ import org.junit.jupiter.api.Test;
 
 final class StagingArenaTest {
     @Test
-    void indivisibleUploadsGrowInWholeReusablePages() {
+    void indivisibleUploadsRoundToWholePages() {
         assertEquals(StagingArena.PAGE_SIZE, StagingArena.allocationCapacity(0L));
         assertEquals(StagingArena.PAGE_SIZE, StagingArena.allocationCapacity(StagingArena.PAGE_SIZE));
         assertEquals(

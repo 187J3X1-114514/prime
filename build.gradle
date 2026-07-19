@@ -90,9 +90,9 @@ abstract class GenerateShaderAbi extends DefaultTask {
 		def atmosphereContract = schema.atmosphereContract
 		def nrdContract = schema.nrdContract
 
-		if (primitive.size != 36 || section.size != 64 || lightNode.size != 32
+		if (primitive.size != 32 || section.size != 64 || lightNode.size != 32
 				|| lightNodeForward.size != 4 || lightNodeReverse.size != 4
-				|| lightEmitter.size != 96 || lightCell.size != 16
+				|| lightEmitter.size != 96 || lightCell.size != 12
 				|| sectionLightHeader.size != 48
 				|| integrator.size != 32 || pathState.size != 96 || tracePayload.size != 80
 				|| surfaceInteraction.size != 80 || push.size != 128) {

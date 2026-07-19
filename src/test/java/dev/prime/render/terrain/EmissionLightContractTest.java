@@ -60,6 +60,18 @@ final class EmissionLightContractTest {
     }
 
     @Test
+    void aliasAndCellGeometryShareOneWordWithoutLosingEitherIndex() {
+        for (int cellIndex = 0; cellIndex < EmissionDistribution.CELL_COUNT; cellIndex++) {
+            int alias = EmissionDistribution.CELL_COUNT - 1 - cellIndex;
+            int packed = EmissionDistribution.packAliasGeometry(alias, cellIndex);
+            assertEquals(alias, packed & 0xff);
+            assertEquals(
+                    EmissionDistribution.cell(cellIndex).packedGeometry(),
+                    packed >>> 8);
+        }
+    }
+
+    @Test
     void emissionImportanceUsesTheLargestLinearRec2020Component() {
         assertEquals(1.0F, EmissionDistribution.linearSrgbToRec2020Maximum(1.0F, 1.0F, 1.0F), 1.0E-6F);
         assertEquals(0.6274039F, EmissionDistribution.linearSrgbToRec2020Maximum(1.0F, 0.0F, 0.0F), 1.0E-6F);
@@ -155,7 +167,7 @@ final class EmissionLightContractTest {
         assertTrue(lights.contains("primeLightTreeSelectionPdf"));
         assertTrue(lights.contains("selectedCell.probabilityMass / cellArea"));
         assertTrue(lights.contains("cell.probabilityMass / cellArea"));
-        assertTrue(lights.contains("primeLightCellVertices(selectedCell.geometry"));
+        assertTrue(lights.contains("primeLightCellVertices(selectedCell.aliasGeometry >> 8u"));
         assertFalse(lights.contains("candidateRow"));
         String forwardTraversal = lights.substring(
                 lights.indexOf("LightTreePick primePickLightTree"),

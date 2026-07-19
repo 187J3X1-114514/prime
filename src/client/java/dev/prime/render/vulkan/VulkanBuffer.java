@@ -71,6 +71,10 @@ public final class VulkanBuffer implements Destroyable {
         Vma.vmaFlushAllocation(this.allocator, this.allocation, offset, length);
     }
 
+    public void invalidate(long offset, long length) {
+        Vma.vmaInvalidateAllocation(this.allocator, this.allocation, offset, length);
+    }
+
     @Override
     public void destroy() {
         if (!this.destroyed) {

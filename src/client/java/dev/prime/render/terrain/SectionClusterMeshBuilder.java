@@ -6,8 +6,8 @@ import java.util.List;
 /** Merges Section-local compiler output into one cluster-local BLAS payload. */
 final class SectionClusterMeshBuilder {
     private static final int POSITION_WORDS_PER_TRIANGLE = 9;
-    private static final int PRIMITIVE_WORDS_PER_TRIANGLE = 9;
-    private static final int EMITTER_INDEX_WORD = 6;
+    private static final int PRIMITIVE_WORDS_PER_TRIANGLE = CpuSectionMesh.PRIMITIVE_WORDS;
+    private static final int FLAGS_EMITTER_WORD = 5;
 
     private final int clusterX;
     private final int clusterY;
@@ -77,26 +77,30 @@ final class SectionClusterMeshBuilder {
             float translateX = (entry.sectionX - this.clusterX) * 16.0F;
             float translateY = (entry.sectionY - this.clusterY) * 16.0F;
             float translateZ = (entry.sectionZ - this.clusterZ) * 16.0F;
-            int opaqueWords = Math.multiplyExact(
+            int opaquePositionWords = Math.multiplyExact(
                     mesh.opaqueTriangleCount(), POSITION_WORDS_PER_TRIANGLE);
-            int cutoutWords = Math.multiplyExact(
+            int cutoutPositionWords = Math.multiplyExact(
                     mesh.cutoutTriangleCount(), POSITION_WORDS_PER_TRIANGLE);
+            int opaquePrimitiveWords = Math.multiplyExact(
+                    mesh.opaqueTriangleCount(), PRIMITIVE_WORDS_PER_TRIANGLE);
+            int cutoutPrimitiveWords = Math.multiplyExact(
+                    mesh.cutoutTriangleCount(), PRIMITIVE_WORDS_PER_TRIANGLE);
 
             copyTranslatedPositions(
                     mesh.positions(),
                     0,
                     positions,
                     opaquePositionCursor,
-                    opaqueWords,
+                    opaquePositionWords,
                     translateX,
                     translateY,
                     translateZ);
             copyTranslatedPositions(
                     mesh.positions(),
-                    opaqueWords,
+                    opaquePositionWords,
                     positions,
                     cutoutPositionCursor,
-                    cutoutWords,
+                    cutoutPositionWords,
                     translateX,
                     translateY,
                     translateZ);
@@ -105,20 +109,20 @@ final class SectionClusterMeshBuilder {
                     0,
                     primitives,
                     opaquePrimitiveCursor,
-                    opaqueWords,
+                    opaquePrimitiveWords,
                     entry.lightOffset);
             copyPrimitives(
                     mesh.primitiveRecords(),
-                    opaqueWords,
+                    opaquePrimitiveWords,
                     primitives,
                     cutoutPrimitiveCursor,
-                    cutoutWords,
+                    cutoutPrimitiveWords,
                     entry.lightOffset);
 
-            opaquePositionCursor += opaqueWords;
-            opaquePrimitiveCursor += opaqueWords;
-            cutoutPositionCursor += cutoutWords;
-            cutoutPrimitiveCursor += cutoutWords;
+            opaquePositionCursor += opaquePositionWords;
+            opaquePrimitiveCursor += opaquePrimitiveWords;
+            cutoutPositionCursor += cutoutPositionWords;
+            cutoutPrimitiveCursor += cutoutPrimitiveWords;
             if (!mesh.lights().isEmpty()) {
                 lightSources.add(new CpuSectionLights.Translated(
                         mesh.lights(), translateX, translateY, translateZ));
@@ -165,10 +169,12 @@ final class SectionClusterMeshBuilder {
         int destinationEnd = destinationOffset + wordCount;
         for (int record = destinationOffset; record < destinationEnd;
                 record += PRIMITIVE_WORDS_PER_TRIANGLE) {
-            int emitterIndex = destination[record + EMITTER_INDEX_WORD];
-            if (emitterIndex != 0) {
-                destination[record + EMITTER_INDEX_WORD] = Math.addExact(
-                        emitterIndex, lightOffset);
+            int packed = destination[record + FLAGS_EMITTER_WORD];
+            int emitterIndex = PrimitivePacking.unpackEmitterIndex(packed);
+            if (emitterIndex != PrimitivePacking.NO_EMITTER_INDEX) {
+                destination[record + FLAGS_EMITTER_WORD] = PrimitivePacking.packFlagsEmitter(
+                        PrimitivePacking.unpackFlags(packed),
+                        Math.addExact(emitterIndex, lightOffset));
             }
         }
     }

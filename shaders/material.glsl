@@ -34,17 +34,18 @@ MaterialEvaluation primeEvaluateMaterial(PrimitiveRecord primitive, vec2 uv, flo
     // Decode both before multiplication, then cross the single material boundary into the
     // integrator's linear Rec.2020 working space. Alpha is coverage and is never color-decoded.
     result.baseColor = primeAtlasBaseColor(primitive.tint, uv, textureLodValue, result.opacity);
-    result.flags = primitive.flags;
-    vec4 normalSample = primeHasLabPbrNormal(primitive.flags)
+    uint primitiveFlags = primitive.flagsEmitter & 0x1ffu;
+    result.flags = primitiveFlags;
+    vec4 normalSample = primeHasLabPbrNormal(primitiveFlags)
             ? textureLod(primeLabPbrNormalAtlas, uv, textureLodValue)
             : vec4(0.5, 0.5, 1.0, 1.0);
-    vec4 specularSample = primeHasLabPbrSpecular(primitive.flags)
+    vec4 specularSample = primeHasLabPbrSpecular(primitiveFlags)
             ? textureLod(primeLabPbrSpecularAtlas, uv, textureLodValue)
             : vec4(0.0, 4.0 / 255.0, 0.0, 1.0);
     result.labPbrNormal = packUnorm4x8(normalSample);
     result.labPbrSpecular = packUnorm4x8(specularSample);
     PrimeTranslatedLabPbrMaterial translated = primeDecodeAndTranslateLabPbr(
-            result.labPbrNormal, result.labPbrSpecular, primitive.flags);
+            result.labPbrNormal, result.labPbrSpecular, primitiveFlags);
     if (primeTranslatedLabPbrIsMetal(translated)) {
         result.flags |= PRIME_MATERIAL_FLAG_LABPBR_METAL;
     }

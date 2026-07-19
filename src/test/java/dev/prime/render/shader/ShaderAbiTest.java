@@ -7,13 +7,13 @@ import org.junit.jupiter.api.Test;
 final class ShaderAbiTest {
     @Test
     void fixedRecordSizesAndBindingsMatchTheContract() {
-        assertEquals(36, ShaderAbi.PRIMITIVE_RECORD_SIZE);
+        assertEquals(32, ShaderAbi.PRIMITIVE_RECORD_SIZE);
         assertEquals(64, ShaderAbi.SECTION_RECORD_SIZE);
         assertEquals(32, ShaderAbi.LIGHT_NODE_SIZE);
         assertEquals(4, ShaderAbi.LIGHT_NODE_FORWARD_SIZE);
         assertEquals(4, ShaderAbi.LIGHT_NODE_REVERSE_SIZE);
         assertEquals(96, ShaderAbi.LIGHT_EMITTER_SIZE);
-        assertEquals(16, ShaderAbi.LIGHT_CELL_SIZE);
+        assertEquals(12, ShaderAbi.LIGHT_CELL_SIZE);
         assertEquals(48, ShaderAbi.SECTION_LIGHT_HEADER_SIZE);
         assertEquals(32, ShaderAbi.INTEGRATOR_RECORD_SIZE);
         assertEquals(96, ShaderAbi.PATH_STATE_SIZE);
@@ -84,8 +84,8 @@ final class ShaderAbiTest {
         assertEquals(0, ShaderAbi.PRIMITIVE_UV0_OFFSET);
         assertEquals(12, ShaderAbi.PRIMITIVE_TINT_OFFSET);
         assertEquals(16, ShaderAbi.PRIMITIVE_NORMAL_OFFSET);
-        assertEquals(28, ShaderAbi.PRIMITIVE_UV_DENSITY_OFFSET);
-        assertEquals(32, ShaderAbi.PRIMITIVE_TANGENT_OFFSET);
+        assertEquals(24, ShaderAbi.PRIMITIVE_UV_DENSITY_OFFSET);
+        assertEquals(28, ShaderAbi.PRIMITIVE_TANGENT_OFFSET);
         assertEquals(0, ShaderAbi.SECTION_PRIMITIVE_ADDRESS_OFFSET);
         assertEquals(8, ShaderAbi.SECTION_LIGHT_ADDRESS_OFFSET);
         assertEquals(16, ShaderAbi.SECTION_WORLD_LIGHT_ADDRESS_OFFSET);
@@ -103,7 +103,7 @@ final class ShaderAbiTest {
         assertEquals(80, ShaderAbi.LIGHT_EMITTER_METADATA_OFFSET);
         assertEquals(0, ShaderAbi.LIGHT_CELL_ALIAS_PROBABILITY_OFFSET);
         assertEquals(8, ShaderAbi.LIGHT_CELL_PROBABILITY_MASS_OFFSET);
-        assertEquals(12, ShaderAbi.LIGHT_CELL_GEOMETRY_OFFSET);
+        assertEquals(4, ShaderAbi.LIGHT_CELL_ALIAS_GEOMETRY_OFFSET);
         assertEquals(0, ShaderAbi.SECTION_LIGHT_HEADER_NODE_ADDRESS_OFFSET);
         assertEquals(8, ShaderAbi.SECTION_LIGHT_HEADER_FORWARD_ADDRESS_OFFSET);
         assertEquals(16, ShaderAbi.SECTION_LIGHT_HEADER_REVERSE_ADDRESS_OFFSET);

@@ -381,7 +381,7 @@ AreaLightSample primeSampleAreaLight(
     LightCell aliasCell = cells.cells[emitter.metadata.x + column];
     uint cellIndex = aliasValue - float(column) < aliasCell.aliasProbability
             ? column
-            : aliasCell.aliasIndex;
+            : aliasCell.aliasGeometry & 0xffu;
     LightCell selectedCell = cells.cells[emitter.metadata.x + cellIndex];
     if (!(selectedCell.probabilityMass > 0.0) || !(emitter.cornerArea.w > 0.0)) {
         return primeInvalidAreaLightSample();
@@ -390,7 +390,7 @@ AreaLightSample primeSampleAreaLight(
     vec2 cellFirst;
     vec2 cellSecond;
     vec2 cellThird;
-    primeLightCellVertices(selectedCell.geometry, cellFirst, cellSecond, cellThird);
+    primeLightCellVertices(selectedCell.aliasGeometry >> 8u, cellFirst, cellSecond, cellThird);
     float squareRoot = sqrt(positionSample.x);
     vec3 cellBarycentric = vec3(
             1.0 - squareRoot,

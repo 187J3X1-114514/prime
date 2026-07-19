@@ -1,17 +1,16 @@
 {
   "structs": {
     "primitiveRecord": {
-      "size": 36,
+      "size": 32,
       "fields": [
         { "name": "uv0", "type": "uint", "offset": 0 },
         { "name": "uv1", "type": "uint", "offset": 4 },
         { "name": "uv2", "type": "uint", "offset": 8 },
         { "name": "tint", "type": "uint", "offset": 12 },
         { "name": "normal", "type": "uint", "offset": 16 },
-        { "name": "flags", "type": "uint", "offset": 20 },
-        { "name": "reserved0", "type": "uint", "offset": 24 },
-        { "name": "uvDensity", "type": "uint", "offset": 28 },
-        { "name": "tangent", "type": "uint", "offset": 32 }
+        { "name": "flagsEmitter", "type": "uint", "offset": 20 },
+        { "name": "uvDensity", "type": "uint", "offset": 24 },
+        { "name": "tangent", "type": "uint", "offset": 28 }
       ]
     },
     "sectionRecord": {
@@ -60,12 +59,11 @@
       ]
     },
     "lightCell": {
-      "size": 16,
+      "size": 12,
       "fields": [
         { "name": "aliasProbability", "type": "float", "offset": 0 },
-        { "name": "aliasIndex", "type": "uint", "offset": 4 },
-        { "name": "probabilityMass", "type": "float", "offset": 8 },
-        { "name": "geometry", "type": "uint", "offset": 12 }
+        { "name": "aliasGeometry", "type": "uint", "offset": 4 },
+        { "name": "probabilityMass", "type": "float", "offset": 8 }
       ]
     },
     "sectionLightHeader": {

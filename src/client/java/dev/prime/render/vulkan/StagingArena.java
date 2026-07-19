@@ -12,6 +12,7 @@ public final class StagingArena implements AutoCloseable {
 
     private final VulkanContext context;
     private final List<Page> pages = new ArrayList<>();
+    private int oversizedPageSerial;
 
     public StagingArena(VulkanContext context) {
         this.context = context;
@@ -27,33 +28,29 @@ public final class StagingArena implements AutoCloseable {
             throw new IllegalArgumentException("Staging capacity must not be negative");
         }
         long requiredCapacity = allocationCapacity(minimumCapacity);
+        if (requiredCapacity > PAGE_SIZE) {
+            Page page = this.createPage(
+                    requiredCapacity,
+                    "oversized " + this.oversizedPageSerial++);
+            page.acquireNew();
+            return new Batch(page, true);
+        }
         for (Page page : this.pages) {
             if (page.tryAcquire(requiredCapacity)) {
-                return new Batch(page);
+                return new Batch(page, false);
             }
         }
         if (this.pages.size() < MAX_PAGES) {
             int index = this.pages.size();
-            Page page = this.createPage(requiredCapacity, index);
+            Page page = this.createPage(PAGE_SIZE, Integer.toString(index));
             page.acquireNew();
             this.pages.add(page);
-            return new Batch(page);
-        }
-        for (int index = 0; index < this.pages.size(); index++) {
-            Page page = this.pages.get(index);
-            if (!page.reserveForGrowth(requiredCapacity)) {
-                continue;
-            }
-            page.buffer.destroy();
-            Page replacement = this.createPage(requiredCapacity, index);
-            replacement.acquireNew();
-            this.pages.set(index, replacement);
-            return new Batch(replacement);
+            return new Batch(page, false);
         }
         return null;
     }
 
-    private Page createPage(long capacity, int index) {
+    private Page createPage(long capacity, String index) {
         return new Page(this.context.createBuffer(
                 capacity,
                 VK12.VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
@@ -79,12 +76,14 @@ public final class StagingArena implements AutoCloseable {
 
     public final class Batch implements AutoCloseable {
         private final Page page;
+        private final boolean disposable;
         private long cursor;
         private boolean submitted;
         private boolean closed;
 
-        private Batch(Page page) {
+        private Batch(Page page, boolean disposable) {
             this.page = page;
+            this.disposable = disposable;
         }
 
         public Slice write(ByteBuffer data, long alignment) {
@@ -126,7 +125,11 @@ public final class StagingArena implements AutoCloseable {
             }
             this.page.buffer.flush(0L, this.cursor);
             this.submitted = true;
-            StagingArena.this.context.defer(this.page::release);
+            if (this.disposable) {
+                StagingArena.this.context.defer(this.page.buffer);
+            } else {
+                StagingArena.this.context.defer(this.page::release);
+            }
         }
 
         @Override
@@ -134,7 +137,11 @@ public final class StagingArena implements AutoCloseable {
             if (!this.closed) {
                 this.closed = true;
                 if (!this.submitted) {
-                    this.page.release();
+                    if (this.disposable) {
+                        this.page.buffer.destroy();
+                    } else {
+                        this.page.release();
+                    }
                 }
             }
         }
@@ -166,14 +173,6 @@ public final class StagingArena implements AutoCloseable {
 
         private synchronized boolean tryAcquire(long requiredCapacity) {
             if (!this.available || this.capacity < requiredCapacity) {
-                return false;
-            }
-            this.available = false;
-            return true;
-        }
-
-        private synchronized boolean reserveForGrowth(long requiredCapacity) {
-            if (!this.available || this.capacity >= requiredCapacity) {
                 return false;
             }
             this.available = false;

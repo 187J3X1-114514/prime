@@ -12,12 +12,9 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.PriorityQueue;
 import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.Executor;
 import java.util.concurrent.RejectedExecutionException;
-import java.util.concurrent.ThreadFactory;
-import java.util.concurrent.ThreadPoolExecutor;
-import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.atomic.AtomicInteger;
 import net.minecraft.client.color.block.BlockColors;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
@@ -28,6 +25,7 @@ import net.minecraft.client.renderer.chunk.RenderSectionRegion;
 import net.minecraft.client.renderer.texture.TextureAtlas;
 import net.minecraft.core.SectionPos;
 import net.minecraft.data.AtlasIds;
+import net.minecraft.util.Util;
 import net.minecraft.world.level.chunk.status.ChunkStatus;
 import net.minecraft.world.level.chunk.LevelChunk;
 import net.fabricmc.fabric.api.client.renderer.v1.sprite.FabricTextureAtlas;
@@ -51,20 +49,17 @@ import net.fabricmc.fabric.api.client.renderer.v1.sprite.SpriteFinder;
  */
 public final class TerrainStreamer implements AutoCloseable {
     private static final long[] EMPTY_EVICTIONS = new long[0];
-    private static final int MAX_SNAPSHOTS_PER_FRAME = 1;
-    private static final int MAX_UPLOADS_PER_FRAME = 1;
     // A normal frame retains the old 16 MiB budget, but a single atomic cluster is allowed to
     // exceed it and obtains a correspondingly sized staging page.
     private static final long MAX_UPLOAD_BYTES_PER_FRAME = StagingArena.PAGE_SIZE;
     private static final int MAX_UNLOADED_PROBES_PER_FRAME = 64;
-    private static final int MAX_READY_FOR_UPLOAD = 16;
     private static final int MAX_EXTERNAL_DIRTY_SECTIONS = 16_384;
     private static final CpuSectionMesh EMPTY_MESH = new CpuSectionMesh(
             new float[0], new int[0], 0, 0, CpuSectionLights.EMPTY);
 
     private final TerrainScene scene;
     private final VanillaSceneInterpreter sceneInterpreter = new VanillaSceneInterpreter();
-    private final ThreadPoolExecutor workers;
+    private final Executor workers;
     private final int maximumInFlight;
     private final ArrayBlockingQueue<CompletedCluster> completed;
     private final AtomicBoolean completionOverflow = new AtomicBoolean();
@@ -82,7 +77,7 @@ public final class TerrainStreamer implements AutoCloseable {
             .thenComparingLong(ClusterRequest::distanceSquared)
             .thenComparingLong(ClusterRequest::key));
     private final ArrayDeque<CompletedCluster> readyForUpload = new ArrayDeque<>();
-    private final ArrayList<ClusterUpload> uploadBatch = new ArrayList<>(MAX_UPLOADS_PER_FRAME);
+    private final ArrayList<ClusterUpload> uploadBatch = new ArrayList<>();
     private final ArrayList<ClusterRequest> unloadedRequests =
             new ArrayList<>(MAX_UNLOADED_PROBES_PER_FRAME);
     private final ArrayList<ClusterRequest> blockedRequests =
@@ -99,25 +94,11 @@ public final class TerrainStreamer implements AutoCloseable {
 
     public TerrainStreamer(VulkanContext context, StagingArena stagingArena) {
         this.scene = new TerrainScene(context, stagingArena);
-        int threadCount = Math.max(1, Math.min(4, Runtime.getRuntime().availableProcessors() - 2));
-        this.maximumInFlight = threadCount * 2;
-        this.completed = new ArrayBlockingQueue<>(this.maximumInFlight * 2);
-        AtomicInteger threadNumber = new AtomicInteger();
-        ThreadFactory threadFactory = task -> {
-            Thread thread = new Thread(task, "Prime terrain worker " + threadNumber.incrementAndGet());
-            thread.setDaemon(true);
-            thread.setUncaughtExceptionHandler((ignored, failure) ->
-                    PrimeClient.LOGGER.error("Uncaught Prime terrain worker failure", failure));
-            return thread;
-        };
-        this.workers = new ThreadPoolExecutor(
-                threadCount,
-                threadCount,
-                0L,
-                TimeUnit.MILLISECONDS,
-                new ArrayBlockingQueue<>(this.maximumInFlight - threadCount),
-                threadFactory,
-                new ThreadPoolExecutor.AbortPolicy());
+        // Match vanilla section compilation: use Minecraft's shared work-stealing pool and its
+        // configured CPU limit instead of imposing a second, Prime-specific four-thread ceiling.
+        this.workers = Util.backgroundExecutor();
+        this.maximumInFlight = Util.maxAllowedExecutorThreads();
+        this.completed = new ArrayBlockingQueue<>(this.maximumInFlight);
     }
 
     public void update(Minecraft minecraft, double cameraX, double cameraY, double cameraZ) {
@@ -208,14 +189,8 @@ public final class TerrainStreamer implements AutoCloseable {
 
     @Override
     public void close() {
-        this.workers.shutdownNow();
-        try {
-            if (!this.workers.awaitTermination(5L, TimeUnit.SECONDS)) {
-                PrimeClient.LOGGER.warn("Prime terrain workers did not stop within five seconds");
-            }
-        } catch (InterruptedException exception) {
-            Thread.currentThread().interrupt();
-        }
+        // The executor belongs to Minecraft and is shut down by Minecraft. World epochs and the
+        // interpreter's closed flag make late results harmless without taking ownership here.
         this.sceneInterpreter.close();
         this.scene.close();
         this.completed.clear();
@@ -321,8 +296,12 @@ public final class TerrainStreamer implements AutoCloseable {
     }
 
     private void dispatchSnapshots(Minecraft minecraft, ClientLevel level) {
-        int slots = this.maximumInFlight - this.inFlightGeneration.size();
-        int dispatchBudget = Math.min(MAX_SNAPSHOTS_PER_FRAME, Math.max(0, slots));
+        // Count every stage after snapshot capture so a temporarily busy GPU cannot turn the
+        // shared executor into an unbounded producer of completed cluster payloads.
+        int outstanding = this.inFlightGeneration.size()
+                + this.completed.size()
+                + this.readyForUpload.size();
+        int dispatchBudget = Math.max(0, this.maximumInFlight - outstanding);
         if (dispatchBudget == 0 || this.requests.isEmpty()) {
             return;
         }
@@ -402,19 +381,15 @@ public final class TerrainStreamer implements AutoCloseable {
 
             if (snapshots.isEmpty()) {
                 if (this.scene.contains(request.key())) {
-                    if (this.readyForUpload.size() >= MAX_READY_FOR_UPLOAD) {
-                        this.enqueue(request.key(), request.priority(), request.generation());
-                    } else {
-                        this.readyForUpload.addLast(new CompletedCluster(
-                                this.generations.worldEpoch(),
-                                request.key(),
-                                request.generation(),
-                                clusterX,
-                                clusterY,
-                                clusterZ,
-                                EMPTY_MESH,
-                                null));
-                    }
+                    this.readyForUpload.addLast(new CompletedCluster(
+                            this.generations.worldEpoch(),
+                            request.key(),
+                            request.generation(),
+                            clusterX,
+                            clusterY,
+                            clusterZ,
+                            EMPTY_MESH,
+                            null));
                 } else {
                     this.empty.add(request.key());
                 }
@@ -531,10 +506,6 @@ public final class TerrainStreamer implements AutoCloseable {
                         "Terrain extraction failed for virtual cluster " + result.key(),
                         result.failure());
             }
-            if (this.readyForUpload.size() >= MAX_READY_FOR_UPLOAD) {
-                this.enqueue(result.key(), 0, result.generation());
-                continue;
-            }
             this.readyForUpload.addLast(result);
         }
     }
@@ -543,7 +514,7 @@ public final class TerrainStreamer implements AutoCloseable {
         List<ClusterUpload> uploads = this.uploadBatch;
         uploads.clear();
         long uploadBytes = 0L;
-        while (uploads.size() < MAX_UPLOADS_PER_FRAME && !this.readyForUpload.isEmpty()) {
+        while (!this.readyForUpload.isEmpty()) {
             CompletedCluster next = this.readyForUpload.peekFirst();
             if (!this.generations.isCurrent(next.key(), next.generation()) || !this.desired.contains(next.key())) {
                 this.readyForUpload.removeFirst();

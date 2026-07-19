@@ -87,7 +87,7 @@ final class EmissionLightContractTest {
                 leaf(4.0F, 2.0F, 1),
                 leaf(8.0F, 3.0F, 2));
         CpuLightTree.Result tree = CpuLightTree.build(
-                leaves, leaves.size(), CpuLightTree.SECTION_SOFTENING_SCALE);
+                leaves, leaves.size(), CpuLightTree.LOCAL_SOFTENING_SCALE);
         assertEquals(5, tree.nodeCount());
         assertEquals(6.0F, tree.power(), 1.0E-6F);
         int[] bounds = tree.packNodeBounds();

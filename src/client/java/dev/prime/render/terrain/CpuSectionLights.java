@@ -7,7 +7,7 @@ import java.util.List;
 import java.util.Map;
 import net.minecraft.client.renderer.texture.TextureAtlasSprite;
 
-/** Immutable light surfaces, split local-tree streams and shared texture distributions for one Section. */
+/** Immutable light surfaces, local-tree streams and texture distributions for one geometry unit. */
 public final class CpuSectionLights {
     public static final CpuSectionLights EMPTY = new CpuSectionLights();
     static final int EMITTER_FLAG_TWO_SIDED = 1;
@@ -129,20 +129,50 @@ public final class CpuSectionLights {
             }
         }
         if ((long) result.length * Integer.BYTES != this.byteSize()) {
-            throw new IllegalStateException("Packed Section light layout does not match the shader ABI");
+            throw new IllegalStateException("Packed local light layout does not match the shader ABI");
         }
         return result;
     }
 
     CpuLightTree.Bounds bounds() {
         if (this.isEmpty()) {
-            throw new IllegalStateException("Empty Section has no light bounds");
+            throw new IllegalStateException("Empty geometry unit has no light bounds");
         }
         return this.tree.bounds();
     }
 
     float power() {
         return this.isEmpty() ? 0.0F : this.tree.power();
+    }
+
+    static CpuSectionLights merge(List<Translated> sources) {
+        if (sources.isEmpty()) {
+            return EMPTY;
+        }
+        int emitterCount = 0;
+        int distributionCount = 0;
+        for (Translated source : sources) {
+            emitterCount = Math.addExact(emitterCount, source.lights.emitters.size());
+            distributionCount = Math.addExact(
+                    distributionCount, source.lights.distributions.size());
+        }
+        if (emitterCount == 0) {
+            return EMPTY;
+        }
+        ArrayList<Emitter> mergedEmitters = new ArrayList<>(emitterCount);
+        ArrayList<EmissionDistribution> mergedDistributions = new ArrayList<>(distributionCount);
+        for (Translated source : sources) {
+            int distributionOffset = mergedDistributions.size();
+            mergedDistributions.addAll(source.lights.distributions);
+            for (Emitter emitter : source.lights.emitters) {
+                mergedEmitters.add(emitter.translated(
+                        source.x,
+                        source.y,
+                        source.z,
+                        distributionOffset));
+            }
+        }
+        return build(mergedEmitters, mergedDistributions);
     }
 
     Summary summary() {
@@ -165,9 +195,9 @@ public final class CpuSectionLights {
     }
 
     public static final class Builder {
-        // 1024 * 256 * 16 bytes = 4 MiB worst-case importance data per Section. Additional
-        // layouts share a uniform full-support distribution, preserving correctness under
-        // pathological resource packs instead of overflowing the bounded staging arena.
+        // 1024 * 256 * 16 bytes = 4 MiB worst-case importance data per source Section. Additional
+        // layouts share a uniform full-support distribution, preserving correctness while a
+        // virtual cluster concatenates the bounded results of at most 64 source Sections.
         private static final int MAXIMUM_IMPORTANCE_DISTRIBUTIONS = 1024;
 
         private final List<Emitter> emitters = new ArrayList<>();
@@ -289,31 +319,37 @@ public final class CpuSectionLights {
             if (this.emitters.isEmpty()) {
                 return EMPTY;
             }
-            ArrayList<CpuLightTree.Leaf> leaves = new ArrayList<>(this.emitters.size());
-            for (int index = 0; index < this.emitters.size(); index++) {
-                Emitter emitter = this.emitters.get(index);
-                CpuLightTree.Bounds bounds = CpuLightTree.Bounds.empty()
-                        .include(emitter.cornerX, emitter.cornerY, emitter.cornerZ)
-                        .include(
-                                emitter.cornerX + emitter.edgeOneX,
-                                emitter.cornerY + emitter.edgeOneY,
-                                emitter.cornerZ + emitter.edgeOneZ)
-                        .include(
-                                emitter.cornerX + emitter.edgeTwoX,
-                                emitter.cornerY + emitter.edgeTwoY,
-                                emitter.cornerZ + emitter.edgeTwoZ);
-                leaves.add(new CpuLightTree.Leaf(
-                        bounds,
-                        (bounds.minX() + bounds.maxX()) * 0.5F,
-                        (bounds.minY() + bounds.maxY()) * 0.5F,
-                        (bounds.minZ() + bounds.maxZ()) * 0.5F,
-                        emitter.power,
-                        index));
-            }
-            CpuLightTree.Result tree = CpuLightTree.buildOwned(
-                    leaves, this.emitters.size(), CpuLightTree.SECTION_SOFTENING_SCALE);
-            return new CpuSectionLights(this.emitters, this.distributions, tree);
+            return CpuSectionLights.build(this.emitters, this.distributions);
         }
+    }
+
+    private static CpuSectionLights build(
+            List<Emitter> emitters,
+            List<EmissionDistribution> distributions) {
+        ArrayList<CpuLightTree.Leaf> leaves = new ArrayList<>(emitters.size());
+        for (int index = 0; index < emitters.size(); index++) {
+            Emitter emitter = emitters.get(index);
+            CpuLightTree.Bounds bounds = CpuLightTree.Bounds.empty()
+                    .include(emitter.cornerX, emitter.cornerY, emitter.cornerZ)
+                    .include(
+                            emitter.cornerX + emitter.edgeOneX,
+                            emitter.cornerY + emitter.edgeOneY,
+                            emitter.cornerZ + emitter.edgeOneZ)
+                    .include(
+                            emitter.cornerX + emitter.edgeTwoX,
+                            emitter.cornerY + emitter.edgeTwoY,
+                            emitter.cornerZ + emitter.edgeTwoZ);
+            leaves.add(new CpuLightTree.Leaf(
+                    bounds,
+                    (bounds.minX() + bounds.maxX()) * 0.5F,
+                    (bounds.minY() + bounds.maxY()) * 0.5F,
+                    (bounds.minZ() + bounds.maxZ()) * 0.5F,
+                    emitter.power,
+                    index));
+        }
+        CpuLightTree.Result tree = CpuLightTree.buildOwned(
+                leaves, emitters.size(), CpuLightTree.LOCAL_SOFTENING_SCALE);
+        return new CpuSectionLights(emitters, distributions, tree);
     }
 
     /** Prime's default source-radiance calibration: a white level-15 texel evaluates to 25. */
@@ -329,6 +365,14 @@ public final class CpuSectionLights {
 
         boolean isEmpty() {
             return this.emitterCount == 0;
+        }
+    }
+
+    record Translated(CpuSectionLights lights, float x, float y, float z) {
+        Translated {
+            if (lights == null) {
+                throw new IllegalArgumentException("Translated lights must not be null");
+            }
         }
     }
 
@@ -354,5 +398,29 @@ public final class CpuSectionLights {
             int packedTint,
             int distributionIndex,
             int flags) {
+        Emitter translated(float x, float y, float z, int distributionOffset) {
+            return new Emitter(
+                    this.cornerX + x,
+                    this.cornerY + y,
+                    this.cornerZ + z,
+                    this.edgeOneX,
+                    this.edgeOneY,
+                    this.edgeOneZ,
+                    this.edgeTwoX,
+                    this.edgeTwoY,
+                    this.edgeTwoZ,
+                    this.normalX,
+                    this.normalY,
+                    this.normalZ,
+                    this.area,
+                    this.emissionScale,
+                    this.power,
+                    this.packedUv0,
+                    this.packedUv1,
+                    this.packedUv2,
+                    this.packedTint,
+                    Math.addExact(this.distributionIndex, distributionOffset),
+                    this.flags);
+        }
     }
 }

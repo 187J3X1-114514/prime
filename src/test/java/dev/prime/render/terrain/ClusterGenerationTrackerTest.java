@@ -6,10 +6,10 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import org.junit.jupiter.api.Test;
 
-final class SectionGenerationTrackerTest {
+final class ClusterGenerationTrackerTest {
     @Test
     void invalidationMakesOlderWorkerResultsStale() {
-        SectionGenerationTracker tracker = new SectionGenerationTracker();
+        ClusterGenerationTracker tracker = new ClusterGenerationTracker();
         long key = 42L;
         assertTrue(tracker.isCurrent(key, 0L));
         long first = tracker.advance(key);

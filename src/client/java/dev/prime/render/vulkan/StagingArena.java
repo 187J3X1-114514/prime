@@ -18,22 +18,55 @@ public final class StagingArena implements AutoCloseable {
     }
 
     public Batch tryBeginBatch() {
+        return this.tryBeginBatch(PAGE_SIZE);
+    }
+
+    /** Acquires one reusable page large enough for an indivisible upload transaction. */
+    public Batch tryBeginBatch(long minimumCapacity) {
+        if (minimumCapacity < 0L) {
+            throw new IllegalArgumentException("Staging capacity must not be negative");
+        }
+        long requiredCapacity = allocationCapacity(minimumCapacity);
         for (Page page : this.pages) {
-            if (page.tryAcquire()) {
+            if (page.tryAcquire(requiredCapacity)) {
                 return new Batch(page);
             }
         }
-        if (this.pages.size() >= MAX_PAGES) {
-            return null;
+        if (this.pages.size() < MAX_PAGES) {
+            int index = this.pages.size();
+            Page page = this.createPage(requiredCapacity, index);
+            page.acquireNew();
+            this.pages.add(page);
+            return new Batch(page);
         }
-        Page page = new Page(this.context.createBuffer(
-                PAGE_SIZE,
+        for (int index = 0; index < this.pages.size(); index++) {
+            Page page = this.pages.get(index);
+            if (!page.reserveForGrowth(requiredCapacity)) {
+                continue;
+            }
+            page.buffer.destroy();
+            Page replacement = this.createPage(requiredCapacity, index);
+            replacement.acquireNew();
+            this.pages.set(index, replacement);
+            return new Batch(replacement);
+        }
+        return null;
+    }
+
+    private Page createPage(long capacity, int index) {
+        return new Page(this.context.createBuffer(
+                capacity,
                 VK12.VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
                 true,
-                "Prime staging page " + this.pages.size()));
-        page.acquireNew();
-        this.pages.add(page);
-        return new Batch(page);
+                "Prime staging page " + index + " (" + capacity + " bytes)"), capacity);
+    }
+
+    static long allocationCapacity(long minimumCapacity) {
+        long requested = Math.max(1L, minimumCapacity);
+        if (requested > Long.MAX_VALUE - PAGE_SIZE + 1L) {
+            throw new IllegalArgumentException("Staging capacity is too large to align safely");
+        }
+        return VulkanContext.alignUp(requested, PAGE_SIZE);
     }
 
     @Override
@@ -78,8 +111,9 @@ public final class StagingArena implements AutoCloseable {
 
         private Slice allocate(long size, long alignment) {
             long endOffset = requiredEndOffset(this.cursor, size, alignment);
-            if (endOffset > PAGE_SIZE) {
-                throw new IllegalStateException("Prime staging batch exceeded 16 MiB upload budget");
+            if (endOffset > this.page.capacity) {
+                throw new IllegalStateException(
+                        "Prime staging batch exceeded its " + this.page.capacity + " byte capacity");
             }
             long offset = endOffset - size;
             this.cursor = endOffset;
@@ -122,14 +156,24 @@ public final class StagingArena implements AutoCloseable {
 
     private static final class Page {
         private final VulkanBuffer buffer;
+        private final long capacity;
         private boolean available = true;
 
-        private Page(VulkanBuffer buffer) {
+        private Page(VulkanBuffer buffer, long capacity) {
             this.buffer = buffer;
+            this.capacity = capacity;
         }
 
-        private synchronized boolean tryAcquire() {
-            if (!this.available) {
+        private synchronized boolean tryAcquire(long requiredCapacity) {
+            if (!this.available || this.capacity < requiredCapacity) {
+                return false;
+            }
+            this.available = false;
+            return true;
+        }
+
+        private synchronized boolean reserveForGrowth(long requiredCapacity) {
+            if (!this.available || this.capacity >= requiredCapacity) {
                 return false;
             }
             this.available = false;

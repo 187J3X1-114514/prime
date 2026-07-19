@@ -1,0 +1,38 @@
+package dev.prime.render.terrain;
+
+import net.minecraft.core.SectionPos;
+
+/** Spatial contract for one experimental 64-Section BLAS. */
+final class SectionCluster {
+    static final int SECTION_SIZE = 4;
+    static final int SECTION_COUNT = SECTION_SIZE * SECTION_SIZE * SECTION_SIZE;
+    static final int SNAPSHOT_HALO = 1;
+    static final int SNAPSHOT_SIZE = SECTION_SIZE + SNAPSHOT_HALO * 2;
+
+    private SectionCluster() {
+    }
+
+    static int origin(int sectionCoordinate) {
+        return Math.floorDiv(sectionCoordinate, SECTION_SIZE) * SECTION_SIZE;
+    }
+
+    static long keyForSection(int sectionX, int sectionY, int sectionZ) {
+        return SectionPos.asLong(origin(sectionX), origin(sectionY), origin(sectionZ));
+    }
+
+    static long keyForSection(long sectionKey) {
+        return keyForSection(
+                SectionPos.x(sectionKey),
+                SectionPos.y(sectionKey),
+                SectionPos.z(sectionKey));
+    }
+
+    static boolean contains(long clusterKey, int sectionX, int sectionY, int sectionZ) {
+        int originX = SectionPos.x(clusterKey);
+        int originY = SectionPos.y(clusterKey);
+        int originZ = SectionPos.z(clusterKey);
+        return sectionX >= originX && sectionX < originX + SECTION_SIZE
+                && sectionY >= originY && sectionY < originY + SECTION_SIZE
+                && sectionZ >= originZ && sectionZ < originZ + SECTION_SIZE;
+    }
+}

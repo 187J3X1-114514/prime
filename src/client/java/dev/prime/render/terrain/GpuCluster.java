@@ -3,11 +3,11 @@ package dev.prime.render.terrain;
 import dev.prime.render.vulkan.PreparedBlas;
 import dev.prime.render.vulkan.VulkanBuffer;
 
-record GpuSection(
+record GpuCluster(
         long key,
-        int sectionX,
-        int sectionY,
-        int sectionZ,
+        int clusterX,
+        int clusterY,
+        int clusterZ,
         PreparedBlas blas,
         VulkanBuffer lightBuffer,
         CpuSectionLights.Summary lights) {

@@ -5,38 +5,38 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 
-/** Rebuildable top level over the immutable Section light trees. */
+/** Rebuildable top level over the immutable virtual-cluster light trees. */
 final class CpuWorldLightTree {
     private CpuWorldLightTree() {
     }
 
-    static Result build(List<GpuSection> sections, int originX, int originY, int originZ) {
-        ArrayList<CpuLightTree.Leaf> leaves = new ArrayList<>(sections.size());
-        for (int index = 0; index < sections.size(); index++) {
-            GpuSection section = sections.get(index);
-            if (section.lights().isEmpty()) {
+    static Result build(List<GpuCluster> clusters, int originX, int originY, int originZ) {
+        ArrayList<CpuLightTree.Leaf> leaves = new ArrayList<>(clusters.size());
+        for (int index = 0; index < clusters.size(); index++) {
+            GpuCluster cluster = clusters.get(index);
+            if (cluster.lights().isEmpty()) {
                 continue;
             }
-            float translateX = (section.sectionX() << 4) - originX;
-            float translateY = (section.sectionY() << 4) - originY;
-            float translateZ = (section.sectionZ() << 4) - originZ;
-            CpuLightTree.Bounds bounds = section.lights().bounds().translated(
+            float translateX = (cluster.clusterX() << 4) - originX;
+            float translateY = (cluster.clusterY() << 4) - originY;
+            float translateZ = (cluster.clusterZ() << 4) - originZ;
+            CpuLightTree.Bounds bounds = cluster.lights().bounds().translated(
                     translateX, translateY, translateZ);
             leaves.add(new CpuLightTree.Leaf(
                     bounds,
                     (bounds.minX() + bounds.maxX()) * 0.5F,
                     (bounds.minY() + bounds.maxY()) * 0.5F,
                     (bounds.minZ() + bounds.maxZ()) * 0.5F,
-                    section.lights().power(),
+                    cluster.lights().power(),
                     index));
         }
         if (leaves.isEmpty()) {
-            int[] leafNodes = new int[sections.size()];
+            int[] leafNodes = new int[clusters.size()];
             Arrays.fill(leafNodes, CpuLightTree.NO_INDEX);
             return new Result(new int[0], new int[0], new int[0], leafNodes);
         }
         CpuLightTree.Result tree = CpuLightTree.buildOwned(
-                leaves, sections.size(), CpuLightTree.WORLD_SOFTENING_SCALE);
+                leaves, clusters.size(), CpuLightTree.WORLD_SOFTENING_SCALE);
         return Result.fromTree(tree, tree.leafNodes());
     }
 
@@ -126,8 +126,8 @@ final class CpuWorldLightTree {
             return this.nodeWordCount / (ShaderAbi.LIGHT_NODE_SIZE / Integer.BYTES);
         }
 
-        int leafNode(int sectionIndex) {
-            return this.leafNodes[sectionIndex];
+        int leafNode(int clusterIndex) {
+            return this.leafNodes[clusterIndex];
         }
     }
 }

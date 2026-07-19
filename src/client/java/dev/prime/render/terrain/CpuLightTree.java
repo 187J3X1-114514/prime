@@ -16,7 +16,7 @@ import java.util.List;
  */
 final class CpuLightTree {
     static final int NO_INDEX = -1;
-    static final float SECTION_SOFTENING_SCALE = 1.0F / 128.0F;
+    static final float LOCAL_SOFTENING_SCALE = 1.0F / 128.0F;
     static final float WORLD_SOFTENING_SCALE = 1.0F / 64.0F;
     static final float MINIMUM_SOFTENING_DISTANCE_SQUARED = 0.25F;
     static final int LEAF_FLAG = Integer.MIN_VALUE;

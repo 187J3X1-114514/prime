@@ -36,26 +36,28 @@ import net.fabricmc.fabric.api.client.renderer.v1.sprite.SpriteFinder;
 /**
  * Owns the terrain portion of Prime's scene independently from vanilla's raster renderer.
  *
- * <p>This is the sole authority for which Sections Prime wants, when they become dirty, which
- * generation is current, and how long uploaded geometry remains resident. In particular, this
+ * <p>This is the sole authority for which virtual clusters Prime wants, when they become dirty,
+ * which generation is current, and how long uploaded geometry remains resident. One aligned
+ * 4x4x4 cluster replaces its 64 Sections as the update, light-tree, BLAS, TLAS-instance and
+ * eviction unit. In particular, this
  * scheduler must never depend on {@code LevelRenderer.visibleSections()}, the occlusion graph, or
  * vanilla's raster compilation queue: those are presentation decisions and can omit geometry that
  * still contributes to ray-traced visibility and global illumination.
  *
- * <p>Independence ends at mesh semantics. Once this class has selected a stable Section snapshot,
- * it delegates exactly once to {@link VanillaSceneInterpreter}; Prime does not maintain a second
- * block/fluid mesher and does not merge geometry captured from vanilla's raster tasks.
+ * <p>Independence ends at mesh semantics. Once this class has selected the stable 6x6x6 snapshot
+ * neighborhood around a cluster, each of its 64 inner Sections is delegated to
+ * {@link VanillaSceneInterpreter}. Prime does not maintain a second block/fluid mesher and does
+ * not merge geometry captured from vanilla's raster tasks.
  */
 public final class TerrainStreamer implements AutoCloseable {
     private static final long[] EMPTY_EVICTIONS = new long[0];
-    private static final int SECTION_COUNT_BUDGET_MULTIPLIER = 16;
-    private static final int MAX_SNAPSHOTS_PER_FRAME = 4 * SECTION_COUNT_BUDGET_MULTIPLIER;
-    private static final int MAX_UPLOADS_PER_FRAME = 8 * SECTION_COUNT_BUDGET_MULTIPLIER;
-    // The count budget may grow independently, but one TerrainScene update is still backed by one
-    // staging page. Account for allocation alignment exactly instead of summing payload bytes.
+    private static final int MAX_SNAPSHOTS_PER_FRAME = 1;
+    private static final int MAX_UPLOADS_PER_FRAME = 1;
+    // A normal frame retains the old 16 MiB budget, but a single atomic cluster is allowed to
+    // exceed it and obtains a correspondingly sized staging page.
     private static final long MAX_UPLOAD_BYTES_PER_FRAME = StagingArena.PAGE_SIZE;
-    private static final int MAX_UNLOADED_PROBES_PER_FRAME = 32 * SECTION_COUNT_BUDGET_MULTIPLIER;
-    private static final int MAX_READY_FOR_UPLOAD = 64 * SECTION_COUNT_BUDGET_MULTIPLIER;
+    private static final int MAX_UNLOADED_PROBES_PER_FRAME = 64;
+    private static final int MAX_READY_FOR_UPLOAD = 16;
     private static final int MAX_EXTERNAL_DIRTY_SECTIONS = 16_384;
     private static final CpuSectionMesh EMPTY_MESH = new CpuSectionMesh(
             new float[0], new int[0], 0, 0, CpuSectionLights.EMPTY);
@@ -64,25 +66,26 @@ public final class TerrainStreamer implements AutoCloseable {
     private final VanillaSceneInterpreter sceneInterpreter = new VanillaSceneInterpreter();
     private final ThreadPoolExecutor workers;
     private final int maximumInFlight;
-    private final ArrayBlockingQueue<CompletedSection> completed;
+    private final ArrayBlockingQueue<CompletedCluster> completed;
     private final AtomicBoolean completionOverflow = new AtomicBoolean();
     private final BoundedDirtySections externalDirty =
             new BoundedDirtySections(MAX_EXTERNAL_DIRTY_SECTIONS);
     private final LongOpenHashSet desired = new LongOpenHashSet();
     private final LongOpenHashSet empty = new LongOpenHashSet();
     private final LongOpenHashSet pendingEvictions = new LongOpenHashSet();
-    private final SectionGenerationTracker generations = new SectionGenerationTracker();
+    private final LongOpenHashSet dirtyClusters = new LongOpenHashSet();
+    private final ClusterGenerationTracker generations = new ClusterGenerationTracker();
     private final Long2LongOpenHashMap queuedGeneration = new Long2LongOpenHashMap();
     private final Long2LongOpenHashMap inFlightGeneration = new Long2LongOpenHashMap();
-    private final PriorityQueue<SectionRequest> requests = new PriorityQueue<>(Comparator
-            .comparingInt(SectionRequest::priority)
-            .thenComparingLong(SectionRequest::distanceSquared)
-            .thenComparingLong(SectionRequest::key));
-    private final ArrayDeque<CompletedSection> readyForUpload = new ArrayDeque<>();
-    private final ArrayList<SectionUpload> uploadBatch = new ArrayList<>(MAX_UPLOADS_PER_FRAME);
-    private final ArrayList<SectionRequest> unloadedRequests =
+    private final PriorityQueue<ClusterRequest> requests = new PriorityQueue<>(Comparator
+            .comparingInt(ClusterRequest::priority)
+            .thenComparingLong(ClusterRequest::distanceSquared)
+            .thenComparingLong(ClusterRequest::key));
+    private final ArrayDeque<CompletedCluster> readyForUpload = new ArrayDeque<>();
+    private final ArrayList<ClusterUpload> uploadBatch = new ArrayList<>(MAX_UPLOADS_PER_FRAME);
+    private final ArrayList<ClusterRequest> unloadedRequests =
             new ArrayList<>(MAX_UNLOADED_PROBES_PER_FRAME);
-    private final ArrayList<SectionRequest> blockedRequests =
+    private final ArrayList<ClusterRequest> blockedRequests =
             new ArrayList<>(MAX_UNLOADED_PROBES_PER_FRAME);
 
     private ClientLevel world;
@@ -97,7 +100,7 @@ public final class TerrainStreamer implements AutoCloseable {
     public TerrainStreamer(VulkanContext context, StagingArena stagingArena) {
         this.scene = new TerrainScene(context, stagingArena);
         int threadCount = Math.max(1, Math.min(4, Runtime.getRuntime().availableProcessors() - 2));
-        this.maximumInFlight = threadCount * 2 * SECTION_COUNT_BUDGET_MULTIPLIER;
+        this.maximumInFlight = threadCount * 2;
         this.completed = new ArrayBlockingQueue<>(this.maximumInFlight * 2);
         AtomicInteger threadNumber = new AtomicInteger();
         ThreadFactory threadFactory = task -> {
@@ -178,7 +181,7 @@ public final class TerrainStreamer implements AutoCloseable {
                     y <= Math.min(this.maximumSectionY, this.centerSectionY + 1);
                     y++) {
                 for (int x = this.centerSectionX - 1; x <= this.centerSectionX + 1; x++) {
-                    long key = SectionPos.asLong(x, y, z);
+                    long key = SectionCluster.keyForSection(x, y, z);
                     if (!this.scene.contains(key) && !this.empty.contains(key)) {
                         return false;
                     }
@@ -246,7 +249,7 @@ public final class TerrainStreamer implements AutoCloseable {
                     continue;
                 }
                 for (int y = minSectionY; y <= maxSectionY; y++) {
-                    replacement.add(SectionPos.asLong(x, y, z));
+                    replacement.add(SectionCluster.keyForSection(x, y, z));
                 }
             }
         }
@@ -268,15 +271,24 @@ public final class TerrainStreamer implements AutoCloseable {
         if (batch.fullInvalidation()) {
             this.empty.clear();
             this.rebuildRequestQueue(0);
+            return;
         }
+        this.dirtyClusters.clear();
         for (long sectionKey : batch.keys()) {
-            if (!this.desired.contains(sectionKey)) {
+            long clusterKey = SectionCluster.keyForSection(sectionKey);
+            if (this.desired.contains(clusterKey)) {
+                this.dirtyClusters.add(clusterKey);
+            }
+        }
+        for (long clusterKey : this.dirtyClusters) {
+            if (!this.desired.contains(clusterKey)) {
                 continue;
             }
-            this.empty.remove(sectionKey);
-            long nextGeneration = this.generations.advance(sectionKey);
-            this.enqueue(sectionKey, 0, nextGeneration);
+            this.empty.remove(clusterKey);
+            long nextGeneration = this.generations.advance(clusterKey);
+            this.enqueue(clusterKey, 0, nextGeneration);
         }
+        this.dirtyClusters.clear();
     }
 
     private void rebuildRequestQueue(int priority) {
@@ -292,19 +304,19 @@ public final class TerrainStreamer implements AutoCloseable {
         }
     }
 
-    private void enqueue(long key, int priority, long token) {
-        if (this.queuedGeneration.getOrDefault(key, Long.MIN_VALUE) == token) {
+    private void enqueue(long clusterKey, int priority, long token) {
+        if (this.queuedGeneration.getOrDefault(clusterKey, Long.MIN_VALUE) == token) {
             return;
         }
-        int x = SectionPos.x(key);
-        int y = SectionPos.y(key);
-        int z = SectionPos.z(key);
+        int x = SectionPos.x(clusterKey) + SectionCluster.SECTION_SIZE / 2;
+        int y = SectionPos.y(clusterKey) + SectionCluster.SECTION_SIZE / 2;
+        int z = SectionPos.z(clusterKey) + SectionCluster.SECTION_SIZE / 2;
         long dx = x - this.centerSectionX;
         long dy = y - this.centerSectionY;
         long dz = z - this.centerSectionZ;
         long distanceSquared = ((dx * dx + dz * dz) << 8) | Math.min(255L, Math.abs(dy));
-        this.queuedGeneration.put(key, token);
-        this.requests.add(new SectionRequest(key, token, priority, distanceSquared));
+        this.queuedGeneration.put(clusterKey, token);
+        this.requests.add(new ClusterRequest(clusterKey, token, priority, distanceSquared));
         this.compactRequestQueueIfNeeded();
     }
 
@@ -328,7 +340,7 @@ public final class TerrainStreamer implements AutoCloseable {
         while (dispatched < dispatchBudget
                 && examined < MAX_UNLOADED_PROBES_PER_FRAME
                 && !this.requests.isEmpty()) {
-            SectionRequest request = this.requests.poll();
+            ClusterRequest request = this.requests.poll();
             examined++;
             if (this.queuedGeneration.getOrDefault(request.key(), Long.MIN_VALUE) != request.generation()) {
                 continue;
@@ -343,26 +355,63 @@ public final class TerrainStreamer implements AutoCloseable {
                 continue;
             }
             this.queuedGeneration.remove(request.key());
-            int sectionX = SectionPos.x(request.key());
-            int sectionY = SectionPos.y(request.key());
-            int sectionZ = SectionPos.z(request.key());
-            LevelChunk chunk = level.getChunkSource().getChunk(sectionX, sectionZ, ChunkStatus.FULL, false);
-            if (chunk == null) {
+            int clusterX = SectionPos.x(request.key());
+            int clusterY = SectionPos.y(request.key());
+            int clusterZ = SectionPos.z(request.key());
+            if (!hasCompleteClusterNeighborhood(level, clusterX, clusterZ)) {
+                // A 4x4x4 virtual chunk needs one Section of source data around every face.
+                // Minecraft loads vertical Sections as part of the same chunk column, so checking
+                // the 6x6 horizontal chunk columns establishes the complete 6x6x6 snapshot.
                 this.unloadedRequests.add(request);
                 continue;
             }
-            if (chunk.getSection(chunk.getSectionIndexFromSectionY(sectionY)).hasOnlyAir()) {
+
+            ArrayList<ClusterSectionSnapshot> snapshots = new ArrayList<>(
+                    SectionCluster.SECTION_COUNT);
+            for (int sectionZ = clusterZ;
+                    sectionZ < clusterZ + SectionCluster.SECTION_SIZE;
+                    sectionZ++) {
+                for (int sectionY = clusterY;
+                        sectionY < clusterY + SectionCluster.SECTION_SIZE;
+                        sectionY++) {
+                    if (sectionY < this.minimumSectionY || sectionY > this.maximumSectionY) {
+                        continue;
+                    }
+                    for (int sectionX = clusterX;
+                            sectionX < clusterX + SectionCluster.SECTION_SIZE;
+                            sectionX++) {
+                        LevelChunk chunk = level.getChunkSource().getChunk(
+                                sectionX, sectionZ, ChunkStatus.FULL, false);
+                        if (chunk == null) {
+                            throw new IllegalStateException(
+                                    "Complete cluster neighborhood lost a loaded chunk");
+                        }
+                        if (chunk.getSection(chunk.getSectionIndexFromSectionY(sectionY))
+                                .hasOnlyAir()) {
+                            continue;
+                        }
+                        long sectionKey = SectionPos.asLong(sectionX, sectionY, sectionZ);
+                        snapshots.add(new ClusterSectionSnapshot(
+                                sectionX,
+                                sectionY,
+                                sectionZ,
+                                regionCache.createRegion(level, sectionKey)));
+                    }
+                }
+            }
+
+            if (snapshots.isEmpty()) {
                 if (this.scene.contains(request.key())) {
                     if (this.readyForUpload.size() >= MAX_READY_FOR_UPLOAD) {
                         this.enqueue(request.key(), request.priority(), request.generation());
                     } else {
-                        this.readyForUpload.addLast(new CompletedSection(
+                        this.readyForUpload.addLast(new CompletedCluster(
                                 this.generations.worldEpoch(),
                                 request.key(),
                                 request.generation(),
-                                sectionX,
-                                sectionY,
-                                sectionZ,
+                                clusterX,
+                                clusterY,
+                                clusterZ,
                                 EMPTY_MESH,
                                 null));
                     }
@@ -371,18 +420,6 @@ public final class TerrainStreamer implements AutoCloseable {
                 }
                 continue;
             }
-            if (!hasCompleteHorizontalNeighborhood(level, sectionX, sectionZ)) {
-                // RenderSectionRegion snapshots one Section in every direction. Fluid corner
-                // heights in particular inspect diagonal blocks; ClientLevel substitutes empty
-                // chunks when one of those neighbors has not arrived yet. Compiling that temporary
-                // state produces a persistent sloped seam at the real chunk boundary because Prime
-                // has no vanilla render-chunk task to invalidate it when the neighbor later loads.
-                // Keep the request live until the same 3x3 chunk neighborhood used by vanilla's
-                // stable mesh is present. The retry remains bounded by the request queue.
-                this.unloadedRequests.add(request);
-                continue;
-            }
-            RenderSectionRegion region = regionCache.createRegion(level, request.key());
             LabPbrMaterialSet materialSnapshot = this.labPbrMaterials;
             this.inFlightGeneration.put(request.key(), request.generation());
             long worldEpoch = this.generations.worldEpoch();
@@ -391,30 +428,41 @@ public final class TerrainStreamer implements AutoCloseable {
                     CpuSectionMesh mesh = EMPTY_MESH;
                     Throwable failure = null;
                     try {
-                        mesh = TerrainStreamer.this.sceneInterpreter.compileSection(
-                                region,
-                                models,
-                                fluidModels,
-                                blockColors,
-                                blockSpriteFinder,
-                                materialSnapshot,
-                                cutoutLeaves,
-                                sectionX,
-                                sectionY,
-                                sectionZ);
+                        SectionClusterMeshBuilder cluster = new SectionClusterMeshBuilder(
+                                clusterX, clusterY, clusterZ);
+                        for (ClusterSectionSnapshot snapshot : snapshots) {
+                            CpuSectionMesh sectionMesh = TerrainStreamer.this.sceneInterpreter
+                                    .compileSection(
+                                            snapshot.region(),
+                                            models,
+                                            fluidModels,
+                                            blockColors,
+                                            blockSpriteFinder,
+                                            materialSnapshot,
+                                            cutoutLeaves,
+                                            snapshot.sectionX(),
+                                            snapshot.sectionY(),
+                                            snapshot.sectionZ());
+                            cluster.add(
+                                    snapshot.sectionX(),
+                                    snapshot.sectionY(),
+                                    snapshot.sectionZ(),
+                                    sectionMesh);
+                        }
+                        mesh = cluster.build();
                     } catch (Throwable throwable) {
                         failure = throwable;
                     }
-                    CompletedSection completedSection = new CompletedSection(
+                    CompletedCluster completedCluster = new CompletedCluster(
                             worldEpoch,
                             request.key(),
                             request.generation(),
-                            sectionX,
-                            sectionY,
-                            sectionZ,
+                            clusterX,
+                            clusterY,
+                            clusterZ,
                             mesh,
                             failure);
-                    if (!TerrainStreamer.this.completed.offer(completedSection)) {
+                    if (!TerrainStreamer.this.completed.offer(completedCluster)) {
                         TerrainStreamer.this.completionOverflow.set(true);
                     }
                 });
@@ -427,19 +475,23 @@ public final class TerrainStreamer implements AutoCloseable {
             dispatched++;
         }
         this.requests.addAll(this.blockedRequests);
-        for (SectionRequest request : this.unloadedRequests) {
+        for (ClusterRequest request : this.unloadedRequests) {
             this.enqueue(request.key(), request.priority(), request.generation());
         }
         this.blockedRequests.clear();
         this.unloadedRequests.clear();
     }
 
-    private static boolean hasCompleteHorizontalNeighborhood(
+    private static boolean hasCompleteClusterNeighborhood(
             ClientLevel level,
-            int centerChunkX,
-            int centerChunkZ) {
-        for (int chunkZ = centerChunkZ - 1; chunkZ <= centerChunkZ + 1; chunkZ++) {
-            for (int chunkX = centerChunkX - 1; chunkX <= centerChunkX + 1; chunkX++) {
+            int clusterX,
+            int clusterZ) {
+        int minimumChunkX = clusterX - SectionCluster.SNAPSHOT_HALO;
+        int minimumChunkZ = clusterZ - SectionCluster.SNAPSHOT_HALO;
+        int maximumChunkX = clusterX + SectionCluster.SECTION_SIZE;
+        int maximumChunkZ = clusterZ + SectionCluster.SECTION_SIZE;
+        for (int chunkZ = minimumChunkZ; chunkZ <= maximumChunkZ; chunkZ++) {
+            for (int chunkX = minimumChunkX; chunkX <= maximumChunkX; chunkX++) {
                 if (level.getChunkSource().getChunk(chunkX, chunkZ, ChunkStatus.FULL, false) == null) {
                     return false;
                 }
@@ -457,7 +509,7 @@ public final class TerrainStreamer implements AutoCloseable {
             PrimeClient.LOGGER.warn("Terrain completion queue overflowed; rebuilding the bounded work set");
             return;
         }
-        CompletedSection result;
+        CompletedCluster result;
         while ((result = this.completed.poll()) != null) {
             if (result.worldEpoch() != this.generations.worldEpoch()) {
                 continue;
@@ -476,7 +528,7 @@ public final class TerrainStreamer implements AutoCloseable {
                 // Escalate once on the render thread so the runtime performs its defined FAILED ->
                 // vanilla fallback and presents the actionable reason to the user.
                 throw new IllegalStateException(
-                        "Terrain extraction failed for section " + result.key(),
+                        "Terrain extraction failed for virtual cluster " + result.key(),
                         result.failure());
             }
             if (this.readyForUpload.size() >= MAX_READY_FOR_UPLOAD) {
@@ -488,11 +540,11 @@ public final class TerrainStreamer implements AutoCloseable {
     }
 
     private void uploadReady(double cameraX, double cameraY, double cameraZ) {
-        List<SectionUpload> uploads = this.uploadBatch;
+        List<ClusterUpload> uploads = this.uploadBatch;
         uploads.clear();
         long uploadBytes = 0L;
         while (uploads.size() < MAX_UPLOADS_PER_FRAME && !this.readyForUpload.isEmpty()) {
-            CompletedSection next = this.readyForUpload.peekFirst();
+            CompletedCluster next = this.readyForUpload.peekFirst();
             if (!this.generations.isCurrent(next.key(), next.generation()) || !this.desired.contains(next.key())) {
                 this.readyForUpload.removeFirst();
                 continue;
@@ -501,14 +553,10 @@ public final class TerrainStreamer implements AutoCloseable {
             if (!uploads.isEmpty() && nextEndOffset > MAX_UPLOAD_BYTES_PER_FRAME) {
                 break;
             }
-            if (nextEndOffset > MAX_UPLOAD_BYTES_PER_FRAME) {
-                throw new IllegalStateException(
-                        "Section " + next.key() + " exceeds Prime's 16 MiB per-section upload limit");
-            }
             this.readyForUpload.removeFirst();
             uploadBytes = nextEndOffset;
-            uploads.add(new SectionUpload(
-                    next.key(), next.sectionX(), next.sectionY(), next.sectionZ(), next.mesh()));
+            uploads.add(new ClusterUpload(
+                    next.key(), next.clusterX(), next.clusterY(), next.clusterZ(), next.mesh()));
         }
         long[] evictions = this.pendingEvictions.isEmpty()
                 ? EMPTY_EVICTIONS
@@ -516,14 +564,14 @@ public final class TerrainStreamer implements AutoCloseable {
         boolean updated = this.scene.update(uploads, evictions, cameraX, cameraY, cameraZ);
         if (!updated) {
             for (int index = uploads.size() - 1; index >= 0; index--) {
-                SectionUpload upload = uploads.get(index);
-                this.readyForUpload.addFirst(new CompletedSection(
+                ClusterUpload upload = uploads.get(index);
+                this.readyForUpload.addFirst(new CompletedCluster(
                         this.generations.worldEpoch(),
                         upload.key(),
                         this.generations.current(upload.key()),
-                        upload.sectionX(),
-                        upload.sectionY(),
-                        upload.sectionZ(),
+                        upload.clusterX(),
+                        upload.clusterY(),
+                        upload.clusterZ(),
                         upload.mesh(),
                         null));
             }
@@ -533,7 +581,7 @@ public final class TerrainStreamer implements AutoCloseable {
         for (long key : evictions) {
             this.empty.remove(key);
         }
-        for (SectionUpload upload : uploads) {
+        for (ClusterUpload upload : uploads) {
             if (upload.mesh().isEmpty()) {
                 this.empty.add(upload.key());
             } else {
@@ -572,6 +620,7 @@ public final class TerrainStreamer implements AutoCloseable {
         this.desired.clear();
         this.empty.clear();
         this.pendingEvictions.clear();
+        this.dirtyClusters.clear();
         this.generations.resetWorld();
         this.queuedGeneration.clear();
         this.inFlightGeneration.clear();
@@ -597,16 +646,23 @@ public final class TerrainStreamer implements AutoCloseable {
                                 != request.generation());
     }
 
-    private record SectionRequest(long key, long generation, int priority, long distanceSquared) {
+    private record ClusterRequest(long key, long generation, int priority, long distanceSquared) {
     }
 
-    private record CompletedSection(
-            long worldEpoch,
-            long key,
-            long generation,
+    private record ClusterSectionSnapshot(
             int sectionX,
             int sectionY,
             int sectionZ,
+            RenderSectionRegion region) {
+    }
+
+    private record CompletedCluster(
+            long worldEpoch,
+            long key,
+            long generation,
+            int clusterX,
+            int clusterY,
+            int clusterZ,
             CpuSectionMesh mesh,
             Throwable failure) {
     }

@@ -10,6 +10,7 @@ import java.util.List;
 import java.util.Set;
 import org.lwjgl.system.MemoryStack;
 import org.lwjgl.vulkan.EXTRayTracingInvocationReorder;
+import org.lwjgl.vulkan.EXTOpacityMicromap;
 import org.lwjgl.vulkan.KHRAccelerationStructure;
 import org.lwjgl.vulkan.KHRDedicatedAllocation;
 import org.lwjgl.vulkan.KHRDeferredHostOperations;
@@ -19,6 +20,8 @@ import org.lwjgl.vulkan.NVRayTracingInvocationReorder;
 import org.lwjgl.vulkan.VK12;
 import org.lwjgl.vulkan.VkPhysicalDeviceAccelerationStructureFeaturesKHR;
 import org.lwjgl.vulkan.VkPhysicalDeviceAccelerationStructurePropertiesKHR;
+import org.lwjgl.vulkan.VkPhysicalDeviceOpacityMicromapFeaturesEXT;
+import org.lwjgl.vulkan.VkPhysicalDeviceOpacityMicromapPropertiesEXT;
 import org.lwjgl.vulkan.VkPhysicalDeviceFeatures;
 import org.lwjgl.vulkan.VkPhysicalDeviceFeatures2;
 import org.lwjgl.vulkan.VkPhysicalDeviceProperties2;
@@ -50,6 +53,9 @@ public final class VulkanDeviceNegotiator {
             EXTRayTracingInvocationReorder
                     .VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_INVOCATION_REORDER_FEATURES_EXT,
             VkPhysicalDeviceRayTracingInvocationReorderFeaturesEXT.SIZEOF);
+    private static final VulkanPNextStruct OPACITY_MICROMAP_FEATURES = new VulkanPNextStruct(
+            EXTOpacityMicromap.VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_OPACITY_MICROMAP_FEATURES_EXT,
+            VkPhysicalDeviceOpacityMicromapFeaturesEXT.SIZEOF);
 
     private static final VulkanFeature SHADER_INT64 = new VulkanFeature(
             VulkanBackend.VK10_FEATURES_STRUCT,
@@ -99,6 +105,10 @@ public final class VulkanDeviceNegotiator {
             INVOCATION_REORDER_FEATURES,
             "rayTracingInvocationReorder",
             VkPhysicalDeviceRayTracingInvocationReorderFeaturesEXT.RAYTRACINGINVOCATIONREORDER);
+    private static final VulkanFeature OPACITY_MICROMAP = new VulkanFeature(
+            OPACITY_MICROMAP_FEATURES,
+            "micromap",
+            VkPhysicalDeviceOpacityMicromapFeaturesEXT.MICROMAP);
 
     private VulkanDeviceNegotiator() {
     }
@@ -112,6 +122,8 @@ public final class VulkanDeviceNegotiator {
         boolean invocationReorderExtension = physicalDevice.hasDeviceExtension(
                 EXTRayTracingInvocationReorder
                         .VK_EXT_RAY_TRACING_INVOCATION_REORDER_EXTENSION_NAME);
+        boolean opacityMicromapExtension = physicalDevice.hasDeviceExtension(
+                EXTOpacityMicromap.VK_EXT_OPACITY_MICROMAP_EXTENSION_NAME);
         for (String extension : REQUIRED_EXTENSIONS) {
             if (!physicalDevice.hasDeviceExtension(extension)) {
                 missing.add(extension);
@@ -129,13 +141,22 @@ public final class VulkanDeviceNegotiator {
             VkPhysicalDeviceRayTracingInvocationReorderFeaturesEXT invocationReorder =
                     VkPhysicalDeviceRayTracingInvocationReorderFeaturesEXT.calloc(stack)
                             .sType$Default();
+            VkPhysicalDeviceOpacityMicromapFeaturesEXT opacityMicromap =
+                    VkPhysicalDeviceOpacityMicromapFeaturesEXT.calloc(stack).sType$Default();
             features.pNext(vulkan11.address());
             vulkan11.pNext(vulkan12.address());
             vulkan12.pNext(acceleration.address());
             acceleration.pNext(rayTracing.address());
+            long optionalFeatureChain = 0L;
             if (invocationReorderExtension) {
-                rayTracing.pNext(invocationReorder.address());
+                invocationReorder.pNext(optionalFeatureChain);
+                optionalFeatureChain = invocationReorder.address();
             }
+            if (opacityMicromapExtension) {
+                opacityMicromap.pNext(optionalFeatureChain);
+                optionalFeatureChain = opacityMicromap.address();
+            }
+            rayTracing.pNext(optionalFeatureChain);
             VK12.vkGetPhysicalDeviceFeatures2(physicalDevice.vkPhysicalDevice(), features);
 
             if (!features.features().shaderInt64()) {
@@ -172,11 +193,20 @@ public final class VulkanDeviceNegotiator {
             VkPhysicalDeviceRayTracingInvocationReorderPropertiesEXT invocationReorderProperties =
                     VkPhysicalDeviceRayTracingInvocationReorderPropertiesEXT.calloc(stack)
                             .sType$Default();
+            VkPhysicalDeviceOpacityMicromapPropertiesEXT opacityMicromapProperties =
+                    VkPhysicalDeviceOpacityMicromapPropertiesEXT.calloc(stack).sType$Default();
             properties.pNext(rayProperties.address());
             rayProperties.pNext(accelerationProperties.address());
+            long optionalPropertyChain = 0L;
             if (invocationReorderExtension) {
-                accelerationProperties.pNext(invocationReorderProperties.address());
+                invocationReorderProperties.pNext(optionalPropertyChain);
+                optionalPropertyChain = invocationReorderProperties.address();
             }
+            if (opacityMicromapExtension) {
+                opacityMicromapProperties.pNext(optionalPropertyChain);
+                optionalPropertyChain = opacityMicromapProperties.address();
+            }
+            accelerationProperties.pNext(optionalPropertyChain);
             VK12.vkGetPhysicalDeviceProperties2(physicalDevice.vkPhysicalDevice(), properties);
 
             if (rayProperties.maxRayRecursionDepth() < 1) {
@@ -256,7 +286,9 @@ public final class VulkanDeviceNegotiator {
             // EXT deliberately permits hit objects without real reordering. Prime loads its SER
             // permutation only when the driver advertises both the feature and REORDER mode; a
             // no-op implementation would add live-state save/restore structure without solving
-            // the divergence this path exists for. Two terrain hit groups require index 1.
+            // the divergence this path exists for. The reported record-index limit governs the
+            // explicit hit-object override instruction, not the number of BLAS geometries; Prime
+            // does not issue that instruction and retains its existing conservative index-1 check.
             // LWJGL owns the shared EXT/NV reorder-mode enum alias in its older NV binding class;
             // Prime does not query or enable VK_NV_ray_tracing_invocation_reorder.
             boolean invocationReorderSupported = invocationReorderExtension
@@ -272,6 +304,15 @@ public final class VulkanDeviceNegotiator {
                 enabledFeatures.add(INVOCATION_REORDER);
             }
 
+            boolean opacityMicromapSupported = opacityMicromapExtension
+                    && opacityMicromap.micromap()
+                    && opacityMicromapProperties.maxOpacity4StateSubdivisionLevel()
+                            >= dev.prime.render.terrain.OpacityMicromapData.SUBDIVISION_LEVEL;
+            if (opacityMicromapSupported) {
+                enabledExtensions.add(EXTOpacityMicromap.VK_EXT_OPACITY_MICROMAP_EXTENSION_NAME);
+                enabledFeatures.add(OPACITY_MICROMAP);
+            }
+
             return new VulkanCapabilities(
                     true,
                     deviceName,
@@ -284,6 +325,10 @@ public final class VulkanDeviceNegotiator {
                     rayProperties.maxRayRecursionDepth(),
                     accelerationProperties.minAccelerationStructureScratchOffsetAlignment(),
                     invocationReorderSupported,
+                    opacityMicromapSupported,
+                    opacityMicromapSupported
+                            ? opacityMicromapProperties.maxOpacity4StateSubdivisionLevel()
+                            : 0,
                     fsrFp16Supported);
         }
     }

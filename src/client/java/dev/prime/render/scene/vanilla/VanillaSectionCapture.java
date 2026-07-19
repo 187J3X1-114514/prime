@@ -82,13 +82,14 @@ public final class VanillaSectionCapture implements AutoCloseable {
             SpriteFinder blockSpriteFinder,
             LabPbrMaterialSet labPbrMaterials,
             VanillaGeometryPolicy geometryPolicy,
-            boolean cutoutLeaves) {
+            boolean cutoutLeaves,
+            boolean buildOpacityMicromap) {
         this.region = region;
         this.blockColors = blockColors;
         this.blockSpriteFinder = blockSpriteFinder;
         this.geometryPolicy = geometryPolicy;
         this.cutoutLeaves = cutoutLeaves;
-        this.mesh = new SectionMeshAccumulator(labPbrMaterials);
+        this.mesh = new SectionMeshAccumulator(labPbrMaterials, buildOpacityMicromap);
     }
 
     public static VanillaSectionCapture open(
@@ -97,7 +98,8 @@ public final class VanillaSectionCapture implements AutoCloseable {
             SpriteFinder blockSpriteFinder,
             LabPbrMaterialSet labPbrMaterials,
             VanillaGeometryPolicy geometryPolicy,
-            boolean cutoutLeaves) {
+            boolean cutoutLeaves,
+            boolean buildOpacityMicromap) {
         if (ACTIVE.get() != null) {
             throw new IllegalStateException("Nested vanilla Section capture is not supported");
         }
@@ -107,7 +109,8 @@ public final class VanillaSectionCapture implements AutoCloseable {
                 blockSpriteFinder,
                 labPbrMaterials,
                 geometryPolicy,
-                cutoutLeaves);
+                cutoutLeaves,
+                buildOpacityMicromap);
         ACTIVE.set(capture);
         return capture;
     }
@@ -298,7 +301,6 @@ public final class VanillaSectionCapture implements AutoCloseable {
         }
         this.mesh.addQuad(quad, this.blockSurface.set(
                 tint,
-                layer != ChunkSectionLayer.SOLID || foliage,
                 cutout,
                 sprite.contents().isAnimated(),
                 transmissive,
@@ -399,7 +401,6 @@ public final class VanillaSectionCapture implements AutoCloseable {
         }
         this.mesh.addQuad(quad, this.blockSurface.set(
                 tint,
-                layer != ChunkSectionLayer.SOLID || foliage,
                 cutout,
                 source.animated() || sprite.contents().isAnimated(),
                 transmissive,
@@ -610,7 +611,6 @@ public final class VanillaSectionCapture implements AutoCloseable {
                     || this.overlaySprite != null && this.overlaySprite.contents().isAnimated();
             this.owner.mesh.addQuad(this.quad, this.surface.set(
                     this.tint,
-                    this.transmissive,
                     false,
                     animated,
                     this.transmissive,

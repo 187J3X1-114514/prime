@@ -89,8 +89,8 @@ final class ShaderAbiTest {
         assertEquals(0, ShaderAbi.SECTION_PRIMITIVE_ADDRESS_OFFSET);
         assertEquals(8, ShaderAbi.SECTION_LIGHT_ADDRESS_OFFSET);
         assertEquals(16, ShaderAbi.SECTION_WORLD_LIGHT_ADDRESS_OFFSET);
-        assertEquals(24, ShaderAbi.SECTION_OPAQUE_BASE_OFFSET);
-        assertEquals(28, ShaderAbi.SECTION_CUTOUT_BASE_OFFSET);
+        assertEquals(24, ShaderAbi.SECTION_CUTOUT_BASE_OFFSET);
+        assertEquals(28, ShaderAbi.SECTION_TRANSMISSIVE_BASE_OFFSET);
         assertEquals(32, ShaderAbi.SECTION_WORLD_LEAF_NODE_OFFSET);
         assertEquals(40, ShaderAbi.SECTION_WORLD_LIGHT_FORWARD_ADDRESS_OFFSET);
         assertEquals(48, ShaderAbi.SECTION_TRANSLATION_OFFSET);

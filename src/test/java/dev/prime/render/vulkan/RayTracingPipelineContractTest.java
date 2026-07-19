@@ -59,7 +59,9 @@ final class RayTracingPipelineContractTest {
         String closestHit = Files.readString(shaderRoot.resolve("world.rchit"));
 
         assertEquals(2, RayTracingPipeline.MISS_GROUP_COUNT);
-        assertEquals(4, RayTracingPipeline.HIT_GROUP_COUNT);
+        assertEquals(6, RayTracingPipeline.HIT_GROUP_COUNT);
+        assertTrue(integrator.contains(
+                "primeTraceSurfaceWithSbtOffset(path.traceOrigin, path.rayDirection, 3u)"));
         assertTrue(shadowMiss.contains("layout(location = 1) rayPayloadInEXT uint primeShadowOccluded"));
         assertTrue(integrator.contains("gl_RayFlagsSkipClosestHitShaderEXT"));
         assertTrue(integrator.contains("return primeShadowOccluded == 0u"));

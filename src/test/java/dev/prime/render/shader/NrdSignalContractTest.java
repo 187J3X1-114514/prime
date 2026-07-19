@@ -58,7 +58,7 @@ final class NrdSignalContractTest {
         // One declaration and one load: composition alpha and specular RGB share the same fetch.
         assertEquals(2, occurrences(composite, "primeCompositeSpecularMaterial"));
         assertTrue(opaqueAnyHit.contains("primeMaterialIsTransmissive"));
-        assertTrue(integrator.contains("primeTraceSurfaceWithSbtOffset(path.traceOrigin, path.rayDirection, 2u)"));
+        assertTrue(integrator.contains("primeTraceSurfaceWithSbtOffset(path.traceOrigin, path.rayDirection, 3u)"));
         assertTrue(transparent.contains("primeTraceFirstInterfaceBranch("));
         assertTrue(transparent.contains("#define PRIME_REALTIME_SINGLE_REFRACTION 1"));
         assertTrue(transparent.contains("primeSampleMinecraftRealtimeTransmissionBranch("));

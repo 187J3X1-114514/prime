@@ -16,6 +16,7 @@ final class SectionClusterMeshBuilder {
     private final boolean[] populatedSections = new boolean[SectionCluster.SECTION_COUNT];
     private int opaqueTriangleCount;
     private int cutoutTriangleCount;
+    private int transmissiveTriangleCount;
     private int emitterCount;
 
     SectionClusterMeshBuilder(int clusterX, int clusterY, int clusterZ) {
@@ -55,11 +56,15 @@ final class SectionClusterMeshBuilder {
                 this.opaqueTriangleCount, mesh.opaqueTriangleCount());
         this.cutoutTriangleCount = Math.addExact(
                 this.cutoutTriangleCount, mesh.cutoutTriangleCount());
+        this.transmissiveTriangleCount = Math.addExact(
+                this.transmissiveTriangleCount, mesh.transmissiveTriangleCount());
         this.emitterCount = Math.addExact(this.emitterCount, mesh.lights().emitterCount());
     }
 
     CpuSectionMesh build() {
-        int triangleCount = Math.addExact(this.opaqueTriangleCount, this.cutoutTriangleCount);
+        int triangleCount = Math.addExact(
+                Math.addExact(this.opaqueTriangleCount, this.cutoutTriangleCount),
+                this.transmissiveTriangleCount);
         float[] positions = new float[Math.multiplyExact(
                 triangleCount, POSITION_WORDS_PER_TRIANGLE)];
         int[] primitives = new int[Math.multiplyExact(
@@ -70,7 +75,14 @@ final class SectionClusterMeshBuilder {
                 this.opaqueTriangleCount, POSITION_WORDS_PER_TRIANGLE);
         int cutoutPrimitiveCursor = Math.multiplyExact(
                 this.opaqueTriangleCount, PRIMITIVE_WORDS_PER_TRIANGLE);
+        int transmissivePositionCursor = Math.multiplyExact(
+                Math.addExact(this.opaqueTriangleCount, this.cutoutTriangleCount),
+                POSITION_WORDS_PER_TRIANGLE);
+        int transmissivePrimitiveCursor = Math.multiplyExact(
+                Math.addExact(this.opaqueTriangleCount, this.cutoutTriangleCount),
+                PRIMITIVE_WORDS_PER_TRIANGLE);
         ArrayList<CpuSectionLights.Translated> lightSources = new ArrayList<>();
+        OpacityMicromapData.Builder opacityMicromap = new OpacityMicromapData.Builder();
 
         for (Entry entry : this.entries) {
             CpuSectionMesh mesh = entry.mesh;
@@ -81,10 +93,14 @@ final class SectionClusterMeshBuilder {
                     mesh.opaqueTriangleCount(), POSITION_WORDS_PER_TRIANGLE);
             int cutoutPositionWords = Math.multiplyExact(
                     mesh.cutoutTriangleCount(), POSITION_WORDS_PER_TRIANGLE);
+            int transmissivePositionWords = Math.multiplyExact(
+                    mesh.transmissiveTriangleCount(), POSITION_WORDS_PER_TRIANGLE);
             int opaquePrimitiveWords = Math.multiplyExact(
                     mesh.opaqueTriangleCount(), PRIMITIVE_WORDS_PER_TRIANGLE);
             int cutoutPrimitiveWords = Math.multiplyExact(
                     mesh.cutoutTriangleCount(), PRIMITIVE_WORDS_PER_TRIANGLE);
+            int transmissivePrimitiveWords = Math.multiplyExact(
+                    mesh.transmissiveTriangleCount(), PRIMITIVE_WORDS_PER_TRIANGLE);
 
             copyTranslatedPositions(
                     mesh.positions(),
@@ -118,11 +134,30 @@ final class SectionClusterMeshBuilder {
                     cutoutPrimitiveCursor,
                     cutoutPrimitiveWords,
                     entry.lightOffset);
+            copyTranslatedPositions(
+                    mesh.positions(),
+                    opaquePositionWords + cutoutPositionWords,
+                    positions,
+                    transmissivePositionCursor,
+                    transmissivePositionWords,
+                    translateX,
+                    translateY,
+                    translateZ);
+            copyPrimitives(
+                    mesh.primitiveRecords(),
+                    opaquePrimitiveWords + cutoutPrimitiveWords,
+                    primitives,
+                    transmissivePrimitiveCursor,
+                    transmissivePrimitiveWords,
+                    entry.lightOffset);
 
             opaquePositionCursor += opaquePositionWords;
             opaquePrimitiveCursor += opaquePrimitiveWords;
             cutoutPositionCursor += cutoutPositionWords;
             cutoutPrimitiveCursor += cutoutPrimitiveWords;
+            transmissivePositionCursor += transmissivePositionWords;
+            transmissivePrimitiveCursor += transmissivePrimitiveWords;
+            opacityMicromap.append(mesh.opacityMicromap());
             if (!mesh.lights().isEmpty()) {
                 lightSources.add(new CpuSectionLights.Translated(
                         mesh.lights(), translateX, translateY, translateZ));
@@ -138,6 +173,8 @@ final class SectionClusterMeshBuilder {
                 primitives,
                 this.opaqueTriangleCount,
                 this.cutoutTriangleCount,
+                this.transmissiveTriangleCount,
+                opacityMicromap.build(),
                 lights);
     }
 

@@ -39,6 +39,7 @@ public final class VanillaSectionMesher {
             LabPbrMaterialSet labPbrMaterials,
             VanillaGeometryPolicy geometryPolicy,
             boolean cutoutLeaves,
+            boolean buildOpacityMicromap,
             int sectionX,
             int sectionY,
             int sectionZ,
@@ -56,7 +57,8 @@ public final class VanillaSectionMesher {
                 blockSpriteFinder,
                 labPbrMaterials,
                 geometryPolicy,
-                cutoutLeaves)) {
+                cutoutLeaves,
+                buildOpacityMicromap)) {
             SectionCompiler.Results results = compiler.compile(
                     section, region, VertexSorting.byDistance(0.0F, 0.0F, 0.0F), builders);
             try {

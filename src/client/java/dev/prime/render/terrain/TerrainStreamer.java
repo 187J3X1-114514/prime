@@ -55,10 +55,17 @@ public final class TerrainStreamer implements AutoCloseable {
     private static final int MAX_UNLOADED_PROBES_PER_FRAME = 64;
     private static final int MAX_EXTERNAL_DIRTY_SECTIONS = 16_384;
     private static final CpuSectionMesh EMPTY_MESH = new CpuSectionMesh(
-            new float[0], new int[0], 0, 0, CpuSectionLights.EMPTY);
+            new float[0],
+            new int[0],
+            0,
+            0,
+            0,
+            OpacityMicromapData.EMPTY,
+            CpuSectionLights.EMPTY);
 
     private final TerrainScene scene;
-    private final VanillaSceneInterpreter sceneInterpreter = new VanillaSceneInterpreter();
+    private final VanillaSceneInterpreter sceneInterpreter;
+    private final boolean opacityMicromapSupported;
     private final Executor workers;
     private final int maximumInFlight;
     private final ArrayBlockingQueue<CompletedCluster> completed;
@@ -94,6 +101,8 @@ public final class TerrainStreamer implements AutoCloseable {
 
     public TerrainStreamer(VulkanContext context, StagingArena stagingArena) {
         this.scene = new TerrainScene(context, stagingArena);
+        this.opacityMicromapSupported = context.capabilities().opacityMicromapSupported();
+        this.sceneInterpreter = new VanillaSceneInterpreter(this.opacityMicromapSupported);
         // Match vanilla section compilation: use Minecraft's shared work-stealing pool and its
         // configured CPU limit instead of imposing a second, Prime-specific four-thread ceiling.
         this.workers = Util.backgroundExecutor();
@@ -520,7 +529,8 @@ public final class TerrainStreamer implements AutoCloseable {
                 this.readyForUpload.removeFirst();
                 continue;
             }
-            long nextEndOffset = stagingEndOffset(uploadBytes, next.mesh());
+            long nextEndOffset = stagingEndOffset(
+                    uploadBytes, next.mesh(), this.opacityMicromapSupported);
             if (!uploads.isEmpty() && nextEndOffset > MAX_UPLOAD_BYTES_PER_FRAME) {
                 break;
             }
@@ -561,27 +571,51 @@ public final class TerrainStreamer implements AutoCloseable {
         }
     }
 
-    static long stagingEndOffset(long cursor, CpuSectionMesh mesh) {
+    static long stagingEndOffset(
+            long cursor, CpuSectionMesh mesh, boolean includeOpacityMicromap) {
         if (mesh.isEmpty()) {
             return cursor;
         }
+        OpacityMicromapData opacityMicromap = mesh.opacityMicromap();
         return stagingEndOffset(
                 cursor,
                 (long) mesh.positions().length * Float.BYTES,
                 (long) mesh.primitiveRecords().length * Integer.BYTES,
-                mesh.lights().byteSize());
+                mesh.lights().byteSize(),
+                includeOpacityMicromap
+                        ? (long) opacityMicromap.triangleIndices().length * Integer.BYTES
+                        : 0L,
+                includeOpacityMicromap ? opacityMicromap.blocks().length : 0L,
+                includeOpacityMicromap
+                        ? (long) opacityMicromap.blockCount()
+                                * org.lwjgl.vulkan.VkMicromapTriangleEXT.SIZEOF
+                        : 0L);
     }
 
     static long stagingEndOffset(
             long cursor,
             long positionBytes,
             long primitiveBytes,
-            long lightBytes) {
+            long lightBytes,
+            long opacityIndexBytes,
+            long opacityDataBytes,
+            long opacityTriangleBytes) {
         long endOffset = StagingArena.requiredEndOffset(cursor, positionBytes, Float.BYTES);
         endOffset = StagingArena.requiredEndOffset(endOffset, primitiveBytes, Integer.BYTES);
-        return lightBytes == 0L
+        if (lightBytes != 0L) {
+            endOffset = StagingArena.requiredEndOffset(endOffset, lightBytes, 16L);
+        }
+        if (opacityIndexBytes != 0L) {
+            endOffset = StagingArena.requiredEndOffset(
+                    endOffset, opacityIndexBytes, Integer.BYTES);
+        }
+        if (opacityDataBytes != 0L) {
+            endOffset = StagingArena.requiredEndOffset(endOffset, opacityDataBytes, 16L);
+        }
+        return opacityTriangleBytes == 0L
                 ? endOffset
-                : StagingArena.requiredEndOffset(endOffset, lightBytes, 16L);
+                : StagingArena.requiredEndOffset(
+                        endOffset, opacityTriangleBytes, Integer.BYTES);
     }
 
     private void clearWorld(double cameraX, double cameraY, double cameraZ) {

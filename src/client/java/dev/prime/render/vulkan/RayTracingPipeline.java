@@ -14,6 +14,7 @@ import org.lwjgl.system.MemoryStack;
 import org.lwjgl.system.MemoryUtil;
 import org.lwjgl.vulkan.KHRAccelerationStructure;
 import org.lwjgl.vulkan.KHRRayTracingPipeline;
+import org.lwjgl.vulkan.EXTOpacityMicromap;
 import org.lwjgl.vulkan.KHRSynchronization2;
 import org.lwjgl.vulkan.VK12;
 import org.lwjgl.vulkan.VkBufferMemoryBarrier2;
@@ -37,9 +38,9 @@ import org.lwjgl.vulkan.VkWriteDescriptorSet;
 import org.lwjgl.vulkan.VkWriteDescriptorSetAccelerationStructureKHR;
 
 public final class RayTracingPipeline implements Destroyable {
-    private static final int GROUP_COUNT = 7;
+    private static final int GROUP_COUNT = 9;
     static final int MISS_GROUP_COUNT = 2;
-    static final int HIT_GROUP_COUNT = 4;
+    static final int HIT_GROUP_COUNT = 6;
     private static final int ALL_RT_STAGES =
             KHRRayTracingPipeline.VK_SHADER_STAGE_RAYGEN_BIT_KHR
                     | KHRRayTracingPipeline.VK_SHADER_STAGE_MISS_BIT_KHR
@@ -583,16 +584,21 @@ public final class RayTracingPipeline implements Destroyable {
             generalGroup(groups.get(2), 2);
             triangleGroup(groups.get(3), 3, KHRRayTracingPipeline.VK_SHADER_UNUSED_KHR);
             triangleGroup(groups.get(4), 3, 4);
-            // Records 2/3 are selected only by the opaque camera ray. Both geometries use the
-            // filter any-hit so a future mesher cannot accidentally make the partition depend on
-            // which BLAS geometry contains a transmissive primitive.
-            triangleGroup(groups.get(5), 3, 5);
+            triangleGroup(groups.get(5), 3, 4);
+            // Records 3/4/5 are selected only by the opaque camera ray. Cutout coverage remains
+            // visible while the transmissive partition is explicitly skipped by the filter.
             triangleGroup(groups.get(6), 3, 5);
+            triangleGroup(groups.get(7), 3, 5);
+            triangleGroup(groups.get(8), 3, 5);
 
             VkRayTracingPipelineCreateInfoKHR.Buffer createInfo =
                     VkRayTracingPipelineCreateInfoKHR.calloc(1, stack);
             createInfo.get(0)
                     .sType$Default()
+                    .flags(context.capabilities().opacityMicromapSupported()
+                            ? EXTOpacityMicromap
+                                    .VK_PIPELINE_CREATE_RAY_TRACING_OPACITY_MICROMAP_BIT_EXT
+                            : 0)
                     .pStages(stages)
                     .pGroups(groups)
                     .maxPipelineRayRecursionDepth(1)

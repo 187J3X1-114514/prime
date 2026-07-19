@@ -765,12 +765,13 @@ PrimeIntegrationResult primeIntegrate(PathState path, IntegratorRecord integrato
     uint maximumBounces = min(primePush.path.z & 0xffffu, 256u);
     for (path.bounce = 0u; path.bounce < maximumBounces; ++path.bounce) {
 #if defined(PRIME_OPAQUE_PRIMARY_PASS)
-        // SBT records 2/3 differ only at the camera vertex: transparent intersections are skipped
-        // so NRD receives a coherent opaque guide. Secondary and shadow rays keep the ordinary
-        // hit groups and therefore retain all transparent transport instead of treating glass as
+        // The second three-record SBT range differs only at the camera vertex: transmissive
+        // intersections are skipped while alpha-tested cutouts retain their coverage, so NRD
+        // receives a coherent opaque guide. Secondary and shadow rays keep the ordinary hit
+        // groups and therefore retain all transparent transport instead of treating glass as
         // absent from lighting, which would bias the underlying opaque estimator.
         SurfaceInteraction surface = path.bounce == 0u
-                ? primeTraceSurfaceWithSbtOffset(path.traceOrigin, path.rayDirection, 2u)
+                ? primeTraceSurfaceWithSbtOffset(path.traceOrigin, path.rayDirection, 3u)
                 : primeTraceSurface(path.traceOrigin, path.rayDirection);
 #else
         SurfaceInteraction surface = primeTraceSurface(path.traceOrigin, path.rayDirection);

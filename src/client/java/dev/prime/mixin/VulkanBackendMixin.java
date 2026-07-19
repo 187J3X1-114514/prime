@@ -47,6 +47,12 @@ public abstract class VulkanBackendMixin {
                     capabilities.invocationReorderSupported()
                             ? "VK_EXT_ray_tracing_invocation_reorder"
                             : "unavailable (standard mega-kernel)");
+            PrimeClient.LOGGER.info(
+                    "Prime terrain opacity micromaps: {}",
+                    capabilities.opacityMicromapSupported()
+                            ? "VK_EXT_opacity_micromap, subdivision "
+                                    + capabilities.maxOpacityMicromapSubdivisionLevel()
+                            : "unavailable (cutout any-hit fallback)");
         } else {
             PrimeClient.LOGGER.warn("Prime ray tracing unavailable on {}: {}", capabilities.deviceName(), capabilities.unavailableReason());
         }

@@ -12,10 +12,12 @@ public record VulkanCapabilities(
         int maxRayRecursionDepth,
         int accelerationStructureScratchAlignment,
         boolean invocationReorderSupported,
+        boolean opacityMicromapSupported,
+        int maxOpacityMicromapSubdivisionLevel,
         boolean fsrFp16Supported) {
 
     public static VulkanCapabilities unavailable(String deviceName, String reason) {
         return new VulkanCapabilities(
-                false, deviceName, reason, 0, 0, 0, 0, 0, 0, 0, false, false);
+                false, deviceName, reason, 0, 0, 0, 0, 0, 0, 0, false, false, 0, false);
     }
 }

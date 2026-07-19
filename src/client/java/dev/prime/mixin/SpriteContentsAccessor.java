@@ -10,4 +10,7 @@ import org.spongepowered.asm.mixin.gen.Accessor;
 public interface SpriteContentsAccessor {
     @Accessor("originalImage")
     NativeImage prime$originalImage();
+
+    @Accessor("byMipLevel")
+    NativeImage[] prime$byMipLevel();
 }

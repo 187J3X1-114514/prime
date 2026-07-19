@@ -26,7 +26,12 @@ public final class VanillaSceneInterpreter implements AutoCloseable {
     private final ConcurrentLinkedQueue<SectionBufferBuilderPack> availableSectionBuffers =
             new ConcurrentLinkedQueue<>();
     private volatile VanillaGeometryPolicy geometryPolicy = VanillaGeometryPolicy.VANILLA_PARITY;
+    private final boolean buildOpacityMicromap;
     private volatile boolean closed;
+
+    public VanillaSceneInterpreter(boolean buildOpacityMicromap) {
+        this.buildOpacityMicromap = buildOpacityMicromap;
+    }
 
     public CpuSectionMesh compileSection(
             RenderSectionRegion region,
@@ -57,6 +62,7 @@ public final class VanillaSceneInterpreter implements AutoCloseable {
                     labPbrMaterials,
                     policy,
                     cutoutLeaves,
+                    this.buildOpacityMicromap,
                     sectionX,
                     sectionY,
                     sectionZ,

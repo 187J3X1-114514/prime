@@ -38,4 +38,21 @@ final class PreparedBlasTest {
                 IllegalArgumentException.class,
                 () -> PreparedBlas.cutoutGeometryVertexAddress(POSITION_ADDRESS, 0, -1));
     }
+
+    @Test
+    void transmissiveGeometryStartsAfterOpaqueAndCutoutPartitions() {
+        long expected = POSITION_ADDRESS + (12L + 5L) * 9L * Float.BYTES;
+        assertEquals(
+                expected,
+                PreparedBlas.transmissiveGeometryVertexAddress(
+                        POSITION_ADDRESS, 12, 5, 7));
+    }
+
+    @Test
+    void emptyTransmissiveGeometryUsesLiveBufferBase() {
+        assertEquals(
+                POSITION_ADDRESS,
+                PreparedBlas.transmissiveGeometryVertexAddress(
+                        POSITION_ADDRESS, 12, 5, 0));
+    }
 }

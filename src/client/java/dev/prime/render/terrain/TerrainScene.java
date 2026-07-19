@@ -18,6 +18,7 @@ import org.lwjgl.system.MemoryStack;
 import org.lwjgl.vulkan.KHRAccelerationStructure;
 import org.lwjgl.vulkan.KHRRayTracingPipeline;
 import org.lwjgl.vulkan.KHRSynchronization2;
+import org.lwjgl.vulkan.EXTOpacityMicromap;
 import org.lwjgl.vulkan.VK12;
 import org.lwjgl.vulkan.VkBufferCopy;
 import org.lwjgl.vulkan.VkCommandBuffer;
@@ -104,7 +105,9 @@ public final class TerrainScene implements AutoCloseable {
         long clusterStagingBytes = 0L;
         for (ClusterUpload upload : uploads) {
             clusterStagingBytes = TerrainStreamer.stagingEndOffset(
-                    clusterStagingBytes, upload.mesh());
+                    clusterStagingBytes,
+                    upload.mesh(),
+                    this.context.capabilities().opacityMicromapSupported());
         }
         StagingArena.Batch clusterStagingBatch = needsClusterStaging
                 ? this.stagingArena.tryBeginBatch(clusterStagingBytes)
@@ -193,14 +196,38 @@ public final class TerrainScene implements AutoCloseable {
             }
 
             if (!replacements.isEmpty() || replacementWorldLights != null) {
+                boolean hasOpacityMicromapBuild = replacements.stream()
+                        .anyMatch(cluster -> cluster.blas().hasOpacityMicromapBuild());
                 memoryBarrier(
                         commandBuffer,
                         VK12.VK_PIPELINE_STAGE_TRANSFER_BIT,
                         VK12.VK_ACCESS_TRANSFER_WRITE_BIT,
                         KHRAccelerationStructure.VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR
+                                | (hasOpacityMicromapBuild
+                                        ? EXTOpacityMicromap.VK_PIPELINE_STAGE_2_MICROMAP_BUILD_BIT_EXT
+                                        : 0L)
                                 | KHRRayTracingPipeline.VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR,
                         KHRAccelerationStructure.VK_ACCESS_ACCELERATION_STRUCTURE_READ_BIT_KHR
+                                | (hasOpacityMicromapBuild
+                                        ? EXTOpacityMicromap.VK_ACCESS_2_MICROMAP_READ_BIT_EXT
+                                        : 0L)
                                 | VK12.VK_ACCESS_SHADER_READ_BIT);
+                if (hasOpacityMicromapBuild) {
+                    for (GpuCluster cluster : replacements) {
+                        cluster.blas().recordOpacityMicromapBuild(commandBuffer);
+                    }
+                    // EXT micromap construction and BLAS construction are distinct device
+                    // operations. The BLAS is allowed to consume the micromap only after its
+                    // implementation-owned data is visible; this dependency must remain even
+                    // though both commands currently share one transient command buffer.
+                    memoryBarrier(
+                            commandBuffer,
+                            EXTOpacityMicromap.VK_PIPELINE_STAGE_2_MICROMAP_BUILD_BIT_EXT,
+                            EXTOpacityMicromap.VK_ACCESS_2_MICROMAP_WRITE_BIT_EXT,
+                            KHRAccelerationStructure
+                                    .VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR,
+                            EXTOpacityMicromap.VK_ACCESS_2_MICROMAP_READ_BIT_EXT);
+                }
                 for (GpuCluster cluster : replacements) {
                     cluster.blas().recordBuild(commandBuffer);
                 }
@@ -255,6 +282,7 @@ public final class TerrainScene implements AutoCloseable {
                                 worldLightAddress,
                                 worldLightForwardAddress,
                                 cluster.blas().opaqueTriangleCount(),
+                                cluster.blas().cutoutTriangleCount(),
                                 worldLightTree.leafNode(clusterIndex),
                                 cluster.lights().emitterCount(),
                                 worldLightNodeCount,
@@ -588,8 +616,12 @@ public final class TerrainScene implements AutoCloseable {
                     this.context,
                     positions,
                     primitives,
+                    mesh.opacityMicromap(),
+                    stagingBatch,
+                    commandBuffer,
                     mesh.opaqueTriangleCount(),
                     mesh.cutoutTriangleCount(),
+                    mesh.transmissiveTriangleCount(),
                     "Prime cluster " + upload.key() + " BLAS");
             return new GpuCluster(
                     upload.key(),

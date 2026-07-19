@@ -15,28 +15,42 @@ public final class SectionMeshAccumulator {
     private static final int[] SECOND_TRIANGLE = new int[] {0, 2, 3};
 
     private final MeshBuilder opaque = new MeshBuilder();
-    private final MeshBuilder nonOpaque = new MeshBuilder();
+    private final MeshBuilder cutout = new MeshBuilder();
+    private final MeshBuilder transmissive = new MeshBuilder();
+    private final OpacityMicromapData.Builder opacityMicromap;
     private final CpuSectionLights.Builder lights = new CpuSectionLights.Builder();
     private final LabPbrMaterialSet labPbrMaterials;
 
-    public SectionMeshAccumulator(LabPbrMaterialSet labPbrMaterials) {
+    public SectionMeshAccumulator(
+            LabPbrMaterialSet labPbrMaterials, boolean buildOpacityMicromap) {
         this.labPbrMaterials = labPbrMaterials;
+        this.opacityMicromap = buildOpacityMicromap
+                ? new OpacityMicromapData.Builder()
+                : null;
     }
 
     public void addQuad(Quad quad, Surface surface) {
-        MeshBuilder destination = surface.nonOpaque() ? this.nonOpaque : this.opaque;
+        MeshBuilder destination = surface.transmissive()
+                ? this.transmissive
+                : (surface.cutout() ? this.cutout : this.opaque);
         this.emitTriangle(destination, quad, FIRST_TRIANGLE, surface);
         this.emitTriangle(destination, quad, SECOND_TRIANGLE, surface);
     }
 
     public CpuSectionMesh build() {
-        float[] positions = concatenate(this.opaque.positions, this.nonOpaque.positions);
-        int[] primitives = concatenate(this.opaque.primitives, this.nonOpaque.primitives);
+        float[] positions = concatenate(
+                this.opaque.positions, this.cutout.positions, this.transmissive.positions);
+        int[] primitives = concatenate(
+                this.opaque.primitives, this.cutout.primitives, this.transmissive.primitives);
         return new CpuSectionMesh(
                 positions,
                 primitives,
                 this.opaque.triangleCount,
-                this.nonOpaque.triangleCount,
+                this.cutout.triangleCount,
+                this.transmissive.triangleCount,
+                this.opacityMicromap == null
+                        ? OpacityMicromapData.fullyUnknown(this.cutout.triangleCount)
+                        : this.opacityMicromap.build(),
                 this.lights.build());
     }
 
@@ -72,6 +86,9 @@ public final class SectionMeshAccumulator {
         int packedUv0 = PrimitivePacking.packHalf2(uv0U, uv0V);
         int packedUv1 = PrimitivePacking.packHalf2(uv1U, uv1V);
         int packedUv2 = PrimitivePacking.packHalf2(uv2U, uv2V);
+        if (destination == this.cutout && this.opacityMicromap != null) {
+            this.opacityMicromap.addTriangle(surface.sprite(), packedUv0, packedUv1, packedUv2);
+        }
         int packedTint = PrimitivePacking.packTint(surface.tint());
         destination.primitives.add(packedUv0);
         destination.primitives.add(packedUv1);
@@ -159,19 +176,27 @@ public final class SectionMeshAccumulator {
         destination.triangleCount++;
     }
 
-    private static float[] concatenate(FloatArrayBuilder first, FloatArrayBuilder second) {
+    private static float[] concatenate(
+            FloatArrayBuilder first, FloatArrayBuilder second, FloatArrayBuilder third) {
         float[] result = Arrays.copyOf(first.values, first.size);
         int firstSize = result.length;
         result = Arrays.copyOf(result, firstSize + second.size);
         System.arraycopy(second.values, 0, result, firstSize, second.size);
+        int secondEnd = result.length;
+        result = Arrays.copyOf(result, secondEnd + third.size);
+        System.arraycopy(third.values, 0, result, secondEnd, third.size);
         return result;
     }
 
-    private static int[] concatenate(IntArrayBuilder first, IntArrayBuilder second) {
+    private static int[] concatenate(
+            IntArrayBuilder first, IntArrayBuilder second, IntArrayBuilder third) {
         int[] result = Arrays.copyOf(first.values, first.size);
         int firstSize = result.length;
         result = Arrays.copyOf(result, firstSize + second.size);
         System.arraycopy(second.values, 0, result, firstSize, second.size);
+        int secondEnd = result.length;
+        result = Arrays.copyOf(result, secondEnd + third.size);
+        System.arraycopy(third.values, 0, result, secondEnd, third.size);
         return result;
     }
 
@@ -190,7 +215,6 @@ public final class SectionMeshAccumulator {
     /** Mutable per-session scratch for semantics kept outside Minecraft's mesh interfaces. */
     public static final class Surface {
         private int tint;
-        private boolean nonOpaque;
         private boolean cutout;
         private boolean animated;
         private boolean transmissive;
@@ -202,7 +226,6 @@ public final class SectionMeshAccumulator {
 
         public Surface set(
                 int tint,
-                boolean nonOpaque,
                 boolean cutout,
                 boolean animated,
                 boolean transmissive,
@@ -212,7 +235,6 @@ public final class SectionMeshAccumulator {
                 int lightEmission,
                 TextureAtlasSprite sprite) {
             this.tint = tint;
-            this.nonOpaque = nonOpaque;
             this.cutout = cutout;
             this.animated = animated;
             this.transmissive = transmissive;
@@ -226,10 +248,6 @@ public final class SectionMeshAccumulator {
 
         int tint() {
             return this.tint;
-        }
-
-        boolean nonOpaque() {
-            return this.nonOpaque;
         }
 
         boolean cutout() {

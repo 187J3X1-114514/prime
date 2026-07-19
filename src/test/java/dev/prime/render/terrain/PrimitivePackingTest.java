@@ -152,12 +152,15 @@ final class PrimitivePackingTest {
     @Test
     void meshLayoutRejectsMismatchedArrayLengths() {
         CpuSectionMesh mesh = new CpuSectionMesh(
-                new float[9], new int[CpuSectionMesh.PRIMITIVE_WORDS], 1, 0, CpuSectionLights.EMPTY);
+                new float[9], new int[CpuSectionMesh.PRIMITIVE_WORDS], 1, 0, 0,
+                OpacityMicromapData.EMPTY, CpuSectionLights.EMPTY);
         assertEquals(68L, mesh.byteSize());
         assertThrows(IllegalArgumentException.class, () -> new CpuSectionMesh(
-                new float[8], new int[CpuSectionMesh.PRIMITIVE_WORDS], 1, 0, CpuSectionLights.EMPTY));
+                new float[8], new int[CpuSectionMesh.PRIMITIVE_WORDS], 1, 0, 0,
+                OpacityMicromapData.EMPTY, CpuSectionLights.EMPTY));
         assertThrows(IllegalArgumentException.class, () -> new CpuSectionMesh(
-                new float[9], new int[CpuSectionMesh.PRIMITIVE_WORDS - 1], 1, 0, CpuSectionLights.EMPTY));
+                new float[9], new int[CpuSectionMesh.PRIMITIVE_WORDS - 1], 1, 0, 0,
+                OpacityMicromapData.EMPTY, CpuSectionLights.EMPTY));
     }
 
     private static void assertNormalDirection(float x, float y, float z) {

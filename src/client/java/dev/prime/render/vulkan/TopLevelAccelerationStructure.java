@@ -269,6 +269,7 @@ public final class TopLevelAccelerationStructure {
                 long worldLightAddress,
                 long worldLightForwardAddress,
                 int opaqueTriangleCount,
+                int cutoutTriangleCount,
                 int worldLeafNode,
                 int lightCount,
                 int worldLightNodeCount,
@@ -307,10 +308,12 @@ public final class TopLevelAccelerationStructure {
             MemoryUtil.memPutLong(
                     sectionAddress + ShaderAbi.SECTION_WORLD_LIGHT_ADDRESS_OFFSET,
                     worldLightAddress);
-            MemoryUtil.memPutInt(sectionAddress + ShaderAbi.SECTION_OPAQUE_BASE_OFFSET, 0);
             MemoryUtil.memPutInt(
                     sectionAddress + ShaderAbi.SECTION_CUTOUT_BASE_OFFSET,
                     opaqueTriangleCount);
+            MemoryUtil.memPutInt(
+                    sectionAddress + ShaderAbi.SECTION_TRANSMISSIVE_BASE_OFFSET,
+                    Math.addExact(opaqueTriangleCount, cutoutTriangleCount));
             MemoryUtil.memPutInt(
                     sectionAddress + ShaderAbi.SECTION_WORLD_LEAF_NODE_OFFSET,
                     worldLeafNode);

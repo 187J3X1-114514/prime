@@ -108,6 +108,13 @@ public final class StagingArena implements AutoCloseable {
             return slice;
         }
 
+        public Slice write(byte[] data, long alignment) {
+            Slice slice = this.allocate(data.length, alignment);
+            MemoryUtil.memByteBuffer(
+                    this.page.buffer.mappedAddress() + slice.offset(), data.length).put(data);
+            return slice;
+        }
+
         private Slice allocate(long size, long alignment) {
             long endOffset = requiredEndOffset(this.cursor, size, alignment);
             if (endOffset > this.page.capacity) {

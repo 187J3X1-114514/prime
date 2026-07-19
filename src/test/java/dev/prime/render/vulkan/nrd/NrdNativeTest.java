@@ -42,7 +42,7 @@ final class NrdNativeTest {
     }
 
     @Test
-    void bundledBridgeCreatesReblurDiffuseSpecularDispatches() {
+    void bundledBridgeCreatesReblurAndSigmaSunShadowDispatches() {
         requireNativeRuntime();
         try (NrdNative.Instance instance = NrdNative.create(64, 48)) {
             NrdNative.Description description = instance.description();
@@ -118,7 +118,10 @@ final class NrdNativeTest {
                     true,
                     16.67f,
                     1_000.0f,
-                    true));
+                    true,
+                    0.0f,
+                    1.0f,
+                    0.0f));
             var dispatches = instance.getDispatches();
             assertTrue(dispatches.size() >= 7);
             Set<Integer> resourceTypes = new HashSet<>();
@@ -134,8 +137,10 @@ final class NrdNativeTest {
             }
             assertTrue(resourceTypes.contains(NrdNative.RESOURCE_IN_DIFF_RADIANCE_HITDIST));
             assertTrue(resourceTypes.contains(NrdNative.RESOURCE_IN_SPEC_RADIANCE_HITDIST));
+            assertTrue(resourceTypes.contains(NrdNative.RESOURCE_IN_PENUMBRA));
             assertTrue(resourceTypes.contains(NrdNative.RESOURCE_OUT_DIFF_RADIANCE_HITDIST));
             assertTrue(resourceTypes.contains(NrdNative.RESOURCE_OUT_SPEC_RADIANCE_HITDIST));
+            assertTrue(resourceTypes.contains(NrdNative.RESOURCE_OUT_SHADOW_TRANSLUCENCY));
             assertTrue(resourceTypes.contains(NrdNative.RESOURCE_OUT_VALIDATION));
             assertSame(dispatches, instance.getDispatches());
         }

@@ -40,19 +40,24 @@ final class RayTracingPipelineContractTest {
     }
 
     @Test
-    void shadowRaysUseTheirOwnMinimalPayloadAndMissRecord() throws IOException {
+    void shadowRaysUseDistancePayloadAndDedicatedHitRecordsForSigma() throws IOException {
         Path shaderRoot = Path.of(System.getProperty("user.dir"), "shaders");
         String integrator = Files.readString(shaderRoot.resolve("integrator.glsl"));
         String shadowMiss = Files.readString(shaderRoot.resolve("shadow.rmiss"));
+        String shadowHit = Files.readString(shaderRoot.resolve("shadow.rchit"));
         String closestHit = Files.readString(shaderRoot.resolve("world.rchit"));
 
         assertEquals(2, RayTracingPipeline.MISS_GROUP_COUNT);
-        assertEquals(3, RayTracingPipeline.HIT_GROUP_COUNT);
+        assertEquals(6, RayTracingPipeline.HIT_GROUP_COUNT);
         assertEquals(2, RayTracingPipeline.RAYGEN_GROUP_COUNT);
         assertFalse(integrator.contains("primeTraceSurfaceWithSbtOffset("));
-        assertTrue(shadowMiss.contains("layout(location = 1) rayPayloadInEXT uint primeShadowOccluded"));
-        assertTrue(integrator.contains("gl_RayFlagsSkipClosestHitShaderEXT"));
-        assertTrue(integrator.contains("return primeShadowOccluded == 0u"));
+        assertTrue(shadowMiss.contains(
+                "layout(location = 1) rayPayloadInEXT uint primeShadowHitDistanceBits"));
+        assertTrue(shadowMiss.contains("floatBitsToUint(65504.0)"));
+        assertTrue(shadowHit.contains("floatBitsToUint(min(gl_HitTEXT, 65503.0))"));
+        assertTrue(integrator.contains("float primeTraceShadowHitDistance("));
+        assertFalse(integrator.contains("gl_RayFlagsSkipClosestHitShaderEXT"));
+        assertTrue(integrator.contains("primeShadowHitDistanceBits"));
         assertFalse(closestHit.contains("PRIME_TRACE_SHADOW"));
     }
 

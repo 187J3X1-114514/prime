@@ -35,6 +35,8 @@ final class ShaderAbiTest {
         assertEquals(17, ShaderAbi.DESCRIPTOR_TRANSMISSION_GGX_ENERGY);
         assertEquals(18, ShaderAbi.DESCRIPTOR_LABPBR_NORMAL_ATLAS);
         assertEquals(19, ShaderAbi.DESCRIPTOR_LABPBR_SPECULAR_ATLAS);
+        assertEquals(20, ShaderAbi.DESCRIPTOR_NRD_SUN_LIGHTING);
+        assertEquals(21, ShaderAbi.DESCRIPTOR_NRD_SUN_PENUMBRA);
         assertEquals(0x80000000, ShaderAbi.PATH_CAMERA_IN_WATER_MASK);
         assertEquals(0x7fff, ShaderAbi.PATH_JITTER_PHASE_MASK);
         assertEquals(0, ShaderAbi.PATH_SUN_EV_QUARTER_SHIFT);
@@ -50,7 +52,7 @@ final class ShaderAbiTest {
         assertEquals("srgb", ShaderAbi.DISPLAY_COLOR_ENCODING);
         assertEquals("screen-2.5d", ShaderAbi.NRD_MOTION_SPACE);
         assertEquals(
-                "reblur-diffuse-specular-first-non-delta",
+                "reblur-diffuse-specular-plus-sigma-sun-shadow",
                 ShaderAbi.NRD_DENOISER);
         assertEquals("hillaire-8wave-rec2020-d65", ShaderAbi.ATMOSPHERE_SPECTRAL_MODEL);
         assertEquals(12.5F, ShaderAbi.ATMOSPHERE_SPACE_SUN_INTENSITY);

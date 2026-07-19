@@ -22,6 +22,8 @@ layout(set = 0, binding = 9, rgba16f) uniform readonly image2D primeReprojection
 layout(set = 0, binding = 10, rgba16f) uniform readonly image2D primeMotionDiagnostic;
 layout(set = 0, binding = 11, r8) uniform writeonly image2D primeFsrReactiveMask;
 layout(set = 0, binding = 12, r8) uniform writeonly image2D primeFsrTransparencyCompositionMask;
+layout(set = 0, binding = 13, rgba16f) uniform readonly image2D primeUnshadowedSunLighting;
+layout(set = 0, binding = 14, r16f) uniform readonly image2D primeSigmaSunShadow;
 
 layout(push_constant) uniform PrimeCompositePushConstants {
     uvec2 outputExtent;
@@ -128,6 +130,12 @@ void main() {
             specularMaterial.rgb,
             imageLoad(primeDenoisedDiffuse, ivec2(pixel)).rgb,
             imageLoad(primeDenoisedSpecular, ivec2(pixel)).rgb);
+    // SIGMA stores sqrt(visibility); this is the exact SIGMA_BackEnd_UnpackShadow contract.
+    float encodedSunShadow = imageLoad(primeSigmaSunShadow, ivec2(pixel)).x;
+    float sunVisibility = clamp(encodedSunShadow * encodedSunShadow, 0.0, 1.0);
+    if (material.a >= 0.0) {
+        surface += imageLoad(primeUnshadowedSunLighting, ivec2(pixel)).rgb * sunVisibility;
+    }
     vec3 radiance = surface + imageLoad(primeStableAccumulation, ivec2(pixel)).rgb;
     primeCompositeApplyAerial(pixel, material.a, radiance);
     if (any(isnan(radiance)) || any(isinf(radiance))) {

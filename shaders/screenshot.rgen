@@ -6,7 +6,7 @@
 #include "nrd_common.glsl"
 
 layout(location = 0) rayPayloadEXT TracePayload primePayload;
-layout(location = 1) rayPayloadEXT uint primeShadowOccluded;
+layout(location = 1) rayPayloadEXT uint primeShadowHitDistanceBits;
 
 #include "sampling.glsl"
 #include "bsdf.glsl"
@@ -31,7 +31,8 @@ void main() {
     // unsplit path contribution and retains transparent volume-stack transport.
     vec3 sampleRadiance = sampleResult.diffuseRadiance
             + sampleResult.specularRadiance
-            + sampleResult.stableRadiance;
+            + sampleResult.stableRadiance
+            + sampleResult.sunRadiance * sampleResult.sunVisibility;
     primeApplyAerialPerspective(pixel, sampleResult.primaryDistance, sampleRadiance);
     if (any(isnan(sampleRadiance)) || any(isinf(sampleRadiance))) {
         // A non-finite numerical failure is not a radiance sample. Preserve both the previous

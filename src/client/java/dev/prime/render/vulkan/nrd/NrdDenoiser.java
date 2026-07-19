@@ -56,7 +56,7 @@ public final class NrdDenoiser implements Destroyable {
     private static final int IMAGE_USAGE = VK12.VK_IMAGE_USAGE_STORAGE_BIT | VK12.VK_IMAGE_USAGE_SAMPLED_BIT;
     private static final int MOTION_BINDING_COUNT = 10;
     private static final int MOTION_PUSH_SIZE = 196;
-    private static final int COMPOSITE_BINDING_COUNT = 13;
+    private static final int COMPOSITE_BINDING_COUNT = 15;
     private static final int COMPOSITE_PUSH_SIZE = 16;
     // world.rgen writes 65504 for a sky view-Z. Keep the valid range below that sentinel while
     // remaining far beyond Minecraft's usable terrain and Prime's 16,000-block aerial volume.
@@ -225,6 +225,14 @@ public final class NrdDenoiser implements Destroyable {
         return this.images.primaryPosition;
     }
 
+    public VulkanImage sunLighting() {
+        return this.images.sunLighting;
+    }
+
+    public VulkanImage sunPenumbra() {
+        return this.images.sunPenumbra;
+    }
+
     VulkanImage validation() {
         return this.images.validation;
     }
@@ -338,7 +346,8 @@ public final class NrdDenoiser implements Destroyable {
                 currentFrameIndex,
                 restart,
                 deltaMilliseconds,
-                selectedDiagnostic != NrdDiagnostics.Mode.OFF));
+                selectedDiagnostic != NrdDiagnostics.Mode.OFF,
+                sunDirection));
         NrdNative.DispatchList dispatches = this.nativeInstance.getDispatches();
         FrameBindings bindings = this.acquireBindings();
         try {
@@ -454,8 +463,10 @@ public final class NrdDenoiser implements Destroyable {
             case NrdNative.RESOURCE_IN_VIEWZ -> this.images.viewZ;
             case NrdNative.RESOURCE_IN_DIFF_RADIANCE_HITDIST -> this.images.noisyDiffuse;
             case NrdNative.RESOURCE_IN_SPEC_RADIANCE_HITDIST -> this.images.noisySpecular;
+            case NrdNative.RESOURCE_IN_PENUMBRA -> this.images.sunPenumbra;
             case NrdNative.RESOURCE_OUT_DIFF_RADIANCE_HITDIST -> this.images.denoisedDiffuse;
             case NrdNative.RESOURCE_OUT_SPEC_RADIANCE_HITDIST -> this.images.denoisedSpecular;
+            case NrdNative.RESOURCE_OUT_SHADOW_TRANSLUCENCY -> this.images.sunShadow;
             case NrdNative.RESOURCE_OUT_VALIDATION -> this.images.validation;
             case NrdNative.RESOURCE_TRANSIENT_POOL -> checkedPoolImage(
                     this.images.transientPool, indexInPool, "transient");
@@ -547,7 +558,8 @@ public final class NrdDenoiser implements Destroyable {
             int frameIndex,
             boolean restart,
             float deltaMilliseconds,
-            boolean enableValidation) {
+            boolean enableValidation,
+            SunDirection sunDirection) {
         NrdCameraTransform.projectionForNrd(camera.projection(), this.currentNrdProjection);
         NrdCameraTransform.projectionForNrd(previous.projection(), this.previousNrdProjection);
         NrdCameraTransform.previousWorldToView(camera, previous, this.previousWorldToView);
@@ -568,7 +580,10 @@ public final class NrdDenoiser implements Destroyable {
                 restart,
                 deltaMilliseconds,
                 DENOISING_RANGE,
-                enableValidation);
+                enableValidation,
+                sunDirection.x(),
+                sunDirection.y(),
+                sunDirection.z());
     }
 
     private static long createSampler(VulkanContext context, boolean linear, String label) {
@@ -778,6 +793,9 @@ public final class NrdDenoiser implements Destroyable {
         private final VulkanImage material;
         private final VulkanImage specularMaterial;
         private final VulkanImage primaryPosition;
+        private final VulkanImage sunLighting;
+        private final VulkanImage sunPenumbra;
+        private final VulkanImage sunShadow;
         private final VulkanImage reprojectionError;
         private final VulkanImage validation;
         private final VulkanImage denoisedDiffuse;
@@ -799,6 +817,9 @@ public final class NrdDenoiser implements Destroyable {
                 VulkanImage material,
                 VulkanImage specularMaterial,
                 VulkanImage primaryPosition,
+                VulkanImage sunLighting,
+                VulkanImage sunPenumbra,
+                VulkanImage sunShadow,
                 VulkanImage reprojectionError,
                 VulkanImage validation,
                 VulkanImage denoisedDiffuse,
@@ -817,6 +838,9 @@ public final class NrdDenoiser implements Destroyable {
             this.material = material;
             this.specularMaterial = specularMaterial;
             this.primaryPosition = primaryPosition;
+            this.sunLighting = sunLighting;
+            this.sunPenumbra = sunPenumbra;
+            this.sunShadow = sunShadow;
             this.reprojectionError = reprojectionError;
             this.validation = validation;
             this.denoisedDiffuse = denoisedDiffuse;
@@ -859,6 +883,12 @@ public final class NrdDenoiser implements Destroyable {
                         context, created, width, height, VK12.VK_FORMAT_R16G16B16A16_SFLOAT, debugPrefix + " specular material or virtual guide");
                 VulkanImage primaryPosition = createImage(
                         context, created, width, height, VK12.VK_FORMAT_R32G32B32A32_SFLOAT, debugPrefix + " primary or virtual position");
+                VulkanImage sunLighting = createImage(
+                        context, created, width, height, VK12.VK_FORMAT_R16G16B16A16_SFLOAT, debugPrefix + " unshadowed sun lighting");
+                VulkanImage sunPenumbra = createImage(
+                        context, created, width, height, VK12.VK_FORMAT_R16_SFLOAT, debugPrefix + " noisy sun penumbra");
+                VulkanImage sunShadow = createImage(
+                        context, created, width, height, VK12.VK_FORMAT_R16_SFLOAT, debugPrefix + " SIGMA sun shadow");
                 VulkanImage reprojectionError = createImage(
                         context,
                         created,
@@ -895,6 +925,9 @@ public final class NrdDenoiser implements Destroyable {
                         material,
                         specularMaterial,
                         primaryPosition,
+                        sunLighting,
+                        sunPenumbra,
+                        sunShadow,
                         reprojectionError,
                         validation,
                         denoised,
@@ -1794,7 +1827,9 @@ public final class NrdDenoiser implements Destroyable {
                     images.reprojectionError,
                     images.motion,
                     images.fsrReactiveMask,
-                    images.fsrTransparencyCompositionMask
+                    images.fsrTransparencyCompositionMask,
+                    images.sunLighting,
+                    images.sunShadow
                 };
                 VkDescriptorImageInfo.Buffer imageInfos =
                         VkDescriptorImageInfo.calloc(COMPOSITE_BINDING_COUNT, stack);

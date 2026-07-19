@@ -9,7 +9,7 @@
 #include "nrd_common.glsl"
 
 layout(location = 0) rayPayloadEXT TracePayload primePayload;
-layout(location = 1) rayPayloadEXT uint primeShadowOccluded;
+layout(location = 1) rayPayloadEXT uint primeShadowHitDistanceBits;
 
 #include "sampling.glsl"
 #include "bsdf.glsl"
@@ -70,6 +70,14 @@ void main() {
             primeNrdSpecularMaterial,
             ivec2(pixel),
             vec4(sampleResult.primarySpecularF0, float(sampleResult.primaryMaterialFlags)));
+    imageStore(
+            primeNrdSunLighting,
+            ivec2(pixel),
+            vec4(primeNrdSanitizeRadiance(sampleResult.sunRadiance), 1.0));
+    imageStore(
+            primeNrdSunPenumbra,
+            ivec2(pixel),
+            vec4(sampleResult.sunPenumbra));
 
     // Directly visible sky/emission is a current-frame deterministic signal. FSR owns temporal
     // coverage reconstruction, so averaging a second independent history here would create stale

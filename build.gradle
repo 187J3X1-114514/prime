@@ -121,7 +121,7 @@ abstract class GenerateShaderAbi extends DefaultTask {
 							+ 'the -64 sea level / 0.001 km world scale, and a 12.5-unit space sun')
 		}
 		if (nrdContract.version != '4.17.4'
-                || nrdContract.denoiser != 'reblur-diffuse-specular-first-non-delta'
+                || nrdContract.denoiser != 'reblur-diffuse-specular-plus-sigma-sun-shadow'
 				|| nrdContract.normalEncoding != 'r10g10b10a2-unorm'
 				|| nrdContract.roughnessEncoding != 'linear'
 				|| nrdContract.motionSpace != 'screen-2.5d'
@@ -255,6 +255,8 @@ public final class ShaderAbi {
     public static final int DESCRIPTOR_TRANSMISSION_GGX_ENERGY = ${schema.descriptors.transmissionGgxEnergy};
     public static final int DESCRIPTOR_LABPBR_NORMAL_ATLAS = ${schema.descriptors.labPbrNormalAtlas};
     public static final int DESCRIPTOR_LABPBR_SPECULAR_ATLAS = ${schema.descriptors.labPbrSpecularAtlas};
+    public static final int DESCRIPTOR_NRD_SUN_LIGHTING = ${schema.descriptors.nrdSunLighting};
+    public static final int DESCRIPTOR_NRD_SUN_PENUMBRA = ${schema.descriptors.nrdSunPenumbra};
     public static final int PATH_CAMERA_IN_WATER_MASK = ${schema.pathControl.cameraInWaterMask};
     public static final int PATH_JITTER_PHASE_MASK = ${schema.pathControl.jitterPhaseMask};
     public static final int PATH_SUN_EV_QUARTER_SHIFT = ${schema.pathControl.sunEvQuarterShift};
@@ -447,6 +449,8 @@ layout(set = 0, binding = ${schema.descriptors.nrdMotion}, rgba16f) uniform imag
 layout(set = 0, binding = ${schema.descriptors.nrdMaterial}, rgba16f) uniform image2D primeNrdMaterial;
 layout(set = 0, binding = ${schema.descriptors.nrdSpecularMaterial}, rgba16f) uniform image2D primeNrdSpecularMaterial;
 layout(set = 0, binding = ${schema.descriptors.nrdPrimaryPosition}, rgba32f) uniform image2D primeNrdPrimaryPosition;
+layout(set = 0, binding = ${schema.descriptors.nrdSunLighting}, rgba16f) uniform image2D primeNrdSunLighting;
+layout(set = 0, binding = ${schema.descriptors.nrdSunPenumbra}, r16f) uniform image2D primeNrdSunPenumbra;
 #endif
 """
 		new File(glslDir, 'prime_atmosphere_contract.glsl').text = """\
@@ -708,6 +712,7 @@ def verifyDistributionJar = tasks.register('verifyDistributionJar') {
 			'prime/shaders/world_ser.rgen.spv',
 			'prime/shaders/screenshot.rgen.spv',
 			'prime/shaders/screenshot_display.comp.spv',
+			'prime/shaders/shadow.rchit.spv',
 			'prime/shaders/nrd_motion.comp.spv',
 			'prime/shaders/fsr_display.comp.spv'
 		]
@@ -717,9 +722,9 @@ def verifyDistributionJar = tasks.register('verifyDistributionJar') {
 		}
 
 		def shaderNames = names.findAll { it.startsWith('prime/shaders/') && it.endsWith('.spv') }
-		if (shaderNames.size() != 15) {
+		if (shaderNames.size() != 16) {
 			throw new GradleException(
-					"Distribution jar must contain 15 Prime shaders; found ${shaderNames.size()}")
+					"Distribution jar must contain 16 Prime shaders; found ${shaderNames.size()}")
 		}
 
 		new java.util.zip.ZipFile(archive).withCloseable { zip ->

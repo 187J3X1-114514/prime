@@ -10,7 +10,7 @@ import org.junit.jupiter.api.Test;
 
 final class NrdSignalContractTest {
     @Test
-    void realtimeUsesOneCompletePathAndOneDenoiserHistory() throws IOException {
+    void realtimeUsesOneCompletePathWithReblurAndDedicatedSigmaSunShadow() throws IOException {
         Path root = Path.of(System.getProperty("user.dir"));
         Path shaderRoot = root.resolve("shaders");
         String world = Files.readString(shaderRoot.resolve("world.rgen"));
@@ -21,6 +21,8 @@ final class NrdSignalContractTest {
                 "src/client/java/dev/prime/render/VulkanRenderer.java"));
 
         assertTrue(world.contains("PrimeIntegrationResult sampleResult = primeIntegrate(path, integrator)"));
+        assertTrue(world.contains("sampleResult.sunRadiance"));
+        assertTrue(world.contains("sampleResult.sunPenumbra"));
         assertFalse(world.contains("PRIME_OPAQUE_PRIMARY_PASS"));
         assertTrue(integrator.contains("bool hitted_non_delta = false"));
         assertTrue(integrator.contains(
@@ -60,6 +62,8 @@ final class NrdSignalContractTest {
         assertTrue(preparation.contains("primeNrdPackNormalRoughness("));
         assertTrue(composite.contains("primeDenoisedDiffuse"));
         assertTrue(composite.contains("primeDenoisedSpecular"));
+        assertTrue(composite.contains("primeSigmaSunShadow"));
+        assertTrue(composite.contains("encodedSunShadow * encodedSunShadow"));
         assertFalse(Files.exists(shaderRoot.resolve("transparent.rgen")));
         assertFalse(Files.exists(shaderRoot.resolve("nrd_transparent_motion.comp")));
         assertFalse(Files.exists(shaderRoot.resolve("nrd_transparent_composite.comp")));
@@ -67,6 +71,10 @@ final class NrdSignalContractTest {
         String nativeBridge = Files.readString(
                 root.resolve("native/nrd/prime_nrd_bridge.cpp"));
         assertTrue(nativeBridge.contains("HitDistanceReconstructionMode::AREA_5X5"));
+        assertTrue(nativeBridge.contains("Denoiser::SIGMA_SHADOW"));
+        assertTrue(nativeBridge.contains("settings.maxAccumulatedFrameNum = 63"));
+        assertTrue(nativeBridge.contains("settings.maxFastAccumulatedFrameNum = 10"));
+        assertTrue(nativeBridge.contains("settings.historyFixFrameNum = 4"));
         assertFalse(nativeBridge.contains("HitDistanceReconstructionMode::AREA_3X3"));
     }
 }

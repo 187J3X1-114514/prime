@@ -15,8 +15,9 @@
 
 namespace
 {
-    constexpr uint32_t PRIME_NRD_ABI_VERSION = 7;
-    constexpr nrd::Identifier PRIME_NRD_DENOISER_ID = 0;
+    constexpr uint32_t PRIME_NRD_ABI_VERSION = 8;
+    constexpr nrd::Identifier PRIME_NRD_REBLUR_ID = 0;
+    constexpr nrd::Identifier PRIME_NRD_SIGMA_SUN_ID = 1;
 
     struct PrimeNrdCreateDesc
     {
@@ -91,6 +92,7 @@ namespace
         float timeDeltaMilliseconds;
         float denoisingRange;
         uint32_t enableValidation;
+        float sunDirection[3];
     };
 
     struct PrimeNrdResourceInfo
@@ -239,7 +241,7 @@ static_assert(sizeof(PrimeNrdTextureInfo) == 8);
 static_assert(sizeof(PrimeNrdPipelineRangeInfo) == 8);
 static_assert(sizeof(PrimeNrdPipelineInfo) == 288);
 static_assert(sizeof(PrimeNrdDescription) == 136);
-static_assert(sizeof(PrimeNrdFrameSettings) == 308);
+static_assert(sizeof(PrimeNrdFrameSettings) == 320);
 static_assert(sizeof(PrimeNrdResourceInfo) == 16);
 static_assert(sizeof(PrimeNrdDispatchInfo) == 48);
 static_assert(sizeof(PrimeNrdDispatchList) == 16);
@@ -262,9 +264,12 @@ PRIME_NRD_EXPORT int32_t primeNrdCreate(
     if (context == nullptr)
         return -2;
 
-    const nrd::Denoiser selectedDenoiser = nrd::Denoiser::REBLUR_DIFFUSE_SPECULAR;
-    const nrd::DenoiserDesc denoiser = {PRIME_NRD_DENOISER_ID, selectedDenoiser};
-    const nrd::InstanceCreationDesc creation = {{}, &denoiser, 1};
+    const std::array<nrd::DenoiserDesc, 2> denoisers = {{
+        {PRIME_NRD_REBLUR_ID, nrd::Denoiser::REBLUR_DIFFUSE_SPECULAR},
+        {PRIME_NRD_SIGMA_SUN_ID, nrd::Denoiser::SIGMA_SHADOW},
+    }};
+    const nrd::InstanceCreationDesc creation = {
+        {}, denoisers.data(), static_cast<uint32_t>(denoisers.size())};
     nrd::Result result = nrd::CreateInstance(creation, context->instance);
     if (result != nrd::Result::SUCCESS || !BuildDescription(*context))
     {
@@ -276,7 +281,11 @@ PRIME_NRD_EXPORT int32_t primeNrdCreate(
     settings.hitDistanceReconstructionMode = nrd::HitDistanceReconstructionMode::AREA_5X5;
     settings.diffusePrepassBlurRadius = 30.0f;
     settings.specularPrepassBlurRadius = 50.0f;
-    result = nrd::SetDenoiserSettings(*context->instance, PRIME_NRD_DENOISER_ID, &settings);
+    settings.maxAccumulatedFrameNum = 63;
+    settings.maxFastAccumulatedFrameNum = 10;
+    settings.maxStabilizedFrameNum = 63;
+    settings.historyFixFrameNum = 4;
+    result = nrd::SetDenoiserSettings(*context->instance, PRIME_NRD_REBLUR_ID, &settings);
     if (result != nrd::Result::SUCCESS)
     {
         delete context;
@@ -331,6 +340,16 @@ PRIME_NRD_EXPORT int32_t primeNrdSetFrameSettings(
     settings.isMotionVectorInWorldSpace = false;
     settings.enableValidation = input->enableValidation != 0;
 
+    nrd::SigmaSettings sigmaSettings = {};
+    std::memcpy(
+        sigmaSettings.lightDirection,
+        input->sunDirection,
+        sizeof(sigmaSettings.lightDirection));
+    const nrd::Result sigmaResult = nrd::SetDenoiserSettings(
+        *context->instance, PRIME_NRD_SIGMA_SUN_ID, &sigmaSettings);
+    if (sigmaResult != nrd::Result::SUCCESS)
+        return static_cast<int32_t>(sigmaResult);
+
     return static_cast<int32_t>(nrd::SetCommonSettings(*context->instance, settings));
 }
 
@@ -341,13 +360,18 @@ PRIME_NRD_EXPORT int32_t primeNrdGetDispatches(
     if (context == nullptr || output == nullptr)
         return -1;
 
-    const nrd::Identifier identifier = PRIME_NRD_DENOISER_ID;
+    // Keep REBLUR last so its validation grid remains the user-facing diagnostic when both
+    // denoisers write NRD's shared OUT_VALIDATION resource.
+    const std::array<nrd::Identifier, 2> identifiers = {
+        PRIME_NRD_SIGMA_SUN_ID,
+        PRIME_NRD_REBLUR_ID,
+    };
     const nrd::DispatchDesc* sourceDispatches = nullptr;
     uint32_t dispatchCount = 0;
     const nrd::Result result = nrd::GetComputeDispatches(
         *context->instance,
-        &identifier,
-        1,
+        identifiers.data(),
+        static_cast<uint32_t>(identifiers.size()),
         sourceDispatches,
         dispatchCount);
     if (result != nrd::Result::SUCCESS)

@@ -172,7 +172,9 @@
     "nrdSpecularMaterial": 16,
     "transmissionGgxEnergy": 17,
     "labPbrNormalAtlas": 18,
-    "labPbrSpecularAtlas": 19
+    "labPbrSpecularAtlas": 19,
+    "nrdSunLighting": 20,
+    "nrdSunPenumbra": 21
   },
   "pathControl": {
     "cameraInWaterMask": "0x80000000",
@@ -188,7 +190,7 @@
   },
   "nrdContract": {
     "version": "4.17.4",
-    "denoiser": "reblur-diffuse-specular-first-non-delta",
+    "denoiser": "reblur-diffuse-specular-plus-sigma-sun-shadow",
     "normalEncoding": "r10g10b10a2-unorm",
     "roughnessEncoding": "linear",
     "motionSpace": "screen-2.5d",

@@ -30,7 +30,7 @@ import org.lwjgl.system.SharedLibrary;
  * arrays and is versioned independently from NRD's C++ structures.
  */
 public final class NrdNative {
-    static final int ABI_VERSION = 7;
+    static final int ABI_VERSION = 8;
     static final int EXPECTED_NRD_VERSION = 4 << 24 | 17 << 16 | 4;
 
     public static final int DESCRIPTOR_TEXTURE = 0;
@@ -41,8 +41,10 @@ public final class NrdNative {
     public static final int RESOURCE_IN_VIEWZ = 2;
     public static final int RESOURCE_IN_DIFF_RADIANCE_HITDIST = 6;
     public static final int RESOURCE_IN_SPEC_RADIANCE_HITDIST = 7;
+    public static final int RESOURCE_IN_PENUMBRA = 15;
     public static final int RESOURCE_OUT_DIFF_RADIANCE_HITDIST = 18;
     public static final int RESOURCE_OUT_SPEC_RADIANCE_HITDIST = 19;
+    public static final int RESOURCE_OUT_SHADOW_TRANSLUCENCY = 27;
     public static final int RESOURCE_OUT_VALIDATION = 29;
     public static final int RESOURCE_TRANSIENT_POOL = 30;
     public static final int RESOURCE_PERMANENT_POOL = 31;
@@ -52,7 +54,7 @@ public final class NrdNative {
     private static final int PIPELINE_SIZE = 288;
     private static final int PIPELINE_RANGE_SIZE = 8;
     private static final int TEXTURE_INFO_SIZE = 8;
-    private static final int FRAME_SETTINGS_SIZE = 308;
+    private static final int FRAME_SETTINGS_SIZE = 320;
     private static final int DISPATCH_SIZE = 48;
     private static final int RESOURCE_SIZE = 16;
     private static final int DISPATCH_LIST_SIZE = 16;
@@ -351,6 +353,9 @@ public final class NrdNative {
                 input.putFloat(296, settings.timeDeltaMilliseconds());
                 input.putFloat(300, settings.denoisingRange());
                 input.putInt(304, settings.enableValidation() ? 1 : 0);
+                input.putFloat(308, settings.sunDirectionX());
+                input.putFloat(312, settings.sunDirectionY());
+                input.putFloat(316, settings.sunDirectionZ());
                 checkResult(
                         JNI.invokePPI(
                                 instance,
@@ -543,7 +548,10 @@ public final class NrdNative {
             boolean restart,
             float timeDeltaMilliseconds,
             float denoisingRange,
-            boolean enableValidation) {}
+            boolean enableValidation,
+            float sunDirectionX,
+            float sunDirectionY,
+            float sunDirectionZ) {}
 
     private static final class Holder {
         private static final NrdNative INSTANCE = new NrdNative();

@@ -23,6 +23,9 @@ struct PrimeIntegrationResult {
     float specularHitDistance;
     vec3 stableRadiance;
     float diffuseHitDistance;
+    vec3 sunRadiance;
+    float sunPenumbra;
+    float sunVisibility;
     vec3 primaryBaseColor;
     uint primaryHitKind;
     vec3 primaryNormal;
@@ -145,14 +148,14 @@ vec3 primeSurfaceSpecularF0(SurfaceInteraction surface) {
     return vec3(primeMaterialDielectricF0(surface.materialFlags));
 }
 
-bool primeVisible(vec3 physicalPosition, vec3 normal, LightSample light) {
-    primeShadowOccluded = 1u;
+float primeTraceShadowHitDistance(vec3 physicalPosition, vec3 normal, LightSample light) {
+    primeShadowHitDistanceBits = floatBitsToUint(0.0);
     vec3 traceOrigin = primeOffsetRayOrigin(physicalPosition, normal, light.direction);
     traceRayEXT(
             primeScene,
-            gl_RayFlagsTerminateOnFirstHitEXT | gl_RayFlagsSkipClosestHitShaderEXT,
+            gl_RayFlagsTerminateOnFirstHitEXT,
             0xff,
-            0,
+            3,
             1,
             1,
             traceOrigin,
@@ -160,7 +163,11 @@ bool primeVisible(vec3 physicalPosition, vec3 normal, LightSample light) {
             light.direction,
             light.distance,
             1);
-    return primeShadowOccluded == 0u;
+    return uintBitsToFloat(primeShadowHitDistanceBits);
+}
+
+bool primeVisible(vec3 physicalPosition, vec3 normal, LightSample light) {
+    return primeTraceShadowHitDistance(physicalPosition, normal, light) >= PRIME_NRD_FP16_MAX;
 }
 
 PrimeDirectLightingSplit primeEvaluateVisibleDirectSplit(
@@ -240,7 +247,7 @@ PrimeDirectLightingSplit primeEvaluateVisibleDirectSplit(
     return result;
 }
 
-bool primeDirectSampleVisible(
+bool primeDirectSampleEligible(
         SurfaceInteraction surface,
         vec3 viewDirection,
         LightSample light) {
@@ -248,27 +255,56 @@ bool primeDirectSampleVisible(
     return light.pdf > 0.0
             && (primeMaterialIsTransmissive(surface.materialFlags)
                     || primeMaterialIsFoliage(surface.materialFlags)
-                    || dot(shadingNormal, light.direction) > 0.0)
+                    || dot(shadingNormal, light.direction) > 0.0);
+}
+
+bool primeDirectSampleVisible(
+        SurfaceInteraction surface,
+        vec3 viewDirection,
+        LightSample light) {
+    return primeDirectSampleEligible(surface, viewDirection, light)
             && primeVisible(surface.position, surface.geometricNormal, light);
 }
 
-PrimeDirectLightingSplit primeEstimatePrimaryDirectSun(
+struct PrimePrimarySunSample {
+    PrimeDirectLightingSplit lighting;
+    float penumbra;
+    float visibility;
+};
+
+float primeSigmaPackDirectionalPenumbra(float distanceToOccluder) {
+    if (distanceToOccluder >= PRIME_NRD_FP16_MAX) {
+        return PRIME_NRD_FP16_MAX;
+    }
+    float penumbraRadius = 0.5 * distanceToOccluder
+            * tan(ATM_SUN_ANGULAR_RADIUS_RADIANS);
+    return min(max(penumbraRadius, 0.0), 32768.0);
+}
+
+PrimePrimarySunSample primeEstimatePrimaryDirectSun(
         IntegratorRecord integrator,
         SurfaceInteraction surface,
         vec3 viewDirection,
         vec2 sampleValue,
         PrimeRcVolumeStack volumeStack) {
+    PrimePrimarySunSample result;
+    result.lighting.diffuse = vec3(0.0);
+    result.lighting.specular = vec3(0.0);
+    result.penumbra = 0.0;
+    result.visibility = 0.0;
     LightSample light = primeSampleSun(integrator, surface.position, sampleValue);
-    if (!primeDirectSampleVisible(surface, viewDirection, light)) {
-        PrimeDirectLightingSplit result;
-        result.diffuse = vec3(0.0);
-        result.specular = vec3(0.0);
+    if (!primeDirectSampleEligible(surface, viewDirection, light)) {
         return result;
     }
+    float shadowHitDistance = primeTraceShadowHitDistance(
+            surface.position, surface.geometricNormal, light);
+    result.penumbra = primeSigmaPackDirectionalPenumbra(shadowHitDistance);
+    result.visibility = float(shadowHitDistance >= PRIME_NRD_FP16_MAX);
     vec3 radiance = primeResolveSampledSunRadiance(
             integrator, surface.position, light);
-    return primeEvaluateVisibleDirectSplit(
+    result.lighting = primeEvaluateVisibleDirectSplit(
             surface, viewDirection, light, radiance, volumeStack);
+    return result;
 }
 
 PrimeDirectLightingSplit primeEstimatePrimaryDirectAreaLight(
@@ -483,6 +519,9 @@ PrimeIntegrationResult primeIntegrate(PathState path, IntegratorRecord integrato
     result.specularHitDistance = 0.0;
     result.stableRadiance = vec3(0.0);
     result.diffuseHitDistance = 0.0;
+    result.sunRadiance = vec3(0.0);
+    result.sunPenumbra = 0.0;
+    result.sunVisibility = 0.0;
     result.primaryBaseColor = vec3(0.0);
     result.primaryHitKind = PRIME_HIT_NONE;
     result.primaryNormal = vec3(0.0, 1.0, 0.0);
@@ -554,7 +593,7 @@ PrimeIntegrationResult primeIntegrate(PathState path, IntegratorRecord integrato
                     PRIME_SAMPLE_EFFECT_DIRECT_AREA_LIGHT,
                     PRIME_SAMPLE_DIMENSION_SECONDARY);
             if (!hitted_non_delta) {
-                PrimeDirectLightingSplit sunSplit = primeEstimatePrimaryDirectSun(
+                PrimePrimarySunSample sun = primeEstimatePrimaryDirectSun(
                         integrator,
                         surface,
                         viewDirection,
@@ -566,10 +605,12 @@ PrimeIntegrationResult primeIntegrate(PathState path, IntegratorRecord integrato
                         areaTreeSample,
                         areaPositionSample,
                         volumeStack);
-                result.diffuseRadiance += path.throughput
-                        * (sunSplit.diffuse + areaSplit.diffuse);
-                result.specularRadiance += path.throughput
-                        * (sunSplit.specular + areaSplit.specular);
+                result.sunRadiance = path.throughput
+                        * (sun.lighting.diffuse + sun.lighting.specular);
+                result.sunPenumbra = sun.penumbra;
+                result.sunVisibility = sun.visibility;
+                result.diffuseRadiance += path.throughput * areaSplit.diffuse;
+                result.specularRadiance += path.throughput * areaSplit.specular;
             } else {
                 vec3 direct = path.throughput
                         * (primeEstimateDirectSun(

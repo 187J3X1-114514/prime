@@ -33,6 +33,19 @@ import net.minecraft.world.level.chunk.LevelChunk;
 import net.fabricmc.fabric.api.client.renderer.v1.sprite.FabricTextureAtlas;
 import net.fabricmc.fabric.api.client.renderer.v1.sprite.SpriteFinder;
 
+/**
+ * Owns the terrain portion of Prime's scene independently from vanilla's raster renderer.
+ *
+ * <p>This is the sole authority for which Sections Prime wants, when they become dirty, which
+ * generation is current, and how long uploaded geometry remains resident. In particular, this
+ * scheduler must never depend on {@code LevelRenderer.visibleSections()}, the occlusion graph, or
+ * vanilla's raster compilation queue: those are presentation decisions and can omit geometry that
+ * still contributes to ray-traced visibility and global illumination.
+ *
+ * <p>Independence ends at mesh semantics. Once this class has selected a stable Section snapshot,
+ * it delegates exactly once to {@link VanillaSceneInterpreter}; Prime does not maintain a second
+ * block/fluid mesher and does not merge geometry captured from vanilla's raster tasks.
+ */
 public final class TerrainStreamer implements AutoCloseable {
     private static final long[] EMPTY_EVICTIONS = new long[0];
     private static final int SECTION_COUNT_BUDGET_MULTIPLIER = 16;

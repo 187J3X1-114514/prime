@@ -9,7 +9,7 @@ import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 /**
- * Forwards geometry changes without subscribing to vanilla's lighting-only section churn.
+ * Forwards invalidation events without making vanilla a geometry source or scheduling authority.
  *
  * <p>{@code setSectionDirty} is intentionally not intercepted: chunk light updates call it even
  * though Prime does not consume the vanilla light volume. Treating that signal as geometry would

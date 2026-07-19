@@ -11,7 +11,13 @@ import net.minecraft.client.renderer.chunk.RenderSectionRegion;
 import net.fabricmc.fabric.api.client.renderer.v1.sprite.SpriteFinder;
 
 /**
- * Boundary between Minecraft's rendering front end and Prime's renderer-owned world scene.
+ * Single geometry authority between Minecraft's rendering front end and Prime's renderer-owned
+ * world scene.
+ *
+ * <p>{@code TerrainStreamer} owns coverage, invalidation, scheduling and lifetime. This module owns
+ * only the translation of one renderer-owned {@link RenderSectionRegion} through Minecraft's real
+ * Section compiler into an immutable Prime payload. It neither consumes completed raster meshes
+ * nor observes raster visibility, so there is no multi-source reconciliation policy.
  *
  * <p>Only this module interprets vanilla mesh production. Vulkan code consumes immutable scene
  * payloads and never observes Mixins, block states, model objects, or vanilla vertex interfaces.

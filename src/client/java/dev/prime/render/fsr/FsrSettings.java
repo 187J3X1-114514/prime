@@ -3,7 +3,7 @@ package dev.prime.render.fsr;
 import dev.prime.render.shader.ShaderAbi;
 import java.util.Objects;
 
-/** Product-level FidelityFX Super Resolution settings shared by configuration and rendering. */
+/** Product-level FidelityFX settings; diagnostic selection is deliberately session-only. */
 public final class FsrSettings {
     public static final String SDK_VERSION = "1.1.4";
     public static final String UPSCALER_VERSION = "3.1.4";

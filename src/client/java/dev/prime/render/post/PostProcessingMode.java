@@ -6,9 +6,11 @@ import java.util.Optional;
 /** Selects one complete realtime denoising and reconstruction pipeline. */
 public enum PostProcessingMode {
     NRD_FSR("nrd_fsr"),
-    DLSS_RR("dlss_rr");
+    DLSS_RR("dlss_rr"),
+    DISABLED("disabled");
 
-    public static final PostProcessingMode DEFAULT = NRD_FSR;
+    /** RR is requested by default; the renderer falls back to NRD-FSR when NGX is unavailable. */
+    public static final PostProcessingMode DEFAULT = DLSS_RR;
 
     private final String id;
 

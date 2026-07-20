@@ -60,6 +60,10 @@ public abstract class VideoSettingsScreenMixin {
             this.prime$rrDebugView = PrimeVideoOptions.dlssRrDebugView();
             this.prime$rrDebugFullscreen = PrimeVideoOptions.dlssRrDebugFullscreen();
             list.addHeader(PRIME$HEADER);
+            list.addBig(Button.builder(
+                            Component.translatable("prime.options.restore_defaults"),
+                            button -> this.prime$restoreDefaults())
+                    .build());
             list.addBig(this.prime$screenshotMode);
             list.addBig(this.prime$postProcessingMode);
             list.addBig(this.prime$qualityMode);
@@ -69,10 +73,6 @@ public abstract class VideoSettingsScreenMixin {
             list.addBig(this.prime$defaultRoughness);
             list.addSmall(this.prime$nrdDebugView, this.prime$fsrDebugView);
             list.addSmall(this.prime$rrDebugView, this.prime$rrDebugFullscreen);
-            list.addBig(Button.builder(
-                            Component.translatable("prime.options.restore_defaults"),
-                            button -> this.prime$restoreDefaults())
-                    .build());
         }
     }
 

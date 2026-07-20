@@ -10,7 +10,6 @@ import dev.prime.render.fsr.FsrQualityMode;
 import dev.prime.render.fsr.FsrSettings;
 import dev.prime.render.vulkan.VulkanContext;
 import dev.prime.render.vulkan.VulkanImage;
-import dev.prime.render.vulkan.nrd.NrdDiagnostics;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.ByteBuffer;
@@ -72,8 +71,6 @@ public final class Fsr3Upscaler implements Destroyable {
     private long previousSceneResetRevision = Long.MIN_VALUE;
     private long previousAtlasView;
     private long previousAtlasSampler;
-    private FsrDebugView previousFsrDebugView = FsrDebugView.OFF;
-    private NrdDiagnostics.Mode previousNrdDebugView = NrdDiagnostics.Mode.OFF;
     private int frameIndex;
     private long previousFrameNanos;
     private boolean resetRequested = true;
@@ -203,14 +200,9 @@ public final class Fsr3Upscaler implements Destroyable {
         boolean cameraCut = this.initialized
                 && CameraDiscontinuity.isCut(this.previousCamera, camera);
         FsrDebugView fsrDebugView = FsrSettings.debugView();
-        NrdDiagnostics.Mode nrdDebugView = NrdDiagnostics.mode();
-        boolean diagnosticChanged = this.initialized
-                && (fsrDebugView != this.previousFsrDebugView
-                        || nrdDebugView != this.previousNrdDebugView);
         boolean reset = this.resetRequested
                 || !this.initialized
                 || cameraCut
-                || diagnosticChanged
                 || sceneResetRevision != this.previousSceneResetRevision
                 || atlasView != this.previousAtlasView
                 || atlasSampler != this.previousAtlasSampler;
@@ -231,7 +223,6 @@ public final class Fsr3Upscaler implements Destroyable {
                 reset,
                 cameraCut,
                 fsrDebugView,
-                nrdDebugView,
                 deltaMilliseconds,
                 now);
     }
@@ -287,10 +278,7 @@ public final class Fsr3Upscaler implements Destroyable {
             push.putInt(4, this.displayHeight);
             push.putInt(
                     8,
-                    debugView != FsrDebugView.OFF
-                                    || token.nrdDebugView != NrdDiagnostics.Mode.OFF
-                            ? 1
-                            : 0);
+                    debugView != FsrDebugView.OFF ? 1 : 0);
             push.putFloat(12, DisplaySettings.overexposure());
             this.displayPass.record(commandBuffer, push);
         }
@@ -309,8 +297,6 @@ public final class Fsr3Upscaler implements Destroyable {
         this.previousSceneResetRevision = token.sceneResetRevision;
         this.previousAtlasView = token.atlasView;
         this.previousAtlasSampler = token.atlasSampler;
-        this.previousFsrDebugView = token.fsrDebugView;
-        this.previousNrdDebugView = token.nrdDebugView;
         this.previousFrameNanos = token.frameNanos;
         this.frameIndex = token.frameIndex + 1;
     }
@@ -412,7 +398,6 @@ public final class Fsr3Upscaler implements Destroyable {
         private final boolean reset;
         private final boolean cameraCut;
         private final FsrDebugView fsrDebugView;
-        private final NrdDiagnostics.Mode nrdDebugView;
         private final float deltaMilliseconds;
         private final long frameNanos;
         private boolean recorded;
@@ -429,7 +414,6 @@ public final class Fsr3Upscaler implements Destroyable {
                 boolean reset,
                 boolean cameraCut,
                 FsrDebugView fsrDebugView,
-                NrdDiagnostics.Mode nrdDebugView,
                 float deltaMilliseconds,
                 long frameNanos) {
             this.owner = owner;
@@ -442,7 +426,6 @@ public final class Fsr3Upscaler implements Destroyable {
             this.reset = reset;
             this.cameraCut = cameraCut;
             this.fsrDebugView = fsrDebugView;
-            this.nrdDebugView = nrdDebugView;
             this.deltaMilliseconds = deltaMilliseconds;
             this.frameNanos = frameNanos;
         }

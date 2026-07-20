@@ -4,8 +4,8 @@ import dev.prime.PrimeClient;
 import dev.prime.render.DisplaySettings;
 import dev.prime.render.LightingSettings;
 import dev.prime.render.MaterialSettings;
-import dev.prime.render.fsr.FsrQualityMode;
 import dev.prime.render.fsr.FsrDebugView;
+import dev.prime.render.fsr.FsrQualityMode;
 import dev.prime.render.fsr.FsrSettings;
 import dev.prime.render.post.DlssRrDebugView;
 import dev.prime.render.post.PostProcessingMode;
@@ -28,10 +28,14 @@ public final class PrimeConfig {
     private static final String MODE_KEY = "post_processing.mode";
     private static final String QUALITY_KEY = "post_processing.quality";
     private static final String LEGACY_QUALITY_KEY = "fsr.quality";
-    private static final String RR_DEBUG_VIEW_KEY = "dlss_rr.debug_view";
-    private static final String RR_DEBUG_FULLSCREEN_KEY = "dlss_rr.debug_fullscreen";
-    private static final String FSR_DEBUG_VIEW_KEY = "fsr.debug_view";
-    private static final String NRD_DEBUG_VIEW_KEY = "nrd.debug_view";
+    // Former persisted debug keys are ignored and removed on the next settings save. Diagnostics
+    // are observation tools, not product settings, and always start disabled for a new session.
+    private static final String[] LEGACY_DEBUG_KEYS = {
+        "dlss_rr.debug_view",
+        "dlss_rr.debug_fullscreen",
+        "fsr.debug_view",
+        "nrd.debug_view"
+    };
     private static final String SUN_EV_KEY = "lighting.sun_ev";
     private static final String BLOCK_LIGHT_EV_KEY = "lighting.block_light_ev";
     private static final String OKLAB_OVEREXPOSURE_KEY = "display.oklab_overexposure";
@@ -45,10 +49,6 @@ public final class PrimeConfig {
         Path path = configPath();
         PostProcessingMode postProcessingMode = PostProcessingMode.DEFAULT;
         ReconstructionQualityMode quality = ReconstructionQualityMode.DEFAULT;
-        DlssRrDebugView rrDebugView = DlssRrDebugView.OFF;
-        boolean rrDebugFullscreen = false;
-        FsrDebugView fsrDebugView = FsrDebugView.OFF;
-        NrdDiagnostics.Mode nrdDebugView = NrdDiagnostics.Mode.OFF;
         int sunQuarterSteps = LightingSettings.DEFAULT_SUN_QUARTER_STEPS;
         int blockLightQuarterSteps = LightingSettings.DEFAULT_BLOCK_LIGHT_QUARTER_STEPS;
         int oklabOverexposureSteps = DisplaySettings.DEFAULT_OVEREXPOSURE_STEPS;
@@ -92,62 +92,7 @@ public final class PrimeConfig {
                 } else {
                     rewriteNeeded = true;
                 }
-                String rrDebugId = properties.getProperty(RR_DEBUG_VIEW_KEY);
-                if (rrDebugId != null) {
-                    DlssRrDebugView parsed = DlssRrDebugView.findById(rrDebugId).orElse(null);
-                    if (parsed == null) {
-                        PrimeClient.LOGGER.warn(
-                                "Unknown Prime DLSS RR debug view '{}'; disabling it", rrDebugId);
-                        rewriteNeeded = true;
-                    } else {
-                        rrDebugView = parsed;
-                    }
-                } else {
-                    rewriteNeeded = true;
-                }
-                String rrFullscreen = properties.getProperty(RR_DEBUG_FULLSCREEN_KEY);
-                if (rrFullscreen != null) {
-                    if (rrFullscreen.equalsIgnoreCase("true")
-                            || rrFullscreen.equalsIgnoreCase("false")) {
-                        rrDebugFullscreen = Boolean.parseBoolean(rrFullscreen);
-                    } else {
-                        PrimeClient.LOGGER.warn(
-                                "Invalid Prime DLSS RR fullscreen value '{}'; disabling it",
-                                rrFullscreen);
-                        rewriteNeeded = true;
-                    }
-                } else {
-                    rewriteNeeded = true;
-                }
-                String fsrDebugId = properties.getProperty(FSR_DEBUG_VIEW_KEY);
-                if (fsrDebugId != null) {
-                    FsrDebugView parsedDebug = FsrDebugView.findById(fsrDebugId).orElse(null);
-                    if (parsedDebug == null) {
-                        PrimeClient.LOGGER.warn(
-                                "Unknown Prime FSR debug view '{}'; disabling it",
-                                fsrDebugId);
-                        rewriteNeeded = true;
-                    } else {
-                        fsrDebugView = parsedDebug;
-                    }
-                } else {
-                    rewriteNeeded = true;
-                }
-                String nrdDebugId = properties.getProperty(NRD_DEBUG_VIEW_KEY);
-                if (nrdDebugId != null) {
-                    NrdDiagnostics.Mode parsedDebug =
-                            NrdDiagnostics.Mode.findById(nrdDebugId).orElse(null);
-                    if (parsedDebug == null) {
-                        PrimeClient.LOGGER.warn(
-                                "Unknown Prime NRD debug view '{}'; disabling it",
-                                nrdDebugId);
-                        rewriteNeeded = true;
-                    } else {
-                        nrdDebugView = parsedDebug;
-                    }
-                } else {
-                    rewriteNeeded = true;
-                }
+                rewriteNeeded |= hasLegacyDebugProperties(properties);
                 String sunEv = properties.getProperty(SUN_EV_KEY);
                 if (sunEv != null) {
                     try {
@@ -210,11 +155,11 @@ public final class PrimeConfig {
         }
         PostProcessingSettings.setMode(postProcessingMode);
         PostProcessingSettings.setQuality(quality);
-        PostProcessingSettings.setRrDebugView(rrDebugView);
-        PostProcessingSettings.setRrDebugFullscreen(rrDebugFullscreen);
+        PostProcessingSettings.setRrDebugView(DlssRrDebugView.OFF);
+        PostProcessingSettings.setRrDebugFullscreen(false);
         FsrSettings.setQualityMode(quality.fsrMode());
-        FsrSettings.setDebugView(fsrDebugView);
-        NrdDiagnostics.setMode(nrdDebugView);
+        FsrSettings.setDebugView(FsrDebugView.OFF);
+        NrdDiagnostics.setMode(NrdDiagnostics.Mode.OFF);
         LightingSettings.setSunQuarterSteps(sunQuarterSteps);
         LightingSettings.setBlockLightQuarterSteps(blockLightQuarterSteps);
         DisplaySettings.setOverexposureSteps(oklabOverexposureSteps);
@@ -251,31 +196,19 @@ public final class PrimeConfig {
     }
 
     public static void setDlssRrDebugView(DlssRrDebugView mode) {
-        if (mode != PostProcessingSettings.rrDebugView()) {
-            PostProcessingSettings.setRrDebugView(mode);
-            dirty = true;
-        }
+        PostProcessingSettings.setRrDebugView(mode);
     }
 
     public static void setDlssRrDebugFullscreen(boolean fullscreen) {
-        if (fullscreen != PostProcessingSettings.rrDebugFullscreen()) {
-            PostProcessingSettings.setRrDebugFullscreen(fullscreen);
-            dirty = true;
-        }
+        PostProcessingSettings.setRrDebugFullscreen(fullscreen);
     }
 
     public static void setFsrDebugView(FsrDebugView mode) {
-        if (mode != FsrSettings.debugView()) {
-            FsrSettings.setDebugView(mode);
-            dirty = true;
-        }
+        FsrSettings.setDebugView(mode);
     }
 
     public static void setNrdDebugView(NrdDiagnostics.Mode mode) {
-        if (mode != NrdDiagnostics.mode()) {
-            NrdDiagnostics.setMode(mode);
-            dirty = true;
-        }
+        NrdDiagnostics.setMode(mode);
     }
 
     public static void setSunQuarterSteps(int quarterSteps) {
@@ -328,20 +261,7 @@ public final class PrimeConfig {
         Path temporary = path.resolveSibling(path.getFileName() + ".tmp");
         try {
             Files.createDirectories(path.getParent());
-            String contents = MODE_KEY + "=" + PostProcessingSettings.mode().id() + "\n"
-                    + QUALITY_KEY + "=" + PostProcessingSettings.quality().id() + "\n"
-                    + RR_DEBUG_VIEW_KEY + "=" + PostProcessingSettings.rrDebugView().id() + "\n"
-                    + RR_DEBUG_FULLSCREEN_KEY + "="
-                    + PostProcessingSettings.rrDebugFullscreen() + "\n"
-                    + FSR_DEBUG_VIEW_KEY + "=" + FsrSettings.debugView().id() + "\n"
-                    + NRD_DEBUG_VIEW_KEY + "=" + NrdDiagnostics.mode().id() + "\n"
-                    + SUN_EV_KEY + "=" + formatEv(LightingSettings.sunQuarterSteps()) + "\n"
-                    + BLOCK_LIGHT_EV_KEY + "="
-                    + formatEv(LightingSettings.blockLightQuarterSteps()) + "\n"
-                    + OKLAB_OVEREXPOSURE_KEY + "="
-                    + formatOverexposure(DisplaySettings.overexposureSteps()) + "\n"
-                    + DEFAULT_ROUGHNESS_KEY + "="
-                    + formatRoughness(MaterialSettings.roughnessSteps()) + "\n";
+            String contents = serializedContents();
             Files.writeString(
                     temporary,
                     contents,
@@ -364,6 +284,25 @@ public final class PrimeConfig {
                 exception.addSuppressed(cleanupException);
             }
         }
+    }
+
+    static boolean hasLegacyDebugProperties(Properties properties) {
+        for (String key : LEGACY_DEBUG_KEYS) {
+            if (properties.containsKey(key)) return true;
+        }
+        return false;
+    }
+
+    static String serializedContents() {
+        return MODE_KEY + "=" + PostProcessingSettings.mode().id() + "\n"
+                    + QUALITY_KEY + "=" + PostProcessingSettings.quality().id() + "\n"
+                    + SUN_EV_KEY + "=" + formatEv(LightingSettings.sunQuarterSteps()) + "\n"
+                    + BLOCK_LIGHT_EV_KEY + "="
+                    + formatEv(LightingSettings.blockLightQuarterSteps()) + "\n"
+                    + OKLAB_OVEREXPOSURE_KEY + "="
+                    + formatOverexposure(DisplaySettings.overexposureSteps()) + "\n"
+                    + DEFAULT_ROUGHNESS_KEY + "="
+                    + formatRoughness(MaterialSettings.roughnessSteps()) + "\n";
     }
 
     static int parseEvQuarterSteps(String value) {

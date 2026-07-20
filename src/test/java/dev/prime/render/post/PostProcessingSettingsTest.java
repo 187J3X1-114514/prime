@@ -9,7 +9,7 @@ import org.junit.jupiter.api.Test;
 
 final class PostProcessingSettingsTest {
     @Test
-    void persistedModeAndDebugIdsRoundTrip() {
+    void modeAndSessionDebugIdsRoundTrip() {
         for (PostProcessingMode mode : PostProcessingMode.values()) {
             assertEquals(mode, PostProcessingMode.fromId(mode.id()));
         }

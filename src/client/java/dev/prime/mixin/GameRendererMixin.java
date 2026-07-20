@@ -2,6 +2,7 @@ package dev.prime.mixin;
 
 import com.mojang.blaze3d.pipeline.RenderTarget;
 import dev.prime.render.RayTracingRuntime;
+import dev.prime.render.ScreenshotModeControls;
 import dev.prime.render.post.DlssRrDebugControls;
 import net.minecraft.client.DeltaTracker;
 import net.minecraft.client.renderer.GameRenderer;
@@ -27,6 +28,7 @@ public abstract class GameRendererMixin {
     @Inject(method = "render(Lnet/minecraft/client/DeltaTracker;Z)V", at = @At("HEAD"))
     private void prime$beginFrame(DeltaTracker deltaTracker, boolean advanceGameTime, CallbackInfo ci) {
         var minecraft = net.minecraft.client.Minecraft.getInstance();
+        ScreenshotModeControls.tick(minecraft);
         DlssRrDebugControls.tick(minecraft);
         RayTracingRuntime.instance().beginFrame(minecraft);
     }

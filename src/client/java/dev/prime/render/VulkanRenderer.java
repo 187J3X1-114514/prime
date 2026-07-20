@@ -238,6 +238,11 @@ public final class VulkanRenderer implements AutoCloseable {
                 renderWidth = requestedQualityMode.renderWidth(width);
                 renderHeight = requestedQualityMode.renderHeight(height);
             }
+        } else if (effectiveMode == PostProcessingMode.DISABLED) {
+            // The diagnostic raw path is intentionally a native-resolution 1 spp presentation;
+            // reconstruction quality must not quietly turn it into an upscaled image.
+            renderWidth = width;
+            renderHeight = height;
         } else {
             if (effectiveMode == PostProcessingMode.DLSS_RR) {
                 effectiveMode = PostProcessingMode.NRD_FSR;
@@ -356,9 +361,12 @@ public final class VulkanRenderer implements AutoCloseable {
         VkCommandBuffer commandBuffer = encoder.allocateAndBeginTransientCommandBuffer();
         this.context.device().instance().debug().beginDebugGroup(
                 commandBuffer,
-                () -> images.mode == PostProcessingMode.DLSS_RR
-                        ? "Prime 1spp path tracing and DLSS Ray Reconstruction"
-                        : "Prime 1spp path tracing, NRD, and FidelityFX FSR 3.1.4");
+                () -> switch (images.mode) {
+                    case DLSS_RR -> "Prime 1spp path tracing and DLSS Ray Reconstruction";
+                    case NRD_FSR ->
+                            "Prime 1spp path tracing, NRD, and FidelityFX FSR 3.1.4";
+                    case DISABLED -> "Prime native 1spp path tracing without post-processing";
+                });
         this.atmosphere.prepare(commandBuffer, frameCamera, frameSunDirection);
         this.prepareOutputForComposite(commandBuffer, target);
         this.prepareAccumulationForTrace(commandBuffer, history);
@@ -373,16 +381,18 @@ public final class VulkanRenderer implements AutoCloseable {
                     renderWidth,
                     renderHeight,
                     frameSunDirection,
-                    images.qualityMode.packedRayCone(
+                    (images.mode == PostProcessingMode.DISABLED
+                            ? ReconstructionQualityMode.NATIVE_AA
+                            : images.qualityMode).packedRayCone(
                             frameCamera.projection().m00(),
                             frameCamera.projection().m11(),
                             renderWidth,
                             renderHeight),
                     this.realtimeSampleState.sampleIndex(),
                     this.realtimeSampleState.epoch(),
-                    images.mode == PostProcessingMode.DLSS_RR
-                            ? images.qualityMode.rrJitterPhase(postFrame.frameIndex())
-                            : images.qualityMode.fsrJitterPhase(postFrame.frameIndex()),
+                    images.mode == PostProcessingMode.NRD_FSR
+                            ? images.qualityMode.fsrJitterPhase(postFrame.frameIndex())
+                            : images.qualityMode.rrJitterPhase(postFrame.frameIndex()),
                     frameCameraInWater,
                     lighting,
                     material,

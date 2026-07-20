@@ -5,6 +5,7 @@ import dev.prime.render.post.RealtimePostProcessor;
 import dev.prime.render.post.ReconstructionQualityMode;
 import dev.prime.render.vulkan.fsr.Fsr3Upscaler;
 import dev.prime.render.vulkan.nrd.NrdDenoiser;
+import dev.prime.render.vulkan.nrd.NrdDiagnostics;
 import org.lwjgl.vulkan.VK12;
 import org.lwjgl.vulkan.VkCommandBuffer;
 import org.lwjgl.system.MemoryStack;
@@ -22,6 +23,7 @@ public final class NrdFsrPostProcessor implements RealtimePostProcessor {
     private final VulkanImage sceneColor;
     private final NrdDenoiser denoiser;
     private final Fsr3Upscaler upscaler;
+    private final NativeDebugPresentPass nrdDebugPresent;
     private boolean destroyed;
 
     private NrdFsrPostProcessor(
@@ -32,7 +34,8 @@ public final class NrdFsrPostProcessor implements RealtimePostProcessor {
             int displayHeight,
             VulkanImage sceneColor,
             NrdDenoiser denoiser,
-            Fsr3Upscaler upscaler) {
+            Fsr3Upscaler upscaler,
+            NativeDebugPresentPass nrdDebugPresent) {
         this.quality = quality;
         this.renderWidth = renderWidth;
         this.renderHeight = renderHeight;
@@ -41,6 +44,7 @@ public final class NrdFsrPostProcessor implements RealtimePostProcessor {
         this.sceneColor = sceneColor;
         this.denoiser = denoiser;
         this.upscaler = upscaler;
+        this.nrdDebugPresent = nrdDebugPresent;
     }
 
     public static NrdFsrPostProcessor create(
@@ -56,6 +60,7 @@ public final class NrdFsrPostProcessor implements RealtimePostProcessor {
         VulkanImage sceneColor = null;
         NrdDenoiser denoiser = null;
         Fsr3Upscaler upscaler = null;
+        NativeDebugPresentPass nrdDebugPresent = null;
         try {
             sceneColor = context.createImage2D(
                     renderWidth,
@@ -78,6 +83,8 @@ public final class NrdFsrPostProcessor implements RealtimePostProcessor {
                     denoiser.fsrReactiveMask(),
                     denoiser.fsrTransparencyCompositionMask(),
                     displayOutput);
+            nrdDebugPresent = NativeDebugPresentPass.create(
+                    context, denoiser.validation(), displayOutput);
             return new NrdFsrPostProcessor(
                     quality,
                     renderWidth,
@@ -86,8 +93,10 @@ public final class NrdFsrPostProcessor implements RealtimePostProcessor {
                     displayHeight,
                     sceneColor,
                     denoiser,
-                    upscaler);
+                    upscaler,
+                    nrdDebugPresent);
         } catch (RuntimeException exception) {
+            if (nrdDebugPresent != null) nrdDebugPresent.destroy();
             if (upscaler != null) upscaler.destroy();
             if (denoiser != null) denoiser.destroy();
             if (sceneColor != null) sceneColor.destroy();
@@ -116,7 +125,7 @@ public final class NrdFsrPostProcessor implements RealtimePostProcessor {
                 parameters.sceneRevision(),
                 parameters.atlasView(),
                 parameters.atlasSampler());
-        return new FrameToken(this, fsr);
+        return new FrameToken(this, fsr, NrdDiagnostics.mode());
     }
 
     @Override
@@ -167,6 +176,9 @@ public final class NrdFsrPostProcessor implements RealtimePostProcessor {
                 parameters.sunRadianceMultiplier(),
                 token.reset());
         this.upscaler.record(commandBuffer, token.fsr);
+        if (token.nrdDebugView != NrdDiagnostics.Mode.OFF) {
+            this.nrdDebugPresent.record(commandBuffer);
+        }
         token.recorded = true;
     }
 
@@ -197,6 +209,7 @@ public final class NrdFsrPostProcessor implements RealtimePostProcessor {
     public void destroy() {
         if (this.destroyed) return;
         this.destroyed = true;
+        this.nrdDebugPresent.destroy();
         this.upscaler.destroy();
         this.denoiser.destroy();
         this.sceneColor.destroy();
@@ -205,13 +218,18 @@ public final class NrdFsrPostProcessor implements RealtimePostProcessor {
     public static final class FrameToken implements Frame {
         private final NrdFsrPostProcessor owner;
         private final Fsr3Upscaler.FrameToken fsr;
+        private final NrdDiagnostics.Mode nrdDebugView;
         private NrdDenoiser.FrameToken nrd;
         private boolean recorded;
         private boolean submitted;
 
-        private FrameToken(NrdFsrPostProcessor owner, Fsr3Upscaler.FrameToken fsr) {
+        private FrameToken(
+                NrdFsrPostProcessor owner,
+                Fsr3Upscaler.FrameToken fsr,
+                NrdDiagnostics.Mode nrdDebugView) {
             this.owner = owner;
             this.fsr = fsr;
+            this.nrdDebugView = nrdDebugView;
         }
 
         @Override public int frameIndex() { return this.fsr.frameIndex(); }

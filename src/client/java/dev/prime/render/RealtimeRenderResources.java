@@ -6,6 +6,7 @@ import dev.prime.render.post.RealtimePostProcessor;
 import dev.prime.render.post.ReconstructionQualityMode;
 import dev.prime.render.vulkan.AtmospherePipeline;
 import dev.prime.render.vulkan.NrdFsrPostProcessor;
+import dev.prime.render.vulkan.NoisyPostProcessor;
 import dev.prime.render.vulkan.VulkanContext;
 import dev.prime.render.vulkan.VulkanImage;
 import dev.prime.render.vulkan.dlss.DlssRrNative;
@@ -56,8 +57,8 @@ final class RealtimeRenderResources implements Destroyable {
         try {
             output = context.createOutputImage(displayWidth, displayHeight);
             accumulation = context.createAccumulationImage(renderWidth, renderHeight);
-            if (mode == PostProcessingMode.NRD_FSR) {
-                processor = NrdFsrPostProcessor.create(
+            processor = switch (mode) {
+                case NRD_FSR -> NrdFsrPostProcessor.create(
                         context,
                         atmosphere,
                         accumulation,
@@ -67,22 +68,32 @@ final class RealtimeRenderResources implements Destroyable {
                         displayWidth,
                         displayHeight,
                         qualityMode);
-            } else {
-                if (ngxContext == null) {
-                    throw new IllegalStateException("DLSS RR was selected without an initialized NGX context");
+                case DLSS_RR -> {
+                    if (ngxContext == null) {
+                        throw new IllegalStateException(
+                                "DLSS RR was selected without an initialized NGX context");
+                    }
+                    yield DlssRrPostProcessor.create(
+                            context,
+                            ngxContext,
+                            atmosphere,
+                            accumulation,
+                            output,
+                            renderWidth,
+                            renderHeight,
+                            displayWidth,
+                            displayHeight,
+                            qualityMode);
                 }
-                processor = DlssRrPostProcessor.create(
+                case DISABLED -> NoisyPostProcessor.create(
                         context,
-                        ngxContext,
                         atmosphere,
                         accumulation,
                         output,
                         renderWidth,
                         renderHeight,
-                        displayWidth,
-                        displayHeight,
                         qualityMode);
-            }
+            };
             return new RealtimeRenderResources(
                     output,
                     accumulation,

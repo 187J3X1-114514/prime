@@ -1,0 +1,25 @@
+#version 460
+#extension GL_EXT_samplerless_texture_functions : require
+
+layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
+
+layout(set = 0, binding = 0) uniform texture2D primeNativeDebugInput;
+layout(set = 0, binding = 1, rgba8) uniform writeonly image2D primeNativeDebugOutput;
+
+layout(push_constant) uniform PrimeNativeDebugPresentPushConstants {
+    uvec2 sourceExtent;
+    uvec2 outputExtent;
+} primeNativeDebugPush;
+
+void main() {
+    uvec2 pixel = gl_GlobalInvocationID.xy;
+    if (any(greaterThanEqual(pixel, primeNativeDebugPush.outputExtent))) return;
+    uvec2 sourcePixel = min(
+            (pixel * primeNativeDebugPush.sourceExtent)
+                    / primeNativeDebugPush.outputExtent,
+            primeNativeDebugPush.sourceExtent - uvec2(1u));
+    imageStore(
+            primeNativeDebugOutput,
+            ivec2(pixel),
+            texelFetch(primeNativeDebugInput, ivec2(sourcePixel), 0));
+}

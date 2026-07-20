@@ -239,7 +239,7 @@ public final class NrdDenoiser implements Destroyable, DenoiserInputs {
         return this.images.transparencyGuide;
     }
 
-    VulkanImage validation() {
+    public VulkanImage validation() {
         return this.images.validation;
     }
 
@@ -399,7 +399,7 @@ public final class NrdDenoiser implements Destroyable, DenoiserInputs {
                     commandBuffer,
                     this.width,
                     this.height,
-                    diagnosticMode,
+                    0,
                     sunRadianceMultiplier);
             return new FrameToken(
                     this,

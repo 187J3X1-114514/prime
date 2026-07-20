@@ -14,6 +14,7 @@ public interface Denoiser extends Destroyable {
     enum Kind {
         NRD_FSR,
         DLSS_RR,
+        NOISY,
         REFERENCE_ACCUMULATION
     }
 

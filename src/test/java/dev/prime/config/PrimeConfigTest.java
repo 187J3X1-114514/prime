@@ -1,6 +1,8 @@
 package dev.prime.config;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import dev.prime.render.post.DlssRrDebugView;
@@ -48,10 +50,10 @@ final class PrimeConfigTest {
     }
 
     @Test
-    void missingAndUnknownPostProcessingValuesUseReleaseSafeDefaults() {
-        assertEquals(PostProcessingMode.NRD_FSR, PostProcessingMode.DEFAULT);
-        assertEquals(PostProcessingMode.NRD_FSR, PostProcessingMode.fromId(null));
-        assertEquals(PostProcessingMode.NRD_FSR, PostProcessingMode.fromId("future_backend"));
+    void missingAndUnknownPostProcessingValuesRequestRrByDefault() {
+        assertEquals(PostProcessingMode.DLSS_RR, PostProcessingMode.DEFAULT);
+        assertEquals(PostProcessingMode.DLSS_RR, PostProcessingMode.fromId(null));
+        assertEquals(PostProcessingMode.DLSS_RR, PostProcessingMode.fromId("future_backend"));
         assertEquals(ReconstructionQualityMode.PERFORMANCE, ReconstructionQualityMode.DEFAULT);
         assertEquals(
                 ReconstructionQualityMode.PERFORMANCE,
@@ -67,5 +69,17 @@ final class PrimeConfigTest {
 
         legacy.setProperty("post_processing.quality", "quality");
         assertEquals("quality", PrimeConfig.configuredQualityId(legacy));
+    }
+
+    @Test
+    void debugSelectionsAreSessionOnlyAndLegacyKeysAreRemovedOnRewrite() {
+        String serialized = PrimeConfig.serializedContents();
+        assertFalse(serialized.contains("debug_view"));
+        assertFalse(serialized.contains("debug_fullscreen"));
+
+        Properties properties = new Properties();
+        assertFalse(PrimeConfig.hasLegacyDebugProperties(properties));
+        properties.setProperty("dlss_rr.debug_view", "motion");
+        assertTrue(PrimeConfig.hasLegacyDebugProperties(properties));
     }
 }

@@ -4,7 +4,7 @@ import java.util.Arrays;
 import java.util.Objects;
 import java.util.Optional;
 
-/** Persisted runtime control for NRD integration diagnostics. */
+/** Session-only runtime control for NRD integration diagnostics. */
 public final class NrdDiagnostics {
     private static volatile Mode mode = Mode.OFF;
 

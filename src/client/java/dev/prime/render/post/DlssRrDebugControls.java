@@ -1,6 +1,5 @@
 package dev.prime.render.post;
 
-import dev.prime.config.PrimeConfig;
 import net.minecraft.client.Minecraft;
 import org.lwjgl.glfw.GLFW;
 
@@ -20,12 +19,11 @@ public final class DlssRrDebugControls {
         boolean cycle = control && alt && pressed(window, GLFW.GLFW_KEY_F12);
         boolean layout = control && alt && pressed(window, GLFW.GLFW_KEY_F11);
         if (cycle && !previousCycle) {
-            PrimeConfig.setDlssRrDebugView(PostProcessingSettings.rrDebugView().next());
-            PrimeConfig.save();
+            PostProcessingSettings.setRrDebugView(PostProcessingSettings.rrDebugView().next());
         }
         if (layout && !previousLayout) {
-            PrimeConfig.setDlssRrDebugFullscreen(!PostProcessingSettings.rrDebugFullscreen());
-            PrimeConfig.save();
+            PostProcessingSettings.setRrDebugFullscreen(
+                    !PostProcessingSettings.rrDebugFullscreen());
         }
         previousCycle = cycle;
         previousLayout = layout;

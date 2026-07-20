@@ -13,7 +13,8 @@ final class DenoiserArchitectureTest {
         assertTrue(Denoiser.class.isAssignableFrom(RealtimePostProcessor.class));
         assertTrue(Denoiser.class.isAssignableFrom(
                 Class.forName("dev.prime.render.ReferenceAccumulator")));
-        assertEquals(3, Denoiser.Kind.values().length);
+        assertEquals(4, Denoiser.Kind.values().length);
+        assertEquals(Denoiser.Kind.NOISY, Denoiser.Kind.valueOf("NOISY"));
         assertEquals(Denoiser.Kind.REFERENCE_ACCUMULATION,
                 Denoiser.Kind.valueOf("REFERENCE_ACCUMULATION"));
     }

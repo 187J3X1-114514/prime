@@ -18,7 +18,11 @@ public interface RealtimePostProcessor extends Denoiser {
 
     @Override
     default Kind kind() {
-        return mode() == PostProcessingMode.DLSS_RR ? Kind.DLSS_RR : Kind.NRD_FSR;
+        return switch (mode()) {
+            case NRD_FSR -> Kind.NRD_FSR;
+            case DLSS_RR -> Kind.DLSS_RR;
+            case DISABLED -> Kind.NOISY;
+        };
     }
 
     ReconstructionQualityMode quality();

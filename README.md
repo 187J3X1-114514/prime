@@ -9,9 +9,9 @@ Prime 是一个面向 Minecraft 的客户端 Shader Mod，基于 Minecraft Vulka
 
 ## 当前积分器基线
 
-- “视频设置”中的“截图模式”会冻结进入时的相机、太阳、地形、灯光标定、摄像机介质状态与方块动画，在窗口原生分辨率每像素追踪一条完整 BSDF 路径，并直接累积到线性 Rec.2020 RGBA32F 历史。该路径不运行 NRD 或 FSR，也不对高亮样本做钳制；显示时只读取当前统计均值并执行同一 Oklab DRT。退出后会恢复地形流送并进行一次完整重同步。窗口纵横比变化会保留冻结的位置与朝向、更新投影并重新开始累积；世界/资源切换则安全退出模式，避免在同一均值中混合不同场景。该开关仅在当前游戏会话有效。
+- “视频设置”中的“参考累积截图”会冻结进入时的相机、太阳、地形、灯光标定、摄像机介质状态与方块动画，在窗口原生分辨率每像素追踪一条完整 BSDF 路径，并直接累积到线性 Rec.2020 RGBA32F 历史。该路径旁路 DLSS RR、NRD、FSR 及全部实时调试覆盖层，也不对高亮样本做钳制；显示时只读取当前统计均值并执行同一 Oklab DRT。`Ctrl+Alt+F2` 可进入/退出且不影响普通 `F2` 截图，`Esc` 只退出。退出后会恢复地形流送并进行一次完整重同步。窗口纵横比变化会保留冻结的位置与朝向、更新投影并重新开始累积；世界/资源切换则安全退出模式，避免在同一均值中混合不同场景。该开关仅在当前游戏会话有效。
 - 完整使用 Vulkan KHR ray tracing pipeline。raygen 以迭代 mega-kernel 推进路径，miss、closest-hit 和 any-hit 只返回遍历结果；管线递归深度保持为 1。支持通用 `VK_EXT_ray_tracing_invocation_reorder` 且报告真实重排模式的设备会在表面遍历后对 shader 续体做可选重排；普通 permutation 保留原始行为。
-- 默认启用 `NRD-FSR`：路径追踪与 NRD 在较低分辨率运行，去噪后的线性 Rec.2020 HDR 场景由 AMD FidelityFX FSR 3.1.4 执行时间超分辨率，最后进入 Prime 的 Oklab 显示变换。也可选择平级的 `DLSS RR`，直接以完整 noisy color、运动、深度、法线/粗糙度、两种反照率、镜面命中距离和透明前颜色执行联合降噪与超分，再使用相同显示变换；该路径不调度 NRD 或 FSR。主光线使用模型 UV 微分驱动的 ray-cone LOD，并应用当前质量档对应的 mip bias。视频设置可统一选择 Native AA、Quality、Balanced、Performance 或 Ultra Performance；默认模式仍为 NRD-FSR、默认质量仍为 Performance。模式/质量变化会成组重建尺寸资源与时间历史。
+- 支持的 RTX 设备默认启用 `DLSS RR`，直接以完整 noisy color、运动、深度、法线/粗糙度、两种反照率、镜面命中距离和透明前颜色执行联合降噪与超分，再使用公共 Oklab 显示变换；该路径不调度 NRD 或 FSR。RR 不可用或初始化失败时，会话自动回退到 `NRD-FSR`：路径追踪与 NRD 在较低分辨率运行，去噪后的线性 Rec.2020 HDR 场景由 AMD FidelityFX FSR 3.1.4 执行时间超分辨率。另有“禁用（不推荐）”模式，以原生分辨率直接显示每帧 1 spp 的噪点结果，不运行任一降噪/重建后端。主光线使用模型 UV 微分驱动的 ray-cone LOD，并应用所选路径对应的 mip bias。视频设置可统一选择 Native AA、Quality、Balanced、Performance 或 Ultra Performance；默认质量为 Performance。模式/质量变化会成组重建尺寸资源与时间历史。
 - 每像素每帧只追踪一条完整 BSDF 路径。NRD 4.17.4 的 `REBLUR_DIFFUSE_SPECULAR` 使用 63 帧主/稳定历史、10 帧快速历史和 4 帧 history-fix 处理面积光与间接光；太阳直射保持为独立信号，由 `SIGMA_SHADOW` 过滤可见性，不进入两级辐射历史。漫反射和镜面信号先按精确的方向能量分离，在材质除法后以共享比例限制实际送入 REBLUR 的 illumination。R10G10B10A2 normal/roughness 输入还区分普通介电、金属、透明接口与 foliage，避免跨材质历史混合。首个可见表面立即提供降噪法线、线性粗糙度和漫反射/镜面方向能量；后续透明 delta 链只把各表面的镜面能量乘入 guide，首次采到 non-delta 事件时再乘入该表面的漫反射与镜面能量之和。REBLUR 命中距离重建使用 5×5 区域，并为概率采样的漫反射/镜面信号保留 30/50 像素 prepass。换世界或渲染原点变化会同步重启采样、NRD 和 FSR 历史；普通区块流送依靠逐像素重投影和反遮挡处理，不触发整屏重置。
 - NRD 使用主表面的世界空间法线、线性粗糙度、view-Z、命中距离和 FSR 的统一 Halton 帧抖动进行重投影。运动采用 NRD 推荐的非抖动 2.5D 屏幕空间约定：`old = new + MV`，其中 XY 指向上一帧 UV，Z 为上一帧与当前帧 view-Z 之差；FSR 复用其 XY，并接收独立的 reversed-infinite depth。天空运动只包含视角旋转而忽略平移。窗口尺寸变化会整体重建与尺寸相关的 NRD/FSR 图像和历史，不复用不兼容资源。
 - 当前缺省不透明材质是由方块纹理与生物群系 tint 驱动的介质边界与漫反射基底；没有材质包粗糙度时使用 0.80 的感知粗糙度、0.04 的介质 F0 和 1.5 的 IOR，显式材质数据仍优先。Section 网格同时提取 solid、cutout、translucent 模型层与原版流体（包括 waterlogged 流体）；玻璃类完整方块、薄壁透明模型和水分别进入完整的 RoboCute 介质透射 BSDF，使用运行时 3D 方向能量表、Fresnel/折射以及跨反弹保存的两层体积栈。缺省透明材质的线性粗糙度固定为零，由单条路径按 Fresnel 分布采样 delta 反射或透射；未来显式提供非零粗糙度的材质仍使用完整 GGX 重要性采样。零体积薄壁使用闭包的精确光滑双界面级数。吸收严格按射线实际经过的介质段应用；摄像机位于真实水面以下时会以水介质初始化体积栈。光源来自光谱大气、太阳和从原版发光等级/纹理估计的方块面光源。它们仍是可替换的内部适配层，不定义最终产品材质或灯光模型。
@@ -76,7 +76,7 @@ $env:Path = "$env:JAVA_HOME\bin;$env:VULKAN_SDK\Bin;$env:Path"
 
 ### 视频设置与诊断
 
-原版“视频设置”的 Prime 区域集中管理截图模式、`NRD-FSR`/`DLSS RR` 后处理模式、五档统一重建质量、阳光强度、方块灯光强度及对应调试视图，并提供“恢复 Prime 默认设置”。RR 调试覆盖层可显示实际 NGX 输入、Color Before Transparency 差值与 RR 输出；`Ctrl+Alt+F12` 循环内容，`Ctrl+Alt+F11` 切换右上角面板/全屏。两项灯光强度是相对默认标定的 EV 偏移，每档 `0.25 EV`，按 `2^EV` 换算为线性辐射亮度。除仅对当前会话生效的截图模式外，其余选择都会保存到 `config/prime.properties`。
+原版“视频设置”的 Prime 区域将“恢复 Prime 默认设置”置于顶部，并集中管理参考累积截图、`NRD-FSR`/`DLSS RR`/禁用后处理、五档统一重建质量、阳光强度、方块灯光强度及对应调试视图。NRD 验证图以最近邻直接呈现其原生输出，FSR 总览保留 FidelityFX 的原生标色，两者都绕过 Oklab 变换；RR 调试覆盖层显示实际 NGX 输入、Color Before Transparency 差值与 RR 输出，`Ctrl+Alt+F12` 循环内容，`Ctrl+Alt+F11` 切换右上角面板/全屏。三类调试选择和截图模式都仅对当前会话生效，切换调试不会重置时间历史，也不会写入 `config/prime.properties`。两项灯光强度是相对默认标定的 EV 偏移，每档 `0.25 EV`，按 `2^EV` 换算为线性辐射亮度。
 
 NRD 调试视图包含：
 

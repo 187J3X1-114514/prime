@@ -32,7 +32,6 @@ struct LightEvaluation {
 // path escapes; the sun and area-light adapters are sampled explicitly and perform no selection.
 
 const float PRIME_FLOAT_MAX = 3.402823466e+38;
-const float PRIME_MAXIMUM_INVERSE_PDF = 1.0e30;
 
 float primePowerHeuristic(float firstPdf, float secondPdf) {
     if (isnan(firstPdf) || !(firstPdf > 0.0)) {
@@ -61,21 +60,17 @@ float primePowerHeuristicOverPdf(float sampledPdf, float otherPdf) {
         return 0.0;
     }
     if (isnan(otherPdf) || !(otherPdf > 0.0)) {
-        return min(1.0 / sampledPdf, PRIME_MAXIMUM_INVERSE_PDF);
+        return 1.0 / sampledPdf;
     }
     if (isinf(otherPdf)) {
         return 0.0;
     }
     if (sampledPdf >= otherPdf) {
         float ratio = otherPdf / sampledPdf;
-        return min(
-                (1.0 / sampledPdf) / (1.0 + ratio * ratio),
-                PRIME_MAXIMUM_INVERSE_PDF);
+        return (1.0 / sampledPdf) / (1.0 + ratio * ratio);
     }
     float ratio = sampledPdf / otherPdf;
-    return min(
-            (ratio / otherPdf) / (1.0 + ratio * ratio),
-            PRIME_MAXIMUM_INVERSE_PDF);
+    return (ratio / otherPdf) / (1.0 + ratio * ratio);
 }
 
 vec3 primeEnvironmentRadiance(IntegratorRecord integrator, vec3 direction) {

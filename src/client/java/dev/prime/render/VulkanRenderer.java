@@ -54,7 +54,7 @@ public final class VulkanRenderer implements AutoCloseable {
     private RayTracingPipeline pipeline;
     private AtmospherePipeline atmosphere;
     private RealtimeRenderResources realtimeResources;
-    private ScreenshotRenderResources screenshotResources;
+    private ReferenceAccumulator screenshotResources;
     private BlockAtlasFrame blockAtlasFrame;
     private FrameCamera camera;
     private SunDirection sunDirection;
@@ -498,7 +498,7 @@ public final class VulkanRenderer implements AutoCloseable {
         }
 
         this.ensureScreenshotResources(width, height);
-        ScreenshotRenderResources images = this.screenshotResources;
+        ReferenceAccumulator images = this.screenshotResources;
         if (images == null) {
             return;
         }
@@ -864,12 +864,12 @@ public final class VulkanRenderer implements AutoCloseable {
     }
 
     private void ensureScreenshotResources(int width, int height) {
-        ScreenshotRenderResources current = this.screenshotResources;
+        ReferenceAccumulator current = this.screenshotResources;
         if (current != null && current.matches(width, height)) {
             return;
         }
-        ScreenshotRenderResources replacement =
-                ScreenshotRenderResources.create(this.context, width, height);
+        ReferenceAccumulator replacement =
+                ReferenceAccumulator.create(this.context, width, height);
         this.screenshotResources = replacement;
         this.screenshotSampleCount = 0L;
         if (current != null) {

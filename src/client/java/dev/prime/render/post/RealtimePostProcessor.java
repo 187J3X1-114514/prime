@@ -1,10 +1,9 @@
 package dev.prime.render.post;
 
-import com.mojang.blaze3d.vulkan.Destroyable;
 import dev.prime.render.FrameCamera;
 import dev.prime.render.SunDirection;
 import dev.prime.render.fsr.FsrSettings;
-import dev.prime.render.vulkan.PathTraceTargets;
+import dev.prime.render.vulkan.DenoiserInputs;
 import dev.prime.render.vulkan.VulkanImage;
 import org.lwjgl.vulkan.VkCommandBuffer;
 
@@ -14,8 +13,13 @@ import org.lwjgl.vulkan.VkCommandBuffer;
  * <p>It owns render extent, temporal jitter/history, raw path targets, command recording,
  * submission state, full-resolution linear HDR output, and backend lifetime.
  */
-public interface RealtimePostProcessor extends Destroyable {
+public interface RealtimePostProcessor extends Denoiser {
     PostProcessingMode mode();
+
+    @Override
+    default Kind kind() {
+        return mode() == PostProcessingMode.DLSS_RR ? Kind.DLSS_RR : Kind.NRD_FSR;
+    }
 
     ReconstructionQualityMode quality();
 
@@ -27,7 +31,7 @@ public interface RealtimePostProcessor extends Destroyable {
 
     int displayHeight();
 
-    PathTraceTargets targets();
+    DenoiserInputs targets();
 
     VulkanImage linearHdrOutput();
 

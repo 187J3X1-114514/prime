@@ -285,6 +285,8 @@ PRIME_NRD_EXPORT int32_t primeNrdCreate(
     settings.maxFastAccumulatedFrameNum = 10;
     settings.maxStabilizedFrameNum = 63;
     settings.historyFixFrameNum = 4;
+    settings.minMaterialForDiffuse = 0.0f;
+    settings.minMaterialForSpecular = 0.0f;
     result = nrd::SetDenoiserSettings(*context->instance, PRIME_NRD_REBLUR_ID, &settings);
     if (result != nrd::Result::SUCCESS)
     {
@@ -338,6 +340,7 @@ PRIME_NRD_EXPORT int32_t primeNrdSetFrameSettings(
         ? nrd::AccumulationMode::RESTART
         : nrd::AccumulationMode::CONTINUE;
     settings.isMotionVectorInWorldSpace = false;
+    settings.strandMaterialID = 1.0f;
     settings.enableValidation = input->enableValidation != 0;
 
     nrd::SigmaSettings sigmaSettings = {};

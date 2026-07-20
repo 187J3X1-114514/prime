@@ -15,15 +15,17 @@ cmake --build build/native/nrd --config Release --target prime_nrd --parallel
 
 The build is deliberately pinned to NRD 4.17.4, SPIR-V only, with one NRD instance containing
 `REBLUR_DIFFUSE_SPECULAR` and `SIGMA_SHADOW`, no NRI and no quad-intrinsics extension. Realtime
-rendering traces one complete path per pixel. REBLUR uses 30 main-history frames, 6 fast-history
-frames and a 3-frame history fix for area-light and indirect transport. Direct sun remains a
+rendering traces one complete path per pixel. REBLUR uses 63 main/stabilized-history frames,
+10 fast-history frames and a 4-frame history fix for area-light and indirect transport. Direct sun remains a
 separate signal and consumes SIGMA's filtered visibility at composition.
 Demodulated diffuse and specular illumination share a bounded input, and remodulated output is
 bounded together with direct sun before composition. Probabilistically sampled diffuse and
 specular transport use the default 30/50-pixel prepasses. The first visible surface
 supplies NRD's normal, roughness, and per-lobe directional energy. A following delta chain
 multiplies specular energy into the specular guide until the first non-delta event contributes
-its diffuse-plus-specular energy. REBLUR hit-distance reconstruction uses NRD's 5x5 area mode.
+its diffuse-plus-specular energy. The A2 normal channel classifies ordinary dielectrics, metals,
+transmissive interfaces and strand-like foliage; the bridge enables exact material comparison and
+the foliage strand ID. REBLUR hit-distance reconstruction uses NRD's 5x5 area mode.
 Copy the resulting `build/native/nrd/bin/Release/prime_nrd.dll` to
 `src/client/resources/prime/natives/windows-x86_64/prime_nrd.dll` and run the full Gradle build.
 

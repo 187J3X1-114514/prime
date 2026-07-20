@@ -1,7 +1,7 @@
 package dev.prime.render.vulkan;
 
-/** Images written directly by the realtime ray-generation shader. */
-public interface PathTraceTargets {
+/** Physical path signals and primary-surface guides written by the realtime ray-generation shader. */
+public interface DenoiserInputs {
     VulkanImage noisyDiffuse();
 
     VulkanImage noisySpecular();

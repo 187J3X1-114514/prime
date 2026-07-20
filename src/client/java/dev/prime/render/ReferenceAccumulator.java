@@ -1,25 +1,25 @@
 package dev.prime.render;
 
-import com.mojang.blaze3d.vulkan.Destroyable;
+import dev.prime.render.post.Denoiser;
 import dev.prime.render.vulkan.ScreenshotDisplay;
 import dev.prime.render.vulkan.VulkanContext;
 import dev.prime.render.vulkan.VulkanImage;
 
-/** Native-resolution resources owned exclusively by one screenshot accumulation session. */
-final class ScreenshotRenderResources implements Destroyable {
+/** Zero-filter native-resolution denoiser used by one frozen reference accumulation session. */
+final class ReferenceAccumulator implements Denoiser {
     final VulkanImage output;
     final VulkanImage accumulation;
     final ScreenshotDisplay display;
     private boolean destroyed;
 
-    private ScreenshotRenderResources(
+    private ReferenceAccumulator(
             VulkanImage output, VulkanImage accumulation, ScreenshotDisplay display) {
         this.output = output;
         this.accumulation = accumulation;
         this.display = display;
     }
 
-    static ScreenshotRenderResources create(VulkanContext context, int width, int height) {
+    static ReferenceAccumulator create(VulkanContext context, int width, int height) {
         VulkanImage output = null;
         VulkanImage accumulation = null;
         ScreenshotDisplay display = null;
@@ -27,7 +27,7 @@ final class ScreenshotRenderResources implements Destroyable {
             output = context.createOutputImage(width, height);
             accumulation = context.createAccumulationImage(width, height);
             display = ScreenshotDisplay.create(context, accumulation, output);
-            return new ScreenshotRenderResources(output, accumulation, display);
+            return new ReferenceAccumulator(output, accumulation, display);
         } catch (RuntimeException exception) {
             if (display != null) {
                 display.destroy();
@@ -48,6 +48,13 @@ final class ScreenshotRenderResources implements Destroyable {
                 && this.accumulation.width() == width
                 && this.accumulation.height() == height;
     }
+
+    @Override public Kind kind() { return Kind.REFERENCE_ACCUMULATION; }
+    @Override public int renderWidth() { return this.accumulation.width(); }
+    @Override public int renderHeight() { return this.accumulation.height(); }
+    @Override public int displayWidth() { return this.output.width(); }
+    @Override public int displayHeight() { return this.output.height(); }
+    @Override public VulkanImage linearHdrOutput() { return this.accumulation; }
 
     @Override
     public void destroy() {

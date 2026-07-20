@@ -10,7 +10,7 @@ layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
 layout(set = 0, binding = 0, rgba16f) uniform readonly image2D rrNoisyDiffuse;
 layout(set = 0, binding = 1, rgba16f) uniform readonly image2D rrNoisySpecular;
 layout(set = 0, binding = 2, rgba16f) uniform image2D rrDiffuseMaterial;
-layout(set = 0, binding = 3, rgba16f) uniform readonly image2D rrSpecularMaterial;
+layout(set = 0, binding = 3, rgba16f) uniform image2D rrSpecularMaterial;
 layout(set = 0, binding = 4, rgb10_a2) uniform readonly image2D rrPackedNormalRoughness;
 layout(set = 0, binding = 5, r32f) uniform writeonly image2D rrLinearViewZ;
 layout(set = 0, binding = 6, rgba32f) uniform readonly image2D rrPrimaryPosition;
@@ -119,8 +119,16 @@ void main() {
     roughness = sky ? PRIME_DEFAULT_REFERENCE_LINEAR_ROUGHNESS : clamp(roughness, 0.0, 1.0);
     imageStore(rrNormalRoughness, pixel, vec4(normal, roughness));
 
-    vec3 diffuseAlbedo = transparent ? vec3(0.0) : primeNrdSanitizeGuide(material.rgb);
+    // The SDK's neutral sky fallback is 0.5 for both albedos. A value of one tells RR that all
+    // noisy sky energy is fully explained by material reflectance and over-constrains reconstruction.
+    vec3 diffuseAlbedo = sky
+            ? vec3(0.5)
+            : (transparent ? vec3(0.0) : primeNrdSanitizeGuide(material.rgb));
+    vec3 specularAlbedo = sky
+            ? vec3(0.5)
+            : primeNrdSanitizeGuide(specularMaterial.rgb);
     imageStore(rrDiffuseMaterial, pixel, vec4(diffuseAlbedo, material.a));
+    imageStore(rrSpecularMaterial, pixel, vec4(specularAlbedo, specularMaterial.a));
     imageStore(
             rrSpecularHitDistance,
             pixel,

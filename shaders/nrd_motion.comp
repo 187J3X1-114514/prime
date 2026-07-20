@@ -80,7 +80,9 @@ void main() {
                 primeNormalRoughness,
                 pixel,
                 primeNrdPackNormalRoughness(
-                        vec3(0.0, 0.0, 1.0), PRIME_DEFAULT_REFERENCE_LINEAR_ROUGHNESS));
+                        vec3(0.0, 0.0, 1.0),
+                        PRIME_DEFAULT_REFERENCE_LINEAR_ROUGHNESS,
+                        0.0));
         imageStore(primeViewZ, pixel, vec4(PRIME_MOTION_SKY_VIEW_Z, 0.0, 0.0, 0.0));
         imageStore(primeMaterial, pixel, vec4(1.0, 1.0, 1.0, primaryDistance));
         imageStore(
@@ -142,7 +144,10 @@ void main() {
     imageStore(
             primeNormalRoughness,
             pixel,
-            primeNrdPackNormalRoughness(primaryNormal, primaryLinearRoughness));
+            primeNrdPackNormalRoughness(
+                    primaryNormal,
+                    primaryLinearRoughness,
+                    primeNrdMaterialId(primaryMaterialFlags)));
     imageStore(primeViewZ, pixel, vec4(currentViewZ, 0.0, 0.0, 0.0));
     imageStore(
             primeMaterial,

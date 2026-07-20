@@ -116,7 +116,7 @@ public final class RayTracingPipeline implements Destroyable {
             VulkanImage labPbrNormalAtlas,
             VulkanImage labPbrSpecularAtlas,
             AtmospherePipeline atmosphere,
-            PathTraceTargets targets) {
+            DenoiserInputs targets) {
         if (this.descriptorBindings != null
                 && this.descriptorBindings.matches(
                         tlas,
@@ -709,7 +709,7 @@ public final class RayTracingPipeline implements Destroyable {
                 VulkanImage labPbrNormalAtlas,
                 VulkanImage labPbrSpecularAtlas,
                 AtmospherePipeline atmosphere,
-                PathTraceTargets targets,
+                DenoiserInputs targets,
                 BsdfLookupTable bsdfLookup) {
             try (MemoryStack stack = MemoryStack.stackPush()) {
                 VkDescriptorPoolSize.Buffer sizes = VkDescriptorPoolSize.calloc(3, stack);

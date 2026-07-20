@@ -1,6 +1,8 @@
 #ifndef PRIME_NRD_COMMON_GLSL
 #define PRIME_NRD_COMMON_GLSL
 
+#include "default_material.glsl"
+
 // These encoders are the shader half of the immutable NRD 4.17 contract declared in abi.json.
 // Every radiance value is demodulated linear Rec.2020 D65. Normals remain in Prime's world axes,
 // roughness is linear, motion is non-jittered 2.5D screen-space previous-minus-current, and view Z
@@ -23,7 +25,20 @@ vec3 primeNrdYCoCgToLinear(vec3 color) {
     return max(vec3(t + color.y, color.x + color.z, t - color.y), vec3(0.0));
 }
 
-vec4 primeNrdPackNormalRoughness(vec3 normal, float roughness) {
+float primeNrdMaterialId(uint materialFlags) {
+    // R10_G10_B10_A2_UNORM provides four exact classes. These categories deliberately describe
+    // reconstruction behavior, not every authored material: ordinary dielectrics, conductors,
+    // transmissive interfaces, and strand-like foliage must not exchange temporal history.
+    if (primeMaterialIsFoliage(materialFlags)) {
+        return 1.0;
+    }
+    if (primeMaterialIsTransmissive(materialFlags)) {
+        return 2.0 / 3.0;
+    }
+    return (materialFlags & PRIME_MATERIAL_FLAG_LABPBR_METAL) != 0u ? 1.0 / 3.0 : 0.0;
+}
+
+vec4 primeNrdPackNormalRoughness(vec3 normal, float roughness, float materialId) {
     vec3 encodedNormal = normalize(normal);
     encodedNormal /= max(abs(encodedNormal.x) + abs(encodedNormal.y) + abs(encodedNormal.z), 1.0e-9);
     vec3 packed;
@@ -34,7 +49,7 @@ vec4 primeNrdPackNormalRoughness(vec3 normal, float roughness) {
             ? -max(roughness, 1.5 / 512.0)
             : max(roughness, 1.5 / 512.0);
     packed.z = signedRoughness * 0.5 + 0.5;
-    return vec4(packed, 0.0);
+    return vec4(packed, clamp(materialId, 0.0, 1.0));
 }
 
 void primeNrdUnpackNormalRoughness(

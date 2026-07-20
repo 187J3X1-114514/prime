@@ -1,7 +1,7 @@
 package dev.prime.render.vulkan.dlss;
 
 import com.mojang.blaze3d.vulkan.Destroyable;
-import dev.prime.render.vulkan.PathTraceTargets;
+import dev.prime.render.vulkan.DenoiserInputs;
 import dev.prime.render.vulkan.VulkanContext;
 import dev.prime.render.vulkan.VulkanImage;
 import java.util.ArrayList;
@@ -13,7 +13,7 @@ import org.lwjgl.vulkan.VkDependencyInfo;
 import org.lwjgl.vulkan.VkImageMemoryBarrier2;
 
 /** Owns every raw path-trace signal and concrete NGX image for one RR feature extent. */
-public final class DlssRrTargets implements PathTraceTargets, Destroyable {
+public final class DlssRrTargets implements DenoiserInputs, Destroyable {
     static final int COLOR_FORMAT = VK12.VK_FORMAT_R16G16B16A16_SFLOAT;
     static final int ALBEDO_FORMAT = VK12.VK_FORMAT_R16G16B16A16_SFLOAT;
     static final int NORMAL_ROUGHNESS_FORMAT = VK12.VK_FORMAT_R16G16B16A16_SFLOAT;

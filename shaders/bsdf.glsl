@@ -21,7 +21,6 @@ struct PrimeTransmissiveBsdfSample {
 };
 
 const float PRIME_GLASS_MINIMUM_TINT_WEIGHT = 0.75;
-const float PRIME_MINIMUM_BSDF_SAMPLE_PDF = 1.0e-4;
 // Rec.2020's near-monochromatic primaries are 630, 532 and 467 nm. Pope and Fry's measured
 // absorption coefficients for pure water at 22 C are 0.2916 m^-1 at 630 nm and, by linear
 // interpolation of their Table 3, 0.04444 m^-1 at 532 nm and 0.010182 m^-1 at 467 nm.
@@ -32,8 +31,10 @@ const vec3 PRIME_REC2020_PRIMARY_WAVELENGTHS_NM = vec3(630.0, 532.0, 467.0);
 const vec3 PRIME_PURE_WATER_ABSORPTION_M_INV = vec3(0.2916, 0.04444, 0.010182);
 
 vec3 primeBsdfSampleWeight(PrimeRcSample sampleValue) {
-    return sampleValue.throughput.value
-            / max(sampleValue.pdf, PRIME_MINIMUM_BSDF_SAMPLE_PDF);
+    // primeValidRcSample has already established a finite, strictly positive density. Do not
+    // floor it here: truncating a rare high-weight path is a systematic dark bias and affects the
+    // reference accumulator as well as realtime reconstruction.
+    return sampleValue.throughput.value / sampleValue.pdf;
 }
 
 bool primeFiniteNonnegative(vec3 value) {
@@ -406,7 +407,7 @@ PrimeBsdfComponents primeEvaluateOpaqueComponents(
     vec3 localView = primeRcOnbToLocal(state.material.geometry.onb, viewDirection);
     vec3 localScatter = primeRcOnbToLocal(state.material.geometry.onb, scatterDirection);
     float cosine = abs(localScatter.z);
-    if (cosine <= PRIME_BSDF_EPSILON) {
+    if (!(cosine > 0.0)) {
         return result;
     }
     bool subsurface = state.material.weight.subsurface > 0.0;
@@ -517,8 +518,12 @@ PrimeMinecraftMirrorSplit primeMinecraftMirrorSplit(
             state.specularMicrofacet,
             localView.z,
             state.specularFresnel.ior);
-    float resolvedEnergy = max(primeRcReduceSum(directionalEnergy), PRIME_BSDF_EPSILON);
-    float reflectedFraction = clamp(directionalEnergy.x / resolvedEnergy, 0.0, 1.0);
+    float resolvedEnergy = primeRcReduceSum(directionalEnergy);
+    float reflectedFraction = resolvedEnergy > 0.0
+                    && !isnan(resolvedEnergy)
+                    && !isinf(resolvedEnergy)
+            ? clamp(directionalEnergy.x / resolvedEnergy, 0.0, 1.0)
+            : 0.0;
     // The default Minecraft adapter keeps dielectric reflection achromatic. Retaining the color
     // term here makes the split remain correct if a future material decoder tints the interface.
     result.reflectance = reflectedFraction * state.specularFresnel.color;
@@ -569,7 +574,7 @@ BsdfEvaluation primeEvaluateMinecraftTransmission(
     if (evaluation.pdf > 0.0
             && !isnan(evaluation.pdf)
             && !isinf(evaluation.pdf)
-            && cosine > PRIME_BSDF_EPSILON
+            && cosine > 0.0
             && evaluation.throughput.flags != PRIME_RC_FLAG_NONE
             && primeFiniteNonnegative(evaluation.throughput.value)) {
         result.value = evaluation.throughput.value / cosine;
@@ -625,7 +630,9 @@ PrimeTransmissiveBsdfSample primeSampleMinecraftTransmission(
         float branchProbability = reflectionBranch
                 ? mirror.probability
                 : 1.0 - mirror.probability;
-        if (branchProbability <= PRIME_BSDF_EPSILON) {
+        if (!(branchProbability > 0.0)
+                || isnan(branchProbability)
+                || isinf(branchProbability)) {
             return result;
         }
         vec3 branchSample = sampleValue;
@@ -849,7 +856,7 @@ BsdfEvaluation primeEvaluateMinecraftFoliage(
     if (evaluation.pdf > 0.0
             && !isnan(evaluation.pdf)
             && !isinf(evaluation.pdf)
-            && cosine > PRIME_BSDF_EPSILON
+            && cosine > 0.0
             && evaluation.throughput.flags != PRIME_RC_FLAG_NONE
             && primeFiniteNonnegative(evaluation.throughput.value)) {
         result.value = evaluation.throughput.value / cosine;
@@ -887,7 +894,7 @@ PrimeBsdfComponents primeEvaluateMinecraftFoliageComponents(
     vec3 localView = primeRcOnbToLocal(state.material.geometry.onb, viewDirection);
     vec3 localScatter = primeRcOnbToLocal(state.material.geometry.onb, scatterDirection);
     float cosine = abs(localScatter.z);
-    if (cosine <= PRIME_BSDF_EPSILON) {
+    if (!(cosine > 0.0)) {
         return result;
     }
     result.pdf = primeRcPrimeThinWallPdf(localView, localScatter, state);

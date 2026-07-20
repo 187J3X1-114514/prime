@@ -30,11 +30,8 @@ void main() {
     // Screenshot mode consumes the complete one-path estimator before any temporal filtering;
     // adding the mutually exclusive estimator partitions is mathematically identical to the
     // unsplit path contribution and retains transparent volume-stack transport.
-    vec3 sampleRadiance = sampleResult.diffuseRadiance
-            + sampleResult.specularRadiance
-            + sampleResult.stableRadiance
-            + sampleResult.sunRadiance * sampleResult.sunVisibility;
-    primeApplyAerialPerspective(pixel, sampleResult.primaryDistance, sampleRadiance);
+    vec3 sampleRadiance = primeResolveIntegrationRadiance(sampleResult);
+    primeApplyAerialPerspective(pixel, sampleResult.guides.primaryDistance, sampleRadiance);
     if (any(isnan(sampleRadiance)) || any(isinf(sampleRadiance))) {
         // A non-finite numerical failure is not a radiance sample. Preserve both the previous
         // mean and its count instead of clamping a firefly or biasing the estimator toward black.

@@ -7,7 +7,7 @@ import dev.prime.render.vulkan.AtmospherePipeline;
 import dev.prime.render.vulkan.VulkanBuffer;
 import dev.prime.render.vulkan.VulkanContext;
 import dev.prime.render.vulkan.VulkanImage;
-import dev.prime.render.vulkan.PathTraceTargets;
+import dev.prime.render.vulkan.DenoiserInputs;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.ByteBuffer;
@@ -52,7 +52,7 @@ import org.lwjgl.vulkan.VkWriteDescriptorSet;
  * frame bindings at the real queue completion point. This boundary is intentionally generic so a
  * later wavefront path scheduler can replace raygen without changing denoiser ownership.
  */
-public final class NrdDenoiser implements Destroyable, PathTraceTargets {
+public final class NrdDenoiser implements Destroyable, DenoiserInputs {
     private static final int COMPUTE_STAGE = VK12.VK_SHADER_STAGE_COMPUTE_BIT;
     private static final int IMAGE_USAGE = VK12.VK_IMAGE_USAGE_STORAGE_BIT | VK12.VK_IMAGE_USAGE_SAMPLED_BIT;
     private static final int MOTION_BINDING_COUNT = 10;

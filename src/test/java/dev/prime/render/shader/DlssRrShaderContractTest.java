@@ -13,6 +13,7 @@ final class DlssRrShaderContractTest {
     void transparentGuideSplitsOnlyTheFirstVisibleTransmissiveInterface() throws IOException {
         String raygen = shader("world.rgen");
         String integrator = shader("integrator.glsl");
+        String guides = shader("denoiser_guides.glsl");
 
         assertTrue(raygen.contains("PRIME_PATH_DLSS_RR_MASK"));
         assertTrue(raygen.contains("PRIME_MATERIAL_FLAG_TRANSMISSIVE"));
@@ -20,10 +21,12 @@ final class DlssRrShaderContractTest {
                         raygen.indexOf("if ((primePush.path.w & PRIME_PATH_DLSS_RR_MASK"),
                         raygen.indexOf("transparencyGuide = primeIntegrateTransparencyGuide"))
                 .contains("CUTOUT"));
-        assertTrue(integrator.contains("primeTraceSurface(cameraPath.traceOrigin"));
-        assertTrue(integrator.contains("normalize(reflect(cameraPath.rayDirection"));
-        assertTrue(integrator.contains("guide.reflectionHitDistance = reflected.hitKind"));
-        assertTrue(integrator.contains("primeIntegrateWithVolume(\n            cameraPath"));
+        assertFalse(integrator.contains("PrimeTransparencyGuideResult"));
+        assertTrue(guides.contains("primeTraceSurface(cameraPath.traceOrigin"));
+        assertTrue(guides.contains("normalize(reflect(cameraPath.rayDirection"));
+        assertTrue(guides.contains("guide.reflectionHitDistance = reflected.hitKind"));
+        assertTrue(guides.contains("primeIntegrateWithVolume(\n            cameraPath"));
+        assertTrue(guides.contains("primeResolveIntegrationRadiance(background)"));
     }
 
     @Test
@@ -44,7 +47,9 @@ final class DlssRrShaderContractTest {
         assertTrue(prepare.contains("return previousUv - currentSampleUv;"));
         assertFalse(prepare.contains("return previousUv - currentUv;"));
         assertTrue(prepare.contains("viewZ = abs(viewPosition.z);"));
-        assertTrue(prepare.contains("vec3 diffuseAlbedo = transparent ? vec3(0.0)"));
+        assertTrue(prepare.contains("vec3 diffuseAlbedo = sky"));
+        assertTrue(prepare.contains("vec3 specularAlbedo = sky"));
+        assertTrue(prepare.contains("? vec3(0.5)"));
         assertTrue(prepare.contains("rrSpecularHitDistance,\n            pixel"));
         assertTrue(preparePass.contains("private static final int PUSH_SIZE = 208;"));
         assertTrue(preparePass.contains("push.putFloat(192, sunRadianceMultiplier);"));

@@ -264,14 +264,14 @@ public final class VulkanRenderer implements AutoCloseable {
         this.cameraInWater = frameCameraInWater;
         this.realtimeSampleState.prepare(
                 frameCamera,
-                scene.resetRevision(),
+                scene.temporalRevision(),
                 atlasViewHandle,
                 atlasSamplerHandle,
                 frameSunDirection,
                 resized || lightingChanged || materialChanged);
         Fsr3Upscaler.FrameToken fsrFrame = upscaler.beginFrame(
                 frameCamera,
-                scene.resetRevision(),
+                scene.temporalRevision(),
                 atlasViewHandle,
                 atlasSamplerHandle);
         FsrSettings.Jitter cameraJitter = fsrFrame.jitter();
@@ -310,7 +310,7 @@ public final class VulkanRenderer implements AutoCloseable {
             nrdFrame = denoiser.record(
                     commandBuffer,
                     frameCamera,
-                    scene.resetRevision(),
+                    scene.temporalRevision(),
                     atlasViewHandle,
                     atlasSamplerHandle,
                     frameSunDirection,

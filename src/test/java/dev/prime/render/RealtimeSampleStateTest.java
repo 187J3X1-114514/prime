@@ -39,24 +39,28 @@ final class RealtimeSampleStateTest {
     }
 
     @Test
-    void gradualSunMotionUsesBoundedHistoryWithoutRestarting() {
+    void gradualSunMotionKeepsAdvancingTheSampleSequence() {
         RealtimeSampleState state = new RealtimeSampleState();
         FrameCamera camera = camera(1.0);
         state.prepare(camera, 1L, 2L, 3L, NOON, false);
         state.submitted(camera, 2L, 3L, NOON);
+        int epoch = state.epoch();
         SunDirection movingSun = NOON;
         for (int step = 1; step <= 20; step++) {
             movingSun = SunDirection.fromVanillaAngle((float) Math.toRadians(step * 0.01));
             assertFalse(state.prepare(camera, 1L, 2L, 3L, movingSun, false));
+            assertEquals(epoch, state.epoch());
             state.submitted(camera, 2L, 3L, movingSun);
-            assertTrue(state.sampleIndex() < 8);
+            assertEquals(step + 1, state.sampleIndex());
         }
 
+        int previous = state.sampleIndex();
         for (int frame = 0; frame < 8; frame++) {
             assertFalse(state.prepare(camera, 1L, 2L, 3L, movingSun, false));
             state.submitted(camera, 2L, 3L, movingSun);
+            assertEquals(++previous, state.sampleIndex());
+            assertEquals(epoch, state.epoch());
         }
-        assertTrue(state.sampleIndex() >= 8);
     }
 
     @Test
@@ -65,10 +69,30 @@ final class RealtimeSampleStateTest {
         FrameCamera camera = camera(1.0);
         state.prepare(camera, 1L, 2L, 3L, NOON, false);
         state.submitted(camera, 2L, 3L, NOON);
+        int epoch = state.epoch();
 
         SunDirection sunset = SunDirection.fromVanillaAngle((float) (Math.PI * 0.5));
         assertTrue(state.prepare(camera, 1L, 2L, 3L, sunset, false));
         assertEquals(0, state.sampleIndex());
+        assertEquals(epoch + 1, state.epoch());
+    }
+
+    @Test
+    void sobolSequenceStartsANewEpochBeforeItsSixteenBitIndexRepeats() {
+        RealtimeSampleState state = new RealtimeSampleState();
+        FrameCamera camera = camera(1.0);
+        assertTrue(state.prepare(camera, 1L, 2L, 3L, NOON, false));
+        int epoch = state.epoch();
+        for (int index = 0; index < (1 << 16); index++) {
+            if (index != 0) {
+                assertFalse(state.prepare(camera, 1L, 2L, 3L, NOON, false));
+            }
+            state.submitted(camera, 2L, 3L, NOON);
+        }
+
+        assertTrue(state.prepare(camera, 1L, 2L, 3L, NOON, false));
+        assertEquals(0, state.sampleIndex());
+        assertEquals(epoch + 1, state.epoch());
     }
 
     private static FrameCamera camera(double x) {

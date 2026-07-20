@@ -56,15 +56,11 @@ float primeMaterialDielectricF0(uint flags) {
     return (flags & PRIME_MATERIAL_FLAG_WATER) != 0u ? 0.02037 : PRIME_DEFAULT_DIELECTRIC_F0;
 }
 
-float primeFsrTransparencyAndCompositionMask(uint flags, float linearRoughness) {
+float primeFsrTransparencyAndCompositionMask(uint flags) {
     if (primeMaterialIsTransmissive(flags) || primeMaterialIsFoliage(flags)) {
         return 1.0;
     }
-    float animated = (flags & PRIME_MATERIAL_FLAG_ANIMATED_TEXTURE) != 0u ? 0.75 : 0.0;
-    // Smooth LabPBR reflections need faster temporal replacement. Ordinary terrain uses the
-    // configured default roughness, so changing that setting also changes this temporal hint.
-    float hardToTrackReflection = 0.5 * (1.0 - smoothstep(0.20, 0.45, linearRoughness));
-    return max(animated, hardToTrackReflection);
+    return (flags & PRIME_MATERIAL_FLAG_ANIMATED_TEXTURE) != 0u ? 0.75 : 0.0;
 }
 
 #endif

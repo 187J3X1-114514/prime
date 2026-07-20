@@ -72,9 +72,25 @@ final class IntegratorSettings {
     }
 
     static float powerHeuristic(float firstPdf, float secondPdf) {
-        float first = firstPdf * firstPdf;
-        float second = secondPdf * secondPdf;
-        return first / Math.max(first + second, 1.0e-30F);
+        if (Float.isNaN(firstPdf) || !(firstPdf > 0.0F)) {
+            return 0.0F;
+        }
+        if (Float.isNaN(secondPdf) || !(secondPdf > 0.0F)) {
+            return 1.0F;
+        }
+        if (Float.isInfinite(firstPdf)) {
+            return Float.isInfinite(secondPdf) ? 0.5F : 1.0F;
+        }
+        if (Float.isInfinite(secondPdf)) {
+            return 0.0F;
+        }
+        if (firstPdf >= secondPdf) {
+            float ratio = secondPdf / firstPdf;
+            return 1.0F / (1.0F + ratio * ratio);
+        }
+        float ratio = firstPdf / secondPdf;
+        float ratioSquared = ratio * ratio;
+        return ratioSquared / (1.0F + ratioSquared);
     }
 
     static float rouletteSurvival(float maximumThroughput) {

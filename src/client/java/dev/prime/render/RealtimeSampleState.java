@@ -4,14 +4,12 @@ package dev.prime.render;
  * Tracks sample sequencing and temporal invalidation for the interactive render path.
  *
  * <p>This is not a radiance accumulator. NRD and FSR own the interactive temporal histories;
- * this state only supplies their sampling epoch and bounded history index. The future offline
+ * this state only supplies their sampling epoch and monotonic sample index. The future offline
  * path must own a separate, monotonic sample counter and an explicit RGBA32F running mean.
  */
 final class RealtimeSampleState {
 
-    private static final int MAXIMUM_EXACT_FLOAT_SAMPLE_INDEX = 16_777_215;
-    private static final int DYNAMIC_LIGHTING_HISTORY_SAMPLES = 8;
-    private static final int LIGHTING_QUIESCENCE_FRAMES = 8;
+    private static final int SOBOL_SEQUENCE_LENGTH = 1 << 16;
     private static final float SUN_HISTORY_DISCONTINUITY_COSINE =
             (float) Math.cos(Math.toRadians(1.0));
 
@@ -22,8 +20,6 @@ final class RealtimeSampleState {
     private SunDirection sunDirection;
     private int sampleIndex;
     private int epoch;
-    private int lightingStableFrames;
-    private boolean dynamicLightingHistory;
 
     boolean prepare(
             FrameCamera nextCamera,
@@ -38,29 +34,13 @@ final class RealtimeSampleState {
                 || nextAtlasView != this.atlasView
                 || nextAtlasSampler != this.atlasSampler
                 || sunDirectionDiscontinuous(nextSunDirection, this.sunDirection)
-                || this.sampleIndex == MAXIMUM_EXACT_FLOAT_SAMPLE_INDEX;
+                || this.sampleIndex >= SOBOL_SEQUENCE_LENGTH;
         if (immediateReset) {
             this.invalidate();
             this.resetRevision = nextResetRevision;
             return true;
         }
 
-        if (!nextSunDirection.equals(this.sunDirection)) {
-            this.lightingStableFrames = 0;
-            this.dynamicLightingHistory = true;
-            this.sampleIndex = Math.min(
-                    this.sampleIndex,
-                    DYNAMIC_LIGHTING_HISTORY_SAMPLES - 1);
-            // The bounded history index would otherwise repeat the same Sobol point every tick.
-            // Advancing the scramble epoch keeps samples independent while the sun moves.
-            this.epoch++;
-            return false;
-        }
-        if (this.dynamicLightingHistory
-                && ++this.lightingStableFrames >= LIGHTING_QUIESCENCE_FRAMES) {
-            this.dynamicLightingHistory = false;
-            this.lightingStableFrames = 0;
-        }
         return false;
     }
 
@@ -69,9 +49,7 @@ final class RealtimeSampleState {
             long submittedAtlasView,
             long submittedAtlasSampler,
             SunDirection submittedSunDirection) {
-        this.sampleIndex = this.dynamicLightingHistory
-                ? Math.min(this.sampleIndex + 1, DYNAMIC_LIGHTING_HISTORY_SAMPLES - 1)
-                : this.sampleIndex + 1;
+        this.sampleIndex++;
         this.camera = submittedCamera;
         this.atlasView = submittedAtlasView;
         this.atlasSampler = submittedAtlasSampler;
@@ -81,8 +59,6 @@ final class RealtimeSampleState {
     void invalidate() {
         this.sampleIndex = 0;
         this.epoch++;
-        this.lightingStableFrames = 0;
-        this.dynamicLightingHistory = false;
     }
 
     int sampleIndex() {

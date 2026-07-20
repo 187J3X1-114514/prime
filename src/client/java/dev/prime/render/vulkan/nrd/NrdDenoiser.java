@@ -327,6 +327,7 @@ public final class NrdDenoiser implements Destroyable {
                 || sunDirectionDiscontinuous(sunDirection, this.previousSunDirection);
         FrameCamera historyCamera = restart ? camera : this.previousCamera;
         NrdDiagnostics.Mode selectedDiagnostic = NrdDiagnostics.mode();
+        int diagnosticMode = selectedDiagnostic.outputSelector();
         float historyCameraJitterX = restart ? cameraJitterX : this.previousCameraJitterX;
         float historyCameraJitterY = restart ? cameraJitterY : this.previousCameraJitterY;
         int currentFrameIndex = restart ? 0 : this.frameIndex;
@@ -359,7 +360,7 @@ public final class NrdDenoiser implements Destroyable {
                     historyCamera,
                     this.width,
                     this.height,
-                    0);
+                    diagnosticMode);
             computeToComputeBarrier(commandBuffer);
             for (int dispatchIndex = 0; dispatchIndex < dispatches.size(); dispatchIndex++) {
                 if (dispatchIndex != 0) {
@@ -392,7 +393,7 @@ public final class NrdDenoiser implements Destroyable {
                     commandBuffer,
                     this.width,
                     this.height,
-                    0,
+                    diagnosticMode,
                     sunRadianceMultiplier);
             return new FrameToken(
                     this,

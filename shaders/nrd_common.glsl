@@ -8,10 +8,8 @@
 // native library.
 
 const float PRIME_NRD_FP16_MAX = 65504.0;
+const float PRIME_NRD_RADIANCE_LIMIT = 16.0;
 const vec3 PRIME_NRD_HIT_DISTANCE_PARAMETERS = vec3(3.0, 0.1, 20.0);
-const float PRIME_NRD_MATERIAL_FACTOR_MIN = 0.02;
-const float PRIME_NRD_ROUGHNESS_FACTOR_MIN = 0.1;
-const float PRIME_NRD_EPSILON = 1.0e-6;
 
 vec3 primeNrdLinearToYCoCg(vec3 color) {
     return vec3(
@@ -23,61 +21,6 @@ vec3 primeNrdLinearToYCoCg(vec3 color) {
 vec3 primeNrdYCoCgToLinear(vec3 color) {
     float t = color.x - color.z;
     return max(vec3(t + color.y, color.x + color.z, t - color.y), vec3(0.0));
-}
-
-vec3 primeNrdEnvironmentTerm(vec3 reflectanceAtNormal, float cosineView, float roughness) {
-    // Exact GLSL transcription of NRD 4.17.4's _NRD_EnvironmentTerm_Rtg. Matrix products are
-    // written as row dot-products to preserve HLSL mul(M, v) semantics across languages.
-    float squaredRoughness = clamp(roughness * roughness, 0.0, 1.0);
-    vec4 x = vec4(1.0, cosineView, cosineView * cosineView, 0.0);
-    x.w = x.y * x.z;
-    vec4 y = vec4(
-            1.0,
-            squaredRoughness,
-            squaredRoughness * squaredRoughness,
-            0.0);
-    y.w = y.y * y.z;
-
-    vec2 m1x = vec2(
-            dot(vec2(0.99044, -1.28514), x.xy),
-            dot(vec2(1.29678, -0.755907), x.xy));
-    vec3 m2x = vec3(
-            dot(vec3(1.0, 2.92338, 59.4188), x.xyw),
-            dot(vec3(20.3225, -27.0302, 222.592), x.xyw),
-            dot(vec3(121.563, 626.13, 316.627), x.xyw));
-    vec2 m3x = vec2(
-            dot(vec2(0.0365463, 3.32707), x.xy),
-            dot(vec2(9.0632, -9.04756), x.xy));
-    vec3 m4x = vec3(
-            dot(vec3(1.0, 3.59685, -1.36772), x.xzw),
-            dot(vec3(9.04401, -16.3174, 9.22949), x.xzw),
-            dot(vec3(5.56589, 19.7886, -20.2123), x.xzw));
-    float bias = dot(m1x, y.xy) / max(dot(m2x, y.xyw), PRIME_NRD_EPSILON);
-    float scale = dot(m3x, y.xy) / max(dot(m4x, y.xyw), PRIME_NRD_EPSILON);
-    return clamp(reflectanceAtNormal * scale + bias, 0.0, 1.0);
-}
-
-void primeNrdMaterialFactors(
-        vec3 normal,
-        vec3 viewDirection,
-        vec3 baseColor,
-        vec3 reflectanceAtNormal,
-        float roughness,
-        out vec3 diffuseFactor,
-        out vec3 specularFactor) {
-    // Keep this paired with NRD_MaterialFactors. REBLUR expects illumination with both the
-    // diffuse albedo and the view-dependent environment BRDF removed before filtering.
-    float cosineView = abs(dot(normal, viewDirection));
-    vec3 environmentFresnel = primeNrdEnvironmentTerm(
-            reflectanceAtNormal, cosineView, roughness);
-    diffuseFactor = mix(
-            vec3(PRIME_NRD_MATERIAL_FACTOR_MIN),
-            vec3(1.0),
-            (vec3(1.0) - environmentFresnel) * clamp(baseColor, 0.0, 1.0));
-    specularFactor = environmentFresnel
-            * mix(PRIME_NRD_ROUGHNESS_FACTOR_MIN, 1.0, roughness);
-    specularFactor = mix(
-            vec3(PRIME_NRD_MATERIAL_FACTOR_MIN), vec3(1.0), specularFactor);
 }
 
 vec4 primeNrdPackNormalRoughness(vec3 normal, float roughness) {
@@ -118,11 +61,68 @@ float primeNrdNormalizedHitDistance(float hitDistance, float viewZ, float roughn
     return clamp(hitDistance / max(scale, 1.0e-6), 0.0, 1.0);
 }
 
-vec3 primeNrdSanitizeRadiance(vec3 radiance) {
+float primeNrdRadiancePeak(vec3 radiance) {
+    return max(radiance.x, max(radiance.y, radiance.z));
+}
+
+vec3 primeNrdClampRadiance(vec3 radiance, float limit) {
     bool invalid = any(isnan(radiance)) || any(isinf(radiance));
-    return invalid
-            ? vec3(0.0)
-            : clamp(radiance, vec3(0.0), vec3(PRIME_NRD_FP16_MAX));
+    radiance = invalid ? vec3(0.0) : max(radiance, vec3(0.0));
+    float peak = primeNrdRadiancePeak(radiance);
+    return peak > limit ? radiance * (limit / peak) : radiance;
+}
+
+vec3 primeNrdSanitizeRadiance(vec3 radiance) {
+    return primeNrdClampRadiance(radiance, PRIME_NRD_FP16_MAX);
+}
+
+vec3 primeNrdSanitizeGuide(vec3 guide) {
+    bool invalid = any(isnan(guide)) || any(isinf(guide));
+    return invalid ? vec3(0.0) : clamp(guide, vec3(0.0), vec3(PRIME_NRD_FP16_MAX));
+}
+
+vec3 primeNrdDemodulate(vec3 radiance, vec3 guide) {
+    radiance = primeNrdSanitizeRadiance(radiance);
+    guide = primeNrdSanitizeGuide(guide);
+    return vec3(
+            guide.x > 0.0 ? radiance.x / guide.x : 0.0,
+            guide.y > 0.0 ? radiance.y / guide.y : 0.0,
+            guide.z > 0.0 ? radiance.z / guide.z : 0.0);
+}
+
+void primeNrdClampRadianceTriple(
+        inout vec3 first,
+        inout vec3 second,
+        inout vec3 third,
+        float limit) {
+    bool invalidFirst = any(isnan(first)) || any(isinf(first));
+    bool invalidSecond = any(isnan(second)) || any(isinf(second));
+    bool invalidThird = any(isnan(third)) || any(isinf(third));
+    first = invalidFirst ? vec3(0.0) : max(first, vec3(0.0));
+    second = invalidSecond ? vec3(0.0) : max(second, vec3(0.0));
+    third = invalidThird ? vec3(0.0) : max(third, vec3(0.0));
+
+    float sourcePeak = max(
+            primeNrdRadiancePeak(first),
+            max(primeNrdRadiancePeak(second), primeNrdRadiancePeak(third)));
+    if (!(sourcePeak > 0.0)) {
+        return;
+    }
+
+    vec3 normalizedTotal = first / sourcePeak + second / sourcePeak + third / sourcePeak;
+    float normalizedPeak = primeNrdRadiancePeak(normalizedTotal);
+    float scale = min(1.0, (limit / sourcePeak) / max(normalizedPeak, 1.0e-20));
+    first *= scale;
+    second *= scale;
+    third *= scale;
+}
+
+void primeNrdClampRadiancePair(
+        inout vec3 first,
+        inout vec3 second,
+        float limit) {
+    vec3 unused = vec3(0.0);
+    primeNrdClampRadianceTriple(first, second, unused, limit);
 }
 
 vec4 primeNrdPackRadianceAndHitDistance(vec3 radiance, float normalizedHitDistance) {

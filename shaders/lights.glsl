@@ -31,10 +31,51 @@ struct LightEvaluation {
 // PDF queries must reuse that exact quantized value. The environment is evaluated only when a BSDF
 // path escapes; the sun and area-light adapters are sampled explicitly and perform no selection.
 
+const float PRIME_FLOAT_MAX = 3.402823466e+38;
+const float PRIME_MAXIMUM_INVERSE_PDF = 1.0e30;
+
 float primePowerHeuristic(float firstPdf, float secondPdf) {
-    float first = firstPdf * firstPdf;
-    float second = secondPdf * secondPdf;
-    return first / max(first + second, 1.0e-30);
+    if (isnan(firstPdf) || !(firstPdf > 0.0)) {
+        return 0.0;
+    }
+    if (isnan(secondPdf) || !(secondPdf > 0.0)) {
+        return 1.0;
+    }
+    if (isinf(firstPdf)) {
+        return isinf(secondPdf) ? 0.5 : 1.0;
+    }
+    if (isinf(secondPdf)) {
+        return 0.0;
+    }
+    if (firstPdf >= secondPdf) {
+        float ratio = secondPdf / firstPdf;
+        return 1.0 / (1.0 + ratio * ratio);
+    }
+    float ratio = firstPdf / secondPdf;
+    float ratioSquared = ratio * ratio;
+    return ratioSquared / (1.0 + ratioSquared);
+}
+
+float primePowerHeuristicOverPdf(float sampledPdf, float otherPdf) {
+    if (isnan(sampledPdf) || !(sampledPdf > 0.0) || isinf(sampledPdf)) {
+        return 0.0;
+    }
+    if (isnan(otherPdf) || !(otherPdf > 0.0)) {
+        return min(1.0 / sampledPdf, PRIME_MAXIMUM_INVERSE_PDF);
+    }
+    if (isinf(otherPdf)) {
+        return 0.0;
+    }
+    if (sampledPdf >= otherPdf) {
+        float ratio = otherPdf / sampledPdf;
+        return min(
+                (1.0 / sampledPdf) / (1.0 + ratio * ratio),
+                PRIME_MAXIMUM_INVERSE_PDF);
+    }
+    float ratio = sampledPdf / otherPdf;
+    return min(
+            (ratio / otherPdf) / (1.0 + ratio * ratio),
+            PRIME_MAXIMUM_INVERSE_PDF);
 }
 
 vec3 primeEnvironmentRadiance(IntegratorRecord integrator, vec3 direction) {
@@ -332,10 +373,25 @@ float primeAreaSolidAnglePdf(
         float areaPdf) {
     vec3 delta = lightPosition - origin;
     float distanceSquared = dot(delta, delta);
-    if (distanceSquared <= 0.0 || lightCosine <= 0.0 || areaPdf <= 0.0) {
+    float cosine = clamp(lightCosine, 0.0, 1.0);
+    if (!(distanceSquared > 0.0)
+            || isnan(distanceSquared)
+            || isinf(distanceSquared)
+            || !(cosine > 0.0)
+            || !(areaPdf > 0.0)
+            || isnan(areaPdf)) {
         return 0.0;
     }
-    return areaPdf * distanceSquared / lightCosine;
+    if (isinf(areaPdf)) {
+        return PRIME_FLOAT_MAX;
+    }
+    float maximumAreaPdf = cosine >= distanceSquared
+            ? PRIME_FLOAT_MAX
+            : (PRIME_FLOAT_MAX * cosine) / distanceSquared;
+    if (areaPdf > maximumAreaPdf) {
+        return PRIME_FLOAT_MAX;
+    }
+    return areaPdf * distanceSquared / cosine;
 }
 
 AreaLightSample primeSampleAreaLight(
@@ -417,7 +473,8 @@ AreaLightSample primeSampleAreaLight(
     float cellArea = emitter.cornerArea.w / float(PRIME_LIGHT_CELL_COUNT);
     float areaPdf = worldPick.pdf * sectionPick.pdf
             * selectedCell.probabilityMass / cellArea;
-    float pdf = areaPdf * distanceSquared / lightCosine;
+    float pdf = primeAreaSolidAnglePdf(
+            surfacePosition, lightPosition, lightCosine, areaPdf);
     if (!(pdf > 0.0)) {
         return primeInvalidAreaLightSample();
     }

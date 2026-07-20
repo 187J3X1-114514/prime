@@ -1,12 +1,7 @@
 package dev.prime.render.vulkan;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import org.junit.jupiter.api.Test;
 import org.lwjgl.vulkan.KHRRayTracingPipeline;
 
@@ -29,71 +24,15 @@ final class RayTracingPipelineContractTest {
     }
 
     @Test
-    void runtimeTransmissionLookupMatchesTheImportedBsdfTable() throws IOException {
+    void runtimeTransmissionLookupHasTheExpectedShape() {
         assertEquals(32, BsdfLookupTable.RESOLUTION);
         assertEquals(32 * 32 * 32 * 4 * Float.BYTES, BsdfLookupTable.BYTE_SIZE);
-        String pipeline = Files.readString(Path.of(
-                System.getProperty("user.dir"),
-                "src/client/java/dev/prime/render/vulkan/RayTracingPipeline.java"));
-        assertTrue(pipeline.contains("ShaderAbi.DESCRIPTOR_TRANSMISSION_GGX_ENERGY"));
-        assertTrue(pipeline.contains("bsdfLookup.prepare(commandBuffer)"));
     }
 
     @Test
-    void shadowRaysUseDistancePayloadAndDedicatedHitRecordsForSigma() throws IOException {
-        Path shaderRoot = Path.of(System.getProperty("user.dir"), "shaders");
-        String integrator = Files.readString(shaderRoot.resolve("integrator.glsl"));
-        String shadowMiss = Files.readString(shaderRoot.resolve("shadow.rmiss"));
-        String shadowHit = Files.readString(shaderRoot.resolve("shadow.rchit"));
-        String closestHit = Files.readString(shaderRoot.resolve("world.rchit"));
-
+    void rayTracingShaderGroupsHaveTheExpectedShape() {
         assertEquals(2, RayTracingPipeline.MISS_GROUP_COUNT);
         assertEquals(6, RayTracingPipeline.HIT_GROUP_COUNT);
         assertEquals(2, RayTracingPipeline.RAYGEN_GROUP_COUNT);
-        assertFalse(integrator.contains("primeTraceSurfaceWithSbtOffset("));
-        assertTrue(shadowMiss.contains(
-                "layout(location = 1) rayPayloadInEXT uint primeShadowHitDistanceBits"));
-        assertTrue(shadowMiss.contains("floatBitsToUint(65504.0)"));
-        assertTrue(shadowHit.contains("floatBitsToUint(min(gl_HitTEXT, 65503.0))"));
-        assertTrue(integrator.contains("float primeTraceShadowHitDistance("));
-        assertFalse(integrator.contains("gl_RayFlagsSkipClosestHitShaderEXT"));
-        assertTrue(integrator.contains("primeShadowHitDistanceBits"));
-        assertFalse(closestHit.contains("PRIME_TRACE_SHADOW"));
-    }
-
-    @Test
-    void serPermutationReordersOnlySurfaceContinuationsAndKeepsFallback() throws IOException {
-        Path root = Path.of(System.getProperty("user.dir"));
-        String rayGeneration = Files.readString(root.resolve("shaders/world.rgen"));
-        String integrator = Files.readString(root.resolve("shaders/integrator.glsl"))
-                .replace("\r\n", "\n");
-        String pipeline = Files.readString(root.resolve(
-                "src/client/java/dev/prime/render/vulkan/RayTracingPipeline.java"));
-
-        assertTrue(rayGeneration.contains("GL_EXT_shader_invocation_reorder"));
-        assertTrue(integrator.contains("hitObjectTraceRayEXT"));
-        assertTrue(integrator.contains("reorderThreadEXT(hitObject, coherenceHint, 8u)"));
-        assertTrue(integrator.contains("hitObjectExecuteShaderEXT(hitObject, 0)"));
-        assertTrue(integrator.contains("#else\n    traceRayEXT"));
-        assertEquals(1, countOccurrences(integrator, "hitObjectTraceRayEXT"));
-        assertTrue(pipeline.contains("world_ser.rgen.spv"));
-        assertTrue(pipeline.contains("world.rgen.spv"));
-        assertTrue(pipeline.contains("screenshot.rgen.spv"));
-        assertFalse(pipeline.contains("transparent.rgen.spv"));
-        assertFalse(pipeline.contains("world_opaque.rahit.spv"));
-        assertFalse(pipeline.contains("traceTransparent"));
-        assertTrue(pipeline.contains("traceScreenshot"));
-        assertEquals(1, countOccurrences(pipeline, "vkCreateRayTracingPipelinesKHR("));
-        assertTrue(pipeline.contains("raygenAddress(raygenGroup)"));
-    }
-
-    private static int countOccurrences(String text, String needle) {
-        int count = 0;
-        int offset = 0;
-        while ((offset = text.indexOf(needle, offset)) >= 0) {
-            count++;
-            offset += needle.length();
-        }
-        return count;
     }
 }

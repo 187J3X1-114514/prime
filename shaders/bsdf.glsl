@@ -21,6 +21,7 @@ struct PrimeTransmissiveBsdfSample {
 };
 
 const float PRIME_GLASS_MINIMUM_TINT_WEIGHT = 0.75;
+const float PRIME_MINIMUM_BSDF_SAMPLE_PDF = 1.0e-4;
 // Rec.2020's near-monochromatic primaries are 630, 532 and 467 nm. Pope and Fry's measured
 // absorption coefficients for pure water at 22 C are 0.2916 m^-1 at 630 nm and, by linear
 // interpolation of their Table 3, 0.04444 m^-1 at 532 nm and 0.010182 m^-1 at 467 nm.
@@ -29,6 +30,25 @@ const float PRIME_GLASS_MINIMUM_TINT_WEIGHT = 0.75;
 // absorption and break the Beer-Lambert medium contract.
 const vec3 PRIME_REC2020_PRIMARY_WAVELENGTHS_NM = vec3(630.0, 532.0, 467.0);
 const vec3 PRIME_PURE_WATER_ABSORPTION_M_INV = vec3(0.2916, 0.04444, 0.010182);
+
+vec3 primeBsdfSampleWeight(PrimeRcSample sampleValue) {
+    return sampleValue.throughput.value
+            / max(sampleValue.pdf, PRIME_MINIMUM_BSDF_SAMPLE_PDF);
+}
+
+bool primeFiniteNonnegative(vec3 value) {
+    return all(greaterThanEqual(value, vec3(0.0)))
+            && !any(isnan(value))
+            && !any(isinf(value));
+}
+
+bool primeValidRcSample(PrimeRcSample sampleValue) {
+    return sampleValue.throughput.flags != PRIME_RC_FLAG_NONE
+            && sampleValue.pdf > 0.0
+            && !isnan(sampleValue.pdf)
+            && !isinf(sampleValue.pdf)
+            && primeFiniteNonnegative(sampleValue.throughput.value);
+}
 
 PrimeRcVolumeStack primeEmptyVolumeStack() {
     PrimeRcVolumeStack result;
@@ -341,13 +361,26 @@ PrimeRcState primeOpaqueState(
             0u);
 }
 
-struct PrimeOpaqueBsdfComponents {
+struct PrimeBsdfComponents {
     vec3 diffuseValue;
     vec3 specularValue;
     float pdf;
 };
 
-PrimeOpaqueBsdfComponents primeEvaluateOpaqueComponents(
+PrimeBsdfComponents primeSanitizeBsdfComponents(PrimeBsdfComponents value) {
+    if (!(value.pdf >= 0.0)
+            || isnan(value.pdf)
+            || isinf(value.pdf)
+            || !primeFiniteNonnegative(value.diffuseValue)
+            || !primeFiniteNonnegative(value.specularValue)) {
+        value.diffuseValue = vec3(0.0);
+        value.specularValue = vec3(0.0);
+        value.pdf = 0.0;
+    }
+    return value;
+}
+
+PrimeBsdfComponents primeEvaluateOpaqueComponents(
         vec3 baseColor,
         vec3 normal,
         uint packedNormal,
@@ -357,7 +390,7 @@ PrimeOpaqueBsdfComponents primeEvaluateOpaqueComponents(
         vec3 scatterDirection,
         float rayT,
         PrimeRcVolumeStack volumeStack) {
-    PrimeOpaqueBsdfComponents result;
+    PrimeBsdfComponents result;
     result.diffuseValue = vec3(0.0);
     result.specularValue = vec3(0.0);
     result.pdf = 0.0;
@@ -393,7 +426,7 @@ PrimeOpaqueBsdfComponents primeEvaluateOpaqueComponents(
             : primeRcBasicMetallicEval(localView, localScatter, specularState);
     result.diffuseValue = diffuse.value / cosine;
     result.specularValue = specular.value / cosine;
-    return result;
+    return primeSanitizeBsdfComponents(result);
 }
 
 BsdfSample primeSampleOpaque(
@@ -420,8 +453,7 @@ BsdfSample primeSampleOpaque(
     PrimeRcSampleResult sampled = state.material.weight.subsurface > 0.0
             ? primeRcSubsurfaceGlossySample(localView, sampleValue, state, volumeStack)
             : primeRcBasicMetallicSample(localView, sampleValue, state, volumeStack);
-    if (sampled.bsdfSample.pdf <= 0.0
-            || sampled.bsdfSample.throughput.flags == PRIME_RC_FLAG_NONE) {
+    if (!primeValidRcSample(sampled.bsdfSample)) {
         return result;
     }
     result.direction = primeRcOnbToWorld(
@@ -432,7 +464,7 @@ BsdfSample primeSampleOpaque(
         // preserves the world-space hemisphere at extreme grazing angles.
         result.direction = normalize(reflect(-viewDirection, normal));
     }
-    result.weight = sampled.bsdfSample.throughput.value / sampled.bsdfSample.pdf;
+    result.weight = primeBsdfSampleWeight(sampled.bsdfSample);
     result.pdf = sampled.bsdfSample.pdf;
     result.relativeEta = 1.0;
     result.eventFlags = primeRcToBsdfEventFlags(sampled.bsdfSample.throughput.flags);
@@ -534,12 +566,20 @@ BsdfEvaluation primeEvaluateMinecraftTransmission(
     PrimeRcEval evaluation = primeRcTransmissionEvaluate(localView, localScatter, state);
     BsdfEvaluation result = primeInvalidBsdfEvaluation();
     float cosine = abs(localScatter.z);
-    if (evaluation.pdf > 0.0 && cosine > PRIME_BSDF_EPSILON
-            && evaluation.throughput.flags != PRIME_RC_FLAG_NONE) {
+    if (evaluation.pdf > 0.0
+            && !isnan(evaluation.pdf)
+            && !isinf(evaluation.pdf)
+            && cosine > PRIME_BSDF_EPSILON
+            && evaluation.throughput.flags != PRIME_RC_FLAG_NONE
+            && primeFiniteNonnegative(evaluation.throughput.value)) {
         result.value = evaluation.throughput.value / cosine;
         result.pdf = evaluation.pdf * (state.geometryThinWalled == 0u
                 ? (closedReflection ? mirror.probability : 1.0 - mirror.probability)
                 : 1.0);
+        if (!(result.pdf >= 0.0) || isnan(result.pdf) || isinf(result.pdf)
+                || !primeFiniteNonnegative(result.value)) {
+            return primeInvalidBsdfEvaluation();
+        }
     }
     return result;
 }
@@ -607,14 +647,12 @@ PrimeTransmissiveBsdfSample primeSampleMinecraftTransmission(
     }
     PrimeRcSampleResult sampled = primeRcTransmissionSample(
             localView, sampleValue, state, volumeStack);
-    if (sampled.bsdfSample.pdf <= 0.0
-            || sampled.bsdfSample.throughput.flags == PRIME_RC_FLAG_NONE) {
+    if (!primeValidRcSample(sampled.bsdfSample)) {
         return result;
     }
     result.bsdfSample.direction = primeRcOnbToWorld(
             state.material.geometry.onb, sampled.bsdfSample.wo);
-    result.bsdfSample.weight = sampled.bsdfSample.throughput.value
-            / sampled.bsdfSample.pdf;
+    result.bsdfSample.weight = primeBsdfSampleWeight(sampled.bsdfSample);
     result.bsdfSample.pdf = sampled.bsdfSample.pdf;
     bool transmitted = primeRcIsTransmissive(sampled.bsdfSample.throughput.flags);
     result.bsdfSample.relativeEta = transmitted && state.geometryThinWalled == 0u
@@ -665,8 +703,7 @@ PrimeTransmissiveBsdfSample primeSampleMinecraftTransmissionBranchFromState(
             : PRIME_RC_FLAG_TRANSMISSION;
     PrimeRcSampleResult sampled = primeRcTransmissionSample(
             localView, sampleValue, state, volumeStack);
-    if (sampled.bsdfSample.pdf <= 0.0
-            || sampled.bsdfSample.throughput.flags == PRIME_RC_FLAG_NONE) {
+    if (!primeValidRcSample(sampled.bsdfSample)) {
         return result;
     }
     // Forcing a branch renormalizes RoboCute's internal proposal onto that branch. The returned
@@ -674,8 +711,7 @@ PrimeTransmissiveBsdfSample primeSampleMinecraftTransmissionBranchFromState(
     // already the unbiased conditional estimator. No branch-selection probability belongs here.
     result.bsdfSample.direction = primeRcOnbToWorld(
             state.material.geometry.onb, sampled.bsdfSample.wo);
-    result.bsdfSample.weight = sampled.bsdfSample.throughput.value
-            / sampled.bsdfSample.pdf;
+    result.bsdfSample.weight = primeBsdfSampleWeight(sampled.bsdfSample);
     result.bsdfSample.pdf = sampled.bsdfSample.pdf;
     // RoboCute keeps eta in the closure state rather than its sample record. Prime's transport
     // ABI defines relativeEta as n_transmitted / n_incident (the inverse of GLSL refract's eta).
@@ -810,12 +846,60 @@ BsdfEvaluation primeEvaluateMinecraftFoliage(
     PrimeRcEval evaluation = primeRcPrimeThinWallEvaluate(localView, localScatter, state);
     BsdfEvaluation result = primeInvalidBsdfEvaluation();
     float cosine = abs(localScatter.z);
-    if (evaluation.pdf > 0.0 && cosine > PRIME_BSDF_EPSILON
-            && evaluation.throughput.flags != PRIME_RC_FLAG_NONE) {
+    if (evaluation.pdf > 0.0
+            && !isnan(evaluation.pdf)
+            && !isinf(evaluation.pdf)
+            && cosine > PRIME_BSDF_EPSILON
+            && evaluation.throughput.flags != PRIME_RC_FLAG_NONE
+            && primeFiniteNonnegative(evaluation.throughput.value)) {
         result.value = evaluation.throughput.value / cosine;
         result.pdf = evaluation.pdf;
+        if (!primeFiniteNonnegative(result.value)) {
+            return primeInvalidBsdfEvaluation();
+        }
     }
     return result;
+}
+
+PrimeBsdfComponents primeEvaluateMinecraftFoliageComponents(
+        vec3 baseColor,
+        vec3 outwardNormal,
+        uint packedNormal,
+        uint packedSpecular,
+        uint materialFlags,
+        vec3 viewDirection,
+        vec3 scatterDirection,
+        float rayT,
+        PrimeRcVolumeStack volumeStack) {
+    PrimeBsdfComponents result;
+    result.diffuseValue = vec3(0.0);
+    result.specularValue = vec3(0.0);
+    result.pdf = 0.0;
+    PrimeRcState state = primeMinecraftFoliageState(
+            baseColor,
+            outwardNormal,
+            packedNormal,
+            packedSpecular,
+            materialFlags,
+            viewDirection,
+            rayT,
+            volumeStack);
+    vec3 localView = primeRcOnbToLocal(state.material.geometry.onb, viewDirection);
+    vec3 localScatter = primeRcOnbToLocal(state.material.geometry.onb, scatterDirection);
+    float cosine = abs(localScatter.z);
+    if (cosine <= PRIME_BSDF_EPSILON) {
+        return result;
+    }
+    result.pdf = primeRcPrimeThinWallPdf(localView, localScatter, state);
+    PrimeRcState diffuseState = state;
+    diffuseState.samplingFlags &= PRIME_RC_FLAG_DIFFUSE;
+    PrimeRcState specularState = state;
+    specularState.samplingFlags &= PRIME_RC_FLAG_SPECULAR | PRIME_RC_FLAG_DELTA;
+    result.diffuseValue = primeRcPrimeThinWallEval(
+            localView, localScatter, diffuseState).value / cosine;
+    result.specularValue = primeRcPrimeThinWallEval(
+            localView, localScatter, specularState).value / cosine;
+    return primeSanitizeBsdfComponents(result);
 }
 
 BsdfSample primeSampleMinecraftFoliage(
@@ -841,16 +925,64 @@ BsdfSample primeSampleMinecraftFoliage(
     vec3 localView = primeRcOnbToLocal(state.material.geometry.onb, viewDirection);
     PrimeRcSampleResult sampled = primeRcPrimeThinWallSample(
             localView, sampleValue, state, volumeStack);
-    if (sampled.bsdfSample.pdf <= 0.0
-            || sampled.bsdfSample.throughput.flags == PRIME_RC_FLAG_NONE) {
+    if (!primeValidRcSample(sampled.bsdfSample)) {
         return result;
     }
     result.direction = primeRcOnbToWorld(
             state.material.geometry.onb, sampled.bsdfSample.wo);
-    result.weight = sampled.bsdfSample.throughput.value / sampled.bsdfSample.pdf;
+    result.weight = primeBsdfSampleWeight(sampled.bsdfSample);
     result.pdf = sampled.bsdfSample.pdf;
     result.relativeEta = 1.0;
     result.eventFlags = primeRcToBsdfEventFlags(sampled.bsdfSample.throughput.flags);
+    return result;
+}
+
+const uint PRIME_DENOISE_CLOSURE_OPAQUE = 0u;
+const uint PRIME_DENOISE_CLOSURE_FOLIAGE = 1u;
+const uint PRIME_DENOISE_CLOSURE_TRANSMISSIVE = 2u;
+
+struct PrimeDenoiseAlbedos {
+    vec3 diffuse;
+    vec3 specular;
+};
+
+vec3 primeSanitizeDenoiseAlbedo(vec3 albedo) {
+    if (any(isnan(albedo)) || any(isinf(albedo))) {
+        return vec3(0.0);
+    }
+    return max(albedo, vec3(0.0));
+}
+
+vec3 primeRcDenoiseClosureEnergy(
+        vec3 localView,
+        PrimeRcState state,
+        uint closureKind) {
+    if (closureKind == PRIME_DENOISE_CLOSURE_OPAQUE) {
+        return state.material.weight.subsurface > 0.0
+                ? primeRcSubsurfaceGlossyEnergy(localView, state)
+                : primeRcBasicMetallicEnergy(localView, state);
+    }
+    if (closureKind == PRIME_DENOISE_CLOSURE_FOLIAGE) {
+        return primeRcBaseSubstrateEnergy(localView, state);
+    }
+    return primeRcTransmissionEnergy(localView, state);
+}
+
+PrimeDenoiseAlbedos primeDenoiseAlbedosFromState(
+        PrimeRcState state,
+        vec3 viewDirection,
+        uint closureKind) {
+    vec3 localView = primeRcOnbToLocal(state.material.geometry.onb, viewDirection);
+    uint materialFlags = state.samplingFlags;
+    state.spectrumed = 0u;
+
+    PrimeDenoiseAlbedos result;
+    state.samplingFlags = materialFlags & PRIME_RC_FLAG_DIFFUSE;
+    result.diffuse = primeSanitizeDenoiseAlbedo(
+            primeRcDenoiseClosureEnergy(localView, state, closureKind));
+    state.samplingFlags = materialFlags & (PRIME_RC_FLAG_SPECULAR | PRIME_RC_FLAG_DELTA);
+    result.specular = primeSanitizeDenoiseAlbedo(
+            primeRcDenoiseClosureEnergy(localView, state, closureKind));
     return result;
 }
 

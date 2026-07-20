@@ -7,6 +7,10 @@ import dev.prime.render.MaterialSettings;
 import dev.prime.render.fsr.FsrQualityMode;
 import dev.prime.render.fsr.FsrDebugView;
 import dev.prime.render.fsr.FsrSettings;
+import dev.prime.render.post.DlssRrDebugView;
+import dev.prime.render.post.PostProcessingMode;
+import dev.prime.render.post.PostProcessingSettings;
+import dev.prime.render.post.ReconstructionQualityMode;
 import dev.prime.render.vulkan.nrd.NrdDiagnostics;
 import java.io.IOException;
 import java.io.Reader;
@@ -21,7 +25,11 @@ import net.fabricmc.loader.api.FabricLoader;
 
 /** Small, version-tolerant owner for Prime's user-facing settings. */
 public final class PrimeConfig {
-    private static final String QUALITY_KEY = "fsr.quality";
+    private static final String MODE_KEY = "post_processing.mode";
+    private static final String QUALITY_KEY = "post_processing.quality";
+    private static final String LEGACY_QUALITY_KEY = "fsr.quality";
+    private static final String RR_DEBUG_VIEW_KEY = "dlss_rr.debug_view";
+    private static final String RR_DEBUG_FULLSCREEN_KEY = "dlss_rr.debug_fullscreen";
     private static final String FSR_DEBUG_VIEW_KEY = "fsr.debug_view";
     private static final String NRD_DEBUG_VIEW_KEY = "nrd.debug_view";
     private static final String SUN_EV_KEY = "lighting.sun_ev";
@@ -35,7 +43,10 @@ public final class PrimeConfig {
 
     public static void load() {
         Path path = configPath();
-        FsrQualityMode mode = FsrSettings.DEFAULT_QUALITY_MODE;
+        PostProcessingMode postProcessingMode = PostProcessingMode.DEFAULT;
+        ReconstructionQualityMode quality = ReconstructionQualityMode.DEFAULT;
+        DlssRrDebugView rrDebugView = DlssRrDebugView.OFF;
+        boolean rrDebugFullscreen = false;
         FsrDebugView fsrDebugView = FsrDebugView.OFF;
         NrdDiagnostics.Mode nrdDebugView = NrdDiagnostics.Mode.OFF;
         int sunQuarterSteps = LightingSettings.DEFAULT_SUN_QUARTER_STEPS;
@@ -47,17 +58,63 @@ public final class PrimeConfig {
             try (Reader reader = Files.newBufferedReader(path, StandardCharsets.UTF_8)) {
                 Properties properties = new Properties();
                 properties.load(reader);
-                String id = properties.getProperty(QUALITY_KEY);
-                if (id != null) {
-                    FsrQualityMode parsed = FsrQualityMode.findById(id).orElse(null);
+                String postProcessingId = properties.getProperty(MODE_KEY);
+                if (postProcessingId != null) {
+                    PostProcessingMode parsed = PostProcessingMode.findById(postProcessingId).orElse(null);
                     if (parsed == null) {
                         PrimeClient.LOGGER.warn(
-                                "Unknown Prime FSR quality mode '{}'; using {}",
-                                id,
-                                FsrSettings.DEFAULT_QUALITY_MODE.id());
+                                "Unknown Prime post-processing mode '{}'; using {}",
+                                postProcessingId,
+                                PostProcessingMode.DEFAULT.id());
                         rewriteNeeded = true;
                     } else {
-                        mode = parsed;
+                        postProcessingMode = parsed;
+                    }
+                } else {
+                    rewriteNeeded = true;
+                }
+                String qualityId = configuredQualityId(properties);
+                if (!properties.containsKey(QUALITY_KEY)) {
+                    rewriteNeeded = true;
+                }
+                if (qualityId != null) {
+                    ReconstructionQualityMode parsed =
+                            ReconstructionQualityMode.findById(qualityId).orElse(null);
+                    if (parsed == null) {
+                        PrimeClient.LOGGER.warn(
+                                "Unknown Prime reconstruction quality '{}'; using {}",
+                                qualityId,
+                                ReconstructionQualityMode.DEFAULT.id());
+                        rewriteNeeded = true;
+                    } else {
+                        quality = parsed;
+                    }
+                } else {
+                    rewriteNeeded = true;
+                }
+                String rrDebugId = properties.getProperty(RR_DEBUG_VIEW_KEY);
+                if (rrDebugId != null) {
+                    DlssRrDebugView parsed = DlssRrDebugView.findById(rrDebugId).orElse(null);
+                    if (parsed == null) {
+                        PrimeClient.LOGGER.warn(
+                                "Unknown Prime DLSS RR debug view '{}'; disabling it", rrDebugId);
+                        rewriteNeeded = true;
+                    } else {
+                        rrDebugView = parsed;
+                    }
+                } else {
+                    rewriteNeeded = true;
+                }
+                String rrFullscreen = properties.getProperty(RR_DEBUG_FULLSCREEN_KEY);
+                if (rrFullscreen != null) {
+                    if (rrFullscreen.equalsIgnoreCase("true")
+                            || rrFullscreen.equalsIgnoreCase("false")) {
+                        rrDebugFullscreen = Boolean.parseBoolean(rrFullscreen);
+                    } else {
+                        PrimeClient.LOGGER.warn(
+                                "Invalid Prime DLSS RR fullscreen value '{}'; disabling it",
+                                rrFullscreen);
+                        rewriteNeeded = true;
                     }
                 } else {
                     rewriteNeeded = true;
@@ -151,7 +208,11 @@ public final class PrimeConfig {
                 rewriteNeeded = true;
             }
         }
-        FsrSettings.setQualityMode(mode);
+        PostProcessingSettings.setMode(postProcessingMode);
+        PostProcessingSettings.setQuality(quality);
+        PostProcessingSettings.setRrDebugView(rrDebugView);
+        PostProcessingSettings.setRrDebugFullscreen(rrDebugFullscreen);
+        FsrSettings.setQualityMode(quality.fsrMode());
         FsrSettings.setDebugView(fsrDebugView);
         NrdDiagnostics.setMode(nrdDebugView);
         LightingSettings.setSunQuarterSteps(sunQuarterSteps);
@@ -160,9 +221,10 @@ public final class PrimeConfig {
         MaterialSettings.setRoughnessSteps(defaultRoughnessSteps);
         dirty = rewriteNeeded;
         PrimeClient.LOGGER.info(
-                "Prime settings: FSR {} ({}x), sun {} EV, block lights {} EV, Oklab DRT overexposure {}, default roughness {}",
-                mode.id(),
-                mode.upscaleRatio(),
+                "Prime settings: post-processing {} quality {} (NRD-FSR {}x), sun {} EV, block lights {} EV, Oklab DRT overexposure {}, default roughness {}",
+                postProcessingMode.id(),
+                quality.id(),
+                quality.upscaleRatio(),
                 formatEv(sunQuarterSteps),
                 formatEv(blockLightQuarterSteps),
                 formatOverexposure(oklabOverexposureSteps),
@@ -170,8 +232,34 @@ public final class PrimeConfig {
     }
 
     public static void setFsrQualityMode(FsrQualityMode mode) {
-        if (mode != FsrSettings.qualityMode()) {
-            FsrSettings.setQualityMode(mode);
+        setReconstructionQualityMode(ReconstructionQualityMode.fromId(mode.id()));
+    }
+
+    public static void setPostProcessingMode(PostProcessingMode mode) {
+        if (mode != PostProcessingSettings.mode()) {
+            PostProcessingSettings.setMode(mode);
+            dirty = true;
+        }
+    }
+
+    public static void setReconstructionQualityMode(ReconstructionQualityMode mode) {
+        if (mode != PostProcessingSettings.quality()) {
+            PostProcessingSettings.setQuality(mode);
+            FsrSettings.setQualityMode(mode.fsrMode());
+            dirty = true;
+        }
+    }
+
+    public static void setDlssRrDebugView(DlssRrDebugView mode) {
+        if (mode != PostProcessingSettings.rrDebugView()) {
+            PostProcessingSettings.setRrDebugView(mode);
+            dirty = true;
+        }
+    }
+
+    public static void setDlssRrDebugFullscreen(boolean fullscreen) {
+        if (fullscreen != PostProcessingSettings.rrDebugFullscreen()) {
+            PostProcessingSettings.setRrDebugFullscreen(fullscreen);
             dirty = true;
         }
     }
@@ -219,7 +307,10 @@ public final class PrimeConfig {
     }
 
     public static void restoreDefaults() {
-        setFsrQualityMode(FsrSettings.DEFAULT_QUALITY_MODE);
+        setPostProcessingMode(PostProcessingMode.DEFAULT);
+        setReconstructionQualityMode(ReconstructionQualityMode.DEFAULT);
+        setDlssRrDebugView(DlssRrDebugView.OFF);
+        setDlssRrDebugFullscreen(false);
         setFsrDebugView(FsrDebugView.OFF);
         setNrdDebugView(NrdDiagnostics.Mode.OFF);
         setSunQuarterSteps(LightingSettings.DEFAULT_SUN_QUARTER_STEPS);
@@ -237,7 +328,11 @@ public final class PrimeConfig {
         Path temporary = path.resolveSibling(path.getFileName() + ".tmp");
         try {
             Files.createDirectories(path.getParent());
-            String contents = QUALITY_KEY + "=" + FsrSettings.qualityMode().id() + "\n"
+            String contents = MODE_KEY + "=" + PostProcessingSettings.mode().id() + "\n"
+                    + QUALITY_KEY + "=" + PostProcessingSettings.quality().id() + "\n"
+                    + RR_DEBUG_VIEW_KEY + "=" + PostProcessingSettings.rrDebugView().id() + "\n"
+                    + RR_DEBUG_FULLSCREEN_KEY + "="
+                    + PostProcessingSettings.rrDebugFullscreen() + "\n"
                     + FSR_DEBUG_VIEW_KEY + "=" + FsrSettings.debugView().id() + "\n"
                     + NRD_DEBUG_VIEW_KEY + "=" + NrdDiagnostics.mode().id() + "\n"
                     + SUN_EV_KEY + "=" + formatEv(LightingSettings.sunQuarterSteps()) + "\n"
@@ -330,6 +425,12 @@ public final class PrimeConfig {
         return BigDecimal.valueOf(steps)
                 .divide(BigDecimal.valueOf(MaterialSettings.STEPS_PER_UNIT))
                 .toPlainString();
+    }
+
+    /** New shared quality wins; otherwise the former FSR key is migrated verbatim. */
+    static String configuredQualityId(Properties properties) {
+        String quality = properties.getProperty(QUALITY_KEY);
+        return quality != null ? quality : properties.getProperty(LEGACY_QUALITY_KEY);
     }
 
     private static Path configPath() {

@@ -7,6 +7,7 @@ import dev.prime.render.vulkan.AtmospherePipeline;
 import dev.prime.render.vulkan.VulkanBuffer;
 import dev.prime.render.vulkan.VulkanContext;
 import dev.prime.render.vulkan.VulkanImage;
+import dev.prime.render.vulkan.PathTraceTargets;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.ByteBuffer;
@@ -51,7 +52,7 @@ import org.lwjgl.vulkan.VkWriteDescriptorSet;
  * frame bindings at the real queue completion point. This boundary is intentionally generic so a
  * later wavefront path scheduler can replace raygen without changing denoiser ownership.
  */
-public final class NrdDenoiser implements Destroyable {
+public final class NrdDenoiser implements Destroyable, PathTraceTargets {
     private static final int COMPUTE_STAGE = VK12.VK_SHADER_STAGE_COMPUTE_BIT;
     private static final int IMAGE_USAGE = VK12.VK_IMAGE_USAGE_STORAGE_BIT | VK12.VK_IMAGE_USAGE_SAMPLED_BIT;
     private static final int MOTION_BINDING_COUNT = 10;
@@ -231,6 +232,11 @@ public final class NrdDenoiser implements Destroyable {
 
     public VulkanImage sunPenumbra() {
         return this.images.sunPenumbra;
+    }
+
+    @Override
+    public VulkanImage transparencyGuide() {
+        return this.images.transparencyGuide;
     }
 
     VulkanImage validation() {
@@ -796,6 +802,7 @@ public final class NrdDenoiser implements Destroyable {
         private final VulkanImage primaryPosition;
         private final VulkanImage sunLighting;
         private final VulkanImage sunPenumbra;
+        private final VulkanImage transparencyGuide;
         private final VulkanImage sunShadow;
         private final VulkanImage reprojectionError;
         private final VulkanImage validation;
@@ -820,6 +827,7 @@ public final class NrdDenoiser implements Destroyable {
                 VulkanImage primaryPosition,
                 VulkanImage sunLighting,
                 VulkanImage sunPenumbra,
+                VulkanImage transparencyGuide,
                 VulkanImage sunShadow,
                 VulkanImage reprojectionError,
                 VulkanImage validation,
@@ -841,6 +849,7 @@ public final class NrdDenoiser implements Destroyable {
             this.primaryPosition = primaryPosition;
             this.sunLighting = sunLighting;
             this.sunPenumbra = sunPenumbra;
+            this.transparencyGuide = transparencyGuide;
             this.sunShadow = sunShadow;
             this.reprojectionError = reprojectionError;
             this.validation = validation;
@@ -888,6 +897,13 @@ public final class NrdDenoiser implements Destroyable {
                         context, created, width, height, VK12.VK_FORMAT_R16G16B16A16_SFLOAT, debugPrefix + " unshadowed sun lighting");
                 VulkanImage sunPenumbra = createImage(
                         context, created, width, height, VK12.VK_FORMAT_R16_SFLOAT, debugPrefix + " noisy sun penumbra");
+                VulkanImage transparencyGuide = createImage(
+                        context,
+                        created,
+                        width,
+                        height,
+                        VK12.VK_FORMAT_R16G16B16A16_SFLOAT,
+                        debugPrefix + " inactive RR transparency guide");
                 VulkanImage sunShadow = createImage(
                         context, created, width, height, VK12.VK_FORMAT_R16_SFLOAT, debugPrefix + " SIGMA sun shadow");
                 VulkanImage reprojectionError = createImage(
@@ -928,6 +944,7 @@ public final class NrdDenoiser implements Destroyable {
                         primaryPosition,
                         sunLighting,
                         sunPenumbra,
+                        transparencyGuide,
                         sunShadow,
                         reprojectionError,
                         validation,

@@ -10,6 +10,10 @@ import dev.prime.render.fsr.FsrDebugView;
 import dev.prime.render.fsr.FsrQualityMode;
 import dev.prime.render.fsr.FsrSettings;
 import dev.prime.render.vulkan.nrd.NrdDiagnostics;
+import dev.prime.render.post.DlssRrDebugView;
+import dev.prime.render.post.PostProcessingMode;
+import dev.prime.render.post.PostProcessingSettings;
+import dev.prime.render.post.ReconstructionQualityMode;
 import net.minecraft.client.OptionInstance;
 import net.minecraft.client.gui.components.AbstractWidget;
 import net.minecraft.client.gui.components.Button;
@@ -29,19 +33,23 @@ public abstract class VideoSettingsScreenMixin {
     private static final Component PRIME$HEADER =
             Component.translatable("prime.options.header");
     @Unique private OptionInstance<Boolean> prime$screenshotMode;
-    @Unique private OptionInstance<FsrQualityMode> prime$qualityMode;
+    @Unique private OptionInstance<PostProcessingMode> prime$postProcessingMode;
+    @Unique private OptionInstance<ReconstructionQualityMode> prime$qualityMode;
     @Unique private OptionInstance<Integer> prime$sunExposure;
     @Unique private OptionInstance<Integer> prime$blockLightExposure;
     @Unique private OptionInstance<Integer> prime$oklabOverexposure;
     @Unique private OptionInstance<Integer> prime$defaultRoughness;
     @Unique private OptionInstance<NrdDiagnostics.Mode> prime$nrdDebugView;
     @Unique private OptionInstance<FsrDebugView> prime$fsrDebugView;
+    @Unique private OptionInstance<DlssRrDebugView> prime$rrDebugView;
+    @Unique private OptionInstance<Boolean> prime$rrDebugFullscreen;
 
     @Inject(method = "addOptions", at = @At("TAIL"))
     private void prime$addOptions(CallbackInfo callbackInfo) {
         OptionsList list = ((OptionsSubScreenAccessor) this).prime$getList();
         if (list != null) {
             this.prime$screenshotMode = PrimeVideoOptions.screenshotMode();
+            this.prime$postProcessingMode = PrimeVideoOptions.postProcessingMode();
             this.prime$qualityMode = PrimeVideoOptions.qualityMode();
             this.prime$sunExposure = PrimeVideoOptions.sunExposure();
             this.prime$blockLightExposure = PrimeVideoOptions.blockLightExposure();
@@ -49,14 +57,18 @@ public abstract class VideoSettingsScreenMixin {
             this.prime$defaultRoughness = PrimeVideoOptions.defaultRoughness();
             this.prime$nrdDebugView = PrimeVideoOptions.nrdDebugView();
             this.prime$fsrDebugView = PrimeVideoOptions.fsrDebugView();
+            this.prime$rrDebugView = PrimeVideoOptions.dlssRrDebugView();
+            this.prime$rrDebugFullscreen = PrimeVideoOptions.dlssRrDebugFullscreen();
             list.addHeader(PRIME$HEADER);
             list.addBig(this.prime$screenshotMode);
+            list.addBig(this.prime$postProcessingMode);
             list.addBig(this.prime$qualityMode);
             list.addBig(this.prime$sunExposure);
             list.addBig(this.prime$blockLightExposure);
             list.addBig(this.prime$oklabOverexposure);
             list.addBig(this.prime$defaultRoughness);
             list.addSmall(this.prime$nrdDebugView, this.prime$fsrDebugView);
+            list.addSmall(this.prime$rrDebugView, this.prime$rrDebugFullscreen);
             list.addBig(Button.builder(
                             Component.translatable("prime.options.restore_defaults"),
                             button -> this.prime$restoreDefaults())
@@ -69,7 +81,8 @@ public abstract class VideoSettingsScreenMixin {
         PrimeConfig.restoreDefaults();
         ScreenshotMode.request(false);
         this.prime$refresh(this.prime$screenshotMode, false);
-        this.prime$refresh(this.prime$qualityMode, FsrSettings.DEFAULT_QUALITY_MODE);
+        this.prime$refresh(this.prime$postProcessingMode, PostProcessingMode.DEFAULT);
+        this.prime$refresh(this.prime$qualityMode, ReconstructionQualityMode.DEFAULT);
         this.prime$refresh(
                 this.prime$sunExposure,
                 LightingSettings.DEFAULT_SUN_QUARTER_STEPS);
@@ -84,6 +97,8 @@ public abstract class VideoSettingsScreenMixin {
                 MaterialSettings.DEFAULT_ROUGHNESS_STEPS);
         this.prime$refresh(this.prime$nrdDebugView, NrdDiagnostics.Mode.OFF);
         this.prime$refresh(this.prime$fsrDebugView, FsrDebugView.OFF);
+        this.prime$refresh(this.prime$rrDebugView, DlssRrDebugView.OFF);
+        this.prime$refresh(this.prime$rrDebugFullscreen, false);
     }
 
     @Unique

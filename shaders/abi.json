@@ -174,7 +174,8 @@
     "labPbrNormalAtlas": 18,
     "labPbrSpecularAtlas": 19,
     "nrdSunLighting": 20,
-    "nrdSunPenumbra": 21
+    "nrdSunPenumbra": 21,
+    "transparencyGuide": 22
   },
   "pathControl": {
     "cameraInWaterMask": "0x80000000",
@@ -186,6 +187,7 @@
     "materialRoughnessShift": 16,
     "materialRoughnessMask": "0xff",
     "materialRoughnessStepsPerUnit": 100,
+    "dlssRrMask": "0x01000000",
     "russianRouletteStart": 2
   },
   "nrdContract": {

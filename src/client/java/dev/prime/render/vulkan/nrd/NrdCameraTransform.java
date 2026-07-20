@@ -22,14 +22,14 @@ import org.joml.Vector4f;
  * {@code currentCamera - previousCamera} before applying the previous rotation. The sign follows
  * directly from {@code world = currentRelative + currentCamera}.
  */
-final class NrdCameraTransform {
+public final class NrdCameraTransform {
     private NrdCameraTransform() {}
 
-    static Matrix4f projectionForNrd(Matrix4fc minecraftProjection) {
+    public static Matrix4f projectionForNrd(Matrix4fc minecraftProjection) {
         return projectionForNrd(minecraftProjection, new Matrix4f());
     }
 
-    static Matrix4f projectionForNrd(Matrix4fc minecraftProjection, Matrix4f result) {
+    public static Matrix4f projectionForNrd(Matrix4fc minecraftProjection, Matrix4f result) {
         result.set(minecraftProjection);
         return result
                 .m01(-result.m01())
@@ -38,21 +38,21 @@ final class NrdCameraTransform {
                 .m31(-result.m31());
     }
 
-    static Matrix4f currentClipToWorld(FrameCamera current) {
+    public static Matrix4f currentClipToWorld(FrameCamera current) {
         return currentClipToWorld(current, new Matrix4f());
     }
 
-    static Matrix4f currentClipToWorld(FrameCamera current, Matrix4f result) {
+    public static Matrix4f currentClipToWorld(FrameCamera current, Matrix4f result) {
         return projectionForNrd(current.projection(), result)
                 .mul(current.viewRotation())
                 .invert();
     }
 
-    static Matrix4f previousWorldToView(FrameCamera current, FrameCamera previous) {
+    public static Matrix4f previousWorldToView(FrameCamera current, FrameCamera previous) {
         return previousWorldToView(current, previous, new Matrix4f());
     }
 
-    static Matrix4f previousWorldToView(
+    public static Matrix4f previousWorldToView(
             FrameCamera current, FrameCamera previous, Matrix4f result) {
         return result.set(previous.viewRotation()).translate(
                 (float) (current.renderX() - previous.renderX()),
@@ -60,11 +60,11 @@ final class NrdCameraTransform {
                 (float) (current.renderZ() - previous.renderZ()));
     }
 
-    static Matrix4f previousWorldToClip(FrameCamera current, FrameCamera previous) {
+    public static Matrix4f previousWorldToClip(FrameCamera current, FrameCamera previous) {
         return previousWorldToClip(current, previous, new Matrix4f(), new Matrix4f());
     }
 
-    static Matrix4f previousWorldToClip(
+    public static Matrix4f previousWorldToClip(
             FrameCamera current,
             FrameCamera previous,
             Matrix4f result,
@@ -80,11 +80,11 @@ final class NrdCameraTransform {
      * it. The exact rendered transform is relative to Minecraft's physical camera, hence the
      * current effective pinhole to previous physical camera translation.
      */
-    static Matrix4f previousRenderedWorldToClip(FrameCamera current, FrameCamera previous) {
+    public static Matrix4f previousRenderedWorldToClip(FrameCamera current, FrameCamera previous) {
         return previousRenderedWorldToClip(current, previous, new Matrix4f());
     }
 
-    static Matrix4f previousRenderedWorldToClip(
+    public static Matrix4f previousRenderedWorldToClip(
             FrameCamera current, FrameCamera previous, Matrix4f result) {
         return result.set(previous.inverseViewProjection())
                 .invert()
@@ -94,7 +94,7 @@ final class NrdCameraTransform {
                         (float) (current.renderZ() - previous.z()));
     }
 
-    static Vector2f screenUv(Matrix4fc worldToClip, Vector3fc position) {
+    public static Vector2f screenUv(Matrix4fc worldToClip, Vector3fc position) {
         Vector4f clip = worldToClip.transform(
                 new Vector4f(position.x(), position.y(), position.z(), 1.0F));
         float inverseW = 1.0F / clip.w;

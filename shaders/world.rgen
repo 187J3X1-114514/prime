@@ -28,6 +28,17 @@ void main() {
     PathState path = primeCameraPath(pixel, 0u, cameraSample);
 
     PrimeIntegrationResult sampleResult = primeIntegrate(path, integrator);
+    PrimeTransparencyGuideResult transparencyGuide;
+    transparencyGuide.backgroundRadiance = vec3(0.0);
+    transparencyGuide.reflectionHitDistance = 0.0;
+    transparencyGuide.valid = false;
+    if ((primePush.path.w & PRIME_PATH_DLSS_RR_MASK) != 0u
+            && (sampleResult.primaryMaterialFlags & PRIME_MATERIAL_FLAG_TRANSMISSIVE) != 0u) {
+        transparencyGuide = primeIntegrateTransparencyGuide(path, integrator);
+        if (transparencyGuide.valid) {
+            sampleResult.specularHitDistance = transparencyGuide.reflectionHitDistance;
+        }
+    }
     vec3 noisyDiffuse = sampleResult.diffuseRadiance;
     vec3 noisySpecular = sampleResult.specularRadiance;
     primeNrdClampRadiancePair(noisyDiffuse, noisySpecular, PRIME_NRD_FP16_MAX);
@@ -85,6 +96,16 @@ void main() {
             primeNrdSunPenumbra,
             ivec2(pixel),
             vec4(sampleResult.sunPenumbra));
+    imageStore(
+            primeTransparencyGuide,
+            ivec2(pixel),
+            transparencyGuide.valid
+                    ? vec4(
+                            primeNrdClampRadiance(
+                                    transparencyGuide.backgroundRadiance,
+                                    PRIME_NRD_FP16_MAX),
+                            1.0)
+                    : vec4(0.0));
 
     // Directly visible sky/emission is a current-frame deterministic signal. FSR owns temporal
     // coverage reconstruction, so averaging a second independent history here would create stale

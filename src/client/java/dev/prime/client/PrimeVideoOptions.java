@@ -9,6 +9,10 @@ import dev.prime.render.ScreenshotMode;
 import dev.prime.render.fsr.FsrDebugView;
 import dev.prime.render.fsr.FsrQualityMode;
 import dev.prime.render.fsr.FsrSettings;
+import dev.prime.render.post.DlssRrDebugView;
+import dev.prime.render.post.PostProcessingMode;
+import dev.prime.render.post.PostProcessingSettings;
+import dev.prime.render.post.ReconstructionQualityMode;
 import dev.prime.render.vulkan.nrd.NrdDiagnostics;
 import java.util.List;
 import java.util.Locale;
@@ -18,7 +22,11 @@ import net.minecraft.network.chat.Component;
 
 /** Builds Prime's live controls shown in Minecraft's Video Settings screen. */
 public final class PrimeVideoOptions {
-    private static final List<FsrQualityMode> QUALITY_MODES = List.of(FsrQualityMode.values());
+    private static final List<PostProcessingMode> POST_PROCESSING_MODES =
+            List.of(PostProcessingMode.values());
+    private static final List<ReconstructionQualityMode> QUALITY_MODES =
+            List.of(ReconstructionQualityMode.values());
+    private static final List<DlssRrDebugView> RR_DEBUG_VIEWS = List.of(DlssRrDebugView.values());
     private static final List<FsrDebugView> FSR_DEBUG_VIEWS = List.of(FsrDebugView.values());
     private static final List<NrdDiagnostics.Mode> NRD_DEBUG_VIEWS =
             List.of(NrdDiagnostics.Mode.values());
@@ -35,19 +43,59 @@ public final class PrimeVideoOptions {
                 ScreenshotMode::request);
     }
 
-    public static OptionInstance<FsrQualityMode> qualityMode() {
+    public static OptionInstance<PostProcessingMode> postProcessingMode() {
         return new OptionInstance<>(
-                "prime.options.fsr.quality",
+                "prime.options.post_processing.mode",
                 OptionInstance.cachedConstantTooltip(
-                        Component.translatable("prime.options.fsr.quality.tooltip")),
+                        Component.translatable("prime.options.post_processing.mode.tooltip")),
                 (caption, mode) -> Options.genericValueLabel(
                         caption,
-                        Component.translatable("prime.options.fsr.quality." + mode.id())),
+                        Component.translatable("prime.options.post_processing.mode." + mode.id())),
+                new OptionInstance.Enum<>(
+                        POST_PROCESSING_MODES,
+                        Codec.STRING.xmap(PostProcessingMode::fromId, PostProcessingMode::id)),
+                PostProcessingSettings.mode(),
+                PrimeConfig::setPostProcessingMode);
+    }
+
+    public static OptionInstance<ReconstructionQualityMode> qualityMode() {
+        return new OptionInstance<>(
+                "prime.options.post_processing.quality",
+                OptionInstance.cachedConstantTooltip(
+                        Component.translatable("prime.options.post_processing.quality.tooltip")),
+                (caption, mode) -> Options.genericValueLabel(
+                        caption,
+                        Component.translatable("prime.options.post_processing.quality." + mode.id())),
                 new OptionInstance.SliderableEnum<>(
                         QUALITY_MODES,
-                        Codec.STRING.xmap(FsrQualityMode::fromId, FsrQualityMode::id)),
-                FsrSettings.qualityMode(),
-                PrimeConfig::setFsrQualityMode);
+                        Codec.STRING.xmap(
+                                ReconstructionQualityMode::fromId,
+                                ReconstructionQualityMode::id)),
+                PostProcessingSettings.quality(),
+                PrimeConfig::setReconstructionQualityMode);
+    }
+
+    public static OptionInstance<DlssRrDebugView> dlssRrDebugView() {
+        return new OptionInstance<>(
+                "prime.options.dlss_rr.debug_view",
+                OptionInstance.cachedConstantTooltip(
+                        Component.translatable("prime.options.dlss_rr.debug_view.tooltip")),
+                (caption, mode) -> Component.translatable(
+                        "prime.options.dlss_rr.debug_view." + mode.id()),
+                new OptionInstance.Enum<>(
+                        RR_DEBUG_VIEWS,
+                        Codec.STRING.xmap(DlssRrDebugView::fromId, DlssRrDebugView::id)),
+                PostProcessingSettings.rrDebugView(),
+                PrimeConfig::setDlssRrDebugView);
+    }
+
+    public static OptionInstance<Boolean> dlssRrDebugFullscreen() {
+        return OptionInstance.createBoolean(
+                "prime.options.dlss_rr.debug_fullscreen",
+                OptionInstance.cachedConstantTooltip(
+                        Component.translatable("prime.options.dlss_rr.debug_fullscreen.tooltip")),
+                PostProcessingSettings.rrDebugFullscreen(),
+                PrimeConfig::setDlssRrDebugFullscreen);
     }
 
     public static OptionInstance<Integer> sunExposure() {

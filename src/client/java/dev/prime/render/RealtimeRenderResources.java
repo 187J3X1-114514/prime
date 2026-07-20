@@ -1,13 +1,15 @@
 package dev.prime.render;
 
 import com.mojang.blaze3d.vulkan.Destroyable;
-import dev.prime.render.fsr.FsrQualityMode;
+import dev.prime.render.post.PostProcessingMode;
+import dev.prime.render.post.RealtimePostProcessor;
+import dev.prime.render.post.ReconstructionQualityMode;
 import dev.prime.render.vulkan.AtmospherePipeline;
+import dev.prime.render.vulkan.NrdFsrPostProcessor;
 import dev.prime.render.vulkan.VulkanContext;
 import dev.prime.render.vulkan.VulkanImage;
-import dev.prime.render.vulkan.fsr.Fsr3Upscaler;
-import dev.prime.render.vulkan.nrd.NrdDenoiser;
-import org.lwjgl.vulkan.VK12;
+import dev.prime.render.vulkan.dlss.DlssRrNative;
+import dev.prime.render.vulkan.dlss.DlssRrPostProcessor;
 
 /**
  * Owns the complete size-dependent resource graph for Prime's interactive render path.
@@ -20,24 +22,21 @@ import org.lwjgl.vulkan.VK12;
 final class RealtimeRenderResources implements Destroyable {
     final VulkanImage output;
     final VulkanImage accumulation;
-    final VulkanImage sceneColor;
-    final FsrQualityMode qualityMode;
-    NrdDenoiser denoiser;
-    Fsr3Upscaler upscaler;
+    final PostProcessingMode mode;
+    final ReconstructionQualityMode qualityMode;
+    final RealtimePostProcessor processor;
     private boolean destroyed;
 
     private RealtimeRenderResources(
             VulkanImage output,
             VulkanImage accumulation,
-            VulkanImage sceneColor,
-            NrdDenoiser denoiser,
-            Fsr3Upscaler upscaler,
-            FsrQualityMode qualityMode) {
+            RealtimePostProcessor processor,
+            PostProcessingMode mode,
+            ReconstructionQualityMode qualityMode) {
         this.output = output;
         this.accumulation = accumulation;
-        this.sceneColor = sceneColor;
-        this.denoiser = denoiser;
-        this.upscaler = upscaler;
+        this.processor = processor;
+        this.mode = mode;
         this.qualityMode = qualityMode;
     }
 
@@ -48,57 +47,51 @@ final class RealtimeRenderResources implements Destroyable {
             int displayHeight,
             int renderWidth,
             int renderHeight,
-            FsrQualityMode qualityMode) {
+            PostProcessingMode mode,
+            ReconstructionQualityMode qualityMode,
+            DlssRrNative.Context ngxContext) {
         VulkanImage output = null;
         VulkanImage accumulation = null;
-        VulkanImage sceneColor = null;
-        NrdDenoiser denoiser = null;
-        Fsr3Upscaler upscaler = null;
+        RealtimePostProcessor processor = null;
         try {
             output = context.createOutputImage(displayWidth, displayHeight);
             accumulation = context.createAccumulationImage(renderWidth, renderHeight);
-            sceneColor = context.createImage2D(
-                    renderWidth,
-                    renderHeight,
-                    VK12.VK_FORMAT_R16G16B16A16_SFLOAT,
-                    VK12.VK_IMAGE_USAGE_STORAGE_BIT | VK12.VK_IMAGE_USAGE_SAMPLED_BIT,
-                    "Prime realtime linear HDR scene color");
-            denoiser = NrdDenoiser.create(
-                    context,
-                    renderWidth,
-                    renderHeight,
-                    sceneColor,
-                    accumulation,
-                    atmosphere);
-            upscaler = Fsr3Upscaler.create(
-                    context,
-                    renderWidth,
-                    renderHeight,
-                    displayWidth,
-                    displayHeight,
-                    qualityMode,
-                    sceneColor,
-                    denoiser.motion(),
-                    denoiser.fsrDepth(),
-                    denoiser.fsrReactiveMask(),
-                    denoiser.fsrTransparencyCompositionMask(),
-                    output);
+            if (mode == PostProcessingMode.NRD_FSR) {
+                processor = NrdFsrPostProcessor.create(
+                        context,
+                        atmosphere,
+                        accumulation,
+                        output,
+                        renderWidth,
+                        renderHeight,
+                        displayWidth,
+                        displayHeight,
+                        qualityMode);
+            } else {
+                if (ngxContext == null) {
+                    throw new IllegalStateException("DLSS RR was selected without an initialized NGX context");
+                }
+                processor = DlssRrPostProcessor.create(
+                        context,
+                        ngxContext,
+                        atmosphere,
+                        accumulation,
+                        output,
+                        renderWidth,
+                        renderHeight,
+                        displayWidth,
+                        displayHeight,
+                        qualityMode);
+            }
             return new RealtimeRenderResources(
                     output,
                     accumulation,
-                    sceneColor,
-                    denoiser,
-                    upscaler,
+                    processor,
+                    mode,
                     qualityMode);
         } catch (RuntimeException exception) {
-            if (upscaler != null) {
-                upscaler.destroy();
-            }
-            if (denoiser != null) {
-                denoiser.destroy();
-            }
-            if (sceneColor != null) {
-                sceneColor.destroy();
+            if (processor != null) {
+                processor.destroy();
             }
             if (accumulation != null) {
                 accumulation.destroy();
@@ -115,14 +108,20 @@ final class RealtimeRenderResources implements Destroyable {
             int displayHeight,
             int renderWidth,
             int renderHeight,
-            FsrQualityMode requestedQualityMode) {
+            PostProcessingMode requestedMode,
+            ReconstructionQualityMode requestedQualityMode) {
         return this.output.width() == displayWidth
                 && this.output.height() == displayHeight
                 && this.accumulation.width() == renderWidth
                 && this.accumulation.height() == renderHeight
-                && this.sceneColor.width() == renderWidth
-                && this.sceneColor.height() == renderHeight
+                && this.processor.renderWidth() == renderWidth
+                && this.processor.renderHeight() == renderHeight
+                && this.mode == requestedMode
                 && this.qualityMode == requestedQualityMode;
+    }
+
+    void requestReset() {
+        this.processor.requestReset();
     }
 
     @Override
@@ -131,9 +130,7 @@ final class RealtimeRenderResources implements Destroyable {
             return;
         }
         this.destroyed = true;
-        this.upscaler.destroy();
-        this.denoiser.destroy();
-        this.sceneColor.destroy();
+        this.processor.destroy();
         this.accumulation.destroy();
         this.output.destroy();
     }

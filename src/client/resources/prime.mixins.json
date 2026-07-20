@@ -12,6 +12,7 @@
     "FixedPlayerDistanceChunkTrackerMixin",
     "FluidRendererMixin",
     "GameRendererMixin",
+    "GuiMixin",
     "GpuDeviceAccessor",
     "IndigoAltModelBlockRendererMixin",
     "LevelExtractorMixin",
@@ -26,6 +27,7 @@
     "TextureAtlasMixin",
     "TextureAtlasSpriteAccessor",
     "VulkanBackendMixin",
+    "VulkanInstanceMixin",
     "VideoSettingsScreenMixin"
   ],
   "injectors": {

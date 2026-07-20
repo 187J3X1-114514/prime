@@ -1,0 +1,193 @@
+package dev.prime.render.vulkan.dlss;
+
+import com.mojang.blaze3d.vulkan.Destroyable;
+import dev.prime.render.vulkan.PathTraceTargets;
+import dev.prime.render.vulkan.VulkanContext;
+import dev.prime.render.vulkan.VulkanImage;
+import java.util.ArrayList;
+import org.lwjgl.system.MemoryStack;
+import org.lwjgl.vulkan.KHRRayTracingPipeline;
+import org.lwjgl.vulkan.KHRSynchronization2;
+import org.lwjgl.vulkan.VK12;
+import org.lwjgl.vulkan.VkDependencyInfo;
+import org.lwjgl.vulkan.VkImageMemoryBarrier2;
+
+/** Owns every raw path-trace signal and concrete NGX image for one RR feature extent. */
+public final class DlssRrTargets implements PathTraceTargets, Destroyable {
+    static final int COLOR_FORMAT = VK12.VK_FORMAT_R16G16B16A16_SFLOAT;
+    static final int ALBEDO_FORMAT = VK12.VK_FORMAT_R16G16B16A16_SFLOAT;
+    static final int NORMAL_ROUGHNESS_FORMAT = VK12.VK_FORMAT_R16G16B16A16_SFLOAT;
+    static final int LINEAR_DEPTH_FORMAT = VK12.VK_FORMAT_R32_SFLOAT;
+    static final int MOTION_FORMAT = VK12.VK_FORMAT_R16G16B16A16_SFLOAT;
+    static final int SPECULAR_HIT_DISTANCE_FORMAT = VK12.VK_FORMAT_R16_SFLOAT;
+    private static final int USAGE =
+            VK12.VK_IMAGE_USAGE_STORAGE_BIT | VK12.VK_IMAGE_USAGE_SAMPLED_BIT;
+
+    private final VulkanImage noisyDiffuse;
+    private final VulkanImage noisySpecular;
+    private final VulkanImage packedNormalRoughness;
+    private final VulkanImage linearViewZ;
+    private final VulkanImage motion;
+    private final VulkanImage material;
+    private final VulkanImage specularMaterial;
+    private final VulkanImage primaryPosition;
+    private final VulkanImage sunLighting;
+    private final VulkanImage sunPenumbra;
+    private final VulkanImage transparencyGuide;
+    private final VulkanImage inputColor;
+    private final VulkanImage colorBeforeTransparency;
+    private final VulkanImage normalRoughness;
+    private final VulkanImage specularHitDistance;
+    private final VulkanImage rrOutput;
+    private final VulkanImage[] owned;
+    private boolean destroyed;
+
+    private DlssRrTargets(ArrayList<VulkanImage> images) {
+        this.noisyDiffuse = images.get(0);
+        this.noisySpecular = images.get(1);
+        this.packedNormalRoughness = images.get(2);
+        this.linearViewZ = images.get(3);
+        this.motion = images.get(4);
+        this.material = images.get(5);
+        this.specularMaterial = images.get(6);
+        this.primaryPosition = images.get(7);
+        this.sunLighting = images.get(8);
+        this.sunPenumbra = images.get(9);
+        this.transparencyGuide = images.get(10);
+        this.inputColor = images.get(11);
+        this.colorBeforeTransparency = images.get(12);
+        this.normalRoughness = images.get(13);
+        this.specularHitDistance = images.get(14);
+        this.rrOutput = images.get(15);
+        this.owned = images.toArray(VulkanImage[]::new);
+    }
+
+    public static DlssRrTargets create(
+            VulkanContext context,
+            int renderWidth,
+            int renderHeight,
+            int displayWidth,
+            int displayHeight) {
+        ArrayList<VulkanImage> images = new ArrayList<>();
+        try {
+            add(context, images, renderWidth, renderHeight,
+                    VK12.VK_FORMAT_R16G16B16A16_SFLOAT, "Prime RR noisy diffuse");
+            add(context, images, renderWidth, renderHeight,
+                    VK12.VK_FORMAT_R16G16B16A16_SFLOAT, "Prime RR noisy specular");
+            add(context, images, renderWidth, renderHeight,
+                    VK12.VK_FORMAT_A2B10G10R10_UNORM_PACK32, "Prime RR packed world normal and roughness");
+            add(context, images, renderWidth, renderHeight,
+                    LINEAR_DEPTH_FORMAT, "Prime RR linear view Z");
+            add(context, images, renderWidth, renderHeight,
+                    MOTION_FORMAT, "Prime RR low-resolution motion");
+            add(context, images, renderWidth, renderHeight,
+                    ALBEDO_FORMAT, "Prime RR diffuse albedo and distance");
+            add(context, images, renderWidth, renderHeight,
+                    ALBEDO_FORMAT, "Prime RR specular albedo and material flags");
+            add(context, images, renderWidth, renderHeight,
+                    VK12.VK_FORMAT_R32G32B32A32_SFLOAT, "Prime RR primary position");
+            add(context, images, renderWidth, renderHeight,
+                    VK12.VK_FORMAT_R16G16B16A16_SFLOAT, "Prime RR sun lighting");
+            add(context, images, renderWidth, renderHeight,
+                    VK12.VK_FORMAT_R16_SFLOAT, "Prime RR sun penumbra");
+            add(context, images, renderWidth, renderHeight,
+                    VK12.VK_FORMAT_R16G16B16A16_SFLOAT, "Prime RR transmission background guide");
+            add(context, images, renderWidth, renderHeight,
+                    COLOR_FORMAT, "Prime RR input color");
+            add(context, images, renderWidth, renderHeight,
+                    COLOR_FORMAT, "Prime RR color before transparency");
+            add(context, images, renderWidth, renderHeight,
+                    NORMAL_ROUGHNESS_FORMAT, "Prime RR world normal and roughness");
+            add(context, images, renderWidth, renderHeight,
+                    SPECULAR_HIT_DISTANCE_FORMAT, "Prime RR world specular hit distance");
+            add(context, images, displayWidth, displayHeight,
+                    COLOR_FORMAT, "Prime RR linear HDR output");
+            return new DlssRrTargets(images);
+        } catch (RuntimeException exception) {
+            for (int index = images.size() - 1; index >= 0; index--) {
+                images.get(index).destroy();
+            }
+            throw exception;
+        }
+    }
+
+    private static void add(
+            VulkanContext context,
+            ArrayList<VulkanImage> images,
+            int width,
+            int height,
+            int format,
+            String label) {
+        images.add(context.createImage2D(width, height, format, USAGE, label));
+    }
+
+    /** Transitions the exact RR resource set to its lifetime-stable GENERAL layout. */
+    public void prepareForRayTrace(org.lwjgl.vulkan.VkCommandBuffer commandBuffer) {
+        try (MemoryStack stack = MemoryStack.stackPush()) {
+            VkImageMemoryBarrier2.Buffer barriers = VkImageMemoryBarrier2.calloc(this.owned.length, stack);
+            for (int index = 0; index < this.owned.length; index++) {
+                VulkanImage image = this.owned[index];
+                boolean initialized = image.initialized();
+                barriers.get(index)
+                        .sType$Default()
+                        .srcStageMask(initialized
+                                ? VK12.VK_PIPELINE_STAGE_ALL_COMMANDS_BIT
+                                : VK12.VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT)
+                        .srcAccessMask(initialized
+                                ? VK12.VK_ACCESS_MEMORY_READ_BIT | VK12.VK_ACCESS_MEMORY_WRITE_BIT
+                                : 0L)
+                        .dstStageMask(
+                                KHRRayTracingPipeline.VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR
+                                        | VK12.VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT)
+                        .dstAccessMask(VK12.VK_ACCESS_SHADER_READ_BIT | VK12.VK_ACCESS_SHADER_WRITE_BIT)
+                        .oldLayout(initialized
+                                ? VK12.VK_IMAGE_LAYOUT_GENERAL
+                                : VK12.VK_IMAGE_LAYOUT_UNDEFINED)
+                        .newLayout(VK12.VK_IMAGE_LAYOUT_GENERAL)
+                        .srcQueueFamilyIndex(VK12.VK_QUEUE_FAMILY_IGNORED)
+                        .dstQueueFamilyIndex(VK12.VK_QUEUE_FAMILY_IGNORED)
+                        .image(image.image());
+                barriers.get(index).subresourceRange()
+                        .aspectMask(VK12.VK_IMAGE_ASPECT_COLOR_BIT)
+                        .baseMipLevel(0)
+                        .levelCount(1)
+                        .baseArrayLayer(0)
+                        .layerCount(1);
+                image.markInitialized();
+            }
+            VkDependencyInfo dependency = VkDependencyInfo.calloc(stack)
+                    .sType$Default()
+                    .pImageMemoryBarriers(barriers);
+            KHRSynchronization2.vkCmdPipelineBarrier2KHR(commandBuffer, dependency);
+        }
+    }
+
+    @Override public VulkanImage noisyDiffuse() { return this.noisyDiffuse; }
+    @Override public VulkanImage noisySpecular() { return this.noisySpecular; }
+    @Override public VulkanImage normalRoughness() { return this.packedNormalRoughness; }
+    @Override public VulkanImage viewZ() { return this.linearViewZ; }
+    @Override public VulkanImage motion() { return this.motion; }
+    @Override public VulkanImage material() { return this.material; }
+    @Override public VulkanImage specularMaterial() { return this.specularMaterial; }
+    @Override public VulkanImage primaryPosition() { return this.primaryPosition; }
+    @Override public VulkanImage sunLighting() { return this.sunLighting; }
+    @Override public VulkanImage sunPenumbra() { return this.sunPenumbra; }
+    @Override public VulkanImage transparencyGuide() { return this.transparencyGuide; }
+
+    public VulkanImage inputColor() { return this.inputColor; }
+    public VulkanImage colorBeforeTransparency() { return this.colorBeforeTransparency; }
+    public VulkanImage rrNormalRoughness() { return this.normalRoughness; }
+    public VulkanImage specularHitDistance() { return this.specularHitDistance; }
+    public VulkanImage rrOutput() { return this.rrOutput; }
+
+    @Override
+    public void destroy() {
+        if (this.destroyed) {
+            return;
+        }
+        this.destroyed = true;
+        for (int index = this.owned.length - 1; index >= 0; index--) {
+            this.owned[index].destroy();
+        }
+    }
+}

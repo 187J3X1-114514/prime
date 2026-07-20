@@ -3,6 +3,10 @@ package dev.prime.config;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
+import dev.prime.render.post.DlssRrDebugView;
+import dev.prime.render.post.PostProcessingMode;
+import dev.prime.render.post.ReconstructionQualityMode;
+import java.util.Properties;
 import org.junit.jupiter.api.Test;
 
 final class PrimeConfigTest {
@@ -41,5 +45,27 @@ final class PrimeConfigTest {
                 () -> PrimeConfig.parseRoughnessSteps("0.805"));
         assertThrows(IllegalArgumentException.class,
                 () -> PrimeConfig.parseRoughnessSteps("1.01"));
+    }
+
+    @Test
+    void missingAndUnknownPostProcessingValuesUseReleaseSafeDefaults() {
+        assertEquals(PostProcessingMode.NRD_FSR, PostProcessingMode.DEFAULT);
+        assertEquals(PostProcessingMode.NRD_FSR, PostProcessingMode.fromId(null));
+        assertEquals(PostProcessingMode.NRD_FSR, PostProcessingMode.fromId("future_backend"));
+        assertEquals(ReconstructionQualityMode.PERFORMANCE, ReconstructionQualityMode.DEFAULT);
+        assertEquals(
+                ReconstructionQualityMode.PERFORMANCE,
+                ReconstructionQualityMode.fromId("future_quality"));
+        assertEquals(DlssRrDebugView.OFF, DlssRrDebugView.fromId("future_view"));
+    }
+
+    @Test
+    void legacyFsrQualityMigratesUnlessTheSharedKeyExists() {
+        Properties legacy = new Properties();
+        legacy.setProperty("fsr.quality", "balanced");
+        assertEquals("balanced", PrimeConfig.configuredQualityId(legacy));
+
+        legacy.setProperty("post_processing.quality", "quality");
+        assertEquals("quality", PrimeConfig.configuredQualityId(legacy));
     }
 }

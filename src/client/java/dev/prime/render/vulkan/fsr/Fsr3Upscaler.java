@@ -181,6 +181,10 @@ public final class Fsr3Upscaler implements Destroyable {
         return this.frameIndex;
     }
 
+    public VulkanImage linearOutput() {
+        return this.linearOutput;
+    }
+
     public FsrSettings.Jitter jitter() {
         return this.qualityMode.jitter(this.frameIndex);
     }

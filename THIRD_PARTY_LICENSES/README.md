@@ -12,6 +12,14 @@ NVIDIA, the NVIDIA logo, and NVIDIA Real-time Denoisers (NRD) are trademarks
 and/or registered trademarks of NVIDIA Corporation in the United States and
 other countries.
 
+Prime releases also include its own `prime_dlss_rr.dll` C ABI bridge and NVIDIA's
+release `nvngx_dlssd.dll` for DLSS Ray Reconstruction. The SDK and redistributable
+remain subject to `DLSS-SDK-LICENSE.txt`; Prime does not ship the DLSS development
+DLL, standalone DLSS Super Resolution, or Frame Generation libraries.
+
+NVIDIA, DLSS, GeForce RTX, and their associated logos are trademarks and/or
+registered trademarks of NVIDIA Corporation in the United States and other countries.
+
 Prime's OpenPBR closure library and transmission-GGX energy data are derived
 from RoboCute's Apache-2.0-licensed BSDF implementation. See
 `ROBOCUTE-NOTICE.txt` and `APACHE-2.0.txt`.

@@ -8,6 +8,7 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
 import java.util.Set;
+import dev.prime.render.vulkan.dlss.DlssRrBootstrap;
 import org.lwjgl.system.MemoryStack;
 import org.lwjgl.vulkan.EXTRayTracingInvocationReorder;
 import org.lwjgl.vulkan.EXTOpacityMicromap;
@@ -245,6 +246,8 @@ public final class VulkanDeviceNegotiator {
             }
 
             enabledExtensions.addAll(REQUIRED_EXTENSIONS);
+            DlssRrBootstrap.enableRequiredDeviceExtensions(
+                    physicalDevice, enabledExtensions);
 
             // FidelityFX SDK 1.1.4 decides whether to use dedicated allocations from the
             // physical device's advertised extension list, not the logical device's enabled

@@ -24,6 +24,10 @@ final class IntegratorArchitectureContractTest {
         assertTrue(raygen.contains("#include \"denoiser_guides.glsl\""));
         assertFalse(screenshot.contains("denoiser_guides.glsl"));
         assertTrue(screenshot.contains("primeResolveIntegrationRadiance(sampleResult)"));
+        assertTrue(integrator.contains("uint primaryScatterEventFlags;"));
+        assertTrue(integrator.contains("float primaryScatterProposalProbability;"));
+        assertTrue(integrator.contains(
+                "result.guides.primaryScatterProposalProbability = scatter.proposalProbability;"));
     }
 
     @Test

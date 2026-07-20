@@ -73,6 +73,11 @@ LabPBR 是材质贴图的存储标准，不是完整的表面/体积散射模型
 Color Before Transparency 与反射 hit-distance guide。该文件只由实时 raygen 引入，截图 shader 不会
 编译这些路径，因此辅助射线在结构上无法改变参考估计器。
 
+闭合光滑透明界面会复用 beauty path 已经选择的分支。beauty 抽到透射时，以记录的 Fresnel proposal
+probability 恢复被重要性采样除掉的物理透射权重，直接作为 Color Before Transparency，只补一条反射
+hit-distance 射线；beauty 抽到反射时复用已有反射距离，只补完整透射背景。粗糙或 thin-wall 闭包仍走
+独立 forced-transmission 回退，避免错误复用不具备相同条件采样契约的 radiance。
+
 ### 偏差清单
 
 | 项目 | 类型 | 当前处理 |

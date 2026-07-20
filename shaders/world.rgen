@@ -36,7 +36,7 @@ void main() {
     if ((primePush.path.w & PRIME_PATH_DLSS_RR_MASK) != 0u
             && (sampleResult.guides.primaryMaterialFlags
                     & PRIME_MATERIAL_FLAG_TRANSMISSIVE) != 0u) {
-        transparencyGuide = primeIntegrateTransparencyGuide(path, integrator);
+        transparencyGuide = primeIntegrateTransparencyGuide(path, integrator, sampleResult);
         if (transparencyGuide.valid) {
             sampleResult.guides.specularHitDistance = transparencyGuide.reflectionHitDistance;
         }

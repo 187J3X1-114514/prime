@@ -18,6 +18,9 @@
 struct PrimeTransmissiveBsdfSample {
     BsdfSample bsdfSample;
     PrimeRcVolumeStack volumeStack;
+    // Probability used by the outer reflection/transmission proposal. Forced-branch callers use
+    // one; the ordinary complete BSDF sampler records the value it divided out of the path weight.
+    float proposalProbability;
 };
 
 const float PRIME_GLASS_MINIMUM_TINT_WEIGHT = 0.75;
@@ -612,6 +615,7 @@ PrimeTransmissiveBsdfSample primeSampleMinecraftTransmission(
     PrimeTransmissiveBsdfSample result;
     result.bsdfSample = primeInvalidBsdfSample();
     result.volumeStack = volumeStack;
+    result.proposalProbability = 1.0;
     PrimeRcState state = primeMinecraftTransmissionState(
             baseColor,
             opacity,
@@ -650,6 +654,7 @@ PrimeTransmissiveBsdfSample primeSampleMinecraftTransmission(
                 volumeStack);
         result.bsdfSample.weight /= branchProbability;
         result.bsdfSample.pdf *= branchProbability;
+        result.proposalProbability = branchProbability;
         return result;
     }
     PrimeRcSampleResult sampled = primeRcTransmissionSample(
@@ -684,6 +689,7 @@ PrimeTransmissiveBsdfSample primeSampleMinecraftTransmissionBranchFromState(
     PrimeTransmissiveBsdfSample result;
     result.bsdfSample = primeInvalidBsdfSample();
     result.volumeStack = volumeStack;
+    result.proposalProbability = 1.0;
     vec3 localView = primeRcOnbToLocal(state.material.geometry.onb, viewDirection);
 
     if (state.geometryThinWalled == 0u

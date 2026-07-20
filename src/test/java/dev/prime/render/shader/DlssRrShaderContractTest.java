@@ -27,6 +27,17 @@ final class DlssRrShaderContractTest {
         assertTrue(guides.contains("guide.reflectionHitDistance = reflected.hitKind"));
         assertTrue(guides.contains("primeIntegrateWithVolume(\n            cameraPath"));
         assertTrue(guides.contains("primeResolveIntegrationRadiance(background)"));
+        assertTrue(guides.contains("PrimeIntegrationResult beauty"));
+        assertTrue(guides.contains("bool closedSmoothInterface"));
+        assertTrue(guides.contains("bool selectedTransmission"));
+        assertTrue(guides.contains(
+                "guide.backgroundRadiance = beauty.radiance.specular * proposalProbability;"));
+        assertTrue(guides.contains("primeTraceReflectionGuideFromPrimary"));
+        assertTrue(guides.contains("bool selectedReflection"));
+        assertTrue(guides.contains(
+                "guide.reflectionHitDistance = beauty.guides.specularHitDistance;"));
+        assertTrue(raygen.contains(
+                "primeIntegrateTransparencyGuide(path, integrator, sampleResult)"));
     }
 
     @Test

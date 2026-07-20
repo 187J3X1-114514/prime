@@ -50,6 +50,9 @@ final class ShaderAbiTest {
         assertEquals("linear-rec2020-d65", ShaderAbi.WORKING_COLOR_SPACE);
         assertEquals("srgb", ShaderAbi.TEXTURE_COLOR_ENCODING);
         assertEquals("srgb", ShaderAbi.DISPLAY_COLOR_ENCODING);
+        assertEquals("rec709-d65", ShaderAbi.DISPLAY_COLOR_SPACE);
+        assertEquals("oklab-drt", ShaderAbi.DEFAULT_DISPLAY_TRANSFORM);
+        assertEquals(1.0F, ShaderAbi.DISPLAY_EXPOSURE);
         assertEquals("screen-2.5d", ShaderAbi.NRD_MOTION_SPACE);
         assertEquals(
                 "reblur-diffuse-specular-plus-sigma-sun-shadow",

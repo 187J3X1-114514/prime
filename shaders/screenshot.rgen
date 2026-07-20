@@ -1,6 +1,8 @@
 #version 460
 #extension GL_GOOGLE_include_directive : require
 
+#define PRIME_SCREENSHOT_MODE 1
+
 #include "common.glsl"
 #include "atmosphere_rt.glsl"
 #include "nrd_common.glsl"
@@ -12,7 +14,6 @@ layout(location = 1) rayPayloadEXT uint primeShadowHitDistanceBits;
 #include "bsdf.glsl"
 #include "lights.glsl"
 #include "integrator.glsl"
-#define PRIME_SCREENSHOT_MODE 1
 #include "camera.glsl"
 
 void main() {

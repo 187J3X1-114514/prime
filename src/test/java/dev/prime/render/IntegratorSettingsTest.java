@@ -54,6 +54,12 @@ final class IntegratorSettingsTest {
         float forward = IntegratorSettings.powerHeuristic(0.3F, 0.7F);
         float reverse = IntegratorSettings.powerHeuristic(0.7F, 0.3F);
         assertEquals(1.0F, forward + reverse, 1.0e-6F);
+        assertEquals(0.5F,
+                IntegratorSettings.powerHeuristic(Float.MAX_VALUE, Float.MAX_VALUE),
+                0.0F);
+        assertEquals(0.5F,
+                IntegratorSettings.powerHeuristic(Float.MIN_VALUE, Float.MIN_VALUE),
+                0.0F);
     }
 
     @Test

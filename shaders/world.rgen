@@ -28,6 +28,9 @@ void main() {
     PathState path = primeCameraPath(pixel, 0u, cameraSample);
 
     PrimeIntegrationResult sampleResult = primeIntegrate(path, integrator);
+    vec3 noisyDiffuse = sampleResult.diffuseRadiance;
+    vec3 noisySpecular = sampleResult.specularRadiance;
+    primeNrdClampRadiancePair(noisyDiffuse, noisySpecular, PRIME_NRD_FP16_MAX);
     // These images are a private raygen -> NRD-preparation scratch contract. Keeping raw
     // radiance, hit distance and primary material data here removes demodulation, YCoCg packing,
     // guide construction and FSR mask work from the register-heavy ray-generation shader. The
@@ -37,13 +40,13 @@ void main() {
             primeNrdNoisyDiffuse,
             ivec2(pixel),
             vec4(
-                    primeNrdSanitizeRadiance(sampleResult.diffuseRadiance),
+                    primeNrdSanitizeRadiance(noisyDiffuse),
                     sampleResult.diffuseHitDistance));
     imageStore(
             primeNrdNoisySpecular,
             ivec2(pixel),
             vec4(
-                    primeNrdSanitizeRadiance(sampleResult.specularRadiance),
+                    primeNrdSanitizeRadiance(noisySpecular),
                     sampleResult.specularHitDistance));
     // Diagnostic-only exact primary hit relative to the effective camera pinhole. Keeping this
     // separate from view-Z reconstruction lets the reprojection probe detect a self-consistent
@@ -59,7 +62,7 @@ void main() {
     imageStore(
             primeNrdMaterial,
             ivec2(pixel),
-            vec4(sampleResult.primaryBaseColor, sampleResult.primaryDistance));
+            vec4(primeNrdSanitizeGuide(sampleResult.primaryAlbedo), sampleResult.primaryDistance));
     imageStore(
             primeNrdNormalRoughness,
             ivec2(pixel),
@@ -69,11 +72,15 @@ void main() {
     imageStore(
             primeNrdSpecularMaterial,
             ivec2(pixel),
-            vec4(sampleResult.primarySpecularF0, float(sampleResult.primaryMaterialFlags)));
+            vec4(
+                    primeNrdSanitizeGuide(sampleResult.primarySpecularAlbedo),
+                    float(sampleResult.primaryMaterialFlags)));
     imageStore(
             primeNrdSunLighting,
             ivec2(pixel),
-            vec4(primeNrdSanitizeRadiance(sampleResult.sunRadiance), 1.0));
+            vec4(
+                    primeNrdClampRadiance(sampleResult.sunRadiance, PRIME_NRD_FP16_MAX),
+                    sampleResult.sunVisibility));
     imageStore(
             primeNrdSunPenumbra,
             ivec2(pixel),

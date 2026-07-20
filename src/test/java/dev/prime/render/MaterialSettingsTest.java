@@ -7,6 +7,14 @@ import org.junit.jupiter.api.Test;
 
 final class MaterialSettingsTest {
     @Test
+    void unauthoredMaterialsUseTheCalibratedDefaultRoughness() {
+        assertEquals(80, MaterialSettings.DEFAULT_ROUGHNESS_STEPS);
+        assertEquals(0.80F,
+                MaterialSettings.linearRoughness(MaterialSettings.DEFAULT_ROUGHNESS_STEPS),
+                1.0e-7F);
+    }
+
+    @Test
     void roughnessUsesExactHundredthStepsAndRevisionChangesOnlyWithTheValue() {
         int original = MaterialSettings.roughnessSteps();
         try {

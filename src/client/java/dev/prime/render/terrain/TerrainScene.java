@@ -41,6 +41,7 @@ public final class TerrainScene implements AutoCloseable {
     private int originZ;
     private long revision;
     private long resetRevision;
+    private long temporalRevision;
 
     public TerrainScene(VulkanContext context, StagingArena stagingArena) {
         this.context = context;
@@ -66,6 +67,7 @@ public final class TerrainScene implements AutoCloseable {
                         this.originY,
                         this.originZ,
                         REBASE_DISTANCE);
+        boolean invalidateTemporalHistory = invalidatesTemporalHistory(needsRebase);
         if (!contentChanged && !needsRebase && !hasReadyCompaction) {
             return true;
         }
@@ -336,7 +338,8 @@ public final class TerrainScene implements AutoCloseable {
                     replacements,
                     replacementTlas,
                     replacementWorldLights,
-                    rebuildWorldLights);
+                    rebuildWorldLights,
+                    invalidateTemporalHistory);
             replacementWorldLights = null;
             return true;
         } catch (RuntimeException exception) {
@@ -395,6 +398,7 @@ public final class TerrainScene implements AutoCloseable {
     /** Marks every temporal consumer as unrelated to its previous world. */
     void beginUnrelatedWorld() {
         this.resetRevision++;
+        this.temporalRevision++;
     }
 
     public int residentCount() {
@@ -492,7 +496,8 @@ public final class TerrainScene implements AutoCloseable {
             List<GpuCluster> replacements,
             TopLevelAccelerationStructure replacementTlas,
             VulkanBuffer replacementWorldLights,
-            boolean replaceWorldLights) {
+            boolean replaceWorldLights,
+            boolean invalidateTemporalHistory) {
         List<GpuCluster> retired = new ArrayList<>(evictions.length + uploads.size());
         for (long key : evictions) {
             GpuCluster removed = this.resident.remove(key);
@@ -520,6 +525,9 @@ public final class TerrainScene implements AutoCloseable {
             this.currentWorldLights = replacementWorldLights;
         }
         this.revision++;
+        if (invalidateTemporalHistory) {
+            this.temporalRevision++;
+        }
         this.currentView = this.currentTlas == null || this.resident.isEmpty()
                 ? null
                 : new SceneView(
@@ -529,7 +537,8 @@ public final class TerrainScene implements AutoCloseable {
                         this.originY,
                         this.originZ,
                         this.revision,
-                        this.resetRevision);
+                        this.resetRevision,
+                        this.temporalRevision);
         if (previousTlas != null) {
             this.context.defer(previousTlas::release);
         }
@@ -680,6 +689,10 @@ public final class TerrainScene implements AutoCloseable {
         }
     }
 
+    static boolean invalidatesTemporalHistory(boolean needsRebase) {
+        return needsRebase;
+    }
+
     public record SceneView(
             long tlas,
             long sectionTableAddress,
@@ -687,6 +700,7 @@ public final class TerrainScene implements AutoCloseable {
             int originY,
             int originZ,
             long revision,
-            long resetRevision) {
+            long resetRevision,
+            long temporalRevision) {
     }
 }

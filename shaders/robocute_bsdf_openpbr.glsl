@@ -111,7 +111,7 @@ PrimeRcSampleResult primeRcMixedDiffuseSample(
         return primeRcZeroSampleResult(state, stack);
     }
     float weight = state.material.weight.subsurface;
-    if (randomValue.z <= mixState.secondSampleWeight) {
+    if (randomValue.z < mixState.secondSampleWeight) {
         PrimeRcSampleResult result = primeRcSubsurfaceSample(
                 wi,
                 vec3(randomValue.xy, randomValue.z / mixState.secondSampleWeight),
@@ -180,7 +180,7 @@ PrimeRcSampleResult primeRcGlossyDiffuseSample(
         return primeRcZeroSampleResult(state, stack);
     }
     float weight = state.material.weight.specular > 0.0 ? 1.0 : 0.0;
-    if (randomValue.z <= layer.coatSampleWeight) {
+    if (randomValue.z < layer.coatSampleWeight) {
         PrimeRcSampleResult result = primeRcSpecularSample(
                 wi, vec3(randomValue.xy, randomValue.z / layer.coatSampleWeight),
                 state, stack);
@@ -245,7 +245,7 @@ PrimeRcSampleResult primeRcDielectricBaseSample(
         return primeRcZeroSampleResult(state, stack);
     }
     float weight = state.material.weight.transmission;
-    if (randomValue.z <= mixState.secondSampleWeight) {
+    if (randomValue.z < mixState.secondSampleWeight) {
         PrimeRcSampleResult result = primeRcTransmissionSample(
                 wi, vec3(randomValue.xy, randomValue.z / mixState.secondSampleWeight),
                 state, stack);
@@ -310,7 +310,7 @@ PrimeRcSampleResult primeRcBaseSubstrateSample(
         return primeRcZeroSampleResult(state, stack);
     }
     float weight = state.material.weight.metalness;
-    if (randomValue.z <= mixState.secondSampleWeight) {
+    if (randomValue.z < mixState.secondSampleWeight) {
         PrimeRcSampleResult result = primeRcConductorSample(
                 wi, vec3(randomValue.xy, randomValue.z / mixState.secondSampleWeight),
                 state, stack);
@@ -378,7 +378,7 @@ PrimeRcSampleResult primeRcDiffractionBaseSample(
         return primeRcZeroSampleResult(state, stack);
     }
     float weight = state.material.weight.diffraction;
-    if (randomValue.z <= layer.coatSampleWeight) {
+    if (randomValue.z < layer.coatSampleWeight) {
         PrimeRcSampleResult result = primeRcDiffractionSample(
                 wi, vec3(randomValue.xy, randomValue.z / layer.coatSampleWeight),
                 state, stack);
@@ -447,7 +447,7 @@ PrimeRcSampleResult primeRcCoatedBaseSample(
         return primeRcZeroSampleResult(state, stack);
     }
     float weight = state.material.weight.coat;
-    if (randomValue.z <= layer.coatSampleWeight) {
+    if (randomValue.z < layer.coatSampleWeight) {
         PrimeRcSampleResult result = primeRcCoatSample(
                 wi, vec3(randomValue.xy, randomValue.z / layer.coatSampleWeight),
                 state, stack);
@@ -515,7 +515,7 @@ PrimeRcSampleResult primeRcOpenPbrSample(
         return primeRcZeroSampleResult(state, stack);
     }
     float weight = state.material.weight.fuzz;
-    if (randomValue.z <= layer.coatSampleWeight) {
+    if (randomValue.z < layer.coatSampleWeight) {
         PrimeRcSampleResult result = primeRcFuzzSample(
                 wi, vec3(randomValue.xy, randomValue.z / layer.coatSampleWeight),
                 state, stack);
@@ -1032,7 +1032,7 @@ PrimeRcSampleResult primeRcBasicGlossySample(
         return primeRcZeroSampleResult(state, stack);
     }
     float weight = state.material.weight.specular > 0.0 ? 1.0 : 0.0;
-    if (randomValue.z <= layer.coatSampleWeight) {
+    if (randomValue.z < layer.coatSampleWeight) {
         PrimeRcSampleResult result = primeRcSpecularSample(
                 wi, vec3(randomValue.xy, randomValue.z / layer.coatSampleWeight),
                 state, stack);
@@ -1104,7 +1104,7 @@ PrimeRcSampleResult primeRcBasicMetallicSample(
         return primeRcZeroSampleResult(state, stack);
     }
     float weight = state.material.weight.metalness;
-    if (randomValue.z <= state.basicMetal.secondSampleWeight) {
+    if (randomValue.z < state.basicMetal.secondSampleWeight) {
         PrimeRcSampleResult result = primeRcConductorSample(
                 wi, vec3(randomValue.xy,
                         randomValue.z / state.basicMetal.secondSampleWeight),
@@ -1224,7 +1224,7 @@ PrimeRcSampleResult primeRcSubsurfaceGlossySample(
         return primeRcZeroSampleResult(state, stack);
     }
     float weight = state.material.weight.specular > 0.0 ? 1.0 : 0.0;
-    if (randomValue.z <= layer.coatSampleWeight) {
+    if (randomValue.z < layer.coatSampleWeight) {
         PrimeRcSampleResult result = primeRcSpecularSample(
                 wi, vec3(randomValue.xy, randomValue.z / layer.coatSampleWeight),
                 state, stack);

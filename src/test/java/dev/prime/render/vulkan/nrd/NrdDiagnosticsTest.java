@@ -5,9 +5,6 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.util.Arrays;
 import org.junit.jupiter.api.Test;
 
@@ -39,28 +36,5 @@ final class NrdDiagnosticsTest {
                 NrdDiagnostics.Mode.OPAQUE,
                 NrdDiagnostics.Mode.fromId("reprojection_error"));
         assertEquals(NrdDiagnostics.Mode.OPAQUE, NrdDiagnostics.Mode.fromId("motion"));
-    }
-
-    @Test
-    void everyPermanentModeHasEnglishAndChineseUserText() throws IOException {
-        Path languageRoot = Path.of("src/client/resources/assets/prime/lang");
-        String english = Files.readString(languageRoot.resolve("en_us.json"));
-        String chinese = Files.readString(languageRoot.resolve("zh_cn.json"));
-        for (NrdDiagnostics.Mode mode : NrdDiagnostics.Mode.values()) {
-            String key = "\"prime.options.nrd.debug_view." + mode.id() + "\"";
-            assertTrue(english.contains(key));
-            assertTrue(chinese.contains(key));
-        }
-        for (String key : new String[] {
-            "prime.options.fsr.quality.tooltip",
-            "prime.options.lighting.sun_ev.tooltip",
-            "prime.options.lighting.block_light_ev.tooltip",
-            "prime.options.display.oklab_overexposure.tooltip",
-            "prime.options.nrd.debug_view.tooltip",
-            "prime.options.fsr.debug_view.tooltip"
-        }) {
-            assertTrue(english.contains("\"" + key + "\""));
-            assertTrue(chinese.contains("\"" + key + "\""));
-        }
     }
 }

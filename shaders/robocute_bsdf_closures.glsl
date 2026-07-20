@@ -126,7 +126,7 @@ PrimeRcSampleResult primeRcDiffuseSample(
     }
     float uniformProbability = primeRcEonUniformPdf(wi.z, roughness);
     float cltcPdf;
-    if (randomValue.z <= uniformProbability) {
+    if (randomValue.z < uniformProbability) {
         result.bsdfSample.wo = primeRcUniformSampleHemisphere(randomValue.xy);
         cltcPdf = primeRcEonCltcPdf(wi, result.bsdfSample.wo, roughness);
     } else {
@@ -610,7 +610,7 @@ PrimeRcSampleResult primeRcSubsurfaceSample(
     result.bsdfSample.pdf = PRIME_RC_INV_PI * result.bsdfSample.wo.z;
     result.bsdfSample.throughput.value = vec3(PRIME_RC_INV_PI * result.bsdfSample.wo.z);
     if (wi.z < 0.0) { result.bsdfSample.wo.z = -result.bsdfSample.wo.z; }
-    if (randomValue.z <= transmissionProbability) {
+    if (randomValue.z < transmissionProbability) {
         result.bsdfSample.wo.z = -result.bsdfSample.wo.z;
         result.bsdfSample.pdf *= transmissionProbability;
         result.bsdfSample.throughput.value *= transmissionProbability;

@@ -5,14 +5,11 @@ import dev.prime.config.PrimeConfig;
 import dev.prime.render.DisplaySettings;
 import dev.prime.render.LightingSettings;
 import dev.prime.render.MaterialSettings;
-import dev.prime.render.ScreenshotMode;
+import dev.prime.render.RayTracingRuntime;
 import dev.prime.render.fsr.FsrDebugView;
-import dev.prime.render.fsr.FsrQualityMode;
-import dev.prime.render.fsr.FsrSettings;
 import dev.prime.render.vulkan.nrd.NrdDiagnostics;
 import dev.prime.render.post.DlssRrDebugView;
 import dev.prime.render.post.PostProcessingMode;
-import dev.prime.render.post.PostProcessingSettings;
 import dev.prime.render.post.ReconstructionQualityMode;
 import net.minecraft.client.OptionInstance;
 import net.minecraft.client.gui.components.AbstractWidget;
@@ -79,7 +76,7 @@ public abstract class VideoSettingsScreenMixin {
     @Unique
     private void prime$restoreDefaults() {
         PrimeConfig.restoreDefaults();
-        ScreenshotMode.request(false);
+        RayTracingRuntime.instance().restoreSessionDefaults();
         this.prime$refresh(this.prime$screenshotMode, false);
         this.prime$refresh(this.prime$postProcessingMode, PostProcessingMode.DEFAULT);
         this.prime$refresh(this.prime$qualityMode, ReconstructionQualityMode.DEFAULT);

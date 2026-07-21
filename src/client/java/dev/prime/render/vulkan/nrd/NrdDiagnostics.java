@@ -1,22 +1,11 @@
 package dev.prime.render.vulkan.nrd;
 
 import java.util.Arrays;
-import java.util.Objects;
 import java.util.Optional;
 
-/** Session-only runtime control for NRD integration diagnostics. */
+/** NRD diagnostic modes and their native output selectors. */
 public final class NrdDiagnostics {
-    private static volatile Mode mode = Mode.OFF;
-
     private NrdDiagnostics() {}
-
-    public static Mode mode() {
-        return mode;
-    }
-
-    public static void setMode(Mode value) {
-        mode = Objects.requireNonNull(value, "value");
-    }
 
     public enum Mode {
         OFF("off", 0),

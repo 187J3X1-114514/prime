@@ -1,6 +1,7 @@
 package dev.prime.render.vulkan;
 
 import com.mojang.blaze3d.vulkan.Destroyable;
+import dev.prime.render.ResourceCleanup;
 import dev.prime.render.terrain.OpacityMicromapData;
 import java.nio.LongBuffer;
 import java.util.Objects;
@@ -220,12 +221,12 @@ final class OpacityMicromap implements Destroyable {
             if (handle != 0L) {
                 EXTOpacityMicromap.vkDestroyMicromapEXT(context.vkDevice(), handle, null);
             }
-            destroy(storage);
-            destroy(data);
-            destroy(triangles);
-            destroy(indices);
-            destroy(scratch);
-            throw exception;
+            RuntimeException failure = ResourceCleanup.destroy(storage, exception);
+            failure = ResourceCleanup.destroy(data, failure);
+            failure = ResourceCleanup.destroy(triangles, failure);
+            failure = ResourceCleanup.destroy(indices, failure);
+            failure = ResourceCleanup.destroy(scratch, failure);
+            throw failure;
         }
     }
 
@@ -284,10 +285,11 @@ final class OpacityMicromap implements Destroyable {
         this.indices = null;
         this.scratch = null;
         this.context.defer(() -> {
-            destroy(retiredData);
-            destroy(retiredTriangles);
-            destroy(retiredIndices);
-            destroy(retiredScratch);
+            RuntimeException failure = ResourceCleanup.destroy(retiredData, null);
+            failure = ResourceCleanup.destroy(retiredTriangles, failure);
+            failure = ResourceCleanup.destroy(retiredIndices, failure);
+            failure = ResourceCleanup.destroy(retiredScratch, failure);
+            ResourceCleanup.throwIfFailed(failure);
         });
     }
 
@@ -301,16 +303,17 @@ final class OpacityMicromap implements Destroyable {
             EXTOpacityMicromap.vkDestroyMicromapEXT(this.context.vkDevice(), this.handle, null);
             this.handle = 0L;
         }
-        destroy(this.storage);
-        destroy(this.data);
-        destroy(this.triangles);
-        destroy(this.indices);
-        destroy(this.scratch);
+        RuntimeException failure = ResourceCleanup.destroy(this.storage, null);
+        failure = ResourceCleanup.destroy(this.data, failure);
+        failure = ResourceCleanup.destroy(this.triangles, failure);
+        failure = ResourceCleanup.destroy(this.indices, failure);
+        failure = ResourceCleanup.destroy(this.scratch, failure);
         this.storage = null;
         this.data = null;
         this.triangles = null;
         this.indices = null;
         this.scratch = null;
+        ResourceCleanup.throwIfFailed(failure);
     }
 
     private static VkMicromapUsageEXT.Buffer usage(MemoryStack stack, int count) {
@@ -373,9 +376,4 @@ final class OpacityMicromap implements Destroyable {
         }
     }
 
-    private static void destroy(VulkanBuffer buffer) {
-        if (buffer != null) {
-            buffer.destroy();
-        }
-    }
 }

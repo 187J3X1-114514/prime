@@ -2,6 +2,7 @@ package dev.prime.render.terrain;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
+import java.util.List;
 import org.junit.jupiter.api.Test;
 
 final class TerrainUploadBudgetTest {
@@ -17,5 +18,27 @@ final class TerrainUploadBudgetTest {
                 252L,
                 TerrainStreamer.stagingEndOffset(
                         184L, 36L, 32L, 0L, 0L, 0L, 0L));
+    }
+
+    @Test
+    void stagingBudgetIncludesEveryCpuSegmentWithoutAddingBlasPayloads() {
+        CpuClusterMesh mesh = CpuClusterMesh.fromSegments(List.of(
+                mesh(1, 1, 0),
+                mesh(0, 0, 1)));
+
+        assertEquals(204L, TerrainStreamer.stagingEndOffset(0L, mesh, false));
+        assertEquals(2, mesh.segments().size());
+    }
+
+    private static CpuSectionMesh mesh(int opaque, int cutout, int transmissive) {
+        int triangles = opaque + cutout + transmissive;
+        return new CpuSectionMesh(
+                new float[triangles * 9],
+                new int[triangles * CpuSectionMesh.PRIMITIVE_WORDS],
+                opaque,
+                cutout,
+                transmissive,
+                OpacityMicromapData.fullyUnknown(cutout),
+                CpuSectionLights.EMPTY);
     }
 }

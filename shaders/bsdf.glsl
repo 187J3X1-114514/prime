@@ -270,11 +270,6 @@ PrimeLabPbrFresnel primeLabPbrMetalFresnel(vec3 baseColor, uint metalId) {
     return result;
 }
 
-float primeLabPbrLinearRoughness(uint packedNormal, uint packedSpecular, uint flags) {
-    return primeDecodeAndTranslateLabPbr(
-            packedNormal, packedSpecular, flags).linearRoughness;
-}
-
 vec3 primeLabPbrSpecularF0(
         vec3 baseColor, uint packedNormal, uint packedSpecular, uint flags) {
     PrimeTranslatedLabPbrMaterial translated = primeDecodeAndTranslateLabPbr(
@@ -933,10 +928,10 @@ struct PrimeDenoiseAlbedos {
 };
 
 vec3 primeSanitizeDenoiseAlbedo(vec3 albedo) {
-    if (any(isnan(albedo)) || any(isinf(albedo))) {
-        return vec3(0.0);
-    }
-    return max(albedo, vec3(0.0));
+    return vec3(
+            isnan(albedo.x) || isinf(albedo.x) ? 0.0 : clamp(albedo.x, 0.0, 1.0),
+            isnan(albedo.y) || isinf(albedo.y) ? 0.0 : clamp(albedo.y, 0.0, 1.0),
+            isnan(albedo.z) || isinf(albedo.z) ? 0.0 : clamp(albedo.z, 0.0, 1.0));
 }
 
 vec3 primeRcDenoiseClosureEnergy(

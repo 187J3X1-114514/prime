@@ -4,14 +4,9 @@ import dev.prime.PrimeClient;
 import dev.prime.render.DisplaySettings;
 import dev.prime.render.LightingSettings;
 import dev.prime.render.MaterialSettings;
-import dev.prime.render.fsr.FsrDebugView;
 import dev.prime.render.fsr.FsrQualityMode;
-import dev.prime.render.fsr.FsrSettings;
-import dev.prime.render.post.DlssRrDebugView;
 import dev.prime.render.post.PostProcessingMode;
-import dev.prime.render.post.PostProcessingSettings;
 import dev.prime.render.post.ReconstructionQualityMode;
-import dev.prime.render.vulkan.nrd.NrdDiagnostics;
 import java.io.IOException;
 import java.io.Reader;
 import java.math.BigDecimal;
@@ -40,6 +35,9 @@ public final class PrimeConfig {
     private static final String BLOCK_LIGHT_EV_KEY = "lighting.block_light_ev";
     private static final String OKLAB_OVEREXPOSURE_KEY = "display.oklab_overexposure";
     private static final String DEFAULT_ROUGHNESS_KEY = "material.default_roughness";
+    // Fabric initializes and mutates video options on the client thread. One immutable snapshot
+    // keeps every renderer read coherent without a shared lock or independently mutable globals.
+    private static PrimeSettings settings = PrimeSettings.defaults();
     private static boolean dirty;
 
     private PrimeConfig() {
@@ -153,17 +151,15 @@ public final class PrimeConfig {
                 rewriteNeeded = true;
             }
         }
-        PostProcessingSettings.setMode(postProcessingMode);
-        PostProcessingSettings.setQuality(quality);
-        PostProcessingSettings.setRrDebugView(DlssRrDebugView.OFF);
-        PostProcessingSettings.setRrDebugFullscreen(false);
-        FsrSettings.setQualityMode(quality.fsrMode());
-        FsrSettings.setDebugView(FsrDebugView.OFF);
-        NrdDiagnostics.setMode(NrdDiagnostics.Mode.OFF);
-        LightingSettings.setSunQuarterSteps(sunQuarterSteps);
-        LightingSettings.setBlockLightQuarterSteps(blockLightQuarterSteps);
-        DisplaySettings.setOverexposureSteps(oklabOverexposureSteps);
-        MaterialSettings.setRoughnessSteps(defaultRoughnessSteps);
+        settings = new PrimeSettings(
+                postProcessingMode,
+                quality,
+                sunQuarterSteps,
+                blockLightQuarterSteps,
+                oklabOverexposureSteps,
+                defaultRoughnessSteps,
+                0L,
+                0L);
         dirty = rewriteNeeded;
         PrimeClient.LOGGER.info(
                 "Prime settings: post-processing {} quality {} (NRD-FSR {}x), sun {} EV, block lights {} EV, Oklab DRT overexposure {}, default roughness {}",
@@ -180,72 +176,37 @@ public final class PrimeConfig {
         setReconstructionQualityMode(ReconstructionQualityMode.fromId(mode.id()));
     }
 
+    public static PrimeSettings settings() {
+        return settings;
+    }
+
     public static void setPostProcessingMode(PostProcessingMode mode) {
-        if (mode != PostProcessingSettings.mode()) {
-            PostProcessingSettings.setMode(mode);
-            dirty = true;
-        }
+        update(settings.withPostProcessingMode(mode));
     }
 
     public static void setReconstructionQualityMode(ReconstructionQualityMode mode) {
-        if (mode != PostProcessingSettings.quality()) {
-            PostProcessingSettings.setQuality(mode);
-            FsrSettings.setQualityMode(mode.fsrMode());
-            dirty = true;
-        }
-    }
-
-    public static void setDlssRrDebugView(DlssRrDebugView mode) {
-        PostProcessingSettings.setRrDebugView(mode);
-    }
-
-    public static void setDlssRrDebugFullscreen(boolean fullscreen) {
-        PostProcessingSettings.setRrDebugFullscreen(fullscreen);
-    }
-
-    public static void setFsrDebugView(FsrDebugView mode) {
-        FsrSettings.setDebugView(mode);
-    }
-
-    public static void setNrdDebugView(NrdDiagnostics.Mode mode) {
-        NrdDiagnostics.setMode(mode);
+        update(settings.withReconstructionQuality(mode));
     }
 
     public static void setSunQuarterSteps(int quarterSteps) {
-        if (quarterSteps != LightingSettings.sunQuarterSteps()) {
-            LightingSettings.setSunQuarterSteps(quarterSteps);
-            dirty = true;
-        }
+        update(settings.withSunQuarterSteps(quarterSteps));
     }
 
     public static void setBlockLightQuarterSteps(int quarterSteps) {
-        if (quarterSteps != LightingSettings.blockLightQuarterSteps()) {
-            LightingSettings.setBlockLightQuarterSteps(quarterSteps);
-            dirty = true;
-        }
+        update(settings.withBlockLightQuarterSteps(quarterSteps));
     }
 
     public static void setOklabOverexposureSteps(int steps) {
-        if (steps != DisplaySettings.overexposureSteps()) {
-            DisplaySettings.setOverexposureSteps(steps);
-            dirty = true;
-        }
+        update(settings.withOklabOverexposureSteps(steps));
     }
 
     public static void setDefaultRoughnessSteps(int steps) {
-        if (steps != MaterialSettings.roughnessSteps()) {
-            MaterialSettings.setRoughnessSteps(steps);
-            dirty = true;
-        }
+        update(settings.withDefaultRoughnessSteps(steps));
     }
 
     public static void restoreDefaults() {
         setPostProcessingMode(PostProcessingMode.DEFAULT);
         setReconstructionQualityMode(ReconstructionQualityMode.DEFAULT);
-        setDlssRrDebugView(DlssRrDebugView.OFF);
-        setDlssRrDebugFullscreen(false);
-        setFsrDebugView(FsrDebugView.OFF);
-        setNrdDebugView(NrdDiagnostics.Mode.OFF);
         setSunQuarterSteps(LightingSettings.DEFAULT_SUN_QUARTER_STEPS);
         setBlockLightQuarterSteps(LightingSettings.DEFAULT_BLOCK_LIGHT_QUARTER_STEPS);
         setOklabOverexposureSteps(DisplaySettings.DEFAULT_OVEREXPOSURE_STEPS);
@@ -277,12 +238,12 @@ public final class PrimeConfig {
             }
             dirty = false;
         } catch (IOException exception) {
-            PrimeClient.LOGGER.error("Could not save Prime settings to {}", path, exception);
             try {
                 Files.deleteIfExists(temporary);
             } catch (IOException cleanupException) {
                 exception.addSuppressed(cleanupException);
             }
+            PrimeClient.LOGGER.error("Could not save Prime settings to {}", path, exception);
         }
     }
 
@@ -294,15 +255,23 @@ public final class PrimeConfig {
     }
 
     static String serializedContents() {
-        return MODE_KEY + "=" + PostProcessingSettings.mode().id() + "\n"
-                    + QUALITY_KEY + "=" + PostProcessingSettings.quality().id() + "\n"
-                    + SUN_EV_KEY + "=" + formatEv(LightingSettings.sunQuarterSteps()) + "\n"
+        PrimeSettings current = settings;
+        return MODE_KEY + "=" + current.postProcessingMode().id() + "\n"
+                    + QUALITY_KEY + "=" + current.reconstructionQuality().id() + "\n"
+                    + SUN_EV_KEY + "=" + formatEv(current.sunQuarterSteps()) + "\n"
                     + BLOCK_LIGHT_EV_KEY + "="
-                    + formatEv(LightingSettings.blockLightQuarterSteps()) + "\n"
+                    + formatEv(current.blockLightQuarterSteps()) + "\n"
                     + OKLAB_OVEREXPOSURE_KEY + "="
-                    + formatOverexposure(DisplaySettings.overexposureSteps()) + "\n"
+                    + formatOverexposure(current.oklabOverexposureSteps()) + "\n"
                     + DEFAULT_ROUGHNESS_KEY + "="
-                    + formatRoughness(MaterialSettings.roughnessSteps()) + "\n";
+                    + formatRoughness(current.defaultRoughnessSteps()) + "\n";
+    }
+
+    private static void update(PrimeSettings replacement) {
+        if (replacement != settings) {
+            settings = replacement;
+            dirty = true;
+        }
     }
 
     static int parseEvQuarterSteps(String value) {

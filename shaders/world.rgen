@@ -71,7 +71,7 @@ void main() {
             primeNrdMaterial,
             ivec2(pixel),
             vec4(
-                    primeNrdSanitizeGuide(sampleResult.guides.primaryAlbedo),
+                    primeNrdSanitizeAlbedo(sampleResult.guides.primaryAlbedo),
                     primaryDistance));
     imageStore(
             primeNrdNormalRoughness,
@@ -84,7 +84,7 @@ void main() {
             primeNrdSpecularMaterial,
             ivec2(pixel),
             vec4(
-                    primeNrdSanitizeGuide(sampleResult.guides.primarySpecularAlbedo),
+                    primeNrdSanitizeAlbedo(sampleResult.guides.primarySpecularAlbedo),
                     float(sampleResult.guides.primaryMaterialFlags)));
     imageStore(
             primeNrdSunLighting,

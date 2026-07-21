@@ -1,6 +1,7 @@
 package dev.prime.render.terrain;
 
 import com.mojang.blaze3d.vulkan.VulkanCommandEncoder;
+import dev.prime.render.ResourceCleanup;
 import dev.prime.render.vulkan.PreparedBlas;
 import dev.prime.render.vulkan.StagingArena;
 import dev.prime.render.vulkan.TopLevelAccelerationStructure;
@@ -31,8 +32,9 @@ public final class TerrainScene implements AutoCloseable {
 
     private final VulkanContext context;
     private final StagingArena stagingArena;
-    private final Long2ObjectOpenHashMap<GpuCluster> resident = new Long2ObjectOpenHashMap<>();
+    private Long2ObjectOpenHashMap<GpuCluster> resident = new Long2ObjectOpenHashMap<>();
     private final List<TopLevelAccelerationStructure> tlasSlots = new ArrayList<>(TLAS_SLOT_COUNT);
+    private final CpuWorldLightTree worldLightTree = new CpuWorldLightTree();
     private TopLevelAccelerationStructure currentTlas;
     private VulkanBuffer currentWorldLights;
     private SceneView currentView;
@@ -82,7 +84,7 @@ public final class TerrainScene implements AutoCloseable {
 
         int nonEmptyUploadCount = 0;
         for (ClusterUpload upload : uploads) {
-            if (!upload.mesh().isEmpty()) {
+            if (!upload.isEmpty()) {
                 nonEmptyUploadCount++;
             }
         }
@@ -139,6 +141,8 @@ public final class TerrainScene implements AutoCloseable {
         VulkanBuffer replacementWorldLights = null;
         VkCommandBuffer commandBuffer = null;
         boolean submitted = false;
+        boolean ownershipTransferred = false;
+        boolean cleanupHandled = false;
         try {
             if (hasReadyCompaction) {
                 for (GpuCluster cluster : this.resident.values()) {
@@ -166,12 +170,10 @@ public final class TerrainScene implements AutoCloseable {
 
             if (clusterStagingBatch != null) {
                 for (ClusterUpload upload : uploads) {
-                    CpuSectionMesh mesh = upload.mesh();
-                    if (mesh.isEmpty()) {
-                        continue;
+                    if (!upload.isEmpty()) {
+                        replacements.add(this.prepareCluster(
+                                upload, clusterStagingBatch, commandBuffer));
                     }
-                    replacements.add(this.prepareCluster(
-                            upload, mesh, clusterStagingBatch, commandBuffer));
                 }
             }
 
@@ -180,8 +182,10 @@ public final class TerrainScene implements AutoCloseable {
             int nextOriginX = needsRebase ? RenderOrigin.alignToSection(cameraX) : this.originX;
             int nextOriginY = needsRebase ? RenderOrigin.alignToSection(cameraY) : this.originY;
             int nextOriginZ = needsRebase ? RenderOrigin.alignToSection(cameraZ) : this.originZ;
-            CpuWorldLightTree.Result worldLightTree = CpuWorldLightTree.build(
-                    finalClusters, nextOriginX, nextOriginY, nextOriginZ);
+            CpuWorldLightTree.Result worldLightTree = rebuildWorldLights
+                    ? this.worldLightTree.update(
+                            finalClusters, nextOriginX, nextOriginY, nextOriginZ)
+                    : this.worldLightTree.result();
             if (!worldLightTree.isEmpty()) {
                 if (worldStagingBatch == null || commandBuffer == null) {
                     throw new IllegalStateException("World light tree requires an upload batch");
@@ -308,9 +312,6 @@ public final class TerrainScene implements AutoCloseable {
                         KHRAccelerationStructure.VK_ACCESS_ACCELERATION_STRUCTURE_WRITE_BIT_KHR,
                         KHRRayTracingPipeline.VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR,
                         KHRAccelerationStructure.VK_ACCESS_ACCELERATION_STRUCTURE_READ_BIT_KHR);
-                this.originX = nextOriginX;
-                this.originY = nextOriginY;
-                this.originZ = nextOriginZ;
             }
 
             if (commandBuffer != null) {
@@ -332,57 +333,76 @@ public final class TerrainScene implements AutoCloseable {
             for (PreparedBlas.Compaction compaction : compactions) {
                 compaction.commit();
             }
-            this.commit(
+            RuntimeException retirementFailure = this.commit(
                     uploads,
-                    evictions,
+                    removedKeys,
                     replacements,
                     replacementTlas,
                     replacementWorldLights,
                     rebuildWorldLights,
-                    invalidateTemporalHistory);
+                    invalidateTemporalHistory,
+                    nextOriginX,
+                    nextOriginY,
+                    nextOriginZ);
+            ownershipTransferred = true;
+            replacementTlas = null;
             replacementWorldLights = null;
+            ResourceCleanup.throwIfFailed(retirementFailure);
             return true;
         } catch (RuntimeException exception) {
-            if (submitted) {
-                for (PreparedBlas.Compaction compaction : compactions) {
-                    compaction.abandonAfterSubmission();
-                }
-            }
-            for (GpuCluster replacement : replacements) {
+            RuntimeException failure = exception;
+            if (!ownershipTransferred) {
                 if (submitted) {
-                    this.context.defer(replacement::destroyAllResources);
-                } else {
-                    replacement.destroyAllResources();
+                    for (PreparedBlas.Compaction compaction : compactions) {
+                        failure = ResourceCleanup.run(
+                                compaction::abandonAfterSubmission, failure);
+                    }
+                }
+                for (GpuCluster replacement : replacements) {
+                    if (submitted) {
+                        failure = ResourceCleanup.run(
+                                () -> this.context.defer(replacement::destroyAllResources),
+                                failure);
+                    } else {
+                        failure = ResourceCleanup.run(
+                                replacement::destroyAllResources, failure);
+                    }
+                }
+                if (replacementTlas != null) {
+                    if (submitted) {
+                        TopLevelAccelerationStructure failedTlas = replacementTlas;
+                        failure = ResourceCleanup.run(
+                                () -> this.context.defer(failedTlas::release), failure);
+                    } else {
+                        failure = ResourceCleanup.run(replacementTlas::release, failure);
+                    }
+                }
+                if (replacementWorldLights != null) {
+                    if (submitted) {
+                        VulkanBuffer failedWorldLights = replacementWorldLights;
+                        failure = ResourceCleanup.run(
+                                () -> this.context.defer(failedWorldLights), failure);
+                    } else {
+                        failure = ResourceCleanup.destroy(replacementWorldLights, failure);
+                    }
                 }
             }
-            if (replacementTlas != null) {
-                if (submitted) {
-                    this.context.defer(replacementTlas::release);
-                } else {
-                    replacementTlas.release();
-                }
-            }
-            if (replacementWorldLights != null) {
-                if (submitted) {
-                    VulkanBuffer failedWorldLights = replacementWorldLights;
-                    this.context.defer(failedWorldLights::destroy);
-                } else {
-                    replacementWorldLights.destroy();
-                }
-            }
-            throw exception;
-        } finally {
             for (PreparedBlas.Compaction compaction : compactions) {
-                compaction.close();
+                failure = ResourceCleanup.close(compaction, failure);
             }
-            if (clusterStagingBatch != null) {
-                clusterStagingBatch.close();
-            }
-            if (worldStagingBatch != null) {
-                worldStagingBatch.close();
-            }
-            if (commandBuffer != null && !submitted) {
-                // The command pool owns command buffers. A failed recording is reclaimed when the pool resets.
+            failure = ResourceCleanup.close(clusterStagingBatch, failure);
+            failure = ResourceCleanup.close(worldStagingBatch, failure);
+            cleanupHandled = true;
+            throw failure;
+        } finally {
+            if (!cleanupHandled) {
+                RuntimeException failure = null;
+                for (PreparedBlas.Compaction compaction : compactions) {
+                    failure = ResourceCleanup.close(compaction, failure);
+                }
+                failure = ResourceCleanup.close(clusterStagingBatch, failure);
+                failure = ResourceCleanup.close(worldStagingBatch, failure);
+                ResourceCleanup.throwIfFailed(failure);
             }
         }
     }
@@ -411,26 +431,33 @@ public final class TerrainScene implements AutoCloseable {
 
     @Override
     public void close() {
+        RuntimeException failure = null;
         for (GpuCluster cluster : this.resident.values()) {
-            cluster.destroy();
+            failure = ResourceCleanup.run(cluster::destroy, failure);
         }
         this.resident.clear();
         for (TopLevelAccelerationStructure slot : this.tlasSlots) {
-            slot.destroy();
+            failure = ResourceCleanup.run(slot::destroy, failure);
         }
         this.tlasSlots.clear();
         this.currentTlas = null;
         this.currentView = null;
         if (this.currentWorldLights != null) {
-            this.currentWorldLights.destroy();
+            failure = ResourceCleanup.destroy(this.currentWorldLights, failure);
             this.currentWorldLights = null;
         }
+        ResourceCleanup.throwIfFailed(failure);
     }
 
     private static LongOpenHashSet removedKeys(
             List<ClusterUpload> uploads, long[] evictions) {
         LongOpenHashSet result = new LongOpenHashSet(evictions);
+        LongOpenHashSet uploadKeys = new LongOpenHashSet();
         for (ClusterUpload upload : uploads) {
+            if (!uploadKeys.add(upload.key())) {
+                throw new IllegalArgumentException(
+                        "A logical cluster was replaced more than once in one update");
+            }
             result.add(upload.key());
         }
         return result;
@@ -445,7 +472,7 @@ public final class TerrainScene implements AutoCloseable {
             }
         }
         for (ClusterUpload upload : uploads) {
-            if (!upload.mesh().isEmpty()) {
+            if (!upload.isEmpty()) {
                 count++;
             }
         }
@@ -459,7 +486,7 @@ public final class TerrainScene implements AutoCloseable {
             }
         }
         for (ClusterUpload upload : uploads) {
-            if (!upload.mesh().isEmpty() || this.resident.containsKey(upload.key())) {
+            if (!upload.isEmpty() || this.resident.containsKey(upload.key())) {
                 return true;
             }
         }
@@ -468,7 +495,8 @@ public final class TerrainScene implements AutoCloseable {
 
     private boolean hasReadyCompaction(LongOpenHashSet removedKeys) {
         for (GpuCluster cluster : this.resident.values()) {
-            if (!removedKeys.contains(cluster.key()) && cluster.blas().hasReadyCompaction()) {
+            if (!removedKeys.contains(cluster.key())
+                    && cluster.blas().hasReadyCompaction()) {
                 return true;
             }
         }
@@ -490,61 +518,102 @@ public final class TerrainScene implements AutoCloseable {
         return result;
     }
 
-    private void commit(
+    private RuntimeException commit(
             List<ClusterUpload> uploads,
-            long[] evictions,
+            LongOpenHashSet removedKeys,
             List<GpuCluster> replacements,
             TopLevelAccelerationStructure replacementTlas,
             VulkanBuffer replacementWorldLights,
             boolean replaceWorldLights,
-            boolean invalidateTemporalHistory) {
-        List<GpuCluster> retired = new ArrayList<>(evictions.length + uploads.size());
-        for (long key : evictions) {
-            GpuCluster removed = this.resident.remove(key);
-            if (removed != null) {
-                retired.add(removed);
+            boolean invalidateTemporalHistory,
+            int nextOriginX,
+            int nextOriginY,
+            int nextOriginZ) {
+        Long2ObjectOpenHashMap<GpuCluster> replacementGroups =
+                groupReplacements(uploads, replacements);
+        List<GpuCluster> retired = new ArrayList<>();
+        Long2ObjectOpenHashMap<GpuCluster> nextResident = new Long2ObjectOpenHashMap<>();
+        for (var entry : this.resident.long2ObjectEntrySet()) {
+            if (removedKeys.contains(entry.getLongKey())) {
+                retired.add(entry.getValue());
+            } else {
+                nextResident.put(entry.getLongKey(), entry.getValue());
             }
         }
-        for (ClusterUpload upload : uploads) {
-            GpuCluster removed = this.resident.remove(upload.key());
-            if (removed != null) {
-                retired.add(removed);
-            }
-        }
-        for (GpuCluster replacement : replacements) {
-            this.resident.put(replacement.key(), replacement);
-        }
-        for (GpuCluster removed : retired) {
-            this.context.defer(removed::destroy);
+        for (var entry : replacementGroups.long2ObjectEntrySet()) {
+            nextResident.put(entry.getLongKey(), entry.getValue());
         }
 
         TopLevelAccelerationStructure previousTlas = this.currentTlas;
         VulkanBuffer previousWorldLights = replaceWorldLights ? this.currentWorldLights : null;
+        long nextRevision = this.revision + 1L;
+        long nextTemporalRevision = invalidateTemporalHistory
+                ? this.temporalRevision + 1L
+                : this.temporalRevision;
+        SceneView nextView = replacementTlas == null || nextResident.isEmpty()
+                ? null
+                : new SceneView(
+                        replacementTlas.handle(),
+                        replacementTlas.sectionTableAddress(),
+                        nextOriginX,
+                        nextOriginY,
+                        nextOriginZ,
+                        nextRevision,
+                        this.resetRevision,
+                        nextTemporalRevision);
+
+        this.resident = nextResident;
         this.currentTlas = replacementTlas;
         if (replaceWorldLights) {
             this.currentWorldLights = replacementWorldLights;
         }
-        this.revision++;
-        if (invalidateTemporalHistory) {
-            this.temporalRevision++;
+        this.originX = nextOriginX;
+        this.originY = nextOriginY;
+        this.originZ = nextOriginZ;
+        this.revision = nextRevision;
+        this.temporalRevision = nextTemporalRevision;
+        this.currentView = nextView;
+
+        RuntimeException retirementFailure = null;
+        for (GpuCluster removed : retired) {
+            retirementFailure = ResourceCleanup.run(
+                    () -> this.context.defer(removed::destroy), retirementFailure);
         }
-        this.currentView = this.currentTlas == null || this.resident.isEmpty()
-                ? null
-                : new SceneView(
-                        this.currentTlas.handle(),
-                        this.currentTlas.sectionTableAddress(),
-                        this.originX,
-                        this.originY,
-                        this.originZ,
-                        this.revision,
-                        this.resetRevision,
-                        this.temporalRevision);
         if (previousTlas != null) {
-            this.context.defer(previousTlas::release);
+            retirementFailure = ResourceCleanup.run(
+                    () -> this.context.defer(previousTlas::release), retirementFailure);
         }
         if (previousWorldLights != null) {
-            this.context.defer(previousWorldLights::destroy);
+            retirementFailure = ResourceCleanup.run(
+                    () -> this.context.defer(previousWorldLights), retirementFailure);
         }
+        return retirementFailure;
+    }
+
+    private static Long2ObjectOpenHashMap<GpuCluster> groupReplacements(
+            List<ClusterUpload> uploads, List<GpuCluster> replacements) {
+        Long2ObjectOpenHashMap<GpuCluster> result = new Long2ObjectOpenHashMap<>();
+        int cursor = 0;
+        for (ClusterUpload upload : uploads) {
+            if (upload.isEmpty()) {
+                continue;
+            }
+            if (cursor >= replacements.size()) {
+                throw new IllegalStateException(
+                        "Cluster replacement lost logical ownership");
+            }
+            GpuCluster replacement = replacements.get(cursor++);
+            if (replacement.key() != upload.key()) {
+                throw new IllegalStateException(
+                        "Cluster replacement order disagrees with its upload");
+            }
+            result.put(upload.key(), replacement);
+        }
+        if (cursor != replacements.size()) {
+            throw new IllegalStateException(
+                    "Cluster replacement lost logical ownership");
+        }
+        return result;
     }
 
     private TopLevelAccelerationStructure acquireTlas(int capacity) {
@@ -580,22 +649,22 @@ public final class TerrainScene implements AutoCloseable {
 
     private GpuCluster prepareCluster(
             ClusterUpload upload,
-            CpuSectionMesh mesh,
             StagingArena.Batch stagingBatch,
             VkCommandBuffer commandBuffer) {
+        CpuClusterMesh mesh = upload.mesh();
         VulkanBuffer positions = null;
         VulkanBuffer primitives = null;
         VulkanBuffer lights = null;
         PreparedBlas blas = null;
         try {
             positions = this.context.createBuffer(
-                    (long) mesh.positions().length * Float.BYTES,
+                    mesh.positionBytes(),
                     VK12.VK_BUFFER_USAGE_TRANSFER_DST_BIT
                             | KHRAccelerationStructure.VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR,
                     false,
                     "Prime cluster " + upload.key() + " positions");
             primitives = this.context.createBuffer(
-                    (long) mesh.primitiveRecords().length * Integer.BYTES,
+                    mesh.primitiveBytes(),
                     VK12.VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK12.VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
                     false,
                     "Prime cluster " + upload.key() + " primitives");
@@ -606,14 +675,7 @@ public final class TerrainScene implements AutoCloseable {
                         false,
                         "Prime cluster " + upload.key() + " lights");
             }
-            copyBuffer(
-                    commandBuffer,
-                    stagingBatch.write(mesh.positions(), Float.BYTES),
-                    positions);
-            copyBuffer(
-                    commandBuffer,
-                    stagingBatch.write(mesh.primitiveRecords(), Integer.BYTES),
-                    primitives);
+            copyMeshSegments(commandBuffer, stagingBatch, mesh, positions, primitives);
             if (lights != null) {
                 copyBuffer(
                         commandBuffer,
@@ -641,28 +703,92 @@ public final class TerrainScene implements AutoCloseable {
                     lights,
                     lightSummary);
         } catch (RuntimeException exception) {
+            RuntimeException failure = exception;
             if (blas != null) {
-                blas.destroyAllResources();
+                failure = ResourceCleanup.run(blas::destroyAllResources, failure);
             } else {
-                if (positions != null) {
-                    positions.destroy();
-                }
-                if (primitives != null) {
-                    primitives.destroy();
-                }
+                failure = ResourceCleanup.destroy(positions, failure);
+                failure = ResourceCleanup.destroy(primitives, failure);
             }
-            if (lights != null) {
-                lights.destroy();
+            failure = ResourceCleanup.destroy(lights, failure);
+            throw failure;
+        }
+    }
+
+    private static void copyMeshSegments(
+            VkCommandBuffer commandBuffer,
+            StagingArena.Batch staging,
+            CpuClusterMesh mesh,
+            VulkanBuffer positions,
+            VulkanBuffer primitives) {
+        long[] positionCursors = new long[] {
+            0L,
+            Math.multiplyExact(mesh.opaqueTriangleCount(), 9L * Float.BYTES),
+            Math.multiplyExact(
+                    Math.addExact(mesh.opaqueTriangleCount(), mesh.cutoutTriangleCount()),
+                    9L * Float.BYTES)
+        };
+        long[] primitiveCursors = new long[] {
+            0L,
+            Math.multiplyExact(
+                    mesh.opaqueTriangleCount(),
+                    (long) CpuSectionMesh.PRIMITIVE_WORDS * Integer.BYTES),
+            Math.multiplyExact(
+                    Math.addExact(mesh.opaqueTriangleCount(), mesh.cutoutTriangleCount()),
+                    (long) CpuSectionMesh.PRIMITIVE_WORDS * Integer.BYTES)
+        };
+        for (CpuClusterMesh.Segment segment : mesh.segments()) {
+            int sourcePosition = 0;
+            int sourcePrimitive = 0;
+            for (int category = 0; category < 3; category++) {
+                int triangleCount = switch (category) {
+                    case 0 -> segment.opaqueTriangleCount();
+                    case 1 -> segment.cutoutTriangleCount();
+                    default -> segment.transmissiveTriangleCount();
+                };
+                int positionWords = Math.multiplyExact(triangleCount, 9);
+                int primitiveWords = Math.multiplyExact(
+                        triangleCount, CpuSectionMesh.PRIMITIVE_WORDS);
+                if (triangleCount != 0) {
+                    StagingArena.Slice positionSlice = staging.write(
+                            segment.positions(), sourcePosition, positionWords, Float.BYTES);
+                    copyBuffer(
+                            commandBuffer,
+                            positionSlice,
+                            positions,
+                            positionCursors[category]);
+                    StagingArena.Slice primitiveSlice = staging.write(
+                            segment.primitiveRecords(),
+                            sourcePrimitive,
+                            primitiveWords,
+                            Integer.BYTES);
+                    copyBuffer(
+                            commandBuffer,
+                            primitiveSlice,
+                            primitives,
+                            primitiveCursors[category]);
+                }
+                sourcePosition += positionWords;
+                sourcePrimitive += primitiveWords;
+                positionCursors[category] += (long) positionWords * Float.BYTES;
+                primitiveCursors[category] += (long) primitiveWords * Integer.BYTES;
             }
-            throw exception;
         }
     }
 
     private static void copyBuffer(VkCommandBuffer commandBuffer, StagingArena.Slice source, VulkanBuffer destination) {
+        copyBuffer(commandBuffer, source, destination, 0L);
+    }
+
+    private static void copyBuffer(
+            VkCommandBuffer commandBuffer,
+            StagingArena.Slice source,
+            VulkanBuffer destination,
+            long destinationOffset) {
         try (MemoryStack stack = MemoryStack.stackPush()) {
             VkBufferCopy.Buffer copy = VkBufferCopy.calloc(1, stack)
                     .srcOffset(source.offset())
-                    .dstOffset(0L)
+                    .dstOffset(destinationOffset)
                     .size(source.size());
             VK12.vkCmdCopyBuffer(commandBuffer, source.buffer(), destination.handle(), copy);
         }

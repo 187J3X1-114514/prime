@@ -4,6 +4,7 @@ import com.mojang.blaze3d.vertex.MeshData;
 import dev.prime.render.terrain.CpuSectionMesh;
 import dev.prime.render.terrain.LabPbrMaterialSet;
 import dev.prime.render.terrain.SectionMeshAccumulator;
+import java.util.List;
 import it.unimi.dsi.fastutil.ints.IntArrayList;
 import java.util.ArrayDeque;
 import java.util.Arrays;
@@ -83,13 +84,15 @@ public final class VanillaSectionCapture implements AutoCloseable {
             LabPbrMaterialSet labPbrMaterials,
             VanillaGeometryPolicy geometryPolicy,
             boolean cutoutLeaves,
-            boolean buildOpacityMicromap) {
+            boolean buildOpacityMicromap,
+            int segmentTriangleTarget) {
         this.region = region;
         this.blockColors = blockColors;
         this.blockSpriteFinder = blockSpriteFinder;
         this.geometryPolicy = geometryPolicy;
         this.cutoutLeaves = cutoutLeaves;
-        this.mesh = new SectionMeshAccumulator(labPbrMaterials, buildOpacityMicromap);
+        this.mesh = new SectionMeshAccumulator(
+                labPbrMaterials, buildOpacityMicromap, segmentTriangleTarget);
     }
 
     public static VanillaSectionCapture open(
@@ -99,7 +102,8 @@ public final class VanillaSectionCapture implements AutoCloseable {
             LabPbrMaterialSet labPbrMaterials,
             VanillaGeometryPolicy geometryPolicy,
             boolean cutoutLeaves,
-            boolean buildOpacityMicromap) {
+            boolean buildOpacityMicromap,
+            int segmentTriangleTarget) {
         if (ACTIVE.get() != null) {
             throw new IllegalStateException("Nested vanilla Section capture is not supported");
         }
@@ -110,7 +114,8 @@ public final class VanillaSectionCapture implements AutoCloseable {
                 labPbrMaterials,
                 geometryPolicy,
                 cutoutLeaves,
-                buildOpacityMicromap);
+                buildOpacityMicromap,
+                segmentTriangleTarget);
         ACTIVE.set(capture);
         return capture;
     }
@@ -215,7 +220,7 @@ public final class VanillaSectionCapture implements AutoCloseable {
         }
     }
 
-    public CpuSectionMesh finish(SectionCompiler.Results results) {
+    public List<CpuSectionMesh> finish(SectionCompiler.Results results) {
         if (this.finished) {
             throw new IllegalStateException("Vanilla Section capture was already finished");
         }

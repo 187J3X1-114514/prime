@@ -1,8 +1,10 @@
 package dev.prime.render.vulkan;
 
+import dev.prime.render.ResourceCleanup;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 import org.lwjgl.system.MemoryUtil;
 import org.lwjgl.vulkan.VK12;
 
@@ -68,10 +70,12 @@ public final class StagingArena implements AutoCloseable {
 
     @Override
     public void close() {
+        RuntimeException failure = null;
         for (Page page : this.pages) {
-            page.buffer.destroy();
+            failure = ResourceCleanup.destroy(page.buffer, failure);
         }
         this.pages.clear();
+        ResourceCleanup.throwIfFailed(failure);
     }
 
     public final class Batch implements AutoCloseable {
@@ -97,14 +101,26 @@ public final class StagingArena implements AutoCloseable {
         }
 
         public Slice write(float[] data, long alignment) {
-            Slice slice = this.allocate((long) data.length * Float.BYTES, alignment);
-            MemoryUtil.memFloatBuffer(this.page.buffer.mappedAddress() + slice.offset(), data.length).put(data);
+            return this.write(data, 0, data.length, alignment);
+        }
+
+        public Slice write(float[] data, int offset, int length, long alignment) {
+            Objects.checkFromIndexSize(offset, length, data.length);
+            Slice slice = this.allocate((long) length * Float.BYTES, alignment);
+            MemoryUtil.memFloatBuffer(this.page.buffer.mappedAddress() + slice.offset(), length)
+                    .put(data, offset, length);
             return slice;
         }
 
         public Slice write(int[] data, long alignment) {
-            Slice slice = this.allocate((long) data.length * Integer.BYTES, alignment);
-            MemoryUtil.memIntBuffer(this.page.buffer.mappedAddress() + slice.offset(), data.length).put(data);
+            return this.write(data, 0, data.length, alignment);
+        }
+
+        public Slice write(int[] data, int offset, int length, long alignment) {
+            Objects.checkFromIndexSize(offset, length, data.length);
+            Slice slice = this.allocate((long) length * Integer.BYTES, alignment);
+            MemoryUtil.memIntBuffer(this.page.buffer.mappedAddress() + slice.offset(), length)
+                    .put(data, offset, length);
             return slice;
         }
 

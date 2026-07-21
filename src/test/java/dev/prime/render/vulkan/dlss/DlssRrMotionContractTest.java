@@ -24,6 +24,12 @@ final class DlssRrMotionContractTest {
             (float) Math.toRadians(70.0), (float) WIDTH / HEIGHT, 512.0F, 0.05F, true);
 
     @Test
+    void ngxReceivesTheOppositeOfTheRaySampleJitter() {
+        assertEquals(-0.25F, DlssRrNative.ngxJitterOffset(0.25F));
+        assertEquals(0.375F, DlssRrNative.ngxJitterOffset(-0.375F));
+    }
+
+    @Test
     void everyRrJitterPhaseProducesZeroSurfaceAndSkyMotionForAStaticCamera() {
         FrameCamera camera = camera(new Matrix4f(), 0.0, 0.0, 0.0);
 

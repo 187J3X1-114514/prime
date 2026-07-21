@@ -59,6 +59,39 @@ def shaderAbiJavaRoot = layout.buildDirectory.dir('generated/sources/shaderAbi/j
 def shaderAbiIncludeRoot = layout.buildDirectory.dir('generated/sources/shaderAbi/glsl')
 def compiledShaderRoot = layout.buildDirectory.dir('generated/resources/shaders')
 
+def verifyRoboCutePort = tasks.register('verifyRoboCutePort') {
+	group = 'verification'
+	description = 'Verifies the approved RoboCute port revision and protected source hashes.'
+	def lockFile = file('shaders/robocute.lock.json')
+	def protectedFiles = fileTree('shaders') {
+		include 'robocute_bsdf_*.glsl'
+	}
+	inputs.file(lockFile)
+	inputs.files(protectedFiles)
+
+	doLast {
+		def lock = new groovy.json.JsonSlurper().parse(lockFile)
+		if (lock.repository != 'https://github.com/RoboCute/RoboCute'
+				|| lock.commit != '5985e989254b4685e3885d876b33f4874d233dcd') {
+			throw new GradleException('RoboCute lock must name the approved repository and commit')
+		}
+		def expected = new TreeSet<String>(lock.files.keySet())
+		def actual = new TreeSet<String>(protectedFiles.files.collect { it.name })
+		if (actual != expected) {
+			throw new GradleException(
+					"Protected RoboCute file set changed: expected ${expected}, found ${actual}")
+		}
+		protectedFiles.files.each { source ->
+			def digest = java.security.MessageDigest.getInstance('SHA-256')
+					.digest(source.bytes).encodeHex().toString()
+			if (digest != lock.files[source.name]) {
+				throw new GradleException(
+						"Protected RoboCute source changed without updating its approved lock: ${source.name}")
+			}
+		}
+	}
+}
+
 abstract class GenerateShaderAbi extends DefaultTask {
 	@InputFile
 	abstract RegularFileProperty getSchemaFile()
@@ -613,7 +646,7 @@ def generateShaderAbi = tasks.register('generateShaderAbi', GenerateShaderAbi) {
 }
 
 def compileShaders = tasks.register('compileShaders', CompilePrimeShaders) {
-	dependsOn generateShaderAbi
+	dependsOn generateShaderAbi, verifyRoboCutePort
 	sourceDirectory = file('shaders')
 	includeDirectory = shaderAbiIncludeRoot
 	outputDirectory = compiledShaderRoot
@@ -798,7 +831,7 @@ def verifyDistributionJar = tasks.register('verifyDistributionJar') {
 }
 
 tasks.named('check') {
-	dependsOn verifyDistributionJar
+	dependsOn verifyDistributionJar, verifyRoboCutePort
 }
 
 publishing {

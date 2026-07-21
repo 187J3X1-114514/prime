@@ -18,10 +18,10 @@ public record CpuSectionMesh(
         int triangleCount = Math.addExact(
                 Math.addExact(opaqueTriangleCount, cutoutTriangleCount),
                 transmissiveTriangleCount);
-        if (positions.length != triangleCount * 9) {
+        if (positions.length != Math.multiplyExact(triangleCount, 9)) {
             throw new IllegalArgumentException("Position array does not match triangle count");
         }
-        if (primitiveRecords.length != triangleCount * PRIMITIVE_WORDS) {
+        if (primitiveRecords.length != Math.multiplyExact(triangleCount, PRIMITIVE_WORDS)) {
             throw new IllegalArgumentException("Primitive array does not match triangle count");
         }
         if (opacityMicromap == null || lights == null) {
@@ -33,7 +33,13 @@ public record CpuSectionMesh(
     }
 
     public boolean isEmpty() {
-        return this.opaqueTriangleCount + this.cutoutTriangleCount + this.transmissiveTriangleCount == 0;
+        return this.triangleCount() == 0;
+    }
+
+    public int triangleCount() {
+        return Math.addExact(
+                Math.addExact(this.opaqueTriangleCount, this.cutoutTriangleCount),
+                this.transmissiveTriangleCount);
     }
 
     public long byteSize() {

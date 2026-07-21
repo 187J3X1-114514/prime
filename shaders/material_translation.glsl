@@ -9,7 +9,6 @@
 // encodings deliberately lose their effect instead of being assigned a plausible but false one.
 struct PrimeTranslatedLabPbrMaterial {
     float perceptualRoughness;
-    float linearRoughness;
     float dielectricF0;
     float subsurfaceWeight;
     uint metalId;
@@ -45,8 +44,6 @@ PrimeTranslatedLabPbrMaterial primeTranslateLabPbr(
     result.perceptualRoughness = authored
             ? clamp(encoded.perceptualRoughness, 0.0, 1.0)
             : primeDefaultLinearRoughness();
-    result.linearRoughness = result.perceptualRoughness * result.perceptualRoughness;
-
     // LabPBR gives G=255 an explicit custom-metal meaning: the albedo texture is normal-incidence
     // reflectance (F0), not diffuse color. Preserve that defined transport semantic alongside the
     // eight predefined metals. Reserved IDs 238..254 and metal semantics on transmissive models

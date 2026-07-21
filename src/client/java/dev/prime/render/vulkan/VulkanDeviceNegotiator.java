@@ -239,6 +239,11 @@ public final class VulkanDeviceNegotiator {
             if (rayProperties.shaderGroupHandleSize() <= 0
                     || rayProperties.maxShaderGroupStride() == 0
                     || rayProperties.maxRayDispatchInvocationCount() == 0
+                    || accelerationProperties.maxPrimitiveCount() == 0L
+                    || accelerationProperties.maxInstanceCount() == 0L
+                    || Long.compareUnsigned(
+                                    accelerationProperties.maxGeometryCount(), 3L)
+                            < 0
                     || !isPositivePowerOfTwo(rayProperties.shaderGroupHandleAlignment())
                     || !isPositivePowerOfTwo(rayProperties.shaderGroupBaseAlignment())
                     || !isPositivePowerOfTwo(accelerationProperties.minAccelerationStructureScratchOffsetAlignment())) {
@@ -326,6 +331,8 @@ public final class VulkanDeviceNegotiator {
                     rayProperties.maxShaderGroupStride(),
                     rayProperties.maxRayDispatchInvocationCount(),
                     rayProperties.maxRayRecursionDepth(),
+                    accelerationProperties.maxPrimitiveCount(),
+                    accelerationProperties.maxInstanceCount(),
                     accelerationProperties.minAccelerationStructureScratchOffsetAlignment(),
                     invocationReorderSupported,
                     opacityMicromapSupported,

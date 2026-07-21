@@ -4,16 +4,19 @@ import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
+import java.util.List;
 import org.junit.jupiter.api.Test;
 
 final class SectionClusterMeshBuilderTest {
     @Test
     void keepsOpaqueBeforeCutoutBeforeTransmissionAndTranslatesSectionLocalPositions() {
         SectionClusterMeshBuilder builder = new SectionClusterMeshBuilder(-4, 0, 8);
-        builder.add(-4, 0, 8, mesh(1.0F, 1, 1, 1));
-        builder.add(-1, 2, 11, mesh(2.0F, 1, 1, 1));
+        builder.add(-4, 0, 8, List.of(mesh(1.0F, 1, 1, 1)));
+        builder.add(-1, 2, 11, List.of(mesh(2.0F, 1, 1, 1)));
 
-        CpuSectionMesh result = builder.build();
+        CpuClusterMesh cluster = builder.build();
+        assertEquals(1, cluster.segments().size());
+        CpuClusterMesh.Segment result = cluster.segments().getFirst();
         assertEquals(2, result.opaqueTriangleCount());
         assertEquals(2, result.cutoutTriangleCount());
         assertEquals(2, result.transmissiveTriangleCount());
@@ -36,10 +39,36 @@ final class SectionClusterMeshBuilderTest {
     @Test
     void rejectsDuplicateSectionsInsideOneVirtualChunk() {
         SectionClusterMeshBuilder builder = new SectionClusterMeshBuilder(0, 0, 0);
-        builder.add(0, 0, 0, mesh(0.0F, 1, 1, 1));
+        builder.add(0, 0, 0, List.of(mesh(0.0F, 1, 1, 1)));
         assertThrows(
                 IllegalArgumentException.class,
-                () -> builder.add(0, 0, 0, mesh(0.0F, 1, 1, 1)));
+                () -> builder.add(0, 0, 0, List.of(mesh(0.0F, 1, 1, 1))));
+    }
+
+    @Test
+    void segmentsLargeLogicalClustersWithoutCreatingAnotherLogicalPayload() {
+        SectionClusterMeshBuilder builder = new SectionClusterMeshBuilder(0, 0, 0);
+        int trianglesPerSection = 60_000;
+        int sectionCount = 17;
+        CpuSectionMesh section = opaqueMesh(trianglesPerSection);
+        for (int index = 0; index < sectionCount; index++) {
+            builder.add(
+                    index & 3,
+                    index >> 2 & 3,
+                    index >> 4,
+                    List.of(section));
+        }
+
+        CpuClusterMesh cluster = builder.build();
+
+        assertEquals(9, cluster.segments().size());
+        assertEquals(
+                (long) trianglesPerSection * sectionCount,
+                cluster.triangleCount());
+        assertEquals(
+                section.byteSize() * sectionCount,
+                cluster.positionBytes() + cluster.primitiveBytes());
+        assertThrows(IllegalStateException.class, builder::build);
     }
 
     private static CpuSectionMesh mesh(float base, int opaque, int cutout, int transmissive) {
@@ -70,5 +99,16 @@ final class SectionClusterMeshBuilderTest {
 
     private static OpacityMicromapData specialMicromap(int triangleCount) {
         return OpacityMicromapData.fullyUnknown(triangleCount);
+    }
+
+    private static CpuSectionMesh opaqueMesh(int triangleCount) {
+        return new CpuSectionMesh(
+                new float[Math.multiplyExact(triangleCount, 9)],
+                new int[Math.multiplyExact(triangleCount, CpuSectionMesh.PRIMITIVE_WORDS)],
+                triangleCount,
+                0,
+                0,
+                OpacityMicromapData.EMPTY,
+                CpuSectionLights.EMPTY);
     }
 }

@@ -113,8 +113,8 @@ void main() {
             primaryLinearRoughness);
     // Raygen supplies directional BSDF energy for each lobe. Zero-energy channels stay zero;
     // guarded division avoids manufacturing a material floor that would later change remodulation.
-    vec3 diffuseAlbedo = primeNrdSanitizeGuide(rawMaterial.rgb);
-    vec3 specularAlbedo = primeNrdSanitizeGuide(rawSpecularMaterial.rgb);
+    vec3 diffuseAlbedo = primeNrdSanitizeAlbedo(rawMaterial.rgb);
+    vec3 specularAlbedo = primeNrdSanitizeAlbedo(rawSpecularMaterial.rgb);
     vec3 primaryVector = primeNrdIsFinite(primary.xyz) ? primary.xyz : vec3(0.0);
     vec3 tracedRayDirection = dot(primaryVector, primaryVector) > 1.0e-12
             ? primeNrdSafeNormalize(primaryVector, vec3(0.0, 0.0, -1.0))

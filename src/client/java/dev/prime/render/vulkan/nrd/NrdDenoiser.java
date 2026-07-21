@@ -2,6 +2,7 @@ package dev.prime.render.vulkan.nrd;
 
 import com.mojang.blaze3d.vulkan.Destroyable;
 import dev.prime.render.FrameCamera;
+import dev.prime.render.ResourceCleanup;
 import dev.prime.render.SunDirection;
 import dev.prime.render.vulkan.AtmospherePipeline;
 import dev.prime.render.vulkan.VulkanBuffer;
@@ -18,6 +19,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.IdentityHashMap;
 import java.util.List;
+import java.util.Objects;
 import java.util.Set;
 import org.joml.Matrix4f;
 import org.lwjgl.system.MemoryStack;
@@ -161,23 +163,17 @@ public final class NrdDenoiser implements Destroyable, DenoiserInputs {
                     motionPipeline,
                     composite);
         } catch (RuntimeException exception) {
-            if (composite != null) {
-                composite.destroy();
-            }
-            if (motionPipeline != null) {
-                motionPipeline.destroy();
-            }
-            destroyPipelines(pipelines);
+            ResourceCleanup.destroy(composite, exception);
+            ResourceCleanup.destroy(motionPipeline, exception);
+            destroyPipelines(pipelines, exception);
             if (linearSampler != 0L) {
                 VK12.vkDestroySampler(context.vkDevice(), linearSampler, null);
             }
             if (nearestSampler != 0L) {
                 VK12.vkDestroySampler(context.vkDevice(), nearestSampler, null);
             }
-            if (images != null) {
-                images.destroy();
-            }
-            nativeInstance.close();
+            ResourceCleanup.destroy(images, exception);
+            ResourceCleanup.close(nativeInstance, exception);
             throw exception;
         }
     }
@@ -294,7 +290,8 @@ public final class NrdDenoiser implements Destroyable, DenoiserInputs {
             float cameraJitterX,
             float cameraJitterY,
             float sunRadianceMultiplier,
-            boolean forceRestart) {
+            boolean forceRestart,
+            NrdDiagnostics.Mode selectedDiagnostic) {
         return this.recordInternal(
                 commandBuffer,
                 camera,
@@ -305,7 +302,8 @@ public final class NrdDenoiser implements Destroyable, DenoiserInputs {
                 cameraJitterX,
                 cameraJitterY,
                 sunRadianceMultiplier,
-                forceRestart);
+                forceRestart,
+                selectedDiagnostic);
     }
 
     private FrameToken recordInternal(
@@ -318,8 +316,10 @@ public final class NrdDenoiser implements Destroyable, DenoiserInputs {
             float cameraJitterX,
             float cameraJitterY,
             float sunRadianceMultiplier,
-            boolean forceRestart) {
+            boolean forceRestart,
+            NrdDiagnostics.Mode selectedDiagnostic) {
         this.requireOpen();
+        Objects.requireNonNull(selectedDiagnostic, "selectedDiagnostic");
         boolean restart = forceRestart
                 || this.previousCamera == null
                 || sceneResetRevision != this.previousSceneResetRevision
@@ -327,7 +327,6 @@ public final class NrdDenoiser implements Destroyable, DenoiserInputs {
                 || atlasSampler != this.previousAtlasSampler
                 || sunDirectionDiscontinuous(sunDirection, this.previousSunDirection);
         FrameCamera historyCamera = restart ? camera : this.previousCamera;
-        NrdDiagnostics.Mode selectedDiagnostic = NrdDiagnostics.mode();
         int diagnosticMode = selectedDiagnostic.outputSelector();
         float historyCameraJitterX = restart ? cameraJitterX : this.previousCameraJitterX;
         float historyCameraJitterY = restart ? cameraJitterY : this.previousCameraJitterY;
@@ -507,23 +506,25 @@ public final class NrdDenoiser implements Destroyable, DenoiserInputs {
         if (this.destroyed) {
             return;
         }
+        // Submission-completion callbacks may race teardown. Publish terminal ownership first;
+        // the binding lock then makes each late recycle destroy rather than requeue its binding.
         this.destroyed = true;
+        RuntimeException failure = null;
         synchronized (this.freeBindings) {
             for (FrameBindings bindings : this.allBindings) {
-                bindings.destroy();
+                failure = ResourceCleanup.destroy(bindings, failure);
             }
             this.allBindings.clear();
             this.freeBindings.clear();
         }
-        if (this.composite != null) {
-            this.composite.destroy();
-        }
-        this.motionPipeline.destroy();
-        destroyPipelines(this.pipelines);
+        failure = ResourceCleanup.destroy(this.composite, failure);
+        failure = ResourceCleanup.destroy(this.motionPipeline, failure);
+        failure = destroyPipelines(this.pipelines, failure);
         VK12.vkDestroySampler(this.context.vkDevice(), this.linearSampler, null);
         VK12.vkDestroySampler(this.context.vkDevice(), this.nearestSampler, null);
-        this.images.destroy();
-        this.nativeInstance.close();
+        failure = ResourceCleanup.destroy(this.images, failure);
+        failure = ResourceCleanup.close(this.nativeInstance, failure);
+        ResourceCleanup.throwIfFailed(failure);
     }
 
     private void requireOpen() {
@@ -630,20 +631,20 @@ public final class NrdDenoiser implements Destroyable, DenoiserInputs {
             }
             return pipelines;
         } catch (RuntimeException exception) {
-            destroyPipelines(pipelines);
+            destroyPipelines(pipelines, exception);
             throw exception;
         }
     }
 
-    private static void destroyPipelines(ComputePipeline[] pipelines) {
+    private static RuntimeException destroyPipelines(
+            ComputePipeline[] pipelines, RuntimeException failure) {
         if (pipelines == null) {
-            return;
+            return failure;
         }
         for (int index = pipelines.length - 1; index >= 0; index--) {
-            if (pipelines[index] != null) {
-                pipelines[index].destroy();
-            }
+            failure = ResourceCleanup.destroy(pipelines[index], failure);
         }
+        return failure;
     }
 
     private static void rayTraceToComputeBarrier(VkCommandBuffer commandBuffer) {

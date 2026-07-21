@@ -1,17 +1,12 @@
 package dev.prime.render.vulkan.nrd;
 
+import dev.prime.render.vulkan.NativeRuntimeFiles;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
-import java.nio.file.FileAlreadyExistsException;
-import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.StandardCopyOption;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
-import java.util.HexFormat;
 import java.util.List;
 import java.util.Locale;
 import org.joml.Matrix4fc;
@@ -68,17 +63,30 @@ public final class NrdNative {
     private final long destroyFunction;
 
     private NrdNative() {
-        this.library = loadLibrary();
-        long getAbiVersionFunction = requireFunction(this.library, "primeNrdGetAbiVersion");
-        this.createFunction = requireFunction(this.library, "primeNrdCreate");
-        this.getDescriptionFunction = requireFunction(this.library, "primeNrdGetDescription");
-        this.setFrameSettingsFunction = requireFunction(this.library, "primeNrdSetFrameSettings");
-        this.getDispatchesFunction = requireFunction(this.library, "primeNrdGetDispatches");
-        this.destroyFunction = requireFunction(this.library, "primeNrdDestroy");
-        int abiVersion = JNI.invokeI(getAbiVersionFunction);
-        if (abiVersion != ABI_VERSION) {
-            throw new IllegalStateException(
-                    "Prime NRD bridge ABI mismatch: expected " + ABI_VERSION + ", found " + abiVersion);
+        SharedLibrary loaded = loadLibrary();
+        try {
+            this.library = loaded;
+            long getAbiVersionFunction = requireFunction(loaded, "primeNrdGetAbiVersion");
+            this.createFunction = requireFunction(loaded, "primeNrdCreate");
+            this.getDescriptionFunction = requireFunction(loaded, "primeNrdGetDescription");
+            this.setFrameSettingsFunction = requireFunction(loaded, "primeNrdSetFrameSettings");
+            this.getDispatchesFunction = requireFunction(loaded, "primeNrdGetDispatches");
+            this.destroyFunction = requireFunction(loaded, "primeNrdDestroy");
+            int abiVersion = JNI.invokeI(getAbiVersionFunction);
+            if (abiVersion != ABI_VERSION) {
+                throw new IllegalStateException(
+                        "Prime NRD bridge ABI mismatch: expected "
+                                + ABI_VERSION
+                                + ", found "
+                                + abiVersion);
+            }
+        } catch (RuntimeException | Error exception) {
+            try {
+                loaded.free();
+            } catch (RuntimeException | Error cleanupFailure) {
+                exception.addSuppressed(cleanupFailure);
+            }
+            throw exception;
         }
     }
 
@@ -258,38 +266,10 @@ public final class NrdNative {
         } catch (IOException exception) {
             throw new IllegalStateException("Unable to read the bundled NRD native library", exception);
         }
-        String digest = sha256(libraryBytes);
-        Path directory = Path.of(System.getProperty("java.io.tmpdir"), "prime-nrd", digest);
+        Path directory = NativeRuntimeFiles.directory("prime-nrd", libraryBytes);
         Path libraryPath = directory.resolve("prime_nrd.dll");
-        try {
-            Files.createDirectories(directory);
-            if (!Files.exists(libraryPath)) {
-                Path temporary = directory.resolve("prime_nrd-" + ProcessHandle.current().pid() + ".tmp");
-                try {
-                    Files.write(temporary, libraryBytes);
-                    try {
-                        Files.move(temporary, libraryPath, StandardCopyOption.ATOMIC_MOVE);
-                    } catch (FileAlreadyExistsException ignored) {
-                        // Another client process published the same content-addressed DLL.
-                    } finally {
-                        Files.deleteIfExists(temporary);
-                    }
-                } catch (FileAlreadyExistsException ignored) {
-                    // Another thread in this process won the extraction race.
-                }
-            }
-        } catch (IOException exception) {
-            throw new IllegalStateException("Unable to extract the bundled NRD native library", exception);
-        }
+        NativeRuntimeFiles.publish(libraryPath, libraryBytes);
         return APIUtil.apiCreateLibrary(libraryPath.toAbsolutePath().toString());
-    }
-
-    private static String sha256(byte[] bytes) {
-        try {
-            return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(bytes));
-        } catch (NoSuchAlgorithmException exception) {
-            throw new IllegalStateException("The Java runtime does not provide SHA-256", exception);
-        }
     }
 
     private static long requireFunction(SharedLibrary library, String name) {

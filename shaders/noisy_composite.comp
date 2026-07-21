@@ -24,7 +24,7 @@ ATM_DECLARE_SAMPLE_3D(primeNoisySampleAerialRadiance, primeNoisyAerialRadiance)
 ATM_DECLARE_SAMPLE_3D(primeNoisySampleAerialTransmittance, primeNoisyAerialTransmittance)
 
 void primeNoisyApplyAerial(uvec2 pixel, float primaryDistance, inout vec3 radiance) {
-    if (primaryDistance < 0.0) return;
+    if (!primeNrdIsFinite(primaryDistance) || primaryDistance < 0.0) return;
     float distanceKm = primaryDistance * ATM_WORLD_UNIT_SCALE_KM;
     ivec3 dimensions = imageSize(primeNoisyAerialRadiance);
     float firstSliceDepth = 0.5 / float(max(dimensions.z, 1));
@@ -52,15 +52,14 @@ void main() {
     if (any(greaterThanEqual(pixel, primeNoisyPush.outputExtent))) return;
 
     vec4 material = imageLoad(primeNoisyMaterial, ivec2(pixel));
-    vec3 surface = material.a < 0.0
+    vec4 sun = imageLoad(primeNoisySunLighting, ivec2(pixel));
+    vec3 surface = !primeNrdIsFinite(material.a) || material.a < 0.0
             ? vec3(0.0)
             : primeNrdSanitizeRadiance(imageLoad(primeNoisyDiffuse, ivec2(pixel)).rgb)
                     + primeNrdSanitizeRadiance(
                             imageLoad(primeNoisySpecular, ivec2(pixel)).rgb)
-                    + primeNrdSanitizeRadiance(
-                            imageLoad(primeNoisySunLighting, ivec2(pixel)).rgb)
-                            * clamp(imageLoad(
-                                    primeNoisySunLighting, ivec2(pixel)).a, 0.0, 1.0);
+                    + primeNrdSanitizeRadiance(sun.rgb)
+                            * primeNrdSanitizeUnit(sun.a, 0.0);
     vec3 stable = primeNrdClampRadiance(
             imageLoad(primeNoisyStableRadiance, ivec2(pixel)).rgb,
             PRIME_NRD_FP16_MAX);

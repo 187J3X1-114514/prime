@@ -13,8 +13,19 @@ final class StagingArenaTest {
         assertEquals(
                 StagingArena.PAGE_SIZE * 2L,
                 StagingArena.allocationCapacity(StagingArena.PAGE_SIZE + 1L));
+        assertEquals(70L << 30, StagingArena.allocationCapacity(70L << 30));
         assertThrows(
                 IllegalArgumentException.class,
                 () -> StagingArena.allocationCapacity(Long.MAX_VALUE));
+    }
+
+    @Test
+    void alignmentRejectsInvalidAndOverflowingDomains() {
+        assertEquals(16L, VulkanContext.alignUp(9L, 8L));
+        assertThrows(IllegalArgumentException.class, () -> VulkanContext.alignUp(-1L, 8L));
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> VulkanContext.alignUp(Long.MAX_VALUE, 8L));
+        assertThrows(IllegalArgumentException.class, () -> VulkanContext.alignUp(1L, 3L));
     }
 }

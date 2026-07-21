@@ -39,8 +39,6 @@ import org.lwjgl.vulkan.VkWriteDescriptorSet;
 final class DlssRrPreparePass implements Destroyable {
     private static final int IMAGE_COUNT = 15;
     private static final int COMPUTE_STAGE = VK12.VK_SHADER_STAGE_COMPUTE_BIT;
-    // Three mat4s, sun multiplier at 192, four bytes of std430 padding, then vec2 jitter at 200.
-    private static final int PUSH_SIZE = 208;
     private static final int LOCAL_SIZE = 8;
     private static final String SHADER = "/prime/shaders/rr_prepare.comp.spv";
 
@@ -120,7 +118,7 @@ final class DlssRrPreparePass implements Destroyable {
                     "create RR prepare descriptor layout");
             setLayout = pointer.get(0);
             VkPushConstantRange.Buffer pushRange = VkPushConstantRange.calloc(1, stack)
-                    .stageFlags(COMPUTE_STAGE).offset(0).size(PUSH_SIZE);
+                    .stageFlags(COMPUTE_STAGE).offset(0).size(DlssRrPrepareConstants.SIZE);
             pointer.clear();
             VulkanContext.check(
                     VK12.vkCreatePipelineLayout(
@@ -213,14 +211,15 @@ final class DlssRrPreparePass implements Destroyable {
         NrdCameraTransform.previousWorldToClip(
                 camera, previousCamera, this.previousWorldToClip, new Matrix4f());
         try (MemoryStack stack = MemoryStack.stackPush()) {
-            ByteBuffer push = stack.malloc(PUSH_SIZE).order(ByteOrder.nativeOrder());
-            this.currentClipToWorld.get(0, push);
-            this.previousWorldToClip.get(64, push);
-            camera.viewRotation().get(128, push);
-            push.putFloat(192, sunRadianceMultiplier);
-            push.putInt(196, 0);
-            push.putFloat(200, currentJitterPixels.x());
-            push.putFloat(204, currentJitterPixels.y());
+            ByteBuffer push = stack.malloc(DlssRrPrepareConstants.SIZE)
+                    .order(ByteOrder.nativeOrder());
+            DlssRrPrepareConstants.write(
+                    push,
+                    this.currentClipToWorld,
+                    this.previousWorldToClip,
+                    camera.viewRotation(),
+                    sunRadianceMultiplier,
+                    currentJitterPixels);
             VK12.vkCmdBindPipeline(commandBuffer, VK12.VK_PIPELINE_BIND_POINT_COMPUTE, this.pipeline);
             VK12.vkCmdBindDescriptorSets(
                     commandBuffer,

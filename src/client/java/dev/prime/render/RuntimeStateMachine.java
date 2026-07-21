@@ -1,7 +1,7 @@
 package dev.prime.render;
 
 final class RuntimeStateMachine {
-    private volatile RuntimeState current = RuntimeState.UNAVAILABLE;
+    private RuntimeState current = RuntimeState.UNAVAILABLE;
 
     RuntimeState current() {
         return this.current;

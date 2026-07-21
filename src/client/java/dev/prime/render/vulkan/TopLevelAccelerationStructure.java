@@ -1,5 +1,6 @@
 package dev.prime.render.vulkan;
 
+import dev.prime.render.ResourceCleanup;
 import dev.prime.render.shader.ShaderAbi;
 import java.nio.LongBuffer;
 import org.lwjgl.PointerBuffer;
@@ -43,7 +44,20 @@ public final class TopLevelAccelerationStructure {
     }
 
     public static TopLevelAccelerationStructure create(VulkanContext context, int requestedCapacity, String label) {
-        int capacity = Math.max(64, Integer.highestOneBit(Math.max(1, requestedCapacity - 1)) << 1);
+        long reportedLimit = context.capabilities().maxAccelerationStructureInstanceCount();
+        long deviceLimit = Long.compareUnsigned(reportedLimit, 1L << 24) < 0
+                ? reportedLimit
+                : 1L << 24;
+        if (requestedCapacity <= 0 || requestedCapacity > deviceLimit) {
+            throw new IllegalStateException(
+                    "TLAS requires "
+                            + requestedCapacity
+                            + " instances, but the Vulkan/device-address ABI supports "
+                            + deviceLimit);
+        }
+        int capacity = requestedCapacity <= 64
+                ? Math.toIntExact(Math.min(64L, deviceLimit))
+                : nextCapacity(requestedCapacity, deviceLimit);
         VulkanBuffer instances = null;
         VulkanBuffer sectionTable = null;
         VulkanBuffer backing = null;
@@ -119,26 +133,19 @@ public final class TopLevelAccelerationStructure {
                         context, capacity, instances, sectionTable, scratch, accelerationStructure);
             }
         } catch (RuntimeException exception) {
+            RuntimeException failure = exception;
             if (accelerationStructure != null) {
-                accelerationStructure.destroy();
+                failure = ResourceCleanup.destroy(accelerationStructure, failure);
             } else {
                 if (handle != 0L) {
                     KHRAccelerationStructure.vkDestroyAccelerationStructureKHR(context.vkDevice(), handle, null);
                 }
-                if (backing != null) {
-                    backing.destroy();
-                }
+                failure = ResourceCleanup.destroy(backing, failure);
             }
-            if (scratch != null) {
-                scratch.destroy();
-            }
-            if (sectionTable != null) {
-                sectionTable.destroy();
-            }
-            if (instances != null) {
-                instances.destroy();
-            }
-            throw exception;
+            failure = ResourceCleanup.destroy(scratch, failure);
+            failure = ResourceCleanup.destroy(sectionTable, failure);
+            failure = ResourceCleanup.destroy(instances, failure);
+            throw failure;
         }
     }
 
@@ -157,7 +164,7 @@ public final class TopLevelAccelerationStructure {
     }
 
     public boolean hasCapacity(int count) {
-        return count <= this.capacity;
+        return count >= 0 && count <= this.capacity;
     }
 
     public void populate(int count, InstancePopulator populator) {
@@ -219,11 +226,18 @@ public final class TopLevelAccelerationStructure {
         if (!this.destroyed) {
             this.destroyed = true;
             this.available = false;
-            this.accelerationStructure.destroy();
-            this.instances.destroy();
-            this.sectionTable.destroy();
-            this.scratch.destroy();
+            RuntimeException failure = ResourceCleanup.destroy(this.accelerationStructure, null);
+            failure = ResourceCleanup.destroy(this.instances, failure);
+            failure = ResourceCleanup.destroy(this.sectionTable, failure);
+            failure = ResourceCleanup.destroy(this.scratch, failure);
+            ResourceCleanup.throwIfFailed(failure);
         }
+    }
+
+    private static int nextCapacity(int requested, long limit) {
+        int highest = Integer.highestOneBit(requested - 1);
+        long rounded = (long) highest << 1;
+        return Math.toIntExact(Math.min(rounded, limit));
     }
 
     private static VkAccelerationStructureGeometryKHR.Buffer tlasGeometry(MemoryStack stack, long instanceAddress) {
@@ -268,8 +282,8 @@ public final class TopLevelAccelerationStructure {
                 long lightAddress,
                 long worldLightAddress,
                 long worldLightForwardAddress,
-                int opaqueTriangleCount,
-                int cutoutTriangleCount,
+                long opaqueTriangleCount,
+                long cutoutTriangleCount,
                 int worldLeafNode,
                 int lightCount,
                 int worldLightNodeCount,
@@ -278,6 +292,14 @@ public final class TopLevelAccelerationStructure {
                 float translateZ) {
             if (this.index >= this.capacity) {
                 throw new IllegalStateException("TLAS populator wrote too many instances");
+            }
+            long transmissiveBase = Math.addExact(
+                    opaqueTriangleCount, cutoutTriangleCount);
+            if (opaqueTriangleCount < 0L
+                    || Long.compareUnsigned(opaqueTriangleCount, 0xffff_ffffL) > 0
+                    || Long.compareUnsigned(transmissiveBase, 0xffff_ffffL) > 0) {
+                throw new IllegalArgumentException(
+                        "Cluster primitive bases exceed the shader uint ABI");
             }
             this.matrix.clear();
             this.matrix
@@ -310,10 +332,10 @@ public final class TopLevelAccelerationStructure {
                     worldLightAddress);
             MemoryUtil.memPutInt(
                     sectionAddress + ShaderAbi.SECTION_CUTOUT_BASE_OFFSET,
-                    opaqueTriangleCount);
+                    (int) opaqueTriangleCount);
             MemoryUtil.memPutInt(
                     sectionAddress + ShaderAbi.SECTION_TRANSMISSIVE_BASE_OFFSET,
-                    Math.addExact(opaqueTriangleCount, cutoutTriangleCount));
+                    (int) transmissiveBase);
             MemoryUtil.memPutInt(
                     sectionAddress + ShaderAbi.SECTION_WORLD_LEAF_NODE_OFFSET,
                     worldLeafNode);

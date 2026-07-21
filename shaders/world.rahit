@@ -4,7 +4,7 @@
 
 void main() {
     PrimitiveRecord primitive = primePrimitive();
-    if (primeMaterialIsTransmissive(primitive.flagsEmitter & 0x1ffu)) {
+    if (primeMaterialIsTransmissive(primePrimitiveFlags(primitive))) {
         // A transmission surface is a real path vertex, not alpha coverage. In particular, a
         // straight NEE shadow segment must not silently pass through another refractive boundary:
         // that would omit its Fresnel/refraction terms and create biased light leaks. Accept the

@@ -7,6 +7,7 @@ import java.nio.LongBuffer;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.IdentityHashMap;
+import java.util.Objects;
 import java.util.Set;
 import org.lwjgl.PointerBuffer;
 import org.lwjgl.system.MemoryStack;
@@ -68,6 +69,7 @@ public final class VulkanContext implements AutoCloseable {
     }
 
     public VulkanCommandEncoder commandEncoder() {
+        requireOpen();
         return this.device.createCommandEncoder();
     }
 
@@ -76,6 +78,7 @@ public final class VulkanContext implements AutoCloseable {
     }
 
     public VulkanBuffer createBuffer(long size, int usage, boolean hostVisible, String label) {
+        requireOpen();
         if (size <= 0L) {
             throw new IllegalArgumentException("Vulkan buffer size must be positive");
         }
@@ -103,18 +106,28 @@ public final class VulkanContext implements AutoCloseable {
                     allocationPointer,
                     allocationInfo), "create " + label);
             long handle = bufferPointer.get(0);
-            this.device.instance().debug().setObjectName(this.device.vkDevice(), VK12.VK_OBJECT_TYPE_BUFFER, handle, label);
-            VkBufferDeviceAddressInfo addressInfo = VkBufferDeviceAddressInfo.calloc(stack)
-                    .sType$Default()
-                    .buffer(handle);
-            long address = VK12.vkGetBufferDeviceAddress(this.device.vkDevice(), addressInfo);
-            return new VulkanBuffer(
-                    this.allocator,
-                    allocationPointer.get(0),
-                    handle,
-                    address,
-                    hostVisible ? allocationInfo.pMappedData() : 0L,
-                    size);
+            long allocation = allocationPointer.get(0);
+            try {
+                this.device.instance().debug().setObjectName(
+                        this.device.vkDevice(), VK12.VK_OBJECT_TYPE_BUFFER, handle, label);
+                VkBufferDeviceAddressInfo addressInfo = VkBufferDeviceAddressInfo.calloc(stack)
+                        .sType$Default()
+                        .buffer(handle);
+                long address = VK12.vkGetBufferDeviceAddress(this.device.vkDevice(), addressInfo);
+                if (address == 0L) {
+                    throw new IllegalStateException("Vulkan returned a null device address for " + label);
+                }
+                return new VulkanBuffer(
+                        this.allocator,
+                        allocation,
+                        handle,
+                        address,
+                        hostVisible ? allocationInfo.pMappedData() : 0L,
+                        size);
+            } catch (RuntimeException exception) {
+                Vma.vmaDestroyBuffer(this.allocator, handle, allocation);
+                throw exception;
+            }
         }
     }
 
@@ -208,6 +221,7 @@ public final class VulkanContext implements AutoCloseable {
             int format,
             int usage,
             String label) {
+        requireOpen();
         if (width <= 0 || height <= 0 || depth <= 0) {
             throw new IllegalArgumentException("Vulkan image dimensions must be positive");
         }
@@ -313,6 +327,7 @@ public final class VulkanContext implements AutoCloseable {
     }
 
     public void defer(Destroyable destroyable) {
+        Objects.requireNonNull(destroyable, "destroyable");
         if (this.closed) {
             throw new IllegalStateException("Cannot defer a resource after the Vulkan context has closed");
         }
@@ -330,15 +345,15 @@ public final class VulkanContext implements AutoCloseable {
                 }
             });
         } catch (RuntimeException exception) {
-            synchronized (this.deferred) {
-                this.deferred.remove(destroyable);
-            }
+            // Keep ownership in deferred: the callback was not registered, so close() must
+            // retire the resource after vkDeviceWaitIdle instead of leaking it or freeing it early.
             throw exception;
         }
     }
 
     /** Runs only after all commands submitted before this call have completed on the real queue timeline. */
     public void afterSubmission(Runnable callback) {
+        Objects.requireNonNull(callback, "callback");
         if (this.closed) {
             throw new IllegalStateException("Cannot register a completion callback after the Vulkan context has closed");
         }
@@ -346,6 +361,7 @@ public final class VulkanContext implements AutoCloseable {
     }
 
     public void awaitIdle() {
+        requireOpen();
         check(VK12.vkDeviceWaitIdle(this.device.vkDevice()), "wait for Vulkan device");
     }
 
@@ -355,14 +371,29 @@ public final class VulkanContext implements AutoCloseable {
             pending = new ArrayList<>(this.deferred);
             this.deferred.clear();
         }
+        RuntimeException failure = null;
         for (Destroyable destroyable : pending) {
-            destroyable.destroy();
+            try {
+                destroyable.destroy();
+            } catch (RuntimeException exception) {
+                if (failure == null) {
+                    failure = exception;
+                } else {
+                    failure.addSuppressed(exception);
+                }
+            }
+        }
+        if (failure != null) {
+            throw failure;
         }
     }
 
     public static long alignUp(long value, long alignment) {
         if (alignment <= 0L || (alignment & alignment - 1L) != 0L) {
             throw new IllegalArgumentException("Alignment must be a positive power of two");
+        }
+        if (value < 0L || value > Long.MAX_VALUE - (alignment - 1L)) {
+            throw new IllegalArgumentException("Value cannot be aligned without overflow");
         }
         return value + alignment - 1L & -alignment;
     }
@@ -375,11 +406,27 @@ public final class VulkanContext implements AutoCloseable {
 
     @Override
     public void close() {
-        if (!this.closed) {
-            this.closed = true;
-            this.awaitIdle();
+        if (this.closed) {
+            return;
+        }
+        // Do not publish a terminal state until GPU ownership can be released safely.
+        this.awaitIdle();
+        RuntimeException failure = null;
+        try {
             this.drainDeferredAfterIdle();
-            Vma.vmaDestroyAllocator(this.allocator);
+        } catch (RuntimeException exception) {
+            failure = exception;
+        }
+        Vma.vmaDestroyAllocator(this.allocator);
+        this.closed = true;
+        if (failure != null) {
+            throw failure;
+        }
+    }
+
+    private void requireOpen() {
+        if (this.closed) {
+            throw new IllegalStateException("Vulkan context is closed");
         }
     }
 }

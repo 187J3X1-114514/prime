@@ -101,15 +101,9 @@ final class RealtimeRenderResources implements Destroyable {
                     mode,
                     qualityMode);
         } catch (RuntimeException exception) {
-            if (processor != null) {
-                processor.destroy();
-            }
-            if (accumulation != null) {
-                accumulation.destroy();
-            }
-            if (output != null) {
-                output.destroy();
-            }
+            ResourceCleanup.destroy(processor, exception);
+            ResourceCleanup.destroy(accumulation, exception);
+            ResourceCleanup.destroy(output, exception);
             throw exception;
         }
     }
@@ -140,9 +134,11 @@ final class RealtimeRenderResources implements Destroyable {
         if (this.destroyed) {
             return;
         }
+        RuntimeException failure = null;
+        failure = ResourceCleanup.destroy(this.processor, failure);
+        failure = ResourceCleanup.destroy(this.accumulation, failure);
+        failure = ResourceCleanup.destroy(this.output, failure);
         this.destroyed = true;
-        this.processor.destroy();
-        this.accumulation.destroy();
-        this.output.destroy();
+        ResourceCleanup.throwIfFailed(failure);
     }
 }

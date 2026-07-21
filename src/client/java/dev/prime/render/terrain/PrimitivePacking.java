@@ -12,33 +12,44 @@ public final class PrimitivePacking {
     public static final int FLAG_TANGENT_NEGATIVE = 1 << 8;
     public static final int FLAG_MASK = (1 << 9) - 1;
     public static final int NO_EMITTER_INDEX = -1;
-    public static final int MAX_EMITTER_INDEX = (1 << 23) - 2;
+    public static final int MAX_EMITTER_INDEX = Integer.MAX_VALUE - 1;
 
     private PrimitivePacking() {
     }
 
     /**
-     * Packs the nine material flags and the local light-emitter index without truncation.
-     * Zero in the upper field means no emitter; every real index is stored plus one.
+     * Packs the high material-flag bit and the local light-emitter index without truncation.
+     * The tint alpha byte owns the other eight flags; tint alpha is not a shading input.
      */
     public static int packFlagsEmitter(int flags, int emitterIndex) {
         if ((flags & ~FLAG_MASK) != 0) {
             throw new IllegalArgumentException("Primitive flags exceed their nine-bit ABI field");
         }
         if (emitterIndex < NO_EMITTER_INDEX || emitterIndex > MAX_EMITTER_INDEX) {
-            throw new IllegalArgumentException("Primitive emitter index exceeds its 23-bit ABI field");
+            throw new IllegalArgumentException("Primitive emitter index exceeds its 31-bit ABI field");
         }
         int encodedEmitter = emitterIndex == NO_EMITTER_INDEX ? 0 : emitterIndex + 1;
-        return flags | encodedEmitter << 9;
+        return flags >>> 8 | encodedEmitter << 1;
     }
 
-    public static int unpackFlags(int packed) {
-        return packed & FLAG_MASK;
+    public static int packTintFlags(int packedTint, int flags) {
+        if ((flags & ~FLAG_MASK) != 0) {
+            throw new IllegalArgumentException("Primitive flags exceed their nine-bit ABI field");
+        }
+        return (packedTint & 0x00ff_ffff) | (flags & 0xff) << 24;
+    }
+
+    public static int unpackFlags(int packedTint, int packedFlagsEmitter) {
+        return packedTint >>> 24 | (packedFlagsEmitter & 1) << 8;
     }
 
     public static int unpackEmitterIndex(int packed) {
-        int encoded = packed >>> 9;
+        int encoded = packed >>> 1;
         return encoded == 0 ? NO_EMITTER_INDEX : encoded - 1;
+    }
+
+    public static int withEmitterIndex(int packed, int emitterIndex) {
+        return packFlagsEmitter((packed & 1) << 8, emitterIndex);
     }
 
     public static int packHalf2(float x, float y) {

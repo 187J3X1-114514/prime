@@ -2,9 +2,8 @@
 
 ## 性能：地形流送期间的 Java 堆分配风暴
 
-- 状态：已确认，暂不修复
-- 类型：CPU 地形/灯光树构建的对象布局与全量重建问题
-- 计划：随 mesh 与地形构建算法重写一并处理
+- 状态：主要分配源已修复，仍需实机场景验证与 TLAS 更新策略研究
+- 类型：CPU 地形构建存储与 TLAS 全量更新成本
 
 ### 现象
 
@@ -14,12 +13,20 @@
 
 ### 已确认原因
 
-- Section 以小批次上传时，当前实现会针对全部驻留 Section 重新构建世界级灯光树和 TLAS 实例表。
-- SAH 每次全量构建仍会创建 `Leaf`、`Bounds`、`Node`、集合和引用数组。Java `record` 仍是普通引用对象，不能按原生语言的内联值类型估算成本。
-- CPU mesh 的大型 primitive 数组和待上传结果按 Section 数量而非累计字节限制；复杂 Section 会显著增加存活堆和 G1 humongous allocation 压力。
+- Section 以小批次上传时，TLAS 实例表与 GPU TLAS 仍会针对全部驻留 virtual cluster 更新。
+- CPU mesh 在 Section 输出合并成 4×4×4 virtual cluster 时使用有界 segment，避免创建一个与整个 cluster 等大的 Java 数组；原子上传仍需要与完整 generation 对应的 staging 和 GPU 分配。
 - 大堆主要通过降低 GC 频率掩盖分配速率，不能解决算法复杂度、内存带宽或最坏情况下的停顿。
 
-诊断中曾观察到约一百万个已分配的灯光树 `Bounds`、数万节点和约 4.6 万个单次 TLAS Section 实例。该统计包含尚未回收的不可达对象，说明的是分配风暴，不应直接解读为等量的永久泄漏。当前性能分支已经复用 SAH bin 工作区、直接打包灯光树、流式写入 TLAS 实例、去掉 mesh 合并的中间大数组，并在 GPU 上传后只保留世界树所需的 Section 灯光摘要；这些改动降低了分配量和存活堆，但全量重建的渐近成本仍然存在。
+诊断中曾观察到约一百万个已分配的灯光树 `Bounds`、数万节点和约 4.6 万个单次 TLAS Section 实例。该统计包含尚未回收的不可达对象，说明的是分配风暴，不应直接解读为等量的永久泄漏。
+
+当前实现已落地以下整改：
+
+- 两级灯光树的 leaf、node、emitter 与 SAH 工作区均改为紧凑 primitive 数组；SAH 使用单次前缀/后缀聚合，fallback sort 不分配对象。
+- 世界灯光树由渲染线程单独拥有稳定叶槽；普通替换、卸载与原点移动执行 O(n) refit，仅在容量、利用率或 SAH 成本明确退化时完整重建。
+- mesh 三段合并只分配一次最终数组；GPU 上传后驻留对象只保留世界树所需的灯光摘要。
+- 跨世界 worker 数量不会重置，worker/completed/ready 三阶段共享一个任务上限。一个 logical cluster 始终只生成一个 BLAS/TLAS instance，但 CPU 输入可拥有任意数量 segment；128K 三角形/约 16 MiB 只是 segment 工作集目标，不是内容拒绝上限。实际在途内存由内容规模和资源可用量决定，资源耗尽会明确失败而不会丢弃几何。
+
+这些改动消除了已确认的无界存活堆与主要小对象风暴，但 TLAS 全量实例写入/GPU build 和 Section→cluster 的有界双份数组仍存在。
 
 ### 临时规避
 
@@ -29,10 +36,6 @@
 
 ### 重写要求
 
-- mesh、Section 灯光和 SAH 工作数据改用可复用的 primitive 数组或等价的紧凑布局，避免每个节点由多层小对象组成。
-- 使用前缀/后缀 bin 聚合或等价算法，消除 SAH split 评估内的临时 `Bounds` 分配和重复扫描。
-- 世界级灯光树采用稳定叶槽、增量更新与祖先 refit；仅在质量确实退化时执行低频完整重建。
-- 合并 TLAS/世界树更新批次，不随每个最多 8 Section 的上传批次全量重建全部驻留场景。
-- 待构建、已完成和待上传队列同时受任务数与累计字节约束，形成明确的内存背压。
-- GPU 上传完成后仅保留世界树更新所需的 Section 灯光摘要，释放完整 CPU emitter、分布和局部树构建数据。
+- 评估 TLAS `ALLOW_UPDATE`/refit 或低延迟批处理；不得让新 geometry 在可见性结构之外形成错误画面。
+- 评估将 CPU segment 直接流式写入可复用 staging 区域，同时保持一个 cluster 只有一个 BLAS 和一次原子 resident 替换；不得以增加 TLAS instance 换取较低上传峰值。
 - 在常见的小堆发行配置、高视距跑图和复杂发光地形下验证稳定分配速率、GC 停顿、队列上限及长期帧时间。

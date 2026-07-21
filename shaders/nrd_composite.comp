@@ -55,8 +55,8 @@ vec3 primeCompositeSurfaceSignal(
     if (!primeNrdIsFinite(material.a) || material.a < 0.0) {
         return vec3(0.0);
     }
-    vec3 diffuseAlbedo = primeNrdSanitizeGuide(material.rgb);
-    vec3 safeSpecularAlbedo = primeNrdSanitizeGuide(specularAlbedo);
+    vec3 diffuseAlbedo = primeNrdSanitizeAlbedo(material.rgb);
+    vec3 safeSpecularAlbedo = primeNrdSanitizeAlbedo(specularAlbedo);
     vec3 diffuse = primeNrdYCoCgToLinear(diffuseSignal) * diffuseAlbedo;
     vec3 specular = primeNrdYCoCgToLinear(specularSignal) * safeSpecularAlbedo;
     primeNrdClampRadianceTriple(

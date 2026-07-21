@@ -15,18 +15,17 @@ import org.lwjgl.vulkan.VkExtensionProperties;
 
 /** Session-scoped, fail-safe NGX capability negotiation. */
 public final class DlssRrBootstrap {
-    private static List<String> instanceExtensions = List.of();
-    private static String unavailableReason = "DLSS RR has not been probed";
-    private static boolean instanceReady;
-    private static boolean deviceReady;
-    private static boolean initializationAttempted;
+    // Vulkan instance/device hooks and the later render-runtime initialization share this
+    // pre-device lifecycle. The existing class monitor serializes that boundary; one immutable
+    // state prevents partially updated capability observations inside it.
+    private static State state = State.initial();
 
     private DlssRrBootstrap() {}
 
     public static synchronized void enableRequiredInstanceExtensions(
             Collection<String> enabledExtensions) {
-        if (instanceReady) {
-            enabledExtensions.addAll(instanceExtensions);
+        if (state.instanceReady()) {
+            enabledExtensions.addAll(state.instanceExtensions());
             return;
         }
         if (!DlssRrNative.isSupportedPlatform()) {
@@ -43,10 +42,13 @@ public final class DlssRrBootstrap {
                 disable("Missing NGX Vulkan instance extensions: " + String.join(", ", missing), null);
                 return;
             }
-            instanceExtensions = required;
             enabledExtensions.addAll(required);
-            instanceReady = true;
-            unavailableReason = "DLSS RR Vulkan device has not been probed";
+            state = new State(
+                    required,
+                    "DLSS RR Vulkan device has not been probed",
+                    true,
+                    false,
+                    state.initializationAttempted());
             PrimeClient.LOGGER.info(
                     "Enabled {} NVIDIA NGX Vulkan instance extension(s)", required.size());
         } catch (RuntimeException | LinkageError exception) {
@@ -56,7 +58,7 @@ public final class DlssRrBootstrap {
 
     public static synchronized void enableRequiredDeviceExtensions(
             VulkanPhysicalDevice physicalDevice, Collection<String> enabledExtensions) {
-        if (!instanceReady) {
+        if (!state.instanceReady()) {
             return;
         }
         try {
@@ -74,8 +76,12 @@ public final class DlssRrBootstrap {
                 return;
             }
             enabledExtensions.addAll(required);
-            deviceReady = true;
-            unavailableReason = "NVIDIA NGX has not been initialized";
+            state = new State(
+                    state.instanceExtensions(),
+                    "NVIDIA NGX has not been initialized",
+                    true,
+                    true,
+                    state.initializationAttempted());
             PrimeClient.LOGGER.info(
                     "Enabled {} NVIDIA NGX Vulkan device extension(s)", required.size());
         } catch (RuntimeException | LinkageError exception) {
@@ -84,13 +90,23 @@ public final class DlssRrBootstrap {
     }
 
     public static synchronized Optional<DlssRrNative.Context> initialize(VulkanContext context) {
-        if (!deviceReady || initializationAttempted) {
+        if (!state.deviceReady() || state.initializationAttempted()) {
             return Optional.empty();
         }
-        initializationAttempted = true;
+        state = new State(
+                state.instanceExtensions(),
+                state.unavailableReason(),
+                state.instanceReady(),
+                state.deviceReady(),
+                true);
         try {
             DlssRrNative.Context ngx = DlssRrNative.initialize(context);
-            unavailableReason = "";
+            state = new State(
+                    state.instanceExtensions(),
+                    "",
+                    state.instanceReady(),
+                    state.deviceReady(),
+                    true);
             PrimeClient.LOGGER.info("NVIDIA NGX DLSS Ray Reconstruction is available");
             return Optional.of(ngx);
         } catch (RuntimeException | LinkageError exception) {
@@ -100,11 +116,11 @@ public final class DlssRrBootstrap {
     }
 
     public static synchronized boolean deviceReady() {
-        return deviceReady;
+        return state.deviceReady();
     }
 
     public static synchronized String unavailableReason() {
-        return unavailableReason;
+        return state.unavailableReason();
     }
 
     public static synchronized void failSession(String reason, Throwable cause) {
@@ -134,13 +150,37 @@ public final class DlssRrBootstrap {
     }
 
     private static void disable(String reason, Throwable cause) {
-        instanceReady = false;
-        deviceReady = false;
-        unavailableReason = reason;
+        state = new State(
+                state.instanceExtensions(),
+                reason,
+                false,
+                false,
+                state.initializationAttempted());
         if (cause == null) {
             PrimeClient.LOGGER.warn("DLSS RR unavailable for this session: {}", reason);
         } else {
             PrimeClient.LOGGER.warn("DLSS RR unavailable for this session: {}", reason, cause);
+        }
+    }
+
+    private record State(
+            List<String> instanceExtensions,
+            String unavailableReason,
+            boolean instanceReady,
+            boolean deviceReady,
+            boolean initializationAttempted) {
+        private State {
+            instanceExtensions = List.copyOf(instanceExtensions);
+            java.util.Objects.requireNonNull(unavailableReason, "unavailableReason");
+        }
+
+        private static State initial() {
+            return new State(
+                    List.of(),
+                    "DLSS RR has not been probed",
+                    false,
+                    false,
+                    false);
         }
     }
 }

@@ -4,10 +4,13 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import dev.prime.render.fsr.FsrQualityMode;
+import java.util.Arrays;
 import java.util.Map;
+import java.util.Set;
+import java.util.stream.Collectors;
 import org.junit.jupiter.api.Test;
 
-final class PostProcessingSettingsTest {
+final class ReconstructionModesTest {
     @Test
     void modeAndSessionDebugIdsRoundTrip() {
         for (PostProcessingMode mode : PostProcessingMode.values()) {
@@ -21,6 +24,12 @@ final class PostProcessingSettingsTest {
             }
             assertEquals(view, cycled);
         }
+        Set<Integer> shaderIds = Arrays.stream(DlssRrDebugView.values())
+                .map(DlssRrDebugView::shaderId)
+                .collect(Collectors.toSet());
+        assertEquals(DlssRrDebugView.values().length, shaderIds.size());
+        assertEquals(0, DlssRrDebugView.OFF.shaderId());
+        assertEquals(11, DlssRrDebugView.RR_OUTPUT.shaderId());
     }
 
     @Test

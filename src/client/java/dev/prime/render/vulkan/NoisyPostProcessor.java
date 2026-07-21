@@ -1,5 +1,6 @@
 package dev.prime.render.vulkan;
 
+import dev.prime.render.ResourceCleanup;
 import dev.prime.render.fsr.FsrSettings;
 import dev.prime.render.post.PostProcessingMode;
 import dev.prime.render.post.RealtimePostProcessor;
@@ -53,9 +54,9 @@ public final class NoisyPostProcessor implements RealtimePostProcessor {
             return new NoisyPostProcessor(
                     quality, width, height, targets, composite, displayTransform);
         } catch (RuntimeException exception) {
-            if (displayTransform != null) displayTransform.destroy();
-            if (composite != null) composite.destroy();
-            if (targets != null) targets.destroy();
+            ResourceCleanup.destroy(displayTransform, exception);
+            ResourceCleanup.destroy(composite, exception);
+            ResourceCleanup.destroy(targets, exception);
             throw exception;
         }
     }
@@ -71,6 +72,7 @@ public final class NoisyPostProcessor implements RealtimePostProcessor {
 
     @Override
     public void requestReset() {
+        requireOpen();
         this.resetRequested = true;
     }
 
@@ -97,7 +99,7 @@ public final class NoisyPostProcessor implements RealtimePostProcessor {
         FrameToken token = requireFrame(frame);
         token.recorded = true;
         this.composite.record(commandBuffer, parameters.sunRadianceMultiplier());
-        this.displayTransform.record(commandBuffer, false);
+        this.displayTransform.record(commandBuffer, false, parameters.displayOverexposure());
     }
 
     @Override
@@ -133,10 +135,12 @@ public final class NoisyPostProcessor implements RealtimePostProcessor {
     @Override
     public void destroy() {
         if (this.destroyed) return;
+        RuntimeException failure = null;
+        failure = ResourceCleanup.destroy(this.displayTransform, failure);
+        failure = ResourceCleanup.destroy(this.composite, failure);
+        failure = ResourceCleanup.destroy(this.targets, failure);
         this.destroyed = true;
-        this.displayTransform.destroy();
-        this.composite.destroy();
-        this.targets.destroy();
+        ResourceCleanup.throwIfFailed(failure);
     }
 
     private static final class FrameToken implements Frame {

@@ -29,15 +29,9 @@ final class ReferenceAccumulator implements Denoiser {
             display = ScreenshotDisplay.create(context, accumulation, output);
             return new ReferenceAccumulator(output, accumulation, display);
         } catch (RuntimeException exception) {
-            if (display != null) {
-                display.destroy();
-            }
-            if (accumulation != null) {
-                accumulation.destroy();
-            }
-            if (output != null) {
-                output.destroy();
-            }
+            ResourceCleanup.destroy(display, exception);
+            ResourceCleanup.destroy(accumulation, exception);
+            ResourceCleanup.destroy(output, exception);
             throw exception;
         }
     }
@@ -61,9 +55,11 @@ final class ReferenceAccumulator implements Denoiser {
         if (this.destroyed) {
             return;
         }
+        RuntimeException failure = null;
+        failure = ResourceCleanup.destroy(this.display, failure);
+        failure = ResourceCleanup.destroy(this.accumulation, failure);
+        failure = ResourceCleanup.destroy(this.output, failure);
         this.destroyed = true;
-        this.display.destroy();
-        this.accumulation.destroy();
-        this.output.destroy();
+        ResourceCleanup.throwIfFailed(failure);
     }
 }

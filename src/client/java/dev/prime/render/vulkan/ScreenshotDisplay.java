@@ -1,7 +1,6 @@
 package dev.prime.render.vulkan;
 
 import com.mojang.blaze3d.vulkan.Destroyable;
-import dev.prime.render.DisplaySettings;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.ByteBuffer;
@@ -192,7 +191,8 @@ public final class ScreenshotDisplay implements Destroyable {
         }
     }
 
-    public void record(VkCommandBuffer commandBuffer, int width, int height) {
+    public void record(
+            VkCommandBuffer commandBuffer, int width, int height, float displayOverexposure) {
         if (this.destroyed) {
             throw new IllegalStateException("Screenshot display pass is destroyed");
         }
@@ -209,7 +209,7 @@ public final class ScreenshotDisplay implements Destroyable {
             ByteBuffer push = stack.malloc(PUSH_SIZE).order(ByteOrder.nativeOrder());
             push.putInt(0, width);
             push.putInt(4, height);
-            push.putFloat(8, DisplaySettings.overexposure());
+            push.putFloat(8, displayOverexposure);
             push.putInt(12, 0);
             VK12.vkCmdPushConstants(
                     commandBuffer, this.pipelineLayout, COMPUTE_STAGE, 0, push);

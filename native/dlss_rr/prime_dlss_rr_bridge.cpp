@@ -1,7 +1,9 @@
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <cstdint>
 #include <cstring>
+#include <iterator>
 #include <new>
 
 #include <vulkan/vulkan.h>
@@ -116,7 +118,43 @@ struct Feature {
     Context* context{};
     NVSDK_NGX_Handle* handle{};
     NVSDK_NGX_Parameter* parameters{};
+    std::uint32_t renderWidth{};
+    std::uint32_t renderHeight{};
+    std::uint32_t outputWidth{};
+    std::uint32_t outputHeight{};
 };
+
+bool validQuality(std::int32_t quality) {
+    switch (quality) {
+        case NVSDK_NGX_PerfQuality_Value_MaxPerf:
+        case NVSDK_NGX_PerfQuality_Value_Balanced:
+        case NVSDK_NGX_PerfQuality_Value_MaxQuality:
+        case NVSDK_NGX_PerfQuality_Value_UltraPerformance:
+        case NVSDK_NGX_PerfQuality_Value_DLAA:
+            return true;
+        default:
+            return false;
+    }
+}
+
+bool finiteMatrix(const float (&matrix)[16]) {
+    return std::all_of(std::begin(matrix), std::end(matrix), [](float value) {
+        return std::isfinite(value);
+    });
+}
+
+bool validImage(
+        const PrimeImage& image,
+        VkFormat format,
+        std::uint32_t width,
+        std::uint32_t height) {
+    return image.image != 0
+            && image.view != 0
+            && image.format == format
+            && image.width == width
+            && image.height == height
+            && image.reserved == 0;
+}
 
 NVSDK_NGX_FeatureCommonInfo makeFeatureInfo(
         const wchar_t* featurePath,
@@ -197,6 +235,10 @@ PRIME_EXPORT int primeDlssRrGetInstanceExtensions(PrimeExtensionQuery* query) {
     if (query == nullptr) {
         return -1;
     }
+    query->count = 0;
+    if (query->engineVersion == nullptr || query->engineVersion[0] == '\0') {
+        return -1;
+    }
     const wchar_t* path = nullptr;
     NVSDK_NGX_FeatureCommonInfo featureInfo = makeFeatureInfo(query->featurePath, &path);
     NVSDK_NGX_FeatureDiscoveryInfo discovery = makeDiscoveryInfo(*query, &featureInfo);
@@ -211,7 +253,12 @@ PRIME_EXPORT int primeDlssRrGetInstanceExtensions(PrimeExtensionQuery* query) {
 }
 
 PRIME_EXPORT int primeDlssRrGetDeviceExtensions(PrimeExtensionQuery* query) {
-    if (query == nullptr || query->instance == 0 || query->physicalDevice == 0) {
+    if (query == nullptr) {
+        return -1;
+    }
+    query->count = 0;
+    if (query->instance == 0 || query->physicalDevice == 0
+            || query->engineVersion == nullptr || query->engineVersion[0] == '\0') {
         return -1;
     }
     const wchar_t* path = nullptr;
@@ -232,12 +279,15 @@ PRIME_EXPORT int primeDlssRrGetDeviceExtensions(PrimeExtensionQuery* query) {
 }
 
 PRIME_EXPORT int primeDlssRrInitialize(PrimeInitDescription* description) {
-    if (description == nullptr || description->outputContext == nullptr
-            || description->instance == 0 || description->physicalDevice == 0
-            || description->device == 0) {
+    if (description == nullptr || description->outputContext == nullptr) {
         return -1;
     }
     *description->outputContext = nullptr;
+    if (description->instance == 0 || description->physicalDevice == 0
+            || description->device == 0 || description->engineVersion == nullptr
+            || description->engineVersion[0] == '\0') {
+        return -1;
+    }
     const wchar_t* path = nullptr;
     NVSDK_NGX_FeatureCommonInfo featureInfo = makeFeatureInfo(description->featurePath, &path);
     VkDevice device = reinterpret_cast<VkDevice>(description->device);
@@ -285,8 +335,14 @@ PRIME_EXPORT int primeDlssRrInitialize(PrimeInitDescription* description) {
 }
 
 PRIME_EXPORT int primeDlssRrGetOptimalSettings(PrimeOptimalSettings* settings) {
-    if (settings == nullptr || settings->context == nullptr
-            || settings->outputWidth == 0 || settings->outputHeight == 0) {
+    if (settings == nullptr) {
+        return -1;
+    }
+    settings->renderWidth = 0;
+    settings->renderHeight = 0;
+    if (settings->context == nullptr
+            || settings->outputWidth == 0 || settings->outputHeight == 0
+            || !validQuality(settings->quality)) {
         return -1;
     }
     auto* context = static_cast<Context*>(settings->context);
@@ -311,11 +367,19 @@ PRIME_EXPORT int primeDlssRrGetOptimalSettings(PrimeOptimalSettings* settings) {
 }
 
 PRIME_EXPORT int primeDlssRrCreateFeature(PrimeFeatureDescription* description) {
-    if (description == nullptr || description->context == nullptr
-            || description->outputFeature == nullptr || description->commandBuffer == 0) {
+    if (description == nullptr || description->outputFeature == nullptr) {
         return -1;
     }
     *description->outputFeature = nullptr;
+    if (description->context == nullptr || description->commandBuffer == 0
+            || description->renderWidth == 0 || description->renderHeight == 0
+            || description->outputWidth == 0 || description->outputHeight == 0
+            || description->renderWidth > description->outputWidth
+            || description->renderHeight > description->outputHeight
+            || description->reserved != 0
+            || !validQuality(description->quality)) {
+        return -1;
+    }
     auto* context = static_cast<Context*>(description->context);
     auto* feature = new (std::nothrow) Feature();
     if (feature == nullptr) {
@@ -359,6 +423,10 @@ PRIME_EXPORT int primeDlssRrCreateFeature(PrimeFeatureDescription* description) 
         delete feature;
         return static_cast<int>(result);
     }
+    feature->renderWidth = description->renderWidth;
+    feature->renderHeight = description->renderHeight;
+    feature->outputWidth = description->outputWidth;
+    feature->outputHeight = description->outputHeight;
     *description->outputFeature = feature;
     return 0;
 }
@@ -369,6 +437,62 @@ PRIME_EXPORT int primeDlssRrEvaluate(PrimeEvaluateDescription* description) {
         return -1;
     }
     auto* feature = static_cast<Feature*>(description->feature);
+    const bool validScalars = description->renderWidth == feature->renderWidth
+            && description->renderHeight == feature->renderHeight
+            && std::isfinite(description->jitterX)
+            && std::isfinite(description->jitterY)
+            && std::abs(description->jitterX) <= 0.5F
+            && std::abs(description->jitterY) <= 0.5F
+            && description->motionScaleX == static_cast<float>(feature->renderWidth)
+            && description->motionScaleY == static_cast<float>(feature->renderHeight)
+            && std::isfinite(description->frameTimeMilliseconds)
+            && description->frameTimeMilliseconds >= 0.0F
+            && (description->reset == 0 || description->reset == 1)
+            && finiteMatrix(description->worldToView)
+            && finiteMatrix(description->viewToClip);
+    const bool validImages = validImage(
+                    description->images[DIFFUSE_ALBEDO],
+                    VK_FORMAT_R16G16B16A16_SFLOAT,
+                    feature->renderWidth,
+                    feature->renderHeight)
+            && validImage(
+                    description->images[SPECULAR_ALBEDO],
+                    VK_FORMAT_R16G16B16A16_SFLOAT,
+                    feature->renderWidth,
+                    feature->renderHeight)
+            && validImage(
+                    description->images[NORMAL_ROUGHNESS],
+                    VK_FORMAT_R16G16B16A16_SFLOAT,
+                    feature->renderWidth,
+                    feature->renderHeight)
+            && validImage(
+                    description->images[INPUT_COLOR],
+                    VK_FORMAT_R16G16B16A16_SFLOAT,
+                    feature->renderWidth,
+                    feature->renderHeight)
+            && validImage(
+                    description->images[OUTPUT_COLOR],
+                    VK_FORMAT_R16G16B16A16_SFLOAT,
+                    feature->outputWidth,
+                    feature->outputHeight)
+            && validImage(
+                    description->images[LINEAR_DEPTH],
+                    VK_FORMAT_R32_SFLOAT,
+                    feature->renderWidth,
+                    feature->renderHeight)
+            && validImage(
+                    description->images[MOTION_VECTORS],
+                    VK_FORMAT_R16G16B16A16_SFLOAT,
+                    feature->renderWidth,
+                    feature->renderHeight)
+            && validImage(
+                    description->images[SPECULAR_HIT_DISTANCE],
+                    VK_FORMAT_R16_SFLOAT,
+                    feature->renderWidth,
+                    feature->renderHeight);
+    if (!validScalars || !validImages) {
+        return -2;
+    }
     std::array<NVSDK_NGX_Resource_VK, IMAGE_COUNT> resources{};
     for (std::size_t index = 0; index < resources.size(); ++index) {
         resources[index] = imageResource(

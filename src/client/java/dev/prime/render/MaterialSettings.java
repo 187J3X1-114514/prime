@@ -7,29 +7,7 @@ public final class MaterialSettings {
     public static final int MAXIMUM_ROUGHNESS_STEPS = STEPS_PER_UNIT;
     public static final int DEFAULT_ROUGHNESS_STEPS = 80;
 
-    private static volatile State state = new State(DEFAULT_ROUGHNESS_STEPS, 0L);
-
     private MaterialSettings() {
-    }
-
-    public static Snapshot snapshot() {
-        State current = state;
-        return new Snapshot(
-                current.roughnessSteps,
-                linearRoughness(current.roughnessSteps),
-                current.revision);
-    }
-
-    public static int roughnessSteps() {
-        return state.roughnessSteps;
-    }
-
-    public static synchronized void setRoughnessSteps(int roughnessSteps) {
-        requireValid(roughnessSteps);
-        State current = state;
-        if (roughnessSteps != current.roughnessSteps) {
-            state = new State(roughnessSteps, current.revision + 1L);
-        }
     }
 
     public static float linearRoughness(int roughnessSteps) {
@@ -45,8 +23,5 @@ public final class MaterialSettings {
     }
 
     public record Snapshot(int roughnessSteps, float linearRoughness, long revision) {
-    }
-
-    private record State(int roughnessSteps, long revision) {
     }
 }

@@ -1,6 +1,7 @@
 package dev.prime.render.terrain;
 
 import dev.prime.PrimeClient;
+import dev.prime.render.ResourceCleanup;
 import dev.prime.render.scene.vanilla.VanillaSceneInterpreter;
 import dev.prime.render.vulkan.StagingArena;
 import dev.prime.render.vulkan.VulkanContext;
@@ -14,7 +15,6 @@ import java.util.PriorityQueue;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.Executor;
 import java.util.concurrent.RejectedExecutionException;
-import java.util.concurrent.atomic.AtomicBoolean;
 import net.minecraft.client.color.block.BlockColors;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
@@ -36,11 +36,11 @@ import net.fabricmc.fabric.api.client.renderer.v1.sprite.SpriteFinder;
  *
  * <p>This is the sole authority for which virtual clusters Prime wants, when they become dirty,
  * which generation is current, and how long uploaded geometry remains resident. One aligned
- * 4x4x4 cluster replaces its 64 Sections as the update, light-tree, BLAS, TLAS-instance and
- * eviction unit. In particular, this
- * scheduler must never depend on {@code LevelRenderer.visibleSections()}, the occlusion graph, or
- * vanilla's raster compilation queue: those are presentation decisions and can omit geometry that
- * still contributes to ray-traced visibility and global illumination.
+ * 4x4x4 logical cluster replaces its 64 Sections atomically and owns exactly one BLAS/TLAS
+ * instance. Its CPU build input may use any number of storage segments. In
+ * particular, this scheduler must never depend on {@code LevelRenderer.visibleSections()}, the
+ * occlusion graph, or vanilla's raster compilation queue: those are presentation decisions and can
+ * omit geometry that still contributes to ray-traced visibility and global illumination.
  *
  * <p>Independence ends at mesh semantics. Once this class has selected the stable 6x6x6 snapshot
  * neighborhood around a cluster, each of its 64 inner Sections is delegated to
@@ -49,27 +49,20 @@ import net.fabricmc.fabric.api.client.renderer.v1.sprite.SpriteFinder;
  */
 public final class TerrainStreamer implements AutoCloseable {
     private static final long[] EMPTY_EVICTIONS = new long[0];
-    // A normal frame retains the old 16 MiB budget, but a single atomic cluster is allowed to
-    // exceed it and obtains a correspondingly sized staging page.
-    private static final long MAX_UPLOAD_BYTES_PER_FRAME = StagingArena.PAGE_SIZE;
+    // A normal frame targets one reusable staging page. An oversized atomic replacement obtains a
+    // correspondingly sized transient page instead of being rejected by a content policy.
+    private static final long TARGET_UPLOAD_BYTES_PER_FRAME = StagingArena.PAGE_SIZE;
     private static final int MAX_UNLOADED_PROBES_PER_FRAME = 64;
     private static final int MAX_EXTERNAL_DIRTY_SECTIONS = 16_384;
-    private static final CpuSectionMesh EMPTY_MESH = new CpuSectionMesh(
-            new float[0],
-            new int[0],
-            0,
-            0,
-            0,
-            OpacityMicromapData.EMPTY,
-            CpuSectionLights.EMPTY);
-
     private final TerrainScene scene;
     private final VanillaSceneInterpreter sceneInterpreter;
     private final boolean opacityMicromapSupported;
+    private final int segmentTriangleTarget;
     private final Executor workers;
     private final int maximumInFlight;
+    // Workers publish one immutable result per accepted job. The render-thread-owned count is
+    // never reset across worlds, so the fixed queue remains a proof-backed bound during churn.
     private final ArrayBlockingQueue<CompletedCluster> completed;
-    private final AtomicBoolean completionOverflow = new AtomicBoolean();
     private final BoundedDirtySections externalDirty =
             new BoundedDirtySections(MAX_EXTERNAL_DIRTY_SECTIONS);
     private final LongOpenHashSet desired = new LongOpenHashSet();
@@ -98,15 +91,22 @@ public final class TerrainStreamer implements AutoCloseable {
     private int minimumSectionY;
     private int maximumSectionY;
     private LabPbrMaterialSet labPbrMaterials = LabPbrMaterialSet.EMPTY;
+    private int workerJobs;
 
     public TerrainStreamer(VulkanContext context, StagingArena stagingArena) {
         this.scene = new TerrainScene(context, stagingArena);
         this.opacityMicromapSupported = context.capabilities().opacityMicromapSupported();
-        this.sceneInterpreter = new VanillaSceneInterpreter(this.opacityMicromapSupported);
+        this.segmentTriangleTarget = TerrainMemoryBudget.segmentTriangleTarget(
+                context.capabilities().maxAccelerationStructurePrimitiveCount());
+        this.sceneInterpreter = new VanillaSceneInterpreter(
+                this.opacityMicromapSupported,
+                this.segmentTriangleTarget);
         // Match vanilla section compilation: use Minecraft's shared work-stealing pool and its
         // configured CPU limit instead of imposing a second, Prime-specific four-thread ceiling.
         this.workers = Util.backgroundExecutor();
-        this.maximumInFlight = Util.maxAllowedExecutorThreads();
+        this.maximumInFlight = TerrainMemoryBudget.maximumInFlight(
+                Math.max(1, Util.maxAllowedExecutorThreads()),
+                Runtime.getRuntime().maxMemory());
         this.completed = new ArrayBlockingQueue<>(this.maximumInFlight);
     }
 
@@ -200,11 +200,12 @@ public final class TerrainStreamer implements AutoCloseable {
     public void close() {
         // The executor belongs to Minecraft and is shut down by Minecraft. World epochs and the
         // interpreter's closed flag make late results harmless without taking ownership here.
-        this.sceneInterpreter.close();
-        this.scene.close();
+        RuntimeException failure = ResourceCleanup.close(this.sceneInterpreter, null);
+        failure = ResourceCleanup.close(this.scene, failure);
         this.completed.clear();
         this.externalDirty.clear();
         this.readyForUpload.clear();
+        ResourceCleanup.throwIfFailed(failure);
     }
 
     private void synchronizeWindow(
@@ -307,9 +308,7 @@ public final class TerrainStreamer implements AutoCloseable {
     private void dispatchSnapshots(Minecraft minecraft, ClientLevel level) {
         // Count every stage after snapshot capture so a temporarily busy GPU cannot turn the
         // shared executor into an unbounded producer of completed cluster payloads.
-        int outstanding = this.inFlightGeneration.size()
-                + this.completed.size()
-                + this.readyForUpload.size();
+        int outstanding = this.workerJobs + this.readyForUpload.size();
         int dispatchBudget = Math.max(0, this.maximumInFlight - outstanding);
         if (dispatchBudget == 0 || this.requests.isEmpty()) {
             return;
@@ -324,8 +323,8 @@ public final class TerrainStreamer implements AutoCloseable {
         this.unloadedRequests.clear();
         this.blockedRequests.clear();
         int examined = 0;
-        int dispatched = 0;
-        while (dispatched < dispatchBudget
+        int accepted = 0;
+        while (accepted < dispatchBudget
                 && examined < MAX_UNLOADED_PROBES_PER_FRAME
                 && !this.requests.isEmpty()) {
             ClusterRequest request = this.requests.poll();
@@ -397,11 +396,12 @@ public final class TerrainStreamer implements AutoCloseable {
                             clusterX,
                             clusterY,
                             clusterZ,
-                            EMPTY_MESH,
+                            CpuClusterMesh.empty(),
                             null));
                 } else {
                     this.empty.add(request.key());
                 }
+                accepted++;
                 continue;
             }
             LabPbrMaterialSet materialSnapshot = this.labPbrMaterials;
@@ -409,13 +409,13 @@ public final class TerrainStreamer implements AutoCloseable {
             long worldEpoch = this.generations.worldEpoch();
             try {
                 this.workers.execute(() -> {
-                    CpuSectionMesh mesh = EMPTY_MESH;
+                    CpuClusterMesh mesh = CpuClusterMesh.empty();
                     Throwable failure = null;
                     try {
                         SectionClusterMeshBuilder cluster = new SectionClusterMeshBuilder(
-                                clusterX, clusterY, clusterZ);
+                                clusterX, clusterY, clusterZ, this.segmentTriangleTarget);
                         for (ClusterSectionSnapshot snapshot : snapshots) {
-                            CpuSectionMesh sectionMesh = TerrainStreamer.this.sceneInterpreter
+                            List<CpuSectionMesh> sectionMeshes = TerrainStreamer.this.sceneInterpreter
                                     .compileSection(
                                             snapshot.region(),
                                             models,
@@ -431,7 +431,7 @@ public final class TerrainStreamer implements AutoCloseable {
                                     snapshot.sectionX(),
                                     snapshot.sectionY(),
                                     snapshot.sectionZ(),
-                                    sectionMesh);
+                                    sectionMeshes);
                         }
                         mesh = cluster.build();
                     } catch (Throwable throwable) {
@@ -446,17 +446,16 @@ public final class TerrainStreamer implements AutoCloseable {
                             clusterZ,
                             mesh,
                             failure);
-                    if (!TerrainStreamer.this.completed.offer(completedCluster)) {
-                        TerrainStreamer.this.completionOverflow.set(true);
-                    }
+                    TerrainStreamer.this.completed.add(completedCluster);
                 });
+                this.workerJobs++;
             } catch (RejectedExecutionException ignored) {
                 this.inFlightGeneration.remove(request.key());
                 this.enqueue(request.key(), request.priority(), request.generation());
                 PrimeClient.LOGGER.debug("Terrain executor is temporarily saturated");
                 break;
             }
-            dispatched++;
+            accepted++;
         }
         this.requests.addAll(this.blockedRequests);
         for (ClusterRequest request : this.unloadedRequests) {
@@ -485,16 +484,9 @@ public final class TerrainStreamer implements AutoCloseable {
     }
 
     private void drainCompleted() {
-        if (this.completionOverflow.getAndSet(false)) {
-            this.completed.clear();
-            this.readyForUpload.clear();
-            this.inFlightGeneration.clear();
-            this.rebuildRequestQueue(0);
-            PrimeClient.LOGGER.warn("Terrain completion queue overflowed; rebuilding the bounded work set");
-            return;
-        }
         CompletedCluster result;
         while ((result = this.completed.poll()) != null) {
+            this.workerJobs--;
             if (result.worldEpoch() != this.generations.worldEpoch()) {
                 continue;
             }
@@ -511,9 +503,11 @@ public final class TerrainStreamer implements AutoCloseable {
                 // in STREAMING forever and could emit hundreds of megabytes of identical stacks.
                 // Escalate once on the render thread so the runtime performs its defined FAILED ->
                 // vanilla fallback and presents the actionable reason to the user.
-                throw new IllegalStateException(
-                        "Terrain extraction failed for virtual cluster " + result.key(),
-                        result.failure());
+                String message = result.failure() instanceof OutOfMemoryError
+                        ? "Terrain resources exhausted while extracting virtual cluster "
+                                + result.key()
+                        : "Terrain extraction failed for virtual cluster " + result.key();
+                throw new IllegalStateException(message, result.failure());
             }
             this.readyForUpload.addLast(result);
         }
@@ -531,7 +525,7 @@ public final class TerrainStreamer implements AutoCloseable {
             }
             long nextEndOffset = stagingEndOffset(
                     uploadBytes, next.mesh(), this.opacityMicromapSupported);
-            if (!uploads.isEmpty() && nextEndOffset > MAX_UPLOAD_BYTES_PER_FRAME) {
+            if (!uploads.isEmpty() && nextEndOffset > TARGET_UPLOAD_BYTES_PER_FRAME) {
                 break;
             }
             this.readyForUpload.removeFirst();
@@ -563,7 +557,7 @@ public final class TerrainStreamer implements AutoCloseable {
             this.empty.remove(key);
         }
         for (ClusterUpload upload : uploads) {
-            if (upload.mesh().isEmpty()) {
+            if (upload.isEmpty()) {
                 this.empty.add(upload.key());
             } else {
                 this.empty.remove(upload.key());
@@ -572,16 +566,29 @@ public final class TerrainStreamer implements AutoCloseable {
     }
 
     static long stagingEndOffset(
-            long cursor, CpuSectionMesh mesh, boolean includeOpacityMicromap) {
+            long cursor, CpuClusterMesh mesh, boolean includeOpacityMicromap) {
         if (mesh.isEmpty()) {
             return cursor;
         }
+        long result = cursor;
+        for (CpuClusterMesh.Segment segment : mesh.segments()) {
+            result = segmentStagingEndOffset(
+                    result, segment.opaqueTriangleCount());
+            result = segmentStagingEndOffset(
+                    result, segment.cutoutTriangleCount());
+            result = segmentStagingEndOffset(
+                    result, segment.transmissiveTriangleCount());
+        }
+        if (!mesh.lights().isEmpty()) {
+            result = StagingArena.requiredEndOffset(
+                    result, mesh.lights().byteSize(), 16L);
+        }
         OpacityMicromapData opacityMicromap = mesh.opacityMicromap();
         return stagingEndOffset(
-                cursor,
-                (long) mesh.positions().length * Float.BYTES,
-                (long) mesh.primitiveRecords().length * Integer.BYTES,
-                mesh.lights().byteSize(),
+                result,
+                0L,
+                0L,
+                0L,
                 includeOpacityMicromap
                         ? (long) opacityMicromap.triangleIndices().length * Integer.BYTES
                         : 0L,
@@ -590,6 +597,18 @@ public final class TerrainStreamer implements AutoCloseable {
                         ? (long) opacityMicromap.blockCount()
                                 * org.lwjgl.vulkan.VkMicromapTriangleEXT.SIZEOF
                         : 0L);
+    }
+
+    private static long segmentStagingEndOffset(long cursor, int triangleCount) {
+        if (triangleCount == 0) {
+            return cursor;
+        }
+        long result = StagingArena.requiredEndOffset(
+                cursor, (long) triangleCount * 9L * Float.BYTES, Float.BYTES);
+        return StagingArena.requiredEndOffset(
+                result,
+                (long) triangleCount * CpuSectionMesh.PRIMITIVE_WORDS * Integer.BYTES,
+                Integer.BYTES);
     }
 
     static long stagingEndOffset(
@@ -631,7 +650,6 @@ public final class TerrainStreamer implements AutoCloseable {
         this.inFlightGeneration.clear();
         this.requests.clear();
         this.externalDirty.clear();
-        this.completionOverflow.set(false);
         this.readyForUpload.clear();
         this.centerSectionX = Integer.MIN_VALUE;
         this.centerSectionY = Integer.MIN_VALUE;
@@ -668,7 +686,7 @@ public final class TerrainStreamer implements AutoCloseable {
             int clusterX,
             int clusterY,
             int clusterZ,
-            CpuSectionMesh mesh,
+            CpuClusterMesh mesh,
             Throwable failure) {
     }
 }

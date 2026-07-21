@@ -11,7 +11,6 @@ struct PrimeLabPbrSample {
     float ambientOcclusion;
     float height;
     float perceptualRoughness;
-    float linearRoughness;
     float dielectricF0;
     uint metalId;
     float porosity;
@@ -47,8 +46,6 @@ PrimeLabPbrSample primeDecodeLabPbr(uint packedNormal, uint packedSpecular, uint
 
     float smoothness = float(specularBytes.x) / 255.0;
     result.perceptualRoughness = 1.0 - smoothness;
-    // LabPBR 1.3 explicitly defines linear roughness as the square of perceptual roughness.
-    result.linearRoughness = result.perceptualRoughness * result.perceptualRoughness;
     result.metalId = specularBytes.y >= 230u ? specularBytes.y : 0u;
     result.dielectricF0 = specularBytes.y < 230u
             ? float(specularBytes.y) / 255.0
@@ -69,7 +66,6 @@ PrimeLabPbrSample primeDecodeLabPbr(uint packedNormal, uint packedSpecular, uint
     }
     if (!primeHasLabPbrSpecular(flags)) {
         result.perceptualRoughness = PRIME_DEFAULT_REFERENCE_LINEAR_ROUGHNESS;
-        result.linearRoughness = PRIME_DEFAULT_REFERENCE_LINEAR_ROUGHNESS;
         result.dielectricF0 = PRIME_DEFAULT_DIELECTRIC_F0;
         result.metalId = 0u;
         result.porosity = 0.0;

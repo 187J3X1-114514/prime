@@ -11,7 +11,7 @@ Prime 是一个面向 Minecraft 的客户端 Shader Mod，基于 Minecraft Vulka
 
 - “视频设置”中的“参考累积截图”会冻结进入时的相机、太阳、地形、灯光标定、摄像机介质状态与方块动画，在窗口原生分辨率每像素追踪一条完整 BSDF 路径，并直接累积到线性 Rec.2020 RGBA32F 历史。该路径旁路 DLSS RR、NRD、FSR 及全部实时调试覆盖层，也不对高亮样本做钳制；显示时只读取当前统计均值并执行同一 Oklab DRT。`Ctrl+Alt+F2` 可进入/退出且不影响普通 `F2` 截图，`Esc` 只退出。退出后会恢复地形流送并进行一次完整重同步。窗口纵横比变化会保留冻结的位置与朝向、更新投影并重新开始累积；世界/资源切换则安全退出模式，避免在同一均值中混合不同场景。该开关仅在当前游戏会话有效。
 - 完整使用 Vulkan KHR ray tracing pipeline。raygen 以迭代 mega-kernel 推进路径，miss、closest-hit 和 any-hit 只返回遍历结果；管线递归深度保持为 1。支持通用 `VK_EXT_ray_tracing_invocation_reorder` 且报告真实重排模式的设备会在表面遍历后对 shader 续体做可选重排；普通 permutation 保留原始行为。
-- 支持的 RTX 设备默认启用 `DLSS RR`，直接以完整 noisy color、运动、深度、法线/粗糙度、两种反照率、镜面命中距离和透明前颜色执行联合降噪与超分，再使用公共 Oklab 显示变换；该路径不调度 NRD 或 FSR。RR 不可用或初始化失败时，会话自动回退到 `NRD-FSR`：路径追踪与 NRD 在较低分辨率运行，去噪后的线性 Rec.2020 HDR 场景由 AMD FidelityFX FSR 3.1.4 执行时间超分辨率。另有“禁用（不推荐）”模式，以原生分辨率直接显示每帧 1 spp 的噪点结果，不运行任一降噪/重建后端。主光线使用模型 UV 微分驱动的 ray-cone LOD，并应用所选路径对应的 mip bias。视频设置可统一选择 Native AA、Quality、Balanced、Performance 或 Ultra Performance；默认质量为 Performance。模式/质量变化会成组重建尺寸资源与时间历史。
+- 支持的 RTX 设备默认启用 `DLSS RR`，直接以完整 noisy color、运动、深度、法线/粗糙度、两种反照率和镜面命中距离执行联合降噪与超分，再使用公共 Oklab 显示变换；该路径不调度 NRD 或 FSR。当前单路径实验不提交 `Color Before Transparency`，用来直接评估 RR 在没有透明辅助输运时的重建能力。RR 不可用或初始化失败时，会话自动回退到 `NRD-FSR`：路径追踪与 NRD 在较低分辨率运行，去噪后的线性 Rec.2020 HDR 场景由 AMD FidelityFX FSR 3.1.4 执行时间超分辨率。另有“禁用（不推荐）”模式，以原生分辨率直接显示每帧 1 spp 的噪点结果，不运行任一降噪/重建后端。主光线使用模型 UV 微分驱动的 ray-cone LOD，并应用所选路径对应的 mip bias。视频设置可统一选择 Native AA、Quality、Balanced、Performance 或 Ultra Performance；默认质量为 Performance。模式/质量变化会成组重建尺寸资源与时间历史。
 - 每像素每帧只追踪一条完整 BSDF 路径。NRD 4.17.4 的 `REBLUR_DIFFUSE_SPECULAR` 使用 63 帧主/稳定历史、10 帧快速历史和 4 帧 history-fix 处理面积光与间接光；太阳直射保持为独立信号，由 `SIGMA_SHADOW` 过滤可见性，不进入两级辐射历史。漫反射和镜面信号先按精确的方向能量分离，在材质除法后以共享比例限制实际送入 REBLUR 的 illumination。R10G10B10A2 normal/roughness 输入还区分普通介电、金属、透明接口与 foliage，避免跨材质历史混合。首个可见表面立即提供降噪法线、线性粗糙度和漫反射/镜面方向能量；后续透明 delta 链只把各表面的镜面能量乘入 guide，首次采到 non-delta 事件时再乘入该表面的漫反射与镜面能量之和。REBLUR 命中距离重建使用 5×5 区域，并为概率采样的漫反射/镜面信号保留 30/50 像素 prepass。换世界或渲染原点变化会同步重启采样、NRD 和 FSR 历史；普通区块流送依靠逐像素重投影和反遮挡处理，不触发整屏重置。
 - NRD 使用主表面的世界空间法线、线性粗糙度、view-Z、命中距离和 FSR 的统一 Halton 帧抖动进行重投影。运动采用 NRD 推荐的非抖动 2.5D 屏幕空间约定：`old = new + MV`，其中 XY 指向上一帧 UV，Z 为上一帧与当前帧 view-Z 之差；FSR 复用其 XY，并接收独立的 reversed-infinite depth。天空运动只包含视角旋转而忽略平移。窗口尺寸变化会整体重建与尺寸相关的 NRD/FSR 图像和历史，不复用不兼容资源。
 - 当前缺省不透明材质是由方块纹理与生物群系 tint 驱动的介质边界与漫反射基底；没有材质包粗糙度时使用 0.80 的感知粗糙度、0.04 的介质 F0 和 1.5 的 IOR，显式材质数据仍优先。Section 网格同时提取 solid、cutout、translucent 模型层与原版流体（包括 waterlogged 流体）；玻璃类完整方块、薄壁透明模型和水分别进入完整的 RoboCute 介质透射 BSDF，使用运行时 3D 方向能量表、Fresnel/折射以及跨反弹保存的两层体积栈。缺省透明材质的线性粗糙度固定为零，由单条路径按 Fresnel 分布采样 delta 反射或透射；未来显式提供非零粗糙度的材质仍使用完整 GGX 重要性采样。零体积薄壁使用闭包的精确光滑双界面级数。吸收严格按射线实际经过的介质段应用；摄像机位于真实水面以下时会以水介质初始化体积栈。光源来自光谱大气、太阳和从原版发光等级/纹理估计的方块面光源。它们仍是可替换的内部适配层，不定义最终产品材质或灯光模型。
@@ -36,7 +36,7 @@ Prime 是一个面向 Minecraft 的客户端 Shader Mod，基于 Minecraft Vulka
 
 GPU 更新采用替换后提交：旧 Section/BLAS、TLAS、descriptor 和 shader pipeline 会一直有效到新版本完整建立，并通过原版 Vulkan 提交时间线延迟退休。渲染热路径不调用 `vkDeviceWaitIdle`。
 
-地形流送会在提交模型快照前快速排除全空气 Section。失效、构建完成、待上传和工作线程队列均有明确容量；压力超过容量时会合并为全量失效或重新生成当前有界工作集，不会无限积累任务。
+地形流送会在提交模型快照前快速排除全空气 Section。一个 64-Section virtual cluster 始终对应一个 BLAS、一个 TLAS instance 和一个世界灯光树叶，同时也是原子 generation 与清退单位。Section 捕获及 cluster 合并以 128K 三角形、约 16 MiB 为 CPU segment 目标，segment 只避免单个 Java 数组成为内容上限；上传时按 opaque、cutout、transmissive 的全局顺序写入一组完整 GPU buffer，最终只构建一个 BLAS。目标大小不限制 cluster 总几何；实际设备报告的 BLAS primitive/geometry 能力、Vulkan `uint` build-range/vertex ABI、buffer 与内存分配结果才是容量边界。资源不足时不会提交不完整 generation，也不会静默丢弃模型。
 
 ## 构建
 
@@ -76,7 +76,7 @@ $env:Path = "$env:JAVA_HOME\bin;$env:VULKAN_SDK\Bin;$env:Path"
 
 ### 视频设置与诊断
 
-原版“视频设置”的 Prime 区域将“恢复 Prime 默认设置”置于顶部，并集中管理参考累积截图、`NRD-FSR`/`DLSS RR`/禁用后处理、五档统一重建质量、阳光强度、方块灯光强度及对应调试视图。NRD 验证图以最近邻直接呈现其原生输出，FSR 总览保留 FidelityFX 的原生标色，两者都绕过 Oklab 变换；RR 调试覆盖层显示实际 NGX 输入、Color Before Transparency 差值与 RR 输出，`Ctrl+Alt+F12` 循环内容，`Ctrl+Alt+F11` 切换右上角面板/全屏。三类调试选择和截图模式都仅对当前会话生效，切换调试不会重置时间历史，也不会写入 `config/prime.properties`。两项灯光强度是相对默认标定的 EV 偏移，每档 `0.25 EV`，按 `2^EV` 换算为线性辐射亮度。
+原版“视频设置”的 Prime 区域将“恢复 Prime 默认设置”置于顶部，并集中管理参考累积截图、`NRD-FSR`/`DLSS RR`/禁用后处理、五档统一重建质量、阳光强度、方块灯光强度及对应调试视图。NRD 验证图以最近邻直接呈现其原生输出，FSR 总览保留 FidelityFX 的原生标色，两者都绕过 Oklab 变换；RR 调试覆盖层显示当前实际提交给 NGX 的输入与 RR 输出，`Ctrl+Alt+F12` 循环内容，`Ctrl+Alt+F11` 切换右上角面板/全屏。三类调试选择和截图模式都仅对当前会话生效，切换调试不会重置时间历史，也不会写入 `config/prime.properties`。两项灯光强度是相对默认标定的 EV 偏移，每档 `0.25 EV`，按 `2^EV` 换算为线性辐射亮度。
 
 NRD 调试视图包含：
 
@@ -92,15 +92,19 @@ NRD 调试视图包含：
 .\gradlew.bat test compileShaders build
 ```
 
-自动测试覆盖 ABI 大小和偏移、NRD 原生 ABI/版本/SPIR-V/漫反射与镜面调度描述、颜色空间契约与往返转换、Oklab 显示变换参考检查点、显示范围和累积边界、截图模式状态与无降噪完整路径契约、SBT 对齐、UV/tint/法线/透明材质标志编码、Section generation token、CPU 网格布局、渲染原点重定位、采样流、MIS 正反向权重、Russian roulette 吞吐补偿、RoboCute 透射查找表与持久体积栈接入、累积历史状态，以及漫反射在常量环境下的统计收敛。构建以 Java 25 的全部编译警告为错误。
+自动测试覆盖 ABI 大小和偏移、NRD 原生 ABI/版本/SPIR-V/漫反射与镜面调度描述、DLSS RR 桥接 ABI 与运动/抖动数学、颜色空间契约与往返转换、Oklab 显示变换参考检查点、显示范围和累积边界、会话临时控制、重建模式、SBT 对齐、UV/tint/法线/透明材质标志编码、Section generation token、CPU 网格布局与任意规模 cluster 分片、渲染原点重定位、采样流、MIS 正反向权重、Russian roulette 吞吐补偿、RoboCute 透射查找表与持久体积栈接入、累积历史状态，以及漫反射在常量环境下的统计收敛。构建以 Java 25 的全部编译警告为错误。
 
-`build` 还会检查发行 JAR 的完整性：Fabric 元数据、许可证、NRD DLL、FidelityFX DLL 和 Prime shader 必须齐全，验证专用 shader 与 GLSL 源文件不得混入发行物。两个 DLL 都会检查 PE 文件头；Windows x86-64 测试还会实际加载它们并验证导出入口，其他构建平台会跳过原生执行测试。GitHub Actions 使用 Linux 完整编译 Java 和 Prime shader、执行其余测试并检查最终 JAR。
+`build` 还会检查发行 JAR 的完整性：Fabric 元数据、许可证、四个运行时 DLL 和 Prime shader 必须齐全，验证专用 shader、GLSL 源文件和 NVIDIA development DLL 不得混入发行物。所有 DLL 都会检查 PE 文件头；Windows x86-64 测试还会实际加载 NRD、FidelityFX 与 Prime RR 桥接库并验证版本或 ABI，其他构建平台会跳过原生执行测试。GitHub Actions 使用 Linux 完整编译 Java 和 Prime shader、执行其余测试并检查最终 JAR。
 
 ## 许可
 
 Prime 自有代码使用 MIT 许可证。见 [LICENSE](LICENSE)。随发行物提供的 NVIDIA NRD
 原生组件仍受 NVIDIA RTX SDKs License 约束，不属于 MIT 许可范围；详情见
 `THIRD_PARTY_LICENSES/NRD-LICENSE.txt`。
+
+随包提供的 Prime RR 桥接库与 NVIDIA release `nvngx_dlssd.dll` 受 NVIDIA RTX SDKs
+License 约束；详情见 `THIRD_PARTY_LICENSES/DLSS-SDK-LICENSE.txt`。发行物不包含
+NVIDIA development DLL、独立 DLSS Super Resolution 或 Frame Generation。
 
 默认粗糙介质的 GGX 方向能量特化包含源自 RoboCute 的 Apache 2.0 授权数据与模型；
 归属和许可文本见 `THIRD_PARTY_LICENSES/ROBOCUTE-NOTICE.txt` 与

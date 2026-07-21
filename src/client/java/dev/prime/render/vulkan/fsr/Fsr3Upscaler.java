@@ -2,8 +2,8 @@ package dev.prime.render.vulkan.fsr;
 
 import com.mojang.blaze3d.vulkan.Destroyable;
 import dev.prime.render.CameraDiscontinuity;
-import dev.prime.render.DisplaySettings;
 import dev.prime.render.FrameCamera;
+import dev.prime.render.ResourceCleanup;
 import dev.prime.render.fsr.FsrDebugView;
 import dev.prime.render.fsr.FsrDispatchValidator;
 import dev.prime.render.fsr.FsrQualityMode;
@@ -158,18 +158,9 @@ public final class Fsr3Upscaler implements Destroyable {
                     nativeInstance,
                     displayPass);
         } catch (RuntimeException exception) {
-            if (displayPass != null) {
-                displayPass.destroy();
-            }
-            try {
-                if (nativeInstance != null) {
-                    nativeInstance.close();
-                }
-            } finally {
-                if (linearOutput != null) {
-                    linearOutput.destroy();
-                }
-            }
+            ResourceCleanup.destroy(displayPass, exception);
+            ResourceCleanup.close(nativeInstance, exception);
+            ResourceCleanup.destroy(linearOutput, exception);
             throw exception;
         }
     }
@@ -194,12 +185,13 @@ public final class Fsr3Upscaler implements Destroyable {
             FrameCamera camera,
             long sceneResetRevision,
             long atlasView,
-            long atlasSampler) {
+            long atlasSampler,
+            FsrDebugView fsrDebugView) {
         this.requireOpen();
         Objects.requireNonNull(camera, "camera");
+        Objects.requireNonNull(fsrDebugView, "fsrDebugView");
         boolean cameraCut = this.initialized
                 && CameraDiscontinuity.isCut(this.previousCamera, camera);
-        FsrDebugView fsrDebugView = FsrSettings.debugView();
         boolean reset = this.resetRequested
                 || !this.initialized
                 || cameraCut
@@ -227,7 +219,8 @@ public final class Fsr3Upscaler implements Destroyable {
                 now);
     }
 
-    public void record(VkCommandBuffer commandBuffer, FrameToken token) {
+    public void record(
+            VkCommandBuffer commandBuffer, FrameToken token, float displayOverexposure) {
         this.requireOpen();
         if (token.owner != this || token.recorded || token.submitted) {
             throw new IllegalArgumentException("FSR frame token does not belong to this recording");
@@ -279,7 +272,7 @@ public final class Fsr3Upscaler implements Destroyable {
             push.putInt(
                     8,
                     debugView != FsrDebugView.OFF ? 1 : 0);
-            push.putFloat(12, DisplaySettings.overexposure());
+            push.putFloat(12, displayOverexposure);
             this.displayPass.record(commandBuffer, push);
         }
     }
@@ -377,13 +370,12 @@ public final class Fsr3Upscaler implements Destroyable {
         if (this.destroyed) {
             return;
         }
+        RuntimeException failure = null;
+        failure = ResourceCleanup.destroy(this.displayPass, failure);
+        failure = ResourceCleanup.close(this.nativeInstance, failure);
+        failure = ResourceCleanup.destroy(this.linearOutput, failure);
         this.destroyed = true;
-        this.displayPass.destroy();
-        try {
-            this.nativeInstance.close();
-        } finally {
-            this.linearOutput.destroy();
-        }
+        ResourceCleanup.throwIfFailed(failure);
     }
 
     /** Immutable temporal inputs chosen before ray generation plus submission bookkeeping. */

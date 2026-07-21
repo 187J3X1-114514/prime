@@ -2,22 +2,19 @@ package dev.prime.render.vulkan.dlss;
 
 import dev.prime.PrimeClient;
 import dev.prime.render.post.ReconstructionQualityMode;
+import dev.prime.render.vulkan.NativeRuntimeFiles;
 import dev.prime.render.vulkan.VulkanContext;
 import dev.prime.render.vulkan.VulkanImage;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
-import java.nio.file.FileAlreadyExistsException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.StandardCopyOption;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
-import java.util.ArrayList;
-import java.util.HexFormat;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Objects;
 import net.fabricmc.loader.api.FabricLoader;
 import org.joml.Matrix4fc;
 import org.lwjgl.system.APIUtil;
@@ -65,23 +62,28 @@ public final class DlssRrNative {
                 .getModContainer(PrimeClient.MOD_ID)
                 .map(container -> container.getMetadata().getVersion().getFriendlyString())
                 .orElse("unknown");
-        this.library = APIUtil.apiCreateLibrary(runtime.bridge().toString());
-        long getAbiVersionFunction = requireFunction("primeDlssRrGetAbiVersion");
-        this.instanceExtensionsFunction = requireFunction("primeDlssRrGetInstanceExtensions");
-        this.deviceExtensionsFunction = requireFunction("primeDlssRrGetDeviceExtensions");
-        this.initializeFunction = requireFunction("primeDlssRrInitialize");
-        this.optimalSettingsFunction = requireFunction("primeDlssRrGetOptimalSettings");
-        this.createFeatureFunction = requireFunction("primeDlssRrCreateFeature");
-        this.evaluateFunction = requireFunction("primeDlssRrEvaluate");
-        this.releaseFeatureFunction = requireFunction("primeDlssRrReleaseFeature");
-        this.shutdownFunction = requireFunction("primeDlssRrShutdown");
-        int abiVersion = JNI.invokeI(getAbiVersionFunction);
-        if (abiVersion != ABI_VERSION) {
-            throw new IllegalStateException(
-                    "Prime DLSS RR bridge ABI mismatch: expected "
-                            + ABI_VERSION
-                            + ", found "
-                            + abiVersion);
+        if (this.engineVersion.isBlank()) {
+            throw new IllegalStateException("Prime's NGX engine version must not be blank");
+        }
+        SharedLibrary loaded = APIUtil.apiCreateLibrary(runtime.bridge().toString());
+        try {
+            BridgeFunctions functions = validateBridge(loaded);
+            this.library = loaded;
+            this.instanceExtensionsFunction = functions.instanceExtensions();
+            this.deviceExtensionsFunction = functions.deviceExtensions();
+            this.initializeFunction = functions.initialize();
+            this.optimalSettingsFunction = functions.optimalSettings();
+            this.createFeatureFunction = functions.createFeature();
+            this.evaluateFunction = functions.evaluate();
+            this.releaseFeatureFunction = functions.releaseFeature();
+            this.shutdownFunction = functions.shutdown();
+        } catch (RuntimeException | Error exception) {
+            try {
+                loaded.free();
+            } catch (RuntimeException | Error cleanupFailure) {
+                exception.addSuppressed(cleanupFailure);
+            }
+            throw exception;
         }
     }
 
@@ -112,6 +114,22 @@ public final class DlssRrNative {
         return Holder.INSTANCE.initializeContext(context);
     }
 
+    static void verifyLibrary() {
+        ExtractedRuntime runtime = extractRuntime();
+        SharedLibrary loaded = APIUtil.apiCreateLibrary(runtime.bridge().toString());
+        try {
+            validateBridge(loaded);
+        } catch (RuntimeException | Error exception) {
+            try {
+                loaded.free();
+            } catch (RuntimeException | Error cleanupFailure) {
+                exception.addSuppressed(cleanupFailure);
+            }
+            throw exception;
+        }
+        loaded.free();
+    }
+
     private List<String> queryExtensions(long instance, long physicalDevice, long function) {
         try (MemoryStack stack = MemoryStack.stackPush()) {
             ByteBuffer names = stack.calloc(EXTENSION_CAPACITY * EXTENSION_NAME_STRIDE);
@@ -128,13 +146,14 @@ public final class DlssRrNative {
             if (count < 0 || count > EXTENSION_CAPACITY) {
                 throw new IllegalStateException("DLSS RR returned an invalid extension count " + count);
             }
-            ArrayList<String> extensions = new ArrayList<>(count);
+            LinkedHashSet<String> extensions = new LinkedHashSet<>(count);
             long namesAddress = MemoryUtil.memAddress(names);
             for (int index = 0; index < count; index++) {
                 long address = namesAddress + (long) index * EXTENSION_NAME_STRIDE;
                 String extension = MemoryUtil.memUTF8(address);
-                if (!extension.isBlank()) {
-                    extensions.add(extension);
+                if (extension.isBlank() || !extensions.add(extension)) {
+                    throw new IllegalStateException(
+                            "DLSS RR returned an invalid Vulkan extension list");
                 }
             }
             return List.copyOf(extensions);
@@ -163,8 +182,30 @@ public final class DlssRrNative {
         }
     }
 
-    private long requireFunction(String name) {
-        long function = this.library.getFunctionAddress(name);
+    private static BridgeFunctions validateBridge(SharedLibrary library) {
+        long getAbiVersion = requireFunction(library, "primeDlssRrGetAbiVersion");
+        BridgeFunctions functions = new BridgeFunctions(
+                requireFunction(library, "primeDlssRrGetInstanceExtensions"),
+                requireFunction(library, "primeDlssRrGetDeviceExtensions"),
+                requireFunction(library, "primeDlssRrInitialize"),
+                requireFunction(library, "primeDlssRrGetOptimalSettings"),
+                requireFunction(library, "primeDlssRrCreateFeature"),
+                requireFunction(library, "primeDlssRrEvaluate"),
+                requireFunction(library, "primeDlssRrReleaseFeature"),
+                requireFunction(library, "primeDlssRrShutdown"));
+        int abiVersion = JNI.invokeI(getAbiVersion);
+        if (abiVersion != ABI_VERSION) {
+            throw new IllegalStateException(
+                    "Prime DLSS RR bridge ABI mismatch: expected "
+                            + ABI_VERSION
+                            + ", found "
+                            + abiVersion);
+        }
+        return functions;
+    }
+
+    private static long requireFunction(SharedLibrary library, String name) {
+        long function = library.getFunctionAddress(name);
         if (function == MemoryUtil.NULL) {
             throw new IllegalStateException("The DLSS RR bridge is missing " + name);
         }
@@ -177,18 +218,11 @@ public final class DlssRrNative {
         }
         byte[] bridge = readResource(BRIDGE_RESOURCE);
         byte[] feature = readResource(FEATURE_RESOURCE);
-        String digest = sha256(bridge, feature);
-        Path directory = Path.of(System.getProperty("java.io.tmpdir"), "prime-dlss-rr", digest)
-                .toAbsolutePath();
+        Path directory = NativeRuntimeFiles.directory("prime-dlss-rr", bridge, feature);
         Path bridgePath = directory.resolve("prime_dlss_rr.dll");
         Path featurePath = directory.resolve("nvngx_dlssd.dll");
-        try {
-            Files.createDirectories(directory);
-            publish(bridgePath, bridge);
-            publish(featurePath, feature);
-        } catch (IOException exception) {
-            throw new IllegalStateException("Unable to extract the bundled DLSS RR runtime", exception);
-        }
+        NativeRuntimeFiles.publish(bridgePath, bridge);
+        NativeRuntimeFiles.publish(featurePath, feature);
         return new ExtractedRuntime(directory, bridgePath);
     }
 
@@ -217,38 +251,6 @@ public final class DlssRrNative {
         }
     }
 
-    private static void publish(Path target, byte[] bytes) throws IOException {
-        if (Files.exists(target)) {
-            return;
-        }
-        Path temporary = target.resolveSibling(target.getFileName()
-                + "-"
-                + ProcessHandle.current().pid()
-                + ".tmp");
-        try {
-            Files.write(temporary, bytes);
-            try {
-                Files.move(temporary, target, StandardCopyOption.ATOMIC_MOVE);
-            } catch (FileAlreadyExistsException ignored) {
-                // Another client process published the same content-addressed runtime.
-            }
-        } finally {
-            Files.deleteIfExists(temporary);
-        }
-    }
-
-    private static String sha256(byte[]... inputs) {
-        try {
-            MessageDigest digest = MessageDigest.getInstance("SHA-256");
-            for (byte[] input : inputs) {
-                digest.update(input);
-            }
-            return HexFormat.of().formatHex(digest.digest());
-        } catch (NoSuchAlgorithmException exception) {
-            throw new IllegalStateException("The Java runtime does not provide SHA-256", exception);
-        }
-    }
-
     private static void checkResult(int result, String operation) {
         if (result != 0) {
             throw new IllegalStateException(operation + " failed with native result " + result);
@@ -273,6 +275,10 @@ public final class DlssRrNative {
 
         public OptimalSettings optimalSettings(
                 int outputWidth, int outputHeight, ReconstructionQualityMode quality) {
+            if (outputWidth <= 0 || outputHeight <= 0) {
+                throw new IllegalArgumentException("DLSS RR output dimensions must be positive");
+            }
+            Objects.requireNonNull(quality, "quality");
             long context = requireOpen();
             try (MemoryStack stack = MemoryStack.stackPush()) {
                 ByteBuffer settings = stack.calloc(OPTIMAL_SETTINGS_SIZE).order(ByteOrder.nativeOrder());
@@ -287,20 +293,33 @@ public final class DlssRrNative {
                         "query DLSS RR optimal settings");
                 int width = settings.getInt(20);
                 int height = settings.getInt(24);
-                if (width <= 0 || height <= 0) {
+                if (width <= 0
+                        || height <= 0
+                        || width > outputWidth
+                        || height > outputHeight) {
                     throw new IllegalStateException("DLSS RR returned invalid optimal dimensions");
                 }
                 return new OptimalSettings(width, height);
             }
         }
 
-        public Feature createFeature(
+        Feature createFeature(
                 VkCommandBuffer commandBuffer,
                 int renderWidth,
                 int renderHeight,
                 int outputWidth,
                 int outputHeight,
                 ReconstructionQualityMode quality) {
+            Objects.requireNonNull(commandBuffer, "commandBuffer");
+            Objects.requireNonNull(quality, "quality");
+            if (renderWidth <= 0
+                    || renderHeight <= 0
+                    || outputWidth <= 0
+                    || outputHeight <= 0
+                    || renderWidth > outputWidth
+                    || renderHeight > outputHeight) {
+                throw new IllegalArgumentException("DLSS RR feature dimensions are invalid");
+            }
             long context = requireOpen();
             try (MemoryStack stack = MemoryStack.stackPush()) {
                 ByteBuffer description = stack.calloc(FEATURE_DESCRIPTION_SIZE)
@@ -323,7 +342,13 @@ public final class DlssRrNative {
                 if (feature == MemoryUtil.NULL) {
                     throw new IllegalStateException("DLSS RR returned a null feature");
                 }
-                return new Feature(this.nativeApi, feature);
+                return new Feature(
+                        this.nativeApi,
+                        feature,
+                        renderWidth,
+                        renderHeight,
+                        outputWidth,
+                        outputHeight);
             }
         }
 
@@ -346,21 +371,41 @@ public final class DlssRrNative {
         }
     }
 
-    public static final class Feature implements AutoCloseable {
+    static final class Feature implements AutoCloseable {
         private final DlssRrNative nativeApi;
+        private final int renderWidth;
+        private final int renderHeight;
+        private final int outputWidth;
+        private final int outputHeight;
         private long handle;
 
-        private Feature(DlssRrNative nativeApi, long handle) {
+        private Feature(
+                DlssRrNative nativeApi,
+                long handle,
+                int renderWidth,
+                int renderHeight,
+                int outputWidth,
+                int outputHeight) {
             this.nativeApi = nativeApi;
             this.handle = handle;
+            this.renderWidth = renderWidth;
+            this.renderHeight = renderHeight;
+            this.outputWidth = outputWidth;
+            this.outputHeight = outputHeight;
         }
 
-        public void evaluate(VkCommandBuffer commandBuffer, Evaluation evaluation) {
+        void evaluate(VkCommandBuffer commandBuffer, Evaluation evaluation) {
             if (this.handle == MemoryUtil.NULL) {
                 throw new IllegalStateException("DLSS RR feature is closed");
             }
-            if (evaluation.images().size() != IMAGE_COUNT) {
-                throw new IllegalArgumentException("DLSS RR evaluation requires exactly nine images");
+            Objects.requireNonNull(commandBuffer, "commandBuffer");
+            Objects.requireNonNull(evaluation, "evaluation");
+            if (evaluation.renderWidth() != this.renderWidth
+                    || evaluation.renderHeight() != this.renderHeight
+                    || evaluation.outputColor().width() != this.outputWidth
+                    || evaluation.outputColor().height() != this.outputHeight) {
+                throw new IllegalArgumentException(
+                        "DLSS RR evaluation dimensions do not match its feature");
             }
             try (MemoryStack stack = MemoryStack.stackPush()) {
                 ByteBuffer description = stack.calloc(EVALUATE_DESCRIPTION_SIZE)
@@ -369,17 +414,22 @@ public final class DlssRrNative {
                 description.putLong(8, commandBuffer.address());
                 description.putInt(16, evaluation.renderWidth());
                 description.putInt(20, evaluation.renderHeight());
-                description.putFloat(24, evaluation.jitterX());
-                description.putFloat(28, evaluation.jitterY());
+                description.putFloat(24, ngxJitterOffset(evaluation.sampleJitterX()));
+                description.putFloat(28, ngxJitterOffset(evaluation.sampleJitterY()));
                 description.putFloat(32, evaluation.motionScaleX());
                 description.putFloat(36, evaluation.motionScaleY());
                 description.putInt(40, evaluation.reset() ? 1 : 0);
                 description.putFloat(44, evaluation.frameTimeMilliseconds());
                 putMatrixForNgx(description, 48, evaluation.worldToView());
                 putMatrixForNgx(description, 112, evaluation.viewToClip());
-                for (int index = 0; index < IMAGE_COUNT; index++) {
-                    putImage(description, 176 + index * IMAGE_SIZE, evaluation.images().get(index));
-                }
+                putImage(description, 176, evaluation.diffuseAlbedo());
+                putImage(description, 176 + IMAGE_SIZE, evaluation.specularAlbedo());
+                putImage(description, 176 + 2 * IMAGE_SIZE, evaluation.normalRoughness());
+                putImage(description, 176 + 3 * IMAGE_SIZE, evaluation.inputColor());
+                putImage(description, 176 + 4 * IMAGE_SIZE, evaluation.outputColor());
+                putImage(description, 176 + 5 * IMAGE_SIZE, evaluation.linearDepth());
+                putImage(description, 176 + 6 * IMAGE_SIZE, evaluation.motionVectors());
+                putImage(description, 176 + 7 * IMAGE_SIZE, evaluation.specularHitDistance());
                 checkResult(
                         JNI.invokePI(MemoryUtil.memAddress(description), this.nativeApi.evaluateFunction),
                         "evaluate DLSS RR");
@@ -408,24 +458,95 @@ public final class DlssRrNative {
 
     public record OptimalSettings(int renderWidth, int renderHeight) {}
 
-    /** Images are ordered exactly as the bridge ABI: both albedos, normal/roughness, color,
-     * color-before-transparency, output, depth, motion, and specular hit distance. */
-    public record Evaluation(
+    static float ngxJitterOffset(float sampleJitter) {
+        return -sampleJitter;
+    }
+
+    /** One complete low-resolution RR evaluation and its full-resolution output. */
+    record Evaluation(
             int renderWidth,
             int renderHeight,
-            float jitterX,
-            float jitterY,
+            float sampleJitterX,
+            float sampleJitterY,
             float motionScaleX,
             float motionScaleY,
             boolean reset,
             float frameTimeMilliseconds,
             Matrix4fc worldToView,
             Matrix4fc viewToClip,
-            List<VulkanImage> images) {
+            VulkanImage diffuseAlbedo,
+            VulkanImage specularAlbedo,
+            VulkanImage normalRoughness,
+            VulkanImage inputColor,
+            VulkanImage outputColor,
+            VulkanImage linearDepth,
+            VulkanImage motionVectors,
+            VulkanImage specularHitDistance) {
         public Evaluation {
-            images = List.copyOf(images);
+            if (renderWidth <= 0 || renderHeight <= 0) {
+                throw new IllegalArgumentException("DLSS RR render dimensions must be positive");
+            }
+            if (!Float.isFinite(sampleJitterX)
+                    || !Float.isFinite(sampleJitterY)
+                    || Math.abs(sampleJitterX) > 0.5F
+                    || Math.abs(sampleJitterY) > 0.5F) {
+                throw new IllegalArgumentException("DLSS RR sample jitter must be finite pixel offsets");
+            }
+            if (motionScaleX != renderWidth || motionScaleY != renderHeight) {
+                throw new IllegalArgumentException("DLSS RR motion scale must match the render extent");
+            }
+            if (!Float.isFinite(frameTimeMilliseconds) || frameTimeMilliseconds < 0.0F) {
+                throw new IllegalArgumentException("DLSS RR frame time must be finite and non-negative");
+            }
+            worldToView = Objects.requireNonNull(worldToView, "worldToView");
+            viewToClip = Objects.requireNonNull(viewToClip, "viewToClip");
+            if (!worldToView.isFinite() || !viewToClip.isFinite()) {
+                throw new IllegalArgumentException("DLSS RR matrices must be finite");
+            }
+            requireInput(diffuseAlbedo, "diffuse albedo", DlssRrTargets.ALBEDO_FORMAT,
+                    renderWidth, renderHeight);
+            requireInput(specularAlbedo, "specular albedo", DlssRrTargets.ALBEDO_FORMAT,
+                    renderWidth, renderHeight);
+            requireInput(normalRoughness, "normal/roughness",
+                    DlssRrTargets.NORMAL_ROUGHNESS_FORMAT, renderWidth, renderHeight);
+            requireInput(inputColor, "input color", DlssRrTargets.COLOR_FORMAT,
+                    renderWidth, renderHeight);
+            requireOutput(outputColor);
+            requireInput(linearDepth, "linear depth", DlssRrTargets.LINEAR_DEPTH_FORMAT,
+                    renderWidth, renderHeight);
+            requireInput(motionVectors, "motion vectors", DlssRrTargets.MOTION_FORMAT,
+                    renderWidth, renderHeight);
+            requireInput(specularHitDistance, "specular hit distance",
+                    DlssRrTargets.SPECULAR_HIT_DISTANCE_FORMAT, renderWidth, renderHeight);
+        }
+
+        private static void requireInput(
+                VulkanImage image, String name, int format, int width, int height) {
+            Objects.requireNonNull(image, name);
+            if (image.format() != format || image.width() != width || image.height() != height) {
+                throw new IllegalArgumentException("Invalid DLSS RR " + name + " image");
+            }
+        }
+
+        private static void requireOutput(VulkanImage image) {
+            Objects.requireNonNull(image, "outputColor");
+            if (image.format() != DlssRrTargets.COLOR_FORMAT
+                    || image.width() <= 0
+                    || image.height() <= 0) {
+                throw new IllegalArgumentException("Invalid DLSS RR output color image");
+            }
         }
     }
+
+    private record BridgeFunctions(
+            long instanceExtensions,
+            long deviceExtensions,
+            long initialize,
+            long optimalSettings,
+            long createFeature,
+            long evaluate,
+            long releaseFeature,
+            long shutdown) {}
 
     private record ExtractedRuntime(Path directory, Path bridge) {}
 

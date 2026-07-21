@@ -2,7 +2,7 @@ package dev.prime.render.terrain;
 
 import net.minecraft.core.SectionPos;
 
-/** Spatial contract for one experimental 64-Section BLAS. */
+/** Spatial contract for one atomic 64-Section logical cluster. */
 final class SectionCluster {
     static final int SECTION_SIZE = 4;
     static final int SECTION_COUNT = SECTION_SIZE * SECTION_SIZE * SECTION_SIZE;

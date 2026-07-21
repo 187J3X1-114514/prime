@@ -1,5 +1,6 @@
 package dev.prime.render.vulkan;
 
+import dev.prime.render.ResourceCleanup;
 import dev.prime.render.post.PostProcessingMode;
 import dev.prime.render.post.RealtimePostProcessor;
 import dev.prime.render.post.ReconstructionQualityMode;
@@ -96,10 +97,10 @@ public final class NrdFsrPostProcessor implements RealtimePostProcessor {
                     upscaler,
                     nrdDebugPresent);
         } catch (RuntimeException exception) {
-            if (nrdDebugPresent != null) nrdDebugPresent.destroy();
-            if (upscaler != null) upscaler.destroy();
-            if (denoiser != null) denoiser.destroy();
-            if (sceneColor != null) sceneColor.destroy();
+            ResourceCleanup.destroy(nrdDebugPresent, exception);
+            ResourceCleanup.destroy(upscaler, exception);
+            ResourceCleanup.destroy(denoiser, exception);
+            ResourceCleanup.destroy(sceneColor, exception);
             throw exception;
         }
     }
@@ -115,21 +116,25 @@ public final class NrdFsrPostProcessor implements RealtimePostProcessor {
 
     @Override
     public void requestReset() {
+        requireOpen();
         this.upscaler.requestReset();
     }
 
     @Override
     public FrameToken beginFrame(FrameParameters parameters) {
+        requireOpen();
         Fsr3Upscaler.FrameToken fsr = this.upscaler.beginFrame(
                 parameters.camera(),
                 parameters.sceneRevision(),
                 parameters.atlasView(),
-                parameters.atlasSampler());
-        return new FrameToken(this, fsr, NrdDiagnostics.mode());
+                parameters.atlasSampler(),
+                parameters.fsrDebugView());
+        return new FrameToken(this, fsr, parameters.nrdDebugView());
     }
 
     @Override
     public void prepareForRayTrace(VkCommandBuffer commandBuffer) {
+        requireOpen();
         try (MemoryStack stack = MemoryStack.stackPush()) {
             boolean initialized = this.sceneColor.initialized();
             VkImageMemoryBarrier2.Buffer barrier = VkImageMemoryBarrier2.calloc(1, stack);
@@ -164,6 +169,12 @@ public final class NrdFsrPostProcessor implements RealtimePostProcessor {
     public void record(
             VkCommandBuffer commandBuffer, Frame frame, FrameParameters parameters) {
         FrameToken token = requireFrame(frame);
+        if (token.recorded) {
+            throw new IllegalArgumentException("NRD-FSR frame was already recorded");
+        }
+        // Recording can fail after emitting commands; such a token must never be retried into the
+        // same or another command buffer.
+        token.recorded = true;
         token.nrd = this.denoiser.record(
                 commandBuffer,
                 parameters.camera(),
@@ -174,16 +185,17 @@ public final class NrdFsrPostProcessor implements RealtimePostProcessor {
                 token.jitter().x(),
                 token.jitter().y(),
                 parameters.sunRadianceMultiplier(),
-                token.reset());
-        this.upscaler.record(commandBuffer, token.fsr);
+                token.reset(),
+                token.nrdDebugView);
+        this.upscaler.record(commandBuffer, token.fsr, parameters.displayOverexposure());
         if (token.nrdDebugView != NrdDiagnostics.Mode.OFF) {
             this.nrdDebugPresent.record(commandBuffer);
         }
-        token.recorded = true;
     }
 
     @Override
     public void submitted(Frame frame) {
+        requireOpen();
         FrameToken token = requireFrame(frame);
         if (!token.recorded || token.submitted || token.nrd == null) {
             throw new IllegalArgumentException("NRD-FSR frame was not recorded exactly once");
@@ -200,6 +212,12 @@ public final class NrdFsrPostProcessor implements RealtimePostProcessor {
         return token;
     }
 
+    private void requireOpen() {
+        if (this.destroyed) {
+            throw new IllegalStateException("NRD-FSR post-processor is destroyed");
+        }
+    }
+
     /** Keeps scene color in GENERAL before NRD's composite writes it. */
     public VulkanImage sceneColor() {
         return this.sceneColor;
@@ -208,11 +226,13 @@ public final class NrdFsrPostProcessor implements RealtimePostProcessor {
     @Override
     public void destroy() {
         if (this.destroyed) return;
+        RuntimeException failure = null;
+        failure = ResourceCleanup.destroy(this.nrdDebugPresent, failure);
+        failure = ResourceCleanup.destroy(this.upscaler, failure);
+        failure = ResourceCleanup.destroy(this.denoiser, failure);
+        failure = ResourceCleanup.destroy(this.sceneColor, failure);
         this.destroyed = true;
-        this.nrdDebugPresent.destroy();
-        this.upscaler.destroy();
-        this.denoiser.destroy();
-        this.sceneColor.destroy();
+        ResourceCleanup.throwIfFailed(failure);
     }
 
     public static final class FrameToken implements Frame {

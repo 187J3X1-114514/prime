@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import dev.prime.config.PrimeSettings;
 import org.junit.jupiter.api.Test;
 
 final class LightingSettingsTest {
@@ -24,27 +25,14 @@ final class LightingSettingsTest {
 
     @Test
     void changingEitherControlAdvancesTheSharedLightingRevision() {
-        int originalSun = LightingSettings.sunQuarterSteps();
-        int originalBlock = LightingSettings.blockLightQuarterSteps();
-        try {
-            long originalRevision = LightingSettings.snapshot().revision();
-            int changedSun = originalSun == LightingSettings.MAXIMUM_QUARTER_STEPS
-                    ? originalSun - 1
-                    : originalSun + 1;
-            LightingSettings.setSunQuarterSteps(changedSun);
-            long sunRevision = LightingSettings.snapshot().revision();
-            assertTrue(sunRevision > originalRevision);
-            LightingSettings.setSunQuarterSteps(changedSun);
-            assertEquals(sunRevision, LightingSettings.snapshot().revision());
+        PrimeSettings defaults = PrimeSettings.defaults();
+        PrimeSettings sun = defaults.withSunQuarterSteps(1);
+        assertTrue(sun.lightingRevision() > defaults.lightingRevision());
+        assertEquals(sun, sun.withSunQuarterSteps(1));
 
-            int changedBlock = originalBlock == LightingSettings.MAXIMUM_QUARTER_STEPS
-                    ? originalBlock - 1
-                    : originalBlock + 1;
-            LightingSettings.setBlockLightQuarterSteps(changedBlock);
-            assertTrue(LightingSettings.snapshot().revision() > sunRevision);
-        } finally {
-            LightingSettings.setSunQuarterSteps(originalSun);
-            LightingSettings.setBlockLightQuarterSteps(originalBlock);
-        }
+        PrimeSettings block = sun.withBlockLightQuarterSteps(-1);
+        assertTrue(block.lightingRevision() > sun.lightingRevision());
+        assertEquals(1, block.lighting().sunQuarterSteps());
+        assertEquals(-1, block.lighting().blockLightQuarterSteps());
     }
 }

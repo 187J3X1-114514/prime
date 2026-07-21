@@ -14,52 +14,7 @@ public final class LightingSettings {
     public static final int DEFAULT_SUN_QUARTER_STEPS = 0;
     public static final int DEFAULT_BLOCK_LIGHT_QUARTER_STEPS = 0;
 
-    private static volatile State state = new State(
-            DEFAULT_SUN_QUARTER_STEPS,
-            DEFAULT_BLOCK_LIGHT_QUARTER_STEPS,
-            0L);
-
     private LightingSettings() {
-    }
-
-    public static Snapshot snapshot() {
-        State current = state;
-        return new Snapshot(
-                current.sunQuarterSteps,
-                current.blockLightQuarterSteps,
-                linearMultiplier(current.sunQuarterSteps),
-                linearMultiplier(current.blockLightQuarterSteps),
-                current.revision);
-    }
-
-    public static int sunQuarterSteps() {
-        return state.sunQuarterSteps;
-    }
-
-    public static int blockLightQuarterSteps() {
-        return state.blockLightQuarterSteps;
-    }
-
-    public static synchronized void setSunQuarterSteps(int quarterSteps) {
-        requireValid(quarterSteps);
-        State current = state;
-        if (quarterSteps != current.sunQuarterSteps) {
-            state = new State(
-                    quarterSteps,
-                    current.blockLightQuarterSteps,
-                    current.revision + 1L);
-        }
-    }
-
-    public static synchronized void setBlockLightQuarterSteps(int quarterSteps) {
-        requireValid(quarterSteps);
-        State current = state;
-        if (quarterSteps != current.blockLightQuarterSteps) {
-            state = new State(
-                    current.sunQuarterSteps,
-                    quarterSteps,
-                    current.revision + 1L);
-        }
     }
 
     public static float linearMultiplier(int quarterSteps) {
@@ -93,8 +48,5 @@ public final class LightingSettings {
             float sunMultiplier,
             float blockLightMultiplier,
             long revision) {
-    }
-
-    private record State(int sunQuarterSteps, int blockLightQuarterSteps, long revision) {
     }
 }

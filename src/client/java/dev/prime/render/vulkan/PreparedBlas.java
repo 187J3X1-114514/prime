@@ -1,5 +1,6 @@
 package dev.prime.render.vulkan;
 
+import dev.prime.render.ResourceCleanup;
 import dev.prime.render.terrain.OpacityMicromapData;
 import java.nio.IntBuffer;
 import java.nio.LongBuffer;
@@ -21,6 +22,8 @@ import org.lwjgl.vulkan.VkQueryPoolCreateInfo;
 
 public final class PreparedBlas {
     private static final int GEOMETRY_COUNT = 3;
+    private static final long MAX_TRIANGLES_PER_GEOMETRY = 0x1_0000_0000L / 3L;
+    private static final long MAX_PRIMITIVE_RECORDS = 0x1_0000_0000L;
     private static final int BUILD_FLAGS =
             KHRAccelerationStructure.VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT_KHR
                     | KHRAccelerationStructure.VK_BUILD_ACCELERATION_STRUCTURE_ALLOW_COMPACTION_BIT_KHR;
@@ -36,9 +39,9 @@ public final class PreparedBlas {
     private volatile boolean compactionReady;
     private boolean compactionResolved;
     private final String label;
-    private final int opaqueTriangleCount;
-    private final int cutoutTriangleCount;
-    private final int transmissiveTriangleCount;
+    private final long opaqueTriangleCount;
+    private final long cutoutTriangleCount;
+    private final long transmissiveTriangleCount;
 
     private PreparedBlas(
             VulkanContext context,
@@ -49,9 +52,9 @@ public final class PreparedBlas {
             OpacityMicromap opacityMicromap,
             VulkanBuffer compactionResult,
             long compactionQueryPool,
-            int opaqueTriangleCount,
-            int cutoutTriangleCount,
-            int transmissiveTriangleCount,
+            long opaqueTriangleCount,
+            long cutoutTriangleCount,
+            long transmissiveTriangleCount,
             String label) {
         this.context = context;
         this.accelerationStructure = accelerationStructure;
@@ -74,19 +77,15 @@ public final class PreparedBlas {
             OpacityMicromapData opacityMicromapData,
             StagingArena.Batch staging,
             VkCommandBuffer commandBuffer,
-            int opaqueTriangleCount,
-            int cutoutTriangleCount,
-            int transmissiveTriangleCount,
+            long opaqueTriangleCount,
+            long cutoutTriangleCount,
+            long transmissiveTriangleCount,
             String label) {
-        if (opaqueTriangleCount < 0 || cutoutTriangleCount < 0 || transmissiveTriangleCount < 0) {
-            throw new IllegalArgumentException("Triangle counts must not be negative");
-        }
-        long triangleCount = (long) opaqueTriangleCount
-                + cutoutTriangleCount
-                + transmissiveTriangleCount;
-        if (triangleCount == 0L) {
-            throw new IllegalArgumentException("A BLAS must contain at least one triangle");
-        }
+        validateCounts(
+                opaqueTriangleCount,
+                cutoutTriangleCount,
+                transmissiveTriangleCount,
+                context.capabilities().maxAccelerationStructurePrimitiveCount());
         OpacityMicromap opacityMicromap = OpacityMicromap.create(
                 context,
                 opacityMicromapData,
@@ -109,7 +108,9 @@ public final class PreparedBlas {
                     .geometryCount(GEOMETRY_COUNT)
                     .pGeometries(geometries);
             IntBuffer primitiveCounts = stack.ints(
-                    opaqueTriangleCount, cutoutTriangleCount, transmissiveTriangleCount);
+                    (int) opaqueTriangleCount,
+                    (int) cutoutTriangleCount,
+                    (int) transmissiveTriangleCount);
             VkAccelerationStructureBuildSizesInfoKHR sizes = VkAccelerationStructureBuildSizesInfoKHR.calloc(stack).sType$Default();
             KHRAccelerationStructure.vkGetAccelerationStructureBuildSizesKHR(
                     context.vkDevice(),
@@ -160,25 +161,17 @@ public final class PreparedBlas {
                         transmissiveTriangleCount,
                         label);
             } catch (RuntimeException exception) {
-                if (accelerationStructure != null) {
-                    accelerationStructure.destroy();
-                }
-                if (scratch != null) {
-                    scratch.destroy();
-                }
-                if (compactionResult != null) {
-                    compactionResult.destroy();
-                }
+                RuntimeException failure = ResourceCleanup.destroy(
+                        accelerationStructure, exception);
+                failure = ResourceCleanup.destroy(scratch, failure);
+                failure = ResourceCleanup.destroy(compactionResult, failure);
                 if (compactionQueryPool != 0L) {
                     VK10.vkDestroyQueryPool(context.vkDevice(), compactionQueryPool, null);
                 }
-                throw exception;
+                throw failure;
             }
         } catch (RuntimeException exception) {
-            if (opacityMicromap != null) {
-                opacityMicromap.destroy();
-            }
-            throw exception;
+            throw ResourceCleanup.destroy(opacityMicromap, exception);
         }
     }
 
@@ -209,17 +202,17 @@ public final class PreparedBlas {
             VkAccelerationStructureBuildRangeInfoKHR.Buffer ranges =
                     VkAccelerationStructureBuildRangeInfoKHR.calloc(GEOMETRY_COUNT, stack);
             ranges.get(0)
-                    .primitiveCount(this.opaqueTriangleCount)
+                    .primitiveCount((int) this.opaqueTriangleCount)
                     .primitiveOffset(0)
                     .firstVertex(0)
                     .transformOffset(0);
             ranges.get(1)
-                    .primitiveCount(this.cutoutTriangleCount)
+                    .primitiveCount((int) this.cutoutTriangleCount)
                     .primitiveOffset(0)
                     .firstVertex(0)
                     .transformOffset(0);
             ranges.get(2)
-                    .primitiveCount(this.transmissiveTriangleCount)
+                    .primitiveCount((int) this.transmissiveTriangleCount)
                     .primitiveOffset(0)
                     .firstVertex(0)
                     .transformOffset(0);
@@ -294,15 +287,15 @@ public final class PreparedBlas {
         return this.primitives;
     }
 
-    public int opaqueTriangleCount() {
+    public long opaqueTriangleCount() {
         return this.opaqueTriangleCount;
     }
 
-    public int cutoutTriangleCount() {
+    public long cutoutTriangleCount() {
         return this.cutoutTriangleCount;
     }
 
-    public int transmissiveTriangleCount() {
+    public long transmissiveTriangleCount() {
         return this.transmissiveTriangleCount;
     }
 
@@ -312,40 +305,41 @@ public final class PreparedBlas {
         VulkanBuffer retiredScratch = this.scratch;
         this.positions = null;
         this.scratch = null;
+        RuntimeException failure = null;
         if (retiredPositions != null || retiredScratch != null) {
-            this.context.defer(() -> {
-                if (retiredPositions != null) {
-                    retiredPositions.destroy();
-                }
-                if (retiredScratch != null) {
-                    retiredScratch.destroy();
-                }
-            });
+            failure = ResourceCleanup.run(() -> this.context.defer(() -> {
+                RuntimeException cleanupFailure = ResourceCleanup.destroy(retiredPositions, null);
+                cleanupFailure = ResourceCleanup.destroy(retiredScratch, cleanupFailure);
+                ResourceCleanup.throwIfFailed(cleanupFailure);
+            }), null);
         }
         if (this.opacityMicromap != null) {
-            this.opacityMicromap.retireBuildResources();
+            failure = ResourceCleanup.run(
+                    this.opacityMicromap::retireBuildResources, failure);
         }
+        ResourceCleanup.throwIfFailed(failure);
     }
 
     public void destroyPersistentResources() {
-        this.accelerationStructure.destroy();
-        this.primitives.destroy();
-        if (this.opacityMicromap != null) {
-            this.opacityMicromap.destroy();
-        }
-        this.destroyCompactionQuery();
+        RuntimeException failure = ResourceCleanup.destroy(this.accelerationStructure, null);
+        failure = ResourceCleanup.destroy(this.primitives, failure);
+        failure = ResourceCleanup.destroy(this.opacityMicromap, failure);
+        failure = ResourceCleanup.run(this::destroyCompactionQuery, failure);
         if (this.positions != null) {
-            this.positions.destroy();
+            failure = ResourceCleanup.destroy(this.positions, failure);
             this.positions = null;
         }
+        ResourceCleanup.throwIfFailed(failure);
     }
 
     public void destroyAllResources() {
+        RuntimeException failure = null;
         if (this.scratch != null) {
-            this.scratch.destroy();
+            failure = ResourceCleanup.destroy(this.scratch, null);
             this.scratch = null;
         }
-        this.destroyPersistentResources();
+        failure = ResourceCleanup.run(this::destroyPersistentResources, failure);
+        ResourceCleanup.throwIfFailed(failure);
     }
 
     private synchronized void destroyCompactionQuery() {
@@ -396,8 +390,7 @@ public final class PreparedBlas {
             if (handle != 0L) {
                 KHRAccelerationStructure.vkDestroyAccelerationStructureKHR(context.vkDevice(), handle, null);
             }
-            backing.destroy();
-            throw exception;
+            throw ResourceCleanup.destroy(backing, exception);
         }
     }
 
@@ -460,9 +453,9 @@ public final class PreparedBlas {
     private static VkAccelerationStructureGeometryKHR.Buffer geometries(
             MemoryStack stack,
             long positionAddress,
-            int opaqueTriangleCount,
-            int cutoutTriangleCount,
-            int transmissiveTriangleCount,
+            long opaqueTriangleCount,
+            long cutoutTriangleCount,
+            long transmissiveTriangleCount,
             OpacityMicromap opacityMicromap) {
         VkAccelerationStructureGeometryKHR.Buffer geometries =
                 VkAccelerationStructureGeometryKHR.calloc(GEOMETRY_COUNT, stack);
@@ -489,8 +482,8 @@ public final class PreparedBlas {
 
     static long cutoutGeometryVertexAddress(
             long positionAddress,
-            int opaqueTriangleCount,
-            int cutoutTriangleCount) {
+            long opaqueTriangleCount,
+            long cutoutTriangleCount) {
         if (opaqueTriangleCount < 0 || cutoutTriangleCount < 0) {
             throw new IllegalArgumentException("Triangle counts must not be negative");
         }
@@ -500,15 +493,15 @@ public final class PreparedBlas {
             // its primitive count is zero, so it must not point one byte past the opaque vertex data.
             return positionAddress;
         }
-        long opaqueBytes = Math.multiplyExact((long) opaqueTriangleCount, 3L * 3L * Float.BYTES);
+        long opaqueBytes = Math.multiplyExact(opaqueTriangleCount, 3L * 3L * Float.BYTES);
         return Math.addExact(positionAddress, opaqueBytes);
     }
 
     static long transmissiveGeometryVertexAddress(
             long positionAddress,
-            int opaqueTriangleCount,
-            int cutoutTriangleCount,
-            int transmissiveTriangleCount) {
+            long opaqueTriangleCount,
+            long cutoutTriangleCount,
+            long transmissiveTriangleCount) {
         if (opaqueTriangleCount < 0 || cutoutTriangleCount < 0 || transmissiveTriangleCount < 0) {
             throw new IllegalArgumentException("Triangle counts must not be negative");
         }
@@ -517,7 +510,7 @@ public final class PreparedBlas {
             return positionAddress;
         }
         long precedingTriangles = Math.addExact(
-                (long) opaqueTriangleCount, (long) cutoutTriangleCount);
+                opaqueTriangleCount, cutoutTriangleCount);
         long precedingBytes = Math.multiplyExact(
                 precedingTriangles, 3L * 3L * Float.BYTES);
         return Math.addExact(positionAddress, precedingBytes);
@@ -526,7 +519,7 @@ public final class PreparedBlas {
     private static void fillGeometry(
             VkAccelerationStructureGeometryKHR geometry,
             long vertexAddress,
-            int triangleCount,
+            long triangleCount,
             boolean opaque) {
         geometry.sType$Default()
                 .geometryType(KHRAccelerationStructure.VK_GEOMETRY_TYPE_TRIANGLES_KHR)
@@ -537,10 +530,48 @@ public final class PreparedBlas {
                 .sType$Default()
                 .vertexFormat(VK12.VK_FORMAT_R32G32B32_SFLOAT)
                 .vertexStride(3L * Float.BYTES)
-                .maxVertex(Math.max(0, triangleCount * 3 - 1))
+                .maxVertex(triangleCount == 0L
+                        ? 0
+                        : (int) (Math.multiplyExact(triangleCount, 3L) - 1L))
                 .indexType(KHRAccelerationStructure.VK_INDEX_TYPE_NONE_KHR);
         geometry.geometry().triangles().vertexData().deviceAddress(vertexAddress);
         geometry.geometry().triangles().indexData().deviceAddress(0L);
         geometry.geometry().triangles().transformData().deviceAddress(0L);
+    }
+
+    private static void validateGeometryCount(String name, long triangleCount) {
+        if (triangleCount > MAX_TRIANGLES_PER_GEOMETRY) {
+            throw new IllegalStateException(
+                    name + " geometry exceeds Vulkan's uint maxVertex range");
+        }
+    }
+
+    static long validateCounts(
+            long opaque,
+            long cutout,
+            long transmissive,
+            long devicePrimitiveLimit) {
+        if (opaque < 0L || cutout < 0L || transmissive < 0L) {
+            throw new IllegalArgumentException("Triangle counts must not be negative");
+        }
+        long total = Math.addExact(Math.addExact(opaque, cutout), transmissive);
+        if (total == 0L) {
+            throw new IllegalArgumentException("A BLAS must contain at least one triangle");
+        }
+        if (Long.compareUnsigned(total, devicePrimitiveLimit) > 0) {
+            throw new IllegalStateException(
+                    "BLAS requires "
+                            + total
+                            + " primitives, but the Vulkan device supports "
+                            + Long.toUnsignedString(devicePrimitiveLimit));
+        }
+        validateGeometryCount("opaque", opaque);
+        validateGeometryCount("cutout", cutout);
+        validateGeometryCount("transmissive", transmissive);
+        if (total > MAX_PRIMITIVE_RECORDS) {
+            throw new IllegalStateException(
+                    "BLAS primitive records exceed the shader uint address space");
+        }
+        return total;
     }
 }

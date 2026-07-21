@@ -5,6 +5,7 @@ import dev.prime.PrimeClient;
 import dev.prime.mixin.SpriteContentsAccessor;
 import dev.prime.mixin.TextureAtlasAccessor;
 import dev.prime.mixin.TextureAtlasSpriteAccessor;
+import dev.prime.render.ResourceCleanup;
 import dev.prime.render.terrain.LabPbrEmissionMap;
 import dev.prime.render.terrain.LabPbrMaterialSet;
 import java.io.IOException;
@@ -53,6 +54,8 @@ public final class LabPbrTextureAtlas implements AutoCloseable {
     private final VulkanContext context;
     private final StagingArena stagingArena;
     private final AtomicLong requestedGeneration = new AtomicLong();
+    private final ArrayList<AnimationUpdate> animationUpdates = new ArrayList<>();
+    private final ArrayList<Copy> animationCopies = new ArrayList<>();
     private Resources resources;
     private boolean closed;
 
@@ -72,15 +75,12 @@ public final class LabPbrTextureAtlas implements AutoCloseable {
                 && this.resources.vanillaAtlasView == vanillaAtlasView) {
             return this.resources.materials;
         }
-        Resources replacement;
-        try {
-            replacement = build(
-                    minecraft.getResourceManager(), atlas, vanillaAtlasView, generation);
-        } catch (RuntimeException exception) {
-            throw exception;
-        }
+        Resources replacement = build(
+                minecraft.getResourceManager(), atlas, vanillaAtlasView, generation);
         Resources previous = this.resources;
         this.resources = replacement;
+        this.animationUpdates.clear();
+        this.animationCopies.clear();
         if (previous != null) {
             if (previous.prepared) {
                 this.context.defer(previous);
@@ -107,28 +107,28 @@ public final class LabPbrTextureAtlas implements AutoCloseable {
     /** Records the initial upload and any base-animation frame changes. */
     public FrameToken prepare(VkCommandBuffer commandBuffer) {
         Resources current = requireResources();
+        this.animationCopies.clear();
         boolean retireInitialUploads = false;
         if (!current.prepared) {
             recordInitialUpload(commandBuffer, current);
             current.prepared = true;
             retireInitialUploads = true;
         }
-        List<AnimationUpdate> changes = current.animationChanges();
-        if (changes.isEmpty()) {
+        current.collectAnimationChanges(this.animationUpdates);
+        if (this.animationUpdates.isEmpty()) {
             return retireInitialUploads
-                    ? new FrameToken(null, current, true)
+                    ? new FrameToken(this, null, current, true)
                     : null;
         }
         StagingArena.Batch batch = this.stagingArena.tryBeginBatch();
         if (batch == null) {
             return retireInitialUploads
-                    ? new FrameToken(null, current, true)
+                    ? new FrameToken(this, null, current, true)
                     : null;
         }
-        ArrayList<Copy> copies = new ArrayList<>();
         try {
             long budget = 0L;
-            for (AnimationUpdate change : changes) {
+            for (AnimationUpdate change : this.animationUpdates) {
                 AnimatedMaterialSprite sprite = change.sprite;
                 long spriteBudget = budget;
                 for (int mip = 0; mip < current.mipLevels; mip++) {
@@ -148,7 +148,7 @@ public final class LabPbrTextureAtlas implements AutoCloseable {
                 for (int mip = 0; mip < current.mipLevels; mip++) {
                     if (sprite.normal != null) {
                         addAnimatedCopy(
-                                copies,
+                                this.animationCopies,
                                 batch,
                                 current.normalAtlas,
                                 sprite,
@@ -159,7 +159,7 @@ public final class LabPbrTextureAtlas implements AutoCloseable {
                     }
                     if (sprite.specular != null) {
                         addAnimatedCopy(
-                                copies,
+                                this.animationCopies,
                                 batch,
                                 current.specularAtlas,
                                 sprite,
@@ -172,23 +172,26 @@ public final class LabPbrTextureAtlas implements AutoCloseable {
                 budget = spriteBudget;
                 sprite.lastSample = change.sample;
             }
-            if (copies.isEmpty()) {
+            if (this.animationCopies.isEmpty()) {
                 batch.close();
                 return retireInitialUploads
-                        ? new FrameToken(null, current, true)
+                        ? new FrameToken(this, null, current, true)
                         : null;
             }
-            boolean normalChanged = copies.stream().anyMatch(copy -> copy.image == current.normalAtlas);
-            boolean specularChanged = copies.stream().anyMatch(copy -> copy.image == current.specularAtlas);
+            boolean normalChanged = false;
+            boolean specularChanged = false;
+            for (Copy copy : this.animationCopies) {
+                normalChanged |= copy.image == current.normalAtlas;
+                specularChanged |= copy.image == current.specularAtlas;
+            }
             transitionForCopies(commandBuffer, current, normalChanged, specularChanged, true);
-            for (Copy copy : copies) {
+            for (Copy copy : this.animationCopies) {
                 recordCopy(commandBuffer, copy);
             }
             transitionForCopies(commandBuffer, current, normalChanged, specularChanged, false);
-            return new FrameToken(batch, current, retireInitialUploads);
+            return new FrameToken(this, batch, current, retireInitialUploads);
         } catch (RuntimeException exception) {
-            batch.close();
-            throw exception;
+            throw ResourceCleanup.close(batch, exception);
         }
     }
 
@@ -197,13 +200,20 @@ public final class LabPbrTextureAtlas implements AutoCloseable {
         if (token == null) {
             return;
         }
+        if (token.atlas != this || token.submitted) {
+            throw new IllegalArgumentException("LabPBR frame token does not belong to this submission");
+        }
+        token.submitted = true;
+        RuntimeException failure = null;
         if (token.batch != null) {
-            token.batch.submitForRetirement();
-            token.batch.close();
+            failure = ResourceCleanup.run(token.batch::submitForRetirement, null);
+            failure = ResourceCleanup.close(token.batch, failure);
         }
         if (token.retireInitialUploads) {
-            token.owner.retireUploads(this.context);
+            failure = ResourceCleanup.run(
+                    () -> token.owner.retireUploads(this.context), failure);
         }
+        ResourceCleanup.throwIfFailed(failure);
     }
 
     @Override
@@ -211,8 +221,9 @@ public final class LabPbrTextureAtlas implements AutoCloseable {
         if (!this.closed) {
             this.closed = true;
             if (this.resources != null) {
-                this.resources.destroy();
+                RuntimeException failure = ResourceCleanup.destroy(this.resources, null);
                 this.resources = null;
+                ResourceCleanup.throwIfFailed(failure);
             }
         }
     }
@@ -329,19 +340,11 @@ public final class LabPbrTextureAtlas implements AutoCloseable {
                     materials,
                     animated);
         } catch (RuntimeException exception) {
-            if (specularUpload != null) {
-                specularUpload.destroy();
-            }
-            if (normalUpload != null) {
-                normalUpload.destroy();
-            }
-            if (specularAtlas != null) {
-                specularAtlas.destroy();
-            }
-            if (normalAtlas != null) {
-                normalAtlas.destroy();
-            }
-            throw exception;
+            RuntimeException failure = ResourceCleanup.destroy(specularUpload, exception);
+            failure = ResourceCleanup.destroy(normalUpload, failure);
+            failure = ResourceCleanup.destroy(specularAtlas, failure);
+            failure = ResourceCleanup.destroy(normalAtlas, failure);
+            throw failure;
         }
     }
 
@@ -607,14 +610,18 @@ public final class LabPbrTextureAtlas implements AutoCloseable {
     }
 
     public static final class FrameToken {
+        private final LabPbrTextureAtlas atlas;
         private final StagingArena.Batch batch;
         private final Resources owner;
         private final boolean retireInitialUploads;
+        private boolean submitted;
 
         private FrameToken(
+                LabPbrTextureAtlas atlas,
                 StagingArena.Batch batch,
                 Resources owner,
                 boolean retireInitialUploads) {
+            this.atlas = atlas;
             this.batch = batch;
             this.owner = owner;
             this.retireInitialUploads = retireInitialUploads;
@@ -954,15 +961,14 @@ public final class LabPbrTextureAtlas implements AutoCloseable {
             this.animated = animated;
         }
 
-        List<AnimationUpdate> animationChanges() {
-            ArrayList<AnimationUpdate> result = new ArrayList<>();
+        void collectAnimationChanges(ArrayList<AnimationUpdate> result) {
+            result.clear();
             for (AnimatedMaterialSprite sprite : this.animated) {
                 AnimationSample sample = AnimationFrameAccess.sample(sprite.state);
                 if (!sample.equals(sprite.lastSample)) {
                     result.add(new AnimationUpdate(sprite, sample));
                 }
             }
-            return result;
         }
 
         void retireUploads(VulkanContext context) {
@@ -970,26 +976,22 @@ public final class LabPbrTextureAtlas implements AutoCloseable {
             VulkanBuffer specular = this.specularUpload;
             this.normalUpload = null;
             this.specularUpload = null;
-            if (normal != null) {
-                context.defer(normal);
-            }
-            if (specular != null) {
-                context.defer(specular);
-            }
+            RuntimeException failure = ResourceCleanup.run(
+                    normal == null ? null : () -> context.defer(normal), null);
+            failure = ResourceCleanup.run(
+                    specular == null ? null : () -> context.defer(specular), failure);
+            ResourceCleanup.throwIfFailed(failure);
         }
 
         @Override
         public void destroy() {
             if (!this.destroyed) {
                 this.destroyed = true;
-                if (this.specularUpload != null) {
-                    this.specularUpload.destroy();
-                }
-                if (this.normalUpload != null) {
-                    this.normalUpload.destroy();
-                }
-                this.specularAtlas.destroy();
-                this.normalAtlas.destroy();
+                RuntimeException failure = ResourceCleanup.destroy(this.specularUpload, null);
+                failure = ResourceCleanup.destroy(this.normalUpload, failure);
+                failure = ResourceCleanup.destroy(this.specularAtlas, failure);
+                failure = ResourceCleanup.destroy(this.normalAtlas, failure);
+                ResourceCleanup.throwIfFailed(failure);
             }
         }
     }

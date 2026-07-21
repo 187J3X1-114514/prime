@@ -1,7 +1,6 @@
 package dev.prime.render.vulkan;
 
 import com.mojang.blaze3d.vulkan.Destroyable;
-import dev.prime.render.DisplaySettings;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.ByteBuffer;
@@ -168,13 +167,19 @@ public final class DisplayTransformPass implements Destroyable {
         }
     }
 
-    public void record(VkCommandBuffer commandBuffer, boolean diagnostic) {
+    public void record(
+            VkCommandBuffer commandBuffer, boolean diagnostic, float displayOverexposure) {
+        if (!Float.isFinite(displayOverexposure)
+                || displayOverexposure < 1.0F
+                || displayOverexposure > 2.0F) {
+            throw new IllegalArgumentException("Display overexposure must be finite and within [1, 2]");
+        }
         try (MemoryStack stack = MemoryStack.stackPush()) {
             ByteBuffer push = stack.malloc(PUSH_SIZE).order(ByteOrder.nativeOrder());
             push.putInt(0, this.width);
             push.putInt(4, this.height);
             push.putInt(8, diagnostic ? 1 : 0);
-            push.putFloat(12, DisplaySettings.overexposure());
+            push.putFloat(12, displayOverexposure);
             VK12.vkCmdBindPipeline(commandBuffer, VK12.VK_PIPELINE_BIND_POINT_COMPUTE, this.pipeline);
             VK12.vkCmdBindDescriptorSets(
                     commandBuffer,

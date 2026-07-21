@@ -1,0 +1,147 @@
+package dev.prime.render.terrain;
+
+import java.util.ArrayList;
+import java.util.List;
+
+/** One BLAS payload backed by bounded CPU segments. */
+public final class CpuClusterMesh {
+    private final List<Segment> segments;
+    private final long opaqueTriangleCount;
+    private final long cutoutTriangleCount;
+    private final long transmissiveTriangleCount;
+    private final OpacityMicromapData opacityMicromap;
+    private final CpuSectionLights lights;
+
+    private CpuClusterMesh(
+            List<Segment> segments,
+            long opaqueTriangleCount,
+            long cutoutTriangleCount,
+            long transmissiveTriangleCount,
+            OpacityMicromapData opacityMicromap,
+            CpuSectionLights lights) {
+        this.segments = List.copyOf(segments);
+        this.opaqueTriangleCount = opaqueTriangleCount;
+        this.cutoutTriangleCount = cutoutTriangleCount;
+        this.transmissiveTriangleCount = transmissiveTriangleCount;
+        this.opacityMicromap = opacityMicromap;
+        this.lights = lights;
+    }
+
+    static CpuClusterMesh fromSegments(List<CpuSectionMesh> meshes) {
+        ArrayList<Segment> segments = new ArrayList<>(meshes.size());
+        ArrayList<CpuSectionLights.Translated> lightSources = new ArrayList<>();
+        OpacityMicromapData.Builder opacityMicromap = new OpacityMicromapData.Builder();
+        long opaque = 0L;
+        long cutout = 0L;
+        long transmissive = 0L;
+        for (CpuSectionMesh mesh : meshes) {
+            if (mesh.isEmpty()) {
+                continue;
+            }
+            segments.add(new Segment(
+                    mesh.positions(),
+                    mesh.primitiveRecords(),
+                    mesh.opaqueTriangleCount(),
+                    mesh.cutoutTriangleCount(),
+                    mesh.transmissiveTriangleCount()));
+            opaque = Math.addExact(opaque, mesh.opaqueTriangleCount());
+            cutout = Math.addExact(cutout, mesh.cutoutTriangleCount());
+            transmissive = Math.addExact(transmissive, mesh.transmissiveTriangleCount());
+            opacityMicromap.append(mesh.opacityMicromap());
+            if (!mesh.lights().isEmpty()) {
+                lightSources.add(new CpuSectionLights.Translated(
+                        mesh.lights(), 0.0F, 0.0F, 0.0F));
+            }
+        }
+        return new CpuClusterMesh(
+                segments,
+                opaque,
+                cutout,
+                transmissive,
+                opacityMicromap.build(),
+                CpuSectionLights.merge(lightSources));
+    }
+
+    static CpuClusterMesh empty() {
+        return new CpuClusterMesh(
+                List.of(), 0L, 0L, 0L, OpacityMicromapData.EMPTY, CpuSectionLights.EMPTY);
+    }
+
+    public List<Segment> segments() {
+        return this.segments;
+    }
+
+    public long opaqueTriangleCount() {
+        return this.opaqueTriangleCount;
+    }
+
+    public long cutoutTriangleCount() {
+        return this.cutoutTriangleCount;
+    }
+
+    public long transmissiveTriangleCount() {
+        return this.transmissiveTriangleCount;
+    }
+
+    public long triangleCount() {
+        return Math.addExact(
+                Math.addExact(this.opaqueTriangleCount, this.cutoutTriangleCount),
+                this.transmissiveTriangleCount);
+    }
+
+    public OpacityMicromapData opacityMicromap() {
+        return this.opacityMicromap;
+    }
+
+    public CpuSectionLights lights() {
+        return this.lights;
+    }
+
+    public boolean isEmpty() {
+        return this.segments.isEmpty();
+    }
+
+    public long positionBytes() {
+        return Math.multiplyExact(
+                this.triangleCount(), 9L * Float.BYTES);
+    }
+
+    public long primitiveBytes() {
+        return Math.multiplyExact(
+                this.triangleCount(), (long) CpuSectionMesh.PRIMITIVE_WORDS * Integer.BYTES);
+    }
+
+    public long byteSize() {
+        return Math.addExact(
+                Math.addExact(this.positionBytes(), this.primitiveBytes()),
+                Math.addExact(this.opacityMicromap.byteSize(), this.lights.byteSize()));
+    }
+
+    /** A CPU storage segment; segmentation does not create another BLAS or TLAS instance. */
+    public record Segment(
+            float[] positions,
+            int[] primitiveRecords,
+            int opaqueTriangleCount,
+            int cutoutTriangleCount,
+            int transmissiveTriangleCount) {
+        public Segment {
+            int triangles = Math.addExact(
+                    Math.addExact(opaqueTriangleCount, cutoutTriangleCount),
+                    transmissiveTriangleCount);
+            if (opaqueTriangleCount < 0
+                    || cutoutTriangleCount < 0
+                    || transmissiveTriangleCount < 0
+                    || positions.length != Math.multiplyExact(triangles, 9)
+                    || primitiveRecords.length
+                            != Math.multiplyExact(triangles, CpuSectionMesh.PRIMITIVE_WORDS)) {
+                throw new IllegalArgumentException("Invalid cluster mesh segment");
+            }
+        }
+
+        public int triangleCount() {
+            return Math.addExact(
+                    Math.addExact(this.opaqueTriangleCount, this.cutoutTriangleCount),
+                    this.transmissiveTriangleCount);
+        }
+    }
+}

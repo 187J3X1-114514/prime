@@ -3,6 +3,7 @@ package dev.prime.render.scene.vanilla;
 import com.mojang.blaze3d.vertex.VertexSorting;
 import dev.prime.render.terrain.CpuSectionMesh;
 import dev.prime.render.terrain.LabPbrMaterialSet;
+import java.util.List;
 import net.minecraft.client.color.block.BlockColors;
 import net.minecraft.client.renderer.SectionBufferBuilderPack;
 import net.minecraft.client.renderer.block.BlockStateModelSet;
@@ -30,7 +31,7 @@ public final class VanillaSectionMesher {
     private VanillaSectionMesher() {
     }
 
-    public static CpuSectionMesh mesh(
+    public static List<CpuSectionMesh> mesh(
             RenderSectionRegion region,
             BlockStateModelSet blockModels,
             FluidStateModelSet fluidModels,
@@ -40,6 +41,7 @@ public final class VanillaSectionMesher {
             VanillaGeometryPolicy geometryPolicy,
             boolean cutoutLeaves,
             boolean buildOpacityMicromap,
+            int segmentTriangleTarget,
             int sectionX,
             int sectionY,
             int sectionZ,
@@ -58,11 +60,12 @@ public final class VanillaSectionMesher {
                 labPbrMaterials,
                 geometryPolicy,
                 cutoutLeaves,
-                buildOpacityMicromap)) {
+                buildOpacityMicromap,
+                segmentTriangleTarget)) {
             SectionCompiler.Results results = compiler.compile(
                     section, region, VertexSorting.byDistance(0.0F, 0.0F, 0.0F), builders);
             try {
-                CpuSectionMesh mesh = capture.finish(results);
+                List<CpuSectionMesh> mesh = capture.finish(results);
                 completed = true;
                 return mesh;
             } finally {

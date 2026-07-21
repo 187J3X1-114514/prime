@@ -2,8 +2,9 @@ package dev.prime.render.terrain;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 
-/** Merges Section-local compiler output into one cluster-local BLAS payload. */
+/** Merges Section-local output into bounded CPU segments for one cluster BLAS. */
 final class SectionClusterMeshBuilder {
     private static final int POSITION_WORDS_PER_TRIANGLE = 9;
     private static final int PRIMITIVE_WORDS_PER_TRIANGLE = CpuSectionMesh.PRIMITIVE_WORDS;
@@ -12,14 +13,24 @@ final class SectionClusterMeshBuilder {
     private final int clusterX;
     private final int clusterY;
     private final int clusterZ;
+    private final int segmentTriangleTarget;
     private final List<Entry> entries = new ArrayList<>(SectionCluster.SECTION_COUNT);
+    private final ArrayList<CpuSectionMesh> segments = new ArrayList<>();
     private final boolean[] populatedSections = new boolean[SectionCluster.SECTION_COUNT];
     private int opaqueTriangleCount;
     private int cutoutTriangleCount;
     private int transmissiveTriangleCount;
     private int emitterCount;
+    private int totalEmitterCount;
+    private long inputBytes;
+    private boolean built;
 
     SectionClusterMeshBuilder(int clusterX, int clusterY, int clusterZ) {
+        this(clusterX, clusterY, clusterZ, TerrainMemoryBudget.TARGET_SEGMENT_TRIANGLES);
+    }
+
+    SectionClusterMeshBuilder(
+            int clusterX, int clusterY, int clusterZ, int segmentTriangleTarget) {
         if (SectionCluster.origin(clusterX) != clusterX
                 || SectionCluster.origin(clusterY) != clusterY
                 || SectionCluster.origin(clusterZ) != clusterZ) {
@@ -28,9 +39,20 @@ final class SectionClusterMeshBuilder {
         this.clusterX = clusterX;
         this.clusterY = clusterY;
         this.clusterZ = clusterZ;
+        if (segmentTriangleTarget <= 0) {
+            throw new IllegalArgumentException("Cluster segment triangle target must be positive");
+        }
+        this.segmentTriangleTarget = segmentTriangleTarget;
     }
 
-    void add(int sectionX, int sectionY, int sectionZ, CpuSectionMesh mesh) {
+    void add(int sectionX, int sectionY, int sectionZ, List<CpuSectionMesh> meshes) {
+        if (this.built) {
+            throw new IllegalStateException("Cluster mesh was already built");
+        }
+        Objects.requireNonNull(meshes, "meshes");
+        for (CpuSectionMesh mesh : meshes) {
+            Objects.requireNonNull(mesh, "mesh");
+        }
         long clusterKey = net.minecraft.core.SectionPos.asLong(
                 this.clusterX, this.clusterY, this.clusterZ);
         if (!SectionCluster.contains(clusterKey, sectionX, sectionY, sectionZ)) {
@@ -45,7 +67,22 @@ final class SectionClusterMeshBuilder {
             throw new IllegalArgumentException("Section was added to its cluster more than once");
         }
         this.populatedSections[localIndex] = true;
-        int lightOffset = this.emitterCount;
+        for (CpuSectionMesh mesh : meshes) {
+            if (!mesh.isEmpty()) {
+                this.addPart(sectionX, sectionY, sectionZ, mesh);
+            }
+        }
+    }
+
+    private void addPart(int sectionX, int sectionY, int sectionZ, CpuSectionMesh mesh) {
+        int triangleCount = Math.addExact(
+                Math.addExact(this.opaqueTriangleCount, this.cutoutTriangleCount),
+                this.transmissiveTriangleCount);
+        if (TerrainMemoryBudget.startsNewSegment(
+                this.inputBytes, triangleCount, mesh, this.segmentTriangleTarget)) {
+            this.finishSegment();
+        }
+        int lightOffset = this.totalEmitterCount;
         this.entries.add(new Entry(
                 sectionX,
                 sectionY,
@@ -59,9 +96,39 @@ final class SectionClusterMeshBuilder {
         this.transmissiveTriangleCount = Math.addExact(
                 this.transmissiveTriangleCount, mesh.transmissiveTriangleCount());
         this.emitterCount = Math.addExact(this.emitterCount, mesh.lights().emitterCount());
+        this.totalEmitterCount = Math.addExact(
+                this.totalEmitterCount, mesh.lights().emitterCount());
+        this.inputBytes = Math.addExact(this.inputBytes, mesh.byteSize());
     }
 
-    CpuSectionMesh build() {
+    CpuClusterMesh build() {
+        if (this.built) {
+            throw new IllegalStateException("Cluster mesh was already built");
+        }
+        this.built = true;
+        this.finishSegment();
+        CpuClusterMesh result = CpuClusterMesh.fromSegments(this.segments);
+        if (result.lights().emitterCount() != this.totalEmitterCount) {
+            throw new IllegalStateException(
+                    "Merged cluster light indices disagree with its light tree");
+        }
+        return result;
+    }
+
+    private void finishSegment() {
+        if (this.entries.isEmpty()) {
+            return;
+        }
+        this.segments.add(this.buildSegment());
+        this.entries.clear();
+        this.opaqueTriangleCount = 0;
+        this.cutoutTriangleCount = 0;
+        this.transmissiveTriangleCount = 0;
+        this.emitterCount = 0;
+        this.inputBytes = 0L;
+    }
+
+    private CpuSectionMesh buildSegment() {
         int triangleCount = Math.addExact(
                 Math.addExact(this.opaqueTriangleCount, this.cutoutTriangleCount),
                 this.transmissiveTriangleCount);
@@ -168,7 +235,7 @@ final class SectionClusterMeshBuilder {
         if (lights.emitterCount() != this.emitterCount) {
             throw new IllegalStateException("Merged cluster light indices disagree with its light tree");
         }
-        return new CpuSectionMesh(
+        CpuSectionMesh result = new CpuSectionMesh(
                 positions,
                 primitives,
                 this.opaqueTriangleCount,
@@ -176,6 +243,7 @@ final class SectionClusterMeshBuilder {
                 this.transmissiveTriangleCount,
                 opacityMicromap.build(),
                 lights);
+        return result;
     }
 
     private static void copyTranslatedPositions(
@@ -209,8 +277,8 @@ final class SectionClusterMeshBuilder {
             int packed = destination[record + FLAGS_EMITTER_WORD];
             int emitterIndex = PrimitivePacking.unpackEmitterIndex(packed);
             if (emitterIndex != PrimitivePacking.NO_EMITTER_INDEX) {
-                destination[record + FLAGS_EMITTER_WORD] = PrimitivePacking.packFlagsEmitter(
-                        PrimitivePacking.unpackFlags(packed),
+                destination[record + FLAGS_EMITTER_WORD] = PrimitivePacking.withEmitterIndex(
+                        packed,
                         Math.addExact(emitterIndex, lightOffset));
             }
         }

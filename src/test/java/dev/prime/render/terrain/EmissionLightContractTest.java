@@ -3,8 +3,11 @@ package dev.prime.render.terrain;
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 
@@ -152,6 +155,98 @@ final class EmissionLightContractTest {
         assertArrayEquals(bounds, java.util.Arrays.copyOfRange(packed, 0, 16));
         assertArrayEquals(forward, java.util.Arrays.copyOfRange(packed, 16, 18));
         assertArrayEquals(reverse, java.util.Arrays.copyOfRange(packed, 18, 20));
+    }
+
+    @Test
+    void treeRejectsAggregatePowerOutsideThePackedF32Domain() {
+        List<CpuLightTree.Leaf> leaves = List.of(
+                leaf(0.0F, Float.MAX_VALUE, 0),
+                leaf(1.0F, Float.MAX_VALUE, 1));
+
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> CpuLightTree.build(
+                        leaves, leaves.size(), CpuLightTree.LOCAL_SOFTENING_SCALE));
+    }
+
+    @Test
+    void worldTreeRefitKeepsExactForwardAndReverseLeafMapping() {
+        ArrayList<GpuCluster> clusters = new ArrayList<>();
+        for (int index = 0; index < 8; index++) {
+            clusters.add(cluster(index, index + 1.0F));
+        }
+        CpuWorldLightTree tree = new CpuWorldLightTree();
+        CpuWorldLightTree.Result initial = tree.update(clusters, 0, 0, 0);
+        assertWorldLeafMapping(initial, clusters.size());
+        assertEquals(36.0F, Float.intBitsToFloat(initial.pack()[3]), 1.0E-6F);
+
+        clusters.remove(0);
+        Collections.reverse(clusters);
+        CpuWorldLightTree.Result refitted = tree.update(clusters, 16, 0, 0);
+        assertWorldLeafMapping(refitted, clusters.size());
+        assertEquals(35.0F, Float.intBitsToFloat(refitted.pack()[3]), 1.0E-6F);
+        boolean hasInactiveLeaf = false;
+        for (int node = 0; node < refitted.nodeCount(); node++) {
+            if (Float.intBitsToFloat(refitted.pack()[node * 8 + 3]) == 0.0F) {
+                hasInactiveLeaf = true;
+                break;
+            }
+        }
+        assertTrue(hasInactiveLeaf);
+    }
+
+    @Test
+    void worldWithoutEmittersMapsEveryResidentClusterToNoLight() {
+        CpuWorldLightTree tree = new CpuWorldLightTree();
+        List<GpuCluster> clusters = List.of(
+                emptyCluster(1),
+                emptyCluster(2),
+                emptyCluster(3));
+
+        CpuWorldLightTree.Result result = tree.update(clusters, 0, 0, 0);
+
+        assertTrue(result.isEmpty());
+        for (int clusterIndex = 0; clusterIndex < clusters.size(); clusterIndex++) {
+            assertEquals(CpuLightTree.NO_INDEX, result.leafNode(clusterIndex));
+        }
+        assertThrows(
+                IndexOutOfBoundsException.class,
+                () -> result.leafNode(clusters.size()));
+    }
+
+    private static void assertWorldLeafMapping(CpuWorldLightTree.Result tree, int clusterCount) {
+        int forwardOffset = Math.toIntExact(tree.forwardByteOffset() / Integer.BYTES);
+        for (int clusterIndex = 0; clusterIndex < clusterCount; clusterIndex++) {
+            int leafNode = tree.leafNode(clusterIndex);
+            assertNotEquals(CpuLightTree.NO_INDEX, leafNode);
+            assertEquals(
+                    CpuLightTree.LEAF_FLAG | clusterIndex,
+                    tree.pack()[forwardOffset + leafNode]);
+        }
+    }
+
+    private static GpuCluster cluster(int index, float power) {
+        CpuLightTree.Bounds bounds = new CpuLightTree.Bounds(
+                0.0F, 0.0F, 0.0F, 1.0F, 1.0F, 1.0F);
+        return new GpuCluster(
+                index,
+                index,
+                0,
+                0,
+                null,
+                null,
+                new CpuSectionLights.Summary(1, bounds, power));
+    }
+
+    private static GpuCluster emptyCluster(int index) {
+        return new GpuCluster(
+                index,
+                index,
+                0,
+                0,
+                null,
+                null,
+                CpuSectionLights.EMPTY.summary());
     }
 
     private static CpuLightTree.Leaf leaf(float x, float power, int index) {

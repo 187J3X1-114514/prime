@@ -5,13 +5,11 @@ import dev.prime.config.PrimeConfig;
 import dev.prime.render.DisplaySettings;
 import dev.prime.render.LightingSettings;
 import dev.prime.render.MaterialSettings;
-import dev.prime.render.ScreenshotMode;
+import dev.prime.render.RayTracingRuntime;
 import dev.prime.render.fsr.FsrDebugView;
 import dev.prime.render.fsr.FsrQualityMode;
-import dev.prime.render.fsr.FsrSettings;
 import dev.prime.render.post.DlssRrDebugView;
 import dev.prime.render.post.PostProcessingMode;
-import dev.prime.render.post.PostProcessingSettings;
 import dev.prime.render.post.ReconstructionQualityMode;
 import dev.prime.render.vulkan.nrd.NrdDiagnostics;
 import java.util.List;
@@ -35,12 +33,13 @@ public final class PrimeVideoOptions {
     }
 
     public static OptionInstance<Boolean> screenshotMode() {
+        RayTracingRuntime runtime = RayTracingRuntime.instance();
         return OptionInstance.createBoolean(
                 "prime.options.screenshot_mode",
                 OptionInstance.cachedConstantTooltip(
                         Component.translatable("prime.options.screenshot_mode.tooltip")),
-                ScreenshotMode.requested(),
-                ScreenshotMode::request);
+                runtime.screenshotRequested(),
+                runtime::requestScreenshot);
     }
 
     public static OptionInstance<PostProcessingMode> postProcessingMode() {
@@ -54,7 +53,7 @@ public final class PrimeVideoOptions {
                 new OptionInstance.Enum<>(
                         POST_PROCESSING_MODES,
                         Codec.STRING.xmap(PostProcessingMode::fromId, PostProcessingMode::id)),
-                PostProcessingSettings.mode(),
+                PrimeConfig.settings().postProcessingMode(),
                 PrimeConfig::setPostProcessingMode);
     }
 
@@ -71,11 +70,12 @@ public final class PrimeVideoOptions {
                         Codec.STRING.xmap(
                                 ReconstructionQualityMode::fromId,
                                 ReconstructionQualityMode::id)),
-                PostProcessingSettings.quality(),
+                PrimeConfig.settings().reconstructionQuality(),
                 PrimeConfig::setReconstructionQualityMode);
     }
 
     public static OptionInstance<DlssRrDebugView> dlssRrDebugView() {
+        RayTracingRuntime runtime = RayTracingRuntime.instance();
         return new OptionInstance<>(
                 "prime.options.dlss_rr.debug_view",
                 OptionInstance.cachedConstantTooltip(
@@ -85,24 +85,25 @@ public final class PrimeVideoOptions {
                 new OptionInstance.Enum<>(
                         RR_DEBUG_VIEWS,
                         Codec.STRING.xmap(DlssRrDebugView::fromId, DlssRrDebugView::id)),
-                PostProcessingSettings.rrDebugView(),
-                PrimeConfig::setDlssRrDebugView);
+                runtime.rrDebugView(),
+                runtime::setRrDebugView);
     }
 
     public static OptionInstance<Boolean> dlssRrDebugFullscreen() {
+        RayTracingRuntime runtime = RayTracingRuntime.instance();
         return OptionInstance.createBoolean(
                 "prime.options.dlss_rr.debug_fullscreen",
                 OptionInstance.cachedConstantTooltip(
                         Component.translatable("prime.options.dlss_rr.debug_fullscreen.tooltip")),
-                PostProcessingSettings.rrDebugFullscreen(),
-                PrimeConfig::setDlssRrDebugFullscreen);
+                runtime.rrDebugFullscreen(),
+                runtime::setRrDebugFullscreen);
     }
 
     public static OptionInstance<Integer> sunExposure() {
         return exposureOption(
                 "prime.options.lighting.sun_ev",
                 "prime.options.lighting.sun_ev.tooltip",
-                LightingSettings.sunQuarterSteps(),
+                PrimeConfig.settings().sunQuarterSteps(),
                 PrimeConfig::setSunQuarterSteps);
     }
 
@@ -110,7 +111,7 @@ public final class PrimeVideoOptions {
         return exposureOption(
                 "prime.options.lighting.block_light_ev",
                 "prime.options.lighting.block_light_ev.tooltip",
-                LightingSettings.blockLightQuarterSteps(),
+                PrimeConfig.settings().blockLightQuarterSteps(),
                 PrimeConfig::setBlockLightQuarterSteps);
     }
 
@@ -125,7 +126,7 @@ public final class PrimeVideoOptions {
                 new OptionInstance.IntRange(
                         DisplaySettings.MINIMUM_OVEREXPOSURE_STEPS,
                         DisplaySettings.MAXIMUM_OVEREXPOSURE_STEPS),
-                DisplaySettings.overexposureSteps(),
+                PrimeConfig.settings().oklabOverexposureSteps(),
                 PrimeConfig::setOklabOverexposureSteps);
     }
 
@@ -140,11 +141,12 @@ public final class PrimeVideoOptions {
                 new OptionInstance.IntRange(
                         MaterialSettings.MINIMUM_ROUGHNESS_STEPS,
                         MaterialSettings.MAXIMUM_ROUGHNESS_STEPS),
-                MaterialSettings.roughnessSteps(),
+                PrimeConfig.settings().defaultRoughnessSteps(),
                 PrimeConfig::setDefaultRoughnessSteps);
     }
 
     public static OptionInstance<NrdDiagnostics.Mode> nrdDebugView() {
+        RayTracingRuntime runtime = RayTracingRuntime.instance();
         return new OptionInstance<>(
                 "prime.options.nrd.debug_view",
                 OptionInstance.cachedConstantTooltip(
@@ -154,11 +156,12 @@ public final class PrimeVideoOptions {
                 new OptionInstance.Enum<>(
                         NRD_DEBUG_VIEWS,
                         Codec.STRING.xmap(NrdDiagnostics.Mode::fromId, NrdDiagnostics.Mode::id)),
-                NrdDiagnostics.mode(),
-                PrimeConfig::setNrdDebugView);
+                runtime.nrdDebugView(),
+                runtime::setNrdDebugView);
     }
 
     public static OptionInstance<FsrDebugView> fsrDebugView() {
+        RayTracingRuntime runtime = RayTracingRuntime.instance();
         return new OptionInstance<>(
                 "prime.options.fsr.debug_view",
                 OptionInstance.cachedConstantTooltip(
@@ -168,8 +171,8 @@ public final class PrimeVideoOptions {
                 new OptionInstance.Enum<>(
                         FSR_DEBUG_VIEWS,
                         Codec.STRING.xmap(FsrDebugView::fromId, FsrDebugView::id)),
-                FsrSettings.debugView(),
-                PrimeConfig::setFsrDebugView);
+                runtime.fsrDebugView(),
+                runtime::setFsrDebugView);
     }
 
     private static OptionInstance<Integer> exposureOption(

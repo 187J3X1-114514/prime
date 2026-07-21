@@ -138,9 +138,16 @@ float primeNrdRadiancePeak(vec3 radiance) {
     return max(radiance.x, max(radiance.y, radiance.z));
 }
 
+float primeNrdSanitizeNonnegative(float value) {
+    return primeNrdIsFinite(value) ? max(value, 0.0) : 0.0;
+}
+
 vec3 primeNrdClampRadiance(vec3 radiance, float limit) {
-    bool invalid = any(isnan(radiance)) || any(isinf(radiance));
-    radiance = invalid ? vec3(0.0) : max(radiance, vec3(0.0));
+    // Channels are independent estimators. One failed component must not erase the other two.
+    radiance = vec3(
+            primeNrdSanitizeNonnegative(radiance.x),
+            primeNrdSanitizeNonnegative(radiance.y),
+            primeNrdSanitizeNonnegative(radiance.z));
     float peak = primeNrdRadiancePeak(radiance);
     return peak > limit ? radiance * (limit / peak) : radiance;
 }
@@ -149,14 +156,16 @@ vec3 primeNrdSanitizeRadiance(vec3 radiance) {
     return primeNrdClampRadiance(radiance, PRIME_NRD_FP16_MAX);
 }
 
-vec3 primeNrdSanitizeGuide(vec3 guide) {
-    bool invalid = any(isnan(guide)) || any(isinf(guide));
-    return invalid ? vec3(0.0) : clamp(guide, vec3(0.0), vec3(PRIME_NRD_FP16_MAX));
+vec3 primeNrdSanitizeAlbedo(vec3 albedo) {
+    return vec3(
+            primeNrdSanitizeUnit(albedo.x, 0.0),
+            primeNrdSanitizeUnit(albedo.y, 0.0),
+            primeNrdSanitizeUnit(albedo.z, 0.0));
 }
 
 vec3 primeNrdDemodulate(vec3 radiance, vec3 guide) {
     radiance = primeNrdSanitizeRadiance(radiance);
-    guide = primeNrdSanitizeGuide(guide);
+    guide = primeNrdSanitizeAlbedo(guide);
     return vec3(
             guide.x > 0.0 ? radiance.x / guide.x : 0.0,
             guide.y > 0.0 ? radiance.y / guide.y : 0.0,
@@ -168,12 +177,18 @@ void primeNrdClampRadianceTriple(
         inout vec3 second,
         inout vec3 third,
         float limit) {
-    bool invalidFirst = any(isnan(first)) || any(isinf(first));
-    bool invalidSecond = any(isnan(second)) || any(isinf(second));
-    bool invalidThird = any(isnan(third)) || any(isinf(third));
-    first = invalidFirst ? vec3(0.0) : max(first, vec3(0.0));
-    second = invalidSecond ? vec3(0.0) : max(second, vec3(0.0));
-    third = invalidThird ? vec3(0.0) : max(third, vec3(0.0));
+    first = vec3(
+            primeNrdSanitizeNonnegative(first.x),
+            primeNrdSanitizeNonnegative(first.y),
+            primeNrdSanitizeNonnegative(first.z));
+    second = vec3(
+            primeNrdSanitizeNonnegative(second.x),
+            primeNrdSanitizeNonnegative(second.y),
+            primeNrdSanitizeNonnegative(second.z));
+    third = vec3(
+            primeNrdSanitizeNonnegative(third.x),
+            primeNrdSanitizeNonnegative(third.y),
+            primeNrdSanitizeNonnegative(third.z));
 
     float sourcePeak = max(
             primeNrdRadiancePeak(first),

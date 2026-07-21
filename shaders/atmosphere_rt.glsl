@@ -44,9 +44,10 @@ vec3 primeAtmosphereSunTransmittance(
 
 void primeApplyAerialPerspective(
         uvec2 pixel,
+        vec2 cameraSample,
         float primaryDistance,
         inout vec3 radiance) {
-    if (primaryDistance < 0.0) {
+    if (isnan(primaryDistance) || isinf(primaryDistance) || primaryDistance < 0.0) {
         return;
     }
     float distanceKm = primaryDistance * ATM_WORLD_UNIT_SCALE_KM;
@@ -58,7 +59,9 @@ void primeApplyAerialPerspective(
             distanceKm / max(ATM_AERIAL_MAX_DISTANCE_KM, 1.0e-6), 0.0, 1.0)));
     float nearWeight = clamp(
             distanceKm / max(firstSliceDistanceKm, 1.0e-6), 0.0, 1.0);
-    vec2 screenUv = (vec2(pixel) + vec2(0.5)) / vec2(primePush.outputExtent);
+    // Screenshot accumulation integrates the pixel filter. Sampling this direction-dependent
+    // term at pixel centre would leave a deterministic sub-pixel bias in the reference image.
+    vec2 screenUv = (vec2(pixel) + cameraSample) / vec2(primePush.outputExtent);
     vec3 uvw = vec3(screenUv, normalizedDepth);
     vec3 inscatter = max(primeSampleAerialRadiance(uvw).rgb, vec3(0.0));
     vec3 transmittance = clamp(

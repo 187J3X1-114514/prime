@@ -1,12 +1,10 @@
 package dev.prime.render.vulkan.dlss;
 
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import java.io.IOException;
-import java.io.InputStream;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import org.joml.Matrix4f;
@@ -56,21 +54,16 @@ final class DlssRrNativeContractTest {
     }
 
     @Test
-    void runtimeResourcesAreWindowsPeImagesAndOnlyX64WindowsIsAccepted() throws IOException {
-        assertPe("/prime/natives/windows-x86_64/prime_dlss_rr.dll");
-        assertPe("/prime/natives/windows-x86_64/nvngx_dlssd.dll");
+    void onlyX64WindowsIsAccepted() {
         assertTrue(DlssRrNative.isSupportedPlatform("Windows 11", "amd64"));
         assertTrue(DlssRrNative.isSupportedPlatform("WINDOWS 10", "x86_64"));
         assertFalse(DlssRrNative.isSupportedPlatform("Windows 11", "aarch64"));
         assertFalse(DlssRrNative.isSupportedPlatform("Linux", "amd64"));
     }
 
-    private static void assertPe(String resource) throws IOException {
-        try (InputStream input = DlssRrNativeContractTest.class.getResourceAsStream(resource)) {
-            assertNotNull(input, "missing bundled RR runtime " + resource);
-            byte[] header = input.readNBytes(2);
-            assertEquals((byte) 'M', header[0]);
-            assertEquals((byte) 'Z', header[1]);
-        }
+    @Test
+    void bundledBridgeExportsTheDeclaredAbiOnItsSupportedPlatform() {
+        org.junit.jupiter.api.Assumptions.assumeTrue(DlssRrNative.isSupportedPlatform());
+        assertDoesNotThrow(DlssRrNative::verifyLibrary);
     }
 }

@@ -7,22 +7,7 @@ public final class DisplaySettings {
     public static final int MAXIMUM_OVEREXPOSURE_STEPS = 2 * STEPS_PER_UNIT;
     public static final int DEFAULT_OVEREXPOSURE_STEPS = 37;
 
-    private static volatile int overexposureSteps = DEFAULT_OVEREXPOSURE_STEPS;
-
     private DisplaySettings() {
-    }
-
-    public static int overexposureSteps() {
-        return overexposureSteps;
-    }
-
-    public static float overexposure() {
-        return overexposure(overexposureSteps);
-    }
-
-    public static synchronized void setOverexposureSteps(int steps) {
-        requireValid(steps);
-        overexposureSteps = steps;
     }
 
     public static float overexposure(int steps) {

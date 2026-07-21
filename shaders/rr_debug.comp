@@ -34,6 +34,19 @@ const uint RR_DIFFUSE_ALBEDO = 8u;
 const uint RR_SPECULAR_ALBEDO = 9u;
 const uint RR_SPECULAR_HIT_DISTANCE = 10u;
 const uint RR_OUTPUT = 11u;
+const vec3 RR_INVALID = vec3(1.0, 0.0, 1.0);
+
+bool rrFinite(float value) {
+    return !isnan(value) && !isinf(value);
+}
+
+bool rrFinite(vec2 value) {
+    return !any(isnan(value)) && !any(isinf(value));
+}
+
+bool rrFinite(vec3 value) {
+    return !any(isnan(value)) && !any(isinf(value));
+}
 
 float rrHalton(uint index, uint base) {
     float result = 0.0;
@@ -52,9 +65,7 @@ ivec2 rrSourcePixel(vec2 uv, ivec2 size) {
 }
 
 vec3 rrHdr(vec3 radiance) {
-    if (any(isnan(radiance)) || any(isinf(radiance))) {
-        radiance = vec3(0.0);
-    }
+    if (!rrFinite(radiance)) return RR_INVALID;
     return primeDisplayTransformToSrgb(
             max(radiance, vec3(0.0)), rrDebugPush.oklabOverexposure);
 }
@@ -84,6 +95,7 @@ vec3 rrPanel(uint panel, vec2 uv) {
     if (panel == RR_INPUT_COLOR) return rrHdr(imageLoad(rrDebugInputColor, lowPixel).rgb);
     if (panel == RR_MOTION) {
         vec2 motionPixels = imageLoad(rrDebugMotion, lowPixel).xy * vec2(lowSize);
+        if (!rrFinite(motionPixels)) return RR_INVALID;
         vec3 positive = max(motionPixels.x, 0.0) * vec3(1.0, 0.0, 0.0)
                 + max(motionPixels.y, 0.0) * vec3(0.0, 1.0, 0.0);
         vec3 negative = max(-motionPixels.x, 0.0) * vec3(0.0, 1.0, 1.0)
@@ -91,23 +103,32 @@ vec3 rrPanel(uint panel, vec2 uv) {
         return clamp((positive + negative) * 0.08, 0.0, 1.0);
     }
     if (panel == RR_DEPTH) {
-        float mapped = clamp(log2(1.0 + max(imageLoad(rrDebugDepth, lowPixel).x, 0.0)) / 16.0, 0.0, 1.0);
+        float depth = imageLoad(rrDebugDepth, lowPixel).x;
+        if (!rrFinite(depth)) return RR_INVALID;
+        float mapped = clamp(log2(1.0 + max(depth, 0.0)) / 16.0, 0.0, 1.0);
         return vec3(mapped);
     }
     if (panel == RR_JITTER) return rrJitterPlot(uv);
     vec4 normalRoughness = imageLoad(rrDebugNormalRoughness, lowPixel);
+    if (!rrFinite(normalRoughness.xyz) || !rrFinite(normalRoughness.a)) return RR_INVALID;
     if (panel == RR_NORMALS) return clamp(normalRoughness.xyz * 0.5 + 0.5, 0.0, 1.0);
     if (panel == RR_ROUGHNESS) return vec3(clamp(normalRoughness.a, 0.0, 1.0));
     if (panel == RR_DIFFUSE_ALBEDO) {
-        vec3 albedo = max(imageLoad(rrDebugDiffuseAlbedo, lowPixel).rgb, vec3(0.0));
+        vec3 albedo = imageLoad(rrDebugDiffuseAlbedo, lowPixel).rgb;
+        if (!rrFinite(albedo)) return RR_INVALID;
+        albedo = max(albedo, vec3(0.0));
         return clamp(primeEncodeSrgb(primeLinearRec2020ToLinearBt709(albedo)), 0.0, 1.0);
     }
     if (panel == RR_SPECULAR_ALBEDO) {
-        vec3 albedo = max(imageLoad(rrDebugSpecularAlbedo, lowPixel).rgb, vec3(0.0));
+        vec3 albedo = imageLoad(rrDebugSpecularAlbedo, lowPixel).rgb;
+        if (!rrFinite(albedo)) return RR_INVALID;
+        albedo = max(albedo, vec3(0.0));
         return clamp(primeEncodeSrgb(primeLinearRec2020ToLinearBt709(albedo)), 0.0, 1.0);
     }
     if (panel == RR_SPECULAR_HIT_DISTANCE) {
-        float mapped = clamp(log2(1.0 + max(imageLoad(rrDebugSpecularHitDistance, lowPixel).x, 0.0)) / 16.0, 0.0, 1.0);
+        float hitDistance = imageLoad(rrDebugSpecularHitDistance, lowPixel).x;
+        if (!rrFinite(hitDistance)) return RR_INVALID;
+        float mapped = clamp(log2(1.0 + max(hitDistance, 0.0)) / 16.0, 0.0, 1.0);
         return vec3(mapped, mapped * mapped, 1.0 - mapped);
     }
     return rrHdr(imageLoad(rrDebugOutput, fullPixel).rgb);

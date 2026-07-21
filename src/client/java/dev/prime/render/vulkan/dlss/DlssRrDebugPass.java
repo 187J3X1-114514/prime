@@ -1,9 +1,7 @@
 package dev.prime.render.vulkan.dlss;
 
 import com.mojang.blaze3d.vulkan.Destroyable;
-import dev.prime.render.DisplaySettings;
 import dev.prime.render.post.DlssRrDebugView;
-import dev.prime.render.post.PostProcessingSettings;
 import dev.prime.render.vulkan.VulkanContext;
 import dev.prime.render.vulkan.VulkanImage;
 import java.io.IOException;
@@ -179,18 +177,23 @@ final class DlssRrDebugPass implements Destroyable {
         }
     }
 
-    void record(VkCommandBuffer commandBuffer, int frameIndex, int jitterPhaseCount) {
-        DlssRrDebugView view = PostProcessingSettings.rrDebugView();
+    void record(
+            VkCommandBuffer commandBuffer,
+            DlssRrDebugView view,
+            boolean fullscreen,
+            int frameIndex,
+            int jitterPhaseCount,
+            float displayOverexposure) {
         if (view == DlssRrDebugView.OFF) {
             return;
         }
         try (MemoryStack stack = MemoryStack.stackPush()) {
             ByteBuffer push = stack.malloc(PUSH_SIZE).order(ByteOrder.nativeOrder());
-            push.putInt(0, view.ordinal());
-            push.putInt(4, PostProcessingSettings.rrDebugFullscreen() ? 1 : 0);
+            push.putInt(0, view.shaderId());
+            push.putInt(4, fullscreen ? 1 : 0);
             push.putInt(8, Math.floorMod(frameIndex, jitterPhaseCount) + 1);
             push.putInt(12, jitterPhaseCount);
-            push.putFloat(16, DisplaySettings.overexposure());
+            push.putFloat(16, displayOverexposure);
             VK12.vkCmdBindPipeline(commandBuffer, VK12.VK_PIPELINE_BIND_POINT_COMPUTE, this.pipeline);
             VK12.vkCmdBindDescriptorSets(
                     commandBuffer,

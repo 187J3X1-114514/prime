@@ -2,9 +2,12 @@ package dev.prime.render.post;
 
 import dev.prime.render.FrameCamera;
 import dev.prime.render.SunDirection;
+import dev.prime.render.fsr.FsrDebugView;
 import dev.prime.render.fsr.FsrSettings;
 import dev.prime.render.vulkan.DenoiserInputs;
 import dev.prime.render.vulkan.VulkanImage;
+import dev.prime.render.vulkan.nrd.NrdDiagnostics;
+import java.util.Objects;
 import org.lwjgl.vulkan.VkCommandBuffer;
 
 /**
@@ -63,5 +66,26 @@ public interface RealtimePostProcessor extends Denoiser {
             long atlasView,
             long atlasSampler,
             SunDirection sunDirection,
-            float sunRadianceMultiplier) {}
+            float sunRadianceMultiplier,
+            float displayOverexposure,
+            NrdDiagnostics.Mode nrdDebugView,
+            FsrDebugView fsrDebugView,
+            DlssRrDebugView rrDebugView,
+            boolean rrDebugFullscreen) {
+        public FrameParameters {
+            camera = Objects.requireNonNull(camera, "camera");
+            sunDirection = Objects.requireNonNull(sunDirection, "sunDirection");
+            nrdDebugView = Objects.requireNonNull(nrdDebugView, "nrdDebugView");
+            fsrDebugView = Objects.requireNonNull(fsrDebugView, "fsrDebugView");
+            rrDebugView = Objects.requireNonNull(rrDebugView, "rrDebugView");
+            if (!Float.isFinite(sunRadianceMultiplier) || sunRadianceMultiplier <= 0.0F) {
+                throw new IllegalArgumentException("Sun radiance multiplier must be finite and positive");
+            }
+            if (!Float.isFinite(displayOverexposure)
+                    || displayOverexposure < 1.0F
+                    || displayOverexposure > 2.0F) {
+                throw new IllegalArgumentException("Display overexposure must be between 1.0 and 2.0");
+            }
+        }
+    }
 }

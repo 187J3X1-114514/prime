@@ -3,19 +3,14 @@ package dev.prime.render.vulkan.fsr;
 import dev.prime.render.FrameCamera;
 import dev.prime.render.fsr.FsrDebugView;
 import dev.prime.render.fsr.FsrSettings;
+import dev.prime.render.vulkan.NativeRuntimeFiles;
 import dev.prime.render.vulkan.VulkanContext;
 import dev.prime.render.vulkan.VulkanImage;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
-import java.nio.file.FileAlreadyExistsException;
-import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.StandardCopyOption;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
-import java.util.HexFormat;
 import java.util.Locale;
 import org.lwjgl.system.APIUtil;
 import org.lwjgl.system.JNI;
@@ -75,18 +70,28 @@ final class FsrNative {
     private final long queryFunction;
 
     private FsrNative() {
-        this.library = loadLibrary();
-        this.createFunction = requireFunction(this.library, "ffxCreateContext");
-        this.destroyFunction = requireFunction(this.library, "ffxDestroyContext");
-        this.dispatchFunction = requireFunction(this.library, "ffxDispatch");
-        this.queryFunction = requireFunction(this.library, "ffxQuery");
-        String availableVersion = this.queryAvailableVersion();
-        if (!EXPECTED_UPSCALER_VERSION.equals(availableVersion)) {
-            throw new IllegalStateException(
-                    "Bundled FidelityFX upscaler version is "
-                            + availableVersion
-                            + "; expected "
-                            + EXPECTED_UPSCALER_VERSION);
+        SharedLibrary loaded = loadLibrary();
+        try {
+            this.library = loaded;
+            this.createFunction = requireFunction(loaded, "ffxCreateContext");
+            this.destroyFunction = requireFunction(loaded, "ffxDestroyContext");
+            this.dispatchFunction = requireFunction(loaded, "ffxDispatch");
+            this.queryFunction = requireFunction(loaded, "ffxQuery");
+            String availableVersion = this.queryAvailableVersion();
+            if (!EXPECTED_UPSCALER_VERSION.equals(availableVersion)) {
+                throw new IllegalStateException(
+                        "Bundled FidelityFX upscaler version is "
+                                + availableVersion
+                                + "; expected "
+                                + EXPECTED_UPSCALER_VERSION);
+            }
+        } catch (RuntimeException | Error exception) {
+            try {
+                loaded.free();
+            } catch (RuntimeException | Error cleanupFailure) {
+                exception.addSuppressed(cleanupFailure);
+            }
+            throw exception;
         }
     }
 
@@ -167,7 +172,11 @@ final class FsrNative {
                 }
                 return new Instance(this, handle, version, creationStorage);
             } catch (RuntimeException exception) {
-                this.destroy(stack, handle);
+                try {
+                    this.destroy(stack, handle);
+                } catch (RuntimeException cleanupFailure) {
+                    exception.addSuppressed(cleanupFailure);
+                }
                 throw exception;
             }
         } catch (RuntimeException exception) {
@@ -375,39 +384,10 @@ final class FsrNative {
         } catch (IOException exception) {
             throw new IllegalStateException("Unable to read the bundled FidelityFX library", exception);
         }
-        String digest = sha256(bytes);
-        Path directory = Path.of(System.getProperty("java.io.tmpdir"), "prime-fsr", digest);
+        Path directory = NativeRuntimeFiles.directory("prime-fsr", bytes);
         Path libraryPath = directory.resolve("amd_fidelityfx_vk.dll");
-        try {
-            Files.createDirectories(directory);
-            if (!Files.exists(libraryPath)) {
-                Path temporary = directory.resolve(
-                        "amd_fidelityfx_vk-" + ProcessHandle.current().pid() + ".tmp");
-                try {
-                    Files.write(temporary, bytes);
-                    try {
-                        Files.move(temporary, libraryPath, StandardCopyOption.ATOMIC_MOVE);
-                    } catch (FileAlreadyExistsException ignored) {
-                        // Another process published the same content-addressed DLL.
-                    } finally {
-                        Files.deleteIfExists(temporary);
-                    }
-                } catch (FileAlreadyExistsException ignored) {
-                    // Another thread in this process won the extraction race.
-                }
-            }
-        } catch (IOException exception) {
-            throw new IllegalStateException("Unable to extract the bundled FidelityFX library", exception);
-        }
+        NativeRuntimeFiles.publish(libraryPath, bytes);
         return APIUtil.apiCreateLibrary(libraryPath.toAbsolutePath().toString());
-    }
-
-    private static String sha256(byte[] bytes) {
-        try {
-            return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(bytes));
-        } catch (NoSuchAlgorithmException exception) {
-            throw new IllegalStateException("The Java runtime does not provide SHA-256", exception);
-        }
     }
 
     private static long requireFunction(SharedLibrary library, String name) {

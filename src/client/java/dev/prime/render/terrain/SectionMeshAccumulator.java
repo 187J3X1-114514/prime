@@ -1,6 +1,8 @@
 package dev.prime.render.terrain;
 
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.List;
 import net.minecraft.client.renderer.texture.TextureAtlasSprite;
 
 /**
@@ -14,35 +16,82 @@ public final class SectionMeshAccumulator {
     private static final int[] FIRST_TRIANGLE = new int[] {0, 1, 2};
     private static final int[] SECOND_TRIANGLE = new int[] {0, 2, 3};
 
-    private final MeshBuilder opaque = new MeshBuilder();
-    private final MeshBuilder cutout = new MeshBuilder();
-    private final MeshBuilder transmissive = new MeshBuilder();
-    private final OpacityMicromapData.Builder opacityMicromap;
-    private final CpuSectionLights.Builder lights = new CpuSectionLights.Builder();
+    private final boolean buildOpacityMicromap;
     private final LabPbrMaterialSet labPbrMaterials;
+    private final int segmentTriangleTarget;
+    private final ArrayList<CpuSectionMesh> segments = new ArrayList<>();
+    private MeshBuilder opaque;
+    private MeshBuilder cutout;
+    private MeshBuilder transmissive;
+    private OpacityMicromapData.Builder opacityMicromap;
+    private CpuSectionLights.Builder lights;
+    private int triangleCount;
+    private boolean built;
 
     public SectionMeshAccumulator(
             LabPbrMaterialSet labPbrMaterials, boolean buildOpacityMicromap) {
+        this(labPbrMaterials, buildOpacityMicromap,
+                TerrainMemoryBudget.TARGET_SEGMENT_TRIANGLES);
+    }
+
+    public SectionMeshAccumulator(
+            LabPbrMaterialSet labPbrMaterials,
+            boolean buildOpacityMicromap,
+            int segmentTriangleTarget) {
+        if (segmentTriangleTarget < 2 || (segmentTriangleTarget & 1) != 0) {
+            throw new IllegalArgumentException(
+                    "Section mesh segment capacity must contain whole quads");
+        }
         this.labPbrMaterials = labPbrMaterials;
-        this.opacityMicromap = buildOpacityMicromap
-                ? new OpacityMicromapData.Builder()
-                : null;
+        this.buildOpacityMicromap = buildOpacityMicromap;
+        this.segmentTriangleTarget = segmentTriangleTarget;
+        this.beginSegment();
     }
 
     public void addQuad(Quad quad, Surface surface) {
+        if (this.built) {
+            throw new IllegalStateException("Section mesh was already built");
+        }
+        if (this.triangleCount >= this.segmentTriangleTarget) {
+            this.finishSegment();
+        }
         MeshBuilder destination = surface.transmissive()
                 ? this.transmissive
                 : (surface.cutout() ? this.cutout : this.opaque);
         this.emitTriangle(destination, quad, FIRST_TRIANGLE, surface);
         this.emitTriangle(destination, quad, SECOND_TRIANGLE, surface);
+        this.triangleCount += 2;
     }
 
-    public CpuSectionMesh build() {
+    public List<CpuSectionMesh> build() {
+        if (this.built) {
+            throw new IllegalStateException("Section mesh was already built");
+        }
+        this.built = true;
+        this.finishSegment();
+        return List.copyOf(this.segments);
+    }
+
+    private void beginSegment() {
+        this.opaque = new MeshBuilder();
+        this.cutout = new MeshBuilder();
+        this.transmissive = new MeshBuilder();
+        this.opacityMicromap = this.buildOpacityMicromap
+                ? new OpacityMicromapData.Builder()
+                : null;
+        this.lights = new CpuSectionLights.Builder();
+        this.triangleCount = 0;
+    }
+
+    private void finishSegment() {
+        if (this.triangleCount == 0) {
+            return;
+        }
         float[] positions = concatenate(
                 this.opaque.positions, this.cutout.positions, this.transmissive.positions);
         int[] primitives = concatenate(
                 this.opaque.primitives, this.cutout.primitives, this.transmissive.primitives);
-        return new CpuSectionMesh(
+        this.segments.add(new CpuSectionMesh(
                 positions,
                 primitives,
                 this.opaque.triangleCount,
@@ -51,7 +100,10 @@ public final class SectionMeshAccumulator {
                 this.opacityMicromap == null
                         ? OpacityMicromapData.fullyUnknown(this.cutout.triangleCount)
                         : this.opacityMicromap.build(),
-                this.lights.build());
+                this.lights.build()));
+        if (!this.built) {
+            this.beginSegment();
+        }
     }
 
     private void emitTriangle(MeshBuilder destination, Quad quad, int[] indices, Surface surface) {
@@ -93,7 +145,6 @@ public final class SectionMeshAccumulator {
         destination.primitives.add(packedUv0);
         destination.primitives.add(packedUv1);
         destination.primitives.add(packedUv2);
-        destination.primitives.add(packedTint);
 
         float edge1X = secondX - firstX;
         float edge1Y = secondY - firstY;
@@ -122,7 +173,6 @@ public final class SectionMeshAccumulator {
                 quad.normalX,
                 quad.normalY,
                 quad.normalZ);
-        destination.primitives.add(packedNormal);
         long packedTangent = PrimitivePacking.packTriangleTangent(
                 edge1X,
                 edge1Y,
@@ -147,6 +197,7 @@ public final class SectionMeshAccumulator {
                 this.labPbrMaterials.hasNormal(surface.sprite().contents().name()),
                 this.labPbrMaterials.hasSpecular(surface.sprite().contents().name()),
                 (packedTangent & 0x1_0000_0000L) != 0L);
+        packedTint = PrimitivePacking.packTintFlags(packedTint, flags);
         int encodedEmitterIndex = this.lights.addTriangle(
                 firstX,
                 firstY,
@@ -166,6 +217,8 @@ public final class SectionMeshAccumulator {
                 surface.lightEmission(),
                 surface.sprite(),
                 this.labPbrMaterials.emissionMap(surface.sprite().contents().name()));
+        destination.primitives.add(packedTint);
+        destination.primitives.add(packedNormal);
         destination.primitives.add(PrimitivePacking.packFlagsEmitter(
                 flags,
                 encodedEmitterIndex == 0
@@ -178,25 +231,23 @@ public final class SectionMeshAccumulator {
 
     private static float[] concatenate(
             FloatArrayBuilder first, FloatArrayBuilder second, FloatArrayBuilder third) {
-        float[] result = Arrays.copyOf(first.values, first.size);
-        int firstSize = result.length;
-        result = Arrays.copyOf(result, firstSize + second.size);
-        System.arraycopy(second.values, 0, result, firstSize, second.size);
-        int secondEnd = result.length;
-        result = Arrays.copyOf(result, secondEnd + third.size);
-        System.arraycopy(third.values, 0, result, secondEnd, third.size);
+        int secondOffset = first.size;
+        int thirdOffset = Math.addExact(secondOffset, second.size);
+        float[] result = new float[Math.addExact(thirdOffset, third.size)];
+        System.arraycopy(first.values, 0, result, 0, first.size);
+        System.arraycopy(second.values, 0, result, secondOffset, second.size);
+        System.arraycopy(third.values, 0, result, thirdOffset, third.size);
         return result;
     }
 
     private static int[] concatenate(
             IntArrayBuilder first, IntArrayBuilder second, IntArrayBuilder third) {
-        int[] result = Arrays.copyOf(first.values, first.size);
-        int firstSize = result.length;
-        result = Arrays.copyOf(result, firstSize + second.size);
-        System.arraycopy(second.values, 0, result, firstSize, second.size);
-        int secondEnd = result.length;
-        result = Arrays.copyOf(result, secondEnd + third.size);
-        System.arraycopy(third.values, 0, result, secondEnd, third.size);
+        int secondOffset = first.size;
+        int thirdOffset = Math.addExact(secondOffset, second.size);
+        int[] result = new int[Math.addExact(thirdOffset, third.size)];
+        System.arraycopy(first.values, 0, result, 0, first.size);
+        System.arraycopy(second.values, 0, result, secondOffset, second.size);
+        System.arraycopy(third.values, 0, result, thirdOffset, third.size);
         return result;
     }
 

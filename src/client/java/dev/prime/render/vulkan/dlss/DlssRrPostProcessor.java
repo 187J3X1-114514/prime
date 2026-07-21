@@ -1,12 +1,11 @@
 package dev.prime.render.vulkan.dlss;
 
-import com.mojang.blaze3d.vulkan.Destroyable;
 import dev.prime.render.CameraDiscontinuity;
 import dev.prime.render.FrameCamera;
+import dev.prime.render.ResourceCleanup;
 import dev.prime.render.fsr.FsrSettings;
 import dev.prime.render.post.DlssRrDebugView;
 import dev.prime.render.post.PostProcessingMode;
-import dev.prime.render.post.PostProcessingSettings;
 import dev.prime.render.post.RealtimePostProcessor;
 import dev.prime.render.post.ReconstructionQualityMode;
 import dev.prime.render.vulkan.AtmospherePipeline;
@@ -14,7 +13,6 @@ import dev.prime.render.vulkan.DisplayTransformPass;
 import dev.prime.render.vulkan.VulkanContext;
 import dev.prime.render.vulkan.VulkanImage;
 import dev.prime.render.vulkan.nrd.NrdCameraTransform;
-import java.util.List;
 import java.util.Objects;
 import org.joml.Matrix4f;
 import org.lwjgl.system.MemoryStack;
@@ -125,13 +123,13 @@ public final class DlssRrPostProcessor implements RealtimePostProcessor {
                     displayTransform,
                     debugPass);
         } catch (RuntimeException exception) {
-            context.awaitIdle();
-            if (feature != null) feature.close();
-            if (debugPass != null) debugPass.destroy();
-            if (displayTransform != null) displayTransform.destroy();
-            if (preparePass != null) preparePass.destroy();
-            if (targets != null) targets.destroy();
-            throw exception;
+            RuntimeException failure = ResourceCleanup.run(context::awaitIdle, exception);
+            failure = ResourceCleanup.close(feature, failure);
+            failure = ResourceCleanup.destroy(debugPass, failure);
+            failure = ResourceCleanup.destroy(displayTransform, failure);
+            failure = ResourceCleanup.destroy(preparePass, failure);
+            failure = ResourceCleanup.destroy(targets, failure);
+            throw failure;
         }
     }
 
@@ -150,6 +148,7 @@ public final class DlssRrPostProcessor implements RealtimePostProcessor {
     public int displayHeight() { return this.displayHeight; }
 
     public void requestReset() {
+        requireOpen();
         this.resetRequested = true;
     }
 
@@ -157,9 +156,12 @@ public final class DlssRrPostProcessor implements RealtimePostProcessor {
             FrameCamera camera,
             long sceneRevision,
             long atlasView,
-            long atlasSampler) {
+            long atlasSampler,
+            DlssRrDebugView debugView,
+            boolean debugFullscreen) {
         requireOpen();
         Objects.requireNonNull(camera, "camera");
+        Objects.requireNonNull(debugView, "debugView");
         boolean cameraCut = this.initialized && CameraDiscontinuity.isCut(this.previousCamera, camera);
         boolean reset = this.resetRequested
                 || !this.initialized
@@ -184,7 +186,9 @@ public final class DlssRrPostProcessor implements RealtimePostProcessor {
                 jitter,
                 reset,
                 deltaMilliseconds,
-                now);
+                now,
+                debugView,
+                debugFullscreen);
     }
 
     @Override
@@ -193,7 +197,9 @@ public final class DlssRrPostProcessor implements RealtimePostProcessor {
                 parameters.camera(),
                 parameters.sceneRevision(),
                 parameters.atlasView(),
-                parameters.atlasSampler());
+                parameters.atlasSampler(),
+                parameters.rrDebugView(),
+                parameters.rrDebugFullscreen());
     }
 
     public void prepareForRayTrace(VkCommandBuffer commandBuffer) {
@@ -202,7 +208,10 @@ public final class DlssRrPostProcessor implements RealtimePostProcessor {
     }
 
     public void record(
-            VkCommandBuffer commandBuffer, FrameToken token, float sunRadianceMultiplier) {
+            VkCommandBuffer commandBuffer,
+            FrameToken token,
+            float sunRadianceMultiplier,
+            float displayOverexposure) {
         requireOpen();
         if (token.owner != this || token.recorded || token.submitted) {
             throw new IllegalArgumentException("DLSS RR frame token does not belong to this recording");
@@ -220,29 +229,33 @@ public final class DlssRrPostProcessor implements RealtimePostProcessor {
                 new DlssRrNative.Evaluation(
                         this.renderWidth,
                         this.renderHeight,
-                        -token.jitter.x(),
-                        -token.jitter.y(),
+                        token.jitter.x(),
+                        token.jitter.y(),
                         this.renderWidth,
                         this.renderHeight,
                         token.reset,
                         token.deltaMilliseconds,
                         token.camera.viewRotation(),
                         this.ngxProjection,
-                        List.of(
-                                this.targets.material(),
-                                this.targets.specularMaterial(),
-                                this.targets.rrNormalRoughness(),
-                                this.targets.inputColor(),
-                                this.targets.rrOutput(),
-                                this.targets.viewZ(),
-                                this.targets.motion(),
-                                this.targets.specularHitDistance())));
+                        this.targets.material(),
+                        this.targets.specularMaterial(),
+                        this.targets.rrNormalRoughness(),
+                        this.targets.inputColor(),
+                        this.targets.rrOutput(),
+                        this.targets.viewZ(),
+                        this.targets.motion(),
+                        this.targets.specularHitDistance()));
         allCommandsToCompute(commandBuffer);
-        this.displayTransform.record(commandBuffer, false);
-        if (PostProcessingSettings.rrDebugView() != DlssRrDebugView.OFF) {
+        this.displayTransform.record(commandBuffer, false, displayOverexposure);
+        if (token.debugView != DlssRrDebugView.OFF) {
             allCommandsToCompute(commandBuffer);
             this.debugPass.record(
-                    commandBuffer, token.frameIndex, this.quality.rrJitterPhaseCount());
+                    commandBuffer,
+                    token.debugView,
+                    token.debugFullscreen,
+                    token.frameIndex,
+                    this.quality.rrJitterPhaseCount(),
+                    displayOverexposure);
         }
     }
 
@@ -252,7 +265,11 @@ public final class DlssRrPostProcessor implements RealtimePostProcessor {
         if (!(frame instanceof FrameToken token)) {
             throw new IllegalArgumentException("DLSS RR received another processor's frame token");
         }
-        this.record(commandBuffer, token, parameters.sunRadianceMultiplier());
+        this.record(
+                commandBuffer,
+                token,
+                parameters.sunRadianceMultiplier(),
+                parameters.displayOverexposure());
     }
 
     private static void allCommandsToCompute(VkCommandBuffer commandBuffer) {
@@ -300,13 +317,16 @@ public final class DlssRrPostProcessor implements RealtimePostProcessor {
     @Override
     public void destroy() {
         if (this.destroyed) return;
-        this.destroyed = true;
+        // Do not make a failed wait terminal: no child handle is safe to release until all NGX
+        // work has retired, and a later caller must be able to retry this ownership boundary.
         this.context.awaitIdle();
-        this.feature.close();
-        this.debugPass.destroy();
-        this.displayTransform.destroy();
-        this.preparePass.destroy();
-        this.targets.destroy();
+        RuntimeException failure = ResourceCleanup.close(this.feature, null);
+        failure = ResourceCleanup.destroy(this.debugPass, failure);
+        failure = ResourceCleanup.destroy(this.displayTransform, failure);
+        failure = ResourceCleanup.destroy(this.preparePass, failure);
+        failure = ResourceCleanup.destroy(this.targets, failure);
+        this.destroyed = true;
+        ResourceCleanup.throwIfFailed(failure);
     }
 
     public static final class FrameToken implements Frame {
@@ -321,6 +341,8 @@ public final class DlssRrPostProcessor implements RealtimePostProcessor {
         private final boolean reset;
         private final float deltaMilliseconds;
         private final long frameNanos;
+        private final DlssRrDebugView debugView;
+        private final boolean debugFullscreen;
         private boolean recorded;
         private boolean submitted;
 
@@ -335,7 +357,9 @@ public final class DlssRrPostProcessor implements RealtimePostProcessor {
                 FsrSettings.Jitter jitter,
                 boolean reset,
                 float deltaMilliseconds,
-                long frameNanos) {
+                long frameNanos,
+                DlssRrDebugView debugView,
+                boolean debugFullscreen) {
             this.owner = owner;
             this.camera = camera;
             this.historyCamera = historyCamera;
@@ -347,6 +371,8 @@ public final class DlssRrPostProcessor implements RealtimePostProcessor {
             this.reset = reset;
             this.deltaMilliseconds = deltaMilliseconds;
             this.frameNanos = frameNanos;
+            this.debugView = debugView;
+            this.debugFullscreen = debugFullscreen;
         }
 
         @Override public int frameIndex() { return this.frameIndex; }

@@ -127,10 +127,10 @@ void main() {
     // noisy sky energy is fully explained by material reflectance and over-constrains reconstruction.
     vec3 diffuseAlbedo = sky
             ? vec3(0.5)
-            : (transparent ? vec3(0.0) : primeNrdSanitizeGuide(material.rgb));
+            : (transparent ? vec3(0.0) : primeNrdSanitizeAlbedo(material.rgb));
     vec3 specularAlbedo = sky
             ? vec3(0.5)
-            : primeNrdSanitizeGuide(specularMaterial.rgb);
+            : primeNrdSanitizeAlbedo(specularMaterial.rgb);
     imageStore(rrDiffuseMaterial, pixel, vec4(diffuseAlbedo, material.a));
     imageStore(rrSpecularMaterial, pixel, vec4(specularAlbedo, specularMaterial.a));
     imageStore(

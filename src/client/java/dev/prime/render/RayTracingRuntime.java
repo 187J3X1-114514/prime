@@ -1,16 +1,22 @@
 package dev.prime.render;
 
 import com.mojang.blaze3d.pipeline.RenderTarget;
+import com.mojang.blaze3d.platform.InputConstants;
 import com.mojang.blaze3d.systems.RenderSystem;
 import com.mojang.blaze3d.vulkan.VulkanDevice;
 import dev.prime.PrimeClient;
+import dev.prime.render.fsr.FsrDebugView;
+import dev.prime.render.post.DlssRrDebugView;
 import dev.prime.render.vulkan.VulkanBootstrap;
 import dev.prime.render.vulkan.VulkanCapabilities;
+import dev.prime.render.vulkan.nrd.NrdDiagnostics;
+import java.util.List;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.components.toasts.SystemToast;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.network.chat.Component;
 import org.joml.Matrix4fc;
+import org.lwjgl.glfw.GLFW;
 
 public final class RayTracingRuntime {
     private static final RayTracingRuntime INSTANCE = new RayTracingRuntime();
@@ -22,6 +28,12 @@ public final class RayTracingRuntime {
     private boolean notificationShown;
     private boolean unavailabilityLogged;
     private boolean shuttingDown;
+    private boolean previousEscape;
+    private boolean previousRrCycle;
+    private boolean previousRrLayout;
+    private SessionControls controls = SessionControls.defaults();
+    // Resource reload preparation may observe the renderer off the client thread. The renderer
+    // itself remains client-thread owned; volatile only publishes attachment and detachment.
     private volatile VulkanRenderer renderer;
     private ClientLevel world;
 
@@ -41,8 +53,9 @@ public final class RayTracingRuntime {
         if (this.renderer != null || this.shuttingDown || this.states.current() == RuntimeState.FAILED) {
             return;
         }
-        VulkanCapabilities capabilities = VulkanBootstrap.capabilities();
-        VulkanDevice device = VulkanBootstrap.device();
+        VulkanBootstrap.Snapshot bootstrap = VulkanBootstrap.snapshot();
+        VulkanCapabilities capabilities = bootstrap.capabilities();
+        VulkanDevice device = bootstrap.device();
         if (!capabilities.available() || device == null) {
             this.failureReason = capabilities.unavailableReason();
             this.states.unavailable();
@@ -71,9 +84,13 @@ public final class RayTracingRuntime {
         if (!this.initialized) {
             return;
         }
+        this.updateSessionShortcuts(minecraft);
         this.tryInitializeRenderer();
         this.finalizeUnavailableReason();
         this.showFailureNotificationOnce(minecraft);
+        if (this.states.current() == RuntimeState.FAILED) {
+            return;
+        }
         VulkanRenderer activeRenderer = this.renderer;
         if (activeRenderer == null) {
             return;
@@ -84,7 +101,11 @@ public final class RayTracingRuntime {
                 this.world = currentWorld;
                 this.states.worldChanged();
             }
-            activeRenderer.beginFrame(minecraft);
+            SessionControls frameControls = this.controls;
+            boolean screenshotRequested = activeRenderer.beginFrame(minecraft, frameControls);
+            if (screenshotRequested != frameControls.screenshotRequested()) {
+                this.controls = this.controls.withScreenshotRequested(screenshotRequested);
+            }
             if (currentWorld == null || minecraft.player == null) {
                 this.states.worldAbsent();
             } else {
@@ -104,7 +125,7 @@ public final class RayTracingRuntime {
             double z,
             float sunAngleRadians) {
         VulkanRenderer activeRenderer = this.renderer;
-        if (activeRenderer != null) {
+        if (activeRenderer != null && this.states.current() != RuntimeState.FAILED) {
             activeRenderer.captureCamera(
                     renderedProjection,
                     baseProjection,
@@ -128,6 +149,75 @@ public final class RayTracingRuntime {
         }
     }
 
+    public boolean handleScreenshotShortcut(
+            Minecraft minecraft, InputConstants.Key key, boolean controlDown) {
+        long window = minecraft.getWindow().handle();
+        boolean alt = pressed(window, GLFW.GLFW_KEY_LEFT_ALT)
+                || pressed(window, GLFW.GLFW_KEY_RIGHT_ALT);
+        if (!controlDown
+                || !alt
+                || !minecraft.options.keyScreenshot.matches(key)
+                || minecraft.level == null) {
+            return false;
+        }
+        this.requestScreenshot(!this.controls.screenshotRequested());
+        return true;
+    }
+
+    public boolean screenshotRequested() {
+        return this.controls.screenshotRequested();
+    }
+
+    public void requestScreenshot(boolean enabled) {
+        this.controls = this.controls.withScreenshotRequested(enabled);
+    }
+
+    public boolean screenshotActive() {
+        VulkanRenderer activeRenderer = this.renderer;
+        return activeRenderer != null && activeRenderer.screenshotActive();
+    }
+
+    public NrdDiagnostics.Mode nrdDebugView() {
+        return this.controls.nrdDebugView();
+    }
+
+    public void setNrdDebugView(NrdDiagnostics.Mode value) {
+        this.controls = this.controls.withNrdDebugView(value);
+    }
+
+    public FsrDebugView fsrDebugView() {
+        return this.controls.fsrDebugView();
+    }
+
+    public void setFsrDebugView(FsrDebugView value) {
+        this.controls = this.controls.withFsrDebugView(value);
+    }
+
+    public DlssRrDebugView rrDebugView() {
+        return this.controls.rrDebugView();
+    }
+
+    public void setRrDebugView(DlssRrDebugView value) {
+        this.controls = this.controls.withRrDebugView(value);
+    }
+
+    public boolean rrDebugFullscreen() {
+        return this.controls.rrDebugFullscreen();
+    }
+
+    public void setRrDebugFullscreen(boolean value) {
+        this.controls = this.controls.withRrDebugFullscreen(value);
+    }
+
+    public void restoreSessionDefaults() {
+        this.controls = SessionControls.defaults();
+    }
+
+    public List<String> debugLines() {
+        VulkanRenderer activeRenderer = this.renderer;
+        return activeRenderer == null ? List.of() : activeRenderer.debugLines();
+    }
+
     public void invalidateBlocks(
             int minimumX,
             int minimumY,
@@ -136,7 +226,7 @@ public final class RayTracingRuntime {
             int maximumY,
             int maximumZ) {
         VulkanRenderer activeRenderer = this.renderer;
-        if (activeRenderer != null) {
+        if (activeRenderer != null && this.states.current() != RuntimeState.FAILED) {
             activeRenderer.invalidateBlocks(
                     minimumX, minimumY, minimumZ, maximumX, maximumY, maximumZ);
         }
@@ -144,7 +234,7 @@ public final class RayTracingRuntime {
 
     public void invalidateAll() {
         VulkanRenderer activeRenderer = this.renderer;
-        if (activeRenderer != null) {
+        if (activeRenderer != null && this.states.current() != RuntimeState.FAILED) {
             activeRenderer.invalidateAll();
         }
     }
@@ -152,7 +242,7 @@ public final class RayTracingRuntime {
     /** Thread-safe prepare-phase invalidation; GPU ownership remains on the render thread. */
     public void beginResourceReload() {
         VulkanRenderer activeRenderer = this.renderer;
-        if (activeRenderer != null) {
+        if (activeRenderer != null && this.states.current() != RuntimeState.FAILED) {
             activeRenderer.requestResourceReload();
         }
     }
@@ -160,12 +250,13 @@ public final class RayTracingRuntime {
     /** Applies the completed reload without issuing a second material-atlas invalidation. */
     public void finishResourceReload(boolean reloadShaders) {
         VulkanRenderer activeRenderer = this.renderer;
-        if (activeRenderer != null) {
+        if (activeRenderer != null && this.states.current() != RuntimeState.FAILED) {
             // Minecraft's initial resource load completes after Prime has already constructed all
             // pipelines from the packaged SPIR-V. Rebuilding those identical pipelines here made
             // every cold start pay the driver compilation cost twice. Later explicit resource
             // reloads still replace every pipeline before rendering resumes.
             if (reloadShaders) {
+                this.requestScreenshot(false);
                 activeRenderer.requestShaderReload();
             }
             activeRenderer.invalidateAll();
@@ -175,28 +266,37 @@ public final class RayTracingRuntime {
     public void shutdown() {
         this.shuttingDown = true;
         VulkanRenderer activeRenderer = this.renderer;
-        this.renderer = null;
         this.world = null;
-        if (activeRenderer != null) {
-            activeRenderer.close();
+        this.controls = SessionControls.defaults();
+        try {
+            if (activeRenderer != null) {
+                activeRenderer.close();
+                if (this.renderer == activeRenderer) {
+                    this.renderer = null;
+                }
+            }
+        } finally {
+            this.states.shutdown();
         }
-        this.states.shutdown();
     }
 
     public void fail(Throwable failure) {
         this.failureReason = failure.getMessage() == null ? failure.getClass().getSimpleName() : failure.getMessage();
         this.states.fail();
-        PrimeClient.LOGGER.error("Prime ray tracing failed; returning to vanilla rendering", failure);
         VulkanRenderer failedRenderer = this.renderer;
-        this.renderer = null;
         this.world = null;
+        this.controls = SessionControls.defaults();
         if (failedRenderer != null) {
             try {
                 failedRenderer.close();
+                if (this.renderer == failedRenderer) {
+                    this.renderer = null;
+                }
             } catch (RuntimeException closeFailure) {
                 failure.addSuppressed(closeFailure);
             }
         }
+        PrimeClient.LOGGER.error("Prime ray tracing failed; returning to vanilla rendering", failure);
     }
 
     private void showFailureNotificationOnce(Minecraft minecraft) {
@@ -219,11 +319,42 @@ public final class RayTracingRuntime {
         if (this.unavailabilityLogged || this.states.current() != RuntimeState.UNAVAILABLE) {
             return;
         }
-        if (VulkanBootstrap.device() == null) {
+        if (VulkanBootstrap.snapshot().device() == null) {
             String backend = RenderSystem.getDevice().getDeviceInfo().backendName();
             this.failureReason = "Minecraft is using " + backend + "; select the Vulkan graphics backend";
         }
         this.unavailabilityLogged = true;
         PrimeClient.LOGGER.warn("Prime will use vanilla rendering: {}", this.failureReason);
+    }
+
+    private void updateSessionShortcuts(Minecraft minecraft) {
+        long window = minecraft.getWindow().handle();
+        boolean escape = pressed(window, GLFW.GLFW_KEY_ESCAPE);
+        if (escape
+                && !this.previousEscape
+                && (this.controls.screenshotRequested() || this.screenshotActive())) {
+            // Escape is exit-only. Vanilla still receives it and may open the pause screen.
+            this.requestScreenshot(false);
+        }
+
+        boolean control = pressed(window, GLFW.GLFW_KEY_LEFT_CONTROL)
+                || pressed(window, GLFW.GLFW_KEY_RIGHT_CONTROL);
+        boolean alt = pressed(window, GLFW.GLFW_KEY_LEFT_ALT)
+                || pressed(window, GLFW.GLFW_KEY_RIGHT_ALT);
+        boolean rrCycle = control && alt && pressed(window, GLFW.GLFW_KEY_F12);
+        boolean rrLayout = control && alt && pressed(window, GLFW.GLFW_KEY_F11);
+        if (rrCycle && !this.previousRrCycle) {
+            this.setRrDebugView(this.controls.rrDebugView().next());
+        }
+        if (rrLayout && !this.previousRrLayout) {
+            this.setRrDebugFullscreen(!this.controls.rrDebugFullscreen());
+        }
+        this.previousEscape = escape;
+        this.previousRrCycle = rrCycle;
+        this.previousRrLayout = rrLayout;
+    }
+
+    private static boolean pressed(long window, int key) {
+        return GLFW.glfwGetKey(window, key) == GLFW.GLFW_PRESS;
     }
 }

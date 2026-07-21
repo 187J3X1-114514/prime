@@ -2,7 +2,6 @@ package dev.prime.mixin;
 
 import com.mojang.blaze3d.platform.InputConstants;
 import dev.prime.render.RayTracingRuntime;
-import dev.prime.render.ScreenshotModeControls;
 import net.minecraft.client.Minecraft;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
@@ -18,7 +17,8 @@ public abstract class MinecraftMixin {
             boolean controlDown,
             CallbackInfoReturnable<Boolean> callbackInfo) {
         Minecraft minecraft = (Minecraft) (Object) this;
-        if (ScreenshotModeControls.handleGlobalKeyPress(minecraft, key, controlDown)) {
+        if (RayTracingRuntime.instance().handleScreenshotShortcut(
+                minecraft, key, controlDown)) {
             callbackInfo.setReturnValue(true);
         }
     }

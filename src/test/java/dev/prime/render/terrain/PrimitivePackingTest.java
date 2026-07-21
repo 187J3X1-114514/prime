@@ -58,12 +58,17 @@ final class PrimitivePackingTest {
 
     @Test
     void flagsAndEmitterIndexRoundTripAcrossTheWholeAbiRange() {
-        int flags = PrimitivePacking.FLAG_CUTOUT | PrimitivePacking.FLAG_LABPBR_SPECULAR;
+        int flags = PrimitivePacking.FLAG_CUTOUT
+                | PrimitivePacking.FLAG_LABPBR_SPECULAR
+                | PrimitivePacking.FLAG_TANGENT_NEGATIVE;
+        int tint = PrimitivePacking.packTintFlags(
+                PrimitivePacking.packTint(0x80402010), flags);
+        assertEquals(0x00102040, tint & 0x00ff_ffff);
         for (int emitter : new int[] {
             PrimitivePacking.NO_EMITTER_INDEX, 0, 1, 1024, PrimitivePacking.MAX_EMITTER_INDEX
         }) {
             int packed = PrimitivePacking.packFlagsEmitter(flags, emitter);
-            assertEquals(flags, PrimitivePacking.unpackFlags(packed));
+            assertEquals(flags, PrimitivePacking.unpackFlags(tint, packed));
             assertEquals(emitter, PrimitivePacking.unpackEmitterIndex(packed));
         }
         assertThrows(

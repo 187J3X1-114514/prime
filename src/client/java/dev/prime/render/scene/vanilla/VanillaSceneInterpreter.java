@@ -1,7 +1,9 @@
 package dev.prime.render.scene.vanilla;
 
+import dev.prime.render.ResourceCleanup;
 import dev.prime.render.terrain.CpuSectionMesh;
 import dev.prime.render.terrain.LabPbrMaterialSet;
+import java.util.List;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import net.minecraft.client.color.block.BlockColors;
 import net.minecraft.client.renderer.SectionBufferBuilderPack;
@@ -25,15 +27,18 @@ import net.fabricmc.fabric.api.client.renderer.v1.sprite.SpriteFinder;
 public final class VanillaSceneInterpreter implements AutoCloseable {
     private final ConcurrentLinkedQueue<SectionBufferBuilderPack> availableSectionBuffers =
             new ConcurrentLinkedQueue<>();
-    private volatile VanillaGeometryPolicy geometryPolicy = VanillaGeometryPolicy.VANILLA_PARITY;
     private final boolean buildOpacityMicromap;
+    private final int segmentTriangleTarget;
+    // close() runs on the client thread while shared-executor compilers may still return buffers.
     private volatile boolean closed;
 
-    public VanillaSceneInterpreter(boolean buildOpacityMicromap) {
+    public VanillaSceneInterpreter(
+            boolean buildOpacityMicromap, int segmentTriangleTarget) {
         this.buildOpacityMicromap = buildOpacityMicromap;
+        this.segmentTriangleTarget = segmentTriangleTarget;
     }
 
-    public CpuSectionMesh compileSection(
+    public List<CpuSectionMesh> compileSection(
             RenderSectionRegion region,
             BlockStateModelSet blockModels,
             FluidStateModelSet fluidModels,
@@ -44,7 +49,6 @@ public final class VanillaSceneInterpreter implements AutoCloseable {
             int sectionX,
             int sectionY,
             int sectionZ) {
-        VanillaGeometryPolicy policy = this.geometryPolicy;
         if (this.closed) {
             throw new IllegalStateException("Vanilla scene interpreter is closed");
         }
@@ -60,9 +64,10 @@ public final class VanillaSceneInterpreter implements AutoCloseable {
                     blockColors,
                     blockSpriteFinder,
                     labPbrMaterials,
-                    policy,
+                    VanillaGeometryPolicy.VANILLA_PARITY,
                     cutoutLeaves,
                     this.buildOpacityMicromap,
+                    this.segmentTriangleTarget,
                     sectionX,
                     sectionY,
                     sectionZ,
@@ -72,27 +77,24 @@ public final class VanillaSceneInterpreter implements AutoCloseable {
                 buffers.close();
             } else {
                 this.availableSectionBuffers.offer(buffers);
+                // close() can win between the first check and offer(). Removing after publication
+                // transfers ownership to exactly one side without adding a lock domain.
+                if (this.closed && this.availableSectionBuffers.remove(buffers)) {
+                    buffers.close();
+                }
             }
         }
-    }
-
-    public VanillaGeometryPolicy geometryPolicy() {
-        return this.geometryPolicy;
-    }
-
-    public void setGeometryPolicy(VanillaGeometryPolicy policy) {
-        if (policy == null) {
-            throw new IllegalArgumentException("Vanilla geometry policy must not be null");
-        }
-        this.geometryPolicy = policy;
     }
 
     @Override
     public void close() {
         this.closed = true;
+        RuntimeException failure = null;
         SectionBufferBuilderPack buffers;
         while ((buffers = this.availableSectionBuffers.poll()) != null) {
-            buffers.close();
+            SectionBufferBuilderPack retired = buffers;
+            failure = ResourceCleanup.run(retired::close, failure);
         }
+        ResourceCleanup.throwIfFailed(failure);
     }
 }

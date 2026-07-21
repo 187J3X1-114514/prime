@@ -23,7 +23,8 @@ void main() {
             primePush.sunDirection,
             ATM_SPACE_SUN_INTENSITY * primeSunRadianceMultiplier());
     integrator.environmentRadiance = vec4(0.0);
-    PathState path = primeCameraPath(pixel, 0u, primeCameraSample());
+    vec2 cameraSample = primeCameraSample();
+    PathState path = primeCameraPath(pixel, 0u, cameraSample);
     PrimeIntegrationResult sampleResult = primeIntegrate(path, integrator);
 
     // The interactive renderer splits these terms only because NRD needs separate signals.
@@ -31,18 +32,34 @@ void main() {
     // adding the mutually exclusive estimator partitions is mathematically identical to the
     // unsplit path contribution and retains transparent volume-stack transport.
     vec3 sampleRadiance = primeResolveIntegrationRadiance(sampleResult);
-    primeApplyAerialPerspective(pixel, sampleResult.guides.primaryDistance, sampleRadiance);
-    if (any(isnan(sampleRadiance)) || any(isinf(sampleRadiance))) {
-        // A non-finite numerical failure is not a radiance sample. Preserve both the previous
-        // mean and its count instead of clamping a firefly or biasing the estimator toward black.
+    primeApplyAerialPerspective(
+            pixel,
+            cameraSample,
+            sampleResult.guides.primaryDistance,
+            sampleRadiance);
+    vec4 previous = imageLoad(primeAccumulation, ivec2(pixel));
+    // Alpha stores the negated rejection count, not the accepted count. The latter would stop
+    // incrementing at 2^24; the pushed 48-bit ordinal remains exact and can subtract rejections.
+    const float maxRejectedSamples = 16777216.0;
+    float rejectedSamples = max(-previous.a, 0.0);
+    if (!sampleResult.validSample
+            || any(isnan(sampleRadiance))
+            || any(isinf(sampleRadiance))) {
+        // A failed estimator sample must change neither the mean nor its accepted-sample count.
+        if (rejectedSamples < maxRejectedSamples) {
+            imageStore(primeAccumulation, ivec2(pixel),
+                    vec4(previous.rgb, -(rejectedSamples + 1.0)));
+        }
         return;
     }
+    // Once the exact f32 rejection counter is exhausted, freezing is safer than silently using
+    // an incorrect denominator. Reaching it requires more than 16 million failures at one pixel.
+    if (rejectedSamples >= maxRejectedSamples) return;
 
-    bool firstSample = primePush.path.x == 0u && primePush.path.y == 0u;
-    vec4 previous = firstSample
-            ? vec4(0.0)
-            : imageLoad(primeAccumulation, ivec2(pixel));
-    float sampleCount = previous.a + 1.0;
+    uint64_t zeroBasedSample = (uint64_t(primePush.path.y) << 16u)
+            | uint64_t(primePush.path.x & 0xffffu);
+    float sampleCount = float(
+            zeroBasedSample + uint64_t(1) - uint64_t(rejectedSamples));
     vec3 mean = previous.rgb + (sampleRadiance - previous.rgb) / sampleCount;
-    imageStore(primeAccumulation, ivec2(pixel), vec4(mean, sampleCount));
+    imageStore(primeAccumulation, ivec2(pixel), vec4(mean, previous.a));
 }

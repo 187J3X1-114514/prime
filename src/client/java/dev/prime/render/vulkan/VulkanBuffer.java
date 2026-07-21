@@ -1,6 +1,7 @@
 package dev.prime.render.vulkan;
 
 import com.mojang.blaze3d.vulkan.Destroyable;
+import java.util.Objects;
 import org.lwjgl.system.MemoryUtil;
 import org.lwjgl.util.vma.Vma;
 
@@ -37,6 +38,9 @@ public final class VulkanBuffer implements Destroyable {
     }
 
     public long mappedAddress() {
+        if (this.destroyed) {
+            throw new IllegalStateException("Buffer is destroyed");
+        }
         if (this.mappedAddress == 0L) {
             throw new IllegalStateException("Buffer is not host visible");
         }
@@ -48,10 +52,9 @@ public final class VulkanBuffer implements Destroyable {
     }
 
     public void put(long offset, java.nio.ByteBuffer source) {
+        Objects.requireNonNull(source, "source");
         long length = source.remaining();
-        if (offset < 0L || offset + length > this.size) {
-            throw new IndexOutOfBoundsException("Buffer write exceeds allocation");
-        }
+        validateMappedRange(offset, length);
         MemoryUtil.memCopy(MemoryUtil.memAddress(source) + source.position(), this.mappedAddress() + offset, length);
         Vma.vmaFlushAllocation(this.allocator, this.allocation, offset, length);
     }
@@ -60,19 +63,31 @@ public final class VulkanBuffer implements Destroyable {
         if (sourceAddress == 0L && length != 0L) {
             throw new IllegalArgumentException("Buffer source address is null");
         }
-        if (offset < 0L || length < 0L || offset > this.size - length) {
-            throw new IndexOutOfBoundsException("Buffer write exceeds allocation");
-        }
+        validateMappedRange(offset, length);
         MemoryUtil.memCopy(sourceAddress, this.mappedAddress() + offset, length);
         Vma.vmaFlushAllocation(this.allocator, this.allocation, offset, length);
     }
 
     public void flush(long offset, long length) {
+        validateMappedRange(offset, length);
         Vma.vmaFlushAllocation(this.allocator, this.allocation, offset, length);
     }
 
     public void invalidate(long offset, long length) {
+        validateMappedRange(offset, length);
         Vma.vmaInvalidateAllocation(this.allocator, this.allocation, offset, length);
+    }
+
+    private void validateMappedRange(long offset, long length) {
+        if (this.destroyed) {
+            throw new IllegalStateException("Buffer is destroyed");
+        }
+        if (this.mappedAddress == 0L) {
+            throw new IllegalStateException("Buffer is not host visible");
+        }
+        if (offset < 0L || length < 0L || length > this.size || offset > this.size - length) {
+            throw new IndexOutOfBoundsException("Buffer range exceeds allocation");
+        }
     }
 
     @Override

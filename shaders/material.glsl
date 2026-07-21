@@ -20,6 +20,10 @@ struct MaterialEvaluation {
 const uint PRIME_EMITTER_FLAG_TWO_SIDED = 1u;
 const uint PRIME_EMITTER_FLAG_LABPBR_EMISSION = 2u;
 
+uint primePrimitiveFlags(PrimitiveRecord primitive) {
+    return (primitive.tint >> 24u) | ((primitive.flagsEmitter & 1u) << 8u);
+}
+
 vec3 primeAtlasBaseColor(uint packedTint, vec2 uv, float textureLodValue, out float opacity) {
     vec4 textureSample = textureLod(primeBlockAtlas, uv, textureLodValue);
     vec4 tint = primeUnpackTint(packedTint);
@@ -34,7 +38,7 @@ MaterialEvaluation primeEvaluateMaterial(PrimitiveRecord primitive, vec2 uv, flo
     // Decode both before multiplication, then cross the single material boundary into the
     // integrator's linear Rec.2020 working space. Alpha is coverage and is never color-decoded.
     result.baseColor = primeAtlasBaseColor(primitive.tint, uv, textureLodValue, result.opacity);
-    uint primitiveFlags = primitive.flagsEmitter & 0x1ffu;
+    uint primitiveFlags = primePrimitiveFlags(primitive);
     result.flags = primitiveFlags;
     vec4 normalSample = primeHasLabPbrNormal(primitiveFlags)
             ? textureLod(primeLabPbrNormalAtlas, uv, textureLodValue)

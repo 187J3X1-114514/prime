@@ -10,6 +10,8 @@ public record VulkanCapabilities(
         int maxShaderGroupStride,
         int maxRayDispatchInvocationCount,
         int maxRayRecursionDepth,
+        long maxAccelerationStructurePrimitiveCount,
+        long maxAccelerationStructureInstanceCount,
         int accelerationStructureScratchAlignment,
         boolean invocationReorderSupported,
         boolean opacityMicromapSupported,
@@ -18,6 +20,6 @@ public record VulkanCapabilities(
 
     public static VulkanCapabilities unavailable(String deviceName, String reason) {
         return new VulkanCapabilities(
-                false, deviceName, reason, 0, 0, 0, 0, 0, 0, 0, false, false, 0, false);
+                false, deviceName, reason, 0, 0, 0, 0, 0, 0, 0L, 0L, 0, false, false, 0, false);
     }
 }

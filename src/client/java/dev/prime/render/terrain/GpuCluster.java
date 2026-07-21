@@ -1,5 +1,6 @@
 package dev.prime.render.terrain;
 
+import dev.prime.render.ResourceCleanup;
 import dev.prime.render.vulkan.PreparedBlas;
 import dev.prime.render.vulkan.VulkanBuffer;
 
@@ -16,16 +17,16 @@ record GpuCluster(
     }
 
     void destroy() {
-        this.blas.destroyPersistentResources();
-        if (this.lightBuffer != null) {
-            this.lightBuffer.destroy();
-        }
+        RuntimeException failure = ResourceCleanup.run(
+                this.blas::destroyPersistentResources, null);
+        failure = ResourceCleanup.destroy(this.lightBuffer, failure);
+        ResourceCleanup.throwIfFailed(failure);
     }
 
     void destroyAllResources() {
-        this.blas.destroyAllResources();
-        if (this.lightBuffer != null) {
-            this.lightBuffer.destroy();
-        }
+        RuntimeException failure = ResourceCleanup.run(
+                this.blas::destroyAllResources, null);
+        failure = ResourceCleanup.destroy(this.lightBuffer, failure);
+        ResourceCleanup.throwIfFailed(failure);
     }
 }

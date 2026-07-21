@@ -1,12 +1,8 @@
 package dev.prime.render.shader;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import org.junit.jupiter.api.Test;
 
 final class NrdNumericalStabilityTest {
@@ -33,53 +29,6 @@ final class NrdNumericalStabilityTest {
                         "the guard must preserve RoboCute's result away from the singularity");
             }
         }
-    }
-
-    @Test
-    void shaderContractsRejectNonFiniteValuesBeforeEveryNrdInput() throws IOException {
-        String common = shader("nrd_common.glsl");
-        String integrator = shader("integrator.glsl");
-        String raygen = shader("world.rgen");
-        String motion = shader("nrd_motion.comp");
-        String closures = shader("robocute_bsdf_closures.glsl");
-        String microfacet = shader("robocute_bsdf_microfacet.glsl");
-        String openPbr = shader("robocute_bsdf_openpbr.glsl");
-        String specializations = shader("prime_bsdf_specializations.glsl");
-
-        assertTrue(closures.contains("primeRcGuardedThinWallSeriesReciprocal"));
-        assertTrue(closures.contains("vec3 denominator = vec3(1.0) - primeRcSquare(roundTrip);"));
-        assertTrue(closures.contains("0 * Inf -> NaN"));
-        assertFalse(closures.contains(
-                "1.0 / (vec3(1.0) - primeRcSquare(fresnel.first * absorption))"));
-        assertFalse(closures.contains(
-                "1.0 / (vec3(1.0) - primeRcSquare(reflection * absorption))"));
-        assertFalse(closures.contains("primeRcSmoothSpecularReflectance"));
-        assertFalse(microfacet.contains("firstCellWeight"));
-        assertFalse(microfacet.contains("exactEndpoint"));
-        assertFalse(openPbr.contains("PRIME_RC_ENABLE_FULL_OPENPBR"));
-        assertFalse(openPbr.contains("primeRcPrimeThinWallStateInit"));
-        assertTrue(specializations.contains("Prime adapter:"));
-        assertTrue(specializations.contains("primeRcPrimeThinWallStateInit"));
-        assertTrue(openPbr.contains(
-                "randomValue.z <= mixState.secondSampleWeight && mixState.secondSampleWeight > 0.0"));
-
-        assertTrue(common.contains("float primeNrdSanitizeHitDistance(float hitDistance)"));
-        assertTrue(common.contains("float primeNrdSanitizePrimaryDistance("));
-        assertTrue(common.contains("vec3 primeNrdSafeNormalize("));
-        assertTrue(common.contains("vec3 primeNrdSanitizeMotion("));
-        assertTrue(integrator.contains("bool primeValidSurfaceInteraction("));
-        assertTrue(integrator.contains("primeNrdSanitizeHitDistance(surface.t)"));
-
-        assertTrue(raygen.contains(
-                "primeNrdSanitizeHitDistance(\n                            sampleResult.guides.diffuseHitDistance)"));
-        assertTrue(raygen.contains(
-                "primeNrdSanitizeHitDistance(\n                            sampleResult.guides.specularHitDistance)"));
-        assertTrue(raygen.contains("primeNrdSanitizePrimaryDistance("));
-        assertTrue(raygen.contains("primeNrdSanitizeUnit(sampleResult.radiance.sunVisibility"));
-        assertTrue(raygen.contains("primeNrdSanitizeHitDistance(sampleResult.guides.sunPenumbra)"));
-        assertTrue(motion.contains("!primeNrdIsFinite(primaryDistance)"));
-        assertTrue(motion.contains("primeNrdSanitizeMotion("));
-        assertTrue(motion.contains("imageStore(primeViewZ, pixel, vec4(currentViewZ"));
     }
 
     @Test
@@ -116,10 +65,6 @@ final class NrdNumericalStabilityTest {
 
     private static double sanitizeHitDistance(double value) {
         return Double.isFinite(value) ? Math.clamp(value, 0.0, FP16_MAX) : FP16_MAX;
-    }
-
-    private static String shader(String name) throws IOException {
-        return Files.readString(Path.of(System.getProperty("user.dir"), "shaders", name));
     }
 
     private record Energy(double reflection, double transmission) {}

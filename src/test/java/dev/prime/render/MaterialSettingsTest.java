@@ -3,6 +3,7 @@ package dev.prime.render;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
+import dev.prime.config.PrimeSettings;
 import org.junit.jupiter.api.Test;
 
 final class MaterialSettingsTest {
@@ -16,23 +17,16 @@ final class MaterialSettingsTest {
 
     @Test
     void roughnessUsesExactHundredthStepsAndRevisionChangesOnlyWithTheValue() {
-        int original = MaterialSettings.roughnessSteps();
-        try {
-            MaterialSettings.setRoughnessSteps(37);
-            MaterialSettings.Snapshot first = MaterialSettings.snapshot();
-            assertEquals(37, first.roughnessSteps());
-            assertEquals(0.37F, first.linearRoughness(), 1.0e-7F);
+        PrimeSettings first = PrimeSettings.defaults().withDefaultRoughnessSteps(37);
+        assertEquals(37, first.material().roughnessSteps());
+        assertEquals(0.37F, first.material().linearRoughness(), 1.0e-7F);
+        assertEquals(first, first.withDefaultRoughnessSteps(37));
 
-            MaterialSettings.setRoughnessSteps(37);
-            assertEquals(first.revision(), MaterialSettings.snapshot().revision());
-            MaterialSettings.setRoughnessSteps(38);
-            assertEquals(first.revision() + 1L, MaterialSettings.snapshot().revision());
-        } finally {
-            MaterialSettings.setRoughnessSteps(original);
-        }
+        PrimeSettings second = first.withDefaultRoughnessSteps(38);
+        assertEquals(first.materialRevision() + 1L, second.materialRevision());
         assertThrows(IllegalArgumentException.class,
-                () -> MaterialSettings.setRoughnessSteps(-1));
+                () -> first.withDefaultRoughnessSteps(-1));
         assertThrows(IllegalArgumentException.class,
-                () -> MaterialSettings.setRoughnessSteps(101));
+                () -> first.withDefaultRoughnessSteps(101));
     }
 }

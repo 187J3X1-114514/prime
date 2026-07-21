@@ -1,0 +1,15 @@
+{
+  "repository": "https://github.com/RoboCute/RoboCute",
+  "commit": "5985e989254b4685e3885d876b33f4874d233dcd",
+  "approvedDifferences": [
+    "Zero-probability sampling endpoints stay on a positive-probability branch so remapping never evaluates 0 / 0.",
+    "The thin-wall geometric-series reciprocal returns its exact finite grazing limit instead of allowing 0 * Inf to become NaN."
+  ],
+  "files": {
+    "robocute_bsdf_closures.glsl": "6ce1140068d05a70cce62dc6d0f86ca38ece75862438c79120cf671ae95cd2f0",
+    "robocute_bsdf_common.glsl": "b8b17355472e4e1455869bacefcf3b5a0571c1bfae1b4cb79f8fa9394b451645",
+    "robocute_bsdf_fresnel.glsl": "7c559551b8385da9d1e80f5c35efef154256543143205aa702c8dde560b6f591",
+    "robocute_bsdf_microfacet.glsl": "8d63f2a0b973ad651db05db2f5b67757f3930b3bbb235582a1cd9b59495cc621",
+    "robocute_bsdf_openpbr.glsl": "4c06f2d44b584248bab60f6f6170f6c47e1a37abb3f21357c5c803c3ec4fe93f"
+  }
+}

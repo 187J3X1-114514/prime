@@ -21,13 +21,11 @@ final class IntegratorArchitectureContractTest {
         assertTrue(integrator.contains("PrimeDenoiserGuides guides;"));
         assertTrue(integrator.contains("vec3 primeResolveIntegrationRadiance"));
         assertFalse(integrator.contains("PrimeTransparencyGuideResult"));
-        assertTrue(raygen.contains("#include \"denoiser_guides.glsl\""));
+        assertFalse(raygen.contains("denoiser_guides.glsl"));
         assertFalse(screenshot.contains("denoiser_guides.glsl"));
         assertTrue(screenshot.contains("primeResolveIntegrationRadiance(sampleResult)"));
-        assertTrue(integrator.contains("uint primaryScatterEventFlags;"));
-        assertTrue(integrator.contains("float primaryScatterProposalProbability;"));
-        assertTrue(integrator.contains(
-                "result.guides.primaryScatterProposalProbability = scatter.proposalProbability;"));
+        assertFalse(integrator.contains("primaryScatterEventFlags"));
+        assertFalse(integrator.contains("primaryScatterProposalProbability"));
     }
 
     @Test

@@ -16,14 +16,12 @@ layout(set = 0, binding = 5, r32f) uniform writeonly image2D rrLinearViewZ;
 layout(set = 0, binding = 6, rgba32f) uniform readonly image2D rrPrimaryPosition;
 layout(set = 0, binding = 7, rgba16f) uniform readonly image2D rrSunLighting;
 layout(set = 0, binding = 8, rgba32f) uniform readonly image2D rrStableRadiance;
-layout(set = 0, binding = 9, rgba16f) uniform readonly image2D rrTransparencyGuide;
-layout(set = 0, binding = 10, rgba16f) uniform readonly image3D rrAerialRadiance;
-layout(set = 0, binding = 11, rgba16f) uniform readonly image3D rrAerialTransmittance;
-layout(set = 0, binding = 12, rgba16f) uniform writeonly image2D rrInputColor;
-layout(set = 0, binding = 13, rgba16f) uniform writeonly image2D rrColorBeforeTransparency;
-layout(set = 0, binding = 14, rgba16f) uniform writeonly image2D rrMotion;
-layout(set = 0, binding = 15, rgba16f) uniform writeonly image2D rrNormalRoughness;
-layout(set = 0, binding = 16, r16f) uniform writeonly image2D rrSpecularHitDistance;
+layout(set = 0, binding = 9, rgba16f) uniform readonly image3D rrAerialRadiance;
+layout(set = 0, binding = 10, rgba16f) uniform readonly image3D rrAerialTransmittance;
+layout(set = 0, binding = 11, rgba16f) uniform writeonly image2D rrInputColor;
+layout(set = 0, binding = 12, rgba16f) uniform writeonly image2D rrMotion;
+layout(set = 0, binding = 13, rgba16f) uniform writeonly image2D rrNormalRoughness;
+layout(set = 0, binding = 14, r16f) uniform writeonly image2D rrSpecularHitDistance;
 
 layout(push_constant) uniform PrimeRrPreparePushConstants {
     mat4 currentClipToWorld;
@@ -156,15 +154,5 @@ void main() {
     rrApplyAerial(pixel, extent, material.a, inputRadiance);
     inputRadiance = primeNrdClampRadiance(inputRadiance, PRIME_NRD_FP16_MAX);
 
-    vec4 transmission = imageLoad(rrTransparencyGuide, pixel);
-    vec3 beforeRadiance = inputRadiance;
-    if (transparent && transmission.a > 0.5) {
-        beforeRadiance = primeNrdClampRadiance(transmission.rgb, PRIME_NRD_FP16_MAX);
-        rrApplyAerial(pixel, extent, material.a, beforeRadiance);
-        beforeRadiance = primeNrdClampRadiance(beforeRadiance, PRIME_NRD_FP16_MAX);
-    }
-    // For opaque surfaces and sky this value is copied from the final local variable, guaranteeing
-    // bit-identical FP16 conversion in both NGX resources.
     imageStore(rrInputColor, pixel, vec4(inputRadiance, 1.0));
-    imageStore(rrColorBeforeTransparency, pixel, vec4(beforeRadiance, 1.0));
 }

@@ -60,8 +60,8 @@ LabPBR 是材质贴图的存储标准，不是完整的表面/体积散射模型
 - Russian roulette 与路径终止；
 - 对完整 radiance sample 的互斥 signal 分类。
 
-`primeResolveIntegrationRadiance` 是唯一 beauty 合成公式。截图后端和 RR 透明背景辅助路径都调用该
-函数，避免某个消费者遗漏太阳可见性或 stable signal。
+`primeResolveIntegrationRadiance` 是唯一 beauty 合成公式，截图后端调用该函数，避免消费者遗漏太阳
+可见性或 stable signal。
 
 ### 重建观测
 
@@ -69,14 +69,9 @@ LabPBR 是材质贴图的存储标准，不是完整的表面/体积散射模型
 视角相关镜面 albedo、首个后续 diffuse/specular hit distance，以及太阳 penumbra。`PrimeDenoiserState`
 封装 delta chain 上的 albedo 传播和首次 non-delta 分类，不包含任何具体 Vulkan image 或 SDK 资源名。
 
-`denoiser_guides.glsl` 保存只为重建服务的额外工作。当前只有 RR 的首层玻璃/水
-Color Before Transparency 与反射 hit-distance guide。该文件只由实时 raygen 引入，截图 shader 不会
-编译这些路径，因此辅助射线在结构上无法改变参考估计器。
-
-闭合光滑透明界面会复用 beauty path 已经选择的分支。beauty 抽到透射时，以记录的 Fresnel proposal
-probability 恢复被重要性采样除掉的物理透射权重，直接作为 Color Before Transparency，只补一条反射
-hit-distance 射线；beauty 抽到反射时复用已有反射距离，只补完整透射背景。粗糙或 thin-wall 闭包仍走
-独立 forced-transmission 回退，避免错误复用不具备相同条件采样契约的 radiance。
+当前实时 raygen 不追踪后端专用的辅助输运路径。RR 的 `Color Before Transparency` 输入留空，玻璃和
+水与其他材质一样只积分一条完整 beauty path；specular hit distance 也只来自该路径已经采样的首次后续
+命中。这保持了固定 1 spp 的单路径成本，代价是 RR 不再获得首层透明界面的显式分界信号。
 
 ### 偏差清单
 
@@ -92,7 +87,7 @@ hit-distance 射线；beauty 抽到反射时复用已有反射距离，只补完
 | NRD illumination 16.0、FP16 65504 边界 | 实时重建输入偏差 | 只存在于 NRD/RR 准备边界；截图 RGBA32F 路径不使用 |
 | NRD anti-firefly、history fix、prepass | 空间/时间滤波偏差 | 后端有意行为，不反馈积分器 |
 | FSR 与 DLSS RR 时间超分/历史锁定 | 重建偏差 | 后端有意行为，可通过参考累积对照 |
-| RR 透明辅助路径 | Guide 的条件估计 | 不参与 beauty；只帮助 RR 识别首层透明界面 |
+| RR 透明 Guide | 未提交 | 固定 1 spp 只积分 beauty path，不追加透明辅助路径 |
 
 ## 三个 Denoiser 后端
 
@@ -135,12 +130,10 @@ REBLUR 仍比 RELAX 更适合当前“原始 1 spp、单路径、概率 lobe”�
 - current-to-previous、non-jittered、低分辨率 motion；
 - linear view-Z、world shading normal、linear roughness；
 - diffuse albedo、视角相关 specular albedo；
-- world-space specular hit distance 与当前/上一帧矩阵；
-- 与 input color 同格式的 Color Before Transparency。
+- world-space specular hit distance 与当前/上一帧矩阵。
 
-天空的 diffuse/specular albedo 使用 SDK 推荐的中性 `0.5`，透明首界面的 diffuse albedo 为零。玻璃/水
-额外追踪反射 guide ray，避免把折射延续路径距离误报为 specular hit distance。Color Before Transparency
-保留折射、介质吸收和背景照明，但排除首层界面反射；不透明像素和天空逐位复制 input color。
+天空的 diffuse/specular albedo 使用 SDK 推荐的中性 `0.5`，透明首界面的 diffuse albedo 为零。当前
+`pInColorBeforeTransparency` 为 `nullptr`，不分配或生成对应图像，也不为玻璃/水追加第二条路径。
 
 暂不接入：
 

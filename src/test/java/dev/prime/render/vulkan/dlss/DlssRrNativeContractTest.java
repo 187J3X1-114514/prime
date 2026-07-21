@@ -16,13 +16,14 @@ import org.lwjgl.vulkan.VK12;
 final class DlssRrNativeContractTest {
     @Test
     void fixedWidthJavaAbiMatchesTheNativeBridge() {
+        assertEquals(2, DlssRrNative.ABI_VERSION);
         assertEquals(56, DlssRrNative.EXTENSION_QUERY_SIZE);
         assertEquals(56, DlssRrNative.INIT_DESCRIPTION_SIZE);
         assertEquals(32, DlssRrNative.OPTIMAL_SETTINGS_SIZE);
         assertEquals(48, DlssRrNative.FEATURE_DESCRIPTION_SIZE);
         assertEquals(32, DlssRrNative.IMAGE_SIZE);
-        assertEquals(9, DlssRrNative.IMAGE_COUNT);
-        assertEquals(464, DlssRrNative.EVALUATE_DESCRIPTION_SIZE);
+        assertEquals(8, DlssRrNative.IMAGE_COUNT);
+        assertEquals(432, DlssRrNative.EVALUATE_DESCRIPTION_SIZE);
     }
 
     @Test

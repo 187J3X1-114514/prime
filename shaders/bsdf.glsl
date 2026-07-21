@@ -18,9 +18,6 @@
 struct PrimeTransmissiveBsdfSample {
     BsdfSample bsdfSample;
     PrimeRcVolumeStack volumeStack;
-    // Probability used by the outer reflection/transmission proposal. Forced-branch callers use
-    // one; the ordinary complete BSDF sampler records the value it divided out of the path weight.
-    float proposalProbability;
 };
 
 const float PRIME_GLASS_MINIMUM_TINT_WEIGHT = 0.75;
@@ -624,7 +621,6 @@ PrimeTransmissiveBsdfSample primeSampleMinecraftTransmission(
     PrimeTransmissiveBsdfSample result;
     result.bsdfSample = primeInvalidBsdfSample();
     result.volumeStack = volumeStack;
-    result.proposalProbability = 1.0;
     PrimeRcState state = primeMinecraftTransmissionState(
             baseColor,
             opacity,
@@ -666,7 +662,6 @@ PrimeTransmissiveBsdfSample primeSampleMinecraftTransmission(
                 volumeStack);
         result.bsdfSample.weight /= branchProbability;
         result.bsdfSample.pdf *= branchProbability;
-        result.proposalProbability = branchProbability;
         return result;
     }
     PrimeRcSampleResult sampled = primeRcTransmissionSample(
@@ -701,7 +696,6 @@ PrimeTransmissiveBsdfSample primeSampleMinecraftTransmissionBranchFromState(
     PrimeTransmissiveBsdfSample result;
     result.bsdfSample = primeInvalidBsdfSample();
     result.volumeStack = volumeStack;
-    result.proposalProbability = 1.0;
     vec3 localView = primeRcOnbToLocal(state.material.geometry.onb, viewDirection);
 
     if (state.geometryThinWalled == 0u
@@ -752,40 +746,6 @@ PrimeTransmissiveBsdfSample primeSampleMinecraftTransmissionBranchFromState(
             sampled.bsdfSample.throughput.flags);
     result.volumeStack = sampled.volumeStack;
     return result;
-}
-
-PrimeTransmissiveBsdfSample primeSampleMinecraftTransmissionBranch(
-        vec3 baseColor,
-        float opacity,
-        vec3 outwardNormal,
-        uint materialFlags,
-        uint packedNormal,
-        uint packedSpecular,
-        vec3 viewDirection,
-        vec3 sampleValue,
-        bool reflectionBranch,
-        float rayT,
-        PrimeRcVolumeStack volumeStack) {
-    PrimeRcState state = primeMinecraftTransmissionState(
-            baseColor,
-            opacity,
-            outwardNormal,
-            materialFlags,
-            packedNormal,
-            packedSpecular,
-            viewDirection,
-            rayT,
-            volumeStack);
-    vec3 localView = primeRcOnbToLocal(state.material.geometry.onb, viewDirection);
-    PrimeMinecraftMirrorSplit mirror = primeMinecraftMirrorSplit(localView, state);
-    return primeSampleMinecraftTransmissionBranchFromState(
-            state,
-            mirror,
-            outwardNormal,
-            viewDirection,
-            sampleValue,
-            reflectionBranch,
-            volumeStack);
 }
 
 // Vanilla grass blades and leaf texels are zero-thickness surfaces rather than dielectric

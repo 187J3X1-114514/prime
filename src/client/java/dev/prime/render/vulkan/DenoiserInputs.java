@@ -21,6 +21,4 @@ public interface DenoiserInputs {
     VulkanImage sunLighting();
 
     VulkanImage sunPenumbra();
-
-    VulkanImage transparencyGuide();
 }

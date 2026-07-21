@@ -10,34 +10,20 @@ import org.junit.jupiter.api.Test;
 
 final class DlssRrShaderContractTest {
     @Test
-    void transparentGuideSplitsOnlyTheFirstVisibleTransmissiveInterface() throws IOException {
+    void rrOmitsTransparencyInputAndSupplementalTransport() throws IOException {
         String raygen = shader("world.rgen");
-        String integrator = shader("integrator.glsl");
-        String guides = shader("denoiser_guides.glsl");
+        String prepare = shader("rr_prepare.comp");
+        String bsdf = shader("bsdf.glsl");
+        String nativeBridge = nativeSource("dlss_rr", "prime_dlss_rr_bridge.cpp");
 
-        assertTrue(raygen.contains("PRIME_PATH_DLSS_RR_MASK"));
-        assertTrue(raygen.contains("PRIME_MATERIAL_FLAG_TRANSMISSIVE"));
-        assertFalse(raygen.substring(
-                        raygen.indexOf("if ((primePush.path.w & PRIME_PATH_DLSS_RR_MASK"),
-                        raygen.indexOf("transparencyGuide = primeIntegrateTransparencyGuide"))
-                .contains("CUTOUT"));
-        assertFalse(integrator.contains("PrimeTransparencyGuideResult"));
-        assertTrue(guides.contains("primeTraceSurface(cameraPath.traceOrigin"));
-        assertTrue(guides.contains("normalize(reflect(cameraPath.rayDirection"));
-        assertTrue(guides.contains("guide.reflectionHitDistance = reflected.hitKind"));
-        assertTrue(guides.contains("primeIntegrateWithVolume(\n            cameraPath"));
-        assertTrue(guides.contains("primeResolveIntegrationRadiance(background)"));
-        assertTrue(guides.contains("PrimeIntegrationResult beauty"));
-        assertTrue(guides.contains("bool closedSmoothInterface"));
-        assertTrue(guides.contains("bool selectedTransmission"));
-        assertTrue(guides.contains(
-                "guide.backgroundRadiance = beauty.radiance.specular * proposalProbability;"));
-        assertTrue(guides.contains("primeTraceReflectionGuideFromPrimary"));
-        assertTrue(guides.contains("bool selectedReflection"));
-        assertTrue(guides.contains(
-                "guide.reflectionHitDistance = beauty.guides.specularHitDistance;"));
-        assertTrue(raygen.contains(
-                "primeIntegrateTransparencyGuide(path, integrator, sampleResult)"));
+        assertFalse(raygen.contains("denoiser_guides.glsl"));
+        assertFalse(raygen.contains("TransparencyGuide"));
+        assertFalse(prepare.contains("rrTransparencyGuide"));
+        assertFalse(prepare.contains("rrColorBeforeTransparency"));
+        assertFalse(bsdf.contains(
+                "PrimeTransmissiveBsdfSample primeSampleMinecraftTransmissionBranch("));
+        assertTrue(nativeBridge.contains("evaluate.pInColorBeforeTransparency = nullptr;"));
+        assertFalse(nativeBridge.contains("COLOR_BEFORE_TRANSPARENCY,"));
     }
 
     @Test
@@ -49,8 +35,6 @@ final class DlssRrShaderContractTest {
                 "render", "vulkan", "dlss", "DlssRrPostProcessor.java");
         String nativeBridge = nativeSource("dlss_rr", "prime_dlss_rr_bridge.cpp");
 
-        assertTrue(prepare.contains("vec3 beforeRadiance = inputRadiance;"));
-        assertTrue(prepare.contains("if (transparent && transmission.a > 0.5)"));
         assertTrue(prepare.contains("vec2 currentJitterPixels;"));
         assertTrue(prepare.contains(
                 "vec2 currentSampleUv = (vec2(pixel) + vec2(0.5) + rrPush.currentJitterPixels)"));
@@ -80,12 +64,12 @@ final class DlssRrShaderContractTest {
         String debug = shader("rr_debug.comp");
         String pass = javaSource("render", "vulkan", "dlss", "DlssRrDebugPass.java");
 
-        assertTrue(debug.contains("const uint panels[12]"));
-        assertTrue(debug.contains("abs(inputColor.rgb - before.rgb)"));
+        assertTrue(debug.contains("const uint panels[10]"));
+        assertFalse(debug.contains("TRANSPARENCY"));
         assertTrue(debug.contains("log2(1.0 + max(imageLoad(rrDebugDepth"));
         assertTrue(debug.contains("log2(1.0 + max(imageLoad(rrDebugSpecularHitDistance"));
         assertTrue(pass.contains("targets.inputColor()"));
-        assertTrue(pass.contains("targets.colorBeforeTransparency()"));
+        assertFalse(pass.contains("targets.colorBeforeTransparency()"));
         assertTrue(pass.contains("targets.rrOutput()"));
         assertTrue(pass.contains("if (view == DlssRrDebugView.OFF) {\n            return;"));
     }

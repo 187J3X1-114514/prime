@@ -15,8 +15,11 @@ final class PostProcessingSettingsTest {
         }
         for (DlssRrDebugView view : DlssRrDebugView.values()) {
             assertEquals(view, DlssRrDebugView.fromId(view.id()));
-            assertEquals(view, view.next().next().next().next().next().next().next()
-                    .next().next().next().next().next().next().next());
+            DlssRrDebugView cycled = view;
+            for (int index = 0; index < DlssRrDebugView.values().length; index++) {
+                cycled = cycled.next();
+            }
+            assertEquals(view, cycled);
         }
     }
 

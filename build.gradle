@@ -137,7 +137,6 @@ abstract class GenerateShaderAbi extends DefaultTask {
 				|| schema.pathControl.materialRoughnessShift != 16
 				|| !schema.pathControl.materialRoughnessMask.toString().equalsIgnoreCase('0xff')
 				|| schema.pathControl.materialRoughnessStepsPerUnit != 100
-				|| !schema.pathControl.dlssRrMask.toString().equalsIgnoreCase('0x01000000')
 				|| schema.pathControl.russianRouletteStart != 2) {
 			throw new GradleException(
 					'Prime path controls must preserve the camera, lighting, material, jitter, and second-bounce roulette ABI')
@@ -258,7 +257,6 @@ public final class ShaderAbi {
     public static final int DESCRIPTOR_LABPBR_SPECULAR_ATLAS = ${schema.descriptors.labPbrSpecularAtlas};
     public static final int DESCRIPTOR_NRD_SUN_LIGHTING = ${schema.descriptors.nrdSunLighting};
     public static final int DESCRIPTOR_NRD_SUN_PENUMBRA = ${schema.descriptors.nrdSunPenumbra};
-    public static final int DESCRIPTOR_TRANSPARENCY_GUIDE = ${schema.descriptors.transparencyGuide};
     public static final int PATH_CAMERA_IN_WATER_MASK = ${schema.pathControl.cameraInWaterMask};
     public static final int PATH_JITTER_PHASE_MASK = ${schema.pathControl.jitterPhaseMask};
     public static final int PATH_SUN_EV_QUARTER_SHIFT = ${schema.pathControl.sunEvQuarterShift};
@@ -268,7 +266,6 @@ public final class ShaderAbi {
     public static final int PATH_MATERIAL_ROUGHNESS_SHIFT = ${schema.pathControl.materialRoughnessShift};
     public static final int PATH_MATERIAL_ROUGHNESS_MASK = ${schema.pathControl.materialRoughnessMask};
     public static final int PATH_MATERIAL_ROUGHNESS_STEPS_PER_UNIT = ${schema.pathControl.materialRoughnessStepsPerUnit};
-    public static final int PATH_DLSS_RR_MASK = ${schema.pathControl.dlssRrMask};
     public static final int RUSSIAN_ROULETTE_START = ${schema.pathControl.russianRouletteStart};
     public static final float CUTOUT_ALPHA_THRESHOLD = ${schema.cutoutAlphaThreshold}f;
     public static final String WORKING_COLOR_SPACE = "${colorContract.workingSpace}";
@@ -335,7 +332,6 @@ ${javaOffsets}
 #define PRIME_PATH_MATERIAL_ROUGHNESS_SHIFT ${schema.pathControl.materialRoughnessShift}u
 #define PRIME_PATH_MATERIAL_ROUGHNESS_MASK ${schema.pathControl.materialRoughnessMask}u
 #define PRIME_PATH_MATERIAL_ROUGHNESS_STEPS_PER_UNIT ${schema.pathControl.materialRoughnessStepsPerUnit}.0
-#define PRIME_PATH_DLSS_RR_MASK ${schema.pathControl.dlssRrMask}u
 #define PRIME_RUSSIAN_ROULETTE_START ${schema.pathControl.russianRouletteStart}u
 #define PRIME_CUTOUT_ALPHA_THRESHOLD ${schema.cutoutAlphaThreshold}
 struct PrimitiveRecord {
@@ -455,7 +451,6 @@ layout(set = 0, binding = ${schema.descriptors.nrdSpecularMaterial}, rgba16f) un
 layout(set = 0, binding = ${schema.descriptors.nrdPrimaryPosition}, rgba32f) uniform image2D primeNrdPrimaryPosition;
 layout(set = 0, binding = ${schema.descriptors.nrdSunLighting}, rgba16f) uniform image2D primeNrdSunLighting;
 layout(set = 0, binding = ${schema.descriptors.nrdSunPenumbra}, r16f) uniform image2D primeNrdSunPenumbra;
-layout(set = 0, binding = ${schema.descriptors.transparencyGuide}, rgba16f) uniform image2D primeTransparencyGuide;
 #endif
 """
 		new File(glslDir, 'prime_atmosphere_contract.glsl').text = """\

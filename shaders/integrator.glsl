@@ -41,8 +41,6 @@ struct PrimeDenoiserGuides {
     vec3 primarySpecularAlbedo;
     float primaryLinearRoughness;
     vec3 primaryPosition;
-    uint primaryScatterEventFlags;
-    float primaryScatterProposalProbability;
 };
 
 struct PrimeIntegrationResult {
@@ -532,7 +530,6 @@ bool primeIsPureDeltaInterface(SurfaceInteraction surface) {
 struct PrimePathScatter {
     BsdfSample bsdf;
     PrimeRcVolumeStack volumeStack;
-    float proposalProbability;
 };
 
 PrimePathScatter primeSamplePathSurface(
@@ -542,7 +539,6 @@ PrimePathScatter primeSamplePathSurface(
         PrimeRcVolumeStack volumeStack) {
     PrimePathScatter result;
     result.volumeStack = volumeStack;
-    result.proposalProbability = 1.0;
     if (primeMaterialIsFoliage(surface.materialFlags)) {
         result.bsdf = primeSampleMinecraftFoliage(
                 surface.baseColor,
@@ -568,7 +564,6 @@ PrimePathScatter primeSamplePathSurface(
                 volumeStack);
         result.bsdf = transmitted.bsdfSample;
         result.volumeStack = transmitted.volumeStack;
-        result.proposalProbability = transmitted.proposalProbability;
     } else {
         result.bsdf = primeSampleOpaque(
                 surface.baseColor,
@@ -650,8 +645,6 @@ PrimeIntegrationResult primeIntegrateWithVolume(
     result.guides.primarySpecularAlbedo = vec3(0.0);
     result.guides.primaryLinearRoughness = PRIME_DEFAULT_REFERENCE_LINEAR_ROUGHNESS;
     result.guides.primaryPosition = vec3(0.0);
-    result.guides.primaryScatterEventFlags = 0u;
-    result.guides.primaryScatterProposalProbability = 1.0;
     PrimeDenoiserState denoiserState;
     denoiserState.hasPrimarySurface = false;
     denoiserState.reachedNonDelta = false;
@@ -795,8 +788,6 @@ PrimeIntegrationResult primeIntegrateWithVolume(
                 result.guides.primarySpecularAlbedo = primeSanitizeDenoiseAlbedo(
                         denoiserState.specularAlbedoProduct);
                 result.guides.primaryLinearRoughness = primeSurfaceLinearRoughness(surface);
-                result.guides.primaryScatterEventFlags = validScatter ? bsdf.eventFlags : 0u;
-                result.guides.primaryScatterProposalProbability = scatter.proposalProbability;
             }
 
             bool sampledNonDelta = primeIsNonDeltaSample(bsdf);

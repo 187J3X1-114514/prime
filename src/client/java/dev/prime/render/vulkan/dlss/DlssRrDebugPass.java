@@ -31,7 +31,7 @@ import org.lwjgl.vulkan.VkWriteDescriptorSet;
 
 /** Prime-owned release-safe visualizer over the exact images submitted to NGX. */
 final class DlssRrDebugPass implements Destroyable {
-    private static final int IMAGE_COUNT = 10;
+    private static final int IMAGE_COUNT = 9;
     private static final int COMPUTE_STAGE = VK12.VK_SHADER_STAGE_COMPUTE_BIT;
     private static final int PUSH_SIZE = 20;
     private static final int LOCAL_SIZE = 8;
@@ -70,7 +70,6 @@ final class DlssRrDebugPass implements Destroyable {
             VulkanContext context, DlssRrTargets targets, VulkanImage displayOutput) {
         List<VulkanImage> images = List.of(
                 targets.inputColor(),
-                targets.colorBeforeTransparency(),
                 targets.motion(),
                 targets.viewZ(),
                 targets.rrNormalRoughness(),

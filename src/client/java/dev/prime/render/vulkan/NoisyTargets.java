@@ -24,7 +24,6 @@ final class NoisyTargets implements DenoiserInputs, Destroyable {
     private final VulkanImage primaryPosition;
     private final VulkanImage sunLighting;
     private final VulkanImage sunPenumbra;
-    private final VulkanImage transparencyGuide;
     private final VulkanImage linearOutput;
     private final VulkanImage[] owned;
     private boolean destroyed;
@@ -40,8 +39,7 @@ final class NoisyTargets implements DenoiserInputs, Destroyable {
         this.primaryPosition = images.get(7);
         this.sunLighting = images.get(8);
         this.sunPenumbra = images.get(9);
-        this.transparencyGuide = images.get(10);
-        this.linearOutput = images.get(11);
+        this.linearOutput = images.get(10);
         this.owned = images.toArray(VulkanImage[]::new);
     }
 
@@ -68,8 +66,6 @@ final class NoisyTargets implements DenoiserInputs, Destroyable {
                     "Prime noisy sun lighting");
             add(context, images, width, height, VK12.VK_FORMAT_R16_SFLOAT,
                     "Prime noisy sun penumbra");
-            add(context, images, width, height, VK12.VK_FORMAT_R16G16B16A16_SFLOAT,
-                    "Prime inactive noisy transparency guide");
             add(context, images, width, height, VK12.VK_FORMAT_R16G16B16A16_SFLOAT,
                     "Prime noisy linear HDR output");
             return new NoisyTargets(images);
@@ -138,7 +134,6 @@ final class NoisyTargets implements DenoiserInputs, Destroyable {
     @Override public VulkanImage primaryPosition() { return this.primaryPosition; }
     @Override public VulkanImage sunLighting() { return this.sunLighting; }
     @Override public VulkanImage sunPenumbra() { return this.sunPenumbra; }
-    @Override public VulkanImage transparencyGuide() { return this.transparencyGuide; }
     VulkanImage linearOutput() { return this.linearOutput; }
 
     @Override

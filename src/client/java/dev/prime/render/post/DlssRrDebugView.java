@@ -8,8 +8,6 @@ public enum DlssRrDebugView {
     OFF("off"),
     OVERVIEW("overview"),
     INPUT_COLOR("input_color"),
-    COLOR_BEFORE_TRANSPARENCY("color_before_transparency"),
-    TRANSPARENCY_DIFFERENCE("transparency_difference"),
     MOTION("motion"),
     DEPTH("depth"),
     JITTER("jitter"),

@@ -37,7 +37,7 @@ import org.lwjgl.vulkan.VkWriteDescriptorSet;
 
 /** Converts raw path-tracing signals into the exact low-resolution image set submitted to NGX. */
 final class DlssRrPreparePass implements Destroyable {
-    private static final int IMAGE_COUNT = 17;
+    private static final int IMAGE_COUNT = 15;
     private static final int COMPUTE_STAGE = VK12.VK_SHADER_STAGE_COMPUTE_BIT;
     // Three mat4s, sun multiplier at 192, four bytes of std430 padding, then vec2 jitter at 200.
     private static final int PUSH_SIZE = 208;
@@ -90,11 +90,9 @@ final class DlssRrPreparePass implements Destroyable {
                 targets.primaryPosition(),
                 targets.sunLighting(),
                 stableRadiance,
-                targets.transparencyGuide(),
                 atmosphere.aerialRadiance(),
                 atmosphere.aerialTransmittance(),
                 targets.inputColor(),
-                targets.colorBeforeTransparency(),
                 targets.motion(),
                 targets.rrNormalRoughness(),
                 targets.specularHitDistance());

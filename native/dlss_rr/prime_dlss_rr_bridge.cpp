@@ -17,7 +17,7 @@
 
 namespace {
 
-constexpr std::uint32_t PRIME_DLSS_RR_ABI_VERSION = 1;
+constexpr std::uint32_t PRIME_DLSS_RR_ABI_VERSION = 2;
 constexpr char PROJECT_ID[] = "7bc01faf-de5e-4c7c-9936-43cb5c301232";
 constexpr std::uint32_t EXTENSION_NAME_STRIDE = 256;
 
@@ -77,7 +77,6 @@ enum ImageIndex : std::size_t {
     SPECULAR_ALBEDO,
     NORMAL_ROUGHNESS,
     INPUT_COLOR,
-    COLOR_BEFORE_TRANSPARENCY,
     OUTPUT_COLOR,
     LINEAR_DEPTH,
     MOTION_VECTORS,
@@ -106,7 +105,7 @@ static_assert(sizeof(PrimeInitDescription) == 56);
 static_assert(sizeof(PrimeOptimalSettings) == 32);
 static_assert(sizeof(PrimeFeatureDescription) == 48);
 static_assert(sizeof(PrimeImage) == 32);
-static_assert(sizeof(PrimeEvaluateDescription) == 464);
+static_assert(sizeof(PrimeEvaluateDescription) == 432);
 
 struct Context {
     VkDevice device{};
@@ -384,7 +383,8 @@ PRIME_EXPORT int primeDlssRrEvaluate(PrimeEvaluateDescription* description) {
     evaluate.pInOutput = &resources[OUTPUT_COLOR];
     evaluate.pInDepth = &resources[LINEAR_DEPTH];
     evaluate.pInMotionVectors = &resources[MOTION_VECTORS];
-    evaluate.pInColorBeforeTransparency = &resources[COLOR_BEFORE_TRANSPARENCY];
+    // Deliberately omit the optional transparency guide for the single-path RR experiment.
+    evaluate.pInColorBeforeTransparency = nullptr;
     evaluate.pInSpecularHitDistance = &resources[SPECULAR_HIT_DISTANCE];
     evaluate.pInWorldToViewMatrix = description->worldToView;
     evaluate.pInViewToClipMatrix = description->viewToClip;

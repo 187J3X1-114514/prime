@@ -234,11 +234,6 @@ public final class NrdDenoiser implements Destroyable, DenoiserInputs {
         return this.images.sunPenumbra;
     }
 
-    @Override
-    public VulkanImage transparencyGuide() {
-        return this.images.transparencyGuide;
-    }
-
     public VulkanImage validation() {
         return this.images.validation;
     }
@@ -802,7 +797,6 @@ public final class NrdDenoiser implements Destroyable, DenoiserInputs {
         private final VulkanImage primaryPosition;
         private final VulkanImage sunLighting;
         private final VulkanImage sunPenumbra;
-        private final VulkanImage transparencyGuide;
         private final VulkanImage sunShadow;
         private final VulkanImage reprojectionError;
         private final VulkanImage validation;
@@ -827,7 +821,6 @@ public final class NrdDenoiser implements Destroyable, DenoiserInputs {
                 VulkanImage primaryPosition,
                 VulkanImage sunLighting,
                 VulkanImage sunPenumbra,
-                VulkanImage transparencyGuide,
                 VulkanImage sunShadow,
                 VulkanImage reprojectionError,
                 VulkanImage validation,
@@ -849,7 +842,6 @@ public final class NrdDenoiser implements Destroyable, DenoiserInputs {
             this.primaryPosition = primaryPosition;
             this.sunLighting = sunLighting;
             this.sunPenumbra = sunPenumbra;
-            this.transparencyGuide = transparencyGuide;
             this.sunShadow = sunShadow;
             this.reprojectionError = reprojectionError;
             this.validation = validation;
@@ -897,13 +889,6 @@ public final class NrdDenoiser implements Destroyable, DenoiserInputs {
                         context, created, width, height, VK12.VK_FORMAT_R16G16B16A16_SFLOAT, debugPrefix + " unshadowed sun lighting");
                 VulkanImage sunPenumbra = createImage(
                         context, created, width, height, VK12.VK_FORMAT_R16_SFLOAT, debugPrefix + " noisy sun penumbra");
-                VulkanImage transparencyGuide = createImage(
-                        context,
-                        created,
-                        width,
-                        height,
-                        VK12.VK_FORMAT_R16G16B16A16_SFLOAT,
-                        debugPrefix + " inactive RR transparency guide");
                 VulkanImage sunShadow = createImage(
                         context, created, width, height, VK12.VK_FORMAT_R16_SFLOAT, debugPrefix + " SIGMA sun shadow");
                 VulkanImage reprojectionError = createImage(
@@ -944,7 +929,6 @@ public final class NrdDenoiser implements Destroyable, DenoiserInputs {
                         primaryPosition,
                         sunLighting,
                         sunPenumbra,
-                        transparencyGuide,
                         sunShadow,
                         reprojectionError,
                         validation,

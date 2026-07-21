@@ -233,7 +233,6 @@ public final class DlssRrPostProcessor implements RealtimePostProcessor {
                                 this.targets.specularMaterial(),
                                 this.targets.rrNormalRoughness(),
                                 this.targets.inputColor(),
-                                this.targets.colorBeforeTransparency(),
                                 this.targets.rrOutput(),
                                 this.targets.viewZ(),
                                 this.targets.motion(),

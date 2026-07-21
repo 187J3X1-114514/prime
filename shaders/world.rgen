@@ -15,7 +15,6 @@ layout(location = 1) rayPayloadEXT uint primeShadowHitDistanceBits;
 #include "bsdf.glsl"
 #include "lights.glsl"
 #include "integrator.glsl"
-#include "denoiser_guides.glsl"
 #include "camera.glsl"
 
 void main() {
@@ -29,18 +28,6 @@ void main() {
     PathState path = primeCameraPath(pixel, 0u, cameraSample);
 
     PrimeIntegrationResult sampleResult = primeIntegrate(path, integrator);
-    PrimeTransparencyGuideResult transparencyGuide;
-    transparencyGuide.backgroundRadiance = vec3(0.0);
-    transparencyGuide.reflectionHitDistance = 0.0;
-    transparencyGuide.valid = false;
-    if ((primePush.path.w & PRIME_PATH_DLSS_RR_MASK) != 0u
-            && (sampleResult.guides.primaryMaterialFlags
-                    & PRIME_MATERIAL_FLAG_TRANSMISSIVE) != 0u) {
-        transparencyGuide = primeIntegrateTransparencyGuide(path, integrator, sampleResult);
-        if (transparencyGuide.valid) {
-            sampleResult.guides.specularHitDistance = transparencyGuide.reflectionHitDistance;
-        }
-    }
     vec3 noisyDiffuse = sampleResult.radiance.diffuse;
     vec3 noisySpecular = sampleResult.radiance.specular;
     primeNrdClampRadiancePair(noisyDiffuse, noisySpecular, PRIME_NRD_FP16_MAX);
@@ -102,17 +89,6 @@ void main() {
             primeNrdSunPenumbra,
             ivec2(pixel),
             vec4(sampleResult.guides.sunPenumbra));
-    imageStore(
-            primeTransparencyGuide,
-            ivec2(pixel),
-            transparencyGuide.valid
-                    ? vec4(
-                            primeNrdClampRadiance(
-                                    transparencyGuide.backgroundRadiance,
-                                    PRIME_NRD_FP16_MAX),
-                            1.0)
-                    : vec4(0.0));
-
     // Directly visible sky/emission is a current-frame deterministic signal. FSR owns temporal
     // coverage reconstruction, so averaging a second independent history here would create stale
     // silhouettes and make its lock/disocclusion logic impossible to reason about.

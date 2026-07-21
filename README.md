@@ -28,7 +28,7 @@ Prime 是一个面向 Minecraft 的客户端 Shader Mod，基于 Minecraft Vulka
 - `render/vulkan` 独占 Vulkan 句柄、VMA 分配、同步、SBT、管线和加速结构所有权。
 - `render/terrain` 负责不可变 Section 快照的异步网格化、有界任务队列、BLAS 驻留和 TLAS 场景替换。第二个 BLAS geometry 是“需要 any-hit 的表面”而非单纯 cutout：alpha coverage 与真实透射仍由 primitive flag 严格区分。
 - `shaders/abi.json` 是 Java、GLSL 布局、积分器颜色空间与默认显示设备/变换的唯一契约声明源。构建会生成双方代码，再编译并验证全部 SPIR-V。
-- `shaders/bsdf.glsl`、`material.glsl`、`lights.glsl` 和 `sampling.glsl` 定义可独立替换的积分器语义；`integrator.glsl` 负责当前 mega-kernel 调度，并将完整 radiance estimate 与只读 denoiser guides 分开。`denoiser_guides.glsl` 保存不会进入参考累计的后端辅助射线。
+- `shaders/bsdf.glsl`、`material.glsl`、`lights.glsl` 和 `sampling.glsl` 定义可独立替换的积分器语义；`integrator.glsl` 负责当前 mega-kernel 调度，并将完整 radiance estimate 与只读 denoiser guides 分开。
 - 公共 `Denoiser` 边界统一 NRD-FSR、DLSS RR 与参考累积的尺寸、线性 HDR 输出和生命周期；实时子接口额外拥有 jitter/history、`DenoiserInputs`、命令记录与提交。`shaders/nrd_common.glsl` 与 `render/vulkan/nrd` 定义 NRD 信号和调度，`render/vulkan/dlss` 定义 NGX RR 资源与 Prime 自有覆盖层；三个后端都不拥有或修改物理积分器。
 - `shaders/display_transform.glsl` 是工作空间到显示设备的独立语义边界。实时路径的大气透视在 NRD 后、FSR 前的线性 HDR 合成中加入，显示变换严格位于 FSR 之后；截图路径则在每个样本进入 RGBA32F 均值前加入固定的大气透视，并从均值直接显示。两条路径的历史都不会混入非线性的显示设备编码值。
 - Mixin 只承担 Minecraft 接入和设备能力协商；地形与 Vulkan 业务对象不持有 Mixin 对象。

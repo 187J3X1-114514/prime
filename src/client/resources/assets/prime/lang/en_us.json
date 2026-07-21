@@ -26,8 +26,6 @@
   "prime.options.dlss_rr.debug_view.off": "Off",
   "prime.options.dlss_rr.debug_view.overview": "Inputs Overview",
   "prime.options.dlss_rr.debug_view.input_color": "Input Color",
-  "prime.options.dlss_rr.debug_view.color_before_transparency": "Color Before Transparency",
-  "prime.options.dlss_rr.debug_view.transparency_difference": "Transparency Difference",
   "prime.options.dlss_rr.debug_view.motion": "Motion Vectors",
   "prime.options.dlss_rr.debug_view.depth": "Linear Depth",
   "prime.options.dlss_rr.debug_view.jitter": "Jitter History",

@@ -29,13 +29,13 @@ import org.lwjgl.vulkan.VkCommandBuffer;
 
 /** Stable, fixed-width Java binding for Prime's private DLSS Ray Reconstruction bridge. */
 public final class DlssRrNative {
-    public static final int ABI_VERSION = 1;
+    public static final int ABI_VERSION = 2;
     static final int EXTENSION_QUERY_SIZE = 56;
     static final int INIT_DESCRIPTION_SIZE = 56;
     static final int OPTIMAL_SETTINGS_SIZE = 32;
     static final int FEATURE_DESCRIPTION_SIZE = 48;
     static final int IMAGE_SIZE = 32;
-    static final int IMAGE_COUNT = 9;
+    static final int IMAGE_COUNT = 8;
     static final int EVALUATE_DESCRIPTION_SIZE = 176 + IMAGE_COUNT * IMAGE_SIZE;
     private static final int EXTENSION_CAPACITY = 64;
     private static final int EXTENSION_NAME_STRIDE = 256;

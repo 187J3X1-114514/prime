@@ -1,14 +1,6 @@
 #ifndef PRIME_ROBOCUTE_BSDF_OPENPBR_GLSL
 #define PRIME_ROBOCUTE_BSDF_OPENPBR_GLSL
 
-// The imported library remains complete by default so its standalone validation shader keeps
-// compiling every OpenPBR layer. Prime's runtime adapter defines this as zero because its current
-// material translation only reaches the basic-metallic, subsurface-glossy, transmission and
-// thin-wall substrate specializations below.
-#ifndef PRIME_RC_ENABLE_FULL_OPENPBR
-#define PRIME_RC_ENABLE_FULL_OPENPBR 1
-#endif
-
 #include "robocute_bsdf_common.glsl"
 #include "robocute_bsdf_closures.glsl"
 
@@ -111,7 +103,7 @@ PrimeRcSampleResult primeRcMixedDiffuseSample(
         return primeRcZeroSampleResult(state, stack);
     }
     float weight = state.material.weight.subsurface;
-    if (randomValue.z < mixState.secondSampleWeight) {
+    if (randomValue.z <= mixState.secondSampleWeight && mixState.secondSampleWeight > 0.0) {
         PrimeRcSampleResult result = primeRcSubsurfaceSample(
                 wi,
                 vec3(randomValue.xy, randomValue.z / mixState.secondSampleWeight),
@@ -180,7 +172,7 @@ PrimeRcSampleResult primeRcGlossyDiffuseSample(
         return primeRcZeroSampleResult(state, stack);
     }
     float weight = state.material.weight.specular > 0.0 ? 1.0 : 0.0;
-    if (randomValue.z < layer.coatSampleWeight) {
+    if (randomValue.z <= layer.coatSampleWeight && layer.coatSampleWeight > 0.0) {
         PrimeRcSampleResult result = primeRcSpecularSample(
                 wi, vec3(randomValue.xy, randomValue.z / layer.coatSampleWeight),
                 state, stack);
@@ -245,7 +237,7 @@ PrimeRcSampleResult primeRcDielectricBaseSample(
         return primeRcZeroSampleResult(state, stack);
     }
     float weight = state.material.weight.transmission;
-    if (randomValue.z < mixState.secondSampleWeight) {
+    if (randomValue.z <= mixState.secondSampleWeight && mixState.secondSampleWeight > 0.0) {
         PrimeRcSampleResult result = primeRcTransmissionSample(
                 wi, vec3(randomValue.xy, randomValue.z / mixState.secondSampleWeight),
                 state, stack);
@@ -310,7 +302,7 @@ PrimeRcSampleResult primeRcBaseSubstrateSample(
         return primeRcZeroSampleResult(state, stack);
     }
     float weight = state.material.weight.metalness;
-    if (randomValue.z < mixState.secondSampleWeight) {
+    if (randomValue.z <= mixState.secondSampleWeight && mixState.secondSampleWeight > 0.0) {
         PrimeRcSampleResult result = primeRcConductorSample(
                 wi, vec3(randomValue.xy, randomValue.z / mixState.secondSampleWeight),
                 state, stack);
@@ -360,7 +352,6 @@ vec3 primeRcBaseSubstrateEnergy(vec3 wi, PrimeRcState state) {
             state.material.weight.metalness);
 }
 
-#if PRIME_RC_ENABLE_FULL_OPENPBR
 PrimeRcThroughput primeRcDiffractionBaseEval(vec3 wi, vec3 wo, PrimeRcState state) {
     float weight = state.material.weight.diffraction;
     return primeRcLayerEvalValues(
@@ -378,7 +369,7 @@ PrimeRcSampleResult primeRcDiffractionBaseSample(
         return primeRcZeroSampleResult(state, stack);
     }
     float weight = state.material.weight.diffraction;
-    if (randomValue.z < layer.coatSampleWeight) {
+    if (randomValue.z <= layer.coatSampleWeight && layer.coatSampleWeight > 0.0) {
         PrimeRcSampleResult result = primeRcDiffractionSample(
                 wi, vec3(randomValue.xy, randomValue.z / layer.coatSampleWeight),
                 state, stack);
@@ -447,7 +438,7 @@ PrimeRcSampleResult primeRcCoatedBaseSample(
         return primeRcZeroSampleResult(state, stack);
     }
     float weight = state.material.weight.coat;
-    if (randomValue.z < layer.coatSampleWeight) {
+    if (randomValue.z <= layer.coatSampleWeight && layer.coatSampleWeight > 0.0) {
         PrimeRcSampleResult result = primeRcCoatSample(
                 wi, vec3(randomValue.xy, randomValue.z / layer.coatSampleWeight),
                 state, stack);
@@ -515,7 +506,7 @@ PrimeRcSampleResult primeRcOpenPbrSample(
         return primeRcZeroSampleResult(state, stack);
     }
     float weight = state.material.weight.fuzz;
-    if (randomValue.z < layer.coatSampleWeight) {
+    if (randomValue.z <= layer.coatSampleWeight && layer.coatSampleWeight > 0.0) {
         PrimeRcSampleResult result = primeRcFuzzSample(
                 wi, vec3(randomValue.xy, randomValue.z / layer.coatSampleWeight),
                 state, stack);
@@ -572,7 +563,6 @@ PrimeRcEval primeRcOpenPbrEvaluate(vec3 wi, vec3 wo, PrimeRcState state) {
     result.pdf = primeRcOpenPbrPdf(wi, wo, state);
     return result;
 }
-#endif
 
 PrimeRcMaterial primeRcMaterialFromMetallic(
         vec3 baseColor, float roughness, float metalness, vec3 normal) {
@@ -788,84 +778,6 @@ PrimeRcState primeRcInitializeTransmission(PrimeRcState state) {
     return state;
 }
 
-// Prime's exact OpenPBR subset for thin-walled Minecraft surfaces. This is the same imported
-// composition as the full graph through BaseSubstrate:
-//   mix(diffuse, subsurface) -> dielectric specular -> transmission -> conductor mix.
-// Prime does not author coat, fuzz, diffraction or thin-film weights, so stopping at this node
-// removes no reachable lobe and preserves the full graph's evaluation and sampling mathematics.
-PrimeRcThroughput primeRcPrimeThinWallEval(vec3 wi, vec3 wo, PrimeRcState state) {
-    return primeRcBaseSubstrateEval(wi, wo, state);
-}
-
-PrimeRcSampleResult primeRcPrimeThinWallSample(
-        vec3 wi, vec3 randomValue, PrimeRcState state, PrimeRcVolumeStack stack) {
-    return primeRcBaseSubstrateSample(wi, randomValue, state, stack);
-}
-
-float primeRcPrimeThinWallPdf(vec3 wi, vec3 wo, PrimeRcState state) {
-    return primeRcBaseSubstratePdf(wi, wo, state);
-}
-
-PrimeRcEval primeRcPrimeThinWallEvaluate(vec3 wi, vec3 wo, PrimeRcState state) {
-    PrimeRcEval result;
-    result.throughput = primeRcPrimeThinWallEval(wi, wo, state);
-    result.pdf = primeRcPrimeThinWallPdf(wi, wo, state);
-    return result;
-}
-
-PrimeRcState primeRcPrimeThinWallStateInit(
-        PrimeRcMaterial material,
-        vec3 wi,
-        float inverseOutsideIor,
-        float rayT,
-        vec3 wavelengthsNm,
-        uint heroWavelengthIndex,
-        uint detail,
-        uint spectrumed) {
-    PrimeRcState state = primeRcBaseState(
-            material, inverseOutsideIor, rayT, wavelengthsNm,
-            heroWavelengthIndex, detail, spectrumed, false);
-
-    vec3 diffuseEnergy = state.material.weight.subsurface < 1.0
-            ? primeRcDiffuseEnergy(wi, state) : vec3(0.0);
-    vec3 subsurfaceEnergy = state.material.weight.subsurface > 0.0
-            ? primeRcSubsurfaceEnergy(wi, state) : vec3(0.0);
-    state.mixedDiffuse = primeRcMakeMixState(
-            state.material.weight.subsurface, diffuseEnergy, subsurfaceEnergy);
-
-    vec3 mixedEnergy = primeRcMixedDiffuseEnergy(wi, state);
-    state.glossyDiffuse = state.material.weight.specular > 0.0
-            ? primeRcMakeLayerState(
-                    1.0,
-                    mixedEnergy,
-                    primeRcSpecularTrans(wi, state, mixedEnergy),
-                    primeRcSpecularEnergy(wi, state))
-            : primeRcMakeLayerState(
-                    0.0, vec3(0.0), vec3(0.0), vec3(0.0));
-
-    if (state.material.weight.transmission > 0.0) {
-        state = primeRcInitializeTransmission(state);
-    }
-    state.dielectricBase = primeRcMakeMixState(
-            state.material.weight.transmission,
-            state.material.weight.transmission < 1.0
-                    ? primeRcGlossyDiffuseEnergy(wi, state) : vec3(0.0),
-            state.material.weight.transmission > 0.0
-                    ? primeRcTransmissionEnergy(wi, state) : vec3(0.0));
-
-    if (state.material.weight.metalness > 0.0) {
-        state = primeRcInitializeConductor(wi, state);
-    }
-    state.baseSubstrate = primeRcMakeMixState(
-            state.material.weight.metalness,
-            state.material.weight.metalness < 1.0
-                    ? primeRcDielectricBaseEnergy(wi, state) : vec3(0.0),
-            state.material.weight.metalness > 0.0
-                    ? primeRcConductorEnergy(wi, state) : vec3(0.0));
-    return state;
-}
-
-#if PRIME_RC_ENABLE_FULL_OPENPBR
 PrimeRcState primeRcInitializeCoat(PrimeRcState state) {
     state.coatMicrofacet.alpha = primeRcSpecularNdfRoughnesses(
             state.material.coat.roughness,
@@ -1011,7 +923,6 @@ PrimeRcState primeRcOpenPbrStateInit(
     }
     return state;
 }
-#endif
 
 // RoboCute's polymorphic basic-metallic branch: Lambertian substrate under the identical
 // dielectric specular layer, then energy-weighted mixing with the conductor closure.
@@ -1032,7 +943,7 @@ PrimeRcSampleResult primeRcBasicGlossySample(
         return primeRcZeroSampleResult(state, stack);
     }
     float weight = state.material.weight.specular > 0.0 ? 1.0 : 0.0;
-    if (randomValue.z < layer.coatSampleWeight) {
+    if (randomValue.z <= layer.coatSampleWeight && layer.coatSampleWeight > 0.0) {
         PrimeRcSampleResult result = primeRcSpecularSample(
                 wi, vec3(randomValue.xy, randomValue.z / layer.coatSampleWeight),
                 state, stack);
@@ -1104,7 +1015,7 @@ PrimeRcSampleResult primeRcBasicMetallicSample(
         return primeRcZeroSampleResult(state, stack);
     }
     float weight = state.material.weight.metalness;
-    if (randomValue.z < state.basicMetal.secondSampleWeight) {
+    if (randomValue.z <= state.basicMetal.secondSampleWeight && state.basicMetal.secondSampleWeight > 0.0) {
         PrimeRcSampleResult result = primeRcConductorSample(
                 wi, vec3(randomValue.xy,
                         randomValue.z / state.basicMetal.secondSampleWeight),
@@ -1224,7 +1135,7 @@ PrimeRcSampleResult primeRcSubsurfaceGlossySample(
         return primeRcZeroSampleResult(state, stack);
     }
     float weight = state.material.weight.specular > 0.0 ? 1.0 : 0.0;
-    if (randomValue.z < layer.coatSampleWeight) {
+    if (randomValue.z <= layer.coatSampleWeight && layer.coatSampleWeight > 0.0) {
         PrimeRcSampleResult result = primeRcSpecularSample(
                 wi, vec3(randomValue.xy, randomValue.z / layer.coatSampleWeight),
                 state, stack);

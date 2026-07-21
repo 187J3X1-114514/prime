@@ -135,6 +135,21 @@ SurfaceInteraction primeTraceSurface(vec3 origin, vec3 direction) {
     return surface;
 }
 
+bool primeValidSurfaceInteraction(SurfaceInteraction surface) {
+    if (surface.hitKind == PRIME_HIT_NONE) {
+        return true;
+    }
+    float normalLengthSquared = dot(surface.geometricNormal, surface.geometricNormal);
+    return surface.hitKind == PRIME_HIT_SURFACE
+            && primeNrdIsFinite(surface.t)
+            && surface.t >= 0.0
+            && primeNrdIsFinite(surface.position)
+            && primeNrdIsFinite(surface.geometricNormal)
+            && primeNrdIsFinite(normalLengthSquared)
+            && normalLengthSquared > 1.0e-12
+            && primeNrdIsFinite(surface.baseColor);
+}
+
 bool primePreviousCannotUseMis(PathState path) {
     return path.bounce == 0u
             || (path.flags & (PRIME_PATH_PREVIOUS_DELTA | PRIME_PATH_PREVIOUS_NO_NEE)) != 0u;
@@ -229,7 +244,7 @@ float primeTraceShadowHitDistance(vec3 physicalPosition, vec3 normal, LightSampl
             light.direction,
             light.distance,
             1);
-    return uintBitsToFloat(primeShadowHitDistanceBits);
+    return primeNrdSanitizeHitDistance(uintBitsToFloat(primeShadowHitDistanceBits));
 }
 
 bool primeVisible(vec3 physicalPosition, vec3 normal, LightSample light) {
@@ -340,6 +355,7 @@ struct PrimePrimarySunSample {
 };
 
 float primeSigmaPackDirectionalPenumbra(float distanceToOccluder) {
+    distanceToOccluder = primeNrdSanitizeHitDistance(distanceToOccluder);
     if (distanceToOccluder >= PRIME_NRD_FP16_MAX) {
         return PRIME_NRD_FP16_MAX;
     }
@@ -661,12 +677,15 @@ PrimeIntegrationResult primeIntegrateWithVolume(
     uint maximumBounces = min(primePush.path.z & 0xffffu, 256u);
     for (path.bounce = 0u; path.bounce < maximumBounces; ++path.bounce) {
         SurfaceInteraction surface = primeTraceSurface(path.traceOrigin, path.rayDirection);
+        if (!primeValidSurfaceInteraction(surface)) {
+            break;
+        }
         vec3 viewDirection = -path.rayDirection;
         if (denoiserState.hasPrimarySurface
                 && path.bounce == denoiserState.primaryBounce + 1u) {
             float firstBounceHitDistance = surface.hitKind == PRIME_HIT_NONE
                     ? PRIME_NRD_FP16_MAX
-                    : max(surface.t, 0.0);
+                    : primeNrdSanitizeHitDistance(surface.t);
             if (denoiserState.diffusePath) {
                 result.guides.diffuseHitDistance = firstBounceHitDistance;
             } else {

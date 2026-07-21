@@ -8,8 +8,7 @@
 #include "color_space.glsl"
 #define PRIME_RC_TRANSMISSION_GGX_SET 0
 #define PRIME_RC_TRANSMISSION_GGX_BINDING PRIME_DESCRIPTOR_TRANSMISSION_GGX_ENERGY
-#define PRIME_RC_ENABLE_FULL_OPENPBR 0
-#include "robocute_bsdf_openpbr.glsl"
+#include "prime_bsdf_specializations.glsl"
 
 // Minecraft's translucent render layer is adapted to RoboCute's complete dielectric
 // transmission closure. The imported closure owns Fresnel, rough reflection/refraction,

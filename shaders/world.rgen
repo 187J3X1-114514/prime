@@ -30,6 +30,12 @@ void main() {
     PrimeIntegrationResult sampleResult = primeIntegrate(path, integrator);
     vec3 noisyDiffuse = sampleResult.radiance.diffuse;
     vec3 noisySpecular = sampleResult.radiance.specular;
+    bool hasPrimarySurface = sampleResult.guides.primaryHitKind == PRIME_HIT_SURFACE;
+    float primaryDistance = primeNrdSanitizePrimaryDistance(
+            sampleResult.guides.primaryDistance, hasPrimarySurface);
+    vec3 primaryPosition = primeNrdIsFinite(sampleResult.guides.primaryPosition)
+            ? sampleResult.guides.primaryPosition
+            : vec3(0.0);
     primeNrdClampRadiancePair(noisyDiffuse, noisySpecular, PRIME_NRD_FP16_MAX);
     // These images are a private raygen -> NRD-preparation scratch contract. Keeping raw
     // radiance, hit distance and primary material data here removes demodulation, YCoCg packing,
@@ -41,30 +47,32 @@ void main() {
             ivec2(pixel),
             vec4(
                     primeNrdSanitizeRadiance(noisyDiffuse),
-                    sampleResult.guides.diffuseHitDistance));
+                    primeNrdSanitizeHitDistance(
+                            sampleResult.guides.diffuseHitDistance)));
     imageStore(
             primeNrdNoisySpecular,
             ivec2(pixel),
             vec4(
                     primeNrdSanitizeRadiance(noisySpecular),
-                    sampleResult.guides.specularHitDistance));
+                    primeNrdSanitizeHitDistance(
+                            sampleResult.guides.specularHitDistance)));
     // Diagnostic-only exact primary hit relative to the effective camera pinhole. Keeping this
     // separate from view-Z reconstruction lets the reprojection probe detect a self-consistent
     // but wrong camera transform instead of repeating the motion generator's assumptions.
     imageStore(
             primeNrdPrimaryPosition,
             ivec2(pixel),
-            sampleResult.guides.primaryDistance < 0.0
+            primaryDistance < 0.0
                     ? vec4(0.0)
                     : vec4(
-                            sampleResult.guides.primaryPosition,
+                            primaryPosition,
                             uintBitsToFloat(packHalf2x16(cameraSample))));
     imageStore(
             primeNrdMaterial,
             ivec2(pixel),
             vec4(
                     primeNrdSanitizeGuide(sampleResult.guides.primaryAlbedo),
-                    sampleResult.guides.primaryDistance));
+                    primaryDistance));
     imageStore(
             primeNrdNormalRoughness,
             ivec2(pixel),
@@ -84,13 +92,16 @@ void main() {
             vec4(
                     primeNrdClampRadiance(
                             sampleResult.radiance.unshadowedSun, PRIME_NRD_FP16_MAX),
-                    sampleResult.radiance.sunVisibility));
+                    primeNrdSanitizeUnit(sampleResult.radiance.sunVisibility, 0.0)));
     imageStore(
             primeNrdSunPenumbra,
             ivec2(pixel),
-            vec4(sampleResult.guides.sunPenumbra));
+            vec4(primeNrdSanitizeHitDistance(sampleResult.guides.sunPenumbra)));
     // Directly visible sky/emission is a current-frame deterministic signal. FSR owns temporal
     // coverage reconstruction, so averaging a second independent history here would create stale
     // silhouettes and make its lock/disocclusion logic impossible to reason about.
-    imageStore(primeAccumulation, ivec2(pixel), vec4(sampleResult.radiance.stable, 1.0));
+    imageStore(
+            primeAccumulation,
+            ivec2(pixel),
+            vec4(primeNrdSanitizeRadiance(sampleResult.radiance.stable), 1.0));
 }

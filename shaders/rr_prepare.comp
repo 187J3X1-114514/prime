@@ -66,7 +66,7 @@ vec2 rrMotionVector(ivec2 pixel, ivec2 extent, vec3 position, bool sky) {
 }
 
 void rrApplyAerial(ivec2 pixel, ivec2 extent, float primaryDistance, inout vec3 radiance) {
-    if (primaryDistance < 0.0) {
+    if (!primeNrdIsFinite(primaryDistance) || primaryDistance < 0.0) {
         return;
     }
     float distanceKm = primaryDistance * ATM_WORLD_UNIT_SCALE_KM;
@@ -100,8 +100,10 @@ void main() {
 
     vec4 material = imageLoad(rrDiffuseMaterial, pixel);
     vec4 specularMaterial = imageLoad(rrSpecularMaterial, pixel);
-    uint materialFlags = uint(max(round(specularMaterial.a), 0.0));
-    bool sky = material.a < 0.0;
+    uint materialFlags = primeNrdIsFinite(specularMaterial.a)
+            ? uint(clamp(round(specularMaterial.a), 0.0, PRIME_NRD_FP16_MAX))
+            : 0u;
+    bool sky = !primeNrdIsFinite(material.a) || material.a < 0.0;
     bool transparent = !sky
             && (materialFlags & PRIME_MATERIAL_FLAG_TRANSMISSIVE) != 0u;
     vec4 primary = imageLoad(rrPrimaryPosition, pixel);
@@ -113,8 +115,12 @@ void main() {
     float roughness;
     primeNrdUnpackNormalRoughness(
             imageLoad(rrPackedNormalRoughness, pixel), normal, roughness);
-    normal = sky ? vec3(0.0, 0.0, 1.0) : normalize(normal);
-    roughness = sky ? PRIME_DEFAULT_REFERENCE_LINEAR_ROUGHNESS : clamp(roughness, 0.0, 1.0);
+    normal = sky
+            ? vec3(0.0, 0.0, 1.0)
+            : primeNrdSafeNormalize(normal, vec3(0.0, 0.0, 1.0));
+    roughness = sky
+            ? PRIME_DEFAULT_REFERENCE_LINEAR_ROUGHNESS
+            : primeNrdSanitizeUnit(roughness, PRIME_DEFAULT_REFERENCE_LINEAR_ROUGHNESS);
     imageStore(rrNormalRoughness, pixel, vec4(normal, roughness));
 
     // The SDK's neutral sky fallback is 0.5 for both albedos. A value of one tells RR that all
@@ -130,7 +136,7 @@ void main() {
     imageStore(
             rrSpecularHitDistance,
             pixel,
-            vec4(sky ? 0.0 : max(noisySpecular.a, 0.0)));
+            vec4(sky ? 0.0 : primeNrdSanitizeHitDistance(noisySpecular.a)));
 
     float viewZ = PRIME_RR_SKY_VIEW_Z;
     if (!sky) {
@@ -141,13 +147,18 @@ void main() {
         }
     }
     imageStore(rrLinearViewZ, pixel, vec4(viewZ));
-    imageStore(rrMotion, pixel, vec4(rrMotionVector(pixel, extent, primary.xyz, sky), 0.0, 0.0));
+    imageStore(
+            rrMotion,
+            pixel,
+            vec4(primeNrdSanitizeMotion(
+                    vec3(rrMotionVector(pixel, extent, primary.xyz, sky), 0.0)), 0.0));
 
     vec3 surface = sky
             ? vec3(0.0)
             : primeNrdSanitizeRadiance(noisyDiffuse.rgb)
                     + primeNrdSanitizeRadiance(noisySpecular.rgb)
-                    + primeNrdSanitizeRadiance(sun.rgb) * clamp(sun.a, 0.0, 1.0);
+                    + primeNrdSanitizeRadiance(sun.rgb)
+                            * primeNrdSanitizeUnit(sun.a, 0.0);
     vec3 stable = primeNrdClampRadiance(
             imageLoad(rrStableRadiance, pixel).rgb, PRIME_NRD_FP16_MAX);
     vec3 inputRadiance = surface + stable;

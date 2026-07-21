@@ -10,8 +10,60 @@
 // native library.
 
 const float PRIME_NRD_FP16_MAX = 65504.0;
+const float PRIME_NRD_MAX_SURFACE_DISTANCE = 65503.0;
 const float PRIME_NRD_RADIANCE_LIMIT = 16.0;
 const vec3 PRIME_NRD_HIT_DISTANCE_PARAMETERS = vec3(3.0, 0.1, 20.0);
+
+bool primeNrdIsFinite(float value) {
+    return !isnan(value) && !isinf(value);
+}
+
+bool primeNrdIsFinite(vec2 value) {
+    return !any(isnan(value)) && !any(isinf(value));
+}
+
+bool primeNrdIsFinite(vec3 value) {
+    return !any(isnan(value)) && !any(isinf(value));
+}
+
+bool primeNrdIsFinite(vec4 value) {
+    return !any(isnan(value)) && !any(isinf(value));
+}
+
+float primeNrdSanitizeUnit(float value, float fallback) {
+    return clamp(primeNrdIsFinite(value) ? value : fallback, 0.0, 1.0);
+}
+
+float primeNrdSanitizeHitDistance(float hitDistance) {
+    // A non-finite secondary distance is conservatively a miss. Zero has a distinct NRD meaning
+    // (no usable hit distance) and would create a false near reflector for a valid noisy signal.
+    return primeNrdIsFinite(hitDistance)
+            ? clamp(hitDistance, 0.0, PRIME_NRD_FP16_MAX)
+            : PRIME_NRD_FP16_MAX;
+}
+
+float primeNrdSanitizePrimaryDistance(float primaryDistance, bool hasSurface) {
+    return hasSurface && primeNrdIsFinite(primaryDistance) && primaryDistance >= 0.0
+            ? min(primaryDistance, PRIME_NRD_MAX_SURFACE_DISTANCE)
+            : -1.0;
+}
+
+vec3 primeNrdSafeNormalize(vec3 value, vec3 fallback) {
+    float lengthSquared = dot(value, value);
+    if (!primeNrdIsFinite(value)
+            || !primeNrdIsFinite(lengthSquared)
+            || !(lengthSquared > 1.0e-12)) {
+        return fallback;
+    }
+    vec3 normalized = normalize(value);
+    return primeNrdIsFinite(normalized) ? normalized : fallback;
+}
+
+vec3 primeNrdSanitizeMotion(vec3 motion) {
+    return primeNrdIsFinite(motion)
+            ? clamp(motion, vec3(-PRIME_NRD_FP16_MAX), vec3(PRIME_NRD_FP16_MAX))
+            : vec3(0.0);
+}
 
 vec3 primeNrdLinearToYCoCg(vec3 color) {
     return vec3(
@@ -39,17 +91,19 @@ float primeNrdMaterialId(uint materialFlags) {
 }
 
 vec4 primeNrdPackNormalRoughness(vec3 normal, float roughness, float materialId) {
-    vec3 encodedNormal = normalize(normal);
+    vec3 encodedNormal = primeNrdSafeNormalize(normal, vec3(0.0, 0.0, 1.0));
     encodedNormal /= max(abs(encodedNormal.x) + abs(encodedNormal.y) + abs(encodedNormal.z), 1.0e-9);
     vec3 packed;
     packed.y = encodedNormal.y * 0.5 + 0.5;
     packed.x = encodedNormal.x * 0.5 + packed.y;
     packed.y -= encodedNormal.x * 0.5;
+    float safeRoughness = primeNrdSanitizeUnit(
+            roughness, PRIME_DEFAULT_REFERENCE_LINEAR_ROUGHNESS);
     float signedRoughness = encodedNormal.z < 0.0
-            ? -max(roughness, 1.5 / 512.0)
-            : max(roughness, 1.5 / 512.0);
+            ? -max(safeRoughness, 1.5 / 512.0)
+            : max(safeRoughness, 1.5 / 512.0);
     packed.z = signedRoughness * 0.5 + 0.5;
-    return vec4(packed, clamp(materialId, 0.0, 1.0));
+    return vec4(packed, primeNrdSanitizeUnit(materialId, 0.0));
 }
 
 void primeNrdUnpackNormalRoughness(
@@ -61,15 +115,19 @@ void primeNrdUnpackNormalRoughness(
     float signedRoughness = packed.z * 2.0 - 1.0;
     float z = sign(signedRoughness)
             * max(1.0 - abs(octahedral.x) - abs(octahedral.y), 0.0);
-    normal = normalize(vec3(octahedral, z));
-    roughness = abs(signedRoughness);
+    normal = primeNrdSafeNormalize(vec3(octahedral, z), vec3(0.0, 0.0, 1.0));
+    roughness = primeNrdSanitizeUnit(abs(signedRoughness),
+            PRIME_DEFAULT_REFERENCE_LINEAR_ROUGHNESS);
 }
 
 float primeNrdNormalizedHitDistance(float hitDistance, float viewZ, float roughness) {
     // Exact REBLUR_FrontEnd_GetNormHitDist contract. The roughness-dependent scale is essential
     // for specular virtual motion; using the diffuse shortcut here destabilizes highlights.
+    hitDistance = primeNrdSanitizeHitDistance(hitDistance);
+    viewZ = primeNrdIsFinite(viewZ) ? abs(viewZ) : PRIME_NRD_FP16_MAX;
+    roughness = primeNrdSanitizeUnit(roughness, PRIME_DEFAULT_REFERENCE_LINEAR_ROUGHNESS);
     float spread = 1.0 - exp2(-200.0 * roughness * roughness);
-    spread *= pow(clamp(roughness, 0.0, 1.0), 0.5);
+    spread *= pow(roughness, 0.5);
     float scale = (PRIME_NRD_HIT_DISTANCE_PARAMETERS.x
             + abs(viewZ) * PRIME_NRD_HIT_DISTANCE_PARAMETERS.y)
             * mix(PRIME_NRD_HIT_DISTANCE_PARAMETERS.z, 1.0, spread);
@@ -142,7 +200,9 @@ void primeNrdClampRadiancePair(
 
 vec4 primeNrdPackRadianceAndHitDistance(vec3 radiance, float normalizedHitDistance) {
     vec3 sanitized = primeNrdSanitizeRadiance(radiance);
-    return vec4(primeNrdLinearToYCoCg(sanitized), clamp(normalizedHitDistance, 0.0, 1.0));
+    return vec4(
+            primeNrdLinearToYCoCg(sanitized),
+            primeNrdSanitizeUnit(normalizedHitDistance, 0.0));
 }
 
 #endif

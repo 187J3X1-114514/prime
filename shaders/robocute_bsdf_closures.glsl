@@ -126,7 +126,7 @@ PrimeRcSampleResult primeRcDiffuseSample(
     }
     float uniformProbability = primeRcEonUniformPdf(wi.z, roughness);
     float cltcPdf;
-    if (randomValue.z < uniformProbability) {
+    if (randomValue.z <= uniformProbability) {
         result.bsdfSample.wo = primeRcUniformSampleHemisphere(randomValue.xy);
         cltcPdf = primeRcEonCltcPdf(wi, result.bsdfSample.wo, roughness);
     } else {
@@ -266,30 +266,8 @@ float primeRcSpecularPdf(vec3 wi, vec3 wo, PrimeRcState state) {
 
 vec3 primeRcSpecularTintOut(vec3 wo, PrimeRcState state) { return vec3(1.0); }
 
-vec3 primeRcSmoothSpecularReflectance(vec3 wi, PrimeRcState state, bool includeTint) {
-    // The GGX directional-energy table resolves finite microfacet distributions. Its first
-    // grazing-angle texel is necessarily an average over a finite interval, whereas a delta
-    // interface has an exact analytic Fresnel value. Using that texel to choose between the
-    // delta coat and its substrate makes the sampling probability disagree with the sampled
-    // throughput (most visibly at grazing angles), which breaks the layer's white-furnace
-    // contract. Keep the LUT for every finite lobe and use the closure's own Fresnel for the
-    // measure-zero delta limit.
-    PrimeRcSpecularFresnel fresnel = state.specularFresnel;
-    if (!includeTint) {
-        fresnel.color = vec3(1.0);
-    }
-    return primeRcSpecularFresnelUnpolarized(
-            fresnel,
-            state.wavelengthsNm,
-            state.spectrumed,
-            clamp(wi.z, 0.0, 1.0));
-}
-
 vec3 primeRcSpecularTrans(vec3 wi, PrimeRcState state, vec3 baseEnergy) {
     if (wi.z < 0.0) { return vec3(1.0); }
-    if (primeRcMicrofacetEffectivelySmooth(state.specularMicrofacet)) {
-        return vec3(1.0) - primeRcSmoothSpecularReflectance(wi, state, false);
-    }
     vec2 energy = primeRcMicrofacetDirectionalAlbedoTransmission(
             state.specularMicrofacet, wi.z, state.specularFresnel.energyIor);
     return vec3(energy.y / primeRcReduceSum(energy));
@@ -304,9 +282,6 @@ vec3 primeRcSpecularEnergy(vec3 wi, PrimeRcState state) {
         return vec3(0.0);
     }
     if (!primeRcIsReflective(state.samplingFlags)) { return vec3(0.0); }
-    if (primeRcMicrofacetEffectivelySmooth(state.specularMicrofacet)) {
-        return primeRcSmoothSpecularReflectance(wi, state, true);
-    }
     vec2 energy = primeRcMicrofacetDirectionalAlbedoTransmission(
             state.specularMicrofacet, wi.z, state.specularFresnel.energyIor);
     return state.specularFresnel.color * (energy.x / primeRcReduceSum(energy));
@@ -610,7 +585,7 @@ PrimeRcSampleResult primeRcSubsurfaceSample(
     result.bsdfSample.pdf = PRIME_RC_INV_PI * result.bsdfSample.wo.z;
     result.bsdfSample.throughput.value = vec3(PRIME_RC_INV_PI * result.bsdfSample.wo.z);
     if (wi.z < 0.0) { result.bsdfSample.wo.z = -result.bsdfSample.wo.z; }
-    if (randomValue.z < transmissionProbability) {
+    if (randomValue.z <= transmissionProbability) {
         result.bsdfSample.wo.z = -result.bsdfSample.wo.z;
         result.bsdfSample.pdf *= transmissionProbability;
         result.bsdfSample.throughput.value *= transmissionProbability;
@@ -661,6 +636,27 @@ vec3 primeRcSubsurfaceEnergy(vec3 wi, PrimeRcState state) {
     return vec3(0.0);
 }
 
+float primeRcGuardedPositiveReciprocal(float denominator) {
+    if (!(denominator > 0.0) || isnan(denominator) || isinf(denominator)) {
+        return 0.0;
+    }
+    float reciprocal = 1.0 / denominator;
+    return isnan(reciprocal) || isinf(reciprocal) ? 0.0 : reciprocal;
+}
+
+vec3 primeRcGuardedThinWallSeriesReciprocal(vec3 roundTrip) {
+    // Preserve RoboCute's exact operation order: rcp(1 - sqr(F * A)). Only guard the reciprocal
+    // at its removable R=A=1 singularity, where the products below have the exact finite limits
+    // reflected=1 and transmitted=0; the unguarded form instead evaluates 0 * Inf -> NaN. This
+    // must not be replaced by an algebraic refactor because
+    // the imported BSDF's f32 calculation sequence is part of Prime's reference contract.
+    vec3 denominator = vec3(1.0) - primeRcSquare(roundTrip);
+    return vec3(
+            primeRcGuardedPositiveReciprocal(denominator.x),
+            primeRcGuardedPositiveReciprocal(denominator.y),
+            primeRcGuardedPositiveReciprocal(denominator.z));
+}
+
 PrimeRcVecPair primeRcTransmissionThinWallRt(float cosineTheta, PrimeRcState state) {
     PrimeRcVecPair fresnel = primeRcSpecularFresnelRt(
             state.specularFresnel,
@@ -673,7 +669,8 @@ PrimeRcVecPair primeRcTransmissionThinWallRt(float cosineTheta, PrimeRcState sta
     float cosineThetaI = sqrt(t0);
     vec3 absorption = state.transmissionTint
             * exp(-state.transmissionVolume.extinction / cosineThetaI);
-    vec3 inverseSeries = 1.0 / (vec3(1.0) - primeRcSquare(fresnel.first * absorption));
+    vec3 inverseSeries = primeRcGuardedThinWallSeriesReciprocal(
+            fresnel.first * absorption);
     PrimeRcVecPair result;
     result.first = fresnel.first
             * (vec3(1.0) + primeRcSquare(fresnel.second * absorption) * inverseSeries);
@@ -695,7 +692,8 @@ vec3 primeRcCalculateThinWallDeltaTransmission(PrimeRcMaterial material, float c
         absorption = exp(-primeRcVolumeFromTransmission(material.transmission).extinction
                 / cosineThetaI);
     }
-    vec3 inverseSeries = 1.0 / (vec3(1.0) - primeRcSquare(reflection * absorption));
+    vec3 inverseSeries = primeRcGuardedThinWallSeriesReciprocal(
+            reflection * absorption);
     return primeRcSquare(transmission) * absorption * inverseSeries;
 }
 

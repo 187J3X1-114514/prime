@@ -31,16 +31,19 @@ final class IntegratorArchitectureContractTest {
     }
 
     @Test
-    void samplingDoesNotDeliberatelyTruncateRareFinitePaths() throws IOException {
+    void samplingRetainsRequiredFinitePrecisionNanGuards() throws IOException {
         String bsdf = shader("bsdf.glsl");
         String lights = shader("lights.glsl");
 
-        assertFalse(bsdf.contains("PRIME_MINIMUM_BSDF_SAMPLE_PDF"));
-        assertTrue(bsdf.contains("sampleValue.throughput.value / sampleValue.pdf"));
-        assertFalse(bsdf.contains("cosine > PRIME_BSDF_EPSILON"));
-        assertFalse(bsdf.contains("cosine <= PRIME_BSDF_EPSILON"));
-        assertFalse(lights.contains("PRIME_MAXIMUM_INVERSE_PDF"));
-        assertFalse(lights.contains("min(1.0 / sampledPdf"));
+        assertTrue(bsdf.contains("const float PRIME_MINIMUM_BSDF_SAMPLE_PDF = 1.0e-4;"));
+        assertTrue(bsdf.contains("max(sampleValue.pdf, PRIME_MINIMUM_BSDF_SAMPLE_PDF)"));
+        assertTrue(bsdf.contains("branchProbability <= PRIME_BSDF_EPSILON"));
+        assertTrue(bsdf.contains("cosine > PRIME_BSDF_EPSILON"));
+        assertTrue(bsdf.contains("cosine <= PRIME_BSDF_EPSILON"));
+        assertTrue(bsdf.contains("0 * Inf = NaN"));
+        assertTrue(lights.contains("const float PRIME_MAXIMUM_INVERSE_PDF = 1.0e30;"));
+        assertTrue(lights.contains("min(1.0 / sampledPdf, PRIME_MAXIMUM_INVERSE_PDF)"));
+        assertTrue(lights.contains("intentional finite-precision bias"));
     }
 
     @Test

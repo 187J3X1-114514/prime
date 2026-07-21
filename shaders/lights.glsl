@@ -32,6 +32,10 @@ struct LightEvaluation {
 // path escapes; the sun and area-light adapters are sampled explicitly and perform no selection.
 
 const float PRIME_FLOAT_MAX = 3.402823466e+38;
+// Required f32 stability boundary. MIS factors are later multiplied by values that may be exactly
+// zero; allowing the reciprocal PDF to overflow creates 0 * Inf = NaN. The cap is therefore an
+// intentional finite-precision bias and must not be removed as an algebraic "unbiasing" cleanup.
+const float PRIME_MAXIMUM_INVERSE_PDF = 1.0e30;
 
 float primePowerHeuristic(float firstPdf, float secondPdf) {
     if (isnan(firstPdf) || !(firstPdf > 0.0)) {
@@ -60,17 +64,21 @@ float primePowerHeuristicOverPdf(float sampledPdf, float otherPdf) {
         return 0.0;
     }
     if (isnan(otherPdf) || !(otherPdf > 0.0)) {
-        return 1.0 / sampledPdf;
+        return min(1.0 / sampledPdf, PRIME_MAXIMUM_INVERSE_PDF);
     }
     if (isinf(otherPdf)) {
         return 0.0;
     }
     if (sampledPdf >= otherPdf) {
         float ratio = otherPdf / sampledPdf;
-        return (1.0 / sampledPdf) / (1.0 + ratio * ratio);
+        return min(
+                (1.0 / sampledPdf) / (1.0 + ratio * ratio),
+                PRIME_MAXIMUM_INVERSE_PDF);
     }
     float ratio = sampledPdf / otherPdf;
-    return (ratio / otherPdf) / (1.0 + ratio * ratio);
+    return min(
+            (ratio / otherPdf) / (1.0 + ratio * ratio),
+            PRIME_MAXIMUM_INVERSE_PDF);
 }
 
 vec3 primeEnvironmentRadiance(IntegratorRecord integrator, vec3 direction) {

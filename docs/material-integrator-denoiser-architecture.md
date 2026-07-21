@@ -82,9 +82,9 @@ hit-distance 射线；beauty 抽到反射时复用已有反射距离，只补完
 
 | 项目 | 类型 | 当前处理 |
 |---|---|---|
-| BSDF PDF 曾被 `max(pdf, 1e-4)` | 真实 estimator 暗偏 | 已移除；有限正 PDF 使用精确除法 |
-| MIS 的 `1/pdf` 曾被限制为 `1e30` | 真实 estimator 暗偏 | 已移除；使用稳定 power-heuristic 代数式 |
-| BSDF evaluation 曾忽略 `cos(theta) <= 1e-7` | 真实 estimator 掠射角暗偏 | 已移除；只排除数学上退化的零 cosine |
+| BSDF PDF 使用 `max(pdf, 1e-4)`，透明分支拒绝 `p <= 1e-7` | 有限精度暗偏 | 必须保留；防止倒数权重溢出为 Inf 后在零吞吐/可见性处形成 `0*Inf=NaN` |
+| MIS 的 `1/pdf` 限制为 `1e30` | 有限精度暗偏 | 必须保留；稳定代数避免中间溢出，上限继续保证最终 MIS 因子有限 |
+| BSDF evaluation 忽略 `cos(theta) <= 1e-7` | 有限精度掠射角暗偏 | 必须保留；所有相关闭包需要除以 cosine，阈值阻止 Inf/NaN 污染路径 |
 | 256 bounce 上限 | 异常路径截断 | 保留并作为工程无偏定义中的显式安全边界 |
 | ray origin offset、有限 `tMax` | 数值/场景范围近似 | 保留；物理 shading point 与 traversal origin 已分离 |
 | NaN/Inf/越界浮点样本拒绝 | 有限精度安全边界 | 参考累积不以黑色替代，直接保留旧均值与计数 |

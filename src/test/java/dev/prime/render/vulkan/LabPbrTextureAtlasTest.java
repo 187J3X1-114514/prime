@@ -2,11 +2,22 @@ package dev.prime.render.vulkan;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.nio.ByteBuffer;
 import org.junit.jupiter.api.Test;
 
 final class LabPbrTextureAtlasTest {
+    @Test
+    void atlasAndAnimationBudgetsKeepOffsetsAboveTwoGibibytes() {
+        long atlasBytes = LabPbrTextureAtlas.totalMipBytes(32_768, 32_768, 16);
+        long animationBytes = LabPbrTextureAtlas.animationEndOffset(
+                0L, 32_768, 32_768, true, true);
+
+        assertTrue(atlasBytes > Integer.MAX_VALUE);
+        assertEquals(8L * 32_768L * 32_768L, animationBytes);
+    }
+
     @Test
     void argbSourcesAreWrittenAsVulkanRgbaBytes() {
         ByteBuffer bytes = ByteBuffer.allocate(4);

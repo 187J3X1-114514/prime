@@ -33,12 +33,15 @@ final class RealtimeSampleState {
                 || nextResetRevision != this.resetRevision
                 || nextAtlasView != this.atlasView
                 || nextAtlasSampler != this.atlasSampler
-                || sunDirectionDiscontinuous(nextSunDirection, this.sunDirection)
-                || this.sampleIndex >= SOBOL_SEQUENCE_LENGTH;
+                || sunDirectionDiscontinuous(nextSunDirection, this.sunDirection);
         if (immediateReset) {
             this.invalidate();
             this.resetRevision = nextResetRevision;
             return true;
+        }
+        if (this.sampleIndex >= SOBOL_SEQUENCE_LENGTH) {
+            this.sampleIndex = 0;
+            this.epoch++;
         }
 
         return false;

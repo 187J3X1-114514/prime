@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import dev.prime.render.shader.ShaderAbi;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -89,6 +90,53 @@ final class EmissionLightContractTest {
         }
         assertEquals(1.0F, total, 1.0E-5F);
         assertEquals(1.0F, distribution.meanImportance(), 1.0E-6F);
+    }
+
+    @Test
+    void sectionRetainsMoreThan1024DistinctImportanceDistributions() {
+        int count = 1026;
+        CpuSectionLights.Builder builder = new CpuSectionLights.Builder();
+        for (int index = 0; index < count; index++) {
+            builder.addTriangle(
+                    index,
+                    0.0F,
+                    0.0F,
+                    index + 1.0F,
+                    0.0F,
+                    0.0F,
+                    index,
+                    1.0F,
+                    0.0F,
+                    0,
+                    0,
+                    0,
+                    0xff000000 | index,
+                    0,
+                    false,
+                    15,
+                    null,
+                    null);
+        }
+
+        CpuSectionLights lights = builder.build();
+        int nodeCount = count * 2 - 1;
+        int nodeStart = ShaderAbi.SECTION_LIGHT_HEADER_SIZE / Integer.BYTES;
+        int forwardStart = nodeStart
+                + nodeCount * (ShaderAbi.LIGHT_NODE_SIZE / Integer.BYTES);
+        int reverseStart = forwardStart
+                + nodeCount * (ShaderAbi.LIGHT_NODE_FORWARD_SIZE / Integer.BYTES);
+        int emitterStart = (reverseStart
+                        + nodeCount * (ShaderAbi.LIGHT_NODE_REVERSE_SIZE / Integer.BYTES)
+                        + 3)
+                / 4
+                * 4;
+        int lastEmitter = emitterStart
+                + (count - 1) * (ShaderAbi.LIGHT_EMITTER_SIZE / Integer.BYTES);
+
+        assertEquals(count, lights.emitterCount());
+        assertEquals(
+                (count - 1) * EmissionDistribution.CELL_COUNT,
+                lights.pack(0L)[lastEmitter + 20]);
     }
 
     @Test

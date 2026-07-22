@@ -10,9 +10,8 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
  * Preserves player-ticket distances above 127.
  *
  * <p>Vanilla bounds this tracker to 32 and stores its levels in a byte. Prime extends the bound to
- * 128, so the same byte must be interpreted as the unsigned value that the graph wrote. Changing
- * the representation is unnecessary: all required levels, including the graph's 130 sentinel,
- * still fit exactly in an unsigned byte.
+ * 251, so the byte must be interpreted as the unsigned value that the graph wrote. All required
+ * levels, including the graph's 253 sentinel, still fit exactly in an unsigned byte.
  */
 @Mixin(targets = "net.minecraft.server.level.DistanceManager$FixedPlayerDistanceChunkTracker")
 public abstract class FixedPlayerDistanceChunkTrackerMixin {

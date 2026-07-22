@@ -131,7 +131,8 @@ public final class StagingArena implements AutoCloseable {
             return slice;
         }
 
-        private Slice allocate(long size, long alignment) {
+        /** Reserves mapped staging storage for producers that write directly into the page. */
+        public Slice allocate(long size, long alignment) {
             long endOffset = requiredEndOffset(this.cursor, size, alignment);
             if (endOffset > this.page.capacity) {
                 throw new IllegalStateException(
@@ -139,7 +140,15 @@ public final class StagingArena implements AutoCloseable {
             }
             long offset = endOffset - size;
             this.cursor = endOffset;
-            return new Slice(this.page.buffer.handle(), offset, size);
+            return new Slice(
+                    this.page.buffer.handle(),
+                    offset,
+                    size,
+                    this.page.buffer.mappedAddress() + offset);
+        }
+
+        public long capacity() {
+            return this.page.capacity;
         }
 
         public void submitForRetirement() {
@@ -170,7 +179,7 @@ public final class StagingArena implements AutoCloseable {
         }
     }
 
-    public record Slice(long buffer, long offset, long size) {
+    public record Slice(long buffer, long offset, long size, long mappedAddress) {
     }
 
     /**

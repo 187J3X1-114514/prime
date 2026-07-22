@@ -90,7 +90,7 @@ final class RealtimeSampleStateTest {
             state.submitted(camera, 2L, 3L, NOON);
         }
 
-        assertTrue(state.prepare(camera, 1L, 2L, 3L, NOON, false));
+        assertFalse(state.prepare(camera, 1L, 2L, 3L, NOON, false));
         assertEquals(0, state.sampleIndex());
         assertEquals(epoch + 1, state.epoch());
     }

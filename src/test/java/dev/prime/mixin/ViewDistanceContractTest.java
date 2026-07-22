@@ -6,7 +6,10 @@ import org.junit.jupiter.api.Test;
 
 final class ViewDistanceContractTest {
     @Test
-    void maximumRenderDistanceIs128Chunks() {
-        assertEquals(128, ViewDistanceLimits.MAXIMUM_RENDER_DISTANCE);
+    void playerDistanceAndReservedGraphLevelsFitTheUnsignedStorageContract() {
+        int sentinelLevel = ViewDistanceLimits.MAXIMUM_RENDER_DISTANCE + 2;
+
+        assertEquals(253, sentinelLevel);
+        assertEquals(sentinelLevel, Byte.toUnsignedInt((byte) sentinelLevel));
     }
 }

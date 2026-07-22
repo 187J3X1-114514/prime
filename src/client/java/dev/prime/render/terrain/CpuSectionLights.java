@@ -228,15 +228,9 @@ public final class CpuSectionLights {
     }
 
     static final class Builder {
-        // 1024 * 256 * 12 bytes = 3 MiB worst-case importance data per source Section. Additional
-        // layouts share a uniform full-support distribution, preserving correctness. Cluster
-        // assembly additionally interns bit-identical GPU tables across its 64 source Sections.
-        private static final int MAXIMUM_IMPORTANCE_DISTRIBUTIONS = 1024;
-
         private final Emitters emitters = new Emitters(16);
         private final Map<EmissionDistribution.Key, Integer> distributionIndices = new HashMap<>();
         private final List<EmissionDistribution> distributions = new ArrayList<>();
-        private int uniformDistributionIndex = -1;
 
         int addTriangle(
                 float cornerX,
@@ -293,16 +287,10 @@ public final class CpuSectionLights {
             int distributionIndex;
             if (cachedDistribution != null) {
                 distributionIndex = cachedDistribution;
-            } else if (this.distributionIndices.size() < MAXIMUM_IMPORTANCE_DISTRIBUTIONS) {
+            } else {
                 distributionIndex = this.distributions.size();
                 this.distributions.add(EmissionDistribution.build(key));
                 this.distributionIndices.put(key, distributionIndex);
-            } else {
-                if (this.uniformDistributionIndex < 0) {
-                    this.uniformDistributionIndex = this.distributions.size();
-                    this.distributions.add(EmissionDistribution.uniform());
-                }
-                distributionIndex = this.uniformDistributionIndex;
             }
             EmissionDistribution distribution = this.distributions.get(distributionIndex);
             if (!distribution.hasSourceSupport()) {

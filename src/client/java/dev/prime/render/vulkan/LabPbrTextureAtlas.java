@@ -120,7 +120,13 @@ public final class LabPbrTextureAtlas implements AutoCloseable {
                     ? new FrameToken(this, null, current, true)
                     : null;
         }
-        StagingArena.Batch batch = this.stagingArena.tryBeginBatch();
+        long requiredCapacity = 0L;
+        for (AnimationUpdate update : this.animationUpdates) {
+            requiredCapacity = Math.max(
+                    requiredCapacity,
+                    animationEndOffset(0L, update.sprite, current.mipLevels));
+        }
+        StagingArena.Batch batch = this.stagingArena.tryBeginBatch(requiredCapacity);
         if (batch == null) {
             return retireInitialUploads
                     ? new FrameToken(this, null, current, true)
@@ -130,19 +136,8 @@ public final class LabPbrTextureAtlas implements AutoCloseable {
             long budget = 0L;
             for (AnimationUpdate change : this.animationUpdates) {
                 AnimatedMaterialSprite sprite = change.sprite;
-                long spriteBudget = budget;
-                for (int mip = 0; mip < current.mipLevels; mip++) {
-                    int width = sprite.mipWidth(mip);
-                    int height = sprite.mipHeight(mip);
-                    long bytes = (long) width * height * 4L;
-                    if (sprite.normal != null) {
-                        spriteBudget = StagingArena.requiredEndOffset(spriteBudget, bytes, 4L);
-                    }
-                    if (sprite.specular != null) {
-                        spriteBudget = StagingArena.requiredEndOffset(spriteBudget, bytes, 4L);
-                    }
-                }
-                if (spriteBudget > StagingArena.PAGE_SIZE) {
+                long spriteBudget = animationEndOffset(budget, sprite, current.mipLevels);
+                if (spriteBudget > batch.capacity()) {
                     continue;
                 }
                 for (int mip = 0; mip < current.mipLevels; mip++) {
@@ -408,11 +403,9 @@ public final class LabPbrTextureAtlas implements AutoCloseable {
             List<MaterialSprite> sprites,
             boolean normal,
             int defaultArgb) {
-        int byteSize = Math.toIntExact(totalMipBytes(atlasWidth, atlasHeight, mipLevels));
-        ByteBuffer target = MemoryUtil.memByteBuffer(upload.mappedAddress(), byteSize);
-        for (int offset = 0; offset < byteSize; offset += Integer.BYTES) {
-            writeArgb(target, offset, defaultArgb);
-        }
+        long byteSize = totalMipBytes(atlasWidth, atlasHeight, mipLevels);
+        long target = upload.mappedAddress();
+        fillArgb(target, byteSize, defaultArgb);
         long mipOffset = 0L;
         for (int mip = 0; mip < mipLevels; mip++) {
             int mipWidth = Math.max(1, atlasWidth >> mip);
@@ -421,7 +414,7 @@ public final class LabPbrTextureAtlas implements AutoCloseable {
                 if (source != null) {
                     sprite.write(
                             target,
-                            Math.toIntExact(mipOffset),
+                            mipOffset,
                             mipWidth,
                             source,
                             AnimationSample.ZERO,
@@ -493,24 +486,19 @@ public final class LabPbrTextureAtlas implements AutoCloseable {
             boolean specular) {
         int width = sprite.mipWidth(mip);
         int height = sprite.mipHeight(mip);
-        int byteSize = Math.multiplyExact(Math.multiplyExact(width, height), 4);
-        ByteBuffer pixels = MemoryUtil.memAlloc(byteSize);
-        try {
-            sprite.write(pixels, 0, width, source, sample, mip, true, specular);
-            pixels.position(0).limit(byteSize);
-            StagingArena.Slice slice = batch.write(pixels, 4L);
-            copies.add(new Copy(
-                    image,
-                    slice.buffer(),
-                    slice.offset(),
-                    mip,
-                    sprite.mipX(mip),
-                    sprite.mipY(mip),
-                    width,
-                    height));
-        } finally {
-            MemoryUtil.memFree(pixels);
-        }
+        long byteSize = Math.multiplyExact(Math.multiplyExact((long) width, height), 4L);
+        StagingArena.Slice slice = batch.allocate(byteSize, 4L);
+        sprite.write(
+                slice.mappedAddress(), 0L, width, source, sample, mip, true, specular);
+        copies.add(new Copy(
+                image,
+                slice.buffer(),
+                slice.offset(),
+                mip,
+                sprite.mipX(mip),
+                sprite.mipY(mip),
+                width,
+                height));
     }
 
     private static void recordCopy(VkCommandBuffer commandBuffer, Copy copy) {
@@ -590,7 +578,7 @@ public final class LabPbrTextureAtlas implements AutoCloseable {
                 .layerCount(1);
     }
 
-    private static long totalMipBytes(int width, int height, int mipLevels) {
+    static long totalMipBytes(int width, int height, int mipLevels) {
         long result = 0L;
         for (int mip = 0; mip < mipLevels; mip++) {
             result = Math.addExact(
@@ -607,6 +595,61 @@ public final class LabPbrTextureAtlas implements AutoCloseable {
         target.put(offset + 1, (byte) (argb >>> 8));
         target.put(offset + 2, (byte) argb);
         target.put(offset + 3, (byte) (argb >>> 24));
+    }
+
+    private static void writeArgb(long target, long offset, int argb) {
+        MemoryUtil.memPutByte(target + offset, (byte) (argb >>> 16));
+        MemoryUtil.memPutByte(target + offset + 1L, (byte) (argb >>> 8));
+        MemoryUtil.memPutByte(target + offset + 2L, (byte) argb);
+        MemoryUtil.memPutByte(target + offset + 3L, (byte) (argb >>> 24));
+    }
+
+    private static void fillArgb(long target, long byteSize, int argb) {
+        if ((byteSize & 3L) != 0L) {
+            throw new IllegalArgumentException("RGBA atlas byte size must be pixel aligned");
+        }
+        int patternSize = (int) Math.min(byteSize, 1L << 20);
+        ByteBuffer pattern = MemoryUtil.memAlloc(patternSize);
+        try {
+            for (int offset = 0; offset < patternSize; offset += Integer.BYTES) {
+                writeArgb(pattern, offset, argb);
+            }
+            long source = MemoryUtil.memAddress(pattern);
+            for (long offset = 0L; offset < byteSize; offset += patternSize) {
+                MemoryUtil.memCopy(
+                        source,
+                        target + offset,
+                        Math.min(patternSize, byteSize - offset));
+            }
+        } finally {
+            MemoryUtil.memFree(pattern);
+        }
+    }
+
+    static long animationEndOffset(
+            long cursor, int width, int height, boolean normal, boolean specular) {
+        long bytes = Math.multiplyExact(Math.multiplyExact((long) width, height), 4L);
+        long result = cursor;
+        if (normal) {
+            result = StagingArena.requiredEndOffset(result, bytes, 4L);
+        }
+        return specular
+                ? StagingArena.requiredEndOffset(result, bytes, 4L)
+                : result;
+    }
+
+    private static long animationEndOffset(
+            long cursor, AnimatedMaterialSprite sprite, int mipLevels) {
+        long result = cursor;
+        for (int mip = 0; mip < mipLevels; mip++) {
+            result = animationEndOffset(
+                    result,
+                    sprite.mipWidth(mip),
+                    sprite.mipHeight(mip),
+                    sprite.normal != null,
+                    sprite.specular != null);
+        }
+        return result;
     }
 
     public static final class FrameToken {
@@ -679,8 +722,8 @@ public final class LabPbrTextureAtlas implements AutoCloseable {
         }
 
         void write(
-                ByteBuffer target,
-                int baseOffset,
+                long target,
+                long baseOffset,
                 int rowWidth,
                 MaterialSource source,
                 AnimationSample sample,
@@ -708,8 +751,14 @@ public final class LabPbrTextureAtlas implements AutoCloseable {
                             this.sprite.contents().width(),
                             this.sprite.contents().height(),
                             specular);
-                    int offset = baseOffset
-                            + ((destinationY + y) * rowWidth + destinationX + x) * 4;
+                    long offset = Math.addExact(
+                            baseOffset,
+                            Math.multiplyExact(
+                                    Math.addExact(
+                                            Math.multiplyExact(
+                                                    (long) destinationY + y, rowWidth),
+                                            (long) destinationX + x),
+                                    4L));
                     writeArgb(target, offset, pixel);
                 }
             }

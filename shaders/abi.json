@@ -96,10 +96,10 @@
         { "name": "flags", "type": "uint", "offset": 44 },
         { "name": "throughput", "type": "vec3", "offset": 48 },
         { "name": "previousBsdfPdf", "type": "float", "offset": 60 },
-        { "name": "radiance", "type": "vec3", "offset": 64 },
-        { "name": "pixel", "type": "uvec2", "offset": 80 },
-        { "name": "sampleIndex", "type": "uint", "offset": 88 },
-        { "name": "sampleEpoch", "type": "uint", "offset": 92 }
+        { "name": "rrDepth", "type": "uint", "offset": 64 },
+        { "name": "pixel", "type": "uvec2", "offset": 72 },
+        { "name": "sampleIndex", "type": "uint", "offset": 80 },
+        { "name": "sampleEpoch", "type": "uint", "offset": 84 }
       ]
     },
     "tracePayload": {
@@ -150,6 +150,16 @@
         { "name": "rayCone", "type": "uint", "offset": 108 },
         { "name": "path", "type": "uvec4", "offset": 112 }
       ]
+    },
+    "nrdMotionPushConstants": {
+      "size": 208,
+      "fields": [
+        { "name": "currentClipToWorld", "type": "mat4", "offset": 0 },
+        { "name": "previousWorldToClip", "type": "mat4", "offset": 64 },
+        { "name": "previousRenderedWorldToClip", "type": "mat4", "offset": 128 },
+        { "name": "diagnosticMode", "type": "uint", "offset": 192 },
+        { "name": "currentJitterPixels", "type": "vec2", "offset": 200 }
+      ]
     }
   },
   "descriptors": {
@@ -177,7 +187,16 @@
     "nrdSunPenumbra": 21,
     "nrdDiffuseDirection": 22,
     "nrdSpecularDirection": 23,
-    "rawNumericalDiagnostic": 24
+    "rawNumericalDiagnostic": 24,
+    "nrdReflectionNoisyDiffuse": 25,
+    "nrdReflectionNoisySpecular": 26,
+    "nrdReflectionNormalRoughness": 27,
+    "nrdReflectionMaterial": 28,
+    "nrdReflectionSpecularMaterial": 29,
+    "nrdReflectionPosition": 30,
+    "nrdReflectionDiffuseDirection": 31,
+    "nrdReflectionSpecularDirection": 32,
+    "nrdDisplayPosition": 33
   },
   "pathControl": {
     "cameraInWaterMask": "0x80000000",
@@ -195,7 +214,7 @@
   },
   "nrdContract": {
     "version": "4.17.4",
-    "denoiser": "reblur-diffuse-specular-sh-plus-sigma-sun-shadow",
+    "denoiser": "dual-reblur-diffuse-specular-sh-plus-sigma-sun-shadow",
     "normalEncoding": "r10g10b10a2-unorm",
     "roughnessEncoding": "linear",
     "motionSpace": "screen-2.5d",

@@ -27,7 +27,7 @@ import org.lwjgl.vulkan.VkPushConstantRange;
 import org.lwjgl.vulkan.VkShaderModuleCreateInfo;
 import org.lwjgl.vulkan.VkWriteDescriptorSet;
 
-/** Sums the raw one-path estimator into native-resolution linear HDR without filtering. */
+/** Sums the raw estimator partitions into native-resolution linear HDR without filtering. */
 final class NoisyCompositePass implements Destroyable {
     private static final int IMAGE_COUNT = 8;
     private static final int PUSH_SIZE = 16;

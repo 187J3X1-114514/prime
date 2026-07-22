@@ -125,7 +125,9 @@ final class NrdNativeTest {
             var dispatches = instance.getDispatches();
             assertTrue(dispatches.size() >= 7);
             Set<Integer> resourceTypes = new HashSet<>();
+            Set<Integer> identifiers = new HashSet<>();
             for (int dispatchIndex = 0; dispatchIndex < dispatches.size(); dispatchIndex++) {
+                identifiers.add(dispatches.identifier(dispatchIndex));
                 assertTrue(dispatches.gridWidth(dispatchIndex) > 0);
                 assertTrue(dispatches.gridHeight(dispatchIndex) > 0);
                 assertTrue(dispatches.resourceCount(dispatchIndex) > 0);
@@ -135,6 +137,7 @@ final class NrdNativeTest {
                     resourceTypes.add(dispatches.resourceType(dispatchIndex, resourceIndex));
                 }
             }
+            assertEquals(Set.of(0, 1, 2), identifiers);
             assertTrue(resourceTypes.contains(NrdNative.RESOURCE_IN_DIFF_SH0));
             assertTrue(resourceTypes.contains(NrdNative.RESOURCE_IN_DIFF_SH1));
             assertTrue(resourceTypes.contains(NrdNative.RESOURCE_IN_SPEC_SH0));

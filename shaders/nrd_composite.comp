@@ -32,6 +32,16 @@ layout(set = 0, binding = 17, rgb10_a2) uniform readonly image2D primeCompositeN
 layout(set = 0, binding = 18, r32f) uniform readonly image2D primeCompositeViewZ;
 layout(set = 0, binding = 19, rgba32f) uniform readonly image2D primeCompositePrimaryPosition;
 layout(set = 0, binding = 20, rgba16f) uniform readonly image2D primeNoisySpecular;
+layout(set = 0, binding = 21, rgba16f) uniform readonly image2D primeReflectionDenoisedDiffuse;
+layout(set = 0, binding = 22, rgba16f) uniform readonly image2D primeReflectionDenoisedSpecular;
+layout(set = 0, binding = 23, rgba16f) uniform readonly image2D primeReflectionCompositeMaterial;
+layout(set = 0, binding = 24, rgba16f) uniform readonly image2D primeReflectionCompositeSpecularMaterial;
+layout(set = 0, binding = 25, rgba16f) uniform readonly image2D primeReflectionDenoisedDiffuseSh1;
+layout(set = 0, binding = 26, rgba16f) uniform readonly image2D primeReflectionDenoisedSpecularSh1;
+layout(set = 0, binding = 27, rgb10_a2) uniform readonly image2D primeReflectionCompositeNormalRoughness;
+layout(set = 0, binding = 28, r32f) uniform readonly image2D primeReflectionCompositeViewZ;
+layout(set = 0, binding = 29, rgba32f) uniform readonly image2D primeReflectionCompositePosition;
+layout(set = 0, binding = 30, rgba32f) uniform readonly image2D primeDisplayPosition;
 
 layout(push_constant) uniform PrimeCompositePushConstants {
     uvec2 outputExtent;
@@ -112,17 +122,22 @@ ivec2 primeCompositeNeighbor(ivec2 pixel, ivec2 offset) {
             ivec2(primeCompositePush.outputExtent) - ivec2(1));
 }
 
-vec3 primeCompositeNormal(ivec2 pixel) {
+vec3 primeCompositeNormal(ivec2 pixel, bool reflection) {
     vec3 normal;
     float roughness;
     primeNrdUnpackNormalRoughness(
-            imageLoad(primeCompositeNormalRoughness, pixel), normal, roughness);
+            reflection
+                    ? imageLoad(primeReflectionCompositeNormalRoughness, pixel)
+                    : imageLoad(primeCompositeNormalRoughness, pixel),
+            normal,
+            roughness);
     return normal;
 }
 
 void primeCompositeResolveSh(
         ivec2 pixel,
         float primaryDistance,
+        bool reflection,
         out vec3 diffuse,
         out vec3 specular) {
     diffuse = vec3(0.0);
@@ -134,16 +149,32 @@ void primeCompositeResolveSh(
     vec3 normal;
     float roughness;
     primeNrdUnpackNormalRoughness(
-            imageLoad(primeCompositeNormalRoughness, pixel), normal, roughness);
-    vec3 primaryPosition = imageLoad(primeCompositePrimaryPosition, pixel).xyz;
+            reflection
+                    ? imageLoad(primeReflectionCompositeNormalRoughness, pixel)
+                    : imageLoad(primeCompositeNormalRoughness, pixel),
+            normal,
+            roughness);
+    vec3 primaryPosition = reflection
+            ? imageLoad(primeReflectionCompositePosition, pixel).xyz
+            : imageLoad(primeCompositePrimaryPosition, pixel).xyz;
     vec3 view = primeNrdSafeNormalize(-primaryPosition, normal);
     PrimeNrdSg diffuseSg = primeNrdUnpackSg(
-            imageLoad(primeDenoisedDiffuse, pixel),
-            imageLoad(primeDenoisedDiffuseSh1, pixel).xyz);
+            reflection
+                    ? imageLoad(primeReflectionDenoisedDiffuse, pixel)
+                    : imageLoad(primeDenoisedDiffuse, pixel),
+            reflection
+                    ? imageLoad(primeReflectionDenoisedDiffuseSh1, pixel).xyz
+                    : imageLoad(primeDenoisedDiffuseSh1, pixel).xyz);
     PrimeNrdSg specularSg = primeNrdUnpackSg(
-            imageLoad(primeDenoisedSpecular, pixel),
-            imageLoad(primeDenoisedSpecularSh1, pixel).xyz);
-    float materialId = imageLoad(primeCompositeNormalRoughness, pixel).a;
+            reflection
+                    ? imageLoad(primeReflectionDenoisedSpecular, pixel)
+                    : imageLoad(primeDenoisedSpecular, pixel),
+            reflection
+                    ? imageLoad(primeReflectionDenoisedSpecularSh1, pixel).xyz
+                    : imageLoad(primeDenoisedSpecularSh1, pixel).xyz);
+    float materialId = reflection
+            ? imageLoad(primeReflectionCompositeNormalRoughness, pixel).a
+            : imageLoad(primeCompositeNormalRoughness, pixel).a;
     if (materialId > 0.5 && materialId < 5.0 / 6.0) {
         // NRD's SG resolver evaluates a reflective GGX lobe. A refracted direction lies below the
         // visible interface and would be clamped away, so transmission consumes the filtered SH0
@@ -165,12 +196,14 @@ void primeCompositeResolveSh(
     ivec2 west = primeCompositeNeighbor(pixel, ivec2(-1, 0));
     ivec2 north = primeCompositeNeighbor(pixel, ivec2(0, 1));
     ivec2 south = primeCompositeNeighbor(pixel, ivec2(0, -1));
-    float viewZ = imageLoad(primeCompositeViewZ, pixel).x;
+    float viewZ = reflection
+            ? imageLoad(primeReflectionCompositeViewZ, pixel).x
+            : imageLoad(primeCompositeViewZ, pixel).x;
     vec4 neighborViewZ = vec4(
-            imageLoad(primeCompositeViewZ, east).x,
-            imageLoad(primeCompositeViewZ, west).x,
-            imageLoad(primeCompositeViewZ, north).x,
-            imageLoad(primeCompositeViewZ, south).x);
+            reflection ? imageLoad(primeReflectionCompositeViewZ, east).x : imageLoad(primeCompositeViewZ, east).x,
+            reflection ? imageLoad(primeReflectionCompositeViewZ, west).x : imageLoad(primeCompositeViewZ, west).x,
+            reflection ? imageLoad(primeReflectionCompositeViewZ, north).x : imageLoad(primeCompositeViewZ, north).x,
+            reflection ? imageLoad(primeReflectionCompositeViewZ, south).x : imageLoad(primeCompositeViewZ, south).x);
     vec2 scale = primeNrdSgReJitter(
             diffuseSg,
             specularSg,
@@ -179,10 +212,10 @@ void primeCompositeResolveSh(
             viewZ,
             neighborViewZ,
             normal,
-            primeCompositeNormal(east),
-            primeCompositeNormal(west),
-            primeCompositeNormal(north),
-            primeCompositeNormal(south));
+            primeCompositeNormal(east, reflection),
+            primeCompositeNormal(west, reflection),
+            primeCompositeNormal(north, reflection),
+            primeCompositeNormal(south, reflection));
     if (!hasDiffuseDirection) scale.x = 1.0;
     if (!hasSpecularDirection) scale.y = 1.0;
     diffuse *= scale.x;
@@ -207,18 +240,40 @@ vec3 primeCompositeRadiance(uvec2 pixel, vec4 material, vec4 specularMaterial) {
     vec3 diffuseSignal;
     vec3 specularSignal;
     primeCompositeResolveSh(
-            ivec2(pixel), material.a, diffuseSignal, specularSignal);
+            ivec2(pixel), material.a, false, diffuseSignal, specularSignal);
     vec3 surface = primeCompositeSurfaceSignal(
             material,
             specularMaterial.rgb,
             diffuseSignal,
             specularSignal,
             sunSignal);
+    vec4 reflectionMaterial = imageLoad(
+            primeReflectionCompositeMaterial, ivec2(pixel));
+    vec4 reflectionSpecularMaterial = imageLoad(
+            primeReflectionCompositeSpecularMaterial, ivec2(pixel));
+    vec3 reflectionDiffuse;
+    vec3 reflectionSpecular;
+    primeCompositeResolveSh(
+            ivec2(pixel),
+            reflectionMaterial.a,
+            true,
+            reflectionDiffuse,
+            reflectionSpecular);
+    vec3 reflectionSurface = primeCompositeSurfaceSignal(
+            reflectionMaterial,
+            reflectionSpecularMaterial.rgb,
+            reflectionDiffuse,
+            reflectionSpecular,
+            vec3(0.0));
     vec3 stable = primeNrdClampRadiance(
             imageLoad(primeStableAccumulation, ivec2(pixel)).rgb,
             PRIME_NRD_FP16_MAX);
-    vec3 radiance = surface + stable;
-    primeCompositeApplyAerial(pixel, material.a, radiance);
+    vec3 radiance = surface + reflectionSurface + stable;
+    vec3 displayPosition = imageLoad(primeDisplayPosition, ivec2(pixel)).xyz;
+    float displayDistance = all(equal(displayPosition, vec3(0.0)))
+            ? -1.0
+            : length(displayPosition);
+    primeCompositeApplyAerial(pixel, displayDistance, radiance);
     return primeNrdClampRadiance(radiance, PRIME_NRD_FP16_MAX);
 }
 
@@ -233,7 +288,7 @@ vec3 primeCompositeRemodulatedSpecular(
     }
     vec3 diffuse;
     vec3 specular;
-    primeCompositeResolveSh(ivec2(pixel), material.a, diffuse, specular);
+    primeCompositeResolveSh(ivec2(pixel), material.a, false, diffuse, specular);
     return primeNrdClampRadiance(
             primeNrdSanitizeRadiance(specular)
                     * primeNrdSanitizeAlbedo(specularAlbedo),

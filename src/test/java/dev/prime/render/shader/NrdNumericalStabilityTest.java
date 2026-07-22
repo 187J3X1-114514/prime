@@ -65,6 +65,41 @@ final class NrdNumericalStabilityTest {
         assertTrue(Math.abs(overwrittenY - continuationY) > 1.0);
     }
 
+    @Test
+    void fixedTransparentSplitIsTheStratifiedFormOfUnbiasedBranchSampling() {
+        double reflectionEnergy = 0.08;
+        double transmissionEnergy = 0.92;
+        double reflectionRadiance = 14.0;
+        double transmissionRadiance = 3.0;
+        double branchProbability = 0.2;
+
+        double fixedSplit = reflectionEnergy * reflectionRadiance
+                + transmissionEnergy * transmissionRadiance;
+        double stochasticExpectation = branchProbability
+                        * reflectionEnergy * reflectionRadiance / branchProbability
+                + (1.0 - branchProbability)
+                        * transmissionEnergy * transmissionRadiance
+                        / (1.0 - branchProbability);
+
+        assertEquals(fixedSplit, stochasticExpectation, 1.0e-12);
+    }
+
+    @Test
+    void fixedTransparentSplitUsesTheSameConditionalPdfOnBothMisSides() {
+        double lightPdf = 0.15;
+        double conditionalBsdfPdf = 0.6;
+        double branchProbability = 0.08;
+
+        double matched = powerHeuristic(lightPdf, conditionalBsdfPdf)
+                + powerHeuristic(conditionalBsdfPdf, lightPdf);
+        double mismatched = powerHeuristic(
+                        lightPdf, conditionalBsdfPdf * branchProbability)
+                + powerHeuristic(conditionalBsdfPdf, lightPdf);
+
+        assertEquals(1.0, matched, 1.0e-15);
+        assertTrue(Math.abs(mismatched - 1.0) > 0.1);
+    }
+
     private static double oldThinWallTransmission(double reflection, double absorption) {
         double transmission = 1.0 - reflection;
         return transmission * transmission * absorption
@@ -93,6 +128,12 @@ final class NrdNumericalStabilityTest {
 
     private static double remodulateAfterLimit(double radiance, double albedo, double limit) {
         return Math.min(radiance / albedo, limit) * albedo;
+    }
+
+    private static double powerHeuristic(double selectedPdf, double otherPdf) {
+        double selected = selectedPdf * selectedPdf;
+        double other = otherPdf * otherPdf;
+        return selected / (selected + other);
     }
 
     private record Energy(double reflection, double transmission) {}

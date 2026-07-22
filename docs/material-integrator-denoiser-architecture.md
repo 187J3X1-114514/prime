@@ -7,14 +7,14 @@
 ## 不变量
 
 1. `PrimePathRadiance` 是完整 beauty estimator 的互斥分区。`diffuse + specular + stable +
-   unshadowedSun * sunVisibility` 必须与未拆分的一条路径样本等价。
+   unshadowedSun * sunVisibility` 必须与未分类的同一估计器等价。
 2. `PrimeDenoiserGuides` 只描述路径和主表面。Guide 可以使用额外射线或后端特有近似，但不得反馈到
    beauty estimator。
 3. 参考累积、NRD-FSR 和 DLSS RR 都是 `Denoiser` 后端。参考累积是零滤波、零超分的特殊后端，
    它直接对完整路径估计取运行均值。
 4. 实时输出允许有偏，因为时间重建本身就是有偏估计；偏差必须位于积分器之后并能按后端定位。
 5. 1 spp 只意味着高方差，不等于有偏。概率式 lobe 选择、NEE/MIS 和带吞吐补偿的 Russian roulette
-   在 PDF 与权重一致时仍然无偏。
+   在 PDF 与权重一致时仍然无偏。RR 深度只统计会执行 NEE 的非纯 delta 顶点；总表面深度仍独立限制所有路径。
 
 ## LabPBR 1.3 能力边界
 
@@ -50,7 +50,7 @@ LabPBR 是材质贴图的存储标准，不是完整的表面/体积散射模型
 
 ### 物理估计
 
-`integrator.glsl` 只负责同一条完整路径上的：
+`integrator.glsl` 只负责完整物理估计中的：
 
 - 介质段吸收；
 - 表面发光与环境命中；
@@ -69,9 +69,10 @@ LabPBR 是材质贴图的存储标准，不是完整的表面/体积散射模型
 视角相关镜面 albedo、首个后续 diffuse/specular hit distance，以及太阳 penumbra。`PrimeDenoiserState`
 封装 delta chain 上的 albedo 传播和首次 non-delta 分类，不包含任何具体 Vulkan image 或 SDK 资源名。
 
-当前实时 raygen 不追踪后端专用的辅助输运路径。RR 的 `Color Before Transparency` 输入留空，玻璃和
-水与其他材质一样只积分一条完整 beauty path；specular hit distance 也只来自该路径已经采样的首次后续
-命中。这保持了固定 1 spp 的单路径成本，代价是 RR 不再获得首层透明界面的显式分界信号。
+普通首表面只积分一条完整 beauty path。首个可见表面为玻璃或水时，积分器在该界面固定分层采样一次
+反射和一次透射，直接相加两个互斥域的条件估计；后续顶点各自恢复普通单路径采样，因此总路径数为二而
+不会随透明层递归增长。两支共享首个命中、材质翻译、RoboCute 闭包状态、局部视角和降噪能量计算。
+这不是后端专用 Guide 路径：参考累积、NRD 与 RR 使用完全相同的 beauty estimator。
 
 ### 偏差清单
 
@@ -87,23 +88,25 @@ LabPBR 是材质贴图的存储标准，不是完整的表面/体积散射模型
 | NRD/RR FP16 65504 边界 | 实时重建输入偏差 | 只存在于实时后端的可表示范围边界；截图 RGBA32F 路径不使用 |
 | NRD anti-firefly、history fix、prepass | 空间/时间滤波偏差 | 后端有意行为，不反馈积分器 |
 | FSR 与 DLSS RR 时间超分/历史锁定 | 重建偏差 | 后端有意行为，可通过参考累积对照 |
-| RR 透明 Guide | 未提交 | 固定 1 spp 只积分 beauty path，不追加透明辅助路径 |
+| RR 透明 Guide | 条件透射样本 | 直接复用 beauty estimator 的透射支，不追加后端专用射线 |
 
 ## 三个 Denoiser 后端
 
 ### Reference accumulation
 
-- 输入：完整 `PrimePathRadiance` 的合成结果；
+- 输入：完整 `PrimePathRadiance` 的合成结果，包括透明首表面的两支条件估计；
 - 处理：原生分辨率 RGBA32F 运行均值；
 - 不使用：Guide、实时 jitter history、NRD、FSR、RR、firefly clamp；
 - 作用：质量上限、偏差审计基准、所有实时后端的回归 oracle。
 
 ### NRD-FSR
 
-当前使用 `REBLUR_DIFFUSE_SPECULAR_SH + SIGMA_SHADOW + FSR 3.1.4`：
+当前使用两套 `REBLUR_DIFFUSE_SPECULAR_SH`、一套 `SIGMA_SHADOW` 和 `FSR 3.1.4`：
 
 - 已提供 non-jittered 2.5D motion、world normal、linear roughness、view-Z；
 - diffuse/specular 按方向能量拆分并 demodulate，SH1 保存主面积光与延续路径的辐射加权一阶方向矩，分别附带 normalized hit distance；
+- 主 REBLUR 处理普通像素的真实主表面，并在透明像素处理透射支的 PSR 信号；第二套 REBLUR 只处理反射支，两条实际路径分别提供 radiance、虚拟表面 hit distance、方向和材质，过滤后再 remodulate 相加；
+- 两套 REBLUR 位于同一 NRD instance；透明分叉复用首接口计算，并在已有两支遍历中捕获首个非 delta 表面，不新增 Guide 射线、材质求值或 RR 输入；
 - 太阳 radiance 与 visibility/penumbra 分离，SIGMA 只过滤 shadow signal；
 - R10G10B10A2 的 A2 现在区分普通介电、金属、透明接口和 foliage，避免跨材质历史混合；
 - 概率 lobe 采样使用 5×5 hit-distance reconstruction 和 30/50 像素 prepass。
@@ -112,13 +115,14 @@ LabPBR 是材质贴图的存储标准，不是完整的表面/体积散射模型
 
 1. **Diffuse/specular confidence**：需要在当前帧低分辨率重评上一帧照明并模糊 confidence，不能用常量
    假装。它对动画灯光、可见性变化和高频材质最有价值。
-2. **Primary Surface Replacement**：纯镜面/delta chain 可把 first non-delta virtual surface 作为 NRD
-   主表面。当前只传播 albedo，primary depth/normal 仍是首个可见接口；镜面房间和多层折射是边界。
+2. **Primary Surface Replacement 的运动精度**：透明两支已经把 first non-delta virtual surface 的位置、法线、
+   材质、粗糙度、反照率、方向与 hit distance 提交给各自 REBLUR。当前帧虚拟位置来自实际路径长度；上一帧重投影
+   仍以该虚拟位置投影到旧相机，没有为折射链求解昂贵的上一帧 Fermat/Snell 对应点，因此复杂动态折射仍是边界。
 3. **Disocclusion threshold mix**：适合曲面镜、细叶片和未来法线贴图造成的高曲率区域。
 4. **Translucent shadow**：当前太阳 visibility 是二值遮挡；有色半透明阴影需要 SIGMA translucent signal
    与物理 shadow transmittance 一起设计。
 
-REBLUR 仍比 RELAX 更适合当前“原始 1 spp、单路径、概率 lobe”信号。若未来引入 RTXDI/ReSTIR 或显著
+REBLUR 仍比 RELAX 更适合当前“原始 1 spp、普通表面单路径、透明首表面固定二分”信号。若未来引入 RTXDI/ReSTIR 或显著
 更干净的局部估计，再重新比较 RELAX，不能只按名称替换。
 
 ### DLSS Ray Reconstruction
@@ -129,10 +133,12 @@ REBLUR 仍比 RELAX 更适合当前“原始 1 spp、单路径、概率 lobe”�
 - current-to-previous、non-jittered、低分辨率 motion；
 - linear view-Z、world shading normal、linear roughness；
 - diffuse albedo、视角相关 specular albedo；
-- world-space specular hit distance 与当前/上一帧矩阵。
+- world-space specular hit distance、`Color Before Transparency` 与当前/上一帧矩阵。
 
-天空的 diffuse/specular albedo 使用 SDK 推荐的中性 `0.5`，透明首界面的 diffuse albedo 为零。当前
-`pInColorBeforeTransparency` 为 `nullptr`，不分配或生成对应图像，也不为玻璃/水追加第二条路径。
+天空的 diffuse/specular albedo 使用 SDK 推荐的中性 `0.5`；RR 边界仍将透明首界面的 diffuse albedo
+置零，不暴露 NRD 借用 diffuse 槽过滤透射时使用的 demodulation factor。透明首界面的完整输入为反射、
+透射和界面局部能量之和；`pInColorBeforeTransparency` 直接读取同一估计器的完整透射支。两者共享所有
+首表面工作，不再追踪额外的 RR Guide 射线；不透明表面和天空的两个颜色输入逐位相同。
 
 暂不接入：
 

@@ -26,6 +26,8 @@
   "prime.options.dlss_rr.debug_view.off": "关闭",
   "prime.options.dlss_rr.debug_view.overview": "输入总览",
   "prime.options.dlss_rr.debug_view.input_color": "输入颜色",
+  "prime.options.dlss_rr.debug_view.color_before_transparency": "透明前颜色",
+  "prime.options.dlss_rr.debug_view.transparency_difference": "透明度差值",
   "prime.options.dlss_rr.debug_view.motion": "运动向量",
   "prime.options.dlss_rr.debug_view.depth": "线性深度",
   "prime.options.dlss_rr.debug_view.jitter": "抖动历史",

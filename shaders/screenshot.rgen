@@ -28,9 +28,9 @@ void main() {
     PrimeIntegrationResult sampleResult = primeIntegrate(path, integrator);
 
     // The interactive renderer splits these terms only because NRD needs separate signals.
-    // Screenshot mode consumes the complete one-path estimator before any temporal filtering;
-    // adding the mutually exclusive estimator partitions is mathematically identical to the
-    // unsplit path contribution and retains transparent volume-stack transport.
+    // Screenshot mode consumes the complete estimator before temporal filtering. Ordinary
+    // surfaces use one path; a primary transparent interface sums one conditional reflection and
+    // transmission sample, retaining the same unbiased volume-stack transport as realtime.
     vec3 sampleRadiance = primeResolveIntegrationRadiance(sampleResult);
     primeApplyAerialPerspective(
             pixel,

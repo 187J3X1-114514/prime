@@ -1,19 +1,21 @@
 #version 460
 #extension GL_GOOGLE_include_directive : require
 
+#include "default_material.glsl"
 #include "display_transform.glsl"
 
 layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
 
 layout(set = 0, binding = 0, rgba16f) uniform readonly image2D rrDebugInputColor;
-layout(set = 0, binding = 1, rgba16f) uniform readonly image2D rrDebugMotion;
-layout(set = 0, binding = 2, r32f) uniform readonly image2D rrDebugDepth;
-layout(set = 0, binding = 3, rgba16f) uniform readonly image2D rrDebugNormalRoughness;
-layout(set = 0, binding = 4, rgba16f) uniform readonly image2D rrDebugDiffuseAlbedo;
-layout(set = 0, binding = 5, rgba16f) uniform readonly image2D rrDebugSpecularAlbedo;
-layout(set = 0, binding = 6, r16f) uniform readonly image2D rrDebugSpecularHitDistance;
-layout(set = 0, binding = 7, rgba16f) uniform readonly image2D rrDebugOutput;
-layout(set = 0, binding = 8, rgba8) uniform image2D rrDebugDisplay;
+layout(set = 0, binding = 1, rgba16f) uniform readonly image2D rrDebugBeforeTransparency;
+layout(set = 0, binding = 2, rgba16f) uniform readonly image2D rrDebugMotion;
+layout(set = 0, binding = 3, r32f) uniform readonly image2D rrDebugDepth;
+layout(set = 0, binding = 4, rgba16f) uniform readonly image2D rrDebugNormalRoughness;
+layout(set = 0, binding = 5, rgba16f) uniform readonly image2D rrDebugDiffuseAlbedo;
+layout(set = 0, binding = 6, rgba16f) uniform readonly image2D rrDebugSpecularAlbedo;
+layout(set = 0, binding = 7, r16f) uniform readonly image2D rrDebugSpecularHitDistance;
+layout(set = 0, binding = 8, rgba16f) uniform readonly image2D rrDebugOutput;
+layout(set = 0, binding = 9, rgba8) uniform image2D rrDebugDisplay;
 
 layout(push_constant) uniform PrimeRrDebugPushConstants {
     uint view;
@@ -25,15 +27,17 @@ layout(push_constant) uniform PrimeRrDebugPushConstants {
 
 const uint RR_OVERVIEW = 1u;
 const uint RR_INPUT_COLOR = 2u;
-const uint RR_MOTION = 3u;
-const uint RR_DEPTH = 4u;
-const uint RR_JITTER = 5u;
-const uint RR_NORMALS = 6u;
-const uint RR_ROUGHNESS = 7u;
-const uint RR_DIFFUSE_ALBEDO = 8u;
-const uint RR_SPECULAR_ALBEDO = 9u;
-const uint RR_SPECULAR_HIT_DISTANCE = 10u;
-const uint RR_OUTPUT = 11u;
+const uint RR_COLOR_BEFORE_TRANSPARENCY = 3u;
+const uint RR_TRANSPARENCY_DIFFERENCE = 4u;
+const uint RR_MOTION = 5u;
+const uint RR_DEPTH = 6u;
+const uint RR_JITTER = 7u;
+const uint RR_NORMALS = 8u;
+const uint RR_ROUGHNESS = 9u;
+const uint RR_DIFFUSE_ALBEDO = 10u;
+const uint RR_SPECULAR_ALBEDO = 11u;
+const uint RR_SPECULAR_HIT_DISTANCE = 12u;
+const uint RR_OUTPUT = 13u;
 const vec3 RR_INVALID = vec3(1.0, 0.0, 1.0);
 
 bool rrFinite(float value) {
@@ -92,7 +96,19 @@ vec3 rrPanel(uint panel, vec2 uv) {
     ivec2 fullSize = imageSize(rrDebugOutput);
     ivec2 lowPixel = rrSourcePixel(uv, lowSize);
     ivec2 fullPixel = rrSourcePixel(uv, fullSize);
-    if (panel == RR_INPUT_COLOR) return rrHdr(imageLoad(rrDebugInputColor, lowPixel).rgb);
+    vec4 inputColor = imageLoad(rrDebugInputColor, lowPixel);
+    vec4 before = imageLoad(rrDebugBeforeTransparency, lowPixel);
+    if (panel == RR_INPUT_COLOR) return rrHdr(inputColor.rgb);
+    if (panel == RR_COLOR_BEFORE_TRANSPARENCY) return rrHdr(before.rgb);
+    if (panel == RR_TRANSPARENCY_DIFFERENCE) {
+        if (!rrFinite(inputColor.rgb) || !rrFinite(before.rgb)) return RR_INVALID;
+        vec3 difference = rrHdr(abs(inputColor.rgb - before.rgb) * 4.0);
+        float rawFlags = imageLoad(rrDebugSpecularAlbedo, lowPixel).a;
+        if (!rrFinite(rawFlags)) return RR_INVALID;
+        uint flags = uint(clamp(round(rawFlags), 0.0, 65504.0));
+        bool transmissive = (flags & PRIME_MATERIAL_FLAG_TRANSMISSIVE) != 0u;
+        return transmissive ? mix(difference, vec3(0.05, 0.7, 1.0), 0.25) : difference;
+    }
     if (panel == RR_MOTION) {
         vec2 motionPixels = imageLoad(rrDebugMotion, lowPixel).xy * vec2(lowSize);
         if (!rrFinite(motionPixels)) return RR_INVALID;
@@ -161,20 +177,22 @@ void main() {
     ivec2 local = pixel - panelOrigin;
     vec3 color;
     if (rrDebugPush.view == RR_OVERVIEW) {
-        const uint panels[10] = uint[10](
+        const uint panels[12] = uint[12](
                 RR_INPUT_COLOR,
+                RR_COLOR_BEFORE_TRANSPARENCY,
+                RR_TRANSPARENCY_DIFFERENCE,
                 RR_MOTION,
                 RR_DEPTH,
-                RR_JITTER,
                 RR_NORMALS,
                 RR_ROUGHNESS,
                 RR_DIFFUSE_ALBEDO,
                 RR_SPECULAR_ALBEDO,
                 RR_SPECULAR_HIT_DISTANCE,
-                RR_OUTPUT);
-        ivec2 cellExtent = max(panelExtent / ivec2(2, 5), ivec2(1));
-        ivec2 cell = clamp(local / cellExtent, ivec2(0), ivec2(1, 4));
-        uint index = uint(cell.y * 2 + cell.x);
+                RR_OUTPUT,
+                RR_JITTER);
+        ivec2 cellExtent = max(panelExtent / ivec2(3, 4), ivec2(1));
+        ivec2 cell = clamp(local / cellExtent, ivec2(0), ivec2(2, 3));
+        uint index = uint(cell.y * 3 + cell.x);
         vec2 uv = (vec2(local - cell * cellExtent) + 0.5) / vec2(cellExtent);
         color = rrPanel(panels[index], uv);
         if (local.x % cellExtent.x < 2 || local.y % cellExtent.y < 2) color = vec3(0.85);

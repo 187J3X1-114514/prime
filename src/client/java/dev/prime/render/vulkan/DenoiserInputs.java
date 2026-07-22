@@ -31,6 +31,24 @@ public interface DenoiserInputs {
         return noisySpecular();
     }
 
+    default VulkanImage reflectionNoisyDiffuse() { return noisyDiffuse(); }
+
+    default VulkanImage reflectionNoisySpecular() { return noisySpecular(); }
+
+    default VulkanImage reflectionNormalRoughness() { return normalRoughness(); }
+
+    default VulkanImage reflectionMaterial() { return material(); }
+
+    default VulkanImage reflectionSpecularMaterial() { return specularMaterial(); }
+
+    default VulkanImage reflectionPosition() { return primaryPosition(); }
+
+    default VulkanImage reflectionDiffuseDirection() { return diffuseDirection(); }
+
+    default VulkanImage reflectionSpecularDirection() { return specularDirection(); }
+
+    default VulkanImage displayPosition() { return primaryPosition(); }
+
     default boolean usesShInputs() {
         return false;
     }

@@ -35,6 +35,9 @@ public final class RayTracingRuntime {
     // Resource reload preparation may observe the renderer off the client thread. The renderer
     // itself remains client-thread owned; volatile only publishes attachment and detachment.
     private volatile VulkanRenderer renderer;
+    // Failure transfers the sole renderer ownership here until the next frame boundary. Closing
+    // it inside renderWorld would invalidate resources referenced by that frame's command buffers.
+    private VulkanRenderer retiringRenderer;
     private ClientLevel world;
 
     private RayTracingRuntime() {
@@ -81,6 +84,7 @@ public final class RayTracingRuntime {
     }
 
     public void beginFrame(Minecraft minecraft) {
+        this.retireFailedRenderer();
         if (!this.initialized) {
             return;
         }
@@ -266,18 +270,27 @@ public final class RayTracingRuntime {
     public void shutdown() {
         this.shuttingDown = true;
         VulkanRenderer activeRenderer = this.renderer;
+        VulkanRenderer failedRenderer = this.retiringRenderer;
         this.world = null;
         this.controls = SessionControls.defaults();
+        RuntimeException failure = null;
         try {
             if (activeRenderer != null) {
-                activeRenderer.close();
+                failure = ResourceCleanup.close(activeRenderer, failure);
                 if (this.renderer == activeRenderer) {
                     this.renderer = null;
+                }
+            }
+            if (failedRenderer != null && failedRenderer != activeRenderer) {
+                failure = ResourceCleanup.close(failedRenderer, failure);
+                if (this.retiringRenderer == failedRenderer) {
+                    this.retiringRenderer = null;
                 }
             }
         } finally {
             this.states.shutdown();
         }
+        ResourceCleanup.throwIfFailed(failure);
     }
 
     public void fail(Throwable failure) {
@@ -287,16 +300,27 @@ public final class RayTracingRuntime {
         this.world = null;
         this.controls = SessionControls.defaults();
         if (failedRenderer != null) {
-            try {
-                failedRenderer.close();
-                if (this.renderer == failedRenderer) {
-                    this.renderer = null;
-                }
-            } catch (RuntimeException closeFailure) {
-                failure.addSuppressed(closeFailure);
+            if (this.renderer == failedRenderer) {
+                this.renderer = null;
             }
+            this.retiringRenderer = failedRenderer;
         }
         PrimeClient.LOGGER.error("Prime ray tracing failed; returning to vanilla rendering", failure);
+    }
+
+    private void retireFailedRenderer() {
+        VulkanRenderer failedRenderer = this.retiringRenderer;
+        if (failedRenderer == null) {
+            return;
+        }
+        try {
+            failedRenderer.close();
+            if (this.retiringRenderer == failedRenderer) {
+                this.retiringRenderer = null;
+            }
+        } catch (RuntimeException exception) {
+            PrimeClient.LOGGER.error("Failed to retire Prime Vulkan resources", exception);
+        }
     }
 
     private void showFailureNotificationOnce(Minecraft minecraft) {

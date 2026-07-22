@@ -29,7 +29,7 @@ final class ReconstructionModesTest {
                 .collect(Collectors.toSet());
         assertEquals(DlssRrDebugView.values().length, shaderIds.size());
         assertEquals(0, DlssRrDebugView.OFF.shaderId());
-        assertEquals(11, DlssRrDebugView.RR_OUTPUT.shaderId());
+        assertEquals(13, DlssRrDebugView.RR_OUTPUT.shaderId());
     }
 
     @Test

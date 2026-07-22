@@ -18,6 +18,11 @@ struct PrimeTransmissiveBsdfSample {
     PrimeRcVolumeStack volumeStack;
 };
 
+struct PrimeTransmissiveBsdfSplit {
+    PrimeTransmissiveBsdfSample reflection;
+    PrimeTransmissiveBsdfSample transmission;
+};
+
 const float PRIME_GLASS_MINIMUM_TINT_WEIGHT = 0.75;
 // Rec.2020's near-monochromatic primaries are 630, 532 and 467 nm. Pope and Fry's measured
 // absorption coefficients for pure water at 22 C are 0.2916 m^-1 at 630 nm and, by linear
@@ -382,7 +387,7 @@ PrimeMinecraftMirrorSplit primeMinecraftMirrorSplit(
     return result;
 }
 
-BsdfEvaluation primeEvaluateMinecraftTransmission(
+BsdfEvaluation primeEvaluateMinecraftTransmissionImpl(
         vec3 baseColor,
         float opacity,
         vec3 outwardNormal,
@@ -392,7 +397,8 @@ BsdfEvaluation primeEvaluateMinecraftTransmission(
         vec3 viewDirection,
         vec3 scatterDirection,
         float rayT,
-        PrimeRcVolumeStack volumeStack) {
+        PrimeRcVolumeStack volumeStack,
+        bool conditionalBranch) {
     PrimeRcState state = primeMinecraftTransmissionState(
             baseColor,
             opacity,
@@ -412,8 +418,13 @@ BsdfEvaluation primeEvaluateMinecraftTransmission(
         // A coherent reflection has no finite solid-angle evaluation.
         return primeInvalidBsdfEvaluation();
     }
-    PrimeMinecraftMirrorSplit mirror = primeMinecraftMirrorSplit(localView, state);
-    if (state.geometryThinWalled == 0u) {
+    PrimeMinecraftMirrorSplit mirror;
+    mirror.reflectance = vec3(0.0);
+    mirror.probability = 0.0;
+    if (state.geometryThinWalled == 0u && !conditionalBranch) {
+        mirror = primeMinecraftMirrorSplit(localView, state);
+    }
+    if (state.geometryThinWalled == 0u || conditionalBranch) {
         state.samplingFlags = closedReflection
                 ? PRIME_RC_FLAG_REFLECTION
                 : PRIME_RC_FLAG_TRANSMISSION;
@@ -422,7 +433,7 @@ BsdfEvaluation primeEvaluateMinecraftTransmission(
     BsdfEvaluation result = primeInvalidBsdfEvaluation();
     if (evaluation.throughput.flags != PRIME_RC_FLAG_NONE) {
         result.response = evaluation.throughput.value;
-        result.pdf = evaluation.pdf * (state.geometryThinWalled == 0u
+        result.pdf = evaluation.pdf * (state.geometryThinWalled == 0u && !conditionalBranch
                 ? (closedReflection ? mirror.probability : 1.0 - mirror.probability)
                 : 1.0);
     }
@@ -436,6 +447,7 @@ PrimeTransmissiveBsdfSample primeSampleMinecraftTransmissionBranchFromState(
         PrimeMinecraftMirrorSplit mirror,
         vec3 outwardNormal,
         vec3 viewDirection,
+        vec3 localView,
         vec3 sampleValue,
         bool reflectionBranch,
         PrimeRcVolumeStack volumeStack);
@@ -481,6 +493,7 @@ PrimeTransmissiveBsdfSample primeSampleMinecraftTransmission(
                 mirror,
                 outwardNormal,
                 viewDirection,
+                localView,
                 branchSample,
                 reflectionBranch,
                 volumeStack);
@@ -510,26 +523,111 @@ PrimeTransmissiveBsdfSample primeSampleMinecraftTransmission(
     return result;
 }
 
+BsdfEvaluation primeEvaluateMinecraftTransmission(
+        vec3 baseColor,
+        float opacity,
+        vec3 outwardNormal,
+        uint materialFlags,
+        uint packedNormal,
+        uint packedSpecular,
+        vec3 viewDirection,
+        vec3 scatterDirection,
+        float rayT,
+        PrimeRcVolumeStack volumeStack) {
+    return primeEvaluateMinecraftTransmissionImpl(
+            baseColor,
+            opacity,
+            outwardNormal,
+            materialFlags,
+            packedNormal,
+            packedSpecular,
+            viewDirection,
+            scatterDirection,
+            rayT,
+            volumeStack,
+            false);
+}
+
+BsdfEvaluation primeEvaluateMinecraftTransmissionBranch(
+        vec3 baseColor,
+        float opacity,
+        vec3 outwardNormal,
+        uint materialFlags,
+        uint packedNormal,
+        uint packedSpecular,
+        vec3 viewDirection,
+        vec3 scatterDirection,
+        float rayT,
+        PrimeRcVolumeStack volumeStack) {
+    // Fixed stratification samples each hemisphere conditionally. Its NEE weight must compare
+    // against that same conditional PDF rather than the stochastic mixture PDF.
+    return primeEvaluateMinecraftTransmissionImpl(
+            baseColor,
+            opacity,
+            outwardNormal,
+            materialFlags,
+            packedNormal,
+            packedSpecular,
+            viewDirection,
+            scatterDirection,
+            rayT,
+            volumeStack,
+            true);
+}
+
+PrimeTransmissiveBsdfSplit primeSampleMinecraftTransmissionSplitFromState(
+        PrimeRcState state,
+        vec3 localView,
+        PrimeMinecraftMirrorSplit mirror,
+        vec3 outwardNormal,
+        vec3 viewDirection,
+        vec3 reflectionSample,
+        vec3 transmissionSample,
+        PrimeRcVolumeStack volumeStack) {
+    // The first visible transparent interface is stratified over its two disjoint domains.
+    PrimeTransmissiveBsdfSplit result;
+    result.reflection = primeSampleMinecraftTransmissionBranchFromState(
+            state,
+            mirror,
+            outwardNormal,
+            viewDirection,
+            localView,
+            reflectionSample,
+            true,
+            volumeStack);
+    result.transmission = primeSampleMinecraftTransmissionBranchFromState(
+            state,
+            mirror,
+            outwardNormal,
+            viewDirection,
+            localView,
+            transmissionSample,
+            false,
+            volumeStack);
+    // These are conditional proposals over disjoint physical lobes. Because both are evaluated,
+    // neither PDF includes a branch-selection probability; summing their estimates is unbiased.
+    return result;
+}
+
 PrimeTransmissiveBsdfSample primeSampleMinecraftTransmissionBranchFromState(
         PrimeRcState state,
         PrimeMinecraftMirrorSplit mirror,
         vec3 outwardNormal,
         vec3 viewDirection,
+        vec3 localView,
         vec3 sampleValue,
         bool reflectionBranch,
         PrimeRcVolumeStack volumeStack) {
     PrimeTransmissiveBsdfSample result;
     result.bsdfSample = primeInvalidBsdfSample();
     result.volumeStack = volumeStack;
-    vec3 localView = primeRcOnbToLocal(state.material.geometry.onb, viewDirection);
-
     if (state.geometryThinWalled == 0u
             && reflectionBranch
             && primeRcMicrofacetEffectivelySmooth(state.specularMicrofacet)) {
         // Closed Minecraft glass deliberately models the reflected interface as a delta mirror.
         // This conditional branch carries the physical Fresnel energy itself. No selection
-        // probability belongs inside this helper; the fixed-proposal caller applies its
-        // separate proposal probability exactly once after the conditional sample is complete.
+        // probability belongs inside this helper: a stochastic caller adds its proposal
+        // probability, while a caller evaluating both disjoint branches does not.
         if (all(lessThanEqual(mirror.reflectance, vec3(0.0)))) {
             return result;
         }
@@ -551,8 +649,8 @@ PrimeTransmissiveBsdfSample primeSampleMinecraftTransmissionBranchFromState(
         return result;
     }
     // Forcing a branch renormalizes RoboCute's internal proposal onto that branch. The returned
-    // throughput still contains its complete physical Fresnel/transmission response. The caller
-    // folds branch selection into the PDF before path advancement performs the single division.
+    // throughput still contains its complete physical Fresnel/transmission response; only a
+    // stochastic outer branch selection belongs in this conditional PDF.
     result.bsdfSample.direction = primeRcOnbToWorld(
             state.material.geometry.onb, sampled.bsdfSample.wo);
     result.bsdfSample.response = sampled.bsdfSample.throughput.value;
@@ -777,12 +875,73 @@ PrimeDenoiseAlbedos primeDenoiseAlbedosFromState(
     state.spectrumed = 0u;
 
     PrimeDenoiseAlbedos result;
+    if (closureKind == PRIME_DENOISE_CLOSURE_TRANSMISSIVE) {
+        // REBLUR exposes two independently filtered lanes. At a transparent primary surface they
+        // represent transmission and reflection rather than diffuse and specular BRDF classes.
+        state.samplingFlags = PRIME_RC_FLAG_TRANSMISSION;
+        result.diffuse = primeSanitizeDenoiseAlbedo(
+                primeRcDenoiseClosureEnergy(localView, state, closureKind));
+        state.samplingFlags = PRIME_RC_FLAG_REFLECTION;
+        result.specular = primeSanitizeDenoiseAlbedo(
+                primeRcDenoiseClosureEnergy(localView, state, closureKind));
+        return result;
+    }
     state.samplingFlags = materialFlags & PRIME_RC_FLAG_DIFFUSE;
     result.diffuse = primeSanitizeDenoiseAlbedo(
             primeRcDenoiseClosureEnergy(localView, state, closureKind));
     state.samplingFlags = materialFlags & (PRIME_RC_FLAG_SPECULAR | PRIME_RC_FLAG_DELTA);
     result.specular = primeSanitizeDenoiseAlbedo(
             primeRcDenoiseClosureEnergy(localView, state, closureKind));
+    return result;
+}
+
+struct PrimeTransmissivePrimarySample {
+    PrimeTransmissiveBsdfSplit paths;
+    PrimeDenoiseAlbedos albedos;
+};
+
+PrimeTransmissivePrimarySample primeSampleMinecraftTransmissionPrimary(
+        vec3 baseColor,
+        float opacity,
+        vec3 outwardNormal,
+        uint materialFlags,
+        uint packedNormal,
+        uint packedSpecular,
+        vec3 viewDirection,
+        vec3 reflectionSample,
+        vec3 transmissionSample,
+        float rayT,
+        PrimeRcVolumeStack volumeStack) {
+    // This is the only fixed-split entry point. Translation, closure initialization, local-view
+    // conversion and guide energy are shared before the unavoidable two conditional samples.
+    PrimeRcState state = primeMinecraftTransmissionState(
+            baseColor,
+            opacity,
+            outwardNormal,
+            materialFlags,
+            packedNormal,
+            packedSpecular,
+            viewDirection,
+            rayT,
+            volumeStack);
+    vec3 localView = primeRcOnbToLocal(state.material.geometry.onb, viewDirection);
+    // One directional-energy lookup supplies both the reflection demodulation factor and the
+    // smooth-mirror sample. The conditional transmission factor is exactly the closure tint;
+    // Fresnel remains in illumination and is restored without losing energy after denoising.
+    PrimeMinecraftMirrorSplit mirror = primeMinecraftMirrorSplit(localView, state);
+
+    PrimeTransmissivePrimarySample result;
+    result.albedos.diffuse = primeSanitizeDenoiseAlbedo(state.transmissionTint);
+    result.albedos.specular = primeSanitizeDenoiseAlbedo(mirror.reflectance);
+    result.paths = primeSampleMinecraftTransmissionSplitFromState(
+            state,
+            localView,
+            mirror,
+            outwardNormal,
+            viewDirection,
+            reflectionSample,
+            transmissionSample,
+            volumeStack);
     return result;
 }
 

@@ -15,9 +15,10 @@
 
 namespace
 {
-    constexpr uint32_t PRIME_NRD_ABI_VERSION = 9;
-    constexpr nrd::Identifier PRIME_NRD_REBLUR_ID = 0;
+    constexpr uint32_t PRIME_NRD_ABI_VERSION = 10;
+    constexpr nrd::Identifier PRIME_NRD_PRIMARY_REBLUR_ID = 0;
     constexpr nrd::Identifier PRIME_NRD_SIGMA_SUN_ID = 1;
+    constexpr nrd::Identifier PRIME_NRD_REFLECTION_REBLUR_ID = 2;
 
     struct PrimeNrdCreateDesc
     {
@@ -264,9 +265,10 @@ PRIME_NRD_EXPORT int32_t primeNrdCreate(
     if (context == nullptr)
         return -2;
 
-    const std::array<nrd::DenoiserDesc, 2> denoisers = {{
-        {PRIME_NRD_REBLUR_ID, nrd::Denoiser::REBLUR_DIFFUSE_SPECULAR_SH},
+    const std::array<nrd::DenoiserDesc, 3> denoisers = {{
+        {PRIME_NRD_PRIMARY_REBLUR_ID, nrd::Denoiser::REBLUR_DIFFUSE_SPECULAR_SH},
         {PRIME_NRD_SIGMA_SUN_ID, nrd::Denoiser::SIGMA_SHADOW},
+        {PRIME_NRD_REFLECTION_REBLUR_ID, nrd::Denoiser::REBLUR_DIFFUSE_SPECULAR_SH},
     }};
     const nrd::InstanceCreationDesc creation = {
         {}, denoisers.data(), static_cast<uint32_t>(denoisers.size())};
@@ -287,7 +289,11 @@ PRIME_NRD_EXPORT int32_t primeNrdCreate(
     settings.historyFixFrameNum = 4;
     settings.minMaterialForDiffuse = 0.0f;
     settings.minMaterialForSpecular = 0.0f;
-    result = nrd::SetDenoiserSettings(*context->instance, PRIME_NRD_REBLUR_ID, &settings);
+    result = nrd::SetDenoiserSettings(
+        *context->instance, PRIME_NRD_PRIMARY_REBLUR_ID, &settings);
+    if (result == nrd::Result::SUCCESS)
+        result = nrd::SetDenoiserSettings(
+            *context->instance, PRIME_NRD_REFLECTION_REBLUR_ID, &settings);
     if (result != nrd::Result::SUCCESS)
     {
         delete context;
@@ -363,11 +369,11 @@ PRIME_NRD_EXPORT int32_t primeNrdGetDispatches(
     if (context == nullptr || output == nullptr)
         return -1;
 
-    // Keep REBLUR last so its validation grid remains the user-facing diagnostic when both
-    // denoisers write NRD's shared OUT_VALIDATION resource.
-    const std::array<nrd::Identifier, 2> identifiers = {
+    // Keep the primary/transmission REBLUR last so validation follows the main beauty history.
+    const std::array<nrd::Identifier, 3> identifiers = {
         PRIME_NRD_SIGMA_SUN_ID,
-        PRIME_NRD_REBLUR_ID,
+        PRIME_NRD_REFLECTION_REBLUR_ID,
+        PRIME_NRD_PRIMARY_REBLUR_ID,
     };
     const nrd::DispatchDesc* sourceDispatches = nullptr;
     uint32_t dispatchCount = 0;
@@ -407,6 +413,7 @@ PRIME_NRD_EXPORT int32_t primeNrdGetDispatches(
         destination.pipelineIndex = source.pipelineIndex;
         destination.gridWidth = source.gridWidth;
         destination.gridHeight = source.gridHeight;
+        destination.reserved = source.identifier;
     }
 
     output->dispatchesAddress = reinterpret_cast<uint64_t>(context->dispatches.data());

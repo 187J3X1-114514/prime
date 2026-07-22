@@ -122,6 +122,7 @@ abstract class GenerateShaderAbi extends DefaultTask {
 		def tracePayload = schema.structs.tracePayload
 		def surfaceInteraction = schema.structs.surfaceInteraction
 		def push = schema.structs.pushConstants
+		def nrdMotionPush = schema.structs.nrdMotionPushConstants
 		def colorContract = schema.colorContract
 		def emissionContract = schema.emissionContract
 		def atmosphereContract = schema.atmosphereContract
@@ -132,7 +133,8 @@ abstract class GenerateShaderAbi extends DefaultTask {
 				|| lightEmitter.size != 96 || lightCell.size != 12
 				|| sectionLightHeader.size != 48
 				|| integrator.size != 32 || pathState.size != 96 || tracePayload.size != 80
-				|| surfaceInteraction.size != 80 || push.size != 128) {
+				|| surfaceInteraction.size != 80 || push.size != 128
+				|| nrdMotionPush.size != 208) {
 			throw new GradleException('Prime shader ABI sizes changed without a coordinated migration')
 		}
 		if (colorContract.workingSpace != 'linear-rec2020-d65'
@@ -158,7 +160,7 @@ abstract class GenerateShaderAbi extends DefaultTask {
 							+ 'the -64 sea level / 0.001 km world scale, and a 12.5-unit space sun')
 		}
 		if (nrdContract.version != '4.17.4'
-                || nrdContract.denoiser != 'reblur-diffuse-specular-sh-plus-sigma-sun-shadow'
+                || nrdContract.denoiser != 'dual-reblur-diffuse-specular-sh-plus-sigma-sun-shadow'
 				|| nrdContract.normalEncoding != 'r10g10b10a2-unorm'
 				|| nrdContract.roughnessEncoding != 'linear'
 				|| nrdContract.motionSpace != 'screen-2.5d'
@@ -184,6 +186,7 @@ abstract class GenerateShaderAbi extends DefaultTask {
 			uint: [size: 4, alignment: 4],
 			uint64_t: [size: 8, alignment: 8],
 			mat4: [size: 64, alignment: 16],
+			vec2: [size: 8, alignment: 8],
 			vec3: [size: 12, alignment: 16],
 			vec4: [size: 16, alignment: 16],
 			uvec2: [size: 8, alignment: 8],
@@ -222,6 +225,7 @@ abstract class GenerateShaderAbi extends DefaultTask {
 		validateStruct('TracePayload', tracePayload)
 		validateStruct('SurfaceInteraction', surfaceInteraction)
 		validateStruct('PushConstants', push)
+		validateStruct('NrdMotionPushConstants', nrdMotionPush)
 
 		def constantName = { String value ->
 			value.replaceAll('([a-z0-9])([A-Z])', '$1_$2').toUpperCase(java.util.Locale.ROOT)
@@ -240,7 +244,8 @@ abstract class GenerateShaderAbi extends DefaultTask {
 			PATH_STATE: pathState,
 			TRACE_PAYLOAD: tracePayload,
 			SURFACE: surfaceInteraction,
-			PUSH: push
+			PUSH: push,
+			NRD_MOTION_PUSH: nrdMotionPush
 		].each { prefix, definition ->
 			definition.fields.each { field ->
 				javaOffsets.append("    public static final int ${prefix}_${constantName(field.name)}_OFFSET = ${field.offset};\n")
@@ -273,6 +278,7 @@ public final class ShaderAbi {
     public static final int TRACE_PAYLOAD_SIZE = ${tracePayload.size};
     public static final int SURFACE_INTERACTION_SIZE = ${surfaceInteraction.size};
     public static final int PUSH_CONSTANT_SIZE = ${push.size};
+    public static final int NRD_MOTION_PUSH_CONSTANT_SIZE = ${nrdMotionPush.size};
     public static final int DESCRIPTOR_TLAS = ${schema.descriptors.tlas};
     public static final int DESCRIPTOR_OUTPUT_IMAGE = ${schema.descriptors.outputImage};
     public static final int DESCRIPTOR_BLOCK_ATLAS = ${schema.descriptors.blockAtlas};
@@ -298,6 +304,15 @@ public final class ShaderAbi {
     public static final int DESCRIPTOR_NRD_DIFFUSE_DIRECTION = ${schema.descriptors.nrdDiffuseDirection};
     public static final int DESCRIPTOR_NRD_SPECULAR_DIRECTION = ${schema.descriptors.nrdSpecularDirection};
     public static final int DESCRIPTOR_RAW_NUMERICAL_DIAGNOSTIC = ${schema.descriptors.rawNumericalDiagnostic};
+    public static final int DESCRIPTOR_NRD_REFLECTION_NOISY_DIFFUSE = ${schema.descriptors.nrdReflectionNoisyDiffuse};
+    public static final int DESCRIPTOR_NRD_REFLECTION_NOISY_SPECULAR = ${schema.descriptors.nrdReflectionNoisySpecular};
+    public static final int DESCRIPTOR_NRD_REFLECTION_NORMAL_ROUGHNESS = ${schema.descriptors.nrdReflectionNormalRoughness};
+    public static final int DESCRIPTOR_NRD_REFLECTION_MATERIAL = ${schema.descriptors.nrdReflectionMaterial};
+    public static final int DESCRIPTOR_NRD_REFLECTION_SPECULAR_MATERIAL = ${schema.descriptors.nrdReflectionSpecularMaterial};
+    public static final int DESCRIPTOR_NRD_REFLECTION_POSITION = ${schema.descriptors.nrdReflectionPosition};
+    public static final int DESCRIPTOR_NRD_REFLECTION_DIFFUSE_DIRECTION = ${schema.descriptors.nrdReflectionDiffuseDirection};
+    public static final int DESCRIPTOR_NRD_REFLECTION_SPECULAR_DIRECTION = ${schema.descriptors.nrdReflectionSpecularDirection};
+    public static final int DESCRIPTOR_NRD_DISPLAY_POSITION = ${schema.descriptors.nrdDisplayPosition};
     public static final int PATH_CAMERA_IN_WATER_MASK = ${schema.pathControl.cameraInWaterMask};
     public static final int PATH_JITTER_PHASE_MASK = ${schema.pathControl.jitterPhaseMask};
     public static final int PATH_SUN_EV_QUARTER_SHIFT = ${schema.pathControl.sunEvQuarterShift};
@@ -499,6 +514,15 @@ layout(set = 0, binding = ${schema.descriptors.nrdSunPenumbra}, r16f) uniform im
 layout(set = 0, binding = ${schema.descriptors.nrdDiffuseDirection}, rgba16f) uniform image2D primeNrdDiffuseDirection;
 layout(set = 0, binding = ${schema.descriptors.nrdSpecularDirection}, rgba16f) uniform image2D primeNrdSpecularDirection;
 layout(set = 0, binding = ${schema.descriptors.rawNumericalDiagnostic}, rgba16f) uniform writeonly image2D primeRawNumericalDiagnostic;
+layout(set = 0, binding = ${schema.descriptors.nrdReflectionNoisyDiffuse}, rgba16f) uniform image2D primeNrdReflectionNoisyDiffuse;
+layout(set = 0, binding = ${schema.descriptors.nrdReflectionNoisySpecular}, rgba16f) uniform image2D primeNrdReflectionNoisySpecular;
+layout(set = 0, binding = ${schema.descriptors.nrdReflectionNormalRoughness}, rgb10_a2) uniform image2D primeNrdReflectionNormalRoughness;
+layout(set = 0, binding = ${schema.descriptors.nrdReflectionMaterial}, rgba16f) uniform image2D primeNrdReflectionMaterial;
+layout(set = 0, binding = ${schema.descriptors.nrdReflectionSpecularMaterial}, rgba16f) uniform image2D primeNrdReflectionSpecularMaterial;
+layout(set = 0, binding = ${schema.descriptors.nrdReflectionPosition}, rgba32f) uniform image2D primeNrdReflectionPosition;
+layout(set = 0, binding = ${schema.descriptors.nrdReflectionDiffuseDirection}, rgba16f) uniform image2D primeNrdReflectionDiffuseDirection;
+layout(set = 0, binding = ${schema.descriptors.nrdReflectionSpecularDirection}, rgba16f) uniform image2D primeNrdReflectionSpecularDirection;
+layout(set = 0, binding = ${schema.descriptors.nrdDisplayPosition}, rgba32f) uniform image2D primeNrdDisplayPosition;
 #endif
 """
 		new File(glslDir, 'prime_atmosphere_contract.glsl').text = """\
@@ -527,6 +551,20 @@ layout(set = 0, binding = ${schema.descriptors.rawNumericalDiagnostic}, rgba16f)
 #define PRIME_COLOR_DISPLAY_SPACE_REC709_D65 1
 #define PRIME_COLOR_DISPLAY_TRANSFORM_OKLAB_DRT 1
 #define PRIME_DISPLAY_EXPOSURE ${colorContract.displayExposure}
+
+#endif
+"""
+		def glslNrdMotionPushFields = nrdMotionPush.fields.collect { field ->
+			"    layout(offset = ${field.offset}) ${field.type} ${field.name};"
+		}.join('\n')
+		new File(glslDir, 'prime_nrd_motion_contract.glsl').text = """\
+#ifndef PRIME_NRD_MOTION_CONTRACT_GLSL
+#define PRIME_NRD_MOTION_CONTRACT_GLSL
+
+// Generated from shaders/abi.json. The Vulkan range and shader block share this layout.
+layout(push_constant) uniform PrimeMotionPushConstants {
+${glslNrdMotionPushFields}
+} primeMotionPush;
 
 #endif
 """

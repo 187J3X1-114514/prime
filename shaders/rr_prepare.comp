@@ -19,9 +19,10 @@ layout(set = 0, binding = 8, rgba32f) uniform readonly image2D rrStableRadiance;
 layout(set = 0, binding = 9, rgba16f) uniform readonly image3D rrAerialRadiance;
 layout(set = 0, binding = 10, rgba16f) uniform readonly image3D rrAerialTransmittance;
 layout(set = 0, binding = 11, rgba16f) uniform writeonly image2D rrInputColor;
-layout(set = 0, binding = 12, rgba16f) uniform writeonly image2D rrMotion;
-layout(set = 0, binding = 13, rgba16f) uniform writeonly image2D rrNormalRoughness;
-layout(set = 0, binding = 14, r16f) uniform writeonly image2D rrSpecularHitDistance;
+layout(set = 0, binding = 12, rgba16f) uniform writeonly image2D rrColorBeforeTransparency;
+layout(set = 0, binding = 13, rgba16f) uniform writeonly image2D rrMotion;
+layout(set = 0, binding = 14, rgba16f) uniform writeonly image2D rrNormalRoughness;
+layout(set = 0, binding = 15, r16f) uniform writeonly image2D rrSpecularHitDistance;
 
 layout(push_constant) uniform PrimeRrPreparePushConstants {
     mat4 currentClipToWorld;
@@ -165,5 +166,15 @@ void main() {
     rrApplyAerial(pixel, extent, material.a, inputRadiance);
     inputRadiance = primeNrdClampRadiance(inputRadiance, PRIME_NRD_FP16_MAX);
 
+    vec3 beforeRadiance = inputRadiance;
+    if (transparent) {
+        // The fixed primary-interface split writes its complete transmitted continuation into the
+        // raw diffuse lane. Reuse that exact sample for NGX instead of tracing a guide path.
+        beforeRadiance = primeNrdSanitizeRadiance(noisyDiffuse.rgb);
+        rrApplyAerial(pixel, extent, material.a, beforeRadiance);
+        beforeRadiance = primeNrdClampRadiance(beforeRadiance, PRIME_NRD_FP16_MAX);
+    }
+    // Opaque surfaces and sky use the same final variable, guaranteeing identical FP16 stores.
     imageStore(rrInputColor, pixel, vec4(inputRadiance, 1.0));
+    imageStore(rrColorBeforeTransparency, pixel, vec4(beforeRadiance, 1.0));
 }

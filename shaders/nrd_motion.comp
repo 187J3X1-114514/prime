@@ -3,6 +3,7 @@
 
 #include "default_material.glsl"
 #include "nrd_common.glsl"
+#include "prime_nrd_motion_contract.glsl"
 
 layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
 
@@ -19,253 +20,270 @@ layout(set = 0, binding = 9, rgba16f) uniform image2D primeSpecularMaterial;
 layout(set = 0, binding = 10, rgba16f) uniform image2D primeDiffuseDirection;
 layout(set = 0, binding = 11, rgba16f) uniform image2D primeSpecularDirection;
 
-layout(push_constant) uniform PrimeMotionPushConstants {
-    mat4 currentClipToWorld;
-    mat4 previousWorldToClip;
-    mat4 previousRenderedWorldToClip;
-    uint diagnosticMode;
-} primeMotionPush;
+layout(set = 0, binding = 12, rgba16f) uniform writeonly image2D primeReflectionMotion;
+layout(set = 0, binding = 13, r32f) uniform image2D primeReflectionViewZ;
+layout(set = 0, binding = 14, rgba32f) uniform readonly image2D primeReflectionPosition;
+layout(set = 0, binding = 15, rgba16f) uniform image2D primeReflectionNoisyDiffuse;
+layout(set = 0, binding = 16, rgba16f) uniform image2D primeReflectionNoisySpecular;
+layout(set = 0, binding = 17, rgb10_a2) uniform image2D primeReflectionNormalRoughness;
+layout(set = 0, binding = 18, rgba16f) uniform image2D primeReflectionMaterial;
+layout(set = 0, binding = 19, rgba16f) uniform image2D primeReflectionSpecularMaterial;
+layout(set = 0, binding = 20, rgba16f) uniform image2D primeReflectionDiffuseDirection;
+layout(set = 0, binding = 21, rgba16f) uniform image2D primeReflectionSpecularDirection;
+layout(set = 0, binding = 22, rgba32f) uniform readonly image2D primeDisplayPosition;
+layout(set = 0, binding = 23, rgba16f) uniform writeonly image2D primeFsrMotion;
 
 const float PRIME_MOTION_SKY_VIEW_Z = 65504.0;
 const float PRIME_FSR_NEAR_PLANE = 0.05;
 const uint PRIME_DIAGNOSTIC_REPROJECTION_ERROR = 2u;
 
 vec3 primeMotionRayDirection(vec2 screenUv) {
-    // NRD uses D3D screen UVs: y=0 is clip y=+1. The Java boundary has already reflected
-    // Minecraft's projection Y, so this names the same image row that world.rgen traced.
     vec2 clipXY = screenUv * vec2(2.0, -2.0) + vec2(-1.0, 1.0);
     vec4 nearPoint = primeMotionPush.currentClipToWorld * vec4(clipXY, 1.0, 1.0);
     vec4 farPoint = primeMotionPush.currentClipToWorld * vec4(clipXY, 0.0, 1.0);
     return normalize(farPoint.xyz / farPoint.w - nearPoint.xyz / nearPoint.w);
 }
 
-vec2 primeMotionSampleUv(ivec2 pixel, ivec2 extent, vec4 primary) {
-    vec2 cameraSample = unpackHalf2x16(floatBitsToUint(primary.w));
-    cameraSample = primeNrdIsFinite(cameraSample)
-            ? clamp(cameraSample, vec2(0.0), vec2(1.0))
-            : vec2(0.5);
-    return (vec2(pixel) + cameraSample) / vec2(extent);
+vec2 primeMotionSampleUv(ivec2 pixel, ivec2 extent) {
+    return (vec2(pixel) + vec2(0.5) + primeMotionPush.currentJitterPixels)
+            / vec2(extent);
 }
 
-void primeStoreSkyMotion(ivec2 pixel, ivec2 extent, vec2 currentSampleUv) {
-    // NRD masks sky from its surface denoiser, but FSR consumes this same XY motion texture.
-    // A direction projected with w=0 ignores camera translation and preserves rotation, so
-    // the infinite sky follows camera orientation without acquiring false parallax.
-    vec3 rayDirection = primeMotionRayDirection(currentSampleUv);
-    vec4 previousClip = primeMotionPush.previousWorldToClip
-            * vec4(rayDirection, 0.0);
-    vec2 skyMotion = vec2(0.0);
+vec4 primeLoadMaterial(ivec2 pixel, bool reflection) {
+    return reflection
+            ? imageLoad(primeReflectionMaterial, pixel)
+            : imageLoad(primeMaterial, pixel);
+}
+
+vec4 primeLoadSpecularMaterial(ivec2 pixel, bool reflection) {
+    return reflection
+            ? imageLoad(primeReflectionSpecularMaterial, pixel)
+            : imageLoad(primeSpecularMaterial, pixel);
+}
+
+vec4 primeLoadPosition(ivec2 pixel, bool reflection) {
+    return reflection
+            ? imageLoad(primeReflectionPosition, pixel)
+            : imageLoad(primePrimaryPosition, pixel);
+}
+
+vec4 primeLoadDiffuse(ivec2 pixel, bool reflection) {
+    return reflection
+            ? imageLoad(primeReflectionNoisyDiffuse, pixel)
+            : imageLoad(primeNoisyDiffuse, pixel);
+}
+
+vec4 primeLoadSpecular(ivec2 pixel, bool reflection) {
+    return reflection
+            ? imageLoad(primeReflectionNoisySpecular, pixel)
+            : imageLoad(primeNoisySpecular, pixel);
+}
+
+vec4 primeLoadPackedNormal(ivec2 pixel, bool reflection) {
+    return reflection
+            ? imageLoad(primeReflectionNormalRoughness, pixel)
+            : imageLoad(primeNormalRoughness, pixel);
+}
+
+vec3 primeLoadDiffuseDirection(ivec2 pixel, bool reflection) {
+    return reflection
+            ? imageLoad(primeReflectionDiffuseDirection, pixel).xyz
+            : imageLoad(primeDiffuseDirection, pixel).xyz;
+}
+
+vec3 primeLoadSpecularDirection(ivec2 pixel, bool reflection) {
+    return reflection
+            ? imageLoad(primeReflectionSpecularDirection, pixel).xyz
+            : imageLoad(primeSpecularDirection, pixel).xyz;
+}
+
+void primeStoreMotion(ivec2 pixel, bool reflection, vec4 value) {
+    if (reflection) imageStore(primeReflectionMotion, pixel, value);
+    else imageStore(primeMotion, pixel, value);
+}
+
+void primeStoreViewZ(ivec2 pixel, bool reflection, float value) {
+    if (reflection) imageStore(primeReflectionViewZ, pixel, vec4(value));
+    else imageStore(primeViewZ, pixel, vec4(value));
+}
+
+void primeStoreDiffuse(ivec2 pixel, bool reflection, vec4 value) {
+    if (reflection) imageStore(primeReflectionNoisyDiffuse, pixel, value);
+    else imageStore(primeNoisyDiffuse, pixel, value);
+}
+
+void primeStoreSpecular(ivec2 pixel, bool reflection, vec4 value) {
+    if (reflection) imageStore(primeReflectionNoisySpecular, pixel, value);
+    else imageStore(primeNoisySpecular, pixel, value);
+}
+
+void primeStoreNormal(ivec2 pixel, bool reflection, vec4 value) {
+    if (reflection) imageStore(primeReflectionNormalRoughness, pixel, value);
+    else imageStore(primeNormalRoughness, pixel, value);
+}
+
+void primeStoreMaterial(ivec2 pixel, bool reflection, vec4 value) {
+    if (reflection) imageStore(primeReflectionMaterial, pixel, value);
+    else imageStore(primeMaterial, pixel, value);
+}
+
+void primeStoreSpecularMaterial(ivec2 pixel, bool reflection, vec4 value) {
+    if (reflection) imageStore(primeReflectionSpecularMaterial, pixel, value);
+    else imageStore(primeSpecularMaterial, pixel, value);
+}
+
+void primeStoreDiffuseDirection(ivec2 pixel, bool reflection, vec4 value) {
+    if (reflection) imageStore(primeReflectionDiffuseDirection, pixel, value);
+    else imageStore(primeDiffuseDirection, pixel, value);
+}
+
+void primeStoreSpecularDirection(ivec2 pixel, bool reflection, vec4 value) {
+    if (reflection) imageStore(primeReflectionSpecularDirection, pixel, value);
+    else imageStore(primeSpecularDirection, pixel, value);
+}
+
+void primeClearBranch(ivec2 pixel, bool reflection) {
+    primeStoreDiffuse(pixel, reflection, primeNrdPackRadianceAndHitDistance(vec3(0.0), 0.0));
+    primeStoreSpecular(pixel, reflection, primeNrdPackRadianceAndHitDistance(vec3(0.0), 0.0));
+    primeStoreDiffuseDirection(pixel, reflection, vec4(0.0));
+    primeStoreSpecularDirection(pixel, reflection, vec4(0.0));
+    primeStoreNormal(pixel, reflection, primeNrdPackNormalRoughness(
+            vec3(0.0, 0.0, 1.0), PRIME_DEFAULT_REFERENCE_LINEAR_ROUGHNESS, 0.0));
+    primeStoreViewZ(pixel, reflection, PRIME_MOTION_SKY_VIEW_Z);
+    primeStoreMotion(pixel, reflection, vec4(0.0));
+    primeStoreMaterial(pixel, reflection, vec4(1.0, 1.0, 1.0, -1.0));
+    primeStoreSpecularMaterial(pixel, reflection, vec4(1.0, 1.0, 1.0, 0.0));
+}
+
+void primePrepareBranch(ivec2 pixel, ivec2 extent, bool reflection) {
+    vec4 rawMaterial = primeLoadMaterial(pixel, reflection);
+    float primaryDistance = rawMaterial.a;
+    if (!primeNrdIsFinite(primaryDistance) || primaryDistance < 0.0) {
+        primeClearBranch(pixel, reflection);
+        return;
+    }
+
+    vec4 rawSpecularMaterial = primeLoadSpecularMaterial(pixel, reflection);
+    uint materialFlags = primeNrdIsFinite(rawSpecularMaterial.a)
+            ? uint(clamp(round(rawSpecularMaterial.a), 0.0, PRIME_NRD_FP16_MAX))
+            : 0u;
+    vec3 normal;
+    float roughness;
+    primeNrdUnpackNormalRoughness(
+            primeLoadPackedNormal(pixel, reflection), normal, roughness);
+    vec3 diffuseAlbedo = primeNrdSanitizeAlbedo(rawMaterial.rgb);
+    vec3 specularAlbedo = primeNrdSanitizeAlbedo(rawSpecularMaterial.rgb);
+    vec3 position = primeLoadPosition(pixel, reflection).xyz;
+    vec3 cameraForward = primeMotionRayDirection(vec2(0.5));
+    float currentViewZ = dot(position, cameraForward);
+    currentViewZ = primeNrdIsFinite(currentViewZ) && currentViewZ > 0.0
+            ? min(currentViewZ, PRIME_MOTION_SKY_VIEW_Z)
+            : PRIME_MOTION_SKY_VIEW_Z;
+
+    vec4 rawDiffuse = primeLoadDiffuse(pixel, reflection);
+    vec4 rawSpecular = primeLoadSpecular(pixel, reflection);
+    float diffuseHitT = primeNrdSanitizeHitDistance(rawDiffuse.a);
+    float specularHitT = primeNrdSanitizeHitDistance(rawSpecular.a);
+    vec3 diffuse = primeNrdDemodulate(rawDiffuse.rgb, diffuseAlbedo);
+    vec3 specular = primeNrdDemodulate(rawSpecular.rgb, specularAlbedo);
+    primeNrdClampRadiancePair(diffuse, specular, PRIME_NRD_FP16_MAX);
+    primeStoreDiffuse(pixel, reflection, primeNrdPackRadianceAndHitDistance(
+            diffuse,
+            diffuseHitT <= 0.0 ? 0.0
+                    : primeNrdNormalizedHitDistance(diffuseHitT, currentViewZ, 1.0)));
+    primeStoreSpecular(pixel, reflection, primeNrdPackRadianceAndHitDistance(
+            specular,
+            specularHitT <= 0.0 ? 0.0
+                    : primeNrdNormalizedHitDistance(specularHitT, currentViewZ, roughness)));
+
+    vec3 diffuseDirection = primeLoadDiffuseDirection(pixel, reflection);
+    vec3 specularDirection = primeLoadSpecularDirection(pixel, reflection);
+    diffuseDirection = primeNrdIsFinite(diffuseDirection)
+            ? clamp(diffuseDirection, vec3(-1.0), vec3(1.0)) : vec3(0.0);
+    specularDirection = primeNrdIsFinite(specularDirection)
+            ? clamp(specularDirection, vec3(-1.0), vec3(1.0)) : vec3(0.0);
+    primeStoreDiffuseDirection(pixel, reflection, vec4(
+            diffuseDirection * primeNrdLinearToYCoCg(diffuse).x, 0.0));
+    primeStoreSpecularDirection(pixel, reflection, vec4(
+            specularDirection * primeNrdLinearToYCoCg(specular).x, 0.0));
+    primeStoreNormal(pixel, reflection, primeNrdPackNormalRoughness(
+            normal, roughness, primeNrdMaterialId(materialFlags)));
+    primeStoreViewZ(pixel, reflection, currentViewZ);
+    primeStoreMaterial(pixel, reflection, vec4(diffuseAlbedo, primaryDistance));
+    float composition = reflection
+            ? 0.0
+            : primeFsrTransparencyAndCompositionMask(
+                    floatBitsToUint(imageLoad(primeDisplayPosition, pixel).w));
+    primeStoreSpecularMaterial(pixel, reflection, vec4(specularAlbedo, composition));
+
+    vec2 currentSampleUv = primeMotionSampleUv(pixel, extent);
+    vec4 previousClip = primeMotionPush.previousWorldToClip * vec4(position, 1.0);
+    if (!(abs(previousClip.w) > 1.0e-6)
+            || any(isnan(previousClip)) || any(isinf(previousClip))) {
+        primeStoreMotion(pixel, reflection, vec4(0.0));
+        return;
+    }
+    vec2 previousUv = previousClip.xy / previousClip.w
+            * vec2(0.5, -0.5) + vec2(0.5);
+    primeStoreMotion(pixel, reflection, vec4(primeNrdSanitizeMotion(vec3(
+            previousUv - currentSampleUv,
+            abs(previousClip.w) - currentViewZ)), 0.0));
+
+    if (!reflection && primeMotionPush.diagnosticMode == PRIME_DIAGNOSTIC_REPROJECTION_ERROR) {
+        vec4 exactPreviousClip = primeMotionPush.previousRenderedWorldToClip
+                * vec4(position, 1.0);
+        vec3 error = vec3(1.0);
+        if (abs(exactPreviousClip.w) > 1.0e-6
+                && !any(isnan(exactPreviousClip)) && !any(isinf(exactPreviousClip))) {
+            vec2 exactUv = exactPreviousClip.xy / exactPreviousClip.w * 0.5 + 0.5;
+            vec2 pixels = (previousUv - exactUv) * vec2(extent);
+            error = vec3(max(pixels.x, 0.0), max(pixels.y, 0.0), 0.0)
+                    + vec3(max(-pixels.y, 0.0), max(-pixels.x, 0.0), max(-pixels.x, 0.0));
+            error = (error + abs(abs(previousClip.w) - abs(exactPreviousClip.w))) * 0.25;
+        }
+        imageStore(primeReprojectionError, pixel, vec4(clamp(error, 0.0, 1.0), 1.0));
+    }
+}
+
+void primePrepareFsrGuide(ivec2 pixel, ivec2 extent) {
+    vec4 display = imageLoad(primeDisplayPosition, pixel);
+    vec3 position = display.xyz;
+    vec2 currentSampleUv = primeMotionSampleUv(pixel, extent);
+    if (all(equal(position, vec3(0.0)))) {
+        vec3 rayDirection = primeMotionRayDirection(currentSampleUv);
+        vec4 previousClip = primeMotionPush.previousWorldToClip * vec4(rayDirection, 0.0);
+        vec2 motion = vec2(0.0);
+        if (abs(previousClip.w) > 1.0e-6
+                && !any(isnan(previousClip)) && !any(isinf(previousClip))) {
+            vec2 previousUv = previousClip.xy / previousClip.w
+                    * vec2(0.5, -0.5) + vec2(0.5);
+            motion = previousUv - currentSampleUv;
+        }
+        imageStore(primeFsrMotion, pixel, vec4(primeNrdSanitizeMotion(vec3(motion, 0.0)), 0.0));
+        imageStore(primeFsrDepth, pixel, vec4(0.0));
+        return;
+    }
+
+    float viewZ = dot(position, primeMotionRayDirection(vec2(0.5)));
+    viewZ = primeNrdIsFinite(viewZ) && viewZ > 0.0
+            ? min(viewZ, PRIME_MOTION_SKY_VIEW_Z) : PRIME_MOTION_SKY_VIEW_Z;
+    imageStore(primeFsrDepth, pixel, vec4(PRIME_FSR_NEAR_PLANE / viewZ));
+    vec4 previousClip = primeMotionPush.previousWorldToClip * vec4(position, 1.0);
+    vec3 motion = vec3(0.0);
     if (abs(previousClip.w) > 1.0e-6
-            && !any(isnan(previousClip))
-            && !any(isinf(previousClip))) {
-        vec2 previousNdc = previousClip.xy / previousClip.w;
-        vec2 previousUv = previousNdc * vec2(0.5, -0.5) + vec2(0.5);
-        skyMotion = previousUv - currentSampleUv;
+            && !any(isnan(previousClip)) && !any(isinf(previousClip))) {
+        vec2 previousUv = previousClip.xy / previousClip.w
+                * vec2(0.5, -0.5) + vec2(0.5);
+        motion = vec3(previousUv - currentSampleUv, abs(previousClip.w) - viewZ);
     }
-    imageStore(
-            primeMotion,
-            pixel,
-            vec4(primeNrdSanitizeMotion(vec3(skyMotion, 0.0)), 0.0));
-    imageStore(primeFsrDepth, pixel, vec4(0.0));
-    if (primeMotionPush.diagnosticMode == PRIME_DIAGNOSTIC_REPROJECTION_ERROR) {
-        imageStore(primeReprojectionError, pixel, vec4(0.0, 0.0, 0.0, 1.0));
-    }
+    imageStore(primeFsrMotion, pixel, vec4(primeNrdSanitizeMotion(motion), 0.0));
 }
 
 void main() {
     ivec2 pixel = ivec2(gl_GlobalInvocationID.xy);
     ivec2 extent = imageSize(primeViewZ);
-    if (any(greaterThanEqual(pixel, extent))) {
-        return;
-    }
-
-    // Raygen leaves raw signals in the eventual NRD images. Resolve the primary guide and convert
-    // them in place before motion generation. This pass is separated from raygen specifically to
-    // shorten the maximum live range in the mega-kernel; its output encoding remains the exact
-    // immutable NRD contract consumed by all following dispatches.
-    vec4 rawMaterial = imageLoad(primeMaterial, pixel);
-    vec4 primary = imageLoad(primePrimaryPosition, pixel);
-    vec2 currentSampleUv = primeMotionSampleUv(pixel, extent, primary);
-    float primaryDistance = rawMaterial.a;
-    if (!primeNrdIsFinite(primaryDistance) || primaryDistance < 0.0) {
-        imageStore(primeNoisyDiffuse, pixel, primeNrdPackRadianceAndHitDistance(vec3(0.0), 0.0));
-        imageStore(primeNoisySpecular, pixel, primeNrdPackRadianceAndHitDistance(vec3(0.0), 0.0));
-        imageStore(primeDiffuseDirection, pixel, vec4(0.0));
-        imageStore(primeSpecularDirection, pixel, vec4(0.0));
-        imageStore(
-                primeNormalRoughness,
-                pixel,
-                primeNrdPackNormalRoughness(
-                        vec3(0.0, 0.0, 1.0),
-                        PRIME_DEFAULT_REFERENCE_LINEAR_ROUGHNESS,
-                        0.0));
-        imageStore(primeViewZ, pixel, vec4(PRIME_MOTION_SKY_VIEW_Z, 0.0, 0.0, 0.0));
-        imageStore(primeMaterial, pixel, vec4(1.0, 1.0, 1.0, -1.0));
-        imageStore(
-                primeSpecularMaterial,
-                pixel,
-                vec4(
-                        1.0,
-                        1.0,
-                        1.0,
-                        primeFsrTransparencyAndCompositionMask(0u)));
-        primeStoreSkyMotion(pixel, extent, currentSampleUv);
-        return;
-    }
-
-    vec4 rawSpecularMaterial = imageLoad(primeSpecularMaterial, pixel);
-    uint primaryMaterialFlags = primeNrdIsFinite(rawSpecularMaterial.a)
-            ? uint(clamp(round(rawSpecularMaterial.a), 0.0, PRIME_NRD_FP16_MAX))
-            : 0u;
-    vec3 primaryNormal;
-    float primaryLinearRoughness;
-    primeNrdUnpackNormalRoughness(
-            imageLoad(primeNormalRoughness, pixel),
-            primaryNormal,
-            primaryLinearRoughness);
-    // Raygen supplies directional BSDF energy for each lobe. Zero-energy channels stay zero;
-    // guarded division avoids manufacturing a material floor that would later change remodulation.
-    vec3 diffuseAlbedo = primeNrdSanitizeAlbedo(rawMaterial.rgb);
-    vec3 specularAlbedo = primeNrdSanitizeAlbedo(rawSpecularMaterial.rgb);
-    vec3 primaryVector = primeNrdIsFinite(primary.xyz) ? primary.xyz : vec3(0.0);
-    vec3 cameraForward = primeMotionRayDirection(vec2(0.5));
-    float currentViewZ = dot(primaryVector, cameraForward);
-    currentViewZ = primeNrdIsFinite(currentViewZ) && currentViewZ > 0.0
-            ? min(currentViewZ, PRIME_MOTION_SKY_VIEW_Z)
-            : PRIME_MOTION_SKY_VIEW_Z;
-    vec4 rawDiffuse = imageLoad(primeNoisyDiffuse, pixel);
-    vec4 rawSpecular = imageLoad(primeNoisySpecular, pixel);
-    float diffuseHitDistance = primeNrdSanitizeHitDistance(rawDiffuse.a);
-    float specularHitDistance = primeNrdSanitizeHitDistance(rawSpecular.a);
-    float normalizedDiffuseHitDistance = diffuseHitDistance <= 0.0
-            ? 0.0
-            : primeNrdNormalizedHitDistance(diffuseHitDistance, currentViewZ, 1.0);
-    float normalizedSpecularHitDistance = specularHitDistance <= 0.0
-            ? 0.0
-            : primeNrdNormalizedHitDistance(
-                    specularHitDistance, currentViewZ, primaryLinearRoughness);
-    vec3 demodulatedDiffuse = primeNrdDemodulate(rawDiffuse.rgb, diffuseAlbedo);
-    vec3 demodulatedSpecular = primeNrdDemodulate(rawSpecular.rgb, specularAlbedo);
-    primeNrdClampRadiancePair(
-            demodulatedDiffuse, demodulatedSpecular, PRIME_NRD_FP16_MAX);
-    imageStore(
-            primeNoisyDiffuse,
-            pixel,
-            primeNrdPackRadianceAndHitDistance(
-                    demodulatedDiffuse,
-                    normalizedDiffuseHitDistance));
-    imageStore(
-            primeNoisySpecular,
-            pixel,
-            primeNrdPackRadianceAndHitDistance(
-                    demodulatedSpecular,
-                    normalizedSpecularHitDistance));
-    vec3 diffuseDirection = imageLoad(primeDiffuseDirection, pixel).xyz;
-    vec3 specularDirection = imageLoad(primeSpecularDirection, pixel).xyz;
-    diffuseDirection = primeNrdIsFinite(diffuseDirection)
-            ? clamp(diffuseDirection, vec3(-1.0), vec3(1.0))
-            : vec3(0.0);
-    specularDirection = primeNrdIsFinite(specularDirection)
-            ? clamp(specularDirection, vec3(-1.0), vec3(1.0))
-            : vec3(0.0);
-    imageStore(
-            primeDiffuseDirection,
-            pixel,
-            vec4(diffuseDirection * primeNrdLinearToYCoCg(demodulatedDiffuse).x, 0.0));
-    imageStore(
-            primeSpecularDirection,
-            pixel,
-            vec4(specularDirection * primeNrdLinearToYCoCg(demodulatedSpecular).x, 0.0));
-    imageStore(
-            primeNormalRoughness,
-            pixel,
-            primeNrdPackNormalRoughness(
-                    primaryNormal,
-                    primaryLinearRoughness,
-                    primeNrdMaterialId(primaryMaterialFlags)));
-    imageStore(primeViewZ, pixel, vec4(currentViewZ, 0.0, 0.0, 0.0));
-    imageStore(
-            primeMaterial,
-            pixel,
-            vec4(diffuseAlbedo, primaryDistance));
-    imageStore(
-            primeSpecularMaterial,
-            pixel,
-            vec4(
-                    specularAlbedo,
-                    primeFsrTransparencyAndCompositionMask(primaryMaterialFlags)));
-
-    if (!(currentViewZ > 0.0) || currentViewZ >= PRIME_MOTION_SKY_VIEW_Z) {
-        primeStoreSkyMotion(pixel, extent, currentSampleUv);
-        return;
-    }
-
-    // Minecraft/Prime use a reversed infinite depth convention. FSR reconstructs view-Z as
-    // near/depth using the matching deviceToViewDepth constants; this is an API boundary and must
-    // remain synchronized with Fsr3Upscaler rather than being inferred from Mojang's depth image.
-    imageStore(primeFsrDepth, pixel, vec4(PRIME_FSR_NEAR_PLANE / currentViewZ));
-
-    // Non-jittered MV means that jitter delta is not encoded as motion. The evaluated point is
-    // still the actual jittered primary hit; moving it back to pixel center invents parallax.
-    vec3 currentWorldPosition = primaryVector;
-    vec4 previousClip = primeMotionPush.previousWorldToClip
-            * vec4(currentWorldPosition, 1.0);
-    if (!(abs(previousClip.w) > 1.0e-6)
-            || any(isnan(previousClip))
-            || any(isinf(previousClip))) {
-        imageStore(primeMotion, pixel, vec4(0.0));
-        if (primeMotionPush.diagnosticMode == PRIME_DIAGNOSTIC_REPROJECTION_ERROR) {
-            imageStore(primeReprojectionError, pixel, vec4(1.0, 1.0, 1.0, 1.0));
-        }
-        return;
-    }
-
-    vec2 previousNdc = previousClip.xy / previousClip.w;
-    vec2 previousUv = previousNdc * vec2(0.5, -0.5) + vec2(0.5);
-    // NRD's immutable contract is old = new + MV. Minecraft terrain is static, so camera
-    // translation and rotation are both fully represented by this previous-current difference.
-    vec2 screenMotion = previousUv - currentSampleUv;
-    float previousViewZ = abs(previousClip.w);
-    imageStore(
-            primeMotion,
-            pixel,
-            vec4(primeNrdSanitizeMotion(
-                    vec3(screenMotion, previousViewZ - currentViewZ)), 0.0));
-
-    if (primeMotionPush.diagnosticMode != PRIME_DIAGNOSTIC_REPROJECTION_ERROR) {
-        return;
-    }
-
-    // Compare the canonical NRD camera decomposition against the exact transform consumed by
-    // raygen. Both project the same recorded stochastic primary hit and sample position.
-    // This matrix is the inverse of the exact inverse-view-projection consumed by raygen, not the
-    // canonical matrix used above to generate NRD motion. Its image Y therefore follows Prime's
-    // native convention and intentionally supplies an independent reference.
-    vec4 exactPreviousClip = primeMotionPush.previousRenderedWorldToClip
-            * vec4(primary.xyz, 1.0);
-    if (!(abs(exactPreviousClip.w) > 1.0e-6)
-            || any(isnan(exactPreviousClip))
-            || any(isinf(exactPreviousClip))) {
-        imageStore(primeReprojectionError, pixel, vec4(1.0));
-        return;
-    }
-    vec2 exactPreviousUv = exactPreviousClip.xy / exactPreviousClip.w
-            * vec2(0.5) + vec2(0.5);
-    vec2 reprojectionErrorPixels = (currentSampleUv + screenMotion - exactPreviousUv)
-            * vec2(extent);
-    float expectedPreviousViewZ = abs(exactPreviousClip.w);
-    float depthError = currentViewZ + (previousViewZ - currentViewZ)
-            - expectedPreviousViewZ;
-
-    // Black is exact. Positive X/Y errors are red/green, negative X/Y are cyan/magenta, and
-    // absolute depth disagreement is white. One full color unit represents four pixels or blocks.
-    vec3 positiveColor = max(reprojectionErrorPixels.x, 0.0) * vec3(1.0, 0.0, 0.0)
-            + max(reprojectionErrorPixels.y, 0.0) * vec3(0.0, 1.0, 0.0);
-    vec3 negativeColor = max(-reprojectionErrorPixels.x, 0.0) * vec3(0.0, 1.0, 1.0)
-            + max(-reprojectionErrorPixels.y, 0.0) * vec3(1.0, 0.0, 1.0);
-    vec3 diagnosticColor = (positiveColor + negativeColor + abs(depthError)) * 0.25;
-    imageStore(
-            primeReprojectionError,
-            pixel,
-            vec4(clamp(diagnosticColor, vec3(0.0), vec3(1.0)), 1.0));
+    if (any(greaterThanEqual(pixel, extent))) return;
+    primePrepareBranch(pixel, extent, false);
+    primePrepareBranch(pixel, extent, true);
+    primePrepareFsrGuide(pixel, extent);
 }

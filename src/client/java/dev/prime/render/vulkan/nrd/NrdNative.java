@@ -25,7 +25,7 @@ import org.lwjgl.system.SharedLibrary;
  * arrays and is versioned independently from NRD's C++ structures.
  */
 public final class NrdNative {
-    static final int ABI_VERSION = 9;
+    static final int ABI_VERSION = 10;
     static final int EXPECTED_NRD_VERSION = 4 << 24 | 17 << 16 | 4;
 
     public static final int DESCRIPTOR_TEXTURE = 0;
@@ -476,6 +476,10 @@ public final class NrdNative {
 
         public int gridHeight(int dispatchIndex) {
             return MemoryUtil.memGetInt(this.dispatchAddress(dispatchIndex) + 40L);
+        }
+
+        public int identifier(int dispatchIndex) {
+            return MemoryUtil.memGetInt(this.dispatchAddress(dispatchIndex) + 44L);
         }
 
         public int resourceCount(int dispatchIndex) {

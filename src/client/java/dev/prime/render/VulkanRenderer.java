@@ -204,7 +204,7 @@ public final class VulkanRenderer implements AutoCloseable {
     }
 
     /**
-     * Records Prime's interactive frame graph: one path sample, the selected reconstruction
+     * Records Prime's interactive frame graph: one estimator sample, the selected reconstruction
      * backend, and the common display transform. Keeping this orchestration behind a named boundary
      * prevents the future offline accumulator from inheriting temporal resources by accident.
      */

@@ -61,7 +61,7 @@ PathState primeCameraPath(uvec2 pixel, uint pathIndex, vec2 cameraSample) {
     path.flags = PRIME_PATH_PREVIOUS_DELTA;
     path.throughput = vec3(1.0);
     path.previousBsdfPdf = 0.0;
-    path.radiance = vec3(0.0);
+    path.rrDepth = 0u;
     path.pixel = pixel;
     path.sampleIndex = primePush.path.x;
     path.sampleEpoch = primePush.path.y;

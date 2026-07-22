@@ -60,7 +60,7 @@ final class ShaderAbiTest {
         assertEquals(1.0F, ShaderAbi.DISPLAY_EXPOSURE);
         assertEquals("screen-2.5d", ShaderAbi.NRD_MOTION_SPACE);
         assertEquals(
-                "reblur-diffuse-specular-sh-plus-sigma-sun-shadow",
+                "dual-reblur-diffuse-specular-sh-plus-sigma-sun-shadow",
                 ShaderAbi.NRD_DENOISER);
         assertEquals("hillaire-8wave-rec2020-d65", ShaderAbi.ATMOSPHERE_SPECTRAL_MODEL);
         assertEquals(12.5F, ShaderAbi.ATMOSPHERE_SPACE_SUN_INTENSITY);
@@ -107,8 +107,9 @@ final class ShaderAbiTest {
         assertEquals(16, ShaderAbi.INTEGRATOR_ENVIRONMENT_RADIANCE_OFFSET);
         assertEquals(0, ShaderAbi.PATH_STATE_PHYSICAL_ORIGIN_OFFSET);
         assertEquals(16, ShaderAbi.PATH_STATE_TRACE_ORIGIN_OFFSET);
-        assertEquals(80, ShaderAbi.PATH_STATE_PIXEL_OFFSET);
-        assertEquals(92, ShaderAbi.PATH_STATE_SAMPLE_EPOCH_OFFSET);
+        assertEquals(64, ShaderAbi.PATH_STATE_RR_DEPTH_OFFSET);
+        assertEquals(72, ShaderAbi.PATH_STATE_PIXEL_OFFSET);
+        assertEquals(84, ShaderAbi.PATH_STATE_SAMPLE_EPOCH_OFFSET);
         assertEquals(0, ShaderAbi.TRACE_PAYLOAD_POSITION_OFFSET);
         assertEquals(16, ShaderAbi.TRACE_PAYLOAD_GEOMETRIC_NORMAL_OFFSET);
         assertEquals(44, ShaderAbi.TRACE_PAYLOAD_TRACE_KIND_OFFSET);

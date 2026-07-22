@@ -135,11 +135,19 @@ final class NrdNativeTest {
                     resourceTypes.add(dispatches.resourceType(dispatchIndex, resourceIndex));
                 }
             }
-            assertTrue(resourceTypes.contains(NrdNative.RESOURCE_IN_DIFF_RADIANCE_HITDIST));
-            assertTrue(resourceTypes.contains(NrdNative.RESOURCE_IN_SPEC_RADIANCE_HITDIST));
+            assertTrue(resourceTypes.contains(NrdNative.RESOURCE_IN_DIFF_SH0));
+            assertTrue(resourceTypes.contains(NrdNative.RESOURCE_IN_DIFF_SH1));
+            assertTrue(resourceTypes.contains(NrdNative.RESOURCE_IN_SPEC_SH0));
+            assertTrue(resourceTypes.contains(NrdNative.RESOURCE_IN_SPEC_SH1));
             assertTrue(resourceTypes.contains(NrdNative.RESOURCE_IN_PENUMBRA));
-            assertTrue(resourceTypes.contains(NrdNative.RESOURCE_OUT_DIFF_RADIANCE_HITDIST));
-            assertTrue(resourceTypes.contains(NrdNative.RESOURCE_OUT_SPEC_RADIANCE_HITDIST));
+            assertTrue(resourceTypes.contains(NrdNative.RESOURCE_OUT_DIFF_SH0));
+            assertTrue(resourceTypes.contains(NrdNative.RESOURCE_OUT_DIFF_SH1));
+            assertTrue(resourceTypes.contains(NrdNative.RESOURCE_OUT_SPEC_SH0));
+            assertTrue(resourceTypes.contains(NrdNative.RESOURCE_OUT_SPEC_SH1));
+            assertFalse(resourceTypes.contains(NrdNative.RESOURCE_IN_DIFF_RADIANCE_HITDIST));
+            assertFalse(resourceTypes.contains(NrdNative.RESOURCE_IN_SPEC_RADIANCE_HITDIST));
+            assertFalse(resourceTypes.contains(NrdNative.RESOURCE_OUT_DIFF_RADIANCE_HITDIST));
+            assertFalse(resourceTypes.contains(NrdNative.RESOURCE_OUT_SPEC_RADIANCE_HITDIST));
             assertTrue(resourceTypes.contains(NrdNative.RESOURCE_OUT_SHADOW_TRANSLUCENCY));
             assertTrue(resourceTypes.contains(NrdNative.RESOURCE_OUT_VALIDATION));
             assertSame(dispatches, instance.getDispatches());

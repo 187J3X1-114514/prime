@@ -27,7 +27,7 @@ final class IntegratorSettingsTest {
 
     @Test
     void materialLightingControlStoresIndependentEvAndRoughnessFields() {
-        int packed = IntegratorSettings.packMaterialLightingControl(-16, 16, 73);
+        int packed = IntegratorSettings.packMaterialLightingControl(-16, 16, 73, false);
         int sun = ((packed >>> ShaderAbi.PATH_SUN_EV_QUARTER_SHIFT)
                 & ShaderAbi.PATH_EV_QUARTER_MASK) - ShaderAbi.PATH_EV_QUARTER_BIAS;
         int block = ((packed >>> ShaderAbi.PATH_BLOCK_LIGHT_EV_QUARTER_SHIFT)
@@ -36,12 +36,17 @@ final class IntegratorSettingsTest {
         assertEquals(16, block);
         assertEquals(73, (packed >>> ShaderAbi.PATH_MATERIAL_ROUGHNESS_SHIFT)
                 & ShaderAbi.PATH_MATERIAL_ROUGHNESS_MASK);
+        assertEquals(0, packed & ShaderAbi.PATH_SH_INPUT_MASK);
+        assertEquals(
+                ShaderAbi.PATH_SH_INPUT_MASK,
+                IntegratorSettings.packMaterialLightingControl(-16, 16, 73, true)
+                        & ShaderAbi.PATH_SH_INPUT_MASK);
         assertThrows(IllegalArgumentException.class,
-                () -> IntegratorSettings.packMaterialLightingControl(-129, 0, 80));
+                () -> IntegratorSettings.packMaterialLightingControl(-129, 0, 80, false));
         assertThrows(IllegalArgumentException.class,
-                () -> IntegratorSettings.packMaterialLightingControl(0, 128, 80));
+                () -> IntegratorSettings.packMaterialLightingControl(0, 128, 80, false));
         assertThrows(IllegalArgumentException.class,
-                () -> IntegratorSettings.packMaterialLightingControl(0, 0, 101));
+                () -> IntegratorSettings.packMaterialLightingControl(0, 0, 101, false));
     }
 
     @Test

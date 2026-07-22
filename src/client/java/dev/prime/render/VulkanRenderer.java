@@ -411,7 +411,8 @@ public final class VulkanRenderer implements AutoCloseable {
                             : images.qualityMode.rrJitterPhase(postFrame.frameIndex()),
                     frameCameraInWater,
                     lighting,
-                    material);
+                    material,
+                    processor.targets().usesShInputs());
             this.pipeline.trace(commandBuffer, pushConstants, renderWidth, renderHeight);
             processor.record(commandBuffer, postFrame, postParameters);
             this.finishAtlasRead(commandBuffer, atlasView.texture());
@@ -560,7 +561,8 @@ public final class VulkanRenderer implements AutoCloseable {
                     1,
                     this.screenshotCameraInWater,
                     lighting,
-                    material);
+                    material,
+                    false);
             this.pipeline.traceScreenshot(commandBuffer, pushConstants, width, height);
             this.prepareScreenshotDisplay(commandBuffer, images.accumulation);
             images.display.record(
@@ -1085,7 +1087,8 @@ public final class VulkanRenderer implements AutoCloseable {
             int jitterPhase,
             boolean cameraInWater,
             LightingSettings.Snapshot lighting,
-            MaterialSettings.Snapshot material) {
+            MaterialSettings.Snapshot material,
+            boolean shInput) {
         ByteBuffer buffer = stack.calloc(ShaderAbi.PUSH_CONSTANT_SIZE).order(ByteOrder.nativeOrder());
         camera.inverseViewProjection().get(
                 ShaderAbi.PUSH_INVERSE_VIEW_PROJECTION_OFFSET, buffer);
@@ -1116,7 +1119,8 @@ public final class VulkanRenderer implements AutoCloseable {
         int materialLightingControl = IntegratorSettings.packMaterialLightingControl(
                         lighting.sunQuarterSteps(),
                         lighting.blockLightQuarterSteps(),
-                        material.roughnessSteps());
+                        material.roughnessSteps(),
+                        shInput);
         buffer.putInt(pathOffset + 3 * Integer.BYTES, materialLightingControl);
         return buffer.position(0).limit(ShaderAbi.PUSH_CONSTANT_SIZE);
     }

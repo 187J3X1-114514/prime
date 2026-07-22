@@ -16,6 +16,8 @@ layout(set = 0, binding = 6, rgba16f) uniform image2D primeNoisySpecular;
 layout(set = 0, binding = 7, rgb10_a2) uniform image2D primeNormalRoughness;
 layout(set = 0, binding = 8, rgba16f) uniform image2D primeMaterial;
 layout(set = 0, binding = 9, rgba16f) uniform image2D primeSpecularMaterial;
+layout(set = 0, binding = 10, rgba16f) uniform image2D primeDiffuseDirection;
+layout(set = 0, binding = 11, rgba16f) uniform image2D primeSpecularDirection;
 
 layout(push_constant) uniform PrimeMotionPushConstants {
     mat4 currentClipToWorld;
@@ -37,12 +39,19 @@ vec3 primeMotionRayDirection(vec2 screenUv) {
     return normalize(farPoint.xyz / farPoint.w - nearPoint.xyz / nearPoint.w);
 }
 
-void primeStoreSkyMotion(ivec2 pixel, ivec2 extent) {
+vec2 primeMotionSampleUv(ivec2 pixel, ivec2 extent, vec4 primary) {
+    vec2 cameraSample = unpackHalf2x16(floatBitsToUint(primary.w));
+    cameraSample = primeNrdIsFinite(cameraSample)
+            ? clamp(cameraSample, vec2(0.0), vec2(1.0))
+            : vec2(0.5);
+    return (vec2(pixel) + cameraSample) / vec2(extent);
+}
+
+void primeStoreSkyMotion(ivec2 pixel, ivec2 extent, vec2 currentSampleUv) {
     // NRD masks sky from its surface denoiser, but FSR consumes this same XY motion texture.
     // A direction projected with w=0 ignores camera translation and preserves rotation, so
     // the infinite sky follows camera orientation without acquiring false parallax.
-    vec2 currentUv = (vec2(pixel) + vec2(0.5)) / vec2(extent);
-    vec3 rayDirection = primeMotionRayDirection(currentUv);
+    vec3 rayDirection = primeMotionRayDirection(currentSampleUv);
     vec4 previousClip = primeMotionPush.previousWorldToClip
             * vec4(rayDirection, 0.0);
     vec2 skyMotion = vec2(0.0);
@@ -51,7 +60,7 @@ void primeStoreSkyMotion(ivec2 pixel, ivec2 extent) {
             && !any(isinf(previousClip))) {
         vec2 previousNdc = previousClip.xy / previousClip.w;
         vec2 previousUv = previousNdc * vec2(0.5, -0.5) + vec2(0.5);
-        skyMotion = previousUv - currentUv;
+        skyMotion = previousUv - currentSampleUv;
     }
     imageStore(
             primeMotion,
@@ -75,10 +84,14 @@ void main() {
     // shorten the maximum live range in the mega-kernel; its output encoding remains the exact
     // immutable NRD contract consumed by all following dispatches.
     vec4 rawMaterial = imageLoad(primeMaterial, pixel);
+    vec4 primary = imageLoad(primePrimaryPosition, pixel);
+    vec2 currentSampleUv = primeMotionSampleUv(pixel, extent, primary);
     float primaryDistance = rawMaterial.a;
     if (!primeNrdIsFinite(primaryDistance) || primaryDistance < 0.0) {
         imageStore(primeNoisyDiffuse, pixel, primeNrdPackRadianceAndHitDistance(vec3(0.0), 0.0));
         imageStore(primeNoisySpecular, pixel, primeNrdPackRadianceAndHitDistance(vec3(0.0), 0.0));
+        imageStore(primeDiffuseDirection, pixel, vec4(0.0));
+        imageStore(primeSpecularDirection, pixel, vec4(0.0));
         imageStore(
                 primeNormalRoughness,
                 pixel,
@@ -96,11 +109,10 @@ void main() {
                         1.0,
                         1.0,
                         primeFsrTransparencyAndCompositionMask(0u)));
-        primeStoreSkyMotion(pixel, extent);
+        primeStoreSkyMotion(pixel, extent, currentSampleUv);
         return;
     }
 
-    vec4 primary = imageLoad(primePrimaryPosition, pixel);
     vec4 rawSpecularMaterial = imageLoad(primeSpecularMaterial, pixel);
     uint primaryMaterialFlags = primeNrdIsFinite(rawSpecularMaterial.a)
             ? uint(clamp(round(rawSpecularMaterial.a), 0.0, PRIME_NRD_FP16_MAX))
@@ -116,12 +128,8 @@ void main() {
     vec3 diffuseAlbedo = primeNrdSanitizeAlbedo(rawMaterial.rgb);
     vec3 specularAlbedo = primeNrdSanitizeAlbedo(rawSpecularMaterial.rgb);
     vec3 primaryVector = primeNrdIsFinite(primary.xyz) ? primary.xyz : vec3(0.0);
-    vec3 tracedRayDirection = dot(primaryVector, primaryVector) > 1.0e-12
-            ? primeNrdSafeNormalize(primaryVector, vec3(0.0, 0.0, -1.0))
-            : primeMotionRayDirection(
-                    (vec2(pixel) + vec2(0.5)) / vec2(extent));
     vec3 cameraForward = primeMotionRayDirection(vec2(0.5));
-    float currentViewZ = primaryDistance * dot(tracedRayDirection, cameraForward);
+    float currentViewZ = dot(primaryVector, cameraForward);
     currentViewZ = primeNrdIsFinite(currentViewZ) && currentViewZ > 0.0
             ? min(currentViewZ, PRIME_MOTION_SKY_VIEW_Z)
             : PRIME_MOTION_SKY_VIEW_Z;
@@ -152,6 +160,22 @@ void main() {
             primeNrdPackRadianceAndHitDistance(
                     demodulatedSpecular,
                     normalizedSpecularHitDistance));
+    vec3 diffuseDirection = imageLoad(primeDiffuseDirection, pixel).xyz;
+    vec3 specularDirection = imageLoad(primeSpecularDirection, pixel).xyz;
+    diffuseDirection = primeNrdIsFinite(diffuseDirection)
+            ? clamp(diffuseDirection, vec3(-1.0), vec3(1.0))
+            : vec3(0.0);
+    specularDirection = primeNrdIsFinite(specularDirection)
+            ? clamp(specularDirection, vec3(-1.0), vec3(1.0))
+            : vec3(0.0);
+    imageStore(
+            primeDiffuseDirection,
+            pixel,
+            vec4(diffuseDirection * primeNrdLinearToYCoCg(demodulatedDiffuse).x, 0.0));
+    imageStore(
+            primeSpecularDirection,
+            pixel,
+            vec4(specularDirection * primeNrdLinearToYCoCg(demodulatedSpecular).x, 0.0));
     imageStore(
             primeNormalRoughness,
             pixel,
@@ -172,7 +196,7 @@ void main() {
                     primeFsrTransparencyAndCompositionMask(primaryMaterialFlags)));
 
     if (!(currentViewZ > 0.0) || currentViewZ >= PRIME_MOTION_SKY_VIEW_Z) {
-        primeStoreSkyMotion(pixel, extent);
+        primeStoreSkyMotion(pixel, extent, currentSampleUv);
         return;
     }
 
@@ -181,20 +205,9 @@ void main() {
     // remain synchronized with Fsr3Upscaler rather than being inferred from Mojang's depth image.
     imageStore(primeFsrDepth, pixel, vec4(PRIME_FSR_NEAR_PLANE / currentViewZ));
 
-    // NRD requires non-jittered motion even though the noisy primary sample is jittered.
-    vec2 currentUv = (vec2(pixel) + vec2(0.5)) / vec2(extent);
-    vec3 rayDirection = primeMotionRayDirection(currentUv);
-    float forwardProjection = dot(rayDirection, cameraForward);
-    if (!(forwardProjection > 1.0e-6)) {
-        imageStore(primeMotion, pixel, vec4(0.0));
-        imageStore(primeFsrDepth, pixel, vec4(0.0));
-        if (primeMotionPush.diagnosticMode == PRIME_DIAGNOSTIC_REPROJECTION_ERROR) {
-            imageStore(primeReprojectionError, pixel, vec4(1.0, 1.0, 1.0, 1.0));
-        }
-        return;
-    }
-
-    vec3 currentWorldPosition = rayDirection * (currentViewZ / forwardProjection);
+    // Non-jittered MV means that jitter delta is not encoded as motion. The evaluated point is
+    // still the actual jittered primary hit; moving it back to pixel center invents parallax.
+    vec3 currentWorldPosition = primaryVector;
     vec4 previousClip = primeMotionPush.previousWorldToClip
             * vec4(currentWorldPosition, 1.0);
     if (!(abs(previousClip.w) > 1.0e-6)
@@ -211,7 +224,7 @@ void main() {
     vec2 previousUv = previousNdc * vec2(0.5, -0.5) + vec2(0.5);
     // NRD's immutable contract is old = new + MV. Minecraft terrain is static, so camera
     // translation and rotation are both fully represented by this previous-current difference.
-    vec2 screenMotion = previousUv - currentUv;
+    vec2 screenMotion = previousUv - currentSampleUv;
     float previousViewZ = abs(previousClip.w);
     imageStore(
             primeMotion,
@@ -223,12 +236,8 @@ void main() {
         return;
     }
 
-    // This probe deliberately does not reconstruct the primary point from view-Z. Raygen records
-    // the actual stochastic primary hit, and its sub-pixel sample is packed into W. Comparing that
-    // independent point with the guide-derived motion exposes errors hidden by self-consistent
-    // camera matrices and view-Z reconstruction.
-    vec2 primarySample = unpackHalf2x16(floatBitsToUint(primary.w));
-    vec2 primaryUv = (vec2(pixel) + primarySample) / vec2(extent);
+    // Compare the canonical NRD camera decomposition against the exact transform consumed by
+    // raygen. Both project the same recorded stochastic primary hit and sample position.
     // This matrix is the inverse of the exact inverse-view-projection consumed by raygen, not the
     // canonical matrix used above to generate NRD motion. Its image Y therefore follows Prime's
     // native convention and intentionally supplies an independent reference.
@@ -242,7 +251,7 @@ void main() {
     }
     vec2 exactPreviousUv = exactPreviousClip.xy / exactPreviousClip.w
             * vec2(0.5) + vec2(0.5);
-    vec2 reprojectionErrorPixels = (primaryUv + screenMotion - exactPreviousUv)
+    vec2 reprojectionErrorPixels = (currentSampleUv + screenMotion - exactPreviousUv)
             * vec2(extent);
     float expectedPreviousViewZ = abs(exactPreviousClip.w);
     float depthError = currentViewZ + (previousViewZ - currentViewZ)

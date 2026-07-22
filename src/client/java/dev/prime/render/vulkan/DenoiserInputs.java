@@ -21,4 +21,17 @@ public interface DenoiserInputs {
     VulkanImage sunLighting();
 
     VulkanImage sunPenumbra();
+
+    /** Raygen writes these only when {@link #usesShInputs()} is true. */
+    default VulkanImage diffuseDirection() {
+        return noisyDiffuse();
+    }
+
+    default VulkanImage specularDirection() {
+        return noisySpecular();
+    }
+
+    default boolean usesShInputs() {
+        return false;
+    }
 }

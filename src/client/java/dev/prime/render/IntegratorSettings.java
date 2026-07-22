@@ -49,14 +49,16 @@ final class IntegratorSettings {
     static int packMaterialLightingControl(
             int sunQuarterSteps,
             int blockLightQuarterSteps,
-            int materialRoughnessSteps) {
+            int materialRoughnessSteps,
+            boolean shInput) {
         if (materialRoughnessSteps < MaterialSettings.MINIMUM_ROUGHNESS_STEPS
                 || materialRoughnessSteps > MaterialSettings.MAXIMUM_ROUGHNESS_STEPS
                 || (materialRoughnessSteps & ~ShaderAbi.PATH_MATERIAL_ROUGHNESS_MASK) != 0) {
             throw new IllegalArgumentException(
                     "Default material roughness does not fit in the path-control ABI");
         }
-        return packEvQuarterSteps(sunQuarterSteps, ShaderAbi.PATH_SUN_EV_QUARTER_SHIFT)
+        return (shInput ? ShaderAbi.PATH_SH_INPUT_MASK : 0)
+                | packEvQuarterSteps(sunQuarterSteps, ShaderAbi.PATH_SUN_EV_QUARTER_SHIFT)
                 | packEvQuarterSteps(
                         blockLightQuarterSteps,
                         ShaderAbi.PATH_BLOCK_LIGHT_EV_QUARTER_SHIFT)

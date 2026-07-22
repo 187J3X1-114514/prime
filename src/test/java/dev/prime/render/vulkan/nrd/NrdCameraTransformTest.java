@@ -106,6 +106,39 @@ final class NrdCameraTransformTest {
         assertEquals(directUv.y, diagnosticUv.y, EPSILON);
     }
 
+    @Test
+    void jitteredHitAndSkyDirectionsHaveZeroMotionForAStaticCamera() {
+        FrameCamera camera = camera(new Matrix4f(), 0.0, 0.0, 0.0);
+        Matrix4f clipToWorld = NrdCameraTransform.currentClipToWorld(camera);
+        Matrix4f previousWorldToClip = NrdCameraTransform.previousWorldToClip(camera, camera);
+        int width = 1920;
+        int height = 1080;
+        int pixelX = 733;
+        int pixelY = 419;
+        for (int phase = 1; phase <= 32; phase++) {
+            float jitterX = halton(phase, 2) - 0.5F;
+            float jitterY = halton(phase, 3) - 0.5F;
+            Vector2f sampleUv = new Vector2f(
+                    (pixelX + 0.5F + jitterX) / width,
+                    (pixelY + 0.5F + jitterY) / height);
+            Vector3f ray = rayDirection(clipToWorld, sampleUv);
+            Vector3f hit = new Vector3f(ray).mul(37.0F);
+
+            Vector2f previousHitUv = NrdCameraTransform.screenUv(previousWorldToClip, hit);
+            Vector2f previousSkyUv = skyUv(previousWorldToClip, ray);
+            assertEquals(0.0F, previousHitUv.x - sampleUv.x, EPSILON);
+            assertEquals(0.0F, previousHitUv.y - sampleUv.y, EPSILON);
+            assertEquals(0.0F, previousSkyUv.x - sampleUv.x, EPSILON);
+            assertEquals(0.0F, previousSkyUv.y - sampleUv.y, EPSILON);
+
+            Vector2f centerUv = new Vector2f(
+                    (pixelX + 0.5F) / width,
+                    (pixelY + 0.5F) / height);
+            assertEquals(jitterX / width, previousHitUv.x - centerUv.x, EPSILON);
+            assertEquals(jitterY / height, previousHitUv.y - centerUv.y, EPSILON);
+        }
+    }
+
     private static void assertReprojectsStaticPoint(FrameCamera previous, FrameCamera current) {
         Motion motion = motion(previous, current);
         assertEquals(motion.previousUv.x, motion.currentUv.x + motion.vector.x, EPSILON);
@@ -170,6 +203,36 @@ final class NrdCameraTransformTest {
         return new Vector2f(
                 clip.x * inverseW * 0.5F + 0.5F,
                 clip.y * inverseW * 0.5F + 0.5F);
+    }
+
+    private static Vector3f rayDirection(Matrix4f clipToWorld, Vector2f uv) {
+        float clipX = uv.x * 2.0F - 1.0F;
+        float clipY = 1.0F - uv.y * 2.0F;
+        Vector4f near = clipToWorld.transform(new Vector4f(clipX, clipY, 1.0F, 1.0F));
+        Vector4f far = clipToWorld.transform(new Vector4f(clipX, clipY, 0.0F, 1.0F));
+        near.div(near.w);
+        far.div(far.w);
+        return new Vector3f(far.x - near.x, far.y - near.y, far.z - near.z).normalize();
+    }
+
+    private static Vector2f skyUv(Matrix4f worldToClip, Vector3f direction) {
+        Vector4f clip = worldToClip.transform(
+                new Vector4f(direction.x, direction.y, direction.z, 0.0F));
+        return new Vector2f(
+                clip.x / clip.w * 0.5F + 0.5F,
+                clip.y / clip.w * -0.5F + 0.5F);
+    }
+
+    private static float halton(int index, int base) {
+        float value = 0.0F;
+        float fraction = 1.0F;
+        int remaining = index;
+        while (remaining > 0) {
+            fraction /= base;
+            value += fraction * (remaining % base);
+            remaining /= base;
+        }
+        return value;
     }
 
     private static FrameCamera camera(Matrix4f viewRotation, double x, double y, double z) {

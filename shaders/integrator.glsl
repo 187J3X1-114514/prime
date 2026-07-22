@@ -14,6 +14,7 @@ const uint PRIME_PATH_PREVIOUS_NO_NEE = 2u;
 struct PrimeDirectLightingSplit {
     vec3 diffuse;
     vec3 specular;
+    vec3 direction;
 };
 
 // This is the complete Monte Carlo estimate, split only because realtime denoisers consume
@@ -41,6 +42,8 @@ struct PrimeDenoiserGuides {
     vec3 primarySpecularAlbedo;
     float primaryLinearRoughness;
     vec3 primaryPosition;
+    vec3 diffuseDirection;
+    vec3 specularDirection;
 };
 
 struct PrimeIntegrationResult {
@@ -261,6 +264,7 @@ PrimeDirectLightingSplit primeEvaluateVisibleDirectSplit(
     PrimeDirectLightingSplit result;
     result.diffuse = vec3(0.0);
     result.specular = vec3(0.0);
+    result.direction = light.direction;
     bool transmissive = primeMaterialIsTransmissive(surface.materialFlags);
     bool foliage = primeMaterialIsFoliage(surface.materialFlags);
     vec3 shadingNormal = primeSurfaceShadingNormal(surface, viewDirection);
@@ -374,6 +378,7 @@ PrimePrimarySunSample primeEstimatePrimaryDirectSun(
     PrimePrimarySunSample result;
     result.lighting.diffuse = vec3(0.0);
     result.lighting.specular = vec3(0.0);
+    result.lighting.direction = vec3(0.0);
     result.penumbra = 0.0;
     result.visibility = 0.0;
     LightSample light = primeSampleSun(integrator, surface.position, sampleValue);
@@ -403,6 +408,7 @@ PrimeDirectLightingSplit primeEstimatePrimaryDirectAreaLight(
         PrimeDirectLightingSplit result;
         result.diffuse = vec3(0.0);
         result.specular = vec3(0.0);
+        result.direction = vec3(0.0);
         return result;
     }
     vec3 radiance = primeResolveSampledAreaLightRadiance(area);
@@ -696,6 +702,8 @@ PrimeIntegrationResult primeIntegrateWithVolume(
     result.guides.primarySpecularAlbedo = vec3(0.0);
     result.guides.primaryLinearRoughness = PRIME_DEFAULT_REFERENCE_LINEAR_ROUGHNESS;
     result.guides.primaryPosition = vec3(0.0);
+    result.guides.diffuseDirection = vec3(0.0);
+    result.guides.specularDirection = vec3(0.0);
     result.validSample = true;
     PrimeDenoiserState denoiserState;
     denoiserState.hasPrimarySurface = false;
@@ -793,6 +801,12 @@ PrimeIntegrationResult primeIntegrateWithVolume(
                 bool validSpecular = primeTryAccumulate(
                         result.radiance.specular,
                         path.throughput * areaSplit.specular);
+                if (any(greaterThan(areaSplit.diffuse, vec3(0.0)))) {
+                    result.guides.diffuseDirection = areaSplit.direction;
+                }
+                if (any(greaterThan(areaSplit.specular, vec3(0.0)))) {
+                    result.guides.specularDirection = areaSplit.direction;
+                }
                 result.validSample = validSun
                         && validDiffuse
                         && validSpecular
@@ -853,6 +867,13 @@ PrimeIntegrationResult primeIntegrateWithVolume(
                 result.guides.primarySpecularAlbedo = primeSanitizeDenoiseAlbedo(
                         denoiserState.specularAlbedoProduct);
                 result.guides.primaryLinearRoughness = primeSurfaceLinearRoughness(surface);
+                if (validScatter) {
+                    if (denoiserState.diffusePath) {
+                        result.guides.diffuseDirection = bsdf.direction;
+                    } else {
+                        result.guides.specularDirection = bsdf.direction;
+                    }
+                }
             }
 
             bool sampledNonDelta = primeIsNonDeltaSample(bsdf);

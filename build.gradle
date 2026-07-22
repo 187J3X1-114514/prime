@@ -154,7 +154,7 @@ abstract class GenerateShaderAbi extends DefaultTask {
 							+ 'the -64 sea level / 0.001 km world scale, and a 12.5-unit space sun')
 		}
 		if (nrdContract.version != '4.17.4'
-                || nrdContract.denoiser != 'reblur-diffuse-specular-plus-sigma-sun-shadow'
+                || nrdContract.denoiser != 'reblur-diffuse-specular-sh-plus-sigma-sun-shadow'
 				|| nrdContract.normalEncoding != 'r10g10b10a2-unorm'
 				|| nrdContract.roughnessEncoding != 'linear'
 				|| nrdContract.motionSpace != 'screen-2.5d'
@@ -170,6 +170,7 @@ abstract class GenerateShaderAbi extends DefaultTask {
 				|| schema.pathControl.materialRoughnessShift != 16
 				|| !schema.pathControl.materialRoughnessMask.toString().equalsIgnoreCase('0xff')
 				|| schema.pathControl.materialRoughnessStepsPerUnit != 100
+				|| !schema.pathControl.shInputMask.toString().equalsIgnoreCase('0x01000000')
 				|| schema.pathControl.russianRouletteStart != 2) {
 			throw new GradleException(
 					'Prime path controls must preserve the camera, lighting, material, jitter, and second-bounce roulette ABI')
@@ -290,6 +291,8 @@ public final class ShaderAbi {
     public static final int DESCRIPTOR_LABPBR_SPECULAR_ATLAS = ${schema.descriptors.labPbrSpecularAtlas};
     public static final int DESCRIPTOR_NRD_SUN_LIGHTING = ${schema.descriptors.nrdSunLighting};
     public static final int DESCRIPTOR_NRD_SUN_PENUMBRA = ${schema.descriptors.nrdSunPenumbra};
+    public static final int DESCRIPTOR_NRD_DIFFUSE_DIRECTION = ${schema.descriptors.nrdDiffuseDirection};
+    public static final int DESCRIPTOR_NRD_SPECULAR_DIRECTION = ${schema.descriptors.nrdSpecularDirection};
     public static final int PATH_CAMERA_IN_WATER_MASK = ${schema.pathControl.cameraInWaterMask};
     public static final int PATH_JITTER_PHASE_MASK = ${schema.pathControl.jitterPhaseMask};
     public static final int PATH_SUN_EV_QUARTER_SHIFT = ${schema.pathControl.sunEvQuarterShift};
@@ -299,6 +302,7 @@ public final class ShaderAbi {
     public static final int PATH_MATERIAL_ROUGHNESS_SHIFT = ${schema.pathControl.materialRoughnessShift};
     public static final int PATH_MATERIAL_ROUGHNESS_MASK = ${schema.pathControl.materialRoughnessMask};
     public static final int PATH_MATERIAL_ROUGHNESS_STEPS_PER_UNIT = ${schema.pathControl.materialRoughnessStepsPerUnit};
+    public static final int PATH_SH_INPUT_MASK = ${schema.pathControl.shInputMask};
     public static final int RUSSIAN_ROULETTE_START = ${schema.pathControl.russianRouletteStart};
     public static final float CUTOUT_ALPHA_THRESHOLD = ${schema.cutoutAlphaThreshold}f;
     public static final String WORKING_COLOR_SPACE = "${colorContract.workingSpace}";
@@ -365,6 +369,7 @@ ${javaOffsets}
 #define PRIME_PATH_MATERIAL_ROUGHNESS_SHIFT ${schema.pathControl.materialRoughnessShift}u
 #define PRIME_PATH_MATERIAL_ROUGHNESS_MASK ${schema.pathControl.materialRoughnessMask}u
 #define PRIME_PATH_MATERIAL_ROUGHNESS_STEPS_PER_UNIT ${schema.pathControl.materialRoughnessStepsPerUnit}.0
+#define PRIME_PATH_SH_INPUT_MASK ${schema.pathControl.shInputMask}u
 #define PRIME_RUSSIAN_ROULETTE_START ${schema.pathControl.russianRouletteStart}u
 #define PRIME_CUTOUT_ALPHA_THRESHOLD ${schema.cutoutAlphaThreshold}
 struct PrimitiveRecord {
@@ -484,6 +489,8 @@ layout(set = 0, binding = ${schema.descriptors.nrdSpecularMaterial}, rgba16f) un
 layout(set = 0, binding = ${schema.descriptors.nrdPrimaryPosition}, rgba32f) uniform image2D primeNrdPrimaryPosition;
 layout(set = 0, binding = ${schema.descriptors.nrdSunLighting}, rgba16f) uniform image2D primeNrdSunLighting;
 layout(set = 0, binding = ${schema.descriptors.nrdSunPenumbra}, r16f) uniform image2D primeNrdSunPenumbra;
+layout(set = 0, binding = ${schema.descriptors.nrdDiffuseDirection}, rgba16f) uniform image2D primeNrdDiffuseDirection;
+layout(set = 0, binding = ${schema.descriptors.nrdSpecularDirection}, rgba16f) uniform image2D primeNrdSpecularDirection;
 #endif
 """
 		new File(glslDir, 'prime_atmosphere_contract.glsl').text = """\

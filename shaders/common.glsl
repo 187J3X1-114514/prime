@@ -26,6 +26,10 @@ float primeBlockLightRadianceMultiplier() {
             PRIME_PATH_BLOCK_LIGHT_EV_QUARTER_SHIFT)));
 }
 
+bool primeWritesNrdShInputs() {
+    return (primePush.path.w & PRIME_PATH_SH_INPUT_MASK) != 0u;
+}
+
 vec2 primeSignNotZero(vec2 value) {
     return vec2(value.x >= 0.0 ? 1.0 : -1.0, value.y >= 0.0 ? 1.0 : -1.0);
 }

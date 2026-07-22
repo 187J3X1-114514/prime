@@ -57,10 +57,10 @@ import org.lwjgl.vulkan.VkWriteDescriptorSet;
 public final class NrdDenoiser implements Destroyable, DenoiserInputs {
     private static final int COMPUTE_STAGE = VK12.VK_SHADER_STAGE_COMPUTE_BIT;
     private static final int IMAGE_USAGE = VK12.VK_IMAGE_USAGE_STORAGE_BIT | VK12.VK_IMAGE_USAGE_SAMPLED_BIT;
-    private static final int MOTION_BINDING_COUNT = 10;
+    private static final int MOTION_BINDING_COUNT = 12;
     private static final int MOTION_PUSH_SIZE = 196;
-    private static final int COMPOSITE_BINDING_COUNT = 15;
-    private static final int COMPOSITE_PUSH_SIZE = 16;
+    private static final int COMPOSITE_BINDING_COUNT = 20;
+    private static final int COMPOSITE_PUSH_SIZE = 24;
     // world.rgen writes 65504 for a sky view-Z. Keep the valid range below that sentinel while
     // remaining far beyond Minecraft's usable terrain and Prime's 16,000-block aerial volume.
     private static final float DENOISING_RANGE = 60_000.0f;
@@ -184,6 +184,21 @@ public final class NrdDenoiser implements Destroyable, DenoiserInputs {
 
     public VulkanImage noisySpecular() {
         return this.images.noisySpecular;
+    }
+
+    @Override
+    public VulkanImage diffuseDirection() {
+        return this.images.noisyDiffuseSh1;
+    }
+
+    @Override
+    public VulkanImage specularDirection() {
+        return this.images.noisySpecularSh1;
+    }
+
+    @Override
+    public boolean usesShInputs() {
+        return true;
     }
 
     public VulkanImage denoisedDiffuse() {
@@ -394,7 +409,9 @@ public final class NrdDenoiser implements Destroyable, DenoiserInputs {
                     this.width,
                     this.height,
                     0,
-                    sunRadianceMultiplier);
+                    sunRadianceMultiplier,
+                    cameraJitterX,
+                    cameraJitterY);
             return new FrameToken(
                     this,
                     bindings,
@@ -464,9 +481,17 @@ public final class NrdDenoiser implements Destroyable, DenoiserInputs {
             case NrdNative.RESOURCE_IN_VIEWZ -> this.images.viewZ;
             case NrdNative.RESOURCE_IN_DIFF_RADIANCE_HITDIST -> this.images.noisyDiffuse;
             case NrdNative.RESOURCE_IN_SPEC_RADIANCE_HITDIST -> this.images.noisySpecular;
+            case NrdNative.RESOURCE_IN_DIFF_SH0 -> this.images.noisyDiffuse;
+            case NrdNative.RESOURCE_IN_DIFF_SH1 -> this.images.noisyDiffuseSh1;
+            case NrdNative.RESOURCE_IN_SPEC_SH0 -> this.images.noisySpecular;
+            case NrdNative.RESOURCE_IN_SPEC_SH1 -> this.images.noisySpecularSh1;
             case NrdNative.RESOURCE_IN_PENUMBRA -> this.images.sunPenumbra;
             case NrdNative.RESOURCE_OUT_DIFF_RADIANCE_HITDIST -> this.images.denoisedDiffuse;
             case NrdNative.RESOURCE_OUT_SPEC_RADIANCE_HITDIST -> this.images.denoisedSpecular;
+            case NrdNative.RESOURCE_OUT_DIFF_SH0 -> this.images.denoisedDiffuse;
+            case NrdNative.RESOURCE_OUT_DIFF_SH1 -> this.images.denoisedDiffuseSh1;
+            case NrdNative.RESOURCE_OUT_SPEC_SH0 -> this.images.denoisedSpecular;
+            case NrdNative.RESOURCE_OUT_SPEC_SH1 -> this.images.denoisedSpecularSh1;
             case NrdNative.RESOURCE_OUT_SHADOW_TRANSLUCENCY -> this.images.sunShadow;
             case NrdNative.RESOURCE_OUT_VALIDATION -> this.images.validation;
             case NrdNative.RESOURCE_TRANSIENT_POOL -> checkedPoolImage(
@@ -789,6 +814,8 @@ public final class NrdDenoiser implements Destroyable, DenoiserInputs {
     private static final class Images implements Destroyable {
         private final VulkanImage noisyDiffuse;
         private final VulkanImage noisySpecular;
+        private final VulkanImage noisyDiffuseSh1;
+        private final VulkanImage noisySpecularSh1;
         private final VulkanImage normalRoughness;
         private final VulkanImage viewZ;
         private final VulkanImage motion;
@@ -803,6 +830,8 @@ public final class NrdDenoiser implements Destroyable, DenoiserInputs {
         private final VulkanImage validation;
         private final VulkanImage denoisedDiffuse;
         private final VulkanImage denoisedSpecular;
+        private final VulkanImage denoisedDiffuseSh1;
+        private final VulkanImage denoisedSpecularSh1;
         private final VulkanImage fsrReactiveMask;
         private final VulkanImage fsrTransparencyCompositionMask;
         private final VulkanImage[] permanentPool;
@@ -813,6 +842,8 @@ public final class NrdDenoiser implements Destroyable, DenoiserInputs {
         private Images(
                 VulkanImage noisyDiffuse,
                 VulkanImage noisySpecular,
+                VulkanImage noisyDiffuseSh1,
+                VulkanImage noisySpecularSh1,
                 VulkanImage normalRoughness,
                 VulkanImage viewZ,
                 VulkanImage motion,
@@ -827,6 +858,8 @@ public final class NrdDenoiser implements Destroyable, DenoiserInputs {
                 VulkanImage validation,
                 VulkanImage denoisedDiffuse,
                 VulkanImage denoisedSpecular,
+                VulkanImage denoisedDiffuseSh1,
+                VulkanImage denoisedSpecularSh1,
                 VulkanImage fsrReactiveMask,
                 VulkanImage fsrTransparencyCompositionMask,
                 VulkanImage[] permanentPool,
@@ -834,6 +867,8 @@ public final class NrdDenoiser implements Destroyable, DenoiserInputs {
                 VulkanImage[] ownedImages) {
             this.noisyDiffuse = noisyDiffuse;
             this.noisySpecular = noisySpecular;
+            this.noisyDiffuseSh1 = noisyDiffuseSh1;
+            this.noisySpecularSh1 = noisySpecularSh1;
             this.normalRoughness = normalRoughness;
             this.viewZ = viewZ;
             this.motion = motion;
@@ -848,6 +883,8 @@ public final class NrdDenoiser implements Destroyable, DenoiserInputs {
             this.validation = validation;
             this.denoisedDiffuse = denoisedDiffuse;
             this.denoisedSpecular = denoisedSpecular;
+            this.denoisedDiffuseSh1 = denoisedDiffuseSh1;
+            this.denoisedSpecularSh1 = denoisedSpecularSh1;
             this.fsrReactiveMask = fsrReactiveMask;
             this.fsrTransparencyCompositionMask = fsrTransparencyCompositionMask;
             this.permanentPool = permanentPool;
@@ -872,6 +909,12 @@ public final class NrdDenoiser implements Destroyable, DenoiserInputs {
                         height,
                         VK12.VK_FORMAT_R16G16B16A16_SFLOAT,
                         debugPrefix + " noisy specular");
+                VulkanImage noisyDiffuseSh1 = createImage(
+                        context, created, width, height, VK12.VK_FORMAT_R16G16B16A16_SFLOAT,
+                        debugPrefix + " noisy diffuse SH1");
+                VulkanImage noisySpecularSh1 = createImage(
+                        context, created, width, height, VK12.VK_FORMAT_R16G16B16A16_SFLOAT,
+                        debugPrefix + " noisy specular SH1");
                 VulkanImage normal = createImage(
                         context, created, width, height, VK12.VK_FORMAT_A2B10G10R10_UNORM_PACK32, debugPrefix + " normal roughness");
                 VulkanImage viewZ = createImage(
@@ -910,6 +953,12 @@ public final class NrdDenoiser implements Destroyable, DenoiserInputs {
                         height,
                         VK12.VK_FORMAT_R16G16B16A16_SFLOAT,
                         debugPrefix + " denoised specular");
+                VulkanImage denoisedDiffuseSh1 = createImage(
+                        context, created, width, height, VK12.VK_FORMAT_R16G16B16A16_SFLOAT,
+                        debugPrefix + " denoised diffuse SH1");
+                VulkanImage denoisedSpecularSh1 = createImage(
+                        context, created, width, height, VK12.VK_FORMAT_R16G16B16A16_SFLOAT,
+                        debugPrefix + " denoised specular SH1");
                 VulkanImage fsrReactiveMask = createImage(
                         context, created, width, height, VK12.VK_FORMAT_R8_UNORM, debugPrefix + " FSR reactive mask");
                 VulkanImage fsrTransparencyCompositionMask = createImage(
@@ -921,6 +970,8 @@ public final class NrdDenoiser implements Destroyable, DenoiserInputs {
                 return new Images(
                         noisy,
                         noisySpecular,
+                        noisyDiffuseSh1,
+                        noisySpecularSh1,
                         normal,
                         viewZ,
                         motion,
@@ -935,6 +986,8 @@ public final class NrdDenoiser implements Destroyable, DenoiserInputs {
                         validation,
                         denoised,
                         denoisedSpecular,
+                        denoisedDiffuseSh1,
+                        denoisedSpecularSh1,
                         fsrReactiveMask,
                         fsrTransparencyCompositionMask,
                         permanent,
@@ -1609,7 +1662,9 @@ public final class NrdDenoiser implements Destroyable, DenoiserInputs {
                     images.noisySpecular,
                     images.normalRoughness,
                     images.material,
-                    images.specularMaterial
+                    images.specularMaterial,
+                    images.noisyDiffuseSh1,
+                    images.noisySpecularSh1
                 };
                 VkDescriptorImageInfo.Buffer imageInfos =
                         VkDescriptorImageInfo.calloc(MOTION_BINDING_COUNT, stack);
@@ -1832,7 +1887,12 @@ public final class NrdDenoiser implements Destroyable, DenoiserInputs {
                     images.fsrReactiveMask,
                     images.fsrTransparencyCompositionMask,
                     images.sunLighting,
-                    images.sunShadow
+                    images.sunShadow,
+                    images.denoisedDiffuseSh1,
+                    images.denoisedSpecularSh1,
+                    images.normalRoughness,
+                    images.viewZ,
+                    images.primaryPosition
                 };
                 VkDescriptorImageInfo.Buffer imageInfos =
                         VkDescriptorImageInfo.calloc(COMPOSITE_BINDING_COUNT, stack);
@@ -1881,7 +1941,9 @@ public final class NrdDenoiser implements Destroyable, DenoiserInputs {
                 int width,
                 int height,
                 int diagnosticMode,
-                float sunRadianceMultiplier) {
+                float sunRadianceMultiplier,
+                float cameraJitterX,
+                float cameraJitterY) {
             try (MemoryStack stack = MemoryStack.stackPush()) {
                 VK12.vkCmdBindPipeline(
                         commandBuffer, VK12.VK_PIPELINE_BIND_POINT_COMPUTE, this.pipeline);
@@ -1897,6 +1959,8 @@ public final class NrdDenoiser implements Destroyable, DenoiserInputs {
                 push.putInt(4, height);
                 push.putInt(8, diagnosticMode);
                 push.putFloat(12, sunRadianceMultiplier);
+                push.putFloat(16, cameraJitterX);
+                push.putFloat(20, cameraJitterY);
                 VK12.vkCmdPushConstants(
                         commandBuffer,
                         this.pipelineLayout,

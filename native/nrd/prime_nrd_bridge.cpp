@@ -15,7 +15,7 @@
 
 namespace
 {
-    constexpr uint32_t PRIME_NRD_ABI_VERSION = 8;
+    constexpr uint32_t PRIME_NRD_ABI_VERSION = 9;
     constexpr nrd::Identifier PRIME_NRD_REBLUR_ID = 0;
     constexpr nrd::Identifier PRIME_NRD_SIGMA_SUN_ID = 1;
 
@@ -265,7 +265,7 @@ PRIME_NRD_EXPORT int32_t primeNrdCreate(
         return -2;
 
     const std::array<nrd::DenoiserDesc, 2> denoisers = {{
-        {PRIME_NRD_REBLUR_ID, nrd::Denoiser::REBLUR_DIFFUSE_SPECULAR},
+        {PRIME_NRD_REBLUR_ID, nrd::Denoiser::REBLUR_DIFFUSE_SPECULAR_SH},
         {PRIME_NRD_SIGMA_SUN_ID, nrd::Denoiser::SIGMA_SHADOW},
     }};
     const nrd::InstanceCreationDesc creation = {

@@ -14,7 +14,7 @@ cmake --build build/native/nrd --config Release --target prime_nrd --parallel
 ```
 
 The build is deliberately pinned to NRD 4.17.4, SPIR-V only, with one NRD instance containing
-`REBLUR_DIFFUSE_SPECULAR` and `SIGMA_SHADOW`, no NRI and no quad-intrinsics extension. Realtime
+`REBLUR_DIFFUSE_SPECULAR_SH` and `SIGMA_SHADOW`, no NRI and no quad-intrinsics extension. Realtime
 rendering traces one complete path per pixel. REBLUR uses 63 main/stabilized-history frames,
 10 fast-history frames and a 4-frame history fix for area-light and indirect transport. Direct sun remains a
 separate signal and consumes SIGMA's filtered visibility at composition.

@@ -85,7 +85,10 @@ public final class NrdFsrPostProcessor implements RealtimePostProcessor {
                     denoiser.fsrTransparencyCompositionMask(),
                     displayOutput);
             nrdDebugPresent = NativeDebugPresentPass.create(
-                    context, denoiser.validation(), displayOutput);
+                    context,
+                    displayOutput,
+                    denoiser.validation(),
+                    denoiser.rawNumericalDiagnostic());
             return new NrdFsrPostProcessor(
                     quality,
                     renderWidth,
@@ -189,7 +192,8 @@ public final class NrdFsrPostProcessor implements RealtimePostProcessor {
                 token.nrdDebugView);
         this.upscaler.record(commandBuffer, token.fsr, parameters.displayOverexposure());
         if (token.nrdDebugView != NrdDiagnostics.Mode.OFF) {
-            this.nrdDebugPresent.record(commandBuffer);
+            this.nrdDebugPresent.record(
+                    commandBuffer, token.nrdDebugView.presentSource());
         }
     }
 

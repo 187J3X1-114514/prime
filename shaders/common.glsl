@@ -30,6 +30,141 @@ bool primeWritesNrdShInputs() {
     return (primePush.path.w & PRIME_PATH_SH_INPUT_MASK) != 0u;
 }
 
+bool primeWritesRawNumericalDiagnostic() {
+    return (primePush.path.w & PRIME_PATH_RAW_NUMERICAL_MASK) != 0u;
+}
+
+const uint PRIME_NUMERICAL_NAN = 1u;
+const uint PRIME_NUMERICAL_POSITIVE_INFINITY = 2u;
+const uint PRIME_NUMERICAL_NEGATIVE_INFINITY = 4u;
+const uint PRIME_NUMERICAL_FINITE_NEGATIVE = 8u;
+const uint PRIME_NUMERICAL_ABOVE_FP16 = 16u;
+const uint PRIME_NUMERICAL_REJECTED = 64u;
+const uint PRIME_NUMERICAL_ABOVE_UNIT = 128u;
+const uint PRIME_NUMERICAL_INVALID_DIRECTION = 256u;
+const float PRIME_NUMERICAL_FP16_MAX = 65504.0;
+
+uint primeRawNumericalFlags = 0u;
+
+uint primeClassifyNonFinite(float value) {
+    if (isnan(value)) return PRIME_NUMERICAL_NAN;
+    if (!isinf(value)) return 0u;
+    return value > 0.0
+            ? PRIME_NUMERICAL_POSITIVE_INFINITY
+            : PRIME_NUMERICAL_NEGATIVE_INFINITY;
+}
+
+uint primeClassifyNonFinite(vec3 value) {
+    return primeClassifyNonFinite(value.x)
+            | primeClassifyNonFinite(value.y)
+            | primeClassifyNonFinite(value.z);
+}
+
+uint primeClassifyNonnegative(float value) {
+    uint flags = primeClassifyNonFinite(value);
+    return flags == 0u && value < 0.0
+            ? PRIME_NUMERICAL_FINITE_NEGATIVE
+            : flags;
+}
+
+uint primeClassifyNonnegative(vec3 value) {
+    return primeClassifyNonnegative(value.x)
+            | primeClassifyNonnegative(value.y)
+            | primeClassifyNonnegative(value.z);
+}
+
+uint primeClassifyRadiance(float value) {
+    uint flags = primeClassifyNonnegative(value);
+    if (flags != 0u) return flags;
+    if (value > PRIME_NUMERICAL_FP16_MAX) flags |= PRIME_NUMERICAL_ABOVE_FP16;
+    return flags;
+}
+
+uint primeClassifyRadiance(vec3 value) {
+    return primeClassifyRadiance(value.x)
+            | primeClassifyRadiance(value.y)
+            | primeClassifyRadiance(value.z);
+}
+
+uint primeClassifyUnit(float value) {
+    uint flags = primeClassifyNonnegative(value);
+    return flags == 0u && value > 1.0
+            ? PRIME_NUMERICAL_ABOVE_UNIT
+            : flags;
+}
+
+uint primeClassifyUnit(vec3 value) {
+    return primeClassifyUnit(value.x)
+            | primeClassifyUnit(value.y)
+            | primeClassifyUnit(value.z);
+}
+
+uint primeClassifyDirection(vec3 value) {
+    uint flags = primeClassifyNonFinite(value);
+    if (flags != 0u) return flags;
+    float lengthSquared = dot(value, value);
+    return isnan(lengthSquared)
+            || isinf(lengthSquared)
+            || !(lengthSquared > 1.0e-12)
+            || abs(lengthSquared - 1.0) > 1.0e-3
+            ? PRIME_NUMERICAL_INVALID_DIRECTION
+            : 0u;
+}
+
+void primeRecordNonFinite(float value) {
+    if (primeWritesRawNumericalDiagnostic()) {
+        primeRawNumericalFlags |= primeClassifyNonFinite(value);
+    }
+}
+
+void primeRecordNonFinite(vec3 value) {
+    if (primeWritesRawNumericalDiagnostic()) {
+        primeRawNumericalFlags |= primeClassifyNonFinite(value);
+    }
+}
+
+void primeRecordNonnegative(float value) {
+    if (primeWritesRawNumericalDiagnostic()) {
+        primeRawNumericalFlags |= primeClassifyNonnegative(value);
+    }
+}
+
+void primeRecordNonnegative(vec3 value) {
+    if (primeWritesRawNumericalDiagnostic()) {
+        primeRawNumericalFlags |= primeClassifyNonnegative(value);
+    }
+}
+
+void primeRecordRadiance(vec3 value) {
+    if (primeWritesRawNumericalDiagnostic()) {
+        primeRawNumericalFlags |= primeClassifyRadiance(value);
+    }
+}
+
+void primeRecordUnit(float value) {
+    if (primeWritesRawNumericalDiagnostic()) {
+        primeRawNumericalFlags |= primeClassifyUnit(value);
+    }
+}
+
+void primeRecordUnit(vec3 value) {
+    if (primeWritesRawNumericalDiagnostic()) {
+        primeRawNumericalFlags |= primeClassifyUnit(value);
+    }
+}
+
+void primeRecordDirection(vec3 value) {
+    if (primeWritesRawNumericalDiagnostic()) {
+        primeRawNumericalFlags |= primeClassifyDirection(value);
+    }
+}
+
+void primeRecordRejected() {
+    if (primeWritesRawNumericalDiagnostic()) {
+        primeRawNumericalFlags |= PRIME_NUMERICAL_REJECTED;
+    }
+}
+
 vec2 primeSignNotZero(vec2 value) {
     return vec2(value.x >= 0.0 ? 1.0 : -1.0, value.y >= 0.0 ? 1.0 : -1.0);
 }

@@ -32,12 +32,10 @@ struct LightEvaluation {
 // path escapes; the sun and area-light adapters are sampled explicitly and perform no selection.
 
 const float PRIME_FLOAT_MAX = 3.402823466e+38;
-// Required f32 stability boundary. MIS factors are later multiplied by values that may be exactly
-// zero; allowing the reciprocal PDF to overflow creates 0 * Inf = NaN. The cap is therefore an
-// intentional finite-precision bias and must not be removed as an algebraic "unbiasing" cleanup.
-const float PRIME_MAXIMUM_INVERSE_PDF = 1.0e30;
 
 float primePowerHeuristic(float firstPdf, float secondPdf) {
+    primeRecordNonnegative(firstPdf);
+    primeRecordNonnegative(secondPdf);
     if (isnan(firstPdf) || !(firstPdf > 0.0)) {
         return 0.0;
     }
@@ -60,25 +58,29 @@ float primePowerHeuristic(float firstPdf, float secondPdf) {
 }
 
 float primePowerHeuristicOverPdf(float sampledPdf, float otherPdf) {
+    primeRecordNonnegative(sampledPdf);
+    primeRecordNonnegative(otherPdf);
     if (isnan(sampledPdf) || !(sampledPdf > 0.0) || isinf(sampledPdf)) {
         return 0.0;
     }
     if (isnan(otherPdf) || !(otherPdf > 0.0)) {
-        return min(1.0 / sampledPdf, PRIME_MAXIMUM_INVERSE_PDF);
+        float result = 1.0 / sampledPdf;
+        primeRecordNonnegative(result);
+        return result;
     }
     if (isinf(otherPdf)) {
         return 0.0;
     }
     if (sampledPdf >= otherPdf) {
         float ratio = otherPdf / sampledPdf;
-        return min(
-                (1.0 / sampledPdf) / (1.0 + ratio * ratio),
-                PRIME_MAXIMUM_INVERSE_PDF);
+        float result = (1.0 / sampledPdf) / (1.0 + ratio * ratio);
+        primeRecordNonnegative(result);
+        return result;
     }
     float ratio = sampledPdf / otherPdf;
-    return min(
-            (ratio / otherPdf) / (1.0 + ratio * ratio),
-            PRIME_MAXIMUM_INVERSE_PDF);
+    float result = (ratio / otherPdf) / (1.0 + ratio * ratio);
+    primeRecordNonnegative(result);
+    return result;
 }
 
 vec3 primeEnvironmentRadiance(IntegratorRecord integrator, vec3 direction) {
@@ -376,6 +378,11 @@ float primeAreaSolidAnglePdf(
         float areaPdf) {
     vec3 delta = lightPosition - origin;
     float distanceSquared = dot(delta, delta);
+    primeRecordNonFinite(origin);
+    primeRecordNonFinite(lightPosition);
+    primeRecordNonnegative(distanceSquared);
+    primeRecordUnit(lightCosine);
+    primeRecordNonnegative(areaPdf);
     float cosine = clamp(lightCosine, 0.0, 1.0);
     if (!(distanceSquared > 0.0)
             || isnan(distanceSquared)

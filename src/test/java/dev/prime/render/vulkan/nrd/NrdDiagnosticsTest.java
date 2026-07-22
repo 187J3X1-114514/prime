@@ -3,6 +3,7 @@ package dev.prime.render.vulkan.nrd;
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.Arrays;
@@ -10,21 +11,18 @@ import org.junit.jupiter.api.Test;
 
 final class NrdDiagnosticsTest {
     @Test
-    void modesSelectExactlyOneFinalValidationSource() {
+    void modesSelectNativeValidationAndPresentationSources() {
         assertArrayEquals(
-                new int[] {0, 1},
+                new int[] {0, 1, 0},
                 Arrays.stream(NrdDiagnostics.Mode.values())
                         .mapToInt(NrdDiagnostics.Mode::outputSelector)
                         .toArray());
-        for (NrdDiagnostics.Mode selected : NrdDiagnostics.Mode.values()) {
-            for (NrdDiagnostics.Mode denoiser : NrdDiagnostics.Mode.values()) {
-                boolean expected = selected != NrdDiagnostics.Mode.OFF && selected == denoiser;
-                assertEquals(expected, selected.enablesValidationFor(denoiser));
-            }
-        }
-        assertFalse(NrdDiagnostics.Mode.OFF.enablesValidationFor(NrdDiagnostics.Mode.OPAQUE));
-        assertTrue(NrdDiagnostics.Mode.OPAQUE.enablesValidationFor(
-                NrdDiagnostics.Mode.OPAQUE));
+        assertFalse(NrdDiagnostics.Mode.OFF.nativeValidation());
+        assertTrue(NrdDiagnostics.Mode.OPAQUE.nativeValidation());
+        assertFalse(NrdDiagnostics.Mode.RAW_NUMERICAL.nativeValidation());
+        assertThrows(IllegalStateException.class, NrdDiagnostics.Mode.OFF::presentSource);
+        assertEquals(0, NrdDiagnostics.Mode.OPAQUE.presentSource());
+        assertEquals(1, NrdDiagnostics.Mode.RAW_NUMERICAL.presentSource());
     }
 
     @Test
@@ -36,5 +34,11 @@ final class NrdDiagnosticsTest {
                 NrdDiagnostics.Mode.OPAQUE,
                 NrdDiagnostics.Mode.fromId("reprojection_error"));
         assertEquals(NrdDiagnostics.Mode.OPAQUE, NrdDiagnostics.Mode.fromId("motion"));
+        assertEquals(
+                NrdDiagnostics.Mode.RAW_NUMERICAL,
+                NrdDiagnostics.Mode.fromId("raw_nonfinite"));
+        assertEquals(
+                NrdDiagnostics.Mode.RAW_NUMERICAL,
+                NrdDiagnostics.Mode.fromId("raw_numerical"));
     }
 }

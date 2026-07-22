@@ -147,7 +147,7 @@ void main() {
     vec3 demodulatedDiffuse = primeNrdDemodulate(rawDiffuse.rgb, diffuseAlbedo);
     vec3 demodulatedSpecular = primeNrdDemodulate(rawSpecular.rgb, specularAlbedo);
     primeNrdClampRadiancePair(
-            demodulatedDiffuse, demodulatedSpecular, PRIME_NRD_RADIANCE_LIMIT);
+            demodulatedDiffuse, demodulatedSpecular, PRIME_NRD_FP16_MAX);
     imageStore(
             primeNoisyDiffuse,
             pixel,

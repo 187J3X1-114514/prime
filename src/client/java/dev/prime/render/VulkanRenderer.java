@@ -25,6 +25,7 @@ import dev.prime.render.vulkan.VulkanContext;
 import dev.prime.render.vulkan.VulkanImage;
 import dev.prime.render.vulkan.dlss.DlssRrBootstrap;
 import dev.prime.render.vulkan.dlss.DlssRrNative;
+import dev.prime.render.vulkan.nrd.NrdDiagnostics;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.util.List;
@@ -412,7 +413,10 @@ public final class VulkanRenderer implements AutoCloseable {
                     frameCameraInWater,
                     lighting,
                     material,
-                    processor.targets().usesShInputs());
+                    processor.targets().usesShInputs(),
+                    images.mode == PostProcessingMode.NRD_FSR
+                            && postParameters.nrdDebugView()
+                                    == NrdDiagnostics.Mode.RAW_NUMERICAL);
             this.pipeline.trace(commandBuffer, pushConstants, renderWidth, renderHeight);
             processor.record(commandBuffer, postFrame, postParameters);
             this.finishAtlasRead(commandBuffer, atlasView.texture());
@@ -562,6 +566,7 @@ public final class VulkanRenderer implements AutoCloseable {
                     this.screenshotCameraInWater,
                     lighting,
                     material,
+                    false,
                     false);
             this.pipeline.traceScreenshot(commandBuffer, pushConstants, width, height);
             this.prepareScreenshotDisplay(commandBuffer, images.accumulation);
@@ -1088,7 +1093,8 @@ public final class VulkanRenderer implements AutoCloseable {
             boolean cameraInWater,
             LightingSettings.Snapshot lighting,
             MaterialSettings.Snapshot material,
-            boolean shInput) {
+            boolean shInput,
+            boolean rawNumericalDiagnostic) {
         ByteBuffer buffer = stack.calloc(ShaderAbi.PUSH_CONSTANT_SIZE).order(ByteOrder.nativeOrder());
         camera.inverseViewProjection().get(
                 ShaderAbi.PUSH_INVERSE_VIEW_PROJECTION_OFFSET, buffer);
@@ -1120,7 +1126,8 @@ public final class VulkanRenderer implements AutoCloseable {
                         lighting.sunQuarterSteps(),
                         lighting.blockLightQuarterSteps(),
                         material.roughnessSteps(),
-                        shInput);
+                        shInput,
+                        rawNumericalDiagnostic);
         buffer.putInt(pathOffset + 3 * Integer.BYTES, materialLightingControl);
         return buffer.position(0).limit(ShaderAbi.PUSH_CONSTANT_SIZE);
     }

@@ -41,6 +41,30 @@ final class NrdNumericalStabilityTest {
         assertEquals(FP16_MAX, sanitizeHitDistance(1.0e9), 0.0);
     }
 
+    @Test
+    void fp16BoundaryDoesNotDarkenRepresentableDemodulatedRadiance() {
+        double radiance = 4.0;
+        double albedo = 0.1;
+        assertEquals(1.6, remodulateAfterLimit(radiance, albedo, 16.0), 1.0e-12);
+        assertEquals(radiance, remodulateAfterLimit(radiance, albedo, FP16_MAX), 0.0);
+    }
+
+    @Test
+    void directionalMomentPreservesDirectAndContinuationEnergy() {
+        double directY = 2.0;
+        double continuationY = 6.0;
+        double totalY = directY + continuationY;
+        double effectiveX = directY / totalY;
+        double effectiveY = continuationY / totalY;
+
+        assertEquals(directY, effectiveX * totalY, 0.0);
+        assertEquals(continuationY, effectiveY * totalY, 0.0);
+        double overwrittenX = 0.0;
+        double overwrittenY = totalY;
+        assertTrue(Math.abs(overwrittenX - directY) > 1.0);
+        assertTrue(Math.abs(overwrittenY - continuationY) > 1.0);
+    }
+
     private static double oldThinWallTransmission(double reflection, double absorption) {
         double transmission = 1.0 - reflection;
         return transmission * transmission * absorption
@@ -65,6 +89,10 @@ final class NrdNumericalStabilityTest {
 
     private static double sanitizeHitDistance(double value) {
         return Double.isFinite(value) ? Math.clamp(value, 0.0, FP16_MAX) : FP16_MAX;
+    }
+
+    private static double remodulateAfterLimit(double radiance, double albedo, double limit) {
+        return Math.min(radiance / albedo, limit) * albedo;
     }
 
     private record Energy(double reflection, double transmission) {}

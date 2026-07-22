@@ -176,7 +176,8 @@
     "nrdSunLighting": 20,
     "nrdSunPenumbra": 21,
     "nrdDiffuseDirection": 22,
-    "nrdSpecularDirection": 23
+    "nrdSpecularDirection": 23,
+    "rawNumericalDiagnostic": 24
   },
   "pathControl": {
     "cameraInWaterMask": "0x80000000",
@@ -189,6 +190,7 @@
     "materialRoughnessMask": "0xff",
     "materialRoughnessStepsPerUnit": 100,
     "shInputMask": "0x01000000",
+    "rawNumericalMask": "0x02000000",
     "russianRouletteStart": 2
   },
   "nrdContract": {

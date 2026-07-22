@@ -84,7 +84,7 @@ LabPBR 是材质贴图的存储标准，不是完整的表面/体积散射模型
 | ray origin offset、有限 `tMax` | 数值/场景范围近似 | 保留；物理 shading point 与 traversal origin 已分离 |
 | NaN/Inf/越界浮点样本拒绝 | 有限精度安全边界 | 参考累积不以黑色替代，直接保留旧均值与计数 |
 | 材质参数 clamp/缺省值 | 场景模型近似 | 不属于相对当前场景模型的 Monte Carlo 偏差，但必须由材质适配层声明 |
-| NRD illumination 16.0、FP16 65504 边界 | 实时重建输入偏差 | 只存在于 NRD/RR 准备边界；截图 RGBA32F 路径不使用 |
+| NRD/RR FP16 65504 边界 | 实时重建输入偏差 | 只存在于实时后端的可表示范围边界；截图 RGBA32F 路径不使用 |
 | NRD anti-firefly、history fix、prepass | 空间/时间滤波偏差 | 后端有意行为，不反馈积分器 |
 | FSR 与 DLSS RR 时间超分/历史锁定 | 重建偏差 | 后端有意行为，可通过参考累积对照 |
 | RR 透明 Guide | 未提交 | 固定 1 spp 只积分 beauty path，不追加透明辅助路径 |
@@ -100,10 +100,10 @@ LabPBR 是材质贴图的存储标准，不是完整的表面/体积散射模型
 
 ### NRD-FSR
 
-当前使用 `REBLUR_DIFFUSE_SPECULAR + SIGMA_SHADOW + FSR 3.1.4`：
+当前使用 `REBLUR_DIFFUSE_SPECULAR_SH + SIGMA_SHADOW + FSR 3.1.4`：
 
 - 已提供 non-jittered 2.5D motion、world normal、linear roughness、view-Z；
-- diffuse/specular 按方向能量拆分并 demodulate，分别附带 normalized hit distance；
+- diffuse/specular 按方向能量拆分并 demodulate，SH1 保存主面积光与延续路径的辐射加权一阶方向矩，分别附带 normalized hit distance；
 - 太阳 radiance 与 visibility/penumbra 分离，SIGMA 只过滤 shadow signal；
 - R10G10B10A2 的 A2 现在区分普通介电、金属、透明接口和 foliage，避免跨材质历史混合；
 - 概率 lobe 采样使用 5×5 hit-distance reconstruction 和 30/50 像素 prepass。
@@ -115,8 +115,7 @@ LabPBR 是材质贴图的存储标准，不是完整的表面/体积散射模型
 2. **Primary Surface Replacement**：纯镜面/delta chain 可把 first non-delta virtual surface 作为 NRD
    主表面。当前只传播 albedo，primary depth/normal 仍是首个可见接口；镜面房间和多层折射是边界。
 3. **Disocclusion threshold mix**：适合曲面镜、细叶片和未来法线贴图造成的高曲率区域。
-4. **SH signal**：能保留方向信息并改善 normal mapping 后的宏/微细节，但增加输入、输出与 resolve 带宽。
-5. **Translucent shadow**：当前太阳 visibility 是二值遮挡；有色半透明阴影需要 SIGMA translucent signal
+4. **Translucent shadow**：当前太阳 visibility 是二值遮挡；有色半透明阴影需要 SIGMA translucent signal
    与物理 shadow transmittance 一起设计。
 
 REBLUR 仍比 RELAX 更适合当前“原始 1 spp、单路径、概率 lobe”信号。若未来引入 RTXDI/ReSTIR 或显著
@@ -159,7 +158,7 @@ RR 对采样独立性比 NRD 更敏感。公共采样器继续使用逐像素、
    放进物理积分器；降噪器只接收其结果与可定义的 Guide。
 5. **真实 SSS**：优先 BSSRDF/random walk 的无偏版本；若另设实时 screen-space SSS，必须作为独立的
    有偏 Denoiser 后端能力，并启用 RR SSS Guide。
-6. **SH/各向异性扩展**：在正常贴图和纤维材质到来后，再评估 NRD SH 与新的 LabPBR 外部材质参数。
+6. **SH/各向异性扩展**：当前 SH1 已覆盖单次主面积光与延续路径；正常贴图和纤维材质到来后，再评估更完整的方向分布与新的 LabPBR 外部材质参数。
 
 每一项新能力都应同时回答三个问题：它改变了场景模型还是估计器；它需要哪些可从同一路径无偏观测的
 Guide；参考累积如何证明实时后端的变化只发生在预期的有偏重建边界。

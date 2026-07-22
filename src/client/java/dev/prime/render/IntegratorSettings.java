@@ -50,7 +50,8 @@ final class IntegratorSettings {
             int sunQuarterSteps,
             int blockLightQuarterSteps,
             int materialRoughnessSteps,
-            boolean shInput) {
+            boolean shInput,
+            boolean rawNumericalDiagnostic) {
         if (materialRoughnessSteps < MaterialSettings.MINIMUM_ROUGHNESS_STEPS
                 || materialRoughnessSteps > MaterialSettings.MAXIMUM_ROUGHNESS_STEPS
                 || (materialRoughnessSteps & ~ShaderAbi.PATH_MATERIAL_ROUGHNESS_MASK) != 0) {
@@ -58,6 +59,7 @@ final class IntegratorSettings {
                     "Default material roughness does not fit in the path-control ABI");
         }
         return (shInput ? ShaderAbi.PATH_SH_INPUT_MASK : 0)
+                | (rawNumericalDiagnostic ? ShaderAbi.PATH_RAW_NUMERICAL_MASK : 0)
                 | packEvQuarterSteps(sunQuarterSteps, ShaderAbi.PATH_SUN_EV_QUARTER_SHIFT)
                 | packEvQuarterSteps(
                         blockLightQuarterSteps,

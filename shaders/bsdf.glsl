@@ -20,12 +20,6 @@ struct PrimeTransmissiveBsdfSample {
 };
 
 const float PRIME_GLASS_MINIMUM_TINT_WEIGHT = 0.75;
-// Required f32 stability boundary, not an optional firefly clamp. A smaller positive density can
-// produce an infinite reciprocal weight; a later zero visibility/throughput factor then evaluates
-// as 0 * Inf and contaminates the path with NaN. This deliberately truncates an unrepresentable
-// tail of the mathematical estimator. Do not remove it unless every downstream product has been
-// made safe for extended-range weights and the NaN regression contract is replaced.
-const float PRIME_MINIMUM_BSDF_SAMPLE_PDF = 1.0e-4;
 // Rec.2020's near-monochromatic primaries are 630, 532 and 467 nm. Pope and Fry's measured
 // absorption coefficients for pure water at 22 C are 0.2916 m^-1 at 630 nm and, by linear
 // interpolation of their Table 3, 0.04444 m^-1 at 532 nm and 0.010182 m^-1 at 467 nm.
@@ -36,10 +30,11 @@ const vec3 PRIME_REC2020_PRIMARY_WAVELENGTHS_NM = vec3(630.0, 532.0, 467.0);
 const vec3 PRIME_PURE_WATER_ABSORPTION_M_INV = vec3(0.2916, 0.04444, 0.010182);
 
 vec3 primeBsdfSampleWeight(PrimeRcSample sampleValue) {
-    // Valid and positive is insufficient in f32: a subnormal PDF can still overflow this division
-    // to Inf, which later becomes NaN when multiplied by an exactly zero transport factor.
-    return sampleValue.throughput.value
-            / max(sampleValue.pdf, PRIME_MINIMUM_BSDF_SAMPLE_PDF);
+    primeRecordNonnegative(sampleValue.throughput.value);
+    primeRecordNonnegative(sampleValue.pdf);
+    vec3 weight = sampleValue.throughput.value / sampleValue.pdf;
+    primeRecordNonnegative(weight);
+    return weight;
 }
 
 bool primeFiniteNonnegative(vec3 value) {
@@ -369,11 +364,15 @@ struct PrimeBsdfComponents {
 };
 
 PrimeBsdfComponents primeSanitizeBsdfComponents(PrimeBsdfComponents value) {
+    primeRecordNonnegative(value.diffuseValue);
+    primeRecordNonnegative(value.specularValue);
+    primeRecordNonnegative(value.pdf);
     if (!(value.pdf >= 0.0)
             || isnan(value.pdf)
             || isinf(value.pdf)
             || !primeFiniteNonnegative(value.diffuseValue)
             || !primeFiniteNonnegative(value.specularValue)) {
+        primeRecordRejected();
         value.diffuseValue = vec3(0.0);
         value.specularValue = vec3(0.0);
         value.pdf = 0.0;
@@ -407,9 +406,7 @@ PrimeBsdfComponents primeEvaluateOpaqueComponents(
     vec3 localView = primeRcOnbToLocal(state.material.geometry.onb, viewDirection);
     vec3 localScatter = primeRcOnbToLocal(state.material.geometry.onb, scatterDirection);
     float cosine = abs(localScatter.z);
-    // All component evaluations below divide f*|cos| by cosine. Treat the f32 grazing band as
-    // degenerate so a finite closure value cannot become Inf and subsequently poison MIS with NaN.
-    if (cosine <= PRIME_BSDF_EPSILON) {
+    if (!(cosine > 0.0)) {
         return result;
     }
     bool subsurface = state.material.weight.subsurface > 0.0;
@@ -521,6 +518,7 @@ PrimeMinecraftMirrorSplit primeMinecraftMirrorSplit(
             localView.z,
             state.specularFresnel.ior);
     float resolvedEnergy = primeRcReduceSum(directionalEnergy);
+    primeRecordNonnegative(vec3(directionalEnergy, resolvedEnergy));
     float reflectedFraction = resolvedEnergy > 0.0
                     && !isnan(resolvedEnergy)
                     && !isinf(resolvedEnergy)
@@ -531,6 +529,8 @@ PrimeMinecraftMirrorSplit primeMinecraftMirrorSplit(
     result.reflectance = reflectedFraction * state.specularFresnel.color;
     result.probability = clamp(
             primeRcSpectrumToWeight(result.reflectance), 0.0, 1.0);
+    primeRecordUnit(result.reflectance);
+    primeRecordUnit(result.probability);
     return result;
 }
 
@@ -576,16 +576,18 @@ BsdfEvaluation primeEvaluateMinecraftTransmission(
     if (evaluation.pdf > 0.0
             && !isnan(evaluation.pdf)
             && !isinf(evaluation.pdf)
-            // This is the same mandatory f32 division guard as opaque component evaluation.
-            && cosine > PRIME_BSDF_EPSILON
+            && cosine > 0.0
             && evaluation.throughput.flags != PRIME_RC_FLAG_NONE
             && primeFiniteNonnegative(evaluation.throughput.value)) {
         result.value = evaluation.throughput.value / cosine;
         result.pdf = evaluation.pdf * (state.geometryThinWalled == 0u
                 ? (closedReflection ? mirror.probability : 1.0 - mirror.probability)
                 : 1.0);
+        primeRecordNonnegative(result.value);
+        primeRecordNonnegative(result.pdf);
         if (!(result.pdf >= 0.0) || isnan(result.pdf) || isinf(result.pdf)
                 || !primeFiniteNonnegative(result.value)) {
+            primeRecordRejected();
             return primeInvalidBsdfEvaluation();
         }
     }
@@ -633,19 +635,17 @@ PrimeTransmissiveBsdfSample primeSampleMinecraftTransmission(
         float branchProbability = reflectionBranch
                 ? mirror.probability
                 : 1.0 - mirror.probability;
-        // Remapping the random variate and compensating the selected branch both divide by this
-        // probability. Keep the epsilon rejection with the PDF floor above: accepting a merely
-        // positive subnormal probability can create Inf followed by 0 * Inf = NaN.
-        if (branchProbability <= PRIME_BSDF_EPSILON
+        primeRecordUnit(branchProbability);
+        if (!(branchProbability > 0.0)
                 || isnan(branchProbability)
                 || isinf(branchProbability)) {
             return result;
         }
         vec3 branchSample = sampleValue;
-        branchSample.z = clamp(
-                (sampleValue.z - branchStart) / branchProbability,
-                0.0,
-                0.99999994);
+        float remappedBranchSample =
+                (sampleValue.z - branchStart) / branchProbability;
+        primeRecordNonnegative(remappedBranchSample);
+        branchSample.z = clamp(remappedBranchSample, 0.0, 0.99999994);
         result = primeSampleMinecraftTransmissionBranchFromState(
                 state,
                 mirror,
@@ -656,6 +656,8 @@ PrimeTransmissiveBsdfSample primeSampleMinecraftTransmission(
                 volumeStack);
         result.bsdfSample.weight /= branchProbability;
         result.bsdfSample.pdf *= branchProbability;
+        primeRecordNonnegative(result.bsdfSample.weight);
+        primeRecordNonnegative(result.bsdfSample.pdf);
         return result;
     }
     PrimeRcSampleResult sampled = primeRcTransmissionSample(
@@ -828,13 +830,15 @@ BsdfEvaluation primeEvaluateMinecraftFoliage(
     if (evaluation.pdf > 0.0
             && !isnan(evaluation.pdf)
             && !isinf(evaluation.pdf)
-            // Required f32 grazing-angle division guard; see primeEvaluateOpaqueComponents.
-            && cosine > PRIME_BSDF_EPSILON
+            && cosine > 0.0
             && evaluation.throughput.flags != PRIME_RC_FLAG_NONE
             && primeFiniteNonnegative(evaluation.throughput.value)) {
         result.value = evaluation.throughput.value / cosine;
         result.pdf = evaluation.pdf;
+        primeRecordNonnegative(result.value);
+        primeRecordNonnegative(result.pdf);
         if (!primeFiniteNonnegative(result.value)) {
+            primeRecordRejected();
             return primeInvalidBsdfEvaluation();
         }
     }
@@ -867,8 +871,7 @@ PrimeBsdfComponents primeEvaluateMinecraftFoliageComponents(
     vec3 localView = primeRcOnbToLocal(state.material.geometry.onb, viewDirection);
     vec3 localScatter = primeRcOnbToLocal(state.material.geometry.onb, scatterDirection);
     float cosine = abs(localScatter.z);
-    // Required f32 grazing-angle division guard; the component values below divide by cosine.
-    if (cosine <= PRIME_BSDF_EPSILON) {
+    if (!(cosine > 0.0)) {
         return result;
     }
     result.pdf = primeRcPrimeThinWallPdf(localView, localScatter, state);
@@ -928,6 +931,7 @@ struct PrimeDenoiseAlbedos {
 };
 
 vec3 primeSanitizeDenoiseAlbedo(vec3 albedo) {
+    primeRecordUnit(albedo);
     return vec3(
             isnan(albedo.x) || isinf(albedo.x) ? 0.0 : clamp(albedo.x, 0.0, 1.0),
             isnan(albedo.y) || isinf(albedo.y) ? 0.0 : clamp(albedo.y, 0.0, 1.0),

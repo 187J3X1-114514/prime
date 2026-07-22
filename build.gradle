@@ -293,6 +293,7 @@ public final class ShaderAbi {
     public static final int DESCRIPTOR_NRD_SUN_PENUMBRA = ${schema.descriptors.nrdSunPenumbra};
     public static final int DESCRIPTOR_NRD_DIFFUSE_DIRECTION = ${schema.descriptors.nrdDiffuseDirection};
     public static final int DESCRIPTOR_NRD_SPECULAR_DIRECTION = ${schema.descriptors.nrdSpecularDirection};
+    public static final int DESCRIPTOR_RAW_NUMERICAL_DIAGNOSTIC = ${schema.descriptors.rawNumericalDiagnostic};
     public static final int PATH_CAMERA_IN_WATER_MASK = ${schema.pathControl.cameraInWaterMask};
     public static final int PATH_JITTER_PHASE_MASK = ${schema.pathControl.jitterPhaseMask};
     public static final int PATH_SUN_EV_QUARTER_SHIFT = ${schema.pathControl.sunEvQuarterShift};
@@ -303,6 +304,7 @@ public final class ShaderAbi {
     public static final int PATH_MATERIAL_ROUGHNESS_MASK = ${schema.pathControl.materialRoughnessMask};
     public static final int PATH_MATERIAL_ROUGHNESS_STEPS_PER_UNIT = ${schema.pathControl.materialRoughnessStepsPerUnit};
     public static final int PATH_SH_INPUT_MASK = ${schema.pathControl.shInputMask};
+    public static final int PATH_RAW_NUMERICAL_MASK = ${schema.pathControl.rawNumericalMask};
     public static final int RUSSIAN_ROULETTE_START = ${schema.pathControl.russianRouletteStart};
     public static final float CUTOUT_ALPHA_THRESHOLD = ${schema.cutoutAlphaThreshold}f;
     public static final String WORKING_COLOR_SPACE = "${colorContract.workingSpace}";
@@ -370,6 +372,7 @@ ${javaOffsets}
 #define PRIME_PATH_MATERIAL_ROUGHNESS_MASK ${schema.pathControl.materialRoughnessMask}u
 #define PRIME_PATH_MATERIAL_ROUGHNESS_STEPS_PER_UNIT ${schema.pathControl.materialRoughnessStepsPerUnit}.0
 #define PRIME_PATH_SH_INPUT_MASK ${schema.pathControl.shInputMask}u
+#define PRIME_PATH_RAW_NUMERICAL_MASK ${schema.pathControl.rawNumericalMask}u
 #define PRIME_RUSSIAN_ROULETTE_START ${schema.pathControl.russianRouletteStart}u
 #define PRIME_CUTOUT_ALPHA_THRESHOLD ${schema.cutoutAlphaThreshold}
 struct PrimitiveRecord {
@@ -491,6 +494,7 @@ layout(set = 0, binding = ${schema.descriptors.nrdSunLighting}, rgba16f) uniform
 layout(set = 0, binding = ${schema.descriptors.nrdSunPenumbra}, r16f) uniform image2D primeNrdSunPenumbra;
 layout(set = 0, binding = ${schema.descriptors.nrdDiffuseDirection}, rgba16f) uniform image2D primeNrdDiffuseDirection;
 layout(set = 0, binding = ${schema.descriptors.nrdSpecularDirection}, rgba16f) uniform image2D primeNrdSpecularDirection;
+layout(set = 0, binding = ${schema.descriptors.rawNumericalDiagnostic}, rgba16f) uniform writeonly image2D primeRawNumericalDiagnostic;
 #endif
 """
 		new File(glslDir, 'prime_atmosphere_contract.glsl').text = """\

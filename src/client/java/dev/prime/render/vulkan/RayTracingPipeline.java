@@ -142,7 +142,8 @@ public final class RayTracingPipeline implements Destroyable {
                         targets.diffuseDirection().view(),
                         targets.specularDirection().view(),
                         targets.sunLighting().view(),
-                        targets.sunPenumbra().view())) {
+                        targets.sunPenumbra().view(),
+                        targets.rawNumericalDiagnostic().view())) {
             return;
         }
         DescriptorBindings replacement = DescriptorBindings.create(
@@ -280,7 +281,7 @@ public final class RayTracingPipeline implements Destroyable {
     }
 
     private static long createDescriptorSetLayout(VulkanContext context, MemoryStack stack) {
-        VkDescriptorSetLayoutBinding.Buffer bindings = VkDescriptorSetLayoutBinding.calloc(24, stack);
+        VkDescriptorSetLayoutBinding.Buffer bindings = VkDescriptorSetLayoutBinding.calloc(25, stack);
         bindings.get(0)
                 .binding(ShaderAbi.DESCRIPTOR_TLAS)
                 .descriptorType(KHRAccelerationStructure.VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR)
@@ -360,6 +361,11 @@ public final class RayTracingPipeline implements Destroyable {
                 .stageFlags(KHRRayTracingPipeline.VK_SHADER_STAGE_RAYGEN_BIT_KHR);
         bindings.get(23)
                 .binding(ShaderAbi.DESCRIPTOR_NRD_SUN_PENUMBRA)
+                .descriptorType(VK12.VK_DESCRIPTOR_TYPE_STORAGE_IMAGE)
+                .descriptorCount(1)
+                .stageFlags(KHRRayTracingPipeline.VK_SHADER_STAGE_RAYGEN_BIT_KHR);
+        bindings.get(24)
+                .binding(ShaderAbi.DESCRIPTOR_RAW_NUMERICAL_DIAGNOSTIC)
                 .descriptorType(VK12.VK_DESCRIPTOR_TYPE_STORAGE_IMAGE)
                 .descriptorCount(1)
                 .stageFlags(KHRRayTracingPipeline.VK_SHADER_STAGE_RAYGEN_BIT_KHR);
@@ -640,6 +646,7 @@ public final class RayTracingPipeline implements Destroyable {
         private final long nrdSpecularDirection;
         private final long nrdSunLighting;
         private final long nrdSunPenumbra;
+        private final long rawNumericalDiagnostic;
         private boolean destroyed;
 
         private DescriptorBindings(
@@ -669,7 +676,8 @@ public final class RayTracingPipeline implements Destroyable {
                 long nrdDiffuseDirection,
                 long nrdSpecularDirection,
                 long nrdSunLighting,
-                long nrdSunPenumbra) {
+                long nrdSunPenumbra,
+                long rawNumericalDiagnostic) {
             this.context = context;
             this.descriptorPool = descriptorPool;
             this.descriptorSet = descriptorSet;
@@ -697,6 +705,7 @@ public final class RayTracingPipeline implements Destroyable {
             this.nrdSpecularDirection = nrdSpecularDirection;
             this.nrdSunLighting = nrdSunLighting;
             this.nrdSunPenumbra = nrdSunPenumbra;
+            this.rawNumericalDiagnostic = rawNumericalDiagnostic;
         }
 
         private static DescriptorBindings create(
@@ -715,7 +724,7 @@ public final class RayTracingPipeline implements Destroyable {
             try (MemoryStack stack = MemoryStack.stackPush()) {
                 VkDescriptorPoolSize.Buffer sizes = VkDescriptorPoolSize.calloc(3, stack);
                 sizes.get(0).type(KHRAccelerationStructure.VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR).descriptorCount(1);
-                sizes.get(1).type(VK12.VK_DESCRIPTOR_TYPE_STORAGE_IMAGE).descriptorCount(19);
+                sizes.get(1).type(VK12.VK_DESCRIPTOR_TYPE_STORAGE_IMAGE).descriptorCount(20);
                 sizes.get(2).type(VK12.VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER).descriptorCount(4);
                 VkDescriptorPoolCreateInfo poolCreateInfo = VkDescriptorPoolCreateInfo.calloc(stack)
                         .sType$Default()
@@ -741,7 +750,7 @@ public final class RayTracingPipeline implements Destroyable {
                             VkWriteDescriptorSetAccelerationStructureKHR.calloc(stack)
                                     .sType$Default()
                                     .pAccelerationStructures(stack.longs(tlas));
-                    VkDescriptorImageInfo.Buffer imageInfos = VkDescriptorImageInfo.calloc(23, stack);
+                    VkDescriptorImageInfo.Buffer imageInfos = VkDescriptorImageInfo.calloc(24, stack);
                     imageInfos.get(0)
                             .imageView(output.view())
                             .imageLayout(VK12.VK_IMAGE_LAYOUT_GENERAL);
@@ -799,7 +808,10 @@ public final class RayTracingPipeline implements Destroyable {
                     imageInfos.get(22)
                             .imageView(targets.sunPenumbra().view())
                             .imageLayout(VK12.VK_IMAGE_LAYOUT_GENERAL);
-                    VkWriteDescriptorSet.Buffer writes = VkWriteDescriptorSet.calloc(24, stack);
+                    imageInfos.get(23)
+                            .imageView(targets.rawNumericalDiagnostic().view())
+                            .imageLayout(VK12.VK_IMAGE_LAYOUT_GENERAL);
+                    VkWriteDescriptorSet.Buffer writes = VkWriteDescriptorSet.calloc(25, stack);
                     writes.get(0)
                             .sType$Default()
                             .pNext(acceleration.address())
@@ -902,6 +914,13 @@ public final class RayTracingPipeline implements Destroyable {
                             .descriptorCount(1)
                             .descriptorType(VK12.VK_DESCRIPTOR_TYPE_STORAGE_IMAGE)
                             .pImageInfo(VkDescriptorImageInfo.create(imageInfos.get(22).address(), 1));
+                    writes.get(24)
+                            .sType$Default()
+                            .dstSet(descriptorSet)
+                            .dstBinding(ShaderAbi.DESCRIPTOR_RAW_NUMERICAL_DIAGNOSTIC)
+                            .descriptorCount(1)
+                            .descriptorType(VK12.VK_DESCRIPTOR_TYPE_STORAGE_IMAGE)
+                            .pImageInfo(VkDescriptorImageInfo.create(imageInfos.get(23).address(), 1));
                     VK12.vkUpdateDescriptorSets(context.vkDevice(), writes, null);
                     return new DescriptorBindings(
                             context,
@@ -930,7 +949,8 @@ public final class RayTracingPipeline implements Destroyable {
                             targets.diffuseDirection().view(),
                             targets.specularDirection().view(),
                             targets.sunLighting().view(),
-                            targets.sunPenumbra().view());
+                            targets.sunPenumbra().view(),
+                            targets.rawNumericalDiagnostic().view());
                 } catch (RuntimeException exception) {
                     VK12.vkDestroyDescriptorPool(context.vkDevice(), pool, null);
                     throw exception;
@@ -962,7 +982,8 @@ public final class RayTracingPipeline implements Destroyable {
                 long nrdDiffuseDirection,
                 long nrdSpecularDirection,
                 long nrdSunLighting,
-                long nrdSunPenumbra) {
+                long nrdSunPenumbra,
+                long rawNumericalDiagnostic) {
             return this.tlas == tlas
                     && this.outputView == outputView
                     && this.accumulationView == accumulationView
@@ -986,7 +1007,8 @@ public final class RayTracingPipeline implements Destroyable {
                     && this.nrdDiffuseDirection == nrdDiffuseDirection
                     && this.nrdSpecularDirection == nrdSpecularDirection
                     && this.nrdSunLighting == nrdSunLighting
-                    && this.nrdSunPenumbra == nrdSunPenumbra;
+                    && this.nrdSunPenumbra == nrdSunPenumbra
+                    && this.rawNumericalDiagnostic == rawNumericalDiagnostic;
         }
 
         @Override

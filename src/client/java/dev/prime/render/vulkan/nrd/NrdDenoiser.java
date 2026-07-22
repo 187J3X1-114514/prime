@@ -249,6 +249,11 @@ public final class NrdDenoiser implements Destroyable, DenoiserInputs {
         return this.images.validation;
     }
 
+    @Override
+    public VulkanImage rawNumericalDiagnostic() {
+        return this.images.reprojectionError;
+    }
+
     public VulkanImage fsrReactiveMask() {
         return this.images.fsrReactiveMask;
     }
@@ -362,7 +367,7 @@ public final class NrdDenoiser implements Destroyable, DenoiserInputs {
                 currentFrameIndex,
                 restart,
                 deltaMilliseconds,
-                selectedDiagnostic != NrdDiagnostics.Mode.OFF,
+                selectedDiagnostic.nativeValidation(),
                 sunDirection));
         NrdNative.DispatchList dispatches = this.nativeInstance.getDispatches();
         FrameBindings bindings = this.acquireBindings();

@@ -67,7 +67,7 @@ vec3 primeCompositeSurfaceSignal(
     vec3 diffuse = primeNrdSanitizeRadiance(diffuseSignal) * diffuseAlbedo;
     vec3 specular = primeNrdSanitizeRadiance(specularSignal) * safeSpecularAlbedo;
     primeNrdClampRadianceTriple(
-            diffuse, specular, sunSignal, PRIME_NRD_RADIANCE_LIMIT);
+            diffuse, specular, sunSignal, PRIME_NRD_FP16_MAX);
     return diffuse + specular + sunSignal;
 }
 
@@ -146,8 +146,14 @@ void primeCompositeResolveSh(
         specular = primeNrdSgExtractColor(specularSg);
         return;
     }
-    diffuse = primeNrdResolveSgDiffuse(diffuseSg, normal, view, roughness);
-    specular = primeNrdResolveSgSpecular(specularSg, normal, view, roughness);
+    bool hasDiffuseDirection = length(diffuseSg.c1) > PRIME_NRD_EPS;
+    bool hasSpecularDirection = length(specularSg.c1) > PRIME_NRD_EPS;
+    diffuse = hasDiffuseDirection
+            ? primeNrdResolveSgDiffuse(diffuseSg, normal, view, roughness)
+            : primeNrdSgExtractColor(diffuseSg);
+    specular = hasSpecularDirection
+            ? primeNrdResolveSgSpecular(specularSg, normal, view, roughness)
+            : primeNrdSgExtractColor(specularSg);
 
     ivec2 east = primeCompositeNeighbor(pixel, ivec2(1, 0));
     ivec2 west = primeCompositeNeighbor(pixel, ivec2(-1, 0));
@@ -171,6 +177,8 @@ void primeCompositeResolveSh(
             primeCompositeNormal(west),
             primeCompositeNormal(north),
             primeCompositeNormal(south));
+    if (!hasDiffuseDirection) scale.x = 1.0;
+    if (!hasSpecularDirection) scale.y = 1.0;
     diffuse *= scale.x;
     specular *= scale.y;
 }

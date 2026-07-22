@@ -11,7 +11,6 @@
 
 const float PRIME_NRD_FP16_MAX = 65504.0;
 const float PRIME_NRD_MAX_SURFACE_DISTANCE = 65503.0;
-const float PRIME_NRD_RADIANCE_LIMIT = 16.0;
 const vec3 PRIME_NRD_HIT_DISTANCE_PARAMETERS = vec3(3.0, 0.1, 20.0);
 
 bool primeNrdIsFinite(float value) {
@@ -172,7 +171,7 @@ vec3 primeNrdDemodulate(vec3 radiance, vec3 guide) {
             guide.z > 0.0 ? radiance.z / guide.z : 0.0);
 }
 
-void primeNrdClampRadianceTriple(
+float primeNrdClampRadianceTriple(
         inout vec3 first,
         inout vec3 second,
         inout vec3 third,
@@ -194,7 +193,7 @@ void primeNrdClampRadianceTriple(
             primeNrdRadiancePeak(first),
             max(primeNrdRadiancePeak(second), primeNrdRadiancePeak(third)));
     if (!(sourcePeak > 0.0)) {
-        return;
+        return 1.0;
     }
 
     vec3 normalizedTotal = first / sourcePeak + second / sourcePeak + third / sourcePeak;
@@ -203,14 +202,15 @@ void primeNrdClampRadianceTriple(
     first *= scale;
     second *= scale;
     third *= scale;
+    return scale;
 }
 
-void primeNrdClampRadiancePair(
+float primeNrdClampRadiancePair(
         inout vec3 first,
         inout vec3 second,
         float limit) {
     vec3 unused = vec3(0.0);
-    primeNrdClampRadianceTriple(first, second, unused, limit);
+    return primeNrdClampRadianceTriple(first, second, unused, limit);
 }
 
 vec4 primeNrdPackRadianceAndHitDistance(vec3 radiance, float normalizedHitDistance) {

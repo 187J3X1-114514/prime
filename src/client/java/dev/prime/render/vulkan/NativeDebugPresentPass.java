@@ -35,11 +35,11 @@ final class NativeDebugPresentPass implements Destroyable {
     private final VulkanContext context;
     private final long descriptorSetLayout;
     private final long descriptorPool;
-    private final long descriptorSet;
+    private final long[] descriptorSets;
     private final long pipelineLayout;
     private final long pipeline;
-    private final int sourceWidth;
-    private final int sourceHeight;
+    private final int[] sourceWidths;
+    private final int[] sourceHeights;
     private final int outputWidth;
     private final int outputHeight;
     private boolean destroyed;
@@ -48,25 +48,32 @@ final class NativeDebugPresentPass implements Destroyable {
             VulkanContext context,
             long descriptorSetLayout,
             long descriptorPool,
-            long descriptorSet,
+            long[] descriptorSets,
             long pipelineLayout,
             long pipeline,
-            VulkanImage source,
+            VulkanImage[] sources,
             VulkanImage output) {
         this.context = context;
         this.descriptorSetLayout = descriptorSetLayout;
         this.descriptorPool = descriptorPool;
-        this.descriptorSet = descriptorSet;
+        this.descriptorSets = descriptorSets;
         this.pipelineLayout = pipelineLayout;
         this.pipeline = pipeline;
-        this.sourceWidth = source.width();
-        this.sourceHeight = source.height();
+        this.sourceWidths = new int[sources.length];
+        this.sourceHeights = new int[sources.length];
+        for (int index = 0; index < sources.length; index++) {
+            this.sourceWidths[index] = sources[index].width();
+            this.sourceHeights[index] = sources[index].height();
+        }
         this.outputWidth = output.width();
         this.outputHeight = output.height();
     }
 
     static NativeDebugPresentPass create(
-            VulkanContext context, VulkanImage source, VulkanImage output) {
+            VulkanContext context, VulkanImage output, VulkanImage... sources) {
+        if (sources.length == 0) {
+            throw new IllegalArgumentException("Native debug presentation needs a source");
+        }
         long setLayout = 0L;
         long descriptorPool = 0L;
         long pipelineLayout = 0L;
@@ -118,47 +125,65 @@ final class NativeDebugPresentPass implements Destroyable {
                 VK12.vkDestroyShaderModule(context.vkDevice(), shader, null);
             }
             VkDescriptorPoolSize.Buffer poolSizes = VkDescriptorPoolSize.calloc(2, stack);
-            poolSizes.get(0).type(VK12.VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE).descriptorCount(1);
-            poolSizes.get(1).type(VK12.VK_DESCRIPTOR_TYPE_STORAGE_IMAGE).descriptorCount(1);
+            poolSizes.get(0).type(VK12.VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE)
+                    .descriptorCount(sources.length);
+            poolSizes.get(1).type(VK12.VK_DESCRIPTOR_TYPE_STORAGE_IMAGE)
+                    .descriptorCount(sources.length);
             pointer.clear();
             VulkanContext.check(
                     VK12.vkCreateDescriptorPool(
                             context.vkDevice(),
                             VkDescriptorPoolCreateInfo.calloc(stack).sType$Default()
-                                    .maxSets(1).pPoolSizes(poolSizes),
+                                    .maxSets(sources.length).pPoolSizes(poolSizes),
                             null,
                             pointer),
                     "create native-debug presentation descriptor pool");
             descriptorPool = pointer.get(0);
             pointer.clear();
+            LongBuffer setLayouts = stack.mallocLong(sources.length);
+            for (int index = 0; index < sources.length; index++) {
+                setLayouts.put(setLayout);
+            }
+            setLayouts.flip();
+            LongBuffer setPointers = stack.mallocLong(sources.length);
             VulkanContext.check(
                     VK12.vkAllocateDescriptorSets(
                             context.vkDevice(),
                             VkDescriptorSetAllocateInfo.calloc(stack).sType$Default()
                                     .descriptorPool(descriptorPool)
-                                    .pSetLayouts(stack.longs(setLayout)),
-                            pointer),
+                                    .pSetLayouts(setLayouts),
+                            setPointers),
                     "allocate native-debug presentation descriptor set");
-            long descriptorSet = pointer.get(0);
-            VkDescriptorImageInfo.Buffer imageInfos = VkDescriptorImageInfo.calloc(2, stack);
-            imageInfos.get(0).imageView(source.view()).imageLayout(VK12.VK_IMAGE_LAYOUT_GENERAL);
-            imageInfos.get(1).imageView(output.view()).imageLayout(VK12.VK_IMAGE_LAYOUT_GENERAL);
-            VkWriteDescriptorSet.Buffer writes = VkWriteDescriptorSet.calloc(2, stack);
-            writes.get(0).sType$Default().dstSet(descriptorSet).dstBinding(0)
-                    .descriptorCount(1).descriptorType(VK12.VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE)
-                    .pImageInfo(VkDescriptorImageInfo.create(imageInfos.get(0).address(), 1));
-            writes.get(1).sType$Default().dstSet(descriptorSet).dstBinding(1)
-                    .descriptorCount(1).descriptorType(VK12.VK_DESCRIPTOR_TYPE_STORAGE_IMAGE)
-                    .pImageInfo(VkDescriptorImageInfo.create(imageInfos.get(1).address(), 1));
+            long[] descriptorSets = new long[sources.length];
+            VkDescriptorImageInfo.Buffer imageInfos =
+                    VkDescriptorImageInfo.calloc(sources.length * 2, stack);
+            VkWriteDescriptorSet.Buffer writes =
+                    VkWriteDescriptorSet.calloc(sources.length * 2, stack);
+            for (int index = 0; index < sources.length; index++) {
+                long descriptorSet = setPointers.get(index);
+                descriptorSets[index] = descriptorSet;
+                imageInfos.get(index * 2).imageView(sources[index].view())
+                        .imageLayout(VK12.VK_IMAGE_LAYOUT_GENERAL);
+                imageInfos.get(index * 2 + 1).imageView(output.view())
+                        .imageLayout(VK12.VK_IMAGE_LAYOUT_GENERAL);
+                writes.get(index * 2).sType$Default().dstSet(descriptorSet).dstBinding(0)
+                        .descriptorCount(1).descriptorType(VK12.VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE)
+                        .pImageInfo(VkDescriptorImageInfo.create(
+                                imageInfos.get(index * 2).address(), 1));
+                writes.get(index * 2 + 1).sType$Default().dstSet(descriptorSet).dstBinding(1)
+                        .descriptorCount(1).descriptorType(VK12.VK_DESCRIPTOR_TYPE_STORAGE_IMAGE)
+                        .pImageInfo(VkDescriptorImageInfo.create(
+                                imageInfos.get(index * 2 + 1).address(), 1));
+            }
             VK12.vkUpdateDescriptorSets(context.vkDevice(), writes, null);
             return new NativeDebugPresentPass(
                     context,
                     setLayout,
                     descriptorPool,
-                    descriptorSet,
+                    descriptorSets,
                     pipelineLayout,
                     pipeline,
-                    source,
+                    sources,
                     output);
         } catch (RuntimeException exception) {
             if (descriptorPool != 0L) {
@@ -175,7 +200,10 @@ final class NativeDebugPresentPass implements Destroyable {
         }
     }
 
-    void record(VkCommandBuffer commandBuffer) {
+    void record(VkCommandBuffer commandBuffer, int source) {
+        if (source < 0 || source >= this.descriptorSets.length) {
+            throw new IllegalArgumentException("Invalid native debug source " + source);
+        }
         try (MemoryStack stack = MemoryStack.stackPush()) {
             VkMemoryBarrier2.Buffer barrier = VkMemoryBarrier2.calloc(1, stack);
             barrier.get(0).sType$Default()
@@ -188,8 +216,8 @@ final class NativeDebugPresentPass implements Destroyable {
                     VkDependencyInfo.calloc(stack).sType$Default().pMemoryBarriers(barrier));
 
             ByteBuffer push = stack.malloc(PUSH_SIZE).order(ByteOrder.nativeOrder());
-            push.putInt(0, this.sourceWidth);
-            push.putInt(4, this.sourceHeight);
+            push.putInt(0, this.sourceWidths[source]);
+            push.putInt(4, this.sourceHeights[source]);
             push.putInt(8, this.outputWidth);
             push.putInt(12, this.outputHeight);
             VK12.vkCmdBindPipeline(commandBuffer, VK12.VK_PIPELINE_BIND_POINT_COMPUTE, this.pipeline);
@@ -198,7 +226,7 @@ final class NativeDebugPresentPass implements Destroyable {
                     VK12.VK_PIPELINE_BIND_POINT_COMPUTE,
                     this.pipelineLayout,
                     0,
-                    stack.longs(this.descriptorSet),
+                    stack.longs(this.descriptorSets[source]),
                     null);
             VK12.vkCmdPushConstants(
                     commandBuffer, this.pipelineLayout, COMPUTE_STAGE, 0, push);

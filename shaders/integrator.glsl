@@ -44,6 +44,9 @@ struct PrimeDenoiserGuides {
     vec3 primaryPosition;
     vec3 diffuseDirection;
     vec3 specularDirection;
+    vec3 primaryAreaDiffuse;
+    vec3 primaryAreaSpecular;
+    vec3 primaryAreaDirection;
 };
 
 struct PrimeIntegrationResult {
@@ -465,6 +468,7 @@ bool primeRussianRoulette(
         return false;
     }
     vec3 survivedThroughput = path.throughput / survival;
+    primeRecordNonnegative(survivedThroughput);
     bool valid = !any(isnan(survivedThroughput))
             && !any(isinf(survivedThroughput))
             && all(greaterThanEqual(survivedThroughput, vec3(0.0)))
@@ -472,24 +476,30 @@ bool primeRussianRoulette(
     if (valid) {
         path.throughput = survivedThroughput;
     } else {
+        primeRecordRejected();
         numericalFailure = true;
     }
     return valid;
 }
 
 bool primeTryAccumulate(inout vec3 accumulator, vec3 contribution) {
+    primeRecordRadiance(contribution);
     bool validContribution = !any(isnan(contribution))
             && !any(isinf(contribution))
             && all(greaterThanEqual(contribution, vec3(0.0)));
     if (!validContribution) {
+        primeRecordRejected();
         return false;
     }
     vec3 candidate = accumulator + contribution;
+    primeRecordRadiance(candidate);
     bool validCandidate = !any(isnan(candidate))
             && !any(isinf(candidate))
             && all(greaterThanEqual(candidate, vec3(0.0)));
     if (validCandidate) {
         accumulator = candidate;
+    } else {
+        primeRecordRejected();
     }
     return validCandidate;
 }
@@ -544,10 +554,12 @@ bool primeApplySegmentMedium(
     PrimeRcVolume medium = volumeStack.values[volumeStack.count - 1u];
     vec3 attenuatedThroughput = path.throughput
             * exp(-medium.extinction * max(surface.t, 0.0));
+    primeRecordNonnegative(attenuatedThroughput);
     bool finiteNonnegative = !any(isnan(attenuatedThroughput))
             && !any(isinf(attenuatedThroughput))
             && all(greaterThanEqual(attenuatedThroughput, vec3(0.0)));
     if (!finiteNonnegative) {
+        primeRecordRejected();
         numericalFailure = true;
         return false;
     }
@@ -618,16 +630,21 @@ PrimePathScatter primeSamplePathSurface(
 }
 
 bool primeValidScatter(BsdfSample bsdf) {
+    float directionLengthSquared = dot(bsdf.direction, bsdf.direction);
     bool finite = !isnan(bsdf.pdf) && !isinf(bsdf.pdf)
             && !any(isnan(bsdf.weight)) && !any(isinf(bsdf.weight))
-            && !any(isnan(bsdf.direction)) && !any(isinf(bsdf.direction));
+            && !any(isnan(bsdf.direction)) && !any(isinf(bsdf.direction))
+            && !isnan(directionLengthSquared) && !isinf(directionLengthSquared);
     return finite
             && bsdf.pdf > 0.0
             && all(greaterThanEqual(bsdf.weight, vec3(0.0)))
-            && any(greaterThan(bsdf.weight, vec3(0.0)));
+            && any(greaterThan(bsdf.weight, vec3(0.0)))
+            && directionLengthSquared > 1.0e-12;
 }
 
 bool primeScatterNumericallyValid(BsdfSample bsdf) {
+    float directionLengthSquared = dot(bsdf.direction, bsdf.direction);
+    bool hasSample = bsdf.pdf > 0.0 || any(greaterThan(bsdf.weight, vec3(0.0)));
     return !isnan(bsdf.pdf)
             && !isinf(bsdf.pdf)
             && bsdf.pdf >= 0.0
@@ -635,7 +652,10 @@ bool primeScatterNumericallyValid(BsdfSample bsdf) {
             && !any(isinf(bsdf.weight))
             && all(greaterThanEqual(bsdf.weight, vec3(0.0)))
             && !any(isnan(bsdf.direction))
-            && !any(isinf(bsdf.direction));
+            && !any(isinf(bsdf.direction))
+            && (!hasSample || (!isnan(directionLengthSquared)
+                    && !isinf(directionLengthSquared)
+                    && directionLengthSquared > 1.0e-12));
 }
 
 bool primeIsDeltaSample(BsdfSample bsdf) {
@@ -655,10 +675,12 @@ bool primeAdvancePath(
         out bool numericalFailure) {
     numericalFailure = false;
     vec3 nextThroughput = path.throughput * bsdf.weight;
+    primeRecordNonnegative(nextThroughput);
     bool finiteNonnegative = !any(isnan(nextThroughput))
             && !any(isinf(nextThroughput))
             && all(greaterThanEqual(nextThroughput, vec3(0.0)));
     if (!finiteNonnegative) {
+        primeRecordRejected();
         numericalFailure = true;
         return false;
     }
@@ -704,6 +726,9 @@ PrimeIntegrationResult primeIntegrateWithVolume(
     result.guides.primaryPosition = vec3(0.0);
     result.guides.diffuseDirection = vec3(0.0);
     result.guides.specularDirection = vec3(0.0);
+    result.guides.primaryAreaDiffuse = vec3(0.0);
+    result.guides.primaryAreaSpecular = vec3(0.0);
+    result.guides.primaryAreaDirection = vec3(0.0);
     result.validSample = true;
     PrimeDenoiserState denoiserState;
     denoiserState.hasPrimarySurface = false;
@@ -721,7 +746,12 @@ PrimeIntegrationResult primeIntegrateWithVolume(
     uint maximumBounces = min(primePush.path.z & 0xffffu, 256u);
     for (path.bounce = 0u; path.bounce < maximumBounces; ++path.bounce) {
         SurfaceInteraction surface = primeTraceSurface(path.traceOrigin, path.rayDirection);
+        primeRecordNonFinite(surface.position);
+        primeRecordNonnegative(surface.t);
+        primeRecordDirection(surface.geometricNormal);
+        primeRecordUnit(surface.baseColor);
         if (!primeValidSurfaceInteraction(surface)) {
+            primeRecordRejected();
             result.validSample = false;
             break;
         }
@@ -795,17 +825,23 @@ PrimeIntegrationResult primeIntegrateWithVolume(
                 bool validSun = primeTryAccumulate(
                         result.radiance.unshadowedSun,
                         path.throughput * (sun.lighting.diffuse + sun.lighting.specular));
+                vec3 primaryAreaDiffuse = path.throughput * areaSplit.diffuse;
+                vec3 primaryAreaSpecular = path.throughput * areaSplit.specular;
                 bool validDiffuse = primeTryAccumulate(
-                        result.radiance.diffuse,
-                        path.throughput * areaSplit.diffuse);
+                        result.radiance.diffuse, primaryAreaDiffuse);
                 bool validSpecular = primeTryAccumulate(
-                        result.radiance.specular,
-                        path.throughput * areaSplit.specular);
-                if (any(greaterThan(areaSplit.diffuse, vec3(0.0)))) {
-                    result.guides.diffuseDirection = areaSplit.direction;
+                        result.radiance.specular, primaryAreaSpecular);
+                if (validDiffuse) {
+                    result.guides.primaryAreaDiffuse = primaryAreaDiffuse;
                 }
-                if (any(greaterThan(areaSplit.specular, vec3(0.0)))) {
-                    result.guides.specularDirection = areaSplit.direction;
+                if (validSpecular) {
+                    result.guides.primaryAreaSpecular = primaryAreaSpecular;
+                }
+                if ((validDiffuse && any(greaterThan(primaryAreaDiffuse, vec3(0.0))))
+                        || (validSpecular
+                                && any(greaterThan(primaryAreaSpecular, vec3(0.0))))) {
+                    // SH1 needs the primary area sample apart from the continuation direction.
+                    result.guides.primaryAreaDirection = areaSplit.direction;
                 }
                 result.validSample = validSun
                         && validDiffuse
@@ -844,9 +880,21 @@ PrimeIntegrationResult primeIntegrateWithVolume(
         PrimePathScatter scatter = primeSamplePathSurface(
                 surface, viewDirection, scatterSample, volumeStack);
         BsdfSample bsdf = scatter.bsdf;
+        if (bsdf.pdf > 0.0 || any(greaterThan(bsdf.weight, vec3(0.0)))) {
+            primeRecordDirection(bsdf.direction);
+        } else {
+            primeRecordNonFinite(bsdf.direction);
+        }
+        primeRecordNonnegative(bsdf.weight);
+        primeRecordNonnegative(bsdf.pdf);
+        primeRecordNonnegative(bsdf.relativeEta);
         volumeStack = scatter.volumeStack;
         bool validScatter = primeValidScatter(bsdf);
-        result.validSample = primeScatterNumericallyValid(bsdf) && result.validSample;
+        bool numericalScatter = primeScatterNumericallyValid(bsdf);
+        if (!numericalScatter) {
+            primeRecordRejected();
+        }
+        result.validSample = numericalScatter && result.validSample;
         if (!denoiserState.reachedNonDelta) {
             bool firstDenoiseSurface = !denoiserState.hasPrimarySurface;
             if (firstDenoiseSurface) {

@@ -88,7 +88,8 @@ public final class NrdFsrPostProcessor implements RealtimePostProcessor {
                     context,
                     displayOutput,
                     denoiser.validation(),
-                    denoiser.rawNumericalDiagnostic());
+                    denoiser.rawNumericalDiagnostic(),
+                    sceneColor);
             return new NrdFsrPostProcessor(
                     quality,
                     renderWidth,
@@ -188,6 +189,7 @@ public final class NrdFsrPostProcessor implements RealtimePostProcessor {
                 token.jitter().x(),
                 token.jitter().y(),
                 parameters.sunRadianceMultiplier(),
+                parameters.displayOverexposure(),
                 token.reset(),
                 token.nrdDebugView);
         this.upscaler.record(commandBuffer, token.fsr, parameters.displayOverexposure());

@@ -59,8 +59,8 @@ public final class NrdDenoiser implements Destroyable, DenoiserInputs {
     private static final int IMAGE_USAGE = VK12.VK_IMAGE_USAGE_STORAGE_BIT | VK12.VK_IMAGE_USAGE_SAMPLED_BIT;
     private static final int MOTION_BINDING_COUNT = 12;
     private static final int MOTION_PUSH_SIZE = 196;
-    private static final int COMPOSITE_BINDING_COUNT = 20;
-    private static final int COMPOSITE_PUSH_SIZE = 24;
+    private static final int COMPOSITE_BINDING_COUNT = 21;
+    private static final int COMPOSITE_PUSH_SIZE = 28;
     // world.rgen writes 65504 for a sky view-Z. Keep the valid range below that sentinel while
     // remaining far beyond Minecraft's usable terrain and Prime's 16,000-block aerial volume.
     private static final float DENOISING_RANGE = 60_000.0f;
@@ -310,6 +310,7 @@ public final class NrdDenoiser implements Destroyable, DenoiserInputs {
             float cameraJitterX,
             float cameraJitterY,
             float sunRadianceMultiplier,
+            float displayOverexposure,
             boolean forceRestart,
             NrdDiagnostics.Mode selectedDiagnostic) {
         return this.recordInternal(
@@ -322,6 +323,7 @@ public final class NrdDenoiser implements Destroyable, DenoiserInputs {
                 cameraJitterX,
                 cameraJitterY,
                 sunRadianceMultiplier,
+                displayOverexposure,
                 forceRestart,
                 selectedDiagnostic);
     }
@@ -336,6 +338,7 @@ public final class NrdDenoiser implements Destroyable, DenoiserInputs {
             float cameraJitterX,
             float cameraJitterY,
             float sunRadianceMultiplier,
+            float displayOverexposure,
             boolean forceRestart,
             NrdDiagnostics.Mode selectedDiagnostic) {
         this.requireOpen();
@@ -413,10 +416,11 @@ public final class NrdDenoiser implements Destroyable, DenoiserInputs {
                     commandBuffer,
                     this.width,
                     this.height,
-                    0,
+                    diagnosticMode,
                     sunRadianceMultiplier,
                     cameraJitterX,
-                    cameraJitterY);
+                    cameraJitterY,
+                    displayOverexposure);
             return new FrameToken(
                     this,
                     bindings,
@@ -1897,7 +1901,8 @@ public final class NrdDenoiser implements Destroyable, DenoiserInputs {
                     images.denoisedSpecularSh1,
                     images.normalRoughness,
                     images.viewZ,
-                    images.primaryPosition
+                    images.primaryPosition,
+                    images.noisySpecular
                 };
                 VkDescriptorImageInfo.Buffer imageInfos =
                         VkDescriptorImageInfo.calloc(COMPOSITE_BINDING_COUNT, stack);
@@ -1948,7 +1953,8 @@ public final class NrdDenoiser implements Destroyable, DenoiserInputs {
                 int diagnosticMode,
                 float sunRadianceMultiplier,
                 float cameraJitterX,
-                float cameraJitterY) {
+                float cameraJitterY,
+                float displayOverexposure) {
             try (MemoryStack stack = MemoryStack.stackPush()) {
                 VK12.vkCmdBindPipeline(
                         commandBuffer, VK12.VK_PIPELINE_BIND_POINT_COMPUTE, this.pipeline);
@@ -1966,6 +1972,7 @@ public final class NrdDenoiser implements Destroyable, DenoiserInputs {
                 push.putFloat(12, sunRadianceMultiplier);
                 push.putFloat(16, cameraJitterX);
                 push.putFloat(20, cameraJitterY);
+                push.putFloat(24, displayOverexposure);
                 VK12.vkCmdPushConstants(
                         commandBuffer,
                         this.pipelineLayout,

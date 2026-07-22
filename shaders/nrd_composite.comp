@@ -2,6 +2,7 @@
 #extension GL_GOOGLE_include_directive : require
 
 #include "atmosphere.glsl"
+#include "display_transform.glsl"
 #include "nrd_common.glsl"
 #include "nrd_sh.glsl"
 
@@ -18,7 +19,7 @@ layout(set = 0, binding = 4, rgba16f) uniform readonly image2D primeCompositeSpe
 layout(set = 0, binding = 5, rgba32f) uniform readonly image2D primeStableAccumulation;
 layout(set = 0, binding = 6, rgba16f) uniform readonly image3D primeCompositeAerialRadiance;
 layout(set = 0, binding = 7, rgba16f) uniform readonly image3D primeCompositeAerialTransmittance;
-layout(set = 0, binding = 8, rgba8) uniform readonly image2D primeNrdValidation;
+layout(set = 0, binding = 8, rgba8) uniform image2D primeNrdValidation;
 layout(set = 0, binding = 9, rgba16f) uniform readonly image2D primeReprojectionError;
 layout(set = 0, binding = 10, rgba16f) uniform readonly image2D primeMotionDiagnostic;
 layout(set = 0, binding = 11, r8) uniform writeonly image2D primeFsrReactiveMask;
@@ -30,18 +31,23 @@ layout(set = 0, binding = 16, rgba16f) uniform readonly image2D primeDenoisedSpe
 layout(set = 0, binding = 17, rgb10_a2) uniform readonly image2D primeCompositeNormalRoughness;
 layout(set = 0, binding = 18, r32f) uniform readonly image2D primeCompositeViewZ;
 layout(set = 0, binding = 19, rgba32f) uniform readonly image2D primeCompositePrimaryPosition;
+layout(set = 0, binding = 20, rgba16f) uniform readonly image2D primeNoisySpecular;
 
 layout(push_constant) uniform PrimeCompositePushConstants {
     uvec2 outputExtent;
     uint diagnosticMode;
     float sunRadianceMultiplier;
     vec2 currentJitterPixels;
+    float displayOverexposure;
 } primeCompositePush;
 
 const uint PRIME_DIAGNOSTIC_OFF = 0u;
 const uint PRIME_DIAGNOSTIC_NRD_VALIDATION = 1u;
 const uint PRIME_DIAGNOSTIC_REPROJECTION_ERROR = 2u;
 const uint PRIME_DIAGNOSTIC_MOTION = 3u;
+const uint PRIME_DIAGNOSTIC_SPECULAR_INPUT = 4u;
+const uint PRIME_DIAGNOSTIC_SPECULAR_OUTPUT = 5u;
+const uint PRIME_DIAGNOSTIC_SPECULAR_REMODULATED = 6u;
 
 #ifndef PRIME_ENABLE_FILTERED_SUN_SHADOW
 #define PRIME_ENABLE_FILTERED_SUN_SHADOW 1
@@ -183,50 +189,7 @@ void primeCompositeResolveSh(
     specular *= scale.y;
 }
 
-void main() {
-    uvec2 pixel = gl_GlobalInvocationID.xy;
-    if (any(greaterThanEqual(pixel, primeCompositePush.outputExtent))) {
-        return;
-    }
-    // The single PT/NRD path owns the complete surface signal. Valid surface motion should not be
-    // marked reactive, while the material metadata below supplies FSR's composition hint.
-    imageStore(primeFsrReactiveMask, ivec2(pixel), vec4(0.0));
-    vec4 specularMaterial = imageLoad(
-            primeCompositeSpecularMaterial, ivec2(pixel));
-    float transparencyAndComposition = specularMaterial.a;
-    imageStore(
-            primeFsrTransparencyCompositionMask,
-            ivec2(pixel),
-            vec4(primeNrdSanitizeUnit(transparencyAndComposition, 0.0)));
-    if (primeCompositePush.diagnosticMode == PRIME_DIAGNOSTIC_NRD_VALIDATION) {
-        imageStore(
-                primeCompositeOutput,
-                ivec2(pixel),
-                vec4(imageLoad(primeNrdValidation, ivec2(pixel)).rgb, 1.0));
-        return;
-    }
-    if (primeCompositePush.diagnosticMode == PRIME_DIAGNOSTIC_REPROJECTION_ERROR) {
-        imageStore(
-                primeCompositeOutput,
-                ivec2(pixel),
-                vec4(imageLoad(primeReprojectionError, ivec2(pixel)).rgb, 1.0));
-        return;
-    }
-    if (primeCompositePush.diagnosticMode == PRIME_DIAGNOSTIC_MOTION) {
-        vec3 motion = imageLoad(primeMotionDiagnostic, ivec2(pixel)).xyz;
-        vec2 motionPixels = motion.xy * vec2(primeCompositePush.outputExtent);
-        vec3 positiveColor = max(motionPixels.x, 0.0) * vec3(1.0, 0.0, 0.0)
-                + max(motionPixels.y, 0.0) * vec3(0.0, 1.0, 0.0);
-        vec3 negativeColor = max(-motionPixels.x, 0.0) * vec3(0.0, 1.0, 1.0)
-                + max(-motionPixels.y, 0.0) * vec3(1.0, 0.0, 1.0);
-        vec3 motionColor = (positiveColor + negativeColor + abs(motion.z)) * 0.25;
-        imageStore(
-                primeCompositeOutput,
-                ivec2(pixel),
-                vec4(clamp(motionColor, vec3(0.0), vec3(1.0)), 1.0));
-        return;
-    }
-    vec4 material = imageLoad(primeCompositeMaterial, ivec2(pixel));
+vec3 primeCompositeRadiance(uvec2 pixel, vec4 material, vec4 specularMaterial) {
     vec4 unshadowedSunLighting = imageLoad(
             primeUnshadowedSunLighting, ivec2(pixel));
 #if PRIME_ENABLE_FILTERED_SUN_SHADOW
@@ -256,7 +219,122 @@ void main() {
             PRIME_NRD_FP16_MAX);
     vec3 radiance = surface + stable;
     primeCompositeApplyAerial(pixel, material.a, radiance);
-    radiance = primeNrdClampRadiance(radiance, PRIME_NRD_FP16_MAX);
+    return primeNrdClampRadiance(radiance, PRIME_NRD_FP16_MAX);
+}
+
+vec3 primeCompositeSh0Color(vec4 sh0) {
+    return primeNrdSgExtractColor(primeNrdUnpackSg(sh0, vec3(0.0)));
+}
+
+vec3 primeCompositeRemodulatedSpecular(
+        uvec2 pixel, vec4 material, vec3 specularAlbedo) {
+    if (!primeNrdIsFinite(material.a) || material.a < 0.0) {
+        return vec3(0.0);
+    }
+    vec3 diffuse;
+    vec3 specular;
+    primeCompositeResolveSh(ivec2(pixel), material.a, diffuse, specular);
+    return primeNrdClampRadiance(
+            primeNrdSanitizeRadiance(specular)
+                    * primeNrdSanitizeAlbedo(specularAlbedo),
+            PRIME_NRD_FP16_MAX);
+}
+
+vec3 primeCompositeDisplayDiagnostic(vec3 radiance) {
+    radiance = primeNrdIsFinite(radiance) ? max(radiance, vec3(0.0)) : vec3(0.0);
+    return primeDisplayTransformToSrgb(
+            radiance, primeCompositePush.displayOverexposure);
+}
+
+bool primeCompositeIsValidationSceneTile(uvec2 pixel) {
+    // Match NRD's 4x4 viewport selection at pixel centers. REBLUR deliberately leaves the middle
+    // six tiles untouched for the application-provided beauty image.
+    uvec2 viewport = min(
+            (pixel * 4u + 2u) / primeCompositePush.outputExtent,
+            uvec2(3u));
+    return (viewport.x == 1u || viewport.x == 2u) && viewport.y >= 1u;
+}
+
+void main() {
+    uvec2 pixel = gl_GlobalInvocationID.xy;
+    if (any(greaterThanEqual(pixel, primeCompositePush.outputExtent))) {
+        return;
+    }
+    // The single PT/NRD path owns the complete surface signal. Valid surface motion should not be
+    // marked reactive, while the material metadata below supplies FSR's composition hint.
+    imageStore(primeFsrReactiveMask, ivec2(pixel), vec4(0.0));
+    vec4 specularMaterial = imageLoad(
+            primeCompositeSpecularMaterial, ivec2(pixel));
+    vec4 material = imageLoad(primeCompositeMaterial, ivec2(pixel));
+    float transparencyAndComposition = specularMaterial.a;
+    imageStore(
+            primeFsrTransparencyCompositionMask,
+            ivec2(pixel),
+            vec4(primeNrdSanitizeUnit(transparencyAndComposition, 0.0)));
+    if (primeCompositePush.diagnosticMode == PRIME_DIAGNOSTIC_SPECULAR_INPUT) {
+        imageStore(
+                primeCompositeOutput,
+                ivec2(pixel),
+                vec4(primeCompositeDisplayDiagnostic(primeCompositeSh0Color(
+                        imageLoad(primeNoisySpecular, ivec2(pixel)))), 1.0));
+        return;
+    }
+    if (primeCompositePush.diagnosticMode == PRIME_DIAGNOSTIC_SPECULAR_OUTPUT) {
+        imageStore(
+                primeCompositeOutput,
+                ivec2(pixel),
+                vec4(primeCompositeDisplayDiagnostic(primeCompositeSh0Color(
+                        imageLoad(primeDenoisedSpecular, ivec2(pixel)))), 1.0));
+        return;
+    }
+    if (primeCompositePush.diagnosticMode == PRIME_DIAGNOSTIC_SPECULAR_REMODULATED) {
+        imageStore(
+                primeCompositeOutput,
+                ivec2(pixel),
+                vec4(primeCompositeDisplayDiagnostic(
+                        primeCompositeRemodulatedSpecular(
+                                pixel, material, specularMaterial.rgb)), 1.0));
+        return;
+    }
+    if (primeCompositePush.diagnosticMode == PRIME_DIAGNOSTIC_REPROJECTION_ERROR) {
+        imageStore(
+                primeCompositeOutput,
+                ivec2(pixel),
+                vec4(imageLoad(primeReprojectionError, ivec2(pixel)).rgb, 1.0));
+        return;
+    }
+    if (primeCompositePush.diagnosticMode == PRIME_DIAGNOSTIC_MOTION) {
+        vec3 motion = imageLoad(primeMotionDiagnostic, ivec2(pixel)).xyz;
+        vec2 motionPixels = motion.xy * vec2(primeCompositePush.outputExtent);
+        vec3 positiveColor = max(motionPixels.x, 0.0) * vec3(1.0, 0.0, 0.0)
+                + max(motionPixels.y, 0.0) * vec3(0.0, 1.0, 0.0);
+        vec3 negativeColor = max(-motionPixels.x, 0.0) * vec3(0.0, 1.0, 1.0)
+                + max(-motionPixels.y, 0.0) * vec3(1.0, 0.0, 1.0);
+        vec3 motionColor = (positiveColor + negativeColor + abs(motion.z)) * 0.25;
+        imageStore(
+                primeCompositeOutput,
+                ivec2(pixel),
+                vec4(clamp(motionColor, vec3(0.0), vec3(1.0)), 1.0));
+        return;
+    }
+    vec3 radiance = primeCompositeRadiance(pixel, material, specularMaterial);
+    if (primeCompositePush.diagnosticMode == PRIME_DIAGNOSTIC_NRD_VALIDATION) {
+        vec3 validationColor;
+        if (primeCompositeIsValidationSceneTile(pixel)) {
+            validationColor = primeCompositeDisplayDiagnostic(radiance);
+            imageStore(
+                    primeNrdValidation,
+                    ivec2(pixel),
+                    vec4(validationColor, 1.0));
+        } else {
+            validationColor = imageLoad(primeNrdValidation, ivec2(pixel)).rgb;
+        }
+        imageStore(
+                primeCompositeOutput,
+                ivec2(pixel),
+                vec4(validationColor, 1.0));
+        return;
+    }
     imageStore(
             primeCompositeOutput,
             ivec2(pixel),

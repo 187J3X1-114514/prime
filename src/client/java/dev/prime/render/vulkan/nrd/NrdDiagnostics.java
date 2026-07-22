@@ -9,8 +9,11 @@ public final class NrdDiagnostics {
 
     public enum Mode {
         OFF("off", 0, false, -1),
-        OPAQUE("opaque", 1, true, 0),
-        RAW_NUMERICAL("raw_numerical", 0, false, 1);
+        NATIVE_VALIDATION("native_validation", 1, true, 0),
+        RAW_NUMERICAL("raw_numerical", 0, false, 1),
+        SPECULAR_INPUT("specular_input", 4, false, 2),
+        SPECULAR_OUTPUT("specular_output", 5, false, 2),
+        SPECULAR_REMODULATED("specular_remodulated", 6, false, 2);
 
         private final String id;
         private final int outputSelector;
@@ -49,7 +52,8 @@ public final class NrdDiagnostics {
             }
             // Migrate the development-only names used before validation became a user feature.
             String canonicalId = switch (id) {
-                case "nrd_validation", "reprojection_error", "motion" -> "opaque";
+                case "opaque", "nrd_validation", "reprojection_error", "motion" ->
+                    "native_validation";
                 case "raw_nonfinite" -> "raw_numerical";
                 default -> id;
             };

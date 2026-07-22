@@ -17,7 +17,7 @@ final class SessionControlsTest {
         SessionControls defaults = SessionControls.defaults();
         SessionControls changed = defaults
                 .withScreenshotRequested(true)
-                .withNrdDebugView(NrdDiagnostics.Mode.OPAQUE)
+                .withNrdDebugView(NrdDiagnostics.Mode.NATIVE_VALIDATION)
                 .withFsrDebugView(FsrDebugView.OVERVIEW)
                 .withRrDebugView(DlssRrDebugView.MOTION)
                 .withRrDebugFullscreen(true);
@@ -28,7 +28,7 @@ final class SessionControlsTest {
         assertEquals(DlssRrDebugView.OFF, defaults.rrDebugView());
         assertFalse(defaults.rrDebugFullscreen());
         assertTrue(changed.screenshotRequested());
-        assertEquals(NrdDiagnostics.Mode.OPAQUE, changed.nrdDebugView());
+        assertEquals(NrdDiagnostics.Mode.NATIVE_VALIDATION, changed.nrdDebugView());
         assertEquals(
                 FsrDebugView.OVERVIEW,
                 changed.fsrDebugView());

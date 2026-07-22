@@ -26,6 +26,13 @@ struct PrimeSampleBase {
     uint pathIndex;
 };
 
+// A path vertex consumes several independent effects. Cache the invariant pixel/epoch/path hash
+// once per vertex instead of rebuilding the same five-stage hash for every Sobol projection.
+struct PrimePreparedSampleBase {
+    uint sampleIndex;
+    uint seed;
+};
+
 // Joe-Kuo direction numbers for the first four Sobol dimensions, in reversed-bit order. The
 // Burley construction below Owen-scrambles both the sample index and the resulting dimension.
 const uint PRIME_SOBOL_BURLEY_TABLE[4][32] = uint[4][32](
@@ -106,8 +113,15 @@ uint primeSampleBaseSeed(PrimeSampleBase base) {
     return primeHashCombine(seed, base.vertexIndex);
 }
 
-uint primeEffectSeed(PrimeSampleBase base, uint effect) {
-    return primeHashCombine(primeSampleBaseSeed(base), effect);
+PrimePreparedSampleBase primePrepareSampleBase(PrimeSampleBase base) {
+    PrimePreparedSampleBase result;
+    result.sampleIndex = base.sampleIndex;
+    result.seed = primeSampleBaseSeed(base);
+    return result;
+}
+
+uint primeEffectSeed(PrimePreparedSampleBase base, uint effect) {
+    return primeHashCombine(base.seed, effect);
 }
 
 uint primeReversedBitOwen(uint value, uint seed) {
@@ -147,7 +161,7 @@ float primeSobolBurley(uint reversedBitIndex, uint dimension, uint seed) {
 }
 
 float primeSobolSample1D(
-        PrimeSampleBase base, uint effect, uint dimension) {
+        PrimePreparedSampleBase base, uint effect, uint dimension) {
     uint mixedSeed = primeEffectSeed(base, effect) ^ primeHighQualityHash(dimension);
     uint shuffledIndex = primeReversedBitOwen(
             bitfieldReverse(base.sampleIndex), mixedSeed ^ 0xbff95bfeu)
@@ -156,7 +170,7 @@ float primeSobolSample1D(
 }
 
 vec2 primeSobolSample2D(
-        PrimeSampleBase base, uint effect, uint dimensionSet) {
+        PrimePreparedSampleBase base, uint effect, uint dimensionSet) {
     uint mixedSeed = primeEffectSeed(base, effect) ^ primeHighQualityHash(dimensionSet);
     uint shuffledIndex = primeReversedBitOwen(
             bitfieldReverse(base.sampleIndex), mixedSeed ^ 0xf8ade99au)
@@ -167,7 +181,7 @@ vec2 primeSobolSample2D(
 }
 
 vec3 primeSobolSample3D(
-        PrimeSampleBase base, uint effect, uint dimensionSet) {
+        PrimePreparedSampleBase base, uint effect, uint dimensionSet) {
     uint mixedSeed = primeEffectSeed(base, effect) ^ primeHighQualityHash(dimensionSet);
     uint shuffledIndex = primeReversedBitOwen(
             bitfieldReverse(base.sampleIndex), mixedSeed ^ 0xcaa726acu)
@@ -179,7 +193,7 @@ vec3 primeSobolSample3D(
 }
 
 vec4 primeSobolSample4D(
-        PrimeSampleBase base, uint effect, uint dimensionSet) {
+        PrimePreparedSampleBase base, uint effect, uint dimensionSet) {
     uint mixedSeed = primeEffectSeed(base, effect) ^ primeHighQualityHash(dimensionSet);
     uint shuffledIndex = primeReversedBitOwen(
             bitfieldReverse(base.sampleIndex), mixedSeed ^ 0xc2c1a055u)
@@ -192,7 +206,7 @@ vec4 primeSobolSample4D(
 }
 
 float primeHashSample1D(
-        PrimeSampleBase base, uint effect, uint streamIndex) {
+        PrimePreparedSampleBase base, uint effect, uint streamIndex) {
     uint seed = primeEffectSeed(base, effect);
     seed = primeHashCombine(seed, base.sampleIndex);
     seed = primeHashCombine(seed, streamIndex);

@@ -287,6 +287,9 @@ PRIME_NRD_EXPORT int32_t primeNrdCreate(
     settings.maxFastAccumulatedFrameNum = 10;
     settings.maxStabilizedFrameNum = 63;
     settings.historyFixFrameNum = 4;
+    // Tighten REBLUR's documented sporadic-outlier rejection for Prime's 1 spp continuation
+    // signal. This remains a denoiser-only bias and never feeds the reference integrator.
+    settings.fireflySuppressorMinRelativeScale = 1.5f;
     settings.minMaterialForDiffuse = 0.0f;
     settings.minMaterialForSpecular = 0.0f;
     result = nrd::SetDenoiserSettings(

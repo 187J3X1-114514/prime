@@ -28,8 +28,10 @@ final class RealtimeSampleState {
             long nextAtlasSampler,
             SunDirection nextSunDirection,
             boolean forceReset) {
+        // Motion vectors preserve ordinary camera motion. Restarting the Sobol epoch on every
+        // translated or rotated frame destroys its temporal stratification and raises 1 spp noise.
         boolean immediateReset = forceReset
-                || !sameCamera(nextCamera, this.camera)
+                || CameraDiscontinuity.isCut(this.camera, nextCamera)
                 || nextResetRevision != this.resetRevision
                 || nextAtlasView != this.atlasView
                 || nextAtlasSampler != this.atlasSampler
@@ -84,12 +86,4 @@ final class RealtimeSampleState {
         return cosine < SUN_HISTORY_DISCONTINUITY_COSINE;
     }
 
-    private static boolean sameCamera(FrameCamera first, FrameCamera second) {
-        return first != null
-                && second != null
-                && first.inverseViewProjection().equals(second.inverseViewProjection())
-                && Double.doubleToLongBits(first.x()) == Double.doubleToLongBits(second.x())
-                && Double.doubleToLongBits(first.y()) == Double.doubleToLongBits(second.y())
-                && Double.doubleToLongBits(first.z()) == Double.doubleToLongBits(second.z());
-    }
 }

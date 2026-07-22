@@ -109,7 +109,8 @@ LabPBR 是材质贴图的存储标准，不是完整的表面/体积散射模型
 - 两套 REBLUR 位于同一 NRD instance；透明分叉复用首接口计算，并在已有两支遍历中捕获首个非 delta 表面，不新增 Guide 射线、材质求值或 RR 输入；
 - 太阳 radiance 与 visibility/penumbra 分离，SIGMA 只过滤 shadow signal；
 - R10G10B10A2 的 A2 现在区分普通介电、金属、透明接口和 foliage，避免跨材质历史混合；
-- 概率 lobe 采样使用 5×5 hit-distance reconstruction 和 30/50 像素 prepass。
+- 概率 lobe 采样使用 5×5 hit-distance reconstruction 和 30/50 像素 prepass；REBLUR 的
+  sporadic-outlier relative scale 为 `1.5`，只在实时降噪边界抑制 1 spp firefly，不反馈积分器。
 
 仍未使用的主要能力：
 
@@ -152,7 +153,8 @@ specular albedo、界面 roughness 和 reflection motion 仍锚定真实透明�
 
 RR 对采样独立性比 NRD 更敏感。公共采样器继续使用逐像素、逐帧扰动的低差异样本；不得为了 NRD
 单独加入屏幕共享 hash、checkerboard 或固定蓝噪声图案。初始相机 jitter 是允许的例外，NGX 单独接收
-其负值，而 motion 本身不包含 jitter。
+其负值，而 motion 本身不包含 jitter。RR 使用至少 64 个 Halton 相位；普通相机移动继续同一 Sobol
+序列，只有相机 cut、场景/材质变化或显式失效才开启新 epoch。
 
 ## 演进顺序
 

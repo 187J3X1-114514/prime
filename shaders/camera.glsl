@@ -17,7 +17,9 @@ vec2 primeCameraSample() {
     base.vertexIndex = 0u;
     base.pathIndex = 0u;
     return primeSobolSample2D(
-            base, PRIME_SAMPLE_EFFECT_CAMERA, PRIME_SAMPLE_DIMENSION_PRIMARY);
+            primePrepareSampleBase(base),
+            PRIME_SAMPLE_EFFECT_CAMERA,
+            PRIME_SAMPLE_DIMENSION_PRIMARY);
 #else
     uint jitterPhase = max(
             (primePush.path.z >> 16u) & PRIME_PATH_JITTER_PHASE_MASK,

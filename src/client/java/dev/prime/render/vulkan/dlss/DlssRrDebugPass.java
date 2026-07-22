@@ -74,7 +74,7 @@ final class DlssRrDebugPass implements Destroyable {
                 targets.rrNormalRoughness(),
                 targets.material(),
                 targets.specularMaterial(),
-                targets.specularHitDistance(),
+                targets.noisySpecular(),
                 targets.rrOutput(),
                 displayOutput);
         long setLayout = 0L;

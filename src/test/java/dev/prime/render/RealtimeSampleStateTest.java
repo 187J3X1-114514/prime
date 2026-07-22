@@ -23,18 +23,21 @@ final class RealtimeSampleStateTest {
     }
 
     @Test
-    void worldCameraAtlasAndExplicitInvalidationResetHistory() {
+    void worldCameraCutAtlasAndExplicitInvalidationResetSequence() {
         RealtimeSampleState state = new RealtimeSampleState();
         FrameCamera camera = camera(1.0);
         state.prepare(camera, 1L, 2L, 3L, NOON, false);
         state.submitted(camera, 2L, 3L, NOON);
         assertTrue(state.prepare(camera, 2L, 2L, 3L, NOON, false));
         state.submitted(camera, 2L, 3L, NOON);
-        assertTrue(state.prepare(camera(2.0), 2L, 2L, 3L, NOON, false));
+        assertFalse(state.prepare(camera(2.0), 2L, 2L, 3L, NOON, false));
         state.submitted(camera(2.0), 2L, 3L, NOON);
-        assertTrue(state.prepare(camera(2.0), 2L, 4L, 3L, NOON, false));
-        state.submitted(camera(2.0), 4L, 3L, NOON);
-        assertTrue(state.prepare(camera(2.0), 2L, 4L, 3L, NOON, true));
+        assertEquals(2, state.sampleIndex());
+        assertTrue(state.prepare(camera(35.0), 2L, 2L, 3L, NOON, false));
+        state.submitted(camera(35.0), 2L, 3L, NOON);
+        assertTrue(state.prepare(camera(35.0), 2L, 4L, 3L, NOON, false));
+        state.submitted(camera(35.0), 4L, 3L, NOON);
+        assertTrue(state.prepare(camera(35.0), 2L, 4L, 3L, NOON, true));
         assertEquals(0, state.sampleIndex());
     }
 

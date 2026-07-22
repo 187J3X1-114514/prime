@@ -13,7 +13,7 @@ layout(set = 0, binding = 3, r32f) uniform readonly image2D rrDebugDepth;
 layout(set = 0, binding = 4, rgba16f) uniform readonly image2D rrDebugNormalRoughness;
 layout(set = 0, binding = 5, rgba16f) uniform readonly image2D rrDebugDiffuseAlbedo;
 layout(set = 0, binding = 6, rgba16f) uniform readonly image2D rrDebugSpecularAlbedo;
-layout(set = 0, binding = 7, r16f) uniform readonly image2D rrDebugSpecularHitDistance;
+layout(set = 0, binding = 7, rgba16f) uniform readonly image2D rrDebugNoisySpecular;
 layout(set = 0, binding = 8, rgba16f) uniform readonly image2D rrDebugOutput;
 layout(set = 0, binding = 9, rgba8) uniform image2D rrDebugDisplay;
 
@@ -137,7 +137,7 @@ vec3 rrPanel(uint panel, vec2 uv) {
         return clamp(primeEncodeSrgb(primeLinearRec2020ToLinearBt709(albedo)), 0.0, 1.0);
     }
     if (panel == RR_SPECULAR_HIT_DISTANCE) {
-        float hitDistance = imageLoad(rrDebugSpecularHitDistance, lowPixel).x;
+        float hitDistance = imageLoad(rrDebugNoisySpecular, lowPixel).a;
         if (!rrFinite(hitDistance)) return RR_INVALID;
         float mapped = clamp(log2(1.0 + max(hitDistance, 0.0)) / 16.0, 0.0, 1.0);
         return vec3(mapped, mapped * mapped, 1.0 - mapped);

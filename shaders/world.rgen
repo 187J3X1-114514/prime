@@ -117,16 +117,17 @@ void main() {
     bool nrdShInputs = primeWritesNrdShInputs();
     bool hasTransmissionGuide = sampleResult.transparentPrimary
             && sampleResult.transmissionGuides.primaryHitKind == PRIME_HIT_SURFACE;
-    float transmissionWeight = primeNrdLinearToYCoCg(
-            primeNrdSanitizeAlbedo(sampleResult.guides.primaryAlbedo)).x;
-    float reflectionWeight = primeNrdLinearToYCoCg(
-            primeNrdSanitizeAlbedo(sampleResult.guides.primarySpecularAlbedo)).x;
     // RR has one primary guide set. Select the deterministic dominant transparent branch instead
     // of pairing refracted radiance with the water interface's zero diffuse albedo. Reflection
     // retains its own motion vector, so transmission can safely own the main virtual surface.
-    bool rrUsesTransmissionGuide = !nrdShInputs
-            && hasTransmissionGuide
-            && transmissionWeight >= reflectionWeight;
+    bool rrUsesTransmissionGuide = false;
+    if (!nrdShInputs && hasTransmissionGuide) {
+        float transmissionWeight = primeNrdLinearToYCoCg(
+                primeNrdSanitizeAlbedo(sampleResult.guides.primaryAlbedo)).x;
+        float reflectionWeight = primeNrdLinearToYCoCg(
+                primeNrdSanitizeAlbedo(sampleResult.guides.primarySpecularAlbedo)).x;
+        rrUsesTransmissionGuide = transmissionWeight >= reflectionWeight;
+    }
     PrimeDenoiserGuides nrdGuides = sampleResult.transparentPrimary
             && (nrdShInputs || rrUsesTransmissionGuide)
             ? sampleResult.transmissionGuides

@@ -21,8 +21,7 @@ layout(set = 0, binding = 10, rgba16f) uniform readonly image3D rrAerialTransmit
 layout(set = 0, binding = 11, rgba16f) uniform writeonly image2D rrInputColor;
 layout(set = 0, binding = 12, rgba16f) uniform writeonly image2D rrMotion;
 layout(set = 0, binding = 13, rgba16f) uniform writeonly image2D rrNormalRoughness;
-layout(set = 0, binding = 14, r16f) uniform writeonly image2D rrSpecularHitDistance;
-layout(set = 0, binding = 15, rg16f) uniform writeonly image2D rrSpecularMotion;
+layout(set = 0, binding = 14, rg16f) uniform writeonly image2D rrSpecularMotion;
 
 layout(push_constant) uniform PrimeRrPreparePushConstants {
     mat4 currentClipToWorld;
@@ -45,12 +44,10 @@ vec3 rrRayDirection(vec2 screenUv) {
     return normalize(farPoint.xyz / farPoint.w - nearPoint.xyz / nearPoint.w);
 }
 
-vec2 rrMotionVector(ivec2 pixel, ivec2 extent, vec3 position, bool sky) {
+vec2 rrMotionVector(vec2 currentSampleUv, vec3 position, bool sky) {
     // The primary point was traced through pixel center + the current camera jitter. Projecting
     // that point with a non-jittered matrix therefore lands at this sample UV, not at pixel center.
     // Subtracting pixel center would leak the current Halton offset into every static motion vector.
-    vec2 currentSampleUv = (vec2(pixel) + vec2(0.5) + rrPush.currentJitterPixels)
-            / vec2(extent);
     vec4 previousClip = sky
             ? rrPush.previousWorldToClip * vec4(rrRayDirection(currentSampleUv), 0.0)
             : rrPush.previousWorldToClip * vec4(position, 1.0);
@@ -125,20 +122,15 @@ void main() {
             : primeNrdSanitizeUnit(specularMaterial.a, roughness);
     imageStore(rrNormalRoughness, pixel, vec4(normal, roughness));
 
-    // The SDK's neutral sky fallback is 0.5 for both albedos. A value of one tells RR that all
-    // noisy sky energy is fully explained by material reflectance and over-constrains reconstruction.
-    vec3 diffuseAlbedo = sky
-            ? vec3(0.5)
-            : primeNrdSanitizeAlbedo(material.rgb);
-    vec3 specularAlbedo = sky
-            ? vec3(0.5)
-            : primeNrdSanitizeAlbedo(specularMaterial.rgb);
-    imageStore(rrDiffuseMaterial, pixel, vec4(diffuseAlbedo, material.a));
-    imageStore(rrSpecularMaterial, pixel, vec4(specularAlbedo, specularMaterial.a));
+    // Raygen already writes finite, clamped surface albedos. Only sky needs the SDK's neutral 0.5
+    // fallback, avoiding two redundant full-frame stores over ordinary geometry.
+    if (sky) {
+        imageStore(rrDiffuseMaterial, pixel, vec4(vec3(0.5), material.a));
+        imageStore(rrSpecularMaterial, pixel, vec4(vec3(0.5), specularMaterial.a));
+    }
     float specularHitDistance = sky
             ? 0.0
             : primeNrdSanitizeHitDistance(noisySpecular.a);
-    imageStore(rrSpecularHitDistance, pixel, vec4(specularHitDistance));
 
     float viewZ = PRIME_RR_SKY_VIEW_Z;
     if (!sky) {
@@ -149,7 +141,9 @@ void main() {
         }
     }
     imageStore(rrLinearViewZ, pixel, vec4(viewZ));
-    vec2 primaryMotion = rrMotionVector(pixel, extent, primary.xyz, sky);
+    vec2 currentSampleUv = (vec2(pixel) + vec2(0.5) + rrPush.currentJitterPixels)
+            / vec2(extent);
+    vec2 primaryMotion = rrMotionVector(currentSampleUv, primary.xyz, sky);
     imageStore(rrMotion, pixel, vec4(
             primeNrdSanitizeMotion(vec3(primaryMotion, 0.0)), 0.0));
 
@@ -167,7 +161,7 @@ void main() {
         // visible interface. primary.xyz may independently describe a transmitted PSR.
         vec3 virtualPosition = primary.xyz / guideDistance
                 * (visibleDistance + specularHitDistance);
-        specularMotion = rrMotionVector(pixel, extent, virtualPosition, false);
+        specularMotion = rrMotionVector(currentSampleUv, virtualPosition, false);
     }
     imageStore(rrSpecularMotion, pixel, vec4(
             primeNrdSanitizeMotion(vec3(specularMotion, 0.0)), 0.0));

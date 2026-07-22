@@ -53,7 +53,7 @@ final class ReconstructionModesTest {
             assertEquals(quality, ReconstructionQualityMode.fromId(quality.id()));
             assertEquals(fsr.get(quality), quality.fsrMode());
             assertEquals(ngx.get(quality), quality.ngxPerfQualityValue());
-            assertTrue(quality.rrJitterPhaseCount() >= 32);
+            assertTrue(quality.rrJitterPhaseCount() >= 64);
             assertEquals(quality.rrJitter(0), quality.rrJitter(quality.rrJitterPhaseCount()));
         }
     }

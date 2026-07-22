@@ -658,7 +658,8 @@ bool primeAdvancePath(
         inout PathState path,
         SurfaceInteraction surface,
         BsdfSample bsdf,
-        PrimeSampleBase bounceSample) {
+        PrimePreparedSampleBase bounceSample,
+        bool pureDeltaInterface) {
     vec3 nextThroughput = primeProductOver(path.throughput, bsdf.response, bsdf.pdf);
     primeRecordNonnegative(nextThroughput);
     if (all(equal(nextThroughput, vec3(0.0)))) {
@@ -676,7 +677,7 @@ bool primeAdvancePath(
     // A pure delta transparent interface has no NEE vertex. Excluding it from RR avoids turning
     // long glass chains into mostly-zero samples without adding expensive light-tree work.
     // Cutout/null coverage is rejected by any-hit and never reaches this state transition.
-    if (primeIsPureDeltaInterface(surface)) {
+    if (pureDeltaInterface) {
         return true;
     }
     uint rrDepth = path.rrDepth++;
@@ -878,6 +879,7 @@ PrimeTransparentBranchResult primeIntegrateTransparentBranch(
 
         vec3 viewDirection = -path.rayDirection;
         PrimeSampleBase bounceSample = primeMakeSampleBase(path, path.bounce + 1u);
+        PrimePreparedSampleBase preparedSample = primePrepareSampleBase(bounceSample);
         bool pureDeltaInterface = primeIsPureDeltaInterface(surface);
         bool primarySurfaceReplacement = !hasGuide && !pureDeltaInterface;
         PrimeDenoiseAlbedos surfaceAlbedos;
@@ -901,15 +903,15 @@ PrimeTransparentBranchResult primeIntegrateTransparentBranch(
                 primeEvaluateHitEmission(path, surface));
         if (!pureDeltaInterface) {
             vec2 sunSample = primeSobolSample2D(
-                    bounceSample,
+                    preparedSample,
                     PRIME_SAMPLE_EFFECT_DIRECT_SUN,
                     PRIME_SAMPLE_DIMENSION_PRIMARY);
             vec3 areaTreeSample = primeSobolSample3D(
-                    bounceSample,
+                    preparedSample,
                     PRIME_SAMPLE_EFFECT_DIRECT_AREA_LIGHT,
                     PRIME_SAMPLE_DIMENSION_PRIMARY);
             vec2 areaPositionSample = primeSobolSample2D(
-                    bounceSample,
+                    preparedSample,
                     PRIME_SAMPLE_EFFECT_DIRECT_AREA_LIGHT,
                     PRIME_SAMPLE_DIMENSION_SECONDARY);
             if (primarySurfaceReplacement) {
@@ -955,7 +957,7 @@ PrimeTransparentBranchResult primeIntegrateTransparentBranch(
         }
 
         vec3 scatterSample = primeSobolSample3D(
-                bounceSample,
+                preparedSample,
                 PRIME_SAMPLE_EFFECT_SCATTER_BSDF,
                 PRIME_SAMPLE_DIMENSION_PRIMARY);
         PrimePathScatter scatter = primeSamplePathSurface(
@@ -985,7 +987,8 @@ PrimeTransparentBranchResult primeIntegrateTransparentBranch(
             primeAppendPsrDelta(deltaChain, surface, bsdf);
         }
         volumeStack = scatter.volumeStack;
-        if (!primeAdvancePath(path, surface, bsdf, bounceSample)) {
+        if (!primeAdvancePath(
+                path, surface, bsdf, preparedSample, pureDeltaInterface)) {
             break;
         }
     }
@@ -1090,18 +1093,19 @@ PrimeIntegrationResult primeIntegrateWithVolume(
         }
 
         PrimeSampleBase bounceSample = primeMakeSampleBase(path, path.bounce + 1u);
+        PrimePreparedSampleBase preparedSample = primePrepareSampleBase(bounceSample);
         bool pureDeltaInterface = primeIsPureDeltaInterface(surface);
         if (!pureDeltaInterface) {
             vec2 sunSample = primeSobolSample2D(
-                    bounceSample,
+                    preparedSample,
                     PRIME_SAMPLE_EFFECT_DIRECT_SUN,
                     PRIME_SAMPLE_DIMENSION_PRIMARY);
             vec3 areaTreeSample = primeSobolSample3D(
-                    bounceSample,
+                    preparedSample,
                     PRIME_SAMPLE_EFFECT_DIRECT_AREA_LIGHT,
                     PRIME_SAMPLE_DIMENSION_PRIMARY);
             vec2 areaPositionSample = primeSobolSample2D(
-                    bounceSample,
+                    preparedSample,
                     PRIME_SAMPLE_EFFECT_DIRECT_AREA_LIGHT,
                     PRIME_SAMPLE_DIMENSION_SECONDARY);
             if (!denoiserState.hasPrimarySurface) {
@@ -1170,7 +1174,7 @@ PrimeIntegrationResult primeIntegrateWithVolume(
         }
 
         vec3 scatterSample = primeSobolSample3D(
-                bounceSample,
+                preparedSample,
                 PRIME_SAMPLE_EFFECT_SCATTER_BSDF,
                 PRIME_SAMPLE_DIMENSION_PRIMARY);
 
@@ -1183,7 +1187,7 @@ PrimeIntegrationResult primeIntegrateWithVolume(
         }
         if (firstTransparent) {
             vec3 transmissionSample = primeSobolSample3D(
-                    bounceSample,
+                    preparedSample,
                     PRIME_SAMPLE_EFFECT_SCATTER_BSDF,
                     PRIME_SAMPLE_DIMENSION_SECONDARY);
             PrimeTransmissivePrimarySample primarySample =
@@ -1242,7 +1246,11 @@ PrimeIntegrationResult primeIntegrateWithVolume(
                 result.reflectionGuides.specularDirection = reflected.direction;
                 PathState reflectionPath = path;
                 if (primeAdvancePath(
-                        reflectionPath, surface, reflected, bounceSample)) {
+                        reflectionPath,
+                        surface,
+                        reflected,
+                        preparedSample,
+                        pureDeltaInterface)) {
                     reflectionPath.bounce = path.bounce + 1u;
                     PrimeTransparentBranchResult reflection =
                             primeIntegrateTransparentBranch(
@@ -1276,7 +1284,11 @@ PrimeIntegrationResult primeIntegrateWithVolume(
                 // roulette sample independent without adding RNG calls or dimensions.
                 transmissionPath.sampleDimension = path.sampleDimension + 1u;
                 if (primeAdvancePath(
-                        transmissionPath, surface, transmitted, bounceSample)) {
+                        transmissionPath,
+                        surface,
+                        transmitted,
+                        preparedSample,
+                        pureDeltaInterface)) {
                     transmissionPath.bounce = path.bounce + 1u;
                     PrimeTransparentBranchResult transmission =
                             primeIntegrateTransparentBranch(
@@ -1370,7 +1382,8 @@ PrimeIntegrationResult primeIntegrateWithVolume(
         if (!hasScatter) {
             break;
         }
-        if (!primeAdvancePath(path, surface, bsdf, bounceSample)) {
+        if (!primeAdvancePath(
+                path, surface, bsdf, preparedSample, pureDeltaInterface)) {
             break;
         }
     }

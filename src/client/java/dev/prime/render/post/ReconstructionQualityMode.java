@@ -66,9 +66,9 @@ public enum ReconstructionQualityMode {
         return this.fsrMode.jitterPhase(frameIndex);
     }
 
-    /** RR uses at least 32 Halton phases even for DLAA and lower upscale ratios. */
+    /** RR uses a long Halton cycle to avoid a visible short-period sub-pixel pattern. */
     public int rrJitterPhaseCount() {
-        return Math.max(32, this.fsrMode.jitterPhaseCount());
+        return Math.max(64, this.fsrMode.jitterPhaseCount());
     }
 
     public int rrJitterPhase(int frameIndex) {

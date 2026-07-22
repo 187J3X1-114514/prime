@@ -31,22 +31,14 @@ struct LightEvaluation {
 // PDF queries must reuse that exact quantized value. The environment is evaluated only when a BSDF
 // path escapes; the sun and area-light adapters are sampled explicitly and perform no selection.
 
-const float PRIME_FLOAT_MAX = 3.402823466e+38;
-
 float primePowerHeuristic(float firstPdf, float secondPdf) {
     primeRecordNonnegative(firstPdf);
     primeRecordNonnegative(secondPdf);
-    if (isnan(firstPdf) || !(firstPdf > 0.0)) {
+    if (firstPdf <= 0.0) {
         return 0.0;
     }
-    if (isnan(secondPdf) || !(secondPdf > 0.0)) {
+    if (secondPdf <= 0.0) {
         return 1.0;
-    }
-    if (isinf(firstPdf)) {
-        return isinf(secondPdf) ? 0.5 : 1.0;
-    }
-    if (isinf(secondPdf)) {
-        return 0.0;
     }
     if (firstPdf >= secondPdf) {
         float ratio = secondPdf / firstPdf;
@@ -60,16 +52,13 @@ float primePowerHeuristic(float firstPdf, float secondPdf) {
 float primePowerHeuristicOverPdf(float sampledPdf, float otherPdf) {
     primeRecordNonnegative(sampledPdf);
     primeRecordNonnegative(otherPdf);
-    if (isnan(sampledPdf) || !(sampledPdf > 0.0) || isinf(sampledPdf)) {
+    if (sampledPdf <= 0.0) {
         return 0.0;
     }
-    if (isnan(otherPdf) || !(otherPdf > 0.0)) {
+    if (otherPdf <= 0.0) {
         float result = 1.0 / sampledPdf;
         primeRecordNonnegative(result);
         return result;
-    }
-    if (isinf(otherPdf)) {
-        return 0.0;
     }
     if (sampledPdf >= otherPdf) {
         float ratio = otherPdf / sampledPdf;
@@ -87,7 +76,7 @@ vec3 primeEnvironmentRadiance(IntegratorRecord integrator, vec3 direction) {
     // Atmosphere LUT construction is linear in its extraterrestrial source. Reusing the calibrated
     // base LUT and applying the same scale as direct sun is exact for this single-source model.
     float sunScale = max(integrator.sunDirectionIntensity.w, 0.0)
-            / max(ATM_SPACE_SUN_INTENSITY, 1.0e-30);
+            / ATM_SPACE_SUN_INTENSITY;
     return primeAtmosphereSky(direction, integrator.sunDirectionIntensity.xyz) * sunScale;
 }
 
@@ -103,7 +92,7 @@ float primeSunSolidAngle() {
 }
 
 float primeSunPdf() {
-    return 1.0 / max(primeSunSolidAngle(), 1.0e-12);
+    return 1.0 / primeSunSolidAngle();
 }
 
 bool primeSunContainsDirection(IntegratorRecord integrator, vec3 direction) {
@@ -144,7 +133,7 @@ LightSample primeSampleSun(
         vec3 surfacePosition,
         vec2 sampleValue) {
     float cosine = mix(primeSunCosAngularRadius(), 1.0, sampleValue.x);
-    float sine = sqrt(max(1.0 - cosine * cosine, 0.0));
+    float sine = sqrt(1.0 - cosine * cosine);
     float azimuth = 2.0 * PRIME_PI * sampleValue.y;
     vec3 localDirection = vec3(sine * cos(azimuth), sine * sin(azimuth), cosine);
     LightSample result;
@@ -205,8 +194,18 @@ float primeLightBranchProbability(LightNode first, LightNode second, vec3 point)
     float secondDistanceSquared = primeLightNodeDistanceSquared(second, point);
     // This is normalized power/distance^2 with the common division removed. Forward and reverse
     // traversal both read these exact f32 node records, which is required for valid MIS.
-    float firstScore = max(first.boundsMinPower.w, 0.0) * secondDistanceSquared;
-    float secondScore = max(second.boundsMinPower.w, 0.0) * firstDistanceSquared;
+    float firstPower = max(first.boundsMinPower.w, 0.0);
+    float secondPower = max(second.boundsMinPower.w, 0.0);
+    float powerScale = max(firstPower, secondPower);
+    if (powerScale == 0.0) return -1.0;
+    float firstPowerRatio = firstPower / powerScale;
+    float secondPowerRatio = secondPower / powerScale;
+    float distanceScale = max(firstDistanceSquared, secondDistanceSquared);
+    if (distanceScale == 0.0) {
+        return firstPowerRatio / (firstPowerRatio + secondPowerRatio);
+    }
+    float firstScore = firstPowerRatio * (secondDistanceSquared / distanceScale);
+    float secondScore = secondPowerRatio * (firstDistanceSquared / distanceScale);
     float sum = firstScore + secondScore;
     return sum > 0.0 ? firstScore / sum : -1.0;
 }
@@ -383,25 +382,11 @@ float primeAreaSolidAnglePdf(
     primeRecordNonnegative(distanceSquared);
     primeRecordUnit(lightCosine);
     primeRecordNonnegative(areaPdf);
-    float cosine = clamp(lightCosine, 0.0, 1.0);
-    if (!(distanceSquared > 0.0)
-            || isnan(distanceSquared)
-            || isinf(distanceSquared)
-            || !(cosine > 0.0)
-            || !(areaPdf > 0.0)
-            || isnan(areaPdf)) {
+    float cosine = lightCosine;
+    if (distanceSquared <= 0.0 || cosine <= 0.0 || areaPdf <= 0.0) {
         return 0.0;
     }
-    if (isinf(areaPdf)) {
-        return PRIME_FLOAT_MAX;
-    }
-    float maximumAreaPdf = cosine >= distanceSquared
-            ? PRIME_FLOAT_MAX
-            : (PRIME_FLOAT_MAX * cosine) / distanceSquared;
-    if (areaPdf > maximumAreaPdf) {
-        return PRIME_FLOAT_MAX;
-    }
-    return areaPdf * distanceSquared / cosine;
+    return primeProductOver(areaPdf, distanceSquared, cosine);
 }
 
 AreaLightSample primeSampleAreaLight(
@@ -557,18 +542,11 @@ LightEvaluation primeEvaluateAreaLight(
     vec3 relative = localPosition - emitter.cornerArea.xyz;
     vec3 firstEdge = emitter.edgeOneScale.xyz;
     vec3 secondEdge = emitter.edgeTwoPower.xyz;
-    float firstDot = dot(firstEdge, firstEdge);
-    float crossDot = dot(firstEdge, secondEdge);
-    float secondDot = dot(secondEdge, secondEdge);
-    float relativeFirst = dot(relative, firstEdge);
-    float relativeSecond = dot(relative, secondEdge);
-    float denominator = firstDot * secondDot - crossDot * crossDot;
-    if (!(abs(denominator) > 1.0e-12)) {
-        return result;
-    }
+    vec3 edgeCross = cross(firstEdge, secondEdge);
+    float denominator = dot(edgeCross, edgeCross);
     vec2 parentBarycentric = vec2(
-            (secondDot * relativeFirst - crossDot * relativeSecond) / denominator,
-            (firstDot * relativeSecond - crossDot * relativeFirst) / denominator);
+            dot(cross(relative, secondEdge), edgeCross) / denominator,
+            dot(cross(firstEdge, relative), edgeCross) / denominator);
     uint cellIndex = primeLightCellIndex(parentBarycentric);
     LightCell cell = cells.cells[emitter.metadata.x + cellIndex];
     float cellArea = emitter.cornerArea.w / float(PRIME_LIGHT_CELL_COUNT);

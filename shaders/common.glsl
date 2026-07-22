@@ -26,6 +26,41 @@ float primeBlockLightRadianceMultiplier() {
             PRIME_PATH_BLOCK_LIGHT_EV_QUARTER_SHIFT)));
 }
 
+// Power-of-two scaling preserves a representable a*b/c when either intermediate operation would
+// overflow or underflow. frexp/ldexp transfer exponents exactly; only the significand operations
+// and final result round.
+float primeProductOver(float first, float second, float denominator) {
+    int firstExponent;
+    int secondExponent;
+    int denominatorExponent;
+    float significand = frexp(first, firstExponent)
+            * frexp(second, secondExponent)
+            / frexp(denominator, denominatorExponent);
+    return ldexp(significand, firstExponent + secondExponent - denominatorExponent);
+}
+
+vec3 primeProductOver(vec3 first, vec3 second, float denominator) {
+    ivec3 firstExponent;
+    ivec3 secondExponent;
+    int denominatorExponent;
+    vec3 significand = frexp(first, firstExponent)
+            * frexp(second, secondExponent)
+            / frexp(denominator, denominatorExponent);
+    return ldexp(
+            significand,
+            firstExponent + secondExponent - ivec3(denominatorExponent));
+}
+
+vec3 primeTripleProduct(vec3 first, vec3 second, float third) {
+    ivec3 firstExponent;
+    ivec3 secondExponent;
+    int thirdExponent;
+    vec3 significand = frexp(first, firstExponent)
+            * frexp(second, secondExponent)
+            * frexp(third, thirdExponent);
+    return ldexp(significand, firstExponent + secondExponent + ivec3(thirdExponent));
+}
+
 bool primeWritesNrdShInputs() {
     return (primePush.path.w & PRIME_PATH_SH_INPUT_MASK) != 0u;
 }
@@ -39,7 +74,6 @@ const uint PRIME_NUMERICAL_POSITIVE_INFINITY = 2u;
 const uint PRIME_NUMERICAL_NEGATIVE_INFINITY = 4u;
 const uint PRIME_NUMERICAL_FINITE_NEGATIVE = 8u;
 const uint PRIME_NUMERICAL_ABOVE_FP16 = 16u;
-const uint PRIME_NUMERICAL_REJECTED = 64u;
 const uint PRIME_NUMERICAL_ABOVE_UNIT = 128u;
 const uint PRIME_NUMERICAL_INVALID_DIRECTION = 256u;
 const float PRIME_NUMERICAL_FP16_MAX = 65504.0;
@@ -156,12 +190,6 @@ void primeRecordUnit(vec3 value) {
 void primeRecordDirection(vec3 value) {
     if (primeWritesRawNumericalDiagnostic()) {
         primeRawNumericalFlags |= primeClassifyDirection(value);
-    }
-}
-
-void primeRecordRejected() {
-    if (primeWritesRawNumericalDiagnostic()) {
-        primeRawNumericalFlags |= PRIME_NUMERICAL_REJECTED;
     }
 }
 

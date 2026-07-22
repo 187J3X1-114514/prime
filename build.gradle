@@ -82,8 +82,12 @@ def verifyRoboCutePort = tasks.register('verifyRoboCutePort') {
 					"Protected RoboCute file set changed: expected ${expected}, found ${actual}")
 		}
 		protectedFiles.files.each { source ->
+			def normalized = source.getText('UTF-8')
+					.replace('\r\n', '\n')
+					.replace('\r', '\n')
+					.getBytes('UTF-8')
 			def digest = java.security.MessageDigest.getInstance('SHA-256')
-					.digest(source.bytes).encodeHex().toString()
+					.digest(normalized).encodeHex().toString()
 			if (digest != lock.files[source.name]) {
 				throw new GradleException(
 						"Protected RoboCute source changed without updating its approved lock: ${source.name}")

@@ -47,7 +47,6 @@ uint primeClassifyRawOutput(PrimeIntegrationResult result) {
             || any(greaterThan(result.guides.primaryAreaSpecular, vec3(0.0)))) {
         flags |= primeClassifyDirection(result.guides.primaryAreaDirection);
     }
-    if (!result.validSample) flags |= PRIME_NUMERICAL_REJECTED;
     return flags;
 }
 
@@ -61,7 +60,6 @@ vec3 primeRawNumericalColor(uint flags) {
     if (nonFinite == PRIME_NUMERICAL_NEGATIVE_INFINITY) return vec3(0.0, 1.0, 1.0);
     if (nonFinite != 0u) return vec3(1.0);
     if ((flags & PRIME_NUMERICAL_FINITE_NEGATIVE) != 0u) return vec3(0.0, 0.25, 1.0);
-    if ((flags & PRIME_NUMERICAL_REJECTED) != 0u) return vec3(0.0, 1.0, 0.0);
     if ((flags & PRIME_NUMERICAL_INVALID_DIRECTION) != 0u) return vec3(1.0, 0.0, 0.5);
     if ((flags & PRIME_NUMERICAL_ABOVE_UNIT) != 0u) return vec3(0.5, 0.0, 1.0);
     return vec3(1.0, 1.0, 0.0);

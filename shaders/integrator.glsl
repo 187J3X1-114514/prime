@@ -52,7 +52,6 @@ struct PrimeDenoiserGuides {
 struct PrimeIntegrationResult {
     PrimePathRadiance radiance;
     PrimeDenoiserGuides guides;
-    bool validSample;
 };
 
 // Bookkeeping that maps a complete physical path into the signal/guide contract. Keeping it in a
@@ -142,19 +141,8 @@ SurfaceInteraction primeTraceSurface(vec3 origin, vec3 direction) {
     return surface;
 }
 
-bool primeValidSurfaceInteraction(SurfaceInteraction surface) {
-    if (surface.hitKind == PRIME_HIT_NONE) {
-        return true;
-    }
-    float normalLengthSquared = dot(surface.geometricNormal, surface.geometricNormal);
-    return surface.hitKind == PRIME_HIT_SURFACE
-            && primeNrdIsFinite(surface.t)
-            && surface.t >= 0.0
-            && primeNrdIsFinite(surface.position)
-            && primeNrdIsFinite(surface.geometricNormal)
-            && primeNrdIsFinite(normalLengthSquared)
-            && normalLengthSquared > 1.0e-12
-            && primeNrdIsFinite(surface.baseColor);
+bool primeKnownHitKind(SurfaceInteraction surface) {
+    return surface.hitKind == PRIME_HIT_NONE || surface.hitKind == PRIME_HIT_SURFACE;
 }
 
 bool primePreviousCannotUseMis(PathState path) {
@@ -294,8 +282,8 @@ PrimeDirectLightingSplit primeEvaluateVisibleDirectSplit(
                 volumeStack);
         float weightedInversePdf = primePowerHeuristicOverPdf(
                 light.pdf, evaluation.pdf);
-        result.specular = lightRadiance
-                * evaluation.value * (cosine * weightedInversePdf);
+        result.specular = primeTripleProduct(
+                lightRadiance, evaluation.response, weightedInversePdf);
         return result;
     }
     if (foliage) {
@@ -311,9 +299,10 @@ PrimeDirectLightingSplit primeEvaluateVisibleDirectSplit(
                 volumeStack);
         float weightedInversePdf = primePowerHeuristicOverPdf(
                 light.pdf, components.pdf);
-        vec3 scale = lightRadiance * (cosine * weightedInversePdf);
-        result.diffuse = scale * components.diffuseValue;
-        result.specular = scale * components.specularValue;
+        result.diffuse = primeTripleProduct(
+                lightRadiance, components.diffuseResponse, weightedInversePdf);
+        result.specular = primeTripleProduct(
+                lightRadiance, components.specularResponse, weightedInversePdf);
         return result;
     }
     // The translation layer supplies conservative defaults when no community material data is
@@ -331,9 +320,10 @@ PrimeDirectLightingSplit primeEvaluateVisibleDirectSplit(
             volumeStack);
     float weightedInversePdf = primePowerHeuristicOverPdf(
             light.pdf, components.pdf);
-    vec3 scale = lightRadiance * (cosine * weightedInversePdf);
-    result.diffuse = scale * components.diffuseValue;
-    result.specular = scale * components.specularValue;
+    result.diffuse = primeTripleProduct(
+            lightRadiance, components.diffuseResponse, weightedInversePdf);
+    result.specular = primeTripleProduct(
+            lightRadiance, components.specularResponse, weightedInversePdf);
     return result;
 }
 
@@ -456,9 +446,7 @@ vec3 primeEstimateDirectAreaLight(
 bool primeRussianRoulette(
         inout PathState path,
         uint firstBounce,
-        float sampleValue,
-        out bool numericalFailure) {
-    numericalFailure = false;
+        float sampleValue) {
     if (path.bounce < firstBounce) {
         return true;
     }
@@ -467,54 +455,26 @@ bool primeRussianRoulette(
     if (sampleValue >= survival) {
         return false;
     }
-    vec3 survivedThroughput = path.throughput / survival;
-    primeRecordNonnegative(survivedThroughput);
-    bool valid = !any(isnan(survivedThroughput))
-            && !any(isinf(survivedThroughput))
-            && all(greaterThanEqual(survivedThroughput, vec3(0.0)))
-            && any(greaterThan(survivedThroughput, vec3(0.0)));
-    if (valid) {
-        path.throughput = survivedThroughput;
-    } else {
-        primeRecordRejected();
-        numericalFailure = true;
-    }
-    return valid;
+    path.throughput /= survival;
+    primeRecordNonnegative(path.throughput);
+    return true;
 }
 
-bool primeTryAccumulate(inout vec3 accumulator, vec3 contribution) {
+void primeAccumulate(inout vec3 accumulator, vec3 contribution) {
     primeRecordRadiance(contribution);
-    bool validContribution = !any(isnan(contribution))
-            && !any(isinf(contribution))
-            && all(greaterThanEqual(contribution, vec3(0.0)));
-    if (!validContribution) {
-        primeRecordRejected();
-        return false;
-    }
-    vec3 candidate = accumulator + contribution;
-    primeRecordRadiance(candidate);
-    bool validCandidate = !any(isnan(candidate))
-            && !any(isinf(candidate))
-            && all(greaterThanEqual(candidate, vec3(0.0)));
-    if (validCandidate) {
-        accumulator = candidate;
-    } else {
-        primeRecordRejected();
-    }
-    return validCandidate;
+    accumulator += contribution;
+    primeRecordRadiance(accumulator);
 }
 
 void primeAccumulateAfterPrimary(
         inout PrimeIntegrationResult result,
         bool diffusePath,
         vec3 contribution) {
-    bool accepted;
     if (diffusePath) {
-        accepted = primeTryAccumulate(result.radiance.diffuse, contribution);
+        primeAccumulate(result.radiance.diffuse, contribution);
     } else {
-        accepted = primeTryAccumulate(result.radiance.specular, contribution);
+        primeAccumulate(result.radiance.specular, contribution);
     }
-    result.validSample = accepted && result.validSample;
 }
 
 // Realtime and screenshot rendering share this one complete path estimator. Keeping segment
@@ -539,35 +499,20 @@ vec3 primeEvaluateHitEmission(
     float hitAreaWeight = primePreviousCannotUseMis(path)
             ? 1.0
             : primePowerHeuristic(path.previousBsdfPdf, hitAreaLight.pdf);
-    return path.throughput * hitAreaLight.radiance * hitAreaWeight;
+    return primeTripleProduct(path.throughput, hitAreaLight.radiance, hitAreaWeight);
 }
 
 bool primeApplySegmentMedium(
         inout PathState path,
         SurfaceInteraction surface,
-        PrimeRcVolumeStack volumeStack,
-        out bool numericalFailure) {
-    numericalFailure = false;
+        PrimeRcVolumeStack volumeStack) {
     if (volumeStack.count == 0u) {
         return true;
     }
     PrimeRcVolume medium = volumeStack.values[volumeStack.count - 1u];
-    vec3 attenuatedThroughput = path.throughput
-            * exp(-medium.extinction * max(surface.t, 0.0));
-    primeRecordNonnegative(attenuatedThroughput);
-    bool finiteNonnegative = !any(isnan(attenuatedThroughput))
-            && !any(isinf(attenuatedThroughput))
-            && all(greaterThanEqual(attenuatedThroughput, vec3(0.0)));
-    if (!finiteNonnegative) {
-        primeRecordRejected();
-        numericalFailure = true;
-        return false;
-    }
-    bool survives = any(greaterThan(attenuatedThroughput, vec3(0.0)));
-    if (survives) {
-        path.throughput = attenuatedThroughput;
-    }
-    return survives;
+    path.throughput *= exp(-medium.extinction * surface.t);
+    primeRecordNonnegative(path.throughput);
+    return !all(equal(path.throughput, vec3(0.0)));
 }
 
 bool primeIsPureDeltaInterface(SurfaceInteraction surface) {
@@ -629,33 +574,8 @@ PrimePathScatter primeSamplePathSurface(
     return result;
 }
 
-bool primeValidScatter(BsdfSample bsdf) {
-    float directionLengthSquared = dot(bsdf.direction, bsdf.direction);
-    bool finite = !isnan(bsdf.pdf) && !isinf(bsdf.pdf)
-            && !any(isnan(bsdf.weight)) && !any(isinf(bsdf.weight))
-            && !any(isnan(bsdf.direction)) && !any(isinf(bsdf.direction))
-            && !isnan(directionLengthSquared) && !isinf(directionLengthSquared);
-    return finite
-            && bsdf.pdf > 0.0
-            && all(greaterThanEqual(bsdf.weight, vec3(0.0)))
-            && any(greaterThan(bsdf.weight, vec3(0.0)))
-            && directionLengthSquared > 1.0e-12;
-}
-
-bool primeScatterNumericallyValid(BsdfSample bsdf) {
-    float directionLengthSquared = dot(bsdf.direction, bsdf.direction);
-    bool hasSample = bsdf.pdf > 0.0 || any(greaterThan(bsdf.weight, vec3(0.0)));
-    return !isnan(bsdf.pdf)
-            && !isinf(bsdf.pdf)
-            && bsdf.pdf >= 0.0
-            && !any(isnan(bsdf.weight))
-            && !any(isinf(bsdf.weight))
-            && all(greaterThanEqual(bsdf.weight, vec3(0.0)))
-            && !any(isnan(bsdf.direction))
-            && !any(isinf(bsdf.direction))
-            && (!hasSample || (!isnan(directionLengthSquared)
-                    && !isinf(directionLengthSquared)
-                    && directionLengthSquared > 1.0e-12));
+bool primeHasScatter(BsdfSample bsdf) {
+    return bsdf.eventFlags != 0u;
 }
 
 bool primeIsDeltaSample(BsdfSample bsdf) {
@@ -671,20 +591,10 @@ bool primeAdvancePath(
         inout PathState path,
         SurfaceInteraction surface,
         BsdfSample bsdf,
-        float rouletteSample,
-        out bool numericalFailure) {
-    numericalFailure = false;
-    vec3 nextThroughput = path.throughput * bsdf.weight;
+        float rouletteSample) {
+    vec3 nextThroughput = primeProductOver(path.throughput, bsdf.response, bsdf.pdf);
     primeRecordNonnegative(nextThroughput);
-    bool finiteNonnegative = !any(isnan(nextThroughput))
-            && !any(isinf(nextThroughput))
-            && all(greaterThanEqual(nextThroughput, vec3(0.0)));
-    if (!finiteNonnegative) {
-        primeRecordRejected();
-        numericalFailure = true;
-        return false;
-    }
-    if (!any(greaterThan(nextThroughput, vec3(0.0)))) {
+    if (all(equal(nextThroughput, vec3(0.0)))) {
         return false;
     }
     path.throughput = nextThroughput;
@@ -699,8 +609,7 @@ bool primeAdvancePath(
     return primeRussianRoulette(
             path,
             PRIME_RUSSIAN_ROULETTE_START,
-            rouletteSample,
-            numericalFailure);
+            rouletteSample);
 }
 
 PrimeIntegrationResult primeIntegrateWithVolume(
@@ -729,7 +638,6 @@ PrimeIntegrationResult primeIntegrateWithVolume(
     result.guides.primaryAreaDiffuse = vec3(0.0);
     result.guides.primaryAreaSpecular = vec3(0.0);
     result.guides.primaryAreaDirection = vec3(0.0);
-    result.validSample = true;
     PrimeDenoiserState denoiserState;
     denoiserState.hasPrimarySurface = false;
     denoiserState.reachedNonDelta = false;
@@ -750,9 +658,7 @@ PrimeIntegrationResult primeIntegrateWithVolume(
         primeRecordNonnegative(surface.t);
         primeRecordDirection(surface.geometricNormal);
         primeRecordUnit(surface.baseColor);
-        if (!primeValidSurfaceInteraction(surface)) {
-            primeRecordRejected();
-            result.validSample = false;
+        if (!primeKnownHitKind(surface)) {
             break;
         }
         vec3 viewDirection = -path.rayDirection;
@@ -770,24 +676,20 @@ PrimeIntegrationResult primeIntegrateWithVolume(
         if (surface.hitKind == PRIME_HIT_NONE) {
             vec3 contribution = primeEvaluateEnvironmentContribution(path, integrator);
             if (!denoiserState.hasPrimarySurface) {
-                result.validSample = primeTryAccumulate(
-                        result.radiance.stable, contribution) && result.validSample;
+                primeAccumulate(result.radiance.stable, contribution);
             } else {
                 primeAccumulateAfterPrimary(result, denoiserState.diffusePath, contribution);
             }
             break;
         }
 
-        bool mediumFailure;
-        if (!primeApplySegmentMedium(path, surface, volumeStack, mediumFailure)) {
-            result.validSample = !mediumFailure && result.validSample;
+        if (!primeApplySegmentMedium(path, surface, volumeStack)) {
             break;
         }
 
         vec3 emitted = primeEvaluateHitEmission(path, surface);
         if (!denoiserState.hasPrimarySurface) {
-            result.validSample = primeTryAccumulate(
-                    result.radiance.stable, emitted) && result.validSample;
+            primeAccumulate(result.radiance.stable, emitted);
         } else {
             primeAccumulateAfterPrimary(result, denoiserState.diffusePath, emitted);
         }
@@ -822,31 +724,20 @@ PrimeIntegrationResult primeIntegrateWithVolume(
                         volumeStack);
                 result.guides.sunPenumbra = sun.penumbra;
                 result.radiance.sunVisibility = sun.visibility;
-                bool validSun = primeTryAccumulate(
+                primeAccumulate(
                         result.radiance.unshadowedSun,
                         path.throughput * (sun.lighting.diffuse + sun.lighting.specular));
                 vec3 primaryAreaDiffuse = path.throughput * areaSplit.diffuse;
                 vec3 primaryAreaSpecular = path.throughput * areaSplit.specular;
-                bool validDiffuse = primeTryAccumulate(
-                        result.radiance.diffuse, primaryAreaDiffuse);
-                bool validSpecular = primeTryAccumulate(
-                        result.radiance.specular, primaryAreaSpecular);
-                if (validDiffuse) {
-                    result.guides.primaryAreaDiffuse = primaryAreaDiffuse;
-                }
-                if (validSpecular) {
-                    result.guides.primaryAreaSpecular = primaryAreaSpecular;
-                }
-                if ((validDiffuse && any(greaterThan(primaryAreaDiffuse, vec3(0.0))))
-                        || (validSpecular
-                                && any(greaterThan(primaryAreaSpecular, vec3(0.0))))) {
+                primeAccumulate(result.radiance.diffuse, primaryAreaDiffuse);
+                primeAccumulate(result.radiance.specular, primaryAreaSpecular);
+                result.guides.primaryAreaDiffuse = primaryAreaDiffuse;
+                result.guides.primaryAreaSpecular = primaryAreaSpecular;
+                if (any(greaterThan(primaryAreaDiffuse, vec3(0.0)))
+                        || any(greaterThan(primaryAreaSpecular, vec3(0.0)))) {
                     // SH1 needs the primary area sample apart from the continuation direction.
                     result.guides.primaryAreaDirection = areaSplit.direction;
                 }
-                result.validSample = validSun
-                        && validDiffuse
-                        && validSpecular
-                        && result.validSample;
             } else {
                 vec3 direct = path.throughput
                         * (primeEstimateDirectSun(
@@ -872,29 +763,24 @@ PrimeIntegrationResult primeIntegrateWithVolume(
 
         PrimeDenoiseAlbedos surfaceAlbedos;
         if (!denoiserState.reachedNonDelta) {
-            // Derive guides from the initialized BSDF before drawing a continuation sample. A
-            // rejected proposal must not erase an otherwise valid visible surface.
+            // Derive guides from the initialized BSDF before drawing a continuation sample. An
+            // empty proposal must not erase an otherwise valid visible surface.
             surfaceAlbedos = primeSurfaceDenoiseAlbedos(
                     surface, viewDirection, volumeStack);
         }
         PrimePathScatter scatter = primeSamplePathSurface(
                 surface, viewDirection, scatterSample, volumeStack);
         BsdfSample bsdf = scatter.bsdf;
-        if (bsdf.pdf > 0.0 || any(greaterThan(bsdf.weight, vec3(0.0)))) {
+        if (bsdf.eventFlags != 0u) {
             primeRecordDirection(bsdf.direction);
         } else {
             primeRecordNonFinite(bsdf.direction);
         }
-        primeRecordNonnegative(bsdf.weight);
+        primeRecordNonnegative(bsdf.response);
         primeRecordNonnegative(bsdf.pdf);
         primeRecordNonnegative(bsdf.relativeEta);
         volumeStack = scatter.volumeStack;
-        bool validScatter = primeValidScatter(bsdf);
-        bool numericalScatter = primeScatterNumericallyValid(bsdf);
-        if (!numericalScatter) {
-            primeRecordRejected();
-        }
-        result.validSample = numericalScatter && result.validSample;
+        bool hasScatter = primeHasScatter(bsdf);
         if (!denoiserState.reachedNonDelta) {
             bool firstDenoiseSurface = !denoiserState.hasPrimarySurface;
             if (firstDenoiseSurface) {
@@ -915,7 +801,7 @@ PrimeIntegrationResult primeIntegrateWithVolume(
                 result.guides.primarySpecularAlbedo = primeSanitizeDenoiseAlbedo(
                         denoiserState.specularAlbedoProduct);
                 result.guides.primaryLinearRoughness = primeSurfaceLinearRoughness(surface);
-                if (validScatter) {
+                if (hasScatter) {
                     if (denoiserState.diffusePath) {
                         result.guides.diffuseDirection = bsdf.direction;
                     } else {
@@ -925,10 +811,10 @@ PrimeIntegrationResult primeIntegrateWithVolume(
             }
 
             bool sampledNonDelta = primeIsNonDeltaSample(bsdf);
-            bool surfaceHasFiniteLobe = any(greaterThan(
+            bool surfaceHasNonDeltaLobe = any(greaterThan(
                     surfaceAlbedos.diffuse, vec3(0.0)))
                     || primeSurfaceLinearRoughness(surface) > 0.0;
-            if (sampledNonDelta || (!validScatter && surfaceHasFiniteLobe)) {
+            if (sampledNonDelta || (!hasScatter && surfaceHasNonDeltaLobe)) {
                 if (!firstDenoiseSurface) {
                     denoiserState.specularAlbedoProduct *=
                             surfaceAlbedos.specular + surfaceAlbedos.diffuse;
@@ -942,16 +828,14 @@ PrimeIntegrationResult primeIntegrateWithVolume(
                         denoiserState.specularAlbedoProduct);
             }
         }
-        if (!validScatter) {
+        if (!hasScatter) {
             break;
         }
         float rouletteSample = primeHashSample1D(
                 bounceSample,
                 PRIME_SAMPLE_EFFECT_RUSSIAN_ROULETTE,
                 PRIME_SAMPLE_DIMENSION_PRIMARY);
-        bool advanceFailure;
-        if (!primeAdvancePath(path, surface, bsdf, rouletteSample, advanceFailure)) {
-            result.validSample = !advanceFailure && result.validSample;
+        if (!primeAdvancePath(path, surface, bsdf, rouletteSample)) {
             break;
         }
     }

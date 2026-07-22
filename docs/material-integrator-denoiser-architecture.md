@@ -105,7 +105,7 @@ LabPBR 是材质贴图的存储标准，不是完整的表面/体积散射模型
 
 - 已提供 non-jittered 2.5D motion、world normal、linear roughness、view-Z；
 - diffuse/specular 按方向能量拆分并 demodulate，SH1 保存主面积光与延续路径的辐射加权一阶方向矩，分别附带 normalized hit distance；
-- 主 REBLUR 处理普通像素的真实主表面，并在透明像素处理透射支的 PSR 信号；第二套 REBLUR 只处理反射支，两条实际路径分别提供 radiance、虚拟表面 hit distance、方向和材质，过滤后再 remodulate 相加；
+- 主 REBLUR 处理普通像素的真实主表面，并在透明像素处理透射支的 PSR 信号；第二套 REBLUR 只处理反射支的 PSR。两条实际路径分别提供 radiance、虚拟表面 hit distance、方向和材质，过滤后再 remodulate 相加；RR 在透射占优时也选择透射虚拟主表面，并为反射支单独提交虚拟运动；
 - 两套 REBLUR 位于同一 NRD instance；透明分叉复用首接口计算，并在已有两支遍历中捕获首个非 delta 表面，不新增 Guide 射线、材质求值或 RR 输入；
 - 太阳 radiance 与 visibility/penumbra 分离，SIGMA 只过滤 shadow signal；
 - R10G10B10A2 的 A2 现在区分普通介电、金属、透明接口和 foliage，避免跨材质历史混合；
@@ -130,15 +130,17 @@ REBLUR 仍比 RELAX 更适合当前“原始 1 spp、普通表面单路径、透
 当前提交给 NGX 的实际图像包括：
 
 - 完整 noisy linear Rec.2020 HDR color；
-- current-to-previous、non-jittered、低分辨率 motion；
+- current-to-previous、non-jittered、低分辨率 primary motion 与 reflection motion；
 - linear view-Z、world shading normal、linear roughness；
 - diffuse albedo、视角相关 specular albedo；
-- world-space specular hit distance、`Color Before Transparency` 与当前/上一帧矩阵。
+- 当前/上一帧矩阵。specular hit distance 只在 Prime 内部构造 reflection motion，不提交给 NGX。
 
-天空的 diffuse/specular albedo 使用 SDK 推荐的中性 `0.5`；RR 边界仍将透明首界面的 diffuse albedo
-置零，不暴露 NRD 借用 diffuse 槽过滤透射时使用的 demodulation factor。透明首界面的完整输入为反射、
-透射和界面局部能量之和；`pInColorBeforeTransparency` 直接读取同一估计器的完整透射支。两者共享所有
-首表面工作，不再追踪额外的 RR Guide 射线；不透明表面和天空的两个颜色输入逐位相同。
+天空的 diffuse/specular albedo 使用 SDK 推荐的中性 `0.5`。透明首界面的完整输入为反射、透射和界面
+局部能量之和；RR 使用首界面确定性的透射 tint 与 Fresnel reflectance 选择占优 Guide。透射占优时，
+primary depth、normal、roughness、albedo 和 motion 来自同一实际透射路径捕获的 first non-delta PSR；
+specular albedo、界面 roughness 和 reflection motion 仍锚定真实透明界面。该选择不读取 noisy radiance，
+因此不会逐帧翻转。`Color Before Transparency` 不提交：路径追踪的折射支不是后叠加透明层，伪造该
+快照会让 RR 按错误语义处理水下信号。整个过程复用已有两支路径，不追踪额外的 RR Guide 射线。
 
 暂不接入：
 

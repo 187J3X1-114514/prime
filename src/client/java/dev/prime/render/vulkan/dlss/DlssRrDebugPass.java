@@ -27,7 +27,7 @@ import org.lwjgl.vulkan.VkPushConstantRange;
 import org.lwjgl.vulkan.VkShaderModuleCreateInfo;
 import org.lwjgl.vulkan.VkWriteDescriptorSet;
 
-/** Prime-owned release-safe visualizer over the exact images submitted to NGX. */
+/** Prime-owned release-safe visualizer over RR inputs and reflection-MV construction guides. */
 final class DlssRrDebugPass implements Destroyable {
     private static final int IMAGE_COUNT = 10;
     private static final int COMPUTE_STAGE = VK12.VK_SHADER_STAGE_COMPUTE_BIT;
@@ -68,8 +68,8 @@ final class DlssRrDebugPass implements Destroyable {
             VulkanContext context, DlssRrTargets targets, VulkanImage displayOutput) {
         List<VulkanImage> images = List.of(
                 targets.inputColor(),
-                targets.colorBeforeTransparency(),
                 targets.motion(),
+                targets.specularMotion(),
                 targets.viewZ(),
                 targets.rrNormalRoughness(),
                 targets.material(),

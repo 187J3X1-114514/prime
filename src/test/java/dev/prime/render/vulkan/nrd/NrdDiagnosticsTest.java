@@ -13,19 +13,23 @@ final class NrdDiagnosticsTest {
     @Test
     void modesSelectNativeValidationAndPresentationSources() {
         assertArrayEquals(
-                new int[] {0, 1, 0, 4, 5, 6},
+                new int[] {0, 1, 0, 2, 3, 4, 5, 6},
                 Arrays.stream(NrdDiagnostics.Mode.values())
                         .mapToInt(NrdDiagnostics.Mode::outputSelector)
                         .toArray());
         assertFalse(NrdDiagnostics.Mode.OFF.nativeValidation());
         assertTrue(NrdDiagnostics.Mode.NATIVE_VALIDATION.nativeValidation());
         assertFalse(NrdDiagnostics.Mode.RAW_NUMERICAL.nativeValidation());
+        assertFalse(NrdDiagnostics.Mode.REPROJECTION_ERROR.nativeValidation());
+        assertFalse(NrdDiagnostics.Mode.MOTION.nativeValidation());
         assertFalse(NrdDiagnostics.Mode.SPECULAR_INPUT.nativeValidation());
         assertFalse(NrdDiagnostics.Mode.SPECULAR_OUTPUT.nativeValidation());
         assertFalse(NrdDiagnostics.Mode.SPECULAR_REMODULATED.nativeValidation());
         assertThrows(IllegalStateException.class, NrdDiagnostics.Mode.OFF::presentSource);
         assertEquals(0, NrdDiagnostics.Mode.NATIVE_VALIDATION.presentSource());
         assertEquals(1, NrdDiagnostics.Mode.RAW_NUMERICAL.presentSource());
+        assertEquals(2, NrdDiagnostics.Mode.REPROJECTION_ERROR.presentSource());
+        assertEquals(2, NrdDiagnostics.Mode.MOTION.presentSource());
         assertEquals(2, NrdDiagnostics.Mode.SPECULAR_INPUT.presentSource());
         assertEquals(2, NrdDiagnostics.Mode.SPECULAR_OUTPUT.presentSource());
         assertEquals(2, NrdDiagnostics.Mode.SPECULAR_REMODULATED.presentSource());
@@ -35,18 +39,18 @@ final class NrdDiagnosticsTest {
     }
 
     @Test
-    void oldDevelopmentViewsMigrateToNativeValidation() {
+    void oldDevelopmentViewsAndCurrentDiagnosticsResolveIndependently() {
         assertEquals(
                 NrdDiagnostics.Mode.NATIVE_VALIDATION,
                 NrdDiagnostics.Mode.fromId("nrd_validation"));
         assertEquals(
-                NrdDiagnostics.Mode.NATIVE_VALIDATION,
+                NrdDiagnostics.Mode.REPROJECTION_ERROR,
                 NrdDiagnostics.Mode.fromId("reprojection_error"));
         assertEquals(
                 NrdDiagnostics.Mode.NATIVE_VALIDATION,
                 NrdDiagnostics.Mode.fromId("opaque"));
         assertEquals(
-                NrdDiagnostics.Mode.NATIVE_VALIDATION,
+                NrdDiagnostics.Mode.MOTION,
                 NrdDiagnostics.Mode.fromId("motion"));
         assertEquals(
                 NrdDiagnostics.Mode.RAW_NUMERICAL,

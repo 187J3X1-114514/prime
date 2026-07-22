@@ -19,6 +19,7 @@ public final class DlssRrTargets implements DenoiserInputs, Destroyable {
     static final int NORMAL_ROUGHNESS_FORMAT = VK12.VK_FORMAT_R16G16B16A16_SFLOAT;
     static final int LINEAR_DEPTH_FORMAT = VK12.VK_FORMAT_R32_SFLOAT;
     static final int MOTION_FORMAT = VK12.VK_FORMAT_R16G16B16A16_SFLOAT;
+    static final int SPECULAR_MOTION_FORMAT = VK12.VK_FORMAT_R16G16_SFLOAT;
     static final int SPECULAR_HIT_DISTANCE_FORMAT = VK12.VK_FORMAT_R16_SFLOAT;
     private static final int USAGE =
             VK12.VK_IMAGE_USAGE_STORAGE_BIT | VK12.VK_IMAGE_USAGE_SAMPLED_BIT;
@@ -34,9 +35,9 @@ public final class DlssRrTargets implements DenoiserInputs, Destroyable {
     private final VulkanImage sunLighting;
     private final VulkanImage sunPenumbra;
     private final VulkanImage inputColor;
-    private final VulkanImage colorBeforeTransparency;
     private final VulkanImage normalRoughness;
     private final VulkanImage specularHitDistance;
+    private final VulkanImage specularMotion;
     private final VulkanImage rrOutput;
     private final VulkanImage[] owned;
     private boolean destroyed;
@@ -53,9 +54,9 @@ public final class DlssRrTargets implements DenoiserInputs, Destroyable {
         this.sunLighting = images.get(8);
         this.sunPenumbra = images.get(9);
         this.inputColor = images.get(10);
-        this.colorBeforeTransparency = images.get(11);
-        this.normalRoughness = images.get(12);
-        this.specularHitDistance = images.get(13);
+        this.normalRoughness = images.get(11);
+        this.specularHitDistance = images.get(12);
+        this.specularMotion = images.get(13);
         this.rrOutput = images.get(14);
         this.owned = images.toArray(VulkanImage[]::new);
     }
@@ -91,11 +92,11 @@ public final class DlssRrTargets implements DenoiserInputs, Destroyable {
             add(context, images, renderWidth, renderHeight,
                     COLOR_FORMAT, "Prime RR input color");
             add(context, images, renderWidth, renderHeight,
-                    COLOR_FORMAT, "Prime RR color before transparency");
-            add(context, images, renderWidth, renderHeight,
                     NORMAL_ROUGHNESS_FORMAT, "Prime RR world normal and roughness");
             add(context, images, renderWidth, renderHeight,
                     SPECULAR_HIT_DISTANCE_FORMAT, "Prime RR world specular hit distance");
+            add(context, images, renderWidth, renderHeight,
+                    SPECULAR_MOTION_FORMAT, "Prime RR reflection motion");
             add(context, images, displayWidth, displayHeight,
                     COLOR_FORMAT, "Prime RR linear HDR output");
             return new DlssRrTargets(images);
@@ -170,9 +171,9 @@ public final class DlssRrTargets implements DenoiserInputs, Destroyable {
     @Override public VulkanImage sunPenumbra() { return this.sunPenumbra; }
 
     public VulkanImage inputColor() { return this.inputColor; }
-    public VulkanImage colorBeforeTransparency() { return this.colorBeforeTransparency; }
     public VulkanImage rrNormalRoughness() { return this.normalRoughness; }
     public VulkanImage specularHitDistance() { return this.specularHitDistance; }
+    public VulkanImage specularMotion() { return this.specularMotion; }
     public VulkanImage rrOutput() { return this.rrOutput; }
 
     @Override

@@ -91,10 +91,10 @@ final class DlssRrPreparePass implements Destroyable {
                 atmosphere.aerialRadiance(),
                 atmosphere.aerialTransmittance(),
                 targets.inputColor(),
-                targets.colorBeforeTransparency(),
                 targets.motion(),
                 targets.rrNormalRoughness(),
-                targets.specularHitDistance());
+                targets.specularHitDistance(),
+                targets.specularMotion());
         long setLayout = 0L;
         long descriptorPool = 0L;
         long pipelineLayout = 0L;

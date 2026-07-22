@@ -106,6 +106,70 @@ final class DlssRrMotionContractTest {
         assertTrue(motionPixels.lengthSquared() > 1.0F);
     }
 
+    @Test
+    void smoothReflectionsUseVirtualMotionAndRoughSurfacesUsePrimaryMotion() {
+        FrameCamera previous = camera(new Matrix4f(), 0.0, 0.0, 0.0);
+        FrameCamera current = camera(
+                new Matrix4f().rotateY((float) Math.toRadians(6.0)),
+                0.7,
+                0.2,
+                -0.5);
+        FsrSettings.Jitter jitter = ReconstructionQualityMode.QUALITY.rrJitter(9);
+        Vector2f currentSampleUv = sampleUv(jitter);
+        Vector3f primaryPosition = rayDirection(current, currentSampleUv).mul(7.0F);
+        float hitDistance = 24.0F;
+        Vector3f virtualPosition = new Vector3f(primaryPosition).fma(
+                hitDistance,
+                new Vector3f(primaryPosition).normalize());
+        Vector2f expectedVirtual = projectSurface(current, previous, virtualPosition)
+                .sub(currentSampleUv, new Vector2f());
+        Vector2f primary = motion(
+                current, previous, currentSampleUv, primaryPosition, false);
+
+        Vector2f smooth = specularMotion(
+                current, previous, currentSampleUv, primaryPosition, 7.0F, hitDistance, 0.1F);
+        Vector2f rough = specularMotion(
+                current, previous, currentSampleUv, primaryPosition, 7.0F, hitDistance, 0.25F);
+        Vector2f missingHit = specularMotion(
+                current, previous, currentSampleUv, primaryPosition, 7.0F, 0.0F, 0.1F);
+
+        assertVectorEquals(expectedVirtual, smooth);
+        assertVectorEquals(primary, rough);
+        assertVectorEquals(primary, missingHit);
+        assertTrue(new Vector2f(smooth).sub(primary).lengthSquared() > 1.0e-8F);
+    }
+
+    @Test
+    void transmittedPrimaryGuideKeepsReflectionAnchoredAtTheVisibleInterface() {
+        FrameCamera previous = camera(new Matrix4f(), 0.0, 0.0, 0.0);
+        FrameCamera current = camera(
+                new Matrix4f().rotateX((float) Math.toRadians(5.0)),
+                0.3,
+                0.4,
+                -0.6);
+        FsrSettings.Jitter jitter = ReconstructionQualityMode.BALANCED.rrJitter(4);
+        Vector2f currentSampleUv = sampleUv(jitter);
+        Vector3f ray = rayDirection(current, currentSampleUv);
+        Vector3f transmittedVirtualPosition = new Vector3f(ray).mul(40.0F);
+        float visibleInterfaceDistance = 6.0F;
+        float reflectionHitDistance = 13.0F;
+        Vector3f expectedReflectionPosition = new Vector3f(ray).mul(
+                visibleInterfaceDistance + reflectionHitDistance);
+        Vector2f expected = motion(
+                current, previous, currentSampleUv, expectedReflectionPosition, false);
+
+        Vector2f actual = specularMotion(
+                current,
+                previous,
+                currentSampleUv,
+                transmittedVirtualPosition,
+                visibleInterfaceDistance,
+                reflectionHitDistance,
+                0.05F);
+
+        assertVectorEquals(expected, actual);
+    }
+
     private static Vector2f sampleUv(FsrSettings.Jitter jitter) {
         return new Vector2f(
                 (PIXEL_X + 0.5F + jitter.x()) / WIDTH,
@@ -122,6 +186,22 @@ final class DlssRrMotionContractTest {
                 ? projectSky(current, previous, rayDirection(current, currentSampleUv))
                 : projectSurface(current, previous, primaryPosition);
         return previousUv.sub(currentSampleUv, new Vector2f());
+    }
+
+    private static Vector2f specularMotion(
+            FrameCamera current,
+            FrameCamera previous,
+            Vector2f currentSampleUv,
+            Vector3f primaryPosition,
+            float visibleInterfaceDistance,
+            float hitDistance,
+            float roughness) {
+        if (!(hitDistance > 1.0e-3F) || !(roughness < 0.25F)) {
+            return motion(current, previous, currentSampleUv, primaryPosition, false);
+        }
+        Vector3f virtualPosition = new Vector3f(primaryPosition).normalize()
+                .mul(visibleInterfaceDistance + hitDistance);
+        return motion(current, previous, currentSampleUv, virtualPosition, false);
     }
 
     private static Vector2f projectSurface(

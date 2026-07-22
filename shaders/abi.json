@@ -217,7 +217,7 @@
     "denoiser": "dual-reblur-diffuse-specular-sh-plus-sigma-sun-shadow",
     "normalEncoding": "r10g10b10a2-unorm",
     "roughnessEncoding": "linear",
-    "motionSpace": "screen-2.5d",
+    "motionSpace": "screen-pixel-2.5d",
     "signalSpace": "demodulated-linear-rec2020-d65"
   },
   "colorContract": {

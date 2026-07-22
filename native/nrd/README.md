@@ -26,7 +26,8 @@ Demodulated diffuse and specular illumination share a bounded input, and remodul
 bounded together with direct sun before composition. Probabilistically sampled diffuse and
 specular transport use the default 30/50-pixel prepasses. Ordinary pixels use the first visible surface.
 Transparent branches capture the first non-delta virtual surface's position, normal, roughness, material,
-albedo, hit distance, and directional energy during their existing traversal. A bounded invocation-local
+albedo, hit distance, and directional energy during their existing traversal. RR separately retains the real
+visible interface and the first reflection/transmission segment distances. A bounded invocation-local
 delta-chain record may fall back to the real first interface for guides only; it never truncates transport.
 The A2 normal channel classifies ordinary dielectrics, metals,
 transmissive interfaces and strand-like foliage; the bridge enables exact material comparison and

@@ -8,17 +8,16 @@ public enum DlssRrDebugView {
     OFF("off", 0),
     OVERVIEW("overview", 1),
     INPUT_COLOR("input_color", 2),
-    COLOR_BEFORE_TRANSPARENCY("color_before_transparency", 3),
-    TRANSPARENCY_DIFFERENCE("transparency_difference", 4),
-    MOTION("motion", 5),
-    DEPTH("depth", 6),
-    JITTER("jitter", 7),
-    NORMALS("normals", 8),
-    ROUGHNESS("roughness", 9),
-    DIFFUSE_ALBEDO("diffuse_albedo", 10),
-    SPECULAR_ALBEDO("specular_albedo", 11),
-    SPECULAR_HIT_DISTANCE("specular_hit_distance", 12),
-    RR_OUTPUT("rr_output", 13);
+    MOTION("motion", 3),
+    SPECULAR_MOTION("specular_motion", 4),
+    DEPTH("depth", 5),
+    JITTER("jitter", 6),
+    NORMALS("normals", 7),
+    ROUGHNESS("roughness", 8),
+    DIFFUSE_ALBEDO("diffuse_albedo", 9),
+    SPECULAR_ALBEDO("specular_albedo", 10),
+    SPECULAR_HIT_DISTANCE("specular_hit_distance", 11),
+    RR_OUTPUT("rr_output", 12);
 
     private final String id;
     private final int shaderId;

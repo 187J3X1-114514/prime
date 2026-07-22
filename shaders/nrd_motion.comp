@@ -226,7 +226,7 @@ void primePrepareBranch(ivec2 pixel, ivec2 extent, bool reflection) {
     vec2 previousUv = previousClip.xy / previousClip.w
             * vec2(0.5, -0.5) + vec2(0.5);
     primeStoreMotion(pixel, reflection, vec4(primeNrdSanitizeMotion(vec3(
-            previousUv - currentSampleUv,
+            (previousUv - currentSampleUv) * vec2(extent),
             abs(previousClip.w) - currentViewZ)), 0.0));
 
     if (!reflection && primeMotionPush.diagnosticMode == PRIME_DIAGNOSTIC_REPROJECTION_ERROR) {
@@ -235,7 +235,8 @@ void primePrepareBranch(ivec2 pixel, ivec2 extent, bool reflection) {
         vec3 error = vec3(1.0);
         if (abs(exactPreviousClip.w) > 1.0e-6
                 && !any(isnan(exactPreviousClip)) && !any(isinf(exactPreviousClip))) {
-            vec2 exactUv = exactPreviousClip.xy / exactPreviousClip.w * 0.5 + 0.5;
+            vec2 exactUv = exactPreviousClip.xy / exactPreviousClip.w
+                    * vec2(0.5, -0.5) + vec2(0.5);
             vec2 pixels = (previousUv - exactUv) * vec2(extent);
             error = vec3(max(pixels.x, 0.0), max(pixels.y, 0.0), 0.0)
                     + vec3(max(-pixels.y, 0.0), max(-pixels.x, 0.0), max(-pixels.x, 0.0));

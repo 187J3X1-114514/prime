@@ -163,7 +163,7 @@ abstract class GenerateShaderAbi extends DefaultTask {
                 || nrdContract.denoiser != 'dual-reblur-diffuse-specular-sh-plus-sigma-sun-shadow'
 				|| nrdContract.normalEncoding != 'r10g10b10a2-unorm'
 				|| nrdContract.roughnessEncoding != 'linear'
-				|| nrdContract.motionSpace != 'screen-2.5d'
+				|| nrdContract.motionSpace != 'screen-pixel-2.5d'
 				|| nrdContract.signalSpace != 'demodulated-linear-rec2020-d65') {
 			throw new GradleException('Prime NRD signal and native-library contracts changed without a coordinated migration')
 		}

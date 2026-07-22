@@ -19,10 +19,10 @@ layout(set = 0, binding = 8, rgba32f) uniform readonly image2D rrStableRadiance;
 layout(set = 0, binding = 9, rgba16f) uniform readonly image3D rrAerialRadiance;
 layout(set = 0, binding = 10, rgba16f) uniform readonly image3D rrAerialTransmittance;
 layout(set = 0, binding = 11, rgba16f) uniform writeonly image2D rrInputColor;
-layout(set = 0, binding = 12, rgba16f) uniform writeonly image2D rrColorBeforeTransparency;
-layout(set = 0, binding = 13, rgba16f) uniform writeonly image2D rrMotion;
-layout(set = 0, binding = 14, rgba16f) uniform writeonly image2D rrNormalRoughness;
-layout(set = 0, binding = 15, r16f) uniform writeonly image2D rrSpecularHitDistance;
+layout(set = 0, binding = 12, rgba16f) uniform writeonly image2D rrMotion;
+layout(set = 0, binding = 13, rgba16f) uniform writeonly image2D rrNormalRoughness;
+layout(set = 0, binding = 14, r16f) uniform writeonly image2D rrSpecularHitDistance;
+layout(set = 0, binding = 15, rg16f) uniform writeonly image2D rrSpecularMotion;
 
 layout(push_constant) uniform PrimeRrPreparePushConstants {
     mat4 currentClipToWorld;
@@ -33,6 +33,7 @@ layout(push_constant) uniform PrimeRrPreparePushConstants {
 } rrPush;
 
 const float PRIME_RR_SKY_VIEW_Z = 65504.0;
+const float PRIME_RR_SPECULAR_MOTION_ROUGHNESS = 0.25;
 
 ATM_DECLARE_SAMPLE_3D(rrSampleAerialRadiance, rrAerialRadiance)
 ATM_DECLARE_SAMPLE_3D(rrSampleAerialTransmittance, rrAerialTransmittance)
@@ -101,12 +102,7 @@ void main() {
 
     vec4 material = imageLoad(rrDiffuseMaterial, pixel);
     vec4 specularMaterial = imageLoad(rrSpecularMaterial, pixel);
-    uint materialFlags = primeNrdIsFinite(specularMaterial.a)
-            ? uint(clamp(round(specularMaterial.a), 0.0, PRIME_NRD_FP16_MAX))
-            : 0u;
     bool sky = !primeNrdIsFinite(material.a) || material.a < 0.0;
-    bool transparent = !sky
-            && (materialFlags & PRIME_MATERIAL_FLAG_TRANSMISSIVE) != 0u;
     vec4 primary = imageLoad(rrPrimaryPosition, pixel);
     vec4 noisyDiffuse = imageLoad(rrNoisyDiffuse, pixel);
     vec4 noisySpecular = imageLoad(rrNoisySpecular, pixel);
@@ -122,22 +118,27 @@ void main() {
     roughness = sky
             ? PRIME_DEFAULT_REFERENCE_LINEAR_ROUGHNESS
             : primeNrdSanitizeUnit(roughness, PRIME_DEFAULT_REFERENCE_LINEAR_ROUGHNESS);
+    // The primary guide can be a transmitted PSR, while reflection MV still belongs to the
+    // visible interface. Raygen preserves that interface roughness in the private alpha lane.
+    float reflectionRoughness = sky
+            ? PRIME_DEFAULT_REFERENCE_LINEAR_ROUGHNESS
+            : primeNrdSanitizeUnit(specularMaterial.a, roughness);
     imageStore(rrNormalRoughness, pixel, vec4(normal, roughness));
 
     // The SDK's neutral sky fallback is 0.5 for both albedos. A value of one tells RR that all
     // noisy sky energy is fully explained by material reflectance and over-constrains reconstruction.
     vec3 diffuseAlbedo = sky
             ? vec3(0.5)
-            : (transparent ? vec3(0.0) : primeNrdSanitizeAlbedo(material.rgb));
+            : primeNrdSanitizeAlbedo(material.rgb);
     vec3 specularAlbedo = sky
             ? vec3(0.5)
             : primeNrdSanitizeAlbedo(specularMaterial.rgb);
     imageStore(rrDiffuseMaterial, pixel, vec4(diffuseAlbedo, material.a));
     imageStore(rrSpecularMaterial, pixel, vec4(specularAlbedo, specularMaterial.a));
-    imageStore(
-            rrSpecularHitDistance,
-            pixel,
-            vec4(sky ? 0.0 : primeNrdSanitizeHitDistance(noisySpecular.a)));
+    float specularHitDistance = sky
+            ? 0.0
+            : primeNrdSanitizeHitDistance(noisySpecular.a);
+    imageStore(rrSpecularHitDistance, pixel, vec4(specularHitDistance));
 
     float viewZ = PRIME_RR_SKY_VIEW_Z;
     if (!sky) {
@@ -148,11 +149,28 @@ void main() {
         }
     }
     imageStore(rrLinearViewZ, pixel, vec4(viewZ));
-    imageStore(
-            rrMotion,
-            pixel,
-            vec4(primeNrdSanitizeMotion(
-                    vec3(rrMotionVector(pixel, extent, primary.xyz, sky), 0.0)), 0.0));
+    vec2 primaryMotion = rrMotionVector(pixel, extent, primary.xyz, sky);
+    imageStore(rrMotion, pixel, vec4(
+            primeNrdSanitizeMotion(vec3(primaryMotion, 0.0)), 0.0));
+
+    vec2 specularMotion = primaryMotion;
+    float guideDistance = length(primary.xyz);
+    float visibleDistance = primary.w;
+    if (!sky
+            && specularHitDistance > 1.0e-3
+            && reflectionRoughness < PRIME_RR_SPECULAR_MOTION_ROUGHNESS
+            && primeNrdIsFinite(guideDistance)
+            && guideDistance > 1.0e-6
+            && primeNrdIsFinite(visibleDistance)
+            && visibleDistance > 0.0) {
+        // Planar-reflector virtual image: the secondary segment is mirrored behind the
+        // visible interface. primary.xyz may independently describe a transmitted PSR.
+        vec3 virtualPosition = primary.xyz / guideDistance
+                * (visibleDistance + specularHitDistance);
+        specularMotion = rrMotionVector(pixel, extent, virtualPosition, false);
+    }
+    imageStore(rrSpecularMotion, pixel, vec4(
+            primeNrdSanitizeMotion(vec3(specularMotion, 0.0)), 0.0));
 
     vec3 surface = sky
             ? vec3(0.0)
@@ -166,15 +184,5 @@ void main() {
     rrApplyAerial(pixel, extent, material.a, inputRadiance);
     inputRadiance = primeNrdClampRadiance(inputRadiance, PRIME_NRD_FP16_MAX);
 
-    vec3 beforeRadiance = inputRadiance;
-    if (transparent) {
-        // The fixed primary-interface split writes its complete transmitted continuation into the
-        // raw diffuse lane. Reuse that exact sample for NGX instead of tracing a guide path.
-        beforeRadiance = primeNrdSanitizeRadiance(noisyDiffuse.rgb);
-        rrApplyAerial(pixel, extent, material.a, beforeRadiance);
-        beforeRadiance = primeNrdClampRadiance(beforeRadiance, PRIME_NRD_FP16_MAX);
-    }
-    // Opaque surfaces and sky use the same final variable, guaranteeing identical FP16 stores.
     imageStore(rrInputColor, pixel, vec4(inputRadiance, 1.0));
-    imageStore(rrColorBeforeTransparency, pixel, vec4(beforeRadiance, 1.0));
 }

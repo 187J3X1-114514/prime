@@ -328,8 +328,8 @@ PRIME_NRD_EXPORT int32_t primeNrdSetFrameSettings(
     std::memcpy(settings.worldToViewMatrixPrev, input->worldToViewPrev, sizeof(input->worldToViewPrev));
     std::memcpy(settings.cameraJitter, input->cameraJitter, sizeof(input->cameraJitter));
     std::memcpy(settings.cameraJitterPrev, input->cameraJitterPrev, sizeof(input->cameraJitterPrev));
-    settings.motionVectorScale[0] = 1.0f;
-    settings.motionVectorScale[1] = 1.0f;
+    settings.motionVectorScale[0] = 1.0f / static_cast<float>(input->width);
+    settings.motionVectorScale[1] = 1.0f / static_cast<float>(input->height);
     settings.motionVectorScale[2] = 1.0f;
     settings.resourceSize[0] = static_cast<uint16_t>(input->width);
     settings.resourceSize[1] = static_cast<uint16_t>(input->height);

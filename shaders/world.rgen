@@ -115,14 +115,27 @@ void main() {
                         primeRawNumericalFlags | primeClassifyRawOutput(sampleResult)), 1.0));
     }
     bool nrdShInputs = primeWritesNrdShInputs();
+    bool hasTransmissionGuide = sampleResult.transparentPrimary
+            && sampleResult.transmissionGuides.primaryHitKind == PRIME_HIT_SURFACE;
+    float transmissionWeight = primeNrdLinearToYCoCg(
+            primeNrdSanitizeAlbedo(sampleResult.guides.primaryAlbedo)).x;
+    float reflectionWeight = primeNrdLinearToYCoCg(
+            primeNrdSanitizeAlbedo(sampleResult.guides.primarySpecularAlbedo)).x;
+    // RR has one primary guide set. Select the deterministic dominant transparent branch instead
+    // of pairing refracted radiance with the water interface's zero diffuse albedo. Reflection
+    // retains its own motion vector, so transmission can safely own the main virtual surface.
+    bool rrUsesTransmissionGuide = !nrdShInputs
+            && hasTransmissionGuide
+            && transmissionWeight >= reflectionWeight;
     PrimeDenoiserGuides nrdGuides = sampleResult.transparentPrimary
+            && (nrdShInputs || rrUsesTransmissionGuide)
             ? sampleResult.transmissionGuides
             : sampleResult.guides;
     vec3 noisyDiffuse = sampleResult.radiance.diffuse;
     vec3 noisySpecular = sampleResult.radiance.specular;
     if (!nrdShInputs && sampleResult.transparentPrimary) {
-        // RR and the unfiltered mode consume one complete color split at the visible interface.
-        // NRD alone routes the two fixed branches through independent REBLUR histories below.
+        // RR receives transmission as diffuse and reflection as specular so each can use the
+        // matching albedo and motion contract even though they share one combined color input.
         noisyDiffuse += noisySpecular;
         noisySpecular = sampleResult.reflectionDiffuseRadiance
                 + sampleResult.reflectionSpecularRadiance;
@@ -130,9 +143,15 @@ void main() {
     bool hasPrimarySurface = nrdGuides.primaryHitKind == PRIME_HIT_SURFACE;
     float primaryDistance = primeNrdSanitizePrimaryDistance(
             nrdGuides.primaryDistance, hasPrimarySurface);
+    bool hasVisibleSurface = sampleResult.guides.primaryHitKind == PRIME_HIT_SURFACE;
+    float visibleDistance = primeNrdSanitizePrimaryDistance(
+            sampleResult.guides.primaryDistance, hasVisibleSurface);
     vec3 primaryPosition = primeNrdIsFinite(nrdGuides.primaryPosition)
             ? nrdGuides.primaryPosition
             : vec3(0.0);
+    float specularHitDistance = !nrdShInputs && sampleResult.transparentPrimary
+            ? sampleResult.guides.specularHitDistance
+            : nrdGuides.specularHitDistance;
     float rawSignalScale = primeNrdClampRadiancePair(
             noisyDiffuse, noisySpecular, PRIME_NRD_FP16_MAX);
     // These images are a private raygen -> NRD-preparation scratch contract. Keeping raw
@@ -153,16 +172,17 @@ void main() {
             vec4(
                     primeNrdSanitizeRadiance(noisySpecular),
                     primeNrdSanitizeHitDistance(
-                            nrdGuides.specularHitDistance)));
-    // Diagnostic-only exact primary hit relative to the effective camera pinhole. Keeping this
-    // separate from view-Z reconstruction lets the reprojection probe detect a self-consistent
-    // but wrong camera transform instead of repeating the motion generator's assumptions.
+                            specularHitDistance)));
+    // NRD keeps the exact sample for its reprojection probe. RR instead needs the real visible
+    // interface distance to build reflection motion when the primary xyz is a transmitted PSR.
     imageStore(
             primeNrdPrimaryPosition,
             ivec2(pixel),
             vec4(
                     primaryDistance < 0.0 ? vec3(0.0) : primaryPosition,
-                    uintBitsToFloat(packHalf2x16(cameraSample))));
+                    nrdShInputs
+                            ? uintBitsToFloat(packHalf2x16(cameraSample))
+                            : visibleDistance));
     if (nrdShInputs) {
         vec3 primaryAreaDiffuse = nrdGuides.primaryAreaDiffuse * rawSignalScale;
         vec3 primaryAreaSpecular = nrdGuides.primaryAreaSpecular * rawSignalScale;
@@ -190,7 +210,7 @@ void main() {
             ivec2(pixel),
             vec4(
                     primeNrdSanitizeAlbedo(nrdGuides.primaryAlbedo),
-                    primaryDistance));
+                    rrUsesTransmissionGuide ? visibleDistance : primaryDistance));
     imageStore(
             primeNrdNormalRoughness,
             ivec2(pixel),
@@ -202,10 +222,13 @@ void main() {
             primeNrdSpecularMaterial,
             ivec2(pixel),
             vec4(
-                    primeNrdSanitizeAlbedo(nrdGuides.primarySpecularAlbedo),
-                    float(nrdGuides.primaryMaterialFlags)));
+                    primeNrdSanitizeAlbedo(rrUsesTransmissionGuide
+                            ? sampleResult.guides.primarySpecularAlbedo
+                            : nrdGuides.primarySpecularAlbedo),
+                    nrdShInputs
+                            ? float(nrdGuides.primaryMaterialFlags)
+                            : sampleResult.guides.primaryLinearRoughness));
     if (nrdShInputs) {
-        bool hasVisibleSurface = sampleResult.guides.primaryHitKind == PRIME_HIT_SURFACE;
         imageStore(
                 primeNrdDisplayPosition,
                 ivec2(pixel),

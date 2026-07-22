@@ -139,6 +139,19 @@ final class NrdCameraTransformTest {
         }
     }
 
+    @Test
+    void pixelUnitsPreserveSmallScreenMotionThroughFp16() {
+        int width = 3840;
+        float uvMotion = 0.0000002F;
+
+        float normalizedRoundTrip = Float.float16ToFloat(Float.floatToFloat16(uvMotion));
+        float pixelRoundTrip = Float.float16ToFloat(Float.floatToFloat16(uvMotion * width))
+                / width;
+
+        assertTrue(Math.abs(pixelRoundTrip - uvMotion) < Math.abs(normalizedRoundTrip - uvMotion));
+        assertEquals(uvMotion, pixelRoundTrip, 1.0e-10F);
+    }
+
     private static void assertReprojectsStaticPoint(FrameCamera previous, FrameCamera current) {
         Motion motion = motion(previous, current);
         assertEquals(motion.previousUv.x, motion.currentUv.x + motion.vector.x, EPSILON);

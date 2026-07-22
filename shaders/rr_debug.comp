@@ -7,8 +7,8 @@
 layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
 
 layout(set = 0, binding = 0, rgba16f) uniform readonly image2D rrDebugInputColor;
-layout(set = 0, binding = 1, rgba16f) uniform readonly image2D rrDebugBeforeTransparency;
-layout(set = 0, binding = 2, rgba16f) uniform readonly image2D rrDebugMotion;
+layout(set = 0, binding = 1, rgba16f) uniform readonly image2D rrDebugMotion;
+layout(set = 0, binding = 2, rg16f) uniform readonly image2D rrDebugSpecularMotion;
 layout(set = 0, binding = 3, r32f) uniform readonly image2D rrDebugDepth;
 layout(set = 0, binding = 4, rgba16f) uniform readonly image2D rrDebugNormalRoughness;
 layout(set = 0, binding = 5, rgba16f) uniform readonly image2D rrDebugDiffuseAlbedo;
@@ -27,17 +27,16 @@ layout(push_constant) uniform PrimeRrDebugPushConstants {
 
 const uint RR_OVERVIEW = 1u;
 const uint RR_INPUT_COLOR = 2u;
-const uint RR_COLOR_BEFORE_TRANSPARENCY = 3u;
-const uint RR_TRANSPARENCY_DIFFERENCE = 4u;
-const uint RR_MOTION = 5u;
-const uint RR_DEPTH = 6u;
-const uint RR_JITTER = 7u;
-const uint RR_NORMALS = 8u;
-const uint RR_ROUGHNESS = 9u;
-const uint RR_DIFFUSE_ALBEDO = 10u;
-const uint RR_SPECULAR_ALBEDO = 11u;
-const uint RR_SPECULAR_HIT_DISTANCE = 12u;
-const uint RR_OUTPUT = 13u;
+const uint RR_MOTION = 3u;
+const uint RR_SPECULAR_MOTION = 4u;
+const uint RR_DEPTH = 5u;
+const uint RR_JITTER = 6u;
+const uint RR_NORMALS = 7u;
+const uint RR_ROUGHNESS = 8u;
+const uint RR_DIFFUSE_ALBEDO = 9u;
+const uint RR_SPECULAR_ALBEDO = 10u;
+const uint RR_SPECULAR_HIT_DISTANCE = 11u;
+const uint RR_OUTPUT = 12u;
 const vec3 RR_INVALID = vec3(1.0, 0.0, 1.0);
 
 bool rrFinite(float value) {
@@ -91,32 +90,28 @@ vec3 rrJitterPlot(vec2 uv) {
     return color;
 }
 
+vec3 rrMotionColor(vec2 motion, ivec2 size) {
+    vec2 motionPixels = motion * vec2(size);
+    if (!rrFinite(motionPixels)) return RR_INVALID;
+    vec3 positive = max(motionPixels.x, 0.0) * vec3(1.0, 0.0, 0.0)
+            + max(motionPixels.y, 0.0) * vec3(0.0, 1.0, 0.0);
+    vec3 negative = max(-motionPixels.x, 0.0) * vec3(0.0, 1.0, 1.0)
+            + max(-motionPixels.y, 0.0) * vec3(1.0, 0.0, 1.0);
+    return clamp((positive + negative) * 0.08, 0.0, 1.0);
+}
+
 vec3 rrPanel(uint panel, vec2 uv) {
     ivec2 lowSize = imageSize(rrDebugInputColor);
     ivec2 fullSize = imageSize(rrDebugOutput);
     ivec2 lowPixel = rrSourcePixel(uv, lowSize);
     ivec2 fullPixel = rrSourcePixel(uv, fullSize);
     vec4 inputColor = imageLoad(rrDebugInputColor, lowPixel);
-    vec4 before = imageLoad(rrDebugBeforeTransparency, lowPixel);
     if (panel == RR_INPUT_COLOR) return rrHdr(inputColor.rgb);
-    if (panel == RR_COLOR_BEFORE_TRANSPARENCY) return rrHdr(before.rgb);
-    if (panel == RR_TRANSPARENCY_DIFFERENCE) {
-        if (!rrFinite(inputColor.rgb) || !rrFinite(before.rgb)) return RR_INVALID;
-        vec3 difference = rrHdr(abs(inputColor.rgb - before.rgb) * 4.0);
-        float rawFlags = imageLoad(rrDebugSpecularAlbedo, lowPixel).a;
-        if (!rrFinite(rawFlags)) return RR_INVALID;
-        uint flags = uint(clamp(round(rawFlags), 0.0, 65504.0));
-        bool transmissive = (flags & PRIME_MATERIAL_FLAG_TRANSMISSIVE) != 0u;
-        return transmissive ? mix(difference, vec3(0.05, 0.7, 1.0), 0.25) : difference;
-    }
     if (panel == RR_MOTION) {
-        vec2 motionPixels = imageLoad(rrDebugMotion, lowPixel).xy * vec2(lowSize);
-        if (!rrFinite(motionPixels)) return RR_INVALID;
-        vec3 positive = max(motionPixels.x, 0.0) * vec3(1.0, 0.0, 0.0)
-                + max(motionPixels.y, 0.0) * vec3(0.0, 1.0, 0.0);
-        vec3 negative = max(-motionPixels.x, 0.0) * vec3(0.0, 1.0, 1.0)
-                + max(-motionPixels.y, 0.0) * vec3(1.0, 0.0, 1.0);
-        return clamp((positive + negative) * 0.08, 0.0, 1.0);
+        return rrMotionColor(imageLoad(rrDebugMotion, lowPixel).xy, lowSize);
+    }
+    if (panel == RR_SPECULAR_MOTION) {
+        return rrMotionColor(imageLoad(rrDebugSpecularMotion, lowPixel).xy, lowSize);
     }
     if (panel == RR_DEPTH) {
         float depth = imageLoad(rrDebugDepth, lowPixel).x;
@@ -177,22 +172,20 @@ void main() {
     ivec2 local = pixel - panelOrigin;
     vec3 color;
     if (rrDebugPush.view == RR_OVERVIEW) {
-        const uint panels[12] = uint[12](
+        const uint panels[10] = uint[10](
                 RR_INPUT_COLOR,
-                RR_COLOR_BEFORE_TRANSPARENCY,
-                RR_TRANSPARENCY_DIFFERENCE,
                 RR_MOTION,
+                RR_SPECULAR_MOTION,
                 RR_DEPTH,
                 RR_NORMALS,
                 RR_ROUGHNESS,
                 RR_DIFFUSE_ALBEDO,
                 RR_SPECULAR_ALBEDO,
                 RR_SPECULAR_HIT_DISTANCE,
-                RR_OUTPUT,
-                RR_JITTER);
-        ivec2 cellExtent = max(panelExtent / ivec2(3, 4), ivec2(1));
-        ivec2 cell = clamp(local / cellExtent, ivec2(0), ivec2(2, 3));
-        uint index = uint(cell.y * 3 + cell.x);
+                RR_OUTPUT);
+        ivec2 cellExtent = max(panelExtent / ivec2(5, 2), ivec2(1));
+        ivec2 cell = clamp(local / cellExtent, ivec2(0), ivec2(4, 1));
+        uint index = uint(cell.y * 5 + cell.x);
         vec2 uv = (vec2(local - cell * cellExtent) + 0.5) / vec2(cellExtent);
         color = rrPanel(panels[index], uv);
         if (local.x % cellExtent.x < 2 || local.y % cellExtent.y < 2) color = vec3(0.85);

@@ -172,10 +172,8 @@ void primeCompositeResolveSh(
             reflection
                     ? imageLoad(primeReflectionDenoisedSpecularSh1, pixel).xyz
                     : imageLoad(primeDenoisedSpecularSh1, pixel).xyz);
-    float materialId = reflection
-            ? imageLoad(primeReflectionCompositeNormalRoughness, pixel).a
-            : imageLoad(primeCompositeNormalRoughness, pixel).a;
-    if (materialId > 0.5 && materialId < 5.0 / 6.0) {
+    uint visibleMaterialFlags = floatBitsToUint(imageLoad(primeDisplayPosition, pixel).w);
+    if (!reflection && primeMaterialIsTransmissive(visibleMaterialFlags)) {
         // NRD's SG resolver evaluates a reflective GGX lobe. A refracted direction lies below the
         // visible interface and would be clamped away, so transmission consumes the filtered SH0
         // color without applying a reflection-only resolve or re-jitter Jacobian.
@@ -360,7 +358,7 @@ void main() {
     }
     if (primeCompositePush.diagnosticMode == PRIME_DIAGNOSTIC_MOTION) {
         vec3 motion = imageLoad(primeMotionDiagnostic, ivec2(pixel)).xyz;
-        vec2 motionPixels = motion.xy * vec2(primeCompositePush.outputExtent);
+        vec2 motionPixels = motion.xy;
         vec3 positiveColor = max(motionPixels.x, 0.0) * vec3(1.0, 0.0, 0.0)
                 + max(motionPixels.y, 0.0) * vec3(0.0, 1.0, 0.0);
         vec3 negativeColor = max(-motionPixels.x, 0.0) * vec3(0.0, 1.0, 1.0)

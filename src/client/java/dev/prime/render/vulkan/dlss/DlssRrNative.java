@@ -26,13 +26,13 @@ import org.lwjgl.vulkan.VkCommandBuffer;
 
 /** Stable, fixed-width Java binding for Prime's private DLSS Ray Reconstruction bridge. */
 public final class DlssRrNative {
-    public static final int ABI_VERSION = 3;
+    public static final int ABI_VERSION = 4;
     static final int EXTENSION_QUERY_SIZE = 56;
     static final int INIT_DESCRIPTION_SIZE = 56;
     static final int OPTIMAL_SETTINGS_SIZE = 32;
     static final int FEATURE_DESCRIPTION_SIZE = 48;
     static final int IMAGE_SIZE = 32;
-    static final int IMAGE_COUNT = 9;
+    static final int IMAGE_COUNT = 8;
     static final int EVALUATE_DESCRIPTION_SIZE = 176 + IMAGE_COUNT * IMAGE_SIZE;
     private static final int EXTENSION_CAPACITY = 64;
     private static final int EXTENSION_NAME_STRIDE = 256;
@@ -426,11 +426,10 @@ public final class DlssRrNative {
                 putImage(description, 176 + IMAGE_SIZE, evaluation.specularAlbedo());
                 putImage(description, 176 + 2 * IMAGE_SIZE, evaluation.normalRoughness());
                 putImage(description, 176 + 3 * IMAGE_SIZE, evaluation.inputColor());
-                putImage(description, 176 + 4 * IMAGE_SIZE, evaluation.colorBeforeTransparency());
-                putImage(description, 176 + 5 * IMAGE_SIZE, evaluation.outputColor());
-                putImage(description, 176 + 6 * IMAGE_SIZE, evaluation.linearDepth());
-                putImage(description, 176 + 7 * IMAGE_SIZE, evaluation.motionVectors());
-                putImage(description, 176 + 8 * IMAGE_SIZE, evaluation.specularHitDistance());
+                putImage(description, 176 + 4 * IMAGE_SIZE, evaluation.outputColor());
+                putImage(description, 176 + 5 * IMAGE_SIZE, evaluation.linearDepth());
+                putImage(description, 176 + 6 * IMAGE_SIZE, evaluation.motionVectors());
+                putImage(description, 176 + 7 * IMAGE_SIZE, evaluation.specularMotionVectors());
                 checkResult(
                         JNI.invokePI(MemoryUtil.memAddress(description), this.nativeApi.evaluateFunction),
                         "evaluate DLSS RR");
@@ -479,11 +478,10 @@ public final class DlssRrNative {
             VulkanImage specularAlbedo,
             VulkanImage normalRoughness,
             VulkanImage inputColor,
-            VulkanImage colorBeforeTransparency,
             VulkanImage outputColor,
             VulkanImage linearDepth,
             VulkanImage motionVectors,
-            VulkanImage specularHitDistance) {
+            VulkanImage specularMotionVectors) {
         public Evaluation {
             if (renderWidth <= 0 || renderHeight <= 0) {
                 throw new IllegalArgumentException("DLSS RR render dimensions must be positive");
@@ -513,15 +511,13 @@ public final class DlssRrNative {
                     DlssRrTargets.NORMAL_ROUGHNESS_FORMAT, renderWidth, renderHeight);
             requireInput(inputColor, "input color", DlssRrTargets.COLOR_FORMAT,
                     renderWidth, renderHeight);
-            requireInput(colorBeforeTransparency, "color before transparency",
-                    DlssRrTargets.COLOR_FORMAT, renderWidth, renderHeight);
             requireOutput(outputColor);
             requireInput(linearDepth, "linear depth", DlssRrTargets.LINEAR_DEPTH_FORMAT,
                     renderWidth, renderHeight);
             requireInput(motionVectors, "motion vectors", DlssRrTargets.MOTION_FORMAT,
                     renderWidth, renderHeight);
-            requireInput(specularHitDistance, "specular hit distance",
-                    DlssRrTargets.SPECULAR_HIT_DISTANCE_FORMAT, renderWidth, renderHeight);
+            requireInput(specularMotionVectors, "specular motion vectors",
+                    DlssRrTargets.SPECULAR_MOTION_FORMAT, renderWidth, renderHeight);
         }
 
         private static void requireInput(

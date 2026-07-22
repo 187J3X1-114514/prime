@@ -63,6 +63,7 @@ struct PrimeTransparentBranchResult {
     vec3 diffuseRadiance;
     vec3 specularRadiance;
     PrimeDenoiserGuides guides;
+    float firstHitDistance;
 };
 
 // Bookkeeping that maps a complete physical path into the signal/guide contract. Keeping it in a
@@ -815,6 +816,7 @@ PrimeTransparentBranchResult primeIntegrateTransparentBranch(
     result.diffuseRadiance = vec3(0.0);
     result.specularRadiance = vec3(0.0);
     result.guides = primeEmptyDenoiserGuides();
+    result.firstHitDistance = 0.0;
     PrimePsrDeltaChain deltaChain = primeEmptyPsrDeltaChain();
     bool hasGuide = (firstBsdf.eventFlags & PRIME_BSDF_EVENT_DELTA) == 0u;
     bool diffusePath = transmissionBranch;
@@ -837,6 +839,7 @@ PrimeTransparentBranchResult primeIntegrateTransparentBranch(
     }
 
     uint maximumBounces = min(primePush.path.z & 0xffffu, 256u);
+    bool firstSegment = true;
     for (; path.bounce < maximumBounces; ++path.bounce) {
         SurfaceInteraction surface = primeTraceSurface(path.traceOrigin, path.rayDirection);
         primeRecordNonFinite(surface.position);
@@ -845,6 +848,12 @@ PrimeTransparentBranchResult primeIntegrateTransparentBranch(
         primeRecordUnit(surface.baseColor);
         if (!primeKnownHitKind(surface)) {
             break;
+        }
+        if (firstSegment) {
+            result.firstHitDistance = surface.hitKind == PRIME_HIT_NONE
+                    ? PRIME_NRD_FP16_MAX
+                    : primeNrdSanitizeHitDistance(surface.t);
+            firstSegment = false;
         }
         if (hasGuide && path.bounce == guideBounce + 1u) {
             float hitDistance = surface.hitKind == PRIME_HIT_NONE
@@ -1252,6 +1261,7 @@ PrimeIntegrationResult primeIntegrateWithVolume(
                     primeAccumulate(
                             result.reflectionSpecularRadiance,
                             reflection.specularRadiance);
+                    result.guides.specularHitDistance = reflection.firstHitDistance;
                     result.reflectionGuides = reflection.guides;
                 }
             } else {
@@ -1281,6 +1291,7 @@ PrimeIntegrationResult primeIntegrateWithVolume(
                             true);
                     primeAccumulate(result.radiance.diffuse, transmission.diffuseRadiance);
                     primeAccumulate(result.radiance.specular, transmission.specularRadiance);
+                    result.guides.diffuseHitDistance = transmission.firstHitDistance;
                     result.transmissionGuides = transmission.guides;
                 }
             } else {

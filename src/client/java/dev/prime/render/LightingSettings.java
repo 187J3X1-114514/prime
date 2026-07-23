@@ -3,15 +3,18 @@ package dev.prime.render;
 /**
  * Runtime lighting controls expressed as photographic exposure-value offsets.
  *
- * <p>The zero-EV defaults preserve Prime's calibrated 12.5-unit extraterrestrial sun and the
- * level-squared, 25-unit level-15 Minecraft emitter model. A quarter-EV step is converted only at the rendering
- * boundary as {@code 2^(quarterSteps / 4)}; the stored values never masquerade as linear light.
+ * <p>The zero-EV defaults preserve Prime's calibrated sun, embedded night sky, and Minecraft
+ * emitter models. A quarter-EV step is converted only at the rendering boundary as
+ * {@code 2^(quarterSteps / 4)}; the stored values never masquerade as linear light.
  */
 public final class LightingSettings {
     public static final int QUARTER_STEPS_PER_EV = 4;
     public static final int MINIMUM_QUARTER_STEPS = -32;
     public static final int MAXIMUM_QUARTER_STEPS = 32;
+    public static final int MINIMUM_STAR_QUARTER_STEPS = -32;
+    public static final int MAXIMUM_STAR_QUARTER_STEPS = 32;
     public static final int DEFAULT_SUN_QUARTER_STEPS = 0;
+    public static final int DEFAULT_STAR_QUARTER_STEPS = 0;
     public static final int DEFAULT_BLOCK_LIGHT_QUARTER_STEPS = 0;
 
     private LightingSettings() {
@@ -24,6 +27,16 @@ public final class LightingSettings {
 
     public static float exposureValue(int quarterSteps) {
         requireValid(quarterSteps);
+        return quarterSteps / (float) QUARTER_STEPS_PER_EV;
+    }
+
+    public static float starLinearMultiplier(int quarterSteps) {
+        requireValidStar(quarterSteps);
+        return (float) Math.pow(2.0, quarterSteps / (double) QUARTER_STEPS_PER_EV);
+    }
+
+    public static float starExposureValue(int quarterSteps) {
+        requireValidStar(quarterSteps);
         return quarterSteps / (float) QUARTER_STEPS_PER_EV;
     }
 
@@ -42,10 +55,23 @@ public final class LightingSettings {
         return quarterSteps / (float) QUARTER_STEPS_PER_EV;
     }
 
+    private static void requireValidStar(int quarterSteps) {
+        if (quarterSteps < MINIMUM_STAR_QUARTER_STEPS
+                || quarterSteps > MAXIMUM_STAR_QUARTER_STEPS) {
+            throw new IllegalArgumentException(
+                    "Star EV must be between "
+                            + exposureValueUnchecked(MINIMUM_STAR_QUARTER_STEPS)
+                            + " and "
+                            + exposureValueUnchecked(MAXIMUM_STAR_QUARTER_STEPS));
+        }
+    }
+
     public record Snapshot(
             int sunQuarterSteps,
+            int starQuarterSteps,
             int blockLightQuarterSteps,
             float sunMultiplier,
+            float starMultiplier,
             float blockLightMultiplier,
             long revision) {
     }

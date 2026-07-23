@@ -16,6 +16,7 @@ import org.lwjgl.vulkan.EXTOpacityMicromap;
 import org.lwjgl.vulkan.VK12;
 import org.lwjgl.vulkan.VkCommandBuffer;
 import org.lwjgl.vulkan.VkDependencyInfo;
+import org.lwjgl.vulkan.VkDescriptorBufferInfo;
 import org.lwjgl.vulkan.VkDescriptorImageInfo;
 import org.lwjgl.vulkan.VkDescriptorPoolCreateInfo;
 import org.lwjgl.vulkan.VkDescriptorPoolSize;
@@ -57,11 +58,13 @@ public final class RayTracingPipeline implements Destroyable {
     private final long pipelineLayout;
     private final TracePipeline tracePipeline;
     private final BsdfLookupTable bsdfLookup;
+    private final StarmapTexture starmap;
     private DescriptorBindings descriptorBindings;
     private boolean destroyed;
 
-    public RayTracingPipeline(VulkanContext context) {
+    public RayTracingPipeline(VulkanContext context, StarmapTexture starmap) {
         this.context = context;
+        this.starmap = java.util.Objects.requireNonNull(starmap, "starmap");
         long newDescriptorSetLayout = 0L;
         long newPipelineLayout = 0L;
         TracePipeline newTracePipeline = null;
@@ -158,7 +161,8 @@ public final class RayTracingPipeline implements Destroyable {
                 labPbrSpecularAtlas,
                 atmosphere,
                 targets,
-                this.bsdfLookup);
+                this.bsdfLookup,
+                this.starmap);
         DescriptorBindings previous = this.descriptorBindings;
         this.descriptorBindings = replacement;
         if (previous != null) {
@@ -167,6 +171,7 @@ public final class RayTracingPipeline implements Destroyable {
     }
 
     public void trace(VkCommandBuffer commandBuffer, ByteBuffer pushConstants, int width, int height) {
+        this.starmap.prepare(commandBuffer);
         this.bsdfLookup.prepare(commandBuffer);
         this.trace(commandBuffer, pushConstants, width, height, OPAQUE_RAYGEN_GROUP);
     }
@@ -174,6 +179,7 @@ public final class RayTracingPipeline implements Destroyable {
     /** Records one complete, unsplit path sample per pixel for unbiased screenshot accumulation. */
     public void traceScreenshot(
             VkCommandBuffer commandBuffer, ByteBuffer pushConstants, int width, int height) {
+        this.starmap.prepare(commandBuffer);
         this.bsdfLookup.prepare(commandBuffer);
         this.trace(commandBuffer, pushConstants, width, height, SCREENSHOT_RAYGEN_GROUP);
     }
@@ -281,7 +287,7 @@ public final class RayTracingPipeline implements Destroyable {
     }
 
     private static long createDescriptorSetLayout(VulkanContext context, MemoryStack stack) {
-        VkDescriptorSetLayoutBinding.Buffer bindings = VkDescriptorSetLayoutBinding.calloc(34, stack);
+        VkDescriptorSetLayoutBinding.Buffer bindings = VkDescriptorSetLayoutBinding.calloc(36, stack);
         bindings.get(0)
                 .binding(ShaderAbi.DESCRIPTOR_TLAS)
                 .descriptorType(KHRAccelerationStructure.VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR)
@@ -376,6 +382,16 @@ public final class RayTracingPipeline implements Destroyable {
         bindings.get(33)
                 .binding(ShaderAbi.DESCRIPTOR_RAW_NUMERICAL_DIAGNOSTIC)
                 .descriptorType(VK12.VK_DESCRIPTOR_TYPE_STORAGE_IMAGE)
+                .descriptorCount(1)
+                .stageFlags(KHRRayTracingPipeline.VK_SHADER_STAGE_RAYGEN_BIT_KHR);
+        bindings.get(34)
+                .binding(ShaderAbi.DESCRIPTOR_STARMAP)
+                .descriptorType(VK12.VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER)
+                .descriptorCount(1)
+                .stageFlags(KHRRayTracingPipeline.VK_SHADER_STAGE_RAYGEN_BIT_KHR);
+        bindings.get(35)
+                .binding(ShaderAbi.DESCRIPTOR_STARMAP_IMPORTANCE)
+                .descriptorType(VK12.VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
                 .descriptorCount(1)
                 .stageFlags(KHRRayTracingPipeline.VK_SHADER_STAGE_RAYGEN_BIT_KHR);
         VkDescriptorSetLayoutCreateInfo createInfo = VkDescriptorSetLayoutCreateInfo.calloc(stack)
@@ -729,12 +745,14 @@ public final class RayTracingPipeline implements Destroyable {
                 VulkanImage labPbrSpecularAtlas,
                 AtmospherePipeline atmosphere,
                 DenoiserInputs targets,
-                BsdfLookupTable bsdfLookup) {
+                BsdfLookupTable bsdfLookup,
+                StarmapTexture starmap) {
             try (MemoryStack stack = MemoryStack.stackPush()) {
-                VkDescriptorPoolSize.Buffer sizes = VkDescriptorPoolSize.calloc(3, stack);
+                VkDescriptorPoolSize.Buffer sizes = VkDescriptorPoolSize.calloc(4, stack);
                 sizes.get(0).type(KHRAccelerationStructure.VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR).descriptorCount(1);
                 sizes.get(1).type(VK12.VK_DESCRIPTOR_TYPE_STORAGE_IMAGE).descriptorCount(29);
-                sizes.get(2).type(VK12.VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER).descriptorCount(4);
+                sizes.get(2).type(VK12.VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER).descriptorCount(5);
+                sizes.get(3).type(VK12.VK_DESCRIPTOR_TYPE_STORAGE_BUFFER).descriptorCount(1);
                 VkDescriptorPoolCreateInfo poolCreateInfo = VkDescriptorPoolCreateInfo.calloc(stack)
                         .sType$Default()
                         .maxSets(1)
@@ -759,7 +777,7 @@ public final class RayTracingPipeline implements Destroyable {
                             VkWriteDescriptorSetAccelerationStructureKHR.calloc(stack)
                                     .sType$Default()
                                     .pAccelerationStructures(stack.longs(tlas));
-                    VkDescriptorImageInfo.Buffer imageInfos = VkDescriptorImageInfo.calloc(33, stack);
+                    VkDescriptorImageInfo.Buffer imageInfos = VkDescriptorImageInfo.calloc(34, stack);
                     imageInfos.get(0)
                             .imageView(output.view())
                             .imageLayout(VK12.VK_IMAGE_LAYOUT_GENERAL);
@@ -829,7 +847,17 @@ public final class RayTracingPipeline implements Destroyable {
                     imageInfos.get(32)
                             .imageView(targets.rawNumericalDiagnostic().view())
                             .imageLayout(VK12.VK_IMAGE_LAYOUT_GENERAL);
-                    VkWriteDescriptorSet.Buffer writes = VkWriteDescriptorSet.calloc(34, stack);
+                    imageInfos.get(33)
+                            .sampler(starmap.sampler())
+                            .imageView(starmap.image().view())
+                            .imageLayout(VK12.VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+                    VkDescriptorBufferInfo.Buffer bufferInfos =
+                            VkDescriptorBufferInfo.calloc(1, stack);
+                    bufferInfos.get(0)
+                            .buffer(starmap.importance().handle())
+                            .offset(0L)
+                            .range(starmap.importance().size());
+                    VkWriteDescriptorSet.Buffer writes = VkWriteDescriptorSet.calloc(36, stack);
                     writes.get(0)
                             .sType$Default()
                             .pNext(acceleration.address())
@@ -948,6 +976,21 @@ public final class RayTracingPipeline implements Destroyable {
                             .descriptorCount(1)
                             .descriptorType(VK12.VK_DESCRIPTOR_TYPE_STORAGE_IMAGE)
                             .pImageInfo(VkDescriptorImageInfo.create(imageInfos.get(32).address(), 1));
+                    writes.get(34)
+                            .sType$Default()
+                            .dstSet(descriptorSet)
+                            .dstBinding(ShaderAbi.DESCRIPTOR_STARMAP)
+                            .descriptorCount(1)
+                            .descriptorType(VK12.VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER)
+                            .pImageInfo(VkDescriptorImageInfo.create(imageInfos.get(33).address(), 1));
+                    writes.get(35)
+                            .sType$Default()
+                            .dstSet(descriptorSet)
+                            .dstBinding(ShaderAbi.DESCRIPTOR_STARMAP_IMPORTANCE)
+                            .descriptorCount(1)
+                            .descriptorType(VK12.VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
+                            .pBufferInfo(VkDescriptorBufferInfo.create(
+                                    bufferInfos.get(0).address(), 1));
                     VK12.vkUpdateDescriptorSets(context.vkDevice(), writes, null);
                     return new DescriptorBindings(
                             context,

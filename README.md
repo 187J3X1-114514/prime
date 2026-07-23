@@ -76,7 +76,7 @@ $env:Path = "$env:JAVA_HOME\bin;$env:VULKAN_SDK\Bin;$env:Path"
 
 ### 视频设置与诊断
 
-原版“视频设置”的 Prime 区域将“恢复 Prime 默认设置”置于顶部，并集中管理参考累积截图、`NRD-FSR`/`DLSS RR`/禁用后处理、五档统一重建质量、阳光强度、方块灯光强度及对应调试视图。NRD 验证图以最近邻直接呈现其原生输出，FSR 总览保留 FidelityFX 的原生标色，两者都绕过 Oklab 变换；RR 调试覆盖层显示当前实际提交给 NGX 的输入与 RR 输出，`Ctrl+Alt+F12` 循环内容，`Ctrl+Alt+F11` 切换右上角面板/全屏。三类调试选择和截图模式都仅对当前会话生效，切换调试不会重置时间历史，也不会写入 `config/prime.properties`。两项灯光强度是相对默认标定的 EV 偏移，每档 `0.25 EV`，按 `2^EV` 换算为线性辐射亮度。
+原版“视频设置”的 Prime 区域将“恢复 Prime 默认设置”置于顶部，并集中管理参考累积截图、`NRD-FSR`/`DLSS RR`/禁用后处理、五档统一重建质量、阳光强度、星空强度、方块灯光强度及对应调试视图。NRD 验证图以最近邻直接呈现其原生输出，FSR 总览保留 FidelityFX 的原生标色，两者都绕过 Oklab 变换；RR 调试覆盖层显示当前实际提交给 NGX 的输入与 RR 输出，`Ctrl+Alt+F12` 循环内容，`Ctrl+Alt+F11` 切换右上角面板/全屏。三类调试选择和截图模式都仅对当前会话生效，切换调试不会重置时间历史，也不会写入 `config/prime.properties`。三项灯光强度是相对默认标定的 EV 偏移，每档 `0.25 EV`，按 `2^EV` 换算为线性辐射亮度。
 
 NRD 调试视图包含：
 
@@ -110,6 +110,13 @@ NVIDIA development DLL、独立 DLSS Super Resolution 或 Frame Generation。
 `THIRD_PARTY_LICENSES/APACHE-2.0.txt`。
 
 随包提供的 AMD FidelityFX SDK 1.1.4 Vulkan DLL 包含 FSR 3.1.4 Upscaler，按 FidelityFX SDK 的 MIT 许可证分发。Prime 只调用 Upscaler API，不接入 Frame Generation 或交换链替换。许可文本见 `THIRD_PARTY_LICENSES/FIDELITYFX-SDK-LICENSE.txt`。
+
+夜空资源来自 [NASA SVS Deep Star Maps 2020](https://svs.gsfc.nasa.gov/4851/)：
+NASA/Goddard Space Flight Center Scientific Visualization Studio. Gaia DR2:
+[ESA/Gaia/DPAC](https://gea.esac.esa.int/archive/documentation/GDR2/Miscellaneous/sec_credit_and_citation_instructions/)。
+星座图形基于 Alan MacRobert 为 IAU 制作并发表于 *Sky and Telescope* 的版本
+（Roger Sinnott 与 Rick Fienberg）。完整归属与无损重打包说明见
+`THIRD_PARTY_LICENSES/NASA-DEEP-STAR-MAPS-2020-NOTICE.md`。
 
 ## Co-Authored-By
 

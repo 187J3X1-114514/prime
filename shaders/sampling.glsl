@@ -5,8 +5,7 @@
 // contract: a future wavefront scheduler may move effects to separate kernels without changing
 // their sample streams.
 const uint PRIME_SAMPLE_EFFECT_CAMERA = 0u;
-// Effect identity 1 is intentionally retired. Keeping the remaining identities stable preserves
-// their sample streams after explicit environment sampling was removed.
+const uint PRIME_SAMPLE_EFFECT_DIRECT_STARS = 1u;
 const uint PRIME_SAMPLE_EFFECT_DIRECT_SUN = 2u;
 const uint PRIME_SAMPLE_EFFECT_SCATTER_BSDF = 3u;
 const uint PRIME_SAMPLE_EFFECT_RUSSIAN_ROULETTE = 4u;

@@ -126,6 +126,7 @@ abstract class GenerateShaderAbi extends DefaultTask {
 		def colorContract = schema.colorContract
 		def emissionContract = schema.emissionContract
 		def atmosphereContract = schema.atmosphereContract
+		def starmapContract = schema.starmapContract
 		def nrdContract = schema.nrdContract
 
 		if (primitive.size != 32 || section.size != 64 || lightNode.size != 32
@@ -159,6 +160,15 @@ abstract class GenerateShaderAbi extends DefaultTask {
 					'Prime atmosphere contract must remain the eight-wave Rec.2020 model, '
 							+ 'the -64 sea level / 0.001 km world scale, and a 12.5-unit space sun')
 		}
+		if (starmapContract.width != 8192
+				|| starmapContract.height != 4096
+				|| starmapContract.importanceWidth != 1024
+				|| starmapContract.importanceHeight != 512
+				|| starmapContract.observerLatitudeDegrees != 30.0
+				|| starmapContract.sourceSha256 != 'dc6c4f413e85707a29a25a9451148154554ecca2c996f84fa8f47b65ef9ff7c4') {
+			throw new GradleException(
+					'Prime starmap contract must preserve the full NASA source and its 30-degree observer frame')
+		}
 		if (nrdContract.version != '4.17.4'
                 || nrdContract.denoiser != 'dual-reblur-diffuse-specular-sh-plus-sigma-sun-shadow'
 				|| nrdContract.normalEncoding != 'r10g10b10a2-unorm'
@@ -174,9 +184,13 @@ abstract class GenerateShaderAbi extends DefaultTask {
 				|| !schema.pathControl.evQuarterMask.toString().equalsIgnoreCase('0xff')
 				|| schema.pathControl.evQuarterBias != 128
 				|| schema.pathControl.materialRoughnessShift != 16
-				|| !schema.pathControl.materialRoughnessMask.toString().equalsIgnoreCase('0xff')
+				|| !schema.pathControl.materialRoughnessMask.toString().equalsIgnoreCase('0x7f')
 				|| schema.pathControl.materialRoughnessStepsPerUnit != 100
-				|| !schema.pathControl.shInputMask.toString().equalsIgnoreCase('0x01000000')
+				|| !schema.pathControl.shInputMask.toString().equalsIgnoreCase('0x00800000')
+				|| !schema.pathControl.rawNumericalMask.toString().equalsIgnoreCase('0x01000000')
+				|| schema.pathControl.starEvQuarterShift != 25
+				|| !schema.pathControl.starEvQuarterMask.toString().equalsIgnoreCase('0x7f')
+				|| schema.pathControl.starEvQuarterBias != 32
 				|| schema.pathControl.russianRouletteStart != 2) {
 			throw new GradleException(
 					'Prime path controls must preserve the camera, lighting, material, jitter, and second-bounce roulette ABI')
@@ -313,6 +327,8 @@ public final class ShaderAbi {
     public static final int DESCRIPTOR_NRD_REFLECTION_DIFFUSE_DIRECTION = ${schema.descriptors.nrdReflectionDiffuseDirection};
     public static final int DESCRIPTOR_NRD_REFLECTION_SPECULAR_DIRECTION = ${schema.descriptors.nrdReflectionSpecularDirection};
     public static final int DESCRIPTOR_NRD_DISPLAY_POSITION = ${schema.descriptors.nrdDisplayPosition};
+    public static final int DESCRIPTOR_STARMAP = ${schema.descriptors.starmap};
+    public static final int DESCRIPTOR_STARMAP_IMPORTANCE = ${schema.descriptors.starmapImportance};
     public static final int PATH_CAMERA_IN_WATER_MASK = ${schema.pathControl.cameraInWaterMask};
     public static final int PATH_JITTER_PHASE_MASK = ${schema.pathControl.jitterPhaseMask};
     public static final int PATH_SUN_EV_QUARTER_SHIFT = ${schema.pathControl.sunEvQuarterShift};
@@ -324,6 +340,9 @@ public final class ShaderAbi {
     public static final int PATH_MATERIAL_ROUGHNESS_STEPS_PER_UNIT = ${schema.pathControl.materialRoughnessStepsPerUnit};
     public static final int PATH_SH_INPUT_MASK = ${schema.pathControl.shInputMask};
     public static final int PATH_RAW_NUMERICAL_MASK = ${schema.pathControl.rawNumericalMask};
+    public static final int PATH_STAR_EV_QUARTER_SHIFT = ${schema.pathControl.starEvQuarterShift};
+    public static final int PATH_STAR_EV_QUARTER_MASK = ${schema.pathControl.starEvQuarterMask};
+    public static final int PATH_STAR_EV_QUARTER_BIAS = ${schema.pathControl.starEvQuarterBias};
     public static final int RUSSIAN_ROULETTE_START = ${schema.pathControl.russianRouletteStart};
     public static final float CUTOUT_ALPHA_THRESHOLD = ${schema.cutoutAlphaThreshold}f;
     public static final String WORKING_COLOR_SPACE = "${colorContract.workingSpace}";
@@ -347,6 +366,12 @@ public final class ShaderAbi {
     public static final float ATMOSPHERE_SPACE_SUN_INTENSITY = ${atmosphereContract.spaceSunIntensity}f;
     public static final float ATMOSPHERE_SUN_ANGULAR_RADIUS_RADIANS = ${atmosphereContract.sunAngularRadiusRadians}f;
     public static final float ATMOSPHERE_AERIAL_MAX_DISTANCE_KM = ${atmosphereContract.aerialMaxDistanceKm}f;
+    public static final int STARMAP_WIDTH = ${starmapContract.width};
+    public static final int STARMAP_HEIGHT = ${starmapContract.height};
+    public static final int STARMAP_IMPORTANCE_WIDTH = ${starmapContract.importanceWidth};
+    public static final int STARMAP_IMPORTANCE_HEIGHT = ${starmapContract.importanceHeight};
+    public static final float STARMAP_OBSERVER_LATITUDE_DEGREES = ${starmapContract.observerLatitudeDegrees}f;
+    public static final String STARMAP_SOURCE_SHA256 = "${starmapContract.sourceSha256}";
 ${javaOffsets}
 
     private ShaderAbi() {
@@ -392,6 +417,14 @@ ${javaOffsets}
 #define PRIME_PATH_MATERIAL_ROUGHNESS_STEPS_PER_UNIT ${schema.pathControl.materialRoughnessStepsPerUnit}.0
 #define PRIME_PATH_SH_INPUT_MASK ${schema.pathControl.shInputMask}u
 #define PRIME_PATH_RAW_NUMERICAL_MASK ${schema.pathControl.rawNumericalMask}u
+#define PRIME_PATH_STAR_EV_QUARTER_SHIFT ${schema.pathControl.starEvQuarterShift}u
+#define PRIME_PATH_STAR_EV_QUARTER_MASK ${schema.pathControl.starEvQuarterMask}u
+#define PRIME_PATH_STAR_EV_QUARTER_BIAS ${schema.pathControl.starEvQuarterBias}
+#define PRIME_STARMAP_WIDTH ${starmapContract.width}
+#define PRIME_STARMAP_HEIGHT ${starmapContract.height}
+#define PRIME_STARMAP_IMPORTANCE_WIDTH ${starmapContract.importanceWidth}
+#define PRIME_STARMAP_IMPORTANCE_HEIGHT ${starmapContract.importanceHeight}
+#define PRIME_STARMAP_OBSERVER_LATITUDE_RADIANS (${starmapContract.observerLatitudeDegrees} * 0.017453292519943295)
 #define PRIME_RUSSIAN_ROULETTE_START ${schema.pathControl.russianRouletteStart}u
 #define PRIME_CUTOUT_ALPHA_THRESHOLD ${schema.cutoutAlphaThreshold}
 struct PrimitiveRecord {
@@ -497,6 +530,10 @@ layout(set = 0, binding = ${schema.descriptors.transmittanceLow}, rgba16f) unifo
 layout(set = 0, binding = ${schema.descriptors.transmittanceHigh}, rgba16f) uniform readonly image2D primeTransmittanceHigh;
 layout(set = 0, binding = ${schema.descriptors.aerialRadiance}, rgba16f) uniform readonly image3D primeAerialRadiance;
 layout(set = 0, binding = ${schema.descriptors.aerialTransmittance}, rgba16f) uniform readonly image3D primeAerialTransmittance;
+layout(set = 0, binding = ${schema.descriptors.starmap}) uniform sampler2D primeStarmap;
+layout(set = 0, binding = ${schema.descriptors.starmapImportance}, std430) readonly buffer PrimeStarmapImportance {
+    uint words[];
+} primeStarmapImportance;
 // NRD is part of the integrator boundary. Raygen first writes private raw signals to a subset of
 // these images; nrd_motion.comp converts them in place to demodulated scene-linear Rec.2020
 // radiance and matching primary guides before NRD reads them. Changing the final encoding, units
@@ -793,6 +830,13 @@ def verifyDistributionJar = tasks.register('verifyDistributionJar') {
 			'META-INF/licenses/NRD-LICENSE.txt',
 			'META-INF/licenses/DLSS-SDK-LICENSE.txt',
 			'META-INF/licenses/ROBOCUTE-NOTICE.txt',
+			'META-INF/licenses/NASA-DEEP-STAR-MAPS-2020-NOTICE.md',
+			'prime/starmap/starmap_2020_8k.json',
+			'prime/starmap/starmap_2020_8k_0.rgba16f.gz',
+			'prime/starmap/starmap_2020_8k_1.rgba16f.gz',
+			'prime/starmap/starmap_2020_8k_2.rgba16f.gz',
+			'prime/starmap/starmap_2020_8k_3.rgba16f.gz',
+			'prime/starmap/starmap_2020_8k.alias.gz',
 			'prime/natives/windows-x86_64/prime_nrd.dll',
 			'prime/natives/windows-x86_64/amd_fidelityfx_vk.dll',
 			'prime/natives/windows-x86_64/prime_dlss_rr.dll',

@@ -26,6 +26,13 @@ float primeBlockLightRadianceMultiplier() {
             PRIME_PATH_BLOCK_LIGHT_EV_QUARTER_SHIFT)));
 }
 
+float primeStarRadianceMultiplier() {
+    uint encoded = (primePush.path.w >> PRIME_PATH_STAR_EV_QUARTER_SHIFT)
+            & PRIME_PATH_STAR_EV_QUARTER_MASK;
+    int quarterSteps = int(encoded) - PRIME_PATH_STAR_EV_QUARTER_BIAS;
+    return exp2(0.25 * float(quarterSteps));
+}
+
 // Power-of-two scaling preserves a representable a*b/c when either intermediate operation would
 // overflow or underflow. frexp/ldexp transfer exponents exactly; only the significand operations
 // and final result round.

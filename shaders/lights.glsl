@@ -26,6 +26,8 @@ struct LightEvaluation {
     float pdf;
 };
 
+#include "starmap.glsl"
+
 // All radiance values in this adapter are linear Rec.2020 D65. pdf is the complete f32 sampling
 // density, including light-selection probability when a future registry introduces one. Reverse
 // PDF queries must reuse that exact quantized value. The environment is evaluated only when a BSDF
@@ -78,6 +80,17 @@ vec3 primeEnvironmentRadiance(IntegratorRecord integrator, vec3 direction) {
     float sunScale = max(integrator.sunDirectionIntensity.w, 0.0)
             / ATM_SPACE_SUN_INTENSITY;
     return primeAtmosphereSky(direction, integrator.sunDirectionIntensity.xyz) * sunScale;
+}
+
+LightEvaluation primeEvaluateStarmap(
+        IntegratorRecord integrator,
+        vec3 surfacePosition,
+        vec3 direction) {
+    LightEvaluation result;
+    result.radiance = primeStarmapRadiance(
+            integrator, surfacePosition, direction);
+    result.pdf = primeStarmapPdf(integrator, direction);
+    return result;
 }
 
 float primeSunCosAngularRadius() {

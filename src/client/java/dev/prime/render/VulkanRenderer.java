@@ -20,6 +20,7 @@ import dev.prime.render.vulkan.AtmospherePipeline;
 import dev.prime.render.vulkan.LabPbrTextureAtlas;
 import dev.prime.render.vulkan.RayTracingPipeline;
 import dev.prime.render.vulkan.StagingArena;
+import dev.prime.render.vulkan.StarmapTexture;
 import dev.prime.render.vulkan.VulkanCapabilities;
 import dev.prime.render.vulkan.VulkanContext;
 import dev.prime.render.vulkan.VulkanImage;
@@ -50,6 +51,7 @@ public final class VulkanRenderer implements AutoCloseable {
     private final VulkanContext context;
     private final DlssRrNative.Context ngxContext;
     private final StagingArena stagingArena;
+    private final StarmapTexture starmap;
     private final TerrainStreamer terrain;
     private final LabPbrTextureAtlas labPbrAtlas;
     private final RealtimeSampleState realtimeSampleState = new RealtimeSampleState();
@@ -91,6 +93,7 @@ public final class VulkanRenderer implements AutoCloseable {
     public VulkanRenderer(com.mojang.blaze3d.vulkan.VulkanDevice device, VulkanCapabilities capabilities) {
         VulkanContext newContext = new VulkanContext(device, capabilities);
         StagingArena newStagingArena = null;
+        StarmapTexture newStarmap = null;
         AtmospherePipeline newAtmosphere = null;
         RayTracingPipeline newPipeline = null;
         TerrainStreamer newTerrain = null;
@@ -98,14 +101,16 @@ public final class VulkanRenderer implements AutoCloseable {
         DlssRrNative.Context newNgxContext = null;
         try {
             newStagingArena = new StagingArena(newContext);
+            newStarmap = new StarmapTexture(newContext);
             newAtmosphere = new AtmospherePipeline(newContext);
-            newPipeline = new RayTracingPipeline(newContext);
+            newPipeline = new RayTracingPipeline(newContext, newStarmap);
             newTerrain = new TerrainStreamer(newContext, newStagingArena);
             newLabPbrAtlas = new LabPbrTextureAtlas(newContext, newStagingArena);
             newNgxContext = DlssRrBootstrap.initialize(newContext).orElse(null);
             this.context = newContext;
             this.ngxContext = newNgxContext;
             this.stagingArena = newStagingArena;
+            this.starmap = newStarmap;
             this.pipeline = newPipeline;
             this.atmosphere = newAtmosphere;
             this.terrain = newTerrain;
@@ -116,6 +121,7 @@ public final class VulkanRenderer implements AutoCloseable {
             ResourceCleanup.close(newTerrain, exception);
             ResourceCleanup.destroy(newPipeline, exception);
             ResourceCleanup.destroy(newAtmosphere, exception);
+            ResourceCleanup.destroy(newStarmap, exception);
             ResourceCleanup.close(newStagingArena, exception);
             ResourceCleanup.close(newContext, exception);
             throw exception;
@@ -767,6 +773,7 @@ public final class VulkanRenderer implements AutoCloseable {
         failure = ResourceCleanup.close(this.terrain, failure);
         failure = ResourceCleanup.close(this.labPbrAtlas, failure);
         failure = ResourceCleanup.destroy(this.atmosphere, failure);
+        failure = ResourceCleanup.destroy(this.starmap, failure);
         failure = ResourceCleanup.close(this.stagingArena, failure);
         if (this.ngxContext != null) {
             failure = ResourceCleanup.close(this.ngxContext, failure);
@@ -787,7 +794,7 @@ public final class VulkanRenderer implements AutoCloseable {
         RealtimeRenderResources replacementResources = null;
         try {
             replacementAtmosphere = new AtmospherePipeline(this.context);
-            replacementPipeline = new RayTracingPipeline(this.context);
+            replacementPipeline = new RayTracingPipeline(this.context, this.starmap);
             RealtimeRenderResources current = this.realtimeResources;
             if (current != null) {
                 replacementResources = RealtimeRenderResources.create(
@@ -1148,6 +1155,7 @@ public final class VulkanRenderer implements AutoCloseable {
                         cameraInWater));
         int materialLightingControl = IntegratorSettings.packMaterialLightingControl(
                         lighting.sunQuarterSteps(),
+                        lighting.starQuarterSteps(),
                         lighting.blockLightQuarterSteps(),
                         material.roughnessSteps(),
                         shInput,

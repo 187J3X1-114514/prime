@@ -13,7 +13,7 @@ final class IntegratorSettings {
     static final int MAXIMUM_BOUNCES = 256;
     static final int RUSSIAN_ROULETTE_START = ShaderAbi.RUSSIAN_ROULETTE_START;
     static final int SAMPLE_EFFECT_CAMERA = 0;
-    // Effect identity 1 remains retired so removing environment NEE does not reshuffle streams.
+    static final int SAMPLE_EFFECT_DIRECT_STARS = 1;
     static final int SAMPLE_EFFECT_DIRECT_SUN = 2;
     static final int SAMPLE_EFFECT_SCATTER_BSDF = 3;
     static final int SAMPLE_EFFECT_DIRECT_AREA_LIGHT = 5;
@@ -48,10 +48,12 @@ final class IntegratorSettings {
 
     static int packMaterialLightingControl(
             int sunQuarterSteps,
+            int starQuarterSteps,
             int blockLightQuarterSteps,
             int materialRoughnessSteps,
             boolean shInput,
             boolean rawNumericalDiagnostic) {
+        LightingSettings.starLinearMultiplier(starQuarterSteps);
         if (materialRoughnessSteps < MaterialSettings.MINIMUM_ROUGHNESS_STEPS
                 || materialRoughnessSteps > MaterialSettings.MAXIMUM_ROUGHNESS_STEPS
                 || (materialRoughnessSteps & ~ShaderAbi.PATH_MATERIAL_ROUGHNESS_MASK) != 0) {
@@ -61,6 +63,7 @@ final class IntegratorSettings {
         return (shInput ? ShaderAbi.PATH_SH_INPUT_MASK : 0)
                 | (rawNumericalDiagnostic ? ShaderAbi.PATH_RAW_NUMERICAL_MASK : 0)
                 | packEvQuarterSteps(sunQuarterSteps, ShaderAbi.PATH_SUN_EV_QUARTER_SHIFT)
+                | packStarEvQuarterSteps(starQuarterSteps)
                 | packEvQuarterSteps(
                         blockLightQuarterSteps,
                         ShaderAbi.PATH_BLOCK_LIGHT_EV_QUARTER_SHIFT)
@@ -73,6 +76,14 @@ final class IntegratorSettings {
             throw new IllegalArgumentException("Lighting EV does not fit in the path-control ABI");
         }
         return encoded << shift;
+    }
+
+    private static int packStarEvQuarterSteps(int quarterSteps) {
+        int encoded = quarterSteps + ShaderAbi.PATH_STAR_EV_QUARTER_BIAS;
+        if ((encoded & ~ShaderAbi.PATH_STAR_EV_QUARTER_MASK) != 0) {
+            throw new IllegalArgumentException("Star EV does not fit in the path-control ABI");
+        }
+        return encoded << ShaderAbi.PATH_STAR_EV_QUARTER_SHIFT;
     }
 
     static float powerHeuristic(float firstPdf, float secondPdf) {

@@ -104,7 +104,19 @@ public final class PrimeVideoOptions {
                 "prime.options.lighting.sun_ev",
                 "prime.options.lighting.sun_ev.tooltip",
                 PrimeConfig.settings().sunQuarterSteps(),
+                LightingSettings.MINIMUM_QUARTER_STEPS,
+                LightingSettings.MAXIMUM_QUARTER_STEPS,
                 PrimeConfig::setSunQuarterSteps);
+    }
+
+    public static OptionInstance<Integer> starExposure() {
+        return exposureOption(
+                "prime.options.lighting.star_ev",
+                "prime.options.lighting.star_ev.tooltip",
+                PrimeConfig.settings().starQuarterSteps(),
+                LightingSettings.MINIMUM_STAR_QUARTER_STEPS,
+                LightingSettings.MAXIMUM_STAR_QUARTER_STEPS,
+                PrimeConfig::setStarQuarterSteps);
     }
 
     public static OptionInstance<Integer> blockLightExposure() {
@@ -112,6 +124,8 @@ public final class PrimeVideoOptions {
                 "prime.options.lighting.block_light_ev",
                 "prime.options.lighting.block_light_ev.tooltip",
                 PrimeConfig.settings().blockLightQuarterSteps(),
+                LightingSettings.MINIMUM_QUARTER_STEPS,
+                LightingSettings.MAXIMUM_QUARTER_STEPS,
                 PrimeConfig::setBlockLightQuarterSteps);
     }
 
@@ -179,6 +193,8 @@ public final class PrimeVideoOptions {
             String captionKey,
             String tooltipKey,
             int initialQuarterSteps,
+            int minimumQuarterSteps,
+            int maximumQuarterSteps,
             OptionInstance.ValueUpdateListener<Integer> listener) {
         return new OptionInstance<>(
                 captionKey,
@@ -187,8 +203,8 @@ public final class PrimeVideoOptions {
                         caption,
                         Component.literal(formatExposure(quarterSteps))),
                 new OptionInstance.IntRange(
-                        LightingSettings.MINIMUM_QUARTER_STEPS,
-                        LightingSettings.MAXIMUM_QUARTER_STEPS),
+                        minimumQuarterSteps,
+                        maximumQuarterSteps),
                 initialQuarterSteps,
                 listener);
     }

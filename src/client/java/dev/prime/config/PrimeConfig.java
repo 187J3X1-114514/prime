@@ -32,6 +32,7 @@ public final class PrimeConfig {
         "nrd.debug_view"
     };
     private static final String SUN_EV_KEY = "lighting.sun_ev";
+    private static final String STAR_EV_KEY = "lighting.star_ev";
     private static final String BLOCK_LIGHT_EV_KEY = "lighting.block_light_ev";
     private static final String OKLAB_OVEREXPOSURE_KEY = "display.oklab_overexposure";
     private static final String DEFAULT_ROUGHNESS_KEY = "material.default_roughness";
@@ -48,6 +49,7 @@ public final class PrimeConfig {
         PostProcessingMode postProcessingMode = PostProcessingMode.DEFAULT;
         ReconstructionQualityMode quality = ReconstructionQualityMode.DEFAULT;
         int sunQuarterSteps = LightingSettings.DEFAULT_SUN_QUARTER_STEPS;
+        int starQuarterSteps = LightingSettings.DEFAULT_STAR_QUARTER_STEPS;
         int blockLightQuarterSteps = LightingSettings.DEFAULT_BLOCK_LIGHT_QUARTER_STEPS;
         int oklabOverexposureSteps = DisplaySettings.DEFAULT_OVEREXPOSURE_STEPS;
         int defaultRoughnessSteps = MaterialSettings.DEFAULT_ROUGHNESS_STEPS;
@@ -104,6 +106,19 @@ public final class PrimeConfig {
                 } else {
                     rewriteNeeded = true;
                 }
+                String starEv = properties.getProperty(STAR_EV_KEY);
+                if (starEv != null) {
+                    try {
+                        starQuarterSteps = parseStarEvQuarterSteps(starEv);
+                    } catch (IllegalArgumentException exception) {
+                        PrimeClient.LOGGER.warn(
+                                "Invalid Prime star exposure '{}'; using 0 EV",
+                                starEv);
+                        rewriteNeeded = true;
+                    }
+                } else {
+                    rewriteNeeded = true;
+                }
                 String blockLightEv = properties.getProperty(BLOCK_LIGHT_EV_KEY);
                 if (blockLightEv != null) {
                     try {
@@ -155,6 +170,7 @@ public final class PrimeConfig {
                 postProcessingMode,
                 quality,
                 sunQuarterSteps,
+                starQuarterSteps,
                 blockLightQuarterSteps,
                 oklabOverexposureSteps,
                 defaultRoughnessSteps,
@@ -162,11 +178,12 @@ public final class PrimeConfig {
                 0L);
         dirty = rewriteNeeded;
         PrimeClient.LOGGER.info(
-                "Prime settings: post-processing {} quality {} (NRD-FSR {}x), sun {} EV, block lights {} EV, Oklab DRT overexposure {}, default roughness {}",
+                "Prime settings: post-processing {} quality {} (NRD-FSR {}x), sun {} EV, stars {} EV, block lights {} EV, Oklab DRT overexposure {}, default roughness {}",
                 postProcessingMode.id(),
                 quality.id(),
                 quality.upscaleRatio(),
                 formatEv(sunQuarterSteps),
+                formatStarEv(starQuarterSteps),
                 formatEv(blockLightQuarterSteps),
                 formatOverexposure(oklabOverexposureSteps),
                 formatRoughness(defaultRoughnessSteps));
@@ -192,6 +209,10 @@ public final class PrimeConfig {
         update(settings.withSunQuarterSteps(quarterSteps));
     }
 
+    public static void setStarQuarterSteps(int quarterSteps) {
+        update(settings.withStarQuarterSteps(quarterSteps));
+    }
+
     public static void setBlockLightQuarterSteps(int quarterSteps) {
         update(settings.withBlockLightQuarterSteps(quarterSteps));
     }
@@ -208,6 +229,7 @@ public final class PrimeConfig {
         setPostProcessingMode(PostProcessingMode.DEFAULT);
         setReconstructionQualityMode(ReconstructionQualityMode.DEFAULT);
         setSunQuarterSteps(LightingSettings.DEFAULT_SUN_QUARTER_STEPS);
+        setStarQuarterSteps(LightingSettings.DEFAULT_STAR_QUARTER_STEPS);
         setBlockLightQuarterSteps(LightingSettings.DEFAULT_BLOCK_LIGHT_QUARTER_STEPS);
         setOklabOverexposureSteps(DisplaySettings.DEFAULT_OVEREXPOSURE_STEPS);
         setDefaultRoughnessSteps(MaterialSettings.DEFAULT_ROUGHNESS_STEPS);
@@ -259,6 +281,7 @@ public final class PrimeConfig {
         return MODE_KEY + "=" + current.postProcessingMode().id() + "\n"
                     + QUALITY_KEY + "=" + current.reconstructionQuality().id() + "\n"
                     + SUN_EV_KEY + "=" + formatEv(current.sunQuarterSteps()) + "\n"
+                    + STAR_EV_KEY + "=" + formatStarEv(current.starQuarterSteps()) + "\n"
                     + BLOCK_LIGHT_EV_KEY + "="
                     + formatEv(current.blockLightQuarterSteps()) + "\n"
                     + OKLAB_OVEREXPOSURE_KEY + "="
@@ -288,6 +311,25 @@ public final class PrimeConfig {
 
     static String formatEv(int quarterSteps) {
         LightingSettings.linearMultiplier(quarterSteps);
+        return BigDecimal.valueOf(quarterSteps)
+                .divide(BigDecimal.valueOf(LightingSettings.QUARTER_STEPS_PER_EV))
+                .toPlainString();
+    }
+
+    static int parseStarEvQuarterSteps(String value) {
+        try {
+            int quarterSteps = new BigDecimal(value)
+                    .multiply(BigDecimal.valueOf(LightingSettings.QUARTER_STEPS_PER_EV))
+                    .intValueExact();
+            LightingSettings.starLinearMultiplier(quarterSteps);
+            return quarterSteps;
+        } catch (ArithmeticException | NumberFormatException exception) {
+            throw new IllegalArgumentException("Star EV must be an exact 0.25-EV step", exception);
+        }
+    }
+
+    static String formatStarEv(int quarterSteps) {
+        LightingSettings.starLinearMultiplier(quarterSteps);
         return BigDecimal.valueOf(quarterSteps)
                 .divide(BigDecimal.valueOf(LightingSettings.QUARTER_STEPS_PER_EV))
                 .toPlainString();

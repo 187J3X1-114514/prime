@@ -484,6 +484,32 @@ PrimeDirectLightingSplit primeEstimatePrimaryDirectAreaLight(
             conditionalTransparentBranch);
 }
 
+PrimeDirectLightingSplit primeEstimatePrimaryDirectStarmap(
+        IntegratorRecord integrator,
+        SurfaceInteraction surface,
+        vec3 viewDirection,
+        vec3 sampleValue,
+        PrimeRcVolumeStack volumeStack,
+        bool conditionalTransparentBranch) {
+    LightSample light = primeSampleStarmap(
+            integrator, surface.position, sampleValue);
+    if (all(lessThanEqual(light.radiance, vec3(0.0)))
+            || !primeDirectSampleVisible(surface, viewDirection, light)) {
+        PrimeDirectLightingSplit result;
+        result.diffuse = vec3(0.0);
+        result.specular = vec3(0.0);
+        result.direction = vec3(0.0);
+        return result;
+    }
+    return primeEvaluateVisibleDirectSplit(
+            surface,
+            viewDirection,
+            light,
+            light.radiance,
+            volumeStack,
+            conditionalTransparentBranch);
+}
+
 vec3 primeEstimateDirectSun(
         IntegratorRecord integrator,
         SurfaceInteraction surface,
@@ -516,6 +542,39 @@ vec3 primeEstimateDirectAreaLight(
     PrimeDirectLightingSplit split = primeEvaluateVisibleDirectSplit(
             surface, viewDirection, area.light, radiance, volumeStack, false);
     return split.diffuse + split.specular;
+}
+
+vec3 primeEstimateDirectStarmap(
+        IntegratorRecord integrator,
+        SurfaceInteraction surface,
+        vec3 viewDirection,
+        vec3 sampleValue,
+        PrimeRcVolumeStack volumeStack) {
+    LightSample light = primeSampleStarmap(
+            integrator, surface.position, sampleValue);
+    if (all(lessThanEqual(light.radiance, vec3(0.0)))
+            || !primeDirectSampleVisible(surface, viewDirection, light)) {
+        return vec3(0.0);
+    }
+    PrimeDirectLightingSplit split = primeEvaluateVisibleDirectSplit(
+            surface, viewDirection, light, light.radiance, volumeStack, false);
+    return split.diffuse + split.specular;
+}
+
+vec3 primeCombinedDirectDirection(
+        PrimeDirectLightingSplit first,
+        PrimeDirectLightingSplit second) {
+    float firstWeight = max(
+            first.diffuse.r + first.specular.r,
+            max(first.diffuse.g + first.specular.g,
+                    first.diffuse.b + first.specular.b));
+    float secondWeight = max(
+            second.diffuse.r + second.specular.r,
+            max(second.diffuse.g + second.specular.g,
+                    second.diffuse.b + second.specular.b));
+    vec3 sum = first.direction * firstWeight + second.direction * secondWeight;
+    float lengthSquared = dot(sum, sum);
+    return lengthSquared > 1.0e-12 ? sum * inversesqrt(lengthSquared) : vec3(0.0);
 }
 
 bool primeRussianRoulette(
@@ -553,13 +612,19 @@ void primeAccumulateAfterPrimary(
 // from drifting between the two modes.
 vec3 primeEvaluateEnvironmentContribution(
         PathState path, IntegratorRecord integrator) {
+    LightEvaluation stars = primeEvaluateStarmap(
+            integrator, path.physicalOrigin, path.rayDirection);
     LightEvaluation sun = primeEvaluateSun(
             integrator, path.physicalOrigin, path.rayDirection);
+    float starWeight = primePreviousCannotUseMis(path)
+            ? 1.0
+            : primePowerHeuristic(path.previousBsdfPdf, stars.pdf);
     float sunWeight = primePreviousCannotUseMis(path)
             ? 1.0
             : primePowerHeuristic(path.previousBsdfPdf, sun.pdf);
     return path.throughput
             * (primeEnvironmentRadiance(integrator, path.rayDirection)
+            + stars.radiance * starWeight
             + sun.radiance * sunWeight);
 }
 
@@ -958,6 +1023,10 @@ PrimeTransparentBranchResult primeIntegrateTransparentBranch(
                 primarySurfaceReplacement ? true : diffusePath,
                 primeEvaluateHitEmission(path, surface));
         if (!pureDeltaInterface) {
+            vec3 starSample = primeSobolSample3D(
+                    preparedSample,
+                    PRIME_SAMPLE_EFFECT_DIRECT_STARS,
+                    PRIME_SAMPLE_DIMENSION_PRIMARY);
             vec2 sunSample = primeSobolSample2D(
                     preparedSample,
                     PRIME_SAMPLE_EFFECT_DIRECT_SUN,
@@ -985,15 +1054,27 @@ PrimeTransparentBranchResult primeIntegrateTransparentBranch(
                         areaPositionSample,
                         volumeStack,
                         false);
+                PrimeDirectLightingSplit stars = primeEstimatePrimaryDirectStarmap(
+                        integrator,
+                        surface,
+                        viewDirection,
+                        starSample,
+                        volumeStack,
+                        false);
                 vec3 diffuseDirect = path.throughput
-                        * (sun.lighting.diffuse * sun.visibility + area.diffuse);
+                        * (sun.lighting.diffuse * sun.visibility
+                                + area.diffuse + stars.diffuse);
                 vec3 specularDirect = path.throughput
-                        * (sun.lighting.specular * sun.visibility + area.specular);
+                        * (sun.lighting.specular * sun.visibility
+                                + area.specular + stars.specular);
                 primeAccumulate(result.diffuseRadiance, diffuseDirect);
                 primeAccumulate(result.specularRadiance, specularDirect);
-                result.guides.primaryAreaDiffuse = path.throughput * area.diffuse;
-                result.guides.primaryAreaSpecular = path.throughput * area.specular;
-                result.guides.primaryAreaDirection = area.direction;
+                result.guides.primaryAreaDiffuse =
+                        path.throughput * (area.diffuse + stars.diffuse);
+                result.guides.primaryAreaSpecular =
+                        path.throughput * (area.specular + stars.specular);
+                result.guides.primaryAreaDirection =
+                        primeCombinedDirectDirection(area, stars);
             } else {
                 vec3 direct = path.throughput
                         * (primeEstimateDirectSun(
@@ -1001,6 +1082,12 @@ PrimeTransparentBranchResult primeIntegrateTransparentBranch(
                                 surface,
                                 viewDirection,
                                 sunSample,
+                                volumeStack)
+                        + primeEstimateDirectStarmap(
+                                integrator,
+                                surface,
+                                viewDirection,
+                                starSample,
                                 volumeStack)
                         + primeEstimateDirectAreaLight(
                                 surface,
@@ -1158,6 +1245,10 @@ PrimeIntegrationResult primeIntegrateWithVolume(
         PrimePreparedSampleBase preparedSample = primePrepareSampleBase(bounceSample);
         bool pureDeltaInterface = primeIsPureDeltaInterface(surface);
         if (!pureDeltaInterface) {
+            vec3 starSample = primeSobolSample3D(
+                    preparedSample,
+                    PRIME_SAMPLE_EFFECT_DIRECT_STARS,
+                    PRIME_SAMPLE_DIMENSION_PRIMARY);
             vec2 sunSample = primeSobolSample2D(
                     preparedSample,
                     PRIME_SAMPLE_EFFECT_DIRECT_SUN,
@@ -1185,6 +1276,13 @@ PrimeIntegrationResult primeIntegrateWithVolume(
                         areaPositionSample,
                         volumeStack,
                         firstTransparent);
+                PrimeDirectLightingSplit starSplit = primeEstimatePrimaryDirectStarmap(
+                        integrator,
+                        surface,
+                        viewDirection,
+                        starSample,
+                        volumeStack,
+                        firstTransparent);
                 if (firstTransparent) {
                     // SIGMA has one shadow signal and cannot preserve the reflection/transmission
                     // partition. Keep the visible primary-interface estimate in the two REBLUR
@@ -1202,8 +1300,10 @@ PrimeIntegrationResult primeIntegrateWithVolume(
                             result.radiance.unshadowedSun,
                             path.throughput * (sun.lighting.diffuse + sun.lighting.specular));
                 }
-                vec3 primaryAreaDiffuse = path.throughput * areaSplit.diffuse;
-                vec3 primaryAreaSpecular = path.throughput * areaSplit.specular;
+                vec3 primaryAreaDiffuse =
+                        path.throughput * (areaSplit.diffuse + starSplit.diffuse);
+                vec3 primaryAreaSpecular =
+                        path.throughput * (areaSplit.specular + starSplit.specular);
                 primeAccumulate(result.radiance.diffuse, primaryAreaDiffuse);
                 if (firstTransparent) {
                     primeAccumulate(result.reflectionSpecularRadiance, primaryAreaSpecular);
@@ -1214,8 +1314,9 @@ PrimeIntegrationResult primeIntegrateWithVolume(
                 result.guides.primaryAreaSpecular = primaryAreaSpecular;
                 if (any(greaterThan(primaryAreaDiffuse, vec3(0.0)))
                         || any(greaterThan(primaryAreaSpecular, vec3(0.0)))) {
-                    // SH1 needs the primary area sample apart from the continuation direction.
-                    result.guides.primaryAreaDirection = areaSplit.direction;
+                    // SH1 needs the non-sun direct sample apart from the continuation direction.
+                    result.guides.primaryAreaDirection =
+                            primeCombinedDirectDirection(areaSplit, starSplit);
                 }
             } else {
                 vec3 direct = path.throughput
@@ -1224,6 +1325,12 @@ PrimeIntegrationResult primeIntegrateWithVolume(
                                 surface,
                                 viewDirection,
                                 sunSample,
+                                volumeStack)
+                        + primeEstimateDirectStarmap(
+                                integrator,
+                                surface,
+                                viewDirection,
+                                starSample,
                                 volumeStack)
                         + primeEstimateDirectAreaLight(
                                 surface,

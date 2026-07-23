@@ -16,9 +16,9 @@ vec3 primeAtmosphereSky(vec3 direction, vec3 sunDirection) {
     return max(primeSampleSkyView(uv).rgb, vec3(0.0));
 }
 
-vec3 primeAtmosphereSunTransmittance(
+vec3 primeAtmosphereDistantTransmittance(
         vec3 surfacePosition,
-        vec3 directionToSun) {
+        vec3 direction) {
     // The same artistic scale maps both vertical coordinates and travelled distance: one
     // Minecraft block represents 0.001 atmospheric kilometres. Splitting these scales would make
     // density layers disagree with aerial perspective and break the atmosphere/terrain contract.
@@ -32,14 +32,20 @@ vec3 primeAtmosphereSunTransmittance(
     vec3 horizonPosition = vec3(0.0, primePush.atmosphereEyeRadiusKm, 0.0);
     if (atmRaySegment(horizonPosition
             - vec3(0.0, ATM_PLANET_RADIUS_OFFSET_KM, 0.0),
-            directionToSun).hitsGround) {
+            direction).hitsGround) {
         return vec3(0.0);
     }
     float normalizedAltitude = (radius - ATM_BOTTOM_RADIUS_KM) / ATM_THICKNESS_KM;
-    vec2 uv = atmTransmittanceUv(directionToSun.y, normalizedAltitude);
+    vec2 uv = atmTransmittanceUv(direction.y, normalizedAltitude);
     return atmRec2020Transmittance(
             primeSampleTransmittanceLow(uv),
             primeSampleTransmittanceHigh(uv));
+}
+
+vec3 primeAtmosphereSunTransmittance(
+        vec3 surfacePosition,
+        vec3 directionToSun) {
+    return primeAtmosphereDistantTransmittance(surfacePosition, directionToSun);
 }
 
 void primeApplyAerialPerspective(

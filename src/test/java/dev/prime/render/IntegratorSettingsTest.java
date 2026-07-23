@@ -28,12 +28,15 @@ final class IntegratorSettingsTest {
     @Test
     void materialLightingControlStoresIndependentEvAndRoughnessFields() {
         int packed = IntegratorSettings.packMaterialLightingControl(
-                -16, 16, 73, false, false);
+                -16, 32, 16, 73, false, false);
         int sun = ((packed >>> ShaderAbi.PATH_SUN_EV_QUARTER_SHIFT)
                 & ShaderAbi.PATH_EV_QUARTER_MASK) - ShaderAbi.PATH_EV_QUARTER_BIAS;
+        int stars = ((packed >>> ShaderAbi.PATH_STAR_EV_QUARTER_SHIFT)
+                & ShaderAbi.PATH_STAR_EV_QUARTER_MASK) - ShaderAbi.PATH_STAR_EV_QUARTER_BIAS;
         int block = ((packed >>> ShaderAbi.PATH_BLOCK_LIGHT_EV_QUARTER_SHIFT)
                 & ShaderAbi.PATH_EV_QUARTER_MASK) - ShaderAbi.PATH_EV_QUARTER_BIAS;
         assertEquals(-16, sun);
+        assertEquals(32, stars);
         assertEquals(16, block);
         assertEquals(73, (packed >>> ShaderAbi.PATH_MATERIAL_ROUGHNESS_SHIFT)
                 & ShaderAbi.PATH_MATERIAL_ROUGHNESS_MASK);
@@ -41,21 +44,24 @@ final class IntegratorSettingsTest {
         assertEquals(0, packed & ShaderAbi.PATH_RAW_NUMERICAL_MASK);
         assertEquals(
                 ShaderAbi.PATH_SH_INPUT_MASK,
-                IntegratorSettings.packMaterialLightingControl(-16, 16, 73, true, false)
+                IntegratorSettings.packMaterialLightingControl(-16, 32, 16, 73, true, false)
                         & ShaderAbi.PATH_SH_INPUT_MASK);
         assertEquals(
                 ShaderAbi.PATH_RAW_NUMERICAL_MASK,
-                IntegratorSettings.packMaterialLightingControl(-16, 16, 73, false, true)
+                IntegratorSettings.packMaterialLightingControl(-16, 32, 16, 73, false, true)
                         & ShaderAbi.PATH_RAW_NUMERICAL_MASK);
         assertThrows(IllegalArgumentException.class,
                 () -> IntegratorSettings.packMaterialLightingControl(
-                        -129, 0, 80, false, false));
+                        -129, 0, 0, 80, false, false));
         assertThrows(IllegalArgumentException.class,
                 () -> IntegratorSettings.packMaterialLightingControl(
-                        0, 128, 80, false, false));
+                        0, 33, 0, 80, false, false));
         assertThrows(IllegalArgumentException.class,
                 () -> IntegratorSettings.packMaterialLightingControl(
-                        0, 0, 101, false, false));
+                        0, 0, 128, 80, false, false));
+        assertThrows(IllegalArgumentException.class,
+                () -> IntegratorSettings.packMaterialLightingControl(
+                        0, 0, 0, 101, false, false));
     }
 
     @Test

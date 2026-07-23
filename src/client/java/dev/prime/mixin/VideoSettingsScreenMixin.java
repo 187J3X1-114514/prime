@@ -33,6 +33,7 @@ public abstract class VideoSettingsScreenMixin {
     @Unique private OptionInstance<PostProcessingMode> prime$postProcessingMode;
     @Unique private OptionInstance<ReconstructionQualityMode> prime$qualityMode;
     @Unique private OptionInstance<Integer> prime$sunExposure;
+    @Unique private OptionInstance<Integer> prime$starExposure;
     @Unique private OptionInstance<Integer> prime$blockLightExposure;
     @Unique private OptionInstance<Integer> prime$oklabOverexposure;
     @Unique private OptionInstance<Integer> prime$defaultRoughness;
@@ -49,6 +50,7 @@ public abstract class VideoSettingsScreenMixin {
             this.prime$postProcessingMode = PrimeVideoOptions.postProcessingMode();
             this.prime$qualityMode = PrimeVideoOptions.qualityMode();
             this.prime$sunExposure = PrimeVideoOptions.sunExposure();
+            this.prime$starExposure = PrimeVideoOptions.starExposure();
             this.prime$blockLightExposure = PrimeVideoOptions.blockLightExposure();
             this.prime$oklabOverexposure = PrimeVideoOptions.oklabOverexposure();
             this.prime$defaultRoughness = PrimeVideoOptions.defaultRoughness();
@@ -65,6 +67,7 @@ public abstract class VideoSettingsScreenMixin {
             list.addBig(this.prime$postProcessingMode);
             list.addBig(this.prime$qualityMode);
             list.addBig(this.prime$sunExposure);
+            list.addBig(this.prime$starExposure);
             list.addBig(this.prime$blockLightExposure);
             list.addBig(this.prime$oklabOverexposure);
             list.addBig(this.prime$defaultRoughness);
@@ -83,6 +86,9 @@ public abstract class VideoSettingsScreenMixin {
         this.prime$refresh(
                 this.prime$sunExposure,
                 LightingSettings.DEFAULT_SUN_QUARTER_STEPS);
+        this.prime$refresh(
+                this.prime$starExposure,
+                LightingSettings.DEFAULT_STAR_QUARTER_STEPS);
         this.prime$refresh(
                 this.prime$blockLightExposure,
                 LightingSettings.DEFAULT_BLOCK_LIGHT_QUARTER_STEPS);

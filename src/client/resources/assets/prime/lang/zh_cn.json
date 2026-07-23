@@ -40,6 +40,8 @@
   "prime.options.dlss_rr.debug_fullscreen.tooltip": "将选中的 RR 诊断内容全屏显示，而不是放在右上角面板中。该临时状态不会写入配置文件。",
   "prime.options.lighting.sun_ev": "太阳亮度（EV）",
   "prime.options.lighting.sun_ev.tooltip": "曝光值（EV）会同时调节直射阳光、天空和大气散射的亮度。每格为 0.25 EV，增加 1 EV 等于亮度翻倍。建议先使用默认的 0 EV，仅在整个室外画面偏亮或偏暗时修改。",
+  "prime.options.lighting.star_ev": "星空亮度（EV）",
+  "prime.options.lighting.star_ev.tooltip": "独立调节内嵌 Gaia 夜空的亮度。每格为 0.25 EV，增加 1 EV 等于亮度翻倍；星空会在白天淡出，并在夜晚参与表面照明。",
   "prime.options.lighting.block_light_ev": "方块光源亮度（EV）",
   "prime.options.lighting.block_light_ev.tooltip": "曝光值（EV）会调节火把、荧石等发光方块产生的照明，不会改变哪些方块会发光。每格为 0.25 EV，增加 1 EV 等于亮度翻倍。建议先使用默认的 0 EV。",
   "prime.options.display.oklab_overexposure": "Oklab DRT 高光过曝量",

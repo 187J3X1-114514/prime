@@ -18,9 +18,15 @@ final class LightingSettingsTest {
         assertEquals(256.0F, LightingSettings.linearMultiplier(32));
         assertEquals(1.0F / 256.0F, LightingSettings.linearMultiplier(-32));
         assertEquals((float) Math.pow(2.0, 0.25), LightingSettings.linearMultiplier(1));
+        assertEquals(1.0F, LightingSettings.starLinearMultiplier(0));
+        assertEquals(
+                256.0F,
+                LightingSettings.starLinearMultiplier(32));
         assertThrows(IllegalArgumentException.class,
                 () -> LightingSettings.linearMultiplier(
                         LightingSettings.MAXIMUM_QUARTER_STEPS + 1));
+        assertThrows(IllegalArgumentException.class,
+                () -> LightingSettings.starLinearMultiplier(33));
     }
 
     @Test
@@ -30,9 +36,12 @@ final class LightingSettingsTest {
         assertTrue(sun.lightingRevision() > defaults.lightingRevision());
         assertEquals(sun, sun.withSunQuarterSteps(1));
 
-        PrimeSettings block = sun.withBlockLightQuarterSteps(-1);
-        assertTrue(block.lightingRevision() > sun.lightingRevision());
+        PrimeSettings stars = sun.withStarQuarterSteps(2);
+        assertTrue(stars.lightingRevision() > sun.lightingRevision());
+        PrimeSettings block = stars.withBlockLightQuarterSteps(-1);
+        assertTrue(block.lightingRevision() > stars.lightingRevision());
         assertEquals(1, block.lighting().sunQuarterSteps());
+        assertEquals(2, block.lighting().starQuarterSteps());
         assertEquals(-1, block.lighting().blockLightQuarterSteps());
     }
 }

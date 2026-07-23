@@ -23,6 +23,10 @@ final class PrimeConfigTest {
                 () -> PrimeConfig.parseEvQuarterSteps("0.1"));
         assertThrows(IllegalArgumentException.class,
                 () -> PrimeConfig.parseEvQuarterSteps("8.25"));
+        assertEquals(32, PrimeConfig.parseStarEvQuarterSteps("8"));
+        assertEquals("8", PrimeConfig.formatStarEv(32));
+        assertThrows(IllegalArgumentException.class,
+                () -> PrimeConfig.parseStarEvQuarterSteps("8.25"));
     }
 
     @Test
@@ -76,6 +80,7 @@ final class PrimeConfigTest {
         String serialized = PrimeConfig.serializedContents();
         assertFalse(serialized.contains("debug_view"));
         assertFalse(serialized.contains("debug_fullscreen"));
+        assertTrue(serialized.contains("lighting.star_ev=0\n"));
 
         Properties properties = new Properties();
         assertFalse(PrimeConfig.hasLegacyDebugProperties(properties));

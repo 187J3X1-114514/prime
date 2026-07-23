@@ -23,3 +23,7 @@ registered trademarks of NVIDIA Corporation in the United States and other count
 Prime's OpenPBR closure library and transmission-GGX energy data are derived
 from RoboCute's Apache-2.0-licensed BSDF implementation. See
 `ROBOCUTE-NOTICE.txt` and `APACHE-2.0.txt`.
+
+Prime's night sky uses NASA Scientific Visualization Studio's Deep Star Maps
+2020 with Gaia DR2 data. See `NASA-DEEP-STAR-MAPS-2020-NOTICE.md` for the
+source, lossless repacking details, and requested attribution.

@@ -40,6 +40,8 @@ final class ShaderAbiTest {
         assertEquals(24, ShaderAbi.DESCRIPTOR_RAW_NUMERICAL_DIAGNOSTIC);
         assertEquals(22, ShaderAbi.DESCRIPTOR_NRD_DIFFUSE_DIRECTION);
         assertEquals(23, ShaderAbi.DESCRIPTOR_NRD_SPECULAR_DIRECTION);
+        assertEquals(34, ShaderAbi.DESCRIPTOR_STARMAP);
+        assertEquals(35, ShaderAbi.DESCRIPTOR_STARMAP_IMPORTANCE);
         assertEquals(0x80000000, ShaderAbi.PATH_CAMERA_IN_WATER_MASK);
         assertEquals(0x7fff, ShaderAbi.PATH_JITTER_PHASE_MASK);
         assertEquals(0, ShaderAbi.PATH_SUN_EV_QUARTER_SHIFT);
@@ -47,10 +49,13 @@ final class ShaderAbiTest {
         assertEquals(0xff, ShaderAbi.PATH_EV_QUARTER_MASK);
         assertEquals(128, ShaderAbi.PATH_EV_QUARTER_BIAS);
         assertEquals(16, ShaderAbi.PATH_MATERIAL_ROUGHNESS_SHIFT);
-        assertEquals(0xff, ShaderAbi.PATH_MATERIAL_ROUGHNESS_MASK);
+        assertEquals(0x7f, ShaderAbi.PATH_MATERIAL_ROUGHNESS_MASK);
         assertEquals(100, ShaderAbi.PATH_MATERIAL_ROUGHNESS_STEPS_PER_UNIT);
-        assertEquals(0x01000000, ShaderAbi.PATH_SH_INPUT_MASK);
-        assertEquals(0x02000000, ShaderAbi.PATH_RAW_NUMERICAL_MASK);
+        assertEquals(0x00800000, ShaderAbi.PATH_SH_INPUT_MASK);
+        assertEquals(0x01000000, ShaderAbi.PATH_RAW_NUMERICAL_MASK);
+        assertEquals(25, ShaderAbi.PATH_STAR_EV_QUARTER_SHIFT);
+        assertEquals(0x7f, ShaderAbi.PATH_STAR_EV_QUARTER_MASK);
+        assertEquals(32, ShaderAbi.PATH_STAR_EV_QUARTER_BIAS);
         assertEquals(2, ShaderAbi.RUSSIAN_ROULETTE_START);
         assertEquals("linear-rec2020-d65", ShaderAbi.WORKING_COLOR_SPACE);
         assertEquals("srgb", ShaderAbi.TEXTURE_COLOR_ENCODING);
@@ -69,6 +74,14 @@ final class ShaderAbiTest {
         assertEquals(-64.0F, ShaderAbi.ATMOSPHERE_WORLD_SEA_LEVEL_Y);
         assertEquals(0.001F, ShaderAbi.ATMOSPHERE_WORLD_UNIT_SCALE_KM);
         assertEquals(64.0F, ShaderAbi.ATMOSPHERE_AERIAL_MAX_DISTANCE_KM);
+        assertEquals(8192, ShaderAbi.STARMAP_WIDTH);
+        assertEquals(4096, ShaderAbi.STARMAP_HEIGHT);
+        assertEquals(1024, ShaderAbi.STARMAP_IMPORTANCE_WIDTH);
+        assertEquals(512, ShaderAbi.STARMAP_IMPORTANCE_HEIGHT);
+        assertEquals(30.0F, ShaderAbi.STARMAP_OBSERVER_LATITUDE_DEGREES);
+        assertEquals(
+                "dc6c4f413e85707a29a25a9451148154554ecca2c996f84fa8f47b65ef9ff7c4",
+                ShaderAbi.STARMAP_SOURCE_SHA256);
     }
 
     @Test

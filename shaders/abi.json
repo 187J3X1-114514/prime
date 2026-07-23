@@ -196,7 +196,9 @@
     "nrdReflectionPosition": 30,
     "nrdReflectionDiffuseDirection": 31,
     "nrdReflectionSpecularDirection": 32,
-    "nrdDisplayPosition": 33
+    "nrdDisplayPosition": 33,
+    "starmap": 34,
+    "starmapImportance": 35
   },
   "pathControl": {
     "cameraInWaterMask": "0x80000000",
@@ -206,10 +208,13 @@
     "evQuarterMask": "0xff",
     "evQuarterBias": 128,
     "materialRoughnessShift": 16,
-    "materialRoughnessMask": "0xff",
+    "materialRoughnessMask": "0x7f",
     "materialRoughnessStepsPerUnit": 100,
-    "shInputMask": "0x01000000",
-    "rawNumericalMask": "0x02000000",
+    "shInputMask": "0x00800000",
+    "rawNumericalMask": "0x01000000",
+    "starEvQuarterShift": 25,
+    "starEvQuarterMask": "0x7f",
+    "starEvQuarterBias": 32,
     "russianRouletteStart": 2
   },
   "nrdContract": {
@@ -240,6 +245,14 @@
     "spaceSunIntensity": 12.5,
     "sunAngularRadiusRadians": 0.00471,
     "aerialMaxDistanceKm": 64.0
+  },
+  "starmapContract": {
+    "width": 8192,
+    "height": 4096,
+    "importanceWidth": 1024,
+    "importanceHeight": 512,
+    "observerLatitudeDegrees": 30.0,
+    "sourceSha256": "dc6c4f413e85707a29a25a9451148154554ecca2c996f84fa8f47b65ef9ff7c4"
   },
   "cutoutAlphaThreshold": 0.5
 }

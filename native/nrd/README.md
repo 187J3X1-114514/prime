@@ -19,10 +19,13 @@ The main REBLUR handles ordinary primary surfaces and the transmission PSR signa
 the second REBLUR handles only the fixed reflection branch. Realtime rendering normally traces one complete
 path per pixel. A first visible transparent interface fixes one conditional transmission path and one
 conditional reflection path, reusing the interface hit and material work. No extra guide ray is traced.
-REBLUR uses 63 main/stabilized-history frames,
+The primary REBLUR uses 63 main/stabilized-history frames. The transparent-reflection REBLUR keeps
+the 63-frame main ceiling for rough reflections, caps stabilization at 10 frames, and uses NRD's
+roughness-responsive accumulation below 0.1 with a 3-frame floor for smooth water/glass. Both use
 10 fast-history frames, a 4-frame history fix, and a 1.5 sporadic-outlier relative scale for the 1 spp
-area-light and indirect signal. Direct sun remains a separate signal and consumes SIGMA's filtered visibility
-at composition.
+area-light and indirect signal. Direct sun on ordinary primary surfaces remains separate and
+consumes SIGMA's filtered visibility at composition; transparent-interface sun reflection remains
+in the dedicated reflection REBLUR so it retains the interface split.
 Demodulated diffuse and specular illumination share a bounded input, and remodulated output is
 bounded together with direct sun before composition. Probabilistically sampled diffuse and
 specular transport use the default 30/50-pixel prepasses. Ordinary pixels use the first visible surface.

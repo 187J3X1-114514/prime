@@ -295,8 +295,18 @@ PRIME_NRD_EXPORT int32_t primeNrdCreate(
     result = nrd::SetDenoiserSettings(
         *context->instance, PRIME_NRD_PRIMARY_REBLUR_ID, &settings);
     if (result == nrd::Result::SUCCESS)
+    {
+        nrd::ReblurSettings reflectionSettings = settings;
+        // The second REBLUR contains only transparent-interface reflection. Its smooth water and
+        // glass highlights are view dependent, so retaining the general 63-frame stabilization
+        // produces visible trails even with correct virtual motion. NRD 4.17 explicitly provides
+        // responsive accumulation for this case; rough reflections retain the long main history.
+        reflectionSettings.responsiveAccumulationSettings.roughnessThreshold = 0.1f;
+        reflectionSettings.responsiveAccumulationSettings.minAccumulatedFrameNum = 3;
+        reflectionSettings.maxStabilizedFrameNum = 10;
         result = nrd::SetDenoiserSettings(
-            *context->instance, PRIME_NRD_REFLECTION_REBLUR_ID, &settings);
+            *context->instance, PRIME_NRD_REFLECTION_REBLUR_ID, &reflectionSettings);
+    }
     if (result != nrd::Result::SUCCESS)
     {
         delete context;

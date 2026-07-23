@@ -173,9 +173,14 @@ void primePrepareBranch(ivec2 pixel, ivec2 extent, bool reflection) {
             primeLoadPackedNormal(pixel, reflection), normal, roughness);
     vec3 diffuseAlbedo = primeNrdSanitizeAlbedo(rawMaterial.rgb);
     vec3 specularAlbedo = primeNrdSanitizeAlbedo(rawSpecularMaterial.rgb);
-    vec3 position = primeLoadPosition(pixel, reflection).xyz;
+    vec4 rawPosition = primeLoadPosition(pixel, reflection);
+    vec3 position = rawPosition.xyz;
+    bool directional = reflection && rawPosition.w > 0.5;
+    vec2 currentSampleUv = primeMotionSampleUv(pixel, extent);
     vec3 cameraForward = primeMotionRayDirection(vec2(0.5));
-    float currentViewZ = dot(position, cameraForward);
+    float currentViewZ = directional
+            ? dot(primeMotionRayDirection(currentSampleUv) * primaryDistance, cameraForward)
+            : dot(position, cameraForward);
     currentViewZ = primeNrdIsFinite(currentViewZ) && currentViewZ > 0.0
             ? min(currentViewZ, PRIME_MOTION_SKY_VIEW_Z)
             : PRIME_MOTION_SKY_VIEW_Z;
@@ -216,8 +221,10 @@ void primePrepareBranch(ivec2 pixel, ivec2 extent, bool reflection) {
                     floatBitsToUint(imageLoad(primeDisplayPosition, pixel).w));
     primeStoreSpecularMaterial(pixel, reflection, vec4(specularAlbedo, composition));
 
-    vec2 currentSampleUv = primeMotionSampleUv(pixel, extent);
-    vec4 previousClip = primeMotionPush.previousWorldToClip * vec4(position, 1.0);
+    // Infinite environment reflections use direction motion: camera translation must not move the
+    // sun/sky image across a finite water surface. Depth and rejection still describe that surface.
+    vec4 previousClip = primeMotionPush.previousWorldToClip
+            * vec4(position, directional ? 0.0 : 1.0);
     if (!(abs(previousClip.w) > 1.0e-6)
             || any(isnan(previousClip)) || any(isinf(previousClip))) {
         primeStoreMotion(pixel, reflection, vec4(0.0));
@@ -227,11 +234,11 @@ void primePrepareBranch(ivec2 pixel, ivec2 extent, bool reflection) {
             * vec2(0.5, -0.5) + vec2(0.5);
     primeStoreMotion(pixel, reflection, vec4(primeNrdSanitizeMotion(vec3(
             (previousUv - currentSampleUv) * vec2(extent),
-            abs(previousClip.w) - currentViewZ)), 0.0));
+            directional ? 0.0 : abs(previousClip.w) - currentViewZ)), 0.0));
 
     if (!reflection && primeMotionPush.diagnosticMode == PRIME_DIAGNOSTIC_REPROJECTION_ERROR) {
         vec4 exactPreviousClip = primeMotionPush.previousRenderedWorldToClip
-                * vec4(position, 1.0);
+                * vec4(position, directional ? 0.0 : 1.0);
         vec3 error = vec3(1.0);
         if (abs(exactPreviousClip.w) > 1.0e-6
                 && !any(isnan(exactPreviousClip)) && !any(isinf(exactPreviousClip))) {
@@ -240,7 +247,10 @@ void primePrepareBranch(ivec2 pixel, ivec2 extent, bool reflection) {
             vec2 pixels = (previousUv - exactUv) * vec2(extent);
             error = vec3(max(pixels.x, 0.0), max(pixels.y, 0.0), 0.0)
                     + vec3(max(-pixels.y, 0.0), max(-pixels.x, 0.0), max(-pixels.x, 0.0));
-            error = (error + abs(abs(previousClip.w) - abs(exactPreviousClip.w))) * 0.25;
+            float depthError = directional
+                    ? 0.0
+                    : abs(abs(previousClip.w) - abs(exactPreviousClip.w));
+            error = (error + depthError) * 0.25;
         }
         imageStore(primeReprojectionError, pixel, vec4(clamp(error, 0.0, 1.0), 1.0));
     }

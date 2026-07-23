@@ -57,6 +57,7 @@ struct PrimeIntegrationResult {
     PrimeDenoiserGuides transmissionGuides;
     PrimeDenoiserGuides reflectionGuides;
     float transmissionAnchorDistance;
+    bool reflectionDirectionalGuide;
     bool transparentPrimary;
 };
 
@@ -66,6 +67,7 @@ struct PrimeTransparentBranchResult {
     PrimeDenoiserGuides guides;
     float firstHitDistance;
     float anchorDistance;
+    bool directionalGuide;
 };
 
 // Bookkeeping that maps a complete physical path into the signal/guide contract. Keeping it in a
@@ -846,6 +848,7 @@ PrimeTransparentBranchResult primeIntegrateTransparentBranch(
     result.guides = primeEmptyDenoiserGuides();
     result.firstHitDistance = 0.0;
     result.anchorDistance = -1.0;
+    result.directionalGuide = false;
     PrimePsrDeltaChain deltaChain = primeEmptyPsrDeltaChain();
     bool hasGuide = (firstBsdf.eventFlags & PRIME_BSDF_EVENT_DELTA) == 0u;
     bool diffusePath = transmissionBranch;
@@ -901,6 +904,19 @@ PrimeTransparentBranchResult primeIntegrateTransparentBranch(
             }
         }
         if (surface.hitKind == PRIME_HIT_NONE) {
+            if (!transmissionBranch && !hasGuide
+                    && deltaChain.count > 0u && !deltaChain.overflowed) {
+                vec3 direction = primePsrVirtualDirection(deltaChain, path.rayDirection);
+                float lengthSquared = dot(direction, direction);
+                if (primeNrdIsFinite(direction) && primeNrdIsFinite(lengthSquared)
+                        && lengthSquared > 1.0e-12) {
+                    // The same environment radiance reappears along the inverse-reflected world
+                    // direction. Keep it as a direction so camera translation cannot drag an
+                    // infinite sun/sky reflection across the finite water interface.
+                    result.guides.primaryPosition = direction * inversesqrt(lengthSquared);
+                    result.directionalGuide = true;
+                }
+            }
             primeAccumulateTransparentBranch(
                     result,
                     diffusePath,
@@ -1036,6 +1052,7 @@ PrimeTransparentBranchResult primeIntegrateTransparentBranch(
         // A delta chain that terminates at the environment has no finite PSR. The real first
         // interface is a stable, bounded fallback and keeps this sample denoisable without
         // inventing a virtual material or tracing another ray.
+        vec3 directionalPosition = result.guides.primaryPosition;
         primeSetPsrGuide(
                 result.guides,
                 firstInterface,
@@ -1043,6 +1060,9 @@ PrimeTransparentBranchResult primeIntegrateTransparentBranch(
                 firstAlbedos,
                 firstGuideThroughput,
                 primeEmptyPsrDeltaChain());
+        if (result.directionalGuide) {
+            result.guides.primaryPosition = directionalPosition;
+        }
         if (transmissionBranch) {
             result.guides.diffuseDirection = firstBsdf.direction;
             result.guides.diffuseHitDistance = PRIME_NRD_FP16_MAX;
@@ -1070,6 +1090,7 @@ PrimeIntegrationResult primeIntegrateWithVolume(
     result.transmissionGuides = primeEmptyDenoiserGuides();
     result.reflectionGuides = primeEmptyDenoiserGuides();
     result.transmissionAnchorDistance = -1.0;
+    result.reflectionDirectionalGuide = false;
     result.transparentPrimary = false;
     PrimeDenoiserState denoiserState;
     denoiserState.hasPrimarySurface = false;
@@ -1312,6 +1333,7 @@ PrimeIntegrationResult primeIntegrateWithVolume(
                             reflection.specularRadiance);
                     result.guides.specularHitDistance = reflection.firstHitDistance;
                     result.reflectionGuides = reflection.guides;
+                    result.reflectionDirectionalGuide = reflection.directionalGuide;
                 }
             } else {
                 primeRecordNonFinite(reflected.direction);

@@ -56,6 +56,7 @@ struct PrimeIntegrationResult {
     vec3 reflectionSpecularRadiance;
     PrimeDenoiserGuides transmissionGuides;
     PrimeDenoiserGuides reflectionGuides;
+    float rrTransmissionAnchorDistance;
     bool transparentPrimary;
 };
 
@@ -64,6 +65,7 @@ struct PrimeTransparentBranchResult {
     vec3 specularRadiance;
     PrimeDenoiserGuides guides;
     float firstHitDistance;
+    float rrAnchorDistance;
 };
 
 // Bookkeeping that maps a complete physical path into the signal/guide contract. Keeping it in a
@@ -763,6 +765,31 @@ bool primeBuildPsrGuide(
     return true;
 }
 
+float primeRrPlanarAnchorDistance(
+        PrimePsrDeltaChain chain,
+        vec3 target,
+        vec3 targetNormal) {
+    if (chain.overflowed) {
+        return -1.0;
+    }
+    vec3 firstPoint = chain.count == 0u ? target : chain.positionEta[0].xyz;
+    vec3 firstSegment = firstPoint - primePush.cameraPosition;
+    float firstLengthSquared = dot(firstSegment, firstSegment);
+    if (!primeNrdIsFinite(firstLengthSquared) || !(firstLengthSquared > 1.0e-12)) {
+        return -1.0;
+    }
+    vec3 primaryDirection = firstSegment * inversesqrt(firstLengthSquared);
+    float denominator = dot(primaryDirection, targetNormal);
+    if (!primeNrdIsFinite(denominator) || !(abs(denominator) > 1.0e-4)) {
+        return -1.0;
+    }
+    float distance = dot(target - primePush.cameraPosition, targetNormal) / denominator;
+    if (!primeNrdIsFinite(distance) || !(distance > 0.0)) {
+        return -1.0;
+    }
+    return distance;
+}
+
 void primeSetPsrGuide(
         inout PrimeDenoiserGuides guides,
         SurfaceInteraction surface,
@@ -818,6 +845,7 @@ PrimeTransparentBranchResult primeIntegrateTransparentBranch(
     result.specularRadiance = vec3(0.0);
     result.guides = primeEmptyDenoiserGuides();
     result.firstHitDistance = 0.0;
+    result.rrAnchorDistance = -1.0;
     PrimePsrDeltaChain deltaChain = primeEmptyPsrDeltaChain();
     bool hasGuide = (firstBsdf.eventFlags & PRIME_BSDF_EVENT_DELTA) == 0u;
     bool diffusePath = transmissionBranch;
@@ -830,6 +858,12 @@ PrimeTransparentBranchResult primeIntegrateTransparentBranch(
                 firstAlbedos,
                 firstGuideThroughput,
                 deltaChain);
+        if (transmissionBranch) {
+            result.rrAnchorDistance = primeRrPlanarAnchorDistance(
+                    deltaChain,
+                    firstInterface.position,
+                    firstInterface.geometricNormal);
+        }
         if (diffusePath) {
             result.guides.diffuseDirection = firstBsdf.direction;
         } else {
@@ -893,6 +927,12 @@ PrimeTransparentBranchResult primeIntegrateTransparentBranch(
                     surfaceAlbedos,
                     path.throughput,
                     deltaChain);
+            if (transmissionBranch) {
+                result.rrAnchorDistance = primeRrPlanarAnchorDistance(
+                        deltaChain,
+                        surface.position,
+                        surface.geometricNormal);
+            }
             hasGuide = true;
             guideBounce = path.bounce;
         }
@@ -1029,6 +1069,7 @@ PrimeIntegrationResult primeIntegrateWithVolume(
     result.reflectionSpecularRadiance = vec3(0.0);
     result.transmissionGuides = primeEmptyDenoiserGuides();
     result.reflectionGuides = primeEmptyDenoiserGuides();
+    result.rrTransmissionAnchorDistance = -1.0;
     result.transparentPrimary = false;
     PrimeDenoiserState denoiserState;
     denoiserState.hasPrimarySurface = false;
@@ -1305,6 +1346,7 @@ PrimeIntegrationResult primeIntegrateWithVolume(
                     primeAccumulate(result.radiance.specular, transmission.specularRadiance);
                     result.guides.diffuseHitDistance = transmission.firstHitDistance;
                     result.transmissionGuides = transmission.guides;
+                    result.rrTransmissionAnchorDistance = transmission.rrAnchorDistance;
                 }
             } else {
                 primeRecordNonFinite(transmitted.direction);

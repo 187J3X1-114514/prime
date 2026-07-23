@@ -83,6 +83,10 @@ public final class VulkanRenderer implements AutoCloseable {
     private boolean screenshotRequestRejected;
     private boolean closed;
     private boolean rrFallbackReported;
+    private DlssRrNative.OptimalSettings rrOptimalSettings;
+    private ReconstructionQualityMode rrOptimalQualityMode;
+    private int rrOptimalDisplayWidth;
+    private int rrOptimalDisplayHeight;
 
     public VulkanRenderer(com.mojang.blaze3d.vulkan.VulkanDevice device, VulkanCapabilities capabilities) {
         VulkanContext newContext = new VulkanContext(device, capabilities);
@@ -239,7 +243,7 @@ public final class VulkanRenderer implements AutoCloseable {
                 && DlssRrBootstrap.deviceReady()) {
             try {
                 DlssRrNative.OptimalSettings optimal =
-                        this.ngxContext.optimalSettings(width, height, requestedQualityMode);
+                        this.optimalDlssRrSettings(width, height, requestedQualityMode);
                 renderWidth = optimal.renderWidth();
                 renderHeight = optimal.renderHeight();
                 this.rrFallbackReported = false;
@@ -821,6 +825,26 @@ public final class VulkanRenderer implements AutoCloseable {
         ResourceCleanup.throwIfFailed(retirementFailure);
         this.realtimeSampleState.invalidate();
         PrimeClient.LOGGER.info("Reloaded Prime ray tracing and atmosphere shaders");
+    }
+
+    private DlssRrNative.OptimalSettings optimalDlssRrSettings(
+            int displayWidth,
+            int displayHeight,
+            ReconstructionQualityMode qualityMode) {
+        DlssRrNative.OptimalSettings cached = this.rrOptimalSettings;
+        if (cached != null
+                && this.rrOptimalDisplayWidth == displayWidth
+                && this.rrOptimalDisplayHeight == displayHeight
+                && this.rrOptimalQualityMode == qualityMode) {
+            return cached;
+        }
+        DlssRrNative.OptimalSettings optimal =
+                this.ngxContext.optimalSettings(displayWidth, displayHeight, qualityMode);
+        this.rrOptimalDisplayWidth = displayWidth;
+        this.rrOptimalDisplayHeight = displayHeight;
+        this.rrOptimalQualityMode = qualityMode;
+        this.rrOptimalSettings = optimal;
+        return optimal;
     }
 
     private boolean ensureRealtimeResources(

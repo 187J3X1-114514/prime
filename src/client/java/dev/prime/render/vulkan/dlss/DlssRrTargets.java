@@ -18,7 +18,7 @@ public final class DlssRrTargets implements DenoiserInputs, Destroyable {
     static final int ALBEDO_FORMAT = VK12.VK_FORMAT_R16G16B16A16_SFLOAT;
     static final int NORMAL_ROUGHNESS_FORMAT = VK12.VK_FORMAT_R16G16B16A16_SFLOAT;
     static final int LINEAR_DEPTH_FORMAT = VK12.VK_FORMAT_R32_SFLOAT;
-    static final int MOTION_FORMAT = VK12.VK_FORMAT_R16G16B16A16_SFLOAT;
+    static final int MOTION_FORMAT = VK12.VK_FORMAT_R16G16_SFLOAT;
     static final int SPECULAR_MOTION_FORMAT = VK12.VK_FORMAT_R16G16_SFLOAT;
     private static final int USAGE =
             VK12.VK_IMAGE_USAGE_STORAGE_BIT | VK12.VK_IMAGE_USAGE_SAMPLED_BIT;

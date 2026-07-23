@@ -32,7 +32,7 @@ final class DlssRrNativeContractTest {
                 VK12.VK_FORMAT_R16G16B16A16_SFLOAT,
                 DlssRrTargets.NORMAL_ROUGHNESS_FORMAT);
         assertEquals(VK12.VK_FORMAT_R32_SFLOAT, DlssRrTargets.LINEAR_DEPTH_FORMAT);
-        assertEquals(VK12.VK_FORMAT_R16G16B16A16_SFLOAT, DlssRrTargets.MOTION_FORMAT);
+        assertEquals(VK12.VK_FORMAT_R16G16_SFLOAT, DlssRrTargets.MOTION_FORMAT);
         assertEquals(VK12.VK_FORMAT_R16G16_SFLOAT, DlssRrTargets.SPECULAR_MOTION_FORMAT);
     }
 

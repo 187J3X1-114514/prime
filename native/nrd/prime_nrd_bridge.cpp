@@ -399,9 +399,8 @@ PRIME_NRD_EXPORT int32_t primeNrdGetDispatches(
     if (result != nrd::Result::SUCCESS)
         return static_cast<int32_t>(result);
 
-    context->dispatchResources.clear();
+    // Dispatch topology is stable; resizing in place preserves inner resource capacity per frame.
     context->dispatchResources.resize(dispatchCount);
-    context->dispatches.clear();
     context->dispatches.resize(dispatchCount);
     for (uint32_t dispatchIndex = 0; dispatchIndex < dispatchCount; dispatchIndex++)
     {

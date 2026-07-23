@@ -482,7 +482,7 @@ PRIME_EXPORT int primeDlssRrEvaluate(PrimeEvaluateDescription* description) {
                     feature->renderHeight)
             && validImage(
                     description->images[MOTION_VECTORS],
-                    VK_FORMAT_R16G16B16A16_SFLOAT,
+                    VK_FORMAT_R16G16_SFLOAT,
                     feature->renderWidth,
                     feature->renderHeight)
             && validImage(

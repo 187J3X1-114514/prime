@@ -155,7 +155,12 @@ void primeClearBranch(ivec2 pixel, bool reflection) {
     primeStoreSpecularMaterial(pixel, reflection, vec4(1.0, 1.0, 1.0, 0.0));
 }
 
-void primePrepareBranch(ivec2 pixel, ivec2 extent, bool reflection) {
+void primePrepareBranch(
+        ivec2 pixel,
+        ivec2 extent,
+        vec2 currentSampleUv,
+        vec3 cameraForward,
+        bool reflection) {
     vec4 rawMaterial = primeLoadMaterial(pixel, reflection);
     float primaryDistance = rawMaterial.a;
     if (!primeNrdIsFinite(primaryDistance) || primaryDistance < 0.0) {
@@ -176,8 +181,6 @@ void primePrepareBranch(ivec2 pixel, ivec2 extent, bool reflection) {
     vec4 rawPosition = primeLoadPosition(pixel, reflection);
     vec3 position = rawPosition.xyz;
     bool directional = reflection && rawPosition.w > 0.5;
-    vec2 currentSampleUv = primeMotionSampleUv(pixel, extent);
-    vec3 cameraForward = primeMotionRayDirection(vec2(0.5));
     float currentViewZ = directional
             ? dot(primeMotionRayDirection(currentSampleUv) * primaryDistance, cameraForward)
             : dot(position, cameraForward);
@@ -256,10 +259,13 @@ void primePrepareBranch(ivec2 pixel, ivec2 extent, bool reflection) {
     }
 }
 
-void primePrepareFsrGuide(ivec2 pixel, ivec2 extent) {
-    vec4 display = imageLoad(primeDisplayPosition, pixel);
+void primePrepareFsrGuide(
+        ivec2 pixel,
+        ivec2 extent,
+        vec4 display,
+        vec2 currentSampleUv,
+        vec3 cameraForward) {
     vec3 position = display.xyz;
-    vec2 currentSampleUv = primeMotionSampleUv(pixel, extent);
     if (all(equal(position, vec3(0.0)))) {
         vec3 rayDirection = primeMotionRayDirection(currentSampleUv);
         vec4 previousClip = primeMotionPush.previousWorldToClip * vec4(rayDirection, 0.0);
@@ -275,7 +281,7 @@ void primePrepareFsrGuide(ivec2 pixel, ivec2 extent) {
         return;
     }
 
-    float viewZ = dot(position, primeMotionRayDirection(vec2(0.5)));
+    float viewZ = dot(position, cameraForward);
     viewZ = primeNrdIsFinite(viewZ) && viewZ > 0.0
             ? min(viewZ, PRIME_MOTION_SKY_VIEW_Z) : PRIME_MOTION_SKY_VIEW_Z;
     imageStore(primeFsrDepth, pixel, vec4(PRIME_FSR_NEAR_PLANE / viewZ));
@@ -294,7 +300,15 @@ void main() {
     ivec2 pixel = ivec2(gl_GlobalInvocationID.xy);
     ivec2 extent = imageSize(primeViewZ);
     if (any(greaterThanEqual(pixel, extent))) return;
-    primePrepareBranch(pixel, extent, false);
-    primePrepareBranch(pixel, extent, true);
-    primePrepareFsrGuide(pixel, extent);
+    vec2 currentSampleUv = primeMotionSampleUv(pixel, extent);
+    vec4 display = imageLoad(primeDisplayPosition, pixel);
+    bool sky = all(equal(display.xyz, vec3(0.0)));
+    // Surface branches and the FSR depth guide share the same center ray. Sky only needs its
+    // per-pixel direction, avoiding an otherwise unused matrix reconstruction.
+    vec3 cameraForward = sky
+            ? vec3(0.0, 0.0, 1.0)
+            : primeMotionRayDirection(vec2(0.5));
+    primePrepareBranch(pixel, extent, currentSampleUv, cameraForward, false);
+    primePrepareBranch(pixel, extent, currentSampleUv, cameraForward, true);
+    primePrepareFsrGuide(pixel, extent, display, currentSampleUv, cameraForward);
 }

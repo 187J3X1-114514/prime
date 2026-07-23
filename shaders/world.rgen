@@ -253,72 +253,78 @@ void main() {
         PrimeDenoiserGuides reflectionGuides = sampleResult.reflectionGuides;
         bool hasReflectionGuide = sampleResult.transparentPrimary
                 && reflectionGuides.primaryHitKind == PRIME_HIT_SURFACE;
-        float reflectionDistance = primeNrdSanitizePrimaryDistance(
-                reflectionGuides.primaryDistance, hasReflectionGuide);
-        vec3 reflectionDiffuse = sampleResult.reflectionDiffuseRadiance;
-        vec3 reflectionSpecular = sampleResult.reflectionSpecularRadiance;
-        float reflectionScale = primeNrdClampRadiancePair(
-                reflectionDiffuse, reflectionSpecular, PRIME_NRD_FP16_MAX);
-        imageStore(
-                primeNrdReflectionNoisyDiffuse,
-                ivec2(pixel),
-                vec4(
-                        primeNrdSanitizeRadiance(reflectionDiffuse),
-                        primeNrdSanitizeHitDistance(
-                                reflectionGuides.diffuseHitDistance)));
-        imageStore(
-                primeNrdReflectionNoisySpecular,
-                ivec2(pixel),
-                vec4(
-                        primeNrdSanitizeRadiance(reflectionSpecular),
-                        primeNrdSanitizeHitDistance(
-                                reflectionGuides.specularHitDistance)));
-        imageStore(
-                primeNrdReflectionPosition,
-                ivec2(pixel),
-                vec4(
-                        reflectionDistance < 0.0
-                                ? vec3(0.0)
-                                : reflectionGuides.primaryPosition,
-                        sampleResult.reflectionDirectionalGuide ? 1.0 : 0.0));
-        imageStore(
-                primeNrdReflectionDiffuseDirection,
-                ivec2(pixel),
-                vec4(primeNrdEffectiveDirection(
-                        reflectionDiffuse,
-                        reflectionGuides.primaryAreaDiffuse * reflectionScale,
-                        reflectionGuides.primaryAreaDirection,
-                        reflectionGuides.diffuseDirection,
-                        reflectionGuides.primaryAlbedo), 0.0));
-        imageStore(
-                primeNrdReflectionSpecularDirection,
-                ivec2(pixel),
-                vec4(primeNrdEffectiveDirection(
-                        reflectionSpecular,
-                        reflectionGuides.primaryAreaSpecular * reflectionScale,
-                        reflectionGuides.primaryAreaDirection,
-                        reflectionGuides.specularDirection,
-                        reflectionGuides.primarySpecularAlbedo), 0.0));
-        imageStore(
-                primeNrdReflectionMaterial,
-                ivec2(pixel),
-                vec4(
-                        primeNrdSanitizeAlbedo(reflectionGuides.primaryAlbedo),
-                        reflectionDistance));
-        imageStore(
-                primeNrdReflectionNormalRoughness,
-                ivec2(pixel),
-                primeNrdPackNormalRoughness(
-                        reflectionGuides.primaryNormal,
-                        reflectionGuides.primaryLinearRoughness,
-                        primeNrdMaterialId(reflectionGuides.primaryMaterialFlags)));
-        imageStore(
-                primeNrdReflectionSpecularMaterial,
-                ivec2(pixel),
-                vec4(
-                        primeNrdSanitizeAlbedo(
-                                reflectionGuides.primarySpecularAlbedo),
-                        float(reflectionGuides.primaryMaterialFlags)));
+        if (hasReflectionGuide) {
+            float reflectionDistance = primeNrdSanitizePrimaryDistance(
+                    reflectionGuides.primaryDistance, true);
+            vec3 reflectionDiffuse = sampleResult.reflectionDiffuseRadiance;
+            vec3 reflectionSpecular = sampleResult.reflectionSpecularRadiance;
+            float reflectionScale = primeNrdClampRadiancePair(
+                    reflectionDiffuse, reflectionSpecular, PRIME_NRD_FP16_MAX);
+            imageStore(
+                    primeNrdReflectionNoisyDiffuse,
+                    ivec2(pixel),
+                    vec4(
+                            primeNrdSanitizeRadiance(reflectionDiffuse),
+                            primeNrdSanitizeHitDistance(
+                                    reflectionGuides.diffuseHitDistance)));
+            imageStore(
+                    primeNrdReflectionNoisySpecular,
+                    ivec2(pixel),
+                    vec4(
+                            primeNrdSanitizeRadiance(reflectionSpecular),
+                            primeNrdSanitizeHitDistance(
+                                    reflectionGuides.specularHitDistance)));
+            imageStore(
+                    primeNrdReflectionPosition,
+                    ivec2(pixel),
+                    vec4(
+                            reflectionGuides.primaryPosition,
+                            sampleResult.reflectionDirectionalGuide ? 1.0 : 0.0));
+            imageStore(
+                    primeNrdReflectionDiffuseDirection,
+                    ivec2(pixel),
+                    vec4(primeNrdEffectiveDirection(
+                            reflectionDiffuse,
+                            reflectionGuides.primaryAreaDiffuse * reflectionScale,
+                            reflectionGuides.primaryAreaDirection,
+                            reflectionGuides.diffuseDirection,
+                            reflectionGuides.primaryAlbedo), 0.0));
+            imageStore(
+                    primeNrdReflectionSpecularDirection,
+                    ivec2(pixel),
+                    vec4(primeNrdEffectiveDirection(
+                            reflectionSpecular,
+                            reflectionGuides.primaryAreaSpecular * reflectionScale,
+                            reflectionGuides.primaryAreaDirection,
+                            reflectionGuides.specularDirection,
+                            reflectionGuides.primarySpecularAlbedo), 0.0));
+            imageStore(
+                    primeNrdReflectionMaterial,
+                    ivec2(pixel),
+                    vec4(
+                            primeNrdSanitizeAlbedo(reflectionGuides.primaryAlbedo),
+                            reflectionDistance));
+            imageStore(
+                    primeNrdReflectionNormalRoughness,
+                    ivec2(pixel),
+                    primeNrdPackNormalRoughness(
+                            reflectionGuides.primaryNormal,
+                            reflectionGuides.primaryLinearRoughness,
+                            primeNrdMaterialId(reflectionGuides.primaryMaterialFlags)));
+            imageStore(
+                    primeNrdReflectionSpecularMaterial,
+                    ivec2(pixel),
+                    vec4(
+                            primeNrdSanitizeAlbedo(
+                                    reflectionGuides.primarySpecularAlbedo),
+                            float(reflectionGuides.primaryMaterialFlags)));
+        } else {
+            // nrd_motion checks this marker before touching any other reflection input.
+            imageStore(
+                    primeNrdReflectionMaterial,
+                    ivec2(pixel),
+                    vec4(1.0, 1.0, 1.0, -1.0));
+        }
     }
     imageStore(
             primeNrdSunLighting,

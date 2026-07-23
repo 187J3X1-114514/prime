@@ -38,7 +38,7 @@ uint primeClassifyRawOutput(PrimeIntegrationResult result) {
             | primeClassifyRadiance(result.guides.primaryAreaDiffuse)
             | primeClassifyRadiance(result.guides.primaryAreaSpecular);
     if (result.transparentPrimary) {
-        flags |= primeClassifyNonFinite(result.rrTransmissionAnchorDistance)
+        flags |= primeClassifyNonFinite(result.transmissionAnchorDistance)
                 | primeClassifyNonFinite(result.transmissionGuides.primaryDistance)
                 | primeClassifyDirection(result.transmissionGuides.primaryNormal)
                 | primeClassifyNonnegative(result.transmissionGuides.primaryAlbedo)
@@ -118,13 +118,13 @@ void main() {
     bool nrdShInputs = primeWritesNrdShInputs();
     bool hasTransmissionGuide = sampleResult.transparentPrimary
             && sampleResult.transmissionGuides.primaryHitKind == PRIME_HIT_SURFACE;
+    bool usesTransmissionAnchor = hasTransmissionGuide
+            && primeNrdIsFinite(sampleResult.transmissionAnchorDistance)
+            && sampleResult.transmissionAnchorDistance > 0.0;
     // RR cannot represent both the interface and the refracted scene as primary geometry. Keep
     // the guide topology fixed: whenever the transmission branch reaches a finite non-delta
     // surface, that surface plane owns the primary guide regardless of Fresnel energy.
-    bool rrUsesTransmissionGuide = !nrdShInputs
-            && hasTransmissionGuide
-            && primeNrdIsFinite(sampleResult.rrTransmissionAnchorDistance)
-            && sampleResult.rrTransmissionAnchorDistance > 0.0;
+    bool rrUsesTransmissionGuide = !nrdShInputs && usesTransmissionAnchor;
     PrimeDenoiserGuides nrdGuides = sampleResult.transparentPrimary
             && (nrdShInputs || rrUsesTransmissionGuide)
             ? sampleResult.transmissionGuides
@@ -140,8 +140,8 @@ void main() {
     }
     bool hasPrimarySurface = nrdGuides.primaryHitKind == PRIME_HIT_SURFACE;
     float primaryDistance = primeNrdSanitizePrimaryDistance(
-            rrUsesTransmissionGuide
-                    ? sampleResult.rrTransmissionAnchorDistance
+            usesTransmissionAnchor
+                    ? sampleResult.transmissionAnchorDistance
                     : nrdGuides.primaryDistance,
             hasPrimarySurface);
     bool hasVisibleSurface = sampleResult.guides.primaryHitKind == PRIME_HIT_SURFACE;
@@ -150,10 +150,11 @@ void main() {
     vec3 primaryPosition = primeNrdIsFinite(nrdGuides.primaryPosition)
             ? nrdGuides.primaryPosition
             : vec3(0.0);
-    if (rrUsesTransmissionGuide) {
+    if (usesTransmissionAnchor) {
         // The target's real refracted hit does not project to this pixel under the camera's
         // straight projection. Place its plane intersection on the original primary ray so a
         // static camera produces zero motion while depth remains anchored to the target surface.
+        // NRD applies this only to its transmission history; reflection keeps its independent PSR.
         vec3 fallbackDirection = primeNrdSafeNormalize(
                 nrdGuides.primaryPosition, vec3(0.0, 0.0, 1.0));
         vec3 primaryDirection = primeNrdSafeNormalize(

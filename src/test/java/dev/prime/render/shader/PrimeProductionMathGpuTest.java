@@ -1,0 +1,340 @@
+package dev.prime.render.shader;
+
+import java.io.IOException;
+import java.nio.ByteBuffer;
+import java.nio.file.Path;
+import java.util.SplittableRandom;
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.Assumptions;
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.Tag;
+import org.junit.jupiter.api.Test;
+
+@Tag("gpu-shader")
+final class PrimeProductionMathGpuTest {
+    private static final int CASES_PER_KIND = 8_192;
+    private static final long TRANSPORT_SEED = 0x71A4_5A09_D522_0101L;
+    private static final long MATERIAL_SEED = 0x4A7E_21A1_0000_0001L;
+    private static final long NRD_SEED = 0x4E52_4404_1700_0001L;
+    private static final int[] SPECIAL_FLOAT_BITS = {
+        0x0000_0000,
+        0x0000_0001,
+        0x3f00_0000,
+        0x3f80_0000,
+        0x7f7f_ffff,
+        0x7f80_0000,
+        0xff80_0000,
+        0x7fc0_0001,
+        0xbf80_0000
+    };
+
+    private static ShaderComputeRunner runner;
+
+    @BeforeAll
+    static void openRunner() throws ShaderComputeRunner.UnavailableException {
+        try {
+            runner = ShaderComputeRunner.open();
+        } catch (ShaderComputeRunner.UnavailableException | LinkageError exception) {
+            if (Boolean.getBoolean("prime.shaderTests.required")) {
+                throw new AssertionError(
+                        "A Vulkan compute device is required for shader tests", exception);
+            }
+            Assumptions.assumeTrue(
+                    false, "Vulkan shader tests unavailable: " + exception.getMessage());
+        }
+    }
+
+    @AfterAll
+    static void closeRunner() {
+        if (runner != null) runner.close();
+    }
+
+    @Test
+    void integratorAndLightTransportMathKeepsItsNumericalContracts() throws IOException {
+        int kinds = 5;
+        int inputWords = 3;
+        ShaderPropertyBatch.assertProperties(
+                runner,
+                shader("prime_transport_properties.comp.spv"),
+                transportCases(kinds, inputWords),
+                CASES_PER_KIND * kinds,
+                inputWords,
+                7,
+                TRANSPORT_SEED);
+    }
+
+    @Test
+    void labPbrDecodeTranslationAndFresnelCoverTheIntegerTransportDomain()
+            throws IOException {
+        int kinds = 2;
+        int inputWords = 3;
+        ShaderPropertyBatch.assertProperties(
+                runner,
+                shader("prime_material_properties.comp.spv"),
+                materialCases(kinds, inputWords),
+                65_536 * kinds,
+                inputWords,
+                8,
+                MATERIAL_SEED);
+    }
+
+    @Test
+    void nrdPackingDemodulationAndSanitizersRejectNonFiniteState() throws IOException {
+        int kinds = 7;
+        int inputWords = 4;
+        ShaderPropertyBatch.assertProperties(
+                runner,
+                shader("prime_nrd_properties.comp.spv"),
+                nrdCases(kinds, inputWords),
+                CASES_PER_KIND * kinds,
+                inputWords,
+                9,
+                NRD_SEED);
+    }
+
+    private static ByteBuffer transportCases(int kinds, int words) {
+        ByteBuffer input = ShaderTestBuffer.inputs(CASES_PER_KIND * kinds, words);
+        SplittableRandom random = new SplittableRandom(TRANSPORT_SEED);
+        for (int kind = 0; kind < kinds; kind++) {
+            for (int local = 0; local < CASES_PER_KIND; local++) {
+                int index = kind * CASES_PER_KIND + local;
+                putInt(input, index, words, 0, 0, kind);
+                if (kind == 0) {
+                    float denominator = powerOfTwo(random.nextInt(-20, 21));
+                    putVec4(
+                            input,
+                            index,
+                            words,
+                            1,
+                            positiveFloat(random, -90, 90),
+                            positiveFloat(random, -90, 90),
+                            positiveFloat(random, -90, 90),
+                            denominator);
+                    putVec4(
+                            input,
+                            index,
+                            words,
+                            2,
+                            positiveFloat(random, -20, 20),
+                            positiveFloat(random, -20, 20),
+                            positiveFloat(random, -20, 20),
+                            0.0F);
+                } else if (kind == 1) {
+                    putVec4(
+                            input,
+                            index,
+                            words,
+                            1,
+                            positiveFloat(random, -60, 60),
+                            positiveFloat(random, -60, 60),
+                            powerOfTwo(random.nextInt(-20, 21)),
+                            0.0F);
+                } else if (kind == 2) {
+                    putVec4(
+                            input,
+                            index,
+                            words,
+                            1,
+                            random.nextFloat() * 10.0F,
+                            random.nextFloat() * 10.0F,
+                            random.nextFloat() * 10.0F,
+                            random.nextFloat() * 100.0F);
+                } else if (kind == 3) {
+                    putVec4(
+                            input,
+                            index,
+                            words,
+                            1,
+                            random.nextFloat(),
+                            random.nextFloat(),
+                            random.nextFloat(),
+                            random.nextFloat());
+                } else {
+                    putVec4(
+                            input,
+                            index,
+                            words,
+                            1,
+                            positiveFloat(random, -20, 20),
+                            positiveFloat(random, -20, 20),
+                            powerOfTwo(random.nextInt(-20, 1)),
+                            0.0F);
+                }
+            }
+        }
+        return input;
+    }
+
+    private static ByteBuffer materialCases(int kinds, int words) {
+        int casesPerKind = 65_536;
+        ByteBuffer input = ShaderTestBuffer.inputs(casesPerKind * kinds, words);
+        SplittableRandom random = new SplittableRandom(MATERIAL_SEED);
+        for (int kind = 0; kind < kinds; kind++) {
+            for (int local = 0; local < casesPerKind; local++) {
+                int index = kind * casesPerKind + local;
+                int flags = local & 0x1ff;
+                int normal = kind == 0
+                        ? pack(local & 0xff, (local >>> 8) & 0xff, local * 31, local * 67)
+                        : pack(local * 13, local * 29, local * 47, local * 71);
+                int specular = kind == 1
+                        ? pack(local & 0xff, (local >>> 8) & 0xff, local * 43, local * 89)
+                        : pack(local * 17, local * 23, local * 53, local * 97);
+                putInt(input, index, words, 0, 0, kind);
+                putInt(input, index, words, 0, 1, flags);
+                putInt(input, index, words, 0, 2, normal);
+                putInt(input, index, words, 0, 3, specular);
+                putVec4(
+                        input,
+                        index,
+                        words,
+                        1,
+                        random.nextFloat(),
+                        random.nextFloat(),
+                        random.nextFloat(),
+                        random.nextFloat());
+                putInt(input, index, words, 2, 0, local & 0xff);
+            }
+        }
+        return input;
+    }
+
+    private static ByteBuffer nrdCases(int kinds, int words) {
+        ByteBuffer input = ShaderTestBuffer.inputs(CASES_PER_KIND * kinds, words);
+        SplittableRandom random = new SplittableRandom(NRD_SEED);
+        for (int kind = 0; kind < kinds; kind++) {
+            for (int local = 0; local < CASES_PER_KIND; local++) {
+                int index = kind * CASES_PER_KIND + local;
+                putInt(input, index, words, 0, 0, kind);
+                putInt(input, index, words, 0, 1, local & 0x3ff);
+                if (kind == 1) {
+                    putVec4(
+                            input,
+                            index,
+                            words,
+                            1,
+                            random.nextFloat() * 65_504.0F,
+                            random.nextFloat() * 65_504.0F,
+                            random.nextFloat() * 65_504.0F,
+                            0.0F);
+                } else if (kind == 2) {
+                    putVec4(
+                            input,
+                            index,
+                            words,
+                            1,
+                            random.nextFloat() * 2.0F - 1.0F,
+                            random.nextFloat() * 2.0F - 1.0F,
+                            random.nextFloat() * 2.0F - 1.0F,
+                            random.nextFloat() * 3.0F - 1.0F);
+                    putFloat(input, index, words, 2, 0, random.nextFloat() * 3.0F - 1.0F);
+                } else if (kind == 3) {
+                    putVec4(
+                            input,
+                            index,
+                            words,
+                            1,
+                            random.nextFloat() * 65_504.0F,
+                            random.nextFloat() * 10_000.0F,
+                            random.nextFloat(),
+                            0.0F);
+                    putVec4(
+                            input,
+                            index,
+                            words,
+                            2,
+                            random.nextFloat() * 65_504.0F,
+                            random.nextFloat() * 65_504.0F,
+                            random.nextFloat() * 65_504.0F,
+                            random.nextFloat() * 65_504.0F);
+                } else if (kind == 4) {
+                    float[] guides = {0.0F, Float.MIN_VALUE, 1.0e-20F, 1.0e-6F, 0.1F, 1.0F};
+                    putVec4(
+                            input,
+                            index,
+                            words,
+                            1,
+                            random.nextFloat() * 65_504.0F,
+                            random.nextFloat() * 65_504.0F,
+                            random.nextFloat() * 65_504.0F,
+                            0.0F);
+                    putVec4(
+                            input,
+                            index,
+                            words,
+                            2,
+                            guides[local % guides.length],
+                            guides[(local / guides.length) % guides.length],
+                            guides[(local / (guides.length * guides.length)) % guides.length],
+                            0.0F);
+                } else {
+                    for (int word = 1; word < words; word++) {
+                        for (int component = 0; component < 4; component++) {
+                            int bits = local < SPECIAL_FLOAT_BITS.length
+                                    ? SPECIAL_FLOAT_BITS[(local + word + component)
+                                            % SPECIAL_FLOAT_BITS.length]
+                                    : Float.floatToRawIntBits(
+                                            random.nextFloat() * 200_000.0F - 50_000.0F);
+                            putInt(input, index, words, word, component, bits);
+                        }
+                    }
+                }
+            }
+        }
+        return input;
+    }
+
+    private static Path shader(String name) {
+        return Path.of(System.getProperty("prime.test.shaderDirectory"), name);
+    }
+
+    private static float positiveFloat(SplittableRandom random, int minimumExponent, int maximumExponent) {
+        return Math.scalb(0.5F + random.nextFloat() * 0.5F,
+                random.nextInt(minimumExponent, maximumExponent + 1));
+    }
+
+    private static float powerOfTwo(int exponent) {
+        return Math.scalb(1.0F, exponent);
+    }
+
+    private static int pack(int x, int y, int z, int w) {
+        return (x & 0xff)
+                | ((y & 0xff) << 8)
+                | ((z & 0xff) << 16)
+                | ((w & 0xff) << 24);
+    }
+
+    private static void putVec4(
+            ByteBuffer input,
+            int caseIndex,
+            int words,
+            int word,
+            float x,
+            float y,
+            float z,
+            float w) {
+        putFloat(input, caseIndex, words, word, 0, x);
+        putFloat(input, caseIndex, words, word, 1, y);
+        putFloat(input, caseIndex, words, word, 2, z);
+        putFloat(input, caseIndex, words, word, 3, w);
+    }
+
+    private static void putFloat(
+            ByteBuffer input,
+            int caseIndex,
+            int words,
+            int word,
+            int component,
+            float value) {
+        ShaderTestBuffer.putFloat(input, caseIndex, words, word, component, value);
+    }
+
+    private static void putInt(
+            ByteBuffer input,
+            int caseIndex,
+            int words,
+            int word,
+            int component,
+            int value) {
+        ShaderTestBuffer.putInt(input, caseIndex, words, word, component, value);
+    }
+}

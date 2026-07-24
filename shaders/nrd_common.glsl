@@ -148,7 +148,9 @@ vec3 primeNrdClampRadiance(vec3 radiance, float limit) {
             primeNrdSanitizeNonnegative(radiance.y),
             primeNrdSanitizeNonnegative(radiance.z));
     float peak = primeNrdRadiancePeak(radiance);
-    return peak > limit ? radiance * (limit / peak) : radiance;
+    vec3 result = peak > limit ? radiance * (limit / peak) : radiance;
+    // Multiplication may round one ulp above the target even though the scale is <= 1.
+    return min(result, vec3(limit));
 }
 
 vec3 primeNrdSanitizeRadiance(vec3 radiance) {
@@ -162,13 +164,22 @@ vec3 primeNrdSanitizeAlbedo(vec3 albedo) {
             primeNrdSanitizeUnit(albedo.z, 0.0));
 }
 
+float primeNrdDemodulateChannel(float radiance, float guide) {
+    if (!(guide > 0.0) || !(radiance > 0.0)) return 0.0;
+    // Select the clamped result before division so a valid tiny guide cannot create infinity and
+    // then be mistaken for a failed channel by a later sanitizer.
+    return radiance > PRIME_NRD_FP16_MAX * guide
+            ? PRIME_NRD_FP16_MAX
+            : radiance / guide;
+}
+
 vec3 primeNrdDemodulate(vec3 radiance, vec3 guide) {
     radiance = primeNrdSanitizeRadiance(radiance);
     guide = primeNrdSanitizeAlbedo(guide);
     return vec3(
-            guide.x > 0.0 ? radiance.x / guide.x : 0.0,
-            guide.y > 0.0 ? radiance.y / guide.y : 0.0,
-            guide.z > 0.0 ? radiance.z / guide.z : 0.0);
+            primeNrdDemodulateChannel(radiance.x, guide.x),
+            primeNrdDemodulateChannel(radiance.y, guide.y),
+            primeNrdDemodulateChannel(radiance.z, guide.z));
 }
 
 float primeNrdClampRadianceTriple(

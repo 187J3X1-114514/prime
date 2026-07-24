@@ -45,7 +45,9 @@ PrimeLabPbrSample primeDecodeLabPbr(uint packedNormal, uint packedSpecular, uint
     result.height = float(normalBytes.w) / 255.0;
 
     float smoothness = float(specularBytes.x) / 255.0;
-    result.perceptualRoughness = 1.0 - smoothness;
+    // UNORM decoding is mathematically closed on [0, 1], but reciprocal-255 constant folding may
+    // put the 255 endpoint one ulp above one on a GPU. Keep the public material domain exact.
+    result.perceptualRoughness = clamp(1.0 - smoothness, 0.0, 1.0);
     result.metalId = specularBytes.y >= 230u ? specularBytes.y : 0u;
     result.dielectricF0 = specularBytes.y < 230u
             ? float(specularBytes.y) / 255.0

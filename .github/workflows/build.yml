@@ -33,8 +33,16 @@ jobs:
           vulkan-use-cache: true
       - name: Report shader tool versions
         run: glslangValidator --version && spirv-val --version
+      - name: Set up headless Vulkan compute
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes mesa-vulkan-drivers vulkan-tools
+          lvp_icd="$(find /usr/share/vulkan/icd.d -name 'lvp_icd*.json' -print -quit)"
+          test -n "$lvp_icd"
+          echo "VK_DRIVER_FILES=$lvp_icd" >> "$GITHUB_ENV"
+          VK_DRIVER_FILES="$lvp_icd" vulkaninfo --summary
       - name: Build and test
-        run: ./gradlew --no-daemon --stacktrace clean build
+        run: ./gradlew --no-daemon --stacktrace clean build shaderTest
       - name: Capture test reports on failure
         if: failure()
         uses: actions/upload-artifact@v7

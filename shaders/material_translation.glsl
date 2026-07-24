@@ -117,7 +117,10 @@ vec3 primeLabPbrConductorReflectance(float cosineIncident, vec3 eta, vec3 k) {
     vec3 t3 = cosine2 * a2PlusB2 + vec3(sine2 * sine2);
     vec3 t4 = t2 * sine2;
     vec3 rp = rs * (t3 - t4) / (t3 + t4);
-    return 0.5 * (rs + rp);
+    // The exact result is a unit reflectance. At the integer LabPBR domain boundary, the final
+    // subtraction can undershoot zero by one f32 rounding step, so enforce the physical adapter
+    // contract before the value enters the fitted Fresnel endpoints.
+    return clamp(0.5 * (rs + rp), vec3(0.0), vec3(1.0));
 }
 
 bool primeLabPbrMetalOpticalConstants(uint metalId, out vec3 eta, out vec3 k) {

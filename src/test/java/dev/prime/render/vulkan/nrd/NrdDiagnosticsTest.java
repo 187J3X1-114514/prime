@@ -13,26 +13,35 @@ final class NrdDiagnosticsTest {
     @Test
     void modesSelectNativeValidationAndPresentationSources() {
         assertArrayEquals(
-                new int[] {0, 1, 0, 2, 3, 4, 5, 6},
+                new int[] {0, 1, 0, 0, 2, 3, 4, 5, 6},
                 Arrays.stream(NrdDiagnostics.Mode.values())
                         .mapToInt(NrdDiagnostics.Mode::outputSelector)
                         .toArray());
         assertFalse(NrdDiagnostics.Mode.OFF.nativeValidation());
         assertTrue(NrdDiagnostics.Mode.NATIVE_VALIDATION.nativeValidation());
         assertFalse(NrdDiagnostics.Mode.RAW_NUMERICAL.nativeValidation());
+        assertFalse(NrdDiagnostics.Mode.RAW_NUMERICAL_STAGE.nativeValidation());
         assertFalse(NrdDiagnostics.Mode.REPROJECTION_ERROR.nativeValidation());
         assertFalse(NrdDiagnostics.Mode.MOTION.nativeValidation());
         assertFalse(NrdDiagnostics.Mode.SPECULAR_INPUT.nativeValidation());
         assertFalse(NrdDiagnostics.Mode.SPECULAR_OUTPUT.nativeValidation());
         assertFalse(NrdDiagnostics.Mode.SPECULAR_REMODULATED.nativeValidation());
         assertThrows(IllegalStateException.class, NrdDiagnostics.Mode.OFF::presentSource);
+        assertThrows(IllegalStateException.class, NrdDiagnostics.Mode.OFF::presentation);
         assertEquals(0, NrdDiagnostics.Mode.NATIVE_VALIDATION.presentSource());
         assertEquals(1, NrdDiagnostics.Mode.RAW_NUMERICAL.presentSource());
+        assertEquals(1, NrdDiagnostics.Mode.RAW_NUMERICAL_STAGE.presentSource());
         assertEquals(2, NrdDiagnostics.Mode.REPROJECTION_ERROR.presentSource());
         assertEquals(2, NrdDiagnostics.Mode.MOTION.presentSource());
         assertEquals(2, NrdDiagnostics.Mode.SPECULAR_INPUT.presentSource());
         assertEquals(2, NrdDiagnostics.Mode.SPECULAR_OUTPUT.presentSource());
         assertEquals(2, NrdDiagnostics.Mode.SPECULAR_REMODULATED.presentSource());
+        assertEquals(0, NrdDiagnostics.Mode.NATIVE_VALIDATION.presentation());
+        assertEquals(1, NrdDiagnostics.Mode.RAW_NUMERICAL.presentation());
+        assertEquals(2, NrdDiagnostics.Mode.RAW_NUMERICAL_STAGE.presentation());
+        assertTrue(NrdDiagnostics.Mode.RAW_NUMERICAL.rawNumerical());
+        assertTrue(NrdDiagnostics.Mode.RAW_NUMERICAL_STAGE.rawNumerical());
+        assertFalse(NrdDiagnostics.Mode.REPROJECTION_ERROR.rawNumerical());
         for (NrdDiagnostics.Mode mode : NrdDiagnostics.Mode.values()) {
             assertEquals(mode, NrdDiagnostics.Mode.fromId(mode.id()));
         }

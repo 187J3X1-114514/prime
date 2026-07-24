@@ -580,12 +580,11 @@ vec3 primeCombinedDirectDirection(
 bool primeRussianRoulette(
         inout PathState path,
         float sampleValue) {
-    float survival = clamp(max(path.throughput.r, max(path.throughput.g, path.throughput.b)),
-            0.05, 0.95);
+    float survival = primeRussianRouletteSurvival(path.throughput);
     if (sampleValue >= survival) {
         return false;
     }
-    path.throughput /= survival;
+    path.throughput = primeRussianRouletteReweight(path.throughput, survival);
     primeRecordNonnegative(path.throughput);
     return true;
 }
@@ -612,6 +611,7 @@ void primeAccumulateAfterPrimary(
 // from drifting between the two modes.
 vec3 primeEvaluateEnvironmentContribution(
         PathState path, IntegratorRecord integrator) {
+    primeSetNumericalContext(PRIME_NUMERICAL_STAGE_EMISSION, path.bounce);
     LightEvaluation stars = primeEvaluateStarmap(
             integrator, path.physicalOrigin, path.rayDirection);
     LightEvaluation sun = primeEvaluateSun(
@@ -630,6 +630,7 @@ vec3 primeEvaluateEnvironmentContribution(
 
 vec3 primeEvaluateHitEmission(
         PathState path, SurfaceInteraction surface) {
+    primeSetNumericalContext(PRIME_NUMERICAL_STAGE_EMISSION, path.bounce);
     LightEvaluation hitAreaLight = primeEvaluateAreaLight(
             surface, path.physicalOrigin, path.rayDirection);
     float hitAreaWeight = primePreviousCannotUseMis(path)
@@ -642,11 +643,12 @@ bool primeApplySegmentMedium(
         inout PathState path,
         SurfaceInteraction surface,
         PrimeRcVolumeStack volumeStack) {
+    primeSetNumericalContext(PRIME_NUMERICAL_STAGE_MEDIUM, path.bounce);
     if (volumeStack.count == 0u) {
         return true;
     }
     PrimeRcVolume medium = volumeStack.values[volumeStack.count - 1u];
-    path.throughput *= exp(-medium.extinction * surface.t);
+    path.throughput *= primeSegmentTransmittance(medium.extinction, surface.t);
     primeRecordNonnegative(path.throughput);
     return !all(equal(path.throughput, vec3(0.0)));
 }
@@ -729,6 +731,7 @@ bool primeAdvancePath(
         BsdfSample bsdf,
         PrimePreparedSampleBase bounceSample,
         bool pureDeltaInterface) {
+    primeSetNumericalContext(PRIME_NUMERICAL_STAGE_PATH_ADVANCE, path.bounce);
     vec3 nextThroughput = primeProductOver(path.throughput, bsdf.response, bsdf.pdf);
     primeRecordNonnegative(nextThroughput);
     if (all(equal(nextThroughput, vec3(0.0)))) {
@@ -945,7 +948,9 @@ PrimeTransparentBranchResult primeIntegrateTransparentBranch(
     bool firstSegment = true;
     [[dont_unroll]]
     for (; path.bounce < maximumBounces; ++path.bounce) {
+        primeSetNumericalContext(PRIME_NUMERICAL_STAGE_TRACE, path.bounce);
         SurfaceInteraction surface = primeTraceSurface(path.traceOrigin, path.rayDirection);
+        primeSetNumericalContext(PRIME_NUMERICAL_STAGE_SURFACE, path.bounce);
         primeRecordNonFinite(surface.position);
         primeRecordNonnegative(surface.t);
         primeRecordDirection(surface.geometricNormal);
@@ -1024,6 +1029,7 @@ PrimeTransparentBranchResult primeIntegrateTransparentBranch(
                 primarySurfaceReplacement ? true : diffusePath,
                 primeEvaluateHitEmission(path, surface));
         if (!pureDeltaInterface) {
+            primeSetNumericalContext(PRIME_NUMERICAL_STAGE_DIRECT_LIGHT, path.bounce);
             vec3 starSample = primeSobolSample3D(
                     preparedSample,
                     PRIME_SAMPLE_EFFECT_DIRECT_STARS,
@@ -1104,17 +1110,16 @@ PrimeTransparentBranchResult primeIntegrateTransparentBranch(
                 preparedSample,
                 PRIME_SAMPLE_EFFECT_SCATTER_BSDF,
                 PRIME_SAMPLE_DIMENSION_PRIMARY);
+        primeSetNumericalContext(PRIME_NUMERICAL_STAGE_BSDF_SAMPLE, path.bounce);
         PrimePathScatter scatter = primeSamplePathSurface(
                 surface, viewDirection, scatterSample, volumeStack);
         BsdfSample bsdf = scatter.bsdf;
-        if (bsdf.eventFlags != 0u) {
+        if (primeHasScatter(bsdf)) {
             primeRecordDirection(bsdf.direction);
-        } else {
-            primeRecordNonFinite(bsdf.direction);
+            primeRecordNonnegative(bsdf.response);
+            primeRecordNonnegative(bsdf.pdf);
+            primeRecordNonnegative(bsdf.relativeEta);
         }
-        primeRecordNonnegative(bsdf.response);
-        primeRecordNonnegative(bsdf.pdf);
-        primeRecordNonnegative(bsdf.relativeEta);
         if (!primeHasScatter(bsdf)) {
             break;
         }
@@ -1200,7 +1205,9 @@ PrimeIntegrationResult primeIntegrateWithVolume(
     // during cold pipeline creation.
     [[dont_unroll]]
     for (path.bounce = 0u; path.bounce < maximumBounces; ++path.bounce) {
+        primeSetNumericalContext(PRIME_NUMERICAL_STAGE_TRACE, path.bounce);
         SurfaceInteraction surface = primeTraceSurface(path.traceOrigin, path.rayDirection);
+        primeSetNumericalContext(PRIME_NUMERICAL_STAGE_SURFACE, path.bounce);
         primeRecordNonFinite(surface.position);
         primeRecordNonnegative(surface.t);
         primeRecordDirection(surface.geometricNormal);
@@ -1251,6 +1258,7 @@ PrimeIntegrationResult primeIntegrateWithVolume(
         PrimePreparedSampleBase preparedSample = primePrepareSampleBase(bounceSample);
         bool pureDeltaInterface = primeIsPureDeltaInterface(surface);
         if (!pureDeltaInterface) {
+            primeSetNumericalContext(PRIME_NUMERICAL_STAGE_DIRECT_LIGHT, path.bounce);
             vec3 starSample = primeSobolSample3D(
                     preparedSample,
                     PRIME_SAMPLE_EFFECT_DIRECT_STARS,
@@ -1361,6 +1369,7 @@ PrimeIntegrationResult primeIntegrateWithVolume(
                     surface, viewDirection, volumeStack);
         }
         if (firstTransparent) {
+            primeSetNumericalContext(PRIME_NUMERICAL_STAGE_BSDF_SAMPLE, path.bounce);
             vec3 transmissionSample = primeSobolSample3D(
                     preparedSample,
                     PRIME_SAMPLE_EFFECT_SCATTER_BSDF,
@@ -1408,15 +1417,12 @@ PrimeIntegrationResult primeIntegrateWithVolume(
 
             BsdfSample reflected = split.reflection.bsdfSample;
             BsdfSample transmitted = split.transmission.bsdfSample;
-            primeRecordNonnegative(reflected.response);
-            primeRecordNonnegative(reflected.pdf);
-            primeRecordNonnegative(reflected.relativeEta);
-            primeRecordNonnegative(transmitted.response);
-            primeRecordNonnegative(transmitted.pdf);
-            primeRecordNonnegative(transmitted.relativeEta);
 
             if (primeHasScatter(reflected)) {
                 primeRecordDirection(reflected.direction);
+                primeRecordNonnegative(reflected.response);
+                primeRecordNonnegative(reflected.pdf);
+                primeRecordNonnegative(reflected.relativeEta);
                 result.guides.specularDirection = reflected.direction;
                 result.reflectionGuides.specularDirection = reflected.direction;
                 PathState reflectionPath = path;
@@ -1448,11 +1454,12 @@ PrimeIntegrationResult primeIntegrateWithVolume(
                     result.reflectionGuides = reflection.guides;
                     result.reflectionDirectionalGuide = reflection.directionalGuide;
                 }
-            } else {
-                primeRecordNonFinite(reflected.direction);
             }
             if (primeHasScatter(transmitted)) {
                 primeRecordDirection(transmitted.direction);
+                primeRecordNonnegative(transmitted.response);
+                primeRecordNonnegative(transmitted.pdf);
+                primeRecordNonnegative(transmitted.relativeEta);
                 result.guides.diffuseDirection = transmitted.direction;
                 result.transmissionGuides.diffuseDirection = transmitted.direction;
                 PathState transmissionPath = path;
@@ -1483,8 +1490,6 @@ PrimeIntegrationResult primeIntegrateWithVolume(
                     result.transmissionGuides = transmission.guides;
                     result.transmissionAnchorDistance = transmission.anchorDistance;
                 }
-            } else {
-                primeRecordNonFinite(transmitted.direction);
             }
             result.transmissionGuides.primaryAreaDiffuse =
                     result.guides.primaryAreaDiffuse;
@@ -1496,17 +1501,16 @@ PrimeIntegrationResult primeIntegrateWithVolume(
                     result.guides.primaryAreaDirection;
             break;
         }
+        primeSetNumericalContext(PRIME_NUMERICAL_STAGE_BSDF_SAMPLE, path.bounce);
         PrimePathScatter scatter = primeSamplePathSurface(
                 surface, viewDirection, scatterSample, volumeStack);
         BsdfSample bsdf = scatter.bsdf;
-        if (bsdf.eventFlags != 0u) {
+        if (primeHasScatter(bsdf)) {
             primeRecordDirection(bsdf.direction);
-        } else {
-            primeRecordNonFinite(bsdf.direction);
+            primeRecordNonnegative(bsdf.response);
+            primeRecordNonnegative(bsdf.pdf);
+            primeRecordNonnegative(bsdf.relativeEta);
         }
-        primeRecordNonnegative(bsdf.response);
-        primeRecordNonnegative(bsdf.pdf);
-        primeRecordNonnegative(bsdf.relativeEta);
         volumeStack = scatter.volumeStack;
         bool hasScatter = primeHasScatter(bsdf);
         if (!denoiserState.reachedNonDelta) {

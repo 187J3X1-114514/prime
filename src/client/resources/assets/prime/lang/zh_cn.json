@@ -53,6 +53,7 @@
   "prime.options.nrd.debug_view.off": "关闭",
   "prime.options.nrd.debug_view.native_validation": "NRD 原生验证",
   "prime.options.nrd.debug_view.raw_numerical": "裸输出数值异常",
+  "prime.options.nrd.debug_view.raw_numerical_stage": "数值异常首发阶段",
   "prime.options.nrd.debug_view.specular_input": "镜面 SH0 输入",
   "prime.options.nrd.debug_view.specular_output": "镜面 SH0 输出",
   "prime.options.nrd.debug_view.specular_remodulated": "镜面重调制",

@@ -822,6 +822,12 @@ tasks.withType(Test).configureEach {
 	}
 }
 
+tasks.named('test') {
+	useJUnitPlatform {
+		excludeTags 'gpu-shader'
+	}
+}
+
 tasks.register('shaderTest', Test) {
 	group = 'verification'
 	description = 'Runs GPU shader property tests and requires a usable Vulkan compute device.'

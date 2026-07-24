@@ -37,15 +37,35 @@ mass, performs a pooled chi-square histogram test (including an invalid/rejected
 bin), and compares sampled and independently evaluated Monte Carlo energy with
 the quadrature reference.
 
+`PrimeBsdfGpuTest` includes the production `bsdf.glsl` adapter, not only the
+protected reference fragments. It sweeps opaque, transmissive, foliage, and
+fixed primary-split entry points. Rejected proposals must become Prime's
+canonical zero-event sample; every accepted public payload must be finite,
+nonnegative, directionally valid, and keep its volume-stack transition within
+the fixed ABI capacity.
+
+`PrimeProductionMathGpuTest` includes the same small production fragments used
+by the renderer. Its concern-specific batches cover exponent-scaled throughput,
+MIS and area-light PDFs, Beer-Lambert attenuation, Russian roulette, the full
+16-bit LabPBR normal/specular byte domains, conductor Fresnel, NRD sanitization,
+normal packing, hit-distance normalization, demodulation, and radiance limits.
+Do not replace these tests with Java copies of GLSL formulas: a copy cannot
+observe shader compiler or device floating-point behavior.
+
 `ShaderComputeRunner` owns a minimal headless Vulkan 1.2 compute device and
-executes a complete batch in one dispatch. Normal `test` runs GPU tests when
-Vulkan is available and reports them as skipped otherwise. Use:
+executes a complete batch in one dispatch. Bindings 0 and 1 are the standard
+input/output SSBOs; tests may add arbitrary 2D/3D sampled images, 2D storage
+images, push constants, and explicit XYZ workgroup counts. The runner contract
+itself has an executable image/push-constant round-trip test.
+
+Normal `test` excludes the tagged GPU suites. Use:
 
 ```text
 gradlew shaderTest
 ```
 
-to require a usable Vulkan compute device and fail instead of skipping. Every
+to require a usable Vulkan compute device and fail instead of skipping. CI
+always runs this task through the Lavapipe Vulkan compute implementation. Every
 randomized property suite must use a fixed seed, print the seed and failing case
 index, and include explicit boundary cases before generated cases. Properties
 must observe executable behavior; source-text matching is not a correctness

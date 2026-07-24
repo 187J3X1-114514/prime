@@ -195,7 +195,9 @@ public final class NrdFsrPostProcessor implements RealtimePostProcessor {
         this.upscaler.record(commandBuffer, token.fsr, parameters.displayOverexposure());
         if (token.nrdDebugView != NrdDiagnostics.Mode.OFF) {
             this.nrdDebugPresent.record(
-                    commandBuffer, token.nrdDebugView.presentSource());
+                    commandBuffer,
+                    token.nrdDebugView.presentSource(),
+                    token.nrdDebugView.presentation());
         }
     }
 

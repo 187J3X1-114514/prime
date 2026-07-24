@@ -1,0 +1,141 @@
+#version 460
+#extension GL_GOOGLE_include_directive : require
+
+#define PRIME_COLOR_WORKING_SPACE_LINEAR_REC2020_D65 1
+#define PRIME_COLOR_TEXTURE_ENCODING_SRGB 1
+#define PRIME_COLOR_DISPLAY_ENCODING_SRGB 1
+#define PRIME_COLOR_DISPLAY_SPACE_REC709_D65 1
+#include "prime_test_abi.glsl"
+#include "material_translation.glsl"
+
+const uint PRIME_MATERIAL_INPUT_WORDS = 3u;
+const uint PRIME_MATERIAL_WITNESS_WORDS = 8u;
+
+void primeMaterialClassify(inout uint mask, float value) {
+    mask |= primeTestClassify(value);
+}
+
+void primeMaterialClassify(inout uint mask, vec3 value) {
+    mask |= primeTestClassify(value);
+}
+
+bool primeMaterialUnit(float value) {
+    return value >= 0.0 && value <= 1.0;
+}
+
+bool primeMaterialUnit(vec3 value) {
+    return all(greaterThanEqual(value, vec3(0.0)))
+            && all(lessThanEqual(value, vec3(1.0)));
+}
+
+void main() {
+    uint caseIndex;
+    if (!primeTestBegin(caseIndex)) return;
+    uint inputOffset = primeTestInputOffset(caseIndex, PRIME_MATERIAL_INPUT_WORDS);
+    uvec4 control = primeTestInput.words[inputOffset];
+    vec4 baseAndCosine = uintBitsToFloat(primeTestInput.words[inputOffset + 1u]);
+    uvec4 expected = primeTestInput.words[inputOffset + 2u];
+    uint kind = control.x;
+    uint flags = control.y;
+    uint packedNormal = control.z;
+    uint packedSpecular = control.w;
+
+    uint mask = 0u;
+    PrimeLabPbrSample decoded = primeDecodeLabPbr(packedNormal, packedSpecular, flags);
+    PrimeTranslatedLabPbrMaterial translated =
+            primeTranslateLabPbr(decoded, flags);
+    float normalLengthSquared = dot(decoded.tangentNormal, decoded.tangentNormal);
+    primeMaterialClassify(mask, decoded.tangentNormal);
+    primeMaterialClassify(mask, normalLengthSquared);
+    primeMaterialClassify(mask, vec3(
+            decoded.ambientOcclusion, decoded.height, decoded.perceptualRoughness));
+    primeMaterialClassify(mask, vec3(
+            decoded.dielectricF0, decoded.porosity, decoded.subsurface));
+    primeMaterialClassify(mask, decoded.emission);
+    if (!primeTestClose(normalLengthSquared, 1.0, 2.0e-6, 2.0e-6)) {
+        mask |= PRIME_TEST_FAILURE_UNIT_LENGTH;
+    }
+    if (!primeMaterialUnit(decoded.ambientOcclusion)
+            || !primeMaterialUnit(decoded.height)
+            || !primeMaterialUnit(decoded.perceptualRoughness)
+            || !primeMaterialUnit(decoded.dielectricF0)
+            || !primeMaterialUnit(decoded.porosity)
+            || !primeMaterialUnit(decoded.subsurface)
+            || !primeMaterialUnit(decoded.emission)) {
+        mask |= PRIME_TEST_FAILURE_RANGE;
+    }
+    if (!primeHasLabPbrNormal(flags)
+            && (!all(equal(decoded.tangentNormal, vec3(0.0, 0.0, 1.0)))
+                    || decoded.ambientOcclusion != 1.0
+                    || decoded.height != 1.0)) {
+        mask |= PRIME_TEST_FAILURE_STATE;
+    }
+    if (!primeHasLabPbrSpecular(flags)
+            && (decoded.perceptualRoughness != PRIME_DEFAULT_REFERENCE_LINEAR_ROUGHNESS
+                    || decoded.dielectricF0 != PRIME_DEFAULT_DIELECTRIC_F0
+                    || decoded.metalId != 0u
+                    || decoded.porosity != 0.0
+                    || decoded.subsurface != 0.0
+                    || decoded.emission != 0.0)) {
+        mask |= PRIME_TEST_FAILURE_STATE;
+    }
+
+    primeMaterialClassify(mask, vec3(
+            translated.perceptualRoughness,
+            translated.dielectricF0,
+            translated.subsurfaceWeight));
+    if (!primeMaterialUnit(translated.perceptualRoughness)
+            || !primeMaterialUnit(translated.dielectricF0)
+            || !primeMaterialUnit(translated.subsurfaceWeight)
+            || (translated.metalId != 0u
+                    && !primeLabPbrIsSupportedMetalId(translated.metalId))
+            || (primeMaterialIsTransmissive(flags) && translated.metalId != 0u)
+            || ((translated.thinWalled != 0u)
+                    != (translated.subsurfaceWeight > 0.0))) {
+        mask |= PRIME_TEST_FAILURE_RANGE;
+    }
+
+    PrimeLabPbrFresnel fresnel =
+            primeLabPbrMetalFresnel(baseAndCosine.xyz, expected.x);
+    primeMaterialClassify(mask, fresnel.f0);
+    primeMaterialClassify(mask, fresnel.f82Tint);
+    if (!primeMaterialUnit(fresnel.f0) || !primeMaterialUnit(fresnel.f82Tint)) {
+        mask |= PRIME_TEST_FAILURE_RANGE;
+    }
+    vec3 eta;
+    vec3 k;
+    bool standard = primeLabPbrMetalOpticalConstants(expected.x, eta, k);
+    if (standard != primeLabPbrIsStandardMetalId(expected.x)) {
+        mask |= PRIME_TEST_FAILURE_EVENT;
+    }
+    if (standard) {
+        vec3 reflectance =
+                primeLabPbrConductorReflectance(baseAndCosine.w, eta, k);
+        primeMaterialClassify(mask, reflectance);
+        if (!primeMaterialUnit(reflectance)) mask |= PRIME_TEST_FAILURE_RANGE;
+    }
+    if (kind > 1u) mask |= PRIME_TEST_FAILURE_EVENT;
+
+    uint outputWords = primeTestOutputWords();
+    uint outputOffset = primeTestOutputOffset(caseIndex, outputWords);
+    primeTestOutput.words[outputOffset] = uvec4(mask, kind, caseIndex, 0u);
+    if (outputWords >= PRIME_MATERIAL_WITNESS_WORDS) {
+        primeTestOutput.words[outputOffset + 1u] = control;
+        primeTestOutput.words[outputOffset + 2u] = floatBitsToUint(baseAndCosine);
+        primeTestOutput.words[outputOffset + 3u] = expected;
+        primeTestOutput.words[outputOffset + 4u] =
+                floatBitsToUint(vec4(decoded.tangentNormal, normalLengthSquared));
+        primeTestOutput.words[outputOffset + 5u] = floatBitsToUint(vec4(
+                decoded.perceptualRoughness,
+                decoded.dielectricF0,
+                decoded.subsurface,
+                decoded.emission));
+        primeTestOutput.words[outputOffset + 6u] = floatBitsToUint(vec4(
+                translated.perceptualRoughness,
+                translated.dielectricF0,
+                translated.subsurfaceWeight,
+                float(translated.metalId)));
+        primeTestOutput.words[outputOffset + 7u] =
+                floatBitsToUint(vec4(fresnel.f0, fresnel.f82Tint.x));
+    }
+}

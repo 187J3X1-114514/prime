@@ -5,8 +5,12 @@
 #include "default_material.glsl"
 #include "labpbr.glsl"
 #include "material_translation.glsl"
+#ifndef PRIME_RC_TRANSMISSION_GGX_SET
 #define PRIME_RC_TRANSMISSION_GGX_SET 0
+#endif
+#ifndef PRIME_RC_TRANSMISSION_GGX_BINDING
 #define PRIME_RC_TRANSMISSION_GGX_BINDING PRIME_DESCRIPTOR_TRANSMISSION_GGX_ENERGY
+#endif
 #include "prime_bsdf_specializations.glsl"
 
 // Minecraft's translucent render layer is adapted to RoboCute's complete dielectric
@@ -34,12 +38,25 @@ const vec3 PRIME_REC2020_PRIMARY_WAVELENGTHS_NM = vec3(630.0, 532.0, 467.0);
 const vec3 PRIME_PURE_WATER_ABSORPTION_M_INV = vec3(0.2916, 0.04444, 0.010182);
 
 bool primeRcHasSample(PrimeRcSample sampleValue) {
+    if (sampleValue.throughput.flags == PRIME_RC_FLAG_NONE) {
+        // RoboCute does not promise initialized payloads for a rejected proposal. Prime replaces
+        // it with its canonical zero-event sample, so inspecting the discarded payload only
+        // creates diagnostic false positives and says nothing about consumed transport.
+        return false;
+    }
+    if (!primeBsdfDirection(sampleValue.wo)
+            || !primeBsdfFinite(sampleValue.throughput.value)
+            || !primeBsdfFinite(sampleValue.pdf)
+            || any(lessThan(sampleValue.throughput.value, vec3(0.0)))
+            || !(sampleValue.pdf > 0.0)) {
+        // Float singularities in the reference closure are contained at Prime's adapter boundary.
+        // A rejected proposal contributes zero and cannot poison later MIS or throughput state.
+        return false;
+    }
     primeRecordNonnegative(sampleValue.throughput.value);
     primeRecordNonnegative(sampleValue.pdf);
-    if (sampleValue.throughput.flags != PRIME_RC_FLAG_NONE) {
-        primeRecordDirection(sampleValue.wo);
-    }
-    return sampleValue.throughput.flags != PRIME_RC_FLAG_NONE;
+    primeRecordDirection(sampleValue.wo);
+    return true;
 }
 
 PrimeRcVolumeStack primeEmptyVolumeStack() {
@@ -238,6 +255,20 @@ struct PrimeBsdfComponents {
     float pdf;
 };
 
+PrimeBsdfComponents primeSanitizeBsdfComponents(PrimeBsdfComponents components) {
+    if (!primeBsdfFinite(components.diffuseResponse)
+            || !primeBsdfFinite(components.specularResponse)
+            || !primeBsdfFinite(components.pdf)
+            || any(lessThan(components.diffuseResponse, vec3(0.0)))
+            || any(lessThan(components.specularResponse, vec3(0.0)))
+            || components.pdf < 0.0) {
+        components.diffuseResponse = vec3(0.0);
+        components.specularResponse = vec3(0.0);
+        components.pdf = 0.0;
+    }
+    return components;
+}
+
 PrimeBsdfComponents primeEvaluateOpaqueComponents(
         vec3 baseColor,
         vec3 normal,
@@ -280,6 +311,7 @@ PrimeBsdfComponents primeEvaluateOpaqueComponents(
             : primeRcPrimeBasicMetallicEval(localView, localScatter, specularState);
     result.diffuseResponse = diffuse.value;
     result.specularResponse = specular.value;
+    result = primeSanitizeBsdfComponents(result);
     primeRecordNonnegative(result.diffuseResponse);
     primeRecordNonnegative(result.specularResponse);
     primeRecordNonnegative(result.pdf);
@@ -325,7 +357,7 @@ BsdfSample primeSampleOpaque(
     result.pdf = sampled.bsdfSample.pdf;
     result.relativeEta = 1.0;
     result.eventFlags = primeRcToBsdfEventFlags(sampled.bsdfSample.throughput.flags);
-    return result;
+    return primeSanitizeBsdfSample(result);
 }
 
 PrimeRcState primeMinecraftTransmissionState(
@@ -372,7 +404,16 @@ PrimeMinecraftMirrorSplit primeMinecraftMirrorSplit(PrimeRcState state) {
     // The default Minecraft adapter keeps dielectric reflection achromatic. Retaining the color
     // term here makes the split remain correct if a future material decoder tints the interface.
     result.reflectance = state.transmissionMultipleScattering.z * state.specularFresnel.color;
+    if (!primeBsdfFinite(result.reflectance)
+            || any(lessThan(result.reflectance, vec3(0.0)))) {
+        result.reflectance = vec3(0.0);
+    } else {
+        result.reflectance = clamp(result.reflectance, vec3(0.0), vec3(1.0));
+    }
     result.probability = primeRcSpectrumToWeight(result.reflectance);
+    result.probability = primeBsdfFinite(result.probability)
+            ? clamp(result.probability, 0.0, 1.0)
+            : 0.0;
     primeRecordUnit(result.reflectance);
     primeRecordUnit(result.probability);
     return result;
@@ -428,6 +469,7 @@ BsdfEvaluation primeEvaluateMinecraftTransmissionImpl(
                 ? (closedReflection ? mirror.probability : 1.0 - mirror.probability)
                 : 1.0);
     }
+    result = primeSanitizeBsdfEvaluation(result);
     primeRecordNonnegative(result.response);
     primeRecordNonnegative(result.pdf);
     return result;
@@ -489,6 +531,10 @@ PrimeTransmissiveBsdfSample primeSampleMinecraftTransmission(
                 reflectionBranch,
                 volumeStack);
         result.bsdfSample.pdf *= branchProbability;
+        result.bsdfSample = primeSanitizeBsdfSample(result.bsdfSample);
+        if (result.bsdfSample.eventFlags == 0u) {
+            result.volumeStack = volumeStack;
+        }
         primeRecordNonnegative(result.bsdfSample.response);
         primeRecordNonnegative(result.bsdfSample.pdf);
         return result;
@@ -511,6 +557,10 @@ PrimeTransmissiveBsdfSample primeSampleMinecraftTransmission(
     result.bsdfSample.eventFlags = primeRcToBsdfEventFlags(
             sampled.bsdfSample.throughput.flags);
     result.volumeStack = sampled.volumeStack;
+    result.bsdfSample = primeSanitizeBsdfSample(result.bsdfSample);
+    if (result.bsdfSample.eventFlags == 0u) {
+        result.volumeStack = volumeStack;
+    }
     return result;
 }
 
@@ -597,6 +647,14 @@ PrimeTransmissiveBsdfSplit primeSampleMinecraftTransmissionSplitFromState(
             volumeStack);
     // These are conditional proposals over disjoint physical lobes. Because both are evaluated,
     // neither PDF includes a branch-selection probability; summing their estimates is unbiased.
+    result.reflection.bsdfSample = primeSanitizeBsdfSample(result.reflection.bsdfSample);
+    if (result.reflection.bsdfSample.eventFlags == 0u) {
+        result.reflection.volumeStack = volumeStack;
+    }
+    result.transmission.bsdfSample = primeSanitizeBsdfSample(result.transmission.bsdfSample);
+    if (result.transmission.bsdfSample.eventFlags == 0u) {
+        result.transmission.volumeStack = volumeStack;
+    }
     return result;
 }
 
@@ -628,6 +686,7 @@ PrimeTransmissiveBsdfSample primeSampleMinecraftTransmissionBranchFromState(
         result.bsdfSample.relativeEta = 1.0;
         result.bsdfSample.eventFlags = PRIME_BSDF_EVENT_REFLECTION
                 | PRIME_BSDF_EVENT_DELTA;
+        result.bsdfSample = primeSanitizeBsdfSample(result.bsdfSample);
         return result;
     }
 
@@ -659,6 +718,10 @@ PrimeTransmissiveBsdfSample primeSampleMinecraftTransmissionBranchFromState(
     result.bsdfSample.eventFlags = primeRcToBsdfEventFlags(
             sampled.bsdfSample.throughput.flags);
     result.volumeStack = sampled.volumeStack;
+    result.bsdfSample = primeSanitizeBsdfSample(result.bsdfSample);
+    if (result.bsdfSample.eventFlags == 0u) {
+        result.volumeStack = volumeStack;
+    }
     return result;
 }
 
@@ -748,6 +811,7 @@ BsdfEvaluation primeEvaluateMinecraftFoliage(
         result.response = evaluation.throughput.value;
         result.pdf = evaluation.pdf;
     }
+    result = primeSanitizeBsdfEvaluation(result);
     primeRecordNonnegative(result.response);
     primeRecordNonnegative(result.pdf);
     return result;
@@ -787,6 +851,7 @@ PrimeBsdfComponents primeEvaluateMinecraftFoliageComponents(
             localView, localScatter, diffuseState).value;
     result.specularResponse = primeRcPrimeThinWallEval(
             localView, localScatter, specularState).value;
+    result = primeSanitizeBsdfComponents(result);
     primeRecordNonnegative(result.diffuseResponse);
     primeRecordNonnegative(result.specularResponse);
     primeRecordNonnegative(result.pdf);
@@ -825,7 +890,7 @@ BsdfSample primeSampleMinecraftFoliage(
     result.pdf = sampled.bsdfSample.pdf;
     result.relativeEta = 1.0;
     result.eventFlags = primeRcToBsdfEventFlags(sampled.bsdfSample.throughput.flags);
-    return result;
+    return primeSanitizeBsdfSample(result);
 }
 
 const uint PRIME_DENOISE_CLOSURE_OPAQUE = 0u;
@@ -838,8 +903,12 @@ struct PrimeDenoiseAlbedos {
 };
 
 vec3 primeSanitizeDenoiseAlbedo(vec3 albedo) {
-    primeRecordUnit(albedo);
-    return clamp(albedo, vec3(0.0), vec3(1.0));
+    vec3 result = vec3(
+            primeBsdfFinite(albedo.x) ? clamp(albedo.x, 0.0, 1.0) : 0.0,
+            primeBsdfFinite(albedo.y) ? clamp(albedo.y, 0.0, 1.0) : 0.0,
+            primeBsdfFinite(albedo.z) ? clamp(albedo.z, 0.0, 1.0) : 0.0);
+    primeRecordUnit(result);
+    return result;
 }
 
 vec3 primeRcDenoiseClosureEnergy(

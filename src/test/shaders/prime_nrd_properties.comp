@@ -1,0 +1,191 @@
+#version 460
+#extension GL_GOOGLE_include_directive : require
+
+#include "prime_test_abi.glsl"
+#include "nrd_common.glsl"
+
+const uint PRIME_NRD_INPUT_WORDS = 4u;
+const uint PRIME_NRD_WITNESS_WORDS = 9u;
+
+void primeNrdCheckFinite(inout uint mask, float value) {
+    mask |= primeTestClassify(value);
+}
+
+void primeNrdCheckFinite(inout uint mask, vec3 value) {
+    mask |= primeTestClassify(value);
+}
+
+void primeNrdCheckFinite(inout uint mask, vec4 value) {
+    mask |= primeTestClassify(value);
+}
+
+void primeNrdCheckUnit(inout uint mask, float value) {
+    primeNrdCheckFinite(mask, value);
+    if (value < 0.0 || value > 1.0) mask |= PRIME_TEST_FAILURE_RANGE;
+}
+
+void primeNrdCheckUnit(inout uint mask, vec3 value) {
+    primeNrdCheckFinite(mask, value);
+    if (any(lessThan(value, vec3(0.0))) || any(greaterThan(value, vec3(1.0)))) {
+        mask |= PRIME_TEST_FAILURE_RANGE;
+    }
+}
+
+void primeNrdCheckUnit(inout uint mask, vec4 value) {
+    mask |= primeTestClassify(value);
+    if (any(lessThan(value, vec4(0.0))) || any(greaterThan(value, vec4(1.0)))) {
+        mask |= PRIME_TEST_FAILURE_RANGE;
+    }
+}
+
+void main() {
+    uint caseIndex;
+    if (!primeTestBegin(caseIndex)) return;
+    uint inputOffset = primeTestInputOffset(caseIndex, PRIME_NRD_INPUT_WORDS);
+    uvec4 control = primeTestInput.words[inputOffset];
+    vec4 first = uintBitsToFloat(primeTestInput.words[inputOffset + 1u]);
+    vec4 second = uintBitsToFloat(primeTestInput.words[inputOffset + 2u]);
+    vec4 third = uintBitsToFloat(primeTestInput.words[inputOffset + 3u]);
+    uint kind = control.x;
+    uint mask = 0u;
+    vec4 result0 = vec4(0.0);
+    vec4 result1 = vec4(0.0);
+    vec4 result2 = vec4(0.0);
+    vec4 result3 = vec4(0.0);
+
+    if (kind == 0u) {
+        vec3 radiance = primeNrdSanitizeRadiance(first.xyz);
+        vec3 albedo = primeNrdSanitizeAlbedo(second.xyz);
+        vec3 motion = primeNrdSanitizeMotion(third.xyz);
+        float hitDistance = primeNrdSanitizeHitDistance(first.w);
+        float primaryDistance =
+                primeNrdSanitizePrimaryDistance(second.w, control.y != 0u);
+        primeNrdCheckFinite(mask, radiance);
+        primeNrdCheckUnit(mask, albedo);
+        primeNrdCheckFinite(mask, motion);
+        primeNrdCheckFinite(mask, hitDistance);
+        primeNrdCheckFinite(mask, primaryDistance);
+        if (any(lessThan(radiance, vec3(0.0)))
+                || any(greaterThan(radiance, vec3(PRIME_NRD_FP16_MAX)))
+                || any(lessThan(motion, vec3(-PRIME_NRD_FP16_MAX)))
+                || any(greaterThan(motion, vec3(PRIME_NRD_FP16_MAX)))
+                || hitDistance < 0.0
+                || hitDistance > PRIME_NRD_FP16_MAX
+                || primaryDistance < -1.0
+                || primaryDistance > PRIME_NRD_MAX_SURFACE_DISTANCE) {
+            mask |= PRIME_TEST_FAILURE_RANGE;
+        }
+        result0 = vec4(radiance, hitDistance);
+        result1 = vec4(albedo, primaryDistance);
+        result2 = vec4(motion, 0.0);
+    } else if (kind == 1u) {
+        vec3 encoded = primeNrdLinearToYCoCg(first.xyz);
+        vec3 decoded = primeNrdYCoCgToLinear(encoded);
+        primeNrdCheckFinite(mask, encoded);
+        primeNrdCheckFinite(mask, decoded);
+        float transformTolerance =
+                2.0e-6 + 1.0e-6 * max(first.x, max(first.y, first.z));
+        if (any(greaterThan(abs(first.xyz - decoded), vec3(transformTolerance)))) {
+            mask |= PRIME_TEST_FAILURE_ROUND_TRIP;
+        }
+        result0 = vec4(encoded, 0.0);
+        result1 = vec4(decoded, 0.0);
+    } else if (kind == 2u) {
+        vec4 packed = primeNrdPackNormalRoughness(first.xyz, first.w, second.x);
+        vec3 normal;
+        float roughness;
+        primeNrdUnpackNormalRoughness(packed, normal, roughness);
+        primeNrdCheckUnit(mask, packed);
+        primeNrdCheckFinite(mask, normal);
+        primeNrdCheckUnit(mask, roughness);
+        float lengthSquared = dot(normal, normal);
+        if (!primeTestClose(lengthSquared, 1.0, 2.0e-6, 2.0e-6)) {
+            mask |= PRIME_TEST_FAILURE_UNIT_LENGTH;
+        }
+        vec3 expectedNormal = primeNrdSafeNormalize(first.xyz, vec3(0.0, 0.0, 1.0));
+        if (!primeTestClose(normal, expectedNormal, 5.0e-5, 5.0e-5)) {
+            mask |= PRIME_TEST_FAILURE_ROUND_TRIP;
+        }
+        result0 = packed;
+        result1 = vec4(normal, roughness);
+    } else if (kind == 3u) {
+        float normalized =
+                primeNrdNormalizedHitDistance(first.x, first.y, first.z);
+        float farther = primeNrdNormalizedHitDistance(
+                max(first.x, 0.0) + abs(second.x), first.y, first.z);
+        vec4 packed = primeNrdPackRadianceAndHitDistance(second.yzw, normalized);
+        primeNrdCheckUnit(mask, normalized);
+        primeNrdCheckUnit(mask, farther);
+        primeNrdCheckFinite(mask, packed);
+        if (primeNrdIsFinite(first.x) && first.x >= 0.0 && farther < normalized) {
+            mask |= PRIME_TEST_FAILURE_IDENTITY;
+        }
+        result0 = vec4(normalized, farther, 0.0, 0.0);
+        result1 = packed;
+    } else if (kind == 4u) {
+        vec3 safeRadiance = primeNrdSanitizeRadiance(first.xyz);
+        vec3 safeGuide = primeNrdSanitizeAlbedo(second.xyz);
+        vec3 demodulated = primeNrdDemodulate(first.xyz, second.xyz);
+        vec3 remodulated = demodulated * safeGuide;
+        primeNrdCheckFinite(mask, demodulated);
+        primeNrdCheckFinite(mask, remodulated);
+        vec3 expected = vec3(
+                safeGuide.x > 0.0 ? safeRadiance.x : 0.0,
+                safeGuide.y > 0.0 ? safeRadiance.y : 0.0,
+                safeGuide.z > 0.0 ? safeRadiance.z : 0.0);
+        bvec3 unclamped = lessThanEqual(
+                safeRadiance, vec3(PRIME_NRD_FP16_MAX) * safeGuide);
+        if (any(lessThan(demodulated, vec3(0.0)))
+                || any(greaterThan(demodulated, vec3(PRIME_NRD_FP16_MAX)))
+                || any(greaterThan(remodulated, expected * (1.0 + 2.0e-6) + vec3(2.0e-6)))
+                || (unclamped.x && !primeTestClose(remodulated.x, expected.x, 2.0e-5, 2.0e-5))
+                || (unclamped.y && !primeTestClose(remodulated.y, expected.y, 2.0e-5, 2.0e-5))
+                || (unclamped.z && !primeTestClose(remodulated.z, expected.z, 2.0e-5, 2.0e-5))) {
+            mask |= PRIME_TEST_FAILURE_IDENTITY;
+        }
+        result0 = vec4(demodulated, 0.0);
+        result1 = vec4(remodulated, 0.0);
+    } else if (kind == 5u) {
+        vec3 a = first.xyz;
+        vec3 b = second.xyz;
+        vec3 c = third.xyz;
+        float limit = max(first.w, 0.0);
+        float scale = primeNrdClampRadianceTriple(a, b, c, limit);
+        primeNrdCheckUnit(mask, scale);
+        primeNrdCheckFinite(mask, a);
+        primeNrdCheckFinite(mask, b);
+        primeNrdCheckFinite(mask, c);
+        vec3 sum = a + b + c;
+        if (any(lessThan(a, vec3(0.0)))
+                || any(lessThan(b, vec3(0.0)))
+                || any(lessThan(c, vec3(0.0)))
+                || primeNrdRadiancePeak(sum) > limit * (1.0 + 2.0e-6) + 1.0e-6) {
+            mask |= PRIME_TEST_FAILURE_RANGE;
+        }
+        result0 = vec4(a, scale);
+        result1 = vec4(b, limit);
+        result2 = vec4(c, primeNrdRadiancePeak(sum));
+    } else if (kind == 6u) {
+        float id = primeNrdMaterialId(control.y);
+        primeNrdCheckUnit(mask, id);
+        bool exact = id == 0.0 || id == 1.0 / 3.0 || id == 2.0 / 3.0 || id == 1.0;
+        if (!exact) mask |= PRIME_TEST_FAILURE_EVENT;
+        result0 = vec4(id, 0.0, 0.0, 0.0);
+    } else {
+        mask |= PRIME_TEST_FAILURE_EVENT;
+    }
+
+    uint outputWords = primeTestOutputWords();
+    uint outputOffset = primeTestOutputOffset(caseIndex, outputWords);
+    primeTestOutput.words[outputOffset] = uvec4(mask, kind, caseIndex, 0u);
+    if (outputWords >= PRIME_NRD_WITNESS_WORDS) {
+        primeTestOutput.words[outputOffset + 1u] = control;
+        primeTestOutput.words[outputOffset + 2u] = floatBitsToUint(first);
+        primeTestOutput.words[outputOffset + 3u] = floatBitsToUint(second);
+        primeTestOutput.words[outputOffset + 4u] = floatBitsToUint(third);
+        primeTestOutput.words[outputOffset + 5u] = floatBitsToUint(result0);
+        primeTestOutput.words[outputOffset + 6u] = floatBitsToUint(result1);
+        primeTestOutput.words[outputOffset + 7u] = floatBitsToUint(result2);
+        primeTestOutput.words[outputOffset + 8u] = floatBitsToUint(result3);
+    }
+}

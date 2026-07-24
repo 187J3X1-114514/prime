@@ -53,6 +53,7 @@
   "prime.options.nrd.debug_view.off": "Off",
   "prime.options.nrd.debug_view.native_validation": "Native NRD Validation",
   "prime.options.nrd.debug_view.raw_numerical": "Raw Numerical Anomalies",
+  "prime.options.nrd.debug_view.raw_numerical_stage": "Raw Numerical First Stage",
   "prime.options.nrd.debug_view.specular_input": "Specular SH0 Input",
   "prime.options.nrd.debug_view.specular_output": "Specular SH0 Output",
   "prime.options.nrd.debug_view.specular_remodulated": "Remodulated Specular",

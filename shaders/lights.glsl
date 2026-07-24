@@ -36,40 +36,13 @@ struct LightEvaluation {
 float primePowerHeuristic(float firstPdf, float secondPdf) {
     primeRecordNonnegative(firstPdf);
     primeRecordNonnegative(secondPdf);
-    if (firstPdf <= 0.0) {
-        return 0.0;
-    }
-    if (secondPdf <= 0.0) {
-        return 1.0;
-    }
-    if (firstPdf >= secondPdf) {
-        float ratio = secondPdf / firstPdf;
-        return 1.0 / (1.0 + ratio * ratio);
-    }
-    float ratio = firstPdf / secondPdf;
-    float ratioSquared = ratio * ratio;
-    return ratioSquared / (1.0 + ratioSquared);
+    return primePowerHeuristicValue(firstPdf, secondPdf);
 }
 
 float primePowerHeuristicOverPdf(float sampledPdf, float otherPdf) {
     primeRecordNonnegative(sampledPdf);
     primeRecordNonnegative(otherPdf);
-    if (sampledPdf <= 0.0) {
-        return 0.0;
-    }
-    if (otherPdf <= 0.0) {
-        float result = 1.0 / sampledPdf;
-        primeRecordNonnegative(result);
-        return result;
-    }
-    if (sampledPdf >= otherPdf) {
-        float ratio = otherPdf / sampledPdf;
-        float result = (1.0 / sampledPdf) / (1.0 + ratio * ratio);
-        primeRecordNonnegative(result);
-        return result;
-    }
-    float ratio = sampledPdf / otherPdf;
-    float result = (ratio / otherPdf) / (1.0 + ratio * ratio);
+    float result = primePowerHeuristicOverPdfValue(sampledPdf, otherPdf);
     primeRecordNonnegative(result);
     return result;
 }
@@ -400,11 +373,7 @@ float primeAreaSolidAnglePdf(
     primeRecordNonnegative(distanceSquared);
     primeRecordUnit(lightCosine);
     primeRecordNonnegative(areaPdf);
-    float cosine = lightCosine;
-    if (distanceSquared <= 0.0 || cosine <= 0.0 || areaPdf <= 0.0) {
-        return 0.0;
-    }
-    return primeProductOver(areaPdf, distanceSquared, cosine);
+    return primeAreaSolidAnglePdfValue(areaPdf, distanceSquared, lightCosine);
 }
 
 AreaLightSample primeSampleAreaLight(

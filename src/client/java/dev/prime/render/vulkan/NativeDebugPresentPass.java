@@ -26,10 +26,10 @@ import org.lwjgl.vulkan.VkPushConstantRange;
 import org.lwjgl.vulkan.VkShaderModuleCreateInfo;
 import org.lwjgl.vulkan.VkWriteDescriptorSet;
 
-/** Nearest-neighbor presentation for a native diagnostic image with no color transformation. */
+/** Nearest-neighbor presentation and decoding for native diagnostic images. */
 final class NativeDebugPresentPass implements Destroyable {
     private static final int COMPUTE_STAGE = VK12.VK_SHADER_STAGE_COMPUTE_BIT;
-    private static final int PUSH_SIZE = 16;
+    private static final int PUSH_SIZE = 20;
     private static final String SHADER = "/prime/shaders/native_debug_present.comp.spv";
 
     private final VulkanContext context;
@@ -200,9 +200,13 @@ final class NativeDebugPresentPass implements Destroyable {
         }
     }
 
-    void record(VkCommandBuffer commandBuffer, int source) {
+    void record(VkCommandBuffer commandBuffer, int source, int presentation) {
         if (source < 0 || source >= this.descriptorSets.length) {
             throw new IllegalArgumentException("Invalid native debug source " + source);
+        }
+        if (presentation < 0 || presentation > 2) {
+            throw new IllegalArgumentException(
+                    "Invalid native debug presentation " + presentation);
         }
         try (MemoryStack stack = MemoryStack.stackPush()) {
             VkMemoryBarrier2.Buffer barrier = VkMemoryBarrier2.calloc(1, stack);
@@ -220,6 +224,7 @@ final class NativeDebugPresentPass implements Destroyable {
             push.putInt(4, this.sourceHeights[source]);
             push.putInt(8, this.outputWidth);
             push.putInt(12, this.outputHeight);
+            push.putInt(16, presentation);
             VK12.vkCmdBindPipeline(commandBuffer, VK12.VK_PIPELINE_BIND_POINT_COMPUTE, this.pipeline);
             VK12.vkCmdBindDescriptorSets(
                     commandBuffer,

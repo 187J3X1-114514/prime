@@ -3,6 +3,8 @@
 
 #extension GL_GOOGLE_include_directive : require
 #include "prime_abi.glsl"
+#include "numerical.glsl"
+#include "transport_math.glsl"
 
 vec2 primeUnpackHalf2(uint packedValue) {
     return unpackHalf2x16(packedValue);
@@ -33,41 +35,6 @@ float primeStarRadianceMultiplier() {
     return exp2(0.25 * float(quarterSteps));
 }
 
-// Power-of-two scaling preserves a representable a*b/c when either intermediate operation would
-// overflow or underflow. frexp/ldexp transfer exponents exactly; only the significand operations
-// and final result round.
-float primeProductOver(float first, float second, float denominator) {
-    int firstExponent;
-    int secondExponent;
-    int denominatorExponent;
-    float significand = frexp(first, firstExponent)
-            * frexp(second, secondExponent)
-            / frexp(denominator, denominatorExponent);
-    return ldexp(significand, firstExponent + secondExponent - denominatorExponent);
-}
-
-vec3 primeProductOver(vec3 first, vec3 second, float denominator) {
-    ivec3 firstExponent;
-    ivec3 secondExponent;
-    int denominatorExponent;
-    vec3 significand = frexp(first, firstExponent)
-            * frexp(second, secondExponent)
-            / frexp(denominator, denominatorExponent);
-    return ldexp(
-            significand,
-            firstExponent + secondExponent - ivec3(denominatorExponent));
-}
-
-vec3 primeTripleProduct(vec3 first, vec3 second, float third) {
-    ivec3 firstExponent;
-    ivec3 secondExponent;
-    int thirdExponent;
-    vec3 significand = frexp(first, firstExponent)
-            * frexp(second, secondExponent)
-            * frexp(third, thirdExponent);
-    return ldexp(significand, firstExponent + secondExponent + ivec3(thirdExponent));
-}
-
 bool primeWritesNrdShInputs() {
     return (primePush.path.w & PRIME_PATH_SH_INPUT_MASK) != 0u;
 }
@@ -76,128 +43,75 @@ bool primeWritesRawNumericalDiagnostic() {
     return (primePush.path.w & PRIME_PATH_RAW_NUMERICAL_MASK) != 0u;
 }
 
-const uint PRIME_NUMERICAL_NAN = 1u;
-const uint PRIME_NUMERICAL_POSITIVE_INFINITY = 2u;
-const uint PRIME_NUMERICAL_NEGATIVE_INFINITY = 4u;
-const uint PRIME_NUMERICAL_FINITE_NEGATIVE = 8u;
-const uint PRIME_NUMERICAL_ABOVE_FP16 = 16u;
-const uint PRIME_NUMERICAL_ABOVE_UNIT = 128u;
-const uint PRIME_NUMERICAL_INVALID_DIRECTION = 256u;
-const float PRIME_NUMERICAL_FP16_MAX = 65504.0;
-
 uint primeRawNumericalFlags = 0u;
+uint primeRawNumericalContext = 0u;
+uint primeRawNumericalFirstContext = 0u;
 
-uint primeClassifyNonFinite(float value) {
-    if (isnan(value)) return PRIME_NUMERICAL_NAN;
-    if (!isinf(value)) return 0u;
-    return value > 0.0
-            ? PRIME_NUMERICAL_POSITIVE_INFINITY
-            : PRIME_NUMERICAL_NEGATIVE_INFINITY;
+void primeSetNumericalContext(uint stage, uint bounce) {
+    if (primeWritesRawNumericalDiagnostic()) {
+        primeRawNumericalContext = (stage & 0x0fu) | (min(bounce, 255u) << 4u);
+    }
 }
 
-uint primeClassifyNonFinite(vec3 value) {
-    return primeClassifyNonFinite(value.x)
-            | primeClassifyNonFinite(value.y)
-            | primeClassifyNonFinite(value.z);
+void primeRecordNumerical(uint flags, uint field) {
+    if (!primeWritesRawNumericalDiagnostic() || flags == 0u) return;
+    if (primeRawNumericalFirstContext == 0u) {
+        // Add one so zero remains the unrecorded sentinel. Stage and bounce occupy exactly
+        // representable integer ranges in the RGBA16F diagnostic target.
+        primeRawNumericalFirstContext =
+                1u + primeRawNumericalContext + ((field & 0x0fu) << 12u);
+    }
+    primeRawNumericalFlags |= flags;
 }
 
-uint primeClassifyNonnegative(float value) {
-    uint flags = primeClassifyNonFinite(value);
-    return flags == 0u && value < 0.0
-            ? PRIME_NUMERICAL_FINITE_NEGATIVE
-            : flags;
-}
-
-uint primeClassifyNonnegative(vec3 value) {
-    return primeClassifyNonnegative(value.x)
-            | primeClassifyNonnegative(value.y)
-            | primeClassifyNonnegative(value.z);
-}
-
-uint primeClassifyRadiance(float value) {
-    uint flags = primeClassifyNonnegative(value);
-    if (flags != 0u) return flags;
-    if (value > PRIME_NUMERICAL_FP16_MAX) flags |= PRIME_NUMERICAL_ABOVE_FP16;
-    return flags;
-}
-
-uint primeClassifyRadiance(vec3 value) {
-    return primeClassifyRadiance(value.x)
-            | primeClassifyRadiance(value.y)
-            | primeClassifyRadiance(value.z);
-}
-
-uint primeClassifyUnit(float value) {
-    uint flags = primeClassifyNonnegative(value);
-    return flags == 0u && value > 1.0
-            ? PRIME_NUMERICAL_ABOVE_UNIT
-            : flags;
-}
-
-uint primeClassifyUnit(vec3 value) {
-    return primeClassifyUnit(value.x)
-            | primeClassifyUnit(value.y)
-            | primeClassifyUnit(value.z);
-}
-
-uint primeClassifyDirection(vec3 value) {
-    uint flags = primeClassifyNonFinite(value);
-    if (flags != 0u) return flags;
-    float lengthSquared = dot(value, value);
-    return isnan(lengthSquared)
-            || isinf(lengthSquared)
-            || !(lengthSquared > 1.0e-12)
-            || abs(lengthSquared - 1.0) > 1.0e-3
-            ? PRIME_NUMERICAL_INVALID_DIRECTION
-            : 0u;
+vec4 primeRawNumericalMetadata() {
+    if (primeRawNumericalFlags == 0u) return vec4(0.0);
+    uint context = primeRawNumericalFirstContext - 1u;
+    return vec4(
+            float(primeRawNumericalFlags),
+            float(context & 0x0fu),
+            float((context >> 4u) & 0xffu),
+            float((context >> 12u) & 0x0fu));
 }
 
 void primeRecordNonFinite(float value) {
-    if (primeWritesRawNumericalDiagnostic()) {
-        primeRawNumericalFlags |= primeClassifyNonFinite(value);
-    }
+    primeRecordNumerical(
+            primeClassifyNonFinite(value), PRIME_NUMERICAL_FIELD_NON_FINITE);
 }
 
 void primeRecordNonFinite(vec3 value) {
-    if (primeWritesRawNumericalDiagnostic()) {
-        primeRawNumericalFlags |= primeClassifyNonFinite(value);
-    }
+    primeRecordNumerical(
+            primeClassifyNonFinite(value), PRIME_NUMERICAL_FIELD_NON_FINITE);
 }
 
 void primeRecordNonnegative(float value) {
-    if (primeWritesRawNumericalDiagnostic()) {
-        primeRawNumericalFlags |= primeClassifyNonnegative(value);
-    }
+    primeRecordNumerical(
+            primeClassifyNonnegative(value), PRIME_NUMERICAL_FIELD_NONNEGATIVE);
 }
 
 void primeRecordNonnegative(vec3 value) {
-    if (primeWritesRawNumericalDiagnostic()) {
-        primeRawNumericalFlags |= primeClassifyNonnegative(value);
-    }
+    primeRecordNumerical(
+            primeClassifyNonnegative(value), PRIME_NUMERICAL_FIELD_NONNEGATIVE);
 }
 
 void primeRecordRadiance(vec3 value) {
-    if (primeWritesRawNumericalDiagnostic()) {
-        primeRawNumericalFlags |= primeClassifyRadiance(value);
-    }
+    primeRecordNumerical(
+            primeClassifyRadiance(value), PRIME_NUMERICAL_FIELD_RADIANCE);
 }
 
 void primeRecordUnit(float value) {
-    if (primeWritesRawNumericalDiagnostic()) {
-        primeRawNumericalFlags |= primeClassifyUnit(value);
-    }
+    primeRecordNumerical(
+            primeClassifyUnit(value), PRIME_NUMERICAL_FIELD_UNIT);
 }
 
 void primeRecordUnit(vec3 value) {
-    if (primeWritesRawNumericalDiagnostic()) {
-        primeRawNumericalFlags |= primeClassifyUnit(value);
-    }
+    primeRecordNumerical(
+            primeClassifyUnit(value), PRIME_NUMERICAL_FIELD_UNIT);
 }
 
 void primeRecordDirection(vec3 value) {
-    if (primeWritesRawNumericalDiagnostic()) {
-        primeRawNumericalFlags |= primeClassifyDirection(value);
-    }
+    primeRecordNumerical(
+            primeClassifyDirection(value), PRIME_NUMERICAL_FIELD_DIRECTION);
 }
 
 vec2 primeSignNotZero(vec2 value) {

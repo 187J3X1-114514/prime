@@ -66,4 +66,46 @@ BsdfSample primeInvalidBsdfSample() {
     return result;
 }
 
+bool primeBsdfFinite(float value) {
+    return !isnan(value) && !isinf(value);
+}
+
+bool primeBsdfFinite(vec3 value) {
+    return !any(isnan(value)) && !any(isinf(value));
+}
+
+bool primeBsdfDirection(vec3 value) {
+    if (!primeBsdfFinite(value)) return false;
+    float lengthSquared = dot(value, value);
+    return primeBsdfFinite(lengthSquared)
+            && lengthSquared > 1.0e-12
+            && abs(lengthSquared - 1.0) <= 1.0e-3;
+}
+
+BsdfEvaluation primeSanitizeBsdfEvaluation(BsdfEvaluation evaluation) {
+    if (!primeBsdfFinite(evaluation.response)
+            || !primeBsdfFinite(evaluation.pdf)
+            || any(lessThan(evaluation.response, vec3(0.0)))
+            || evaluation.pdf < 0.0) {
+        return primeInvalidBsdfEvaluation();
+    }
+    return evaluation;
+}
+
+BsdfSample primeSanitizeBsdfSample(BsdfSample sampleValue) {
+    if (sampleValue.eventFlags == 0u) {
+        return primeInvalidBsdfSample();
+    }
+    if (!primeBsdfDirection(sampleValue.direction)
+            || !primeBsdfFinite(sampleValue.response)
+            || !primeBsdfFinite(sampleValue.pdf)
+            || !primeBsdfFinite(sampleValue.relativeEta)
+            || any(lessThan(sampleValue.response, vec3(0.0)))
+            || !(sampleValue.pdf > 0.0)
+            || !(sampleValue.relativeEta > 0.0)) {
+        return primeInvalidBsdfSample();
+    }
+    return sampleValue;
+}
+
 #endif

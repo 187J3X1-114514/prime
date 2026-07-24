@@ -1,0 +1,33 @@
+#version 460
+
+layout(local_size_x = 1, local_size_y = 1, local_size_z = 1) in;
+
+layout(set = 0, binding = 0, std430) readonly buffer PrimeRunnerInput {
+    uint unused[];
+} primeRunnerInput;
+
+layout(set = 0, binding = 1, std430) writeonly buffer PrimeRunnerOutput {
+    vec4 values[];
+} primeRunnerOutput;
+
+layout(set = 0, binding = 2) uniform sampler2D primeRunnerSampled;
+layout(set = 0, binding = 3, rgba32f) uniform image2D primeRunnerStorage;
+
+layout(push_constant) uniform PrimeRunnerPush {
+    float scale;
+    float bias;
+    vec2 unused;
+} primeRunnerPush;
+
+void main() {
+    ivec2 pixel = ivec2(gl_GlobalInvocationID.xy);
+    ivec2 size = imageSize(primeRunnerStorage);
+    if (any(greaterThanEqual(pixel, size))) return;
+    vec4 value = texelFetch(primeRunnerSampled, pixel, 0)
+            * primeRunnerPush.scale
+            + vec4(primeRunnerPush.bias);
+    imageStore(primeRunnerStorage, pixel, value);
+    memoryBarrierImage();
+    uint index = uint(pixel.y * size.x + pixel.x);
+    primeRunnerOutput.values[index] = imageLoad(primeRunnerStorage, pixel);
+}

@@ -425,8 +425,7 @@ public final class VulkanRenderer implements AutoCloseable {
                     material,
                     processor.targets().usesShInputs(),
                     images.mode == PostProcessingMode.NRD_FSR
-                            && postParameters.nrdDebugView()
-                                    == NrdDiagnostics.Mode.RAW_NUMERICAL);
+                            && postParameters.nrdDebugView().rawNumerical());
             this.pipeline.trace(commandBuffer, pushConstants, renderWidth, renderHeight);
             processor.record(commandBuffer, postFrame, postParameters);
             this.finishAtlasRead(commandBuffer, atlasView.texture());

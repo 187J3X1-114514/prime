@@ -1,0 +1,160 @@
+#version 460
+#extension GL_GOOGLE_include_directive : require
+
+#include "prime_test_abi.glsl"
+#include "transport_math.glsl"
+
+const uint PRIME_TRANSPORT_INPUT_WORDS = 3u;
+const uint PRIME_TRANSPORT_WITNESS_WORDS = 7u;
+
+struct PrimeTransportResult {
+    uint mask;
+    vec4 first;
+    vec4 second;
+    vec4 third;
+};
+
+void primeTransportClassify(inout uint mask, float value) {
+    mask |= primeTestClassify(value);
+}
+
+void primeTransportClassify(inout uint mask, vec3 value) {
+    mask |= primeTestClassify(value);
+}
+
+void primeCheckProduct(
+        inout PrimeTransportResult result, vec3 first, vec3 second, float denominator) {
+    vec3 value = primeProductOver(first, second, denominator);
+    vec3 rescaled = primeProductOver(first, second * 2.0, denominator * 2.0);
+    vec3 identity = primeProductOver(first, vec3(denominator), denominator);
+    primeTransportClassify(result.mask, value);
+    if (any(lessThan(value, vec3(0.0)))) result.mask |= PRIME_TEST_FAILURE_RANGE;
+    if (!primeTestClose(value, rescaled, 0.0, 2.0e-6)) {
+        result.mask |= PRIME_TEST_FAILURE_IDENTITY;
+    }
+    if (!primeTestClose(first, identity, 0.0, 2.0e-6)) {
+        result.mask |= PRIME_TEST_FAILURE_IDENTITY;
+    }
+    result.first = vec4(value, denominator);
+    result.second = vec4(rescaled, 0.0);
+    result.third = vec4(identity, 0.0);
+}
+
+void primeCheckMis(
+        inout PrimeTransportResult result, float firstPdf, float secondPdf, float scale) {
+    float first = primePowerHeuristicValue(firstPdf, secondPdf);
+    float second = primePowerHeuristicValue(secondPdf, firstPdf);
+    float scaled = primePowerHeuristicValue(firstPdf * scale, secondPdf * scale);
+    float overPdf = primePowerHeuristicOverPdfValue(firstPdf, secondPdf);
+    primeTransportClassify(result.mask, vec3(first, second, scaled));
+    primeTransportClassify(result.mask, overPdf);
+    if (first < 0.0 || first > 1.0 || second < 0.0 || second > 1.0 || overPdf < 0.0) {
+        result.mask |= PRIME_TEST_FAILURE_RANGE;
+    }
+    if (!primeTestClose(first + second, 1.0, 2.0e-6, 2.0e-6)
+            || !primeTestClose(first, scaled, 2.0e-6, 2.0e-6)
+            || !primeTestClose(first, overPdf * firstPdf, 2.0e-6, 2.0e-6)) {
+        result.mask |= PRIME_TEST_FAILURE_IDENTITY;
+    }
+    result.first = vec4(first, second, scaled, overPdf);
+}
+
+void primeCheckTransmittance(
+        inout PrimeTransportResult result, vec3 extinction, float distance) {
+    vec3 full = primeSegmentTransmittance(extinction, distance);
+    vec3 halfDistance = primeSegmentTransmittance(extinction, distance * 0.5);
+    vec3 later = primeSegmentTransmittance(extinction, distance + 1.0);
+    vec3 identity = primeSegmentTransmittance(extinction, 0.0);
+    primeTransportClassify(result.mask, full);
+    primeTransportClassify(result.mask, halfDistance);
+    if (any(lessThan(full, vec3(0.0))) || any(greaterThan(full, vec3(1.0)))) {
+        result.mask |= PRIME_TEST_FAILURE_RANGE;
+    }
+    if (any(greaterThan(later, full))
+            || !primeTestClose(identity, vec3(1.0), 0.0, 0.0)
+            || !primeTestClose(full, halfDistance * halfDistance, 2.0e-6, 2.0e-5)) {
+        result.mask |= PRIME_TEST_FAILURE_IDENTITY;
+    }
+    result.first = vec4(full, distance);
+    result.second = vec4(halfDistance, 0.0);
+    result.third = vec4(later, 0.0);
+}
+
+void primeCheckRoulette(
+        inout PrimeTransportResult result, vec3 throughput, float sampleValue) {
+    float survival = primeRussianRouletteSurvival(throughput);
+    vec3 reweighted = primeRussianRouletteReweight(throughput, survival);
+    primeTransportClassify(result.mask, survival);
+    primeTransportClassify(result.mask, reweighted);
+    if (survival < 0.05 || survival > 0.95
+            || any(lessThan(reweighted, vec3(0.0)))) {
+        result.mask |= PRIME_TEST_FAILURE_RANGE;
+    }
+    if (!primeTestClose(
+            throughput, reweighted * survival, 1.0e-7, 2.0e-6)) {
+        result.mask |= PRIME_TEST_FAILURE_IDENTITY;
+    }
+    bool survives = sampleValue < survival;
+    if (survives != (sampleValue < primeRussianRouletteSurvival(throughput))) {
+        result.mask |= PRIME_TEST_FAILURE_EVENT;
+    }
+    result.first = vec4(reweighted, survival);
+    result.second = vec4(throughput, sampleValue);
+}
+
+void primeCheckAreaPdf(
+        inout PrimeTransportResult result,
+        float areaPdf,
+        float distanceSquared,
+        float cosine) {
+    float value = primeAreaSolidAnglePdfValue(areaPdf, distanceSquared, cosine);
+    float rescaled = primeAreaSolidAnglePdfValue(
+            areaPdf * 0.5, distanceSquared * 2.0, cosine);
+    primeTransportClassify(result.mask, value);
+    if (value < 0.0) result.mask |= PRIME_TEST_FAILURE_RANGE;
+    if (!primeTestClose(value, rescaled, 0.0, 2.0e-6)) {
+        result.mask |= PRIME_TEST_FAILURE_IDENTITY;
+    }
+    result.first = vec4(value, rescaled, areaPdf, cosine);
+}
+
+void main() {
+    uint caseIndex;
+    if (!primeTestBegin(caseIndex)) return;
+    uint inputOffset = primeTestInputOffset(caseIndex, PRIME_TRANSPORT_INPUT_WORDS);
+    uvec4 control = primeTestInput.words[inputOffset];
+    vec4 first = uintBitsToFloat(primeTestInput.words[inputOffset + 1u]);
+    vec4 second = uintBitsToFloat(primeTestInput.words[inputOffset + 2u]);
+
+    PrimeTransportResult result;
+    result.mask = 0u;
+    result.first = vec4(0.0);
+    result.second = vec4(0.0);
+    result.third = vec4(0.0);
+    uint kind = control.x;
+    if (kind == 0u) {
+        primeCheckProduct(result, first.xyz, second.xyz, first.w);
+    } else if (kind == 1u) {
+        primeCheckMis(result, first.x, first.y, first.z);
+    } else if (kind == 2u) {
+        primeCheckTransmittance(result, first.xyz, first.w);
+    } else if (kind == 3u) {
+        primeCheckRoulette(result, first.xyz, first.w);
+    } else if (kind == 4u) {
+        primeCheckAreaPdf(result, first.x, first.y, first.z);
+    } else {
+        result.mask |= PRIME_TEST_FAILURE_EVENT;
+    }
+
+    uint outputWords = primeTestOutputWords();
+    uint outputOffset = primeTestOutputOffset(caseIndex, outputWords);
+    primeTestOutput.words[outputOffset] = uvec4(result.mask, kind, caseIndex, 0u);
+    if (outputWords >= PRIME_TRANSPORT_WITNESS_WORDS) {
+        primeTestOutput.words[outputOffset + 1u] = control;
+        primeTestOutput.words[outputOffset + 2u] = floatBitsToUint(first);
+        primeTestOutput.words[outputOffset + 3u] = floatBitsToUint(second);
+        primeTestOutput.words[outputOffset + 4u] = floatBitsToUint(result.first);
+        primeTestOutput.words[outputOffset + 5u] = floatBitsToUint(result.second);
+        primeTestOutput.words[outputOffset + 6u] = floatBitsToUint(result.third);
+    }
+}

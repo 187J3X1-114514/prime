@@ -68,7 +68,7 @@ void main() {
             wi, randomValue, subsurfaceState, stack);
 
     PrimeRcState transmissionState = primeRcTransmissionStateInit(
-            material, 1.0, 0.25, vec3(460.0, 550.0, 610.0),
+            material, wi, 1.0, 0.25, vec3(460.0, 550.0, 610.0),
             1u, PRIME_RC_DETAIL_DEFAULT, 0u);
     PrimeRcEval transmissionEvaluation = primeRcTransmissionEvaluate(
             wi, wo, transmissionState);

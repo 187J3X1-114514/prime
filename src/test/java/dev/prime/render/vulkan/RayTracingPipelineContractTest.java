@@ -25,8 +25,10 @@ final class RayTracingPipelineContractTest {
 
     @Test
     void runtimeTransmissionLookupHasTheExpectedShape() {
-        assertEquals(32, BsdfLookupTable.RESOLUTION);
-        assertEquals(32 * 32 * 32 * 4 * Float.BYTES, BsdfLookupTable.BYTE_SIZE);
+        assertEquals(44, BsdfLookupTable.WIDTH);
+        assertEquals(32, BsdfLookupTable.HEIGHT);
+        assertEquals(159, BsdfLookupTable.DEPTH);
+        assertEquals(44 * 32 * 159 * 4 * Short.BYTES, BsdfLookupTable.BYTE_SIZE);
     }
 
     @Test

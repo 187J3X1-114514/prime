@@ -629,6 +629,7 @@ float primeRcInverseOutsideIor(float wiZ, PrimeRcVolumeStack volumeStack) {
 
 PrimeRcState primeRcBaseState(
         PrimeRcMaterial inputMaterial,
+        vec3 wi,
         float inverseOutsideIor,
         float rayT,
         vec3 wavelengthsNm,
@@ -709,6 +710,8 @@ PrimeRcState primeRcBaseState(
     }
     state.specularMicrofacet.alpha = primeRcSpecularNdfRoughnesses(
             specularRoughness, material.specular.roughnessAnisotropy);
+    state.specularMultipleScattering = primeRcMicrofacetDielectricMsCompensation(
+            state.specularMicrofacet, wi.z, state.specularFresnel.energyIor);
 
     if (fullOpenPbr) {
         vec3 coatNormal = primeRcOnbToLocal(
@@ -727,11 +730,13 @@ PrimeRcState primeRcBaseState(
     state.transmissionMicrofacet.alpha = vec2(0.0);
     state.transmissionTint = vec3(1.0);
     state.transmissionVolume = primeRcVolumeFromTransmission(material.transmission);
+    state.transmissionMultipleScattering = vec3(1.0, 1.0, 0.0);
     state.coatMicrofacet.alpha = vec2(0.0);
     state.coatFresnelIor = 1.0;
     state.coatTint = vec3(1.0);
     state.coatDarkening = 0.0;
     state.coatBaseRoughness = material.specular.roughness;
+    state.coatMultipleScattering = vec3(1.0, 1.0, 0.0);
     state.diffractionState.directionalAlbedo = 0.0;
     state.diffractionState.h = vec3(0.0, 0.0, 1.0);
     state.diffractionState.angleCs = vec2(1.0, 0.0);
@@ -757,7 +762,7 @@ PrimeRcState primeRcInitializeConductor(vec3 wi, PrimeRcState state) {
     return state;
 }
 
-PrimeRcState primeRcInitializeTransmission(PrimeRcState state) {
+PrimeRcState primeRcInitializeTransmission(vec3 wi, PrimeRcState state) {
     state.transmissionTint = state.material.transmission.depth == 0.0
             ? state.material.transmission.color : vec3(1.0);
     state.transmissionVolume = primeRcVolumeFromTransmission(state.material.transmission);
@@ -774,11 +779,14 @@ PrimeRcState primeRcInitializeTransmission(PrimeRcState state) {
                 state.specularMicrofacet.alpha
                 * primeRcThinDielectricRoughnessScaler2(state.specularFresnel.ior),
                 vec2(0.0), vec2(1.0));
+    } else {
+        state.transmissionMultipleScattering = primeRcMicrofacetDielectricMsCompensation(
+                state.specularMicrofacet, wi.z, state.specularFresnel.ior);
     }
     return state;
 }
 
-PrimeRcState primeRcInitializeCoat(PrimeRcState state) {
+PrimeRcState primeRcInitializeCoat(vec3 wi, PrimeRcState state) {
     state.coatMicrofacet.alpha = primeRcSpecularNdfRoughnesses(
             state.material.coat.roughness,
             state.material.coat.roughnessAnisotropy);
@@ -790,6 +798,9 @@ PrimeRcState primeRcInitializeCoat(PrimeRcState state) {
             1.0, baseRoughness, primeRcIorToF0(state.specularFresnel.energyIor));
     state.coatBaseRoughness = mix(
             dielectricRoughness, baseRoughness, state.material.weight.metalness);
+    vec3 coatWi = primeRcOnbToLocal(state.coatLocalOnb, wi);
+    state.coatMultipleScattering = primeRcMicrofacetDielectricMsCompensation(
+            state.coatMicrofacet, coatWi.z, state.coatFresnelIor);
     return state;
 }
 
@@ -826,6 +837,7 @@ PrimeRcState primeRcOpenPbrStateInit(
         uint spectrumed) {
     PrimeRcState state = primeRcBaseState(
             material,
+            wi,
             inverseOutsideIor,
             rayT,
             wavelengthsNm,
@@ -858,7 +870,7 @@ PrimeRcState primeRcOpenPbrStateInit(
     }
 
     if (state.material.weight.transmission > 0.0) {
-        state = primeRcInitializeTransmission(state);
+        state = primeRcInitializeTransmission(wi, state);
     }
     vec3 glossyEnergy = state.material.weight.transmission < 1.0
             ? primeRcGlossyDiffuseEnergy(wi, state) : vec3(0.0);
@@ -897,7 +909,7 @@ PrimeRcState primeRcOpenPbrStateInit(
 
     vec3 diffractionEnergy = primeRcDiffractionBaseEnergy(wi, state);
     if (state.material.weight.coat > 0.0) {
-        state = primeRcInitializeCoat(state);
+        state = primeRcInitializeCoat(wi, state);
         vec3 coatTrans = primeRcCoatTrans(wi, state, diffractionEnergy);
         state.coatedBase = primeRcMakeLayerState(
                 state.material.weight.coat,
@@ -1090,7 +1102,7 @@ PrimeRcState primeRcBasicMetallicStateInit(
         uint detail,
         uint spectrumed) {
     PrimeRcState state = primeRcBaseState(
-            material, inverseOutsideIor, rayT, wavelengthsNm,
+            material, wi, inverseOutsideIor, rayT, wavelengthsNm,
             heroWavelengthIndex, detail, spectrumed, false);
     if (state.material.weight.metalness < 1.0) {
         vec3 subEnergy = primeRcLambertEnergy(wi, state);
@@ -1212,7 +1224,7 @@ PrimeRcState primeRcSubsurfaceGlossyStateInit(
         uint detail,
         uint spectrumed) {
     PrimeRcState state = primeRcBaseState(
-            material, inverseOutsideIor, rayT, wavelengthsNm,
+            material, wi, inverseOutsideIor, rayT, wavelengthsNm,
             heroWavelengthIndex, detail, spectrumed, false);
     vec3 subEnergy = primeRcSubsurfaceEnergy(wi, state);
     state.subsurfaceGlossy = state.material.weight.specular > 0.0
@@ -1235,6 +1247,7 @@ PrimeRcEval primeRcTransmissionEvaluate(vec3 wi, vec3 wo, PrimeRcState state) {
 
 PrimeRcState primeRcTransmissionStateInit(
         PrimeRcMaterial material,
+        vec3 wi,
         float inverseOutsideIor,
         float rayT,
         vec3 wavelengthsNm,
@@ -1242,9 +1255,9 @@ PrimeRcState primeRcTransmissionStateInit(
         uint detail,
         uint spectrumed) {
     PrimeRcState state = primeRcBaseState(
-            material, inverseOutsideIor, rayT, wavelengthsNm,
+            material, wi, inverseOutsideIor, rayT, wavelengthsNm,
             heroWavelengthIndex, detail, spectrumed, false);
-    return primeRcInitializeTransmission(state);
+    return primeRcInitializeTransmission(wi, state);
 }
 
 #endif

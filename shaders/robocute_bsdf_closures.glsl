@@ -231,8 +231,7 @@ PrimeRcThroughput primeRcSpecularEval(vec3 wi, vec3 wo, PrimeRcState state) {
             base.microCosine) * base.factor;
     result.flags = base.flags;
     if (primeRcIsNonDelta(result.flags)) {
-        result.value /= primeRcReduceSum(primeRcMicrofacetDirectionalAlbedoTransmission(
-                state.specularMicrofacet, wi.z, state.specularFresnel.energyIor));
+        result.value *= state.specularMultipleScattering.x;
     }
     return result;
 }
@@ -250,10 +249,7 @@ PrimeRcSampleResult primeRcSpecularSample(
             state.spectrumed,
             base.microCosine);
     if (primeRcIsNonDelta(result.bsdfSample.throughput.flags)) {
-        result.bsdfSample.throughput.value /= primeRcReduceSum(
-                primeRcMicrofacetDirectionalAlbedoTransmission(
-                        state.specularMicrofacet, wi.z,
-                        state.specularFresnel.energyIor));
+        result.bsdfSample.throughput.value *= state.specularMultipleScattering.x;
     }
     return result;
 }
@@ -268,9 +264,7 @@ vec3 primeRcSpecularTintOut(vec3 wo, PrimeRcState state) { return vec3(1.0); }
 
 vec3 primeRcSpecularTrans(vec3 wi, PrimeRcState state, vec3 baseEnergy) {
     if (wi.z < 0.0) { return vec3(1.0); }
-    vec2 energy = primeRcMicrofacetDirectionalAlbedoTransmission(
-            state.specularMicrofacet, wi.z, state.specularFresnel.energyIor);
-    return vec3(energy.y / primeRcReduceSum(energy));
+    return vec3(1.0 - state.specularMultipleScattering.z);
 }
 
 vec3 primeRcSpecularEnergy(vec3 wi, PrimeRcState state) {
@@ -282,9 +276,7 @@ vec3 primeRcSpecularEnergy(vec3 wi, PrimeRcState state) {
         return vec3(0.0);
     }
     if (!primeRcIsReflective(state.samplingFlags)) { return vec3(0.0); }
-    vec2 energy = primeRcMicrofacetDirectionalAlbedoTransmission(
-            state.specularMicrofacet, wi.z, state.specularFresnel.energyIor);
-    return state.specularFresnel.color * (energy.x / primeRcReduceSum(energy));
+    return state.specularMultipleScattering.z * state.specularFresnel.color;
 }
 
 PrimeRcThroughput primeRcConductorEval(vec3 wi, vec3 wo, PrimeRcState state) {
@@ -361,8 +353,7 @@ PrimeRcThroughput primeRcCoatEval(vec3 wi, vec3 wo, PrimeRcState state) {
             state.coatFresnelIor, base.microCosine) * base.factor);
     result.flags = base.flags;
     if (primeRcIsNonDelta(result.flags)) {
-        result.value /= primeRcReduceSum(primeRcMicrofacetDirectionalAlbedoTransmission(
-                state.coatMicrofacet, wi.z, state.coatFresnelIor));
+        result.value *= state.coatMultipleScattering.x;
     }
     return result;
 }
@@ -378,9 +369,7 @@ PrimeRcSampleResult primeRcCoatSample(
     result.bsdfSample.throughput.value *= primeRcDielectricUnpolarized(
             state.coatFresnelIor, base.microCosine);
     if (primeRcIsNonDelta(result.bsdfSample.throughput.flags)) {
-        result.bsdfSample.throughput.value /= primeRcReduceSum(
-                primeRcMicrofacetDirectionalAlbedoTransmission(
-                        state.coatMicrofacet, localWi.z, state.coatFresnelIor));
+        result.bsdfSample.throughput.value *= state.coatMultipleScattering.x;
     }
     if (result.bsdfSample.throughput.flags != PRIME_RC_FLAG_NONE) {
         result.bsdfSample.wo = primeRcOnbToWorld(state.coatLocalOnb, result.bsdfSample.wo);
@@ -417,9 +406,7 @@ vec3 primeRcCoatTrans(vec3 wi, PrimeRcState state, vec3 baseEnergy) {
             baseEnergy.y == 1.0 ? 1.0 : (1.0 - k) / (1.0 - baseEnergy.y * k),
             baseEnergy.z == 1.0 ? 1.0 : (1.0 - k) / (1.0 - baseEnergy.z * k));
     vec3 tintIn = mix(vec3(1.0), darkeningTerm, vec3(state.coatDarkening)) * viewTint;
-    vec2 energy = primeRcMicrofacetDirectionalAlbedoTransmission(
-            state.coatMicrofacet, wi.z, state.coatFresnelIor);
-    return (energy.y / primeRcReduceSum(energy)) * tintIn;
+    return (1.0 - state.coatMultipleScattering.z) * tintIn;
 }
 
 vec3 primeRcCoatEnergy(vec3 wi, PrimeRcState state) {
@@ -432,9 +419,7 @@ vec3 primeRcCoatEnergy(vec3 wi, PrimeRcState state) {
     } else if ((state.samplingFlags & PRIME_RC_FLAG_SPECULAR_REFLECTION) == 0u) {
         return vec3(0.0);
     }
-    vec2 energy = primeRcMicrofacetDirectionalAlbedoTransmission(
-            state.coatMicrofacet, wi.z, state.coatFresnelIor);
-    return vec3(energy.x / primeRcReduceSum(energy));
+    return vec3(state.coatMultipleScattering.z);
 }
 
 float primeRcFuzzDirectionalAlbedo(float x, float y) {
@@ -636,25 +621,10 @@ vec3 primeRcSubsurfaceEnergy(vec3 wi, PrimeRcState state) {
     return vec3(0.0);
 }
 
-float primeRcGuardedPositiveReciprocal(float denominator) {
-    if (!(denominator > 0.0) || isnan(denominator) || isinf(denominator)) {
-        return 0.0;
-    }
-    float reciprocal = 1.0 / denominator;
-    return isnan(reciprocal) || isinf(reciprocal) ? 0.0 : reciprocal;
-}
-
 vec3 primeRcGuardedThinWallSeriesReciprocal(vec3 roundTrip) {
-    // Preserve RoboCute's exact operation order: rcp(1 - sqr(F * A)). Only guard the reciprocal
-    // at its removable R=A=1 singularity, where the products below have the exact finite limits
-    // reflected=1 and transmitted=0; the unguarded form instead evaluates 0 * Inf -> NaN. This
-    // must not be replaced by an algebraic refactor because
-    // the imported BSDF's f32 calculation sequence is part of Prime's reference contract.
-    vec3 denominator = vec3(1.0) - primeRcSquare(roundTrip);
-    return vec3(
-            primeRcGuardedPositiveReciprocal(denominator.x),
-            primeRcGuardedPositiveReciprocal(denominator.y),
-            primeRcGuardedPositiveReciprocal(denominator.z));
+    return vec3(1.0) / max(
+            vec3(PRIME_RC_DENOM_TOLERANCE),
+            vec3(1.0) - primeRcSquare(roundTrip));
 }
 
 PrimeRcVecPair primeRcTransmissionThinWallRt(float cosineTheta, PrimeRcState state) {
@@ -740,10 +710,9 @@ PrimeRcThroughput primeRcTransmissionEval(vec3 wi, vec3 inputWo, PrimeRcState st
                     * exp(-state.transmissionVolume.extinction * state.rayT);
         }
         if (primeRcIsNonDelta(result.flags)) {
-            result.value /= primeRcReduceSum(
-                    primeRcMicrofacetDirectionalAlbedoTransmission(
-                            state.specularMicrofacet, wi.z,
-                            state.specularFresnel.ior));
+            result.value *= primeRcIsTransmissive(result.flags)
+                    ? state.transmissionMultipleScattering.y
+                    : state.transmissionMultipleScattering.x;
         }
     }
     return result;
@@ -810,10 +779,10 @@ PrimeRcSampleResult primeRcTransmissionSample(
         primeRcStackPush(result.volumeStack, volume);
     }
     if (primeRcIsNonDelta(result.bsdfSample.throughput.flags)) {
-        result.bsdfSample.throughput.value /= primeRcReduceSum(
-                primeRcMicrofacetDirectionalAlbedoTransmission(
-                        state.specularMicrofacet, wi.z,
-                        state.specularFresnel.ior));
+        result.bsdfSample.throughput.value *=
+                primeRcIsTransmissive(result.bsdfSample.throughput.flags)
+                ? state.transmissionMultipleScattering.y
+                : state.transmissionMultipleScattering.x;
     }
     return result;
 }
@@ -850,9 +819,7 @@ vec3 primeRcTransmissionTintOut(vec3 wo, PrimeRcState state) {
 
 vec3 primeRcTransmissionTrans(vec3 wi, PrimeRcState state, vec3 baseEnergy) {
     if (state.geometryThinWalled != 0u) { return vec3(0.0); }
-    vec2 energy = primeRcMicrofacetDirectionalAlbedoTransmission(
-            state.specularMicrofacet, wi.z, state.specularFresnel.ior);
-    return vec3(energy.y / primeRcReduceSum(energy));
+    return vec3(1.0 - state.transmissionMultipleScattering.z);
 }
 
 vec3 primeRcTransmissionEnergy(vec3 wi, PrimeRcState state) {
@@ -862,12 +829,15 @@ vec3 primeRcTransmissionEnergy(vec3 wi, PrimeRcState state) {
     } else if (!primeRcIsDelta(state.samplingFlags)) {
         return vec3(0.0);
     }
-    if (state.geometryThinWalled != 0u) { wi.z = abs(wi.z); }
-    vec2 energy = primeRcMicrofacetDirectionalAlbedoTransmission(
-            state.specularMicrofacet, wi.z, state.specularFresnel.ior);
-    float reflected = energy.x / primeRcReduceSum(energy);
-    if (!primeRcIsReflective(state.samplingFlags)) { reflected = 0.0; }
-    float transmitted = primeRcIsTransmissive(state.samplingFlags) ? 1.0 - reflected : 0.0;
+    float helperR;
+    if (state.geometryThinWalled != 0u) {
+        helperR = primeRcMicrofacetDielectricMsCompensation(
+                state.specularMicrofacet, abs(wi.z), state.specularFresnel.ior).z;
+    } else {
+        helperR = state.transmissionMultipleScattering.z;
+    }
+    float reflected = primeRcIsReflective(state.samplingFlags) ? helperR : 0.0;
+    float transmitted = primeRcIsTransmissive(state.samplingFlags) ? 1.0 - helperR : 0.0;
     return reflected * state.specularFresnel.color
             + transmitted * state.transmissionTint;
 }

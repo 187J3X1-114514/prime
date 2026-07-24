@@ -223,6 +223,19 @@ public final class VulkanDeviceNegotiator {
                         deviceName,
                         "RGBA32F storage images required for path accumulation are not supported");
             }
+            VkFormatProperties bsdfLookupFormat = VkFormatProperties.calloc(stack);
+            VK12.vkGetPhysicalDeviceFormatProperties(
+                    physicalDevice.vkPhysicalDevice(),
+                    VK12.VK_FORMAT_R16G16B16A16_SFLOAT,
+                    bsdfLookupFormat);
+            int requiredBsdfLookupFeatures = VK12.VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT
+                    | VK12.VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT;
+            if ((bsdfLookupFormat.optimalTilingFeatures() & requiredBsdfLookupFeatures)
+                    != requiredBsdfLookupFeatures) {
+                return VulkanCapabilities.unavailable(
+                        deviceName,
+                        "RGBA16F linearly filtered images required for the BSDF lookup are not supported");
+            }
             VkFormatProperties nrdNormalFormat = VkFormatProperties.calloc(stack);
             VK12.vkGetPhysicalDeviceFormatProperties(
                     physicalDevice.vkPhysicalDevice(),

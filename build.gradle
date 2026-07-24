@@ -66,14 +66,40 @@ def verifyRoboCutePort = tasks.register('verifyRoboCutePort') {
 	def protectedFiles = fileTree('shaders') {
 		include 'robocute_bsdf_*.glsl'
 	}
+	def authorityOverlayDirectory =
+			file('third_party/robocute/author-bsdf-hotfix-2026-07-24')
 	inputs.file(lockFile)
 	inputs.files(protectedFiles)
+	inputs.dir(authorityOverlayDirectory)
 
 	doLast {
 		def lock = new groovy.json.JsonSlurper().parse(lockFile)
 		if (lock.repository != 'https://github.com/RoboCute/RoboCute'
 				|| lock.commit != '5985e989254b4685e3885d876b33f4874d233dcd') {
 			throw new GradleException('RoboCute lock must name the approved repository and commit')
+		}
+		def overlay = lock.authorityOverlay
+		if (overlay == null
+				|| overlay.path != 'third_party/robocute/author-bsdf-hotfix-2026-07-24') {
+			throw new GradleException('RoboCute lock must name the approved author hotfix overlay')
+		}
+		def expectedOverlay = new TreeSet<String>(overlay.files.keySet())
+		def actualOverlay = new TreeSet<String>(fileTree(authorityOverlayDirectory) {
+			include '*.hpp', '*.bytes'
+		}.files.collect { it.name })
+		if (actualOverlay != expectedOverlay) {
+			throw new GradleException(
+					"RoboCute author hotfix file set changed: expected ${expectedOverlay}, found ${actualOverlay}")
+		}
+		fileTree(authorityOverlayDirectory) {
+			include '*.hpp', '*.bytes'
+		}.files.each { source ->
+			def digest = java.security.MessageDigest.getInstance('SHA-256')
+					.digest(source.bytes).encodeHex().toString()
+			if (digest != overlay.files[source.name]) {
+				throw new GradleException(
+						"RoboCute author hotfix changed: ${source.name}")
+			}
 		}
 		def expected = new TreeSet<String>(lock.files.keySet())
 		def actual = new TreeSet<String>(protectedFiles.files.collect { it.name })

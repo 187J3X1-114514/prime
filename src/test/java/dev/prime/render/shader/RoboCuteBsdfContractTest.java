@@ -1,5 +1,6 @@
 package dev.prime.render.shader;
 
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -18,13 +19,15 @@ import java.util.zip.GZIPInputStream;
 import org.junit.jupiter.api.Test;
 
 final class RoboCuteBsdfContractTest {
-    private static final int GGX_LUT_RESOLUTION = 32;
+    private static final int GGX_LUT_WIDTH = 44;
+    private static final int GGX_LUT_HEIGHT = 32;
+    private static final int GGX_LUT_DEPTH = 159;
     private static final int GGX_LUT_CHANNELS = 4;
     private static final String GGX_LUT_SHA256 =
-            "2d655ae640d7f57da3ad0609d92fde55df1d9de18e9fbc19fa9aa2adbb0d8df4";
+            "605c9160fb9348a1d033321c40cf9930226ce74c03f2624033f5b73aacfa67df";
 
     @Test
-    void transmissionGgxEnergyTableIsExactAndFinite()
+    void transmissionGgxEnergyTableMatchesAuthoritativeHalfDataAndIsFinite()
             throws IOException, NoSuchAlgorithmException {
         Path encodedPath = Path.of(
                 System.getProperty("user.dir"),
@@ -37,9 +40,14 @@ final class RoboCuteBsdfContractTest {
             input.transferTo(output);
             decoded = output.toByteArray();
         }
+        byte[] authoritative = Files.readAllBytes(Path.of(
+                System.getProperty("user.dir"),
+                "third_party", "robocute", "author-bsdf-hotfix-2026-07-24",
+                "trans_ggx.bytes"));
+        assertArrayEquals(authoritative, decoded);
         assertEquals(
-                GGX_LUT_RESOLUTION * GGX_LUT_RESOLUTION * GGX_LUT_RESOLUTION
-                        * GGX_LUT_CHANNELS * Float.BYTES,
+                GGX_LUT_WIDTH * GGX_LUT_HEIGHT * GGX_LUT_DEPTH
+                        * GGX_LUT_CHANNELS * Short.BYTES,
                 decoded.length);
         assertEquals(
                 GGX_LUT_SHA256,
@@ -47,9 +55,8 @@ final class RoboCuteBsdfContractTest {
 
         ByteBuffer values = ByteBuffer.wrap(decoded).order(ByteOrder.LITTLE_ENDIAN);
         while (values.hasRemaining()) {
-            float value = values.getFloat();
+            float value = Float.float16ToFloat(values.getShort());
             assertTrue(Float.isFinite(value));
-            assertTrue(value >= 0.0F && value <= 1.0F);
         }
     }
 

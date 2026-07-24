@@ -353,6 +353,7 @@ PrimeRcState primeMinecraftTransmissionState(
     float inverseOutsideIor = primeRcInverseOutsideIor(localView.z, volumeStack);
     return primeRcTransmissionStateInit(
             material,
+            localView,
             inverseOutsideIor,
             rayT,
             PRIME_REC2020_PRIMARY_WAVELENGTHS_NM,
@@ -366,21 +367,11 @@ struct PrimeMinecraftMirrorSplit {
     float probability;
 };
 
-PrimeMinecraftMirrorSplit primeMinecraftMirrorSplit(
-        vec3 localView,
-        PrimeRcState state) {
+PrimeMinecraftMirrorSplit primeMinecraftMirrorSplit(PrimeRcState state) {
     PrimeMinecraftMirrorSplit result;
-    vec2 directionalEnergy = primeRcMicrofacetDirectionalAlbedoTransmission(
-            state.specularMicrofacet,
-            localView.z,
-            state.specularFresnel.ior);
-    float resolvedEnergy = primeRcReduceSum(directionalEnergy);
-    float reflectedFraction = resolvedEnergy > 0.0
-            ? directionalEnergy.x / resolvedEnergy
-            : 0.0;
     // The default Minecraft adapter keeps dielectric reflection achromatic. Retaining the color
     // term here makes the split remain correct if a future material decoder tints the interface.
-    result.reflectance = reflectedFraction * state.specularFresnel.color;
+    result.reflectance = state.transmissionMultipleScattering.z * state.specularFresnel.color;
     result.probability = primeRcSpectrumToWeight(result.reflectance);
     primeRecordUnit(result.reflectance);
     primeRecordUnit(result.probability);
@@ -422,7 +413,7 @@ BsdfEvaluation primeEvaluateMinecraftTransmissionImpl(
     mirror.reflectance = vec3(0.0);
     mirror.probability = 0.0;
     if (state.geometryThinWalled == 0u && !conditionalBranch) {
-        mirror = primeMinecraftMirrorSplit(localView, state);
+        mirror = primeMinecraftMirrorSplit(state);
     }
     if (state.geometryThinWalled == 0u || conditionalBranch) {
         state.samplingFlags = closedReflection
@@ -477,7 +468,7 @@ PrimeTransmissiveBsdfSample primeSampleMinecraftTransmission(
             rayT,
             volumeStack);
     vec3 localView = primeRcOnbToLocal(state.material.geometry.onb, viewDirection);
-    PrimeMinecraftMirrorSplit mirror = primeMinecraftMirrorSplit(localView, state);
+    PrimeMinecraftMirrorSplit mirror = primeMinecraftMirrorSplit(state);
     if (state.geometryThinWalled == 0u) {
         bool reflectionBranch = sampleValue.z < mirror.probability;
         float branchStart = reflectionBranch ? 0.0 : mirror.probability;
@@ -928,7 +919,7 @@ PrimeTransmissivePrimarySample primeSampleMinecraftTransmissionPrimary(
     // One directional-energy lookup supplies both the reflection demodulation factor and the
     // smooth-mirror sample. The conditional transmission factor is exactly the closure tint;
     // Fresnel remains in illumination and is restored without losing energy after denoising.
-    PrimeMinecraftMirrorSplit mirror = primeMinecraftMirrorSplit(localView, state);
+    PrimeMinecraftMirrorSplit mirror = primeMinecraftMirrorSplit(state);
 
     PrimeTransmissivePrimarySample result;
     result.albedos.diffuse = primeSanitizeDenoiseAlbedo(state.transmissionTint);

@@ -7,9 +7,10 @@ import org.junit.jupiter.api.Test;
 
 final class NrdNumericalStabilityTest {
     private static final double FP16_MAX = 65_504.0;
+    private static final double DENOMINATOR_TOLERANCE = 1.0e-10;
 
     @Test
-    void thinWallSeriesUsesTheExactFiniteLimitAtLosslessGrazingIncidence() {
+    void thinWallSeriesUsesTheAuthoritativeFiniteClampAtLosslessGrazingIncidence() {
         double oldTransmission = oldThinWallTransmission(1.0, 1.0);
         assertTrue(Double.isNaN(oldTransmission), "the former 0 / 0 regression must stay observable");
 
@@ -18,6 +19,13 @@ final class NrdNumericalStabilityTest {
         assertEquals(0.0, grazing.transmission, 0.0);
         assertTrue(Double.isFinite(grazing.reflection));
         assertTrue(Double.isFinite(grazing.transmission));
+
+        double nearUnity = 1.0 - 1.0e-12;
+        Energy clamped = stableThinWallEnergy(nearUnity, 1.0);
+        assertEquals(
+                (1.0 - nearUnity) * (1.0 - nearUnity) / DENOMINATOR_TOLERANCE,
+                clamped.transmission,
+                0.0);
 
         double[] reflections = {0.0, 0.04, 0.5, 0.9, 0.999_999};
         double[] absorptions = {0.1, 0.75, 0.999, 1.0};
@@ -110,12 +118,7 @@ final class NrdNumericalStabilityTest {
         double transmission = 1.0 - reflection;
         double roundTrip = reflection * absorption;
         double denominator = 1.0 - roundTrip * roundTrip;
-        double inverseSeries = denominator > 0.0 && Double.isFinite(denominator)
-                ? 1.0 / denominator
-                : 0.0;
-        if (!Double.isFinite(inverseSeries)) {
-            inverseSeries = 0.0;
-        }
+        double inverseSeries = 1.0 / Math.max(DENOMINATOR_TOLERANCE, denominator);
         return new Energy(
                 reflection * (1.0 + transmission * transmission
                         * absorption * absorption * inverseSeries),

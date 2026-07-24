@@ -5,11 +5,16 @@ RoboCute project:
 
 https://github.com/RoboCute/RoboCute
 
-BSDF source revision: 5985e989254b4685e3885d876b33f4874d233dcd
+BSDF base source revision: 5985e989254b4685e3885d876b33f4874d233dcd
 
-The required 32x32x32 RGBA32F transmission-GGX directional-energy table is
+Prime additionally applies the authoritative temporary dielectric-highlight
+fix supplied directly by the RoboCute author on 2026-07-24. The exact source
+overlay is retained under
+`third_party/robocute/author-bsdf-hotfix-2026-07-24`.
+
+The replacement 44x32x159 RGBA16F transmission-GGX compensation table is
 stored in `prime/bsdf/trans_ggx.bytes.gz.b64`; its decoded SHA-256 is
-2d655ae640d7f57da3ad0609d92fde55df1d9de18e9fbc19fa9aa2adbb0d8df4.
+605c9160fb9348a1d033321c40cf9930226ce74c03f2624033f5b73aacfa67df.
 
 Copyright RoboCute contributors. Licensed under the Apache License, Version
 2.0. A copy of that license is included in APACHE-2.0.txt.

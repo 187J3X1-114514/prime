@@ -1,15 +1,27 @@
 {
   "repository": "https://github.com/RoboCute/RoboCute",
   "commit": "5985e989254b4685e3885d876b33f4874d233dcd",
+  "authorityOverlay": {
+    "description": "Temporary dielectric-highlight fix supplied directly by the RoboCute author on 2026-07-24.",
+    "path": "third_party/robocute/author-bsdf-hotfix-2026-07-24",
+    "files": {
+      "coat.hpp": "e5d7b25389111ef94bd9c5f5f0465938b41f6142dfb9dcc3d8441ed03e048df7",
+      "microfacet.hpp": "9d74a1f3e85f9a09fb8adfb604ecee0abe910ad1ae6a8afc53647ccc6c028c20",
+      "resource_layout.hpp": "6eac5cdde203394981529ff93b2d43ecee449deb0be48249eb497d89a1e0357d",
+      "specular.hpp": "867b4d51ef3db75d4808741c4e37c7977887fe3c29261f6a7ead024e8abc2f88",
+      "trans_ggx.bytes": "605c9160fb9348a1d033321c40cf9930226ce74c03f2624033f5b73aacfa67df",
+      "transmission.hpp": "7d81b6508cefac64715bf5bf9538db7e823068f6e889ea4712b4e0f3ecb8cefa"
+    }
+  },
   "approvedDifferences": [
     "Zero-probability sampling endpoints stay on a positive-probability branch so remapping never evaluates 0 / 0.",
-    "The thin-wall geometric-series reciprocal returns its exact finite grazing limit instead of allowing 0 * Inf to become NaN."
+    "The RoboCute author's 2026-07-24 dielectric-highlight hotfix replaces the directional-energy normalization with branch-separated multiple-scattering compensation and its 44x32x159 HALF4 table."
   ],
   "files": {
-    "robocute_bsdf_closures.glsl": "139d25e45ece5538547f17efb20b310ad2937790fe973bfce511bf1490090304",
-    "robocute_bsdf_common.glsl": "1b9ef5aeaff8455993390f5a24727e60ed415a0e0c699e428660ba81b982e492",
+    "robocute_bsdf_closures.glsl": "4c341cccbb537f39fcc50a7d10001dd2eb436179dcec3067123f89e4fc9387bb",
+    "robocute_bsdf_common.glsl": "f9b98f15d87f6514db59e43269d171a83bde7c9f35dac1547b627910c43043b5",
     "robocute_bsdf_fresnel.glsl": "b01ea6a84d1095e082da45f4e56f992fbd3c59ade21ce29655ff9d60c7aab9e7",
-    "robocute_bsdf_microfacet.glsl": "e8fcecc32c936f73e9003043fc87a5ecdbe9f021fa7a9e5a463d7dd6280d3462",
-    "robocute_bsdf_openpbr.glsl": "e56b6dab073d6bfa9c60cfb3c2b57788c640b6ddcbe42f06dc9aebd71ca4cbf4"
+    "robocute_bsdf_microfacet.glsl": "f0b3fa502248d634516e2a681ea1a529dd9a49798283b512cd4663e062262038",
+    "robocute_bsdf_openpbr.glsl": "3cac9081cfb97a8240e1e4a6ade3ad17d26ad726f784fe573f689cf5690f72a6"
   }
 }

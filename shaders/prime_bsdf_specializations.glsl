@@ -36,7 +36,7 @@ PrimeRcState primeRcPrimeThinWallStateInit(
         uint detail,
         uint spectrumed) {
     PrimeRcState state = primeRcBaseState(
-            material, inverseOutsideIor, rayT, wavelengthsNm,
+            material, wi, inverseOutsideIor, rayT, wavelengthsNm,
             heroWavelengthIndex, detail, spectrumed, false);
 
     vec3 diffuseEnergy = state.material.weight.subsurface < 1.0
@@ -57,7 +57,7 @@ PrimeRcState primeRcPrimeThinWallStateInit(
                     0.0, vec3(0.0), vec3(0.0), vec3(0.0));
 
     if (state.material.weight.transmission > 0.0) {
-        state = primeRcInitializeTransmission(state);
+        state = primeRcInitializeTransmission(wi, state);
     }
     state.dielectricBase = primeRcMakeMixState(
             state.material.weight.transmission,

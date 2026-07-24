@@ -20,8 +20,11 @@ import org.lwjgl.vulkan.VkSamplerCreateInfo;
 
 /** Owns the immutable lookup data required by the connected RoboCute BSDF closures. */
 final class BsdfLookupTable implements Destroyable {
-    static final int RESOLUTION = 32;
-    static final int BYTE_SIZE = RESOLUTION * RESOLUTION * RESOLUTION * 4 * Float.BYTES;
+    static final int WIDTH = 44;
+    static final int HEIGHT = 32;
+    static final int DEPTH = 159;
+    static final int CHANNELS = 4;
+    static final int BYTE_SIZE = WIDTH * HEIGHT * DEPTH * CHANNELS * Short.BYTES;
 
     private final VulkanContext context;
     private final VulkanImage transmissionGgxEnergy;
@@ -37,10 +40,10 @@ final class BsdfLookupTable implements Destroyable {
         long newSampler = 0L;
         try {
             newImage = context.createSampledImage3D(
-                    RESOLUTION,
-                    RESOLUTION,
-                    RESOLUTION,
-                    VK12.VK_FORMAT_R32G32B32A32_SFLOAT,
+                    WIDTH,
+                    HEIGHT,
+                    DEPTH,
+                    VK12.VK_FORMAT_R16G16B16A16_SFLOAT,
                     "Prime transmission GGX energy");
             newUpload = context.createBuffer(
                     BYTE_SIZE,
@@ -54,9 +57,9 @@ final class BsdfLookupTable implements Destroyable {
                         .magFilter(VK12.VK_FILTER_LINEAR)
                         .minFilter(VK12.VK_FILTER_LINEAR)
                         .mipmapMode(VK12.VK_SAMPLER_MIPMAP_MODE_NEAREST)
-                        .addressModeU(VK12.VK_SAMPLER_ADDRESS_MODE_MIRRORED_REPEAT)
-                        .addressModeV(VK12.VK_SAMPLER_ADDRESS_MODE_MIRRORED_REPEAT)
-                        .addressModeW(VK12.VK_SAMPLER_ADDRESS_MODE_MIRRORED_REPEAT)
+                        .addressModeU(VK12.VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE)
+                        .addressModeV(VK12.VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE)
+                        .addressModeW(VK12.VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE)
                         .minLod(0.0F)
                         .maxLod(0.0F)
                         .maxAnisotropy(1.0F);
@@ -122,7 +125,7 @@ final class BsdfLookupTable implements Destroyable {
                     .baseArrayLayer(0)
                     .layerCount(1);
             copy.get(0).imageOffset().set(0, 0, 0);
-            copy.get(0).imageExtent().set(RESOLUTION, RESOLUTION, RESOLUTION);
+            copy.get(0).imageExtent().set(WIDTH, HEIGHT, DEPTH);
             VK12.vkCmdCopyBufferToImage(
                     commandBuffer,
                     this.upload.handle(),

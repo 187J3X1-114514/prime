@@ -58,6 +58,7 @@ dependencies {
 def shaderAbiJavaRoot = layout.buildDirectory.dir('generated/sources/shaderAbi/java')
 def shaderAbiIncludeRoot = layout.buildDirectory.dir('generated/sources/shaderAbi/glsl')
 def compiledShaderRoot = layout.buildDirectory.dir('generated/resources/shaders')
+def compiledTestShaderRoot = layout.buildDirectory.dir('generated/testShaders')
 
 def verifyRoboCutePort = tasks.register('verifyRoboCutePort') {
 	group = 'verification'
@@ -774,6 +775,17 @@ def compileShaders = tasks.register('compileShaders', CompilePrimeShaders) {
 			.orElse(false)
 }
 
+def compileTestShaders = tasks.register('compileTestShaders', CompilePrimeShaders) {
+	dependsOn verifyRoboCutePort
+	sourceDirectory = file('src/test/shaders')
+	includeDirectory = file('shaders')
+	outputDirectory = compiledTestShaderRoot
+	glslangValidator = resolveVulkanTool('glslangValidator')
+	spirvValidator = resolveVulkanTool('spirv-val')
+	spirvOptimizer = resolveVulkanTool('spirv-opt')
+	debugInfo = false
+}
+
 sourceSets.client.java.srcDir(files(shaderAbiJavaRoot).builtBy(generateShaderAbi))
 sourceSets.client.resources.srcDir(files(compiledShaderRoot).builtBy(compileShaders))
 sourceSets.test.compileClasspath += sourceSets.client.output
@@ -796,12 +808,30 @@ tasks.withType(JavaCompile).configureEach {
 }
 
 tasks.withType(Test).configureEach {
+	dependsOn compileTestShaders
+	inputs.dir(compiledTestShaderRoot)
 	useJUnitPlatform()
 	// The NRD ABI tests intentionally load the bundled bridge through LWJGL. Declare native and
 	// LWJGL legacy-memory access explicitly on Java 25, and keep JOML on its supported safe path, so
 	// dependency warnings do not hide actionable test failures.
 	jvmArgs '--enable-native-access=ALL-UNNAMED', '--sun-misc-unsafe-memory-access=allow'
 	systemProperty 'joml.nounsafe', 'true'
+	doFirst {
+		systemProperty 'prime.test.shaderDirectory',
+				new File(compiledTestShaderRoot.get().asFile, 'prime/shaders').absolutePath
+	}
+}
+
+tasks.register('shaderTest', Test) {
+	group = 'verification'
+	description = 'Runs GPU shader property tests and requires a usable Vulkan compute device.'
+	testClassesDirs = sourceSets.test.output.classesDirs
+	classpath = sourceSets.test.runtimeClasspath
+	useJUnitPlatform {
+		includeTags 'gpu-shader'
+	}
+	systemProperty 'prime.shaderTests.required', 'true'
+	outputs.upToDateWhen { false }
 }
 
 java {

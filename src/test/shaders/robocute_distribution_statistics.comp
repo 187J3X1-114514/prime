@@ -1,0 +1,161 @@
+#version 460
+#extension GL_GOOGLE_include_directive : require
+
+#define PRIME_RC_TRANSMISSION_GGX_SET 0
+#define PRIME_RC_TRANSMISSION_GGX_BINDING 2
+#include "prime_test_abi.glsl"
+#include "prime_bsdf_specializations.glsl"
+
+const uint PRIME_STAT_SAMPLE = 0u;
+const uint PRIME_STAT_INTEGRATE = 1u;
+const uint PRIME_STAT_LAMBERT = 0u;
+const uint PRIME_STAT_CONDUCTOR = 1u;
+const uint PRIME_STAT_TRANSMISSION = 2u;
+const uint PRIME_STAT_GRID_Z = 256u;
+const uint PRIME_STAT_GRID_PHI = 512u;
+const uint PRIME_STAT_OUTPUT_WORDS = 3u;
+
+uint primeStatHash(uint value) {
+    value ^= value >> 16u;
+    value *= 0x7feb352du;
+    value ^= value >> 15u;
+    value *= 0x846ca68bu;
+    value ^= value >> 16u;
+    return value;
+}
+
+float primeStatUnit(uint value) {
+    return float(primeStatHash(value) >> 8u) * (1.0 / 16777216.0);
+}
+
+vec3 primeStatRandom(uint index, uint seed) {
+    return vec3(
+            primeStatUnit(index ^ seed),
+            primeStatUnit(index ^ seed ^ 0x9e3779b9u),
+            primeStatUnit(index ^ seed ^ 0x3c6ef372u));
+}
+
+PrimeRcVolumeStack primeStatEmptyStack() {
+    PrimeRcVolumeStack stack;
+    PrimeRcVolume volume;
+    volume.extinction = vec3(0.0);
+    volume.albedo = vec3(0.0);
+    volume.anisotropy = 0.0;
+    volume.ior = 1.0;
+    stack.values[0] = volume;
+    stack.values[1] = volume;
+    stack.count = 0u;
+    return stack;
+}
+
+PrimeRcState primeStatState(
+        uint suite,
+        vec3 wi,
+        float roughness,
+        float anisotropy,
+        float ior,
+        vec3 color) {
+    PrimeRcMaterial material = primeRcMaterialFromMetallic(
+            color,
+            roughness,
+            suite == PRIME_STAT_CONDUCTOR ? 1.0 : 0.0,
+            vec3(0.0, 0.0, 1.0));
+    material.specular.roughnessAnisotropy = anisotropy;
+    material.specular.ior = ior;
+    if (suite == PRIME_STAT_LAMBERT) {
+        material.weight.specular = 0.0;
+    } else if (suite == PRIME_STAT_TRANSMISSION) {
+        material.weight.transmission = 1.0;
+        material.transmission.color = color;
+        material.transmission.depth = 0.0;
+        material.transmission.scatter = vec3(0.0);
+        material.transmission.scatterAnisotropy = 0.0;
+    }
+    vec3 wavelengths = vec3(630.0, 532.0, 467.0);
+    if (suite == PRIME_STAT_TRANSMISSION) {
+        return primeRcTransmissionStateInit(
+                material, wi, 1.0, 0.0, wavelengths,
+                0u, PRIME_RC_DETAIL_DEFAULT, 0u);
+    }
+    return primeRcBasicMetallicStateInit(
+            material, wi, 1.0, 0.0, wavelengths,
+            0u, PRIME_RC_DETAIL_DEFAULT, 0u);
+}
+
+void main() {
+    uint caseIndex;
+    if (!primeTestBegin(caseIndex)) {
+        return;
+    }
+    uvec4 control = primeTestInput.words[1];
+    vec4 first = uintBitsToFloat(primeTestInput.words[2]);
+    vec4 second = uintBitsToFloat(primeTestInput.words[3]);
+    uint mode = control.x;
+    uint suite = control.y;
+    uint seed = control.z;
+    float roughness = first.x;
+    float anisotropy = first.y;
+    float viewCosine = first.z;
+    float ior = first.w;
+    vec3 color = second.xyz;
+    float viewSine = sqrt(max(0.0, 1.0 - viewCosine * viewCosine));
+    vec3 wi = vec3(viewSine, 0.0, viewCosine);
+    PrimeRcState state = primeStatState(
+            suite, wi, roughness, anisotropy, ior, color);
+    uint outputOffset = caseIndex * PRIME_STAT_OUTPUT_WORDS;
+
+    if (mode == PRIME_STAT_SAMPLE) {
+        vec3 randomValue = primeStatRandom(caseIndex, seed);
+        PrimeRcSampleResult sampled;
+        if (suite == PRIME_STAT_TRANSMISSION) {
+            sampled = primeRcPrimeTransmissionSample(
+                    wi, randomValue, state, primeStatEmptyStack());
+        } else {
+            sampled = primeRcBasicMetallicSample(
+                    wi, randomValue, state, primeStatEmptyStack());
+        }
+        primeTestOutput.words[outputOffset] = floatBitsToUint(vec4(
+                sampled.bsdfSample.wo, sampled.bsdfSample.pdf));
+        primeTestOutput.words[outputOffset + 1u] = uvec4(
+                floatBitsToUint(sampled.bsdfSample.throughput.value.x),
+                floatBitsToUint(sampled.bsdfSample.throughput.value.y),
+                floatBitsToUint(sampled.bsdfSample.throughput.value.z),
+                sampled.bsdfSample.throughput.flags);
+        PrimeRcEval evaluated;
+        if (suite == PRIME_STAT_TRANSMISSION) {
+            evaluated = primeRcTransmissionEvaluate(
+                    wi, sampled.bsdfSample.wo, state);
+        } else {
+            evaluated = primeRcPrimeBasicMetallicEvaluate(
+                    wi, sampled.bsdfSample.wo, state);
+        }
+        primeTestOutput.words[outputOffset + 2u] = floatBitsToUint(vec4(
+                evaluated.throughput.value, evaluated.pdf));
+        return;
+    }
+
+    uint zIndex = caseIndex / PRIME_STAT_GRID_PHI;
+    uint phiIndex = caseIndex % PRIME_STAT_GRID_PHI;
+    float zUnit = (float(zIndex) + 0.5) / float(PRIME_STAT_GRID_Z);
+    float z = suite == PRIME_STAT_TRANSMISSION
+            ? zUnit * 2.0 - 1.0
+            : zUnit;
+    float phi = (float(phiIndex) + 0.5)
+            * (2.0 * PRIME_RC_PI / float(PRIME_STAT_GRID_PHI));
+    float radius = sqrt(max(0.0, 1.0 - z * z));
+    vec3 wo = vec3(radius * cos(phi), radius * sin(phi), z);
+    PrimeRcEval evaluated;
+    vec3 directionalEnergy;
+    if (suite == PRIME_STAT_TRANSMISSION) {
+        evaluated = primeRcTransmissionEvaluate(wi, wo, state);
+        directionalEnergy = primeRcTransmissionEnergy(wi, state);
+    } else {
+        evaluated = primeRcPrimeBasicMetallicEvaluate(wi, wo, state);
+        directionalEnergy = primeRcBasicMetallicEnergy(wi, state);
+    }
+    primeTestOutput.words[outputOffset] = floatBitsToUint(vec4(
+            evaluated.throughput.value, evaluated.pdf));
+    primeTestOutput.words[outputOffset + 1u] =
+            floatBitsToUint(vec4(directionalEnergy, 0.0));
+    primeTestOutput.words[outputOffset + 2u] = uvec4(0u);
+}

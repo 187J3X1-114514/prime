@@ -265,19 +265,19 @@ PrimeBsdfComponents primeEvaluateOpaqueComponents(
     vec3 localScatter = primeRcOnbToLocal(state.material.geometry.onb, scatterDirection);
     bool subsurface = state.material.weight.subsurface > 0.0;
     PrimeRcEval full = subsurface
-            ? primeRcSubsurfaceGlossyEvaluate(localView, localScatter, state)
-            : primeRcBasicMetallicEvaluate(localView, localScatter, state);
+            ? primeRcPrimeSubsurfaceGlossyEvaluate(localView, localScatter, state)
+            : primeRcPrimeBasicMetallicEvaluate(localView, localScatter, state);
     result.pdf = full.pdf;
     PrimeRcState diffuseState = state;
     diffuseState.samplingFlags = PRIME_RC_FLAG_DIFFUSE;
     PrimeRcThroughput diffuse = subsurface
-            ? primeRcSubsurfaceGlossyEval(localView, localScatter, diffuseState)
-            : primeRcBasicMetallicEval(localView, localScatter, diffuseState);
+            ? primeRcPrimeSubsurfaceGlossyEval(localView, localScatter, diffuseState)
+            : primeRcPrimeBasicMetallicEval(localView, localScatter, diffuseState);
     PrimeRcState specularState = state;
     specularState.samplingFlags = PRIME_RC_FLAG_SPECULAR | PRIME_RC_FLAG_DELTA;
     PrimeRcThroughput specular = subsurface
-            ? primeRcSubsurfaceGlossyEval(localView, localScatter, specularState)
-            : primeRcBasicMetallicEval(localView, localScatter, specularState);
+            ? primeRcPrimeSubsurfaceGlossyEval(localView, localScatter, specularState)
+            : primeRcPrimeBasicMetallicEval(localView, localScatter, specularState);
     result.diffuseResponse = diffuse.value;
     result.specularResponse = specular.value;
     primeRecordNonnegative(result.diffuseResponse);
@@ -493,7 +493,7 @@ PrimeTransmissiveBsdfSample primeSampleMinecraftTransmission(
         primeRecordNonnegative(result.bsdfSample.pdf);
         return result;
     }
-    PrimeRcSampleResult sampled = primeRcTransmissionSample(
+    PrimeRcSampleResult sampled = primeRcPrimeTransmissionSample(
             localView, sampleValue, state, volumeStack);
     if (!primeRcHasSample(sampled.bsdfSample)) {
         return result;
@@ -634,7 +634,7 @@ PrimeTransmissiveBsdfSample primeSampleMinecraftTransmissionBranchFromState(
     state.samplingFlags = reflectionBranch
             ? PRIME_RC_FLAG_REFLECTION
             : PRIME_RC_FLAG_TRANSMISSION;
-    PrimeRcSampleResult sampled = primeRcTransmissionSample(
+    PrimeRcSampleResult sampled = primeRcPrimeTransmissionSample(
             localView, sampleValue, state, volumeStack);
     if (!primeRcHasSample(sampled.bsdfSample)) {
         return result;

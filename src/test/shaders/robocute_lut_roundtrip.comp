@@ -1,0 +1,23 @@
+#version 460
+#extension GL_GOOGLE_include_directive : require
+
+#define PRIME_RC_TRANSMISSION_GGX_SET 0
+#define PRIME_RC_TRANSMISSION_GGX_BINDING 2
+#include "prime_test_abi.glsl"
+#include "robocute_bsdf_microfacet.glsl"
+
+const uvec3 PRIME_TEST_GGX_SIZE = uvec3(44u, 32u, 159u);
+
+void main() {
+    uint caseIndex;
+    if (!primeTestBegin(caseIndex)) {
+        return;
+    }
+    uint x = caseIndex % PRIME_TEST_GGX_SIZE.x;
+    uint yz = caseIndex / PRIME_TEST_GGX_SIZE.x;
+    uint y = yz % PRIME_TEST_GGX_SIZE.y;
+    uint z = yz / PRIME_TEST_GGX_SIZE.y;
+    vec3 uvw = (vec3(x, y, z) + vec3(0.5)) / vec3(PRIME_TEST_GGX_SIZE);
+    primeTestOutput.words[caseIndex] = floatBitsToUint(
+            textureLod(primeRcTransmissionGgxEnergy, uvw, 0.0));
+}

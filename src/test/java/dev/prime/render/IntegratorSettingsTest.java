@@ -19,8 +19,10 @@ final class IntegratorSettingsTest {
         assertEquals(0, dry & ShaderAbi.PATH_CAMERA_IN_WATER_MASK);
         assertEquals(ShaderAbi.PATH_CAMERA_IN_WATER_MASK,
                 submerged & ShaderAbi.PATH_CAMERA_IN_WATER_MASK);
+        int screenshot = IntegratorSettings.packPathControl(256, 0, false);
+        assertEquals(0, (screenshot >>> 16) & ShaderAbi.PATH_JITTER_PHASE_MASK);
         assertThrows(IllegalArgumentException.class,
-                () -> IntegratorSettings.packPathControl(256, 0, false));
+                () -> IntegratorSettings.packPathControl(256, -1, false));
         assertThrows(IllegalArgumentException.class,
                 () -> IntegratorSettings.packPathControl(256, 0x8000, false));
     }

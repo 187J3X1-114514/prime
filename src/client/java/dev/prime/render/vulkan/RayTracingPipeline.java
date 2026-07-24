@@ -3,6 +3,7 @@ package dev.prime.render.vulkan;
 import com.mojang.blaze3d.vulkan.Destroyable;
 import com.mojang.blaze3d.vulkan.VulkanGpuSampler;
 import com.mojang.blaze3d.vulkan.VulkanGpuTextureView;
+import dev.prime.PrimeClient;
 import dev.prime.render.shader.ShaderAbi;
 import java.io.IOException;
 import java.io.InputStream;
@@ -11,6 +12,7 @@ import java.nio.LongBuffer;
 import org.lwjgl.system.MemoryStack;
 import org.lwjgl.system.MemoryUtil;
 import org.lwjgl.vulkan.KHRAccelerationStructure;
+import org.lwjgl.vulkan.KHRDeferredHostOperations;
 import org.lwjgl.vulkan.KHRRayTracingPipeline;
 import org.lwjgl.vulkan.EXTOpacityMicromap;
 import org.lwjgl.vulkan.VK12;
@@ -35,8 +37,7 @@ import org.lwjgl.vulkan.VkWriteDescriptorSetAccelerationStructureKHR;
 
 public final class RayTracingPipeline implements Destroyable {
     private static final int OPAQUE_RAYGEN_GROUP = 0;
-    private static final int SCREENSHOT_RAYGEN_GROUP = 1;
-    static final int RAYGEN_GROUP_COUNT = 2;
+    static final int RAYGEN_GROUP_COUNT = 1;
     static final int MISS_GROUP_COUNT = 2;
     static final int HIT_GROUP_COUNT = 6;
     private static final int GROUP_COUNT = RAYGEN_GROUP_COUNT + MISS_GROUP_COUNT + HIT_GROUP_COUNT;
@@ -77,9 +78,9 @@ public final class RayTracingPipeline implements Destroyable {
                 String opaqueRaygen = context.capabilities().invocationReorderSupported()
                         ? "/prime/shaders/world_ser.rgen.spv"
                         : "/prime/shaders/world.rgen.spv";
-                // Both render paths share miss/hit stages and the pipeline layout. Keeping
-                // their raygen groups in one pipeline lets the Vulkan driver compile that common
-                // graph once; dispatch selects a base-aligned raygen SBT record.
+                // Realtime and screenshot output are uniform branches of one raygen module. The
+                // complete integrator is optimized once and both modes are resident before this
+                // constructor returns.
                 newTracePipeline = TracePipeline.create(
                         context,
                         stack,
@@ -181,7 +182,7 @@ public final class RayTracingPipeline implements Destroyable {
             VkCommandBuffer commandBuffer, ByteBuffer pushConstants, int width, int height) {
         this.starmap.prepare(commandBuffer);
         this.bsdfLookup.prepare(commandBuffer);
-        this.trace(commandBuffer, pushConstants, width, height, SCREENSHOT_RAYGEN_GROUP);
+        this.trace(commandBuffer, pushConstants, width, height, OPAQUE_RAYGEN_GROUP);
     }
 
     private void trace(
@@ -426,18 +427,20 @@ public final class RayTracingPipeline implements Destroyable {
             long pipelineLayout,
             String opaqueRaygenResource,
             String debugName) {
-        long[] modules = new long[7];
+        PrimeClient.LOGGER.info(
+                "Compiling Prime realtime and screenshot ray tracing pipelines");
+        long compilationStart = System.nanoTime();
+        long[] modules = new long[6];
+        long deferredOperation = 0L;
         try {
             modules[0] = createShaderModule(context, opaqueRaygenResource);
-            modules[1] = createShaderModule(context, "/prime/shaders/screenshot.rgen.spv");
-            modules[2] = createShaderModule(context, "/prime/shaders/world.rmiss.spv");
-            modules[3] = createShaderModule(context, "/prime/shaders/shadow.rmiss.spv");
-            modules[4] = createShaderModule(context, "/prime/shaders/world.rchit.spv");
-            modules[5] = createShaderModule(context, "/prime/shaders/world.rahit.spv");
-            modules[6] = createShaderModule(context, "/prime/shaders/shadow.rchit.spv");
-            VkPipelineShaderStageCreateInfo.Buffer stages = VkPipelineShaderStageCreateInfo.calloc(7, stack);
+            modules[1] = createShaderModule(context, "/prime/shaders/world.rmiss.spv");
+            modules[2] = createShaderModule(context, "/prime/shaders/shadow.rmiss.spv");
+            modules[3] = createShaderModule(context, "/prime/shaders/world.rchit.spv");
+            modules[4] = createShaderModule(context, "/prime/shaders/world.rahit.spv");
+            modules[5] = createShaderModule(context, "/prime/shaders/shadow.rchit.spv");
+            VkPipelineShaderStageCreateInfo.Buffer stages = VkPipelineShaderStageCreateInfo.calloc(6, stack);
             int[] stageFlags = new int[] {
-                KHRRayTracingPipeline.VK_SHADER_STAGE_RAYGEN_BIT_KHR,
                 KHRRayTracingPipeline.VK_SHADER_STAGE_RAYGEN_BIT_KHR,
                 KHRRayTracingPipeline.VK_SHADER_STAGE_MISS_BIT_KHR,
                 KHRRayTracingPipeline.VK_SHADER_STAGE_MISS_BIT_KHR,
@@ -459,13 +462,12 @@ public final class RayTracingPipeline implements Destroyable {
             generalGroup(groups.get(0), 0);
             generalGroup(groups.get(1), 1);
             generalGroup(groups.get(2), 2);
-            generalGroup(groups.get(3), 3);
-            triangleGroup(groups.get(4), 4, KHRRayTracingPipeline.VK_SHADER_UNUSED_KHR);
-            triangleGroup(groups.get(5), 4, 5);
-            triangleGroup(groups.get(6), 4, 5);
-            triangleGroup(groups.get(7), 6, KHRRayTracingPipeline.VK_SHADER_UNUSED_KHR);
-            triangleGroup(groups.get(8), 6, 5);
-            triangleGroup(groups.get(9), 6, KHRRayTracingPipeline.VK_SHADER_UNUSED_KHR);
+            triangleGroup(groups.get(3), 3, KHRRayTracingPipeline.VK_SHADER_UNUSED_KHR);
+            triangleGroup(groups.get(4), 3, 4);
+            triangleGroup(groups.get(5), 3, 4);
+            triangleGroup(groups.get(6), 5, KHRRayTracingPipeline.VK_SHADER_UNUSED_KHR);
+            triangleGroup(groups.get(7), 5, 4);
+            triangleGroup(groups.get(8), 5, KHRRayTracingPipeline.VK_SHADER_UNUSED_KHR);
 
             VkRayTracingPipelineCreateInfoKHR.Buffer createInfo =
                     VkRayTracingPipelineCreateInfoKHR.calloc(1, stack);
@@ -480,11 +482,45 @@ public final class RayTracingPipeline implements Destroyable {
                     .maxPipelineRayRecursionDepth(1)
                     .layout(pipelineLayout);
             LongBuffer pointer = stack.mallocLong(1);
+            LongBuffer deferredPointer = stack.mallocLong(1);
             VulkanContext.check(
-                    KHRRayTracingPipeline.vkCreateRayTracingPipelinesKHR(
-                            context.vkDevice(), 0L, 0L, createInfo, null, pointer),
-                    "create Prime ray tracing pipeline");
+                    KHRDeferredHostOperations.vkCreateDeferredOperationKHR(
+                            context.vkDevice(), null, deferredPointer),
+                    "create Prime deferred pipeline operation");
+            deferredOperation = deferredPointer.get(0);
+            int result = KHRRayTracingPipeline.vkCreateRayTracingPipelinesKHR(
+                    context.vkDevice(),
+                    deferredOperation,
+                    0L,
+                    createInfo,
+                    null,
+                    pointer);
+            int workerCount = 1;
+            if (result == KHRDeferredHostOperations.VK_OPERATION_DEFERRED_KHR) {
+                int reportedConcurrency =
+                        KHRDeferredHostOperations.vkGetDeferredOperationMaxConcurrencyKHR(
+                                context.vkDevice(), deferredOperation);
+                int availableProcessors = Runtime.getRuntime().availableProcessors();
+                workerCount = deferredWorkerCount(
+                        reportedConcurrency, availableProcessors);
+                PrimeClient.LOGGER.info(
+                        "Prime RT driver compilation concurrency: {} reported, {} host logical "
+                                + "processor(s), {} thread(s) selected",
+                        Integer.toUnsignedLong(reportedConcurrency),
+                        availableProcessors,
+                        workerCount);
+                workerCount = completeDeferredPipelineCreation(
+                        context, deferredOperation, workerCount);
+            } else if (result != KHRDeferredHostOperations.VK_OPERATION_NOT_DEFERRED_KHR) {
+                VulkanContext.check(result, "create Prime ray tracing pipeline");
+            }
             long pipeline = pointer.get(0);
+            long compilationMillis =
+                    (System.nanoTime() - compilationStart) / 1_000_000L;
+            PrimeClient.LOGGER.info(
+                    "Prime ray tracing pipelines compiled in {} ms using {} host thread(s)",
+                    compilationMillis,
+                    workerCount);
             context.device().instance().debug().setObjectName(
                     context.vkDevice(),
                     VK12.VK_OBJECT_TYPE_PIPELINE,
@@ -492,11 +528,97 @@ public final class RayTracingPipeline implements Destroyable {
                     debugName);
             return pipeline;
         } finally {
+            if (deferredOperation != 0L) {
+                KHRDeferredHostOperations.vkDestroyDeferredOperationKHR(
+                        context.vkDevice(), deferredOperation, null);
+            }
             for (long module : modules) {
                 if (module != 0L) {
                     VK12.vkDestroyShaderModule(context.vkDevice(), module, null);
                 }
             }
+        }
+    }
+
+    static int deferredWorkerCount(int reportedConcurrency, int availableProcessors) {
+        long reported = Integer.toUnsignedLong(reportedConcurrency);
+        return (int) Math.max(
+                1L,
+                Math.min(reported, Math.max(availableProcessors, 1)));
+    }
+
+    private static int completeDeferredPipelineCreation(
+            VulkanContext context,
+            long deferredOperation,
+            int workerCount) {
+        Thread[] workers = new Thread[Math.max(workerCount - 1, 0)];
+        int startedWorkers = 0;
+        try {
+            for (int index = 0; index < workers.length; index++) {
+                Thread worker = new Thread(
+                        () -> joinDeferredOperation(context, deferredOperation),
+                        "Prime RT compiler " + (index + 1));
+                workers[index] = worker;
+                worker.start();
+                startedWorkers++;
+            }
+        } catch (RuntimeException | OutOfMemoryError exception) {
+            // The calling thread still guarantees completion, so a host thread creation
+            // failure only reduces parallelism and never leaves the Vulkan operation pending.
+            PrimeClient.LOGGER.warn(
+                    "Started only {} of {} Prime RT compiler worker thread(s)",
+                    startedWorkers,
+                    workers.length,
+                    exception);
+        }
+        joinDeferredOperation(context, deferredOperation);
+
+        boolean interrupted = false;
+        for (int index = 0; index < startedWorkers; index++) {
+            Thread worker = workers[index];
+            for (;;) {
+                try {
+                    worker.join();
+                    break;
+                } catch (InterruptedException exception) {
+                    // The Vulkan operation cannot be abandoned while its input pointers are live.
+                    // Complete the ownership boundary, then restore the caller's interrupt state.
+                    interrupted = true;
+                }
+            }
+        }
+        if (interrupted) {
+            Thread.currentThread().interrupt();
+        }
+
+        int result = KHRDeferredHostOperations.vkGetDeferredOperationResultKHR(
+                context.vkDevice(), deferredOperation);
+        while (result == VK12.VK_NOT_READY) {
+            VulkanContext.check(
+                    joinDeferredOperation(context, deferredOperation),
+                    "join Prime deferred ray tracing pipeline");
+            result = KHRDeferredHostOperations.vkGetDeferredOperationResultKHR(
+                    context.vkDevice(), deferredOperation);
+        }
+        VulkanContext.check(result, "complete Prime deferred ray tracing pipeline");
+        return startedWorkers + 1;
+    }
+
+    private static int joinDeferredOperation(
+            VulkanContext context,
+            long deferredOperation) {
+        for (;;) {
+            int result = KHRDeferredHostOperations.vkDeferredOperationJoinKHR(
+                    context.vkDevice(), deferredOperation);
+            if (result == KHRDeferredHostOperations.VK_THREAD_IDLE_KHR) {
+                Thread.yield();
+                continue;
+            }
+            if (result == VK12.VK_SUCCESS
+                    || result == KHRDeferredHostOperations.VK_THREAD_DONE_KHR) {
+                return VK12.VK_SUCCESS;
+            }
+            return result;
         }
     }
 

@@ -33,6 +33,15 @@ final class RayTracingPipelineContractTest {
     void rayTracingShaderGroupsHaveTheExpectedShape() {
         assertEquals(2, RayTracingPipeline.MISS_GROUP_COUNT);
         assertEquals(6, RayTracingPipeline.HIT_GROUP_COUNT);
-        assertEquals(2, RayTracingPipeline.RAYGEN_GROUP_COUNT);
+        assertEquals(1, RayTracingPipeline.RAYGEN_GROUP_COUNT);
+    }
+
+    @Test
+    void deferredCompilationClampsDriverConcurrencyToTheHost() {
+        assertEquals(1, RayTracingPipeline.deferredWorkerCount(0, 32));
+        assertEquals(2, RayTracingPipeline.deferredWorkerCount(2, 32));
+        assertEquals(8, RayTracingPipeline.deferredWorkerCount(32, 8));
+        assertEquals(32, RayTracingPipeline.deferredWorkerCount(-1, 32));
+        assertEquals(1, RayTracingPipeline.deferredWorkerCount(8, 0));
     }
 }

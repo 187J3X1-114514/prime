@@ -572,7 +572,7 @@ public final class VulkanRenderer implements AutoCloseable {
                             height),
                     sampleIndex,
                     sampleEpoch,
-                    1,
+                    0,
                     this.screenshotCameraInWater,
                     lighting,
                     material,

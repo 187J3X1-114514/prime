@@ -38,7 +38,9 @@ final class IntegratorSettings {
         if (maximumBounces < 0 || maximumBounces > 0xffff) {
             throw new IllegalArgumentException("Maximum bounce count does not fit in 16 bits");
         }
-        if (jitterPhase < 1 || jitterPhase > ShaderAbi.PATH_JITTER_PHASE_MASK) {
+        // Zero selects the precompiled screenshot branch. Realtime reconstruction uses the exact
+        // one-based jitter phase supplied by FSR or RR.
+        if (jitterPhase < 0 || jitterPhase > ShaderAbi.PATH_JITTER_PHASE_MASK) {
             throw new IllegalArgumentException("Jitter phase does not fit in 15 bits");
         }
         return (cameraInWater ? ShaderAbi.PATH_CAMERA_IN_WATER_MASK : 0)

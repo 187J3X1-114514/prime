@@ -1,5 +1,6 @@
 #version 460
 #extension GL_GOOGLE_include_directive : require
+#extension GL_EXT_control_flow_attributes : require
 #if defined(PRIME_ENABLE_SER)
 #extension GL_EXT_buffer_reference_uvec2 : require
 #extension GL_EXT_shader_invocation_reorder : require
@@ -108,6 +109,24 @@ void main() {
     PathState path = primeCameraPath(pixel, 0u, cameraSample);
 
     PrimeIntegrationResult sampleResult = primeIntegrate(path, integrator);
+    if (primeScreenshotMode()) {
+        // Both product modes share this one compiled integrator. The uniform push-constant branch
+        // avoids compiling a second near-identical raygen while retaining immediate switching:
+        // both paths are resident before the renderer becomes visible to the game.
+        vec3 sampleRadiance = primeResolveIntegrationRadiance(sampleResult);
+        primeApplyAerialPerspective(
+                pixel,
+                cameraSample,
+                sampleResult.guides.primaryDistance,
+                sampleRadiance);
+        vec4 previous = imageLoad(primeAccumulation, ivec2(pixel));
+        uint64_t zeroBasedSample = (uint64_t(primePush.path.y) << 16u)
+                | uint64_t(primePush.path.x & 0xffffu);
+        float sampleCount = float(zeroBasedSample + uint64_t(1));
+        vec3 mean = previous.rgb + (sampleRadiance - previous.rgb) / sampleCount;
+        imageStore(primeAccumulation, ivec2(pixel), vec4(mean, 1.0));
+        return;
+    }
     if (primeWritesRawNumericalDiagnostic()) {
         imageStore(
                 primeRawNumericalDiagnostic,

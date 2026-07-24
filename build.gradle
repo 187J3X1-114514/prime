@@ -843,7 +843,6 @@ def verifyDistributionJar = tasks.register('verifyDistributionJar') {
 			'prime/natives/windows-x86_64/nvngx_dlssd.dll',
 			'prime/shaders/world.rgen.spv',
 			'prime/shaders/world_ser.rgen.spv',
-			'prime/shaders/screenshot.rgen.spv',
 			'prime/shaders/screenshot_display.comp.spv',
 			'prime/shaders/shadow.rchit.spv',
 			'prime/shaders/nrd_motion.comp.spv',
@@ -859,9 +858,9 @@ def verifyDistributionJar = tasks.register('verifyDistributionJar') {
 		}
 
 		def shaderNames = names.findAll { it.startsWith('prime/shaders/') && it.endsWith('.spv') }
-		if (shaderNames.size() != 20) {
+		if (shaderNames.size() != 19) {
 			throw new GradleException(
-					"Distribution jar must contain 20 Prime shaders; found ${shaderNames.size()}")
+					"Distribution jar must contain 19 Prime shaders; found ${shaderNames.size()}")
 		}
 
 		new java.util.zip.ZipFile(archive).withCloseable { zip ->

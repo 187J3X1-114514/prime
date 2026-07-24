@@ -236,6 +236,10 @@ LightTreePick primePickLightTree(
     LightNode node = nodes.nodes[root];
     float lowerBound = 0.0;
     float pdf = 1.0;
+    // This bound is a traversal safety limit, not an invitation to duplicate 64 levels of the
+    // light-tree body in native raygen code. Keeping the loop compact materially reduces cold
+    // pipeline compilation without changing traversal order.
+    [[dont_unroll]]
     for (uint depth = 0u; depth < PRIME_LIGHT_TREE_MAX_DEPTH; ++depth) {
         if (!(node.boundsMinPower.w > 0.0)) {
             return primeInvalidLightTreePick();
@@ -292,6 +296,7 @@ float primeLightTreeSelectionPdf(
     }
     uint nodeIndex = leafNode;
     float pdf = 1.0;
+    [[dont_unroll]]
     for (uint depth = 0u; depth < PRIME_LIGHT_TREE_MAX_DEPTH; ++depth) {
         LightNode node = nodes.nodes[nodeIndex];
         if (!(node.boundsMinPower.w > 0.0)) {

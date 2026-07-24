@@ -943,6 +943,7 @@ PrimeTransparentBranchResult primeIntegrateTransparentBranch(
 
     uint maximumBounces = min(primePush.path.z & 0xffffu, 256u);
     bool firstSegment = true;
+    [[dont_unroll]]
     for (; path.bounce < maximumBounces; ++path.bounce) {
         SurfaceInteraction surface = primeTraceSurface(path.traceOrigin, path.rayDirection);
         primeRecordNonFinite(surface.position);
@@ -1190,9 +1191,14 @@ PrimeIntegrationResult primeIntegrateWithVolume(
     // nested air/water/glass transitions use the IOR below the current medium and so absorption is
     // applied exactly once to the segment that was actually travelled.
     // path.z packs three independently generated Java contracts without growing Vulkan's
-    // guaranteed 128-byte push range: low 16 bits are the bounce cap, bits 16..30 the exact
-    // one-based FSR jitter phase, and bit 31 says that the camera lies inside the water volume.
+    // guaranteed 128-byte push range: low 16 bits are the bounce cap, bits 16..30 are the exact
+    // one-based reconstruction jitter phase (zero selects the precompiled screenshot branch),
+    // and bit 31 says that the camera lies inside the water volume.
     uint maximumBounces = min(primePush.path.z & 0xffffu, 256u);
+    // The cap is dynamic and intentionally large for pathological transparent stacks. Preserve
+    // the loop so the native compiler cannot turn the full integrator into hundreds of copies
+    // during cold pipeline creation.
+    [[dont_unroll]]
     for (path.bounce = 0u; path.bounce < maximumBounces; ++path.bounce) {
         SurfaceInteraction surface = primeTraceSurface(path.traceOrigin, path.rayDirection);
         primeRecordNonFinite(surface.position);

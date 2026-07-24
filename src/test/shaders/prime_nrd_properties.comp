@@ -88,6 +88,9 @@ void main() {
         if (any(greaterThan(abs(first.xyz - decoded), vec3(transformTolerance)))) {
             mask |= PRIME_TEST_FAILURE_ROUND_TRIP;
         }
+        if (!primeTestClose(encoded.x, primeNrdY(first.xyz), 0.0, 0.0)) {
+            mask |= PRIME_TEST_FAILURE_IDENTITY;
+        }
         result0 = vec4(encoded, 0.0);
         result1 = vec4(decoded, 0.0);
     } else if (kind == 2u) {
@@ -114,10 +117,22 @@ void main() {
         float farther = primeNrdNormalizedHitDistance(
                 max(first.x, 0.0) + abs(second.x), first.y, first.z);
         vec4 packed = primeNrdPackRadianceAndHitDistance(second.yzw, normalized);
+        float safeHitDistance = primeNrdSanitizeHitDistance(first.x);
+        float safeViewZ = primeNrdIsFinite(first.y)
+                ? abs(first.y) : PRIME_NRD_FP16_MAX;
+        float safeRoughness = primeNrdSanitizeUnit(
+                first.z, PRIME_DEFAULT_REFERENCE_LINEAR_ROUGHNESS);
+        float trustedNormalized = primeNrdNormalizedSanitizedHitDistance(
+                safeHitDistance, safeViewZ, safeRoughness);
+        vec4 trustedPacked = primeNrdPackSanitizedRadianceAndHitDistance(
+                primeNrdSanitizeRadiance(second.yzw), normalized);
         primeNrdCheckUnit(mask, normalized);
         primeNrdCheckUnit(mask, farther);
         primeNrdCheckFinite(mask, packed);
-        if (primeNrdIsFinite(first.x) && first.x >= 0.0 && farther < normalized) {
+        if (!primeTestClose(normalized, trustedNormalized, 0.0, 0.0)
+                || any(notEqual(packed, trustedPacked))
+                || (primeNrdIsFinite(first.x) && first.x >= 0.0
+                        && farther < normalized)) {
             mask |= PRIME_TEST_FAILURE_IDENTITY;
         }
         result0 = vec4(normalized, farther, 0.0, 0.0);
@@ -126,6 +141,8 @@ void main() {
         vec3 safeRadiance = primeNrdSanitizeRadiance(first.xyz);
         vec3 safeGuide = primeNrdSanitizeAlbedo(second.xyz);
         vec3 demodulated = primeNrdDemodulate(first.xyz, second.xyz);
+        vec3 trustedDemodulated =
+                primeNrdDemodulateSanitized(safeRadiance, safeGuide);
         vec3 remodulated = demodulated * safeGuide;
         primeNrdCheckFinite(mask, demodulated);
         primeNrdCheckFinite(mask, remodulated);
@@ -137,6 +154,7 @@ void main() {
                 safeRadiance, vec3(PRIME_NRD_FP16_MAX) * safeGuide);
         if (any(lessThan(demodulated, vec3(0.0)))
                 || any(greaterThan(demodulated, vec3(PRIME_NRD_FP16_MAX)))
+                || !primeTestClose(demodulated, trustedDemodulated, 0.0, 0.0)
                 || any(greaterThan(remodulated, expected * (1.0 + 2.0e-6) + vec3(2.0e-6)))
                 || (unclamped.x && !primeTestClose(remodulated.x, expected.x, 2.0e-5, 2.0e-5))
                 || (unclamped.y && !primeTestClose(remodulated.y, expected.y, 2.0e-5, 2.0e-5))
@@ -151,6 +169,19 @@ void main() {
         vec3 c = third.xyz;
         float limit = max(first.w, 0.0);
         float scale = primeNrdClampRadianceTriple(a, b, c, limit);
+        vec3 pairA = first.xyz;
+        vec3 pairB = second.xyz;
+        vec3 trustedPairA = vec3(
+                primeNrdSanitizeNonnegative(pairA.x),
+                primeNrdSanitizeNonnegative(pairA.y),
+                primeNrdSanitizeNonnegative(pairA.z));
+        vec3 trustedPairB = vec3(
+                primeNrdSanitizeNonnegative(pairB.x),
+                primeNrdSanitizeNonnegative(pairB.y),
+                primeNrdSanitizeNonnegative(pairB.z));
+        float pairScale = primeNrdClampRadiancePair(pairA, pairB, limit);
+        float trustedPairScale = primeNrdClampSanitizedRadiancePair(
+                trustedPairA, trustedPairB, limit);
         primeNrdCheckUnit(mask, scale);
         primeNrdCheckFinite(mask, a);
         primeNrdCheckFinite(mask, b);
@@ -159,12 +190,16 @@ void main() {
         if (any(lessThan(a, vec3(0.0)))
                 || any(lessThan(b, vec3(0.0)))
                 || any(lessThan(c, vec3(0.0)))
+                || !primeTestClose(pairScale, trustedPairScale, 0.0, 0.0)
+                || any(notEqual(pairA, trustedPairA))
+                || any(notEqual(pairB, trustedPairB))
                 || primeNrdRadiancePeak(sum) > limit * (1.0 + 2.0e-6) + 1.0e-6) {
             mask |= PRIME_TEST_FAILURE_RANGE;
         }
         result0 = vec4(a, scale);
         result1 = vec4(b, limit);
         result2 = vec4(c, primeNrdRadiancePeak(sum));
+        result3 = vec4(pairA + pairB, pairScale);
     } else if (kind == 6u) {
         float id = primeNrdMaterialId(control.y);
         primeNrdCheckUnit(mask, id);

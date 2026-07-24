@@ -99,59 +99,67 @@ void main() {
 
     vec4 material = imageLoad(rrDiffuseMaterial, pixel);
     vec4 specularMaterial = imageLoad(rrSpecularMaterial, pixel);
-    bool sky = !primeNrdIsFinite(material.a) || material.a < 0.0;
-    vec4 primary = imageLoad(rrPrimaryPosition, pixel);
-    vec4 noisyDiffuse = imageLoad(rrNoisyDiffuse, pixel);
-    vec4 noisySpecular = imageLoad(rrNoisySpecular, pixel);
-    vec4 sun = imageLoad(rrSunLighting, pixel);
+    // This pass consumes raygen's private RR scratch contract. Radiance, distances, albedos,
+    // roughness and the sky marker have already been made finite and range-limited at the writer.
+    bool sky = material.a < 0.0;
+    if (sky) {
+        // Raygen already writes finite surface albedos. Only sky needs the SDK's neutral fallback.
+        imageStore(rrDiffuseMaterial, pixel, vec4(vec3(0.5), material.a));
+        imageStore(rrSpecularMaterial, pixel, vec4(vec3(0.5), specularMaterial.a));
+        imageStore(rrNormalRoughness, pixel, vec4(
+                0.0, 0.0, 1.0, PRIME_DEFAULT_REFERENCE_LINEAR_ROUGHNESS));
+        imageStore(rrLinearViewZ, pixel, vec4(PRIME_RR_SKY_VIEW_Z));
+        vec2 currentSampleUv =
+                (vec2(pixel) + vec2(0.5) + rrPush.currentJitterPixels)
+                / vec2(extent);
+        vec2 motion = rrMotionVector(currentSampleUv, vec3(0.0), true);
+        vec4 packedMotion = vec4(
+                primeNrdSanitizeMotion(vec3(motion, 0.0)), 0.0);
+        imageStore(rrMotion, pixel, packedMotion);
+        imageStore(rrSpecularMotion, pixel, packedMotion);
+        imageStore(rrInputColor, pixel, vec4(
+                imageLoad(rrStableRadiance, pixel).rgb, 1.0));
+        return;
+    }
 
+    vec4 primary = imageLoad(rrPrimaryPosition, pixel);
     vec3 normal;
     float roughness;
     primeNrdUnpackNormalRoughness(
             imageLoad(rrPackedNormalRoughness, pixel), normal, roughness);
-    normal = sky
-            ? vec3(0.0, 0.0, 1.0)
-            : primeNrdSafeNormalize(normal, vec3(0.0, 0.0, 1.0));
-    roughness = sky
-            ? PRIME_DEFAULT_REFERENCE_LINEAR_ROUGHNESS
-            : primeNrdSanitizeUnit(roughness, PRIME_DEFAULT_REFERENCE_LINEAR_ROUGHNESS);
-    // The primary guide can be a transmitted PSR, while reflection MV still belongs to the
-    // visible interface. Raygen preserves that interface roughness in the private alpha lane.
-    float reflectionRoughness = sky
-            ? PRIME_DEFAULT_REFERENCE_LINEAR_ROUGHNESS
-            : primeNrdSanitizeUnit(specularMaterial.a, roughness);
     imageStore(rrNormalRoughness, pixel, vec4(normal, roughness));
+    // The transmitted PSR and visible reflection interface can have different roughness.
+    float reflectionRoughness = specularMaterial.a;
+    vec4 noisyDiffuse = imageLoad(rrNoisyDiffuse, pixel);
+    vec4 noisySpecular = imageLoad(rrNoisySpecular, pixel);
+    vec4 sun = imageLoad(rrSunLighting, pixel);
+    float specularHitDistance = noisySpecular.a;
+    vec3 inputRadiance = noisyDiffuse.rgb
+            + noisySpecular.rgb
+            + sun.rgb * sun.a
+            + imageLoad(rrStableRadiance, pixel).rgb;
+    // Finish and store color before matrix reconstruction so lighting vectors are no longer live
+    // while primary and virtual-reflection motion are projected.
+    rrApplyAerial(pixel, extent, material.a, inputRadiance);
+    imageStore(rrInputColor, pixel, vec4(
+            primeNrdClampRadiance(inputRadiance, PRIME_NRD_FP16_MAX), 1.0));
 
-    // Raygen already writes finite, clamped surface albedos. Only sky needs the SDK's neutral 0.5
-    // fallback, avoiding two redundant full-frame stores over ordinary geometry.
-    if (sky) {
-        imageStore(rrDiffuseMaterial, pixel, vec4(vec3(0.5), material.a));
-        imageStore(rrSpecularMaterial, pixel, vec4(vec3(0.5), specularMaterial.a));
-    }
-    float specularHitDistance = sky
-            ? 0.0
-            : primeNrdSanitizeHitDistance(noisySpecular.a);
-
-    float viewZ = PRIME_RR_SKY_VIEW_Z;
-    if (!sky) {
-        vec4 viewPosition = rrPush.currentWorldToView * vec4(primary.xyz, 1.0);
-        viewZ = abs(viewPosition.z);
-        if (!(viewZ > 0.0) || isnan(viewZ) || isinf(viewZ)) {
-            viewZ = PRIME_RR_SKY_VIEW_Z;
-        }
+    vec4 viewPosition = rrPush.currentWorldToView * vec4(primary.xyz, 1.0);
+    float viewZ = abs(viewPosition.z);
+    if (!(viewZ > 0.0) || isnan(viewZ) || isinf(viewZ)) {
+        viewZ = PRIME_RR_SKY_VIEW_Z;
     }
     imageStore(rrLinearViewZ, pixel, vec4(viewZ));
     vec2 currentSampleUv = (vec2(pixel) + vec2(0.5) + rrPush.currentJitterPixels)
             / vec2(extent);
-    vec2 primaryMotion = rrMotionVector(currentSampleUv, primary.xyz, sky);
+    vec2 primaryMotion = rrMotionVector(currentSampleUv, primary.xyz, false);
     imageStore(rrMotion, pixel, vec4(
             primeNrdSanitizeMotion(vec3(primaryMotion, 0.0)), 0.0));
 
     vec2 specularMotion = primaryMotion;
     float guideDistance = length(primary.xyz);
     float visibleDistance = primary.w;
-    if (!sky
-            && specularHitDistance > 1.0e-3
+    if (specularHitDistance > 1.0e-3
             && reflectionRoughness < PRIME_RR_SPECULAR_MOTION_ROUGHNESS
             && primeNrdIsFinite(guideDistance)
             && guideDistance > 1.0e-6
@@ -165,18 +173,4 @@ void main() {
     }
     imageStore(rrSpecularMotion, pixel, vec4(
             primeNrdSanitizeMotion(vec3(specularMotion, 0.0)), 0.0));
-
-    vec3 surface = sky
-            ? vec3(0.0)
-            : primeNrdSanitizeRadiance(noisyDiffuse.rgb)
-                    + primeNrdSanitizeRadiance(noisySpecular.rgb)
-                    + primeNrdSanitizeRadiance(sun.rgb)
-                            * primeNrdSanitizeUnit(sun.a, 0.0);
-    vec3 stable = primeNrdClampRadiance(
-            imageLoad(rrStableRadiance, pixel).rgb, PRIME_NRD_FP16_MAX);
-    vec3 inputRadiance = surface + stable;
-    rrApplyAerial(pixel, extent, material.a, inputRadiance);
-    inputRadiance = primeNrdClampRadiance(inputRadiance, PRIME_NRD_FP16_MAX);
-
-    imageStore(rrInputColor, pixel, vec4(inputRadiance, 1.0));
 }

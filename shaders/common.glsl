@@ -54,7 +54,7 @@ void primeSetNumericalContext(uint stage, uint bounce) {
 }
 
 void primeRecordNumerical(uint flags, uint field) {
-    if (!primeWritesRawNumericalDiagnostic() || flags == 0u) return;
+    if (flags == 0u) return;
     if (primeRawNumericalFirstContext == 0u) {
         // Add one so zero remains the unrecorded sentinel. Stage and bounce occupy exactly
         // representable integer ranges in the RGBA16F diagnostic target.
@@ -75,43 +75,59 @@ vec4 primeRawNumericalMetadata() {
 }
 
 void primeRecordNonFinite(float value) {
-    primeRecordNumerical(
-            primeClassifyNonFinite(value), PRIME_NUMERICAL_FIELD_NON_FINITE);
+    if (primeWritesRawNumericalDiagnostic()) {
+        primeRecordNumerical(
+                primeClassifyNonFinite(value), PRIME_NUMERICAL_FIELD_NON_FINITE);
+    }
 }
 
 void primeRecordNonFinite(vec3 value) {
-    primeRecordNumerical(
-            primeClassifyNonFinite(value), PRIME_NUMERICAL_FIELD_NON_FINITE);
+    if (primeWritesRawNumericalDiagnostic()) {
+        primeRecordNumerical(
+                primeClassifyNonFinite(value), PRIME_NUMERICAL_FIELD_NON_FINITE);
+    }
 }
 
 void primeRecordNonnegative(float value) {
-    primeRecordNumerical(
-            primeClassifyNonnegative(value), PRIME_NUMERICAL_FIELD_NONNEGATIVE);
+    if (primeWritesRawNumericalDiagnostic()) {
+        primeRecordNumerical(
+                primeClassifyNonnegative(value), PRIME_NUMERICAL_FIELD_NONNEGATIVE);
+    }
 }
 
 void primeRecordNonnegative(vec3 value) {
-    primeRecordNumerical(
-            primeClassifyNonnegative(value), PRIME_NUMERICAL_FIELD_NONNEGATIVE);
+    if (primeWritesRawNumericalDiagnostic()) {
+        primeRecordNumerical(
+                primeClassifyNonnegative(value), PRIME_NUMERICAL_FIELD_NONNEGATIVE);
+    }
 }
 
 void primeRecordRadiance(vec3 value) {
-    primeRecordNumerical(
-            primeClassifyRadiance(value), PRIME_NUMERICAL_FIELD_RADIANCE);
+    if (primeWritesRawNumericalDiagnostic()) {
+        primeRecordNumerical(
+                primeClassifyRadiance(value), PRIME_NUMERICAL_FIELD_RADIANCE);
+    }
 }
 
 void primeRecordUnit(float value) {
-    primeRecordNumerical(
-            primeClassifyUnit(value), PRIME_NUMERICAL_FIELD_UNIT);
+    if (primeWritesRawNumericalDiagnostic()) {
+        primeRecordNumerical(
+                primeClassifyUnit(value), PRIME_NUMERICAL_FIELD_UNIT);
+    }
 }
 
 void primeRecordUnit(vec3 value) {
-    primeRecordNumerical(
-            primeClassifyUnit(value), PRIME_NUMERICAL_FIELD_UNIT);
+    if (primeWritesRawNumericalDiagnostic()) {
+        primeRecordNumerical(
+                primeClassifyUnit(value), PRIME_NUMERICAL_FIELD_UNIT);
+    }
 }
 
 void primeRecordDirection(vec3 value) {
-    primeRecordNumerical(
-            primeClassifyDirection(value), PRIME_NUMERICAL_FIELD_DIRECTION);
+    if (primeWritesRawNumericalDiagnostic()) {
+        primeRecordNumerical(
+                primeClassifyDirection(value), PRIME_NUMERICAL_FIELD_DIRECTION);
+    }
 }
 
 vec2 primeSignNotZero(vec2 value) {

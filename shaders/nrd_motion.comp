@@ -143,12 +143,12 @@ void primeStoreSpecularDirection(ivec2 pixel, bool reflection, vec4 value) {
 }
 
 void primeClearBranch(ivec2 pixel, bool reflection) {
-    primeStoreDiffuse(pixel, reflection, primeNrdPackRadianceAndHitDistance(vec3(0.0), 0.0));
-    primeStoreSpecular(pixel, reflection, primeNrdPackRadianceAndHitDistance(vec3(0.0), 0.0));
+    primeStoreDiffuse(pixel, reflection, vec4(0.0));
+    primeStoreSpecular(pixel, reflection, vec4(0.0));
     primeStoreDiffuseDirection(pixel, reflection, vec4(0.0));
     primeStoreSpecularDirection(pixel, reflection, vec4(0.0));
-    primeStoreNormal(pixel, reflection, primeNrdPackNormalRoughness(
-            vec3(0.0, 0.0, 1.0), PRIME_DEFAULT_REFERENCE_LINEAR_ROUGHNESS, 0.0));
+    primeStoreNormal(pixel, reflection, vec4(
+            0.5, 0.5, PRIME_DEFAULT_REFERENCE_LINEAR_ROUGHNESS * 0.5 + 0.5, 0.0));
     primeStoreViewZ(pixel, reflection, PRIME_MOTION_SKY_VIEW_Z);
     primeStoreMotion(pixel, reflection, vec4(0.0));
     primeStoreMaterial(pixel, reflection, vec4(1.0, 1.0, 1.0, -1.0));
@@ -168,16 +168,6 @@ void primePrepareBranch(
         return;
     }
 
-    vec4 rawSpecularMaterial = primeLoadSpecularMaterial(pixel, reflection);
-    uint materialFlags = primeNrdIsFinite(rawSpecularMaterial.a)
-            ? uint(clamp(round(rawSpecularMaterial.a), 0.0, PRIME_NRD_FP16_MAX))
-            : 0u;
-    vec3 normal;
-    float roughness;
-    primeNrdUnpackNormalRoughness(
-            primeLoadPackedNormal(pixel, reflection), normal, roughness);
-    vec3 diffuseAlbedo = primeNrdSanitizeAlbedo(rawMaterial.rgb);
-    vec3 specularAlbedo = primeNrdSanitizeAlbedo(rawSpecularMaterial.rgb);
     vec4 rawPosition = primeLoadPosition(pixel, reflection);
     vec3 position = rawPosition.xyz;
     bool directional = reflection && rawPosition.w > 0.5;
@@ -188,58 +178,25 @@ void primePrepareBranch(
             ? min(currentViewZ, PRIME_MOTION_SKY_VIEW_Z)
             : PRIME_MOTION_SKY_VIEW_Z;
 
-    vec4 rawDiffuse = primeLoadDiffuse(pixel, reflection);
-    vec4 rawSpecular = primeLoadSpecular(pixel, reflection);
-    float diffuseHitT = primeNrdSanitizeHitDistance(rawDiffuse.a);
-    float specularHitT = primeNrdSanitizeHitDistance(rawSpecular.a);
-    vec3 diffuse = primeNrdDemodulate(rawDiffuse.rgb, diffuseAlbedo);
-    vec3 specular = primeNrdDemodulate(rawSpecular.rgb, specularAlbedo);
-    primeNrdClampRadiancePair(diffuse, specular, PRIME_NRD_FP16_MAX);
-    primeStoreDiffuse(pixel, reflection, primeNrdPackRadianceAndHitDistance(
-            diffuse,
-            diffuseHitT <= 0.0 ? 0.0
-                    : primeNrdNormalizedHitDistance(diffuseHitT, currentViewZ, 1.0)));
-    primeStoreSpecular(pixel, reflection, primeNrdPackRadianceAndHitDistance(
-            specular,
-            specularHitT <= 0.0 ? 0.0
-                    : primeNrdNormalizedHitDistance(specularHitT, currentViewZ, roughness)));
-
-    vec3 diffuseDirection = primeLoadDiffuseDirection(pixel, reflection);
-    vec3 specularDirection = primeLoadSpecularDirection(pixel, reflection);
-    diffuseDirection = primeNrdIsFinite(diffuseDirection)
-            ? clamp(diffuseDirection, vec3(-1.0), vec3(1.0)) : vec3(0.0);
-    specularDirection = primeNrdIsFinite(specularDirection)
-            ? clamp(specularDirection, vec3(-1.0), vec3(1.0)) : vec3(0.0);
-    primeStoreDiffuseDirection(pixel, reflection, vec4(
-            diffuseDirection * primeNrdLinearToYCoCg(diffuse).x, 0.0));
-    primeStoreSpecularDirection(pixel, reflection, vec4(
-            specularDirection * primeNrdLinearToYCoCg(specular).x, 0.0));
-    primeStoreNormal(pixel, reflection, primeNrdPackNormalRoughness(
-            normal, roughness, primeNrdMaterialId(materialFlags)));
-    primeStoreViewZ(pixel, reflection, currentViewZ);
-    primeStoreMaterial(pixel, reflection, vec4(diffuseAlbedo, primaryDistance));
-    float composition = reflection
-            ? 0.0
-            : primeFsrTransparencyAndCompositionMask(
-                    floatBitsToUint(imageLoad(primeDisplayPosition, pixel).w));
-    primeStoreSpecularMaterial(pixel, reflection, vec4(specularAlbedo, composition));
-
-    // Infinite environment reflections use direction motion: camera translation must not move the
-    // sun/sky image across a finite water surface. Depth and rejection still describe that surface.
+    // Finish matrix work before loading material and lighting vectors. Position and clip
+    // temporaries then die before demodulation, keeping the two largest live ranges disjoint.
     vec4 previousClip = primeMotionPush.previousWorldToClip
             * vec4(position, directional ? 0.0 : 1.0);
-    if (!(abs(previousClip.w) > 1.0e-6)
-            || any(isnan(previousClip)) || any(isinf(previousClip))) {
+    bool validPreviousClip = abs(previousClip.w) > 1.0e-6
+            && !any(isnan(previousClip)) && !any(isinf(previousClip));
+    vec2 previousUv = vec2(0.0);
+    if (validPreviousClip) {
+        previousUv = previousClip.xy / previousClip.w
+                * vec2(0.5, -0.5) + vec2(0.5);
+        primeStoreMotion(pixel, reflection, vec4(primeNrdSanitizeMotion(vec3(
+                (previousUv - currentSampleUv) * vec2(extent),
+                directional ? 0.0 : abs(previousClip.w) - currentViewZ)), 0.0));
+    } else {
         primeStoreMotion(pixel, reflection, vec4(0.0));
-        return;
     }
-    vec2 previousUv = previousClip.xy / previousClip.w
-            * vec2(0.5, -0.5) + vec2(0.5);
-    primeStoreMotion(pixel, reflection, vec4(primeNrdSanitizeMotion(vec3(
-            (previousUv - currentSampleUv) * vec2(extent),
-            directional ? 0.0 : abs(previousClip.w) - currentViewZ)), 0.0));
-
-    if (!reflection && primeMotionPush.diagnosticMode == PRIME_DIAGNOSTIC_REPROJECTION_ERROR) {
+    if (validPreviousClip
+            && !reflection
+            && primeMotionPush.diagnosticMode == PRIME_DIAGNOSTIC_REPROJECTION_ERROR) {
         vec4 exactPreviousClip = primeMotionPush.previousRenderedWorldToClip
                 * vec4(position, directional ? 0.0 : 1.0);
         vec3 error = vec3(1.0);
@@ -257,6 +214,46 @@ void primePrepareBranch(
         }
         imageStore(primeReprojectionError, pixel, vec4(clamp(error, 0.0, 1.0), 1.0));
     }
+
+    vec4 rawSpecularMaterial = primeLoadSpecularMaterial(pixel, reflection);
+    vec3 normal;
+    float roughness;
+    primeNrdUnpackNormalRoughness(
+            primeLoadPackedNormal(pixel, reflection), normal, roughness);
+    // Raygen owns this private pre-NRD contract: these albedos, hit distances, packed normals and
+    // direction moments are already finite and range-limited. Revalidating them here doubles the
+    // full-screen scalar work and extends every raw vector's lifetime.
+    vec3 diffuseAlbedo = rawMaterial.rgb;
+    vec3 specularAlbedo = rawSpecularMaterial.rgb;
+    vec4 rawDiffuse = primeLoadDiffuse(pixel, reflection);
+    vec4 rawSpecular = primeLoadSpecular(pixel, reflection);
+    float diffuseHitT = rawDiffuse.a;
+    float specularHitT = rawSpecular.a;
+    vec3 diffuse = primeNrdDemodulateSanitized(rawDiffuse.rgb, diffuseAlbedo);
+    vec3 specular = primeNrdDemodulateSanitized(rawSpecular.rgb, specularAlbedo);
+    primeNrdClampSanitizedRadiancePair(diffuse, specular, PRIME_NRD_FP16_MAX);
+    primeStoreDiffuse(pixel, reflection, primeNrdPackSanitizedRadianceAndHitDistance(
+            diffuse,
+            diffuseHitT <= 0.0 ? 0.0
+                    : primeNrdNormalizedSanitizedHitDistance(
+                            diffuseHitT, currentViewZ, 1.0)));
+    vec3 diffuseDirection = primeLoadDiffuseDirection(pixel, reflection);
+    primeStoreDiffuseDirection(pixel, reflection, vec4(
+            diffuseDirection * primeNrdY(diffuse), 0.0));
+    primeStoreSpecular(pixel, reflection, primeNrdPackSanitizedRadianceAndHitDistance(
+            specular,
+            specularHitT <= 0.0 ? 0.0
+                    : primeNrdNormalizedSanitizedHitDistance(
+                            specularHitT, currentViewZ, roughness)));
+    vec3 specularDirection = primeLoadSpecularDirection(pixel, reflection);
+    primeStoreSpecularDirection(pixel, reflection, vec4(
+            specularDirection * primeNrdY(specular), 0.0));
+    primeStoreViewZ(pixel, reflection, currentViewZ);
+    float composition = reflection
+            ? 0.0
+            : primeFsrTransparencyAndCompositionMask(
+                    floatBitsToUint(imageLoad(primeDisplayPosition, pixel).w));
+    primeStoreSpecularMaterial(pixel, reflection, vec4(specularAlbedo, composition));
 }
 
 void primePrepareFsrGuide(

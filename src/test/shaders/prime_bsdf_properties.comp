@@ -100,6 +100,31 @@ bool primeAdapterZero(vec3 value) {
     return all(equal(value, vec3(0.0)));
 }
 
+bool primeAdapterSameSample(BsdfSample first, BsdfSample second) {
+    return all(equal(first.direction, second.direction))
+            && all(equal(first.response, second.response))
+            && first.pdf == second.pdf
+            && first.relativeEta == second.relativeEta
+            && first.eventFlags == second.eventFlags;
+}
+
+bool primeAdapterSameStack(
+        PrimeRcVolumeStack first,
+        PrimeRcVolumeStack second) {
+    if (first.count != second.count) return false;
+    for (uint index = 0u; index < first.count; index++) {
+        PrimeRcVolume a = first.values[index];
+        PrimeRcVolume b = second.values[index];
+        if (!all(equal(a.extinction, b.extinction))
+                || !all(equal(a.albedo, b.albedo))
+                || a.anisotropy != b.anisotropy
+                || a.ior != b.ior) {
+            return false;
+        }
+    }
+    return true;
+}
+
 void primeAdapterCheckEvaluation(
         inout uint mask, BsdfEvaluation evaluation) {
     primeAdapterClassify(mask, evaluation.response);
@@ -366,6 +391,33 @@ void primeAdapterProperties(
                 sampled.paths.reflection.volumeStack.count,
                 sampled.paths.transmission.volumeStack.count);
         result.albedos = sampled.albedos;
+        PrimeTransmissiveBsdfSplit referenceSplit =
+                primeSampleMinecraftTransmissionSplit(
+                        baseColor,
+                        opacity,
+                        outwardNormal,
+                        materialFlags,
+                        packedNormal,
+                        packedSpecular,
+                        viewDirection,
+                        firstSample,
+                        secondSample,
+                        rayT,
+                        stack);
+        if (!primeAdapterSameSample(
+                        sampled.paths.reflection.bsdfSample,
+                        referenceSplit.reflection.bsdfSample)
+                || !primeAdapterSameSample(
+                        sampled.paths.transmission.bsdfSample,
+                        referenceSplit.transmission.bsdfSample)
+                || !primeAdapterSameStack(
+                        sampled.paths.reflection.volumeStack,
+                        referenceSplit.reflection.volumeStack)
+                || !primeAdapterSameStack(
+                        sampled.paths.transmission.volumeStack,
+                        referenceSplit.transmission.volumeStack)) {
+            result.mask |= PRIME_TEST_FAILURE_IDENTITY;
+        }
         if (result.second.eventFlags != 0u) {
             result.sampledEvaluation = primeEvaluateMinecraftTransmissionBranch(
                     baseColor,

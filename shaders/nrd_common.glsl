@@ -64,9 +64,13 @@ vec3 primeNrdSanitizeMotion(vec3 motion) {
             : vec3(0.0);
 }
 
+float primeNrdY(vec3 color) {
+    return dot(color, vec3(0.25, 0.5, 0.25));
+}
+
 vec3 primeNrdLinearToYCoCg(vec3 color) {
     return vec3(
-            dot(color, vec3(0.25, 0.5, 0.25)),
+            primeNrdY(color),
             dot(color, vec3(0.5, 0.0, -0.5)),
             dot(color, vec3(-0.25, 0.5, -0.25)));
 }
@@ -119,18 +123,26 @@ void primeNrdUnpackNormalRoughness(
             PRIME_DEFAULT_REFERENCE_LINEAR_ROUGHNESS);
 }
 
-float primeNrdNormalizedHitDistance(float hitDistance, float viewZ, float roughness) {
-    // Exact REBLUR_FrontEnd_GetNormHitDist contract. The roughness-dependent scale is essential
-    // for specular virtual motion; using the diffuse shortcut here destabilizes highlights.
-    hitDistance = primeNrdSanitizeHitDistance(hitDistance);
-    viewZ = primeNrdIsFinite(viewZ) ? abs(viewZ) : PRIME_NRD_FP16_MAX;
-    roughness = primeNrdSanitizeUnit(roughness, PRIME_DEFAULT_REFERENCE_LINEAR_ROUGHNESS);
+float primeNrdNormalizedSanitizedHitDistance(
+        float hitDistance,
+        float viewZ,
+        float roughness) {
     float spread = 1.0 - exp2(-200.0 * roughness * roughness);
     spread *= pow(roughness, 0.5);
     float scale = (PRIME_NRD_HIT_DISTANCE_PARAMETERS.x
             + abs(viewZ) * PRIME_NRD_HIT_DISTANCE_PARAMETERS.y)
             * mix(PRIME_NRD_HIT_DISTANCE_PARAMETERS.z, 1.0, spread);
     return clamp(hitDistance / max(scale, 1.0e-6), 0.0, 1.0);
+}
+
+float primeNrdNormalizedHitDistance(float hitDistance, float viewZ, float roughness) {
+    // Exact REBLUR_FrontEnd_GetNormHitDist contract. The roughness-dependent scale is essential
+    // for specular virtual motion; using the diffuse shortcut here destabilizes highlights.
+    return primeNrdNormalizedSanitizedHitDistance(
+            primeNrdSanitizeHitDistance(hitDistance),
+            primeNrdIsFinite(viewZ) ? abs(viewZ) : PRIME_NRD_FP16_MAX,
+            primeNrdSanitizeUnit(
+                    roughness, PRIME_DEFAULT_REFERENCE_LINEAR_ROUGHNESS));
 }
 
 float primeNrdRadiancePeak(vec3 radiance) {
@@ -173,13 +185,17 @@ float primeNrdDemodulateChannel(float radiance, float guide) {
             : radiance / guide;
 }
 
-vec3 primeNrdDemodulate(vec3 radiance, vec3 guide) {
-    radiance = primeNrdSanitizeRadiance(radiance);
-    guide = primeNrdSanitizeAlbedo(guide);
+vec3 primeNrdDemodulateSanitized(vec3 radiance, vec3 guide) {
     return vec3(
             primeNrdDemodulateChannel(radiance.x, guide.x),
             primeNrdDemodulateChannel(radiance.y, guide.y),
             primeNrdDemodulateChannel(radiance.z, guide.z));
+}
+
+vec3 primeNrdDemodulate(vec3 radiance, vec3 guide) {
+    return primeNrdDemodulateSanitized(
+            primeNrdSanitizeRadiance(radiance),
+            primeNrdSanitizeAlbedo(guide));
 }
 
 float primeNrdClampRadianceTriple(
@@ -220,8 +236,34 @@ float primeNrdClampRadiancePair(
         inout vec3 first,
         inout vec3 second,
         float limit) {
-    vec3 unused = vec3(0.0);
-    return primeNrdClampRadianceTriple(first, second, unused, limit);
+    first = vec3(
+            primeNrdSanitizeNonnegative(first.x),
+            primeNrdSanitizeNonnegative(first.y),
+            primeNrdSanitizeNonnegative(first.z));
+    second = vec3(
+            primeNrdSanitizeNonnegative(second.x),
+            primeNrdSanitizeNonnegative(second.y),
+            primeNrdSanitizeNonnegative(second.z));
+    float sourcePeak = max(primeNrdRadiancePeak(first), primeNrdRadiancePeak(second));
+    if (!(sourcePeak > 0.0)) return 1.0;
+    float normalizedPeak = primeNrdRadiancePeak(first / sourcePeak + second / sourcePeak);
+    float scale = min(1.0, (limit / sourcePeak) / max(normalizedPeak, 1.0e-20));
+    first *= scale;
+    second *= scale;
+    return scale;
+}
+
+float primeNrdClampSanitizedRadiancePair(
+        inout vec3 first,
+        inout vec3 second,
+        float limit) {
+    float sourcePeak = max(primeNrdRadiancePeak(first), primeNrdRadiancePeak(second));
+    if (!(sourcePeak > 0.0)) return 1.0;
+    float normalizedPeak = primeNrdRadiancePeak(first / sourcePeak + second / sourcePeak);
+    float scale = min(1.0, (limit / sourcePeak) / max(normalizedPeak, 1.0e-20));
+    first *= scale;
+    second *= scale;
+    return scale;
 }
 
 vec4 primeNrdPackRadianceAndHitDistance(vec3 radiance, float normalizedHitDistance) {
@@ -229,6 +271,12 @@ vec4 primeNrdPackRadianceAndHitDistance(vec3 radiance, float normalizedHitDistan
     return vec4(
             primeNrdLinearToYCoCg(sanitized),
             primeNrdSanitizeUnit(normalizedHitDistance, 0.0));
+}
+
+vec4 primeNrdPackSanitizedRadianceAndHitDistance(
+        vec3 radiance,
+        float normalizedHitDistance) {
+    return vec4(primeNrdLinearToYCoCg(radiance), normalizedHitDistance);
 }
 
 #endif

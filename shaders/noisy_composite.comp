@@ -52,14 +52,22 @@ void main() {
     if (any(greaterThanEqual(pixel, primeNoisyPush.outputExtent))) return;
 
     vec4 material = imageLoad(primeNoisyMaterial, ivec2(pixel));
+    if (!primeNrdIsFinite(material.a) || material.a < 0.0) {
+        imageStore(
+                primeNoisyOutput,
+                ivec2(pixel),
+                vec4(primeNrdClampRadiance(
+                        imageLoad(primeNoisyStableRadiance, ivec2(pixel)).rgb,
+                        PRIME_NRD_FP16_MAX), 1.0));
+        return;
+    }
     vec4 sun = imageLoad(primeNoisySunLighting, ivec2(pixel));
-    vec3 surface = !primeNrdIsFinite(material.a) || material.a < 0.0
-            ? vec3(0.0)
-            : primeNrdSanitizeRadiance(imageLoad(primeNoisyDiffuse, ivec2(pixel)).rgb)
-                    + primeNrdSanitizeRadiance(
-                            imageLoad(primeNoisySpecular, ivec2(pixel)).rgb)
-                    + primeNrdSanitizeRadiance(sun.rgb)
-                            * primeNrdSanitizeUnit(sun.a, 0.0);
+    vec3 surface = primeNrdSanitizeRadiance(
+            imageLoad(primeNoisyDiffuse, ivec2(pixel)).rgb)
+            + primeNrdSanitizeRadiance(
+                    imageLoad(primeNoisySpecular, ivec2(pixel)).rgb)
+            + primeNrdSanitizeRadiance(sun.rgb)
+                    * primeNrdSanitizeUnit(sun.a, 0.0);
     vec3 stable = primeNrdClampRadiance(
             imageLoad(primeNoisyStableRadiance, ivec2(pixel)).rgb,
             PRIME_NRD_FP16_MAX);

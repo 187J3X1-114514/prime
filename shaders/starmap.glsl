@@ -36,52 +36,9 @@ vec2 primeStarmapUv(IntegratorRecord integrator, vec3 direction) {
             clamp(0.5 - declination / PRIME_PI, 0.0, 1.0));
 }
 
-vec3 primeStarmapDirection(IntegratorRecord integrator, vec2 uv) {
-    vec3 east;
-    vec3 pole;
-    vec3 meridian;
-    float phase;
-    primeStarmapFrame(integrator, east, pole, meridian, phase);
-    float rightAscension = (0.5 - uv.x) * (2.0 * PRIME_PI);
-    float declination = (0.5 - uv.y) * PRIME_PI;
-    float hourAngle = phase - rightAscension;
-    return normalize(pole * sin(declination)
-            + cos(declination)
-                    * (meridian * cos(hourAngle) - east * sin(hourAngle)));
-}
-
 float primeStarmapNightFactor(IntegratorRecord integrator) {
     return 1.0 - smoothstep(
             -0.12, 0.02, normalize(integrator.sunDirectionIntensity.xyz).y);
-}
-
-uint primeStarmapImportanceIndex(vec2 uv) {
-    uvec2 cell = min(
-            uvec2(uv * vec2(
-                    float(PRIME_STARMAP_IMPORTANCE_WIDTH),
-                    float(PRIME_STARMAP_IMPORTANCE_HEIGHT))),
-            uvec2(PRIME_STARMAP_IMPORTANCE_WIDTH - 1,
-                    PRIME_STARMAP_IMPORTANCE_HEIGHT - 1));
-    return cell.y * uint(PRIME_STARMAP_IMPORTANCE_WIDTH) + cell.x;
-}
-
-float primeStarmapCellSolidAngle(uint cellY) {
-    float top = 0.5 * PRIME_PI
-            - PRIME_PI * float(cellY) / float(PRIME_STARMAP_IMPORTANCE_HEIGHT);
-    float bottom = 0.5 * PRIME_PI
-            - PRIME_PI * float(cellY + 1u) / float(PRIME_STARMAP_IMPORTANCE_HEIGHT);
-    return (2.0 * PRIME_PI / float(PRIME_STARMAP_IMPORTANCE_WIDTH))
-            * (sin(top) - sin(bottom));
-}
-
-float primeStarmapPdf(IntegratorRecord integrator, vec3 direction) {
-    if (!(primeStarmapNightFactor(integrator) > 0.0)) {
-        return 0.0;
-    }
-    uint index = primeStarmapImportanceIndex(primeStarmapUv(integrator, direction));
-    float mass = uintBitsToFloat(primeStarmapImportance.words[index * 3u + 2u]);
-    uint cellY = index / uint(PRIME_STARMAP_IMPORTANCE_WIDTH);
-    return mass / primeStarmapCellSolidAngle(cellY);
 }
 
 vec3 primeStarmapRadianceUv(
@@ -110,50 +67,6 @@ vec3 primeStarmapRadiance(
                     primeStarmapUv(integrator, direction),
                     scale)
             : vec3(0.0);
-}
-
-LightSample primeSampleStarmap(
-        IntegratorRecord integrator,
-        vec3 surfacePosition,
-        vec3 sampleValue) {
-    LightSample result;
-    result.direction = vec3(0.0, 1.0, 0.0);
-    result.distance = 1000000.0;
-    result.radiance = vec3(0.0);
-    result.pdf = 0.0;
-    result.isDelta = 0u;
-    float scale = primeStarmapNightFactor(integrator) * primeStarRadianceMultiplier();
-    if (!(scale > 0.0)) {
-        return result;
-    }
-
-    const uint cellCount = uint(
-            PRIME_STARMAP_IMPORTANCE_WIDTH * PRIME_STARMAP_IMPORTANCE_HEIGHT);
-    float aliasValue = sampleValue.x * float(cellCount);
-    uint column = min(uint(aliasValue), cellCount - 1u);
-    uint word = column * 3u;
-    float threshold = uintBitsToFloat(primeStarmapImportance.words[word]);
-    uint alias = primeStarmapImportance.words[word + 1u];
-    uint index = aliasValue - float(column) < threshold ? column : alias;
-    uint cellX = index % uint(PRIME_STARMAP_IMPORTANCE_WIDTH);
-    uint cellY = index / uint(PRIME_STARMAP_IMPORTANCE_WIDTH);
-
-    float declinationTop = 0.5 * PRIME_PI
-            - PRIME_PI * float(cellY) / float(PRIME_STARMAP_IMPORTANCE_HEIGHT);
-    float declinationBottom = 0.5 * PRIME_PI
-            - PRIME_PI * float(cellY + 1u) / float(PRIME_STARMAP_IMPORTANCE_HEIGHT);
-    float sineDeclination = mix(
-            sin(declinationBottom), sin(declinationTop), sampleValue.z);
-    float declination = asin(clamp(sineDeclination, -1.0, 1.0));
-    vec2 uv = vec2(
-            (float(cellX) + sampleValue.y) / float(PRIME_STARMAP_IMPORTANCE_WIDTH),
-            0.5 - declination / PRIME_PI);
-    result.direction = primeStarmapDirection(integrator, uv);
-    float mass = uintBitsToFloat(primeStarmapImportance.words[index * 3u + 2u]);
-    result.pdf = mass / primeStarmapCellSolidAngle(cellY);
-    result.radiance = primeStarmapRadianceUv(
-            surfacePosition, result.direction, uv, scale);
-    return result;
 }
 
 #endif

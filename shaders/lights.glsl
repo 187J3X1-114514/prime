@@ -55,17 +55,6 @@ vec3 primeEnvironmentRadiance(IntegratorRecord integrator, vec3 direction) {
     return primeAtmosphereSky(direction, integrator.sunDirectionIntensity.xyz) * sunScale;
 }
 
-LightEvaluation primeEvaluateStarmap(
-        IntegratorRecord integrator,
-        vec3 surfacePosition,
-        vec3 direction) {
-    LightEvaluation result;
-    result.radiance = primeStarmapRadiance(
-            integrator, surfacePosition, direction);
-    result.pdf = primeStarmapPdf(integrator, direction);
-    return result;
-}
-
 float primeSunCosAngularRadius() {
     return cos(ATM_SUN_ANGULAR_RADIUS_RADIANS);
 }

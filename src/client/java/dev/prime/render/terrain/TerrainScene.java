@@ -186,7 +186,7 @@ public final class TerrainScene implements AutoCloseable {
                     ? this.worldLightTree.update(
                             finalClusters, nextOriginX, nextOriginY, nextOriginZ)
                     : this.worldLightTree.result();
-            if (!worldLightTree.isEmpty()) {
+            if (requiresWorldLightUpload(rebuildWorldLights, worldLightTree)) {
                 if (worldStagingBatch == null || commandBuffer == null) {
                     throw new IllegalStateException("World light tree requires an upload batch");
                 }
@@ -409,6 +409,11 @@ public final class TerrainScene implements AutoCloseable {
 
     public SceneView view() {
         return this.currentView;
+    }
+
+    static boolean requiresWorldLightUpload(
+            boolean rebuildWorldLights, CpuWorldLightTree.Result worldLightTree) {
+        return rebuildWorldLights && !worldLightTree.isEmpty();
     }
 
     public boolean contains(long key) {

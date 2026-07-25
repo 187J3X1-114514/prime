@@ -2,6 +2,7 @@ package dev.prime.render.terrain;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -251,6 +252,21 @@ final class EmissionLightContractTest {
         assertArrayEquals(bounds, java.util.Arrays.copyOfRange(packed, 0, 16));
         assertArrayEquals(forward, java.util.Arrays.copyOfRange(packed, 16, 18));
         assertArrayEquals(reverse, java.util.Arrays.copyOfRange(packed, 18, 20));
+    }
+
+    @Test
+    void compactionOnlyUpdateReusesExistingWorldLightUpload() {
+        CpuWorldLightTree.Result existingTree = new CpuWorldLightTree.Result(
+                new int[8],
+                new int[] {CpuLightTree.LEAF_FLAG},
+                new int[] {CpuLightTree.NO_INDEX},
+                new int[] {0});
+        CpuWorldLightTree.Result emptyTree =
+                new CpuWorldLightTree.Result(new int[0], new int[0], new int[0], new int[0]);
+
+        assertFalse(TerrainScene.requiresWorldLightUpload(false, existingTree));
+        assertTrue(TerrainScene.requiresWorldLightUpload(true, existingTree));
+        assertFalse(TerrainScene.requiresWorldLightUpload(true, emptyTree));
     }
 
     @Test

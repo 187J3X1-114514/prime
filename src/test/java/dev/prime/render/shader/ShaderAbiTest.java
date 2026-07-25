@@ -42,6 +42,10 @@ final class ShaderAbiTest {
         assertEquals(23, ShaderAbi.DESCRIPTOR_NRD_SPECULAR_DIRECTION);
         assertEquals(34, ShaderAbi.DESCRIPTOR_STARMAP);
         assertEquals(35, ShaderAbi.DESCRIPTOR_STARMAP_IMPORTANCE);
+        assertEquals(36, ShaderAbi.DESCRIPTOR_WAVEFRONT_PATHS);
+        assertEquals(8, ShaderAbi.WAVEFRONT_ROUNDS);
+        assertEquals(112, ShaderAbi.WAVEFRONT_PATH_RECORD_SIZE);
+        assertEquals(1, ShaderAbi.WAVEFRONT_ACTIVE_MASK);
         assertEquals(0x80000000, ShaderAbi.PATH_CAMERA_IN_WATER_MASK);
         assertEquals(0x1fff, ShaderAbi.PATH_JITTER_PHASE_MASK);
         assertEquals(29, ShaderAbi.PATH_TRANSPARENT_GUIDE_MODE_SHIFT);

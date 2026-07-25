@@ -482,6 +482,47 @@ vec3 primeResolveSampledAreaLightRadiance(AreaLightSample areaSample) {
             emitters.emitters[areaSample.emitterIndex], areaSample.uv);
 }
 
+// Tail paths do not sample the area-light tree. A directly hit emitter therefore needs radiance
+// only and has MIS weight one; avoiding the reverse tree and cell PDF streams is the main reason
+// the tail remains cheap after wavefront scheduling has removed the coherent early vertices.
+vec3 primeEvaluateAreaEmission(SurfaceInteraction surface, vec3 rayDirection) {
+    if (surface.emitterIndex == PRIME_NO_LIGHT_INDEX) {
+        return vec3(0.0);
+    }
+    SectionTable sections = SectionTable(primePush.sectionTableAddress);
+    SectionRecord section = sections.sections[surface.sectionIndex];
+    if (section.lightAddress == uint64_t(0)) {
+        return vec3(0.0);
+    }
+    SectionLightHeaderBuffer sectionBuffer = SectionLightHeaderBuffer(section.lightAddress);
+    SectionLightHeader header = sectionBuffer.header;
+    if (surface.emitterIndex >= header.emitterCount) {
+        return vec3(0.0);
+    }
+    LightEmitterBuffer emitters = LightEmitterBuffer(header.emitterAddress);
+    LightEmitter emitter = emitters.emitters[surface.emitterIndex];
+    if (!(primeEmitterCosine(emitter, rayDirection) > 0.0)
+            || !(emitter.cornerArea.w > 0.0)) {
+        return vec3(0.0);
+    }
+    vec3 localPosition = surface.position - section.translation;
+    vec3 relative = localPosition - emitter.cornerArea.xyz;
+    vec3 firstEdge = emitter.edgeOneScale.xyz;
+    vec3 secondEdge = emitter.edgeTwoPower.xyz;
+    vec3 edgeCross = cross(firstEdge, secondEdge);
+    float denominator = dot(edgeCross, edgeCross);
+    if (!(denominator > 0.0)) {
+        return vec3(0.0);
+    }
+    vec2 parentBarycentric = vec2(
+            dot(cross(relative, secondEdge), edgeCross) / denominator,
+            dot(cross(firstEdge, relative), edgeCross) / denominator);
+    return primeEvaluateEmitterRadiance(
+            emitter,
+            primeEmitterUv(emitter, parentBarycentric),
+            uintBitsToFloat(surface.textureLod));
+}
+
 LightEvaluation primeEvaluateAreaLight(
         SurfaceInteraction surface,
         vec3 rayOrigin,

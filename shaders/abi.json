@@ -198,7 +198,13 @@
     "nrdReflectionSpecularDirection": 32,
     "nrdDisplayPosition": 33,
     "starmap": 34,
-    "starmapImportance": 35
+    "starmapImportance": 35,
+    "wavefrontPaths": 36
+  },
+  "wavefrontContract": {
+    "rounds": 8,
+    "pathRecordSize": 112,
+    "activeMask": "0x1"
   },
   "pathControl": {
     "cameraInWaterMask": "0x80000000",

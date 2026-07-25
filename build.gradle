@@ -155,6 +155,7 @@ abstract class GenerateShaderAbi extends DefaultTask {
 		def atmosphereContract = schema.atmosphereContract
 		def starmapContract = schema.starmapContract
 		def nrdContract = schema.nrdContract
+		def wavefrontContract = schema.wavefrontContract
 
 		if (primitive.size != 32 || section.size != 64 || lightNode.size != 32
 				|| lightNodeForward.size != 4 || lightNodeReverse.size != 4
@@ -203,6 +204,12 @@ abstract class GenerateShaderAbi extends DefaultTask {
 				|| nrdContract.motionSpace != 'screen-pixel-2.5d'
 				|| nrdContract.signalSpace != 'demodulated-linear-rec2020-d65') {
 			throw new GradleException('Prime NRD signal and native-library contracts changed without a coordinated migration')
+		}
+		if (wavefrontContract.rounds != 8
+				|| wavefrontContract.pathRecordSize != 112
+				|| !wavefrontContract.activeMask.toString().equalsIgnoreCase('0x1')) {
+			throw new GradleException(
+					'Prime hybrid scheduler must preserve eight wavefront rounds and its queue ABI')
 		}
 		if (!schema.pathControl.cameraInWaterMask.toString().equalsIgnoreCase('0x80000000')
 				|| !schema.pathControl.jitterPhaseMask.toString().equalsIgnoreCase('0x1fff')
@@ -361,6 +368,10 @@ public final class ShaderAbi {
     public static final int DESCRIPTOR_NRD_DISPLAY_POSITION = ${schema.descriptors.nrdDisplayPosition};
     public static final int DESCRIPTOR_STARMAP = ${schema.descriptors.starmap};
     public static final int DESCRIPTOR_STARMAP_IMPORTANCE = ${schema.descriptors.starmapImportance};
+    public static final int DESCRIPTOR_WAVEFRONT_PATHS = ${schema.descriptors.wavefrontPaths};
+    public static final int WAVEFRONT_ROUNDS = ${wavefrontContract.rounds};
+    public static final int WAVEFRONT_PATH_RECORD_SIZE = ${wavefrontContract.pathRecordSize};
+    public static final int WAVEFRONT_ACTIVE_MASK = ${wavefrontContract.activeMask};
     public static final int PATH_CAMERA_IN_WATER_MASK = ${schema.pathControl.cameraInWaterMask};
     public static final int PATH_JITTER_PHASE_MASK = ${schema.pathControl.jitterPhaseMask};
     public static final int PATH_TRANSPARENT_GUIDE_MODE_SHIFT = ${schema.pathControl.transparentGuideModeShift};
@@ -443,6 +454,10 @@ ${javaOffsets}
 #define PRIME_SURFACE_INTERACTION_SIZE ${surfaceInteraction.size}
 #define PRIME_PUSH_CONSTANT_SIZE ${push.size}
 #define PRIME_DESCRIPTOR_TRANSMISSION_GGX_ENERGY ${schema.descriptors.transmissionGgxEnergy}
+#define PRIME_DESCRIPTOR_WAVEFRONT_PATHS ${schema.descriptors.wavefrontPaths}
+#define PRIME_WAVEFRONT_ROUNDS ${wavefrontContract.rounds}
+#define PRIME_WAVEFRONT_PATH_RECORD_SIZE ${wavefrontContract.pathRecordSize}
+#define PRIME_WAVEFRONT_ACTIVE_MASK ${wavefrontContract.activeMask}u
 #define PRIME_PATH_CAMERA_IN_WATER_MASK ${schema.pathControl.cameraInWaterMask}u
 #define PRIME_PATH_JITTER_PHASE_MASK ${schema.pathControl.jitterPhaseMask}u
 #define PRIME_PATH_TRANSPARENT_GUIDE_MODE_SHIFT ${schema.pathControl.transparentGuideModeShift}u
@@ -736,12 +751,26 @@ abstract class CompilePrimeShaders extends DefaultTask {
 			if (source.name.endsWith('_validation.comp')) {
 				java.nio.file.Files.delete(output.toPath())
 			}
-			if (source.name == 'world.rgen') {
+			if (source.name in [
+					'world.rgen',
+					'wavefront_head.rgen',
+					'wavefront_step.rgen',
+					'wavefront_transition.rgen',
+					'wavefront_tail.rgen']) {
 				// Keep a baseline module that never declares the optional extension and a separate
 				// SER permutation for devices that negotiate real invocation reordering. Runtime
 				// selection therefore cannot expose unsupported SPIR-V to a fallback device.
-				def serOutput = new File(scratch, 'world_ser.rgen.spv')
-				compileShader(source, serOutput, ['-DPRIME_ENABLE_SER=1'])
+				def baseName = source.name.substring(0, source.name.length() - '.rgen'.length())
+				def serOutput = new File(scratch, "${baseName}_ser.rgen.spv")
+				def serDefinitions = ['-DPRIME_ENABLE_SER=1']
+				if (source.name == 'wavefront_tail.rgen') {
+					// The sparse tail keeps the complete result, medium and denoiser state live
+					// across its local loop. Repacking those invocations spills more state than
+					// it can recover through coherence; SER remains on the bounded wavefront
+					// stages where only the trace key crosses the reorder point.
+					serDefinitions.add('-DPRIME_DISABLE_SER_REORDER=1')
+				}
+				compileShader(source, serOutput, serDefinitions)
 			}
 		}
 
@@ -920,6 +949,14 @@ def verifyDistributionJar = tasks.register('verifyDistributionJar') {
 			'prime/natives/windows-x86_64/nvngx_dlssd.dll',
 			'prime/shaders/world.rgen.spv',
 			'prime/shaders/world_ser.rgen.spv',
+			'prime/shaders/wavefront_head.rgen.spv',
+			'prime/shaders/wavefront_head_ser.rgen.spv',
+			'prime/shaders/wavefront_step.rgen.spv',
+			'prime/shaders/wavefront_step_ser.rgen.spv',
+			'prime/shaders/wavefront_transition.rgen.spv',
+			'prime/shaders/wavefront_transition_ser.rgen.spv',
+			'prime/shaders/wavefront_tail.rgen.spv',
+			'prime/shaders/wavefront_tail_ser.rgen.spv',
 			'prime/shaders/screenshot_display.comp.spv',
 			'prime/shaders/shadow.rchit.spv',
 			'prime/shaders/nrd_motion.comp.spv',
@@ -935,9 +972,9 @@ def verifyDistributionJar = tasks.register('verifyDistributionJar') {
 		}
 
 		def shaderNames = names.findAll { it.startsWith('prime/shaders/') && it.endsWith('.spv') }
-		if (shaderNames.size() != 19) {
+		if (shaderNames.size() != 27) {
 			throw new GradleException(
-					"Distribution jar must contain 19 Prime shaders; found ${shaderNames.size()}")
+					"Distribution jar must contain 27 Prime shaders; found ${shaderNames.size()}")
 		}
 
 		new java.util.zip.ZipFile(archive).withCloseable { zip ->

@@ -14,6 +14,7 @@ import org.lwjgl.system.MemoryUtil;
 import org.lwjgl.vulkan.KHRAccelerationStructure;
 import org.lwjgl.vulkan.KHRDeferredHostOperations;
 import org.lwjgl.vulkan.KHRRayTracingPipeline;
+import org.lwjgl.vulkan.KHRSynchronization2;
 import org.lwjgl.vulkan.EXTOpacityMicromap;
 import org.lwjgl.vulkan.VK12;
 import org.lwjgl.vulkan.VkCommandBuffer;
@@ -25,6 +26,7 @@ import org.lwjgl.vulkan.VkDescriptorPoolSize;
 import org.lwjgl.vulkan.VkDescriptorSetAllocateInfo;
 import org.lwjgl.vulkan.VkDescriptorSetLayoutBinding;
 import org.lwjgl.vulkan.VkDescriptorSetLayoutCreateInfo;
+import org.lwjgl.vulkan.VkMemoryBarrier2;
 import org.lwjgl.vulkan.VkPipelineLayoutCreateInfo;
 import org.lwjgl.vulkan.VkPipelineShaderStageCreateInfo;
 import org.lwjgl.vulkan.VkPushConstantRange;
@@ -36,10 +38,16 @@ import org.lwjgl.vulkan.VkWriteDescriptorSet;
 import org.lwjgl.vulkan.VkWriteDescriptorSetAccelerationStructureKHR;
 
 public final class RayTracingPipeline implements Destroyable {
-    private static final int OPAQUE_RAYGEN_GROUP = 0;
-    static final int RAYGEN_GROUP_COUNT = 1;
+    private static final int SCREENSHOT_RAYGEN_GROUP = 0;
+    private static final int WAVEFRONT_HEAD_GROUP = 1;
+    private static final int WAVEFRONT_STEP_GROUP = 2;
+    private static final int WAVEFRONT_TRANSITION_GROUP = 3;
+    private static final int WAVEFRONT_TAIL_GROUP = 4;
+    static final int RAYGEN_GROUP_COUNT = 5;
     static final int MISS_GROUP_COUNT = 2;
     static final int HIT_GROUP_COUNT = 6;
+    static final int WAVEFRONT_STEP_DISPATCH_COUNT = ShaderAbi.WAVEFRONT_ROUNDS - 1;
+    static final int REALTIME_DISPATCH_COUNT = ShaderAbi.WAVEFRONT_ROUNDS + 2;
     private static final int GROUP_COUNT = RAYGEN_GROUP_COUNT + MISS_GROUP_COUNT + HIT_GROUP_COUNT;
     private static final int ALL_RT_STAGES =
             KHRRayTracingPipeline.VK_SHADER_STAGE_RAYGEN_BIT_KHR
@@ -60,6 +68,7 @@ public final class RayTracingPipeline implements Destroyable {
     private final TracePipeline tracePipeline;
     private final BsdfLookupTable bsdfLookup;
     private final StarmapTexture starmap;
+    private VulkanBuffer wavefrontPaths;
     private DescriptorBindings descriptorBindings;
     private boolean destroyed;
 
@@ -75,19 +84,25 @@ public final class RayTracingPipeline implements Destroyable {
             try (MemoryStack stack = MemoryStack.stackPush()) {
                 newDescriptorSetLayout = createDescriptorSetLayout(context, stack);
                 newPipelineLayout = createPipelineLayout(context, stack, newDescriptorSetLayout);
-                String opaqueRaygen = context.capabilities().invocationReorderSupported()
-                        ? "/prime/shaders/world_ser.rgen.spv"
-                        : "/prime/shaders/world.rgen.spv";
-                // Realtime and screenshot output are uniform branches of one raygen module. The
-                // complete integrator is optimized once and both modes are resident before this
-                // constructor returns.
+                boolean ser = context.capabilities().invocationReorderSupported();
+                String suffix = ser ? "_ser.rgen.spv" : ".rgen.spv";
+                String[] raygens = new String[] {
+                    "/prime/shaders/world" + suffix,
+                    "/prime/shaders/wavefront_head" + suffix,
+                    "/prime/shaders/wavefront_step" + suffix,
+                    "/prime/shaders/wavefront_transition" + suffix,
+                    "/prime/shaders/wavefront_tail" + suffix
+                };
+                // Screenshot, head, single-vertex and tail programs are compiled into one
+                // pipeline so every mode is resident before gameplay and the hit groups are not
+                // redundantly optimized by the driver.
                 newTracePipeline = TracePipeline.create(
                         context,
                         stack,
                         newPipelineLayout,
-                        opaqueRaygen,
-                        "Prime unified ray tracing pipeline",
-                        "Prime unified shader binding table");
+                        raygens,
+                        "Prime hybrid ray tracing pipeline",
+                        "Prime hybrid shader binding table");
             }
 
             this.descriptorSetLayout = newDescriptorSetLayout;
@@ -121,6 +136,18 @@ public final class RayTracingPipeline implements Destroyable {
             VulkanImage labPbrSpecularAtlas,
             AtmospherePipeline atmosphere,
             DenoiserInputs targets) {
+        long requiredWavefrontBytes = wavefrontPathBytes(
+                targets.noisyDiffuse().width(), targets.noisyDiffuse().height());
+        VulkanBuffer candidateWavefront = this.wavefrontPaths;
+        boolean replacesWavefront =
+                candidateWavefront == null || candidateWavefront.size() != requiredWavefrontBytes;
+        if (replacesWavefront) {
+            candidateWavefront = this.context.createBuffer(
+                    requiredWavefrontBytes,
+                    VK12.VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+                    false,
+                    "Prime wavefront path slots");
+        }
         if (this.descriptorBindings != null
                 && this.descriptorBindings.matches(
                         tlas,
@@ -147,34 +174,65 @@ public final class RayTracingPipeline implements Destroyable {
                         targets.specularDirection().view(),
                         targets.sunLighting().view(),
                         targets.sunPenumbra().view(),
-                        targets.rawNumericalDiagnostic().view())) {
+                        targets.rawNumericalDiagnostic().view(),
+                        candidateWavefront.handle())) {
             return;
         }
-        DescriptorBindings replacement = DescriptorBindings.create(
-                this.context,
-                this.descriptorSetLayout,
-                tlas,
-                output,
-                accumulation,
-                atlasView,
-                atlasSampler,
-                labPbrNormalAtlas,
-                labPbrSpecularAtlas,
-                atmosphere,
-                targets,
-                this.bsdfLookup,
-                this.starmap);
+        DescriptorBindings replacement;
+        try {
+            replacement = DescriptorBindings.create(
+                    this.context,
+                    this.descriptorSetLayout,
+                    tlas,
+                    output,
+                    accumulation,
+                    atlasView,
+                    atlasSampler,
+                    labPbrNormalAtlas,
+                    labPbrSpecularAtlas,
+                    atmosphere,
+                    targets,
+                    this.bsdfLookup,
+                    this.starmap,
+                    candidateWavefront);
+        } catch (RuntimeException exception) {
+            if (replacesWavefront) {
+                candidateWavefront.destroy();
+            }
+            throw exception;
+        }
         DescriptorBindings previous = this.descriptorBindings;
+        VulkanBuffer previousWavefront = this.wavefrontPaths;
         this.descriptorBindings = replacement;
+        this.wavefrontPaths = candidateWavefront;
         if (previous != null) {
             this.context.defer(previous);
+        }
+        if (replacesWavefront && previousWavefront != null) {
+            this.context.defer(previousWavefront);
         }
     }
 
     public void trace(VkCommandBuffer commandBuffer, ByteBuffer pushConstants, int width, int height) {
+        if (this.wavefrontPaths == null
+                || this.wavefrontPaths.size() != wavefrontPathBytes(width, height)) {
+            throw new IllegalStateException(
+                    "Wavefront path slots do not match the realtime trace extent");
+        }
         this.starmap.prepare(commandBuffer);
         this.bsdfLookup.prepare(commandBuffer);
-        this.trace(commandBuffer, pushConstants, width, height, OPAQUE_RAYGEN_GROUP);
+        this.bind(commandBuffer, pushConstants);
+        try (MemoryStack stack = MemoryStack.stackPush()) {
+            this.trace(commandBuffer, stack, width, height, WAVEFRONT_HEAD_GROUP);
+            this.wavefrontBarrier(commandBuffer, stack);
+            for (int round = 0; round < WAVEFRONT_STEP_DISPATCH_COUNT; round++) {
+                this.trace(commandBuffer, stack, width, height, WAVEFRONT_STEP_GROUP);
+                this.wavefrontBarrier(commandBuffer, stack);
+            }
+            this.trace(commandBuffer, stack, width, height, WAVEFRONT_TRANSITION_GROUP);
+            this.wavefrontBarrier(commandBuffer, stack);
+            this.trace(commandBuffer, stack, width, height, WAVEFRONT_TAIL_GROUP);
+        }
     }
 
     /** Records one complete, unsplit path sample per pixel for unbiased screenshot accumulation. */
@@ -182,15 +240,13 @@ public final class RayTracingPipeline implements Destroyable {
             VkCommandBuffer commandBuffer, ByteBuffer pushConstants, int width, int height) {
         this.starmap.prepare(commandBuffer);
         this.bsdfLookup.prepare(commandBuffer);
-        this.trace(commandBuffer, pushConstants, width, height, OPAQUE_RAYGEN_GROUP);
+        this.bind(commandBuffer, pushConstants);
+        try (MemoryStack stack = MemoryStack.stackPush()) {
+            this.trace(commandBuffer, stack, width, height, SCREENSHOT_RAYGEN_GROUP);
+        }
     }
 
-    private void trace(
-            VkCommandBuffer commandBuffer,
-            ByteBuffer pushConstants,
-            int width,
-            int height,
-            int raygenGroup) {
+    private void bind(VkCommandBuffer commandBuffer, ByteBuffer pushConstants) {
         if (this.descriptorBindings == null) {
             throw new IllegalStateException("Ray tracing descriptors have not been initialized");
         }
@@ -210,22 +266,52 @@ public final class RayTracingPipeline implements Destroyable {
                     stack.longs(this.descriptorBindings.descriptorSet),
                     null);
             VK12.vkCmdPushConstants(commandBuffer, this.pipelineLayout, ALL_RT_STAGES, 0, pushConstants);
-
-            VkStridedDeviceAddressRegionKHR raygen = VkStridedDeviceAddressRegionKHR.calloc(stack)
-                    .deviceAddress(this.tracePipeline.raygenAddress(raygenGroup))
-                    .stride(this.tracePipeline.raygenRecordStride)
-                    .size(this.tracePipeline.raygenRecordStride);
-            VkStridedDeviceAddressRegionKHR miss = VkStridedDeviceAddressRegionKHR.calloc(stack)
-                    .deviceAddress(this.tracePipeline.missAddress)
-                    .stride(this.tracePipeline.recordStride)
-                    .size(this.tracePipeline.recordStride * MISS_GROUP_COUNT);
-            VkStridedDeviceAddressRegionKHR hit = VkStridedDeviceAddressRegionKHR.calloc(stack)
-                    .deviceAddress(this.tracePipeline.hitAddress)
-                    .stride(this.tracePipeline.recordStride)
-                    .size(this.tracePipeline.recordStride * HIT_GROUP_COUNT);
-            VkStridedDeviceAddressRegionKHR callable = VkStridedDeviceAddressRegionKHR.calloc(stack);
-            KHRRayTracingPipeline.vkCmdTraceRaysKHR(commandBuffer, raygen, miss, hit, callable, width, height, 1);
         }
+    }
+
+    private void trace(
+            VkCommandBuffer commandBuffer,
+            MemoryStack stack,
+            int width,
+            int height,
+            int raygenGroup) {
+        VkStridedDeviceAddressRegionKHR raygen = VkStridedDeviceAddressRegionKHR.calloc(stack)
+                .deviceAddress(this.tracePipeline.raygenAddress(raygenGroup))
+                .stride(this.tracePipeline.raygenRecordStride)
+                .size(this.tracePipeline.raygenRecordStride);
+        VkStridedDeviceAddressRegionKHR miss = VkStridedDeviceAddressRegionKHR.calloc(stack)
+                .deviceAddress(this.tracePipeline.missAddress)
+                .stride(this.tracePipeline.recordStride)
+                .size(this.tracePipeline.recordStride * MISS_GROUP_COUNT);
+        VkStridedDeviceAddressRegionKHR hit = VkStridedDeviceAddressRegionKHR.calloc(stack)
+                .deviceAddress(this.tracePipeline.hitAddress)
+                .stride(this.tracePipeline.recordStride)
+                .size(this.tracePipeline.recordStride * HIT_GROUP_COUNT);
+        VkStridedDeviceAddressRegionKHR callable = VkStridedDeviceAddressRegionKHR.calloc(stack);
+        KHRRayTracingPipeline.vkCmdTraceRaysKHR(
+                commandBuffer, raygen, miss, hit, callable, width, height, 1);
+    }
+
+    private void wavefrontBarrier(VkCommandBuffer commandBuffer, MemoryStack stack) {
+        VkMemoryBarrier2.Buffer barrier = VkMemoryBarrier2.calloc(1, stack);
+        barrier.get(0)
+                .sType$Default()
+                .srcStageMask(KHRRayTracingPipeline.VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR)
+                .srcAccessMask(VK12.VK_ACCESS_SHADER_WRITE_BIT)
+                .dstStageMask(KHRRayTracingPipeline.VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR)
+                .dstAccessMask(VK12.VK_ACCESS_SHADER_READ_BIT | VK12.VK_ACCESS_SHADER_WRITE_BIT);
+        KHRSynchronization2.vkCmdPipelineBarrier2KHR(
+                commandBuffer,
+                VkDependencyInfo.calloc(stack).sType$Default().pMemoryBarriers(barrier));
+    }
+
+    static long wavefrontPathBytes(int width, int height) {
+        if (width <= 0 || height <= 0) {
+            throw new IllegalArgumentException("Wavefront extent must be positive");
+        }
+        return Math.multiplyExact(
+                Math.multiplyExact((long) width, (long) height),
+                (long) ShaderAbi.WAVEFRONT_PATH_RECORD_SIZE);
     }
 
     @Override
@@ -235,6 +321,10 @@ public final class RayTracingPipeline implements Destroyable {
             if (this.descriptorBindings != null) {
                 this.descriptorBindings.destroy();
                 this.descriptorBindings = null;
+            }
+            if (this.wavefrontPaths != null) {
+                this.wavefrontPaths.destroy();
+                this.wavefrontPaths = null;
             }
             this.tracePipeline.destroy();
             VK12.vkDestroyPipelineLayout(this.context.vkDevice(), this.pipelineLayout, null);
@@ -288,7 +378,7 @@ public final class RayTracingPipeline implements Destroyable {
     }
 
     private static long createDescriptorSetLayout(VulkanContext context, MemoryStack stack) {
-        VkDescriptorSetLayoutBinding.Buffer bindings = VkDescriptorSetLayoutBinding.calloc(36, stack);
+        VkDescriptorSetLayoutBinding.Buffer bindings = VkDescriptorSetLayoutBinding.calloc(37, stack);
         bindings.get(0)
                 .binding(ShaderAbi.DESCRIPTOR_TLAS)
                 .descriptorType(KHRAccelerationStructure.VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR)
@@ -395,6 +485,11 @@ public final class RayTracingPipeline implements Destroyable {
                 .descriptorType(VK12.VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
                 .descriptorCount(1)
                 .stageFlags(KHRRayTracingPipeline.VK_SHADER_STAGE_RAYGEN_BIT_KHR);
+        bindings.get(36)
+                .binding(ShaderAbi.DESCRIPTOR_WAVEFRONT_PATHS)
+                .descriptorType(VK12.VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
+                .descriptorCount(1)
+                .stageFlags(KHRRayTracingPipeline.VK_SHADER_STAGE_RAYGEN_BIT_KHR);
         VkDescriptorSetLayoutCreateInfo createInfo = VkDescriptorSetLayoutCreateInfo.calloc(stack)
                 .sType$Default()
                 .pBindings(bindings);
@@ -425,49 +520,78 @@ public final class RayTracingPipeline implements Destroyable {
             VulkanContext context,
             MemoryStack stack,
             long pipelineLayout,
-            String opaqueRaygenResource,
+            String[] raygenResources,
             String debugName) {
         PrimeClient.LOGGER.info(
                 "Compiling Prime realtime and screenshot ray tracing pipelines");
         long compilationStart = System.nanoTime();
-        long[] modules = new long[6];
+        if (raygenResources.length != RAYGEN_GROUP_COUNT) {
+            throw new IllegalArgumentException("Unexpected Prime raygen module count");
+        }
+        long[] modules = new long[RAYGEN_GROUP_COUNT + 5];
         long deferredOperation = 0L;
         try {
-            modules[0] = createShaderModule(context, opaqueRaygenResource);
-            modules[1] = createShaderModule(context, "/prime/shaders/world.rmiss.spv");
-            modules[2] = createShaderModule(context, "/prime/shaders/shadow.rmiss.spv");
-            modules[3] = createShaderModule(context, "/prime/shaders/world.rchit.spv");
-            modules[4] = createShaderModule(context, "/prime/shaders/world.rahit.spv");
-            modules[5] = createShaderModule(context, "/prime/shaders/shadow.rchit.spv");
-            VkPipelineShaderStageCreateInfo.Buffer stages = VkPipelineShaderStageCreateInfo.calloc(6, stack);
-            int[] stageFlags = new int[] {
-                KHRRayTracingPipeline.VK_SHADER_STAGE_RAYGEN_BIT_KHR,
-                KHRRayTracingPipeline.VK_SHADER_STAGE_MISS_BIT_KHR,
-                KHRRayTracingPipeline.VK_SHADER_STAGE_MISS_BIT_KHR,
-                KHRRayTracingPipeline.VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR,
-                KHRRayTracingPipeline.VK_SHADER_STAGE_ANY_HIT_BIT_KHR,
-                KHRRayTracingPipeline.VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR
-            };
+            for (int index = 0; index < RAYGEN_GROUP_COUNT; index++) {
+                modules[index] = createShaderModule(context, raygenResources[index]);
+            }
+            int miss = RAYGEN_GROUP_COUNT;
+            int shadowMiss = miss + 1;
+            int closestHit = miss + 2;
+            int anyHit = miss + 3;
+            int shadowClosestHit = miss + 4;
+            modules[miss] = createShaderModule(context, "/prime/shaders/world.rmiss.spv");
+            modules[shadowMiss] =
+                    createShaderModule(context, "/prime/shaders/shadow.rmiss.spv");
+            modules[closestHit] =
+                    createShaderModule(context, "/prime/shaders/world.rchit.spv");
+            modules[anyHit] =
+                    createShaderModule(context, "/prime/shaders/world.rahit.spv");
+            modules[shadowClosestHit] =
+                    createShaderModule(context, "/prime/shaders/shadow.rchit.spv");
+            VkPipelineShaderStageCreateInfo.Buffer stages =
+                    VkPipelineShaderStageCreateInfo.calloc(modules.length, stack);
             ByteBuffer mainName = stack.UTF8("main");
             for (int index = 0; index < stages.capacity(); index++) {
+                int stageFlag;
+                if (index < RAYGEN_GROUP_COUNT) {
+                    stageFlag = KHRRayTracingPipeline.VK_SHADER_STAGE_RAYGEN_BIT_KHR;
+                } else if (index <= shadowMiss) {
+                    stageFlag = KHRRayTracingPipeline.VK_SHADER_STAGE_MISS_BIT_KHR;
+                } else if (index == anyHit) {
+                    stageFlag = KHRRayTracingPipeline.VK_SHADER_STAGE_ANY_HIT_BIT_KHR;
+                } else {
+                    stageFlag = KHRRayTracingPipeline.VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR;
+                }
                 stages.get(index)
                         .sType$Default()
-                        .stage(stageFlags[index])
+                        .stage(stageFlag)
                         .module(modules[index])
                         .pName(mainName);
             }
 
             VkRayTracingShaderGroupCreateInfoKHR.Buffer groups =
                     VkRayTracingShaderGroupCreateInfoKHR.calloc(GROUP_COUNT, stack);
-            generalGroup(groups.get(0), 0);
-            generalGroup(groups.get(1), 1);
-            generalGroup(groups.get(2), 2);
-            triangleGroup(groups.get(3), 3, KHRRayTracingPipeline.VK_SHADER_UNUSED_KHR);
-            triangleGroup(groups.get(4), 3, 4);
-            triangleGroup(groups.get(5), 3, 4);
-            triangleGroup(groups.get(6), 5, KHRRayTracingPipeline.VK_SHADER_UNUSED_KHR);
-            triangleGroup(groups.get(7), 5, 4);
-            triangleGroup(groups.get(8), 5, KHRRayTracingPipeline.VK_SHADER_UNUSED_KHR);
+            for (int index = 0; index < RAYGEN_GROUP_COUNT; index++) {
+                generalGroup(groups.get(index), index);
+            }
+            generalGroup(groups.get(RAYGEN_GROUP_COUNT), miss);
+            generalGroup(groups.get(RAYGEN_GROUP_COUNT + 1), shadowMiss);
+            int hitBase = RAYGEN_GROUP_COUNT + MISS_GROUP_COUNT;
+            triangleGroup(
+                    groups.get(hitBase),
+                    closestHit,
+                    KHRRayTracingPipeline.VK_SHADER_UNUSED_KHR);
+            triangleGroup(groups.get(hitBase + 1), closestHit, anyHit);
+            triangleGroup(groups.get(hitBase + 2), closestHit, anyHit);
+            triangleGroup(
+                    groups.get(hitBase + 3),
+                    shadowClosestHit,
+                    KHRRayTracingPipeline.VK_SHADER_UNUSED_KHR);
+            triangleGroup(groups.get(hitBase + 4), shadowClosestHit, anyHit);
+            triangleGroup(
+                    groups.get(hitBase + 5),
+                    shadowClosestHit,
+                    KHRRayTracingPipeline.VK_SHADER_UNUSED_KHR);
 
             VkRayTracingPipelineCreateInfoKHR.Buffer createInfo =
                     VkRayTracingPipelineCreateInfoKHR.calloc(1, stack);
@@ -698,14 +822,14 @@ public final class RayTracingPipeline implements Destroyable {
                 VulkanContext context,
                 MemoryStack stack,
                 long pipelineLayout,
-                String raygenResource,
+                String[] raygenResources,
                 String pipelineName,
                 String sbtName) {
             long pipeline = 0L;
             VulkanBuffer shaderBindingTable = null;
             try {
                 pipeline = createPipeline(
-                        context, stack, pipelineLayout, raygenResource, pipelineName);
+                        context, stack, pipelineLayout, raygenResources, pipelineName);
                 int handleSize = context.capabilities().shaderGroupHandleSize();
                 int handleAlignment = context.capabilities().shaderGroupHandleAlignment();
                 int baseAlignment = context.capabilities().shaderGroupBaseAlignment();
@@ -794,6 +918,7 @@ public final class RayTracingPipeline implements Destroyable {
         private final long nrdSunLighting;
         private final long nrdSunPenumbra;
         private final long rawNumericalDiagnostic;
+        private final long wavefrontPaths;
         private boolean destroyed;
 
         private DescriptorBindings(
@@ -824,7 +949,8 @@ public final class RayTracingPipeline implements Destroyable {
                 long nrdSpecularDirection,
                 long nrdSunLighting,
                 long nrdSunPenumbra,
-                long rawNumericalDiagnostic) {
+                long rawNumericalDiagnostic,
+                long wavefrontPaths) {
             this.context = context;
             this.descriptorPool = descriptorPool;
             this.descriptorSet = descriptorSet;
@@ -853,6 +979,7 @@ public final class RayTracingPipeline implements Destroyable {
             this.nrdSunLighting = nrdSunLighting;
             this.nrdSunPenumbra = nrdSunPenumbra;
             this.rawNumericalDiagnostic = rawNumericalDiagnostic;
+            this.wavefrontPaths = wavefrontPaths;
         }
 
         private static DescriptorBindings create(
@@ -868,13 +995,14 @@ public final class RayTracingPipeline implements Destroyable {
                 AtmospherePipeline atmosphere,
                 DenoiserInputs targets,
                 BsdfLookupTable bsdfLookup,
-                StarmapTexture starmap) {
+                StarmapTexture starmap,
+                VulkanBuffer wavefrontPaths) {
             try (MemoryStack stack = MemoryStack.stackPush()) {
                 VkDescriptorPoolSize.Buffer sizes = VkDescriptorPoolSize.calloc(4, stack);
                 sizes.get(0).type(KHRAccelerationStructure.VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR).descriptorCount(1);
                 sizes.get(1).type(VK12.VK_DESCRIPTOR_TYPE_STORAGE_IMAGE).descriptorCount(29);
                 sizes.get(2).type(VK12.VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER).descriptorCount(5);
-                sizes.get(3).type(VK12.VK_DESCRIPTOR_TYPE_STORAGE_BUFFER).descriptorCount(1);
+                sizes.get(3).type(VK12.VK_DESCRIPTOR_TYPE_STORAGE_BUFFER).descriptorCount(2);
                 VkDescriptorPoolCreateInfo poolCreateInfo = VkDescriptorPoolCreateInfo.calloc(stack)
                         .sType$Default()
                         .maxSets(1)
@@ -974,12 +1102,16 @@ public final class RayTracingPipeline implements Destroyable {
                             .imageView(starmap.image().view())
                             .imageLayout(VK12.VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
                     VkDescriptorBufferInfo.Buffer bufferInfos =
-                            VkDescriptorBufferInfo.calloc(1, stack);
+                            VkDescriptorBufferInfo.calloc(2, stack);
                     bufferInfos.get(0)
                             .buffer(starmap.importance().handle())
                             .offset(0L)
                             .range(starmap.importance().size());
-                    VkWriteDescriptorSet.Buffer writes = VkWriteDescriptorSet.calloc(36, stack);
+                    bufferInfos.get(1)
+                            .buffer(wavefrontPaths.handle())
+                            .offset(0L)
+                            .range(wavefrontPaths.size());
+                    VkWriteDescriptorSet.Buffer writes = VkWriteDescriptorSet.calloc(37, stack);
                     writes.get(0)
                             .sType$Default()
                             .pNext(acceleration.address())
@@ -1113,6 +1245,14 @@ public final class RayTracingPipeline implements Destroyable {
                             .descriptorType(VK12.VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
                             .pBufferInfo(VkDescriptorBufferInfo.create(
                                     bufferInfos.get(0).address(), 1));
+                    writes.get(36)
+                            .sType$Default()
+                            .dstSet(descriptorSet)
+                            .dstBinding(ShaderAbi.DESCRIPTOR_WAVEFRONT_PATHS)
+                            .descriptorCount(1)
+                            .descriptorType(VK12.VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
+                            .pBufferInfo(VkDescriptorBufferInfo.create(
+                                    bufferInfos.get(1).address(), 1));
                     VK12.vkUpdateDescriptorSets(context.vkDevice(), writes, null);
                     return new DescriptorBindings(
                             context,
@@ -1142,7 +1282,8 @@ public final class RayTracingPipeline implements Destroyable {
                             targets.specularDirection().view(),
                             targets.sunLighting().view(),
                             targets.sunPenumbra().view(),
-                            targets.rawNumericalDiagnostic().view());
+                            targets.rawNumericalDiagnostic().view(),
+                            wavefrontPaths.handle());
                 } catch (RuntimeException exception) {
                     VK12.vkDestroyDescriptorPool(context.vkDevice(), pool, null);
                     throw exception;
@@ -1175,7 +1316,8 @@ public final class RayTracingPipeline implements Destroyable {
                 long nrdSpecularDirection,
                 long nrdSunLighting,
                 long nrdSunPenumbra,
-                long rawNumericalDiagnostic) {
+                long rawNumericalDiagnostic,
+                long wavefrontPaths) {
             return this.tlas == tlas
                     && this.outputView == outputView
                     && this.accumulationView == accumulationView
@@ -1200,7 +1342,8 @@ public final class RayTracingPipeline implements Destroyable {
                     && this.nrdSpecularDirection == nrdSpecularDirection
                     && this.nrdSunLighting == nrdSunLighting
                     && this.nrdSunPenumbra == nrdSunPenumbra
-                    && this.rawNumericalDiagnostic == rawNumericalDiagnostic;
+                    && this.rawNumericalDiagnostic == rawNumericalDiagnostic
+                    && this.wavefrontPaths == wavefrontPaths;
         }
 
         @Override

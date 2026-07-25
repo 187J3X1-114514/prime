@@ -103,21 +103,20 @@
       ]
     },
     "tracePayload": {
-      "size": 80,
+      "size": 64,
       "fields": [
-        { "name": "position", "type": "vec3", "offset": 0 },
+        { "name": "geometricNormal", "type": "vec3", "offset": 0 },
         { "name": "t", "type": "float", "offset": 12 },
-        { "name": "geometricNormal", "type": "vec3", "offset": 16 },
-        { "name": "hitKind", "type": "uint", "offset": 28 },
-        { "name": "baseColor", "type": "vec3", "offset": 32 },
-        { "name": "traceKind", "type": "uint", "offset": 44 },
-        { "name": "sectionIndex", "type": "uint", "offset": 48 },
-        { "name": "emitterIndex", "type": "uint", "offset": 52 },
-        { "name": "textureLod", "type": "uint", "offset": 56 },
-        { "name": "opacity", "type": "uint", "offset": 60 },
-        { "name": "shadingNormal", "type": "uint", "offset": 64 },
-        { "name": "labPbrNormal", "type": "uint", "offset": 68 },
-        { "name": "labPbrSpecular", "type": "uint", "offset": 72 }
+        { "name": "baseColor", "type": "vec3", "offset": 16 },
+        { "name": "traceKind", "type": "uint", "offset": 28 },
+        { "name": "sectionIndex", "type": "uint", "offset": 32 },
+        { "name": "emitterIndex", "type": "uint", "offset": 36 },
+        { "name": "textureLod", "type": "uint", "offset": 40 },
+        { "name": "opacity", "type": "uint", "offset": 44 },
+        { "name": "shadingNormal", "type": "uint", "offset": 48 },
+        { "name": "labPbrNormal", "type": "uint", "offset": 52 },
+        { "name": "labPbrSpecular", "type": "uint", "offset": 56 },
+        { "name": "hitKind", "type": "uint", "offset": 60 }
       ]
     },
     "surfaceInteraction": {

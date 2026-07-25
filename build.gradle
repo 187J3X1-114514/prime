@@ -161,7 +161,7 @@ abstract class GenerateShaderAbi extends DefaultTask {
 				|| lightNodeForward.size != 4 || lightNodeReverse.size != 4
 				|| lightEmitter.size != 96 || lightCell.size != 12
 				|| sectionLightHeader.size != 48
-				|| integrator.size != 32 || pathState.size != 96 || tracePayload.size != 80
+				|| integrator.size != 32 || pathState.size != 96 || tracePayload.size != 64
 				|| surfaceInteraction.size != 80 || push.size != 128
 				|| nrdMotionPush.size != 208) {
 			throw new GradleException('Prime shader ABI sizes changed without a coordinated migration')
@@ -775,7 +775,10 @@ abstract class CompilePrimeShaders extends DefaultTask {
 				// selection therefore cannot expose unsupported SPIR-V to a fallback device.
 				def baseName = source.name.substring(0, source.name.length() - '.rgen'.length())
 				def serOutput = new File(scratch, "${baseName}_ser.rgen.spv")
-				def serDefinitions = ['-DPRIME_ENABLE_SER=1']
+				def serDefinitions = [
+						'-DPRIME_ENABLE_SER=1',
+						'-DPRIME_ENABLE_SUBGROUP_QUEUE=1'
+				]
 				compileShader(source, serOutput, serDefinitions)
 			}
 		}

@@ -1,6 +1,10 @@
 #version 460
 #extension GL_GOOGLE_include_directive : require
 #extension GL_EXT_control_flow_attributes : require
+#if defined(PRIME_ENABLE_SUBGROUP_QUEUE)
+#extension GL_KHR_shader_subgroup_basic : require
+#extension GL_KHR_shader_subgroup_ballot : require
+#endif
 #if defined(PRIME_ENABLE_SER)
 #extension GL_EXT_buffer_reference_uvec2 : require
 #extension GL_EXT_shader_invocation_reorder : require
@@ -25,6 +29,8 @@ const uint PRIME_WAVEFRONT_STAGE_STEP = 1u;
 const uint PRIME_WAVEFRONT_STAGE_TRANSITION = 2u;
 const uint PRIME_WAVEFRONT_STAGE_TAIL = 3u;
 const uint PRIME_WAVEFRONT_STAGE_RESOLVE = 4u;
+layout(constant_id = 0) const uint primeWavefrontSpecializedStage =
+        PRIME_WAVEFRONT_STAGE_HEAD;
 
 layout(shaderRecordEXT, std430) buffer PrimeWavefrontShaderRecord {
     uint control;
@@ -329,16 +335,7 @@ void primeWavefrontHead() {
 void primeWavefrontStep(bool sunOnlyTail, uint sourceQueue) {
     uint recordIndex =
             primeWavefrontQueuedPath(sourceQueue, gl_LaunchIDEXT.x);
-    if (recordIndex >= primeWavefrontPathCapacity()) {
-        return;
-    }
     uvec2 pixel = primeWavefrontPixel(recordIndex);
-    if ((floatBitsToUint(
-            primeWavefrontPaths.records[recordIndex]
-                    .rayDirectionAndDenoiserControl.w)
-            & PRIME_WAVEFRONT_ACTIVE_MASK) == 0u) {
-        return;
-    }
     uint packedDiagnostic = floatBitsToUint(
             primeWavefrontPaths.records[recordIndex]
                     .throughputAndNumericalFlags.w);
@@ -355,12 +352,22 @@ void primeWavefrontStep(bool sunOnlyTail, uint sourceQueue) {
             .traceOriginAndPathControl.xyz;
     vec3 rayDirection = primeWavefrontPaths.records[recordIndex]
             .rayDirectionAndDenoiserControl.xyz;
+    uint traceControl = floatBitsToUint(
+            primeWavefrontPaths.records[recordIndex]
+                    .rayDirectionAndDenoiserControl.w);
+    uint pathClass = (traceControl & PRIME_WAVEFRONT_TRANSPARENT_BRANCH) == 0u
+            ? 0u
+            : (traceControl & PRIME_WAVEFRONT_TRANSMISSION_BRANCH) == 0u
+                    ? 1u
+                    : 2u;
     primeSetNumericalContext(PRIME_NUMERICAL_STAGE_TRACE, bounce);
-    SurfaceInteraction surface = primeTraceSurface(traceOrigin, rayDirection);
+    SurfaceInteraction surface = primeTraceSurfaceClassified(
+            traceOrigin, rayDirection, pathClass);
 
-    // Reload after SER so the 144-byte path record and image-backed result are not live state at
-    // the reorder point. Only the traversal key and two diagnostic words cross that boundary.
-    PrimeWavefrontPathRecord record = primeWavefrontPaths.records[recordIndex];
+    // Reload after SER so transport and image-backed signal state are not live at the reorder
+    // point. Cold area-light and PSR lanes remain untouched unless their path class needs them.
+    PrimeWavefrontPathRecord record =
+            primeLoadWavefrontTransportRecord(recordIndex);
     PathState path = primeWavefrontPath(pixel, record);
     PrimeRcVolumeStack volumeStack = primeWavefrontVolumeStack(record);
     IntegratorRecord integrator;
@@ -369,22 +376,34 @@ void primeWavefrontStep(bool sunOnlyTail, uint sourceQueue) {
             ATM_SPACE_SUN_INTENSITY * primeSunRadianceMultiplier());
     integrator.environmentRadiance = vec4(0.0);
     uint maximumBounces = min(primePush.path.z & 0xffffu, 256u);
+    bool queueContinuation;
 
     if (primeWavefrontTransparentBranch(record)) {
-        PrimeTransparentBranchResult branchResult =
-                primeLoadTransparentBranchIntermediate(pixel, record);
-        PrimeQueuedPsrState psrState =
-                primeWavefrontQueuedPsrState(record);
         uint control =
                 floatBitsToUint(record.rayDirectionAndDenoiserControl.w);
-        bool hasGuide =
+        bool hadGuide =
                 (control & PRIME_WAVEFRONT_REACHED_NON_DELTA) != 0u;
+        bool guideEnabled =
+                (control & PRIME_WAVEFRONT_GUIDE_ENABLED) != 0u;
+        bool needsPsr = guideEnabled && !hadGuide;
+        if (needsPsr) {
+            primeLoadWavefrontPsrRecord(recordIndex, record);
+        }
+        PrimeTransparentBranchResult branchResult =
+                primeLoadTransparentBranchActiveIntermediate(pixel, record);
+        PrimeQueuedPsrState psrState =
+                needsPsr
+                        ? primeWavefrontQueuedPsrState(record)
+                        : primeEmptyQueuedPsrState();
+        bool hasGuide =
+                hadGuide;
         bool diffusePath =
                 (control & PRIME_WAVEFRONT_DIFFUSE_PATH) != 0u;
         uint guideBounce =
                 (control >> PRIME_WAVEFRONT_PRIMARY_BOUNCE_SHIFT)
                         & PRIME_WAVEFRONT_BYTE_MASK;
         bool directionalGuide = primeWavefrontDirectionalGuide(record);
+        bool hadDirectionalGuide = directionalGuide;
         bool continuation = primeIntegrateTransparentWavefrontSurface(
                 path,
                 integrator,
@@ -397,7 +416,7 @@ void primeWavefrontStep(bool sunOnlyTail, uint sourceQueue) {
                 directionalGuide,
                 surface,
                 primeWavefrontTransmissionBranch(record),
-                primeWavefrontGuideEnabled(record),
+                guideEnabled,
                 sunOnlyTail);
         continuation = continuation && path.bounce < maximumBounces;
         primeUpdateTransparentWavefrontRecord(
@@ -411,50 +430,53 @@ void primeWavefrontStep(bool sunOnlyTail, uint sourceQueue) {
                 guideBounce,
                 directionalGuide,
                 continuation);
-        primeWavefrontPaths.records[recordIndex] = record;
-        primeStoreTransparentBranchIntermediate(
-                pixel,
-                primeWavefrontTransmissionBranch(record),
-                branchResult);
-        if (continuation) {
-            primeAppendWavefrontPath(sourceQueue ^ 1u, recordIndex);
+        primeStoreWavefrontTransportRecord(recordIndex, record);
+        if (continuation && guideEnabled && !hasGuide) {
+            primeStoreWavefrontPsrRecord(recordIndex, record);
         }
-        return;
+        bool transmissionBranch = primeWavefrontTransmissionBranch(record);
+        primeStoreTransparentBranchActiveIntermediate(
+                pixel,
+                transmissionBranch,
+                !hadGuide && hasGuide,
+                !hadDirectionalGuide && directionalGuide,
+                branchResult);
+        queueContinuation = continuation;
+    } else {
+        uint control =
+                floatBitsToUint(record.rayDirectionAndDenoiserControl.w);
+        bool guideWasPending =
+                (control & PRIME_WAVEFRONT_REACHED_NON_DELTA) == 0u;
+        PrimeIntegrationResult result =
+                primeLoadWavefrontActiveIntermediate(pixel, record);
+        PrimeDenoiserState denoiserState =
+                primeWavefrontDenoiserState(record, result);
+        bool continuation = primeIntegrateWavefrontSurface(
+                path,
+                integrator,
+                volumeStack,
+                denoiserState,
+                result,
+                surface,
+                sunOnlyTail);
+        continuation = continuation && path.bounce < maximumBounces;
+        primeUpdateWavefrontRecord(
+                record, path, volumeStack, denoiserState, continuation);
+        primeStoreWavefrontTransportRecord(recordIndex, record);
+        primeStoreWavefrontActiveIntermediate(
+                pixel, guideWasPending, result);
+        queueContinuation = continuation;
     }
-
-    PrimeIntegrationResult result = primeLoadWavefrontIntermediate(pixel, record);
-    PrimeDenoiserState denoiserState =
-            primeWavefrontDenoiserState(record, result);
-    bool continuation = primeIntegrateWavefrontSurface(
-            path,
-            integrator,
-            volumeStack,
-            denoiserState,
-            result,
-            surface,
-            sunOnlyTail);
-    continuation = continuation && path.bounce < maximumBounces;
-    primeUpdateWavefrontRecord(
-            record, path, volumeStack, denoiserState, continuation);
-    primeWavefrontPaths.records[recordIndex] = record;
-    primeStoreWavefrontIntermediate(pixel, result);
-    if (continuation) {
-        primeAppendWavefrontPath(sourceQueue ^ 1u, recordIndex);
-    }
+    primeAppendWavefrontContinuation(
+            sourceQueue ^ 1u, recordIndex, queueContinuation);
 }
 
 void primeWavefrontTail(uint sourceQueue) {
     uint recordIndex =
             primeWavefrontQueuedPath(sourceQueue, gl_LaunchIDEXT.x);
-    if (recordIndex >= primeWavefrontPathCapacity()) {
-        return;
-    }
     uvec2 pixel = primeWavefrontPixel(recordIndex);
     PrimeWavefrontPathRecord record =
-            primeWavefrontPaths.records[recordIndex];
-    if (!primeWavefrontActive(record)) {
-        return;
-    }
+            primeLoadWavefrontTransportRecord(recordIndex);
     primeRestoreWavefrontDiagnostic(record);
 
     PathState path = primeWavefrontPath(pixel, record);
@@ -467,20 +489,31 @@ void primeWavefrontTail(uint sourceQueue) {
     uint maximumBounces = min(primePush.path.z & 0xffffu, 256u);
 
     if (primeWavefrontTransparentBranch(record)) {
-        PrimeTransparentBranchResult branchResult =
-                primeLoadTransparentBranchIntermediate(pixel, record);
-        PrimeQueuedPsrState psrState =
-                primeWavefrontQueuedPsrState(record);
         uint control =
                 floatBitsToUint(record.rayDirectionAndDenoiserControl.w);
-        bool hasGuide =
+        bool hadGuide =
                 (control & PRIME_WAVEFRONT_REACHED_NON_DELTA) != 0u;
+        bool guideEnabled =
+                (control & PRIME_WAVEFRONT_GUIDE_ENABLED) != 0u;
+        bool needsPsr = guideEnabled && !hadGuide;
+        if (needsPsr) {
+            primeLoadWavefrontPsrRecord(recordIndex, record);
+        }
+        PrimeTransparentBranchResult branchResult =
+                primeLoadTransparentBranchActiveIntermediate(pixel, record);
+        PrimeQueuedPsrState psrState =
+                needsPsr
+                        ? primeWavefrontQueuedPsrState(record)
+                        : primeEmptyQueuedPsrState();
+        bool hasGuide =
+                hadGuide;
         bool diffusePath =
                 (control & PRIME_WAVEFRONT_DIFFUSE_PATH) != 0u;
         uint guideBounce =
                 (control >> PRIME_WAVEFRONT_PRIMARY_BOUNCE_SHIFT)
                         & PRIME_WAVEFRONT_BYTE_MASK;
         bool directionalGuide = primeWavefrontDirectionalGuide(record);
+        bool hadDirectionalGuide = directionalGuide;
         [[dont_unroll]]
         while (path.bounce < maximumBounces) {
             primeSetNumericalContext(
@@ -499,7 +532,7 @@ void primeWavefrontTail(uint sourceQueue) {
                     directionalGuide,
                     surface,
                     primeWavefrontTransmissionBranch(record),
-                    primeWavefrontGuideEnabled(record),
+                    guideEnabled,
                     true)) {
                 break;
             }
@@ -515,16 +548,22 @@ void primeWavefrontTail(uint sourceQueue) {
                 guideBounce,
                 directionalGuide,
                 false);
-        primeWavefrontPaths.records[recordIndex] = record;
-        primeStoreTransparentBranchIntermediate(
+        primeStoreWavefrontTransportRecord(recordIndex, record);
+        primeStoreTransparentBranchActiveIntermediate(
                 pixel,
                 primeWavefrontTransmissionBranch(record),
+                !hadGuide && hasGuide,
+                !hadDirectionalGuide && directionalGuide,
                 branchResult);
         return;
     }
 
+    uint control =
+            floatBitsToUint(record.rayDirectionAndDenoiserControl.w);
+    bool guideWasPending =
+            (control & PRIME_WAVEFRONT_REACHED_NON_DELTA) == 0u;
     PrimeIntegrationResult result =
-            primeLoadWavefrontIntermediate(pixel, record);
+            primeLoadWavefrontActiveIntermediate(pixel, record);
     PrimeDenoiserState denoiserState =
             primeWavefrontDenoiserState(record, result);
     // Paths reaching this point are sparse and incoherent. Finish them locally so queue traffic
@@ -548,8 +587,9 @@ void primeWavefrontTail(uint sourceQueue) {
     }
     primeUpdateWavefrontRecord(
             record, path, volumeStack, denoiserState, false);
-    primeWavefrontPaths.records[recordIndex] = record;
-    primeStoreWavefrontIntermediate(pixel, result);
+    primeStoreWavefrontTransportRecord(recordIndex, record);
+    primeStoreWavefrontActiveIntermediate(
+            pixel, guideWasPending, result);
 }
 
 void primeWavefrontResolve() {
@@ -587,17 +627,16 @@ void primeWavefrontResolve() {
 }
 
 void main() {
-    uint stage = primeWavefrontShaderRecord.control & 0xffu;
+    uint recordStage = primeWavefrontShaderRecord.control & 0xffu;
     uint sourceQueue = (primeWavefrontShaderRecord.control >> 8u) & 1u;
-    switch (stage) {
+    switch (primeWavefrontSpecializedStage) {
         case PRIME_WAVEFRONT_STAGE_HEAD:
             primeWavefrontHead();
             break;
         case PRIME_WAVEFRONT_STAGE_STEP:
-            primeWavefrontStep(false, sourceQueue);
-            break;
-        case PRIME_WAVEFRONT_STAGE_TRANSITION:
-            primeWavefrontStep(true, sourceQueue);
+            primeWavefrontStep(
+                    recordStage == PRIME_WAVEFRONT_STAGE_TRANSITION,
+                    sourceQueue);
             break;
         case PRIME_WAVEFRONT_STAGE_TAIL:
             primeWavefrontTail(sourceQueue);

@@ -38,7 +38,6 @@ void main() {
     float textureLodValue = primeRayConeTextureLod(primitive, normal);
     MaterialEvaluation material = primeEvaluateMaterial(
             primitive, primeInterpolateUv(section, primitive), textureLodValue);
-    primePayload.position = gl_WorldRayOriginEXT + gl_HitTEXT * gl_WorldRayDirectionEXT;
     primePayload.t = gl_HitTEXT;
     // Keep the authored outward normal. Opaque shading orients it at the integrator boundary,
     // while transmissive BSDFs require its sign to distinguish entering from exiting a medium.

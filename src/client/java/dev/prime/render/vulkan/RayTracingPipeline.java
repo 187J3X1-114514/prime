@@ -33,6 +33,8 @@ import org.lwjgl.vulkan.VkPushConstantRange;
 import org.lwjgl.vulkan.VkRayTracingPipelineCreateInfoKHR;
 import org.lwjgl.vulkan.VkRayTracingShaderGroupCreateInfoKHR;
 import org.lwjgl.vulkan.VkShaderModuleCreateInfo;
+import org.lwjgl.vulkan.VkSpecializationInfo;
+import org.lwjgl.vulkan.VkSpecializationMapEntry;
 import org.lwjgl.vulkan.VkStridedDeviceAddressRegionKHR;
 import org.lwjgl.vulkan.VkWriteDescriptorSet;
 import org.lwjgl.vulkan.VkWriteDescriptorSetAccelerationStructureKHR;
@@ -48,7 +50,8 @@ public final class RayTracingPipeline implements Destroyable {
     private static final int WAVEFRONT_TAIL_QUEUE_1_GROUP = 7;
     private static final int WAVEFRONT_RESOLVE_GROUP = 8;
     static final int RAYGEN_GROUP_COUNT = 9;
-    static final int RAYGEN_SHADER_STAGE_COUNT = 2;
+    static final int RAYGEN_MODULE_COUNT = 2;
+    static final int RAYGEN_SHADER_STAGE_COUNT = 5;
     static final int MISS_GROUP_COUNT = 2;
     static final int HIT_GROUP_COUNT = 6;
     static final int RAYGEN_RECORD_DATA_SIZE = Integer.BYTES;
@@ -91,15 +94,16 @@ public final class RayTracingPipeline implements Destroyable {
             try (MemoryStack stack = MemoryStack.stackPush()) {
                 newDescriptorSetLayout = createDescriptorSetLayout(context, stack);
                 newPipelineLayout = createPipelineLayout(context, stack, newDescriptorSetLayout);
-                boolean ser = context.capabilities().invocationReorderSupported();
+                boolean ser = context.capabilities().invocationReorderSupported()
+                        && context.capabilities().wavefrontSubgroupSupported();
                 String suffix = ser ? "_ser.rgen.spv" : ".rgen.spv";
                 String[] raygens = new String[] {
                     "/prime/shaders/world" + suffix,
                     "/prime/shaders/wavefront" + suffix
                 };
-                // All modes remain resident before gameplay. Head, step and transition share one
-                // stage and select their entry through SBT data, so the driver compiles their
-                // common integrator/BSDF/light code once.
+                // All modes remain resident before gameplay. Wavefront stages share one SPIR-V
+                // module but use specialization constants, allowing per-stage register allocation
+                // without multiplying the large offline shader module.
                 newTracePipeline = TracePipeline.create(
                         context,
                         stack,
@@ -751,31 +755,38 @@ public final class RayTracingPipeline implements Destroyable {
         PrimeClient.LOGGER.info(
                 "Compiling Prime realtime and screenshot ray tracing pipelines");
         long compilationStart = System.nanoTime();
-        if (raygenResources.length != RAYGEN_SHADER_STAGE_COUNT) {
+        if (raygenResources.length != RAYGEN_MODULE_COUNT) {
             throw new IllegalArgumentException("Unexpected Prime raygen module count");
         }
-        long[] modules = new long[RAYGEN_SHADER_STAGE_COUNT + 5];
+        long[] modules = new long[RAYGEN_MODULE_COUNT + 5];
         long deferredOperation = 0L;
         try {
-            for (int index = 0; index < RAYGEN_SHADER_STAGE_COUNT; index++) {
+            for (int index = 0; index < RAYGEN_MODULE_COUNT; index++) {
                 modules[index] = createShaderModule(context, raygenResources[index]);
             }
+            int missModule = RAYGEN_MODULE_COUNT;
+            int shadowMissModule = missModule + 1;
+            int closestHitModule = missModule + 2;
+            int anyHitModule = missModule + 3;
+            int shadowClosestHitModule = missModule + 4;
+            modules[missModule] =
+                    createShaderModule(context, "/prime/shaders/world.rmiss.spv");
+            modules[shadowMissModule] =
+                    createShaderModule(context, "/prime/shaders/shadow.rmiss.spv");
+            modules[closestHitModule] =
+                    createShaderModule(context, "/prime/shaders/world.rchit.spv");
+            modules[anyHitModule] =
+                    createShaderModule(context, "/prime/shaders/world.rahit.spv");
+            modules[shadowClosestHitModule] =
+                    createShaderModule(context, "/prime/shaders/shadow.rchit.spv");
             int miss = RAYGEN_SHADER_STAGE_COUNT;
             int shadowMiss = miss + 1;
             int closestHit = miss + 2;
             int anyHit = miss + 3;
             int shadowClosestHit = miss + 4;
-            modules[miss] = createShaderModule(context, "/prime/shaders/world.rmiss.spv");
-            modules[shadowMiss] =
-                    createShaderModule(context, "/prime/shaders/shadow.rmiss.spv");
-            modules[closestHit] =
-                    createShaderModule(context, "/prime/shaders/world.rchit.spv");
-            modules[anyHit] =
-                    createShaderModule(context, "/prime/shaders/world.rahit.spv");
-            modules[shadowClosestHit] =
-                    createShaderModule(context, "/prime/shaders/shadow.rchit.spv");
             VkPipelineShaderStageCreateInfo.Buffer stages =
-                    VkPipelineShaderStageCreateInfo.calloc(modules.length, stack);
+                    VkPipelineShaderStageCreateInfo.calloc(
+                            RAYGEN_SHADER_STAGE_COUNT + 5, stack);
             ByteBuffer mainName = stack.UTF8("main");
             for (int index = 0; index < stages.capacity(); index++) {
                 int stageFlag;
@@ -791,8 +802,29 @@ public final class RayTracingPipeline implements Destroyable {
                 stages.get(index)
                         .sType$Default()
                         .stage(stageFlag)
-                        .module(modules[index])
+                        .module(index == 0
+                                ? modules[0]
+                                : index < RAYGEN_SHADER_STAGE_COUNT
+                                        ? modules[1]
+                                        : modules[index
+                                                - RAYGEN_SHADER_STAGE_COUNT
+                                                + RAYGEN_MODULE_COUNT])
                         .pName(mainName);
+                if (index > 0 && index < RAYGEN_SHADER_STAGE_COUNT) {
+                    VkSpecializationMapEntry.Buffer map =
+                            VkSpecializationMapEntry.calloc(1, stack);
+                    map.get(0)
+                            .constantID(0)
+                            .offset(0)
+                            .size(Integer.BYTES);
+                    ByteBuffer data = stack.malloc(Integer.BYTES);
+                    data.putInt(0, raygenSpecializationStage(index));
+                    VkSpecializationInfo specialization =
+                            VkSpecializationInfo.calloc(stack)
+                                    .pMapEntries(map)
+                                    .pData(data);
+                    stages.get(index).pSpecializationInfo(specialization);
+                }
             }
 
             VkRayTracingShaderGroupCreateInfoKHR.Buffer groups =
@@ -900,16 +932,27 @@ public final class RayTracingPipeline implements Destroyable {
     static int raygenShaderStage(int group) {
         return switch (group) {
             case SCREENSHOT_RAYGEN_GROUP -> 0;
-            case WAVEFRONT_HEAD_GROUP,
-                    WAVEFRONT_STEP_QUEUE_0_GROUP,
+            case WAVEFRONT_HEAD_GROUP -> 1;
+            case WAVEFRONT_STEP_QUEUE_0_GROUP,
                     WAVEFRONT_STEP_QUEUE_1_GROUP,
                     WAVEFRONT_TRANSITION_QUEUE_0_GROUP,
-                    WAVEFRONT_TRANSITION_QUEUE_1_GROUP,
-                    WAVEFRONT_TAIL_QUEUE_0_GROUP,
-                    WAVEFRONT_TAIL_QUEUE_1_GROUP,
-                    WAVEFRONT_RESOLVE_GROUP -> 1;
+                    WAVEFRONT_TRANSITION_QUEUE_1_GROUP -> 2;
+            case WAVEFRONT_TAIL_QUEUE_0_GROUP,
+                    WAVEFRONT_TAIL_QUEUE_1_GROUP -> 3;
+            case WAVEFRONT_RESOLVE_GROUP -> 4;
             default -> throw new IllegalArgumentException(
                     "Invalid Prime raygen group " + group);
+        };
+    }
+
+    static int raygenSpecializationStage(int shaderStage) {
+        return switch (shaderStage) {
+            case 1 -> 0;
+            case 2 -> 1;
+            case 3 -> 3;
+            case 4 -> 4;
+            default -> throw new IllegalArgumentException(
+                    "Invalid specialized Prime raygen stage " + shaderStage);
         };
     }
 

@@ -20,6 +20,10 @@
 
 每个路径槽的 `PrimeWavefrontPathRecord` 为 144 字节，每像素固定两个状态槽。原来的 96 字节共享首表面记录已经删除：可见法线复用最终 normal/roughness 图像，可见位置在 NRD 模式复用 display-position 图像，RR/无后处理模式从相机射线和保存的距离重建；透明主表面不用的稳定/SIGMA 通道在 `resolve` 前暂存必要的反射信号和材质。
 
+144 字节是九条连续 16 字节 lane，不包含布局空洞。活动轮次只逐成员读取和写回前六条 lane：64 字节 f32 传输核心加 32 字节双层介质栈。16 字节首表面 area-light moment 在 `head` 后只读，32 字节 PSR 只在启用透明引导且尚未找到 guide 时访问；找到 guide 后不再写回。固定槽的稳态分配尚未缩小，但普通路径每轮的记录流量已从 144 字节读加 144 字节写降到 96 字节读加 96 字节写。
+
+普通活动路径只往返 diffuse/specular 两组热信号；首表面材质、法线、位置、太阳项和方向不再在每个 bounce 重写。尚未结束 delta guide 链时额外读取并按需更新 specular albedo。透明路径同样只持续更新分支辐射和 hit metadata，完整虚拟表面 guide 仅在首次建立时写入。
+
 两个 ping-pong 活动队列各按最坏情况保留 `2N` 个 32-bit 路径 ID，另有两个 16 字节间接命令：
 
 `144 × 2 + 4 × 2 × 2 = 304 字节/内部渲染像素，另加 32 字节`
@@ -37,7 +41,10 @@
 ## 已验证契约
 
 - ABI 固定为 12 轮、144 字节路径记录、每像素两个路径槽、两个紧凑索引队列、16 字节间接命令和 32-bit 路径 ID。
-- CPU 只创建两个 raygen shader module：参考积分器和统一 wavefront；head、两种 queue 方向的 step/transition/tail、resolve 通过 SBT record 选择入口。
+- CPU 只创建两个 raygen shader module：参考积分器和统一 wavefront。统一模块以 specialization constant 生成 head、step/transition、tail 和 resolve 四个 shader stage；queue 方向与 transition 标记仍由 SBT record 提供。主 step 因此不再继承 head/tail/resolve 的寄存器上限。
+- 支持 RayGen subgroup ballot 的 SER 设备使用 subgroup 聚合 append：一个 subgroup 只执行一次全局计数器分配，并连续写入所有存活路径。无此能力的设备继续使用逐路径原子 fallback。
+- SER coherence hint 使用六位 section 局部性和两位路径类别，区分普通、透明反射和透明透射。
+- 主追踪 payload 从 80 字节降到 64 字节；命中位置由 raygen 根据 `origin + direction × t` 重建，完整 `SurfaceInteraction` 的公开 ABI 不变。
 - 实时 wavefront SPIR-V 中已无 `primeIntegrateWithVolume` 或 `primeIntegrate` 调用，megakernel 主积分路径可被死代码消除。
 - 新增的 queued PSR 属性测试用显式 delta 链对照四元数压缩表达，覆盖 1–8 个 delta 事件及其全部随机反射组合。
 - Java 单元测试、完整 GPU shader 属性测试、glslang 编译、SPIR-V 优化与验证均通过。

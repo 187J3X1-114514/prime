@@ -31,6 +31,59 @@ layout(
     uint words[];
 } primeWavefrontQueue;
 
+// Active rounds only need the six transport/medium lanes. Area-light moments are immutable after
+// head, while queued PSR is cold state used only by transparent paths before a guide is found.
+// Member-wise access prevents the SPIR-V front end from emitting a 144-byte aggregate load/store
+// for every ordinary continuation.
+PrimeWavefrontPathRecord primeLoadWavefrontTransportRecord(uint pathIndex) {
+    PrimeWavefrontPathRecord record;
+    record.physicalOriginAndPreviousBsdfPdf =
+            primeWavefrontPaths.records[pathIndex].physicalOriginAndPreviousBsdfPdf;
+    record.traceOriginAndPathControl =
+            primeWavefrontPaths.records[pathIndex].traceOriginAndPathControl;
+    record.rayDirectionAndDenoiserControl =
+            primeWavefrontPaths.records[pathIndex].rayDirectionAndDenoiserControl;
+    record.throughputAndNumericalFlags =
+            primeWavefrontPaths.records[pathIndex].throughputAndNumericalFlags;
+    record.medium0 = primeWavefrontPaths.records[pathIndex].medium0;
+    record.medium1 = primeWavefrontPaths.records[pathIndex].medium1;
+    record.primaryAreaRadianceAndDirection = uvec4(0u);
+    record.psrLastPositionControl = vec4(0.0);
+    record.psrPacked = uvec4(0u);
+    return record;
+}
+
+void primeLoadWavefrontPsrRecord(
+        uint pathIndex,
+        inout PrimeWavefrontPathRecord record) {
+    record.psrLastPositionControl =
+            primeWavefrontPaths.records[pathIndex].psrLastPositionControl;
+    record.psrPacked = primeWavefrontPaths.records[pathIndex].psrPacked;
+}
+
+void primeStoreWavefrontTransportRecord(
+        uint pathIndex,
+        PrimeWavefrontPathRecord record) {
+    primeWavefrontPaths.records[pathIndex].physicalOriginAndPreviousBsdfPdf =
+            record.physicalOriginAndPreviousBsdfPdf;
+    primeWavefrontPaths.records[pathIndex].traceOriginAndPathControl =
+            record.traceOriginAndPathControl;
+    primeWavefrontPaths.records[pathIndex].rayDirectionAndDenoiserControl =
+            record.rayDirectionAndDenoiserControl;
+    primeWavefrontPaths.records[pathIndex].throughputAndNumericalFlags =
+            record.throughputAndNumericalFlags;
+    primeWavefrontPaths.records[pathIndex].medium0 = record.medium0;
+    primeWavefrontPaths.records[pathIndex].medium1 = record.medium1;
+}
+
+void primeStoreWavefrontPsrRecord(
+        uint pathIndex,
+        PrimeWavefrontPathRecord record) {
+    primeWavefrontPaths.records[pathIndex].psrLastPositionControl =
+            record.psrLastPositionControl;
+    primeWavefrontPaths.records[pathIndex].psrPacked = record.psrPacked;
+}
+
 const uint PRIME_WAVEFRONT_REACHED_NON_DELTA = 2u;
 const uint PRIME_WAVEFRONT_DIFFUSE_PATH = 4u;
 const uint PRIME_WAVEFRONT_TRANSPARENT_BRANCH = 8u;
@@ -101,6 +154,45 @@ void primeAppendWavefrontPath(uint queue, uint pathIndex) {
         atomicMin(primeWavefrontQueue.words[commandWord], capacity);
         atomicOr(primeWavefrontQueue.words[commandWord + 3u], 1u);
     }
+}
+
+// Must be called by every invocation in the subgroup from uniform control flow. The elected lane
+// reserves one contiguous range, reducing global atomics and preserving subgroup locality.
+void primeAppendWavefrontContinuation(
+        uint queue,
+        uint pathIndex,
+        bool continuation) {
+#if defined(PRIME_ENABLE_SUBGROUP_QUEUE)
+    uvec4 activeMask = subgroupBallot(continuation);
+    uint activeCount = subgroupBallotBitCount(activeMask);
+    uint firstEntry = 0u;
+    if (subgroupElect() && activeCount != 0u) {
+        firstEntry = atomicAdd(
+                primeWavefrontQueue.words[primeWavefrontQueueCommandWord(queue)],
+                activeCount);
+    }
+    firstEntry = subgroupBroadcastFirst(firstEntry);
+    uint capacity = primeWavefrontPathCapacity();
+    bool overflow = activeCount > capacity
+            || firstEntry > capacity - min(activeCount, capacity);
+    if (subgroupElect() && overflow) {
+        uint commandWord = primeWavefrontQueueCommandWord(queue);
+        atomicMin(primeWavefrontQueue.words[commandWord], capacity);
+        atomicOr(primeWavefrontQueue.words[commandWord + 3u], 1u);
+    }
+    if (!continuation) {
+        return;
+    }
+
+    uint entry = firstEntry + subgroupBallotExclusiveBitCount(activeMask);
+    if (entry < capacity) {
+        primeWavefrontQueue.words[primeWavefrontQueueWord(queue, entry)] = pathIndex;
+    }
+#else
+    if (continuation) {
+        primeAppendWavefrontPath(queue, pathIndex);
+    }
+#endif
 }
 
 uvec4 primePackWavefrontMedium(PrimeRcVolume medium) {
@@ -669,6 +761,61 @@ PrimeIntegrationResult primeLoadWavefrontIntermediate(
     return result;
 }
 
+// A queued ordinary continuation already owns a primary guide. Only radiance and the two
+// first-bounce hit distances evolve on every vertex. The pre-guide delta chain additionally needs
+// its albedo products, but no other immutable guide field participates in transport.
+PrimeIntegrationResult primeLoadWavefrontActiveIntermediate(
+        uvec2 pixel,
+        PrimeWavefrontPathRecord record) {
+    ivec2 coordinate = ivec2(pixel);
+    vec4 diffuse = imageLoad(primeNrdNoisyDiffuse, coordinate);
+    vec4 specular = imageLoad(primeNrdNoisySpecular, coordinate);
+    uint control = floatBitsToUint(record.rayDirectionAndDenoiserControl.w);
+
+    PrimeIntegrationResult result = primeEmptyIntegrationResult();
+    result.radiance.diffuse = diffuse.rgb;
+    result.radiance.specular = specular.rgb;
+    result.guides.diffuseHitDistance = diffuse.a;
+    result.guides.specularHitDistance = specular.a;
+    if ((control & PRIME_WAVEFRONT_REACHED_NON_DELTA) == 0u) {
+        result.guides.primaryAlbedo =
+                imageLoad(primeNrdMaterial, coordinate).rgb;
+        result.guides.primarySpecularAlbedo =
+                imageLoad(primeNrdSpecularMaterial, coordinate).rgb;
+    }
+    return result;
+}
+
+void primeStoreWavefrontActiveIntermediate(
+        uvec2 pixel,
+        bool guideWasPending,
+        PrimeIntegrationResult result) {
+    ivec2 coordinate = ivec2(pixel);
+    imageStore(
+            primeNrdNoisyDiffuse,
+            coordinate,
+            vec4(
+                    primeNrdSanitizeRadiance(result.radiance.diffuse),
+                    primeNrdSanitizeHitDistance(
+                            result.guides.diffuseHitDistance)));
+    imageStore(
+            primeNrdNoisySpecular,
+            coordinate,
+            vec4(
+                    primeNrdSanitizeRadiance(result.radiance.specular),
+                    primeNrdSanitizeHitDistance(
+                            result.guides.specularHitDistance)));
+    if (guideWasPending) {
+        vec4 encoded = imageLoad(primeNrdSpecularMaterial, coordinate);
+        imageStore(
+                primeNrdSpecularMaterial,
+                coordinate,
+                vec4(
+                        result.guides.primarySpecularAlbedo,
+                        encoded.a));
+    }
+}
+
 void primeStoreTransparentBranchIntermediate(
         uvec2 pixel,
         bool transmissionBranch,
@@ -785,6 +932,210 @@ void primeStoreTransparentBranchIntermediate(
                 primeNrdReflectionSpecularDirection,
                 coordinate,
                 vec4(result.guides.specularDirection, 0.0));
+    }
+}
+
+// Active transparent branches keep their immutable guide images resident. Per-vertex transport
+// reads only radiance, hit metadata and the two fallback directions required until PSR resolves.
+PrimeTransparentBranchResult primeLoadTransparentBranchActiveIntermediate(
+        uvec2 pixel,
+        PrimeWavefrontPathRecord record) {
+    ivec2 coordinate = ivec2(pixel);
+    bool transmissionBranch = primeWavefrontTransmissionBranch(record);
+    bool nrdShInputs = primeWritesNrdShInputs();
+    uint control = floatBitsToUint(record.rayDirectionAndDenoiserControl.w);
+    bool hasGuide = (control & PRIME_WAVEFRONT_REACHED_NON_DELTA) != 0u;
+    vec4 diffuse = transmissionBranch
+            ? imageLoad(primeNrdNoisyDiffuse, coordinate)
+            : nrdShInputs
+                    ? imageLoad(primeNrdReflectionNoisyDiffuse, coordinate)
+                    : vec4(imageLoad(primeAccumulation, coordinate).rgb, 0.0);
+    vec4 specular = transmissionBranch
+            ? imageLoad(primeNrdNoisySpecular, coordinate)
+            : nrdShInputs
+                    ? imageLoad(primeNrdReflectionNoisySpecular, coordinate)
+                    : vec4(0.0);
+
+    PrimeTransparentBranchResult result;
+    result.diffuseRadiance = diffuse.rgb;
+    result.specularRadiance = specular.rgb;
+    result.guides = primeEmptyDenoiserGuides();
+    result.guides.diffuseHitDistance = diffuse.a;
+    result.guides.specularHitDistance = specular.a;
+    result.guides.primaryMaterialFlags =
+            (control >> PRIME_WAVEFRONT_PRIMARY_FLAGS_SHIFT)
+                    & PRIME_WAVEFRONT_PRIMARY_FLAGS_MASK;
+    if (!hasGuide && nrdShInputs) {
+        if (transmissionBranch) {
+            result.guides.diffuseDirection = primeRestoreFp16Direction(
+                    imageLoad(primeNrdDiffuseDirection, coordinate).xyz);
+            result.guides.specularDirection = primeRestoreFp16Direction(
+                    imageLoad(primeNrdSpecularDirection, coordinate).xyz);
+        } else {
+            result.guides.diffuseDirection = primeRestoreFp16Direction(
+                    imageLoad(
+                            primeNrdReflectionDiffuseDirection,
+                            coordinate).xyz);
+            result.guides.specularDirection = primeRestoreFp16Direction(
+                    imageLoad(
+                            primeNrdReflectionSpecularDirection,
+                            coordinate).xyz);
+        }
+    }
+    if (transmissionBranch) {
+        vec4 metadata = imageLoad(primeNrdMotion, coordinate);
+        result.anchorDistance = metadata.x;
+        result.firstHitDistance = metadata.y;
+    } else {
+        result.anchorDistance = -1.0;
+        result.firstHitDistance =
+                imageLoad(primeNrdSunPenumbra, coordinate).r;
+    }
+    result.directionalGuide = primeWavefrontDirectionalGuide(record);
+    return result;
+}
+
+void primeStoreTransparentBranchGuide(
+        uvec2 pixel,
+        bool transmissionBranch,
+        PrimeTransparentBranchResult result) {
+    ivec2 coordinate = ivec2(pixel);
+    if (transmissionBranch) {
+        imageStore(
+                primeNrdPrimaryPosition,
+                coordinate,
+                vec4(result.guides.primaryPosition, result.guides.primaryDistance));
+        imageStore(
+                primeNrdMaterial,
+                coordinate,
+                vec4(
+                        result.guides.primaryAlbedo,
+                        result.guides.primaryLinearRoughness));
+        vec2 normalOctahedral = unpackSnorm2x16(
+                primePackOctahedralNormal(result.guides.primaryNormal));
+        imageStore(
+                primeNrdSpecularMaterial,
+                coordinate,
+                vec4(result.guides.primarySpecularAlbedo, normalOctahedral.y));
+        imageStore(primeNrdViewZ, coordinate, vec4(normalOctahedral.x));
+        if (primeWritesNrdShInputs()) {
+            imageStore(
+                    primeNrdDiffuseDirection,
+                    coordinate,
+                    vec4(result.guides.diffuseDirection, 0.0));
+            imageStore(
+                    primeNrdSpecularDirection,
+                    coordinate,
+                    vec4(result.guides.specularDirection, 0.0));
+        }
+        return;
+    }
+    if (!primeWritesNrdShInputs()) {
+        return;
+    }
+
+    imageStore(
+            primeNrdReflectionPosition,
+            coordinate,
+            vec4(result.guides.primaryPosition, result.firstHitDistance));
+    imageStore(
+            primeNrdReflectionMaterial,
+            coordinate,
+            vec4(result.guides.primaryAlbedo, result.guides.primaryDistance));
+    imageStore(
+            primeNrdReflectionSpecularMaterial,
+            coordinate,
+            vec4(result.guides.primarySpecularAlbedo, 0.0));
+    imageStore(
+            primeNrdReflectionNormalRoughness,
+            coordinate,
+            primeNrdPackNormalRoughness(
+                    result.guides.primaryNormal,
+                    result.guides.primaryLinearRoughness,
+                    primeNrdMaterialId(result.guides.primaryMaterialFlags)));
+    imageStore(
+            primeNrdReflectionDiffuseDirection,
+            coordinate,
+            vec4(result.guides.diffuseDirection, 0.0));
+    imageStore(
+            primeNrdReflectionSpecularDirection,
+            coordinate,
+            vec4(result.guides.specularDirection, 0.0));
+}
+
+void primeStoreTransparentBranchActiveIntermediate(
+        uvec2 pixel,
+        bool transmissionBranch,
+        bool storeGuide,
+        bool storeDirectionalPosition,
+        PrimeTransparentBranchResult result) {
+    ivec2 coordinate = ivec2(pixel);
+    if (transmissionBranch) {
+        imageStore(
+                primeNrdNoisyDiffuse,
+                coordinate,
+                vec4(
+                        primeNrdSanitizeRadiance(result.diffuseRadiance),
+                        primeNrdSanitizeHitDistance(
+                                result.guides.diffuseHitDistance)));
+        imageStore(
+                primeNrdNoisySpecular,
+                coordinate,
+                vec4(
+                        primeNrdSanitizeRadiance(result.specularRadiance),
+                        primeNrdSanitizeHitDistance(
+                                result.guides.specularHitDistance)));
+        imageStore(
+                primeNrdMotion,
+                coordinate,
+                vec4(
+                        result.anchorDistance,
+                        result.firstHitDistance,
+                        0.0,
+                        0.0));
+    } else {
+        imageStore(
+                primeNrdSunPenumbra,
+                coordinate,
+                vec4(primeNrdSanitizeHitDistance(result.firstHitDistance)));
+        if (primeWritesNrdShInputs()) {
+            imageStore(
+                    primeNrdReflectionNoisyDiffuse,
+                    coordinate,
+                    vec4(
+                            primeNrdSanitizeRadiance(result.diffuseRadiance),
+                            primeNrdSanitizeHitDistance(
+                                    result.guides.diffuseHitDistance)));
+            imageStore(
+                    primeNrdReflectionNoisySpecular,
+                    coordinate,
+                    vec4(
+                            primeNrdSanitizeRadiance(result.specularRadiance),
+                            primeNrdSanitizeHitDistance(
+                                    result.guides.specularHitDistance)));
+        } else {
+            vec4 visibleScratch = imageLoad(primeAccumulation, coordinate);
+            imageStore(
+                    primeAccumulation,
+                    coordinate,
+                    vec4(
+                            primeNrdSanitizeRadiance(
+                                    result.diffuseRadiance
+                                            + result.specularRadiance),
+                            visibleScratch.a));
+        }
+    }
+
+    if (storeGuide) {
+        primeStoreTransparentBranchGuide(
+                pixel, transmissionBranch, result);
+    } else if (storeDirectionalPosition
+            && !transmissionBranch
+            && primeWritesNrdShInputs()) {
+        imageStore(
+                primeNrdReflectionPosition,
+                coordinate,
+                vec4(result.guides.primaryPosition, result.firstHitDistance));
     }
 }
 

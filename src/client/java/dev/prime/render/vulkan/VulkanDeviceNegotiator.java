@@ -18,6 +18,7 @@ import org.lwjgl.vulkan.KHRDeferredHostOperations;
 import org.lwjgl.vulkan.KHRGetMemoryRequirements2;
 import org.lwjgl.vulkan.KHRRayTracingPipeline;
 import org.lwjgl.vulkan.NVRayTracingInvocationReorder;
+import org.lwjgl.vulkan.VK11;
 import org.lwjgl.vulkan.VK12;
 import org.lwjgl.vulkan.VkPhysicalDeviceAccelerationStructureFeaturesKHR;
 import org.lwjgl.vulkan.VkPhysicalDeviceAccelerationStructurePropertiesKHR;
@@ -30,6 +31,7 @@ import org.lwjgl.vulkan.VkPhysicalDeviceRayTracingInvocationReorderFeaturesEXT;
 import org.lwjgl.vulkan.VkPhysicalDeviceRayTracingInvocationReorderPropertiesEXT;
 import org.lwjgl.vulkan.VkPhysicalDeviceRayTracingPipelineFeaturesKHR;
 import org.lwjgl.vulkan.VkPhysicalDeviceRayTracingPipelinePropertiesKHR;
+import org.lwjgl.vulkan.VkPhysicalDeviceSubgroupProperties;
 import org.lwjgl.vulkan.VkPhysicalDeviceVulkan12Features;
 import org.lwjgl.vulkan.VkPhysicalDeviceVulkan11Features;
 import org.lwjgl.vulkan.VkFormatProperties;
@@ -194,6 +196,8 @@ public final class VulkanDeviceNegotiator {
             }
 
             VkPhysicalDeviceProperties2 properties = VkPhysicalDeviceProperties2.calloc(stack).sType$Default();
+            VkPhysicalDeviceSubgroupProperties subgroupProperties =
+                    VkPhysicalDeviceSubgroupProperties.calloc(stack).sType$Default();
             VkPhysicalDeviceRayTracingPipelinePropertiesKHR rayProperties =
                     VkPhysicalDeviceRayTracingPipelinePropertiesKHR.calloc(stack).sType$Default();
             VkPhysicalDeviceAccelerationStructurePropertiesKHR accelerationProperties =
@@ -203,7 +207,8 @@ public final class VulkanDeviceNegotiator {
                             .sType$Default();
             VkPhysicalDeviceOpacityMicromapPropertiesEXT opacityMicromapProperties =
                     VkPhysicalDeviceOpacityMicromapPropertiesEXT.calloc(stack).sType$Default();
-            properties.pNext(rayProperties.address());
+            properties.pNext(subgroupProperties.address());
+            subgroupProperties.pNext(rayProperties.address());
             rayProperties.pNext(accelerationProperties.address());
             long optionalPropertyChain = 0L;
             if (invocationReorderExtension) {
@@ -327,6 +332,9 @@ public final class VulkanDeviceNegotiator {
                                     .VK_RAY_TRACING_INVOCATION_REORDER_MODE_REORDER_EXT
                     && supportsSbtRecordIndex(
                             invocationReorderProperties.maxShaderBindingTableRecordIndex(), 1);
+            boolean wavefrontSubgroupSupported = supportsWavefrontSubgroups(
+                    subgroupProperties.supportedStages(),
+                    subgroupProperties.supportedOperations());
             if (invocationReorderSupported) {
                 enabledExtensions.add(EXTRayTracingInvocationReorder
                         .VK_EXT_RAY_TRACING_INVOCATION_REORDER_EXTENSION_NAME);
@@ -355,6 +363,7 @@ public final class VulkanDeviceNegotiator {
                     accelerationProperties.maxPrimitiveCount(),
                     accelerationProperties.maxInstanceCount(),
                     accelerationProperties.minAccelerationStructureScratchOffsetAlignment(),
+                    wavefrontSubgroupSupported,
                     invocationReorderSupported,
                     opacityMicromapSupported,
                     opacityMicromapSupported
@@ -366,6 +375,19 @@ public final class VulkanDeviceNegotiator {
 
     private static boolean isPositivePowerOfTwo(int value) {
         return value > 0 && (value & value - 1) == 0;
+    }
+
+    static boolean supportsWavefrontSubgroups(
+            int supportedStages,
+            int supportedOperations) {
+        int requiredOperations =
+                VK11.VK_SUBGROUP_FEATURE_BASIC_BIT
+                        | VK11.VK_SUBGROUP_FEATURE_BALLOT_BIT;
+        return (supportedStages
+                        & KHRRayTracingPipeline.VK_SHADER_STAGE_RAYGEN_BIT_KHR)
+                != 0
+                && (supportedOperations & requiredOperations)
+                        == requiredOperations;
     }
 
     static boolean supportsSbtRecordIndex(int unsignedMaximum, int requiredIndex) {

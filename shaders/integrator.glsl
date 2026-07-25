@@ -131,8 +131,10 @@ vec3 primeOffsetRayOrigin(vec3 physicalPosition, vec3 normal, vec3 direction) {
     return physicalPosition + normal * (side * 0.001);
 }
 
-SurfaceInteraction primeTraceSurface(vec3 origin, vec3 direction) {
-    primePayload.position = vec3(0.0);
+SurfaceInteraction primeTraceSurfaceClassified(
+        vec3 origin,
+        vec3 direction,
+        uint pathClass) {
     primePayload.t = 0.0;
     primePayload.geometricNormal = vec3(0.0, 1.0, 0.0);
     primePayload.hitKind = PRIME_HIT_NONE;
@@ -166,9 +168,13 @@ SurfaceInteraction primeTraceSurface(vec3 origin, vec3 direction) {
             direction,
             1000000.0,
             0);
-    uint coherenceHint = hitObjectIsHitEXT(hitObject)
-            ? uint(hitObjectGetInstanceCustomIndexEXT(hitObject))
-            : 0u;
+    // Keep six section bits for primitive-buffer locality and reserve two bits for the caller's
+    // transport class. Reordered invocations therefore stay coherent after returning to ordinary,
+    // transparent-reflection or transparent-transmission shading.
+    uint coherenceHint = ((pathClass & 0x3u) << 6u)
+            | (hitObjectIsHitEXT(hitObject)
+                    ? uint(hitObjectGetInstanceCustomIndexEXT(hitObject)) & 0x3fu
+                    : 0u);
     reorderThreadEXT(hitObject, coherenceHint, 8u);
     hitObjectExecuteShaderEXT(hitObject, 0);
 #else
@@ -176,7 +182,9 @@ SurfaceInteraction primeTraceSurface(vec3 origin, vec3 direction) {
             origin, 0.0, direction, 1000000.0, 0);
 #endif
     SurfaceInteraction surface;
-    surface.position = primePayload.position;
+    surface.position = primePayload.hitKind == PRIME_HIT_NONE
+            ? vec3(0.0)
+            : origin + direction * primePayload.t;
     surface.t = primePayload.t;
     surface.geometricNormal = primePayload.geometricNormal;
     surface.hitKind = primePayload.hitKind;
@@ -192,6 +200,10 @@ SurfaceInteraction primeTraceSurface(vec3 origin, vec3 direction) {
     return surface;
 }
 
+SurfaceInteraction primeTraceSurface(vec3 origin, vec3 direction) {
+    return primeTraceSurfaceClassified(origin, direction, 0u);
+}
+
 SurfaceInteraction primeTraceSurfaceWithoutReorder(vec3 origin, vec3 direction) {
 #if !defined(PRIME_ENABLE_SER)
     return primeTraceSurface(origin, direction);
@@ -199,7 +211,6 @@ SurfaceInteraction primeTraceSurfaceWithoutReorder(vec3 origin, vec3 direction) 
     // The sparse tail keeps the complete result, medium and denoiser state live across its
     // local loop. Repacking there spills more state than it recovers through coherence, so this
     // entry deliberately executes the same trace without the SER reorder point.
-    primePayload.position = vec3(0.0);
     primePayload.t = 0.0;
     primePayload.geometricNormal = vec3(0.0, 1.0, 0.0);
     primePayload.hitKind = PRIME_HIT_NONE;
@@ -229,7 +240,9 @@ SurfaceInteraction primeTraceSurfaceWithoutReorder(vec3 origin, vec3 direction) 
             0);
 
     SurfaceInteraction surface;
-    surface.position = primePayload.position;
+    surface.position = primePayload.hitKind == PRIME_HIT_NONE
+            ? vec3(0.0)
+            : origin + direction * primePayload.t;
     surface.t = primePayload.t;
     surface.geometricNormal = primePayload.geometricNormal;
     surface.hitKind = primePayload.hitKind;

@@ -13,6 +13,7 @@ public record VulkanCapabilities(
         long maxAccelerationStructurePrimitiveCount,
         long maxAccelerationStructureInstanceCount,
         int accelerationStructureScratchAlignment,
+        boolean wavefrontSubgroupSupported,
         boolean invocationReorderSupported,
         boolean opacityMicromapSupported,
         int maxOpacityMicromapSubdivisionLevel,
@@ -20,6 +21,22 @@ public record VulkanCapabilities(
 
     public static VulkanCapabilities unavailable(String deviceName, String reason) {
         return new VulkanCapabilities(
-                false, deviceName, reason, 0, 0, 0, 0, 0, 0, 0L, 0L, 0, false, false, 0, false);
+                false,
+                deviceName,
+                reason,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0L,
+                0L,
+                0,
+                false,
+                false,
+                false,
+                0,
+                false);
     }
 }

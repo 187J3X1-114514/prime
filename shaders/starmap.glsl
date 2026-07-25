@@ -18,7 +18,7 @@ void primeStarmapFrame(
     vec3 north = vec3(sineLatitude, 0.0, cosineLatitude);
     pole = north * cosineLatitude + vec3(0.0, sineLatitude, 0.0);
     meridian = cross(east, pole);
-    vec3 sunDirection = normalize(integrator.sunDirectionIntensity.xyz);
+    vec3 sunDirection = integrator.sunDirectionIntensity.xyz;
     phase = atan(dot(sunDirection, east), sunDirection.y);
 }
 
@@ -28,7 +28,6 @@ vec2 primeStarmapUv(IntegratorRecord integrator, vec3 direction) {
     vec3 meridian;
     float phase;
     primeStarmapFrame(integrator, east, pole, meridian, phase);
-    direction = normalize(direction);
     float declination = asin(clamp(dot(direction, pole), -1.0, 1.0));
     float hourAngle = atan(-dot(direction, east), dot(direction, meridian));
     float rightAscension = phase - hourAngle;
@@ -38,7 +37,7 @@ vec2 primeStarmapUv(IntegratorRecord integrator, vec3 direction) {
 
 float primeStarmapNightFactor(IntegratorRecord integrator) {
     return 1.0 - smoothstep(
-            -0.12, 0.02, normalize(integrator.sunDirectionIntensity.xyz).y);
+            -0.12, 0.02, integrator.sunDirectionIntensity.y);
 }
 
 vec3 primeStarmapRadianceUv(

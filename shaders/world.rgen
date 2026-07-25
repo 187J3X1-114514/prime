@@ -30,23 +30,18 @@ void main() {
     vec2 cameraSample = primeCameraSample();
     PathState path = primeCameraPath(pixel, 0u, cameraSample);
 
-    if (primeScreenshotMode()) {
-        // Reference accumulation shares transport helpers with realtime, but does not retain the
-        // three denoiser-guide records or PSR chain that dominate realtime register pressure.
-        PrimeReferenceResult reference = primeIntegrateReference(path, integrator);
-        primeApplyAerialPerspective(
-                pixel,
-                cameraSample,
-                reference.primaryDistance,
-                reference.radiance);
-        vec4 previous = imageLoad(primeAccumulation, ivec2(pixel));
-        uint64_t zeroBasedSample = (uint64_t(primeSampleEpoch()) << 16u)
-                | uint64_t(primePush.path.x & 0xffffu);
-        float sampleCount = float(zeroBasedSample + uint64_t(1));
-        vec3 mean = previous.rgb + (reference.radiance - previous.rgb) / sampleCount;
-        imageStore(primeAccumulation, ivec2(pixel), vec4(mean, 1.0));
-        return;
-    }
-    PrimeIntegrationResult sampleResult = primeIntegrate(path, integrator);
-    primeWriteRealtimeOutput(pixel, cameraSample, sampleResult);
+    // This entry is dispatched only by traceScreenshot. Realtime uses the bounded wavefront
+    // entry, so retaining its guide-heavy megakernel here only duplicates driver compilation.
+    PrimeReferenceResult reference = primeIntegrateReference(path, integrator);
+    primeApplyAerialPerspective(
+            pixel,
+            cameraSample,
+            reference.primaryDistance,
+            reference.radiance);
+    vec4 previous = imageLoad(primeAccumulation, ivec2(pixel));
+    uint64_t zeroBasedSample = (uint64_t(primeSampleEpoch()) << 16u)
+            | uint64_t(primePush.path.x & 0xffffu);
+    float sampleCount = float(zeroBasedSample + uint64_t(1));
+    vec3 mean = previous.rgb + (reference.radiance - previous.rgb) / sampleCount;
+    imageStore(primeAccumulation, ivec2(pixel), vec4(mean, 1.0));
 }

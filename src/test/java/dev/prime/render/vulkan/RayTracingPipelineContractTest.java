@@ -37,8 +37,18 @@ final class RayTracingPipelineContractTest {
         assertEquals(2, RayTracingPipeline.MISS_GROUP_COUNT);
         assertEquals(6, RayTracingPipeline.HIT_GROUP_COUNT);
         assertEquals(5, RayTracingPipeline.RAYGEN_GROUP_COUNT);
+        assertEquals(2, RayTracingPipeline.RAYGEN_SHADER_STAGE_COUNT);
         assertEquals(11, RayTracingPipeline.WAVEFRONT_STEP_DISPATCH_COUNT);
         assertEquals(14, RayTracingPipeline.REALTIME_DISPATCH_COUNT);
+        assertEquals(0, RayTracingPipeline.raygenShaderStage(0));
+        assertEquals(1, RayTracingPipeline.raygenShaderStage(1));
+        assertEquals(1, RayTracingPipeline.raygenShaderStage(2));
+        assertEquals(1, RayTracingPipeline.raygenShaderStage(3));
+        assertEquals(1, RayTracingPipeline.raygenShaderStage(4));
+        assertEquals(0, RayTracingPipeline.raygenRecordStage(1));
+        assertEquals(1, RayTracingPipeline.raygenRecordStage(2));
+        assertEquals(2, RayTracingPipeline.raygenRecordStage(3));
+        assertEquals(3, RayTracingPipeline.raygenRecordStage(4));
     }
 
     @Test

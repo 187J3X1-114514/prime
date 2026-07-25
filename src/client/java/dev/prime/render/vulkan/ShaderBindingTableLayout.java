@@ -12,17 +12,23 @@ record ShaderBindingTableLayout(
             int handleSize,
             int handleAlignment,
             int baseAlignment,
+            int raygenDataSize,
             int raygenGroupCount,
             int missGroupCount,
             int hitGroupCount,
             long bufferAddress) {
-        if (handleSize <= 0 || raygenGroupCount <= 0 || missGroupCount <= 0 || hitGroupCount <= 0) {
+        if (handleSize <= 0
+                || raygenDataSize < 0
+                || raygenGroupCount <= 0
+                || missGroupCount <= 0
+                || hitGroupCount <= 0) {
             throw new IllegalArgumentException("Shader binding table dimensions must be positive");
         }
         long recordStride = VulkanContext.alignUp(handleSize, handleAlignment);
         // vkCmdTraceRaysKHR requires the selected raygen address itself to satisfy the base
-        // alignment. Each selectable record therefore has a wider stride than miss/hit records.
-        long raygenRecordStride = VulkanContext.alignUp(recordStride, baseAlignment);
+        // alignment. The raygen record also carries a small scheduler selector after its handle.
+        long raygenRecordStride = VulkanContext.alignUp(
+                Math.addExact((long) handleSize, raygenDataSize), baseAlignment);
         long raygenOffset = VulkanContext.alignUp(bufferAddress, baseAlignment) - bufferAddress;
         long raygenSize = Math.multiplyExact(raygenRecordStride, raygenGroupCount);
         long missOffset = VulkanContext.alignUp(bufferAddress + raygenOffset + raygenSize, baseAlignment)
@@ -38,6 +44,7 @@ record ShaderBindingTableLayout(
             int handleSize,
             int handleAlignment,
             int baseAlignment,
+            int raygenDataSize,
             int raygenGroupCount,
             int missGroupCount,
             int hitGroupCount) {
@@ -45,6 +52,7 @@ record ShaderBindingTableLayout(
                 handleSize,
                 handleAlignment,
                 baseAlignment,
+                raygenDataSize,
                 raygenGroupCount,
                 missGroupCount,
                 hitGroupCount,

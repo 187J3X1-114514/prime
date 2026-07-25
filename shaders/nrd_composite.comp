@@ -146,18 +146,6 @@ void primeCompositeResolveSh(
         return;
     }
 
-    vec3 normal;
-    float roughness;
-    primeNrdUnpackNormalRoughness(
-            reflection
-                    ? imageLoad(primeReflectionCompositeNormalRoughness, pixel)
-                    : imageLoad(primeCompositeNormalRoughness, pixel),
-            normal,
-            roughness);
-    vec3 primaryPosition = reflection
-            ? imageLoad(primeReflectionCompositePosition, pixel).xyz
-            : imageLoad(primeCompositePrimaryPosition, pixel).xyz;
-    vec3 view = primeNrdSafeNormalize(-primaryPosition, normal);
     PrimeNrdSg diffuseSg = primeNrdUnpackSg(
             reflection
                     ? imageLoad(primeReflectionDenoisedDiffuse, pixel)
@@ -183,8 +171,22 @@ void primeCompositeResolveSh(
             return;
         }
     }
-    bool hasDiffuseDirection = length(diffuseSg.c1) > PRIME_NRD_EPS;
-    bool hasSpecularDirection = length(specularSg.c1) > PRIME_NRD_EPS;
+    vec3 normal;
+    float roughness;
+    primeNrdUnpackNormalRoughness(
+            reflection
+                    ? imageLoad(primeReflectionCompositeNormalRoughness, pixel)
+                    : imageLoad(primeCompositeNormalRoughness, pixel),
+            normal,
+            roughness);
+    vec3 primaryPosition = reflection
+            ? imageLoad(primeReflectionCompositePosition, pixel).xyz
+            : imageLoad(primeCompositePrimaryPosition, pixel).xyz;
+    vec3 view = primeNrdSafeNormalize(-primaryPosition, normal);
+    bool hasDiffuseDirection =
+            dot(diffuseSg.c1, diffuseSg.c1) > PRIME_NRD_EPS * PRIME_NRD_EPS;
+    bool hasSpecularDirection =
+            dot(specularSg.c1, specularSg.c1) > PRIME_NRD_EPS * PRIME_NRD_EPS;
     diffuse = hasDiffuseDirection
             ? primeNrdResolveSgDiffuse(diffuseSg, normal, view, roughness)
             : primeNrdSgExtractColor(diffuseSg);

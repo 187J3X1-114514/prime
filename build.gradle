@@ -716,7 +716,8 @@ abstract class CompilePrimeShaders extends DefaultTask {
 				// These passes only canonicalize SPIR-V structure and remove redundant operations.
 				// Do not add aggressive inlining here: it greatly increases driver compile time.
 				// Dead functions may be removed after glslang has compiled the complete standalone
-				// RoboCute validation module; runtime modules must not carry unreachable library code.
+				// RoboCute validation module. Function-local DCE removes inactive mode branches and
+				// unconsumed aggregate fields without changing live floating-point evaluation order.
 				execOperations.exec {
 					commandLine spirvOptimizer.get(),
 							'--remove-duplicates',
@@ -724,6 +725,11 @@ abstract class CompilePrimeShaders extends DefaultTask {
 							'--eliminate-local-single-store',
 							'--ssa-rewrite',
 							'--redundancy-elimination',
+							'--simplify-instructions',
+							'--eliminate-dead-branches',
+							'--eliminate-dead-code-aggressive',
+							'--eliminate-dead-inserts',
+							'--eliminate-dead-members',
 							'--simplify-instructions',
 							'--eliminate-dead-functions',
 							'--merge-blocks',
@@ -749,23 +755,13 @@ abstract class CompilePrimeShaders extends DefaultTask {
 			}
 			if (source.name in [
 					'world.rgen',
-					'wavefront_head.rgen',
-					'wavefront_step.rgen',
-					'wavefront_transition.rgen',
-					'wavefront_tail.rgen']) {
+					'wavefront.rgen']) {
 				// Keep a baseline module that never declares the optional extension and a separate
 				// SER permutation for devices that negotiate real invocation reordering. Runtime
 				// selection therefore cannot expose unsupported SPIR-V to a fallback device.
 				def baseName = source.name.substring(0, source.name.length() - '.rgen'.length())
 				def serOutput = new File(scratch, "${baseName}_ser.rgen.spv")
 				def serDefinitions = ['-DPRIME_ENABLE_SER=1']
-				if (source.name == 'wavefront_tail.rgen') {
-					// The sparse tail keeps the complete result, medium and denoiser state live
-					// across its local loop. Repacking those invocations spills more state than
-					// it can recover through coherence; SER remains on the bounded wavefront
-					// stages where only the trace key crosses the reorder point.
-					serDefinitions.add('-DPRIME_DISABLE_SER_REORDER=1')
-				}
 				compileShader(source, serOutput, serDefinitions)
 			}
 		}
@@ -944,14 +940,8 @@ def verifyDistributionJar = tasks.register('verifyDistributionJar') {
 			'prime/natives/windows-x86_64/nvngx_dlssd.dll',
 			'prime/shaders/world.rgen.spv',
 			'prime/shaders/world_ser.rgen.spv',
-			'prime/shaders/wavefront_head.rgen.spv',
-			'prime/shaders/wavefront_head_ser.rgen.spv',
-			'prime/shaders/wavefront_step.rgen.spv',
-			'prime/shaders/wavefront_step_ser.rgen.spv',
-			'prime/shaders/wavefront_transition.rgen.spv',
-			'prime/shaders/wavefront_transition_ser.rgen.spv',
-			'prime/shaders/wavefront_tail.rgen.spv',
-			'prime/shaders/wavefront_tail_ser.rgen.spv',
+			'prime/shaders/wavefront.rgen.spv',
+			'prime/shaders/wavefront_ser.rgen.spv',
 			'prime/shaders/screenshot_display.comp.spv',
 			'prime/shaders/shadow.rchit.spv',
 			'prime/shaders/nrd_motion.comp.spv',
@@ -967,9 +957,9 @@ def verifyDistributionJar = tasks.register('verifyDistributionJar') {
 		}
 
 		def shaderNames = names.findAll { it.startsWith('prime/shaders/') && it.endsWith('.spv') }
-		if (shaderNames.size() != 27) {
+		if (shaderNames.size() != 21) {
 			throw new GradleException(
-					"Distribution jar must contain 27 Prime shaders; found ${shaderNames.size()}")
+					"Distribution jar must contain 21 Prime shaders; found ${shaderNames.size()}")
 		}
 
 		new java.util.zip.ZipFile(archive).withCloseable { zip ->

@@ -63,7 +63,7 @@ public final class NrdDenoiser implements Destroyable, DenoiserInputs {
     private static final int MOTION_PUSH_SIZE = ShaderAbi.NRD_MOTION_PUSH_CONSTANT_SIZE;
     private static final int COMPOSITE_BINDING_COUNT = 31;
     private static final int COMPOSITE_PUSH_SIZE = 28;
-    // world.rgen writes 65504 for a sky view-Z. Keep the valid range below that sentinel while
+    // Wavefront resolve writes 65504 for a sky view-Z. Keep the valid range below that sentinel while
     // remaining far beyond Minecraft's usable terrain and Prime's 16,000-block aerial volume.
     private static final float DENOISING_RANGE = 60_000.0f;
     private static final float SUN_HISTORY_DISCONTINUITY_COSINE =

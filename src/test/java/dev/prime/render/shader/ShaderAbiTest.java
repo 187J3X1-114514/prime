@@ -37,6 +37,8 @@ final class ShaderAbiTest {
         assertEquals(19, ShaderAbi.DESCRIPTOR_LABPBR_SPECULAR_ATLAS);
         assertEquals(20, ShaderAbi.DESCRIPTOR_NRD_SUN_LIGHTING);
         assertEquals(21, ShaderAbi.DESCRIPTOR_NRD_SUN_PENUMBRA);
+        assertEquals(35, ShaderAbi.DESCRIPTOR_SCREENSHOT_ACCUMULATION);
+        assertEquals(128, ShaderAbi.MAXIMUM_BOUNCES);
         assertEquals(24, ShaderAbi.DESCRIPTOR_RAW_NUMERICAL_DIAGNOSTIC);
         assertEquals(22, ShaderAbi.DESCRIPTOR_NRD_DIFFUSE_DIRECTION);
         assertEquals(23, ShaderAbi.DESCRIPTOR_NRD_SPECULAR_DIRECTION);

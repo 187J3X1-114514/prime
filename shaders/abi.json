@@ -197,6 +197,7 @@
     "nrdReflectionSpecularDirection": 32,
     "nrdDisplayPosition": 33,
     "starmap": 34,
+    "screenshotAccumulation": 35,
     "wavefrontPaths": 36,
     "wavefrontQueue": 37
   },
@@ -231,6 +232,7 @@
     "starEvQuarterShift": 25,
     "starEvQuarterMask": "0x7f",
     "starEvQuarterBias": 32,
+    "maximumBounces": 128,
     "russianRouletteStart": 1
   },
   "nrdContract": {

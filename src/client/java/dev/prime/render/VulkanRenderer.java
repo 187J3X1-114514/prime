@@ -216,7 +216,7 @@ public final class VulkanRenderer implements AutoCloseable {
     /**
      * Records Prime's interactive frame graph: one estimator sample, the selected reconstruction
      * backend, and the common display transform. Keeping this orchestration behind a named boundary
-     * prevents the future offline accumulator from inheriting temporal resources by accident.
+     * prevents screenshot accumulation from inheriting temporal resources by accident.
      */
     private void renderRealtime(RenderTarget mainTarget) {
         TerrainScene.SceneView scene = this.terrain.sceneView();
@@ -483,13 +483,11 @@ public final class VulkanRenderer implements AutoCloseable {
         SunDirection frameSunDirection = this.screenshotSunDirection;
         LightingSettings.Snapshot lighting = this.screenshotLighting;
         MaterialSettings.Snapshot material = this.screenshotMaterial;
-        RealtimeRenderResources realtime = this.realtimeResources;
         if (scene == null
                 || frameCamera == null
                 || frameSunDirection == null
                 || lighting == null
-                || material == null
-                || realtime == null) {
+                || material == null) {
             this.cancelScreenshotSession();
             this.renderRealtime(mainTarget);
             return;
@@ -539,13 +537,14 @@ public final class VulkanRenderer implements AutoCloseable {
         this.pipeline.ensureDescriptors(
                 scene.tlas(),
                 images.output,
+                images.wavefrontAccumulation,
                 images.accumulation,
                 atlasView,
                 atlasSampler,
                 this.labPbrAtlas.normalAtlas(),
                 this.labPbrAtlas.specularAtlas(),
                 this.atmosphere,
-                realtime.processor.targets());
+                images.wavefrontTargets);
 
         var encoder = this.context.commandEncoder();
         VkCommandBuffer commandBuffer = encoder.allocateAndBeginTransientCommandBuffer();
@@ -553,7 +552,10 @@ public final class VulkanRenderer implements AutoCloseable {
                 commandBuffer, () -> "Prime unbiased screenshot accumulation");
         this.atmosphere.prepare(commandBuffer, frameCamera, frameSunDirection);
         this.prepareOutputForComposite(commandBuffer, images.output);
+        this.prepareAccumulationForTrace(
+                commandBuffer, images.wavefrontAccumulation);
         this.prepareAccumulationForTrace(commandBuffer, images.accumulation);
+        images.wavefrontTargets.prepareForRayTrace(commandBuffer);
         this.prepareAtlasForTrace(commandBuffer, atlasView.texture());
         LabPbrTextureAtlas.FrameToken labPbrFrame = this.labPbrAtlas.prepare(commandBuffer);
         try (MemoryStack stack = MemoryStack.stackPush()) {
@@ -874,6 +876,7 @@ public final class VulkanRenderer implements AutoCloseable {
                     tlas,
                     current.output,
                     current.accumulation,
+                    current.accumulation,
                     atlasView,
                     atlasSampler,
                     this.labPbrAtlas.normalAtlas(),
@@ -896,6 +899,7 @@ public final class VulkanRenderer implements AutoCloseable {
             this.pipeline.ensureDescriptors(
                     tlas,
                     replacement.output,
+                    replacement.accumulation,
                     replacement.accumulation,
                     atlasView,
                     atlasSampler,

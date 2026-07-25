@@ -2,7 +2,7 @@
 
 ## 目标
 
-本实验从实时 raygen 中移除 megakernel 主积分路径，让固定轮数的 wavefront 阶段承担完整主积分。截图/参考累积继续使用独立参考积分器，不参与实时队列。
+固定轮数的 wavefront 阶段现在承担实时与截图/参考累积的完整主积分，旧 megakernel raygen 已删除。两种模式只在 `resolve` 的输出策略上不同：实时写 NRD、DLSS RR 或无后处理输入，截图应用 aerial perspective 后写 RGBA32F 运行均值。
 
 透明主表面仍同时生成物理反射与透射两条路径，不采用随机单分支。两条路径是同一种队列记录中的独立工作项，共享 step、transition 和 tail 调度；分支类型只作为路径状态，不产生两套积分管线。每轮 trace 的 SER 重排因此可以同时接收两类路径，并按实际命中着色器重组执行。
 
@@ -12,7 +12,8 @@
 2. 路径状态仍拥有稳定 ID：槽 0 保存普通/透射路径，槽 1 保存反射路径。`head` 只把真正需要继续的 ID append 到活动队列。
 3. 前 11 轮 `step` 执行完整 NEE，`transition` 切换到仅太阳 NEE，`tail` 在局部循环中结束残余路径。
 4. 每轮从一个紧凑索引队列读取，只把仍活动的路径 append 到另一个队列；两个队列 ping-pong，并直接把活动计数作为下一次 `vkCmdTraceRaysIndirectKHR` 的宽度。
-5. 每条透明路径独立保存辐射、介质、降噪引导与 PSR 状态；`resolve` 最后按像素合并反射、透射和首表面引导，再写入现有 NRD、DLSS RR 或无后处理输出。
+5. 每条透明路径独立保存辐射、介质、降噪引导与 PSR 状态；`resolve` 最后按像素合并反射、透射和首表面引导，再选择实时重建输入或截图运行均值输出。
+6. 总反弹硬上限为 128。俄罗斯轮盘赌仍从第 1 次续接后开始，所以上限只截断极端幸存尾部。
 
 透明与不透明路径共用活动队列和 SER 重排点。当前压缩的是活动 ID，未执行显式全局 radix sort；稳定路径状态仍按最坏情况保留两个槽，因此压缩直接减少空 invocation 和队列流量，但不按实际透明像素数动态缩小路径状态池。
 
@@ -38,14 +39,16 @@
 
 创建队列前会分别校验路径区、索引队列区、`maxStorageBufferRange` 和 `maxRayDispatchInvocationCount`。活动队列需要 `rayTracingPipelineTraceRaysIndirect`；设备协商阶段会明确验证并启用该特性。
 
+截图会话必须在原生分辨率保存同一套 wavefront 暂存状态，不能借用可能较低分辨率的实时 NRD/RR 输入。该资源集只在截图会话存在，退出后整体延迟释放；截图运行均值使用独立 RGBA32F 描述符，避免被逐阶段的稳定辐射 scratch 覆盖。实时稳态显存不受此项影响。
+
 ## 已验证契约
 
 - ABI 固定为 12 轮、144 字节路径记录、每像素两个路径槽、两个紧凑索引队列、16 字节间接命令和 32-bit 路径 ID。
-- CPU 只创建两个 raygen shader module：参考积分器和统一 wavefront。统一模块以 specialization constant 生成 head、step/transition、tail 和 resolve 四个 shader stage；queue 方向与 transition 标记仍由 SBT record 提供。主 step 因此不再继承 head/tail/resolve 的寄存器上限。
+- CPU 只创建一个 wavefront raygen shader module。它以 specialization constant 生成 head、step/transition、tail 和 resolve 四个 shader stage；queue 方向、transition 与截图输出标记由 SBT record 提供。主 step 因此不继承 head/tail/resolve 的寄存器上限。
 - 支持 RayGen subgroup ballot 的 SER 设备使用 subgroup 聚合 append：一个 subgroup 只执行一次全局计数器分配，并连续写入所有存活路径。无此能力的设备继续使用逐路径原子 fallback。
 - SER coherence hint 使用六位 section 局部性和两位路径类别，区分普通、透明反射和透明透射。
 - 主追踪 payload 从 80 字节降到 64 字节；命中位置由 raygen 根据 `origin + direction × t` 重建，完整 `SurfaceInteraction` 的公开 ABI 不变。
-- 实时 wavefront SPIR-V 中已无 `primeIntegrateWithVolume` 或 `primeIntegrate` 调用，megakernel 主积分路径可被死代码消除。
+- 实时和截图共用同一组 15 次 dispatch 与一套队列状态；截图不再创建或编译独立 raygen。
 - 新增的 queued PSR 属性测试用显式 delta 链对照四元数压缩表达，覆盖 1–8 个 delta 事件及其全部随机反射组合。
 - Java 单元测试、完整 GPU shader 属性测试、glslang 编译、SPIR-V 优化与验证均通过。
 
@@ -58,3 +61,4 @@
 - [ ] 对比主线记录驱动首次编译时间、实时帧时、寄存器数、occupancy、显存峰值和稳态显存。
 - [ ] 用 Nsight 确认间接宽度随 bounce 单调收缩，并测量全局 append counter 的竞争成本。
 - [ ] 根据显存目标评估分块路径状态池或冷状态拆分。
+- [ ] 测试截图运行均值连续累积，且切换 NRD、DLSS RR 与内部缩放比例后仍保持原生分辨率。

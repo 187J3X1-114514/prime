@@ -29,6 +29,7 @@ const uint PRIME_WAVEFRONT_STAGE_STEP = 1u;
 const uint PRIME_WAVEFRONT_STAGE_TRANSITION = 2u;
 const uint PRIME_WAVEFRONT_STAGE_TAIL = 3u;
 const uint PRIME_WAVEFRONT_STAGE_RESOLVE = 4u;
+const uint PRIME_WAVEFRONT_SCREENSHOT_OUTPUT = 1u << 9u;
 layout(constant_id = 0) const uint primeWavefrontSpecializedStage =
         PRIME_WAVEFRONT_STAGE_HEAD;
 
@@ -258,7 +259,8 @@ void primeInitializeTransparentWavefront(
 void primeWavefrontHead() {
     uvec2 pixel = gl_LaunchIDEXT.xy;
     uint recordIndex = primeWavefrontIndex(pixel);
-    uint maximumBounces = min(primePush.path.z & 0xffffu, 256u);
+    uint maximumBounces = min(
+            primePush.path.z & 0xffffu, PRIME_MAXIMUM_BOUNCES);
     primeSetNumericalContext(PRIME_NUMERICAL_STAGE_CAMERA, 0u);
 
     if (maximumBounces == 0u) {
@@ -375,7 +377,8 @@ void primeWavefrontStep(bool sunOnlyTail, uint sourceQueue) {
             primePush.sunDirection,
             ATM_SPACE_SUN_INTENSITY * primeSunRadianceMultiplier());
     integrator.environmentRadiance = vec4(0.0);
-    uint maximumBounces = min(primePush.path.z & 0xffffu, 256u);
+    uint maximumBounces = min(
+            primePush.path.z & 0xffffu, PRIME_MAXIMUM_BOUNCES);
     bool queueContinuation;
 
     if (primeWavefrontTransparentBranch(record)) {
@@ -486,7 +489,8 @@ void primeWavefrontTail(uint sourceQueue) {
             primePush.sunDirection,
             ATM_SPACE_SUN_INTENSITY * primeSunRadianceMultiplier());
     integrator.environmentRadiance = vec4(0.0);
-    uint maximumBounces = min(primePush.path.z & 0xffffu, 256u);
+    uint maximumBounces = min(
+            primePush.path.z & 0xffffu, PRIME_MAXIMUM_BOUNCES);
 
     if (primeWavefrontTransparentBranch(record)) {
         uint control =
@@ -623,7 +627,13 @@ void primeWavefrontResolve() {
             : primeLoadWavefrontIntermediate(
                     pixel,
                     primaryRecord);
-    primeWriteRealtimeOutput(pixel, primeCameraSample(), result);
+    vec2 cameraSample = primeCameraSample();
+    if ((primeWavefrontShaderRecord.control
+            & PRIME_WAVEFRONT_SCREENSHOT_OUTPUT) != 0u) {
+        primeWriteScreenshotOutput(pixel, cameraSample, result);
+    } else {
+        primeWriteRealtimeOutput(pixel, cameraSample, result);
+    }
 }
 
 void main() {

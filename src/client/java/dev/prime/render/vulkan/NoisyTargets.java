@@ -9,8 +9,8 @@ import org.lwjgl.vulkan.VK12;
 import org.lwjgl.vulkan.VkDependencyInfo;
 import org.lwjgl.vulkan.VkImageMemoryBarrier2;
 
-/** Minimal native-resolution image set for presenting the integrator's unfiltered 1 spp result. */
-final class NoisyTargets implements DenoiserInputs, Destroyable {
+/** Minimal native-resolution image set for wavefront transport and unfiltered presentation. */
+public final class NoisyTargets implements DenoiserInputs, Destroyable {
     private static final int USAGE =
             VK12.VK_IMAGE_USAGE_STORAGE_BIT | VK12.VK_IMAGE_USAGE_SAMPLED_BIT;
 
@@ -28,7 +28,7 @@ final class NoisyTargets implements DenoiserInputs, Destroyable {
     private final VulkanImage[] owned;
     private boolean destroyed;
 
-    private NoisyTargets(ArrayList<VulkanImage> images) {
+    private NoisyTargets(ArrayList<VulkanImage> images, boolean hasLinearOutput) {
         this.noisyDiffuse = images.get(0);
         this.noisySpecular = images.get(1);
         this.normalRoughness = images.get(2);
@@ -39,36 +39,52 @@ final class NoisyTargets implements DenoiserInputs, Destroyable {
         this.primaryPosition = images.get(7);
         this.sunLighting = images.get(8);
         this.sunPenumbra = images.get(9);
-        this.linearOutput = images.get(10);
+        this.linearOutput = hasLinearOutput ? images.get(10) : null;
         this.owned = images.toArray(VulkanImage[]::new);
     }
 
     static NoisyTargets create(VulkanContext context, int width, int height) {
+        return create(context, width, height, "Prime noisy", true);
+    }
+
+    public static NoisyTargets createScratch(
+            VulkanContext context, int width, int height) {
+        return create(context, width, height, "Prime screenshot", false);
+    }
+
+    private static NoisyTargets create(
+            VulkanContext context,
+            int width,
+            int height,
+            String label,
+            boolean hasLinearOutput) {
         ArrayList<VulkanImage> images = new ArrayList<>();
         try {
             add(context, images, width, height, VK12.VK_FORMAT_R16G16B16A16_SFLOAT,
-                    "Prime noisy diffuse");
+                    label + " diffuse");
             add(context, images, width, height, VK12.VK_FORMAT_R16G16B16A16_SFLOAT,
-                    "Prime noisy specular");
+                    label + " specular");
             add(context, images, width, height, VK12.VK_FORMAT_A2B10G10R10_UNORM_PACK32,
-                    "Prime noisy packed normal and roughness");
+                    label + " packed normal and roughness");
             add(context, images, width, height, VK12.VK_FORMAT_R32_SFLOAT,
-                    "Prime noisy view Z");
+                    label + " view Z");
             add(context, images, width, height, VK12.VK_FORMAT_R16G16B16A16_SFLOAT,
-                    "Prime noisy motion placeholder");
+                    label + " motion placeholder");
             add(context, images, width, height, VK12.VK_FORMAT_R16G16B16A16_SFLOAT,
-                    "Prime noisy material");
+                    label + " material");
             add(context, images, width, height, VK12.VK_FORMAT_R16G16B16A16_SFLOAT,
-                    "Prime noisy specular material");
+                    label + " specular material");
             add(context, images, width, height, VK12.VK_FORMAT_R32G32B32A32_SFLOAT,
-                    "Prime noisy primary position");
+                    label + " primary position");
             add(context, images, width, height, VK12.VK_FORMAT_R16G16B16A16_SFLOAT,
-                    "Prime noisy sun lighting");
+                    label + " sun lighting");
             add(context, images, width, height, VK12.VK_FORMAT_R16_SFLOAT,
-                    "Prime noisy sun penumbra");
-            add(context, images, width, height, VK12.VK_FORMAT_R16G16B16A16_SFLOAT,
-                    "Prime noisy linear HDR output");
-            return new NoisyTargets(images);
+                    label + " sun penumbra");
+            if (hasLinearOutput) {
+                add(context, images, width, height, VK12.VK_FORMAT_R16G16B16A16_SFLOAT,
+                        label + " linear HDR output");
+            }
+            return new NoisyTargets(images, hasLinearOutput);
         } catch (RuntimeException exception) {
             for (int index = images.size() - 1; index >= 0; index--) {
                 images.get(index).destroy();
@@ -87,7 +103,7 @@ final class NoisyTargets implements DenoiserInputs, Destroyable {
         images.add(context.createImage2D(width, height, format, USAGE, label));
     }
 
-    void prepareForRayTrace(org.lwjgl.vulkan.VkCommandBuffer commandBuffer) {
+    public void prepareForRayTrace(org.lwjgl.vulkan.VkCommandBuffer commandBuffer) {
         try (MemoryStack stack = MemoryStack.stackPush()) {
             VkImageMemoryBarrier2.Buffer barriers =
                     VkImageMemoryBarrier2.calloc(this.owned.length, stack);

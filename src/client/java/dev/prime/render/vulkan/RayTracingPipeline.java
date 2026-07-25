@@ -40,7 +40,7 @@ import org.lwjgl.vulkan.VkWriteDescriptorSet;
 import org.lwjgl.vulkan.VkWriteDescriptorSetAccelerationStructureKHR;
 
 public final class RayTracingPipeline implements Destroyable {
-    private static final int SCREENSHOT_RAYGEN_GROUP = 0;
+    private static final int WAVEFRONT_SCREENSHOT_RESOLVE_GROUP = 0;
     private static final int WAVEFRONT_HEAD_GROUP = 1;
     private static final int WAVEFRONT_STEP_QUEUE_0_GROUP = 2;
     private static final int WAVEFRONT_STEP_QUEUE_1_GROUP = 3;
@@ -50,14 +50,14 @@ public final class RayTracingPipeline implements Destroyable {
     private static final int WAVEFRONT_TAIL_QUEUE_1_GROUP = 7;
     private static final int WAVEFRONT_RESOLVE_GROUP = 8;
     static final int RAYGEN_GROUP_COUNT = 9;
-    static final int RAYGEN_MODULE_COUNT = 2;
-    static final int RAYGEN_SHADER_STAGE_COUNT = 5;
+    static final int RAYGEN_MODULE_COUNT = 1;
+    static final int RAYGEN_SHADER_STAGE_COUNT = 4;
     static final int MISS_GROUP_COUNT = 2;
     static final int HIT_GROUP_COUNT = 6;
     static final int RAYGEN_RECORD_DATA_SIZE = Integer.BYTES;
     private static final long WAVEFRONT_QUEUE_OFFSET_ALIGNMENT = 256L;
     static final int WAVEFRONT_STEP_DISPATCH_COUNT = ShaderAbi.WAVEFRONT_ROUNDS - 1;
-    static final int REALTIME_DISPATCH_COUNT = ShaderAbi.WAVEFRONT_ROUNDS + 3;
+    static final int WAVEFRONT_DISPATCH_COUNT = ShaderAbi.WAVEFRONT_ROUNDS + 3;
     private static final int GROUP_COUNT = RAYGEN_GROUP_COUNT + MISS_GROUP_COUNT + HIT_GROUP_COUNT;
     private static final int ALL_RT_STAGES =
             KHRRayTracingPipeline.VK_SHADER_STAGE_RAYGEN_BIT_KHR
@@ -97,13 +97,10 @@ public final class RayTracingPipeline implements Destroyable {
                 boolean ser = context.capabilities().invocationReorderSupported()
                         && context.capabilities().wavefrontSubgroupSupported();
                 String suffix = ser ? "_ser.rgen.spv" : ".rgen.spv";
-                String[] raygens = new String[] {
-                    "/prime/shaders/world" + suffix,
-                    "/prime/shaders/wavefront" + suffix
-                };
-                // All modes remain resident before gameplay. Wavefront stages share one SPIR-V
-                // module but use specialization constants, allowing per-stage register allocation
-                // without multiplying the large offline shader module.
+                String[] raygens =
+                        new String[] {"/prime/shaders/wavefront" + suffix};
+                // Every render mode uses this module. Specialization constants still give each
+                // stage an independent driver optimization and register-allocation boundary.
                 newTracePipeline = TracePipeline.create(
                         context,
                         stack,
@@ -138,6 +135,7 @@ public final class RayTracingPipeline implements Destroyable {
             long tlas,
             VulkanImage output,
             VulkanImage accumulation,
+            VulkanImage screenshotAccumulation,
             VulkanGpuTextureView atlasView,
             VulkanGpuSampler atlasSampler,
             VulkanImage labPbrNormalAtlas,
@@ -171,6 +169,7 @@ public final class RayTracingPipeline implements Destroyable {
                         tlas,
                         output.view(),
                         accumulation.view(),
+                        screenshotAccumulation.view(),
                         atlasView.vkImageView(),
                         atlasSampler.vkSampler(),
                         labPbrNormalAtlas.view(),
@@ -204,6 +203,7 @@ public final class RayTracingPipeline implements Destroyable {
                     tlas,
                     output,
                     accumulation,
+                    screenshotAccumulation,
                     atlasView,
                     atlasSampler,
                     labPbrNormalAtlas,
@@ -232,10 +232,35 @@ public final class RayTracingPipeline implements Destroyable {
     }
 
     public void trace(VkCommandBuffer commandBuffer, ByteBuffer pushConstants, int width, int height) {
+        this.traceWavefront(
+                commandBuffer,
+                pushConstants,
+                width,
+                height,
+                WAVEFRONT_RESOLVE_GROUP);
+    }
+
+    /** Records one native-resolution unbiased path sample into the screenshot running mean. */
+    public void traceScreenshot(
+            VkCommandBuffer commandBuffer, ByteBuffer pushConstants, int width, int height) {
+        this.traceWavefront(
+                commandBuffer,
+                pushConstants,
+                width,
+                height,
+                WAVEFRONT_SCREENSHOT_RESOLVE_GROUP);
+    }
+
+    private void traceWavefront(
+            VkCommandBuffer commandBuffer,
+            ByteBuffer pushConstants,
+            int width,
+            int height,
+            int resolveGroup) {
         if (this.wavefrontPaths == null
                 || this.wavefrontPaths.size() != wavefrontPathBytes(width, height)) {
             throw new IllegalStateException(
-                    "Wavefront path slots do not match the realtime trace extent");
+                    "Wavefront path slots do not match the trace extent");
         }
         this.starmap.prepare(commandBuffer);
         this.bsdfLookup.prepare(commandBuffer);
@@ -273,18 +298,7 @@ public final class RayTracingPipeline implements Destroyable {
                     queueOffset,
                     sourceQueue);
             this.wavefrontBarrier(commandBuffer, stack);
-            this.trace(commandBuffer, stack, width, height, WAVEFRONT_RESOLVE_GROUP);
-        }
-    }
-
-    /** Records one complete, unsplit path sample per pixel for unbiased screenshot accumulation. */
-    public void traceScreenshot(
-            VkCommandBuffer commandBuffer, ByteBuffer pushConstants, int width, int height) {
-        this.starmap.prepare(commandBuffer);
-        this.bsdfLookup.prepare(commandBuffer);
-        this.bind(commandBuffer, pushConstants);
-        try (MemoryStack stack = MemoryStack.stackPush()) {
-            this.trace(commandBuffer, stack, width, height, SCREENSHOT_RAYGEN_GROUP);
+            this.trace(commandBuffer, stack, width, height, resolveGroup);
         }
     }
 
@@ -608,7 +622,7 @@ public final class RayTracingPipeline implements Destroyable {
     }
 
     private static long createDescriptorSetLayout(VulkanContext context, MemoryStack stack) {
-        VkDescriptorSetLayoutBinding.Buffer bindings = VkDescriptorSetLayoutBinding.calloc(37, stack);
+        VkDescriptorSetLayoutBinding.Buffer bindings = VkDescriptorSetLayoutBinding.calloc(38, stack);
         bindings.get(0)
                 .binding(ShaderAbi.DESCRIPTOR_TLAS)
                 .descriptorType(KHRAccelerationStructure.VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR)
@@ -711,11 +725,16 @@ public final class RayTracingPipeline implements Destroyable {
                 .descriptorCount(1)
                 .stageFlags(KHRRayTracingPipeline.VK_SHADER_STAGE_RAYGEN_BIT_KHR);
         bindings.get(35)
+                .binding(ShaderAbi.DESCRIPTOR_SCREENSHOT_ACCUMULATION)
+                .descriptorType(VK12.VK_DESCRIPTOR_TYPE_STORAGE_IMAGE)
+                .descriptorCount(1)
+                .stageFlags(KHRRayTracingPipeline.VK_SHADER_STAGE_RAYGEN_BIT_KHR);
+        bindings.get(36)
                 .binding(ShaderAbi.DESCRIPTOR_WAVEFRONT_PATHS)
                 .descriptorType(VK12.VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
                 .descriptorCount(1)
                 .stageFlags(KHRRayTracingPipeline.VK_SHADER_STAGE_RAYGEN_BIT_KHR);
-        bindings.get(36)
+        bindings.get(37)
                 .binding(ShaderAbi.DESCRIPTOR_WAVEFRONT_QUEUE)
                 .descriptorType(VK12.VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
                 .descriptorCount(1)
@@ -753,7 +772,7 @@ public final class RayTracingPipeline implements Destroyable {
             String[] raygenResources,
             String debugName) {
         PrimeClient.LOGGER.info(
-                "Compiling Prime realtime and screenshot ray tracing pipelines");
+                "Compiling Prime unified wavefront ray tracing pipeline");
         long compilationStart = System.nanoTime();
         if (raygenResources.length != RAYGEN_MODULE_COUNT) {
             throw new IllegalArgumentException("Unexpected Prime raygen module count");
@@ -802,15 +821,13 @@ public final class RayTracingPipeline implements Destroyable {
                 stages.get(index)
                         .sType$Default()
                         .stage(stageFlag)
-                        .module(index == 0
+                        .module(index < RAYGEN_SHADER_STAGE_COUNT
                                 ? modules[0]
-                                : index < RAYGEN_SHADER_STAGE_COUNT
-                                        ? modules[1]
-                                        : modules[index
-                                                - RAYGEN_SHADER_STAGE_COUNT
-                                                + RAYGEN_MODULE_COUNT])
+                                : modules[index
+                                        - RAYGEN_SHADER_STAGE_COUNT
+                                        + RAYGEN_MODULE_COUNT])
                         .pName(mainName);
-                if (index > 0 && index < RAYGEN_SHADER_STAGE_COUNT) {
+                if (index < RAYGEN_SHADER_STAGE_COUNT) {
                     VkSpecializationMapEntry.Buffer map =
                             VkSpecializationMapEntry.calloc(1, stack);
                     map.get(0)
@@ -931,15 +948,15 @@ public final class RayTracingPipeline implements Destroyable {
 
     static int raygenShaderStage(int group) {
         return switch (group) {
-            case SCREENSHOT_RAYGEN_GROUP -> 0;
-            case WAVEFRONT_HEAD_GROUP -> 1;
+            case WAVEFRONT_HEAD_GROUP -> 0;
             case WAVEFRONT_STEP_QUEUE_0_GROUP,
                     WAVEFRONT_STEP_QUEUE_1_GROUP,
                     WAVEFRONT_TRANSITION_QUEUE_0_GROUP,
-                    WAVEFRONT_TRANSITION_QUEUE_1_GROUP -> 2;
+                    WAVEFRONT_TRANSITION_QUEUE_1_GROUP -> 1;
             case WAVEFRONT_TAIL_QUEUE_0_GROUP,
-                    WAVEFRONT_TAIL_QUEUE_1_GROUP -> 3;
-            case WAVEFRONT_RESOLVE_GROUP -> 4;
+                    WAVEFRONT_TAIL_QUEUE_1_GROUP -> 2;
+            case WAVEFRONT_SCREENSHOT_RESOLVE_GROUP,
+                    WAVEFRONT_RESOLVE_GROUP -> 3;
             default -> throw new IllegalArgumentException(
                     "Invalid Prime raygen group " + group);
         };
@@ -947,10 +964,10 @@ public final class RayTracingPipeline implements Destroyable {
 
     static int raygenSpecializationStage(int shaderStage) {
         return switch (shaderStage) {
-            case 1 -> 0;
-            case 2 -> 1;
-            case 3 -> 3;
-            case 4 -> 4;
+            case 0 -> 0;
+            case 1 -> 1;
+            case 2 -> 3;
+            case 3 -> 4;
             default -> throw new IllegalArgumentException(
                     "Invalid specialized Prime raygen stage " + shaderStage);
         };
@@ -966,7 +983,7 @@ public final class RayTracingPipeline implements Destroyable {
             case WAVEFRONT_TAIL_QUEUE_0_GROUP -> 3;
             case WAVEFRONT_TAIL_QUEUE_1_GROUP -> 3 | (1 << 8);
             case WAVEFRONT_RESOLVE_GROUP -> 4;
-            case SCREENSHOT_RAYGEN_GROUP -> 0;
+            case WAVEFRONT_SCREENSHOT_RESOLVE_GROUP -> 4 | (1 << 9);
             default -> throw new IllegalArgumentException(
                     "Invalid Prime raygen group " + group);
         };
@@ -1223,6 +1240,7 @@ public final class RayTracingPipeline implements Destroyable {
         private final long tlas;
         private final long outputView;
         private final long accumulationView;
+        private final long screenshotAccumulationView;
         private final long atlasView;
         private final long atlasSampler;
         private final long labPbrNormalAtlas;
@@ -1255,6 +1273,7 @@ public final class RayTracingPipeline implements Destroyable {
                 long tlas,
                 long outputView,
                 long accumulationView,
+                long screenshotAccumulationView,
                 long atlasView,
                 long atlasSampler,
                 long labPbrNormalAtlas,
@@ -1284,6 +1303,7 @@ public final class RayTracingPipeline implements Destroyable {
             this.tlas = tlas;
             this.outputView = outputView;
             this.accumulationView = accumulationView;
+            this.screenshotAccumulationView = screenshotAccumulationView;
             this.atlasView = atlasView;
             this.atlasSampler = atlasSampler;
             this.labPbrNormalAtlas = labPbrNormalAtlas;
@@ -1315,6 +1335,7 @@ public final class RayTracingPipeline implements Destroyable {
                 long tlas,
                 VulkanImage output,
                 VulkanImage accumulation,
+                VulkanImage screenshotAccumulation,
                 VulkanGpuTextureView atlasView,
                 VulkanGpuSampler atlasSampler,
                 VulkanImage labPbrNormalAtlas,
@@ -1327,7 +1348,7 @@ public final class RayTracingPipeline implements Destroyable {
             try (MemoryStack stack = MemoryStack.stackPush()) {
                 VkDescriptorPoolSize.Buffer sizes = VkDescriptorPoolSize.calloc(4, stack);
                 sizes.get(0).type(KHRAccelerationStructure.VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR).descriptorCount(1);
-                sizes.get(1).type(VK12.VK_DESCRIPTOR_TYPE_STORAGE_IMAGE).descriptorCount(29);
+                sizes.get(1).type(VK12.VK_DESCRIPTOR_TYPE_STORAGE_IMAGE).descriptorCount(30);
                 sizes.get(2).type(VK12.VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER).descriptorCount(5);
                 sizes.get(3).type(VK12.VK_DESCRIPTOR_TYPE_STORAGE_BUFFER).descriptorCount(2);
                 VkDescriptorPoolCreateInfo poolCreateInfo = VkDescriptorPoolCreateInfo.calloc(stack)
@@ -1354,7 +1375,7 @@ public final class RayTracingPipeline implements Destroyable {
                             VkWriteDescriptorSetAccelerationStructureKHR.calloc(stack)
                                     .sType$Default()
                                     .pAccelerationStructures(stack.longs(tlas));
-                    VkDescriptorImageInfo.Buffer imageInfos = VkDescriptorImageInfo.calloc(34, stack);
+                    VkDescriptorImageInfo.Buffer imageInfos = VkDescriptorImageInfo.calloc(35, stack);
                     imageInfos.get(0)
                             .imageView(output.view())
                             .imageLayout(VK12.VK_IMAGE_LAYOUT_GENERAL);
@@ -1428,6 +1449,9 @@ public final class RayTracingPipeline implements Destroyable {
                             .sampler(starmap.sampler())
                             .imageView(starmap.image().view())
                             .imageLayout(VK12.VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+                    imageInfos.get(34)
+                            .imageView(screenshotAccumulation.view())
+                            .imageLayout(VK12.VK_IMAGE_LAYOUT_GENERAL);
                     VkDescriptorBufferInfo.Buffer bufferInfos =
                             VkDescriptorBufferInfo.calloc(2, stack);
                     long wavefrontQueueOffset = wavefrontQueueOffset(
@@ -1441,7 +1465,7 @@ public final class RayTracingPipeline implements Destroyable {
                             .buffer(wavefrontPaths.handle())
                             .offset(wavefrontQueueOffset)
                             .range(wavefrontPaths.size() - wavefrontQueueOffset);
-                    VkWriteDescriptorSet.Buffer writes = VkWriteDescriptorSet.calloc(37, stack);
+                    VkWriteDescriptorSet.Buffer writes = VkWriteDescriptorSet.calloc(38, stack);
                     writes.get(0)
                             .sType$Default()
                             .pNext(acceleration.address())
@@ -1570,12 +1594,20 @@ public final class RayTracingPipeline implements Destroyable {
                     writes.get(35)
                             .sType$Default()
                             .dstSet(descriptorSet)
+                            .dstBinding(ShaderAbi.DESCRIPTOR_SCREENSHOT_ACCUMULATION)
+                            .descriptorCount(1)
+                            .descriptorType(VK12.VK_DESCRIPTOR_TYPE_STORAGE_IMAGE)
+                            .pImageInfo(VkDescriptorImageInfo.create(
+                                    imageInfos.get(34).address(), 1));
+                    writes.get(36)
+                            .sType$Default()
+                            .dstSet(descriptorSet)
                             .dstBinding(ShaderAbi.DESCRIPTOR_WAVEFRONT_PATHS)
                             .descriptorCount(1)
                             .descriptorType(VK12.VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
                             .pBufferInfo(VkDescriptorBufferInfo.create(
                                     bufferInfos.get(0).address(), 1));
-                    writes.get(36)
+                    writes.get(37)
                             .sType$Default()
                             .dstSet(descriptorSet)
                             .dstBinding(ShaderAbi.DESCRIPTOR_WAVEFRONT_QUEUE)
@@ -1591,6 +1623,7 @@ public final class RayTracingPipeline implements Destroyable {
                             tlas,
                             output.view(),
                             accumulation.view(),
+                            screenshotAccumulation.view(),
                             atlasView.vkImageView(),
                             atlasSampler.vkSampler(),
                             labPbrNormalAtlas.view(),
@@ -1625,6 +1658,7 @@ public final class RayTracingPipeline implements Destroyable {
                 long tlas,
                 long outputView,
                 long accumulationView,
+                long screenshotAccumulationView,
                 long atlasView,
                 long atlasSampler,
                 long labPbrNormalAtlas,
@@ -1651,6 +1685,7 @@ public final class RayTracingPipeline implements Destroyable {
             return this.tlas == tlas
                     && this.outputView == outputView
                     && this.accumulationView == accumulationView
+                    && this.screenshotAccumulationView == screenshotAccumulationView
                     && this.atlasView == atlasView
                     && this.atlasSampler == atlasSampler
                     && this.labPbrNormalAtlas == labPbrNormalAtlas

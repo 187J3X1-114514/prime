@@ -1,6 +1,25 @@
 #ifndef PRIME_WORLD_OUTPUT_GLSL
 #define PRIME_WORLD_OUTPUT_GLSL
 
+void primeWriteScreenshotOutput(
+        uvec2 pixel,
+        vec2 cameraSample,
+        PrimeIntegrationResult result) {
+    vec3 radiance = primeResolveIntegrationRadiance(result);
+    primeApplyAerialPerspective(
+            pixel, cameraSample, result.guides.primaryDistance, radiance);
+    uint64_t zeroBasedSample = (uint64_t(primeSampleEpoch()) << 16u)
+            | uint64_t(primePush.path.x & 0xffffu);
+    vec3 mean = radiance;
+    if (zeroBasedSample != uint64_t(0)) {
+        vec4 previous = imageLoad(
+                primeScreenshotAccumulation, ivec2(pixel));
+        float sampleCount = float(zeroBasedSample + uint64_t(1));
+        mean = previous.rgb + (radiance - previous.rgb) / sampleCount;
+    }
+    imageStore(primeScreenshotAccumulation, ivec2(pixel), vec4(mean, 1.0));
+}
+
 uint primeClassifyRawOutput(PrimeIntegrationResult result) {
     uint flags = primeClassifyRadiance(result.radiance.diffuse)
             | primeClassifyRadiance(result.radiance.specular)

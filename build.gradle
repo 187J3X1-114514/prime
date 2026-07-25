@@ -234,6 +234,7 @@ abstract class GenerateShaderAbi extends DefaultTask {
 				|| schema.pathControl.starEvQuarterShift != 25
 				|| !schema.pathControl.starEvQuarterMask.toString().equalsIgnoreCase('0x7f')
 				|| schema.pathControl.starEvQuarterBias != 32
+				|| schema.pathControl.maximumBounces != 128
 				|| schema.pathControl.russianRouletteStart != 1) {
 			throw new GradleException(
 					'Prime path controls must preserve sampling, diagnostics, camera, lighting, material, jitter, and one-guaranteed-continuation roulette ABI')
@@ -340,6 +341,7 @@ public final class ShaderAbi {
     public static final int DESCRIPTOR_OUTPUT_IMAGE = ${schema.descriptors.outputImage};
     public static final int DESCRIPTOR_BLOCK_ATLAS = ${schema.descriptors.blockAtlas};
     public static final int DESCRIPTOR_ACCUMULATION_IMAGE = ${schema.descriptors.accumulationImage};
+    public static final int DESCRIPTOR_SCREENSHOT_ACCUMULATION = ${schema.descriptors.screenshotAccumulation};
     public static final int DESCRIPTOR_SKY_VIEW = ${schema.descriptors.skyView};
     public static final int DESCRIPTOR_TRANSMITTANCE_LOW = ${schema.descriptors.transmittanceLow};
     public static final int DESCRIPTOR_TRANSMITTANCE_HIGH = ${schema.descriptors.transmittanceHigh};
@@ -401,6 +403,7 @@ public final class ShaderAbi {
     public static final int PATH_STAR_EV_QUARTER_SHIFT = ${schema.pathControl.starEvQuarterShift};
     public static final int PATH_STAR_EV_QUARTER_MASK = ${schema.pathControl.starEvQuarterMask};
     public static final int PATH_STAR_EV_QUARTER_BIAS = ${schema.pathControl.starEvQuarterBias};
+    public static final int MAXIMUM_BOUNCES = ${schema.pathControl.maximumBounces};
     public static final int RUSSIAN_ROULETTE_START = ${schema.pathControl.russianRouletteStart};
     public static final float CUTOUT_ALPHA_THRESHOLD = ${schema.cutoutAlphaThreshold}f;
     public static final String WORKING_COLOR_SPACE = "${colorContract.workingSpace}";
@@ -495,6 +498,7 @@ ${javaOffsets}
 #define PRIME_STARMAP_WIDTH ${starmapContract.width}
 #define PRIME_STARMAP_HEIGHT ${starmapContract.height}
 #define PRIME_STARMAP_OBSERVER_LATITUDE_RADIANS (${starmapContract.observerLatitudeDegrees} * 0.017453292519943295)
+#define PRIME_MAXIMUM_BOUNCES ${schema.pathControl.maximumBounces}u
 #define PRIME_RUSSIAN_ROULETTE_START ${schema.pathControl.russianRouletteStart}u
 #define PRIME_CUTOUT_ALPHA_THRESHOLD ${schema.cutoutAlphaThreshold}
 struct PrimitiveRecord {
@@ -595,6 +599,7 @@ layout(set = 0, binding = ${schema.descriptors.blockAtlas}) uniform sampler2D pr
 layout(set = 0, binding = ${schema.descriptors.labPbrNormalAtlas}) uniform sampler2D primeLabPbrNormalAtlas;
 layout(set = 0, binding = ${schema.descriptors.labPbrSpecularAtlas}) uniform sampler2D primeLabPbrSpecularAtlas;
 layout(set = 0, binding = ${schema.descriptors.accumulationImage}, rgba32f) uniform image2D primeAccumulation;
+layout(set = 0, binding = ${schema.descriptors.screenshotAccumulation}, rgba32f) uniform image2D primeScreenshotAccumulation;
 layout(set = 0, binding = ${schema.descriptors.skyView}, rgba16f) uniform readonly image2D primeSkyView;
 layout(set = 0, binding = ${schema.descriptors.transmittanceLow}, rgba16f) uniform readonly image2D primeTransmittanceLow;
 layout(set = 0, binding = ${schema.descriptors.transmittanceHigh}, rgba16f) uniform readonly image2D primeTransmittanceHigh;
@@ -767,9 +772,7 @@ abstract class CompilePrimeShaders extends DefaultTask {
 			if (source.name.endsWith('_validation.comp')) {
 				java.nio.file.Files.delete(output.toPath())
 			}
-			if (source.name in [
-					'world.rgen',
-					'wavefront.rgen']) {
+			if (source.name == 'wavefront.rgen') {
 				// Keep a baseline module that never declares the optional extension and a separate
 				// SER permutation for devices that negotiate real invocation reordering. Runtime
 				// selection therefore cannot expose unsupported SPIR-V to a fallback device.
@@ -955,8 +958,6 @@ def verifyDistributionJar = tasks.register('verifyDistributionJar') {
 			'prime/natives/windows-x86_64/amd_fidelityfx_vk.dll',
 			'prime/natives/windows-x86_64/prime_dlss_rr.dll',
 			'prime/natives/windows-x86_64/nvngx_dlssd.dll',
-			'prime/shaders/world.rgen.spv',
-			'prime/shaders/world_ser.rgen.spv',
 			'prime/shaders/wavefront.rgen.spv',
 			'prime/shaders/wavefront_ser.rgen.spv',
 			'prime/shaders/screenshot_display.comp.spv',
@@ -974,9 +975,9 @@ def verifyDistributionJar = tasks.register('verifyDistributionJar') {
 		}
 
 		def shaderNames = names.findAll { it.startsWith('prime/shaders/') && it.endsWith('.spv') }
-		if (shaderNames.size() != 21) {
+		if (shaderNames.size() != 19) {
 			throw new GradleException(
-					"Distribution jar must contain 21 Prime shaders; found ${shaderNames.size()}")
+					"Distribution jar must contain 19 Prime shaders; found ${shaderNames.size()}")
 		}
 
 		new java.util.zip.ZipFile(archive).withCloseable { zip ->

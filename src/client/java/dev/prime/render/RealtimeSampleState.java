@@ -4,8 +4,8 @@ package dev.prime.render;
  * Tracks sample sequencing and temporal invalidation for the interactive render path.
  *
  * <p>This is not a radiance accumulator. NRD and FSR own the interactive temporal histories;
- * this state only supplies their sampling epoch and monotonic sample index. The future offline
- * path must own a separate, monotonic sample counter and an explicit RGBA32F running mean.
+ * this state only supplies their sampling epoch and monotonic sample index. The screenshot path
+ * owns a separate monotonic sample counter and an explicit RGBA32F running mean.
  */
 final class RealtimeSampleState {
 

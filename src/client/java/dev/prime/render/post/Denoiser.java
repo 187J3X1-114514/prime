@@ -6,9 +6,9 @@ import dev.prime.render.vulkan.VulkanImage;
 /**
  * Common ownership boundary for every noisy-sample consumer.
  *
- * <p>Realtime reconstruction and native-resolution reference accumulation differ in scheduling,
- * but both consume the integrator's linear HDR estimate and own the image that represents their
- * resolved result. This interface keeps that distinction out of the physical integrator.
+ * <p>Realtime reconstruction and native-resolution reference accumulation share path scheduling
+ * but use different output policies. Both own the image representing their resolved linear HDR
+ * result, keeping that distinction out of the physical integrator.
  */
 public interface Denoiser extends Destroyable {
     enum Kind {

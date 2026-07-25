@@ -11,7 +11,7 @@ import dev.prime.render.shader.ShaderAbi;
  * basis without migrating every material, path-state, accumulation, and presentation boundary.
  */
 final class IntegratorSettings {
-    static final int MAXIMUM_BOUNCES = 256;
+    static final int MAXIMUM_BOUNCES = ShaderAbi.MAXIMUM_BOUNCES;
     static final int RUSSIAN_ROULETTE_START = ShaderAbi.RUSSIAN_ROULETTE_START;
     static final int SAMPLE_EFFECT_CAMERA = 0;
     static final int SAMPLE_EFFECT_DIRECT_STARS = 1;
@@ -47,10 +47,11 @@ final class IntegratorSettings {
             int jitterPhase,
             boolean cameraInWater,
             PostProcessingMode postProcessingMode) {
-        if (maximumBounces < 0 || maximumBounces > 0xffff) {
-            throw new IllegalArgumentException("Maximum bounce count does not fit in 16 bits");
+        if (maximumBounces < 0 || maximumBounces > MAXIMUM_BOUNCES) {
+            throw new IllegalArgumentException(
+                    "Maximum bounce count exceeds the integrator limit");
         }
-        // Zero selects the precompiled screenshot branch. Realtime reconstruction uses the exact
+        // Zero selects the screenshot pixel filter. Realtime reconstruction uses the exact
         // one-based jitter phase supplied by FSR or RR.
         if (jitterPhase < 0 || jitterPhase > ShaderAbi.PATH_JITTER_PHASE_MASK) {
             throw new IllegalArgumentException("Jitter phase does not fit in 13 bits");

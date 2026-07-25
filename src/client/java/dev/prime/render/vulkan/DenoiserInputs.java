@@ -1,6 +1,6 @@
 package dev.prime.render.vulkan;
 
-/** Physical path signals and primary-surface guides written by the realtime ray-generation shader. */
+/** Physical path signals and primary-surface guides used as wavefront intermediate storage. */
 public interface DenoiserInputs {
     VulkanImage noisyDiffuse();
 

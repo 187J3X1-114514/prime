@@ -102,6 +102,10 @@ public final class VulkanDeviceNegotiator {
             RAY_TRACING_PIPELINE_FEATURES,
             "rayTracingPipeline",
             VkPhysicalDeviceRayTracingPipelineFeaturesKHR.RAYTRACINGPIPELINE);
+    private static final VulkanFeature RAY_TRACING_PIPELINE_INDIRECT = new VulkanFeature(
+            RAY_TRACING_PIPELINE_FEATURES,
+            "rayTracingPipelineTraceRaysIndirect",
+            VkPhysicalDeviceRayTracingPipelineFeaturesKHR.RAYTRACINGPIPELINETRACERAYSINDIRECT);
     private static final VulkanFeature INVOCATION_REORDER = new VulkanFeature(
             INVOCATION_REORDER_FEATURES,
             "rayTracingInvocationReorder",
@@ -180,6 +184,9 @@ public final class VulkanDeviceNegotiator {
             }
             if (!rayTracing.rayTracingPipeline()) {
                 missing.add("rayTracingPipeline");
+            }
+            if (!rayTracing.rayTracingPipelineTraceRaysIndirect()) {
+                missing.add("rayTracingPipelineTraceRaysIndirect");
             }
 
             if (!missing.isEmpty()) {
@@ -288,6 +295,7 @@ public final class VulkanDeviceNegotiator {
             enabledFeatures.add(BUFFER_DEVICE_ADDRESS);
             enabledFeatures.add(ACCELERATION_STRUCTURE);
             enabledFeatures.add(RAY_TRACING_PIPELINE);
+            enabledFeatures.add(RAY_TRACING_PIPELINE_INDIRECT);
 
             // The FidelityFX DLL owns its FP32/FP16 permutations, but it cannot use an optional
             // physical-device feature unless Minecraft enabled it on the logical device. Expose

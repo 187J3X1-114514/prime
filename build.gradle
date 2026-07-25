@@ -204,7 +204,11 @@ abstract class GenerateShaderAbi extends DefaultTask {
 			throw new GradleException('Prime NRD signal and native-library contracts changed without a coordinated migration')
 		}
 		if (wavefrontContract.rounds != 12
-				|| wavefrontContract.pathRecordSize != 112
+				|| wavefrontContract.pathRecordSize != 144
+				|| wavefrontContract.pathSlotsPerPixel != 2
+				|| wavefrontContract.queueCount != 2
+				|| wavefrontContract.queueCommandStride != 16
+				|| wavefrontContract.queueIndexSize != 4
 				|| !wavefrontContract.activeMask.toString().equalsIgnoreCase('0x1')) {
 			throw new GradleException(
 					'Prime hybrid scheduler must preserve twelve wavefront rounds and its queue ABI')
@@ -368,8 +372,13 @@ public final class ShaderAbi {
     public static final int DESCRIPTOR_NRD_DISPLAY_POSITION = ${schema.descriptors.nrdDisplayPosition};
     public static final int DESCRIPTOR_STARMAP = ${schema.descriptors.starmap};
     public static final int DESCRIPTOR_WAVEFRONT_PATHS = ${schema.descriptors.wavefrontPaths};
+    public static final int DESCRIPTOR_WAVEFRONT_QUEUE = ${schema.descriptors.wavefrontQueue};
     public static final int WAVEFRONT_ROUNDS = ${wavefrontContract.rounds};
     public static final int WAVEFRONT_PATH_RECORD_SIZE = ${wavefrontContract.pathRecordSize};
+    public static final int WAVEFRONT_PATH_SLOTS_PER_PIXEL = ${wavefrontContract.pathSlotsPerPixel};
+    public static final int WAVEFRONT_QUEUE_COUNT = ${wavefrontContract.queueCount};
+    public static final int WAVEFRONT_QUEUE_COMMAND_STRIDE = ${wavefrontContract.queueCommandStride};
+    public static final int WAVEFRONT_QUEUE_INDEX_SIZE = ${wavefrontContract.queueIndexSize};
     public static final int WAVEFRONT_ACTIVE_MASK = ${wavefrontContract.activeMask};
     public static final int PATH_SAMPLE_EPOCH_MASK = ${schema.pathControl.sampleEpochMask};
     public static final int PATH_TRIANGLE_DEBUG_MASK = ${schema.pathControl.triangleDebugMask};
@@ -454,8 +463,13 @@ ${javaOffsets}
 #define PRIME_PUSH_CONSTANT_SIZE ${push.size}
 #define PRIME_DESCRIPTOR_TRANSMISSION_GGX_ENERGY ${schema.descriptors.transmissionGgxEnergy}
 #define PRIME_DESCRIPTOR_WAVEFRONT_PATHS ${schema.descriptors.wavefrontPaths}
+#define PRIME_DESCRIPTOR_WAVEFRONT_QUEUE ${schema.descriptors.wavefrontQueue}
 #define PRIME_WAVEFRONT_ROUNDS ${wavefrontContract.rounds}
 #define PRIME_WAVEFRONT_PATH_RECORD_SIZE ${wavefrontContract.pathRecordSize}
+#define PRIME_WAVEFRONT_PATH_SLOTS_PER_PIXEL ${wavefrontContract.pathSlotsPerPixel}u
+#define PRIME_WAVEFRONT_QUEUE_COUNT ${wavefrontContract.queueCount}u
+#define PRIME_WAVEFRONT_QUEUE_COMMAND_STRIDE ${wavefrontContract.queueCommandStride}u
+#define PRIME_WAVEFRONT_QUEUE_INDEX_SIZE ${wavefrontContract.queueIndexSize}u
 #define PRIME_WAVEFRONT_ACTIVE_MASK ${wavefrontContract.activeMask}u
 #define PRIME_PATH_SAMPLE_EPOCH_MASK ${schema.pathControl.sampleEpochMask}u
 #define PRIME_PATH_TRIANGLE_DEBUG_MASK ${schema.pathControl.triangleDebugMask}u

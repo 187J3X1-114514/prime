@@ -1,6 +1,8 @@
 #ifndef PRIME_INTEGRATOR_GLSL
 #define PRIME_INTEGRATOR_GLSL
 
+#include "queued_psr_math.glsl"
+
 // The entire estimator operates in linear Rec.2020 D65. Scheduling changes may move this state
 // between kernels, but they must not reinterpret it as encoded sRGB or another RGB basis.
 
@@ -1008,6 +1010,60 @@ void primeSetPsrGuide(
     guides.primaryLinearRoughness = linearRoughness;
 }
 
+// Queue-resident PSR state stores the same bounded delta chain as an incremental path length and
+// orthogonal direction transform. Its persisted representation is 32 bytes rather than eight
+// full position/normal pairs, making two parallel transparent branches practical.
+
+void primeAppendQueuedPsrDelta(
+        inout PrimeQueuedPsrState state,
+        SurfaceInteraction surface,
+        BsdfSample bsdf) {
+    primeAppendQueuedPsrState(
+            state,
+            primePush.cameraPosition,
+            surface.position,
+            surface.geometricNormal,
+            (bsdf.eventFlags & PRIME_BSDF_EVENT_REFLECTION) != 0u);
+}
+
+float primeQueuedPsrAnchorDistance(
+        PrimeQueuedPsrState state,
+        vec3 target,
+        vec3 targetNormal) {
+    return primeQueuedPsrAnchorDistanceValue(
+            state,
+            primePush.cameraPosition,
+            target,
+            targetNormal);
+}
+
+void primeSetQueuedPsrGuide(
+        inout PrimeDenoiserGuides guides,
+        SurfaceInteraction surface,
+        vec3 shadingNormal,
+        float linearRoughness,
+        PrimeDenoiseAlbedos albedos,
+        vec3 guideThroughput,
+        PrimeQueuedPsrState state) {
+    vec3 position = surface.position - primePush.cameraPosition;
+    vec3 normal = shadingNormal;
+    vec3 virtualPosition;
+    vec3 virtualNormal;
+    if (primeBuildQueuedPsrGuideValue(
+            state, surface.position, normal, virtualPosition, virtualNormal)) {
+        position = virtualPosition;
+        normal = virtualNormal;
+    }
+    guides.primaryDistance = length(position);
+    guides.primaryPosition = position;
+    guides.primaryAlbedo = guideThroughput * albedos.diffuse;
+    guides.primaryNormal = normal;
+    guides.primaryHitKind = surface.hitKind;
+    guides.primaryMaterialFlags = surface.materialFlags;
+    guides.primarySpecularAlbedo = guideThroughput * albedos.specular;
+    guides.primaryLinearRoughness = linearRoughness;
+}
+
 void primeAccumulateTransparentBranch(
         inout PrimeTransparentBranchResult result,
         bool diffusePath,
@@ -1366,6 +1422,216 @@ PrimeTransparentBranchResult primeIntegrateTransparentBranch(
         }
     }
     return result;
+}
+
+// Advances one of the two fixed primary-transparent branches by one queued vertex. Reflection and
+// transmission invoke this function independently, so traversal/SER can sort them with every
+// other active path while their radiance and guides remain branch-owned.
+bool primeIntegrateTransparentWavefrontSurface(
+        inout PathState path,
+        IntegratorRecord integrator,
+        inout PrimeRcVolumeStack volumeStack,
+        inout PrimeTransparentBranchResult result,
+        inout PrimeQueuedPsrState psrState,
+        inout bool hasGuide,
+        inout bool diffusePath,
+        inout uint guideBounce,
+        inout bool directionalGuide,
+        SurfaceInteraction surface,
+        bool transmissionBranch,
+        bool guideEnabled,
+        bool sunOnlyTail) {
+    primeSetNumericalContext(PRIME_NUMERICAL_STAGE_SURFACE, path.bounce);
+    primeRecordNonFinite(surface.position);
+    primeRecordNonnegative(surface.t);
+    primeRecordDirection(surface.geometricNormal);
+    primeRecordUnit(surface.baseColor);
+    if (!primeKnownHitKind(surface)) {
+        return false;
+    }
+
+    float hitDistance = surface.hitKind == PRIME_HIT_NONE
+            ? PRIME_NRD_FP16_MAX
+            : primeNrdSanitizeHitDistance(surface.t);
+    if (path.bounce == 1u) {
+        result.firstHitDistance = hitDistance;
+    }
+    if (hasGuide && path.bounce == guideBounce + 1u) {
+        if (diffusePath) {
+            result.guides.diffuseHitDistance = hitDistance;
+        } else {
+            result.guides.specularHitDistance = hitDistance;
+        }
+    }
+    if (surface.hitKind == PRIME_HIT_NONE) {
+        if (guideEnabled && !transmissionBranch && !hasGuide
+                && primeQueuedPsrCount(psrState) > 0u
+                && !primeQueuedPsrOverflowed(psrState)) {
+            vec3 direction =
+                    primeQueuedPsrVirtualDirection(psrState, path.rayDirection);
+            float lengthSquared = dot(direction, direction);
+            if (primeNrdIsFinite(direction) && primeNrdIsFinite(lengthSquared)
+                    && lengthSquared > 1.0e-12) {
+                result.guides.primaryPosition =
+                        direction * inversesqrt(lengthSquared);
+                directionalGuide = true;
+            }
+        }
+        primeAccumulateTransparentBranch(
+                result,
+                guideEnabled ? diffusePath : transmissionBranch,
+                primeEvaluateEnvironmentContribution(path, integrator));
+        return false;
+    }
+    if (!primeApplySegmentMedium(path, surface, volumeStack)) {
+        return false;
+    }
+
+    vec3 viewDirection = -path.rayDirection;
+    PrimePreparedSampleBase preparedSample =
+            primePrepareSampleBase(primeMakeSampleBase(path, path.bounce + 1u));
+    bool transmissive = primeMaterialIsTransmissive(surface.materialFlags);
+    float surfaceLinearRoughness = (transmissive || !hasGuide)
+            ? primeSurfaceLinearRoughness(surface)
+            : PRIME_DEFAULT_REFERENCE_LINEAR_ROUGHNESS;
+    bool pureDeltaInterface = transmissive && surfaceLinearRoughness == 0.0;
+    bool primarySurfaceReplacement =
+            guideEnabled && !hasGuide && !pureDeltaInterface;
+    bool contributionDiffuse = guideEnabled
+            ? (primarySurfaceReplacement || diffusePath)
+            : transmissionBranch;
+    bool previousSkippedAreaNee =
+            (path.flags & PRIME_PATH_PREVIOUS_NO_AREA_NEE) != 0u;
+    vec3 emitted = previousSkippedAreaNee
+            ? primeEvaluateHitEmissionWithoutAreaNee(path, surface)
+            : primeEvaluateHitEmission(path, surface);
+    primeAccumulateTransparentBranch(
+            result, contributionDiffuse, emitted);
+
+    if (!pureDeltaInterface) {
+        primeSetNumericalContext(PRIME_NUMERICAL_STAGE_DIRECT_LIGHT, path.bounce);
+        if (primarySurfaceReplacement) {
+            PrimePrimarySunSample sun = primeEstimatePrimaryDirectSun(
+                    integrator,
+                    surface,
+                    viewDirection,
+                    primeSobolSample2D(
+                            preparedSample,
+                            PRIME_SAMPLE_EFFECT_DIRECT_SUN,
+                            PRIME_SAMPLE_DIMENSION_PRIMARY),
+                    volumeStack,
+                    false);
+            vec3 diffuseDirect =
+                    path.throughput * sun.lighting.diffuse * sun.visibility;
+            vec3 specularDirect =
+                    path.throughput * sun.lighting.specular * sun.visibility;
+            if (!sunOnlyTail) {
+                PrimeDirectLightingSplit nonsun = primeEstimatePrimaryNonsunDirect(
+                        surface,
+                        viewDirection,
+                        preparedSample,
+                        volumeStack,
+                        false);
+                diffuseDirect += path.throughput * nonsun.diffuse;
+                specularDirect += path.throughput * nonsun.specular;
+                result.guides.primaryAreaDiffuse =
+                        path.throughput * nonsun.diffuse;
+                result.guides.primaryAreaSpecular =
+                        path.throughput * nonsun.specular;
+                result.guides.primaryAreaDirection = nonsun.direction;
+            }
+            primeAccumulate(result.diffuseRadiance, diffuseDirect);
+            primeAccumulate(result.specularRadiance, specularDirect);
+        } else {
+            vec3 direct = path.throughput * (
+                    sunOnlyTail
+                            ? primeEstimateDirectSun(
+                                    integrator,
+                                    surface,
+                                    viewDirection,
+                                    primeSobolSample2D(
+                                            preparedSample,
+                                            PRIME_SAMPLE_EFFECT_DIRECT_SUN,
+                                            PRIME_SAMPLE_DIMENSION_PRIMARY),
+                                    volumeStack)
+                            : primeEstimateDirectLighting(
+                                    integrator,
+                                    surface,
+                                    viewDirection,
+                                    preparedSample,
+                                    volumeStack));
+            primeAccumulateTransparentBranch(
+                    result,
+                    guideEnabled ? diffusePath : transmissionBranch,
+                    direct);
+        }
+    }
+
+    vec3 scatterSample = primeSobolSample3D(
+            preparedSample,
+            PRIME_SAMPLE_EFFECT_SCATTER_BSDF,
+            PRIME_SAMPLE_DIMENSION_PRIMARY);
+    PrimePathScatter scatter;
+    PrimeDenoiseAlbedos surfaceAlbedos;
+    if (primarySurfaceReplacement) {
+        primeSampleGuidedPathSurface(
+                surface,
+                viewDirection,
+                scatterSample,
+                volumeStack,
+                path.bounce,
+                scatter,
+                surfaceAlbedos);
+        primeSetQueuedPsrGuide(
+                result.guides,
+                surface,
+                primeSurfaceShadingNormal(surface, viewDirection),
+                surfaceLinearRoughness,
+                surfaceAlbedos,
+                path.throughput,
+                psrState);
+        if (transmissionBranch) {
+            result.anchorDistance = primeQueuedPsrAnchorDistance(
+                    psrState, surface.position, surface.geometricNormal);
+        }
+        hasGuide = true;
+        guideBounce = path.bounce;
+    } else {
+        primeSetNumericalContext(PRIME_NUMERICAL_STAGE_BSDF_SAMPLE, path.bounce);
+        scatter = primeSamplePathSurface(
+                surface, viewDirection, scatterSample, volumeStack);
+    }
+    BsdfSample bsdf = scatter.bsdf;
+    if (!primeHasScatter(bsdf)) {
+        return false;
+    }
+    primeRecordDirection(bsdf.direction);
+    primeRecordNonnegative(bsdf.response);
+    primeRecordNonnegative(bsdf.pdf);
+    primeRecordNonnegative(bsdf.relativeEta);
+    if (primarySurfaceReplacement) {
+        diffusePath = (bsdf.eventFlags & PRIME_BSDF_EVENT_DIFFUSE) != 0u;
+        vec3 virtualDirection =
+                primeQueuedPsrVirtualDirection(psrState, bsdf.direction);
+        if (diffusePath) {
+            result.guides.diffuseDirection = virtualDirection;
+        } else {
+            result.guides.specularDirection = virtualDirection;
+        }
+    } else if (guideEnabled && !hasGuide && pureDeltaInterface
+            && (bsdf.eventFlags & PRIME_BSDF_EVENT_DELTA) != 0u) {
+        primeAppendQueuedPsrDelta(psrState, surface, bsdf);
+    }
+    volumeStack = scatter.volumeStack;
+    if (!primeAdvancePath(
+            path, surface, bsdf, preparedSample, pureDeltaInterface)) {
+        return false;
+    }
+    if (sunOnlyTail) {
+        path.flags |= PRIME_PATH_PREVIOUS_NO_AREA_NEE;
+    }
+    path.bounce++;
+    return true;
 }
 
 PrimeIntegrationResult primeIntegrateWithVolume(

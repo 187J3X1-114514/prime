@@ -42,8 +42,13 @@ final class ShaderAbiTest {
         assertEquals(23, ShaderAbi.DESCRIPTOR_NRD_SPECULAR_DIRECTION);
         assertEquals(34, ShaderAbi.DESCRIPTOR_STARMAP);
         assertEquals(36, ShaderAbi.DESCRIPTOR_WAVEFRONT_PATHS);
+        assertEquals(37, ShaderAbi.DESCRIPTOR_WAVEFRONT_QUEUE);
         assertEquals(12, ShaderAbi.WAVEFRONT_ROUNDS);
-        assertEquals(112, ShaderAbi.WAVEFRONT_PATH_RECORD_SIZE);
+        assertEquals(144, ShaderAbi.WAVEFRONT_PATH_RECORD_SIZE);
+        assertEquals(2, ShaderAbi.WAVEFRONT_PATH_SLOTS_PER_PIXEL);
+        assertEquals(2, ShaderAbi.WAVEFRONT_QUEUE_COUNT);
+        assertEquals(16, ShaderAbi.WAVEFRONT_QUEUE_COMMAND_STRIDE);
+        assertEquals(4, ShaderAbi.WAVEFRONT_QUEUE_INDEX_SIZE);
         assertEquals(1, ShaderAbi.WAVEFRONT_ACTIVE_MASK);
         assertEquals(0x7fffffff, ShaderAbi.PATH_SAMPLE_EPOCH_MASK);
         assertEquals(0x80000000, ShaderAbi.PATH_TRIANGLE_DEBUG_MASK);

@@ -1,0 +1,109 @@
+#version 460
+#extension GL_GOOGLE_include_directive : require
+
+#include "prime_test_abi.glsl"
+#include "queued_psr_math.glsl"
+
+const uint PRIME_PSR_INPUT_WORDS = 21u;
+const uint PRIME_PSR_WITNESS_WORDS = 6u;
+
+void main() {
+    uint caseIndex;
+    if (!primeTestBegin(caseIndex)) return;
+    uint inputOffset = primeTestInputOffset(caseIndex, PRIME_PSR_INPUT_WORDS);
+    uvec4 control = primeTestInput.words[inputOffset];
+    uint count = clamp(control.x, 1u, PRIME_QUEUED_PSR_CAPACITY);
+    uint reflectionMask = control.y;
+    vec3 cameraPosition =
+            uintBitsToFloat(primeTestInput.words[inputOffset + 1u]).xyz;
+    vec3 target =
+            uintBitsToFloat(primeTestInput.words[inputOffset + 2u]).xyz;
+    vec3 targetNormal = normalize(
+            uintBitsToFloat(primeTestInput.words[inputOffset + 3u]).xyz);
+    vec3 direction = normalize(
+            uintBitsToFloat(primeTestInput.words[inputOffset + 4u]).xyz);
+
+    vec3 positions[PRIME_QUEUED_PSR_CAPACITY];
+    vec3 normals[PRIME_QUEUED_PSR_CAPACITY];
+    PrimeQueuedPsrState state = primeEmptyQueuedPsrState();
+    for (uint index = 0u; index < count; ++index) {
+        positions[index] = uintBitsToFloat(
+                primeTestInput.words[inputOffset + 5u + index]).xyz;
+        normals[index] = normalize(uintBitsToFloat(
+                primeTestInput.words[
+                        inputOffset + 5u + PRIME_QUEUED_PSR_CAPACITY + index]).xyz);
+        primeAppendQueuedPsrState(
+                state,
+                cameraPosition,
+                positions[index],
+                normals[index],
+                (reflectionMask & (1u << index)) != 0u);
+    }
+
+    vec3 expectedDirection = direction;
+    vec3 expectedNormal = targetNormal;
+    for (int index = int(count) - 1; index >= 0; --index) {
+        if ((reflectionMask & (1u << uint(index))) != 0u) {
+            expectedDirection -= 2.0 * normals[index]
+                    * dot(expectedDirection, normals[index]);
+            expectedNormal -= 2.0 * normals[index]
+                    * dot(expectedNormal, normals[index]);
+        }
+    }
+    float expectedLength = length(positions[0] - cameraPosition);
+    for (uint index = 1u; index < count; ++index) {
+        expectedLength += length(positions[index] - positions[index - 1u]);
+    }
+    expectedLength += length(target - positions[count - 1u]);
+    vec3 expectedPosition =
+            normalize(positions[0] - cameraPosition) * expectedLength;
+
+    vec3 virtualPosition;
+    vec3 virtualNormal;
+    bool built = primeBuildQueuedPsrGuideValue(
+            state, target, targetNormal, virtualPosition, virtualNormal);
+    vec3 virtualDirection = primeQueuedPsrVirtualDirection(state, direction);
+    float anchor = primeQueuedPsrAnchorDistanceValue(
+            state, cameraPosition, target, targetNormal);
+    vec3 primaryDirection = normalize(positions[0] - cameraPosition);
+    float denominator = dot(primaryDirection, targetNormal);
+    float expectedAnchor = abs(denominator) > 1.0e-4
+            ? dot(target - cameraPosition, targetNormal) / denominator
+            : -1.0;
+    if (!(expectedAnchor > 0.0)) expectedAnchor = -1.0;
+
+    uint mask = 0u;
+    if (!built || primeQueuedPsrCount(state) != count) {
+        mask |= PRIME_TEST_FAILURE_EVENT;
+    }
+    if (!primeTestClose(
+            virtualDirection, expectedDirection, 2.0e-6, 2.0e-5)
+            || !primeTestClose(
+                    virtualNormal, expectedNormal, 2.0e-6, 2.0e-5)
+            || !primeTestClose(
+                    virtualPosition, expectedPosition, 2.0e-5, 2.0e-5)
+            || !primeTestClose(anchor, expectedAnchor, 2.0e-5, 2.0e-5)) {
+        mask |= PRIME_TEST_FAILURE_IDENTITY;
+    }
+    mask |= primeTestClassify(virtualDirection)
+            | primeTestClassify(virtualNormal)
+            | primeTestClassify(virtualPosition)
+            | primeTestClassify(anchor);
+
+    uint outputWords = primeTestOutputWords();
+    uint outputOffset = primeTestOutputOffset(caseIndex, outputWords);
+    primeTestOutput.words[outputOffset] =
+            uvec4(mask, count, reflectionMask, caseIndex);
+    if (outputWords >= PRIME_PSR_WITNESS_WORDS) {
+        primeTestOutput.words[outputOffset + 1u] =
+                floatBitsToUint(vec4(virtualDirection, anchor));
+        primeTestOutput.words[outputOffset + 2u] =
+                floatBitsToUint(vec4(expectedDirection, expectedAnchor));
+        primeTestOutput.words[outputOffset + 3u] =
+                floatBitsToUint(vec4(virtualPosition, 0.0));
+        primeTestOutput.words[outputOffset + 4u] =
+                floatBitsToUint(vec4(expectedPosition, 0.0));
+        primeTestOutput.words[outputOffset + 5u] =
+                floatBitsToUint(vec4(virtualNormal, 0.0));
+    }
+}

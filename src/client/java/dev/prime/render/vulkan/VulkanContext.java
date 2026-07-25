@@ -29,6 +29,7 @@ public final class VulkanContext implements AutoCloseable {
     private final VulkanCapabilities capabilities;
     private final long allocator;
     private final long uniformBufferOffsetAlignment;
+    private final long maxStorageBufferRange;
     private final Set<Destroyable> deferred = Collections.newSetFromMap(new IdentityHashMap<>());
     private boolean closed;
 
@@ -53,6 +54,8 @@ public final class VulkanContext implements AutoCloseable {
             VkPhysicalDeviceProperties properties = VkPhysicalDeviceProperties.calloc(stack);
             VK12.vkGetPhysicalDeviceProperties(device.vkDevice().getPhysicalDevice(), properties);
             this.uniformBufferOffsetAlignment = properties.limits().minUniformBufferOffsetAlignment();
+            this.maxStorageBufferRange =
+                    Integer.toUnsignedLong(properties.limits().maxStorageBufferRange());
         }
     }
 
@@ -75,6 +78,10 @@ public final class VulkanContext implements AutoCloseable {
 
     public long uniformBufferOffsetAlignment() {
         return this.uniformBufferOffsetAlignment;
+    }
+
+    public long maxStorageBufferRange() {
+        return this.maxStorageBufferRange;
     }
 
     public VulkanBuffer createBuffer(long size, int usage, boolean hostVisible, String label) {

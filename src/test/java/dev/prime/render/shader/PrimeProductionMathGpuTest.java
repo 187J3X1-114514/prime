@@ -16,6 +16,7 @@ final class PrimeProductionMathGpuTest {
     private static final long TRANSPORT_SEED = 0x71A4_5A09_D522_0101L;
     private static final long MATERIAL_SEED = 0x4A7E_21A1_0000_0001L;
     private static final long NRD_SEED = 0x4E52_4404_1700_0001L;
+    private static final long QUEUED_PSR_SEED = 0x5053_5208_0000_0001L;
     private static final int[] SPECIAL_FLOAT_BITS = {
         0x0000_0000,
         0x0000_0001,
@@ -90,6 +91,19 @@ final class PrimeProductionMathGpuTest {
                 inputWords,
                 9,
                 NRD_SEED);
+    }
+
+    @Test
+    void queuedPsrMatchesTheExplicitDeltaChain() throws IOException {
+        int inputWords = 21;
+        ShaderPropertyBatch.assertProperties(
+                runner,
+                shader("prime_queued_psr_properties.comp.spv"),
+                queuedPsrCases(inputWords),
+                CASES_PER_KIND,
+                inputWords,
+                6,
+                QUEUED_PSR_SEED);
     }
 
     private static ByteBuffer transportCases(int kinds, int words) {
@@ -342,6 +356,55 @@ final class PrimeProductionMathGpuTest {
         return input;
     }
 
+    private static ByteBuffer queuedPsrCases(int words) {
+        ByteBuffer input = ShaderTestBuffer.inputs(CASES_PER_KIND, words);
+        SplittableRandom random = new SplittableRandom(QUEUED_PSR_SEED);
+        for (int index = 0; index < CASES_PER_KIND; index++) {
+            int count = random.nextInt(1, 9);
+            int reflectionMask = random.nextInt(1 << count);
+            putInt(input, index, words, 0, 0, count);
+            putInt(input, index, words, 0, 1, reflectionMask);
+
+            float cameraX = random.nextFloat() * 64.0F - 32.0F;
+            float cameraY = random.nextFloat() * 64.0F - 32.0F;
+            float cameraZ = random.nextFloat() * 64.0F - 32.0F;
+            putVec4(input, index, words, 1, cameraX, cameraY, cameraZ, 0.0F);
+            putVec4(
+                    input,
+                    index,
+                    words,
+                    2,
+                    cameraX + random.nextFloat() * 32.0F - 16.0F,
+                    cameraY + random.nextFloat() * 32.0F - 16.0F,
+                    cameraZ + random.nextFloat() * 32.0F - 16.0F,
+                    0.0F);
+            putRandomUnitVec4(input, index, words, 3, random);
+            putRandomUnitVec4(input, index, words, 4, random);
+
+            float positionX = cameraX;
+            float positionY = cameraY;
+            float positionZ = cameraZ;
+            for (int delta = 0; delta < 8; delta++) {
+                float[] direction = randomUnitVector(random);
+                float distance = 0.125F + random.nextFloat() * 7.875F;
+                positionX += direction[0] * distance;
+                positionY += direction[1] * distance;
+                positionZ += direction[2] * distance;
+                putVec4(
+                        input,
+                        index,
+                        words,
+                        5 + delta,
+                        positionX,
+                        positionY,
+                        positionZ,
+                        0.0F);
+                putRandomUnitVec4(input, index, words, 13 + delta, random);
+            }
+        }
+        return input;
+    }
+
     private static Path shader(String name) {
         return Path.of(System.getProperty("prime.test.shaderDirectory"), name);
     }
@@ -360,6 +423,35 @@ final class PrimeProductionMathGpuTest {
                 | ((y & 0xff) << 8)
                 | ((z & 0xff) << 16)
                 | ((w & 0xff) << 24);
+    }
+
+    private static float[] randomUnitVector(SplittableRandom random) {
+        float z = random.nextFloat() * 2.0F - 1.0F;
+        float angle = random.nextFloat() * (float) (Math.PI * 2.0);
+        float radius = (float) Math.sqrt(Math.max(0.0F, 1.0F - z * z));
+        return new float[] {
+            radius * (float) Math.cos(angle),
+            radius * (float) Math.sin(angle),
+            z
+        };
+    }
+
+    private static void putRandomUnitVec4(
+            ByteBuffer input,
+            int caseIndex,
+            int words,
+            int word,
+            SplittableRandom random) {
+        float[] direction = randomUnitVector(random);
+        putVec4(
+                input,
+                caseIndex,
+                words,
+                word,
+                direction[0],
+                direction[1],
+                direction[2],
+                0.0F);
     }
 
     private static void putVec4(

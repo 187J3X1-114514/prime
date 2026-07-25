@@ -198,11 +198,16 @@
     "nrdReflectionSpecularDirection": 32,
     "nrdDisplayPosition": 33,
     "starmap": 34,
-    "wavefrontPaths": 36
+    "wavefrontPaths": 36,
+    "wavefrontQueue": 37
   },
   "wavefrontContract": {
     "rounds": 12,
-    "pathRecordSize": 112,
+    "pathRecordSize": 144,
+    "pathSlotsPerPixel": 2,
+    "queueCount": 2,
+    "queueCommandStride": 16,
+    "queueIndexSize": 4,
     "activeMask": "0x1"
   },
   "pathControl": {

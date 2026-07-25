@@ -37,6 +37,7 @@ public abstract class VideoSettingsScreenMixin {
     @Unique private OptionInstance<Integer> prime$blockLightExposure;
     @Unique private OptionInstance<Integer> prime$oklabOverexposure;
     @Unique private OptionInstance<Integer> prime$defaultRoughness;
+    @Unique private OptionInstance<Boolean> prime$triangleDebug;
     @Unique private OptionInstance<NrdDiagnostics.Mode> prime$nrdDebugView;
     @Unique private OptionInstance<FsrDebugView> prime$fsrDebugView;
     @Unique private OptionInstance<DlssRrDebugView> prime$rrDebugView;
@@ -54,6 +55,7 @@ public abstract class VideoSettingsScreenMixin {
             this.prime$blockLightExposure = PrimeVideoOptions.blockLightExposure();
             this.prime$oklabOverexposure = PrimeVideoOptions.oklabOverexposure();
             this.prime$defaultRoughness = PrimeVideoOptions.defaultRoughness();
+            this.prime$triangleDebug = PrimeVideoOptions.triangleDebug();
             this.prime$nrdDebugView = PrimeVideoOptions.nrdDebugView();
             this.prime$fsrDebugView = PrimeVideoOptions.fsrDebugView();
             this.prime$rrDebugView = PrimeVideoOptions.dlssRrDebugView();
@@ -71,6 +73,7 @@ public abstract class VideoSettingsScreenMixin {
             list.addBig(this.prime$blockLightExposure);
             list.addBig(this.prime$oklabOverexposure);
             list.addBig(this.prime$defaultRoughness);
+            list.addBig(this.prime$triangleDebug);
             list.addSmall(this.prime$nrdDebugView, this.prime$fsrDebugView);
             list.addSmall(this.prime$rrDebugView, this.prime$rrDebugFullscreen);
         }
@@ -98,6 +101,7 @@ public abstract class VideoSettingsScreenMixin {
         this.prime$refresh(
                 this.prime$defaultRoughness,
                 MaterialSettings.DEFAULT_ROUGHNESS_STEPS);
+        this.prime$refresh(this.prime$triangleDebug, false);
         this.prime$refresh(this.prime$nrdDebugView, NrdDiagnostics.Mode.OFF);
         this.prime$refresh(this.prime$fsrDebugView, FsrDebugView.OFF);
         this.prime$refresh(this.prime$rrDebugView, DlssRrDebugView.OFF);

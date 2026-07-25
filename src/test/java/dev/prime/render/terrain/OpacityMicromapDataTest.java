@@ -101,6 +101,59 @@ final class OpacityMicromapDataTest {
     }
 
     @Test
+    void largerTemplatesPreserveNativeMicrotriangleDensity() {
+        int level = OpacityMicromapData.SUBDIVISION_LEVEL + 2;
+        OpacityMicromapData.BakedBlock block = OpacityMicromapData.bakeCoverage(
+                0.0F,
+                0.0F,
+                1.0F,
+                0.0F,
+                0.0F,
+                1.0F,
+                level,
+                1,
+                (frame, u, v) -> texel(u) == texel(v));
+
+        assertEquals(level, block.subdivisionLevel());
+        assertEquals(
+                OpacityMicromapData.blockByteSize(
+                        OpacityMicromapData.TWO_STATE_FORMAT, level),
+                block.states().length);
+        for (int index = 0;
+                index < OpacityMicromapData.microTriangleCount(level);
+                index++) {
+            int state = block.state(index);
+            assertTrue(state == 0 || state == 1);
+        }
+    }
+
+    @Test
+    void packedBlocksRetainIndependentSubdivisionLevels() {
+        OpacityMicromapData.BakedBlock levelFour = OpacityMicromapData.bakeCoverage(
+                0.0F, 0.0F, 1.0F, 0.0F, 0.0F, 1.0F,
+                OpacityMicromapData.SUBDIVISION_LEVEL,
+                1,
+                (frame, u, v) -> texel(u) == 4);
+        int levelSix = OpacityMicromapData.SUBDIVISION_LEVEL + 2;
+        OpacityMicromapData.BakedBlock larger = OpacityMicromapData.bakeCoverage(
+                0.0F, 0.0F, 1.0F, 0.0F, 0.0F, 1.0F,
+                levelSix,
+                1,
+                (frame, u, v) -> texel(v) == 4);
+
+        OpacityMicromapData data = OpacityMicromapData.pack(
+                new OpacityMicromapData.BakedBlock[] {levelFour, larger},
+                new int[] {0, 1});
+
+        assertArrayEquals(
+                new int[] {OpacityMicromapData.SUBDIVISION_LEVEL, levelSix},
+                data.blockSubdivisionLevels());
+        assertEquals(
+                levelFour.states().length + larger.states().length,
+                data.blocks().length);
+    }
+
+    @Test
     void birdCurveMapsEverySubdivisionCellExactlyOnce() {
         boolean[] seen = new boolean[OpacityMicromapData.MICRO_TRIANGLE_COUNT];
         float[] barycentric = new float[3];

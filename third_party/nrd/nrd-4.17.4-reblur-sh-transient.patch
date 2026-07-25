@@ -1,0 +1,12 @@
+diff --git a/Source/Denoisers/Reblur_DiffuseSpecularSh.hpp b/Source/Denoisers/Reblur_DiffuseSpecularSh.hpp
+index d254419..8a86ccc 100644
+--- a/Source/Denoisers/Reblur_DiffuseSpecularSh.hpp
++++ b/Source/Denoisers/Reblur_DiffuseSpecularSh.hpp
+@@ -78,7 +78,6 @@ void nrd::InstanceImpl::Add_ReblurDiffuseSpecularSh(DenoiserData& denoiserData)
+     AddTextureToTransientPool({REBLUR_FORMAT, 1});
+     AddTextureToTransientPool({REBLUR_FORMAT_FAST_HISTORY, 1});
+     AddTextureToTransientPool({REBLUR_FORMAT, 1});
+-    AddTextureToTransientPool({REBLUR_FORMAT, 1});
+     AddTextureToTransientPool({REBLUR_FORMAT_TILES, 16});
+ 
+     std::array<ShaderMake::ShaderConstant, 2> commonDefines = {{

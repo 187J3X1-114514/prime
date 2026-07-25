@@ -50,17 +50,5 @@
         "compressedSha256": "4cfeb1f5e34a59e35ab46c38325beef5b2cbfd0945fce58fb97987a015609770"
       }
     ]
-  },
-  "importance": {
-    "width": 1024,
-    "height": 512,
-    "cellWidth": 8,
-    "cellHeight": 8,
-    "format": "little-endian records: float threshold, uint alias, float probability mass",
-    "uncompressedBytes": 6291456,
-    "uncompressedSha256": "04eeab4c9893abd521ea5ad9304ffa021ffbcfa6e14d605bde753d7e1584610a",
-    "compressedBytes": 4642718,
-    "compressedSha256": "c5e8ebb5643f45b0386b7622b16f6be94c64ee1bd3b12e6c9c8bb62dff031ede",
-    "probabilitySum": 0.9999999999999999
   }
 }

@@ -198,15 +198,16 @@
     "nrdReflectionSpecularDirection": 32,
     "nrdDisplayPosition": 33,
     "starmap": 34,
-    "starmapImportance": 35,
     "wavefrontPaths": 36
   },
   "wavefrontContract": {
-    "rounds": 8,
+    "rounds": 12,
     "pathRecordSize": 112,
     "activeMask": "0x1"
   },
   "pathControl": {
+    "sampleEpochMask": "0x7fffffff",
+    "triangleDebugMask": "0x80000000",
     "cameraInWaterMask": "0x80000000",
     "jitterPhaseMask": "0x1fff",
     "transparentGuideModeShift": 29,
@@ -260,8 +261,6 @@
   "starmapContract": {
     "width": 8192,
     "height": 4096,
-    "importanceWidth": 1024,
-    "importanceHeight": 512,
     "observerLatitudeDegrees": 30.0,
     "sourceSha256": "dc6c4f413e85707a29a25a9451148154554ecca2c996f84fa8f47b65ef9ff7c4"
   },

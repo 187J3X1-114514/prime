@@ -15,7 +15,7 @@ vec2 primeCameraSample() {
         PrimeSampleBase base;
         base.pixel = gl_LaunchIDEXT.xy;
         base.sampleIndex = primePush.path.x;
-        base.sampleEpoch = primePush.path.y;
+        base.sampleEpoch = primeSampleEpoch();
         base.vertexIndex = 0u;
         base.pathIndex = 0u;
         return primeSobolSample2D(
@@ -68,7 +68,7 @@ PathState primeCameraPath(uvec2 pixel, uint pathIndex, vec2 cameraSample) {
     path.rrDepth = 0u;
     path.pixel = pixel;
     path.sampleIndex = primePush.path.x;
-    path.sampleEpoch = primePush.path.y;
+    path.sampleEpoch = primeSampleEpoch();
     return path;
 }
 

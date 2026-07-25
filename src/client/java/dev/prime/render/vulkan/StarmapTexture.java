@@ -12,31 +12,23 @@ import org.lwjgl.system.MemoryUtil;
 import org.lwjgl.vulkan.KHRRayTracingPipeline;
 import org.lwjgl.vulkan.KHRSynchronization2;
 import org.lwjgl.vulkan.VK12;
-import org.lwjgl.vulkan.VkBufferCopy;
 import org.lwjgl.vulkan.VkBufferImageCopy;
-import org.lwjgl.vulkan.VkBufferMemoryBarrier2;
 import org.lwjgl.vulkan.VkCommandBuffer;
 import org.lwjgl.vulkan.VkDependencyInfo;
 import org.lwjgl.vulkan.VkImageMemoryBarrier2;
 import org.lwjgl.vulkan.VkSamplerCreateInfo;
 
-/** Owns the immutable full-resolution night-sky texture and its coarse importance table. */
+/** Owns the immutable full-resolution night-sky texture. */
 public final class StarmapTexture implements Destroyable {
     static final int WIDTH = 8192;
     static final int HEIGHT = 4096;
     static final int STRIPE_ROWS = 1024;
-    static final int IMPORTANCE_WIDTH = 1024;
-    static final int IMPORTANCE_HEIGHT = 512;
-    static final int IMPORTANCE_RECORD_BYTES = 3 * Integer.BYTES;
     private static final int STRIPE_BYTES =
             WIDTH * STRIPE_ROWS * 4 * Short.BYTES;
-    private static final int IMPORTANCE_BYTES =
-            IMPORTANCE_WIDTH * IMPORTANCE_HEIGHT * IMPORTANCE_RECORD_BYTES;
     private static final String RESOURCE_ROOT = "/prime/starmap/";
 
     private final VulkanContext context;
     private final VulkanImage image;
-    private final VulkanBuffer importance;
     private final long sampler;
     private VulkanBuffer[] uploads;
     private boolean prepared;
@@ -45,8 +37,7 @@ public final class StarmapTexture implements Destroyable {
     public StarmapTexture(VulkanContext context) {
         this.context = context;
         VulkanImage newImage = null;
-        VulkanBuffer newImportance = null;
-        VulkanBuffer[] newUploads = new VulkanBuffer[5];
+        VulkanBuffer[] newUploads = new VulkanBuffer[4];
         long newSampler = 0L;
         try {
             newImage = context.createImage2D(
@@ -55,12 +46,6 @@ public final class StarmapTexture implements Destroyable {
                     VK12.VK_FORMAT_R16G16B16A16_SFLOAT,
                     VK12.VK_IMAGE_USAGE_SAMPLED_BIT | VK12.VK_IMAGE_USAGE_TRANSFER_DST_BIT,
                     "Prime NASA 2020 starmap");
-            newImportance = context.createBuffer(
-                    IMPORTANCE_BYTES,
-                    VK12.VK_BUFFER_USAGE_STORAGE_BUFFER_BIT
-                            | VK12.VK_BUFFER_USAGE_TRANSFER_DST_BIT,
-                    false,
-                    "Prime starmap importance table");
             for (int index = 0; index < 4; index++) {
                 newUploads[index] = createUpload(
                         context,
@@ -68,11 +53,6 @@ public final class StarmapTexture implements Destroyable {
                         "starmap stripe " + index,
                         "starmap_2020_8k_" + index + ".rgba16f.gz");
             }
-            newUploads[4] = createUpload(
-                    context,
-                    IMPORTANCE_BYTES,
-                    "starmap importance",
-                    "starmap_2020_8k.alias.gz");
             try (MemoryStack stack = MemoryStack.stackPush()) {
                 VkSamplerCreateInfo createInfo = VkSamplerCreateInfo.calloc(stack)
                         .sType$Default()
@@ -97,7 +77,6 @@ public final class StarmapTexture implements Destroyable {
                     newSampler,
                     "Prime NASA 2020 starmap sampler");
             this.image = newImage;
-            this.importance = newImportance;
             this.uploads = newUploads;
             this.sampler = newSampler;
         } catch (RuntimeException exception) {
@@ -107,7 +86,6 @@ public final class StarmapTexture implements Destroyable {
             for (int index = newUploads.length - 1; index >= 0; index--) {
                 ResourceCleanup.destroy(newUploads[index], exception);
             }
-            ResourceCleanup.destroy(newImportance, exception);
             ResourceCleanup.destroy(newImage, exception);
             throw exception;
         }
@@ -115,10 +93,6 @@ public final class StarmapTexture implements Destroyable {
 
     VulkanImage image() {
         return this.image;
-    }
-
-    VulkanBuffer importance() {
-        return this.importance;
     }
 
     long sampler() {
@@ -167,17 +141,6 @@ public final class StarmapTexture implements Destroyable {
                         copy);
             }
 
-            VkBufferCopy.Buffer copyImportance = VkBufferCopy.calloc(1, stack);
-            copyImportance.get(0)
-                    .srcOffset(0L)
-                    .dstOffset(0L)
-                    .size(IMPORTANCE_BYTES);
-            VK12.vkCmdCopyBuffer(
-                    commandBuffer,
-                    pending[4].handle(),
-                    this.importance.handle(),
-                    copyImportance);
-
             VkImageMemoryBarrier2.Buffer toShader = VkImageMemoryBarrier2.calloc(1, stack);
             fillImageBarrier(
                     toShader.get(0),
@@ -187,26 +150,11 @@ public final class StarmapTexture implements Destroyable {
                     VK12.VK_ACCESS_SHADER_READ_BIT,
                     VK12.VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
                     VK12.VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
-            VkBufferMemoryBarrier2.Buffer importanceToShader =
-                    VkBufferMemoryBarrier2.calloc(1, stack);
-            importanceToShader.get(0)
-                    .sType$Default()
-                    .srcStageMask(VK12.VK_PIPELINE_STAGE_TRANSFER_BIT)
-                    .srcAccessMask(VK12.VK_ACCESS_TRANSFER_WRITE_BIT)
-                    .dstStageMask(
-                            KHRRayTracingPipeline.VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR)
-                    .dstAccessMask(VK12.VK_ACCESS_SHADER_READ_BIT)
-                    .srcQueueFamilyIndex(VK12.VK_QUEUE_FAMILY_IGNORED)
-                    .dstQueueFamilyIndex(VK12.VK_QUEUE_FAMILY_IGNORED)
-                    .buffer(this.importance.handle())
-                    .offset(0L)
-                    .size(IMPORTANCE_BYTES);
             KHRSynchronization2.vkCmdPipelineBarrier2KHR(
                     commandBuffer,
                     VkDependencyInfo.calloc(stack)
                             .sType$Default()
-                            .pImageMemoryBarriers(toShader)
-                            .pBufferMemoryBarriers(importanceToShader));
+                            .pImageMemoryBarriers(toShader));
         }
         this.image.markInitialized();
         for (VulkanBuffer upload : pending) {
@@ -315,7 +263,6 @@ public final class StarmapTexture implements Destroyable {
                 this.uploads = null;
             }
             VK12.vkDestroySampler(this.context.vkDevice(), this.sampler, null);
-            this.importance.destroy();
             this.image.destroy();
         }
     }

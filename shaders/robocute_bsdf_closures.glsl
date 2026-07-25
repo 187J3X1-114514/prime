@@ -575,17 +575,7 @@ PrimeRcSampleResult primeRcSubsurfaceSample(
         result.bsdfSample.pdf *= transmissionProbability;
         result.bsdfSample.throughput.value *= transmissionProbability;
         result.bsdfSample.throughput.flags = PRIME_RC_FLAG_DIFFUSE_TRANSMISSION;
-        if (state.geometryThinWalled == 0u) {
-            if (wi.z >= 0.0) {
-                PrimeRcVolume volume = primeRcVolumeFromSubsurface(state.material.subsurface);
-                volume.ior = state.originalIor;
-                primeRcStackPush(result.volumeStack, volume);
-            } else if (result.volumeStack.count == 0u) {
-                result.bsdfSample.throughput.value *= state.material.subsurface.color;
-            } else {
-                primeRcStackPop(result.volumeStack);
-            }
-        } else {
+        if (state.geometryThinWalled != 0u) {
             result.bsdfSample.throughput.value *= state.material.subsurface.color;
         }
     } else {
@@ -667,6 +657,10 @@ vec3 primeRcCalculateThinWallDeltaTransmission(PrimeRcMaterial material, float c
     return primeRcSquare(transmission) * absorption * inverseSeries;
 }
 
+vec3 primeRcTransmissionMaterialFrame(vec3 w, PrimeRcState state) {
+    return state.entering != 0u ? w : vec3(-w.x, w.y, -w.z);
+}
+
 PrimeRcThroughput primeRcTransmissionEval(vec3 wi, vec3 inputWo, PrimeRcState state) {
     if (state.geometryThinWalled != 0u) {
         vec3 wo = inputWo;
@@ -703,11 +697,12 @@ PrimeRcThroughput primeRcTransmissionEval(vec3 wi, vec3 inputWo, PrimeRcState st
         }
         return result;
     }
-    PrimeRcThroughput result = primeRcRefractiveEval(wi, inputWo, state);
+    vec3 materialWi = primeRcTransmissionMaterialFrame(wi, state);
+    vec3 materialWo = primeRcTransmissionMaterialFrame(inputWo, state);
+    PrimeRcThroughput result = primeRcRefractiveEval(materialWi, materialWo, state);
     if (result.flags != PRIME_RC_FLAG_NONE) {
         if (primeRcIsTransmissive(result.flags)) {
-            result.value *= state.transmissionTint
-                    * exp(-state.transmissionVolume.extinction * state.rayT);
+            result.value *= state.transmissionTint;
         }
         if (primeRcIsNonDelta(result.flags)) {
             result.value *= primeRcIsTransmissive(result.flags)
@@ -756,27 +751,13 @@ PrimeRcSampleResult primeRcTransmissionSample(
         return result;
     }
 
-    result.bsdfSample = primeRcRefractiveSample(wi, randomValue, state);
+    vec3 materialWi = primeRcTransmissionMaterialFrame(wi, state);
+    result.bsdfSample = primeRcRefractiveSample(materialWi, randomValue, state);
     if (result.bsdfSample.throughput.flags == PRIME_RC_FLAG_NONE) { return result; }
+    result.bsdfSample.wo = primeRcTransmissionMaterialFrame(
+            result.bsdfSample.wo, state);
     if (primeRcIsTransmissive(result.bsdfSample.throughput.flags)) {
         result.bsdfSample.throughput.value *= state.transmissionTint;
-        if (wi.z >= 0.0) {
-            PrimeRcVolume volume = state.transmissionVolume;
-            volume.ior = state.originalIor;
-            primeRcStackPush(result.volumeStack, volume);
-        } else if (result.volumeStack.count == 0u) {
-            result.bsdfSample.throughput.value *= exp(
-                    -state.transmissionVolume.extinction * state.rayT);
-        } else {
-            result.rayT = 0.0;
-            primeRcStackPop(result.volumeStack);
-        }
-    } else if (wi.z <= 0.0 && result.volumeStack.count == 0u) {
-        result.bsdfSample.throughput.value *= exp(
-                -state.transmissionVolume.extinction * state.rayT);
-        PrimeRcVolume volume = state.transmissionVolume;
-        volume.ior = state.originalIor;
-        primeRcStackPush(result.volumeStack, volume);
     }
     if (primeRcIsNonDelta(result.bsdfSample.throughput.flags)) {
         result.bsdfSample.throughput.value *=
@@ -810,7 +791,10 @@ float primeRcTransmissionPdf(vec3 wi, vec3 inputWo, PrimeRcState state) {
                 ? microfacetPdf * transmissionProbability / probabilitySum
                 : microfacetPdf * reflectionProbability / probabilitySum;
     }
-    return primeRcRefractivePdf(wi, inputWo, state);
+    return primeRcRefractivePdf(
+            primeRcTransmissionMaterialFrame(wi, state),
+            primeRcTransmissionMaterialFrame(inputWo, state),
+            state);
 }
 
 vec3 primeRcTransmissionTintOut(vec3 wo, PrimeRcState state) {

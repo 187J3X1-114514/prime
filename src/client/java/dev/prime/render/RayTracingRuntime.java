@@ -181,6 +181,14 @@ public final class RayTracingRuntime {
         return activeRenderer != null && activeRenderer.screenshotActive();
     }
 
+    public boolean triangleDebug() {
+        return this.controls.triangleDebug();
+    }
+
+    public void setTriangleDebug(boolean value) {
+        this.controls = this.controls.withTriangleDebug(value);
+    }
+
     public NrdDiagnostics.Mode nrdDebugView() {
         return this.controls.nrdDebugView();
     }

@@ -129,33 +129,21 @@ uint primeClosureExpectedStackCount(
         uint kind,
         PrimeRcState state,
         PrimeRcSample sampleValue,
-        uint originalCount,
-        vec3 wi) {
+        uint originalCount) {
     if (sampleValue.throughput.flags == PRIME_RC_FLAG_NONE
             || state.geometryThinWalled != 0u
             || kind == PRIME_CLOSURE_BASIC_METALLIC
+            || kind == PRIME_CLOSURE_SUBSURFACE_GLOSSY
             || kind == PRIME_CLOSURE_THIN_WALL) {
         return originalCount;
     }
     bool transmitted = primeRcIsTransmissive(sampleValue.throughput.flags);
-    if (kind == PRIME_CLOSURE_SUBSURFACE_GLOSSY) {
-        if (!transmitted) {
-            return originalCount;
-        }
-        if (wi.z >= 0.0) {
-            return min(originalCount + 1u, PRIME_RC_MAX_VOLUME_STACK_SIZE);
-        }
-        return originalCount == 0u ? 0u : originalCount - 1u;
-    }
     if (kind == PRIME_CLOSURE_TRANSMISSION) {
         if (transmitted) {
-            if (wi.z >= 0.0) {
+            if (state.entering != 0u) {
                 return min(originalCount + 1u, PRIME_RC_MAX_VOLUME_STACK_SIZE);
             }
             return originalCount == 0u ? 0u : originalCount - 1u;
-        }
-        if (wi.z <= 0.0 && originalCount == 0u) {
-            return 1u;
         }
     }
     return originalCount;
@@ -257,6 +245,7 @@ void primeClosureProperties(
         state = primeRcTransmissionStateInit(
                 material, wi, inverseOutsideIor, rayT, wavelengths,
                 0u, PRIME_RC_DETAIL_DEFAULT, 0u);
+        state = primeRcPrimeTransmissionInterfaceState(wi, state);
     } else {
         state = primeRcPrimeThinWallStateInit(
                 material, wi, inverseOutsideIor, rayT, wavelengths,
@@ -292,7 +281,8 @@ void primeClosureProperties(
             evaluated = primeRcPrimeSubsurfaceGlossyEvaluate(
                     wi, sampled.bsdfSample.wo, state);
         } else if (kind == PRIME_CLOSURE_TRANSMISSION) {
-            evaluated = primeRcTransmissionEvaluate(wi, sampled.bsdfSample.wo, state);
+            evaluated = primeRcPrimeTransmissionEvaluate(
+                    wi, sampled.bsdfSample.wo, state);
         } else {
             evaluated = primeRcPrimeThinWallEvaluate(wi, sampled.bsdfSample.wo, state);
         }
@@ -312,7 +302,7 @@ void primeClosureProperties(
     } else if (kind == PRIME_CLOSURE_SUBSURFACE_GLOSSY) {
         probe = primeRcPrimeSubsurfaceGlossyEvaluate(wi, probeWo, state);
     } else if (kind == PRIME_CLOSURE_TRANSMISSION) {
-        probe = primeRcTransmissionEvaluate(wi, probeWo, state);
+        probe = primeRcPrimeTransmissionEvaluate(wi, probeWo, state);
     } else {
         probe = primeRcPrimeThinWallEvaluate(wi, probeWo, state);
     }
@@ -327,6 +317,7 @@ void primeClosureProperties(
             && (flags == PRIME_RC_FLAG_NONE
             || abs(sampled.bsdfSample.wo.z) >= 1.0e-2);
     primeClosureClassify(result.mask, sampled.bsdfSample.wo);
+    primeClosureClassify(result.mask, sampled.bsdfSample.eta);
     primeClosureClassify(result.mask, sampled.rayT);
     if (numericInterior) {
         if (flags != PRIME_RC_FLAG_NONE) {
@@ -370,6 +361,18 @@ void primeClosureProperties(
                 || (!reflected && wi.z * sampled.bsdfSample.wo.z >= 0.0)) {
             result.mask |= PRIME_TEST_FAILURE_HEMISPHERE;
         }
+        bool thickTransmission = !reflected
+                && kind == PRIME_CLOSURE_TRANSMISSION
+                && state.geometryThinWalled == 0u;
+        float expectedEta = thickTransmission
+                ? (state.entering != 0u
+                        ? state.specularFresnel.ior
+                        : 1.0 / state.specularFresnel.ior)
+                : 1.0;
+        if (!primeTestClose(
+                sampled.bsdfSample.eta, expectedEta, 1.0e-7, 2.0e-6)) {
+            result.mask |= PRIME_TEST_FAILURE_STATE;
+        }
         if (numericInterior
                 && primeRcIsDelta(flags)
                 && kind == PRIME_CLOSURE_TRANSMISSION) {
@@ -410,7 +413,7 @@ void primeClosureProperties(
     }
 
     uint expectedStackCount = primeClosureExpectedStackCount(
-            kind, state, sampled.bsdfSample, stackCount, wi);
+            kind, state, sampled.bsdfSample, stackCount);
     if (sampled.volumeStack.count != expectedStackCount
             || sampled.volumeStack.count > PRIME_RC_MAX_VOLUME_STACK_SIZE) {
         result.mask |= PRIME_TEST_FAILURE_STATE;

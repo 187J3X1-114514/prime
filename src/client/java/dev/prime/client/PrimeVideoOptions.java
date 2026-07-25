@@ -57,6 +57,16 @@ public final class PrimeVideoOptions {
                 PrimeConfig::setPostProcessingMode);
     }
 
+    public static OptionInstance<Boolean> triangleDebug() {
+        RayTracingRuntime runtime = RayTracingRuntime.instance();
+        return OptionInstance.createBoolean(
+                "prime.options.debug.triangle_distribution",
+                OptionInstance.cachedConstantTooltip(Component.translatable(
+                        "prime.options.debug.triangle_distribution.tooltip")),
+                runtime.triangleDebug(),
+                runtime::setTriangleDebug);
+    }
+
     public static OptionInstance<ReconstructionQualityMode> qualityMode() {
         return new OptionInstance<>(
                 "prime.options.post_processing.quality",

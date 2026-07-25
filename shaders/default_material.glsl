@@ -20,7 +20,7 @@ const uint PRIME_MATERIAL_FLAG_LABPBR_METAL = 512u;
 const float PRIME_DEFAULT_DIELECTRIC_F0 = 0.04;
 // Standalone preparation shaders do not share the ray-tracing push constants. They use this
 // reference only for invalid/sky fallbacks; ray-tracing stages replace it with the user setting.
-const float PRIME_DEFAULT_REFERENCE_LINEAR_ROUGHNESS = 0.8;
+const float PRIME_DEFAULT_REFERENCE_LINEAR_ROUGHNESS = 0.9;
 #ifndef PRIME_RUNTIME_DEFAULT_LINEAR_ROUGHNESS
 #define PRIME_RUNTIME_DEFAULT_LINEAR_ROUGHNESS PRIME_DEFAULT_REFERENCE_LINEAR_ROUGHNESS
 #endif

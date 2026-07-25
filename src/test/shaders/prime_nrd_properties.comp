@@ -2,6 +2,7 @@
 #extension GL_GOOGLE_include_directive : require
 
 #include "prime_test_abi.glsl"
+#include "numerical.glsl"
 #include "nrd_common.glsl"
 
 const uint PRIME_NRD_INPUT_WORDS = 4u;
@@ -206,6 +207,44 @@ void main() {
         bool exact = id == 0.0 || id == 1.0 / 3.0 || id == 2.0 / 3.0 || id == 1.0;
         if (!exact) mask |= PRIME_TEST_FAILURE_EVENT;
         result0 = vec4(id, 0.0, 0.0, 0.0);
+    } else if (kind == 7u) {
+        uint classification = primeClassifyOptionalDirection(first.xyz);
+        uint expected = control.y == 0u || control.y == 1u
+                ? 0u
+                : (control.y == 2u
+                        ? PRIME_NUMERICAL_INVALID_DIRECTION
+                        : PRIME_NUMERICAL_NAN);
+        if (classification != expected) {
+            mask |= PRIME_TEST_FAILURE_IDENTITY;
+        }
+        result0 = vec4(float(classification), first.xyz);
+    } else if (kind == 8u) {
+        vec2 transported01 = unpackHalf2x16(packHalf2x16(first.xy));
+        float transported2 =
+                unpackHalf2x16(packHalf2x16(vec2(first.z, 0.0))).x;
+        vec3 transported = vec3(transported01, transported2);
+        vec3 restored = primeRestoreFp16Direction(transported);
+        uint classification = primeClassifyOptionalDirection(restored);
+        if (control.y == 0u) {
+            if (classification != 0u
+                    || dot(restored, first.xyz) < 0.99999) {
+                mask |= PRIME_TEST_FAILURE_IDENTITY;
+            }
+        } else if (control.y == 1u) {
+            if (classification != 0u
+                    || any(notEqual(restored, vec3(0.0)))) {
+                mask |= PRIME_TEST_FAILURE_IDENTITY;
+            }
+        } else if (control.y == 2u) {
+            if (classification != PRIME_NUMERICAL_INVALID_DIRECTION
+                    || any(notEqual(restored, transported))) {
+                mask |= PRIME_TEST_FAILURE_IDENTITY;
+            }
+        } else if ((classification & PRIME_NUMERICAL_NAN) == 0u) {
+            mask |= PRIME_TEST_FAILURE_IDENTITY;
+        }
+        result0 = vec4(restored, float(classification));
+        result1 = vec4(transported, 0.0);
     } else {
         mask |= PRIME_TEST_FAILURE_EVENT;
     }

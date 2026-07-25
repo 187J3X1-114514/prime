@@ -14,7 +14,9 @@ final class SectionClusterMeshBuilder {
     private final int clusterY;
     private final int clusterZ;
     private final int segmentTriangleTarget;
+    private final int maxOpacityMicromapSubdivisionLevel;
     private final List<Entry> entries = new ArrayList<>(SectionCluster.SECTION_COUNT);
+    private final ArrayList<MergeFace> mergeFaces = new ArrayList<>();
     private final ArrayList<CpuSectionMesh> segments = new ArrayList<>();
     private final boolean[] populatedSections = new boolean[SectionCluster.SECTION_COUNT];
     private int opaqueTriangleCount;
@@ -26,11 +28,30 @@ final class SectionClusterMeshBuilder {
     private boolean built;
 
     SectionClusterMeshBuilder(int clusterX, int clusterY, int clusterZ) {
-        this(clusterX, clusterY, clusterZ, TerrainMemoryBudget.TARGET_SEGMENT_TRIANGLES);
+        this(
+                clusterX,
+                clusterY,
+                clusterZ,
+                TerrainMemoryBudget.TARGET_SEGMENT_TRIANGLES,
+                OpacityMicromapData.SUBDIVISION_LEVEL + 2);
     }
 
     SectionClusterMeshBuilder(
             int clusterX, int clusterY, int clusterZ, int segmentTriangleTarget) {
+        this(
+                clusterX,
+                clusterY,
+                clusterZ,
+                segmentTriangleTarget,
+                OpacityMicromapData.SUBDIVISION_LEVEL + 2);
+    }
+
+    SectionClusterMeshBuilder(
+            int clusterX,
+            int clusterY,
+            int clusterZ,
+            int segmentTriangleTarget,
+            int maxOpacityMicromapSubdivisionLevel) {
         if (SectionCluster.origin(clusterX) != clusterX
                 || SectionCluster.origin(clusterY) != clusterY
                 || SectionCluster.origin(clusterZ) != clusterZ) {
@@ -43,14 +64,23 @@ final class SectionClusterMeshBuilder {
             throw new IllegalArgumentException("Cluster segment triangle target must be positive");
         }
         this.segmentTriangleTarget = segmentTriangleTarget;
+        this.maxOpacityMicromapSubdivisionLevel = maxOpacityMicromapSubdivisionLevel;
     }
 
     void add(int sectionX, int sectionY, int sectionZ, List<CpuSectionMesh> meshes) {
+        this.add(sectionX, sectionY, sectionZ, new CpuSectionGeometry(meshes, List.of()));
+    }
+
+    void add(
+            int sectionX,
+            int sectionY,
+            int sectionZ,
+            CpuSectionGeometry geometry) {
         if (this.built) {
             throw new IllegalStateException("Cluster mesh was already built");
         }
-        Objects.requireNonNull(meshes, "meshes");
-        for (CpuSectionMesh mesh : meshes) {
+        Objects.requireNonNull(geometry, "geometry");
+        for (CpuSectionMesh mesh : geometry.meshes()) {
             Objects.requireNonNull(mesh, "mesh");
         }
         long clusterKey = net.minecraft.core.SectionPos.asLong(
@@ -67,7 +97,13 @@ final class SectionClusterMeshBuilder {
             throw new IllegalArgumentException("Section was added to its cluster more than once");
         }
         this.populatedSections[localIndex] = true;
-        for (CpuSectionMesh mesh : meshes) {
+        int translateX = (sectionX - this.clusterX) * 16;
+        int translateY = (sectionY - this.clusterY) * 16;
+        int translateZ = (sectionZ - this.clusterZ) * 16;
+        for (MergeFace face : geometry.mergeFaces()) {
+            this.mergeFaces.add(face.translated(translateX, translateY, translateZ));
+        }
+        for (CpuSectionMesh mesh : geometry.meshes()) {
             if (!mesh.isEmpty()) {
                 this.addPart(sectionX, sectionY, sectionZ, mesh);
             }
@@ -104,6 +140,12 @@ final class SectionClusterMeshBuilder {
     CpuClusterMesh build() {
         if (this.built) {
             throw new IllegalStateException("Cluster mesh was already built");
+        }
+        for (CpuSectionMesh mesh : new MergedFaceMeshBuilder(
+                        this.segmentTriangleTarget,
+                        this.maxOpacityMicromapSubdivisionLevel)
+                .build(this.mergeFaces)) {
+            this.addPart(this.clusterX, this.clusterY, this.clusterZ, mesh);
         }
         this.built = true;
         this.finishSegment();

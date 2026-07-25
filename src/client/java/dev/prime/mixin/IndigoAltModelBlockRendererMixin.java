@@ -36,7 +36,7 @@ public abstract class IndigoAltModelBlockRendererMixin {
             BlockStateModel model,
             long seed,
             CallbackInfo ci) {
-        VanillaSectionCapture.beginFabricBlock(level, position, state);
+        VanillaSectionCapture.beginFabricBlock(level, position, state, model);
     }
 
     @Inject(method = "tesselateBlock", at = @At("RETURN"))

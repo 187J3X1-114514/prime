@@ -17,17 +17,20 @@ final class SessionControlsTest {
         SessionControls defaults = SessionControls.defaults();
         SessionControls changed = defaults
                 .withScreenshotRequested(true)
+                .withTriangleDebug(true)
                 .withNrdDebugView(NrdDiagnostics.Mode.NATIVE_VALIDATION)
                 .withFsrDebugView(FsrDebugView.OVERVIEW)
                 .withRrDebugView(DlssRrDebugView.MOTION)
                 .withRrDebugFullscreen(true);
 
         assertFalse(defaults.screenshotRequested());
+        assertFalse(defaults.triangleDebug());
         assertEquals(NrdDiagnostics.Mode.OFF, defaults.nrdDebugView());
         assertEquals(FsrDebugView.OFF, defaults.fsrDebugView());
         assertEquals(DlssRrDebugView.OFF, defaults.rrDebugView());
         assertFalse(defaults.rrDebugFullscreen());
         assertTrue(changed.screenshotRequested());
+        assertTrue(changed.triangleDebug());
         assertEquals(NrdDiagnostics.Mode.NATIVE_VALIDATION, changed.nrdDebugView());
         assertEquals(
                 FsrDebugView.OVERVIEW,

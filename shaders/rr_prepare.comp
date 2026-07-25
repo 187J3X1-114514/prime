@@ -122,7 +122,6 @@ void main() {
         return;
     }
 
-    vec4 primary = imageLoad(rrPrimaryPosition, pixel);
     vec3 normal;
     float roughness;
     primeNrdUnpackNormalRoughness(
@@ -144,6 +143,9 @@ void main() {
     imageStore(rrInputColor, pixel, vec4(
             primeNrdClampRadiance(inputRadiance, PRIME_NRD_FP16_MAX), 1.0));
 
+    // The position is not needed by material decode or lighting. Loading it here keeps four
+    // components out of the color/aerial live range.
+    vec4 primary = imageLoad(rrPrimaryPosition, pixel);
     vec4 viewPosition = rrPush.currentWorldToView * vec4(primary.xyz, 1.0);
     float viewZ = abs(viewPosition.z);
     if (!(viewZ > 0.0) || isnan(viewZ) || isinf(viewZ)) {

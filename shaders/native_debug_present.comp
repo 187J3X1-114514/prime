@@ -49,6 +49,18 @@ vec3 primeNumericalStageColor(uint stage) {
     }
 }
 
+vec3 primeNumericalFieldColor(uint field) {
+    switch (field) {
+        case PRIME_NUMERICAL_FIELD_NON_FINITE: return vec3(0.85, 0.85, 0.85);
+        case PRIME_NUMERICAL_FIELD_NONNEGATIVE: return vec3(0.1, 0.45, 1.0);
+        case PRIME_NUMERICAL_FIELD_RADIANCE: return vec3(1.0, 0.35, 0.05);
+        case PRIME_NUMERICAL_FIELD_UNIT: return vec3(0.65, 0.15, 1.0);
+        case PRIME_NUMERICAL_FIELD_DIRECTION: return vec3(1.0, 0.0, 0.5);
+        case PRIME_NUMERICAL_FIELD_OUTPUT: return vec3(0.15, 1.0, 0.35);
+        default: return vec3(0.5);
+    }
+}
+
 void main() {
     uvec2 pixel = gl_GlobalInvocationID.xy;
     if (any(greaterThanEqual(pixel, primeNativeDebugPush.outputExtent))) return;
@@ -69,6 +81,10 @@ void main() {
         color = flags == 0u
                 ? vec3(0.0)
                 : primeNumericalStageColor(stage) * (nonFinite ? 1.0 : 0.65);
+    } else if (primeNativeDebugPush.presentation == 3u) {
+        uint flags = uint(round(source.r));
+        uint field = uint(round(source.a));
+        color = flags == 0u ? vec3(0.0) : primeNumericalFieldColor(field);
     }
     imageStore(primeNativeDebugOutput, ivec2(pixel), vec4(color, 1.0));
 }

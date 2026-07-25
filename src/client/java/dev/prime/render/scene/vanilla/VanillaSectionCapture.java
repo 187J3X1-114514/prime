@@ -1,10 +1,9 @@
 package dev.prime.render.scene.vanilla;
 
 import com.mojang.blaze3d.vertex.MeshData;
-import dev.prime.render.terrain.CpuSectionMesh;
+import dev.prime.render.terrain.CpuSectionGeometry;
 import dev.prime.render.terrain.LabPbrMaterialSet;
 import dev.prime.render.terrain.SectionMeshAccumulator;
-import java.util.List;
 import it.unimi.dsi.fastutil.ints.IntArrayList;
 import java.util.ArrayDeque;
 import java.util.Arrays;
@@ -17,8 +16,13 @@ import net.fabricmc.fabric.api.client.rendering.v1.BlockTintsFactory;
 import net.minecraft.client.color.block.BlockColors;
 import net.minecraft.client.color.block.BlockTintSource;
 import net.minecraft.client.renderer.block.BlockAndTintGetter;
+import net.minecraft.client.renderer.block.BlockStateModelSet;
 import net.minecraft.client.renderer.block.FluidModel;
 import net.minecraft.client.renderer.block.ModelBlockRenderer;
+import net.minecraft.client.renderer.block.dispatch.BlockStateModel;
+import net.minecraft.client.renderer.block.dispatch.SingleVariant;
+import net.minecraft.client.renderer.block.dispatch.WeightedVariants;
+import net.minecraft.client.renderer.block.dispatch.multipart.MultiPartModel;
 import net.minecraft.client.renderer.chunk.ChunkSectionLayer;
 import net.minecraft.client.renderer.chunk.RenderSectionRegion;
 import net.minecraft.client.renderer.chunk.SectionCompiler;
@@ -45,8 +49,10 @@ import org.joml.Vector3fc;
 public final class VanillaSectionCapture implements AutoCloseable {
     private static final ThreadLocal<VanillaSectionCapture> ACTIVE = new ThreadLocal<>();
     private static final int UNCACHED_TINT = Integer.MIN_VALUE;
+    private static final float COPLANAR_OVERLAY_OFFSET = 1.0F / 4096.0F;
 
     private final RenderSectionRegion region;
+    private final BlockStateModelSet blockModels;
     private final BlockColors blockColors;
     private final SpriteFinder blockSpriteFinder;
     private final boolean cutoutLeaves;
@@ -62,6 +68,7 @@ public final class VanillaSectionCapture implements AutoCloseable {
     private BlockState blockState;
     private boolean blockForceOpaque;
     private boolean blockFoliage;
+    private boolean blockMergeable;
     private boolean blockCollisionKnown;
     private boolean blockCollisionEmpty;
     private final int[] fabricBaseColors = new int[4];
@@ -70,6 +77,7 @@ public final class VanillaSectionCapture implements AutoCloseable {
     private BlockAndTintGetter fabricLevel;
     private BlockPos fabricPosition;
     private BlockState fabricState;
+    private boolean fabricMergeable;
     private List<BlockTintSource> fabricTintSources = List.of();
     private BlockTintsFactory fabricTintFactory;
     private boolean fabricDynamicTintsLoaded;
@@ -79,6 +87,7 @@ public final class VanillaSectionCapture implements AutoCloseable {
 
     private VanillaSectionCapture(
             RenderSectionRegion region,
+            BlockStateModelSet blockModels,
             BlockColors blockColors,
             SpriteFinder blockSpriteFinder,
             LabPbrMaterialSet labPbrMaterials,
@@ -87,6 +96,7 @@ public final class VanillaSectionCapture implements AutoCloseable {
             boolean buildOpacityMicromap,
             int segmentTriangleTarget) {
         this.region = region;
+        this.blockModels = blockModels;
         this.blockColors = blockColors;
         this.blockSpriteFinder = blockSpriteFinder;
         this.geometryPolicy = geometryPolicy;
@@ -97,6 +107,7 @@ public final class VanillaSectionCapture implements AutoCloseable {
 
     public static VanillaSectionCapture open(
             RenderSectionRegion region,
+            BlockStateModelSet blockModels,
             BlockColors blockColors,
             SpriteFinder blockSpriteFinder,
             LabPbrMaterialSet labPbrMaterials,
@@ -109,6 +120,7 @@ public final class VanillaSectionCapture implements AutoCloseable {
         }
         VanillaSectionCapture capture = new VanillaSectionCapture(
                 region,
+                blockModels,
                 blockColors,
                 blockSpriteFinder,
                 labPbrMaterials,
@@ -146,10 +158,11 @@ public final class VanillaSectionCapture implements AutoCloseable {
     public static void beginFabricBlock(
             BlockAndTintGetter level,
             BlockPos position,
-            BlockState state) {
+            BlockState state,
+            BlockStateModel model) {
         VanillaSectionCapture capture = ACTIVE.get();
         if (capture != null) {
-            capture.openFabricBlock(level, position, state);
+            capture.openFabricBlock(level, position, state, model);
         }
     }
 
@@ -220,7 +233,7 @@ public final class VanillaSectionCapture implements AutoCloseable {
         }
     }
 
-    public List<CpuSectionMesh> finish(SectionCompiler.Results results) {
+    public CpuSectionGeometry finish(SectionCompiler.Results results) {
         if (this.finished) {
             throw new IllegalStateException("Vanilla Section capture was already finished");
         }
@@ -268,14 +281,19 @@ public final class VanillaSectionCapture implements AutoCloseable {
                     && (state.is(BlockTags.LEAVES)
                             || state.getBlock() == Blocks.SHORT_GRASS
                             || state.getBlock() == Blocks.TALL_GRASS);
+            // The selected quad, including random orientation, is compared exactly downstream.
+            // Admit every built-in model shape but keep arbitrary renderer models conservative.
+            this.blockMergeable = mergeableModel(this.blockModels.get(state));
             this.blockCollisionKnown = false;
         }
         ChunkSectionLayer layer = this.blockForceOpaque
                 ? ChunkSectionLayer.SOLID
                 : bakedQuad.materialInfo().layer();
         boolean foliage = this.blockFoliage;
-        boolean cutout = layer == ChunkSectionLayer.CUTOUT || foliage;
-        boolean transmissive = layer == ChunkSectionLayer.TRANSLUCENT;
+        SurfaceLayer surfaceLayer = classifySurfaceLayer(
+                layer, foliage, requiresAlphaCut(state));
+        boolean cutout = surfaceLayer.cutout();
+        boolean transmissive = surfaceLayer.transmissive();
         if (transmissive && !this.blockCollisionKnown) {
             this.blockCollisionEmpty = state.getCollisionShape(this.region, position).isEmpty();
             this.blockCollisionKnown = true;
@@ -304,6 +322,13 @@ public final class VanillaSectionCapture implements AutoCloseable {
             quad.u[index] = net.minecraft.client.model.geom.builders.UVPair.unpackU(packedUv);
             quad.v[index] = net.minecraft.client.model.geom.builders.UVPair.unpackV(packedUv);
         }
+        offsetRasterOverlay(
+                quad,
+                isRasterOverlay(
+                        state.getBlock() == Blocks.GRASS_BLOCK,
+                        state.getBlock() == Blocks.REDSTONE_WIRE,
+                        requestedTint,
+                        quad.normalY));
         this.mesh.addQuad(quad, this.blockSurface.set(
                 tint,
                 cutout,
@@ -312,6 +337,7 @@ public final class VanillaSectionCapture implements AutoCloseable {
                 thinWalled || foliage,
                 false,
                 foliage,
+                this.blockMergeable,
                 Math.max(state.getLightEmission(), bakedQuad.materialInfo().lightEmission()),
                 sprite));
     }
@@ -319,7 +345,8 @@ public final class VanillaSectionCapture implements AutoCloseable {
     private void openFabricBlock(
             BlockAndTintGetter level,
             BlockPos position,
-            BlockState state) {
+            BlockState state,
+            BlockStateModel model) {
         if (level != this.region) {
             throw new IllegalStateException("Captured Fabric block belongs to a different region");
         }
@@ -329,6 +356,10 @@ public final class VanillaSectionCapture implements AutoCloseable {
         this.fabricLevel = level;
         this.fabricPosition = position;
         this.fabricState = state;
+        // Indigo also routes ordinary vanilla models through this path. Preserve the same
+        // built-in-model gate as direct capture instead of treating every Fabric-rendered quad as
+        // custom geometry.
+        this.fabricMergeable = mergeableModel(model);
         this.fabricTintSources = this.blockColors.getTintSources(state);
         this.fabricTintFactory = this.fabricTintSources.isEmpty()
                 ? BlockColorRegistry.getFactory(state)
@@ -348,6 +379,7 @@ public final class VanillaSectionCapture implements AutoCloseable {
         this.fabricLevel = null;
         this.fabricPosition = null;
         this.fabricState = null;
+        this.fabricMergeable = false;
         this.fabricTintSources = List.of();
         this.fabricTintFactory = null;
         this.fabricDynamicTints.clear();
@@ -385,8 +417,10 @@ public final class VanillaSectionCapture implements AutoCloseable {
                         || state.getBlock() == Blocks.SHORT_GRASS
                         || state.getBlock() == Blocks.TALL_GRASS);
         ChunkSectionLayer layer = forceOpaque ? ChunkSectionLayer.SOLID : source.chunkLayer();
-        boolean cutout = layer == ChunkSectionLayer.CUTOUT || foliage;
-        boolean transmissive = layer == ChunkSectionLayer.TRANSLUCENT;
+        SurfaceLayer surfaceLayer = classifySurfaceLayer(
+                layer, foliage, requiresAlphaCut(state));
+        boolean cutout = surfaceLayer.cutout();
+        boolean transmissive = surfaceLayer.transmissive();
         boolean thinWalled = transmissive
                 && state.getCollisionShape(this.region, position).isEmpty();
         int tint = this.averageFabricColor(source.tintIndex());
@@ -404,6 +438,13 @@ public final class VanillaSectionCapture implements AutoCloseable {
             quad.u[index] = source.u(index);
             quad.v[index] = source.v(index);
         }
+        offsetRasterOverlay(
+                quad,
+                isRasterOverlay(
+                        state.getBlock() == Blocks.GRASS_BLOCK,
+                        state.getBlock() == Blocks.REDSTONE_WIRE,
+                        source.tintIndex(),
+                        quad.normalY));
         this.mesh.addQuad(quad, this.blockSurface.set(
                 tint,
                 cutout,
@@ -412,8 +453,51 @@ public final class VanillaSectionCapture implements AutoCloseable {
                 thinWalled || foliage,
                 false,
                 foliage,
+                this.fabricMergeable,
                 Math.max(state.getLightEmission(), source.emissive() ? 15 : 0),
                 sprite));
+    }
+
+    static void offsetRasterOverlay(
+            SectionMeshAccumulator.Quad quad, boolean rasterOverlay) {
+        if (!rasterOverlay) {
+            return;
+        }
+        // Vulkan traversal has no raster draw order for coincident faces. Keep Minecraft's
+        // compositing layer just outside the base; Section-local coordinates make this offset
+        // representable without a visible silhouette change.
+        for (int index = 0; index < 4; index++) {
+            quad.x[index] += quad.normalX * COPLANAR_OVERLAY_OFFSET;
+            quad.y[index] += quad.normalY * COPLANAR_OVERLAY_OFFSET;
+            quad.z[index] += quad.normalZ * COPLANAR_OVERLAY_OFFSET;
+        }
+    }
+
+    static boolean isRasterOverlay(
+            boolean grassBlock, boolean redstoneWire, int tintIndex, float normalY) {
+        return (grassBlock && tintIndex >= 0 && Math.abs(normalY) < 0.5F)
+                || (redstoneWire && tintIndex < 0);
+    }
+
+    static SurfaceLayer classifySurfaceLayer(
+            ChunkSectionLayer layer, boolean foliage, boolean alphaCutOverride) {
+        // Minecraft's force_translucent may request alpha blending without describing a
+        // dielectric medium. Known binary-coverage models translate that raster hint to cutout.
+        return new SurfaceLayer(
+                layer == ChunkSectionLayer.CUTOUT || foliage || alphaCutOverride,
+                layer == ChunkSectionLayer.TRANSLUCENT && !alphaCutOverride);
+    }
+
+    static boolean requiresAlphaCut(BlockState state) {
+        // Some packs replace these models without carrying Minecraft's raster layer metadata.
+        // Their geometry still relies on binary texture coverage: treating the head planes as
+        // solid turns transparent texels into an opaque box and also expands the emitter support.
+        return state.getBlock() == Blocks.REDSTONE_WIRE
+                || state.getBlock() == Blocks.REDSTONE_TORCH
+                || state.getBlock() == Blocks.REDSTONE_WALL_TORCH;
+    }
+
+    record SurfaceLayer(boolean cutout, boolean transmissive) {
     }
 
     private int averageFabricColor(int tintIndex) {
@@ -470,6 +554,12 @@ public final class VanillaSectionCapture implements AutoCloseable {
         return value;
     }
 
+    static boolean mergeableModel(BlockStateModel model) {
+        return model instanceof SingleVariant
+                || model instanceof WeightedVariants
+                || model instanceof MultiPartModel;
+    }
+
     @Override
     public void close() {
         if (ACTIVE.get() != this) {
@@ -480,6 +570,7 @@ public final class VanillaSectionCapture implements AutoCloseable {
         this.fabricLevel = null;
         this.fabricPosition = null;
         this.fabricState = null;
+        this.fabricMergeable = false;
         this.fabricQuadPending = false;
     }
 
@@ -621,6 +712,7 @@ public final class VanillaSectionCapture implements AutoCloseable {
                     this.transmissive,
                     false,
                     this.water,
+                    false,
                     false,
                     this.lightEmission,
                     sprite));

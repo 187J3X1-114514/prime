@@ -3,32 +3,70 @@
 
 #include "robocute_bsdf_openpbr.glsl"
 
-// Prime adapter: RoboCute's refractive evaluator applies the radiance eta^-2
-// factor, while its sampler omits it for both rough and delta transmission.
-// Keep the vendored reference untouched and reconcile the response only at
-// Prime's sampling boundary; relativeEta remains independent path metadata.
-PrimeRcSample primeRcPrimeCorrectTransmissionSample(
-        PrimeRcSample sampleValue, vec3 wi, PrimeRcState state) {
-    if (state.geometryThinWalled == 0u
-            && (sampleValue.throughput.flags == PRIME_RC_FLAG_SPECULAR_TRANSMISSION
-            || sampleValue.throughput.flags == PRIME_RC_FLAG_DELTA_TRANSMISSION)) {
-        float etaPath = wi.z > 0.0
-                ? state.specularFresnel.ior
-                : 1.0 / state.specularFresnel.ior;
-        sampleValue.throughput.value /= primeRcSquare(etaPath);
+// RoboCute's refractive core already encodes the interface side in the sign of wi.z. Its new
+// thick-glass wrapper rotates an exit back to the positive hemisphere without changing the IOR,
+// which turns exit into a second entry. Keep the signed interface state and recompute the LUT
+// quantity that the reference initializer derived from the rotated direction.
+PrimeRcState primeRcPrimeTransmissionInterfaceState(vec3 wi, PrimeRcState state) {
+    if (state.geometryThinWalled != 0u || state.entering != 0u) {
+        return state;
     }
-    return sampleValue;
+    state.transmissionMultipleScattering = primeRcMicrofacetDielectricMsCompensation(
+            state.specularMicrofacet, wi.z, state.specularFresnel.ior);
+    return state;
 }
 
+// Bypass only the inconsistent wrapper rotation while retaining state.entering for Prime's
+// medium lifecycle. The protected refractive sample/eval/pdf then all observe the same signed wi.
+PrimeRcState primeRcPrimeTransmissionClosureState(PrimeRcState state) {
+    if (state.geometryThinWalled == 0u) {
+        state.entering = 1u;
+    }
+    return state;
+}
+
+PrimeRcThroughput primeRcPrimeTransmissionEval(
+        vec3 wi, vec3 wo, PrimeRcState state) {
+    return primeRcTransmissionEval(
+            wi, wo, primeRcPrimeTransmissionClosureState(state));
+}
+
+float primeRcPrimeTransmissionPdf(vec3 wi, vec3 wo, PrimeRcState state) {
+    return primeRcTransmissionPdf(
+            wi, wo, primeRcPrimeTransmissionClosureState(state));
+}
+
+PrimeRcEval primeRcPrimeTransmissionEvaluate(
+        vec3 wi, vec3 wo, PrimeRcState state) {
+    PrimeRcEval result;
+    result.throughput = primeRcPrimeTransmissionEval(wi, wo, state);
+    result.pdf = primeRcPrimeTransmissionPdf(wi, wo, state);
+    return result;
+}
+
+// Prime retains a two-entry medium stack rather than RoboCute's nested-priority integrator.
+// The updated reference closure owns only interface sampling, so lifecycle changes remain here.
 PrimeRcSampleResult primeRcPrimeTransmissionSample(
         vec3 wi,
         vec3 randomValue,
         PrimeRcState state,
         PrimeRcVolumeStack stack) {
     PrimeRcSampleResult result = primeRcTransmissionSample(
-            wi, randomValue, state, stack);
-    result.bsdfSample = primeRcPrimeCorrectTransmissionSample(
-            result.bsdfSample, wi, state);
+            wi,
+            randomValue,
+            primeRcPrimeTransmissionClosureState(state),
+            stack);
+    if (state.geometryThinWalled == 0u
+            && primeRcIsTransmissive(result.bsdfSample.throughput.flags)) {
+        if (state.entering != 0u) {
+            PrimeRcVolume volume = state.transmissionVolume;
+            volume.ior = state.originalIor;
+            primeRcStackPush(result.volumeStack, volume);
+        } else if (result.volumeStack.count > 0u) {
+            result.rayT = 0.0;
+            primeRcStackPop(result.volumeStack);
+        }
+    }
     return result;
 }
 
@@ -158,7 +196,7 @@ PrimeRcThroughput primeRcPrimeDielectricBaseEval(
                     ? primeRcPrimeGlossyDiffuseEval(wi, wo, state)
                     : primeRcZeroThroughput(),
             weight > 0.0
-                    ? primeRcTransmissionEval(wi, wo, state)
+                    ? primeRcPrimeTransmissionEval(wi, wo, state)
                     : primeRcZeroThroughput(),
             weight);
 }

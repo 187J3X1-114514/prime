@@ -44,8 +44,10 @@ public final class RayTracingPipeline implements Destroyable {
     private static final int WAVEFRONT_TRANSITION_GROUP = 3;
     private static final int WAVEFRONT_TAIL_GROUP = 4;
     static final int RAYGEN_GROUP_COUNT = 5;
+    static final int RAYGEN_SHADER_STAGE_COUNT = 2;
     static final int MISS_GROUP_COUNT = 2;
     static final int HIT_GROUP_COUNT = 6;
+    static final int RAYGEN_RECORD_DATA_SIZE = Integer.BYTES;
     static final int WAVEFRONT_STEP_DISPATCH_COUNT = ShaderAbi.WAVEFRONT_ROUNDS - 1;
     static final int REALTIME_DISPATCH_COUNT = ShaderAbi.WAVEFRONT_ROUNDS + 2;
     private static final int GROUP_COUNT = RAYGEN_GROUP_COUNT + MISS_GROUP_COUNT + HIT_GROUP_COUNT;
@@ -88,14 +90,11 @@ public final class RayTracingPipeline implements Destroyable {
                 String suffix = ser ? "_ser.rgen.spv" : ".rgen.spv";
                 String[] raygens = new String[] {
                     "/prime/shaders/world" + suffix,
-                    "/prime/shaders/wavefront_head" + suffix,
-                    "/prime/shaders/wavefront_step" + suffix,
-                    "/prime/shaders/wavefront_transition" + suffix,
-                    "/prime/shaders/wavefront_tail" + suffix
+                    "/prime/shaders/wavefront" + suffix
                 };
-                // Screenshot, head, single-vertex and tail programs are compiled into one
-                // pipeline so every mode is resident before gameplay and the hit groups are not
-                // redundantly optimized by the driver.
+                // All modes remain resident before gameplay. Head, step and transition share one
+                // stage and select their entry through SBT data, so the driver compiles their
+                // common integrator/BSDF/light code once.
                 newTracePipeline = TracePipeline.create(
                         context,
                         stack,
@@ -352,11 +351,15 @@ public final class RayTracingPipeline implements Destroyable {
             long source = MemoryUtil.memAddress(handles);
             long destination = shaderBindingTable.mappedAddress();
             for (int raygenIndex = 0; raygenIndex < RAYGEN_GROUP_COUNT; raygenIndex++) {
+                long recordAddress = destination + layout.raygenOffset()
+                        + raygenIndex * layout.raygenRecordStride();
                 MemoryUtil.memCopy(
                         source + (long) raygenIndex * handleSize,
-                        destination + layout.raygenOffset()
-                                + raygenIndex * layout.raygenRecordStride(),
+                        recordAddress,
                         handleSize);
+                MemoryUtil.memPutInt(
+                        recordAddress + handleSize,
+                        raygenRecordStage(raygenIndex));
             }
             for (int missIndex = 0; missIndex < MISS_GROUP_COUNT; missIndex++) {
                 MemoryUtil.memCopy(
@@ -378,7 +381,7 @@ public final class RayTracingPipeline implements Destroyable {
     }
 
     private static long createDescriptorSetLayout(VulkanContext context, MemoryStack stack) {
-        VkDescriptorSetLayoutBinding.Buffer bindings = VkDescriptorSetLayoutBinding.calloc(37, stack);
+        VkDescriptorSetLayoutBinding.Buffer bindings = VkDescriptorSetLayoutBinding.calloc(36, stack);
         bindings.get(0)
                 .binding(ShaderAbi.DESCRIPTOR_TLAS)
                 .descriptorType(KHRAccelerationStructure.VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR)
@@ -481,11 +484,6 @@ public final class RayTracingPipeline implements Destroyable {
                 .descriptorCount(1)
                 .stageFlags(KHRRayTracingPipeline.VK_SHADER_STAGE_RAYGEN_BIT_KHR);
         bindings.get(35)
-                .binding(ShaderAbi.DESCRIPTOR_STARMAP_IMPORTANCE)
-                .descriptorType(VK12.VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
-                .descriptorCount(1)
-                .stageFlags(KHRRayTracingPipeline.VK_SHADER_STAGE_RAYGEN_BIT_KHR);
-        bindings.get(36)
                 .binding(ShaderAbi.DESCRIPTOR_WAVEFRONT_PATHS)
                 .descriptorType(VK12.VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
                 .descriptorCount(1)
@@ -525,16 +523,16 @@ public final class RayTracingPipeline implements Destroyable {
         PrimeClient.LOGGER.info(
                 "Compiling Prime realtime and screenshot ray tracing pipelines");
         long compilationStart = System.nanoTime();
-        if (raygenResources.length != RAYGEN_GROUP_COUNT) {
+        if (raygenResources.length != RAYGEN_SHADER_STAGE_COUNT) {
             throw new IllegalArgumentException("Unexpected Prime raygen module count");
         }
-        long[] modules = new long[RAYGEN_GROUP_COUNT + 5];
+        long[] modules = new long[RAYGEN_SHADER_STAGE_COUNT + 5];
         long deferredOperation = 0L;
         try {
-            for (int index = 0; index < RAYGEN_GROUP_COUNT; index++) {
+            for (int index = 0; index < RAYGEN_SHADER_STAGE_COUNT; index++) {
                 modules[index] = createShaderModule(context, raygenResources[index]);
             }
-            int miss = RAYGEN_GROUP_COUNT;
+            int miss = RAYGEN_SHADER_STAGE_COUNT;
             int shadowMiss = miss + 1;
             int closestHit = miss + 2;
             int anyHit = miss + 3;
@@ -553,7 +551,7 @@ public final class RayTracingPipeline implements Destroyable {
             ByteBuffer mainName = stack.UTF8("main");
             for (int index = 0; index < stages.capacity(); index++) {
                 int stageFlag;
-                if (index < RAYGEN_GROUP_COUNT) {
+                if (index < RAYGEN_SHADER_STAGE_COUNT) {
                     stageFlag = KHRRayTracingPipeline.VK_SHADER_STAGE_RAYGEN_BIT_KHR;
                 } else if (index <= shadowMiss) {
                     stageFlag = KHRRayTracingPipeline.VK_SHADER_STAGE_MISS_BIT_KHR;
@@ -572,7 +570,7 @@ public final class RayTracingPipeline implements Destroyable {
             VkRayTracingShaderGroupCreateInfoKHR.Buffer groups =
                     VkRayTracingShaderGroupCreateInfoKHR.calloc(GROUP_COUNT, stack);
             for (int index = 0; index < RAYGEN_GROUP_COUNT; index++) {
-                generalGroup(groups.get(index), index);
+                generalGroup(groups.get(index), raygenShaderStage(index));
             }
             generalGroup(groups.get(RAYGEN_GROUP_COUNT), miss);
             generalGroup(groups.get(RAYGEN_GROUP_COUNT + 1), shadowMiss);
@@ -669,6 +667,30 @@ public final class RayTracingPipeline implements Destroyable {
         return (int) Math.max(
                 1L,
                 Math.min(reported, Math.max(availableProcessors, 1)));
+    }
+
+    static int raygenShaderStage(int group) {
+        return switch (group) {
+            case SCREENSHOT_RAYGEN_GROUP -> 0;
+            case WAVEFRONT_HEAD_GROUP,
+                    WAVEFRONT_STEP_GROUP,
+                    WAVEFRONT_TRANSITION_GROUP,
+                    WAVEFRONT_TAIL_GROUP -> 1;
+            default -> throw new IllegalArgumentException(
+                    "Invalid Prime raygen group " + group);
+        };
+    }
+
+    static int raygenRecordStage(int group) {
+        return switch (group) {
+            case WAVEFRONT_HEAD_GROUP -> 0;
+            case WAVEFRONT_STEP_GROUP -> 1;
+            case WAVEFRONT_TRANSITION_GROUP -> 2;
+            case WAVEFRONT_TAIL_GROUP -> 3;
+            case SCREENSHOT_RAYGEN_GROUP -> 0;
+            default -> throw new IllegalArgumentException(
+                    "Invalid Prime raygen group " + group);
+        };
     }
 
     private static int completeDeferredPipelineCreation(
@@ -837,6 +859,7 @@ public final class RayTracingPipeline implements Destroyable {
                         handleSize,
                         handleAlignment,
                         baseAlignment,
+                        RAYGEN_RECORD_DATA_SIZE,
                         RAYGEN_GROUP_COUNT,
                         MISS_GROUP_COUNT,
                         HIT_GROUP_COUNT);
@@ -849,6 +872,7 @@ public final class RayTracingPipeline implements Destroyable {
                         handleSize,
                         handleAlignment,
                         baseAlignment,
+                        RAYGEN_RECORD_DATA_SIZE,
                         RAYGEN_GROUP_COUNT,
                         MISS_GROUP_COUNT,
                         HIT_GROUP_COUNT,
@@ -1002,7 +1026,7 @@ public final class RayTracingPipeline implements Destroyable {
                 sizes.get(0).type(KHRAccelerationStructure.VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR).descriptorCount(1);
                 sizes.get(1).type(VK12.VK_DESCRIPTOR_TYPE_STORAGE_IMAGE).descriptorCount(29);
                 sizes.get(2).type(VK12.VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER).descriptorCount(5);
-                sizes.get(3).type(VK12.VK_DESCRIPTOR_TYPE_STORAGE_BUFFER).descriptorCount(2);
+                sizes.get(3).type(VK12.VK_DESCRIPTOR_TYPE_STORAGE_BUFFER).descriptorCount(1);
                 VkDescriptorPoolCreateInfo poolCreateInfo = VkDescriptorPoolCreateInfo.calloc(stack)
                         .sType$Default()
                         .maxSets(1)
@@ -1102,16 +1126,12 @@ public final class RayTracingPipeline implements Destroyable {
                             .imageView(starmap.image().view())
                             .imageLayout(VK12.VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
                     VkDescriptorBufferInfo.Buffer bufferInfos =
-                            VkDescriptorBufferInfo.calloc(2, stack);
+                            VkDescriptorBufferInfo.calloc(1, stack);
                     bufferInfos.get(0)
-                            .buffer(starmap.importance().handle())
-                            .offset(0L)
-                            .range(starmap.importance().size());
-                    bufferInfos.get(1)
                             .buffer(wavefrontPaths.handle())
                             .offset(0L)
                             .range(wavefrontPaths.size());
-                    VkWriteDescriptorSet.Buffer writes = VkWriteDescriptorSet.calloc(37, stack);
+                    VkWriteDescriptorSet.Buffer writes = VkWriteDescriptorSet.calloc(36, stack);
                     writes.get(0)
                             .sType$Default()
                             .pNext(acceleration.address())
@@ -1240,19 +1260,11 @@ public final class RayTracingPipeline implements Destroyable {
                     writes.get(35)
                             .sType$Default()
                             .dstSet(descriptorSet)
-                            .dstBinding(ShaderAbi.DESCRIPTOR_STARMAP_IMPORTANCE)
-                            .descriptorCount(1)
-                            .descriptorType(VK12.VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
-                            .pBufferInfo(VkDescriptorBufferInfo.create(
-                                    bufferInfos.get(0).address(), 1));
-                    writes.get(36)
-                            .sType$Default()
-                            .dstSet(descriptorSet)
                             .dstBinding(ShaderAbi.DESCRIPTOR_WAVEFRONT_PATHS)
                             .descriptorCount(1)
                             .descriptorType(VK12.VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
                             .pBufferInfo(VkDescriptorBufferInfo.create(
-                                    bufferInfos.get(1).address(), 1));
+                                    bufferInfos.get(0).address(), 1));
                     VK12.vkUpdateDescriptorSets(context.vkDevice(), writes, null);
                     return new DescriptorBindings(
                             context,

@@ -11,6 +11,7 @@ const uint PRIME_NUMERICAL_ABOVE_FP16 = 16u;
 const uint PRIME_NUMERICAL_ABOVE_UNIT = 128u;
 const uint PRIME_NUMERICAL_INVALID_DIRECTION = 256u;
 const float PRIME_NUMERICAL_FP16_MAX = 65504.0;
+const float PRIME_NUMERICAL_FP16_DIRECTION_ERROR = 4.0e-3;
 
 const uint PRIME_NUMERICAL_STAGE_UNSCOPED = 0u;
 const uint PRIME_NUMERICAL_STAGE_CAMERA = 1u;
@@ -97,6 +98,31 @@ uint primeClassifyDirection(vec3 value) {
             || abs(lengthSquared - 1.0) > 1.0e-3
             ? PRIME_NUMERICAL_INVALID_DIRECTION
             : 0u;
+}
+
+uint primeClassifyOptionalDirection(vec3 value) {
+    uint flags = primeClassifyNonFinite(value);
+    if (flags != 0u) return flags;
+    // A missing SH1 lobe has an exact zero first moment. It carries no direction to validate;
+    // nonzero near-degenerate vectors remain errors so this does not mask unstable normalization.
+    return all(equal(value, vec3(0.0)))
+            ? 0u
+            : primeClassifyDirection(value);
+}
+
+vec3 primeRestoreFp16Direction(vec3 value) {
+    uint flags = primeClassifyNonFinite(value);
+    if (flags != 0u) return value;
+
+    float lengthSquared = dot(value, value);
+    // FP16 storage perturbs a valid unit vector beyond the FP32 diagnostic tolerance.
+    // Repair only the representational error envelope; zero and clearly invalid vectors
+    // remain unchanged so numerical diagnostics can still identify producer failures.
+    return lengthSquared > 1.0e-12
+                    && abs(lengthSquared - 1.0)
+                            <= PRIME_NUMERICAL_FP16_DIRECTION_ERROR
+            ? value * inversesqrt(lengthSquared)
+            : value;
 }
 
 #endif

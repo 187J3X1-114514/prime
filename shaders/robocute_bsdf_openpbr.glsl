@@ -657,6 +657,7 @@ PrimeRcState primeRcBaseState(
     state.detail = detail;
     state.spectrumed = spectrumed;
     state.geometryThinWalled = material.geometry.thinWalled;
+    state.entering = wi.z >= 0.0 ? 1u : 0u;
     state.selectedWavelength = 0u;
     state.wavelengthsNm = wavelengthsNm;
     state.rayT = rayT;
@@ -768,8 +769,8 @@ PrimeRcState primeRcInitializeTransmission(vec3 wi, PrimeRcState state) {
     state.transmissionVolume = primeRcVolumeFromTransmission(state.material.transmission);
     if (state.material.transmission.dispersionScale > 0.0) {
         state.selectedWavelength = 1u;
-        state.specularFresnel.ior = primeRcDispersionIor(
-                state.originalIor * state.invOutIor,
+        state.specularFresnel.ior = state.invOutIor * primeRcDispersionIor(
+                state.originalIor,
                 state.material.transmission.dispersionAbbeNumber,
                 state.material.transmission.dispersionScale,
                 state.wavelengthsNm[state.heroWavelengthIndex]);
@@ -780,6 +781,7 @@ PrimeRcState primeRcInitializeTransmission(vec3 wi, PrimeRcState state) {
                 * primeRcThinDielectricRoughnessScaler2(state.specularFresnel.ior),
                 vec2(0.0), vec2(1.0));
     } else {
+        wi = primeRcTransmissionMaterialFrame(wi, state);
         state.transmissionMultipleScattering = primeRcMicrofacetDielectricMsCompensation(
                 state.specularMicrofacet, wi.z, state.specularFresnel.ior);
     }

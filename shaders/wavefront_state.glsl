@@ -177,7 +177,7 @@ PathState primeWavefrontPath(
             & PRIME_WAVEFRONT_BYTE_MASK;
     path.pixel = pixel;
     path.sampleIndex = primePush.path.x;
-    path.sampleEpoch = primePush.path.y;
+    path.sampleEpoch = primeSampleEpoch();
     return path;
 }
 
@@ -359,9 +359,11 @@ PrimeIntegrationResult primeLoadWavefrontIntermediate(
     result.guides.primaryPosition = position.xyz;
     if (primeWritesNrdShInputs()) {
         result.guides.diffuseDirection =
-                imageLoad(primeNrdDiffuseDirection, coordinate).xyz;
+                primeRestoreFp16Direction(
+                        imageLoad(primeNrdDiffuseDirection, coordinate).xyz);
         result.guides.specularDirection =
-                imageLoad(primeNrdSpecularDirection, coordinate).xyz;
+                primeRestoreFp16Direction(
+                        imageLoad(primeNrdSpecularDirection, coordinate).xyz);
     }
     primeUnpackWavefrontPair(
             record.primaryAreaRadianceAndDirection.xyz,

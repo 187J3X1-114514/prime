@@ -35,10 +35,10 @@ final class OpacityMicromap implements Destroyable {
     private final long dataAddress;
     private final long triangleAddress;
     private final long scratchAddress;
-    private final int twoStateBlockCount;
-    private final int fourStateBlockCount;
-    private final int mappedTwoStateTriangleCount;
-    private final int mappedFourStateTriangleCount;
+    private final int[] twoStateBlockCounts;
+    private final int[] fourStateBlockCounts;
+    private final int[] mappedTwoStateTriangleCounts;
+    private final int[] mappedFourStateTriangleCounts;
     private boolean destroyed;
 
     private OpacityMicromap(
@@ -52,10 +52,10 @@ final class OpacityMicromap implements Destroyable {
             long dataAddress,
             long triangleAddress,
             long scratchAddress,
-            int twoStateBlockCount,
-            int fourStateBlockCount,
-            int mappedTwoStateTriangleCount,
-            int mappedFourStateTriangleCount) {
+            int[] twoStateBlockCounts,
+            int[] fourStateBlockCounts,
+            int[] mappedTwoStateTriangleCounts,
+            int[] mappedFourStateTriangleCounts) {
         this.context = context;
         this.handle = handle;
         this.storage = storage;
@@ -66,10 +66,10 @@ final class OpacityMicromap implements Destroyable {
         this.dataAddress = dataAddress;
         this.triangleAddress = triangleAddress;
         this.scratchAddress = scratchAddress;
-        this.twoStateBlockCount = twoStateBlockCount;
-        this.fourStateBlockCount = fourStateBlockCount;
-        this.mappedTwoStateTriangleCount = mappedTwoStateTriangleCount;
-        this.mappedFourStateTriangleCount = mappedFourStateTriangleCount;
+        this.twoStateBlockCounts = twoStateBlockCounts;
+        this.fourStateBlockCounts = fourStateBlockCounts;
+        this.mappedTwoStateTriangleCounts = mappedTwoStateTriangleCounts;
+        this.mappedFourStateTriangleCounts = mappedFourStateTriangleCounts;
     }
 
     static OpacityMicromap create(
@@ -94,15 +94,16 @@ final class OpacityMicromap implements Destroyable {
         try {
             int[] sourceIndices = source.triangleIndices();
             validateIndices(sourceIndices, source.blockCount());
-            int mappedTwoStateTriangleCount = 0;
-            int mappedFourStateTriangleCount = 0;
+            int[] mappedTwoStateTriangleCounts = new int[16];
+            int[] mappedFourStateTriangleCounts = new int[16];
             for (int index : sourceIndices) {
                 if (index >= 0) {
                     int format = source.blockFormats()[index];
+                    int subdivisionLevel = source.blockSubdivisionLevels()[index];
                     if (format == OpacityMicromapData.TWO_STATE_FORMAT) {
-                        mappedTwoStateTriangleCount++;
+                        mappedTwoStateTriangleCounts[subdivisionLevel]++;
                     } else if (format == OpacityMicromapData.FOUR_STATE_FORMAT) {
-                        mappedFourStateTriangleCount++;
+                        mappedFourStateTriangleCounts[subdivisionLevel]++;
                     } else {
                         throw new IllegalArgumentException(
                                 "Opacity micromap triangle references an unsupported format");
@@ -119,10 +120,21 @@ final class OpacityMicromap implements Destroyable {
             copyBuffer(commandBuffer, staging.write(sourceIndices, Integer.BYTES), indices);
 
             int blockCount = source.blockCount();
-            int twoStateBlockCount =
-                    source.blockCount(OpacityMicromapData.TWO_STATE_FORMAT);
-            int fourStateBlockCount =
-                    source.blockCount(OpacityMicromapData.FOUR_STATE_FORMAT);
+            int[] twoStateBlockCounts = new int[16];
+            int[] fourStateBlockCounts = new int[16];
+            for (int index = 0; index < blockCount; index++) {
+                int level = source.blockSubdivisionLevels()[index];
+                if (level > context.capabilities().maxOpacityMicromapSubdivisionLevel()) {
+                    throw new IllegalArgumentException(
+                            "Opacity micromap subdivision level exceeds the device limit");
+                }
+                if (source.blockFormats()[index] == OpacityMicromapData.TWO_STATE_FORMAT) {
+                    twoStateBlockCounts[level]++;
+                } else if (source.blockFormats()[index]
+                        == OpacityMicromapData.FOUR_STATE_FORMAT) {
+                    fourStateBlockCounts[level]++;
+                }
+            }
             if (blockCount == 0) {
                 return new OpacityMicromap(
                         context,
@@ -135,10 +147,10 @@ final class OpacityMicromap implements Destroyable {
                         0L,
                         0L,
                         0L,
-                        0,
-                        0,
-                        0,
-                        0);
+                        new int[16],
+                        new int[16],
+                        new int[16],
+                        new int[16]);
             }
 
             data = context.createBuffer(
@@ -148,7 +160,9 @@ final class OpacityMicromap implements Destroyable {
                     false,
                     label + " states");
             int[] triangleDescriptors = triangleDescriptors(
-                    source.blockOffsets(), source.blockFormats());
+                    source.blockOffsets(),
+                    source.blockFormats(),
+                    source.blockSubdivisionLevels());
             triangles = context.createBuffer(
                     alignedAllocationSize(
                             (long) triangleDescriptors.length * Integer.BYTES,
@@ -175,7 +189,7 @@ final class OpacityMicromap implements Destroyable {
 
             try (MemoryStack stack = MemoryStack.stackPush()) {
                 VkMicromapUsageEXT.Buffer usage = usage(
-                        stack, twoStateBlockCount, fourStateBlockCount);
+                        stack, twoStateBlockCounts, fourStateBlockCounts);
                 VkMicromapBuildInfoEXT buildInfo = VkMicromapBuildInfoEXT.calloc(stack)
                         .sType$Default()
                         .type(EXTOpacityMicromap.VK_MICROMAP_TYPE_OPACITY_MICROMAP_EXT)
@@ -238,10 +252,10 @@ final class OpacityMicromap implements Destroyable {
                     dataAddress,
                     triangleAddress,
                     scratchAddress,
-                    twoStateBlockCount,
-                    fourStateBlockCount,
-                    mappedTwoStateTriangleCount,
-                    mappedFourStateTriangleCount);
+                    twoStateBlockCounts,
+                    fourStateBlockCounts,
+                    mappedTwoStateTriangleCounts,
+                    mappedFourStateTriangleCounts);
         } catch (RuntimeException exception) {
             if (handle != 0L) {
                 EXTOpacityMicromap.vkDestroyMicromapEXT(context.vkDevice(), handle, null);
@@ -261,7 +275,7 @@ final class OpacityMicromap implements Destroyable {
         }
         try (MemoryStack stack = MemoryStack.stackPush()) {
             VkMicromapUsageEXT.Buffer usage = usage(
-                    stack, this.twoStateBlockCount, this.fourStateBlockCount);
+                    stack, this.twoStateBlockCounts, this.fourStateBlockCounts);
             VkMicromapBuildInfoEXT.Buffer buildInfos = VkMicromapBuildInfoEXT.calloc(1, stack);
             VkMicromapBuildInfoEXT buildInfo = buildInfos.get(0)
                     .sType$Default()
@@ -294,12 +308,12 @@ final class OpacityMicromap implements Destroyable {
                         .baseTriangle(0)
                         .micromap(this.handle);
         attachment.indexBuffer().deviceAddress(this.indices.deviceAddress());
-        if (this.mappedTwoStateTriangleCount != 0
-                || this.mappedFourStateTriangleCount != 0) {
+        if (total(this.mappedTwoStateTriangleCounts) != 0
+                || total(this.mappedFourStateTriangleCounts) != 0) {
             VkMicromapUsageEXT.Buffer usage = usage(
                     stack,
-                    this.mappedTwoStateTriangleCount,
-                    this.mappedFourStateTriangleCount);
+                    this.mappedTwoStateTriangleCounts,
+                    this.mappedFourStateTriangleCounts);
             attachment
                     .usageCountsCount(usage.remaining())
                     .pUsageCounts(usage);
@@ -349,37 +363,57 @@ final class OpacityMicromap implements Destroyable {
     }
 
     private static VkMicromapUsageEXT.Buffer usage(
-            MemoryStack stack, int twoStateCount, int fourStateCount) {
-        int usageCount = (twoStateCount == 0 ? 0 : 1) + (fourStateCount == 0 ? 0 : 1);
+            MemoryStack stack, int[] twoStateCounts, int[] fourStateCounts) {
+        if (twoStateCounts.length != fourStateCounts.length) {
+            throw new IllegalArgumentException("Opacity micromap usage levels are inconsistent");
+        }
+        int usageCount = 0;
+        for (int level = 0; level < twoStateCounts.length; level++) {
+            usageCount += twoStateCounts[level] == 0 ? 0 : 1;
+            usageCount += fourStateCounts[level] == 0 ? 0 : 1;
+        }
         if (usageCount == 0) {
             throw new IllegalArgumentException(
                     "Opacity micromap usage must contain at least one mapped block");
         }
         VkMicromapUsageEXT.Buffer usage = VkMicromapUsageEXT.calloc(usageCount, stack);
         int index = 0;
-        if (twoStateCount != 0) {
-            setUsage(usage.get(index++), twoStateCount, OpacityMicromapData.TWO_STATE_FORMAT);
-        }
-        if (fourStateCount != 0) {
-            setUsage(usage.get(index), fourStateCount, OpacityMicromapData.FOUR_STATE_FORMAT);
+        for (int level = 0; level < twoStateCounts.length; level++) {
+            if (twoStateCounts[level] != 0) {
+                setUsage(
+                        usage.get(index++),
+                        twoStateCounts[level],
+                        level,
+                        OpacityMicromapData.TWO_STATE_FORMAT);
+            }
+            if (fourStateCounts[level] != 0) {
+                setUsage(
+                        usage.get(index++),
+                        fourStateCounts[level],
+                        level,
+                        OpacityMicromapData.FOUR_STATE_FORMAT);
+            }
         }
         return usage;
     }
 
-    private static void setUsage(VkMicromapUsageEXT usage, int count, int format) {
+    private static void setUsage(
+            VkMicromapUsageEXT usage, int count, int subdivisionLevel, int format) {
         usage.count(count)
-                .subdivisionLevel(OpacityMicromapData.SUBDIVISION_LEVEL)
+                .subdivisionLevel(subdivisionLevel)
                 .format(format);
     }
 
-    static int[] triangleDescriptors(int[] blockOffsets, int[] blockFormats) {
-        if (blockOffsets.length != blockFormats.length) {
+    static int[] triangleDescriptors(
+            int[] blockOffsets, int[] blockFormats, int[] blockSubdivisionLevels) {
+        if (blockOffsets.length != blockFormats.length
+                || blockOffsets.length != blockSubdivisionLevels.length) {
             throw new IllegalArgumentException("Opacity micromap block metadata is inconsistent");
         }
         int[] result = new int[Math.multiplyExact(blockOffsets.length, 2)];
         for (int index = 0; index < blockOffsets.length; index++) {
             result[index * 2] = blockOffsets[index];
-            result[index * 2 + 1] = OpacityMicromapData.SUBDIVISION_LEVEL
+            result[index * 2 + 1] = blockSubdivisionLevels[index]
                     | blockFormats[index] << 16;
         }
         return result;
@@ -423,6 +457,14 @@ final class OpacityMicromap implements Destroyable {
                         "Opacity micromap triangle references an invalid block: " + index);
             }
         }
+    }
+
+    private static int total(int[] counts) {
+        int total = 0;
+        for (int count : counts) {
+            total = Math.addExact(total, count);
+        }
+        return total;
     }
 
 }

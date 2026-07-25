@@ -12,6 +12,21 @@ import org.junit.jupiter.api.Test;
 
 final class IntegratorSettingsTest {
     @Test
+    void sampleEpochKeepsTriangleDiagnosticOutOfSamplingState() {
+        assertEquals(17, IntegratorSettings.packSampleEpoch(17, false));
+        assertEquals(
+                17 | ShaderAbi.PATH_TRIANGLE_DEBUG_MASK,
+                IntegratorSettings.packSampleEpoch(17, true));
+        assertEquals(
+                17,
+                IntegratorSettings.packSampleEpoch(17, true)
+                        & ShaderAbi.PATH_SAMPLE_EPOCH_MASK);
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> IntegratorSettings.packSampleEpoch(-1, false));
+    }
+
+    @Test
     void pathControlKeepsCameraMediumSeparateFromJitterAndBounceFields() {
         int dry = IntegratorSettings.packPathControl(
                 256, 18, false, PostProcessingMode.NRD_FSR);

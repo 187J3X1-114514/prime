@@ -15,6 +15,8 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
+import java.util.stream.Collectors;
+import java.util.stream.IntStream;
 import org.joml.Matrix4f;
 import org.junit.jupiter.api.Test;
 
@@ -126,6 +128,7 @@ final class NrdNativeTest {
             assertTrue(dispatches.size() >= 7);
             Set<Integer> resourceTypes = new HashSet<>();
             Set<Integer> identifiers = new HashSet<>();
+            Set<Integer> transientResources = new HashSet<>();
             for (int dispatchIndex = 0; dispatchIndex < dispatches.size(); dispatchIndex++) {
                 identifiers.add(dispatches.identifier(dispatchIndex));
                 assertTrue(dispatches.gridWidth(dispatchIndex) > 0);
@@ -135,6 +138,11 @@ final class NrdNativeTest {
                         resourceIndex < dispatches.resourceCount(dispatchIndex);
                         resourceIndex++) {
                     resourceTypes.add(dispatches.resourceType(dispatchIndex, resourceIndex));
+                    if (dispatches.resourceType(dispatchIndex, resourceIndex)
+                            == NrdNative.RESOURCE_TRANSIENT_POOL) {
+                        transientResources.add(
+                                dispatches.resourceIndexInPool(dispatchIndex, resourceIndex));
+                    }
                 }
             }
             assertEquals(Set.of(0, 1, 2), identifiers);
@@ -153,6 +161,14 @@ final class NrdNativeTest {
             assertFalse(resourceTypes.contains(NrdNative.RESOURCE_OUT_SPEC_RADIANCE_HITDIST));
             assertTrue(resourceTypes.contains(NrdNative.RESOURCE_OUT_SHADOW_TRANSLUCENCY));
             assertTrue(resourceTypes.contains(NrdNative.RESOURCE_OUT_VALIDATION));
+            Set<Integer> allocatedTransientResources = IntStream.range(
+                            0, description.transientPool().size())
+                    .boxed()
+                    .collect(Collectors.toSet());
+            assertEquals(
+                    allocatedTransientResources,
+                    transientResources,
+                    "NRD allocated a transient texture that no dispatch references");
             assertSame(dispatches, instance.getDispatches());
         }
     }

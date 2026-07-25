@@ -8,6 +8,7 @@ import java.util.Objects;
 /** Immutable, non-persistent controls owned by the client runtime. */
 public record SessionControls(
         boolean screenshotRequested,
+        boolean triangleDebug,
         NrdDiagnostics.Mode nrdDebugView,
         FsrDebugView fsrDebugView,
         DlssRrDebugView rrDebugView,
@@ -21,6 +22,7 @@ public record SessionControls(
     public static SessionControls defaults() {
         return new SessionControls(
                 false,
+                false,
                 NrdDiagnostics.Mode.OFF,
                 FsrDebugView.OFF,
                 DlssRrDebugView.OFF,
@@ -31,6 +33,19 @@ public record SessionControls(
         return value == this.screenshotRequested
                 ? this
                 : new SessionControls(
+                        value,
+                        this.triangleDebug,
+                        this.nrdDebugView,
+                        this.fsrDebugView,
+                        this.rrDebugView,
+                        this.rrDebugFullscreen);
+    }
+
+    public SessionControls withTriangleDebug(boolean value) {
+        return value == this.triangleDebug
+                ? this
+                : new SessionControls(
+                        this.screenshotRequested,
                         value,
                         this.nrdDebugView,
                         this.fsrDebugView,
@@ -44,6 +59,7 @@ public record SessionControls(
                 ? this
                 : new SessionControls(
                         this.screenshotRequested,
+                        this.triangleDebug,
                         value,
                         this.fsrDebugView,
                         this.rrDebugView,
@@ -56,6 +72,7 @@ public record SessionControls(
                 ? this
                 : new SessionControls(
                         this.screenshotRequested,
+                        this.triangleDebug,
                         this.nrdDebugView,
                         value,
                         this.rrDebugView,
@@ -68,6 +85,7 @@ public record SessionControls(
                 ? this
                 : new SessionControls(
                         this.screenshotRequested,
+                        this.triangleDebug,
                         this.nrdDebugView,
                         this.fsrDebugView,
                         value,
@@ -79,6 +97,7 @@ public record SessionControls(
                 ? this
                 : new SessionControls(
                         this.screenshotRequested,
+                        this.triangleDebug,
                         this.nrdDebugView,
                         this.fsrDebugView,
                         this.rrDebugView,

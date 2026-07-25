@@ -361,8 +361,8 @@ PrimeRcThroughput primeRcRefractiveEval(vec3 wi, vec3 wo, PrimeRcState state) {
         float denominator = primeRcSquare(microOutgoing + microIncident / etaPath) * wi.z;
         result.value = rt.second * distribution
                 * primeRcMicrofacetG2t(microfacet, wi, wo)
-                * abs(microIncident * microOutgoing / denominator)
-                / primeRcSquare(etaPath);
+                * abs(microIncident * microOutgoing / denominator);
+        result.value *= 1.0 / primeRcSquare(etaPath);
         result.flags = PRIME_RC_FLAG_SPECULAR_TRANSMISSION;
     }
     return result;
@@ -408,20 +408,22 @@ PrimeRcSample primeRcRefractiveSample(vec3 wi, vec3 randomValue, PrimeRcState st
     if (randomValue.z < transmissionProbability / probabilitySum) {
         vec3 wo = refracted.wo;
         if (wi.z * wo.z >= 0.0) { return primeRcZeroSample(); }
+        float etaPath = refracted.relativeIor;
         result.wo = wo;
+        result.eta = etaPath;
         result.throughput.value = transmission;
         result.throughput.flags = PRIME_RC_FLAG_DELTA_TRANSMISSION;
         result.pdf = transmissionProbability / probabilitySum;
         if (!primeRcMicrofacetEffectivelySmooth(microfacet) && fresnel.ior != 1.0) {
             float microOutgoing = dot(wo, halfVector);
-            float eta = microIncident > 0.0 ? fresnel.ior : 1.0 / fresnel.ior;
-            float denominator = primeRcSquare(microOutgoing + microIncident / eta);
+            float denominator = primeRcSquare(microOutgoing + microIncident / etaPath);
             result.pdf *= microfacetPdf * abs(microOutgoing) / denominator;
             result.throughput.value = transmission * distribution
                     * primeRcMicrofacetG2t(microfacet, wi, wo)
                     * abs(microIncident * microOutgoing / (wi.z * denominator));
             result.throughput.flags = PRIME_RC_FLAG_SPECULAR_TRANSMISSION;
         }
+        result.throughput.value *= 1.0 / primeRcSquare(etaPath);
     } else {
         vec3 wo = reflect(-wi, halfVector);
         if (wi.z * wo.z < 0.0) { return primeRcZeroSample(); }

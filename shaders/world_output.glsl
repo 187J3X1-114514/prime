@@ -39,15 +39,15 @@ uint primeClassifyRawOutput(PrimeIntegrationResult result) {
     }
     if (any(greaterThan(
             result.radiance.diffuse - result.guides.primaryAreaDiffuse, vec3(0.0)))) {
-        flags |= primeClassifyDirection(result.guides.diffuseDirection);
+        flags |= primeClassifyOptionalDirection(result.guides.diffuseDirection);
     }
     if (any(greaterThan(
             result.radiance.specular - result.guides.primaryAreaSpecular, vec3(0.0)))) {
-        flags |= primeClassifyDirection(result.guides.specularDirection);
+        flags |= primeClassifyOptionalDirection(result.guides.specularDirection);
     }
     if (any(greaterThan(result.guides.primaryAreaDiffuse, vec3(0.0)))
             || any(greaterThan(result.guides.primaryAreaSpecular, vec3(0.0)))) {
-        flags |= primeClassifyDirection(result.guides.primaryAreaDirection);
+        flags |= primeClassifyOptionalDirection(result.guides.primaryAreaDirection);
     }
     return flags;
 }

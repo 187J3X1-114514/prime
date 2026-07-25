@@ -49,6 +49,7 @@ PrimeRcRefractResult primeRcDielectricRefract(float ior, vec3 wi, vec3 normal) {
     float t0 = 1.0 - (1.0 - cosineTheta * cosineTheta) * inverseEta * inverseEta;
     PrimeRcRefractResult result;
     result.valid = t0 > 0.0 ? 1u : 0u;
+    result.relativeIor = 1.0 / inverseEta;
     result.wo = inverseEta * wi
             - (inverseEta * cosineTheta + sqrt(max(t0, 0.0))) * normal;
     return result;

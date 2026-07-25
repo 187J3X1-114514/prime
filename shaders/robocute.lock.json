@@ -1,6 +1,6 @@
 {
   "repository": "https://github.com/RoboCute/RoboCute",
-  "commit": "5985e989254b4685e3885d876b33f4874d233dcd",
+  "commit": "0d982c77b3fd26c2c5a3c0852be3bd05e5860bd8",
   "authorityOverlay": {
     "description": "Temporary dielectric-highlight fix supplied directly by the RoboCute author on 2026-07-24.",
     "path": "third_party/robocute/author-bsdf-hotfix-2026-07-24",
@@ -15,13 +15,14 @@
   },
   "approvedDifferences": [
     "Zero-probability sampling endpoints stay on a positive-probability branch so remapping never evaluates 0 / 0.",
-    "The RoboCute author's 2026-07-24 dielectric-highlight hotfix replaces the directional-energy normalization with branch-separated multiple-scattering compensation and its 44x32x159 HALF4 table."
+    "The RoboCute author's 2026-07-24 dielectric-highlight hotfix replaces the directional-energy normalization with branch-separated multiple-scattering compensation and its 44x32x159 HALF4 table.",
+    "Prime retains its bounded two-entry medium stack instead of RoboCute's nested-priority medium integrator; interface sampling, transport eta and exiting material-frame behavior follow the pinned reference."
   ],
   "files": {
-    "robocute_bsdf_closures.glsl": "4c341cccbb537f39fcc50a7d10001dd2eb436179dcec3067123f89e4fc9387bb",
-    "robocute_bsdf_common.glsl": "f9b98f15d87f6514db59e43269d171a83bde7c9f35dac1547b627910c43043b5",
-    "robocute_bsdf_fresnel.glsl": "b01ea6a84d1095e082da45f4e56f992fbd3c59ade21ce29655ff9d60c7aab9e7",
-    "robocute_bsdf_microfacet.glsl": "f0b3fa502248d634516e2a681ea1a529dd9a49798283b512cd4663e062262038",
-    "robocute_bsdf_openpbr.glsl": "3cac9081cfb97a8240e1e4a6ade3ad17d26ad726f784fe573f689cf5690f72a6"
+    "robocute_bsdf_closures.glsl": "7f49af6bb8864a09626f65207d49d8bf7fe083a4c458359634d83a9e14ac25b2",
+    "robocute_bsdf_common.glsl": "4476c53857644edb3407b69cd2123356a7c3f4d24507f8626c061d2b98edd2f8",
+    "robocute_bsdf_fresnel.glsl": "df94e938b3f82446222c41015025e9bc60c25a4f63dfe3b4c806a41bd489dd74",
+    "robocute_bsdf_microfacet.glsl": "7f531d1431839a27e8b2d65c3fcfbcc7178bbe2b0b858efae222ed8c4442fa15",
+    "robocute_bsdf_openpbr.glsl": "fad116cae6532909fe98f2ea8f03546e0b68ba3bde6bc9b1eeadb3127adaa812"
   }
 }

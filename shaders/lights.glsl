@@ -32,6 +32,8 @@ struct LightEvaluation {
 // density, including light-selection probability when a future registry introduces one. Reverse
 // PDF queries must reuse that exact quantized value. The environment is evaluated only when a BSDF
 // path escapes; the sun and area-light adapters are sampled explicitly and perform no selection.
+// The submitted sun direction and all path directions are unit vectors at this boundary.
+// Renormalizing them per vertex would only repeat a square root and three divisions.
 
 float primePowerHeuristic(float firstPdf, float secondPdf) {
     primeRecordNonnegative(firstPdf);
@@ -71,7 +73,7 @@ float primeSunPdf() {
 }
 
 bool primeSunContainsDirection(IntegratorRecord integrator, vec3 direction) {
-    return dot(normalize(direction), normalize(integrator.sunDirectionIntensity.xyz))
+    return dot(direction, integrator.sunDirectionIntensity.xyz)
             >= primeSunCosAngularRadius();
 }
 
@@ -114,7 +116,7 @@ LightSample primeSampleSun(
     LightSample result;
     result.direction = primeLocalToWorld(
             localDirection,
-            normalize(integrator.sunDirectionIntensity.xyz));
+            integrator.sunDirectionIntensity.xyz);
     result.distance = 1000000.0;
     // Visibility must be known before evaluating the atmosphere transmittance.
     result.radiance = vec3(0.0);

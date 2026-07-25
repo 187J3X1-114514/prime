@@ -24,6 +24,28 @@ final class OpacityMicromapTest {
                         new int[] {
                             OpacityMicromapData.TWO_STATE_FORMAT,
                             OpacityMicromapData.FOUR_STATE_FORMAT
+                        },
+                        new int[] {
+                            OpacityMicromapData.SUBDIVISION_LEVEL,
+                            OpacityMicromapData.SUBDIVISION_LEVEL
                         }));
+    }
+
+    @Test
+    void triangleDescriptorsPreservePerBlockSubdivisionLevels() {
+        assertArrayEquals(
+                new int[] {
+                    0,
+                    5 | OpacityMicromapData.TWO_STATE_FORMAT << 16,
+                    128,
+                    6 | OpacityMicromapData.FOUR_STATE_FORMAT << 16
+                },
+                OpacityMicromap.triangleDescriptors(
+                        new int[] {0, 128},
+                        new int[] {
+                            OpacityMicromapData.TWO_STATE_FORMAT,
+                            OpacityMicromapData.FOUR_STATE_FORMAT
+                        },
+                        new int[] {5, 6}));
     }
 }

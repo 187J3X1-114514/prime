@@ -65,18 +65,18 @@ final class NoisyCompositePass implements Destroyable {
 
     static NoisyCompositePass create(
             VulkanContext context,
-            NoisyTargets targets,
+            BasicWavefrontSignals signals,
             VulkanImage stableRadiance,
             AtmospherePipeline atmosphere) {
         List<VulkanImage> images = List.of(
-                targets.noisyDiffuse(),
-                targets.noisySpecular(),
-                targets.material(),
+                signals.noisyDiffuse(),
+                signals.noisySpecular(),
+                signals.material(),
                 stableRadiance,
-                targets.sunLighting(),
+                signals.sunLighting(),
                 atmosphere.aerialRadiance(),
                 atmosphere.aerialTransmittance(),
-                targets.linearOutput());
+                signals.linearOutput());
         long setLayout = 0L;
         long descriptorPool = 0L;
         long pipelineLayout = 0L;
@@ -170,8 +170,8 @@ final class NoisyCompositePass implements Destroyable {
                     descriptorSet,
                     pipelineLayout,
                     pipeline,
-                    targets.linearOutput().width(),
-                    targets.linearOutput().height());
+                    signals.linearOutput().width(),
+                    signals.linearOutput().height());
         } catch (RuntimeException exception) {
             if (descriptorPool != 0L) {
                 VK12.vkDestroyDescriptorPool(context.vkDevice(), descriptorPool, null);

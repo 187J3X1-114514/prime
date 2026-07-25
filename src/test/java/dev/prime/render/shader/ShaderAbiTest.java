@@ -21,9 +21,8 @@ final class ShaderAbiTest {
         assertEquals(80, ShaderAbi.SURFACE_INTERACTION_SIZE);
         assertEquals(128, ShaderAbi.PUSH_CONSTANT_SIZE);
         assertEquals(0, ShaderAbi.DESCRIPTOR_TLAS);
-        assertEquals(1, ShaderAbi.DESCRIPTOR_OUTPUT_IMAGE);
         assertEquals(2, ShaderAbi.DESCRIPTOR_BLOCK_ATLAS);
-        assertEquals(3, ShaderAbi.DESCRIPTOR_ACCUMULATION_IMAGE);
+        assertEquals(3, ShaderAbi.DESCRIPTOR_STABLE_RADIANCE);
         assertEquals(4, ShaderAbi.DESCRIPTOR_SKY_VIEW);
         assertEquals(5, ShaderAbi.DESCRIPTOR_TRANSMITTANCE_LOW);
         assertEquals(6, ShaderAbi.DESCRIPTOR_TRANSMITTANCE_HIGH);
@@ -37,7 +36,7 @@ final class ShaderAbiTest {
         assertEquals(19, ShaderAbi.DESCRIPTOR_LABPBR_SPECULAR_ATLAS);
         assertEquals(20, ShaderAbi.DESCRIPTOR_NRD_SUN_LIGHTING);
         assertEquals(21, ShaderAbi.DESCRIPTOR_NRD_SUN_PENUMBRA);
-        assertEquals(35, ShaderAbi.DESCRIPTOR_SCREENSHOT_ACCUMULATION);
+        assertEquals(35, ShaderAbi.DESCRIPTOR_SCREENSHOT_RUNNING_MEAN);
         assertEquals(128, ShaderAbi.MAXIMUM_BOUNCES);
         assertEquals(24, ShaderAbi.DESCRIPTOR_RAW_NUMERICAL_DIAGNOSTIC);
         assertEquals(22, ShaderAbi.DESCRIPTOR_NRD_DIFFUSE_DIRECTION);

@@ -1,11 +1,12 @@
 package dev.prime.render.post;
 
+import com.mojang.blaze3d.vulkan.Destroyable;
 import dev.prime.render.FrameCamera;
 import dev.prime.render.SunDirection;
 import dev.prime.render.fsr.FsrDebugView;
 import dev.prime.render.fsr.FsrSettings;
-import dev.prime.render.vulkan.DenoiserInputs;
 import dev.prime.render.vulkan.VulkanImage;
+import dev.prime.render.vulkan.WavefrontSignals;
 import dev.prime.render.vulkan.nrd.NrdDiagnostics;
 import java.util.Objects;
 import org.lwjgl.vulkan.VkCommandBuffer;
@@ -16,17 +17,8 @@ import org.lwjgl.vulkan.VkCommandBuffer;
  * <p>It owns render extent, temporal jitter/history, raw path targets, command recording,
  * submission state, full-resolution linear HDR output, and backend lifetime.
  */
-public interface RealtimePostProcessor extends Denoiser {
+public interface RealtimePostProcessor extends Destroyable {
     PostProcessingMode mode();
-
-    @Override
-    default Kind kind() {
-        return switch (mode()) {
-            case NRD_FSR -> Kind.NRD_FSR;
-            case DLSS_RR -> Kind.DLSS_RR;
-            case DISABLED -> Kind.NOISY;
-        };
-    }
 
     ReconstructionQualityMode quality();
 
@@ -38,7 +30,7 @@ public interface RealtimePostProcessor extends Denoiser {
 
     int displayHeight();
 
-    DenoiserInputs targets();
+    WavefrontSignals signals();
 
     VulkanImage linearHdrOutput();
 

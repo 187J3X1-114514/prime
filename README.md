@@ -10,17 +10,17 @@ Prime 是一个面向 Minecraft 的客户端 Shader Mod，基于 Minecraft Vulka
 ## 当前积分器基线
 
 - “视频设置”中的“参考累积截图”会冻结进入时的相机、太阳、地形、灯光标定、摄像机介质状态与方块动画，在窗口原生分辨率对普通首表面追踪一条完整 BSDF 路径、对透明首表面追踪固定反射/透射两支，并直接累积到线性 Rec.2020 RGBA32F 历史。该路径旁路 DLSS RR、NRD、FSR 及全部实时调试覆盖层，也不对高亮样本做钳制；显示时只读取当前统计均值并执行同一 Oklab DRT。`Ctrl+Alt+F2` 可进入/退出且不影响普通 `F2` 截图，`Esc` 只退出。退出后会恢复地形流送并进行一次完整重同步。窗口纵横比变化会保留冻结的位置与朝向、更新投影并重新开始累积；世界/资源切换则安全退出模式，避免在同一均值中混合不同场景。该开关仅在当前游戏会话有效。
-- 完整使用 Vulkan KHR ray tracing pipeline。raygen 以迭代 mega-kernel 推进路径，miss、closest-hit 和 any-hit 只返回遍历结果；管线递归深度保持为 1。支持通用 `VK_EXT_ray_tracing_invocation_reorder` 且报告真实重排模式的设备会在表面遍历后对 shader 续体做可选重排；普通 permutation 保留原始行为。
+- 完整使用 Vulkan KHR ray tracing pipeline。固定 12 轮的紧凑 wavefront 队列承担实时与截图的共同主积分：head 建立路径，step/transition 推进活动路径，tail 结束稀疏长尾，resolve 再把同一个物理样本交给实时重建信号或截图运行均值输出适配器。miss、closest-hit 和 any-hit 只返回遍历结果，管线递归深度保持为 1。支持通用 `VK_EXT_ray_tracing_invocation_reorder` 且报告真实重排模式的设备会在表面遍历后对 shader 续体做可选重排；普通 permutation 保留原始行为。
 - 支持的 RTX 设备默认启用 `DLSS RR`，直接以完整 noisy color、`Color Before Transparency`、运动、深度、法线/粗糙度、两种反照率和镜面命中距离执行联合降噪与超分，再使用公共 Oklab 显示变换；该路径不调度 NRD 或 FSR。透明首表面的固定二分直接提供完整透射样本作为透明前颜色，不追加后端专用 Guide 射线。RR 不可用或初始化失败时，会话自动回退到 `NRD-FSR`：路径追踪与 NRD 在较低分辨率运行，去噪后的线性 Rec.2020 HDR 场景由 AMD FidelityFX FSR 3.1.4 执行时间超分辨率。另有“禁用（不推荐）”模式，以原生分辨率直接显示每帧 1 spp 的噪点结果，不运行任一降噪/重建后端。主光线使用模型 UV 微分驱动的 ray-cone LOD，并应用所选路径对应的 mip bias。视频设置可统一选择 Native AA、Quality、Balanced、Performance 或 Ultra Performance；默认质量为 Performance。模式/质量变化会成组重建尺寸资源与时间历史。
 - 每像素每帧通常追踪一条完整 BSDF 路径；首个可见表面为透明接口时，固定各追踪一条条件反射与条件透射路径并相加，后续顶点恢复普通单路径采样，不递归分叉。两条路径共享首个命中、材质翻译、闭包初始化和局部视角计算。NRD 4.17.4 使用两套 `REBLUR_DIFFUSE_SPECULAR_SH` 历史：主历史处理普通真实主表面，并在透明像素处理透射支的 primary-surface-replacement 信号；反射历史只处理反射支，二者过滤后 remodulate 相加。两套 REBLUR 共用一个 NRD instance、一次输入准备与一次最终合成，不重复追踪或材质求值。REBLUR 使用 63 帧主/稳定历史、10 帧快速历史和 4 帧 history-fix 处理面积光与间接光；普通首表面的太阳直射保持为独立信号，由同一 instance 中的 `SIGMA_SHADOW` 过滤可见性。SH1 保存对应虚拟主表面的面积光样本与延续路径的辐射加权一阶方向矩。材质除法后的 illumination 只在 RGBA16F 的 65504 表示边界按共享比例缩放，不使用更低的亮度截断。R10G10B10A2 normal/roughness 输入还区分普通介电、金属、透明接口与 foliage，避免跨材质历史混合。固定分叉在原有遍历中捕获首个非 delta 表面的位置、法线、材质、粗糙度、反照率、方向和命中距离；delta 链超出本地 Guide 容量时仅让 Guide 回退到真实首接口，不截断光传输。REBLUR 命中距离重建使用 5×5 区域，并为概率采样的普通漫反射/镜面信号保留 30/50 像素 prepass。换世界或渲染原点变化会同步重启采样、NRD 和 FSR 历史；普通区块流送依靠逐像素重投影和反遮挡处理，不触发整屏重置。
 - NRD 使用主表面的世界空间法线、线性粗糙度、view-Z、命中距离和 FSR 的统一 Halton 帧抖动进行重投影。运动采用 NRD 推荐的非抖动 2.5D 屏幕空间约定：`old = new + MV`，其中 XY 指向上一帧 UV，Z 为上一帧与当前帧 view-Z 之差；FSR 复用其 XY，并接收独立的 reversed-infinite depth。天空运动只包含视角旋转而忽略平移。窗口尺寸变化会整体重建与尺寸相关的 NRD/FSR 图像和历史，不复用不兼容资源。
-- 当前缺省不透明材质是由方块纹理与生物群系 tint 驱动的介质边界与漫反射基底；没有材质包粗糙度时使用 0.80 的感知粗糙度、0.04 的介质 F0 和 1.5 的 IOR，显式材质数据仍优先。Section 网格同时提取 solid、cutout、translucent 模型层与原版流体（包括 waterlogged 流体）；玻璃类完整方块、薄壁透明模型和水分别进入完整的 RoboCute 介质透射 BSDF，使用运行时 3D 方向能量表、Fresnel/折射以及跨反弹保存的两层体积栈。缺省透明材质的线性粗糙度固定为零，由单条路径按 Fresnel 分布采样 delta 反射或透射；未来显式提供非零粗糙度的材质仍使用完整 GGX 重要性采样。零体积薄壁使用闭包的精确光滑双界面级数。吸收严格按射线实际经过的介质段应用；摄像机位于真实水面以下时会以水介质初始化体积栈。光源来自光谱大气、太阳和从原版发光等级/纹理估计的方块面光源。它们仍是可替换的内部适配层，不定义最终产品材质或灯光模型。
+- 当前缺省不透明材质是由方块纹理与生物群系 tint 驱动的介质边界与漫反射基底；没有材质包粗糙度时使用 0.90 的感知粗糙度、0.04 的介质 F0 和 1.5 的 IOR，显式材质数据仍优先。Section 网格同时提取 solid、cutout、translucent 模型层与原版流体（包括 waterlogged 流体）；玻璃类完整方块、薄壁透明模型和水分别进入完整的 RoboCute 介质透射 BSDF，使用运行时 3D 方向能量表、Fresnel/折射以及跨反弹保存的两层体积栈。缺省透明材质的线性粗糙度固定为零，由单条路径按 Fresnel 分布采样 delta 反射或透射；未来显式提供非零粗糙度的材质仍使用完整 GGX 重要性采样。零体积薄壁使用闭包的精确光滑双界面级数。吸收严格按射线实际经过的介质段应用；摄像机位于真实水面以下时会以水介质初始化体积栈。光源来自光谱大气、太阳和从原版发光等级/纹理估计的方块面光源。它们仍是可替换的内部适配层，不定义最终产品材质或灯光模型。
 - 资源包声明 `format=lab-pbr/1.3` 时，Prime 会为方块图集建立同布局的 `_n`/`_s` 辅助图集，并完整解码 LabPBR 1.3 的八个通道。当前参与着色与采样的内容包括感知光滑度/线性粗糙度、介电 F0、预定义与自定义金属、次表面散射权重和发光强度；切线空间法线已经读取并重建，但本阶段按设计继续使用几何法线，AO、高度和孔隙率则只保留明确语义，等待对应的微观遮蔽、位移和天气系统。材质贴图提供的发光会逐像素覆盖原版发光语义，并进入现有两级灯光树、下一事件估计与 MIS。透明与不透明材质共享同一 RoboCute 闭包和重要性采样边界。辅助贴图跟随原版图集的 mip、padding、自定义帧顺序和插值进度；资源包重载会原子替换 GPU 图集并使受影响的 Section 重新构建。
 - 积分器、材质、光源、路径吞吐和 RGBA32F 累积统一使用 D65 白点的线性 Rec.2020 工作空间。Minecraft 方块纹理与 tint 在材质边界从 sRGB 解码并转换。累积完成后，独立的显示变换边界将 HDR 工作空间映射到目标显示设备；当前 sRGB Rec.709 默认采用 Oklab DRT，高光压缩前的曝光乘数硬编码为 `1.0`。显示变换只作用于一次性 RGBA8_UNORM 输出，不写回累积历史。该工作空间是积分器 ABI 契约，而不是可由单个 shader 局部修改的显示选项。
 - 线性化是光传输正确性的一部分，而非单纯的显示校色。早期实现曾直接在 sRGB 非线性编码值上进行 BSDF、光源和累积运算，导致乘法、求和与平均不再对应辐射度计算，并表现为暗角系统性偏亮；改为在线性 Rec.2020 中积分后该问题才真正消失。
-- 太阳与方块面光源使用下一事件估计和 power-heuristic MIS；路径正常由 miss 或带吞吐补偿的 Russian roulette 结束。RR 深度与总表面深度独立，未执行 NEE 的纯 delta 透明界面不增加 RR 深度，避免多层玻璃产生大量零值/高权重样本；粗糙或混合透明仍正常计数。256 次反弹保留为异常路径的安全上限。
+- 太阳与方块面光源使用下一事件估计和 power-heuristic MIS；路径正常由 miss 或带吞吐补偿的 Russian roulette 结束。RR 深度与总表面深度独立，未执行 NEE 的纯 delta 透明界面不增加 RR 深度，避免多层玻璃产生大量零值/高权重样本；粗糙或混合透明仍正常计数。128 次反弹保留为异常路径的安全上限。
 - 物理着色点与 Vulkan 遍历偏移原点分离。所有路径坐标仍相对于 Prime 的渲染原点，未退回绝对世界 `float` 坐标。
-- `PathState`、`SurfaceInteraction`、BSDF、光源样本、PDF 和采样维度均为显式契约。当前不实现 wavefront，但未来可以替换调度与队列层而不重写积分器数学。
+- `PathState`、`SurfaceInteraction`、BSDF、光源样本、PDF 和采样维度均为显式契约。wavefront 只负责保存状态和安排执行，不重解释这些积分器数学。
 
 ## 设计边界
 
@@ -28,8 +28,8 @@ Prime 是一个面向 Minecraft 的客户端 Shader Mod，基于 Minecraft Vulka
 - `render/vulkan` 独占 Vulkan 句柄、VMA 分配、同步、SBT、管线和加速结构所有权。
 - `render/terrain` 负责不可变 Section 快照的异步网格化、有界任务队列、BLAS 驻留和 TLAS 场景替换。第二个 BLAS geometry 是“需要 any-hit 的表面”而非单纯 cutout：alpha coverage 与真实透射仍由 primitive flag 严格区分。
 - `shaders/abi.json` 是 Java、GLSL 布局、积分器颜色空间与默认显示设备/变换的唯一契约声明源。构建会生成双方代码，再编译并验证全部 SPIR-V。
-- `shaders/bsdf.glsl`、`material.glsl`、`lights.glsl` 和 `sampling.glsl` 定义可独立替换的积分器语义；`integrator.glsl` 负责当前 mega-kernel 调度，并将完整 radiance estimate 与只读 denoiser guides 分开。
-- 公共 `Denoiser` 边界统一 NRD-FSR、DLSS RR 与参考累积的尺寸、线性 HDR 输出和生命周期；实时子接口额外拥有 jitter/history、`DenoiserInputs`、命令记录与提交。`shaders/nrd_common.glsl` 与 `render/vulkan/nrd` 定义 NRD 信号和调度，`render/vulkan/dlss` 定义 NGX RR 资源与 Prime 自有覆盖层；三个后端都不拥有或修改物理积分器。
+- `shaders/bsdf.glsl`、`material.glsl`、`lights.glsl` 和 `sampling.glsl` 定义可独立替换的积分器语义；`integrator.glsl` 只定义传输状态、估计器和 reconstruction guides，`wavefront.rgen`/`wavefront_state.glsl` 负责调度与持久化，`wavefront_output.glsl` 负责实时信号和截图运行均值输出。
+- `WavefrontSignals` 是物理样本到输出后端的公共图像契约。NRD-FSR、DLSS RR、无后处理和截图各自拥有资源与生命周期，只消费或显式复用这些信号；`RealtimePostProcessor` 额外拥有 jitter/history、命令记录与提交。`shaders/nrd_common.glsl` 与 `render/vulkan/nrd` 定义 NRD 编解码和调度，`render/vulkan/dlss` 定义 NGX RR 资源与 Prime 自有覆盖层；输出后端都不拥有或修改物理积分器。
 - `shaders/display_transform.glsl` 是工作空间到显示设备的独立语义边界。实时路径的大气透视在 NRD 后、FSR 前的线性 HDR 合成中加入，显示变换严格位于 FSR 之后；截图路径则在每个样本进入 RGBA32F 均值前加入固定的大气透视，并从均值直接显示。两条路径的历史都不会混入非线性的显示设备编码值。
 - Mixin 只承担 Minecraft 接入和设备能力协商；地形与 Vulkan 业务对象不持有 Mixin 对象。
 - 所有运行错误均停止接管世界渲染并回到原版路径。设备不支持所需 KHR 扩展时不会请求这些扩展。

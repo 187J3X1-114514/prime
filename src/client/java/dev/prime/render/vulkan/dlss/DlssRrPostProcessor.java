@@ -134,7 +134,7 @@ public final class DlssRrPostProcessor implements RealtimePostProcessor {
     }
 
     @Override public PostProcessingMode mode() { return PostProcessingMode.DLSS_RR; }
-    @Override public DlssRrTargets targets() { return this.targets; }
+    @Override public DlssRrTargets signals() { return this.targets; }
     @Override public VulkanImage linearHdrOutput() { return this.targets.rrOutput(); }
     @Override
     public ReconstructionQualityMode quality() { return this.quality; }

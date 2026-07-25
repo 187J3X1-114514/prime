@@ -12,7 +12,7 @@ public final class NoisyPostProcessor implements RealtimePostProcessor {
     private final ReconstructionQualityMode quality;
     private final int width;
     private final int height;
-    private final NoisyTargets targets;
+    private final BasicWavefrontSignals signals;
     private final NoisyCompositePass composite;
     private final DisplayTransformPass displayTransform;
     private int frameIndex;
@@ -23,13 +23,13 @@ public final class NoisyPostProcessor implements RealtimePostProcessor {
             ReconstructionQualityMode quality,
             int width,
             int height,
-            NoisyTargets targets,
+            BasicWavefrontSignals signals,
             NoisyCompositePass composite,
             DisplayTransformPass displayTransform) {
         this.quality = quality;
         this.width = width;
         this.height = height;
-        this.targets = targets;
+        this.signals = signals;
         this.composite = composite;
         this.displayTransform = displayTransform;
     }
@@ -42,21 +42,21 @@ public final class NoisyPostProcessor implements RealtimePostProcessor {
             int width,
             int height,
             ReconstructionQualityMode quality) {
-        NoisyTargets targets = null;
+        BasicWavefrontSignals signals = null;
         NoisyCompositePass composite = null;
         DisplayTransformPass displayTransform = null;
         try {
-            targets = NoisyTargets.create(context, width, height);
+            signals = BasicWavefrontSignals.createRealtime(context, width, height);
             composite = NoisyCompositePass.create(
-                    context, targets, stableRadiance, atmosphere);
+                    context, signals, stableRadiance, atmosphere);
             displayTransform = DisplayTransformPass.create(
-                    context, targets.linearOutput(), displayOutput);
+                    context, signals.linearOutput(), displayOutput);
             return new NoisyPostProcessor(
-                    quality, width, height, targets, composite, displayTransform);
+                    quality, width, height, signals, composite, displayTransform);
         } catch (RuntimeException exception) {
             ResourceCleanup.destroy(displayTransform, exception);
             ResourceCleanup.destroy(composite, exception);
-            ResourceCleanup.destroy(targets, exception);
+            ResourceCleanup.destroy(signals, exception);
             throw exception;
         }
     }
@@ -67,8 +67,8 @@ public final class NoisyPostProcessor implements RealtimePostProcessor {
     @Override public int renderHeight() { return this.height; }
     @Override public int displayWidth() { return this.width; }
     @Override public int displayHeight() { return this.height; }
-    @Override public DenoiserInputs targets() { return this.targets; }
-    @Override public VulkanImage linearHdrOutput() { return this.targets.linearOutput(); }
+    @Override public WavefrontSignals signals() { return this.signals; }
+    @Override public VulkanImage linearHdrOutput() { return this.signals.linearOutput(); }
 
     @Override
     public void requestReset() {
@@ -90,7 +90,7 @@ public final class NoisyPostProcessor implements RealtimePostProcessor {
     @Override
     public void prepareForRayTrace(VkCommandBuffer commandBuffer) {
         requireOpen();
-        this.targets.prepareForRayTrace(commandBuffer);
+        this.signals.prepareForRayTrace(commandBuffer);
     }
 
     @Override
@@ -138,7 +138,7 @@ public final class NoisyPostProcessor implements RealtimePostProcessor {
         RuntimeException failure = null;
         failure = ResourceCleanup.destroy(this.displayTransform, failure);
         failure = ResourceCleanup.destroy(this.composite, failure);
-        failure = ResourceCleanup.destroy(this.targets, failure);
+        failure = ResourceCleanup.destroy(this.signals, failure);
         this.destroyed = true;
         ResourceCleanup.throwIfFailed(failure);
     }

@@ -54,6 +54,8 @@ public final class RayTracingPipeline implements Destroyable {
     static final int RAYGEN_SHADER_STAGE_COUNT = 4;
     static final int MISS_GROUP_COUNT = 2;
     static final int HIT_GROUP_COUNT = 6;
+    static final int DESCRIPTOR_BINDING_COUNT = 37;
+    static final int STORAGE_IMAGE_DESCRIPTOR_COUNT = 29;
     static final int RAYGEN_RECORD_DATA_SIZE = Integer.BYTES;
     private static final long WAVEFRONT_QUEUE_OFFSET_ALIGNMENT = 256L;
     static final int WAVEFRONT_STEP_DISPATCH_COUNT = ShaderAbi.WAVEFRONT_ROUNDS - 1;
@@ -133,24 +135,23 @@ public final class RayTracingPipeline implements Destroyable {
 
     public void ensureDescriptors(
             long tlas,
-            VulkanImage output,
-            VulkanImage accumulation,
-            VulkanImage screenshotAccumulation,
+            VulkanImage stableRadiance,
+            VulkanImage screenshotRunningMean,
             VulkanGpuTextureView atlasView,
             VulkanGpuSampler atlasSampler,
             VulkanImage labPbrNormalAtlas,
             VulkanImage labPbrSpecularAtlas,
             AtmospherePipeline atmosphere,
-            DenoiserInputs targets) {
+            WavefrontSignals signals) {
         long requiredWavefrontBytes = wavefrontPathBytes(
-                targets.noisyDiffuse().width(), targets.noisyDiffuse().height());
+                signals.noisyDiffuse().width(), signals.noisyDiffuse().height());
         validateWavefrontRanges(
-                targets.noisyDiffuse().width(),
-                targets.noisyDiffuse().height(),
+                signals.noisyDiffuse().width(),
+                signals.noisyDiffuse().height(),
                 this.context.maxStorageBufferRange());
         validateWavefrontDispatch(
-                targets.noisyDiffuse().width(),
-                targets.noisyDiffuse().height(),
+                signals.noisyDiffuse().width(),
+                signals.noisyDiffuse().height(),
                 this.context.capabilities().maxRayDispatchInvocationCount());
         VulkanBuffer candidateWavefront = this.wavefrontPaths;
         boolean replacesWavefront =
@@ -167,9 +168,8 @@ public final class RayTracingPipeline implements Destroyable {
         if (this.descriptorBindings != null
                 && this.descriptorBindings.matches(
                         tlas,
-                        output.view(),
-                        accumulation.view(),
-                        screenshotAccumulation.view(),
+                        stableRadiance.view(),
+                        screenshotRunningMean.view(),
                         atlasView.vkImageView(),
                         atlasSampler.vkSampler(),
                         labPbrNormalAtlas.view(),
@@ -179,19 +179,19 @@ public final class RayTracingPipeline implements Destroyable {
                         atmosphere.transmittanceHigh().view(),
                         atmosphere.aerialRadiance().view(),
                         atmosphere.aerialTransmittance().view(),
-                        targets.noisyDiffuse().view(),
-                        targets.noisySpecular().view(),
-                        targets.normalRoughness().view(),
-                        targets.viewZ().view(),
-                        targets.motion().view(),
-                        targets.material().view(),
-                        targets.specularMaterial().view(),
-                        targets.primaryPosition().view(),
-                        targets.diffuseDirection().view(),
-                        targets.specularDirection().view(),
-                        targets.sunLighting().view(),
-                        targets.sunPenumbra().view(),
-                        targets.rawNumericalDiagnostic().view(),
+                        signals.noisyDiffuse().view(),
+                        signals.noisySpecular().view(),
+                        signals.normalRoughness().view(),
+                        signals.viewZ().view(),
+                        signals.motion().view(),
+                        signals.material().view(),
+                        signals.specularMaterial().view(),
+                        signals.primaryPosition().view(),
+                        signals.diffuseDirection().view(),
+                        signals.specularDirection().view(),
+                        signals.sunLighting().view(),
+                        signals.sunPenumbra().view(),
+                        signals.rawNumericalDiagnostic().view(),
                         candidateWavefront.handle())) {
             return;
         }
@@ -201,15 +201,14 @@ public final class RayTracingPipeline implements Destroyable {
                     this.context,
                     this.descriptorSetLayout,
                     tlas,
-                    output,
-                    accumulation,
-                    screenshotAccumulation,
+                    stableRadiance,
+                    screenshotRunningMean,
                     atlasView,
                     atlasSampler,
                     labPbrNormalAtlas,
                     labPbrSpecularAtlas,
                     atmosphere,
-                    targets,
+                    signals,
                     this.bsdfLookup,
                     this.starmap,
                     candidateWavefront);
@@ -622,26 +621,22 @@ public final class RayTracingPipeline implements Destroyable {
     }
 
     private static long createDescriptorSetLayout(VulkanContext context, MemoryStack stack) {
-        VkDescriptorSetLayoutBinding.Buffer bindings = VkDescriptorSetLayoutBinding.calloc(38, stack);
+        VkDescriptorSetLayoutBinding.Buffer bindings =
+                VkDescriptorSetLayoutBinding.calloc(DESCRIPTOR_BINDING_COUNT, stack);
         bindings.get(0)
                 .binding(ShaderAbi.DESCRIPTOR_TLAS)
                 .descriptorType(KHRAccelerationStructure.VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR)
                 .descriptorCount(1)
                 .stageFlags(KHRRayTracingPipeline.VK_SHADER_STAGE_RAYGEN_BIT_KHR);
         bindings.get(1)
-                .binding(ShaderAbi.DESCRIPTOR_OUTPUT_IMAGE)
-                .descriptorType(VK12.VK_DESCRIPTOR_TYPE_STORAGE_IMAGE)
-                .descriptorCount(1)
-                .stageFlags(KHRRayTracingPipeline.VK_SHADER_STAGE_RAYGEN_BIT_KHR);
-        bindings.get(2)
                 .binding(ShaderAbi.DESCRIPTOR_BLOCK_ATLAS)
                 .descriptorType(VK12.VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER)
                 .descriptorCount(1)
                 // Raygen evaluates sampled area lights, closest-hit shades visible surfaces, and
                 // any-hit tests cutout opacity. All three therefore read the block atlas.
                 .stageFlags(BLOCK_ATLAS_STAGES);
-        bindings.get(3)
-                .binding(ShaderAbi.DESCRIPTOR_ACCUMULATION_IMAGE)
+        bindings.get(2)
+                .binding(ShaderAbi.DESCRIPTOR_STABLE_RADIANCE)
                 .descriptorType(VK12.VK_DESCRIPTOR_TYPE_STORAGE_IMAGE)
                 .descriptorCount(1)
                 .stageFlags(KHRRayTracingPipeline.VK_SHADER_STAGE_RAYGEN_BIT_KHR);
@@ -653,7 +648,7 @@ public final class RayTracingPipeline implements Destroyable {
             ShaderAbi.DESCRIPTOR_AERIAL_TRANSMITTANCE
         };
         for (int index = 0; index < atmosphereBindings.length; index++) {
-            bindings.get(index + 4)
+            bindings.get(index + 3)
                     .binding(atmosphereBindings[index])
                     .descriptorType(VK12.VK_DESCRIPTOR_TYPE_STORAGE_IMAGE)
                     .descriptorCount(1)
@@ -681,60 +676,60 @@ public final class RayTracingPipeline implements Destroyable {
             ShaderAbi.DESCRIPTOR_NRD_DISPLAY_POSITION
         };
         for (int index = 0; index < nrdBindings.length; index++) {
-            bindings.get(index + 9)
+            bindings.get(index + 8)
                     .binding(nrdBindings[index])
                     .descriptorType(VK12.VK_DESCRIPTOR_TYPE_STORAGE_IMAGE)
                     .descriptorCount(1)
                     .stageFlags(KHRRayTracingPipeline.VK_SHADER_STAGE_RAYGEN_BIT_KHR);
         }
-        bindings.get(28)
+        bindings.get(27)
                 .binding(ShaderAbi.DESCRIPTOR_TRANSMISSION_GGX_ENERGY)
                 .descriptorType(VK12.VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER)
                 .descriptorCount(1)
                 .stageFlags(KHRRayTracingPipeline.VK_SHADER_STAGE_RAYGEN_BIT_KHR);
-        bindings.get(29)
+        bindings.get(28)
                 .binding(ShaderAbi.DESCRIPTOR_LABPBR_NORMAL_ATLAS)
                 .descriptorType(VK12.VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER)
                 .descriptorCount(1)
                 .stageFlags(KHRRayTracingPipeline.VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR);
-        bindings.get(30)
+        bindings.get(29)
                 .binding(ShaderAbi.DESCRIPTOR_LABPBR_SPECULAR_ATLAS)
                 .descriptorType(VK12.VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER)
                 .descriptorCount(1)
                 // Closest-hit transports material data; raygen evaluates the authored alpha
                 // when an emissive area-light triangle is sampled or directly visible.
                 .stageFlags(LABPBR_SPECULAR_STAGES);
-        bindings.get(31)
+        bindings.get(30)
                 .binding(ShaderAbi.DESCRIPTOR_NRD_SUN_LIGHTING)
                 .descriptorType(VK12.VK_DESCRIPTOR_TYPE_STORAGE_IMAGE)
                 .descriptorCount(1)
                 .stageFlags(KHRRayTracingPipeline.VK_SHADER_STAGE_RAYGEN_BIT_KHR);
-        bindings.get(32)
+        bindings.get(31)
                 .binding(ShaderAbi.DESCRIPTOR_NRD_SUN_PENUMBRA)
                 .descriptorType(VK12.VK_DESCRIPTOR_TYPE_STORAGE_IMAGE)
                 .descriptorCount(1)
                 .stageFlags(KHRRayTracingPipeline.VK_SHADER_STAGE_RAYGEN_BIT_KHR);
-        bindings.get(33)
+        bindings.get(32)
                 .binding(ShaderAbi.DESCRIPTOR_RAW_NUMERICAL_DIAGNOSTIC)
                 .descriptorType(VK12.VK_DESCRIPTOR_TYPE_STORAGE_IMAGE)
                 .descriptorCount(1)
                 .stageFlags(KHRRayTracingPipeline.VK_SHADER_STAGE_RAYGEN_BIT_KHR);
-        bindings.get(34)
+        bindings.get(33)
                 .binding(ShaderAbi.DESCRIPTOR_STARMAP)
                 .descriptorType(VK12.VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER)
                 .descriptorCount(1)
                 .stageFlags(KHRRayTracingPipeline.VK_SHADER_STAGE_RAYGEN_BIT_KHR);
-        bindings.get(35)
-                .binding(ShaderAbi.DESCRIPTOR_SCREENSHOT_ACCUMULATION)
+        bindings.get(34)
+                .binding(ShaderAbi.DESCRIPTOR_SCREENSHOT_RUNNING_MEAN)
                 .descriptorType(VK12.VK_DESCRIPTOR_TYPE_STORAGE_IMAGE)
                 .descriptorCount(1)
                 .stageFlags(KHRRayTracingPipeline.VK_SHADER_STAGE_RAYGEN_BIT_KHR);
-        bindings.get(36)
+        bindings.get(35)
                 .binding(ShaderAbi.DESCRIPTOR_WAVEFRONT_PATHS)
                 .descriptorType(VK12.VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
                 .descriptorCount(1)
                 .stageFlags(KHRRayTracingPipeline.VK_SHADER_STAGE_RAYGEN_BIT_KHR);
-        bindings.get(37)
+        bindings.get(36)
                 .binding(ShaderAbi.DESCRIPTOR_WAVEFRONT_QUEUE)
                 .descriptorType(VK12.VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
                 .descriptorCount(1)
@@ -1238,9 +1233,8 @@ public final class RayTracingPipeline implements Destroyable {
         private final long descriptorPool;
         private final long descriptorSet;
         private final long tlas;
-        private final long outputView;
-        private final long accumulationView;
-        private final long screenshotAccumulationView;
+        private final long stableRadianceView;
+        private final long screenshotRunningMeanView;
         private final long atlasView;
         private final long atlasSampler;
         private final long labPbrNormalAtlas;
@@ -1271,9 +1265,8 @@ public final class RayTracingPipeline implements Destroyable {
                 long descriptorPool,
                 long descriptorSet,
                 long tlas,
-                long outputView,
-                long accumulationView,
-                long screenshotAccumulationView,
+                long stableRadianceView,
+                long screenshotRunningMeanView,
                 long atlasView,
                 long atlasSampler,
                 long labPbrNormalAtlas,
@@ -1301,9 +1294,8 @@ public final class RayTracingPipeline implements Destroyable {
             this.descriptorPool = descriptorPool;
             this.descriptorSet = descriptorSet;
             this.tlas = tlas;
-            this.outputView = outputView;
-            this.accumulationView = accumulationView;
-            this.screenshotAccumulationView = screenshotAccumulationView;
+            this.stableRadianceView = stableRadianceView;
+            this.screenshotRunningMeanView = screenshotRunningMeanView;
             this.atlasView = atlasView;
             this.atlasSampler = atlasSampler;
             this.labPbrNormalAtlas = labPbrNormalAtlas;
@@ -1333,22 +1325,23 @@ public final class RayTracingPipeline implements Destroyable {
                 VulkanContext context,
                 long descriptorSetLayout,
                 long tlas,
-                VulkanImage output,
-                VulkanImage accumulation,
-                VulkanImage screenshotAccumulation,
+                VulkanImage stableRadiance,
+                VulkanImage screenshotRunningMean,
                 VulkanGpuTextureView atlasView,
                 VulkanGpuSampler atlasSampler,
                 VulkanImage labPbrNormalAtlas,
                 VulkanImage labPbrSpecularAtlas,
                 AtmospherePipeline atmosphere,
-                DenoiserInputs targets,
+                WavefrontSignals signals,
                 BsdfLookupTable bsdfLookup,
                 StarmapTexture starmap,
                 VulkanBuffer wavefrontPaths) {
             try (MemoryStack stack = MemoryStack.stackPush()) {
                 VkDescriptorPoolSize.Buffer sizes = VkDescriptorPoolSize.calloc(4, stack);
                 sizes.get(0).type(KHRAccelerationStructure.VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR).descriptorCount(1);
-                sizes.get(1).type(VK12.VK_DESCRIPTOR_TYPE_STORAGE_IMAGE).descriptorCount(30);
+                sizes.get(1)
+                        .type(VK12.VK_DESCRIPTOR_TYPE_STORAGE_IMAGE)
+                        .descriptorCount(STORAGE_IMAGE_DESCRIPTOR_COUNT);
                 sizes.get(2).type(VK12.VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER).descriptorCount(5);
                 sizes.get(3).type(VK12.VK_DESCRIPTOR_TYPE_STORAGE_BUFFER).descriptorCount(2);
                 VkDescriptorPoolCreateInfo poolCreateInfo = VkDescriptorPoolCreateInfo.calloc(stack)
@@ -1375,14 +1368,11 @@ public final class RayTracingPipeline implements Destroyable {
                             VkWriteDescriptorSetAccelerationStructureKHR.calloc(stack)
                                     .sType$Default()
                                     .pAccelerationStructures(stack.longs(tlas));
-                    VkDescriptorImageInfo.Buffer imageInfos = VkDescriptorImageInfo.calloc(35, stack);
+                    VkDescriptorImageInfo.Buffer imageInfos = VkDescriptorImageInfo.calloc(34, stack);
                     imageInfos.get(0)
-                            .imageView(output.view())
+                            .imageView(stableRadiance.view())
                             .imageLayout(VK12.VK_IMAGE_LAYOUT_GENERAL);
                     imageInfos.get(1)
-                            .imageView(accumulation.view())
-                            .imageLayout(VK12.VK_IMAGE_LAYOUT_GENERAL);
-                    imageInfos.get(2)
                             .sampler(atlasSampler.vkSampler())
                             .imageView(atlasView.vkImageView())
                             .imageLayout(VK12.VK_IMAGE_LAYOUT_GENERAL);
@@ -1394,69 +1384,69 @@ public final class RayTracingPipeline implements Destroyable {
                         atmosphere.aerialTransmittance()
                     };
                     for (int index = 0; index < atmosphereImages.length; index++) {
-                        imageInfos.get(index + 3)
+                        imageInfos.get(index + 2)
                                 .imageView(atmosphereImages[index].view())
                                 .imageLayout(VK12.VK_IMAGE_LAYOUT_GENERAL);
                     }
                     VulkanImage[] nrdImages = new VulkanImage[] {
-                        targets.noisyDiffuse(),
-                        targets.noisySpecular(),
-                        targets.normalRoughness(),
-                        targets.viewZ(),
-                        targets.motion(),
-                        targets.material(),
-                        targets.specularMaterial(),
-                        targets.primaryPosition(),
-                        targets.diffuseDirection(),
-                        targets.specularDirection(),
-                        targets.reflectionNoisyDiffuse(),
-                        targets.reflectionNoisySpecular(),
-                        targets.reflectionNormalRoughness(),
-                        targets.reflectionMaterial(),
-                        targets.reflectionSpecularMaterial(),
-                        targets.reflectionPosition(),
-                        targets.reflectionDiffuseDirection(),
-                        targets.reflectionSpecularDirection(),
-                        targets.displayPosition()
+                        signals.noisyDiffuse(),
+                        signals.noisySpecular(),
+                        signals.normalRoughness(),
+                        signals.viewZ(),
+                        signals.motion(),
+                        signals.material(),
+                        signals.specularMaterial(),
+                        signals.primaryPosition(),
+                        signals.diffuseDirection(),
+                        signals.specularDirection(),
+                        signals.reflectionNoisyDiffuse(),
+                        signals.reflectionNoisySpecular(),
+                        signals.reflectionNormalRoughness(),
+                        signals.reflectionMaterial(),
+                        signals.reflectionSpecularMaterial(),
+                        signals.reflectionPosition(),
+                        signals.reflectionDiffuseDirection(),
+                        signals.reflectionSpecularDirection(),
+                        signals.displayPosition()
                     };
                     for (int index = 0; index < nrdImages.length; index++) {
-                        imageInfos.get(index + 8)
+                        imageInfos.get(index + 7)
                                 .imageView(nrdImages[index].view())
                                 .imageLayout(VK12.VK_IMAGE_LAYOUT_GENERAL);
                     }
-                    imageInfos.get(27)
+                    imageInfos.get(26)
                             .sampler(bsdfLookup.sampler())
                             .imageView(bsdfLookup.transmissionGgxEnergy().view())
                             .imageLayout(VK12.VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
-                    imageInfos.get(28)
+                    imageInfos.get(27)
                             .sampler(atlasSampler.vkSampler())
                             .imageView(labPbrNormalAtlas.view())
                             .imageLayout(VK12.VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
-                    imageInfos.get(29)
+                    imageInfos.get(28)
                             .sampler(atlasSampler.vkSampler())
                             .imageView(labPbrSpecularAtlas.view())
                             .imageLayout(VK12.VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+                    imageInfos.get(29)
+                            .imageView(signals.sunLighting().view())
+                            .imageLayout(VK12.VK_IMAGE_LAYOUT_GENERAL);
                     imageInfos.get(30)
-                            .imageView(targets.sunLighting().view())
+                            .imageView(signals.sunPenumbra().view())
                             .imageLayout(VK12.VK_IMAGE_LAYOUT_GENERAL);
                     imageInfos.get(31)
-                            .imageView(targets.sunPenumbra().view())
+                            .imageView(signals.rawNumericalDiagnostic().view())
                             .imageLayout(VK12.VK_IMAGE_LAYOUT_GENERAL);
                     imageInfos.get(32)
-                            .imageView(targets.rawNumericalDiagnostic().view())
-                            .imageLayout(VK12.VK_IMAGE_LAYOUT_GENERAL);
-                    imageInfos.get(33)
                             .sampler(starmap.sampler())
                             .imageView(starmap.image().view())
                             .imageLayout(VK12.VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
-                    imageInfos.get(34)
-                            .imageView(screenshotAccumulation.view())
+                    imageInfos.get(33)
+                            .imageView(screenshotRunningMean.view())
                             .imageLayout(VK12.VK_IMAGE_LAYOUT_GENERAL);
                     VkDescriptorBufferInfo.Buffer bufferInfos =
                             VkDescriptorBufferInfo.calloc(2, stack);
                     long wavefrontQueueOffset = wavefrontQueueOffset(
-                            targets.noisyDiffuse().width(),
-                            targets.noisyDiffuse().height());
+                            signals.noisyDiffuse().width(),
+                            signals.noisyDiffuse().height());
                     bufferInfos.get(0)
                             .buffer(wavefrontPaths.handle())
                             .offset(0L)
@@ -1465,7 +1455,7 @@ public final class RayTracingPipeline implements Destroyable {
                             .buffer(wavefrontPaths.handle())
                             .offset(wavefrontQueueOffset)
                             .range(wavefrontPaths.size() - wavefrontQueueOffset);
-                    VkWriteDescriptorSet.Buffer writes = VkWriteDescriptorSet.calloc(38, stack);
+                    VkWriteDescriptorSet.Buffer writes = VkWriteDescriptorSet.calloc(37, stack);
                     writes.get(0)
                             .sType$Default()
                             .pNext(acceleration.address())
@@ -1476,24 +1466,17 @@ public final class RayTracingPipeline implements Destroyable {
                     writes.get(1)
                             .sType$Default()
                             .dstSet(descriptorSet)
-                            .dstBinding(ShaderAbi.DESCRIPTOR_OUTPUT_IMAGE)
+                            .dstBinding(ShaderAbi.DESCRIPTOR_STABLE_RADIANCE)
                             .descriptorCount(1)
                             .descriptorType(VK12.VK_DESCRIPTOR_TYPE_STORAGE_IMAGE)
                             .pImageInfo(VkDescriptorImageInfo.create(imageInfos.get(0).address(), 1));
                     writes.get(2)
                             .sType$Default()
                             .dstSet(descriptorSet)
-                            .dstBinding(ShaderAbi.DESCRIPTOR_ACCUMULATION_IMAGE)
-                            .descriptorCount(1)
-                            .descriptorType(VK12.VK_DESCRIPTOR_TYPE_STORAGE_IMAGE)
-                            .pImageInfo(VkDescriptorImageInfo.create(imageInfos.get(1).address(), 1));
-                    writes.get(3)
-                            .sType$Default()
-                            .dstSet(descriptorSet)
                             .dstBinding(ShaderAbi.DESCRIPTOR_BLOCK_ATLAS)
                             .descriptorCount(1)
                             .descriptorType(VK12.VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER)
-                            .pImageInfo(VkDescriptorImageInfo.create(imageInfos.get(2).address(), 1));
+                            .pImageInfo(VkDescriptorImageInfo.create(imageInfos.get(1).address(), 1));
                     int[] atmosphereBindings = new int[] {
                         ShaderAbi.DESCRIPTOR_SKY_VIEW,
                         ShaderAbi.DESCRIPTOR_TRANSMITTANCE_LOW,
@@ -1502,14 +1485,14 @@ public final class RayTracingPipeline implements Destroyable {
                         ShaderAbi.DESCRIPTOR_AERIAL_TRANSMITTANCE
                     };
                     for (int index = 0; index < atmosphereBindings.length; index++) {
-                        writes.get(index + 4)
+                        writes.get(index + 3)
                                 .sType$Default()
                                 .dstSet(descriptorSet)
                                 .dstBinding(atmosphereBindings[index])
                                 .descriptorCount(1)
                                 .descriptorType(VK12.VK_DESCRIPTOR_TYPE_STORAGE_IMAGE)
                                 .pImageInfo(VkDescriptorImageInfo.create(
-                                        imageInfos.get(index + 3).address(), 1));
+                                        imageInfos.get(index + 2).address(), 1));
                     }
                     int[] nrdBindings = new int[] {
                         ShaderAbi.DESCRIPTOR_NRD_NOISY_DIFFUSE,
@@ -1533,73 +1516,73 @@ public final class RayTracingPipeline implements Destroyable {
                         ShaderAbi.DESCRIPTOR_NRD_DISPLAY_POSITION
                     };
                     for (int index = 0; index < nrdBindings.length; index++) {
-                        writes.get(index + 9)
+                        writes.get(index + 8)
                                 .sType$Default()
                                 .dstSet(descriptorSet)
                                 .dstBinding(nrdBindings[index])
                                 .descriptorCount(1)
                                 .descriptorType(VK12.VK_DESCRIPTOR_TYPE_STORAGE_IMAGE)
                                 .pImageInfo(VkDescriptorImageInfo.create(
-                                        imageInfos.get(index + 8).address(), 1));
+                                        imageInfos.get(index + 7).address(), 1));
                     }
-                    writes.get(28)
+                    writes.get(27)
                             .sType$Default()
                             .dstSet(descriptorSet)
                             .dstBinding(ShaderAbi.DESCRIPTOR_TRANSMISSION_GGX_ENERGY)
+                            .descriptorCount(1)
+                            .descriptorType(VK12.VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER)
+                            .pImageInfo(VkDescriptorImageInfo.create(imageInfos.get(26).address(), 1));
+                    writes.get(28)
+                            .sType$Default()
+                            .dstSet(descriptorSet)
+                            .dstBinding(ShaderAbi.DESCRIPTOR_LABPBR_NORMAL_ATLAS)
                             .descriptorCount(1)
                             .descriptorType(VK12.VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER)
                             .pImageInfo(VkDescriptorImageInfo.create(imageInfos.get(27).address(), 1));
                     writes.get(29)
                             .sType$Default()
                             .dstSet(descriptorSet)
-                            .dstBinding(ShaderAbi.DESCRIPTOR_LABPBR_NORMAL_ATLAS)
+                            .dstBinding(ShaderAbi.DESCRIPTOR_LABPBR_SPECULAR_ATLAS)
                             .descriptorCount(1)
                             .descriptorType(VK12.VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER)
                             .pImageInfo(VkDescriptorImageInfo.create(imageInfos.get(28).address(), 1));
                     writes.get(30)
                             .sType$Default()
                             .dstSet(descriptorSet)
-                            .dstBinding(ShaderAbi.DESCRIPTOR_LABPBR_SPECULAR_ATLAS)
+                            .dstBinding(ShaderAbi.DESCRIPTOR_NRD_SUN_LIGHTING)
                             .descriptorCount(1)
-                            .descriptorType(VK12.VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER)
+                            .descriptorType(VK12.VK_DESCRIPTOR_TYPE_STORAGE_IMAGE)
                             .pImageInfo(VkDescriptorImageInfo.create(imageInfos.get(29).address(), 1));
                     writes.get(31)
                             .sType$Default()
                             .dstSet(descriptorSet)
-                            .dstBinding(ShaderAbi.DESCRIPTOR_NRD_SUN_LIGHTING)
+                            .dstBinding(ShaderAbi.DESCRIPTOR_NRD_SUN_PENUMBRA)
                             .descriptorCount(1)
                             .descriptorType(VK12.VK_DESCRIPTOR_TYPE_STORAGE_IMAGE)
                             .pImageInfo(VkDescriptorImageInfo.create(imageInfos.get(30).address(), 1));
                     writes.get(32)
                             .sType$Default()
                             .dstSet(descriptorSet)
-                            .dstBinding(ShaderAbi.DESCRIPTOR_NRD_SUN_PENUMBRA)
+                            .dstBinding(ShaderAbi.DESCRIPTOR_RAW_NUMERICAL_DIAGNOSTIC)
                             .descriptorCount(1)
                             .descriptorType(VK12.VK_DESCRIPTOR_TYPE_STORAGE_IMAGE)
                             .pImageInfo(VkDescriptorImageInfo.create(imageInfos.get(31).address(), 1));
                     writes.get(33)
                             .sType$Default()
                             .dstSet(descriptorSet)
-                            .dstBinding(ShaderAbi.DESCRIPTOR_RAW_NUMERICAL_DIAGNOSTIC)
+                            .dstBinding(ShaderAbi.DESCRIPTOR_STARMAP)
                             .descriptorCount(1)
-                            .descriptorType(VK12.VK_DESCRIPTOR_TYPE_STORAGE_IMAGE)
+                            .descriptorType(VK12.VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER)
                             .pImageInfo(VkDescriptorImageInfo.create(imageInfos.get(32).address(), 1));
                     writes.get(34)
                             .sType$Default()
                             .dstSet(descriptorSet)
-                            .dstBinding(ShaderAbi.DESCRIPTOR_STARMAP)
-                            .descriptorCount(1)
-                            .descriptorType(VK12.VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER)
-                            .pImageInfo(VkDescriptorImageInfo.create(imageInfos.get(33).address(), 1));
-                    writes.get(35)
-                            .sType$Default()
-                            .dstSet(descriptorSet)
-                            .dstBinding(ShaderAbi.DESCRIPTOR_SCREENSHOT_ACCUMULATION)
+                            .dstBinding(ShaderAbi.DESCRIPTOR_SCREENSHOT_RUNNING_MEAN)
                             .descriptorCount(1)
                             .descriptorType(VK12.VK_DESCRIPTOR_TYPE_STORAGE_IMAGE)
                             .pImageInfo(VkDescriptorImageInfo.create(
-                                    imageInfos.get(34).address(), 1));
-                    writes.get(36)
+                                    imageInfos.get(33).address(), 1));
+                    writes.get(35)
                             .sType$Default()
                             .dstSet(descriptorSet)
                             .dstBinding(ShaderAbi.DESCRIPTOR_WAVEFRONT_PATHS)
@@ -1607,7 +1590,7 @@ public final class RayTracingPipeline implements Destroyable {
                             .descriptorType(VK12.VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
                             .pBufferInfo(VkDescriptorBufferInfo.create(
                                     bufferInfos.get(0).address(), 1));
-                    writes.get(37)
+                    writes.get(36)
                             .sType$Default()
                             .dstSet(descriptorSet)
                             .dstBinding(ShaderAbi.DESCRIPTOR_WAVEFRONT_QUEUE)
@@ -1621,9 +1604,8 @@ public final class RayTracingPipeline implements Destroyable {
                             pool,
                             descriptorSet,
                             tlas,
-                            output.view(),
-                            accumulation.view(),
-                            screenshotAccumulation.view(),
+                            stableRadiance.view(),
+                            screenshotRunningMean.view(),
                             atlasView.vkImageView(),
                             atlasSampler.vkSampler(),
                             labPbrNormalAtlas.view(),
@@ -1633,19 +1615,19 @@ public final class RayTracingPipeline implements Destroyable {
                             atmosphere.transmittanceHigh().view(),
                             atmosphere.aerialRadiance().view(),
                             atmosphere.aerialTransmittance().view(),
-                            targets.noisyDiffuse().view(),
-                            targets.noisySpecular().view(),
-                            targets.normalRoughness().view(),
-                            targets.viewZ().view(),
-                            targets.motion().view(),
-                            targets.material().view(),
-                            targets.specularMaterial().view(),
-                            targets.primaryPosition().view(),
-                            targets.diffuseDirection().view(),
-                            targets.specularDirection().view(),
-                            targets.sunLighting().view(),
-                            targets.sunPenumbra().view(),
-                            targets.rawNumericalDiagnostic().view(),
+                            signals.noisyDiffuse().view(),
+                            signals.noisySpecular().view(),
+                            signals.normalRoughness().view(),
+                            signals.viewZ().view(),
+                            signals.motion().view(),
+                            signals.material().view(),
+                            signals.specularMaterial().view(),
+                            signals.primaryPosition().view(),
+                            signals.diffuseDirection().view(),
+                            signals.specularDirection().view(),
+                            signals.sunLighting().view(),
+                            signals.sunPenumbra().view(),
+                            signals.rawNumericalDiagnostic().view(),
                             wavefrontPaths.handle());
                 } catch (RuntimeException exception) {
                     VK12.vkDestroyDescriptorPool(context.vkDevice(), pool, null);
@@ -1656,9 +1638,8 @@ public final class RayTracingPipeline implements Destroyable {
 
         private boolean matches(
                 long tlas,
-                long outputView,
-                long accumulationView,
-                long screenshotAccumulationView,
+                long stableRadianceView,
+                long screenshotRunningMeanView,
                 long atlasView,
                 long atlasSampler,
                 long labPbrNormalAtlas,
@@ -1683,9 +1664,8 @@ public final class RayTracingPipeline implements Destroyable {
                 long rawNumericalDiagnostic,
                 long wavefrontPaths) {
             return this.tlas == tlas
-                    && this.outputView == outputView
-                    && this.accumulationView == accumulationView
-                    && this.screenshotAccumulationView == screenshotAccumulationView
+                    && this.stableRadianceView == stableRadianceView
+                    && this.screenshotRunningMeanView == screenshotRunningMeanView
                     && this.atlasView == atlasView
                     && this.atlasSampler == atlasSampler
                     && this.labPbrNormalAtlas == labPbrNormalAtlas

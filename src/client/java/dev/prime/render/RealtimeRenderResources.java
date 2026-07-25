@@ -22,7 +22,7 @@ import dev.prime.render.vulkan.dlss.DlssRrPostProcessor;
  */
 final class RealtimeRenderResources implements Destroyable {
     final VulkanImage output;
-    final VulkanImage accumulation;
+    final VulkanImage stableRadiance;
     final PostProcessingMode mode;
     final ReconstructionQualityMode qualityMode;
     final RealtimePostProcessor processor;
@@ -30,12 +30,12 @@ final class RealtimeRenderResources implements Destroyable {
 
     private RealtimeRenderResources(
             VulkanImage output,
-            VulkanImage accumulation,
+            VulkanImage stableRadiance,
             RealtimePostProcessor processor,
             PostProcessingMode mode,
             ReconstructionQualityMode qualityMode) {
         this.output = output;
-        this.accumulation = accumulation;
+        this.stableRadiance = stableRadiance;
         this.processor = processor;
         this.mode = mode;
         this.qualityMode = qualityMode;
@@ -52,16 +52,16 @@ final class RealtimeRenderResources implements Destroyable {
             ReconstructionQualityMode qualityMode,
             DlssRrNative.Context ngxContext) {
         VulkanImage output = null;
-        VulkanImage accumulation = null;
+        VulkanImage stableRadiance = null;
         RealtimePostProcessor processor = null;
         try {
             output = context.createOutputImage(displayWidth, displayHeight);
-            accumulation = context.createAccumulationImage(renderWidth, renderHeight);
+            stableRadiance = context.createAccumulationImage(renderWidth, renderHeight);
             processor = switch (mode) {
                 case NRD_FSR -> NrdFsrPostProcessor.create(
                         context,
                         atmosphere,
-                        accumulation,
+                        stableRadiance,
                         output,
                         renderWidth,
                         renderHeight,
@@ -77,7 +77,7 @@ final class RealtimeRenderResources implements Destroyable {
                             context,
                             ngxContext,
                             atmosphere,
-                            accumulation,
+                            stableRadiance,
                             output,
                             renderWidth,
                             renderHeight,
@@ -88,7 +88,7 @@ final class RealtimeRenderResources implements Destroyable {
                 case DISABLED -> NoisyPostProcessor.create(
                         context,
                         atmosphere,
-                        accumulation,
+                        stableRadiance,
                         output,
                         renderWidth,
                         renderHeight,
@@ -96,13 +96,13 @@ final class RealtimeRenderResources implements Destroyable {
             };
             return new RealtimeRenderResources(
                     output,
-                    accumulation,
+                    stableRadiance,
                     processor,
                     mode,
                     qualityMode);
         } catch (RuntimeException exception) {
             ResourceCleanup.destroy(processor, exception);
-            ResourceCleanup.destroy(accumulation, exception);
+            ResourceCleanup.destroy(stableRadiance, exception);
             ResourceCleanup.destroy(output, exception);
             throw exception;
         }
@@ -117,8 +117,8 @@ final class RealtimeRenderResources implements Destroyable {
             ReconstructionQualityMode requestedQualityMode) {
         return this.output.width() == displayWidth
                 && this.output.height() == displayHeight
-                && this.accumulation.width() == renderWidth
-                && this.accumulation.height() == renderHeight
+                && this.stableRadiance.width() == renderWidth
+                && this.stableRadiance.height() == renderHeight
                 && this.processor.renderWidth() == renderWidth
                 && this.processor.renderHeight() == renderHeight
                 && this.mode == requestedMode
@@ -136,7 +136,7 @@ final class RealtimeRenderResources implements Destroyable {
         }
         RuntimeException failure = null;
         failure = ResourceCleanup.destroy(this.processor, failure);
-        failure = ResourceCleanup.destroy(this.accumulation, failure);
+        failure = ResourceCleanup.destroy(this.stableRadiance, failure);
         failure = ResourceCleanup.destroy(this.output, failure);
         this.destroyed = true;
         ResourceCleanup.throwIfFailed(failure);

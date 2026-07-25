@@ -39,7 +39,7 @@
 
 创建队列前会分别校验路径区、索引队列区、`maxStorageBufferRange` 和 `maxRayDispatchInvocationCount`。活动队列需要 `rayTracingPipelineTraceRaysIndirect`；设备协商阶段会明确验证并启用该特性。
 
-截图会话必须在原生分辨率保存同一套 wavefront 暂存状态，不能借用可能较低分辨率的实时 NRD/RR 输入。该资源集只在截图会话存在，退出后整体延迟释放；截图运行均值使用独立 RGBA32F 描述符，避免被逐阶段的稳定辐射 scratch 覆盖。实时稳态显存不受此项影响。
+截图会话必须在原生分辨率保存同一套 wavefront 暂存状态，不能借用可能较低分辨率的实时 NRD/RR 输入。`ScreenshotRenderResources` 独占原生分辨率的 `BasicWavefrontSignals`、稳定辐射 scratch、RGBA32F 运行均值和显示输出，退出后整体延迟释放；实时与截图只通过 `WavefrontSignals` 契约复用布局语义，不共享图像所有权。截图 scratch 只声明 storage usage，实时稳态显存不受此项影响。
 
 ## 已验证契约
 
@@ -49,6 +49,7 @@
 - SER coherence hint 使用六位 section 局部性和两位路径类别，区分普通、透明反射和透明透射。
 - 主追踪 payload 从 80 字节降到 64 字节；命中位置由 raygen 根据 `origin + direction × t` 重建，完整 `SurfaceInteraction` 的公开 ABI 不变。
 - 实时和截图共用同一组 15 次 dispatch 与一套队列状态；截图不再创建或编译独立 raygen。
+- 光追 descriptor 不再包含已经无人读写的最终显示输出；显示图像变化不会使主积分 descriptor 缓存失效。
 - 新增的 queued PSR 属性测试用显式 delta 链对照四元数压缩表达，覆盖 1–8 个 delta 事件及其全部随机反射组合。
 - Java 单元测试、完整 GPU shader 属性测试、glslang 编译、SPIR-V 优化与验证均通过。
 

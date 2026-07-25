@@ -59,7 +59,7 @@ public final class VulkanRenderer implements AutoCloseable {
     private RayTracingPipeline pipeline;
     private AtmospherePipeline atmosphere;
     private RealtimeRenderResources realtimeResources;
-    private ReferenceAccumulator screenshotResources;
+    private ScreenshotRenderResources screenshotResources;
     private BlockAtlasFrame blockAtlasFrame;
     private FrameCamera camera;
     private SunDirection sunDirection;
@@ -327,7 +327,7 @@ public final class VulkanRenderer implements AutoCloseable {
             return;
         }
         VulkanImage target = images.output;
-        VulkanImage history = images.accumulation;
+        VulkanImage history = images.stableRadiance;
         RealtimePostProcessor processor = images.processor;
         LightingSettings.Snapshot lighting = settings.lighting();
         MaterialSettings.Snapshot material = settings.material();
@@ -424,7 +424,7 @@ public final class VulkanRenderer implements AutoCloseable {
                     images.mode,
                     lighting,
                     material,
-                    processor.targets().usesShInputs(),
+                    processor.signals().usesShInputs(),
                     images.mode == PostProcessingMode.NRD_FSR
                             && postParameters.nrdDebugView().rawNumerical(),
                     this.frameControls.triangleDebug());
@@ -530,32 +530,31 @@ public final class VulkanRenderer implements AutoCloseable {
         }
 
         this.ensureScreenshotResources(width, height);
-        ReferenceAccumulator images = this.screenshotResources;
+        ScreenshotRenderResources images = this.screenshotResources;
         if (images == null) {
             return;
         }
         this.pipeline.ensureDescriptors(
                 scene.tlas(),
-                images.output,
-                images.wavefrontAccumulation,
-                images.accumulation,
+                images.stableRadiance,
+                images.runningMean,
                 atlasView,
                 atlasSampler,
                 this.labPbrAtlas.normalAtlas(),
                 this.labPbrAtlas.specularAtlas(),
                 this.atmosphere,
-                images.wavefrontTargets);
+                images.signals);
 
         var encoder = this.context.commandEncoder();
         VkCommandBuffer commandBuffer = encoder.allocateAndBeginTransientCommandBuffer();
         this.context.device().instance().debug().beginDebugGroup(
                 commandBuffer, () -> "Prime unbiased screenshot accumulation");
         this.atmosphere.prepare(commandBuffer, frameCamera, frameSunDirection);
-        this.prepareOutputForComposite(commandBuffer, images.output);
+        this.prepareOutputForComposite(commandBuffer, images.displayOutput);
         this.prepareAccumulationForTrace(
-                commandBuffer, images.wavefrontAccumulation);
-        this.prepareAccumulationForTrace(commandBuffer, images.accumulation);
-        images.wavefrontTargets.prepareForRayTrace(commandBuffer);
+                commandBuffer, images.stableRadiance);
+        this.prepareAccumulationForTrace(commandBuffer, images.runningMean);
+        images.signals.prepareForRayTrace(commandBuffer);
         this.prepareAtlasForTrace(commandBuffer, atlasView.texture());
         LabPbrTextureAtlas.FrameToken labPbrFrame = this.labPbrAtlas.prepare(commandBuffer);
         try (MemoryStack stack = MemoryStack.stackPush()) {
@@ -584,14 +583,14 @@ public final class VulkanRenderer implements AutoCloseable {
                     false,
                     false);
             this.pipeline.traceScreenshot(commandBuffer, pushConstants, width, height);
-            this.prepareScreenshotDisplay(commandBuffer, images.accumulation);
+            this.prepareScreenshotDisplay(commandBuffer, images.runningMean);
             images.display.record(
                     commandBuffer,
                     width,
                     height,
                     PrimeConfig.settings().oklabOverexposure());
             this.finishAtlasRead(commandBuffer, atlasView.texture());
-            this.prepareImagesForCopy(commandBuffer, images.output, mainColor);
+            this.prepareImagesForCopy(commandBuffer, images.displayOutput, mainColor);
             VkImageCopy.Buffer copy = VkImageCopy.calloc(1, stack);
             copy.get(0).srcSubresource()
                     .aspectMask(VK12.VK_IMAGE_ASPECT_COLOR_BIT)
@@ -606,12 +605,12 @@ public final class VulkanRenderer implements AutoCloseable {
             copy.get(0).extent().set(width, height, 1);
             VK12.vkCmdCopyImage(
                     commandBuffer,
-                    images.output.image(),
+                    images.displayOutput.image(),
                     VK12.VK_IMAGE_LAYOUT_GENERAL,
                     mainColor.vkImage(),
                     VK12.VK_IMAGE_LAYOUT_GENERAL,
                     copy);
-            this.finishImageCopy(commandBuffer, images.output, mainColor);
+            this.finishImageCopy(commandBuffer, images.displayOutput, mainColor);
         }
         this.context.device().instance().debug().endDebugGroup(commandBuffer);
         VulkanContext.check(
@@ -807,8 +806,8 @@ public final class VulkanRenderer implements AutoCloseable {
                         replacementAtmosphere,
                         current.output.width(),
                         current.output.height(),
-                        current.accumulation.width(),
-                        current.accumulation.height(),
+                        current.stableRadiance.width(),
+                        current.stableRadiance.height(),
                         current.mode,
                         current.qualityMode,
                         this.ngxContext);
@@ -874,15 +873,14 @@ public final class VulkanRenderer implements AutoCloseable {
                 displayWidth, displayHeight, renderWidth, renderHeight, mode, qualityMode)) {
             this.pipeline.ensureDescriptors(
                     tlas,
-                    current.output,
-                    current.accumulation,
-                    current.accumulation,
+                    current.stableRadiance,
+                    current.stableRadiance,
                     atlasView,
                     atlasSampler,
                     this.labPbrAtlas.normalAtlas(),
                     this.labPbrAtlas.specularAtlas(),
                     this.atmosphere,
-                    current.processor.targets());
+                    current.processor.signals());
             return false;
         }
         RealtimeRenderResources replacement = RealtimeRenderResources.create(
@@ -898,15 +896,14 @@ public final class VulkanRenderer implements AutoCloseable {
         try {
             this.pipeline.ensureDescriptors(
                     tlas,
-                    replacement.output,
-                    replacement.accumulation,
-                    replacement.accumulation,
+                    replacement.stableRadiance,
+                    replacement.stableRadiance,
                     atlasView,
                     atlasSampler,
                     this.labPbrAtlas.normalAtlas(),
                     this.labPbrAtlas.specularAtlas(),
                     this.atmosphere,
-                    replacement.processor.targets());
+                    replacement.processor.signals());
         } catch (RuntimeException exception) {
             ResourceCleanup.destroy(replacement, exception);
             throw exception;
@@ -927,8 +924,8 @@ public final class VulkanRenderer implements AutoCloseable {
                 qualityMode.id(),
                 hex(replacement.output.image()),
                 hex(replacement.output.view()),
-                hex(replacement.accumulation.image()),
-                hex(replacement.accumulation.view()),
+                hex(replacement.stableRadiance.image()),
+                hex(replacement.stableRadiance.view()),
                 hex(atlasView.texture().vkImage()),
                 hex(atlasView.vkImageView()),
                 hex(atlasSampler.vkSampler()));
@@ -936,12 +933,12 @@ public final class VulkanRenderer implements AutoCloseable {
     }
 
     private void ensureScreenshotResources(int width, int height) {
-        ReferenceAccumulator current = this.screenshotResources;
+        ScreenshotRenderResources current = this.screenshotResources;
         if (current != null && current.matches(width, height)) {
             return;
         }
-        ReferenceAccumulator replacement =
-                ReferenceAccumulator.create(this.context, width, height);
+        ScreenshotRenderResources replacement =
+                ScreenshotRenderResources.create(this.context, width, height);
         this.screenshotResources = replacement;
         this.screenshotSampleCount = 0L;
         if (current != null) {

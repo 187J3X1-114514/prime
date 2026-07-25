@@ -21,7 +21,7 @@ layout(location = 1) rayPayloadEXT uint primeShadowHitDistanceBits;
 #include "lights.glsl"
 #include "integrator.glsl"
 #include "camera.glsl"
-#include "world_output.glsl"
+#include "wavefront_output.glsl"
 #include "wavefront_state.glsl"
 
 const uint PRIME_WAVEFRONT_STAGE_HEAD = 0u;

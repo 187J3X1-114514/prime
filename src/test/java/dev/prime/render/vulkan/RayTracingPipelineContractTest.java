@@ -34,6 +34,8 @@ final class RayTracingPipelineContractTest {
 
     @Test
     void rayTracingShaderGroupsHaveTheExpectedShape() {
+        assertEquals(37, RayTracingPipeline.DESCRIPTOR_BINDING_COUNT);
+        assertEquals(29, RayTracingPipeline.STORAGE_IMAGE_DESCRIPTOR_COUNT);
         assertEquals(2, RayTracingPipeline.MISS_GROUP_COUNT);
         assertEquals(6, RayTracingPipeline.HIT_GROUP_COUNT);
         assertEquals(9, RayTracingPipeline.RAYGEN_GROUP_COUNT);

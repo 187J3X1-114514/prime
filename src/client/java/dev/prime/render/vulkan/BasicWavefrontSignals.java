@@ -9,10 +9,9 @@ import org.lwjgl.vulkan.VK12;
 import org.lwjgl.vulkan.VkDependencyInfo;
 import org.lwjgl.vulkan.VkImageMemoryBarrier2;
 
-/** Minimal native-resolution image set for wavefront transport and unfiltered presentation. */
-public final class NoisyTargets implements DenoiserInputs, Destroyable {
-    private static final int USAGE =
-            VK12.VK_IMAGE_USAGE_STORAGE_BIT | VK12.VK_IMAGE_USAGE_SAMPLED_BIT;
+/** Minimal image-backed wavefront signal set for screenshot scratch and unfiltered presentation. */
+public final class BasicWavefrontSignals implements WavefrontSignals, Destroyable {
+    private static final int USAGE = VK12.VK_IMAGE_USAGE_STORAGE_BIT;
 
     private final VulkanImage noisyDiffuse;
     private final VulkanImage noisySpecular;
@@ -26,9 +25,10 @@ public final class NoisyTargets implements DenoiserInputs, Destroyable {
     private final VulkanImage sunPenumbra;
     private final VulkanImage linearOutput;
     private final VulkanImage[] owned;
+    private final boolean hasLinearOutput;
     private boolean destroyed;
 
-    private NoisyTargets(ArrayList<VulkanImage> images, boolean hasLinearOutput) {
+    private BasicWavefrontSignals(ArrayList<VulkanImage> images, boolean hasLinearOutput) {
         this.noisyDiffuse = images.get(0);
         this.noisySpecular = images.get(1);
         this.normalRoughness = images.get(2);
@@ -41,18 +41,22 @@ public final class NoisyTargets implements DenoiserInputs, Destroyable {
         this.sunPenumbra = images.get(9);
         this.linearOutput = hasLinearOutput ? images.get(10) : null;
         this.owned = images.toArray(VulkanImage[]::new);
+        this.hasLinearOutput = hasLinearOutput;
     }
 
-    static NoisyTargets create(VulkanContext context, int width, int height) {
-        return create(context, width, height, "Prime noisy", true);
-    }
-
-    public static NoisyTargets createScratch(
+    static BasicWavefrontSignals createRealtime(
             VulkanContext context, int width, int height) {
-        return create(context, width, height, "Prime screenshot", false);
+        return create(
+                context, width, height, "Prime unfiltered", true);
     }
 
-    private static NoisyTargets create(
+    public static BasicWavefrontSignals createScreenshotScratch(
+            VulkanContext context, int width, int height) {
+        return create(
+                context, width, height, "Prime screenshot scratch", false);
+    }
+
+    private static BasicWavefrontSignals create(
             VulkanContext context,
             int width,
             int height,
@@ -84,7 +88,7 @@ public final class NoisyTargets implements DenoiserInputs, Destroyable {
                 add(context, images, width, height, VK12.VK_FORMAT_R16G16B16A16_SFLOAT,
                         label + " linear HDR output");
             }
-            return new NoisyTargets(images, hasLinearOutput);
+            return new BasicWavefrontSignals(images, hasLinearOutput);
         } catch (RuntimeException exception) {
             for (int index = images.size() - 1; index >= 0; index--) {
                 images.get(index).destroy();
@@ -110,6 +114,10 @@ public final class NoisyTargets implements DenoiserInputs, Destroyable {
             for (int index = 0; index < this.owned.length; index++) {
                 VulkanImage image = this.owned[index];
                 boolean initialized = image.initialized();
+                boolean linearOutput = this.hasLinearOutput
+                        && index == this.owned.length - 1;
+                long destinationStages = destinationStages(
+                        this.hasLinearOutput, linearOutput);
                 barriers.get(index).sType$Default()
                         .srcStageMask(initialized
                                 ? VK12.VK_PIPELINE_STAGE_ALL_COMMANDS_BIT
@@ -117,9 +125,7 @@ public final class NoisyTargets implements DenoiserInputs, Destroyable {
                         .srcAccessMask(initialized
                                 ? VK12.VK_ACCESS_MEMORY_READ_BIT | VK12.VK_ACCESS_MEMORY_WRITE_BIT
                                 : 0L)
-                        .dstStageMask(
-                                KHRRayTracingPipeline.VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR
-                                        | VK12.VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT)
+                        .dstStageMask(destinationStages)
                         .dstAccessMask(VK12.VK_ACCESS_SHADER_READ_BIT | VK12.VK_ACCESS_SHADER_WRITE_BIT)
                         .oldLayout(initialized
                                 ? VK12.VK_IMAGE_LAYOUT_GENERAL
@@ -151,6 +157,22 @@ public final class NoisyTargets implements DenoiserInputs, Destroyable {
     @Override public VulkanImage sunLighting() { return this.sunLighting; }
     @Override public VulkanImage sunPenumbra() { return this.sunPenumbra; }
     VulkanImage linearOutput() { return this.linearOutput; }
+
+    static int imageUsage() {
+        return USAGE;
+    }
+
+    static long destinationStages(boolean hasLinearOutput, boolean linearOutput) {
+        if (linearOutput) {
+            if (!hasLinearOutput) {
+                throw new IllegalArgumentException(
+                        "Screenshot scratch has no linear output image");
+            }
+            return VK12.VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT;
+        }
+        return KHRRayTracingPipeline.VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR
+                | (hasLinearOutput ? VK12.VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT : 0L);
+    }
 
     @Override
     public void destroy() {

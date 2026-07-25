@@ -163,9 +163,8 @@
   },
   "descriptors": {
     "tlas": 0,
-    "outputImage": 1,
     "blockAtlas": 2,
-    "accumulationImage": 3,
+    "stableRadiance": 3,
     "skyView": 4,
     "transmittanceLow": 5,
     "transmittanceHigh": 6,
@@ -197,7 +196,7 @@
     "nrdReflectionSpecularDirection": 32,
     "nrdDisplayPosition": 33,
     "starmap": 34,
-    "screenshotAccumulation": 35,
+    "screenshotRunningMean": 35,
     "wavefrontPaths": 36,
     "wavefrontQueue": 37
   },

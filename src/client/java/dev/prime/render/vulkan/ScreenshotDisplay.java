@@ -23,7 +23,7 @@ import org.lwjgl.vulkan.VkPushConstantRange;
 import org.lwjgl.vulkan.VkShaderModuleCreateInfo;
 import org.lwjgl.vulkan.VkWriteDescriptorSet;
 
-/** One-to-one linear Rec.2020 accumulation to sRGB display conversion for screenshot mode. */
+/** One-to-one linear Rec.2020 running-mean to sRGB display conversion for screenshot mode. */
 public final class ScreenshotDisplay implements Destroyable {
     private static final int PUSH_SIZE = 16;
     private static final int COMPUTE_STAGE = VK12.VK_SHADER_STAGE_COMPUTE_BIT;
@@ -58,7 +58,7 @@ public final class ScreenshotDisplay implements Destroyable {
     }
 
     public static ScreenshotDisplay create(
-            VulkanContext context, VulkanImage accumulation, VulkanImage output) {
+            VulkanContext context, VulkanImage runningMean, VulkanImage output) {
         long descriptorSetLayout = 0L;
         long descriptorPool = 0L;
         long pipelineLayout = 0L;
@@ -147,7 +147,7 @@ public final class ScreenshotDisplay implements Destroyable {
 
             VkDescriptorImageInfo.Buffer imageInfos = VkDescriptorImageInfo.calloc(2, stack);
             imageInfos.get(0)
-                    .imageView(accumulation.view())
+                    .imageView(runningMean.view())
                     .imageLayout(VK12.VK_IMAGE_LAYOUT_GENERAL);
             imageInfos.get(1)
                     .imageView(output.view())

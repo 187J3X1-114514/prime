@@ -115,7 +115,7 @@ public final class NrdFsrPostProcessor implements RealtimePostProcessor {
     @Override public int renderHeight() { return this.renderHeight; }
     @Override public int displayWidth() { return this.displayWidth; }
     @Override public int displayHeight() { return this.displayHeight; }
-    @Override public DenoiserInputs targets() { return this.denoiser; }
+    @Override public WavefrontSignals signals() { return this.denoiser; }
     @Override public VulkanImage linearHdrOutput() { return this.upscaler.linearOutput(); }
 
     @Override

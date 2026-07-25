@@ -1,7 +1,13 @@
 package dev.prime.render.vulkan;
 
-/** Physical path signals and primary-surface guides used as wavefront intermediate storage. */
-public interface DenoiserInputs {
+/**
+ * Physical path signals and reconstruction guides shared by every wavefront output adapter.
+ *
+ * <p>The transport scheduler owns when these images are produced. NRD, DLSS RR, the unfiltered
+ * realtime path and screenshot accumulation only choose how the resolved signals are consumed or
+ * aliased; none of them changes the physical estimator.
+ */
+public interface WavefrontSignals {
     VulkanImage noisyDiffuse();
 
     VulkanImage noisySpecular();

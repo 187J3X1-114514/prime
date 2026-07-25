@@ -338,10 +338,9 @@ public final class ShaderAbi {
     public static final int PUSH_CONSTANT_SIZE = ${push.size};
     public static final int NRD_MOTION_PUSH_CONSTANT_SIZE = ${nrdMotionPush.size};
     public static final int DESCRIPTOR_TLAS = ${schema.descriptors.tlas};
-    public static final int DESCRIPTOR_OUTPUT_IMAGE = ${schema.descriptors.outputImage};
     public static final int DESCRIPTOR_BLOCK_ATLAS = ${schema.descriptors.blockAtlas};
-    public static final int DESCRIPTOR_ACCUMULATION_IMAGE = ${schema.descriptors.accumulationImage};
-    public static final int DESCRIPTOR_SCREENSHOT_ACCUMULATION = ${schema.descriptors.screenshotAccumulation};
+    public static final int DESCRIPTOR_STABLE_RADIANCE = ${schema.descriptors.stableRadiance};
+    public static final int DESCRIPTOR_SCREENSHOT_RUNNING_MEAN = ${schema.descriptors.screenshotRunningMean};
     public static final int DESCRIPTOR_SKY_VIEW = ${schema.descriptors.skyView};
     public static final int DESCRIPTOR_TRANSMITTANCE_LOW = ${schema.descriptors.transmittanceLow};
     public static final int DESCRIPTOR_TRANSMITTANCE_HIGH = ${schema.descriptors.transmittanceHigh};
@@ -594,12 +593,11 @@ ${glslPushFields}
 } primePush;
 
 layout(set = 0, binding = ${schema.descriptors.tlas}) uniform accelerationStructureEXT primeScene;
-layout(set = 0, binding = ${schema.descriptors.outputImage}, rgba8) uniform image2D primeOutput;
 layout(set = 0, binding = ${schema.descriptors.blockAtlas}) uniform sampler2D primeBlockAtlas;
 layout(set = 0, binding = ${schema.descriptors.labPbrNormalAtlas}) uniform sampler2D primeLabPbrNormalAtlas;
 layout(set = 0, binding = ${schema.descriptors.labPbrSpecularAtlas}) uniform sampler2D primeLabPbrSpecularAtlas;
-layout(set = 0, binding = ${schema.descriptors.accumulationImage}, rgba32f) uniform image2D primeAccumulation;
-layout(set = 0, binding = ${schema.descriptors.screenshotAccumulation}, rgba32f) uniform image2D primeScreenshotAccumulation;
+layout(set = 0, binding = ${schema.descriptors.stableRadiance}, rgba32f) uniform image2D primeStableRadiance;
+layout(set = 0, binding = ${schema.descriptors.screenshotRunningMean}, rgba32f) uniform image2D primeScreenshotRunningMean;
 layout(set = 0, binding = ${schema.descriptors.skyView}, rgba16f) uniform readonly image2D primeSkyView;
 layout(set = 0, binding = ${schema.descriptors.transmittanceLow}, rgba16f) uniform readonly image2D primeTransmittanceLow;
 layout(set = 0, binding = ${schema.descriptors.transmittanceHigh}, rgba16f) uniform readonly image2D primeTransmittanceHigh;

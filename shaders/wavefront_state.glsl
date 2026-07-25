@@ -559,7 +559,7 @@ void primeStoreWavefrontVisibleScratch(
                     visibleGuides.primaryLinearRoughness,
                     primeNrdMaterialId(visibleGuides.primaryMaterialFlags)));
     imageStore(
-            primeAccumulation,
+            primeStableRadiance,
             coordinate,
             vec4(0.0, 0.0, 0.0, visibleGuides.primaryDistance));
     imageStore(primeNrdSunPenumbra, coordinate, vec4(0.0));
@@ -596,7 +596,7 @@ PrimeDenoiserGuides primeLoadWavefrontVisibleGuides(
         PrimeTransparentBranchResult reflection) {
     ivec2 coordinate = ivec2(pixel);
     PrimeDenoiserGuides guides = transmission.guides;
-    guides.primaryDistance = imageLoad(primeAccumulation, coordinate).a;
+    guides.primaryDistance = imageLoad(primeStableRadiance, coordinate).a;
     guides.primaryHitKind = guides.primaryDistance >= 0.0
             ? PRIME_HIT_SURFACE
             : PRIME_HIT_NONE;
@@ -654,7 +654,7 @@ void primeStoreWavefrontIntermediate(
                     primeNrdSanitizeRadiance(result.radiance.specular),
                     primeNrdSanitizeHitDistance(result.guides.specularHitDistance)));
     imageStore(
-            primeAccumulation,
+            primeStableRadiance,
             coordinate,
             vec4(primeNrdSanitizeRadiance(result.radiance.stable), 1.0));
     imageStore(
@@ -703,7 +703,7 @@ PrimeIntegrationResult primeLoadWavefrontIntermediate(
     ivec2 coordinate = ivec2(pixel);
     vec4 diffuse = imageLoad(primeNrdNoisyDiffuse, coordinate);
     vec4 specular = imageLoad(primeNrdNoisySpecular, coordinate);
-    vec4 stable = imageLoad(primeAccumulation, coordinate);
+    vec4 stable = imageLoad(primeStableRadiance, coordinate);
     vec4 sun = imageLoad(primeNrdSunLighting, coordinate);
     vec4 position = imageLoad(primeNrdPrimaryPosition, coordinate);
     vec4 material = imageLoad(primeNrdMaterial, coordinate);
@@ -879,9 +879,9 @@ void primeStoreTransparentBranchIntermediate(
             coordinate,
             vec4(primeNrdSanitizeHitDistance(result.firstHitDistance)));
     if (!primeWritesNrdShInputs()) {
-        vec4 visibleScratch = imageLoad(primeAccumulation, coordinate);
+        vec4 visibleScratch = imageLoad(primeStableRadiance, coordinate);
         imageStore(
-                primeAccumulation,
+                primeStableRadiance,
                 coordinate,
                 vec4(
                         primeNrdSanitizeRadiance(
@@ -949,7 +949,7 @@ PrimeTransparentBranchResult primeLoadTransparentBranchActiveIntermediate(
             ? imageLoad(primeNrdNoisyDiffuse, coordinate)
             : nrdShInputs
                     ? imageLoad(primeNrdReflectionNoisyDiffuse, coordinate)
-                    : vec4(imageLoad(primeAccumulation, coordinate).rgb, 0.0);
+                    : vec4(imageLoad(primeStableRadiance, coordinate).rgb, 0.0);
     vec4 specular = transmissionBranch
             ? imageLoad(primeNrdNoisySpecular, coordinate)
             : nrdShInputs
@@ -1114,9 +1114,9 @@ void primeStoreTransparentBranchActiveIntermediate(
                             primeNrdSanitizeHitDistance(
                                     result.guides.specularHitDistance)));
         } else {
-            vec4 visibleScratch = imageLoad(primeAccumulation, coordinate);
+            vec4 visibleScratch = imageLoad(primeStableRadiance, coordinate);
             imageStore(
-                    primeAccumulation,
+                    primeStableRadiance,
                     coordinate,
                     vec4(
                             primeNrdSanitizeRadiance(
@@ -1149,7 +1149,7 @@ PrimeTransparentBranchResult primeLoadTransparentBranchIntermediate(
             ? imageLoad(primeNrdNoisyDiffuse, coordinate)
             : nrdShInputs
                     ? imageLoad(primeNrdReflectionNoisyDiffuse, coordinate)
-                    : vec4(imageLoad(primeAccumulation, coordinate).rgb, 0.0);
+                    : vec4(imageLoad(primeStableRadiance, coordinate).rgb, 0.0);
     vec4 specular = transmissionBranch
             ? imageLoad(primeNrdNoisySpecular, coordinate)
             : nrdShInputs

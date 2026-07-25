@@ -1,5 +1,8 @@
-#ifndef PRIME_WORLD_OUTPUT_GLSL
-#define PRIME_WORLD_OUTPUT_GLSL
+#ifndef PRIME_WAVEFRONT_OUTPUT_GLSL
+#define PRIME_WAVEFRONT_OUTPUT_GLSL
+
+// Output adapters consume one resolved physical sample. They may encode reconstruction signals or
+// a screenshot running mean, but never feed data back into transport.
 
 void primeWriteScreenshotOutput(
         uvec2 pixel,
@@ -13,11 +16,11 @@ void primeWriteScreenshotOutput(
     vec3 mean = radiance;
     if (zeroBasedSample != uint64_t(0)) {
         vec4 previous = imageLoad(
-                primeScreenshotAccumulation, ivec2(pixel));
+                primeScreenshotRunningMean, ivec2(pixel));
         float sampleCount = float(zeroBasedSample + uint64_t(1));
         mean = previous.rgb + (radiance - previous.rgb) / sampleCount;
     }
-    imageStore(primeScreenshotAccumulation, ivec2(pixel), vec4(mean, 1.0));
+    imageStore(primeScreenshotRunningMean, ivec2(pixel), vec4(mean, 1.0));
 }
 
 uint primeClassifyRawOutput(PrimeIntegrationResult result) {
@@ -317,7 +320,7 @@ void primeWriteRealtimeOutput(
     // Visible sky/emission is deterministic current-frame energy. A second temporal history here
     // would retain stale silhouettes underneath the reconstruction pass.
     imageStore(
-            primeAccumulation,
+            primeStableRadiance,
             ivec2(pixel),
             vec4(primeNrdSanitizeRadiance(sampleResult.radiance.stable), 1.0));
 }

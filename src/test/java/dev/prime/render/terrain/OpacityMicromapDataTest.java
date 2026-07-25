@@ -1,12 +1,105 @@
 package dev.prime.render.terrain;
 
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import org.junit.jupiter.api.Test;
+import org.lwjgl.vulkan.EXTOpacityMicromap;
 
 final class OpacityMicromapDataTest {
+    @Test
+    void twoStateBlocksPackOneBitPerMicrotriangle() {
+        assertEquals(
+                EXTOpacityMicromap.VK_OPACITY_MICROMAP_FORMAT_2_STATE_EXT,
+                OpacityMicromapData.TWO_STATE_FORMAT);
+        assertEquals(
+                EXTOpacityMicromap.VK_OPACITY_MICROMAP_FORMAT_4_STATE_EXT,
+                OpacityMicromapData.FOUR_STATE_FORMAT);
+        assertEquals(
+                OpacityMicromapData.MICRO_TRIANGLE_COUNT / Byte.SIZE,
+                OpacityMicromapData.TWO_STATE_BYTES_PER_BLOCK);
+        assertEquals(
+                OpacityMicromapData.MICRO_TRIANGLE_COUNT * 2 / Byte.SIZE,
+                OpacityMicromapData.FOUR_STATE_BYTES_PER_BLOCK);
+    }
+
+    @Test
+    void isolatedMipZeroTexelKeepsItsTwoAlignedMicrotriangles() {
+        OpacityMicromapData.BakedBlock block = OpacityMicromapData.bakeCoverage(
+                0.0F,
+                0.0F,
+                1.0F,
+                0.0F,
+                0.0F,
+                1.0F,
+                1,
+                (frame, u, v) -> texel(u) == 4 && texel(v) == 4);
+        assertEquals(OpacityMicromapData.TWO_STATE_FORMAT, block.format());
+        int opaqueMicrotriangles = 0;
+        for (int index = 0; index < OpacityMicromapData.MICRO_TRIANGLE_COUNT; index++) {
+            opaqueMicrotriangles += block.state(index);
+        }
+        assertEquals(2, opaqueMicrotriangles);
+    }
+
+    @Test
+    void animatedCoverageUsesUnknownOnlyWhereFramesDisagree() {
+        OpacityMicromapData.BakedBlock block = OpacityMicromapData.bakeCoverage(
+                0.0F,
+                0.0F,
+                1.0F,
+                0.0F,
+                0.0F,
+                1.0F,
+                2,
+                (frame, u, v) -> frame == 0 && texel(u) == 4 && texel(v) == 4);
+        assertEquals(OpacityMicromapData.FOUR_STATE_FORMAT, block.format());
+        int unknownMicrotriangles = 0;
+        int transparentMicrotriangles = 0;
+        for (int index = 0; index < OpacityMicromapData.MICRO_TRIANGLE_COUNT; index++) {
+            int state = block.state(index);
+            unknownMicrotriangles += state == 3 ? 1 : 0;
+            transparentMicrotriangles += state == 0 ? 1 : 0;
+        }
+        assertEquals(2, unknownMicrotriangles);
+        assertEquals(
+                OpacityMicromapData.MICRO_TRIANGLE_COUNT - 2,
+                transparentMicrotriangles);
+    }
+
+    @Test
+    void mixedBlocksPackVariableStridesAndFormats() {
+        OpacityMicromapData.BakedBlock twoState = OpacityMicromapData.bakeCoverage(
+                0.0F, 0.0F, 1.0F, 0.0F, 0.0F, 1.0F,
+                1,
+                (frame, u, v) -> texel(u) == 4 && texel(v) == 4);
+        OpacityMicromapData.BakedBlock fourState = OpacityMicromapData.bakeCoverage(
+                0.0F, 0.0F, 1.0F, 0.0F, 0.0F, 1.0F,
+                2,
+                (frame, u, v) -> frame == 0 && texel(u) == 4 && texel(v) == 4);
+        OpacityMicromapData data = OpacityMicromapData.pack(
+                new OpacityMicromapData.BakedBlock[] {twoState, fourState},
+                new int[] {0, 1});
+
+        assertEquals(
+                OpacityMicromapData.TWO_STATE_BYTES_PER_BLOCK
+                        + OpacityMicromapData.FOUR_STATE_BYTES_PER_BLOCK,
+                data.blocks().length);
+        assertArrayEquals(
+                new int[] {0, OpacityMicromapData.TWO_STATE_BYTES_PER_BLOCK},
+                data.blockOffsets());
+        assertArrayEquals(
+                new int[] {
+                    OpacityMicromapData.TWO_STATE_FORMAT,
+                    OpacityMicromapData.FOUR_STATE_FORMAT
+                },
+                data.blockFormats());
+        assertEquals(1, data.blockCount(OpacityMicromapData.TWO_STATE_FORMAT));
+        assertEquals(1, data.blockCount(OpacityMicromapData.FOUR_STATE_FORMAT));
+    }
+
     @Test
     void birdCurveMapsEverySubdivisionCellExactlyOnce() {
         boolean[] seen = new boolean[OpacityMicromapData.MICRO_TRIANGLE_COUNT];
@@ -32,5 +125,12 @@ final class OpacityMicromapDataTest {
         assertEquals(0, data.blockCount());
         assertEquals(17, data.triangleIndices().length);
         assertEquals(17L * Integer.BYTES, data.byteSize());
+    }
+
+    private static int texel(float coordinate) {
+        float clamped = Math.max(0.0F, Math.min(Math.nextDown(1.0F), coordinate));
+        return Math.min(
+                (int) (clamped * EmissionDistribution.SUBDIVISION),
+                EmissionDistribution.SUBDIVISION - 1);
     }
 }

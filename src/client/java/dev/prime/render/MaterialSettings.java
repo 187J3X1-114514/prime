@@ -5,7 +5,7 @@ public final class MaterialSettings {
     public static final int STEPS_PER_UNIT = 100;
     public static final int MINIMUM_ROUGHNESS_STEPS = 0;
     public static final int MAXIMUM_ROUGHNESS_STEPS = STEPS_PER_UNIT;
-    public static final int DEFAULT_ROUGHNESS_STEPS = 80;
+    public static final int DEFAULT_ROUGHNESS_STEPS = 90;
 
     private MaterialSettings() {
     }

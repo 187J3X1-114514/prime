@@ -41,9 +41,8 @@ final class ShaderAbiTest {
         assertEquals(22, ShaderAbi.DESCRIPTOR_NRD_DIFFUSE_DIRECTION);
         assertEquals(23, ShaderAbi.DESCRIPTOR_NRD_SPECULAR_DIRECTION);
         assertEquals(34, ShaderAbi.DESCRIPTOR_STARMAP);
-        assertEquals(35, ShaderAbi.DESCRIPTOR_STARMAP_IMPORTANCE);
         assertEquals(36, ShaderAbi.DESCRIPTOR_WAVEFRONT_PATHS);
-        assertEquals(8, ShaderAbi.WAVEFRONT_ROUNDS);
+        assertEquals(12, ShaderAbi.WAVEFRONT_ROUNDS);
         assertEquals(112, ShaderAbi.WAVEFRONT_PATH_RECORD_SIZE);
         assertEquals(1, ShaderAbi.WAVEFRONT_ACTIVE_MASK);
         assertEquals(0x7fffffff, ShaderAbi.PATH_SAMPLE_EPOCH_MASK);
@@ -87,8 +86,6 @@ final class ShaderAbiTest {
         assertEquals(64.0F, ShaderAbi.ATMOSPHERE_AERIAL_MAX_DISTANCE_KM);
         assertEquals(8192, ShaderAbi.STARMAP_WIDTH);
         assertEquals(4096, ShaderAbi.STARMAP_HEIGHT);
-        assertEquals(1024, ShaderAbi.STARMAP_IMPORTANCE_WIDTH);
-        assertEquals(512, ShaderAbi.STARMAP_IMPORTANCE_HEIGHT);
         assertEquals(30.0F, ShaderAbi.STARMAP_OBSERVER_LATITUDE_DEGREES);
         assertEquals(
                 "dc6c4f413e85707a29a25a9451148154554ecca2c996f84fa8f47b65ef9ff7c4",

@@ -242,6 +242,9 @@ public final class CpuSectionLights {
                 float thirdX,
                 float thirdY,
                 float thirdZ,
+                float outwardNormalX,
+                float outwardNormalY,
+                float outwardNormalZ,
                 int packedUv0,
                 int packedUv1,
                 int packedUv2,
@@ -263,6 +266,16 @@ public final class CpuSectionLights {
             float normalX = edgeOneY * edgeTwoZ - edgeOneZ * edgeTwoY;
             float normalY = edgeOneZ * edgeTwoX - edgeOneX * edgeTwoZ;
             float normalZ = edgeOneX * edgeTwoY - edgeOneY * edgeTwoX;
+            // Resource quads may disagree with their authored outward normal in winding. Light
+            // sidedness must match the surface normal or an opaque emitter radiates inward only.
+            if (normalX * outwardNormalX
+                            + normalY * outwardNormalY
+                            + normalZ * outwardNormalZ
+                    < 0.0F) {
+                normalX = -normalX;
+                normalY = -normalY;
+                normalZ = -normalZ;
+            }
             float twiceArea = (float) Math.sqrt(normalX * normalX + normalY * normalY + normalZ * normalZ);
             if (!(twiceArea > 1.0E-8F) || !Float.isFinite(twiceArea)) {
                 return 0;

@@ -76,7 +76,7 @@ def verifyRoboCutePort = tasks.register('verifyRoboCutePort') {
 	doLast {
 		def lock = new groovy.json.JsonSlurper().parse(lockFile)
 		if (lock.repository != 'https://github.com/RoboCute/RoboCute'
-				|| lock.commit != '5985e989254b4685e3885d876b33f4874d233dcd') {
+				|| lock.commit != '0d982c77b3fd26c2c5a3c0852be3bd05e5860bd8') {
 			throw new GradleException('RoboCute lock must name the approved repository and commit')
 		}
 		def overlay = lock.authorityOverlay
@@ -190,8 +190,6 @@ abstract class GenerateShaderAbi extends DefaultTask {
 		}
 		if (starmapContract.width != 8192
 				|| starmapContract.height != 4096
-				|| starmapContract.importanceWidth != 1024
-				|| starmapContract.importanceHeight != 512
 				|| starmapContract.observerLatitudeDegrees != 30.0
 				|| starmapContract.sourceSha256 != 'dc6c4f413e85707a29a25a9451148154554ecca2c996f84fa8f47b65ef9ff7c4') {
 			throw new GradleException(
@@ -205,11 +203,11 @@ abstract class GenerateShaderAbi extends DefaultTask {
 				|| nrdContract.signalSpace != 'demodulated-linear-rec2020-d65') {
 			throw new GradleException('Prime NRD signal and native-library contracts changed without a coordinated migration')
 		}
-		if (wavefrontContract.rounds != 8
+		if (wavefrontContract.rounds != 12
 				|| wavefrontContract.pathRecordSize != 112
 				|| !wavefrontContract.activeMask.toString().equalsIgnoreCase('0x1')) {
 			throw new GradleException(
-					'Prime hybrid scheduler must preserve eight wavefront rounds and its queue ABI')
+					'Prime hybrid scheduler must preserve twelve wavefront rounds and its queue ABI')
 		}
 		if (!schema.pathControl.sampleEpochMask.toString().equalsIgnoreCase('0x7fffffff')
 				|| !schema.pathControl.triangleDebugMask.toString().equalsIgnoreCase('0x80000000')
@@ -369,7 +367,6 @@ public final class ShaderAbi {
     public static final int DESCRIPTOR_NRD_REFLECTION_SPECULAR_DIRECTION = ${schema.descriptors.nrdReflectionSpecularDirection};
     public static final int DESCRIPTOR_NRD_DISPLAY_POSITION = ${schema.descriptors.nrdDisplayPosition};
     public static final int DESCRIPTOR_STARMAP = ${schema.descriptors.starmap};
-    public static final int DESCRIPTOR_STARMAP_IMPORTANCE = ${schema.descriptors.starmapImportance};
     public static final int DESCRIPTOR_WAVEFRONT_PATHS = ${schema.descriptors.wavefrontPaths};
     public static final int WAVEFRONT_ROUNDS = ${wavefrontContract.rounds};
     public static final int WAVEFRONT_PATH_RECORD_SIZE = ${wavefrontContract.pathRecordSize};
@@ -420,8 +417,6 @@ public final class ShaderAbi {
     public static final float ATMOSPHERE_AERIAL_MAX_DISTANCE_KM = ${atmosphereContract.aerialMaxDistanceKm}f;
     public static final int STARMAP_WIDTH = ${starmapContract.width};
     public static final int STARMAP_HEIGHT = ${starmapContract.height};
-    public static final int STARMAP_IMPORTANCE_WIDTH = ${starmapContract.importanceWidth};
-    public static final int STARMAP_IMPORTANCE_HEIGHT = ${starmapContract.importanceHeight};
     public static final float STARMAP_OBSERVER_LATITUDE_DEGREES = ${starmapContract.observerLatitudeDegrees}f;
     public static final String STARMAP_SOURCE_SHA256 = "${starmapContract.sourceSha256}";
 ${javaOffsets}
@@ -485,8 +480,6 @@ ${javaOffsets}
 #define PRIME_PATH_STAR_EV_QUARTER_BIAS ${schema.pathControl.starEvQuarterBias}
 #define PRIME_STARMAP_WIDTH ${starmapContract.width}
 #define PRIME_STARMAP_HEIGHT ${starmapContract.height}
-#define PRIME_STARMAP_IMPORTANCE_WIDTH ${starmapContract.importanceWidth}
-#define PRIME_STARMAP_IMPORTANCE_HEIGHT ${starmapContract.importanceHeight}
 #define PRIME_STARMAP_OBSERVER_LATITUDE_RADIANS (${starmapContract.observerLatitudeDegrees} * 0.017453292519943295)
 #define PRIME_RUSSIAN_ROULETTE_START ${schema.pathControl.russianRouletteStart}u
 #define PRIME_CUTOUT_ALPHA_THRESHOLD ${schema.cutoutAlphaThreshold}
@@ -594,9 +587,6 @@ layout(set = 0, binding = ${schema.descriptors.transmittanceHigh}, rgba16f) unif
 layout(set = 0, binding = ${schema.descriptors.aerialRadiance}, rgba16f) uniform readonly image3D primeAerialRadiance;
 layout(set = 0, binding = ${schema.descriptors.aerialTransmittance}, rgba16f) uniform readonly image3D primeAerialTransmittance;
 layout(set = 0, binding = ${schema.descriptors.starmap}) uniform sampler2D primeStarmap;
-layout(set = 0, binding = ${schema.descriptors.starmapImportance}, std430) readonly buffer PrimeStarmapImportance {
-    uint words[];
-} primeStarmapImportance;
 // NRD is part of the integrator boundary. Raygen first writes private raw signals to a subset of
 // these images; nrd_motion.comp converts them in place to demodulated scene-linear Rec.2020
 // radiance and matching primary guides before NRD reads them. Changing the final encoding, units
@@ -948,7 +938,6 @@ def verifyDistributionJar = tasks.register('verifyDistributionJar') {
 			'prime/starmap/starmap_2020_8k_1.rgba16f.gz',
 			'prime/starmap/starmap_2020_8k_2.rgba16f.gz',
 			'prime/starmap/starmap_2020_8k_3.rgba16f.gz',
-			'prime/starmap/starmap_2020_8k.alias.gz',
 			'prime/natives/windows-x86_64/prime_nrd.dll',
 			'prime/natives/windows-x86_64/amd_fidelityfx_vk.dll',
 			'prime/natives/windows-x86_64/prime_dlss_rr.dll',

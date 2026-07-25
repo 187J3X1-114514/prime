@@ -107,6 +107,9 @@ final class EmissionLightContractTest {
                     index,
                     1.0F,
                     0.0F,
+                    0.0F,
+                    0.0F,
+                    1.0F,
                     0,
                     0,
                     0,
@@ -137,6 +140,51 @@ final class EmissionLightContractTest {
         assertEquals(
                 (count - 1) * EmissionDistribution.CELL_COUNT,
                 lights.pack(0L)[lastEmitter + 20]);
+    }
+
+    @Test
+    void emitterNormalFollowsTheAuthoredOutwardHemisphere() {
+        CpuSectionLights.Builder builder = new CpuSectionLights.Builder();
+        builder.addTriangle(
+                0.0F,
+                0.0F,
+                0.0F,
+                0.0F,
+                1.0F,
+                0.0F,
+                1.0F,
+                0.0F,
+                0.0F,
+                0.0F,
+                0.0F,
+                1.0F,
+                0,
+                0,
+                0,
+                -1,
+                0,
+                false,
+                15,
+                null,
+                null);
+
+        CpuSectionLights lights = builder.build();
+        int nodeCount = 1;
+        int nodeStart = ShaderAbi.SECTION_LIGHT_HEADER_SIZE / Integer.BYTES;
+        int forwardStart = nodeStart
+                + nodeCount * (ShaderAbi.LIGHT_NODE_SIZE / Integer.BYTES);
+        int reverseStart = forwardStart
+                + nodeCount * (ShaderAbi.LIGHT_NODE_FORWARD_SIZE / Integer.BYTES);
+        int emitterStart = (reverseStart
+                        + nodeCount * (ShaderAbi.LIGHT_NODE_REVERSE_SIZE / Integer.BYTES)
+                        + 3)
+                / 4
+                * 4;
+        int[] packed = lights.pack(0L);
+
+        assertEquals(0.0F, Float.intBitsToFloat(packed[emitterStart + 12]), 0.0F);
+        assertEquals(0.0F, Float.intBitsToFloat(packed[emitterStart + 13]), 0.0F);
+        assertEquals(1.0F, Float.intBitsToFloat(packed[emitterStart + 14]), 0.0F);
     }
 
     @Test

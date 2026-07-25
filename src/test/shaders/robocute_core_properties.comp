@@ -446,8 +446,7 @@ void primeCoreRefraction(uvec4 encoded[4], out PrimeCoreResult result) {
     state.samplingFlags = PRIME_RC_FLAG_ALL;
     state.geometryThinWalled = 0u;
 
-    PrimeRcSample sampled = primeRcPrimeCorrectTransmissionSample(
-            primeRcRefractiveSample(wi, randomValue, state), wi, state);
+    PrimeRcSample sampled = primeRcRefractiveSample(wi, randomValue, state);
     uint flags = sampled.throughput.flags;
     PrimeRcThroughput evaluated;
     evaluated.value = vec3(0.0);
@@ -486,6 +485,7 @@ void primeCoreRefraction(uvec4 encoded[4], out PrimeCoreResult result) {
 
     primeCoreClassify(result.mask, sampled.wo);
     primeCoreClassify(result.mask, sampled.pdf);
+    primeCoreClassify(result.mask, sampled.eta);
     primeCoreClassify(result.mask, evaluatedPdf);
     primeCoreClassify(result.mask, maximumLambda);
     if (numericInterior) {
@@ -512,6 +512,12 @@ void primeCoreRefraction(uvec4 encoded[4], out PrimeCoreResult result) {
             result.mask |= PRIME_TEST_FAILURE_UNIT_LENGTH;
         }
         bool reflected = (flags & PRIME_RC_FLAG_REFLECTION) != 0u;
+        float expectedEta = reflected
+                ? 1.0
+                : (wi.z > 0.0 ? ior : 1.0 / ior);
+        if (!primeTestClose(sampled.eta, expectedEta, 1.0e-7, 2.0e-6)) {
+            result.mask |= PRIME_TEST_FAILURE_STATE;
+        }
         if ((reflected && wi.z * sampled.wo.z <= 0.0)
                 || (!reflected && wi.z * sampled.wo.z >= 0.0)) {
             result.mask |= PRIME_TEST_FAILURE_HEMISPHERE;
@@ -529,8 +535,7 @@ void primeCoreRefraction(uvec4 encoded[4], out PrimeCoreResult result) {
                     state.spectrumed,
                     microIncident);
             vec3 expectedDeltaValue = (flags == PRIME_RC_FLAG_DELTA_TRANSMISSION)
-                    ? deltaRt.second / primeRcSquare(
-                            wi.z > 0.0 ? ior : 1.0 / ior)
+                    ? deltaRt.second * (1.0 / primeRcSquare(sampled.eta))
                     : deltaRt.first;
             if (!primeTestClose(
                     sampled.throughput.value,
@@ -544,10 +549,7 @@ void primeCoreRefraction(uvec4 encoded[4], out PrimeCoreResult result) {
                 result.mask |= PRIME_TEST_FAILURE_EVENT;
             }
             bool reflected = (flags & PRIME_RC_FLAG_REFLECTION) != 0u;
-            float etaPath = reflected
-                    ? 1.0
-                    : (wi.z > 0.0 ? ior : 1.0 / ior);
-            float halfVectorLength = length(wi + etaPath * sampled.wo);
+            float halfVectorLength = length(wi + sampled.eta * sampled.wo);
             bool stableReconstruction = numericInterior
                     && (reflected || abs(ior - 1.0) >= 1.0e-2)
                     && halfVectorLength > 1.0e-3;

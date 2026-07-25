@@ -17,6 +17,7 @@ const uint PRIME_RC_FLAG_SPECULAR_REFLECTION = 1u << 2u;
 const uint PRIME_RC_FLAG_SPECULAR_TRANSMISSION = 1u << 3u;
 const uint PRIME_RC_FLAG_DELTA_REFLECTION = 1u << 4u;
 const uint PRIME_RC_FLAG_DELTA_TRANSMISSION = 1u << 5u;
+const uint PRIME_RC_FLAG_NO_MEDIUM_CHANGE = 1u << 6u;
 const uint PRIME_RC_FLAG_DIFFUSE =
         PRIME_RC_FLAG_DIFFUSE_REFLECTION | PRIME_RC_FLAG_DIFFUSE_TRANSMISSION;
 const uint PRIME_RC_FLAG_SPECULAR =
@@ -139,6 +140,7 @@ struct PrimeRcThroughput {
 struct PrimeRcSample {
     PrimeRcThroughput throughput;
     float pdf;
+    float eta;
     vec3 wo;
 };
 
@@ -152,6 +154,7 @@ struct PrimeRcVecPair { vec3 first; vec3 second; };
 
 struct PrimeRcRefractResult {
     vec3 wo;
+    float relativeIor;
     uint valid;
 };
 
@@ -219,6 +222,7 @@ struct PrimeRcState {
     uint detail;
     uint spectrumed;
     uint geometryThinWalled;
+    uint entering;
     uint selectedWavelength;
     vec3 wavelengthsNm;
     float rayT;
@@ -279,6 +283,7 @@ PrimeRcSample primeRcZeroSample() {
     PrimeRcSample result;
     result.throughput = primeRcZeroThroughput();
     result.pdf = 0.0;
+    result.eta = 1.0;
     result.wo = vec3(0.0);
     return result;
 }

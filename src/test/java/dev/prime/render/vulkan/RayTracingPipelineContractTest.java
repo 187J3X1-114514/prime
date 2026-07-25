@@ -37,8 +37,8 @@ final class RayTracingPipelineContractTest {
         assertEquals(2, RayTracingPipeline.MISS_GROUP_COUNT);
         assertEquals(6, RayTracingPipeline.HIT_GROUP_COUNT);
         assertEquals(5, RayTracingPipeline.RAYGEN_GROUP_COUNT);
-        assertEquals(7, RayTracingPipeline.WAVEFRONT_STEP_DISPATCH_COUNT);
-        assertEquals(10, RayTracingPipeline.REALTIME_DISPATCH_COUNT);
+        assertEquals(11, RayTracingPipeline.WAVEFRONT_STEP_DISPATCH_COUNT);
+        assertEquals(14, RayTracingPipeline.REALTIME_DISPATCH_COUNT);
     }
 
     @Test

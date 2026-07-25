@@ -393,7 +393,7 @@ PrimeRcState primeMinecraftTransmissionState(
             packedSpecular);
     vec3 localView = primeRcOnbToLocal(material.geometry.onb, viewDirection);
     float inverseOutsideIor = primeRcInverseOutsideIor(localView.z, volumeStack);
-    return primeRcTransmissionStateInit(
+    PrimeRcState state = primeRcTransmissionStateInit(
             material,
             localView,
             inverseOutsideIor,
@@ -402,6 +402,7 @@ PrimeRcState primeMinecraftTransmissionState(
             0u,
             PRIME_RC_DETAIL_DEFAULT,
             0u);
+    return primeRcPrimeTransmissionInterfaceState(localView, state);
 }
 
 struct PrimeMinecraftMirrorSplit {
@@ -471,7 +472,8 @@ BsdfEvaluation primeEvaluateMinecraftTransmissionImpl(
                 ? PRIME_RC_FLAG_REFLECTION
                 : PRIME_RC_FLAG_TRANSMISSION;
     }
-    PrimeRcEval evaluation = primeRcTransmissionEvaluate(localView, localScatter, state);
+    PrimeRcEval evaluation = primeRcPrimeTransmissionEvaluate(
+            localView, localScatter, state);
     BsdfEvaluation result = primeInvalidBsdfEvaluation();
     if (evaluation.throughput.flags != PRIME_RC_FLAG_NONE) {
         result.response = evaluation.throughput.value;
@@ -543,12 +545,7 @@ PrimeTransmissiveBsdfSample primeSampleMinecraftTransmissionFromState(
             state.material.geometry.onb, sampled.bsdfSample.wo);
     result.bsdfSample.response = sampled.bsdfSample.throughput.value;
     result.bsdfSample.pdf = sampled.bsdfSample.pdf;
-    bool transmitted = primeRcIsTransmissive(sampled.bsdfSample.throughput.flags);
-    result.bsdfSample.relativeEta = transmitted && state.geometryThinWalled == 0u
-            ? (localView.z > 0.0
-                    ? state.specularFresnel.ior
-                    : 1.0 / state.specularFresnel.ior)
-            : 1.0;
+    result.bsdfSample.relativeEta = sampled.bsdfSample.eta;
     result.bsdfSample.eventFlags = primeRcToBsdfEventFlags(
             sampled.bsdfSample.throughput.flags);
     result.volumeStack = sampled.volumeStack;
@@ -729,16 +726,8 @@ PrimeTransmissiveBsdfSample primeSampleMinecraftTransmissionBranchFromState(
             state.material.geometry.onb, sampled.bsdfSample.wo);
     result.bsdfSample.response = sampled.bsdfSample.throughput.value;
     result.bsdfSample.pdf = sampled.bsdfSample.pdf;
-    // RoboCute keeps eta in the closure state rather than its sample record. Prime's transport
-    // ABI defines relativeEta as n_transmitted / n_incident (the inverse of GLSL refract's eta).
-    // Preserve it here: transparent reprojection needs the same interface contract as the BSDF,
-    // and replacing it with 1 silently turns every refractive path into straight-through motion.
-    bool transmitted = primeRcIsTransmissive(sampled.bsdfSample.throughput.flags);
-    result.bsdfSample.relativeEta = transmitted && state.geometryThinWalled == 0u
-            ? (localView.z > 0.0
-                    ? state.specularFresnel.ior
-                    : 1.0 / state.specularFresnel.ior)
-            : 1.0;
+    // RoboCute now returns the exact relative IOR used by the sampled refractive event.
+    result.bsdfSample.relativeEta = sampled.bsdfSample.eta;
     result.bsdfSample.eventFlags = primeRcToBsdfEventFlags(
             sampled.bsdfSample.throughput.flags);
     result.volumeStack = sampled.volumeStack;

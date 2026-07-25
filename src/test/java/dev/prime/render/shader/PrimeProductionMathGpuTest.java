@@ -80,7 +80,7 @@ final class PrimeProductionMathGpuTest {
 
     @Test
     void nrdPackingDemodulationAndSanitizersRejectNonFiniteState() throws IOException {
-        int kinds = 7;
+        int kinds = 9;
         int inputWords = 4;
         ShaderPropertyBatch.assertProperties(
                 runner,
@@ -266,6 +266,65 @@ final class PrimeProductionMathGpuTest {
                             guides[(local / guides.length) % guides.length],
                             guides[(local / (guides.length * guides.length)) % guides.length],
                             0.0F);
+                } else if (kind == 7) {
+                    int optionalDirectionCase = local & 3;
+                    putInt(input, index, words, 0, 1, optionalDirectionCase);
+                    if (optionalDirectionCase == 0) {
+                        putVec4(input, index, words, 1, 0.0F, 0.0F, 0.0F, 0.0F);
+                    } else if (optionalDirectionCase == 1) {
+                        putVec4(input, index, words, 1, 1.0F, 0.0F, 0.0F, 0.0F);
+                    } else if (optionalDirectionCase == 2) {
+                        putVec4(input, index, words, 1, 0.5F, 0.0F, 0.0F, 0.0F);
+                    } else {
+                        putVec4(
+                                input,
+                                index,
+                                words,
+                                1,
+                                Float.intBitsToFloat(0x7fc0_0001),
+                                0.0F,
+                                0.0F,
+                                0.0F);
+                    }
+                } else if (kind == 8) {
+                    int directionCase = local & 3;
+                    putInt(input, index, words, 0, 1, directionCase);
+                    if (directionCase == 0) {
+                        float x;
+                        float y;
+                        float z;
+                        float lengthSquared;
+                        do {
+                            x = random.nextFloat() * 2.0F - 1.0F;
+                            y = random.nextFloat() * 2.0F - 1.0F;
+                            z = random.nextFloat() * 2.0F - 1.0F;
+                            lengthSquared = x * x + y * y + z * z;
+                        } while (lengthSquared < 1.0e-12F);
+                        float inverseLength = 1.0F / (float) Math.sqrt(lengthSquared);
+                        putVec4(
+                                input,
+                                index,
+                                words,
+                                1,
+                                x * inverseLength,
+                                y * inverseLength,
+                                z * inverseLength,
+                                0.0F);
+                    } else if (directionCase == 1) {
+                        putVec4(input, index, words, 1, 0.0F, 0.0F, 0.0F, 0.0F);
+                    } else if (directionCase == 2) {
+                        putVec4(input, index, words, 1, 0.5F, 0.0F, 0.0F, 0.0F);
+                    } else {
+                        putVec4(
+                                input,
+                                index,
+                                words,
+                                1,
+                                Float.intBitsToFloat(0x7fc0_0001),
+                                0.0F,
+                                0.0F,
+                                0.0F);
+                    }
                 } else {
                     for (int word = 1; word < words; word++) {
                         for (int component = 0; component < 4; component++) {

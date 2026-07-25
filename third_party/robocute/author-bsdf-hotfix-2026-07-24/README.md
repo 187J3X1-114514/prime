@@ -2,11 +2,16 @@
 
 These files were provided directly to the Prime project owner by the RoboCute
 author on 2026-07-24 as an authoritative temporary fix for dielectric highlight
-energy compensation. They are an overlay on Prime's pinned RoboCute reference:
+energy compensation. They were authored against:
 
 - Repository: https://github.com/RoboCute/RoboCute
 - Base commit: `5985e989254b4685e3885d876b33f4874d233dcd`
 - License: Apache License 2.0
+
+Prime now pins RoboCute commit
+`0d982c77b3fd26c2c5a3c0852be3bd05e5860bd8`. That revision fixes thick-glass
+transport but does not contain this replacement LUT or its branch-separated
+multiple-scattering compensation, so the overlay remains independently locked.
 
 The replacement transmission-GGX table has extent `44 x 32 x 159`, format
 `HALF4`, and decoded size 1,790,976 bytes.

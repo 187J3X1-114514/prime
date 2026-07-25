@@ -7,7 +7,7 @@
 Prime 使用以下固定 RoboCute 版本作为 BSDF 参考：
 
 - GitHub: <https://github.com/RoboCute/RoboCute>
-- Commit: `5985e989254b4685e3885d876b33f4874d233dcd`
+- Commit: `0d982c77b3fd26c2c5a3c0852be3bd05e5860bd8`
 - 本地参考副本：`C:\WorkSpace\_ref\RoboCute`
 
 `shaders/robocute_bsdf_*.glsl` 是受保护的参考库移植。其表达式、求值顺序和浮点运算顺序必须与上述固定版本的参考实现一致；在约定的输入、精度、编译选项和执行环境下，目标输出必须逐 bit 一致。

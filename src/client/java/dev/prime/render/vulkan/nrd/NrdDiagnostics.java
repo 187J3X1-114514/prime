@@ -12,6 +12,7 @@ public final class NrdDiagnostics {
         NATIVE_VALIDATION("native_validation", 1, true, 0, 0),
         RAW_NUMERICAL("raw_numerical", 0, false, 1, 1),
         RAW_NUMERICAL_STAGE("raw_numerical_stage", 0, false, 1, 2),
+        RAW_NUMERICAL_FIELD("raw_numerical_field", 0, false, 1, 3),
         REPROJECTION_ERROR("reprojection_error", 2, false, 2, 0),
         MOTION("motion", 3, false, 2, 0),
         SPECULAR_INPUT("specular_input", 4, false, 2, 0),
@@ -64,7 +65,9 @@ public final class NrdDiagnostics {
         }
 
         public boolean rawNumerical() {
-            return this == RAW_NUMERICAL || this == RAW_NUMERICAL_STAGE;
+            return this == RAW_NUMERICAL
+                    || this == RAW_NUMERICAL_STAGE
+                    || this == RAW_NUMERICAL_FIELD;
         }
 
         public static Optional<Mode> findById(String id) {

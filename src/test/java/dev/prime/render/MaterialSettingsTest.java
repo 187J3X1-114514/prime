@@ -9,8 +9,8 @@ import org.junit.jupiter.api.Test;
 final class MaterialSettingsTest {
     @Test
     void unauthoredMaterialsUseTheCalibratedDefaultRoughness() {
-        assertEquals(80, MaterialSettings.DEFAULT_ROUGHNESS_STEPS);
-        assertEquals(0.80F,
+        assertEquals(90, MaterialSettings.DEFAULT_ROUGHNESS_STEPS);
+        assertEquals(0.90F,
                 MaterialSettings.linearRoughness(MaterialSettings.DEFAULT_ROUGHNESS_STEPS),
                 1.0e-7F);
     }

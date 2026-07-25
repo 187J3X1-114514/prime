@@ -23,10 +23,13 @@ sample and identities at grazing, degenerate-half-vector, eta-equals-one, or
 critical-angle discontinuities are outside the numeric property domain.
 
 `RoboCuteClosureGpuTest` exercises every Prime-reachable closure through its
-public state, sample, evaluate, volume-stack, and ray-distance contracts. The
-entry points exercise Prime's adapter wrappers, including the radiance eta
-correction for rough and delta transmission and zero-event Fresnel handling, while the
-protected RoboCute port remains unchanged. The
+public state, sample, evaluate, volume-stack, and ray-distance contracts. A
+separate parallel-slab batch sends the same direction through entry and exit
+interfaces, checking reciprocal relative IOR, radiance eta scaling, Snell
+round-trip direction, total internal reflection, and medium-stack lifecycle.
+The entry points exercise Prime's adapter wrappers, including exiting-interface
+state correction and zero-event Fresnel handling, while the protected RoboCute port remains
+unchanged. The
 test runner can bind the authoritative transmission-energy table as a real
 immutable 3D `rgba16f` sampled image. `RoboCuteLutGpuTest` samples every texel
 center and compares all four half-float channels with the vendored raw resource.

@@ -1,10 +1,9 @@
 package dev.prime.render.scene.vanilla;
 
 import com.mojang.blaze3d.vertex.MeshData;
-import dev.prime.render.terrain.CpuSectionMesh;
+import dev.prime.render.terrain.CpuSectionGeometry;
 import dev.prime.render.terrain.LabPbrMaterialSet;
 import dev.prime.render.terrain.SectionMeshAccumulator;
-import java.util.List;
 import it.unimi.dsi.fastutil.ints.IntArrayList;
 import java.util.ArrayDeque;
 import java.util.Arrays;
@@ -17,8 +16,13 @@ import net.fabricmc.fabric.api.client.rendering.v1.BlockTintsFactory;
 import net.minecraft.client.color.block.BlockColors;
 import net.minecraft.client.color.block.BlockTintSource;
 import net.minecraft.client.renderer.block.BlockAndTintGetter;
+import net.minecraft.client.renderer.block.BlockStateModelSet;
 import net.minecraft.client.renderer.block.FluidModel;
 import net.minecraft.client.renderer.block.ModelBlockRenderer;
+import net.minecraft.client.renderer.block.dispatch.BlockStateModel;
+import net.minecraft.client.renderer.block.dispatch.SingleVariant;
+import net.minecraft.client.renderer.block.dispatch.WeightedVariants;
+import net.minecraft.client.renderer.block.dispatch.multipart.MultiPartModel;
 import net.minecraft.client.renderer.chunk.ChunkSectionLayer;
 import net.minecraft.client.renderer.chunk.RenderSectionRegion;
 import net.minecraft.client.renderer.chunk.SectionCompiler;
@@ -47,6 +51,7 @@ public final class VanillaSectionCapture implements AutoCloseable {
     private static final int UNCACHED_TINT = Integer.MIN_VALUE;
 
     private final RenderSectionRegion region;
+    private final BlockStateModelSet blockModels;
     private final BlockColors blockColors;
     private final SpriteFinder blockSpriteFinder;
     private final boolean cutoutLeaves;
@@ -62,6 +67,7 @@ public final class VanillaSectionCapture implements AutoCloseable {
     private BlockState blockState;
     private boolean blockForceOpaque;
     private boolean blockFoliage;
+    private boolean blockMergeable;
     private boolean blockCollisionKnown;
     private boolean blockCollisionEmpty;
     private final int[] fabricBaseColors = new int[4];
@@ -70,6 +76,7 @@ public final class VanillaSectionCapture implements AutoCloseable {
     private BlockAndTintGetter fabricLevel;
     private BlockPos fabricPosition;
     private BlockState fabricState;
+    private boolean fabricMergeable;
     private List<BlockTintSource> fabricTintSources = List.of();
     private BlockTintsFactory fabricTintFactory;
     private boolean fabricDynamicTintsLoaded;
@@ -79,6 +86,7 @@ public final class VanillaSectionCapture implements AutoCloseable {
 
     private VanillaSectionCapture(
             RenderSectionRegion region,
+            BlockStateModelSet blockModels,
             BlockColors blockColors,
             SpriteFinder blockSpriteFinder,
             LabPbrMaterialSet labPbrMaterials,
@@ -87,6 +95,7 @@ public final class VanillaSectionCapture implements AutoCloseable {
             boolean buildOpacityMicromap,
             int segmentTriangleTarget) {
         this.region = region;
+        this.blockModels = blockModels;
         this.blockColors = blockColors;
         this.blockSpriteFinder = blockSpriteFinder;
         this.geometryPolicy = geometryPolicy;
@@ -97,6 +106,7 @@ public final class VanillaSectionCapture implements AutoCloseable {
 
     public static VanillaSectionCapture open(
             RenderSectionRegion region,
+            BlockStateModelSet blockModels,
             BlockColors blockColors,
             SpriteFinder blockSpriteFinder,
             LabPbrMaterialSet labPbrMaterials,
@@ -109,6 +119,7 @@ public final class VanillaSectionCapture implements AutoCloseable {
         }
         VanillaSectionCapture capture = new VanillaSectionCapture(
                 region,
+                blockModels,
                 blockColors,
                 blockSpriteFinder,
                 labPbrMaterials,
@@ -146,10 +157,11 @@ public final class VanillaSectionCapture implements AutoCloseable {
     public static void beginFabricBlock(
             BlockAndTintGetter level,
             BlockPos position,
-            BlockState state) {
+            BlockState state,
+            BlockStateModel model) {
         VanillaSectionCapture capture = ACTIVE.get();
         if (capture != null) {
-            capture.openFabricBlock(level, position, state);
+            capture.openFabricBlock(level, position, state, model);
         }
     }
 
@@ -220,7 +232,7 @@ public final class VanillaSectionCapture implements AutoCloseable {
         }
     }
 
-    public List<CpuSectionMesh> finish(SectionCompiler.Results results) {
+    public CpuSectionGeometry finish(SectionCompiler.Results results) {
         if (this.finished) {
             throw new IllegalStateException("Vanilla Section capture was already finished");
         }
@@ -268,6 +280,9 @@ public final class VanillaSectionCapture implements AutoCloseable {
                     && (state.is(BlockTags.LEAVES)
                             || state.getBlock() == Blocks.SHORT_GRASS
                             || state.getBlock() == Blocks.TALL_GRASS);
+            // The selected quad, including random orientation, is compared exactly downstream.
+            // Admit every built-in model shape but keep arbitrary renderer models conservative.
+            this.blockMergeable = mergeableModel(this.blockModels.get(state));
             this.blockCollisionKnown = false;
         }
         ChunkSectionLayer layer = this.blockForceOpaque
@@ -312,6 +327,7 @@ public final class VanillaSectionCapture implements AutoCloseable {
                 thinWalled || foliage,
                 false,
                 foliage,
+                this.blockMergeable,
                 Math.max(state.getLightEmission(), bakedQuad.materialInfo().lightEmission()),
                 sprite));
     }
@@ -319,7 +335,8 @@ public final class VanillaSectionCapture implements AutoCloseable {
     private void openFabricBlock(
             BlockAndTintGetter level,
             BlockPos position,
-            BlockState state) {
+            BlockState state,
+            BlockStateModel model) {
         if (level != this.region) {
             throw new IllegalStateException("Captured Fabric block belongs to a different region");
         }
@@ -329,6 +346,10 @@ public final class VanillaSectionCapture implements AutoCloseable {
         this.fabricLevel = level;
         this.fabricPosition = position;
         this.fabricState = state;
+        // Indigo also routes ordinary vanilla models through this path. Preserve the same
+        // built-in-model gate as direct capture instead of treating every Fabric-rendered quad as
+        // custom geometry.
+        this.fabricMergeable = mergeableModel(model);
         this.fabricTintSources = this.blockColors.getTintSources(state);
         this.fabricTintFactory = this.fabricTintSources.isEmpty()
                 ? BlockColorRegistry.getFactory(state)
@@ -348,6 +369,7 @@ public final class VanillaSectionCapture implements AutoCloseable {
         this.fabricLevel = null;
         this.fabricPosition = null;
         this.fabricState = null;
+        this.fabricMergeable = false;
         this.fabricTintSources = List.of();
         this.fabricTintFactory = null;
         this.fabricDynamicTints.clear();
@@ -412,6 +434,7 @@ public final class VanillaSectionCapture implements AutoCloseable {
                 thinWalled || foliage,
                 false,
                 foliage,
+                this.fabricMergeable,
                 Math.max(state.getLightEmission(), source.emissive() ? 15 : 0),
                 sprite));
     }
@@ -470,6 +493,12 @@ public final class VanillaSectionCapture implements AutoCloseable {
         return value;
     }
 
+    static boolean mergeableModel(BlockStateModel model) {
+        return model instanceof SingleVariant
+                || model instanceof WeightedVariants
+                || model instanceof MultiPartModel;
+    }
+
     @Override
     public void close() {
         if (ACTIVE.get() != this) {
@@ -480,6 +509,7 @@ public final class VanillaSectionCapture implements AutoCloseable {
         this.fabricLevel = null;
         this.fabricPosition = null;
         this.fabricState = null;
+        this.fabricMergeable = false;
         this.fabricQuadPending = false;
     }
 
@@ -621,6 +651,7 @@ public final class VanillaSectionCapture implements AutoCloseable {
                     this.transmissive,
                     false,
                     this.water,
+                    false,
                     false,
                     this.lightEmission,
                     sprite));

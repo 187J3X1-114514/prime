@@ -35,6 +35,13 @@ final class IntegratorSettings {
     private IntegratorSettings() {
     }
 
+    static int packSampleEpoch(int sampleEpoch, boolean triangleDebug) {
+        if ((sampleEpoch & ~ShaderAbi.PATH_SAMPLE_EPOCH_MASK) != 0) {
+            throw new IllegalArgumentException("Sample epoch does not fit in 31 bits");
+        }
+        return sampleEpoch | (triangleDebug ? ShaderAbi.PATH_TRIANGLE_DEBUG_MASK : 0);
+    }
+
     static int packPathControl(
             int maximumBounces,
             int jitterPhase,

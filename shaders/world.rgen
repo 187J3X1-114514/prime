@@ -40,7 +40,7 @@ void main() {
                 reference.primaryDistance,
                 reference.radiance);
         vec4 previous = imageLoad(primeAccumulation, ivec2(pixel));
-        uint64_t zeroBasedSample = (uint64_t(primePush.path.y) << 16u)
+        uint64_t zeroBasedSample = (uint64_t(primeSampleEpoch()) << 16u)
                 | uint64_t(primePush.path.x & 0xffffu);
         float sampleCount = float(zeroBasedSample + uint64_t(1));
         vec3 mean = previous.rgb + (reference.radiance - previous.rgb) / sampleCount;

@@ -43,6 +43,14 @@ bool primeWritesRawNumericalDiagnostic() {
     return (primePush.path.w & PRIME_PATH_RAW_NUMERICAL_MASK) != 0u;
 }
 
+uint primeSampleEpoch() {
+    return primePush.path.y & PRIME_PATH_SAMPLE_EPOCH_MASK;
+}
+
+bool primeVisualizesTriangles() {
+    return (primePush.path.y & PRIME_PATH_TRIANGLE_DEBUG_MASK) != 0u;
+}
+
 uint primeRawNumericalFlags = 0u;
 uint primeRawNumericalContext = 0u;
 uint primeRawNumericalFirstContext = 0u;

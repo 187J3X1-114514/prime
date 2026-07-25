@@ -71,6 +71,193 @@ final class SectionClusterMeshBuilderTest {
         assertThrows(IllegalStateException.class, builder::build);
     }
 
+    @Test
+    void mergesCompatibleFacesAcrossSectionBoundaries() {
+        try (SectionMeshAccumulatorTest.TestSprite sprite =
+                new SectionMeshAccumulatorTest.TestSprite()) {
+            SectionMeshAccumulator left = new SectionMeshAccumulator(
+                    LabPbrMaterialSet.EMPTY, false);
+            left.addQuad(
+                    SectionMeshAccumulatorTest.horizontalQuad(15.0F, 2.0F, 3.0F, 1.0F),
+                    SectionMeshAccumulatorTest.opaqueSurface(sprite));
+            SectionMeshAccumulator right = new SectionMeshAccumulator(
+                    LabPbrMaterialSet.EMPTY, false);
+            right.addQuad(
+                    SectionMeshAccumulatorTest.horizontalQuad(0.0F, 2.0F, 3.0F, 1.0F),
+                    SectionMeshAccumulatorTest.opaqueSurface(sprite));
+
+            SectionClusterMeshBuilder builder = new SectionClusterMeshBuilder(0, 0, 0);
+            builder.add(0, 0, 0, left.build());
+            builder.add(1, 0, 0, right.build());
+            CpuClusterMesh cluster = builder.build();
+
+            assertEquals(2, cluster.triangleCount());
+            assertEquals(2, cluster.segments().getFirst().opaqueTriangleCount());
+            assertArrayEquals(
+                    new float[] {
+                        15, 2, 3, 17, 2, 3, 17, 3, 3,
+                        15, 2, 3, 17, 3, 3, 15, 3, 3
+                    },
+                    cluster.segments().getFirst().positions());
+        }
+    }
+
+    @Test
+    void mergesPlanesByTheirExactSixteenthBlockBucket() {
+        try (SectionMeshAccumulatorTest.TestSprite sprite =
+                new SectionMeshAccumulatorTest.TestSprite()) {
+            float plane = 49.0F / 16.0F;
+            SectionMeshAccumulator accumulator = new SectionMeshAccumulator(
+                    LabPbrMaterialSet.EMPTY, false);
+            accumulator.addQuad(
+                    SectionMeshAccumulatorTest.horizontalQuad(0.0F, 0.0F, plane, 1.0F),
+                    SectionMeshAccumulatorTest.opaqueSurface(sprite));
+            accumulator.addQuad(
+                    SectionMeshAccumulatorTest.horizontalQuad(
+                            1.0F, 0.0F, Math.nextDown(plane), 1.0F),
+                    SectionMeshAccumulatorTest.opaqueSurface(sprite));
+
+            SectionClusterMeshBuilder builder = new SectionClusterMeshBuilder(0, 0, 0);
+            builder.add(0, 0, 0, accumulator.build());
+            CpuClusterMesh cluster = builder.build();
+
+            assertEquals(2, cluster.triangleCount());
+            assertArrayEquals(
+                    new float[] {
+                        0, 0, plane, 2, 0, plane, 2, 1, plane,
+                        0, 0, plane, 2, 1, plane, 0, 1, plane
+                    },
+                    cluster.segments().getFirst().positions());
+        }
+    }
+
+    @Test
+    void coversCutoutFacesOnlyWithBoundedSquareTemplates() {
+        try (SectionMeshAccumulatorTest.TestSprite sprite =
+                new SectionMeshAccumulatorTest.TestSprite()) {
+            SectionMeshAccumulator accumulator = new SectionMeshAccumulator(
+                    LabPbrMaterialSet.EMPTY, false);
+            for (int y = 0; y < 4; y++) {
+                for (int x = 0; x < 4; x++) {
+                    accumulator.addQuad(
+                            SectionMeshAccumulatorTest.horizontalQuad(x, y, 1.0F, 1.0F),
+                            SectionMeshAccumulatorTest.cutoutSurface(sprite));
+                }
+            }
+
+            SectionClusterMeshBuilder builder = new SectionClusterMeshBuilder(0, 0, 0);
+            builder.add(0, 0, 0, accumulator.build());
+            CpuClusterMesh cluster = builder.build();
+
+            assertEquals(2, cluster.triangleCount());
+            assertEquals(2, cluster.segments().getFirst().cutoutTriangleCount());
+            assertEquals(
+                    2,
+                    cluster.opacityMicromap().triangleIndices().length);
+        }
+    }
+
+    @Test
+    void neverMergesDifferentMaterialOrUvMappings() {
+        try (SectionMeshAccumulatorTest.TestSprite sprite =
+                new SectionMeshAccumulatorTest.TestSprite()) {
+            SectionMeshAccumulator accumulator = new SectionMeshAccumulator(
+                    LabPbrMaterialSet.EMPTY, false);
+            accumulator.addQuad(
+                    SectionMeshAccumulatorTest.horizontalQuad(0.0F, 0.0F, 2.0F, 1.0F),
+                    SectionMeshAccumulatorTest.opaqueSurface(sprite));
+            SectionMeshAccumulator.Quad tinted =
+                    SectionMeshAccumulatorTest.horizontalQuad(1.0F, 0.0F, 2.0F, 1.0F);
+            accumulator.addQuad(
+                    tinted,
+                    new SectionMeshAccumulator.Surface().set(
+                            0xffff0000,
+                            false,
+                            false,
+                            false,
+                            false,
+                            false,
+                            false,
+                            true,
+                            0,
+                            sprite));
+            SectionMeshAccumulator.Quad rotated =
+                    SectionMeshAccumulatorTest.horizontalQuad(2.0F, 0.0F, 2.0F, 1.0F);
+            for (int vertex = 0; vertex < 4; vertex++) {
+                float oldU = rotated.u[vertex];
+                rotated.u[vertex] = rotated.v[vertex];
+                rotated.v[vertex] = 1.0F - oldU;
+            }
+            accumulator.addQuad(
+                    rotated, SectionMeshAccumulatorTest.opaqueSurface(sprite));
+
+            SectionClusterMeshBuilder builder = new SectionClusterMeshBuilder(0, 0, 0);
+            builder.add(0, 0, 0, accumulator.build());
+            CpuClusterMesh cluster = builder.build();
+
+            assertEquals(6, cluster.triangleCount());
+        }
+    }
+
+    @Test
+    void mergesAdjacentFacesWithTheSameSelectedTextureRotation() {
+        try (SectionMeshAccumulatorTest.TestSprite sprite =
+                new SectionMeshAccumulatorTest.TestSprite()) {
+            SectionMeshAccumulator accumulator = new SectionMeshAccumulator(
+                    LabPbrMaterialSet.EMPTY, false);
+            SectionMeshAccumulator.Quad first =
+                    SectionMeshAccumulatorTest.horizontalQuad(0.0F, 0.0F, 4.0F, 1.0F);
+            SectionMeshAccumulator.Quad second =
+                    SectionMeshAccumulatorTest.horizontalQuad(1.0F, 0.0F, 4.0F, 1.0F);
+            rotateUv(first);
+            rotateUv(second);
+            accumulator.addQuad(first, SectionMeshAccumulatorTest.opaqueSurface(sprite));
+            accumulator.addQuad(second, SectionMeshAccumulatorTest.opaqueSurface(sprite));
+
+            SectionClusterMeshBuilder builder = new SectionClusterMeshBuilder(0, 0, 0);
+            builder.add(0, 0, 0, accumulator.build());
+
+            assertEquals(2, builder.build().triangleCount());
+        }
+    }
+
+    @Test
+    void mergesNonFluidTransmissiveFacesIntoTheTransmissiveGeometry() {
+        try (SectionMeshAccumulatorTest.TestSprite sprite =
+                new SectionMeshAccumulatorTest.TestSprite()) {
+            SectionMeshAccumulator accumulator = new SectionMeshAccumulator(
+                    LabPbrMaterialSet.EMPTY, false);
+            accumulator.addQuad(
+                    SectionMeshAccumulatorTest.horizontalQuad(0.0F, 0.0F, 5.0F, 1.0F),
+                    SectionMeshAccumulatorTest.transmissiveSurface(sprite, false));
+            accumulator.addQuad(
+                    SectionMeshAccumulatorTest.horizontalQuad(1.0F, 0.0F, 5.0F, 1.0F),
+                    SectionMeshAccumulatorTest.transmissiveSurface(sprite, false));
+
+            SectionClusterMeshBuilder builder = new SectionClusterMeshBuilder(0, 0, 0);
+            builder.add(0, 0, 0, accumulator.build());
+            CpuClusterMesh cluster = builder.build();
+
+            assertEquals(2, cluster.triangleCount());
+            assertEquals(0, cluster.opaqueTriangleCount());
+            assertEquals(0, cluster.cutoutTriangleCount());
+            assertEquals(2, cluster.transmissiveTriangleCount());
+            int[] primitives = cluster.segments().getFirst().primitiveRecords();
+            int flags = PrimitivePacking.unpackFlags(primitives[3], primitives[5]);
+            assertEquals(
+                    PrimitivePacking.FLAG_TRANSMISSIVE,
+                    flags & PrimitivePacking.FLAG_TRANSMISSIVE);
+        }
+    }
+
+    private static void rotateUv(SectionMeshAccumulator.Quad quad) {
+        for (int vertex = 0; vertex < 4; vertex++) {
+            float oldU = quad.u[vertex];
+            quad.u[vertex] = quad.v[vertex];
+            quad.v[vertex] = 1.0F - oldU;
+        }
+    }
+
     private static CpuSectionMesh mesh(float base, int opaque, int cutout, int transmissive) {
         float[] positions = new float[] {
             base, base, base,

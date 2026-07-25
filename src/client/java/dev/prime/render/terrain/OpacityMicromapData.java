@@ -30,19 +30,23 @@ public final class OpacityMicromapData {
     private static final int STATE_UNKNOWN_OPAQUE = 3;
 
     public static final OpacityMicromapData EMPTY =
-            new OpacityMicromapData(new byte[0], new int[0], new int[0], new int[0]);
+            new OpacityMicromapData(
+                    new byte[0], new int[0], new int[0], new int[0], new int[0]);
 
     private final byte[] blocks;
     private final int[] blockOffsets;
     private final int[] blockFormats;
+    private final int[] blockSubdivisionLevels;
     private final int[] triangleIndices;
 
     private OpacityMicromapData(
             byte[] blocks,
             int[] blockOffsets,
             int[] blockFormats,
+            int[] blockSubdivisionLevels,
             int[] triangleIndices) {
-        if (blockOffsets.length != blockFormats.length) {
+        if (blockOffsets.length != blockFormats.length
+                || blockOffsets.length != blockSubdivisionLevels.length) {
             throw new IllegalArgumentException("Opacity micromap block metadata is inconsistent");
         }
         int expectedOffset = 0;
@@ -50,7 +54,9 @@ public final class OpacityMicromapData {
             if (blockOffsets[index] != expectedOffset) {
                 throw new IllegalArgumentException("Opacity micromap blocks are not tightly packed");
             }
-            expectedOffset = Math.addExact(expectedOffset, blockByteSize(blockFormats[index]));
+            expectedOffset = Math.addExact(
+                    expectedOffset,
+                    blockByteSize(blockFormats[index], blockSubdivisionLevels[index]));
         }
         if (expectedOffset != blocks.length) {
             throw new IllegalArgumentException("Opacity micromap byte storage is inconsistent");
@@ -58,6 +64,7 @@ public final class OpacityMicromapData {
         this.blocks = blocks;
         this.blockOffsets = blockOffsets;
         this.blockFormats = blockFormats;
+        this.blockSubdivisionLevels = blockSubdivisionLevels;
         this.triangleIndices = triangleIndices;
     }
 
@@ -77,6 +84,10 @@ public final class OpacityMicromapData {
         return this.blockFormats;
     }
 
+    public int[] blockSubdivisionLevels() {
+        return this.blockSubdivisionLevels;
+    }
+
     public int blockCount() {
         return this.blockFormats.length;
     }
@@ -89,13 +100,38 @@ public final class OpacityMicromapData {
         return count;
     }
 
+    public int blockCount(int format, int subdivisionLevel) {
+        int count = 0;
+        for (int index = 0; index < this.blockFormats.length; index++) {
+            count += this.blockFormats[index] == format
+                    && this.blockSubdivisionLevels[index] == subdivisionLevel
+                    ? 1
+                    : 0;
+        }
+        return count;
+    }
+
     public static int blockByteSize(int format) {
-        return switch (format) {
-            case TWO_STATE_FORMAT -> TWO_STATE_BYTES_PER_BLOCK;
-            case FOUR_STATE_FORMAT -> FOUR_STATE_BYTES_PER_BLOCK;
+        return blockByteSize(format, SUBDIVISION_LEVEL);
+    }
+
+    public static int blockByteSize(int format, int subdivisionLevel) {
+        int microTriangleCount = microTriangleCount(subdivisionLevel);
+        long bits = switch (format) {
+            case TWO_STATE_FORMAT -> microTriangleCount;
+            case FOUR_STATE_FORMAT -> (long) microTriangleCount * 2L;
             default -> throw new IllegalArgumentException(
                     "Unsupported opacity micromap format: " + format);
         };
+        return Math.toIntExact((bits + Byte.SIZE - 1L) / Byte.SIZE);
+    }
+
+    public static int microTriangleCount(int subdivisionLevel) {
+        if (subdivisionLevel < 0 || subdivisionLevel > 15) {
+            throw new IllegalArgumentException(
+                    "Opacity micromap subdivision level is outside its packed ABI");
+        }
+        return 1 << (2 * subdivisionLevel);
     }
 
     public boolean isEmpty() {
@@ -120,7 +156,7 @@ public final class OpacityMicromapData {
                 indices,
                 EXTOpacityMicromap.VK_OPACITY_MICROMAP_SPECIAL_INDEX_FULLY_UNKNOWN_OPAQUE_EXT);
         return new OpacityMicromapData(
-                new byte[0], new int[0], new int[0], indices);
+                new byte[0], new int[0], new int[0], new int[0], indices);
     }
 
     /** Per-mesh builder. Cluster merging reuses the same content interning path. */
@@ -128,6 +164,7 @@ public final class OpacityMicromapData {
         private final ArrayList<BakedBlock> blocks = new ArrayList<>();
         private final Map<BlockKey, Integer> blockIndices = new HashMap<>();
         private final Map<BakeKey, Integer> bakedTriangles = new HashMap<>();
+        private final Map<RepeatedBakeKey, Integer> bakedRepeatedTriangles = new HashMap<>();
         private final Map<TextureAtlasSprite, SpriteAlphaFrames> alphaFrames =
                 new IdentityHashMap<>();
         private int[] triangleIndices = new int[32];
@@ -164,6 +201,70 @@ public final class OpacityMicromapData {
             this.addIndex(index);
         }
 
+        public void addRepeatedTriangle(
+                TextureAtlasSprite sprite,
+                int packedUv0,
+                int packedUv1,
+                int packedUv2,
+                int size,
+                float projectedU0,
+                float projectedV0,
+                float projectedU1,
+                float projectedV1,
+                float projectedU2,
+                float projectedV2) {
+            if (size <= 0 || size > 4 || (size & size - 1) != 0) {
+                throw new IllegalArgumentException(
+                        "Cutout macro-face size must be one, two, or four blocks");
+            }
+            RepeatedBakeKey key = new RepeatedBakeKey(
+                    sprite,
+                    packedUv0,
+                    packedUv1,
+                    packedUv2,
+                    size,
+                    projectedU0,
+                    projectedV0,
+                    projectedU1,
+                    projectedV1,
+                    projectedU2,
+                    projectedV2);
+            Integer cached = this.bakedRepeatedTriangles.get(key);
+            if (cached != null) {
+                this.addIndex(cached);
+                return;
+            }
+            int index;
+            try {
+                SpriteAlphaFrames frames =
+                        this.alphaFrames.computeIfAbsent(sprite, SpriteAlphaFrames::create);
+                int subdivisionLevel =
+                        SUBDIVISION_LEVEL + Integer.numberOfTrailingZeros(size);
+                index = this.intern(bakeRepeated(
+                        frames,
+                        packedUv0,
+                        packedUv1,
+                        packedUv2,
+                        subdivisionLevel,
+                        projectedU0,
+                        projectedV0,
+                        projectedU1,
+                        projectedV1,
+                        projectedU2,
+                        projectedV2));
+            } catch (RuntimeException exception) {
+                index = EXTOpacityMicromap
+                        .VK_OPACITY_MICROMAP_SPECIAL_INDEX_FULLY_UNKNOWN_OPAQUE_EXT;
+            }
+            this.bakedRepeatedTriangles.put(key, index);
+            this.addIndex(index);
+        }
+
+        public void addFullyUnknownTriangle() {
+            this.addIndex(EXTOpacityMicromap
+                    .VK_OPACITY_MICROMAP_SPECIAL_INDEX_FULLY_UNKNOWN_OPAQUE_EXT);
+        }
+
         public void append(OpacityMicromapData data) {
             int[] remappedBlocks = new int[data.blockCount()];
             Arrays.fill(remappedBlocks, Integer.MIN_VALUE);
@@ -176,10 +277,14 @@ public final class OpacityMicromapData {
                 if (destinationIndex == Integer.MIN_VALUE) {
                     int offset = data.blockOffsets[sourceIndex];
                     int format = data.blockFormats[sourceIndex];
+                    int subdivisionLevel = data.blockSubdivisionLevels[sourceIndex];
                     BakedBlock block = new BakedBlock(
                             format,
+                            subdivisionLevel,
                             Arrays.copyOfRange(
-                                    data.blocks, offset, offset + blockByteSize(format)));
+                                    data.blocks,
+                                    offset,
+                                    offset + blockByteSize(format, subdivisionLevel)));
                     destinationIndex = this.intern(block);
                     remappedBlocks[sourceIndex] = destinationIndex;
                 }
@@ -200,7 +305,9 @@ public final class OpacityMicromapData {
             boolean allOpaque = true;
             boolean allTransparent = true;
             boolean allUnknownOpaque = block.format == FOUR_STATE_FORMAT;
-            for (int index = 0; index < MICRO_TRIANGLE_COUNT; index++) {
+            for (int index = 0;
+                    index < microTriangleCount(block.subdivisionLevel);
+                    index++) {
                 int state = block.state(index);
                 allOpaque &= state == STATE_OPAQUE;
                 allTransparent &= state == STATE_TRANSPARENT;
@@ -217,7 +324,8 @@ public final class OpacityMicromapData {
                 return EXTOpacityMicromap
                         .VK_OPACITY_MICROMAP_SPECIAL_INDEX_FULLY_UNKNOWN_OPAQUE_EXT;
             }
-            BlockKey key = new BlockKey(block.format, block.states);
+            BlockKey key = new BlockKey(
+                    block.format, block.subdivisionLevel, block.states);
             Integer existing = this.blockIndices.get(key);
             if (existing != null) {
                 return existing;
@@ -245,17 +353,23 @@ public final class OpacityMicromapData {
         byte[] packedBlocks = new byte[packedSize];
         int[] blockOffsets = new int[blocks.length];
         int[] blockFormats = new int[blocks.length];
+        int[] blockSubdivisionLevels = new int[blocks.length];
         int destination = 0;
         for (int index = 0; index < blocks.length; index++) {
             BakedBlock block = blocks[index];
             blockOffsets[index] = destination;
             blockFormats[index] = block.format;
+            blockSubdivisionLevels[index] = block.subdivisionLevel;
             System.arraycopy(
                     block.states, 0, packedBlocks, destination, block.states.length);
             destination += block.states.length;
         }
         return new OpacityMicromapData(
-                packedBlocks, blockOffsets, blockFormats, triangleIndices);
+                packedBlocks,
+                blockOffsets,
+                blockFormats,
+                blockSubdivisionLevels,
+                triangleIndices);
     }
 
     private static BakedBlock bake(
@@ -270,6 +384,40 @@ public final class OpacityMicromapData {
                 u0, v0, u1, v1, u2, v2, frames.frameCount(), frames);
     }
 
+    private static BakedBlock bakeRepeated(
+            SpriteAlphaFrames frames,
+            int packedUv0,
+            int packedUv1,
+            int packedUv2,
+            int subdivisionLevel,
+            float projectedU0,
+            float projectedV0,
+            float projectedU1,
+            float projectedV1,
+            float projectedU2,
+            float projectedV2) {
+        float u0 = frames.localU(unpackHalf(packedUv0, false));
+        float v0 = frames.localV(unpackHalf(packedUv0, true));
+        float u1 = frames.localU(unpackHalf(packedUv1, false));
+        float v1 = frames.localV(unpackHalf(packedUv1, true));
+        float u2 = frames.localU(unpackHalf(packedUv2, false));
+        float v2 = frames.localV(unpackHalf(packedUv2, true));
+        return bakeMapped(
+                subdivisionLevel,
+                frames.frameCount(),
+                (frame, barycentric) -> {
+                    float projectedU = interpolate(
+                            projectedU0, projectedU1, projectedU2, barycentric);
+                    float projectedV = interpolate(
+                            projectedV0, projectedV1, projectedV2, barycentric);
+                    float repeatedU = repeat(projectedU);
+                    float repeatedV = repeat(projectedV);
+                    float textureU = u0 + repeatedU * (u1 - u0) + repeatedV * (u2 - u0);
+                    float textureV = v0 + repeatedU * (v1 - v0) + repeatedV * (v2 - v0);
+                    return frames.opaque(frame, textureU, textureV);
+                });
+    }
+
     static BakedBlock bakeCoverage(
             float u0,
             float v0,
@@ -279,28 +427,61 @@ public final class OpacityMicromapData {
             float v2,
             int frameCount,
             AlphaSampler alphaSampler) {
+        return bakeCoverage(
+                u0,
+                v0,
+                u1,
+                v1,
+                u2,
+                v2,
+                SUBDIVISION_LEVEL,
+                frameCount,
+                alphaSampler);
+    }
+
+    static BakedBlock bakeCoverage(
+            float u0,
+            float v0,
+            float u1,
+            float v1,
+            float u2,
+            float v2,
+            int subdivisionLevel,
+            int frameCount,
+            AlphaSampler alphaSampler) {
+        return bakeMapped(
+                subdivisionLevel,
+                frameCount,
+                (frame, barycentric) -> alphaSampler.opaque(
+                        frame,
+                        interpolate(u0, u1, u2, barycentric),
+                        interpolate(v0, v1, v2, barycentric)));
+    }
+
+    private static BakedBlock bakeMapped(
+            int subdivisionLevel,
+            int frameCount,
+            BarycentricAlphaSampler alphaSampler) {
         if (frameCount <= 0) {
             throw new IllegalArgumentException("Alpha coverage must contain at least one frame");
         }
-        byte[] fourState = new byte[FOUR_STATE_BYTES_PER_BLOCK];
+        int microTriangleCount = microTriangleCount(subdivisionLevel);
+        byte[] fourState = new byte[blockByteSize(FOUR_STATE_FORMAT, subdivisionLevel)];
         float[] barycentric = new float[3];
         boolean hasUnknown = false;
-        for (int cellIndex = 0; cellIndex < MICRO_TRIANGLE_COUNT; cellIndex++) {
-            EmissionDistribution.Cell cell = EmissionDistribution.cell(cellIndex);
+        for (int cellIndex = 0; cellIndex < microTriangleCount; cellIndex++) {
             int birdIndex = 0;
             boolean firstFrameOpaque = false;
             boolean frameMismatch = false;
             for (int frame = 0; frame < frameCount; frame++) {
                 int opaqueSamples = 0;
                 for (int sample = 0; sample < 4; sample++) {
-                    cell.samplePoint(sample, barycentric);
+                    samplePoint(cellIndex, subdivisionLevel, sample, barycentric);
                     if (frame == 0 && sample == 0) {
                         birdIndex = barycentricsToSpaceFillingCurveIndex(
-                                barycentric[1], barycentric[2], SUBDIVISION_LEVEL);
+                                barycentric[1], barycentric[2], subdivisionLevel);
                     }
-                    float u = interpolate(u0, u1, u2, barycentric);
-                    float v = interpolate(v0, v1, v2, barycentric);
-                    if (alphaSampler.opaque(frame, u, v)) {
+                    if (alphaSampler.opaque(frame, barycentric)) {
                         opaqueSamples++;
                     }
                 }
@@ -321,14 +502,71 @@ public final class OpacityMicromapData {
             fourState[birdIndex >>> 2] |= (byte) (state << ((birdIndex & 3) * 2));
         }
         if (hasUnknown) {
-            return new BakedBlock(FOUR_STATE_FORMAT, fourState);
+            return new BakedBlock(FOUR_STATE_FORMAT, subdivisionLevel, fourState);
         }
-        byte[] twoState = new byte[TWO_STATE_BYTES_PER_BLOCK];
-        for (int index = 0; index < MICRO_TRIANGLE_COUNT; index++) {
+        byte[] twoState = new byte[blockByteSize(TWO_STATE_FORMAT, subdivisionLevel)];
+        for (int index = 0; index < microTriangleCount; index++) {
             int state = fourState[index >>> 2] >>> ((index & 3) * 2) & 3;
             twoState[index >>> 3] |= (byte) ((state & 1) << (index & 7));
         }
-        return new BakedBlock(TWO_STATE_FORMAT, twoState);
+        return new BakedBlock(TWO_STATE_FORMAT, subdivisionLevel, twoState);
+    }
+
+    private static void samplePoint(
+            int cellIndex, int subdivisionLevel, int sampleIndex, float[] target) {
+        if (sampleIndex < 0 || sampleIndex >= 4) {
+            throw new IndexOutOfBoundsException(sampleIndex);
+        }
+        int subdivision = 1 << subdivisionLevel;
+        int remaining = cellIndex;
+        int row = 0;
+        while (row < subdivision) {
+            int rowCount = 2 * (subdivision - row) - 1;
+            if (remaining < rowCount) {
+                break;
+            }
+            remaining -= rowCount;
+            row++;
+        }
+        if (row == subdivision) {
+            throw new IndexOutOfBoundsException(cellIndex);
+        }
+        int column = remaining / 2;
+        boolean upper = (remaining & 1) != 0;
+        float inverse = 1.0F / subdivision;
+        float x = column * inverse;
+        float y = row * inverse;
+        float centroid0;
+        float centroid1;
+        float centroid2;
+        if (upper) {
+            centroid0 = 1.0F - x - y - 4.0F * inverse / 3.0F;
+            centroid1 = x + 2.0F * inverse / 3.0F;
+            centroid2 = y + 2.0F * inverse / 3.0F;
+        } else {
+            centroid0 = 1.0F - x - y - 2.0F * inverse / 3.0F;
+            centroid1 = x + inverse / 3.0F;
+            centroid2 = y + inverse / 3.0F;
+        }
+        if (sampleIndex == 0) {
+            target[0] = centroid0;
+            target[1] = centroid1;
+            target[2] = centroid2;
+            return;
+        }
+        int vertex = sampleIndex - 1;
+        float vertex1;
+        float vertex2;
+        if (upper) {
+            vertex1 = vertex < 2 ? x + inverse : x;
+            vertex2 = vertex == 0 ? y : y + inverse;
+        } else {
+            vertex1 = vertex == 1 ? x + inverse : x;
+            vertex2 = vertex == 2 ? y + inverse : y;
+        }
+        target[1] = (centroid1 + vertex1) * 0.5F;
+        target[2] = (centroid2 + vertex2) * 0.5F;
+        target[0] = 1.0F - target[1] - target[2];
     }
 
     private static float interpolate(
@@ -349,6 +587,16 @@ public final class OpacityMicromapData {
     @FunctionalInterface
     interface AlphaSampler {
         boolean opaque(int frame, float u, float v);
+    }
+
+    @FunctionalInterface
+    private interface BarycentricAlphaSampler {
+        boolean opaque(int frame, float[] barycentric);
+    }
+
+    private static float repeat(float value) {
+        float repeated = value - (float) Math.floor(value);
+        return Math.min(repeated, Math.nextDown(1.0F));
     }
 
     private record SpriteAlphaFrames(
@@ -460,16 +708,20 @@ public final class OpacityMicromapData {
         return (value | value << 1) & 0x55555555;
     }
 
-    record BakedBlock(int format, byte[] states) {
+    record BakedBlock(int format, int subdivisionLevel, byte[] states) {
+        BakedBlock(int format, byte[] states) {
+            this(format, SUBDIVISION_LEVEL, states);
+        }
+
         BakedBlock {
-            if (states.length != blockByteSize(format)) {
+            if (states.length != blockByteSize(format, subdivisionLevel)) {
                 throw new IllegalArgumentException(
                         "Opacity micromap block size does not match its format");
             }
         }
 
         int state(int index) {
-            if (index < 0 || index >= MICRO_TRIANGLE_COUNT) {
+            if (index < 0 || index >= microTriangleCount(this.subdivisionLevel)) {
                 throw new IndexOutOfBoundsException(index);
             }
             return this.format == TWO_STATE_FORMAT
@@ -480,13 +732,15 @@ public final class OpacityMicromapData {
 
     private static final class BlockKey {
         private final int format;
+        private final int subdivisionLevel;
         private final byte[] data;
         private final int hash;
 
-        private BlockKey(int format, byte[] data) {
+        private BlockKey(int format, int subdivisionLevel, byte[] data) {
             this.format = format;
+            this.subdivisionLevel = subdivisionLevel;
             this.data = data;
-            this.hash = 31 * format + Arrays.hashCode(data);
+            this.hash = 31 * (31 * format + subdivisionLevel) + Arrays.hashCode(data);
         }
 
         @Override
@@ -494,6 +748,7 @@ public final class OpacityMicromapData {
             return this == other
                     || other instanceof BlockKey key
                             && this.format == key.format
+                            && this.subdivisionLevel == key.subdivisionLevel
                             && Arrays.equals(this.data, key.data);
         }
 
@@ -505,5 +760,19 @@ public final class OpacityMicromapData {
 
     private record BakeKey(
             TextureAtlasSprite sprite, int packedUv0, int packedUv1, int packedUv2) {
+    }
+
+    private record RepeatedBakeKey(
+            TextureAtlasSprite sprite,
+            int packedUv0,
+            int packedUv1,
+            int packedUv2,
+            int size,
+            float projectedU0,
+            float projectedV0,
+            float projectedU1,
+            float projectedV1,
+            float projectedU2,
+            float projectedV2) {
     }
 }

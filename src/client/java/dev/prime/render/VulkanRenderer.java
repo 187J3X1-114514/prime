@@ -426,7 +426,8 @@ public final class VulkanRenderer implements AutoCloseable {
                     material,
                     processor.targets().usesShInputs(),
                     images.mode == PostProcessingMode.NRD_FSR
-                            && postParameters.nrdDebugView().rawNumerical());
+                            && postParameters.nrdDebugView().rawNumerical(),
+                    this.frameControls.triangleDebug());
             this.pipeline.trace(commandBuffer, pushConstants, renderWidth, renderHeight);
             processor.record(commandBuffer, postFrame, postParameters);
             this.finishAtlasRead(commandBuffer, atlasView.texture());
@@ -577,6 +578,7 @@ public final class VulkanRenderer implements AutoCloseable {
                     PostProcessingMode.DISABLED,
                     lighting,
                     material,
+                    false,
                     false,
                     false);
             this.pipeline.traceScreenshot(commandBuffer, pushConstants, width, height);
@@ -1127,7 +1129,8 @@ public final class VulkanRenderer implements AutoCloseable {
             LightingSettings.Snapshot lighting,
             MaterialSettings.Snapshot material,
             boolean shInput,
-            boolean rawNumericalDiagnostic) {
+            boolean rawNumericalDiagnostic,
+            boolean triangleDebug) {
         ByteBuffer buffer = stack.calloc(ShaderAbi.PUSH_CONSTANT_SIZE).order(ByteOrder.nativeOrder());
         camera.inverseViewProjection().get(
                 ShaderAbi.PUSH_INVERSE_VIEW_PROJECTION_OFFSET, buffer);
@@ -1148,7 +1151,9 @@ public final class VulkanRenderer implements AutoCloseable {
         buffer.putInt(ShaderAbi.PUSH_RAY_CONE_OFFSET, packedRayCone);
         int pathOffset = ShaderAbi.PUSH_PATH_OFFSET;
         buffer.putInt(pathOffset, sampleIndex);
-        buffer.putInt(pathOffset + Integer.BYTES, sampleEpoch);
+        buffer.putInt(
+                pathOffset + Integer.BYTES,
+                IntegratorSettings.packSampleEpoch(sampleEpoch, triangleDebug));
         buffer.putInt(
                 pathOffset + 2 * Integer.BYTES,
                 IntegratorSettings.packPathControl(

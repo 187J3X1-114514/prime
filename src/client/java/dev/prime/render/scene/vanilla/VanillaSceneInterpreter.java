@@ -1,9 +1,8 @@
 package dev.prime.render.scene.vanilla;
 
 import dev.prime.render.ResourceCleanup;
-import dev.prime.render.terrain.CpuSectionMesh;
+import dev.prime.render.terrain.CpuSectionGeometry;
 import dev.prime.render.terrain.LabPbrMaterialSet;
-import java.util.List;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import net.minecraft.client.color.block.BlockColors;
 import net.minecraft.client.renderer.SectionBufferBuilderPack;
@@ -38,7 +37,7 @@ public final class VanillaSceneInterpreter implements AutoCloseable {
         this.segmentTriangleTarget = segmentTriangleTarget;
     }
 
-    public List<CpuSectionMesh> compileSection(
+    public CpuSectionGeometry compileSection(
             RenderSectionRegion region,
             BlockStateModelSet blockModels,
             FluidStateModelSet fluidModels,

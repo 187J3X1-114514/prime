@@ -177,7 +177,7 @@ PathState primeWavefrontPath(
             & PRIME_WAVEFRONT_BYTE_MASK;
     path.pixel = pixel;
     path.sampleIndex = primePush.path.x;
-    path.sampleEpoch = primePush.path.y;
+    path.sampleEpoch = primeSampleEpoch();
     return path;
 }
 

@@ -27,7 +27,26 @@ PrimitiveRecord primePrimitive() {
     return primePrimitive(primeSection());
 }
 
-vec2 primeInterpolateUv(PrimitiveRecord primitive) {
+bool primeUsesRepeatedUv(PrimitiveRecord primitive) {
+    return uintBitsToFloat(primitive.uvDensity) < 0.0;
+}
+
+vec2 primeInterpolateUv(SectionRecord section, PrimitiveRecord primitive) {
+    if (primeUsesRepeatedUv(primitive)) {
+        vec3 hitPosition = gl_WorldRayOriginEXT + gl_HitTEXT * gl_WorldRayDirectionEXT;
+        vec3 localPosition = hitPosition - section.translation;
+        vec3 normal = abs(primeUnpackOctahedralNormal(primitive.normal));
+        vec2 projectedPosition = normal.x > normal.y && normal.x > normal.z
+                ? localPosition.yz
+                : (normal.y > normal.z ? localPosition.xz : localPosition.xy);
+        vec2 repeatedPosition = fract(projectedPosition);
+        vec2 uv0 = primeUnpackHalf2(primitive.uv0);
+        vec2 uv1 = primeUnpackHalf2(primitive.uv1);
+        vec2 uv2 = primeUnpackHalf2(primitive.uv2);
+        return uv0
+                + repeatedPosition.x * (uv1 - uv0)
+                + repeatedPosition.y * (uv2 - uv0);
+    }
     vec3 barycentric = vec3(1.0 - primeBarycentrics.x - primeBarycentrics.y,
             primeBarycentrics.x, primeBarycentrics.y);
     return primeUnpackHalf2(primitive.uv0) * barycentric.x
@@ -37,7 +56,7 @@ vec2 primeInterpolateUv(PrimitiveRecord primitive) {
 
 float primeRayConeTextureLod(PrimitiveRecord primitive, vec3 geometricNormal) {
     vec2 rayCone = unpackHalf2x16(primePush.rayCone);
-    float normalizedUvDensity = max(uintBitsToFloat(primitive.uvDensity), 0.0);
+    float normalizedUvDensity = abs(uintBitsToFloat(primitive.uvDensity));
     int mipLevels = textureQueryLevels(primeBlockAtlas);
     if (!(rayCone.x > 0.0) || !(normalizedUvDensity > 0.0) || mipLevels <= 1) {
         return 0.0;

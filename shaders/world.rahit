@@ -3,7 +3,8 @@
 #include "hit_common.glsl"
 
 void main() {
-    PrimitiveRecord primitive = primePrimitive();
+    SectionRecord section = primeSection();
+    PrimitiveRecord primitive = primePrimitive(section);
     if (primeMaterialIsTransmissive(primePrimitiveFlags(primitive))) {
         // A transmission surface is a real path vertex, not alpha coverage. In particular, a
         // straight NEE shadow segment must not silently pass through another refractive boundary:
@@ -13,7 +14,8 @@ void main() {
     }
     vec3 normal = primeUnpackOctahedralNormal(primitive.normal);
     float textureLodValue = primeRayConeTextureLod(primitive, normal);
-    float opacity = primeEvaluateOpacity(primeInterpolateUv(primitive), textureLodValue);
+    float opacity = primeEvaluateOpacity(
+            primeInterpolateUv(section, primitive), textureLodValue);
     if (opacity < PRIME_CUTOUT_ALPHA_THRESHOLD) {
         ignoreIntersectionEXT;
     }

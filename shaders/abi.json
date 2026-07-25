@@ -207,6 +207,8 @@
     "activeMask": "0x1"
   },
   "pathControl": {
+    "sampleEpochMask": "0x7fffffff",
+    "triangleDebugMask": "0x80000000",
     "cameraInWaterMask": "0x80000000",
     "jitterPhaseMask": "0x1fff",
     "transparentGuideModeShift": 29,

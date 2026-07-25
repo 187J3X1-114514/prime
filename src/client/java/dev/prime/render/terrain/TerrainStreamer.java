@@ -57,6 +57,7 @@ public final class TerrainStreamer implements AutoCloseable {
     private final TerrainScene scene;
     private final VanillaSceneInterpreter sceneInterpreter;
     private final boolean opacityMicromapSupported;
+    private final int maxOpacityMicromapSubdivisionLevel;
     private final int segmentTriangleTarget;
     private final Executor workers;
     private final int maximumInFlight;
@@ -96,6 +97,8 @@ public final class TerrainStreamer implements AutoCloseable {
     public TerrainStreamer(VulkanContext context, StagingArena stagingArena) {
         this.scene = new TerrainScene(context, stagingArena);
         this.opacityMicromapSupported = context.capabilities().opacityMicromapSupported();
+        this.maxOpacityMicromapSubdivisionLevel =
+                context.capabilities().maxOpacityMicromapSubdivisionLevel();
         this.segmentTriangleTarget = TerrainMemoryBudget.segmentTriangleTarget(
                 context.capabilities().maxAccelerationStructurePrimitiveCount());
         this.sceneInterpreter = new VanillaSceneInterpreter(
@@ -413,9 +416,14 @@ public final class TerrainStreamer implements AutoCloseable {
                     Throwable failure = null;
                     try {
                         SectionClusterMeshBuilder cluster = new SectionClusterMeshBuilder(
-                                clusterX, clusterY, clusterZ, this.segmentTriangleTarget);
+                                clusterX,
+                                clusterY,
+                                clusterZ,
+                                this.segmentTriangleTarget,
+                                TerrainStreamer.this.maxOpacityMicromapSubdivisionLevel);
                         for (ClusterSectionSnapshot snapshot : snapshots) {
-                            List<CpuSectionMesh> sectionMeshes = TerrainStreamer.this.sceneInterpreter
+                            CpuSectionGeometry sectionGeometry =
+                                    TerrainStreamer.this.sceneInterpreter
                                     .compileSection(
                                             snapshot.region(),
                                             models,
@@ -425,13 +433,13 @@ public final class TerrainStreamer implements AutoCloseable {
                                             materialSnapshot,
                                             cutoutLeaves,
                                             snapshot.sectionX(),
-                                            snapshot.sectionY(),
-                                            snapshot.sectionZ());
+                                    snapshot.sectionY(),
+                                    snapshot.sectionZ());
                             cluster.add(
                                     snapshot.sectionX(),
                                     snapshot.sectionY(),
                                     snapshot.sectionZ(),
-                                    sectionMeshes);
+                                    sectionGeometry);
                         }
                         mesh = cluster.build();
                     } catch (Throwable throwable) {

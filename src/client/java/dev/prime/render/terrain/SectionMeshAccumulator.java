@@ -2,7 +2,6 @@ package dev.prime.render.terrain;
 
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.List;
 import net.minecraft.client.renderer.texture.TextureAtlasSprite;
 
 /**
@@ -20,6 +19,7 @@ public final class SectionMeshAccumulator {
     private final LabPbrMaterialSet labPbrMaterials;
     private final int segmentTriangleTarget;
     private final ArrayList<CpuSectionMesh> segments = new ArrayList<>();
+    private final ArrayList<MergeFace> mergeFaces = new ArrayList<>();
     private MeshBuilder opaque;
     private MeshBuilder cutout;
     private MeshBuilder transmissive;
@@ -52,6 +52,12 @@ public final class SectionMeshAccumulator {
         if (this.built) {
             throw new IllegalStateException("Section mesh was already built");
         }
+        MergeFace mergeFace = MergeFace.tryCreate(
+                quad, surface, this.labPbrMaterials, this.buildOpacityMicromap);
+        if (mergeFace != null) {
+            this.mergeFaces.add(mergeFace);
+            return;
+        }
         if (this.triangleCount >= this.segmentTriangleTarget) {
             this.finishSegment();
         }
@@ -63,13 +69,13 @@ public final class SectionMeshAccumulator {
         this.triangleCount += 2;
     }
 
-    public List<CpuSectionMesh> build() {
+    public CpuSectionGeometry build() {
         if (this.built) {
             throw new IllegalStateException("Section mesh was already built");
         }
         this.built = true;
         this.finishSegment();
-        return List.copyOf(this.segments);
+        return new CpuSectionGeometry(this.segments, this.mergeFaces);
     }
 
     private void beginSegment() {
@@ -272,6 +278,7 @@ public final class SectionMeshAccumulator {
         private boolean thinWalled;
         private boolean water;
         private boolean foliage;
+        private boolean mergeable;
         private int lightEmission;
         private TextureAtlasSprite sprite;
 
@@ -283,6 +290,7 @@ public final class SectionMeshAccumulator {
                 boolean thinWalled,
                 boolean water,
                 boolean foliage,
+                boolean mergeable,
                 int lightEmission,
                 TextureAtlasSprite sprite) {
             this.tint = tint;
@@ -292,6 +300,7 @@ public final class SectionMeshAccumulator {
             this.thinWalled = thinWalled;
             this.water = water;
             this.foliage = foliage;
+            this.mergeable = mergeable;
             this.lightEmission = lightEmission;
             this.sprite = sprite;
             return this;
@@ -323,6 +332,10 @@ public final class SectionMeshAccumulator {
 
         boolean foliage() {
             return this.foliage;
+        }
+
+        boolean mergeable() {
+            return this.mergeable;
         }
 
         int lightEmission() {

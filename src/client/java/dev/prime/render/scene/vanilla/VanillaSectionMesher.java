@@ -1,9 +1,8 @@
 package dev.prime.render.scene.vanilla;
 
 import com.mojang.blaze3d.vertex.VertexSorting;
-import dev.prime.render.terrain.CpuSectionMesh;
+import dev.prime.render.terrain.CpuSectionGeometry;
 import dev.prime.render.terrain.LabPbrMaterialSet;
-import java.util.List;
 import net.minecraft.client.color.block.BlockColors;
 import net.minecraft.client.renderer.SectionBufferBuilderPack;
 import net.minecraft.client.renderer.block.BlockStateModelSet;
@@ -31,7 +30,7 @@ public final class VanillaSectionMesher {
     private VanillaSectionMesher() {
     }
 
-    public static List<CpuSectionMesh> mesh(
+    public static CpuSectionGeometry mesh(
             RenderSectionRegion region,
             BlockStateModelSet blockModels,
             FluidStateModelSet fluidModels,
@@ -55,6 +54,7 @@ public final class VanillaSectionMesher {
         boolean completed = false;
         try (VanillaSectionCapture capture = VanillaSectionCapture.open(
                 region,
+                blockModels,
                 blockColors,
                 blockSpriteFinder,
                 labPbrMaterials,
@@ -65,7 +65,7 @@ public final class VanillaSectionMesher {
             SectionCompiler.Results results = compiler.compile(
                     section, region, VertexSorting.byDistance(0.0F, 0.0F, 0.0F), builders);
             try {
-                List<CpuSectionMesh> mesh = capture.finish(results);
+                CpuSectionGeometry mesh = capture.finish(results);
                 completed = true;
                 return mesh;
             } finally {

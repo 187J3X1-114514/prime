@@ -211,7 +211,9 @@ abstract class GenerateShaderAbi extends DefaultTask {
 			throw new GradleException(
 					'Prime hybrid scheduler must preserve eight wavefront rounds and its queue ABI')
 		}
-		if (!schema.pathControl.cameraInWaterMask.toString().equalsIgnoreCase('0x80000000')
+		if (!schema.pathControl.sampleEpochMask.toString().equalsIgnoreCase('0x7fffffff')
+				|| !schema.pathControl.triangleDebugMask.toString().equalsIgnoreCase('0x80000000')
+				|| !schema.pathControl.cameraInWaterMask.toString().equalsIgnoreCase('0x80000000')
 				|| !schema.pathControl.jitterPhaseMask.toString().equalsIgnoreCase('0x1fff')
 				|| schema.pathControl.transparentGuideModeShift != 29
 				|| !schema.pathControl.transparentGuideModeMask.toString().equalsIgnoreCase('0x3')
@@ -232,7 +234,7 @@ abstract class GenerateShaderAbi extends DefaultTask {
 				|| schema.pathControl.starEvQuarterBias != 32
 				|| schema.pathControl.russianRouletteStart != 1) {
 			throw new GradleException(
-					'Prime path controls must preserve the camera, lighting, material, jitter, and one-guaranteed-continuation roulette ABI')
+					'Prime path controls must preserve sampling, diagnostics, camera, lighting, material, jitter, and one-guaranteed-continuation roulette ABI')
 		}
 		def typeLayout = [
 			float: [size: 4, alignment: 4],
@@ -372,6 +374,8 @@ public final class ShaderAbi {
     public static final int WAVEFRONT_ROUNDS = ${wavefrontContract.rounds};
     public static final int WAVEFRONT_PATH_RECORD_SIZE = ${wavefrontContract.pathRecordSize};
     public static final int WAVEFRONT_ACTIVE_MASK = ${wavefrontContract.activeMask};
+    public static final int PATH_SAMPLE_EPOCH_MASK = ${schema.pathControl.sampleEpochMask};
+    public static final int PATH_TRIANGLE_DEBUG_MASK = ${schema.pathControl.triangleDebugMask};
     public static final int PATH_CAMERA_IN_WATER_MASK = ${schema.pathControl.cameraInWaterMask};
     public static final int PATH_JITTER_PHASE_MASK = ${schema.pathControl.jitterPhaseMask};
     public static final int PATH_TRANSPARENT_GUIDE_MODE_SHIFT = ${schema.pathControl.transparentGuideModeShift};
@@ -458,6 +462,8 @@ ${javaOffsets}
 #define PRIME_WAVEFRONT_ROUNDS ${wavefrontContract.rounds}
 #define PRIME_WAVEFRONT_PATH_RECORD_SIZE ${wavefrontContract.pathRecordSize}
 #define PRIME_WAVEFRONT_ACTIVE_MASK ${wavefrontContract.activeMask}u
+#define PRIME_PATH_SAMPLE_EPOCH_MASK ${schema.pathControl.sampleEpochMask}u
+#define PRIME_PATH_TRIANGLE_DEBUG_MASK ${schema.pathControl.triangleDebugMask}u
 #define PRIME_PATH_CAMERA_IN_WATER_MASK ${schema.pathControl.cameraInWaterMask}u
 #define PRIME_PATH_JITTER_PHASE_MASK ${schema.pathControl.jitterPhaseMask}u
 #define PRIME_PATH_TRANSPARENT_GUIDE_MODE_SHIFT ${schema.pathControl.transparentGuideModeShift}u

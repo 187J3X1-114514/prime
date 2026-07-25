@@ -39,7 +39,7 @@ final class RayTracingPipelineContractTest {
         assertEquals(2, RayTracingPipeline.MISS_GROUP_COUNT);
         assertEquals(6, RayTracingPipeline.HIT_GROUP_COUNT);
         assertEquals(9, RayTracingPipeline.RAYGEN_GROUP_COUNT);
-        assertEquals(1, RayTracingPipeline.RAYGEN_MODULE_COUNT);
+        assertEquals(4, RayTracingPipeline.RAYGEN_MODULE_COUNT);
         assertEquals(4, RayTracingPipeline.RAYGEN_SHADER_STAGE_COUNT);
         assertEquals(11, RayTracingPipeline.WAVEFRONT_STEP_DISPATCH_COUNT);
         assertEquals(15, RayTracingPipeline.WAVEFRONT_DISPATCH_COUNT);
@@ -52,13 +52,6 @@ final class RayTracingPipelineContractTest {
         assertEquals(2, RayTracingPipeline.raygenShaderStage(6));
         assertEquals(2, RayTracingPipeline.raygenShaderStage(7));
         assertEquals(3, RayTracingPipeline.raygenShaderStage(8));
-        assertEquals(0, RayTracingPipeline.raygenSpecializationStage(0));
-        assertEquals(1, RayTracingPipeline.raygenSpecializationStage(1));
-        assertEquals(3, RayTracingPipeline.raygenSpecializationStage(2));
-        assertEquals(4, RayTracingPipeline.raygenSpecializationStage(3));
-        assertThrows(
-                IllegalArgumentException.class,
-                () -> RayTracingPipeline.raygenSpecializationStage(4));
         assertEquals(516, RayTracingPipeline.raygenRecordStage(0));
         assertEquals(0, RayTracingPipeline.raygenRecordStage(1));
         assertEquals(1, RayTracingPipeline.raygenRecordStage(2));

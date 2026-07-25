@@ -215,6 +215,7 @@ public final class NrdNative {
             }
             byte[] spirv = new byte[(int) spirvSize];
             MemoryUtil.memByteBuffer(spirvAddress, spirv.length).get(spirv);
+            spirv = NrdSpirv.expandThreeComponentStorageWrites(spirv);
             long rangesAddress = MemoryUtil.memGetLong(pipelineAddress + 16L);
             int rangesNum = MemoryUtil.memGetInt(pipelineAddress + 24L);
             requireArray(rangesAddress, rangesNum, PIPELINE_RANGE_SIZE, "NRD pipeline ranges");

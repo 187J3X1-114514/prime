@@ -59,6 +59,10 @@ final class NrdNativeTest {
                 assertEquals(
                         0x07230203,
                         ByteBuffer.wrap(pipeline.spirv()).order(ByteOrder.LITTLE_ENDIAN).getInt());
+                assertEquals(
+                        0,
+                        NrdSpirv.countThreeComponentStorageWrites(pipeline.spirv()),
+                        pipeline.identifier());
                 Set<Integer> requiredBindings = new HashSet<>();
                 if (pipeline.hasConstantData()) {
                     requiredBindings.add(description.constantBufferOffset()

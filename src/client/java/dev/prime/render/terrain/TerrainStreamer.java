@@ -5,7 +5,6 @@ import dev.prime.render.ResourceCleanup;
 import dev.prime.render.scene.vanilla.VanillaSceneInterpreter;
 import dev.prime.render.vulkan.StagingArena;
 import dev.prime.render.vulkan.VulkanContext;
-import it.unimi.dsi.fastutil.longs.Long2LongOpenHashMap;
 import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
@@ -71,8 +70,7 @@ public final class TerrainStreamer implements AutoCloseable {
     private final LongOpenHashSet pendingEvictions = new LongOpenHashSet();
     private final LongOpenHashSet dirtyClusters = new LongOpenHashSet();
     private final ClusterGenerationTracker generations = new ClusterGenerationTracker();
-    private final Long2LongOpenHashMap queuedGeneration = new Long2LongOpenHashMap();
-    private final Long2LongOpenHashMap inFlightGeneration = new Long2LongOpenHashMap();
+    private final ClusterPipelineState pipelineState = new ClusterPipelineState();
     private final PriorityQueue<ClusterRequest> requests = new PriorityQueue<>(Comparator
             .comparingInt(ClusterRequest::priority)
             .thenComparingLong(ClusterRequest::distanceSquared)
@@ -208,6 +206,7 @@ public final class TerrainStreamer implements AutoCloseable {
         this.completed.clear();
         this.externalDirty.clear();
         this.readyForUpload.clear();
+        this.pipelineState.clear();
         ResourceCleanup.throwIfFailed(failure);
     }
 
@@ -281,7 +280,7 @@ public final class TerrainStreamer implements AutoCloseable {
 
     private void rebuildRequestQueue(int priority) {
         this.requests.clear();
-        this.queuedGeneration.clear();
+        this.pipelineState.clearQueued();
         for (long key : this.desired) {
             if (!this.scene.contains(key) || priority == 0) {
                 long nextGeneration = priority == 0
@@ -293,7 +292,7 @@ public final class TerrainStreamer implements AutoCloseable {
     }
 
     private void enqueue(long clusterKey, int priority, long token) {
-        if (this.queuedGeneration.getOrDefault(clusterKey, Long.MIN_VALUE) == token) {
+        if (!this.pipelineState.enqueue(clusterKey, token)) {
             return;
         }
         int x = SectionPos.x(clusterKey) + SectionCluster.SECTION_SIZE / 2;
@@ -303,7 +302,6 @@ public final class TerrainStreamer implements AutoCloseable {
         long dy = y - this.centerSectionY;
         long dz = z - this.centerSectionZ;
         long distanceSquared = ((dx * dx + dz * dz) << 8) | Math.min(255L, Math.abs(dy));
-        this.queuedGeneration.put(clusterKey, token);
         this.requests.add(new ClusterRequest(clusterKey, token, priority, distanceSquared));
         this.compactRequestQueueIfNeeded();
     }
@@ -332,19 +330,19 @@ public final class TerrainStreamer implements AutoCloseable {
                 && !this.requests.isEmpty()) {
             ClusterRequest request = this.requests.poll();
             examined++;
-            if (this.queuedGeneration.getOrDefault(request.key(), Long.MIN_VALUE) != request.generation()) {
+            if (!this.pipelineState.isQueued(request.key(), request.generation())) {
                 continue;
             }
             if (!this.desired.contains(request.key())
                     || !this.generations.isCurrent(request.key(), request.generation())) {
-                this.queuedGeneration.remove(request.key());
+                this.pipelineState.cancelQueued(request.key(), request.generation());
                 continue;
             }
-            if (this.inFlightGeneration.containsKey(request.key())) {
+            if (this.pipelineState.hasInFlight(request.key())) {
                 this.blockedRequests.add(request);
                 continue;
             }
-            this.queuedGeneration.remove(request.key());
+            this.pipelineState.cancelQueued(request.key(), request.generation());
             int clusterX = SectionPos.x(request.key());
             int clusterY = SectionPos.y(request.key());
             int clusterZ = SectionPos.z(request.key());
@@ -392,7 +390,7 @@ public final class TerrainStreamer implements AutoCloseable {
 
             if (snapshots.isEmpty()) {
                 if (this.scene.contains(request.key())) {
-                    this.readyForUpload.addLast(new CompletedCluster(
+                    CompletedCluster result = new CompletedCluster(
                             this.generations.worldEpoch(),
                             request.key(),
                             request.generation(),
@@ -400,7 +398,11 @@ public final class TerrainStreamer implements AutoCloseable {
                             clusterY,
                             clusterZ,
                             CpuClusterMesh.empty(),
-                            null));
+                            null);
+                    if (this.pipelineState.completeToReady(
+                            result.key(), result.generation())) {
+                        this.readyForUpload.addLast(result);
+                    }
                 } else {
                     this.empty.add(request.key());
                 }
@@ -408,7 +410,7 @@ public final class TerrainStreamer implements AutoCloseable {
                 continue;
             }
             LabPbrMaterialSet materialSnapshot = this.labPbrMaterials;
-            this.inFlightGeneration.put(request.key(), request.generation());
+            this.pipelineState.beginInFlight(request.key(), request.generation());
             long worldEpoch = this.generations.worldEpoch();
             try {
                 this.workers.execute(() -> {
@@ -458,7 +460,7 @@ public final class TerrainStreamer implements AutoCloseable {
                 });
                 this.workerJobs++;
             } catch (RejectedExecutionException ignored) {
-                this.inFlightGeneration.remove(request.key());
+                this.pipelineState.cancelInFlight(request.key(), request.generation());
                 this.enqueue(request.key(), request.priority(), request.generation());
                 PrimeClient.LOGGER.debug("Terrain executor is temporarily saturated");
                 break;
@@ -498,9 +500,7 @@ public final class TerrainStreamer implements AutoCloseable {
             if (result.worldEpoch() != this.generations.worldEpoch()) {
                 continue;
             }
-            if (this.inFlightGeneration.getOrDefault(result.key(), Long.MIN_VALUE) == result.generation()) {
-                this.inFlightGeneration.remove(result.key());
-            }
+            this.pipelineState.cancelInFlight(result.key(), result.generation());
             if (!this.desired.contains(result.key())
                     || !this.generations.isCurrent(result.key(), result.generation())) {
                 continue;
@@ -517,7 +517,9 @@ public final class TerrainStreamer implements AutoCloseable {
                         : "Terrain extraction failed for virtual cluster " + result.key();
                 throw new IllegalStateException(message, result.failure());
             }
-            this.readyForUpload.addLast(result);
+            if (this.pipelineState.completeToReady(result.key(), result.generation())) {
+                this.readyForUpload.addLast(result);
+            }
         }
     }
 
@@ -529,6 +531,7 @@ public final class TerrainStreamer implements AutoCloseable {
             CompletedCluster next = this.readyForUpload.peekFirst();
             if (!this.generations.isCurrent(next.key(), next.generation()) || !this.desired.contains(next.key())) {
                 this.readyForUpload.removeFirst();
+                this.pipelineState.consumeReady(next.key(), next.generation());
                 continue;
             }
             long nextEndOffset = stagingEndOffset(
@@ -537,6 +540,7 @@ public final class TerrainStreamer implements AutoCloseable {
                 break;
             }
             this.readyForUpload.removeFirst();
+            this.pipelineState.consumeReady(next.key(), next.generation());
             uploadBytes = nextEndOffset;
             uploads.add(new ClusterUpload(
                     next.key(), next.clusterX(), next.clusterY(), next.clusterZ(), next.mesh()));
@@ -548,7 +552,7 @@ public final class TerrainStreamer implements AutoCloseable {
         if (!updated) {
             for (int index = uploads.size() - 1; index >= 0; index--) {
                 ClusterUpload upload = uploads.get(index);
-                this.readyForUpload.addFirst(new CompletedCluster(
+                CompletedCluster result = new CompletedCluster(
                         this.generations.worldEpoch(),
                         upload.key(),
                         this.generations.current(upload.key()),
@@ -556,7 +560,11 @@ public final class TerrainStreamer implements AutoCloseable {
                         upload.clusterY(),
                         upload.clusterZ(),
                         upload.mesh(),
-                        null));
+                        null);
+                if (this.pipelineState.completeToReady(
+                        result.key(), result.generation())) {
+                    this.readyForUpload.addFirst(result);
+                }
             }
             return;
         }
@@ -654,8 +662,7 @@ public final class TerrainStreamer implements AutoCloseable {
         this.pendingEvictions.clear();
         this.dirtyClusters.clear();
         this.generations.resetWorld();
-        this.queuedGeneration.clear();
-        this.inFlightGeneration.clear();
+        this.pipelineState.clear();
         this.requests.clear();
         this.externalDirty.clear();
         this.readyForUpload.clear();
@@ -673,8 +680,8 @@ public final class TerrainStreamer implements AutoCloseable {
         this.requests.removeIf(request ->
                 !this.desired.contains(request.key())
                         || !this.generations.isCurrent(request.key(), request.generation())
-                        || this.queuedGeneration.getOrDefault(request.key(), Long.MIN_VALUE)
-                                != request.generation());
+                        || !this.pipelineState.isQueued(
+                                request.key(), request.generation()));
     }
 
     private record ClusterRequest(long key, long generation, int priority, long distanceSquared) {

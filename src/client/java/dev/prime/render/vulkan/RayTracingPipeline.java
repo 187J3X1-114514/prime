@@ -33,8 +33,6 @@ import org.lwjgl.vulkan.VkPushConstantRange;
 import org.lwjgl.vulkan.VkRayTracingPipelineCreateInfoKHR;
 import org.lwjgl.vulkan.VkRayTracingShaderGroupCreateInfoKHR;
 import org.lwjgl.vulkan.VkShaderModuleCreateInfo;
-import org.lwjgl.vulkan.VkSpecializationInfo;
-import org.lwjgl.vulkan.VkSpecializationMapEntry;
 import org.lwjgl.vulkan.VkStridedDeviceAddressRegionKHR;
 import org.lwjgl.vulkan.VkWriteDescriptorSet;
 import org.lwjgl.vulkan.VkWriteDescriptorSetAccelerationStructureKHR;
@@ -50,7 +48,7 @@ public final class RayTracingPipeline implements Destroyable {
     private static final int WAVEFRONT_TAIL_QUEUE_1_GROUP = 7;
     private static final int WAVEFRONT_RESOLVE_GROUP = 8;
     static final int RAYGEN_GROUP_COUNT = 9;
-    static final int RAYGEN_MODULE_COUNT = 1;
+    static final int RAYGEN_MODULE_COUNT = 4;
     static final int RAYGEN_SHADER_STAGE_COUNT = 4;
     static final int MISS_GROUP_COUNT = 2;
     static final int HIT_GROUP_COUNT = 6;
@@ -99,10 +97,15 @@ public final class RayTracingPipeline implements Destroyable {
                 boolean ser = context.capabilities().invocationReorderSupported()
                         && context.capabilities().wavefrontSubgroupSupported();
                 String suffix = ser ? "_ser.rgen.spv" : ".rgen.spv";
-                String[] raygens =
-                        new String[] {"/prime/shaders/wavefront" + suffix};
-                // Every render mode uses this module. Specialization constants still give each
-                // stage an independent driver optimization and register-allocation boundary.
+                String[] raygens = new String[] {
+                    "/prime/shaders/wavefront_head" + suffix,
+                    "/prime/shaders/wavefront_step" + suffix,
+                    "/prime/shaders/wavefront_tail" + suffix,
+                    "/prime/shaders/wavefront_resolve" + suffix
+                };
+                // Every render mode remains resident in one pipeline. Build-time specialization
+                // keeps the existing per-stage optimization and register-allocation boundaries
+                // without asking the driver to repeatedly prune the complete scheduler module.
                 newTracePipeline = TracePipeline.create(
                         context,
                         stack,
@@ -817,26 +820,11 @@ public final class RayTracingPipeline implements Destroyable {
                         .sType$Default()
                         .stage(stageFlag)
                         .module(index < RAYGEN_SHADER_STAGE_COUNT
-                                ? modules[0]
+                                ? modules[index]
                                 : modules[index
                                         - RAYGEN_SHADER_STAGE_COUNT
                                         + RAYGEN_MODULE_COUNT])
                         .pName(mainName);
-                if (index < RAYGEN_SHADER_STAGE_COUNT) {
-                    VkSpecializationMapEntry.Buffer map =
-                            VkSpecializationMapEntry.calloc(1, stack);
-                    map.get(0)
-                            .constantID(0)
-                            .offset(0)
-                            .size(Integer.BYTES);
-                    ByteBuffer data = stack.malloc(Integer.BYTES);
-                    data.putInt(0, raygenSpecializationStage(index));
-                    VkSpecializationInfo specialization =
-                            VkSpecializationInfo.calloc(stack)
-                                    .pMapEntries(map)
-                                    .pData(data);
-                    stages.get(index).pSpecializationInfo(specialization);
-                }
             }
 
             VkRayTracingShaderGroupCreateInfoKHR.Buffer groups =
@@ -954,17 +942,6 @@ public final class RayTracingPipeline implements Destroyable {
                     WAVEFRONT_RESOLVE_GROUP -> 3;
             default -> throw new IllegalArgumentException(
                     "Invalid Prime raygen group " + group);
-        };
-    }
-
-    static int raygenSpecializationStage(int shaderStage) {
-        return switch (shaderStage) {
-            case 0 -> 0;
-            case 1 -> 1;
-            case 2 -> 3;
-            case 3 -> 4;
-            default -> throw new IllegalArgumentException(
-                    "Invalid specialized Prime raygen stage " + shaderStage);
         };
     }
 

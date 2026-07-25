@@ -21,6 +21,13 @@ surface. Its scheduler consequently binds the full-resolution surface as `gOut_T
 the Vulkan storage-image component contract and leaving the actual tile surface unused. The patch
 removes only that orphan declaration and restores the scheduler's existing enum-to-pool mapping.
 
+REBLUR SH1 is intentionally a three-component value, but NRD allocates its portable backing
+texture as `RGBA16F`. DXC consequently emits formatless three-component `OpImageWrite`
+instructions, which violate Vulkan's storage-image component contract when Prime binds the
+four-component view. `NrdSpirv` repairs those writes at Prime's native-adapter boundary by adding
+an unused fourth component. NRD reads SH1 as `xyz`, so this does not change denoising math or
+require a source modification to the pinned SDK.
+
 Prime builds SPIR-V only, with one NRD instance containing two
 `REBLUR_DIFFUSE_SPECULAR_SH` denoisers and one `SIGMA_SHADOW`, no NRI and no quad-intrinsics extension.
 The main REBLUR handles ordinary primary surfaces and the transmission PSR signal on transparent pixels;

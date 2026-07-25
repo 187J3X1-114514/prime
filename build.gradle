@@ -762,25 +762,66 @@ abstract class CompilePrimeShaders extends DefaultTask {
 				commandLine spirvValidator.get(), '--target-env', 'vulkan1.2', output.absolutePath
 			}
 		}
-		sources.each { source ->
-			def output = new File(scratch, source.name + '.spv')
-			compileShader(source, output, [])
-			// Conformance-only shaders force otherwise dormant libraries through glslang and
-			// spirv-val, but are never loaded at runtime and must not inflate the distributable jar.
-			if (source.name.endsWith('_validation.comp')) {
-				java.nio.file.Files.delete(output.toPath())
+		def specializeWavefront = { File input, File output, int stage ->
+			execOperations.exec {
+				commandLine spirvOptimizer.get(),
+						'--set-spec-const-default-value', "0:${stage}",
+						'--freeze-spec-const',
+						'--fold-spec-const-op-composite',
+						'--eliminate-dead-branches',
+						'--eliminate-dead-code-aggressive',
+						'--eliminate-dead-inserts',
+						'--eliminate-dead-members',
+						'--simplify-instructions',
+						'--eliminate-dead-functions',
+						'--merge-blocks',
+						'--compact-ids',
+						input.absolutePath,
+						'-o', output.absolutePath
 			}
+			execOperations.exec {
+				commandLine spirvValidator.get(), '--target-env', 'vulkan1.2', output.absolutePath
+			}
+		}
+		sources.each { source ->
 			if (source.name == 'wavefront.rgen') {
-				// Keep a baseline module that never declares the optional extension and a separate
-				// SER permutation for devices that negotiate real invocation reordering. Runtime
-				// selection therefore cannot expose unsupported SPIR-V to a fallback device.
-				def baseName = source.name.substring(0, source.name.length() - '.rgen'.length())
-				def serOutput = new File(scratch, "${baseName}_ser.rgen.spv")
-				def serDefinitions = [
-						'-DPRIME_ENABLE_SER=1',
-						'-DPRIME_ENABLE_SUBGROUP_QUEUE=1'
+				// Freeze the four uniform scheduler stages before the driver sees them. The source
+				// and glslang front end remain shared, while dead stage call trees are removed once
+				// per baseline/SER variant instead of being rediscovered during every cold start.
+				def stages = [
+						head: 0,
+						step: 1,
+						tail: 3,
+						resolve: 4
 				]
-				compileShader(source, serOutput, serDefinitions)
+				def variants = [
+						[name: '', definitions: []],
+						[name: '_ser', definitions: [
+								'-DPRIME_ENABLE_SER=1',
+								'-DPRIME_ENABLE_SUBGROUP_QUEUE=1'
+						]]
+				]
+				variants.each { variant ->
+					def generic = new File(
+							scratch, "wavefront${variant.name}.generic.rgen.spv")
+					compileShader(source, generic, variant.definitions)
+					stages.each { stageName, stage ->
+						def output = new File(
+								scratch,
+								"wavefront_${stageName}${variant.name}.rgen.spv")
+						specializeWavefront(generic, output, stage)
+					}
+					java.nio.file.Files.delete(generic.toPath())
+				}
+			} else {
+				def output = new File(scratch, source.name + '.spv')
+				compileShader(source, output, [])
+				// Conformance-only shaders force otherwise dormant libraries through glslang and
+				// spirv-val, but are never loaded at runtime and must not inflate the distributable
+				// jar.
+				if (source.name.endsWith('_validation.comp')) {
+					java.nio.file.Files.delete(output.toPath())
+				}
 			}
 		}
 
@@ -956,8 +997,14 @@ def verifyDistributionJar = tasks.register('verifyDistributionJar') {
 			'prime/natives/windows-x86_64/amd_fidelityfx_vk.dll',
 			'prime/natives/windows-x86_64/prime_dlss_rr.dll',
 			'prime/natives/windows-x86_64/nvngx_dlssd.dll',
-			'prime/shaders/wavefront.rgen.spv',
-			'prime/shaders/wavefront_ser.rgen.spv',
+			'prime/shaders/wavefront_head.rgen.spv',
+			'prime/shaders/wavefront_step.rgen.spv',
+			'prime/shaders/wavefront_tail.rgen.spv',
+			'prime/shaders/wavefront_resolve.rgen.spv',
+			'prime/shaders/wavefront_head_ser.rgen.spv',
+			'prime/shaders/wavefront_step_ser.rgen.spv',
+			'prime/shaders/wavefront_tail_ser.rgen.spv',
+			'prime/shaders/wavefront_resolve_ser.rgen.spv',
 			'prime/shaders/screenshot_display.comp.spv',
 			'prime/shaders/shadow.rchit.spv',
 			'prime/shaders/nrd_motion.comp.spv',
@@ -973,9 +1020,9 @@ def verifyDistributionJar = tasks.register('verifyDistributionJar') {
 		}
 
 		def shaderNames = names.findAll { it.startsWith('prime/shaders/') && it.endsWith('.spv') }
-		if (shaderNames.size() != 19) {
+		if (shaderNames.size() != 25) {
 			throw new GradleException(
-					"Distribution jar must contain 19 Prime shaders; found ${shaderNames.size()}")
+					"Distribution jar must contain 25 Prime shaders; found ${shaderNames.size()}")
 		}
 
 		new java.util.zip.ZipFile(archive).withCloseable { zip ->

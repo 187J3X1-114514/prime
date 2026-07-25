@@ -44,7 +44,10 @@
 ## 已验证契约
 
 - ABI 固定为 12 轮、144 字节路径记录、每像素两个路径槽、两个紧凑索引队列、16 字节间接命令和 32-bit 路径 ID。
-- CPU 只创建一个 wavefront raygen shader module。它以 specialization constant 生成 head、step/transition、tail 和 resolve 四个 shader stage；queue 方向、transition 与截图输出标记由 SBT record 提供。主 step 因此不继承 head/tail/resolve 的寄存器上限。
+- CPU 只创建一条完整 wavefront RT pipeline。发布构建预先冻结 specialization constant，
+  将同一 GLSL 源裁成 head、step/transition、tail 和 resolve 四个 raygen stage 模块；
+  queue 方向、transition 与截图输出标记仍由 SBT record 提供。主 step 因此不继承
+  head/tail/resolve 的寄存器上限，也不要求驱动在冷启动时重复裁剪整个统一模块。
 - 支持 RayGen subgroup ballot 的 SER 设备使用 subgroup 聚合 append：一个 subgroup 只执行一次全局计数器分配，并连续写入所有存活路径。无此能力的设备继续使用逐路径原子 fallback。
 - SER coherence hint 使用六位 section 局部性和两位路径类别，区分普通、透明反射和透明透射。
 - 主追踪 payload 从 80 字节降到 64 字节；命中位置由 raygen 根据 `origin + direction × t` 重建，完整 `SurfaceInteraction` 的公开 ABI 不变。

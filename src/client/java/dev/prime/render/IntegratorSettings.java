@@ -1,5 +1,6 @@
 package dev.prime.render;
 
+import dev.prime.render.post.PostProcessingMode;
 import dev.prime.render.shader.ShaderAbi;
 
 /**
@@ -34,16 +35,26 @@ final class IntegratorSettings {
     private IntegratorSettings() {
     }
 
-    static int packPathControl(int maximumBounces, int jitterPhase, boolean cameraInWater) {
+    static int packPathControl(
+            int maximumBounces,
+            int jitterPhase,
+            boolean cameraInWater,
+            PostProcessingMode postProcessingMode) {
         if (maximumBounces < 0 || maximumBounces > 0xffff) {
             throw new IllegalArgumentException("Maximum bounce count does not fit in 16 bits");
         }
         // Zero selects the precompiled screenshot branch. Realtime reconstruction uses the exact
         // one-based jitter phase supplied by FSR or RR.
         if (jitterPhase < 0 || jitterPhase > ShaderAbi.PATH_JITTER_PHASE_MASK) {
-            throw new IllegalArgumentException("Jitter phase does not fit in 15 bits");
+            throw new IllegalArgumentException("Jitter phase does not fit in 13 bits");
         }
+        int transparentGuideMode = switch (postProcessingMode) {
+            case NRD_FSR -> ShaderAbi.PATH_TRANSPARENT_GUIDE_MODE_NRD;
+            case DLSS_RR -> ShaderAbi.PATH_TRANSPARENT_GUIDE_MODE_DLSS_RR;
+            case DISABLED -> ShaderAbi.PATH_TRANSPARENT_GUIDE_MODE_DISABLED;
+        };
         return (cameraInWater ? ShaderAbi.PATH_CAMERA_IN_WATER_MASK : 0)
+                | transparentGuideMode << ShaderAbi.PATH_TRANSPARENT_GUIDE_MODE_SHIFT
                 | (jitterPhase << 16)
                 | maximumBounces;
     }

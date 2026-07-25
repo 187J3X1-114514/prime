@@ -421,6 +421,7 @@ public final class VulkanRenderer implements AutoCloseable {
                             ? images.qualityMode.fsrJitterPhase(postFrame.frameIndex())
                             : images.qualityMode.rrJitterPhase(postFrame.frameIndex()),
                     frameCameraInWater,
+                    images.mode,
                     lighting,
                     material,
                     processor.targets().usesShInputs(),
@@ -573,6 +574,7 @@ public final class VulkanRenderer implements AutoCloseable {
                     sampleEpoch,
                     0,
                     this.screenshotCameraInWater,
+                    PostProcessingMode.DISABLED,
                     lighting,
                     material,
                     false,
@@ -1121,6 +1123,7 @@ public final class VulkanRenderer implements AutoCloseable {
             int sampleEpoch,
             int jitterPhase,
             boolean cameraInWater,
+            PostProcessingMode postProcessingMode,
             LightingSettings.Snapshot lighting,
             MaterialSettings.Snapshot material,
             boolean shInput,
@@ -1151,7 +1154,8 @@ public final class VulkanRenderer implements AutoCloseable {
                 IntegratorSettings.packPathControl(
                         IntegratorSettings.MAXIMUM_BOUNCES,
                         jitterPhase,
-                        cameraInWater));
+                        cameraInWater,
+                        postProcessingMode));
         int materialLightingControl = IntegratorSettings.packMaterialLightingControl(
                         lighting.sunQuarterSteps(),
                         lighting.starQuarterSteps(),

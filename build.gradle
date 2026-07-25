@@ -205,7 +205,12 @@ abstract class GenerateShaderAbi extends DefaultTask {
 			throw new GradleException('Prime NRD signal and native-library contracts changed without a coordinated migration')
 		}
 		if (!schema.pathControl.cameraInWaterMask.toString().equalsIgnoreCase('0x80000000')
-				|| !schema.pathControl.jitterPhaseMask.toString().equalsIgnoreCase('0x7fff')
+				|| !schema.pathControl.jitterPhaseMask.toString().equalsIgnoreCase('0x1fff')
+				|| schema.pathControl.transparentGuideModeShift != 29
+				|| !schema.pathControl.transparentGuideModeMask.toString().equalsIgnoreCase('0x3')
+				|| schema.pathControl.transparentGuideModeNrd != 0
+				|| schema.pathControl.transparentGuideModeDlssRr != 1
+				|| schema.pathControl.transparentGuideModeDisabled != 2
 				|| schema.pathControl.sunEvQuarterShift != 0
 				|| schema.pathControl.blockLightEvQuarterShift != 8
 				|| !schema.pathControl.evQuarterMask.toString().equalsIgnoreCase('0xff')
@@ -218,9 +223,9 @@ abstract class GenerateShaderAbi extends DefaultTask {
 				|| schema.pathControl.starEvQuarterShift != 25
 				|| !schema.pathControl.starEvQuarterMask.toString().equalsIgnoreCase('0x7f')
 				|| schema.pathControl.starEvQuarterBias != 32
-				|| schema.pathControl.russianRouletteStart != 2) {
+				|| schema.pathControl.russianRouletteStart != 1) {
 			throw new GradleException(
-					'Prime path controls must preserve the camera, lighting, material, jitter, and second-bounce roulette ABI')
+					'Prime path controls must preserve the camera, lighting, material, jitter, and one-guaranteed-continuation roulette ABI')
 		}
 		def typeLayout = [
 			float: [size: 4, alignment: 4],
@@ -358,6 +363,11 @@ public final class ShaderAbi {
     public static final int DESCRIPTOR_STARMAP_IMPORTANCE = ${schema.descriptors.starmapImportance};
     public static final int PATH_CAMERA_IN_WATER_MASK = ${schema.pathControl.cameraInWaterMask};
     public static final int PATH_JITTER_PHASE_MASK = ${schema.pathControl.jitterPhaseMask};
+    public static final int PATH_TRANSPARENT_GUIDE_MODE_SHIFT = ${schema.pathControl.transparentGuideModeShift};
+    public static final int PATH_TRANSPARENT_GUIDE_MODE_MASK = ${schema.pathControl.transparentGuideModeMask};
+    public static final int PATH_TRANSPARENT_GUIDE_MODE_NRD = ${schema.pathControl.transparentGuideModeNrd};
+    public static final int PATH_TRANSPARENT_GUIDE_MODE_DLSS_RR = ${schema.pathControl.transparentGuideModeDlssRr};
+    public static final int PATH_TRANSPARENT_GUIDE_MODE_DISABLED = ${schema.pathControl.transparentGuideModeDisabled};
     public static final int PATH_SUN_EV_QUARTER_SHIFT = ${schema.pathControl.sunEvQuarterShift};
     public static final int PATH_BLOCK_LIGHT_EV_QUARTER_SHIFT = ${schema.pathControl.blockLightEvQuarterShift};
     public static final int PATH_EV_QUARTER_MASK = ${schema.pathControl.evQuarterMask};
@@ -435,6 +445,11 @@ ${javaOffsets}
 #define PRIME_DESCRIPTOR_TRANSMISSION_GGX_ENERGY ${schema.descriptors.transmissionGgxEnergy}
 #define PRIME_PATH_CAMERA_IN_WATER_MASK ${schema.pathControl.cameraInWaterMask}u
 #define PRIME_PATH_JITTER_PHASE_MASK ${schema.pathControl.jitterPhaseMask}u
+#define PRIME_PATH_TRANSPARENT_GUIDE_MODE_SHIFT ${schema.pathControl.transparentGuideModeShift}u
+#define PRIME_PATH_TRANSPARENT_GUIDE_MODE_MASK ${schema.pathControl.transparentGuideModeMask}u
+#define PRIME_PATH_TRANSPARENT_GUIDE_MODE_NRD ${schema.pathControl.transparentGuideModeNrd}u
+#define PRIME_PATH_TRANSPARENT_GUIDE_MODE_DLSS_RR ${schema.pathControl.transparentGuideModeDlssRr}u
+#define PRIME_PATH_TRANSPARENT_GUIDE_MODE_DISABLED ${schema.pathControl.transparentGuideModeDisabled}u
 #define PRIME_PATH_SUN_EV_QUARTER_SHIFT ${schema.pathControl.sunEvQuarterShift}u
 #define PRIME_PATH_BLOCK_LIGHT_EV_QUARTER_SHIFT ${schema.pathControl.blockLightEvQuarterShift}u
 #define PRIME_PATH_EV_QUARTER_MASK ${schema.pathControl.evQuarterMask}u

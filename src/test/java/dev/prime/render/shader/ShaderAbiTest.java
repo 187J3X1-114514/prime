@@ -43,7 +43,12 @@ final class ShaderAbiTest {
         assertEquals(34, ShaderAbi.DESCRIPTOR_STARMAP);
         assertEquals(35, ShaderAbi.DESCRIPTOR_STARMAP_IMPORTANCE);
         assertEquals(0x80000000, ShaderAbi.PATH_CAMERA_IN_WATER_MASK);
-        assertEquals(0x7fff, ShaderAbi.PATH_JITTER_PHASE_MASK);
+        assertEquals(0x1fff, ShaderAbi.PATH_JITTER_PHASE_MASK);
+        assertEquals(29, ShaderAbi.PATH_TRANSPARENT_GUIDE_MODE_SHIFT);
+        assertEquals(0x3, ShaderAbi.PATH_TRANSPARENT_GUIDE_MODE_MASK);
+        assertEquals(0, ShaderAbi.PATH_TRANSPARENT_GUIDE_MODE_NRD);
+        assertEquals(1, ShaderAbi.PATH_TRANSPARENT_GUIDE_MODE_DLSS_RR);
+        assertEquals(2, ShaderAbi.PATH_TRANSPARENT_GUIDE_MODE_DISABLED);
         assertEquals(0, ShaderAbi.PATH_SUN_EV_QUARTER_SHIFT);
         assertEquals(8, ShaderAbi.PATH_BLOCK_LIGHT_EV_QUARTER_SHIFT);
         assertEquals(0xff, ShaderAbi.PATH_EV_QUARTER_MASK);
@@ -56,7 +61,7 @@ final class ShaderAbiTest {
         assertEquals(25, ShaderAbi.PATH_STAR_EV_QUARTER_SHIFT);
         assertEquals(0x7f, ShaderAbi.PATH_STAR_EV_QUARTER_MASK);
         assertEquals(32, ShaderAbi.PATH_STAR_EV_QUARTER_BIAS);
-        assertEquals(2, ShaderAbi.RUSSIAN_ROULETTE_START);
+        assertEquals(1, ShaderAbi.RUSSIAN_ROULETTE_START);
         assertEquals("linear-rec2020-d65", ShaderAbi.WORKING_COLOR_SPACE);
         assertEquals("srgb", ShaderAbi.TEXTURE_COLOR_ENCODING);
         assertEquals("srgb", ShaderAbi.DISPLAY_COLOR_ENCODING);

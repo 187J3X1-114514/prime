@@ -6,25 +6,45 @@ import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import dev.prime.render.post.PostProcessingMode;
 import dev.prime.render.shader.ShaderAbi;
 import org.junit.jupiter.api.Test;
 
 final class IntegratorSettingsTest {
     @Test
     void pathControlKeepsCameraMediumSeparateFromJitterAndBounceFields() {
-        int dry = IntegratorSettings.packPathControl(256, 18, false);
-        int submerged = IntegratorSettings.packPathControl(256, 18, true);
+        int dry = IntegratorSettings.packPathControl(
+                256, 18, false, PostProcessingMode.NRD_FSR);
+        int submerged = IntegratorSettings.packPathControl(
+                256, 18, true, PostProcessingMode.NRD_FSR);
         assertEquals(256, dry & 0xffff);
         assertEquals(18, (dry >>> 16) & ShaderAbi.PATH_JITTER_PHASE_MASK);
         assertEquals(0, dry & ShaderAbi.PATH_CAMERA_IN_WATER_MASK);
         assertEquals(ShaderAbi.PATH_CAMERA_IN_WATER_MASK,
                 submerged & ShaderAbi.PATH_CAMERA_IN_WATER_MASK);
-        int screenshot = IntegratorSettings.packPathControl(256, 0, false);
+        int screenshot = IntegratorSettings.packPathControl(
+                256, 0, false, PostProcessingMode.DISABLED);
         assertEquals(0, (screenshot >>> 16) & ShaderAbi.PATH_JITTER_PHASE_MASK);
+        int dlss = IntegratorSettings.packPathControl(
+                256, 18, false, PostProcessingMode.DLSS_RR);
+        assertEquals(
+                ShaderAbi.PATH_TRANSPARENT_GUIDE_MODE_NRD,
+                dry >>> ShaderAbi.PATH_TRANSPARENT_GUIDE_MODE_SHIFT
+                        & ShaderAbi.PATH_TRANSPARENT_GUIDE_MODE_MASK);
+        assertEquals(
+                ShaderAbi.PATH_TRANSPARENT_GUIDE_MODE_DLSS_RR,
+                dlss >>> ShaderAbi.PATH_TRANSPARENT_GUIDE_MODE_SHIFT
+                        & ShaderAbi.PATH_TRANSPARENT_GUIDE_MODE_MASK);
+        assertEquals(
+                ShaderAbi.PATH_TRANSPARENT_GUIDE_MODE_DISABLED,
+                screenshot >>> ShaderAbi.PATH_TRANSPARENT_GUIDE_MODE_SHIFT
+                        & ShaderAbi.PATH_TRANSPARENT_GUIDE_MODE_MASK);
         assertThrows(IllegalArgumentException.class,
-                () -> IntegratorSettings.packPathControl(256, -1, false));
+                () -> IntegratorSettings.packPathControl(
+                        256, -1, false, PostProcessingMode.NRD_FSR));
         assertThrows(IllegalArgumentException.class,
-                () -> IntegratorSettings.packPathControl(256, 0x8000, false));
+                () -> IntegratorSettings.packPathControl(
+                        256, 0x2000, false, PostProcessingMode.NRD_FSR));
     }
 
     @Test
@@ -67,8 +87,8 @@ final class IntegratorSettingsTest {
     }
 
     @Test
-    void rouletteStartsAtTheSecondBounceContract() {
-        assertEquals(2, IntegratorSettings.RUSSIAN_ROULETTE_START);
+    void rouletteStartsAfterOneGuaranteedContinuation() {
+        assertEquals(1, IntegratorSettings.RUSSIAN_ROULETTE_START);
     }
 
     @Test

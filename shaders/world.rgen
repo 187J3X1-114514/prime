@@ -38,13 +38,18 @@ uint primeClassifyRawOutput(PrimeIntegrationResult result) {
             | primeClassifyNonFinite(result.guides.primaryPosition)
             | primeClassifyRadiance(result.guides.primaryAreaDiffuse)
             | primeClassifyRadiance(result.guides.primaryAreaSpecular);
-    if (result.transparentPrimary) {
+    uint transparentGuideMode = primeTransparentGuideMode();
+    if (result.transparentPrimary
+            && transparentGuideMode != PRIME_PATH_TRANSPARENT_GUIDE_MODE_DISABLED) {
         flags |= primeClassifyNonFinite(result.transmissionAnchorDistance)
                 | primeClassifyNonFinite(result.transmissionGuides.primaryDistance)
                 | primeClassifyDirection(result.transmissionGuides.primaryNormal)
                 | primeClassifyNonnegative(result.transmissionGuides.primaryAlbedo)
-                | primeClassifyNonnegative(result.transmissionGuides.primarySpecularAlbedo)
-                | primeClassifyNonFinite(result.reflectionGuides.primaryDistance)
+                | primeClassifyNonnegative(result.transmissionGuides.primarySpecularAlbedo);
+    }
+    if (result.transparentPrimary
+            && transparentGuideMode == PRIME_PATH_TRANSPARENT_GUIDE_MODE_NRD) {
+        flags |= primeClassifyNonFinite(result.reflectionGuides.primaryDistance)
                 | primeClassifyDirection(result.reflectionGuides.primaryNormal)
                 | primeClassifyNonnegative(result.reflectionGuides.primaryAlbedo)
                 | primeClassifyNonnegative(result.reflectionGuides.primarySpecularAlbedo);

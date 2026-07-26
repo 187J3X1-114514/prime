@@ -225,7 +225,8 @@ public final class AtmospherePipeline implements Destroyable {
 
     /**
      * Maps Minecraft height into the atmosphere at one metre per block.
-     * Y=-64 is sea level and every block represents one metre, so Y=320 is 0.384 km high.
+     * Y=-128 is the virtual planet ground and every block represents one metre, so Y=320 is
+     * 0.448 km high.
      */
     public static float worldAltitudeKm(double worldY) {
         return (float) ((worldY - WORLD_SEA_LEVEL_Y) * WORLD_UNIT_SCALE_KM);

@@ -27,12 +27,14 @@ final class AtmospherePipelineTest {
 
     @Test
     void minecraftBuildRangeUsesOneToOneAtmosphereScale() {
-        assertEquals(0.0F, AtmospherePipeline.worldAltitudeKm(-64.0));
-        assertEquals(0.384F, AtmospherePipeline.worldAltitudeKm(320.0));
+        assertEquals(0.0F, AtmospherePipeline.worldAltitudeKm(-128.0));
+        assertEquals(0.064F, AtmospherePipeline.worldAltitudeKm(-64.0));
+        assertEquals(0.448F, AtmospherePipeline.worldAltitudeKm(320.0));
         // The one-metre radius offset keeps ray/sphere tests numerically outside the ground while
-        // the conceptual altitude remains exactly sea level.
-        assertEquals(6_360.001F, AtmospherePipeline.eyeRadiusKm(-64.0));
-        assertEquals(6_360.384F, AtmospherePipeline.eyeRadiusKm(320.0));
+        // the conceptual virtual-ground altitude remains exactly zero.
+        assertEquals(6_360.001F, AtmospherePipeline.eyeRadiusKm(-128.0));
+        assertEquals(6_360.064F, AtmospherePipeline.eyeRadiusKm(-64.0));
+        assertEquals(6_360.448F, AtmospherePipeline.eyeRadiusKm(320.0));
     }
 
     @Test

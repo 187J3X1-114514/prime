@@ -180,13 +180,13 @@ abstract class GenerateShaderAbi extends DefaultTask {
 					'Prime emission contract must preserve a 25-unit white level-15 block source')
 		}
 		if (atmosphereContract.spectralModel != 'hillaire-8wave-rec2020-d65'
-				|| atmosphereContract.worldSeaLevelY != -64.0
+				|| atmosphereContract.worldSeaLevelY != -128.0
 				|| atmosphereContract.worldUnitScaleKm != 0.001
 				|| atmosphereContract.spaceSunIntensity != 12.5
 				|| atmosphereContract.sunAngularRadiusRadians != 0.00471) {
 			throw new GradleException(
 					'Prime atmosphere contract must remain the eight-wave Rec.2020 model, '
-							+ 'the -64 sea level / 0.001 km world scale, and a 12.5-unit space sun')
+							+ 'the -128 virtual-ground / 0.001 km world scale, and a 12.5-unit space sun')
 		}
 		if (starmapContract.width != 8192
 				|| starmapContract.height != 4096

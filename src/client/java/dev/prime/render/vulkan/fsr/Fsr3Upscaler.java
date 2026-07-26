@@ -1,13 +1,14 @@
 package dev.prime.render.vulkan.fsr;
 
 import com.mojang.blaze3d.vulkan.Destroyable;
-import dev.prime.render.CameraDiscontinuity;
 import dev.prime.render.FrameCamera;
 import dev.prime.render.ResourceCleanup;
 import dev.prime.render.fsr.FsrDebugView;
 import dev.prime.render.fsr.FsrDispatchValidator;
 import dev.prime.render.fsr.FsrQualityMode;
 import dev.prime.render.fsr.FsrSettings;
+import dev.prime.render.post.TemporalReconstructionState;
+import dev.prime.render.post.ReconstructionFrameHistory;
 import dev.prime.render.vulkan.VulkanContext;
 import dev.prime.render.vulkan.VulkanImage;
 import java.io.IOException;
@@ -67,14 +68,8 @@ public final class Fsr3Upscaler implements Destroyable {
     private final FsrNative.Instance nativeInstance;
     private final DisplayPass displayPass;
 
-    private FrameCamera previousCamera;
-    private long previousSceneResetRevision = Long.MIN_VALUE;
-    private long previousAtlasView;
-    private long previousAtlasSampler;
-    private int frameIndex;
-    private long previousFrameNanos;
-    private boolean resetRequested = true;
-    private boolean initialized;
+    private final ReconstructionFrameHistory history =
+            new ReconstructionFrameHistory();
     private boolean destroyed;
 
     private Fsr3Upscaler(
@@ -165,58 +160,38 @@ public final class Fsr3Upscaler implements Destroyable {
         }
     }
 
-    public int frameIndex() {
-        return this.frameIndex;
-    }
-
     public VulkanImage linearOutput() {
         return this.linearOutput;
     }
 
-    public FsrSettings.Jitter jitter() {
-        return this.qualityMode.jitter(this.frameIndex);
-    }
-
     public void requestReset() {
-        this.resetRequested = true;
+        this.history.requestReset();
     }
 
     public FrameToken beginFrame(
             FrameCamera camera,
+            long frameTimeNanos,
             long sceneResetRevision,
-            long atlasView,
-            long atlasSampler,
+            long textureRevision,
+            boolean forceRestart,
             FsrDebugView fsrDebugView) {
         this.requireOpen();
         Objects.requireNonNull(camera, "camera");
         Objects.requireNonNull(fsrDebugView, "fsrDebugView");
-        boolean cameraCut = this.initialized
-                && CameraDiscontinuity.isCut(this.previousCamera, camera);
-        boolean reset = this.resetRequested
-                || !this.initialized
-                || cameraCut
-                || sceneResetRevision != this.previousSceneResetRevision
-                || atlasView != this.previousAtlasView
-                || atlasSampler != this.previousAtlasSampler;
-        int currentFrameIndex = reset ? 0 : this.frameIndex;
-        FsrSettings.Jitter jitter = this.qualityMode.jitter(currentFrameIndex);
-        long now = System.nanoTime();
-        float deltaMilliseconds = this.previousFrameNanos == 0L
-                ? 1000.0F / 60.0F
-                : Math.min((now - this.previousFrameNanos) * 1.0e-6F, 1000.0F);
+        ReconstructionFrameHistory.PlannedFrame temporal = this.history.plan(
+                new TemporalReconstructionState.Input(
+                        camera,
+                        frameTimeNanos,
+                        sceneResetRevision,
+                        textureRevision,
+                        forceRestart));
+        FsrSettings.Jitter jitter = this.qualityMode.jitter(
+                temporal.plan().frameIndex());
         return new FrameToken(
                 this,
-                camera,
-                sceneResetRevision,
-                atlasView,
-                atlasSampler,
-                currentFrameIndex,
+                temporal,
                 jitter,
-                reset,
-                cameraCut,
-                fsrDebugView,
-                deltaMilliseconds,
-                now);
+                fsrDebugView);
     }
 
     public void record(
@@ -226,6 +201,8 @@ public final class Fsr3Upscaler implements Destroyable {
             throw new IllegalArgumentException("FSR frame token does not belong to this recording");
         }
         token.recorded = true;
+        TemporalReconstructionState.Plan temporal =
+                token.temporal.claimForExecution();
         FsrDispatchValidator.validate(
                 this.renderWidth,
                 this.renderHeight,
@@ -245,7 +222,7 @@ public final class Fsr3Upscaler implements Destroyable {
         this.nativeInstance.dispatch(
                 commandBuffer,
                 new FsrNative.Dispatch(
-                        token.camera,
+                        temporal.camera(),
                         this.sceneColor,
                         this.inputDepth,
                         this.inputMotion,
@@ -257,8 +234,8 @@ public final class Fsr3Upscaler implements Destroyable {
                         this.displayWidth,
                         this.displayHeight,
                         token.jitter,
-                        token.deltaMilliseconds,
-                        token.reset,
+                        temporal.deltaMilliseconds(),
+                        temporal.restart(),
                         debugView));
 
         // FidelityFX restores imported resources to UNORDERED_ACCESS/GENERAL. Its output writes
@@ -284,14 +261,7 @@ public final class Fsr3Upscaler implements Destroyable {
             throw new IllegalArgumentException("FSR frame token does not belong to this submission");
         }
         token.submitted = true;
-        this.initialized = true;
-        this.resetRequested = false;
-        this.previousCamera = token.camera;
-        this.previousSceneResetRevision = token.sceneResetRevision;
-        this.previousAtlasView = token.atlasView;
-        this.previousAtlasSampler = token.atlasSampler;
-        this.previousFrameNanos = token.frameNanos;
-        this.frameIndex = token.frameIndex + 1;
+        this.history.submitted(token.temporal);
     }
 
     private void initializeLinearOutput(VkCommandBuffer commandBuffer) {
@@ -381,49 +351,25 @@ public final class Fsr3Upscaler implements Destroyable {
     /** Immutable temporal inputs chosen before ray generation plus submission bookkeeping. */
     public static final class FrameToken {
         private final Fsr3Upscaler owner;
-        private final FrameCamera camera;
-        private final long sceneResetRevision;
-        private final long atlasView;
-        private final long atlasSampler;
-        private final int frameIndex;
+        private final ReconstructionFrameHistory.PlannedFrame temporal;
         private final FsrSettings.Jitter jitter;
-        private final boolean reset;
-        private final boolean cameraCut;
         private final FsrDebugView fsrDebugView;
-        private final float deltaMilliseconds;
-        private final long frameNanos;
         private boolean recorded;
         private boolean submitted;
 
         private FrameToken(
                 Fsr3Upscaler owner,
-                FrameCamera camera,
-                long sceneResetRevision,
-                long atlasView,
-                long atlasSampler,
-                int frameIndex,
+                ReconstructionFrameHistory.PlannedFrame temporal,
                 FsrSettings.Jitter jitter,
-                boolean reset,
-                boolean cameraCut,
-                FsrDebugView fsrDebugView,
-                float deltaMilliseconds,
-                long frameNanos) {
+                FsrDebugView fsrDebugView) {
             this.owner = owner;
-            this.camera = camera;
-            this.sceneResetRevision = sceneResetRevision;
-            this.atlasView = atlasView;
-            this.atlasSampler = atlasSampler;
-            this.frameIndex = frameIndex;
+            this.temporal = temporal;
             this.jitter = jitter;
-            this.reset = reset;
-            this.cameraCut = cameraCut;
             this.fsrDebugView = fsrDebugView;
-            this.deltaMilliseconds = deltaMilliseconds;
-            this.frameNanos = frameNanos;
         }
 
         public int frameIndex() {
-            return this.frameIndex;
+            return this.temporal.plan().frameIndex();
         }
 
         public FsrSettings.Jitter jitter() {
@@ -431,11 +377,11 @@ public final class Fsr3Upscaler implements Destroyable {
         }
 
         public boolean reset() {
-            return this.reset;
+            return this.temporal.plan().restart();
         }
 
         public boolean cameraCut() {
-            return this.cameraCut;
+            return this.temporal.plan().cameraCut();
         }
     }
 

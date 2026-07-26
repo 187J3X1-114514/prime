@@ -78,6 +78,15 @@ public final class VulkanBuffer implements Destroyable {
         Vma.vmaInvalidateAllocation(this.allocator, this.allocation, offset, length);
     }
 
+    /** Reads a completed GPU write from a host-visible allocation. */
+    public byte[] read(long offset, int length) {
+        validateMappedRange(offset, length);
+        this.invalidate(offset, length);
+        byte[] result = new byte[length];
+        MemoryUtil.memByteBuffer(this.mappedAddress() + offset, length).get(result);
+        return result;
+    }
+
     private void validateMappedRange(long offset, long length) {
         if (this.destroyed) {
             throw new IllegalStateException("Buffer is destroyed");

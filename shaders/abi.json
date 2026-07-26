@@ -173,7 +173,7 @@
     "nrdNoisyDiffuse": 9,
     "nrdNormalRoughness": 10,
     "nrdViewZ": 11,
-    "nrdMotion": 12,
+    "wavefrontTransportMetadata": 12,
     "nrdMaterial": 13,
     "nrdPrimaryPosition": 14,
     "nrdNoisySpecular": 15,

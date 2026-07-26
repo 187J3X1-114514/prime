@@ -258,6 +258,17 @@ final class CpuLightTree {
             this.softeningScale = softeningScale;
         }
 
+        Result copy() {
+            return new Result(
+                    this.nodes.copy(),
+                    this.leafNodes.clone(),
+                    this.softeningScale);
+        }
+
+        int leafCapacity() {
+            return this.leafNodes.length;
+        }
+
         void setLeaf(
                 int slot,
                 float minX,
@@ -690,6 +701,38 @@ final class CpuLightTree {
             this.secondChild = new int[capacity];
             Arrays.fill(this.firstChildOrLeaf, NO_INDEX);
             Arrays.fill(this.secondChild, NO_INDEX);
+        }
+
+        private Nodes copy() {
+            Nodes copy = new Nodes(this.minX.length);
+            System.arraycopy(this.minX, 0, copy.minX, 0, this.minX.length);
+            System.arraycopy(this.minY, 0, copy.minY, 0, this.minY.length);
+            System.arraycopy(this.minZ, 0, copy.minZ, 0, this.minZ.length);
+            System.arraycopy(this.maxX, 0, copy.maxX, 0, this.maxX.length);
+            System.arraycopy(this.maxY, 0, copy.maxY, 0, this.maxY.length);
+            System.arraycopy(this.maxZ, 0, copy.maxZ, 0, this.maxZ.length);
+            System.arraycopy(this.power, 0, copy.power, 0, this.power.length);
+            System.arraycopy(
+                    this.softeningDistanceSquared,
+                    0,
+                    copy.softeningDistanceSquared,
+                    0,
+                    this.softeningDistanceSquared.length);
+            System.arraycopy(this.parent, 0, copy.parent, 0, this.parent.length);
+            System.arraycopy(
+                    this.firstChildOrLeaf,
+                    0,
+                    copy.firstChildOrLeaf,
+                    0,
+                    this.firstChildOrLeaf.length);
+            System.arraycopy(
+                    this.secondChild,
+                    0,
+                    copy.secondChild,
+                    0,
+                    this.secondChild.length);
+            copy.size = this.size;
+            return copy;
         }
 
         private int add(

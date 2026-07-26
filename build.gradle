@@ -349,7 +349,7 @@ public final class ShaderAbi {
     public static final int DESCRIPTOR_NRD_NOISY_DIFFUSE = ${schema.descriptors.nrdNoisyDiffuse};
     public static final int DESCRIPTOR_NRD_NORMAL_ROUGHNESS = ${schema.descriptors.nrdNormalRoughness};
     public static final int DESCRIPTOR_NRD_VIEW_Z = ${schema.descriptors.nrdViewZ};
-    public static final int DESCRIPTOR_NRD_MOTION = ${schema.descriptors.nrdMotion};
+    public static final int DESCRIPTOR_WAVEFRONT_TRANSPORT_METADATA = ${schema.descriptors.wavefrontTransportMetadata};
     public static final int DESCRIPTOR_NRD_MATERIAL = ${schema.descriptors.nrdMaterial};
     public static final int DESCRIPTOR_NRD_PRIMARY_POSITION = ${schema.descriptors.nrdPrimaryPosition};
     public static final int DESCRIPTOR_NRD_NOISY_SPECULAR = ${schema.descriptors.nrdNoisySpecular};
@@ -612,7 +612,7 @@ layout(set = 0, binding = ${schema.descriptors.nrdNoisyDiffuse}, rgba16f) unifor
 layout(set = 0, binding = ${schema.descriptors.nrdNoisySpecular}, rgba16f) uniform image2D primeNrdNoisySpecular;
 layout(set = 0, binding = ${schema.descriptors.nrdNormalRoughness}, rgb10_a2) uniform image2D primeNrdNormalRoughness;
 layout(set = 0, binding = ${schema.descriptors.nrdViewZ}, r32f) uniform image2D primeNrdViewZ;
-layout(set = 0, binding = ${schema.descriptors.nrdMotion}, rgba16f) uniform image2D primeNrdMotion;
+layout(set = 0, binding = ${schema.descriptors.wavefrontTransportMetadata}, rgba16f) uniform image2D primeWavefrontTransportMetadata;
 layout(set = 0, binding = ${schema.descriptors.nrdMaterial}, rgba16f) uniform image2D primeNrdMaterial;
 layout(set = 0, binding = ${schema.descriptors.nrdSpecularMaterial}, rgba16f) uniform image2D primeNrdSpecularMaterial;
 layout(set = 0, binding = ${schema.descriptors.nrdPrimaryPosition}, rgba32f) uniform image2D primeNrdPrimaryPosition;
@@ -935,6 +935,41 @@ tasks.register('shaderTest', Test) {
 	outputs.upToDateWhen { false }
 }
 
+tasks.register('validateReplayFixture', JavaExec) {
+	group = 'verification'
+	description = 'Validates one captured low-resolution replay fixture.'
+	dependsOn tasks.named('compileClientJava')
+	classpath = sourceSets.client.runtimeClasspath
+	mainClass = 'dev.prime.render.replay.RenderReplayFixtureTool'
+	doFirst {
+		def fixture = providers.gradleProperty('primeReplayFixture').orNull
+		if (fixture == null || fixture.isBlank()) {
+			throw new GradleException(
+					'Pass -PprimeReplayFixture=<path> to validateReplayFixture')
+		}
+		args 'validate', file(fixture).absolutePath
+	}
+}
+
+tasks.register('compareReplayFixtures', JavaExec) {
+	group = 'verification'
+	description = 'Strictly compares two same-platform replay fixtures.'
+	dependsOn tasks.named('compileClientJava')
+	classpath = sourceSets.client.runtimeClasspath
+	mainClass = 'dev.prime.render.replay.RenderReplayFixtureTool'
+	doFirst {
+		def expected = providers.gradleProperty('primeReplayExpected').orNull
+		def actual = providers.gradleProperty('primeReplayActual').orNull
+		if (expected == null || expected.isBlank()
+				|| actual == null || actual.isBlank()) {
+			throw new GradleException(
+					'Pass -PprimeReplayExpected=<path> and '
+							+ '-PprimeReplayActual=<path> to compareReplayFixtures')
+		}
+		args 'compare', file(expected).absolutePath, file(actual).absolutePath
+	}
+}
+
 java {
 	withSourcesJar()
 	sourceCompatibility = JavaVersion.VERSION_25
@@ -1008,6 +1043,8 @@ def verifyDistributionJar = tasks.register('verifyDistributionJar') {
 			'prime/shaders/screenshot_display.comp.spv',
 			'prime/shaders/shadow.rchit.spv',
 			'prime/shaders/nrd_motion.comp.spv',
+			'prime/shaders/replay_capture_raw.comp.spv',
+			'prime/shaders/replay_capture_prepared_nrd.comp.spv',
 			'prime/shaders/native_debug_present.comp.spv',
 			'prime/shaders/noisy_composite.comp.spv',
 			'prime/shaders/rr_prepare.comp.spv',
@@ -1020,9 +1057,9 @@ def verifyDistributionJar = tasks.register('verifyDistributionJar') {
 		}
 
 		def shaderNames = names.findAll { it.startsWith('prime/shaders/') && it.endsWith('.spv') }
-		if (shaderNames.size() != 25) {
+		if (shaderNames.size() != 27) {
 			throw new GradleException(
-					"Distribution jar must contain 25 Prime shaders; found ${shaderNames.size()}")
+					"Distribution jar must contain 27 Prime shaders; found ${shaderNames.size()}")
 		}
 
 		new java.util.zip.ZipFile(archive).withCloseable { zip ->

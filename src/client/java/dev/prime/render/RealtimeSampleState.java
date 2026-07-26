@@ -1,69 +1,78 @@
 package dev.prime.render;
 
+import java.util.Objects;
+
 /**
- * Tracks sample sequencing and temporal invalidation for the interactive render path.
+ * Pure sample-sequence transition for the interactive render path.
  *
- * <p>This is not a radiance accumulator. NRD and FSR own the interactive temporal histories;
- * this state only supplies their sampling epoch and monotonic sample index. The screenshot path
- * owns a separate monotonic sample counter and an explicit RGBA32F running mean.
+ * <p>A plan exposes the exact Sobol index and epoch used by one frame. The returned state becomes
+ * current only after that frame is submitted, so failed recording cannot consume a sample.
  */
 final class RealtimeSampleState {
-
     private static final int SOBOL_SEQUENCE_LENGTH = 1 << 16;
-    private static final float SUN_HISTORY_DISCONTINUITY_COSINE =
+    private static final float SUN_DISCONTINUITY_COSINE =
             (float) Math.cos(Math.toRadians(1.0));
 
-    private FrameCamera camera;
-    private long resetRevision = Long.MIN_VALUE;
-    private long atlasView;
-    private long atlasSampler;
-    private SunDirection sunDirection;
-    private int sampleIndex;
-    private int epoch;
+    private final FrameCamera camera;
+    private final long resetRevision;
+    private final long textureRevision;
+    private final SunDirection sunDirection;
+    private final int sampleIndex;
+    private final int epoch;
 
-    boolean prepare(
-            FrameCamera nextCamera,
-            long nextResetRevision,
-            long nextAtlasView,
-            long nextAtlasSampler,
-            SunDirection nextSunDirection,
-            boolean forceReset) {
-        // Motion vectors preserve ordinary camera motion. Restarting the Sobol epoch on every
-        // translated or rotated frame destroys its temporal stratification and raises 1 spp noise.
-        boolean immediateReset = forceReset
-                || CameraDiscontinuity.isCut(this.camera, nextCamera)
-                || nextResetRevision != this.resetRevision
-                || nextAtlasView != this.atlasView
-                || nextAtlasSampler != this.atlasSampler
-                || sunDirectionDiscontinuous(nextSunDirection, this.sunDirection);
-        if (immediateReset) {
-            this.invalidate();
-            this.resetRevision = nextResetRevision;
-            return true;
-        }
-        if (this.sampleIndex >= SOBOL_SEQUENCE_LENGTH) {
-            this.sampleIndex = 0;
-            this.epoch++;
-        }
-
-        return false;
+    private RealtimeSampleState(
+            FrameCamera camera,
+            long resetRevision,
+            long textureRevision,
+            SunDirection sunDirection,
+            int sampleIndex,
+            int epoch) {
+        this.camera = camera;
+        this.resetRevision = resetRevision;
+        this.textureRevision = textureRevision;
+        this.sunDirection = sunDirection;
+        this.sampleIndex = sampleIndex;
+        this.epoch = epoch;
     }
 
-    void submitted(
-            FrameCamera submittedCamera,
-            long submittedAtlasView,
-            long submittedAtlasSampler,
-            SunDirection submittedSunDirection) {
-        this.sampleIndex++;
-        this.camera = submittedCamera;
-        this.atlasView = submittedAtlasView;
-        this.atlasSampler = submittedAtlasSampler;
-        this.sunDirection = submittedSunDirection;
+    static RealtimeSampleState initial() {
+        return new RealtimeSampleState(
+                null, Long.MIN_VALUE, Long.MIN_VALUE, null, 0, 0);
     }
 
-    void invalidate() {
-        this.sampleIndex = 0;
-        this.epoch++;
+    Plan plan(Input input) {
+        Objects.requireNonNull(input, "input");
+        // Motion vectors preserve ordinary camera motion. Restarting on every translated or
+        // rotated frame destroys temporal Sobol stratification and raises 1 spp noise.
+        boolean reset = input.forceReset()
+                || CameraDiscontinuity.isCut(this.camera, input.camera())
+                || input.resetRevision() != this.resetRevision
+                || input.textureRevision() != this.textureRevision
+                || sunDirectionDiscontinuous(input.sunDirection(), this.sunDirection);
+        int plannedSample = reset ? 0 : this.sampleIndex;
+        int plannedEpoch = reset ? this.epoch + 1 : this.epoch;
+        if (!reset && plannedSample >= SOBOL_SEQUENCE_LENGTH) {
+            plannedSample = 0;
+            plannedEpoch++;
+        }
+        RealtimeSampleState committed = new RealtimeSampleState(
+                input.camera(),
+                input.resetRevision(),
+                input.textureRevision(),
+                input.sunDirection(),
+                plannedSample + 1,
+                plannedEpoch);
+        return new Plan(plannedSample, plannedEpoch, reset, committed);
+    }
+
+    RealtimeSampleState invalidated() {
+        return new RealtimeSampleState(
+                this.camera,
+                this.resetRevision,
+                this.textureRevision,
+                this.sunDirection,
+                0,
+                this.epoch + 1);
     }
 
     int sampleIndex() {
@@ -83,7 +92,31 @@ final class RealtimeSampleState {
         float cosine = current.x() * previous.x()
                 + current.y() * previous.y()
                 + current.z() * previous.z();
-        return cosine < SUN_HISTORY_DISCONTINUITY_COSINE;
+        return cosine < SUN_DISCONTINUITY_COSINE;
     }
 
+    record Input(
+            FrameCamera camera,
+            long resetRevision,
+            long textureRevision,
+            SunDirection sunDirection,
+            boolean forceReset) {
+        Input {
+            Objects.requireNonNull(camera, "camera");
+            Objects.requireNonNull(sunDirection, "sunDirection");
+        }
+    }
+
+    record Plan(
+            int sampleIndex,
+            int epoch,
+            boolean reset,
+            RealtimeSampleState committedState) {
+        Plan {
+            if (sampleIndex < 0 || sampleIndex >= SOBOL_SEQUENCE_LENGTH) {
+                throw new IllegalArgumentException("Sobol sample index is outside its sequence");
+            }
+            Objects.requireNonNull(committedState, "committedState");
+        }
+    }
 }

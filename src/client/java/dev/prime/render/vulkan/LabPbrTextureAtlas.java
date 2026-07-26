@@ -96,6 +96,11 @@ public final class LabPbrTextureAtlas implements AutoCloseable {
         this.requestedGeneration.incrementAndGet();
     }
 
+    /** Source-pack generation currently represented by the resident auxiliary atlases. */
+    public long sourceGeneration() {
+        return requireResources().sourceGeneration;
+    }
+
     public VulkanImage normalAtlas() {
         return requireResources().normalAtlas;
     }

@@ -34,10 +34,11 @@ public final class TerrainScene implements AutoCloseable {
     private final StagingArena stagingArena;
     private Long2ObjectOpenHashMap<GpuCluster> resident = new Long2ObjectOpenHashMap<>();
     private final List<TopLevelAccelerationStructure> tlasSlots = new ArrayList<>(TLAS_SLOT_COUNT);
-    private final CpuWorldLightTree worldLightTree = new CpuWorldLightTree();
+    private final CpuWorldLightTree worldLightHistory =
+            new CpuWorldLightTree();
     private TopLevelAccelerationStructure currentTlas;
     private VulkanBuffer currentWorldLights;
-    private SceneView currentView;
+    private ResidentSceneView currentView;
     private int originX;
     private int originY;
     private int originZ;
@@ -51,7 +52,7 @@ public final class TerrainScene implements AutoCloseable {
     }
 
     public boolean update(
-            List<ClusterUpload> uploads,
+            List<CompiledCluster> uploads,
             long[] evictions,
             double cameraX,
             double cameraY,
@@ -83,7 +84,7 @@ public final class TerrainScene implements AutoCloseable {
         }
 
         int nonEmptyUploadCount = 0;
-        for (ClusterUpload upload : uploads) {
+        for (CompiledCluster upload : uploads) {
             if (!upload.isEmpty()) {
                 nonEmptyUploadCount++;
             }
@@ -96,7 +97,7 @@ public final class TerrainScene implements AutoCloseable {
             }
         }
         if (!hasPotentialLights) {
-            for (ClusterUpload upload : uploads) {
+            for (CompiledCluster upload : uploads) {
                 if (!upload.mesh().lights().isEmpty()) {
                     hasPotentialLights = true;
                     break;
@@ -107,7 +108,7 @@ public final class TerrainScene implements AutoCloseable {
         boolean rebuildWorldLights = contentChanged || needsRebase;
         boolean needsWorldStaging = rebuildWorldLights && finalClusterCount > 0 && hasPotentialLights;
         long clusterStagingBytes = 0L;
-        for (ClusterUpload upload : uploads) {
+        for (CompiledCluster upload : uploads) {
             clusterStagingBytes = TerrainStreamer.stagingEndOffset(
                     clusterStagingBytes,
                     upload.mesh(),
@@ -169,7 +170,7 @@ public final class TerrainScene implements AutoCloseable {
             }
 
             if (clusterStagingBatch != null) {
-                for (ClusterUpload upload : uploads) {
+                for (CompiledCluster upload : uploads) {
                     if (!upload.isEmpty()) {
                         replacements.add(this.prepareCluster(
                                 upload, clusterStagingBatch, commandBuffer));
@@ -183,9 +184,13 @@ public final class TerrainScene implements AutoCloseable {
             int nextOriginY = needsRebase ? RenderOrigin.alignToSection(cameraY) : this.originY;
             int nextOriginZ = needsRebase ? RenderOrigin.alignToSection(cameraZ) : this.originZ;
             CpuWorldLightTree.Result worldLightTree = rebuildWorldLights
-                    ? this.worldLightTree.update(
-                            finalClusters, nextOriginX, nextOriginY, nextOriginZ)
-                    : this.worldLightTree.result();
+                    ? this.worldLightHistory.update(
+                            WorldLightTreeInput.capture(
+                                    finalClusters,
+                                    nextOriginX,
+                                    nextOriginY,
+                                    nextOriginZ))
+                    : this.worldLightHistory.result();
             if (requiresWorldLightUpload(rebuildWorldLights, worldLightTree)) {
                 if (worldStagingBatch == null || commandBuffer == null) {
                     throw new IllegalStateException("World light tree requires an upload batch");
@@ -407,7 +412,7 @@ public final class TerrainScene implements AutoCloseable {
         }
     }
 
-    public SceneView view() {
+    public ResidentSceneView residentView() {
         return this.currentView;
     }
 
@@ -455,10 +460,10 @@ public final class TerrainScene implements AutoCloseable {
     }
 
     private static LongOpenHashSet removedKeys(
-            List<ClusterUpload> uploads, long[] evictions) {
+            List<CompiledCluster> uploads, long[] evictions) {
         LongOpenHashSet result = new LongOpenHashSet(evictions);
         LongOpenHashSet uploadKeys = new LongOpenHashSet();
-        for (ClusterUpload upload : uploads) {
+        for (CompiledCluster upload : uploads) {
             if (!uploadKeys.add(upload.key())) {
                 throw new IllegalArgumentException(
                         "A logical cluster was replaced more than once in one update");
@@ -469,14 +474,14 @@ public final class TerrainScene implements AutoCloseable {
     }
 
     private int estimateFinalClusterCount(
-            List<ClusterUpload> uploads, LongOpenHashSet removedKeys) {
+            List<CompiledCluster> uploads, LongOpenHashSet removedKeys) {
         int count = this.resident.size();
         for (long key : removedKeys) {
             if (this.resident.containsKey(key)) {
                 count--;
             }
         }
-        for (ClusterUpload upload : uploads) {
+        for (CompiledCluster upload : uploads) {
             if (!upload.isEmpty()) {
                 count++;
             }
@@ -484,13 +489,13 @@ public final class TerrainScene implements AutoCloseable {
         return count;
     }
 
-    private boolean hasActualContentChange(List<ClusterUpload> uploads, long[] evictions) {
+    private boolean hasActualContentChange(List<CompiledCluster> uploads, long[] evictions) {
         for (long key : evictions) {
             if (this.resident.containsKey(key)) {
                 return true;
             }
         }
-        for (ClusterUpload upload : uploads) {
+        for (CompiledCluster upload : uploads) {
             if (!upload.isEmpty() || this.resident.containsKey(upload.key())) {
                 return true;
             }
@@ -524,7 +529,7 @@ public final class TerrainScene implements AutoCloseable {
     }
 
     private RuntimeException commit(
-            List<ClusterUpload> uploads,
+            List<CompiledCluster> uploads,
             LongOpenHashSet removedKeys,
             List<GpuCluster> replacements,
             TopLevelAccelerationStructure replacementTlas,
@@ -555,9 +560,9 @@ public final class TerrainScene implements AutoCloseable {
         long nextTemporalRevision = invalidateTemporalHistory
                 ? this.temporalRevision + 1L
                 : this.temporalRevision;
-        SceneView nextView = replacementTlas == null || nextResident.isEmpty()
+        ResidentSceneView nextView = replacementTlas == null || nextResident.isEmpty()
                 ? null
-                : new SceneView(
+                : new ResidentSceneView(
                         replacementTlas.handle(),
                         replacementTlas.sectionTableAddress(),
                         nextOriginX,
@@ -596,10 +601,10 @@ public final class TerrainScene implements AutoCloseable {
     }
 
     private static Long2ObjectOpenHashMap<GpuCluster> groupReplacements(
-            List<ClusterUpload> uploads, List<GpuCluster> replacements) {
+            List<CompiledCluster> uploads, List<GpuCluster> replacements) {
         Long2ObjectOpenHashMap<GpuCluster> result = new Long2ObjectOpenHashMap<>();
         int cursor = 0;
-        for (ClusterUpload upload : uploads) {
+        for (CompiledCluster upload : uploads) {
             if (upload.isEmpty()) {
                 continue;
             }
@@ -653,7 +658,7 @@ public final class TerrainScene implements AutoCloseable {
     }
 
     private GpuCluster prepareCluster(
-            ClusterUpload upload,
+            CompiledCluster upload,
             StagingArena.Batch stagingBatch,
             VkCommandBuffer commandBuffer) {
         CpuClusterMesh mesh = upload.mesh();
@@ -684,10 +689,10 @@ public final class TerrainScene implements AutoCloseable {
             if (lights != null) {
                 copyBuffer(
                         commandBuffer,
-                        stagingBatch.write(mesh.lights().pack(lights.deviceAddress()), 16L),
+                        stagingBatch.write(mesh.lights().relocate(lights.deviceAddress()), 16L),
                         lights);
             }
-            CpuSectionLights.Summary lightSummary = mesh.lights().summary();
+            CompiledClusterLights.Summary lightSummary = mesh.lights().summary();
             blas = PreparedBlas.create(
                     this.context,
                     positions,
@@ -824,7 +829,8 @@ public final class TerrainScene implements AutoCloseable {
         return needsRebase;
     }
 
-    public record SceneView(
+    /** Immutable GPU-resident scene identity consumed by one or more frame plans. */
+    public record ResidentSceneView(
             long tlas,
             long sectionTableAddress,
             int originX,

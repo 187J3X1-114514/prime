@@ -2,15 +2,9 @@ package dev.prime.render.scene.vanilla;
 
 import com.mojang.blaze3d.vertex.VertexSorting;
 import dev.prime.render.terrain.CpuSectionGeometry;
-import dev.prime.render.terrain.LabPbrMaterialSet;
-import net.minecraft.client.color.block.BlockColors;
 import net.minecraft.client.renderer.SectionBufferBuilderPack;
-import net.minecraft.client.renderer.block.BlockStateModelSet;
-import net.minecraft.client.renderer.block.FluidStateModelSet;
-import net.minecraft.client.renderer.chunk.RenderSectionRegion;
 import net.minecraft.client.renderer.chunk.SectionCompiler;
 import net.minecraft.core.SectionPos;
-import net.fabricmc.fabric.api.client.renderer.v1.sprite.SpriteFinder;
 
 /**
  * Runs Minecraft's real Section compiler with a renderer-owned semantic side channel.
@@ -30,40 +24,37 @@ public final class VanillaSectionMesher {
     private VanillaSectionMesher() {
     }
 
-    public static CpuSectionGeometry mesh(
-            RenderSectionRegion region,
-            BlockStateModelSet blockModels,
-            FluidStateModelSet fluidModels,
-            BlockColors blockColors,
-            SpriteFinder blockSpriteFinder,
-            LabPbrMaterialSet labPbrMaterials,
-            VanillaGeometryPolicy geometryPolicy,
-            boolean cutoutLeaves,
-            boolean buildOpacityMicromap,
-            int segmentTriangleTarget,
-            int sectionX,
-            int sectionY,
-            int sectionZ,
-            SectionBufferBuilderPack builders) {
+    public static CpuSectionGeometry compile(
+            VanillaSectionCompileInput input, SectionBufferBuilderPack builders) {
         // AO and the light map affect only raster vertex illumination. Disabling AO here avoids
         // doing expensive work that the side channel deliberately does not consume; geometry,
         // model selection, culling, UVs, fluid surfaces and render layers still come from vanilla.
         SectionCompiler compiler = new SectionCompiler(
-                false, cutoutLeaves, blockModels, fluidModels, blockColors);
-        SectionPos section = SectionPos.of(sectionX, sectionY, sectionZ);
+                false,
+                input.assets().cutoutLeaves(),
+                input.assets().blockModels(),
+                input.assets().fluidModels(),
+                input.assets().blockColors());
+        SectionPos section = SectionPos.of(
+                input.section().sectionX(),
+                input.section().sectionY(),
+                input.section().sectionZ());
         boolean completed = false;
         try (VanillaSectionCapture capture = VanillaSectionCapture.open(
-                region,
-                blockModels,
-                blockColors,
-                blockSpriteFinder,
-                labPbrMaterials,
-                geometryPolicy,
-                cutoutLeaves,
-                buildOpacityMicromap,
-                segmentTriangleTarget)) {
+                input.section().region(),
+                input.assets().blockModels(),
+                input.assets().blockColors(),
+                input.assets().blockSpriteFinder(),
+                input.assets().labPbrMaterials(),
+                input.assets().geometryPolicy(),
+                input.assets().cutoutLeaves(),
+                input.assets().buildOpacityMicromap(),
+                input.assets().segmentTriangleTarget())) {
             SectionCompiler.Results results = compiler.compile(
-                    section, region, VertexSorting.byDistance(0.0F, 0.0F, 0.0F), builders);
+                    section,
+                    input.section().region(),
+                    VertexSorting.byDistance(0.0F, 0.0F, 0.0F),
+                    builders);
             try {
                 CpuSectionGeometry mesh = capture.finish(results);
                 completed = true;

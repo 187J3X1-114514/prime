@@ -3,7 +3,6 @@ package dev.prime.render.terrain;
 import dev.prime.render.shader.ShaderAbi;
 import it.unimi.dsi.fastutil.longs.Long2IntOpenHashMap;
 import java.util.Arrays;
-import java.util.List;
 
 /**
  * Render-thread-owned world light tree with stable leaf slots and incremental refit.
@@ -27,38 +26,44 @@ final class CpuWorldLightTree {
 
     CpuWorldLightTree() {}
 
-    Result update(List<GpuCluster> clusters, int originX, int originY, int originZ) {
-        int lightCount = lightCount(clusters);
+    CpuWorldLightTree(Snapshot snapshot) {
+        restore(snapshot);
+    }
+
+    Result update(WorldLightTreeInput input) {
+        int lightCount = lightCount(input);
         if (lightCount == 0) {
-            clear(clusters.size());
+            clear(input.clusterCount());
             return this.result;
         }
         int capacity = this.active.length;
         if (this.tree == null
                 || lightCount > capacity
                 || (long) lightCount * 2L < capacity
-                || newKeyCount(clusters) > this.freeCount) {
-            rebuild(clusters, originX, originY, originZ, lightCount);
+                || newKeyCount(input) > this.freeCount) {
+            rebuild(input, lightCount);
             return this.result;
         }
 
         Arrays.fill(this.seen, false);
-        this.result.prepare(this.tree, clusters.size());
-        for (int clusterIndex = 0; clusterIndex < clusters.size(); clusterIndex++) {
-            GpuCluster cluster = clusters.get(clusterIndex);
-            if (cluster.lights().isEmpty()) {
+        this.result.prepare(this.tree, input.clusterCount());
+        for (int clusterIndex = 0;
+                clusterIndex < input.clusterCount();
+                clusterIndex++) {
+            if (input.lights(clusterIndex).isEmpty()) {
                 continue;
             }
-            int slot = this.slots.getOrDefault(cluster.key(), CpuLightTree.NO_INDEX);
+            long key = input.key(clusterIndex);
+            int slot = this.slots.getOrDefault(key, CpuLightTree.NO_INDEX);
             if (slot == CpuLightTree.NO_INDEX) {
                 slot = this.freeSlots[--this.freeCount];
-                this.slots.put(cluster.key(), slot);
-                this.slotKeys[slot] = cluster.key();
+                this.slots.put(key, slot);
+                this.slotKeys[slot] = key;
                 this.active[slot] = true;
                 this.activeCount++;
             }
             this.seen[slot] = true;
-            setLeaf(slot, clusterIndex, cluster, originX, originY, originZ);
+            setLeaf(slot, clusterIndex, input);
             this.result.setLeafNode(clusterIndex, this.tree.leafNode(slot));
         }
         for (int slot = 0; slot < this.active.length; slot++) {
@@ -76,7 +81,7 @@ final class CpuWorldLightTree {
         if (this.activeCount > 1
                 && (this.baselineCost == 0.0
                         || cost > this.baselineCost * REBUILD_COST_RATIO)) {
-            rebuild(clusters, originX, originY, originZ, lightCount);
+            rebuild(input, lightCount);
         }
         return this.result;
     }
@@ -85,11 +90,34 @@ final class CpuWorldLightTree {
         return this.result;
     }
 
+    Snapshot snapshot() {
+        return new Snapshot(this);
+    }
+
+    private void restore(Snapshot snapshot) {
+        if (snapshot == null) {
+            throw new IllegalArgumentException(
+                    "World-light history snapshot must not be null");
+        }
+        this.slots.clear();
+        this.tree = snapshot.tree == null ? null : snapshot.tree.copy();
+        this.slotKeys = snapshot.slotKeys.clone();
+        this.active = snapshot.active.clone();
+        this.seen = new boolean[this.active.length];
+        this.freeSlots = snapshot.freeSlots.clone();
+        this.freeCount = snapshot.freeCount;
+        this.activeCount = snapshot.activeCount;
+        this.baselineCost = snapshot.baselineCost;
+        this.result = snapshot.result.copy();
+        for (int slot = 0; slot < this.active.length; slot++) {
+            if (this.active[slot]) {
+                this.slots.put(this.slotKeys[slot], slot);
+            }
+        }
+    }
+
     private void rebuild(
-            List<GpuCluster> clusters,
-            int originX,
-            int originY,
-            int originZ,
+            WorldLightTreeInput input,
             int lightCount) {
         int reserve = Math.max(1, lightCount / 8);
         int capacity = Math.addExact(lightCount, reserve);
@@ -109,16 +137,22 @@ final class CpuWorldLightTree {
         this.freeCount = 0;
         this.activeCount = 0;
 
-        for (int clusterIndex = 0; clusterIndex < clusters.size(); clusterIndex++) {
-            GpuCluster cluster = clusters.get(clusterIndex);
-            if (cluster.lights().isEmpty()) {
+        for (int clusterIndex = 0;
+                clusterIndex < input.clusterCount();
+                clusterIndex++) {
+            CompiledClusterLights.Summary lights =
+                    input.lights(clusterIndex);
+            if (lights.isEmpty()) {
                 continue;
             }
             int slot = this.activeCount++;
-            CpuLightTree.Bounds bounds = cluster.lights().bounds();
-            float translateX = (cluster.clusterX() << 4) - originX;
-            float translateY = (cluster.clusterY() << 4) - originY;
-            float translateZ = (cluster.clusterZ() << 4) - originZ;
+            CpuLightTree.Bounds bounds = lights.bounds();
+            float translateX =
+                    (input.clusterX(clusterIndex) << 4) - input.originX();
+            float translateY =
+                    (input.clusterY(clusterIndex) << 4) - input.originY();
+            float translateZ =
+                    (input.clusterZ(clusterIndex) << 4) - input.originZ();
             float minX = bounds.minX() + translateX;
             float minY = bounds.minY() + translateY;
             float minZ = bounds.minZ() + translateZ;
@@ -144,10 +178,10 @@ final class CpuWorldLightTree {
                     (minX + maxX) * 0.5F,
                     (minY + maxY) * 0.5F,
                     (minZ + maxZ) * 0.5F,
-                    cluster.lights().power(),
+                    lights.power(),
                     slot);
-            this.slots.put(cluster.key(), slot);
-            this.slotKeys[slot] = cluster.key();
+            this.slots.put(input.key(clusterIndex), slot);
+            this.slotKeys[slot] = input.key(clusterIndex);
             this.active[slot] = true;
         }
         for (int slot = this.activeCount; slot < capacity; slot++) {
@@ -164,14 +198,16 @@ final class CpuWorldLightTree {
 
         this.tree = CpuLightTree.buildOwned(
                 leaves, capacity, CpuLightTree.WORLD_SOFTENING_SCALE);
-        this.result = Result.forTree(this.tree, clusters.size());
-        for (int clusterIndex = 0; clusterIndex < clusters.size(); clusterIndex++) {
-            GpuCluster cluster = clusters.get(clusterIndex);
-            if (cluster.lights().isEmpty()) {
+        this.result = Result.forTree(this.tree, input.clusterCount());
+        for (int clusterIndex = 0;
+                clusterIndex < input.clusterCount();
+                clusterIndex++) {
+            if (input.lights(clusterIndex).isEmpty()) {
                 continue;
             }
-            int slot = this.slots.getOrDefault(cluster.key(), CpuLightTree.NO_INDEX);
-            setLeaf(slot, clusterIndex, cluster, originX, originY, originZ);
+            int slot = this.slots.getOrDefault(
+                    input.key(clusterIndex), CpuLightTree.NO_INDEX);
+            setLeaf(slot, clusterIndex, input);
             this.result.setLeafNode(clusterIndex, this.tree.leafNode(slot));
         }
         for (int slot = this.activeCount; slot < capacity; slot++) {
@@ -182,11 +218,12 @@ final class CpuWorldLightTree {
         this.result.pack(this.tree);
     }
 
-    private int newKeyCount(List<GpuCluster> clusters) {
+    private int newKeyCount(WorldLightTreeInput input) {
         int count = 0;
-        for (GpuCluster cluster : clusters) {
-            if (!cluster.lights().isEmpty()
-                    && this.slots.getOrDefault(cluster.key(), CpuLightTree.NO_INDEX)
+        for (int index = 0; index < input.clusterCount(); index++) {
+            if (!input.lights(index).isEmpty()
+                    && this.slots.getOrDefault(
+                                    input.key(index), CpuLightTree.NO_INDEX)
                             == CpuLightTree.NO_INDEX) {
                 count++;
             }
@@ -197,14 +234,16 @@ final class CpuWorldLightTree {
     private void setLeaf(
             int slot,
             int clusterIndex,
-            GpuCluster cluster,
-            int originX,
-            int originY,
-            int originZ) {
-        CpuLightTree.Bounds bounds = cluster.lights().bounds();
-        float translateX = (cluster.clusterX() << 4) - originX;
-        float translateY = (cluster.clusterY() << 4) - originY;
-        float translateZ = (cluster.clusterZ() << 4) - originZ;
+            WorldLightTreeInput input) {
+        CompiledClusterLights.Summary lights =
+                input.lights(clusterIndex);
+        CpuLightTree.Bounds bounds = lights.bounds();
+        float translateX =
+                (input.clusterX(clusterIndex) << 4) - input.originX();
+        float translateY =
+                (input.clusterY(clusterIndex) << 4) - input.originY();
+        float translateZ =
+                (input.clusterZ(clusterIndex) << 4) - input.originZ();
         this.tree.setLeaf(
                 slot,
                 bounds.minX() + translateX,
@@ -213,14 +252,14 @@ final class CpuWorldLightTree {
                 bounds.maxX() + translateX,
                 bounds.maxY() + translateY,
                 bounds.maxZ() + translateZ,
-                cluster.lights().power(),
+                lights.power(),
                 clusterIndex);
     }
 
-    private static int lightCount(List<GpuCluster> clusters) {
+    private static int lightCount(WorldLightTreeInput input) {
         int count = 0;
-        for (GpuCluster cluster : clusters) {
-            if (!cluster.lights().isEmpty()) {
+        for (int index = 0; index < input.clusterCount(); index++) {
+            if (!input.lights(index).isEmpty()) {
                 count++;
             }
         }
@@ -290,6 +329,22 @@ final class CpuWorldLightTree {
 
         private static Result empty() {
             return new Result(new int[0], 0, 0, 0);
+        }
+
+        private Result copy() {
+            Result copy = new Result(
+                    this.packedWords.clone(),
+                    this.nodeWordCount,
+                    this.forwardWordCount,
+                    this.leafNodes.length);
+            System.arraycopy(
+                    this.leafNodes,
+                    0,
+                    copy.leafNodes,
+                    0,
+                    this.leafNodes.length);
+            copy.clusterCount = this.clusterCount;
+            return copy;
         }
 
         private void prepareEmpty(int count) {
@@ -372,6 +427,79 @@ final class CpuWorldLightTree {
                 throw new IndexOutOfBoundsException(clusterIndex);
             }
             return this.leafNodes[clusterIndex];
+        }
+    }
+
+    /**
+     * Optional immutable checkpoint of the incremental topology.
+     *
+     * <p>Creation is O(tree size) and is intended for replay capture and tests, never the normal
+     * scene-update path.
+     */
+    static final class Snapshot {
+        private final CpuLightTree.Result tree;
+        private final long[] slotKeys;
+        private final boolean[] active;
+        private final int[] freeSlots;
+        private final int freeCount;
+        private final int activeCount;
+        private final double baselineCost;
+        private final Result result;
+
+        private Snapshot(CpuWorldLightTree source) {
+            this.tree = source.tree == null
+                    ? null
+                    : source.tree.copy();
+            this.slotKeys = source.slotKeys.clone();
+            this.active = source.active.clone();
+            this.freeSlots = source.freeSlots.clone();
+            this.freeCount = source.freeCount;
+            this.activeCount = source.activeCount;
+            this.baselineCost = source.baselineCost;
+            this.result = source.result.copy();
+            validate();
+        }
+
+        private void validate() {
+            if (this.slotKeys.length != this.active.length
+                    || this.freeSlots.length != this.active.length
+                    || this.freeCount < 0
+                    || this.freeCount > this.freeSlots.length
+                    || this.activeCount < 0
+                    || this.activeCount > this.active.length
+                    || this.activeCount + this.freeCount
+                            != this.active.length
+                    || !Double.isFinite(this.baselineCost)
+                    || this.baselineCost < 0.0
+                    || (this.tree == null
+                            ? this.active.length != 0
+                            : this.tree.leafCapacity()
+                                    != this.active.length)) {
+                throw new IllegalArgumentException(
+                        "World-light history snapshot is inconsistent");
+            }
+            boolean[] free = new boolean[this.active.length];
+            for (int index = 0; index < this.freeCount; index++) {
+                int slot = this.freeSlots[index];
+                if (slot < 0
+                        || slot >= free.length
+                        || this.active[slot]
+                        || free[slot]) {
+                    throw new IllegalArgumentException(
+                            "World-light history has an invalid free slot");
+                }
+                free[slot] = true;
+            }
+            int countedActive = 0;
+            for (boolean value : this.active) {
+                if (value) {
+                    countedActive++;
+                }
+            }
+            if (countedActive != this.activeCount) {
+                throw new IllegalArgumentException(
+                        "World-light history active count is inconsistent");
+            }
         }
     }
 }

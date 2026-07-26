@@ -2,7 +2,11 @@ package dev.prime.render.terrain;
 
 import dev.prime.PrimeClient;
 import dev.prime.render.ResourceCleanup;
+import dev.prime.render.scene.vanilla.VanillaGeometryPolicy;
+import dev.prime.render.scene.vanilla.VanillaAssetSnapshot;
 import dev.prime.render.scene.vanilla.VanillaSceneInterpreter;
+import dev.prime.render.scene.vanilla.VanillaSectionCompileInput;
+import dev.prime.render.scene.vanilla.VanillaSectionSnapshot;
 import dev.prime.render.vulkan.StagingArena;
 import dev.prime.render.vulkan.VulkanContext;
 import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
@@ -20,7 +24,6 @@ import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.client.renderer.block.BlockStateModelSet;
 import net.minecraft.client.renderer.block.FluidStateModelSet;
 import net.minecraft.client.renderer.chunk.RenderRegionCache;
-import net.minecraft.client.renderer.chunk.RenderSectionRegion;
 import net.minecraft.client.renderer.texture.TextureAtlas;
 import net.minecraft.core.SectionPos;
 import net.minecraft.data.AtlasIds;
@@ -76,7 +79,7 @@ public final class TerrainStreamer implements AutoCloseable {
             .thenComparingLong(ClusterRequest::distanceSquared)
             .thenComparingLong(ClusterRequest::key));
     private final ArrayDeque<CompletedCluster> readyForUpload = new ArrayDeque<>();
-    private final ArrayList<ClusterUpload> uploadBatch = new ArrayList<>();
+    private final ArrayList<CompiledCluster> uploadBatch = new ArrayList<>();
     private final ArrayList<ClusterRequest> unloadedRequests =
             new ArrayList<>(MAX_UNLOADED_PROBES_PER_FRAME);
     private final ArrayList<ClusterRequest> blockedRequests =
@@ -99,9 +102,7 @@ public final class TerrainStreamer implements AutoCloseable {
                 context.capabilities().maxOpacityMicromapSubdivisionLevel();
         this.segmentTriangleTarget = TerrainMemoryBudget.segmentTriangleTarget(
                 context.capabilities().maxAccelerationStructurePrimitiveCount());
-        this.sceneInterpreter = new VanillaSceneInterpreter(
-                this.opacityMicromapSupported,
-                this.segmentTriangleTarget);
+        this.sceneInterpreter = new VanillaSceneInterpreter();
         // Match vanilla section compilation: use Minecraft's shared work-stealing pool and its
         // configured CPU limit instead of imposing a second, Prime-specific four-thread ceiling.
         this.workers = Util.backgroundExecutor();
@@ -152,8 +153,8 @@ public final class TerrainStreamer implements AutoCloseable {
         this.dispatchSnapshots(minecraft, currentWorld);
     }
 
-    public TerrainScene.SceneView sceneView() {
-        return this.scene.view();
+    public TerrainScene.ResidentSceneView residentScene() {
+        return this.scene.residentView();
     }
 
     public void setLabPbrMaterials(LabPbrMaterialSet materials) {
@@ -179,7 +180,7 @@ public final class TerrainStreamer implements AutoCloseable {
                 }
             }
         }
-        return this.scene.view() != null;
+        return this.scene.residentView() != null;
     }
 
     public void invalidateBlocks(
@@ -321,6 +322,16 @@ public final class TerrainStreamer implements AutoCloseable {
         TextureAtlas blockAtlas = minecraft.getAtlasManager().getAtlasOrThrow(AtlasIds.BLOCKS);
         SpriteFinder blockSpriteFinder = ((FabricTextureAtlas) (Object) blockAtlas).spriteFinder();
         boolean cutoutLeaves = minecraft.options.cutoutLeaves().get();
+        VanillaAssetSnapshot assetSnapshot = new VanillaAssetSnapshot(
+                models,
+                fluidModels,
+                blockColors,
+                blockSpriteFinder,
+                this.labPbrMaterials,
+                VanillaGeometryPolicy.VANILLA_PARITY,
+                cutoutLeaves,
+                this.opacityMicromapSupported,
+                this.segmentTriangleTarget);
         this.unloadedRequests.clear();
         this.blockedRequests.clear();
         int examined = 0;
@@ -354,7 +365,7 @@ public final class TerrainStreamer implements AutoCloseable {
                 continue;
             }
 
-            ArrayList<ClusterSectionSnapshot> snapshots = new ArrayList<>(
+            ArrayList<VanillaSectionSnapshot> snapshots = new ArrayList<>(
                     SectionCluster.SECTION_COUNT);
             for (int sectionZ = clusterZ;
                     sectionZ < clusterZ + SectionCluster.SECTION_SIZE;
@@ -379,7 +390,7 @@ public final class TerrainStreamer implements AutoCloseable {
                             continue;
                         }
                         long sectionKey = SectionPos.asLong(sectionX, sectionY, sectionZ);
-                        snapshots.add(new ClusterSectionSnapshot(
+                        snapshots.add(new VanillaSectionSnapshot(
                                 sectionX,
                                 sectionY,
                                 sectionZ,
@@ -409,7 +420,6 @@ public final class TerrainStreamer implements AutoCloseable {
                 accepted++;
                 continue;
             }
-            LabPbrMaterialSet materialSnapshot = this.labPbrMaterials;
             this.pipelineState.beginInFlight(request.key(), request.generation());
             long worldEpoch = this.generations.worldEpoch();
             try {
@@ -423,20 +433,13 @@ public final class TerrainStreamer implements AutoCloseable {
                                 clusterZ,
                                 this.segmentTriangleTarget,
                                 TerrainStreamer.this.maxOpacityMicromapSubdivisionLevel);
-                        for (ClusterSectionSnapshot snapshot : snapshots) {
+                        for (VanillaSectionSnapshot snapshot : snapshots) {
                             CpuSectionGeometry sectionGeometry =
                                     TerrainStreamer.this.sceneInterpreter
                                     .compileSection(
-                                            snapshot.region(),
-                                            models,
-                                            fluidModels,
-                                            blockColors,
-                                            blockSpriteFinder,
-                                            materialSnapshot,
-                                            cutoutLeaves,
-                                            snapshot.sectionX(),
-                                    snapshot.sectionY(),
-                                    snapshot.sectionZ());
+                                            new VanillaSectionCompileInput(
+                                                    snapshot,
+                                                    assetSnapshot));
                             cluster.add(
                                     snapshot.sectionX(),
                                     snapshot.sectionY(),
@@ -524,7 +527,7 @@ public final class TerrainStreamer implements AutoCloseable {
     }
 
     private void uploadReady(double cameraX, double cameraY, double cameraZ) {
-        List<ClusterUpload> uploads = this.uploadBatch;
+        List<CompiledCluster> uploads = this.uploadBatch;
         uploads.clear();
         long uploadBytes = 0L;
         while (!this.readyForUpload.isEmpty()) {
@@ -542,7 +545,7 @@ public final class TerrainStreamer implements AutoCloseable {
             this.readyForUpload.removeFirst();
             this.pipelineState.consumeReady(next.key(), next.generation());
             uploadBytes = nextEndOffset;
-            uploads.add(new ClusterUpload(
+            uploads.add(new CompiledCluster(
                     next.key(), next.clusterX(), next.clusterY(), next.clusterZ(), next.mesh()));
         }
         long[] evictions = this.pendingEvictions.isEmpty()
@@ -551,7 +554,7 @@ public final class TerrainStreamer implements AutoCloseable {
         boolean updated = this.scene.update(uploads, evictions, cameraX, cameraY, cameraZ);
         if (!updated) {
             for (int index = uploads.size() - 1; index >= 0; index--) {
-                ClusterUpload upload = uploads.get(index);
+                CompiledCluster upload = uploads.get(index);
                 CompletedCluster result = new CompletedCluster(
                         this.generations.worldEpoch(),
                         upload.key(),
@@ -572,7 +575,7 @@ public final class TerrainStreamer implements AutoCloseable {
         for (long key : evictions) {
             this.empty.remove(key);
         }
-        for (ClusterUpload upload : uploads) {
+        for (CompiledCluster upload : uploads) {
             if (upload.isEmpty()) {
                 this.empty.add(upload.key());
             } else {
@@ -685,13 +688,6 @@ public final class TerrainStreamer implements AutoCloseable {
     }
 
     private record ClusterRequest(long key, long generation, int priority, long distanceSquared) {
-    }
-
-    private record ClusterSectionSnapshot(
-            int sectionX,
-            int sectionY,
-            int sectionZ,
-            RenderSectionRegion region) {
     }
 
     private record CompletedCluster(

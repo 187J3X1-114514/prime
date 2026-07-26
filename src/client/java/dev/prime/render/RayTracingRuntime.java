@@ -8,10 +8,13 @@ import dev.prime.PrimeClient;
 import dev.prime.config.PrimeConfig;
 import dev.prime.render.fsr.FsrDebugView;
 import dev.prime.render.post.DlssRrDebugView;
+import dev.prime.render.replay.RenderReplayFixtureStore;
+import dev.prime.render.replay.RenderReplayVerification;
 import dev.prime.render.vulkan.VulkanBootstrap;
 import dev.prime.render.vulkan.VulkanCapabilities;
 import dev.prime.render.vulkan.nrd.NrdDiagnostics;
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.components.toasts.SystemToast;
 import net.minecraft.client.multiplayer.ClientLevel;
@@ -22,6 +25,8 @@ import org.lwjgl.glfw.GLFW;
 public final class RayTracingRuntime {
     private static final RayTracingRuntime INSTANCE = new RayTracingRuntime();
     private static final SystemToast.SystemToastId UNAVAILABLE_TOAST = new SystemToast.SystemToastId(8_000L);
+    private static final SystemToast.SystemToastId REPLAY_TEST_TOAST =
+            new SystemToast.SystemToastId(8_001L);
 
     private final RuntimeStateMachine states = new RuntimeStateMachine();
     private String failureReason = "Prime has not initialized";
@@ -32,6 +37,8 @@ public final class RayTracingRuntime {
     private boolean previousEscape;
     private boolean previousRrCycle;
     private boolean previousRrLayout;
+    private boolean previousReplayTest;
+    private CompletableFuture<RenderReplayVerification> replayTest;
     private SessionControls controls = SessionControls.defaults();
     // Resource reload preparation may observe the renderer off the client thread. The renderer
     // itself remains client-thread owned; volatile only publishes attachment and detachment.
@@ -254,6 +261,23 @@ public final class RayTracingRuntime {
         return activeRenderer == null ? List.of() : activeRenderer.debugLines();
     }
 
+    /** Executes two production sequences from one frame snapshot and compares their outputs. */
+    public CompletableFuture<RenderReplayVerification> verifyReplayProbe(
+            int width, int height) {
+        VulkanRenderer activeRenderer = this.renderer;
+        if (activeRenderer == null
+                || this.states.current() != RuntimeState.ACTIVE) {
+            return CompletableFuture.failedFuture(
+                    new IllegalStateException(
+                            "Prime renderer is not active"));
+        }
+        try {
+            return activeRenderer.verifyReplayProbe(width, height);
+        } catch (RuntimeException exception) {
+            return CompletableFuture.failedFuture(exception);
+        }
+    }
+
     public void invalidateBlocks(
             int minimumX,
             int minimumY,
@@ -301,6 +325,7 @@ public final class RayTracingRuntime {
 
     public void shutdown() {
         this.shuttingDown = true;
+        this.replayTest = null;
         VulkanRenderer activeRenderer = this.renderer;
         VulkanRenderer failedRenderer = this.retiringRenderer;
         this.world = null;
@@ -328,6 +353,7 @@ public final class RayTracingRuntime {
     public void fail(Throwable failure) {
         this.failureReason = failure.getMessage() == null ? failure.getClass().getSimpleName() : failure.getMessage();
         this.states.fail();
+        this.replayTest = null;
         VulkanRenderer failedRenderer = this.renderer;
         this.world = null;
         this.controls = SessionControls.defaults();
@@ -359,6 +385,7 @@ public final class RayTracingRuntime {
         VulkanRenderer activeRenderer = this.renderer;
         this.world = null;
         this.states.disabled();
+        this.replayTest = null;
         if (activeRenderer == null) {
             return;
         }
@@ -416,15 +443,78 @@ public final class RayTracingRuntime {
                 || pressed(window, GLFW.GLFW_KEY_RIGHT_ALT);
         boolean rrCycle = control && alt && pressed(window, GLFW.GLFW_KEY_F12);
         boolean rrLayout = control && alt && pressed(window, GLFW.GLFW_KEY_F11);
+        boolean replayTest =
+                control && alt && pressed(window, GLFW.GLFW_KEY_F10);
         if (rrCycle && !this.previousRrCycle) {
             this.setRrDebugView(this.controls.rrDebugView().next());
         }
         if (rrLayout && !this.previousRrLayout) {
             this.setRrDebugFullscreen(!this.controls.rrDebugFullscreen());
         }
+        if (replayTest && !this.previousReplayTest
+                && (this.replayTest == null || this.replayTest.isDone())) {
+            CompletableFuture<RenderReplayVerification> requested =
+                    this.verifyReplayProbe(64, 64);
+            this.replayTest = requested;
+            requested.whenComplete((verification, failure) ->
+                    minecraft.execute(() -> this.reportReplayTest(
+                            minecraft, requested, verification, failure)));
+        }
         this.previousEscape = escape;
         this.previousRrCycle = rrCycle;
         this.previousRrLayout = rrLayout;
+        this.previousReplayTest = replayTest;
+    }
+
+    private void reportReplayTest(
+            Minecraft minecraft,
+            CompletableFuture<RenderReplayVerification> request,
+            RenderReplayVerification verification,
+            Throwable failure) {
+        if (this.replayTest != request) {
+            return;
+        }
+        this.replayTest = null;
+        boolean passed = failure == null
+                && verification != null
+                && verification.valid();
+        if (passed) {
+            var fixture = minecraft.gameDirectory
+                    .toPath()
+                    .resolve("prime/replay/last-success.prseq");
+            try {
+                RenderReplayFixtureStore.save(
+                        fixture, verification.reference());
+                PrimeClient.LOGGER.info(
+                        "Saved validated Prime replay fixture to {}",
+                        fixture.toAbsolutePath().normalize());
+            } catch (java.io.IOException | RuntimeException exception) {
+                PrimeClient.LOGGER.warn(
+                        "Prime replay self-test passed, but its fixture could not be saved",
+                        exception);
+            }
+            PrimeClient.LOGGER.info(
+                    "Prime 64x64 deterministic NRD replay self-test passed");
+        } else if (failure != null) {
+            PrimeClient.LOGGER.error(
+                    "Prime deterministic NRD replay self-test failed",
+                    failure);
+        } else {
+            PrimeClient.LOGGER.error(
+                    "Prime deterministic NRD replay self-test failed: semantic reference={}, semantic replay={}, first divergence={}",
+                    verification.referenceSemantics(),
+                    verification.replaySemantics(),
+                    verification.determinism().firstMismatch());
+        }
+        if (minecraft.gui != null) {
+            SystemToast.add(
+                    minecraft.gui.toastManager(),
+                    REPLAY_TEST_TOAST,
+                    Component.literal("Prime replay self-test"),
+                    Component.literal(passed
+                            ? "64×64 NRD semantics and replay passed"
+                            : "Failed; see the log for the first divergence"));
+        }
     }
 
     private static boolean pressed(long window, int key) {

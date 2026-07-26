@@ -7,7 +7,7 @@ import org.junit.jupiter.api.Test;
 import org.lwjgl.vulkan.KHRRayTracingPipeline;
 import org.lwjgl.vulkan.VK12;
 
-final class BasicWavefrontSignalsTest {
+final class BasicRawWavefrontFrameTest {
     @Test
     void imageUsageAndSynchronizationFollowTheOutputBoundary() {
         long rayTracing =
@@ -16,17 +16,17 @@ final class BasicWavefrontSignalsTest {
 
         assertEquals(
                 VK12.VK_IMAGE_USAGE_STORAGE_BIT,
-                BasicWavefrontSignals.imageUsage(false));
+                BasicRawWavefrontFrame.imageUsage(false));
         assertEquals(
                 VK12.VK_IMAGE_USAGE_STORAGE_BIT | VK12.VK_IMAGE_USAGE_SAMPLED_BIT,
-                BasicWavefrontSignals.imageUsage(true));
-        assertEquals(rayTracing, BasicWavefrontSignals.destinationStages(false, false));
+                BasicRawWavefrontFrame.imageUsage(true));
+        assertEquals(rayTracing, BasicRawWavefrontFrame.destinationStages(false, false));
         assertEquals(
                 rayTracing | compute,
-                BasicWavefrontSignals.destinationStages(true, false));
-        assertEquals(compute, BasicWavefrontSignals.destinationStages(true, true));
+                BasicRawWavefrontFrame.destinationStages(true, false));
+        assertEquals(compute, BasicRawWavefrontFrame.destinationStages(true, true));
         assertThrows(
                 IllegalArgumentException.class,
-                () -> BasicWavefrontSignals.destinationStages(false, true));
+                () -> BasicRawWavefrontFrame.destinationStages(false, true));
     }
 }

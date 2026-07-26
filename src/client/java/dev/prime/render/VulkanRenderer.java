@@ -2,6 +2,7 @@ package dev.prime.render;
 
 import com.mojang.blaze3d.GpuFormat;
 import com.mojang.blaze3d.pipeline.RenderTarget;
+import com.mojang.blaze3d.vulkan.Destroyable;
 import com.mojang.blaze3d.vulkan.VulkanGpuSampler;
 import com.mojang.blaze3d.vulkan.VulkanGpuTexture;
 import com.mojang.blaze3d.vulkan.VulkanGpuTextureView;
@@ -15,10 +16,12 @@ import dev.prime.render.post.PostProcessingMode;
 import dev.prime.render.post.RealtimePostProcessor;
 import dev.prime.render.post.ReconstructionQualityMode;
 import dev.prime.render.post.DlssRrDebugStatus;
-import dev.prime.render.shader.ShaderAbi;
+import dev.prime.render.replay.RenderReplayVerification;
 import dev.prime.render.vulkan.AtmospherePipeline;
 import dev.prime.render.vulkan.LabPbrTextureAtlas;
 import dev.prime.render.vulkan.RayTracingPipeline;
+import dev.prime.render.vulkan.RealtimeFrameExecutor;
+import dev.prime.render.vulkan.ScreenshotFrameExecutor;
 import dev.prime.render.vulkan.StagingArena;
 import dev.prime.render.vulkan.StarmapTexture;
 import dev.prime.render.vulkan.VulkanCapabilities;
@@ -27,9 +30,9 @@ import dev.prime.render.vulkan.VulkanImage;
 import dev.prime.render.vulkan.dlss.DlssRrBootstrap;
 import dev.prime.render.vulkan.dlss.DlssRrNative;
 import dev.prime.render.vulkan.nrd.NrdDiagnostics;
-import java.nio.ByteBuffer;
-import java.nio.ByteOrder;
+import dev.prime.render.vulkan.replay.ReplayProbeController;
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.client.renderer.texture.TextureAtlas;
@@ -38,29 +41,25 @@ import net.minecraft.data.AtlasIds;
 import net.minecraft.tags.FluidTags;
 import org.joml.Matrix4fc;
 import org.joml.Matrix4f;
-import org.lwjgl.system.MemoryStack;
-import org.lwjgl.vulkan.KHRRayTracingPipeline;
-import org.lwjgl.vulkan.KHRSynchronization2;
-import org.lwjgl.vulkan.VK12;
-import org.lwjgl.vulkan.VkCommandBuffer;
-import org.lwjgl.vulkan.VkDependencyInfo;
-import org.lwjgl.vulkan.VkImageCopy;
-import org.lwjgl.vulkan.VkImageMemoryBarrier2;
 
 public final class VulkanRenderer implements AutoCloseable {
     private final VulkanContext context;
+    private final RealtimeFrameExecutor realtimeExecutor;
+    private final ScreenshotFrameExecutor screenshotExecutor;
+    private final ReplayProbeController replayProbeController;
     private DlssRrNative.Context ngxContext;
     private final StagingArena stagingArena;
     private final StarmapTexture starmap;
     private final TerrainStreamer terrain;
     private final LabPbrTextureAtlas labPbrAtlas;
-    private final RealtimeSampleState realtimeSampleState = new RealtimeSampleState();
+    private RealtimeSampleState realtimeSampleState = RealtimeSampleState.initial();
     private final BlockPos.MutableBlockPos cameraBlockPosition = new BlockPos.MutableBlockPos();
     private RayTracingPipeline pipeline;
     private AtmospherePipeline atmosphere;
     private RealtimeRenderResources realtimeResources;
     private ScreenshotRenderResources screenshotResources;
     private BlockAtlasFrame blockAtlasFrame;
+    private long blockAtlasTextureRevision;
     private FrameCamera camera;
     private SunDirection sunDirection;
     private boolean cameraMediumKnown;
@@ -71,7 +70,7 @@ public final class VulkanRenderer implements AutoCloseable {
     // still consumed and owned by beginFrame on the render thread.
     private volatile boolean shaderReloadRequested;
     private ClientLevel screenshotWorld;
-    private TerrainScene.SceneView screenshotScene;
+    private TerrainScene.ResidentSceneView screenshotScene;
     private FrameCamera screenshotCamera;
     private SunDirection screenshotSunDirection;
     private LightingSettings.Snapshot screenshotLighting;
@@ -79,6 +78,7 @@ public final class VulkanRenderer implements AutoCloseable {
     private boolean screenshotCameraInWater;
     private long screenshotAtlasView;
     private long screenshotAtlasSampler;
+    private long screenshotTextureRevision = Long.MIN_VALUE;
     private long screenshotSampleCount;
     private SessionControls frameControls = SessionControls.defaults();
     private List<String> debugLines = List.of();
@@ -89,7 +89,6 @@ public final class VulkanRenderer implements AutoCloseable {
     private ReconstructionQualityMode rrOptimalQualityMode;
     private int rrOptimalDisplayWidth;
     private int rrOptimalDisplayHeight;
-
     public VulkanRenderer(com.mojang.blaze3d.vulkan.VulkanDevice device, VulkanCapabilities capabilities) {
         VulkanContext newContext = new VulkanContext(device, capabilities);
         StagingArena newStagingArena = null;
@@ -108,6 +107,12 @@ public final class VulkanRenderer implements AutoCloseable {
             newLabPbrAtlas = new LabPbrTextureAtlas(newContext, newStagingArena);
             newNgxContext = DlssRrBootstrap.initialize(newContext).orElse(null);
             this.context = newContext;
+            this.realtimeExecutor =
+                    new RealtimeFrameExecutor(newContext);
+            this.screenshotExecutor =
+                    new ScreenshotFrameExecutor(newContext);
+            this.replayProbeController =
+                    new ReplayProbeController(newContext);
             this.ngxContext = newNgxContext;
             this.stagingArena = newStagingArena;
             this.starmap = newStarmap;
@@ -177,7 +182,21 @@ public final class VulkanRenderer implements AutoCloseable {
         }
         this.terrain.setLabPbrMaterials(
                 this.labPbrAtlas.ensure(minecraft, atlas, atlasView.vkImageView()));
-        this.blockAtlasFrame = new BlockAtlasFrame(atlasView, atlasSampler);
+        long sourceGeneration = this.labPbrAtlas.sourceGeneration();
+        BlockAtlasFrame previous = this.blockAtlasFrame;
+        boolean changed = previous == null
+                || previous.view().vkImageView() != atlasView.vkImageView()
+                || previous.sampler().vkSampler() != atlasSampler.vkSampler()
+                || previous.sourceGeneration() != sourceGeneration;
+        if (changed) {
+            this.blockAtlasTextureRevision =
+                    Math.incrementExact(this.blockAtlasTextureRevision);
+        }
+        this.blockAtlasFrame = new BlockAtlasFrame(
+                atlasView,
+                atlasSampler,
+                sourceGeneration,
+                this.blockAtlasTextureRevision);
     }
 
     public void captureCamera(
@@ -198,7 +217,7 @@ public final class VulkanRenderer implements AutoCloseable {
     }
 
     public boolean isReady() {
-        return this.terrain.isNearCameraReady() && this.terrain.sceneView() != null;
+        return this.terrain.isNearCameraReady() && this.terrain.residentScene() != null;
     }
 
     public boolean screenshotActive() {
@@ -223,7 +242,7 @@ public final class VulkanRenderer implements AutoCloseable {
      * prevents screenshot accumulation from inheriting temporal resources by accident.
      */
     private void renderRealtime(RenderTarget mainTarget) {
-        TerrainScene.SceneView scene = this.terrain.sceneView();
+        TerrainScene.ResidentSceneView scene = this.terrain.residentScene();
         FrameCamera frameCamera = this.camera;
         SunDirection frameSunDirection = this.sunDirection;
         if (scene == null || frameCamera == null || frameSunDirection == null) {
@@ -291,8 +310,6 @@ public final class VulkanRenderer implements AutoCloseable {
         Minecraft minecraft = Minecraft.getInstance();
         VulkanGpuTextureView atlasView = blockAtlas.view;
         VulkanGpuSampler atlasSampler = blockAtlas.sampler;
-        long atlasViewHandle = atlasView.vkImageView();
-        long atlasSamplerHandle = atlasSampler.vkSampler();
         boolean resized;
         try {
             resized = this.ensureRealtimeResources(
@@ -348,32 +365,42 @@ public final class VulkanRenderer implements AutoCloseable {
         if (this.cameraMediumKnown && this.cameraInWater != frameCameraInWater) {
             // Crossing the water surface changes transport for essentially every visible path.
             // Treat it as a temporal discontinuity so NRD/FSR do not retain the previous medium.
-            this.realtimeSampleState.invalidate();
+            this.realtimeSampleState = this.realtimeSampleState.invalidated();
             images.requestReset();
         }
         this.cameraMediumKnown = true;
         this.cameraInWater = frameCameraInWater;
-        this.realtimeSampleState.prepare(
+        RealtimeFrameInput frameInput = new RealtimeFrameInput(
                 frameCamera,
+                System.nanoTime(),
                 scene.temporalRevision(),
-                atlasViewHandle,
-                atlasSamplerHandle,
+                blockAtlas.textureRevision(),
+                renderWidth,
+                renderHeight,
+                width,
+                height,
                 frameSunDirection,
+                frameCameraInWater,
+                images.mode,
+                images.qualityMode,
+                lighting,
+                material,
+                processor.rawFrame().usesShInputs(),
+                this.frameControls.triangleDebug(),
+                settings.oklabOverexposure(),
+                this.frameControls.nrdDebugView(),
+                this.frameControls.fsrDebugView(),
+                this.frameControls.rrDebugView(),
+                this.frameControls.rrDebugFullscreen(),
                 resized || lightingChanged || materialChanged);
+        frameInput.requireCompatible(processor);
+        RealtimeSampleState.Plan sampleFrame =
+                this.realtimeSampleState.plan(frameInput.sampleStateInput());
         RealtimePostProcessor.FrameParameters postParameters =
-                new RealtimePostProcessor.FrameParameters(
-                        frameCamera,
-                        scene.temporalRevision(),
-                        atlasViewHandle,
-                        atlasSamplerHandle,
-                        frameSunDirection,
-                        lighting.sunMultiplier(),
-                        settings.oklabOverexposure(),
-                        this.frameControls.nrdDebugView(),
-                        this.frameControls.fsrDebugView(),
-                        this.frameControls.rrDebugView(),
-                        this.frameControls.rrDebugFullscreen());
+                frameInput.reconstructionInput(sampleFrame.reset());
         RealtimePostProcessor.Frame postFrame = processor.beginFrame(postParameters);
+        RealtimeFramePlan framePlan =
+                RealtimeFramePlan.complete(frameInput, sampleFrame, postFrame);
         if (images.mode == PostProcessingMode.DLSS_RR) {
             this.debugLines = DlssRrDebugStatus.lines(
                     images.qualityMode,
@@ -388,87 +415,47 @@ public final class VulkanRenderer implements AutoCloseable {
         } else {
             this.debugLines = List.of();
         }
-        var encoder = this.context.commandEncoder();
-        VkCommandBuffer commandBuffer = encoder.allocateAndBeginTransientCommandBuffer();
-        this.context.device().instance().debug().beginDebugGroup(
-                commandBuffer,
-                () -> switch (images.mode) {
-                    case DLSS_RR -> "Prime 1spp path tracing and DLSS Ray Reconstruction";
+        this.realtimeExecutor.execute(
+                switch (images.mode) {
+                    case DLSS_RR ->
+                            "Prime 1spp path tracing and DLSS Ray Reconstruction";
                     case NRD_FSR ->
                             "Prime 1spp path tracing, NRD, and FidelityFX FSR 3.1.4";
-                    case DISABLED -> "Prime native 1spp path tracing without post-processing";
-                });
-        this.atmosphere.prepare(commandBuffer, frameCamera, frameSunDirection);
-        this.prepareOutputForComposite(commandBuffer, target);
-        this.prepareAccumulationForTrace(commandBuffer, history);
-        processor.prepareForRayTrace(commandBuffer);
-        this.prepareAtlasForTrace(commandBuffer, atlasView.texture());
-        LabPbrTextureAtlas.FrameToken labPbrFrame = this.labPbrAtlas.prepare(commandBuffer);
-        try (MemoryStack stack = MemoryStack.stackPush()) {
-            ByteBuffer pushConstants = this.createPushConstants(
-                    stack,
-                    frameCamera,
-                    scene,
-                    renderWidth,
-                    renderHeight,
-                    frameSunDirection,
-                    (images.mode == PostProcessingMode.DISABLED
-                            ? ReconstructionQualityMode.NATIVE_AA
-                            : images.qualityMode).packedRayCone(
-                            frameCamera.projection().m00(),
-                            frameCamera.projection().m11(),
-                            renderWidth,
-                            renderHeight),
-                    this.realtimeSampleState.sampleIndex(),
-                    this.realtimeSampleState.epoch(),
-                    images.mode == PostProcessingMode.NRD_FSR
-                            ? images.qualityMode.fsrJitterPhase(postFrame.frameIndex())
-                            : images.qualityMode.rrJitterPhase(postFrame.frameIndex()),
-                    frameCameraInWater,
-                    images.mode,
-                    lighting,
-                    material,
-                    processor.signals().usesShInputs(),
-                    images.mode == PostProcessingMode.NRD_FSR
-                            && postParameters.nrdDebugView().rawNumerical(),
-                    this.frameControls.triangleDebug());
-            this.pipeline.trace(commandBuffer, pushConstants, renderWidth, renderHeight);
-            processor.record(commandBuffer, postFrame, postParameters);
-            this.finishAtlasRead(commandBuffer, atlasView.texture());
-            this.prepareImagesForCopy(commandBuffer, target, mainColor);
-            VkImageCopy.Buffer copy = VkImageCopy.calloc(1, stack);
-            copy.get(0).srcSubresource()
-                    .aspectMask(VK12.VK_IMAGE_ASPECT_COLOR_BIT)
-                    .mipLevel(0)
-                    .baseArrayLayer(0)
-                    .layerCount(1);
-            copy.get(0).dstSubresource()
-                    .aspectMask(VK12.VK_IMAGE_ASPECT_COLOR_BIT)
-                    .mipLevel(0)
-                    .baseArrayLayer(0)
-                    .layerCount(1);
-            copy.get(0).extent().set(width, height, 1);
-            VK12.vkCmdCopyImage(
-                    commandBuffer,
-                    target.image(),
-                    VK12.VK_IMAGE_LAYOUT_GENERAL,
-                    mainColor.vkImage(),
-                    VK12.VK_IMAGE_LAYOUT_GENERAL,
-                    copy);
-            this.finishImageCopy(commandBuffer, target, mainColor);
-        }
-        this.context.device().instance().debug().endDebugGroup(commandBuffer);
-        VulkanContext.check(VK12.vkEndCommandBuffer(commandBuffer), "end Prime ray tracing command buffer");
-        encoder.execute(commandBuffer);
-        this.labPbrAtlas.submitted(labPbrFrame);
-        processor.submitted(postFrame);
+                    case DISABLED ->
+                            "Prime native 1spp path tracing without post-processing";
+                },
+                this.pipeline,
+                this.atmosphere,
+                this.labPbrAtlas,
+                scene,
+                framePlan,
+                processor,
+                postFrame,
+                target,
+                history,
+                atlasView,
+                mainColor);
         this.submittedLightingRevision = lighting.revision();
         this.submittedMaterialRevision = material.revision();
-        this.realtimeSampleState.submitted(
-                frameCamera,
-                atlasViewHandle,
-                atlasSamplerHandle,
-                frameSunDirection);
+        this.realtimeSampleState = sampleFrame.committedState();
+        this.replayProbeController.run(
+                new ReplayProbeController.RunInput(
+                        this.pipeline,
+                        this.atmosphere,
+                        scene,
+                        frameCamera,
+                        frameSunDirection,
+                        frameCameraInWater,
+                        lighting,
+                        material,
+                        settings.oklabOverexposure(),
+                        atlasView,
+                        atlasSampler,
+                        blockAtlas.textureRevision(),
+                        images.stableRadiance,
+                        this.labPbrAtlas.normalAtlas(),
+                        this.labPbrAtlas.specularAtlas(),
+                        images.processor.rawFrame()));
         int accumulatedSampleCount = this.realtimeSampleState.sampleIndex();
         if (accumulatedSampleCount >= 16
                 && (accumulatedSampleCount & (accumulatedSampleCount - 1)) == 0) {
@@ -482,7 +469,7 @@ public final class VulkanRenderer implements AutoCloseable {
     /** Records one native-resolution unbiased sample and presents the running mean directly. */
     private void renderScreenshot(RenderTarget mainTarget) {
         this.debugLines = List.of();
-        TerrainScene.SceneView scene = this.screenshotScene;
+        TerrainScene.ResidentSceneView scene = this.screenshotScene;
         FrameCamera frameCamera = this.screenshotCamera;
         SunDirection frameSunDirection = this.screenshotSunDirection;
         LightingSettings.Snapshot lighting = this.screenshotLighting;
@@ -520,11 +507,10 @@ public final class VulkanRenderer implements AutoCloseable {
         VulkanGpuSampler atlasSampler = blockAtlas.sampler;
         long atlasViewHandle = atlasView.vkImageView();
         long atlasSamplerHandle = atlasSampler.vkSampler();
-        if (this.screenshotAtlasView == 0L) {
-            this.screenshotAtlasView = atlasViewHandle;
-            this.screenshotAtlasSampler = atlasSamplerHandle;
-        } else if (this.screenshotAtlasView != atlasViewHandle
-                || this.screenshotAtlasSampler != atlasSamplerHandle) {
+        if (this.screenshotAtlasView != atlasViewHandle
+                || this.screenshotAtlasSampler != atlasSamplerHandle
+                || this.screenshotTextureRevision
+                        != blockAtlas.textureRevision()) {
             // A resource-pack reload replaces the frozen material snapshot. Continuing would mix
             // two different texture sets in one statistical mean, so return to realtime and let
             // the ordinary reload/resynchronization path establish a new coherent scene.
@@ -547,82 +533,33 @@ public final class VulkanRenderer implements AutoCloseable {
                 this.labPbrAtlas.normalAtlas(),
                 this.labPbrAtlas.specularAtlas(),
                 this.atmosphere,
-                images.signals);
-
-        var encoder = this.context.commandEncoder();
-        VkCommandBuffer commandBuffer = encoder.allocateAndBeginTransientCommandBuffer();
-        this.context.device().instance().debug().beginDebugGroup(
-                commandBuffer, () -> "Prime unbiased screenshot accumulation");
-        this.atmosphere.prepare(commandBuffer, frameCamera, frameSunDirection);
-        this.prepareOutputForComposite(commandBuffer, images.displayOutput);
-        this.prepareAccumulationForTrace(
-                commandBuffer, images.stableRadiance);
-        this.prepareAccumulationForTrace(commandBuffer, images.runningMean);
-        images.signals.prepareForRayTrace(commandBuffer);
-        this.prepareAtlasForTrace(commandBuffer, atlasView.texture());
-        LabPbrTextureAtlas.FrameToken labPbrFrame = this.labPbrAtlas.prepare(commandBuffer);
-        try (MemoryStack stack = MemoryStack.stackPush()) {
-            int sampleIndex = (int) (this.screenshotSampleCount & 0xffffL);
-            int sampleEpoch = (int) (this.screenshotSampleCount >>> 16);
-            ByteBuffer pushConstants = this.createPushConstants(
-                    stack,
-                    frameCamera,
-                    scene,
-                    width,
-                    height,
-                    frameSunDirection,
-                    packScreenshotRayCone(
-                            frameCamera.projection().m00(),
-                            frameCamera.projection().m11(),
-                            width,
-                            height),
-                    sampleIndex,
-                    sampleEpoch,
-                    0,
-                    this.screenshotCameraInWater,
-                    PostProcessingMode.DISABLED,
-                    lighting,
-                    material,
-                    false,
-                    false,
-                    false);
-            this.pipeline.traceScreenshot(commandBuffer, pushConstants, width, height);
-            this.prepareScreenshotDisplay(commandBuffer, images.runningMean);
-            images.display.record(
-                    commandBuffer,
-                    width,
-                    height,
-                    PrimeConfig.settings().oklabOverexposure());
-            this.finishAtlasRead(commandBuffer, atlasView.texture());
-            this.prepareImagesForCopy(commandBuffer, images.displayOutput, mainColor);
-            VkImageCopy.Buffer copy = VkImageCopy.calloc(1, stack);
-            copy.get(0).srcSubresource()
-                    .aspectMask(VK12.VK_IMAGE_ASPECT_COLOR_BIT)
-                    .mipLevel(0)
-                    .baseArrayLayer(0)
-                    .layerCount(1);
-            copy.get(0).dstSubresource()
-                    .aspectMask(VK12.VK_IMAGE_ASPECT_COLOR_BIT)
-                    .mipLevel(0)
-                    .baseArrayLayer(0)
-                    .layerCount(1);
-            copy.get(0).extent().set(width, height, 1);
-            VK12.vkCmdCopyImage(
-                    commandBuffer,
-                    images.displayOutput.image(),
-                    VK12.VK_IMAGE_LAYOUT_GENERAL,
-                    mainColor.vkImage(),
-                    VK12.VK_IMAGE_LAYOUT_GENERAL,
-                    copy);
-            this.finishImageCopy(commandBuffer, images.displayOutput, mainColor);
-        }
-        this.context.device().instance().debug().endDebugGroup(commandBuffer);
-        VulkanContext.check(
-                VK12.vkEndCommandBuffer(commandBuffer),
-                "end Prime screenshot accumulation command buffer");
-        encoder.execute(commandBuffer);
-        this.labPbrAtlas.submitted(labPbrFrame);
-        this.screenshotSampleCount++;
+                images.rawFrame);
+        ScreenshotFramePlan framePlan = new ScreenshotFrameInput(
+                frameCamera,
+                width,
+                height,
+                scene.temporalRevision(),
+                this.screenshotTextureRevision,
+                frameSunDirection,
+                this.screenshotCameraInWater,
+                lighting,
+                material,
+                this.screenshotSampleCount,
+                PrimeConfig.settings().oklabOverexposure()).plan();
+        this.screenshotExecutor.execute(
+                this.pipeline,
+                this.atmosphere,
+                this.labPbrAtlas,
+                scene,
+                framePlan,
+                images.displayOutput,
+                images.stableRadiance,
+                images.runningMean,
+                images.rawFrame,
+                images.display,
+                atlasView,
+                mainColor);
+        this.screenshotSampleCount = framePlan.nextSampleCount();
         if (this.screenshotSampleCount > 0L
                 && (this.screenshotSampleCount & (this.screenshotSampleCount - 1L)) == 0L) {
             PrimeClient.LOGGER.info(
@@ -645,18 +582,21 @@ public final class VulkanRenderer implements AutoCloseable {
                 && minecraft.level != null
                 && this.camera != null
                 && this.sunDirection != null
-                && this.terrain.sceneView() != null
-                && this.realtimeResources != null) {
+                && this.terrain.residentScene() != null
+                && this.realtimeResources != null
+                && this.blockAtlasFrame != null) {
             this.screenshotWorld = minecraft.level;
-            this.screenshotScene = this.terrain.sceneView();
+            this.screenshotScene = this.terrain.residentScene();
             this.screenshotCamera = this.camera;
             this.screenshotSunDirection = this.sunDirection;
             PrimeSettings settings = PrimeConfig.settings();
             this.screenshotLighting = settings.lighting();
             this.screenshotMaterial = settings.material();
             this.screenshotCameraInWater = this.isCameraInWater(minecraft, this.camera);
-            this.screenshotAtlasView = 0L;
-            this.screenshotAtlasSampler = 0L;
+            BlockAtlasFrame atlas = this.blockAtlasFrame;
+            this.screenshotAtlasView = atlas.view().vkImageView();
+            this.screenshotAtlasSampler = atlas.sampler().vkSampler();
+            this.screenshotTextureRevision = atlas.textureRevision();
             this.screenshotSampleCount = 0L;
             PrimeClient.LOGGER.info(
                     "Entered Prime screenshot mode at scene revision {}",
@@ -677,6 +617,7 @@ public final class VulkanRenderer implements AutoCloseable {
         this.screenshotMaterial = null;
         this.screenshotAtlasView = 0L;
         this.screenshotAtlasSampler = 0L;
+        this.screenshotTextureRevision = Long.MIN_VALUE;
         this.screenshotSampleCount = 0L;
         if (this.screenshotResources != null) {
             this.context.defer(this.screenshotResources);
@@ -686,7 +627,7 @@ public final class VulkanRenderer implements AutoCloseable {
         // exit also covers animation-driven or external changes that do not expose a precise
         // block range, without invalidating the frozen screenshot while it is converging.
         this.terrain.invalidateAll();
-        this.realtimeSampleState.invalidate();
+        this.realtimeSampleState = this.realtimeSampleState.invalidated();
         if (this.realtimeResources != null) {
             this.realtimeResources.requestReset();
         }
@@ -759,6 +700,15 @@ public final class VulkanRenderer implements AutoCloseable {
         this.labPbrAtlas.requestReload();
     }
 
+    /**
+     * Executes two deterministic low-resolution restart/motion sequences from one rendered-world
+     * snapshot and compares their production outputs.
+     */
+    public CompletableFuture<RenderReplayVerification> verifyReplayProbe(
+            int width, int height) {
+        return this.replayProbeController.request(width, height);
+    }
+
     @Override
     public void close() {
         if (this.closed) {
@@ -768,6 +718,8 @@ public final class VulkanRenderer implements AutoCloseable {
         // successful wait, every child is attempted once and failures are aggregated.
         this.context.awaitIdle();
         RuntimeException failure = null;
+        failure = ResourceCleanup.destroy(
+                this.replayProbeController, failure);
         failure = ResourceCleanup.run(this.context::drainDeferredAfterIdle, failure);
         failure = ResourceCleanup.destroy(this.pipeline, failure);
         if (this.realtimeResources != null) {
@@ -852,7 +804,7 @@ public final class VulkanRenderer implements AutoCloseable {
         retirementFailure = ResourceCleanup.run(
                 () -> this.context.defer(previousAtmosphere), retirementFailure);
         ResourceCleanup.throwIfFailed(retirementFailure);
-        this.realtimeSampleState.invalidate();
+        this.realtimeSampleState = this.realtimeSampleState.invalidated();
         PrimeClient.LOGGER.info("Reloaded Prime ray tracing and atmosphere shaders");
     }
 
@@ -898,7 +850,7 @@ public final class VulkanRenderer implements AutoCloseable {
                     this.labPbrAtlas.normalAtlas(),
                     this.labPbrAtlas.specularAtlas(),
                     this.atmosphere,
-                    current.processor.signals());
+                    current.processor.rawFrame());
             return false;
         }
         RealtimeRenderResources replacement = RealtimeRenderResources.create(
@@ -921,7 +873,7 @@ public final class VulkanRenderer implements AutoCloseable {
                     this.labPbrAtlas.normalAtlas(),
                     this.labPbrAtlas.specularAtlas(),
                     this.atmosphere,
-                    replacement.processor.signals());
+                    replacement.processor.rawFrame());
         } catch (RuntimeException exception) {
             ResourceCleanup.destroy(replacement, exception);
             throw exception;
@@ -966,247 +918,6 @@ public final class VulkanRenderer implements AutoCloseable {
                 "Created Prime screenshot resources at native {}x{}", width, height);
     }
 
-    private void prepareAtlasForTrace(VkCommandBuffer commandBuffer, VulkanGpuTexture atlas) {
-        // Minecraft updates animated atlas regions in place and keeps the image in GENERAL.
-        // Queue order alone is not a memory dependency: without this availability/visibility
-        // barrier, ray tracing can observe an atlas render pass while it is still writing. The
-        // resulting corruption is especially reproducible when a swapchain resize changes GPU
-        // scheduling. Do not remove this half of the pair unless atlas ownership and submissions
-        // are replaced by an equivalent explicit synchronization protocol.
-        imageBarrier(
-                commandBuffer,
-                atlas.vkImage(),
-                VK12.VK_IMAGE_LAYOUT_GENERAL,
-                VK12.VK_IMAGE_LAYOUT_GENERAL,
-                VK12.VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
-                VK12.VK_ACCESS_MEMORY_WRITE_BIT,
-                KHRRayTracingPipeline.VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR,
-                VK12.VK_ACCESS_SHADER_READ_BIT);
-    }
-
-    private void finishAtlasRead(VkCommandBuffer commandBuffer, VulkanGpuTexture atlas) {
-        // Complete Prime's sampled reads before a later Minecraft render/transfer pass writes the
-        // atlas again. This is the reverse dependency of prepareAtlasForTrace; both barriers are
-        // required even though the layout remains GENERAL throughout.
-        imageBarrier(
-                commandBuffer,
-                atlas.vkImage(),
-                VK12.VK_IMAGE_LAYOUT_GENERAL,
-                VK12.VK_IMAGE_LAYOUT_GENERAL,
-                KHRRayTracingPipeline.VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR,
-                VK12.VK_ACCESS_SHADER_READ_BIT,
-                VK12.VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
-                VK12.VK_ACCESS_MEMORY_WRITE_BIT);
-    }
-
-    private void prepareOutputForComposite(VkCommandBuffer commandBuffer, VulkanImage image) {
-        int oldLayout = image.initialized() ? VK12.VK_IMAGE_LAYOUT_GENERAL : VK12.VK_IMAGE_LAYOUT_UNDEFINED;
-        long sourceStage = image.initialized() ? VK12.VK_PIPELINE_STAGE_TRANSFER_BIT : VK12.VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
-        long sourceAccess = image.initialized() ? VK12.VK_ACCESS_TRANSFER_READ_BIT : 0L;
-        imageBarrier(
-                commandBuffer,
-                image.image(),
-                oldLayout,
-                VK12.VK_IMAGE_LAYOUT_GENERAL,
-                sourceStage,
-                sourceAccess,
-                VK12.VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-                VK12.VK_ACCESS_SHADER_WRITE_BIT);
-        image.markInitialized();
-    }
-
-    private void prepareAccumulationForTrace(VkCommandBuffer commandBuffer, VulkanImage image) {
-        int oldLayout = image.initialized() ? VK12.VK_IMAGE_LAYOUT_GENERAL : VK12.VK_IMAGE_LAYOUT_UNDEFINED;
-        long sourceStage = image.initialized()
-                // The stable remainder is written by raygen, then read by NRD's composite pass.
-                // Both accesses belong to the image's cross-frame lifetime: omitting the compute
-                // read here would allow the next raygen dispatch to overwrite a pixel still being
-                // consumed by the previous frame on an asynchronously executing Vulkan queue.
-                ? KHRRayTracingPipeline.VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR
-                        | VK12.VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT
-                : VK12.VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
-        long sourceAccess = image.initialized()
-                ? VK12.VK_ACCESS_SHADER_READ_BIT | VK12.VK_ACCESS_SHADER_WRITE_BIT
-                : 0L;
-        imageBarrier(
-                commandBuffer,
-                image.image(),
-                oldLayout,
-                VK12.VK_IMAGE_LAYOUT_GENERAL,
-                sourceStage,
-                sourceAccess,
-                KHRRayTracingPipeline.VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR,
-                VK12.VK_ACCESS_SHADER_READ_BIT | VK12.VK_ACCESS_SHADER_WRITE_BIT);
-        image.markInitialized();
-    }
-
-    private void prepareScreenshotDisplay(
-            VkCommandBuffer commandBuffer, VulkanImage accumulation) {
-        // Screenshot raygen updates an in-place running mean. The display pass reads that exact
-        // RGBA32F history; this dependency is the only hand-off and deliberately contains no NRD
-        // or FSR temporal resource.
-        imageBarrier(
-                commandBuffer,
-                accumulation.image(),
-                VK12.VK_IMAGE_LAYOUT_GENERAL,
-                VK12.VK_IMAGE_LAYOUT_GENERAL,
-                KHRRayTracingPipeline.VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR,
-                VK12.VK_ACCESS_SHADER_WRITE_BIT,
-                VK12.VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-                VK12.VK_ACCESS_SHADER_READ_BIT);
-    }
-
-    private void prepareSceneColorForComposite(VkCommandBuffer commandBuffer, VulkanImage image) {
-        int oldLayout = image.initialized()
-                ? VK12.VK_IMAGE_LAYOUT_GENERAL
-                : VK12.VK_IMAGE_LAYOUT_UNDEFINED;
-        imageBarrier(
-                commandBuffer,
-                image.image(),
-                oldLayout,
-                VK12.VK_IMAGE_LAYOUT_GENERAL,
-                image.initialized()
-                        ? VK12.VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT
-                        : VK12.VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
-                image.initialized()
-                        ? VK12.VK_ACCESS_SHADER_READ_BIT | VK12.VK_ACCESS_SHADER_WRITE_BIT
-                        : 0L,
-                VK12.VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-                VK12.VK_ACCESS_SHADER_WRITE_BIT);
-        image.markInitialized();
-    }
-
-    private void prepareImagesForCopy(VkCommandBuffer commandBuffer, VulkanImage source, VulkanGpuTexture destination) {
-        try (MemoryStack stack = MemoryStack.stackPush()) {
-            VkImageMemoryBarrier2.Buffer barriers = VkImageMemoryBarrier2.calloc(2, stack);
-            fillImageBarrier(
-                    barriers.get(0),
-                    source.image(),
-                    VK12.VK_IMAGE_LAYOUT_GENERAL,
-                    VK12.VK_IMAGE_LAYOUT_GENERAL,
-                    VK12.VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-                    VK12.VK_ACCESS_SHADER_WRITE_BIT,
-                    VK12.VK_PIPELINE_STAGE_TRANSFER_BIT,
-                    VK12.VK_ACCESS_TRANSFER_READ_BIT);
-            fillImageBarrier(
-                    barriers.get(1),
-                    destination.vkImage(),
-                    VK12.VK_IMAGE_LAYOUT_GENERAL,
-                    VK12.VK_IMAGE_LAYOUT_GENERAL,
-                    VK12.VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
-                    VK12.VK_ACCESS_MEMORY_WRITE_BIT,
-                    VK12.VK_PIPELINE_STAGE_TRANSFER_BIT,
-                    VK12.VK_ACCESS_TRANSFER_WRITE_BIT);
-            VkDependencyInfo dependency = VkDependencyInfo.calloc(stack)
-                    .sType$Default()
-                    .pImageMemoryBarriers(barriers);
-            KHRSynchronization2.vkCmdPipelineBarrier2KHR(commandBuffer, dependency);
-        }
-    }
-
-    private void finishImageCopy(VkCommandBuffer commandBuffer, VulkanImage source, VulkanGpuTexture destination) {
-        try (MemoryStack stack = MemoryStack.stackPush()) {
-            VkImageMemoryBarrier2.Buffer barriers = VkImageMemoryBarrier2.calloc(2, stack);
-            fillImageBarrier(
-                    barriers.get(0),
-                    source.image(),
-                    VK12.VK_IMAGE_LAYOUT_GENERAL,
-                    VK12.VK_IMAGE_LAYOUT_GENERAL,
-                    VK12.VK_PIPELINE_STAGE_TRANSFER_BIT,
-                    VK12.VK_ACCESS_TRANSFER_READ_BIT,
-                    VK12.VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-                    VK12.VK_ACCESS_SHADER_WRITE_BIT);
-            fillImageBarrier(
-                    barriers.get(1),
-                    destination.vkImage(),
-                    VK12.VK_IMAGE_LAYOUT_GENERAL,
-                    VK12.VK_IMAGE_LAYOUT_GENERAL,
-                    VK12.VK_PIPELINE_STAGE_TRANSFER_BIT,
-                    VK12.VK_ACCESS_TRANSFER_WRITE_BIT,
-                    VK12.VK_PIPELINE_STAGE_ALL_GRAPHICS_BIT,
-                    VK12.VK_ACCESS_MEMORY_READ_BIT | VK12.VK_ACCESS_MEMORY_WRITE_BIT);
-            VkDependencyInfo dependency = VkDependencyInfo.calloc(stack)
-                    .sType$Default()
-                    .pImageMemoryBarriers(barriers);
-            KHRSynchronization2.vkCmdPipelineBarrier2KHR(commandBuffer, dependency);
-        }
-    }
-
-    private ByteBuffer createPushConstants(
-            MemoryStack stack,
-            FrameCamera camera,
-            TerrainScene.SceneView scene,
-            int width,
-            int height,
-            SunDirection sunDirection,
-            int packedRayCone,
-            int sampleIndex,
-            int sampleEpoch,
-            int jitterPhase,
-            boolean cameraInWater,
-            PostProcessingMode postProcessingMode,
-            LightingSettings.Snapshot lighting,
-            MaterialSettings.Snapshot material,
-            boolean shInput,
-            boolean rawNumericalDiagnostic,
-            boolean triangleDebug) {
-        ByteBuffer buffer = stack.calloc(ShaderAbi.PUSH_CONSTANT_SIZE).order(ByteOrder.nativeOrder());
-        camera.inverseViewProjection().get(
-                ShaderAbi.PUSH_INVERSE_VIEW_PROJECTION_OFFSET, buffer);
-        int cameraOffset = ShaderAbi.PUSH_CAMERA_POSITION_OFFSET;
-        buffer.putFloat(cameraOffset, (float) (camera.renderX() - scene.originX()));
-        buffer.putFloat(cameraOffset + Float.BYTES, (float) (camera.renderY() - scene.originY()));
-        buffer.putFloat(cameraOffset + 2 * Float.BYTES, (float) (camera.renderZ() - scene.originZ()));
-        buffer.putFloat(
-                ShaderAbi.PUSH_ATMOSPHERE_EYE_RADIUS_KM_OFFSET,
-                AtmospherePipeline.eyeRadiusKm(camera.y()));
-        buffer.putLong(ShaderAbi.PUSH_SECTION_TABLE_ADDRESS_OFFSET, scene.sectionTableAddress());
-        buffer.putInt(ShaderAbi.PUSH_OUTPUT_EXTENT_OFFSET, width);
-        buffer.putInt(ShaderAbi.PUSH_OUTPUT_EXTENT_OFFSET + Integer.BYTES, height);
-        int sunOffset = ShaderAbi.PUSH_SUN_DIRECTION_OFFSET;
-        buffer.putFloat(sunOffset, sunDirection.x());
-        buffer.putFloat(sunOffset + Float.BYTES, sunDirection.y());
-        buffer.putFloat(sunOffset + 2 * Float.BYTES, sunDirection.z());
-        buffer.putInt(ShaderAbi.PUSH_RAY_CONE_OFFSET, packedRayCone);
-        int pathOffset = ShaderAbi.PUSH_PATH_OFFSET;
-        buffer.putInt(pathOffset, sampleIndex);
-        buffer.putInt(
-                pathOffset + Integer.BYTES,
-                IntegratorSettings.packSampleEpoch(sampleEpoch, triangleDebug));
-        buffer.putInt(
-                pathOffset + 2 * Integer.BYTES,
-                IntegratorSettings.packPathControl(
-                        IntegratorSettings.MAXIMUM_BOUNCES,
-                        jitterPhase,
-                        cameraInWater,
-                        postProcessingMode));
-        int materialLightingControl = IntegratorSettings.packMaterialLightingControl(
-                        lighting.sunQuarterSteps(),
-                        lighting.starQuarterSteps(),
-                        lighting.blockLightQuarterSteps(),
-                        material.roughnessSteps(),
-                        shInput,
-                        rawNumericalDiagnostic);
-        buffer.putInt(pathOffset + 3 * Integer.BYTES, materialLightingControl);
-        return buffer.position(0).limit(ShaderAbi.PUSH_CONSTANT_SIZE);
-    }
-
-    private static int packScreenshotRayCone(
-            float projectionM00, float projectionM11, int width, int height) {
-        if (width <= 0 || height <= 0) {
-            throw new IllegalArgumentException("Ray-cone render dimensions must be positive");
-        }
-        float x = 2.0F / (width * Math.abs(projectionM00));
-        float y = 2.0F / (height * Math.abs(projectionM11));
-        float spread = Math.max(x, y);
-        if (!Float.isFinite(spread) || spread <= 0.0F) {
-            throw new IllegalArgumentException("Ray-cone projection must be finite and non-zero");
-        }
-        // Screenshot mode renders natively and therefore has no upscaler-specific negative LOD
-        // bias. The low half remains the physical one-pixel cone spread used by hit shaders.
-        return Float.floatToFloat16(spread) & 0xffff;
-    }
-
     private void requireRayDispatchCapacity(int width, int height) {
         long invocationCount = (long) width * height;
         if (invocationCount
@@ -1230,60 +941,6 @@ public final class VulkanRenderer implements AutoCloseable {
                 && camera.y() < position.getY() + fluid.getHeight(minecraft.level, position);
     }
 
-    private static void imageBarrier(
-            VkCommandBuffer commandBuffer,
-            long image,
-            int oldLayout,
-            int newLayout,
-            long sourceStage,
-            long sourceAccess,
-            long destinationStage,
-            long destinationAccess) {
-        try (MemoryStack stack = MemoryStack.stackPush()) {
-            VkImageMemoryBarrier2.Buffer barrier = VkImageMemoryBarrier2.calloc(1, stack);
-            fillImageBarrier(
-                    barrier.get(0),
-                    image,
-                    oldLayout,
-                    newLayout,
-                    sourceStage,
-                    sourceAccess,
-                    destinationStage,
-                    destinationAccess);
-            VkDependencyInfo dependency = VkDependencyInfo.calloc(stack)
-                    .sType$Default()
-                    .pImageMemoryBarriers(barrier);
-            KHRSynchronization2.vkCmdPipelineBarrier2KHR(commandBuffer, dependency);
-        }
-    }
-
-    private static void fillImageBarrier(
-            VkImageMemoryBarrier2 barrier,
-            long image,
-            int oldLayout,
-            int newLayout,
-            long sourceStage,
-            long sourceAccess,
-            long destinationStage,
-            long destinationAccess) {
-        barrier.sType$Default()
-                .srcStageMask(sourceStage)
-                .srcAccessMask(sourceAccess)
-                .dstStageMask(destinationStage)
-                .dstAccessMask(destinationAccess)
-                .oldLayout(oldLayout)
-                .newLayout(newLayout)
-                .srcQueueFamilyIndex(VK12.VK_QUEUE_FAMILY_IGNORED)
-                .dstQueueFamilyIndex(VK12.VK_QUEUE_FAMILY_IGNORED)
-                .image(image);
-        barrier.subresourceRange()
-                .aspectMask(VK12.VK_IMAGE_ASPECT_COLOR_BIT)
-                .baseMipLevel(0)
-                .levelCount(1)
-                .baseArrayLayer(0)
-                .layerCount(1);
-    }
-
     private static String hex(long handle) {
         return "0x" + Long.toUnsignedString(handle, 16);
     }
@@ -1291,7 +948,9 @@ public final class VulkanRenderer implements AutoCloseable {
     /** One block-atlas snapshot is resolved and synchronized at the frame boundary. */
     private record BlockAtlasFrame(
             VulkanGpuTextureView view,
-            VulkanGpuSampler sampler) {
+            VulkanGpuSampler sampler,
+            long sourceGeneration,
+            long textureRevision) {
     }
 
 }

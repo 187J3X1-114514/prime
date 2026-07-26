@@ -1,13 +1,13 @@
 package dev.prime.render.vulkan;
 
 /**
- * Physical path signals and reconstruction guides shared by every wavefront output adapter.
+ * Lifetime-stable image view written by one resolved wavefront frame.
  *
- * <p>The transport scheduler owns when these images are produced. NRD, DLSS RR, the unfiltered
- * realtime path and screenshot accumulation only choose how the resolved signals are consumed or
- * aliased; none of them changes the physical estimator.
+ * <p>These are transport outputs, not reconstruction inputs. In particular,
+ * {@link #transportMetadata()} is private raygen scratch; a reconstruction preparation stage may
+ * alias and overwrite it with a backend-specific motion vector only after ray tracing completes.
  */
-public interface WavefrontSignals {
+public interface RawWavefrontFrame {
     VulkanImage noisyDiffuse();
 
     VulkanImage noisySpecular();
@@ -16,7 +16,7 @@ public interface WavefrontSignals {
 
     VulkanImage viewZ();
 
-    VulkanImage motion();
+    VulkanImage transportMetadata();
 
     VulkanImage material();
 

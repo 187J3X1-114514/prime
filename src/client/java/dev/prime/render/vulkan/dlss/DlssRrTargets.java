@@ -3,7 +3,7 @@ package dev.prime.render.vulkan.dlss;
 import com.mojang.blaze3d.vulkan.Destroyable;
 import dev.prime.render.vulkan.VulkanContext;
 import dev.prime.render.vulkan.VulkanImage;
-import dev.prime.render.vulkan.WavefrontSignals;
+import dev.prime.render.vulkan.RawWavefrontFrame;
 import java.util.ArrayList;
 import org.lwjgl.system.MemoryStack;
 import org.lwjgl.vulkan.KHRRayTracingPipeline;
@@ -13,7 +13,7 @@ import org.lwjgl.vulkan.VkDependencyInfo;
 import org.lwjgl.vulkan.VkImageMemoryBarrier2;
 
 /** Owns every raw path-trace signal and concrete NGX image for one RR feature extent. */
-public final class DlssRrTargets implements WavefrontSignals, Destroyable {
+public final class DlssRrTargets implements RawWavefrontFrame, Destroyable {
     static final int COLOR_FORMAT = VK12.VK_FORMAT_R16G16B16A16_SFLOAT;
     static final int ALBEDO_FORMAT = VK12.VK_FORMAT_R16G16B16A16_SFLOAT;
     static final int NORMAL_ROUGHNESS_FORMAT = VK12.VK_FORMAT_R16G16B16A16_SFLOAT;
@@ -158,7 +158,7 @@ public final class DlssRrTargets implements WavefrontSignals, Destroyable {
     @Override public VulkanImage noisySpecular() { return this.noisySpecular; }
     @Override public VulkanImage normalRoughness() { return this.packedNormalRoughness; }
     @Override public VulkanImage viewZ() { return this.linearViewZ; }
-    @Override public VulkanImage motion() { return this.motion; }
+    @Override public VulkanImage transportMetadata() { return this.motion; }
     @Override public VulkanImage material() { return this.material; }
     @Override public VulkanImage specularMaterial() { return this.specularMaterial; }
     @Override public VulkanImage primaryPosition() { return this.primaryPosition; }
@@ -166,6 +166,7 @@ public final class DlssRrTargets implements WavefrontSignals, Destroyable {
     @Override public VulkanImage sunPenumbra() { return this.sunPenumbra; }
 
     public VulkanImage inputColor() { return this.inputColor; }
+    public VulkanImage motion() { return this.motion; }
     public VulkanImage rrNormalRoughness() { return this.normalRoughness; }
     public VulkanImage specularMotion() { return this.specularMotion; }
     public VulkanImage rrOutput() { return this.rrOutput; }

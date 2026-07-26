@@ -11,91 +11,147 @@ final class RealtimeSampleStateTest {
     private static final SunDirection NOON = SunDirection.fromVanillaAngle(0.0F);
 
     @Test
-    void stableFramesAdvanceWithoutReset() {
-        RealtimeSampleState state = new RealtimeSampleState();
+    void stableCommittedFramesAdvanceWithoutReset() {
+        RealtimeSampleState state = RealtimeSampleState.initial();
         FrameCamera camera = camera(1.0);
-        assertTrue(state.prepare(camera, 3L, 11L, 13L, NOON, false));
-        int epoch = state.epoch();
-        state.submitted(camera, 11L, 13L, NOON);
-        assertEquals(1, state.sampleIndex());
-        assertFalse(state.prepare(camera, 3L, 11L, 13L, NOON, false));
-        assertEquals(epoch, state.epoch());
+        RealtimeSampleState.Plan first = state.plan(input(camera, 3L, 11L, NOON, false));
+        assertTrue(first.reset());
+        assertEquals(0, first.sampleIndex());
+        int epoch = first.epoch();
+
+        RealtimeSampleState.Plan second =
+                first.committedState().plan(input(camera, 3L, 11L, NOON, false));
+        assertFalse(second.reset());
+        assertEquals(1, second.sampleIndex());
+        assertEquals(epoch, second.epoch());
+    }
+
+    @Test
+    void unsubmittedPlansDoNotConsumeSamples() {
+        RealtimeSampleState state = RealtimeSampleState.initial();
+        FrameCamera camera = camera(1.0);
+        RealtimeSampleState.Plan first = state.plan(input(camera, 1L, 2L, NOON, false));
+        RealtimeSampleState.Plan retried = state.plan(input(camera, 1L, 2L, NOON, false));
+
+        assertEquals(first.sampleIndex(), retried.sampleIndex());
+        assertEquals(first.epoch(), retried.epoch());
+        assertTrue(retried.reset());
+        RealtimeSampleState.Plan firstContinuation =
+                first.committedState().plan(input(camera, 1L, 2L, NOON, false));
+        RealtimeSampleState.Plan retryContinuation =
+                retried.committedState().plan(input(camera, 1L, 2L, NOON, false));
+        assertEquals(firstContinuation.sampleIndex(), retryContinuation.sampleIndex());
+        assertEquals(firstContinuation.epoch(), retryContinuation.epoch());
     }
 
     @Test
     void worldCameraCutAtlasAndExplicitInvalidationResetSequence() {
-        RealtimeSampleState state = new RealtimeSampleState();
         FrameCamera camera = camera(1.0);
-        state.prepare(camera, 1L, 2L, 3L, NOON, false);
-        state.submitted(camera, 2L, 3L, NOON);
-        assertTrue(state.prepare(camera, 2L, 2L, 3L, NOON, false));
-        state.submitted(camera, 2L, 3L, NOON);
-        assertFalse(state.prepare(camera(2.0), 2L, 2L, 3L, NOON, false));
-        state.submitted(camera(2.0), 2L, 3L, NOON);
+        RealtimeSampleState state = commit(
+                RealtimeSampleState.initial(), input(camera, 1L, 2L, NOON, false));
+
+        RealtimeSampleState.Plan world =
+                state.plan(input(camera, 2L, 2L, NOON, false));
+        assertTrue(world.reset());
+        state = world.committedState();
+
+        RealtimeSampleState.Plan ordinaryMotion =
+                state.plan(input(camera(2.0), 2L, 2L, NOON, false));
+        assertFalse(ordinaryMotion.reset());
+        state = ordinaryMotion.committedState();
         assertEquals(2, state.sampleIndex());
-        assertTrue(state.prepare(camera(35.0), 2L, 2L, 3L, NOON, false));
-        state.submitted(camera(35.0), 2L, 3L, NOON);
-        assertTrue(state.prepare(camera(35.0), 2L, 4L, 3L, NOON, false));
-        state.submitted(camera(35.0), 4L, 3L, NOON);
-        assertTrue(state.prepare(camera(35.0), 2L, 4L, 3L, NOON, true));
-        assertEquals(0, state.sampleIndex());
+
+        RealtimeSampleState.Plan cameraCut =
+                state.plan(input(camera(35.0), 2L, 2L, NOON, false));
+        assertTrue(cameraCut.reset());
+        state = cameraCut.committedState();
+
+        RealtimeSampleState.Plan atlas =
+                state.plan(input(camera(35.0), 2L, 4L, NOON, false));
+        assertTrue(atlas.reset());
+        state = atlas.committedState();
+
+        RealtimeSampleState.Plan forced =
+                state.plan(input(camera(35.0), 2L, 4L, NOON, true));
+        assertTrue(forced.reset());
+        assertEquals(0, forced.sampleIndex());
+
+        RealtimeSampleState invalidated = state.invalidated();
+        assertEquals(0, invalidated.sampleIndex());
+        assertEquals(state.epoch() + 1, invalidated.epoch());
     }
 
     @Test
     void gradualSunMotionKeepsAdvancingTheSampleSequence() {
-        RealtimeSampleState state = new RealtimeSampleState();
         FrameCamera camera = camera(1.0);
-        state.prepare(camera, 1L, 2L, 3L, NOON, false);
-        state.submitted(camera, 2L, 3L, NOON);
+        RealtimeSampleState state = commit(
+                RealtimeSampleState.initial(), input(camera, 1L, 2L, NOON, false));
         int epoch = state.epoch();
-        SunDirection movingSun = NOON;
-        for (int step = 1; step <= 20; step++) {
-            movingSun = SunDirection.fromVanillaAngle((float) Math.toRadians(step * 0.01));
-            assertFalse(state.prepare(camera, 1L, 2L, 3L, movingSun, false));
-            assertEquals(epoch, state.epoch());
-            state.submitted(camera, 2L, 3L, movingSun);
-            assertEquals(step + 1, state.sampleIndex());
-        }
 
-        int previous = state.sampleIndex();
-        for (int frame = 0; frame < 8; frame++) {
-            assertFalse(state.prepare(camera, 1L, 2L, 3L, movingSun, false));
-            state.submitted(camera, 2L, 3L, movingSun);
-            assertEquals(++previous, state.sampleIndex());
-            assertEquals(epoch, state.epoch());
+        for (int step = 1; step <= 20; step++) {
+            SunDirection movingSun =
+                    SunDirection.fromVanillaAngle((float) Math.toRadians(step * 0.01));
+            RealtimeSampleState.Plan plan =
+                    state.plan(input(camera, 1L, 2L, movingSun, false));
+            assertFalse(plan.reset());
+            assertEquals(epoch, plan.epoch());
+            state = plan.committedState();
+            assertEquals(step + 1, state.sampleIndex());
         }
     }
 
     @Test
     void changingSunDirectionInvalidatesAccumulatedRadiance() {
-        RealtimeSampleState state = new RealtimeSampleState();
         FrameCamera camera = camera(1.0);
-        state.prepare(camera, 1L, 2L, 3L, NOON, false);
-        state.submitted(camera, 2L, 3L, NOON);
+        RealtimeSampleState state = commit(
+                RealtimeSampleState.initial(), input(camera, 1L, 2L, NOON, false));
         int epoch = state.epoch();
 
         SunDirection sunset = SunDirection.fromVanillaAngle((float) (Math.PI * 0.5));
-        assertTrue(state.prepare(camera, 1L, 2L, 3L, sunset, false));
-        assertEquals(0, state.sampleIndex());
-        assertEquals(epoch + 1, state.epoch());
+        RealtimeSampleState.Plan plan =
+                state.plan(input(camera, 1L, 2L, sunset, false));
+        assertTrue(plan.reset());
+        assertEquals(0, plan.sampleIndex());
+        assertEquals(epoch + 1, plan.epoch());
     }
 
     @Test
     void sobolSequenceStartsANewEpochBeforeItsSixteenBitIndexRepeats() {
-        RealtimeSampleState state = new RealtimeSampleState();
         FrameCamera camera = camera(1.0);
-        assertTrue(state.prepare(camera, 1L, 2L, 3L, NOON, false));
-        int epoch = state.epoch();
+        RealtimeSampleState state = RealtimeSampleState.initial();
+        int initialEpoch = -1;
         for (int index = 0; index < (1 << 16); index++) {
-            if (index != 0) {
-                assertFalse(state.prepare(camera, 1L, 2L, 3L, NOON, false));
+            RealtimeSampleState.Plan plan =
+                    state.plan(input(camera, 1L, 2L, NOON, false));
+            if (index == 0) {
+                initialEpoch = plan.epoch();
+            } else {
+                assertFalse(plan.reset());
             }
-            state.submitted(camera, 2L, 3L, NOON);
+            assertEquals(index, plan.sampleIndex());
+            state = plan.committedState();
         }
 
-        assertFalse(state.prepare(camera, 1L, 2L, 3L, NOON, false));
-        assertEquals(0, state.sampleIndex());
-        assertEquals(epoch + 1, state.epoch());
+        RealtimeSampleState.Plan wrapped =
+                state.plan(input(camera, 1L, 2L, NOON, false));
+        assertFalse(wrapped.reset());
+        assertEquals(0, wrapped.sampleIndex());
+        assertEquals(initialEpoch + 1, wrapped.epoch());
+    }
+
+    private static RealtimeSampleState commit(
+            RealtimeSampleState state, RealtimeSampleState.Input input) {
+        return state.plan(input).committedState();
+    }
+
+    private static RealtimeSampleState.Input input(
+            FrameCamera camera,
+            long revision,
+            long textureRevision,
+            SunDirection sun,
+            boolean forceReset) {
+        return new RealtimeSampleState.Input(
+                camera, revision, textureRevision, sun, forceReset);
     }
 
     private static FrameCamera camera(double x) {

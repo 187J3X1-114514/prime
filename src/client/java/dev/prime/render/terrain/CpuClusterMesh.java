@@ -10,7 +10,7 @@ public final class CpuClusterMesh {
     private final long cutoutTriangleCount;
     private final long transmissiveTriangleCount;
     private final OpacityMicromapData opacityMicromap;
-    private final CpuSectionLights lights;
+    private final CompiledClusterLights lights;
 
     private CpuClusterMesh(
             List<Segment> segments,
@@ -18,13 +18,58 @@ public final class CpuClusterMesh {
             long cutoutTriangleCount,
             long transmissiveTriangleCount,
             OpacityMicromapData opacityMicromap,
-            CpuSectionLights lights) {
+            CompiledClusterLights lights) {
         this.segments = List.copyOf(segments);
+        if (opaqueTriangleCount < 0L
+                || cutoutTriangleCount < 0L
+                || transmissiveTriangleCount < 0L) {
+            throw new IllegalArgumentException("Cluster triangle counts must not be negative");
+        }
+        long segmentOpaque = 0L;
+        long segmentCutout = 0L;
+        long segmentTransmissive = 0L;
+        for (Segment segment : this.segments) {
+            segmentOpaque = Math.addExact(
+                    segmentOpaque, segment.opaqueTriangleCount());
+            segmentCutout = Math.addExact(
+                    segmentCutout, segment.cutoutTriangleCount());
+            segmentTransmissive = Math.addExact(
+                    segmentTransmissive, segment.transmissiveTriangleCount());
+        }
+        if (segmentOpaque != opaqueTriangleCount
+                || segmentCutout != cutoutTriangleCount
+                || segmentTransmissive != transmissiveTriangleCount) {
+            throw new IllegalArgumentException(
+                    "Cluster segments disagree with aggregate triangle counts");
+        }
+        if (opacityMicromap == null || lights == null) {
+            throw new IllegalArgumentException("Cluster sidecar data must not be null");
+        }
+        if (opacityMicromap.triangleIndices().length != cutoutTriangleCount) {
+            throw new IllegalArgumentException(
+                    "Cluster opacity micromap does not match cutout geometry");
+        }
         this.opaqueTriangleCount = opaqueTriangleCount;
         this.cutoutTriangleCount = cutoutTriangleCount;
         this.transmissiveTriangleCount = transmissiveTriangleCount;
         this.opacityMicromap = opacityMicromap;
         this.lights = lights;
+    }
+
+    static CpuClusterMesh fromEncoded(
+            List<Segment> segments,
+            long opaqueTriangleCount,
+            long cutoutTriangleCount,
+            long transmissiveTriangleCount,
+            OpacityMicromapData opacityMicromap,
+            CompiledClusterLights lights) {
+        return new CpuClusterMesh(
+                segments,
+                opaqueTriangleCount,
+                cutoutTriangleCount,
+                transmissiveTriangleCount,
+                opacityMicromap,
+                lights);
     }
 
     static CpuClusterMesh fromSegments(List<CpuSectionMesh> meshes) {
@@ -59,12 +104,17 @@ public final class CpuClusterMesh {
                 cutout,
                 transmissive,
                 opacityMicromap.build(),
-                CpuSectionLights.merge(lightSources));
+                CompiledClusterLights.compile(CpuSectionLights.merge(lightSources)));
     }
 
     static CpuClusterMesh empty() {
         return new CpuClusterMesh(
-                List.of(), 0L, 0L, 0L, OpacityMicromapData.EMPTY, CpuSectionLights.EMPTY);
+                List.of(),
+                0L,
+                0L,
+                0L,
+                OpacityMicromapData.EMPTY,
+                CompiledClusterLights.EMPTY);
     }
 
     public List<Segment> segments() {
@@ -93,7 +143,7 @@ public final class CpuClusterMesh {
         return this.opacityMicromap;
     }
 
-    public CpuSectionLights lights() {
+    public CompiledClusterLights lights() {
         return this.lights;
     }
 

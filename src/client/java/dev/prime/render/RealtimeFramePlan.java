@@ -1,0 +1,66 @@
+package dev.prime.render;
+
+import dev.prime.render.fsr.FsrSettings;
+import dev.prime.render.post.RealtimePostProcessor;
+import java.util.Objects;
+
+/**
+ * Immutable semantic plan shared by wavefront integration and temporal reconstruction.
+ *
+ * <p>The backend token is copied into plain values and remains outside this type. A plan can
+ * therefore be compared or serialized without device ownership becoming part of frame identity.
+ */
+public record RealtimeFramePlan(
+        IntegratorFrameInput integrator,
+        RealtimePostProcessor.FrameParameters reconstruction,
+        int reconstructionFrameIndex,
+        FsrSettings.Jitter jitter,
+        boolean reconstructionReset) {
+    public RealtimeFramePlan {
+        Objects.requireNonNull(integrator, "integrator");
+        Objects.requireNonNull(reconstruction, "reconstruction");
+        Objects.requireNonNull(jitter, "jitter");
+        if (reconstructionFrameIndex < 0) {
+            throw new IllegalArgumentException(
+                    "Reconstruction frame index must be non-negative");
+        }
+        if (!Float.isFinite(jitter.x()) || !Float.isFinite(jitter.y())) {
+            throw new IllegalArgumentException(
+                    "Reconstruction jitter must be finite");
+        }
+    }
+
+    static RealtimeFramePlan complete(
+            RealtimeFrameInput input,
+            RealtimeSampleState.Plan sample,
+            RealtimePostProcessor.Frame reconstructionFrame) {
+        Objects.requireNonNull(input, "input");
+        Objects.requireNonNull(sample, "sample");
+        Objects.requireNonNull(reconstructionFrame, "reconstructionFrame");
+        if (sample.reset() && !reconstructionFrame.reset()) {
+            throw new IllegalStateException(
+                    "Reconstruction history must restart with the integrator sample sequence");
+        }
+        FsrSettings.Jitter expected =
+                input.expectedJitter(reconstructionFrame.frameIndex());
+        FsrSettings.Jitter actual = reconstructionFrame.jitter();
+        if (Float.floatToRawIntBits(actual.x())
+                        != Float.floatToRawIntBits(expected.x())
+                || Float.floatToRawIntBits(actual.y())
+                        != Float.floatToRawIntBits(expected.y())) {
+            throw new IllegalStateException(
+                    "Reconstruction jitter does not match the frame semantic input");
+        }
+        RealtimePostProcessor.FrameParameters reconstruction =
+                input.reconstructionInput(sample.reset());
+        return new RealtimeFramePlan(
+                input.integratorInput(
+                        sample.sampleIndex(),
+                        sample.epoch(),
+                        reconstructionFrame.frameIndex()),
+                reconstruction,
+                reconstructionFrame.frameIndex(),
+                actual,
+                reconstructionFrame.reset());
+    }
+}

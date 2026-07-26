@@ -864,7 +864,7 @@ void primeStoreTransparentBranchIntermediate(
                     vec4(result.guides.specularDirection, 0.0));
         }
         imageStore(
-                primeNrdMotion,
+                primeWavefrontTransportMetadata,
                 coordinate,
                 vec4(
                         result.anchorDistance,
@@ -983,7 +983,7 @@ PrimeTransparentBranchResult primeLoadTransparentBranchActiveIntermediate(
         }
     }
     if (transmissionBranch) {
-        vec4 metadata = imageLoad(primeNrdMotion, coordinate);
+        vec4 metadata = imageLoad(primeWavefrontTransportMetadata, coordinate);
         result.anchorDistance = metadata.x;
         result.firstHitDistance = metadata.y;
     } else {
@@ -1086,7 +1086,7 @@ void primeStoreTransparentBranchActiveIntermediate(
                         primeNrdSanitizeHitDistance(
                                 result.guides.specularHitDistance)));
         imageStore(
-                primeNrdMotion,
+                primeWavefrontTransportMetadata,
                 coordinate,
                 vec4(
                         result.anchorDistance,
@@ -1171,7 +1171,7 @@ PrimeTransparentBranchResult primeLoadTransparentBranchIntermediate(
                     ? imageLoad(primeNrdReflectionSpecularMaterial, coordinate)
                     : vec4(0.0);
     vec4 branchMetadata = transmissionBranch
-            ? imageLoad(primeNrdMotion, coordinate)
+            ? imageLoad(primeWavefrontTransportMetadata, coordinate)
             : position;
     uint control = floatBitsToUint(record.rayDirectionAndDenoiserControl.w);
 

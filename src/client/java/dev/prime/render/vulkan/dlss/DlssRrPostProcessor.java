@@ -1,6 +1,5 @@
 package dev.prime.render.vulkan.dlss;
 
-import dev.prime.render.CameraDiscontinuity;
 import dev.prime.render.FrameCamera;
 import dev.prime.render.ResourceCleanup;
 import dev.prime.render.fsr.FsrSettings;
@@ -8,6 +7,8 @@ import dev.prime.render.post.DlssRrDebugView;
 import dev.prime.render.post.PostProcessingMode;
 import dev.prime.render.post.RealtimePostProcessor;
 import dev.prime.render.post.ReconstructionQualityMode;
+import dev.prime.render.post.TemporalReconstructionState;
+import dev.prime.render.post.ReconstructionFrameHistory;
 import dev.prime.render.vulkan.AtmospherePipeline;
 import dev.prime.render.vulkan.DisplayTransformPass;
 import dev.prime.render.vulkan.VulkanContext;
@@ -37,14 +38,8 @@ public final class DlssRrPostProcessor implements RealtimePostProcessor {
     private final DisplayTransformPass displayTransform;
     private final DlssRrDebugPass debugPass;
     private final Matrix4f ngxProjection = new Matrix4f();
-    private FrameCamera previousCamera;
-    private long previousSceneRevision = Long.MIN_VALUE;
-    private long previousAtlasView;
-    private long previousAtlasSampler;
-    private int frameIndex;
-    private long previousFrameNanos;
-    private boolean resetRequested = true;
-    private boolean initialized;
+    private final ReconstructionFrameHistory history =
+            new ReconstructionFrameHistory();
     private boolean destroyed;
 
     private DlssRrPostProcessor(
@@ -134,7 +129,7 @@ public final class DlssRrPostProcessor implements RealtimePostProcessor {
     }
 
     @Override public PostProcessingMode mode() { return PostProcessingMode.DLSS_RR; }
-    @Override public DlssRrTargets signals() { return this.targets; }
+    @Override public DlssRrTargets rawFrame() { return this.targets; }
     @Override public VulkanImage linearHdrOutput() { return this.targets.rrOutput(); }
     @Override
     public ReconstructionQualityMode quality() { return this.quality; }
@@ -149,44 +144,33 @@ public final class DlssRrPostProcessor implements RealtimePostProcessor {
 
     public void requestReset() {
         requireOpen();
-        this.resetRequested = true;
+        this.history.requestReset();
     }
 
     public FrameToken beginFrame(
             FrameCamera camera,
+            long frameTimeNanos,
             long sceneRevision,
-            long atlasView,
-            long atlasSampler,
+            long textureRevision,
+            boolean forceRestart,
             DlssRrDebugView debugView,
             boolean debugFullscreen) {
         requireOpen();
         Objects.requireNonNull(camera, "camera");
         Objects.requireNonNull(debugView, "debugView");
-        boolean cameraCut = this.initialized && CameraDiscontinuity.isCut(this.previousCamera, camera);
-        boolean reset = this.resetRequested
-                || !this.initialized
-                || cameraCut
-                || sceneRevision != this.previousSceneRevision
-                || atlasView != this.previousAtlasView
-                || atlasSampler != this.previousAtlasSampler;
-        int currentFrame = reset ? 0 : this.frameIndex;
-        FsrSettings.Jitter jitter = this.quality.rrJitter(currentFrame);
-        long now = System.nanoTime();
-        float deltaMilliseconds = this.previousFrameNanos == 0L
-                ? 1000.0F / 60.0F
-                : Math.min((now - this.previousFrameNanos) * 1.0e-6F, 1000.0F);
+        ReconstructionFrameHistory.PlannedFrame temporal = this.history.plan(
+                new TemporalReconstructionState.Input(
+                        camera,
+                        frameTimeNanos,
+                        sceneRevision,
+                        textureRevision,
+                        forceRestart));
+        FsrSettings.Jitter jitter = this.quality.rrJitter(
+                temporal.plan().frameIndex());
         return new FrameToken(
                 this,
-                camera,
-                reset ? camera : this.previousCamera,
-                sceneRevision,
-                atlasView,
-                atlasSampler,
-                currentFrame,
+                temporal,
                 jitter,
-                reset,
-                deltaMilliseconds,
-                now,
                 debugView,
                 debugFullscreen);
     }
@@ -195,9 +179,10 @@ public final class DlssRrPostProcessor implements RealtimePostProcessor {
     public FrameToken beginFrame(FrameParameters parameters) {
         return this.beginFrame(
                 parameters.camera(),
+                parameters.frameTimeNanos(),
                 parameters.sceneRevision(),
-                parameters.atlasView(),
-                parameters.atlasSampler(),
+                parameters.textureRevision(),
+                parameters.forceRestart(),
                 parameters.rrDebugView(),
                 parameters.rrDebugFullscreen());
     }
@@ -217,13 +202,16 @@ public final class DlssRrPostProcessor implements RealtimePostProcessor {
             throw new IllegalArgumentException("DLSS RR frame token does not belong to this recording");
         }
         token.recorded = true;
+        TemporalReconstructionState.Plan temporal =
+                token.temporal.claimForExecution();
         this.preparePass.record(
                 commandBuffer,
-                token.camera,
-                token.historyCamera,
+                temporal.camera(),
+                temporal.historyCamera(),
                 token.jitter,
                 sunRadianceMultiplier);
-        NrdCameraTransform.projectionForNrd(token.camera.projection(), this.ngxProjection);
+        NrdCameraTransform.projectionForNrd(
+                temporal.camera().projection(), this.ngxProjection);
         this.feature.evaluate(
                 commandBuffer,
                 new DlssRrNative.Evaluation(
@@ -233,9 +221,9 @@ public final class DlssRrPostProcessor implements RealtimePostProcessor {
                         token.jitter.y(),
                         this.renderWidth,
                         this.renderHeight,
-                        token.reset,
-                        token.deltaMilliseconds,
-                        token.camera.viewRotation(),
+                        temporal.restart(),
+                        temporal.deltaMilliseconds(),
+                        temporal.camera().viewRotation(),
                         this.ngxProjection,
                         this.targets.material(),
                         this.targets.specularMaterial(),
@@ -253,7 +241,7 @@ public final class DlssRrPostProcessor implements RealtimePostProcessor {
                     commandBuffer,
                     token.debugView,
                     token.debugFullscreen,
-                    token.frameIndex,
+                    temporal.frameIndex(),
                     this.quality.rrJitterPhaseCount(),
                     displayOverexposure);
         }
@@ -292,14 +280,7 @@ public final class DlssRrPostProcessor implements RealtimePostProcessor {
             throw new IllegalArgumentException("DLSS RR frame token does not belong to this submission");
         }
         token.submitted = true;
-        this.initialized = true;
-        this.resetRequested = false;
-        this.previousCamera = token.camera;
-        this.previousSceneRevision = token.sceneRevision;
-        this.previousAtlasView = token.atlasView;
-        this.previousAtlasSampler = token.atlasSampler;
-        this.previousFrameNanos = token.frameNanos;
-        this.frameIndex = token.frameIndex + 1;
+        this.history.submitted(token.temporal);
     }
 
     @Override
@@ -331,16 +312,8 @@ public final class DlssRrPostProcessor implements RealtimePostProcessor {
 
     public static final class FrameToken implements Frame {
         private final DlssRrPostProcessor owner;
-        private final FrameCamera camera;
-        private final FrameCamera historyCamera;
-        private final long sceneRevision;
-        private final long atlasView;
-        private final long atlasSampler;
-        private final int frameIndex;
+        private final ReconstructionFrameHistory.PlannedFrame temporal;
         private final FsrSettings.Jitter jitter;
-        private final boolean reset;
-        private final float deltaMilliseconds;
-        private final long frameNanos;
         private final DlssRrDebugView debugView;
         private final boolean debugFullscreen;
         private boolean recorded;
@@ -348,35 +321,19 @@ public final class DlssRrPostProcessor implements RealtimePostProcessor {
 
         private FrameToken(
                 DlssRrPostProcessor owner,
-                FrameCamera camera,
-                FrameCamera historyCamera,
-                long sceneRevision,
-                long atlasView,
-                long atlasSampler,
-                int frameIndex,
+                ReconstructionFrameHistory.PlannedFrame temporal,
                 FsrSettings.Jitter jitter,
-                boolean reset,
-                float deltaMilliseconds,
-                long frameNanos,
                 DlssRrDebugView debugView,
                 boolean debugFullscreen) {
             this.owner = owner;
-            this.camera = camera;
-            this.historyCamera = historyCamera;
-            this.sceneRevision = sceneRevision;
-            this.atlasView = atlasView;
-            this.atlasSampler = atlasSampler;
-            this.frameIndex = frameIndex;
+            this.temporal = temporal;
             this.jitter = jitter;
-            this.reset = reset;
-            this.deltaMilliseconds = deltaMilliseconds;
-            this.frameNanos = frameNanos;
             this.debugView = debugView;
             this.debugFullscreen = debugFullscreen;
         }
 
-        @Override public int frameIndex() { return this.frameIndex; }
+        @Override public int frameIndex() { return this.temporal.plan().frameIndex(); }
         @Override public FsrSettings.Jitter jitter() { return this.jitter; }
-        @Override public boolean reset() { return this.reset; }
+        @Override public boolean reset() { return this.temporal.plan().restart(); }
     }
 }

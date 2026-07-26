@@ -10,8 +10,8 @@ import dev.prime.render.shader.ShaderAbi;
  * adapters may change the light model, but must not supply encoded sRGB or silently change the RGB
  * basis without migrating every material, path-state, accumulation, and presentation boundary.
  */
-final class IntegratorSettings {
-    static final int MAXIMUM_BOUNCES = ShaderAbi.MAXIMUM_BOUNCES;
+public final class IntegratorSettings {
+    public static final int MAXIMUM_BOUNCES = ShaderAbi.MAXIMUM_BOUNCES;
     static final int RUSSIAN_ROULETTE_START = ShaderAbi.RUSSIAN_ROULETTE_START;
     static final int SAMPLE_EFFECT_CAMERA = 0;
     static final int SAMPLE_EFFECT_DIRECT_STARS = 1;
@@ -35,14 +35,14 @@ final class IntegratorSettings {
     private IntegratorSettings() {
     }
 
-    static int packSampleEpoch(int sampleEpoch, boolean triangleDebug) {
+    public static int packSampleEpoch(int sampleEpoch, boolean triangleDebug) {
         if ((sampleEpoch & ~ShaderAbi.PATH_SAMPLE_EPOCH_MASK) != 0) {
             throw new IllegalArgumentException("Sample epoch does not fit in 31 bits");
         }
         return sampleEpoch | (triangleDebug ? ShaderAbi.PATH_TRIANGLE_DEBUG_MASK : 0);
     }
 
-    static int packPathControl(
+    public static int packPathControl(
             int maximumBounces,
             int jitterPhase,
             boolean cameraInWater,
@@ -67,7 +67,7 @@ final class IntegratorSettings {
                 | maximumBounces;
     }
 
-    static int packMaterialLightingControl(
+    public static int packMaterialLightingControl(
             int sunQuarterSteps,
             int starQuarterSteps,
             int blockLightQuarterSteps,

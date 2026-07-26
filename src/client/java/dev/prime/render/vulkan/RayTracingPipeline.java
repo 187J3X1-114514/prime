@@ -4,7 +4,9 @@ import com.mojang.blaze3d.vulkan.Destroyable;
 import com.mojang.blaze3d.vulkan.VulkanGpuSampler;
 import com.mojang.blaze3d.vulkan.VulkanGpuTextureView;
 import dev.prime.PrimeClient;
+import dev.prime.render.IntegratorFrameInput;
 import dev.prime.render.shader.ShaderAbi;
+import dev.prime.render.terrain.TerrainScene;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.ByteBuffer;
@@ -145,7 +147,7 @@ public final class RayTracingPipeline implements Destroyable {
             VulkanImage labPbrNormalAtlas,
             VulkanImage labPbrSpecularAtlas,
             AtmospherePipeline atmosphere,
-            WavefrontSignals signals) {
+            RawWavefrontFrame signals) {
         long requiredWavefrontBytes = wavefrontPathBytes(
                 signals.noisyDiffuse().width(), signals.noisyDiffuse().height());
         validateWavefrontRanges(
@@ -186,7 +188,7 @@ public final class RayTracingPipeline implements Destroyable {
                         signals.noisySpecular().view(),
                         signals.normalRoughness().view(),
                         signals.viewZ().view(),
-                        signals.motion().view(),
+                        signals.transportMetadata().view(),
                         signals.material().view(),
                         signals.specularMaterial().view(),
                         signals.primaryPosition().view(),
@@ -233,32 +235,36 @@ public final class RayTracingPipeline implements Destroyable {
         }
     }
 
-    public void trace(VkCommandBuffer commandBuffer, ByteBuffer pushConstants, int width, int height) {
+    public void trace(
+            VkCommandBuffer commandBuffer,
+            IntegratorFrameInput input,
+            TerrainScene.ResidentSceneView scene) {
         this.traceWavefront(
                 commandBuffer,
-                pushConstants,
-                width,
-                height,
+                input,
+                scene,
                 WAVEFRONT_RESOLVE_GROUP);
     }
 
     /** Records one native-resolution unbiased path sample into the screenshot running mean. */
     public void traceScreenshot(
-            VkCommandBuffer commandBuffer, ByteBuffer pushConstants, int width, int height) {
+            VkCommandBuffer commandBuffer,
+            IntegratorFrameInput input,
+            TerrainScene.ResidentSceneView scene) {
         this.traceWavefront(
                 commandBuffer,
-                pushConstants,
-                width,
-                height,
+                input,
+                scene,
                 WAVEFRONT_SCREENSHOT_RESOLVE_GROUP);
     }
 
     private void traceWavefront(
             VkCommandBuffer commandBuffer,
-            ByteBuffer pushConstants,
-            int width,
-            int height,
+            IntegratorFrameInput input,
+            TerrainScene.ResidentSceneView scene,
             int resolveGroup) {
+        int width = input.width();
+        int height = input.height();
         if (this.wavefrontPaths == null
                 || this.wavefrontPaths.size() != wavefrontPathBytes(width, height)) {
             throw new IllegalStateException(
@@ -266,8 +272,10 @@ public final class RayTracingPipeline implements Destroyable {
         }
         this.starmap.prepare(commandBuffer);
         this.bsdfLookup.prepare(commandBuffer);
-        this.bind(commandBuffer, pushConstants);
         try (MemoryStack stack = MemoryStack.stackPush()) {
+            this.bind(
+                    commandBuffer,
+                    RayTracingPushConstants.encode(stack, input, scene));
             long queueOffset = wavefrontQueueOffset(width, height);
             this.initializeWavefrontQueues(commandBuffer, stack, queueOffset);
             this.trace(commandBuffer, stack, width, height, WAVEFRONT_HEAD_GROUP);
@@ -662,7 +670,7 @@ public final class RayTracingPipeline implements Destroyable {
             ShaderAbi.DESCRIPTOR_NRD_NOISY_SPECULAR,
             ShaderAbi.DESCRIPTOR_NRD_NORMAL_ROUGHNESS,
             ShaderAbi.DESCRIPTOR_NRD_VIEW_Z,
-            ShaderAbi.DESCRIPTOR_NRD_MOTION,
+            ShaderAbi.DESCRIPTOR_WAVEFRONT_TRANSPORT_METADATA,
             ShaderAbi.DESCRIPTOR_NRD_MATERIAL,
             ShaderAbi.DESCRIPTOR_NRD_SPECULAR_MATERIAL,
             ShaderAbi.DESCRIPTOR_NRD_PRIMARY_POSITION,
@@ -1225,7 +1233,7 @@ public final class RayTracingPipeline implements Destroyable {
         private final long nrdNoisySpecular;
         private final long nrdNormalRoughness;
         private final long nrdViewZ;
-        private final long nrdMotion;
+        private final long wavefrontTransportMetadata;
         private final long nrdMaterial;
         private final long nrdSpecularMaterial;
         private final long nrdPrimaryPosition;
@@ -1257,7 +1265,7 @@ public final class RayTracingPipeline implements Destroyable {
                 long nrdNoisySpecular,
                 long nrdNormalRoughness,
                 long nrdViewZ,
-                long nrdMotion,
+                long wavefrontTransportMetadata,
                 long nrdMaterial,
                 long nrdSpecularMaterial,
                 long nrdPrimaryPosition,
@@ -1286,7 +1294,7 @@ public final class RayTracingPipeline implements Destroyable {
             this.nrdNoisySpecular = nrdNoisySpecular;
             this.nrdNormalRoughness = nrdNormalRoughness;
             this.nrdViewZ = nrdViewZ;
-            this.nrdMotion = nrdMotion;
+            this.wavefrontTransportMetadata = wavefrontTransportMetadata;
             this.nrdMaterial = nrdMaterial;
             this.nrdSpecularMaterial = nrdSpecularMaterial;
             this.nrdPrimaryPosition = nrdPrimaryPosition;
@@ -1309,7 +1317,7 @@ public final class RayTracingPipeline implements Destroyable {
                 VulkanImage labPbrNormalAtlas,
                 VulkanImage labPbrSpecularAtlas,
                 AtmospherePipeline atmosphere,
-                WavefrontSignals signals,
+                RawWavefrontFrame signals,
                 BsdfLookupTable bsdfLookup,
                 StarmapTexture starmap,
                 VulkanBuffer wavefrontPaths) {
@@ -1370,7 +1378,7 @@ public final class RayTracingPipeline implements Destroyable {
                         signals.noisySpecular(),
                         signals.normalRoughness(),
                         signals.viewZ(),
-                        signals.motion(),
+                        signals.transportMetadata(),
                         signals.material(),
                         signals.specularMaterial(),
                         signals.primaryPosition(),
@@ -1476,7 +1484,7 @@ public final class RayTracingPipeline implements Destroyable {
                         ShaderAbi.DESCRIPTOR_NRD_NOISY_SPECULAR,
                         ShaderAbi.DESCRIPTOR_NRD_NORMAL_ROUGHNESS,
                         ShaderAbi.DESCRIPTOR_NRD_VIEW_Z,
-                        ShaderAbi.DESCRIPTOR_NRD_MOTION,
+                        ShaderAbi.DESCRIPTOR_WAVEFRONT_TRANSPORT_METADATA,
                         ShaderAbi.DESCRIPTOR_NRD_MATERIAL,
                         ShaderAbi.DESCRIPTOR_NRD_SPECULAR_MATERIAL,
                         ShaderAbi.DESCRIPTOR_NRD_PRIMARY_POSITION,
@@ -1596,7 +1604,7 @@ public final class RayTracingPipeline implements Destroyable {
                             signals.noisySpecular().view(),
                             signals.normalRoughness().view(),
                             signals.viewZ().view(),
-                            signals.motion().view(),
+                            signals.transportMetadata().view(),
                             signals.material().view(),
                             signals.specularMaterial().view(),
                             signals.primaryPosition().view(),
@@ -1630,7 +1638,7 @@ public final class RayTracingPipeline implements Destroyable {
                 long nrdNoisySpecular,
                 long nrdNormalRoughness,
                 long nrdViewZ,
-                long nrdMotion,
+                long wavefrontTransportMetadata,
                 long nrdMaterial,
                 long nrdSpecularMaterial,
                 long nrdPrimaryPosition,
@@ -1656,7 +1664,7 @@ public final class RayTracingPipeline implements Destroyable {
                     && this.nrdNoisySpecular == nrdNoisySpecular
                     && this.nrdNormalRoughness == nrdNormalRoughness
                     && this.nrdViewZ == nrdViewZ
-                    && this.nrdMotion == nrdMotion
+                    && this.wavefrontTransportMetadata == wavefrontTransportMetadata
                     && this.nrdMaterial == nrdMaterial
                     && this.nrdSpecularMaterial == nrdSpecularMaterial
                     && this.nrdPrimaryPosition == nrdPrimaryPosition

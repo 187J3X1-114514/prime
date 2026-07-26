@@ -9,7 +9,6 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import dev.prime.render.shader.ShaderAbi;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 
@@ -288,13 +287,14 @@ final class EmissionLightContractTest {
             clusters.add(cluster(index, index + 1.0F));
         }
         CpuWorldLightTree tree = new CpuWorldLightTree();
-        CpuWorldLightTree.Result initial = tree.update(clusters, 0, 0, 0);
+        CpuWorldLightTree.Result initial =
+                tree.update(worldLightInput(clusters, 0, 0, 0));
         assertWorldLeafMapping(initial, clusters.size());
         assertEquals(36.0F, Float.intBitsToFloat(initial.pack()[3]), 1.0E-6F);
 
         clusters.remove(0);
-        Collections.reverse(clusters);
-        CpuWorldLightTree.Result refitted = tree.update(clusters, 16, 0, 0);
+        CpuWorldLightTree.Result refitted =
+                tree.update(worldLightInput(clusters, 16, 0, 0));
         assertWorldLeafMapping(refitted, clusters.size());
         assertEquals(35.0F, Float.intBitsToFloat(refitted.pack()[3]), 1.0E-6F);
         boolean hasInactiveLeaf = false;
@@ -315,7 +315,8 @@ final class EmissionLightContractTest {
                 emptyCluster(2),
                 emptyCluster(3));
 
-        CpuWorldLightTree.Result result = tree.update(clusters, 0, 0, 0);
+        CpuWorldLightTree.Result result =
+                tree.update(worldLightInput(clusters, 0, 0, 0));
 
         assertTrue(result.isEmpty());
         for (int clusterIndex = 0; clusterIndex < clusters.size(); clusterIndex++) {
@@ -347,7 +348,24 @@ final class EmissionLightContractTest {
                 0,
                 null,
                 null,
-                new CpuSectionLights.Summary(1, bounds, power));
+                new CompiledClusterLights.Summary(
+                        1,
+                        bounds.minX(),
+                        bounds.minY(),
+                        bounds.minZ(),
+                        bounds.maxX(),
+                        bounds.maxY(),
+                        bounds.maxZ(),
+                        power));
+    }
+
+    private static WorldLightTreeInput worldLightInput(
+            List<GpuCluster> clusters,
+            int originX,
+            int originY,
+            int originZ) {
+        return WorldLightTreeInput.capture(
+                clusters, originX, originY, originZ);
     }
 
     private static GpuCluster emptyCluster(int index) {
@@ -358,7 +376,7 @@ final class EmissionLightContractTest {
                 0,
                 null,
                 null,
-                CpuSectionLights.EMPTY.summary());
+                CompiledClusterLights.EMPTY.summary());
     }
 
     private static CpuLightTree.Leaf leaf(float x, float power, int index) {

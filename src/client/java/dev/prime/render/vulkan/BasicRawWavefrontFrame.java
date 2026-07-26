@@ -10,7 +10,7 @@ import org.lwjgl.vulkan.VkDependencyInfo;
 import org.lwjgl.vulkan.VkImageMemoryBarrier2;
 
 /** Minimal image-backed wavefront signal set for screenshot scratch and unfiltered presentation. */
-public final class BasicWavefrontSignals implements WavefrontSignals, Destroyable {
+public final class BasicRawWavefrontFrame implements RawWavefrontFrame, Destroyable {
     private static final int SIGNAL_USAGE = VK12.VK_IMAGE_USAGE_STORAGE_BIT;
     private static final int LINEAR_OUTPUT_USAGE =
             SIGNAL_USAGE | VK12.VK_IMAGE_USAGE_SAMPLED_BIT;
@@ -19,7 +19,7 @@ public final class BasicWavefrontSignals implements WavefrontSignals, Destroyabl
     private final VulkanImage noisySpecular;
     private final VulkanImage normalRoughness;
     private final VulkanImage viewZ;
-    private final VulkanImage motion;
+    private final VulkanImage transportMetadata;
     private final VulkanImage material;
     private final VulkanImage specularMaterial;
     private final VulkanImage primaryPosition;
@@ -30,12 +30,12 @@ public final class BasicWavefrontSignals implements WavefrontSignals, Destroyabl
     private final boolean hasLinearOutput;
     private boolean destroyed;
 
-    private BasicWavefrontSignals(ArrayList<VulkanImage> images, boolean hasLinearOutput) {
+    private BasicRawWavefrontFrame(ArrayList<VulkanImage> images, boolean hasLinearOutput) {
         this.noisyDiffuse = images.get(0);
         this.noisySpecular = images.get(1);
         this.normalRoughness = images.get(2);
         this.viewZ = images.get(3);
-        this.motion = images.get(4);
+        this.transportMetadata = images.get(4);
         this.material = images.get(5);
         this.specularMaterial = images.get(6);
         this.primaryPosition = images.get(7);
@@ -46,19 +46,19 @@ public final class BasicWavefrontSignals implements WavefrontSignals, Destroyabl
         this.hasLinearOutput = hasLinearOutput;
     }
 
-    static BasicWavefrontSignals createRealtime(
+    static BasicRawWavefrontFrame createRealtime(
             VulkanContext context, int width, int height) {
         return create(
                 context, width, height, "Prime unfiltered", true);
     }
 
-    public static BasicWavefrontSignals createScreenshotScratch(
+    public static BasicRawWavefrontFrame createScreenshotScratch(
             VulkanContext context, int width, int height) {
         return create(
                 context, width, height, "Prime screenshot scratch", false);
     }
 
-    private static BasicWavefrontSignals create(
+    private static BasicRawWavefrontFrame create(
             VulkanContext context,
             int width,
             int height,
@@ -75,7 +75,7 @@ public final class BasicWavefrontSignals implements WavefrontSignals, Destroyabl
             add(context, images, width, height, VK12.VK_FORMAT_R32_SFLOAT,
                     label + " view Z");
             add(context, images, width, height, VK12.VK_FORMAT_R16G16B16A16_SFLOAT,
-                    label + " motion placeholder");
+                    label + " transport metadata");
             add(context, images, width, height, VK12.VK_FORMAT_R16G16B16A16_SFLOAT,
                     label + " material");
             add(context, images, width, height, VK12.VK_FORMAT_R16G16B16A16_SFLOAT,
@@ -90,7 +90,7 @@ public final class BasicWavefrontSignals implements WavefrontSignals, Destroyabl
                 add(context, images, width, height, VK12.VK_FORMAT_R16G16B16A16_SFLOAT,
                         LINEAR_OUTPUT_USAGE, label + " linear HDR output");
             }
-            return new BasicWavefrontSignals(images, hasLinearOutput);
+            return new BasicRawWavefrontFrame(images, hasLinearOutput);
         } catch (RuntimeException exception) {
             for (int index = images.size() - 1; index >= 0; index--) {
                 images.get(index).destroy();
@@ -163,7 +163,7 @@ public final class BasicWavefrontSignals implements WavefrontSignals, Destroyabl
     @Override public VulkanImage noisySpecular() { return this.noisySpecular; }
     @Override public VulkanImage normalRoughness() { return this.normalRoughness; }
     @Override public VulkanImage viewZ() { return this.viewZ; }
-    @Override public VulkanImage motion() { return this.motion; }
+    @Override public VulkanImage transportMetadata() { return this.transportMetadata; }
     @Override public VulkanImage material() { return this.material; }
     @Override public VulkanImage specularMaterial() { return this.specularMaterial; }
     @Override public VulkanImage primaryPosition() { return this.primaryPosition; }

@@ -11,7 +11,7 @@ record GpuCluster(
         int clusterZ,
         PreparedBlas blas,
         VulkanBuffer lightBuffer,
-        CpuSectionLights.Summary lights) {
+        CompiledClusterLights.Summary lights) {
     long lightAddress() {
         return this.lightBuffer == null ? 0L : this.lightBuffer.deviceAddress();
     }

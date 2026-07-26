@@ -7,6 +7,8 @@ import dev.prime.render.post.ReconstructionQualityMode;
 import dev.prime.render.vulkan.fsr.Fsr3Upscaler;
 import dev.prime.render.vulkan.nrd.NrdDenoiser;
 import dev.prime.render.vulkan.nrd.NrdDiagnostics;
+import dev.prime.render.vulkan.nrd.NrdFrameHistory;
+import dev.prime.render.vulkan.nrd.NrdFrameInput;
 import org.lwjgl.vulkan.VK12;
 import org.lwjgl.vulkan.VkCommandBuffer;
 import org.lwjgl.system.MemoryStack;
@@ -23,6 +25,7 @@ public final class NrdFsrPostProcessor implements RealtimePostProcessor {
     private final int displayHeight;
     private final VulkanImage sceneColor;
     private final NrdDenoiser denoiser;
+    private final NrdFrameHistory nrdHistory = new NrdFrameHistory();
     private final Fsr3Upscaler upscaler;
     private final NativeDebugPresentPass nrdDebugPresent;
     private boolean destroyed;
@@ -79,7 +82,7 @@ public final class NrdFsrPostProcessor implements RealtimePostProcessor {
                     displayHeight,
                     quality.fsrMode(),
                     sceneColor,
-                    denoiser.motion(),
+                    denoiser.fsrMotion(),
                     denoiser.fsrDepth(),
                     denoiser.fsrReactiveMask(),
                     denoiser.fsrTransparencyCompositionMask(),
@@ -115,7 +118,7 @@ public final class NrdFsrPostProcessor implements RealtimePostProcessor {
     @Override public int renderHeight() { return this.renderHeight; }
     @Override public int displayWidth() { return this.displayWidth; }
     @Override public int displayHeight() { return this.displayHeight; }
-    @Override public WavefrontSignals signals() { return this.denoiser; }
+    @Override public RawWavefrontFrame rawFrame() { return this.denoiser.rawFrame(); }
     @Override public VulkanImage linearHdrOutput() { return this.upscaler.linearOutput(); }
 
     @Override
@@ -129,11 +132,24 @@ public final class NrdFsrPostProcessor implements RealtimePostProcessor {
         requireOpen();
         Fsr3Upscaler.FrameToken fsr = this.upscaler.beginFrame(
                 parameters.camera(),
+                parameters.frameTimeNanos(),
                 parameters.sceneRevision(),
-                parameters.atlasView(),
-                parameters.atlasSampler(),
+                parameters.textureRevision(),
+                parameters.forceRestart(),
                 parameters.fsrDebugView());
-        return new FrameToken(this, fsr, parameters.nrdDebugView());
+        NrdFrameHistory.PlannedFrame nrd = this.nrdHistory.plan(
+                new NrdFrameInput(
+                        parameters.camera(),
+                        parameters.frameTimeNanos(),
+                        parameters.sceneRevision(),
+                        parameters.textureRevision(),
+                        parameters.sunDirection(),
+                        fsr.jitter().x(),
+                        fsr.jitter().y(),
+                        fsr.reset(),
+                        parameters.nrdDebugView()));
+        return new FrameToken(
+                this, fsr, nrd);
     }
 
     @Override
@@ -179,25 +195,21 @@ public final class NrdFsrPostProcessor implements RealtimePostProcessor {
         // Recording can fail after emitting commands; such a token must never be retried into the
         // same or another command buffer.
         token.recorded = true;
-        token.nrd = this.denoiser.record(
+        token.nrdPrepared =
+                this.denoiser.prepareInputs(commandBuffer, token.nrdPlan);
+        token.nrd = this.denoiser.recordReconstruction(
                 commandBuffer,
-                parameters.camera(),
-                parameters.sceneRevision(),
-                parameters.atlasView(),
-                parameters.atlasSampler(),
-                parameters.sunDirection(),
-                token.jitter().x(),
-                token.jitter().y(),
+                token.nrdPrepared,
                 parameters.sunRadianceMultiplier(),
-                parameters.displayOverexposure(),
-                token.reset(),
-                token.nrdDebugView);
+                parameters.displayOverexposure());
         this.upscaler.record(commandBuffer, token.fsr, parameters.displayOverexposure());
-        if (token.nrdDebugView != NrdDiagnostics.Mode.OFF) {
+        NrdDiagnostics.Mode diagnostic =
+                token.nrdPlan.plan().input().diagnostic();
+        if (diagnostic != NrdDiagnostics.Mode.OFF) {
             this.nrdDebugPresent.record(
                     commandBuffer,
-                    token.nrdDebugView.presentSource(),
-                    token.nrdDebugView.presentation());
+                    diagnostic.presentSource(),
+                    diagnostic.presentation());
         }
     }
 
@@ -208,7 +220,7 @@ public final class NrdFsrPostProcessor implements RealtimePostProcessor {
         if (!token.recorded || token.submitted || token.nrd == null) {
             throw new IllegalArgumentException("NRD-FSR frame was not recorded exactly once");
         }
-        this.denoiser.submitted(token.nrd);
+        this.nrdHistory.submitted(this.denoiser.submitted(token.nrd));
         this.upscaler.submitted(token.fsr);
         token.submitted = true;
     }
@@ -246,7 +258,8 @@ public final class NrdFsrPostProcessor implements RealtimePostProcessor {
     public static final class FrameToken implements Frame {
         private final NrdFsrPostProcessor owner;
         private final Fsr3Upscaler.FrameToken fsr;
-        private final NrdDiagnostics.Mode nrdDebugView;
+        private final NrdFrameHistory.PlannedFrame nrdPlan;
+        private NrdDenoiser.PreparedFrame nrdPrepared;
         private NrdDenoiser.FrameToken nrd;
         private boolean recorded;
         private boolean submitted;
@@ -254,10 +267,10 @@ public final class NrdFsrPostProcessor implements RealtimePostProcessor {
         private FrameToken(
                 NrdFsrPostProcessor owner,
                 Fsr3Upscaler.FrameToken fsr,
-                NrdDiagnostics.Mode nrdDebugView) {
+                NrdFrameHistory.PlannedFrame nrdPlan) {
             this.owner = owner;
             this.fsr = fsr;
-            this.nrdDebugView = nrdDebugView;
+            this.nrdPlan = nrdPlan;
         }
 
         @Override public int frameIndex() { return this.fsr.frameIndex(); }

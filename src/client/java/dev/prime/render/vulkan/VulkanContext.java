@@ -3,6 +3,7 @@ package dev.prime.render.vulkan;
 import com.mojang.blaze3d.vulkan.Destroyable;
 import com.mojang.blaze3d.vulkan.VulkanCommandEncoder;
 import com.mojang.blaze3d.vulkan.VulkanDevice;
+import dev.prime.render.replay.RenderPlatformFingerprint;
 import java.nio.LongBuffer;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -30,6 +31,7 @@ public final class VulkanContext implements AutoCloseable {
     private final long allocator;
     private final long uniformBufferOffsetAlignment;
     private final long maxStorageBufferRange;
+    private final RenderPlatformFingerprint platformFingerprint;
     private final Set<Destroyable> deferred = Collections.newSetFromMap(new IdentityHashMap<>());
     private boolean closed;
 
@@ -56,6 +58,8 @@ public final class VulkanContext implements AutoCloseable {
             this.uniformBufferOffsetAlignment = properties.limits().minUniformBufferOffsetAlignment();
             this.maxStorageBufferRange =
                     Integer.toUnsignedLong(properties.limits().maxStorageBufferRange());
+            this.platformFingerprint =
+                    RenderPlatformFingerprint.capture(properties, capabilities);
         }
     }
 
@@ -84,7 +88,35 @@ public final class VulkanContext implements AutoCloseable {
         return this.maxStorageBufferRange;
     }
 
+    public RenderPlatformFingerprint platformFingerprint() {
+        return this.platformFingerprint;
+    }
+
     public VulkanBuffer createBuffer(long size, int usage, boolean hostVisible, String label) {
+        int hostFlags = hostVisible
+                ? Vma.VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT
+                        | Vma.VMA_ALLOCATION_CREATE_MAPPED_BIT
+                : 0;
+        return createBuffer(size, usage, hostFlags, label);
+    }
+
+    /**
+     * Creates a host-readable GPU output buffer.
+     *
+     * <p>This is reserved for explicit diagnostics and replay capture; production frame resources
+     * remain device local.
+     */
+    public VulkanBuffer createReadbackBuffer(long size, int usage, String label) {
+        return createBuffer(
+                size,
+                usage,
+                Vma.VMA_ALLOCATION_CREATE_HOST_ACCESS_RANDOM_BIT
+                        | Vma.VMA_ALLOCATION_CREATE_MAPPED_BIT,
+                label);
+    }
+
+    private VulkanBuffer createBuffer(
+            long size, int usage, int hostFlags, String label) {
         requireOpen();
         if (size <= 0L) {
             throw new IllegalArgumentException("Vulkan buffer size must be positive");
@@ -96,11 +128,11 @@ public final class VulkanContext implements AutoCloseable {
                     .usage(usage | VK12.VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT)
                     .sharingMode(VK12.VK_SHARING_MODE_EXCLUSIVE);
             VmaAllocationCreateInfo allocationCreateInfo = VmaAllocationCreateInfo.calloc(stack)
-                    .usage(hostVisible ? Vma.VMA_MEMORY_USAGE_AUTO_PREFER_HOST : Vma.VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE);
-            if (hostVisible) {
-                allocationCreateInfo.flags(
-                        Vma.VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT
-                                | Vma.VMA_ALLOCATION_CREATE_MAPPED_BIT);
+                    .usage(hostFlags != 0
+                            ? Vma.VMA_MEMORY_USAGE_AUTO_PREFER_HOST
+                            : Vma.VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE);
+            if (hostFlags != 0) {
+                allocationCreateInfo.flags(hostFlags);
             }
             LongBuffer bufferPointer = stack.mallocLong(1);
             PointerBuffer allocationPointer = stack.mallocPointer(1);
@@ -129,7 +161,7 @@ public final class VulkanContext implements AutoCloseable {
                         allocation,
                         handle,
                         address,
-                        hostVisible ? allocationInfo.pMappedData() : 0L,
+                        hostFlags != 0 ? allocationInfo.pMappedData() : 0L,
                         size);
             } catch (RuntimeException exception) {
                 Vma.vmaDestroyBuffer(this.allocator, handle, allocation);

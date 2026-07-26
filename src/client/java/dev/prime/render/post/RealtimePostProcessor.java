@@ -6,7 +6,7 @@ import dev.prime.render.SunDirection;
 import dev.prime.render.fsr.FsrDebugView;
 import dev.prime.render.fsr.FsrSettings;
 import dev.prime.render.vulkan.VulkanImage;
-import dev.prime.render.vulkan.WavefrontSignals;
+import dev.prime.render.vulkan.RawWavefrontFrame;
 import dev.prime.render.vulkan.nrd.NrdDiagnostics;
 import java.util.Objects;
 import org.lwjgl.vulkan.VkCommandBuffer;
@@ -30,7 +30,7 @@ public interface RealtimePostProcessor extends Destroyable {
 
     int displayHeight();
 
-    WavefrontSignals signals();
+    RawWavefrontFrame rawFrame();
 
     VulkanImage linearHdrOutput();
 
@@ -54,9 +54,10 @@ public interface RealtimePostProcessor extends Destroyable {
 
     record FrameParameters(
             FrameCamera camera,
+            long frameTimeNanos,
             long sceneRevision,
-            long atlasView,
-            long atlasSampler,
+            long textureRevision,
+            boolean forceRestart,
             SunDirection sunDirection,
             float sunRadianceMultiplier,
             float displayOverexposure,

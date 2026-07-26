@@ -65,7 +65,7 @@ final class NoisyCompositePass implements Destroyable {
 
     static NoisyCompositePass create(
             VulkanContext context,
-            BasicWavefrontSignals signals,
+            BasicRawWavefrontFrame signals,
             VulkanImage stableRadiance,
             AtmospherePipeline atmosphere) {
         List<VulkanImage> images = List.of(

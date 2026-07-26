@@ -277,7 +277,8 @@ public final class MergeFace {
     }
 
     boolean sameMaterial(MergeFace other) {
-        return this.sprite == other.sprite
+        return this.sprite.contents().name().equals(
+                        other.sprite.contents().name())
                 && this.cutout == other.cutout
                 && this.transmissive == other.transmissive
                 && this.buildOpacityMicromap == other.buildOpacityMicromap
@@ -285,7 +286,7 @@ public final class MergeFace {
     }
 
     int materialHash() {
-        int hash = System.identityHashCode(this.sprite);
+        int hash = this.sprite.contents().name().hashCode();
         hash = 31 * hash + Boolean.hashCode(this.cutout);
         hash = 31 * hash + Boolean.hashCode(this.transmissive);
         hash = 31 * hash + Boolean.hashCode(this.buildOpacityMicromap);

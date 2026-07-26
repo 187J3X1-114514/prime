@@ -1,0 +1,136 @@
+package dev.prime.render.replay;
+
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+
+import dev.prime.render.FrameCamera;
+import dev.prime.render.IntegratorFrameInput;
+import dev.prime.render.LightingSettings;
+import dev.prime.render.MaterialSettings;
+import dev.prime.render.SunDirection;
+import dev.prime.render.post.PostProcessingMode;
+import dev.prime.render.shader.ShaderAbi;
+import dev.prime.render.terrain.TerrainScene;
+import dev.prime.render.vulkan.RayTracingPushConstants;
+import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
+import org.joml.Matrix4f;
+import org.junit.jupiter.api.Test;
+
+final class RayTraceReplayInputCodecTest {
+    @Test
+    void semanticFrameRoundTripsAndRebindsDeviceAddresses() {
+        Fixture fixture = input();
+        IntegratorFrameInput original = fixture.input();
+        RayTraceReplayInput captured =
+                RayTraceReplayInput.capture(original, fixture.scene());
+        byte[] encoded = RayTraceReplayInputCodec.encode(captured);
+        RayTraceReplayInput decoded =
+                RayTraceReplayInputCodec.decode(encoded);
+
+        assertArrayEquals(
+                encoded, RayTraceReplayInputCodec.encode(decoded));
+        assertEquals(captured.camera(), decoded.camera());
+        IntegratorFrameInput rebound = decoded.bind(fixture.scene());
+        ByteBuffer expected = ByteBuffer.allocate(ShaderAbi.PUSH_CONSTANT_SIZE)
+                .order(ByteOrder.nativeOrder());
+        ByteBuffer actual = ByteBuffer.allocate(ShaderAbi.PUSH_CONSTANT_SIZE)
+                .order(ByteOrder.nativeOrder());
+        RayTracingPushConstants.write(
+                original, fixture.scene(), expected);
+        RayTracingPushConstants.write(
+                rebound, fixture.scene(), actual);
+        assertArrayEquals(expected.array(), actual.array());
+    }
+
+    @Test
+    void allocatorAddressesAreNotSerializedButSceneIdentityIsChecked() {
+        Fixture fixture = input();
+        IntegratorFrameInput original = fixture.input();
+        RayTraceReplayInput captured =
+                RayTraceReplayInput.capture(original, fixture.scene());
+        TerrainScene.ResidentSceneView relocated =
+                new TerrainScene.ResidentSceneView(
+                        99L,
+                        0x1111_2222_3333_4444L,
+                        fixture.scene().originX(),
+                        fixture.scene().originY(),
+                        fixture.scene().originZ(),
+                        fixture.scene().revision(),
+                        fixture.scene().resetRevision(),
+                        fixture.scene().temporalRevision());
+
+        IntegratorFrameInput rebound = captured.bind(relocated);
+
+        assertEquals(original, rebound);
+        assertNotEquals(
+                fixture.scene().sectionTableAddress(),
+                relocated.sectionTableAddress());
+        TerrainScene.ResidentSceneView wrongRevision =
+                new TerrainScene.ResidentSceneView(
+                        relocated.tlas(),
+                        relocated.sectionTableAddress(),
+                        relocated.originX(),
+                        relocated.originY(),
+                        relocated.originZ(),
+                        relocated.revision() + 1L,
+                        relocated.resetRevision(),
+                        relocated.temporalRevision());
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> captured.bind(wrongRevision));
+    }
+
+    private static Fixture input() {
+        FrameCamera camera = new FrameCamera(
+                new Matrix4f().perspective(
+                        (float) Math.toRadians(70.0),
+                        16.0F / 9.0F,
+                        512.0F,
+                        0.05F,
+                        true),
+                new Matrix4f().rotateY(0.25F),
+                new Matrix4f().translation(0.25F, -0.5F, 0.75F),
+                101.0,
+                64.0,
+                -33.0,
+                101.25,
+                63.5,
+                -32.75);
+        TerrainScene.ResidentSceneView scene =
+                new TerrainScene.ResidentSceneView(
+                        3L,
+                        0x1020_3040_5060_7080L,
+                        96,
+                        48,
+                        -48,
+                        4L,
+                        5L,
+                        6L);
+        IntegratorFrameInput input = new IntegratorFrameInput(
+                camera,
+                320,
+                180,
+                new SunDirection(-0.5F, 0.75F, 0.25F),
+                0x1234_5678,
+                37,
+                19,
+                7,
+                true,
+                PostProcessingMode.NRD_FSR,
+                new LightingSettings.Snapshot(
+                        4, -8, 12, 2.0F, 0.25F, 8.0F, 7L),
+                new MaterialSettings.Snapshot(90, 0.9F, 8L),
+                true,
+                true,
+                true);
+        return new Fixture(input, scene);
+    }
+
+    private record Fixture(
+            IntegratorFrameInput input,
+            TerrainScene.ResidentSceneView scene) {
+    }
+}

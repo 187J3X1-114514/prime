@@ -385,12 +385,23 @@ public final class NrdDenoiser implements Destroyable {
     /** Must be called immediately after the command buffer containing {@code token} is submitted. */
     public NrdFrameHistory.PlannedFrame submitted(FrameToken token) {
         this.requireOpen();
-        if (token.owner != this || token.submitted) {
+        if (token.owner != this || token.submitted || token.abandoned) {
             throw new IllegalArgumentException("NRD frame token does not belong to this submission");
         }
         token.submitted = true;
         this.context.afterSubmission(() -> this.recycle(token.bindings));
         return token.planned;
+    }
+
+    /** Returns bindings for reconstruction commands that were recorded but never submitted. */
+    public void abandon(FrameToken token) {
+        this.requireOpen();
+        if (token.owner != this || token.submitted || token.abandoned) {
+            throw new IllegalArgumentException(
+                    "NRD frame token does not belong to this denoiser");
+        }
+        token.abandoned = true;
+        this.recycle(token.bindings);
     }
 
     private FrameBindings acquireBindings(int requiredDispatches) {
@@ -779,6 +790,7 @@ public final class NrdDenoiser implements Destroyable {
         private final FrameBindings bindings;
         private final NrdFrameHistory.PlannedFrame planned;
         private boolean submitted;
+        private boolean abandoned;
 
         private FrameToken(
                 NrdDenoiser owner,

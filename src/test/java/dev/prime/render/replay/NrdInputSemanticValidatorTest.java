@@ -72,6 +72,65 @@ final class NrdInputSemanticValidatorTest {
                 violation -> violation.reason().contains("history reset")));
     }
 
+    @Test
+    void productionHistoryRejectsForgedDeltaAndBackwardsTime() {
+        RenderReplayCapture first = capture(false, false);
+        NrdPreparationReplayInput valid =
+                preparation(first, 1, false);
+        RenderReplayCapture wrongDelta = withPreparation(
+                first,
+                new NrdPreparationReplayInput(
+                        valid.currentCamera(),
+                        valid.historyCamera(),
+                        valid.frameTimeNanos(),
+                        valid.sceneRevision(),
+                        valid.textureRevision(),
+                        valid.currentJitterX(),
+                        valid.currentJitterY(),
+                        valid.historyJitterX(),
+                        valid.historyJitterY(),
+                        valid.frameIndex(),
+                        valid.forceRestart(),
+                        valid.restart(),
+                        16.0F,
+                        valid.sunDirection(),
+                        valid.diagnosticMode(),
+                        valid.nativeValidation()));
+        NrdInputSemanticValidator.SequenceReport deltaReport =
+                NrdInputSemanticValidator.validate(
+                        new RenderReplaySequence(List.of(first, wrongDelta)));
+        assertFalse(deltaReport.valid());
+        assertTrue(deltaReport.temporalViolations().stream().anyMatch(
+                violation -> violation.reason().contains("frame delta")));
+
+        RenderReplayCapture backwards = withPreparation(
+                first,
+                new NrdPreparationReplayInput(
+                        valid.currentCamera(),
+                        valid.historyCamera(),
+                        -1L,
+                        valid.sceneRevision(),
+                        valid.textureRevision(),
+                        valid.currentJitterX(),
+                        valid.currentJitterY(),
+                        valid.historyJitterX(),
+                        valid.historyJitterY(),
+                        valid.frameIndex(),
+                        valid.forceRestart(),
+                        valid.restart(),
+                        0.0F,
+                        valid.sunDirection(),
+                        valid.diagnosticMode(),
+                        valid.nativeValidation()));
+        NrdInputSemanticValidator.SequenceReport backwardsReport =
+                NrdInputSemanticValidator.validate(
+                        new RenderReplaySequence(List.of(first, backwards)));
+        assertFalse(backwardsReport.valid());
+        assertTrue(backwardsReport.temporalViolations().stream().anyMatch(
+                violation -> violation.reason().contains(
+                        "invalid production temporal input")));
+    }
+
     static RenderReplayCapture capture(
             boolean nonFinite, boolean motion) {
         int[] raw = new int[
@@ -157,13 +216,13 @@ final class NrdInputSemanticValidatorTest {
                 Float.floatToRawIntBits(value);
     }
 
-    private static NrdPreparationReplayInput preparation(
+    static NrdPreparationReplayInput preparation(
             RenderReplayCapture source, int frameIndex, boolean restart) {
         NrdPreparationReplayInput input = source.nrdPreparation();
         return new NrdPreparationReplayInput(
                 input.currentCamera(),
                 input.historyCamera(),
-                input.frameTimeNanos(),
+                input.frameTimeNanos() + 10_000_000L,
                 input.sceneRevision(),
                 input.textureRevision(),
                 input.currentJitterX(),
@@ -171,15 +230,15 @@ final class NrdInputSemanticValidatorTest {
                 input.historyJitterX(),
                 input.historyJitterY(),
                 frameIndex,
-                input.forceRestart(),
                 restart,
-                input.deltaMilliseconds(),
+                restart,
+                10.0F,
                 input.sunDirection(),
                 input.diagnosticMode(),
                 input.nativeValidation());
     }
 
-    private static RenderReplayCapture withPreparation(
+    static RenderReplayCapture withPreparation(
             RenderReplayCapture source,
             NrdPreparationReplayInput preparation) {
         return new RenderReplayCapture(

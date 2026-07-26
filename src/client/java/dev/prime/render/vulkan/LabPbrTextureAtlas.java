@@ -57,6 +57,7 @@ public final class LabPbrTextureAtlas implements AutoCloseable {
     private final ArrayList<AnimationUpdate> animationUpdates = new ArrayList<>();
     private final ArrayList<Copy> animationCopies = new ArrayList<>();
     private Resources resources;
+    private FrameToken pending;
     private boolean closed;
 
     public LabPbrTextureAtlas(VulkanContext context, StagingArena stagingArena) {
@@ -74,6 +75,10 @@ public final class LabPbrTextureAtlas implements AutoCloseable {
                 && this.resources.sourceGeneration == generation
                 && this.resources.vanillaAtlasView == vanillaAtlasView) {
             return this.resources.materials;
+        }
+        if (this.pending != null) {
+            throw new IllegalStateException(
+                    "Cannot replace the LabPBR atlas with an outstanding upload");
         }
         Resources replacement = build(
                 minecraft.getResourceManager(), atlas, vanillaAtlasView, generation);
@@ -111,19 +116,19 @@ public final class LabPbrTextureAtlas implements AutoCloseable {
 
     /** Records the initial upload and any base-animation frame changes. */
     public FrameToken prepare(VkCommandBuffer commandBuffer) {
+        if (this.pending != null) {
+            throw new IllegalStateException(
+                    "Previous LabPBR upload has not been submitted or abandoned");
+        }
         Resources current = requireResources();
         this.animationCopies.clear();
-        boolean retireInitialUploads = false;
-        if (!current.prepared) {
+        boolean initialUpload = !current.prepared;
+        if (initialUpload) {
             recordInitialUpload(commandBuffer, current);
-            current.prepared = true;
-            retireInitialUploads = true;
         }
         current.collectAnimationChanges(this.animationUpdates);
         if (this.animationUpdates.isEmpty()) {
-            return retireInitialUploads
-                    ? new FrameToken(this, null, current, true)
-                    : null;
+            return this.publish(null, current, initialUpload, 0);
         }
         long requiredCapacity = 0L;
         for (AnimationUpdate update : this.animationUpdates) {
@@ -133,13 +138,13 @@ public final class LabPbrTextureAtlas implements AutoCloseable {
         }
         StagingArena.Batch batch = this.stagingArena.tryBeginBatch(requiredCapacity);
         if (batch == null) {
-            return retireInitialUploads
-                    ? new FrameToken(this, null, current, true)
-                    : null;
+            return this.publish(null, current, initialUpload, 0);
         }
         try {
             long budget = 0L;
-            for (AnimationUpdate change : this.animationUpdates) {
+            int acceptedCount = 0;
+            for (int index = 0; index < this.animationUpdates.size(); index++) {
+                AnimationUpdate change = this.animationUpdates.get(index);
                 AnimatedMaterialSprite sprite = change.sprite;
                 long spriteBudget = animationEndOffset(budget, sprite, current.mipLevels);
                 if (spriteBudget > batch.capacity()) {
@@ -170,13 +175,11 @@ public final class LabPbrTextureAtlas implements AutoCloseable {
                     }
                 }
                 budget = spriteBudget;
-                sprite.lastSample = change.sample;
+                this.animationUpdates.set(acceptedCount++, change);
             }
             if (this.animationCopies.isEmpty()) {
                 batch.close();
-                return retireInitialUploads
-                        ? new FrameToken(this, null, current, true)
-                        : null;
+                return this.publish(null, current, initialUpload, 0);
             }
             boolean normalChanged = false;
             boolean specularChanged = false;
@@ -184,12 +187,25 @@ public final class LabPbrTextureAtlas implements AutoCloseable {
                 normalChanged |= copy.image == current.normalAtlas;
                 specularChanged |= copy.image == current.specularAtlas;
             }
-            transitionForCopies(commandBuffer, current, normalChanged, specularChanged, true);
+            transitionForCopies(
+                    commandBuffer,
+                    current,
+                    normalChanged,
+                    specularChanged,
+                    current.prepared || initialUpload,
+                    true);
             for (Copy copy : this.animationCopies) {
                 recordCopy(commandBuffer, copy);
             }
-            transitionForCopies(commandBuffer, current, normalChanged, specularChanged, false);
-            return new FrameToken(this, batch, current, retireInitialUploads);
+            transitionForCopies(
+                    commandBuffer,
+                    current,
+                    normalChanged,
+                    specularChanged,
+                    true,
+                    false);
+            return this.publish(
+                    batch, current, initialUpload, acceptedCount);
         } catch (RuntimeException exception) {
             throw ResourceCleanup.close(batch, exception);
         }
@@ -200,32 +216,85 @@ public final class LabPbrTextureAtlas implements AutoCloseable {
         if (token == null) {
             return;
         }
-        if (token.atlas != this || token.submitted) {
+        if (token.atlas != this
+                || token != this.pending
+                || token.finished) {
             throw new IllegalArgumentException("LabPBR frame token does not belong to this submission");
         }
-        token.submitted = true;
+        token.finished = true;
+        this.pending = null;
+        if (token.initialUpload) {
+            token.owner.prepared = true;
+            token.owner.normalAtlas.markInitialized();
+            token.owner.specularAtlas.markInitialized();
+        }
+        for (int index = 0; index < token.animationUpdateCount; index++) {
+            AnimationUpdate update = this.animationUpdates.get(index);
+            update.sprite.lastSample = update.sample;
+        }
         RuntimeException failure = null;
         if (token.batch != null) {
             failure = ResourceCleanup.run(token.batch::submitForRetirement, null);
             failure = ResourceCleanup.close(token.batch, failure);
         }
-        if (token.retireInitialUploads) {
+        if (token.initialUpload) {
             failure = ResourceCleanup.run(
                     () -> token.owner.retireUploads(this.context), failure);
         }
         ResourceCleanup.throwIfFailed(failure);
     }
 
+    /** Releases staging for a recorded upload whose command buffer was not submitted. */
+    public void abandon(FrameToken token) {
+        if (token == null) {
+            return;
+        }
+        if (token.atlas != this
+                || token != this.pending
+                || token.finished) {
+            throw new IllegalArgumentException(
+                    "LabPBR frame token does not belong to this atlas");
+        }
+        token.finished = true;
+        this.pending = null;
+        ResourceCleanup.throwIfFailed(ResourceCleanup.close(token.batch, null));
+    }
+
     @Override
     public void close() {
         if (!this.closed) {
             this.closed = true;
-            if (this.resources != null) {
-                RuntimeException failure = ResourceCleanup.destroy(this.resources, null);
-                this.resources = null;
-                ResourceCleanup.throwIfFailed(failure);
+            RuntimeException failure = null;
+            if (this.pending != null) {
+                FrameToken abandoned = this.pending;
+                this.pending = null;
+                abandoned.finished = true;
+                failure = ResourceCleanup.close(abandoned.batch, failure);
             }
+            if (this.resources != null) {
+                failure = ResourceCleanup.destroy(this.resources, failure);
+                this.resources = null;
+            }
+            ResourceCleanup.throwIfFailed(failure);
         }
+    }
+
+    private FrameToken publish(
+            StagingArena.Batch batch,
+            Resources owner,
+            boolean initialUpload,
+            int animationUpdateCount) {
+        if (!initialUpload && batch == null) {
+            return null;
+        }
+        FrameToken token = new FrameToken(
+                this,
+                batch,
+                owner,
+                initialUpload,
+                animationUpdateCount);
+        this.pending = token;
+        return token;
     }
 
     private Resources requireResources() {
@@ -462,7 +531,8 @@ public final class LabPbrTextureAtlas implements AutoCloseable {
     }
 
     private static void recordInitialUpload(VkCommandBuffer commandBuffer, Resources resources) {
-        transitionForCopies(commandBuffer, resources, true, true, true);
+        transitionForCopies(
+                commandBuffer, resources, true, true, false, true);
         long offset = 0L;
         for (int mip = 0; mip < resources.mipLevels; mip++) {
             int width = Math.max(1, resources.width >> mip);
@@ -475,9 +545,8 @@ public final class LabPbrTextureAtlas implements AutoCloseable {
                     new Copy(resources.specularAtlas, resources.specularUpload.handle(), offset, mip, 0, 0, width, height));
             offset += (long) width * height * 4L;
         }
-        transitionForCopies(commandBuffer, resources, true, true, false);
-        resources.normalAtlas.markInitialized();
-        resources.specularAtlas.markInitialized();
+        transitionForCopies(
+                commandBuffer, resources, true, true, true, false);
     }
 
     private static void addAnimatedCopy(
@@ -534,16 +603,27 @@ public final class LabPbrTextureAtlas implements AutoCloseable {
             Resources resources,
             boolean normal,
             boolean specular,
+            boolean initialized,
             boolean toTransfer) {
         int count = (normal ? 1 : 0) + (specular ? 1 : 0);
         try (MemoryStack stack = MemoryStack.stackPush()) {
             VkImageMemoryBarrier2.Buffer barriers = VkImageMemoryBarrier2.calloc(count, stack);
             int index = 0;
             if (normal) {
-                fillBarrier(barriers.get(index++), resources.normalAtlas, resources.mipLevels, resources.prepared, toTransfer);
+                fillBarrier(
+                        barriers.get(index++),
+                        resources.normalAtlas,
+                        resources.mipLevels,
+                        initialized,
+                        toTransfer);
             }
             if (specular) {
-                fillBarrier(barriers.get(index), resources.specularAtlas, resources.mipLevels, resources.prepared, toTransfer);
+                fillBarrier(
+                        barriers.get(index),
+                        resources.specularAtlas,
+                        resources.mipLevels,
+                        initialized,
+                        toTransfer);
             }
             KHRSynchronization2.vkCmdPipelineBarrier2KHR(
                     commandBuffer,
@@ -661,18 +741,21 @@ public final class LabPbrTextureAtlas implements AutoCloseable {
         private final LabPbrTextureAtlas atlas;
         private final StagingArena.Batch batch;
         private final Resources owner;
-        private final boolean retireInitialUploads;
-        private boolean submitted;
+        private final boolean initialUpload;
+        private final int animationUpdateCount;
+        private boolean finished;
 
         private FrameToken(
                 LabPbrTextureAtlas atlas,
                 StagingArena.Batch batch,
                 Resources owner,
-                boolean retireInitialUploads) {
+                boolean initialUpload,
+                int animationUpdateCount) {
             this.atlas = atlas;
             this.batch = batch;
             this.owner = owner;
-            this.retireInitialUploads = retireInitialUploads;
+            this.initialUpload = initialUpload;
+            this.animationUpdateCount = animationUpdateCount;
         }
     }
 

@@ -2,6 +2,7 @@ package dev.prime.render.post;
 
 import dev.prime.render.CameraDiscontinuity;
 import dev.prime.render.FrameCamera;
+import dev.prime.render.FrameTime;
 import java.util.Objects;
 
 /**
@@ -11,8 +12,6 @@ import java.util.Objects;
  * Planning or failed recording therefore cannot consume a history frame.
  */
 public final class TemporalReconstructionState {
-    private static final float DEFAULT_DELTA_MILLISECONDS = 1000.0F / 60.0F;
-
     private final FrameCamera camera;
     private final long sceneRevision;
     private final long textureRevision;
@@ -64,11 +63,8 @@ public final class TemporalReconstructionState {
                 || input.sceneRevision() != this.sceneRevision
                 || input.textureRevision() != this.textureRevision;
         int currentFrameIndex = restart ? 0 : this.nextFrameIndex;
-        float deltaMilliseconds = !initialized
-                ? DEFAULT_DELTA_MILLISECONDS
-                : Math.min(
-                        (input.frameTimeNanos() - this.frameTimeNanos) * 1.0e-6F,
-                        1000.0F);
+        float deltaMilliseconds = FrameTime.deltaMilliseconds(
+                initialized, input.frameTimeNanos(), this.frameTimeNanos);
         TemporalReconstructionState committed = new TemporalReconstructionState(
                 input.camera(),
                 input.sceneRevision(),

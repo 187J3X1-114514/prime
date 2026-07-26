@@ -197,7 +197,10 @@ public final class Fsr3Upscaler implements Destroyable {
     public void record(
             VkCommandBuffer commandBuffer, FrameToken token, float displayOverexposure) {
         this.requireOpen();
-        if (token.owner != this || token.recorded || token.submitted) {
+        if (token.owner != this
+                || token.recorded
+                || token.submitted
+                || token.abandoned) {
             throw new IllegalArgumentException("FSR frame token does not belong to this recording");
         }
         token.recorded = true;
@@ -257,11 +260,24 @@ public final class Fsr3Upscaler implements Destroyable {
     /** Must be called immediately after the command buffer containing {@code token} is submitted. */
     public void submitted(FrameToken token) {
         this.requireOpen();
-        if (token.owner != this || !token.recorded || token.submitted) {
+        if (token.owner != this
+                || !token.recorded
+                || token.submitted
+                || token.abandoned) {
             throw new IllegalArgumentException("FSR frame token does not belong to this submission");
         }
         token.submitted = true;
         this.history.submitted(token.temporal);
+    }
+
+    public void abandon(FrameToken token) {
+        this.requireOpen();
+        if (token.owner != this || token.submitted || token.abandoned) {
+            throw new IllegalArgumentException(
+                    "FSR frame token does not belong to this upscaler");
+        }
+        token.abandoned = true;
+        this.history.abandon(token.temporal);
     }
 
     private void initializeLinearOutput(VkCommandBuffer commandBuffer) {
@@ -356,6 +372,7 @@ public final class Fsr3Upscaler implements Destroyable {
         private final FsrDebugView fsrDebugView;
         private boolean recorded;
         private boolean submitted;
+        private boolean abandoned;
 
         private FrameToken(
                 Fsr3Upscaler owner,

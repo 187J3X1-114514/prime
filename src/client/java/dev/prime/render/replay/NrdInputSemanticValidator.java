@@ -2,6 +2,10 @@ package dev.prime.render.replay;
 
 import dev.prime.render.FrameCamera;
 import dev.prime.render.vulkan.nrd.NrdCameraTransform;
+import dev.prime.render.vulkan.nrd.NrdDiagnostics;
+import dev.prime.render.vulkan.nrd.NrdFrameHistory;
+import dev.prime.render.vulkan.nrd.NrdFrameInput;
+import dev.prime.render.vulkan.nrd.NrdFramePlan;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
@@ -98,6 +102,7 @@ public final class NrdInputSemanticValidator {
         ArrayList<Report> frameReports =
                 new ArrayList<>(sequence.frames().size());
         ArrayList<TemporalViolation> temporalViolations = new ArrayList<>();
+        NrdFrameHistory expectedHistory = new NrdFrameHistory();
         for (int index = 0; index < sequence.frames().size(); index++) {
             RenderReplayCapture frame = sequence.frames().get(index);
             frameReports.add(validate(frame));
@@ -118,56 +123,70 @@ public final class NrdInputSemanticValidator {
                         index,
                         "sequence begins without an explicit history reset"));
             }
-            if (temporal.restart()) {
-                if (temporal.frameIndex() != 0) {
-                    temporalViolations.add(new TemporalViolation(
-                            index,
-                            "restart frame index is not zero"));
-                }
-                if (!temporal.currentCamera().equals(
-                        temporal.historyCamera())
-                        || Float.floatToRawIntBits(
-                                        temporal.currentJitterX())
-                                != Float.floatToRawIntBits(
-                                        temporal.historyJitterX())
-                        || Float.floatToRawIntBits(
-                                        temporal.currentJitterY())
-                                != Float.floatToRawIntBits(
-                                        temporal.historyJitterY())) {
-                    temporalViolations.add(new TemporalViolation(
-                            index,
-                            "restart frame did not self-initialize history"));
-                }
-            } else if (index > 0) {
-                NrdPreparationReplayInput previous =
-                        sequence.frames()
-                                .get(index - 1)
-                                .nrdPreparation();
-                if (!temporal.historyCamera().equals(
-                        previous.currentCamera())) {
-                    temporalViolations.add(new TemporalViolation(
-                            index,
-                            "history camera is not the previous submitted camera"));
-                }
-                if (Float.floatToRawIntBits(temporal.historyJitterX())
-                                != Float.floatToRawIntBits(
-                                        previous.currentJitterX())
-                        || Float.floatToRawIntBits(
-                                        temporal.historyJitterY())
-                                != Float.floatToRawIntBits(
-                                        previous.currentJitterY())) {
-                    temporalViolations.add(new TemporalViolation(
-                            index,
-                            "history jitter is not the previous submitted jitter"));
-                }
-                if (temporal.frameIndex() != previous.frameIndex() + 1) {
-                    temporalViolations.add(new TemporalViolation(
-                            index,
-                            "NRD frame index did not advance exactly once"));
-                }
+            try {
+                NrdFrameHistory.PlannedFrame expectedFrame =
+                        expectedHistory.plan(new NrdFrameInput(
+                                temporal.currentCamera().materialize(),
+                                temporal.frameTimeNanos(),
+                                temporal.sceneRevision(),
+                                temporal.textureRevision(),
+                                temporal.sunDirection(),
+                                temporal.currentJitterX(),
+                                temporal.currentJitterY(),
+                                temporal.forceRestart(),
+                                NrdDiagnostics.Mode.OFF));
+                validateTemporalPlan(
+                        temporalViolations,
+                        index,
+                        temporal,
+                        expectedFrame.plan());
+                expectedFrame.claimForExecution();
+                expectedHistory.submitted(expectedFrame);
+            } catch (RuntimeException exception) {
+                temporalViolations.add(new TemporalViolation(
+                        index,
+                        "invalid production temporal input: "
+                                + exception.getMessage()));
             }
         }
         return new SequenceReport(frameReports, temporalViolations);
+    }
+
+    private static void validateTemporalPlan(
+            List<TemporalViolation> violations,
+            int frameIndex,
+            NrdPreparationReplayInput actual,
+            NrdFramePlan expected) {
+        if (actual.restart() != expected.restart()) {
+            violations.add(new TemporalViolation(
+                    frameIndex,
+                    "restart does not match the production temporal state"));
+        }
+        if (actual.frameIndex() != expected.frameIndex()) {
+            violations.add(new TemporalViolation(
+                    frameIndex,
+                    "NRD frame index did not advance exactly once"));
+        }
+        if (!actual.historyCamera().equals(
+                FrameCameraSnapshot.capture(expected.historyCamera()))) {
+            violations.add(new TemporalViolation(
+                    frameIndex,
+                    "history camera does not match the production temporal state"));
+        }
+        if (Float.floatToRawIntBits(actual.historyJitterX())
+                        != Float.floatToRawIntBits(expected.historyJitterX())
+                || Float.floatToRawIntBits(actual.historyJitterY())
+                        != Float.floatToRawIntBits(expected.historyJitterY())) {
+            violations.add(new TemporalViolation(
+                    frameIndex,
+                    "history jitter does not match the production temporal state"));
+        }
+        if (Float.floatToRawIntBits(actual.deltaMilliseconds())
+                != Float.floatToRawIntBits(expected.deltaMilliseconds())) {
+            violations.add(new TemporalViolation(
+                    frameIndex,
+                    "frame delta does not match captured timestamps"));
+        }
     }
 
     private static void finite(

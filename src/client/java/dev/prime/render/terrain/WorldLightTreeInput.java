@@ -4,10 +4,10 @@ import java.util.List;
 import java.util.Objects;
 
 /**
- * Immutable, device-free semantic input for one world-light-tree update.
+ * Immutable, device-free semantic input for one world-light-tree build.
  *
  * <p>Entries are strictly key-sorted so collection iteration and GPU residency identity cannot
- * affect slot allocation or rebuild topology.
+ * affect the packed topology.
  */
 final class WorldLightTreeInput {
     private final int originX;

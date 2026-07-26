@@ -281,42 +281,37 @@ final class EmissionLightContractTest {
     }
 
     @Test
-    void worldTreeRefitKeepsExactForwardAndReverseLeafMapping() {
+    void worldTreeRebuildKeepsExactForwardAndReverseLeafMapping() {
         ArrayList<GpuCluster> clusters = new ArrayList<>();
         for (int index = 0; index < 8; index++) {
             clusters.add(cluster(index, index + 1.0F));
         }
-        CpuWorldLightTree tree = new CpuWorldLightTree();
         CpuWorldLightTree.Result initial =
-                tree.update(worldLightInput(clusters, 0, 0, 0));
+                CpuWorldLightTree.build(worldLightInput(clusters, 0, 0, 0));
         assertWorldLeafMapping(initial, clusters.size());
+        assertEquals(2 * clusters.size() - 1, initial.nodeCount());
         assertEquals(36.0F, Float.intBitsToFloat(initial.pack()[3]), 1.0E-6F);
 
         clusters.remove(0);
-        CpuWorldLightTree.Result refitted =
-                tree.update(worldLightInput(clusters, 16, 0, 0));
-        assertWorldLeafMapping(refitted, clusters.size());
-        assertEquals(35.0F, Float.intBitsToFloat(refitted.pack()[3]), 1.0E-6F);
-        boolean hasInactiveLeaf = false;
-        for (int node = 0; node < refitted.nodeCount(); node++) {
-            if (Float.intBitsToFloat(refitted.pack()[node * 8 + 3]) == 0.0F) {
-                hasInactiveLeaf = true;
-                break;
-            }
+        CpuWorldLightTree.Result rebuilt =
+                CpuWorldLightTree.build(worldLightInput(clusters, 16, 0, 0));
+        assertWorldLeafMapping(rebuilt, clusters.size());
+        assertEquals(2 * clusters.size() - 1, rebuilt.nodeCount());
+        assertEquals(35.0F, Float.intBitsToFloat(rebuilt.pack()[3]), 1.0E-6F);
+        for (int node = 0; node < rebuilt.nodeCount(); node++) {
+            assertTrue(Float.intBitsToFloat(rebuilt.pack()[node * 8 + 3]) > 0.0F);
         }
-        assertTrue(hasInactiveLeaf);
     }
 
     @Test
     void worldWithoutEmittersMapsEveryResidentClusterToNoLight() {
-        CpuWorldLightTree tree = new CpuWorldLightTree();
         List<GpuCluster> clusters = List.of(
                 emptyCluster(1),
                 emptyCluster(2),
                 emptyCluster(3));
 
         CpuWorldLightTree.Result result =
-                tree.update(worldLightInput(clusters, 0, 0, 0));
+                CpuWorldLightTree.build(worldLightInput(clusters, 0, 0, 0));
 
         assertTrue(result.isEmpty());
         for (int clusterIndex = 0; clusterIndex < clusters.size(); clusterIndex++) {

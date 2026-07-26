@@ -34,10 +34,10 @@ public final class TerrainScene implements AutoCloseable {
     private final StagingArena stagingArena;
     private Long2ObjectOpenHashMap<GpuCluster> resident = new Long2ObjectOpenHashMap<>();
     private final List<TopLevelAccelerationStructure> tlasSlots = new ArrayList<>(TLAS_SLOT_COUNT);
-    private final CpuWorldLightTree worldLightHistory =
-            new CpuWorldLightTree();
     private TopLevelAccelerationStructure currentTlas;
     private VulkanBuffer currentWorldLights;
+    private CpuWorldLightTree.Result currentWorldLightTree =
+            CpuWorldLightTree.Result.empty(0);
     private ResidentSceneView currentView;
     private int originX;
     private int originY;
@@ -105,6 +105,12 @@ public final class TerrainScene implements AutoCloseable {
             }
         }
         boolean needsClusterStaging = nonEmptyUploadCount > 0;
+        /*
+         * A semantic change already replaces and uploads the complete packed tree. Stable-slot
+         * refit would therefore save only CPU construction while retaining inactive reserve nodes
+         * and accumulated SAH degradation on the GPU. Rebuild to exactly 2L-1 nodes; BLAS
+         * compaction changes only addresses and deliberately reuses the committed tree.
+         */
         boolean rebuildWorldLights = contentChanged || needsRebase;
         boolean needsWorldStaging = rebuildWorldLights && finalClusterCount > 0 && hasPotentialLights;
         long clusterStagingBytes = 0L;
@@ -184,13 +190,13 @@ public final class TerrainScene implements AutoCloseable {
             int nextOriginY = needsRebase ? RenderOrigin.alignToSection(cameraY) : this.originY;
             int nextOriginZ = needsRebase ? RenderOrigin.alignToSection(cameraZ) : this.originZ;
             CpuWorldLightTree.Result worldLightTree = rebuildWorldLights
-                    ? this.worldLightHistory.update(
+                    ? CpuWorldLightTree.build(
                             WorldLightTreeInput.capture(
                                     finalClusters,
                                     nextOriginX,
                                     nextOriginY,
                                     nextOriginZ))
-                    : this.worldLightHistory.result();
+                    : this.currentWorldLightTree;
             if (requiresWorldLightUpload(rebuildWorldLights, worldLightTree)) {
                 if (worldStagingBatch == null || commandBuffer == null) {
                     throw new IllegalStateException("World light tree requires an upload batch");
@@ -344,6 +350,7 @@ public final class TerrainScene implements AutoCloseable {
                     replacements,
                     replacementTlas,
                     replacementWorldLights,
+                    worldLightTree,
                     rebuildWorldLights,
                     invalidateTemporalHistory,
                     nextOriginX,
@@ -456,6 +463,7 @@ public final class TerrainScene implements AutoCloseable {
             failure = ResourceCleanup.destroy(this.currentWorldLights, failure);
             this.currentWorldLights = null;
         }
+        this.currentWorldLightTree = CpuWorldLightTree.Result.empty(0);
         ResourceCleanup.throwIfFailed(failure);
     }
 
@@ -534,6 +542,7 @@ public final class TerrainScene implements AutoCloseable {
             List<GpuCluster> replacements,
             TopLevelAccelerationStructure replacementTlas,
             VulkanBuffer replacementWorldLights,
+            CpuWorldLightTree.Result replacementWorldLightTree,
             boolean replaceWorldLights,
             boolean invalidateTemporalHistory,
             int nextOriginX,
@@ -576,6 +585,7 @@ public final class TerrainScene implements AutoCloseable {
         this.currentTlas = replacementTlas;
         if (replaceWorldLights) {
             this.currentWorldLights = replacementWorldLights;
+            this.currentWorldLightTree = replacementWorldLightTree;
         }
         this.originX = nextOriginX;
         this.originY = nextOriginY;

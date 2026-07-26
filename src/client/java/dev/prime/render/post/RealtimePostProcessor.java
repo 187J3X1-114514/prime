@@ -42,6 +42,9 @@ public interface RealtimePostProcessor extends Destroyable {
 
     void record(VkCommandBuffer commandBuffer, Frame frame, FrameParameters parameters);
 
+    /** Releases a frame whose command buffer was not submitted. */
+    void abandon(Frame frame);
+
     void submitted(Frame frame);
 
     interface Frame {

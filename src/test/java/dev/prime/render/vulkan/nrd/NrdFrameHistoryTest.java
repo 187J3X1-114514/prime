@@ -72,6 +72,30 @@ final class NrdFrameHistoryTest {
                 () -> foreign.submitted(frame));
     }
 
+    @Test
+    void abandoningConsumedWorkKeepsTheCommittedHistory() {
+        NrdFrameHistory history = new NrdFrameHistory();
+        NrdFrameHistory.PlannedFrame abandoned =
+                history.plan(input(camera(0.0), 1_000_000L));
+        abandoned.claimForExecution();
+        history.abandon(abandoned);
+
+        assertThrows(
+                IllegalArgumentException.class,
+                abandoned::claimForExecution);
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> history.abandon(abandoned));
+
+        NrdFrameHistory.PlannedFrame retry =
+                history.plan(input(camera(1.0), 2_000_000L));
+        assertTrue(retry.plan().restart());
+        assertEquals(0, retry.plan().frameIndex());
+        assertSame(
+                retry.plan().input().camera(),
+                retry.plan().historyCamera());
+    }
+
     private static NrdFrameInput input(
             FrameCamera camera, long frameTimeNanos) {
         return new NrdFrameInput(

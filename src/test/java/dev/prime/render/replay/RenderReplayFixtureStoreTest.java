@@ -19,10 +19,14 @@ final class RenderReplayFixtureStoreTest {
     @Test
     void validFixtureRoundTripsAndReplacesAtomically() throws IOException {
         RenderReplaySequence first = validSequence();
+        RenderReplayCapture firstFrame = first.frames().getFirst();
         RenderReplaySequence second =
                 new RenderReplaySequence(List.of(
-                        first.frames().getFirst(),
-                        first.frames().getFirst()));
+                        firstFrame,
+                        NrdInputSemanticValidatorTest.withPreparation(
+                                firstFrame,
+                                NrdInputSemanticValidatorTest.preparation(
+                                        firstFrame, 1, false))));
         Path fixture = this.temporaryDirectory.resolve("nested/reference.prseq");
 
         RenderReplayFixtureStore.save(fixture, first);

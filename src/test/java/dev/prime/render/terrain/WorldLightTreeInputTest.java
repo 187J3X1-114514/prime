@@ -28,29 +28,19 @@ final class WorldLightTreeInputTest {
     }
 
     @Test
-    void identicalSemanticUpdateSequenceReplaysExactTopology() {
-        CpuWorldLightTree first = new CpuWorldLightTree();
-        CpuWorldLightTree replay = new CpuWorldLightTree();
-        ArrayList<GpuCluster> initial = new ArrayList<>();
+    void identicalInputBuildsExactTopology() {
+        ArrayList<GpuCluster> clusters = new ArrayList<>();
         for (int index = 0; index < 8; index++) {
-            initial.add(cluster(index, index + 1.0F));
+            clusters.add(cluster(index, index + 1.0F));
         }
-        WorldLightTreeInput initialInput =
-                WorldLightTreeInput.capture(initial, 0, 0, 0);
-        first.update(initialInput);
-        replay.update(initialInput);
-
-        ArrayList<GpuCluster> changed = new ArrayList<>(
-                initial.subList(1, initial.size()));
-        changed.add(cluster(9, 3.0F));
-        WorldLightTreeInput changedInput =
-                WorldLightTreeInput.capture(changed, 16, 0, 0);
-        CpuWorldLightTree.Result expected = first.update(changedInput);
-        CpuWorldLightTree.Result actual = replay.update(changedInput);
+        WorldLightTreeInput input =
+                WorldLightTreeInput.capture(clusters, 16, 0, 0);
+        CpuWorldLightTree.Result expected = CpuWorldLightTree.build(input);
+        CpuWorldLightTree.Result actual = CpuWorldLightTree.build(input);
 
         assertArrayEquals(expected.pack(), actual.pack());
         assertEquals(expected.nodeCount(), actual.nodeCount());
-        for (int index = 0; index < changed.size(); index++) {
+        for (int index = 0; index < clusters.size(); index++) {
             assertEquals(
                     expected.leafNode(index),
                     actual.leafNode(index));
@@ -58,26 +48,21 @@ final class WorldLightTreeInputTest {
     }
 
     @Test
-    void capturedIncrementalHistoryResumesTheExactNextTopology() {
-        CpuWorldLightTree uninterrupted = new CpuWorldLightTree();
+    void buildDependsOnlyOnCurrentInput() {
         ArrayList<GpuCluster> initial = new ArrayList<>();
         for (int index = 0; index < 8; index++) {
             initial.add(cluster(index, index + 1.0F));
         }
-        uninterrupted.update(
-                WorldLightTreeInput.capture(initial, 0, 0, 0));
-        CpuWorldLightTree restored =
-                new CpuWorldLightTree(uninterrupted.snapshot());
-
         ArrayList<GpuCluster> changed = new ArrayList<>(
                 initial.subList(1, initial.size()));
         changed.add(cluster(9, 3.0F));
         WorldLightTreeInput changedInput =
                 WorldLightTreeInput.capture(changed, 16, 0, 0);
-        CpuWorldLightTree.Result expected =
-                uninterrupted.update(changedInput);
-        CpuWorldLightTree.Result actual =
-                restored.update(changedInput);
+        CpuWorldLightTree.Result expected = CpuWorldLightTree.build(changedInput);
+
+        CpuWorldLightTree.build(
+                WorldLightTreeInput.capture(initial, 0, 0, 0));
+        CpuWorldLightTree.Result actual = CpuWorldLightTree.build(changedInput);
 
         assertArrayEquals(expected.pack(), actual.pack());
         for (int index = 0; index < changed.size(); index++) {

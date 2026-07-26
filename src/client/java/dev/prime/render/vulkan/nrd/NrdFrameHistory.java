@@ -41,6 +41,18 @@ public final class NrdFrameHistory {
         this.pending = null;
     }
 
+    public void abandon(PlannedFrame frame) {
+        if (frame == null
+                || frame.owner != this
+                || frame != this.pending
+                || frame.submitted) {
+            throw new IllegalArgumentException(
+                    "NRD frame plan does not belong to this history");
+        }
+        frame.abandoned = true;
+        this.pending = null;
+    }
+
     /** One device-free temporal version, consumed exactly once by an NRD device execution. */
     public static final class PlannedFrame {
         private final NrdFrameHistory owner;
@@ -48,6 +60,7 @@ public final class NrdFrameHistory {
         private final NrdTemporalState committedState;
         private boolean consumed;
         private boolean submitted;
+        private boolean abandoned;
 
         private PlannedFrame(
                 NrdFrameHistory owner,
@@ -62,8 +75,8 @@ public final class NrdFrameHistory {
             return this.plan;
         }
 
-        NrdFramePlan claimForExecution() {
-            if (this.consumed || this.submitted) {
+        public NrdFramePlan claimForExecution() {
+            if (this.consumed || this.submitted || this.abandoned) {
                 throw new IllegalArgumentException(
                         "NRD frame plan was already consumed");
             }

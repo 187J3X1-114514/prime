@@ -80,6 +80,29 @@ final class ReconstructionFrameHistoryTest {
                 () -> foreign.submitted(frame));
     }
 
+    @Test
+    void abandoningConsumedWorkKeepsTheCommittedHistory() {
+        ReconstructionFrameHistory history =
+                new ReconstructionFrameHistory();
+        ReconstructionFrameHistory.PlannedFrame abandoned =
+                history.plan(input(camera(0.0), 1_000_000L, false));
+        abandoned.claimForExecution();
+        history.abandon(abandoned);
+
+        assertThrows(
+                IllegalArgumentException.class,
+                abandoned::claimForExecution);
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> history.abandon(abandoned));
+
+        ReconstructionFrameHistory.PlannedFrame retry =
+                history.plan(input(camera(1.0), 2_000_000L, false));
+        assertTrue(retry.plan().restart());
+        assertEquals(0, retry.plan().frameIndex());
+        assertSame(retry.plan().camera(), retry.plan().historyCamera());
+    }
+
     private static TemporalReconstructionState.Input input(
             FrameCamera camera,
             long frameTimeNanos,

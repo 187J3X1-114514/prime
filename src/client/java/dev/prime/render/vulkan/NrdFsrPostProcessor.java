@@ -225,8 +225,28 @@ public final class NrdFsrPostProcessor implements RealtimePostProcessor {
         token.submitted = true;
     }
 
+    @Override
+    public void abandon(Frame frame) {
+        requireOpen();
+        FrameToken token = requireFrame(frame);
+        token.abandoned = true;
+        RuntimeException failure = null;
+        if (token.nrd != null) {
+            failure = ResourceCleanup.run(
+                    () -> this.denoiser.abandon(token.nrd), failure);
+        }
+        failure = ResourceCleanup.run(
+                () -> this.nrdHistory.abandon(token.nrdPlan), failure);
+        failure = ResourceCleanup.run(
+                () -> this.upscaler.abandon(token.fsr), failure);
+        ResourceCleanup.throwIfFailed(failure);
+    }
+
     private FrameToken requireFrame(Frame frame) {
-        if (!(frame instanceof FrameToken token) || token.owner != this || token.submitted) {
+        if (!(frame instanceof FrameToken token)
+                || token.owner != this
+                || token.submitted
+                || token.abandoned) {
             throw new IllegalArgumentException("NRD-FSR frame token does not belong to this processor");
         }
         return token;
@@ -263,6 +283,7 @@ public final class NrdFsrPostProcessor implements RealtimePostProcessor {
         private NrdDenoiser.FrameToken nrd;
         private boolean recorded;
         private boolean submitted;
+        private boolean abandoned;
 
         private FrameToken(
                 NrdFsrPostProcessor owner,

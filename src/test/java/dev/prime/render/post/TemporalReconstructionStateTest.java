@@ -3,6 +3,7 @@ package dev.prime.render.post;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import dev.prime.render.FrameCamera;
@@ -79,6 +80,17 @@ final class TemporalReconstructionStateTest {
         assertTrue(plan.cameraCut());
         assertTrue(plan.restart());
         assertEquals(1000.0F, plan.deltaMilliseconds());
+    }
+
+    @Test
+    void submittedFrameTimeCannotMoveBackwards() {
+        TemporalReconstructionState state = TemporalReconstructionState.initial()
+                .plan(input(camera(0.0), 2L, 1L, 2L))
+                .committedState();
+
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> state.plan(input(camera(0.0), 1L, 1L, 2L)));
     }
 
     private static TemporalReconstructionState.Input input(

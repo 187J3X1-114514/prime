@@ -1,6 +1,7 @@
 package dev.prime.render.vulkan.nrd;
 
 import dev.prime.render.FrameCamera;
+import dev.prime.render.FrameTime;
 import dev.prime.render.SunDirection;
 import java.util.Objects;
 
@@ -8,8 +9,6 @@ import java.util.Objects;
 final class NrdTemporalState {
     private static final float SUN_DISCONTINUITY_COSINE =
             (float) Math.cos(Math.toRadians(1.0));
-    private static final float DEFAULT_DELTA_MILLISECONDS = 1000.0F / 60.0F;
-
     private final FrameCamera camera;
     private final long sceneRevision;
     private final long textureRevision;
@@ -55,9 +54,8 @@ final class NrdTemporalState {
         float historyJitterX = restart ? input.cameraJitterX() : this.cameraJitterX;
         float historyJitterY = restart ? input.cameraJitterY() : this.cameraJitterY;
         int currentFrameIndex = restart ? 0 : this.nextFrameIndex;
-        float deltaMilliseconds = !initialized
-                ? DEFAULT_DELTA_MILLISECONDS
-                : Math.min((input.frameTimeNanos() - this.frameTimeNanos) * 1.0e-6F, 1000.0F);
+        float deltaMilliseconds = FrameTime.deltaMilliseconds(
+                initialized, input.frameTimeNanos(), this.frameTimeNanos);
         NrdTemporalState committed = new NrdTemporalState(
                 input.camera(),
                 input.sceneRevision(),

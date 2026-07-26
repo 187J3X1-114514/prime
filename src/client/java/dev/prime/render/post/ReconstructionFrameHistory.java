@@ -51,12 +51,25 @@ public final class ReconstructionFrameHistory {
         this.pending = null;
     }
 
+    public void abandon(PlannedFrame frame) {
+        if (frame == null
+                || frame.owner != this
+                || frame != this.pending
+                || frame.submitted) {
+            throw new IllegalArgumentException(
+                    "Reconstruction frame does not belong to this history");
+        }
+        frame.abandoned = true;
+        this.pending = null;
+    }
+
     public static final class PlannedFrame {
         private final ReconstructionFrameHistory owner;
         private final TemporalReconstructionState.Plan plan;
         private final TemporalReconstructionState committedState;
         private boolean consumed;
         private boolean submitted;
+        private boolean abandoned;
 
         private PlannedFrame(
                 ReconstructionFrameHistory owner,
@@ -72,7 +85,7 @@ public final class ReconstructionFrameHistory {
         }
 
         public TemporalReconstructionState.Plan claimForExecution() {
-            if (this.consumed || this.submitted) {
+            if (this.consumed || this.submitted || this.abandoned) {
                 throw new IllegalArgumentException(
                         "Reconstruction frame was already consumed");
             }

@@ -2,6 +2,7 @@ package dev.prime.render.vulkan;
 
 import com.mojang.blaze3d.vulkan.VulkanGpuTexture;
 import com.mojang.blaze3d.vulkan.VulkanGpuTextureView;
+import dev.prime.render.ResourceCleanup;
 import dev.prime.render.ScreenshotFramePlan;
 import dev.prime.render.terrain.TerrainScene;
 import java.util.Objects;
@@ -53,70 +54,83 @@ public final class ScreenshotFrameExecutor {
         var encoder = this.context.commandEncoder();
         VkCommandBuffer commandBuffer =
                 encoder.allocateAndBeginTransientCommandBuffer();
-        this.context.device().instance().debug().beginDebugGroup(
-                commandBuffer,
-                () -> "Prime unbiased screenshot accumulation");
-        atmosphere.prepare(
-                commandBuffer,
-                plan.integrator().camera(),
-                plan.integrator().sunDirection());
-        VulkanImageTransitions.prepareOutputForComposite(
-                commandBuffer, displayOutput);
-        VulkanImageTransitions.prepareAccumulationForTrace(
-                commandBuffer, stableRadiance);
-        VulkanImageTransitions.prepareAccumulationForTrace(
-                commandBuffer, runningMean);
-        rawFrame.prepareForRayTrace(commandBuffer);
-        VulkanImageTransitions.prepareAtlasForTrace(
-                commandBuffer, atlasView.texture());
-        LabPbrTextureAtlas.FrameToken labPbrFrame =
-                labPbrAtlas.prepare(commandBuffer);
-        try (MemoryStack stack = MemoryStack.stackPush()) {
-            pipeline.traceScreenshot(
-                    commandBuffer, plan.integrator(), scene);
-            VulkanImageTransitions.prepareScreenshotDisplay(
+        LabPbrTextureAtlas.FrameToken labPbrFrame = null;
+        boolean submissionAttempted = false;
+        try {
+            this.context.device().instance().debug().beginDebugGroup(
+                    commandBuffer,
+                    () -> "Prime unbiased screenshot accumulation");
+            atmosphere.prepare(
+                    commandBuffer,
+                    plan.integrator().camera(),
+                    plan.integrator().sunDirection());
+            VulkanImageTransitions.prepareOutputForComposite(
+                    commandBuffer, displayOutput);
+            VulkanImageTransitions.prepareAccumulationForTrace(
+                    commandBuffer, stableRadiance);
+            VulkanImageTransitions.prepareAccumulationForTrace(
                     commandBuffer, runningMean);
-            display.record(
-                    commandBuffer,
-                    plan.input().width(),
-                    plan.input().height(),
-                    plan.input().displayOverexposure());
-            VulkanImageTransitions.finishAtlasRead(
+            rawFrame.prepareForRayTrace(commandBuffer);
+            VulkanImageTransitions.prepareAtlasForTrace(
                     commandBuffer, atlasView.texture());
-            VulkanImageTransitions.prepareImagesForCopy(
-                    commandBuffer, displayOutput, mainColor);
-            VkImageCopy.Buffer copy = VkImageCopy.calloc(1, stack);
-            copy.get(0).srcSubresource()
-                    .aspectMask(VK12.VK_IMAGE_ASPECT_COLOR_BIT)
-                    .mipLevel(0)
-                    .baseArrayLayer(0)
-                    .layerCount(1);
-            copy.get(0).dstSubresource()
-                    .aspectMask(VK12.VK_IMAGE_ASPECT_COLOR_BIT)
-                    .mipLevel(0)
-                    .baseArrayLayer(0)
-                    .layerCount(1);
-            copy.get(0).extent().set(
-                    plan.input().width(),
-                    plan.input().height(),
-                    1);
-            VK12.vkCmdCopyImage(
-                    commandBuffer,
-                    displayOutput.image(),
-                    VK12.VK_IMAGE_LAYOUT_GENERAL,
-                    mainColor.vkImage(),
-                    VK12.VK_IMAGE_LAYOUT_GENERAL,
-                    copy);
-            VulkanImageTransitions.finishImageCopy(
-                    commandBuffer, displayOutput, mainColor);
+            labPbrFrame = labPbrAtlas.prepare(commandBuffer);
+            try (MemoryStack stack = MemoryStack.stackPush()) {
+                pipeline.traceScreenshot(
+                        commandBuffer, plan.integrator(), scene);
+                VulkanImageTransitions.prepareScreenshotDisplay(
+                        commandBuffer, runningMean);
+                display.record(
+                        commandBuffer,
+                        plan.input().width(),
+                        plan.input().height(),
+                        plan.input().displayOverexposure());
+                VulkanImageTransitions.finishAtlasRead(
+                        commandBuffer, atlasView.texture());
+                VulkanImageTransitions.prepareImagesForCopy(
+                        commandBuffer, displayOutput, mainColor);
+                VkImageCopy.Buffer copy = VkImageCopy.calloc(1, stack);
+                copy.get(0).srcSubresource()
+                        .aspectMask(VK12.VK_IMAGE_ASPECT_COLOR_BIT)
+                        .mipLevel(0)
+                        .baseArrayLayer(0)
+                        .layerCount(1);
+                copy.get(0).dstSubresource()
+                        .aspectMask(VK12.VK_IMAGE_ASPECT_COLOR_BIT)
+                        .mipLevel(0)
+                        .baseArrayLayer(0)
+                        .layerCount(1);
+                copy.get(0).extent().set(
+                        plan.input().width(),
+                        plan.input().height(),
+                        1);
+                VK12.vkCmdCopyImage(
+                        commandBuffer,
+                        displayOutput.image(),
+                        VK12.VK_IMAGE_LAYOUT_GENERAL,
+                        mainColor.vkImage(),
+                        VK12.VK_IMAGE_LAYOUT_GENERAL,
+                        copy);
+                VulkanImageTransitions.finishImageCopy(
+                        commandBuffer, displayOutput, mainColor);
+            }
+            this.context.device().instance().debug().endDebugGroup(
+                    commandBuffer);
+            VulkanContext.check(
+                    VK12.vkEndCommandBuffer(commandBuffer),
+                    "end Prime screenshot accumulation command buffer");
+            submissionAttempted = true;
+            encoder.execute(commandBuffer);
+            labPbrAtlas.submitted(labPbrFrame);
+        } catch (RuntimeException exception) {
+            if (!submissionAttempted) {
+                LabPbrTextureAtlas.FrameToken abandonedLabPbrFrame =
+                        labPbrFrame;
+                throw ResourceCleanup.run(
+                        () -> labPbrAtlas.abandon(abandonedLabPbrFrame),
+                        exception);
+            }
+            throw exception;
         }
-        this.context.device().instance().debug().endDebugGroup(
-                commandBuffer);
-        VulkanContext.check(
-                VK12.vkEndCommandBuffer(commandBuffer),
-                "end Prime screenshot accumulation command buffer");
-        encoder.execute(commandBuffer);
-        labPbrAtlas.submitted(labPbrFrame);
     }
 
     private static void validateExtents(

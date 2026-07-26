@@ -13,8 +13,8 @@ import net.minecraft.client.renderer.chunk.RenderSectionRegion;
  * <p>{@code TerrainStreamer} owns coverage, invalidation, scheduling and lifetime. This module owns
  * only the translation of one captured {@link RenderSectionRegion} through Minecraft's real
  * Section compiler into an immutable Prime payload. The region's block states are copied by
- * Minecraft; remaining live tint/light/entity services are an explicit capture-boundary gap, not
- * interpreter-owned hidden state. It neither consumes completed raster meshes nor observes raster
+ * Minecraft; live tint/light/entity services remain in the Minecraft adapter boundary rather than
+ * becoming interpreter-owned hidden state. It neither consumes completed raster meshes nor observes raster
  * visibility, so there is no multi-source reconciliation policy.
  *
  * <p>Only this module interprets vanilla mesh production. Vulkan code consumes immutable scene

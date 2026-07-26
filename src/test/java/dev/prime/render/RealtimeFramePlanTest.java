@@ -232,6 +232,11 @@ final class RealtimeFramePlanTest {
         }
 
         @Override
+        public void abandon(Frame frame) {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
         public void submitted(Frame frame) {
             throw new UnsupportedOperationException();
         }

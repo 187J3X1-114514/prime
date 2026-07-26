@@ -3,11 +3,17 @@ package dev.prime.render.vulkan;
 import dev.prime.render.ResourceCleanup;
 import dev.prime.render.fsr.FsrSettings;
 import dev.prime.render.post.PostProcessingMode;
+import dev.prime.render.post.ReconstructionFrameHistory;
 import dev.prime.render.post.RealtimePostProcessor;
 import dev.prime.render.post.ReconstructionQualityMode;
+import dev.prime.render.post.TemporalReconstructionState;
 import org.lwjgl.vulkan.VkCommandBuffer;
 
-/** Native-resolution 1 spp presentation path with no denoising or temporal reconstruction. */
+/**
+ * Native-resolution 1 spp presentation path with no denoising or temporal filtering.
+ *
+ * <p>The shared history state controls only jitter identity and reset/submit semantics.
+ */
 public final class NoisyPostProcessor implements RealtimePostProcessor {
     private final ReconstructionQualityMode quality;
     private final int width;
@@ -15,8 +21,8 @@ public final class NoisyPostProcessor implements RealtimePostProcessor {
     private final BasicRawWavefrontFrame rawFrame;
     private final NoisyCompositePass composite;
     private final DisplayTransformPass displayTransform;
-    private int frameIndex;
-    private boolean resetRequested = true;
+    private final ReconstructionFrameHistory history =
+            new ReconstructionFrameHistory();
     private boolean destroyed;
 
     private NoisyPostProcessor(
@@ -73,19 +79,25 @@ public final class NoisyPostProcessor implements RealtimePostProcessor {
     @Override
     public void requestReset() {
         requireOpen();
-        this.resetRequested = true;
+        this.history.requestReset();
     }
 
     @Override
     public Frame beginFrame(FrameParameters parameters) {
         requireOpen();
-        boolean reset = this.resetRequested || parameters.forceRestart();
-        int index = reset ? 0 : this.frameIndex;
+        ReconstructionFrameHistory.PlannedFrame temporal = this.history.plan(
+                new TemporalReconstructionState.Input(
+                        parameters.camera(),
+                        parameters.frameTimeNanos(),
+                        parameters.sceneRevision(),
+                        parameters.textureRevision(),
+                        parameters.forceRestart()));
+        int index = temporal.plan().frameIndex();
         return new FrameToken(
                 this,
-                index,
+                temporal,
                 this.quality.rrJitter(index),
-                reset);
+                temporal.plan().restart());
     }
 
     @Override
@@ -99,6 +111,7 @@ public final class NoisyPostProcessor implements RealtimePostProcessor {
             VkCommandBuffer commandBuffer, Frame frame, FrameParameters parameters) {
         FrameToken token = requireFrame(frame);
         token.recorded = true;
+        token.temporal.claimForExecution();
         this.composite.record(commandBuffer, parameters.sunRadianceMultiplier());
         this.displayTransform.record(commandBuffer, false, parameters.displayOverexposure());
     }
@@ -109,13 +122,27 @@ public final class NoisyPostProcessor implements RealtimePostProcessor {
         if (!(frame instanceof FrameToken token)
                 || token.owner != this
                 || !token.recorded
-                || token.submitted) {
+                || token.submitted
+                || token.abandoned) {
             throw new IllegalArgumentException(
                     "Noisy frame was not recorded exactly once by this processor");
         }
         token.submitted = true;
-        this.resetRequested = false;
-        this.frameIndex = token.frameIndex + 1;
+        this.history.submitted(token.temporal);
+    }
+
+    @Override
+    public void abandon(Frame frame) {
+        requireOpen();
+        if (!(frame instanceof FrameToken token)
+                || token.owner != this
+                || token.submitted
+                || token.abandoned) {
+            throw new IllegalArgumentException(
+                    "Noisy frame token does not belong to this processor");
+        }
+        token.abandoned = true;
+        this.history.abandon(token.temporal);
     }
 
     private FrameToken requireFrame(Frame frame) {
@@ -123,6 +150,7 @@ public final class NoisyPostProcessor implements RealtimePostProcessor {
         if (!(frame instanceof FrameToken token)
                 || token.owner != this
                 || token.submitted
+                || token.abandoned
                 || token.recorded) {
             throw new IllegalArgumentException("Noisy frame token does not belong to this processor");
         }
@@ -146,24 +174,25 @@ public final class NoisyPostProcessor implements RealtimePostProcessor {
 
     private static final class FrameToken implements Frame {
         private final NoisyPostProcessor owner;
-        private final int frameIndex;
+        private final ReconstructionFrameHistory.PlannedFrame temporal;
         private final FsrSettings.Jitter jitter;
         private final boolean reset;
         private boolean recorded;
         private boolean submitted;
+        private boolean abandoned;
 
         private FrameToken(
                 NoisyPostProcessor owner,
-                int frameIndex,
+                ReconstructionFrameHistory.PlannedFrame temporal,
                 FsrSettings.Jitter jitter,
                 boolean reset) {
             this.owner = owner;
-            this.frameIndex = frameIndex;
+            this.temporal = temporal;
             this.jitter = jitter;
             this.reset = reset;
         }
 
-        @Override public int frameIndex() { return this.frameIndex; }
+        @Override public int frameIndex() { return this.temporal.plan().frameIndex(); }
         @Override public FsrSettings.Jitter jitter() { return this.jitter; }
         @Override public boolean reset() { return this.reset; }
     }

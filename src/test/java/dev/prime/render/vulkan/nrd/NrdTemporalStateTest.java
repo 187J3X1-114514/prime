@@ -104,6 +104,26 @@ final class NrdTemporalStateTest {
     }
 
     @Test
+    void submittedFrameTimeCannotMoveBackwards() {
+        NrdTemporalState state = NrdTemporalState.initial().plan(
+                input(camera(0.0), 2L, 1L, 2L, NOON, 0.0F, 0.0F, false))
+                .committedState();
+
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> state.plan(
+                        input(
+                                camera(0.0),
+                                1L,
+                                1L,
+                                2L,
+                                NOON,
+                                0.0F,
+                                0.0F,
+                                false)));
+    }
+
+    @Test
     void semanticPlanPreservesTheCompleteInputAndDerivedHistory() {
         FrameCamera camera = camera(4.0);
         NrdFrameInput input = new NrdFrameInput(

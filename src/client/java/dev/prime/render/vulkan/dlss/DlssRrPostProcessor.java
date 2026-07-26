@@ -198,7 +198,10 @@ public final class DlssRrPostProcessor implements RealtimePostProcessor {
             float sunRadianceMultiplier,
             float displayOverexposure) {
         requireOpen();
-        if (token.owner != this || token.recorded || token.submitted) {
+        if (token.owner != this
+                || token.recorded
+                || token.submitted
+                || token.abandoned) {
             throw new IllegalArgumentException("DLSS RR frame token does not belong to this recording");
         }
         token.recorded = true;
@@ -276,11 +279,24 @@ public final class DlssRrPostProcessor implements RealtimePostProcessor {
 
     public void submitted(FrameToken token) {
         requireOpen();
-        if (token.owner != this || !token.recorded || token.submitted) {
+        if (token.owner != this
+                || !token.recorded
+                || token.submitted
+                || token.abandoned) {
             throw new IllegalArgumentException("DLSS RR frame token does not belong to this submission");
         }
         token.submitted = true;
         this.history.submitted(token.temporal);
+    }
+
+    public void abandon(FrameToken token) {
+        requireOpen();
+        if (token.owner != this || token.submitted || token.abandoned) {
+            throw new IllegalArgumentException(
+                    "DLSS RR frame token does not belong to this processor");
+        }
+        token.abandoned = true;
+        this.history.abandon(token.temporal);
     }
 
     @Override
@@ -289,6 +305,15 @@ public final class DlssRrPostProcessor implements RealtimePostProcessor {
             throw new IllegalArgumentException("DLSS RR received another processor's frame token");
         }
         this.submitted(token);
+    }
+
+    @Override
+    public void abandon(Frame frame) {
+        if (!(frame instanceof FrameToken token)) {
+            throw new IllegalArgumentException(
+                    "DLSS RR received another processor's frame token");
+        }
+        this.abandon(token);
     }
 
     private void requireOpen() {
@@ -318,6 +343,7 @@ public final class DlssRrPostProcessor implements RealtimePostProcessor {
         private final boolean debugFullscreen;
         private boolean recorded;
         private boolean submitted;
+        private boolean abandoned;
 
         private FrameToken(
                 DlssRrPostProcessor owner,

@@ -49,7 +49,7 @@ import org.lwjgl.vulkan.VkImageMemoryBarrier2;
 
 public final class VulkanRenderer implements AutoCloseable {
     private final VulkanContext context;
-    private final DlssRrNative.Context ngxContext;
+    private DlssRrNative.Context ngxContext;
     private final StagingArena stagingArena;
     private final StarmapTexture starmap;
     private final TerrainStreamer terrain;
@@ -116,7 +116,11 @@ public final class VulkanRenderer implements AutoCloseable {
             this.terrain = newTerrain;
             this.labPbrAtlas = newLabPbrAtlas;
         } catch (RuntimeException exception) {
-            ResourceCleanup.close(newNgxContext, exception);
+            if (newNgxContext != null) {
+                DlssRrNative.Context failedNgxContext = newNgxContext;
+                ResourceCleanup.run(
+                        () -> DlssRrBootstrap.release(failedNgxContext), exception);
+            }
             ResourceCleanup.close(newLabPbrAtlas, exception);
             ResourceCleanup.close(newTerrain, exception);
             ResourceCleanup.destroy(newPipeline, exception);
@@ -780,12 +784,26 @@ public final class VulkanRenderer implements AutoCloseable {
         failure = ResourceCleanup.destroy(this.starmap, failure);
         failure = ResourceCleanup.close(this.stagingArena, failure);
         if (this.ngxContext != null) {
-            failure = ResourceCleanup.close(this.ngxContext, failure);
+            failure = ResourceCleanup.run(this::releaseNgxContext, failure);
         }
         failure = ResourceCleanup.close(this.context, failure);
         this.debugLines = List.of();
         this.closed = true;
         ResourceCleanup.throwIfFailed(failure);
+    }
+
+    private void releaseNgxContext() {
+        DlssRrNative.Context context = this.ngxContext;
+        if (context == null) {
+            return;
+        }
+        try {
+            DlssRrBootstrap.release(context);
+        } finally {
+            // Context.close consumes the native handle before reporting shutdown failure. Either
+            // outcome makes this Java owner terminal and prevents a retry from double-releasing.
+            this.ngxContext = null;
+        }
     }
 
     private void reloadPipelineIfRequested() {

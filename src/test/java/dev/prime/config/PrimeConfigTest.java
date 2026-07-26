@@ -78,6 +78,7 @@ final class PrimeConfigTest {
     @Test
     void debugSelectionsAreSessionOnlyAndLegacyKeysAreRemovedOnRewrite() {
         String serialized = PrimeConfig.serializedContents();
+        assertTrue(serialized.contains("renderer.path_tracing=true\n"));
         assertFalse(serialized.contains("debug_view"));
         assertFalse(serialized.contains("debug_fullscreen"));
         assertTrue(serialized.contains("lighting.star_ev=0\n"));
@@ -86,5 +87,15 @@ final class PrimeConfigTest {
         assertFalse(PrimeConfig.hasLegacyDebugProperties(properties));
         properties.setProperty("dlss_rr.debug_view", "motion");
         assertTrue(PrimeConfig.hasLegacyDebugProperties(properties));
+    }
+
+    @Test
+    void pathTracingSwitchAcceptsOnlyExplicitBooleans() {
+        assertTrue(PrimeConfig.parseBoolean("true"));
+        assertTrue(PrimeConfig.parseBoolean("TRUE"));
+        assertFalse(PrimeConfig.parseBoolean("false"));
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> PrimeConfig.parseBoolean("enabled"));
     }
 }

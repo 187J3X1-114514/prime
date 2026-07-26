@@ -59,7 +59,9 @@ import org.lwjgl.vulkan.VkWriteDescriptorSet;
 public final class NrdDenoiser implements Destroyable, WavefrontSignals {
     private static final int COMPUTE_STAGE = VK12.VK_SHADER_STAGE_COMPUTE_BIT;
     private static final int IMAGE_USAGE = VK12.VK_IMAGE_USAGE_STORAGE_BIT | VK12.VK_IMAGE_USAGE_SAMPLED_BIT;
-    private static final int MOTION_BINDING_COUNT = 24;
+    static final int MOTION_NRD_BINDING = 0;
+    static final int MOTION_FSR_BINDING = 23;
+    static final int MOTION_BINDING_COUNT = 24;
     private static final int MOTION_PUSH_SIZE = ShaderAbi.NRD_MOTION_PUSH_CONSTANT_SIZE;
     private static final int COMPOSITE_BINDING_COUNT = 31;
     private static final int COMPOSITE_PUSH_SIZE = 28;
@@ -120,6 +122,17 @@ public final class NrdDenoiser implements Destroyable, WavefrontSignals {
         this.pipelines = pipelines;
         this.motionPipeline = motionPipeline;
         this.composite = composite;
+    }
+
+    static <T> void validateMotionBindings(
+            T[] descriptorImages, T nrdMotion, T fsrMotion) {
+        if (descriptorImages.length != MOTION_BINDING_COUNT
+                || descriptorImages[MOTION_NRD_BINDING] != nrdMotion
+                || descriptorImages[MOTION_FSR_BINDING] != fsrMotion
+                || nrdMotion == fsrMotion) {
+            throw new IllegalStateException(
+                    "NRD and FSR motion outputs must use distinct ABI bindings");
+        }
     }
 
     public static NrdDenoiser create(
@@ -1801,7 +1814,7 @@ public final class NrdDenoiser implements Destroyable, WavefrontSignals {
                 descriptorSet = pointer.get(0);
 
                 VulkanImage[] descriptorImages = new VulkanImage[] {
-                    images.fsrMotion,
+                    images.motion,
                     images.viewZ,
                     images.primaryPosition,
                     images.reprojectionError,
@@ -1826,6 +1839,8 @@ public final class NrdDenoiser implements Destroyable, WavefrontSignals {
                     images.displayPosition,
                     images.fsrMotion
                 };
+                validateMotionBindings(
+                        descriptorImages, images.motion, images.fsrMotion);
                 VkDescriptorImageInfo.Buffer imageInfos =
                         VkDescriptorImageInfo.calloc(MOTION_BINDING_COUNT, stack);
                 VkWriteDescriptorSet.Buffer writes =

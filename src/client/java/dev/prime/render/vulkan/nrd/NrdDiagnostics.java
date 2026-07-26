@@ -5,6 +5,8 @@ import java.util.Optional;
 
 /** NRD diagnostic modes and their native output selectors. */
 public final class NrdDiagnostics {
+    public static final int MAX_PRESENTATION = 3;
+
     private NrdDiagnostics() {}
 
     public enum Mode {
@@ -60,6 +62,10 @@ public final class NrdDiagnostics {
         public int presentation() {
             if (this.presentSource < 0) {
                 throw new IllegalStateException("Off has no diagnostic presentation");
+            }
+            if (this.presentation < 0 || this.presentation > MAX_PRESENTATION) {
+                throw new IllegalStateException(
+                        "Unsupported NRD diagnostic presentation " + this.presentation);
             }
             return this.presentation;
         }

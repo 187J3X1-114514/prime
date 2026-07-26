@@ -29,6 +29,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 public abstract class VideoSettingsScreenMixin {
     private static final Component PRIME$HEADER =
             Component.translatable("prime.options.header");
+    @Unique private OptionInstance<Boolean> prime$pathTracingEnabled;
     @Unique private OptionInstance<Boolean> prime$screenshotMode;
     @Unique private OptionInstance<PostProcessingMode> prime$postProcessingMode;
     @Unique private OptionInstance<ReconstructionQualityMode> prime$qualityMode;
@@ -47,6 +48,7 @@ public abstract class VideoSettingsScreenMixin {
     private void prime$addOptions(CallbackInfo callbackInfo) {
         OptionsList list = ((OptionsSubScreenAccessor) this).prime$getList();
         if (list != null) {
+            this.prime$pathTracingEnabled = PrimeVideoOptions.pathTracingEnabled();
             this.prime$screenshotMode = PrimeVideoOptions.screenshotMode();
             this.prime$postProcessingMode = PrimeVideoOptions.postProcessingMode();
             this.prime$qualityMode = PrimeVideoOptions.qualityMode();
@@ -65,6 +67,7 @@ public abstract class VideoSettingsScreenMixin {
                             Component.translatable("prime.options.restore_defaults"),
                             button -> this.prime$restoreDefaults())
                     .build());
+            list.addBig(this.prime$pathTracingEnabled);
             list.addBig(this.prime$screenshotMode);
             list.addBig(this.prime$postProcessingMode);
             list.addBig(this.prime$qualityMode);
@@ -83,6 +86,7 @@ public abstract class VideoSettingsScreenMixin {
     private void prime$restoreDefaults() {
         PrimeConfig.restoreDefaults();
         RayTracingRuntime.instance().restoreSessionDefaults();
+        this.prime$refresh(this.prime$pathTracingEnabled, true);
         this.prime$refresh(this.prime$screenshotMode, false);
         this.prime$refresh(this.prime$postProcessingMode, PostProcessingMode.DEFAULT);
         this.prime$refresh(this.prime$qualityMode, ReconstructionQualityMode.DEFAULT);

@@ -32,6 +32,16 @@ public final class PrimeVideoOptions {
     private PrimeVideoOptions() {
     }
 
+    public static OptionInstance<Boolean> pathTracingEnabled() {
+        RayTracingRuntime runtime = RayTracingRuntime.instance();
+        return OptionInstance.createBoolean(
+                "prime.options.path_tracing",
+                OptionInstance.cachedConstantTooltip(
+                        Component.translatable("prime.options.path_tracing.tooltip")),
+                PrimeConfig.settings().pathTracingEnabled(),
+                runtime::setPathTracingEnabled);
+    }
+
     public static OptionInstance<Boolean> screenshotMode() {
         RayTracingRuntime runtime = RayTracingRuntime.instance();
         return OptionInstance.createBoolean(

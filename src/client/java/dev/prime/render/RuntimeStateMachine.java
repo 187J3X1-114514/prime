@@ -7,6 +7,10 @@ final class RuntimeStateMachine {
         return this.current;
     }
 
+    void disabled() {
+        this.current = RuntimeState.DISABLED;
+    }
+
     void unavailable() {
         if (this.current != RuntimeState.FAILED) {
             this.current = RuntimeState.UNAVAILABLE;
@@ -20,7 +24,9 @@ final class RuntimeStateMachine {
     }
 
     void worldAbsent() {
-        if (this.current != RuntimeState.FAILED && this.current != RuntimeState.UNAVAILABLE) {
+        if (this.current != RuntimeState.DISABLED
+                && this.current != RuntimeState.FAILED
+                && this.current != RuntimeState.UNAVAILABLE) {
             this.current = RuntimeState.WAITING_FOR_WORLD;
         }
     }
@@ -30,7 +36,9 @@ final class RuntimeStateMachine {
     }
 
     void worldStreaming(boolean active) {
-        if (this.current != RuntimeState.FAILED && this.current != RuntimeState.UNAVAILABLE) {
+        if (this.current != RuntimeState.DISABLED
+                && this.current != RuntimeState.FAILED
+                && this.current != RuntimeState.UNAVAILABLE) {
             if (this.current != RuntimeState.ACTIVE) {
                 this.current = active ? RuntimeState.ACTIVE : RuntimeState.STREAMING;
             }

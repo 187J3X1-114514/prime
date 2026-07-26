@@ -1,5 +1,7 @@
 {
   "prime.options.header": "Prime 路径追踪",
+  "prime.options.path_tracing": "Prime 路径追踪",
+  "prime.options.path_tracing.tooltip": "在原版光栅化渲染和 Prime 路径追踪之间切换。切换在下一帧边界安全停止或重新创建整套 Prime GPU 管线，可当作不退出游戏的渲染器重启；使用原版时不会保留或运行 Prime 的路径追踪、降噪和超分资源。",
   "prime.options.screenshot_mode": "参考累积截图（临时）",
   "prime.options.screenshot_mode.tooltip": "冻结当前相机、太阳、地形和方块动画，以原生分辨率执行无偏路径追踪累积。此模式完全旁路 DLSS RR、NRD、FSR 和所有实时调试覆盖层，画面会从噪点逐渐收敛。按 Ctrl+Alt+F2 可进入或退出，普通 F2 截图不受影响；按 Esc 只会退出，不会进入。该选项仅对本次游戏会话生效。",
   "prime.options.fsr.quality": "FSR 超分辨率",
@@ -57,6 +59,8 @@
   "prime.options.nrd.debug_view.raw_numerical": "裸输出数值异常",
   "prime.options.nrd.debug_view.raw_numerical_stage": "数值异常首发阶段",
   "prime.options.nrd.debug_view.raw_numerical_field": "数值异常首发字段",
+  "prime.options.nrd.debug_view.reprojection_error": "重投影误差",
+  "prime.options.nrd.debug_view.motion": "运动向量",
   "prime.options.nrd.debug_view.specular_input": "镜面 SH0 输入",
   "prime.options.nrd.debug_view.specular_output": "镜面 SH0 输出",
   "prime.options.nrd.debug_view.specular_remodulated": "镜面重调制",

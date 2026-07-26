@@ -14,7 +14,12 @@ final class BasicWavefrontSignalsTest {
                 KHRRayTracingPipeline.VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR;
         long compute = VK12.VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT;
 
-        assertEquals(VK12.VK_IMAGE_USAGE_STORAGE_BIT, BasicWavefrontSignals.imageUsage());
+        assertEquals(
+                VK12.VK_IMAGE_USAGE_STORAGE_BIT,
+                BasicWavefrontSignals.imageUsage(false));
+        assertEquals(
+                VK12.VK_IMAGE_USAGE_STORAGE_BIT | VK12.VK_IMAGE_USAGE_SAMPLED_BIT,
+                BasicWavefrontSignals.imageUsage(true));
         assertEquals(rayTracing, BasicWavefrontSignals.destinationStages(false, false));
         assertEquals(
                 rayTracing | compute,

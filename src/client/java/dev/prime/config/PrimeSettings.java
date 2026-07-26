@@ -9,6 +9,7 @@ import java.util.Objects;
 
 /** Immutable product settings and renderer revision markers owned by {@link PrimeConfig}. */
 public record PrimeSettings(
+        boolean pathTracingEnabled,
         PostProcessingMode postProcessingMode,
         ReconstructionQualityMode reconstructionQuality,
         int sunQuarterSteps,
@@ -34,6 +35,7 @@ public record PrimeSettings(
 
     public static PrimeSettings defaults() {
         return new PrimeSettings(
+                true,
                 PostProcessingMode.DEFAULT,
                 ReconstructionQualityMode.DEFAULT,
                 LightingSettings.DEFAULT_SUN_QUARTER_STEPS,
@@ -45,11 +47,28 @@ public record PrimeSettings(
                 0L);
     }
 
+    public PrimeSettings withPathTracingEnabled(boolean value) {
+        return value == this.pathTracingEnabled
+                ? this
+                : new PrimeSettings(
+                        value,
+                        this.postProcessingMode,
+                        this.reconstructionQuality,
+                        this.sunQuarterSteps,
+                        this.starQuarterSteps,
+                        this.blockLightQuarterSteps,
+                        this.oklabOverexposureSteps,
+                        this.defaultRoughnessSteps,
+                        this.lightingRevision,
+                        this.materialRevision);
+    }
+
     public PrimeSettings withPostProcessingMode(PostProcessingMode value) {
         Objects.requireNonNull(value, "value");
         return value == this.postProcessingMode
                 ? this
                 : new PrimeSettings(
+                        this.pathTracingEnabled,
                         value,
                         this.reconstructionQuality,
                         this.sunQuarterSteps,
@@ -66,6 +85,7 @@ public record PrimeSettings(
         return value == this.reconstructionQuality
                 ? this
                 : new PrimeSettings(
+                        this.pathTracingEnabled,
                         this.postProcessingMode,
                         value,
                         this.sunQuarterSteps,
@@ -82,6 +102,7 @@ public record PrimeSettings(
         return value == this.sunQuarterSteps
                 ? this
                 : new PrimeSettings(
+                        this.pathTracingEnabled,
                         this.postProcessingMode,
                         this.reconstructionQuality,
                         value,
@@ -98,6 +119,7 @@ public record PrimeSettings(
         return value == this.starQuarterSteps
                 ? this
                 : new PrimeSettings(
+                        this.pathTracingEnabled,
                         this.postProcessingMode,
                         this.reconstructionQuality,
                         this.sunQuarterSteps,
@@ -114,6 +136,7 @@ public record PrimeSettings(
         return value == this.blockLightQuarterSteps
                 ? this
                 : new PrimeSettings(
+                        this.pathTracingEnabled,
                         this.postProcessingMode,
                         this.reconstructionQuality,
                         this.sunQuarterSteps,
@@ -130,6 +153,7 @@ public record PrimeSettings(
         return value == this.oklabOverexposureSteps
                 ? this
                 : new PrimeSettings(
+                        this.pathTracingEnabled,
                         this.postProcessingMode,
                         this.reconstructionQuality,
                         this.sunQuarterSteps,
@@ -146,6 +170,7 @@ public record PrimeSettings(
         return value == this.defaultRoughnessSteps
                 ? this
                 : new PrimeSettings(
+                        this.pathTracingEnabled,
                         this.postProcessingMode,
                         this.reconstructionQuality,
                         this.sunQuarterSteps,

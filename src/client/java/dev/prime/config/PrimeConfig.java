@@ -20,6 +20,7 @@ import net.fabricmc.loader.api.FabricLoader;
 
 /** Small, version-tolerant owner for Prime's user-facing settings. */
 public final class PrimeConfig {
+    private static final String PATH_TRACING_ENABLED_KEY = "renderer.path_tracing";
     private static final String MODE_KEY = "post_processing.mode";
     private static final String QUALITY_KEY = "post_processing.quality";
     private static final String LEGACY_QUALITY_KEY = "fsr.quality";
@@ -46,6 +47,7 @@ public final class PrimeConfig {
 
     public static void load() {
         Path path = configPath();
+        boolean pathTracingEnabled = true;
         PostProcessingMode postProcessingMode = PostProcessingMode.DEFAULT;
         ReconstructionQualityMode quality = ReconstructionQualityMode.DEFAULT;
         int sunQuarterSteps = LightingSettings.DEFAULT_SUN_QUARTER_STEPS;
@@ -58,6 +60,19 @@ public final class PrimeConfig {
             try (Reader reader = Files.newBufferedReader(path, StandardCharsets.UTF_8)) {
                 Properties properties = new Properties();
                 properties.load(reader);
+                String pathTracing = properties.getProperty(PATH_TRACING_ENABLED_KEY);
+                if (pathTracing != null) {
+                    try {
+                        pathTracingEnabled = parseBoolean(pathTracing);
+                    } catch (IllegalArgumentException exception) {
+                        PrimeClient.LOGGER.warn(
+                                "Invalid Prime path-tracing switch '{}'; enabling path tracing",
+                                pathTracing);
+                        rewriteNeeded = true;
+                    }
+                } else {
+                    rewriteNeeded = true;
+                }
                 String postProcessingId = properties.getProperty(MODE_KEY);
                 if (postProcessingId != null) {
                     PostProcessingMode parsed = PostProcessingMode.findById(postProcessingId).orElse(null);
@@ -167,6 +182,7 @@ public final class PrimeConfig {
             }
         }
         settings = new PrimeSettings(
+                pathTracingEnabled,
                 postProcessingMode,
                 quality,
                 sunQuarterSteps,
@@ -178,7 +194,8 @@ public final class PrimeConfig {
                 0L);
         dirty = rewriteNeeded;
         PrimeClient.LOGGER.info(
-                "Prime settings: post-processing {} quality {} (NRD-FSR {}x), sun {} EV, stars {} EV, block lights {} EV, Oklab DRT overexposure {}, default roughness {}",
+                "Prime settings: path tracing {}, post-processing {} quality {} (NRD-FSR {}x), sun {} EV, stars {} EV, block lights {} EV, Oklab DRT overexposure {}, default roughness {}",
+                pathTracingEnabled ? "enabled" : "disabled",
                 postProcessingMode.id(),
                 quality.id(),
                 quality.upscaleRatio(),
@@ -195,6 +212,10 @@ public final class PrimeConfig {
 
     public static PrimeSettings settings() {
         return settings;
+    }
+
+    public static void setPathTracingEnabled(boolean enabled) {
+        update(settings.withPathTracingEnabled(enabled));
     }
 
     public static void setPostProcessingMode(PostProcessingMode mode) {
@@ -226,6 +247,7 @@ public final class PrimeConfig {
     }
 
     public static void restoreDefaults() {
+        setPathTracingEnabled(true);
         setPostProcessingMode(PostProcessingMode.DEFAULT);
         setReconstructionQualityMode(ReconstructionQualityMode.DEFAULT);
         setSunQuarterSteps(LightingSettings.DEFAULT_SUN_QUARTER_STEPS);
@@ -278,7 +300,8 @@ public final class PrimeConfig {
 
     static String serializedContents() {
         PrimeSettings current = settings;
-        return MODE_KEY + "=" + current.postProcessingMode().id() + "\n"
+        return PATH_TRACING_ENABLED_KEY + "=" + current.pathTracingEnabled() + "\n"
+                    + MODE_KEY + "=" + current.postProcessingMode().id() + "\n"
                     + QUALITY_KEY + "=" + current.reconstructionQuality().id() + "\n"
                     + SUN_EV_KEY + "=" + formatEv(current.sunQuarterSteps()) + "\n"
                     + STAR_EV_KEY + "=" + formatStarEv(current.starQuarterSteps()) + "\n"
@@ -288,6 +311,16 @@ public final class PrimeConfig {
                     + formatOverexposure(current.oklabOverexposureSteps()) + "\n"
                     + DEFAULT_ROUGHNESS_KEY + "="
                     + formatRoughness(current.defaultRoughnessSteps()) + "\n";
+    }
+
+    static boolean parseBoolean(String value) {
+        if ("true".equalsIgnoreCase(value)) {
+            return true;
+        }
+        if ("false".equalsIgnoreCase(value)) {
+            return false;
+        }
+        throw new IllegalArgumentException("Boolean setting must be true or false");
     }
 
     private static void update(PrimeSettings replacement) {

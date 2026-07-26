@@ -5,6 +5,7 @@ import com.mojang.blaze3d.platform.InputConstants;
 import com.mojang.blaze3d.systems.RenderSystem;
 import com.mojang.blaze3d.vulkan.VulkanDevice;
 import dev.prime.PrimeClient;
+import dev.prime.config.PrimeConfig;
 import dev.prime.render.fsr.FsrDebugView;
 import dev.prime.render.post.DlssRrDebugView;
 import dev.prime.render.vulkan.VulkanBootstrap;
@@ -49,11 +50,18 @@ public final class RayTracingRuntime {
 
     public void initialize() {
         this.initialized = true;
-        this.tryInitializeRenderer();
+        if (PrimeConfig.settings().pathTracingEnabled()) {
+            this.tryInitializeRenderer();
+        } else {
+            this.states.disabled();
+        }
     }
 
     private void tryInitializeRenderer() {
-        if (this.renderer != null || this.shuttingDown || this.states.current() == RuntimeState.FAILED) {
+        if (this.renderer != null
+                || this.retiringRenderer != null
+                || this.shuttingDown
+                || this.states.current() == RuntimeState.FAILED) {
             return;
         }
         VulkanBootstrap.Snapshot bootstrap = VulkanBootstrap.snapshot();
@@ -89,6 +97,10 @@ public final class RayTracingRuntime {
             return;
         }
         this.updateSessionShortcuts(minecraft);
+        if (!PrimeConfig.settings().pathTracingEnabled()) {
+            this.disableRenderer();
+            return;
+        }
         this.tryInitializeRenderer();
         this.finalizeUnavailableReason();
         this.showFailureNotificationOnce(minecraft);
@@ -170,6 +182,18 @@ public final class RayTracingRuntime {
 
     public boolean screenshotRequested() {
         return this.controls.screenshotRequested();
+    }
+
+    public void setPathTracingEnabled(boolean enabled) {
+        boolean changed = PrimeConfig.settings().pathTracingEnabled() != enabled;
+        PrimeConfig.setPathTracingEnabled(enabled);
+        if (!enabled) {
+            this.requestScreenshot(false);
+        } else if (changed && this.states.current() == RuntimeState.DISABLED) {
+            // Enabling after an explicit stop is a fresh initialization attempt.
+            this.notificationShown = false;
+            this.unavailabilityLogged = false;
+        }
     }
 
     public void requestScreenshot(boolean enabled) {
@@ -328,6 +352,23 @@ public final class RayTracingRuntime {
             }
         } catch (RuntimeException exception) {
             PrimeClient.LOGGER.error("Failed to retire Prime Vulkan resources", exception);
+        }
+    }
+
+    private void disableRenderer() {
+        VulkanRenderer activeRenderer = this.renderer;
+        this.world = null;
+        this.states.disabled();
+        if (activeRenderer == null) {
+            return;
+        }
+        this.renderer = null;
+        try {
+            activeRenderer.close();
+        } catch (RuntimeException exception) {
+            this.retiringRenderer = activeRenderer;
+            PrimeClient.LOGGER.error(
+                    "Failed to stop Prime after path tracing was disabled", exception);
         }
     }
 

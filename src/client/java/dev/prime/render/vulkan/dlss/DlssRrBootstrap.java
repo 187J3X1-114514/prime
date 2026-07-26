@@ -48,7 +48,7 @@ public final class DlssRrBootstrap {
                     "DLSS RR Vulkan device has not been probed",
                     true,
                     false,
-                    state.initializationAttempted());
+                    state.initialization());
             PrimeClient.LOGGER.info(
                     "Enabled {} NVIDIA NGX Vulkan instance extension(s)", required.size());
         } catch (RuntimeException | LinkageError exception) {
@@ -81,7 +81,7 @@ public final class DlssRrBootstrap {
                     "NVIDIA NGX has not been initialized",
                     true,
                     true,
-                    state.initializationAttempted());
+                    state.initialization());
             PrimeClient.LOGGER.info(
                     "Enabled {} NVIDIA NGX Vulkan device extension(s)", required.size());
         } catch (RuntimeException | LinkageError exception) {
@@ -90,15 +90,9 @@ public final class DlssRrBootstrap {
     }
 
     public static synchronized Optional<DlssRrNative.Context> initialize(VulkanContext context) {
-        if (!state.deviceReady() || state.initializationAttempted()) {
+        if (!state.initialization().canInitialize(state.deviceReady())) {
             return Optional.empty();
         }
-        state = new State(
-                state.instanceExtensions(),
-                state.unavailableReason(),
-                state.instanceReady(),
-                state.deviceReady(),
-                true);
         try {
             DlssRrNative.Context ngx = DlssRrNative.initialize(context);
             state = new State(
@@ -106,12 +100,41 @@ public final class DlssRrBootstrap {
                     "",
                     state.instanceReady(),
                     state.deviceReady(),
-                    true);
+                    state.initialization().initialized());
             PrimeClient.LOGGER.info("NVIDIA NGX DLSS Ray Reconstruction is available");
             return Optional.of(ngx);
         } catch (RuntimeException | LinkageError exception) {
             disable("NVIDIA NGX DLSS RR initialization failed", exception);
             return Optional.empty();
+        }
+    }
+
+    /**
+     * Releases the sole active NGX context and re-arms initialization for an in-game renderer
+     * restart. A previously failed RR session remains disabled after its context is retired.
+     */
+    public static synchronized void release(DlssRrNative.Context context) {
+        java.util.Objects.requireNonNull(context, "context");
+        if (state.initialization() != Initialization.ACTIVE) {
+            throw new IllegalStateException("No NVIDIA NGX context is active");
+        }
+        RuntimeException failure = null;
+        try {
+            context.close();
+        } catch (RuntimeException exception) {
+            failure = exception;
+            disable("NVIDIA NGX shutdown failed", exception);
+        }
+        state = new State(
+                state.instanceExtensions(),
+                state.deviceReady()
+                        ? "NVIDIA NGX has not been initialized"
+                        : state.unavailableReason(),
+                state.instanceReady(),
+                state.deviceReady(),
+                state.initialization().released());
+        if (failure != null) {
+            throw failure;
         }
     }
 
@@ -155,7 +178,7 @@ public final class DlssRrBootstrap {
                 reason,
                 false,
                 false,
-                state.initializationAttempted());
+                state.initialization());
         if (cause == null) {
             PrimeClient.LOGGER.warn("DLSS RR unavailable for this session: {}", reason);
         } else {
@@ -168,10 +191,11 @@ public final class DlssRrBootstrap {
             String unavailableReason,
             boolean instanceReady,
             boolean deviceReady,
-            boolean initializationAttempted) {
+            Initialization initialization) {
         private State {
             instanceExtensions = List.copyOf(instanceExtensions);
             java.util.Objects.requireNonNull(unavailableReason, "unavailableReason");
+            java.util.Objects.requireNonNull(initialization, "initialization");
         }
 
         private static State initial() {
@@ -180,7 +204,30 @@ public final class DlssRrBootstrap {
                     "DLSS RR has not been probed",
                     false,
                     false,
-                    false);
+                    Initialization.IDLE);
+        }
+    }
+
+    enum Initialization {
+        IDLE,
+        ACTIVE;
+
+        boolean canInitialize(boolean deviceReady) {
+            return deviceReady && this == IDLE;
+        }
+
+        Initialization initialized() {
+            if (this != IDLE) {
+                throw new IllegalStateException("NVIDIA NGX is already initialized");
+            }
+            return ACTIVE;
+        }
+
+        Initialization released() {
+            if (this != ACTIVE) {
+                throw new IllegalStateException("NVIDIA NGX is not initialized");
+            }
+            return IDLE;
         }
     }
 }

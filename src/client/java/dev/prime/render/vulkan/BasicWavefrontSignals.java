@@ -11,7 +11,9 @@ import org.lwjgl.vulkan.VkImageMemoryBarrier2;
 
 /** Minimal image-backed wavefront signal set for screenshot scratch and unfiltered presentation. */
 public final class BasicWavefrontSignals implements WavefrontSignals, Destroyable {
-    private static final int USAGE = VK12.VK_IMAGE_USAGE_STORAGE_BIT;
+    private static final int SIGNAL_USAGE = VK12.VK_IMAGE_USAGE_STORAGE_BIT;
+    private static final int LINEAR_OUTPUT_USAGE =
+            SIGNAL_USAGE | VK12.VK_IMAGE_USAGE_SAMPLED_BIT;
 
     private final VulkanImage noisyDiffuse;
     private final VulkanImage noisySpecular;
@@ -86,7 +88,7 @@ public final class BasicWavefrontSignals implements WavefrontSignals, Destroyabl
                     label + " sun penumbra");
             if (hasLinearOutput) {
                 add(context, images, width, height, VK12.VK_FORMAT_R16G16B16A16_SFLOAT,
-                        label + " linear HDR output");
+                        LINEAR_OUTPUT_USAGE, label + " linear HDR output");
             }
             return new BasicWavefrontSignals(images, hasLinearOutput);
         } catch (RuntimeException exception) {
@@ -104,7 +106,18 @@ public final class BasicWavefrontSignals implements WavefrontSignals, Destroyabl
             int height,
             int format,
             String label) {
-        images.add(context.createImage2D(width, height, format, USAGE, label));
+        add(context, images, width, height, format, SIGNAL_USAGE, label);
+    }
+
+    private static void add(
+            VulkanContext context,
+            ArrayList<VulkanImage> images,
+            int width,
+            int height,
+            int format,
+            int usage,
+            String label) {
+        images.add(context.createImage2D(width, height, format, usage, label));
     }
 
     public void prepareForRayTrace(org.lwjgl.vulkan.VkCommandBuffer commandBuffer) {
@@ -158,8 +171,8 @@ public final class BasicWavefrontSignals implements WavefrontSignals, Destroyabl
     @Override public VulkanImage sunPenumbra() { return this.sunPenumbra; }
     VulkanImage linearOutput() { return this.linearOutput; }
 
-    static int imageUsage() {
-        return USAGE;
+    static int imageUsage(boolean linearOutput) {
+        return linearOutput ? LINEAR_OUTPUT_USAGE : SIGNAL_USAGE;
     }
 
     static long destinationStages(boolean hasLinearOutput, boolean linearOutput) {

@@ -1,6 +1,7 @@
 package dev.prime.render.vulkan;
 
 import com.mojang.blaze3d.vulkan.Destroyable;
+import dev.prime.render.vulkan.nrd.NrdDiagnostics;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.ByteBuffer;
@@ -204,7 +205,7 @@ final class NativeDebugPresentPass implements Destroyable {
         if (source < 0 || source >= this.descriptorSets.length) {
             throw new IllegalArgumentException("Invalid native debug source " + source);
         }
-        if (presentation < 0 || presentation > 2) {
+        if (presentation < 0 || presentation > NrdDiagnostics.MAX_PRESENTATION) {
             throw new IllegalArgumentException(
                     "Invalid native debug presentation " + presentation);
         }

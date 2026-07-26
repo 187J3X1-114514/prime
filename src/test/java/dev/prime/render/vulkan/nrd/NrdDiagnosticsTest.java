@@ -42,6 +42,11 @@ final class NrdDiagnosticsTest {
         assertEquals(1, NrdDiagnostics.Mode.RAW_NUMERICAL.presentation());
         assertEquals(2, NrdDiagnostics.Mode.RAW_NUMERICAL_STAGE.presentation());
         assertEquals(3, NrdDiagnostics.Mode.RAW_NUMERICAL_FIELD.presentation());
+        for (NrdDiagnostics.Mode mode : NrdDiagnostics.Mode.values()) {
+            if (mode != NrdDiagnostics.Mode.OFF) {
+                assertTrue(mode.presentation() <= NrdDiagnostics.MAX_PRESENTATION);
+            }
+        }
         assertTrue(NrdDiagnostics.Mode.RAW_NUMERICAL.rawNumerical());
         assertTrue(NrdDiagnostics.Mode.RAW_NUMERICAL_STAGE.rawNumerical());
         assertTrue(NrdDiagnostics.Mode.RAW_NUMERICAL_FIELD.rawNumerical());

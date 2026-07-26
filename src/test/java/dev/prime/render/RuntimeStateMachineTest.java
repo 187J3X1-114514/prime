@@ -42,4 +42,24 @@ final class RuntimeStateMachineTest {
         states.worldStreaming(true);
         assertEquals(RuntimeState.ACTIVE, states.current());
     }
+
+    @Test
+    void explicitDisableReturnsToVanillaAndPermitsFreshInitialization() {
+        RuntimeStateMachine states = new RuntimeStateMachine();
+        states.rendererReady();
+        states.worldStreaming(true);
+        states.disabled();
+        assertEquals(RuntimeState.DISABLED, states.current());
+        states.worldStreaming(true);
+        states.worldAbsent();
+        assertEquals(RuntimeState.DISABLED, states.current());
+
+        states.rendererReady();
+        assertEquals(RuntimeState.WAITING_FOR_WORLD, states.current());
+
+        states.fail();
+        states.disabled();
+        states.rendererReady();
+        assertEquals(RuntimeState.WAITING_FOR_WORLD, states.current());
+    }
 }

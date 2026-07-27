@@ -9,6 +9,7 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.Objects;
 import org.joml.Matrix4fc;
 import org.lwjgl.system.APIUtil;
 import org.lwjgl.system.JNI;
@@ -57,7 +58,6 @@ public final class NrdNative {
     private static final int PIPELINE_SIZE = 288;
     private static final int PIPELINE_RANGE_SIZE = 8;
     private static final int TEXTURE_INFO_SIZE = 8;
-    private static final int FRAME_SETTINGS_SIZE = 320;
     private static final int DISPATCH_SIZE = 48;
     private static final int RESOURCE_SIZE = 16;
     private static final int DISPATCH_LIST_SIZE = 16;
@@ -322,29 +322,10 @@ public final class NrdNative {
         public void setFrameSettings(FrameSettings settings) {
             long instance = this.requireOpen();
             try (MemoryStack stack = MemoryStack.stackPush()) {
-                ByteBuffer input = stack.calloc(FRAME_SETTINGS_SIZE).order(ByteOrder.nativeOrder());
-                putMatrix(input, 0, settings.viewToClip());
-                putMatrix(input, 64, settings.viewToClipPrevious());
-                putMatrix(input, 128, settings.worldToView());
-                putMatrix(input, 192, settings.worldToViewPrevious());
-                putVector2(input, 256, settings.cameraJitterX(), settings.cameraJitterY());
-                putVector2(
-                        input,
-                        264,
-                        settings.previousCameraJitterX(),
-                        settings.previousCameraJitterY());
-                input.putInt(272, settings.width());
-                input.putInt(276, settings.height());
-                input.putInt(280, settings.previousWidth());
-                input.putInt(284, settings.previousHeight());
-                input.putInt(288, settings.frameIndex());
-                input.putInt(292, settings.restart() ? 1 : 0);
-                input.putFloat(296, settings.timeDeltaMilliseconds());
-                input.putFloat(300, settings.denoisingRange());
-                input.putInt(304, settings.enableValidation() ? 1 : 0);
-                input.putFloat(308, settings.sunDirectionX());
-                input.putFloat(312, settings.sunDirectionY());
-                input.putFloat(316, settings.sunDirectionZ());
+                ByteBuffer input = stack.calloc(
+                                NrdFrameSettingsConstants.SIZE)
+                        .order(ByteOrder.nativeOrder());
+                NrdFrameSettingsConstants.write(input, settings);
                 checkResult(
                         JNI.invokePPI(
                                 instance,
@@ -392,14 +373,6 @@ public final class NrdNative {
             return this.handle;
         }
 
-        private static void putMatrix(ByteBuffer target, int offset, Matrix4fc matrix) {
-            matrix.get(offset, target);
-        }
-
-        private static void putVector2(ByteBuffer target, int offset, float x, float y) {
-            target.putFloat(offset, x);
-            target.putFloat(offset + Float.BYTES, y);
-        }
     }
 
     public record Description(
@@ -544,7 +517,64 @@ public final class NrdNative {
             boolean enableValidation,
             float sunDirectionX,
             float sunDirectionY,
-            float sunDirectionZ) {}
+            float sunDirectionZ) {
+        public FrameSettings {
+            Objects.requireNonNull(viewToClip, "viewToClip");
+            Objects.requireNonNull(
+                    viewToClipPrevious, "viewToClipPrevious");
+            Objects.requireNonNull(worldToView, "worldToView");
+            Objects.requireNonNull(
+                    worldToViewPrevious, "worldToViewPrevious");
+            if (!viewToClip.isFinite()
+                    || !viewToClipPrevious.isFinite()
+                    || !worldToView.isFinite()
+                    || !worldToViewPrevious.isFinite()) {
+                throw new IllegalArgumentException(
+                        "NRD frame matrices must be finite");
+            }
+            if (!validJitter(cameraJitterX)
+                    || !validJitter(cameraJitterY)
+                    || !validJitter(previousCameraJitterX)
+                    || !validJitter(previousCameraJitterY)) {
+                throw new IllegalArgumentException(
+                        "NRD jitter must remain inside one source pixel");
+            }
+            if (width <= 0
+                    || height <= 0
+                    || previousWidth <= 0
+                    || previousHeight <= 0
+                    || width > 65_535
+                    || height > 65_535
+                    || previousWidth > 65_535
+                    || previousHeight > 65_535
+                    || frameIndex < 0) {
+                throw new IllegalArgumentException(
+                        "NRD extents or frame index are invalid");
+            }
+            if (!Float.isFinite(timeDeltaMilliseconds)
+                    || timeDeltaMilliseconds < 0.0F
+                    || timeDeltaMilliseconds
+                            > dev.prime.render.FrameTime
+                                    .MAXIMUM_DELTA_MILLISECONDS
+                    || !Float.isFinite(denoisingRange)
+                    || denoisingRange <= 0.0F) {
+                throw new IllegalArgumentException(
+                        "NRD time delta or denoising range is invalid");
+            }
+            float sunLengthSquared = sunDirectionX * sunDirectionX
+                    + sunDirectionY * sunDirectionY
+                    + sunDirectionZ * sunDirectionZ;
+            if (!Float.isFinite(sunLengthSquared)
+                    || Math.abs(sunLengthSquared - 1.0F) > 1.0e-4F) {
+                throw new IllegalArgumentException(
+                        "NRD sun direction must be finite and unit length");
+            }
+        }
+
+        private static boolean validJitter(float value) {
+            return Float.isFinite(value) && Math.abs(value) <= 0.5F;
+        }
+    }
 
     private static final class Holder {
         private static final NrdNative INSTANCE = new NrdNative();

@@ -134,6 +134,19 @@ public final class FrameCamera {
         return this.renderZ;
     }
 
+    /** True when every captured matrix and physical/effective position can cross a GPU boundary. */
+    public boolean isFinite() {
+        return this.projection.isFinite()
+                && this.viewRotation.isFinite()
+                && this.inverseViewProjection.isFinite()
+                && Double.isFinite(this.x)
+                && Double.isFinite(this.y)
+                && Double.isFinite(this.z)
+                && Double.isFinite(this.renderX)
+                && Double.isFinite(this.renderY)
+                && Double.isFinite(this.renderZ);
+    }
+
     static FrameCamera tryCreate(
             Matrix4fc renderedProjection,
             Matrix4fc baseProjection,

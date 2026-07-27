@@ -1,7 +1,6 @@
 package dev.prime.render.vulkan.fsr;
 
-import dev.prime.render.FrameCamera;
-import dev.prime.render.fsr.FsrDebugView;
+import dev.prime.render.fsr.FsrDispatchPlan;
 import dev.prime.render.fsr.FsrSettings;
 import dev.prime.render.vulkan.NativeRuntimeFiles;
 import dev.prime.render.vulkan.VulkanContext;
@@ -57,7 +56,6 @@ final class FsrNative {
             | CREATE_FLAG_DEPTH_INVERTED
             | CREATE_FLAG_DEPTH_INFINITE;
 
-    private static final int DISPATCH_FLAG_DEBUG_VIEW = 1 << 0;
     private static final int RESOURCE_TYPE_TEXTURE_2D = 2;
     private static final int RESOURCE_USAGE_READ_ONLY = 0;
     private static final int RESOURCE_USAGE_UAV = 1 << 1;
@@ -251,32 +249,7 @@ final class FsrNative {
             putResource(description, 264, dispatch.transparencyComposition(), false);
             putResource(description, 312, dispatch.output(), true);
 
-            FsrSettings.Jitter nativeJitter = dispatch.jitter().forFsrDispatch();
-            putVector2(description, 360, nativeJitter.x(), nativeJitter.y());
-            // Prime stores current-to-previous motion as normalized UV displacement. The public
-            // FidelityFX host API divides this scale by the motion-vector target extent before
-            // shaders consume it, so passing the render extent produces the required internal
-            // scale of (1, 1). These are deliberately not the old direct-shader constants.
-            putVector2(
-                    description, 368, (float) dispatch.renderWidth(), (float) dispatch.renderHeight());
-            putExtent(description, 376, dispatch.renderWidth(), dispatch.renderHeight());
-            putExtent(description, 384, dispatch.displayWidth(), dispatch.displayHeight());
-            description.put(392, (byte) 1);
-            description.putFloat(396, FsrSettings.RCAS_SHARPNESS);
-            description.putFloat(400, dispatch.frameTimeMilliseconds());
-            description.putFloat(404, FsrSettings.EXPOSURE);
-            description.put(408, dispatch.reset() ? (byte) 1 : (byte) 0);
-            // FidelityFX expresses a reversed infinite projection by swapping the public near/far
-            // values: cameraNear is FLT_MAX and cameraFar is the physical near distance.
-            description.putFloat(412, Float.MAX_VALUE);
-            description.putFloat(416, Fsr3Upscaler.NEAR_PLANE);
-            description.putFloat(420, verticalFieldOfView(dispatch.camera()));
-            description.putFloat(424, 1.0F);
-            description.putInt(
-                    428,
-                    dispatch.debugView() == FsrDebugView.OVERVIEW
-                            ? DISPATCH_FLAG_DEBUG_VIEW
-                            : 0);
+            FsrDispatchConstants.write(description, dispatch.plan());
 
             ByteBuffer contextPointer = stack.calloc(Long.BYTES).order(ByteOrder.nativeOrder());
             contextPointer.putLong(0, handle);
@@ -308,11 +281,6 @@ final class FsrNative {
     private static void putExtent(ByteBuffer buffer, int offset, int width, int height) {
         buffer.putInt(offset, width);
         buffer.putInt(offset + Integer.BYTES, height);
-    }
-
-    private static void putVector2(ByteBuffer buffer, int offset, float x, float y) {
-        buffer.putFloat(offset, x);
-        buffer.putFloat(offset + Float.BYTES, y);
     }
 
     private static void putNullResource(ByteBuffer buffer, int offset) {
@@ -347,15 +315,6 @@ final class FsrNative {
             default -> throw new IllegalArgumentException(
                     "Unsupported FidelityFX Vulkan image format " + vkFormat);
         };
-    }
-
-    private static float verticalFieldOfView(FrameCamera camera) {
-        float inverseCotangent = Math.abs(1.0F / camera.projection().m11());
-        float fieldOfView = 2.0F * (float) Math.atan(inverseCotangent);
-        if (!Float.isFinite(fieldOfView) || fieldOfView <= 0.0F || fieldOfView > Math.PI) {
-            throw new IllegalArgumentException("FSR camera projection has an invalid vertical FOV");
-        }
-        return fieldOfView;
     }
 
     static boolean isSupportedPlatform() {
@@ -405,21 +364,13 @@ final class FsrNative {
     }
 
     record Dispatch(
-            FrameCamera camera,
             VulkanImage color,
             VulkanImage depth,
             VulkanImage motion,
             VulkanImage reactive,
             VulkanImage transparencyComposition,
             VulkanImage output,
-            int renderWidth,
-            int renderHeight,
-            int displayWidth,
-            int displayHeight,
-            FsrSettings.Jitter jitter,
-            float frameTimeMilliseconds,
-            boolean reset,
-            FsrDebugView debugView) {
+            FsrDispatchPlan plan) {
     }
 
     static final class Instance implements AutoCloseable {

@@ -242,6 +242,13 @@
     "motionSpace": "screen-pixel-2.5d",
     "signalSpace": "demodulated-linear-rec2020-d65"
   },
+  "fsrContract": {
+    "version": "3.1.4",
+    "motionSpace": "normalized-uv-current-to-previous",
+    "depthSpace": "reversed-infinite",
+    "nearPlane": 0.05,
+    "viewSpaceToMetersFactor": 1.0
+  },
   "colorContract": {
     "workingSpace": "linear-rec2020-d65",
     "textureEncoding": "srgb",

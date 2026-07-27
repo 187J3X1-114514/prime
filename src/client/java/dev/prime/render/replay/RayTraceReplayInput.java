@@ -38,6 +38,10 @@ public record RayTraceReplayInput(
         Objects.requireNonNull(postProcessingMode, "postProcessingMode");
         Objects.requireNonNull(lighting, "lighting");
         Objects.requireNonNull(material, "material");
+        if (!camera.isFinite()) {
+            throw new IllegalArgumentException(
+                    "Ray-tracing replay camera must be finite");
+        }
         if (width <= 0 || height <= 0) {
             throw new IllegalArgumentException("Ray-tracing extent must be positive");
         }

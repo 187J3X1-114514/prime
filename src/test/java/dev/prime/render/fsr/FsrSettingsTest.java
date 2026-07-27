@@ -2,6 +2,7 @@ package dev.prime.render.fsr;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.Map;
@@ -82,5 +83,18 @@ final class FsrSettingsTest {
             assertEquals(mode, FsrDebugView.fromId(mode.id()));
         }
         assertEquals(FsrDebugView.OFF, FsrDebugView.fromId("future_view"));
+    }
+
+    @Test
+    void valueTypesRejectOutOfContractExtentsAndJitter() {
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> new FsrSettings.Extent(0, 1));
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> new FsrSettings.Jitter(Float.NaN, 0.0F));
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> new FsrSettings.Jitter(0.0F, -0.5001F));
     }
 }

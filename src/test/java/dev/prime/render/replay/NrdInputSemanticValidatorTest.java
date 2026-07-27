@@ -36,6 +36,57 @@ final class NrdInputSemanticValidatorTest {
     }
 
     @Test
+    void reportsFsrDepthMotionAndUnusedChannelContractViolations() {
+        RenderReplayCapture source = capture(false, false);
+        int[] prepared = source.preparedNrd().words();
+        set(
+                prepared,
+                RenderStageSchema.PREPARED_NRD,
+                "fsr.depth",
+                0,
+                2.0F);
+        set(
+                prepared,
+                RenderStageSchema.PREPARED_NRD,
+                "fsr.motion",
+                0,
+                0.25F);
+        set(
+                prepared,
+                RenderStageSchema.PREPARED_NRD,
+                "fsr.motion",
+                2,
+                1.0F);
+        RenderReplayCapture invalid = new RenderReplayCapture(
+                source.platform(),
+                source.binary(),
+                source.frame(),
+                source.nrdPreparation(),
+                source.rawWavefront(),
+                new CapturedRenderStage(
+                        RenderStageSchema.PREPARED_NRD,
+                        1,
+                        1,
+                        prepared));
+
+        NrdInputSemanticValidator.Report report =
+                NrdInputSemanticValidator.validate(invalid);
+
+        assertFalse(report.valid());
+        assertTrue(report.violations().stream().anyMatch(
+                violation -> violation.signal().equals("fsr.depth")
+                        && violation.reason().contains(
+                                "reversed-infinite")));
+        assertTrue(report.violations().stream().anyMatch(
+                violation -> violation.signal().equals("fsr.motion")
+                        && violation.reason().contains(
+                                "current-to-previous")));
+        assertTrue(report.violations().stream().anyMatch(
+                violation -> violation.signal().equals("fsr.motion")
+                        && violation.reason().contains("unused")));
+    }
+
+    @Test
     void validatesExplicitHistoryTransitionAndFrameIndex() {
         RenderReplayCapture first = capture(false, false);
         RenderReplayCapture second = withPreparation(

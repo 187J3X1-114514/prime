@@ -101,6 +101,17 @@ final class NrdTemporalStateTest {
                         Float.NaN,
                         0.0F,
                         false));
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> input(
+                        camera(0.0),
+                        1L,
+                        1L,
+                        2L,
+                        NOON,
+                        0.5001F,
+                        0.0F,
+                        false));
     }
 
     @Test

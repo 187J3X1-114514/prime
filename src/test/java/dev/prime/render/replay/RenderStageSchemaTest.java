@@ -37,5 +37,11 @@ final class RenderStageSchemaTest {
         assertEquals(
                 VK12.VK_FORMAT_R16_SFLOAT,
                 schema.format(schema.signalIndex("sun.penumbra")));
+        assertEquals(
+                VK12.VK_FORMAT_R32_SFLOAT,
+                schema.format(schema.signalIndex("fsr.depth")));
+        assertEquals(
+                VK12.VK_FORMAT_R16G16B16A16_SFLOAT,
+                schema.format(schema.signalIndex("fsr.motion")));
     }
 }

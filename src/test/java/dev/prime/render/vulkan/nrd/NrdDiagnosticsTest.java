@@ -53,6 +53,9 @@ final class NrdDiagnosticsTest {
         assertFalse(NrdDiagnostics.Mode.REPROJECTION_ERROR.rawNumerical());
         for (NrdDiagnostics.Mode mode : NrdDiagnostics.Mode.values()) {
             assertEquals(mode, NrdDiagnostics.Mode.fromId(mode.id()));
+            assertTrue(
+                    mode.outputSelector()
+                            <= NrdDiagnostics.MAX_OUTPUT_SELECTOR);
         }
     }
 

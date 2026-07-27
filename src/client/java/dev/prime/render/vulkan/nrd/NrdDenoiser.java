@@ -126,7 +126,9 @@ public final class NrdDenoiser implements Destroyable {
                         images.reflectionNoisySpecular,
                         images.reflectionNoisyDiffuseSh1,
                         images.reflectionNoisySpecularSh1),
-                images.sunPenumbra);
+                images.sunPenumbra,
+                images.fsrDepth,
+                images.fsrMotion);
         this.nearestSampler = nearestSampler;
         this.linearSampler = linearSampler;
         this.pipelines = pipelines;
@@ -1920,13 +1922,14 @@ public final class NrdDenoiser implements Destroyable {
                         stack.longs(this.descriptorSet),
                         null);
                 ByteBuffer push = stack.malloc(MOTION_PUSH_SIZE).order(ByteOrder.nativeOrder());
-                this.currentClipToWorld.get(0, push);
-                this.previousWorldToClip.get(64, push);
-                this.previousRenderedWorldToClip.get(128, push);
-                push.putInt(ShaderAbi.NRD_MOTION_PUSH_DIAGNOSTIC_MODE_OFFSET, diagnosticMode);
-                int jitterOffset = ShaderAbi.NRD_MOTION_PUSH_CURRENT_JITTER_PIXELS_OFFSET;
-                push.putFloat(jitterOffset, cameraJitterX);
-                push.putFloat(jitterOffset + Float.BYTES, cameraJitterY);
+                NrdMotionConstants.write(
+                        push,
+                        this.currentClipToWorld,
+                        this.previousWorldToClip,
+                        this.previousRenderedWorldToClip,
+                        diagnosticMode,
+                        cameraJitterX,
+                        cameraJitterY);
                 VK12.vkCmdPushConstants(
                         commandBuffer,
                         this.pipelineLayout,

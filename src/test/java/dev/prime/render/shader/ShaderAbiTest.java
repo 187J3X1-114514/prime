@@ -80,6 +80,13 @@ final class ShaderAbiTest {
         assertEquals("oklab-drt", ShaderAbi.DEFAULT_DISPLAY_TRANSFORM);
         assertEquals(1.0F, ShaderAbi.DISPLAY_EXPOSURE);
         assertEquals("screen-pixel-2.5d", ShaderAbi.NRD_MOTION_SPACE);
+        assertEquals("3.1.4", ShaderAbi.FSR_VERSION);
+        assertEquals(
+                "normalized-uv-current-to-previous",
+                ShaderAbi.FSR_MOTION_SPACE);
+        assertEquals("reversed-infinite", ShaderAbi.FSR_DEPTH_SPACE);
+        assertEquals(0.05F, ShaderAbi.FSR_NEAR_PLANE);
+        assertEquals(1.0F, ShaderAbi.FSR_VIEW_SPACE_TO_METERS_FACTOR);
         assertEquals(
                 "dual-reblur-diffuse-specular-sh-plus-sigma-sun-shadow",
                 ShaderAbi.NRD_DENOISER);

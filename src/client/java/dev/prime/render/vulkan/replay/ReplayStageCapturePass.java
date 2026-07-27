@@ -151,7 +151,9 @@ public final class ReplayStageCapturePass implements Destroyable {
                         reflection.noisySpecular(),
                         reflection.noisyDiffuseSh1(),
                         reflection.noisySpecularSh1(),
-                        frame.sunPenumbra()));
+                        frame.sunPenumbra(),
+                        frame.fsrDepth(),
+                        frame.fsrMotion()));
     }
 
     private static ReplayStageCapturePass create(

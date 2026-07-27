@@ -3,6 +3,7 @@
 
 #include "atmosphere.glsl"
 #include "display_transform.glsl"
+#include "fsr_input.glsl"
 #include "nrd_common.glsl"
 #include "nrd_sh.glsl"
 
@@ -337,7 +338,7 @@ void main() {
     imageStore(
             primeFsrTransparencyCompositionMask,
             ivec2(pixel),
-            vec4(primeNrdSanitizeUnit(transparencyAndComposition, 0.0)));
+            vec4(primeFsrSanitizeMask(transparencyAndComposition)));
     if (primeCompositePush.diagnosticMode == PRIME_DIAGNOSTIC_SPECULAR_INPUT) {
         imageStore(
                 primeCompositeOutput,

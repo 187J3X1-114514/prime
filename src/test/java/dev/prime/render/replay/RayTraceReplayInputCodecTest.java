@@ -111,6 +111,22 @@ final class RayTraceReplayInputCodecTest {
                 () -> RayTraceReplayInputCodec.decode(encoded));
     }
 
+    @Test
+    void decodeRejectsANonFiniteCamera() {
+        Fixture fixture = input();
+        byte[] encoded = RayTraceReplayInputCodec.encode(
+                RayTraceReplayInput.capture(fixture.input(), fixture.scene()));
+        int sceneBytes = 3 * Integer.BYTES + 3 * Long.BYTES;
+        int cameraOffset = 2 * Integer.BYTES + sceneBytes;
+        ByteBuffer.wrap(encoded)
+                .order(ByteOrder.LITTLE_ENDIAN)
+                .putFloat(cameraOffset, Float.NaN);
+
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> RayTraceReplayInputCodec.decode(encoded));
+    }
+
     private static IntegratorFrameInput withSampleIndex(
             IntegratorFrameInput input, int sampleIndex) {
         return new IntegratorFrameInput(
@@ -161,7 +177,10 @@ final class RayTraceReplayInputCodecTest {
                 camera,
                 320,
                 180,
-                new SunDirection(-0.5F, 0.75F, 0.25F),
+                new SunDirection(
+                        -0.5345225F,
+                        0.8017837F,
+                        0.26726124F),
                 0x1234_5678,
                 37,
                 19,

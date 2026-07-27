@@ -1,6 +1,7 @@
 package dev.prime.render.replay;
 
 import dev.prime.render.FrameCamera;
+import dev.prime.render.shader.ShaderAbi;
 import dev.prime.render.vulkan.nrd.NrdCameraTransform;
 import dev.prime.render.vulkan.nrd.NrdDiagnostics;
 import dev.prime.render.vulkan.nrd.NrdFrameHistory;
@@ -79,6 +80,22 @@ public final class NrdInputSemanticValidator {
                 "sun.penumbra",
                 1,
                 "negative sun blocker distance");
+        finite(violations, prepared, "fsr.depth", 1);
+        range(
+                violations,
+                prepared,
+                "fsr.depth",
+                1,
+                0.0F,
+                1.0F);
+        finite(violations, prepared, "fsr.motion", 4);
+        range(
+                violations,
+                prepared,
+                "fsr.motion",
+                2,
+                -1.0F,
+                1.0F);
 
         validateClearedBranch(
                 violations, raw, prepared, "primary");
@@ -88,10 +105,14 @@ public final class NrdInputSemanticValidator {
                 violations, capture, "primary", false);
         validateMotionProjection(
                 violations, capture, "reflection", true);
+        validateFsrGuideProjection(violations, capture);
         if (capture.nrdPreparation().restart()) {
-            validateRestartMotion(violations, prepared, "primary.motion");
             validateRestartMotion(
-                    violations, prepared, "reflection.motion");
+                    violations, prepared, "primary.motion", 3);
+            validateRestartMotion(
+                    violations, prepared, "reflection.motion", 3);
+            validateRestartMotion(
+                    violations, prepared, "fsr.motion", 2);
         }
         return violations.report();
     }
@@ -361,8 +382,9 @@ public final class NrdInputSemanticValidator {
     private static void validateRestartMotion(
             Collector violations,
             CapturedRenderStage stage,
-            String signal) {
-        forEach(stage, signal, 3, (x, y, channel, value) -> {
+            String signal,
+            int channels) {
+        forEach(stage, signal, channels, (x, y, channel, value) -> {
             if (Float.isFinite(value)
                     && Math.abs(value) > ZERO_MOTION_TOLERANCE) {
                 violations.add(
@@ -375,6 +397,144 @@ public final class NrdInputSemanticValidator {
                         stage.rawWord(signal, x, y, channel));
             }
         });
+    }
+
+    private static void validateFsrGuideProjection(
+            Collector violations,
+            RenderReplayCapture capture) {
+        CapturedRenderStage raw = capture.rawWavefront();
+        CapturedRenderStage prepared = capture.preparedNrd();
+        NrdPreparationReplayInput temporal = capture.nrdPreparation();
+        FrameCamera current = temporal.currentCamera().materialize();
+        FrameCamera history = temporal.historyCamera().materialize();
+        Matrix4f currentClipToWorld =
+                NrdCameraTransform.currentClipToWorld(current);
+        Matrix4f previousWorldToClip =
+                NrdCameraTransform.previousWorldToClip(current, history);
+        Vector3f cameraForward = motionRayDirection(
+                currentClipToWorld, 0.5F, 0.5F);
+        for (int y = 0; y < raw.height(); y++) {
+            for (int x = 0; x < raw.width(); x++) {
+                float sampleU =
+                        (x + 0.5F + temporal.currentJitterX())
+                                / raw.width();
+                float sampleV =
+                        (y + 0.5F + temporal.currentJitterY())
+                                / raw.height();
+                Vector3f position = new Vector3f(
+                        raw.value("display.position", x, y, 0),
+                        raw.value("display.position", x, y, 1),
+                        raw.value("display.position", x, y, 2));
+                boolean sky = position.x == 0.0F
+                        && position.y == 0.0F
+                        && position.z == 0.0F;
+                float expectedDepth = 0.0F;
+                Vector4f previousClip;
+                if (sky) {
+                    Vector3f ray = motionRayDirection(
+                            currentClipToWorld, sampleU, sampleV);
+                    previousClip = previousWorldToClip.transform(
+                            new Vector4f(ray.x, ray.y, ray.z, 0.0F));
+                } else {
+                    float viewZ = position.dot(cameraForward);
+                    viewZ = Float.isFinite(viewZ) && viewZ > 0.0F
+                            ? Math.min(viewZ, SKY_VIEW_Z)
+                            : SKY_VIEW_Z;
+                    expectedDepth = Math.clamp(
+                            ShaderAbi.FSR_NEAR_PLANE / viewZ,
+                            0.0F,
+                            1.0F);
+                    previousClip = previousWorldToClip.transform(
+                            new Vector4f(
+                                    position.x,
+                                    position.y,
+                                    position.z,
+                                    1.0F));
+                }
+                float actualDepth =
+                        prepared.value("fsr.depth", x, y, 0);
+                if (Float.isFinite(actualDepth)
+                        && Math.abs(actualDepth - expectedDepth)
+                                > 1.0e-6F) {
+                    violations.add(
+                            prepared.schema(),
+                            "fsr.depth",
+                            x,
+                            y,
+                            0,
+                            "depth disagrees with the reversed-infinite projection",
+                            prepared.rawWord(
+                                    "fsr.depth", x, y, 0));
+                }
+
+                float expectedX = 0.0F;
+                float expectedY = 0.0F;
+                if (previousClip.isFinite()
+                        && Math.abs(previousClip.w) > 1.0e-6F) {
+                    float previousU =
+                            previousClip.x / previousClip.w
+                                    * 0.5F
+                                    + 0.5F;
+                    float previousV =
+                            previousClip.y / previousClip.w
+                                    * -0.5F
+                                    + 0.5F;
+                    expectedX = Math.clamp(
+                            previousU - sampleU, -1.0F, 1.0F);
+                    expectedY = Math.clamp(
+                            previousV - sampleV, -1.0F, 1.0F);
+                }
+                float[] expected = {
+                    Float.float16ToFloat(
+                            Float.floatToFloat16(expectedX)),
+                    Float.float16ToFloat(
+                            Float.floatToFloat16(expectedY))
+                };
+                for (int channel = 0;
+                        channel < expected.length;
+                        channel++) {
+                    float actual = prepared.value(
+                            "fsr.motion", x, y, channel);
+                    if (Float.isFinite(actual)
+                            && Math.abs(actual - expected[channel])
+                                    > 2.0e-5F) {
+                        violations.add(
+                                prepared.schema(),
+                                "fsr.motion",
+                                x,
+                                y,
+                                channel,
+                                "motion disagrees with current-to-previous normalized UV",
+                                prepared.rawWord(
+                                        "fsr.motion",
+                                        x,
+                                        y,
+                                        channel));
+                    }
+                }
+                for (int channel = 2; channel < 4; channel++) {
+                    if (prepared.value(
+                                    "fsr.motion",
+                                    x,
+                                    y,
+                                    channel)
+                            != 0.0F) {
+                        violations.add(
+                                prepared.schema(),
+                                "fsr.motion",
+                                x,
+                                y,
+                                channel,
+                                "unused FSR motion channel is not zero",
+                                prepared.rawWord(
+                                        "fsr.motion",
+                                        x,
+                                        y,
+                                        channel));
+                    }
+                }
+            }
+        }
     }
 
     private static void validateMotionProjection(

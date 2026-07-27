@@ -19,6 +19,12 @@ public record SunDirection(float x, float y, float z) {
         if (!Float.isFinite(x) || !Float.isFinite(y) || !Float.isFinite(z)) {
             throw new IllegalArgumentException("Sun direction must be finite");
         }
+        float lengthSquared = x * x + y * y + z * z;
+        if (!Float.isFinite(lengthSquared)
+                || Math.abs(lengthSquared - 1.0F) > 1.0e-4F) {
+            throw new IllegalArgumentException(
+                    "Sun direction must have unit length");
+        }
     }
 
     public static SunDirection fromVanillaAngle(float sunAngleRadians) {

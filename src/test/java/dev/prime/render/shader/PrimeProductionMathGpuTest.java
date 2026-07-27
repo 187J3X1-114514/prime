@@ -98,7 +98,7 @@ final class PrimeProductionMathGpuTest {
     void fsrMasksKeepStaticAlphaTestedFoliageEligibleForThinFeatureLocks()
             throws IOException {
         int cases = 1 << 10;
-        int inputWords = 2;
+        int inputWords = 3;
         ByteBuffer input = ShaderTestBuffer.inputs(cases, inputWords);
         for (int flags = 0; flags < cases; flags++) {
             putInt(input, flags, inputWords, 0, 0, 0);
@@ -110,14 +110,14 @@ final class PrimeProductionMathGpuTest {
                 input,
                 cases,
                 inputWords,
-                4,
+                5,
                 FSR_SEED);
     }
 
     @Test
     void fsrDepthAndMotionStayInsideTheDeclaredInputDomains() throws IOException {
-        int kinds = 2;
-        int inputWords = 2;
+        int kinds = 4;
+        int inputWords = 3;
         ByteBuffer input = fsrGuideCases(kinds, inputWords);
         ShaderPropertyBatch.assertProperties(
                 runner,
@@ -125,7 +125,7 @@ final class PrimeProductionMathGpuTest {
                 input,
                 CASES_PER_KIND * kinds,
                 inputWords,
-                4,
+                5,
                 FSR_SEED);
     }
 
@@ -407,7 +407,7 @@ final class PrimeProductionMathGpuTest {
                                             ? positiveFloat(random, -30, 30)
                                             : -positiveFloat(random, -30, 30));
                     putInt(input, index, words, 1, 0, bits);
-                } else {
+                } else if (kind == 1) {
                     for (int component = 0; component < 4; component++) {
                         int bits = local < SPECIAL_FLOAT_BITS.length
                                 ? SPECIAL_FLOAT_BITS[
@@ -416,6 +416,39 @@ final class PrimeProductionMathGpuTest {
                                         random.nextFloat() * 8.0F - 4.0F);
                         putInt(input, index, words, 1, component, bits);
                     }
+                } else if (kind == 2) {
+                    for (int component = 0; component < 3; component++) {
+                        int positionBits = local < SPECIAL_FLOAT_BITS.length
+                                ? SPECIAL_FLOAT_BITS[
+                                        (local + component)
+                                                % SPECIAL_FLOAT_BITS.length]
+                                : Float.floatToRawIntBits(
+                                        random.nextFloat() * 200_000.0F
+                                                - 50_000.0F);
+                        putInt(
+                                input,
+                                index,
+                                words,
+                                1,
+                                component,
+                                positionBits);
+                    }
+                    float[] forward = randomUnitVector(random);
+                    putVec4(
+                            input,
+                            index,
+                            words,
+                            2,
+                            forward[0],
+                            forward[1],
+                            forward[2],
+                            0.0F);
+                } else {
+                    int bits = local < SPECIAL_FLOAT_BITS.length
+                            ? SPECIAL_FLOAT_BITS[local]
+                            : Float.floatToRawIntBits(
+                                    random.nextFloat() * 4.0F - 1.5F);
+                    putInt(input, index, words, 1, 0, bits);
                 }
             }
         }

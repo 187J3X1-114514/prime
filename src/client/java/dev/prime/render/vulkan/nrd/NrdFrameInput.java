@@ -19,8 +19,16 @@ public record NrdFrameInput(
         Objects.requireNonNull(camera, "camera");
         Objects.requireNonNull(sunDirection, "sunDirection");
         Objects.requireNonNull(diagnostic, "diagnostic");
-        if (!Float.isFinite(cameraJitterX) || !Float.isFinite(cameraJitterY)) {
-            throw new IllegalArgumentException("NRD camera jitter must be finite");
+        if (!camera.isFinite()) {
+            throw new IllegalArgumentException(
+                    "NRD camera must be finite");
+        }
+        if (!Float.isFinite(cameraJitterX)
+                || !Float.isFinite(cameraJitterY)
+                || Math.abs(cameraJitterX) > 0.5F
+                || Math.abs(cameraJitterY) > 0.5F) {
+            throw new IllegalArgumentException(
+                    "NRD camera jitter must remain inside one source pixel");
         }
     }
 }

@@ -96,6 +96,18 @@ public final class FrameCameraSnapshot {
                 Double.longBitsToDouble(this.renderZ));
     }
 
+    boolean isFinite() {
+        return finite(this.projection)
+                && finite(this.viewRotation)
+                && finite(this.inverseViewProjection)
+                && Double.isFinite(Double.longBitsToDouble(this.x))
+                && Double.isFinite(Double.longBitsToDouble(this.y))
+                && Double.isFinite(Double.longBitsToDouble(this.z))
+                && Double.isFinite(Double.longBitsToDouble(this.renderX))
+                && Double.isFinite(Double.longBitsToDouble(this.renderY))
+                && Double.isFinite(Double.longBitsToDouble(this.renderZ));
+    }
+
     @Override
     public boolean equals(Object object) {
         if (object == this) {
@@ -144,6 +156,15 @@ public final class FrameCameraSnapshot {
             values[index] = Float.intBitsToFloat(bits[index]);
         }
         return new Matrix4f().set(values);
+    }
+
+    private static boolean finite(int[] bits) {
+        for (int value : bits) {
+            if (!Float.isFinite(Float.intBitsToFloat(value))) {
+                return false;
+            }
+        }
+        return true;
     }
 
     private static int[] requireMatrix(int[] matrix, String label) {

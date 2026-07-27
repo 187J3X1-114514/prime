@@ -13,7 +13,14 @@ public final class FrameTime {
         if (!initialized) {
             return INITIAL_DELTA_MILLISECONDS;
         }
-        long elapsedNanos = currentNanos - previousNanos;
+        long elapsedNanos;
+        try {
+            elapsedNanos = Math.subtractExact(
+                    currentNanos, previousNanos);
+        } catch (ArithmeticException exception) {
+            throw new IllegalArgumentException(
+                    "Captured frame time interval overflowed", exception);
+        }
         if (elapsedNanos < 0L) {
             throw new IllegalArgumentException(
                     "Captured frame time must not move backwards");

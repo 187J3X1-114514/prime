@@ -1,6 +1,7 @@
 package dev.prime.render;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import java.util.SplittableRandom;
 import org.junit.jupiter.api.Test;
@@ -41,6 +42,16 @@ final class SunDirectionTest {
                     + direction.z() * direction.z();
             assertEquals(1.0F, lengthSquared, 2.0e-7F);
         }
+    }
+
+    @Test
+    void rejectsFiniteButNonUnitDirectionsAtTheSemanticBoundary() {
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> new SunDirection(0.0F, 0.0F, 0.0F));
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> new SunDirection(0.0F, 2.0F, 0.0F));
     }
 
     private static void assertDirection(

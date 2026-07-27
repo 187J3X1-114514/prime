@@ -6,6 +6,7 @@ import java.util.Optional;
 /** NRD diagnostic modes and their native output selectors. */
 public final class NrdDiagnostics {
     public static final int MAX_PRESENTATION = 3;
+    public static final int MAX_OUTPUT_SELECTOR = 6;
 
     private NrdDiagnostics() {}
 

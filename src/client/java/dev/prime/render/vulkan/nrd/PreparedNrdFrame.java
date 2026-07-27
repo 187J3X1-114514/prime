@@ -13,11 +13,20 @@ public final class PreparedNrdFrame {
     private final Branch primary;
     private final Branch reflection;
     private final VulkanImage sunPenumbra;
+    private final VulkanImage fsrDepth;
+    private final VulkanImage fsrMotion;
 
-    PreparedNrdFrame(Branch primary, Branch reflection, VulkanImage sunPenumbra) {
+    PreparedNrdFrame(
+            Branch primary,
+            Branch reflection,
+            VulkanImage sunPenumbra,
+            VulkanImage fsrDepth,
+            VulkanImage fsrMotion) {
         this.primary = Objects.requireNonNull(primary, "primary");
         this.reflection = Objects.requireNonNull(reflection, "reflection");
         this.sunPenumbra = Objects.requireNonNull(sunPenumbra, "sunPenumbra");
+        this.fsrDepth = Objects.requireNonNull(fsrDepth, "fsrDepth");
+        this.fsrMotion = Objects.requireNonNull(fsrMotion, "fsrMotion");
     }
 
     VulkanImage resolveInput(int resourceType, int denoiserIdentifier) {
@@ -48,6 +57,14 @@ public final class PreparedNrdFrame {
 
     public VulkanImage sunPenumbra() {
         return this.sunPenumbra;
+    }
+
+    public VulkanImage fsrDepth() {
+        return this.fsrDepth;
+    }
+
+    public VulkanImage fsrMotion() {
+        return this.fsrMotion;
     }
 
     public record Branch(

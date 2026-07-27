@@ -4,7 +4,7 @@ import com.mojang.blaze3d.vulkan.Destroyable;
 import dev.prime.render.FrameCamera;
 import dev.prime.render.ResourceCleanup;
 import dev.prime.render.fsr.FsrDebugView;
-import dev.prime.render.fsr.FsrDispatchValidator;
+import dev.prime.render.fsr.FsrDispatchPlan;
 import dev.prime.render.fsr.FsrQualityMode;
 import dev.prime.render.fsr.FsrSettings;
 import dev.prime.render.post.TemporalReconstructionState;
@@ -48,8 +48,6 @@ import org.lwjgl.vulkan.VkCommandBuffer;
  * an application color-management boundary rather than part of FSR.
  */
 public final class Fsr3Upscaler implements Destroyable {
-    static final float NEAR_PLANE = 0.05F;
-
     private static final int COMPUTE_STAGE = VK12.VK_SHADER_STAGE_COMPUTE_BIT;
     private static final int DISPLAY_PUSH_SIZE = 16;
     private static final int DISPLAY_LOCAL_SIZE = 8;
@@ -207,18 +205,25 @@ public final class Fsr3Upscaler implements Destroyable {
                 || token.abandoned) {
             throw new IllegalArgumentException("FSR frame token does not belong to this recording");
         }
-        token.recorded = true;
-        TemporalReconstructionState.Plan temporal =
-                token.temporal.claimForExecution();
-        FsrDispatchValidator.validate(
+        TemporalReconstructionState.Plan plannedTemporal =
+                token.temporal.plan();
+        FsrDispatchPlan dispatchPlan = FsrDispatchPlan.create(
+                plannedTemporal.camera(),
                 this.renderWidth,
                 this.renderHeight,
                 this.displayWidth,
                 this.displayHeight,
                 token.jitter,
-                FsrSettings.EXPOSURE,
-                (float) this.renderWidth,
-                (float) this.renderHeight);
+                plannedTemporal.deltaMilliseconds(),
+                plannedTemporal.restart(),
+                token.fsrDebugView);
+        token.recorded = true;
+        TemporalReconstructionState.Plan temporal =
+                token.temporal.claimForExecution();
+        if (temporal != plannedTemporal) {
+            throw new IllegalStateException(
+                    "FSR temporal plan changed between planning and execution");
+        }
 
         // The single NRD composite writes every imported input immediately before FSR.
         // The DLL owns its internal barriers, but this external producer/consumer dependency is
@@ -229,21 +234,13 @@ public final class Fsr3Upscaler implements Destroyable {
         this.nativeInstance.dispatch(
                 commandBuffer,
                 new FsrNative.Dispatch(
-                        temporal.camera(),
                         this.sceneColor,
                         this.inputDepth,
                         this.inputMotion,
                         this.reactiveMask,
                         this.transparencyCompositionMask,
                         this.linearOutput,
-                        this.renderWidth,
-                        this.renderHeight,
-                        this.displayWidth,
-                        this.displayHeight,
-                        token.jitter,
-                        temporal.deltaMilliseconds(),
-                        temporal.restart(),
-                        debugView));
+                        dispatchPlan));
 
         // FidelityFX restores imported resources to UNORDERED_ACCESS/GENERAL. Its output writes
         // still need an execution and memory dependency before Prime's display-transform shader

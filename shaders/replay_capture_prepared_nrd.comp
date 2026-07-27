@@ -17,7 +17,9 @@ layout(set = 0, binding = 11, rgba16f) uniform readonly image2D primeReflectionN
 layout(set = 0, binding = 12, rgba16f) uniform readonly image2D primeReflectionDiffuseSh1;
 layout(set = 0, binding = 13, rgba16f) uniform readonly image2D primeReflectionSpecularSh1;
 layout(set = 0, binding = 14, r16f) uniform readonly image2D primeSunPenumbra;
-layout(set = 0, binding = 15, std430) writeonly buffer PrimeReplayCapture {
+layout(set = 0, binding = 15, r32f) uniform readonly image2D primeFsrDepth;
+layout(set = 0, binding = 16, rgba16f) uniform readonly image2D primeFsrMotion;
+layout(set = 0, binding = 17, std430) writeonly buffer PrimeReplayCapture {
     uvec4 values[];
 } primeCapture;
 
@@ -50,4 +52,6 @@ void main() {
     primeStore(12u, linearPixel, imageLoad(primeReflectionDiffuseSh1, coordinate));
     primeStore(13u, linearPixel, imageLoad(primeReflectionSpecularSh1, coordinate));
     primeStore(14u, linearPixel, imageLoad(primeSunPenumbra, coordinate));
+    primeStore(15u, linearPixel, imageLoad(primeFsrDepth, coordinate));
+    primeStore(16u, linearPixel, imageLoad(primeFsrMotion, coordinate));
 }

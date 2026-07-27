@@ -1,6 +1,7 @@
 package dev.prime.render.vulkan.nrd;
 
 import dev.prime.render.FrameCamera;
+import dev.prime.render.FrameTime;
 import java.util.Objects;
 
 /**
@@ -21,8 +22,12 @@ public record NrdFramePlan(
         Objects.requireNonNull(historyCamera, "historyCamera");
         if (!Float.isFinite(historyJitterX)
                 || !Float.isFinite(historyJitterY)
+                || Math.abs(historyJitterX) > 0.5F
+                || Math.abs(historyJitterY) > 0.5F
                 || !Float.isFinite(deltaMilliseconds)
-                || deltaMilliseconds < 0.0F) {
+                || deltaMilliseconds < 0.0F
+                || deltaMilliseconds
+                        > FrameTime.MAXIMUM_DELTA_MILLISECONDS) {
             throw new IllegalArgumentException(
                     "NRD planned temporal values must be finite and non-negative where required");
         }

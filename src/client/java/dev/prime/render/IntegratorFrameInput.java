@@ -49,15 +49,7 @@ public record IntegratorFrameInput(
             throw new IllegalArgumentException(
                     "Packed ray cone must contain a positive finite width and finite mip bias");
         }
-        if (!camera.projection().isFinite()
-                || !camera.viewRotation().isFinite()
-                || !camera.inverseViewProjection().isFinite()
-                || !Double.isFinite(camera.x())
-                || !Double.isFinite(camera.y())
-                || !Double.isFinite(camera.z())
-                || !Double.isFinite(camera.renderX())
-                || !Double.isFinite(camera.renderY())
-                || !Double.isFinite(camera.renderZ())) {
+        if (!camera.isFinite()) {
             throw new IllegalArgumentException(
                     "Integrator camera must be finite");
         }

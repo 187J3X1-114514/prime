@@ -155,6 +155,7 @@ abstract class GenerateShaderAbi extends DefaultTask {
 		def atmosphereContract = schema.atmosphereContract
 		def starmapContract = schema.starmapContract
 		def nrdContract = schema.nrdContract
+		def fsrContract = schema.fsrContract
 		def wavefrontContract = schema.wavefrontContract
 
 		if (primitive.size != 32 || section.size != 64 || lightNode.size != 32
@@ -202,6 +203,13 @@ abstract class GenerateShaderAbi extends DefaultTask {
 				|| nrdContract.motionSpace != 'screen-pixel-2.5d'
 				|| nrdContract.signalSpace != 'demodulated-linear-rec2020-d65') {
 			throw new GradleException('Prime NRD signal and native-library contracts changed without a coordinated migration')
+		}
+		if (fsrContract.version != '3.1.4'
+				|| fsrContract.motionSpace != 'normalized-uv-current-to-previous'
+				|| fsrContract.depthSpace != 'reversed-infinite'
+				|| fsrContract.nearPlane != 0.05
+				|| fsrContract.viewSpaceToMetersFactor != 1.0) {
+			throw new GradleException('Prime FSR signal and projection contracts changed without a coordinated migration')
 		}
 		if (wavefrontContract.rounds != 12
 				|| wavefrontContract.pathRecordSize != 144
@@ -418,6 +426,11 @@ public final class ShaderAbi {
     public static final String NRD_ROUGHNESS_ENCODING = "${nrdContract.roughnessEncoding}";
     public static final String NRD_MOTION_SPACE = "${nrdContract.motionSpace}";
     public static final String NRD_SIGNAL_SPACE = "${nrdContract.signalSpace}";
+    public static final String FSR_VERSION = "${fsrContract.version}";
+    public static final String FSR_MOTION_SPACE = "${fsrContract.motionSpace}";
+    public static final String FSR_DEPTH_SPACE = "${fsrContract.depthSpace}";
+    public static final float FSR_NEAR_PLANE = ${fsrContract.nearPlane}f;
+    public static final float FSR_VIEW_SPACE_TO_METERS_FACTOR = ${fsrContract.viewSpaceToMetersFactor}f;
     public static final String ATMOSPHERE_SPECTRAL_MODEL = "${atmosphereContract.spectralModel}";
     public static final float ATMOSPHERE_BOTTOM_RADIUS_KM = ${atmosphereContract.bottomRadiusKm}f;
     public static final float ATMOSPHERE_TOP_RADIUS_KM = ${atmosphereContract.topRadiusKm}f;
@@ -661,6 +674,16 @@ layout(set = 0, binding = ${schema.descriptors.nrdDisplayPosition}, rgba32f) uni
 
 #endif
 """
+		new File(glslDir, 'prime_fsr_contract.glsl').text = """\
+#ifndef PRIME_FSR_CONTRACT_GLSL
+#define PRIME_FSR_CONTRACT_GLSL
+
+// Generated from shaders/abi.json. FSR host parameters and shader guides share these values.
+#define PRIME_FSR_NEAR_PLANE ${fsrContract.nearPlane}
+#define PRIME_FSR_VIEW_SPACE_TO_METERS_FACTOR ${fsrContract.viewSpaceToMetersFactor}
+
+#endif
+"""
 		def glslNrdMotionPushFields = nrdMotionPush.fields.collect { field ->
 			"    layout(offset = ${field.offset}) ${field.type} ${field.name};"
 		}.join('\n')
@@ -684,6 +707,10 @@ abstract class CompilePrimeShaders extends DefaultTask {
 
 	@InputDirectory
 	abstract DirectoryProperty getIncludeDirectory()
+
+	@Optional
+	@InputDirectory
+	abstract DirectoryProperty getAdditionalIncludeDirectory()
 
 	@OutputDirectory
 	abstract DirectoryProperty getOutputDirectory()
@@ -723,6 +750,10 @@ abstract class CompilePrimeShaders extends DefaultTask {
 					debugInfo.get() ? '-g' : '-g0']
 			arguments.addAll(definitions)
 			arguments.add("-I${includeDirectory.get().asFile.absolutePath}")
+			if (additionalIncludeDirectory.isPresent()) {
+				arguments.add(
+						"-I${additionalIncludeDirectory.get().asFile.absolutePath}")
+			}
 			arguments.add(source.absolutePath)
 			arguments.addAll(['-o', output.absolutePath])
 			execOperations.exec {
@@ -871,9 +902,10 @@ def compileShaders = tasks.register('compileShaders', CompilePrimeShaders) {
 }
 
 def compileTestShaders = tasks.register('compileTestShaders', CompilePrimeShaders) {
-	dependsOn verifyRoboCutePort
+	dependsOn generateShaderAbi, verifyRoboCutePort
 	sourceDirectory = file('src/test/shaders')
 	includeDirectory = file('shaders')
+	additionalIncludeDirectory = shaderAbiIncludeRoot
 	outputDirectory = compiledTestShaderRoot
 	glslangValidator = resolveVulkanTool('glslangValidator')
 	spirvValidator = resolveVulkanTool('spirv-val')

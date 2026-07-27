@@ -4,8 +4,8 @@
 #include "prime_test_abi.glsl"
 #include "fsr_input.glsl"
 
-const uint PRIME_FSR_INPUT_WORDS = 2u;
-const uint PRIME_FSR_WITNESS_WORDS = 4u;
+const uint PRIME_FSR_INPUT_WORDS = 3u;
+const uint PRIME_FSR_WITNESS_WORDS = 5u;
 
 void main() {
     uint caseIndex;
@@ -13,6 +13,7 @@ void main() {
     uint inputOffset = primeTestInputOffset(caseIndex, PRIME_FSR_INPUT_WORDS);
     uvec4 control = primeTestInput.words[inputOffset];
     vec4 values = uintBitsToFloat(primeTestInput.words[inputOffset + 1u]);
+    vec4 second = uintBitsToFloat(primeTestInput.words[inputOffset + 2u]);
     uint kind = control.x;
     uint mask = 0u;
     vec4 actual = vec4(0.0);
@@ -54,6 +55,29 @@ void main() {
                 || !primeTestClose(actual.y, expected.y, 0.0, 0.0)) {
             mask |= PRIME_TEST_FAILURE_IDENTITY;
         }
+    } else if (kind == 3u) {
+        actual.x = primeFsrSurfaceViewZ(values.xyz, second.xyz);
+        float raw = dot(values.xyz, second.xyz);
+        expected.x = primeNrdIsFinite(raw) && raw > 0.0
+                ? min(raw, PRIME_NRD_FP16_MAX)
+                : PRIME_NRD_FP16_MAX;
+        mask |= primeTestClassify(actual.x);
+        if (actual.x <= 0.0 || actual.x > PRIME_NRD_FP16_MAX) {
+            mask |= PRIME_TEST_FAILURE_RANGE;
+        }
+        if (!primeTestClose(actual.x, expected.x, 0.0, 0.0)) {
+            mask |= PRIME_TEST_FAILURE_IDENTITY;
+        }
+    } else if (kind == 4u) {
+        actual.x = primeFsrSanitizeMask(values.x);
+        expected.x = primeNrdSanitizeUnit(values.x, 0.0);
+        mask |= primeTestClassify(actual.x);
+        if (actual.x < 0.0 || actual.x > 1.0) {
+            mask |= PRIME_TEST_FAILURE_RANGE;
+        }
+        if (!primeTestClose(actual.x, expected.x, 0.0, 0.0)) {
+            mask |= PRIME_TEST_FAILURE_IDENTITY;
+        }
     } else {
         mask |= PRIME_TEST_FAILURE_EVENT;
     }
@@ -64,7 +88,8 @@ void main() {
     if (outputWords >= PRIME_FSR_WITNESS_WORDS) {
         primeTestOutput.words[outputOffset + 1u] = control;
         primeTestOutput.words[outputOffset + 2u] = floatBitsToUint(values);
-        primeTestOutput.words[outputOffset + 3u] =
+        primeTestOutput.words[outputOffset + 3u] = floatBitsToUint(second);
+        primeTestOutput.words[outputOffset + 4u] =
                 floatBitsToUint(vec4(actual.xy, expected.xy));
     }
 }

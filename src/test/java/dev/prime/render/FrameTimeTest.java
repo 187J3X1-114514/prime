@@ -32,5 +32,9 @@ final class FrameTimeTest {
                 IllegalArgumentException.class,
                 () -> FrameTime.deltaMilliseconds(
                         true, Long.MAX_VALUE, Long.MIN_VALUE));
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> FrameTime.deltaMilliseconds(
+                        true, Long.MIN_VALUE, Long.MAX_VALUE));
     }
 }

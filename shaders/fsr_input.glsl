@@ -2,8 +2,7 @@
 #define PRIME_FSR_INPUT_GLSL
 
 #include "nrd_common.glsl"
-
-const float PRIME_FSR_NEAR_PLANE = 0.05;
+#include "prime_fsr_contract.glsl"
 
 float primeFsrSurfaceViewZ(vec3 position, vec3 cameraForward) {
     float viewZ = dot(position, cameraForward);
@@ -23,6 +22,10 @@ vec2 primeFsrNormalizedMotion(vec2 previousUv, vec2 currentUv) {
     return primeNrdIsFinite(motion)
             ? clamp(motion, vec2(-1.0), vec2(1.0))
             : vec2(0.0);
+}
+
+float primeFsrSanitizeMask(float value) {
+    return primeNrdSanitizeUnit(value, 0.0);
 }
 
 #endif

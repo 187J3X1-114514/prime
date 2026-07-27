@@ -21,6 +21,8 @@ import org.lwjgl.vulkan.VkImageCopy;
  */
 public final class RealtimeFrameExecutor {
     private final VulkanContext context;
+    private final VulkanImageInitializationBatch imageInitialization =
+            new VulkanImageInitializationBatch();
 
     public RealtimeFrameExecutor(VulkanContext context) {
         this.context = Objects.requireNonNull(context, "context");
@@ -43,8 +45,10 @@ public final class RealtimeFrameExecutor {
         Objects.requireNonNull(processor, "processor");
         Objects.requireNonNull(processorFrame, "processorFrame");
         long atmosphereFrame = 0L;
+        long pipelineFrame = 0L;
         LabPbrTextureAtlas.FrameToken labPbrFrame = null;
         boolean submissionAccepted = false;
+        boolean initializationActive = false;
         try {
             Objects.requireNonNull(debugLabel, "debugLabel");
             Objects.requireNonNull(pipeline, "pipeline");
@@ -59,10 +63,14 @@ public final class RealtimeFrameExecutor {
             plan.requireSceneRevision(scene.revision());
             plan.requireTextureRevision(textureRevision);
             validateExtents(plan, processor, output, stableRadiance, mainColor);
+            this.imageInitialization.begin();
+            initializationActive = true;
 
             var encoder = this.context.commandEncoder();
             VkCommandBuffer commandBuffer =
                     encoder.allocateAndBeginTransientCommandBuffer();
+            pipelineFrame = pipeline.prepareFrame(
+                    commandBuffer, this.imageInitialization);
             this.context.device().instance().debug().beginDebugGroup(
                     commandBuffer, () -> debugLabel);
             atmosphereFrame = atmosphere.prepare(
@@ -70,10 +78,11 @@ public final class RealtimeFrameExecutor {
                     plan.integrator().camera(),
                     plan.integrator().sunDirection());
             VulkanImageTransitions.prepareOutputForComposite(
-                    commandBuffer, output);
+                    commandBuffer, this.imageInitialization, output);
             VulkanImageTransitions.prepareAccumulationForTrace(
-                    commandBuffer, stableRadiance);
-            processor.prepareForRayTrace(commandBuffer);
+                    commandBuffer, this.imageInitialization, stableRadiance);
+            processor.prepareForRayTrace(
+                    commandBuffer, this.imageInitialization);
             VulkanImageTransitions.prepareAtlasForTrace(
                     commandBuffer, atlasView.texture());
             labPbrFrame = labPbrAtlas.prepare(commandBuffer);
@@ -82,7 +91,8 @@ public final class RealtimeFrameExecutor {
                 processor.record(
                         commandBuffer,
                         processorFrame,
-                        plan.reconstruction());
+                        plan.reconstruction(),
+                        this.imageInitialization);
                 VulkanImageTransitions.finishAtlasRead(
                         commandBuffer, atlasView.texture());
                 VulkanImageTransitions.prepareImagesForCopy(
@@ -121,9 +131,15 @@ public final class RealtimeFrameExecutor {
             // Minecraft's execute() first validates the encoder, then appends this command buffer
             // to its open Submission. Only a normal return transfers recorded-resource ownership.
             submissionAccepted = true;
-            long submittedAtmosphereFrame = atmosphereFrame;
+            this.imageInitialization.submitted();
+            initializationActive = false;
+            long submittedPipelineFrame = pipelineFrame;
             RuntimeException commitFailure = ResourceCleanup.run(
-                    () -> atmosphere.submitted(submittedAtmosphereFrame), null);
+                    () -> pipeline.submitted(submittedPipelineFrame), null);
+            long submittedAtmosphereFrame = atmosphereFrame;
+            commitFailure = ResourceCleanup.run(
+                    () -> atmosphere.submitted(submittedAtmosphereFrame),
+                    commitFailure);
             commitFailure = ResourceCleanup.run(
                     () -> processor.submitted(processorFrame), commitFailure);
             LabPbrTextureAtlas.FrameToken submittedLabPbrFrame =
@@ -135,6 +151,16 @@ public final class RealtimeFrameExecutor {
         } catch (RuntimeException exception) {
             if (!submissionAccepted) {
                 RuntimeException failure = exception;
+                if (initializationActive) {
+                    failure = ResourceCleanup.run(
+                            this.imageInitialization::abandon, failure);
+                }
+                if (pipelineFrame != 0L) {
+                    long abandonedPipelineFrame = pipelineFrame;
+                    failure = ResourceCleanup.run(
+                            () -> pipeline.abandon(abandonedPipelineFrame),
+                            failure);
+                }
                 if (atmosphereFrame != 0L) {
                     long abandonedAtmosphereFrame = atmosphereFrame;
                     failure = ResourceCleanup.run(

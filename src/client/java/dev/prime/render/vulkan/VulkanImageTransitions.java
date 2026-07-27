@@ -44,14 +44,17 @@ public final class VulkanImageTransitions {
     }
 
     public static void prepareOutputForComposite(
-            VkCommandBuffer commandBuffer, VulkanImage image) {
-        int oldLayout = image.initialized()
+            VkCommandBuffer commandBuffer,
+            VulkanImageInitializationBatch initialization,
+            VulkanImage image) {
+        boolean initialized = initialization.prepare(image);
+        int oldLayout = initialized
                 ? VK12.VK_IMAGE_LAYOUT_GENERAL
                 : VK12.VK_IMAGE_LAYOUT_UNDEFINED;
-        long sourceStage = image.initialized()
+        long sourceStage = initialized
                 ? VK12.VK_PIPELINE_STAGE_TRANSFER_BIT
                 : VK12.VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
-        long sourceAccess = image.initialized()
+        long sourceAccess = initialized
                 ? VK12.VK_ACCESS_TRANSFER_READ_BIT
                 : 0L;
         imageBarrier(
@@ -63,20 +66,22 @@ public final class VulkanImageTransitions {
                 sourceAccess,
                 VK12.VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
                 VK12.VK_ACCESS_SHADER_WRITE_BIT);
-        image.markInitialized();
     }
 
     public static void prepareAccumulationForTrace(
-            VkCommandBuffer commandBuffer, VulkanImage image) {
-        int oldLayout = image.initialized()
+            VkCommandBuffer commandBuffer,
+            VulkanImageInitializationBatch initialization,
+            VulkanImage image) {
+        boolean initialized = initialization.prepare(image);
+        int oldLayout = initialized
                 ? VK12.VK_IMAGE_LAYOUT_GENERAL
                 : VK12.VK_IMAGE_LAYOUT_UNDEFINED;
-        long sourceStage = image.initialized()
+        long sourceStage = initialized
                 // Stable radiance is written by raygen and read by NRD composite across frames.
                 ? KHRRayTracingPipeline.VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR
                         | VK12.VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT
                 : VK12.VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
-        long sourceAccess = image.initialized()
+        long sourceAccess = initialized
                 ? VK12.VK_ACCESS_SHADER_READ_BIT | VK12.VK_ACCESS_SHADER_WRITE_BIT
                 : 0L;
         imageBarrier(
@@ -88,7 +93,6 @@ public final class VulkanImageTransitions {
                 sourceAccess,
                 KHRRayTracingPipeline.VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR,
                 VK12.VK_ACCESS_SHADER_READ_BIT | VK12.VK_ACCESS_SHADER_WRITE_BIT);
-        image.markInitialized();
     }
 
     public static void prepareScreenshotDisplay(

@@ -120,13 +120,15 @@ public final class BasicRawWavefrontFrame implements RawWavefrontFrame, Destroya
         images.add(context.createImage2D(width, height, format, usage, label));
     }
 
-    public void prepareForRayTrace(org.lwjgl.vulkan.VkCommandBuffer commandBuffer) {
+    public void prepareForRayTrace(
+            org.lwjgl.vulkan.VkCommandBuffer commandBuffer,
+            VulkanImageInitializationBatch initialization) {
         try (MemoryStack stack = MemoryStack.stackPush()) {
             VkImageMemoryBarrier2.Buffer barriers =
                     VkImageMemoryBarrier2.calloc(this.owned.length, stack);
             for (int index = 0; index < this.owned.length; index++) {
                 VulkanImage image = this.owned[index];
-                boolean initialized = image.initialized();
+                boolean initialized = initialization.prepare(image);
                 boolean linearOutput = this.hasLinearOutput
                         && index == this.owned.length - 1;
                 long destinationStages = destinationStages(
@@ -150,7 +152,6 @@ public final class BasicRawWavefrontFrame implements RawWavefrontFrame, Destroya
                 barriers.get(index).subresourceRange()
                         .aspectMask(VK12.VK_IMAGE_ASPECT_COLOR_BIT)
                         .baseMipLevel(0).levelCount(1).baseArrayLayer(0).layerCount(1);
-                image.markInitialized();
             }
             KHRSynchronization2.vkCmdPipelineBarrier2KHR(
                     commandBuffer,

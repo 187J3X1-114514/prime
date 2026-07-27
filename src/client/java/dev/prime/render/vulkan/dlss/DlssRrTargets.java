@@ -4,6 +4,7 @@ import com.mojang.blaze3d.vulkan.Destroyable;
 import dev.prime.render.vulkan.VulkanContext;
 import dev.prime.render.vulkan.VulkanImage;
 import dev.prime.render.vulkan.RawWavefrontFrame;
+import dev.prime.render.vulkan.VulkanImageInitializationBatch;
 import java.util.ArrayList;
 import org.lwjgl.system.MemoryStack;
 import org.lwjgl.vulkan.KHRRayTracingPipeline;
@@ -114,12 +115,14 @@ public final class DlssRrTargets implements RawWavefrontFrame, Destroyable {
     }
 
     /** Transitions the exact RR resource set to its lifetime-stable GENERAL layout. */
-    public void prepareForRayTrace(org.lwjgl.vulkan.VkCommandBuffer commandBuffer) {
+    public void prepareForRayTrace(
+            org.lwjgl.vulkan.VkCommandBuffer commandBuffer,
+            VulkanImageInitializationBatch initialization) {
         try (MemoryStack stack = MemoryStack.stackPush()) {
             VkImageMemoryBarrier2.Buffer barriers = VkImageMemoryBarrier2.calloc(this.owned.length, stack);
             for (int index = 0; index < this.owned.length; index++) {
                 VulkanImage image = this.owned[index];
-                boolean initialized = image.initialized();
+                boolean initialized = initialization.prepare(image);
                 barriers.get(index)
                         .sType$Default()
                         .srcStageMask(initialized
@@ -145,7 +148,6 @@ public final class DlssRrTargets implements RawWavefrontFrame, Destroyable {
                         .levelCount(1)
                         .baseArrayLayer(0)
                         .layerCount(1);
-                image.markInitialized();
             }
             VkDependencyInfo dependency = VkDependencyInfo.calloc(stack)
                     .sType$Default()

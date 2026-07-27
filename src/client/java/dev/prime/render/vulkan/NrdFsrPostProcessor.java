@@ -158,10 +158,12 @@ public final class NrdFsrPostProcessor implements RealtimePostProcessor {
     }
 
     @Override
-    public void prepareForRayTrace(VkCommandBuffer commandBuffer) {
+    public void prepareForRayTrace(
+            VkCommandBuffer commandBuffer,
+            VulkanImageInitializationBatch initialization) {
         requireOpen();
         try (MemoryStack stack = MemoryStack.stackPush()) {
-            boolean initialized = this.sceneColor.initialized();
+            boolean initialized = initialization.prepare(this.sceneColor);
             VkImageMemoryBarrier2.Buffer barrier = VkImageMemoryBarrier2.calloc(1, stack);
             barrier.get(0).sType$Default()
                     .srcStageMask(initialized
@@ -185,14 +187,16 @@ public final class NrdFsrPostProcessor implements RealtimePostProcessor {
             KHRSynchronization2.vkCmdPipelineBarrier2KHR(
                     commandBuffer,
                     VkDependencyInfo.calloc(stack).sType$Default().pImageMemoryBarriers(barrier));
-            this.sceneColor.markInitialized();
         }
-        this.denoiser.prepareForRayTrace(commandBuffer);
+        this.denoiser.prepareForRayTrace(commandBuffer, initialization);
     }
 
     @Override
     public void record(
-            VkCommandBuffer commandBuffer, Frame frame, FrameParameters parameters) {
+            VkCommandBuffer commandBuffer,
+            Frame frame,
+            FrameParameters parameters,
+            VulkanImageInitializationBatch initialization) {
         FrameToken token = requireFrame(frame);
         if (token.recorded) {
             throw new IllegalArgumentException("NRD-FSR frame was already recorded");
@@ -207,7 +211,11 @@ public final class NrdFsrPostProcessor implements RealtimePostProcessor {
                 token.nrdPrepared,
                 parameters.sunRadianceMultiplier(),
                 parameters.displayOverexposure());
-        this.upscaler.record(commandBuffer, token.fsr, parameters.displayOverexposure());
+        this.upscaler.record(
+                commandBuffer,
+                token.fsr,
+                parameters.displayOverexposure(),
+                initialization);
         NrdDiagnostics.Mode diagnostic =
                 token.nrdPlan.plan().input().diagnostic();
         if (diagnostic != NrdDiagnostics.Mode.OFF) {

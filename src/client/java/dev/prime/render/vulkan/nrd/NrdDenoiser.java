@@ -10,6 +10,7 @@ import dev.prime.render.vulkan.VulkanBuffer;
 import dev.prime.render.vulkan.VulkanContext;
 import dev.prime.render.vulkan.VulkanImage;
 import dev.prime.render.vulkan.RawWavefrontFrame;
+import dev.prime.render.vulkan.VulkanImageInitializationBatch;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.ByteBuffer;
@@ -235,14 +236,16 @@ public final class NrdDenoiser implements Destroyable {
      * preparation and denoising compute passes. The GENERAL layout is stable for their complete
      * lifetime; only explicit availability and visibility dependencies change between stages.
      */
-    public void prepareForRayTrace(VkCommandBuffer commandBuffer) {
+    public void prepareForRayTrace(
+            VkCommandBuffer commandBuffer,
+            VulkanImageInitializationBatch initialization) {
         this.requireOpen();
         VulkanImage[] allImages = this.images.allImages();
         try (MemoryStack stack = MemoryStack.stackPush()) {
             VkImageMemoryBarrier2.Buffer barriers = VkImageMemoryBarrier2.calloc(allImages.length, stack);
             for (int index = 0; index < allImages.length; index++) {
                 VulkanImage image = allImages[index];
-                boolean initialized = image.initialized();
+                boolean initialized = initialization.prepare(image);
                 barriers.get(index)
                         .sType$Default()
                         .srcStageMask(initialized ? VK12.VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT : VK12.VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT)
@@ -262,7 +265,6 @@ public final class NrdDenoiser implements Destroyable {
                         .levelCount(1)
                         .baseArrayLayer(0)
                         .layerCount(1);
-                image.markInitialized();
             }
             issueImageBarrier(commandBuffer, stack, barriers);
         }

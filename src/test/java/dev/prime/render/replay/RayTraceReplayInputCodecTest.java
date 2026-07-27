@@ -89,6 +89,28 @@ final class RayTraceReplayInputCodecTest {
                         relocated));
     }
 
+    @Test
+    void decodeRejectsAStoredDerivedValueThatDisagreesWithCanonicalSteps() {
+        Fixture fixture = input();
+        byte[] encoded = RayTraceReplayInputCodec.encode(
+                RayTraceReplayInput.capture(fixture.input(), fixture.scene()));
+        int sceneBytes = 3 * Integer.BYTES + 3 * Long.BYTES;
+        int frameWordsBeforeLighting = 11;
+        int lightingStepWords = 3;
+        int sunMultiplierOffset = 2 * Integer.BYTES
+                + sceneBytes
+                + FrameCameraSnapshot.ENCODED_BYTES
+                + (frameWordsBeforeLighting + lightingStepWords)
+                        * Integer.BYTES;
+        ByteBuffer.wrap(encoded)
+                .order(ByteOrder.LITTLE_ENDIAN)
+                .putInt(sunMultiplierOffset, Float.floatToRawIntBits(1.0F));
+
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> RayTraceReplayInputCodec.decode(encoded));
+    }
+
     private static IntegratorFrameInput withSampleIndex(
             IntegratorFrameInput input, int sampleIndex) {
         return new IntegratorFrameInput(
@@ -147,8 +169,8 @@ final class RayTraceReplayInputCodecTest {
                 true,
                 PostProcessingMode.NRD_FSR,
                 new LightingSettings.Snapshot(
-                        4, -8, 12, 2.0F, 0.25F, 8.0F, 7L),
-                new MaterialSettings.Snapshot(90, 0.9F, 8L),
+                        4, -8, 12, 7L),
+                new MaterialSettings.Snapshot(90, 8L),
                 true,
                 true,
                 true);

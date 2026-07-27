@@ -11,6 +11,7 @@ import dev.prime.render.post.TemporalReconstructionState;
 import dev.prime.render.post.ReconstructionFrameHistory;
 import dev.prime.render.vulkan.VulkanContext;
 import dev.prime.render.vulkan.VulkanImage;
+import dev.prime.render.vulkan.VulkanImageInitializationBatch;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.ByteBuffer;
@@ -195,7 +196,10 @@ public final class Fsr3Upscaler implements Destroyable {
     }
 
     public void record(
-            VkCommandBuffer commandBuffer, FrameToken token, float displayOverexposure) {
+            VkCommandBuffer commandBuffer,
+            FrameToken token,
+            float displayOverexposure,
+            VulkanImageInitializationBatch initialization) {
         this.requireOpen();
         if (token.owner != this
                 || token.recorded
@@ -220,7 +224,7 @@ public final class Fsr3Upscaler implements Destroyable {
         // The DLL owns its internal barriers, but this external producer/consumer dependency is
         // Prime's responsibility and must remain explicit.
         computeBarrier(commandBuffer);
-        this.initializeLinearOutput(commandBuffer);
+        this.initializeLinearOutput(commandBuffer, initialization);
         FsrDebugView debugView = token.fsrDebugView;
         this.nativeInstance.dispatch(
                 commandBuffer,
@@ -280,8 +284,10 @@ public final class Fsr3Upscaler implements Destroyable {
         this.history.abandon(token.temporal);
     }
 
-    private void initializeLinearOutput(VkCommandBuffer commandBuffer) {
-        if (this.linearOutput.initialized()) {
+    private void initializeLinearOutput(
+            VkCommandBuffer commandBuffer,
+            VulkanImageInitializationBatch initialization) {
+        if (initialization.prepare(this.linearOutput)) {
             return;
         }
         try (MemoryStack stack = MemoryStack.stackPush()) {
@@ -308,7 +314,6 @@ public final class Fsr3Upscaler implements Destroyable {
                     .pImageMemoryBarriers(barrier);
             KHRSynchronization2.vkCmdPipelineBarrier2KHR(commandBuffer, dependency);
         }
-        this.linearOutput.markInitialized();
     }
 
     private static void computeBarrier(VkCommandBuffer commandBuffer) {

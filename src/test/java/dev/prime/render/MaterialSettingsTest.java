@@ -29,4 +29,18 @@ final class MaterialSettingsTest {
         assertThrows(IllegalArgumentException.class,
                 () -> first.withDefaultRoughnessSteps(101));
     }
+
+    @Test
+    void snapshotDerivesLinearRoughnessFromItsCanonicalSteps() {
+        MaterialSettings.Snapshot snapshot =
+                new MaterialSettings.Snapshot(37, 2L);
+
+        assertEquals(0.37F, snapshot.linearRoughness());
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> new MaterialSettings.Snapshot(101, 0L));
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> new MaterialSettings.Snapshot(0, -1L));
+    }
 }

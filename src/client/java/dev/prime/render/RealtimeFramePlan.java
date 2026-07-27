@@ -38,9 +38,11 @@ public record RealtimeFramePlan(
     static RealtimeFramePlan complete(
             RealtimeFrameInput input,
             RealtimeSampleState.Plan sample,
+            RealtimePostProcessor.FrameParameters reconstruction,
             RealtimePostProcessor.Frame reconstructionFrame) {
         Objects.requireNonNull(input, "input");
         Objects.requireNonNull(sample, "sample");
+        input.requireReconstructionInput(reconstruction, sample.reset());
         Objects.requireNonNull(reconstructionFrame, "reconstructionFrame");
         if (sample.reset() && !reconstructionFrame.reset()) {
             throw new IllegalStateException(
@@ -56,8 +58,6 @@ public record RealtimeFramePlan(
             throw new IllegalStateException(
                     "Reconstruction jitter does not match the frame semantic input");
         }
-        RealtimePostProcessor.FrameParameters reconstruction =
-                input.reconstructionInput(sample.reset());
         return new RealtimeFramePlan(
                 input.integratorInput(
                         sample.sampleIndex(),

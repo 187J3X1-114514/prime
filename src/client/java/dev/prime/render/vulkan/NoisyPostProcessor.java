@@ -101,14 +101,19 @@ public final class NoisyPostProcessor implements RealtimePostProcessor {
     }
 
     @Override
-    public void prepareForRayTrace(VkCommandBuffer commandBuffer) {
+    public void prepareForRayTrace(
+            VkCommandBuffer commandBuffer,
+            VulkanImageInitializationBatch initialization) {
         requireOpen();
-        this.rawFrame.prepareForRayTrace(commandBuffer);
+        this.rawFrame.prepareForRayTrace(commandBuffer, initialization);
     }
 
     @Override
     public void record(
-            VkCommandBuffer commandBuffer, Frame frame, FrameParameters parameters) {
+            VkCommandBuffer commandBuffer,
+            Frame frame,
+            FrameParameters parameters,
+            VulkanImageInitializationBatch initialization) {
         FrameToken token = requireFrame(frame);
         token.recorded = true;
         token.temporal.claimForExecution();

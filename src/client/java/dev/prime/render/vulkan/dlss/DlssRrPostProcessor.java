@@ -13,6 +13,7 @@ import dev.prime.render.vulkan.AtmospherePipeline;
 import dev.prime.render.vulkan.DisplayTransformPass;
 import dev.prime.render.vulkan.VulkanContext;
 import dev.prime.render.vulkan.VulkanImage;
+import dev.prime.render.vulkan.VulkanImageInitializationBatch;
 import dev.prime.render.vulkan.nrd.NrdCameraTransform;
 import java.util.Objects;
 import org.joml.Matrix4f;
@@ -187,9 +188,11 @@ public final class DlssRrPostProcessor implements RealtimePostProcessor {
                 parameters.rrDebugFullscreen());
     }
 
-    public void prepareForRayTrace(VkCommandBuffer commandBuffer) {
+    public void prepareForRayTrace(
+            VkCommandBuffer commandBuffer,
+            VulkanImageInitializationBatch initialization) {
         requireOpen();
-        this.targets.prepareForRayTrace(commandBuffer);
+        this.targets.prepareForRayTrace(commandBuffer, initialization);
     }
 
     public void record(
@@ -252,7 +255,10 @@ public final class DlssRrPostProcessor implements RealtimePostProcessor {
 
     @Override
     public void record(
-            VkCommandBuffer commandBuffer, Frame frame, FrameParameters parameters) {
+            VkCommandBuffer commandBuffer,
+            Frame frame,
+            FrameParameters parameters,
+            VulkanImageInitializationBatch initialization) {
         if (!(frame instanceof FrameToken token)) {
             throw new IllegalArgumentException("DLSS RR received another processor's frame token");
         }

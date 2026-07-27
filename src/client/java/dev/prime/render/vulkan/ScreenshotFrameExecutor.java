@@ -14,6 +14,8 @@ import org.lwjgl.vulkan.VkImageCopy;
 /** Device side effects for one already-planned native screenshot sample. */
 public final class ScreenshotFrameExecutor {
     private final VulkanContext context;
+    private final VulkanImageInitializationBatch imageInitialization =
+            new VulkanImageInitializationBatch();
 
     public ScreenshotFrameExecutor(VulkanContext context) {
         this.context = Objects.requireNonNull(context, "context");
@@ -58,9 +60,15 @@ public final class ScreenshotFrameExecutor {
         VkCommandBuffer commandBuffer =
                 encoder.allocateAndBeginTransientCommandBuffer();
         long atmosphereFrame = 0L;
+        long pipelineFrame = 0L;
         LabPbrTextureAtlas.FrameToken labPbrFrame = null;
         boolean submissionAccepted = false;
+        boolean initializationActive = false;
         try {
+            this.imageInitialization.begin();
+            initializationActive = true;
+            pipelineFrame = pipeline.prepareFrame(
+                    commandBuffer, this.imageInitialization);
             this.context.device().instance().debug().beginDebugGroup(
                     commandBuffer,
                     () -> "Prime unbiased screenshot accumulation");
@@ -69,12 +77,13 @@ public final class ScreenshotFrameExecutor {
                     plan.integrator().camera(),
                     plan.integrator().sunDirection());
             VulkanImageTransitions.prepareOutputForComposite(
-                    commandBuffer, displayOutput);
+                    commandBuffer, this.imageInitialization, displayOutput);
             VulkanImageTransitions.prepareAccumulationForTrace(
-                    commandBuffer, stableRadiance);
+                    commandBuffer, this.imageInitialization, stableRadiance);
             VulkanImageTransitions.prepareAccumulationForTrace(
-                    commandBuffer, runningMean);
-            rawFrame.prepareForRayTrace(commandBuffer);
+                    commandBuffer, this.imageInitialization, runningMean);
+            rawFrame.prepareForRayTrace(
+                    commandBuffer, this.imageInitialization);
             VulkanImageTransitions.prepareAtlasForTrace(
                     commandBuffer, atlasView.texture());
             labPbrFrame = labPbrAtlas.prepare(commandBuffer);
@@ -126,9 +135,15 @@ public final class ScreenshotFrameExecutor {
             // execute() transfers this command buffer to Minecraft's open Submission only after
             // its validation succeeds; failed calls still own and must abandon recorded state.
             submissionAccepted = true;
-            long submittedAtmosphereFrame = atmosphereFrame;
+            this.imageInitialization.submitted();
+            initializationActive = false;
+            long submittedPipelineFrame = pipelineFrame;
             RuntimeException commitFailure = ResourceCleanup.run(
-                    () -> atmosphere.submitted(submittedAtmosphereFrame), null);
+                    () -> pipeline.submitted(submittedPipelineFrame), null);
+            long submittedAtmosphereFrame = atmosphereFrame;
+            commitFailure = ResourceCleanup.run(
+                    () -> atmosphere.submitted(submittedAtmosphereFrame),
+                    commitFailure);
             LabPbrTextureAtlas.FrameToken submittedLabPbrFrame =
                     labPbrFrame;
             commitFailure = ResourceCleanup.run(
@@ -138,6 +153,16 @@ public final class ScreenshotFrameExecutor {
         } catch (RuntimeException exception) {
             if (!submissionAccepted) {
                 RuntimeException failure = exception;
+                if (initializationActive) {
+                    failure = ResourceCleanup.run(
+                            this.imageInitialization::abandon, failure);
+                }
+                if (pipelineFrame != 0L) {
+                    long abandonedPipelineFrame = pipelineFrame;
+                    failure = ResourceCleanup.run(
+                            () -> pipeline.abandon(abandonedPipelineFrame),
+                            failure);
+                }
                 long abandonedAtmosphereFrame = atmosphereFrame;
                 failure = ResourceCleanup.run(
                         () -> atmosphere.abandon(abandonedAtmosphereFrame),

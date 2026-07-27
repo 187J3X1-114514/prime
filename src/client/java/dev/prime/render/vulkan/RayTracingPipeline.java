@@ -5,6 +5,7 @@ import com.mojang.blaze3d.vulkan.VulkanGpuSampler;
 import com.mojang.blaze3d.vulkan.VulkanGpuTextureView;
 import dev.prime.PrimeClient;
 import dev.prime.render.IntegratorFrameInput;
+import dev.prime.render.ResourceCleanup;
 import dev.prime.render.shader.ShaderAbi;
 import dev.prime.render.terrain.TerrainScene;
 import java.io.IOException;
@@ -73,6 +74,8 @@ public final class RayTracingPipeline implements Destroyable {
     static final int LABPBR_SPECULAR_STAGES =
             KHRRayTracingPipeline.VK_SHADER_STAGE_RAYGEN_BIT_KHR
                     | KHRRayTracingPipeline.VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR;
+    private static final int STARMAP_UPLOAD = 1;
+    private static final int BSDF_LOOKUP_UPLOAD = 1 << 1;
 
     private final VulkanContext context;
     private final long descriptorSetLayout;
@@ -82,6 +85,10 @@ public final class RayTracingPipeline implements Destroyable {
     private final StarmapTexture starmap;
     private VulkanBuffer wavefrontPaths;
     private DescriptorBindings descriptorBindings;
+    private long nextFrameToken;
+    private long pendingFrameToken;
+    private int pendingUploads;
+    private boolean staticResourcesPrepared;
     private boolean destroyed;
 
     public RayTracingPipeline(VulkanContext context, StarmapTexture starmap) {
@@ -235,6 +242,82 @@ public final class RayTracingPipeline implements Destroyable {
         }
     }
 
+    /**
+     * Records immutable starmap and BSDF-LUT uploads without publishing their CPU state.
+     *
+     * <p>The returned primitive token is zero after the initial accepted upload and therefore has
+     * no steady-state allocation or resource cost.
+     */
+    public long prepareFrame(
+            VkCommandBuffer commandBuffer,
+            VulkanImageInitializationBatch initialization) {
+        if (this.pendingFrameToken != 0L) {
+            throw new IllegalStateException(
+                    "Ray-tracing static-resource upload is already pending");
+        }
+        int uploads = 0;
+        try {
+            if (this.starmap.prepare(commandBuffer, initialization)) {
+                uploads |= STARMAP_UPLOAD;
+            }
+            if (this.bsdfLookup.prepare(commandBuffer, initialization)) {
+                uploads |= BSDF_LOOKUP_UPLOAD;
+            }
+            if (uploads == 0) {
+                this.staticResourcesPrepared = true;
+                return 0L;
+            }
+            long token = this.nextFrameToken();
+            this.pendingFrameToken = token;
+            this.pendingUploads = uploads;
+            return token;
+        } catch (RuntimeException exception) {
+            RuntimeException failure = exception;
+            if ((uploads & BSDF_LOOKUP_UPLOAD) != 0) {
+                failure = ResourceCleanup.run(this.bsdfLookup::abandon, failure);
+            }
+            if ((uploads & STARMAP_UPLOAD) != 0) {
+                failure = ResourceCleanup.run(this.starmap::abandon, failure);
+            }
+            throw failure;
+        }
+    }
+
+    public void submitted(long token) {
+        if (token == 0L) {
+            return;
+        }
+        this.requirePendingToken(token);
+        RuntimeException failure = null;
+        if ((this.pendingUploads & STARMAP_UPLOAD) != 0) {
+            failure = ResourceCleanup.run(this.starmap::submitted, failure);
+        }
+        if ((this.pendingUploads & BSDF_LOOKUP_UPLOAD) != 0) {
+            failure = ResourceCleanup.run(this.bsdfLookup::submitted, failure);
+        }
+        this.staticResourcesPrepared = failure == null;
+        this.pendingFrameToken = 0L;
+        this.pendingUploads = 0;
+        ResourceCleanup.throwIfFailed(failure);
+    }
+
+    public void abandon(long token) {
+        if (token == 0L) {
+            return;
+        }
+        this.requirePendingToken(token);
+        RuntimeException failure = null;
+        if ((this.pendingUploads & BSDF_LOOKUP_UPLOAD) != 0) {
+            failure = ResourceCleanup.run(this.bsdfLookup::abandon, failure);
+        }
+        if ((this.pendingUploads & STARMAP_UPLOAD) != 0) {
+            failure = ResourceCleanup.run(this.starmap::abandon, failure);
+        }
+        this.pendingFrameToken = 0L;
+        this.pendingUploads = 0;
+        ResourceCleanup.throwIfFailed(failure);
+    }
+
     public void trace(
             VkCommandBuffer commandBuffer,
             IntegratorFrameInput input,
@@ -258,6 +341,21 @@ public final class RayTracingPipeline implements Destroyable {
                 WAVEFRONT_SCREENSHOT_RESOLVE_GROUP);
     }
 
+    private long nextFrameToken() {
+        long token = ++this.nextFrameToken;
+        if (token == 0L) {
+            token = ++this.nextFrameToken;
+        }
+        return token;
+    }
+
+    private void requirePendingToken(long token) {
+        if (token != this.pendingFrameToken) {
+            throw new IllegalArgumentException(
+                    "Ray-tracing frame token does not belong to this submission");
+        }
+    }
+
     private void traceWavefront(
             VkCommandBuffer commandBuffer,
             IntegratorFrameInput input,
@@ -270,8 +368,10 @@ public final class RayTracingPipeline implements Destroyable {
             throw new IllegalStateException(
                     "Wavefront path slots do not match the trace extent");
         }
-        this.starmap.prepare(commandBuffer);
-        this.bsdfLookup.prepare(commandBuffer);
+        if (!this.staticResourcesPrepared && this.pendingFrameToken == 0L) {
+            throw new IllegalStateException(
+                    "Ray-tracing static resources were not prepared for this frame");
+        }
         try (MemoryStack stack = MemoryStack.stackPush()) {
             this.bind(
                     commandBuffer,

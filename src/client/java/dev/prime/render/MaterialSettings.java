@@ -22,6 +22,17 @@ public final class MaterialSettings {
         }
     }
 
-    public record Snapshot(int roughnessSteps, float linearRoughness, long revision) {
+    public record Snapshot(int roughnessSteps, long revision) {
+        public Snapshot {
+            requireValid(roughnessSteps);
+            if (revision < 0L) {
+                throw new IllegalArgumentException(
+                        "Material revision must not be negative");
+            }
+        }
+
+        public float linearRoughness() {
+            return MaterialSettings.linearRoughness(this.roughnessSteps);
+        }
     }
 }

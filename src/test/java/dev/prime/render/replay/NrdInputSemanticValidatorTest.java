@@ -174,8 +174,8 @@ final class NrdInputSemanticValidatorTest {
                 false,
                 PostProcessingMode.NRD_FSR,
                 new LightingSettings.Snapshot(
-                        0, 0, 0, 1.0F, 1.0F, 1.0F, 1L),
-                new MaterialSettings.Snapshot(90, 0.9F, 1L),
+                        0, 0, 0, 1L),
+                new MaterialSettings.Snapshot(90, 1L),
                 true,
                 false,
                 false);

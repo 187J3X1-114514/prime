@@ -382,7 +382,11 @@ public final class VulkanRenderer implements AutoCloseable {
         RealtimeFramePlan framePlan;
         try {
             framePlan =
-                    RealtimeFramePlan.complete(frameInput, sampleFrame, postFrame);
+                    RealtimeFramePlan.complete(
+                            frameInput,
+                            sampleFrame,
+                            postParameters,
+                            postFrame);
             if (images.mode == PostProcessingMode.DLSS_RR) {
                 this.debugLines = DlssRrDebugStatus.lines(
                         images.qualityMode,

@@ -90,9 +90,9 @@ final class RayTracingPushConstantsTest {
                 new TerrainScene.ResidentSceneView(
                         3L, 0x1020_3040_5060_7080L, 96, 48, -48, 4L, 5L, 6L);
         LightingSettings.Snapshot lighting =
-                new LightingSettings.Snapshot(4, -8, 12, 2.0F, 0.25F, 8.0F, 7L);
+                new LightingSettings.Snapshot(4, -8, 12, 7L);
         MaterialSettings.Snapshot material =
-                new MaterialSettings.Snapshot(90, 0.9F, 8L);
+                new MaterialSettings.Snapshot(90, 8L);
         IntegratorFrameInput input = new IntegratorFrameInput(
                 camera,
                 320,

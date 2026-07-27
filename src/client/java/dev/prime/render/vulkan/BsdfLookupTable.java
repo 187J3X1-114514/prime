@@ -31,6 +31,7 @@ final class BsdfLookupTable implements Destroyable {
     private final VulkanBuffer upload;
     private final long sampler;
     private boolean prepared;
+    private boolean pending;
     private boolean destroyed;
 
     BsdfLookupTable(VulkanContext context) {
@@ -99,11 +100,22 @@ final class BsdfLookupTable implements Destroyable {
         return this.sampler;
     }
 
-    void prepare(VkCommandBuffer commandBuffer) {
+    boolean prepare(
+            VkCommandBuffer commandBuffer,
+            VulkanImageInitializationBatch initialization) {
         if (this.prepared) {
-            return;
+            return false;
         }
+        if (this.pending) {
+            throw new IllegalStateException(
+                    "BSDF lookup upload is already pending submission");
+        }
+        this.pending = true;
         try (MemoryStack stack = MemoryStack.stackPush()) {
+            if (initialization.prepare(this.transmissionGgxEnergy)) {
+                throw new IllegalStateException(
+                        "BSDF lookup image is initialized without committed upload state");
+            }
             VkImageMemoryBarrier2.Buffer toTransfer = VkImageMemoryBarrier2.calloc(1, stack);
             fillBarrier(
                     toTransfer.get(0),
@@ -145,9 +157,28 @@ final class BsdfLookupTable implements Destroyable {
             KHRSynchronization2.vkCmdPipelineBarrier2KHR(
                     commandBuffer,
                     VkDependencyInfo.calloc(stack).sType$Default().pImageMemoryBarriers(toShader));
+            return true;
+        } catch (RuntimeException exception) {
+            this.pending = false;
+            throw exception;
         }
-        this.transmissionGgxEnergy.markInitialized();
+    }
+
+    void submitted() {
+        if (!this.pending) {
+            throw new IllegalStateException(
+                    "BSDF lookup upload is not pending submission");
+        }
         this.prepared = true;
+        this.pending = false;
+    }
+
+    void abandon() {
+        if (!this.pending) {
+            throw new IllegalStateException(
+                    "BSDF lookup upload is not pending submission");
+        }
+        this.pending = false;
     }
 
     private void fillBarrier(

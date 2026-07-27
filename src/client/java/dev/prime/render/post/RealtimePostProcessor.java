@@ -2,10 +2,12 @@ package dev.prime.render.post;
 
 import com.mojang.blaze3d.vulkan.Destroyable;
 import dev.prime.render.FrameCamera;
+import dev.prime.render.LightingSettings;
 import dev.prime.render.SunDirection;
 import dev.prime.render.fsr.FsrDebugView;
 import dev.prime.render.fsr.FsrSettings;
 import dev.prime.render.vulkan.VulkanImage;
+import dev.prime.render.vulkan.VulkanImageInitializationBatch;
 import dev.prime.render.vulkan.RawWavefrontFrame;
 import dev.prime.render.vulkan.nrd.NrdDiagnostics;
 import java.util.Objects;
@@ -38,9 +40,15 @@ public interface RealtimePostProcessor extends Destroyable {
 
     Frame beginFrame(FrameParameters parameters);
 
-    void prepareForRayTrace(VkCommandBuffer commandBuffer);
+    void prepareForRayTrace(
+            VkCommandBuffer commandBuffer,
+            VulkanImageInitializationBatch initialization);
 
-    void record(VkCommandBuffer commandBuffer, Frame frame, FrameParameters parameters);
+    void record(
+            VkCommandBuffer commandBuffer,
+            Frame frame,
+            FrameParameters parameters,
+            VulkanImageInitializationBatch initialization);
 
     /** Releases a frame whose command buffer was not submitted. */
     void abandon(Frame frame);
@@ -62,7 +70,7 @@ public interface RealtimePostProcessor extends Destroyable {
             long textureRevision,
             boolean forceRestart,
             SunDirection sunDirection,
-            float sunRadianceMultiplier,
+            LightingSettings.Snapshot lighting,
             float displayOverexposure,
             NrdDiagnostics.Mode nrdDebugView,
             FsrDebugView fsrDebugView,
@@ -71,17 +79,19 @@ public interface RealtimePostProcessor extends Destroyable {
         public FrameParameters {
             camera = Objects.requireNonNull(camera, "camera");
             sunDirection = Objects.requireNonNull(sunDirection, "sunDirection");
+            lighting = Objects.requireNonNull(lighting, "lighting");
             nrdDebugView = Objects.requireNonNull(nrdDebugView, "nrdDebugView");
             fsrDebugView = Objects.requireNonNull(fsrDebugView, "fsrDebugView");
             rrDebugView = Objects.requireNonNull(rrDebugView, "rrDebugView");
-            if (!Float.isFinite(sunRadianceMultiplier) || sunRadianceMultiplier <= 0.0F) {
-                throw new IllegalArgumentException("Sun radiance multiplier must be finite and positive");
-            }
             if (!Float.isFinite(displayOverexposure)
                     || displayOverexposure < 1.0F
                     || displayOverexposure > 2.0F) {
                 throw new IllegalArgumentException("Display overexposure must be between 1.0 and 2.0");
             }
+        }
+
+        public float sunRadianceMultiplier() {
+            return this.lighting.sunMultiplier();
         }
     }
 }

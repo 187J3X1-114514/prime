@@ -70,9 +70,27 @@ public final class LightingSettings {
             int sunQuarterSteps,
             int starQuarterSteps,
             int blockLightQuarterSteps,
-            float sunMultiplier,
-            float starMultiplier,
-            float blockLightMultiplier,
             long revision) {
+        public Snapshot {
+            requireValid(sunQuarterSteps);
+            requireValidStar(starQuarterSteps);
+            requireValid(blockLightQuarterSteps);
+            if (revision < 0L) {
+                throw new IllegalArgumentException(
+                        "Lighting revision must not be negative");
+            }
+        }
+
+        public float sunMultiplier() {
+            return linearMultiplier(this.sunQuarterSteps);
+        }
+
+        public float starMultiplier() {
+            return starLinearMultiplier(this.starQuarterSteps);
+        }
+
+        public float blockLightMultiplier() {
+            return linearMultiplier(this.blockLightQuarterSteps);
+        }
     }
 }

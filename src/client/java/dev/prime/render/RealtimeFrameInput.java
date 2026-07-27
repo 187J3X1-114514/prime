@@ -102,12 +102,35 @@ public record RealtimeFrameInput(
                 this.textureRevision,
                 forceRestart,
                 this.sunDirection,
-                this.lighting.sunMultiplier(),
+                this.lighting,
                 this.displayOverexposure,
                 this.nrdDebugView,
                 this.fsrDebugView,
                 this.rrDebugView,
                 this.rrDebugFullscreen);
+    }
+
+    void requireReconstructionInput(
+            RealtimePostProcessor.FrameParameters parameters,
+            boolean forceRestart) {
+        Objects.requireNonNull(parameters, "parameters");
+        if (!this.camera.equals(parameters.camera())
+                || this.frameTimeNanos != parameters.frameTimeNanos()
+                || this.sceneRevision != parameters.sceneRevision()
+                || this.textureRevision != parameters.textureRevision()
+                || forceRestart != parameters.forceRestart()
+                || !this.sunDirection.equals(parameters.sunDirection())
+                || !this.lighting.equals(parameters.lighting())
+                || Float.floatToRawIntBits(this.displayOverexposure)
+                        != Float.floatToRawIntBits(
+                                parameters.displayOverexposure())
+                || this.nrdDebugView != parameters.nrdDebugView()
+                || this.fsrDebugView != parameters.fsrDebugView()
+                || this.rrDebugView != parameters.rrDebugView()
+                || this.rrDebugFullscreen != parameters.rrDebugFullscreen()) {
+            throw new IllegalStateException(
+                    "Reconstruction parameters do not match the captured frame input");
+        }
     }
 
     IntegratorFrameInput integratorInput(

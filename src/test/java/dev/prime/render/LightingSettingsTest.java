@@ -44,4 +44,20 @@ final class LightingSettingsTest {
         assertEquals(2, block.lighting().starQuarterSteps());
         assertEquals(-1, block.lighting().blockLightQuarterSteps());
     }
+
+    @Test
+    void snapshotDerivesLinearValuesFromItsCanonicalSteps() {
+        LightingSettings.Snapshot snapshot =
+                new LightingSettings.Snapshot(4, -8, 12, 3L);
+
+        assertEquals(2.0F, snapshot.sunMultiplier());
+        assertEquals(0.25F, snapshot.starMultiplier());
+        assertEquals(8.0F, snapshot.blockLightMultiplier());
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> new LightingSettings.Snapshot(33, 0, 0, 0L));
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> new LightingSettings.Snapshot(0, 0, 0, -1L));
+    }
 }

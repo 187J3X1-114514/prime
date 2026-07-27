@@ -75,11 +75,11 @@ public final class VulkanImage implements Destroyable {
         return this.depth;
     }
 
-    public boolean initialized() {
+    boolean initialized() {
         return this.initialized;
     }
 
-    public void markInitialized() {
+    void markInitialized() {
         this.initialized = true;
     }
 

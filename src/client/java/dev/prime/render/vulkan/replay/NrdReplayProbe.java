@@ -15,6 +15,7 @@ import dev.prime.render.vulkan.AtmospherePipeline;
 import dev.prime.render.vulkan.RawWavefrontFrame;
 import dev.prime.render.vulkan.VulkanContext;
 import dev.prime.render.vulkan.VulkanImage;
+import dev.prime.render.vulkan.VulkanImageInitializationBatch;
 import dev.prime.render.vulkan.nrd.NrdDenoiser;
 import dev.prime.render.vulkan.nrd.NrdDiagnostics;
 import dev.prime.render.vulkan.nrd.NrdFrameHistory;
@@ -103,10 +104,12 @@ public final class NrdReplayProbe implements Destroyable {
         return this.stableRadiance;
     }
 
-    public void prepareForTrace(VkCommandBuffer commandBuffer) {
+    public void prepareForTrace(
+            VkCommandBuffer commandBuffer,
+            VulkanImageInitializationBatch initialization) {
         requireOpen();
-        prepareCompositeImages(commandBuffer);
-        this.denoiser.prepareForRayTrace(commandBuffer);
+        prepareCompositeImages(commandBuffer, initialization);
+        this.denoiser.prepareForRayTrace(commandBuffer, initialization);
     }
 
     public PlannedFrame planFrame(
@@ -364,14 +367,16 @@ public final class NrdReplayProbe implements Destroyable {
         return result;
     }
 
-    private void prepareCompositeImages(VkCommandBuffer commandBuffer) {
+    private void prepareCompositeImages(
+            VkCommandBuffer commandBuffer,
+            VulkanImageInitializationBatch initialization) {
         try (MemoryStack stack = MemoryStack.stackPush()) {
             VulkanImage[] images = {this.output, this.stableRadiance};
             VkImageMemoryBarrier2.Buffer barriers =
                     VkImageMemoryBarrier2.calloc(images.length, stack);
             for (int index = 0; index < images.length; index++) {
                 VulkanImage image = images[index];
-                boolean initialized = image.initialized();
+                boolean initialized = initialization.prepare(image);
                 barriers.get(index)
                         .sType$Default()
                         .srcStageMask(initialized
@@ -400,7 +405,6 @@ public final class NrdReplayProbe implements Destroyable {
                         .levelCount(1)
                         .baseArrayLayer(0)
                         .layerCount(1);
-                image.markInitialized();
             }
             KHRSynchronization2.vkCmdPipelineBarrier2KHR(
                     commandBuffer,

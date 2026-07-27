@@ -106,20 +106,40 @@ public final class RayTraceReplayInputCodec {
                         "Ray-trace replay contains unknown flags");
             }
             PostProcessingMode mode = mode(input.getInt());
+            int sunQuarterSteps = input.getInt();
+            int starQuarterSteps = input.getInt();
+            int blockLightQuarterSteps = input.getInt();
+            int sunMultiplierBits = input.getInt();
+            int starMultiplierBits = input.getInt();
+            int blockLightMultiplierBits = input.getInt();
             LightingSettings.Snapshot lighting =
                     new LightingSettings.Snapshot(
-                            input.getInt(),
-                            input.getInt(),
-                            input.getInt(),
-                            Float.intBitsToFloat(input.getInt()),
-                            Float.intBitsToFloat(input.getInt()),
-                            Float.intBitsToFloat(input.getInt()),
+                            sunQuarterSteps,
+                            starQuarterSteps,
+                            blockLightQuarterSteps,
                             input.getLong());
+            requireDerivedValue(
+                    sunMultiplierBits,
+                    lighting.sunMultiplier(),
+                    "sun multiplier");
+            requireDerivedValue(
+                    starMultiplierBits,
+                    lighting.starMultiplier(),
+                    "star multiplier");
+            requireDerivedValue(
+                    blockLightMultiplierBits,
+                    lighting.blockLightMultiplier(),
+                    "block-light multiplier");
+            int roughnessSteps = input.getInt();
+            int linearRoughnessBits = input.getInt();
             MaterialSettings.Snapshot material =
                     new MaterialSettings.Snapshot(
-                            input.getInt(),
-                            Float.intBitsToFloat(input.getInt()),
+                            roughnessSteps,
                             input.getLong());
+            requireDerivedValue(
+                    linearRoughnessBits,
+                    material.linearRoughness(),
+                    "material roughness");
             if (input.hasRemaining()) {
                 throw new IllegalArgumentException(
                         "Ray-trace replay contains trailing data");
@@ -162,6 +182,14 @@ public final class RayTraceReplayInputCodec {
             result |= FLAG_TRIANGLE_DEBUG;
         }
         return result;
+    }
+
+    private static void requireDerivedValue(
+            int encodedBits, float expected, String label) {
+        if (encodedBits != Float.floatToRawIntBits(expected)) {
+            throw new IllegalArgumentException(
+                    "Ray-trace replay contains an inconsistent " + label);
+        }
     }
 
     private static int mode(PostProcessingMode mode) {

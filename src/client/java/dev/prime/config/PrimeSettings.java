@@ -187,16 +187,12 @@ public record PrimeSettings(
                 this.sunQuarterSteps,
                 this.starQuarterSteps,
                 this.blockLightQuarterSteps,
-                LightingSettings.linearMultiplier(this.sunQuarterSteps),
-                LightingSettings.starLinearMultiplier(this.starQuarterSteps),
-                LightingSettings.linearMultiplier(this.blockLightQuarterSteps),
                 this.lightingRevision);
     }
 
     public MaterialSettings.Snapshot material() {
         return new MaterialSettings.Snapshot(
                 this.defaultRoughnessSteps,
-                MaterialSettings.linearRoughness(this.defaultRoughnessSteps),
                 this.materialRevision);
     }
 

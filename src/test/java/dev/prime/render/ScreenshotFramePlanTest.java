@@ -65,8 +65,8 @@ final class ScreenshotFramePlanTest {
                 new SunDirection(0.0F, 1.0F, 0.0F),
                 false,
                 new LightingSettings.Snapshot(
-                        0, 0, 0, 1.0F, 1.0F, 1.0F, 1L),
-                new MaterialSettings.Snapshot(90, 0.9F, 1L),
+                        0, 0, 0, 1L),
+                new MaterialSettings.Snapshot(90, 1L),
                 sampleCount,
                 1.0F);
     }

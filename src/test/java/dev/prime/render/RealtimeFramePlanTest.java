@@ -2,6 +2,7 @@ package dev.prime.render;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -14,6 +15,7 @@ import dev.prime.render.post.ReconstructionQualityMode;
 import dev.prime.render.vulkan.nrd.NrdDiagnostics;
 import dev.prime.render.vulkan.RawWavefrontFrame;
 import dev.prime.render.vulkan.VulkanImage;
+import dev.prime.render.vulkan.VulkanImageInitializationBatch;
 import org.lwjgl.vulkan.VkCommandBuffer;
 import org.joml.Matrix4f;
 import org.junit.jupiter.api.Test;
@@ -40,9 +42,12 @@ final class RealtimeFramePlanTest {
                         RealtimeSampleState.initial().plan(
                                 sampleInput);
                 FsrSettings.Jitter jitter = input.expectedJitter(0);
+                RealtimePostProcessor.FrameParameters reconstruction =
+                        input.reconstructionInput(sample.reset());
                 RealtimeFramePlan plan = RealtimeFramePlan.complete(
                         input,
                         sample,
+                        reconstruction,
                         new FrameStub(0, jitter, true));
 
                 assertEquals(input.camera(), plan.integrator().camera());
@@ -52,6 +57,7 @@ final class RealtimeFramePlanTest {
                 assertEquals(0, plan.integrator().sampleIndex());
                 assertEquals(sample.epoch(), plan.integrator().sampleEpoch());
                 assertEquals(jitter, plan.jitter());
+                assertSame(reconstruction, plan.reconstruction());
                 assertTrue(plan.reconstruction().forceRestart());
                 assertTrue(plan.reconstructionReset());
                 assertEquals(
@@ -106,6 +112,7 @@ final class RealtimeFramePlanTest {
         RealtimeFramePlan plan = RealtimeFramePlan.complete(
                 secondInput,
                 second,
+                secondInput.reconstructionInput(second.reset()),
                 new FrameStub(
                         1, secondInput.expectedJitter(1), false));
 
@@ -139,6 +146,7 @@ final class RealtimeFramePlanTest {
                 () -> RealtimeFramePlan.complete(
                         input,
                         sample,
+                        input.reconstructionInput(sample.reset()),
                         new FrameStub(
                                 0, input.expectedJitter(0), false)));
         assertThrows(
@@ -146,10 +154,45 @@ final class RealtimeFramePlanTest {
                 () -> RealtimeFramePlan.complete(
                         input,
                         sample,
+                        input.reconstructionInput(sample.reset()),
                         new FrameStub(
                                 0,
                                 new FsrSettings.Jitter(0.0F, 0.0F),
                                 true)));
+    }
+
+    @Test
+    void reconstructionParametersCannotDivergeFromCapturedFrameInput() {
+        RealtimeFrameInput input = input(
+                PostProcessingMode.NRD_FSR,
+                ReconstructionQualityMode.QUALITY);
+        RealtimeSampleState.Plan sample = RealtimeSampleState.initial().plan(
+                input.sampleStateInput());
+        RealtimePostProcessor.FrameParameters expected =
+                input.reconstructionInput(sample.reset());
+        RealtimePostProcessor.FrameParameters wrongTexture =
+                new RealtimePostProcessor.FrameParameters(
+                        expected.camera(),
+                        expected.frameTimeNanos(),
+                        expected.sceneRevision(),
+                        expected.textureRevision() + 1L,
+                        expected.forceRestart(),
+                        expected.sunDirection(),
+                        expected.lighting(),
+                        expected.displayOverexposure(),
+                        expected.nrdDebugView(),
+                        expected.fsrDebugView(),
+                        expected.rrDebugView(),
+                        expected.rrDebugFullscreen());
+
+        assertThrows(
+                IllegalStateException.class,
+                () -> RealtimeFramePlan.complete(
+                        input,
+                        sample,
+                        wrongTexture,
+                        new FrameStub(
+                                0, input.expectedJitter(0), true)));
     }
 
     @Test
@@ -194,8 +237,8 @@ final class RealtimeFramePlanTest {
                 mode,
                 quality,
                 new LightingSettings.Snapshot(
-                        0, 0, 0, 1.0F, 1.0F, 1.0F, 13L),
-                new MaterialSettings.Snapshot(90, 0.9F, 17L),
+                        0, 0, 0, 13L),
+                new MaterialSettings.Snapshot(90, 17L),
                 true,
                 false,
                 1.0F,
@@ -242,7 +285,9 @@ final class RealtimeFramePlanTest {
         }
 
         @Override
-        public void prepareForRayTrace(VkCommandBuffer commandBuffer) {
+        public void prepareForRayTrace(
+                VkCommandBuffer commandBuffer,
+                VulkanImageInitializationBatch initialization) {
             throw new UnsupportedOperationException();
         }
 
@@ -250,7 +295,8 @@ final class RealtimeFramePlanTest {
         public void record(
                 VkCommandBuffer commandBuffer,
                 Frame frame,
-                FrameParameters parameters) {
+                FrameParameters parameters,
+                VulkanImageInitializationBatch initialization) {
             throw new UnsupportedOperationException();
         }
 

@@ -32,6 +32,7 @@ public final class StarmapTexture implements Destroyable {
     private final long sampler;
     private VulkanBuffer[] uploads;
     private boolean prepared;
+    private boolean pending;
     private boolean destroyed;
 
     public StarmapTexture(VulkanContext context) {
@@ -99,12 +100,23 @@ public final class StarmapTexture implements Destroyable {
         return this.sampler;
     }
 
-    void prepare(VkCommandBuffer commandBuffer) {
+    boolean prepare(
+            VkCommandBuffer commandBuffer,
+            VulkanImageInitializationBatch initialization) {
         if (this.prepared) {
-            return;
+            return false;
         }
+        if (this.pending) {
+            throw new IllegalStateException(
+                    "Starmap upload is already pending submission");
+        }
+        this.pending = true;
         VulkanBuffer[] pending = this.uploads;
         try (MemoryStack stack = MemoryStack.stackPush()) {
+            if (initialization.prepare(this.image)) {
+                throw new IllegalStateException(
+                        "Starmap image is initialized without committed upload state");
+            }
             for (VulkanBuffer upload : pending) {
                 upload.flush(0L, upload.size());
             }
@@ -155,13 +167,33 @@ public final class StarmapTexture implements Destroyable {
                     VkDependencyInfo.calloc(stack)
                             .sType$Default()
                             .pImageMemoryBarriers(toShader));
+            return true;
+        } catch (RuntimeException exception) {
+            this.pending = false;
+            throw exception;
         }
-        this.image.markInitialized();
+    }
+
+    void submitted() {
+        if (!this.pending) {
+            throw new IllegalStateException(
+                    "Starmap upload is not pending submission");
+        }
+        VulkanBuffer[] pending = this.uploads;
         for (VulkanBuffer upload : pending) {
             this.context.defer(upload);
         }
         this.uploads = null;
         this.prepared = true;
+        this.pending = false;
+    }
+
+    void abandon() {
+        if (!this.pending) {
+            throw new IllegalStateException(
+                    "Starmap upload is not pending submission");
+        }
+        this.pending = false;
     }
 
     private void fillImageBarrier(

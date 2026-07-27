@@ -19,6 +19,7 @@ public record RealtimeFrameInput(
         FrameCamera camera,
         long frameTimeNanos,
         long sceneRevision,
+        long residentSceneRevision,
         long textureRevision,
         int width,
         int height,
@@ -55,6 +56,10 @@ public record RealtimeFrameInput(
             throw new IllegalArgumentException(
                     "Realtime render and display extents must be positive");
         }
+        if (residentSceneRevision < 0L) {
+            throw new IllegalArgumentException(
+                    "Realtime resident scene revision must be non-negative");
+        }
         if (!Float.isFinite(displayOverexposure)
                 || displayOverexposure < 1.0F
                 || displayOverexposure > 2.0F) {
@@ -81,7 +86,10 @@ public record RealtimeFrameInput(
                 this.camera,
                 this.sceneRevision,
                 this.textureRevision,
+                this.lighting.revision(),
+                this.material.revision(),
                 this.sunDirection,
+                this.cameraInWater,
                 this.forceReset);
     }
 

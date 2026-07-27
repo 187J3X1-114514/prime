@@ -92,6 +92,15 @@ public record RayTraceReplayInput(
                 this.triangleDebug);
     }
 
+    public void requireMatch(
+            IntegratorFrameInput input,
+            TerrainScene.ResidentSceneView residentScene) {
+        if (!this.equals(capture(input, residentScene))) {
+            throw new IllegalArgumentException(
+                    "Integrator input does not match its replay capture");
+        }
+    }
+
     public record SceneIdentity(
             int originX,
             int originY,

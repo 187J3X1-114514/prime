@@ -161,12 +161,12 @@ public final class NrdReplayProbe implements Destroyable {
                     "Replay-probe plan does not belong to this recording");
         }
         frame.recorded = true;
-        ReplayStageCapturePass rawCapture =
-                ReplayStageCapturePass.createRaw(
-                        this.context, this.denoiser.rawFrame());
+        ReplayStageCapturePass rawCapture = null;
         ReplayStageCapturePass preparedCapture = null;
         NrdDenoiser.FrameToken reconstruction = null;
         try {
+            rawCapture = ReplayStageCapturePass.createRaw(
+                    this.context, this.denoiser.rawFrame());
             rawCapture.recordAfterRayTrace(commandBuffer);
             NrdDenoiser.PreparedFrame prepared =
                     this.denoiser.prepareInputs(
@@ -187,16 +187,58 @@ public final class NrdReplayProbe implements Destroyable {
                     rawCapture,
                     preparedCapture,
                     reconstruction,
+                    frame.denoiserPlan,
                     preparationInput);
             this.planned = null;
             this.pending = recorded;
             return recorded;
         } catch (RuntimeException exception) {
             this.planned = null;
-            ResourceCleanup.destroy(preparedCapture, exception);
-            ResourceCleanup.destroy(rawCapture, exception);
-            throw exception;
+            frame.abandoned = true;
+            RuntimeException failure = ResourceCleanup.run(
+                    () -> this.nrdHistory.abandon(frame.denoiserPlan),
+                    exception);
+            failure = ResourceCleanup.destroy(preparedCapture, failure);
+            failure = ResourceCleanup.destroy(rawCapture, failure);
+            throw failure;
         }
+    }
+
+    public void abandon(PlannedFrame frame) {
+        requireOpen();
+        if (frame == null
+                || frame.owner != this
+                || frame != this.planned
+                || frame.recorded
+                || frame.abandoned) {
+            throw new IllegalArgumentException(
+                    "Replay-probe plan does not belong to this probe");
+        }
+        frame.abandoned = true;
+        this.planned = null;
+        this.nrdHistory.abandon(frame.denoiserPlan);
+    }
+
+    public void abandon(RecordedFrame recorded) {
+        requireOpen();
+        if (recorded == null
+                || recorded.owner != this
+                || recorded != this.pending
+                || recorded.submitted
+                || recorded.abandoned) {
+            throw new IllegalArgumentException(
+                    "Replay-probe frame does not belong to this probe");
+        }
+        recorded.abandoned = true;
+        this.pending = null;
+        RuntimeException failure = ResourceCleanup.run(
+                () -> this.denoiser.abandon(recorded.reconstruction), null);
+        failure = ResourceCleanup.run(
+                () -> this.nrdHistory.abandon(recorded.denoiserPlan),
+                failure);
+        failure = ResourceCleanup.destroy(recorded.preparedCapture, failure);
+        failure = ResourceCleanup.destroy(recorded.rawCapture, failure);
+        ResourceCleanup.throwIfFailed(failure);
     }
 
     public CompletableFuture<RenderReplayCapture> submitted(
@@ -210,7 +252,8 @@ public final class NrdReplayProbe implements Destroyable {
         Objects.requireNonNull(frame, "frame");
         if (recorded.owner != this
                 || recorded != this.pending
-                || recorded.submitted) {
+                || recorded.submitted
+                || recorded.abandoned) {
             throw new IllegalArgumentException(
                     "Replay-probe frame does not belong to this submission");
         }
@@ -400,19 +443,23 @@ public final class NrdReplayProbe implements Destroyable {
         private final ReplayStageCapturePass rawCapture;
         private final ReplayStageCapturePass preparedCapture;
         private final NrdDenoiser.FrameToken reconstruction;
+        private final NrdFrameHistory.PlannedFrame denoiserPlan;
         private final NrdPreparationReplayInput preparationInput;
         private boolean submitted;
+        private boolean abandoned;
 
         private RecordedFrame(
                 NrdReplayProbe owner,
                 ReplayStageCapturePass rawCapture,
                 ReplayStageCapturePass preparedCapture,
                 NrdDenoiser.FrameToken reconstruction,
+                NrdFrameHistory.PlannedFrame denoiserPlan,
                 NrdPreparationReplayInput preparationInput) {
             this.owner = owner;
             this.rawCapture = rawCapture;
             this.preparedCapture = preparedCapture;
             this.reconstruction = reconstruction;
+            this.denoiserPlan = denoiserPlan;
             this.preparationInput = preparationInput;
         }
     }
@@ -421,6 +468,7 @@ public final class NrdReplayProbe implements Destroyable {
         private final NrdReplayProbe owner;
         private final NrdFrameHistory.PlannedFrame denoiserPlan;
         private boolean recorded;
+        private boolean abandoned;
 
         private PlannedFrame(
                 NrdReplayProbe owner,

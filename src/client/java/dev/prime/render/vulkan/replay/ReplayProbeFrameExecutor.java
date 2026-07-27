@@ -2,6 +2,7 @@ package dev.prime.render.vulkan.replay;
 
 import com.mojang.blaze3d.vulkan.VulkanGpuTextureView;
 import dev.prime.render.IntegratorFrameInput;
+import dev.prime.render.ResourceCleanup;
 import dev.prime.render.replay.RayTraceReplayInput;
 import dev.prime.render.replay.RenderBinaryFingerprint;
 import dev.prime.render.replay.RenderPlatformFingerprint;
@@ -36,43 +37,65 @@ public final class ReplayProbeFrameExecutor {
             float displayOverexposure,
             RenderPlatformFingerprint platform,
             RenderBinaryFingerprint binary) {
-        Objects.requireNonNull(debugLabel, "debugLabel");
-        Objects.requireNonNull(pipeline, "pipeline");
         Objects.requireNonNull(probe, "probe");
         Objects.requireNonNull(nrdFrame, "nrdFrame");
-        Objects.requireNonNull(scene, "scene");
-        Objects.requireNonNull(integrator, "integrator");
-        Objects.requireNonNull(replayInput, "replayInput");
-        Objects.requireNonNull(atlasView, "atlasView");
-        Objects.requireNonNull(platform, "platform");
-        Objects.requireNonNull(binary, "binary");
+        NrdReplayProbe.RecordedFrame recorded = null;
+        boolean recordingAttempted = false;
+        boolean submissionAccepted = false;
+        try {
+            Objects.requireNonNull(debugLabel, "debugLabel");
+            Objects.requireNonNull(pipeline, "pipeline");
+            Objects.requireNonNull(scene, "scene");
+            Objects.requireNonNull(integrator, "integrator");
+            Objects.requireNonNull(replayInput, "replayInput");
+            Objects.requireNonNull(atlasView, "atlasView");
+            Objects.requireNonNull(platform, "platform");
+            Objects.requireNonNull(binary, "binary");
+            replayInput.requireMatch(integrator, scene);
 
-        var encoder = this.context.commandEncoder();
-        VkCommandBuffer commandBuffer =
-                encoder.allocateAndBeginTransientCommandBuffer();
-        this.context.device().instance().debug().beginDebugGroup(
-                commandBuffer, () -> debugLabel);
-        probe.prepareForTrace(commandBuffer);
-        VulkanImageTransitions.prepareAtlasForTrace(
-                commandBuffer, atlasView.texture());
-        pipeline.trace(commandBuffer, integrator, scene);
-        NrdReplayProbe.RecordedFrame recorded = probe.recordAfterTrace(
-                commandBuffer,
-                nrdFrame,
-                sunRadianceMultiplier,
-                displayOverexposure);
-        VulkanImageTransitions.finishAtlasRead(
-                commandBuffer, atlasView.texture());
-        this.context.device().instance().debug().endDebugGroup(
-                commandBuffer);
-        VulkanContext.check(
-                VK12.vkEndCommandBuffer(commandBuffer),
-                "end Prime replay-probe command buffer");
-        encoder.execute(commandBuffer);
-        return probe.submitted(
-                recorded,
-                platform,
-                binary,
-                replayInput);
+            var encoder = this.context.commandEncoder();
+            VkCommandBuffer commandBuffer =
+                    encoder.allocateAndBeginTransientCommandBuffer();
+            this.context.device().instance().debug().beginDebugGroup(
+                    commandBuffer, () -> debugLabel);
+            probe.prepareForTrace(commandBuffer);
+            VulkanImageTransitions.prepareAtlasForTrace(
+                    commandBuffer, atlasView.texture());
+            pipeline.trace(commandBuffer, integrator, scene);
+            recordingAttempted = true;
+            recorded = probe.recordAfterTrace(
+                    commandBuffer,
+                    nrdFrame,
+                    sunRadianceMultiplier,
+                    displayOverexposure);
+            VulkanImageTransitions.finishAtlasRead(
+                    commandBuffer, atlasView.texture());
+            this.context.device().instance().debug().endDebugGroup(
+                    commandBuffer);
+            VulkanContext.check(
+                    VK12.vkEndCommandBuffer(commandBuffer),
+                    "end Prime replay-probe command buffer");
+            encoder.execute(commandBuffer);
+            submissionAccepted = true;
+            return probe.submitted(
+                    recorded,
+                    platform,
+                    binary,
+                    replayInput);
+        } catch (RuntimeException exception) {
+            if (!submissionAccepted) {
+                RuntimeException failure = exception;
+                if (recorded != null) {
+                    NrdReplayProbe.RecordedFrame abandoned = recorded;
+                    failure = ResourceCleanup.run(
+                            () -> probe.abandon(abandoned), failure);
+                } else if (!recordingAttempted) {
+                    failure = ResourceCleanup.run(
+                            () -> probe.abandon(nrdFrame), failure);
+                }
+                throw failure;
+            }
+            throw exception;
+        }
     }
 }

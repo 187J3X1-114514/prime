@@ -1,5 +1,6 @@
 package dev.prime.render;
 
+import java.util.Objects;
 import org.joml.Matrix4f;
 import org.joml.Matrix4fc;
 import org.joml.Vector3f;
@@ -25,20 +26,112 @@ import org.joml.Vector3f;
  * Minecraft Vulkan depth is [0, 1] reversed-Z (near=1, far=0), and its internal target maps image
  * row zero to NDC y=-1 before the presentation flip.
  */
-public record FrameCamera(
-        Matrix4f projection,
-        Matrix4f viewRotation,
-        Matrix4f inverseViewProjection,
-        double x,
-        double y,
-        double z,
-        double renderX,
-        double renderY,
-        double renderZ) {
+public final class FrameCamera {
     private static final ThreadLocal<Scratch> SCRATCH = ThreadLocal.withInitial(Scratch::new);
 
+    private final Matrix4f projection;
+    private final Matrix4f viewRotation;
+    private final Matrix4f inverseViewProjection;
+    private final double x;
+    private final double y;
+    private final double z;
+    private final double renderX;
+    private final double renderY;
+    private final double renderZ;
+
+    public FrameCamera(
+            Matrix4fc projection,
+            Matrix4fc viewRotation,
+            Matrix4fc inverseViewProjection,
+            double x,
+            double y,
+            double z,
+            double renderX,
+            double renderY,
+            double renderZ) {
+        this(
+                new Matrix4f(Objects.requireNonNull(projection, "projection")),
+                new Matrix4f(Objects.requireNonNull(viewRotation, "view rotation")),
+                new Matrix4f(Objects.requireNonNull(
+                        inverseViewProjection, "inverse view projection")),
+                x,
+                y,
+                z,
+                renderX,
+                renderY,
+                renderZ);
+    }
+
+    // Only fresh matrices already owned by this class may use this overload. It avoids three
+    // defensive copies on the per-frame camera capture path.
+    private FrameCamera(
+            Matrix4f projection,
+            Matrix4f viewRotation,
+            Matrix4f inverseViewProjection,
+            double x,
+            double y,
+            double z,
+            double renderX,
+            double renderY,
+            double renderZ) {
+        this.projection = projection;
+        this.viewRotation = viewRotation;
+        this.inverseViewProjection = inverseViewProjection;
+        this.x = x;
+        this.y = y;
+        this.z = z;
+        this.renderX = renderX;
+        this.renderY = renderY;
+        this.renderZ = renderZ;
+    }
+
     FrameCamera(Matrix4f inverseViewProjection, double x, double y, double z) {
-        this(new Matrix4f(), new Matrix4f(), inverseViewProjection, x, y, z, x, y, z);
+        this(
+                new Matrix4f(),
+                new Matrix4f(),
+                new Matrix4f(inverseViewProjection),
+                x,
+                y,
+                z,
+                x,
+                y,
+                z);
+    }
+
+    public Matrix4fc projection() {
+        return this.projection;
+    }
+
+    public Matrix4fc viewRotation() {
+        return this.viewRotation;
+    }
+
+    public Matrix4fc inverseViewProjection() {
+        return this.inverseViewProjection;
+    }
+
+    public double x() {
+        return this.x;
+    }
+
+    public double y() {
+        return this.y;
+    }
+
+    public double z() {
+        return this.z;
+    }
+
+    public double renderX() {
+        return this.renderX;
+    }
+
+    public double renderY() {
+        return this.renderY;
+    }
+
+    public double renderZ() {
+        return this.renderZ;
     }
 
     static FrameCamera tryCreate(
@@ -96,6 +189,38 @@ public record FrameCamera(
                         effectiveY,
                         effectiveZ)
                 : null;
+    }
+
+    @Override
+    public boolean equals(Object object) {
+        if (object == this) {
+            return true;
+        }
+        if (!(object instanceof FrameCamera other)) {
+            return false;
+        }
+        return this.projection.equals(other.projection)
+                && this.viewRotation.equals(other.viewRotation)
+                && this.inverseViewProjection.equals(other.inverseViewProjection)
+                && Double.compare(this.x, other.x) == 0
+                && Double.compare(this.y, other.y) == 0
+                && Double.compare(this.z, other.z) == 0
+                && Double.compare(this.renderX, other.renderX) == 0
+                && Double.compare(this.renderY, other.renderY) == 0
+                && Double.compare(this.renderZ, other.renderZ) == 0;
+    }
+
+    @Override
+    public int hashCode() {
+        int result = this.projection.hashCode();
+        result = 31 * result + this.viewRotation.hashCode();
+        result = 31 * result + this.inverseViewProjection.hashCode();
+        result = 31 * result + Double.hashCode(this.x);
+        result = 31 * result + Double.hashCode(this.y);
+        result = 31 * result + Double.hashCode(this.z);
+        result = 31 * result + Double.hashCode(this.renderX);
+        result = 31 * result + Double.hashCode(this.renderY);
+        return 31 * result + Double.hashCode(this.renderZ);
     }
 
     private static boolean isInvertible(Matrix4fc matrix) {

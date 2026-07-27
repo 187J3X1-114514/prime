@@ -35,6 +35,14 @@ final class ScreenshotFramePlanTest {
         assertFalse(first.integrator().shInput());
         assertFalse(first.integrator().rawNumericalDiagnostic());
         assertFalse(first.integrator().triangleDebug());
+        first.requireSceneRevision(input.sceneRevision());
+        assertThrows(
+                IllegalStateException.class,
+                () -> first.requireSceneRevision(input.sceneRevision() + 1L));
+        first.requireTextureRevision(input.textureRevision());
+        assertThrows(
+                IllegalStateException.class,
+                () -> first.requireTextureRevision(input.textureRevision() + 1L));
     }
 
     @Test

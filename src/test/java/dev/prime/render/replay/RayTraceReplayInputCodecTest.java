@@ -65,6 +65,7 @@ final class RayTraceReplayInputCodecTest {
         IntegratorFrameInput rebound = captured.bind(relocated);
 
         assertEquals(original, rebound);
+        captured.requireMatch(original, relocated);
         assertNotEquals(
                 fixture.scene().sectionTableAddress(),
                 relocated.sectionTableAddress());
@@ -81,6 +82,31 @@ final class RayTraceReplayInputCodecTest {
         assertThrows(
                 IllegalArgumentException.class,
                 () -> captured.bind(wrongRevision));
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> captured.requireMatch(
+                        withSampleIndex(original, original.sampleIndex() + 1),
+                        relocated));
+    }
+
+    private static IntegratorFrameInput withSampleIndex(
+            IntegratorFrameInput input, int sampleIndex) {
+        return new IntegratorFrameInput(
+                input.camera(),
+                input.width(),
+                input.height(),
+                input.sunDirection(),
+                input.packedRayCone(),
+                sampleIndex,
+                input.sampleEpoch(),
+                input.jitterPhase(),
+                input.cameraInWater(),
+                input.postProcessingMode(),
+                input.lighting(),
+                input.material(),
+                input.shInput(),
+                input.rawNumericalDiagnostic(),
+                input.triangleDebug());
     }
 
     private static Fixture input() {

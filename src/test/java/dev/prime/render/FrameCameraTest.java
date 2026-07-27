@@ -1,82 +1,65 @@
 package dev.prime.render;
 
-import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertNull;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 
+import dev.prime.render.replay.FrameCameraSnapshot;
 import org.joml.Matrix4f;
-import org.joml.Matrix4fc;
 import org.junit.jupiter.api.Test;
 
 final class FrameCameraTest {
     @Test
-    void acceptsFiniteInvertibleCameraTransform() {
-        assertNotNull(FrameCamera.tryCreate(
-                new Matrix4f(), new Matrix4f(), new Matrix4f(), 1.0, 2.0, 3.0));
-    }
-
-    @Test
-    void rejectsSingularOrNonFiniteResizeFrames() {
-        assertNull(FrameCamera.tryCreate(
-                new Matrix4f().zero(),
-                new Matrix4f(),
-                new Matrix4f(),
+    void publicConstructionDoesNotAliasMutableSourceMatrices() {
+        Matrix4f projection = new Matrix4f().perspective(
+                (float) Math.toRadians(70.0), 16.0F / 9.0F, 0.05F, 512.0F);
+        Matrix4f viewRotation = new Matrix4f().rotateY(0.25F);
+        Matrix4f inverseViewProjection =
+                new Matrix4f(projection).mul(viewRotation).invert();
+        FrameCamera camera = new FrameCamera(
+                projection,
+                viewRotation,
+                inverseViewProjection,
                 1.0,
                 2.0,
-                3.0));
-        assertNull(FrameCamera.tryCreate(
-                new Matrix4f(),
-                new Matrix4f(),
-                new Matrix4f(),
-                Double.NaN,
-                2.0,
-                3.0));
+                3.0,
+                1.25,
+                2.5,
+                3.75);
+        FrameCameraSnapshot expected = FrameCameraSnapshot.capture(camera);
+
+        projection.zero();
+        viewRotation.zero();
+        inverseViewProjection.zero();
+
+        assertEquals(expected, FrameCameraSnapshot.capture(camera));
     }
 
     @Test
-    void extractsRigidViewEffectsWithoutChangingMojangsRenderedTransform() {
-        Matrix4f baseProjection = new Matrix4f().perspective(
-                (float) Math.toRadians(70.0), 16.0F / 9.0F, 512.0F, 0.05F, true);
-        Matrix4f cameraViewRotation = new Matrix4f()
-                .rotateY((float) Math.toRadians(37.0))
-                .rotateX((float) Math.toRadians(-21.0));
-        Matrix4f viewEffect = new Matrix4f()
-                .translate(0.08F, -0.13F, 0.02F)
-                .rotateZ((float) Math.toRadians(2.5))
-                .rotateX((float) Math.toRadians(4.0));
-        Matrix4f renderedProjection = new Matrix4f(baseProjection).mul(viewEffect);
+    void valueEqualityIsPreservedAfterRecordReplacement() {
+        Matrix4f projection = new Matrix4f().scale(2.0F);
+        Matrix4f viewRotation = new Matrix4f().rotateX(0.5F);
+        Matrix4f inverseViewProjection = new Matrix4f().translation(1.0F, 2.0F, 3.0F);
+        FrameCamera first = new FrameCamera(
+                projection,
+                viewRotation,
+                inverseViewProjection,
+                1.0,
+                2.0,
+                3.0,
+                4.0,
+                5.0,
+                6.0);
+        FrameCamera second = new FrameCamera(
+                projection,
+                viewRotation,
+                inverseViewProjection,
+                1.0,
+                2.0,
+                3.0,
+                4.0,
+                5.0,
+                6.0);
 
-        FrameCamera camera = FrameCamera.tryCreate(
-                renderedProjection,
-                baseProjection,
-                cameraViewRotation,
-                100.0,
-                64.0,
-                -30.0);
-        assertNotNull(camera);
-
-        Matrix4f canonicalFromPhysicalCamera = new Matrix4f(camera.projection())
-                .mul(camera.viewRotation())
-                .translate(
-                        (float) (100.0 - camera.renderX()),
-                        (float) (64.0 - camera.renderY()),
-                        (float) (-30.0 - camera.renderZ()));
-        Matrix4f exactMojangTransform = new Matrix4f(renderedProjection).mul(cameraViewRotation);
-        assertMatrixEquals(exactMojangTransform, canonicalFromPhysicalCamera, 2.0e-5F);
-
-        Matrix4f expectedInverse = exactMojangTransform.invert(new Matrix4f());
-        assertMatrixEquals(expectedInverse, camera.inverseViewProjection(), 2.0e-5F);
-    }
-
-    private static void assertMatrixEquals(Matrix4fc expected, Matrix4fc actual, float tolerance) {
-        float[] expectedValues = expected.get(new float[16]);
-        float[] actualValues = actual.get(new float[16]);
-        for (int index = 0; index < expectedValues.length; index++) {
-            int element = index;
-            assertTrue(
-                    Math.abs(expectedValues[index] - actualValues[index]) <= tolerance,
-                    () -> "matrix element " + element + " differs: expected "
-                            + expectedValues[element] + ", actual " + actualValues[element]);
-        }
+        assertEquals(first, second);
+        assertEquals(first.hashCode(), second.hashCode());
     }
 }

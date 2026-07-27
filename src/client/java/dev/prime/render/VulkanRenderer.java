@@ -62,10 +62,6 @@ public final class VulkanRenderer implements AutoCloseable {
     private long blockAtlasTextureRevision;
     private FrameCamera camera;
     private SunDirection sunDirection;
-    private boolean cameraMediumKnown;
-    private boolean cameraInWater;
-    private long submittedLightingRevision = Long.MIN_VALUE;
-    private long submittedMaterialRevision = Long.MIN_VALUE;
     // Resource-reload apply can publish this request off the render thread; all GPU mutation is
     // still consumed and owned by beginFrame on the render thread.
     private volatile boolean shaderReloadRequested;
@@ -352,28 +348,12 @@ public final class VulkanRenderer implements AutoCloseable {
         RealtimePostProcessor processor = images.processor;
         LightingSettings.Snapshot lighting = settings.lighting();
         MaterialSettings.Snapshot material = settings.material();
-        boolean lightingChanged = this.submittedLightingRevision != Long.MIN_VALUE
-                && lighting.revision() != this.submittedLightingRevision;
-        boolean materialChanged = this.submittedMaterialRevision != Long.MIN_VALUE
-                && material.revision() != this.submittedMaterialRevision;
-        if (lightingChanged || materialChanged) {
-            // Radiance and BSDF parameter changes invalidate temporal estimators, but not
-            // geometry, atmosphere transmittance, or light-tree probabilities.
-            images.requestReset();
-        }
         boolean frameCameraInWater = this.isCameraInWater(minecraft, frameCamera);
-        if (this.cameraMediumKnown && this.cameraInWater != frameCameraInWater) {
-            // Crossing the water surface changes transport for essentially every visible path.
-            // Treat it as a temporal discontinuity so NRD/FSR do not retain the previous medium.
-            this.realtimeSampleState = this.realtimeSampleState.invalidated();
-            images.requestReset();
-        }
-        this.cameraMediumKnown = true;
-        this.cameraInWater = frameCameraInWater;
         RealtimeFrameInput frameInput = new RealtimeFrameInput(
                 frameCamera,
                 System.nanoTime(),
                 scene.temporalRevision(),
+                scene.revision(),
                 blockAtlas.textureRevision(),
                 renderWidth,
                 renderHeight,
@@ -392,28 +372,34 @@ public final class VulkanRenderer implements AutoCloseable {
                 this.frameControls.fsrDebugView(),
                 this.frameControls.rrDebugView(),
                 this.frameControls.rrDebugFullscreen(),
-                resized || lightingChanged || materialChanged);
+                resized);
         frameInput.requireCompatible(processor);
         RealtimeSampleState.Plan sampleFrame =
                 this.realtimeSampleState.plan(frameInput.sampleStateInput());
         RealtimePostProcessor.FrameParameters postParameters =
                 frameInput.reconstructionInput(sampleFrame.reset());
         RealtimePostProcessor.Frame postFrame = processor.beginFrame(postParameters);
-        RealtimeFramePlan framePlan =
-                RealtimeFramePlan.complete(frameInput, sampleFrame, postFrame);
-        if (images.mode == PostProcessingMode.DLSS_RR) {
-            this.debugLines = DlssRrDebugStatus.lines(
-                    images.qualityMode,
-                    renderWidth,
-                    renderHeight,
-                    width,
-                    height,
-                    true,
-                    postFrame.reset(),
-                    this.frameControls.rrDebugView(),
-                    this.frameControls.rrDebugFullscreen());
-        } else {
-            this.debugLines = List.of();
+        RealtimeFramePlan framePlan;
+        try {
+            framePlan =
+                    RealtimeFramePlan.complete(frameInput, sampleFrame, postFrame);
+            if (images.mode == PostProcessingMode.DLSS_RR) {
+                this.debugLines = DlssRrDebugStatus.lines(
+                        images.qualityMode,
+                        renderWidth,
+                        renderHeight,
+                        width,
+                        height,
+                        true,
+                        postFrame.reset(),
+                        this.frameControls.rrDebugView(),
+                        this.frameControls.rrDebugFullscreen());
+            } else {
+                this.debugLines = List.of();
+            }
+        } catch (RuntimeException exception) {
+            throw ResourceCleanup.run(
+                    () -> processor.abandon(postFrame), exception);
         }
         this.realtimeExecutor.execute(
                 switch (images.mode) {
@@ -434,9 +420,8 @@ public final class VulkanRenderer implements AutoCloseable {
                 target,
                 history,
                 atlasView,
+                blockAtlas.textureRevision(),
                 mainColor);
-        this.submittedLightingRevision = lighting.revision();
-        this.submittedMaterialRevision = material.revision();
         this.realtimeSampleState = sampleFrame.committedState();
         this.replayProbeController.run(
                 new ReplayProbeController.RunInput(
@@ -538,7 +523,7 @@ public final class VulkanRenderer implements AutoCloseable {
                 frameCamera,
                 width,
                 height,
-                scene.temporalRevision(),
+                scene.revision(),
                 this.screenshotTextureRevision,
                 frameSunDirection,
                 this.screenshotCameraInWater,
@@ -558,6 +543,7 @@ public final class VulkanRenderer implements AutoCloseable {
                 images.rawFrame,
                 images.display,
                 atlasView,
+                this.screenshotTextureRevision,
                 mainColor);
         this.screenshotSampleCount = framePlan.nextSampleCount();
         if (this.screenshotSampleCount > 0L
@@ -628,9 +614,6 @@ public final class VulkanRenderer implements AutoCloseable {
         // block range, without invalidating the frozen screenshot while it is converging.
         this.terrain.invalidateAll();
         this.realtimeSampleState = this.realtimeSampleState.invalidated();
-        if (this.realtimeResources != null) {
-            this.realtimeResources.requestReset();
-        }
         PrimeClient.LOGGER.info("Left Prime screenshot mode; scheduled a full terrain resync");
     }
 

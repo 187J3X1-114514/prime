@@ -25,9 +25,20 @@ final class RealtimeFramePlanTest {
             for (ReconstructionQualityMode quality
                     : ReconstructionQualityMode.values()) {
                 RealtimeFrameInput input = input(mode, quality);
+                RealtimeSampleState.Input sampleInput =
+                        input.sampleStateInput();
+                assertEquals(
+                        input.lighting().revision(),
+                        sampleInput.lightingRevision());
+                assertEquals(
+                        input.material().revision(),
+                        sampleInput.materialRevision());
+                assertEquals(
+                        input.cameraInWater(),
+                        sampleInput.cameraInWater());
                 RealtimeSampleState.Plan sample =
                         RealtimeSampleState.initial().plan(
-                                input.sampleStateInput());
+                                sampleInput);
                 FsrSettings.Jitter jitter = input.expectedJitter(0);
                 RealtimeFramePlan plan = RealtimeFramePlan.complete(
                         input,
@@ -70,6 +81,7 @@ final class RealtimeFramePlanTest {
                 firstInput.camera(),
                 99L,
                 firstInput.sceneRevision(),
+                firstInput.residentSceneRevision(),
                 firstInput.textureRevision(),
                 firstInput.width(),
                 firstInput.height(),
@@ -102,6 +114,16 @@ final class RealtimeFramePlanTest {
         assertEquals(99L, plan.reconstruction().frameTimeNanos());
         assertFalse(plan.reconstruction().forceRestart());
         assertFalse(plan.reconstructionReset());
+        plan.requireSceneRevision(secondInput.residentSceneRevision());
+        assertThrows(
+                IllegalStateException.class,
+                () -> plan.requireSceneRevision(
+                        secondInput.residentSceneRevision() + 1L));
+        plan.requireTextureRevision(secondInput.textureRevision());
+        assertThrows(
+                IllegalStateException.class,
+                () -> plan.requireTextureRevision(
+                        secondInput.textureRevision() + 1L));
     }
 
     @Test
@@ -161,6 +183,7 @@ final class RealtimeFramePlanTest {
                 new FrameCamera(new Matrix4f(), 1.0, 2.0, 3.0),
                 42L,
                 7L,
+                9L,
                 11L,
                 64,
                 48,

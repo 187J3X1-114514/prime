@@ -9,7 +9,6 @@ import java.io.InputStream;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.LongBuffer;
-import java.util.Arrays;
 import java.util.Base64;
 import java.util.zip.GZIPInputStream;
 import org.lwjgl.system.MemoryStack;
@@ -55,6 +54,7 @@ public final class AtmospherePipeline implements Destroyable {
     private static final int BINDING_COUNT = 8;
     private static final int PHASE_LUT_BINDING = 7;
     private static final int PHASE_LUT_BYTE_SIZE = 131_072;
+    private static final int AERIAL_KEY_SIZE = 20;
     private static final int COMPUTE_STAGE = VK12.VK_SHADER_STAGE_COMPUTE_BIT;
 
     private final VulkanContext context;
@@ -80,13 +80,12 @@ public final class AtmospherePipeline implements Destroyable {
     private final VulkanImage[] skyImage;
     private final VulkanImage[] aerialImages;
     private final VulkanImage[] dynamicImages;
-    private int skyEyeRadiusBits;
-    private int skySunElevationBits;
-    private int[] aerialKey = new int[20];
-    private int[] nextAerialKey = new int[20];
+    private final AtmosphereLutHistory history =
+            new AtmosphereLutHistory(AERIAL_KEY_SIZE);
     private final float[] aerialMatrix = new float[16];
-    private boolean aerialKeyValid;
-    private boolean staticPrepared;
+    private long nextFrameToken;
+    private long pendingFrameToken;
+    private int pendingChanges;
     private boolean destroyed;
 
     public AtmospherePipeline(VulkanContext context) {
@@ -232,7 +231,7 @@ public final class AtmospherePipeline implements Destroyable {
         return (float) ((worldY - WORLD_SEA_LEVEL_Y) * WORLD_UNIT_SCALE_KM);
     }
 
-    public void prepare(
+    public long prepare(
             VkCommandBuffer commandBuffer,
             FrameCamera camera,
             SunDirection sunDirection) {
@@ -240,81 +239,107 @@ public final class AtmospherePipeline implements Destroyable {
         int eyeRadiusBits = Float.floatToIntBits(eyeRadiusKm);
         int sunElevationBits = Float.floatToIntBits(sunDirection.y());
         fillAerialKey(
-                this.nextAerialKey,
+                this.history.beginCandidate(),
                 this.aerialMatrix,
                 camera,
                 eyeRadiusBits,
                 sunDirection);
-        boolean prepareStatic = !this.staticPrepared;
+        int changes = this.history.prepareCandidate(
+                eyeRadiusBits, sunElevationBits);
+        if (changes == 0) {
+            return 0L;
+        }
+        boolean prepareStatic = (changes & AtmosphereLutHistory.STATIC) != 0;
         // Sky-view azimuth is defined relative to the sun's horizontal projection, so rotating
         // that projection around world Y changes only the lookup orientation, not the table data.
-        boolean prepareSky = prepareStatic
-                || eyeRadiusBits != this.skyEyeRadiusBits
-                || sunElevationBits != this.skySunElevationBits;
-        boolean prepareAerial = prepareStatic
-                || !this.aerialKeyValid
-                || !Arrays.equals(this.aerialKey, this.nextAerialKey);
-        if (!prepareStatic && !prepareSky && !prepareAerial) {
-            return;
-        }
+        boolean prepareSky = (changes & AtmosphereLutHistory.SKY) != 0;
+        boolean prepareAerial = (changes & AtmosphereLutHistory.AERIAL) != 0;
+        long token = nextFrameToken();
+        this.pendingFrameToken = token;
+        this.pendingChanges = changes;
+        try {
+            if (prepareStatic) {
+                transitionAllToGeneral(commandBuffer);
+                dispatch(commandBuffer, this.transmittancePipeline, 32, 8, 1, null);
+                computeWriteBarrier(commandBuffer, this.transmittanceImages, VK12.VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT
+                        | KHRRayTracingPipeline.VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR);
+                // Split the two spectral groups along dispatch Z. This preserves the reference's
+                // 256 directions × 128 steps while avoiding one twice-as-long shader invocation,
+                // which matters for Windows GPU timeout resilience during the one-time precompute.
+                dispatch(commandBuffer, this.multiScatteringPipeline, 8, 8, 2, null);
+                computeWriteBarrier(
+                        commandBuffer,
+                        this.multiScatteringImages,
+                        VK12.VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
+            } else {
+                VulkanImage[] overwritten = prepareSky && prepareAerial
+                        ? this.dynamicImages
+                        : prepareSky
+                                ? this.skyImage
+                                : this.aerialImages;
+                shaderReadToComputeWriteBarrier(commandBuffer, overwritten);
+            }
 
-        if (prepareStatic) {
-            transitionAllToGeneral(commandBuffer);
-            dispatch(commandBuffer, this.transmittancePipeline, 32, 8, 1, null);
-            computeWriteBarrier(commandBuffer, this.transmittanceImages, VK12.VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT
-                    | KHRRayTracingPipeline.VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR);
-            // Split the two spectral groups along dispatch Z. This preserves the reference's
-            // 256 directions × 128 steps while avoiding one twice-as-long shader invocation,
-            // which matters for Windows GPU timeout resilience during the one-time precompute.
-            dispatch(commandBuffer, this.multiScatteringPipeline, 8, 8, 2, null);
-            computeWriteBarrier(
-                    commandBuffer,
-                    this.multiScatteringImages,
-                    VK12.VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
-        } else {
-            VulkanImage[] overwritten = prepareSky && prepareAerial
+            try (MemoryStack stack = MemoryStack.stackPush()) {
+                ByteBuffer pushConstants = createPushConstants(
+                        stack,
+                        camera,
+                        eyeRadiusKm,
+                        sunDirection);
+                if (prepareSky) {
+                    dispatch(commandBuffer, this.skyPipeline, 32, 32, 1, pushConstants);
+                }
+                if (prepareAerial) {
+                    dispatch(commandBuffer, this.aerialPipeline, 8, 8, 8, pushConstants);
+                }
+            }
+            VulkanImage[] written = prepareSky && prepareAerial
                     ? this.dynamicImages
                     : prepareSky
                             ? this.skyImage
                             : this.aerialImages;
-            shaderReadToComputeWriteBarrier(commandBuffer, overwritten);
+            computeWriteBarrier(
+                    commandBuffer,
+                    written,
+                    // Raygen consumes sky/transmittance while the post-NRD composite consumes the
+                    // aerial-perspective volumes. Keep both destinations explicit: atmosphere and
+                    // display composition deliberately straddle the denoiser boundary.
+                    KHRRayTracingPipeline.VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR
+                            | VK12.VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
+            return token;
+        } catch (RuntimeException exception) {
+            this.pendingFrameToken = 0L;
+            this.pendingChanges = 0;
+            this.history.abandon();
+            throw exception;
         }
+    }
 
-        try (MemoryStack stack = MemoryStack.stackPush()) {
-            ByteBuffer pushConstants = createPushConstants(
-                    stack,
-                    camera,
-                    eyeRadiusKm,
-                    sunDirection);
-            if (prepareSky) {
-                dispatch(commandBuffer, this.skyPipeline, 32, 32, 1, pushConstants);
-            }
-            if (prepareAerial) {
-                dispatch(commandBuffer, this.aerialPipeline, 8, 8, 8, pushConstants);
+    /** Commits the LUT keys after the command buffer containing {@code token} is submitted. */
+    public void submitted(long token) {
+        if (token == 0L) {
+            return;
+        }
+        requirePendingToken(token);
+        if ((this.pendingChanges & AtmosphereLutHistory.STATIC) != 0) {
+            for (VulkanImage image : this.images) {
+                image.markInitialized();
             }
         }
-        VulkanImage[] written = prepareSky && prepareAerial
-                ? this.dynamicImages
-                : prepareSky
-                        ? this.skyImage
-                        : this.aerialImages;
-        computeWriteBarrier(
-                commandBuffer,
-                written,
-                // Raygen consumes sky/transmittance while the post-NRD composite consumes the
-                // aerial-perspective volumes. Keep both destinations explicit: atmosphere and
-                // display composition deliberately straddle the denoiser boundary.
-                KHRRayTracingPipeline.VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR
-                        | VK12.VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
-        this.staticPrepared = true;
-        this.skyEyeRadiusBits = eyeRadiusBits;
-        this.skySunElevationBits = sunElevationBits;
-        if (prepareAerial) {
-            int[] previousKey = this.aerialKey;
-            this.aerialKey = this.nextAerialKey;
-            this.nextAerialKey = previousKey;
-            this.aerialKeyValid = true;
+        this.history.commit();
+        this.pendingFrameToken = 0L;
+        this.pendingChanges = 0;
+    }
+
+    /** Discards keys recorded into a command buffer that was not submitted. */
+    public void abandon(long token) {
+        if (token == 0L) {
+            return;
         }
+        requirePendingToken(token);
+        this.history.abandon();
+        this.pendingFrameToken = 0L;
+        this.pendingChanges = 0;
     }
 
     @Override
@@ -381,9 +406,23 @@ public final class AtmospherePipeline implements Destroyable {
                         0L,
                         VK12.VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
                         VK12.VK_ACCESS_SHADER_READ_BIT | VK12.VK_ACCESS_SHADER_WRITE_BIT);
-                images[index].markInitialized();
             }
             issueBarrier(commandBuffer, stack, barriers);
+        }
+    }
+
+    private long nextFrameToken() {
+        long token = ++this.nextFrameToken;
+        if (token == 0L) {
+            token = ++this.nextFrameToken;
+        }
+        return token;
+    }
+
+    private void requirePendingToken(long token) {
+        if (token != this.pendingFrameToken) {
+            throw new IllegalArgumentException(
+                    "Atmosphere frame token does not belong to this submission");
         }
     }
 

@@ -137,19 +137,24 @@ public final class NrdFsrPostProcessor implements RealtimePostProcessor {
                 parameters.textureRevision(),
                 parameters.forceRestart(),
                 parameters.fsrDebugView());
-        NrdFrameHistory.PlannedFrame nrd = this.nrdHistory.plan(
-                new NrdFrameInput(
-                        parameters.camera(),
-                        parameters.frameTimeNanos(),
-                        parameters.sceneRevision(),
-                        parameters.textureRevision(),
-                        parameters.sunDirection(),
-                        fsr.jitter().x(),
-                        fsr.jitter().y(),
-                        fsr.reset(),
-                        parameters.nrdDebugView()));
-        return new FrameToken(
-                this, fsr, nrd);
+        try {
+            NrdFrameHistory.PlannedFrame nrd = this.nrdHistory.plan(
+                    new NrdFrameInput(
+                            parameters.camera(),
+                            parameters.frameTimeNanos(),
+                            parameters.sceneRevision(),
+                            parameters.textureRevision(),
+                            parameters.sunDirection(),
+                            fsr.jitter().x(),
+                            fsr.jitter().y(),
+                            fsr.reset(),
+                            parameters.nrdDebugView()));
+            return new FrameToken(
+                    this, fsr, nrd);
+        } catch (RuntimeException exception) {
+            throw ResourceCleanup.run(
+                    () -> this.upscaler.abandon(fsr), exception);
+        }
     }
 
     @Override
@@ -220,9 +225,22 @@ public final class NrdFsrPostProcessor implements RealtimePostProcessor {
         if (!token.recorded || token.submitted || token.nrd == null) {
             throw new IllegalArgumentException("NRD-FSR frame was not recorded exactly once");
         }
-        this.nrdHistory.submitted(this.denoiser.submitted(token.nrd));
-        this.upscaler.submitted(token.fsr);
         token.submitted = true;
+        RuntimeException failure = null;
+        NrdFrameHistory.PlannedFrame submittedNrd = null;
+        try {
+            submittedNrd = this.denoiser.submitted(token.nrd);
+        } catch (RuntimeException exception) {
+            failure = exception;
+        }
+        if (submittedNrd != null) {
+            NrdFrameHistory.PlannedFrame committedNrd = submittedNrd;
+            failure = ResourceCleanup.run(
+                    () -> this.nrdHistory.submitted(committedNrd), failure);
+        }
+        failure = ResourceCleanup.run(
+                () -> this.upscaler.submitted(token.fsr), failure);
+        ResourceCleanup.throwIfFailed(failure);
     }
 
     @Override

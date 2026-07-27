@@ -31,6 +31,7 @@ public final class ScreenshotFrameExecutor {
             BasicRawWavefrontFrame rawFrame,
             ScreenshotDisplay display,
             VulkanGpuTextureView atlasView,
+            long textureRevision,
             VulkanGpuTexture mainColor) {
         Objects.requireNonNull(pipeline, "pipeline");
         Objects.requireNonNull(atmosphere, "atmosphere");
@@ -44,6 +45,8 @@ public final class ScreenshotFrameExecutor {
         Objects.requireNonNull(display, "display");
         Objects.requireNonNull(atlasView, "atlasView");
         Objects.requireNonNull(mainColor, "mainColor");
+        plan.requireSceneRevision(scene.revision());
+        plan.requireTextureRevision(textureRevision);
         validateExtents(
                 plan,
                 displayOutput,
@@ -54,13 +57,14 @@ public final class ScreenshotFrameExecutor {
         var encoder = this.context.commandEncoder();
         VkCommandBuffer commandBuffer =
                 encoder.allocateAndBeginTransientCommandBuffer();
+        long atmosphereFrame = 0L;
         LabPbrTextureAtlas.FrameToken labPbrFrame = null;
-        boolean submissionAttempted = false;
+        boolean submissionAccepted = false;
         try {
             this.context.device().instance().debug().beginDebugGroup(
                     commandBuffer,
                     () -> "Prime unbiased screenshot accumulation");
-            atmosphere.prepare(
+            atmosphereFrame = atmosphere.prepare(
                     commandBuffer,
                     plan.integrator().camera(),
                     plan.integrator().sunDirection());
@@ -118,16 +122,31 @@ public final class ScreenshotFrameExecutor {
             VulkanContext.check(
                     VK12.vkEndCommandBuffer(commandBuffer),
                     "end Prime screenshot accumulation command buffer");
-            submissionAttempted = true;
             encoder.execute(commandBuffer);
-            labPbrAtlas.submitted(labPbrFrame);
+            // execute() transfers this command buffer to Minecraft's open Submission only after
+            // its validation succeeds; failed calls still own and must abandon recorded state.
+            submissionAccepted = true;
+            long submittedAtmosphereFrame = atmosphereFrame;
+            RuntimeException commitFailure = ResourceCleanup.run(
+                    () -> atmosphere.submitted(submittedAtmosphereFrame), null);
+            LabPbrTextureAtlas.FrameToken submittedLabPbrFrame =
+                    labPbrFrame;
+            commitFailure = ResourceCleanup.run(
+                    () -> labPbrAtlas.submitted(submittedLabPbrFrame),
+                    commitFailure);
+            ResourceCleanup.throwIfFailed(commitFailure);
         } catch (RuntimeException exception) {
-            if (!submissionAttempted) {
+            if (!submissionAccepted) {
+                RuntimeException failure = exception;
+                long abandonedAtmosphereFrame = atmosphereFrame;
+                failure = ResourceCleanup.run(
+                        () -> atmosphere.abandon(abandonedAtmosphereFrame),
+                        failure);
                 LabPbrTextureAtlas.FrameToken abandonedLabPbrFrame =
                         labPbrFrame;
                 throw ResourceCleanup.run(
                         () -> labPbrAtlas.abandon(abandonedLabPbrFrame),
-                        exception);
+                        failure);
             }
             throw exception;
         }

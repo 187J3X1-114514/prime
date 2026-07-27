@@ -45,7 +45,7 @@ final class RealtimeSampleStateTest {
     }
 
     @Test
-    void worldCameraCutAtlasAndExplicitInvalidationResetSequence() {
+    void allTransportIdentityChangesResetSequence() {
         FrameCamera camera = camera(1.0);
         RealtimeSampleState state = commit(
                 RealtimeSampleState.initial(), input(camera, 1L, 2L, NOON, false));
@@ -71,14 +71,54 @@ final class RealtimeSampleStateTest {
         assertTrue(atlas.reset());
         state = atlas.committedState();
 
+        RealtimeSampleState.Plan lighting =
+                state.plan(input(camera(35.0), 2L, 4L, 6L, 7L, NOON, false, false));
+        assertTrue(lighting.reset());
+        state = lighting.committedState();
+
+        RealtimeSampleState.Plan material =
+                state.plan(input(camera(35.0), 2L, 4L, 6L, 8L, NOON, false, false));
+        assertTrue(material.reset());
+        state = material.committedState();
+
+        RealtimeSampleState.Plan medium =
+                state.plan(input(camera(35.0), 2L, 4L, 6L, 8L, NOON, true, false));
+        assertTrue(medium.reset());
+        state = medium.committedState();
+
         RealtimeSampleState.Plan forced =
-                state.plan(input(camera(35.0), 2L, 4L, NOON, true));
+                state.plan(input(camera(35.0), 2L, 4L, 6L, 8L, NOON, true, true));
         assertTrue(forced.reset());
         assertEquals(0, forced.sampleIndex());
 
         RealtimeSampleState invalidated = state.invalidated();
-        assertEquals(0, invalidated.sampleIndex());
-        assertEquals(state.epoch() + 1, invalidated.epoch());
+        assertEquals(state.sampleIndex(), invalidated.sampleIndex());
+        assertEquals(state.epoch(), invalidated.epoch());
+        RealtimeSampleState.Plan invalidation =
+                invalidated.plan(input(camera(35.0), 2L, 4L, 6L, 8L, NOON, true, false));
+        assertTrue(invalidation.reset());
+        assertEquals(0, invalidation.sampleIndex());
+        assertEquals(state.epoch() + 1, invalidation.epoch());
+    }
+
+    @Test
+    void repeatedInvalidationIsConsumedOnceByTheNextPlan() {
+        FrameCamera camera = camera(1.0);
+        RealtimeSampleState state = commit(
+                RealtimeSampleState.initial(), input(camera, 1L, 2L, NOON, false));
+
+        RealtimeSampleState invalidated = state.invalidated().invalidated();
+        RealtimeSampleState.Plan reset =
+                invalidated.plan(input(camera, 1L, 2L, NOON, false));
+        assertTrue(reset.reset());
+        assertEquals(0, reset.sampleIndex());
+        assertEquals(state.epoch() + 1, reset.epoch());
+
+        RealtimeSampleState.Plan continuation =
+                reset.committedState().plan(input(camera, 1L, 2L, NOON, false));
+        assertFalse(continuation.reset());
+        assertEquals(1, continuation.sampleIndex());
+        assertEquals(reset.epoch(), continuation.epoch());
     }
 
     @Test
@@ -151,7 +191,34 @@ final class RealtimeSampleStateTest {
             SunDirection sun,
             boolean forceReset) {
         return new RealtimeSampleState.Input(
-                camera, revision, textureRevision, sun, forceReset);
+                camera,
+                revision,
+                textureRevision,
+                5L,
+                7L,
+                sun,
+                false,
+                forceReset);
+    }
+
+    private static RealtimeSampleState.Input input(
+            FrameCamera camera,
+            long revision,
+            long textureRevision,
+            long lightingRevision,
+            long materialRevision,
+            SunDirection sun,
+            boolean cameraInWater,
+            boolean forceReset) {
+        return new RealtimeSampleState.Input(
+                camera,
+                revision,
+                textureRevision,
+                lightingRevision,
+                materialRevision,
+                sun,
+                cameraInWater,
+                forceReset);
     }
 
     private static FrameCamera camera(double x) {

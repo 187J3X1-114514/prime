@@ -13,6 +13,7 @@ import java.util.Objects;
 public record RealtimeFramePlan(
         IntegratorFrameInput integrator,
         RealtimePostProcessor.FrameParameters reconstruction,
+        long residentSceneRevision,
         int reconstructionFrameIndex,
         FsrSettings.Jitter jitter,
         boolean reconstructionReset) {
@@ -23,6 +24,10 @@ public record RealtimeFramePlan(
         if (reconstructionFrameIndex < 0) {
             throw new IllegalArgumentException(
                     "Reconstruction frame index must be non-negative");
+        }
+        if (residentSceneRevision < 0L) {
+            throw new IllegalArgumentException(
+                    "Realtime resident scene revision must be non-negative");
         }
         if (!Float.isFinite(jitter.x()) || !Float.isFinite(jitter.y())) {
             throw new IllegalArgumentException(
@@ -59,8 +64,23 @@ public record RealtimeFramePlan(
                         sample.epoch(),
                         reconstructionFrame.frameIndex()),
                 reconstruction,
+                input.residentSceneRevision(),
                 reconstructionFrame.frameIndex(),
                 actual,
                 reconstructionFrame.reset());
+    }
+
+    public void requireSceneRevision(long revision) {
+        if (revision != this.residentSceneRevision) {
+            throw new IllegalStateException(
+                    "Realtime frame plan does not match its resident scene");
+        }
+    }
+
+    public void requireTextureRevision(long revision) {
+        if (revision != this.reconstruction.textureRevision()) {
+            throw new IllegalStateException(
+                    "Realtime frame plan does not match its texture snapshot");
+        }
     }
 }

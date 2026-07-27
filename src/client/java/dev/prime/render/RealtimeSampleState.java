@@ -7,6 +7,8 @@ import java.util.Objects;
  *
  * <p>A plan exposes the exact Sobol index and epoch used by one frame. The returned state becomes
  * current only after that frame is submitted, so failed recording cannot consume a sample.
+ * Scene, texture, lighting, material and camera-medium identities live here rather than in
+ * parallel renderer fields so every temporal reset derives from one committed state.
  */
 final class RealtimeSampleState {
     private static final int SOBOL_SEQUENCE_LENGTH = 1 << 16;
@@ -16,38 +18,64 @@ final class RealtimeSampleState {
     private final FrameCamera camera;
     private final long resetRevision;
     private final long textureRevision;
+    private final long lightingRevision;
+    private final long materialRevision;
     private final SunDirection sunDirection;
+    private final boolean cameraInWater;
     private final int sampleIndex;
     private final int epoch;
+    private final boolean resetRequested;
 
     private RealtimeSampleState(
             FrameCamera camera,
             long resetRevision,
             long textureRevision,
+            long lightingRevision,
+            long materialRevision,
             SunDirection sunDirection,
+            boolean cameraInWater,
             int sampleIndex,
-            int epoch) {
+            int epoch,
+            boolean resetRequested) {
         this.camera = camera;
         this.resetRevision = resetRevision;
         this.textureRevision = textureRevision;
+        this.lightingRevision = lightingRevision;
+        this.materialRevision = materialRevision;
         this.sunDirection = sunDirection;
+        this.cameraInWater = cameraInWater;
         this.sampleIndex = sampleIndex;
         this.epoch = epoch;
+        this.resetRequested = resetRequested;
     }
 
     static RealtimeSampleState initial() {
         return new RealtimeSampleState(
-                null, Long.MIN_VALUE, Long.MIN_VALUE, null, 0, 0);
+                null,
+                Long.MIN_VALUE,
+                Long.MIN_VALUE,
+                Long.MIN_VALUE,
+                Long.MIN_VALUE,
+                null,
+                false,
+                0,
+                0,
+                true);
     }
 
     Plan plan(Input input) {
         Objects.requireNonNull(input, "input");
         // Motion vectors preserve ordinary camera motion. Restarting on every translated or
         // rotated frame destroys temporal Sobol stratification and raises 1 spp noise.
-        boolean reset = input.forceReset()
+        boolean reset = this.resetRequested
+                || input.forceReset()
                 || CameraDiscontinuity.isCut(this.camera, input.camera())
                 || input.resetRevision() != this.resetRevision
                 || input.textureRevision() != this.textureRevision
+                || input.lightingRevision() != this.lightingRevision
+                || input.materialRevision() != this.materialRevision
+                || (this.camera != null
+                        && input.cameraInWater() != this.cameraInWater)
                 || sunDirectionDiscontinuous(input.sunDirection(), this.sunDirection);
         int plannedSample = reset ? 0 : this.sampleIndex;
         int plannedEpoch = reset ? this.epoch + 1 : this.epoch;
@@ -59,20 +87,31 @@ final class RealtimeSampleState {
                 input.camera(),
                 input.resetRevision(),
                 input.textureRevision(),
+                input.lightingRevision(),
+                input.materialRevision(),
                 input.sunDirection(),
+                input.cameraInWater(),
                 plannedSample + 1,
-                plannedEpoch);
+                plannedEpoch,
+                false);
         return new Plan(plannedSample, plannedEpoch, reset, committed);
     }
 
     RealtimeSampleState invalidated() {
+        if (this.resetRequested) {
+            return this;
+        }
         return new RealtimeSampleState(
                 this.camera,
                 this.resetRevision,
                 this.textureRevision,
+                this.lightingRevision,
+                this.materialRevision,
                 this.sunDirection,
-                0,
-                this.epoch + 1);
+                this.cameraInWater,
+                this.sampleIndex,
+                this.epoch,
+                true);
     }
 
     int sampleIndex() {
@@ -99,7 +138,10 @@ final class RealtimeSampleState {
             FrameCamera camera,
             long resetRevision,
             long textureRevision,
+            long lightingRevision,
+            long materialRevision,
             SunDirection sunDirection,
+            boolean cameraInWater,
             boolean forceReset) {
         Input {
             Objects.requireNonNull(camera, "camera");

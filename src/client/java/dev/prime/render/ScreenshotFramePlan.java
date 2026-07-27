@@ -14,4 +14,18 @@ public record ScreenshotFramePlan(
     public long nextSampleCount() {
         return Math.incrementExact(this.input.sampleCount());
     }
+
+    public void requireSceneRevision(long revision) {
+        if (revision != this.input.sceneRevision()) {
+            throw new IllegalStateException(
+                    "Screenshot frame plan does not match its resident scene");
+        }
+    }
+
+    public void requireTextureRevision(long revision) {
+        if (revision != this.input.textureRevision()) {
+            throw new IllegalStateException(
+                    "Screenshot frame plan does not match its texture snapshot");
+        }
+    }
 }

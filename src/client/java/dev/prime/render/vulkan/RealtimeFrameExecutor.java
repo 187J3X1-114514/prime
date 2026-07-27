@@ -38,30 +38,34 @@ public final class RealtimeFrameExecutor {
             VulkanImage output,
             VulkanImage stableRadiance,
             VulkanGpuTextureView atlasView,
+            long textureRevision,
             VulkanGpuTexture mainColor) {
-        Objects.requireNonNull(debugLabel, "debugLabel");
-        Objects.requireNonNull(pipeline, "pipeline");
-        Objects.requireNonNull(atmosphere, "atmosphere");
-        Objects.requireNonNull(labPbrAtlas, "labPbrAtlas");
-        Objects.requireNonNull(scene, "scene");
-        Objects.requireNonNull(plan, "plan");
         Objects.requireNonNull(processor, "processor");
         Objects.requireNonNull(processorFrame, "processorFrame");
-        Objects.requireNonNull(output, "output");
-        Objects.requireNonNull(stableRadiance, "stableRadiance");
-        Objects.requireNonNull(atlasView, "atlasView");
-        Objects.requireNonNull(mainColor, "mainColor");
-        validateExtents(plan, processor, output, stableRadiance, mainColor);
-
-        var encoder = this.context.commandEncoder();
-        VkCommandBuffer commandBuffer =
-                encoder.allocateAndBeginTransientCommandBuffer();
+        long atmosphereFrame = 0L;
         LabPbrTextureAtlas.FrameToken labPbrFrame = null;
-        boolean submissionAttempted = false;
+        boolean submissionAccepted = false;
         try {
+            Objects.requireNonNull(debugLabel, "debugLabel");
+            Objects.requireNonNull(pipeline, "pipeline");
+            Objects.requireNonNull(atmosphere, "atmosphere");
+            Objects.requireNonNull(labPbrAtlas, "labPbrAtlas");
+            Objects.requireNonNull(scene, "scene");
+            Objects.requireNonNull(plan, "plan");
+            Objects.requireNonNull(output, "output");
+            Objects.requireNonNull(stableRadiance, "stableRadiance");
+            Objects.requireNonNull(atlasView, "atlasView");
+            Objects.requireNonNull(mainColor, "mainColor");
+            plan.requireSceneRevision(scene.revision());
+            plan.requireTextureRevision(textureRevision);
+            validateExtents(plan, processor, output, stableRadiance, mainColor);
+
+            var encoder = this.context.commandEncoder();
+            VkCommandBuffer commandBuffer =
+                    encoder.allocateAndBeginTransientCommandBuffer();
             this.context.device().instance().debug().beginDebugGroup(
                     commandBuffer, () -> debugLabel);
-            atmosphere.prepare(
+            atmosphereFrame = atmosphere.prepare(
                     commandBuffer,
                     plan.integrator().camera(),
                     plan.integrator().sunDirection());
@@ -113,10 +117,15 @@ public final class RealtimeFrameExecutor {
             VulkanContext.check(
                     VK12.vkEndCommandBuffer(commandBuffer),
                     "end Prime realtime command buffer");
-            submissionAttempted = true;
             encoder.execute(commandBuffer);
+            // Minecraft's execute() first validates the encoder, then appends this command buffer
+            // to its open Submission. Only a normal return transfers recorded-resource ownership.
+            submissionAccepted = true;
+            long submittedAtmosphereFrame = atmosphereFrame;
             RuntimeException commitFailure = ResourceCleanup.run(
-                    () -> processor.submitted(processorFrame), null);
+                    () -> atmosphere.submitted(submittedAtmosphereFrame), null);
+            commitFailure = ResourceCleanup.run(
+                    () -> processor.submitted(processorFrame), commitFailure);
             LabPbrTextureAtlas.FrameToken submittedLabPbrFrame =
                     labPbrFrame;
             commitFailure = ResourceCleanup.run(
@@ -124,13 +133,21 @@ public final class RealtimeFrameExecutor {
                     commitFailure);
             ResourceCleanup.throwIfFailed(commitFailure);
         } catch (RuntimeException exception) {
-            if (!submissionAttempted) {
+            if (!submissionAccepted) {
                 RuntimeException failure = exception;
-                LabPbrTextureAtlas.FrameToken abandonedLabPbrFrame =
-                        labPbrFrame;
-                failure = ResourceCleanup.run(
-                        () -> labPbrAtlas.abandon(abandonedLabPbrFrame),
-                        failure);
+                if (atmosphereFrame != 0L) {
+                    long abandonedAtmosphereFrame = atmosphereFrame;
+                    failure = ResourceCleanup.run(
+                            () -> atmosphere.abandon(abandonedAtmosphereFrame),
+                            failure);
+                }
+                if (labPbrFrame != null) {
+                    LabPbrTextureAtlas.FrameToken abandonedLabPbrFrame =
+                            labPbrFrame;
+                    failure = ResourceCleanup.run(
+                            () -> labPbrAtlas.abandon(abandonedLabPbrFrame),
+                            failure);
+                }
                 failure = ResourceCleanup.run(
                         () -> processor.abandon(processorFrame),
                         failure);

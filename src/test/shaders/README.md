@@ -51,7 +51,8 @@ the fixed ABI capacity.
 by the renderer. Its concern-specific batches cover exponent-scaled throughput,
 MIS and area-light PDFs, Beer-Lambert attenuation, Russian roulette, the full
 16-bit LabPBR normal/specular byte domains, conductor Fresnel, NRD sanitization,
-normal packing, hit-distance normalization, demodulation, and radiance limits.
+normal packing, hit-distance normalization, demodulation, radiance limits, and
+FSR depth, motion, and material-mask input domains.
 Do not replace these tests with Java copies of GLSL formulas: a copy cannot
 observe shader compiler or device floating-point behavior.
 

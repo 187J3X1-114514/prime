@@ -16,6 +16,7 @@ final class PrimeProductionMathGpuTest {
     private static final long TRANSPORT_SEED = 0x71A4_5A09_D522_0101L;
     private static final long MATERIAL_SEED = 0x4A7E_21A1_0000_0001L;
     private static final long NRD_SEED = 0x4E52_4404_1700_0001L;
+    private static final long FSR_SEED = 0x4653_5203_0104_0001L;
     private static final long QUEUED_PSR_SEED = 0x5053_5208_0000_0001L;
     private static final int[] SPECIAL_FLOAT_BITS = {
         0x0000_0000,
@@ -91,6 +92,41 @@ final class PrimeProductionMathGpuTest {
                 inputWords,
                 9,
                 NRD_SEED);
+    }
+
+    @Test
+    void fsrMasksKeepStaticAlphaTestedFoliageEligibleForThinFeatureLocks()
+            throws IOException {
+        int cases = 1 << 10;
+        int inputWords = 2;
+        ByteBuffer input = ShaderTestBuffer.inputs(cases, inputWords);
+        for (int flags = 0; flags < cases; flags++) {
+            putInt(input, flags, inputWords, 0, 0, 0);
+            putInt(input, flags, inputWords, 0, 1, flags);
+        }
+        ShaderPropertyBatch.assertProperties(
+                runner,
+                shader("prime_fsr_input_properties.comp.spv"),
+                input,
+                cases,
+                inputWords,
+                4,
+                FSR_SEED);
+    }
+
+    @Test
+    void fsrDepthAndMotionStayInsideTheDeclaredInputDomains() throws IOException {
+        int kinds = 2;
+        int inputWords = 2;
+        ByteBuffer input = fsrGuideCases(kinds, inputWords);
+        ShaderPropertyBatch.assertProperties(
+                runner,
+                shader("prime_fsr_input_properties.comp.spv"),
+                input,
+                CASES_PER_KIND * kinds,
+                inputWords,
+                4,
+                FSR_SEED);
     }
 
     @Test
@@ -349,6 +385,36 @@ final class PrimeProductionMathGpuTest {
                                             random.nextFloat() * 200_000.0F - 50_000.0F);
                             putInt(input, index, words, word, component, bits);
                         }
+                    }
+                }
+            }
+        }
+        return input;
+    }
+
+    private static ByteBuffer fsrGuideCases(int kinds, int words) {
+        ByteBuffer input = ShaderTestBuffer.inputs(CASES_PER_KIND * kinds, words);
+        SplittableRandom random = new SplittableRandom(FSR_SEED);
+        for (int kind = 0; kind < kinds; kind++) {
+            for (int local = 0; local < CASES_PER_KIND; local++) {
+                int index = kind * CASES_PER_KIND + local;
+                putInt(input, index, words, 0, 0, kind + 1);
+                if (kind == 0) {
+                    int bits = local < SPECIAL_FLOAT_BITS.length
+                            ? SPECIAL_FLOAT_BITS[local]
+                            : Float.floatToRawIntBits(
+                                    (local & 1) == 0
+                                            ? positiveFloat(random, -30, 30)
+                                            : -positiveFloat(random, -30, 30));
+                    putInt(input, index, words, 1, 0, bits);
+                } else {
+                    for (int component = 0; component < 4; component++) {
+                        int bits = local < SPECIAL_FLOAT_BITS.length
+                                ? SPECIAL_FLOAT_BITS[
+                                        (local + component) % SPECIAL_FLOAT_BITS.length]
+                                : Float.floatToRawIntBits(
+                                        random.nextFloat() * 8.0F - 4.0F);
+                        putInt(input, index, words, 1, component, bits);
                     }
                 }
             }

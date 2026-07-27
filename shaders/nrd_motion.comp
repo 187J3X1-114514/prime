@@ -2,6 +2,7 @@
 #extension GL_GOOGLE_include_directive : require
 
 #include "default_material.glsl"
+#include "fsr_input.glsl"
 #include "nrd_common.glsl"
 #include "prime_nrd_motion_contract.glsl"
 
@@ -34,7 +35,6 @@ layout(set = 0, binding = 22, rgba32f) uniform readonly image2D primeDisplayPosi
 layout(set = 0, binding = 23, rgba16f) uniform writeonly image2D primeFsrMotion;
 
 const float PRIME_MOTION_SKY_VIEW_Z = 65504.0;
-const float PRIME_FSR_NEAR_PLANE = 0.05;
 const uint PRIME_DIAGNOSTIC_REPROJECTION_ERROR = 2u;
 
 vec3 primeMotionRayDirection(vec2 screenUv) {
@@ -271,26 +271,24 @@ void primePrepareFsrGuide(
                 && !any(isnan(previousClip)) && !any(isinf(previousClip))) {
             vec2 previousUv = previousClip.xy / previousClip.w
                     * vec2(0.5, -0.5) + vec2(0.5);
-            motion = previousUv - currentSampleUv;
+            motion = primeFsrNormalizedMotion(previousUv, currentSampleUv);
         }
-        imageStore(primeFsrMotion, pixel, vec4(primeNrdSanitizeMotion(vec3(motion, 0.0)), 0.0));
+        imageStore(primeFsrMotion, pixel, vec4(motion, 0.0, 0.0));
         imageStore(primeFsrDepth, pixel, vec4(0.0));
         return;
     }
 
-    float viewZ = dot(position, cameraForward);
-    viewZ = primeNrdIsFinite(viewZ) && viewZ > 0.0
-            ? min(viewZ, PRIME_MOTION_SKY_VIEW_Z) : PRIME_MOTION_SKY_VIEW_Z;
-    imageStore(primeFsrDepth, pixel, vec4(PRIME_FSR_NEAR_PLANE / viewZ));
+    float viewZ = primeFsrSurfaceViewZ(position, cameraForward);
+    imageStore(primeFsrDepth, pixel, vec4(primeFsrReversedInfiniteDepth(viewZ)));
     vec4 previousClip = primeMotionPush.previousWorldToClip * vec4(position, 1.0);
-    vec3 motion = vec3(0.0);
+    vec2 motion = vec2(0.0);
     if (abs(previousClip.w) > 1.0e-6
             && !any(isnan(previousClip)) && !any(isinf(previousClip))) {
         vec2 previousUv = previousClip.xy / previousClip.w
                 * vec2(0.5, -0.5) + vec2(0.5);
-        motion = vec3(previousUv - currentSampleUv, abs(previousClip.w) - viewZ);
+        motion = primeFsrNormalizedMotion(previousUv, currentSampleUv);
     }
-    imageStore(primeFsrMotion, pixel, vec4(primeNrdSanitizeMotion(motion), 0.0));
+    imageStore(primeFsrMotion, pixel, vec4(motion, 0.0, 0.0));
 }
 
 void main() {

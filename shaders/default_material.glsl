@@ -57,9 +57,11 @@ float primeMaterialDielectricF0(uint flags) {
 }
 
 float primeFsrTransparencyAndCompositionMask(uint flags) {
-    if (primeMaterialIsTransmissive(flags) || primeMaterialIsFoliage(flags)) {
+    if (primeMaterialIsTransmissive(flags)) {
         return 1.0;
     }
+    // Alpha-tested foliage writes matching depth and motion. Marking it here would fully remove
+    // FSR's thin-feature lock and turn sub-pixel coverage changes into visible edge shimmer.
     return (flags & PRIME_MATERIAL_FLAG_ANIMATED_TEXTURE) != 0u ? 0.75 : 0.0;
 }
 

@@ -18,6 +18,10 @@ public final class CompiledClusterCodec {
 
     public static byte[] encode(CompiledCluster cluster) {
         Objects.requireNonNull(cluster, "cluster");
+        CpuClusterMesh mesh = cluster.mesh();
+        validatePrimitiveRecords(mesh);
+        OpacityMicromapData opacity = mesh.opacityMicromap();
+        opacity.requireValidTriangleIndices();
         int byteSize = Math.toIntExact(encodedByteSize(cluster));
         ByteBuffer output = ByteBuffer.allocate(byteSize).order(ByteOrder.LITTLE_ENDIAN);
         output.putInt(MAGIC);
@@ -27,7 +31,6 @@ public final class CompiledClusterCodec {
         output.putInt(cluster.clusterY());
         output.putInt(cluster.clusterZ());
 
-        CpuClusterMesh mesh = cluster.mesh();
         output.putLong(mesh.opaqueTriangleCount());
         output.putLong(mesh.cutoutTriangleCount());
         output.putLong(mesh.transmissiveTriangleCount());
@@ -40,7 +43,6 @@ public final class CompiledClusterCodec {
             putInts(output, segment.primitiveRecords());
         }
 
-        OpacityMicromapData opacity = mesh.opacityMicromap();
         putBytes(output, opacity.blocks());
         putInts(output, opacity.blockOffsets());
         putInts(output, opacity.blockFormats());
@@ -149,6 +151,7 @@ public final class CompiledClusterCodec {
                     transmissive,
                     opacity,
                     lights);
+            validatePrimitiveRecords(mesh);
             return new CompiledCluster(
                     key, clusterX, clusterY, clusterZ, mesh);
         } catch (BufferUnderflowException | ArithmeticException exception) {
@@ -199,6 +202,10 @@ public final class CompiledClusterCodec {
     private static void putFloats(ByteBuffer output, float[] values) {
         output.putInt(values.length);
         for (float value : values) {
+            if (!Float.isFinite(value)) {
+                throw new IllegalArgumentException(
+                        "Compiled-cluster positions must be finite");
+            }
             output.putInt(Float.floatToRawIntBits(value));
         }
     }
@@ -222,9 +229,66 @@ public final class CompiledClusterCodec {
         requireExpectedCount(input, expectedCount, Float.BYTES, label);
         float[] result = new float[expectedCount];
         for (int index = 0; index < expectedCount; index++) {
-            result[index] = Float.intBitsToFloat(input.getInt());
+            float value = Float.intBitsToFloat(input.getInt());
+            if (!Float.isFinite(value)) {
+                throw new IllegalArgumentException(
+                        "Compiled-cluster " + label + " must be finite");
+            }
+            result[index] = value;
         }
         return result;
+    }
+
+    private static void validatePrimitiveRecords(CpuClusterMesh mesh) {
+        int emitterCount = mesh.lights().emitterCount();
+        for (CpuClusterMesh.Segment segment : mesh.segments()) {
+            int opaqueEnd = segment.opaqueTriangleCount();
+            int cutoutEnd = Math.addExact(
+                    opaqueEnd, segment.cutoutTriangleCount());
+            int[] records = segment.primitiveRecords();
+            for (int triangle = 0; triangle < segment.triangleCount(); triangle++) {
+                int record = Math.multiplyExact(
+                        triangle, CpuSectionMesh.PRIMITIVE_WORDS);
+                for (int vertex = 0; vertex < 3; vertex++) {
+                    requireFiniteHalf2(records[record + vertex]);
+                }
+                int flags = PrimitivePacking.unpackFlags(
+                        records[record + 3], records[record + 5]);
+                PrimitivePacking.requireValidFlags(flags);
+                boolean cutout = (flags & PrimitivePacking.FLAG_CUTOUT) != 0;
+                boolean transmissive =
+                        (flags & PrimitivePacking.FLAG_TRANSMISSIVE) != 0;
+                boolean categoryMismatch = triangle < opaqueEnd
+                        ? cutout || transmissive
+                        : triangle < cutoutEnd
+                                ? !cutout || transmissive
+                                : !transmissive;
+                if (categoryMismatch) {
+                    throw new IllegalArgumentException(
+                            "Compiled-cluster primitive flags disagree with geometry categories");
+                }
+                int emitterIndex = PrimitivePacking.unpackEmitterIndex(
+                        records[record + 5]);
+                if (emitterIndex >= emitterCount) {
+                    throw new IllegalArgumentException(
+                            "Compiled-cluster primitive references an invalid emitter");
+                }
+                float uvDensity = Float.intBitsToFloat(records[record + 6]);
+                if (!(uvDensity >= 0.0F) || !Float.isFinite(uvDensity)) {
+                    throw new IllegalArgumentException(
+                            "Compiled-cluster UV density must be finite and nonnegative");
+                }
+            }
+        }
+    }
+
+    private static void requireFiniteHalf2(int packed) {
+        float low = Float.float16ToFloat((short) packed);
+        float high = Float.float16ToFloat((short) (packed >>> 16));
+        if (!Float.isFinite(low) || !Float.isFinite(high)) {
+            throw new IllegalArgumentException(
+                    "Compiled-cluster texture coordinates must be finite");
+        }
     }
 
     private static int[] getInts(

@@ -82,6 +82,7 @@ public final class StagingArena implements AutoCloseable {
         private final Page page;
         private final boolean disposable;
         private long cursor;
+        private boolean prepared;
         private boolean submitted;
         private boolean closed;
 
@@ -133,6 +134,10 @@ public final class StagingArena implements AutoCloseable {
 
         /** Reserves mapped staging storage for producers that write directly into the page. */
         public Slice allocate(long size, long alignment) {
+            if (this.prepared || this.submitted || this.closed) {
+                throw new IllegalStateException(
+                        "Cannot write a staging batch after submission preparation");
+            }
             long endOffset = requiredEndOffset(this.cursor, size, alignment);
             if (endOffset > this.page.capacity) {
                 throw new IllegalStateException(
@@ -151,11 +156,22 @@ public final class StagingArena implements AutoCloseable {
             return this.page.capacity;
         }
 
-        public void submitForRetirement() {
-            if (this.submitted) {
-                throw new IllegalStateException("Staging batch already submitted");
+        /** Flushes host writes without transferring ownership to a command submission. */
+        public void prepareForSubmission() {
+            if (this.prepared || this.submitted || this.closed) {
+                throw new IllegalStateException(
+                        "Staging batch is already prepared, submitted or closed");
             }
             this.page.buffer.flush(0L, this.cursor);
+            this.prepared = true;
+        }
+
+        /** Transfers lifetime ownership only after the consuming command buffer is accepted. */
+        public void submitted() {
+            if (!this.prepared || this.submitted || this.closed) {
+                throw new IllegalStateException(
+                        "Staging batch must be prepared and open exactly once before submission");
+            }
             this.submitted = true;
             if (this.disposable) {
                 StagingArena.this.context.defer(this.page.buffer);

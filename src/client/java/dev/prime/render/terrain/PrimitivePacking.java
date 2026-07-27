@@ -77,6 +77,25 @@ public final class PrimitivePacking {
             boolean thinWalled,
             boolean water,
             boolean foliage) {
+        int flags = (cutout ? FLAG_CUTOUT : 0)
+                | (animatedTexture ? FLAG_ANIMATED_TEXTURE : 0)
+                | (transmissive ? FLAG_TRANSMISSIVE : 0)
+                | (thinWalled ? FLAG_THIN_WALLED : 0)
+                | (water ? FLAG_WATER : 0)
+                | (foliage ? FLAG_FOLIAGE : 0);
+        requireValidFlags(flags);
+        return flags;
+    }
+
+    static void requireValidFlags(int flags) {
+        if ((flags & ~FLAG_MASK) != 0) {
+            throw new IllegalArgumentException("Primitive flags exceed their nine-bit ABI field");
+        }
+        boolean cutout = (flags & FLAG_CUTOUT) != 0;
+        boolean transmissive = (flags & FLAG_TRANSMISSIVE) != 0;
+        boolean thinWalled = (flags & FLAG_THIN_WALLED) != 0;
+        boolean water = (flags & FLAG_WATER) != 0;
+        boolean foliage = (flags & FLAG_FOLIAGE) != 0;
         if (foliage && (!cutout || !thinWalled || transmissive || water)) {
             throw new IllegalArgumentException(
                     "Foliage must be a cutout, non-volume thin-walled primitive");
@@ -88,12 +107,11 @@ public final class PrimitivePacking {
         if (water && (!transmissive || thinWalled)) {
             throw new IllegalArgumentException("Water must be a solid transmissive medium");
         }
-        return (cutout ? FLAG_CUTOUT : 0)
-                | (animatedTexture ? FLAG_ANIMATED_TEXTURE : 0)
-                | (transmissive ? FLAG_TRANSMISSIVE : 0)
-                | (thinWalled ? FLAG_THIN_WALLED : 0)
-                | (water ? FLAG_WATER : 0)
-                | (foliage ? FLAG_FOLIAGE : 0);
+        if ((flags & FLAG_TANGENT_NEGATIVE) != 0
+                && (flags & FLAG_LABPBR_NORMAL) == 0) {
+            throw new IllegalArgumentException(
+                    "Negative tangent handedness requires a LabPBR normal map");
+        }
     }
 
     public static int withLabPbr(

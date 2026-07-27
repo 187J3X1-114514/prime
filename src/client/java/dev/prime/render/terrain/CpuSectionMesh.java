@@ -1,5 +1,15 @@
 package dev.prime.render.terrain;
 
+import java.util.Objects;
+
+/**
+ * Logically immutable section mesh.
+ *
+ * <p>Construction transfers exclusive ownership of both primitive arrays to this value. Accessors
+ * expose borrowed read-only storage for zero-copy cluster assembly and upload; callers must never
+ * mutate it. Java has no zero-copy read-only primitive-array view, and cloning here would duplicate
+ * the dominant terrain payload.
+ */
 public record CpuSectionMesh(
         float[] positions,
         int[] primitiveRecords,
@@ -12,6 +22,12 @@ public record CpuSectionMesh(
     public static final int PRIMITIVE_WORDS = 8;
 
     public CpuSectionMesh {
+        positions = Objects.requireNonNull(positions, "positions");
+        primitiveRecords = Objects.requireNonNull(
+                primitiveRecords, "primitiveRecords");
+        opacityMicromap = Objects.requireNonNull(
+                opacityMicromap, "opacityMicromap");
+        lights = Objects.requireNonNull(lights, "lights");
         if (opaqueTriangleCount < 0 || cutoutTriangleCount < 0 || transmissiveTriangleCount < 0) {
             throw new IllegalArgumentException("Triangle counts must not be negative");
         }
@@ -24,12 +40,21 @@ public record CpuSectionMesh(
         if (primitiveRecords.length != Math.multiplyExact(triangleCount, PRIMITIVE_WORDS)) {
             throw new IllegalArgumentException("Primitive array does not match triangle count");
         }
-        if (opacityMicromap == null || lights == null) {
-            throw new IllegalArgumentException("Section sidecar data must not be null");
-        }
-        if (opacityMicromap.triangleIndices().length != cutoutTriangleCount) {
+        if (opacityMicromap.triangleCount() != cutoutTriangleCount) {
             throw new IllegalArgumentException("Opacity micromap does not match cutout geometry");
         }
+    }
+
+    /** Borrowed read-only backing storage; ownership remains with this mesh. */
+    @Override
+    public float[] positions() {
+        return this.positions;
+    }
+
+    /** Borrowed read-only backing storage; ownership remains with this mesh. */
+    @Override
+    public int[] primitiveRecords() {
+        return this.primitiveRecords;
     }
 
     public boolean isEmpty() {

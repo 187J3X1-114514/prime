@@ -325,29 +325,9 @@ public final class TerrainScene implements AutoCloseable {
                         KHRAccelerationStructure.VK_ACCESS_ACCELERATION_STRUCTURE_READ_BIT_KHR);
             }
 
-            if (commandBuffer != null) {
-                this.context.device().instance().debug().endDebugGroup(commandBuffer);
-                VulkanContext.check(VK12.vkEndCommandBuffer(commandBuffer), "end Prime terrain command buffer");
-                if (clusterStagingBatch != null) {
-                    clusterStagingBatch.submitForRetirement();
-                }
-                if (worldStagingBatch != null) {
-                    worldStagingBatch.submitForRetirement();
-                }
-                this.context.commandEncoder().execute(commandBuffer);
-                submitted = true;
-            }
-            for (GpuCluster replacement : replacements) {
-                replacement.blas().onBuildSubmitted();
-                replacement.blas().retireBuildResources();
-            }
-            for (PreparedBlas.Compaction compaction : compactions) {
-                compaction.commit();
-            }
-            RuntimeException retirementFailure = this.commit(
-                    uploads,
+            PreparedUpdate preparedUpdate = this.prepareUpdate(
+                    finalClusters,
                     removedKeys,
-                    replacements,
                     replacementTlas,
                     replacementWorldLights,
                     worldLightTree,
@@ -356,9 +336,50 @@ public final class TerrainScene implements AutoCloseable {
                     nextOriginX,
                     nextOriginY,
                     nextOriginZ);
+            for (PreparedBlas.Compaction compaction : compactions) {
+                compaction.requirePublishable();
+            }
+            if (commandBuffer != null) {
+                this.context.device().instance().debug().endDebugGroup(commandBuffer);
+                VulkanContext.check(VK12.vkEndCommandBuffer(commandBuffer), "end Prime terrain command buffer");
+                if (clusterStagingBatch != null) {
+                    clusterStagingBatch.prepareForSubmission();
+                }
+                if (worldStagingBatch != null) {
+                    worldStagingBatch.prepareForSubmission();
+                }
+                this.context.commandEncoder().execute(commandBuffer);
+                submitted = true;
+                RuntimeException stagingFailure = null;
+                if (clusterStagingBatch != null) {
+                    stagingFailure = ResourceCleanup.run(
+                            clusterStagingBatch::submitted, null);
+                }
+                if (worldStagingBatch != null) {
+                    stagingFailure = ResourceCleanup.run(
+                            worldStagingBatch::submitted, stagingFailure);
+                }
+                ResourceCleanup.throwIfFailed(stagingFailure);
+            }
+            for (PreparedBlas.Compaction compaction : compactions) {
+                compaction.publish();
+            }
+            this.publish(preparedUpdate);
             ownershipTransferred = true;
             replacementTlas = null;
             replacementWorldLights = null;
+            RuntimeException retirementFailure = null;
+            for (GpuCluster replacement : replacements) {
+                retirementFailure = ResourceCleanup.run(
+                        replacement.blas()::onBuildSubmitted, retirementFailure);
+                retirementFailure = ResourceCleanup.run(
+                        replacement.blas()::retireBuildResources, retirementFailure);
+            }
+            for (PreparedBlas.Compaction compaction : compactions) {
+                retirementFailure = ResourceCleanup.run(
+                        compaction::retireSource, retirementFailure);
+            }
+            retirementFailure = this.retire(preparedUpdate, retirementFailure);
             ResourceCleanup.throwIfFailed(retirementFailure);
             return true;
         } catch (RuntimeException exception) {
@@ -536,10 +557,9 @@ public final class TerrainScene implements AutoCloseable {
         return result;
     }
 
-    private RuntimeException commit(
-            List<CompiledCluster> uploads,
+    private PreparedUpdate prepareUpdate(
+            List<GpuCluster> finalClusters,
             LongOpenHashSet removedKeys,
-            List<GpuCluster> replacements,
             TopLevelAccelerationStructure replacementTlas,
             VulkanBuffer replacementWorldLights,
             CpuWorldLightTree.Result replacementWorldLightTree,
@@ -548,19 +568,19 @@ public final class TerrainScene implements AutoCloseable {
             int nextOriginX,
             int nextOriginY,
             int nextOriginZ) {
-        Long2ObjectOpenHashMap<GpuCluster> replacementGroups =
-                groupReplacements(uploads, replacements);
         List<GpuCluster> retired = new ArrayList<>();
-        Long2ObjectOpenHashMap<GpuCluster> nextResident = new Long2ObjectOpenHashMap<>();
+        Long2ObjectOpenHashMap<GpuCluster> nextResident =
+                new Long2ObjectOpenHashMap<>(finalClusters.size());
         for (var entry : this.resident.long2ObjectEntrySet()) {
             if (removedKeys.contains(entry.getLongKey())) {
                 retired.add(entry.getValue());
-            } else {
-                nextResident.put(entry.getLongKey(), entry.getValue());
             }
         }
-        for (var entry : replacementGroups.long2ObjectEntrySet()) {
-            nextResident.put(entry.getLongKey(), entry.getValue());
+        for (GpuCluster cluster : finalClusters) {
+            if (nextResident.put(cluster.key(), cluster) != null) {
+                throw new IllegalStateException(
+                        "Prepared terrain scene contains a duplicate logical cluster");
+            }
         }
 
         TopLevelAccelerationStructure previousTlas = this.currentTlas;
@@ -581,59 +601,56 @@ public final class TerrainScene implements AutoCloseable {
                         this.resetRevision,
                         nextTemporalRevision);
 
-        this.resident = nextResident;
-        this.currentTlas = replacementTlas;
-        if (replaceWorldLights) {
-            this.currentWorldLights = replacementWorldLights;
-            this.currentWorldLightTree = replacementWorldLightTree;
-        }
-        this.originX = nextOriginX;
-        this.originY = nextOriginY;
-        this.originZ = nextOriginZ;
-        this.revision = nextRevision;
-        this.temporalRevision = nextTemporalRevision;
-        this.currentView = nextView;
+        return new PreparedUpdate(
+                nextResident,
+                replacementTlas,
+                replacementWorldLights,
+                replacementWorldLightTree,
+                replaceWorldLights,
+                nextOriginX,
+                nextOriginY,
+                nextOriginZ,
+                nextRevision,
+                nextTemporalRevision,
+                nextView,
+                retired,
+                previousTlas,
+                previousWorldLights);
+    }
 
-        RuntimeException retirementFailure = null;
-        for (GpuCluster removed : retired) {
+    /** Publishes a fully allocated scene state; this path must remain allocation- and I/O-free. */
+    private void publish(PreparedUpdate update) {
+        this.resident = update.resident();
+        this.currentTlas = update.tlas();
+        if (update.replaceWorldLights()) {
+            this.currentWorldLights = update.worldLights();
+            this.currentWorldLightTree = update.worldLightTree();
+        }
+        this.originX = update.originX();
+        this.originY = update.originY();
+        this.originZ = update.originZ();
+        this.revision = update.revision();
+        this.temporalRevision = update.temporalRevision();
+        this.currentView = update.view();
+    }
+
+    private RuntimeException retire(
+            PreparedUpdate update, RuntimeException retirementFailure) {
+        for (GpuCluster removed : update.retired()) {
             retirementFailure = ResourceCleanup.run(
                     () -> this.context.defer(removed::destroy), retirementFailure);
         }
-        if (previousTlas != null) {
+        if (update.previousTlas() != null) {
             retirementFailure = ResourceCleanup.run(
-                    () -> this.context.defer(previousTlas::release), retirementFailure);
+                    () -> this.context.defer(update.previousTlas()::release),
+                    retirementFailure);
         }
-        if (previousWorldLights != null) {
+        if (update.previousWorldLights() != null) {
             retirementFailure = ResourceCleanup.run(
-                    () -> this.context.defer(previousWorldLights), retirementFailure);
+                    () -> this.context.defer(update.previousWorldLights()),
+                    retirementFailure);
         }
         return retirementFailure;
-    }
-
-    private static Long2ObjectOpenHashMap<GpuCluster> groupReplacements(
-            List<CompiledCluster> uploads, List<GpuCluster> replacements) {
-        Long2ObjectOpenHashMap<GpuCluster> result = new Long2ObjectOpenHashMap<>();
-        int cursor = 0;
-        for (CompiledCluster upload : uploads) {
-            if (upload.isEmpty()) {
-                continue;
-            }
-            if (cursor >= replacements.size()) {
-                throw new IllegalStateException(
-                        "Cluster replacement lost logical ownership");
-            }
-            GpuCluster replacement = replacements.get(cursor++);
-            if (replacement.key() != upload.key()) {
-                throw new IllegalStateException(
-                        "Cluster replacement order disagrees with its upload");
-            }
-            result.put(upload.key(), replacement);
-        }
-        if (cursor != replacements.size()) {
-            throw new IllegalStateException(
-                    "Cluster replacement lost logical ownership");
-        }
-        return result;
     }
 
     private TopLevelAccelerationStructure acquireTlas(int capacity) {
@@ -837,6 +854,23 @@ public final class TerrainScene implements AutoCloseable {
 
     static boolean invalidatesTemporalHistory(boolean needsRebase) {
         return needsRebase;
+    }
+
+    private record PreparedUpdate(
+            Long2ObjectOpenHashMap<GpuCluster> resident,
+            TopLevelAccelerationStructure tlas,
+            VulkanBuffer worldLights,
+            CpuWorldLightTree.Result worldLightTree,
+            boolean replaceWorldLights,
+            int originX,
+            int originY,
+            int originZ,
+            long revision,
+            long temporalRevision,
+            ResidentSceneView view,
+            List<GpuCluster> retired,
+            TopLevelAccelerationStructure previousTlas,
+            VulkanBuffer previousWorldLights) {
     }
 
     /** Immutable GPU-resident scene identity consumed by one or more frame plans. */

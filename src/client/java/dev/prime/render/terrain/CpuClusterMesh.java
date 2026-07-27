@@ -2,8 +2,14 @@ package dev.prime.render.terrain;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 
-/** One BLAS payload backed by bounded CPU segments. */
+/**
+ * One logically immutable BLAS payload backed by bounded CPU segments.
+ *
+ * <p>Segment arrays are ownership-transferred and exposed only as borrowed read-only storage. The
+ * representation deliberately avoids joining them into another full-size CPU mesh.
+ */
 public final class CpuClusterMesh {
     private final List<Segment> segments;
     private final long opaqueTriangleCount;
@@ -42,10 +48,9 @@ public final class CpuClusterMesh {
             throw new IllegalArgumentException(
                     "Cluster segments disagree with aggregate triangle counts");
         }
-        if (opacityMicromap == null || lights == null) {
-            throw new IllegalArgumentException("Cluster sidecar data must not be null");
-        }
-        if (opacityMicromap.triangleIndices().length != cutoutTriangleCount) {
+        Objects.requireNonNull(opacityMicromap, "opacityMicromap");
+        Objects.requireNonNull(lights, "lights");
+        if (opacityMicromap.triangleCount() != cutoutTriangleCount) {
             throw new IllegalArgumentException(
                     "Cluster opacity micromap does not match cutout geometry");
         }
@@ -167,7 +172,10 @@ public final class CpuClusterMesh {
                 Math.addExact(this.opacityMicromap.byteSize(), this.lights.byteSize()));
     }
 
-    /** A CPU storage segment; segmentation does not create another BLAS or TLAS instance. */
+    /**
+     * An ownership-transferred CPU storage segment; segmentation does not create another BLAS or
+     * TLAS instance.
+     */
     public record Segment(
             float[] positions,
             int[] primitiveRecords,
@@ -175,6 +183,9 @@ public final class CpuClusterMesh {
             int cutoutTriangleCount,
             int transmissiveTriangleCount) {
         public Segment {
+            positions = Objects.requireNonNull(positions, "positions");
+            primitiveRecords = Objects.requireNonNull(
+                    primitiveRecords, "primitiveRecords");
             int triangles = Math.addExact(
                     Math.addExact(opaqueTriangleCount, cutoutTriangleCount),
                     transmissiveTriangleCount);
@@ -186,6 +197,18 @@ public final class CpuClusterMesh {
                             != Math.multiplyExact(triangles, CpuSectionMesh.PRIMITIVE_WORDS)) {
                 throw new IllegalArgumentException("Invalid cluster mesh segment");
             }
+        }
+
+        /** Borrowed read-only backing storage; ownership remains with this segment. */
+        @Override
+        public float[] positions() {
+            return this.positions;
+        }
+
+        /** Borrowed read-only backing storage; ownership remains with this segment. */
+        @Override
+        public int[] primitiveRecords() {
+            return this.primitiveRecords;
         }
 
         public int triangleCount() {

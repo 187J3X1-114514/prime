@@ -234,7 +234,7 @@ public final class LabPbrTextureAtlas implements AutoCloseable {
         }
         RuntimeException failure = null;
         if (token.batch != null) {
-            failure = ResourceCleanup.run(token.batch::submitForRetirement, null);
+            failure = ResourceCleanup.run(token.batch::submitted, null);
             failure = ResourceCleanup.close(token.batch, failure);
         }
         if (token.initialUpload) {
@@ -286,6 +286,9 @@ public final class LabPbrTextureAtlas implements AutoCloseable {
             int animationUpdateCount) {
         if (!initialUpload && batch == null) {
             return null;
+        }
+        if (batch != null) {
+            batch.prepareForSubmission();
         }
         FrameToken token = new FrameToken(
                 this,

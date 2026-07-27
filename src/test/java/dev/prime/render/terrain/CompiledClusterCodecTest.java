@@ -4,6 +4,8 @@ import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
+import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
 import java.util.Arrays;
 import java.util.List;
 import org.junit.jupiter.api.Test;
@@ -11,6 +13,7 @@ import org.junit.jupiter.api.Test;
 final class CompiledClusterCodecTest {
     @Test
     void canonicalRoundTripPreservesTheCompleteUploadInput() {
+        int flags = PrimitivePacking.packFlags(true, false);
         CpuSectionMesh section = new CpuSectionMesh(
                 new float[] {
                     -0.0F, 0.0F, 0.0F,
@@ -18,14 +21,16 @@ final class CompiledClusterCodecTest {
                     0.0F, 1.0F, 0.0F
                 },
                 new int[] {
-                    0x0123_4567,
-                    0x89ab_cdef,
-                    3,
-                    4,
-                    5,
-                    6,
-                    7,
-                    8
+                    PrimitivePacking.packHalf2(0.0F, 0.0F),
+                    PrimitivePacking.packHalf2(1.0F, 0.0F),
+                    PrimitivePacking.packHalf2(0.0F, 1.0F),
+                    PrimitivePacking.packTintFlags(
+                            PrimitivePacking.packTint(-1), flags),
+                    PrimitivePacking.packOctahedralNormal(0.0F, 0.0F, 1.0F),
+                    PrimitivePacking.packFlagsEmitter(
+                            flags, PrimitivePacking.NO_EMITTER_INDEX),
+                    Float.floatToRawIntBits(1.0F),
+                    PrimitivePacking.packOctahedralNormal(1.0F, 0.0F, 0.0F)
                 },
                 0,
                 1,
@@ -47,9 +52,7 @@ final class CompiledClusterCodecTest {
                 CompiledClusterFingerprint.sha256Hex(source),
                 CompiledClusterFingerprint.sha256Hex(decoded));
         assertEquals(1L, decoded.mesh().cutoutTriangleCount());
-        assertEquals(
-                1,
-                decoded.mesh().opacityMicromap().triangleIndices().length);
+        assertEquals(1, decoded.mesh().opacityMicromap().triangleCount());
     }
 
     @Test
@@ -78,5 +81,105 @@ final class CompiledClusterCodecTest {
                 IllegalArgumentException.class,
                 () -> CompiledClusterCodec.decode(
                         Arrays.copyOf(valid, valid.length - 1)));
+    }
+
+    @Test
+    void decodedUploadInputRejectsNonFiniteAndOutOfContractPrimitiveData() {
+        CpuSectionMesh section = new CpuSectionMesh(
+                new float[] {
+                    0.0F, 0.0F, 0.0F,
+                    1.0F, 0.0F, 0.0F,
+                    0.0F, 1.0F, 0.0F
+                },
+                new int[] {
+                    PrimitivePacking.packHalf2(0.0F, 0.0F),
+                    PrimitivePacking.packHalf2(1.0F, 0.0F),
+                    PrimitivePacking.packHalf2(0.0F, 1.0F),
+                    PrimitivePacking.packTintFlags(
+                            PrimitivePacking.packTint(-1), 0),
+                    PrimitivePacking.packOctahedralNormal(0.0F, 0.0F, 1.0F),
+                    PrimitivePacking.packFlagsEmitter(
+                            0, PrimitivePacking.NO_EMITTER_INDEX),
+                    Float.floatToRawIntBits(1.0F),
+                    PrimitivePacking.packOctahedralNormal(1.0F, 0.0F, 0.0F)
+                },
+                1,
+                0,
+                0,
+                OpacityMicromapData.EMPTY,
+                CpuSectionLights.EMPTY);
+        byte[] valid = CompiledClusterCodec.encode(new CompiledCluster(
+                0L,
+                0,
+                0,
+                0,
+                CpuClusterMesh.fromSegments(List.of(section))));
+        PayloadOffsets offsets = firstPayloadOffsets(valid);
+
+        byte[] nonFinitePosition = valid.clone();
+        littleEndian(nonFinitePosition).putInt(
+                offsets.positions(), Float.floatToRawIntBits(Float.NaN));
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> CompiledClusterCodec.decode(nonFinitePosition));
+
+        byte[] nonFiniteUv = valid.clone();
+        littleEndian(nonFiniteUv).putInt(offsets.primitives(), 0x0000_7c00);
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> CompiledClusterCodec.decode(nonFiniteUv));
+
+        byte[] invalidEmitter = valid.clone();
+        littleEndian(invalidEmitter).putInt(
+                offsets.primitives() + 5 * Integer.BYTES,
+                PrimitivePacking.packFlagsEmitter(0, 0));
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> CompiledClusterCodec.decode(invalidEmitter));
+
+        byte[] wrongCategory = valid.clone();
+        int transmissive = PrimitivePacking.packFlags(
+                false, false, true, false, false, false);
+        littleEndian(wrongCategory).putInt(
+                offsets.primitives() + 3 * Integer.BYTES,
+                PrimitivePacking.packTintFlags(
+                        PrimitivePacking.packTint(-1), transmissive));
+        littleEndian(wrongCategory).putInt(
+                offsets.primitives() + 5 * Integer.BYTES,
+                PrimitivePacking.packFlagsEmitter(
+                        transmissive, PrimitivePacking.NO_EMITTER_INDEX));
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> CompiledClusterCodec.decode(wrongCategory));
+
+        byte[] negativeUvDensity = valid.clone();
+        littleEndian(negativeUvDensity).putInt(
+                offsets.primitives() + 6 * Integer.BYTES,
+                Float.floatToRawIntBits(-1.0F));
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> CompiledClusterCodec.decode(negativeUvDensity));
+    }
+
+    private static PayloadOffsets firstPayloadOffsets(byte[] encoded) {
+        ByteBuffer input = littleEndian(encoded);
+        input.position(56);
+        input.position(input.position() + 3 * Integer.BYTES);
+        int positionCount = input.getInt();
+        int positions = input.position();
+        input.position(Math.addExact(
+                positions, Math.multiplyExact(positionCount, Float.BYTES)));
+        int primitiveCount = input.getInt();
+        if (positionCount != 9 || primitiveCount != CpuSectionMesh.PRIMITIVE_WORDS) {
+            throw new AssertionError("Unexpected single-triangle fixture layout");
+        }
+        return new PayloadOffsets(positions, input.position());
+    }
+
+    private static ByteBuffer littleEndian(byte[] data) {
+        return ByteBuffer.wrap(data).order(ByteOrder.LITTLE_ENDIAN);
+    }
+
+    private record PayloadOffsets(int positions, int primitives) {
     }
 }

@@ -3,6 +3,7 @@ package dev.prime.render.terrain;
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import org.junit.jupiter.api.Test;
@@ -176,8 +177,28 @@ final class OpacityMicromapDataTest {
     void fullyUnknownFallbackPreservesOneIndexPerCutoutTriangle() {
         OpacityMicromapData data = OpacityMicromapData.fullyUnknown(17);
         assertEquals(0, data.blockCount());
-        assertEquals(17, data.triangleIndices().length);
+        assertEquals(17, data.triangleCount());
         assertEquals(17L * Integer.BYTES, data.byteSize());
+    }
+
+    @Test
+    void encodedMappingsRejectInvalidBlockReferences() {
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> OpacityMicromapData.fromEncoded(
+                        new byte[0],
+                        new int[0],
+                        new int[0],
+                        new int[0],
+                        new int[] {0}));
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> OpacityMicromapData.fromEncoded(
+                        new byte[0],
+                        new int[0],
+                        new int[0],
+                        new int[0],
+                        new int[] {Integer.MIN_VALUE}));
     }
 
     private static int texel(float coordinate) {

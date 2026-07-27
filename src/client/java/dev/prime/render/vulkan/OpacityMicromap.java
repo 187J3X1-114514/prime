@@ -93,7 +93,7 @@ final class OpacityMicromap implements Destroyable {
         long handle = 0L;
         try {
             int[] sourceIndices = source.triangleIndices();
-            validateIndices(sourceIndices, source.blockCount());
+            source.requireValidTriangleIndices();
             int[] mappedTwoStateTriangleCounts = new int[16];
             int[] mappedFourStateTriangleCounts = new int[16];
             for (int index : sourceIndices) {
@@ -446,17 +446,6 @@ final class OpacityMicromap implements Destroyable {
 
     private static long alignedOffset(long deviceAddress, long alignment) {
         return VulkanContext.alignUp(deviceAddress, alignment) - deviceAddress;
-    }
-
-    private static void validateIndices(int[] indices, int blockCount) {
-        for (int index : indices) {
-            if (index >= blockCount
-                    || index < EXTOpacityMicromap
-                            .VK_OPACITY_MICROMAP_SPECIAL_INDEX_FULLY_UNKNOWN_OPAQUE_EXT) {
-                throw new IllegalArgumentException(
-                        "Opacity micromap triangle references an invalid block: " + index);
-            }
-        }
     }
 
     private static int total(int[] counts) {

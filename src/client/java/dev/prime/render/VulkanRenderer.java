@@ -609,16 +609,17 @@ public final class VulkanRenderer implements AutoCloseable {
         this.screenshotAtlasSampler = 0L;
         this.screenshotTextureRevision = Long.MIN_VALUE;
         this.screenshotSampleCount = 0L;
-        if (this.screenshotResources != null) {
-            this.context.defer(this.screenshotResources);
-            this.screenshotResources = null;
-        }
+        ScreenshotRenderResources retiredResources = this.screenshotResources;
+        this.screenshotResources = null;
         // Dirty notifications continue to accumulate while uploads are paused. A full resync on
         // exit also covers animation-driven or external changes that do not expose a precise
         // block range, without invalidating the frozen screenshot while it is converging.
         this.terrain.invalidateAll();
         this.realtimeSampleState = this.realtimeSampleState.invalidated();
         PrimeClient.LOGGER.info("Left Prime screenshot mode; scheduled a full terrain resync");
+        if (retiredResources != null) {
+            this.context.defer(retiredResources);
+        }
     }
 
     private void cancelScreenshotSession() {
@@ -654,11 +655,12 @@ public final class VulkanRenderer implements AutoCloseable {
                 fixed.renderY(),
                 fixed.renderZ());
         this.screenshotSampleCount = 0L;
-        if (this.screenshotResources != null) {
-            this.context.defer(this.screenshotResources);
-            this.screenshotResources = null;
-        }
+        ScreenshotRenderResources retiredResources = this.screenshotResources;
+        this.screenshotResources = null;
         PrimeClient.LOGGER.info("Restarted Prime screenshot accumulation for a new aspect ratio");
+        if (retiredResources != null) {
+            this.context.defer(retiredResources);
+        }
     }
 
     public void invalidateBlocks(
@@ -782,6 +784,7 @@ public final class VulkanRenderer implements AutoCloseable {
         this.pipeline = replacementPipeline;
         this.atmosphere = replacementAtmosphere;
         this.realtimeResources = replacementResources;
+        this.realtimeSampleState = this.realtimeSampleState.invalidated();
         RuntimeException retirementFailure = ResourceCleanup.run(
                 () -> this.context.defer(previousPipeline), null);
         if (previousResources != null) {
@@ -791,7 +794,6 @@ public final class VulkanRenderer implements AutoCloseable {
         retirementFailure = ResourceCleanup.run(
                 () -> this.context.defer(previousAtmosphere), retirementFailure);
         ResourceCleanup.throwIfFailed(retirementFailure);
-        this.realtimeSampleState = this.realtimeSampleState.invalidated();
         PrimeClient.LOGGER.info("Reloaded Prime ray tracing and atmosphere shaders");
     }
 
@@ -866,6 +868,10 @@ public final class VulkanRenderer implements AutoCloseable {
             throw exception;
         }
         this.realtimeResources = replacement;
+        // Publication is complete before fallible retirement. If retirement reports an error,
+        // the next attempt must still reset histories rather than treating this replacement as an
+        // ordinary matching frame.
+        this.realtimeSampleState = this.realtimeSampleState.invalidated();
         if (current != null) {
             // The pipeline retires its old descriptor set before these referenced image views.
             this.context.defer(current);

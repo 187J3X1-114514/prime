@@ -398,7 +398,8 @@ public final class PreparedBlas {
         private final PreparedBlas owner;
         private final AccelerationStructure source;
         private final AccelerationStructure target;
-        private boolean committed;
+        private boolean published;
+        private boolean retired;
 
         private Compaction(
                 PreparedBlas owner,
@@ -424,27 +425,55 @@ public final class PreparedBlas {
             }
         }
 
-        public void commit() {
+        public void requirePublishable() {
             synchronized (this.owner) {
-                if (this.owner.accelerationStructure != this.source) {
-                    throw new IllegalStateException("BLAS changed before compaction was committed");
+                if (this.published
+                        || this.retired
+                        || this.owner.accelerationStructure != this.source) {
+                    throw new IllegalStateException("BLAS changed before compaction publication");
+                }
+            }
+        }
+
+        /**
+         * Publishes the copied address without performing fallible retirement work.
+         *
+         * <p>The containing scene must validate every compaction first and publish its replacement
+         * TLAS immediately after this call.
+         */
+        public void publish() {
+            synchronized (this.owner) {
+                if (this.published
+                        || this.retired
+                        || this.owner.accelerationStructure != this.source) {
+                    throw new IllegalStateException("BLAS changed before compaction publication");
                 }
                 this.owner.accelerationStructure = this.target;
             }
-            this.committed = true;
+            this.published = true;
+        }
+
+        /** Retires the old address only after both the copy and replacement TLAS were published. */
+        public void retireSource() {
+            if (!this.published || this.retired) {
+                throw new IllegalStateException(
+                        "Compaction source can be retired only once after publication");
+            }
+            this.retired = true;
             this.owner.context.defer(this.source);
         }
 
         public void abandonAfterSubmission() {
-            if (!this.committed) {
-                this.committed = true;
+            if (!this.published && !this.retired) {
+                this.retired = true;
                 this.owner.context.defer(this.target);
             }
         }
 
         @Override
         public void close() {
-            if (!this.committed) {
+            if (!this.published && !this.retired) {
+                this.retired = true;
                 this.target.destroy();
             }
         }

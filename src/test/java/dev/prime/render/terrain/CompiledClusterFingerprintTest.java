@@ -12,7 +12,7 @@ final class CompiledClusterFingerprintTest {
     void equivalentOwnedPayloadsHaveTheSameCanonicalIdentity() {
         CompiledCluster first = cluster(
                 new float[] {0.0F, -0.0F, 1.0F, 1.0F, 0.0F, 1.0F, 0.0F, 1.0F, 1.0F},
-                new int[] {1, 2, 3, 4, 5, 6, 7, 8});
+                opaquePrimitive(8));
         CompiledCluster second = cluster(
                 Arrays.copyOf(first.mesh().segments().get(0).positions(), 9),
                 Arrays.copyOf(first.mesh().segments().get(0).primitiveRecords(), 8));
@@ -27,7 +27,7 @@ final class CompiledClusterFingerprintTest {
     void rawFloatBitsAndPrimitivePayloadParticipateInIdentity() {
         float[] positions =
                 {0.0F, -0.0F, 1.0F, 1.0F, 0.0F, 1.0F, 0.0F, 1.0F, 1.0F};
-        int[] primitives = {1, 2, 3, 4, 5, 6, 7, 8};
+        int[] primitives = opaquePrimitive(8);
         String baseline = CompiledClusterFingerprint.sha256Hex(
                 cluster(positions, primitives));
 
@@ -61,5 +61,19 @@ final class CompiledClusterFingerprintTest {
                 0,
                 0,
                 CpuClusterMesh.fromSegments(List.of(section)));
+    }
+
+    private static int[] opaquePrimitive(int tangentMarker) {
+        return new int[] {
+            PrimitivePacking.packHalf2(0.0F, 0.0F),
+            PrimitivePacking.packHalf2(1.0F, 0.0F),
+            PrimitivePacking.packHalf2(0.0F, 1.0F),
+            PrimitivePacking.packTintFlags(PrimitivePacking.packTint(-1), 0),
+            PrimitivePacking.packOctahedralNormal(0.0F, 0.0F, 1.0F),
+            PrimitivePacking.packFlagsEmitter(
+                    0, PrimitivePacking.NO_EMITTER_INDEX),
+            Float.floatToRawIntBits(1.0F),
+            tangentMarker
+        };
     }
 }

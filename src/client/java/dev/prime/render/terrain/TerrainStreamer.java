@@ -609,9 +609,9 @@ public final class TerrainStreamer implements AutoCloseable {
                 0L,
                 0L,
                 includeOpacityMicromap
-                        ? (long) opacityMicromap.triangleIndices().length * Integer.BYTES
+                        ? (long) opacityMicromap.triangleCount() * Integer.BYTES
                         : 0L,
-                includeOpacityMicromap ? opacityMicromap.blocks().length : 0L,
+                includeOpacityMicromap ? opacityMicromap.blockStorageBytes() : 0L,
                 includeOpacityMicromap
                         ? (long) opacityMicromap.blockCount()
                                 * org.lwjgl.vulkan.VkMicromapTriangleEXT.SIZEOF

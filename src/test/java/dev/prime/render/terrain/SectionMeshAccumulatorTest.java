@@ -78,6 +78,41 @@ final class SectionMeshAccumulatorTest {
         }
     }
 
+    @Test
+    void rejectsNonFiniteCapturedAttributesBeforePublishingGeometry() {
+        try (TestSprite sprite = new TestSprite()) {
+            SectionMeshAccumulator accumulator = new SectionMeshAccumulator(
+                    LabPbrMaterialSet.EMPTY, false);
+            SectionMeshAccumulator.Surface surface = opaqueSurface(sprite);
+            for (float invalid : new float[] {
+                Float.NaN, Float.POSITIVE_INFINITY, Float.NEGATIVE_INFINITY
+            }) {
+                SectionMeshAccumulator.Quad position =
+                        horizontalQuad(0.0F, 0.0F, 0.0F, 1.0F);
+                position.x[0] = invalid;
+                assertThrows(
+                        IllegalArgumentException.class,
+                        () -> accumulator.addQuad(position, surface));
+            }
+            SectionMeshAccumulator.Quad uv =
+                    horizontalQuad(0.0F, 0.0F, 0.0F, 1.0F);
+            uv.v[2] = Float.NaN;
+            assertThrows(
+                    IllegalArgumentException.class,
+                    () -> accumulator.addQuad(uv, surface));
+            SectionMeshAccumulator.Quad normal =
+                    horizontalQuad(0.0F, 0.0F, 0.0F, 1.0F);
+            normal.normalZ = Float.POSITIVE_INFINITY;
+            assertThrows(
+                    IllegalArgumentException.class,
+                    () -> accumulator.addQuad(normal, surface));
+
+            accumulator.addQuad(
+                    horizontalQuad(0.0F, 0.0F, 0.0F, 1.0F), surface);
+            assertEquals(1, accumulator.build().mergeFaces().size());
+        }
+    }
+
     static SectionMeshAccumulator.Quad horizontalQuad(
             float x, float y, float z, float width) {
         SectionMeshAccumulator.Quad quad = new SectionMeshAccumulator.Quad();

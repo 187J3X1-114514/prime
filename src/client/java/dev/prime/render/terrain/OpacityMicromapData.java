@@ -12,7 +12,13 @@ import net.minecraft.client.renderer.texture.SpriteContents;
 import net.minecraft.client.renderer.texture.TextureAtlasSprite;
 import org.lwjgl.vulkan.EXTOpacityMicromap;
 
-/** Immutable CPU build input for alpha-cutout geometry's mixed-format Vulkan opacity micromap. */
+/**
+ * Logically immutable CPU build input for alpha-cutout geometry's mixed-format Vulkan opacity
+ * micromap.
+ *
+ * <p>Builders transfer ownership of the packed arrays. Public array access is a borrowed read-only
+ * view used by serialization and Vulkan upload; mutating it violates the scene-value contract.
+ */
 public final class OpacityMicromapData {
     public static final int SUBDIVISION_LEVEL = 4;
     public static final int MICRO_TRIANGLE_COUNT = 1 << (2 * SUBDIVISION_LEVEL);
@@ -74,6 +80,7 @@ public final class OpacityMicromapData {
             int[] blockFormats,
             int[] blockSubdivisionLevels,
             int[] triangleIndices) {
+        requireValidTriangleIndices(triangleIndices, blockFormats.length);
         return new OpacityMicromapData(
                 blocks.clone(),
                 blockOffsets.clone(),
@@ -82,24 +89,42 @@ public final class OpacityMicromapData {
                 triangleIndices.clone());
     }
 
+    /** Borrowed read-only packed block storage. */
     public byte[] blocks() {
         return this.blocks;
     }
 
+    /** Borrowed read-only triangle-to-block mapping. */
     public int[] triangleIndices() {
         return this.triangleIndices;
     }
 
+    /** Borrowed read-only packed block offsets. */
     public int[] blockOffsets() {
         return this.blockOffsets;
     }
 
+    /** Borrowed read-only packed block formats. */
     public int[] blockFormats() {
         return this.blockFormats;
     }
 
+    /** Borrowed read-only packed block subdivision levels. */
     public int[] blockSubdivisionLevels() {
         return this.blockSubdivisionLevels;
+    }
+
+    public int triangleCount() {
+        return this.triangleIndices.length;
+    }
+
+    public int blockStorageBytes() {
+        return this.blocks.length;
+    }
+
+    /** Revalidates borrowed storage before it crosses the Vulkan boundary. */
+    public void requireValidTriangleIndices() {
+        requireValidTriangleIndices(this.triangleIndices, this.blockFormats.length);
     }
 
     public int blockCount() {
@@ -171,6 +196,18 @@ public final class OpacityMicromapData {
                 EXTOpacityMicromap.VK_OPACITY_MICROMAP_SPECIAL_INDEX_FULLY_UNKNOWN_OPAQUE_EXT);
         return new OpacityMicromapData(
                 new byte[0], new int[0], new int[0], new int[0], indices);
+    }
+
+    private static void requireValidTriangleIndices(
+            int[] triangleIndices, int blockCount) {
+        for (int index : triangleIndices) {
+            if (index >= blockCount
+                    || index < EXTOpacityMicromap
+                            .VK_OPACITY_MICROMAP_SPECIAL_INDEX_FULLY_UNKNOWN_OPAQUE_EXT) {
+                throw new IllegalArgumentException(
+                        "Opacity micromap triangle references an invalid block: " + index);
+            }
+        }
     }
 
     /** Per-mesh builder. Cluster merging reuses the same content interning path. */

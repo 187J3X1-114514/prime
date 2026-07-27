@@ -2,6 +2,7 @@ package dev.prime.render.terrain;
 
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Objects;
 import net.minecraft.client.renderer.texture.TextureAtlasSprite;
 
 /**
@@ -42,7 +43,8 @@ public final class SectionMeshAccumulator {
             throw new IllegalArgumentException(
                     "Section mesh segment capacity must contain whole quads");
         }
-        this.labPbrMaterials = labPbrMaterials;
+        this.labPbrMaterials = Objects.requireNonNull(
+                labPbrMaterials, "labPbrMaterials");
         this.buildOpacityMicromap = buildOpacityMicromap;
         this.segmentTriangleTarget = segmentTriangleTarget;
         this.beginSegment();
@@ -52,6 +54,8 @@ public final class SectionMeshAccumulator {
         if (this.built) {
             throw new IllegalStateException("Section mesh was already built");
         }
+        requireFinite(Objects.requireNonNull(quad, "quad"));
+        Objects.requireNonNull(surface, "surface").requireComplete();
         MergeFace mergeFace = MergeFace.tryCreate(
                 quad, surface, this.labPbrMaterials, this.buildOpacityMicromap);
         if (mergeFace != null) {
@@ -67,6 +71,23 @@ public final class SectionMeshAccumulator {
         this.emitTriangle(destination, quad, FIRST_TRIANGLE, surface);
         this.emitTriangle(destination, quad, SECOND_TRIANGLE, surface);
         this.triangleCount += 2;
+    }
+
+    private static void requireFinite(Quad quad) {
+        boolean finite = Float.isFinite(quad.normalX)
+                && Float.isFinite(quad.normalY)
+                && Float.isFinite(quad.normalZ);
+        for (int index = 0; index < 4; index++) {
+            finite &= Float.isFinite(quad.x[index])
+                    && Float.isFinite(quad.y[index])
+                    && Float.isFinite(quad.z[index])
+                    && Float.isFinite(quad.u[index])
+                    && Float.isFinite(quad.v[index]);
+        }
+        if (!finite) {
+            throw new IllegalArgumentException(
+                    "Captured Section quad contains a non-finite vertex attribute");
+        }
     }
 
     public CpuSectionGeometry build() {
@@ -305,8 +326,12 @@ public final class SectionMeshAccumulator {
             this.foliage = foliage;
             this.mergeable = mergeable;
             this.lightEmission = lightEmission;
-            this.sprite = sprite;
+            this.sprite = Objects.requireNonNull(sprite, "sprite");
             return this;
+        }
+
+        private void requireComplete() {
+            Objects.requireNonNull(this.sprite, "surface sprite");
         }
 
         int tint() {

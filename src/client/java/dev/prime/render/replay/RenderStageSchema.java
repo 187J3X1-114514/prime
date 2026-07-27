@@ -41,7 +41,11 @@ public enum RenderStageSchema {
             signal("reflection.specular_sh1", VK12.VK_FORMAT_R16G16B16A16_SFLOAT),
             signal("sun.penumbra", VK12.VK_FORMAT_R16_SFLOAT),
             signal("fsr.depth", VK12.VK_FORMAT_R32_SFLOAT),
-            signal("fsr.motion", VK12.VK_FORMAT_R16G16B16A16_SFLOAT)));
+            signal("fsr.motion", VK12.VK_FORMAT_R16G16B16A16_SFLOAT))),
+    POST_NRD(List.of(
+            signal("composite.color", VK12.VK_FORMAT_R16G16B16A16_SFLOAT),
+            signal("fsr.reactive", VK12.VK_FORMAT_R8_UNORM),
+            signal("fsr.transparency_composition", VK12.VK_FORMAT_R8_UNORM)));
 
     private final List<Signal> layout;
     private final List<String> signals;

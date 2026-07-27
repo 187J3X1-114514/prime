@@ -3,7 +3,12 @@ package dev.prime.render.replay;
 import java.util.Arrays;
 import java.util.Objects;
 
-/** Finds the first same-platform bitwise replay divergence. */
+/**
+ * Finds the first same-platform bitwise replay divergence.
+ *
+ * <p>Raw branch payloads outside their active material-distance domain are intentionally
+ * undefined and do not participate in the executable contract.
+ */
 public final class RenderReplayComparator {
     private RenderReplayComparator() {
     }
@@ -87,6 +92,13 @@ public final class RenderReplayComparator {
             if (mismatch != null) {
                 return new Report(mismatch);
             }
+            mismatch = compareStage(
+                    index,
+                    expectedFrame.postNrd(),
+                    actualFrame.postNrd());
+            if (mismatch != null) {
+                return new Report(mismatch);
+            }
         }
         return new Report(null);
     }
@@ -152,6 +164,10 @@ public final class RenderReplayComparator {
         for (String signal : expected.schema().signals()) {
             for (int y = 0; y < expected.height(); y++) {
                 for (int x = 0; x < expected.width(); x++) {
+                    if (undefinedInactiveRawSignal(
+                            expected, actual, signal, x, y)) {
+                        continue;
+                    }
                     for (int channel = 0; channel < 4; channel++) {
                         int expectedBits =
                                 expected.rawWord(signal, x, y, channel);
@@ -175,6 +191,40 @@ public final class RenderReplayComparator {
             }
         }
         return null;
+    }
+
+    private static boolean undefinedInactiveRawSignal(
+            CapturedRenderStage expected,
+            CapturedRenderStage actual,
+            String signal,
+            int x,
+            int y) {
+        if (expected.schema() != RenderStageSchema.RAW_WAVEFRONT) {
+            return false;
+        }
+        String branch;
+        if (signal.startsWith("primary.")) {
+            branch = "primary";
+        } else if (signal.startsWith("reflection.")) {
+            branch = "reflection";
+        } else {
+            return false;
+        }
+        String material = branch + ".material";
+        if (signal.equals(material)) {
+            return false;
+        }
+        return !activeRawBranch(expected, material, x, y)
+                || !activeRawBranch(actual, material, x, y);
+    }
+
+    private static boolean activeRawBranch(
+            CapturedRenderStage stage,
+            String material,
+            int x,
+            int y) {
+        float distance = stage.value(material, x, y, 3);
+        return Float.isFinite(distance) && distance >= 0.0F;
     }
 
     public record Report(Mismatch firstMismatch) {

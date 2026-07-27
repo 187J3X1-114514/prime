@@ -81,8 +81,8 @@ final class PrimeProductionMathGpuTest {
     }
 
     @Test
-    void nrdPackingDemodulationAndSanitizersRejectNonFiniteState() throws IOException {
-        int kinds = 9;
+    void nrdPackingDemodulationSanitizationAndReJitterContractsHold() throws IOException {
+        int kinds = 10;
         int inputWords = 4;
         ShaderPropertyBatch.assertProperties(
                 runner,
@@ -95,7 +95,7 @@ final class PrimeProductionMathGpuTest {
     }
 
     @Test
-    void fsrMasksKeepFoliageLockedAndMakeTransparencyReactive()
+    void fsrMasksKeepFoliageLockedAndUseSoftTransparencyHistory()
             throws IOException {
         int cases = 1 << 10;
         int inputWords = 3;

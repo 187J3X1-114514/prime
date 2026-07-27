@@ -1077,6 +1077,7 @@ def verifyDistributionJar = tasks.register('verifyDistributionJar') {
 			'prime/shaders/nrd_motion.comp.spv',
 			'prime/shaders/replay_capture_raw.comp.spv',
 			'prime/shaders/replay_capture_prepared_nrd.comp.spv',
+			'prime/shaders/replay_capture_post_nrd.comp.spv',
 			'prime/shaders/native_debug_present.comp.spv',
 			'prime/shaders/noisy_composite.comp.spv',
 			'prime/shaders/rr_prepare.comp.spv',
@@ -1089,9 +1090,9 @@ def verifyDistributionJar = tasks.register('verifyDistributionJar') {
 		}
 
 		def shaderNames = names.findAll { it.startsWith('prime/shaders/') && it.endsWith('.spv') }
-		if (shaderNames.size() != 27) {
+		if (shaderNames.size() != 28) {
 			throw new GradleException(
-					"Distribution jar must contain 27 Prime shaders; found ${shaderNames.size()}")
+					"Distribution jar must contain 28 Prime shaders; found ${shaderNames.size()}")
 		}
 
 		new java.util.zip.ZipFile(archive).withCloseable { zip ->

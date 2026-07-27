@@ -47,7 +47,10 @@ final class RenderReplaySequenceTest {
         RenderReplayCapture frame =
                 NrdInputSemanticValidatorTest.capture(false, false);
         int[] changedWords = frame.rawWavefront().words();
-        changedWords[0] ^= 1;
+        changedWords[
+                RenderStageSchema.RAW_WAVEFRONT.signalIndex(
+                        "display.position")
+                        * 4] ^= 1;
         RenderReplayCapture changed = new RenderReplayCapture(
                 frame.platform(),
                 frame.binary(),
@@ -58,7 +61,8 @@ final class RenderReplaySequenceTest {
                         frame.rawWavefront().width(),
                         frame.rawWavefront().height(),
                         changedWords),
-                frame.preparedNrd());
+                frame.preparedNrd(),
+                frame.postNrd());
 
         RenderReplayComparator.Report same =
                 RenderReplayComparator.compare(
@@ -75,7 +79,7 @@ final class RenderReplaySequenceTest {
                 RenderStageSchema.RAW_WAVEFRONT,
                 different.firstMismatch().stage());
         assertEquals(
-                "primary.view_z",
+                "display.position",
                 different.firstMismatch().signal());
         assertTrue(RenderReplayVerification.compare(
                         new RenderReplaySequence(List.of(frame)),
@@ -85,5 +89,68 @@ final class RenderReplaySequenceTest {
                         new RenderReplaySequence(List.of(frame)),
                         new RenderReplaySequence(List.of(changed)))
                 .valid());
+    }
+
+    @Test
+    void comparatorIgnoresUndefinedInactiveRawBranchFields() {
+        RenderReplayCapture frame =
+                NrdInputSemanticValidatorTest.capture(false, false);
+        int[] changedWords = frame.rawWavefront().words();
+        changedWords[
+                RenderStageSchema.RAW_WAVEFRONT.signalIndex(
+                        "reflection.position")
+                        * 4] ^= 0x7F00_0001;
+        RenderReplayCapture changed = new RenderReplayCapture(
+                frame.platform(),
+                frame.binary(),
+                frame.frame(),
+                frame.nrdPreparation(),
+                new CapturedRenderStage(
+                        RenderStageSchema.RAW_WAVEFRONT,
+                        frame.rawWavefront().width(),
+                        frame.rawWavefront().height(),
+                        changedWords),
+                frame.preparedNrd(),
+                frame.postNrd());
+
+        RenderReplayComparator.Report comparison =
+                RenderReplayComparator.compare(
+                        new RenderReplaySequence(List.of(frame)),
+                        new RenderReplaySequence(List.of(changed)));
+
+        assertTrue(comparison.identical());
+    }
+
+    @Test
+    void comparatorIncludesPostNrdOutput() {
+        RenderReplayCapture frame =
+                NrdInputSemanticValidatorTest.capture(false, false);
+        int[] changedWords = frame.postNrd().words();
+        changedWords[0] ^= 1;
+        RenderReplayCapture changed = new RenderReplayCapture(
+                frame.platform(),
+                frame.binary(),
+                frame.frame(),
+                frame.nrdPreparation(),
+                frame.rawWavefront(),
+                frame.preparedNrd(),
+                new CapturedRenderStage(
+                        RenderStageSchema.POST_NRD,
+                        frame.postNrd().width(),
+                        frame.postNrd().height(),
+                        changedWords));
+
+        RenderReplayComparator.Report different =
+                RenderReplayComparator.compare(
+                        new RenderReplaySequence(List.of(frame)),
+                        new RenderReplaySequence(List.of(changed)));
+
+        assertFalse(different.identical());
+        assertEquals(
+                RenderStageSchema.POST_NRD,
+                different.firstMismatch().stage());
+        assertEquals(
+                "composite.color",
+                different.firstMismatch().signal());
     }
 }

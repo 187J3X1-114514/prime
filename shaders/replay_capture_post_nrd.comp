@@ -1,0 +1,32 @@
+#version 460
+
+layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
+
+layout(set = 0, binding = 0, rgba16f) uniform readonly image2D primeComposite;
+layout(set = 0, binding = 1, r8) uniform readonly image2D primeReactive;
+layout(set = 0, binding = 2, r8) uniform readonly image2D primeTransparencyComposition;
+layout(set = 0, binding = 3, std430) writeonly buffer PrimeReplayCapture {
+    uvec4 values[];
+} primeCapture;
+
+layout(push_constant) uniform PrimeReplayCapturePush {
+    uvec2 extent;
+} primePush;
+
+void primeStore(uint signal, uint pixel, vec4 value) {
+    uint pixelCount = primePush.extent.x * primePush.extent.y;
+    primeCapture.values[signal * pixelCount + pixel] = floatBitsToUint(value);
+}
+
+void main() {
+    uvec2 pixel = gl_GlobalInvocationID.xy;
+    if (any(greaterThanEqual(pixel, primePush.extent))) return;
+    ivec2 coordinate = ivec2(pixel);
+    uint linearPixel = pixel.y * primePush.extent.x + pixel.x;
+    primeStore(0u, linearPixel, imageLoad(primeComposite, coordinate));
+    primeStore(1u, linearPixel, imageLoad(primeReactive, coordinate));
+    primeStore(
+            2u,
+            linearPixel,
+            imageLoad(primeTransparencyComposition, coordinate));
+}

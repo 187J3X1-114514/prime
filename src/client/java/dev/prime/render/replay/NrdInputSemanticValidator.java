@@ -19,7 +19,6 @@ import org.joml.Vector4f;
  */
 public final class NrdInputSemanticValidator {
     private static final float SKY_VIEW_Z = 65_504.0F;
-    private static final float ZERO_MOTION_TOLERANCE = 1.0e-5F;
     private static final int MAX_REPORTED_VIOLATIONS = 256;
 
     private NrdInputSemanticValidator() {
@@ -30,24 +29,42 @@ public final class NrdInputSemanticValidator {
         Collector violations = new Collector();
         CapturedRenderStage raw = capture.rawWavefront();
         CapturedRenderStage prepared = capture.preparedNrd();
+        CapturedRenderStage postNrd = capture.postNrd();
 
-        finite(violations, raw, "primary.view_z", 1);
-        finite(violations, raw, "primary.position", 4);
-        finite(violations, raw, "primary.diffuse", 4);
-        finite(violations, raw, "primary.specular", 4);
-        finite(violations, raw, "primary.normal_roughness", 4);
-        finite(violations, raw, "primary.material", 4);
-        finite(violations, raw, "primary.specular_material", 4);
-        finite(violations, raw, "primary.diffuse_direction", 4);
-        finite(violations, raw, "primary.specular_direction", 4);
-        finite(violations, raw, "reflection.position", 4);
-        finite(violations, raw, "reflection.diffuse", 4);
-        finite(violations, raw, "reflection.specular", 4);
-        finite(violations, raw, "reflection.normal_roughness", 4);
-        finite(violations, raw, "reflection.material", 4);
-        finite(violations, raw, "reflection.specular_material", 4);
-        finite(violations, raw, "reflection.diffuse_direction", 4);
-        finite(violations, raw, "reflection.specular_direction", 4);
+        for (String branch : List.of("primary", "reflection")) {
+            finiteChannel(
+                    violations, raw, branch + ".material", 3);
+            finiteActiveBranch(
+                    violations, raw, branch, branch + ".material", 3);
+            finiteActiveBranch(
+                    violations,
+                    raw,
+                    branch,
+                    branch + ".position",
+                    branch.equals("reflection") ? 4 : 3);
+            for (String signal : List.of(
+                    "diffuse",
+                    "specular",
+                    "normal_roughness",
+                    "specular_material")) {
+                finiteActiveBranch(
+                        violations,
+                        raw,
+                        branch,
+                        branch + "." + signal,
+                        4);
+            }
+            for (String signal : List.of(
+                    "diffuse_direction",
+                    "specular_direction")) {
+                finiteActiveBranch(
+                        violations,
+                        raw,
+                        branch,
+                        branch + "." + signal,
+                        3);
+            }
+        }
         // display.position.w is an intentional uint bitfield transported through an image.
         finite(violations, raw, "display.position", 3);
 
@@ -68,9 +85,9 @@ public final class NrdInputSemanticValidator {
                     1.0F);
             positiveViewZ(
                     violations, prepared, branch + ".view_z");
-            nonnegativeRadiance(
+            packedSh0(
                     violations, prepared, branch + ".diffuse_sh0");
-            nonnegativeRadiance(
+            packedSh0(
                     violations, prepared, branch + ".specular_sh0");
         }
         finite(violations, prepared, "sun.penumbra", 1);
@@ -96,6 +113,19 @@ public final class NrdInputSemanticValidator {
                 2,
                 -1.0F,
                 1.0F);
+        finite(violations, postNrd, "composite.color", 4);
+        for (String signal : List.of(
+                "fsr.reactive",
+                "fsr.transparency_composition")) {
+            finite(violations, postNrd, signal, 1);
+            range(
+                    violations,
+                    postNrd,
+                    signal,
+                    1,
+                    0.0F,
+                    1.0F);
+        }
 
         validateClearedBranch(
                 violations, raw, prepared, "primary");
@@ -106,14 +136,6 @@ public final class NrdInputSemanticValidator {
         validateMotionProjection(
                 violations, capture, "reflection", true);
         validateFsrGuideProjection(violations, capture);
-        if (capture.nrdPreparation().restart()) {
-            validateRestartMotion(
-                    violations, prepared, "primary.motion", 3);
-            validateRestartMotion(
-                    violations, prepared, "reflection.motion", 3);
-            validateRestartMotion(
-                    violations, prepared, "fsr.motion", 2);
-        }
         return violations.report();
     }
 
@@ -229,6 +251,58 @@ public final class NrdInputSemanticValidator {
         });
     }
 
+    private static void finiteChannel(
+            Collector violations,
+            CapturedRenderStage stage,
+            String signal,
+            int channel) {
+        for (int y = 0; y < stage.height(); y++) {
+            for (int x = 0; x < stage.width(); x++) {
+                float value = stage.value(signal, x, y, channel);
+                if (!Float.isFinite(value)) {
+                    violations.add(
+                            stage.schema(),
+                            signal,
+                            x,
+                            y,
+                            channel,
+                            "non-finite",
+                            stage.rawWord(signal, x, y, channel));
+                }
+            }
+        }
+    }
+
+    private static void finiteActiveBranch(
+            Collector violations,
+            CapturedRenderStage stage,
+            String branch,
+            String signal,
+            int channels) {
+        String material = branch + ".material";
+        for (int y = 0; y < stage.height(); y++) {
+            for (int x = 0; x < stage.width(); x++) {
+                float distance = stage.value(material, x, y, 3);
+                if (!Float.isFinite(distance) || distance < 0.0F) {
+                    continue;
+                }
+                for (int channel = 0; channel < channels; channel++) {
+                    float value = stage.value(signal, x, y, channel);
+                    if (!Float.isFinite(value)) {
+                        violations.add(
+                                stage.schema(),
+                                signal,
+                                x,
+                                y,
+                                channel,
+                                "non-finite",
+                                stage.rawWord(signal, x, y, channel));
+                    }
+                }
+            }
+        }
+    }
+
     private static void range(
             Collector violations,
             CapturedRenderStage stage,
@@ -270,21 +344,28 @@ public final class NrdInputSemanticValidator {
         });
     }
 
-    private static void nonnegativeRadiance(
+    private static void packedSh0(
             Collector violations,
             CapturedRenderStage stage,
             String signal) {
         forEach(stage, signal, 4, (x, y, channel, value) -> {
-            if (Float.isFinite(value) && value < 0.0F) {
+            if (!Float.isFinite(value)) {
+                return;
+            }
+            boolean invalidLuminance =
+                    channel == 0 && value < 0.0F;
+            boolean invalidHitDistance =
+                    channel == 3 && (value < 0.0F || value > 1.0F);
+            if (invalidLuminance || invalidHitDistance) {
                 violations.add(
                         stage.schema(),
                         signal,
                         x,
                         y,
                         channel,
-                        channel == 3
-                                ? "negative normalized hit distance"
-                                : "negative demodulated radiance",
+                        invalidLuminance
+                                ? "negative YCoCg luminance"
+                                : "normalized hit distance outside [0, 1]",
                         stage.rawWord(signal, x, y, channel));
             }
         });
@@ -377,26 +458,6 @@ public final class NrdInputSemanticValidator {
                 }
             }
         }
-    }
-
-    private static void validateRestartMotion(
-            Collector violations,
-            CapturedRenderStage stage,
-            String signal,
-            int channels) {
-        forEach(stage, signal, channels, (x, y, channel, value) -> {
-            if (Float.isFinite(value)
-                    && Math.abs(value) > ZERO_MOTION_TOLERANCE) {
-                violations.add(
-                        stage.schema(),
-                        signal,
-                        x,
-                        y,
-                        channel,
-                        "restart frame has non-zero motion",
-                        stage.rawWord(signal, x, y, channel));
-            }
-        });
     }
 
     private static void validateFsrGuideProjection(

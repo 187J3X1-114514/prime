@@ -64,11 +64,10 @@ struct PrimeFsrMasks {
 PrimeFsrMasks primeFsrMasks(uint flags) {
     PrimeFsrMasks masks;
     if (primeMaterialIsTransmissive(flags)) {
-        // The composite contains both interface reflection and refracted background shading, but
-        // one depth/motion sample can describe only the visible interface. FSR therefore must
-        // prefer the current denoised sample over the mismatched color history. Keep reactivity
-        // below 1 as required by the FSR integration guidance.
-        masks.reactive = 0.9;
+        // The traced composite writes interface depth and motion. FidelityFX recommends the T&C
+        // mask as the softer alternative for reflective shading whose color motion can differ;
+        // a near-one reactive mask would instead discard history and expose the FSR jitter.
+        masks.reactive = 0.0;
         masks.transparencyAndComposition = 1.0;
         return masks;
     }

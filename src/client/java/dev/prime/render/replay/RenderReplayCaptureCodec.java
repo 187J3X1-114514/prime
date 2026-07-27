@@ -10,8 +10,8 @@ import java.util.Objects;
 /** Versioned container for one complete Prime-owned raw-to-NRD replay observation. */
 public final class RenderReplayCaptureCodec {
     private static final int MAGIC = 0x3152_5250;
-    private static final int VERSION = 2;
-    private static final int CHUNK_COUNT = 6;
+    private static final int VERSION = 3;
+    private static final int CHUNK_COUNT = 7;
     private static final int MAX_BYTES = 512 * 1024 * 1024;
 
     private RenderReplayCaptureCodec() {
@@ -25,7 +25,8 @@ public final class RenderReplayCaptureCodec {
             RayTraceReplayInputCodec.encode(capture.frame()),
             NrdPreparationReplayInputCodec.encode(capture.nrdPreparation()),
             capture.rawWavefront().encode(),
-            capture.preparedNrd().encode()
+            capture.preparedNrd().encode(),
+            capture.postNrd().encode()
         };
         long size = 2L * Integer.BYTES;
         for (byte[] chunk : chunks) {
@@ -85,7 +86,8 @@ public final class RenderReplayCaptureCodec {
                 RayTraceReplayInputCodec.decode(chunks[2]),
                 NrdPreparationReplayInputCodec.decode(chunks[3]),
                 CapturedRenderStage.decode(chunks[4]),
-                CapturedRenderStage.decode(chunks[5]));
+                CapturedRenderStage.decode(chunks[5]),
+                CapturedRenderStage.decode(chunks[6]));
     }
 
     public static String sha256(RenderReplayCapture capture) {

@@ -15,6 +15,11 @@ struct PrimeNrdSg {
     vec3 c1;
 };
 
+struct PrimeNrdResolvedSg {
+    vec3 diffuse;
+    vec3 specular;
+};
+
 PrimeNrdSg primeNrdUnpackSg(vec4 sh0, vec3 sh1) {
     PrimeNrdSg sg;
     sg.c0 = primeNrdIsFinite(sh0.x) ? max(sh0.x, 0.0) : 0.0;
@@ -186,6 +191,52 @@ vec2 primeNrdSgReJitter(
     bvec4 withinSurface = lessThanEqual(abs(neighborViewZ - viewZ), vec4(threshold));
     bool symmetrical = all(withinSurface);
     return symmetrical && primeNrdIsFinite(scale) ? scale : vec2(1.0);
+}
+
+PrimeNrdResolvedSg primeNrdResolveFilteredSg(
+        PrimeNrdSg diffuseSg,
+        PrimeNrdSg specularSg,
+        vec3 view,
+        float roughness,
+        float viewZ,
+        vec4 neighborViewZ,
+        vec3 normal,
+        vec3 eastNormal,
+        vec3 westNormal,
+        vec3 northNormal,
+        vec3 southNormal) {
+    bool hasDiffuseDirection =
+            dot(diffuseSg.c1, diffuseSg.c1) > PRIME_NRD_EPS * PRIME_NRD_EPS;
+    bool hasSpecularDirection =
+            dot(specularSg.c1, specularSg.c1) > PRIME_NRD_EPS * PRIME_NRD_EPS;
+    PrimeNrdResolvedSg resolved;
+    resolved.diffuse = !hasDiffuseDirection
+            ? primeNrdSgExtractColor(diffuseSg)
+            : primeNrdResolveSgDiffuse(diffuseSg, normal, view, roughness);
+    resolved.specular = !hasSpecularDirection
+            ? primeNrdSgExtractColor(specularSg)
+            : primeNrdResolveSgSpecular(specularSg, normal, view, roughness);
+    if (!hasDiffuseDirection && !hasSpecularDirection) {
+        return resolved;
+    }
+
+    vec2 scale = primeNrdSgReJitter(
+            diffuseSg,
+            specularSg,
+            view,
+            roughness,
+            viewZ,
+            neighborViewZ,
+            normal,
+            eastNormal,
+            westNormal,
+            northNormal,
+            southNormal);
+    if (!hasDiffuseDirection) scale.x = 1.0;
+    if (!hasSpecularDirection) scale.y = 1.0;
+    resolved.diffuse *= scale.x;
+    resolved.specular *= scale.y;
+    return resolved;
 }
 
 #endif

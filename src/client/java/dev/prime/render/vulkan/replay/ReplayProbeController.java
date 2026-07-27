@@ -12,6 +12,7 @@ import dev.prime.render.ResourceCleanup;
 import dev.prime.render.SunDirection;
 import dev.prime.render.post.PostProcessingMode;
 import dev.prime.render.post.ReconstructionQualityMode;
+import dev.prime.render.fsr.FsrSettings;
 import dev.prime.render.replay.RayTraceReplayInput;
 import dev.prime.render.replay.RenderBinaryFingerprint;
 import dev.prime.render.replay.RenderPlatformFingerprint;
@@ -28,7 +29,6 @@ import java.util.ArrayList;
 import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicReference;
-import org.joml.Matrix4f;
 
 /**
  * Sole request, execution and lifetime owner of deterministic low-resolution replay probes.
@@ -38,6 +38,8 @@ import org.joml.Matrix4f;
  * descriptors before returning from the render-thread call.
  */
 public final class ReplayProbeController implements Destroyable {
+    private static final int JITTER_PHASES = 8;
+    private static final int JITTER_PROBE_FRAMES = JITTER_PHASES * 2;
     private final VulkanContext context;
     private final ReplayProbeFrameExecutor executor;
     private final ReplayProbeRequestState<RenderReplayVerification> requests =
@@ -162,7 +164,7 @@ public final class ReplayProbeController implements Destroyable {
             int width,
             int height) {
         ArrayList<CompletableFuture<RenderReplayCapture>>
-                frameCaptures = new ArrayList<>(2);
+                frameCaptures = new ArrayList<>(JITTER_PROBE_FRAMES);
         try {
             input.pipeline.ensureDescriptors(
                     input.scene.tlas(),
@@ -174,28 +176,23 @@ public final class ReplayProbeController implements Destroyable {
                     input.labPbrSpecularAtlas,
                     input.atmosphere,
                     probe.rawFrame());
-            frameCaptures.add(recordFrame(
-                    probe,
-                    input,
-                    input.camera,
-                    platform,
-                    binary,
-                    width,
-                    height,
-                    0,
-                    0L,
-                    true));
-            frameCaptures.add(recordFrame(
-                    probe,
-                    input,
-                    translatedCamera(input.camera),
-                    platform,
-                    binary,
-                    width,
-                    height,
-                    1,
-                    16_666_667L,
-                    false));
+            for (int frameIndex = 0;
+                    frameIndex < JITTER_PROBE_FRAMES;
+                    frameIndex++) {
+                // The first Halton cycle warms NRD history. The analyzer fits the second cycle,
+                // after the same eight phases have populated every temporal slot once.
+                frameCaptures.add(recordFrame(
+                        probe,
+                        input,
+                        input.camera,
+                        platform,
+                        binary,
+                        width,
+                        height,
+                        frameIndex,
+                        frameIndex * 16_666_667L,
+                        frameIndex == 0));
+            }
             return probe.finish(frameCaptures);
         } catch (RuntimeException exception) {
             return probe.abort(frameCaptures, exception);
@@ -210,17 +207,19 @@ public final class ReplayProbeController implements Destroyable {
             RenderBinaryFingerprint binary,
             int width,
             int height,
-            int sampleIndex,
+            int frameIndex,
             long frameTimeNanos,
             boolean forceRestart) {
+        FsrSettings.Jitter jitter =
+                ReconstructionQualityMode.NATIVE_AA.fsrJitter(frameIndex);
         NrdReplayProbe.PlannedFrame nrdFrame = probe.planFrame(
                 camera,
                 frameTimeNanos,
                 input.scene.temporalRevision(),
                 input.textureRevision,
                 input.sunDirection,
-                0.0F,
-                0.0F,
+                jitter.x(),
+                jitter.y(),
                 forceRestart);
         IntegratorFrameInput frameInput = new IntegratorFrameInput(
                 camera,
@@ -232,9 +231,10 @@ public final class ReplayProbeController implements Destroyable {
                         camera.projection().m11(),
                         width,
                         height),
-                sampleIndex,
-                1,
                 0,
+                1,
+                ReconstructionQualityMode.NATIVE_AA
+                        .fsrJitterPhase(frameIndex),
                 input.cameraInWater,
                 PostProcessingMode.NRD_FSR,
                 input.lighting,
@@ -246,8 +246,9 @@ public final class ReplayProbeController implements Destroyable {
                 RayTraceReplayInput.capture(frameInput, input.scene);
         return this.executor.execute(
                 forceRestart
-                        ? "Prime deterministic replay restart"
-                        : "Prime deterministic replay motion",
+                        ? "Prime deterministic replay jitter restart"
+                        : "Prime deterministic replay jitter phase "
+                                + (frameIndex + 1),
                 input.pipeline,
                 probe,
                 nrdFrame,
@@ -270,22 +271,6 @@ public final class ReplayProbeController implements Destroyable {
             throw new IllegalStateException(
                     "Replay dimensions exceed the Vulkan ray dispatch limit");
         }
-    }
-
-    private static FrameCamera translatedCamera(FrameCamera camera) {
-        // A fixed sub-block translation produces non-zero motion without changing projection,
-        // orientation, medium classification or the captured live-world state.
-        double offset = 0.25;
-        return new FrameCamera(
-                new Matrix4f(camera.projection()),
-                new Matrix4f(camera.viewRotation()),
-                new Matrix4f(camera.inverseViewProjection()),
-                camera.x() + offset,
-                camera.y(),
-                camera.z(),
-                camera.renderX() + offset,
-                camera.renderY(),
-                camera.renderZ());
     }
 
     @Override

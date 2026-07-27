@@ -135,43 +135,62 @@ vec3 primeCompositeNormal(ivec2 pixel, bool reflection) {
     return normal;
 }
 
-void primeCompositeResolveSh(
-        ivec2 pixel,
-        float primaryDistance,
-        bool reflection,
-        out vec3 diffuse,
-        out vec3 specular) {
-    diffuse = vec3(0.0);
-    specular = vec3(0.0);
-    if (!primeNrdIsFinite(primaryDistance) || primaryDistance < 0.0) {
-        return;
+vec4 primeCompositeLoadDenoisedSh0(
+        ivec2 pixel, bool reflection, bool specular) {
+    if (reflection) {
+        return specular
+                ? imageLoad(primeReflectionDenoisedSpecular, pixel)
+                : imageLoad(primeReflectionDenoisedDiffuse, pixel);
     }
+    return specular
+            ? imageLoad(primeDenoisedSpecular, pixel)
+            : imageLoad(primeDenoisedDiffuse, pixel);
+}
 
-    PrimeNrdSg diffuseSg = primeNrdUnpackSg(
-            reflection
-                    ? imageLoad(primeReflectionDenoisedDiffuse, pixel)
-                    : imageLoad(primeDenoisedDiffuse, pixel),
-            reflection
-                    ? imageLoad(primeReflectionDenoisedDiffuseSh1, pixel).xyz
-                    : imageLoad(primeDenoisedDiffuseSh1, pixel).xyz);
-    PrimeNrdSg specularSg = primeNrdUnpackSg(
-            reflection
-                    ? imageLoad(primeReflectionDenoisedSpecular, pixel)
-                    : imageLoad(primeDenoisedSpecular, pixel),
-            reflection
-                    ? imageLoad(primeReflectionDenoisedSpecularSh1, pixel).xyz
-                    : imageLoad(primeDenoisedSpecularSh1, pixel).xyz);
-    if (!reflection) {
-        uint visibleMaterialFlags =
-                floatBitsToUint(imageLoad(primeDisplayPosition, pixel).w);
-        if (primeMaterialIsTransmissive(visibleMaterialFlags)) {
-            // NRD's SG resolver evaluates a reflective GGX lobe. A refracted direction lies below
-            // the visible interface and would be clamped away, so transmission consumes SH0.
-            diffuse = primeNrdSgExtractColor(diffuseSg);
-            specular = primeNrdSgExtractColor(specularSg);
-            return;
-        }
+vec3 primeCompositeLoadDenoisedSh1(
+        ivec2 pixel, bool reflection, bool specular) {
+    if (reflection) {
+        return specular
+                ? imageLoad(primeReflectionDenoisedSpecularSh1, pixel).xyz
+                : imageLoad(primeReflectionDenoisedDiffuseSh1, pixel).xyz;
     }
+    return specular
+            ? imageLoad(primeDenoisedSpecularSh1, pixel).xyz
+            : imageLoad(primeDenoisedDiffuseSh1, pixel).xyz;
+}
+
+vec4 primeCompositeLoadMaterial(ivec2 pixel, bool reflection) {
+    return reflection
+            ? imageLoad(primeReflectionCompositeMaterial, pixel)
+            : imageLoad(primeCompositeMaterial, pixel);
+}
+
+vec3 primeCompositeLoadSpecularAlbedo(ivec2 pixel, bool reflection) {
+    return reflection
+            ? imageLoad(primeReflectionCompositeSpecularMaterial, pixel).rgb
+            : imageLoad(primeCompositeSpecularMaterial, pixel).rgb;
+}
+
+vec3 primeCompositeLoadPosition(ivec2 pixel, bool reflection) {
+    return reflection
+            ? imageLoad(primeReflectionCompositePosition, pixel).xyz
+            : imageLoad(primeCompositePrimaryPosition, pixel).xyz;
+}
+
+float primeCompositeLoadViewZ(ivec2 pixel, bool reflection) {
+    return reflection
+            ? imageLoad(primeReflectionCompositeViewZ, pixel).x
+            : imageLoad(primeCompositeViewZ, pixel).x;
+}
+
+PrimeNrdResolvedSg primeCompositeResolveShAt(
+        ivec2 pixel, bool reflection) {
+    PrimeNrdSg diffuseSg = primeNrdUnpackSg(
+            primeCompositeLoadDenoisedSh0(pixel, reflection, false),
+            primeCompositeLoadDenoisedSh1(pixel, reflection, false));
+    PrimeNrdSg specularSg = primeNrdUnpackSg(
+            primeCompositeLoadDenoisedSh0(pixel, reflection, true),
+            primeCompositeLoadDenoisedSh1(pixel, reflection, true));
     vec3 normal;
     float roughness;
     primeNrdUnpackNormalRoughness(
@@ -180,37 +199,19 @@ void primeCompositeResolveSh(
                     : imageLoad(primeCompositeNormalRoughness, pixel),
             normal,
             roughness);
-    vec3 primaryPosition = reflection
-            ? imageLoad(primeReflectionCompositePosition, pixel).xyz
-            : imageLoad(primeCompositePrimaryPosition, pixel).xyz;
-    vec3 view = primeNrdSafeNormalize(-primaryPosition, normal);
-    bool hasDiffuseDirection =
-            dot(diffuseSg.c1, diffuseSg.c1) > PRIME_NRD_EPS * PRIME_NRD_EPS;
-    bool hasSpecularDirection =
-            dot(specularSg.c1, specularSg.c1) > PRIME_NRD_EPS * PRIME_NRD_EPS;
-    diffuse = hasDiffuseDirection
-            ? primeNrdResolveSgDiffuse(diffuseSg, normal, view, roughness)
-            : primeNrdSgExtractColor(diffuseSg);
-    specular = hasSpecularDirection
-            ? primeNrdResolveSgSpecular(specularSg, normal, view, roughness)
-            : primeNrdSgExtractColor(specularSg);
-    if (!hasDiffuseDirection && !hasSpecularDirection) {
-        return;
-    }
-
+    vec3 view = primeNrdSafeNormalize(
+            -primeCompositeLoadPosition(pixel, reflection), normal);
     ivec2 east = primeCompositeNeighbor(pixel, ivec2(1, 0));
     ivec2 west = primeCompositeNeighbor(pixel, ivec2(-1, 0));
     ivec2 north = primeCompositeNeighbor(pixel, ivec2(0, 1));
     ivec2 south = primeCompositeNeighbor(pixel, ivec2(0, -1));
-    float viewZ = reflection
-            ? imageLoad(primeReflectionCompositeViewZ, pixel).x
-            : imageLoad(primeCompositeViewZ, pixel).x;
+    float viewZ = primeCompositeLoadViewZ(pixel, reflection);
     vec4 neighborViewZ = vec4(
-            reflection ? imageLoad(primeReflectionCompositeViewZ, east).x : imageLoad(primeCompositeViewZ, east).x,
-            reflection ? imageLoad(primeReflectionCompositeViewZ, west).x : imageLoad(primeCompositeViewZ, west).x,
-            reflection ? imageLoad(primeReflectionCompositeViewZ, north).x : imageLoad(primeCompositeViewZ, north).x,
-            reflection ? imageLoad(primeReflectionCompositeViewZ, south).x : imageLoad(primeCompositeViewZ, south).x);
-    vec2 scale = primeNrdSgReJitter(
+            primeCompositeLoadViewZ(east, reflection),
+            primeCompositeLoadViewZ(west, reflection),
+            primeCompositeLoadViewZ(north, reflection),
+            primeCompositeLoadViewZ(south, reflection));
+    return primeNrdResolveFilteredSg(
             diffuseSg,
             specularSg,
             view,
@@ -222,16 +223,88 @@ void primeCompositeResolveSh(
             primeCompositeNormal(west, reflection),
             primeCompositeNormal(north, reflection),
             primeCompositeNormal(south, reflection));
-    if (!hasDiffuseDirection) scale.x = 1.0;
-    if (!hasSpecularDirection) scale.y = 1.0;
-    diffuse *= scale.x;
-    specular *= scale.y;
+}
+
+vec3 primeCompositeSunSignal(ivec2 pixel) {
+    vec4 unshadowed = imageLoad(primeUnshadowedSunLighting, pixel);
+#if PRIME_ENABLE_FILTERED_SUN_SHADOW
+    // The filtered shadow is stored as sqrt(visibility).
+    float encodedShadow = imageLoad(primeSigmaSunShadow, pixel).x;
+    float visibility = isnan(encodedShadow) || isinf(encodedShadow)
+            ? primeNrdSanitizeUnit(unshadowed.a, 0.0)
+            : clamp(encodedShadow * encodedShadow, 0.0, 1.0);
+#else
+    float visibility = primeNrdSanitizeUnit(unshadowed.a, 0.0);
+#endif
+    return unshadowed.rgb * visibility;
+}
+
+struct PrimeCompositeResolvedBranch {
+    vec3 surface;
+    vec3 specular;
+};
+
+PrimeCompositeResolvedBranch primeCompositeResolveBranchAt(
+        ivec2 pixel, bool reflection) {
+    PrimeCompositeResolvedBranch branch;
+    branch.surface = vec3(0.0);
+    branch.specular = vec3(0.0);
+    vec4 material = primeCompositeLoadMaterial(pixel, reflection);
+    if (!primeNrdIsFinite(material.a) || material.a < 0.0) {
+        return branch;
+    }
+
+    PrimeNrdResolvedSg resolved =
+            primeCompositeResolveShAt(pixel, reflection);
+    vec3 specularAlbedo =
+            primeCompositeLoadSpecularAlbedo(pixel, reflection);
+    vec3 sun = reflection
+            ? vec3(0.0)
+            : primeCompositeSunSignal(pixel);
+    branch.surface = primeCompositeSurfaceSignal(
+            material,
+            specularAlbedo,
+            resolved.diffuse,
+            resolved.specular,
+            sun);
+    branch.specular = primeNrdClampRadiance(
+            primeNrdSanitizeRadiance(resolved.specular)
+                    * primeNrdSanitizeAlbedo(specularAlbedo),
+            PRIME_NRD_FP16_MAX);
+    return branch;
+}
+
+PrimeCompositeResolvedBranch primeCompositeSampleResolvedBranch(
+        ivec2 pixel, bool reflection) {
+    vec2 jitter = primeCompositePush.currentJitterPixels;
+    ivec2 base = pixel + ivec2(floor(jitter));
+    vec2 weight = fract(jitter);
+    PrimeCompositeResolvedBranch p00 = primeCompositeResolveBranchAt(
+            primeCompositeNeighbor(base, ivec2(0, 0)), reflection);
+    PrimeCompositeResolvedBranch p10 = primeCompositeResolveBranchAt(
+            primeCompositeNeighbor(base, ivec2(1, 0)), reflection);
+    PrimeCompositeResolvedBranch p01 = primeCompositeResolveBranchAt(
+            primeCompositeNeighbor(base, ivec2(0, 1)), reflection);
+    PrimeCompositeResolvedBranch p11 = primeCompositeResolveBranchAt(
+            primeCompositeNeighbor(base, ivec2(1, 1)), reflection);
+    PrimeCompositeResolvedBranch branch;
+    // NRD's sample resolves and re-jitters each SH signal against one pixel's guides. Restore the
+    // transparent FSR phase only after that resolve and material remodulation, so no neighbor's
+    // demodulated lighting can be reinterpreted by the center pixel's roughness or albedo.
+    branch.surface = mix(
+            mix(p00.surface, p10.surface, weight.x),
+            mix(p01.surface, p11.surface, weight.x),
+            weight.y);
+    branch.specular = mix(
+            mix(p00.specular, p10.specular, weight.x),
+            mix(p01.specular, p11.specular, weight.x),
+            weight.y);
+    return branch;
 }
 
 vec3 primeCompositeRadiance(
         uvec2 pixel,
         vec4 material,
-        vec4 specularMaterial,
         vec3 displayPosition) {
     if (!primeNrdIsFinite(material.a) || material.a < 0.0) {
         // Raygen's sky contract also guarantees a zero display position and no reflection guide,
@@ -240,53 +313,27 @@ vec3 primeCompositeRadiance(
                 imageLoad(primeStableAccumulation, ivec2(pixel)).rgb,
                 PRIME_NRD_FP16_MAX);
     }
-    vec4 unshadowedSunLighting = imageLoad(
-            primeUnshadowedSunLighting, ivec2(pixel));
-#if PRIME_ENABLE_FILTERED_SUN_SHADOW
-    // The filtered shadow is stored as sqrt(visibility).
-    float encodedSunShadow = imageLoad(primeSigmaSunShadow, ivec2(pixel)).x;
-    float sunVisibility = isnan(encodedSunShadow) || isinf(encodedSunShadow)
-            ? primeNrdSanitizeUnit(unshadowedSunLighting.a, 0.0)
-            : clamp(encodedSunShadow * encodedSunShadow, 0.0, 1.0);
-#else
-    float sunVisibility = primeNrdSanitizeUnit(unshadowedSunLighting.a, 0.0);
-#endif
-    vec3 sunSignal = unshadowedSunLighting.rgb * sunVisibility;
-    vec3 diffuseSignal;
-    vec3 specularSignal;
-    primeCompositeResolveSh(
-            ivec2(pixel), material.a, false, diffuseSignal, specularSignal);
-    vec3 surface = primeCompositeSurfaceSignal(
-            material,
-            specularMaterial.rgb,
-            diffuseSignal,
-            specularSignal,
-            sunSignal);
-    vec4 reflectionMaterial = imageLoad(
-            primeReflectionCompositeMaterial, ivec2(pixel));
-    vec3 reflectionSurface = vec3(0.0);
-    if (primeNrdIsFinite(reflectionMaterial.a) && reflectionMaterial.a >= 0.0) {
-        vec3 reflectionDiffuse;
-        vec3 reflectionSpecular;
-        primeCompositeResolveSh(
-                ivec2(pixel),
-                reflectionMaterial.a,
-                true,
-                reflectionDiffuse,
-                reflectionSpecular);
-        reflectionSurface = primeCompositeSurfaceSignal(
-                reflectionMaterial,
-                imageLoad(
-                        primeReflectionCompositeSpecularMaterial,
-                        ivec2(pixel)).rgb,
-                reflectionDiffuse,
-                reflectionSpecular,
-                vec3(0.0));
-    }
+    uint visibleMaterialFlags = floatBitsToUint(
+            imageLoad(primeDisplayPosition, ivec2(pixel)).w);
+    bool restoreTransparentPhase =
+            primeMaterialIsTransmissive(visibleMaterialFlags);
+    PrimeCompositeResolvedBranch primaryBranch =
+            restoreTransparentPhase
+                    ? primeCompositeSampleResolvedBranch(
+                            ivec2(pixel), false)
+                    : primeCompositeResolveBranchAt(
+                            ivec2(pixel), false);
+    PrimeCompositeResolvedBranch reflectionBranch =
+            restoreTransparentPhase
+                    ? primeCompositeSampleResolvedBranch(
+                            ivec2(pixel), true)
+                    : primeCompositeResolveBranchAt(
+                            ivec2(pixel), true);
     vec3 stable = primeNrdClampRadiance(
             imageLoad(primeStableAccumulation, ivec2(pixel)).rgb,
             PRIME_NRD_FP16_MAX);
-    vec3 radiance = surface + reflectionSurface + stable;
+    vec3 radiance =
+            primaryBranch.surface + reflectionBranch.surface + stable;
     float displayDistance = all(equal(displayPosition, vec3(0.0)))
             ? -1.0
             : length(displayPosition);
@@ -298,18 +345,16 @@ vec3 primeCompositeSh0Color(vec4 sh0) {
     return primeNrdSgExtractColor(primeNrdUnpackSg(sh0, vec3(0.0)));
 }
 
-vec3 primeCompositeRemodulatedSpecular(
-        uvec2 pixel, vec4 material, vec3 specularAlbedo) {
-    if (!primeNrdIsFinite(material.a) || material.a < 0.0) {
-        return vec3(0.0);
-    }
-    vec3 diffuse;
-    vec3 specular;
-    primeCompositeResolveSh(ivec2(pixel), material.a, false, diffuse, specular);
-    return primeNrdClampRadiance(
-            primeNrdSanitizeRadiance(specular)
-                    * primeNrdSanitizeAlbedo(specularAlbedo),
-            PRIME_NRD_FP16_MAX);
+vec3 primeCompositeRemodulatedSpecular(uvec2 pixel) {
+    uint visibleMaterialFlags = floatBitsToUint(
+            imageLoad(primeDisplayPosition, ivec2(pixel)).w);
+    PrimeCompositeResolvedBranch branch =
+            primeMaterialIsTransmissive(visibleMaterialFlags)
+                    ? primeCompositeSampleResolvedBranch(
+                            ivec2(pixel), false)
+                    : primeCompositeResolveBranchAt(
+                            ivec2(pixel), false);
+    return branch.specular;
 }
 
 vec3 primeCompositeDisplayDiagnostic(vec3 radiance) {
@@ -339,8 +384,6 @@ void main() {
             primeFsrReactiveMask,
             ivec2(pixel),
             vec4(primeFsrSanitizeMask(fsrMasks.reactive)));
-    vec4 specularMaterial = imageLoad(
-            primeCompositeSpecularMaterial, ivec2(pixel));
     imageStore(
             primeFsrTransparencyCompositionMask,
             ivec2(pixel),
@@ -367,10 +410,7 @@ void main() {
                 primeCompositeOutput,
                 ivec2(pixel),
                 vec4(primeCompositeDisplayDiagnostic(
-                        primeCompositeRemodulatedSpecular(
-                                pixel,
-                                imageLoad(primeCompositeMaterial, ivec2(pixel)),
-                                specularMaterial.rgb)), 1.0));
+                        primeCompositeRemodulatedSpecular(pixel)), 1.0));
         return;
     }
     if (primeCompositePush.diagnosticMode == PRIME_DIAGNOSTIC_REPROJECTION_ERROR) {
@@ -396,7 +436,7 @@ void main() {
     }
     vec4 material = imageLoad(primeCompositeMaterial, ivec2(pixel));
     vec3 radiance = primeCompositeRadiance(
-            pixel, material, specularMaterial, displayPosition.xyz);
+            pixel, material, displayPosition.xyz);
     if (primeCompositePush.diagnosticMode == PRIME_DIAGNOSTIC_NRD_VALIDATION) {
         vec3 validationColor;
         if (primeCompositeIsValidationSceneTile(pixel)) {

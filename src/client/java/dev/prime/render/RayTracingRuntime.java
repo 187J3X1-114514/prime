@@ -478,6 +478,9 @@ public final class RayTracingRuntime {
         boolean passed = failure == null
                 && verification != null
                 && verification.valid();
+        boolean phaseMeasured = verification != null
+                && verification.referenceJitterPhase().measurable()
+                && verification.replayJitterPhase().measurable();
         if (passed) {
             var fixture = minecraft.gameDirectory
                     .toPath()
@@ -494,26 +497,31 @@ public final class RayTracingRuntime {
                         exception);
             }
             PrimeClient.LOGGER.info(
-                    "Prime 64x64 deterministic NRD replay self-test passed");
+                    "Prime 64x64 deterministic NRD jitter replay self-test passed: {}",
+                    verification.referenceJitterPhase());
         } else if (failure != null) {
             PrimeClient.LOGGER.error(
                     "Prime deterministic NRD replay self-test failed",
                     failure);
         } else {
             PrimeClient.LOGGER.error(
-                    "Prime deterministic NRD replay self-test failed: semantic reference={}, semantic replay={}, first divergence={}",
+                    "Prime deterministic NRD jitter replay self-test failed: semantic reference={}, semantic replay={}, jitter reference={}, jitter replay={}, first divergence={}",
                     verification.referenceSemantics(),
                     verification.replaySemantics(),
+                    verification.referenceJitterPhase(),
+                    verification.replayJitterPhase(),
                     verification.determinism().firstMismatch());
         }
         if (minecraft.gui != null) {
             SystemToast.add(
                     minecraft.gui.toastManager(),
                     REPLAY_TEST_TOAST,
-                    Component.literal("Prime replay self-test"),
-                    Component.literal(passed
-                            ? "64×64 NRD semantics and replay passed"
-                            : "Failed; see the log for the first divergence"));
+                    Component.literal("Prime jitter self-test"),
+                    Component.literal(!passed
+                            ? "Phase mismatch; see the measured amplitudes in the log"
+                            : phaseMeasured
+                                    ? "NRD boundary/interior phase matched"
+                                    : "Aim at detailed glass to measure phase"));
         }
     }
 

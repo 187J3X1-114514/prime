@@ -145,7 +145,7 @@ public final class NrdReplayProbe implements Destroyable {
                         cameraJitterX,
                         cameraJitterY,
                         forceRestart,
-                        NrdDiagnostics.Mode.OFF)));
+                        NrdDiagnostics.Mode.SPECULAR_REMODULATED)));
         this.planned = result;
         return result;
     }
@@ -166,6 +166,7 @@ public final class NrdReplayProbe implements Destroyable {
         frame.recorded = true;
         ReplayStageCapturePass rawCapture = null;
         ReplayStageCapturePass preparedCapture = null;
+        ReplayStageCapturePass postNrdCapture = null;
         NrdDenoiser.FrameToken reconstruction = null;
         try {
             rawCapture = ReplayStageCapturePass.createRaw(
@@ -185,10 +186,14 @@ public final class NrdReplayProbe implements Destroyable {
                     prepared,
                     sunRadianceMultiplier,
                     displayOverexposure);
+            postNrdCapture = ReplayStageCapturePass.createPostNrd(
+                    this.context, this.denoiser.compositeFrame());
+            postNrdCapture.recordAfterCompute(commandBuffer);
             RecordedFrame recorded = new RecordedFrame(
                     this,
                     rawCapture,
                     preparedCapture,
+                    postNrdCapture,
                     reconstruction,
                     frame.denoiserPlan,
                     preparationInput);
@@ -198,9 +203,16 @@ public final class NrdReplayProbe implements Destroyable {
         } catch (RuntimeException exception) {
             this.planned = null;
             frame.abandoned = true;
-            RuntimeException failure = ResourceCleanup.run(
+            RuntimeException failure = exception;
+            if (reconstruction != null) {
+                NrdDenoiser.FrameToken abandoned = reconstruction;
+                failure = ResourceCleanup.run(
+                        () -> this.denoiser.abandon(abandoned), failure);
+            }
+            failure = ResourceCleanup.run(
                     () -> this.nrdHistory.abandon(frame.denoiserPlan),
-                    exception);
+                    failure);
+            failure = ResourceCleanup.destroy(postNrdCapture, failure);
             failure = ResourceCleanup.destroy(preparedCapture, failure);
             failure = ResourceCleanup.destroy(rawCapture, failure);
             throw failure;
@@ -240,6 +252,7 @@ public final class NrdReplayProbe implements Destroyable {
                 () -> this.nrdHistory.abandon(recorded.denoiserPlan),
                 failure);
         failure = ResourceCleanup.destroy(recorded.preparedCapture, failure);
+        failure = ResourceCleanup.destroy(recorded.postNrdCapture, failure);
         failure = ResourceCleanup.destroy(recorded.rawCapture, failure);
         ResourceCleanup.throwIfFailed(failure);
     }
@@ -268,15 +281,21 @@ public final class NrdReplayProbe implements Destroyable {
                 recorded.rawCapture.submitted();
         CompletableFuture<CapturedRenderStage> prepared =
                 recorded.preparedCapture.submitted();
+        CompletableFuture<CapturedRenderStage> postNrd =
+                recorded.postNrdCapture.submitted();
         return raw.thenCombine(
-                prepared,
-                (rawStage, preparedStage) -> new RenderReplayCapture(
-                        platform,
-                        binary,
-                        frame,
-                        recorded.preparationInput,
-                        rawStage,
-                        preparedStage));
+                        prepared,
+                        Stages::new)
+                .thenCombine(
+                        postNrd,
+                        (stages, postNrdStage) -> new RenderReplayCapture(
+                                platform,
+                                binary,
+                                frame,
+                                recorded.preparationInput,
+                                stages.raw,
+                                stages.prepared,
+                                postNrdStage));
     }
 
     /**
@@ -433,6 +452,8 @@ public final class NrdReplayProbe implements Destroyable {
             failure = ResourceCleanup.destroy(
                     abandoned.preparedCapture, failure);
             failure = ResourceCleanup.destroy(
+                    abandoned.postNrdCapture, failure);
+            failure = ResourceCleanup.destroy(
                     abandoned.rawCapture, failure);
         }
         failure = ResourceCleanup.destroy(this.denoiser, failure);
@@ -446,6 +467,7 @@ public final class NrdReplayProbe implements Destroyable {
         private final NrdReplayProbe owner;
         private final ReplayStageCapturePass rawCapture;
         private final ReplayStageCapturePass preparedCapture;
+        private final ReplayStageCapturePass postNrdCapture;
         private final NrdDenoiser.FrameToken reconstruction;
         private final NrdFrameHistory.PlannedFrame denoiserPlan;
         private final NrdPreparationReplayInput preparationInput;
@@ -456,16 +478,23 @@ public final class NrdReplayProbe implements Destroyable {
                 NrdReplayProbe owner,
                 ReplayStageCapturePass rawCapture,
                 ReplayStageCapturePass preparedCapture,
+                ReplayStageCapturePass postNrdCapture,
                 NrdDenoiser.FrameToken reconstruction,
                 NrdFrameHistory.PlannedFrame denoiserPlan,
                 NrdPreparationReplayInput preparationInput) {
             this.owner = owner;
             this.rawCapture = rawCapture;
             this.preparedCapture = preparedCapture;
+            this.postNrdCapture = postNrdCapture;
             this.reconstruction = reconstruction;
             this.denoiserPlan = denoiserPlan;
             this.preparationInput = preparationInput;
         }
+    }
+
+    private record Stages(
+            CapturedRenderStage raw,
+            CapturedRenderStage prepared) {
     }
 
     public static final class PlannedFrame {

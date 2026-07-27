@@ -27,6 +27,9 @@ final class RenderReplayCaptureCodecTest {
                 capture.preparedNrd().sha256(),
                 decoded.preparedNrd().sha256());
         assertEquals(
+                capture.postNrd().sha256(),
+                decoded.postNrd().sha256());
+        assertEquals(
                 RenderReplayCaptureCodec.sha256(capture),
                 RenderReplayCaptureCodec.sha256(decoded));
     }

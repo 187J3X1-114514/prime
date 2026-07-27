@@ -1,5 +1,6 @@
 package dev.prime.render.replay;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -23,16 +24,74 @@ final class NrdInputSemanticValidatorTest {
     }
 
     @Test
-    void reportsNonFiniteInputAndRestartMotion() {
-        RenderReplayCapture capture = capture(true, true);
+    void reportsNonFiniteActiveInput() {
+        RenderReplayCapture capture = capture(true, false);
         NrdInputSemanticValidator.Report report =
                 NrdInputSemanticValidator.validate(capture);
 
         assertFalse(report.valid());
         assertTrue(report.violations().stream().anyMatch(
-                violation -> violation.reason().equals("non-finite")));
+                violation -> violation.signal().equals("primary.diffuse")
+                        && violation.reason().equals("non-finite")));
         assertTrue(report.violations().stream().anyMatch(
-                violation -> violation.reason().contains("non-zero motion")));
+                violation -> violation.signal().equals("reflection.material")
+                        && violation.channel() == 3
+                        && violation.reason().equals("non-finite")));
+    }
+
+    @Test
+    void acceptsInactivePayloadsAndTransportedBitPatterns() {
+        RenderReplayCapture source = capture(false, false);
+        int[] raw = source.rawWavefront().words();
+        set(
+                raw,
+                RenderStageSchema.RAW_WAVEFRONT,
+                "primary.material",
+                3,
+                1.0F);
+        set(
+                raw,
+                RenderStageSchema.RAW_WAVEFRONT,
+                "primary.position",
+                3,
+                Float.NaN);
+        set(
+                raw,
+                RenderStageSchema.RAW_WAVEFRONT,
+                "reflection.diffuse",
+                0,
+                Float.NaN);
+        set(
+                raw,
+                RenderStageSchema.RAW_WAVEFRONT,
+                "display.position",
+                3,
+                Float.NaN);
+        RenderReplayCapture valid = new RenderReplayCapture(
+                source.platform(),
+                source.binary(),
+                source.frame(),
+                source.nrdPreparation(),
+                new CapturedRenderStage(
+                        RenderStageSchema.RAW_WAVEFRONT,
+                        1,
+                        1,
+                        raw),
+                source.preparedNrd(),
+                source.postNrd());
+
+        assertTrue(NrdInputSemanticValidator.validate(valid).valid());
+    }
+
+    @Test
+    void restartDoesNotChangeTheMotionContract() {
+        RenderReplayCapture restart = capture(false, true);
+        RenderReplayCapture continued = withPreparation(
+                restart, preparation(restart, 1, false));
+
+        assertEquals(
+                NrdInputSemanticValidator.validate(restart),
+                NrdInputSemanticValidator.validate(continued));
     }
 
     @Test
@@ -67,7 +126,8 @@ final class NrdInputSemanticValidatorTest {
                         RenderStageSchema.PREPARED_NRD,
                         1,
                         1,
-                        prepared));
+                        prepared),
+                source.postNrd());
 
         NrdInputSemanticValidator.Report report =
                 NrdInputSemanticValidator.validate(invalid);
@@ -84,6 +144,94 @@ final class NrdInputSemanticValidatorTest {
         assertTrue(report.violations().stream().anyMatch(
                 violation -> violation.signal().equals("fsr.motion")
                         && violation.reason().contains("unused")));
+    }
+
+    @Test
+    void reportsInvalidPostNrdCompositeAndFsrMasks() {
+        RenderReplayCapture source = capture(false, false);
+        int[] postNrd = source.postNrd().words();
+        set(
+                postNrd,
+                RenderStageSchema.POST_NRD,
+                "composite.color",
+                0,
+                Float.NaN);
+        set(
+                postNrd,
+                RenderStageSchema.POST_NRD,
+                "fsr.reactive",
+                0,
+                1.25F);
+        RenderReplayCapture invalid = new RenderReplayCapture(
+                source.platform(),
+                source.binary(),
+                source.frame(),
+                source.nrdPreparation(),
+                source.rawWavefront(),
+                source.preparedNrd(),
+                new CapturedRenderStage(
+                        RenderStageSchema.POST_NRD,
+                        1,
+                        1,
+                        postNrd));
+
+        NrdInputSemanticValidator.Report report =
+                NrdInputSemanticValidator.validate(invalid);
+
+        assertFalse(report.valid());
+        assertTrue(report.violations().stream().anyMatch(
+                violation -> violation.stage() == RenderStageSchema.POST_NRD
+                        && violation.signal().equals("composite.color")
+                        && violation.reason().equals("non-finite")));
+        assertTrue(report.violations().stream().anyMatch(
+                violation -> violation.stage() == RenderStageSchema.POST_NRD
+                        && violation.signal().equals("fsr.reactive")
+                        && violation.reason().contains("outside")));
+    }
+
+    @Test
+    void acceptsSignedYCoCgChromaInPreparedSh0() {
+        RenderReplayCapture source = capture(false, false);
+        int[] raw = source.rawWavefront().words();
+        int[] prepared = source.preparedNrd().words();
+        set(
+                raw,
+                RenderStageSchema.RAW_WAVEFRONT,
+                "primary.material",
+                3,
+                1.0F);
+        set(
+                prepared,
+                RenderStageSchema.PREPARED_NRD,
+                "primary.diffuse_sh0",
+                1,
+                -0.25F);
+        set(
+                prepared,
+                RenderStageSchema.PREPARED_NRD,
+                "primary.diffuse_sh0",
+                2,
+                -0.125F);
+        RenderReplayCapture signedChroma = new RenderReplayCapture(
+                source.platform(),
+                source.binary(),
+                source.frame(),
+                source.nrdPreparation(),
+                new CapturedRenderStage(
+                        RenderStageSchema.RAW_WAVEFRONT,
+                        1,
+                        1,
+                        raw),
+                new CapturedRenderStage(
+                        RenderStageSchema.PREPARED_NRD,
+                        1,
+                        1,
+                        prepared),
+                source.postNrd());
+
+        assertTrue(
+                NrdInputSemanticValidator.validate(
+                        signedChroma).valid());
     }
 
     @Test
@@ -189,10 +337,19 @@ final class NrdInputSemanticValidatorTest {
         set(raw, RenderStageSchema.RAW_WAVEFRONT, "primary.material", 3, -1.0F);
         set(raw, RenderStageSchema.RAW_WAVEFRONT, "reflection.material", 3, -1.0F);
         if (nonFinite) {
+            set(raw, RenderStageSchema.RAW_WAVEFRONT, "primary.material", 3, 1.0F);
             set(raw, RenderStageSchema.RAW_WAVEFRONT, "primary.diffuse", 0, Float.NaN);
+            set(
+                    raw,
+                    RenderStageSchema.RAW_WAVEFRONT,
+                    "reflection.material",
+                    3,
+                    Float.NaN);
         }
         int[] prepared = new int[
                 RenderStageSchema.PREPARED_NRD.signalCount() * 4];
+        int[] postNrd = new int[
+                RenderStageSchema.POST_NRD.signalCount() * 4];
         set(prepared, RenderStageSchema.PREPARED_NRD, "primary.view_z", 0, 65_504.0F);
         set(prepared, RenderStageSchema.PREPARED_NRD, "reflection.view_z", 0, 65_504.0F);
         set(prepared, RenderStageSchema.PREPARED_NRD, "sun.penumbra", 0, 0.0F);
@@ -254,7 +411,9 @@ final class NrdInputSemanticValidatorTest {
                 new CapturedRenderStage(
                         RenderStageSchema.RAW_WAVEFRONT, 1, 1, raw),
                 new CapturedRenderStage(
-                        RenderStageSchema.PREPARED_NRD, 1, 1, prepared));
+                        RenderStageSchema.PREPARED_NRD, 1, 1, prepared),
+                new CapturedRenderStage(
+                        RenderStageSchema.POST_NRD, 1, 1, postNrd));
     }
 
     private static void set(
@@ -298,7 +457,8 @@ final class NrdInputSemanticValidatorTest {
                 source.frame(),
                 preparation,
                 source.rawWavefront(),
-                source.preparedNrd());
+                source.preparedNrd(),
+                source.postNrd());
     }
 
     private static RenderPlatformFingerprint platform() {

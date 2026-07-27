@@ -9,6 +9,7 @@ import dev.prime.render.vulkan.VulkanBuffer;
 import dev.prime.render.vulkan.VulkanContext;
 import dev.prime.render.vulkan.VulkanImage;
 import dev.prime.render.vulkan.nrd.PreparedNrdFrame;
+import dev.prime.render.vulkan.nrd.NrdCompositeFrame;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.ByteBuffer;
@@ -54,6 +55,8 @@ public final class ReplayStageCapturePass implements Destroyable {
             "/prime/shaders/replay_capture_raw.comp.spv";
     private static final String PREPARED_NRD_SHADER =
             "/prime/shaders/replay_capture_prepared_nrd.comp.spv";
+    private static final String POST_NRD_SHADER =
+            "/prime/shaders/replay_capture_post_nrd.comp.spv";
 
     private final VulkanContext context;
     private final RenderStageSchema schema;
@@ -154,6 +157,19 @@ public final class ReplayStageCapturePass implements Destroyable {
                         frame.sunPenumbra(),
                         frame.fsrDepth(),
                         frame.fsrMotion()));
+    }
+
+    public static ReplayStageCapturePass createPostNrd(
+            VulkanContext context, NrdCompositeFrame frame) {
+        Objects.requireNonNull(frame, "frame");
+        return create(
+                context,
+                RenderStageSchema.POST_NRD,
+                POST_NRD_SHADER,
+                List.of(
+                        frame.color(),
+                        frame.fsrReactive(),
+                        frame.fsrTransparencyComposition()));
     }
 
     private static ReplayStageCapturePass create(

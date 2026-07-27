@@ -9,3 +9,15 @@
   使用任意数量的 CPU segment 表示一个逻辑 cluster，同时保持单 BLAS/TLAS instance，并避免长期
   保留 CPU 灯光数据。所有 segment 在原子 generation 提交前仍持有 Java 基本类型数组；直接写入
   可增长原生存储可以保持数学等价，同时降低 Section→cluster 所有权转移期间的重复驻留。
+
+## 自动曝光
+
+测光、自动调整亮度、可选的曝光度
+
+## 实体、粒子渲染
+
+目前还没有提交mesh
+
+## 体积渲染
+
+云、雾、水、体积光

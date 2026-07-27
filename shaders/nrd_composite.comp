@@ -123,13 +123,20 @@ ivec2 primeCompositeNeighbor(ivec2 pixel, ivec2 offset) {
             ivec2(primeCompositePush.outputExtent) - ivec2(1));
 }
 
+vec4 primeCompositeLoadNormalRoughness(
+        ivec2 pixel, bool reflection) {
+    return reflection
+            ? imageLoad(
+                    primeReflectionCompositeNormalRoughness,
+                    pixel)
+            : imageLoad(primeCompositeNormalRoughness, pixel);
+}
+
 vec3 primeCompositeNormal(ivec2 pixel, bool reflection) {
     vec3 normal;
     float roughness;
     primeNrdUnpackNormalRoughness(
-            reflection
-                    ? imageLoad(primeReflectionCompositeNormalRoughness, pixel)
-                    : imageLoad(primeCompositeNormalRoughness, pixel),
+            primeCompositeLoadNormalRoughness(pixel, reflection),
             normal,
             roughness);
     return normal;
@@ -183,48 +190,6 @@ float primeCompositeLoadViewZ(ivec2 pixel, bool reflection) {
             : imageLoad(primeCompositeViewZ, pixel).x;
 }
 
-PrimeNrdResolvedSg primeCompositeResolveShAt(
-        ivec2 pixel, bool reflection) {
-    PrimeNrdSg diffuseSg = primeNrdUnpackSg(
-            primeCompositeLoadDenoisedSh0(pixel, reflection, false),
-            primeCompositeLoadDenoisedSh1(pixel, reflection, false));
-    PrimeNrdSg specularSg = primeNrdUnpackSg(
-            primeCompositeLoadDenoisedSh0(pixel, reflection, true),
-            primeCompositeLoadDenoisedSh1(pixel, reflection, true));
-    vec3 normal;
-    float roughness;
-    primeNrdUnpackNormalRoughness(
-            reflection
-                    ? imageLoad(primeReflectionCompositeNormalRoughness, pixel)
-                    : imageLoad(primeCompositeNormalRoughness, pixel),
-            normal,
-            roughness);
-    vec3 view = primeNrdSafeNormalize(
-            -primeCompositeLoadPosition(pixel, reflection), normal);
-    ivec2 east = primeCompositeNeighbor(pixel, ivec2(1, 0));
-    ivec2 west = primeCompositeNeighbor(pixel, ivec2(-1, 0));
-    ivec2 north = primeCompositeNeighbor(pixel, ivec2(0, 1));
-    ivec2 south = primeCompositeNeighbor(pixel, ivec2(0, -1));
-    float viewZ = primeCompositeLoadViewZ(pixel, reflection);
-    vec4 neighborViewZ = vec4(
-            primeCompositeLoadViewZ(east, reflection),
-            primeCompositeLoadViewZ(west, reflection),
-            primeCompositeLoadViewZ(north, reflection),
-            primeCompositeLoadViewZ(south, reflection));
-    return primeNrdResolveFilteredSg(
-            diffuseSg,
-            specularSg,
-            view,
-            roughness,
-            viewZ,
-            neighborViewZ,
-            normal,
-            primeCompositeNormal(east, reflection),
-            primeCompositeNormal(west, reflection),
-            primeCompositeNormal(north, reflection),
-            primeCompositeNormal(south, reflection));
-}
-
 vec3 primeCompositeSunSignal(ivec2 pixel) {
     vec4 unshadowed = imageLoad(primeUnshadowedSunLighting, pixel);
 #if PRIME_ENABLE_FILTERED_SUN_SHADOW
@@ -239,66 +204,307 @@ vec3 primeCompositeSunSignal(ivec2 pixel) {
     return unshadowed.rgb * visibility;
 }
 
+struct PrimeCompositeResolveGuide {
+    bool valid;
+    vec4 material;
+    vec3 specularAlbedo;
+    vec3 sun;
+    uint materialId;
+    vec3 normal;
+    float roughness;
+    vec3 view;
+    float viewZ;
+    vec4 neighborViewZ;
+    vec3 eastNormal;
+    vec3 westNormal;
+    vec3 northNormal;
+    vec3 southNormal;
+};
+
 struct PrimeCompositeResolvedBranch {
     vec3 surface;
     vec3 specular;
 };
 
-PrimeCompositeResolvedBranch primeCompositeResolveBranchAt(
+PrimeCompositeResolveGuide primeCompositeLoadResolveGuide(
         ivec2 pixel, bool reflection) {
+    // All translated SH taps are evaluated against this one current-frame guide. Hoisting its
+    // material and ReJitter neighborhood avoids reloading the same center data four times.
+    PrimeCompositeResolveGuide guide;
+    guide.material = primeCompositeLoadMaterial(
+            pixel, reflection);
+    guide.valid = primeNrdIsFinite(guide.material.a)
+            && guide.material.a >= 0.0;
+    if (!guide.valid) {
+        return guide;
+    }
+
+    vec4 normalRoughness =
+            primeCompositeLoadNormalRoughness(
+                    pixel, reflection);
+    primeNrdUnpackNormalRoughness(
+            normalRoughness, guide.normal, guide.roughness);
+    guide.materialId =
+            uint(round(normalRoughness.a * 3.0));
+    guide.view = primeNrdSafeNormalize(
+            -primeCompositeLoadPosition(pixel, reflection),
+            guide.normal);
+    ivec2 east = primeCompositeNeighbor(
+            pixel, ivec2(1, 0));
+    ivec2 west = primeCompositeNeighbor(
+            pixel, ivec2(-1, 0));
+    ivec2 north = primeCompositeNeighbor(
+            pixel, ivec2(0, 1));
+    ivec2 south = primeCompositeNeighbor(
+            pixel, ivec2(0, -1));
+    guide.viewZ = primeCompositeLoadViewZ(
+            pixel, reflection);
+    guide.neighborViewZ = vec4(
+            primeCompositeLoadViewZ(east, reflection),
+            primeCompositeLoadViewZ(west, reflection),
+            primeCompositeLoadViewZ(north, reflection),
+            primeCompositeLoadViewZ(south, reflection));
+    guide.eastNormal = primeCompositeNormal(
+            east, reflection);
+    guide.westNormal = primeCompositeNormal(
+            west, reflection);
+    guide.northNormal = primeCompositeNormal(
+            north, reflection);
+    guide.southNormal = primeCompositeNormal(
+            south, reflection);
+    guide.specularAlbedo =
+            primeCompositeLoadSpecularAlbedo(
+                    pixel, reflection);
+    guide.sun = reflection
+            ? vec3(0.0)
+            : primeCompositeSunSignal(pixel);
+    return guide;
+}
+
+PrimeNrdResolvedSg primeCompositeResolveSh(
+        ivec2 signalPixel,
+        bool reflection,
+        PrimeCompositeResolveGuide guide) {
+    PrimeNrdSg diffuseSg = primeNrdUnpackSg(
+            primeCompositeLoadDenoisedSh0(
+                    signalPixel, reflection, false),
+            primeCompositeLoadDenoisedSh1(
+                    signalPixel, reflection, false));
+    PrimeNrdSg specularSg = primeNrdUnpackSg(
+            primeCompositeLoadDenoisedSh0(
+                    signalPixel, reflection, true),
+            primeCompositeLoadDenoisedSh1(
+                    signalPixel, reflection, true));
+    return primeNrdResolveFilteredSg(
+            diffuseSg,
+            specularSg,
+            guide.view,
+            guide.roughness,
+            guide.viewZ,
+            guide.neighborViewZ,
+            guide.normal,
+            guide.eastNormal,
+            guide.westNormal,
+            guide.northNormal,
+            guide.southNormal);
+}
+
+PrimeCompositeResolvedBranch primeCompositeResolveBranch(
+        ivec2 signalPixel,
+        bool reflection,
+        PrimeCompositeResolveGuide guide) {
     PrimeCompositeResolvedBranch branch;
     branch.surface = vec3(0.0);
     branch.specular = vec3(0.0);
-    vec4 material = primeCompositeLoadMaterial(pixel, reflection);
-    if (!primeNrdIsFinite(material.a) || material.a < 0.0) {
+    if (!guide.valid) {
         return branch;
     }
 
-    PrimeNrdResolvedSg resolved =
-            primeCompositeResolveShAt(pixel, reflection);
-    vec3 specularAlbedo =
-            primeCompositeLoadSpecularAlbedo(pixel, reflection);
-    vec3 sun = reflection
-            ? vec3(0.0)
-            : primeCompositeSunSignal(pixel);
+    PrimeNrdResolvedSg resolved = primeCompositeResolveSh(
+            signalPixel, reflection, guide);
     branch.surface = primeCompositeSurfaceSignal(
-            material,
-            specularAlbedo,
+            guide.material,
+            guide.specularAlbedo,
             resolved.diffuse,
             resolved.specular,
-            sun);
+            guide.sun);
     branch.specular = primeNrdClampRadiance(
             primeNrdSanitizeRadiance(resolved.specular)
-                    * primeNrdSanitizeAlbedo(specularAlbedo),
+                    * primeNrdSanitizeAlbedo(
+                            guide.specularAlbedo),
             PRIME_NRD_FP16_MAX);
     return branch;
 }
 
+PrimeCompositeResolvedBranch primeCompositeResolveBranchAt(
+        ivec2 pixel, bool reflection) {
+    PrimeCompositeResolveGuide guide =
+            primeCompositeLoadResolveGuide(
+                    pixel, reflection);
+    return primeCompositeResolveBranch(
+            pixel, reflection, guide);
+}
+
+float primeCompositeGuideCompatibility(
+        ivec2 samplePixel,
+        bool reflection,
+        uint guideMaterialId,
+        float guideViewZ) {
+    vec4 sampleMaterial = primeCompositeLoadMaterial(
+            samplePixel, reflection);
+    if (!primeNrdIsFinite(sampleMaterial.a)
+            || sampleMaterial.a < 0.0) {
+        return 0.0;
+    }
+
+    vec4 sampleNormalRoughness =
+            primeCompositeLoadNormalRoughness(
+                    samplePixel, reflection);
+    uint sampleMaterialId =
+            uint(round(sampleNormalRoughness.a * 3.0));
+    if (sampleMaterialId != guideMaterialId) {
+        return 0.0;
+    }
+
+    float sampleViewZ =
+            primeCompositeLoadViewZ(samplePixel, reflection);
+    float threshold = PRIME_NRD_REJITTER_VIEW_Z_THRESHOLD
+            * max(abs(sampleViewZ), abs(guideViewZ))
+            + 1.0e-4;
+    return primeNrdIsFinite(sampleViewZ)
+                    && primeNrdIsFinite(guideViewZ)
+                    && abs(sampleViewZ - guideViewZ) <= threshold
+            ? 1.0
+            : 0.0;
+}
+
+mat3 primeCompositeCompatibilityGrid(
+        ivec2 guidePixel,
+        bool reflection,
+        PrimeCompositeResolveGuide guide) {
+    // Four inverse-jittered 2x2 footprints overlap in this 3x3 tile. Evaluate each categorical
+    // surface sample once instead of issuing sixteen repeated compatibility probes.
+    mat3 compatibility = mat3(0.0);
+    for (int y = -1; y <= 1; y++) {
+        for (int x = -1; x <= 1; x++) {
+            float value = x == 0 && y == 0
+                    ? (primeNrdIsFinite(guide.viewZ)
+                            ? 1.0 : 0.0)
+                    : primeCompositeGuideCompatibility(
+                            primeCompositeNeighbor(
+                                    guidePixel, ivec2(x, y)),
+                            reflection,
+                            guide.materialId,
+                            guide.viewZ);
+            compatibility[x + 1][y + 1] = value;
+        }
+    }
+    return compatibility;
+}
+
+float primeCompositeSignalCoverage(
+        ivec2 signalPixel,
+        ivec2 guidePixel,
+        mat3 compatibility) {
+    // Current guide samples already live at pixel + jitter. Sampling them at signal - jitter
+    // reconstructs the categorical surface coverage aligned with NRD's stabilized signal grid.
+    vec2 guidePosition = vec2(signalPixel)
+            - primeCompositePush.currentJitterPixels;
+    ivec2 base = ivec2(floor(guidePosition));
+    vec2 weight = fract(guidePosition);
+    ivec2 p00 = primeCompositeNeighbor(base, ivec2(0, 0));
+    ivec2 p10 = primeCompositeNeighbor(base, ivec2(1, 0));
+    ivec2 p01 = primeCompositeNeighbor(base, ivec2(0, 1));
+    ivec2 p11 = primeCompositeNeighbor(base, ivec2(1, 1));
+    ivec2 i00 = clamp(
+            p00 - guidePixel + ivec2(1), ivec2(0), ivec2(2));
+    ivec2 i10 = clamp(
+            p10 - guidePixel + ivec2(1), ivec2(0), ivec2(2));
+    ivec2 i01 = clamp(
+            p01 - guidePixel + ivec2(1), ivec2(0), ivec2(2));
+    ivec2 i11 = clamp(
+            p11 - guidePixel + ivec2(1), ivec2(0), ivec2(2));
+    vec4 values = vec4(
+            compatibility[i00.x][i00.y],
+            compatibility[i10.x][i10.y],
+            compatibility[i01.x][i01.y],
+            compatibility[i11.x][i11.y]);
+    vec4 coverageWeight = vec4(
+            (1.0 - weight.x) * (1.0 - weight.y),
+            weight.x * (1.0 - weight.y),
+            (1.0 - weight.x) * weight.y,
+            weight.x * weight.y);
+    return dot(values, coverageWeight);
+}
+
 PrimeCompositeResolvedBranch primeCompositeSampleResolvedBranch(
         ivec2 pixel, bool reflection) {
+    PrimeCompositeResolveGuide guide =
+            primeCompositeLoadResolveGuide(
+                    pixel, reflection);
+    if (!guide.valid) {
+        return primeCompositeResolveBranch(
+                pixel, reflection, guide);
+    }
     vec2 jitter = primeCompositePush.currentJitterPixels;
     ivec2 base = pixel + ivec2(floor(jitter));
     vec2 weight = fract(jitter);
-    PrimeCompositeResolvedBranch p00 = primeCompositeResolveBranchAt(
-            primeCompositeNeighbor(base, ivec2(0, 0)), reflection);
-    PrimeCompositeResolvedBranch p10 = primeCompositeResolveBranchAt(
-            primeCompositeNeighbor(base, ivec2(1, 0)), reflection);
-    PrimeCompositeResolvedBranch p01 = primeCompositeResolveBranchAt(
-            primeCompositeNeighbor(base, ivec2(0, 1)), reflection);
-    PrimeCompositeResolvedBranch p11 = primeCompositeResolveBranchAt(
-            primeCompositeNeighbor(base, ivec2(1, 1)), reflection);
+    ivec2 signal00 = primeCompositeNeighbor(
+            base, ivec2(0, 0));
+    ivec2 signal10 = primeCompositeNeighbor(
+            base, ivec2(1, 0));
+    ivec2 signal01 = primeCompositeNeighbor(
+            base, ivec2(0, 1));
+    ivec2 signal11 = primeCompositeNeighbor(
+            base, ivec2(1, 1));
+    vec4 tapWeight = vec4(
+            (1.0 - weight.x) * (1.0 - weight.y),
+            weight.x * (1.0 - weight.y),
+            (1.0 - weight.x) * weight.y,
+            weight.x * weight.y);
+    mat3 compatibility = primeCompositeCompatibilityGrid(
+            pixel, reflection, guide);
+    tapWeight *= vec4(
+            primeCompositeSignalCoverage(
+                    signal00, pixel, compatibility),
+            primeCompositeSignalCoverage(
+                    signal10, pixel, compatibility),
+            primeCompositeSignalCoverage(
+                    signal01, pixel, compatibility),
+            primeCompositeSignalCoverage(
+                    signal11, pixel, compatibility));
+    float weightSum = dot(tapWeight, vec4(1.0));
+    if (!(weightSum > 1.0e-6)) {
+        return primeCompositeResolveBranch(
+                pixel, reflection, guide);
+    }
+    tapWeight /= weightSum;
+    PrimeCompositeResolvedBranch p00 =
+            primeCompositeResolveBranch(
+                    signal00, reflection, guide);
+    PrimeCompositeResolvedBranch p10 =
+            primeCompositeResolveBranch(
+                    signal10, reflection, guide);
+    PrimeCompositeResolvedBranch p01 =
+            primeCompositeResolveBranch(
+                    signal01, reflection, guide);
+    PrimeCompositeResolvedBranch p11 =
+            primeCompositeResolveBranch(
+                    signal11, reflection, guide);
     PrimeCompositeResolvedBranch branch;
-    // NRD's sample resolves and re-jitters each SH signal against one pixel's guides. Restore the
-    // transparent FSR phase only after that resolve and material remodulation, so no neighbor's
-    // demodulated lighting can be reinterpreted by the center pixel's roughness or albedo.
-    branch.surface = mix(
-            mix(p00.surface, p10.surface, weight.x),
-            mix(p01.surface, p11.surface, weight.x),
-            weight.y);
-    branch.specular = mix(
-            mix(p00.specular, p10.specular, weight.x),
-            mix(p01.specular, p11.specular, weight.x),
-            weight.y);
+    // The current guide and material already contain the FSR camera jitter. Only NRD's stabilized
+    // SH signal needs translation; moving both produced the measured 1.6x-2x interior phase.
+    // Resolve every translated signal tap independently against the one current guide. The
+    // inverse-jittered coverage reconstruction preserves NRD's exact material classes and 1%
+    // surface-depth boundary without switching whole taps as the jitter phase changes.
+    branch.surface = p00.surface * tapWeight.x
+            + p10.surface * tapWeight.y
+            + p01.surface * tapWeight.z
+            + p11.surface * tapWeight.w;
+    branch.specular = p00.specular * tapWeight.x
+            + p10.specular * tapWeight.y
+            + p01.specular * tapWeight.z
+            + p11.specular * tapWeight.w;
     return branch;
 }
 

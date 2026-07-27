@@ -228,7 +228,11 @@ void primeCompositeResolveSh(
     specular *= scale.y;
 }
 
-vec3 primeCompositeRadiance(uvec2 pixel, vec4 material, vec4 specularMaterial) {
+vec3 primeCompositeRadiance(
+        uvec2 pixel,
+        vec4 material,
+        vec4 specularMaterial,
+        vec3 displayPosition) {
     if (!primeNrdIsFinite(material.a) || material.a < 0.0) {
         // Raygen's sky contract also guarantees a zero display position and no reflection guide,
         // so the old path resolved to this same stable signal without aerial sampling.
@@ -283,7 +287,6 @@ vec3 primeCompositeRadiance(uvec2 pixel, vec4 material, vec4 specularMaterial) {
             imageLoad(primeStableAccumulation, ivec2(pixel)).rgb,
             PRIME_NRD_FP16_MAX);
     vec3 radiance = surface + reflectionSurface + stable;
-    vec3 displayPosition = imageLoad(primeDisplayPosition, ivec2(pixel)).xyz;
     float displayDistance = all(equal(displayPosition, vec3(0.0)))
             ? -1.0
             : length(displayPosition);
@@ -329,16 +332,20 @@ void main() {
     if (any(greaterThanEqual(pixel, primeCompositePush.outputExtent))) {
         return;
     }
-    // The single PT/NRD path owns the complete surface signal. Valid surface motion should not be
-    // marked reactive, while the material metadata below supplies FSR's composition hint.
-    imageStore(primeFsrReactiveMask, ivec2(pixel), vec4(0.0));
+    vec4 displayPosition = imageLoad(primeDisplayPosition, ivec2(pixel));
+    uint visibleMaterialFlags = floatBitsToUint(displayPosition.w);
+    PrimeFsrMasks fsrMasks = primeFsrMasks(visibleMaterialFlags);
+    imageStore(
+            primeFsrReactiveMask,
+            ivec2(pixel),
+            vec4(primeFsrSanitizeMask(fsrMasks.reactive)));
     vec4 specularMaterial = imageLoad(
             primeCompositeSpecularMaterial, ivec2(pixel));
-    float transparencyAndComposition = specularMaterial.a;
     imageStore(
             primeFsrTransparencyCompositionMask,
             ivec2(pixel),
-            vec4(primeFsrSanitizeMask(transparencyAndComposition)));
+            vec4(primeFsrSanitizeMask(
+                    fsrMasks.transparencyAndComposition)));
     if (primeCompositePush.diagnosticMode == PRIME_DIAGNOSTIC_SPECULAR_INPUT) {
         imageStore(
                 primeCompositeOutput,
@@ -388,7 +395,8 @@ void main() {
         return;
     }
     vec4 material = imageLoad(primeCompositeMaterial, ivec2(pixel));
-    vec3 radiance = primeCompositeRadiance(pixel, material, specularMaterial);
+    vec3 radiance = primeCompositeRadiance(
+            pixel, material, specularMaterial, displayPosition.xyz);
     if (primeCompositePush.diagnosticMode == PRIME_DIAGNOSTIC_NRD_VALIDATION) {
         vec3 validationColor;
         if (primeCompositeIsValidationSceneTile(pixel)) {

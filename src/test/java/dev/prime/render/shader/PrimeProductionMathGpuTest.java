@@ -95,7 +95,7 @@ final class PrimeProductionMathGpuTest {
     }
 
     @Test
-    void fsrMasksKeepStaticAlphaTestedFoliageEligibleForThinFeatureLocks()
+    void fsrMasksKeepFoliageLockedAndMakeTransparencyReactive()
             throws IOException {
         int cases = 1 << 10;
         int inputWords = 3;
@@ -459,10 +459,12 @@ final class PrimeProductionMathGpuTest {
         ByteBuffer input = ShaderTestBuffer.inputs(CASES_PER_KIND, words);
         SplittableRandom random = new SplittableRandom(QUEUED_PSR_SEED);
         for (int index = 0; index < CASES_PER_KIND; index++) {
-            int count = random.nextInt(1, 9);
+            boolean forceOverflow = index == 1 || (index > 1 && random.nextInt(64) == 0);
+            int count = forceOverflow ? 8 : index == 0 ? 0 : random.nextInt(9);
             int reflectionMask = random.nextInt(1 << count);
             putInt(input, index, words, 0, 0, count);
             putInt(input, index, words, 0, 1, reflectionMask);
+            putInt(input, index, words, 0, 2, forceOverflow ? 1 : 0);
 
             float cameraX = random.nextFloat() * 64.0F - 32.0F;
             float cameraY = random.nextFloat() * 64.0F - 32.0F;

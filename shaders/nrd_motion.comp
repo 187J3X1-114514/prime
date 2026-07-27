@@ -249,11 +249,8 @@ void primePrepareBranch(
     primeStoreSpecularDirection(pixel, reflection, vec4(
             specularDirection * primeNrdY(specular), 0.0));
     primeStoreViewZ(pixel, reflection, currentViewZ);
-    float composition = reflection
-            ? 0.0
-            : primeFsrTransparencyAndCompositionMask(
-                    floatBitsToUint(imageLoad(primeDisplayPosition, pixel).w));
-    primeStoreSpecularMaterial(pixel, reflection, vec4(specularAlbedo, composition));
+    primeStoreSpecularMaterial(
+            pixel, reflection, vec4(specularAlbedo, rawSpecularMaterial.a));
 }
 
 void primePrepareFsrGuide(

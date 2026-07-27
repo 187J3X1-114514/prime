@@ -56,13 +56,28 @@ float primeMaterialDielectricF0(uint flags) {
     return (flags & PRIME_MATERIAL_FLAG_WATER) != 0u ? 0.02037 : PRIME_DEFAULT_DIELECTRIC_F0;
 }
 
-float primeFsrTransparencyAndCompositionMask(uint flags) {
+struct PrimeFsrMasks {
+    float reactive;
+    float transparencyAndComposition;
+};
+
+PrimeFsrMasks primeFsrMasks(uint flags) {
+    PrimeFsrMasks masks;
     if (primeMaterialIsTransmissive(flags)) {
-        return 1.0;
+        // The composite contains both interface reflection and refracted background shading, but
+        // one depth/motion sample can describe only the visible interface. FSR therefore must
+        // prefer the current denoised sample over the mismatched color history. Keep reactivity
+        // below 1 as required by the FSR integration guidance.
+        masks.reactive = 0.9;
+        masks.transparencyAndComposition = 1.0;
+        return masks;
     }
     // Alpha-tested foliage writes matching depth and motion. Marking it here would fully remove
     // FSR's thin-feature lock and turn sub-pixel coverage changes into visible edge shimmer.
-    return (flags & PRIME_MATERIAL_FLAG_ANIMATED_TEXTURE) != 0u ? 0.75 : 0.0;
+    masks.reactive = 0.0;
+    masks.transparencyAndComposition =
+            (flags & PRIME_MATERIAL_FLAG_ANIMATED_TEXTURE) != 0u ? 0.75 : 0.0;
+    return masks;
 }
 
 #endif

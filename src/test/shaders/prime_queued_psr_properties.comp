@@ -12,8 +12,9 @@ void main() {
     if (!primeTestBegin(caseIndex)) return;
     uint inputOffset = primeTestInputOffset(caseIndex, PRIME_PSR_INPUT_WORDS);
     uvec4 control = primeTestInput.words[inputOffset];
-    uint count = clamp(control.x, 1u, PRIME_QUEUED_PSR_CAPACITY);
+    uint count = min(control.x, PRIME_QUEUED_PSR_CAPACITY);
     uint reflectionMask = control.y;
+    bool forceOverflow = control.z != 0u;
     vec3 cameraPosition =
             uintBitsToFloat(primeTestInput.words[inputOffset + 1u]).xyz;
     vec3 target =
@@ -39,6 +40,10 @@ void main() {
                 normals[index],
                 (reflectionMask & (1u << index)) != 0u);
     }
+    if (forceOverflow) {
+        primeAppendQueuedPsrState(
+                state, cameraPosition, target, targetNormal, false);
+    }
 
     vec3 expectedDirection = direction;
     vec3 expectedNormal = targetNormal;
@@ -50,38 +55,55 @@ void main() {
                     * dot(expectedNormal, normals[index]);
         }
     }
-    float expectedLength = length(positions[0] - cameraPosition);
-    for (uint index = 1u; index < count; ++index) {
-        expectedLength += length(positions[index] - positions[index - 1u]);
+    vec3 expectedPosition = vec3(0.0);
+    if (count > 0u) {
+        float expectedLength = length(positions[0] - cameraPosition);
+        for (uint index = 1u; index < count; ++index) {
+            expectedLength += length(positions[index] - positions[index - 1u]);
+        }
+        expectedLength += length(target - positions[count - 1u]);
+        expectedPosition =
+                normalize(positions[0] - cameraPosition) * expectedLength;
     }
-    expectedLength += length(target - positions[count - 1u]);
-    vec3 expectedPosition =
-            normalize(positions[0] - cameraPosition) * expectedLength;
 
-    vec3 virtualPosition;
-    vec3 virtualNormal;
+    vec3 virtualPosition = vec3(0.0);
+    vec3 virtualNormal = vec3(0.0);
     bool built = primeBuildQueuedPsrGuideValue(
             state, target, targetNormal, virtualPosition, virtualNormal);
+    if (!built) {
+        // An out payload is unspecified when the public result says no guide was built.
+        virtualPosition = vec3(0.0);
+        virtualNormal = vec3(0.0);
+    }
     vec3 virtualDirection = primeQueuedPsrVirtualDirection(state, direction);
     float anchor = primeQueuedPsrAnchorDistanceValue(
             state, cameraPosition, target, targetNormal);
-    vec3 primaryDirection = normalize(positions[0] - cameraPosition);
+    vec3 targetDirection = target - cameraPosition;
+    float targetLengthSquared = dot(targetDirection, targetDirection);
+    vec3 primaryDirection = count == 0u && targetLengthSquared > 1.0e-12
+            ? targetDirection * inversesqrt(targetLengthSquared)
+            : count > 0u
+                    ? normalize(positions[0] - cameraPosition)
+                    : vec3(0.0);
     float denominator = dot(primaryDirection, targetNormal);
-    float expectedAnchor = abs(denominator) > 1.0e-4
+    float expectedAnchor = !forceOverflow && abs(denominator) > 1.0e-4
             ? dot(target - cameraPosition, targetNormal) / denominator
             : -1.0;
     if (!(expectedAnchor > 0.0)) expectedAnchor = -1.0;
 
     uint mask = 0u;
-    if (!built || primeQueuedPsrCount(state) != count) {
+    bool expectedBuilt = count > 0u && !forceOverflow;
+    if (built != expectedBuilt
+            || primeQueuedPsrCount(state) != count
+            || primeQueuedPsrOverflowed(state) != forceOverflow) {
         mask |= PRIME_TEST_FAILURE_EVENT;
     }
     if (!primeTestClose(
             virtualDirection, expectedDirection, 2.0e-6, 2.0e-5)
-            || !primeTestClose(
-                    virtualNormal, expectedNormal, 2.0e-6, 2.0e-5)
-            || !primeTestClose(
-                    virtualPosition, expectedPosition, 2.0e-5, 2.0e-5)
+            || (expectedBuilt && !primeTestClose(
+                    virtualNormal, expectedNormal, 2.0e-6, 2.0e-5))
+            || (expectedBuilt && !primeTestClose(
+                    virtualPosition, expectedPosition, 2.0e-5, 2.0e-5))
             || !primeTestClose(anchor, expectedAnchor, 2.0e-5, 2.0e-5)) {
         mask |= PRIME_TEST_FAILURE_IDENTITY;
     }

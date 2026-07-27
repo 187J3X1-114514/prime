@@ -21,11 +21,17 @@ void main() {
 
     if (kind == 0u) {
         uint flags = control.y;
-        actual.x = primeFsrTransparencyAndCompositionMask(flags);
-        expected.x = primeMaterialIsTransmissive(flags)
-                ? 1.0
-                : ((flags & PRIME_MATERIAL_FLAG_ANIMATED_TEXTURE) != 0u ? 0.75 : 0.0);
-        if (!primeTestClose(actual.x, expected.x, 0.0, 0.0)) {
+        PrimeFsrMasks masks = primeFsrMasks(flags);
+        actual.xy = vec2(masks.reactive, masks.transparencyAndComposition);
+        expected.xy = primeMaterialIsTransmissive(flags)
+                ? vec2(0.9, 1.0)
+                : vec2(
+                        0.0,
+                        (flags & PRIME_MATERIAL_FLAG_ANIMATED_TEXTURE) != 0u
+                                ? 0.75
+                                : 0.0);
+        if (!primeTestClose(actual.x, expected.x, 0.0, 0.0)
+                || !primeTestClose(actual.y, expected.y, 0.0, 0.0)) {
             mask |= PRIME_TEST_FAILURE_STATE;
         }
     } else if (kind == 1u) {

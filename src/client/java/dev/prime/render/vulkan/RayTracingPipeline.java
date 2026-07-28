@@ -55,6 +55,8 @@ public final class RayTracingPipeline implements Destroyable {
     static final int RAYGEN_SHADER_STAGE_COUNT = 4;
     static final int MISS_GROUP_COUNT = 2;
     static final int HIT_GROUP_COUNT = 6;
+    static final int FIXED_SHADER_MODULE_COUNT = 6;
+    static final int ANY_HIT_SHADER_STAGE_COUNT = 2;
     static final int DESCRIPTOR_BINDING_COUNT = 37;
     static final int STORAGE_IMAGE_DESCRIPTOR_COUNT = 29;
     static final int RAYGEN_RECORD_DATA_SIZE = Integer.BYTES;
@@ -329,7 +331,7 @@ public final class RayTracingPipeline implements Destroyable {
                 WAVEFRONT_RESOLVE_GROUP);
     }
 
-    /** Records one native-resolution unbiased path sample into the screenshot running mean. */
+    /** Records one raw native-resolution model sample into the screenshot running mean. */
     public void traceScreenshot(
             VkCommandBuffer commandBuffer,
             IntegratorFrameInput input,
@@ -883,7 +885,7 @@ public final class RayTracingPipeline implements Destroyable {
         if (raygenResources.length != RAYGEN_MODULE_COUNT) {
             throw new IllegalArgumentException("Unexpected Prime raygen module count");
         }
-        long[] modules = new long[RAYGEN_MODULE_COUNT + 5];
+        long[] modules = new long[RAYGEN_MODULE_COUNT + FIXED_SHADER_MODULE_COUNT];
         long deferredOperation = 0L;
         try {
             for (int index = 0; index < RAYGEN_MODULE_COUNT; index++) {
@@ -893,7 +895,8 @@ public final class RayTracingPipeline implements Destroyable {
             int shadowMissModule = missModule + 1;
             int closestHitModule = missModule + 2;
             int anyHitModule = missModule + 3;
-            int shadowClosestHitModule = missModule + 4;
+            int shadowAnyHitModule = missModule + 4;
+            int shadowClosestHitModule = missModule + 5;
             modules[missModule] =
                     createShaderModule(context, "/prime/shaders/world.rmiss.spv");
             modules[shadowMissModule] =
@@ -902,16 +905,19 @@ public final class RayTracingPipeline implements Destroyable {
                     createShaderModule(context, "/prime/shaders/world.rchit.spv");
             modules[anyHitModule] =
                     createShaderModule(context, "/prime/shaders/world.rahit.spv");
+            modules[shadowAnyHitModule] =
+                    createShaderModule(context, "/prime/shaders/shadow.rahit.spv");
             modules[shadowClosestHitModule] =
                     createShaderModule(context, "/prime/shaders/shadow.rchit.spv");
             int miss = RAYGEN_SHADER_STAGE_COUNT;
             int shadowMiss = miss + 1;
             int closestHit = miss + 2;
             int anyHit = miss + 3;
-            int shadowClosestHit = miss + 4;
+            int shadowAnyHit = miss + 4;
+            int shadowClosestHit = miss + 5;
             VkPipelineShaderStageCreateInfo.Buffer stages =
                     VkPipelineShaderStageCreateInfo.calloc(
-                            RAYGEN_SHADER_STAGE_COUNT + 5, stack);
+                            RAYGEN_SHADER_STAGE_COUNT + FIXED_SHADER_MODULE_COUNT, stack);
             ByteBuffer mainName = stack.UTF8("main");
             for (int index = 0; index < stages.capacity(); index++) {
                 int stageFlag;
@@ -919,7 +925,7 @@ public final class RayTracingPipeline implements Destroyable {
                     stageFlag = KHRRayTracingPipeline.VK_SHADER_STAGE_RAYGEN_BIT_KHR;
                 } else if (index <= shadowMiss) {
                     stageFlag = KHRRayTracingPipeline.VK_SHADER_STAGE_MISS_BIT_KHR;
-                } else if (index == anyHit) {
+                } else if (index == anyHit || index == shadowAnyHit) {
                     stageFlag = KHRRayTracingPipeline.VK_SHADER_STAGE_ANY_HIT_BIT_KHR;
                 } else {
                     stageFlag = KHRRayTracingPipeline.VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR;
@@ -957,7 +963,7 @@ public final class RayTracingPipeline implements Destroyable {
             triangleGroup(
                     groups.get(hitBase + 5),
                     shadowClosestHit,
-                    KHRRayTracingPipeline.VK_SHADER_UNUSED_KHR);
+                    shadowAnyHit);
 
             VkRayTracingPipelineCreateInfoKHR.Buffer createInfo =
                     VkRayTracingPipelineCreateInfoKHR.calloc(1, stack);

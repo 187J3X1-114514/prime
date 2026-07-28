@@ -42,17 +42,22 @@ the quadrature reference.
 
 `PrimeBsdfGpuTest` includes the production `bsdf.glsl` adapter, not only the
 protected reference fragments. It sweeps opaque, transmissive, foliage, and
-fixed primary-split entry points. Rejected proposals must become Prime's
-canonical zero-event sample; every accepted public payload must be finite,
-nonnegative, directionally valid, and keep its volume-stack transition within
-the fixed ABI capacity.
+fixed primary-split entry points. It checks the first-interface straight
+direction and complementary Fresnel response, rough-reflection sample/eval/PDF
+consistency, random-independent transparent continuation, per-surface glass
+filtering, and water-only stack transitions. Rejected proposals must become
+Prime's canonical zero-event sample; every accepted public payload must be
+finite, nonnegative, directionally valid, and keep its volume-stack transition
+within the fixed ABI capacity.
 
 `PrimeProductionMathGpuTest` includes the same small production fragments used
 by the renderer. Its concern-specific batches cover exponent-scaled throughput,
 MIS and area-light PDFs, Beer-Lambert attenuation, Russian roulette, the full
 16-bit LabPBR normal/specular byte domains, conductor Fresnel, NRD sanitization,
 normal packing, hit-distance normalization, demodulation, radiance limits, and
-FSR depth, motion, and material-mask input domains. Replay capture additionally
+FSR depth, motion, and material-mask input domains. The transport batch also
+checks glass-filter endpoints and products plus outside/inside, multiple,
+out-of-order, and clamped shadow-water segments. Replay capture additionally
 observes the production FSR depth and motion images emitted by `nrd_motion.comp`;
 Java tests cover the NRD and FSR native scalar ABI encoders without invoking a
 driver or SDK.

@@ -766,24 +766,33 @@ abstract class CompilePrimeShaders extends DefaultTask {
 				// Dead functions may be removed after glslang has compiled the complete standalone
 				// RoboCute validation module. Function-local DCE removes inactive mode branches and
 				// unconsumed aggregate fields without changing live floating-point evaluation order.
+				def optimizerArguments = [
+						'--remove-duplicates',
+						'--eliminate-local-single-block',
+						'--eliminate-local-single-store',
+						'--ssa-rewrite',
+						'--redundancy-elimination',
+						'--simplify-instructions',
+						'--eliminate-dead-branches',
+						'--eliminate-dead-code-aggressive',
+						'--eliminate-dead-inserts']
+				// Hit and miss modules are compiled independently from their raygen caller. Pruning
+				// an incoming payload member renumbers the remaining struct fields and changes the
+				// cross-stage payload ABI even though each standalone module still validates.
+				if (!(source.name.endsWith('.rmiss')
+						|| source.name.endsWith('.rchit')
+						|| source.name.endsWith('.rahit'))) {
+					optimizerArguments.add('--eliminate-dead-members')
+				}
+				optimizerArguments.addAll([
+						'--simplify-instructions',
+						'--eliminate-dead-functions',
+						'--merge-blocks',
+						'--compact-ids',
+						output.absolutePath,
+						'-o', optimized.absolutePath])
 				execOperations.exec {
-					commandLine spirvOptimizer.get(),
-							'--remove-duplicates',
-							'--eliminate-local-single-block',
-							'--eliminate-local-single-store',
-							'--ssa-rewrite',
-							'--redundancy-elimination',
-							'--simplify-instructions',
-							'--eliminate-dead-branches',
-							'--eliminate-dead-code-aggressive',
-							'--eliminate-dead-inserts',
-							'--eliminate-dead-members',
-							'--simplify-instructions',
-							'--eliminate-dead-functions',
-							'--merge-blocks',
-							'--compact-ids',
-							output.absolutePath,
-							'-o', optimized.absolutePath
+					commandLine spirvOptimizer.get(), *optimizerArguments
 				}
 				java.nio.file.Files.move(
 						optimized.toPath(), output.toPath(),
@@ -1073,6 +1082,7 @@ def verifyDistributionJar = tasks.register('verifyDistributionJar') {
 			'prime/shaders/wavefront_tail_ser.rgen.spv',
 			'prime/shaders/wavefront_resolve_ser.rgen.spv',
 			'prime/shaders/screenshot_display.comp.spv',
+			'prime/shaders/shadow.rahit.spv',
 			'prime/shaders/shadow.rchit.spv',
 			'prime/shaders/nrd_motion.comp.spv',
 			'prime/shaders/replay_capture_raw.comp.spv',
@@ -1090,9 +1100,9 @@ def verifyDistributionJar = tasks.register('verifyDistributionJar') {
 		}
 
 		def shaderNames = names.findAll { it.startsWith('prime/shaders/') && it.endsWith('.spv') }
-		if (shaderNames.size() != 28) {
+		if (shaderNames.size() != 29) {
 			throw new GradleException(
-					"Distribution jar must contain 28 Prime shaders; found ${shaderNames.size()}")
+					"Distribution jar must contain 29 Prime shaders; found ${shaderNames.size()}")
 		}
 
 		new java.util.zip.ZipFile(archive).withCloseable { zip ->

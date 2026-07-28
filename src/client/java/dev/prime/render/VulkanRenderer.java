@@ -455,7 +455,7 @@ public final class VulkanRenderer implements AutoCloseable {
         }
     }
 
-    /** Records one native-resolution unbiased sample and presents the running mean directly. */
+    /** Records one raw native-resolution model sample and presents the running mean directly. */
     private void renderScreenshot(RenderTarget mainTarget) {
         this.debugLines = List.of();
         TerrainScene.ResidentSceneView scene = this.screenshotScene;

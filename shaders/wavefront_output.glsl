@@ -1,7 +1,7 @@
 #ifndef PRIME_WAVEFRONT_OUTPUT_GLSL
 #define PRIME_WAVEFRONT_OUTPUT_GLSL
 
-// Output adapters consume one resolved physical sample. They may encode reconstruction signals or
+// Output adapters consume one resolved raw model sample. They may encode reconstruction signals or
 // a screenshot running mean, but never feed data back into transport.
 
 void primeWriteScreenshotOutput(

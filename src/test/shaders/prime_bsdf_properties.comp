@@ -125,6 +125,20 @@ bool primeAdapterSameStack(
     return true;
 }
 
+uint primeAdapterExpectedTransparentStackCount(
+        PrimeRcState state,
+        uint materialFlags,
+        PrimeRcVolumeStack stack) {
+    if ((materialFlags & PRIME_MATERIAL_FLAG_WATER) == 0u
+            || state.geometryThinWalled != 0u) {
+        return stack.count;
+    }
+    if (state.entering != 0u) {
+        return min(stack.count + 1u, PRIME_RC_MAX_VOLUME_STACK_SIZE);
+    }
+    return stack.count > 0u ? stack.count - 1u : 0u;
+}
+
 void primeAdapterCheckEvaluation(
         inout uint mask, BsdfEvaluation evaluation) {
     primeAdapterClassify(mask, evaluation.response);
@@ -322,43 +336,6 @@ void primeAdapterProperties(
         result.albedos = primeDenoiseAlbedosFromState(
                 state, viewDirection, PRIME_DENOISE_CLOSURE_FOLIAGE);
     } else if (kind == PRIME_ADAPTER_TRANSMISSION) {
-        PrimeTransmissiveBsdfSample sampled = primeSampleMinecraftTransmission(
-                baseColor,
-                opacity,
-                outwardNormal,
-                materialFlags,
-                packedNormal,
-                packedSpecular,
-                viewDirection,
-                firstSample,
-                rayT,
-                stack);
-        result.first = sampled.bsdfSample;
-        result.stackCounts.x = sampled.volumeStack.count;
-        if (result.first.eventFlags != 0u) {
-            result.sampledEvaluation = primeEvaluateMinecraftTransmission(
-                    baseColor,
-                    opacity,
-                    outwardNormal,
-                    materialFlags,
-                    packedNormal,
-                    packedSpecular,
-                    viewDirection,
-                    result.first.direction,
-                    rayT,
-                    stack);
-        }
-        result.probeEvaluation = primeEvaluateMinecraftTransmission(
-                baseColor,
-                opacity,
-                outwardNormal,
-                materialFlags,
-                packedNormal,
-                packedSpecular,
-                viewDirection,
-                probeDirection,
-                rayT,
-                stack);
         PrimeRcState state = primeMinecraftTransmissionState(
                 baseColor,
                 opacity,
@@ -369,8 +346,48 @@ void primeAdapterProperties(
                 viewDirection,
                 rayT,
                 stack);
-        result.albedos = primeDenoiseAlbedosFromState(
-                state, viewDirection, PRIME_DENOISE_CLOSURE_TRANSMISSIVE);
+        PrimeTransmissiveBsdfSample sampled =
+                primeSampleMinecraftTransparentContinuation(
+                baseColor,
+                opacity,
+                outwardNormal,
+                materialFlags,
+                packedNormal,
+                packedSpecular,
+                viewDirection,
+                rayT,
+                stack);
+        result.first = sampled.bsdfSample;
+        result.stackCounts.x = sampled.volumeStack.count;
+        PrimeTransmissiveBsdfSample repeated =
+                primeSampleMinecraftTransparentContinuation(
+                baseColor,
+                opacity,
+                outwardNormal,
+                materialFlags,
+                packedNormal,
+                packedSpecular,
+                viewDirection,
+                rayT,
+                stack);
+        vec3 transmittance = primeMinecraftSurfaceTransmittance(
+                baseColor, opacity, materialFlags);
+        result.albedos.diffuse = transmittance;
+        result.albedos.specular = vec3(0.0);
+        uint expectedEvents = PRIME_BSDF_EVENT_TRANSMISSION
+                | PRIME_BSDF_EVENT_DELTA;
+        if (!primeAdapterSameSample(result.first, repeated.bsdfSample)
+                || !primeAdapterSameStack(sampled.volumeStack, repeated.volumeStack)
+                || !all(equal(result.first.direction, -viewDirection))
+                || !all(equal(result.first.response, transmittance))
+                || result.first.pdf != 1.0
+                || result.first.relativeEta != 1.0
+                || result.first.eventFlags != expectedEvents
+                || sampled.volumeStack.count
+                        != primeAdapterExpectedTransparentStackCount(
+                                state, materialFlags, stack)) {
+            result.mask |= PRIME_TEST_FAILURE_IDENTITY;
+        }
     } else {
         PrimeTransmissivePrimarySample sampled =
                 primeSampleMinecraftTransmissionPrimary(
@@ -382,7 +399,6 @@ void primeAdapterProperties(
                 packedSpecular,
                 viewDirection,
                 firstSample,
-                secondSample,
                 rayT,
                 stack);
         result.first = sampled.paths.reflection.bsdfSample;
@@ -391,35 +407,44 @@ void primeAdapterProperties(
                 sampled.paths.reflection.volumeStack.count,
                 sampled.paths.transmission.volumeStack.count);
         result.albedos = sampled.albedos;
-        PrimeTransmissiveBsdfSplit referenceSplit =
-                primeSampleMinecraftTransmissionSplit(
-                        baseColor,
-                        opacity,
-                        outwardNormal,
-                        materialFlags,
-                        packedNormal,
-                        packedSpecular,
-                        viewDirection,
-                        firstSample,
-                        secondSample,
-                        rayT,
-                        stack);
-        if (!primeAdapterSameSample(
-                        sampled.paths.reflection.bsdfSample,
-                        referenceSplit.reflection.bsdfSample)
-                || !primeAdapterSameSample(
-                        sampled.paths.transmission.bsdfSample,
-                        referenceSplit.transmission.bsdfSample)
+        PrimeRcState state = primeMinecraftTransmissionState(
+                baseColor,
+                opacity,
+                outwardNormal,
+                materialFlags,
+                packedNormal,
+                packedSpecular,
+                viewDirection,
+                rayT,
+                stack);
+        vec3 localView =
+                primeRcOnbToLocal(state.material.geometry.onb, viewDirection);
+        PrimeMinecraftMirrorSplit mirror =
+                primeMinecraftMirrorSplit(state, localView);
+        vec3 surfaceTransmittance = primeMinecraftSurfaceTransmittance(
+                baseColor, opacity, materialFlags);
+        uint expectedEvents = PRIME_BSDF_EVENT_TRANSMISSION
+                | PRIME_BSDF_EVENT_DELTA;
+        if (!all(equal(result.second.direction, -viewDirection))
+                || !all(equal(
+                        result.second.response,
+                        (vec3(1.0) - mirror.reflectance) * surfaceTransmittance))
+                || result.second.pdf != 1.0
+                || result.second.relativeEta != 1.0
+                || result.second.eventFlags != expectedEvents
                 || !primeAdapterSameStack(
-                        sampled.paths.reflection.volumeStack,
-                        referenceSplit.reflection.volumeStack)
-                || !primeAdapterSameStack(
-                        sampled.paths.transmission.volumeStack,
-                        referenceSplit.transmission.volumeStack)) {
+                        sampled.paths.reflection.volumeStack, stack)
+                || sampled.paths.transmission.volumeStack.count
+                        != primeAdapterExpectedTransparentStackCount(
+                                state, materialFlags, stack)
+                || !all(equal(result.albedos.diffuse, surfaceTransmittance))
+                || !all(equal(result.albedos.specular, mirror.reflectance))) {
             result.mask |= PRIME_TEST_FAILURE_IDENTITY;
         }
-        if (result.second.eventFlags != 0u) {
-            result.sampledEvaluation = primeEvaluateMinecraftTransmissionBranch(
+        if (result.first.eventFlags != 0u
+                && (result.first.eventFlags & PRIME_BSDF_EVENT_DELTA) == 0u) {
+            result.sampledEvaluation =
+                    primeEvaluateMinecraftTransparentReflection(
                     baseColor,
                     opacity,
                     outwardNormal,
@@ -427,11 +452,35 @@ void primeAdapterProperties(
                     packedNormal,
                     packedSpecular,
                     viewDirection,
-                    result.second.direction,
+                    result.first.direction,
                     rayT,
                     stack);
+            vec3 localScatter =
+                    primeRcOnbToLocal(state.material.geometry.onb, result.first.direction);
+            bool stableReconstruction =
+                    min(
+                            state.specularMicrofacet.alpha.x,
+                            state.specularMicrofacet.alpha.y) >= 5.0e-3
+                    && abs(localView.z) >= 1.0e-1
+                    && abs(localScatter.z) >= 5.0e-2;
+            if (stableReconstruction
+                    && !primeTestClose(
+                            result.first.response,
+                            result.sampledEvaluation.response,
+                            3.0e-6,
+                            2.0e-3)) {
+                result.mask |= PRIME_TEST_FAILURE_VALUE;
+            }
+            if (stableReconstruction
+                    && !primeTestClose(
+                            result.first.pdf,
+                            result.sampledEvaluation.pdf,
+                            3.0e-6,
+                            2.0e-3)) {
+                result.mask |= PRIME_TEST_FAILURE_PDF;
+            }
         }
-        result.probeEvaluation = primeEvaluateMinecraftTransmissionBranch(
+        result.probeEvaluation = primeEvaluateMinecraftTransparentReflection(
                 baseColor,
                 opacity,
                 outwardNormal,

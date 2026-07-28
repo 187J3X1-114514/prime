@@ -12,9 +12,10 @@
 #include "common.glsl"
 #include "atmosphere_rt.glsl"
 #include "nrd_common.glsl"
+#include "shadow_payload.glsl"
 
 layout(location = 0) rayPayloadEXT TracePayload primePayload;
-layout(location = 1) rayPayloadEXT uint primeShadowHitDistanceBits;
+layout(location = 1) rayPayloadEXT PrimeShadowPayload primeShadowPayload;
 
 #include "sampling.glsl"
 #include "bsdf.glsl"
@@ -121,10 +122,6 @@ void primeInitializeTransparentWavefront(
                     preparedSample,
                     PRIME_SAMPLE_EFFECT_SCATTER_BSDF,
                     PRIME_SAMPLE_DIMENSION_PRIMARY),
-            primeSobolSample3D(
-                    preparedSample,
-                    PRIME_SAMPLE_EFFECT_SCATTER_BSDF,
-                    PRIME_SAMPLE_DIMENSION_SECONDARY),
             surface.t,
             volumeStack);
     PrimeDenoiseAlbedos albedos = primarySample.albedos;
@@ -223,13 +220,14 @@ void primeInitializeTransparentWavefront(
 
         PathState branchPath = path;
         branchPath.sampleDimension = transmissionBranch ? 1u : 0u;
+        bool branchPureDelta = transmissionBranch || pureDeltaInterface;
         bool continuation = hasScatter
                 && primeAdvancePath(
                         branchPath,
                         surface,
                         bsdf,
                         preparedSample,
-                        pureDeltaInterface);
+                        branchPureDelta);
         if (continuation) {
             branchPath.bounce = path.bounce + 1u;
             continuation = branchPath.bounce < maximumBounces;

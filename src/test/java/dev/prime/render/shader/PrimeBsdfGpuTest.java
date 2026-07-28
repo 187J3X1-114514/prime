@@ -173,7 +173,7 @@ final class PrimeBsdfGpuTest {
         if (kind == 1 || kind == 3) {
             flags |= PrimitivePacking.FLAG_TRANSMISSIVE;
             if ((localCase & 8) != 0) flags |= PrimitivePacking.FLAG_WATER;
-            if (kind == 1 && (localCase & 16) != 0) {
+            if ((localCase & 16) != 0) {
                 flags |= PrimitivePacking.FLAG_THIN_WALLED;
                 flags &= ~PrimitivePacking.FLAG_WATER;
             }

@@ -6,10 +6,8 @@ void main() {
     SectionRecord section = primeSection();
     PrimitiveRecord primitive = primePrimitive(section);
     if (primeMaterialIsTransmissive(primePrimitiveFlags(primitive))) {
-        // A transmission surface is a real path vertex, not alpha coverage. In particular, a
-        // straight NEE shadow segment must not silently pass through another refractive boundary:
-        // that would omit its Fresnel/refraction terms and create biased light leaks. Accept the
-        // intersection for both radiance and shadow rays; only cutout coverage may be ignored.
+        // Radiance rays keep transparent geometry as explicit path vertices. Shadow rays use
+        // shadow.rahit instead, where straight glass and water transmission are accumulated.
         return;
     }
     vec3 normal = primeUnpackOctahedralNormal(primitive.normal);

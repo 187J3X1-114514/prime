@@ -71,7 +71,7 @@ public final class ScreenshotFrameExecutor {
                     commandBuffer, this.imageInitialization);
             this.context.device().instance().debug().beginDebugGroup(
                     commandBuffer,
-                    () -> "Prime unbiased screenshot accumulation");
+                    () -> "Prime raw-model screenshot accumulation");
             atmosphereFrame = atmosphere.prepare(
                     commandBuffer,
                     plan.integrator().camera(),

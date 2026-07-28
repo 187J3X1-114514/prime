@@ -3,7 +3,7 @@
   "prime.options.path_tracing": "Prime 路径追踪",
   "prime.options.path_tracing.tooltip": "在原版光栅化渲染和 Prime 路径追踪之间切换。切换在下一帧边界安全停止或重新创建整套 Prime GPU 管线，可当作不退出游戏的渲染器重启；使用原版时不会保留或运行 Prime 的路径追踪、降噪和超分资源。",
   "prime.options.screenshot_mode": "参考累积截图（临时）",
-  "prime.options.screenshot_mode.tooltip": "冻结当前相机、太阳、地形和方块动画，以原生分辨率执行无偏路径追踪累积。此模式完全旁路 DLSS RR、NRD、FSR 和所有实时调试覆盖层，画面会从噪点逐渐收敛。按 Ctrl+Alt+F2 可进入或退出，普通 F2 截图不受影响；按 Esc 只会退出，不会进入。该选项仅对本次游戏会话生效。",
+  "prime.options.screenshot_mode.tooltip": "冻结当前相机、太阳、地形和方块动画，以原生分辨率累积 Prime 当前有限反弹材质模型的原始路径估计。此模式完全旁路 DLSS RR、NRD、FSR 和所有实时调试覆盖层，画面会从噪点逐渐收敛。按 Ctrl+Alt+F2 可进入或退出，普通 F2 截图不受影响；按 Esc 只会退出，不会进入。该选项仅对本次游戏会话生效。",
   "prime.options.fsr.quality": "FSR 超分辨率",
   "prime.options.fsr.quality.tooltip": "FSR（FidelityFX Super Resolution）先以较低分辨率进行路径追踪，再放大到窗口分辨率。质量越高，远处细节越清晰；性能越高，帧率通常越高。4K 显示器建议从“质量”开始，帧率不足时再降低。",
   "prime.options.fsr.quality.native_aa": "原生抗锯齿（100%）",

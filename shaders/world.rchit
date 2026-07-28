@@ -40,7 +40,7 @@ void main() {
             primitive, primeInterpolateUv(section, primitive), textureLodValue);
     primePayload.t = gl_HitTEXT;
     // Keep the authored outward normal. Opaque shading orients it at the integrator boundary,
-    // while transmissive BSDFs require its sign to distinguish entering from exiting a medium.
+    // while transparent reflection and the water stack require its authored outward sign.
     primePayload.geometricNormal = normal;
     primePayload.baseColor = primeVisualizesTriangles()
             ? mix(material.baseColor, primeTriangleDebugColor(primitive), 0.5)

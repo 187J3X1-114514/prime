@@ -43,12 +43,8 @@ final class NrdInputSemanticValidatorTest {
     void acceptsInactivePayloadsAndTransportedBitPatterns() {
         RenderReplayCapture source = capture(false, false);
         int[] raw = source.rawWavefront().words();
-        set(
-                raw,
-                RenderStageSchema.RAW_WAVEFRONT,
-                "primary.material",
-                3,
-                1.0F);
+        int[] prepared = source.preparedNrd().words();
+        setStaticPrimarySurface(raw, prepared);
         set(
                 raw,
                 RenderStageSchema.RAW_WAVEFRONT,
@@ -77,10 +73,16 @@ final class NrdInputSemanticValidatorTest {
                         1,
                         1,
                         raw),
-                source.preparedNrd(),
+                new CapturedRenderStage(
+                        RenderStageSchema.PREPARED_NRD,
+                        1,
+                        1,
+                        prepared),
                 source.postNrd());
 
-        assertTrue(NrdInputSemanticValidator.validate(valid).valid());
+        NrdInputSemanticValidator.Report report =
+                NrdInputSemanticValidator.validate(valid);
+        assertTrue(report.valid(), report::toString);
     }
 
     @Test
@@ -194,12 +196,7 @@ final class NrdInputSemanticValidatorTest {
         RenderReplayCapture source = capture(false, false);
         int[] raw = source.rawWavefront().words();
         int[] prepared = source.preparedNrd().words();
-        set(
-                raw,
-                RenderStageSchema.RAW_WAVEFRONT,
-                "primary.material",
-                3,
-                1.0F);
+        setStaticPrimarySurface(raw, prepared);
         set(
                 prepared,
                 RenderStageSchema.PREPARED_NRD,
@@ -229,9 +226,9 @@ final class NrdInputSemanticValidatorTest {
                         prepared),
                 source.postNrd());
 
-        assertTrue(
-                NrdInputSemanticValidator.validate(
-                        signedChroma).valid());
+        NrdInputSemanticValidator.Report report =
+                NrdInputSemanticValidator.validate(signedChroma);
+        assertTrue(report.valid(), report::toString);
     }
 
     @Test
@@ -424,6 +421,15 @@ final class NrdInputSemanticValidatorTest {
             float value) {
         words[schema.signalIndex(signal) * 4 + channel] =
                 Float.floatToRawIntBits(value);
+    }
+
+    private static void setStaticPrimarySurface(
+            int[] raw, int[] prepared) {
+        set(raw, RenderStageSchema.RAW_WAVEFRONT, "primary.material", 3, 1.0F);
+        set(raw, RenderStageSchema.RAW_WAVEFRONT, "primary.position", 2, -1.0F);
+        set(raw, RenderStageSchema.RAW_WAVEFRONT, "display.position", 2, -1.0F);
+        set(prepared, RenderStageSchema.PREPARED_NRD, "primary.view_z", 0, 1.0F);
+        set(prepared, RenderStageSchema.PREPARED_NRD, "fsr.depth", 0, 0.05F);
     }
 
     static NrdPreparationReplayInput preparation(

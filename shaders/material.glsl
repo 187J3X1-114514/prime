@@ -5,6 +5,7 @@
 #include "default_material.glsl"
 #include "labpbr.glsl"
 #include "material_translation.glsl"
+#include "transparent_material.glsl"
 
 // Minimal Minecraft adapter. The integrator consumes only this result, so future material
 // models can replace atlas/tint decoding without changing path scheduling or traversal.

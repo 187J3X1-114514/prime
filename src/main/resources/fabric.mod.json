@@ -3,7 +3,7 @@
   "id": "prime",
   "version": "${version}",
   "name": "Prime",
-  "description": "A Vulkan hardware ray tracing shader mod for developing an unbiased path tracing renderer for Minecraft.",
+  "description": "A Vulkan hardware ray tracing shader mod for developing a path tracing renderer for Minecraft.",
   "authors": [
     "linlin"
   ],

@@ -3,6 +3,7 @@
 
 #include "prime_test_abi.glsl"
 #include "transport_math.glsl"
+#include "transparent_material.glsl"
 
 const uint PRIME_TRANSPORT_INPUT_WORDS = 3u;
 const uint PRIME_TRANSPORT_WITNESS_WORDS = 7u;
@@ -118,6 +119,85 @@ void primeCheckAreaPdf(
     result.first = vec4(value, rescaled, areaPdf, cosine);
 }
 
+void primeCheckGlassFilter(
+        inout PrimeTransportResult result, vec3 baseColor, float opacity) {
+    vec3 transmittance = primeGlassSurfaceTransmittance(baseColor, opacity);
+    vec3 clear = primeGlassSurfaceTransmittance(baseColor, 0.0);
+    vec3 solid = primeGlassSurfaceTransmittance(baseColor, 1.0);
+    vec3 twice = transmittance * transmittance;
+    primeTransportClassify(result.mask, transmittance);
+    primeTransportClassify(result.mask, twice);
+    if (any(lessThan(transmittance, vec3(0.0)))
+            || any(greaterThan(transmittance, vec3(1.0)))
+            || !primeTestClose(clear, vec3(1.0), 0.0, 0.0)
+            || !primeTestClose(
+                    solid,
+                    clamp(baseColor, vec3(0.0), vec3(1.0)),
+                    0.0,
+                    0.0)
+            || any(greaterThan(twice, transmittance))) {
+        result.mask |= PRIME_TEST_FAILURE_IDENTITY;
+    }
+    result.first = vec4(transmittance, opacity);
+    result.second = vec4(twice, 0.0);
+    result.third = vec4(clear, 0.0);
+}
+
+void primeCheckShadowWaterDistance(
+        inout PrimeTransportResult result,
+        vec4 first,
+        vec4 second) {
+    float rayDistance = max(abs(first.x), 1.0e-6);
+    float firstHit = clamp(first.y, 0.0, rayDistance);
+    float secondHit = clamp(first.z, firstHit, rayDistance);
+    float thirdHit = clamp(first.w, secondHit, rayDistance);
+    float fourthHit = clamp(second.x, thirdHit, rayDistance);
+    float forward = primeShadowWaterBoundaryDistance(
+            0.0, rayDistance, firstHit, true);
+    forward = primeShadowWaterBoundaryDistance(
+            forward, rayDistance, secondHit, false);
+    forward = primeShadowWaterBoundaryDistance(
+            forward, rayDistance, thirdHit, true);
+    forward = primeShadowWaterBoundaryDistance(
+            forward, rayDistance, fourthHit, false);
+    float reverse = primeShadowWaterBoundaryDistance(
+            0.0, rayDistance, fourthHit, false);
+    reverse = primeShadowWaterBoundaryDistance(
+            reverse, rayDistance, thirdHit, true);
+    reverse = primeShadowWaterBoundaryDistance(
+            reverse, rayDistance, secondHit, false);
+    reverse = primeShadowWaterBoundaryDistance(
+            reverse, rayDistance, firstHit, true);
+    float inside = primeShadowWaterBoundaryDistance(
+            rayDistance, rayDistance, firstHit, false);
+    inside = primeShadowWaterBoundaryDistance(
+            inside, rayDistance, secondHit, true);
+    inside = primeShadowWaterBoundaryDistance(
+            inside, rayDistance, thirdHit, false);
+    forward = primeShadowWaterDistance(forward, rayDistance);
+    reverse = primeShadowWaterDistance(reverse, rayDistance);
+    inside = primeShadowWaterDistance(inside, rayDistance);
+    vec3 transmittance = exp(-PRIME_PURE_WATER_ABSORPTION_M_INV * forward);
+    float expectedOutside =
+            (secondHit - firstHit) + (fourthHit - thirdHit);
+    float expectedInside = firstHit + (thirdHit - secondHit);
+    float distanceTolerance = 2.0e-6 + 1.0e-6 * rayDistance;
+    primeTransportClassify(result.mask, vec3(forward, reverse, inside));
+    primeTransportClassify(result.mask, transmittance);
+    if (!primeTestClose(forward, expectedOutside, distanceTolerance, 2.0e-6)
+            || !primeTestClose(forward, reverse, distanceTolerance, 2.0e-6)
+            || !primeTestClose(inside, expectedInside, distanceTolerance, 2.0e-6)
+            || primeShadowWaterDistance(-rayDistance, rayDistance) != 0.0
+            || primeShadowWaterDistance(2.0 * rayDistance, rayDistance) != rayDistance
+            || any(lessThan(transmittance, vec3(0.0)))
+            || any(greaterThan(transmittance, vec3(1.0)))) {
+        result.mask |= PRIME_TEST_FAILURE_IDENTITY;
+    }
+    result.first = vec4(forward, reverse, inside, rayDistance);
+    result.second = vec4(transmittance, 0.0);
+    result.third = vec4(expectedOutside, expectedInside, distanceTolerance, 0.0);
+}
+
 void main() {
     uint caseIndex;
     if (!primeTestBegin(caseIndex)) return;
@@ -142,6 +222,10 @@ void main() {
         primeCheckRoulette(result, first.xyz, first.w);
     } else if (kind == 4u) {
         primeCheckAreaPdf(result, first.x, first.y, first.z);
+    } else if (kind == 5u) {
+        primeCheckGlassFilter(result, first.xyz, first.w);
+    } else if (kind == 6u) {
+        primeCheckShadowWaterDistance(result, first, second);
     } else {
         result.mask |= PRIME_TEST_FAILURE_EVENT;
     }

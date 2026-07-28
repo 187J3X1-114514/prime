@@ -2,11 +2,32 @@ package dev.prime.render.vulkan;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.io.IOException;
+import java.io.InputStream;
+import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import org.junit.jupiter.api.Test;
 import org.lwjgl.vulkan.KHRRayTracingPipeline;
 
 final class RayTracingPipelineContractTest {
+    private static final int SPIRV_OP_TYPE_INT = 21;
+    private static final int SPIRV_OP_TYPE_FLOAT = 22;
+    private static final int SPIRV_OP_TYPE_VECTOR = 23;
+    private static final int SPIRV_OP_TYPE_STRUCT = 30;
+    private static final int SPIRV_OP_TYPE_POINTER = 32;
+    private static final int SPIRV_OP_VARIABLE = 59;
+    private static final int SPIRV_STORAGE_RAY_PAYLOAD = 5338;
+    private static final int SPIRV_STORAGE_INCOMING_RAY_PAYLOAD = 5342;
+
     @Test
     void blockAtlasIsVisibleToEveryShaderStageThatSamplesIt() {
         int expected = KHRRayTracingPipeline.VK_SHADER_STAGE_RAYGEN_BIT_KHR
@@ -41,6 +62,8 @@ final class RayTracingPipelineContractTest {
         assertEquals(9, RayTracingPipeline.RAYGEN_GROUP_COUNT);
         assertEquals(4, RayTracingPipeline.RAYGEN_MODULE_COUNT);
         assertEquals(4, RayTracingPipeline.RAYGEN_SHADER_STAGE_COUNT);
+        assertEquals(6, RayTracingPipeline.FIXED_SHADER_MODULE_COUNT);
+        assertEquals(2, RayTracingPipeline.ANY_HIT_SHADER_STAGE_COUNT);
         assertEquals(11, RayTracingPipeline.WAVEFRONT_STEP_DISPATCH_COUNT);
         assertEquals(15, RayTracingPipeline.WAVEFRONT_DISPATCH_COUNT);
         assertEquals(3, RayTracingPipeline.raygenShaderStage(0));
@@ -67,6 +90,40 @@ final class RayTracingPipelineContractTest {
         assertEquals(5, RayTracingPipeline.wavefrontTransitionGroup(1));
         assertEquals(6, RayTracingPipeline.wavefrontTailGroup(0));
         assertEquals(7, RayTracingPipeline.wavefrontTailGroup(1));
+    }
+
+    @Test
+    void optimizedRayTracingModulesPreservePayloadAbi() throws IOException {
+        String tracePayload = "struct(vec3(f32),f32,vec3(f32),"
+                + "u32,u32,u32,u32,u32,u32,u32,u32,u32)";
+        String shadowPayload = "struct(vec3(f32),f32,f32)";
+
+        for (String shader : List.of(
+                "world.rmiss.spv",
+                "world.rchit.spv")) {
+            assertEquals(
+                    Set.of(tracePayload),
+                    payloadShapes(shader, SPIRV_STORAGE_INCOMING_RAY_PAYLOAD));
+        }
+        for (String shader : List.of(
+                "shadow.rmiss.spv",
+                "shadow.rchit.spv",
+                "shadow.rahit.spv")) {
+            assertEquals(
+                    Set.of(shadowPayload),
+                    payloadShapes(shader, SPIRV_STORAGE_INCOMING_RAY_PAYLOAD));
+        }
+        for (String shader : List.of(
+                "wavefront_head.rgen.spv",
+                "wavefront_step.rgen.spv",
+                "wavefront_tail.rgen.spv",
+                "wavefront_head_ser.rgen.spv",
+                "wavefront_step_ser.rgen.spv",
+                "wavefront_tail_ser.rgen.spv")) {
+            Set<String> payloads = payloadShapes(shader, SPIRV_STORAGE_RAY_PAYLOAD);
+            assertTrue(payloads.contains(tracePayload), shader);
+            assertTrue(payloads.contains(shadowPayload), shader);
+        }
     }
 
     @Test
@@ -106,4 +163,107 @@ final class RayTracingPipelineContractTest {
         assertEquals(32, RayTracingPipeline.deferredWorkerCount(-1, 32));
         assertEquals(1, RayTracingPipeline.deferredWorkerCount(8, 0));
     }
+
+    private static Set<String> payloadShapes(
+            String shader, int storageClass) throws IOException {
+        String resource = "/prime/shaders/" + shader;
+        byte[] bytes;
+        try (InputStream input =
+                RayTracingPipelineContractTest.class.getResourceAsStream(resource)) {
+            if (input == null) {
+                throw new IllegalArgumentException(
+                        "Missing compiled shader resource " + resource);
+            }
+            bytes = input.readAllBytes();
+        }
+        if ((bytes.length & 3) != 0) {
+            throw new IllegalArgumentException("Malformed SPIR-V byte length");
+        }
+        int[] words = new int[bytes.length / Integer.BYTES];
+        ByteBuffer.wrap(bytes)
+                .order(ByteOrder.LITTLE_ENDIAN)
+                .asIntBuffer()
+                .get(words);
+        if (words.length < 5 || words[0] != 0x0723_0203) {
+            throw new IllegalArgumentException("Malformed SPIR-V header");
+        }
+
+        Map<Integer, SpirvType> types = new HashMap<>();
+        List<SpirvVariable> variables = new ArrayList<>();
+        for (int offset = 5; offset < words.length; ) {
+            int instruction = words[offset];
+            int wordCount = instruction >>> 16;
+            int opcode = instruction & 0xffff;
+            if (wordCount <= 0 || offset + wordCount > words.length) {
+                throw new IllegalArgumentException("Malformed SPIR-V instruction");
+            }
+            if (opcode == SPIRV_OP_TYPE_INT
+                    || opcode == SPIRV_OP_TYPE_FLOAT
+                    || opcode == SPIRV_OP_TYPE_VECTOR
+                    || opcode == SPIRV_OP_TYPE_STRUCT
+                    || opcode == SPIRV_OP_TYPE_POINTER) {
+                types.put(
+                        words[offset + 1],
+                        new SpirvType(
+                                opcode,
+                                Arrays.copyOfRange(
+                                        words,
+                                        offset + 2,
+                                        offset + wordCount)));
+            } else if (opcode == SPIRV_OP_VARIABLE) {
+                variables.add(new SpirvVariable(
+                        words[offset + 1],
+                        words[offset + 3]));
+            }
+            offset += wordCount;
+        }
+
+        Set<String> result = new HashSet<>();
+        for (SpirvVariable variable : variables) {
+            if (variable.storageClass() != storageClass) {
+                continue;
+            }
+            SpirvType pointer = requireType(types, variable.type());
+            if (pointer.opcode() != SPIRV_OP_TYPE_POINTER
+                    || pointer.operands()[0] != storageClass) {
+                throw new IllegalArgumentException("Malformed SPIR-V payload pointer");
+            }
+            result.add(typeShape(types, pointer.operands()[1]));
+        }
+        return result;
+    }
+
+    private static String typeShape(
+            Map<Integer, SpirvType> types, int identifier) {
+        SpirvType type = requireType(types, identifier);
+        return switch (type.opcode()) {
+            case SPIRV_OP_TYPE_INT ->
+                    (type.operands()[1] == 0 ? "u" : "i") + type.operands()[0];
+            case SPIRV_OP_TYPE_FLOAT -> "f" + type.operands()[0];
+            case SPIRV_OP_TYPE_VECTOR -> "vec" + type.operands()[1]
+                    + "(" + typeShape(types, type.operands()[0]) + ")";
+            case SPIRV_OP_TYPE_STRUCT -> "struct("
+                    + Arrays.stream(type.operands())
+                            .mapToObj(member -> typeShape(types, member))
+                            .reduce((left, right) -> left + "," + right)
+                            .orElse("")
+                    + ")";
+            default -> throw new IllegalArgumentException(
+                    "Unsupported SPIR-V payload type opcode " + type.opcode());
+        };
+    }
+
+    private static SpirvType requireType(
+            Map<Integer, SpirvType> types, int identifier) {
+        SpirvType type = types.get(identifier);
+        if (type == null) {
+            throw new IllegalArgumentException(
+                    "Missing SPIR-V type " + Integer.toUnsignedString(identifier));
+        }
+        return type;
+    }
+
+    private record SpirvType(int opcode, int[] operands) {}
+
+    private record SpirvVariable(int type, int storageClass) {}
 }

@@ -72,7 +72,7 @@ struct PrimeTransparentBranchResult {
     bool directionalGuide;
 };
 
-// Bookkeeping that maps a complete physical path into the signal/guide contract. Keeping it in a
+// Bookkeeping that maps a complete model path into the signal/guide contract. Keeping it in a
 // named state object makes the estimator loop independent of any particular NRD or NGX resource.
 struct PrimeDenoiserState {
     bool hasPrimarySurface;
@@ -295,8 +295,20 @@ float primeSurfaceLinearRoughness(SurfaceInteraction surface) {
     return primeMaterialLinearRoughness(surface.materialFlags);
 }
 
-float primeTraceShadowHitDistance(vec3 physicalPosition, vec3 normal, LightSample light) {
-    primeShadowHitDistanceBits = floatBitsToUint(0.0);
+struct PrimeShadowTrace {
+    vec3 transmittance;
+    float hitDistance;
+};
+
+PrimeShadowTrace primeTraceShadow(
+        vec3 physicalPosition,
+        vec3 normal,
+        LightSample light,
+        PrimeRcVolumeStack volumeStack) {
+    primeShadowPayload.transmittance = vec3(1.0);
+    primeShadowPayload.waterDistance =
+            volumeStack.count > 0u ? light.distance : 0.0;
+    primeShadowPayload.hitDistance = 0.0;
     vec3 traceOrigin = primeOffsetRayOrigin(physicalPosition, normal, light.direction);
     traceRayEXT(
             primeScene,
@@ -310,11 +322,18 @@ float primeTraceShadowHitDistance(vec3 physicalPosition, vec3 normal, LightSampl
             light.direction,
             light.distance,
             1);
-    return primeNrdSanitizeHitDistance(uintBitsToFloat(primeShadowHitDistanceBits));
-}
-
-bool primeVisible(vec3 physicalPosition, vec3 normal, LightSample light) {
-    return primeTraceShadowHitDistance(physicalPosition, normal, light) >= PRIME_NRD_FP16_MAX;
+    float waterDistance = primeShadowWaterDistance(
+            primeShadowPayload.waterDistance, light.distance);
+    PrimeShadowTrace result;
+    result.transmittance = clamp(
+            primeShadowPayload.transmittance
+                    * exp(-PRIME_PURE_WATER_ABSORPTION_M_INV * waterDistance),
+            vec3(0.0),
+            vec3(1.0));
+    result.hitDistance = primeNrdSanitizeHitDistance(
+            primeShadowPayload.hitDistance);
+    primeRecordUnit(result.transmittance);
+    return result;
 }
 
 PrimeDirectLightingSplit primeEvaluateVisibleDirectSplit(
@@ -339,46 +358,30 @@ PrimeDirectLightingSplit primeEvaluateVisibleDirectSplit(
         return result;
     }
     if (transmissive) {
-        // Segment attenuation is owned by the path's active medium before this vertex. Direct
-        // evaluation describes only the current interface, hence rayT=0 here.
         vec3 outwardNormal = primeSurfaceOutwardShadingNormal(surface);
-        BsdfEvaluation evaluation = conditionalTransparentBranch
-                ? primeEvaluateMinecraftTransmissionBranch(
-                        surface.baseColor,
-                        primeSurfaceOpacity(surface),
-                        outwardNormal,
-                        surface.materialFlags,
-                        surface.labPbrNormal,
-                        surface.labPbrSpecular,
-                        viewDirection,
-                        light.direction,
-                        0.0,
-                        volumeStack)
-                : primeEvaluateMinecraftTransmission(
-                        surface.baseColor,
-                        primeSurfaceOpacity(surface),
-                        outwardNormal,
-                        surface.materialFlags,
-                        surface.labPbrNormal,
-                        surface.labPbrSpecular,
-                        viewDirection,
-                        light.direction,
-                        0.0,
-                        volumeStack);
+        bool reflection = dot(outwardNormal, viewDirection)
+                * dot(outwardNormal, light.direction) >= 0.0;
+        // Only the primary transparent reflection has finite support. Straight transmission is a
+        // delta event, and every later transparent vertex is deterministic delta transmission.
+        if (!conditionalTransparentBranch || !reflection) {
+            return result;
+        }
+        BsdfEvaluation evaluation = primeEvaluateMinecraftTransparentReflection(
+                surface.baseColor,
+                primeSurfaceOpacity(surface),
+                outwardNormal,
+                surface.materialFlags,
+                surface.labPbrNormal,
+                surface.labPbrSpecular,
+                viewDirection,
+                light.direction,
+                0.0,
+                volumeStack);
         float weightedInversePdf = primePowerHeuristicOverPdf(
                 light.pdf, evaluation.pdf);
         vec3 contribution = primeTripleProduct(
                 lightRadiance, evaluation.response, weightedInversePdf);
-        bool reflection = dot(outwardNormal, viewDirection)
-                * dot(outwardNormal, light.direction) >= 0.0;
-        // At a transparent primary surface the two NRD lanes are transmission and reflection.
-        // The same split also lets RR derive Color Before Transparency from the actual
-        // transmission estimate without another guide ray.
-        if (reflection) {
-            result.specular = contribution;
-        } else {
-            result.diffuse = contribution;
-        }
+        result.specular = contribution;
         return result;
     }
     if (foliage) {
@@ -432,14 +435,6 @@ bool primeDirectSampleEligible(
                     || dot(shadingNormal, light.direction) > 0.0);
 }
 
-bool primeDirectSampleVisible(
-        SurfaceInteraction surface,
-        vec3 shadingNormal,
-        LightSample light) {
-    return primeDirectSampleEligible(surface, shadingNormal, light)
-            && primeVisible(surface.position, surface.geometricNormal, light);
-}
-
 struct PrimePrimarySunSample {
     PrimeDirectLightingSplit lighting;
     float penumbra;
@@ -474,12 +469,12 @@ PrimePrimarySunSample primeEstimatePrimaryDirectSun(
     if (!primeDirectSampleEligible(surface, shadingNormal, light)) {
         return result;
     }
-    float shadowHitDistance = primeTraceShadowHitDistance(
-            surface.position, surface.geometricNormal, light);
-    result.penumbra = primeSigmaPackDirectionalPenumbra(shadowHitDistance);
-    result.visibility = float(shadowHitDistance >= PRIME_NRD_FP16_MAX);
+    PrimeShadowTrace shadow = primeTraceShadow(
+            surface.position, surface.geometricNormal, light, volumeStack);
+    result.penumbra = primeSigmaPackDirectionalPenumbra(shadow.hitDistance);
+    result.visibility = float(shadow.hitDistance >= PRIME_NRD_FP16_MAX);
     vec3 radiance = primeResolveSampledSunRadiance(
-            integrator, surface.position, light);
+            integrator, surface.position, light) * shadow.transmittance;
     result.lighting = primeEvaluateVisibleDirectSplit(
             surface,
             viewDirection,
@@ -501,14 +496,24 @@ PrimeDirectLightingSplit primeEstimatePrimaryDirectAreaLight(
     AreaLightSample area = primeSampleAreaLight(
             surface.position, treeSample, positionSample);
     vec3 shadingNormal = primeSurfaceShadingNormal(surface, viewDirection);
-    if (!primeDirectSampleVisible(surface, shadingNormal, area.light)) {
+    if (!primeDirectSampleEligible(surface, shadingNormal, area.light)) {
         PrimeDirectLightingSplit result;
         result.diffuse = vec3(0.0);
         result.specular = vec3(0.0);
         result.direction = vec3(0.0);
         return result;
     }
-    vec3 radiance = primeResolveSampledAreaLightRadiance(area);
+    PrimeShadowTrace shadow = primeTraceShadow(
+            surface.position, surface.geometricNormal, area.light, volumeStack);
+    if (shadow.hitDistance < PRIME_NRD_FP16_MAX) {
+        PrimeDirectLightingSplit result;
+        result.diffuse = vec3(0.0);
+        result.specular = vec3(0.0);
+        result.direction = vec3(0.0);
+        return result;
+    }
+    vec3 radiance =
+            primeResolveSampledAreaLightRadiance(area) * shadow.transmittance;
     return primeEvaluateVisibleDirectSplit(
             surface,
             viewDirection,
@@ -527,11 +532,16 @@ vec3 primeEstimateDirectSun(
         PrimeRcVolumeStack volumeStack) {
     LightSample light = primeSampleSun(integrator, surface.position, sampleValue);
     vec3 shadingNormal = primeSurfaceShadingNormal(surface, viewDirection);
-    if (!primeDirectSampleVisible(surface, shadingNormal, light)) {
+    if (!primeDirectSampleEligible(surface, shadingNormal, light)) {
+        return vec3(0.0);
+    }
+    PrimeShadowTrace shadow = primeTraceShadow(
+            surface.position, surface.geometricNormal, light, volumeStack);
+    if (shadow.hitDistance < PRIME_NRD_FP16_MAX) {
         return vec3(0.0);
     }
     vec3 radiance = primeResolveSampledSunRadiance(
-            integrator, surface.position, light);
+            integrator, surface.position, light) * shadow.transmittance;
     PrimeDirectLightingSplit split = primeEvaluateVisibleDirectSplit(
             surface,
             viewDirection,
@@ -552,10 +562,16 @@ vec3 primeEstimateDirectAreaLight(
     AreaLightSample area = primeSampleAreaLight(
             surface.position, treeSample, positionSample);
     vec3 shadingNormal = primeSurfaceShadingNormal(surface, viewDirection);
-    if (!primeDirectSampleVisible(surface, shadingNormal, area.light)) {
+    if (!primeDirectSampleEligible(surface, shadingNormal, area.light)) {
         return vec3(0.0);
     }
-    vec3 radiance = primeResolveSampledAreaLightRadiance(area);
+    PrimeShadowTrace shadow = primeTraceShadow(
+            surface.position, surface.geometricNormal, area.light, volumeStack);
+    if (shadow.hitDistance < PRIME_NRD_FP16_MAX) {
+        return vec3(0.0);
+    }
+    vec3 radiance =
+            primeResolveSampledAreaLightRadiance(area) * shadow.transmittance;
     PrimeDirectLightingSplit split = primeEvaluateVisibleDirectSplit(
             surface,
             viewDirection,
@@ -650,7 +666,7 @@ void primeAccumulateAfterPrimary(
 }
 
 // Realtime and screenshot rendering share this one complete path estimator. Keeping segment
-// attenuation, emitter MIS, BSDF dispatch and path advancement here prevents their physical rules
+// attenuation, emitter MIS, BSDF dispatch and path advancement here prevents their model rules
 // from drifting between the two modes.
 vec3 primeEvaluateEnvironmentContribution(
         PathState path, IntegratorRecord integrator) {
@@ -693,13 +709,6 @@ bool primeApplySegmentMedium(
     return !all(equal(path.throughput, vec3(0.0)));
 }
 
-bool primeIsPureDeltaInterface(SurfaceInteraction surface) {
-    if (!primeMaterialIsTransmissive(surface.materialFlags)) {
-        return false;
-    }
-    return primeSurfaceLinearRoughness(surface) == 0.0;
-}
-
 struct PrimePathScatter {
     BsdfSample bsdf;
     PrimeRcVolumeStack volumeStack;
@@ -737,11 +746,12 @@ PrimePathScatter primeSamplePathSurface(
                 surface.t,
                 volumeStack);
         PrimeTransmissiveBsdfSample transmitted =
-                primeSampleMinecraftTransmissionFromState(
+                primeSampleMinecraftTransparentContinuationFromState(
                         state,
-                        outwardNormal,
+                        surface.baseColor,
+                        primeSurfaceOpacity(surface),
+                        surface.materialFlags,
                         viewDirection,
-                        sampleValue,
                         volumeStack);
         result.bsdf = transmitted.bsdfSample;
         result.volumeStack = transmitted.volumeStack;
@@ -803,15 +813,20 @@ void primeSampleGuidedPathSurface(
                 viewDirection,
                 surface.t,
                 volumeStack);
-        albedos = primeDenoiseAlbedosFromState(
-                state, viewDirection, PRIME_DENOISE_CLOSURE_TRANSMISSIVE);
+        albedos.diffuse = primeSanitizeDenoiseAlbedo(
+                primeMinecraftSurfaceTransmittance(
+                        surface.baseColor,
+                        primeSurfaceOpacity(surface),
+                        surface.materialFlags));
+        albedos.specular = vec3(0.0);
         primeSetNumericalContext(PRIME_NUMERICAL_STAGE_BSDF_SAMPLE, bounce);
         PrimeTransmissiveBsdfSample transmitted =
-                primeSampleMinecraftTransmissionFromState(
+                primeSampleMinecraftTransparentContinuationFromState(
                         state,
-                        outwardNormal,
+                        surface.baseColor,
+                        primeSurfaceOpacity(surface),
+                        surface.materialFlags,
                         viewDirection,
-                        sampleValue,
                         volumeStack);
         scatter.bsdf = transmitted.bsdfSample;
         scatter.volumeStack = transmitted.volumeStack;
@@ -1035,7 +1050,7 @@ bool primeIntegrateTransparentWavefrontSurface(
     float surfaceLinearRoughness = (transmissive || !hasGuide)
             ? primeSurfaceLinearRoughness(surface)
             : PRIME_DEFAULT_REFERENCE_LINEAR_ROUGHNESS;
-    bool pureDeltaInterface = transmissive && surfaceLinearRoughness == 0.0;
+    bool pureDeltaInterface = transmissive;
     bool primarySurfaceReplacement =
             guideEnabled && !hasGuide && !pureDeltaInterface;
     bool contributionDiffuse = guideEnabled
@@ -1108,10 +1123,12 @@ bool primeIntegrateTransparentWavefrontSurface(
         }
     }
 
-    vec3 scatterSample = primeSobolSample3D(
-            preparedSample,
-            PRIME_SAMPLE_EFFECT_SCATTER_BSDF,
-            PRIME_SAMPLE_DIMENSION_PRIMARY);
+    vec3 scatterSample = pureDeltaInterface
+            ? vec3(0.0)
+            : primeSobolSample3D(
+                    preparedSample,
+                    PRIME_SAMPLE_EFFECT_SCATTER_BSDF,
+                    PRIME_SAMPLE_DIMENSION_PRIMARY);
     PrimePathScatter scatter;
     PrimeDenoiseAlbedos surfaceAlbedos;
     if (primarySurfaceReplacement) {
@@ -1205,7 +1222,7 @@ PrimeDenoiserState primeInitialDenoiserState() {
 }
 
 // Processes exactly one ordinary realtime path vertex. Primary transparent interfaces remain a
-// local island because their two physical branches and PSR records share one output pixel. Every
+// local island because their two material-model branches and PSR records share one output pixel. Every
 // other continuation can cross this boundary without carrying invocation-local BSDF state.
 bool primeIntegrateWavefrontSurface(
         inout PathState path,
@@ -1251,7 +1268,7 @@ bool primeIntegrateWavefrontSurface(
     vec3 viewDirection = -path.rayDirection;
     // Emission belongs to the sampling policy of the previous vertex. The last wavefront round
     // still resolves that one pending area-light MIS query, then marks its continuation so every
-    // vertex physically executed by the tail can use the radiance-only emitter path.
+    // vertex executed by the tail can use the radiance-only emitter path.
     {
         bool previousSkippedAreaNee =
                 (path.flags & PRIME_PATH_PREVIOUS_NO_AREA_NEE) != 0u;
@@ -1271,7 +1288,7 @@ bool primeIntegrateWavefrontSurface(
             (transmissive || !denoiserState.reachedNonDelta)
             ? primeSurfaceLinearRoughness(surface)
             : PRIME_DEFAULT_REFERENCE_LINEAR_ROUGHNESS;
-    bool pureDeltaInterface = transmissive && surfaceLinearRoughness == 0.0;
+    bool pureDeltaInterface = transmissive;
     PrimePreparedSampleBase preparedSample =
             primePrepareSampleBase(primeMakeSampleBase(path, path.bounce + 1u));
     if (!pureDeltaInterface) {
@@ -1335,10 +1352,12 @@ bool primeIntegrateWavefrontSurface(
         }
     }
 
-    vec3 scatterSample = primeSobolSample3D(
-            preparedSample,
-            PRIME_SAMPLE_EFFECT_SCATTER_BSDF,
-            PRIME_SAMPLE_DIMENSION_PRIMARY);
+    vec3 scatterSample = pureDeltaInterface
+            ? vec3(0.0)
+            : primeSobolSample3D(
+                    preparedSample,
+                    PRIME_SAMPLE_EFFECT_SCATTER_BSDF,
+                    PRIME_SAMPLE_DIMENSION_PRIMARY);
     PrimePathScatter scatter;
     PrimeDenoiseAlbedos surfaceAlbedos;
     if (!denoiserState.reachedNonDelta) {

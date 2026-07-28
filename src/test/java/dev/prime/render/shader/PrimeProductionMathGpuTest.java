@@ -3,6 +3,7 @@ package dev.prime.render.shader;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.file.Path;
+import java.util.Arrays;
 import java.util.SplittableRandom;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.Assumptions;
@@ -53,7 +54,7 @@ final class PrimeProductionMathGpuTest {
 
     @Test
     void integratorAndLightTransportMathKeepsItsNumericalContracts() throws IOException {
-        int kinds = 5;
+        int kinds = 7;
         int inputWords = 3;
         ShaderPropertyBatch.assertProperties(
                 runner,
@@ -199,6 +200,33 @@ final class PrimeProductionMathGpuTest {
                             random.nextFloat(),
                             random.nextFloat(),
                             random.nextFloat());
+                } else if (kind == 6) {
+                    float rayDistance = powerOfTwo(random.nextInt(-10, 13));
+                    float[] hits = {
+                        random.nextFloat() * rayDistance,
+                        random.nextFloat() * rayDistance,
+                        random.nextFloat() * rayDistance,
+                        random.nextFloat() * rayDistance
+                    };
+                    Arrays.sort(hits);
+                    putVec4(
+                            input,
+                            index,
+                            words,
+                            1,
+                            rayDistance,
+                            hits[0],
+                            hits[1],
+                            hits[2]);
+                    putVec4(
+                            input,
+                            index,
+                            words,
+                            2,
+                            hits[3],
+                            -rayDistance,
+                            2.0F * rayDistance,
+                            0.0F);
                 } else {
                     putVec4(
                             input,

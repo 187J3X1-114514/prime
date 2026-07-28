@@ -14,7 +14,7 @@ SectionRecord primeSection() {
 
 PrimitiveRecord primePrimitive(SectionRecord section) {
     // BLAS geometries and the primitive buffer share one semantic order:
-    // opaque, alpha-tested cutout, then physically transmissive. Opaque starts at zero, so the
+    // opaque, alpha-tested cutout, then transmissive. Opaque starts at zero, so the
     // two saved bases fit the existing 64-byte Section ABI without an otherwise-useless zero.
     uint base = gl_GeometryIndexEXT == 0
             ? 0u

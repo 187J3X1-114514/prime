@@ -1,0 +1,37 @@
+#version 460
+#extension GL_GOOGLE_include_directive : require
+
+#include "hit_common.glsl"
+#include "shadow_payload.glsl"
+
+layout(location = 1) rayPayloadInEXT PrimeShadowPayload primeShadowPayload;
+
+void main() {
+    SectionRecord section = primeSection();
+    PrimitiveRecord primitive = primePrimitive(section);
+    uint flags = primePrimitiveFlags(primitive);
+    if (!primeMaterialIsTransmissive(flags)) {
+        return;
+    }
+
+    vec3 outwardNormal = primeUnpackOctahedralNormal(primitive.normal);
+    if ((flags & PRIME_MATERIAL_FLAG_WATER) != 0u) {
+        bool entering = dot(outwardNormal, gl_WorldRayDirectionEXT) < 0.0;
+        primeShadowPayload.waterDistance = primeShadowWaterBoundaryDistance(
+                primeShadowPayload.waterDistance,
+                gl_RayTmaxEXT,
+                gl_HitTEXT,
+                entering);
+    } else {
+        float opacity;
+        float textureLodValue = primeRayConeTextureLod(primitive, outwardNormal);
+        vec3 baseColor = primeAtlasBaseColor(
+                primitive.tint,
+                primeInterpolateUv(section, primitive),
+                textureLodValue,
+                opacity);
+        primeShadowPayload.transmittance *=
+                primeGlassSurfaceTransmittance(baseColor, opacity);
+    }
+    ignoreIntersectionEXT;
+}

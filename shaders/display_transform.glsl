@@ -40,7 +40,7 @@ vec3 primeOklabToLinearBt709(vec3 color) {
 }
 
 float primeOklabEnhancedReinhard(float value, float overexposure) {
-    return overexposure * value / (1.0 + value);
+    return overexposure * value / (overexposure + value);
 }
 
 float primeOklabTonemapLightness(float lightness, float overexposure) {

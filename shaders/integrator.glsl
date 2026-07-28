@@ -361,7 +361,7 @@ PrimeDirectLightingSplit primeEvaluateVisibleDirectSplit(
         vec3 outwardNormal = primeSurfaceOutwardShadingNormal(surface);
         bool reflection = dot(outwardNormal, viewDirection)
                 * dot(outwardNormal, light.direction) >= 0.0;
-        // Only the primary transparent reflection has finite support. Straight transmission is a
+        // Only the primary transparent reflection has finite support. Refracted transmission is a
         // delta event, and every later transparent vertex is deterministic delta transmission.
         if (!conditionalTransparentBranch || !reflection) {
             return result;
@@ -751,6 +751,7 @@ PrimePathScatter primeSamplePathSurface(
                         surface.baseColor,
                         primeSurfaceOpacity(surface),
                         surface.materialFlags,
+                        outwardNormal,
                         viewDirection,
                         volumeStack);
         result.bsdf = transmitted.bsdfSample;
@@ -826,6 +827,7 @@ void primeSampleGuidedPathSurface(
                         surface.baseColor,
                         primeSurfaceOpacity(surface),
                         surface.materialFlags,
+                        outwardNormal,
                         viewDirection,
                         volumeStack);
         scatter.bsdf = transmitted.bsdfSample;

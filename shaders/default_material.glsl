@@ -45,7 +45,8 @@ float primeMaterialLinearRoughness(uint flags) {
         // their visually sharp interface as a tiny non-zero GGX lobe creates stochastic tail
         // samples and fireflies without representing any Minecraft material detail. Zero is a
         // material-model contract: the first transparent camera hit uses exact delta reflection,
-        // while its paired transmission branch and all later transparent hits stay straight.
+        // while its paired transmission branch and all later transparent hits refract
+        // deterministically.
         return 0.0;
     }
     return primeDefaultLinearRoughness();

@@ -42,13 +42,13 @@ the quadrature reference.
 
 `PrimeBsdfGpuTest` includes the production `bsdf.glsl` adapter, not only the
 protected reference fragments. It sweeps opaque, transmissive, foliage, and
-fixed primary-split entry points. It checks the first-interface straight
-direction and complementary Fresnel response, rough-reflection sample/eval/PDF
-consistency, random-independent transparent continuation, per-surface glass
-filtering, and water-only stack transitions. Rejected proposals must become
-Prime's canonical zero-event sample; every accepted public payload must be
-finite, nonnegative, directionally valid, and keep its volume-stack transition
-within the fixed ABI capacity.
+fixed primary-split entry points. It checks first-interface Snell direction,
+relative IOR and complementary Fresnel response, rough-reflection
+sample/eval/PDF consistency, random-independent deterministic refraction, TIR,
+per-surface glass filtering, and water-only stack transitions. Rejected
+proposals must become Prime's canonical zero-event sample; every accepted public
+payload must be finite, nonnegative, directionally valid, and keep its
+volume-stack transition within the fixed ABI capacity.
 
 `PrimeProductionMathGpuTest` includes the same small production fragments used
 by the renderer. Its concern-specific batches cover exponent-scaled throughput,

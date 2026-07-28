@@ -139,6 +139,72 @@ uint primeAdapterExpectedTransparentStackCount(
     return stack.count > 0u ? stack.count - 1u : 0u;
 }
 
+float primeAdapterExpectedInterfaceIor(
+        PrimeRcState state,
+        uint materialFlags,
+        PrimeRcVolumeStack stack) {
+    if ((materialFlags & PRIME_MATERIAL_FLAG_WATER) != 0u) {
+        return state.specularFresnel.ior;
+    }
+    float outsideIor = stack.count > 0u
+            ? stack.values[stack.count - 1u].ior
+            : 1.0;
+    return state.originalIor / outsideIor;
+}
+
+float primeAdapterExpectedRelativeIor(
+        PrimeRcState state,
+        uint materialFlags,
+        PrimeRcVolumeStack stack) {
+    float interfaceIor =
+            primeAdapterExpectedInterfaceIor(state, materialFlags, stack);
+    return state.entering != 0u ? interfaceIor : 1.0 / interfaceIor;
+}
+
+bool primeAdapterCanRefract(
+        PrimeRcState state,
+        uint materialFlags,
+        vec3 outwardNormal,
+        vec3 viewDirection,
+        PrimeRcVolumeStack stack) {
+    if (state.geometryThinWalled != 0u) return true;
+    float relativeIor =
+            primeAdapterExpectedRelativeIor(state, materialFlags, stack);
+    float cosine = dot(outwardNormal, viewDirection);
+    float sineSquared = max(0.0, 1.0 - cosine * cosine);
+    return 1.0 - sineSquared / (relativeIor * relativeIor) > 0.0;
+}
+
+vec3 primeAdapterExpectedRefraction(
+        PrimeRcState state,
+        uint materialFlags,
+        vec3 outwardNormal,
+        vec3 viewDirection,
+        PrimeRcVolumeStack stack) {
+    float relativeIor =
+            primeAdapterExpectedRelativeIor(state, materialFlags, stack);
+    vec3 interfaceNormal = state.entering != 0u
+            ? outwardNormal
+            : -outwardNormal;
+    return refract(-viewDirection, interfaceNormal, 1.0 / relativeIor);
+}
+
+bool primeAdapterSnellConsistent(
+        BsdfSample sampleValue,
+        vec3 outwardNormal,
+        vec3 viewDirection) {
+    float incidentSine = length(
+            viewDirection - dot(outwardNormal, viewDirection) * outwardNormal);
+    float transmittedSine = length(
+            sampleValue.direction
+                    - dot(outwardNormal, sampleValue.direction) * outwardNormal);
+    return primeTestClose(
+            incidentSine,
+            sampleValue.relativeEta * transmittedSine,
+            2.0e-5,
+            2.0e-5);
+}
+
 void primeAdapterCheckEvaluation(
         inout uint mask, BsdfEvaluation evaluation) {
     primeAdapterClassify(mask, evaluation.response);
@@ -374,18 +440,57 @@ void primeAdapterProperties(
                 baseColor, opacity, materialFlags);
         result.albedos.diffuse = transmittance;
         result.albedos.specular = vec3(0.0);
-        uint expectedEvents = PRIME_BSDF_EVENT_TRANSMISSION
-                | PRIME_BSDF_EVENT_DELTA;
+        bool thinWalled = state.geometryThinWalled != 0u;
+        bool canRefract = primeAdapterCanRefract(
+                state,
+                materialFlags,
+                outwardNormal,
+                viewDirection,
+                stack);
+        bool totalInternalReflection = !thinWalled && !canRefract;
+        uint expectedEvents = totalInternalReflection
+                ? PRIME_BSDF_EVENT_REFLECTION | PRIME_BSDF_EVENT_DELTA
+                : PRIME_BSDF_EVENT_TRANSMISSION | PRIME_BSDF_EVENT_DELTA;
+        vec3 expectedDirection = thinWalled
+                ? -viewDirection
+                : (totalInternalReflection
+                        ? reflect(-viewDirection, outwardNormal)
+                        : primeAdapterExpectedRefraction(
+                                state,
+                                materialFlags,
+                                outwardNormal,
+                                viewDirection,
+                                stack));
+        vec3 expectedResponse =
+                totalInternalReflection ? vec3(1.0) : transmittance;
+        float expectedRelativeIor = thinWalled || totalInternalReflection
+                ? 1.0
+                : primeAdapterExpectedRelativeIor(
+                        state, materialFlags, stack);
+        uint expectedStackCount = totalInternalReflection
+                ? stack.count
+                : primeAdapterExpectedTransparentStackCount(
+                        state, materialFlags, stack);
         if (!primeAdapterSameSample(result.first, repeated.bsdfSample)
                 || !primeAdapterSameStack(sampled.volumeStack, repeated.volumeStack)
-                || !all(equal(result.first.direction, -viewDirection))
-                || !all(equal(result.first.response, transmittance))
+                || !primeTestClose(
+                        result.first.direction,
+                        expectedDirection,
+                        2.0e-6,
+                        2.0e-6)
+                || !all(equal(result.first.response, expectedResponse))
                 || result.first.pdf != 1.0
-                || result.first.relativeEta != 1.0
+                || !primeTestClose(
+                        result.first.relativeEta,
+                        expectedRelativeIor,
+                        2.0e-6,
+                        2.0e-6)
                 || result.first.eventFlags != expectedEvents
-                || sampled.volumeStack.count
-                        != primeAdapterExpectedTransparentStackCount(
-                                state, materialFlags, stack)) {
+                || sampled.volumeStack.count != expectedStackCount
+                || (!thinWalled
+                        && !totalInternalReflection
+                        && !primeAdapterSnellConsistent(
+                                result.first, outwardNormal, viewDirection))) {
             result.mask |= PRIME_TEST_FAILURE_IDENTITY;
         }
     } else {
@@ -423,22 +528,86 @@ void primeAdapterProperties(
                 primeMinecraftMirrorSplit(state, localView);
         vec3 surfaceTransmittance = primeMinecraftSurfaceTransmittance(
                 baseColor, opacity, materialFlags);
-        uint expectedEvents = PRIME_BSDF_EVENT_TRANSMISSION
-                | PRIME_BSDF_EVENT_DELTA;
-        if (!all(equal(result.second.direction, -viewDirection))
-                || !all(equal(
-                        result.second.response,
-                        (vec3(1.0) - mirror.reflectance) * surfaceTransmittance))
-                || result.second.pdf != 1.0
-                || result.second.relativeEta != 1.0
-                || result.second.eventFlags != expectedEvents
+        PrimeTransmissivePrimarySample repeated =
+                primeSampleMinecraftTransmissionPrimary(
+                        baseColor,
+                        opacity,
+                        outwardNormal,
+                        materialFlags,
+                        packedNormal,
+                        packedSpecular,
+                        viewDirection,
+                        secondSample,
+                        rayT,
+                        stack);
+        bool thinWalled = state.geometryThinWalled != 0u;
+        bool canRefract = primeAdapterCanRefract(
+                state,
+                materialFlags,
+                outwardNormal,
+                viewDirection,
+                stack);
+        bool validTransmission = thinWalled || canRefract;
+        vec3 expectedDirection = thinWalled
+                ? -viewDirection
+                : primeAdapterExpectedRefraction(
+                        state,
+                        materialFlags,
+                        outwardNormal,
+                        viewDirection,
+                        stack);
+        float expectedRelativeIor = thinWalled
+                ? 1.0
+                : primeAdapterExpectedRelativeIor(
+                        state, materialFlags, stack);
+        uint expectedStackCount = primeAdapterExpectedTransparentStackCount(
+                state, materialFlags, stack);
+        if (!primeAdapterSameSample(
+                        result.second, repeated.paths.transmission.bsdfSample)
+                || !primeAdapterSameStack(
+                        sampled.paths.transmission.volumeStack,
+                        repeated.paths.transmission.volumeStack)
                 || !primeAdapterSameStack(
                         sampled.paths.reflection.volumeStack, stack)
-                || sampled.paths.transmission.volumeStack.count
-                        != primeAdapterExpectedTransparentStackCount(
-                                state, materialFlags, stack)
                 || !all(equal(result.albedos.diffuse, surfaceTransmittance))
                 || !all(equal(result.albedos.specular, mirror.reflectance))) {
+            result.mask |= PRIME_TEST_FAILURE_IDENTITY;
+        }
+        if (validTransmission) {
+            uint expectedEvents = PRIME_BSDF_EVENT_TRANSMISSION
+                    | PRIME_BSDF_EVENT_DELTA;
+            if (!primeTestClose(
+                            result.second.direction,
+                            expectedDirection,
+                            2.0e-6,
+                            2.0e-6)
+                    || !all(equal(
+                            result.second.response,
+                            (vec3(1.0) - mirror.reflectance)
+                                    * surfaceTransmittance))
+                    || result.second.pdf != 1.0
+                    || !primeTestClose(
+                            result.second.relativeEta,
+                            expectedRelativeIor,
+                            2.0e-6,
+                            2.0e-6)
+                    || result.second.eventFlags != expectedEvents
+                    || sampled.paths.transmission.volumeStack.count
+                            != expectedStackCount
+                    || (!thinWalled
+                            && !primeAdapterSnellConsistent(
+                                    result.second,
+                                    outwardNormal,
+                                    viewDirection))) {
+                result.mask |= PRIME_TEST_FAILURE_IDENTITY;
+            }
+        } else if (result.second.eventFlags != 0u
+                || !primeAdapterZero(result.second.direction)
+                || !primeAdapterZero(result.second.response)
+                || result.second.pdf != 0.0
+                || result.second.relativeEta != 1.0
+                || !primeAdapterSameStack(
+                        sampled.paths.transmission.volumeStack, stack)) {
             result.mask |= PRIME_TEST_FAILURE_IDENTITY;
         }
         if (result.first.eventFlags != 0u

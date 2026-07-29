@@ -9,10 +9,16 @@ final class AutoExposureMath {
     static final float MIN_LOG_LUMINANCE = -16.0F;
     static final float MAX_LOG_LUMINANCE = 20.0F;
     static final float KEY_LUMINANCE = 0.16F;
-    static final float MIN_EV = 0.0F;
+    static final float BASELINE_EV = 0.75F;
+    static final float MIN_EV = -4.0F;
     static final float MAX_EV = 4.0F;
     static final float DARKEN_T90_SECONDS = 0.5F;
     static final float BRIGHTEN_T90_SECONDS = 2.0F;
+    static final float REFERENCE_ALBEDO = 0.18F;
+    static final float MIN_ALBEDO = 0.05F;
+    static final float ALBEDO_BLEND = 0.5F;
+    static final int MATERIAL_DIELECTRIC = 0;
+    static final int MATERIAL_FOLIAGE = 3;
     private static final float LOG_LUMINANCE_RANGE =
             MAX_LOG_LUMINANCE - MIN_LOG_LUMINANCE;
     private static final float LN_10 = (float) Math.log(10.0);
@@ -26,9 +32,63 @@ final class AutoExposureMath {
                 || !Float.isFinite(blue)) {
             return OptionalInt.empty();
         }
-        float luminance = 0.2627F * Math.max(red, 0.0F)
+        return histogramBinForLuminance(luminance(red, green, blue));
+    }
+
+    static OptionalInt histogramBin(
+            float red,
+            float green,
+            float blue,
+            float albedoRed,
+            float albedoGreen,
+            float albedoBlue,
+            float confidence) {
+        if (!Float.isFinite(red)
+                || !Float.isFinite(green)
+                || !Float.isFinite(blue)
+                || !Float.isFinite(albedoRed)
+                || !Float.isFinite(albedoGreen)
+                || !Float.isFinite(albedoBlue)
+                || !Float.isFinite(confidence)) {
+            return OptionalInt.empty();
+        }
+        float luminance = luminance(red, green, blue)
+                * albedoScale(
+                        albedoRed,
+                        albedoGreen,
+                        albedoBlue,
+                        confidence);
+        return histogramBinForLuminance(luminance);
+    }
+
+    static float albedoScale(
+            float red, float green, float blue, float confidence) {
+        float albedoLuminance = luminance(
+                Math.clamp(red, 0.0F, 1.0F),
+                Math.clamp(green, 0.0F, 1.0F),
+                Math.clamp(blue, 0.0F, 1.0F));
+        float fullScale =
+                REFERENCE_ALBEDO / Math.max(albedoLuminance, MIN_ALBEDO);
+        float blendedScale = 1.0F + (fullScale - 1.0F) * ALBEDO_BLEND;
+        return 1.0F + (blendedScale - 1.0F)
+                * Math.clamp(confidence, 0.0F, 1.0F);
+    }
+
+    static float materialConfidence(
+            int materialClass,
+            float primaryDistance) {
+        boolean diffuseSurface = materialClass == MATERIAL_DIELECTRIC
+                || materialClass == MATERIAL_FOLIAGE;
+        return diffuseSurface && primaryDistance >= 0.0F ? 1.0F : 0.0F;
+    }
+
+    private static float luminance(float red, float green, float blue) {
+        return 0.2627F * Math.max(red, 0.0F)
                 + 0.6780F * Math.max(green, 0.0F)
                 + 0.0593F * Math.max(blue, 0.0F);
+    }
+
+    private static OptionalInt histogramBinForLuminance(float luminance) {
         if (!Float.isFinite(luminance)) {
             return OptionalInt.empty();
         }
@@ -101,7 +161,7 @@ final class AutoExposureMath {
         float measuredLogLuminance =
                 (float) (weightedLogLuminance / retainedCount);
         float targetEv = Math.clamp(
-                log2(KEY_LUMINANCE) - measuredLogLuminance,
+                log2(KEY_LUMINANCE) + BASELINE_EV - measuredLogLuminance,
                 MIN_EV,
                 MAX_EV);
         float exposureEv = targetEv;

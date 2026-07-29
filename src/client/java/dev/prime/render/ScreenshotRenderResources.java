@@ -40,7 +40,8 @@ final class ScreenshotRenderResources implements Destroyable {
             stableRadiance = context.createAccumulationImage(width, height);
             rawFrame = BasicRawWavefrontFrame.createScreenshotScratch(
                     context, width, height);
-            display = DisplayTransformPass.create(context, runningMean, displayOutput);
+            display = DisplayTransformPass.createScreenshot(
+                    context, runningMean, rawFrame, displayOutput);
             return new ScreenshotRenderResources(
                     displayOutput,
                     runningMean,

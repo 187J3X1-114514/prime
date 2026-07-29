@@ -91,7 +91,8 @@ public final class DlssRrPostProcessor implements RealtimePostProcessor {
             targets = DlssRrTargets.create(
                     context, renderWidth, renderHeight, displayWidth, displayHeight);
             preparePass = DlssRrPreparePass.create(context, targets, accumulation, atmosphere);
-            displayTransform = DisplayTransformPass.create(context, targets.rrOutput(), displayOutput);
+            displayTransform = DisplayTransformPass.createRealtime(
+                    context, targets.rrOutput(), targets, displayOutput);
             debugPass = DlssRrDebugPass.create(
                     context,
                     targets,

@@ -132,9 +132,9 @@ final class PrimeProductionMathGpuTest {
     }
 
     @Test
-    void autoExposureTargetAndT90AdaptationUseTheProductionContract()
+    void autoExposureTargetAdaptationAndAlbedoMeteringUseTheProductionContract()
             throws IOException {
-        int kinds = 2;
+        int kinds = 4;
         int inputWords = 2;
         ByteBuffer input = ShaderTestBuffer.inputs(
                 CASES_PER_KIND * kinds, inputWords);
@@ -154,14 +154,34 @@ final class PrimeProductionMathGpuTest {
                             0.0F,
                             0.0F,
                             0.0F);
-                } else {
+                } else if (kind == 1) {
                     putVec4(
                             input,
                             index,
                             inputWords,
                             1,
-                            random.nextFloat() * 4.0F,
-                            random.nextFloat() * 4.0F,
+                            random.nextFloat() * 8.0F - 4.0F,
+                            random.nextFloat() * 8.0F - 4.0F,
+                            0.0F,
+                            0.0F);
+                } else if (kind == 2) {
+                    putVec4(
+                            input,
+                            index,
+                            inputWords,
+                            1,
+                            random.nextFloat() * 1.25F - 0.125F,
+                            random.nextFloat() * 2.0F - 0.5F,
+                            0.0F,
+                            0.0F);
+                } else if (kind == 3) {
+                    putVec4(
+                            input,
+                            index,
+                            inputWords,
+                            1,
+                            random.nextInt(4),
+                            random.nextFloat() * 2.0F - 1.0F,
                             0.0F,
                             0.0F);
                 }

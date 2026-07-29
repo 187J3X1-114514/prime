@@ -7,18 +7,35 @@
 layout(local_size_x = 16, local_size_y = 16, local_size_z = 1) in;
 
 layout(set = 0, binding = 0) uniform texture2D primeAutoExposureInput;
-layout(std430, set = 0, binding = 1) buffer PrimeAutoExposureHistogram {
+layout(set = 0, binding = 1, rgba16f) uniform readonly image2D
+        primeAutoExposureAlbedo;
+layout(set = 0, binding = 2, rgb10_a2) uniform readonly image2D
+        primeAutoExposureNormalRoughness;
+layout(std430, set = 0, binding = 3) buffer PrimeAutoExposureHistogram {
     uint bins[256];
     uint validCount;
 } primeAutoExposureHistogram;
 
 layout(push_constant) uniform PrimeAutoExposureHistogramPushConstants {
     uvec2 inputExtent;
-    uvec2 reserved;
+    uint accumulatedMetering;
+    uint reserved;
 } primeAutoExposureHistogramPush;
 
 shared uint primeWorkgroupBins[256];
 shared uint primeWorkgroupValidCount;
+
+uint primeAutoExposureBin(float luminance) {
+    float logLuminance = clamp(
+            log2(max(luminance, exp2(PRIME_AUTO_EXPOSURE_MIN_LOG_LUMINANCE))),
+            PRIME_AUTO_EXPOSURE_MIN_LOG_LUMINANCE,
+            PRIME_AUTO_EXPOSURE_MAX_LOG_LUMINANCE);
+    return min(
+            uint(floor(
+                    (logLuminance - PRIME_AUTO_EXPOSURE_MIN_LOG_LUMINANCE)
+                            * (256.0 / PRIME_AUTO_EXPOSURE_LOG_LUMINANCE_RANGE))),
+            255u);
+}
 
 void main() {
     uint localIndex = gl_LocalInvocationIndex;
@@ -39,22 +56,45 @@ void main() {
             if (any(isnan(radiance)) || any(isinf(radiance))) {
                 continue;
             }
-            radiance = max(radiance, vec3(0.0));
-            float luminance =
-                    dot(radiance, vec3(0.2627, 0.6780, 0.0593));
+            float luminance;
+            if (primeAutoExposureHistogramPush.accumulatedMetering != 0u) {
+                luminance =
+                        texelFetch(primeAutoExposureInput, ivec2(pixel), 0).a;
+            } else {
+                ivec2 guideExtent = imageSize(primeAutoExposureAlbedo);
+                ivec2 guidePixel = min(
+                        ivec2(
+                                (vec2(pixel) + 0.5)
+                                        * vec2(guideExtent)
+                                        / vec2(primeAutoExposureHistogramPush.inputExtent)),
+                        guideExtent - 1);
+                vec4 material =
+                        imageLoad(primeAutoExposureAlbedo, guidePixel);
+                vec4 normalRoughness =
+                        imageLoad(primeAutoExposureNormalRoughness, guidePixel);
+                if (any(isnan(material))
+                        || any(isinf(material))
+                        || any(isnan(normalRoughness))
+                        || any(isinf(normalRoughness))) {
+                    continue;
+                }
+                uint materialClass =
+                        uint(round(clamp(normalRoughness.a, 0.0, 1.0) * 3.0));
+                float confidence = primeAutoExposureMaterialConfidence(
+                        materialClass,
+                        material.a);
+                luminance = primeAutoExposureMeteredLuminance(
+                        radiance,
+                        material.rgb,
+                        confidence);
+            }
             if (isnan(luminance) || isinf(luminance)) {
                 continue;
             }
-            float logLuminance = clamp(
-                    log2(max(luminance, exp2(PRIME_AUTO_EXPOSURE_MIN_LOG_LUMINANCE))),
-                    PRIME_AUTO_EXPOSURE_MIN_LOG_LUMINANCE,
-                    PRIME_AUTO_EXPOSURE_MAX_LOG_LUMINANCE);
-            uint bin = min(
-                    uint(floor(
-                            (logLuminance - PRIME_AUTO_EXPOSURE_MIN_LOG_LUMINANCE)
-                                    * (256.0 / PRIME_AUTO_EXPOSURE_LOG_LUMINANCE_RANGE))),
-                    255u);
-            atomicAdd(primeWorkgroupBins[bin], 1u);
+            atomicAdd(
+                    primeWorkgroupBins[
+                            primeAutoExposureBin(luminance)],
+                    1u);
             atomicAdd(primeWorkgroupValidCount, 1u);
         }
     }
@@ -62,7 +102,9 @@ void main() {
 
     uint count = primeWorkgroupBins[localIndex];
     if (count != 0u) {
-        atomicAdd(primeAutoExposureHistogram.bins[localIndex], count);
+        atomicAdd(
+                primeAutoExposureHistogram.bins[localIndex],
+                count);
     }
     if (localIndex == 0u && primeWorkgroupValidCount != 0u) {
         atomicAdd(

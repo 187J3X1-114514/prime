@@ -65,8 +65,29 @@ public final class DisplayTransformPass implements Destroyable {
         this.height = height;
     }
 
-    public static DisplayTransformPass create(
-            VulkanContext context, VulkanImage linearInput, VulkanImage displayOutput) {
+    public static DisplayTransformPass createRealtime(
+            VulkanContext context,
+            VulkanImage linearInput,
+            RawWavefrontFrame meteringGuide,
+            VulkanImage displayOutput) {
+        return create(context, linearInput, meteringGuide, displayOutput, false);
+    }
+
+    public static DisplayTransformPass createScreenshot(
+            VulkanContext context,
+            VulkanImage linearInput,
+            RawWavefrontFrame meteringGuide,
+            VulkanImage displayOutput) {
+        return create(context, linearInput, meteringGuide, displayOutput, true);
+    }
+
+    private static DisplayTransformPass create(
+            VulkanContext context,
+            VulkanImage linearInput,
+            RawWavefrontFrame meteringGuide,
+            VulkanImage displayOutput,
+            boolean accumulatedMetering) {
+        java.util.Objects.requireNonNull(meteringGuide, "meteringGuide");
         if (linearInput.width() != displayOutput.width()
                 || linearInput.height() != displayOutput.height()) {
             throw new IllegalArgumentException("Display transform input and output extents differ");
@@ -76,7 +97,12 @@ public final class DisplayTransformPass implements Destroyable {
         long pipelineLayout = 0L;
         long pipeline = 0L;
         AutoExposurePass autoExposure =
-                AutoExposurePass.create(context, linearInput);
+                AutoExposurePass.create(
+                        context,
+                        linearInput,
+                        meteringGuide.material(),
+                        meteringGuide.normalRoughness(),
+                        accumulatedMetering);
         try (MemoryStack stack = MemoryStack.stackPush()) {
             VkDescriptorSetLayoutBinding.Buffer bindings = VkDescriptorSetLayoutBinding.calloc(3, stack);
             bindings.get(0).binding(0)

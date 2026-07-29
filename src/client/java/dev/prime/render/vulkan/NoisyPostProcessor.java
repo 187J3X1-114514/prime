@@ -55,8 +55,8 @@ public final class NoisyPostProcessor implements RealtimePostProcessor {
             rawFrame = BasicRawWavefrontFrame.createRealtime(context, width, height);
             composite = NoisyCompositePass.create(
                     context, rawFrame, stableRadiance, atmosphere);
-            displayTransform = DisplayTransformPass.create(
-                    context, rawFrame.linearOutput(), displayOutput);
+            displayTransform = DisplayTransformPass.createRealtime(
+                    context, rawFrame.linearOutput(), rawFrame, displayOutput);
             return new NoisyPostProcessor(
                     quality, width, height, rawFrame, composite, displayTransform);
         } catch (RuntimeException exception) {

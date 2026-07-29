@@ -38,7 +38,8 @@ final class AutoExposurePass implements Destroyable {
     private static final int COMPUTE_STAGE = VK12.VK_SHADER_STAGE_COMPUTE_BIT;
     private static final int PUSH_SIZE = 16;
     private static final int HISTOGRAM_BIN_COUNT = 256;
-    private static final int HISTOGRAM_SIZE = (HISTOGRAM_BIN_COUNT + 1) * Integer.BYTES;
+    private static final int HISTOGRAM_SIZE =
+            (HISTOGRAM_BIN_COUNT + 1) * Integer.BYTES;
     private static final int EXPOSURE_STATE_SIZE = 16;
     private static final int HISTOGRAM_TILE_SIZE = 64;
     private static final String HISTOGRAM_SHADER =
@@ -57,6 +58,7 @@ final class AutoExposurePass implements Destroyable {
     private final long updatePipeline;
     private final int dispatchX;
     private final int dispatchY;
+    private final boolean accumulatedMetering;
     private boolean destroyed;
 
     private AutoExposurePass(
@@ -70,7 +72,8 @@ final class AutoExposurePass implements Destroyable {
             long histogramPipeline,
             long updatePipeline,
             int width,
-            int height) {
+            int height,
+            boolean accumulatedMetering) {
         this.context = context;
         this.histogram = histogram;
         this.exposureState = exposureState;
@@ -82,10 +85,15 @@ final class AutoExposurePass implements Destroyable {
         this.updatePipeline = updatePipeline;
         this.dispatchX = divideRoundUp(width, HISTOGRAM_TILE_SIZE);
         this.dispatchY = divideRoundUp(height, HISTOGRAM_TILE_SIZE);
+        this.accumulatedMetering = accumulatedMetering;
     }
 
     static AutoExposurePass create(
-            VulkanContext context, VulkanImage linearInput) {
+            VulkanContext context,
+            VulkanImage linearInput,
+            VulkanImage albedo,
+            VulkanImage normalRoughness,
+            boolean accumulatedMetering) {
         VulkanBuffer histogram = null;
         VulkanBuffer exposureState = null;
         long setLayout = 0L;
@@ -108,11 +116,16 @@ final class AutoExposurePass implements Destroyable {
                     "Prime auto-exposure state");
             try (MemoryStack stack = MemoryStack.stackPush()) {
                 VkDescriptorSetLayoutBinding.Buffer bindings =
-                        VkDescriptorSetLayoutBinding.calloc(3, stack);
+                        VkDescriptorSetLayoutBinding.calloc(5, stack);
                 bindings.get(0).binding(0)
                         .descriptorType(VK12.VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE)
                         .descriptorCount(1).stageFlags(COMPUTE_STAGE);
                 for (int binding = 1; binding < 3; binding++) {
+                    bindings.get(binding).binding(binding)
+                            .descriptorType(VK12.VK_DESCRIPTOR_TYPE_STORAGE_IMAGE)
+                            .descriptorCount(1).stageFlags(COMPUTE_STAGE);
+                }
+                for (int binding = 3; binding < 5; binding++) {
                     bindings.get(binding).binding(binding)
                             .descriptorType(VK12.VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
                             .descriptorCount(1).stageFlags(COMPUTE_STAGE);
@@ -148,10 +161,12 @@ final class AutoExposurePass implements Destroyable {
                         context, stack, pipelineLayout, UPDATE_SHADER);
 
                 VkDescriptorPoolSize.Buffer poolSizes =
-                        VkDescriptorPoolSize.calloc(2, stack);
+                        VkDescriptorPoolSize.calloc(3, stack);
                 poolSizes.get(0).type(VK12.VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE)
                         .descriptorCount(1);
-                poolSizes.get(1).type(VK12.VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
+                poolSizes.get(1).type(VK12.VK_DESCRIPTOR_TYPE_STORAGE_IMAGE)
+                        .descriptorCount(2);
+                poolSizes.get(2).type(VK12.VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
                         .descriptorCount(2);
                 pointer.clear();
                 VulkanContext.check(
@@ -176,8 +191,12 @@ final class AutoExposurePass implements Destroyable {
                         "allocate auto-exposure descriptor set");
                 long descriptorSet = pointer.get(0);
                 VkDescriptorImageInfo.Buffer imageInfo =
-                        VkDescriptorImageInfo.calloc(1, stack);
+                        VkDescriptorImageInfo.calloc(3, stack);
                 imageInfo.get(0).imageView(linearInput.view())
+                        .imageLayout(VK12.VK_IMAGE_LAYOUT_GENERAL);
+                imageInfo.get(1).imageView(albedo.view())
+                        .imageLayout(VK12.VK_IMAGE_LAYOUT_GENERAL);
+                imageInfo.get(2).imageView(normalRoughness.view())
                         .imageLayout(VK12.VK_IMAGE_LAYOUT_GENERAL);
                 VkDescriptorBufferInfo.Buffer bufferInfos =
                         VkDescriptorBufferInfo.calloc(2, stack);
@@ -186,17 +205,25 @@ final class AutoExposurePass implements Destroyable {
                 bufferInfos.get(1).buffer(exposureState.handle())
                         .offset(0L).range(EXPOSURE_STATE_SIZE);
                 VkWriteDescriptorSet.Buffer writes =
-                        VkWriteDescriptorSet.calloc(3, stack);
+                        VkWriteDescriptorSet.calloc(5, stack);
                 writes.get(0).sType$Default()
                         .dstSet(descriptorSet).dstBinding(0).descriptorCount(1)
                         .descriptorType(VK12.VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE)
-                        .pImageInfo(imageInfo);
+                        .pImageInfo(VkDescriptorImageInfo.create(
+                                imageInfo.get(0).address(), 1));
                 for (int binding = 1; binding < 3; binding++) {
+                    writes.get(binding).sType$Default()
+                            .dstSet(descriptorSet).dstBinding(binding).descriptorCount(1)
+                            .descriptorType(VK12.VK_DESCRIPTOR_TYPE_STORAGE_IMAGE)
+                            .pImageInfo(VkDescriptorImageInfo.create(
+                                    imageInfo.get(binding).address(), 1));
+                }
+                for (int binding = 3; binding < 5; binding++) {
                     writes.get(binding).sType$Default()
                             .dstSet(descriptorSet).dstBinding(binding).descriptorCount(1)
                             .descriptorType(VK12.VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
                             .pBufferInfo(VkDescriptorBufferInfo.create(
-                                    bufferInfos.get(binding - 1).address(), 1));
+                                    bufferInfos.get(binding - 3).address(), 1));
                 }
                 VK12.vkUpdateDescriptorSets(context.vkDevice(), writes, null);
                 return new AutoExposurePass(
@@ -210,7 +237,8 @@ final class AutoExposurePass implements Destroyable {
                         histogramPipeline,
                         updatePipeline,
                         linearInput.width(),
-                        linearInput.height());
+                        linearInput.height(),
+                        accumulatedMetering);
             }
         } catch (RuntimeException exception) {
             if (descriptorPool != 0L) {
@@ -293,7 +321,8 @@ final class AutoExposurePass implements Destroyable {
                     stack.malloc(PUSH_SIZE).order(ByteOrder.nativeOrder());
             histogramPush.putInt(0, width);
             histogramPush.putInt(4, height);
-            histogramPush.putLong(8, 0L);
+            histogramPush.putInt(8, this.accumulatedMetering ? 1 : 0);
+            histogramPush.putInt(12, 0);
             VK12.vkCmdPushConstants(
                     commandBuffer,
                     this.pipelineLayout,

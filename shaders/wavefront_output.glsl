@@ -1,6 +1,8 @@
 #ifndef PRIME_WAVEFRONT_OUTPUT_GLSL
 #define PRIME_WAVEFRONT_OUTPUT_GLSL
 
+#include "auto_exposure.glsl"
+
 // Output adapters consume one resolved raw model sample. They may encode reconstruction signals or
 // a screenshot running mean, but never feed data back into transport.
 
@@ -13,14 +15,27 @@ void primeWriteScreenshotOutput(
             pixel, cameraSample, result.guides.primaryDistance, radiance);
     uint64_t zeroBasedSample = (uint64_t(primeSampleEpoch()) << 16u)
             | uint64_t(primePush.path.x & 0xffffu);
-    vec3 mean = radiance;
+    PrimeDenoiserGuides meteringGuides =
+            result.transparentPrimary
+                    && result.transmissionGuides.primaryHitKind == PRIME_HIT_SURFACE
+            ? result.transmissionGuides
+            : result.guides;
+    float confidence = primeAutoExposureMaterialConfidence(
+            uint(round(primeNrdMaterialId(
+                    meteringGuides.primaryMaterialFlags) * 3.0)),
+            meteringGuides.primaryDistance);
+    float meteredLuminance = primeAutoExposureMeteredLuminance(
+            radiance,
+            primeNrdSanitizeAlbedo(meteringGuides.primaryAlbedo),
+            confidence);
+    vec4 mean = vec4(radiance, meteredLuminance);
     if (zeroBasedSample != uint64_t(0)) {
         vec4 previous = imageLoad(
                 primeScreenshotRunningMean, ivec2(pixel));
         float sampleCount = float(zeroBasedSample + uint64_t(1));
-        mean = previous.rgb + (radiance - previous.rgb) / sampleCount;
+        mean = previous + (mean - previous) / sampleCount;
     }
-    imageStore(primeScreenshotRunningMean, ivec2(pixel), vec4(mean, 1.0));
+    imageStore(primeScreenshotRunningMean, ivec2(pixel), mean);
 }
 
 uint primeClassifyRawOutput(PrimeIntegrationResult result) {

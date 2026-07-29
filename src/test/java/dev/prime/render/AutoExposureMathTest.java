@@ -36,6 +36,114 @@ final class AutoExposureMathTest {
     }
 
     @Test
+    void diffuseAlbedoCorrectionBlendsRawAndNeutralizedLuminance() {
+        int reference = AutoExposureMath.histogramBin(
+                0.18F,
+                0.18F,
+                0.18F,
+                0.18F,
+                0.18F,
+                0.18F,
+                1.0F).orElseThrow();
+        int white = AutoExposureMath.histogramBin(
+                0.72F,
+                0.72F,
+                0.72F,
+                0.72F,
+                0.72F,
+                0.72F,
+                1.0F).orElseThrow();
+        int uncorrectedWhite = AutoExposureMath.histogramBin(
+                0.72F, 0.72F, 0.72F).orElseThrow();
+        int snow = AutoExposureMath.histogramBin(
+                1.0F,
+                1.0F,
+                1.0F,
+                1.0F,
+                1.0F,
+                1.0F,
+                1.0F).orElseThrow();
+        int dark = AutoExposureMath.histogramBin(
+                0.09F,
+                0.09F,
+                0.09F,
+                0.09F,
+                0.09F,
+                0.09F,
+                1.0F).orElseThrow();
+
+        assertTrue(reference < white);
+        assertTrue(uncorrectedWhite > white);
+        assertTrue(white < snow);
+        assertTrue(snow < uncorrectedWhite);
+        assertTrue(dark < reference);
+        assertTrue(dark > AutoExposureMath.histogramBin(
+                0.09F, 0.09F, 0.09F).orElseThrow());
+        assertEquals(
+                1.0F,
+                AutoExposureMath.albedoScale(
+                        1.0F, 1.0F, 1.0F, 0.0F));
+        assertFalse(AutoExposureMath.histogramBin(
+                1.0F,
+                1.0F,
+                1.0F,
+                Float.NaN,
+                1.0F,
+                1.0F,
+                1.0F).isPresent());
+    }
+
+    @Test
+    void albedoCorrectionBlendsRawAndProtectedNeutralizedLuminance() {
+        assertEquals(
+                1.0F + (AutoExposureMath.REFERENCE_ALBEDO - 1.0F)
+                        * AutoExposureMath.ALBEDO_BLEND,
+                AutoExposureMath.albedoScale(
+                        1.0F, 1.0F, 1.0F, 1.0F),
+                1.0e-6F);
+        assertEquals(
+                1.0F + (AutoExposureMath.REFERENCE_ALBEDO
+                        / AutoExposureMath.MIN_ALBEDO - 1.0F)
+                        * AutoExposureMath.ALBEDO_BLEND,
+                AutoExposureMath.albedoScale(
+                        0.0F, 0.0F, 0.0F, 1.0F),
+                1.0e-6F);
+        assertEquals(
+                1.0F + (1.0F + (AutoExposureMath.REFERENCE_ALBEDO - 1.0F)
+                        * AutoExposureMath.ALBEDO_BLEND - 1.0F) * 0.5F,
+                AutoExposureMath.albedoScale(
+                        1.0F, 1.0F, 1.0F, 0.5F),
+                1.0e-6F);
+        assertEquals(
+                0.7612F,
+                (float) (-Math.log(AutoExposureMath.albedoScale(
+                        1.0F, 1.0F, 1.0F, 1.0F)) / Math.log(2.0)),
+                1.0e-4F);
+    }
+
+    @Test
+    void albedoCorrectionExcludesInvalidSpecularAndTransmissiveGuides() {
+        assertEquals(
+                1.0F,
+                AutoExposureMath.materialConfidence(
+                        AutoExposureMath.MATERIAL_DIELECTRIC, 1.0F));
+        assertEquals(
+                1.0F,
+                AutoExposureMath.materialConfidence(
+                        AutoExposureMath.MATERIAL_FOLIAGE, 1.0F));
+        assertEquals(
+                0.0F,
+                AutoExposureMath.materialConfidence(1, 1.0F));
+        assertEquals(
+                0.0F,
+                AutoExposureMath.materialConfidence(2, 1.0F));
+        assertEquals(
+                0.0F,
+                AutoExposureMath.materialConfidence(
+                        AutoExposureMath.MATERIAL_DIELECTRIC, -1.0F));
+    }
+
+    @Test
     void robustMeterDiscardsTheDarkestAndBrightestPercent() {
         int[] histogram = new int[AutoExposureMath.BIN_COUNT];
         histogram[0] = 1;
@@ -49,12 +157,15 @@ final class AutoExposureMathTest {
                 true,
                 false);
 
-        assertEquals(0.0F, result.targetEv(), BIN_HALF_WIDTH_EV);
+        assertEquals(
+                AutoExposureMath.BASELINE_EV,
+                result.targetEv(),
+                BIN_HALF_WIDTH_EV);
         assertEquals(result.targetEv(), result.exposureEv());
     }
 
     @Test
-    void dayBaselineIsOneEvAndBrightScenesCannotBeDarkened() {
+    void baselineAddsThreeQuarterEvAndExposureUsesBothBounds() {
         AutoExposureMath.State day = instantForGray(0.08F);
         AutoExposureMath.State dark = instantForGray(
                 Math.scalb(AutoExposureMath.KEY_LUMINANCE, -8));
@@ -63,10 +174,13 @@ final class AutoExposureMathTest {
         AutoExposureMath.State bright = instantForGray(
                 Math.scalb(AutoExposureMath.KEY_LUMINANCE, 8));
 
-        assertEquals(1.0F, day.targetEv(), BIN_HALF_WIDTH_EV);
+        assertEquals(1.75F, day.targetEv(), BIN_HALF_WIDTH_EV);
         assertEquals(4.0F, dark.targetEv());
-        assertEquals(0.0F, middle.targetEv(), BIN_HALF_WIDTH_EV);
-        assertEquals(0.0F, bright.targetEv());
+        assertEquals(
+                AutoExposureMath.BASELINE_EV,
+                middle.targetEv(),
+                BIN_HALF_WIDTH_EV);
+        assertEquals(-4.0F, bright.targetEv());
         assertTrue(dark.targetEv() > middle.targetEv());
         assertTrue(middle.targetEv() >= bright.targetEv());
     }

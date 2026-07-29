@@ -22,8 +22,8 @@ void main() {
     if (kind == 0u) {
         actual.x = primeAutoExposureTargetEv(values.x);
         expected.x = clamp(
-                log2(0.16) - values.x, 0.0, 4.0);
-        if (actual.x < 0.0 || actual.x > 4.0) {
+                log2(0.16) + 0.75 - values.x, -4.0, 4.0);
+        if (actual.x < -4.0 || actual.x > 4.0) {
             mask |= PRIME_TEST_FAILURE_RANGE;
         }
         if (!primeTestClose(actual.x, expected.x, 1.0e-6, 1.0e-6)) {
@@ -35,6 +35,29 @@ void main() {
         expected.x = values.y + (values.x - values.y) * 0.1;
         if (!primeTestClose(actual.x, expected.x, 2.0e-6, 2.0e-6)) {
             mask |= PRIME_TEST_FAILURE_STATE;
+        }
+    } else if (kind == 2u) {
+        actual.x = primeAutoExposureAlbedoScale(
+                vec3(values.x), values.y);
+        float fullScale =
+                0.18 / max(clamp(values.x, 0.0, 1.0), 0.05);
+        float blendedScale = mix(1.0, fullScale, 0.5);
+        expected.x = mix(
+                1.0, blendedScale, clamp(values.y, 0.0, 1.0));
+        if (actual.x < 0.589999 || actual.x > 2.30001) {
+            mask |= PRIME_TEST_FAILURE_RANGE;
+        }
+        if (!primeTestClose(actual.x, expected.x, 2.0e-6, 2.0e-6)) {
+            mask |= PRIME_TEST_FAILURE_IDENTITY;
+        }
+    } else if (kind == 3u) {
+        uint materialClass = uint(clamp(round(values.x), 0.0, 3.0));
+        actual.x = primeAutoExposureMaterialConfidence(
+                materialClass, values.y);
+        bool diffuseSurface = materialClass == 0u || materialClass == 3u;
+        expected.x = diffuseSurface && values.y >= 0.0 ? 1.0 : 0.0;
+        if (!primeTestClose(actual.x, expected.x, 1.0e-6, 1.0e-6)) {
+            mask |= PRIME_TEST_FAILURE_IDENTITY;
         }
     } else {
         mask |= PRIME_TEST_FAILURE_EVENT;

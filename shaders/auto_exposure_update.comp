@@ -5,12 +5,12 @@
 
 layout(local_size_x = 1, local_size_y = 1, local_size_z = 1) in;
 
-layout(std430, set = 0, binding = 1) readonly buffer PrimeAutoExposureHistogram {
+layout(std430, set = 0, binding = 3) readonly buffer PrimeAutoExposureHistogram {
     uint bins[256];
     uint validCount;
 } primeAutoExposureHistogram;
 
-layout(std430, set = 0, binding = 2) buffer PrimeAutoExposureState {
+layout(std430, set = 0, binding = 4) buffer PrimeAutoExposureState {
     float exposureEv;
     uint initialized;
     float targetEv;
@@ -38,10 +38,9 @@ void main() {
         return;
     }
 
-    uint lowDiscard = validCount / 100u;
-    uint highDiscard = validCount / 100u;
-    uint keepBegin = lowDiscard;
-    uint keepEnd = validCount - highDiscard;
+    uint tailCount = validCount / 100u;
+    uint keepBegin = tailCount;
+    uint keepEnd = validCount - tailCount;
     uint cursor = 0u;
     uint retainedCount = 0u;
     float weightedLogLuminance = 0.0;
@@ -60,7 +59,6 @@ void main() {
         }
         cursor = binEnd;
     }
-
     if (retainedCount == 0u) {
         return;
     }

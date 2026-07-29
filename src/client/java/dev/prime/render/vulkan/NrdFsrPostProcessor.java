@@ -87,6 +87,7 @@ public final class NrdFsrPostProcessor implements RealtimePostProcessor {
                     denoiser.fsrDepth(),
                     denoiser.fsrReactiveMask(),
                     denoiser.fsrTransparencyCompositionMask(),
+                    denoiser.rawFrame(),
                     displayOutput);
             nrdDebugPresent = NativeDebugPresentPass.create(
                     context,

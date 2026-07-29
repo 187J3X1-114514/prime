@@ -11,6 +11,7 @@ import dev.prime.render.fsr.FsrSettings;
 import dev.prime.render.post.ReconstructionFrameHistory;
 import dev.prime.render.post.TemporalReconstructionState;
 import dev.prime.render.vulkan.DisplayTransformPass;
+import dev.prime.render.vulkan.RawWavefrontFrame;
 import dev.prime.render.vulkan.VulkanContext;
 import dev.prime.render.vulkan.VulkanImage;
 import dev.prime.render.vulkan.VulkanImageInitializationBatch;
@@ -91,6 +92,7 @@ public final class Fsr3Upscaler implements Destroyable {
             VulkanImage inputDepth,
             VulkanImage reactiveMask,
             VulkanImage transparencyCompositionMask,
+            RawWavefrontFrame meteringGuide,
             VulkanImage displayOutput) {
         requireExtent(sceneColor, renderWidth, renderHeight, "scene color");
         requireExtent(inputMotion, renderWidth, renderHeight, "motion vectors");
@@ -115,8 +117,8 @@ public final class Fsr3Upscaler implements Destroyable {
                     "Prime FidelityFX linear HDR output");
             nativeInstance = FsrNative.create(
                     context, renderWidth, renderHeight, displayWidth, displayHeight);
-            displayPass = DisplayTransformPass.create(
-                    context, linearOutput, displayOutput);
+            displayPass = DisplayTransformPass.createRealtime(
+                    context, linearOutput, meteringGuide, displayOutput);
             return new Fsr3Upscaler(
                     renderWidth,
                     renderHeight,

@@ -55,8 +55,10 @@ by the renderer. Its concern-specific batches cover exponent-scaled throughput,
 MIS and area-light PDFs, Beer-Lambert attenuation, Russian roulette, the full
 16-bit LabPBR normal/specular byte domains, conductor Fresnel, NRD sanitization,
 normal packing, hit-distance normalization, demodulation, radiance limits, and
-FSR depth, motion, and material-mask input domains. The transport batch also
-checks the gamma-2 glass-filter endpoints, strength, and products plus outside/inside, multiple,
+FSR depth, motion, and material-mask input domains. It also executes the
+production auto-exposure bin mapping, target-EV clamp, and asymmetric temporal
+adaptation contract. The transport batch additionally checks the gamma-2
+glass-filter endpoints, strength, and products plus outside/inside, multiple,
 out-of-order, and clamped shadow-water segments. Replay capture additionally
 observes the production FSR depth and motion images emitted by `nrd_motion.comp`;
 Java tests cover the NRD and FSR native scalar ABI encoders without invoking a

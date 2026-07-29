@@ -124,6 +124,11 @@ void primeCheckGlassFilter(
     vec3 transmittance = primeGlassSurfaceTransmittance(baseColor, opacity);
     vec3 clear = primeGlassSurfaceTransmittance(baseColor, 0.0);
     vec3 solid = primeGlassSurfaceTransmittance(baseColor, 1.0);
+    vec3 linearColor = clamp(baseColor, vec3(0.0), vec3(1.0));
+    float coverage = clamp(opacity, 0.0, 1.0);
+    vec3 encodedBlend = mix(vec3(1.0), sqrt(linearColor), coverage);
+    vec3 expected = encodedBlend * encodedBlend;
+    vec3 linearBlend = mix(vec3(1.0), linearColor, coverage);
     vec3 twice = transmittance * transmittance;
     primeTransportClassify(result.mask, transmittance);
     primeTransportClassify(result.mask, twice);
@@ -132,15 +137,19 @@ void primeCheckGlassFilter(
             || !primeTestClose(clear, vec3(1.0), 0.0, 0.0)
             || !primeTestClose(
                     solid,
-                    clamp(baseColor, vec3(0.0), vec3(1.0)),
-                    0.0,
-                    0.0)
+                    linearColor,
+                    2.0e-6,
+                    2.0e-6)
+            || !primeTestClose(
+                    transmittance, expected, 2.0e-6, 2.0e-6)
+            || any(greaterThan(
+                    transmittance, linearBlend + vec3(2.0e-6)))
             || any(greaterThan(twice, transmittance))) {
         result.mask |= PRIME_TEST_FAILURE_IDENTITY;
     }
     result.first = vec4(transmittance, opacity);
     result.second = vec4(twice, 0.0);
-    result.third = vec4(clear, 0.0);
+    result.third = vec4(linearBlend, 0.0);
 }
 
 void primeCheckShadowWaterDistance(

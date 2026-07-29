@@ -172,7 +172,7 @@ bool primeClosureStableFresnelReconstruction(
         return true;
     }
     float criticalCosine = sqrt(max(0.0, 1.0 - fresnelEta * fresnelEta));
-    return abs(abs(microIncident) - criticalCosine) >= 5.0e-2;
+    return abs(abs(microIncident) - criticalCosine) >= 1.0e-1;
 }
 
 void primeClosureProperties(

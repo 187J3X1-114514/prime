@@ -222,6 +222,55 @@ final class SectionClusterMeshBuilderTest {
     }
 
     @Test
+    void optimallyPartitionsShapeThatDefeatsRowGreedyCover() {
+        try (SectionMeshAccumulatorTest.TestSprite sprite =
+                new SectionMeshAccumulatorTest.TestSprite()) {
+            SectionMeshAccumulator accumulator = new SectionMeshAccumulator(
+                    LabPbrMaterialSet.EMPTY, false);
+            int[][] cells = {{1, 0}, {0, 1}, {1, 1}, {2, 1}};
+            for (int[] cell : cells) {
+                accumulator.addQuad(
+                        SectionMeshAccumulatorTest.horizontalQuad(
+                                cell[0], cell[1], 6.0F, 1.0F),
+                        SectionMeshAccumulatorTest.opaqueSurface(sprite));
+            }
+
+            SectionClusterMeshBuilder builder =
+                    new SectionClusterMeshBuilder(0, 0, 0);
+            builder.add(0, 0, 0, accumulator.build());
+            CpuClusterMesh cluster = builder.build();
+
+            assertEquals(4, cluster.triangleCount());
+            assertEquals(4, cluster.opaqueTriangleCount());
+        }
+    }
+
+    @Test
+    void keepsDuplicateMergeFacesAsSeparateUnitFaces() {
+        try (SectionMeshAccumulatorTest.TestSprite sprite =
+                new SectionMeshAccumulatorTest.TestSprite()) {
+            SectionMeshAccumulator accumulator = new SectionMeshAccumulator(
+                    LabPbrMaterialSet.EMPTY, false);
+            accumulator.addQuad(
+                    SectionMeshAccumulatorTest.horizontalQuad(
+                            2.0F, 3.0F, 7.0F, 1.0F),
+                    SectionMeshAccumulatorTest.opaqueSurface(sprite));
+            accumulator.addQuad(
+                    SectionMeshAccumulatorTest.horizontalQuad(
+                            2.0F, 3.0F, 7.0F, 1.0F),
+                    SectionMeshAccumulatorTest.opaqueSurface(sprite));
+
+            SectionClusterMeshBuilder builder =
+                    new SectionClusterMeshBuilder(0, 0, 0);
+            builder.add(0, 0, 0, accumulator.build());
+            CpuClusterMesh cluster = builder.build();
+
+            assertEquals(4, cluster.triangleCount());
+            assertEquals(4, cluster.opaqueTriangleCount());
+        }
+    }
+
+    @Test
     void mergesNonFluidTransmissiveFacesIntoTheTransmissiveGeometry() {
         try (SectionMeshAccumulatorTest.TestSprite sprite =
                 new SectionMeshAccumulatorTest.TestSprite()) {

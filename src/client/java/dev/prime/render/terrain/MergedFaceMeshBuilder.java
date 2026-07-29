@@ -6,7 +6,13 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
-/** Greedily covers compatible unit faces with conservative cluster-local macro faces. */
+/**
+ * Covers compatible unit faces with conservative cluster-local macro faces.
+ *
+ * <p>Opaque and transmissive groups use the mechanically ported 64x64 optimal
+ * rectangle decomposition. Cutout groups retain their bounded square templates
+ * because those sizes are part of the opacity-micromap contract.
+ */
 final class MergedFaceMeshBuilder {
     private static final int GRID_SIZE = SectionCluster.SECTION_SIZE * 16;
     private static final int[] CUTOUT_SIZES = {4, 2, 1};
@@ -15,6 +21,7 @@ final class MergedFaceMeshBuilder {
     private final int maxOpacityMicromapSubdivisionLevel;
     private final ArrayList<CpuSectionMesh> segments = new ArrayList<>();
     private Segment segment = new Segment();
+    private OptimalCover optimalCover;
 
     MergedFaceMeshBuilder(
             int segmentTriangleTarget, int maxOpacityMicromapSubdivisionLevel) {
@@ -54,30 +61,43 @@ final class MergedFaceMeshBuilder {
     }
 
     private void coverOpaque(FaceGrid grid) {
+        OptimalCover cover = this.optimalCover();
+        cover.layer.clear();
         for (int v = 0; v < GRID_SIZE; v++) {
             for (int u = 0; u < GRID_SIZE; u++) {
-                MergeFace face = grid.get(u, v);
-                if (face == null) {
-                    continue;
+                if (grid.get(u, v) != null) {
+                    cover.layer.pushSquare(u, v, 0, 1);
                 }
-                int width = 1;
-                while (u + width < GRID_SIZE && grid.get(u + width, v) != null) {
-                    width++;
-                }
-                int height = 1;
-                heightLoop:
-                while (v + height < GRID_SIZE) {
-                    for (int offset = 0; offset < width; offset++) {
-                        if (grid.get(u + offset, v + height) == null) {
-                            break heightLoop;
-                        }
-                    }
-                    height++;
-                }
-                grid.clear(u, v, width, height);
-                this.emit(face, u, v, width, height);
             }
         }
+        RectangleDecomposition64.Result rectangles =
+                cover.layer.finish(cover.scratch);
+        for (int index = 0; index < rectangles.size(); index++) {
+            if (rectangles.value(index) != 1) {
+                throw new IllegalStateException(
+                        "Merged-face decomposition changed the occupancy label");
+            }
+            int u = rectangles.xStart(index);
+            int v = rectangles.yStart(index);
+            MergeFace face = grid.get(u, v);
+            if (face == null) {
+                throw new IllegalStateException(
+                        "Merged-face decomposition emitted an empty rectangle");
+            }
+            this.emit(
+                    face,
+                    u,
+                    v,
+                    rectangles.xEnd(index) - u,
+                    rectangles.yEnd(index) - v);
+        }
+    }
+
+    private OptimalCover optimalCover() {
+        if (this.optimalCover == null) {
+            this.optimalCover = new OptimalCover();
+        }
+        return this.optimalCover;
     }
 
     private void coverCutout(FaceGrid grid) {
@@ -349,6 +369,14 @@ final class MergedFaceMeshBuilder {
         public int hashCode() {
             return this.hash;
         }
+    }
+
+    /** Scratch is owned by one cluster build and reused across its material groups. */
+    private static final class OptimalCover {
+        private final RectangleDecomposition64.LayerBuilder layer =
+                new RectangleDecomposition64.LayerBuilder();
+        private final RectangleDecomposition64.Scratch scratch =
+                new RectangleDecomposition64.Scratch();
     }
 
     private static final class FloatBuilder {

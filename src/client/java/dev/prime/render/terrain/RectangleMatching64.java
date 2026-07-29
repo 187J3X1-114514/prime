@@ -1,0 +1,566 @@
+package dev.prime.render.terrain;
+
+import java.util.Arrays;
+
+/**
+ * Fixed-capacity chord matching backend for {@link RectangleDecomposition64}.
+ *
+ * <p>This is a mechanical Java port of the conflict-graph, greedy, and iterative
+ * Hopcroft-Karp path in voxel_engine's rectangle_decomposition crate at
+ * 3e13182214aa3bdf71d4769ca6b1078671a7842c.
+ */
+final class RectangleMatching64 {
+    private static final int AXIS_LIMIT = 64;
+    private static final int AXIS_LENGTH = AXIS_LIMIT + 1;
+    private static final int GRID_POINTS = AXIS_LENGTH * AXIS_LENGTH;
+    private static final int MAX_CHORDS = AXIS_LIMIT * (AXIS_LIMIT - 1);
+    private static final int MAX_CONFLICT_EDGES =
+            (AXIS_LIMIT - 1) * (AXIS_LIMIT - 1);
+    private static final char UNMATCHED = Character.MAX_VALUE;
+
+    private RectangleMatching64() {}
+
+    static final class Scratch {
+        private final int[] rightKeys = new int[MAX_CHORDS];
+        private final int[] nextOffsets = new int[MAX_CHORDS];
+        private final int[] edgeBuffer = new int[MAX_CONFLICT_EDGES];
+        private final byte[] rightDegrees = new byte[MAX_CHORDS];
+        private final int[] adjacencyOffsets = new int[MAX_CHORDS + 1];
+        private final int[] adjacencyEdges = new int[MAX_CONFLICT_EDGES];
+        private final char[] horizontalGrid = new char[GRID_POINTS];
+        private final char[] horizontalGridMarks = new char[GRID_POINTS];
+        private final long[] horizontalYMasks = new long[AXIS_LENGTH];
+        private final char[] horizontalXMarks = new char[AXIS_LENGTH];
+
+        private final char[] pairLeft = new char[MAX_CHORDS];
+        private final char[] pairRight = new char[MAX_CHORDS];
+        private final char[] distance = new char[MAX_CHORDS];
+        private final char[] queue = new char[MAX_CHORDS];
+        private final int[] nextEdge = new int[MAX_CHORDS];
+        private final char[] unmatchedLefts = new char[MAX_CHORDS];
+        private final char[] touchedLefts = new char[MAX_CHORDS];
+        private final boolean[] reachableLeft = new boolean[MAX_CHORDS];
+        private final boolean[] reachableRight = new boolean[MAX_CHORDS];
+        private final int[] transposeOffsets = new int[MAX_CHORDS + 1];
+        private final char[] transposeEdges = new char[MAX_CONFLICT_EDGES];
+        private final int[] writeOffsets = new int[MAX_CHORDS];
+        private final char[] rightOrder = new char[MAX_CHORDS];
+        private final int[] rightDegreeCounts = new int[AXIS_LENGTH];
+        private final int[] leftDegreeCounts = new int[AXIS_LENGTH];
+        private final int[] dfsLeftStack = new int[MAX_CHORDS];
+        private final int[] dfsEdgeStack = new int[MAX_CHORDS];
+
+        private final char[] selectedHorizontal = new char[MAX_CHORDS];
+        private final char[] selectedVertical = new char[MAX_CHORDS];
+
+        private char gridMark;
+        private int edgeCount;
+        private int selectedHorizontalCount;
+        private int selectedVerticalCount;
+
+        Scratch() {
+            Arrays.fill(this.horizontalGrid, UNMATCHED);
+        }
+
+        void selectMaximumIndependentSet(
+                long[] horizontal,
+                int horizontalStart,
+                int horizontalEnd,
+                long[] vertical,
+                int verticalStart,
+                int verticalEnd) {
+            int leftSize = horizontalEnd - horizontalStart;
+            int rightSize = verticalEnd - verticalStart;
+            this.selectedHorizontalCount = 0;
+            this.selectedVerticalCount = 0;
+            if (leftSize == 0 || rightSize == 0) {
+                for (int index = 0; index < leftSize; index++) {
+                    this.selectedHorizontal[this.selectedHorizontalCount++] = (char) index;
+                }
+                for (int index = 0; index < rightSize; index++) {
+                    this.selectedVertical[this.selectedVerticalCount++] = (char) index;
+                }
+                return;
+            }
+
+            this.buildConflictGraph(
+                    horizontal,
+                    horizontalStart,
+                    leftSize,
+                    vertical,
+                    verticalStart,
+                    rightSize);
+            this.hopcroftKarp(leftSize, rightSize);
+            for (int index = 0; index < leftSize; index++) {
+                if (this.reachableLeft[index]) {
+                    this.selectedHorizontal[this.selectedHorizontalCount++] = (char) index;
+                }
+            }
+            for (int index = 0; index < rightSize; index++) {
+                if (!this.reachableRight[index]) {
+                    this.selectedVertical[this.selectedVerticalCount++] = (char) index;
+                }
+            }
+        }
+
+        int selectedHorizontalCount() {
+            return this.selectedHorizontalCount;
+        }
+
+        int selectedHorizontal(int index) {
+            return this.selectedHorizontal[index];
+        }
+
+        int selectedVerticalCount() {
+            return this.selectedVerticalCount;
+        }
+
+        int selectedVertical(int index) {
+            return this.selectedVertical[index];
+        }
+
+        private void buildConflictGraph(
+                long[] horizontal,
+                int horizontalStart,
+                int leftSize,
+                long[] vertical,
+                int verticalStart,
+                int rightSize) {
+            this.resetGrid();
+            this.edgeCount = 0;
+            Arrays.fill(this.rightDegrees, 0, rightSize, (byte) 0);
+
+            for (int index = 0; index < leftSize; index++) {
+                int chord = RectangleDecomposition64.chord(
+                        horizontal[horizontalStart + index]);
+                int y = RectangleDecomposition64.chordY1(chord);
+                int start = Math.max(RectangleDecomposition64.chordX1(chord), 1);
+                int end = Math.min(RectangleDecomposition64.chordX2(chord), 63);
+                for (int x = start; x <= end; x++) {
+                    int slot = gridIndex(x, y);
+                    if (this.horizontalGridMarks[slot] == this.gridMark) {
+                        throw new IllegalStateException(
+                                "Horizontal chords overlap at one internal grid point");
+                    }
+                    this.horizontalGrid[slot] = (char) index;
+                    this.horizontalGridMarks[slot] = this.gridMark;
+                    if (this.horizontalXMarks[x] != this.gridMark) {
+                        this.horizontalXMarks[x] = this.gridMark;
+                        this.horizontalYMasks[x] = 0L;
+                    }
+                    this.horizontalYMasks[x] |= 1L << y;
+                }
+            }
+
+            for (int index = 0; index < rightSize; index++) {
+                int chord = RectangleDecomposition64.chord(vertical[verticalStart + index]);
+                int x = RectangleDecomposition64.chordX1(chord);
+                long active = this.horizontalXMarks[x] == this.gridMark
+                        ? this.horizontalYMasks[x]
+                                & internalMask(
+                                        RectangleDecomposition64.chordY1(chord),
+                                        RectangleDecomposition64.chordY2(chord))
+                        : 0L;
+                while (active != 0L) {
+                    int y = Long.numberOfTrailingZeros(active);
+                    int slot = gridIndex(x, y);
+                    if (this.horizontalGridMarks[slot] != this.gridMark) {
+                        throw new IllegalStateException("Conflict grid mark is inconsistent");
+                    }
+                    if (this.edgeCount >= this.edgeBuffer.length) {
+                        throw new IllegalStateException("Conflict edge capacity was exceeded");
+                    }
+                    int left = this.horizontalGrid[slot];
+                    this.edgeBuffer[this.edgeCount++] = left << 16 | index;
+                    this.rightDegrees[index] =
+                            (byte) (Byte.toUnsignedInt(this.rightDegrees[index]) + 1);
+                    active &= active - 1L;
+                }
+            }
+
+            this.buildAdjacency(leftSize, rightSize);
+        }
+
+        private void buildAdjacency(int leftSize, int rightSize) {
+            Arrays.fill(this.adjacencyOffsets, 0, leftSize + 1, 0);
+            for (int index = 0; index < this.edgeCount; index++) {
+                int left = this.edgeBuffer[index] >>> 16;
+                this.adjacencyOffsets[left + 1]++;
+            }
+            for (int index = 1; index <= leftSize; index++) {
+                this.adjacencyOffsets[index] += this.adjacencyOffsets[index - 1];
+            }
+
+            System.arraycopy(this.adjacencyOffsets, 0, this.nextOffsets, 0, leftSize);
+            for (int index = 0; index < this.edgeCount; index++) {
+                int edge = this.edgeBuffer[index];
+                int left = edge >>> 16;
+                this.adjacencyEdges[this.nextOffsets[left]++] = edge & 0xffff;
+            }
+
+            for (int right = 0; right < rightSize; right++) {
+                this.rightKeys[right] =
+                        Byte.toUnsignedInt(this.rightDegrees[right]) << 16 | right;
+            }
+            for (int left = 0; left < leftSize; left++) {
+                this.sortNeighbors(
+                        this.adjacencyOffsets[left],
+                        this.adjacencyOffsets[left + 1]);
+            }
+        }
+
+        private void sortNeighbors(int start, int end) {
+            int length = end - start;
+            if (length <= 1) {
+                return;
+            }
+            if (length <= 48) {
+                for (int index = start + 1; index < end; index++) {
+                    int value = this.adjacencyEdges[index];
+                    int key = this.rightKeys[value];
+                    int cursor = index;
+                    while (cursor > start
+                            && this.rightKeys[this.adjacencyEdges[cursor - 1]] > key) {
+                        this.adjacencyEdges[cursor] = this.adjacencyEdges[cursor - 1];
+                        cursor--;
+                    }
+                    this.adjacencyEdges[cursor] = value;
+                }
+                return;
+            }
+
+            for (int index = start; index < end; index++) {
+                this.adjacencyEdges[index] =
+                        this.rightKeys[this.adjacencyEdges[index]];
+            }
+            Arrays.sort(this.adjacencyEdges, start, end);
+            for (int index = start; index < end; index++) {
+                this.adjacencyEdges[index] &= 0xffff;
+            }
+        }
+
+        private void resetGrid() {
+            this.gridMark++;
+            if (this.gridMark != 0) {
+                return;
+            }
+            this.gridMark = 1;
+            Arrays.fill(this.horizontalGridMarks, (char) 0);
+            Arrays.fill(this.horizontalXMarks, (char) 0);
+        }
+
+        private void hopcroftKarp(int leftSize, int rightSize) {
+            Arrays.fill(this.pairLeft, 0, leftSize, UNMATCHED);
+            Arrays.fill(this.pairRight, 0, rightSize, UNMATCHED);
+            this.greedyInitialize(leftSize, rightSize);
+            this.greedyAugmentLengthThree(leftSize);
+
+            Arrays.fill(this.distance, 0, leftSize, UNMATCHED);
+            Arrays.fill(this.reachableLeft, 0, leftSize, false);
+            Arrays.fill(this.reachableRight, 0, rightSize, false);
+            int unmatchedCount = 0;
+            for (int left = 0; left < leftSize; left++) {
+                if (this.pairLeft[left] == UNMATCHED) {
+                    this.unmatchedLefts[unmatchedCount++] = (char) left;
+                }
+            }
+            this.sortUnmatchedLeftsByDegree(unmatchedCount);
+            int touchedCount = 0;
+
+            while (unmatchedCount != 0) {
+                for (int index = 0; index < touchedCount; index++) {
+                    this.distance[this.touchedLefts[index]] = UNMATCHED;
+                }
+                touchedCount = 0;
+                int queueCount = 0;
+                int head = 0;
+                boolean foundAugmentingPath = false;
+
+                for (int index = 0; index < unmatchedCount; index++) {
+                    int left = this.unmatchedLefts[index];
+                    this.distance[left] = 0;
+                    this.nextEdge[left] = this.adjacencyOffsets[left];
+                    this.touchedLefts[touchedCount++] = (char) left;
+                    this.queue[queueCount++] = (char) left;
+                }
+
+                while (head < queueCount) {
+                    int left = this.queue[head++];
+                    int start = this.adjacencyOffsets[left];
+                    int end = this.adjacencyOffsets[left + 1];
+                    for (int edge = start; edge < end; edge++) {
+                        int right = this.adjacencyEdges[edge];
+                        char matched = this.pairRight[right];
+                        if (matched == UNMATCHED) {
+                            foundAugmentingPath = true;
+                        } else {
+                            int nextLeft = matched;
+                            if (this.distance[nextLeft] == UNMATCHED) {
+                                this.distance[nextLeft] =
+                                        (char) (this.distance[left] + 1);
+                                this.nextEdge[nextLeft] =
+                                        this.adjacencyOffsets[nextLeft];
+                                this.touchedLefts[touchedCount++] =
+                                        (char) nextLeft;
+                                this.queue[queueCount++] = (char) nextLeft;
+                            }
+                        }
+                    }
+                }
+
+                if (!foundAugmentingPath) {
+                    for (int index = 0; index < touchedCount; index++) {
+                        this.reachableLeft[this.touchedLefts[index]] = true;
+                    }
+                    for (int index = 0; index < touchedCount; index++) {
+                        int left = this.touchedLefts[index];
+                        int start = this.adjacencyOffsets[left];
+                        int end = this.adjacencyOffsets[left + 1];
+                        for (int edge = start; edge < end; edge++) {
+                            int right = this.adjacencyEdges[edge];
+                            if (this.pairLeft[left] != right) {
+                                this.reachableRight[right] = true;
+                            }
+                        }
+                    }
+                    break;
+                }
+
+                for (int index = 0; index < unmatchedCount; index++) {
+                    int left = this.unmatchedLefts[index];
+                    if (this.pairLeft[left] == UNMATCHED) {
+                        this.depthFirstAugment(left);
+                    }
+                }
+
+                int retained = 0;
+                for (int index = 0; index < unmatchedCount; index++) {
+                    char left = this.unmatchedLefts[index];
+                    if (this.pairLeft[left] == UNMATCHED) {
+                        this.unmatchedLefts[retained++] = left;
+                    }
+                }
+                unmatchedCount = retained;
+            }
+        }
+
+        private void greedyInitialize(int leftSize, int rightSize) {
+            for (int left = 0; left < leftSize; left++) {
+                int start = this.adjacencyOffsets[left];
+                if (this.adjacencyOffsets[left + 1] - start != 1) {
+                    continue;
+                }
+                int right = this.adjacencyEdges[start];
+                if (this.pairRight[right] == UNMATCHED) {
+                    this.pairLeft[left] = (char) right;
+                    this.pairRight[right] = (char) left;
+                }
+            }
+
+            Arrays.fill(this.transposeOffsets, 0, rightSize + 1, 0);
+            for (int right = 0; right < rightSize; right++) {
+                this.transposeOffsets[right + 1] =
+                        this.transposeOffsets[right]
+                                + Byte.toUnsignedInt(this.rightDegrees[right]);
+            }
+            System.arraycopy(
+                    this.transposeOffsets, 0, this.writeOffsets, 0, rightSize);
+            for (int left = 0; left < leftSize; left++) {
+                int start = this.adjacencyOffsets[left];
+                int end = this.adjacencyOffsets[left + 1];
+                for (int edge = start; edge < end; edge++) {
+                    int right = this.adjacencyEdges[edge];
+                    this.transposeEdges[this.writeOffsets[right]++] =
+                            (char) left;
+                }
+            }
+
+            this.sortRightOrderByDegree(rightSize);
+            for (int index = 0; index < rightSize; index++) {
+                int right = this.rightOrder[index];
+                if (this.pairRight[right] != UNMATCHED) {
+                    continue;
+                }
+                int start = this.transposeOffsets[right];
+                int end = this.transposeOffsets[right + 1];
+                for (int edge = start; edge < end; edge++) {
+                    int left = this.transposeEdges[edge];
+                    if (this.pairLeft[left] == UNMATCHED) {
+                        this.pairLeft[left] = (char) right;
+                        this.pairRight[right] = (char) left;
+                        break;
+                    }
+                }
+            }
+        }
+
+        private void greedyAugmentLengthThree(int leftSize) {
+            leftLoop:
+            for (int left = 0; left < leftSize; left++) {
+                if (this.pairLeft[left] != UNMATCHED) {
+                    continue;
+                }
+                int start = this.adjacencyOffsets[left];
+                int end = this.adjacencyOffsets[left + 1];
+                for (int edge = start; edge < end; edge++) {
+                    int right = this.adjacencyEdges[edge];
+                    char matchedLeftValue = this.pairRight[right];
+                    if (matchedLeftValue == UNMATCHED) {
+                        this.pairLeft[left] = (char) right;
+                        this.pairRight[right] = (char) left;
+                        break;
+                    }
+
+                    int matchedLeft = matchedLeftValue;
+                    int alternateStart = this.adjacencyOffsets[matchedLeft];
+                    int alternateEnd = this.adjacencyOffsets[matchedLeft + 1];
+                    for (int alternateEdge = alternateStart;
+                            alternateEdge < alternateEnd;
+                            alternateEdge++) {
+                        int alternateRight =
+                                this.adjacencyEdges[alternateEdge];
+                        if (alternateRight == right
+                                || this.pairRight[alternateRight] != UNMATCHED) {
+                            continue;
+                        }
+                        this.pairLeft[matchedLeft] = (char) alternateRight;
+                        this.pairRight[alternateRight] = (char) matchedLeft;
+                        this.pairLeft[left] = (char) right;
+                        this.pairRight[right] = (char) left;
+                        continue leftLoop;
+                    }
+                }
+            }
+        }
+
+        private void sortRightOrderByDegree(int rightSize) {
+            int maxDegree = 0;
+            for (int right = 0; right < rightSize; right++) {
+                maxDegree = Math.max(
+                        maxDegree,
+                        Byte.toUnsignedInt(this.rightDegrees[right]));
+            }
+            Arrays.fill(this.rightDegreeCounts, 0, maxDegree + 1, 0);
+            for (int right = 0; right < rightSize; right++) {
+                this.rightDegreeCounts[
+                        Byte.toUnsignedInt(this.rightDegrees[right])]++;
+            }
+            int offset = 0;
+            for (int degree = 0; degree <= maxDegree; degree++) {
+                int count = this.rightDegreeCounts[degree];
+                this.rightDegreeCounts[degree] = offset;
+                offset += count;
+            }
+            for (int right = 0; right < rightSize; right++) {
+                int degree = Byte.toUnsignedInt(this.rightDegrees[right]);
+                int slot = this.rightDegreeCounts[degree]++;
+                this.rightOrder[slot] = (char) right;
+            }
+        }
+
+        private void sortUnmatchedLeftsByDegree(int unmatchedCount) {
+            int maxDegree = 0;
+            for (int index = 0; index < unmatchedCount; index++) {
+                maxDegree = Math.max(
+                        maxDegree, this.leftDegree(this.unmatchedLefts[index]));
+            }
+            Arrays.fill(this.leftDegreeCounts, 0, maxDegree + 1, 0);
+            for (int index = 0; index < unmatchedCount; index++) {
+                this.leftDegreeCounts[
+                        this.leftDegree(this.unmatchedLefts[index])]++;
+            }
+            int offset = 0;
+            for (int degree = 0; degree <= maxDegree; degree++) {
+                int count = this.leftDegreeCounts[degree];
+                this.leftDegreeCounts[degree] = offset;
+                offset += count;
+            }
+            for (int index = 0; index < unmatchedCount; index++) {
+                char left = this.unmatchedLefts[index];
+                int degree = this.leftDegree(left);
+                int slot = this.leftDegreeCounts[degree]++;
+                this.queue[slot] = left;
+            }
+            System.arraycopy(this.queue, 0, this.unmatchedLefts, 0, unmatchedCount);
+        }
+
+        private int leftDegree(int left) {
+            return this.adjacencyOffsets[left + 1]
+                    - this.adjacencyOffsets[left];
+        }
+
+        private boolean depthFirstAugment(int startLeft) {
+            int stackSize = 1;
+            this.dfsLeftStack[0] = startLeft;
+            this.dfsEdgeStack[0] = this.nextEdge[startLeft];
+
+            while (true) {
+                int top = stackSize - 1;
+                int left = this.dfsLeftStack[top];
+                int edge = this.dfsEdgeStack[top];
+                int end = this.adjacencyOffsets[left + 1];
+                boolean found = false;
+
+                while (edge < end) {
+                    int right = this.adjacencyEdges[edge++];
+                    char matched = this.pairRight[right];
+                    if (matched == UNMATCHED) {
+                        this.pairLeft[left] = (char) right;
+                        this.pairRight[right] = (char) left;
+                        this.dfsEdgeStack[top] = edge;
+                        for (int index = top - 1; index >= 0; index--) {
+                            int previousLeft = this.dfsLeftStack[index];
+                            int previousEdge = this.dfsEdgeStack[index];
+                            int previousRight =
+                                    this.adjacencyEdges[previousEdge - 1];
+                            this.pairLeft[previousLeft] =
+                                    (char) previousRight;
+                            this.pairRight[previousRight] =
+                                    (char) previousLeft;
+                            this.nextEdge[previousLeft] = previousEdge;
+                        }
+                        return true;
+                    }
+
+                    int nextLeft = matched;
+                    if (this.distance[nextLeft]
+                            == this.distance[left] + 1) {
+                        this.dfsEdgeStack[top] = edge;
+                        this.dfsLeftStack[stackSize] = nextLeft;
+                        this.dfsEdgeStack[stackSize] =
+                                this.nextEdge[nextLeft];
+                        stackSize++;
+                        found = true;
+                        break;
+                    }
+                }
+
+                if (!found) {
+                    this.distance[left] = UNMATCHED;
+                    this.nextEdge[left] = edge;
+                    stackSize--;
+                    if (stackSize == 0) {
+                        return false;
+                    }
+                }
+            }
+        }
+    }
+
+    private static int gridIndex(int x, int y) {
+        return y * AXIS_LENGTH + x;
+    }
+
+    private static long internalMask(int start, int end) {
+        int clampedStart = Math.max(start, 1);
+        int clampedEnd = Math.min(end, 63);
+        if (clampedStart > clampedEnd) {
+            return 0L;
+        }
+        long startMask = -1L << clampedStart;
+        long endMask = clampedEnd >= 63
+                ? -1L
+                : (1L << (clampedEnd + 1)) - 1L;
+        return startMask & endMask;
+    }
+}

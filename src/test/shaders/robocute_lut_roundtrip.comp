@@ -17,7 +17,6 @@ void main() {
     uint yz = caseIndex / PRIME_TEST_GGX_SIZE.x;
     uint y = yz % PRIME_TEST_GGX_SIZE.y;
     uint z = yz / PRIME_TEST_GGX_SIZE.y;
-    vec3 uvw = (vec3(x, y, z) + vec3(0.5)) / vec3(PRIME_TEST_GGX_SIZE);
     primeTestOutput.words[caseIndex] = floatBitsToUint(
-            textureLod(primeRcTransmissionGgxEnergy, uvw, 0.0));
+            texelFetch(primeRcTransmissionGgxEnergy, ivec3(x, y, z), 0));
 }

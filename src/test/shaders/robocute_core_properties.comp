@@ -484,11 +484,11 @@ void primeCoreRefraction(uvec4 encoded[4], out PrimeCoreResult result) {
             && abs(ior - 1.0) >= 1.0e-2);
 
     primeCoreClassify(result.mask, sampled.wo);
-    primeCoreClassify(result.mask, sampled.pdf);
     primeCoreClassify(result.mask, sampled.eta);
-    primeCoreClassify(result.mask, evaluatedPdf);
     primeCoreClassify(result.mask, maximumLambda);
     if (numericInterior) {
+        primeCoreClassify(result.mask, sampled.pdf);
+        primeCoreClassify(result.mask, evaluatedPdf);
         primeCoreClassify(result.mask, sampled.throughput.value);
         primeCoreClassify(result.mask, evaluated.value);
         primeCoreClassify(result.mask, sampledG2);

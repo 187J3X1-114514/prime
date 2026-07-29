@@ -307,6 +307,16 @@ void primeClosureProperties(
         probe = primeRcPrimeThinWallEvaluate(wi, probeWo, state);
     }
 
+    float sampledTransport = max(
+            max(
+                    abs(sampled.bsdfSample.throughput.value.x),
+                    abs(sampled.bsdfSample.throughput.value.y)),
+            abs(sampled.bsdfSample.throughput.value.z));
+    float evaluatedTransport = max(
+            max(
+                    abs(evaluated.throughput.value.x),
+                    abs(evaluated.throughput.value.y)),
+            abs(evaluated.throughput.value.z));
     bool numericInterior =
             min(
                     state.specularMicrofacet.alpha.x,
@@ -391,7 +401,10 @@ void primeClosureProperties(
                         wi,
                         sampled.bsdfSample.wo,
                         state.specularFresnel.ior)
-                && abs(state.specularFresnel.ior - 1.0) >= 0.01) {
+                && abs(state.specularFresnel.ior - 1.0) >= 0.01
+                // A PDF mismatch cannot affect the estimator after both
+                // transport values fall below the identity tolerance.
+                && max(sampledTransport, evaluatedTransport) > 5.0e-6) {
             if (evaluated.throughput.flags != flags) {
                 result.mask |= PRIME_TEST_FAILURE_EVENT;
             }

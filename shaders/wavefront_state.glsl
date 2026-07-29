@@ -232,12 +232,12 @@ void primeUnpackWavefrontPair(uvec3 packedPair, out vec3 first, out vec3 second)
 }
 
 uint primePackWavefrontPathControl(PathState path) {
-    // Ordinary queued paths currently have exactly the delta and no-area-NEE flags.
     return (min(path.bounce, PRIME_WAVEFRONT_BYTE_MASK)
                     << PRIME_WAVEFRONT_BOUNCE_SHIFT)
             | (min(path.rrDepth, PRIME_WAVEFRONT_BYTE_MASK)
                     << PRIME_WAVEFRONT_RR_DEPTH_SHIFT)
-            | ((path.flags & 0x3u) << PRIME_WAVEFRONT_PATH_FLAGS_SHIFT);
+            | ((path.flags & PRIME_PATH_PREVIOUS_DELTA)
+                    << PRIME_WAVEFRONT_PATH_FLAGS_SHIFT);
 }
 
 uint primePackWavefrontDiagnostic() {
@@ -342,7 +342,8 @@ PathState primeWavefrontPath(
             ? 1u
             : 0u;
     path.rayDirection = record.rayDirectionAndDenoiserControl.xyz;
-    path.flags = (pathControl >> PRIME_WAVEFRONT_PATH_FLAGS_SHIFT) & 0x3u;
+    path.flags = (pathControl >> PRIME_WAVEFRONT_PATH_FLAGS_SHIFT)
+            & PRIME_PATH_PREVIOUS_DELTA;
     path.throughput = record.throughputAndNumericalFlags.xyz;
     path.previousBsdfPdf = record.physicalOriginAndPreviousBsdfPdf.w;
     path.rrDepth = (pathControl >> PRIME_WAVEFRONT_RR_DEPTH_SHIFT)

@@ -27,7 +27,6 @@ layout(location = 1) rayPayloadEXT PrimeShadowPayload primeShadowPayload;
 
 const uint PRIME_WAVEFRONT_STAGE_HEAD = 0u;
 const uint PRIME_WAVEFRONT_STAGE_STEP = 1u;
-const uint PRIME_WAVEFRONT_STAGE_TRANSITION = 2u;
 const uint PRIME_WAVEFRONT_STAGE_TAIL = 3u;
 const uint PRIME_WAVEFRONT_STAGE_RESOLVE = 4u;
 const uint PRIME_WAVEFRONT_SCREENSHOT_OUTPUT = 1u << 9u;
@@ -317,8 +316,7 @@ void primeWavefrontHead() {
             volumeStack,
             denoiserState,
             result,
-            surface,
-            false);
+            surface);
     continuation = continuation && path.bounce < maximumBounces;
     PrimeWavefrontPathRecord record = primeMakeWavefrontRecord(
             path, volumeStack, denoiserState, result, continuation);
@@ -332,7 +330,7 @@ void primeWavefrontHead() {
     primeStoreWavefrontIntermediate(pixel, result);
 }
 
-void primeWavefrontStep(bool sunOnlyTail, uint sourceQueue) {
+void primeWavefrontStep(uint sourceQueue) {
     uint recordIndex =
             primeWavefrontQueuedPath(sourceQueue, gl_LaunchIDEXT.x);
     uvec2 pixel = primeWavefrontPixel(recordIndex);
@@ -417,8 +415,7 @@ void primeWavefrontStep(bool sunOnlyTail, uint sourceQueue) {
                 directionalGuide,
                 surface,
                 primeWavefrontTransmissionBranch(record),
-                guideEnabled,
-                sunOnlyTail);
+                guideEnabled);
         continuation = continuation && path.bounce < maximumBounces;
         primeUpdateTransparentWavefrontRecord(
                 record,
@@ -458,8 +455,7 @@ void primeWavefrontStep(bool sunOnlyTail, uint sourceQueue) {
                 volumeStack,
                 denoiserState,
                 result,
-                surface,
-                sunOnlyTail);
+                surface);
         continuation = continuation && path.bounce < maximumBounces;
         primeUpdateWavefrontRecord(
                 record, path, volumeStack, denoiserState, continuation);
@@ -534,8 +530,7 @@ void primeWavefrontTail(uint sourceQueue) {
                     directionalGuide,
                     surface,
                     primeWavefrontTransmissionBranch(record),
-                    guideEnabled,
-                    true)) {
+                    guideEnabled)) {
                 break;
             }
         }
@@ -569,7 +564,7 @@ void primeWavefrontTail(uint sourceQueue) {
     PrimeDenoiserState denoiserState =
             primeWavefrontDenoiserState(record, result);
     // Paths reaching this point are sparse and incoherent. Finish them locally so queue traffic
-    // remains bounded; retain sun NEE but never sample the area-light tree.
+    // remains bounded while preserving the same light-sampling policy as the queued rounds.
     [[dont_unroll]]
     while (path.bounce < maximumBounces) {
         primeSetNumericalContext(
@@ -582,8 +577,7 @@ void primeWavefrontTail(uint sourceQueue) {
                 volumeStack,
                 denoiserState,
                 result,
-                surface,
-                true)) {
+                surface)) {
             break;
         }
     }
@@ -635,16 +629,13 @@ void primeWavefrontResolve() {
 }
 
 void main() {
-    uint recordStage = primeWavefrontShaderRecord.control & 0xffu;
     uint sourceQueue = (primeWavefrontShaderRecord.control >> 8u) & 1u;
     switch (primeWavefrontSpecializedStage) {
         case PRIME_WAVEFRONT_STAGE_HEAD:
             primeWavefrontHead();
             break;
         case PRIME_WAVEFRONT_STAGE_STEP:
-            primeWavefrontStep(
-                    recordStage == PRIME_WAVEFRONT_STAGE_TRANSITION,
-                    sourceQueue);
+            primeWavefrontStep(sourceQueue);
             break;
         case PRIME_WAVEFRONT_STAGE_TAIL:
             primeWavefrontTail(sourceQueue);

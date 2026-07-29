@@ -9,9 +9,6 @@
 const uint PRIME_HIT_NONE = 0u;
 const uint PRIME_HIT_SURFACE = 1u;
 const uint PRIME_PATH_PREVIOUS_DELTA = 1u;
-// This path vertex deliberately had no next-event estimate. Its first emitter/environment hit
-// therefore has no competing light-sampling technique and must receive MIS weight one.
-const uint PRIME_PATH_PREVIOUS_NO_AREA_NEE = 2u;
 
 struct PrimeDirectLightingSplit {
     vec3 diffuse;
@@ -253,16 +250,9 @@ bool primeKnownHitKind(SurfaceInteraction surface) {
     return surface.hitKind == PRIME_HIT_NONE || surface.hitKind == PRIME_HIT_SURFACE;
 }
 
-bool primePreviousCannotUseSunMis(PathState path) {
+bool primePreviousCannotUseMis(PathState path) {
     return path.bounce == 0u
             || (path.flags & PRIME_PATH_PREVIOUS_DELTA) != 0u;
-}
-
-bool primePreviousCannotUseAreaMis(PathState path) {
-    return path.bounce == 0u
-            || (path.flags & (
-                    PRIME_PATH_PREVIOUS_DELTA
-                            | PRIME_PATH_PREVIOUS_NO_AREA_NEE)) != 0u;
 }
 
 vec3 primeSurfaceOutwardShadingNormal(SurfaceInteraction surface) {
@@ -675,7 +665,7 @@ vec3 primeEvaluateEnvironmentContribution(
             integrator, path.physicalOrigin, path.rayDirection);
     LightEvaluation sun = primeEvaluateSun(
             integrator, path.physicalOrigin, path.rayDirection);
-    float sunWeight = primePreviousCannotUseSunMis(path)
+    float sunWeight = primePreviousCannotUseMis(path)
             ? 1.0
             : primePowerHeuristic(path.previousBsdfPdf, sun.pdf);
     return path.throughput
@@ -689,7 +679,7 @@ vec3 primeEvaluateHitEmission(
     primeSetNumericalContext(PRIME_NUMERICAL_STAGE_EMISSION, path.bounce);
     LightEvaluation hitAreaLight = primeEvaluateAreaLight(
             surface, path.physicalOrigin, path.rayDirection);
-    float hitAreaWeight = primePreviousCannotUseAreaMis(path)
+    float hitAreaWeight = primePreviousCannotUseMis(path)
             ? 1.0
             : primePowerHeuristic(path.previousBsdfPdf, hitAreaLight.pdf);
     return primeTripleProduct(path.throughput, hitAreaLight.radiance, hitAreaWeight);
@@ -971,12 +961,6 @@ void primeAccumulateTransparentBranch(
     }
 }
 
-vec3 primeEvaluateHitEmissionWithoutAreaNee(
-        PathState path, SurfaceInteraction surface) {
-    primeSetNumericalContext(PRIME_NUMERICAL_STAGE_EMISSION, path.bounce);
-    return path.throughput * primeEvaluateAreaEmission(surface, path.rayDirection);
-}
-
 uint primeTransparentGuideMode() {
     return (primePush.path.z >> PRIME_PATH_TRANSPARENT_GUIDE_MODE_SHIFT)
             & PRIME_PATH_TRANSPARENT_GUIDE_MODE_MASK;
@@ -997,8 +981,7 @@ bool primeIntegrateTransparentWavefrontSurface(
         inout bool directionalGuide,
         SurfaceInteraction surface,
         bool transmissionBranch,
-        bool guideEnabled,
-        bool sunOnlyTail) {
+        bool guideEnabled) {
     primeSetNumericalContext(PRIME_NUMERICAL_STAGE_SURFACE, path.bounce);
     primeRecordNonFinite(surface.position);
     primeRecordNonnegative(surface.t);
@@ -1058,11 +1041,7 @@ bool primeIntegrateTransparentWavefrontSurface(
     bool contributionDiffuse = guideEnabled
             ? (primarySurfaceReplacement || diffusePath)
             : transmissionBranch;
-    bool previousSkippedAreaNee =
-            (path.flags & PRIME_PATH_PREVIOUS_NO_AREA_NEE) != 0u;
-    vec3 emitted = previousSkippedAreaNee
-            ? primeEvaluateHitEmissionWithoutAreaNee(path, surface)
-            : primeEvaluateHitEmission(path, surface);
+    vec3 emitted = primeEvaluateHitEmission(path, surface);
     primeAccumulateTransparentBranch(
             result, contributionDiffuse, emitted);
 
@@ -1083,41 +1062,28 @@ bool primeIntegrateTransparentWavefrontSurface(
                     path.throughput * sun.lighting.diffuse * sun.visibility;
             vec3 specularDirect =
                     path.throughput * sun.lighting.specular * sun.visibility;
-            if (!sunOnlyTail) {
-                PrimeDirectLightingSplit nonsun = primeEstimatePrimaryNonsunDirect(
-                        surface,
-                        viewDirection,
-                        preparedSample,
-                        volumeStack,
-                        false);
-                diffuseDirect += path.throughput * nonsun.diffuse;
-                specularDirect += path.throughput * nonsun.specular;
-                result.guides.primaryAreaDiffuse =
-                        path.throughput * nonsun.diffuse;
-                result.guides.primaryAreaSpecular =
-                        path.throughput * nonsun.specular;
-                result.guides.primaryAreaDirection = nonsun.direction;
-            }
+            PrimeDirectLightingSplit nonsun = primeEstimatePrimaryNonsunDirect(
+                    surface,
+                    viewDirection,
+                    preparedSample,
+                    volumeStack,
+                    false);
+            diffuseDirect += path.throughput * nonsun.diffuse;
+            specularDirect += path.throughput * nonsun.specular;
+            result.guides.primaryAreaDiffuse =
+                    path.throughput * nonsun.diffuse;
+            result.guides.primaryAreaSpecular =
+                    path.throughput * nonsun.specular;
+            result.guides.primaryAreaDirection = nonsun.direction;
             primeAccumulate(result.diffuseRadiance, diffuseDirect);
             primeAccumulate(result.specularRadiance, specularDirect);
         } else {
-            vec3 direct = path.throughput * (
-                    sunOnlyTail
-                            ? primeEstimateDirectSun(
-                                    integrator,
-                                    surface,
-                                    viewDirection,
-                                    primeSobolSample2D(
-                                            preparedSample,
-                                            PRIME_SAMPLE_EFFECT_DIRECT_SUN,
-                                            PRIME_SAMPLE_DIMENSION_PRIMARY),
-                                    volumeStack)
-                            : primeEstimateDirectLighting(
-                                    integrator,
-                                    surface,
-                                    viewDirection,
-                                    preparedSample,
-                                    volumeStack));
+            vec3 direct = path.throughput * primeEstimateDirectLighting(
+                    integrator,
+                    surface,
+                    viewDirection,
+                    preparedSample,
+                    volumeStack);
             primeAccumulateTransparentBranch(
                     result,
                     guideEnabled ? diffusePath : transmissionBranch,
@@ -1187,9 +1153,6 @@ bool primeIntegrateTransparentWavefrontSurface(
             path, surface, bsdf, preparedSample, pureDeltaInterface)) {
         return false;
     }
-    if (sunOnlyTail) {
-        path.flags |= PRIME_PATH_PREVIOUS_NO_AREA_NEE;
-    }
     path.bounce++;
     return true;
 }
@@ -1232,8 +1195,7 @@ bool primeIntegrateWavefrontSurface(
         inout PrimeRcVolumeStack volumeStack,
         inout PrimeDenoiserState denoiserState,
         inout PrimeIntegrationResult result,
-        SurfaceInteraction surface,
-        bool sunOnlyTail) {
+        SurfaceInteraction surface) {
     primeSetNumericalContext(PRIME_NUMERICAL_STAGE_SURFACE, path.bounce);
     primeRecordNonFinite(surface.position);
     primeRecordNonnegative(surface.t);
@@ -1268,21 +1230,12 @@ bool primeIntegrateWavefrontSurface(
     }
 
     vec3 viewDirection = -path.rayDirection;
-    // Emission belongs to the sampling policy of the previous vertex. The last wavefront round
-    // still resolves that one pending area-light MIS query, then marks its continuation so every
-    // vertex executed by the tail can use the radiance-only emitter path.
-    {
-        bool previousSkippedAreaNee =
-                (path.flags & PRIME_PATH_PREVIOUS_NO_AREA_NEE) != 0u;
-        vec3 emitted = previousSkippedAreaNee
-                ? primeEvaluateHitEmissionWithoutAreaNee(path, surface)
-                : primeEvaluateHitEmission(path, surface);
-        if (!denoiserState.hasPrimarySurface) {
-            primeAccumulate(result.radiance.stable, emitted);
-        } else {
-            primeAccumulateAfterPrimary(
-                    result, denoiserState.diffusePath, emitted);
-        }
+    vec3 emitted = primeEvaluateHitEmission(path, surface);
+    if (!denoiserState.hasPrimarySurface) {
+        primeAccumulate(result.radiance.stable, emitted);
+    } else {
+        primeAccumulateAfterPrimary(
+                result, denoiserState.diffusePath, emitted);
     }
 
     bool transmissive = primeMaterialIsTransmissive(surface.materialFlags);
@@ -1328,25 +1281,12 @@ bool primeIntegrateWavefrontSurface(
                 result.guides.primaryAreaDirection = nonsun.direction;
             }
         } else {
-            vec3 direct;
-            if (sunOnlyTail) {
-                direct = path.throughput * primeEstimateDirectSun(
-                        integrator,
-                        surface,
-                        viewDirection,
-                        primeSobolSample2D(
-                                preparedSample,
-                                PRIME_SAMPLE_EFFECT_DIRECT_SUN,
-                                PRIME_SAMPLE_DIMENSION_PRIMARY),
-                        volumeStack);
-            } else {
-                direct = path.throughput * primeEstimateDirectLighting(
-                        integrator,
-                        surface,
-                        viewDirection,
-                        preparedSample,
-                        volumeStack);
-            }
+            vec3 direct = path.throughput * primeEstimateDirectLighting(
+                    integrator,
+                    surface,
+                    viewDirection,
+                    preparedSample,
+                    volumeStack);
             primeAccumulateAfterPrimary(
                     result,
                     denoiserState.diffusePath,
@@ -1437,9 +1377,6 @@ bool primeIntegrateWavefrontSurface(
             || !primeAdvancePath(
                     path, surface, bsdf, preparedSample, pureDeltaInterface)) {
         return false;
-    }
-    if (sunOnlyTail) {
-        path.flags |= PRIME_PATH_PREVIOUS_NO_AREA_NEE;
     }
     path.bounce++;
     return true;

@@ -101,7 +101,7 @@ final class RealtimeFramePlanTest {
                 firstInput.material(),
                 firstInput.shInput(),
                 firstInput.triangleDebug(),
-                firstInput.displayOverexposure(),
+                firstInput.display(),
                 firstInput.nrdDebugView(),
                 firstInput.fsrDebugView(),
                 firstInput.rrDebugView(),
@@ -131,6 +131,27 @@ final class RealtimeFramePlanTest {
                 IllegalStateException.class,
                 () -> plan.requireTextureRevision(
                         secondInput.textureRevision() + 1L));
+    }
+
+    @Test
+    void finalExposureChangesDoNotRestartIntegratorHistory() {
+        RealtimeFrameInput initial = input(
+                PostProcessingMode.NRD_FSR,
+                ReconstructionQualityMode.QUALITY);
+        RealtimeSampleState.Plan first =
+                RealtimeSampleState.initial().plan(initial.sampleStateInput());
+        RealtimeFrameInput adjusted = withDisplay(
+                initial,
+                new DisplaySettings.Snapshot(
+                        4,
+                        initial.display().oklabOverexposureSteps()));
+
+        RealtimeSampleState.Plan second =
+                first.committedState().plan(adjusted.sampleStateInput());
+
+        assertFalse(second.reset());
+        assertEquals(first.sampleIndex() + 1, second.sampleIndex());
+        assertEquals(4, adjusted.display().finalExposureQuarterSteps());
     }
 
     @Test
@@ -179,7 +200,7 @@ final class RealtimeFramePlanTest {
                         expected.forceRestart(),
                         expected.sunDirection(),
                         expected.lighting(),
-                        expected.displayOverexposure(),
+                        expected.display(),
                         expected.nrdDebugView(),
                         expected.fsrDebugView(),
                         expected.rrDebugView(),
@@ -241,11 +262,40 @@ final class RealtimeFramePlanTest {
                 new MaterialSettings.Snapshot(90, 17L),
                 true,
                 false,
-                1.0F,
+                new DisplaySettings.Snapshot(0, 32),
                 NrdDiagnostics.Mode.RAW_NUMERICAL,
                 FsrDebugView.OFF,
                 DlssRrDebugView.OFF,
                 false,
+                false);
+    }
+
+    private static RealtimeFrameInput withDisplay(
+            RealtimeFrameInput input,
+            DisplaySettings.Snapshot display) {
+        return new RealtimeFrameInput(
+                input.camera(),
+                input.frameTimeNanos() + 1L,
+                input.sceneRevision(),
+                input.residentSceneRevision(),
+                input.textureRevision(),
+                input.width(),
+                input.height(),
+                input.displayWidth(),
+                input.displayHeight(),
+                input.sunDirection(),
+                input.cameraInWater(),
+                input.postProcessingMode(),
+                input.quality(),
+                input.lighting(),
+                input.material(),
+                input.shInput(),
+                input.triangleDebug(),
+                display,
+                input.nrdDebugView(),
+                input.fsrDebugView(),
+                input.rrDebugView(),
+                input.rrDebugFullscreen(),
                 false);
     }
 

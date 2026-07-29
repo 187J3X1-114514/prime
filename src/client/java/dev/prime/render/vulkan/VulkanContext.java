@@ -188,7 +188,7 @@ public final class VulkanContext implements AutoCloseable {
                 1,
                 1,
                 VK12.VK_FORMAT_R32G32B32A32_SFLOAT,
-                VK12.VK_IMAGE_USAGE_STORAGE_BIT,
+                VK12.VK_IMAGE_USAGE_STORAGE_BIT | VK12.VK_IMAGE_USAGE_SAMPLED_BIT,
                 "Prime accumulation");
     }
 

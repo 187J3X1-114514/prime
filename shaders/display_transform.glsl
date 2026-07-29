@@ -83,8 +83,12 @@ vec3 primeOklabTonemapCurve(vec3 color, float overexposure) {
     return primeOklabToLinearBt709(faded);
 }
 
-vec3 primeDisplayTransformToSrgb(vec3 hdrRec2020, float overexposure) {
-    vec3 exposedRec2020 = max(hdrRec2020, vec3(0.0)) * PRIME_DISPLAY_EXPOSURE;
+vec3 primeDisplayTransformToSrgb(
+        vec3 hdrRec2020,
+        float exposureMultiplier,
+        float overexposure) {
+    vec3 exposedRec2020 = max(hdrRec2020, vec3(0.0))
+            * (PRIME_DISPLAY_EXPOSURE * exposureMultiplier);
     vec3 linearBt709 = max(primeLinearRec2020ToLinearBt709(exposedRec2020), vec3(0.0));
     vec3 encodedSrgb = primeEncodeSrgb(primeOklabTonemapCurve(linearBt709, overexposure));
     return clamp(encodedSrgb, vec3(0.0), vec3(1.0));

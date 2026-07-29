@@ -1,0 +1,85 @@
+#version 460
+#extension GL_GOOGLE_include_directive : require
+
+#include "auto_exposure.glsl"
+
+layout(local_size_x = 1, local_size_y = 1, local_size_z = 1) in;
+
+layout(std430, set = 0, binding = 1) readonly buffer PrimeAutoExposureHistogram {
+    uint bins[256];
+    uint validCount;
+} primeAutoExposureHistogram;
+
+layout(std430, set = 0, binding = 2) buffer PrimeAutoExposureState {
+    float exposureEv;
+    uint initialized;
+    float targetEv;
+    float measuredLogLuminance;
+} primeAutoExposureState;
+
+layout(push_constant) uniform PrimeAutoExposureUpdatePushConstants {
+    float deltaSeconds;
+    uint reset;
+    uint instant;
+    uint reserved;
+} primeAutoExposureUpdatePush;
+
+void main() {
+    uint validCount = primeAutoExposureHistogram.validCount;
+    if (validCount == 0u) {
+        if (primeAutoExposureUpdatePush.reset != 0u
+                || primeAutoExposureUpdatePush.instant != 0u
+                || primeAutoExposureState.initialized == 0u) {
+            primeAutoExposureState.exposureEv = 0.0;
+            primeAutoExposureState.initialized = 1u;
+            primeAutoExposureState.targetEv = 0.0;
+            primeAutoExposureState.measuredLogLuminance = 0.0;
+        }
+        return;
+    }
+
+    uint lowDiscard = validCount / 100u;
+    uint highDiscard = validCount / 100u;
+    uint keepBegin = lowDiscard;
+    uint keepEnd = validCount - highDiscard;
+    uint cursor = 0u;
+    uint retainedCount = 0u;
+    float weightedLogLuminance = 0.0;
+    for (uint bin = 0u; bin < 256u; ++bin) {
+        uint binCount = primeAutoExposureHistogram.bins[bin];
+        uint binBegin = cursor;
+        uint binEnd = cursor + binCount;
+        uint retainedBegin = max(binBegin, keepBegin);
+        uint retainedEnd = min(binEnd, keepEnd);
+        if (retainedEnd > retainedBegin) {
+            uint retained = retainedEnd - retainedBegin;
+            float binLogLuminance =
+                    primeAutoExposureBinLogLuminance(bin);
+            weightedLogLuminance += binLogLuminance * float(retained);
+            retainedCount += retained;
+        }
+        cursor = binEnd;
+    }
+
+    if (retainedCount == 0u) {
+        return;
+    }
+    float measuredLogLuminance =
+            weightedLogLuminance / float(retainedCount);
+    float targetEv =
+            primeAutoExposureTargetEv(measuredLogLuminance);
+    float exposureEv = targetEv;
+    if (primeAutoExposureUpdatePush.reset == 0u
+            && primeAutoExposureUpdatePush.instant == 0u
+            && primeAutoExposureState.initialized != 0u) {
+        exposureEv = primeAutoExposureAdapt(
+                primeAutoExposureState.exposureEv,
+                targetEv,
+                primeAutoExposureUpdatePush.deltaSeconds);
+    }
+
+    primeAutoExposureState.exposureEv = exposureEv;
+    primeAutoExposureState.initialized = 1u;
+    primeAutoExposureState.targetEv = targetEv;
+    primeAutoExposureState.measuredLogLuminance = measuredLogLuminance;
+}

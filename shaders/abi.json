@@ -258,7 +258,7 @@
     "displayExposure": 1.0
   },
   "emissionContract": {
-    "level15BlockIntensity": 25.0
+    "level15BlockIntensity": 1.5
   },
   "atmosphereContract": {
     "spectralModel": "hillaire-8wave-rec2020-d65",
@@ -274,6 +274,7 @@
     "width": 8192,
     "height": 4096,
     "observerLatitudeDegrees": 30.0,
+    "baseRadianceScale": 0.075,
     "sourceSha256": "dc6c4f413e85707a29a25a9451148154554ecca2c996f84fa8f47b65ef9ff7c4"
   },
   "cutoutAlphaThreshold": 0.5

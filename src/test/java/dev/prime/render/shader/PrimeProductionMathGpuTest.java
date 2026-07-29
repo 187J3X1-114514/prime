@@ -18,6 +18,7 @@ final class PrimeProductionMathGpuTest {
     private static final long MATERIAL_SEED = 0x4A7E_21A1_0000_0001L;
     private static final long NRD_SEED = 0x4E52_4404_1700_0001L;
     private static final long FSR_SEED = 0x4653_5203_0104_0001L;
+    private static final long AUTO_EXPOSURE_SEED = 0x4558_504F_5355_5245L;
     private static final long QUEUED_PSR_SEED = 0x5053_5208_0000_0001L;
     private static final int[] SPECIAL_FLOAT_BITS = {
         0x0000_0000,
@@ -128,6 +129,52 @@ final class PrimeProductionMathGpuTest {
                 inputWords,
                 5,
                 FSR_SEED);
+    }
+
+    @Test
+    void autoExposureTargetAndT90AdaptationUseTheProductionContract()
+            throws IOException {
+        int kinds = 2;
+        int inputWords = 2;
+        ByteBuffer input = ShaderTestBuffer.inputs(
+                CASES_PER_KIND * kinds, inputWords);
+        SplittableRandom random =
+                new SplittableRandom(AUTO_EXPOSURE_SEED);
+        for (int kind = 0; kind < kinds; kind++) {
+            for (int local = 0; local < CASES_PER_KIND; local++) {
+                int index = kind * CASES_PER_KIND + local;
+                putInt(input, index, inputWords, 0, 0, kind);
+                if (kind == 0) {
+                    putVec4(
+                            input,
+                            index,
+                            inputWords,
+                            1,
+                            -24.0F + random.nextFloat() * 52.0F,
+                            0.0F,
+                            0.0F,
+                            0.0F);
+                } else {
+                    putVec4(
+                            input,
+                            index,
+                            inputWords,
+                            1,
+                            random.nextFloat() * 4.0F,
+                            random.nextFloat() * 4.0F,
+                            0.0F,
+                            0.0F);
+                }
+            }
+        }
+        ShaderPropertyBatch.assertProperties(
+                runner,
+                shader("prime_auto_exposure_properties.comp.spv"),
+                input,
+                CASES_PER_KIND * kinds,
+                inputWords,
+                4,
+                AUTO_EXPOSURE_SEED);
     }
 
     @Test

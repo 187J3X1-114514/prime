@@ -92,7 +92,7 @@ final class ShaderAbiTest {
                 ShaderAbi.NRD_DENOISER);
         assertEquals("hillaire-8wave-rec2020-d65", ShaderAbi.ATMOSPHERE_SPECTRAL_MODEL);
         assertEquals(12.5F, ShaderAbi.ATMOSPHERE_SPACE_SUN_INTENSITY);
-        assertEquals(25.0F, ShaderAbi.LEVEL_15_BLOCK_INTENSITY);
+        assertEquals(1.5F, ShaderAbi.LEVEL_15_BLOCK_INTENSITY);
         assertEquals(0.00471F, ShaderAbi.ATMOSPHERE_SUN_ANGULAR_RADIUS_RADIANS);
         assertEquals(-128.0F, ShaderAbi.ATMOSPHERE_WORLD_SEA_LEVEL_Y);
         assertEquals(0.001F, ShaderAbi.ATMOSPHERE_WORLD_UNIT_SCALE_KM);
@@ -100,6 +100,7 @@ final class ShaderAbiTest {
         assertEquals(8192, ShaderAbi.STARMAP_WIDTH);
         assertEquals(4096, ShaderAbi.STARMAP_HEIGHT);
         assertEquals(30.0F, ShaderAbi.STARMAP_OBSERVER_LATITUDE_DEGREES);
+        assertEquals(0.075F, ShaderAbi.STARMAP_BASE_RADIANCE_SCALE);
         assertEquals(
                 "dc6c4f413e85707a29a25a9451148154554ecca2c996f84fa8f47b65ef9ff7c4",
                 ShaderAbi.STARMAP_SOURCE_SHA256);

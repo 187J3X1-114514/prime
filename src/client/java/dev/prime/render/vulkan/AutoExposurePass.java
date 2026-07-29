@@ -1,0 +1,453 @@
+package dev.prime.render.vulkan;
+
+import com.mojang.blaze3d.vulkan.Destroyable;
+import dev.prime.render.ResourceCleanup;
+import java.io.IOException;
+import java.io.InputStream;
+import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
+import java.nio.LongBuffer;
+import org.lwjgl.system.MemoryStack;
+import org.lwjgl.system.MemoryUtil;
+import org.lwjgl.vulkan.KHRSynchronization2;
+import org.lwjgl.vulkan.VK12;
+import org.lwjgl.vulkan.VkCommandBuffer;
+import org.lwjgl.vulkan.VkComputePipelineCreateInfo;
+import org.lwjgl.vulkan.VkDependencyInfo;
+import org.lwjgl.vulkan.VkDescriptorBufferInfo;
+import org.lwjgl.vulkan.VkDescriptorImageInfo;
+import org.lwjgl.vulkan.VkDescriptorPoolCreateInfo;
+import org.lwjgl.vulkan.VkDescriptorPoolSize;
+import org.lwjgl.vulkan.VkDescriptorSetAllocateInfo;
+import org.lwjgl.vulkan.VkDescriptorSetLayoutBinding;
+import org.lwjgl.vulkan.VkDescriptorSetLayoutCreateInfo;
+import org.lwjgl.vulkan.VkMemoryBarrier2;
+import org.lwjgl.vulkan.VkPipelineLayoutCreateInfo;
+import org.lwjgl.vulkan.VkPipelineShaderStageCreateInfo;
+import org.lwjgl.vulkan.VkPushConstantRange;
+import org.lwjgl.vulkan.VkShaderModuleCreateInfo;
+import org.lwjgl.vulkan.VkWriteDescriptorSet;
+
+/**
+ * Device-local full-frame luminance histogram and temporal exposure state.
+ *
+ * <p>The owning display pass records every state transition on the render queue. No CPU readback,
+ * cross-thread mutation or lock participates in exposure adaptation.
+ */
+final class AutoExposurePass implements Destroyable {
+    private static final int COMPUTE_STAGE = VK12.VK_SHADER_STAGE_COMPUTE_BIT;
+    private static final int PUSH_SIZE = 16;
+    private static final int HISTOGRAM_BIN_COUNT = 256;
+    private static final int HISTOGRAM_SIZE = (HISTOGRAM_BIN_COUNT + 1) * Integer.BYTES;
+    private static final int EXPOSURE_STATE_SIZE = 16;
+    private static final int HISTOGRAM_TILE_SIZE = 64;
+    private static final String HISTOGRAM_SHADER =
+            "/prime/shaders/auto_exposure_histogram.comp.spv";
+    private static final String UPDATE_SHADER =
+            "/prime/shaders/auto_exposure_update.comp.spv";
+
+    private final VulkanContext context;
+    private final VulkanBuffer histogram;
+    private final VulkanBuffer exposureState;
+    private final long descriptorSetLayout;
+    private final long descriptorPool;
+    private final long descriptorSet;
+    private final long pipelineLayout;
+    private final long histogramPipeline;
+    private final long updatePipeline;
+    private final int dispatchX;
+    private final int dispatchY;
+    private boolean destroyed;
+
+    private AutoExposurePass(
+            VulkanContext context,
+            VulkanBuffer histogram,
+            VulkanBuffer exposureState,
+            long descriptorSetLayout,
+            long descriptorPool,
+            long descriptorSet,
+            long pipelineLayout,
+            long histogramPipeline,
+            long updatePipeline,
+            int width,
+            int height) {
+        this.context = context;
+        this.histogram = histogram;
+        this.exposureState = exposureState;
+        this.descriptorSetLayout = descriptorSetLayout;
+        this.descriptorPool = descriptorPool;
+        this.descriptorSet = descriptorSet;
+        this.pipelineLayout = pipelineLayout;
+        this.histogramPipeline = histogramPipeline;
+        this.updatePipeline = updatePipeline;
+        this.dispatchX = divideRoundUp(width, HISTOGRAM_TILE_SIZE);
+        this.dispatchY = divideRoundUp(height, HISTOGRAM_TILE_SIZE);
+    }
+
+    static AutoExposurePass create(
+            VulkanContext context, VulkanImage linearInput) {
+        VulkanBuffer histogram = null;
+        VulkanBuffer exposureState = null;
+        long setLayout = 0L;
+        long descriptorPool = 0L;
+        long pipelineLayout = 0L;
+        long histogramPipeline = 0L;
+        long updatePipeline = 0L;
+        try {
+            histogram = context.createBuffer(
+                    HISTOGRAM_SIZE,
+                    VK12.VK_BUFFER_USAGE_STORAGE_BUFFER_BIT
+                            | VK12.VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+                    false,
+                    "Prime auto-exposure histogram");
+            exposureState = context.createBuffer(
+                    EXPOSURE_STATE_SIZE,
+                    VK12.VK_BUFFER_USAGE_STORAGE_BUFFER_BIT
+                            | VK12.VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+                    false,
+                    "Prime auto-exposure state");
+            try (MemoryStack stack = MemoryStack.stackPush()) {
+                VkDescriptorSetLayoutBinding.Buffer bindings =
+                        VkDescriptorSetLayoutBinding.calloc(3, stack);
+                bindings.get(0).binding(0)
+                        .descriptorType(VK12.VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE)
+                        .descriptorCount(1).stageFlags(COMPUTE_STAGE);
+                for (int binding = 1; binding < 3; binding++) {
+                    bindings.get(binding).binding(binding)
+                            .descriptorType(VK12.VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
+                            .descriptorCount(1).stageFlags(COMPUTE_STAGE);
+                }
+                LongBuffer pointer = stack.mallocLong(1);
+                VulkanContext.check(
+                        VK12.vkCreateDescriptorSetLayout(
+                                context.vkDevice(),
+                                VkDescriptorSetLayoutCreateInfo.calloc(stack)
+                                        .sType$Default().pBindings(bindings),
+                                null,
+                                pointer),
+                        "create auto-exposure descriptor layout");
+                setLayout = pointer.get(0);
+
+                VkPushConstantRange.Buffer pushRange = VkPushConstantRange.calloc(1, stack)
+                        .stageFlags(COMPUTE_STAGE).offset(0).size(PUSH_SIZE);
+                pointer.clear();
+                VulkanContext.check(
+                        VK12.vkCreatePipelineLayout(
+                                context.vkDevice(),
+                                VkPipelineLayoutCreateInfo.calloc(stack)
+                                        .sType$Default()
+                                        .pSetLayouts(stack.longs(setLayout))
+                                        .pPushConstantRanges(pushRange),
+                                null,
+                                pointer),
+                        "create auto-exposure pipeline layout");
+                pipelineLayout = pointer.get(0);
+                histogramPipeline = createPipeline(
+                        context, stack, pipelineLayout, HISTOGRAM_SHADER);
+                updatePipeline = createPipeline(
+                        context, stack, pipelineLayout, UPDATE_SHADER);
+
+                VkDescriptorPoolSize.Buffer poolSizes =
+                        VkDescriptorPoolSize.calloc(2, stack);
+                poolSizes.get(0).type(VK12.VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE)
+                        .descriptorCount(1);
+                poolSizes.get(1).type(VK12.VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
+                        .descriptorCount(2);
+                pointer.clear();
+                VulkanContext.check(
+                        VK12.vkCreateDescriptorPool(
+                                context.vkDevice(),
+                                VkDescriptorPoolCreateInfo.calloc(stack)
+                                        .sType$Default().maxSets(1).pPoolSizes(poolSizes),
+                                null,
+                                pointer),
+                        "create auto-exposure descriptor pool");
+                descriptorPool = pointer.get(0);
+
+                pointer.clear();
+                VulkanContext.check(
+                        VK12.vkAllocateDescriptorSets(
+                                context.vkDevice(),
+                                VkDescriptorSetAllocateInfo.calloc(stack)
+                                        .sType$Default()
+                                        .descriptorPool(descriptorPool)
+                                        .pSetLayouts(stack.longs(setLayout)),
+                                pointer),
+                        "allocate auto-exposure descriptor set");
+                long descriptorSet = pointer.get(0);
+                VkDescriptorImageInfo.Buffer imageInfo =
+                        VkDescriptorImageInfo.calloc(1, stack);
+                imageInfo.get(0).imageView(linearInput.view())
+                        .imageLayout(VK12.VK_IMAGE_LAYOUT_GENERAL);
+                VkDescriptorBufferInfo.Buffer bufferInfos =
+                        VkDescriptorBufferInfo.calloc(2, stack);
+                bufferInfos.get(0).buffer(histogram.handle())
+                        .offset(0L).range(HISTOGRAM_SIZE);
+                bufferInfos.get(1).buffer(exposureState.handle())
+                        .offset(0L).range(EXPOSURE_STATE_SIZE);
+                VkWriteDescriptorSet.Buffer writes =
+                        VkWriteDescriptorSet.calloc(3, stack);
+                writes.get(0).sType$Default()
+                        .dstSet(descriptorSet).dstBinding(0).descriptorCount(1)
+                        .descriptorType(VK12.VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE)
+                        .pImageInfo(imageInfo);
+                for (int binding = 1; binding < 3; binding++) {
+                    writes.get(binding).sType$Default()
+                            .dstSet(descriptorSet).dstBinding(binding).descriptorCount(1)
+                            .descriptorType(VK12.VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
+                            .pBufferInfo(VkDescriptorBufferInfo.create(
+                                    bufferInfos.get(binding - 1).address(), 1));
+                }
+                VK12.vkUpdateDescriptorSets(context.vkDevice(), writes, null);
+                return new AutoExposurePass(
+                        context,
+                        histogram,
+                        exposureState,
+                        setLayout,
+                        descriptorPool,
+                        descriptorSet,
+                        pipelineLayout,
+                        histogramPipeline,
+                        updatePipeline,
+                        linearInput.width(),
+                        linearInput.height());
+            }
+        } catch (RuntimeException exception) {
+            if (descriptorPool != 0L) {
+                VK12.vkDestroyDescriptorPool(context.vkDevice(), descriptorPool, null);
+            }
+            if (updatePipeline != 0L) {
+                VK12.vkDestroyPipeline(context.vkDevice(), updatePipeline, null);
+            }
+            if (histogramPipeline != 0L) {
+                VK12.vkDestroyPipeline(context.vkDevice(), histogramPipeline, null);
+            }
+            if (pipelineLayout != 0L) {
+                VK12.vkDestroyPipelineLayout(context.vkDevice(), pipelineLayout, null);
+            }
+            if (setLayout != 0L) {
+                VK12.vkDestroyDescriptorSetLayout(
+                        context.vkDevice(), setLayout, null);
+            }
+            ResourceCleanup.destroy(exposureState, exception);
+            ResourceCleanup.destroy(histogram, exception);
+            throw exception;
+        }
+    }
+
+    VulkanBuffer exposureState() {
+        return this.exposureState;
+    }
+
+    void record(
+            VkCommandBuffer commandBuffer,
+            int width,
+            int height,
+            float deltaSeconds,
+            boolean reset,
+            boolean instant,
+            boolean diagnostic) {
+        if (this.destroyed) {
+            throw new IllegalStateException("Auto-exposure pass is destroyed");
+        }
+        if (width <= 0 || height <= 0) {
+            throw new IllegalArgumentException("Auto-exposure extent must be positive");
+        }
+        if (!Float.isFinite(deltaSeconds) || deltaSeconds < 0.0F) {
+            throw new IllegalArgumentException(
+                    "Auto-exposure frame delta must be finite and non-negative");
+        }
+        if (diagnostic) {
+            if (reset) {
+                VK12.vkCmdFillBuffer(
+                        commandBuffer,
+                        this.exposureState.handle(),
+                        0L,
+                        EXPOSURE_STATE_SIZE,
+                        0);
+                writesToCompute(commandBuffer);
+            }
+            return;
+        }
+
+        VK12.vkCmdFillBuffer(
+                commandBuffer,
+                this.histogram.handle(),
+                0L,
+                HISTOGRAM_SIZE,
+                0);
+        writesToCompute(commandBuffer);
+        try (MemoryStack stack = MemoryStack.stackPush()) {
+            VK12.vkCmdBindDescriptorSets(
+                    commandBuffer,
+                    VK12.VK_PIPELINE_BIND_POINT_COMPUTE,
+                    this.pipelineLayout,
+                    0,
+                    stack.longs(this.descriptorSet),
+                    null);
+            VK12.vkCmdBindPipeline(
+                    commandBuffer,
+                    VK12.VK_PIPELINE_BIND_POINT_COMPUTE,
+                    this.histogramPipeline);
+            ByteBuffer histogramPush =
+                    stack.malloc(PUSH_SIZE).order(ByteOrder.nativeOrder());
+            histogramPush.putInt(0, width);
+            histogramPush.putInt(4, height);
+            histogramPush.putLong(8, 0L);
+            VK12.vkCmdPushConstants(
+                    commandBuffer,
+                    this.pipelineLayout,
+                    COMPUTE_STAGE,
+                    0,
+                    histogramPush);
+            VK12.vkCmdDispatch(
+                    commandBuffer, this.dispatchX, this.dispatchY, 1);
+
+            computeBarrier(commandBuffer);
+            VK12.vkCmdBindPipeline(
+                    commandBuffer,
+                    VK12.VK_PIPELINE_BIND_POINT_COMPUTE,
+                    this.updatePipeline);
+            ByteBuffer updatePush =
+                    stack.malloc(PUSH_SIZE).order(ByteOrder.nativeOrder());
+            updatePush.putFloat(0, deltaSeconds);
+            updatePush.putInt(4, reset ? 1 : 0);
+            updatePush.putInt(8, instant ? 1 : 0);
+            updatePush.putInt(12, 0);
+            VK12.vkCmdPushConstants(
+                    commandBuffer,
+                    this.pipelineLayout,
+                    COMPUTE_STAGE,
+                    0,
+                    updatePush);
+            VK12.vkCmdDispatch(commandBuffer, 1, 1, 1);
+        }
+        computeBarrier(commandBuffer);
+    }
+
+    private static long createPipeline(
+            VulkanContext context,
+            MemoryStack stack,
+            long pipelineLayout,
+            String shaderResource) {
+        long shader = createShaderModule(context, stack, shaderResource);
+        try {
+            VkPipelineShaderStageCreateInfo stage =
+                    VkPipelineShaderStageCreateInfo.calloc(stack)
+                            .sType$Default()
+                            .stage(COMPUTE_STAGE)
+                            .module(shader)
+                            .pName(stack.UTF8("main"));
+            VkComputePipelineCreateInfo.Buffer pipelineInfo =
+                    VkComputePipelineCreateInfo.calloc(1, stack);
+            pipelineInfo.get(0).sType$Default()
+                    .stage(stage).layout(pipelineLayout);
+            LongBuffer pointer = stack.mallocLong(1);
+            VulkanContext.check(
+                    VK12.vkCreateComputePipelines(
+                            context.vkDevice(), 0L, pipelineInfo, null, pointer),
+                    "create " + shaderResource);
+            return pointer.get(0);
+        } finally {
+            VK12.vkDestroyShaderModule(context.vkDevice(), shader, null);
+        }
+    }
+
+    private static long createShaderModule(
+            VulkanContext context, MemoryStack stack, String resourceName) {
+        byte[] bytes;
+        try (InputStream input =
+                AutoExposurePass.class.getResourceAsStream(resourceName)) {
+            if (input == null) {
+                throw new IllegalStateException(
+                        "Missing shader resource " + resourceName);
+            }
+            bytes = input.readAllBytes();
+        } catch (IOException exception) {
+            throw new IllegalStateException(
+                    "Unable to read shader resource " + resourceName,
+                    exception);
+        }
+        ByteBuffer code = MemoryUtil.memAlloc(bytes.length);
+        try {
+            code.put(bytes).flip();
+            LongBuffer pointer = stack.mallocLong(1);
+            VulkanContext.check(
+                    VK12.vkCreateShaderModule(
+                            context.vkDevice(),
+                            VkShaderModuleCreateInfo.calloc(stack)
+                                    .sType$Default().pCode(code),
+                            null,
+                            pointer),
+                    "create " + resourceName);
+            return pointer.get(0);
+        } finally {
+            MemoryUtil.memFree(code);
+        }
+    }
+
+    private static void writesToCompute(VkCommandBuffer commandBuffer) {
+        memoryBarrier(
+                commandBuffer,
+                VK12.VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
+                VK12.VK_ACCESS_MEMORY_WRITE_BIT,
+                VK12.VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                VK12.VK_ACCESS_SHADER_READ_BIT
+                        | VK12.VK_ACCESS_SHADER_WRITE_BIT);
+    }
+
+    private static void computeBarrier(VkCommandBuffer commandBuffer) {
+        memoryBarrier(
+                commandBuffer,
+                VK12.VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                VK12.VK_ACCESS_SHADER_WRITE_BIT,
+                VK12.VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                VK12.VK_ACCESS_SHADER_READ_BIT
+                        | VK12.VK_ACCESS_SHADER_WRITE_BIT);
+    }
+
+    private static void memoryBarrier(
+            VkCommandBuffer commandBuffer,
+            long sourceStage,
+            long sourceAccess,
+            long destinationStage,
+            long destinationAccess) {
+        try (MemoryStack stack = MemoryStack.stackPush()) {
+            VkMemoryBarrier2.Buffer barrier =
+                    VkMemoryBarrier2.calloc(1, stack);
+            barrier.get(0).sType$Default()
+                    .srcStageMask(sourceStage)
+                    .srcAccessMask(sourceAccess)
+                    .dstStageMask(destinationStage)
+                    .dstAccessMask(destinationAccess);
+            KHRSynchronization2.vkCmdPipelineBarrier2KHR(
+                    commandBuffer,
+                    VkDependencyInfo.calloc(stack)
+                            .sType$Default().pMemoryBarriers(barrier));
+        }
+    }
+
+    private static int divideRoundUp(int value, int divisor) {
+        return Math.max(1, (value + divisor - 1) / divisor);
+    }
+
+    @Override
+    public void destroy() {
+        if (this.destroyed) {
+            return;
+        }
+        VK12.vkDestroyDescriptorPool(
+                this.context.vkDevice(), this.descriptorPool, null);
+        VK12.vkDestroyPipeline(
+                this.context.vkDevice(), this.updatePipeline, null);
+        VK12.vkDestroyPipeline(
+                this.context.vkDevice(), this.histogramPipeline, null);
+        VK12.vkDestroyPipelineLayout(
+                this.context.vkDevice(), this.pipelineLayout, null);
+        VK12.vkDestroyDescriptorSetLayout(
+                this.context.vkDevice(), this.descriptorSetLayout, null);
+        this.exposureState.destroy();
+        this.histogram.destroy();
+        this.destroyed = true;
+    }
+}

@@ -367,7 +367,7 @@ public final class VulkanRenderer implements AutoCloseable {
                 material,
                 processor.rawFrame().usesShInputs(),
                 this.frameControls.triangleDebug(),
-                settings.oklabOverexposure(),
+                settings.display(),
                 this.frameControls.nrdDebugView(),
                 this.frameControls.fsrDebugView(),
                 this.frameControls.rrDebugView(),
@@ -534,7 +534,7 @@ public final class VulkanRenderer implements AutoCloseable {
                 lighting,
                 material,
                 this.screenshotSampleCount,
-                PrimeConfig.settings().oklabOverexposure()).plan();
+                PrimeConfig.settings().display()).plan();
         this.screenshotExecutor.execute(
                 this.pipeline,
                 this.atmosphere,

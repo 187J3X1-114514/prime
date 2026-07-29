@@ -55,6 +55,29 @@ final class ScreenshotFramePlanTest {
                 () -> input(1L << 47).plan());
     }
 
+    @Test
+    void finalExposureChangesPreserveAccumulationIdentityAndSampleCount() {
+        ScreenshotFrameInput initial = input(37L);
+        ScreenshotFrameInput adjusted = new ScreenshotFrameInput(
+                initial.camera(),
+                initial.width(),
+                initial.height(),
+                initial.sceneRevision(),
+                initial.textureRevision(),
+                initial.sunDirection(),
+                initial.cameraInWater(),
+                initial.lighting(),
+                initial.material(),
+                initial.sampleCount(),
+                new DisplaySettings.Snapshot(
+                        8,
+                        initial.display().oklabOverexposureSteps()));
+
+        assertEquals(initial.plan().integrator(), adjusted.plan().integrator());
+        assertEquals(initial.plan().nextSampleCount(), adjusted.plan().nextSampleCount());
+        assertEquals(8, adjusted.display().finalExposureQuarterSteps());
+    }
+
     private static ScreenshotFrameInput input(long sampleCount) {
         return new ScreenshotFrameInput(
                 new FrameCamera(new Matrix4f(), 1.0, 2.0, 3.0),
@@ -68,6 +91,6 @@ final class ScreenshotFramePlanTest {
                         0, 0, 0, 1L),
                 new MaterialSettings.Snapshot(90, 1L),
                 sampleCount,
-                1.0F);
+                new DisplaySettings.Snapshot(0, 32));
     }
 }

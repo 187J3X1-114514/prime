@@ -31,7 +31,7 @@ public final class ScreenshotFrameExecutor {
             VulkanImage stableRadiance,
             VulkanImage runningMean,
             BasicRawWavefrontFrame rawFrame,
-            ScreenshotDisplay display,
+            DisplayTransformPass display,
             VulkanGpuTextureView atlasView,
             long textureRevision,
             VulkanGpuTexture mainColor) {
@@ -94,9 +94,11 @@ public final class ScreenshotFrameExecutor {
                         commandBuffer, runningMean);
                 display.record(
                         commandBuffer,
-                        plan.input().width(),
-                        plan.input().height(),
-                        plan.input().displayOverexposure());
+                        false,
+                        0.0F,
+                        plan.input().sampleCount() == 0L,
+                        true,
+                        plan.input().display());
                 VulkanImageTransitions.finishAtlasRead(
                         commandBuffer, atlasView.texture());
                 VulkanImageTransitions.prepareImagesForCopy(

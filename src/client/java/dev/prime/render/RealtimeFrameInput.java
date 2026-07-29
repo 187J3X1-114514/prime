@@ -33,7 +33,7 @@ public record RealtimeFrameInput(
         MaterialSettings.Snapshot material,
         boolean shInput,
         boolean triangleDebug,
-        float displayOverexposure,
+        DisplaySettings.Snapshot display,
         NrdDiagnostics.Mode nrdDebugView,
         FsrDebugView fsrDebugView,
         DlssRrDebugView rrDebugView,
@@ -46,6 +46,7 @@ public record RealtimeFrameInput(
         Objects.requireNonNull(quality, "quality");
         Objects.requireNonNull(lighting, "lighting");
         Objects.requireNonNull(material, "material");
+        Objects.requireNonNull(display, "display");
         Objects.requireNonNull(nrdDebugView, "nrdDebugView");
         Objects.requireNonNull(fsrDebugView, "fsrDebugView");
         Objects.requireNonNull(rrDebugView, "rrDebugView");
@@ -59,12 +60,6 @@ public record RealtimeFrameInput(
         if (residentSceneRevision < 0L) {
             throw new IllegalArgumentException(
                     "Realtime resident scene revision must be non-negative");
-        }
-        if (!Float.isFinite(displayOverexposure)
-                || displayOverexposure < 1.0F
-                || displayOverexposure > 2.0F) {
-            throw new IllegalArgumentException(
-                    "Display overexposure must be between 1.0 and 2.0");
         }
     }
 
@@ -103,7 +98,7 @@ public record RealtimeFrameInput(
                 forceRestart,
                 this.sunDirection,
                 this.lighting,
-                this.displayOverexposure,
+                this.display,
                 this.nrdDebugView,
                 this.fsrDebugView,
                 this.rrDebugView,
@@ -121,9 +116,7 @@ public record RealtimeFrameInput(
                 || forceRestart != parameters.forceRestart()
                 || !this.sunDirection.equals(parameters.sunDirection())
                 || !this.lighting.equals(parameters.lighting())
-                || Float.floatToRawIntBits(this.displayOverexposure)
-                        != Float.floatToRawIntBits(
-                                parameters.displayOverexposure())
+                || !this.display.equals(parameters.display())
                 || this.nrdDebugView != parameters.nrdDebugView()
                 || this.fsrDebugView != parameters.fsrDebugView()
                 || this.rrDebugView != parameters.rrDebugView()

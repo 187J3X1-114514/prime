@@ -684,7 +684,7 @@ vec3 primeCompositeRemodulatedSpecular(
 vec3 primeCompositeDisplayDiagnostic(vec3 radiance) {
     radiance = primeNrdIsFinite(radiance) ? max(radiance, vec3(0.0)) : vec3(0.0);
     return primeDisplayTransformToSrgb(
-            radiance, primeCompositePush.displayOverexposure);
+            radiance, 1.0, primeCompositePush.displayOverexposure);
 }
 
 bool primeCompositeIsValidationSceneTile(uvec2 pixel) {

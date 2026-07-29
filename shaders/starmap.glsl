@@ -35,11 +35,6 @@ vec2 primeStarmapUv(IntegratorRecord integrator, vec3 direction) {
             clamp(0.5 - declination / PRIME_PI, 0.0, 1.0));
 }
 
-float primeStarmapNightFactor(IntegratorRecord integrator) {
-    return 1.0 - smoothstep(
-            -0.12, 0.02, integrator.sunDirectionIntensity.y);
-}
-
 vec3 primeStarmapRadianceUv(
         vec3 surfacePosition,
         vec3 direction,
@@ -58,7 +53,8 @@ vec3 primeStarmapRadiance(
         IntegratorRecord integrator,
         vec3 surfacePosition,
         vec3 direction) {
-    float scale = primeStarmapNightFactor(integrator) * primeStarRadianceMultiplier();
+    float scale =
+            PRIME_STARMAP_BASE_RADIANCE_SCALE * primeStarRadianceMultiplier();
     return scale > 0.0
             ? primeStarmapRadianceUv(
                     surfacePosition,

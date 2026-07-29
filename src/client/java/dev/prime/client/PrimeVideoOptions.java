@@ -149,6 +149,16 @@ public final class PrimeVideoOptions {
                 PrimeConfig::setBlockLightQuarterSteps);
     }
 
+    public static OptionInstance<Integer> finalExposure() {
+        return exposureOption(
+                "prime.options.display.final_exposure_ev",
+                "prime.options.display.final_exposure_ev.tooltip",
+                PrimeConfig.settings().finalExposureQuarterSteps(),
+                DisplaySettings.MINIMUM_FINAL_EXPOSURE_QUARTER_STEPS,
+                DisplaySettings.MAXIMUM_FINAL_EXPOSURE_QUARTER_STEPS,
+                PrimeConfig::setFinalExposureQuarterSteps);
+    }
+
     public static OptionInstance<Integer> oklabOverexposure() {
         return new OptionInstance<>(
                 "prime.options.display.oklab_overexposure",

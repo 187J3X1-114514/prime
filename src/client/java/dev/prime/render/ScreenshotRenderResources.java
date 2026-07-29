@@ -2,7 +2,7 @@ package dev.prime.render;
 
 import com.mojang.blaze3d.vulkan.Destroyable;
 import dev.prime.render.vulkan.BasicRawWavefrontFrame;
-import dev.prime.render.vulkan.ScreenshotDisplay;
+import dev.prime.render.vulkan.DisplayTransformPass;
 import dev.prime.render.vulkan.VulkanContext;
 import dev.prime.render.vulkan.VulkanImage;
 
@@ -12,7 +12,7 @@ final class ScreenshotRenderResources implements Destroyable {
     final VulkanImage runningMean;
     final VulkanImage stableRadiance;
     final BasicRawWavefrontFrame rawFrame;
-    final ScreenshotDisplay display;
+    final DisplayTransformPass display;
     private boolean destroyed;
 
     private ScreenshotRenderResources(
@@ -20,7 +20,7 @@ final class ScreenshotRenderResources implements Destroyable {
             VulkanImage runningMean,
             VulkanImage stableRadiance,
             BasicRawWavefrontFrame rawFrame,
-            ScreenshotDisplay display) {
+            DisplayTransformPass display) {
         this.displayOutput = displayOutput;
         this.runningMean = runningMean;
         this.stableRadiance = stableRadiance;
@@ -33,14 +33,14 @@ final class ScreenshotRenderResources implements Destroyable {
         VulkanImage runningMean = null;
         VulkanImage stableRadiance = null;
         BasicRawWavefrontFrame rawFrame = null;
-        ScreenshotDisplay display = null;
+        DisplayTransformPass display = null;
         try {
             displayOutput = context.createOutputImage(width, height);
             runningMean = context.createAccumulationImage(width, height);
             stableRadiance = context.createAccumulationImage(width, height);
             rawFrame = BasicRawWavefrontFrame.createScreenshotScratch(
                     context, width, height);
-            display = ScreenshotDisplay.create(context, runningMean, displayOutput);
+            display = DisplayTransformPass.create(context, runningMean, displayOutput);
             return new ScreenshotRenderResources(
                     displayOutput,
                     runningMean,

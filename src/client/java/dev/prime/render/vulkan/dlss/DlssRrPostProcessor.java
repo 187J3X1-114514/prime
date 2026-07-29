@@ -1,6 +1,7 @@
 package dev.prime.render.vulkan.dlss;
 
 import dev.prime.render.FrameCamera;
+import dev.prime.render.DisplaySettings;
 import dev.prime.render.ResourceCleanup;
 import dev.prime.render.fsr.FsrSettings;
 import dev.prime.render.post.DlssRrDebugView;
@@ -91,7 +92,11 @@ public final class DlssRrPostProcessor implements RealtimePostProcessor {
                     context, renderWidth, renderHeight, displayWidth, displayHeight);
             preparePass = DlssRrPreparePass.create(context, targets, accumulation, atmosphere);
             displayTransform = DisplayTransformPass.create(context, targets.rrOutput(), displayOutput);
-            debugPass = DlssRrDebugPass.create(context, targets, displayOutput);
+            debugPass = DlssRrDebugPass.create(
+                    context,
+                    targets,
+                    displayOutput,
+                    displayTransform.exposureState());
             var encoder = context.commandEncoder();
             VkCommandBuffer commandBuffer = encoder.allocateAndBeginTransientCommandBuffer();
             feature = ngxContext.createFeature(
@@ -199,7 +204,7 @@ public final class DlssRrPostProcessor implements RealtimePostProcessor {
             VkCommandBuffer commandBuffer,
             FrameToken token,
             float sunRadianceMultiplier,
-            float displayOverexposure) {
+            DisplaySettings.Snapshot display) {
         requireOpen();
         if (token.owner != this
                 || token.recorded
@@ -240,7 +245,13 @@ public final class DlssRrPostProcessor implements RealtimePostProcessor {
                         this.targets.motion(),
                         this.targets.specularMotion()));
         allCommandsToCompute(commandBuffer);
-        this.displayTransform.record(commandBuffer, false, displayOverexposure);
+        this.displayTransform.record(
+                commandBuffer,
+                false,
+                temporal.deltaMilliseconds() * 0.001F,
+                temporal.restart(),
+                false,
+                display);
         if (token.debugView != DlssRrDebugView.OFF) {
             allCommandsToCompute(commandBuffer);
             this.debugPass.record(
@@ -249,7 +260,7 @@ public final class DlssRrPostProcessor implements RealtimePostProcessor {
                     token.debugFullscreen,
                     temporal.frameIndex(),
                     this.quality.rrJitterPhaseCount(),
-                    displayOverexposure);
+                    display);
         }
     }
 
@@ -266,7 +277,7 @@ public final class DlssRrPostProcessor implements RealtimePostProcessor {
                 commandBuffer,
                 token,
                 parameters.sunRadianceMultiplier(),
-                parameters.displayOverexposure());
+                parameters.display());
     }
 
     private static void allCommandsToCompute(VkCommandBuffer commandBuffer) {

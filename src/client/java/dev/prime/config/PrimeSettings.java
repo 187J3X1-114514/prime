@@ -15,6 +15,7 @@ public record PrimeSettings(
         int sunQuarterSteps,
         int starQuarterSteps,
         int blockLightQuarterSteps,
+        int finalExposureQuarterSteps,
         int oklabOverexposureSteps,
         int defaultRoughnessSteps,
         long lightingRevision,
@@ -26,6 +27,7 @@ public record PrimeSettings(
         LightingSettings.linearMultiplier(sunQuarterSteps);
         LightingSettings.starLinearMultiplier(starQuarterSteps);
         LightingSettings.linearMultiplier(blockLightQuarterSteps);
+        DisplaySettings.finalExposureMultiplier(finalExposureQuarterSteps);
         DisplaySettings.overexposure(oklabOverexposureSteps);
         MaterialSettings.linearRoughness(defaultRoughnessSteps);
         if (lightingRevision < 0L || materialRevision < 0L) {
@@ -41,6 +43,7 @@ public record PrimeSettings(
                 LightingSettings.DEFAULT_SUN_QUARTER_STEPS,
                 LightingSettings.DEFAULT_STAR_QUARTER_STEPS,
                 LightingSettings.DEFAULT_BLOCK_LIGHT_QUARTER_STEPS,
+                DisplaySettings.DEFAULT_FINAL_EXPOSURE_QUARTER_STEPS,
                 DisplaySettings.DEFAULT_OVEREXPOSURE_STEPS,
                 MaterialSettings.DEFAULT_ROUGHNESS_STEPS,
                 0L,
@@ -57,6 +60,7 @@ public record PrimeSettings(
                         this.sunQuarterSteps,
                         this.starQuarterSteps,
                         this.blockLightQuarterSteps,
+                        this.finalExposureQuarterSteps,
                         this.oklabOverexposureSteps,
                         this.defaultRoughnessSteps,
                         this.lightingRevision,
@@ -74,6 +78,7 @@ public record PrimeSettings(
                         this.sunQuarterSteps,
                         this.starQuarterSteps,
                         this.blockLightQuarterSteps,
+                        this.finalExposureQuarterSteps,
                         this.oklabOverexposureSteps,
                         this.defaultRoughnessSteps,
                         this.lightingRevision,
@@ -91,6 +96,7 @@ public record PrimeSettings(
                         this.sunQuarterSteps,
                         this.starQuarterSteps,
                         this.blockLightQuarterSteps,
+                        this.finalExposureQuarterSteps,
                         this.oklabOverexposureSteps,
                         this.defaultRoughnessSteps,
                         this.lightingRevision,
@@ -108,6 +114,7 @@ public record PrimeSettings(
                         value,
                         this.starQuarterSteps,
                         this.blockLightQuarterSteps,
+                        this.finalExposureQuarterSteps,
                         this.oklabOverexposureSteps,
                         this.defaultRoughnessSteps,
                         Math.incrementExact(this.lightingRevision),
@@ -125,6 +132,7 @@ public record PrimeSettings(
                         this.sunQuarterSteps,
                         value,
                         this.blockLightQuarterSteps,
+                        this.finalExposureQuarterSteps,
                         this.oklabOverexposureSteps,
                         this.defaultRoughnessSteps,
                         Math.incrementExact(this.lightingRevision),
@@ -142,9 +150,28 @@ public record PrimeSettings(
                         this.sunQuarterSteps,
                         this.starQuarterSteps,
                         value,
+                        this.finalExposureQuarterSteps,
                         this.oklabOverexposureSteps,
                         this.defaultRoughnessSteps,
                         Math.incrementExact(this.lightingRevision),
+                        this.materialRevision);
+    }
+
+    public PrimeSettings withFinalExposureQuarterSteps(int value) {
+        DisplaySettings.finalExposureMultiplier(value);
+        return value == this.finalExposureQuarterSteps
+                ? this
+                : new PrimeSettings(
+                        this.pathTracingEnabled,
+                        this.postProcessingMode,
+                        this.reconstructionQuality,
+                        this.sunQuarterSteps,
+                        this.starQuarterSteps,
+                        this.blockLightQuarterSteps,
+                        value,
+                        this.oklabOverexposureSteps,
+                        this.defaultRoughnessSteps,
+                        this.lightingRevision,
                         this.materialRevision);
     }
 
@@ -159,6 +186,7 @@ public record PrimeSettings(
                         this.sunQuarterSteps,
                         this.starQuarterSteps,
                         this.blockLightQuarterSteps,
+                        this.finalExposureQuarterSteps,
                         value,
                         this.defaultRoughnessSteps,
                         this.lightingRevision,
@@ -176,6 +204,7 @@ public record PrimeSettings(
                         this.sunQuarterSteps,
                         this.starQuarterSteps,
                         this.blockLightQuarterSteps,
+                        this.finalExposureQuarterSteps,
                         this.oklabOverexposureSteps,
                         value,
                         this.lightingRevision,
@@ -194,6 +223,12 @@ public record PrimeSettings(
         return new MaterialSettings.Snapshot(
                 this.defaultRoughnessSteps,
                 this.materialRevision);
+    }
+
+    public DisplaySettings.Snapshot display() {
+        return new DisplaySettings.Snapshot(
+                this.finalExposureQuarterSteps,
+                this.oklabOverexposureSteps);
     }
 
     public float oklabOverexposure() {

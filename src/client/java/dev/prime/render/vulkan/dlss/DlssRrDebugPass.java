@@ -1,7 +1,9 @@
 package dev.prime.render.vulkan.dlss;
 
 import com.mojang.blaze3d.vulkan.Destroyable;
+import dev.prime.render.DisplaySettings;
 import dev.prime.render.post.DlssRrDebugView;
+import dev.prime.render.vulkan.VulkanBuffer;
 import dev.prime.render.vulkan.VulkanContext;
 import dev.prime.render.vulkan.VulkanImage;
 import java.io.IOException;
@@ -15,6 +17,7 @@ import org.lwjgl.system.MemoryUtil;
 import org.lwjgl.vulkan.VK12;
 import org.lwjgl.vulkan.VkCommandBuffer;
 import org.lwjgl.vulkan.VkComputePipelineCreateInfo;
+import org.lwjgl.vulkan.VkDescriptorBufferInfo;
 import org.lwjgl.vulkan.VkDescriptorImageInfo;
 import org.lwjgl.vulkan.VkDescriptorPoolCreateInfo;
 import org.lwjgl.vulkan.VkDescriptorPoolSize;
@@ -31,7 +34,7 @@ import org.lwjgl.vulkan.VkWriteDescriptorSet;
 final class DlssRrDebugPass implements Destroyable {
     private static final int IMAGE_COUNT = 10;
     private static final int COMPUTE_STAGE = VK12.VK_SHADER_STAGE_COMPUTE_BIT;
-    private static final int PUSH_SIZE = 20;
+    private static final int PUSH_SIZE = 24;
     private static final int LOCAL_SIZE = 8;
     private static final String SHADER = "/prime/shaders/rr_debug.comp.spv";
 
@@ -65,7 +68,10 @@ final class DlssRrDebugPass implements Destroyable {
     }
 
     static DlssRrDebugPass create(
-            VulkanContext context, DlssRrTargets targets, VulkanImage displayOutput) {
+            VulkanContext context,
+            DlssRrTargets targets,
+            VulkanImage displayOutput,
+            VulkanBuffer exposureState) {
         List<VulkanImage> images = List.of(
                 targets.inputColor(),
                 targets.motion(),
@@ -83,12 +89,15 @@ final class DlssRrDebugPass implements Destroyable {
         long pipeline = 0L;
         try (MemoryStack stack = MemoryStack.stackPush()) {
             VkDescriptorSetLayoutBinding.Buffer bindings =
-                    VkDescriptorSetLayoutBinding.calloc(IMAGE_COUNT, stack);
+                    VkDescriptorSetLayoutBinding.calloc(IMAGE_COUNT + 1, stack);
             for (int binding = 0; binding < IMAGE_COUNT; binding++) {
                 bindings.get(binding).binding(binding)
                         .descriptorType(VK12.VK_DESCRIPTOR_TYPE_STORAGE_IMAGE)
                         .descriptorCount(1).stageFlags(COMPUTE_STAGE);
             }
+            bindings.get(IMAGE_COUNT).binding(IMAGE_COUNT)
+                    .descriptorType(VK12.VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
+                    .descriptorCount(1).stageFlags(COMPUTE_STAGE);
             LongBuffer pointer = stack.mallocLong(1);
             VulkanContext.check(
                     VK12.vkCreateDescriptorSetLayout(
@@ -127,8 +136,11 @@ final class DlssRrDebugPass implements Destroyable {
             } finally {
                 VK12.vkDestroyShaderModule(context.vkDevice(), shader, null);
             }
-            VkDescriptorPoolSize.Buffer poolSize = VkDescriptorPoolSize.calloc(1, stack);
-            poolSize.get(0).type(VK12.VK_DESCRIPTOR_TYPE_STORAGE_IMAGE).descriptorCount(IMAGE_COUNT);
+            VkDescriptorPoolSize.Buffer poolSize = VkDescriptorPoolSize.calloc(2, stack);
+            poolSize.get(0).type(VK12.VK_DESCRIPTOR_TYPE_STORAGE_IMAGE)
+                    .descriptorCount(IMAGE_COUNT);
+            poolSize.get(1).type(VK12.VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
+                    .descriptorCount(1);
             pointer.clear();
             VulkanContext.check(
                     VK12.vkCreateDescriptorPool(
@@ -151,7 +163,8 @@ final class DlssRrDebugPass implements Destroyable {
                     "allocate RR debug descriptor set");
             long descriptorSet = pointer.get(0);
             VkDescriptorImageInfo.Buffer imageInfos = VkDescriptorImageInfo.calloc(IMAGE_COUNT, stack);
-            VkWriteDescriptorSet.Buffer writes = VkWriteDescriptorSet.calloc(IMAGE_COUNT, stack);
+            VkWriteDescriptorSet.Buffer writes =
+                    VkWriteDescriptorSet.calloc(IMAGE_COUNT + 1, stack);
             for (int binding = 0; binding < IMAGE_COUNT; binding++) {
                 imageInfos.get(binding).imageView(images.get(binding).view())
                         .imageLayout(VK12.VK_IMAGE_LAYOUT_GENERAL);
@@ -159,6 +172,15 @@ final class DlssRrDebugPass implements Destroyable {
                         .descriptorCount(1).descriptorType(VK12.VK_DESCRIPTOR_TYPE_STORAGE_IMAGE)
                         .pImageInfo(VkDescriptorImageInfo.create(imageInfos.get(binding).address(), 1));
             }
+            VkDescriptorBufferInfo.Buffer exposureInfo =
+                    VkDescriptorBufferInfo.calloc(1, stack);
+            exposureInfo.get(0).buffer(exposureState.handle())
+                    .offset(0L).range(exposureState.size());
+            writes.get(IMAGE_COUNT).sType$Default()
+                    .dstSet(descriptorSet).dstBinding(IMAGE_COUNT)
+                    .descriptorCount(1)
+                    .descriptorType(VK12.VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
+                    .pBufferInfo(exposureInfo);
             VK12.vkUpdateDescriptorSets(context.vkDevice(), writes, null);
             return new DlssRrDebugPass(
                     context,
@@ -184,7 +206,7 @@ final class DlssRrDebugPass implements Destroyable {
             boolean fullscreen,
             int frameIndex,
             int jitterPhaseCount,
-            float displayOverexposure) {
+            DisplaySettings.Snapshot display) {
         if (view == DlssRrDebugView.OFF) {
             return;
         }
@@ -194,7 +216,8 @@ final class DlssRrDebugPass implements Destroyable {
             push.putInt(4, fullscreen ? 1 : 0);
             push.putInt(8, Math.floorMod(frameIndex, jitterPhaseCount) + 1);
             push.putInt(12, jitterPhaseCount);
-            push.putFloat(16, displayOverexposure);
+            push.putFloat(16, display.oklabOverexposure());
+            push.putFloat(20, display.finalExposureMultiplier());
             VK12.vkCmdBindPipeline(commandBuffer, VK12.VK_PIPELINE_BIND_POINT_COMPUTE, this.pipeline);
             VK12.vkCmdBindDescriptorSets(
                     commandBuffer,

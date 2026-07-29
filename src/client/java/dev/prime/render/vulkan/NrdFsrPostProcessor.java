@@ -1,6 +1,7 @@
 package dev.prime.render.vulkan;
 
 import dev.prime.render.ResourceCleanup;
+import dev.prime.render.fsr.FsrDebugView;
 import dev.prime.render.post.PostProcessingMode;
 import dev.prime.render.post.RealtimePostProcessor;
 import dev.prime.render.post.ReconstructionQualityMode;
@@ -210,11 +211,15 @@ public final class NrdFsrPostProcessor implements RealtimePostProcessor {
                 commandBuffer,
                 token.nrdPrepared,
                 parameters.sunRadianceMultiplier(),
-                parameters.displayOverexposure());
+                parameters.display().oklabOverexposure());
+        boolean displayDiagnostic =
+                token.nrdPlan.plan().input().diagnostic() != NrdDiagnostics.Mode.OFF
+                        || parameters.fsrDebugView() != FsrDebugView.OFF;
         this.upscaler.record(
                 commandBuffer,
                 token.fsr,
-                parameters.displayOverexposure(),
+                parameters.display(),
+                displayDiagnostic,
                 initialization);
         NrdDiagnostics.Mode diagnostic =
                 token.nrdPlan.plan().input().diagnostic();

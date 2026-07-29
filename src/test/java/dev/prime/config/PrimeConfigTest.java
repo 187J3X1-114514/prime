@@ -42,6 +42,21 @@ final class PrimeConfigTest {
     }
 
     @Test
+    void persistedFinalExposureAcceptsOnlyExactQuarterStopsInRange() {
+        assertEquals(5, PrimeConfig.parseFinalExposureQuarterSteps("1.25"));
+        assertEquals(-32, PrimeConfig.parseFinalExposureQuarterSteps("-8"));
+        assertEquals(32, PrimeConfig.parseFinalExposureQuarterSteps("8"));
+        assertEquals("1.25", PrimeConfig.formatFinalExposure(5));
+        assertEquals("0", PrimeConfig.formatFinalExposure(0));
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> PrimeConfig.parseFinalExposureQuarterSteps("0.1"));
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> PrimeConfig.parseFinalExposureQuarterSteps("8.25"));
+    }
+
+    @Test
     void persistedDefaultRoughnessAcceptsOnlyExactHundredths() {
         assertEquals(0, PrimeConfig.parseRoughnessSteps("0"));
         assertEquals(80, PrimeConfig.parseRoughnessSteps("0.8"));
@@ -82,6 +97,7 @@ final class PrimeConfigTest {
         assertFalse(serialized.contains("debug_view"));
         assertFalse(serialized.contains("debug_fullscreen"));
         assertTrue(serialized.contains("lighting.star_ev=0\n"));
+        assertTrue(serialized.contains("display.final_exposure_ev=0\n"));
 
         Properties properties = new Properties();
         assertFalse(PrimeConfig.hasLegacyDebugProperties(properties));

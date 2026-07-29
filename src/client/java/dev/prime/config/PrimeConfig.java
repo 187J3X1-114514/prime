@@ -35,6 +35,7 @@ public final class PrimeConfig {
     private static final String SUN_EV_KEY = "lighting.sun_ev";
     private static final String STAR_EV_KEY = "lighting.star_ev";
     private static final String BLOCK_LIGHT_EV_KEY = "lighting.block_light_ev";
+    private static final String FINAL_EXPOSURE_EV_KEY = "display.final_exposure_ev";
     private static final String OKLAB_OVEREXPOSURE_KEY = "display.oklab_overexposure";
     private static final String DEFAULT_ROUGHNESS_KEY = "material.default_roughness";
     // Fabric initializes and mutates video options on the client thread. One immutable snapshot
@@ -53,6 +54,8 @@ public final class PrimeConfig {
         int sunQuarterSteps = LightingSettings.DEFAULT_SUN_QUARTER_STEPS;
         int starQuarterSteps = LightingSettings.DEFAULT_STAR_QUARTER_STEPS;
         int blockLightQuarterSteps = LightingSettings.DEFAULT_BLOCK_LIGHT_QUARTER_STEPS;
+        int finalExposureQuarterSteps =
+                DisplaySettings.DEFAULT_FINAL_EXPOSURE_QUARTER_STEPS;
         int oklabOverexposureSteps = DisplaySettings.DEFAULT_OVEREXPOSURE_STEPS;
         int defaultRoughnessSteps = MaterialSettings.DEFAULT_ROUGHNESS_STEPS;
         boolean rewriteNeeded = false;
@@ -147,6 +150,20 @@ public final class PrimeConfig {
                 } else {
                     rewriteNeeded = true;
                 }
+                String finalExposureEv = properties.getProperty(FINAL_EXPOSURE_EV_KEY);
+                if (finalExposureEv != null) {
+                    try {
+                        finalExposureQuarterSteps =
+                                parseFinalExposureQuarterSteps(finalExposureEv);
+                    } catch (IllegalArgumentException exception) {
+                        PrimeClient.LOGGER.warn(
+                                "Invalid Prime final exposure '{}'; using 0 EV",
+                                finalExposureEv);
+                        rewriteNeeded = true;
+                    }
+                } else {
+                    rewriteNeeded = true;
+                }
                 String oklabOverexposure = properties.getProperty(OKLAB_OVEREXPOSURE_KEY);
                 if (oklabOverexposure != null) {
                     try {
@@ -188,13 +205,14 @@ public final class PrimeConfig {
                 sunQuarterSteps,
                 starQuarterSteps,
                 blockLightQuarterSteps,
+                finalExposureQuarterSteps,
                 oklabOverexposureSteps,
                 defaultRoughnessSteps,
                 0L,
                 0L);
         dirty = rewriteNeeded;
         PrimeClient.LOGGER.info(
-                "Prime settings: path tracing {}, post-processing {} quality {} (NRD-FSR {}x), sun {} EV, stars {} EV, block lights {} EV, Oklab DRT overexposure {}, default roughness {}",
+                "Prime settings: path tracing {}, post-processing {} quality {} (NRD-FSR {}x), sun {} EV, stars {} EV, block lights {} EV, final exposure {} EV, Oklab DRT overexposure {}, default roughness {}",
                 pathTracingEnabled ? "enabled" : "disabled",
                 postProcessingMode.id(),
                 quality.id(),
@@ -202,6 +220,7 @@ public final class PrimeConfig {
                 formatEv(sunQuarterSteps),
                 formatStarEv(starQuarterSteps),
                 formatEv(blockLightQuarterSteps),
+                formatFinalExposure(finalExposureQuarterSteps),
                 formatOverexposure(oklabOverexposureSteps),
                 formatRoughness(defaultRoughnessSteps));
     }
@@ -238,6 +257,10 @@ public final class PrimeConfig {
         update(settings.withBlockLightQuarterSteps(quarterSteps));
     }
 
+    public static void setFinalExposureQuarterSteps(int quarterSteps) {
+        update(settings.withFinalExposureQuarterSteps(quarterSteps));
+    }
+
     public static void setOklabOverexposureSteps(int steps) {
         update(settings.withOklabOverexposureSteps(steps));
     }
@@ -253,6 +276,8 @@ public final class PrimeConfig {
         setSunQuarterSteps(LightingSettings.DEFAULT_SUN_QUARTER_STEPS);
         setStarQuarterSteps(LightingSettings.DEFAULT_STAR_QUARTER_STEPS);
         setBlockLightQuarterSteps(LightingSettings.DEFAULT_BLOCK_LIGHT_QUARTER_STEPS);
+        setFinalExposureQuarterSteps(
+                DisplaySettings.DEFAULT_FINAL_EXPOSURE_QUARTER_STEPS);
         setOklabOverexposureSteps(DisplaySettings.DEFAULT_OVEREXPOSURE_STEPS);
         setDefaultRoughnessSteps(MaterialSettings.DEFAULT_ROUGHNESS_STEPS);
     }
@@ -307,6 +332,8 @@ public final class PrimeConfig {
                     + STAR_EV_KEY + "=" + formatStarEv(current.starQuarterSteps()) + "\n"
                     + BLOCK_LIGHT_EV_KEY + "="
                     + formatEv(current.blockLightQuarterSteps()) + "\n"
+                    + FINAL_EXPOSURE_EV_KEY + "="
+                    + formatFinalExposure(current.finalExposureQuarterSteps()) + "\n"
                     + OKLAB_OVEREXPOSURE_KEY + "="
                     + formatOverexposure(current.oklabOverexposureSteps()) + "\n"
                     + DEFAULT_ROUGHNESS_KEY + "="
@@ -365,6 +392,27 @@ public final class PrimeConfig {
         LightingSettings.starLinearMultiplier(quarterSteps);
         return BigDecimal.valueOf(quarterSteps)
                 .divide(BigDecimal.valueOf(LightingSettings.QUARTER_STEPS_PER_EV))
+                .toPlainString();
+    }
+
+    static int parseFinalExposureQuarterSteps(String value) {
+        try {
+            int quarterSteps = new BigDecimal(value)
+                    .multiply(BigDecimal.valueOf(DisplaySettings.QUARTER_STEPS_PER_EV))
+                    .intValueExact();
+            DisplaySettings.finalExposureMultiplier(quarterSteps);
+            return quarterSteps;
+        } catch (ArithmeticException | NumberFormatException exception) {
+            throw new IllegalArgumentException(
+                    "Final exposure must be an exact 0.25-EV step",
+                    exception);
+        }
+    }
+
+    static String formatFinalExposure(int quarterSteps) {
+        DisplaySettings.finalExposureMultiplier(quarterSteps);
+        return BigDecimal.valueOf(quarterSteps)
+                .divide(BigDecimal.valueOf(DisplaySettings.QUARTER_STEPS_PER_EV))
                 .toPlainString();
     }
 

@@ -176,9 +176,9 @@ abstract class GenerateShaderAbi extends DefaultTask {
 			throw new GradleException(
 					'Prime color contract must remain sRGB input -> linear Rec.2020 D65 -> Oklab DRT -> sRGB Rec.709 display')
 		}
-		if (emissionContract.level15BlockIntensity != 25.0) {
+		if (emissionContract.level15BlockIntensity != 1.5) {
 			throw new GradleException(
-					'Prime emission contract must preserve a 25-unit white level-15 block source')
+					'Prime emission contract must preserve a 1.5-unit white level-15 block source')
 		}
 		if (atmosphereContract.spectralModel != 'hillaire-8wave-rec2020-d65'
 				|| atmosphereContract.worldSeaLevelY != -128.0
@@ -192,9 +192,10 @@ abstract class GenerateShaderAbi extends DefaultTask {
 		if (starmapContract.width != 8192
 				|| starmapContract.height != 4096
 				|| starmapContract.observerLatitudeDegrees != 30.0
+				|| starmapContract.baseRadianceScale != 0.075
 				|| starmapContract.sourceSha256 != 'dc6c4f413e85707a29a25a9451148154554ecca2c996f84fa8f47b65ef9ff7c4') {
 			throw new GradleException(
-					'Prime starmap contract must preserve the full NASA source and its 30-degree observer frame')
+					'Prime starmap contract must preserve the full NASA source, its 30-degree observer frame, and its calibrated radiance baseline')
 		}
 		if (nrdContract.version != '4.17.4'
                 || nrdContract.denoiser != 'dual-reblur-diffuse-specular-sh-plus-sigma-sun-shadow'
@@ -442,6 +443,7 @@ public final class ShaderAbi {
     public static final int STARMAP_WIDTH = ${starmapContract.width};
     public static final int STARMAP_HEIGHT = ${starmapContract.height};
     public static final float STARMAP_OBSERVER_LATITUDE_DEGREES = ${starmapContract.observerLatitudeDegrees}f;
+    public static final float STARMAP_BASE_RADIANCE_SCALE = ${starmapContract.baseRadianceScale}f;
     public static final String STARMAP_SOURCE_SHA256 = "${starmapContract.sourceSha256}";
 ${javaOffsets}
 
@@ -510,6 +512,7 @@ ${javaOffsets}
 #define PRIME_STARMAP_WIDTH ${starmapContract.width}
 #define PRIME_STARMAP_HEIGHT ${starmapContract.height}
 #define PRIME_STARMAP_OBSERVER_LATITUDE_RADIANS (${starmapContract.observerLatitudeDegrees} * 0.017453292519943295)
+#define PRIME_STARMAP_BASE_RADIANCE_SCALE ${starmapContract.baseRadianceScale}
 #define PRIME_MAXIMUM_BOUNCES ${schema.pathControl.maximumBounces}u
 #define PRIME_RUSSIAN_ROULETTE_START ${schema.pathControl.russianRouletteStart}u
 #define PRIME_CUTOUT_ALPHA_THRESHOLD ${schema.cutoutAlphaThreshold}
@@ -1081,7 +1084,8 @@ def verifyDistributionJar = tasks.register('verifyDistributionJar') {
 			'prime/shaders/wavefront_step_ser.rgen.spv',
 			'prime/shaders/wavefront_tail_ser.rgen.spv',
 			'prime/shaders/wavefront_resolve_ser.rgen.spv',
-			'prime/shaders/screenshot_display.comp.spv',
+			'prime/shaders/auto_exposure_histogram.comp.spv',
+			'prime/shaders/auto_exposure_update.comp.spv',
 			'prime/shaders/shadow.rahit.spv',
 			'prime/shaders/shadow.rchit.spv',
 			'prime/shaders/nrd_motion.comp.spv',
@@ -1100,9 +1104,9 @@ def verifyDistributionJar = tasks.register('verifyDistributionJar') {
 		}
 
 		def shaderNames = names.findAll { it.startsWith('prime/shaders/') && it.endsWith('.spv') }
-		if (shaderNames.size() != 29) {
+		if (shaderNames.size() != 30) {
 			throw new GradleException(
-					"Distribution jar must contain 29 Prime shaders; found ${shaderNames.size()}")
+					"Distribution jar must contain 30 Prime shaders; found ${shaderNames.size()}")
 		}
 
 		new java.util.zip.ZipFile(archive).withCloseable { zip ->

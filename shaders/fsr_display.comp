@@ -8,11 +8,18 @@ layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
 
 layout(set = 0, binding = 0) uniform texture2D primeFsrLinearOutput;
 layout(set = 0, binding = 1, rgba8) uniform writeonly image2D primeDisplayOutput;
+layout(std430, set = 0, binding = 2) readonly buffer PrimeAutoExposureState {
+    float exposureEv;
+    uint initialized;
+    float targetEv;
+    float measuredLogLuminance;
+} primeAutoExposureState;
 
 layout(push_constant) uniform PrimeFsrDisplayPushConstants {
     uvec2 outputExtent;
     uint debugView;
     float oklabOverexposure;
+    float finalExposureMultiplier;
 } primeFsrDisplayPush;
 
 void main() {
@@ -37,5 +44,7 @@ void main() {
             ivec2(pixel),
             vec4(primeDisplayTransformToSrgb(
                     max(radiance, vec3(0.0)),
+                    exp2(primeAutoExposureState.exposureEv)
+                            * primeFsrDisplayPush.finalExposureMultiplier,
                     primeFsrDisplayPush.oklabOverexposure), 1.0));
 }

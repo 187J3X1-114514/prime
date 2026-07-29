@@ -2,6 +2,7 @@ package dev.prime.render.post;
 
 import com.mojang.blaze3d.vulkan.Destroyable;
 import dev.prime.render.FrameCamera;
+import dev.prime.render.DisplaySettings;
 import dev.prime.render.LightingSettings;
 import dev.prime.render.SunDirection;
 import dev.prime.render.fsr.FsrDebugView;
@@ -71,7 +72,7 @@ public interface RealtimePostProcessor extends Destroyable {
             boolean forceRestart,
             SunDirection sunDirection,
             LightingSettings.Snapshot lighting,
-            float displayOverexposure,
+            DisplaySettings.Snapshot display,
             NrdDiagnostics.Mode nrdDebugView,
             FsrDebugView fsrDebugView,
             DlssRrDebugView rrDebugView,
@@ -80,14 +81,10 @@ public interface RealtimePostProcessor extends Destroyable {
             camera = Objects.requireNonNull(camera, "camera");
             sunDirection = Objects.requireNonNull(sunDirection, "sunDirection");
             lighting = Objects.requireNonNull(lighting, "lighting");
+            display = Objects.requireNonNull(display, "display");
             nrdDebugView = Objects.requireNonNull(nrdDebugView, "nrdDebugView");
             fsrDebugView = Objects.requireNonNull(fsrDebugView, "fsrDebugView");
             rrDebugView = Objects.requireNonNull(rrDebugView, "rrDebugView");
-            if (!Float.isFinite(displayOverexposure)
-                    || displayOverexposure < 1.0F
-                    || displayOverexposure > 2.0F) {
-                throw new IllegalArgumentException("Display overexposure must be between 1.0 and 2.0");
-            }
         }
 
         public float sunRadianceMultiplier() {

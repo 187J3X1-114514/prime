@@ -396,7 +396,7 @@ public final class CpuSectionLights {
         return new CpuSectionLights(emitters, distributions, tree);
     }
 
-    /** Prime's default source-radiance calibration: a white level-15 texel evaluates to 25. */
+    /** A white level-15 texel evaluates to the shared physical block-light ABI baseline. */
     static float emissionScale(int level) {
         int clamped = Math.max(0, Math.min(level, 15));
         return (float) clamped * clamped

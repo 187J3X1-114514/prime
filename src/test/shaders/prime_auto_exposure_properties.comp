@@ -1,0 +1,55 @@
+#version 460
+#extension GL_GOOGLE_include_directive : require
+
+#include "prime_test_abi.glsl"
+#include "auto_exposure.glsl"
+
+const uint PRIME_AUTO_EXPOSURE_INPUT_WORDS = 2u;
+const uint PRIME_AUTO_EXPOSURE_WITNESS_WORDS = 4u;
+
+void main() {
+    uint caseIndex;
+    if (!primeTestBegin(caseIndex)) return;
+    uint inputOffset =
+            primeTestInputOffset(caseIndex, PRIME_AUTO_EXPOSURE_INPUT_WORDS);
+    uvec4 control = primeTestInput.words[inputOffset];
+    vec4 values = uintBitsToFloat(primeTestInput.words[inputOffset + 1u]);
+    uint kind = control.x;
+    uint mask = 0u;
+    vec2 actual = vec2(0.0);
+    vec2 expected = vec2(0.0);
+
+    if (kind == 0u) {
+        actual.x = primeAutoExposureTargetEv(values.x);
+        expected.x = clamp(
+                log2(0.16) - values.x, 0.0, 4.0);
+        if (actual.x < 0.0 || actual.x > 4.0) {
+            mask |= PRIME_TEST_FAILURE_RANGE;
+        }
+        if (!primeTestClose(actual.x, expected.x, 1.0e-6, 1.0e-6)) {
+            mask |= PRIME_TEST_FAILURE_IDENTITY;
+        }
+    } else if (kind == 1u) {
+        float t90 = values.y < values.x ? 0.5 : 2.0;
+        actual.x = primeAutoExposureAdapt(values.x, values.y, t90);
+        expected.x = values.y + (values.x - values.y) * 0.1;
+        if (!primeTestClose(actual.x, expected.x, 2.0e-6, 2.0e-6)) {
+            mask |= PRIME_TEST_FAILURE_STATE;
+        }
+    } else {
+        mask |= PRIME_TEST_FAILURE_EVENT;
+    }
+    mask |= primeTestClassify(actual);
+
+    uint outputWords = primeTestOutputWords();
+    uint outputOffset = primeTestOutputOffset(caseIndex, outputWords);
+    primeTestOutput.words[outputOffset] =
+            uvec4(mask, kind, caseIndex, 0u);
+    if (outputWords >= PRIME_AUTO_EXPOSURE_WITNESS_WORDS) {
+        primeTestOutput.words[outputOffset + 1u] = control;
+        primeTestOutput.words[outputOffset + 2u] =
+                floatBitsToUint(values);
+        primeTestOutput.words[outputOffset + 3u] =
+                floatBitsToUint(vec4(actual, expected));
+    }
+}

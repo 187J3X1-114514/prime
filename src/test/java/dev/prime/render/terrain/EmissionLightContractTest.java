@@ -16,10 +16,10 @@ final class EmissionLightContractTest {
     @Test
     void minecraftLightLevelUsesSquaredRadiusCalibration() {
         assertEquals(0.0F, CpuSectionLights.emissionScale(0));
-        assertEquals(1.0F, CpuSectionLights.emissionScale(3), 1.0E-6F);
-        assertEquals(49.0F / 9.0F, CpuSectionLights.emissionScale(7), 1.0E-6F);
-        assertEquals(25.0F, CpuSectionLights.emissionScale(15));
-        assertEquals(25.0F, CpuSectionLights.emissionScale(100));
+        assertEquals(3.0F / 50.0F, CpuSectionLights.emissionScale(3), 1.0E-6F);
+        assertEquals(49.0F / 150.0F, CpuSectionLights.emissionScale(7), 1.0E-6F);
+        assertEquals(1.5F, CpuSectionLights.emissionScale(15));
+        assertEquals(1.5F, CpuSectionLights.emissionScale(100));
     }
 
     @Test

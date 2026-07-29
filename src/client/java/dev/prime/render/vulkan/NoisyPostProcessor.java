@@ -116,9 +116,16 @@ public final class NoisyPostProcessor implements RealtimePostProcessor {
             VulkanImageInitializationBatch initialization) {
         FrameToken token = requireFrame(frame);
         token.recorded = true;
-        token.temporal.claimForExecution();
+        TemporalReconstructionState.Plan temporal =
+                token.temporal.claimForExecution();
         this.composite.record(commandBuffer, parameters.sunRadianceMultiplier());
-        this.displayTransform.record(commandBuffer, false, parameters.displayOverexposure());
+        this.displayTransform.record(
+                commandBuffer,
+                false,
+                temporal.deltaMilliseconds() * 0.001F,
+                temporal.restart(),
+                false,
+                parameters.display());
     }
 
     @Override

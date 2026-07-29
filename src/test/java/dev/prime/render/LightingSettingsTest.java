@@ -60,4 +60,17 @@ final class LightingSettingsTest {
                 IllegalArgumentException.class,
                 () -> new LightingSettings.Snapshot(0, 0, 0, -1L));
     }
+
+    @Test
+    void finalExposureDoesNotAdvanceLightingOrMaterialRevisions() {
+        PrimeSettings defaults = PrimeSettings.defaults();
+        PrimeSettings changed = defaults.withFinalExposureQuarterSteps(3);
+
+        assertEquals(defaults.lightingRevision(), changed.lightingRevision());
+        assertEquals(defaults.materialRevision(), changed.materialRevision());
+        assertEquals(3, changed.display().finalExposureQuarterSteps());
+        assertEquals(
+                DisplaySettings.finalExposureMultiplier(3),
+                changed.display().finalExposureMultiplier());
+    }
 }

@@ -15,12 +15,13 @@ public record ScreenshotFrameInput(
         LightingSettings.Snapshot lighting,
         MaterialSettings.Snapshot material,
         long sampleCount,
-        float displayOverexposure) {
+        DisplaySettings.Snapshot display) {
     public ScreenshotFrameInput {
         Objects.requireNonNull(camera, "camera");
         Objects.requireNonNull(sunDirection, "sunDirection");
         Objects.requireNonNull(lighting, "lighting");
         Objects.requireNonNull(material, "material");
+        Objects.requireNonNull(display, "display");
         if (width <= 0 || height <= 0) {
             throw new IllegalArgumentException(
                     "Screenshot extent must be positive");
@@ -32,12 +33,6 @@ public record ScreenshotFrameInput(
         if (sceneRevision < 0L || textureRevision < 0L) {
             throw new IllegalArgumentException(
                     "Screenshot scene and texture revisions must be non-negative");
-        }
-        if (!Float.isFinite(displayOverexposure)
-                || displayOverexposure < 1.0F
-                || displayOverexposure > 2.0F) {
-            throw new IllegalArgumentException(
-                    "Display overexposure must be between 1.0 and 2.0");
         }
     }
 

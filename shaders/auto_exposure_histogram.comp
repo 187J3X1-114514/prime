@@ -1,0 +1,72 @@
+#version 460
+#extension GL_GOOGLE_include_directive : require
+#extension GL_EXT_samplerless_texture_functions : require
+
+#include "auto_exposure.glsl"
+
+layout(local_size_x = 16, local_size_y = 16, local_size_z = 1) in;
+
+layout(set = 0, binding = 0) uniform texture2D primeAutoExposureInput;
+layout(std430, set = 0, binding = 1) buffer PrimeAutoExposureHistogram {
+    uint bins[256];
+    uint validCount;
+} primeAutoExposureHistogram;
+
+layout(push_constant) uniform PrimeAutoExposureHistogramPushConstants {
+    uvec2 inputExtent;
+    uvec2 reserved;
+} primeAutoExposureHistogramPush;
+
+shared uint primeWorkgroupBins[256];
+shared uint primeWorkgroupValidCount;
+
+void main() {
+    uint localIndex = gl_LocalInvocationIndex;
+    primeWorkgroupBins[localIndex] = 0u;
+    if (localIndex == 0u) {
+        primeWorkgroupValidCount = 0u;
+    }
+    barrier();
+
+    uvec2 blockOrigin = gl_WorkGroupID.xy * 64u + gl_LocalInvocationID.xy * 4u;
+    for (uint y = 0u; y < 4u; ++y) {
+        for (uint x = 0u; x < 4u; ++x) {
+            uvec2 pixel = blockOrigin + uvec2(x, y);
+            if (any(greaterThanEqual(pixel, primeAutoExposureHistogramPush.inputExtent))) {
+                continue;
+            }
+            vec3 radiance = texelFetch(primeAutoExposureInput, ivec2(pixel), 0).rgb;
+            if (any(isnan(radiance)) || any(isinf(radiance))) {
+                continue;
+            }
+            radiance = max(radiance, vec3(0.0));
+            float luminance =
+                    dot(radiance, vec3(0.2627, 0.6780, 0.0593));
+            if (isnan(luminance) || isinf(luminance)) {
+                continue;
+            }
+            float logLuminance = clamp(
+                    log2(max(luminance, exp2(PRIME_AUTO_EXPOSURE_MIN_LOG_LUMINANCE))),
+                    PRIME_AUTO_EXPOSURE_MIN_LOG_LUMINANCE,
+                    PRIME_AUTO_EXPOSURE_MAX_LOG_LUMINANCE);
+            uint bin = min(
+                    uint(floor(
+                            (logLuminance - PRIME_AUTO_EXPOSURE_MIN_LOG_LUMINANCE)
+                                    * (256.0 / PRIME_AUTO_EXPOSURE_LOG_LUMINANCE_RANGE))),
+                    255u);
+            atomicAdd(primeWorkgroupBins[bin], 1u);
+            atomicAdd(primeWorkgroupValidCount, 1u);
+        }
+    }
+    barrier();
+
+    uint count = primeWorkgroupBins[localIndex];
+    if (count != 0u) {
+        atomicAdd(primeAutoExposureHistogram.bins[localIndex], count);
+    }
+    if (localIndex == 0u && primeWorkgroupValidCount != 0u) {
+        atomicAdd(
+                primeAutoExposureHistogram.validCount,
+                primeWorkgroupValidCount);
+    }
+}

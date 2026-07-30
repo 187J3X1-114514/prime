@@ -4,12 +4,12 @@ import com.mojang.blaze3d.vulkan.Destroyable;
 import com.mojang.blaze3d.vulkan.VulkanGpuSampler;
 import com.mojang.blaze3d.vulkan.VulkanGpuTextureView;
 import dev.prime.PrimeClient;
+import dev.prime.render.AstronomyState;
 import dev.prime.render.FrameCamera;
 import dev.prime.render.IntegratorFrameInput;
 import dev.prime.render.LightingSettings;
 import dev.prime.render.MaterialSettings;
 import dev.prime.render.ResourceCleanup;
-import dev.prime.render.SunDirection;
 import dev.prime.render.post.PostProcessingMode;
 import dev.prime.render.post.ReconstructionQualityMode;
 import dev.prime.render.fsr.FsrSettings;
@@ -217,7 +217,7 @@ public final class ReplayProbeController implements Destroyable {
                 frameTimeNanos,
                 input.scene.temporalRevision(),
                 input.textureRevision,
-                input.sunDirection,
+                input.astronomy.sunDirection(),
                 jitter.x(),
                 jitter.y(),
                 forceRestart);
@@ -225,7 +225,7 @@ public final class ReplayProbeController implements Destroyable {
                 camera,
                 width,
                 height,
-                input.sunDirection,
+                input.astronomy,
                 ReconstructionQualityMode.NATIVE_AA.packedRayCone(
                         camera.projection().m00(),
                         camera.projection().m11(),
@@ -290,7 +290,7 @@ public final class ReplayProbeController implements Destroyable {
             AtmospherePipeline atmosphere,
             TerrainScene.ResidentSceneView scene,
             FrameCamera camera,
-            SunDirection sunDirection,
+            AstronomyState astronomy,
             boolean cameraInWater,
             LightingSettings.Snapshot lighting,
             MaterialSettings.Snapshot material,
@@ -307,7 +307,7 @@ public final class ReplayProbeController implements Destroyable {
             Objects.requireNonNull(atmosphere, "atmosphere");
             Objects.requireNonNull(scene, "scene");
             Objects.requireNonNull(camera, "camera");
-            Objects.requireNonNull(sunDirection, "sunDirection");
+            Objects.requireNonNull(astronomy, "astronomy");
             Objects.requireNonNull(lighting, "lighting");
             Objects.requireNonNull(material, "material");
             Objects.requireNonNull(atlasView, "atlasView");

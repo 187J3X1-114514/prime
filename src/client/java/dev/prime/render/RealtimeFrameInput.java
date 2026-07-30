@@ -25,7 +25,7 @@ public record RealtimeFrameInput(
         int height,
         int displayWidth,
         int displayHeight,
-        SunDirection sunDirection,
+        AstronomyState astronomy,
         boolean cameraInWater,
         PostProcessingMode postProcessingMode,
         ReconstructionQualityMode quality,
@@ -41,7 +41,7 @@ public record RealtimeFrameInput(
         boolean forceReset) {
     public RealtimeFrameInput {
         Objects.requireNonNull(camera, "camera");
-        Objects.requireNonNull(sunDirection, "sunDirection");
+        Objects.requireNonNull(astronomy, "astronomy");
         Objects.requireNonNull(postProcessingMode, "postProcessingMode");
         Objects.requireNonNull(quality, "quality");
         Objects.requireNonNull(lighting, "lighting");
@@ -83,7 +83,7 @@ public record RealtimeFrameInput(
                 this.textureRevision,
                 this.lighting.revision(),
                 this.material.revision(),
-                this.sunDirection,
+                this.astronomy,
                 this.cameraInWater,
                 this.forceReset);
     }
@@ -96,7 +96,7 @@ public record RealtimeFrameInput(
                 this.sceneRevision,
                 this.textureRevision,
                 forceRestart,
-                this.sunDirection,
+                this.sunDirection(),
                 this.lighting,
                 this.display,
                 this.nrdDebugView,
@@ -114,7 +114,7 @@ public record RealtimeFrameInput(
                 || this.sceneRevision != parameters.sceneRevision()
                 || this.textureRevision != parameters.textureRevision()
                 || forceRestart != parameters.forceRestart()
-                || !this.sunDirection.equals(parameters.sunDirection())
+                || !this.sunDirection().equals(parameters.sunDirection())
                 || !this.lighting.equals(parameters.lighting())
                 || !this.display.equals(parameters.display())
                 || this.nrdDebugView != parameters.nrdDebugView()
@@ -138,7 +138,7 @@ public record RealtimeFrameInput(
                 this.camera,
                 this.width,
                 this.height,
-                this.sunDirection,
+                this.astronomy,
                 rayQuality.packedRayCone(
                         this.camera.projection().m00(),
                         this.camera.projection().m11(),
@@ -155,6 +155,10 @@ public record RealtimeFrameInput(
                 this.postProcessingMode == PostProcessingMode.NRD_FSR
                         && this.nrdDebugView.rawNumerical(),
                 this.triangleDebug);
+    }
+
+    public SunDirection sunDirection() {
+        return this.astronomy.sunDirection();
     }
 
     FsrSettings.Jitter expectedJitter(int reconstructionFrameIndex) {

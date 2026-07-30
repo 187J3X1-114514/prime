@@ -64,7 +64,7 @@ final class ScreenshotFramePlanTest {
                 initial.height(),
                 initial.sceneRevision(),
                 initial.textureRevision(),
-                initial.sunDirection(),
+                initial.astronomy(),
                 initial.cameraInWater(),
                 initial.lighting(),
                 initial.material(),
@@ -85,7 +85,8 @@ final class ScreenshotFramePlanTest {
                 48,
                 7L,
                 11L,
-                new SunDirection(0.0F, 1.0F, 0.0F),
+                AstronomyState.atSolarHourAngle(
+                        0.0F, AstronomySettings.defaults()),
                 false,
                 new LightingSettings.Snapshot(
                         0, 0, 0, 1L),

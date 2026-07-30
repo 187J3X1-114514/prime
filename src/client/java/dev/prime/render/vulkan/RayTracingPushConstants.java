@@ -58,7 +58,10 @@ public final class RayTracingPushConstants {
         buffer.putFloat(sunOffset + 2 * Float.BYTES, input.sunDirection().z());
         buffer.putInt(ShaderAbi.PUSH_RAY_CONE_OFFSET, input.packedRayCone());
         int pathOffset = ShaderAbi.PUSH_PATH_OFFSET;
-        buffer.putInt(pathOffset, input.sampleIndex());
+        buffer.putInt(
+                pathOffset,
+                IntegratorSettings.packSampleControl(
+                        input.sampleIndex(), input.astronomy().settings()));
         buffer.putInt(
                 pathOffset + Integer.BYTES,
                 IntegratorSettings.packSampleEpoch(
@@ -68,6 +71,7 @@ public final class RayTracingPushConstants {
                 IntegratorSettings.packPathControl(
                         IntegratorSettings.MAXIMUM_BOUNCES,
                         input.jitterPhase(),
+                        input.astronomy().settings(),
                         input.cameraInWater(),
                         input.postProcessingMode()));
         buffer.putInt(

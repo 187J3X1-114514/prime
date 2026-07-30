@@ -1,0 +1,184 @@
+#version 460
+#extension GL_GOOGLE_include_directive : require
+
+#include "prime_test_abi.glsl"
+
+const float PRIME_PI = 3.14159265358979323846;
+#define PRIME_ASTRONOMY_AXIAL_TILT_RADIANS (23.43928 * 0.017453292519943295)
+#include "celestial.glsl"
+
+const uint PRIME_CELESTIAL_INPUT_WORDS = 2u;
+const uint PRIME_CELESTIAL_WITNESS_WORDS = 5u;
+
+float primeAngleDifference(float first, float second) {
+    return atan(sin(first - second), cos(first - second));
+}
+
+vec3 primeTestSunDirection(
+        float latitude,
+        float solarLongitude,
+        float hourAngle) {
+    float declination = asin(
+            sin(PRIME_ASTRONOMY_AXIAL_TILT_RADIANS)
+                    * sin(solarLongitude));
+    float sineLatitude = sin(latitude);
+    float cosineLatitude = cos(latitude);
+    float sineDeclination = sin(declination);
+    float cosineDeclination = cos(declination);
+    return vec3(
+            -cosineDeclination * sin(hourAngle),
+            sineLatitude * sineDeclination
+                    + cosineLatitude * cosineDeclination * cos(hourAngle),
+            -cosineLatitude * sineDeclination
+                    + sineLatitude * cosineDeclination * cos(hourAngle));
+}
+
+vec3 primeTestEquatorialDirection(
+        PrimeCelestialFrame frame,
+        float rightAscension,
+        float declination) {
+    float hourAngle = frame.siderealPhase - rightAscension;
+    float cosineDeclination = cos(declination);
+    return frame.east * (-cosineDeclination * sin(hourAngle))
+            + frame.meridian * (cosineDeclination * cos(hourAngle))
+            + frame.pole * sin(declination);
+}
+
+void main() {
+    uint caseIndex;
+    if (!primeTestBegin(caseIndex)) return;
+    uint inputOffset =
+            primeTestInputOffset(caseIndex, PRIME_CELESTIAL_INPUT_WORDS);
+    uvec4 control = primeTestInput.words[inputOffset];
+    vec4 values = uintBitsToFloat(primeTestInput.words[inputOffset + 1u]);
+    uint kind = control.x;
+    float latitude = radians(float(int(control.y)));
+    float solarLongitude = radians(float(control.z));
+    float hourAngle = values.x;
+    vec3 sunDirection = primeTestSunDirection(
+            latitude, solarLongitude, hourAngle);
+    PrimeCelestialFrame frame = primeCelestialFrame(
+            sunDirection, latitude, solarLongitude);
+    uint mask = primeTestClassify(sunDirection)
+            | primeTestClassify(frame.east)
+            | primeTestClassify(frame.pole)
+            | primeTestClassify(frame.meridian)
+            | primeTestClassify(frame.siderealPhase);
+    vec4 first = vec4(0.0);
+    vec4 second = vec4(0.0);
+
+    if (kind == 0u) {
+        first = vec4(
+                length(frame.east),
+                length(frame.pole),
+                length(frame.meridian),
+                dot(frame.pole, vec3(0.0, 1.0, 0.0)));
+        second = vec4(
+                dot(frame.east, frame.pole),
+                dot(frame.east, frame.meridian),
+                dot(frame.pole, frame.meridian),
+                sin(latitude));
+        if (!primeTestClose(first.xyz, vec3(1.0), 2.0e-6, 2.0e-6)
+                || !primeTestClose(first.w, second.w, 2.0e-6, 2.0e-6)
+                || !primeTestClose(second.xyz, vec3(0.0), 2.0e-6, 2.0e-6)
+                || frame.pole.z > 2.0e-6) {
+            mask |= PRIME_TEST_FAILURE_ORTHOGONAL;
+        }
+    } else if (kind == 1u) {
+        vec2 equatorial =
+                primeCelestialEquatorialCoordinates(frame, sunDirection);
+        float expectedRightAscension =
+                primeSolarRightAscension(solarLongitude);
+        float expectedDeclination = asin(
+                sin(PRIME_ASTRONOMY_AXIAL_TILT_RADIANS)
+                        * sin(solarLongitude));
+        first = vec4(equatorial, expectedRightAscension, expectedDeclination);
+        if (!primeTestClose(
+                    primeAngleDifference(
+                            equatorial.x, expectedRightAscension),
+                    0.0,
+                    3.0e-6,
+                    3.0e-6)
+                || !primeTestClose(
+                    equatorial.y, expectedDeclination, 3.0e-6, 3.0e-6)) {
+            mask |= PRIME_TEST_FAILURE_IDENTITY;
+        }
+    } else if (kind == 2u) {
+        vec3 direction = primeTestEquatorialDirection(
+                frame, values.y, values.z);
+        vec2 roundTrip =
+                primeCelestialEquatorialCoordinates(frame, direction);
+        float rightAscensionTolerance =
+                abs(values.z) > 1.5 ? 2.0e-4 : 8.0e-6;
+        first = vec4(direction, length(direction));
+        second = vec4(roundTrip, values.y, values.z);
+        mask |= primeTestClassify(direction) | primeTestClassify(roundTrip);
+        if (!primeTestClose(length(direction), 1.0, 3.0e-6, 3.0e-6)
+                || !primeTestClose(
+                    primeAngleDifference(roundTrip.x, values.y),
+                    0.0,
+                    rightAscensionTolerance,
+                    0.0)
+                // Both angular coordinates are conditionally sensitive near a celestial pole.
+                // Keep explicit pole bounds while the direction itself remains unit length.
+                || !primeTestClose(
+                    roundTrip.y, values.z, 2.0e-4, 0.0)) {
+            mask |= PRIME_TEST_FAILURE_ROUND_TRIP;
+        }
+    } else if (kind == 3u) {
+        vec3 nextSun = primeTestSunDirection(
+                latitude,
+                solarLongitude,
+                hourAngle + 2.0 * PRIME_PI);
+        PrimeCelestialFrame next = primeCelestialFrame(
+                nextSun, latitude, solarLongitude);
+        first = vec4(sunDirection, frame.siderealPhase);
+        second = vec4(nextSun, next.siderealPhase);
+        if (!primeTestClose(sunDirection, nextSun, 3.0e-6, 3.0e-6)
+                || !primeTestClose(
+                    primeAngleDifference(
+                            frame.siderealPhase, next.siderealPhase),
+                    0.0,
+                    3.0e-6,
+                    3.0e-6)) {
+            mask |= PRIME_TEST_FAILURE_STATE;
+        }
+    } else if (kind == 4u) {
+        float previousLongitude = radians(359.0);
+        vec3 previousSun = primeTestSunDirection(
+                latitude, previousLongitude, hourAngle);
+        PrimeCelestialFrame previous = primeCelestialFrame(
+                previousSun, latitude, previousLongitude);
+        vec3 equinoxSun = primeTestSunDirection(
+                latitude, 0.0, hourAngle);
+        PrimeCelestialFrame equinox = primeCelestialFrame(
+                equinoxSun, latitude, 0.0);
+        float actual = primeAngleDifference(
+                equinox.siderealPhase, previous.siderealPhase);
+        float expected = primeAngleDifference(
+                primeSolarRightAscension(0.0),
+                primeSolarRightAscension(previousLongitude));
+        first = vec4(
+                actual,
+                expected,
+                previous.siderealPhase,
+                equinox.siderealPhase);
+        if (!primeTestClose(actual, expected, 3.0e-6, 3.0e-6)
+                || abs(actual) > radians(2.0)) {
+            mask |= PRIME_TEST_FAILURE_STATE;
+        }
+    } else {
+        mask |= PRIME_TEST_FAILURE_EVENT;
+    }
+
+    uint outputWords = primeTestOutputWords();
+    uint outputOffset = primeTestOutputOffset(caseIndex, outputWords);
+    primeTestOutput.words[outputOffset] =
+            uvec4(mask, kind, caseIndex, 0u);
+    if (outputWords >= PRIME_CELESTIAL_WITNESS_WORDS) {
+        primeTestOutput.words[outputOffset + 1u] = control;
+        primeTestOutput.words[outputOffset + 2u] = floatBitsToUint(values);
+        primeTestOutput.words[outputOffset + 3u] = floatBitsToUint(first);
+        primeTestOutput.words[outputOffset + 4u] = floatBitsToUint(second);
+    }
+}

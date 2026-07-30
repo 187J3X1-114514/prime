@@ -28,20 +28,28 @@ final class IntegratorSettingsTest {
 
     @Test
     void pathControlKeepsCameraMediumSeparateFromJitterAndBounceFields() {
+        AstronomySettings astronomy = new AstronomySettings(-73, 271);
         int dry = IntegratorSettings.packPathControl(
-                128, 18, false, PostProcessingMode.NRD_FSR);
+                128, 18, astronomy, false, PostProcessingMode.NRD_FSR);
         int submerged = IntegratorSettings.packPathControl(
-                128, 18, true, PostProcessingMode.NRD_FSR);
-        assertEquals(128, dry & 0xffff);
+                128, 18, astronomy, true, PostProcessingMode.NRD_FSR);
+        assertEquals(
+                128,
+                dry & ShaderAbi.PATH_MAXIMUM_BOUNCES_MASK);
+        assertEquals(
+                -73,
+                ((dry >>> ShaderAbi.PATH_LATITUDE_SHIFT)
+                        & ShaderAbi.PATH_LATITUDE_MASK)
+                        - ShaderAbi.PATH_LATITUDE_BIAS);
         assertEquals(18, (dry >>> 16) & ShaderAbi.PATH_JITTER_PHASE_MASK);
         assertEquals(0, dry & ShaderAbi.PATH_CAMERA_IN_WATER_MASK);
         assertEquals(ShaderAbi.PATH_CAMERA_IN_WATER_MASK,
                 submerged & ShaderAbi.PATH_CAMERA_IN_WATER_MASK);
         int screenshot = IntegratorSettings.packPathControl(
-                128, 0, false, PostProcessingMode.DISABLED);
+                128, 0, astronomy, false, PostProcessingMode.DISABLED);
         assertEquals(0, (screenshot >>> 16) & ShaderAbi.PATH_JITTER_PHASE_MASK);
         int dlss = IntegratorSettings.packPathControl(
-                128, 18, false, PostProcessingMode.DLSS_RR);
+                128, 18, astronomy, false, PostProcessingMode.DLSS_RR);
         assertEquals(
                 ShaderAbi.PATH_TRANSPARENT_GUIDE_MODE_NRD,
                 dry >>> ShaderAbi.PATH_TRANSPARENT_GUIDE_MODE_SHIFT
@@ -56,13 +64,28 @@ final class IntegratorSettingsTest {
                         & ShaderAbi.PATH_TRANSPARENT_GUIDE_MODE_MASK);
         assertThrows(IllegalArgumentException.class,
                 () -> IntegratorSettings.packPathControl(
-                        128, -1, false, PostProcessingMode.NRD_FSR));
+                        128, -1, astronomy, false, PostProcessingMode.NRD_FSR));
         assertThrows(IllegalArgumentException.class,
                 () -> IntegratorSettings.packPathControl(
-                        128, 0x2000, false, PostProcessingMode.NRD_FSR));
+                        128, 0x2000, astronomy, false, PostProcessingMode.NRD_FSR));
         assertThrows(IllegalArgumentException.class,
                 () -> IntegratorSettings.packPathControl(
-                        129, 0, false, PostProcessingMode.NRD_FSR));
+                        129, 0, astronomy, false, PostProcessingMode.NRD_FSR));
+    }
+
+    @Test
+    void sampleControlKeepsSeasonSeparateFromSobolIdentity() {
+        AstronomySettings astronomy = new AstronomySettings(30, 359);
+        int packed = IntegratorSettings.packSampleControl(0xabcd, astronomy);
+        assertEquals(0xabcd, packed & ShaderAbi.PATH_SAMPLE_INDEX_MASK);
+        assertEquals(
+                359,
+                (packed >>> ShaderAbi.PATH_SOLAR_LONGITUDE_SHIFT)
+                        & ShaderAbi.PATH_SOLAR_LONGITUDE_MASK);
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> IntegratorSettings.packSampleControl(
+                        1 << 16, astronomy));
     }
 
     @Test

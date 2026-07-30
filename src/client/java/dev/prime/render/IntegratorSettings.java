@@ -35,6 +35,24 @@ public final class IntegratorSettings {
     private IntegratorSettings() {
     }
 
+    public static int packSampleControl(
+            int sampleIndex,
+            AstronomySettings astronomy) {
+        if (sampleIndex < 0
+                || (sampleIndex & ~ShaderAbi.PATH_SAMPLE_INDEX_MASK) != 0) {
+            throw new IllegalArgumentException(
+                    "Sample index does not fit the Sobol sequence");
+        }
+        java.util.Objects.requireNonNull(astronomy, "astronomy");
+        int solarLongitude = astronomy.solarLongitudeDegrees();
+        if ((solarLongitude & ~ShaderAbi.PATH_SOLAR_LONGITUDE_MASK) != 0) {
+            throw new IllegalArgumentException(
+                    "Solar longitude does not fit the path-control ABI");
+        }
+        return sampleIndex
+                | solarLongitude << ShaderAbi.PATH_SOLAR_LONGITUDE_SHIFT;
+    }
+
     public static int packSampleEpoch(int sampleEpoch, boolean triangleDebug) {
         if ((sampleEpoch & ~ShaderAbi.PATH_SAMPLE_EPOCH_MASK) != 0) {
             throw new IllegalArgumentException("Sample epoch does not fit in 31 bits");
@@ -45,6 +63,7 @@ public final class IntegratorSettings {
     public static int packPathControl(
             int maximumBounces,
             int jitterPhase,
+            AstronomySettings astronomy,
             boolean cameraInWater,
             PostProcessingMode postProcessingMode) {
         if (maximumBounces < 0 || maximumBounces > MAXIMUM_BOUNCES) {
@@ -56,6 +75,13 @@ public final class IntegratorSettings {
         if (jitterPhase < 0 || jitterPhase > ShaderAbi.PATH_JITTER_PHASE_MASK) {
             throw new IllegalArgumentException("Jitter phase does not fit in 13 bits");
         }
+        java.util.Objects.requireNonNull(astronomy, "astronomy");
+        int encodedLatitude =
+                astronomy.latitudeDegrees() + ShaderAbi.PATH_LATITUDE_BIAS;
+        if ((encodedLatitude & ~ShaderAbi.PATH_LATITUDE_MASK) != 0) {
+            throw new IllegalArgumentException(
+                    "Observer latitude does not fit the path-control ABI");
+        }
         int transparentGuideMode = switch (postProcessingMode) {
             case NRD_FSR -> ShaderAbi.PATH_TRANSPARENT_GUIDE_MODE_NRD;
             case DLSS_RR -> ShaderAbi.PATH_TRANSPARENT_GUIDE_MODE_DLSS_RR;
@@ -64,6 +90,7 @@ public final class IntegratorSettings {
         return (cameraInWater ? ShaderAbi.PATH_CAMERA_IN_WATER_MASK : 0)
                 | transparentGuideMode << ShaderAbi.PATH_TRANSPARENT_GUIDE_MODE_SHIFT
                 | (jitterPhase << 16)
+                | encodedLatitude << ShaderAbi.PATH_LATITUDE_SHIFT
                 | maximumBounces;
     }
 

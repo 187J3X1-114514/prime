@@ -153,6 +153,7 @@ abstract class GenerateShaderAbi extends DefaultTask {
 		def colorContract = schema.colorContract
 		def emissionContract = schema.emissionContract
 		def atmosphereContract = schema.atmosphereContract
+		def astronomyContract = schema.astronomyContract
 		def starmapContract = schema.starmapContract
 		def nrdContract = schema.nrdContract
 		def fsrContract = schema.fsrContract
@@ -191,11 +192,20 @@ abstract class GenerateShaderAbi extends DefaultTask {
 		}
 		if (starmapContract.width != 8192
 				|| starmapContract.height != 4096
-				|| starmapContract.observerLatitudeDegrees != 30.0
 				|| starmapContract.baseRadianceScale != 0.075
 				|| starmapContract.sourceSha256 != 'dc6c4f413e85707a29a25a9451148154554ecca2c996f84fa8f47b65ef9ff7c4') {
 			throw new GradleException(
-					'Prime starmap contract must preserve the full NASA source, its 30-degree observer frame, and its calibrated radiance baseline')
+					'Prime starmap contract must preserve the full NASA source and its calibrated radiance baseline')
+		}
+		if (astronomyContract.axialTiltDegrees != 23.43928
+				|| astronomyContract.minimumLatitudeDegrees != -90
+				|| astronomyContract.maximumLatitudeDegrees != 90
+				|| astronomyContract.defaultLatitudeDegrees != 30
+				|| astronomyContract.minimumSolarLongitudeDegrees != 0
+				|| astronomyContract.maximumSolarLongitudeDegrees != 359
+				|| astronomyContract.defaultSolarLongitudeDegrees != 0) {
+			throw new GradleException(
+					'Prime astronomy contract must preserve the axial tilt and complete integer-degree control domains')
 		}
 		if (nrdContract.version != '4.17.4'
                 || nrdContract.denoiser != 'dual-reblur-diffuse-specular-sh-plus-sigma-sun-shadow'
@@ -390,8 +400,15 @@ public final class ShaderAbi {
     public static final int WAVEFRONT_QUEUE_COMMAND_STRIDE = ${wavefrontContract.queueCommandStride};
     public static final int WAVEFRONT_QUEUE_INDEX_SIZE = ${wavefrontContract.queueIndexSize};
     public static final int WAVEFRONT_ACTIVE_MASK = ${wavefrontContract.activeMask};
+    public static final int PATH_SAMPLE_INDEX_MASK = ${schema.pathControl.sampleIndexMask};
+    public static final int PATH_SOLAR_LONGITUDE_SHIFT = ${schema.pathControl.solarLongitudeShift};
+    public static final int PATH_SOLAR_LONGITUDE_MASK = ${schema.pathControl.solarLongitudeMask};
     public static final int PATH_SAMPLE_EPOCH_MASK = ${schema.pathControl.sampleEpochMask};
     public static final int PATH_TRIANGLE_DEBUG_MASK = ${schema.pathControl.triangleDebugMask};
+    public static final int PATH_MAXIMUM_BOUNCES_MASK = ${schema.pathControl.maximumBouncesMask};
+    public static final int PATH_LATITUDE_SHIFT = ${schema.pathControl.latitudeShift};
+    public static final int PATH_LATITUDE_MASK = ${schema.pathControl.latitudeMask};
+    public static final int PATH_LATITUDE_BIAS = ${schema.pathControl.latitudeBias};
     public static final int PATH_CAMERA_IN_WATER_MASK = ${schema.pathControl.cameraInWaterMask};
     public static final int PATH_JITTER_PHASE_MASK = ${schema.pathControl.jitterPhaseMask};
     public static final int PATH_TRANSPARENT_GUIDE_MODE_SHIFT = ${schema.pathControl.transparentGuideModeShift};
@@ -440,9 +457,15 @@ public final class ShaderAbi {
     public static final float ATMOSPHERE_SPACE_SUN_INTENSITY = ${atmosphereContract.spaceSunIntensity}f;
     public static final float ATMOSPHERE_SUN_ANGULAR_RADIUS_RADIANS = ${atmosphereContract.sunAngularRadiusRadians}f;
     public static final float ATMOSPHERE_AERIAL_MAX_DISTANCE_KM = ${atmosphereContract.aerialMaxDistanceKm}f;
+    public static final float ASTRONOMY_AXIAL_TILT_DEGREES = ${astronomyContract.axialTiltDegrees}f;
+    public static final int ASTRONOMY_MINIMUM_LATITUDE_DEGREES = ${astronomyContract.minimumLatitudeDegrees};
+    public static final int ASTRONOMY_MAXIMUM_LATITUDE_DEGREES = ${astronomyContract.maximumLatitudeDegrees};
+    public static final int ASTRONOMY_DEFAULT_LATITUDE_DEGREES = ${astronomyContract.defaultLatitudeDegrees};
+    public static final int ASTRONOMY_MINIMUM_SOLAR_LONGITUDE_DEGREES = ${astronomyContract.minimumSolarLongitudeDegrees};
+    public static final int ASTRONOMY_MAXIMUM_SOLAR_LONGITUDE_DEGREES = ${astronomyContract.maximumSolarLongitudeDegrees};
+    public static final int ASTRONOMY_DEFAULT_SOLAR_LONGITUDE_DEGREES = ${astronomyContract.defaultSolarLongitudeDegrees};
     public static final int STARMAP_WIDTH = ${starmapContract.width};
     public static final int STARMAP_HEIGHT = ${starmapContract.height};
-    public static final float STARMAP_OBSERVER_LATITUDE_DEGREES = ${starmapContract.observerLatitudeDegrees}f;
     public static final float STARMAP_BASE_RADIANCE_SCALE = ${starmapContract.baseRadianceScale}f;
     public static final String STARMAP_SOURCE_SHA256 = "${starmapContract.sourceSha256}";
 ${javaOffsets}
@@ -488,8 +511,15 @@ ${javaOffsets}
 #define PRIME_WAVEFRONT_QUEUE_COMMAND_STRIDE ${wavefrontContract.queueCommandStride}u
 #define PRIME_WAVEFRONT_QUEUE_INDEX_SIZE ${wavefrontContract.queueIndexSize}u
 #define PRIME_WAVEFRONT_ACTIVE_MASK ${wavefrontContract.activeMask}u
+#define PRIME_PATH_SAMPLE_INDEX_MASK ${schema.pathControl.sampleIndexMask}u
+#define PRIME_PATH_SOLAR_LONGITUDE_SHIFT ${schema.pathControl.solarLongitudeShift}u
+#define PRIME_PATH_SOLAR_LONGITUDE_MASK ${schema.pathControl.solarLongitudeMask}u
 #define PRIME_PATH_SAMPLE_EPOCH_MASK ${schema.pathControl.sampleEpochMask}u
 #define PRIME_PATH_TRIANGLE_DEBUG_MASK ${schema.pathControl.triangleDebugMask}u
+#define PRIME_PATH_MAXIMUM_BOUNCES_MASK ${schema.pathControl.maximumBouncesMask}u
+#define PRIME_PATH_LATITUDE_SHIFT ${schema.pathControl.latitudeShift}u
+#define PRIME_PATH_LATITUDE_MASK ${schema.pathControl.latitudeMask}u
+#define PRIME_PATH_LATITUDE_BIAS ${schema.pathControl.latitudeBias}
 #define PRIME_PATH_CAMERA_IN_WATER_MASK ${schema.pathControl.cameraInWaterMask}u
 #define PRIME_PATH_JITTER_PHASE_MASK ${schema.pathControl.jitterPhaseMask}u
 #define PRIME_PATH_TRANSPARENT_GUIDE_MODE_SHIFT ${schema.pathControl.transparentGuideModeShift}u
@@ -509,9 +539,9 @@ ${javaOffsets}
 #define PRIME_PATH_STAR_EV_QUARTER_SHIFT ${schema.pathControl.starEvQuarterShift}u
 #define PRIME_PATH_STAR_EV_QUARTER_MASK ${schema.pathControl.starEvQuarterMask}u
 #define PRIME_PATH_STAR_EV_QUARTER_BIAS ${schema.pathControl.starEvQuarterBias}
+#define PRIME_ASTRONOMY_AXIAL_TILT_RADIANS (${astronomyContract.axialTiltDegrees} * 0.017453292519943295)
 #define PRIME_STARMAP_WIDTH ${starmapContract.width}
 #define PRIME_STARMAP_HEIGHT ${starmapContract.height}
-#define PRIME_STARMAP_OBSERVER_LATITUDE_RADIANS (${starmapContract.observerLatitudeDegrees} * 0.017453292519943295)
 #define PRIME_STARMAP_BASE_RADIANCE_SCALE ${starmapContract.baseRadianceScale}
 #define PRIME_MAXIMUM_BOUNCES ${schema.pathControl.maximumBounces}u
 #define PRIME_RUSSIAN_ROULETTE_START ${schema.pathControl.russianRouletteStart}u

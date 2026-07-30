@@ -31,13 +31,83 @@ final class TextureVoxelSurfaceTest {
     }
 
     @Test
-    void detailWindowUsesTheInclusive128BlockSphere() {
-        assertTrue(TerrainStreamer.clusterIntersectsDetailSphere(
-                0.0F, 0.0F, 0.0F, 192.0F, 32.0F, 32.0F));
-        assertFalse(TerrainStreamer.clusterIntersectsDetailSphere(
-                0.0F, 0.0F, 0.0F, Math.nextUp(192.0F), 32.0F, 32.0F));
-        assertFalse(TerrainStreamer.clusterIntersectsDetailSphere(
-                0.0F, 0.0F, 0.0F, 160.0F, 160.0F, 160.0F));
+    void detailWindowUsesExactlyThreeClustersPerAxis() {
+        int count = 0;
+        for (int z = -8; z <= 8; z += SectionCluster.SECTION_SIZE) {
+            for (int y = -8; y <= 8; y += SectionCluster.SECTION_SIZE) {
+                for (int x = -8; x <= 8; x += SectionCluster.SECTION_SIZE) {
+                    if (TerrainStreamer.clusterUsesVoxelSurfaces(
+                            x, y, z, 0, 0, 0)) {
+                        count++;
+                    }
+                }
+            }
+        }
+        assertEquals(27, count);
+        assertTrue(TerrainStreamer.clusterUsesVoxelSurfaces(
+                -4, -4, -4, 0, 0, 0));
+        assertTrue(TerrainStreamer.clusterUsesVoxelSurfaces(
+                4, 4, 4, 3, 3, 3));
+        assertFalse(TerrainStreamer.clusterUsesVoxelSurfaces(
+                8, 0, 0, 0, 0, 0));
+        assertFalse(TerrainStreamer.clusterUsesVoxelSurfaces(
+                -8, 0, 0, 0, 0, 0));
+        assertFalse(TerrainStreamer.clusterUsesVoxelSurfaces(
+                0, 8, 0, 0, 0, 0));
+        assertTrue(TerrainStreamer.clusterUsesVoxelSurfaces(
+                -8, 0, 0, -1, -1, -1));
+        assertFalse(TerrainStreamer.clusterUsesVoxelSurfaces(
+                4, 0, 0, -1, -1, -1));
+    }
+
+    @Test
+    void crossingOneClusterInvalidatesOnlyTheEnteringAndLeavingSlabs() {
+        int changed = 0;
+        for (int z = -8; z <= 12; z += SectionCluster.SECTION_SIZE) {
+            for (int y = -8; y <= 12; y += SectionCluster.SECTION_SIZE) {
+                for (int x = -8; x <= 12; x += SectionCluster.SECTION_SIZE) {
+                    if (TerrainStreamer.voxelSurfaceStateChanges(
+                            x, y, z, 0, 0, 0, 4, 0, 0)) {
+                        changed++;
+                    }
+                }
+            }
+        }
+
+        assertEquals(18, changed);
+        assertFalse(TerrainStreamer.voxelSurfaceStateChanges(
+                0, 0, 0, 0, 0, 0, 4, 0, 0));
+    }
+
+    @Test
+    void labPbrNormalAlphaProvidesNormalizedAnimatedHeight() {
+        LabPbrHeightMap height = LabPbrHeightMap.fromNormal(
+                new int[] {
+                    0xd600_0000, 0xfd00_0000,
+                    0x8000_0000, 0xff00_0000
+                },
+                2,
+                2,
+                2,
+                1,
+                1,
+                2);
+
+        assertEquals(0.0F, height.sample(0, 0.25F, 0.5F));
+        assertEquals(39.0F / 255.0F, height.sample(0, 0.75F, 0.5F));
+        assertEquals(0.0F, height.sample(1, 0.25F, 0.5F));
+        assertEquals(127.0F / 255.0F, height.sample(1, 0.75F, 0.5F));
+
+        LabPbrHeightMap flat = LabPbrHeightMap.fromNormal(
+                new int[] {0xff00_0000, 0xff00_0000},
+                2,
+                1,
+                2,
+                1,
+                1,
+                1);
+        assertEquals(0.0F, flat.sample(0, 0.25F, 0.5F));
+        assertEquals(0.0F, flat.sample(0, 0.75F, 0.5F));
     }
 
     @Test
@@ -98,17 +168,10 @@ final class TextureVoxelSurfaceTest {
 
     @Test
     void compiledClusterRoundTripPreservesReusableMeshesAndInstances() {
-        int triangleCount = 2;
-        float[] positions = new float[triangleCount * 9];
-        int[] primitives =
-                new int[triangleCount * CpuSectionMesh.PRIMITIVE_WORDS];
-        CpuVoxelMesh voxelMesh = new CpuVoxelMesh(
-                positions,
-                primitives,
-                triangleCount,
-                0,
-                0,
-                OpacityMicromapData.EMPTY);
+        CpuVoxelMesh voxelMesh = TextureVoxelMeshBuilder.buildOpaqueHeightField(
+                1, new int[] {0xffff_ffff}, 2, 1);
+        float[] positions = voxelMesh.positions();
+        int[] primitives = voxelMesh.primitiveRecords();
         CpuVoxelInstances instances = new CpuVoxelInstances(
                 new int[] {0, 0},
                 new int[] {0x0012_3456, 0x00ab_cdef},

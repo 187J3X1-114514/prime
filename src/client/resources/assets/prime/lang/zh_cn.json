@@ -3,7 +3,7 @@
   "prime.options.path_tracing": "Prime 路径追踪",
   "prime.options.path_tracing.tooltip": "在原版光栅化渲染和 Prime 路径追踪之间切换。切换在下一帧边界安全停止或重新创建整套 Prime GPU 管线，可当作不退出游戏的渲染器重启；使用原版时不会保留或运行 Prime 的路径追踪、降噪和超分资源。",
   "prime.options.experimental.voxel_texture_surfaces": "纹理体素颗粒表面（实验性）",
-  "prime.options.experimental.voxel_texture_surfaces.tooltip": "在相机 128 方块范围内，将合格的单位方块面替换为实例化的像素高度 mesh，不再生成矩形合并宏面。每个纹理像素形成只向外凸出的台阶柱：纯黑高度为 0，纯白高度为 1/32 方块。该功能会显著增加 BLAS 与 TLAS 构建开销。",
+  "prime.options.experimental.voxel_texture_surfaces.tooltip": "在以玩家当前 64 方块区块簇为中心的 3×3×3 簇窗口内，将合格的单位方块面替换为实例化的像素高度 mesh，不再生成矩形合并宏面。有 LabPBR 法线贴图时使用重基准到零的 Alpha 相对高度；否则按基础纹理亮度将纯黑映射为 0、纯白映射为 1/32 方块。几何始终只向外凸出。该功能会显著增加 BLAS 与 TLAS 构建开销。",
   "prime.options.screenshot_mode": "参考累积截图（临时）",
   "prime.options.screenshot_mode.tooltip": "冻结当前相机、太阳、地形和方块动画，以原生分辨率累积 Prime 当前有限反弹材质模型的原始路径估计。此模式完全旁路 DLSS RR、NRD、FSR 和所有实时调试覆盖层，画面会从噪点逐渐收敛。按 Ctrl+Alt+F2 可进入或退出，普通 F2 截图不受影响；按 Esc 只会退出，不会进入。该选项仅对本次游戏会话生效。",
   "prime.options.fsr.quality": "FSR 超分辨率",

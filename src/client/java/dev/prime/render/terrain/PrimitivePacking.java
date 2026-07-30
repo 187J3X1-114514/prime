@@ -13,6 +13,11 @@ public final class PrimitivePacking {
     public static final int FLAG_MASK = (1 << 9) - 1;
     public static final int NO_EMITTER_INDEX = -1;
     public static final int MAX_EMITTER_INDEX = Integer.MAX_VALUE - 1;
+    /**
+     * Negative zero tags a constant UV stored as two full-precision floats in uv0 and uv1.
+     * Ordinary negative densities remain the periodic macro-face encoding.
+     */
+    public static final int CONSTANT_UV_DENSITY = Float.floatToRawIntBits(-0.0F);
 
     private PrimitivePacking() {
     }
@@ -56,6 +61,15 @@ public final class PrimitivePacking {
         int low = Float.floatToFloat16(x) & 0xffff;
         int high = Float.floatToFloat16(y) & 0xffff;
         return low | high << 16;
+    }
+
+    public static int packConstantUv(float coordinate) {
+        if (!(coordinate >= 0.0F && coordinate <= 1.0F)
+                || !Float.isFinite(coordinate)) {
+            throw new IllegalArgumentException(
+                    "Constant atlas UV must be finite and normalized");
+        }
+        return Float.floatToRawIntBits(coordinate);
     }
 
     public static int packTint(int argb) {

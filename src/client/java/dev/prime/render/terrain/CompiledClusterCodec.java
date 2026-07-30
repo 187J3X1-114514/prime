@@ -386,8 +386,19 @@ public final class CompiledClusterCodec {
         for (int triangle = 0; triangle < triangleCount; triangle++) {
             int record = Math.multiplyExact(
                     triangle, CpuSectionMesh.PRIMITIVE_WORDS);
-            for (int vertex = 0; vertex < 3; vertex++) {
-                requireFiniteHalf2(records[record + vertex]);
+            boolean constantUv =
+                    records[record + 6] == PrimitivePacking.CONSTANT_UV_DENSITY;
+            if (constantUv) {
+                requireNormalizedFloatUv(records[record]);
+                requireNormalizedFloatUv(records[record + 1]);
+                if (records[record + 2] != 0) {
+                    throw new IllegalArgumentException(
+                            "Compiled-cluster constant UV has invalid reserved data");
+                }
+            } else {
+                for (int vertex = 0; vertex < 3; vertex++) {
+                    requireFiniteHalf2(records[record + vertex]);
+                }
             }
             int flags = PrimitivePacking.unpackFlags(
                     records[record + 3], records[record + 5]);
@@ -424,6 +435,15 @@ public final class CompiledClusterCodec {
         if (!Float.isFinite(low) || !Float.isFinite(high)) {
             throw new IllegalArgumentException(
                     "Compiled-cluster texture coordinates must be finite");
+        }
+    }
+
+    private static void requireNormalizedFloatUv(int packed) {
+        float coordinate = Float.intBitsToFloat(packed);
+        if (!(coordinate >= 0.0F && coordinate <= 1.0F)
+                || !Float.isFinite(coordinate)) {
+            throw new IllegalArgumentException(
+                    "Compiled-cluster constant UV must be finite and normalized");
         }
     }
 

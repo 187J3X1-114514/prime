@@ -7,6 +7,7 @@ import dev.prime.mixin.TextureAtlasAccessor;
 import dev.prime.mixin.TextureAtlasSpriteAccessor;
 import dev.prime.render.ResourceCleanup;
 import dev.prime.render.terrain.LabPbrEmissionMap;
+import dev.prime.render.terrain.LabPbrHeightMap;
 import dev.prime.render.terrain.LabPbrMaterialSet;
 import java.io.IOException;
 import java.io.InputStream;
@@ -321,6 +322,7 @@ public final class LabPbrTextureAtlas implements AutoCloseable {
         Set<Identifier> normalSprites = new HashSet<>();
         Set<Identifier> specularSprites = new HashSet<>();
         Map<Identifier, LabPbrEmissionMap> emissionMaps = new java.util.HashMap<>();
+        Map<Identifier, LabPbrHeightMap> heightMaps = new java.util.HashMap<>();
         ArrayList<MaterialSprite> materialSprites = new ArrayList<>();
         if (supported) {
             for (TextureAtlasSprite sprite : sprites.values()) {
@@ -329,6 +331,14 @@ public final class LabPbrTextureAtlas implements AutoCloseable {
                 MaterialSource specular = readMaterial(resourceManager, materialResource(name, "_s"), sprite);
                 if (normal != null) {
                     normalSprites.add(name);
+                    heightMaps.put(name, LabPbrHeightMap.fromNormal(
+                            normal.pixels(),
+                            normal.width(),
+                            normal.height(),
+                            normal.frameWidth(),
+                            normal.frameHeight(),
+                            normal.columns(),
+                            normal.frameCount()));
                 }
                 if (specular != null) {
                     specularSprites.add(name);
@@ -395,7 +405,7 @@ public final class LabPbrTextureAtlas implements AutoCloseable {
                     SPECULAR_DEFAULT_ARGB);
             List<AnimatedMaterialSprite> animated = bindAnimations(atlasAccess, materialSprites);
             LabPbrMaterialSet materials = new LabPbrMaterialSet(
-                    normalSprites, specularSprites, emissionMaps);
+                    normalSprites, specularSprites, emissionMaps, heightMaps);
             PrimeClient.LOGGER.info(
                     "Loaded LabPBR 1.3 material atlas: {} normal maps, {} specular maps, {} emissive maps, {} animated sprites",
                     normalSprites.size(), specularSprites.size(), emissionMaps.size(), animated.size());

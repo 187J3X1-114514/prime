@@ -7,7 +7,8 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Covers compatible unit faces with conservative cluster-local macro faces.
+ * Covers compatible unit faces with conservative cluster-local macro faces or experimental
+ * per-texture voxel-surface instances.
  *
  * <p>Opaque and transmissive groups use the mechanically ported 64x64 optimal
  * rectangle decomposition. Cutout groups retain their bounded square templates
@@ -16,14 +17,10 @@ import java.util.Map;
 final class MergedFaceMeshBuilder {
     private static final int GRID_SIZE = SectionCluster.SECTION_SIZE * 16;
     private static final int[] CUTOUT_SIZES = {4, 2, 1};
-    static final float VOXEL_SURFACE_RADIUS = 128.0F;
 
     private final int segmentTriangleTarget;
     private final int maxOpacityMicromapSubdivisionLevel;
     private final boolean voxelSurfacesEnabled;
-    private final float detailCenterX;
-    private final float detailCenterY;
-    private final float detailCenterZ;
     private final ArrayList<CpuSectionMesh> segments = new ArrayList<>();
     private Segment segment = new Segment();
     private OptimalCover optimalCover;
@@ -35,25 +32,16 @@ final class MergedFaceMeshBuilder {
         this(
                 segmentTriangleTarget,
                 maxOpacityMicromapSubdivisionLevel,
-                false,
-                0.0F,
-                0.0F,
-                0.0F);
+                false);
     }
 
     MergedFaceMeshBuilder(
             int segmentTriangleTarget,
             int maxOpacityMicromapSubdivisionLevel,
-            boolean voxelSurfacesEnabled,
-            float detailCenterX,
-            float detailCenterY,
-            float detailCenterZ) {
+            boolean voxelSurfacesEnabled) {
         this.segmentTriangleTarget = segmentTriangleTarget;
         this.maxOpacityMicromapSubdivisionLevel = maxOpacityMicromapSubdivisionLevel;
         this.voxelSurfacesEnabled = voxelSurfacesEnabled;
-        this.detailCenterX = detailCenterX;
-        this.detailCenterY = detailCenterY;
-        this.detailCenterZ = detailCenterZ;
     }
 
     List<CpuSectionMesh> build(List<MergeFace> faces) {
@@ -71,7 +59,7 @@ final class MergedFaceMeshBuilder {
                 throw new IllegalArgumentException(
                         "Merge face lies outside its logical cluster");
             }
-            if (voxelBuilder != null && this.usesVoxelSurface(face)) {
+            if (voxelBuilder != null && usesVoxelSurface(face)) {
                 if (!voxelBuilder.add(face)) {
                     unmergedFallbacks.add(face);
                 }
@@ -119,7 +107,7 @@ final class MergedFaceMeshBuilder {
         return this.voxelInstances;
     }
 
-    private boolean usesVoxelSurface(MergeFace face) {
+    private static boolean usesVoxelSurface(MergeFace face) {
         int flags = PrimitivePacking.unpackFlags(
                 face.primitive()[3], face.primitive()[5]);
         boolean transmissive =
@@ -130,32 +118,7 @@ final class MergedFaceMeshBuilder {
         if (transmissive && !cutout && !thinWalled) {
             return false;
         }
-        float centerX;
-        float centerY;
-        float centerZ;
-        switch (face.planeAxis()) {
-            case 0 -> {
-                centerX = face.plane();
-                centerY = face.cellU() + 0.5F;
-                centerZ = face.cellV() + 0.5F;
-            }
-            case 1 -> {
-                centerX = face.cellU() + 0.5F;
-                centerY = face.plane();
-                centerZ = face.cellV() + 0.5F;
-            }
-            case 2 -> {
-                centerX = face.cellU() + 0.5F;
-                centerY = face.cellV() + 0.5F;
-                centerZ = face.plane();
-            }
-            default -> throw new IllegalArgumentException("Invalid face plane axis");
-        }
-        float dx = centerX - this.detailCenterX;
-        float dy = centerY - this.detailCenterY;
-        float dz = centerZ - this.detailCenterZ;
-        return dx * dx + dy * dy + dz * dz
-                <= VOXEL_SURFACE_RADIUS * VOXEL_SURFACE_RADIUS;
+        return true;
     }
 
     private void coverOpaque(FaceGrid grid) {

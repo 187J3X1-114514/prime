@@ -215,6 +215,7 @@ public final class OpacityMicromapData {
         private final ArrayList<BakedBlock> blocks = new ArrayList<>();
         private final Map<BlockKey, Integer> blockIndices = new HashMap<>();
         private final Map<BakeKey, Integer> bakedTriangles = new HashMap<>();
+        private final Map<ConstantBakeKey, Integer> bakedConstantTriangles = new HashMap<>();
         private final Map<RepeatedBakeKey, Integer> bakedRepeatedTriangles = new HashMap<>();
         private final Map<TextureAtlasSprite, SpriteAlphaFrames> alphaFrames =
                 new IdentityHashMap<>();
@@ -249,6 +250,30 @@ public final class OpacityMicromapData {
             }
             index = this.intern(block);
             this.bakedTriangles.put(key, index);
+            this.addIndex(index);
+        }
+
+        public void addConstantTriangle(
+                TextureAtlasSprite sprite, float atlasU, float atlasV) {
+            ConstantBakeKey key = new ConstantBakeKey(
+                    sprite,
+                    Float.floatToRawIntBits(atlasU),
+                    Float.floatToRawIntBits(atlasV));
+            Integer cached = this.bakedConstantTriangles.get(key);
+            if (cached != null) {
+                this.addIndex(cached);
+                return;
+            }
+            int index;
+            try {
+                SpriteAlphaFrames frames =
+                        this.alphaFrames.computeIfAbsent(sprite, SpriteAlphaFrames::create);
+                index = this.intern(bakeConstant(frames, atlasU, atlasV));
+            } catch (RuntimeException exception) {
+                index = EXTOpacityMicromap
+                        .VK_OPACITY_MICROMAP_SPECIAL_INDEX_FULLY_UNKNOWN_OPAQUE_EXT;
+            }
+            this.bakedConstantTriangles.put(key, index);
             this.addIndex(index);
         }
 
@@ -433,6 +458,14 @@ public final class OpacityMicromapData {
         float v2 = frames.localV(unpackHalf(packedUv2, true));
         return bakeCoverage(
                 u0, v0, u1, v1, u2, v2, frames.frameCount(), frames);
+    }
+
+    private static BakedBlock bakeConstant(
+            SpriteAlphaFrames frames, float atlasU, float atlasV) {
+        float u = frames.localU(atlasU);
+        float v = frames.localV(atlasV);
+        return bakeCoverage(
+                u, v, u, v, u, v, frames.frameCount(), frames);
     }
 
     private static BakedBlock bakeRepeated(
@@ -811,6 +844,10 @@ public final class OpacityMicromapData {
 
     private record BakeKey(
             TextureAtlasSprite sprite, int packedUv0, int packedUv1, int packedUv2) {
+    }
+
+    private record ConstantBakeKey(
+            TextureAtlasSprite sprite, int floatU, int floatV) {
     }
 
     private record RepeatedBakeKey(

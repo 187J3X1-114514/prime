@@ -7,8 +7,9 @@ import net.minecraft.client.renderer.texture.TextureAtlasSprite;
  * One exact axis-aligned unit face retained until the enclosing 64-block cluster is assembled.
  *
  * <p>The three UV words encode the atlas coordinates at projected corners (0,0), (1,0), and
- * (0,1). A negative UV-density word tags the primitive as periodic without expanding the
- * primitive ABI.
+ * (0,1). Exact float coordinates are retained alongside them because half-precision atlas UVs
+ * cannot address individual texels in a large atlas. A negative UV-density word tags the
+ * primitive as periodic without expanding the primitive ABI.
  */
 public final class MergeFace {
     private static final int PLANE_GRID_SCALE = 16;
@@ -23,9 +24,16 @@ public final class MergeFace {
     private final int cellV;
     private final TextureAtlasSprite sprite;
     private final int[] primitive;
+    private final float uv0U;
+    private final float uv0V;
+    private final float uv1U;
+    private final float uv1V;
+    private final float uv2U;
+    private final float uv2V;
     private final boolean cutout;
     private final boolean transmissive;
     private final boolean buildOpacityMicromap;
+    private final LabPbrHeightMap labPbrHeightMap;
 
     private MergeFace(
             int planeAxis,
@@ -35,9 +43,16 @@ public final class MergeFace {
             int cellV,
             TextureAtlasSprite sprite,
             int[] primitive,
+            float uv0U,
+            float uv0V,
+            float uv1U,
+            float uv1V,
+            float uv2U,
+            float uv2V,
             boolean cutout,
             boolean transmissive,
-            boolean buildOpacityMicromap) {
+            boolean buildOpacityMicromap,
+            LabPbrHeightMap labPbrHeightMap) {
         this.planeAxis = planeAxis;
         this.normalSign = normalSign;
         this.planeCell = planeCell;
@@ -45,9 +60,16 @@ public final class MergeFace {
         this.cellV = cellV;
         this.sprite = sprite;
         this.primitive = primitive;
+        this.uv0U = uv0U;
+        this.uv0V = uv0V;
+        this.uv1U = uv1U;
+        this.uv1V = uv1V;
+        this.uv2U = uv2U;
+        this.uv2V = uv2V;
         this.cutout = cutout;
         this.transmissive = transmissive;
         this.buildOpacityMicromap = buildOpacityMicromap;
+        this.labPbrHeightMap = labPbrHeightMap;
     }
 
     static MergeFace tryCreate(
@@ -212,9 +234,16 @@ public final class MergeFace {
                 Math.round(minimum[axisV]),
                 surface.sprite(),
                 primitive,
+                quad.u[corner00],
+                quad.v[corner00],
+                quad.u[corner10],
+                quad.v[corner10],
+                quad.u[corner01],
+                quad.v[corner01],
                 surface.cutout(),
                 surface.transmissive(),
-                buildOpacityMicromap);
+                buildOpacityMicromap,
+                labPbrMaterials.heightMap(surface.sprite().contents().name()));
     }
 
     MergeFace translated(int x, int y, int z) {
@@ -227,9 +256,16 @@ public final class MergeFace {
                 this.cellV + translation[projectedAxisV(this.planeAxis)],
                 this.sprite,
                 this.primitive,
+                this.uv0U,
+                this.uv0V,
+                this.uv1U,
+                this.uv1V,
+                this.uv2U,
+                this.uv2V,
                 this.cutout,
                 this.transmissive,
-                this.buildOpacityMicromap);
+                this.buildOpacityMicromap,
+                this.labPbrHeightMap);
     }
 
     int planeAxis() {
@@ -264,6 +300,30 @@ public final class MergeFace {
         return this.primitive;
     }
 
+    float uv0U() {
+        return this.uv0U;
+    }
+
+    float uv0V() {
+        return this.uv0V;
+    }
+
+    float uv1U() {
+        return this.uv1U;
+    }
+
+    float uv1V() {
+        return this.uv1V;
+    }
+
+    float uv2U() {
+        return this.uv2U;
+    }
+
+    float uv2V() {
+        return this.uv2V;
+    }
+
     boolean cutout() {
         return this.cutout;
     }
@@ -276,12 +336,22 @@ public final class MergeFace {
         return this.buildOpacityMicromap;
     }
 
+    LabPbrHeightMap labPbrHeightMap() {
+        return this.labPbrHeightMap;
+    }
+
     boolean sameMaterial(MergeFace other) {
         return this.sprite.contents().name().equals(
                         other.sprite.contents().name())
                 && this.cutout == other.cutout
                 && this.transmissive == other.transmissive
                 && this.buildOpacityMicromap == other.buildOpacityMicromap
+                && Float.floatToIntBits(this.uv0U) == Float.floatToIntBits(other.uv0U)
+                && Float.floatToIntBits(this.uv0V) == Float.floatToIntBits(other.uv0V)
+                && Float.floatToIntBits(this.uv1U) == Float.floatToIntBits(other.uv1U)
+                && Float.floatToIntBits(this.uv1V) == Float.floatToIntBits(other.uv1V)
+                && Float.floatToIntBits(this.uv2U) == Float.floatToIntBits(other.uv2U)
+                && Float.floatToIntBits(this.uv2V) == Float.floatToIntBits(other.uv2V)
                 && Arrays.equals(this.primitive, other.primitive);
     }
 
@@ -290,6 +360,12 @@ public final class MergeFace {
         hash = 31 * hash + Boolean.hashCode(this.cutout);
         hash = 31 * hash + Boolean.hashCode(this.transmissive);
         hash = 31 * hash + Boolean.hashCode(this.buildOpacityMicromap);
+        hash = 31 * hash + Float.hashCode(this.uv0U);
+        hash = 31 * hash + Float.hashCode(this.uv0V);
+        hash = 31 * hash + Float.hashCode(this.uv1U);
+        hash = 31 * hash + Float.hashCode(this.uv1V);
+        hash = 31 * hash + Float.hashCode(this.uv2U);
+        hash = 31 * hash + Float.hashCode(this.uv2V);
         return 31 * hash + Arrays.hashCode(this.primitive);
     }
 

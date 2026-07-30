@@ -36,7 +36,16 @@ bool primeUsesRepeatedUv(PrimitiveRecord primitive) {
     return uintBitsToFloat(primitive.uvDensity) < 0.0;
 }
 
+bool primeUsesConstantFloatUv(PrimitiveRecord primitive) {
+    // Negative zero is distinct at the ABI level while remaining outside the negative-density
+    // macro-face encoding. Voxel texel centers need float32 precision on large stitched atlases.
+    return primitive.uvDensity == 0x80000000u;
+}
+
 vec2 primeInterpolateUv(SectionRecord section, PrimitiveRecord primitive) {
+    if (primeUsesConstantFloatUv(primitive)) {
+        return vec2(uintBitsToFloat(primitive.uv0), uintBitsToFloat(primitive.uv1));
+    }
     if (primeUsesRepeatedUv(primitive)) {
         vec3 hitPosition = gl_WorldRayOriginEXT + gl_HitTEXT * gl_WorldRayDirectionEXT;
         vec3 localPosition = hitPosition - section.translation;

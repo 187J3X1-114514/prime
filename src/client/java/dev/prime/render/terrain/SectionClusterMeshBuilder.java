@@ -16,9 +16,6 @@ final class SectionClusterMeshBuilder {
     private final int segmentTriangleTarget;
     private final int maxOpacityMicromapSubdivisionLevel;
     private final boolean voxelSurfacesEnabled;
-    private final float detailCenterX;
-    private final float detailCenterY;
-    private final float detailCenterZ;
     private final List<Entry> entries = new ArrayList<>(SectionCluster.SECTION_COUNT);
     private final ArrayList<MergeFace> mergeFaces = new ArrayList<>();
     private final ArrayList<CpuSectionMesh> segments = new ArrayList<>();
@@ -38,10 +35,7 @@ final class SectionClusterMeshBuilder {
                 clusterZ,
                 TerrainMemoryBudget.TARGET_SEGMENT_TRIANGLES,
                 OpacityMicromapData.SUBDIVISION_LEVEL + 2,
-                false,
-                0.0F,
-                0.0F,
-                0.0F);
+                false);
     }
 
     SectionClusterMeshBuilder(
@@ -52,10 +46,7 @@ final class SectionClusterMeshBuilder {
                 clusterZ,
                 segmentTriangleTarget,
                 OpacityMicromapData.SUBDIVISION_LEVEL + 2,
-                false,
-                0.0F,
-                0.0F,
-                0.0F);
+                false);
     }
 
     SectionClusterMeshBuilder(
@@ -70,10 +61,7 @@ final class SectionClusterMeshBuilder {
                 clusterZ,
                 segmentTriangleTarget,
                 maxOpacityMicromapSubdivisionLevel,
-                false,
-                0.0F,
-                0.0F,
-                0.0F);
+                false);
     }
 
     SectionClusterMeshBuilder(
@@ -82,10 +70,7 @@ final class SectionClusterMeshBuilder {
             int clusterZ,
             int segmentTriangleTarget,
             int maxOpacityMicromapSubdivisionLevel,
-            boolean voxelSurfacesEnabled,
-            float detailCenterWorldX,
-            float detailCenterWorldY,
-            float detailCenterWorldZ) {
+            boolean voxelSurfacesEnabled) {
         if (SectionCluster.origin(clusterX) != clusterX
                 || SectionCluster.origin(clusterY) != clusterY
                 || SectionCluster.origin(clusterZ) != clusterZ) {
@@ -100,9 +85,6 @@ final class SectionClusterMeshBuilder {
         this.segmentTriangleTarget = segmentTriangleTarget;
         this.maxOpacityMicromapSubdivisionLevel = maxOpacityMicromapSubdivisionLevel;
         this.voxelSurfacesEnabled = voxelSurfacesEnabled;
-        this.detailCenterX = detailCenterWorldX - (clusterX << 4);
-        this.detailCenterY = detailCenterWorldY - (clusterY << 4);
-        this.detailCenterZ = detailCenterWorldZ - (clusterZ << 4);
     }
 
     void add(int sectionX, int sectionY, int sectionZ, List<CpuSectionMesh> meshes) {
@@ -182,10 +164,7 @@ final class SectionClusterMeshBuilder {
         MergedFaceMeshBuilder mergedFaces = new MergedFaceMeshBuilder(
                         this.segmentTriangleTarget,
                         this.maxOpacityMicromapSubdivisionLevel,
-                        this.voxelSurfacesEnabled,
-                        this.detailCenterX,
-                        this.detailCenterY,
-                        this.detailCenterZ);
+                        this.voxelSurfacesEnabled);
         for (CpuSectionMesh mesh : mergedFaces.build(this.mergeFaces)) {
             this.addPart(this.clusterX, this.clusterY, this.clusterZ, mesh);
         }

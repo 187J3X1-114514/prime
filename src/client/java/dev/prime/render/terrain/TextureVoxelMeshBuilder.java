@@ -37,9 +37,12 @@ final class TextureVoxelMeshBuilder {
                 face.sprite(),
                 face.planeAxis(),
                 face.normalSign(),
-                face.primitive()[0],
-                face.primitive()[1],
-                face.primitive()[2],
+                face.uv0U(),
+                face.uv0V(),
+                face.uv1U(),
+                face.uv1V(),
+                face.uv2U(),
+                face.uv2V(),
                 flags);
         if (this.rejected.contains(key)) {
             return false;
@@ -48,7 +51,10 @@ final class TextureVoxelMeshBuilder {
         if (meshIndex == null) {
             CpuVoxelMesh mesh;
             try {
-                mesh = buildMesh(key, this.buildOpacityMicromap);
+                mesh = buildMesh(
+                        key,
+                        face.labPbrHeightMap(),
+                        this.buildOpacityMicromap);
             } catch (IllegalArgumentException
                     | IllegalStateException
                     | ArithmeticException exception) {
@@ -102,7 +108,10 @@ final class TextureVoxelMeshBuilder {
         return luma * MAXIMUM_HEIGHT;
     }
 
-    private static CpuVoxelMesh buildMesh(Key key, boolean buildOpacityMicromap) {
+    private static CpuVoxelMesh buildMesh(
+            Key key,
+            LabPbrHeightMap labPbrHeightMap,
+            boolean buildOpacityMicromap) {
         SpritePixels pixels = SpritePixels.create(key.sprite);
         if (pixels.width != pixels.height) {
             throw new IllegalArgumentException(
@@ -113,7 +122,12 @@ final class TextureVoxelMeshBuilder {
         float[] atlasUs = new float[heights.length];
         float[] atlasVs = new float[heights.length];
         UvTransform uv = new UvTransform(
-                key.packedUv0, key.packedUv1, key.packedUv2);
+                key.uv0U,
+                key.uv0V,
+                key.uv1U,
+                key.uv1V,
+                key.uv2U,
+                key.uv2V);
         for (int y = 0; y < size; y++) {
             for (int x = 0; x < size; x++) {
                 int index = x + y * size;
@@ -123,7 +137,13 @@ final class TextureVoxelMeshBuilder {
                 float atlasV = uv.v(u, v);
                 atlasUs[index] = atlasU;
                 atlasVs[index] = atlasV;
-                heights[index] = heightFromArgb(pixels.sample(atlasU, atlasV, key.sprite));
+                heights[index] = labPbrHeightMap == null
+                        ? heightFromArgb(pixels.sample(atlasU, atlasV, key.sprite))
+                        : labPbrHeightMap.sample(
+                                        pixels.firstFrame,
+                                        pixels.localU(atlasU, key.sprite),
+                                        pixels.localV(atlasV, key.sprite))
+                                * MAXIMUM_HEIGHT;
             }
         }
         return buildHeightField(
@@ -160,9 +180,12 @@ final class TextureVoxelMeshBuilder {
                 null,
                 planeAxis,
                 normalSign,
-                PrimitivePacking.packHalf2(0.0F, 0.0F),
-                PrimitivePacking.packHalf2(1.0F, 0.0F),
-                PrimitivePacking.packHalf2(0.0F, 1.0F),
+                0.0F,
+                0.0F,
+                1.0F,
+                0.0F,
+                0.0F,
+                1.0F,
                 0);
         return buildHeightField(
                 key, size, heights, atlasUs, atlasVs, false);
@@ -255,24 +278,17 @@ final class TextureVoxelMeshBuilder {
             TextureAtlasSprite sprite,
             int planeAxis,
             int normalSign,
-            int packedUv0,
-            int packedUv1,
-            int packedUv2,
+            float uv0U,
+            float uv0V,
+            float uv1U,
+            float uv1V,
+            float uv2U,
+            float uv2V,
             int flags) {
     }
 
     private record UvTransform(
             float u0, float v0, float u1, float v1, float u2, float v2) {
-        UvTransform(int packed0, int packed1, int packed2) {
-            this(
-                    unpackHalf(packed0, false),
-                    unpackHalf(packed0, true),
-                    unpackHalf(packed1, false),
-                    unpackHalf(packed1, true),
-                    unpackHalf(packed2, false),
-                    unpackHalf(packed2, true));
-        }
-
         float u(float x, float y) {
             return this.u0 + x * (this.u1 - this.u0) + y * (this.u2 - this.u0);
         }
@@ -286,6 +302,7 @@ final class TextureVoxelMeshBuilder {
             NativeImage image,
             int width,
             int height,
+            int firstFrame,
             int frameX,
             int frameY) {
         static SpritePixels create(TextureAtlasSprite sprite) {
@@ -305,23 +322,35 @@ final class TextureVoxelMeshBuilder {
                     image,
                     width,
                     height,
+                    firstFrame,
                     firstFrame % columns * width,
                     firstFrame / columns * height);
         }
 
         int sample(float atlasU, float atlasV, TextureAtlasSprite sprite) {
-            float uSpan = sprite.getU1() - sprite.getU0();
-            float vSpan = sprite.getV1() - sprite.getV0();
-            if (!(Math.abs(uSpan) > 1.0E-12F)
-                    || !(Math.abs(vSpan) > 1.0E-12F)) {
-                throw new IllegalArgumentException(
-                        "Voxel-surface sprite atlas span is degenerate");
-            }
-            float localU = clampUnit((atlasU - sprite.getU0()) / uSpan);
-            float localV = clampUnit((atlasV - sprite.getV0()) / vSpan);
+            float localU = this.localU(atlasU, sprite);
+            float localV = this.localV(atlasV, sprite);
             int x = Math.min((int) (localU * this.width), this.width - 1);
             int y = Math.min((int) (localV * this.height), this.height - 1);
             return this.image.getPixel(this.frameX + x, this.frameY + y);
+        }
+
+        float localU(float atlasU, TextureAtlasSprite sprite) {
+            float uSpan = sprite.getU1() - sprite.getU0();
+            if (!(Math.abs(uSpan) > 1.0E-12F)) {
+                throw new IllegalArgumentException(
+                        "Voxel-surface sprite atlas span is degenerate");
+            }
+            return clampUnit((atlasU - sprite.getU0()) / uSpan);
+        }
+
+        float localV(float atlasV, TextureAtlasSprite sprite) {
+            float vSpan = sprite.getV1() - sprite.getV0();
+            if (!(Math.abs(vSpan) > 1.0E-12F)) {
+                throw new IllegalArgumentException(
+                        "Voxel-surface sprite atlas span is degenerate");
+            }
+            return clampUnit((atlasV - sprite.getV0()) / vSpan);
         }
     }
 
@@ -437,7 +466,8 @@ final class TextureVoxelMeshBuilder {
             this.positions.add(first);
             this.positions.add(second);
             this.positions.add(third);
-            int packedUv = PrimitivePacking.packHalf2(atlasU, atlasV);
+            int floatU = PrimitivePacking.packConstantUv(atlasU);
+            int floatV = PrimitivePacking.packConstantUv(atlasV);
             float[] edgeOne = subtract(second, first);
             float[] edgeTwo = subtract(third, first);
             int packedNormal = PrimitivePacking.packTriangleNormal(
@@ -467,21 +497,21 @@ final class TextureVoxelMeshBuilder {
                     && (flags & PrimitivePacking.FLAG_LABPBR_NORMAL) != 0) {
                 flags |= PrimitivePacking.FLAG_TANGENT_NEGATIVE;
             }
-            this.primitives.add(packedUv);
-            this.primitives.add(packedUv);
-            this.primitives.add(packedUv);
+            this.primitives.add(floatU);
+            this.primitives.add(floatV);
+            this.primitives.add(0);
             this.primitives.add(PrimitivePacking.packTintFlags(0x00ff_ffff, flags));
             this.primitives.add(packedNormal);
             this.primitives.add(PrimitivePacking.packFlagsEmitter(
                     flags, PrimitivePacking.NO_EMITTER_INDEX));
-            this.primitives.add(Float.floatToRawIntBits(0.0F));
+            this.primitives.add(PrimitivePacking.CONSTANT_UV_DENSITY);
             this.primitives.add((int) tangent);
             if (this.cutoutGeometry) {
                 if (this.opacityMicromap == null) {
                     // Retain the any-hit path when the device cannot consume opacity micromaps.
                 } else {
-                    this.opacityMicromap.addTriangle(
-                            this.key.sprite, packedUv, packedUv, packedUv);
+                    this.opacityMicromap.addConstantTriangle(
+                            this.key.sprite, atlasU, atlasV);
                 }
             }
             this.triangleCount++;
@@ -501,10 +531,6 @@ final class TextureVoxelMeshBuilder {
                     this.transmissive ? this.triangleCount : 0,
                     opacity);
         }
-    }
-
-    private static float unpackHalf(int packed, boolean high) {
-        return Float.float16ToFloat((short) (high ? packed >>> 16 : packed));
     }
 
     private static float clampUnit(float value) {

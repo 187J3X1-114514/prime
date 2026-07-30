@@ -8,14 +8,23 @@ import net.minecraft.resources.Identifier;
 public record LabPbrMaterialSet(
         Set<Identifier> normalSprites,
         Set<Identifier> specularSprites,
-        Map<Identifier, LabPbrEmissionMap> emissionMaps) {
+        Map<Identifier, LabPbrEmissionMap> emissionMaps,
+        Map<Identifier, LabPbrHeightMap> heightMaps) {
     public static final LabPbrMaterialSet EMPTY = new LabPbrMaterialSet(
-            Set.of(), Set.of(), Map.of());
+            Set.of(), Set.of(), Map.of(), Map.of());
+
+    public LabPbrMaterialSet(
+            Set<Identifier> normalSprites,
+            Set<Identifier> specularSprites,
+            Map<Identifier, LabPbrEmissionMap> emissionMaps) {
+        this(normalSprites, specularSprites, emissionMaps, Map.of());
+    }
 
     public LabPbrMaterialSet {
         normalSprites = Set.copyOf(normalSprites);
         specularSprites = Set.copyOf(specularSprites);
         emissionMaps = Map.copyOf(emissionMaps);
+        heightMaps = Map.copyOf(heightMaps);
     }
 
     public boolean hasNormal(Identifier sprite) {
@@ -28,5 +37,9 @@ public record LabPbrMaterialSet(
 
     public LabPbrEmissionMap emissionMap(Identifier sprite) {
         return this.emissionMaps.get(sprite);
+    }
+
+    public LabPbrHeightMap heightMap(Identifier sprite) {
+        return this.heightMaps.get(sprite);
     }
 }

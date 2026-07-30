@@ -2,6 +2,7 @@ package dev.prime.render.terrain;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -15,6 +16,24 @@ final class PrimitivePackingTest {
         float y = Float.float16ToFloat((short) (packed >>> 16));
         assertEquals(0.25F, x);
         assertEquals(0.75F, y);
+    }
+
+    @Test
+    void constantUvKeepsAdjacentTexelCentersDistinctOnA4096Atlas() {
+        float first = 3073.5F / 4096.0F;
+        float second = 3074.5F / 4096.0F;
+        assertEquals(
+                PrimitivePacking.packHalf2(first, first),
+                PrimitivePacking.packHalf2(second, second));
+        assertNotEquals(
+                PrimitivePacking.packConstantUv(first),
+                PrimitivePacking.packConstantUv(second));
+        assertEquals(
+                first,
+                Float.intBitsToFloat(PrimitivePacking.packConstantUv(first)));
+        assertEquals(
+                PrimitivePacking.CONSTANT_UV_DENSITY,
+                Float.floatToRawIntBits(-0.0F));
     }
 
     @Test

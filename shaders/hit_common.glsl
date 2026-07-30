@@ -57,7 +57,10 @@ vec2 primeInterpolateUv(SectionRecord section, PrimitiveRecord primitive) {
 float primeRayConeTextureLod(PrimitiveRecord primitive, vec3 geometricNormal) {
     vec2 rayCone = unpackHalf2x16(primePush.rayCone);
     float normalizedUvDensity = abs(uintBitsToFloat(primitive.uvDensity));
-    int mipLevels = textureQueryLevels(primeBlockAtlas);
+    uint textureIndex = min(
+            primePrimitiveTextureIndex(primitive), PRIME_SCENE_TEXTURE_COUNT - 1u);
+    int mipLevels = textureQueryLevels(
+            primeSceneTextures[nonuniformEXT(textureIndex)]);
     if (!(rayCone.x > 0.0) || !(normalizedUvDensity > 0.0) || mipLevels <= 1) {
         return 0.0;
     }
@@ -66,7 +69,8 @@ float primeRayConeTextureLod(PrimitiveRecord primitive, vec3 geometricNormal) {
     // actual atlas extent turns it into texels per world unit without baking resource-pack size
     // into section meshes. Minecraft block atlases are square; max() remains conservative if a
     // backend exposes a non-square view.
-    ivec2 atlasExtent = textureSize(primeBlockAtlas, 0);
+    ivec2 atlasExtent = textureSize(
+            primeSceneTextures[nonuniformEXT(textureIndex)], 0);
     float texelsPerWorldUnit = normalizedUvDensity
             * float(max(atlasExtent.x, atlasExtent.y));
     vec3 hitPosition = gl_WorldRayOriginEXT + gl_HitTEXT * gl_WorldRayDirectionEXT;

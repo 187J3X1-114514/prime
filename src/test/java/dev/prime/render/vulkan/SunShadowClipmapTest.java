@@ -4,6 +4,8 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import dev.prime.render.AstronomySettings;
+import dev.prime.render.AstronomyState;
 import dev.prime.render.SunDirection;
 import java.util.Set;
 import org.junit.jupiter.api.Test;
@@ -63,9 +65,28 @@ final class SunShadowClipmapTest {
     }
 
     @Test
-    void lightSpaceBasisDoesNotRotateAtTheSolarZenithFallbackBoundary() {
-        SunDirection before = SunDirection.fromVanillaAngle(0.04F);
-        SunDirection after = SunDirection.fromVanillaAngle(0.05F);
+    void lightSpaceBasisRemainsStableThroughTheSolarZenith() {
+        AstronomySettings equatorAtEquinox =
+                new AstronomySettings(0, 0);
+        SunDirection before = AstronomyState.atSolarHourAngle(
+                -0.01F, equatorAtEquinox).sunDirection();
+        SunDirection after = AstronomyState.atSolarHourAngle(
+                0.01F, equatorAtEquinox).sunDirection();
+
+        assertTrue(
+                SunShadowClipmap.basisDirectionCosine(before, after) > 0.999F);
+    }
+
+    @Test
+    void lightSpaceBasisDoesNotFlipWhereTheSunCrossesWorldX() {
+        AstronomySettings equatorAtEquinox =
+                new AstronomySettings(0, 0);
+        SunDirection before = AstronomyState.atSolarHourAngle(
+                (float) -Math.asin(0.9985),
+                equatorAtEquinox).sunDirection();
+        SunDirection after = AstronomyState.atSolarHourAngle(
+                (float) -Math.asin(0.9995),
+                equatorAtEquinox).sunDirection();
 
         assertTrue(
                 SunShadowClipmap.basisDirectionCosine(before, after) > 0.999F);

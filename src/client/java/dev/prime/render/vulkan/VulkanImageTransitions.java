@@ -1,6 +1,7 @@
 package dev.prime.render.vulkan;
 
 import com.mojang.blaze3d.vulkan.VulkanGpuTexture;
+import java.util.List;
 import org.lwjgl.system.MemoryStack;
 import org.lwjgl.vulkan.KHRRayTracingPipeline;
 import org.lwjgl.vulkan.KHRSynchronization2;
@@ -41,6 +42,38 @@ public final class VulkanImageTransitions {
                 VK12.VK_ACCESS_SHADER_READ_BIT,
                 VK12.VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
                 VK12.VK_ACCESS_MEMORY_WRITE_BIT);
+    }
+
+    public static void prepareSceneTexturesForTrace(
+            VkCommandBuffer commandBuffer,
+            List<RayTracingPipeline.SceneTexture> textures) {
+        for (RayTracingPipeline.SceneTexture texture : textures) {
+            imageBarrier(
+                    commandBuffer,
+                    texture.image(),
+                    VK12.VK_IMAGE_LAYOUT_GENERAL,
+                    VK12.VK_IMAGE_LAYOUT_GENERAL,
+                    VK12.VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
+                    VK12.VK_ACCESS_MEMORY_WRITE_BIT,
+                    KHRRayTracingPipeline.VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR,
+                    VK12.VK_ACCESS_SHADER_READ_BIT);
+        }
+    }
+
+    public static void finishSceneTextureReads(
+            VkCommandBuffer commandBuffer,
+            List<RayTracingPipeline.SceneTexture> textures) {
+        for (RayTracingPipeline.SceneTexture texture : textures) {
+            imageBarrier(
+                    commandBuffer,
+                    texture.image(),
+                    VK12.VK_IMAGE_LAYOUT_GENERAL,
+                    VK12.VK_IMAGE_LAYOUT_GENERAL,
+                    KHRRayTracingPipeline.VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR,
+                    VK12.VK_ACCESS_SHADER_READ_BIT,
+                    VK12.VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
+                    VK12.VK_ACCESS_MEMORY_WRITE_BIT);
+        }
     }
 
     public static void prepareOutputForComposite(

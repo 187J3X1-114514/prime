@@ -4,6 +4,8 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import dev.prime.render.AstronomySettings;
+import dev.prime.render.AstronomyState;
 import dev.prime.render.FrameCamera;
 import dev.prime.render.IntegratorFrameInput;
 import dev.prime.render.LightingSettings;
@@ -363,7 +365,9 @@ final class NrdInputSemanticValidatorTest {
                 0.0,
                 64.0,
                 0.0);
-        SunDirection sun = new SunDirection(0.0F, 1.0F, 0.0F);
+        AstronomyState astronomy = AstronomyState.atSolarHourAngle(
+                0.0F, AstronomySettings.defaults());
+        SunDirection sun = astronomy.sunDirection();
         TerrainScene.ResidentSceneView scene =
                 new TerrainScene.ResidentSceneView(
                         1L, 2L, 0, 0, 0, 1L, 1L, 1L);
@@ -371,7 +375,7 @@ final class NrdInputSemanticValidatorTest {
                 camera,
                 1,
                 1,
-                sun,
+                astronomy,
                 Short.toUnsignedInt(Float.floatToFloat16(1.0F)),
                 0,
                 1,

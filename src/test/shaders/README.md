@@ -55,7 +55,10 @@ by the renderer. Its concern-specific batches cover exponent-scaled throughput,
 MIS and area-light PDFs, Beer-Lambert attenuation, Russian roulette, the full
 16-bit LabPBR normal/specular byte domains, conductor Fresnel, NRD sanitization,
 normal packing, hit-distance normalization, demodulation, radiance limits, and
-FSR depth, motion, and material-mask input domains. It also executes the
+FSR depth, motion, and material-mask input domains. The celestial batch executes
+the production equatorial-frame conversion across both poles, all seasonal
+landmarks and randomized right ascension/declination round trips, including the
+one-solar-day phase wrap. It also executes the
 production auto-exposure bin mapping, target-EV clamp, and asymmetric temporal
 adaptation contract. The transport batch additionally checks the gamma-2
 glass-filter endpoints, strength, and products plus outside/inside, multiple,

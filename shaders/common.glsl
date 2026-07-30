@@ -14,6 +14,28 @@ vec4 primeUnpackTint(uint packedValue) {
     return unpackUnorm4x8(packedValue);
 }
 
+uint primeSampleIndex() {
+    return primePush.path.x & PRIME_PATH_SAMPLE_INDEX_MASK;
+}
+
+float primeSolarLongitudeRadians() {
+    uint encoded = (primePush.path.x >> PRIME_PATH_SOLAR_LONGITUDE_SHIFT)
+            & PRIME_PATH_SOLAR_LONGITUDE_MASK;
+    return radians(float(encoded));
+}
+
+float primeObserverLatitudeRadians() {
+    uint encoded = (primePush.path.z >> PRIME_PATH_LATITUDE_SHIFT)
+            & PRIME_PATH_LATITUDE_MASK;
+    return radians(float(int(encoded) - PRIME_PATH_LATITUDE_BIAS));
+}
+
+uint primeMaximumBounces() {
+    return min(
+            primePush.path.z & PRIME_PATH_MAXIMUM_BOUNCES_MASK,
+            PRIME_MAXIMUM_BOUNCES);
+}
+
 int primeDecodeEvQuarterSteps(uint shift) {
     uint encoded = (primePush.path.w >> shift) & PRIME_PATH_EV_QUARTER_MASK;
     return int(encoded) - PRIME_PATH_EV_QUARTER_BIAS;

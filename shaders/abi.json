@@ -210,6 +210,7 @@
     "sunShadowDepth8": 46,
     "sunShadowDepth9": 47
   },
+  "sceneTextureCount": 64,
   "wavefrontContract": {
     "rounds": 12,
     "pathRecordSize": 144,
@@ -220,8 +221,15 @@
     "activeMask": "0x1"
   },
   "pathControl": {
+    "sampleIndexMask": "0xffff",
+    "solarLongitudeShift": 16,
+    "solarLongitudeMask": "0x1ff",
     "sampleEpochMask": "0x7fffffff",
     "triangleDebugMask": "0x80000000",
+    "maximumBouncesMask": "0xff",
+    "latitudeShift": 8,
+    "latitudeMask": "0xff",
+    "latitudeBias": 90,
     "cameraInWaterMask": "0x80000000",
     "jitterPhaseMask": "0x1fff",
     "transparentGuideModeShift": 29,
@@ -287,10 +295,18 @@
     "aerialDepth": 128,
     "aerialSegmentSamples": 2
   },
+  "astronomyContract": {
+    "axialTiltDegrees": 23.43928,
+    "minimumLatitudeDegrees": -90,
+    "maximumLatitudeDegrees": 90,
+    "defaultLatitudeDegrees": 30,
+    "minimumSolarLongitudeDegrees": 0,
+    "maximumSolarLongitudeDegrees": 359,
+    "defaultSolarLongitudeDegrees": 0
+  },
   "starmapContract": {
     "width": 8192,
     "height": 4096,
-    "observerLatitudeDegrees": 30.0,
     "baseRadianceScale": 0.075,
     "sourceSha256": "dc6c4f413e85707a29a25a9451148154554ecca2c996f84fa8f47b65ef9ff7c4"
   },

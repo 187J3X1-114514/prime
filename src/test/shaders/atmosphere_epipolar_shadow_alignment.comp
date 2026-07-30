@@ -31,15 +31,20 @@ void primeAlignmentSunBasis(
         vec3 directionToSun,
         out vec3 basisU,
         out vec3 basisV) {
-    basisU = abs(directionToSun.x) < 0.999
-            ? normalize(vec3(
-                    1.0 - directionToSun.x * directionToSun.x,
-                    -directionToSun.x * directionToSun.y,
-                    -directionToSun.x * directionToSun.z))
-            : normalize(vec3(
-                    -directionToSun.y * directionToSun.x,
-                    1.0 - directionToSun.y * directionToSun.y,
-                    -directionToSun.y * directionToSun.z));
+    if (directionToSun.y < -0.9999999) {
+        basisU = vec3(1.0, 0.0, 0.0);
+    } else {
+        float reciprocal = 1.0 / (1.0 + directionToSun.y);
+        basisU = normalize(vec3(
+                1.0
+                        - directionToSun.x
+                                * directionToSun.x
+                                * reciprocal,
+                -directionToSun.x,
+                -directionToSun.x
+                        * directionToSun.z
+                        * reciprocal));
+    }
     basisV = cross(directionToSun, basisU);
 }
 

@@ -932,16 +932,18 @@ final class SunShadowClipmap implements Destroyable {
         float ux;
         float uy;
         float uz;
-        // Project world X instead of crossing world Y: Prime's solar orbit remains away from
-        // ±X, so this basis stays continuous when the sun passes through the zenith.
-        if (Math.abs(direction.x()) < 0.999F) {
-            ux = 1.0F - direction.x() * direction.x();
-            uy = -direction.x() * direction.y();
-            uz = -direction.x() * direction.z();
+        // Frisvad's orthonormal basis, permuted so its unavoidable seam is at world down. The
+        // astronomical sun can cross ±X, so an axis-selection branch would flip the cache there.
+        if (direction.y() < -0.9999999F) {
+            ux = 1.0F;
+            uy = 0.0F;
+            uz = 0.0F;
         } else {
-            ux = -direction.y() * direction.x();
-            uy = 1.0F - direction.y() * direction.y();
-            uz = -direction.y() * direction.z();
+            float reciprocal = 1.0F / (1.0F + direction.y());
+            ux = 1.0F
+                    - direction.x() * direction.x() * reciprocal;
+            uy = -direction.x();
+            uz = -direction.x() * direction.z() * reciprocal;
         }
         float inverseLength =
                 1.0F / (float) Math.sqrt(ux * ux + uy * uy + uz * uz);

@@ -54,8 +54,15 @@ final class ShaderAbiTest {
         assertEquals(16, ShaderAbi.WAVEFRONT_QUEUE_COMMAND_STRIDE);
         assertEquals(4, ShaderAbi.WAVEFRONT_QUEUE_INDEX_SIZE);
         assertEquals(1, ShaderAbi.WAVEFRONT_ACTIVE_MASK);
+        assertEquals(0xffff, ShaderAbi.PATH_SAMPLE_INDEX_MASK);
+        assertEquals(16, ShaderAbi.PATH_SOLAR_LONGITUDE_SHIFT);
+        assertEquals(0x1ff, ShaderAbi.PATH_SOLAR_LONGITUDE_MASK);
         assertEquals(0x7fffffff, ShaderAbi.PATH_SAMPLE_EPOCH_MASK);
         assertEquals(0x80000000, ShaderAbi.PATH_TRIANGLE_DEBUG_MASK);
+        assertEquals(0xff, ShaderAbi.PATH_MAXIMUM_BOUNCES_MASK);
+        assertEquals(8, ShaderAbi.PATH_LATITUDE_SHIFT);
+        assertEquals(0xff, ShaderAbi.PATH_LATITUDE_MASK);
+        assertEquals(90, ShaderAbi.PATH_LATITUDE_BIAS);
         assertEquals(0x80000000, ShaderAbi.PATH_CAMERA_IN_WATER_MASK);
         assertEquals(0x1fff, ShaderAbi.PATH_JITTER_PHASE_MASK);
         assertEquals(29, ShaderAbi.PATH_TRANSPARENT_GUIDE_MODE_SHIFT);
@@ -117,9 +124,15 @@ final class ShaderAbiTest {
         assertEquals(256, ShaderAbi.ATMOSPHERE_AERIAL_EPIPOLAR_SLICES);
         assertEquals(128, ShaderAbi.ATMOSPHERE_AERIAL_DEPTH);
         assertEquals(2, ShaderAbi.ATMOSPHERE_AERIAL_SEGMENT_SAMPLES);
+        assertEquals(23.43928F, ShaderAbi.ASTRONOMY_AXIAL_TILT_DEGREES);
+        assertEquals(-90, ShaderAbi.ASTRONOMY_MINIMUM_LATITUDE_DEGREES);
+        assertEquals(90, ShaderAbi.ASTRONOMY_MAXIMUM_LATITUDE_DEGREES);
+        assertEquals(30, ShaderAbi.ASTRONOMY_DEFAULT_LATITUDE_DEGREES);
+        assertEquals(0, ShaderAbi.ASTRONOMY_MINIMUM_SOLAR_LONGITUDE_DEGREES);
+        assertEquals(359, ShaderAbi.ASTRONOMY_MAXIMUM_SOLAR_LONGITUDE_DEGREES);
+        assertEquals(0, ShaderAbi.ASTRONOMY_DEFAULT_SOLAR_LONGITUDE_DEGREES);
         assertEquals(8192, ShaderAbi.STARMAP_WIDTH);
         assertEquals(4096, ShaderAbi.STARMAP_HEIGHT);
-        assertEquals(30.0F, ShaderAbi.STARMAP_OBSERVER_LATITUDE_DEGREES);
         assertEquals(0.075F, ShaderAbi.STARMAP_BASE_RADIANCE_SCALE);
         assertEquals(
                 "dc6c4f413e85707a29a25a9451148154554ecca2c996f84fa8f47b65ef9ff7c4",

@@ -1,5 +1,6 @@
 package dev.prime.render.replay;
 
+import dev.prime.render.AstronomyState;
 import dev.prime.render.IntegratorFrameInput;
 import dev.prime.render.LightingSettings;
 import dev.prime.render.MaterialSettings;
@@ -19,7 +20,7 @@ public record RayTraceReplayInput(
         SceneIdentity scene,
         int width,
         int height,
-        SunDirection sunDirection,
+        AstronomyState astronomy,
         int packedRayCone,
         int sampleIndex,
         int sampleEpoch,
@@ -34,7 +35,7 @@ public record RayTraceReplayInput(
     public RayTraceReplayInput {
         Objects.requireNonNull(camera, "camera");
         Objects.requireNonNull(scene, "scene");
-        Objects.requireNonNull(sunDirection, "sunDirection");
+        Objects.requireNonNull(astronomy, "astronomy");
         Objects.requireNonNull(postProcessingMode, "postProcessingMode");
         Objects.requireNonNull(lighting, "lighting");
         Objects.requireNonNull(material, "material");
@@ -61,7 +62,7 @@ public record RayTraceReplayInput(
                 SceneIdentity.capture(scene),
                 input.width(),
                 input.height(),
-                input.sunDirection(),
+                input.astronomy(),
                 input.packedRayCone(),
                 input.sampleIndex(),
                 input.sampleEpoch(),
@@ -82,7 +83,7 @@ public record RayTraceReplayInput(
                 this.camera.materialize(),
                 this.width,
                 this.height,
-                this.sunDirection,
+                this.astronomy,
                 this.packedRayCone,
                 this.sampleIndex,
                 this.sampleEpoch,
@@ -94,6 +95,10 @@ public record RayTraceReplayInput(
                 this.shInput,
                 this.rawNumericalDiagnostic,
                 this.triangleDebug);
+    }
+
+    public SunDirection sunDirection() {
+        return this.astronomy.sunDirection();
     }
 
     public void requireMatch(

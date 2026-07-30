@@ -10,11 +10,20 @@ void main() {
     SectionRecord section = primeSection();
     PrimitiveRecord primitive = primePrimitive(section);
     uint flags = primePrimitiveFlags(primitive);
+    vec3 outwardNormal = primeUnpackOctahedralNormal(primitive.normal);
+    float textureLodValue = primeRayConeTextureLod(primitive, outwardNormal);
+    if ((flags & PRIME_MATERIAL_FLAG_CUTOUT) != 0u
+            && primeEvaluateOpacity(
+                    primitive,
+                    primeInterpolateUv(section, primitive),
+                    textureLodValue) < PRIME_CUTOUT_ALPHA_THRESHOLD) {
+        ignoreIntersectionEXT;
+        return;
+    }
     if (!primeMaterialIsTransmissive(flags)) {
         return;
     }
 
-    vec3 outwardNormal = primeUnpackOctahedralNormal(primitive.normal);
     if ((flags & PRIME_MATERIAL_FLAG_WATER) != 0u) {
         bool entering = dot(outwardNormal, gl_WorldRayDirectionEXT) < 0.0;
         primeShadowPayload.waterDistance = primeShadowWaterBoundaryDistance(
@@ -24,7 +33,6 @@ void main() {
                 entering);
     } else {
         float opacity;
-        float textureLodValue = primeRayConeTextureLod(primitive, outwardNormal);
         vec3 baseColor = primeAtlasBaseColor(
                 primitive.tint,
                 primeInterpolateUv(section, primitive),

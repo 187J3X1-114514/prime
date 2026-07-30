@@ -7,6 +7,7 @@ import dev.prime.render.scene.vanilla.VanillaAssetSnapshot;
 import dev.prime.render.scene.vanilla.VanillaSceneInterpreter;
 import dev.prime.render.scene.vanilla.VanillaSectionCompileInput;
 import dev.prime.render.scene.vanilla.VanillaSectionSnapshot;
+import dev.prime.render.scene.vanilla.DynamicSceneFrame;
 import dev.prime.render.vulkan.StagingArena;
 import dev.prime.render.vulkan.VulkanContext;
 import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
@@ -155,6 +156,29 @@ public final class TerrainStreamer implements AutoCloseable {
 
     public TerrainScene.ResidentSceneView residentScene() {
         return this.scene.residentView();
+    }
+
+    /**
+     * Atomically replaces the one render-thread-owned dynamic BLAS.
+     *
+     * <p>The reserved instance is always sorted after terrain clusters and carries an empty light
+     * payload, so replacing it cannot add an emitter to either light tree.
+     */
+    public boolean updateDynamic(DynamicSceneFrame frame) {
+        CompiledCluster dynamic = CompiledCluster.dynamic(
+                frame.clusterX(),
+                frame.clusterY(),
+                frame.clusterZ(),
+                frame.mesh());
+        double cameraX = (frame.clusterX() << 4) + 32.0;
+        double cameraY = (frame.clusterY() << 4) + 32.0;
+        double cameraZ = (frame.clusterZ() << 4) + 32.0;
+        return this.scene.update(
+                List.of(dynamic),
+                EMPTY_EVICTIONS,
+                cameraX,
+                cameraY,
+                cameraZ);
     }
 
     public void setLabPbrMaterials(LabPbrMaterialSet materials) {

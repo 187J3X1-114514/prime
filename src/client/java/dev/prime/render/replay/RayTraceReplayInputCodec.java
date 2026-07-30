@@ -1,5 +1,7 @@
 package dev.prime.render.replay;
 
+import dev.prime.render.AstronomySettings;
+import dev.prime.render.AstronomyState;
 import dev.prime.render.LightingSettings;
 import dev.prime.render.MaterialSettings;
 import dev.prime.render.SunDirection;
@@ -12,8 +14,8 @@ import java.util.Objects;
 /** Versioned fixed-width encoding of {@link RayTraceReplayInput}. */
 public final class RayTraceReplayInputCodec {
     private static final int MAGIC = 0x3146_5250;
-    private static final int VERSION = 1;
-    private static final int ENCODED_BYTES = 376;
+    private static final int VERSION = 2;
+    private static final int ENCODED_BYTES = 384;
     private static final int FLAG_CAMERA_IN_WATER = 1;
     private static final int FLAG_SH_INPUT = 1 << 1;
     private static final int FLAG_RAW_NUMERICAL = 1 << 2;
@@ -44,6 +46,8 @@ public final class RayTraceReplayInputCodec {
         output.putInt(Float.floatToRawIntBits(input.sunDirection().x()));
         output.putInt(Float.floatToRawIntBits(input.sunDirection().y()));
         output.putInt(Float.floatToRawIntBits(input.sunDirection().z()));
+        output.putInt(input.astronomy().latitudeDegrees());
+        output.putInt(input.astronomy().solarLongitudeDegrees());
         output.putInt(input.packedRayCone());
         output.putInt(input.sampleIndex());
         output.putInt(input.sampleEpoch());
@@ -96,6 +100,9 @@ public final class RayTraceReplayInputCodec {
                     Float.intBitsToFloat(input.getInt()),
                     Float.intBitsToFloat(input.getInt()),
                     Float.intBitsToFloat(input.getInt()));
+            AstronomyState astronomy = new AstronomyState(
+                    new AstronomySettings(input.getInt(), input.getInt()),
+                    sun);
             int packedRayCone = input.getInt();
             int sampleIndex = input.getInt();
             int sampleEpoch = input.getInt();
@@ -149,7 +156,7 @@ public final class RayTraceReplayInputCodec {
                     scene,
                     width,
                     height,
-                    sun,
+                    astronomy,
                     packedRayCone,
                     sampleIndex,
                     sampleEpoch,

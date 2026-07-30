@@ -677,6 +677,11 @@ vec3 primeEvaluateEnvironmentContribution(
 vec3 primeEvaluateHitEmission(
         PathState path, SurfaceInteraction surface) {
     primeSetNumericalContext(PRIME_NUMERICAL_STAGE_EMISSION, path.bounce);
+    if ((surface.materialFlags & PRIME_MATERIAL_FLAG_VISIBLE_EMISSION) != 0u) {
+        return path.throughput * surface.baseColor
+                * PRIME_LEVEL_15_BLOCK_INTENSITY
+                * primeBlockLightRadianceMultiplier();
+    }
     LightEvaluation hitAreaLight = primeEvaluateAreaLight(
             surface, path.physicalOrigin, path.rayDirection);
     float hitAreaWeight = primePreviousCannotUseMis(path)

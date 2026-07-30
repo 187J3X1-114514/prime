@@ -12,6 +12,7 @@ import dev.prime.render.vulkan.RayTracingPipeline;
 import dev.prime.render.vulkan.VulkanContext;
 import dev.prime.render.vulkan.VulkanImageInitializationBatch;
 import dev.prime.render.vulkan.VulkanImageTransitions;
+import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
 import org.lwjgl.vulkan.VK12;
@@ -36,6 +37,7 @@ public final class ReplayProbeFrameExecutor {
             IntegratorFrameInput integrator,
             RayTraceReplayInput replayInput,
             VulkanGpuTextureView atlasView,
+            List<RayTracingPipeline.SceneTexture> sceneTextures,
             float sunRadianceMultiplier,
             float displayOverexposure,
             RenderPlatformFingerprint platform,
@@ -54,6 +56,7 @@ public final class ReplayProbeFrameExecutor {
             Objects.requireNonNull(integrator, "integrator");
             Objects.requireNonNull(replayInput, "replayInput");
             Objects.requireNonNull(atlasView, "atlasView");
+            Objects.requireNonNull(sceneTextures, "sceneTextures");
             Objects.requireNonNull(platform, "platform");
             Objects.requireNonNull(binary, "binary");
             replayInput.requireMatch(integrator, scene);
@@ -71,6 +74,8 @@ public final class ReplayProbeFrameExecutor {
                     commandBuffer, this.imageInitialization);
             VulkanImageTransitions.prepareAtlasForTrace(
                     commandBuffer, atlasView.texture());
+            VulkanImageTransitions.prepareSceneTexturesForTrace(
+                    commandBuffer, sceneTextures);
             pipeline.trace(commandBuffer, integrator, scene);
             recordingAttempted = true;
             recorded = probe.recordAfterTrace(
@@ -80,6 +85,8 @@ public final class ReplayProbeFrameExecutor {
                     displayOverexposure);
             VulkanImageTransitions.finishAtlasRead(
                     commandBuffer, atlasView.texture());
+            VulkanImageTransitions.finishSceneTextureReads(
+                    commandBuffer, sceneTextures);
             this.context.device().instance().debug().endDebugGroup(
                     commandBuffer);
             VulkanContext.check(

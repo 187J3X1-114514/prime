@@ -80,6 +80,27 @@ final class PrimitivePackingTest {
     }
 
     @Test
+    void dynamicTextureAndVisibleEmissionNeverDecodeAsALightTreeEmitter() {
+        int flags = PrimitivePacking.FLAG_CUTOUT;
+        int visible = PrimitivePacking.packDynamicFlags(flags, 63, true);
+        int dark = PrimitivePacking.packDynamicFlags(flags, 1, false);
+
+        assertEquals(63, PrimitivePacking.unpackDynamicTextureIndex(visible));
+        assertEquals(flags, PrimitivePacking.unpackFlags(
+                PrimitivePacking.packTintFlags(-1, flags), visible));
+        assertEquals(PrimitivePacking.NO_EMITTER_INDEX,
+                PrimitivePacking.unpackEmitterIndex(visible));
+        assertTrue(PrimitivePacking.hasVisibleEmission(visible));
+        assertEquals(1, PrimitivePacking.unpackDynamicTextureIndex(dark));
+        assertFalse(PrimitivePacking.hasVisibleEmission(dark));
+        assertEquals(0, PrimitivePacking.unpackDynamicTextureIndex(
+                PrimitivePacking.packFlagsEmitter(flags, 0)));
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> PrimitivePacking.packDynamicFlags(flags, 0, false));
+    }
+
+    @Test
     void octahedralEncodingPreservesNormalDirection() {
         assertNormalDirection(1.0F, 0.0F, 0.0F);
         assertNormalDirection(0.0F, -1.0F, 0.0F);

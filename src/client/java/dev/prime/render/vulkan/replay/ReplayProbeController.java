@@ -4,12 +4,12 @@ import com.mojang.blaze3d.vulkan.Destroyable;
 import com.mojang.blaze3d.vulkan.VulkanGpuSampler;
 import com.mojang.blaze3d.vulkan.VulkanGpuTextureView;
 import dev.prime.PrimeClient;
+import dev.prime.render.AstronomyState;
 import dev.prime.render.FrameCamera;
 import dev.prime.render.IntegratorFrameInput;
 import dev.prime.render.LightingSettings;
 import dev.prime.render.MaterialSettings;
 import dev.prime.render.ResourceCleanup;
-import dev.prime.render.SunDirection;
 import dev.prime.render.post.PostProcessingMode;
 import dev.prime.render.post.ReconstructionQualityMode;
 import dev.prime.render.fsr.FsrSettings;
@@ -26,6 +26,7 @@ import dev.prime.render.vulkan.RayTracingPipeline;
 import dev.prime.render.vulkan.VulkanContext;
 import dev.prime.render.vulkan.VulkanImage;
 import java.util.ArrayList;
+import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicReference;
@@ -141,6 +142,7 @@ public final class ReplayProbeController implements Destroyable {
                         input.stableRadiance,
                         input.atlasView,
                         input.atlasSampler,
+                        input.sceneTextures,
                         input.labPbrNormalAtlas,
                         input.labPbrSpecularAtlas,
                         input.atmosphere,
@@ -172,6 +174,7 @@ public final class ReplayProbeController implements Destroyable {
                     probe.stableRadiance(),
                     input.atlasView,
                     input.atlasSampler,
+                    input.sceneTextures,
                     input.labPbrNormalAtlas,
                     input.labPbrSpecularAtlas,
                     input.atmosphere,
@@ -217,7 +220,7 @@ public final class ReplayProbeController implements Destroyable {
                 frameTimeNanos,
                 input.scene.temporalRevision(),
                 input.textureRevision,
-                input.sunDirection,
+                input.astronomy.sunDirection(),
                 jitter.x(),
                 jitter.y(),
                 forceRestart);
@@ -225,7 +228,7 @@ public final class ReplayProbeController implements Destroyable {
                 camera,
                 width,
                 height,
-                input.sunDirection,
+                input.astronomy,
                 ReconstructionQualityMode.NATIVE_AA.packedRayCone(
                         camera.projection().m00(),
                         camera.projection().m11(),
@@ -256,6 +259,7 @@ public final class ReplayProbeController implements Destroyable {
                 frameInput,
                 replayInput,
                 input.atlasView,
+                input.sceneTextures,
                 input.lighting.sunMultiplier(),
                 input.displayOverexposure,
                 platform,
@@ -290,13 +294,14 @@ public final class ReplayProbeController implements Destroyable {
             AtmospherePipeline atmosphere,
             TerrainScene.ResidentSceneView scene,
             FrameCamera camera,
-            SunDirection sunDirection,
+            AstronomyState astronomy,
             boolean cameraInWater,
             LightingSettings.Snapshot lighting,
             MaterialSettings.Snapshot material,
             float displayOverexposure,
             VulkanGpuTextureView atlasView,
             VulkanGpuSampler atlasSampler,
+            List<RayTracingPipeline.SceneTexture> sceneTextures,
             long textureRevision,
             VulkanImage stableRadiance,
             VulkanImage labPbrNormalAtlas,
@@ -307,11 +312,12 @@ public final class ReplayProbeController implements Destroyable {
             Objects.requireNonNull(atmosphere, "atmosphere");
             Objects.requireNonNull(scene, "scene");
             Objects.requireNonNull(camera, "camera");
-            Objects.requireNonNull(sunDirection, "sunDirection");
+            Objects.requireNonNull(astronomy, "astronomy");
             Objects.requireNonNull(lighting, "lighting");
             Objects.requireNonNull(material, "material");
             Objects.requireNonNull(atlasView, "atlasView");
             Objects.requireNonNull(atlasSampler, "atlasSampler");
+            sceneTextures = List.copyOf(sceneTextures);
             Objects.requireNonNull(stableRadiance, "stableRadiance");
             Objects.requireNonNull(
                     labPbrNormalAtlas, "labPbrNormalAtlas");

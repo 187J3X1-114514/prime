@@ -3,10 +3,23 @@ package dev.prime.render.terrain;
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.mojang.math.Quadrant;
 import dev.prime.render.scene.CapturedSectionGeometry;
+import net.minecraft.client.model.geom.builders.UVPair;
+import net.minecraft.client.renderer.block.dispatch.ModelState;
+import net.minecraft.client.renderer.chunk.ChunkSectionLayer;
+import net.minecraft.client.resources.model.ModelBaker;
+import net.minecraft.client.resources.model.cuboid.CuboidFace;
+import net.minecraft.client.resources.model.cuboid.CuboidRotation;
+import net.minecraft.client.resources.model.cuboid.FaceBakery;
+import net.minecraft.client.resources.model.geometry.BakedQuad;
 import net.minecraft.core.Direction;
+import org.joml.Matrix4f;
+import org.joml.Vector3f;
+import org.joml.Vector3fc;
 import org.junit.jupiter.api.Test;
 
 final class ClusterSceneTranslatorTest {
@@ -172,6 +185,166 @@ final class ClusterSceneTranslatorTest {
     }
 
     @Test
+    void rasterFrontBackPairsBecomeOneTwoSidedCrossSheet() {
+        try (SectionMeshAccumulatorTest.TestSprite grass =
+                new SectionMeshAccumulatorTest.TestSprite("modded_cross_grass")) {
+            grass.fill(0xff40_a040);
+            CapturedSectionGeometry.MutableQuad firstPlane =
+                    diagonalFace(false);
+            CapturedSectionGeometry.MutableQuad firstBack =
+                    rasterBack(firstPlane);
+            CapturedSectionGeometry.MutableQuad secondPlane =
+                    diagonalFace(true);
+            CapturedSectionGeometry.MutableQuad secondBack =
+                    rasterBack(secondPlane);
+            CapturedSectionGeometry.Builder section =
+                    new CapturedSectionGeometry.Builder();
+            CapturedSectionGeometry.Surface surface = crossSurface(grass);
+            section.add(firstPlane, surface);
+            section.add(secondPlane, surface);
+            section.add(firstBack, surface);
+            section.add(secondBack, surface);
+
+            CpuClusterMesh cluster = translate(section.build());
+
+            assertEquals(4L, cluster.cutoutTriangleCount());
+            assertEquals(0L, cluster.opaqueTriangleCount());
+            assertEquals(0L, cluster.transmissiveTriangleCount());
+            int[] primitives = cluster.segments().getFirst().primitiveRecords();
+            assertEquals(
+                    PrimitivePacking.packHalf2(
+                            firstPlane.u[0], firstPlane.v[0]),
+                    primitives[0]);
+            assertEquals(
+                    PrimitivePacking.packHalf2(
+                            firstPlane.u[1], firstPlane.v[1]),
+                    primitives[1]);
+            assertEquals(
+                    PrimitivePacking.packHalf2(
+                            firstPlane.u[2], firstPlane.v[2]),
+                    primitives[2]);
+            assertEquals(
+                    PrimitivePacking.packOctahedralNormal(
+                            -0.70710677F, 0.0F, 0.70710677F),
+                    primitives[4]);
+        }
+    }
+
+    @Test
+    void vanillaFaceBakeryCrossPairMeetsReductionContract() {
+        try (SectionMeshAccumulatorTest.TestSprite grass =
+                new SectionMeshAccumulatorTest.TestSprite("vanilla_cross")) {
+            BakedQuad.MaterialInfo material = new BakedQuad.MaterialInfo(
+                    grass,
+                    ChunkSectionLayer.CUTOUT,
+                    null,
+                    0,
+                    false,
+                    0);
+            CuboidFace.UVs uvs = new CuboidFace.UVs(
+                    0.0F, 0.0F, 16.0F, 16.0F);
+            CuboidRotation rotation = new CuboidRotation(
+                    new Vector3f(0.5F, 0.5F, 0.5F),
+                    () -> new Matrix4f().rotationY((float) Math.toRadians(45.0)),
+                    true);
+            ModelBaker.Interner interner = new ModelBaker.Interner() {
+                @Override
+                public Vector3fc vector(Vector3fc vector) {
+                    return vector;
+                }
+
+                @Override
+                public BakedQuad.MaterialInfo materialInfo(
+                        BakedQuad.MaterialInfo materialInfo) {
+                    return materialInfo;
+                }
+            };
+            ModelState modelState = new ModelState() {
+            };
+            Vector3f from = new Vector3f(0.8F, 0.0F, 8.0F);
+            Vector3f to = new Vector3f(15.2F, 16.0F, 8.0F);
+            BakedQuad north = FaceBakery.bakeQuad(
+                    interner,
+                    from,
+                    to,
+                    uvs,
+                    Quadrant.R0,
+                    material,
+                    Direction.NORTH,
+                    modelState,
+                    rotation);
+            BakedQuad south = FaceBakery.bakeQuad(
+                    interner,
+                    from,
+                    to,
+                    uvs,
+                    Quadrant.R0,
+                    material,
+                    Direction.SOUTH,
+                    modelState,
+                    rotation);
+            Vector3f crossingFrom = new Vector3f(8.0F, 0.0F, 0.8F);
+            Vector3f crossingTo = new Vector3f(8.0F, 16.0F, 15.2F);
+            BakedQuad west = FaceBakery.bakeQuad(
+                    interner,
+                    crossingFrom,
+                    crossingTo,
+                    uvs,
+                    Quadrant.R0,
+                    material,
+                    Direction.WEST,
+                    modelState,
+                    rotation);
+            BakedQuad east = FaceBakery.bakeQuad(
+                    interner,
+                    crossingFrom,
+                    crossingTo,
+                    uvs,
+                    Quadrant.R0,
+                    material,
+                    Direction.EAST,
+                    modelState,
+                    rotation);
+            CapturedSectionGeometry.Builder section =
+                    new CapturedSectionGeometry.Builder();
+            CapturedSectionGeometry.Surface surface = crossSurface(grass);
+            section.add(captured(north), surface);
+            section.add(captured(south), surface);
+            section.add(captured(west), surface);
+            section.add(captured(east), surface);
+            CapturedSectionGeometry captured = section.build();
+
+            java.util.List<CapturedSectionGeometry.Quad> reduced =
+                    TwoSidedQuadReducer.reduce(captured.quads());
+
+            assertEquals(2, reduced.size());
+            assertSame(captured.quads().getFirst(), reduced.getFirst());
+            assertSame(captured.quads().get(2), reduced.get(1));
+        }
+    }
+
+    @Test
+    void oppositeCutoutQuadsWithDifferentTextureDomainRemainDistinct() {
+        try (SectionMeshAccumulatorTest.TestSprite grass =
+                new SectionMeshAccumulatorTest.TestSprite("directional_cross")) {
+            grass.fill(0xff40_a040);
+            CapturedSectionGeometry.MutableQuad front =
+                    diagonalFace(false);
+            CapturedSectionGeometry.MutableQuad back = rasterBack(front);
+            back.u[0] = 0.25F;
+            CapturedSectionGeometry.Builder section =
+                    new CapturedSectionGeometry.Builder();
+            CapturedSectionGeometry.Surface surface = crossSurface(grass);
+            section.add(front, surface);
+            section.add(back, surface);
+
+            CpuClusterMesh cluster = translate(section.build());
+
+            assertEquals(4L, cluster.cutoutTriangleCount());
+        }
+    }
+
+    @Test
     void fixedSectionSlotsMakeCaptureCompletionOrderIrrelevant() {
         try (SectionMeshAccumulatorTest.TestSprite base =
                         new SectionMeshAccumulatorTest.TestSprite("ordered_base");
@@ -302,6 +475,95 @@ final class ClusterSceneTranslatorTest {
         }
         reversed.normalZ = -1.0F;
         return reversed;
+    }
+
+    private static CapturedSectionGeometry.MutableQuad diagonalFace(
+            boolean oppositeDiagonal) {
+        CapturedSectionGeometry.MutableQuad quad =
+                new CapturedSectionGeometry.MutableQuad();
+        float[] first = oppositeDiagonal
+                ? new float[] {1.0F, 0.0F}
+                : new float[] {0.0F, 0.0F};
+        float[] second = oppositeDiagonal
+                ? new float[] {0.0F, 1.0F}
+                : new float[] {1.0F, 1.0F};
+        quad.x[0] = first[0];
+        quad.y[0] = 0.0F;
+        quad.z[0] = first[1];
+        quad.x[1] = second[0];
+        quad.y[1] = 0.0F;
+        quad.z[1] = second[1];
+        quad.x[2] = second[0];
+        quad.y[2] = 1.0F;
+        quad.z[2] = second[1];
+        quad.x[3] = first[0];
+        quad.y[3] = 1.0F;
+        quad.z[3] = first[1];
+        quad.u[0] = 0.0F;
+        quad.v[0] = 1.0F;
+        quad.u[1] = 1.0F;
+        quad.v[1] = 1.0F;
+        quad.u[2] = 1.0F;
+        quad.v[2] = 0.0F;
+        quad.u[3] = 0.0F;
+        quad.v[3] = 0.0F;
+        quad.normalX = oppositeDiagonal ? 1.0F : -1.0F;
+        quad.normalZ = 1.0F;
+        return quad;
+    }
+
+    private static CapturedSectionGeometry.MutableQuad rasterBack(
+            CapturedSectionGeometry.MutableQuad source) {
+        CapturedSectionGeometry.MutableQuad back =
+                new CapturedSectionGeometry.MutableQuad();
+        int[] reverse = {0, 3, 2, 1};
+        for (int vertex = 0; vertex < 4; vertex++) {
+            int sourceVertex = reverse[vertex];
+            back.x[vertex] = source.x[sourceVertex];
+            back.y[vertex] = source.y[sourceVertex];
+            back.z[vertex] = source.z[sourceVertex];
+            back.u[vertex] = source.u[vertex];
+            back.v[vertex] = source.v[vertex];
+        }
+        back.normalX = -source.normalX;
+        back.normalY = -source.normalY;
+        back.normalZ = -source.normalZ;
+        return back;
+    }
+
+    private static CapturedSectionGeometry.MutableQuad captured(
+            BakedQuad source) {
+        CapturedSectionGeometry.MutableQuad captured =
+                new CapturedSectionGeometry.MutableQuad();
+        for (int vertex = 0; vertex < 4; vertex++) {
+            Vector3fc position = source.position(vertex);
+            captured.x[vertex] = position.x();
+            captured.y[vertex] = position.y();
+            captured.z[vertex] = position.z();
+            long packedUv = source.packedUV(vertex);
+            captured.u[vertex] = UVPair.unpackU(packedUv);
+            captured.v[vertex] = UVPair.unpackV(packedUv);
+        }
+        captured.normalX = source.direction().getStepX();
+        captured.normalY = source.direction().getStepY();
+        captured.normalZ = source.direction().getStepZ();
+        return captured;
+    }
+
+    private static CapturedSectionGeometry.Surface crossSurface(
+            SectionMeshAccumulatorTest.TestSprite sprite) {
+        return CapturedSectionGeometry.Surface.uniform(
+                0xff80_c060,
+                CapturedSectionGeometry.Layer.CUTOUT,
+                false,
+                true,
+                false,
+                false,
+                false,
+                true,
+                false,
+                0,
+                sprite);
     }
 
     private static CapturedSectionGeometry.Surface fluidSurface(

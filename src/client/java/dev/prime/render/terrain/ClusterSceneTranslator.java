@@ -59,7 +59,8 @@ final class ClusterSceneTranslator {
                 settings.segmentTriangleTarget());
         SectionMeshAccumulator.Quad quad = new SectionMeshAccumulator.Quad();
         SectionMeshAccumulator.Surface surface = new SectionMeshAccumulator.Surface();
-        for (CapturedSectionGeometry.Quad capturedQuad : captured.quads()) {
+        for (CapturedSectionGeometry.Quad capturedQuad
+                : TwoSidedQuadReducer.reduce(captured.quads())) {
             for (int vertex = 0; vertex < 4; vertex++) {
                 quad.x[vertex] = capturedQuad.x(vertex);
                 quad.y[vertex] = capturedQuad.y(vertex);

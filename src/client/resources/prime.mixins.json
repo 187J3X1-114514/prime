@@ -28,6 +28,7 @@
     "TextureAtlasMixin",
     "TextureAtlasSpriteAccessor",
     "VulkanBackendMixin",
+    "VulkanGpuSurfaceMixin",
     "VulkanInstanceMixin",
     "VideoSettingsScreenMixin"
   ],

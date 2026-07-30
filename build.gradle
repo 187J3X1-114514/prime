@@ -153,6 +153,7 @@ abstract class GenerateShaderAbi extends DefaultTask {
 		def colorContract = schema.colorContract
 		def emissionContract = schema.emissionContract
 		def atmosphereContract = schema.atmosphereContract
+		def astronomyContract = schema.astronomyContract
 		def starmapContract = schema.starmapContract
 		def nrdContract = schema.nrdContract
 		def fsrContract = schema.fsrContract
@@ -164,8 +165,9 @@ abstract class GenerateShaderAbi extends DefaultTask {
 				|| sectionLightHeader.size != 48
 				|| integrator.size != 32 || pathState.size != 96 || tracePayload.size != 64
 				|| surfaceInteraction.size != 80 || push.size != 128
-				|| nrdMotionPush.size != 208) {
-			throw new GradleException('Prime shader ABI sizes changed without a coordinated migration')
+				|| nrdMotionPush.size != 208 || schema.sceneTextureCount != 64) {
+			throw new GradleException(
+					'Prime shader ABI sizes or scene texture count changed without a coordinated migration')
 		}
 		if (colorContract.workingSpace != 'linear-rec2020-d65'
 				|| colorContract.textureEncoding != 'srgb'
@@ -181,21 +183,32 @@ abstract class GenerateShaderAbi extends DefaultTask {
 					'Prime emission contract must preserve a 1.5-unit white level-15 block source')
 		}
 		if (atmosphereContract.spectralModel != 'hillaire-8wave-rec2020-d65'
+				|| atmosphereContract.worldToAtmosphereScale <= 0.0
 				|| atmosphereContract.worldSeaLevelY != -128.0
 				|| atmosphereContract.worldUnitScaleKm != 0.001
 				|| atmosphereContract.spaceSunIntensity != 12.5
 				|| atmosphereContract.sunAngularRadiusRadians != 0.00471) {
 			throw new GradleException(
 					'Prime atmosphere contract must remain the eight-wave Rec.2020 model, '
-							+ 'the -128 virtual-ground / 0.001 km world scale, and a 12.5-unit space sun')
+							+ 'the -128 virtual ground with positive world-to-atmosphere scale, '
+							+ 'and a 12.5-unit space sun')
 		}
 		if (starmapContract.width != 8192
 				|| starmapContract.height != 4096
-				|| starmapContract.observerLatitudeDegrees != 30.0
 				|| starmapContract.baseRadianceScale != 0.075
 				|| starmapContract.sourceSha256 != 'dc6c4f413e85707a29a25a9451148154554ecca2c996f84fa8f47b65ef9ff7c4') {
 			throw new GradleException(
-					'Prime starmap contract must preserve the full NASA source, its 30-degree observer frame, and its calibrated radiance baseline')
+					'Prime starmap contract must preserve the full NASA source and its calibrated radiance baseline')
+		}
+		if (astronomyContract.axialTiltDegrees != 23.43928
+				|| astronomyContract.minimumLatitudeDegrees != -90
+				|| astronomyContract.maximumLatitudeDegrees != 90
+				|| astronomyContract.defaultLatitudeDegrees != 30
+				|| astronomyContract.minimumSolarLongitudeDegrees != 0
+				|| astronomyContract.maximumSolarLongitudeDegrees != 359
+				|| astronomyContract.defaultSolarLongitudeDegrees != 0) {
+			throw new GradleException(
+					'Prime astronomy contract must preserve the axial tilt and complete integer-degree control domains')
 		}
 		if (nrdContract.version != '4.17.4'
                 || nrdContract.denoiser != 'dual-reblur-diffuse-specular-sh-plus-sigma-sun-shadow'
@@ -383,6 +396,17 @@ public final class ShaderAbi {
     public static final int DESCRIPTOR_STARMAP = ${schema.descriptors.starmap};
     public static final int DESCRIPTOR_WAVEFRONT_PATHS = ${schema.descriptors.wavefrontPaths};
     public static final int DESCRIPTOR_WAVEFRONT_QUEUE = ${schema.descriptors.wavefrontQueue};
+    public static final int DESCRIPTOR_SUN_SHADOW_DEPTH_0 = ${schema.descriptors.sunShadowDepth0};
+    public static final int DESCRIPTOR_SUN_SHADOW_DEPTH_1 = ${schema.descriptors.sunShadowDepth1};
+    public static final int DESCRIPTOR_SUN_SHADOW_DEPTH_2 = ${schema.descriptors.sunShadowDepth2};
+    public static final int DESCRIPTOR_SUN_SHADOW_DEPTH_3 = ${schema.descriptors.sunShadowDepth3};
+    public static final int DESCRIPTOR_SUN_SHADOW_DEPTH_4 = ${schema.descriptors.sunShadowDepth4};
+    public static final int DESCRIPTOR_SUN_SHADOW_DEPTH_5 = ${schema.descriptors.sunShadowDepth5};
+    public static final int DESCRIPTOR_SUN_SHADOW_DEPTH_6 = ${schema.descriptors.sunShadowDepth6};
+    public static final int DESCRIPTOR_SUN_SHADOW_DEPTH_7 = ${schema.descriptors.sunShadowDepth7};
+    public static final int DESCRIPTOR_SUN_SHADOW_DEPTH_8 = ${schema.descriptors.sunShadowDepth8};
+    public static final int DESCRIPTOR_SUN_SHADOW_DEPTH_9 = ${schema.descriptors.sunShadowDepth9};
+    public static final int SCENE_TEXTURE_COUNT = ${schema.sceneTextureCount};
     public static final int WAVEFRONT_ROUNDS = ${wavefrontContract.rounds};
     public static final int WAVEFRONT_PATH_RECORD_SIZE = ${wavefrontContract.pathRecordSize};
     public static final int WAVEFRONT_PATH_SLOTS_PER_PIXEL = ${wavefrontContract.pathSlotsPerPixel};
@@ -390,8 +414,15 @@ public final class ShaderAbi {
     public static final int WAVEFRONT_QUEUE_COMMAND_STRIDE = ${wavefrontContract.queueCommandStride};
     public static final int WAVEFRONT_QUEUE_INDEX_SIZE = ${wavefrontContract.queueIndexSize};
     public static final int WAVEFRONT_ACTIVE_MASK = ${wavefrontContract.activeMask};
+    public static final int PATH_SAMPLE_INDEX_MASK = ${schema.pathControl.sampleIndexMask};
+    public static final int PATH_SOLAR_LONGITUDE_SHIFT = ${schema.pathControl.solarLongitudeShift};
+    public static final int PATH_SOLAR_LONGITUDE_MASK = ${schema.pathControl.solarLongitudeMask};
     public static final int PATH_SAMPLE_EPOCH_MASK = ${schema.pathControl.sampleEpochMask};
     public static final int PATH_TRIANGLE_DEBUG_MASK = ${schema.pathControl.triangleDebugMask};
+    public static final int PATH_MAXIMUM_BOUNCES_MASK = ${schema.pathControl.maximumBouncesMask};
+    public static final int PATH_LATITUDE_SHIFT = ${schema.pathControl.latitudeShift};
+    public static final int PATH_LATITUDE_MASK = ${schema.pathControl.latitudeMask};
+    public static final int PATH_LATITUDE_BIAS = ${schema.pathControl.latitudeBias};
     public static final int PATH_CAMERA_IN_WATER_MASK = ${schema.pathControl.cameraInWaterMask};
     public static final int PATH_JITTER_PHASE_MASK = ${schema.pathControl.jitterPhaseMask};
     public static final int PATH_TRANSPARENT_GUIDE_MODE_SHIFT = ${schema.pathControl.transparentGuideModeShift};
@@ -433,16 +464,29 @@ public final class ShaderAbi {
     public static final float FSR_NEAR_PLANE = ${fsrContract.nearPlane}f;
     public static final float FSR_VIEW_SPACE_TO_METERS_FACTOR = ${fsrContract.viewSpaceToMetersFactor}f;
     public static final String ATMOSPHERE_SPECTRAL_MODEL = "${atmosphereContract.spectralModel}";
+    public static final float ATMOSPHERE_WORLD_TO_ATMOSPHERE_SCALE = ${atmosphereContract.worldToAtmosphereScale}f;
     public static final float ATMOSPHERE_BOTTOM_RADIUS_KM = ${atmosphereContract.bottomRadiusKm}f;
     public static final float ATMOSPHERE_TOP_RADIUS_KM = ${atmosphereContract.topRadiusKm}f;
     public static final float ATMOSPHERE_WORLD_SEA_LEVEL_Y = ${atmosphereContract.worldSeaLevelY}f;
-    public static final float ATMOSPHERE_WORLD_UNIT_SCALE_KM = ${atmosphereContract.worldUnitScaleKm}f;
+    public static final float ATMOSPHERE_WORLD_UNIT_SCALE_KM = ${atmosphereContract.worldUnitScaleKm * atmosphereContract.worldToAtmosphereScale}f;
     public static final float ATMOSPHERE_SPACE_SUN_INTENSITY = ${atmosphereContract.spaceSunIntensity}f;
     public static final float ATMOSPHERE_SUN_ANGULAR_RADIUS_RADIANS = ${atmosphereContract.sunAngularRadiusRadians}f;
-    public static final float ATMOSPHERE_AERIAL_MAX_DISTANCE_KM = ${atmosphereContract.aerialMaxDistanceKm}f;
+    public static final float ATMOSPHERE_AERIAL_MAX_DISTANCE_KM = ${atmosphereContract.aerialMaxDistanceKm * atmosphereContract.worldToAtmosphereScale}f;
+    public static final int ATMOSPHERE_AERIAL_WIDTH = ${atmosphereContract.aerialWidth};
+    public static final int ATMOSPHERE_AERIAL_HEIGHT = ${atmosphereContract.aerialHeight};
+    public static final int ATMOSPHERE_AERIAL_EPIPOLAR_SAMPLES = ${atmosphereContract.aerialEpipolarSamples};
+    public static final int ATMOSPHERE_AERIAL_EPIPOLAR_SLICES = ${atmosphereContract.aerialEpipolarSlices};
+    public static final int ATMOSPHERE_AERIAL_DEPTH = ${atmosphereContract.aerialDepth};
+    public static final int ATMOSPHERE_AERIAL_SEGMENT_SAMPLES = ${atmosphereContract.aerialSegmentSamples};
+    public static final float ASTRONOMY_AXIAL_TILT_DEGREES = ${astronomyContract.axialTiltDegrees}f;
+    public static final int ASTRONOMY_MINIMUM_LATITUDE_DEGREES = ${astronomyContract.minimumLatitudeDegrees};
+    public static final int ASTRONOMY_MAXIMUM_LATITUDE_DEGREES = ${astronomyContract.maximumLatitudeDegrees};
+    public static final int ASTRONOMY_DEFAULT_LATITUDE_DEGREES = ${astronomyContract.defaultLatitudeDegrees};
+    public static final int ASTRONOMY_MINIMUM_SOLAR_LONGITUDE_DEGREES = ${astronomyContract.minimumSolarLongitudeDegrees};
+    public static final int ASTRONOMY_MAXIMUM_SOLAR_LONGITUDE_DEGREES = ${astronomyContract.maximumSolarLongitudeDegrees};
+    public static final int ASTRONOMY_DEFAULT_SOLAR_LONGITUDE_DEGREES = ${astronomyContract.defaultSolarLongitudeDegrees};
     public static final int STARMAP_WIDTH = ${starmapContract.width};
     public static final int STARMAP_HEIGHT = ${starmapContract.height};
-    public static final float STARMAP_OBSERVER_LATITUDE_DEGREES = ${starmapContract.observerLatitudeDegrees}f;
     public static final float STARMAP_BASE_RADIANCE_SCALE = ${starmapContract.baseRadianceScale}f;
     public static final String STARMAP_SOURCE_SHA256 = "${starmapContract.sourceSha256}";
 ${javaOffsets}
@@ -481,6 +525,7 @@ ${javaOffsets}
 #define PRIME_DESCRIPTOR_TRANSMISSION_GGX_ENERGY ${schema.descriptors.transmissionGgxEnergy}
 #define PRIME_DESCRIPTOR_WAVEFRONT_PATHS ${schema.descriptors.wavefrontPaths}
 #define PRIME_DESCRIPTOR_WAVEFRONT_QUEUE ${schema.descriptors.wavefrontQueue}
+#define PRIME_SCENE_TEXTURE_COUNT ${schema.sceneTextureCount}u
 #define PRIME_WAVEFRONT_ROUNDS ${wavefrontContract.rounds}
 #define PRIME_WAVEFRONT_PATH_RECORD_SIZE ${wavefrontContract.pathRecordSize}
 #define PRIME_WAVEFRONT_PATH_SLOTS_PER_PIXEL ${wavefrontContract.pathSlotsPerPixel}u
@@ -488,8 +533,15 @@ ${javaOffsets}
 #define PRIME_WAVEFRONT_QUEUE_COMMAND_STRIDE ${wavefrontContract.queueCommandStride}u
 #define PRIME_WAVEFRONT_QUEUE_INDEX_SIZE ${wavefrontContract.queueIndexSize}u
 #define PRIME_WAVEFRONT_ACTIVE_MASK ${wavefrontContract.activeMask}u
+#define PRIME_PATH_SAMPLE_INDEX_MASK ${schema.pathControl.sampleIndexMask}u
+#define PRIME_PATH_SOLAR_LONGITUDE_SHIFT ${schema.pathControl.solarLongitudeShift}u
+#define PRIME_PATH_SOLAR_LONGITUDE_MASK ${schema.pathControl.solarLongitudeMask}u
 #define PRIME_PATH_SAMPLE_EPOCH_MASK ${schema.pathControl.sampleEpochMask}u
 #define PRIME_PATH_TRIANGLE_DEBUG_MASK ${schema.pathControl.triangleDebugMask}u
+#define PRIME_PATH_MAXIMUM_BOUNCES_MASK ${schema.pathControl.maximumBouncesMask}u
+#define PRIME_PATH_LATITUDE_SHIFT ${schema.pathControl.latitudeShift}u
+#define PRIME_PATH_LATITUDE_MASK ${schema.pathControl.latitudeMask}u
+#define PRIME_PATH_LATITUDE_BIAS ${schema.pathControl.latitudeBias}
 #define PRIME_PATH_CAMERA_IN_WATER_MASK ${schema.pathControl.cameraInWaterMask}u
 #define PRIME_PATH_JITTER_PHASE_MASK ${schema.pathControl.jitterPhaseMask}u
 #define PRIME_PATH_TRANSPARENT_GUIDE_MODE_SHIFT ${schema.pathControl.transparentGuideModeShift}u
@@ -509,9 +561,9 @@ ${javaOffsets}
 #define PRIME_PATH_STAR_EV_QUARTER_SHIFT ${schema.pathControl.starEvQuarterShift}u
 #define PRIME_PATH_STAR_EV_QUARTER_MASK ${schema.pathControl.starEvQuarterMask}u
 #define PRIME_PATH_STAR_EV_QUARTER_BIAS ${schema.pathControl.starEvQuarterBias}
+#define PRIME_ASTRONOMY_AXIAL_TILT_RADIANS (${astronomyContract.axialTiltDegrees} * 0.017453292519943295)
 #define PRIME_STARMAP_WIDTH ${starmapContract.width}
 #define PRIME_STARMAP_HEIGHT ${starmapContract.height}
-#define PRIME_STARMAP_OBSERVER_LATITUDE_RADIANS (${starmapContract.observerLatitudeDegrees} * 0.017453292519943295)
 #define PRIME_STARMAP_BASE_RADIANCE_SCALE ${starmapContract.baseRadianceScale}
 #define PRIME_MAXIMUM_BOUNCES ${schema.pathControl.maximumBounces}u
 #define PRIME_RUSSIAN_ROULETTE_START ${schema.pathControl.russianRouletteStart}u
@@ -609,7 +661,7 @@ ${glslPushFields}
 } primePush;
 
 layout(set = 0, binding = ${schema.descriptors.tlas}) uniform accelerationStructureEXT primeScene;
-layout(set = 0, binding = ${schema.descriptors.blockAtlas}) uniform sampler2D primeBlockAtlas;
+layout(set = 0, binding = ${schema.descriptors.blockAtlas}) uniform sampler2D primeSceneTextures[PRIME_SCENE_TEXTURE_COUNT];
 layout(set = 0, binding = ${schema.descriptors.labPbrNormalAtlas}) uniform sampler2D primeLabPbrNormalAtlas;
 layout(set = 0, binding = ${schema.descriptors.labPbrSpecularAtlas}) uniform sampler2D primeLabPbrSpecularAtlas;
 layout(set = 0, binding = ${schema.descriptors.stableRadiance}, rgba32f) uniform image2D primeStableRadiance;
@@ -619,6 +671,16 @@ layout(set = 0, binding = ${schema.descriptors.transmittanceLow}, rgba16f) unifo
 layout(set = 0, binding = ${schema.descriptors.transmittanceHigh}, rgba16f) uniform readonly image2D primeTransmittanceHigh;
 layout(set = 0, binding = ${schema.descriptors.aerialRadiance}, rgba16f) uniform readonly image3D primeAerialRadiance;
 layout(set = 0, binding = ${schema.descriptors.aerialTransmittance}, rgba16f) uniform readonly image3D primeAerialTransmittance;
+layout(set = 0, binding = ${schema.descriptors.sunShadowDepth0}, r32f) uniform image2D primeSunShadowDepth0;
+layout(set = 0, binding = ${schema.descriptors.sunShadowDepth1}, r32f) uniform image2D primeSunShadowDepth1;
+layout(set = 0, binding = ${schema.descriptors.sunShadowDepth2}, r32f) uniform image2D primeSunShadowDepth2;
+layout(set = 0, binding = ${schema.descriptors.sunShadowDepth3}, r32f) uniform image2D primeSunShadowDepth3;
+layout(set = 0, binding = ${schema.descriptors.sunShadowDepth4}, r32f) uniform image2D primeSunShadowDepth4;
+layout(set = 0, binding = ${schema.descriptors.sunShadowDepth5}, r32f) uniform image2D primeSunShadowDepth5;
+layout(set = 0, binding = ${schema.descriptors.sunShadowDepth6}, r32f) uniform image2D primeSunShadowDepth6;
+layout(set = 0, binding = ${schema.descriptors.sunShadowDepth7}, r32f) uniform image2D primeSunShadowDepth7;
+layout(set = 0, binding = ${schema.descriptors.sunShadowDepth8}, r32f) uniform image2D primeSunShadowDepth8;
+layout(set = 0, binding = ${schema.descriptors.sunShadowDepth9}, r32f) uniform image2D primeSunShadowDepth9;
 layout(set = 0, binding = ${schema.descriptors.starmap}) uniform sampler2D primeStarmap;
 // NRD is part of the integrator boundary. Raygen first writes private raw signals to a subset of
 // these images; nrd_motion.comp converts them in place to demodulated scene-linear Rec.2020
@@ -653,13 +715,20 @@ layout(set = 0, binding = ${schema.descriptors.nrdDisplayPosition}, rgba32f) uni
 #define PRIME_ATMOSPHERE_CONTRACT_GLSL
 
 // Generated from shaders/abi.json. Atmosphere compute and ray tracing must share these values.
+#define PRIME_ATMOSPHERE_WORLD_TO_ATMOSPHERE_SCALE ${atmosphereContract.worldToAtmosphereScale}
 #define PRIME_ATMOSPHERE_BOTTOM_RADIUS_KM ${atmosphereContract.bottomRadiusKm}
 #define PRIME_ATMOSPHERE_TOP_RADIUS_KM ${atmosphereContract.topRadiusKm}
 #define PRIME_ATMOSPHERE_WORLD_SEA_LEVEL_Y ${atmosphereContract.worldSeaLevelY}
-#define PRIME_ATMOSPHERE_WORLD_UNIT_SCALE_KM ${atmosphereContract.worldUnitScaleKm}
+#define PRIME_ATMOSPHERE_WORLD_UNIT_SCALE_KM ${atmosphereContract.worldUnitScaleKm * atmosphereContract.worldToAtmosphereScale}
 #define PRIME_ATMOSPHERE_SPACE_SUN_INTENSITY ${atmosphereContract.spaceSunIntensity}
 #define PRIME_ATMOSPHERE_SUN_ANGULAR_RADIUS_RADIANS ${atmosphereContract.sunAngularRadiusRadians}
-#define PRIME_ATMOSPHERE_AERIAL_MAX_DISTANCE_KM ${atmosphereContract.aerialMaxDistanceKm}
+#define PRIME_ATMOSPHERE_AERIAL_MAX_DISTANCE_KM ${atmosphereContract.aerialMaxDistanceKm * atmosphereContract.worldToAtmosphereScale}
+#define PRIME_ATMOSPHERE_AERIAL_WIDTH ${atmosphereContract.aerialWidth}
+#define PRIME_ATMOSPHERE_AERIAL_HEIGHT ${atmosphereContract.aerialHeight}
+#define PRIME_ATMOSPHERE_AERIAL_EPIPOLAR_SAMPLES ${atmosphereContract.aerialEpipolarSamples}
+#define PRIME_ATMOSPHERE_AERIAL_EPIPOLAR_SLICES ${atmosphereContract.aerialEpipolarSlices}
+#define PRIME_ATMOSPHERE_AERIAL_DEPTH ${atmosphereContract.aerialDepth}
+#define PRIME_ATMOSPHERE_AERIAL_SEGMENT_SAMPLES ${atmosphereContract.aerialSegmentSamples}
 
 #endif
 """
@@ -1088,6 +1157,8 @@ def verifyDistributionJar = tasks.register('verifyDistributionJar') {
 			'prime/shaders/auto_exposure_update.comp.spv',
 			'prime/shaders/shadow.rahit.spv',
 			'prime/shaders/shadow.rchit.spv',
+			'prime/shaders/sun_shadow.rgen.spv',
+			'prime/shaders/sun_shadow_hierarchy.comp.spv',
 			'prime/shaders/nrd_motion.comp.spv',
 			'prime/shaders/replay_capture_raw.comp.spv',
 			'prime/shaders/replay_capture_prepared_nrd.comp.spv',
@@ -1104,9 +1175,9 @@ def verifyDistributionJar = tasks.register('verifyDistributionJar') {
 		}
 
 		def shaderNames = names.findAll { it.startsWith('prime/shaders/') && it.endsWith('.spv') }
-		if (shaderNames.size() != 30) {
+		if (shaderNames.size() != 33) {
 			throw new GradleException(
-					"Distribution jar must contain 30 Prime shaders; found ${shaderNames.size()}")
+					"Distribution jar must contain 33 Prime shaders; found ${shaderNames.size()}")
 		}
 
 		new java.util.zip.ZipFile(archive).withCloseable { zip ->

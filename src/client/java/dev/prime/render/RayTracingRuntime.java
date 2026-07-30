@@ -10,6 +10,7 @@ import dev.prime.render.fsr.FsrDebugView;
 import dev.prime.render.post.DlssRrDebugView;
 import dev.prime.render.replay.RenderReplayFixtureStore;
 import dev.prime.render.replay.RenderReplayVerification;
+import dev.prime.render.scene.vanilla.DynamicSceneFrame;
 import dev.prime.render.vulkan.VulkanBootstrap;
 import dev.prime.render.vulkan.VulkanCapabilities;
 import dev.prime.render.vulkan.nrd.NrdDiagnostics;
@@ -98,6 +99,13 @@ public final class RayTracingRuntime {
         return this.states.current() == RuntimeState.ACTIVE;
     }
 
+    public boolean shouldCaptureDynamicScene() {
+        VulkanRenderer activeRenderer = this.renderer;
+        return activeRenderer != null
+                && this.states.current() == RuntimeState.ACTIVE
+                && !activeRenderer.screenshotActive();
+    }
+
     public void beginFrame(Minecraft minecraft) {
         this.retireFailedRenderer();
         if (!this.initialized) {
@@ -167,6 +175,20 @@ public final class RayTracingRuntime {
         }
         try {
             activeRenderer.render(mainTarget);
+        } catch (RuntimeException exception) {
+            this.fail(exception);
+        }
+    }
+
+    public void captureDynamicScene(DynamicSceneFrame frame) {
+        VulkanRenderer activeRenderer = this.renderer;
+        if (activeRenderer == null
+                || this.states.current() != RuntimeState.ACTIVE
+                || activeRenderer.screenshotActive()) {
+            return;
+        }
+        try {
+            activeRenderer.captureDynamicScene(frame);
         } catch (RuntimeException exception) {
             this.fail(exception);
         }

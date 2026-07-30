@@ -1,6 +1,7 @@
 package dev.prime.render.shader;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import org.junit.jupiter.api.Test;
 
@@ -44,6 +45,8 @@ final class ShaderAbiTest {
         assertEquals(34, ShaderAbi.DESCRIPTOR_STARMAP);
         assertEquals(36, ShaderAbi.DESCRIPTOR_WAVEFRONT_PATHS);
         assertEquals(37, ShaderAbi.DESCRIPTOR_WAVEFRONT_QUEUE);
+        assertEquals(38, ShaderAbi.DESCRIPTOR_SUN_SHADOW_DEPTH_0);
+        assertEquals(47, ShaderAbi.DESCRIPTOR_SUN_SHADOW_DEPTH_9);
         assertEquals(12, ShaderAbi.WAVEFRONT_ROUNDS);
         assertEquals(144, ShaderAbi.WAVEFRONT_PATH_RECORD_SIZE);
         assertEquals(2, ShaderAbi.WAVEFRONT_PATH_SLOTS_PER_PIXEL);
@@ -51,8 +54,15 @@ final class ShaderAbiTest {
         assertEquals(16, ShaderAbi.WAVEFRONT_QUEUE_COMMAND_STRIDE);
         assertEquals(4, ShaderAbi.WAVEFRONT_QUEUE_INDEX_SIZE);
         assertEquals(1, ShaderAbi.WAVEFRONT_ACTIVE_MASK);
+        assertEquals(0xffff, ShaderAbi.PATH_SAMPLE_INDEX_MASK);
+        assertEquals(16, ShaderAbi.PATH_SOLAR_LONGITUDE_SHIFT);
+        assertEquals(0x1ff, ShaderAbi.PATH_SOLAR_LONGITUDE_MASK);
         assertEquals(0x7fffffff, ShaderAbi.PATH_SAMPLE_EPOCH_MASK);
         assertEquals(0x80000000, ShaderAbi.PATH_TRIANGLE_DEBUG_MASK);
+        assertEquals(0xff, ShaderAbi.PATH_MAXIMUM_BOUNCES_MASK);
+        assertEquals(8, ShaderAbi.PATH_LATITUDE_SHIFT);
+        assertEquals(0xff, ShaderAbi.PATH_LATITUDE_MASK);
+        assertEquals(90, ShaderAbi.PATH_LATITUDE_BIAS);
         assertEquals(0x80000000, ShaderAbi.PATH_CAMERA_IN_WATER_MASK);
         assertEquals(0x1fff, ShaderAbi.PATH_JITTER_PHASE_MASK);
         assertEquals(29, ShaderAbi.PATH_TRANSPARENT_GUIDE_MODE_SHIFT);
@@ -91,15 +101,38 @@ final class ShaderAbiTest {
                 "dual-reblur-diffuse-specular-sh-plus-sigma-sun-shadow",
                 ShaderAbi.NRD_DENOISER);
         assertEquals("hillaire-8wave-rec2020-d65", ShaderAbi.ATMOSPHERE_SPECTRAL_MODEL);
+        assertTrue(ShaderAbi.ATMOSPHERE_WORLD_TO_ATMOSPHERE_SCALE > 0.0F);
+        assertEquals(
+                6_360.0F,
+                ShaderAbi.ATMOSPHERE_BOTTOM_RADIUS_KM);
+        assertEquals(
+                6_460.0F,
+                ShaderAbi.ATMOSPHERE_TOP_RADIUS_KM);
         assertEquals(12.5F, ShaderAbi.ATMOSPHERE_SPACE_SUN_INTENSITY);
         assertEquals(1.5F, ShaderAbi.LEVEL_15_BLOCK_INTENSITY);
         assertEquals(0.00471F, ShaderAbi.ATMOSPHERE_SUN_ANGULAR_RADIUS_RADIANS);
         assertEquals(-128.0F, ShaderAbi.ATMOSPHERE_WORLD_SEA_LEVEL_Y);
-        assertEquals(0.001F, ShaderAbi.ATMOSPHERE_WORLD_UNIT_SCALE_KM);
-        assertEquals(64.0F, ShaderAbi.ATMOSPHERE_AERIAL_MAX_DISTANCE_KM);
+        assertEquals(
+                0.001F * ShaderAbi.ATMOSPHERE_WORLD_TO_ATMOSPHERE_SCALE,
+                ShaderAbi.ATMOSPHERE_WORLD_UNIT_SCALE_KM);
+        assertEquals(
+                2.048F * ShaderAbi.ATMOSPHERE_WORLD_TO_ATMOSPHERE_SCALE,
+                ShaderAbi.ATMOSPHERE_AERIAL_MAX_DISTANCE_KM);
+        assertEquals(128, ShaderAbi.ATMOSPHERE_AERIAL_WIDTH);
+        assertEquals(64, ShaderAbi.ATMOSPHERE_AERIAL_HEIGHT);
+        assertEquals(128, ShaderAbi.ATMOSPHERE_AERIAL_EPIPOLAR_SAMPLES);
+        assertEquals(256, ShaderAbi.ATMOSPHERE_AERIAL_EPIPOLAR_SLICES);
+        assertEquals(128, ShaderAbi.ATMOSPHERE_AERIAL_DEPTH);
+        assertEquals(2, ShaderAbi.ATMOSPHERE_AERIAL_SEGMENT_SAMPLES);
+        assertEquals(23.43928F, ShaderAbi.ASTRONOMY_AXIAL_TILT_DEGREES);
+        assertEquals(-90, ShaderAbi.ASTRONOMY_MINIMUM_LATITUDE_DEGREES);
+        assertEquals(90, ShaderAbi.ASTRONOMY_MAXIMUM_LATITUDE_DEGREES);
+        assertEquals(30, ShaderAbi.ASTRONOMY_DEFAULT_LATITUDE_DEGREES);
+        assertEquals(0, ShaderAbi.ASTRONOMY_MINIMUM_SOLAR_LONGITUDE_DEGREES);
+        assertEquals(359, ShaderAbi.ASTRONOMY_MAXIMUM_SOLAR_LONGITUDE_DEGREES);
+        assertEquals(0, ShaderAbi.ASTRONOMY_DEFAULT_SOLAR_LONGITUDE_DEGREES);
         assertEquals(8192, ShaderAbi.STARMAP_WIDTH);
         assertEquals(4096, ShaderAbi.STARMAP_HEIGHT);
-        assertEquals(30.0F, ShaderAbi.STARMAP_OBSERVER_LATITUDE_DEGREES);
         assertEquals(0.075F, ShaderAbi.STARMAP_BASE_RADIANCE_SCALE);
         assertEquals(
                 "dc6c4f413e85707a29a25a9451148154554ecca2c996f84fa8f47b65ef9ff7c4",

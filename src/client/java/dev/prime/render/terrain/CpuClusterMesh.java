@@ -77,7 +77,7 @@ public final class CpuClusterMesh {
                 lights);
     }
 
-    static CpuClusterMesh fromSegments(List<CpuSectionMesh> meshes) {
+    public static CpuClusterMesh fromSegments(List<CpuSectionMesh> meshes) {
         ArrayList<Segment> segments = new ArrayList<>(meshes.size());
         ArrayList<CpuSectionLights.Translated> lightSources = new ArrayList<>();
         OpacityMicromapData.Builder opacityMicromap = new OpacityMicromapData.Builder();

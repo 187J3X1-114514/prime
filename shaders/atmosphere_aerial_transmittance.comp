@@ -1,0 +1,146 @@
+#version 460
+#extension GL_GOOGLE_include_directive : require
+#include "atmosphere.glsl"
+
+layout(set = 0, binding = 6, rgba16f) uniform writeonly image3D aerialTransmittance;
+
+layout(push_constant) uniform AtmospherePushConstants {
+    mat4 inverseViewProjection;
+    float eyeRadiusKm;
+    float maximumAerialDistanceKm;
+    vec2 epipoleNdc;
+    vec4 sunDirectionIntensity;
+    vec4 shadowDirectionBank;
+    vec4 shadowCameraEnabled;
+} atmospherePush;
+
+layout(
+        local_size_x = PRIME_ATMOSPHERE_AERIAL_DEPTH,
+        local_size_y = 1,
+        local_size_z = 1) in;
+
+shared vec4 prefixTransmittanceLow[PRIME_ATMOSPHERE_AERIAL_DEPTH];
+shared vec4 prefixTransmittanceHigh[PRIME_ATMOSPHERE_AERIAL_DEPTH];
+shared vec3 aerialRayDirection;
+shared vec3 aerialRayOrigin;
+shared float aerialMaximumDistance;
+
+vec3 aerialDirection(ivec2 coordinate, ivec2 dimensions) {
+    vec2 uv = (vec2(coordinate) + vec2(0.5)) / vec2(dimensions);
+    vec2 ndc = uv * 2.0 - 1.0;
+    vec4 nearPoint =
+            atmospherePush.inverseViewProjection * vec4(ndc, 1.0, 1.0);
+    vec4 farPoint =
+            atmospherePush.inverseViewProjection * vec4(ndc, 0.0, 1.0);
+    return normalize(
+            farPoint.xyz / farPoint.w - nearPoint.xyz / nearPoint.w);
+}
+
+void aerialSegmentTransmittance(
+        vec3 origin,
+        vec3 direction,
+        float segmentStart,
+        float segmentEnd,
+        out vec4 transmittanceLow,
+        out vec4 transmittanceHigh) {
+    transmittanceLow = vec4(1.0);
+    transmittanceHigh = vec4(1.0);
+    if (segmentEnd <= segmentStart) {
+        return;
+    }
+
+    float stepLength = (segmentEnd - segmentStart)
+            / float(PRIME_ATMOSPHERE_AERIAL_SEGMENT_SAMPLES);
+    for (int substep = 0;
+            substep < PRIME_ATMOSPHERE_AERIAL_SEGMENT_SAMPLES;
+            ++substep) {
+        float distanceKm = mix(
+                segmentStart,
+                segmentEnd,
+                (float(substep) + 0.5)
+                        / float(PRIME_ATMOSPHERE_AERIAL_SEGMENT_SAMPLES));
+        vec3 point = origin + direction * distanceKm;
+        float altitude = max(
+                length(point) - ATM_BOTTOM_RADIUS_KM,
+                0.0);
+        transmittanceLow *= exp(
+                -stepLength * atmCoefficients(0, altitude).extinction);
+        transmittanceHigh *= exp(
+                -stepLength * atmCoefficients(1, altitude).extinction);
+    }
+}
+
+void main() {
+    ivec3 dimensions = imageSize(aerialTransmittance);
+    ivec2 coordinate = ivec2(gl_WorkGroupID.xy);
+    int depth = int(gl_LocalInvocationID.x);
+    // Depth lanes share one screen ray; matrix reconstruction and atmosphere
+    // boundary intersection therefore belong to the workgroup, not each lane.
+    if (depth == 0) {
+        aerialRayDirection = aerialDirection(
+                coordinate,
+                dimensions.xy);
+        aerialRayOrigin = atmMoveToTop(
+                vec3(0.0, atmospherePush.eyeRadiusKm, 0.0),
+                aerialRayDirection);
+        aerialMaximumDistance = max(
+                atmRaySegment(
+                        aerialRayOrigin,
+                        aerialRayDirection).maximumDistanceKm,
+                0.0);
+    }
+    barrier();
+    vec3 direction = aerialRayDirection;
+    vec3 origin = aerialRayOrigin;
+    float maximumDistance = aerialMaximumDistance;
+    float inverseDepth = 1.0 / float(dimensions.z);
+    float normalizedStart =
+            max(float(depth) - 0.5, 0.0) * inverseDepth;
+    float normalizedEnd =
+            (float(depth) + 0.5) * inverseDepth;
+    float segmentStart = min(
+            atmospherePush.maximumAerialDistanceKm
+                    * normalizedStart * normalizedStart,
+            maximumDistance);
+    float segmentEnd = min(
+            atmospherePush.maximumAerialDistanceKm
+                    * normalizedEnd * normalizedEnd,
+            maximumDistance);
+    aerialSegmentTransmittance(
+            origin,
+            direction,
+            segmentStart,
+            segmentEnd,
+            prefixTransmittanceLow[depth],
+            prefixTransmittanceHigh[depth]);
+    barrier();
+
+    for (int offset = 1;
+            offset < PRIME_ATMOSPHERE_AERIAL_DEPTH;
+            offset <<= 1) {
+        vec4 earlierLow;
+        vec4 earlierHigh;
+        vec4 currentLow;
+        vec4 currentHigh;
+        if (depth >= offset) {
+            earlierLow = prefixTransmittanceLow[depth - offset];
+            earlierHigh = prefixTransmittanceHigh[depth - offset];
+            currentLow = prefixTransmittanceLow[depth];
+            currentHigh = prefixTransmittanceHigh[depth];
+        }
+        barrier();
+        if (depth >= offset) {
+            prefixTransmittanceLow[depth] = earlierLow * currentLow;
+            prefixTransmittanceHigh[depth] = earlierHigh * currentHigh;
+        }
+        barrier();
+    }
+
+    vec3 transmittance = atmRec2020Transmittance(
+            prefixTransmittanceLow[depth],
+            prefixTransmittanceHigh[depth]);
+    imageStore(
+            aerialTransmittance,
+            ivec3(coordinate, depth),
+            vec4(transmittance, 1.0));
+}

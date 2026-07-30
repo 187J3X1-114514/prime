@@ -2,6 +2,7 @@ package dev.prime.render.vulkan.dlss;
 
 import com.mojang.blaze3d.vulkan.Destroyable;
 import dev.prime.render.FrameCamera;
+import dev.prime.render.SunDirection;
 import dev.prime.render.fsr.FsrSettings;
 import dev.prime.render.vulkan.AtmospherePipeline;
 import dev.prime.render.vulkan.VulkanContext;
@@ -48,6 +49,7 @@ final class DlssRrPreparePass implements Destroyable {
     private final long descriptorSet;
     private final long pipelineLayout;
     private final long pipeline;
+    private final AtmospherePipeline atmosphere;
     private final int dispatchX;
     private final int dispatchY;
     private final Matrix4f currentClipToWorld = new Matrix4f();
@@ -61,6 +63,7 @@ final class DlssRrPreparePass implements Destroyable {
             long descriptorSet,
             long pipelineLayout,
             long pipeline,
+            AtmospherePipeline atmosphere,
             int width,
             int height) {
         this.context = context;
@@ -69,6 +72,7 @@ final class DlssRrPreparePass implements Destroyable {
         this.descriptorSet = descriptorSet;
         this.pipelineLayout = pipelineLayout;
         this.pipeline = pipeline;
+        this.atmosphere = atmosphere;
         this.dispatchX = divideRoundUp(width, LOCAL_SIZE);
         this.dispatchY = divideRoundUp(height, LOCAL_SIZE);
     }
@@ -185,7 +189,7 @@ final class DlssRrPreparePass implements Destroyable {
             VK12.vkUpdateDescriptorSets(context.vkDevice(), writes, null);
             return new DlssRrPreparePass(
                     context, setLayout, descriptorPool, descriptorSet, pipelineLayout, pipeline,
-                    targets.inputColor().width(), targets.inputColor().height());
+                    atmosphere, targets.inputColor().width(), targets.inputColor().height());
         } catch (RuntimeException exception) {
             if (descriptorPool != 0L) VK12.vkDestroyDescriptorPool(context.vkDevice(), descriptorPool, null);
             if (pipeline != 0L) VK12.vkDestroyPipeline(context.vkDevice(), pipeline, null);
@@ -200,6 +204,7 @@ final class DlssRrPreparePass implements Destroyable {
             FrameCamera camera,
             FrameCamera previousCamera,
             FsrSettings.Jitter currentJitterPixels,
+            SunDirection sunDirection,
             float sunRadianceMultiplier) {
         barrier(
                 commandBuffer,
@@ -219,6 +224,7 @@ final class DlssRrPreparePass implements Destroyable {
                     this.previousWorldToClip,
                     camera.viewRotation(),
                     sunRadianceMultiplier,
+                    this.atmosphere.aerialEpipole(camera, sunDirection),
                     currentJitterPixels);
             VK12.vkCmdBindPipeline(commandBuffer, VK12.VK_PIPELINE_BIND_POINT_COMPUTE, this.pipeline);
             VK12.vkCmdBindDescriptorSets(

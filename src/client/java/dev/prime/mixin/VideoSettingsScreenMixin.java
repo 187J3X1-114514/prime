@@ -2,6 +2,7 @@ package dev.prime.mixin;
 
 import dev.prime.client.PrimeVideoOptions;
 import dev.prime.config.PrimeConfig;
+import dev.prime.render.AstronomySettings;
 import dev.prime.render.DisplaySettings;
 import dev.prime.render.LightingSettings;
 import dev.prime.render.MaterialSettings;
@@ -33,6 +34,8 @@ public abstract class VideoSettingsScreenMixin {
     @Unique private OptionInstance<Boolean> prime$screenshotMode;
     @Unique private OptionInstance<PostProcessingMode> prime$postProcessingMode;
     @Unique private OptionInstance<ReconstructionQualityMode> prime$qualityMode;
+    @Unique private OptionInstance<Integer> prime$latitude;
+    @Unique private OptionInstance<Integer> prime$season;
     @Unique private OptionInstance<Integer> prime$sunExposure;
     @Unique private OptionInstance<Integer> prime$starExposure;
     @Unique private OptionInstance<Integer> prime$blockLightExposure;
@@ -53,6 +56,8 @@ public abstract class VideoSettingsScreenMixin {
             this.prime$screenshotMode = PrimeVideoOptions.screenshotMode();
             this.prime$postProcessingMode = PrimeVideoOptions.postProcessingMode();
             this.prime$qualityMode = PrimeVideoOptions.qualityMode();
+            this.prime$latitude = PrimeVideoOptions.latitude();
+            this.prime$season = PrimeVideoOptions.season();
             this.prime$sunExposure = PrimeVideoOptions.sunExposure();
             this.prime$starExposure = PrimeVideoOptions.starExposure();
             this.prime$blockLightExposure = PrimeVideoOptions.blockLightExposure();
@@ -73,6 +78,7 @@ public abstract class VideoSettingsScreenMixin {
             list.addBig(this.prime$screenshotMode);
             list.addBig(this.prime$postProcessingMode);
             list.addBig(this.prime$qualityMode);
+            list.addSmall(this.prime$latitude, this.prime$season);
             list.addBig(this.prime$sunExposure);
             list.addBig(this.prime$starExposure);
             list.addBig(this.prime$blockLightExposure);
@@ -93,6 +99,12 @@ public abstract class VideoSettingsScreenMixin {
         this.prime$refresh(this.prime$screenshotMode, false);
         this.prime$refresh(this.prime$postProcessingMode, PostProcessingMode.DEFAULT);
         this.prime$refresh(this.prime$qualityMode, ReconstructionQualityMode.DEFAULT);
+        this.prime$refresh(
+                this.prime$latitude,
+                AstronomySettings.DEFAULT_LATITUDE_DEGREES);
+        this.prime$refresh(
+                this.prime$season,
+                AstronomySettings.DEFAULT_SOLAR_LONGITUDE_DEGREES);
         this.prime$refresh(
                 this.prime$sunExposure,
                 LightingSettings.DEFAULT_SUN_QUARTER_STEPS);

@@ -5,6 +5,8 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
+import dev.prime.render.AstronomySettings;
+import dev.prime.render.AstronomyState;
 import dev.prime.render.FrameCamera;
 import dev.prime.render.IntegratorFrameInput;
 import dev.prime.render.LightingSettings;
@@ -33,6 +35,7 @@ final class RayTraceReplayInputCodecTest {
         assertArrayEquals(
                 encoded, RayTraceReplayInputCodec.encode(decoded));
         assertEquals(captured.camera(), decoded.camera());
+        assertEquals(captured.astronomy(), decoded.astronomy());
         IntegratorFrameInput rebound = decoded.bind(fixture.scene());
         ByteBuffer expected = ByteBuffer.allocate(ShaderAbi.PUSH_CONSTANT_SIZE)
                 .order(ByteOrder.nativeOrder());
@@ -95,7 +98,7 @@ final class RayTraceReplayInputCodecTest {
         byte[] encoded = RayTraceReplayInputCodec.encode(
                 RayTraceReplayInput.capture(fixture.input(), fixture.scene()));
         int sceneBytes = 3 * Integer.BYTES + 3 * Long.BYTES;
-        int frameWordsBeforeLighting = 11;
+        int frameWordsBeforeLighting = 13;
         int lightingStepWords = 3;
         int sunMultiplierOffset = 2 * Integer.BYTES
                 + sceneBytes
@@ -109,6 +112,48 @@ final class RayTraceReplayInputCodecTest {
         assertThrows(
                 IllegalArgumentException.class,
                 () -> RayTraceReplayInputCodec.decode(encoded));
+    }
+
+    @Test
+    void decodeRejectsInvalidAstronomyAndFormerVersion() {
+        Fixture fixture = input();
+        byte[] latitude = RayTraceReplayInputCodec.encode(
+                RayTraceReplayInput.capture(fixture.input(), fixture.scene()));
+        int sceneBytes = 3 * Integer.BYTES + 3 * Long.BYTES;
+        int latitudeOffset = 2 * Integer.BYTES
+                + sceneBytes
+                + FrameCameraSnapshot.ENCODED_BYTES
+                + 5 * Integer.BYTES;
+        ByteBuffer.wrap(latitude)
+                .order(ByteOrder.LITTLE_ENDIAN)
+                .putInt(latitudeOffset, 91);
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> RayTraceReplayInputCodec.decode(latitude));
+
+        byte[] inconsistent = RayTraceReplayInputCodec.encode(
+                RayTraceReplayInput.capture(fixture.input(), fixture.scene()));
+        int sunOffset = 2 * Integer.BYTES
+                + sceneBytes
+                + FrameCameraSnapshot.ENCODED_BYTES
+                + 2 * Integer.BYTES;
+        ByteBuffer inconsistentBuffer = ByteBuffer.wrap(inconsistent)
+                .order(ByteOrder.LITTLE_ENDIAN);
+        inconsistentBuffer.putFloat(sunOffset, 0.0F);
+        inconsistentBuffer.putFloat(sunOffset + Float.BYTES, 1.0F);
+        inconsistentBuffer.putFloat(sunOffset + 2 * Float.BYTES, 0.0F);
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> RayTraceReplayInputCodec.decode(inconsistent));
+
+        byte[] former = RayTraceReplayInputCodec.encode(
+                RayTraceReplayInput.capture(fixture.input(), fixture.scene()));
+        ByteBuffer.wrap(former)
+                .order(ByteOrder.LITTLE_ENDIAN)
+                .putInt(Integer.BYTES, 1);
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> RayTraceReplayInputCodec.decode(former));
     }
 
     @Test
@@ -133,7 +178,7 @@ final class RayTraceReplayInputCodecTest {
                 input.camera(),
                 input.width(),
                 input.height(),
-                input.sunDirection(),
+                input.astronomy(),
                 input.packedRayCone(),
                 sampleIndex,
                 input.sampleEpoch(),
@@ -177,10 +222,9 @@ final class RayTraceReplayInputCodecTest {
                 camera,
                 320,
                 180,
-                new SunDirection(
-                        -0.5345225F,
-                        0.8017837F,
-                        0.26726124F),
+                AstronomyState.atSolarHourAngle(
+                        0.7F,
+                        new AstronomySettings(-45, 270)),
                 0x1234_5678,
                 37,
                 19,

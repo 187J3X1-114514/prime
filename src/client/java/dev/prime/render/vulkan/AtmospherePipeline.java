@@ -1,9 +1,12 @@
 package dev.prime.render.vulkan;
 
 import com.mojang.blaze3d.vulkan.Destroyable;
+import dev.prime.render.AerialEpipolarMapping;
 import dev.prime.render.FrameCamera;
+import dev.prime.render.IntegratorFrameInput;
 import dev.prime.render.SunDirection;
 import dev.prime.render.shader.ShaderAbi;
+import dev.prime.render.terrain.TerrainScene;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.ByteBuffer;
@@ -49,12 +52,20 @@ public final class AtmospherePipeline implements Destroyable {
 
     private static final float BOTTOM_RADIUS_KM = ShaderAbi.ATMOSPHERE_BOTTOM_RADIUS_KM;
     private static final float TOP_RADIUS_KM = ShaderAbi.ATMOSPHERE_TOP_RADIUS_KM;
-    private static final int PUSH_CONSTANT_SIZE = 96;
+    private static final int PUSH_CONSTANT_SIZE = 128;
     private static final int IMAGE_COUNT = 7;
-    private static final int BINDING_COUNT = 8;
     private static final int PHASE_LUT_BINDING = 7;
+    private static final int SUN_SHADOW_BINDING = 8;
+    private static final int SUN_SHADOW_HIERARCHY_BINDING =
+            SUN_SHADOW_BINDING
+                    + SunShadowClipmap.BANK_COUNT * SunShadowClipmap.CASCADE_COUNT;
+    private static final int SUN_SHADOW_HIERARCHY_COUNT = SunShadowClipmap.CASCADE_COUNT;
+    private static final int SUN_SHADOW_HIERARCHY_WIDTH = SunShadowClipmap.RESOLUTION;
+    private static final int SUN_SHADOW_HIERARCHY_HEIGHT = SunShadowClipmap.RESOLUTION;
+    private static final int BINDING_COUNT =
+            SUN_SHADOW_HIERARCHY_BINDING + SUN_SHADOW_HIERARCHY_COUNT;
     private static final int PHASE_LUT_BYTE_SIZE = 131_072;
-    private static final int AERIAL_KEY_SIZE = 20;
+    private static final int AERIAL_KEY_SIZE = 21;
     private static final int COMPUTE_STAGE = VK12.VK_SHADER_STAGE_COMPUTE_BIT;
 
     private final VulkanContext context;
@@ -65,6 +76,8 @@ public final class AtmospherePipeline implements Destroyable {
     private final VulkanImage skyView;
     private final VulkanImage aerialRadiance;
     private final VulkanImage aerialTransmittance;
+    private final SunShadowClipmap sunShadow;
+    private final VulkanImage[] sunShadowHierarchies;
     private final VulkanBuffer phaseLut;
     private final long descriptorSetLayout;
     private final long descriptorPool;
@@ -74,7 +87,9 @@ public final class AtmospherePipeline implements Destroyable {
     private final long multiScatteringPipeline;
     private final long skyPipeline;
     private final long aerialPipeline;
-    private final VulkanImage[] images;
+    private final long aerialTransmittancePipeline;
+    private final long sunShadowHierarchyPipeline;
+    private final VulkanImage[] initialImages;
     private final VulkanImage[] transmittanceImages;
     private final VulkanImage[] multiScatteringImages;
     private final VulkanImage[] skyImage;
@@ -91,6 +106,9 @@ public final class AtmospherePipeline implements Destroyable {
     public AtmospherePipeline(VulkanContext context) {
         this.context = context;
         VulkanImage[] images = new VulkanImage[IMAGE_COUNT];
+        VulkanImage[] sunShadowHierarchies =
+                new VulkanImage[SUN_SHADOW_HIERARCHY_COUNT];
+        SunShadowClipmap newSunShadow = null;
         VulkanBuffer newPhaseLut = null;
         long newDescriptorSetLayout = 0L;
         long newDescriptorPool = 0L;
@@ -99,6 +117,8 @@ public final class AtmospherePipeline implements Destroyable {
         long newMultiScatteringPipeline = 0L;
         long newSkyPipeline = 0L;
         long newAerialPipeline = 0L;
+        long newAerialTransmittancePipeline = 0L;
+        long newSunShadowHierarchyPipeline = 0L;
         long newDescriptorSet = 0L;
         try {
             images[0] = context.createAtmosphereImage2D(256, 64, "Prime atmosphere transmittance low");
@@ -106,8 +126,27 @@ public final class AtmospherePipeline implements Destroyable {
             images[2] = context.createAtmosphereImage2D(64, 64, "Prime atmosphere multiple scattering low");
             images[3] = context.createAtmosphereImage2D(64, 64, "Prime atmosphere multiple scattering high");
             images[4] = context.createAtmosphereImage2D(256, 256, "Prime atmosphere sky view");
-            images[5] = context.createAtmosphereImage3D(32, 32, 32, "Prime atmosphere aerial radiance");
-            images[6] = context.createAtmosphereImage3D(32, 32, 32, "Prime atmosphere aerial transmittance");
+            images[5] = context.createAtmosphereImage3D(
+                    ShaderAbi.ATMOSPHERE_AERIAL_EPIPOLAR_SAMPLES,
+                    ShaderAbi.ATMOSPHERE_AERIAL_EPIPOLAR_SLICES,
+                    ShaderAbi.ATMOSPHERE_AERIAL_DEPTH,
+                    "Prime atmosphere aerial radiance");
+            images[6] = context.createAtmosphereImage3D(
+                    ShaderAbi.ATMOSPHERE_AERIAL_WIDTH,
+                    ShaderAbi.ATMOSPHERE_AERIAL_HEIGHT,
+                    ShaderAbi.ATMOSPHERE_AERIAL_DEPTH,
+                    "Prime atmosphere aerial transmittance");
+            for (int cascade = 0;
+                    cascade < SUN_SHADOW_HIERARCHY_COUNT;
+                    cascade++) {
+                sunShadowHierarchies[cascade] = context.createImage2D(
+                        SUN_SHADOW_HIERARCHY_WIDTH,
+                        SUN_SHADOW_HIERARCHY_HEIGHT,
+                        VK12.VK_FORMAT_R32G32_SFLOAT,
+                        VK12.VK_IMAGE_USAGE_STORAGE_BIT,
+                        "Prime sun shadow hierarchy cascade " + cascade);
+            }
+            newSunShadow = new SunShadowClipmap(context);
             newPhaseLut = createPhaseLut(context);
             try (MemoryStack stack = MemoryStack.stackPush()) {
                 newDescriptorSetLayout = createDescriptorSetLayout(context, stack);
@@ -135,9 +174,27 @@ public final class AtmospherePipeline implements Destroyable {
                         stack,
                         newPipelineLayout,
                         "/prime/shaders/atmosphere_aerial.comp.spv",
-                        "Prime atmosphere aerial perspective pipeline");
+                        "Prime atmosphere epipolar aerial-radiance pipeline");
+                newAerialTransmittancePipeline = createComputePipeline(
+                        context,
+                        stack,
+                        newPipelineLayout,
+                        "/prime/shaders/atmosphere_aerial_transmittance.comp.spv",
+                        "Prime atmosphere aerial-transmittance pipeline");
+                newSunShadowHierarchyPipeline = createComputePipeline(
+                        context,
+                        stack,
+                        newPipelineLayout,
+                        "/prime/shaders/sun_shadow_hierarchy.comp.spv",
+                        "Prime sun shadow hierarchy pipeline");
                 DescriptorAllocation allocation = createDescriptors(
-                        context, stack, newDescriptorSetLayout, images, newPhaseLut);
+                        context,
+                        stack,
+                        newDescriptorSetLayout,
+                        images,
+                        sunShadowHierarchies,
+                        newSunShadow,
+                        newPhaseLut);
                 newDescriptorPool = allocation.pool();
                 newDescriptorSet = allocation.set();
             }
@@ -148,6 +205,8 @@ public final class AtmospherePipeline implements Destroyable {
             this.skyView = images[4];
             this.aerialRadiance = images[5];
             this.aerialTransmittance = images[6];
+            this.sunShadow = newSunShadow;
+            this.sunShadowHierarchies = sunShadowHierarchies;
             this.phaseLut = newPhaseLut;
             this.descriptorSetLayout = newDescriptorSetLayout;
             this.descriptorPool = newDescriptorPool;
@@ -157,7 +216,18 @@ public final class AtmospherePipeline implements Destroyable {
             this.multiScatteringPipeline = newMultiScatteringPipeline;
             this.skyPipeline = newSkyPipeline;
             this.aerialPipeline = newAerialPipeline;
-            this.images = images;
+            this.aerialTransmittancePipeline =
+                    newAerialTransmittancePipeline;
+            this.sunShadowHierarchyPipeline = newSunShadowHierarchyPipeline;
+            this.initialImages = new VulkanImage[
+                    IMAGE_COUNT + SUN_SHADOW_HIERARCHY_COUNT];
+            System.arraycopy(images, 0, this.initialImages, 0, IMAGE_COUNT);
+            System.arraycopy(
+                    sunShadowHierarchies,
+                    0,
+                    this.initialImages,
+                    IMAGE_COUNT,
+                    SUN_SHADOW_HIERARCHY_COUNT);
             this.transmittanceImages = new VulkanImage[] {
                 this.transmittanceLow, this.transmittanceHigh
             };
@@ -175,6 +245,8 @@ public final class AtmospherePipeline implements Destroyable {
             if (newDescriptorPool != 0L) {
                 VK12.vkDestroyDescriptorPool(context.vkDevice(), newDescriptorPool, null);
             }
+            destroyPipeline(context, newSunShadowHierarchyPipeline);
+            destroyPipeline(context, newAerialTransmittancePipeline);
             destroyPipeline(context, newAerialPipeline);
             destroyPipeline(context, newSkyPipeline);
             destroyPipeline(context, newMultiScatteringPipeline);
@@ -188,9 +260,17 @@ public final class AtmospherePipeline implements Destroyable {
             if (newPhaseLut != null) {
                 newPhaseLut.destroy();
             }
+            if (newSunShadow != null) {
+                newSunShadow.destroy();
+            }
             for (VulkanImage image : images) {
                 if (image != null) {
                     image.destroy();
+                }
+            }
+            for (VulkanImage hierarchy : sunShadowHierarchies) {
+                if (hierarchy != null) {
+                    hierarchy.destroy();
                 }
             }
             throw exception;
@@ -217,15 +297,38 @@ public final class AtmospherePipeline implements Destroyable {
         return this.aerialTransmittance;
     }
 
+    /**
+     * Projects the direction that owns the published aerial shadow cache.
+     *
+     * <p>The cache direction can intentionally lag the visible sun while its next RT bank is
+     * assembled. Epipolar slices must follow that cached direction: otherwise their projections
+     * are not lines in the cache plane and the conservative profile fallback produces dark rays.
+     */
+    public AerialEpipolarMapping.Epipole aerialEpipole(
+            FrameCamera camera,
+            SunDirection fallback) {
+        return AerialEpipolarMapping.project(
+                camera,
+                this.sunShadow.activeDirection(fallback));
+    }
+
+    VulkanImage sunShadowDepth(int bank, int cascade) {
+        return this.sunShadow.depth(bank, cascade);
+    }
+
     public static float eyeRadiusKm(double worldY) {
         float radius = BOTTOM_RADIUS_KM + worldAltitudeKm(worldY);
-        return Math.max(BOTTOM_RADIUS_KM + 0.001F, Math.min(TOP_RADIUS_KM - 0.001F, radius));
+        float shellMarginKm = WORLD_UNIT_SCALE_KM;
+        return Math.max(
+                BOTTOM_RADIUS_KM + shellMarginKm,
+                Math.min(TOP_RADIUS_KM - shellMarginKm, radius));
     }
 
     /**
-     * Maps Minecraft height into the atmosphere at one metre per block.
-     * Y=-128 is the virtual planet ground and every block represents one metre, so Y=320 is
-     * 0.448 km high.
+     * Maps Minecraft height into the physical atmosphere coordinate system.
+     *
+     * <p>Y=-128 remains the virtual planet surface. The generated scale controls how many
+     * atmosphere metres one Minecraft block represents; the atmosphere model itself is unchanged.
      */
     public static float worldAltitudeKm(double worldY) {
         return (float) ((worldY - WORLD_SEA_LEVEL_Y) * WORLD_UNIT_SCALE_KM);
@@ -233,20 +336,54 @@ public final class AtmospherePipeline implements Destroyable {
 
     public long prepare(
             VkCommandBuffer commandBuffer,
-            FrameCamera camera,
-            SunDirection sunDirection) {
-        float eyeRadiusKm = AtmospherePipeline.eyeRadiusKm(camera.y());
-        int eyeRadiusBits = Float.floatToIntBits(eyeRadiusKm);
-        int sunElevationBits = Float.floatToIntBits(sunDirection.y());
-        fillAerialKey(
-                this.history.beginCandidate(),
-                this.aerialMatrix,
-                camera,
-                eyeRadiusBits,
-                sunDirection);
-        int changes = this.history.prepareCandidate(
-                eyeRadiusBits, sunElevationBits);
+            RayTracingPipeline pipeline,
+            IntegratorFrameInput input,
+            TerrainScene.ResidentSceneView scene,
+            boolean forceCompleteSunShadow) {
+        FrameCamera camera = input.camera();
+        SunDirection sunDirection = input.sunDirection();
+        boolean shadowPrepared = false;
+        float eyeRadiusKm;
+        int eyeRadiusBits;
+        int sunElevationBits;
+        int changes;
+        try {
+            if (!this.history.staticPrepared()) {
+                // The shared RT pipeline descriptor set also names these images. They must be in
+                // their declared GENERAL layout before the sun-cache raygen dispatch is recorded,
+                // even though that raygen stage does not read their contents.
+                transitionAllToGeneral(commandBuffer);
+            }
+            shadowPrepared = this.sunShadow.prepare(
+                    commandBuffer,
+                    pipeline,
+                    input,
+                    scene,
+                    forceCompleteSunShadow);
+            eyeRadiusKm = AtmospherePipeline.eyeRadiusKm(camera.y());
+            eyeRadiusBits = Float.floatToIntBits(eyeRadiusKm);
+            sunElevationBits = Float.floatToIntBits(sunDirection.y());
+            fillAerialKey(
+                    this.history.beginCandidate(),
+                    this.aerialMatrix,
+                    camera,
+                    eyeRadiusBits,
+                    sunDirection,
+                    this.sunShadow.contentVersion());
+            changes = this.history.prepareCandidate(
+                    eyeRadiusBits, sunElevationBits);
+        } catch (RuntimeException exception) {
+            if (shadowPrepared) {
+                this.sunShadow.abandon();
+            }
+            throw exception;
+        }
         if (changes == 0) {
+            if (shadowPrepared) {
+                this.sunShadow.abandon();
+                throw new IllegalStateException(
+                        "Sun-shadow content changed without invalidating the aerial LUT");
+            }
             return 0L;
         }
         boolean prepareStatic = (changes & AtmosphereLutHistory.STATIC) != 0;
@@ -259,7 +396,6 @@ public final class AtmospherePipeline implements Destroyable {
         this.pendingChanges = changes;
         try {
             if (prepareStatic) {
-                transitionAllToGeneral(commandBuffer);
                 dispatch(commandBuffer, this.transmittancePipeline, 32, 8, 1, null);
                 computeWriteBarrier(commandBuffer, this.transmittanceImages, VK12.VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT
                         | KHRRayTracingPipeline.VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR);
@@ -285,12 +421,51 @@ public final class AtmospherePipeline implements Destroyable {
                         stack,
                         camera,
                         eyeRadiusKm,
-                        sunDirection);
+                        sunDirection,
+                        scene,
+                        this.sunShadow);
+                int epipoleXBits = pushConstants.getInt(72);
+                int epipoleYBits = pushConstants.getInt(76);
+                if (shadowPrepared) {
+                    if (!prepareStatic) {
+                        shaderReadToComputeWriteBarrier(
+                                commandBuffer, this.sunShadowHierarchies);
+                    }
+                    // Epipolar profiles consume only the resolved leaf layer. Building the
+                    // nine parent levels left over from per-ray traversal is pure overhead.
+                    pushConstants.putInt(72, 0);
+                    dispatch(
+                            commandBuffer,
+                            this.sunShadowHierarchyPipeline,
+                            SunShadowClipmap.RESOLUTION / 8,
+                            SunShadowClipmap.RESOLUTION / 8,
+                            SUN_SHADOW_HIERARCHY_COUNT,
+                            pushConstants);
+                    computeWriteBarrier(
+                            commandBuffer,
+                            this.sunShadowHierarchies,
+                            VK12.VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
+                    pushConstants.putInt(72, epipoleXBits);
+                    pushConstants.putInt(76, epipoleYBits);
+                }
                 if (prepareSky) {
                     dispatch(commandBuffer, this.skyPipeline, 32, 32, 1, pushConstants);
                 }
                 if (prepareAerial) {
-                    dispatch(commandBuffer, this.aerialPipeline, 8, 8, 8, pushConstants);
+                    dispatch(
+                            commandBuffer,
+                            this.aerialTransmittancePipeline,
+                            ShaderAbi.ATMOSPHERE_AERIAL_WIDTH,
+                            ShaderAbi.ATMOSPHERE_AERIAL_HEIGHT,
+                            1,
+                            pushConstants);
+                    dispatch(
+                            commandBuffer,
+                            this.aerialPipeline,
+                            1,
+                            ShaderAbi.ATMOSPHERE_AERIAL_EPIPOLAR_SLICES,
+                            1,
+                            pushConstants);
                 }
             }
             VulkanImage[] written = prepareSky && prepareAerial
@@ -311,6 +486,9 @@ public final class AtmospherePipeline implements Destroyable {
             this.pendingFrameToken = 0L;
             this.pendingChanges = 0;
             this.history.abandon();
+            if (shadowPrepared) {
+                this.sunShadow.abandon();
+            }
             throw exception;
         }
     }
@@ -322,11 +500,12 @@ public final class AtmospherePipeline implements Destroyable {
         }
         requirePendingToken(token);
         if ((this.pendingChanges & AtmosphereLutHistory.STATIC) != 0) {
-            for (VulkanImage image : this.images) {
+            for (VulkanImage image : this.initialImages) {
                 image.markInitialized();
             }
         }
         this.history.commit();
+        this.sunShadow.submitted();
         this.pendingFrameToken = 0L;
         this.pendingChanges = 0;
     }
@@ -338,6 +517,7 @@ public final class AtmospherePipeline implements Destroyable {
         }
         requirePendingToken(token);
         this.history.abandon();
+        this.sunShadow.abandon();
         this.pendingFrameToken = 0L;
         this.pendingChanges = 0;
     }
@@ -347,6 +527,10 @@ public final class AtmospherePipeline implements Destroyable {
         if (!this.destroyed) {
             this.destroyed = true;
             VK12.vkDestroyDescriptorPool(this.context.vkDevice(), this.descriptorPool, null);
+            VK12.vkDestroyPipeline(
+                    this.context.vkDevice(), this.sunShadowHierarchyPipeline, null);
+            VK12.vkDestroyPipeline(
+                    this.context.vkDevice(), this.aerialTransmittancePipeline, null);
             VK12.vkDestroyPipeline(this.context.vkDevice(), this.aerialPipeline, null);
             VK12.vkDestroyPipeline(this.context.vkDevice(), this.skyPipeline, null);
             VK12.vkDestroyPipeline(this.context.vkDevice(), this.multiScatteringPipeline, null);
@@ -355,6 +539,12 @@ public final class AtmospherePipeline implements Destroyable {
             VK12.vkDestroyDescriptorSetLayout(this.context.vkDevice(), this.descriptorSetLayout, null);
             this.aerialTransmittance.destroy();
             this.aerialRadiance.destroy();
+            this.sunShadow.destroy();
+            for (int index = this.sunShadowHierarchies.length - 1;
+                    index >= 0;
+                    index--) {
+                this.sunShadowHierarchies[index].destroy();
+            }
             this.skyView.destroy();
             this.multiScatteringHigh.destroy();
             this.multiScatteringLow.destroy();
@@ -393,7 +583,7 @@ public final class AtmospherePipeline implements Destroyable {
     }
 
     private void transitionAllToGeneral(VkCommandBuffer commandBuffer) {
-        VulkanImage[] images = this.images;
+        VulkanImage[] images = this.initialImages;
         try (MemoryStack stack = MemoryStack.stackPush()) {
             VkImageMemoryBarrier2.Buffer barriers = VkImageMemoryBarrier2.calloc(images.length, stack);
             for (int index = 0; index < images.length; index++) {
@@ -512,15 +702,30 @@ public final class AtmospherePipeline implements Destroyable {
             MemoryStack stack,
             FrameCamera camera,
             float eyeRadiusKm,
-            SunDirection sunDirection) {
+            SunDirection sunDirection,
+            TerrainScene.ResidentSceneView scene,
+            SunShadowClipmap sunShadow) {
         ByteBuffer buffer = stack.calloc(PUSH_CONSTANT_SIZE).order(ByteOrder.nativeOrder());
         camera.inverseViewProjection().get(0, buffer);
         buffer.putFloat(64, eyeRadiusKm);
         buffer.putFloat(68, AERIAL_MAX_DISTANCE_KM);
+        SunDirection shadowDirection = sunShadow.activeDirection(sunDirection);
+        AerialEpipolarMapping.Epipole epipole =
+                AerialEpipolarMapping.project(camera, shadowDirection);
+        buffer.putFloat(72, epipole.x());
+        buffer.putFloat(76, epipole.y());
         buffer.putFloat(80, sunDirection.x());
         buffer.putFloat(84, sunDirection.y());
         buffer.putFloat(88, sunDirection.z());
         buffer.putFloat(92, ShaderAbi.ATMOSPHERE_SPACE_SUN_INTENSITY);
+        buffer.putFloat(96, shadowDirection.x());
+        buffer.putFloat(100, shadowDirection.y());
+        buffer.putFloat(104, shadowDirection.z());
+        buffer.putFloat(108, sunShadow.activeBank());
+        buffer.putFloat(112, (float) (camera.renderX() - scene.originX()));
+        buffer.putFloat(116, (float) (camera.renderY() - scene.originY()));
+        buffer.putFloat(120, (float) (camera.renderZ() - scene.originZ()));
+        buffer.putFloat(124, sunShadow.activeValid() ? 1.0F : 0.0F);
         return buffer.position(0).limit(PUSH_CONSTANT_SIZE);
     }
 
@@ -529,7 +734,8 @@ public final class AtmospherePipeline implements Destroyable {
             float[] matrix,
             FrameCamera camera,
             int eyeRadiusBits,
-            SunDirection sunDirection) {
+            SunDirection sunDirection,
+            int sunShadowVersion) {
         camera.inverseViewProjection().get(matrix);
         for (int index = 0; index < matrix.length; index++) {
             key[index] = Float.floatToIntBits(matrix[index]);
@@ -538,6 +744,7 @@ public final class AtmospherePipeline implements Destroyable {
         key[17] = Float.floatToIntBits(sunDirection.x());
         key[18] = Float.floatToIntBits(sunDirection.y());
         key[19] = Float.floatToIntBits(sunDirection.z());
+        key[20] = sunShadowVersion;
     }
 
     private static long createDescriptorSetLayout(VulkanContext context, MemoryStack stack) {
@@ -554,6 +761,24 @@ public final class AtmospherePipeline implements Destroyable {
                 .descriptorType(VK12.VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
                 .descriptorCount(1)
                 .stageFlags(COMPUTE_STAGE);
+        for (int index = 0;
+                index < SunShadowClipmap.BANK_COUNT * SunShadowClipmap.CASCADE_COUNT;
+                index++) {
+            bindings.get(SUN_SHADOW_BINDING + index)
+                    .binding(SUN_SHADOW_BINDING + index)
+                    .descriptorType(VK12.VK_DESCRIPTOR_TYPE_STORAGE_IMAGE)
+                    .descriptorCount(1)
+                    .stageFlags(COMPUTE_STAGE);
+        }
+        for (int cascade = 0;
+                cascade < SUN_SHADOW_HIERARCHY_COUNT;
+                cascade++) {
+            bindings.get(SUN_SHADOW_HIERARCHY_BINDING + cascade)
+                    .binding(SUN_SHADOW_HIERARCHY_BINDING + cascade)
+                    .descriptorType(VK12.VK_DESCRIPTOR_TYPE_STORAGE_IMAGE)
+                    .descriptorCount(1)
+                    .stageFlags(COMPUTE_STAGE);
+        }
         VkDescriptorSetLayoutCreateInfo createInfo = VkDescriptorSetLayoutCreateInfo.calloc(stack)
                 .sType$Default()
                 .pBindings(bindings);
@@ -620,11 +845,17 @@ public final class AtmospherePipeline implements Destroyable {
             MemoryStack stack,
             long descriptorSetLayout,
             VulkanImage[] images,
+            VulkanImage[] sunShadowHierarchies,
+            SunShadowClipmap sunShadow,
             VulkanBuffer phaseLut) {
         VkDescriptorPoolSize.Buffer sizes = VkDescriptorPoolSize.calloc(2, stack);
         sizes.get(0)
                 .type(VK12.VK_DESCRIPTOR_TYPE_STORAGE_IMAGE)
-                .descriptorCount(IMAGE_COUNT);
+                .descriptorCount(
+                        IMAGE_COUNT
+                                + SunShadowClipmap.BANK_COUNT
+                                        * SunShadowClipmap.CASCADE_COUNT
+                                + SUN_SHADOW_HIERARCHY_COUNT);
         sizes.get(1)
                 .type(VK12.VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
                 .descriptorCount(1);
@@ -647,7 +878,14 @@ public final class AtmospherePipeline implements Destroyable {
                     VK12.vkAllocateDescriptorSets(context.vkDevice(), allocateInfo, setPointer),
                     "allocate Prime atmosphere descriptor set");
             long descriptorSet = setPointer.get(0);
-            VkDescriptorImageInfo.Buffer imageInfos = VkDescriptorImageInfo.calloc(IMAGE_COUNT, stack);
+            int shadowImageCount =
+                    SunShadowClipmap.BANK_COUNT * SunShadowClipmap.CASCADE_COUNT;
+            VkDescriptorImageInfo.Buffer imageInfos =
+                    VkDescriptorImageInfo.calloc(
+                            IMAGE_COUNT
+                                    + shadowImageCount
+                                    + SUN_SHADOW_HIERARCHY_COUNT,
+                            stack);
             VkWriteDescriptorSet.Buffer writes = VkWriteDescriptorSet.calloc(BINDING_COUNT, stack);
             for (int index = 0; index < IMAGE_COUNT; index++) {
                 imageInfos.get(index)
@@ -672,6 +910,41 @@ public final class AtmospherePipeline implements Destroyable {
                     .descriptorCount(1)
                     .descriptorType(VK12.VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
                     .pBufferInfo(bufferInfo);
+            for (int bank = 0; bank < SunShadowClipmap.BANK_COUNT; bank++) {
+                for (int cascade = 0;
+                        cascade < SunShadowClipmap.CASCADE_COUNT;
+                        cascade++) {
+                    int index = bank * SunShadowClipmap.CASCADE_COUNT + cascade;
+                    int descriptorIndex = IMAGE_COUNT + index;
+                    imageInfos.get(descriptorIndex)
+                            .imageView(sunShadow.depth(bank, cascade).view())
+                            .imageLayout(VK12.VK_IMAGE_LAYOUT_GENERAL);
+                    writes.get(SUN_SHADOW_BINDING + index)
+                            .sType$Default()
+                            .dstSet(descriptorSet)
+                            .dstBinding(SUN_SHADOW_BINDING + index)
+                            .descriptorCount(1)
+                            .descriptorType(VK12.VK_DESCRIPTOR_TYPE_STORAGE_IMAGE)
+                            .pImageInfo(VkDescriptorImageInfo.create(
+                                    imageInfos.get(descriptorIndex).address(), 1));
+                }
+            }
+            for (int cascade = 0;
+                    cascade < SUN_SHADOW_HIERARCHY_COUNT;
+                    cascade++) {
+                int descriptorIndex = IMAGE_COUNT + shadowImageCount + cascade;
+                imageInfos.get(descriptorIndex)
+                        .imageView(sunShadowHierarchies[cascade].view())
+                        .imageLayout(VK12.VK_IMAGE_LAYOUT_GENERAL);
+                writes.get(SUN_SHADOW_HIERARCHY_BINDING + cascade)
+                        .sType$Default()
+                        .dstSet(descriptorSet)
+                        .dstBinding(SUN_SHADOW_HIERARCHY_BINDING + cascade)
+                        .descriptorCount(1)
+                        .descriptorType(VK12.VK_DESCRIPTOR_TYPE_STORAGE_IMAGE)
+                        .pImageInfo(VkDescriptorImageInfo.create(
+                                imageInfos.get(descriptorIndex).address(), 1));
+            }
             VK12.vkUpdateDescriptorSets(context.vkDevice(), writes, null);
             return new DescriptorAllocation(pool, descriptorSet);
         } catch (RuntimeException exception) {

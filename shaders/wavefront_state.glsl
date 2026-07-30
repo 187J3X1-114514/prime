@@ -349,7 +349,7 @@ PathState primeWavefrontPath(
     path.rrDepth = (pathControl >> PRIME_WAVEFRONT_RR_DEPTH_SHIFT)
             & PRIME_WAVEFRONT_BYTE_MASK;
     path.pixel = pixel;
-    path.sampleIndex = primePush.path.x;
+    path.sampleIndex = primeSampleIndex();
     path.sampleEpoch = primeSampleEpoch();
     return path;
 }

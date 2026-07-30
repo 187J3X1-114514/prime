@@ -1,0 +1,76 @@
+package dev.prime.render.shader;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+
+import java.io.IOException;
+import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
+import java.nio.file.Path;
+import org.junit.jupiter.api.Assumptions;
+import org.junit.jupiter.api.Tag;
+import org.junit.jupiter.api.Test;
+
+@Tag("gpu-shader")
+final class SunShadowHierarchyGpuTest {
+    private static final int CASE_FLOATS = 6;
+
+    @Test
+    void leafIntegrationResolvesBlockerCrossingsAnalytically() throws IOException {
+        ShaderComputeRunner opened;
+        try {
+            opened = ShaderComputeRunner.open();
+        } catch (ShaderComputeRunner.UnavailableException | LinkageError exception) {
+            if (Boolean.getBoolean("prime.shaderTests.required")) {
+                throw new AssertionError(
+                        "A Vulkan compute device is required for shader tests", exception);
+            }
+            Assumptions.assumeTrue(
+                    false, "Vulkan shader tests unavailable: " + exception.getMessage());
+            return;
+        }
+
+        float[][] cases = {
+            {10.0F, 0.0F, 0.0F, 4.0F, 5.0F, 0.02F},
+            {0.0F, 0.0F, 0.0F, 4.0F, 5.0F, 0.02F},
+            {0.0F, 2.0F, 0.0F, 4.0F, 4.0F, 0.0F},
+            {8.0F, -2.0F, 0.0F, 4.0F, 4.0F, 0.0F},
+            {0.0F, 1.0F, 2.0F, 6.0F, 4.0F, 0.0F},
+            {0.0F, 0.0F, 1.0F, 3.0F, -1.0e20F, 0.02F},
+            {0.0F, 0.0F, 1.0F, 3.0F, 1.0e20F, 0.02F},
+            {4.99F, 0.0F, 2.0F, 5.0F, 5.0F, 0.02F}
+        };
+        float[] expected = {4.0F, 0.0F, 2.0F, 2.0F, 2.0F, 2.0F, 0.0F, 3.0F};
+        ByteBuffer input = ByteBuffer.allocateDirect(
+                        cases.length * CASE_FLOATS * Float.BYTES)
+                .order(ByteOrder.LITTLE_ENDIAN);
+        for (float[] value : cases) {
+            for (float component : value) {
+                input.putFloat(component);
+            }
+        }
+        input.flip();
+        ByteBuffer push = ByteBuffer.allocateDirect(Integer.BYTES)
+                .order(ByteOrder.LITTLE_ENDIAN)
+                .putInt(cases.length)
+                .flip();
+        Path shader = Path.of(
+                System.getProperty("prime.test.shaderDirectory"),
+                "sun_shadow_hierarchy_properties.comp.spv");
+
+        try (ShaderComputeRunner runner = opened) {
+            ByteBuffer output = runner.dispatch(
+                    shader,
+                    input,
+                    cases.length * Float.BYTES,
+                    new ShaderComputeRunner.Workgroups(1, 1, 1),
+                    push);
+            for (int index = 0; index < cases.length; index++) {
+                assertEquals(
+                        expected[index],
+                        output.getFloat(index * Float.BYTES),
+                        1.0e-5F,
+                        "case " + index);
+            }
+        }
+    }
+}

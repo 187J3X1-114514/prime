@@ -84,6 +84,12 @@ public final class VulkanDeviceNegotiator {
             VulkanBackend.VK12_FEATURES_STRUCT,
             "bufferDeviceAddress",
             VkPhysicalDeviceVulkan12Features.BUFFERDEVICEADDRESS);
+    private static final VulkanFeature SAMPLED_IMAGE_ARRAY_NON_UNIFORM_INDEXING =
+            new VulkanFeature(
+                    VulkanBackend.VK12_FEATURES_STRUCT,
+                    "shaderSampledImageArrayNonUniformIndexing",
+                    VkPhysicalDeviceVulkan12Features
+                            .SHADERSAMPLEDIMAGEARRAYNONUNIFORMINDEXING);
     private static final VulkanFeature STORAGE_BUFFER_16_BIT_ACCESS = new VulkanFeature(
             VulkanBackend.VK11_FEATURES_STRUCT,
             "storageBuffer16BitAccess",
@@ -181,6 +187,9 @@ public final class VulkanDeviceNegotiator {
             if (!vulkan12.bufferDeviceAddress()) {
                 missing.add("bufferDeviceAddress");
             }
+            if (!vulkan12.shaderSampledImageArrayNonUniformIndexing()) {
+                missing.add("shaderSampledImageArrayNonUniformIndexing");
+            }
             if (!acceleration.accelerationStructure()) {
                 missing.add("accelerationStructure");
             }
@@ -222,6 +231,14 @@ public final class VulkanDeviceNegotiator {
             accelerationProperties.pNext(optionalPropertyChain);
             VK12.vkGetPhysicalDeviceProperties2(physicalDevice.vkPhysicalDevice(), properties);
 
+            if (properties.properties().limits().maxPerStageDescriptorSamplers()
+                            < dev.prime.render.shader.ShaderAbi.SCENE_TEXTURE_COUNT + 3
+                    || properties.properties().limits().maxDescriptorSetSamplers()
+                            < dev.prime.render.shader.ShaderAbi.SCENE_TEXTURE_COUNT + 4) {
+                return VulkanCapabilities.unavailable(
+                        deviceName,
+                        "Insufficient sampled-image descriptors for dynamic scene textures");
+            }
             if (rayProperties.maxRayRecursionDepth() < 1) {
                 return VulkanCapabilities.unavailable(deviceName, "Ray tracing recursion depth 1 is not supported");
             }
@@ -298,6 +315,7 @@ public final class VulkanDeviceNegotiator {
             enabledFeatures.add(STORAGE_IMAGE_READ_WITHOUT_FORMAT);
             enabledFeatures.add(STORAGE_IMAGE_WRITE_WITHOUT_FORMAT);
             enabledFeatures.add(BUFFER_DEVICE_ADDRESS);
+            enabledFeatures.add(SAMPLED_IMAGE_ARRAY_NON_UNIFORM_INDEXING);
             enabledFeatures.add(ACCELERATION_STRUCTURE);
             enabledFeatures.add(RAY_TRACING_PIPELINE);
             enabledFeatures.add(RAY_TRACING_PIPELINE_INDIRECT);

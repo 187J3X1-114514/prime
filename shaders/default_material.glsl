@@ -16,6 +16,8 @@ const uint PRIME_MATERIAL_FLAG_TANGENT_NEGATIVE = 256u;
 // Per-texel flag produced by the LabPBR decoder. Unlike the atlas-presence bits above this is
 // never stored in terrain geometry; it follows the sampled green channel into NRD and FSR guides.
 const uint PRIME_MATERIAL_FLAG_LABPBR_METAL = 512u;
+// Full-bright dynamic surfaces contribute only when actually hit; neither light tree samples them.
+const uint PRIME_MATERIAL_FLAG_VISIBLE_EMISSION = 1024u;
 
 const float PRIME_DEFAULT_DIELECTRIC_F0 = 0.04;
 // Standalone preparation shaders do not share the ray-tracing push constants. They use this

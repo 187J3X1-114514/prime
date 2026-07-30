@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
+import dev.prime.render.AstronomySettings;
 import dev.prime.render.post.DlssRrDebugView;
 import dev.prime.render.post.PostProcessingMode;
 import dev.prime.render.post.ReconstructionQualityMode;
@@ -12,6 +13,58 @@ import java.util.Properties;
 import org.junit.jupiter.api.Test;
 
 final class PrimeConfigTest {
+    @Test
+    void persistedAstronomyAcceptsOnlyIntegerDegreesInRange() {
+        assertEquals(-90, PrimeConfig.parseLatitudeDegrees("-90"));
+        assertEquals(30, PrimeConfig.parseLatitudeDegrees("30"));
+        assertEquals(90, PrimeConfig.parseLatitudeDegrees("90"));
+        assertEquals(0, PrimeConfig.parseSolarLongitudeDegrees("0"));
+        assertEquals(359, PrimeConfig.parseSolarLongitudeDegrees("359"));
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> PrimeConfig.parseLatitudeDegrees("-91"));
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> PrimeConfig.parseLatitudeDegrees("30.5"));
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> PrimeConfig.parseSolarLongitudeDegrees("-1"));
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> PrimeConfig.parseSolarLongitudeDegrees("360"));
+    }
+
+    @Test
+    void missingOrInvalidAstronomyMigratesToPersistedDefaults() {
+        PrimeConfig.AstronomyLoad missing =
+                PrimeConfig.parseAstronomy(new Properties());
+        assertEquals(AstronomySettings.defaults(), missing.settings());
+        assertTrue(missing.rewriteNeeded());
+
+        Properties valid = new Properties();
+        valid.setProperty("astronomy.latitude_degrees", "-45");
+        valid.setProperty("astronomy.solar_longitude_degrees", "271");
+        PrimeConfig.AstronomyLoad accepted =
+                PrimeConfig.parseAstronomy(valid);
+        assertEquals(
+                new AstronomySettings(-45, 271),
+                accepted.settings());
+        assertFalse(accepted.rewriteNeeded());
+
+        valid.setProperty("astronomy.latitude_degrees", "91");
+        valid.setProperty("astronomy.solar_longitude_degrees", "-1");
+        PrimeConfig.AstronomyLoad invalid =
+                PrimeConfig.parseAstronomy(valid);
+        assertEquals(AstronomySettings.defaults(), invalid.settings());
+        assertTrue(invalid.rewriteNeeded());
+        assertTrue(
+                PrimeConfig.serializedContents()
+                        .contains("astronomy.latitude_degrees=30\n"));
+        assertTrue(
+                PrimeConfig.serializedContents()
+                        .contains("astronomy.solar_longitude_degrees=0\n"));
+    }
+
     @Test
     void persistedEvAcceptsOnlyExactQuarterStopsInRange() {
         assertEquals(5, PrimeConfig.parseEvQuarterSteps("1.25"));
@@ -96,6 +149,8 @@ final class PrimeConfigTest {
         assertTrue(serialized.contains("renderer.path_tracing=true\n"));
         assertFalse(serialized.contains("debug_view"));
         assertFalse(serialized.contains("debug_fullscreen"));
+        assertTrue(serialized.contains("astronomy.latitude_degrees=30\n"));
+        assertTrue(serialized.contains("astronomy.solar_longitude_degrees=0\n"));
         assertTrue(serialized.contains("lighting.star_ev=0\n"));
         assertTrue(serialized.contains("display.final_exposure_ev=0\n"));
 

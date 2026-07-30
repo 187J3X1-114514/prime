@@ -1,0 +1,119 @@
+#version 460
+#extension GL_GOOGLE_include_directive : require
+
+#include "atmosphere_epipolar.glsl"
+
+layout(local_size_x = 128, local_size_y = 1, local_size_z = 1) in;
+
+struct PrimeAlignmentCase {
+    mat4 inverseViewProjection;
+    vec4 epipolarDirection;
+    vec4 shadowDirection;
+};
+
+layout(set = 0, binding = 0, std430) readonly buffer PrimeAlignmentInput {
+    PrimeAlignmentCase values[];
+} primeAlignmentInput;
+
+layout(set = 0, binding = 1, std430) buffer PrimeAlignmentOutput {
+    uint invalidCounts[];
+} primeAlignmentOutput;
+
+layout(push_constant) uniform PrimeAlignmentPush {
+    uint count;
+} primeAlignmentPush;
+
+shared vec3 primeAlignmentBasisU;
+shared vec3 primeAlignmentBasisV;
+shared vec2 primeAlignmentProfileDirection;
+
+void primeAlignmentSunBasis(
+        vec3 directionToSun,
+        out vec3 basisU,
+        out vec3 basisV) {
+    if (directionToSun.y < -0.9999999) {
+        basisU = vec3(1.0, 0.0, 0.0);
+    } else {
+        float reciprocal = 1.0 / (1.0 + directionToSun.y);
+        basisU = normalize(vec3(
+                1.0
+                        - directionToSun.x
+                                * directionToSun.x
+                                * reciprocal,
+                -directionToSun.x,
+                -directionToSun.x
+                        * directionToSun.z
+                        * reciprocal));
+    }
+    basisV = cross(directionToSun, basisU);
+}
+
+vec3 primeAlignmentRayDirection(
+        mat4 inverseViewProjection,
+        vec2 epipoleNdc,
+        int radial,
+        int slice) {
+    vec2 ndc = atmEpipolarSliceNdc(
+            epipoleNdc,
+            ivec2(radial, slice),
+            ivec2(128, 256));
+    vec4 nearPoint =
+            inverseViewProjection * vec4(ndc, 1.0, 1.0);
+    vec4 farPoint =
+            inverseViewProjection * vec4(ndc, 0.0, 1.0);
+    return normalize(
+            farPoint.xyz / farPoint.w
+                    - nearPoint.xyz / nearPoint.w);
+}
+
+void main() {
+    uint caseIndex = gl_WorkGroupID.z;
+    if (caseIndex >= primeAlignmentPush.count) {
+        return;
+    }
+    PrimeAlignmentCase value = primeAlignmentInput.values[caseIndex];
+    vec3 shadowDirection = normalize(value.shadowDirection.xyz);
+    vec2 epipoleNdc = atmEpipolarProjectDirection(
+            value.inverseViewProjection,
+            normalize(value.epipolarDirection.xyz));
+    int radial = int(gl_LocalInvocationID.x);
+    int slice = int(gl_WorkGroupID.y);
+
+    if (radial == 0) {
+        primeAlignmentSunBasis(
+                shadowDirection,
+                primeAlignmentBasisU,
+                primeAlignmentBasisV);
+        vec3 edgeDirection = primeAlignmentRayDirection(
+                value.inverseViewProjection,
+                epipoleNdc,
+                127,
+                slice);
+        vec2 projectedEdge = vec2(
+                dot(edgeDirection, primeAlignmentBasisU),
+                dot(edgeDirection, primeAlignmentBasisV));
+        primeAlignmentProfileDirection =
+                normalize(projectedEdge);
+    }
+    barrier();
+
+    vec3 rayDirection = primeAlignmentRayDirection(
+            value.inverseViewProjection,
+            epipoleNdc,
+            radial,
+            slice);
+    vec2 projectedRay = vec2(
+            dot(rayDirection, primeAlignmentBasisU),
+            dot(rayDirection, primeAlignmentBasisV));
+    float scalarRate =
+            dot(projectedRay, primeAlignmentProfileDirection);
+    float perpendicularRate = abs(
+            projectedRay.x * primeAlignmentProfileDirection.y
+                    - projectedRay.y * primeAlignmentProfileDirection.x);
+    if (scalarRate < -1.0e-4
+            || perpendicularRate > 2.0e-4) {
+        atomicAdd(
+                primeAlignmentOutput.invalidCounts[caseIndex],
+                1u);
+    }
+}

@@ -351,7 +351,8 @@ final class EmissionLightContractTest {
                         bounds.maxX(),
                         bounds.maxY(),
                         bounds.maxZ(),
-                        power));
+                        power),
+                false);
     }
 
     private static WorldLightTreeInput worldLightInput(
@@ -371,7 +372,8 @@ final class EmissionLightContractTest {
                 0,
                 null,
                 null,
-                CompiledClusterLights.EMPTY.summary());
+                CompiledClusterLights.EMPTY.summary(),
+                false);
     }
 
     private static CpuLightTree.Leaf leaf(float x, float power, int index) {

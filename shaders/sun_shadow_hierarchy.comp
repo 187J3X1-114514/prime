@@ -1,0 +1,89 @@
+#version 460
+#extension GL_GOOGLE_include_directive : require
+
+#include "sun_shadow_hierarchy.glsl"
+
+layout(set = 0, binding = 8, r32f) uniform readonly image2D sunShadowDepth0;
+layout(set = 0, binding = 9, r32f) uniform readonly image2D sunShadowDepth1;
+layout(set = 0, binding = 10, r32f) uniform readonly image2D sunShadowDepth2;
+layout(set = 0, binding = 11, r32f) uniform readonly image2D sunShadowDepth3;
+layout(set = 0, binding = 12, r32f) uniform readonly image2D sunShadowDepth4;
+layout(set = 0, binding = 13, r32f) uniform readonly image2D sunShadowDepth5;
+layout(set = 0, binding = 14, r32f) uniform readonly image2D sunShadowDepth6;
+layout(set = 0, binding = 15, r32f) uniform readonly image2D sunShadowDepth7;
+layout(set = 0, binding = 16, r32f) uniform readonly image2D sunShadowDepth8;
+layout(set = 0, binding = 17, r32f) uniform readonly image2D sunShadowDepth9;
+layout(set = 0, binding = 18, rg32f) uniform image2D sunShadowHierarchy0;
+layout(set = 0, binding = 19, rg32f) uniform image2D sunShadowHierarchy1;
+layout(set = 0, binding = 20, rg32f) uniform image2D sunShadowHierarchy2;
+layout(set = 0, binding = 21, rg32f) uniform image2D sunShadowHierarchy3;
+layout(set = 0, binding = 22, rg32f) uniform image2D sunShadowHierarchy4;
+
+layout(push_constant) uniform AtmospherePushConstants {
+    mat4 inverseViewProjection;
+    float eyeRadiusKm;
+    float maximumAerialDistanceKm;
+    int hierarchyLevel;
+    float padding;
+    vec4 sunDirectionIntensity;
+    vec4 shadowDirectionBank;
+    vec4 shadowCameraEnabled;
+} atmospherePush;
+
+layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
+
+float sunShadowDepth(int imageIndex, ivec2 coordinate) {
+    if (imageIndex == 0) return imageLoad(sunShadowDepth0, coordinate).r;
+    if (imageIndex == 1) return imageLoad(sunShadowDepth1, coordinate).r;
+    if (imageIndex == 2) return imageLoad(sunShadowDepth2, coordinate).r;
+    if (imageIndex == 3) return imageLoad(sunShadowDepth3, coordinate).r;
+    if (imageIndex == 4) return imageLoad(sunShadowDepth4, coordinate).r;
+    if (imageIndex == 5) return imageLoad(sunShadowDepth5, coordinate).r;
+    if (imageIndex == 6) return imageLoad(sunShadowDepth6, coordinate).r;
+    if (imageIndex == 7) return imageLoad(sunShadowDepth7, coordinate).r;
+    if (imageIndex == 8) return imageLoad(sunShadowDepth8, coordinate).r;
+    return imageLoad(sunShadowDepth9, coordinate).r;
+}
+
+void hierarchyStore(int cascade, ivec2 coordinate, vec2 value) {
+    if (cascade == 0) {
+        imageStore(sunShadowHierarchy0, coordinate, vec4(value, 0.0, 0.0));
+    } else if (cascade == 1) {
+        imageStore(sunShadowHierarchy1, coordinate, vec4(value, 0.0, 0.0));
+    } else if (cascade == 2) {
+        imageStore(sunShadowHierarchy2, coordinate, vec4(value, 0.0, 0.0));
+    } else if (cascade == 3) {
+        imageStore(sunShadowHierarchy3, coordinate, vec4(value, 0.0, 0.0));
+    } else {
+        imageStore(sunShadowHierarchy4, coordinate, vec4(value, 0.0, 0.0));
+    }
+}
+
+void main() {
+    int level = atmospherePush.hierarchyLevel;
+    ivec2 coordinate = ivec2(gl_GlobalInvocationID.xy);
+    int cascade = int(gl_GlobalInvocationID.z);
+    if (level != 0
+            || cascade >= 5
+            || any(greaterThanEqual(
+                    coordinate,
+                    ivec2(PRIME_SUN_SHADOW_RESOLUTION)))) {
+        return;
+    }
+
+    int bank = int(atmospherePush.shadowDirectionBank.w + 0.5);
+    int imageIndex = bank * 5 + cascade;
+    float blockerDepth = -1.0e20;
+    // Resolve Prime's conservative neighbourhood once. Every later profile
+    // query is one image load instead of nine raw clipmap loads.
+    for (int y = -1; y <= 1; ++y) {
+        for (int x = -1; x <= 1; ++x) {
+            ivec2 source = (coordinate + ivec2(x, y))
+                    & (PRIME_SUN_SHADOW_RESOLUTION - 1);
+            blockerDepth = max(
+                    blockerDepth,
+                    sunShadowDepth(imageIndex, source));
+        }
+    }
+    hierarchyStore(cascade, coordinate, vec2(blockerDepth));
+}

@@ -14,6 +14,7 @@ final class AutoExposureMath {
     static final float MAX_EV = 4.0F;
     static final float DARKEN_T90_SECONDS = 0.5F;
     static final float BRIGHTEN_T90_SECONDS = 2.0F;
+    static final int TAIL_DENOMINATOR = 200;
     static final float REFERENCE_ALBEDO = 0.18F;
     static final float MIN_ALBEDO = 0.02F;
     static final float ALBEDO_BLEND = 1.0F;
@@ -136,8 +137,9 @@ final class AutoExposureMath {
                     : previous;
         }
 
-        long keepBegin = validCount / 100L;
-        long keepEnd = validCount - validCount / 100L;
+        long tailCount = validCount / TAIL_DENOMINATOR;
+        long keepBegin = tailCount;
+        long keepEnd = validCount - tailCount;
         long cursor = 0L;
         long retainedCount = 0L;
         double weightedLogLuminance = 0.0;

@@ -6,6 +6,7 @@ import dev.prime.render.RealtimeFramePlan;
 import dev.prime.render.ResourceCleanup;
 import dev.prime.render.post.RealtimePostProcessor;
 import dev.prime.render.terrain.TerrainScene;
+import java.util.List;
 import java.util.Objects;
 import org.lwjgl.system.MemoryStack;
 import org.lwjgl.vulkan.VK12;
@@ -40,6 +41,7 @@ public final class RealtimeFrameExecutor {
             VulkanImage output,
             VulkanImage stableRadiance,
             VulkanGpuTextureView atlasView,
+            List<RayTracingPipeline.SceneTexture> sceneTextures,
             long textureRevision,
             VulkanGpuTexture mainColor) {
         Objects.requireNonNull(processor, "processor");
@@ -59,6 +61,7 @@ public final class RealtimeFrameExecutor {
             Objects.requireNonNull(output, "output");
             Objects.requireNonNull(stableRadiance, "stableRadiance");
             Objects.requireNonNull(atlasView, "atlasView");
+            Objects.requireNonNull(sceneTextures, "sceneTextures");
             Objects.requireNonNull(mainColor, "mainColor");
             plan.requireSceneRevision(scene.revision());
             plan.requireTextureRevision(textureRevision);
@@ -73,10 +76,6 @@ public final class RealtimeFrameExecutor {
                     commandBuffer, this.imageInitialization);
             this.context.device().instance().debug().beginDebugGroup(
                     commandBuffer, () -> debugLabel);
-            atmosphereFrame = atmosphere.prepare(
-                    commandBuffer,
-                    plan.integrator().camera(),
-                    plan.integrator().sunDirection());
             VulkanImageTransitions.prepareOutputForComposite(
                     commandBuffer, this.imageInitialization, output);
             VulkanImageTransitions.prepareAccumulationForTrace(
@@ -85,7 +84,17 @@ public final class RealtimeFrameExecutor {
                     commandBuffer, this.imageInitialization);
             VulkanImageTransitions.prepareAtlasForTrace(
                     commandBuffer, atlasView.texture());
+            VulkanImageTransitions.prepareSceneTexturesForTrace(
+                    commandBuffer, sceneTextures);
             labPbrFrame = labPbrAtlas.prepare(commandBuffer);
+            // Atmosphere preparation traces the sun cache through the shared RT descriptor set.
+            // Every image named by that set must have its declared layout before this call.
+            atmosphereFrame = atmosphere.prepare(
+                    commandBuffer,
+                    pipeline,
+                    plan.integrator(),
+                    scene,
+                    false);
             try (MemoryStack stack = MemoryStack.stackPush()) {
                 pipeline.trace(commandBuffer, plan.integrator(), scene);
                 processor.record(
@@ -95,6 +104,8 @@ public final class RealtimeFrameExecutor {
                         this.imageInitialization);
                 VulkanImageTransitions.finishAtlasRead(
                         commandBuffer, atlasView.texture());
+                VulkanImageTransitions.finishSceneTextureReads(
+                        commandBuffer, sceneTextures);
                 VulkanImageTransitions.prepareImagesForCopy(
                         commandBuffer, output, mainColor);
                 VkImageCopy.Buffer copy = VkImageCopy.calloc(1, stack);

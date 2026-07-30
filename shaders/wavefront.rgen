@@ -256,8 +256,7 @@ void primeInitializeTransparentWavefront(
 void primeWavefrontHead() {
     uvec2 pixel = gl_LaunchIDEXT.xy;
     uint recordIndex = primeWavefrontIndex(pixel);
-    uint maximumBounces = min(
-            primePush.path.z & 0xffffu, PRIME_MAXIMUM_BOUNCES);
+    uint maximumBounces = primeMaximumBounces();
     primeSetNumericalContext(PRIME_NUMERICAL_STAGE_CAMERA, 0u);
 
     if (maximumBounces == 0u) {
@@ -373,8 +372,7 @@ void primeWavefrontStep(uint sourceQueue) {
             primePush.sunDirection,
             ATM_SPACE_SUN_INTENSITY * primeSunRadianceMultiplier());
     integrator.environmentRadiance = vec4(0.0);
-    uint maximumBounces = min(
-            primePush.path.z & 0xffffu, PRIME_MAXIMUM_BOUNCES);
+    uint maximumBounces = primeMaximumBounces();
     bool queueContinuation;
 
     if (primeWavefrontTransparentBranch(record)) {
@@ -483,8 +481,7 @@ void primeWavefrontTail(uint sourceQueue) {
             primePush.sunDirection,
             ATM_SPACE_SUN_INTENSITY * primeSunRadianceMultiplier());
     integrator.environmentRadiance = vec4(0.0);
-    uint maximumBounces = min(
-            primePush.path.z & 0xffffu, PRIME_MAXIMUM_BOUNCES);
+    uint maximumBounces = primeMaximumBounces();
 
     if (primeWavefrontTransparentBranch(record)) {
         uint control =

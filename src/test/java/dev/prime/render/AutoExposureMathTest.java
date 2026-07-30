@@ -115,7 +115,7 @@ final class AutoExposureMathTest {
                         1.0F, 1.0F, 1.0F, 0.5F),
                 1.0e-6F);
         assertEquals(
-                0.7612F,
+                1.3771F,
                 (float) (-Math.log(AutoExposureMath.albedoScale(
                         1.0F, 1.0F, 1.0F, 1.0F)) / Math.log(2.0)),
                 1.0e-4F);
@@ -165,7 +165,7 @@ final class AutoExposureMathTest {
     }
 
     @Test
-    void baselineAddsThreeQuarterEvAndExposureUsesBothBounds() {
+    void baselineAddsHalfEvAndExposureUsesBothBounds() {
         AutoExposureMath.State day = instantForGray(0.08F);
         AutoExposureMath.State dark = instantForGray(
                 Math.scalb(AutoExposureMath.KEY_LUMINANCE, -8));
@@ -174,7 +174,7 @@ final class AutoExposureMathTest {
         AutoExposureMath.State bright = instantForGray(
                 Math.scalb(AutoExposureMath.KEY_LUMINANCE, 8));
 
-        assertEquals(1.75F, day.targetEv(), BIN_HALF_WIDTH_EV);
+        assertEquals(1.5F, day.targetEv(), BIN_HALF_WIDTH_EV);
         assertEquals(4.0F, dark.targetEv());
         assertEquals(
                 AutoExposureMath.BASELINE_EV,

@@ -22,7 +22,7 @@ void main() {
     if (kind == 0u) {
         actual.x = primeAutoExposureTargetEv(values.x);
         expected.x = clamp(
-                log2(0.16) + 0.75 - values.x, -4.0, 4.0);
+                log2(0.16) + 0.5 - values.x, -4.0, 4.0);
         if (actual.x < -4.0 || actual.x > 4.0) {
             mask |= PRIME_TEST_FAILURE_RANGE;
         }
@@ -41,10 +41,10 @@ void main() {
                 vec3(values.x), values.y);
         float fullScale =
                 0.18 / max(clamp(values.x, 0.0, 1.0), 0.05);
-        float blendedScale = mix(1.0, fullScale, 0.5);
+        float blendedScale = mix(1.0, fullScale, 0.75);
         expected.x = mix(
                 1.0, blendedScale, clamp(values.y, 0.0, 1.0));
-        if (actual.x < 0.589999 || actual.x > 2.30001) {
+        if (actual.x < 0.384999 || actual.x > 2.95001) {
             mask |= PRIME_TEST_FAILURE_RANGE;
         }
         if (!primeTestClose(actual.x, expected.x, 2.0e-6, 2.0e-6)) {

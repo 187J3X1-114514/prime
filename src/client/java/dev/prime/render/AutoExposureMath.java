@@ -9,14 +9,14 @@ final class AutoExposureMath {
     static final float MIN_LOG_LUMINANCE = -16.0F;
     static final float MAX_LOG_LUMINANCE = 20.0F;
     static final float KEY_LUMINANCE = 0.16F;
-    static final float BASELINE_EV = 0.75F;
+    static final float BASELINE_EV = 0.5F;
     static final float MIN_EV = -4.0F;
     static final float MAX_EV = 4.0F;
     static final float DARKEN_T90_SECONDS = 0.5F;
     static final float BRIGHTEN_T90_SECONDS = 2.0F;
     static final float REFERENCE_ALBEDO = 0.18F;
     static final float MIN_ALBEDO = 0.05F;
-    static final float ALBEDO_BLEND = 0.5F;
+    static final float ALBEDO_BLEND = 0.75F;
     static final int MATERIAL_DIELECTRIC = 0;
     static final int MATERIAL_FOLIAGE = 3;
     private static final float LOG_LUMINANCE_RANGE =

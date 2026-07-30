@@ -13,7 +13,7 @@ public record IntegratorFrameInput(
         FrameCamera camera,
         int width,
         int height,
-        SunDirection sunDirection,
+        AstronomyState astronomy,
         int packedRayCone,
         int sampleIndex,
         int sampleEpoch,
@@ -27,7 +27,7 @@ public record IntegratorFrameInput(
         boolean triangleDebug) {
     public IntegratorFrameInput {
         Objects.requireNonNull(camera, "camera");
-        Objects.requireNonNull(sunDirection, "sunDirection");
+        Objects.requireNonNull(astronomy, "astronomy");
         Objects.requireNonNull(postProcessingMode, "postProcessingMode");
         Objects.requireNonNull(lighting, "lighting");
         Objects.requireNonNull(material, "material");
@@ -53,10 +53,12 @@ public record IntegratorFrameInput(
             throw new IllegalArgumentException(
                     "Integrator camera must be finite");
         }
+        IntegratorSettings.packSampleControl(sampleIndex, astronomy.settings());
         IntegratorSettings.packSampleEpoch(sampleEpoch, triangleDebug);
         IntegratorSettings.packPathControl(
                 IntegratorSettings.MAXIMUM_BOUNCES,
                 jitterPhase,
+                astronomy.settings(),
                 cameraInWater,
                 postProcessingMode);
         IntegratorSettings.packMaterialLightingControl(
@@ -66,5 +68,9 @@ public record IntegratorFrameInput(
                 material.roughnessSteps(),
                 shInput,
                 rawNumericalDiagnostic);
+    }
+
+    public SunDirection sunDirection() {
+        return this.astronomy.sunDirection();
     }
 }

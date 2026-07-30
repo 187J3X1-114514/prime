@@ -20,7 +20,7 @@ final class RealtimeSampleState {
     private final long textureRevision;
     private final long lightingRevision;
     private final long materialRevision;
-    private final SunDirection sunDirection;
+    private final AstronomyState astronomy;
     private final boolean cameraInWater;
     private final int sampleIndex;
     private final int epoch;
@@ -32,7 +32,7 @@ final class RealtimeSampleState {
             long textureRevision,
             long lightingRevision,
             long materialRevision,
-            SunDirection sunDirection,
+            AstronomyState astronomy,
             boolean cameraInWater,
             int sampleIndex,
             int epoch,
@@ -42,7 +42,7 @@ final class RealtimeSampleState {
         this.textureRevision = textureRevision;
         this.lightingRevision = lightingRevision;
         this.materialRevision = materialRevision;
-        this.sunDirection = sunDirection;
+        this.astronomy = astronomy;
         this.cameraInWater = cameraInWater;
         this.sampleIndex = sampleIndex;
         this.epoch = epoch;
@@ -76,7 +76,7 @@ final class RealtimeSampleState {
                 || input.materialRevision() != this.materialRevision
                 || (this.camera != null
                         && input.cameraInWater() != this.cameraInWater)
-                || sunDirectionDiscontinuous(input.sunDirection(), this.sunDirection);
+                || astronomyDiscontinuous(input.astronomy(), this.astronomy);
         int plannedSample = reset ? 0 : this.sampleIndex;
         int plannedEpoch = reset ? this.epoch + 1 : this.epoch;
         if (!reset && plannedSample >= SOBOL_SEQUENCE_LENGTH) {
@@ -89,7 +89,7 @@ final class RealtimeSampleState {
                 input.textureRevision(),
                 input.lightingRevision(),
                 input.materialRevision(),
-                input.sunDirection(),
+                input.astronomy(),
                 input.cameraInWater(),
                 plannedSample + 1,
                 plannedEpoch,
@@ -107,7 +107,7 @@ final class RealtimeSampleState {
                 this.textureRevision,
                 this.lightingRevision,
                 this.materialRevision,
-                this.sunDirection,
+                this.astronomy,
                 this.cameraInWater,
                 this.sampleIndex,
                 this.epoch,
@@ -122,15 +122,20 @@ final class RealtimeSampleState {
         return this.epoch;
     }
 
-    private static boolean sunDirectionDiscontinuous(
-            SunDirection current,
-            SunDirection previous) {
+    private static boolean astronomyDiscontinuous(
+            AstronomyState current,
+            AstronomyState previous) {
         if (previous == null) {
             return true;
         }
-        float cosine = current.x() * previous.x()
-                + current.y() * previous.y()
-                + current.z() * previous.z();
+        if (!current.settings().equals(previous.settings())) {
+            return true;
+        }
+        SunDirection currentSun = current.sunDirection();
+        SunDirection previousSun = previous.sunDirection();
+        float cosine = currentSun.x() * previousSun.x()
+                + currentSun.y() * previousSun.y()
+                + currentSun.z() * previousSun.z();
         return cosine < SUN_DISCONTINUITY_COSINE;
     }
 
@@ -140,12 +145,12 @@ final class RealtimeSampleState {
             long textureRevision,
             long lightingRevision,
             long materialRevision,
-            SunDirection sunDirection,
+            AstronomyState astronomy,
             boolean cameraInWater,
             boolean forceReset) {
         Input {
             Objects.requireNonNull(camera, "camera");
-            Objects.requireNonNull(sunDirection, "sunDirection");
+            Objects.requireNonNull(astronomy, "astronomy");
         }
     }
 

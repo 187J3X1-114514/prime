@@ -8,7 +8,9 @@ import org.joml.Matrix4f;
 import org.junit.jupiter.api.Test;
 
 final class RealtimeSampleStateTest {
-    private static final SunDirection NOON = SunDirection.fromVanillaAngle(0.0F);
+    private static final SunDirection NOON =
+            AstronomyState.atSolarHourAngle(
+                    0.0F, AstronomySettings.defaults()).sunDirection();
 
     @Test
     void stableCommittedFramesAdvanceWithoutReset() {
@@ -130,7 +132,10 @@ final class RealtimeSampleStateTest {
 
         for (int step = 1; step <= 20; step++) {
             SunDirection movingSun =
-                    SunDirection.fromVanillaAngle((float) Math.toRadians(step * 0.01));
+                    AstronomyState.atSolarHourAngle(
+                            (float) Math.toRadians(step * 0.01),
+                            AstronomySettings.defaults())
+                            .sunDirection();
             RealtimeSampleState.Plan plan =
                     state.plan(input(camera, 1L, 2L, movingSun, false));
             assertFalse(plan.reset());
@@ -147,12 +152,37 @@ final class RealtimeSampleStateTest {
                 RealtimeSampleState.initial(), input(camera, 1L, 2L, NOON, false));
         int epoch = state.epoch();
 
-        SunDirection sunset = SunDirection.fromVanillaAngle((float) (Math.PI * 0.5));
+        SunDirection sunset = AstronomyState.atSolarHourAngle(
+                (float) (Math.PI * 0.5),
+                AstronomySettings.defaults()).sunDirection();
         RealtimeSampleState.Plan plan =
                 state.plan(input(camera, 1L, 2L, sunset, false));
         assertTrue(plan.reset());
         assertEquals(0, plan.sampleIndex());
         assertEquals(epoch + 1, plan.epoch());
+    }
+
+    @Test
+    void changingSeasonInvalidatesStarsEvenWhenSunDirectionIsContinuous() {
+        FrameCamera camera = camera(1.0);
+        RealtimeSampleState state = commit(
+                RealtimeSampleState.initial(),
+                input(camera, 1L, 2L, NOON, false));
+        AstronomyState september = AstronomyState.atSolarHourAngle(
+                0.0F,
+                new AstronomySettings(30, 180));
+        RealtimeSampleState.Plan plan = state.plan(
+                new RealtimeSampleState.Input(
+                        camera,
+                        1L,
+                        2L,
+                        5L,
+                        7L,
+                        september,
+                        false,
+                        false));
+
+        assertTrue(plan.reset());
     }
 
     @Test
@@ -196,7 +226,7 @@ final class RealtimeSampleStateTest {
                 textureRevision,
                 5L,
                 7L,
-                sun,
+                new AstronomyState(AstronomySettings.defaults(), sun),
                 false,
                 forceReset);
     }
@@ -216,7 +246,7 @@ final class RealtimeSampleStateTest {
                 textureRevision,
                 lightingRevision,
                 materialRevision,
-                sun,
+                new AstronomyState(AstronomySettings.defaults(), sun),
                 cameraInWater,
                 forceReset);
     }

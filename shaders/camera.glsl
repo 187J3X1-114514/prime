@@ -14,7 +14,7 @@ vec2 primeCameraSample() {
         // jitter cycle would stop improving pixel integration after only a few frames.
         PrimeSampleBase base;
         base.pixel = gl_LaunchIDEXT.xy;
-        base.sampleIndex = primePush.path.x;
+        base.sampleIndex = primeSampleIndex();
         base.sampleEpoch = primeSampleEpoch();
         base.vertexIndex = 0u;
         base.pathIndex = 0u;
@@ -67,7 +67,7 @@ PathState primeCameraPath(uvec2 pixel, uint pathIndex, vec2 cameraSample) {
     path.previousBsdfPdf = 0.0;
     path.rrDepth = 0u;
     path.pixel = pixel;
-    path.sampleIndex = primePush.path.x;
+    path.sampleIndex = primeSampleIndex();
     path.sampleEpoch = primeSampleEpoch();
     return path;
 }

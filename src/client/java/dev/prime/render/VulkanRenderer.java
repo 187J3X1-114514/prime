@@ -64,14 +64,14 @@ public final class VulkanRenderer implements AutoCloseable {
     private long blockAtlasTextureRevision;
     private List<RayTracingPipeline.SceneTexture> sceneTextures = List.of();
     private FrameCamera camera;
-    private SunDirection sunDirection;
+    private AstronomyState astronomyState;
     // Resource-reload apply can publish this request off the render thread; all GPU mutation is
     // still consumed and owned by beginFrame on the render thread.
     private volatile boolean shaderReloadRequested;
     private ClientLevel screenshotWorld;
     private TerrainScene.ResidentSceneView screenshotScene;
     private FrameCamera screenshotCamera;
-    private SunDirection screenshotSunDirection;
+    private AstronomyState screenshotAstronomyState;
     private LightingSettings.Snapshot screenshotLighting;
     private MaterialSettings.Snapshot screenshotMaterial;
     private boolean screenshotCameraInWater;
@@ -214,7 +214,9 @@ public final class VulkanRenderer implements AutoCloseable {
         }
         this.camera = FrameCamera.tryCreate(
                 renderedProjection, baseProjection, viewRotation, x, y, z);
-        this.sunDirection = SunDirection.fromVanillaAngle(sunAngleRadians);
+        this.astronomyState = AstronomyState.atSolarHourAngle(
+                sunAngleRadians,
+                PrimeConfig.settings().astronomy());
     }
 
     public void captureDynamicScene(DynamicSceneFrame frame) {
@@ -266,8 +268,8 @@ public final class VulkanRenderer implements AutoCloseable {
     private void renderRealtime(RenderTarget mainTarget) {
         TerrainScene.ResidentSceneView scene = this.terrain.residentScene();
         FrameCamera frameCamera = this.camera;
-        SunDirection frameSunDirection = this.sunDirection;
-        if (scene == null || frameCamera == null || frameSunDirection == null) {
+        AstronomyState frameAstronomy = this.astronomyState;
+        if (scene == null || frameCamera == null || frameAstronomy == null) {
             return;
         }
         if (!(mainTarget.getColorTexture() instanceof VulkanGpuTexture mainColor)) {
@@ -387,7 +389,7 @@ public final class VulkanRenderer implements AutoCloseable {
                 renderHeight,
                 width,
                 height,
-                frameSunDirection,
+                frameAstronomy,
                 frameCameraInWater,
                 images.mode,
                 images.qualityMode,
@@ -462,7 +464,7 @@ public final class VulkanRenderer implements AutoCloseable {
                         this.atmosphere,
                         scene,
                         frameCamera,
-                        frameSunDirection,
+                        frameAstronomy,
                         frameCameraInWater,
                         lighting,
                         material,
@@ -490,12 +492,12 @@ public final class VulkanRenderer implements AutoCloseable {
         this.debugLines = List.of();
         TerrainScene.ResidentSceneView scene = this.screenshotScene;
         FrameCamera frameCamera = this.screenshotCamera;
-        SunDirection frameSunDirection = this.screenshotSunDirection;
+        AstronomyState frameAstronomy = this.screenshotAstronomyState;
         LightingSettings.Snapshot lighting = this.screenshotLighting;
         MaterialSettings.Snapshot material = this.screenshotMaterial;
         if (scene == null
                 || frameCamera == null
-                || frameSunDirection == null
+                || frameAstronomy == null
                 || lighting == null
                 || material == null) {
             this.cancelScreenshotSession();
@@ -560,7 +562,7 @@ public final class VulkanRenderer implements AutoCloseable {
                 height,
                 scene.revision(),
                 this.screenshotTextureRevision,
-                frameSunDirection,
+                frameAstronomy,
                 this.screenshotCameraInWater,
                 lighting,
                 material,
@@ -603,14 +605,14 @@ public final class VulkanRenderer implements AutoCloseable {
                 && requested
                 && minecraft.level != null
                 && this.camera != null
-                && this.sunDirection != null
+                && this.astronomyState != null
                 && this.terrain.residentScene() != null
                 && this.realtimeResources != null
                 && this.blockAtlasFrame != null) {
             this.screenshotWorld = minecraft.level;
             this.screenshotScene = this.terrain.residentScene();
             this.screenshotCamera = this.camera;
-            this.screenshotSunDirection = this.sunDirection;
+            this.screenshotAstronomyState = this.astronomyState;
             PrimeSettings settings = PrimeConfig.settings();
             this.screenshotLighting = settings.lighting();
             this.screenshotMaterial = settings.material();
@@ -635,7 +637,7 @@ public final class VulkanRenderer implements AutoCloseable {
         this.screenshotWorld = null;
         this.screenshotScene = null;
         this.screenshotCamera = null;
-        this.screenshotSunDirection = null;
+        this.screenshotAstronomyState = null;
         this.screenshotLighting = null;
         this.screenshotMaterial = null;
         this.screenshotAtlasView = 0L;

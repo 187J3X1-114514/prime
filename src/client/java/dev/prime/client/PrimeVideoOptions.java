@@ -2,6 +2,7 @@ package dev.prime.client;
 
 import com.mojang.serialization.Codec;
 import dev.prime.config.PrimeConfig;
+import dev.prime.render.AstronomySettings;
 import dev.prime.render.DisplaySettings;
 import dev.prime.render.LightingSettings;
 import dev.prime.render.MaterialSettings;
@@ -92,6 +93,34 @@ public final class PrimeVideoOptions {
                                 ReconstructionQualityMode::id)),
                 PrimeConfig.settings().reconstructionQuality(),
                 PrimeConfig::setReconstructionQualityMode);
+    }
+
+    public static OptionInstance<Integer> latitude() {
+        return new OptionInstance<>(
+                "prime.options.astronomy.latitude",
+                OptionInstance.cachedConstantTooltip(Component.translatable(
+                        "prime.options.astronomy.latitude.tooltip")),
+                (caption, degrees) -> Options.genericValueLabel(
+                        caption, formatLatitude(degrees)),
+                new OptionInstance.IntRange(
+                        AstronomySettings.MINIMUM_LATITUDE_DEGREES,
+                        AstronomySettings.MAXIMUM_LATITUDE_DEGREES),
+                PrimeConfig.settings().astronomy().latitudeDegrees(),
+                PrimeConfig::setLatitudeDegrees);
+    }
+
+    public static OptionInstance<Integer> season() {
+        return new OptionInstance<>(
+                "prime.options.astronomy.season",
+                OptionInstance.cachedConstantTooltip(Component.translatable(
+                        "prime.options.astronomy.season.tooltip")),
+                (caption, degrees) -> Options.genericValueLabel(
+                        caption, formatSolarLongitude(degrees)),
+                new OptionInstance.IntRange(
+                        AstronomySettings.MINIMUM_SOLAR_LONGITUDE_DEGREES,
+                        AstronomySettings.MAXIMUM_SOLAR_LONGITUDE_DEGREES),
+                PrimeConfig.settings().astronomy().solarLongitudeDegrees(),
+                PrimeConfig::setSolarLongitudeDegrees);
     }
 
     public static OptionInstance<DlssRrDebugView> dlssRrDebugView() {
@@ -245,6 +274,42 @@ public final class PrimeVideoOptions {
             return "0 EV";
         }
         return String.format(Locale.ROOT, "%+.2f EV", ev);
+    }
+
+    private static Component formatLatitude(int degrees) {
+        if (degrees == 0) {
+            return Component.translatable("prime.options.astronomy.latitude.equator");
+        }
+        return Component.translatable(
+                degrees > 0
+                        ? "prime.options.astronomy.latitude.north"
+                        : "prime.options.astronomy.latitude.south",
+                Math.abs(degrees));
+    }
+
+    private static Component formatSolarLongitude(int degrees) {
+        String event = switch (degrees) {
+            case 0 -> "march_equinox";
+            case 90 -> "june_solstice";
+            case 180 -> "september_equinox";
+            case 270 -> "december_solstice";
+            default -> null;
+        };
+        if (event != null) {
+            return Component.translatable(
+                    "prime.options.astronomy.season." + event);
+        }
+        String interval = switch (degrees / 90) {
+            case 0 -> "march_to_june";
+            case 1 -> "june_to_september";
+            case 2 -> "september_to_december";
+            default -> "december_to_march";
+        };
+        return Component.translatable(
+                "prime.options.astronomy.season.progress",
+                degrees,
+                Component.translatable(
+                        "prime.options.astronomy.season." + interval));
     }
 
     static String formatOverexposure(int steps) {

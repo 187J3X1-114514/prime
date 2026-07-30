@@ -14,7 +14,7 @@ void primeWriteScreenshotOutput(
     primeApplyAerialPerspective(
             pixel, cameraSample, result.guides.primaryDistance, radiance);
     uint64_t zeroBasedSample = (uint64_t(primeSampleEpoch()) << 16u)
-            | uint64_t(primePush.path.x & 0xffffu);
+            | uint64_t(primeSampleIndex());
     PrimeDenoiserGuides meteringGuides =
             result.transparentPrimary
                     && result.transmissionGuides.primaryHitKind == PRIME_HIT_SURFACE

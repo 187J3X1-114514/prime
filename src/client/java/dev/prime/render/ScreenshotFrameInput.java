@@ -10,7 +10,7 @@ public record ScreenshotFrameInput(
         int height,
         long sceneRevision,
         long textureRevision,
-        SunDirection sunDirection,
+        AstronomyState astronomy,
         boolean cameraInWater,
         LightingSettings.Snapshot lighting,
         MaterialSettings.Snapshot material,
@@ -18,7 +18,7 @@ public record ScreenshotFrameInput(
         DisplaySettings.Snapshot display) {
     public ScreenshotFrameInput {
         Objects.requireNonNull(camera, "camera");
-        Objects.requireNonNull(sunDirection, "sunDirection");
+        Objects.requireNonNull(astronomy, "astronomy");
         Objects.requireNonNull(lighting, "lighting");
         Objects.requireNonNull(material, "material");
         Objects.requireNonNull(display, "display");
@@ -45,7 +45,7 @@ public record ScreenshotFrameInput(
                         this.camera,
                         this.width,
                         this.height,
-                        this.sunDirection,
+                        this.astronomy,
                         packRayCone(
                                 this.camera.projection().m00(),
                                 this.camera.projection().m11(),
@@ -61,6 +61,10 @@ public record ScreenshotFrameInput(
                         false,
                         false,
                         false));
+    }
+
+    public SunDirection sunDirection() {
+        return this.astronomy.sunDirection();
     }
 
     private static int packRayCone(

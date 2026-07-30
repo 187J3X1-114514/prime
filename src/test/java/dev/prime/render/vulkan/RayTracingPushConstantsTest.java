@@ -5,6 +5,8 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import dev.prime.render.FrameCamera;
+import dev.prime.render.AstronomySettings;
+import dev.prime.render.AstronomyState;
 import dev.prime.render.IntegratorFrameInput;
 import dev.prime.render.IntegratorSettings;
 import dev.prime.render.LightingSettings;
@@ -43,7 +45,8 @@ final class RayTracingPushConstantsTest {
                 input.height(),
                 firstBuffer.getInt(ShaderAbi.PUSH_OUTPUT_EXTENT_OFFSET + Integer.BYTES));
         assertEquals(
-                input.sampleIndex(),
+                IntegratorSettings.packSampleControl(
+                        input.sampleIndex(), input.astronomy().settings()),
                 firstBuffer.getInt(ShaderAbi.PUSH_PATH_OFFSET));
         assertEquals(
                 IntegratorSettings.packSampleEpoch(input.sampleEpoch(), input.triangleDebug()),
@@ -60,7 +63,7 @@ final class RayTracingPushConstantsTest {
                         valid.camera(),
                         0,
                         valid.height(),
-                        valid.sunDirection(),
+                        valid.astronomy(),
                         valid.packedRayCone(),
                         valid.sampleIndex(),
                         valid.sampleEpoch(),
@@ -97,7 +100,9 @@ final class RayTracingPushConstantsTest {
                 camera,
                 320,
                 180,
-                new SunDirection(0.0F, 1.0F, 0.0F),
+                AstronomyState.atSolarHourAngle(
+                        0.7F,
+                        new AstronomySettings(-45, 270)),
                 0x1234_5678,
                 sampleIndex,
                 19,

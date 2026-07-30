@@ -7,8 +7,6 @@
 layout(location = 1) rayPayloadEXT PrimeShadowPayload primeShadowPayload;
 
 const int PRIME_SUN_SHADOW_RESOLUTION = 512;
-const int PRIME_SUN_SHADOW_CLEAR_MODE = 1 << 8;
-const float PRIME_SUN_SHADOW_UNKNOWN_DEPTH = 1.0e20;
 const float PRIME_SUN_SHADOW_NO_HIT_DEPTH = -1.0e20;
 
 void primeStoreSunShadowDepth(int imageIndex, ivec2 coordinate, float depth) {
@@ -49,11 +47,6 @@ void main() {
             (storageBits >> 9) & (PRIME_SUN_SHADOW_RESOLUTION - 1));
     ivec2 storageCoordinate =
             (storageOffset + regionCoordinate) & (PRIME_SUN_SHADOW_RESOLUTION - 1);
-    if ((target & PRIME_SUN_SHADOW_CLEAR_MODE) != 0) {
-        primeStoreSunShadowDepth(
-                imageIndex, storageCoordinate, PRIME_SUN_SHADOW_UNKNOWN_DEPTH);
-        return;
-    }
 
     vec3 basisU = primePush.inverseViewProjection[0].xyz;
     float texelSize = primePush.inverseViewProjection[0].w;

@@ -46,6 +46,23 @@ final class SunShadowClipmapTest {
     }
 
     @Test
+    void streamedDirtyTilesRemainRepairableBeforeTheBankIsPublished() {
+        assertFalse(SunShadowClipmap.readyForDirtyRepair(
+                true, SunShadowClipmap.TILE_COUNT - 1));
+        assertTrue(SunShadowClipmap.readyForDirtyRepair(
+                true, SunShadowClipmap.TILE_COUNT));
+        assertFalse(SunShadowClipmap.readyForDirtyRepair(
+                false, SunShadowClipmap.TILE_COUNT));
+    }
+
+    @Test
+    void streamedChangesNeverInvalidateThePublishedBank() {
+        assertFalse(SunShadowClipmap.deferInvalidation(0, 0));
+        assertFalse(SunShadowClipmap.deferInvalidation(1, 1));
+        assertTrue(SunShadowClipmap.deferInvalidation(1, 0));
+    }
+
+    @Test
     void lightSpaceBasisDoesNotRotateAtTheSolarZenithFallbackBoundary() {
         SunDirection before = SunDirection.fromVanillaAngle(0.04F);
         SunDirection after = SunDirection.fromVanillaAngle(0.05F);

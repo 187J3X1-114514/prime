@@ -8,6 +8,7 @@ import dev.prime.render.terrain.TerrainOccluderChange;
 import dev.prime.render.terrain.TerrainScene;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
+import java.util.ArrayList;
 import java.util.List;
 import org.lwjgl.system.MemoryStack;
 import org.lwjgl.vulkan.KHRRayTracingPipeline;
@@ -24,8 +25,9 @@ import org.lwjgl.vulkan.VkImageSubresourceRange;
  *
  * <p>Each texel stores the first opaque sun-ray hit as a scene-origin-relative coordinate along
  * the bank's fixed sun direction. Two banks allow one direction to remain readable while the next
- * direction is assembled over sixteen frames. Unknown texels use a conservative +infinity
- * sentinel, so incomplete streaming can remove sunlight but can never create cave light leaks.
+ * direction is assembled over sixteen frames. Initial or unpublished rebuild texels use a
+ * conservative +infinity sentinel, so incomplete work can remove sunlight but can never create
+ * cave light leaks. Published streaming changes replace their exact affected columns in one frame.
  */
 final class SunShadowClipmap implements Destroyable {
     static final int BANK_COUNT = 2;
@@ -47,7 +49,6 @@ final class SunShadowClipmap implements Destroyable {
         0, 3, 12, 15
     };
     private static final int IMAGE_COUNT = BANK_COUNT * CASCADE_COUNT;
-    private static final int CLEAR_MODE = 1 << 8;
     private static final int COMPUTE_AND_RAY_STAGES =
             VK12.VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT
                     | KHRRayTracingPipeline.VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR;
@@ -214,17 +215,11 @@ final class SunShadowClipmap implements Destroyable {
                         buildingIndex,
                         building);
             }
-            if (building.primaryTile == TILE_COUNT && !hasDirtyTiles(building)) {
-                building.complete = true;
-                if (buildingIndex != this.candidate.activeBank) {
-                    this.candidate.activeBank = buildingIndex;
-                }
-            }
         }
 
         for (int bankIndex = 0; bankIndex < BANK_COUNT; bankIndex++) {
             Bank bank = this.candidate.banks[bankIndex];
-            if (bank.valid && bank.complete) {
+            if (readyForDirtyRepair(bank.valid, bank.primaryTile)) {
                 do {
                     wrote |= buildOneDirtyTilePerCascade(
                             commandBuffer,
@@ -234,6 +229,12 @@ final class SunShadowClipmap implements Destroyable {
                             bankIndex,
                             bank);
                 } while (forceComplete && hasDirtyTiles(bank));
+                if (!bank.complete && !hasDirtyTiles(bank)) {
+                    bank.complete = true;
+                    if (bankIndex != this.candidate.activeBank) {
+                        this.candidate.activeBank = bankIndex;
+                    }
+                }
             }
         }
 
@@ -304,6 +305,14 @@ final class SunShadowClipmap implements Destroyable {
         return PRIMARY_TILE_ORDER[buildIndex];
     }
 
+    static boolean readyForDirtyRepair(boolean valid, int primaryTile) {
+        return valid && primaryTile == TILE_COUNT;
+    }
+
+    static boolean deferInvalidation(int bank, int activeBank) {
+        return bank != activeBank;
+    }
+
     static float basisDirectionCosine(
             SunDirection first, SunDirection second) {
         Basis firstBasis = basis(first);
@@ -329,11 +338,16 @@ final class SunShadowClipmap implements Destroyable {
                 continue;
             }
             Basis basis = basis(bank.direction);
+            boolean defer = deferInvalidation(
+                    bankIndex, this.candidate.activeBank);
             for (int cascade = 0; cascade < CASCADE_COUNT; cascade++) {
-                for (TerrainOccluderChange change : changes) {
-                    Region dirty = projectChange(
-                            change, scene, basis, bank, cascade);
-                    if (dirty.empty()) {
+                for (Region dirty : projectChanges(
+                        changes, scene, basis, bank, cascade)) {
+                    if (defer) {
+                        // Inactive banks are never sampled and can coarsen changes to their
+                        // existing tile repair budget without exposing stale visibility.
+                        markDirtyTiles(bank, cascade, dirty);
+                        wrote = true;
                         continue;
                     }
                     traceRegion(
@@ -344,14 +358,46 @@ final class SunShadowClipmap implements Destroyable {
                             bankIndex,
                             bank,
                             cascade,
-                            dirty,
-                            true);
-                    markDirtyTiles(bank, cascade, dirty);
+                            dirty);
+                    // Never expose UNKNOWN through the published bank. The new TLAS is already
+                    // resident, so replace the exact affected light columns in this frame.
+                    rayWriteToRayWrite(commandBuffer, depth(bankIndex, cascade));
                     wrote = true;
                 }
             }
         }
         return wrote;
+    }
+
+    private List<Region> projectChanges(
+            List<TerrainOccluderChange> changes,
+            TerrainScene.ResidentSceneView scene,
+            Basis basis,
+            Bank bank,
+            int cascade) {
+        List<Region> regions = new ArrayList<>();
+        for (TerrainOccluderChange change : changes) {
+            Region region = projectChange(change, scene, basis, bank, cascade);
+            if (!region.empty()) {
+                addMergedRegion(regions, region);
+            }
+        }
+        return regions;
+    }
+
+    private static void addMergedRegion(List<Region> regions, Region added) {
+        Region merged = added;
+        for (int index = 0; index < regions.size();) {
+            Region existing = regions.get(index);
+            if (merged.touches(existing)) {
+                merged = merged.union(existing);
+                regions.remove(index);
+                index = 0;
+            } else {
+                index++;
+            }
+        }
+        regions.add(merged);
     }
 
     private boolean scrollBank(
@@ -398,8 +444,7 @@ final class SunShadowClipmap implements Destroyable {
                         bankIndex,
                         bank,
                         cascade,
-                        strip,
-                        false);
+                        strip);
                 wrote = true;
             }
             if (deltaV != 0) {
@@ -416,8 +461,7 @@ final class SunShadowClipmap implements Destroyable {
                         bankIndex,
                         bank,
                         cascade,
-                        strip,
-                        false);
+                        strip);
                 wrote = true;
             }
         }
@@ -445,8 +489,7 @@ final class SunShadowClipmap implements Destroyable {
                     bankIndex,
                     bank,
                     cascade,
-                    region,
-                    false);
+                    region);
             bank.dirtyTiles[cascade] &= ~(1 << tile);
         }
         return true;
@@ -474,8 +517,7 @@ final class SunShadowClipmap implements Destroyable {
                     bankIndex,
                     bank,
                     cascade,
-                    tileRegion(tile),
-                    false);
+                    tileRegion(tile));
             bank.dirtyTiles[cascade] &= ~(1 << tile);
             wrote = true;
         }
@@ -490,8 +532,7 @@ final class SunShadowClipmap implements Destroyable {
             int bankIndex,
             Bank bank,
             int cascade,
-            Region region,
-            boolean clear) {
+            Region region) {
         if (region.empty()) {
             return;
         }
@@ -544,8 +585,9 @@ final class SunShadowClipmap implements Destroyable {
             int pathOffset = ShaderAbi.PUSH_PATH_OFFSET;
             push.putInt(pathOffset, region.x);
             push.putInt(pathOffset + Integer.BYTES, region.y);
-            int target = imageIndex(bankIndex, cascade) | (clear ? CLEAR_MODE : 0);
-            push.putInt(pathOffset + 2 * Integer.BYTES, target);
+            push.putInt(
+                    pathOffset + 2 * Integer.BYTES,
+                    imageIndex(bankIndex, cascade));
             int storageOffset = Math.floorMod(bank.minimumU[cascade], RESOLUTION)
                     | (Math.floorMod(bank.minimumV[cascade], RESOLUTION) << 9);
             push.putInt(pathOffset + 3 * Integer.BYTES, storageOffset);
@@ -554,11 +596,6 @@ final class SunShadowClipmap implements Destroyable {
                     push.position(0).limit(ShaderAbi.PUSH_CONSTANT_SIZE),
                     region.width,
                     region.height);
-            if (clear) {
-                // Projected cluster boxes may overlap, and the following tile rebuild overwrites
-                // these sentinels. Order the write/write dependency before recording the next.
-                rayWriteToRayWrite(commandBuffer, depth(bankIndex, cascade));
-            }
         }
     }
 
@@ -1075,6 +1112,25 @@ final class SunShadowClipmap implements Destroyable {
     private record Region(int x, int y, int width, int height) {
         private boolean empty() {
             return this.width <= 0 || this.height <= 0;
+        }
+
+        private boolean touches(Region other) {
+            return this.x <= other.x + other.width
+                    && other.x <= this.x + this.width
+                    && this.y <= other.y + other.height
+                    && other.y <= this.y + this.height;
+        }
+
+        private Region union(Region other) {
+            int minimumX = Math.min(this.x, other.x);
+            int minimumY = Math.min(this.y, other.y);
+            int maximumX = Math.max(this.x + this.width, other.x + other.width);
+            int maximumY = Math.max(this.y + this.height, other.y + other.height);
+            return new Region(
+                    minimumX,
+                    minimumY,
+                    maximumX - minimumX,
+                    maximumY - minimumY);
         }
     }
 }

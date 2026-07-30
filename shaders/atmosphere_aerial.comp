@@ -42,6 +42,9 @@ const int SUN_SHADOW_RESOLUTION = 512;
 const int SUN_SHADOW_CASCADE_COUNT = 5;
 const float SUN_SHADOW_MAX_DISTANCE_METERS = 2048.0;
 const float SUN_SHADOW_DEPTH_BIAS_METERS = 0.02;
+// TEMPORARY DEBUG: use the 90-degree phase value so the visibility probe is view-direction neutral.
+const float AERIAL_DEBUG_RADIANCE_SCALE = 64.0;
+const float AERIAL_DEBUG_PHASE_COSINE = 0.0;
 
 float sunShadowDepth(int imageIndex, ivec2 coordinate) {
     if (imageIndex == 0) return imageLoad(sunShadowDepth0, coordinate).r;
@@ -151,8 +154,6 @@ void integrateAerialGroup(
         out vec4 radiance,
         out vec4 transmittance) {
     vec3 sunDirection = atmospherePush.sunDirectionIntensity.xyz;
-    float phaseCosine = dot(-direction, sunDirection);
-    float molecularPhase = atmRayleighPhase(phaseCosine);
     radiance = vec4(0.0);
     transmittance = vec4(1.0);
     for (int index = 0; index < AERIAL_STEPS; ++index) {
@@ -174,17 +175,20 @@ void integrateAerialGroup(
         bool sunOccluded = atmRaySegment(point - up * ATM_PLANET_RADIUS_OFFSET_KM,
                 sunDirection).hitsGround;
         AtmCoefficients coefficients = atmCoefficients(group, altitude);
-        vec4 direct = sunOccluded ? vec4(0.0)
+        vec4 debugDirect = sunOccluded ? vec4(0.0)
                 : aerialTransmittanceToSun(group, sunMu, normalizedAltitude)
-                * (coefficients.molecularScattering * molecularPhase
-                + atmAerosolPhaseScattering(group, altitude, phaseCosine));
+                * (coefficients.molecularScattering
+                        * atmRayleighPhase(AERIAL_DEBUG_PHASE_COSINE)
+                + atmAerosolPhaseScattering(
+                        group, altitude, AERIAL_DEBUG_PHASE_COSINE));
         vec4 multiple = aerialMultiScattering(group, sunMu, normalizedAltitude)
                 * (coefficients.aerosolScattering + coefficients.molecularScattering);
         float terrainSunVisibility = localSunVisibility(
                 worldPoint, distanceMeters);
         vec4 source = atmSolarSpectrum(group)
-                * (direct + multiple)
-                * terrainSunVisibility;
+                * (debugDirect + multiple)
+                * terrainSunVisibility
+                * AERIAL_DEBUG_RADIANCE_SCALE;
         vec4 stepTransmittance = exp(-stepLength * coefficients.extinction);
         vec4 safeExtinction = max(coefficients.extinction, vec4(1.0e-7));
         radiance += transmittance * (source - source * stepTransmittance) / safeExtinction;

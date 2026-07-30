@@ -8,7 +8,8 @@ final class ShaderAbiTest {
     @Test
     void fixedRecordSizesAndBindingsMatchTheContract() {
         assertEquals(32, ShaderAbi.PRIMITIVE_RECORD_SIZE);
-        assertEquals(64, ShaderAbi.SECTION_RECORD_SIZE);
+        assertEquals(80, ShaderAbi.SECTION_RECORD_SIZE);
+        assertEquals(64, ShaderAbi.SECTION_INSTANCE_TINT_OFFSET);
         assertEquals(32, ShaderAbi.LIGHT_NODE_SIZE);
         assertEquals(4, ShaderAbi.LIGHT_NODE_FORWARD_SIZE);
         assertEquals(4, ShaderAbi.LIGHT_NODE_REVERSE_SIZE);

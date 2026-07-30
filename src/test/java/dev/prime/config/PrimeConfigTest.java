@@ -94,6 +94,9 @@ final class PrimeConfigTest {
     void debugSelectionsAreSessionOnlyAndLegacyKeysAreRemovedOnRewrite() {
         String serialized = PrimeConfig.serializedContents();
         assertTrue(serialized.contains("renderer.path_tracing=true\n"));
+        assertTrue(serialized.contains(
+                "experimental.voxel_texture_surfaces=false\n"));
+        assertFalse(PrimeSettings.defaults().voxelTextureSurfaces());
         assertFalse(serialized.contains("debug_view"));
         assertFalse(serialized.contains("debug_fullscreen"));
         assertTrue(serialized.contains("lighting.star_ev=0\n"));

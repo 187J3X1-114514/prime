@@ -16,28 +16,71 @@ import java.util.Map;
 final class MergedFaceMeshBuilder {
     private static final int GRID_SIZE = SectionCluster.SECTION_SIZE * 16;
     private static final int[] CUTOUT_SIZES = {4, 2, 1};
+    static final float VOXEL_SURFACE_RADIUS = 128.0F;
 
     private final int segmentTriangleTarget;
     private final int maxOpacityMicromapSubdivisionLevel;
+    private final boolean voxelSurfacesEnabled;
+    private final float detailCenterX;
+    private final float detailCenterY;
+    private final float detailCenterZ;
     private final ArrayList<CpuSectionMesh> segments = new ArrayList<>();
     private Segment segment = new Segment();
     private OptimalCover optimalCover;
+    private List<CpuVoxelMesh> voxelMeshes = List.of();
+    private CpuVoxelInstances voxelInstances = CpuVoxelInstances.EMPTY;
 
     MergedFaceMeshBuilder(
             int segmentTriangleTarget, int maxOpacityMicromapSubdivisionLevel) {
+        this(
+                segmentTriangleTarget,
+                maxOpacityMicromapSubdivisionLevel,
+                false,
+                0.0F,
+                0.0F,
+                0.0F);
+    }
+
+    MergedFaceMeshBuilder(
+            int segmentTriangleTarget,
+            int maxOpacityMicromapSubdivisionLevel,
+            boolean voxelSurfacesEnabled,
+            float detailCenterX,
+            float detailCenterY,
+            float detailCenterZ) {
         this.segmentTriangleTarget = segmentTriangleTarget;
         this.maxOpacityMicromapSubdivisionLevel = maxOpacityMicromapSubdivisionLevel;
+        this.voxelSurfacesEnabled = voxelSurfacesEnabled;
+        this.detailCenterX = detailCenterX;
+        this.detailCenterY = detailCenterY;
+        this.detailCenterZ = detailCenterZ;
     }
 
     List<CpuSectionMesh> build(List<MergeFace> faces) {
-        Map<GroupKey, ArrayList<MergeFace>> groups = new LinkedHashMap<>();
+        TextureVoxelMeshBuilder voxelBuilder = this.voxelSurfacesEnabled
+                ? new TextureVoxelMeshBuilder(
+                        faces.stream().anyMatch(MergeFace::buildOpacityMicromap))
+                : null;
+        ArrayList<MergeFace> ordinaryFaces = new ArrayList<>(faces.size());
+        ArrayList<MergeFace> unmergedFallbacks = new ArrayList<>();
         for (MergeFace face : faces) {
             if (face.cellU() < 0
                     || face.cellU() >= GRID_SIZE
                     || face.cellV() < 0
                     || face.cellV() >= GRID_SIZE) {
-                throw new IllegalArgumentException("Merge face lies outside its logical cluster");
+                throw new IllegalArgumentException(
+                        "Merge face lies outside its logical cluster");
             }
+            if (voxelBuilder != null && this.usesVoxelSurface(face)) {
+                if (!voxelBuilder.add(face)) {
+                    unmergedFallbacks.add(face);
+                }
+            } else {
+                ordinaryFaces.add(face);
+            }
+        }
+        Map<GroupKey, ArrayList<MergeFace>> groups = new LinkedHashMap<>();
+        for (MergeFace face : ordinaryFaces) {
             groups.computeIfAbsent(new GroupKey(face), ignored -> new ArrayList<>())
                     .add(face);
         }
@@ -56,8 +99,63 @@ final class MergedFaceMeshBuilder {
                 this.emit(duplicate, duplicate.cellU(), duplicate.cellV(), 1, 1);
             }
         }
+        for (MergeFace fallback : unmergedFallbacks) {
+            this.emit(fallback, fallback.cellU(), fallback.cellV(), 1, 1);
+        }
         this.finishSegment();
+        if (voxelBuilder != null) {
+            TextureVoxelMeshBuilder.ListResult result = voxelBuilder.build();
+            this.voxelMeshes = result.meshes();
+            this.voxelInstances = result.instances();
+        }
         return List.copyOf(this.segments);
+    }
+
+    List<CpuVoxelMesh> voxelMeshes() {
+        return this.voxelMeshes;
+    }
+
+    CpuVoxelInstances voxelInstances() {
+        return this.voxelInstances;
+    }
+
+    private boolean usesVoxelSurface(MergeFace face) {
+        int flags = PrimitivePacking.unpackFlags(
+                face.primitive()[3], face.primitive()[5]);
+        boolean transmissive =
+                (flags & PrimitivePacking.FLAG_TRANSMISSIVE) != 0;
+        boolean cutout = (flags & PrimitivePacking.FLAG_CUTOUT) != 0;
+        boolean thinWalled =
+                (flags & PrimitivePacking.FLAG_THIN_WALLED) != 0;
+        if (transmissive && !cutout && !thinWalled) {
+            return false;
+        }
+        float centerX;
+        float centerY;
+        float centerZ;
+        switch (face.planeAxis()) {
+            case 0 -> {
+                centerX = face.plane();
+                centerY = face.cellU() + 0.5F;
+                centerZ = face.cellV() + 0.5F;
+            }
+            case 1 -> {
+                centerX = face.cellU() + 0.5F;
+                centerY = face.plane();
+                centerZ = face.cellV() + 0.5F;
+            }
+            case 2 -> {
+                centerX = face.cellU() + 0.5F;
+                centerY = face.cellV() + 0.5F;
+                centerZ = face.plane();
+            }
+            default -> throw new IllegalArgumentException("Invalid face plane axis");
+        }
+        float dx = centerX - this.detailCenterX;
+        float dy = centerY - this.detailCenterY;
+        float dz = centerZ - this.detailCenterZ;
+        return dx * dx + dy * dy + dz * dz
+                <= VOXEL_SURFACE_RADIUS * VOXEL_SURFACE_RADIUS;
     }
 
     private void coverOpaque(FaceGrid grid) {

@@ -203,6 +203,14 @@ public final class RayTracingRuntime {
         }
     }
 
+    public void setVoxelTextureSurfaces(boolean enabled) {
+        boolean changed = PrimeConfig.settings().voxelTextureSurfaces() != enabled;
+        PrimeConfig.setVoxelTextureSurfaces(enabled);
+        if (changed) {
+            this.invalidateAll();
+        }
+    }
+
     public void requestScreenshot(boolean enabled) {
         this.controls = this.controls.withScreenshotRequested(enabled);
     }

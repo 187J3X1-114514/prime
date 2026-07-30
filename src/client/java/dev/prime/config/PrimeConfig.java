@@ -21,6 +21,8 @@ import net.fabricmc.loader.api.FabricLoader;
 /** Small, version-tolerant owner for Prime's user-facing settings. */
 public final class PrimeConfig {
     private static final String PATH_TRACING_ENABLED_KEY = "renderer.path_tracing";
+    private static final String VOXEL_TEXTURE_SURFACES_KEY =
+            "experimental.voxel_texture_surfaces";
     private static final String MODE_KEY = "post_processing.mode";
     private static final String QUALITY_KEY = "post_processing.quality";
     private static final String LEGACY_QUALITY_KEY = "fsr.quality";
@@ -49,6 +51,7 @@ public final class PrimeConfig {
     public static void load() {
         Path path = configPath();
         boolean pathTracingEnabled = true;
+        boolean voxelTextureSurfaces = false;
         PostProcessingMode postProcessingMode = PostProcessingMode.DEFAULT;
         ReconstructionQualityMode quality = ReconstructionQualityMode.DEFAULT;
         int sunQuarterSteps = LightingSettings.DEFAULT_SUN_QUARTER_STEPS;
@@ -71,6 +74,20 @@ public final class PrimeConfig {
                         PrimeClient.LOGGER.warn(
                                 "Invalid Prime path-tracing switch '{}'; enabling path tracing",
                                 pathTracing);
+                        rewriteNeeded = true;
+                    }
+                } else {
+                    rewriteNeeded = true;
+                }
+                String voxelSurfaces = properties.getProperty(
+                        VOXEL_TEXTURE_SURFACES_KEY);
+                if (voxelSurfaces != null) {
+                    try {
+                        voxelTextureSurfaces = parseBoolean(voxelSurfaces);
+                    } catch (IllegalArgumentException exception) {
+                        PrimeClient.LOGGER.warn(
+                                "Invalid Prime voxel-texture surface switch '{}'; disabling it",
+                                voxelSurfaces);
                         rewriteNeeded = true;
                     }
                 } else {
@@ -200,6 +217,7 @@ public final class PrimeConfig {
         }
         settings = new PrimeSettings(
                 pathTracingEnabled,
+                voxelTextureSurfaces,
                 postProcessingMode,
                 quality,
                 sunQuarterSteps,
@@ -237,6 +255,10 @@ public final class PrimeConfig {
         update(settings.withPathTracingEnabled(enabled));
     }
 
+    public static void setVoxelTextureSurfaces(boolean enabled) {
+        update(settings.withVoxelTextureSurfaces(enabled));
+    }
+
     public static void setPostProcessingMode(PostProcessingMode mode) {
         update(settings.withPostProcessingMode(mode));
     }
@@ -271,6 +293,7 @@ public final class PrimeConfig {
 
     public static void restoreDefaults() {
         setPathTracingEnabled(true);
+        setVoxelTextureSurfaces(false);
         setPostProcessingMode(PostProcessingMode.DEFAULT);
         setReconstructionQualityMode(ReconstructionQualityMode.DEFAULT);
         setSunQuarterSteps(LightingSettings.DEFAULT_SUN_QUARTER_STEPS);
@@ -326,6 +349,8 @@ public final class PrimeConfig {
     static String serializedContents() {
         PrimeSettings current = settings;
         return PATH_TRACING_ENABLED_KEY + "=" + current.pathTracingEnabled() + "\n"
+                    + VOXEL_TEXTURE_SURFACES_KEY + "="
+                    + current.voxelTextureSurfaces() + "\n"
                     + MODE_KEY + "=" + current.postProcessingMode().id() + "\n"
                     + QUALITY_KEY + "=" + current.reconstructionQuality().id() + "\n"
                     + SUN_EV_KEY + "=" + formatEv(current.sunQuarterSteps()) + "\n"

@@ -38,8 +38,9 @@ import net.fabricmc.fabric.api.client.renderer.v1.sprite.SpriteFinder;
  *
  * <p>This is the sole authority for which virtual clusters Prime wants, when they become dirty,
  * which generation is current, and how long uploaded geometry remains resident. One aligned
- * 4x4x4 logical cluster replaces its 64 Sections atomically and owns exactly one BLAS/TLAS
- * instance. Its CPU build input may use any number of storage segments. In
+ * 4x4x4 logical cluster replaces its 64 Sections atomically. Its ordinary geometry owns one BLAS;
+ * optional experimental detail meshes add reusable BLASes and per-face TLAS instances. Its CPU
+ * build input may use any number of storage segments. In
  * particular, this scheduler must never depend on {@code LevelRenderer.visibleSections()}, the
  * occlusion graph, or vanilla's raster compilation queue: those are presentation decisions and can
  * omit geometry that still contributes to ray-traced visibility and global illumination.
@@ -93,6 +94,7 @@ public final class TerrainStreamer implements AutoCloseable {
     private int minimumSectionY;
     private int maximumSectionY;
     private LabPbrMaterialSet labPbrMaterials = LabPbrMaterialSet.EMPTY;
+    private boolean voxelTextureSurfaces;
     private int workerJobs;
 
     public TerrainStreamer(VulkanContext context, StagingArena stagingArena) {
@@ -129,6 +131,9 @@ public final class TerrainStreamer implements AutoCloseable {
         int playerSectionX = (int) Math.floor(cameraX) >> 4;
         int playerSectionY = (int) Math.floor(cameraY) >> 4;
         int playerSectionZ = (int) Math.floor(cameraZ) >> 4;
+        int previousCenterX = this.centerSectionX;
+        int previousCenterY = this.centerSectionY;
+        int previousCenterZ = this.centerSectionZ;
         int viewDistance = minecraft.options.getEffectiveRenderDistance();
         int minSectionY = currentWorld.getMinY() >> 4;
         int maxSectionY = currentWorld.getMinY() + currentWorld.getHeight() - 1 >> 4;
@@ -145,6 +150,19 @@ public final class TerrainStreamer implements AutoCloseable {
                     viewDistance,
                     minSectionY,
                     maxSectionY);
+            if (this.voxelTextureSurfaces
+                    && previousCenterX != Integer.MIN_VALUE
+                    && (previousCenterX != playerSectionX
+                            || previousCenterY != playerSectionY
+                            || previousCenterZ != playerSectionZ)) {
+                this.invalidateVoxelSurfaceWindow(
+                        previousCenterX,
+                        previousCenterY,
+                        previousCenterZ,
+                        playerSectionX,
+                        playerSectionY,
+                        playerSectionZ);
+            }
         }
 
         this.drainInvalidations();
@@ -160,6 +178,13 @@ public final class TerrainStreamer implements AutoCloseable {
     public void setLabPbrMaterials(LabPbrMaterialSet materials) {
         if (!this.labPbrMaterials.equals(materials)) {
             this.labPbrMaterials = materials;
+            this.invalidateAll();
+        }
+    }
+
+    public void setVoxelTextureSurfaces(boolean enabled) {
+        if (this.voxelTextureSurfaces != enabled) {
+            this.voxelTextureSurfaces = enabled;
             this.invalidateAll();
         }
     }
@@ -357,6 +382,10 @@ public final class TerrainStreamer implements AutoCloseable {
             int clusterX = SectionPos.x(request.key());
             int clusterY = SectionPos.y(request.key());
             int clusterZ = SectionPos.z(request.key());
+            boolean voxelSurfaces = this.voxelTextureSurfaces;
+            float detailCenterWorldX = (this.centerSectionX << 4) + 8.0F;
+            float detailCenterWorldY = (this.centerSectionY << 4) + 8.0F;
+            float detailCenterWorldZ = (this.centerSectionZ << 4) + 8.0F;
             if (!hasCompleteClusterNeighborhood(level, clusterX, clusterZ)) {
                 // A 4x4x4 virtual chunk needs one Section of source data around every face.
                 // Minecraft loads vertical Sections as part of the same chunk column, so checking
@@ -432,7 +461,11 @@ public final class TerrainStreamer implements AutoCloseable {
                                 clusterY,
                                 clusterZ,
                                 this.segmentTriangleTarget,
-                                TerrainStreamer.this.maxOpacityMicromapSubdivisionLevel);
+                                TerrainStreamer.this.maxOpacityMicromapSubdivisionLevel,
+                                voxelSurfaces,
+                                detailCenterWorldX,
+                                detailCenterWorldY,
+                                detailCenterWorldZ);
                         for (VanillaSectionSnapshot snapshot : snapshots) {
                             CpuSectionGeometry sectionGeometry =
                                     TerrainStreamer.this.sceneInterpreter
@@ -598,13 +631,31 @@ public final class TerrainStreamer implements AutoCloseable {
             result = segmentStagingEndOffset(
                     result, segment.transmissiveTriangleCount());
         }
+        result = opacityStagingEndOffset(
+                result, mesh.opacityMicromap(), includeOpacityMicromap);
         if (!mesh.lights().isEmpty()) {
             result = StagingArena.requiredEndOffset(
                     result, mesh.lights().byteSize(), 16L);
         }
-        OpacityMicromapData opacityMicromap = mesh.opacityMicromap();
+        for (CpuVoxelMesh voxelMesh : mesh.voxelMeshes()) {
+            result = StagingArena.requiredEndOffset(
+                    result, voxelMesh.positionBytes(), Float.BYTES);
+            result = StagingArena.requiredEndOffset(
+                    result, voxelMesh.primitiveBytes(), Integer.BYTES);
+            result = opacityStagingEndOffset(
+                    result,
+                    voxelMesh.opacityMicromap(),
+                    includeOpacityMicromap);
+        }
+        return result;
+    }
+
+    private static long opacityStagingEndOffset(
+            long cursor,
+            OpacityMicromapData opacityMicromap,
+            boolean includeOpacityMicromap) {
         return stagingEndOffset(
-                result,
+                cursor,
                 0L,
                 0L,
                 0L,
@@ -673,6 +724,53 @@ public final class TerrainStreamer implements AutoCloseable {
         this.centerSectionY = Integer.MIN_VALUE;
         this.centerSectionZ = Integer.MIN_VALUE;
         this.renderDistance = -1;
+    }
+
+    private void invalidateVoxelSurfaceWindow(
+            int oldSectionX,
+            int oldSectionY,
+            int oldSectionZ,
+            int newSectionX,
+            int newSectionY,
+            int newSectionZ) {
+        float oldX = (oldSectionX << 4) + 8.0F;
+        float oldY = (oldSectionY << 4) + 8.0F;
+        float oldZ = (oldSectionZ << 4) + 8.0F;
+        float newX = (newSectionX << 4) + 8.0F;
+        float newY = (newSectionY << 4) + 8.0F;
+        float newZ = (newSectionZ << 4) + 8.0F;
+        for (long key : this.desired) {
+            int clusterX = SectionPos.x(key) << 4;
+            int clusterY = SectionPos.y(key) << 4;
+            int clusterZ = SectionPos.z(key) << 4;
+            if (clusterIntersectsDetailSphere(
+                            clusterX, clusterY, clusterZ, oldX, oldY, oldZ)
+                    || clusterIntersectsDetailSphere(
+                            clusterX, clusterY, clusterZ, newX, newY, newZ)) {
+                this.externalDirty.add(key);
+            }
+        }
+    }
+
+    static boolean clusterIntersectsDetailSphere(
+            float clusterX,
+            float clusterY,
+            float clusterZ,
+            float centerX,
+            float centerY,
+            float centerZ) {
+        float edge = SectionCluster.SECTION_SIZE * 16.0F;
+        float dx = intervalDistance(centerX, clusterX, clusterX + edge);
+        float dy = intervalDistance(centerY, clusterY, clusterY + edge);
+        float dz = intervalDistance(centerZ, clusterZ, clusterZ + edge);
+        float radius = MergedFaceMeshBuilder.VOXEL_SURFACE_RADIUS;
+        return dx * dx + dy * dy + dz * dz <= radius * radius;
+    }
+
+    private static float intervalDistance(float value, float minimum, float maximum) {
+        return value < minimum
+                ? minimum - value
+                : (value > maximum ? value - maximum : 0.0F);
     }
 
     private void compactRequestQueueIfNeeded() {

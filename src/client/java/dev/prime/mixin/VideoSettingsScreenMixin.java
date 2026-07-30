@@ -30,6 +30,7 @@ public abstract class VideoSettingsScreenMixin {
     private static final Component PRIME$HEADER =
             Component.translatable("prime.options.header");
     @Unique private OptionInstance<Boolean> prime$pathTracingEnabled;
+    @Unique private OptionInstance<Boolean> prime$voxelTextureSurfaces;
     @Unique private OptionInstance<Boolean> prime$screenshotMode;
     @Unique private OptionInstance<PostProcessingMode> prime$postProcessingMode;
     @Unique private OptionInstance<ReconstructionQualityMode> prime$qualityMode;
@@ -50,6 +51,7 @@ public abstract class VideoSettingsScreenMixin {
         OptionsList list = ((OptionsSubScreenAccessor) this).prime$getList();
         if (list != null) {
             this.prime$pathTracingEnabled = PrimeVideoOptions.pathTracingEnabled();
+            this.prime$voxelTextureSurfaces = PrimeVideoOptions.voxelTextureSurfaces();
             this.prime$screenshotMode = PrimeVideoOptions.screenshotMode();
             this.prime$postProcessingMode = PrimeVideoOptions.postProcessingMode();
             this.prime$qualityMode = PrimeVideoOptions.qualityMode();
@@ -70,6 +72,7 @@ public abstract class VideoSettingsScreenMixin {
                             button -> this.prime$restoreDefaults())
                     .build());
             list.addBig(this.prime$pathTracingEnabled);
+            list.addBig(this.prime$voxelTextureSurfaces);
             list.addBig(this.prime$screenshotMode);
             list.addBig(this.prime$postProcessingMode);
             list.addBig(this.prime$qualityMode);
@@ -87,9 +90,14 @@ public abstract class VideoSettingsScreenMixin {
 
     @Unique
     private void prime$restoreDefaults() {
+        boolean voxelSurfacesChanged = PrimeConfig.settings().voxelTextureSurfaces();
         PrimeConfig.restoreDefaults();
         RayTracingRuntime.instance().restoreSessionDefaults();
+        if (voxelSurfacesChanged) {
+            RayTracingRuntime.instance().invalidateAll();
+        }
         this.prime$refresh(this.prime$pathTracingEnabled, true);
+        this.prime$refresh(this.prime$voxelTextureSurfaces, false);
         this.prime$refresh(this.prime$screenshotMode, false);
         this.prime$refresh(this.prime$postProcessingMode, PostProcessingMode.DEFAULT);
         this.prime$refresh(this.prime$qualityMode, ReconstructionQualityMode.DEFAULT);

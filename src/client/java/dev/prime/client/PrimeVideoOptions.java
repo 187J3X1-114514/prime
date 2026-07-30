@@ -42,6 +42,16 @@ public final class PrimeVideoOptions {
                 runtime::setPathTracingEnabled);
     }
 
+    public static OptionInstance<Boolean> voxelTextureSurfaces() {
+        RayTracingRuntime runtime = RayTracingRuntime.instance();
+        return OptionInstance.createBoolean(
+                "prime.options.experimental.voxel_texture_surfaces",
+                OptionInstance.cachedConstantTooltip(Component.translatable(
+                        "prime.options.experimental.voxel_texture_surfaces.tooltip")),
+                PrimeConfig.settings().voxelTextureSurfaces(),
+                runtime::setVoxelTextureSurfaces);
+    }
+
     public static OptionInstance<Boolean> screenshotMode() {
         RayTracingRuntime runtime = RayTracingRuntime.instance();
         return OptionInstance.createBoolean(

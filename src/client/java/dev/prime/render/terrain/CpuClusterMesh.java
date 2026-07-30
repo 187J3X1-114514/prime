@@ -17,6 +17,8 @@ public final class CpuClusterMesh {
     private final long transmissiveTriangleCount;
     private final OpacityMicromapData opacityMicromap;
     private final CompiledClusterLights lights;
+    private final List<CpuVoxelMesh> voxelMeshes;
+    private final CpuVoxelInstances voxelInstances;
 
     private CpuClusterMesh(
             List<Segment> segments,
@@ -24,7 +26,9 @@ public final class CpuClusterMesh {
             long cutoutTriangleCount,
             long transmissiveTriangleCount,
             OpacityMicromapData opacityMicromap,
-            CompiledClusterLights lights) {
+            CompiledClusterLights lights,
+            List<CpuVoxelMesh> voxelMeshes,
+            CpuVoxelInstances voxelInstances) {
         this.segments = List.copyOf(segments);
         if (opaqueTriangleCount < 0L
                 || cutoutTriangleCount < 0L
@@ -50,6 +54,9 @@ public final class CpuClusterMesh {
         }
         Objects.requireNonNull(opacityMicromap, "opacityMicromap");
         Objects.requireNonNull(lights, "lights");
+        this.voxelMeshes = List.copyOf(voxelMeshes);
+        this.voxelInstances = Objects.requireNonNull(
+                voxelInstances, "voxelInstances");
         if (opacityMicromap.triangleCount() != cutoutTriangleCount) {
             throw new IllegalArgumentException(
                     "Cluster opacity micromap does not match cutout geometry");
@@ -59,6 +66,16 @@ public final class CpuClusterMesh {
         this.transmissiveTriangleCount = transmissiveTriangleCount;
         this.opacityMicromap = opacityMicromap;
         this.lights = lights;
+        for (int meshIndex : this.voxelInstances.meshIndices()) {
+            if (meshIndex < 0 || meshIndex >= this.voxelMeshes.size()) {
+                throw new IllegalArgumentException(
+                        "Voxel-surface instance references an invalid mesh");
+            }
+        }
+        if (this.voxelMeshes.isEmpty() != (this.voxelInstances.count() == 0)) {
+            throw new IllegalArgumentException(
+                    "Reusable voxel meshes and their instances must be present together");
+        }
     }
 
     static CpuClusterMesh fromEncoded(
@@ -68,16 +85,45 @@ public final class CpuClusterMesh {
             long transmissiveTriangleCount,
             OpacityMicromapData opacityMicromap,
             CompiledClusterLights lights) {
+        return fromEncoded(
+                segments,
+                opaqueTriangleCount,
+                cutoutTriangleCount,
+                transmissiveTriangleCount,
+                opacityMicromap,
+                lights,
+                List.of(),
+                CpuVoxelInstances.EMPTY);
+    }
+
+    static CpuClusterMesh fromEncoded(
+            List<Segment> segments,
+            long opaqueTriangleCount,
+            long cutoutTriangleCount,
+            long transmissiveTriangleCount,
+            OpacityMicromapData opacityMicromap,
+            CompiledClusterLights lights,
+            List<CpuVoxelMesh> voxelMeshes,
+            CpuVoxelInstances voxelInstances) {
         return new CpuClusterMesh(
                 segments,
                 opaqueTriangleCount,
                 cutoutTriangleCount,
                 transmissiveTriangleCount,
                 opacityMicromap,
-                lights);
+                lights,
+                voxelMeshes,
+                voxelInstances);
     }
 
     static CpuClusterMesh fromSegments(List<CpuSectionMesh> meshes) {
+        return fromSegments(meshes, List.of(), CpuVoxelInstances.EMPTY);
+    }
+
+    static CpuClusterMesh fromSegments(
+            List<CpuSectionMesh> meshes,
+            List<CpuVoxelMesh> voxelMeshes,
+            CpuVoxelInstances voxelInstances) {
         ArrayList<Segment> segments = new ArrayList<>(meshes.size());
         ArrayList<CpuSectionLights.Translated> lightSources = new ArrayList<>();
         OpacityMicromapData.Builder opacityMicromap = new OpacityMicromapData.Builder();
@@ -109,7 +155,9 @@ public final class CpuClusterMesh {
                 cutout,
                 transmissive,
                 opacityMicromap.build(),
-                CompiledClusterLights.compile(CpuSectionLights.merge(lightSources)));
+                CompiledClusterLights.compile(CpuSectionLights.merge(lightSources)),
+                voxelMeshes,
+                voxelInstances);
     }
 
     static CpuClusterMesh empty() {
@@ -119,7 +167,9 @@ public final class CpuClusterMesh {
                 0L,
                 0L,
                 OpacityMicromapData.EMPTY,
-                CompiledClusterLights.EMPTY);
+                CompiledClusterLights.EMPTY,
+                List.of(),
+                CpuVoxelInstances.EMPTY);
     }
 
     public List<Segment> segments() {
@@ -152,8 +202,16 @@ public final class CpuClusterMesh {
         return this.lights;
     }
 
+    public List<CpuVoxelMesh> voxelMeshes() {
+        return this.voxelMeshes;
+    }
+
+    public CpuVoxelInstances voxelInstances() {
+        return this.voxelInstances;
+    }
+
     public boolean isEmpty() {
-        return this.segments.isEmpty();
+        return this.segments.isEmpty() && this.voxelInstances.count() == 0;
     }
 
     public long positionBytes() {
@@ -167,9 +225,18 @@ public final class CpuClusterMesh {
     }
 
     public long byteSize() {
-        return Math.addExact(
+        long result = Math.addExact(
                 Math.addExact(this.positionBytes(), this.primitiveBytes()),
                 Math.addExact(this.opacityMicromap.byteSize(), this.lights.byteSize()));
+        for (CpuVoxelMesh voxelMesh : this.voxelMeshes) {
+            result = Math.addExact(result, voxelMesh.byteSize());
+        }
+        result = Math.addExact(
+                result,
+                Math.multiplyExact(
+                        (long) this.voxelInstances.count(),
+                        2L * Integer.BYTES + 3L * Float.BYTES));
+        return result;
     }
 
     /**

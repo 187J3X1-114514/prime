@@ -158,7 +158,7 @@ abstract class GenerateShaderAbi extends DefaultTask {
 		def fsrContract = schema.fsrContract
 		def wavefrontContract = schema.wavefrontContract
 
-		if (primitive.size != 32 || section.size != 64 || lightNode.size != 32
+		if (primitive.size != 32 || section.size != 80 || lightNode.size != 32
 				|| lightNodeForward.size != 4 || lightNodeReverse.size != 4
 				|| lightEmitter.size != 96 || lightCell.size != 12
 				|| sectionLightHeader.size != 48

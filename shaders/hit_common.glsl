@@ -20,7 +20,12 @@ PrimitiveRecord primePrimitive(SectionRecord section) {
             ? 0u
             : (gl_GeometryIndexEXT == 1 ? section.cutoutBase : section.transmissiveBase);
     PrimitiveBuffer primitives = PrimitiveBuffer(section.primitiveAddress);
-    return primitives.records[base + gl_PrimitiveID];
+    PrimitiveRecord primitive = primitives.records[base + gl_PrimitiveID];
+    if ((section.instanceTint & 0x80000000u) != 0u) {
+        primitive.tint = (primitive.tint & 0xff000000u)
+                | (section.instanceTint & 0x00ffffffu);
+    }
+    return primitive;
 }
 
 PrimitiveRecord primePrimitive() {

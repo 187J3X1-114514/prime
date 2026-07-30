@@ -290,6 +290,46 @@ public final class TopLevelAccelerationStructure {
                 float translateX,
                 float translateY,
                 float translateZ) {
+            this.writeInstanced(
+                    blasAddress,
+                    primitiveAddress,
+                    lightAddress,
+                    worldLightAddress,
+                    worldLightForwardAddress,
+                    opaqueTriangleCount,
+                    cutoutTriangleCount,
+                    worldLeafNode,
+                    lightCount,
+                    worldLightNodeCount,
+                    0xff,
+                    0,
+                    translateX,
+                    translateY,
+                    translateZ,
+                    translateX,
+                    translateY,
+                    translateZ);
+        }
+
+        public void writeInstanced(
+                long blasAddress,
+                long primitiveAddress,
+                long lightAddress,
+                long worldLightAddress,
+                long worldLightForwardAddress,
+                long opaqueTriangleCount,
+                long cutoutTriangleCount,
+                int worldLeafNode,
+                int lightCount,
+                int worldLightNodeCount,
+                int mask,
+                int instanceTint,
+                float transformX,
+                float transformY,
+                float transformZ,
+                float sectionX,
+                float sectionY,
+                float sectionZ) {
             if (this.index >= this.capacity) {
                 throw new IllegalStateException("TLAS populator wrote too many instances");
             }
@@ -301,15 +341,19 @@ public final class TopLevelAccelerationStructure {
                 throw new IllegalArgumentException(
                         "Cluster primitive bases exceed the shader uint ABI");
             }
+            if ((mask & ~0xff) != 0) {
+                throw new IllegalArgumentException(
+                        "TLAS visibility mask exceeds its eight-bit ABI");
+            }
             this.matrix.clear();
             this.matrix
-                    .put(1.0F).put(0.0F).put(0.0F).put(translateX)
-                    .put(0.0F).put(1.0F).put(0.0F).put(translateY)
-                    .put(0.0F).put(0.0F).put(1.0F).put(translateZ)
+                    .put(1.0F).put(0.0F).put(0.0F).put(transformX)
+                    .put(0.0F).put(1.0F).put(0.0F).put(transformY)
+                    .put(0.0F).put(0.0F).put(1.0F).put(transformZ)
                     .flip();
             this.instance.transform().matrix(this.matrix);
             this.instance.instanceCustomIndex(this.index)
-                    .mask(0xff)
+                    .mask(mask)
                     .instanceShaderBindingTableRecordOffset(0)
                     .flags(KHRAccelerationStructure.VK_GEOMETRY_INSTANCE_TRIANGLE_FACING_CULL_DISABLE_BIT_KHR)
                     .accelerationStructureReference(blasAddress);
@@ -347,16 +391,19 @@ public final class TopLevelAccelerationStructure {
                     worldLightForwardAddress);
             MemoryUtil.memPutFloat(
                     sectionAddress + ShaderAbi.SECTION_TRANSLATION_OFFSET,
-                    translateX);
+                    sectionX);
             MemoryUtil.memPutFloat(
                     sectionAddress + ShaderAbi.SECTION_TRANSLATION_OFFSET + Float.BYTES,
-                    translateY);
+                    sectionY);
             MemoryUtil.memPutFloat(
                     sectionAddress + ShaderAbi.SECTION_TRANSLATION_OFFSET + 2L * Float.BYTES,
-                    translateZ);
+                    sectionZ);
             MemoryUtil.memPutInt(
                     sectionAddress + ShaderAbi.SECTION_WORLD_LIGHT_NODE_COUNT_OFFSET,
                     worldLightNodeCount);
+            MemoryUtil.memPutInt(
+                    sectionAddress + ShaderAbi.SECTION_INSTANCE_TINT_OFFSET,
+                    instanceTint);
             this.index++;
         }
     }

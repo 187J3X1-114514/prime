@@ -30,6 +30,31 @@ final class TerrainUploadBudgetTest {
         assertEquals(2, mesh.segments().size());
     }
 
+    @Test
+    void stagingBudgetIncludesReusableVoxelMeshPayloads() {
+        CpuVoxelMesh voxelMesh = new CpuVoxelMesh(
+                new float[9],
+                new int[CpuSectionMesh.PRIMITIVE_WORDS],
+                1,
+                0,
+                0,
+                OpacityMicromapData.EMPTY);
+        CpuClusterMesh mesh = CpuClusterMesh.fromEncoded(
+                List.of(),
+                0L,
+                0L,
+                0L,
+                OpacityMicromapData.EMPTY,
+                CompiledClusterLights.EMPTY,
+                List.of(voxelMesh),
+                new CpuVoxelInstances(
+                        new int[] {0},
+                        new int[] {0x00ff_ffff},
+                        new float[] {0.0F, 0.0F, 0.0F}));
+
+        assertEquals(68L, TerrainStreamer.stagingEndOffset(0L, mesh, false));
+    }
+
     private static CpuSectionMesh mesh(int opaque, int cutout, int transmissive) {
         int triangles = opaque + cutout + transmissive;
         return new CpuSectionMesh(

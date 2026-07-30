@@ -9,8 +9,10 @@ import java.util.Objects;
 /** Versioned canonical binary encoding of one {@link CompiledCluster}. */
 public final class CompiledClusterCodec {
     private static final int MAGIC = 0x3143_4350;
-    private static final int VERSION = 1;
+    private static final int VERSION = 2;
     private static final int MAX_SEGMENTS = 4_096;
+    private static final int MAX_VOXEL_MESHES = 4_096;
+    private static final int MAX_VOXEL_INSTANCES = 4_194_304;
     private static final int MAX_ENCODED_BYTES = 1 << 30;
 
     private CompiledClusterCodec() {
@@ -49,6 +51,19 @@ public final class CompiledClusterCodec {
         putInts(output, opacity.blockSubdivisionLevels());
         putInts(output, opacity.triangleIndices());
 
+        output.putInt(mesh.voxelMeshes().size());
+        for (CpuVoxelMesh voxelMesh : mesh.voxelMeshes()) {
+            output.putInt(voxelMesh.opaqueTriangleCount());
+            output.putInt(voxelMesh.cutoutTriangleCount());
+            output.putInt(voxelMesh.transmissiveTriangleCount());
+            putFloats(output, voxelMesh.positions());
+            putInts(output, voxelMesh.primitiveRecords());
+            putOpacity(output, voxelMesh.opacityMicromap());
+        }
+        putInts(output, mesh.voxelInstances().meshIndices());
+        putInts(output, mesh.voxelInstances().packedTints());
+        putFloats(output, mesh.voxelInstances().translations());
+
         CompiledClusterLights.Summary lights = mesh.lights().summary();
         output.putInt(lights.emitterCount());
         output.putFloat(lights.minX());
@@ -72,7 +87,12 @@ public final class CompiledClusterCodec {
         }
         ByteBuffer input = ByteBuffer.wrap(encoded).order(ByteOrder.LITTLE_ENDIAN);
         try {
-            if (input.getInt() != MAGIC || input.getInt() != VERSION) {
+            if (input.getInt() != MAGIC) {
+                throw new IllegalArgumentException(
+                        "Unsupported compiled-cluster replay header");
+            }
+            int version = input.getInt();
+            if (version < 1 || version > VERSION) {
                 throw new IllegalArgumentException(
                         "Unsupported compiled-cluster replay header");
             }
@@ -128,6 +148,53 @@ public final class CompiledClusterCodec {
                     opacitySubdivisions,
                     opacityTriangles);
 
+            ArrayList<CpuVoxelMesh> voxelMeshes = new ArrayList<>();
+            CpuVoxelInstances voxelInstances = CpuVoxelInstances.EMPTY;
+            if (version >= 2) {
+                int voxelMeshCount = boundedCount(
+                        input.getInt(), MAX_VOXEL_MESHES, "voxel mesh count");
+                voxelMeshes.ensureCapacity(voxelMeshCount);
+                for (int index = 0; index < voxelMeshCount; index++) {
+                    int meshOpaque = nonnegative(
+                            input.getInt(), "voxel mesh opaque triangle count");
+                    int meshCutout = nonnegative(
+                            input.getInt(), "voxel mesh cutout triangle count");
+                    int meshTransmissive = nonnegative(
+                            input.getInt(), "voxel mesh transmissive triangle count");
+                    int triangles = Math.addExact(
+                            Math.addExact(meshOpaque, meshCutout),
+                            meshTransmissive);
+                    float[] meshPositions = getFloats(
+                            input,
+                            Math.multiplyExact(triangles, 9),
+                            "voxel mesh positions");
+                    int[] meshPrimitives = getInts(
+                            input,
+                            Math.multiplyExact(
+                                    triangles, CpuSectionMesh.PRIMITIVE_WORDS),
+                            "voxel mesh primitive records");
+                    voxelMeshes.add(new CpuVoxelMesh(
+                            meshPositions,
+                            meshPrimitives,
+                            meshOpaque,
+                            meshCutout,
+                            meshTransmissive,
+                            getOpacity(input)));
+                }
+                int[] meshIndices = getInts(input, "voxel instance mesh indices");
+                if (meshIndices.length > MAX_VOXEL_INSTANCES) {
+                    throw new IllegalArgumentException(
+                            "Compiled-cluster voxel instance count is invalid");
+                }
+                int[] packedTints = getInts(input, "voxel instance tints");
+                float[] translations = getFloats(
+                        input,
+                        Math.multiplyExact(meshIndices.length, 3),
+                        "voxel instance translations");
+                voxelInstances = new CpuVoxelInstances(
+                        meshIndices, packedTints, translations);
+            }
+
             CompiledClusterLights.Summary lightSummary =
                     new CompiledClusterLights.Summary(
                             nonnegative(input.getInt(), "light emitter count"),
@@ -150,7 +217,9 @@ public final class CompiledClusterCodec {
                     cutout,
                     transmissive,
                     opacity,
-                    lights);
+                    lights,
+                    voxelMeshes,
+                    voxelInstances);
             validatePrimitiveRecords(mesh);
             return new CompiledCluster(
                     key, clusterX, clusterY, clusterZ, mesh);
@@ -176,6 +245,22 @@ public final class CompiledClusterCodec {
                 result, opacity.blockSubdivisionLevels().length, Integer.BYTES);
         result = arrayBytes(
                 result, opacity.triangleIndices().length, Integer.BYTES);
+        result = Math.addExact(result, Integer.BYTES);
+        for (CpuVoxelMesh voxelMesh : cluster.mesh().voxelMeshes()) {
+            result = Math.addExact(result, 3L * Integer.BYTES);
+            result = arrayBytes(
+                    result, voxelMesh.positions().length, Float.BYTES);
+            result = arrayBytes(
+                    result,
+                    voxelMesh.primitiveRecords().length,
+                    Integer.BYTES);
+            result = opacityEncodedByteSize(
+                    result, voxelMesh.opacityMicromap());
+        }
+        CpuVoxelInstances instances = cluster.mesh().voxelInstances();
+        result = arrayBytes(result, instances.meshIndices().length, Integer.BYTES);
+        result = arrayBytes(result, instances.packedTints().length, Integer.BYTES);
+        result = arrayBytes(result, instances.translations().length, Float.BYTES);
         result = Math.addExact(result, 32L);
         result = arrayBytes(
                 result,
@@ -186,6 +271,17 @@ public final class CompiledClusterCodec {
                     "Compiled cluster is too large for the replay format");
         }
         return result;
+    }
+
+    private static long opacityEncodedByteSize(
+            long current, OpacityMicromapData opacity) {
+        long result = arrayBytes(current, opacity.blocks().length, Byte.BYTES);
+        result = arrayBytes(result, opacity.blockOffsets().length, Integer.BYTES);
+        result = arrayBytes(result, opacity.blockFormats().length, Integer.BYTES);
+        result = arrayBytes(
+                result, opacity.blockSubdivisionLevels().length, Integer.BYTES);
+        return arrayBytes(
+                result, opacity.triangleIndices().length, Integer.BYTES);
     }
 
     private static long arrayBytes(long current, int length, int elementBytes) {
@@ -208,6 +304,16 @@ public final class CompiledClusterCodec {
             }
             output.putInt(Float.floatToRawIntBits(value));
         }
+    }
+
+    private static void putOpacity(
+            ByteBuffer output, OpacityMicromapData opacity) {
+        opacity.requireValidTriangleIndices();
+        putBytes(output, opacity.blocks());
+        putInts(output, opacity.blockOffsets());
+        putInts(output, opacity.blockFormats());
+        putInts(output, opacity.blockSubdivisionLevels());
+        putInts(output, opacity.triangleIndices());
     }
 
     private static void putInts(ByteBuffer output, int[] values) {
@@ -239,45 +345,75 @@ public final class CompiledClusterCodec {
         return result;
     }
 
+    private static OpacityMicromapData getOpacity(ByteBuffer input) {
+        return OpacityMicromapData.fromEncoded(
+                getBytes(input, "voxel opacity blocks"),
+                getInts(input, "voxel opacity block offsets"),
+                getInts(input, "voxel opacity block formats"),
+                getInts(input, "voxel opacity subdivision levels"),
+                getInts(input, "voxel opacity triangle indices"));
+    }
+
     private static void validatePrimitiveRecords(CpuClusterMesh mesh) {
         int emitterCount = mesh.lights().emitterCount();
         for (CpuClusterMesh.Segment segment : mesh.segments()) {
-            int opaqueEnd = segment.opaqueTriangleCount();
-            int cutoutEnd = Math.addExact(
-                    opaqueEnd, segment.cutoutTriangleCount());
-            int[] records = segment.primitiveRecords();
-            for (int triangle = 0; triangle < segment.triangleCount(); triangle++) {
-                int record = Math.multiplyExact(
-                        triangle, CpuSectionMesh.PRIMITIVE_WORDS);
-                for (int vertex = 0; vertex < 3; vertex++) {
-                    requireFiniteHalf2(records[record + vertex]);
-                }
-                int flags = PrimitivePacking.unpackFlags(
-                        records[record + 3], records[record + 5]);
-                PrimitivePacking.requireValidFlags(flags);
-                boolean cutout = (flags & PrimitivePacking.FLAG_CUTOUT) != 0;
-                boolean transmissive =
-                        (flags & PrimitivePacking.FLAG_TRANSMISSIVE) != 0;
-                boolean categoryMismatch = triangle < opaqueEnd
-                        ? cutout || transmissive
-                        : triangle < cutoutEnd
-                                ? !cutout || transmissive
-                                : !transmissive;
-                if (categoryMismatch) {
-                    throw new IllegalArgumentException(
-                            "Compiled-cluster primitive flags disagree with geometry categories");
-                }
-                int emitterIndex = PrimitivePacking.unpackEmitterIndex(
-                        records[record + 5]);
-                if (emitterIndex >= emitterCount) {
-                    throw new IllegalArgumentException(
-                            "Compiled-cluster primitive references an invalid emitter");
-                }
-                float uvDensity = Float.intBitsToFloat(records[record + 6]);
-                if (!(uvDensity >= 0.0F) || !Float.isFinite(uvDensity)) {
-                    throw new IllegalArgumentException(
-                            "Compiled-cluster UV density must be finite and nonnegative");
-                }
+            validatePrimitiveRecords(
+                    segment.primitiveRecords(),
+                    segment.opaqueTriangleCount(),
+                    segment.cutoutTriangleCount(),
+                    segment.transmissiveTriangleCount(),
+                    emitterCount);
+        }
+        for (CpuVoxelMesh voxelMesh : mesh.voxelMeshes()) {
+            validatePrimitiveRecords(
+                    voxelMesh.primitiveRecords(),
+                    voxelMesh.opaqueTriangleCount(),
+                    voxelMesh.cutoutTriangleCount(),
+                    voxelMesh.transmissiveTriangleCount(),
+                    0);
+        }
+    }
+
+    private static void validatePrimitiveRecords(
+            int[] records,
+            int opaqueCount,
+            int cutoutCount,
+            int transmissiveCount,
+            int emitterCount) {
+        int opaqueEnd = opaqueCount;
+        int cutoutEnd = Math.addExact(opaqueEnd, cutoutCount);
+        int triangleCount = Math.addExact(cutoutEnd, transmissiveCount);
+        for (int triangle = 0; triangle < triangleCount; triangle++) {
+            int record = Math.multiplyExact(
+                    triangle, CpuSectionMesh.PRIMITIVE_WORDS);
+            for (int vertex = 0; vertex < 3; vertex++) {
+                requireFiniteHalf2(records[record + vertex]);
+            }
+            int flags = PrimitivePacking.unpackFlags(
+                    records[record + 3], records[record + 5]);
+            PrimitivePacking.requireValidFlags(flags);
+            boolean cutout = (flags & PrimitivePacking.FLAG_CUTOUT) != 0;
+            boolean transmissive =
+                    (flags & PrimitivePacking.FLAG_TRANSMISSIVE) != 0;
+            boolean categoryMismatch = triangle < opaqueEnd
+                    ? cutout || transmissive
+                    : triangle < cutoutEnd
+                            ? !cutout || transmissive
+                            : !transmissive;
+            if (categoryMismatch) {
+                throw new IllegalArgumentException(
+                        "Compiled-cluster primitive flags disagree with geometry categories");
+            }
+            int emitterIndex = PrimitivePacking.unpackEmitterIndex(
+                    records[record + 5]);
+            if (emitterIndex >= emitterCount) {
+                throw new IllegalArgumentException(
+                        "Compiled-cluster primitive references an invalid emitter");
+            }
+            float uvDensity = Float.intBitsToFloat(records[record + 6]);
+            if (!(uvDensity >= 0.0F) || !Float.isFinite(uvDensity)) {
+                throw new IllegalArgumentException(
+                        "Compiled-cluster UV density must be finite and nonnegative");
             }
         }
     }

@@ -10,6 +10,7 @@ import java.util.Objects;
 /** Immutable product settings and renderer revision markers owned by {@link PrimeConfig}. */
 public record PrimeSettings(
         boolean pathTracingEnabled,
+        boolean voxelTextureSurfaces,
         PostProcessingMode postProcessingMode,
         ReconstructionQualityMode reconstructionQuality,
         int sunQuarterSteps,
@@ -38,6 +39,7 @@ public record PrimeSettings(
     public static PrimeSettings defaults() {
         return new PrimeSettings(
                 true,
+                false,
                 PostProcessingMode.DEFAULT,
                 ReconstructionQualityMode.DEFAULT,
                 LightingSettings.DEFAULT_SUN_QUARTER_STEPS,
@@ -54,6 +56,25 @@ public record PrimeSettings(
         return value == this.pathTracingEnabled
                 ? this
                 : new PrimeSettings(
+                        value,
+                        this.voxelTextureSurfaces,
+                        this.postProcessingMode,
+                        this.reconstructionQuality,
+                        this.sunQuarterSteps,
+                        this.starQuarterSteps,
+                        this.blockLightQuarterSteps,
+                        this.finalExposureQuarterSteps,
+                        this.oklabOverexposureSteps,
+                        this.defaultRoughnessSteps,
+                        this.lightingRevision,
+                        this.materialRevision);
+    }
+
+    public PrimeSettings withVoxelTextureSurfaces(boolean value) {
+        return value == this.voxelTextureSurfaces
+                ? this
+                : new PrimeSettings(
+                        this.pathTracingEnabled,
                         value,
                         this.postProcessingMode,
                         this.reconstructionQuality,
@@ -73,6 +94,7 @@ public record PrimeSettings(
                 ? this
                 : new PrimeSettings(
                         this.pathTracingEnabled,
+                        this.voxelTextureSurfaces,
                         value,
                         this.reconstructionQuality,
                         this.sunQuarterSteps,
@@ -91,6 +113,7 @@ public record PrimeSettings(
                 ? this
                 : new PrimeSettings(
                         this.pathTracingEnabled,
+                        this.voxelTextureSurfaces,
                         this.postProcessingMode,
                         value,
                         this.sunQuarterSteps,
@@ -109,6 +132,7 @@ public record PrimeSettings(
                 ? this
                 : new PrimeSettings(
                         this.pathTracingEnabled,
+                        this.voxelTextureSurfaces,
                         this.postProcessingMode,
                         this.reconstructionQuality,
                         value,
@@ -127,6 +151,7 @@ public record PrimeSettings(
                 ? this
                 : new PrimeSettings(
                         this.pathTracingEnabled,
+                        this.voxelTextureSurfaces,
                         this.postProcessingMode,
                         this.reconstructionQuality,
                         this.sunQuarterSteps,
@@ -145,6 +170,7 @@ public record PrimeSettings(
                 ? this
                 : new PrimeSettings(
                         this.pathTracingEnabled,
+                        this.voxelTextureSurfaces,
                         this.postProcessingMode,
                         this.reconstructionQuality,
                         this.sunQuarterSteps,
@@ -163,6 +189,7 @@ public record PrimeSettings(
                 ? this
                 : new PrimeSettings(
                         this.pathTracingEnabled,
+                        this.voxelTextureSurfaces,
                         this.postProcessingMode,
                         this.reconstructionQuality,
                         this.sunQuarterSteps,
@@ -181,6 +208,7 @@ public record PrimeSettings(
                 ? this
                 : new PrimeSettings(
                         this.pathTracingEnabled,
+                        this.voxelTextureSurfaces,
                         this.postProcessingMode,
                         this.reconstructionQuality,
                         this.sunQuarterSteps,
@@ -199,6 +227,7 @@ public record PrimeSettings(
                 ? this
                 : new PrimeSettings(
                         this.pathTracingEnabled,
+                        this.voxelTextureSurfaces,
                         this.postProcessingMode,
                         this.reconstructionQuality,
                         this.sunQuarterSteps,

@@ -118,7 +118,11 @@ public final class NoisyPostProcessor implements RealtimePostProcessor {
         token.recorded = true;
         TemporalReconstructionState.Plan temporal =
                 token.temporal.claimForExecution();
-        this.composite.record(commandBuffer, parameters.sunRadianceMultiplier());
+        this.composite.record(
+                commandBuffer,
+                parameters.camera(),
+                parameters.sunDirection(),
+                parameters.sunRadianceMultiplier());
         this.displayTransform.record(
                 commandBuffer,
                 false,

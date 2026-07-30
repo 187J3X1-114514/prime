@@ -144,10 +144,12 @@ final class AutoExposureMathTest {
     }
 
     @Test
-    void robustMeterDiscardsTheDarkestAndBrightestPercent() {
+    void robustMeterDiscardsTheDarkestAndBrightestHalfPercent() {
         int[] histogram = new int[AutoExposureMath.BIN_COUNT];
+        int keyBin = binForGray(AutoExposureMath.KEY_LUMINANCE);
         histogram[0] = 1;
-        histogram[binForGray(AutoExposureMath.KEY_LUMINANCE)] = 98;
+        histogram[1] = 1;
+        histogram[keyBin] = 197;
         histogram[AutoExposureMath.BIN_COUNT - 1] = 1;
 
         AutoExposureMath.State result = AutoExposureMath.update(
@@ -157,10 +159,20 @@ final class AutoExposureMathTest {
                 true,
                 false);
 
+        float binWidth = (
+                AutoExposureMath.MAX_LOG_LUMINANCE
+                        - AutoExposureMath.MIN_LOG_LUMINANCE)
+                / AutoExposureMath.BIN_COUNT;
+        float innerDarkLog =
+                AutoExposureMath.MIN_LOG_LUMINANCE + 1.5F * binWidth;
+        float keyLog = AutoExposureMath.MIN_LOG_LUMINANCE
+                + (keyBin + 0.5F) * binWidth;
+        float expectedMeasuredLog =
+                (innerDarkLog + 197.0F * keyLog) / 198.0F;
         assertEquals(
-                AutoExposureMath.BASELINE_EV,
-                result.targetEv(),
-                BIN_HALF_WIDTH_EV);
+                expectedMeasuredLog,
+                result.measuredLogLuminance(),
+                1.0e-6F);
         assertEquals(result.targetEv(), result.exposureEv());
     }
 

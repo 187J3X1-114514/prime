@@ -45,14 +45,6 @@ float sunShadowDepth(int imageIndex, ivec2 coordinate) {
     return imageLoad(sunShadowDepth9, coordinate).r;
 }
 
-vec2 hierarchyLoad(int cascade, ivec2 coordinate) {
-    if (cascade == 0) return imageLoad(sunShadowHierarchy0, coordinate).rg;
-    if (cascade == 1) return imageLoad(sunShadowHierarchy1, coordinate).rg;
-    if (cascade == 2) return imageLoad(sunShadowHierarchy2, coordinate).rg;
-    if (cascade == 3) return imageLoad(sunShadowHierarchy3, coordinate).rg;
-    return imageLoad(sunShadowHierarchy4, coordinate).rg;
-}
-
 void hierarchyStore(int cascade, ivec2 coordinate, vec2 value) {
     if (cascade == 0) {
         imageStore(sunShadowHierarchy0, coordinate, vec4(value, 0.0, 0.0));
@@ -69,43 +61,29 @@ void hierarchyStore(int cascade, ivec2 coordinate, vec2 value) {
 
 void main() {
     int level = atmospherePush.hierarchyLevel;
-    int resolution = primeSunShadowHierarchyResolution(level);
     ivec2 coordinate = ivec2(gl_GlobalInvocationID.xy);
     int cascade = int(gl_GlobalInvocationID.z);
-    if (cascade >= 5 || any(greaterThanEqual(coordinate, ivec2(resolution)))) {
+    if (level != 0
+            || cascade >= 5
+            || any(greaterThanEqual(
+                    coordinate,
+                    ivec2(PRIME_SUN_SHADOW_RESOLUTION)))) {
         return;
     }
 
-    vec2 range;
-    if (level == 0) {
-        int bank = int(atmospherePush.shadowDirectionBank.w + 0.5);
-        int imageIndex = bank * 5 + cascade;
-        float blockerDepth = -1.0e20;
-        // Resolve Prime's conservative neighbourhood once. Every later ray query is one
-        // hierarchy load instead of nine raw clipmap loads.
-        for (int y = -1; y <= 1; ++y) {
-            for (int x = -1; x <= 1; ++x) {
-                ivec2 source = (coordinate + ivec2(x, y))
-                        & (PRIME_SUN_SHADOW_RESOLUTION - 1);
-                blockerDepth = max(
-                        blockerDepth,
-                        sunShadowDepth(imageIndex, source));
-            }
+    int bank = int(atmospherePush.shadowDirectionBank.w + 0.5);
+    int imageIndex = bank * 5 + cascade;
+    float blockerDepth = -1.0e20;
+    // Resolve Prime's conservative neighbourhood once. Every later profile
+    // query is one image load instead of nine raw clipmap loads.
+    for (int y = -1; y <= 1; ++y) {
+        for (int x = -1; x <= 1; ++x) {
+            ivec2 source = (coordinate + ivec2(x, y))
+                    & (PRIME_SUN_SHADOW_RESOLUTION - 1);
+            blockerDepth = max(
+                    blockerDepth,
+                    sunShadowDepth(imageIndex, source));
         }
-        range = vec2(blockerDepth);
-    } else {
-        ivec2 sourceOffset = primeSunShadowHierarchyOffset(level - 1);
-        ivec2 source = sourceOffset + coordinate * 2;
-        vec2 first = hierarchyLoad(cascade, source);
-        vec2 second = hierarchyLoad(cascade, source + ivec2(1, 0));
-        vec2 third = hierarchyLoad(cascade, source + ivec2(0, 1));
-        vec2 fourth = hierarchyLoad(cascade, source + ivec2(1, 1));
-        range = vec2(
-                min(min(first.x, second.x), min(third.x, fourth.x)),
-                max(max(first.y, second.y), max(third.y, fourth.y)));
     }
-    hierarchyStore(
-            cascade,
-            primeSunShadowHierarchyOffset(level) + coordinate,
-            range);
+    hierarchyStore(cascade, coordinate, vec2(blockerDepth));
 }

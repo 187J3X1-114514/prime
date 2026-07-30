@@ -1,6 +1,7 @@
 #version 460
 #extension GL_GOOGLE_include_directive : require
 #include "atmosphere.glsl"
+#include "atmosphere_epipolar.glsl"
 #include "atmosphere_phase.glsl"
 #include "sun_shadow_hierarchy.glsl"
 
@@ -9,7 +10,6 @@ layout(set = 0, binding = 1, rgba16f) uniform readonly image2D transmittanceHigh
 layout(set = 0, binding = 2, rgba16f) uniform readonly image2D multiScatteringLow;
 layout(set = 0, binding = 3, rgba16f) uniform readonly image2D multiScatteringHigh;
 layout(set = 0, binding = 5, rgba16f) uniform writeonly image3D aerialRadiance;
-layout(set = 0, binding = 6, rgba16f) uniform writeonly image3D aerialTransmittance;
 layout(set = 0, binding = 18, rg32f) uniform readonly image2D sunShadowHierarchy0;
 layout(set = 0, binding = 19, rg32f) uniform readonly image2D sunShadowHierarchy1;
 layout(set = 0, binding = 20, rg32f) uniform readonly image2D sunShadowHierarchy2;
@@ -25,14 +25,14 @@ layout(push_constant) uniform AtmospherePushConstants {
     mat4 inverseViewProjection;
     float eyeRadiusKm;
     float maximumAerialDistanceKm;
-    vec2 padding;
+    vec2 epipoleNdc;
     vec4 sunDirectionIntensity;
     vec4 shadowDirectionBank;
     vec4 shadowCameraEnabled;
 } atmospherePush;
 
 layout(
-        local_size_x = PRIME_ATMOSPHERE_AERIAL_DEPTH,
+        local_size_x = PRIME_ATMOSPHERE_AERIAL_EPIPOLAR_SAMPLES,
         local_size_y = 1,
         local_size_z = 1) in;
 
@@ -41,14 +41,6 @@ const float SUN_SHADOW_MAX_DISTANCE_METERS = 2048.0;
 const float SUN_SHADOW_DEPTH_BIAS_METERS = 0.02;
 const float SUN_SHADOW_CASCADE_RADIUS_TEXELS = 254.0;
 const float SUN_SHADOW_TRAVERSAL_EPSILON = 1.0e-5;
-// TEMPORARY DEBUG: use the 90-degree phase value so the visibility probe is view-direction neutral.
-const float AERIAL_DEBUG_RADIANCE_SCALE = 64.0;
-const float AERIAL_DEBUG_PHASE_COSINE = 0.0;
-
-shared vec4 prefixRadianceLow[PRIME_ATMOSPHERE_AERIAL_DEPTH];
-shared vec4 prefixTransmittanceLow[PRIME_ATMOSPHERE_AERIAL_DEPTH];
-shared vec4 prefixRadianceHigh[PRIME_ATMOSPHERE_AERIAL_DEPTH];
-shared vec4 prefixTransmittanceHigh[PRIME_ATMOSPHERE_AERIAL_DEPTH];
 
 vec2 sunShadowHierarchyRange(
         int cascade, int level, ivec2 worldNode) {
@@ -83,166 +75,7 @@ float sunShadowTexelSize(int cascade) {
             : (cascade == 3 ? 4.0 : 8.0)));
 }
 
-float sunShadowNodeExitDistance(
-        vec2 gridOrigin,
-        vec2 gridRate,
-        ivec2 nodeBase,
-        int nodeSize,
-        float endDistance) {
-    float result = endDistance;
-    if (gridRate.x > 0.0) {
-        result = min(
-                result,
-                (float(nodeBase.x + nodeSize) - gridOrigin.x) / gridRate.x);
-    } else if (gridRate.x < 0.0) {
-        result = min(
-                result,
-                (float(nodeBase.x) - gridOrigin.x) / gridRate.x);
-    }
-    if (gridRate.y > 0.0) {
-        result = min(
-                result,
-                (float(nodeBase.y + nodeSize) - gridOrigin.y) / gridRate.y);
-    } else if (gridRate.y < 0.0) {
-        result = min(
-                result,
-                (float(nodeBase.y) - gridOrigin.y) / gridRate.y);
-    }
-    return result;
-}
-
-float sunShadowCascadeLitLength(
-        int cascade,
-        vec3 rayDirection,
-        vec3 directionToSun,
-        vec3 basisU,
-        vec3 basisV,
-        float startDistance,
-        float endDistance) {
-    vec3 cameraPosition = atmospherePush.shadowCameraEnabled.xyz;
-    float texelSize = sunShadowTexelSize(cascade);
-    vec2 gridOrigin = vec2(
-            dot(cameraPosition, basisU),
-            dot(cameraPosition, basisV)) / texelSize;
-    vec2 gridRate = vec2(
-            dot(rayDirection, basisU),
-            dot(rayDirection, basisV)) / texelSize;
-    float rayDepthAtZero = dot(cameraPosition, directionToSun);
-    float rayDepthRate = dot(rayDirection, directionToSun);
-    float cursor = startDistance;
-    float litLength = 0.0;
-
-    // A half-aerial-segment crosses at most a few dozen leaf cells at the current
-    // 1 km range. The cap is a conservative failure boundary: any unprocessed tail
-    // remains shadowed instead of creating a cave light leak.
-    for (int traversal = 0;
-            traversal < 64
-                    && cursor + SUN_SHADOW_TRAVERSAL_EPSILON < endDistance;
-            ++traversal) {
-        vec2 gridPoint = gridOrigin + gridRate * cursor;
-        ivec2 cell = ivec2(floor(
-                gridPoint + sign(gridRate) * 1.0e-4));
-        bool advanced = false;
-        for (int level = PRIME_SUN_SHADOW_HIERARCHY_LEVELS - 1;
-                level >= 0;
-                --level) {
-            int nodeSize = 1 << level;
-            ivec2 worldNode = cell >> level;
-            ivec2 nodeBase = worldNode << level;
-            float spanEnd = min(
-                    sunShadowNodeExitDistance(
-                            gridOrigin,
-                            gridRate,
-                            nodeBase,
-                            nodeSize,
-                            endDistance),
-                    endDistance);
-            if (spanEnd <= cursor + SUN_SHADOW_TRAVERSAL_EPSILON) {
-                continue;
-            }
-
-            vec2 blockerRange =
-                    sunShadowHierarchyRange(cascade, level, worldNode);
-            float startDepth =
-                    rayDepthAtZero + rayDepthRate * cursor
-                            + SUN_SHADOW_DEPTH_BIAS_METERS;
-            float endDepth =
-                    rayDepthAtZero + rayDepthRate * spanEnd
-                            + SUN_SHADOW_DEPTH_BIAS_METERS;
-            if (min(startDepth, endDepth) >= blockerRange.y) {
-                litLength += spanEnd - cursor;
-            } else if (max(startDepth, endDepth) >= blockerRange.x
-                    && level > 0) {
-                continue;
-            } else if (level == 0) {
-                litLength += primeSunShadowLeafVisibleLength(
-                        rayDepthAtZero,
-                        rayDepthRate,
-                        cursor,
-                        spanEnd,
-                        blockerRange.x,
-                        SUN_SHADOW_DEPTH_BIAS_METERS);
-            }
-            cursor = spanEnd;
-            advanced = true;
-            break;
-        }
-        if (!advanced) {
-            break;
-        }
-    }
-    return litLength;
-}
-
-float localSunVisibilityInterval(
-        vec3 rayDirection,
-        float startDistance,
-        float endDistance) {
-    if (atmospherePush.shadowCameraEnabled.w < 0.5
-            || endDistance <= startDistance) {
-        return 1.0;
-    }
-    float tracedEnd = min(endDistance, SUN_SHADOW_MAX_DISTANCE_METERS);
-    if (tracedEnd <= startDistance) {
-        return 0.0;
-    }
-
-    vec3 directionToSun = normalize(atmospherePush.shadowDirectionBank.xyz);
-    vec3 basisU;
-    vec3 basisV;
-    sunShadowBasis(directionToSun, basisU, basisV);
-    float projectedRate = max(
-            abs(dot(rayDirection, basisU)),
-            abs(dot(rayDirection, basisV)));
-    float cursor = startDistance;
-    float litLength = 0.0;
-    for (int cascade = 0;
-            cascade < SUN_SHADOW_CASCADE_COUNT && cursor < tracedEnd;
-            ++cascade) {
-        float radius = SUN_SHADOW_CASCADE_RADIUS_TEXELS
-                * sunShadowTexelSize(cascade);
-        float cascadeEnd = projectedRate > 1.0e-6
-                ? min(tracedEnd, radius / projectedRate)
-                : tracedEnd;
-        if (cascadeEnd > cursor) {
-            litLength += sunShadowCascadeLitLength(
-                    cascade,
-                    rayDirection,
-                    directionToSun,
-                    basisU,
-                    basisV,
-                    cursor,
-                    cascadeEnd);
-            cursor = cascadeEnd;
-        }
-    }
-    // Missing projected coverage is unknown and therefore shadowed. This is intentionally
-    // asymmetric: cache limits may darken the final metres but can never illuminate a cave.
-    return clamp(
-            litLength / (endDistance - startDistance),
-            0.0,
-            1.0);
-}
+#include "atmosphere_epipolar_shadow.glsl"
 
 vec4 aerialTransmittanceToSun(int group, float sunMu, float normalizedAltitude) {
     vec2 uv = atmTransmittanceUv(sunMu, normalizedAltitude);
@@ -259,6 +92,57 @@ vec4 aerialMultiScattering(int group, float sunMu, float normalizedAltitude) {
             : sampleMultiScatteringHigh(uv);
 }
 
+struct AerialPhase {
+    float molecular;
+    vec4 aerosolBaseLow;
+    vec4 aerosolBackgroundLow;
+    vec4 aerosolBaseHigh;
+    vec4 aerosolBackgroundHigh;
+};
+
+AerialPhase aerialPhase(float phaseCosine) {
+    AerialPhase result;
+    result.molecular = atmRayleighPhase(phaseCosine);
+    result.aerosolBaseLow = vec4(0.0);
+    result.aerosolBackgroundLow = vec4(0.0);
+    result.aerosolBaseHigh = vec4(0.0);
+    result.aerosolBackgroundHigh = vec4(0.0);
+    for (int species = 0;
+            species < ATM_PHASE_SPECIES_COUNT;
+            ++species) {
+        vec4 weightedLow = atmAerosolScatteringCrossSection(0, species)
+                * atmAerosolPhaseValue(0, species, phaseCosine);
+        vec4 weightedHigh = atmAerosolScatteringCrossSection(1, species)
+                * atmAerosolPhaseValue(1, species, phaseCosine);
+        float baseDensity = atmAerosolBaseDensity(species);
+        float backgroundDensity =
+                atmAerosolBackgroundDensity(species);
+        result.aerosolBaseLow += weightedLow * baseDensity;
+        result.aerosolBackgroundLow += weightedLow * backgroundDensity;
+        result.aerosolBaseHigh += weightedHigh * baseDensity;
+        result.aerosolBackgroundHigh +=
+                weightedHigh * backgroundDensity;
+    }
+    return result;
+}
+
+vec4 aerialAerosolPhaseScattering(
+        int group,
+        float altitudeKm,
+        AerialPhase phase) {
+    float altitude = max(altitudeKm, 0.0);
+    float falloff = exp(-altitude / 8.0);
+    float backgroundBlend =
+            smoothstep(1.0, 2.0, altitude);
+    vec4 base = group == 0
+            ? phase.aerosolBaseLow
+            : phase.aerosolBaseHigh;
+    vec4 background = group == 0
+            ? phase.aerosolBackgroundLow
+            : phase.aerosolBackgroundHigh;
+    return falloff * mix(base, background, backgroundBlend);
+}
+
 void aerialStepGroup(
         int group,
         float altitude,
@@ -266,22 +150,21 @@ void aerialStepGroup(
         bool sunOccluded,
         float terrainSunVisibility,
         float stepLength,
+        AerialPhase phase,
         out vec4 radiance,
         out vec4 transmittance) {
     float normalizedAltitude = altitude / ATM_THICKNESS_KM;
     AtmCoefficients coefficients = atmCoefficients(group, altitude);
-    vec4 debugDirect = sunOccluded ? vec4(0.0)
+    vec4 direct = sunOccluded ? vec4(0.0)
             : aerialTransmittanceToSun(group, sunMu, normalizedAltitude)
             * (coefficients.molecularScattering
-                    * atmRayleighPhase(AERIAL_DEBUG_PHASE_COSINE)
-            + atmAerosolPhaseScattering(
-                    group, altitude, AERIAL_DEBUG_PHASE_COSINE));
+                    * phase.molecular
+            + aerialAerosolPhaseScattering(group, altitude, phase));
     vec4 multiple = aerialMultiScattering(group, sunMu, normalizedAltitude)
             * (coefficients.aerosolScattering + coefficients.molecularScattering);
     vec4 source = atmSolarSpectrum(group)
-            * (debugDirect + multiple)
-            * terrainSunVisibility
-            * AERIAL_DEBUG_RADIANCE_SCALE;
+            * (direct + multiple)
+            * terrainSunVisibility;
     transmittance = exp(-stepLength * coefficients.extinction);
     vec4 safeExtinction = max(coefficients.extinction, vec4(1.0e-7));
     radiance = (source - source * transmittance) / safeExtinction;
@@ -307,7 +190,8 @@ AerialSegment integrateAerialSegment(
         vec3 origin,
         vec3 direction,
         float segmentStart,
-        float segmentEnd) {
+        float segmentEnd,
+        AerialPhase phase) {
     AerialSegment result = identityAerialSegment();
     if (segmentEnd <= segmentStart) {
         return result;
@@ -352,6 +236,7 @@ AerialSegment integrateAerialSegment(
                 sunOccluded,
                 terrainSunVisibility,
                 stepLength,
+                phase,
                 radianceLow,
                 transmittanceLowValue);
         aerialStepGroup(
@@ -361,6 +246,7 @@ AerialSegment integrateAerialSegment(
                 sunOccluded,
                 terrainSunVisibility,
                 stepLength,
+                phase,
                 radianceHigh,
                 transmittanceHighValue);
         result.radianceLow += result.transmittanceLow * radianceLow;
@@ -372,8 +258,10 @@ AerialSegment integrateAerialSegment(
 }
 
 vec3 aerialDirection(ivec2 coordinate, ivec2 dimensions) {
-    vec2 uv = (vec2(coordinate) + vec2(0.5)) / vec2(dimensions);
-    vec2 ndc = uv * 2.0 - 1.0;
+    vec2 ndc = atmEpipolarSliceNdc(
+            atmospherePush.epipoleNdc,
+            coordinate,
+            dimensions);
     vec4 nearPoint = atmospherePush.inverseViewProjection * vec4(ndc, 1.0, 1.0);
     vec4 farPoint = atmospherePush.inverseViewProjection * vec4(ndc, 0.0, 1.0);
     return normalize(farPoint.xyz / farPoint.w - nearPoint.xyz / nearPoint.w);
@@ -381,74 +269,94 @@ vec3 aerialDirection(ivec2 coordinate, ivec2 dimensions) {
 
 void main() {
     ivec3 dimensions = imageSize(aerialRadiance);
-    ivec2 coordinate = ivec2(gl_WorkGroupID.xy);
-    int depth = int(gl_LocalInvocationID.x);
-    vec3 direction = aerialDirection(coordinate, dimensions.xy);
-    vec3 origin = atmMoveToTop(vec3(0.0, atmospherePush.eyeRadiusKm, 0.0), direction);
-    float maximumDistance = max(atmRaySegment(origin, direction).maximumDistanceKm, 0.0);
-    float inverseDepth = 1.0 / float(dimensions.z);
-    float normalizedStart = max(float(depth) - 0.5, 0.0) * inverseDepth;
-    float normalizedEnd = (float(depth) + 0.5) * inverseDepth;
-    float segmentStart = min(
-            atmospherePush.maximumAerialDistanceKm
-                    * normalizedStart * normalizedStart,
-            maximumDistance);
-    float segmentEnd = min(
-            atmospherePush.maximumAerialDistanceKm
-                    * normalizedEnd * normalizedEnd,
-            maximumDistance);
-    AerialSegment segment = integrateAerialSegment(
-            origin, direction, segmentStart, segmentEnd);
-    prefixRadianceLow[depth] = segment.radianceLow;
-    prefixTransmittanceLow[depth] = segment.transmittanceLow;
-    prefixRadianceHigh[depth] = segment.radianceHigh;
-    prefixTransmittanceHigh[depth] = segment.transmittanceHigh;
+    int radial = int(gl_LocalInvocationID.x);
+    int slice = int(gl_WorkGroupID.y);
+    ivec2 coordinate = ivec2(radial, slice);
+
+    // One workgroup owns one epipolar slice. Its lanes integrate all radial
+    // screen rays while five lanes build the shared RT blocker profiles.
+    if (radial == 0) {
+        sunShadowProfileDirectionToSun = normalize(
+                atmospherePush.shadowDirectionBank.xyz);
+        sunShadowBasis(
+                sunShadowProfileDirectionToSun,
+                sunShadowProfileBasisU,
+                sunShadowProfileBasisV);
+        vec3 cameraPosition =
+                atmospherePush.shadowCameraEnabled.xyz;
+        sunShadowProfileCamera = vec2(
+                dot(cameraPosition, sunShadowProfileBasisU),
+                dot(cameraPosition, sunShadowProfileBasisV));
+        sunShadowProfileCameraDepth = dot(
+                cameraPosition,
+                sunShadowProfileDirectionToSun);
+
+        vec3 edgeDirection = aerialDirection(
+                ivec2(dimensions.x - 1, slice),
+                dimensions.xy);
+        vec2 projectedEdge = vec2(
+                dot(edgeDirection, sunShadowProfileBasisU),
+                dot(edgeDirection, sunShadowProfileBasisV));
+        float projectedLength = length(projectedEdge);
+        sunShadowProfileDirection = projectedLength > 1.0e-6
+                ? projectedEdge / projectedLength
+                : vec2(1.0, 0.0);
+        sunShadowProfileDirectionMax = max(
+                abs(sunShadowProfileDirection.x),
+                abs(sunShadowProfileDirection.y));
+
+    }
+    barrier();
+    if (radial < SUN_SHADOW_CASCADE_COUNT) {
+        sunShadowBuildProfileCascade(radial);
+    }
     barrier();
 
-    // Segment composition is associative:
-    // (La, Ta) followed by (Lb, Tb) = (La + Ta * Lb, Ta * Tb).
-    for (int offset = 1;
-            offset < PRIME_ATMOSPHERE_AERIAL_DEPTH;
-            offset <<= 1) {
-        vec4 earlierRadianceLow;
-        vec4 earlierTransmittanceLow;
-        vec4 earlierRadianceHigh;
-        vec4 earlierTransmittanceHigh;
-        vec4 currentRadianceLow;
-        vec4 currentTransmittanceLow;
-        vec4 currentRadianceHigh;
-        vec4 currentTransmittanceHigh;
-        if (depth >= offset) {
-            earlierRadianceLow = prefixRadianceLow[depth - offset];
-            earlierTransmittanceLow = prefixTransmittanceLow[depth - offset];
-            earlierRadianceHigh = prefixRadianceHigh[depth - offset];
-            earlierTransmittanceHigh = prefixTransmittanceHigh[depth - offset];
-            currentRadianceLow = prefixRadianceLow[depth];
-            currentTransmittanceLow = prefixTransmittanceLow[depth];
-            currentRadianceHigh = prefixRadianceHigh[depth];
-            currentTransmittanceHigh = prefixTransmittanceHigh[depth];
-        }
-        barrier();
-        if (depth >= offset) {
-            prefixRadianceLow[depth] = earlierRadianceLow
-                    + earlierTransmittanceLow * currentRadianceLow;
-            prefixTransmittanceLow[depth] = earlierTransmittanceLow
-                    * currentTransmittanceLow;
-            prefixRadianceHigh[depth] = earlierRadianceHigh
-                    + earlierTransmittanceHigh * currentRadianceHigh;
-            prefixTransmittanceHigh[depth] = earlierTransmittanceHigh
-                    * currentTransmittanceHigh;
-        }
-        barrier();
-    }
+    vec3 direction = aerialDirection(coordinate, dimensions.xy);
+    float phaseCosine = dot(
+            -direction,
+            atmospherePush.sunDirectionIntensity.xyz);
+    AerialPhase phase = aerialPhase(phaseCosine);
+    vec3 origin = atmMoveToTop(
+            vec3(0.0, atmospherePush.eyeRadiusKm, 0.0),
+            direction);
+    float maximumDistance = max(
+            atmRaySegment(origin, direction).maximumDistanceKm,
+            0.0);
+    float inverseDepth = 1.0 / float(dimensions.z);
+    AerialSegment accumulated = identityAerialSegment();
+    for (int depth = 0; depth < dimensions.z; ++depth) {
+        float normalizedStart =
+                max(float(depth) - 0.5, 0.0) * inverseDepth;
+        float normalizedEnd =
+                (float(depth) + 0.5) * inverseDepth;
+        float segmentStart = min(
+                atmospherePush.maximumAerialDistanceKm
+                        * normalizedStart * normalizedStart,
+                maximumDistance);
+        float segmentEnd = min(
+                atmospherePush.maximumAerialDistanceKm
+                        * normalizedEnd * normalizedEnd,
+                maximumDistance);
+        AerialSegment segment = integrateAerialSegment(
+                origin,
+                direction,
+                segmentStart,
+                segmentEnd,
+                phase);
+        accumulated.radianceLow +=
+                accumulated.transmittanceLow * segment.radianceLow;
+        accumulated.transmittanceLow *= segment.transmittanceLow;
+        accumulated.radianceHigh +=
+                accumulated.transmittanceHigh * segment.radianceHigh;
+        accumulated.transmittanceHigh *= segment.transmittanceHigh;
 
-    vec3 rec2020 = max(atmLinearRec2020FromSpectral(
-            prefixRadianceLow[depth],
-            prefixRadianceHigh[depth]), vec3(0.0));
-    vec3 transmittance = atmRec2020Transmittance(
-            prefixTransmittanceLow[depth],
-            prefixTransmittanceHigh[depth]);
-    ivec3 voxel = ivec3(coordinate, depth);
-    imageStore(aerialRadiance, voxel, vec4(rec2020, 1.0));
-    imageStore(aerialTransmittance, voxel, vec4(transmittance, 1.0));
+        vec3 rec2020 = max(atmLinearRec2020FromSpectral(
+                accumulated.radianceLow,
+                accumulated.radianceHigh), vec3(0.0));
+        imageStore(
+                aerialRadiance,
+                ivec3(coordinate, depth),
+                vec4(rec2020, 1.0));
+    }
 }

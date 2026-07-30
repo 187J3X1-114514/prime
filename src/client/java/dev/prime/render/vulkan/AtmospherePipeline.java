@@ -1,6 +1,7 @@
 package dev.prime.render.vulkan;
 
 import com.mojang.blaze3d.vulkan.Destroyable;
+import dev.prime.render.AerialEpipolarMapping;
 import dev.prime.render.FrameCamera;
 import dev.prime.render.IntegratorFrameInput;
 import dev.prime.render.SunDirection;
@@ -59,10 +60,7 @@ public final class AtmospherePipeline implements Destroyable {
             SUN_SHADOW_BINDING
                     + SunShadowClipmap.BANK_COUNT * SunShadowClipmap.CASCADE_COUNT;
     private static final int SUN_SHADOW_HIERARCHY_COUNT = SunShadowClipmap.CASCADE_COUNT;
-    private static final int SUN_SHADOW_HIERARCHY_LEVELS =
-            Integer.numberOfTrailingZeros(SunShadowClipmap.RESOLUTION) + 1;
-    private static final int SUN_SHADOW_HIERARCHY_WIDTH =
-            SunShadowClipmap.RESOLUTION + SunShadowClipmap.RESOLUTION / 2;
+    private static final int SUN_SHADOW_HIERARCHY_WIDTH = SunShadowClipmap.RESOLUTION;
     private static final int SUN_SHADOW_HIERARCHY_HEIGHT = SunShadowClipmap.RESOLUTION;
     private static final int BINDING_COUNT =
             SUN_SHADOW_HIERARCHY_BINDING + SUN_SHADOW_HIERARCHY_COUNT;
@@ -89,6 +87,7 @@ public final class AtmospherePipeline implements Destroyable {
     private final long multiScatteringPipeline;
     private final long skyPipeline;
     private final long aerialPipeline;
+    private final long aerialTransmittancePipeline;
     private final long sunShadowHierarchyPipeline;
     private final VulkanImage[] initialImages;
     private final VulkanImage[] transmittanceImages;
@@ -118,6 +117,7 @@ public final class AtmospherePipeline implements Destroyable {
         long newMultiScatteringPipeline = 0L;
         long newSkyPipeline = 0L;
         long newAerialPipeline = 0L;
+        long newAerialTransmittancePipeline = 0L;
         long newSunShadowHierarchyPipeline = 0L;
         long newDescriptorSet = 0L;
         try {
@@ -127,8 +127,8 @@ public final class AtmospherePipeline implements Destroyable {
             images[3] = context.createAtmosphereImage2D(64, 64, "Prime atmosphere multiple scattering high");
             images[4] = context.createAtmosphereImage2D(256, 256, "Prime atmosphere sky view");
             images[5] = context.createAtmosphereImage3D(
-                    ShaderAbi.ATMOSPHERE_AERIAL_WIDTH,
-                    ShaderAbi.ATMOSPHERE_AERIAL_HEIGHT,
+                    ShaderAbi.ATMOSPHERE_AERIAL_EPIPOLAR_SAMPLES,
+                    ShaderAbi.ATMOSPHERE_AERIAL_EPIPOLAR_SLICES,
                     ShaderAbi.ATMOSPHERE_AERIAL_DEPTH,
                     "Prime atmosphere aerial radiance");
             images[6] = context.createAtmosphereImage3D(
@@ -174,7 +174,13 @@ public final class AtmospherePipeline implements Destroyable {
                         stack,
                         newPipelineLayout,
                         "/prime/shaders/atmosphere_aerial.comp.spv",
-                        "Prime atmosphere aerial perspective pipeline");
+                        "Prime atmosphere epipolar aerial-radiance pipeline");
+                newAerialTransmittancePipeline = createComputePipeline(
+                        context,
+                        stack,
+                        newPipelineLayout,
+                        "/prime/shaders/atmosphere_aerial_transmittance.comp.spv",
+                        "Prime atmosphere aerial-transmittance pipeline");
                 newSunShadowHierarchyPipeline = createComputePipeline(
                         context,
                         stack,
@@ -210,6 +216,8 @@ public final class AtmospherePipeline implements Destroyable {
             this.multiScatteringPipeline = newMultiScatteringPipeline;
             this.skyPipeline = newSkyPipeline;
             this.aerialPipeline = newAerialPipeline;
+            this.aerialTransmittancePipeline =
+                    newAerialTransmittancePipeline;
             this.sunShadowHierarchyPipeline = newSunShadowHierarchyPipeline;
             this.initialImages = new VulkanImage[
                     IMAGE_COUNT + SUN_SHADOW_HIERARCHY_COUNT];
@@ -238,6 +246,7 @@ public final class AtmospherePipeline implements Destroyable {
                 VK12.vkDestroyDescriptorPool(context.vkDevice(), newDescriptorPool, null);
             }
             destroyPipeline(context, newSunShadowHierarchyPipeline);
+            destroyPipeline(context, newAerialTransmittancePipeline);
             destroyPipeline(context, newAerialPipeline);
             destroyPipeline(context, newSkyPipeline);
             destroyPipeline(context, newMultiScatteringPipeline);
@@ -288,19 +297,38 @@ public final class AtmospherePipeline implements Destroyable {
         return this.aerialTransmittance;
     }
 
+    /**
+     * Projects the direction that owns the published aerial shadow cache.
+     *
+     * <p>The cache direction can intentionally lag the visible sun while its next RT bank is
+     * assembled. Epipolar slices must follow that cached direction: otherwise their projections
+     * are not lines in the cache plane and the conservative profile fallback produces dark rays.
+     */
+    public AerialEpipolarMapping.Epipole aerialEpipole(
+            FrameCamera camera,
+            SunDirection fallback) {
+        return AerialEpipolarMapping.project(
+                camera,
+                this.sunShadow.activeDirection(fallback));
+    }
+
     VulkanImage sunShadowDepth(int bank, int cascade) {
         return this.sunShadow.depth(bank, cascade);
     }
 
     public static float eyeRadiusKm(double worldY) {
         float radius = BOTTOM_RADIUS_KM + worldAltitudeKm(worldY);
-        return Math.max(BOTTOM_RADIUS_KM + 0.001F, Math.min(TOP_RADIUS_KM - 0.001F, radius));
+        float shellMarginKm = WORLD_UNIT_SCALE_KM;
+        return Math.max(
+                BOTTOM_RADIUS_KM + shellMarginKm,
+                Math.min(TOP_RADIUS_KM - shellMarginKm, radius));
     }
 
     /**
-     * Maps Minecraft height into the atmosphere at one metre per block.
-     * Y=-128 is the virtual planet ground and every block represents one metre, so Y=320 is
-     * 0.448 km high.
+     * Maps Minecraft height into the physical atmosphere coordinate system.
+     *
+     * <p>Y=-128 remains the virtual planet surface. The generated scale controls how many
+     * atmosphere metres one Minecraft block represents; the atmosphere model itself is unchanged.
      */
     public static float worldAltitudeKm(double worldY) {
         return (float) ((worldY - WORLD_SEA_LEVEL_Y) * WORLD_UNIT_SCALE_KM);
@@ -396,32 +424,29 @@ public final class AtmospherePipeline implements Destroyable {
                         sunDirection,
                         scene,
                         this.sunShadow);
+                int epipoleXBits = pushConstants.getInt(72);
+                int epipoleYBits = pushConstants.getInt(76);
                 if (shadowPrepared) {
                     if (!prepareStatic) {
                         shaderReadToComputeWriteBarrier(
                                 commandBuffer, this.sunShadowHierarchies);
                     }
-                    for (int level = 0;
-                            level < SUN_SHADOW_HIERARCHY_LEVELS;
-                            level++) {
-                        int resolution = SunShadowClipmap.RESOLUTION >> level;
-                        pushConstants.putInt(72, level);
-                        dispatch(
-                                commandBuffer,
-                                this.sunShadowHierarchyPipeline,
-                                (resolution + 7) / 8,
-                                (resolution + 7) / 8,
-                                SUN_SHADOW_HIERARCHY_COUNT,
-                                pushConstants);
-                        if (level + 1 < SUN_SHADOW_HIERARCHY_LEVELS) {
-                            computeWriteToComputeReadWriteBarrier(
-                                    commandBuffer, this.sunShadowHierarchies);
-                        }
-                    }
+                    // Epipolar profiles consume only the resolved leaf layer. Building the
+                    // nine parent levels left over from per-ray traversal is pure overhead.
+                    pushConstants.putInt(72, 0);
+                    dispatch(
+                            commandBuffer,
+                            this.sunShadowHierarchyPipeline,
+                            SunShadowClipmap.RESOLUTION / 8,
+                            SunShadowClipmap.RESOLUTION / 8,
+                            SUN_SHADOW_HIERARCHY_COUNT,
+                            pushConstants);
                     computeWriteBarrier(
                             commandBuffer,
                             this.sunShadowHierarchies,
                             VK12.VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
+                    pushConstants.putInt(72, epipoleXBits);
+                    pushConstants.putInt(76, epipoleYBits);
                 }
                 if (prepareSky) {
                     dispatch(commandBuffer, this.skyPipeline, 32, 32, 1, pushConstants);
@@ -429,9 +454,16 @@ public final class AtmospherePipeline implements Destroyable {
                 if (prepareAerial) {
                     dispatch(
                             commandBuffer,
-                            this.aerialPipeline,
+                            this.aerialTransmittancePipeline,
                             ShaderAbi.ATMOSPHERE_AERIAL_WIDTH,
                             ShaderAbi.ATMOSPHERE_AERIAL_HEIGHT,
+                            1,
+                            pushConstants);
+                    dispatch(
+                            commandBuffer,
+                            this.aerialPipeline,
+                            1,
+                            ShaderAbi.ATMOSPHERE_AERIAL_EPIPOLAR_SLICES,
                             1,
                             pushConstants);
                 }
@@ -497,6 +529,8 @@ public final class AtmospherePipeline implements Destroyable {
             VK12.vkDestroyDescriptorPool(this.context.vkDevice(), this.descriptorPool, null);
             VK12.vkDestroyPipeline(
                     this.context.vkDevice(), this.sunShadowHierarchyPipeline, null);
+            VK12.vkDestroyPipeline(
+                    this.context.vkDevice(), this.aerialTransmittancePipeline, null);
             VK12.vkDestroyPipeline(this.context.vkDevice(), this.aerialPipeline, null);
             VK12.vkDestroyPipeline(this.context.vkDevice(), this.skyPipeline, null);
             VK12.vkDestroyPipeline(this.context.vkDevice(), this.multiScatteringPipeline, null);
@@ -627,28 +661,6 @@ public final class AtmospherePipeline implements Destroyable {
         }
     }
 
-    private static void computeWriteToComputeReadWriteBarrier(
-            VkCommandBuffer commandBuffer,
-            VulkanImage[] images) {
-        try (MemoryStack stack = MemoryStack.stackPush()) {
-            VkImageMemoryBarrier2.Buffer barriers =
-                    VkImageMemoryBarrier2.calloc(images.length, stack);
-            for (int index = 0; index < images.length; index++) {
-                fillBarrier(
-                        barriers.get(index),
-                        images[index],
-                        VK12.VK_IMAGE_LAYOUT_GENERAL,
-                        VK12.VK_IMAGE_LAYOUT_GENERAL,
-                        VK12.VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-                        VK12.VK_ACCESS_SHADER_WRITE_BIT,
-                        VK12.VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-                        VK12.VK_ACCESS_SHADER_READ_BIT
-                                | VK12.VK_ACCESS_SHADER_WRITE_BIT);
-            }
-            issueBarrier(commandBuffer, stack, barriers);
-        }
-    }
-
     private static void issueBarrier(
             VkCommandBuffer commandBuffer,
             MemoryStack stack,
@@ -697,11 +709,15 @@ public final class AtmospherePipeline implements Destroyable {
         camera.inverseViewProjection().get(0, buffer);
         buffer.putFloat(64, eyeRadiusKm);
         buffer.putFloat(68, AERIAL_MAX_DISTANCE_KM);
+        SunDirection shadowDirection = sunShadow.activeDirection(sunDirection);
+        AerialEpipolarMapping.Epipole epipole =
+                AerialEpipolarMapping.project(camera, shadowDirection);
+        buffer.putFloat(72, epipole.x());
+        buffer.putFloat(76, epipole.y());
         buffer.putFloat(80, sunDirection.x());
         buffer.putFloat(84, sunDirection.y());
         buffer.putFloat(88, sunDirection.z());
         buffer.putFloat(92, ShaderAbi.ATMOSPHERE_SPACE_SUN_INTENSITY);
-        SunDirection shadowDirection = sunShadow.activeDirection(sunDirection);
         buffer.putFloat(96, shadowDirection.x());
         buffer.putFloat(100, shadowDirection.y());
         buffer.putFloat(104, shadowDirection.z());

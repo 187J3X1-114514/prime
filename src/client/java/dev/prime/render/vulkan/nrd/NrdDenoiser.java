@@ -1,6 +1,7 @@
 package dev.prime.render.vulkan.nrd;
 
 import com.mojang.blaze3d.vulkan.Destroyable;
+import dev.prime.render.AerialEpipolarMapping;
 import dev.prime.render.FrameCamera;
 import dev.prime.render.ResourceCleanup;
 import dev.prime.render.SunDirection;
@@ -65,7 +66,7 @@ public final class NrdDenoiser implements Destroyable {
     static final int MOTION_BINDING_COUNT = 24;
     private static final int MOTION_PUSH_SIZE = ShaderAbi.NRD_MOTION_PUSH_CONSTANT_SIZE;
     private static final int COMPOSITE_BINDING_COUNT = 31;
-    private static final int COMPOSITE_PUSH_SIZE = 28;
+    private static final int COMPOSITE_PUSH_SIZE = 40;
     // Wavefront resolve writes 65504 for a sky view-Z. Keep the valid range below that sentinel while
     // remaining far beyond Minecraft's usable terrain and Prime's 16,000-block aerial volume.
     private static final float DENOISING_RANGE = 60_000.0f;
@@ -78,6 +79,7 @@ public final class NrdDenoiser implements Destroyable {
     private final RawWavefrontFrame rawFrame;
     private final PreparedNrdFrame preparedFrame;
     private final NrdCompositeFrame compositeFrame;
+    private final AtmospherePipeline atmosphere;
     private final long nearestSampler;
     private final long linearSampler;
     private final ComputePipeline[] pipelines;
@@ -99,6 +101,7 @@ public final class NrdDenoiser implements Destroyable {
             NrdNative.Instance nativeInstance,
             Images images,
             VulkanImage output,
+            AtmospherePipeline atmosphere,
             long nearestSampler,
             long linearSampler,
             ComputePipeline[] pipelines,
@@ -135,6 +138,7 @@ public final class NrdDenoiser implements Destroyable {
                 output,
                 images.fsrReactiveMask,
                 images.fsrTransparencyCompositionMask);
+        this.atmosphere = atmosphere;
         this.nearestSampler = nearestSampler;
         this.linearSampler = linearSampler;
         this.pipelines = pipelines;
@@ -191,6 +195,7 @@ public final class NrdDenoiser implements Destroyable {
                     nativeInstance,
                     images,
                     output,
+                    atmosphere,
                     nearestSampler,
                     linearSampler,
                     pipelines,
@@ -379,6 +384,10 @@ public final class NrdDenoiser implements Destroyable {
                         1);
             }
             computeToComputeBarrier(commandBuffer);
+            AerialEpipolarMapping.Epipole epipole =
+                    this.atmosphere.aerialEpipole(
+                            input.camera(),
+                            input.sunDirection());
             this.composite.record(
                     commandBuffer,
                     this.width,
@@ -387,7 +396,9 @@ public final class NrdDenoiser implements Destroyable {
                     sunRadianceMultiplier,
                     input.cameraJitterX(),
                     input.cameraJitterY(),
-                    displayOverexposure);
+                    displayOverexposure,
+                    epipole.x(),
+                    epipole.y());
             return new FrameToken(
                     this,
                     bindings,
@@ -2162,7 +2173,9 @@ public final class NrdDenoiser implements Destroyable {
                 float sunRadianceMultiplier,
                 float cameraJitterX,
                 float cameraJitterY,
-                float displayOverexposure) {
+                float displayOverexposure,
+                float epipoleX,
+                float epipoleY) {
             try (MemoryStack stack = MemoryStack.stackPush()) {
                 VK12.vkCmdBindPipeline(
                         commandBuffer, VK12.VK_PIPELINE_BIND_POINT_COMPUTE, this.pipeline);
@@ -2181,6 +2194,9 @@ public final class NrdDenoiser implements Destroyable {
                 push.putFloat(16, cameraJitterX);
                 push.putFloat(20, cameraJitterY);
                 push.putFloat(24, displayOverexposure);
+                push.putFloat(28, 0.0F);
+                push.putFloat(32, epipoleX);
+                push.putFloat(36, epipoleY);
                 VK12.vkCmdPushConstants(
                         commandBuffer,
                         this.pipelineLayout,

@@ -181,13 +181,15 @@ abstract class GenerateShaderAbi extends DefaultTask {
 					'Prime emission contract must preserve a 1.5-unit white level-15 block source')
 		}
 		if (atmosphereContract.spectralModel != 'hillaire-8wave-rec2020-d65'
+				|| atmosphereContract.worldToAtmosphereScale <= 0.0
 				|| atmosphereContract.worldSeaLevelY != -128.0
 				|| atmosphereContract.worldUnitScaleKm != 0.001
 				|| atmosphereContract.spaceSunIntensity != 12.5
 				|| atmosphereContract.sunAngularRadiusRadians != 0.00471) {
 			throw new GradleException(
 					'Prime atmosphere contract must remain the eight-wave Rec.2020 model, '
-							+ 'the -128 virtual-ground / 0.001 km world scale, and a 12.5-unit space sun')
+							+ 'the -128 virtual ground with positive world-to-atmosphere scale, '
+							+ 'and a 12.5-unit space sun')
 		}
 		if (starmapContract.width != 8192
 				|| starmapContract.height != 4096
@@ -443,15 +445,18 @@ public final class ShaderAbi {
     public static final float FSR_NEAR_PLANE = ${fsrContract.nearPlane}f;
     public static final float FSR_VIEW_SPACE_TO_METERS_FACTOR = ${fsrContract.viewSpaceToMetersFactor}f;
     public static final String ATMOSPHERE_SPECTRAL_MODEL = "${atmosphereContract.spectralModel}";
+    public static final float ATMOSPHERE_WORLD_TO_ATMOSPHERE_SCALE = ${atmosphereContract.worldToAtmosphereScale}f;
     public static final float ATMOSPHERE_BOTTOM_RADIUS_KM = ${atmosphereContract.bottomRadiusKm}f;
     public static final float ATMOSPHERE_TOP_RADIUS_KM = ${atmosphereContract.topRadiusKm}f;
     public static final float ATMOSPHERE_WORLD_SEA_LEVEL_Y = ${atmosphereContract.worldSeaLevelY}f;
-    public static final float ATMOSPHERE_WORLD_UNIT_SCALE_KM = ${atmosphereContract.worldUnitScaleKm}f;
+    public static final float ATMOSPHERE_WORLD_UNIT_SCALE_KM = ${atmosphereContract.worldUnitScaleKm * atmosphereContract.worldToAtmosphereScale}f;
     public static final float ATMOSPHERE_SPACE_SUN_INTENSITY = ${atmosphereContract.spaceSunIntensity}f;
     public static final float ATMOSPHERE_SUN_ANGULAR_RADIUS_RADIANS = ${atmosphereContract.sunAngularRadiusRadians}f;
-    public static final float ATMOSPHERE_AERIAL_MAX_DISTANCE_KM = ${atmosphereContract.aerialMaxDistanceKm}f;
+    public static final float ATMOSPHERE_AERIAL_MAX_DISTANCE_KM = ${atmosphereContract.aerialMaxDistanceKm * atmosphereContract.worldToAtmosphereScale}f;
     public static final int ATMOSPHERE_AERIAL_WIDTH = ${atmosphereContract.aerialWidth};
     public static final int ATMOSPHERE_AERIAL_HEIGHT = ${atmosphereContract.aerialHeight};
+    public static final int ATMOSPHERE_AERIAL_EPIPOLAR_SAMPLES = ${atmosphereContract.aerialEpipolarSamples};
+    public static final int ATMOSPHERE_AERIAL_EPIPOLAR_SLICES = ${atmosphereContract.aerialEpipolarSlices};
     public static final int ATMOSPHERE_AERIAL_DEPTH = ${atmosphereContract.aerialDepth};
     public static final int ATMOSPHERE_AERIAL_SEGMENT_SAMPLES = ${atmosphereContract.aerialSegmentSamples};
     public static final int STARMAP_WIDTH = ${starmapContract.width};
@@ -677,15 +682,18 @@ layout(set = 0, binding = ${schema.descriptors.nrdDisplayPosition}, rgba32f) uni
 #define PRIME_ATMOSPHERE_CONTRACT_GLSL
 
 // Generated from shaders/abi.json. Atmosphere compute and ray tracing must share these values.
+#define PRIME_ATMOSPHERE_WORLD_TO_ATMOSPHERE_SCALE ${atmosphereContract.worldToAtmosphereScale}
 #define PRIME_ATMOSPHERE_BOTTOM_RADIUS_KM ${atmosphereContract.bottomRadiusKm}
 #define PRIME_ATMOSPHERE_TOP_RADIUS_KM ${atmosphereContract.topRadiusKm}
 #define PRIME_ATMOSPHERE_WORLD_SEA_LEVEL_Y ${atmosphereContract.worldSeaLevelY}
-#define PRIME_ATMOSPHERE_WORLD_UNIT_SCALE_KM ${atmosphereContract.worldUnitScaleKm}
+#define PRIME_ATMOSPHERE_WORLD_UNIT_SCALE_KM ${atmosphereContract.worldUnitScaleKm * atmosphereContract.worldToAtmosphereScale}
 #define PRIME_ATMOSPHERE_SPACE_SUN_INTENSITY ${atmosphereContract.spaceSunIntensity}
 #define PRIME_ATMOSPHERE_SUN_ANGULAR_RADIUS_RADIANS ${atmosphereContract.sunAngularRadiusRadians}
-#define PRIME_ATMOSPHERE_AERIAL_MAX_DISTANCE_KM ${atmosphereContract.aerialMaxDistanceKm}
+#define PRIME_ATMOSPHERE_AERIAL_MAX_DISTANCE_KM ${atmosphereContract.aerialMaxDistanceKm * atmosphereContract.worldToAtmosphereScale}
 #define PRIME_ATMOSPHERE_AERIAL_WIDTH ${atmosphereContract.aerialWidth}
 #define PRIME_ATMOSPHERE_AERIAL_HEIGHT ${atmosphereContract.aerialHeight}
+#define PRIME_ATMOSPHERE_AERIAL_EPIPOLAR_SAMPLES ${atmosphereContract.aerialEpipolarSamples}
+#define PRIME_ATMOSPHERE_AERIAL_EPIPOLAR_SLICES ${atmosphereContract.aerialEpipolarSlices}
 #define PRIME_ATMOSPHERE_AERIAL_DEPTH ${atmosphereContract.aerialDepth}
 #define PRIME_ATMOSPHERE_AERIAL_SEGMENT_SAMPLES ${atmosphereContract.aerialSegmentSamples}
 
@@ -1134,9 +1142,9 @@ def verifyDistributionJar = tasks.register('verifyDistributionJar') {
 		}
 
 		def shaderNames = names.findAll { it.startsWith('prime/shaders/') && it.endsWith('.spv') }
-		if (shaderNames.size() != 32) {
+		if (shaderNames.size() != 33) {
 			throw new GradleException(
-					"Distribution jar must contain 32 Prime shaders; found ${shaderNames.size()}")
+					"Distribution jar must contain 33 Prime shaders; found ${shaderNames.size()}")
 		}
 
 		new java.util.zip.ZipFile(archive).withCloseable { zip ->

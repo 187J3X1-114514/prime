@@ -1,6 +1,7 @@
 package dev.prime.render.shader;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import org.junit.jupiter.api.Test;
 
@@ -93,14 +94,27 @@ final class ShaderAbiTest {
                 "dual-reblur-diffuse-specular-sh-plus-sigma-sun-shadow",
                 ShaderAbi.NRD_DENOISER);
         assertEquals("hillaire-8wave-rec2020-d65", ShaderAbi.ATMOSPHERE_SPECTRAL_MODEL);
+        assertTrue(ShaderAbi.ATMOSPHERE_WORLD_TO_ATMOSPHERE_SCALE > 0.0F);
+        assertEquals(
+                6_360.0F,
+                ShaderAbi.ATMOSPHERE_BOTTOM_RADIUS_KM);
+        assertEquals(
+                6_460.0F,
+                ShaderAbi.ATMOSPHERE_TOP_RADIUS_KM);
         assertEquals(12.5F, ShaderAbi.ATMOSPHERE_SPACE_SUN_INTENSITY);
         assertEquals(1.5F, ShaderAbi.LEVEL_15_BLOCK_INTENSITY);
         assertEquals(0.00471F, ShaderAbi.ATMOSPHERE_SUN_ANGULAR_RADIUS_RADIANS);
         assertEquals(-128.0F, ShaderAbi.ATMOSPHERE_WORLD_SEA_LEVEL_Y);
-        assertEquals(0.001F, ShaderAbi.ATMOSPHERE_WORLD_UNIT_SCALE_KM);
-        assertEquals(2.048F, ShaderAbi.ATMOSPHERE_AERIAL_MAX_DISTANCE_KM);
-        assertEquals(64, ShaderAbi.ATMOSPHERE_AERIAL_WIDTH);
-        assertEquals(36, ShaderAbi.ATMOSPHERE_AERIAL_HEIGHT);
+        assertEquals(
+                0.001F * ShaderAbi.ATMOSPHERE_WORLD_TO_ATMOSPHERE_SCALE,
+                ShaderAbi.ATMOSPHERE_WORLD_UNIT_SCALE_KM);
+        assertEquals(
+                2.048F * ShaderAbi.ATMOSPHERE_WORLD_TO_ATMOSPHERE_SCALE,
+                ShaderAbi.ATMOSPHERE_AERIAL_MAX_DISTANCE_KM);
+        assertEquals(128, ShaderAbi.ATMOSPHERE_AERIAL_WIDTH);
+        assertEquals(64, ShaderAbi.ATMOSPHERE_AERIAL_HEIGHT);
+        assertEquals(128, ShaderAbi.ATMOSPHERE_AERIAL_EPIPOLAR_SAMPLES);
+        assertEquals(256, ShaderAbi.ATMOSPHERE_AERIAL_EPIPOLAR_SLICES);
         assertEquals(128, ShaderAbi.ATMOSPHERE_AERIAL_DEPTH);
         assertEquals(2, ShaderAbi.ATMOSPHERE_AERIAL_SEGMENT_SAMPLES);
         assertEquals(8192, ShaderAbi.STARMAP_WIDTH);

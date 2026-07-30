@@ -2,6 +2,7 @@ package dev.prime.render.vulkan.dlss;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
+import dev.prime.render.AerialEpipolarMapping;
 import dev.prime.render.fsr.FsrSettings;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
@@ -19,13 +20,21 @@ final class DlssRrPrepareConstantsTest {
                 .order(ByteOrder.nativeOrder());
 
         DlssRrPrepareConstants.write(
-                bytes, current, previous, rotation, 12.5F, jitter);
+                bytes,
+                current,
+                previous,
+                rotation,
+                12.5F,
+                new AerialEpipolarMapping.Epipole(2.0F, -3.0F),
+                jitter);
 
         assertMatrix(bytes, DlssRrPrepareConstants.CURRENT_CLIP_TO_WORLD, 1.0F);
         assertMatrix(bytes, DlssRrPrepareConstants.PREVIOUS_WORLD_TO_CLIP, 17.0F);
         assertMatrix(bytes, DlssRrPrepareConstants.VIEW_ROTATION, 33.0F);
         assertEquals(12.5F, bytes.getFloat(DlssRrPrepareConstants.SUN_RADIANCE));
         assertEquals(0, bytes.getInt(196));
+        assertEquals(2.0F, bytes.getFloat(DlssRrPrepareConstants.EPIPOLE_X));
+        assertEquals(-3.0F, bytes.getFloat(DlssRrPrepareConstants.EPIPOLE_Y));
         assertEquals(0.25F, bytes.getFloat(DlssRrPrepareConstants.JITTER_X));
         assertEquals(-0.375F, bytes.getFloat(DlssRrPrepareConstants.JITTER_Y));
     }

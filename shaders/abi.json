@@ -272,6 +272,7 @@
   },
   "atmosphereContract": {
     "spectralModel": "hillaire-8wave-rec2020-d65",
+    "worldToAtmosphereScale": 4.0,
     "bottomRadiusKm": 6360.0,
     "topRadiusKm": 6460.0,
     "worldSeaLevelY": -128.0,
@@ -279,8 +280,10 @@
     "spaceSunIntensity": 12.5,
     "sunAngularRadiusRadians": 0.00471,
     "aerialMaxDistanceKm": 2.048,
-    "aerialWidth": 64,
-    "aerialHeight": 36,
+    "aerialWidth": 128,
+    "aerialHeight": 64,
+    "aerialEpipolarSamples": 128,
+    "aerialEpipolarSlices": 256,
     "aerialDepth": 128,
     "aerialSegmentSamples": 2
   },

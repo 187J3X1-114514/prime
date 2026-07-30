@@ -5,7 +5,10 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.util.Arrays;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import net.minecraft.core.SectionPos;
 import org.junit.jupiter.api.Test;
 
@@ -80,7 +83,7 @@ final class TextureVoxelSurfaceTest {
     }
 
     @Test
-    void labPbrNormalAlphaProvidesNormalizedAnimatedHeight() {
+    void labPbrNormalAlphaProvidesRebasedAnimatedHeight() {
         LabPbrHeightMap height = LabPbrHeightMap.fromNormal(
                 new int[] {
                     0xd600_0000, 0xfd00_0000,
@@ -111,7 +114,128 @@ final class TextureVoxelSurfaceTest {
     }
 
     @Test
-    void equalHeightPixelsShareInternalWallsAndNeverMoveInward() {
+    void borderReferenceUsesTheDarkestOuterPixel() {
+        float[] heights = {
+            0.4F, 0.5F, 0.6F,
+            0.7F, 0.1F, 0.8F,
+            0.9F, 0.3F, 1.0F
+        };
+
+        assertEquals(
+                0.3F,
+                TextureVoxelMeshBuilder.borderReferenceHeight(heights, 3));
+        assertEquals(
+                0.1F,
+                TextureVoxelMeshBuilder.borderReferenceHeight(
+                        new float[] {0.1F}, 1));
+
+        TextureVoxelMeshBuilder.alignToReferencePlane(heights, 0.3F);
+        assertArrayEquals(
+                new float[] {
+                    0.1F, 0.2F, 0.3F,
+                    0.4F, 0.0F, 0.5F,
+                    0.6F, 0.0F, 0.7F
+                },
+                heights,
+                1.0E-7F);
+    }
+
+    @Test
+    void voxelSurfaceStrengthKeepsOneThirtySecondAsTheDefault() {
+        assertEquals(0.0F, VoxelSurfaceSettings.maximumHeight(0));
+        assertEquals(
+                1.0F / 32.0F,
+                VoxelSurfaceSettings.maximumHeight(
+                        VoxelSurfaceSettings.DEFAULT_STEPS));
+        assertEquals(
+                1.0F / 8.0F,
+                VoxelSurfaceSettings.maximumHeight(
+                        VoxelSurfaceSettings.MAXIMUM_STEPS));
+    }
+
+    @Test
+    void generatedReliefUsesAbsoluteLumaStrength() {
+        CpuVoxelMesh generated = TextureVoxelMeshBuilder.buildOpaqueHeightField(
+                2,
+                new int[] {
+                    0xff80_8080, 0xff00_0000,
+                    0xff00_0000, 0xff00_0000
+                },
+                2,
+                1);
+
+        assertEquals(
+                TextureVoxelMeshBuilder.heightFromArgb(0xff80_8080),
+                maximumAxis(generated.positions(), 2),
+                1.0E-7F);
+    }
+
+    @Test
+    void layeredCutoutUsesOpaqueReliefAndAStableOutwardOffset() {
+        try (SectionMeshAccumulatorTest.TestSprite baseSprite =
+                        new SectionMeshAccumulatorTest.TestSprite("layer_base");
+                SectionMeshAccumulatorTest.TestSprite overlaySprite =
+                        new SectionMeshAccumulatorTest.TestSprite("layer_overlay")) {
+            int[] baseNormal = new int[16 * 16];
+            int[] overlayNormal = new int[16 * 16];
+            Arrays.fill(baseNormal, 0xe400_0000);
+            Arrays.fill(overlayNormal, 0xcf00_0000);
+            for (int index = 0; index < 16; index++) {
+                baseNormal[index] = 0xff00_0000;
+                overlayNormal[index] = 0xff00_0000;
+            }
+            LabPbrHeightMap baseHeight = LabPbrHeightMap.fromNormal(
+                    baseNormal, 16, 16, 16, 16, 1, 1);
+            LabPbrHeightMap overlayHeight = LabPbrHeightMap.fromNormal(
+                    overlayNormal, 16, 16, 16, 16, 1, 1);
+            LabPbrMaterialSet materials = new LabPbrMaterialSet(
+                    Set.of(
+                            baseSprite.contents().name(),
+                            overlaySprite.contents().name()),
+                    Set.of(),
+                    Map.of(),
+                    Map.of(
+                            baseSprite.contents().name(), baseHeight,
+                            overlaySprite.contents().name(), overlayHeight));
+            SectionMeshAccumulator accumulator =
+                    new SectionMeshAccumulator(materials, false);
+            SectionMeshAccumulator.Quad face =
+                    SectionMeshAccumulatorTest.horizontalQuad(
+                            2.0F, 3.0F, 4.0F, 1.0F);
+            accumulator.addQuad(
+                    face, SectionMeshAccumulatorTest.opaqueSurface(baseSprite));
+            accumulator.addQuad(
+                    face, SectionMeshAccumulatorTest.cutoutSurface(overlaySprite));
+            SectionClusterMeshBuilder builder = new SectionClusterMeshBuilder(
+                    0,
+                    0,
+                    0,
+                    TerrainMemoryBudget.TARGET_SEGMENT_TRIANGLES,
+                    OpacityMicromapData.SUBDIVISION_LEVEL + 2,
+                    true,
+                    VoxelSurfaceSettings.BASE_HEIGHT);
+            builder.add(0, 0, 0, accumulator.build());
+
+            CpuClusterMesh cluster = builder.build();
+
+            assertEquals(2, cluster.voxelMeshes().size());
+            assertEquals(2, cluster.voxelInstances().count());
+            assertArrayEquals(
+                    cluster.voxelMeshes().get(0).positions(),
+                    cluster.voxelMeshes().get(1).positions());
+            assertEquals(
+                    4.0F,
+                    cluster.voxelInstances().translationZ(0),
+                    1.0E-7F);
+            assertEquals(
+                    4.0F + TextureVoxelMeshBuilder.LAYER_OFFSET,
+                    cluster.voxelInstances().translationZ(1),
+                    1.0E-7F);
+        }
+    }
+
+    @Test
+    void flatGeneratedTextureAlignsItsOuterSurfaceToTheBlockPlane() {
         CpuVoxelMesh outward = TextureVoxelMeshBuilder.buildOpaqueHeightField(
                 2,
                 new int[] {
@@ -129,11 +253,10 @@ final class TextureVoxelSurfaceTest {
                 2,
                 -1);
 
-        // Four top quads plus eight outer-border wall quads. Equal neighbors add no wall.
-        assertEquals(24, outward.triangleCount());
+        assertEquals(8, outward.triangleCount());
         assertEquals(0.0F, minimumAxis(outward.positions(), 2));
-        assertEquals(1.0F / 32.0F, maximumAxis(outward.positions(), 2));
-        assertEquals(-1.0F / 32.0F, minimumAxis(inwardFacing.positions(), 2));
+        assertEquals(0.0F, maximumAxis(outward.positions(), 2));
+        assertEquals(0.0F, minimumAxis(inwardFacing.positions(), 2));
         assertEquals(0.0F, maximumAxis(inwardFacing.positions(), 2));
         assertNondegenerate(outward.positions());
         assertNondegenerate(inwardFacing.positions());

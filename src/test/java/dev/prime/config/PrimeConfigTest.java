@@ -69,6 +69,20 @@ final class PrimeConfigTest {
     }
 
     @Test
+    void persistedVoxelSurfaceStrengthAcceptsExactPercentSteps() {
+        assertEquals(0, PrimeConfig.parseVoxelSurfaceStrengthSteps("0"));
+        assertEquals(100, PrimeConfig.parseVoxelSurfaceStrengthSteps("1"));
+        assertEquals(400, PrimeConfig.parseVoxelSurfaceStrengthSteps("4"));
+        assertEquals("1", PrimeConfig.formatVoxelSurfaceStrength(100));
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> PrimeConfig.parseVoxelSurfaceStrengthSteps("1.005"));
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> PrimeConfig.parseVoxelSurfaceStrengthSteps("4.01"));
+    }
+
+    @Test
     void missingAndUnknownPostProcessingValuesRequestRrByDefault() {
         assertEquals(PostProcessingMode.DLSS_RR, PostProcessingMode.DEFAULT);
         assertEquals(PostProcessingMode.DLSS_RR, PostProcessingMode.fromId(null));
@@ -96,7 +110,12 @@ final class PrimeConfigTest {
         assertTrue(serialized.contains("renderer.path_tracing=true\n"));
         assertTrue(serialized.contains(
                 "experimental.voxel_texture_surfaces=false\n"));
+        assertTrue(serialized.contains(
+                "experimental.voxel_texture_surface_strength=1\n"));
         assertFalse(PrimeSettings.defaults().voxelTextureSurfaces());
+        assertEquals(
+                100,
+                PrimeSettings.defaults().voxelTextureSurfaceStrengthSteps());
         assertFalse(serialized.contains("debug_view"));
         assertFalse(serialized.contains("debug_fullscreen"));
         assertTrue(serialized.contains("lighting.star_ev=0\n"));

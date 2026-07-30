@@ -211,6 +211,14 @@ public final class RayTracingRuntime {
         }
     }
 
+    public void setVoxelTextureSurfaceStrengthSteps(int steps) {
+        boolean changed = PrimeConfig.settings().voxelTextureSurfaceStrengthSteps() != steps;
+        PrimeConfig.setVoxelTextureSurfaceStrengthSteps(steps);
+        if (changed && PrimeConfig.settings().voxelTextureSurfaces()) {
+            this.invalidateAll();
+        }
+    }
+
     public void requestScreenshot(boolean enabled) {
         this.controls = this.controls.withScreenshotRequested(enabled);
     }

@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import com.mojang.blaze3d.platform.NativeImage;
+import dev.prime.mixin.SpriteContentsAccessor;
 import net.minecraft.client.renderer.texture.SpriteContents;
 import net.minecraft.client.renderer.texture.TextureAtlasSprite;
 import net.minecraft.client.resources.metadata.animation.FrameSize;
@@ -158,17 +159,47 @@ final class SectionMeshAccumulatorTest {
 
     static final class TestSprite extends TextureAtlasSprite {
         TestSprite() {
+            this("merge_test");
+        }
+
+        TestSprite(String path) {
+            this(Identifier.fromNamespaceAndPath("prime", path));
+        }
+
+        private TestSprite(Identifier name) {
             super(
-                    Identifier.fromNamespaceAndPath("prime", "merge_test"),
-                    new SpriteContents(
-                            Identifier.fromNamespaceAndPath("prime", "merge_test"),
-                            new FrameSize(16, 16),
-                            new NativeImage(16, 16, true)),
+                    Identifier.fromNamespaceAndPath("prime", "test_atlas"),
+                    new TestSpriteContents(name),
                     16,
                     16,
                     0,
                     0,
                     0);
+        }
+    }
+
+    private static final class TestSpriteContents
+            extends SpriteContents
+            implements SpriteContentsAccessor {
+        private final NativeImage image;
+
+        TestSpriteContents(Identifier name) {
+            this(name, new NativeImage(16, 16, true));
+        }
+
+        private TestSpriteContents(Identifier name, NativeImage image) {
+            super(name, new FrameSize(16, 16), image);
+            this.image = image;
+        }
+
+        @Override
+        public NativeImage prime$originalImage() {
+            return this.image;
+        }
+
+        @Override
+        public NativeImage[] prime$byMipLevel() {
+            return new NativeImage[] {this.image};
         }
     }
 }

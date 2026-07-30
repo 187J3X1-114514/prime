@@ -95,6 +95,7 @@ public final class TerrainStreamer implements AutoCloseable {
     private int maximumSectionY;
     private LabPbrMaterialSet labPbrMaterials = LabPbrMaterialSet.EMPTY;
     private boolean voxelTextureSurfaces;
+    private int voxelSurfaceStrengthSteps = VoxelSurfaceSettings.DEFAULT_STEPS;
     private int workerJobs;
 
     public TerrainStreamer(VulkanContext context, StagingArena stagingArena) {
@@ -185,9 +186,13 @@ public final class TerrainStreamer implements AutoCloseable {
         }
     }
 
-    public void setVoxelTextureSurfaces(boolean enabled) {
-        if (this.voxelTextureSurfaces != enabled) {
-            this.voxelTextureSurfaces = enabled;
+    public void setVoxelTextureSurfaces(boolean enabled, int strengthSteps) {
+        VoxelSurfaceSettings.maximumHeight(strengthSteps);
+        boolean rebuild = this.voxelTextureSurfaces != enabled
+                || enabled && this.voxelSurfaceStrengthSteps != strengthSteps;
+        this.voxelTextureSurfaces = enabled;
+        this.voxelSurfaceStrengthSteps = strengthSteps;
+        if (rebuild) {
             this.invalidateAll();
         }
     }
@@ -393,6 +398,8 @@ public final class TerrainStreamer implements AutoCloseable {
                             this.centerSectionX,
                             this.centerSectionY,
                             this.centerSectionZ);
+            float voxelSurfaceMaximumHeight = VoxelSurfaceSettings.maximumHeight(
+                    this.voxelSurfaceStrengthSteps);
             if (!hasCompleteClusterNeighborhood(level, clusterX, clusterZ)) {
                 // A 4x4x4 virtual chunk needs one Section of source data around every face.
                 // Minecraft loads vertical Sections as part of the same chunk column, so checking
@@ -469,7 +476,8 @@ public final class TerrainStreamer implements AutoCloseable {
                                 clusterZ,
                                 this.segmentTriangleTarget,
                                 TerrainStreamer.this.maxOpacityMicromapSubdivisionLevel,
-                                voxelSurfaces);
+                                voxelSurfaces,
+                                voxelSurfaceMaximumHeight);
                         for (VanillaSectionSnapshot snapshot : snapshots) {
                             CpuSectionGeometry sectionGeometry =
                                     TerrainStreamer.this.sceneInterpreter

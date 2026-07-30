@@ -85,7 +85,8 @@ public final class LabPbrHeightMap {
      *
      * <p>LabPBR height commonly occupies a narrow high-valued band because its original use is
      * inward parallax depth. Removing that per-frame DC offset prevents a flat map from lifting
-     * the whole face and exposing every instance's perimeter skirt.
+     * the whole face and preserves the authored excursion instead of stretching every material to
+     * the configured maximum.
      */
     float sample(int requestedFrame, float localU, float localV) {
         int frame = this.frameCount == 1

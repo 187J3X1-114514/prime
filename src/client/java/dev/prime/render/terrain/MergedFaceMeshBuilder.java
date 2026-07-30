@@ -2,6 +2,7 @@ package dev.prime.render.terrain;
 
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -21,6 +22,7 @@ final class MergedFaceMeshBuilder {
     private final int segmentTriangleTarget;
     private final int maxOpacityMicromapSubdivisionLevel;
     private final boolean voxelSurfacesEnabled;
+    private final float voxelSurfaceMaximumHeight;
     private final ArrayList<CpuSectionMesh> segments = new ArrayList<>();
     private Segment segment = new Segment();
     private OptimalCover optimalCover;
@@ -32,23 +34,37 @@ final class MergedFaceMeshBuilder {
         this(
                 segmentTriangleTarget,
                 maxOpacityMicromapSubdivisionLevel,
-                false);
+                false,
+                VoxelSurfaceSettings.BASE_HEIGHT);
     }
 
     MergedFaceMeshBuilder(
             int segmentTriangleTarget,
             int maxOpacityMicromapSubdivisionLevel,
-            boolean voxelSurfacesEnabled) {
+            boolean voxelSurfacesEnabled,
+            float voxelSurfaceMaximumHeight) {
         this.segmentTriangleTarget = segmentTriangleTarget;
         this.maxOpacityMicromapSubdivisionLevel = maxOpacityMicromapSubdivisionLevel;
         this.voxelSurfacesEnabled = voxelSurfacesEnabled;
+        this.voxelSurfaceMaximumHeight = voxelSurfaceMaximumHeight;
     }
 
     List<CpuSectionMesh> build(List<MergeFace> faces) {
         TextureVoxelMeshBuilder voxelBuilder = this.voxelSurfacesEnabled
                 ? new TextureVoxelMeshBuilder(
-                        faces.stream().anyMatch(MergeFace::buildOpacityMicromap))
+                        faces.stream().anyMatch(MergeFace::buildOpacityMicromap),
+                        this.voxelSurfaceMaximumHeight)
                 : null;
+        Map<FaceLocation, MergeFace> opaqueRelief = new HashMap<>();
+        if (voxelBuilder != null) {
+            // Minecraft models express tinted overlays as coincident cutout faces. Preserve that
+            // material split while making both layers follow one physical relief surface.
+            for (MergeFace face : faces) {
+                if (usesVoxelSurface(face) && !face.cutout() && !face.transmissive()) {
+                    opaqueRelief.putIfAbsent(new FaceLocation(face), face);
+                }
+            }
+        }
         ArrayList<MergeFace> ordinaryFaces = new ArrayList<>(faces.size());
         ArrayList<MergeFace> unmergedFallbacks = new ArrayList<>();
         for (MergeFace face : faces) {
@@ -60,7 +76,14 @@ final class MergedFaceMeshBuilder {
                         "Merge face lies outside its logical cluster");
             }
             if (voxelBuilder != null && usesVoxelSurface(face)) {
-                if (!voxelBuilder.add(face)) {
+                MergeFace relief = face.cutout() && !face.transmissive()
+                        ? opaqueRelief.get(new FaceLocation(face))
+                        : null;
+                boolean added = relief == null
+                        ? voxelBuilder.add(face)
+                        : voxelBuilder.add(
+                                face, relief, TextureVoxelMeshBuilder.LAYER_OFFSET);
+                if (!added) {
                     unmergedFallbacks.add(face);
                 }
             } else {
@@ -119,6 +142,18 @@ final class MergedFaceMeshBuilder {
             return false;
         }
         return true;
+    }
+
+    private record FaceLocation(
+            int planeAxis, int normalSign, int planeCell, int cellU, int cellV) {
+        FaceLocation(MergeFace face) {
+            this(
+                    face.planeAxis(),
+                    face.normalSign(),
+                    face.planeCell(),
+                    face.cellU(),
+                    face.cellV());
+        }
     }
 
     private void coverOpaque(FaceGrid grid) {

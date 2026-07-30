@@ -17,19 +17,43 @@ import net.minecraft.client.renderer.texture.TextureAtlasSprite;
  * Interns one pixel-height mesh per texture/UV/orientation and records lightweight face instances.
  */
 final class TextureVoxelMeshBuilder {
-    static final float MAXIMUM_HEIGHT = 1.0F / 32.0F;
+    static final float MAXIMUM_HEIGHT = VoxelSurfaceSettings.BASE_HEIGHT;
+    // Large enough to survive float placement in a 64-block cluster, but visually negligible
+    // beside the relief range. Removing it makes coincident material layers traversal-order
+    // dependent.
+    static final float LAYER_OFFSET = 1.0F / 8192.0F;
 
     private final boolean buildOpacityMicromap;
+    private final float maximumHeight;
     private final Map<Key, Integer> meshIndices = new HashMap<>();
     private final Set<Key> rejected = new HashSet<>();
     private final ArrayList<CpuVoxelMesh> meshes = new ArrayList<>();
     private final CpuVoxelInstances.Builder instances = new CpuVoxelInstances.Builder();
 
-    TextureVoxelMeshBuilder(boolean buildOpacityMicromap) {
+    TextureVoxelMeshBuilder(boolean buildOpacityMicromap, float maximumHeight) {
+        if (!Float.isFinite(maximumHeight) || maximumHeight < 0.0F) {
+            throw new IllegalArgumentException(
+                    "Voxel-surface maximum height must be finite and nonnegative");
+        }
         this.buildOpacityMicromap = buildOpacityMicromap;
+        this.maximumHeight = maximumHeight;
     }
 
     boolean add(MergeFace face) {
+        return this.add(face, face, 0.0F);
+    }
+
+    boolean add(MergeFace face, MergeFace relief, float outwardOffset) {
+        if (face.planeAxis() != relief.planeAxis()
+                || face.normalSign() != relief.normalSign()
+                || face.planeCell() != relief.planeCell()
+                || face.cellU() != relief.cellU()
+                || face.cellV() != relief.cellV()
+                || !Float.isFinite(outwardOffset)
+                || outwardOffset < 0.0F) {
+            throw new IllegalArgumentException(
+                    "Voxel-surface material and relief faces are incompatible");
+        }
         int flags = PrimitivePacking.unpackFlags(
                 face.primitive()[3], face.primitive()[5])
                 & ~PrimitivePacking.FLAG_TANGENT_NEGATIVE;
@@ -43,6 +67,13 @@ final class TextureVoxelMeshBuilder {
                 face.uv1V(),
                 face.uv2U(),
                 face.uv2V(),
+                relief.sprite(),
+                relief.uv0U(),
+                relief.uv0V(),
+                relief.uv1U(),
+                relief.uv1V(),
+                relief.uv2U(),
+                relief.uv2V(),
                 flags);
         if (this.rejected.contains(key)) {
             return false;
@@ -53,7 +84,8 @@ final class TextureVoxelMeshBuilder {
             try {
                 mesh = buildMesh(
                         key,
-                        face.labPbrHeightMap(),
+                        relief.labPbrHeightMap(),
+                        this.maximumHeight,
                         this.buildOpacityMicromap);
             } catch (IllegalArgumentException
                     | IllegalStateException
@@ -68,21 +100,22 @@ final class TextureVoxelMeshBuilder {
         float translationX;
         float translationY;
         float translationZ;
+        float plane = face.plane() + face.normalSign() * outwardOffset;
         switch (face.planeAxis()) {
             case 0 -> {
-                translationX = face.plane();
+                translationX = plane;
                 translationY = face.cellU();
                 translationZ = face.cellV();
             }
             case 1 -> {
                 translationX = face.cellU();
-                translationY = face.plane();
+                translationY = plane;
                 translationZ = face.cellV();
             }
             case 2 -> {
                 translationX = face.cellU();
                 translationY = face.cellV();
-                translationZ = face.plane();
+                translationZ = plane;
             }
             default -> throw new IllegalArgumentException("Invalid face plane axis");
         }
@@ -100,52 +133,68 @@ final class TextureVoxelMeshBuilder {
     }
 
     static float heightFromArgb(int argb) {
+        return lumaFromArgb(argb) * MAXIMUM_HEIGHT;
+    }
+
+    private static float lumaFromArgb(int argb) {
         int red = argb >>> 16 & 0xff;
         int green = argb >>> 8 & 0xff;
         int blue = argb & 0xff;
         // Fixed-point BT.601 Y' coefficients preserve exact black and white endpoints.
-        float luma = (77 * red + 150 * green + 29 * blue) / (255.0F * 256.0F);
-        return luma * MAXIMUM_HEIGHT;
+        return (77 * red + 150 * green + 29 * blue) / (255.0F * 256.0F);
     }
 
     private static CpuVoxelMesh buildMesh(
             Key key,
             LabPbrHeightMap labPbrHeightMap,
+            float maximumHeight,
             boolean buildOpacityMicromap) {
-        SpritePixels pixels = SpritePixels.create(key.sprite);
-        if (pixels.width != pixels.height) {
+        SpritePixels reliefPixels = SpritePixels.create(key.reliefSprite);
+        if (reliefPixels.width != reliefPixels.height) {
             throw new IllegalArgumentException(
                     "Voxel-surface textures must have square animation frames");
         }
-        int size = pixels.width;
+        int size = reliefPixels.width;
         float[] heights = new float[Math.multiplyExact(size, size)];
         float[] atlasUs = new float[heights.length];
         float[] atlasVs = new float[heights.length];
-        UvTransform uv = new UvTransform(
+        UvTransform materialUv = new UvTransform(
                 key.uv0U,
                 key.uv0V,
                 key.uv1U,
                 key.uv1V,
                 key.uv2U,
                 key.uv2V);
+        UvTransform reliefUv = new UvTransform(
+                key.reliefUv0U,
+                key.reliefUv0V,
+                key.reliefUv1U,
+                key.reliefUv1V,
+                key.reliefUv2U,
+                key.reliefUv2V);
         for (int y = 0; y < size; y++) {
             for (int x = 0; x < size; x++) {
                 int index = x + y * size;
                 float u = (x + 0.5F) / size;
                 float v = (y + 0.5F) / size;
-                float atlasU = uv.u(u, v);
-                float atlasV = uv.v(u, v);
+                float atlasU = materialUv.u(u, v);
+                float atlasV = materialUv.v(u, v);
+                float reliefAtlasU = reliefUv.u(u, v);
+                float reliefAtlasV = reliefUv.v(u, v);
                 atlasUs[index] = atlasU;
                 atlasVs[index] = atlasV;
                 heights[index] = labPbrHeightMap == null
-                        ? heightFromArgb(pixels.sample(atlasU, atlasV, key.sprite))
+                        ? lumaFromArgb(reliefPixels.sample(
+                                reliefAtlasU, reliefAtlasV, key.reliefSprite))
                         : labPbrHeightMap.sample(
-                                        pixels.firstFrame,
-                                        pixels.localU(atlasU, key.sprite),
-                                        pixels.localV(atlasV, key.sprite))
-                                * MAXIMUM_HEIGHT;
+                                reliefPixels.firstFrame,
+                                reliefPixels.localU(reliefAtlasU, key.reliefSprite),
+                                reliefPixels.localV(reliefAtlasV, key.reliefSprite));
             }
         }
+        scaleHeights(heights, maximumHeight);
+        float referenceHeight = borderReferenceHeight(heights, size);
+        alignToReferencePlane(heights, referenceHeight);
         return buildHeightField(
                 key,
                 size,
@@ -171,11 +220,14 @@ final class TextureVoxelMeshBuilder {
         for (int y = 0; y < size; y++) {
             for (int x = 0; x < size; x++) {
                 int index = x + y * size;
-                heights[index] = heightFromArgb(argb[index]);
+                heights[index] = lumaFromArgb(argb[index]);
                 atlasUs[index] = (x + 0.5F) / size;
                 atlasVs[index] = (y + 0.5F) / size;
             }
         }
+        scaleHeights(heights, MAXIMUM_HEIGHT);
+        float referenceHeight = borderReferenceHeight(heights, size);
+        alignToReferencePlane(heights, referenceHeight);
         Key key = new Key(
                 null,
                 planeAxis,
@@ -186,9 +238,52 @@ final class TextureVoxelMeshBuilder {
                 0.0F,
                 0.0F,
                 1.0F,
+                null,
+                0.0F,
+                0.0F,
+                1.0F,
+                0.0F,
+                0.0F,
+                1.0F,
                 0);
         return buildHeightField(
-                key, size, heights, atlasUs, atlasVs, false);
+                key,
+                size,
+                heights,
+                atlasUs,
+                atlasVs,
+                false);
+    }
+
+    static float borderReferenceHeight(float[] heights, int size) {
+        if (size <= 0 || heights.length != Math.multiplyExact(size, size)) {
+            throw new IllegalArgumentException(
+                    "Height field does not match its declared square size");
+        }
+        float reference = Float.POSITIVE_INFINITY;
+        for (int x = 0; x < size; x++) {
+            reference = Math.min(reference, heights[x]);
+            reference = Math.min(reference, heights[x + (size - 1) * size]);
+        }
+        for (int y = 1; y < size - 1; y++) {
+            reference = Math.min(reference, heights[y * size]);
+            reference = Math.min(reference, heights[y * size + size - 1]);
+        }
+        return reference;
+    }
+
+    static void alignToReferencePlane(float[] heights, float referenceHeight) {
+        // The border minimum defines the original block plane. Clamp darker interior samples to
+        // preserve the outward-only surface contract instead of creating hidden inward cavities.
+        for (int index = 0; index < heights.length; index++) {
+            heights[index] = Math.max(heights[index] - referenceHeight, 0.0F);
+        }
+    }
+
+    private static void scaleHeights(float[] heights, float maximumHeight) {
+        for (int index = 0; index < heights.length; index++) {
+            heights[index] *= maximumHeight;
+        }
     }
 
     private static CpuVoxelMesh buildHeightField(
@@ -284,6 +379,13 @@ final class TextureVoxelMeshBuilder {
             float uv1V,
             float uv2U,
             float uv2V,
+            TextureAtlasSprite reliefSprite,
+            float reliefUv0U,
+            float reliefUv0V,
+            float reliefUv1U,
+            float reliefUv1V,
+            float reliefUv2U,
+            float reliefUv2V,
             int flags) {
     }
 

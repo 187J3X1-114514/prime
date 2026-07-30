@@ -11,6 +11,7 @@ import dev.prime.render.fsr.FsrQualityMode;
 import dev.prime.render.post.DlssRrDebugView;
 import dev.prime.render.post.PostProcessingMode;
 import dev.prime.render.post.ReconstructionQualityMode;
+import dev.prime.render.terrain.VoxelSurfaceSettings;
 import dev.prime.render.vulkan.nrd.NrdDiagnostics;
 import java.util.List;
 import java.util.Locale;
@@ -50,6 +51,22 @@ public final class PrimeVideoOptions {
                         "prime.options.experimental.voxel_texture_surfaces.tooltip")),
                 PrimeConfig.settings().voxelTextureSurfaces(),
                 runtime::setVoxelTextureSurfaces);
+    }
+
+    public static OptionInstance<Integer> voxelTextureSurfaceStrength() {
+        RayTracingRuntime runtime = RayTracingRuntime.instance();
+        return new OptionInstance<>(
+                "prime.options.experimental.voxel_texture_surface_strength",
+                OptionInstance.cachedConstantTooltip(Component.translatable(
+                        "prime.options.experimental.voxel_texture_surface_strength.tooltip")),
+                (caption, steps) -> Options.genericValueLabel(
+                        caption,
+                        Component.literal(steps + "%")),
+                new OptionInstance.IntRange(
+                        VoxelSurfaceSettings.MINIMUM_STEPS,
+                        VoxelSurfaceSettings.MAXIMUM_STEPS),
+                PrimeConfig.settings().voxelTextureSurfaceStrengthSteps(),
+                runtime::setVoxelTextureSurfaceStrengthSteps);
     }
 
     public static OptionInstance<Boolean> screenshotMode() {

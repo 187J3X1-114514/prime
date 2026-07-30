@@ -5,12 +5,14 @@ import dev.prime.render.LightingSettings;
 import dev.prime.render.MaterialSettings;
 import dev.prime.render.post.PostProcessingMode;
 import dev.prime.render.post.ReconstructionQualityMode;
+import dev.prime.render.terrain.VoxelSurfaceSettings;
 import java.util.Objects;
 
 /** Immutable product settings and renderer revision markers owned by {@link PrimeConfig}. */
 public record PrimeSettings(
         boolean pathTracingEnabled,
         boolean voxelTextureSurfaces,
+        int voxelTextureSurfaceStrengthSteps,
         PostProcessingMode postProcessingMode,
         ReconstructionQualityMode reconstructionQuality,
         int sunQuarterSteps,
@@ -31,6 +33,7 @@ public record PrimeSettings(
         DisplaySettings.finalExposureMultiplier(finalExposureQuarterSteps);
         DisplaySettings.overexposure(oklabOverexposureSteps);
         MaterialSettings.linearRoughness(defaultRoughnessSteps);
+        VoxelSurfaceSettings.maximumHeight(voxelTextureSurfaceStrengthSteps);
         if (lightingRevision < 0L || materialRevision < 0L) {
             throw new IllegalArgumentException("Prime setting revisions must not be negative");
         }
@@ -40,6 +43,7 @@ public record PrimeSettings(
         return new PrimeSettings(
                 true,
                 false,
+                VoxelSurfaceSettings.DEFAULT_STEPS,
                 PostProcessingMode.DEFAULT,
                 ReconstructionQualityMode.DEFAULT,
                 LightingSettings.DEFAULT_SUN_QUARTER_STEPS,
@@ -58,6 +62,7 @@ public record PrimeSettings(
                 : new PrimeSettings(
                         value,
                         this.voxelTextureSurfaces,
+                        this.voxelTextureSurfaceStrengthSteps,
                         this.postProcessingMode,
                         this.reconstructionQuality,
                         this.sunQuarterSteps,
@@ -75,6 +80,27 @@ public record PrimeSettings(
                 ? this
                 : new PrimeSettings(
                         this.pathTracingEnabled,
+                        value,
+                        this.voxelTextureSurfaceStrengthSteps,
+                        this.postProcessingMode,
+                        this.reconstructionQuality,
+                        this.sunQuarterSteps,
+                        this.starQuarterSteps,
+                        this.blockLightQuarterSteps,
+                        this.finalExposureQuarterSteps,
+                        this.oklabOverexposureSteps,
+                        this.defaultRoughnessSteps,
+                        this.lightingRevision,
+                        this.materialRevision);
+    }
+
+    public PrimeSettings withVoxelTextureSurfaceStrengthSteps(int value) {
+        VoxelSurfaceSettings.maximumHeight(value);
+        return value == this.voxelTextureSurfaceStrengthSteps
+                ? this
+                : new PrimeSettings(
+                        this.pathTracingEnabled,
+                        this.voxelTextureSurfaces,
                         value,
                         this.postProcessingMode,
                         this.reconstructionQuality,
@@ -95,6 +121,7 @@ public record PrimeSettings(
                 : new PrimeSettings(
                         this.pathTracingEnabled,
                         this.voxelTextureSurfaces,
+                        this.voxelTextureSurfaceStrengthSteps,
                         value,
                         this.reconstructionQuality,
                         this.sunQuarterSteps,
@@ -114,6 +141,7 @@ public record PrimeSettings(
                 : new PrimeSettings(
                         this.pathTracingEnabled,
                         this.voxelTextureSurfaces,
+                        this.voxelTextureSurfaceStrengthSteps,
                         this.postProcessingMode,
                         value,
                         this.sunQuarterSteps,
@@ -133,6 +161,7 @@ public record PrimeSettings(
                 : new PrimeSettings(
                         this.pathTracingEnabled,
                         this.voxelTextureSurfaces,
+                        this.voxelTextureSurfaceStrengthSteps,
                         this.postProcessingMode,
                         this.reconstructionQuality,
                         value,
@@ -152,6 +181,7 @@ public record PrimeSettings(
                 : new PrimeSettings(
                         this.pathTracingEnabled,
                         this.voxelTextureSurfaces,
+                        this.voxelTextureSurfaceStrengthSteps,
                         this.postProcessingMode,
                         this.reconstructionQuality,
                         this.sunQuarterSteps,
@@ -171,6 +201,7 @@ public record PrimeSettings(
                 : new PrimeSettings(
                         this.pathTracingEnabled,
                         this.voxelTextureSurfaces,
+                        this.voxelTextureSurfaceStrengthSteps,
                         this.postProcessingMode,
                         this.reconstructionQuality,
                         this.sunQuarterSteps,
@@ -190,6 +221,7 @@ public record PrimeSettings(
                 : new PrimeSettings(
                         this.pathTracingEnabled,
                         this.voxelTextureSurfaces,
+                        this.voxelTextureSurfaceStrengthSteps,
                         this.postProcessingMode,
                         this.reconstructionQuality,
                         this.sunQuarterSteps,
@@ -209,6 +241,7 @@ public record PrimeSettings(
                 : new PrimeSettings(
                         this.pathTracingEnabled,
                         this.voxelTextureSurfaces,
+                        this.voxelTextureSurfaceStrengthSteps,
                         this.postProcessingMode,
                         this.reconstructionQuality,
                         this.sunQuarterSteps,
@@ -228,6 +261,7 @@ public record PrimeSettings(
                 : new PrimeSettings(
                         this.pathTracingEnabled,
                         this.voxelTextureSurfaces,
+                        this.voxelTextureSurfaceStrengthSteps,
                         this.postProcessingMode,
                         this.reconstructionQuality,
                         this.sunQuarterSteps,

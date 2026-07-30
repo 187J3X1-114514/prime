@@ -11,6 +11,7 @@ import dev.prime.render.vulkan.nrd.NrdDiagnostics;
 import dev.prime.render.post.DlssRrDebugView;
 import dev.prime.render.post.PostProcessingMode;
 import dev.prime.render.post.ReconstructionQualityMode;
+import dev.prime.render.terrain.VoxelSurfaceSettings;
 import net.minecraft.client.OptionInstance;
 import net.minecraft.client.gui.components.AbstractWidget;
 import net.minecraft.client.gui.components.Button;
@@ -31,6 +32,7 @@ public abstract class VideoSettingsScreenMixin {
             Component.translatable("prime.options.header");
     @Unique private OptionInstance<Boolean> prime$pathTracingEnabled;
     @Unique private OptionInstance<Boolean> prime$voxelTextureSurfaces;
+    @Unique private OptionInstance<Integer> prime$voxelTextureSurfaceStrength;
     @Unique private OptionInstance<Boolean> prime$screenshotMode;
     @Unique private OptionInstance<PostProcessingMode> prime$postProcessingMode;
     @Unique private OptionInstance<ReconstructionQualityMode> prime$qualityMode;
@@ -52,6 +54,8 @@ public abstract class VideoSettingsScreenMixin {
         if (list != null) {
             this.prime$pathTracingEnabled = PrimeVideoOptions.pathTracingEnabled();
             this.prime$voxelTextureSurfaces = PrimeVideoOptions.voxelTextureSurfaces();
+            this.prime$voxelTextureSurfaceStrength =
+                    PrimeVideoOptions.voxelTextureSurfaceStrength();
             this.prime$screenshotMode = PrimeVideoOptions.screenshotMode();
             this.prime$postProcessingMode = PrimeVideoOptions.postProcessingMode();
             this.prime$qualityMode = PrimeVideoOptions.qualityMode();
@@ -73,6 +77,7 @@ public abstract class VideoSettingsScreenMixin {
                     .build());
             list.addBig(this.prime$pathTracingEnabled);
             list.addBig(this.prime$voxelTextureSurfaces);
+            list.addBig(this.prime$voxelTextureSurfaceStrength);
             list.addBig(this.prime$screenshotMode);
             list.addBig(this.prime$postProcessingMode);
             list.addBig(this.prime$qualityMode);
@@ -98,6 +103,9 @@ public abstract class VideoSettingsScreenMixin {
         }
         this.prime$refresh(this.prime$pathTracingEnabled, true);
         this.prime$refresh(this.prime$voxelTextureSurfaces, false);
+        this.prime$refresh(
+                this.prime$voxelTextureSurfaceStrength,
+                VoxelSurfaceSettings.DEFAULT_STEPS);
         this.prime$refresh(this.prime$screenshotMode, false);
         this.prime$refresh(this.prime$postProcessingMode, PostProcessingMode.DEFAULT);
         this.prime$refresh(this.prime$qualityMode, ReconstructionQualityMode.DEFAULT);

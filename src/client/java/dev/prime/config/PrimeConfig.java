@@ -7,6 +7,7 @@ import dev.prime.render.MaterialSettings;
 import dev.prime.render.fsr.FsrQualityMode;
 import dev.prime.render.post.PostProcessingMode;
 import dev.prime.render.post.ReconstructionQualityMode;
+import dev.prime.render.terrain.VoxelSurfaceSettings;
 import java.io.IOException;
 import java.io.Reader;
 import java.math.BigDecimal;
@@ -23,6 +24,8 @@ public final class PrimeConfig {
     private static final String PATH_TRACING_ENABLED_KEY = "renderer.path_tracing";
     private static final String VOXEL_TEXTURE_SURFACES_KEY =
             "experimental.voxel_texture_surfaces";
+    private static final String VOXEL_TEXTURE_SURFACE_STRENGTH_KEY =
+            "experimental.voxel_texture_surface_strength";
     private static final String MODE_KEY = "post_processing.mode";
     private static final String QUALITY_KEY = "post_processing.quality";
     private static final String LEGACY_QUALITY_KEY = "fsr.quality";
@@ -52,6 +55,7 @@ public final class PrimeConfig {
         Path path = configPath();
         boolean pathTracingEnabled = true;
         boolean voxelTextureSurfaces = false;
+        int voxelTextureSurfaceStrengthSteps = VoxelSurfaceSettings.DEFAULT_STEPS;
         PostProcessingMode postProcessingMode = PostProcessingMode.DEFAULT;
         ReconstructionQualityMode quality = ReconstructionQualityMode.DEFAULT;
         int sunQuarterSteps = LightingSettings.DEFAULT_SUN_QUARTER_STEPS;
@@ -88,6 +92,21 @@ public final class PrimeConfig {
                         PrimeClient.LOGGER.warn(
                                 "Invalid Prime voxel-texture surface switch '{}'; disabling it",
                                 voxelSurfaces);
+                        rewriteNeeded = true;
+                    }
+                } else {
+                    rewriteNeeded = true;
+                }
+                String voxelSurfaceStrength = properties.getProperty(
+                        VOXEL_TEXTURE_SURFACE_STRENGTH_KEY);
+                if (voxelSurfaceStrength != null) {
+                    try {
+                        voxelTextureSurfaceStrengthSteps =
+                                parseVoxelSurfaceStrengthSteps(voxelSurfaceStrength);
+                    } catch (IllegalArgumentException exception) {
+                        PrimeClient.LOGGER.warn(
+                                "Invalid Prime voxel-surface strength '{}'; using the default",
+                                voxelSurfaceStrength);
                         rewriteNeeded = true;
                     }
                 } else {
@@ -218,6 +237,7 @@ public final class PrimeConfig {
         settings = new PrimeSettings(
                 pathTracingEnabled,
                 voxelTextureSurfaces,
+                voxelTextureSurfaceStrengthSteps,
                 postProcessingMode,
                 quality,
                 sunQuarterSteps,
@@ -230,8 +250,10 @@ public final class PrimeConfig {
                 0L);
         dirty = rewriteNeeded;
         PrimeClient.LOGGER.info(
-                "Prime settings: path tracing {}, post-processing {} quality {} (NRD-FSR {}x), sun {} EV, stars {} EV, block lights {} EV, final exposure {} EV, Oklab DRT overexposure {}, default roughness {}",
+                "Prime settings: path tracing {}, voxel surfaces {} at {}x, post-processing {} quality {} (NRD-FSR {}x), sun {} EV, stars {} EV, block lights {} EV, final exposure {} EV, Oklab DRT overexposure {}, default roughness {}",
                 pathTracingEnabled ? "enabled" : "disabled",
+                voxelTextureSurfaces ? "enabled" : "disabled",
+                formatVoxelSurfaceStrength(voxelTextureSurfaceStrengthSteps),
                 postProcessingMode.id(),
                 quality.id(),
                 quality.upscaleRatio(),
@@ -257,6 +279,10 @@ public final class PrimeConfig {
 
     public static void setVoxelTextureSurfaces(boolean enabled) {
         update(settings.withVoxelTextureSurfaces(enabled));
+    }
+
+    public static void setVoxelTextureSurfaceStrengthSteps(int steps) {
+        update(settings.withVoxelTextureSurfaceStrengthSteps(steps));
     }
 
     public static void setPostProcessingMode(PostProcessingMode mode) {
@@ -294,6 +320,7 @@ public final class PrimeConfig {
     public static void restoreDefaults() {
         setPathTracingEnabled(true);
         setVoxelTextureSurfaces(false);
+        setVoxelTextureSurfaceStrengthSteps(VoxelSurfaceSettings.DEFAULT_STEPS);
         setPostProcessingMode(PostProcessingMode.DEFAULT);
         setReconstructionQualityMode(ReconstructionQualityMode.DEFAULT);
         setSunQuarterSteps(LightingSettings.DEFAULT_SUN_QUARTER_STEPS);
@@ -351,6 +378,9 @@ public final class PrimeConfig {
         return PATH_TRACING_ENABLED_KEY + "=" + current.pathTracingEnabled() + "\n"
                     + VOXEL_TEXTURE_SURFACES_KEY + "="
                     + current.voxelTextureSurfaces() + "\n"
+                    + VOXEL_TEXTURE_SURFACE_STRENGTH_KEY + "="
+                    + formatVoxelSurfaceStrength(
+                            current.voxelTextureSurfaceStrengthSteps()) + "\n"
                     + MODE_KEY + "=" + current.postProcessingMode().id() + "\n"
                     + QUALITY_KEY + "=" + current.reconstructionQuality().id() + "\n"
                     + SUN_EV_KEY + "=" + formatEv(current.sunQuarterSteps()) + "\n"
@@ -392,6 +422,27 @@ public final class PrimeConfig {
         } catch (ArithmeticException | NumberFormatException exception) {
             throw new IllegalArgumentException("EV must be an exact 0.25-EV step", exception);
         }
+    }
+
+    static int parseVoxelSurfaceStrengthSteps(String value) {
+        try {
+            int steps = new BigDecimal(value)
+                    .multiply(BigDecimal.valueOf(VoxelSurfaceSettings.STEPS_PER_UNIT))
+                    .intValueExact();
+            VoxelSurfaceSettings.maximumHeight(steps);
+            return steps;
+        } catch (ArithmeticException | NumberFormatException exception) {
+            throw new IllegalArgumentException(
+                    "Voxel-surface strength must be an exact 0.01 step",
+                    exception);
+        }
+    }
+
+    static String formatVoxelSurfaceStrength(int steps) {
+        VoxelSurfaceSettings.maximumHeight(steps);
+        return BigDecimal.valueOf(steps)
+                .divide(BigDecimal.valueOf(VoxelSurfaceSettings.STEPS_PER_UNIT))
+                .toPlainString();
     }
 
     static String formatEv(int quarterSteps) {

@@ -13,8 +13,9 @@ const float PRIME_AUTO_EXPOSURE_LN_10 = 2.302585092994046;
 const float PRIME_AUTO_EXPOSURE_DARKEN_T90 = 0.5;
 const float PRIME_AUTO_EXPOSURE_BRIGHTEN_T90 = 2.0;
 const float PRIME_AUTO_EXPOSURE_REFERENCE_ALBEDO = 0.18;
-const float PRIME_AUTO_EXPOSURE_MIN_ALBEDO = 0.05;
-const float PRIME_AUTO_EXPOSURE_ALBEDO_BLEND = 0.75;
+const float PRIME_AUTO_EXPOSURE_MIN_ALBEDO = 0.02;
+const float PRIME_AUTO_EXPOSURE_ALBEDO_BLEND = 1.0;
+const float PRIME_AUTO_EXPOSURE_SCENE_KEY_MIN_RANGE_EV = 2.0;
 const uint PRIME_AUTO_EXPOSURE_MATERIAL_DIELECTRIC = 0u;
 const uint PRIME_AUTO_EXPOSURE_MATERIAL_FOLIAGE = 3u;
 
@@ -54,10 +55,35 @@ float primeAutoExposureBinLogLuminance(uint bin) {
                     * (PRIME_AUTO_EXPOSURE_LOG_LUMINANCE_RANGE / 256.0);
 }
 
-float primeAutoExposureTargetEv(float measuredLogLuminance) {
+float primeAutoExposureSceneKeyBiasEv(
+        float measuredLogLuminance,
+        float minimumLogLuminance,
+        float maximumLogLuminance) {
+    float range = maximumLogLuminance - minimumLogLuminance;
+    if (range <= 0.0) {
+        return 0.0;
+    }
+    // Reinhard 2002 automatic key: alpha = key * 4^q, or 2q in EV.
+    // A range floor removes its singular sensitivity on nearly uniform images.
+    float q = (
+            2.0 * measuredLogLuminance
+                    - minimumLogLuminance
+                    - maximumLogLuminance)
+            / max(range, PRIME_AUTO_EXPOSURE_SCENE_KEY_MIN_RANGE_EV);
+    return 2.0 * q;
+}
+
+float primeAutoExposureTargetEv(
+        float measuredLogLuminance,
+        float minimumLogLuminance,
+        float maximumLogLuminance) {
     return clamp(
             log2(PRIME_AUTO_EXPOSURE_KEY) + PRIME_AUTO_EXPOSURE_BASELINE_EV
-                    - measuredLogLuminance,
+                    - measuredLogLuminance
+                    + primeAutoExposureSceneKeyBiasEv(
+                            measuredLogLuminance,
+                            minimumLogLuminance,
+                            maximumLogLuminance),
             PRIME_AUTO_EXPOSURE_MIN_EV,
             PRIME_AUTO_EXPOSURE_MAX_EV);
 }

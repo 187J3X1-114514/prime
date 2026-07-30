@@ -36,7 +36,7 @@ final class AutoExposureMathTest {
     }
 
     @Test
-    void diffuseAlbedoCorrectionBlendsRawAndNeutralizedLuminance() {
+    void diffuseAlbedoCorrectionNeutralizesLuminance() {
         int reference = AutoExposureMath.histogramBin(
                 0.18F,
                 0.18F,
@@ -72,11 +72,11 @@ final class AutoExposureMathTest {
                 0.09F,
                 1.0F).orElseThrow();
 
-        assertTrue(reference < white);
+        assertEquals(reference, white);
         assertTrue(uncorrectedWhite > white);
-        assertTrue(white < snow);
+        assertEquals(white, snow);
         assertTrue(snow < uncorrectedWhite);
-        assertTrue(dark < reference);
+        assertEquals(reference, dark);
         assertTrue(dark > AutoExposureMath.histogramBin(
                 0.09F, 0.09F, 0.09F).orElseThrow());
         assertEquals(
@@ -94,7 +94,7 @@ final class AutoExposureMathTest {
     }
 
     @Test
-    void albedoCorrectionBlendsRawAndProtectedNeutralizedLuminance() {
+    void albedoCorrectionUsesFullProtectedNeutralizedLuminance() {
         assertEquals(
                 1.0F + (AutoExposureMath.REFERENCE_ALBEDO - 1.0F)
                         * AutoExposureMath.ALBEDO_BLEND,
@@ -115,7 +115,7 @@ final class AutoExposureMathTest {
                         1.0F, 1.0F, 1.0F, 0.5F),
                 1.0e-6F);
         assertEquals(
-                1.3771F,
+                2.4739F,
                 (float) (-Math.log(AutoExposureMath.albedoScale(
                         1.0F, 1.0F, 1.0F, 1.0F)) / Math.log(2.0)),
                 1.0e-4F);
@@ -162,6 +162,76 @@ final class AutoExposureMathTest {
                 result.targetEv(),
                 BIN_HALF_WIDTH_EV);
         assertEquals(result.targetEv(), result.exposureEv());
+    }
+
+    @Test
+    void reinhardSceneKeyUsesTheOriginalFourToTheQStrength() {
+        assertEquals(
+                0.0F,
+                AutoExposureMath.sceneKeyBiasEv(2.0F, 0.0F, 4.0F));
+        assertEquals(
+                1.0F,
+                AutoExposureMath.sceneKeyBiasEv(3.0F, 0.0F, 4.0F));
+        assertEquals(
+                -1.0F,
+                AutoExposureMath.sceneKeyBiasEv(1.0F, 0.0F, 4.0F));
+        assertEquals(
+                2.0F,
+                AutoExposureMath.sceneKeyBiasEv(4.0F, 0.0F, 4.0F));
+        assertEquals(
+                -2.0F,
+                AutoExposureMath.sceneKeyBiasEv(0.0F, 0.0F, 4.0F));
+        assertEquals(
+                0.0F,
+                AutoExposureMath.sceneKeyBiasEv(2.0F, 2.0F, 2.0F));
+    }
+
+    @Test
+    void reinhardSceneKeyAttenuatesNarrowHistogramNoise() {
+        assertEquals(
+                1.0F,
+                AutoExposureMath.sceneKeyBiasEv(1.0F, 0.0F, 1.0F));
+        assertEquals(
+                -1.0F,
+                AutoExposureMath.sceneKeyBiasEv(0.0F, 0.0F, 1.0F));
+        assertEquals(
+                0.140625F,
+                AutoExposureMath.sceneKeyBiasEv(0.140625F, 0.0F, 0.140625F));
+    }
+
+    @Test
+    void reinhardSceneKeyPreservesDominantBrightAndDarkCompositions() {
+        int center = binForGray(AutoExposureMath.KEY_LUMINANCE);
+        int low = center - 8;
+        int high = center + 8;
+        int[] highKeyHistogram = new int[AutoExposureMath.BIN_COUNT];
+        highKeyHistogram[low] = 20;
+        highKeyHistogram[high] = 80;
+        int[] lowKeyHistogram = new int[AutoExposureMath.BIN_COUNT];
+        lowKeyHistogram[low] = 80;
+        lowKeyHistogram[high] = 20;
+
+        AutoExposureMath.State averageKey =
+                instantForGray(AutoExposureMath.KEY_LUMINANCE);
+        AutoExposureMath.State highKey = AutoExposureMath.update(
+                AutoExposureMath.State.initial(),
+                highKeyHistogram,
+                0.0F,
+                true,
+                true);
+        AutoExposureMath.State lowKey = AutoExposureMath.update(
+                AutoExposureMath.State.initial(),
+                lowKeyHistogram,
+                0.0F,
+                true,
+                true);
+
+        assertTrue(highKey.targetEv() > averageKey.targetEv());
+        assertTrue(lowKey.targetEv() < averageKey.targetEv());
+        assertEquals(
+                2.0F * averageKey.targetEv(),
+                highKey.targetEv() + lowKey.targetEv(),
+                BIN_HALF_WIDTH_EV);
     }
 
     @Test

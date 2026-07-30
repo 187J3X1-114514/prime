@@ -20,9 +20,18 @@ void main() {
     vec2 expected = vec2(0.0);
 
     if (kind == 0u) {
-        actual.x = primeAutoExposureTargetEv(values.x);
+        actual.x = primeAutoExposureTargetEv(
+                values.x, values.y, values.z);
+        float range = values.z - values.y;
+        float keyBiasEv = range > 0.0
+                ? 2.0 * (
+                        2.0 * values.x - values.y - values.z)
+                        / max(range, 2.0)
+                : 0.0;
         expected.x = clamp(
-                log2(0.16) + 0.5 - values.x, -4.0, 4.0);
+                log2(0.16) + 0.5 - values.x + keyBiasEv,
+                -4.0,
+                4.0);
         if (actual.x < -4.0 || actual.x > 4.0) {
             mask |= PRIME_TEST_FAILURE_RANGE;
         }
@@ -40,11 +49,10 @@ void main() {
         actual.x = primeAutoExposureAlbedoScale(
                 vec3(values.x), values.y);
         float fullScale =
-                0.18 / max(clamp(values.x, 0.0, 1.0), 0.05);
-        float blendedScale = mix(1.0, fullScale, 0.75);
+                0.18 / max(clamp(values.x, 0.0, 1.0), 0.02);
         expected.x = mix(
-                1.0, blendedScale, clamp(values.y, 0.0, 1.0));
-        if (actual.x < 0.384999 || actual.x > 2.95001) {
+                1.0, fullScale, clamp(values.y, 0.0, 1.0));
+        if (actual.x < 0.179999 || actual.x > 9.00001) {
             mask |= PRIME_TEST_FAILURE_RANGE;
         }
         if (!primeTestClose(actual.x, expected.x, 2.0e-6, 2.0e-6)) {
@@ -56,6 +64,21 @@ void main() {
                 materialClass, values.y);
         bool diffuseSurface = materialClass == 0u || materialClass == 3u;
         expected.x = diffuseSurface && values.y >= 0.0 ? 1.0 : 0.0;
+        if (!primeTestClose(actual.x, expected.x, 1.0e-6, 1.0e-6)) {
+            mask |= PRIME_TEST_FAILURE_IDENTITY;
+        }
+    } else if (kind == 4u) {
+        actual.x = primeAutoExposureSceneKeyBiasEv(
+                values.x, values.y, values.z);
+        float range = values.z - values.y;
+        expected.x = range > 0.0
+                ? 2.0 * (
+                        2.0 * values.x - values.y - values.z)
+                        / max(range, 2.0)
+                : 0.0;
+        if (actual.x < -2.00001 || actual.x > 2.00001) {
+            mask |= PRIME_TEST_FAILURE_RANGE;
+        }
         if (!primeTestClose(actual.x, expected.x, 1.0e-6, 1.0e-6)) {
             mask |= PRIME_TEST_FAILURE_IDENTITY;
         }

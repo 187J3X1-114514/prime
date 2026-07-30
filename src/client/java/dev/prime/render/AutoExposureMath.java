@@ -15,8 +15,9 @@ final class AutoExposureMath {
     static final float DARKEN_T90_SECONDS = 0.5F;
     static final float BRIGHTEN_T90_SECONDS = 2.0F;
     static final float REFERENCE_ALBEDO = 0.18F;
-    static final float MIN_ALBEDO = 0.05F;
-    static final float ALBEDO_BLEND = 0.75F;
+    static final float MIN_ALBEDO = 0.02F;
+    static final float ALBEDO_BLEND = 1.0F;
+    static final float SCENE_KEY_MIN_RANGE_EV = 2.0F;
     static final int MATERIAL_DIELECTRIC = 0;
     static final int MATERIAL_FOLIAGE = 3;
     private static final float LOG_LUMINANCE_RANGE =
@@ -140,6 +141,8 @@ final class AutoExposureMath {
         long cursor = 0L;
         long retainedCount = 0L;
         double weightedLogLuminance = 0.0;
+        float minimumLogLuminance = 0.0F;
+        float maximumLogLuminance = 0.0F;
         for (int bin = 0; bin < histogram.length; bin++) {
             long binBegin = cursor;
             long binEnd = cursor + histogram[bin];
@@ -149,6 +152,10 @@ final class AutoExposureMath {
                 long retained = retainedEnd - retainedBegin;
                 float binLogLuminance = MIN_LOG_LUMINANCE
                         + (bin + 0.5F) * (LOG_LUMINANCE_RANGE / BIN_COUNT);
+                if (retainedCount == 0L) {
+                    minimumLogLuminance = binLogLuminance;
+                }
+                maximumLogLuminance = binLogLuminance;
                 weightedLogLuminance += binLogLuminance * retained;
                 retainedCount += retained;
             }
@@ -160,10 +167,10 @@ final class AutoExposureMath {
 
         float measuredLogLuminance =
                 (float) (weightedLogLuminance / retainedCount);
-        float targetEv = Math.clamp(
-                log2(KEY_LUMINANCE) + BASELINE_EV - measuredLogLuminance,
-                MIN_EV,
-                MAX_EV);
+        float targetEv = targetEv(
+                measuredLogLuminance,
+                minimumLogLuminance,
+                maximumLogLuminance);
         float exposureEv = targetEv;
         if (!reset && !instant && previous.initialized) {
             float t90 = targetEv < previous.exposureEv
@@ -177,6 +184,38 @@ final class AutoExposureMath {
         }
         return new State(
                 exposureEv, true, targetEv, measuredLogLuminance);
+    }
+
+    static float sceneKeyBiasEv(
+            float measuredLogLuminance,
+            float minimumLogLuminance,
+            float maximumLogLuminance) {
+        float range = maximumLogLuminance - minimumLogLuminance;
+        if (range <= 0.0F) {
+            return 0.0F;
+        }
+        float q = (
+                2.0F * measuredLogLuminance
+                        - minimumLogLuminance
+                        - maximumLogLuminance)
+                / Math.max(range, SCENE_KEY_MIN_RANGE_EV);
+        return 2.0F * q;
+    }
+
+    private static float targetEv(
+            float measuredLogLuminance,
+            float minimumLogLuminance,
+            float maximumLogLuminance) {
+        return Math.clamp(
+                log2(KEY_LUMINANCE)
+                        + BASELINE_EV
+                        - measuredLogLuminance
+                        + sceneKeyBiasEv(
+                                measuredLogLuminance,
+                                minimumLogLuminance,
+                                maximumLogLuminance),
+                MIN_EV,
+                MAX_EV);
     }
 
     private static float log2(float value) {

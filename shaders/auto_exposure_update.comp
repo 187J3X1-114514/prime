@@ -44,6 +44,8 @@ void main() {
     uint cursor = 0u;
     uint retainedCount = 0u;
     float weightedLogLuminance = 0.0;
+    float minimumLogLuminance = 0.0;
+    float maximumLogLuminance = 0.0;
     for (uint bin = 0u; bin < 256u; ++bin) {
         uint binCount = primeAutoExposureHistogram.bins[bin];
         uint binBegin = cursor;
@@ -54,6 +56,10 @@ void main() {
             uint retained = retainedEnd - retainedBegin;
             float binLogLuminance =
                     primeAutoExposureBinLogLuminance(bin);
+            if (retainedCount == 0u) {
+                minimumLogLuminance = binLogLuminance;
+            }
+            maximumLogLuminance = binLogLuminance;
             weightedLogLuminance += binLogLuminance * float(retained);
             retainedCount += retained;
         }
@@ -65,7 +71,10 @@ void main() {
     float measuredLogLuminance =
             weightedLogLuminance / float(retainedCount);
     float targetEv =
-            primeAutoExposureTargetEv(measuredLogLuminance);
+            primeAutoExposureTargetEv(
+                    measuredLogLuminance,
+                    minimumLogLuminance,
+                    maximumLogLuminance);
     float exposureEv = targetEv;
     if (primeAutoExposureUpdatePush.reset == 0u
             && primeAutoExposureUpdatePush.instant == 0u

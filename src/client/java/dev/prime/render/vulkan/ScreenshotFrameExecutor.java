@@ -72,10 +72,6 @@ public final class ScreenshotFrameExecutor {
             this.context.device().instance().debug().beginDebugGroup(
                     commandBuffer,
                     () -> "Prime raw-model screenshot accumulation");
-            atmosphereFrame = atmosphere.prepare(
-                    commandBuffer,
-                    plan.integrator().camera(),
-                    plan.integrator().sunDirection());
             VulkanImageTransitions.prepareOutputForComposite(
                     commandBuffer, this.imageInitialization, displayOutput);
             VulkanImageTransitions.prepareAccumulationForTrace(
@@ -87,6 +83,14 @@ public final class ScreenshotFrameExecutor {
             VulkanImageTransitions.prepareAtlasForTrace(
                     commandBuffer, atlasView.texture());
             labPbrFrame = labPbrAtlas.prepare(commandBuffer);
+            // The sun-cache raygen uses the shared RT descriptor set, including screenshot
+            // accumulation and raw-frame resources initialized immediately above.
+            atmosphereFrame = atmosphere.prepare(
+                    commandBuffer,
+                    pipeline,
+                    plan.integrator(),
+                    scene,
+                    true);
             try (MemoryStack stack = MemoryStack.stackPush()) {
                 pipeline.traceScreenshot(
                         commandBuffer, plan.integrator(), scene);

@@ -383,6 +383,16 @@ public final class ShaderAbi {
     public static final int DESCRIPTOR_STARMAP = ${schema.descriptors.starmap};
     public static final int DESCRIPTOR_WAVEFRONT_PATHS = ${schema.descriptors.wavefrontPaths};
     public static final int DESCRIPTOR_WAVEFRONT_QUEUE = ${schema.descriptors.wavefrontQueue};
+    public static final int DESCRIPTOR_SUN_SHADOW_DEPTH_0 = ${schema.descriptors.sunShadowDepth0};
+    public static final int DESCRIPTOR_SUN_SHADOW_DEPTH_1 = ${schema.descriptors.sunShadowDepth1};
+    public static final int DESCRIPTOR_SUN_SHADOW_DEPTH_2 = ${schema.descriptors.sunShadowDepth2};
+    public static final int DESCRIPTOR_SUN_SHADOW_DEPTH_3 = ${schema.descriptors.sunShadowDepth3};
+    public static final int DESCRIPTOR_SUN_SHADOW_DEPTH_4 = ${schema.descriptors.sunShadowDepth4};
+    public static final int DESCRIPTOR_SUN_SHADOW_DEPTH_5 = ${schema.descriptors.sunShadowDepth5};
+    public static final int DESCRIPTOR_SUN_SHADOW_DEPTH_6 = ${schema.descriptors.sunShadowDepth6};
+    public static final int DESCRIPTOR_SUN_SHADOW_DEPTH_7 = ${schema.descriptors.sunShadowDepth7};
+    public static final int DESCRIPTOR_SUN_SHADOW_DEPTH_8 = ${schema.descriptors.sunShadowDepth8};
+    public static final int DESCRIPTOR_SUN_SHADOW_DEPTH_9 = ${schema.descriptors.sunShadowDepth9};
     public static final int WAVEFRONT_ROUNDS = ${wavefrontContract.rounds};
     public static final int WAVEFRONT_PATH_RECORD_SIZE = ${wavefrontContract.pathRecordSize};
     public static final int WAVEFRONT_PATH_SLOTS_PER_PIXEL = ${wavefrontContract.pathSlotsPerPixel};
@@ -619,6 +629,16 @@ layout(set = 0, binding = ${schema.descriptors.transmittanceLow}, rgba16f) unifo
 layout(set = 0, binding = ${schema.descriptors.transmittanceHigh}, rgba16f) uniform readonly image2D primeTransmittanceHigh;
 layout(set = 0, binding = ${schema.descriptors.aerialRadiance}, rgba16f) uniform readonly image3D primeAerialRadiance;
 layout(set = 0, binding = ${schema.descriptors.aerialTransmittance}, rgba16f) uniform readonly image3D primeAerialTransmittance;
+layout(set = 0, binding = ${schema.descriptors.sunShadowDepth0}, r32f) uniform image2D primeSunShadowDepth0;
+layout(set = 0, binding = ${schema.descriptors.sunShadowDepth1}, r32f) uniform image2D primeSunShadowDepth1;
+layout(set = 0, binding = ${schema.descriptors.sunShadowDepth2}, r32f) uniform image2D primeSunShadowDepth2;
+layout(set = 0, binding = ${schema.descriptors.sunShadowDepth3}, r32f) uniform image2D primeSunShadowDepth3;
+layout(set = 0, binding = ${schema.descriptors.sunShadowDepth4}, r32f) uniform image2D primeSunShadowDepth4;
+layout(set = 0, binding = ${schema.descriptors.sunShadowDepth5}, r32f) uniform image2D primeSunShadowDepth5;
+layout(set = 0, binding = ${schema.descriptors.sunShadowDepth6}, r32f) uniform image2D primeSunShadowDepth6;
+layout(set = 0, binding = ${schema.descriptors.sunShadowDepth7}, r32f) uniform image2D primeSunShadowDepth7;
+layout(set = 0, binding = ${schema.descriptors.sunShadowDepth8}, r32f) uniform image2D primeSunShadowDepth8;
+layout(set = 0, binding = ${schema.descriptors.sunShadowDepth9}, r32f) uniform image2D primeSunShadowDepth9;
 layout(set = 0, binding = ${schema.descriptors.starmap}) uniform sampler2D primeStarmap;
 // NRD is part of the integrator boundary. Raygen first writes private raw signals to a subset of
 // these images; nrd_motion.comp converts them in place to demodulated scene-linear Rec.2020
@@ -1088,6 +1108,7 @@ def verifyDistributionJar = tasks.register('verifyDistributionJar') {
 			'prime/shaders/auto_exposure_update.comp.spv',
 			'prime/shaders/shadow.rahit.spv',
 			'prime/shaders/shadow.rchit.spv',
+			'prime/shaders/sun_shadow.rgen.spv',
 			'prime/shaders/nrd_motion.comp.spv',
 			'prime/shaders/replay_capture_raw.comp.spv',
 			'prime/shaders/replay_capture_prepared_nrd.comp.spv',
@@ -1104,9 +1125,9 @@ def verifyDistributionJar = tasks.register('verifyDistributionJar') {
 		}
 
 		def shaderNames = names.findAll { it.startsWith('prime/shaders/') && it.endsWith('.spv') }
-		if (shaderNames.size() != 30) {
+		if (shaderNames.size() != 31) {
 			throw new GradleException(
-					"Distribution jar must contain 30 Prime shaders; found ${shaderNames.size()}")
+					"Distribution jar must contain 31 Prime shaders; found ${shaderNames.size()}")
 		}
 
 		new java.util.zip.ZipFile(archive).withCloseable { zip ->

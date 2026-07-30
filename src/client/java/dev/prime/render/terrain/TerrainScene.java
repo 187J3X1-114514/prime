@@ -15,6 +15,7 @@ import java.util.Comparator;
 import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
+import net.minecraft.core.SectionPos;
 import org.lwjgl.system.MemoryStack;
 import org.lwjgl.vulkan.KHRAccelerationStructure;
 import org.lwjgl.vulkan.KHRRayTracingPipeline;
@@ -45,6 +46,7 @@ public final class TerrainScene implements AutoCloseable {
     private long revision;
     private long resetRevision;
     private long temporalRevision;
+    private long occluderRevision;
 
     public TerrainScene(VulkanContext context, StagingArena stagingArena) {
         this.context = context;
@@ -59,6 +61,9 @@ public final class TerrainScene implements AutoCloseable {
             double cameraZ) {
         boolean contentChanged = this.hasActualContentChange(uploads, evictions);
         LongOpenHashSet removedKeys = removedKeys(uploads, evictions);
+        List<TerrainOccluderChange> occluderChanges = contentChanged
+                ? this.occluderChanges(uploads, evictions)
+                : List.of();
         boolean hasReadyCompaction = this.hasReadyCompaction(removedKeys);
         boolean needsRebase = this.currentTlas == null
                 ? contentChanged
@@ -333,6 +338,7 @@ public final class TerrainScene implements AutoCloseable {
                     worldLightTree,
                     rebuildWorldLights,
                     invalidateTemporalHistory,
+                    occluderChanges,
                     nextOriginX,
                     nextOriginY,
                     nextOriginZ);
@@ -532,6 +538,36 @@ public final class TerrainScene implements AutoCloseable {
         return false;
     }
 
+    private List<TerrainOccluderChange> occluderChanges(
+            List<CompiledCluster> uploads, long[] evictions) {
+        LongOpenHashSet changedKeys = new LongOpenHashSet();
+        for (long key : evictions) {
+            if (this.resident.containsKey(key)) {
+                changedKeys.add(key);
+            }
+        }
+        for (CompiledCluster upload : uploads) {
+            if (!upload.isEmpty() || this.resident.containsKey(upload.key())) {
+                changedKeys.add(upload.key());
+            }
+        }
+        List<TerrainOccluderChange> changes = new ArrayList<>(changedKeys.size());
+        for (long key : changedKeys) {
+            int minimumX = SectionPos.x(key) << 4;
+            int minimumY = SectionPos.y(key) << 4;
+            int minimumZ = SectionPos.z(key) << 4;
+            int clusterBlockSize = SectionCluster.SECTION_SIZE << 4;
+            changes.add(new TerrainOccluderChange(
+                    minimumX,
+                    minimumY,
+                    minimumZ,
+                    Math.addExact(minimumX, clusterBlockSize),
+                    Math.addExact(minimumY, clusterBlockSize),
+                    Math.addExact(minimumZ, clusterBlockSize)));
+        }
+        return List.copyOf(changes);
+    }
+
     private boolean hasReadyCompaction(LongOpenHashSet removedKeys) {
         for (GpuCluster cluster : this.resident.values()) {
             if (!removedKeys.contains(cluster.key())
@@ -565,6 +601,7 @@ public final class TerrainScene implements AutoCloseable {
             CpuWorldLightTree.Result replacementWorldLightTree,
             boolean replaceWorldLights,
             boolean invalidateTemporalHistory,
+            List<TerrainOccluderChange> occluderChanges,
             int nextOriginX,
             int nextOriginY,
             int nextOriginZ) {
@@ -589,6 +626,9 @@ public final class TerrainScene implements AutoCloseable {
         long nextTemporalRevision = invalidateTemporalHistory
                 ? this.temporalRevision + 1L
                 : this.temporalRevision;
+        long nextOccluderRevision = occluderChanges.isEmpty()
+                ? this.occluderRevision
+                : this.occluderRevision + 1L;
         ResidentSceneView nextView = replacementTlas == null || nextResident.isEmpty()
                 ? null
                 : new ResidentSceneView(
@@ -599,7 +639,9 @@ public final class TerrainScene implements AutoCloseable {
                         nextOriginZ,
                         nextRevision,
                         this.resetRevision,
-                        nextTemporalRevision);
+                        nextTemporalRevision,
+                        nextOccluderRevision,
+                        occluderChanges);
 
         return new PreparedUpdate(
                 nextResident,
@@ -612,6 +654,7 @@ public final class TerrainScene implements AutoCloseable {
                 nextOriginZ,
                 nextRevision,
                 nextTemporalRevision,
+                nextOccluderRevision,
                 nextView,
                 retired,
                 previousTlas,
@@ -631,6 +674,7 @@ public final class TerrainScene implements AutoCloseable {
         this.originZ = update.originZ();
         this.revision = update.revision();
         this.temporalRevision = update.temporalRevision();
+        this.occluderRevision = update.occluderRevision();
         this.currentView = update.view();
     }
 
@@ -867,6 +911,7 @@ public final class TerrainScene implements AutoCloseable {
             int originZ,
             long revision,
             long temporalRevision,
+            long occluderRevision,
             ResidentSceneView view,
             List<GpuCluster> retired,
             TopLevelAccelerationStructure previousTlas,
@@ -882,6 +927,33 @@ public final class TerrainScene implements AutoCloseable {
             int originZ,
             long revision,
             long resetRevision,
-            long temporalRevision) {
+            long temporalRevision,
+            long occluderRevision,
+            List<TerrainOccluderChange> occluderChanges) {
+        public ResidentSceneView {
+            occluderChanges = List.copyOf(occluderChanges);
+        }
+
+        public ResidentSceneView(
+                long tlas,
+                long sectionTableAddress,
+                int originX,
+                int originY,
+                int originZ,
+                long revision,
+                long resetRevision,
+                long temporalRevision) {
+            this(
+                    tlas,
+                    sectionTableAddress,
+                    originX,
+                    originY,
+                    originZ,
+                    revision,
+                    resetRevision,
+                    temporalRevision,
+                    revision,
+                    List.of());
+        }
     }
 }

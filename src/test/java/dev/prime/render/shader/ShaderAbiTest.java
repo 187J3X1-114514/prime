@@ -44,6 +44,8 @@ final class ShaderAbiTest {
         assertEquals(34, ShaderAbi.DESCRIPTOR_STARMAP);
         assertEquals(36, ShaderAbi.DESCRIPTOR_WAVEFRONT_PATHS);
         assertEquals(37, ShaderAbi.DESCRIPTOR_WAVEFRONT_QUEUE);
+        assertEquals(38, ShaderAbi.DESCRIPTOR_SUN_SHADOW_DEPTH_0);
+        assertEquals(47, ShaderAbi.DESCRIPTOR_SUN_SHADOW_DEPTH_9);
         assertEquals(12, ShaderAbi.WAVEFRONT_ROUNDS);
         assertEquals(144, ShaderAbi.WAVEFRONT_PATH_RECORD_SIZE);
         assertEquals(2, ShaderAbi.WAVEFRONT_PATH_SLOTS_PER_PIXEL);
@@ -96,7 +98,7 @@ final class ShaderAbiTest {
         assertEquals(0.00471F, ShaderAbi.ATMOSPHERE_SUN_ANGULAR_RADIUS_RADIANS);
         assertEquals(-128.0F, ShaderAbi.ATMOSPHERE_WORLD_SEA_LEVEL_Y);
         assertEquals(0.001F, ShaderAbi.ATMOSPHERE_WORLD_UNIT_SCALE_KM);
-        assertEquals(64.0F, ShaderAbi.ATMOSPHERE_AERIAL_MAX_DISTANCE_KM);
+        assertEquals(2.048F, ShaderAbi.ATMOSPHERE_AERIAL_MAX_DISTANCE_KM);
         assertEquals(8192, ShaderAbi.STARMAP_WIDTH);
         assertEquals(4096, ShaderAbi.STARMAP_HEIGHT);
         assertEquals(30.0F, ShaderAbi.STARMAP_OBSERVER_LATITUDE_DEGREES);

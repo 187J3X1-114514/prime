@@ -1,7 +1,9 @@
 package dev.prime.render.vulkan;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.Arrays;
 import org.junit.jupiter.api.Test;
@@ -15,6 +17,7 @@ final class AtmosphereLutHistoryTest {
     @Test
     void abandonedCandidateDoesNotAdvanceCommittedKeys() {
         AtmosphereLutHistory history = new AtmosphereLutHistory(4);
+        assertFalse(history.staticPrepared());
         Arrays.fill(history.beginCandidate(), 7);
 
         assertEquals(ALL, history.prepareCandidate(11, 13));
@@ -23,6 +26,7 @@ final class AtmosphereLutHistoryTest {
         Arrays.fill(history.beginCandidate(), 7);
         assertEquals(ALL, history.prepareCandidate(11, 13));
         history.commit();
+        assertTrue(history.staticPrepared());
 
         Arrays.fill(history.beginCandidate(), 7);
         assertEquals(0, history.prepareCandidate(11, 13));

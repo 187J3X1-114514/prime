@@ -198,7 +198,17 @@
     "starmap": 34,
     "screenshotRunningMean": 35,
     "wavefrontPaths": 36,
-    "wavefrontQueue": 37
+    "wavefrontQueue": 37,
+    "sunShadowDepth0": 38,
+    "sunShadowDepth1": 39,
+    "sunShadowDepth2": 40,
+    "sunShadowDepth3": 41,
+    "sunShadowDepth4": 42,
+    "sunShadowDepth5": 43,
+    "sunShadowDepth6": 44,
+    "sunShadowDepth7": 45,
+    "sunShadowDepth8": 46,
+    "sunShadowDepth9": 47
   },
   "wavefrontContract": {
     "rounds": 12,
@@ -268,7 +278,7 @@
     "worldUnitScaleKm": 0.001,
     "spaceSunIntensity": 12.5,
     "sunAngularRadiusRadians": 0.00471,
-    "aerialMaxDistanceKm": 64.0
+    "aerialMaxDistanceKm": 2.048
   },
   "starmapContract": {
     "width": 8192,

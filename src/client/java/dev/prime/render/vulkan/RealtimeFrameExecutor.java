@@ -73,10 +73,6 @@ public final class RealtimeFrameExecutor {
                     commandBuffer, this.imageInitialization);
             this.context.device().instance().debug().beginDebugGroup(
                     commandBuffer, () -> debugLabel);
-            atmosphereFrame = atmosphere.prepare(
-                    commandBuffer,
-                    plan.integrator().camera(),
-                    plan.integrator().sunDirection());
             VulkanImageTransitions.prepareOutputForComposite(
                     commandBuffer, this.imageInitialization, output);
             VulkanImageTransitions.prepareAccumulationForTrace(
@@ -86,6 +82,14 @@ public final class RealtimeFrameExecutor {
             VulkanImageTransitions.prepareAtlasForTrace(
                     commandBuffer, atlasView.texture());
             labPbrFrame = labPbrAtlas.prepare(commandBuffer);
+            // Atmosphere preparation traces the sun cache through the shared RT descriptor set.
+            // Every image named by that set must have its declared layout before this call.
+            atmosphereFrame = atmosphere.prepare(
+                    commandBuffer,
+                    pipeline,
+                    plan.integrator(),
+                    scene,
+                    false);
             try (MemoryStack stack = MemoryStack.stackPush()) {
                 pipeline.trace(commandBuffer, plan.integrator(), scene);
                 processor.record(

@@ -111,8 +111,16 @@ public final class AtmospherePipeline implements Destroyable {
             images[2] = context.createAtmosphereImage2D(64, 64, "Prime atmosphere multiple scattering low");
             images[3] = context.createAtmosphereImage2D(64, 64, "Prime atmosphere multiple scattering high");
             images[4] = context.createAtmosphereImage2D(256, 256, "Prime atmosphere sky view");
-            images[5] = context.createAtmosphereImage3D(32, 32, 32, "Prime atmosphere aerial radiance");
-            images[6] = context.createAtmosphereImage3D(32, 32, 32, "Prime atmosphere aerial transmittance");
+            images[5] = context.createAtmosphereImage3D(
+                    ShaderAbi.ATMOSPHERE_AERIAL_WIDTH,
+                    ShaderAbi.ATMOSPHERE_AERIAL_HEIGHT,
+                    ShaderAbi.ATMOSPHERE_AERIAL_DEPTH,
+                    "Prime atmosphere aerial radiance");
+            images[6] = context.createAtmosphereImage3D(
+                    ShaderAbi.ATMOSPHERE_AERIAL_WIDTH,
+                    ShaderAbi.ATMOSPHERE_AERIAL_HEIGHT,
+                    ShaderAbi.ATMOSPHERE_AERIAL_DEPTH,
+                    "Prime atmosphere aerial transmittance");
             newSunShadow = new SunShadowClipmap(context);
             newPhaseLut = createPhaseLut(context);
             try (MemoryStack stack = MemoryStack.stackPush()) {
@@ -344,7 +352,13 @@ public final class AtmospherePipeline implements Destroyable {
                     dispatch(commandBuffer, this.skyPipeline, 32, 32, 1, pushConstants);
                 }
                 if (prepareAerial) {
-                    dispatch(commandBuffer, this.aerialPipeline, 8, 8, 8, pushConstants);
+                    dispatch(
+                            commandBuffer,
+                            this.aerialPipeline,
+                            ShaderAbi.ATMOSPHERE_AERIAL_WIDTH,
+                            ShaderAbi.ATMOSPHERE_AERIAL_HEIGHT,
+                            1,
+                            pushConstants);
                 }
             }
             VulkanImage[] written = prepareSky && prepareAerial

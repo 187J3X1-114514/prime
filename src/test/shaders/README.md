@@ -71,6 +71,9 @@ executes a complete batch in one dispatch. Bindings 0 and 1 are the standard
 input/output SSBOs; tests may add arbitrary 2D/3D sampled images, 2D storage
 images, push constants, and explicit XYZ workgroup counts. The runner contract
 itself has an executable image/push-constant round-trip test.
+`AtmosphereAerialPrefixGpuTest` executes the 128-lane non-commutative optical
+segment scan and compares both spectral groups with ordered near-to-far
+composition.
 
 Normal `test` excludes the tagged GPU suites. Use:
 

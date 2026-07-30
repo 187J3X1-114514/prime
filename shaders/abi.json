@@ -278,7 +278,11 @@
     "worldUnitScaleKm": 0.001,
     "spaceSunIntensity": 12.5,
     "sunAngularRadiusRadians": 0.00471,
-    "aerialMaxDistanceKm": 2.048
+    "aerialMaxDistanceKm": 2.048,
+    "aerialWidth": 64,
+    "aerialHeight": 36,
+    "aerialDepth": 128,
+    "aerialSegmentSamples": 2
   },
   "starmapContract": {
     "width": 8192,

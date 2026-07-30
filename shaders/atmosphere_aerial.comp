@@ -35,9 +35,11 @@ layout(push_constant) uniform AtmospherePushConstants {
     vec4 shadowCameraEnabled;
 } atmospherePush;
 
-layout(local_size_x = 4, local_size_y = 4, local_size_z = 4) in;
+layout(
+        local_size_x = PRIME_ATMOSPHERE_AERIAL_DEPTH,
+        local_size_y = 1,
+        local_size_z = 1) in;
 
-const int AERIAL_STEPS = 16;
 const int SUN_SHADOW_RESOLUTION = 512;
 const int SUN_SHADOW_CASCADE_COUNT = 5;
 const float SUN_SHADOW_MAX_DISTANCE_METERS = 2048.0;
@@ -45,6 +47,11 @@ const float SUN_SHADOW_DEPTH_BIAS_METERS = 0.02;
 // TEMPORARY DEBUG: use the 90-degree phase value so the visibility probe is view-direction neutral.
 const float AERIAL_DEBUG_RADIANCE_SCALE = 64.0;
 const float AERIAL_DEBUG_PHASE_COSINE = 0.0;
+
+shared vec4 prefixRadianceLow[PRIME_ATMOSPHERE_AERIAL_DEPTH];
+shared vec4 prefixTransmittanceLow[PRIME_ATMOSPHERE_AERIAL_DEPTH];
+shared vec4 prefixRadianceHigh[PRIME_ATMOSPHERE_AERIAL_DEPTH];
+shared vec4 prefixTransmittanceHigh[PRIME_ATMOSPHERE_AERIAL_DEPTH];
 
 float sunShadowDepth(int imageIndex, ivec2 coordinate) {
     if (imageIndex == 0) return imageLoad(sunShadowDepth0, coordinate).r;
@@ -146,58 +153,115 @@ vec4 aerialMultiScattering(int group, float sunMu, float normalizedAltitude) {
             : sampleMultiScatteringHigh(uv);
 }
 
-void integrateAerialGroup(
+void aerialStepGroup(
         int group,
-        vec3 origin,
-        vec3 direction,
-        float maximumDistance,
+        float altitude,
+        float sunMu,
+        bool sunOccluded,
+        float terrainSunVisibility,
+        float stepLength,
         out vec4 radiance,
         out vec4 transmittance) {
+    float normalizedAltitude = altitude / ATM_THICKNESS_KM;
+    AtmCoefficients coefficients = atmCoefficients(group, altitude);
+    vec4 debugDirect = sunOccluded ? vec4(0.0)
+            : aerialTransmittanceToSun(group, sunMu, normalizedAltitude)
+            * (coefficients.molecularScattering
+                    * atmRayleighPhase(AERIAL_DEBUG_PHASE_COSINE)
+            + atmAerosolPhaseScattering(
+                    group, altitude, AERIAL_DEBUG_PHASE_COSINE));
+    vec4 multiple = aerialMultiScattering(group, sunMu, normalizedAltitude)
+            * (coefficients.aerosolScattering + coefficients.molecularScattering);
+    vec4 source = atmSolarSpectrum(group)
+            * (debugDirect + multiple)
+            * terrainSunVisibility
+            * AERIAL_DEBUG_RADIANCE_SCALE;
+    transmittance = exp(-stepLength * coefficients.extinction);
+    vec4 safeExtinction = max(coefficients.extinction, vec4(1.0e-7));
+    radiance = (source - source * transmittance) / safeExtinction;
+}
+
+struct AerialSegment {
+    vec4 radianceLow;
+    vec4 transmittanceLow;
+    vec4 radianceHigh;
+    vec4 transmittanceHigh;
+};
+
+AerialSegment identityAerialSegment() {
+    AerialSegment result;
+    result.radianceLow = vec4(0.0);
+    result.transmittanceLow = vec4(1.0);
+    result.radianceHigh = vec4(0.0);
+    result.transmittanceHigh = vec4(1.0);
+    return result;
+}
+
+AerialSegment integrateAerialSegment(
+        vec3 origin,
+        vec3 direction,
+        float segmentStart,
+        float segmentEnd) {
+    AerialSegment result = identityAerialSegment();
+    if (segmentEnd <= segmentStart) {
+        return result;
+    }
+
     vec3 sunDirection = atmospherePush.sunDirectionIntensity.xyz;
-    radiance = vec4(0.0);
-    transmittance = vec4(1.0);
-    for (int index = 0; index < AERIAL_STEPS; ++index) {
-        float u0 = float(index) / float(AERIAL_STEPS);
-        float u1 = float(index + 1) / float(AERIAL_STEPS);
-        float t0 = u0 * u0 * maximumDistance;
-        float t1 = u1 * u1 * maximumDistance;
-        float t = mix(t0, t1, 0.3);
-        float stepLength = max(t1 - t0, 0.0);
-        vec3 point = origin + direction * t;
-        float distanceMeters = t / ATM_WORLD_UNIT_SCALE_KM;
+    float stepLength = (segmentEnd - segmentStart)
+            / float(PRIME_ATMOSPHERE_AERIAL_SEGMENT_SAMPLES);
+    for (int substep = 0;
+            substep < PRIME_ATMOSPHERE_AERIAL_SEGMENT_SAMPLES;
+            ++substep) {
+        float sampleFraction = (float(substep) + 0.5)
+                / float(PRIME_ATMOSPHERE_AERIAL_SEGMENT_SAMPLES);
+        float distanceKm = mix(segmentStart, segmentEnd, sampleFraction);
+        vec3 point = origin + direction * distanceKm;
+        float distanceMeters = distanceKm / ATM_WORLD_UNIT_SCALE_KM;
         vec3 worldPoint = atmospherePush.shadowCameraEnabled.xyz
                 + direction * distanceMeters;
         float radius = length(point);
         vec3 up = point / max(radius, 1.0e-6);
         float altitude = max(radius - ATM_BOTTOM_RADIUS_KM, 0.0);
-        float normalizedAltitude = altitude / ATM_THICKNESS_KM;
         float sunMu = dot(up, sunDirection);
-        bool sunOccluded = atmRaySegment(point - up * ATM_PLANET_RADIUS_OFFSET_KM,
+        bool sunOccluded = atmRaySegment(
+                point - up * ATM_PLANET_RADIUS_OFFSET_KM,
                 sunDirection).hitsGround;
-        AtmCoefficients coefficients = atmCoefficients(group, altitude);
-        vec4 debugDirect = sunOccluded ? vec4(0.0)
-                : aerialTransmittanceToSun(group, sunMu, normalizedAltitude)
-                * (coefficients.molecularScattering
-                        * atmRayleighPhase(AERIAL_DEBUG_PHASE_COSINE)
-                + atmAerosolPhaseScattering(
-                        group, altitude, AERIAL_DEBUG_PHASE_COSINE));
-        vec4 multiple = aerialMultiScattering(group, sunMu, normalizedAltitude)
-                * (coefficients.aerosolScattering + coefficients.molecularScattering);
         float terrainSunVisibility = localSunVisibility(
                 worldPoint, distanceMeters);
-        vec4 source = atmSolarSpectrum(group)
-                * (debugDirect + multiple)
-                * terrainSunVisibility
-                * AERIAL_DEBUG_RADIANCE_SCALE;
-        vec4 stepTransmittance = exp(-stepLength * coefficients.extinction);
-        vec4 safeExtinction = max(coefficients.extinction, vec4(1.0e-7));
-        radiance += transmittance * (source - source * stepTransmittance) / safeExtinction;
-        transmittance *= stepTransmittance;
+
+        vec4 radianceLow;
+        vec4 transmittanceLowValue;
+        vec4 radianceHigh;
+        vec4 transmittanceHighValue;
+        aerialStepGroup(
+                0,
+                altitude,
+                sunMu,
+                sunOccluded,
+                terrainSunVisibility,
+                stepLength,
+                radianceLow,
+                transmittanceLowValue);
+        aerialStepGroup(
+                1,
+                altitude,
+                sunMu,
+                sunOccluded,
+                terrainSunVisibility,
+                stepLength,
+                radianceHigh,
+                transmittanceHighValue);
+        result.radianceLow += result.transmittanceLow * radianceLow;
+        result.transmittanceLow *= transmittanceLowValue;
+        result.radianceHigh += result.transmittanceHigh * radianceHigh;
+        result.transmittanceHigh *= transmittanceHighValue;
     }
+    return result;
 }
 
-vec3 aerialDirection(ivec3 voxel, ivec3 dimensions) {
-    vec2 uv = (vec2(voxel.xy) + vec2(0.5)) / vec2(dimensions.xy);
+vec3 aerialDirection(ivec2 coordinate, ivec2 dimensions) {
+    vec2 uv = (vec2(coordinate) + vec2(0.5)) / vec2(dimensions);
     vec2 ndc = uv * 2.0 - 1.0;
     vec4 nearPoint = atmospherePush.inverseViewProjection * vec4(ndc, 1.0, 1.0);
     vec4 farPoint = atmospherePush.inverseViewProjection * vec4(ndc, 0.0, 1.0);
@@ -205,34 +269,75 @@ vec3 aerialDirection(ivec3 voxel, ivec3 dimensions) {
 }
 
 void main() {
-    ivec3 voxel = ivec3(gl_GlobalInvocationID.xyz);
     ivec3 dimensions = imageSize(aerialRadiance);
-    if (any(greaterThanEqual(voxel, dimensions))) {
-        return;
-    }
-    vec3 direction = aerialDirection(voxel, dimensions);
+    ivec2 coordinate = ivec2(gl_WorkGroupID.xy);
+    int depth = int(gl_LocalInvocationID.x);
+    vec3 direction = aerialDirection(coordinate, dimensions.xy);
     vec3 origin = atmMoveToTop(vec3(0.0, atmospherePush.eyeRadiusKm, 0.0), direction);
-    AtmRaySegment segment = atmRaySegment(origin, direction);
-    float normalizedDepth = (float(voxel.z) + 0.5) / float(dimensions.z);
-    float requestedDistance = atmospherePush.maximumAerialDistanceKm
-            * normalizedDepth * normalizedDepth;
-    float maximumDistance = min(requestedDistance, segment.maximumDistanceKm);
-    if (segment.maximumDistanceKm < 0.0 || maximumDistance <= 0.0) {
-        imageStore(aerialRadiance, voxel, vec4(0.0));
-        imageStore(aerialTransmittance, voxel, vec4(1.0));
-        return;
+    float maximumDistance = max(atmRaySegment(origin, direction).maximumDistanceKm, 0.0);
+    float inverseDepth = 1.0 / float(dimensions.z);
+    float normalizedStart = max(float(depth) - 0.5, 0.0) * inverseDepth;
+    float normalizedEnd = (float(depth) + 0.5) * inverseDepth;
+    float segmentStart = min(
+            atmospherePush.maximumAerialDistanceKm
+                    * normalizedStart * normalizedStart,
+            maximumDistance);
+    float segmentEnd = min(
+            atmospherePush.maximumAerialDistanceKm
+                    * normalizedEnd * normalizedEnd,
+            maximumDistance);
+    AerialSegment segment = integrateAerialSegment(
+            origin, direction, segmentStart, segmentEnd);
+    prefixRadianceLow[depth] = segment.radianceLow;
+    prefixTransmittanceLow[depth] = segment.transmittanceLow;
+    prefixRadianceHigh[depth] = segment.radianceHigh;
+    prefixTransmittanceHigh[depth] = segment.transmittanceHigh;
+    barrier();
+
+    // Segment composition is associative:
+    // (La, Ta) followed by (Lb, Tb) = (La + Ta * Lb, Ta * Tb).
+    for (int offset = 1;
+            offset < PRIME_ATMOSPHERE_AERIAL_DEPTH;
+            offset <<= 1) {
+        vec4 earlierRadianceLow;
+        vec4 earlierTransmittanceLow;
+        vec4 earlierRadianceHigh;
+        vec4 earlierTransmittanceHigh;
+        vec4 currentRadianceLow;
+        vec4 currentTransmittanceLow;
+        vec4 currentRadianceHigh;
+        vec4 currentTransmittanceHigh;
+        if (depth >= offset) {
+            earlierRadianceLow = prefixRadianceLow[depth - offset];
+            earlierTransmittanceLow = prefixTransmittanceLow[depth - offset];
+            earlierRadianceHigh = prefixRadianceHigh[depth - offset];
+            earlierTransmittanceHigh = prefixTransmittanceHigh[depth - offset];
+            currentRadianceLow = prefixRadianceLow[depth];
+            currentTransmittanceLow = prefixTransmittanceLow[depth];
+            currentRadianceHigh = prefixRadianceHigh[depth];
+            currentTransmittanceHigh = prefixTransmittanceHigh[depth];
+        }
+        barrier();
+        if (depth >= offset) {
+            prefixRadianceLow[depth] = earlierRadianceLow
+                    + earlierTransmittanceLow * currentRadianceLow;
+            prefixTransmittanceLow[depth] = earlierTransmittanceLow
+                    * currentTransmittanceLow;
+            prefixRadianceHigh[depth] = earlierRadianceHigh
+                    + earlierTransmittanceHigh * currentRadianceHigh;
+            prefixTransmittanceHigh[depth] = earlierTransmittanceHigh
+                    * currentTransmittanceHigh;
+        }
+        barrier();
     }
-    vec4 radianceLow;
-    vec4 transmittanceLowValue;
-    vec4 radianceHigh;
-    vec4 transmittanceHighValue;
-    integrateAerialGroup(0, origin, direction, maximumDistance,
-            radianceLow, transmittanceLowValue);
-    integrateAerialGroup(1, origin, direction, maximumDistance,
-            radianceHigh, transmittanceHighValue);
-    vec3 rec2020 = max(atmLinearRec2020FromSpectral(radianceLow, radianceHigh), vec3(0.0));
+
+    vec3 rec2020 = max(atmLinearRec2020FromSpectral(
+            prefixRadianceLow[depth],
+            prefixRadianceHigh[depth]), vec3(0.0));
     vec3 transmittance = atmRec2020Transmittance(
-            transmittanceLowValue, transmittanceHighValue);
+            prefixTransmittanceLow[depth],
+            prefixTransmittanceHigh[depth]);
+    ivec3 voxel = ivec3(coordinate, depth);
     imageStore(aerialRadiance, voxel, vec4(rec2020, 1.0));
     imageStore(aerialTransmittance, voxel, vec4(transmittance, 1.0));
 }

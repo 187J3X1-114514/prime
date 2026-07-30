@@ -1,0 +1,66 @@
+#version 460
+
+#extension GL_GOOGLE_include_directive : require
+
+#include "prime_atmosphere_contract.glsl"
+
+layout(
+        local_size_x = PRIME_ATMOSPHERE_AERIAL_DEPTH,
+        local_size_y = 1,
+        local_size_z = 1) in;
+
+layout(set = 0, binding = 0, std430) readonly buffer PrimeAerialPrefixInput {
+    vec4 values[];
+} primeAerialPrefixInput;
+
+layout(set = 0, binding = 1, std430) writeonly buffer PrimeAerialPrefixOutput {
+    vec4 values[];
+} primeAerialPrefixOutput;
+
+shared vec4 prefixRadianceLow[PRIME_ATMOSPHERE_AERIAL_DEPTH];
+shared vec4 prefixTransmittanceLow[PRIME_ATMOSPHERE_AERIAL_DEPTH];
+shared vec4 prefixRadianceHigh[PRIME_ATMOSPHERE_AERIAL_DEPTH];
+shared vec4 prefixTransmittanceHigh[PRIME_ATMOSPHERE_AERIAL_DEPTH];
+
+void main() {
+    uint depth = gl_LocalInvocationID.x;
+    uint base = depth * 4u;
+    prefixRadianceLow[depth] = primeAerialPrefixInput.values[base];
+    prefixTransmittanceLow[depth] = primeAerialPrefixInput.values[base + 1u];
+    prefixRadianceHigh[depth] = primeAerialPrefixInput.values[base + 2u];
+    prefixTransmittanceHigh[depth] = primeAerialPrefixInput.values[base + 3u];
+    barrier();
+
+    for (uint offset = 1u;
+            offset < PRIME_ATMOSPHERE_AERIAL_DEPTH;
+            offset <<= 1u) {
+        vec4 radianceLow = prefixRadianceLow[depth];
+        vec4 transmittanceLow = prefixTransmittanceLow[depth];
+        vec4 radianceHigh = prefixRadianceHigh[depth];
+        vec4 transmittanceHigh = prefixTransmittanceHigh[depth];
+        if (depth >= offset) {
+            vec4 earlierRadianceLow = prefixRadianceLow[depth - offset];
+            vec4 earlierTransmittanceLow = prefixTransmittanceLow[depth - offset];
+            vec4 earlierRadianceHigh = prefixRadianceHigh[depth - offset];
+            vec4 earlierTransmittanceHigh =
+                    prefixTransmittanceHigh[depth - offset];
+            radianceLow = earlierRadianceLow
+                    + earlierTransmittanceLow * radianceLow;
+            transmittanceLow *= earlierTransmittanceLow;
+            radianceHigh = earlierRadianceHigh
+                    + earlierTransmittanceHigh * radianceHigh;
+            transmittanceHigh *= earlierTransmittanceHigh;
+        }
+        barrier();
+        prefixRadianceLow[depth] = radianceLow;
+        prefixTransmittanceLow[depth] = transmittanceLow;
+        prefixRadianceHigh[depth] = radianceHigh;
+        prefixTransmittanceHigh[depth] = transmittanceHigh;
+        barrier();
+    }
+
+    primeAerialPrefixOutput.values[base] = prefixRadianceLow[depth];
+    primeAerialPrefixOutput.values[base + 1u] = prefixTransmittanceLow[depth];
+    primeAerialPrefixOutput.values[base + 2u] = prefixRadianceHigh[depth];
+    primeAerialPrefixOutput.values[base + 3u] = prefixTransmittanceHigh[depth];
+}

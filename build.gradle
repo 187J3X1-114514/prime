@@ -450,6 +450,10 @@ public final class ShaderAbi {
     public static final float ATMOSPHERE_SPACE_SUN_INTENSITY = ${atmosphereContract.spaceSunIntensity}f;
     public static final float ATMOSPHERE_SUN_ANGULAR_RADIUS_RADIANS = ${atmosphereContract.sunAngularRadiusRadians}f;
     public static final float ATMOSPHERE_AERIAL_MAX_DISTANCE_KM = ${atmosphereContract.aerialMaxDistanceKm}f;
+    public static final int ATMOSPHERE_AERIAL_WIDTH = ${atmosphereContract.aerialWidth};
+    public static final int ATMOSPHERE_AERIAL_HEIGHT = ${atmosphereContract.aerialHeight};
+    public static final int ATMOSPHERE_AERIAL_DEPTH = ${atmosphereContract.aerialDepth};
+    public static final int ATMOSPHERE_AERIAL_SEGMENT_SAMPLES = ${atmosphereContract.aerialSegmentSamples};
     public static final int STARMAP_WIDTH = ${starmapContract.width};
     public static final int STARMAP_HEIGHT = ${starmapContract.height};
     public static final float STARMAP_OBSERVER_LATITUDE_DEGREES = ${starmapContract.observerLatitudeDegrees}f;
@@ -680,6 +684,10 @@ layout(set = 0, binding = ${schema.descriptors.nrdDisplayPosition}, rgba32f) uni
 #define PRIME_ATMOSPHERE_SPACE_SUN_INTENSITY ${atmosphereContract.spaceSunIntensity}
 #define PRIME_ATMOSPHERE_SUN_ANGULAR_RADIUS_RADIANS ${atmosphereContract.sunAngularRadiusRadians}
 #define PRIME_ATMOSPHERE_AERIAL_MAX_DISTANCE_KM ${atmosphereContract.aerialMaxDistanceKm}
+#define PRIME_ATMOSPHERE_AERIAL_WIDTH ${atmosphereContract.aerialWidth}
+#define PRIME_ATMOSPHERE_AERIAL_HEIGHT ${atmosphereContract.aerialHeight}
+#define PRIME_ATMOSPHERE_AERIAL_DEPTH ${atmosphereContract.aerialDepth}
+#define PRIME_ATMOSPHERE_AERIAL_SEGMENT_SAMPLES ${atmosphereContract.aerialSegmentSamples}
 
 #endif
 """

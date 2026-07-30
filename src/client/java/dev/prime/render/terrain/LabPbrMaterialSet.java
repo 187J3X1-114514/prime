@@ -9,15 +9,24 @@ public record LabPbrMaterialSet(
         Set<Identifier> normalSprites,
         Set<Identifier> specularSprites,
         Map<Identifier, LabPbrEmissionMap> emissionMaps,
-        Map<Identifier, LabPbrHeightMap> heightMaps) {
+        Map<Identifier, LabPbrHeightMap> heightMaps,
+        Map<Identifier, LabPbrMaterialMap> materialMaps) {
     public static final LabPbrMaterialSet EMPTY = new LabPbrMaterialSet(
-            Set.of(), Set.of(), Map.of(), Map.of());
+            Set.of(), Set.of(), Map.of(), Map.of(), Map.of());
 
     public LabPbrMaterialSet(
             Set<Identifier> normalSprites,
             Set<Identifier> specularSprites,
             Map<Identifier, LabPbrEmissionMap> emissionMaps) {
-        this(normalSprites, specularSprites, emissionMaps, Map.of());
+        this(normalSprites, specularSprites, emissionMaps, Map.of(), Map.of());
+    }
+
+    public LabPbrMaterialSet(
+            Set<Identifier> normalSprites,
+            Set<Identifier> specularSprites,
+            Map<Identifier, LabPbrEmissionMap> emissionMaps,
+            Map<Identifier, LabPbrHeightMap> heightMaps) {
+        this(normalSprites, specularSprites, emissionMaps, heightMaps, Map.of());
     }
 
     public LabPbrMaterialSet {
@@ -25,6 +34,7 @@ public record LabPbrMaterialSet(
         specularSprites = Set.copyOf(specularSprites);
         emissionMaps = Map.copyOf(emissionMaps);
         heightMaps = Map.copyOf(heightMaps);
+        materialMaps = Map.copyOf(materialMaps);
     }
 
     public boolean hasNormal(Identifier sprite) {
@@ -41,5 +51,9 @@ public record LabPbrMaterialSet(
 
     public LabPbrHeightMap heightMap(Identifier sprite) {
         return this.heightMaps.get(sprite);
+    }
+
+    public LabPbrMaterialMap materialMap(Identifier sprite) {
+        return this.materialMaps.get(sprite);
     }
 }

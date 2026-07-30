@@ -176,6 +176,19 @@ final class SectionMeshAccumulatorTest {
                     0,
                     0);
         }
+
+        void fill(int argb) {
+            TestSpriteContents contents = (TestSpriteContents) this.contents();
+            for (int y = 0; y < 16; y++) {
+                for (int x = 0; x < 16; x++) {
+                    contents.image.setPixel(x, y, argb);
+                }
+            }
+        }
+
+        void setPixel(int x, int y, int argb) {
+            ((TestSpriteContents) this.contents()).image.setPixel(x, y, argb);
+        }
     }
 
     private static final class TestSpriteContents

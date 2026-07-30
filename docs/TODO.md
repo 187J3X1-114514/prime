@@ -37,8 +37,9 @@
 - 分别以 16、32、64、128、256 像素方块纹理测量 3×3×3 细节窗口的 CPU 建网时间、
   BLAS 构建时间、峰值 staging/显存、可复用 mesh 数量和 TLAS instance 数量。
 - 审核平方级 texel/三角形增长、动画帧、非正方形帧、混合分辨率的 LabPBR/base 纹理、
-  atlas padding/mipmap、最大 Vulkan 图像尺寸及所有字节数和 primitive 数溢出边界。
+  atlas padding/mipmap、CPU 侧归一化 LabPBR texel 副本、最大 Vulkan 图像尺寸及所有
+  字节数和 primitive 数溢出边界。
 - 验证大 atlas 上基础色、LabPBR 和 alphacut opacity micromap 的逐 texel 寻址精度，
-  并覆盖资源重载、动画换帧和编译 cluster 缓存往返。
+  并覆盖烘焙 primitive、资源重载、动画换帧和编译 cluster 缓存往返。
 - 在测量基础上决定逐材质分辨率上限、保形降采样或回退普通宏面的策略；降级必须可诊断，
   且不能静默改变透明度、材质 UV 或向外位移上限。

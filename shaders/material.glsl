@@ -22,6 +22,9 @@ struct MaterialEvaluation {
 
 const uint PRIME_EMITTER_FLAG_TWO_SIDED = 1u;
 const uint PRIME_EMITTER_FLAG_LABPBR_EMISSION = 2u;
+const uint PRIME_CONSTANT_UV_DENSITY = 0x80000000u;
+const uint PRIME_CONSTANT_UV_OWN_TINT = 1u;
+const uint PRIME_CONSTANT_UV_BAKED_MATERIAL = 2u;
 
 uint primePrimitiveFlags(PrimitiveRecord primitive) {
     return (primitive.tint >> 24u) | ((primitive.flagsEmitter & 1u) << 8u);
@@ -45,6 +48,11 @@ vec4 primeSamplePrimitiveTexture(
             primeSceneTextures[nonuniformEXT(textureIndex)], uv, textureLodValue);
 }
 
+bool primeUsesBakedMaterial(PrimitiveRecord primitive) {
+    return primitive.uvDensity == PRIME_CONSTANT_UV_DENSITY
+            && (primitive.uv2 & PRIME_CONSTANT_UV_BAKED_MATERIAL) != 0u;
+}
+
 vec3 primeAtlasBaseColor(uint packedTint, vec2 uv, float textureLodValue, out float opacity) {
     vec4 textureSample = textureLod(primeSceneTextures[0], uv, textureLodValue);
     vec4 tint = primeUnpackTint(packedTint);
@@ -53,16 +61,29 @@ vec3 primeAtlasBaseColor(uint packedTint, vec2 uv, float textureLodValue, out fl
     return primeLinearSrgbToLinearRec2020(linearSrgbAlbedo);
 }
 
-MaterialEvaluation primeEvaluateMaterial(PrimitiveRecord primitive, vec2 uv, float textureLodValue) {
+MaterialEvaluation primeEvaluateMaterial(
+        PrimitiveRecord primitive, vec2 uv, float textureLodValue, uint instanceTint) {
     MaterialEvaluation result;
+    bool bakedMaterial = primeUsesBakedMaterial(primitive);
     // Minecraft stores both atlas texels and tint RGB as display-encoded sRGB in UNORM values.
     // Decode both before multiplication, then cross the single material boundary into the
     // integrator's linear Rec.2020 working space. Alpha is coverage and is never color-decoded.
-    vec4 textureSample = primeSamplePrimitiveTexture(primitive, uv, textureLodValue);
-    vec4 tint = primeUnpackTint(primitive.tint);
-    result.opacity = textureSample.a;
-    result.baseColor = primeLinearSrgbToLinearRec2020(
-            primeDecodeSrgb(textureSample.rgb) * primeDecodeSrgb(tint.rgb));
+    if (bakedMaterial) {
+        vec3 linearSrgbAlbedo = primeDecodeSrgb(primeUnpackTint(primitive.tint).rgb);
+        bool ownsTint = (primitive.uv2 & PRIME_CONSTANT_UV_OWN_TINT) != 0u;
+        if (!ownsTint && (instanceTint & 0x80000000u) != 0u) {
+            linearSrgbAlbedo *= primeDecodeSrgb(primeUnpackTint(instanceTint).rgb);
+        }
+        result.baseColor = primeLinearSrgbToLinearRec2020(linearSrgbAlbedo);
+        result.opacity = 1.0;
+    } else {
+        vec4 textureSample =
+                primeSamplePrimitiveTexture(primitive, uv, textureLodValue);
+        vec4 tint = primeUnpackTint(primitive.tint);
+        result.opacity = textureSample.a;
+        result.baseColor = primeLinearSrgbToLinearRec2020(
+                primeDecodeSrgb(textureSample.rgb) * primeDecodeSrgb(tint.rgb));
+    }
     uint primitiveFlags = primePrimitiveFlags(primitive);
     if ((primitive.flagsEmitter
             & (PRIME_DYNAMIC_TEXTURE_FLAG | PRIME_VISIBLE_EMISSION_FLAG))
@@ -70,14 +91,19 @@ MaterialEvaluation primeEvaluateMaterial(PrimitiveRecord primitive, vec2 uv, flo
         primitiveFlags |= PRIME_MATERIAL_FLAG_VISIBLE_EMISSION;
     }
     result.flags = primitiveFlags;
-    vec4 normalSample = primeHasLabPbrNormal(primitiveFlags)
-            ? textureLod(primeLabPbrNormalAtlas, uv, textureLodValue)
-            : vec4(0.5, 0.5, 1.0, 1.0);
-    vec4 specularSample = primeHasLabPbrSpecular(primitiveFlags)
-            ? textureLod(primeLabPbrSpecularAtlas, uv, textureLodValue)
-            : vec4(0.0, 4.0 / 255.0, 0.0, 1.0);
-    result.labPbrNormal = packUnorm4x8(normalSample);
-    result.labPbrSpecular = packUnorm4x8(specularSample);
+    if (bakedMaterial) {
+        result.labPbrNormal = primitive.uv0;
+        result.labPbrSpecular = primitive.uv1;
+    } else {
+        vec4 normalSample = primeHasLabPbrNormal(primitiveFlags)
+                ? textureLod(primeLabPbrNormalAtlas, uv, textureLodValue)
+                : vec4(0.5, 0.5, 1.0, 1.0);
+        vec4 specularSample = primeHasLabPbrSpecular(primitiveFlags)
+                ? textureLod(primeLabPbrSpecularAtlas, uv, textureLodValue)
+                : vec4(0.0, 4.0 / 255.0, 0.0, 1.0);
+        result.labPbrNormal = packUnorm4x8(normalSample);
+        result.labPbrSpecular = packUnorm4x8(specularSample);
+    }
     PrimeTranslatedLabPbrMaterial translated = primeDecodeAndTranslateLabPbr(
             result.labPbrNormal, result.labPbrSpecular, primitiveFlags);
     if (primeTranslatedLabPbrIsMetal(translated)) {

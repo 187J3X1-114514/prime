@@ -35,9 +35,14 @@ void main() {
     PrimitiveRecord primitive = primePrimitive(section);
     primePayload.hitKind = 1u;
     vec3 normal = primeUnpackOctahedralNormal(primitive.normal);
-    float textureLodValue = primeRayConeTextureLod(primitive, normal);
+    bool bakedMaterial = primeUsesBakedMaterial(primitive);
+    float textureLodValue =
+            bakedMaterial ? 0.0 : primeRayConeTextureLod(primitive, normal);
+    vec2 materialUv = bakedMaterial
+            ? vec2(0.0)
+            : primeInterpolateUv(section, primitive);
     MaterialEvaluation material = primeEvaluateMaterial(
-            primitive, primeInterpolateUv(section, primitive), textureLodValue);
+            primitive, materialUv, textureLodValue, section.instanceTint);
     primePayload.t = gl_HitTEXT;
     // Keep the authored outward normal. Opaque shading orients it at the integrator boundary,
     // while transparent reflection and the water stack require its authored outward sign.

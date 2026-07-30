@@ -2,10 +2,14 @@ package dev.prime.render.terrain;
 
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.HashMap;
+import java.util.HashSet;
+import java.util.IdentityHashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * Covers compatible unit faces with conservative cluster-local macro faces or experimental
@@ -55,35 +59,45 @@ final class MergedFaceMeshBuilder {
                         faces.stream().anyMatch(MergeFace::buildOpacityMicromap),
                         this.voxelSurfaceMaximumHeight)
                 : null;
-        Map<FaceLocation, MergeFace> opaqueRelief = new HashMap<>();
+        Set<MergeFace> composited = Collections.newSetFromMap(new IdentityHashMap<>());
         if (voxelBuilder != null) {
-            // Minecraft models express tinted overlays as coincident cutout faces. Preserve that
-            // material split while making both layers follow one physical relief surface.
+            Map<FaceLocation, MergeFace> opaqueFaces = new HashMap<>();
+            Map<FaceLocation, MergeFace> cutoutFaces = new HashMap<>();
+            Set<FaceLocation> ambiguous = new HashSet<>();
             for (MergeFace face : faces) {
+                requireInGrid(face);
                 if (usesVoxelSurface(face) && !face.cutout() && !face.transmissive()) {
-                    opaqueRelief.putIfAbsent(new FaceLocation(face), face);
+                    putUnique(opaqueFaces, ambiguous, face);
+                } else if (usesVoxelSurface(face)
+                        && face.cutout()
+                        && !face.transmissive()
+                        && face.rasterOverlay()) {
+                    putUnique(cutoutFaces, ambiguous, face);
+                }
+            }
+            for (Map.Entry<FaceLocation, MergeFace> entry : opaqueFaces.entrySet()) {
+                if (ambiguous.contains(entry.getKey())) {
+                    continue;
+                }
+                MergeFace overlay = cutoutFaces.get(entry.getKey());
+                if (overlay != null
+                        && voxelBuilder.addComposite(entry.getValue(), overlay)) {
+                    composited.add(entry.getValue());
+                    composited.add(overlay);
                 }
             }
         }
         ArrayList<MergeFace> ordinaryFaces = new ArrayList<>(faces.size());
         ArrayList<MergeFace> unmergedFallbacks = new ArrayList<>();
         for (MergeFace face : faces) {
-            if (face.cellU() < 0
-                    || face.cellU() >= GRID_SIZE
-                    || face.cellV() < 0
-                    || face.cellV() >= GRID_SIZE) {
-                throw new IllegalArgumentException(
-                        "Merge face lies outside its logical cluster");
+            if (voxelBuilder == null) {
+                requireInGrid(face);
+            }
+            if (composited.contains(face)) {
+                continue;
             }
             if (voxelBuilder != null && usesVoxelSurface(face)) {
-                MergeFace relief = face.cutout() && !face.transmissive()
-                        ? opaqueRelief.get(new FaceLocation(face))
-                        : null;
-                boolean added = relief == null
-                        ? voxelBuilder.add(face)
-                        : voxelBuilder.add(
-                                face, relief, TextureVoxelMeshBuilder.LAYER_OFFSET);
-                if (!added) {
+                if (!voxelBuilder.add(face)) {
                     unmergedFallbacks.add(face);
                 }
             } else {
@@ -142,6 +156,26 @@ final class MergedFaceMeshBuilder {
             return false;
         }
         return true;
+    }
+
+    private static void putUnique(
+            Map<FaceLocation, MergeFace> faces,
+            Set<FaceLocation> ambiguous,
+            MergeFace face) {
+        FaceLocation location = new FaceLocation(face);
+        if (faces.putIfAbsent(location, face) != null) {
+            ambiguous.add(location);
+        }
+    }
+
+    private static void requireInGrid(MergeFace face) {
+        if (face.cellU() < 0
+                || face.cellU() >= GRID_SIZE
+                || face.cellV() < 0
+                || face.cellV() >= GRID_SIZE) {
+            throw new IllegalArgumentException(
+                    "Merge face lies outside its logical cluster");
+        }
     }
 
     private record FaceLocation(

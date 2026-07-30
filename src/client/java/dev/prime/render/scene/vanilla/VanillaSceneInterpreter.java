@@ -1,7 +1,7 @@
 package dev.prime.render.scene.vanilla;
 
 import dev.prime.render.ResourceCleanup;
-import dev.prime.render.terrain.CpuSectionGeometry;
+import dev.prime.render.scene.CapturedSectionGeometry;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import net.minecraft.client.renderer.SectionBufferBuilderPack;
 import net.minecraft.client.renderer.chunk.RenderSectionRegion;
@@ -11,14 +11,14 @@ import net.minecraft.client.renderer.chunk.RenderSectionRegion;
  * world scene.
  *
  * <p>{@code TerrainStreamer} owns coverage, invalidation, scheduling and lifetime. This module owns
- * only the translation of one captured {@link RenderSectionRegion} through Minecraft's real
- * Section compiler into an immutable Prime payload. The region's block states are copied by
+ * only the capture of one {@link RenderSectionRegion} through Minecraft's real Section compiler
+ * into immutable accepted-quad facts. The region's block states are copied by
  * Minecraft; live tint/light/entity services remain in the Minecraft adapter boundary rather than
  * becoming interpreter-owned hidden state. It neither consumes completed raster meshes nor observes raster
  * visibility, so there is no multi-source reconciliation policy.
  *
- * <p>Only this module interprets vanilla mesh production. Vulkan code consumes immutable scene
- * payloads and never observes Mixins, block states, model objects, or vanilla vertex interfaces.
+ * <p>Only this module observes vanilla mesh production. Cluster translation and Vulkan code never
+ * observe Mixins, block states, model objects, or vanilla vertex interfaces.
  */
 public final class VanillaSceneInterpreter implements AutoCloseable {
     private final ConcurrentLinkedQueue<SectionBufferBuilderPack> availableSectionBuffers =
@@ -29,7 +29,7 @@ public final class VanillaSceneInterpreter implements AutoCloseable {
     public VanillaSceneInterpreter() {
     }
 
-    public CpuSectionGeometry compileSection(VanillaSectionCompileInput input) {
+    public CapturedSectionGeometry compileSection(VanillaSectionCompileInput input) {
         if (this.closed) {
             throw new IllegalStateException("Vanilla scene interpreter is closed");
         }

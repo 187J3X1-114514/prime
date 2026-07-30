@@ -8,6 +8,7 @@ import dev.prime.mixin.TextureAtlasSpriteAccessor;
 import dev.prime.render.ResourceCleanup;
 import dev.prime.render.terrain.LabPbrEmissionMap;
 import dev.prime.render.terrain.LabPbrHeightMap;
+import dev.prime.render.terrain.LabPbrMaterialMap;
 import dev.prime.render.terrain.LabPbrMaterialSet;
 import java.io.IOException;
 import java.io.InputStream;
@@ -323,6 +324,7 @@ public final class LabPbrTextureAtlas implements AutoCloseable {
         Set<Identifier> specularSprites = new HashSet<>();
         Map<Identifier, LabPbrEmissionMap> emissionMaps = new java.util.HashMap<>();
         Map<Identifier, LabPbrHeightMap> heightMaps = new java.util.HashMap<>();
+        Map<Identifier, LabPbrMaterialMap> materialMaps = new java.util.HashMap<>();
         ArrayList<MaterialSprite> materialSprites = new ArrayList<>();
         if (supported) {
             for (TextureAtlasSprite sprite : sprites.values()) {
@@ -355,6 +357,20 @@ public final class LabPbrTextureAtlas implements AutoCloseable {
                     }
                 }
                 if (normal != null || specular != null) {
+                    SpriteContents contents = sprite.contents();
+                    if (!contents.isAnimated()) {
+                        materialMaps.put(name, new LabPbrMaterialMap(
+                                materialPixels(
+                                        normal,
+                                        contents.width(),
+                                        contents.height(),
+                                        false),
+                                materialPixels(
+                                        specular,
+                                        contents.width(),
+                                        contents.height(),
+                                        true)));
+                    }
                     materialSprites.add(new MaterialSprite(
                             sprite,
                             normal,
@@ -405,7 +421,11 @@ public final class LabPbrTextureAtlas implements AutoCloseable {
                     SPECULAR_DEFAULT_ARGB);
             List<AnimatedMaterialSprite> animated = bindAnimations(atlasAccess, materialSprites);
             LabPbrMaterialSet materials = new LabPbrMaterialSet(
-                    normalSprites, specularSprites, emissionMaps, heightMaps);
+                    normalSprites,
+                    specularSprites,
+                    emissionMaps,
+                    heightMaps,
+                    materialMaps);
             PrimeClient.LOGGER.info(
                     "Loaded LabPBR 1.3 material atlas: {} normal maps, {} specular maps, {} emissive maps, {} animated sprites",
                     normalSprites.size(), specularSprites.size(), emissionMaps.size(), animated.size());
@@ -456,6 +476,51 @@ public final class LabPbrTextureAtlas implements AutoCloseable {
     private static Identifier materialResource(Identifier sprite, String suffix) {
         return Identifier.fromNamespaceAndPath(
                 sprite.getNamespace(), "textures/" + sprite.getPath() + suffix + ".png");
+    }
+
+    private static LabPbrMaterialMap.Pixels materialPixels(
+            MaterialSource source,
+            int baseFrameWidth,
+            int baseFrameHeight,
+            boolean specular) {
+        if (source == null) {
+            return null;
+        }
+        int width = Math.multiplyExact(source.columns(), baseFrameWidth);
+        int rows = Math.floorDiv(
+                Math.addExact(source.frameCount(), source.columns() - 1),
+                source.columns());
+        int[] normalized = new int[Math.multiplyExact(
+                width, Math.multiplyExact(rows, baseFrameHeight))];
+        // Voxel primitives store one material texel per base-color texel. Normalize mixed
+        // resolutions with the same semantic filter as mip-0 atlas upload so baking cannot
+        // silently switch LabPBR values from an averaged footprint to a nearest source sample.
+        for (int frame = 0; frame < source.frameCount(); frame++) {
+            AnimationSample sample = new AnimationSample(frame, frame, 0);
+            int frameX = frame % source.columns() * baseFrameWidth;
+            int frameY = frame / source.columns() * baseFrameHeight;
+            for (int y = 0; y < baseFrameHeight; y++) {
+                for (int x = 0; x < baseFrameWidth; x++) {
+                    normalized[(frameY + y) * width + frameX + x] =
+                            source.filtered(
+                                    sample,
+                                    x,
+                                    y,
+                                    x + 1.0,
+                                    y + 1.0,
+                                    baseFrameWidth,
+                                    baseFrameHeight,
+                                    specular);
+                }
+            }
+        }
+        return new LabPbrMaterialMap.Pixels(
+                normalized,
+                width,
+                baseFrameWidth,
+                baseFrameHeight,
+                source.columns(),
+                source.frameCount());
     }
 
     private static MaterialSource readMaterial(

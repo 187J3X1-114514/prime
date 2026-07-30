@@ -21,7 +21,10 @@ PrimitiveRecord primePrimitive(SectionRecord section) {
             : (gl_GeometryIndexEXT == 1 ? section.cutoutBase : section.transmissiveBase);
     PrimitiveBuffer primitives = PrimitiveBuffer(section.primitiveAddress);
     PrimitiveRecord primitive = primitives.records[base + gl_PrimitiveID];
-    if ((section.instanceTint & 0x80000000u) != 0u) {
+    // Baked material primitives may mix an untinted base with a tinted overlay in one BLAS.
+    // Their instance tint is applied after per-primitive color selection in material.glsl.
+    if ((section.instanceTint & 0x80000000u) != 0u
+            && !primeUsesBakedMaterial(primitive)) {
         primitive.tint = (primitive.tint & 0xff000000u)
                 | (section.instanceTint & 0x00ffffffu);
     }
@@ -39,7 +42,7 @@ bool primeUsesRepeatedUv(PrimitiveRecord primitive) {
 bool primeUsesConstantFloatUv(PrimitiveRecord primitive) {
     // Negative zero is distinct at the ABI level while remaining outside the negative-density
     // macro-face encoding. Voxel texel centers need float32 precision on large stitched atlases.
-    return primitive.uvDensity == 0x80000000u;
+    return primitive.uvDensity == PRIME_CONSTANT_UV_DENSITY;
 }
 
 vec2 primeInterpolateUv(SectionRecord section, PrimitiveRecord primitive) {

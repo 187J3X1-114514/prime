@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import dev.prime.render.scene.CapturedSectionGeometry;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
@@ -171,66 +172,146 @@ final class TextureVoxelSurfaceTest {
     }
 
     @Test
-    void layeredCutoutUsesOpaqueReliefAndAStableOutwardOffset() {
+    void staticCutoutLayerBakesIntoOneOpaqueBaseMesh() {
         try (SectionMeshAccumulatorTest.TestSprite baseSprite =
                         new SectionMeshAccumulatorTest.TestSprite("layer_base");
                 SectionMeshAccumulatorTest.TestSprite overlaySprite =
                         new SectionMeshAccumulatorTest.TestSprite("layer_overlay")) {
+            int baseColor = 0xff60_4020;
+            int overlayColor = 0xff40_c060;
+            int overlayTint = 0xff80_ff80;
+            baseSprite.fill(baseColor);
+            overlaySprite.fill(0);
+            for (int x = 0; x < 16; x++) {
+                overlaySprite.setPixel(x, 0, overlayColor);
+            }
             int[] baseNormal = new int[16 * 16];
             int[] overlayNormal = new int[16 * 16];
-            Arrays.fill(baseNormal, 0xe400_0000);
-            Arrays.fill(overlayNormal, 0xcf00_0000);
-            for (int index = 0; index < 16; index++) {
-                baseNormal[index] = 0xff00_0000;
-                overlayNormal[index] = 0xff00_0000;
-            }
+            int[] baseSpecular = new int[16 * 16];
+            int[] overlaySpecular = new int[16 * 16];
+            Arrays.fill(baseNormal, 0xff12_3456);
+            Arrays.fill(overlayNormal, 0xff65_4321);
+            Arrays.fill(baseSpecular, 0xffa0_b0c0);
+            Arrays.fill(overlaySpecular, 0xff0a_0b0c);
             LabPbrHeightMap baseHeight = LabPbrHeightMap.fromNormal(
                     baseNormal, 16, 16, 16, 16, 1, 1);
-            LabPbrHeightMap overlayHeight = LabPbrHeightMap.fromNormal(
-                    overlayNormal, 16, 16, 16, 16, 1, 1);
+            LabPbrMaterialMap baseMaterial = new LabPbrMaterialMap(
+                    new LabPbrMaterialMap.Pixels(
+                            baseNormal, 16, 16, 16, 1, 1),
+                    new LabPbrMaterialMap.Pixels(
+                            baseSpecular, 16, 16, 16, 1, 1));
+            LabPbrMaterialMap overlayMaterial = new LabPbrMaterialMap(
+                    new LabPbrMaterialMap.Pixels(
+                            overlayNormal, 16, 16, 16, 1, 1),
+                    new LabPbrMaterialMap.Pixels(
+                            overlaySpecular, 16, 16, 16, 1, 1));
             LabPbrMaterialSet materials = new LabPbrMaterialSet(
                     Set.of(
                             baseSprite.contents().name(),
                             overlaySprite.contents().name()),
-                    Set.of(),
+                    Set.of(
+                            baseSprite.contents().name(),
+                            overlaySprite.contents().name()),
                     Map.of(),
+                    Map.of(baseSprite.contents().name(), baseHeight),
                     Map.of(
-                            baseSprite.contents().name(), baseHeight,
-                            overlaySprite.contents().name(), overlayHeight));
-            SectionMeshAccumulator accumulator =
-                    new SectionMeshAccumulator(materials, false);
+                            baseSprite.contents().name(), baseMaterial,
+                            overlaySprite.contents().name(), overlayMaterial));
             SectionMeshAccumulator.Quad face =
                     SectionMeshAccumulatorTest.horizontalQuad(
                             2.0F, 3.0F, 4.0F, 1.0F);
-            accumulator.addQuad(
-                    face, SectionMeshAccumulatorTest.opaqueSurface(baseSprite));
-            accumulator.addQuad(
-                    face, SectionMeshAccumulatorTest.cutoutSurface(overlaySprite));
-            SectionClusterMeshBuilder builder = new SectionClusterMeshBuilder(
-                    0,
-                    0,
-                    0,
-                    TerrainMemoryBudget.TARGET_SEGMENT_TRIANGLES,
-                    OpacityMicromapData.SUBDIVISION_LEVEL + 2,
-                    true,
-                    VoxelSurfaceSettings.BASE_HEIGHT);
-            builder.add(0, 0, 0, accumulator.build());
+            CapturedSectionGeometry.MutableQuad capturedFace =
+                    new CapturedSectionGeometry.MutableQuad();
+            for (int vertex = 0; vertex < 4; vertex++) {
+                capturedFace.x[vertex] = face.x[vertex];
+                capturedFace.y[vertex] = face.y[vertex];
+                capturedFace.z[vertex] = face.z[vertex];
+                capturedFace.u[vertex] = face.u[vertex];
+                capturedFace.v[vertex] = face.v[vertex];
+            }
+            capturedFace.normalX = face.normalX;
+            capturedFace.normalY = face.normalY;
+            capturedFace.normalZ = face.normalZ;
+            CapturedSectionGeometry.Builder section =
+                    new CapturedSectionGeometry.Builder();
+            section.add(
+                    capturedFace,
+                    CapturedSectionGeometry.Surface.uniform(
+                            -1,
+                            CapturedSectionGeometry.Layer.OPAQUE,
+                            false,
+                            false,
+                            false,
+                            false,
+                            false,
+                            true,
+                            false,
+                            0,
+                            baseSprite));
+            section.add(
+                    capturedFace,
+                    CapturedSectionGeometry.Surface.uniform(
+                            overlayTint,
+                            CapturedSectionGeometry.Layer.CUTOUT,
+                            false,
+                            false,
+                            false,
+                            false,
+                            false,
+                            true,
+                            true,
+                            0,
+                            overlaySprite));
+            CapturedCluster.Builder captured =
+                    new CapturedCluster.Builder(0, 0, 0);
+            captured.add(0, 0, 0, section.build());
 
-            CpuClusterMesh cluster = builder.build();
+            CpuClusterMesh cluster = ClusterSceneTranslator.translate(
+                    captured.build(),
+                    materials,
+                    new ClusterTranslationSettings(
+                            false,
+                            TerrainMemoryBudget.TARGET_SEGMENT_TRIANGLES,
+                            OpacityMicromapData.SUBDIVISION_LEVEL + 2,
+                            true,
+                            VoxelSurfaceSettings.BASE_HEIGHT,
+                            false,
+                            false));
 
-            assertEquals(2, cluster.voxelMeshes().size());
-            assertEquals(2, cluster.voxelInstances().count());
-            assertArrayEquals(
-                    cluster.voxelMeshes().get(0).positions(),
-                    cluster.voxelMeshes().get(1).positions());
+            assertEquals(1, cluster.voxelMeshes().size());
+            assertEquals(1, cluster.voxelInstances().count());
             assertEquals(
                     4.0F,
                     cluster.voxelInstances().translationZ(0),
                     1.0E-7F);
             assertEquals(
-                    4.0F + TextureVoxelMeshBuilder.LAYER_OFFSET,
-                    cluster.voxelInstances().translationZ(1),
-                    1.0E-7F);
+                    PrimitivePacking.packTint(overlayTint) & 0x00ff_ffff,
+                    cluster.voxelInstances().packedTint(0));
+
+            CpuVoxelMesh mesh = cluster.voxelMeshes().getFirst();
+            assertEquals(16 * 16 * 2, mesh.opaqueTriangleCount());
+            assertEquals(0, mesh.cutoutTriangleCount());
+            int[] primitives = mesh.primitiveRecords();
+            assertBakedMaterial(
+                    primitives,
+                    0,
+                    overlayColor,
+                    overlayNormal[0],
+                    overlaySpecular[0],
+                    false);
+            int firstBaseTriangle = 16 * 2;
+            assertBakedMaterial(
+                    primitives,
+                    firstBaseTriangle,
+                    baseColor,
+                    baseNormal[0],
+                    baseSpecular[0],
+                    true);
+            assertEquals(
+                    PrimitivePacking.FLAG_LABPBR_NORMAL
+                            | PrimitivePacking.FLAG_LABPBR_SPECULAR,
+                    PrimitivePacking.unpackFlags(
+                            primitives[3], primitives[5]));
         }
     }
 
@@ -331,6 +412,32 @@ final class TextureVoxelSurfaceTest {
         assertArrayEquals(
                 primitives,
                 decoded.mesh().voxelMeshes().getFirst().primitiveRecords());
+    }
+
+    private static void assertBakedMaterial(
+            int[] primitives,
+            int triangle,
+            int argb,
+            int normalArgb,
+            int specularArgb,
+            boolean ownsTint) {
+        int record = triangle * CpuSectionMesh.PRIMITIVE_WORDS;
+        assertEquals(
+                LabPbrMaterialMap.packArgb(normalArgb),
+                primitives[record]);
+        assertEquals(
+                LabPbrMaterialMap.packArgb(specularArgb),
+                primitives[record + 1]);
+        assertEquals(
+                PrimitivePacking.CONSTANT_UV_BAKED_MATERIAL
+                        | (ownsTint ? PrimitivePacking.CONSTANT_UV_OWN_TINT : 0),
+                primitives[record + 2]);
+        assertEquals(
+                PrimitivePacking.packTint(argb) & 0x00ff_ffff,
+                primitives[record + 3] & 0x00ff_ffff);
+        assertEquals(
+                PrimitivePacking.CONSTANT_UV_DENSITY,
+                primitives[record + 6]);
     }
 
     private static float minimumAxis(float[] positions, int axis) {

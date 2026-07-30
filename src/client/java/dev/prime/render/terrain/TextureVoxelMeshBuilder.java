@@ -18,10 +18,6 @@ import net.minecraft.client.renderer.texture.TextureAtlasSprite;
  */
 final class TextureVoxelMeshBuilder {
     static final float MAXIMUM_HEIGHT = VoxelSurfaceSettings.BASE_HEIGHT;
-    // Large enough to survive float placement in a 64-block cluster, but visually negligible
-    // beside the relief range. Removing it makes coincident material layers traversal-order
-    // dependent.
-    static final float LAYER_OFFSET = 1.0F / 8192.0F;
 
     private final boolean buildOpacityMicromap;
     private final float maximumHeight;
@@ -40,20 +36,6 @@ final class TextureVoxelMeshBuilder {
     }
 
     boolean add(MergeFace face) {
-        return this.add(face, face, 0.0F);
-    }
-
-    boolean add(MergeFace face, MergeFace relief, float outwardOffset) {
-        if (face.planeAxis() != relief.planeAxis()
-                || face.normalSign() != relief.normalSign()
-                || face.planeCell() != relief.planeCell()
-                || face.cellU() != relief.cellU()
-                || face.cellV() != relief.cellV()
-                || !Float.isFinite(outwardOffset)
-                || outwardOffset < 0.0F) {
-            throw new IllegalArgumentException(
-                    "Voxel-surface material and relief faces are incompatible");
-        }
         int flags = PrimitivePacking.unpackFlags(
                 face.primitive()[3], face.primitive()[5])
                 & ~PrimitivePacking.FLAG_TANGENT_NEGATIVE;
@@ -67,14 +49,101 @@ final class TextureVoxelMeshBuilder {
                 face.uv1V(),
                 face.uv2U(),
                 face.uv2V(),
-                relief.sprite(),
-                relief.uv0U(),
-                relief.uv0V(),
-                relief.uv1U(),
-                relief.uv1V(),
-                relief.uv2U(),
-                relief.uv2V(),
-                flags);
+                face.sprite(),
+                face.uv0U(),
+                face.uv0V(),
+                face.uv1U(),
+                face.uv1V(),
+                face.uv2U(),
+                face.uv2V(),
+                flags,
+                null);
+        return this.add(
+                face,
+                face.labPbrHeightMap(),
+                face.labPbrMaterialMap(),
+                null,
+                key,
+                face.primitive()[3]);
+    }
+
+    boolean addComposite(MergeFace base, MergeFace overlay) {
+        if (base.planeAxis() != overlay.planeAxis()
+                || base.normalSign() != overlay.normalSign()
+                || base.planeCell() != overlay.planeCell()
+                || base.cellU() != overlay.cellU()
+                || base.cellV() != overlay.cellV()) {
+            throw new IllegalArgumentException(
+                    "Voxel-surface material layers are not coincident");
+        }
+        int baseFlags = PrimitivePacking.unpackFlags(
+                base.primitive()[3], base.primitive()[5])
+                & ~PrimitivePacking.FLAG_TANGENT_NEGATIVE;
+        int overlayFlags = PrimitivePacking.unpackFlags(
+                overlay.primitive()[3], overlay.primitive()[5])
+                & ~PrimitivePacking.FLAG_TANGENT_NEGATIVE;
+        if ((baseFlags
+                                & (PrimitivePacking.FLAG_CUTOUT
+                                        | PrimitivePacking.FLAG_TRANSMISSIVE))
+                        != 0
+                || (overlayFlags & PrimitivePacking.FLAG_CUTOUT) == 0
+                || ((baseFlags | overlayFlags)
+                                & (PrimitivePacking.FLAG_ANIMATED_TEXTURE
+                                        | PrimitivePacking.FLAG_TRANSMISSIVE
+                                        | PrimitivePacking.FLAG_THIN_WALLED
+                                        | PrimitivePacking.FLAG_FOLIAGE))
+                        != 0
+                || base.sprite().contents().isAnimated()
+                || overlay.sprite().contents().isAnimated()) {
+            return false;
+        }
+        int resolvedOverlayFlags = overlayFlags & ~PrimitivePacking.FLAG_CUTOUT;
+        PrimitivePacking.requireValidFlags(resolvedOverlayFlags);
+        Overlay resolvedOverlay = new Overlay(
+                overlay.sprite(),
+                overlay.uv0U(),
+                overlay.uv0V(),
+                overlay.uv1U(),
+                overlay.uv1V(),
+                overlay.uv2U(),
+                overlay.uv2V(),
+                resolvedOverlayFlags,
+                base.primitive()[3] & 0x00ff_ffff);
+        Key key = new Key(
+                base.sprite(),
+                base.planeAxis(),
+                base.normalSign(),
+                base.uv0U(),
+                base.uv0V(),
+                base.uv1U(),
+                base.uv1V(),
+                base.uv2U(),
+                base.uv2V(),
+                base.sprite(),
+                base.uv0U(),
+                base.uv0V(),
+                base.uv1U(),
+                base.uv1V(),
+                base.uv2U(),
+                base.uv2V(),
+                baseFlags,
+                resolvedOverlay);
+        return this.add(
+                base,
+                base.labPbrHeightMap(),
+                base.labPbrMaterialMap(),
+                overlay.labPbrMaterialMap(),
+                key,
+                overlay.primitive()[3]);
+    }
+
+    private boolean add(
+            MergeFace face,
+            LabPbrHeightMap heightMap,
+            LabPbrMaterialMap materialMap,
+            LabPbrMaterialMap overlayMaterialMap,
+            Key key,
+            int packedTintFlags) {
         if (this.rejected.contains(key)) {
             return false;
         }
@@ -84,7 +153,9 @@ final class TextureVoxelMeshBuilder {
             try {
                 mesh = buildMesh(
                         key,
-                        relief.labPbrHeightMap(),
+                        heightMap,
+                        materialMap,
+                        overlayMaterialMap,
                         this.maximumHeight,
                         this.buildOpacityMicromap);
             } catch (IllegalArgumentException
@@ -100,28 +171,27 @@ final class TextureVoxelMeshBuilder {
         float translationX;
         float translationY;
         float translationZ;
-        float plane = face.plane() + face.normalSign() * outwardOffset;
         switch (face.planeAxis()) {
             case 0 -> {
-                translationX = plane;
+                translationX = face.plane();
                 translationY = face.cellU();
                 translationZ = face.cellV();
             }
             case 1 -> {
                 translationX = face.cellU();
-                translationY = plane;
+                translationY = face.plane();
                 translationZ = face.cellV();
             }
             case 2 -> {
                 translationX = face.cellU();
                 translationY = face.cellV();
-                translationZ = plane;
+                translationZ = face.plane();
             }
             default -> throw new IllegalArgumentException("Invalid face plane axis");
         }
         this.instances.add(
                 meshIndex,
-                face.primitive()[3] & 0x00ff_ffff,
+                packedTintFlags & 0x00ff_ffff,
                 translationX,
                 translationY,
                 translationZ);
@@ -147,6 +217,8 @@ final class TextureVoxelMeshBuilder {
     private static CpuVoxelMesh buildMesh(
             Key key,
             LabPbrHeightMap labPbrHeightMap,
+            LabPbrMaterialMap labPbrMaterialMap,
+            LabPbrMaterialMap overlayLabPbrMaterialMap,
             float maximumHeight,
             boolean buildOpacityMicromap) {
         SpritePixels reliefPixels = SpritePixels.create(key.reliefSprite);
@@ -156,8 +228,10 @@ final class TextureVoxelMeshBuilder {
         }
         int size = reliefPixels.width;
         float[] heights = new float[Math.multiplyExact(size, size)];
-        float[] atlasUs = new float[heights.length];
-        float[] atlasVs = new float[heights.length];
+        MaterialSample[] materials = new MaterialSample[heights.length];
+        SpritePixels materialPixels = key.sprite == key.reliefSprite
+                ? reliefPixels
+                : SpritePixels.create(key.sprite);
         UvTransform materialUv = new UvTransform(
                 key.uv0U,
                 key.uv0V,
@@ -172,6 +246,20 @@ final class TextureVoxelMeshBuilder {
                 key.reliefUv1V,
                 key.reliefUv2U,
                 key.reliefUv2V);
+        Overlay overlay = key.overlay;
+        SpritePixels overlayPixels =
+                overlay == null ? null : SpritePixels.create(overlay.sprite);
+        boolean bakeBase = overlay != null
+                || canBakeMaterial(key.sprite, key.flags);
+        UvTransform overlayUv = overlay == null
+                ? null
+                : new UvTransform(
+                        overlay.uv0U,
+                        overlay.uv0V,
+                        overlay.uv1U,
+                        overlay.uv1V,
+                        overlay.uv2U,
+                        overlay.uv2V);
         for (int y = 0; y < size; y++) {
             for (int x = 0; x < size; x++) {
                 int index = x + y * size;
@@ -181,8 +269,50 @@ final class TextureVoxelMeshBuilder {
                 float atlasV = materialUv.v(u, v);
                 float reliefAtlasU = reliefUv.u(u, v);
                 float reliefAtlasV = reliefUv.v(u, v);
-                atlasUs[index] = atlasU;
-                atlasVs[index] = atlasV;
+                int baseArgb = bakeBase
+                        ? materialPixels.sample(atlasU, atlasV, key.sprite)
+                        : 0;
+                MaterialSample material = bakeBase
+                        ? bakedMaterial(
+                                key.sprite,
+                                materialPixels,
+                                atlasU,
+                                atlasV,
+                                key.flags,
+                                labPbrMaterialMap,
+                                baseArgb,
+                                0x00ff_ffff,
+                                false)
+                        : sampledMaterial(
+                                key.sprite, atlasU, atlasV, key.flags);
+                if (overlay != null) {
+                    float overlayAtlasU = overlayUv.u(u, v);
+                    float overlayAtlasV = overlayUv.v(u, v);
+                    int overlayArgb = overlayPixels.sample(
+                            overlayAtlasU, overlayAtlasV, overlay.sprite);
+                    material = overlayArgb >>> 24 >= 128
+                            ? bakedMaterial(
+                                    overlay.sprite,
+                                    overlayPixels,
+                                    overlayAtlasU,
+                                    overlayAtlasV,
+                                    overlay.flags,
+                                    overlayLabPbrMaterialMap,
+                                    overlayArgb,
+                                    0x00ff_ffff,
+                                    false)
+                            : bakedMaterial(
+                                    key.sprite,
+                                    materialPixels,
+                                    atlasU,
+                                    atlasV,
+                                    key.flags,
+                                    labPbrMaterialMap,
+                                    baseArgb,
+                                    overlay.baseTint,
+                                    true);
+                }
+                materials[index] = material;
                 heights[index] = labPbrHeightMap == null
                         ? lumaFromArgb(reliefPixels.sample(
                                 reliefAtlasU, reliefAtlasV, key.reliefSprite))
@@ -199,9 +329,84 @@ final class TextureVoxelMeshBuilder {
                 key,
                 size,
                 heights,
-                atlasUs,
-                atlasVs,
+                materials,
                 buildOpacityMicromap);
+    }
+
+    private static boolean canBakeMaterial(TextureAtlasSprite sprite, int flags) {
+        return (flags
+                                & (PrimitivePacking.FLAG_CUTOUT
+                                        | PrimitivePacking.FLAG_ANIMATED_TEXTURE
+                                        | PrimitivePacking.FLAG_TRANSMISSIVE))
+                        == 0
+                && !sprite.contents().isAnimated();
+    }
+
+    private static MaterialSample sampledMaterial(
+            TextureAtlasSprite sprite, float atlasU, float atlasV, int flags) {
+        return new MaterialSample(
+                sprite,
+                atlasU,
+                atlasV,
+                flags,
+                0x00ff_ffff,
+                LabPbrMaterialMap.DEFAULT_NORMAL,
+                LabPbrMaterialMap.DEFAULT_SPECULAR,
+                0);
+    }
+
+    private static MaterialSample bakedMaterial(
+            TextureAtlasSprite sprite,
+            SpritePixels pixels,
+            float atlasU,
+            float atlasV,
+            int flags,
+            LabPbrMaterialMap materialMap,
+            int argb,
+            int packedTint,
+            boolean ownsTint) {
+        float localU = pixels.localU(atlasU, sprite);
+        float localV = pixels.localV(atlasV, sprite);
+        int packedNormal = materialMap == null
+                ? LabPbrMaterialMap.DEFAULT_NORMAL
+                : materialMap.sampleNormal(pixels.firstFrame, localU, localV);
+        int packedSpecular = materialMap == null
+                ? LabPbrMaterialMap.DEFAULT_SPECULAR
+                : materialMap.sampleSpecular(pixels.firstFrame, localU, localV);
+        int mode = PrimitivePacking.CONSTANT_UV_BAKED_MATERIAL
+                | (ownsTint ? PrimitivePacking.CONSTANT_UV_OWN_TINT : 0);
+        return new MaterialSample(
+                sprite,
+                atlasU,
+                atlasV,
+                flags,
+                bakeSrgbTint(argb, packedTint),
+                packedNormal,
+                packedSpecular,
+                mode);
+    }
+
+    private static int bakeSrgbTint(int argb, int packedTint) {
+        // A composite instance owns the overlay's biome tint. Fold the base layer's independent
+        // tint into its texel in linear light so both layers still match the atlas shading path.
+        int red = bakeSrgbChannel(argb >>> 16 & 0xff, packedTint & 0xff);
+        int green = bakeSrgbChannel(argb >>> 8 & 0xff, packedTint >>> 8 & 0xff);
+        int blue = bakeSrgbChannel(argb & 0xff, packedTint >>> 16 & 0xff);
+        return red | green << 8 | blue << 16;
+    }
+
+    private static int bakeSrgbChannel(int texel, int tint) {
+        double linear = decodeSrgb(texel / 255.0) * decodeSrgb(tint / 255.0);
+        double encoded = linear <= 0.0031308
+                ? 12.92 * linear
+                : 1.055 * Math.pow(linear, 1.0 / 2.4) - 0.055;
+        return Math.max(0, Math.min(255, (int) Math.round(encoded * 255.0)));
+    }
+
+    private static double decodeSrgb(double encoded) {
+        return encoded <= 0.04045
+                ? encoded / 12.92
+                : Math.pow((encoded + 0.055) / 1.055, 2.4);
     }
 
     static CpuVoxelMesh buildOpaqueHeightField(
@@ -215,14 +420,20 @@ final class TextureVoxelMeshBuilder {
                     "Invalid source for an opaque voxel height field");
         }
         float[] heights = new float[argb.length];
-        float[] atlasUs = new float[argb.length];
-        float[] atlasVs = new float[argb.length];
+        MaterialSample[] materials = new MaterialSample[argb.length];
         for (int y = 0; y < size; y++) {
             for (int x = 0; x < size; x++) {
                 int index = x + y * size;
                 heights[index] = lumaFromArgb(argb[index]);
-                atlasUs[index] = (x + 0.5F) / size;
-                atlasVs[index] = (y + 0.5F) / size;
+                materials[index] = new MaterialSample(
+                        null,
+                        (x + 0.5F) / size,
+                        (y + 0.5F) / size,
+                        0,
+                        PrimitivePacking.packTint(argb[index]) & 0x00ff_ffff,
+                        LabPbrMaterialMap.DEFAULT_NORMAL,
+                        LabPbrMaterialMap.DEFAULT_SPECULAR,
+                        PrimitivePacking.CONSTANT_UV_BAKED_MATERIAL);
             }
         }
         scaleHeights(heights, MAXIMUM_HEIGHT);
@@ -245,13 +456,13 @@ final class TextureVoxelMeshBuilder {
                 0.0F,
                 0.0F,
                 1.0F,
-                0);
+                0,
+                null);
         return buildHeightField(
                 key,
                 size,
                 heights,
-                atlasUs,
-                atlasVs,
+                materials,
                 false);
     }
 
@@ -290,8 +501,7 @@ final class TextureVoxelMeshBuilder {
             Key key,
             int size,
             float[] heights,
-            float[] atlasUs,
-            float[] atlasVs,
+            MaterialSample[] materials,
             boolean buildOpacityMicromap) {
         Mesh mesh = new Mesh(key, buildOpacityMicromap);
         for (int y = 0; y < size; y++) {
@@ -308,8 +518,7 @@ final class TextureVoxelMeshBuilder {
                         maximumU,
                         maximumV,
                         height,
-                        atlasUs[index],
-                        atlasVs[index]);
+                        materials[index]);
                 if (x == 0 || height > heights[index - 1]) {
                     mesh.addWall(
                             0,
@@ -319,8 +528,7 @@ final class TextureVoxelMeshBuilder {
                             x == 0 ? 0.0F : heights[index - 1],
                             height,
                             -1,
-                            atlasUs[index],
-                            atlasVs[index]);
+                            materials[index]);
                 }
                 if (x == size - 1 || height > heights[index + 1]) {
                     mesh.addWall(
@@ -331,8 +539,7 @@ final class TextureVoxelMeshBuilder {
                             x == size - 1 ? 0.0F : heights[index + 1],
                             height,
                             1,
-                            atlasUs[index],
-                            atlasVs[index]);
+                            materials[index]);
                 }
                 if (y == 0 || height > heights[index - size]) {
                     mesh.addWall(
@@ -343,8 +550,7 @@ final class TextureVoxelMeshBuilder {
                             y == 0 ? 0.0F : heights[index - size],
                             height,
                             -1,
-                            atlasUs[index],
-                            atlasVs[index]);
+                            materials[index]);
                 }
                 if (y == size - 1 || height > heights[index + size]) {
                     mesh.addWall(
@@ -355,8 +561,7 @@ final class TextureVoxelMeshBuilder {
                             y == size - 1 ? 0.0F : heights[index + size],
                             height,
                             1,
-                            atlasUs[index],
-                            atlasVs[index]);
+                            materials[index]);
                 }
             }
         }
@@ -386,7 +591,34 @@ final class TextureVoxelMeshBuilder {
             float reliefUv1V,
             float reliefUv2U,
             float reliefUv2V,
-            int flags) {
+            int flags,
+            Overlay overlay) {
+    }
+
+    private record Overlay(
+            TextureAtlasSprite sprite,
+            float uv0U,
+            float uv0V,
+            float uv1U,
+            float uv1V,
+            float uv2U,
+            float uv2V,
+            int flags,
+            int baseTint) {
+    }
+
+    private record MaterialSample(
+            TextureAtlasSprite sprite,
+            float atlasU,
+            float atlasV,
+            int flags,
+            int packedTint,
+            int packedLabPbrNormal,
+            int packedLabPbrSpecular,
+            int constantMode) {
+        boolean baked() {
+            return (this.constantMode & PrimitivePacking.CONSTANT_UV_BAKED_MATERIAL) != 0;
+        }
     }
 
     private record UvTransform(
@@ -483,8 +715,7 @@ final class TextureVoxelMeshBuilder {
                 float maximumU,
                 float maximumV,
                 float height,
-                float atlasU,
-                float atlasV) {
+                MaterialSample material) {
             float[][] corners = {
                 this.point(minimumU, minimumV, height),
                 this.point(maximumU, minimumV, height),
@@ -493,7 +724,7 @@ final class TextureVoxelMeshBuilder {
             };
             float[] normal = new float[3];
             normal[this.key.planeAxis] = this.key.normalSign;
-            this.addQuad(corners, normal, atlasU, atlasV);
+            this.addQuad(corners, normal, material);
         }
 
         void addWall(
@@ -504,8 +735,7 @@ final class TextureVoxelMeshBuilder {
                 float minimumHeight,
                 float maximumHeight,
                 int outwardSign,
-                float atlasU,
-                float atlasV) {
+                MaterialSample material) {
             if (!(maximumHeight > minimumHeight)) {
                 return;
             }
@@ -530,7 +760,7 @@ final class TextureVoxelMeshBuilder {
                     ? MergeFace.projectedAxisU(this.key.planeAxis)
                     : MergeFace.projectedAxisV(this.key.planeAxis);
             normal[axis] = outwardSign;
-            this.addQuad(corners, normal, atlasU, atlasV);
+            this.addQuad(corners, normal, material);
         }
 
         private float[] point(float u, float v, float height) {
@@ -543,7 +773,7 @@ final class TextureVoxelMeshBuilder {
         }
 
         private void addQuad(
-                float[][] corners, float[] outward, float atlasU, float atlasV) {
+                float[][] corners, float[] outward, MaterialSample material) {
             float[] edgeOne = subtract(corners[1], corners[0]);
             float[] edgeTwo = subtract(corners[2], corners[0]);
             float[] cross = cross(edgeOne, edgeTwo);
@@ -552,10 +782,8 @@ final class TextureVoxelMeshBuilder {
                 corners[1] = corners[3];
                 corners[3] = swap;
             }
-            this.addTriangle(
-                    corners[0], corners[1], corners[2], outward, atlasU, atlasV);
-            this.addTriangle(
-                    corners[0], corners[2], corners[3], outward, atlasU, atlasV);
+            this.addTriangle(corners[0], corners[1], corners[2], outward, material);
+            this.addTriangle(corners[0], corners[2], corners[3], outward, material);
         }
 
         private void addTriangle(
@@ -563,13 +791,16 @@ final class TextureVoxelMeshBuilder {
                 float[] second,
                 float[] third,
                 float[] outward,
-                float atlasU,
-                float atlasV) {
+                MaterialSample material) {
             this.positions.add(first);
             this.positions.add(second);
             this.positions.add(third);
-            int floatU = PrimitivePacking.packConstantUv(atlasU);
-            int floatV = PrimitivePacking.packConstantUv(atlasV);
+            int firstMaterialWord = material.baked()
+                    ? material.packedLabPbrNormal
+                    : PrimitivePacking.packConstantUv(material.atlasU);
+            int secondMaterialWord = material.baked()
+                    ? material.packedLabPbrSpecular
+                    : PrimitivePacking.packConstantUv(material.atlasV);
             float[] edgeOne = subtract(second, first);
             float[] edgeTwo = subtract(third, first);
             int packedNormal = PrimitivePacking.packTriangleNormal(
@@ -594,26 +825,31 @@ final class TextureVoxelMeshBuilder {
                     0.0F,
                     0.0F,
                     packedNormal);
-            int flags = this.key.flags;
+            int flags = material.flags;
             if ((tangent & 0x1_0000_0000L) != 0L
                     && (flags & PrimitivePacking.FLAG_LABPBR_NORMAL) != 0) {
                 flags |= PrimitivePacking.FLAG_TANGENT_NEGATIVE;
             }
-            this.primitives.add(floatU);
-            this.primitives.add(floatV);
-            this.primitives.add(0);
-            this.primitives.add(PrimitivePacking.packTintFlags(0x00ff_ffff, flags));
+            this.primitives.add(firstMaterialWord);
+            this.primitives.add(secondMaterialWord);
+            this.primitives.add(material.constantMode);
+            this.primitives.add(
+                    PrimitivePacking.packTintFlags(material.packedTint, flags));
             this.primitives.add(packedNormal);
             this.primitives.add(PrimitivePacking.packFlagsEmitter(
                     flags, PrimitivePacking.NO_EMITTER_INDEX));
             this.primitives.add(PrimitivePacking.CONSTANT_UV_DENSITY);
             this.primitives.add((int) tangent);
             if (this.cutoutGeometry) {
+                if (material.baked()) {
+                    throw new IllegalStateException(
+                            "Alpha-tested voxel material cannot discard its coverage texture");
+                }
                 if (this.opacityMicromap == null) {
                     // Retain the any-hit path when the device cannot consume opacity micromaps.
                 } else {
                     this.opacityMicromap.addConstantTriangle(
-                            this.key.sprite, atlasU, atlasV);
+                            material.sprite, material.atlasU, material.atlasV);
                 }
             }
             this.triangleCount++;

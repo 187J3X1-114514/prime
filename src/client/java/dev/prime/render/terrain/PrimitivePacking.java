@@ -21,6 +21,12 @@ public final class PrimitivePacking {
      * Ordinary negative densities remain the periodic macro-face encoding.
      */
     public static final int CONSTANT_UV_DENSITY = Float.floatToRawIntBits(-0.0F);
+    /** Baked primitives keep their own color instead of inheriting the voxel instance tint. */
+    public static final int CONSTANT_UV_OWN_TINT = 1;
+    /** uv0/uv1 contain baked LabPBR texels instead of atlas coordinates. */
+    public static final int CONSTANT_UV_BAKED_MATERIAL = 1 << 1;
+    public static final int CONSTANT_UV_MODE_MASK =
+            CONSTANT_UV_OWN_TINT | CONSTANT_UV_BAKED_MATERIAL;
 
     private PrimitivePacking() {
     }

@@ -2,8 +2,9 @@ package dev.prime.render.terrain;
 
 import dev.prime.PrimeClient;
 import dev.prime.render.ResourceCleanup;
-import dev.prime.render.scene.vanilla.VanillaGeometryPolicy;
+import dev.prime.render.scene.CapturedSectionGeometry;
 import dev.prime.render.scene.vanilla.VanillaAssetSnapshot;
+import dev.prime.render.scene.vanilla.VanillaGeometryPolicy;
 import dev.prime.render.scene.vanilla.VanillaSceneInterpreter;
 import dev.prime.render.scene.vanilla.VanillaSectionCompileInput;
 import dev.prime.render.scene.vanilla.VanillaSectionSnapshot;
@@ -379,16 +380,13 @@ public final class TerrainStreamer implements AutoCloseable {
         TextureAtlas blockAtlas = minecraft.getAtlasManager().getAtlasOrThrow(AtlasIds.BLOCKS);
         SpriteFinder blockSpriteFinder = ((FabricTextureAtlas) (Object) blockAtlas).spriteFinder();
         boolean cutoutLeaves = minecraft.options.cutoutLeaves().get();
+        LabPbrMaterialSet materialSnapshot = this.labPbrMaterials;
         VanillaAssetSnapshot assetSnapshot = new VanillaAssetSnapshot(
                 models,
                 fluidModels,
                 blockColors,
                 blockSpriteFinder,
-                this.labPbrMaterials,
-                VanillaGeometryPolicy.VANILLA_PARITY,
-                cutoutLeaves,
-                this.opacityMicromapSupported,
-                this.segmentTriangleTarget);
+                cutoutLeaves);
         this.unloadedRequests.clear();
         this.blockedRequests.clear();
         int examined = 0;
@@ -424,6 +422,16 @@ public final class TerrainStreamer implements AutoCloseable {
                             this.centerSectionZ);
             float voxelSurfaceMaximumHeight = VoxelSurfaceSettings.maximumHeight(
                     this.voxelSurfaceStrengthSteps);
+            ClusterTranslationSettings translationSettings =
+                    new ClusterTranslationSettings(
+                            this.opacityMicromapSupported,
+                            this.segmentTriangleTarget,
+                            this.maxOpacityMicromapSubdivisionLevel,
+                            voxelSurfaces,
+                            voxelSurfaceMaximumHeight,
+                            VanillaGeometryPolicy.VANILLA_PARITY.closeCoveredFluidGap(),
+                            VanillaGeometryPolicy.VANILLA_PARITY
+                                    .suppressFluidFaceAgainstFullCollision());
             if (!hasCompleteClusterNeighborhood(level, clusterX, clusterZ)) {
                 // A 4x4x4 virtual chunk needs one Section of source data around every face.
                 // Minecraft loads vertical Sections as part of the same chunk column, so checking
@@ -494,28 +502,26 @@ public final class TerrainStreamer implements AutoCloseable {
                     CpuClusterMesh mesh = CpuClusterMesh.empty();
                     Throwable failure = null;
                     try {
-                        SectionClusterMeshBuilder cluster = new SectionClusterMeshBuilder(
-                                clusterX,
-                                clusterY,
-                                clusterZ,
-                                this.segmentTriangleTarget,
-                                TerrainStreamer.this.maxOpacityMicromapSubdivisionLevel,
-                                voxelSurfaces,
-                                voxelSurfaceMaximumHeight);
+                        CapturedCluster.Builder captured =
+                                new CapturedCluster.Builder(
+                                        clusterX, clusterY, clusterZ);
                         for (VanillaSectionSnapshot snapshot : snapshots) {
-                            CpuSectionGeometry sectionGeometry =
+                            CapturedSectionGeometry section =
                                     TerrainStreamer.this.sceneInterpreter
                                     .compileSection(
                                             new VanillaSectionCompileInput(
                                                     snapshot,
                                                     assetSnapshot));
-                            cluster.add(
+                            captured.add(
                                     snapshot.sectionX(),
                                     snapshot.sectionY(),
                                     snapshot.sectionZ(),
-                                    sectionGeometry);
+                                    section);
                         }
-                        mesh = cluster.build();
+                        mesh = ClusterSceneTranslator.translate(
+                                captured.build(),
+                                materialSnapshot,
+                                translationSettings);
                     } catch (Throwable throwable) {
                         failure = throwable;
                     }

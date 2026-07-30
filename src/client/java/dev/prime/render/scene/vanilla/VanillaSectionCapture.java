@@ -1,9 +1,7 @@
 package dev.prime.render.scene.vanilla;
 
 import com.mojang.blaze3d.vertex.MeshData;
-import dev.prime.render.terrain.CpuSectionGeometry;
-import dev.prime.render.terrain.LabPbrMaterialSet;
-import dev.prime.render.terrain.SectionMeshAccumulator;
+import dev.prime.render.scene.CapturedSectionGeometry;
 import it.unimi.dsi.fastutil.ints.IntArrayList;
 import java.util.ArrayDeque;
 import java.util.Arrays;
@@ -49,17 +47,16 @@ import org.joml.Vector3fc;
 public final class VanillaSectionCapture implements AutoCloseable {
     private static final ThreadLocal<VanillaSectionCapture> ACTIVE = new ThreadLocal<>();
     private static final int UNCACHED_TINT = Integer.MIN_VALUE;
-    private static final float COPLANAR_OVERLAY_OFFSET = 1.0F / 4096.0F;
 
     private final RenderSectionRegion region;
     private final BlockStateModelSet blockModels;
     private final BlockColors blockColors;
     private final SpriteFinder blockSpriteFinder;
     private final boolean cutoutLeaves;
-    private final VanillaGeometryPolicy geometryPolicy;
-    private final SectionMeshAccumulator mesh;
-    private final SectionMeshAccumulator.Quad blockQuad = new SectionMeshAccumulator.Quad();
-    private final SectionMeshAccumulator.Surface blockSurface = new SectionMeshAccumulator.Surface();
+    private final CapturedSectionGeometry.Builder geometry =
+            new CapturedSectionGeometry.Builder();
+    private final CapturedSectionGeometry.MutableQuad blockQuad =
+            new CapturedSectionGeometry.MutableQuad();
     private final ArrayDeque<FluidCapture> fluidStack = new ArrayDeque<>();
     private long tintPosition = Long.MIN_VALUE;
     private int tintIndex = -1;
@@ -72,6 +69,7 @@ public final class VanillaSectionCapture implements AutoCloseable {
     private boolean blockCollisionKnown;
     private boolean blockCollisionEmpty;
     private final int[] fabricBaseColors = new int[4];
+    private final int[] fabricResolvedColors = new int[4];
     private int[] fabricTintCache = new int[4];
     private final IntArrayList fabricDynamicTints = new IntArrayList();
     private BlockAndTintGetter fabricLevel;
@@ -90,19 +88,12 @@ public final class VanillaSectionCapture implements AutoCloseable {
             BlockStateModelSet blockModels,
             BlockColors blockColors,
             SpriteFinder blockSpriteFinder,
-            LabPbrMaterialSet labPbrMaterials,
-            VanillaGeometryPolicy geometryPolicy,
-            boolean cutoutLeaves,
-            boolean buildOpacityMicromap,
-            int segmentTriangleTarget) {
+            boolean cutoutLeaves) {
         this.region = region;
         this.blockModels = blockModels;
         this.blockColors = blockColors;
         this.blockSpriteFinder = blockSpriteFinder;
-        this.geometryPolicy = geometryPolicy;
         this.cutoutLeaves = cutoutLeaves;
-        this.mesh = new SectionMeshAccumulator(
-                labPbrMaterials, buildOpacityMicromap, segmentTriangleTarget);
     }
 
     public static VanillaSectionCapture open(
@@ -110,11 +101,7 @@ public final class VanillaSectionCapture implements AutoCloseable {
             BlockStateModelSet blockModels,
             BlockColors blockColors,
             SpriteFinder blockSpriteFinder,
-            LabPbrMaterialSet labPbrMaterials,
-            VanillaGeometryPolicy geometryPolicy,
-            boolean cutoutLeaves,
-            boolean buildOpacityMicromap,
-            int segmentTriangleTarget) {
+            boolean cutoutLeaves) {
         if (ACTIVE.get() != null) {
             throw new IllegalStateException("Nested vanilla Section capture is not supported");
         }
@@ -123,11 +110,7 @@ public final class VanillaSectionCapture implements AutoCloseable {
                 blockModels,
                 blockColors,
                 blockSpriteFinder,
-                labPbrMaterials,
-                geometryPolicy,
-                cutoutLeaves,
-                buildOpacityMicromap,
-                segmentTriangleTarget);
+                cutoutLeaves);
         ACTIVE.set(capture);
         return capture;
     }
@@ -233,7 +216,7 @@ public final class VanillaSectionCapture implements AutoCloseable {
         }
     }
 
-    public CpuSectionGeometry finish(SectionCompiler.Results results) {
+    public CapturedSectionGeometry finish(SectionCompiler.Results results) {
         if (this.finished) {
             throw new IllegalStateException("Vanilla Section capture was already finished");
         }
@@ -257,7 +240,7 @@ public final class VanillaSectionCapture implements AutoCloseable {
                             + " of " + vanillaQuadCount + " vanilla Section quads");
         }
         this.finished = true;
-        return this.mesh.build();
+        return this.geometry.build();
     }
 
     private void addBlockQuad(
@@ -290,15 +273,13 @@ public final class VanillaSectionCapture implements AutoCloseable {
                 ? ChunkSectionLayer.SOLID
                 : bakedQuad.materialInfo().layer();
         boolean foliage = this.blockFoliage;
-        SurfaceLayer surfaceLayer = classifySurfaceLayer(
-                layer, foliage, requiresAlphaCut(state));
-        boolean cutout = surfaceLayer.cutout();
-        boolean transmissive = surfaceLayer.transmissive();
-        if (transmissive && !this.blockCollisionKnown) {
+        boolean alphaCutOverride = requiresAlphaCut(state);
+        boolean needsCollision =
+                layer == ChunkSectionLayer.TRANSLUCENT && !alphaCutOverride;
+        if (needsCollision && !this.blockCollisionKnown) {
             this.blockCollisionEmpty = state.getCollisionShape(this.region, position).isEmpty();
             this.blockCollisionKnown = true;
         }
-        boolean thinWalled = transmissive && this.blockCollisionEmpty;
         int requestedTint = bakedQuad.materialInfo().tintIndex();
         int tint = -1;
         if (requestedTint >= 0) {
@@ -308,7 +289,7 @@ public final class VanillaSectionCapture implements AutoCloseable {
             tint = this.tintValue;
         }
         TextureAtlasSprite sprite = bakedQuad.materialInfo().sprite();
-        SectionMeshAccumulator.Quad quad = this.blockQuad;
+        CapturedSectionGeometry.MutableQuad quad = this.blockQuad;
         Direction direction = bakedQuad.direction();
         quad.normalX = direction.getStepX();
         quad.normalY = direction.getStepY();
@@ -322,22 +303,21 @@ public final class VanillaSectionCapture implements AutoCloseable {
             quad.u[index] = net.minecraft.client.model.geom.builders.UVPair.unpackU(packedUv);
             quad.v[index] = net.minecraft.client.model.geom.builders.UVPair.unpackV(packedUv);
         }
-        offsetRasterOverlay(
-                quad,
-                isRasterOverlay(
-                        state.getBlock() == Blocks.GRASS_BLOCK,
-                        state.getBlock() == Blocks.REDSTONE_WIRE,
-                        requestedTint,
-                        quad.normalY));
-        this.mesh.addQuad(quad, this.blockSurface.set(
+        boolean rasterOverlay = isRasterOverlay(
+                state.getBlock() == Blocks.GRASS_BLOCK,
+                state.getBlock() == Blocks.REDSTONE_WIRE,
+                requestedTint,
+                quad.normalY);
+        this.geometry.add(quad, CapturedSectionGeometry.Surface.uniform(
                 tint,
-                cutout,
+                captureLayer(layer),
+                alphaCutOverride,
+                needsCollision && this.blockCollisionEmpty,
                 sprite.contents().isAnimated(),
-                transmissive,
-                thinWalled || foliage,
                 false,
                 foliage,
                 this.blockMergeable,
+                rasterOverlay,
                 Math.max(state.getLightEmission(), bakedQuad.materialInfo().lightEmission()),
                 sprite));
     }
@@ -417,16 +397,15 @@ public final class VanillaSectionCapture implements AutoCloseable {
                         || state.getBlock() == Blocks.SHORT_GRASS
                         || state.getBlock() == Blocks.TALL_GRASS);
         ChunkSectionLayer layer = forceOpaque ? ChunkSectionLayer.SOLID : source.chunkLayer();
-        SurfaceLayer surfaceLayer = classifySurfaceLayer(
-                layer, foliage, requiresAlphaCut(state));
-        boolean cutout = surfaceLayer.cutout();
-        boolean transmissive = surfaceLayer.transmissive();
-        boolean thinWalled = transmissive
+        boolean alphaCutOverride = requiresAlphaCut(state);
+        boolean collisionEmpty =
+                layer == ChunkSectionLayer.TRANSLUCENT
+                && !alphaCutOverride
                 && state.getCollisionShape(this.region, position).isEmpty();
-        int tint = this.averageFabricColor(source.tintIndex());
+        int[] colors = this.resolveFabricColors(source.tintIndex());
         TextureAtlasSprite sprite = this.blockSpriteFinder.find(source);
 
-        SectionMeshAccumulator.Quad quad = this.blockQuad;
+        CapturedSectionGeometry.MutableQuad quad = this.blockQuad;
         Vector3fc faceNormal = source.faceNormal();
         quad.normalX = faceNormal.x();
         quad.normalY = faceNormal.y();
@@ -438,39 +417,27 @@ public final class VanillaSectionCapture implements AutoCloseable {
             quad.u[index] = source.u(index);
             quad.v[index] = source.v(index);
         }
-        offsetRasterOverlay(
-                quad,
-                isRasterOverlay(
-                        state.getBlock() == Blocks.GRASS_BLOCK,
-                        state.getBlock() == Blocks.REDSTONE_WIRE,
-                        source.tintIndex(),
-                        quad.normalY));
-        this.mesh.addQuad(quad, this.blockSurface.set(
-                tint,
-                cutout,
+        boolean rasterOverlay = isRasterOverlay(
+                state.getBlock() == Blocks.GRASS_BLOCK,
+                state.getBlock() == Blocks.REDSTONE_WIRE,
+                source.tintIndex(),
+                quad.normalY);
+        this.geometry.add(quad, new CapturedSectionGeometry.Surface(
+                colors[0],
+                colors[1],
+                colors[2],
+                colors[3],
+                captureLayer(layer),
+                alphaCutOverride,
+                collisionEmpty,
                 source.animated() || sprite.contents().isAnimated(),
-                transmissive,
-                thinWalled || foliage,
                 false,
                 foliage,
                 this.fabricMergeable,
+                rasterOverlay,
                 Math.max(state.getLightEmission(), source.emissive() ? 15 : 0),
-                sprite));
-    }
-
-    static void offsetRasterOverlay(
-            SectionMeshAccumulator.Quad quad, boolean rasterOverlay) {
-        if (!rasterOverlay) {
-            return;
-        }
-        // Vulkan traversal has no raster draw order for coincident faces. Keep Minecraft's
-        // compositing layer just outside the base; Section-local coordinates make this offset
-        // representable without a visible silhouette change.
-        for (int index = 0; index < 4; index++) {
-            quad.x[index] += quad.normalX * COPLANAR_OVERLAY_OFFSET;
-            quad.y[index] += quad.normalY * COPLANAR_OVERLAY_OFFSET;
-            quad.z[index] += quad.normalZ * COPLANAR_OVERLAY_OFFSET;
-        }
+                sprite,
+                null));
     }
 
     static boolean isRasterOverlay(
@@ -479,13 +446,17 @@ public final class VanillaSectionCapture implements AutoCloseable {
                 || (redstoneWire && tintIndex < 0);
     }
 
-    static SurfaceLayer classifySurfaceLayer(
-            ChunkSectionLayer layer, boolean foliage, boolean alphaCutOverride) {
-        // Minecraft's force_translucent may request alpha blending without describing a
-        // dielectric medium. Known binary-coverage models translate that raster hint to cutout.
-        return new SurfaceLayer(
-                layer == ChunkSectionLayer.CUTOUT || foliage || alphaCutOverride,
-                layer == ChunkSectionLayer.TRANSLUCENT && !alphaCutOverride);
+    static CapturedSectionGeometry.Layer captureLayer(ChunkSectionLayer layer) {
+        if (layer == ChunkSectionLayer.SOLID) {
+            return CapturedSectionGeometry.Layer.OPAQUE;
+        }
+        if (layer == ChunkSectionLayer.CUTOUT) {
+            return CapturedSectionGeometry.Layer.CUTOUT;
+        }
+        if (layer == ChunkSectionLayer.TRANSLUCENT) {
+            return CapturedSectionGeometry.Layer.TRANSLUCENT;
+        }
+        throw new IllegalArgumentException("Unsupported captured Section layer: " + layer);
     }
 
     static boolean requiresAlphaCut(BlockState state) {
@@ -497,28 +468,14 @@ public final class VanillaSectionCapture implements AutoCloseable {
                 || state.getBlock() == Blocks.REDSTONE_WALL_TORCH;
     }
 
-    record SurfaceLayer(boolean cutout, boolean transmissive) {
-    }
-
-    private int averageFabricColor(int tintIndex) {
+    private int[] resolveFabricColors(int tintIndex) {
         int tint = tintIndex < 0 ? -1 : this.resolveFabricTint(tintIndex);
-        int alpha = 0;
-        int red = 0;
-        int green = 0;
-        int blue = 0;
         for (int index = 0; index < 4; index++) {
-            int color = tintIndex < 0
+            this.fabricResolvedColors[index] = tintIndex < 0
                     ? this.fabricBaseColors[index]
                     : ARGB.multiply(this.fabricBaseColors[index], tint);
-            alpha += color >>> 24;
-            red += color >>> 16 & 0xff;
-            green += color >>> 8 & 0xff;
-            blue += color & 0xff;
         }
-        return (alpha + 2) / 4 << 24
-                | (red + 2) / 4 << 16
-                | (green + 2) / 4 << 8
-                | (blue + 2) / 4;
+        return this.fabricResolvedColors;
     }
 
     private int resolveFabricTint(int tintIndex) {
@@ -574,32 +531,23 @@ public final class VanillaSectionCapture implements AutoCloseable {
         this.fabricQuadPending = false;
     }
 
-    /**
-     * Collects the exact vertices emitted by FluidRenderer, then removes raster-only reverse faces.
-     * A Vulkan ray-tracing triangle is already two-sided; retaining both windings would create two
-     * coincident dielectric interfaces and corrupt the volume stack. This is a representation
-     * translation, not an alteration of Minecraft's mesh contract.
-     */
+    /** Collects FluidRenderer vertices plus the world-query facts needed by cluster translation. */
     private static final class FluidCapture {
         private final VanillaSectionCapture owner;
-        private final BlockAndTintGetter level;
         private final int localX;
         private final int localY;
         private final int localZ;
-        private final int worldX;
-        private final int worldY;
-        private final int worldZ;
         private final int tint;
         private final int lightEmission;
         private final boolean transmissive;
         private final boolean water;
         private final boolean fullCeiling;
+        private final int fullCollisionMask;
         private final TextureAtlasSprite stillSprite;
         private final TextureAtlasSprite flowingSprite;
         private final TextureAtlasSprite overlaySprite;
-        private final SectionMeshAccumulator.Quad quad = new SectionMeshAccumulator.Quad();
-        private final SectionMeshAccumulator.Surface surface = new SectionMeshAccumulator.Surface();
-        private final BlockPos.MutableBlockPos neighbor = new BlockPos.MutableBlockPos();
+        private final CapturedSectionGeometry.MutableQuad quad =
+                new CapturedSectionGeometry.MutableQuad();
         private int vertexCount;
 
         private FluidCapture(
@@ -613,13 +561,9 @@ public final class VanillaSectionCapture implements AutoCloseable {
                 throw new IllegalStateException("Captured fluid belongs to a different region");
             }
             this.owner = owner;
-            this.level = level;
             this.localX = SectionPos.sectionRelative(position.getX());
             this.localY = SectionPos.sectionRelative(position.getY());
             this.localZ = SectionPos.sectionRelative(position.getZ());
-            this.worldX = position.getX();
-            this.worldY = position.getY();
-            this.worldZ = position.getZ();
             this.water = fluidState.is(FluidTags.WATER);
             this.transmissive = !fluidState.is(FluidTags.LAVA);
             this.tint = model.tintSource() == null
@@ -631,19 +575,31 @@ public final class VanillaSectionCapture implements AutoCloseable {
             this.overlaySprite = model.overlayMaterial() == null
                     ? null
                     : model.overlayMaterial().sprite();
-            this.neighbor.set(this.worldX, this.worldY + 1, this.worldZ);
-            this.fullCeiling = level.getBlockState(this.neighbor)
-                    .isCollisionShapeFullBlock(level, this.neighbor);
+            int worldX = position.getX();
+            int worldY = position.getY();
+            int worldZ = position.getZ();
+            BlockPos.MutableBlockPos neighbor = new BlockPos.MutableBlockPos(
+                    worldX, worldY + 1, worldZ);
+            this.fullCeiling = level.getBlockState(neighbor)
+                    .isCollisionShapeFullBlock(level, neighbor);
+            int collisionMask = 0;
+            for (Direction direction : Direction.values()) {
+                neighbor.set(
+                        worldX + direction.getStepX(),
+                        worldY + direction.getStepY(),
+                        worldZ + direction.getStepZ());
+                if (level.getBlockState(neighbor)
+                        .isCollisionShapeFullBlock(level, neighbor)) {
+                    collisionMask |= 1 << direction.ordinal();
+                }
+            }
+            this.fullCollisionMask = collisionMask;
         }
 
         private void addVertex(float x, float y, float z, float u, float v) {
             int index = this.vertexCount;
             this.quad.x[index] = x;
-            this.quad.y[index] = this.owner.geometryPolicy.closeCoveredFluidGap()
-                            && this.fullCeiling
-                            && y > this.localY + 0.5F
-                    ? this.localY + 1.0F
-                    : y;
+            this.quad.y[index] = y;
             this.quad.z[index] = z;
             this.quad.u[index] = u;
             this.quad.v[index] = v;
@@ -671,51 +627,45 @@ public final class VanillaSectionCapture implements AutoCloseable {
             float normalX = edgeOneY * edgeTwoZ - edgeOneZ * edgeTwoY;
             float normalY = edgeOneZ * edgeTwoX - edgeOneX * edgeTwoZ;
             float normalZ = edgeOneX * edgeTwoY - edgeOneY * edgeTwoX;
-            float centerX = 0.25F * (this.quad.x[0] + this.quad.x[1] + this.quad.x[2] + this.quad.x[3]);
-            float centerY = 0.25F * (this.quad.y[0] + this.quad.y[1] + this.quad.y[2] + this.quad.y[3]);
-            float centerZ = 0.25F * (this.quad.z[0] + this.quad.z[1] + this.quad.z[2] + this.quad.z[3]);
-            float outward = normalX * (centerX - this.localX - 0.5F)
-                    + normalY * (centerY - this.localY - 0.5F)
-                    + normalZ * (centerZ - this.localZ - 0.5F);
-            if (!(outward > 1.0e-7F)) {
-                return;
-            }
-
             float squaredNormalLength = normalX * normalX + normalY * normalY + normalZ * normalZ;
-            if (!(squaredNormalLength > 1.0e-20F)) {
-                return;
-            }
-            float inverseNormalLength = 1.0F / (float) Math.sqrt(squaredNormalLength);
-            this.quad.normalX = normalX * inverseNormalLength;
-            this.quad.normalY = normalY * inverseNormalLength;
-            this.quad.normalZ = normalZ * inverseNormalLength;
-
-            Direction face = Direction.getApproximateNearest(normalX, normalY, normalZ);
-            this.neighbor.set(
-                    this.worldX + face.getStepX(),
-                    this.worldY + face.getStepY(),
-                    this.worldZ + face.getStepZ());
-            if (this.owner.geometryPolicy.suppressFluidFaceAgainstFullCollision()
-                    && this.level.getBlockState(this.neighbor)
-                            .isCollisionShapeFullBlock(this.level, this.neighbor)) {
-                return;
+            if (squaredNormalLength > 1.0e-20F) {
+                float inverseNormalLength = 1.0F / (float) Math.sqrt(squaredNormalLength);
+                this.quad.normalX = normalX * inverseNormalLength;
+                this.quad.normalY = normalY * inverseNormalLength;
+                this.quad.normalZ = normalZ * inverseNormalLength;
+            } else {
+                this.quad.normalX = 0.0F;
+                this.quad.normalY = 0.0F;
+                this.quad.normalZ = 0.0F;
             }
 
             TextureAtlasSprite sprite = this.selectSprite();
             boolean animated = this.stillSprite.contents().isAnimated()
                     || this.flowingSprite.contents().isAnimated()
                     || this.overlaySprite != null && this.overlaySprite.contents().isAnimated();
-            this.owner.mesh.addQuad(this.quad, this.surface.set(
+            this.owner.geometry.add(this.quad, new CapturedSectionGeometry.Surface(
                     this.tint,
+                    this.tint,
+                    this.tint,
+                    this.tint,
+                    this.transmissive
+                            ? CapturedSectionGeometry.Layer.TRANSLUCENT
+                            : CapturedSectionGeometry.Layer.OPAQUE,
+                    false,
                     false,
                     animated,
-                    this.transmissive,
-                    false,
                     this.water,
                     false,
                     false,
+                    false,
                     this.lightEmission,
-                    sprite));
+                    sprite,
+                    new CapturedSectionGeometry.FluidFacts(
+                            this.localX,
+                            this.localY,
+                            this.localZ,
+                            this.fullCeiling,
+                            this.fullCollisionMask)));
         }
 
         private TextureAtlasSprite selectSprite() {

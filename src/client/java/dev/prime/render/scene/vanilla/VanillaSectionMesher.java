@@ -1,7 +1,7 @@
 package dev.prime.render.scene.vanilla;
 
 import com.mojang.blaze3d.vertex.VertexSorting;
-import dev.prime.render.terrain.CpuSectionGeometry;
+import dev.prime.render.scene.CapturedSectionGeometry;
 import net.minecraft.client.renderer.SectionBufferBuilderPack;
 import net.minecraft.client.renderer.chunk.SectionCompiler;
 import net.minecraft.core.SectionPos;
@@ -14,17 +14,15 @@ import net.minecraft.core.SectionPos;
  * layers, and Fabric renderer integration, but it is scheduled from Prime's scene rather than from
  * vanilla's visible raster Sections.
  *
- * <p>The remaining differences are explicit representation boundaries: raster AO and light-map
- * vertex illumination are excluded from a path-traced material, translucent index sorting is
- * irrelevant to ray-tracing geometry, and coincident reverse fluid faces are collapsed because a
- * Vulkan triangle is already two-sided. Any future compatibility fix belongs in this translation
- * boundary, not in a parallel block or fluid mesher.
+ * <p>Raster AO, light-map vertex illumination and translucent index sorting are not captured
+ * because the path-traced representation does not consume them. Geometry representation changes,
+ * including reverse-fluid-face collapse, happen later in the pure cluster translator.
  */
 public final class VanillaSectionMesher {
     private VanillaSectionMesher() {
     }
 
-    public static CpuSectionGeometry compile(
+    public static CapturedSectionGeometry compile(
             VanillaSectionCompileInput input, SectionBufferBuilderPack builders) {
         // AO and the light map affect only raster vertex illumination. Disabling AO here avoids
         // doing expensive work that the side channel deliberately does not consume; geometry,
@@ -45,20 +43,16 @@ public final class VanillaSectionMesher {
                 input.assets().blockModels(),
                 input.assets().blockColors(),
                 input.assets().blockSpriteFinder(),
-                input.assets().labPbrMaterials(),
-                input.assets().geometryPolicy(),
-                input.assets().cutoutLeaves(),
-                input.assets().buildOpacityMicromap(),
-                input.assets().segmentTriangleTarget())) {
+                input.assets().cutoutLeaves())) {
             SectionCompiler.Results results = compiler.compile(
                     section,
                     input.section().region(),
                     VertexSorting.byDistance(0.0F, 0.0F, 0.0F),
                     builders);
             try {
-                CpuSectionGeometry mesh = capture.finish(results);
+                CapturedSectionGeometry geometry = capture.finish(results);
                 completed = true;
-                return mesh;
+                return geometry;
             } finally {
                 results.release();
             }

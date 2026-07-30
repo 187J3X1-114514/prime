@@ -42,6 +42,7 @@ replay_*.log
 # prime project
 
 *.log
+*.log.gz
 *.zip
 *.7z
 *.rar

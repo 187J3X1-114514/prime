@@ -9,7 +9,7 @@ import java.util.Objects;
 /** Versioned canonical binary encoding of one {@link CompiledCluster}. */
 public final class CompiledClusterCodec {
     private static final int MAGIC = 0x3143_4350;
-    private static final int VERSION = 2;
+    private static final int VERSION = 3;
     private static final int MAX_SEGMENTS = 4_096;
     private static final int MAX_VOXEL_MESHES = 4_096;
     private static final int MAX_VOXEL_INSTANCES = 4_194_304;
@@ -388,12 +388,20 @@ public final class CompiledClusterCodec {
                     triangle, CpuSectionMesh.PRIMITIVE_WORDS);
             boolean constantUv =
                     records[record + 6] == PrimitivePacking.CONSTANT_UV_DENSITY;
+            int constantMode = 0;
             if (constantUv) {
-                requireNormalizedFloatUv(records[record]);
-                requireNormalizedFloatUv(records[record + 1]);
-                if (records[record + 2] != 0) {
+                constantMode = records[record + 2];
+                if ((constantMode & ~PrimitivePacking.CONSTANT_UV_MODE_MASK) != 0
+                        || ((constantMode & PrimitivePacking.CONSTANT_UV_OWN_TINT) != 0
+                                && (constantMode
+                                                & PrimitivePacking.CONSTANT_UV_BAKED_MATERIAL)
+                                        == 0)) {
                     throw new IllegalArgumentException(
                             "Compiled-cluster constant UV has invalid reserved data");
+                }
+                if ((constantMode & PrimitivePacking.CONSTANT_UV_BAKED_MATERIAL) == 0) {
+                    requireNormalizedFloatUv(records[record]);
+                    requireNormalizedFloatUv(records[record + 1]);
                 }
             } else {
                 for (int vertex = 0; vertex < 3; vertex++) {
@@ -406,6 +414,11 @@ public final class CompiledClusterCodec {
             boolean cutout = (flags & PrimitivePacking.FLAG_CUTOUT) != 0;
             boolean transmissive =
                     (flags & PrimitivePacking.FLAG_TRANSMISSIVE) != 0;
+            if ((constantMode & PrimitivePacking.CONSTANT_UV_BAKED_MATERIAL) != 0
+                    && (cutout || transmissive)) {
+                throw new IllegalArgumentException(
+                        "Compiled-cluster baked material must be opaque");
+            }
             boolean categoryMismatch = triangle < opaqueEnd
                     ? cutout || transmissive
                     : triangle < cutoutEnd

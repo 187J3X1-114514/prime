@@ -6,11 +6,11 @@ import java.util.Objects;
 import net.minecraft.client.renderer.texture.TextureAtlasSprite;
 
 /**
- * Builds the renderer-owned Section payload from geometry accepted by Minecraft's mesh compiler.
+ * Invocation-local lowering stage used by the cluster scene translator.
  *
  * <p>This class deliberately has no knowledge of Mixins, render tasks, block states, or model
- * selection. The vanilla interpretation module supplies already-decided quads plus an independent
- * semantic sidecar; the Vulkan scene only receives the immutable {@link CpuSectionMesh} result.
+ * selection. It consumes explicit translated quad semantics and emits immutable Section-local
+ * mesh parts which are immediately assembled into one cluster result.
  */
 public final class SectionMeshAccumulator {
     private static final int[] FIRST_TRIANGLE = new int[] {0, 1, 2};
@@ -303,6 +303,7 @@ public final class SectionMeshAccumulator {
         private boolean water;
         private boolean foliage;
         private boolean mergeable;
+        private boolean rasterOverlay;
         private int lightEmission;
         private TextureAtlasSprite sprite;
 
@@ -317,6 +318,32 @@ public final class SectionMeshAccumulator {
                 boolean mergeable,
                 int lightEmission,
                 TextureAtlasSprite sprite) {
+            return this.set(
+                    tint,
+                    cutout,
+                    animated,
+                    transmissive,
+                    thinWalled,
+                    water,
+                    foliage,
+                    mergeable,
+                    false,
+                    lightEmission,
+                    sprite);
+        }
+
+        public Surface set(
+                int tint,
+                boolean cutout,
+                boolean animated,
+                boolean transmissive,
+                boolean thinWalled,
+                boolean water,
+                boolean foliage,
+                boolean mergeable,
+                boolean rasterOverlay,
+                int lightEmission,
+                TextureAtlasSprite sprite) {
             this.tint = tint;
             this.cutout = cutout;
             this.animated = animated;
@@ -325,6 +352,7 @@ public final class SectionMeshAccumulator {
             this.water = water;
             this.foliage = foliage;
             this.mergeable = mergeable;
+            this.rasterOverlay = rasterOverlay;
             this.lightEmission = lightEmission;
             this.sprite = Objects.requireNonNull(sprite, "sprite");
             return this;
@@ -364,6 +392,10 @@ public final class SectionMeshAccumulator {
 
         boolean mergeable() {
             return this.mergeable;
+        }
+
+        boolean rasterOverlay() {
+            return this.rasterOverlay;
         }
 
         int lightEmission() {

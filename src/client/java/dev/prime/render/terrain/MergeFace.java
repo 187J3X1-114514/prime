@@ -32,8 +32,10 @@ public final class MergeFace {
     private final float uv2V;
     private final boolean cutout;
     private final boolean transmissive;
+    private final boolean rasterOverlay;
     private final boolean buildOpacityMicromap;
     private final LabPbrHeightMap labPbrHeightMap;
+    private final LabPbrMaterialMap labPbrMaterialMap;
 
     private MergeFace(
             int planeAxis,
@@ -51,8 +53,10 @@ public final class MergeFace {
             float uv2V,
             boolean cutout,
             boolean transmissive,
+            boolean rasterOverlay,
             boolean buildOpacityMicromap,
-            LabPbrHeightMap labPbrHeightMap) {
+            LabPbrHeightMap labPbrHeightMap,
+            LabPbrMaterialMap labPbrMaterialMap) {
         this.planeAxis = planeAxis;
         this.normalSign = normalSign;
         this.planeCell = planeCell;
@@ -68,8 +72,10 @@ public final class MergeFace {
         this.uv2V = uv2V;
         this.cutout = cutout;
         this.transmissive = transmissive;
+        this.rasterOverlay = rasterOverlay;
         this.buildOpacityMicromap = buildOpacityMicromap;
         this.labPbrHeightMap = labPbrHeightMap;
+        this.labPbrMaterialMap = labPbrMaterialMap;
     }
 
     static MergeFace tryCreate(
@@ -242,8 +248,10 @@ public final class MergeFace {
                 quad.v[corner01],
                 surface.cutout(),
                 surface.transmissive(),
+                surface.rasterOverlay(),
                 buildOpacityMicromap,
-                labPbrMaterials.heightMap(surface.sprite().contents().name()));
+                labPbrMaterials.heightMap(surface.sprite().contents().name()),
+                labPbrMaterials.materialMap(surface.sprite().contents().name()));
     }
 
     MergeFace translated(int x, int y, int z) {
@@ -264,8 +272,10 @@ public final class MergeFace {
                 this.uv2V,
                 this.cutout,
                 this.transmissive,
+                this.rasterOverlay,
                 this.buildOpacityMicromap,
-                this.labPbrHeightMap);
+                this.labPbrHeightMap,
+                this.labPbrMaterialMap);
     }
 
     int planeAxis() {
@@ -332,12 +342,20 @@ public final class MergeFace {
         return this.transmissive;
     }
 
+    boolean rasterOverlay() {
+        return this.rasterOverlay;
+    }
+
     boolean buildOpacityMicromap() {
         return this.buildOpacityMicromap;
     }
 
     LabPbrHeightMap labPbrHeightMap() {
         return this.labPbrHeightMap;
+    }
+
+    LabPbrMaterialMap labPbrMaterialMap() {
+        return this.labPbrMaterialMap;
     }
 
     boolean sameMaterial(MergeFace other) {

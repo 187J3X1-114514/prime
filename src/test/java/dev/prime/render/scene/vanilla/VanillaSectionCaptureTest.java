@@ -3,13 +3,11 @@ package dev.prime.render.scene.vanilla;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import dev.prime.render.terrain.SectionMeshAccumulator;
 import java.util.List;
 import net.minecraft.client.renderer.block.dispatch.BlockStateModel;
 import net.minecraft.client.renderer.block.dispatch.BlockStateModelPart;
 import net.minecraft.client.renderer.block.dispatch.SingleVariant;
 import net.minecraft.client.renderer.block.dispatch.WeightedVariants;
-import net.minecraft.client.renderer.chunk.ChunkSectionLayer;
 import net.minecraft.client.resources.model.geometry.BakedQuad;
 import net.minecraft.client.resources.model.sprite.Material;
 import net.minecraft.core.Direction;
@@ -31,7 +29,7 @@ final class VanillaSectionCaptureTest {
     }
 
     @Test
-    void onlyVanillaCoplanarOverlayRolesReceiveRasterOrderDepth() {
+    void onlyVanillaCoplanarOverlayRolesAreCapturedForLaterComposition() {
         assertTrue(VanillaSectionCapture.isRasterOverlay(
                 true, false, 0, 0.0F));
         assertFalse(VanillaSectionCapture.isRasterOverlay(
@@ -40,32 +38,6 @@ final class VanillaSectionCaptureTest {
                 true, false, 0, 1.0F));
         assertTrue(VanillaSectionCapture.isRasterOverlay(
                 false, true, -1, 1.0F));
-
-        SectionMeshAccumulator.Quad quad = new SectionMeshAccumulator.Quad();
-        quad.x[0] = 1.0F;
-        quad.x[1] = 1.0F;
-        quad.x[2] = 1.0F;
-        quad.x[3] = 1.0F;
-        quad.normalX = 1.0F;
-        VanillaSectionCapture.offsetRasterOverlay(quad, true);
-        for (float x : quad.x) {
-            assertTrue(x > 1.0F);
-        }
-    }
-
-    @Test
-    void redstoneRasterTranslucencyMapsToAlphaCutInsteadOfPhysicalTransmission() {
-        VanillaSectionCapture.SurfaceLayer ordinary =
-                VanillaSectionCapture.classifySurfaceLayer(
-                        ChunkSectionLayer.TRANSLUCENT, false, false);
-        VanillaSectionCapture.SurfaceLayer redstone =
-                VanillaSectionCapture.classifySurfaceLayer(
-                        ChunkSectionLayer.TRANSLUCENT, false, true);
-
-        assertFalse(ordinary.cutout());
-        assertTrue(ordinary.transmissive());
-        assertTrue(redstone.cutout());
-        assertFalse(redstone.transmissive());
     }
 
     private static final class EmptyModel implements BlockStateModel {

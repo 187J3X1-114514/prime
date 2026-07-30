@@ -38,7 +38,8 @@ void main() {
         return;
     }
 
-    uint tailCount = validCount / 100u;
+    uint tailCount =
+            validCount / PRIME_AUTO_EXPOSURE_TAIL_DENOMINATOR;
     uint keepBegin = tailCount;
     uint keepEnd = validCount - tailCount;
     uint cursor = 0u;

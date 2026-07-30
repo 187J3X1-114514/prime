@@ -116,7 +116,7 @@ public final class CpuClusterMesh {
                 voxelInstances);
     }
 
-    static CpuClusterMesh fromSegments(List<CpuSectionMesh> meshes) {
+    public static CpuClusterMesh fromSegments(List<CpuSectionMesh> meshes) {
         return fromSegments(meshes, List.of(), CpuVoxelInstances.EMPTY);
     }
 

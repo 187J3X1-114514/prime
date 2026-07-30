@@ -199,8 +199,19 @@
     "starmap": 34,
     "screenshotRunningMean": 35,
     "wavefrontPaths": 36,
-    "wavefrontQueue": 37
+    "wavefrontQueue": 37,
+    "sunShadowDepth0": 38,
+    "sunShadowDepth1": 39,
+    "sunShadowDepth2": 40,
+    "sunShadowDepth3": 41,
+    "sunShadowDepth4": 42,
+    "sunShadowDepth5": 43,
+    "sunShadowDepth6": 44,
+    "sunShadowDepth7": 45,
+    "sunShadowDepth8": 46,
+    "sunShadowDepth9": 47
   },
+  "sceneTextureCount": 64,
   "wavefrontContract": {
     "rounds": 12,
     "pathRecordSize": 144,
@@ -211,8 +222,15 @@
     "activeMask": "0x1"
   },
   "pathControl": {
+    "sampleIndexMask": "0xffff",
+    "solarLongitudeShift": 16,
+    "solarLongitudeMask": "0x1ff",
     "sampleEpochMask": "0x7fffffff",
     "triangleDebugMask": "0x80000000",
+    "maximumBouncesMask": "0xff",
+    "latitudeShift": 8,
+    "latitudeMask": "0xff",
+    "latitudeBias": 90,
     "cameraInWaterMask": "0x80000000",
     "jitterPhaseMask": "0x1fff",
     "transparentGuideModeShift": 29,
@@ -263,18 +281,33 @@
   },
   "atmosphereContract": {
     "spectralModel": "hillaire-8wave-rec2020-d65",
+    "worldToAtmosphereScale": 4.0,
     "bottomRadiusKm": 6360.0,
     "topRadiusKm": 6460.0,
     "worldSeaLevelY": -128.0,
     "worldUnitScaleKm": 0.001,
     "spaceSunIntensity": 12.5,
     "sunAngularRadiusRadians": 0.00471,
-    "aerialMaxDistanceKm": 64.0
+    "aerialMaxDistanceKm": 2.048,
+    "aerialWidth": 128,
+    "aerialHeight": 64,
+    "aerialEpipolarSamples": 128,
+    "aerialEpipolarSlices": 256,
+    "aerialDepth": 128,
+    "aerialSegmentSamples": 2
+  },
+  "astronomyContract": {
+    "axialTiltDegrees": 23.43928,
+    "minimumLatitudeDegrees": -90,
+    "maximumLatitudeDegrees": 90,
+    "defaultLatitudeDegrees": 30,
+    "minimumSolarLongitudeDegrees": 0,
+    "maximumSolarLongitudeDegrees": 359,
+    "defaultSolarLongitudeDegrees": 0
   },
   "starmapContract": {
     "width": 8192,
     "height": 4096,
-    "observerLatitudeDegrees": 30.0,
     "baseRadianceScale": 0.075,
     "sourceSha256": "dc6c4f413e85707a29a25a9451148154554ecca2c996f84fa8f47b65ef9ff7c4"
   },

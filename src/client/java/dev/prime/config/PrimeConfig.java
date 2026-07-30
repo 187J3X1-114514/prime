@@ -1,6 +1,7 @@
 package dev.prime.config;
 
 import dev.prime.PrimeClient;
+import dev.prime.render.AstronomySettings;
 import dev.prime.render.DisplaySettings;
 import dev.prime.render.LightingSettings;
 import dev.prime.render.MaterialSettings;
@@ -40,6 +41,9 @@ public final class PrimeConfig {
     private static final String SUN_EV_KEY = "lighting.sun_ev";
     private static final String STAR_EV_KEY = "lighting.star_ev";
     private static final String BLOCK_LIGHT_EV_KEY = "lighting.block_light_ev";
+    private static final String LATITUDE_DEGREES_KEY = "astronomy.latitude_degrees";
+    private static final String SOLAR_LONGITUDE_DEGREES_KEY =
+            "astronomy.solar_longitude_degrees";
     private static final String FINAL_EXPOSURE_EV_KEY = "display.final_exposure_ev";
     private static final String OKLAB_OVEREXPOSURE_KEY = "display.oklab_overexposure";
     private static final String DEFAULT_ROUGHNESS_KEY = "material.default_roughness";
@@ -58,6 +62,9 @@ public final class PrimeConfig {
         int voxelTextureSurfaceStrengthSteps = VoxelSurfaceSettings.DEFAULT_STEPS;
         PostProcessingMode postProcessingMode = PostProcessingMode.DEFAULT;
         ReconstructionQualityMode quality = ReconstructionQualityMode.DEFAULT;
+        int latitudeDegrees = AstronomySettings.DEFAULT_LATITUDE_DEGREES;
+        int solarLongitudeDegrees =
+                AstronomySettings.DEFAULT_SOLAR_LONGITUDE_DEGREES;
         int sunQuarterSteps = LightingSettings.DEFAULT_SUN_QUARTER_STEPS;
         int starQuarterSteps = LightingSettings.DEFAULT_STAR_QUARTER_STEPS;
         int blockLightQuarterSteps = LightingSettings.DEFAULT_BLOCK_LIGHT_QUARTER_STEPS;
@@ -147,6 +154,11 @@ public final class PrimeConfig {
                     rewriteNeeded = true;
                 }
                 rewriteNeeded |= hasLegacyDebugProperties(properties);
+                AstronomyLoad astronomy = parseAstronomy(properties);
+                latitudeDegrees = astronomy.settings().latitudeDegrees();
+                solarLongitudeDegrees =
+                        astronomy.settings().solarLongitudeDegrees();
+                rewriteNeeded |= astronomy.rewriteNeeded();
                 String sunEv = properties.getProperty(SUN_EV_KEY);
                 if (sunEv != null) {
                     try {
@@ -240,6 +252,7 @@ public final class PrimeConfig {
                 voxelTextureSurfaceStrengthSteps,
                 postProcessingMode,
                 quality,
+                new AstronomySettings(latitudeDegrees, solarLongitudeDegrees),
                 sunQuarterSteps,
                 starQuarterSteps,
                 blockLightQuarterSteps,
@@ -250,13 +263,15 @@ public final class PrimeConfig {
                 0L);
         dirty = rewriteNeeded;
         PrimeClient.LOGGER.info(
-                "Prime settings: path tracing {}, voxel surfaces {} at {}x, post-processing {} quality {} (NRD-FSR {}x), sun {} EV, stars {} EV, block lights {} EV, final exposure {} EV, Oklab DRT overexposure {}, default roughness {}",
+                "Prime settings: path tracing {}, voxel surfaces {} at {}x, post-processing {} quality {} (NRD-FSR {}x), latitude {} degrees, solar longitude {} degrees, sun {} EV, stars {} EV, block lights {} EV, final exposure {} EV, Oklab DRT overexposure {}, default roughness {}",
                 pathTracingEnabled ? "enabled" : "disabled",
                 voxelTextureSurfaces ? "enabled" : "disabled",
                 formatVoxelSurfaceStrength(voxelTextureSurfaceStrengthSteps),
                 postProcessingMode.id(),
                 quality.id(),
                 quality.upscaleRatio(),
+                latitudeDegrees,
+                solarLongitudeDegrees,
                 formatEv(sunQuarterSteps),
                 formatStarEv(starQuarterSteps),
                 formatEv(blockLightQuarterSteps),
@@ -293,6 +308,14 @@ public final class PrimeConfig {
         update(settings.withReconstructionQuality(mode));
     }
 
+    public static void setLatitudeDegrees(int degrees) {
+        update(settings.withLatitudeDegrees(degrees));
+    }
+
+    public static void setSolarLongitudeDegrees(int degrees) {
+        update(settings.withSolarLongitudeDegrees(degrees));
+    }
+
     public static void setSunQuarterSteps(int quarterSteps) {
         update(settings.withSunQuarterSteps(quarterSteps));
     }
@@ -323,6 +346,9 @@ public final class PrimeConfig {
         setVoxelTextureSurfaceStrengthSteps(VoxelSurfaceSettings.DEFAULT_STEPS);
         setPostProcessingMode(PostProcessingMode.DEFAULT);
         setReconstructionQualityMode(ReconstructionQualityMode.DEFAULT);
+        setLatitudeDegrees(AstronomySettings.DEFAULT_LATITUDE_DEGREES);
+        setSolarLongitudeDegrees(
+                AstronomySettings.DEFAULT_SOLAR_LONGITUDE_DEGREES);
         setSunQuarterSteps(LightingSettings.DEFAULT_SUN_QUARTER_STEPS);
         setStarQuarterSteps(LightingSettings.DEFAULT_STAR_QUARTER_STEPS);
         setBlockLightQuarterSteps(LightingSettings.DEFAULT_BLOCK_LIGHT_QUARTER_STEPS);
@@ -383,6 +409,10 @@ public final class PrimeConfig {
                             current.voxelTextureSurfaceStrengthSteps()) + "\n"
                     + MODE_KEY + "=" + current.postProcessingMode().id() + "\n"
                     + QUALITY_KEY + "=" + current.reconstructionQuality().id() + "\n"
+                    + LATITUDE_DEGREES_KEY + "="
+                    + current.astronomy().latitudeDegrees() + "\n"
+                    + SOLAR_LONGITUDE_DEGREES_KEY + "="
+                    + current.astronomy().solarLongitudeDegrees() + "\n"
                     + SUN_EV_KEY + "=" + formatEv(current.sunQuarterSteps()) + "\n"
                     + STAR_EV_KEY + "=" + formatStarEv(current.starQuarterSteps()) + "\n"
                     + BLOCK_LIGHT_EV_KEY + "="
@@ -403,6 +433,78 @@ public final class PrimeConfig {
             return false;
         }
         throw new IllegalArgumentException("Boolean setting must be true or false");
+    }
+
+    static int parseLatitudeDegrees(String value) {
+        try {
+            int degrees = Integer.parseInt(value);
+            return new AstronomySettings(
+                    degrees,
+                    AstronomySettings.DEFAULT_SOLAR_LONGITUDE_DEGREES)
+                    .latitudeDegrees();
+        } catch (NumberFormatException exception) {
+            throw new IllegalArgumentException(
+                    "Observer latitude must be an integer degree", exception);
+        }
+    }
+
+    static int parseSolarLongitudeDegrees(String value) {
+        try {
+            int degrees = Integer.parseInt(value);
+            return new AstronomySettings(
+                    AstronomySettings.DEFAULT_LATITUDE_DEGREES,
+                    degrees)
+                    .solarLongitudeDegrees();
+        } catch (NumberFormatException exception) {
+            throw new IllegalArgumentException(
+                    "Solar longitude must be an integer degree", exception);
+        }
+    }
+
+    static AstronomyLoad parseAstronomy(Properties properties) {
+        int latitudeDegrees = AstronomySettings.DEFAULT_LATITUDE_DEGREES;
+        int solarLongitudeDegrees =
+                AstronomySettings.DEFAULT_SOLAR_LONGITUDE_DEGREES;
+        boolean rewriteNeeded = false;
+        String latitude = properties.getProperty(LATITUDE_DEGREES_KEY);
+        if (latitude != null) {
+            try {
+                latitudeDegrees = parseLatitudeDegrees(latitude);
+            } catch (IllegalArgumentException exception) {
+                PrimeClient.LOGGER.warn(
+                        "Invalid Prime observer latitude '{}'; using {} degrees north",
+                        latitude,
+                        AstronomySettings.DEFAULT_LATITUDE_DEGREES);
+                rewriteNeeded = true;
+            }
+        } else {
+            rewriteNeeded = true;
+        }
+        String solarLongitude =
+                properties.getProperty(SOLAR_LONGITUDE_DEGREES_KEY);
+        if (solarLongitude != null) {
+            try {
+                solarLongitudeDegrees =
+                        parseSolarLongitudeDegrees(solarLongitude);
+            } catch (IllegalArgumentException exception) {
+                PrimeClient.LOGGER.warn(
+                        "Invalid Prime solar longitude '{}'; using the March equinox",
+                        solarLongitude);
+                rewriteNeeded = true;
+            }
+        } else {
+            rewriteNeeded = true;
+        }
+        return new AstronomyLoad(
+                new AstronomySettings(
+                        latitudeDegrees,
+                        solarLongitudeDegrees),
+                rewriteNeeded);
+    }
+
+    record AstronomyLoad(
+            AstronomySettings settings,
+            boolean rewriteNeeded) {
     }
 
     private static void update(PrimeSettings replacement) {

@@ -32,6 +32,10 @@ final class AtmosphereLutHistory {
         this.candidateAerialKey = new int[aerialKeySize];
     }
 
+    boolean staticPrepared() {
+        return this.staticPrepared;
+    }
+
     int[] beginCandidate() {
         requireNoPending();
         return this.candidateAerialKey;

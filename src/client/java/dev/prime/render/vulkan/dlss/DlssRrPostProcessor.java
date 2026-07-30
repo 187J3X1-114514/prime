@@ -3,6 +3,7 @@ package dev.prime.render.vulkan.dlss;
 import dev.prime.render.FrameCamera;
 import dev.prime.render.DisplaySettings;
 import dev.prime.render.ResourceCleanup;
+import dev.prime.render.SunDirection;
 import dev.prime.render.fsr.FsrSettings;
 import dev.prime.render.post.DlssRrDebugView;
 import dev.prime.render.post.PostProcessingMode;
@@ -204,6 +205,7 @@ public final class DlssRrPostProcessor implements RealtimePostProcessor {
     public void record(
             VkCommandBuffer commandBuffer,
             FrameToken token,
+            SunDirection sunDirection,
             float sunRadianceMultiplier,
             DisplaySettings.Snapshot display) {
         requireOpen();
@@ -221,6 +223,7 @@ public final class DlssRrPostProcessor implements RealtimePostProcessor {
                 temporal.camera(),
                 temporal.historyCamera(),
                 token.jitter,
+                sunDirection,
                 sunRadianceMultiplier);
         NrdCameraTransform.projectionForNrd(
                 temporal.camera().projection(), this.ngxProjection);
@@ -277,6 +280,7 @@ public final class DlssRrPostProcessor implements RealtimePostProcessor {
         this.record(
                 commandBuffer,
                 token,
+                parameters.sunDirection(),
                 parameters.sunRadianceMultiplier(),
                 parameters.display());
     }

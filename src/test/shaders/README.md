@@ -55,7 +55,10 @@ by the renderer. Its concern-specific batches cover exponent-scaled throughput,
 MIS and area-light PDFs, Beer-Lambert attenuation, Russian roulette, the full
 16-bit LabPBR normal/specular byte domains, conductor Fresnel, NRD sanitization,
 normal packing, hit-distance normalization, demodulation, radiance limits, and
-FSR depth, motion, and material-mask input domains. It also executes the
+FSR depth, motion, and material-mask input domains. The celestial batch executes
+the production equatorial-frame conversion across both poles, all seasonal
+landmarks and randomized right ascension/declination round trips, including the
+one-solar-day phase wrap. It also executes the
 production auto-exposure bin mapping, target-EV clamp, and asymmetric temporal
 adaptation contract. The transport batch additionally checks the gamma-2
 glass-filter endpoints, strength, and products plus outside/inside, multiple,
@@ -71,6 +74,9 @@ executes a complete batch in one dispatch. Bindings 0 and 1 are the standard
 input/output SSBOs; tests may add arbitrary 2D/3D sampled images, 2D storage
 images, push constants, and explicit XYZ workgroup counts. The runner contract
 itself has an executable image/push-constant round-trip test.
+`AtmosphereAerialPrefixGpuTest` executes the 128-lane non-commutative optical
+segment scan and compares both spectral groups with ordered near-to-far
+composition.
 
 Normal `test` excludes the tagged GPU suites. Use:
 

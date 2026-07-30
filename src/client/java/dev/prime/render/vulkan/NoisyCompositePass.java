@@ -1,6 +1,9 @@
 package dev.prime.render.vulkan;
 
 import com.mojang.blaze3d.vulkan.Destroyable;
+import dev.prime.render.AerialEpipolarMapping;
+import dev.prime.render.FrameCamera;
+import dev.prime.render.SunDirection;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.ByteBuffer;
@@ -30,7 +33,7 @@ import org.lwjgl.vulkan.VkWriteDescriptorSet;
 /** Sums the raw estimator partitions into native-resolution linear HDR without filtering. */
 final class NoisyCompositePass implements Destroyable {
     private static final int IMAGE_COUNT = 8;
-    private static final int PUSH_SIZE = 16;
+    private static final int PUSH_SIZE = 24;
     private static final int COMPUTE_STAGE = VK12.VK_SHADER_STAGE_COMPUTE_BIT;
     private static final String SHADER = "/prime/shaders/noisy_composite.comp.spv";
 
@@ -40,6 +43,7 @@ final class NoisyCompositePass implements Destroyable {
     private final long descriptorSet;
     private final long pipelineLayout;
     private final long pipeline;
+    private final AtmospherePipeline atmosphere;
     private final int width;
     private final int height;
     private boolean destroyed;
@@ -51,6 +55,7 @@ final class NoisyCompositePass implements Destroyable {
             long descriptorSet,
             long pipelineLayout,
             long pipeline,
+            AtmospherePipeline atmosphere,
             int width,
             int height) {
         this.context = context;
@@ -59,6 +64,7 @@ final class NoisyCompositePass implements Destroyable {
         this.descriptorSet = descriptorSet;
         this.pipelineLayout = pipelineLayout;
         this.pipeline = pipeline;
+        this.atmosphere = atmosphere;
         this.width = width;
         this.height = height;
     }
@@ -170,6 +176,7 @@ final class NoisyCompositePass implements Destroyable {
                     descriptorSet,
                     pipelineLayout,
                     pipeline,
+                    atmosphere,
                     signals.linearOutput().width(),
                     signals.linearOutput().height());
         } catch (RuntimeException exception) {
@@ -187,7 +194,11 @@ final class NoisyCompositePass implements Destroyable {
         }
     }
 
-    void record(VkCommandBuffer commandBuffer, float sunRadianceMultiplier) {
+    void record(
+            VkCommandBuffer commandBuffer,
+            FrameCamera camera,
+            SunDirection sunDirection,
+            float sunRadianceMultiplier) {
         memoryBarrier(
                 commandBuffer,
                 VK12.VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
@@ -199,6 +210,10 @@ final class NoisyCompositePass implements Destroyable {
             push.putInt(0, this.width);
             push.putInt(4, this.height);
             push.putFloat(8, sunRadianceMultiplier);
+            AerialEpipolarMapping.Epipole epipole =
+                    this.atmosphere.aerialEpipole(camera, sunDirection);
+            push.putFloat(16, epipole.x());
+            push.putFloat(20, epipole.y());
             VK12.vkCmdBindPipeline(commandBuffer, VK12.VK_PIPELINE_BIND_POINT_COMPUTE, this.pipeline);
             VK12.vkCmdBindDescriptorSets(
                     commandBuffer,

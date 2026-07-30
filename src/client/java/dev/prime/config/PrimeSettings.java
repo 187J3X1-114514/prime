@@ -1,5 +1,6 @@
 package dev.prime.config;
 
+import dev.prime.render.AstronomySettings;
 import dev.prime.render.DisplaySettings;
 import dev.prime.render.LightingSettings;
 import dev.prime.render.MaterialSettings;
@@ -15,6 +16,7 @@ public record PrimeSettings(
         int voxelTextureSurfaceStrengthSteps,
         PostProcessingMode postProcessingMode,
         ReconstructionQualityMode reconstructionQuality,
+        AstronomySettings astronomy,
         int sunQuarterSteps,
         int starQuarterSteps,
         int blockLightQuarterSteps,
@@ -27,6 +29,7 @@ public record PrimeSettings(
         postProcessingMode = Objects.requireNonNull(postProcessingMode, "postProcessingMode");
         reconstructionQuality = Objects.requireNonNull(
                 reconstructionQuality, "reconstructionQuality");
+        astronomy = Objects.requireNonNull(astronomy, "astronomy");
         LightingSettings.linearMultiplier(sunQuarterSteps);
         LightingSettings.starLinearMultiplier(starQuarterSteps);
         LightingSettings.linearMultiplier(blockLightQuarterSteps);
@@ -46,6 +49,7 @@ public record PrimeSettings(
                 VoxelSurfaceSettings.DEFAULT_STEPS,
                 PostProcessingMode.DEFAULT,
                 ReconstructionQualityMode.DEFAULT,
+                AstronomySettings.defaults(),
                 LightingSettings.DEFAULT_SUN_QUARTER_STEPS,
                 LightingSettings.DEFAULT_STAR_QUARTER_STEPS,
                 LightingSettings.DEFAULT_BLOCK_LIGHT_QUARTER_STEPS,
@@ -65,6 +69,7 @@ public record PrimeSettings(
                         this.voxelTextureSurfaceStrengthSteps,
                         this.postProcessingMode,
                         this.reconstructionQuality,
+                        this.astronomy,
                         this.sunQuarterSteps,
                         this.starQuarterSteps,
                         this.blockLightQuarterSteps,
@@ -84,6 +89,7 @@ public record PrimeSettings(
                         this.voxelTextureSurfaceStrengthSteps,
                         this.postProcessingMode,
                         this.reconstructionQuality,
+                        this.astronomy,
                         this.sunQuarterSteps,
                         this.starQuarterSteps,
                         this.blockLightQuarterSteps,
@@ -104,6 +110,7 @@ public record PrimeSettings(
                         value,
                         this.postProcessingMode,
                         this.reconstructionQuality,
+                        this.astronomy,
                         this.sunQuarterSteps,
                         this.starQuarterSteps,
                         this.blockLightQuarterSteps,
@@ -124,6 +131,7 @@ public record PrimeSettings(
                         this.voxelTextureSurfaceStrengthSteps,
                         value,
                         this.reconstructionQuality,
+                        this.astronomy,
                         this.sunQuarterSteps,
                         this.starQuarterSteps,
                         this.blockLightQuarterSteps,
@@ -144,6 +152,7 @@ public record PrimeSettings(
                         this.voxelTextureSurfaceStrengthSteps,
                         this.postProcessingMode,
                         value,
+                        this.astronomy,
                         this.sunQuarterSteps,
                         this.starQuarterSteps,
                         this.blockLightQuarterSteps,
@@ -151,6 +160,49 @@ public record PrimeSettings(
                         this.oklabOverexposureSteps,
                         this.defaultRoughnessSteps,
                         this.lightingRevision,
+                        this.materialRevision);
+    }
+
+    public PrimeSettings withLatitudeDegrees(int value) {
+        AstronomySettings replacement = this.astronomy.withLatitudeDegrees(value);
+        return replacement == this.astronomy
+                ? this
+                : new PrimeSettings(
+                        this.pathTracingEnabled,
+                        this.voxelTextureSurfaces,
+                        this.voxelTextureSurfaceStrengthSteps,
+                        this.postProcessingMode,
+                        this.reconstructionQuality,
+                        replacement,
+                        this.sunQuarterSteps,
+                        this.starQuarterSteps,
+                        this.blockLightQuarterSteps,
+                        this.finalExposureQuarterSteps,
+                        this.oklabOverexposureSteps,
+                        this.defaultRoughnessSteps,
+                        Math.incrementExact(this.lightingRevision),
+                        this.materialRevision);
+    }
+
+    public PrimeSettings withSolarLongitudeDegrees(int value) {
+        AstronomySettings replacement =
+                this.astronomy.withSolarLongitudeDegrees(value);
+        return replacement == this.astronomy
+                ? this
+                : new PrimeSettings(
+                        this.pathTracingEnabled,
+                        this.voxelTextureSurfaces,
+                        this.voxelTextureSurfaceStrengthSteps,
+                        this.postProcessingMode,
+                        this.reconstructionQuality,
+                        replacement,
+                        this.sunQuarterSteps,
+                        this.starQuarterSteps,
+                        this.blockLightQuarterSteps,
+                        this.finalExposureQuarterSteps,
+                        this.oklabOverexposureSteps,
+                        this.defaultRoughnessSteps,
+                        Math.incrementExact(this.lightingRevision),
                         this.materialRevision);
     }
 
@@ -164,6 +216,7 @@ public record PrimeSettings(
                         this.voxelTextureSurfaceStrengthSteps,
                         this.postProcessingMode,
                         this.reconstructionQuality,
+                        this.astronomy,
                         value,
                         this.starQuarterSteps,
                         this.blockLightQuarterSteps,
@@ -184,6 +237,7 @@ public record PrimeSettings(
                         this.voxelTextureSurfaceStrengthSteps,
                         this.postProcessingMode,
                         this.reconstructionQuality,
+                        this.astronomy,
                         this.sunQuarterSteps,
                         value,
                         this.blockLightQuarterSteps,
@@ -204,6 +258,7 @@ public record PrimeSettings(
                         this.voxelTextureSurfaceStrengthSteps,
                         this.postProcessingMode,
                         this.reconstructionQuality,
+                        this.astronomy,
                         this.sunQuarterSteps,
                         this.starQuarterSteps,
                         value,
@@ -224,6 +279,7 @@ public record PrimeSettings(
                         this.voxelTextureSurfaceStrengthSteps,
                         this.postProcessingMode,
                         this.reconstructionQuality,
+                        this.astronomy,
                         this.sunQuarterSteps,
                         this.starQuarterSteps,
                         this.blockLightQuarterSteps,
@@ -244,6 +300,7 @@ public record PrimeSettings(
                         this.voxelTextureSurfaceStrengthSteps,
                         this.postProcessingMode,
                         this.reconstructionQuality,
+                        this.astronomy,
                         this.sunQuarterSteps,
                         this.starQuarterSteps,
                         this.blockLightQuarterSteps,
@@ -264,6 +321,7 @@ public record PrimeSettings(
                         this.voxelTextureSurfaceStrengthSteps,
                         this.postProcessingMode,
                         this.reconstructionQuality,
+                        this.astronomy,
                         this.sunQuarterSteps,
                         this.starQuarterSteps,
                         this.blockLightQuarterSteps,

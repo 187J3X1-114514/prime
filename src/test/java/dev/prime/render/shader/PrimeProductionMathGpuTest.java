@@ -15,6 +15,7 @@ import org.junit.jupiter.api.Test;
 final class PrimeProductionMathGpuTest {
     private static final int CASES_PER_KIND = 8_192;
     private static final long TRANSPORT_SEED = 0x71A4_5A09_D522_0101L;
+    private static final long CELESTIAL_SEED = 0x4345_4C45_5354_0001L;
     private static final long MATERIAL_SEED = 0x4A7E_21A1_0000_0001L;
     private static final long NRD_SEED = 0x4E52_4404_1700_0001L;
     private static final long FSR_SEED = 0x4653_5203_0104_0001L;
@@ -65,6 +66,21 @@ final class PrimeProductionMathGpuTest {
                 inputWords,
                 7,
                 TRANSPORT_SEED);
+    }
+
+    @Test
+    void celestialFramePreservesPolesEquatorialCoordinatesAndDailyRotation()
+            throws IOException {
+        int kinds = 5;
+        int inputWords = 2;
+        ShaderPropertyBatch.assertProperties(
+                runner,
+                shader("prime_celestial_properties.comp.spv"),
+                celestialCases(kinds, inputWords),
+                CASES_PER_KIND * kinds,
+                inputWords,
+                5,
+                CELESTIAL_SEED);
     }
 
     @Test
@@ -315,6 +331,54 @@ final class PrimeProductionMathGpuTest {
                             powerOfTwo(random.nextInt(-20, 1)),
                             0.0F);
                 }
+            }
+        }
+        return input;
+    }
+
+    private static ByteBuffer celestialCases(int kinds, int words) {
+        ByteBuffer input =
+                ShaderTestBuffer.inputs(CASES_PER_KIND * kinds, words);
+        SplittableRandom random = new SplittableRandom(CELESTIAL_SEED);
+        int[] latitudeBoundaries = {-90, -30, 0, 30, 90};
+        int[] longitudeBoundaries = {0, 90, 180, 270, 359};
+        float[] hourBoundaries = {
+            0.0F,
+            (float) (-Math.PI * 0.5),
+            (float) (Math.PI * 0.5),
+            (float) Math.PI
+        };
+        for (int kind = 0; kind < kinds; kind++) {
+            for (int local = 0; local < CASES_PER_KIND; local++) {
+                int index = kind * CASES_PER_KIND + local;
+                int latitude = local < latitudeBoundaries.length
+                        ? latitudeBoundaries[local]
+                        : random.nextInt(-90, 91);
+                int solarLongitude = local < longitudeBoundaries.length
+                        ? longitudeBoundaries[local]
+                        : random.nextInt(360);
+                float hourAngle = local < hourBoundaries.length
+                        ? hourBoundaries[local]
+                        : random.nextFloat() * (float) (Math.PI * 2.0)
+                                - (float) Math.PI;
+                float rightAscension =
+                        random.nextFloat() * (float) (Math.PI * 2.0)
+                                - (float) Math.PI;
+                float declination =
+                        random.nextFloat() * ((float) Math.PI - 2.0e-3F)
+                                - ((float) Math.PI * 0.5F - 1.0e-3F);
+                putInt(input, index, words, 0, 0, kind);
+                putInt(input, index, words, 0, 1, latitude);
+                putInt(input, index, words, 0, 2, solarLongitude);
+                putVec4(
+                        input,
+                        index,
+                        words,
+                        1,
+                        hourAngle,
+                        rightAscension,
+                        declination,
+                        0.0F);
             }
         }
         return input;

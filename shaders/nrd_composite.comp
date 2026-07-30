@@ -2,6 +2,7 @@
 #extension GL_GOOGLE_include_directive : require
 
 #include "atmosphere.glsl"
+#include "atmosphere_epipolar.glsl"
 #include "display_transform.glsl"
 #include "fsr_input.glsl"
 #include "nrd_common.glsl"
@@ -50,6 +51,8 @@ layout(push_constant) uniform PrimeCompositePushConstants {
     float sunRadianceMultiplier;
     vec2 currentJitterPixels;
     float displayOverexposure;
+    float padding;
+    vec2 epipoleNdc;
 } primeCompositePush;
 
 const uint PRIME_DIAGNOSTIC_OFF = 0u;
@@ -65,8 +68,12 @@ const uint PRIME_COMPOSITE_COMPATIBILITY_ALL = 0x1ffu;
 #define PRIME_ENABLE_FILTERED_SUN_SHADOW 1
 #endif
 
-ATM_DECLARE_SAMPLE_3D(primeCompositeSampleAerialRadiance, primeCompositeAerialRadiance)
+ATM_DECLARE_SAMPLE_EPIPOLAR(
+        primeCompositeSampleAerialRadiance,
+        primeCompositeAerialRadiance)
 ATM_DECLARE_SAMPLE_3D(primeCompositeSampleAerialTransmittance, primeCompositeAerialTransmittance)
+// The viewport corner angles are identical for every lane in this 8x8 workgroup.
+shared AtmEpipolarRange primeCompositeEpipolarRange;
 
 vec3 primeCompositeSurfaceSignal(
         vec3 diffuseAlbedo,
@@ -96,7 +103,13 @@ void primeCompositeApplyAerial(uvec2 pixel, float primaryDistance, inout vec3 ra
             + primeCompositePush.currentJitterPixels)
             / vec2(primeCompositePush.outputExtent);
     vec3 uvw = vec3(screenUv, normalizedDepth);
-    vec3 inscatter = max(primeCompositeSampleAerialRadiance(uvw).rgb, vec3(0.0));
+    vec3 inscatter = max(
+            primeCompositeSampleAerialRadianceWithRange(
+                    screenUv,
+                    normalizedDepth,
+                    primeCompositePush.epipoleNdc,
+                    primeCompositeEpipolarRange).rgb,
+            vec3(0.0));
     vec3 transmittance = clamp(
             primeCompositeSampleAerialTransmittance(uvw).rgb, vec3(0.0), vec3(1.0));
     if (any(isnan(inscatter)) || any(isinf(inscatter))) {
@@ -697,6 +710,11 @@ bool primeCompositeIsValidationSceneTile(uvec2 pixel) {
 }
 
 void main() {
+    if (gl_LocalInvocationIndex == 0u) {
+        primeCompositeEpipolarRange = atmEpipolarVisibleRange(
+                primeCompositePush.epipoleNdc);
+    }
+    barrier();
     uvec2 pixel = gl_GlobalInvocationID.xy;
     if (any(greaterThanEqual(pixel, primeCompositePush.outputExtent))) {
         return;

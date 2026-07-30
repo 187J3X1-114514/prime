@@ -11,9 +11,14 @@ const float ATM_PI = 3.141592653589793;
 const float ATM_INV_PI = 0.3183098861837907;
 const float ATM_INV_4PI = 0.07957747154594767;
 const float ATM_RAYLEIGH_PHASE_SCALE = 0.05968310365946075;
+// World positions and travelled distances enter this unchanged physical atmosphere
+// through ATM_WORLD_UNIT_SCALE_KM. The explicit factor documents that coordinate contract.
+const float ATM_WORLD_TO_ATMOSPHERE_SCALE =
+        PRIME_ATMOSPHERE_WORLD_TO_ATMOSPHERE_SCALE;
 const float ATM_BOTTOM_RADIUS_KM = PRIME_ATMOSPHERE_BOTTOM_RADIUS_KM;
 const float ATM_TOP_RADIUS_KM = PRIME_ATMOSPHERE_TOP_RADIUS_KM;
-const float ATM_THICKNESS_KM = 100.0;
+const float ATM_THICKNESS_KM =
+        ATM_TOP_RADIUS_KM - ATM_BOTTOM_RADIUS_KM;
 const float ATM_WORLD_SEA_LEVEL_Y = PRIME_ATMOSPHERE_WORLD_SEA_LEVEL_Y;
 const float ATM_WORLD_UNIT_SCALE_KM = PRIME_ATMOSPHERE_WORLD_UNIT_SCALE_KM;
 const float ATM_PLANET_RADIUS_OFFSET_KM = 0.01;
@@ -129,11 +134,12 @@ float atmAerosolBackgroundDensity(int species) {
 }
 
 float atmAerosolDensity(int species, float altitudeKm) {
-    float falloff = exp(-max(altitudeKm, 0.0) / 8.0);
+    float altitude = max(altitudeKm, 0.0);
+    float falloff = exp(-altitude / 8.0);
     return mix(
             atmAerosolBaseDensity(species) * falloff,
             atmAerosolBackgroundDensity(species) * falloff,
-            smoothstep(1.0, 2.0, altitudeKm));
+            smoothstep(1.0, 2.0, altitude));
 }
 
 AtmCoefficients atmCoefficients(int group, float altitudeKm) {
@@ -150,7 +156,8 @@ AtmCoefficients atmCoefficients(int group, float altitudeKm) {
     float ozoneHeight = altitude + 1.0e-4;
     float ozoneT = log(ozoneHeight) - 3.22261;
     float ozoneDensity = 3.78547397e20 / ozoneHeight * exp(-ozoneT * ozoneT * 5.55555555);
-    vec4 molecularAbsorption = atmOzoneCrossSection(group) * 381.0 * ozoneDensity;
+    vec4 molecularAbsorption =
+            atmOzoneCrossSection(group) * 381.0 * ozoneDensity;
     AtmCoefficients result;
     result.aerosolScattering = aerosolScattering;
     result.molecularScattering = molecularScattering;
@@ -210,8 +217,9 @@ float atmMultiUFromSunMu(float sunMu) {
 }
 
 float atmMultiNormalizedAltitudeFromV(float v) {
-    float minimumAltitude = 0.01;
-    float maximumAltitude = ATM_THICKNESS_KM - 0.01;
+    float minimumAltitude = ATM_PLANET_RADIUS_OFFSET_KM;
+    float maximumAltitude =
+            ATM_THICKNESS_KM - ATM_PLANET_RADIUS_OFFSET_KM;
     float range = maximumAltitude - minimumAltitude;
     float cdfMaximum = max(1.0 - exp(-range / ATM_MULTI_ALTITUDE_SCALE_KM), 1.0e-6);
     float cdf = clamp(v, 0.0, 1.0) * cdfMaximum;
@@ -221,8 +229,9 @@ float atmMultiNormalizedAltitudeFromV(float v) {
 }
 
 float atmMultiVFromNormalizedAltitude(float normalizedAltitude) {
-    float minimumAltitude = 0.01;
-    float maximumAltitude = ATM_THICKNESS_KM - 0.01;
+    float minimumAltitude = ATM_PLANET_RADIUS_OFFSET_KM;
+    float maximumAltitude =
+            ATM_THICKNESS_KM - ATM_PLANET_RADIUS_OFFSET_KM;
     float range = maximumAltitude - minimumAltitude;
     float altitude = clamp(normalizedAltitude, 0.0, 1.0) * ATM_THICKNESS_KM;
     float h = clamp(altitude, minimumAltitude, maximumAltitude) - minimumAltitude;

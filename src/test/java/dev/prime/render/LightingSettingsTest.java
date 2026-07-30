@@ -32,8 +32,22 @@ final class LightingSettingsTest {
     @Test
     void changingEitherControlAdvancesTheSharedLightingRevision() {
         PrimeSettings defaults = PrimeSettings.defaults();
-        PrimeSettings sun = defaults.withSunQuarterSteps(1);
-        assertTrue(sun.lightingRevision() > defaults.lightingRevision());
+        assertEquals(AstronomySettings.defaults(), defaults.astronomy());
+        PrimeSettings latitude = defaults.withLatitudeDegrees(-30);
+        assertTrue(
+                latitude.lightingRevision()
+                        > defaults.lightingRevision());
+        PrimeSettings season =
+                latitude.withSolarLongitudeDegrees(180);
+        assertTrue(
+                season.lightingRevision()
+                        > latitude.lightingRevision());
+        assertEquals(-30, season.astronomy().latitudeDegrees());
+        assertEquals(180, season.astronomy().solarLongitudeDegrees());
+        assertEquals(season, season.withSolarLongitudeDegrees(180));
+
+        PrimeSettings sun = season.withSunQuarterSteps(1);
+        assertTrue(sun.lightingRevision() > season.lightingRevision());
         assertEquals(sun, sun.withSunQuarterSteps(1));
 
         PrimeSettings stars = sun.withStarQuarterSteps(2);

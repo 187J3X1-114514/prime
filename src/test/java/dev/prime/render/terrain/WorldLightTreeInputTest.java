@@ -2,6 +2,7 @@ package dev.prime.render.terrain;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import java.util.ArrayList;
@@ -72,6 +73,35 @@ final class WorldLightTreeInputTest {
         }
     }
 
+    @Test
+    void dynamicGeometryWithVisibleEmissionHasNoWorldLightTreeLeaf() {
+        GpuCluster staticCluster = cluster(1, 2.0F);
+        GpuCluster dynamicCluster = new GpuCluster(
+                CompiledCluster.DYNAMIC_KEY,
+                0,
+                0,
+                0,
+                null,
+                null,
+                new CompiledClusterLights.Summary(
+                        0,
+                        0.0F,
+                        0.0F,
+                        0.0F,
+                        0.0F,
+                        0.0F,
+                        0.0F,
+                        0.0F),
+                true);
+
+        CpuWorldLightTree.Result tree = CpuWorldLightTree.build(
+                WorldLightTreeInput.capture(
+                        List.of(staticCluster, dynamicCluster), 0, 0, 0));
+
+        assertNotEquals(CpuLightTree.NO_INDEX, tree.leafNode(0));
+        assertEquals(CpuLightTree.NO_INDEX, tree.leafNode(1));
+    }
+
     private static GpuCluster cluster(int index, float power) {
         return new GpuCluster(
                 index,
@@ -88,6 +118,7 @@ final class WorldLightTreeInputTest {
                         1.0F,
                         1.0F,
                         1.0F,
-                        power));
+                        power),
+                false);
     }
 }

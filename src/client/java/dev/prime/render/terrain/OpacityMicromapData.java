@@ -183,7 +183,7 @@ public final class OpacityMicromapData {
                 + (long) this.triangleIndices.length * Integer.BYTES;
     }
 
-    static OpacityMicromapData fullyUnknown(int triangleCount) {
+    public static OpacityMicromapData fullyUnknown(int triangleCount) {
         if (triangleCount < 0) {
             throw new IllegalArgumentException("Triangle count must not be negative");
         }

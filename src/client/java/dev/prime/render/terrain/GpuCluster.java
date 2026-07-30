@@ -17,7 +17,8 @@ record GpuCluster(
         List<PreparedBlas> voxelBlases,
         CpuVoxelInstances voxelInstances,
         VulkanBuffer lightBuffer,
-        CompiledClusterLights.Summary lights) {
+        CompiledClusterLights.Summary lights,
+        boolean dynamic) {
     GpuCluster {
         voxelBlases = List.copyOf(voxelBlases);
         voxelInstances = Objects.requireNonNull(
@@ -49,12 +50,32 @@ record GpuCluster(
                 clusterY,
                 clusterZ,
                 blas,
+                lightBuffer,
+                lights,
+                false);
+    }
+
+    GpuCluster(
+            long key,
+            int clusterX,
+            int clusterY,
+            int clusterZ,
+            PreparedBlas blas,
+            VulkanBuffer lightBuffer,
+            CompiledClusterLights.Summary lights,
+            boolean dynamic) {
+        this(
+                key,
+                clusterX,
+                clusterY,
+                clusterZ,
+                blas,
                 List.of(),
                 CpuVoxelInstances.EMPTY,
                 lightBuffer,
-                lights);
+                lights,
+                dynamic);
     }
-
     long lightAddress() {
         return this.lightBuffer == null ? 0L : this.lightBuffer.deviceAddress();
     }

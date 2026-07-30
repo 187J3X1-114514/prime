@@ -5,6 +5,7 @@ import com.mojang.blaze3d.vulkan.VulkanGpuTextureView;
 import dev.prime.render.ResourceCleanup;
 import dev.prime.render.ScreenshotFramePlan;
 import dev.prime.render.terrain.TerrainScene;
+import java.util.List;
 import java.util.Objects;
 import org.lwjgl.system.MemoryStack;
 import org.lwjgl.vulkan.VK12;
@@ -33,6 +34,7 @@ public final class ScreenshotFrameExecutor {
             BasicRawWavefrontFrame rawFrame,
             DisplayTransformPass display,
             VulkanGpuTextureView atlasView,
+            List<RayTracingPipeline.SceneTexture> sceneTextures,
             long textureRevision,
             VulkanGpuTexture mainColor) {
         Objects.requireNonNull(pipeline, "pipeline");
@@ -46,6 +48,7 @@ public final class ScreenshotFrameExecutor {
         Objects.requireNonNull(rawFrame, "rawFrame");
         Objects.requireNonNull(display, "display");
         Objects.requireNonNull(atlasView, "atlasView");
+        Objects.requireNonNull(sceneTextures, "sceneTextures");
         Objects.requireNonNull(mainColor, "mainColor");
         plan.requireSceneRevision(scene.revision());
         plan.requireTextureRevision(textureRevision);
@@ -72,10 +75,6 @@ public final class ScreenshotFrameExecutor {
             this.context.device().instance().debug().beginDebugGroup(
                     commandBuffer,
                     () -> "Prime raw-model screenshot accumulation");
-            atmosphereFrame = atmosphere.prepare(
-                    commandBuffer,
-                    plan.integrator().camera(),
-                    plan.integrator().sunDirection());
             VulkanImageTransitions.prepareOutputForComposite(
                     commandBuffer, this.imageInitialization, displayOutput);
             VulkanImageTransitions.prepareAccumulationForTrace(
@@ -86,7 +85,17 @@ public final class ScreenshotFrameExecutor {
                     commandBuffer, this.imageInitialization);
             VulkanImageTransitions.prepareAtlasForTrace(
                     commandBuffer, atlasView.texture());
+            VulkanImageTransitions.prepareSceneTexturesForTrace(
+                    commandBuffer, sceneTextures);
             labPbrFrame = labPbrAtlas.prepare(commandBuffer);
+            // The sun-cache raygen uses the shared RT descriptor set, including screenshot
+            // accumulation and raw-frame resources initialized immediately above.
+            atmosphereFrame = atmosphere.prepare(
+                    commandBuffer,
+                    pipeline,
+                    plan.integrator(),
+                    scene,
+                    true);
             try (MemoryStack stack = MemoryStack.stackPush()) {
                 pipeline.traceScreenshot(
                         commandBuffer, plan.integrator(), scene);
@@ -101,6 +110,8 @@ public final class ScreenshotFrameExecutor {
                         plan.input().display());
                 VulkanImageTransitions.finishAtlasRead(
                         commandBuffer, atlasView.texture());
+                VulkanImageTransitions.finishSceneTextureReads(
+                        commandBuffer, sceneTextures);
                 VulkanImageTransitions.prepareImagesForCopy(
                         commandBuffer, displayOutput, mainColor);
                 VkImageCopy.Buffer copy = VkImageCopy.calloc(1, stack);

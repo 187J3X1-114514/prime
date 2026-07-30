@@ -11,8 +11,11 @@ public final class PrimitivePacking {
     public static final int FLAG_LABPBR_SPECULAR = 1 << 7;
     public static final int FLAG_TANGENT_NEGATIVE = 1 << 8;
     public static final int FLAG_MASK = (1 << 9) - 1;
+    public static final int DYNAMIC_TEXTURE_FLAG = 1 << 31;
+    public static final int VISIBLE_EMISSION_FLAG = 1 << 30;
+    public static final int DYNAMIC_TEXTURE_INDEX_MASK = (1 << 29) - 1;
     public static final int NO_EMITTER_INDEX = -1;
-    public static final int MAX_EMITTER_INDEX = Integer.MAX_VALUE - 1;
+    public static final int MAX_EMITTER_INDEX = (1 << 29) - 2;
 
     private PrimitivePacking() {
     }
@@ -26,7 +29,7 @@ public final class PrimitivePacking {
             throw new IllegalArgumentException("Primitive flags exceed their nine-bit ABI field");
         }
         if (emitterIndex < NO_EMITTER_INDEX || emitterIndex > MAX_EMITTER_INDEX) {
-            throw new IllegalArgumentException("Primitive emitter index exceeds its 31-bit ABI field");
+            throw new IllegalArgumentException("Primitive emitter index exceeds its 29-bit ABI field");
         }
         int encodedEmitter = emitterIndex == NO_EMITTER_INDEX ? 0 : emitterIndex + 1;
         return flags >>> 8 | encodedEmitter << 1;
@@ -44,12 +47,46 @@ public final class PrimitivePacking {
     }
 
     public static int unpackEmitterIndex(int packed) {
+        if ((packed & DYNAMIC_TEXTURE_FLAG) != 0) {
+            return NO_EMITTER_INDEX;
+        }
         int encoded = packed >>> 1;
         return encoded == 0 ? NO_EMITTER_INDEX : encoded - 1;
     }
 
     public static int withEmitterIndex(int packed, int emitterIndex) {
         return packFlagsEmitter((packed & 1) << 8, emitterIndex);
+    }
+
+    /**
+     * Encodes a renderer-owned texture without assigning a light-tree emitter.
+     *
+     * <p>Dynamic geometry never carries a local emitter index. Its otherwise-unused high payload
+     * bits select a scene texture and optionally mark directly visible emission.
+     */
+    public static int packDynamicFlags(
+            int flags, int textureIndex, boolean visibleEmission) {
+        if ((flags & ~FLAG_MASK) != 0) {
+            throw new IllegalArgumentException("Primitive flags exceed their nine-bit ABI field");
+        }
+        if (textureIndex <= 0 || textureIndex > DYNAMIC_TEXTURE_INDEX_MASK) {
+            throw new IllegalArgumentException("Dynamic texture index exceeds its ABI field");
+        }
+        return flags >>> 8
+                | textureIndex << 1
+                | (visibleEmission ? VISIBLE_EMISSION_FLAG : 0)
+                | DYNAMIC_TEXTURE_FLAG;
+    }
+
+    public static int unpackDynamicTextureIndex(int packed) {
+        return (packed & DYNAMIC_TEXTURE_FLAG) == 0
+                ? 0
+                : packed >>> 1 & DYNAMIC_TEXTURE_INDEX_MASK;
+    }
+
+    public static boolean hasVisibleEmission(int packed) {
+        return (packed & (DYNAMIC_TEXTURE_FLAG | VISIBLE_EMISSION_FLAG))
+                == (DYNAMIC_TEXTURE_FLAG | VISIBLE_EMISSION_FLAG);
     }
 
     public static int packHalf2(float x, float y) {

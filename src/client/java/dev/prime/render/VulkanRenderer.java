@@ -17,6 +17,7 @@ import dev.prime.render.post.RealtimePostProcessor;
 import dev.prime.render.post.ReconstructionQualityMode;
 import dev.prime.render.post.DlssRrDebugStatus;
 import dev.prime.render.replay.RenderReplayVerification;
+import dev.prime.render.scene.vanilla.DynamicSceneFrame;
 import dev.prime.render.vulkan.AtmospherePipeline;
 import dev.prime.render.vulkan.LabPbrTextureAtlas;
 import dev.prime.render.vulkan.RayTracingPipeline;
@@ -31,6 +32,7 @@ import dev.prime.render.vulkan.dlss.DlssRrBootstrap;
 import dev.prime.render.vulkan.dlss.DlssRrNative;
 import dev.prime.render.vulkan.nrd.NrdDiagnostics;
 import dev.prime.render.vulkan.replay.ReplayProbeController;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import net.minecraft.client.Minecraft;
@@ -60,6 +62,7 @@ public final class VulkanRenderer implements AutoCloseable {
     private ScreenshotRenderResources screenshotResources;
     private BlockAtlasFrame blockAtlasFrame;
     private long blockAtlasTextureRevision;
+    private List<RayTracingPipeline.SceneTexture> sceneTextures = List.of();
     private FrameCamera camera;
     private SunDirection sunDirection;
     // Resource-reload apply can publish this request off the render thread; all GPU mutation is
@@ -75,6 +78,8 @@ public final class VulkanRenderer implements AutoCloseable {
     private long screenshotAtlasView;
     private long screenshotAtlasSampler;
     private long screenshotTextureRevision = Long.MIN_VALUE;
+    private List<RayTracingPipeline.SceneTexture> screenshotSceneTextures =
+            List.of();
     private long screenshotSampleCount;
     private SessionControls frameControls = SessionControls.defaults();
     private List<String> debugLines = List.of();
@@ -212,6 +217,27 @@ public final class VulkanRenderer implements AutoCloseable {
         this.sunDirection = SunDirection.fromVanillaAngle(sunAngleRadians);
     }
 
+    public void captureDynamicScene(DynamicSceneFrame frame) {
+        ArrayList<RayTracingPipeline.SceneTexture> textures =
+                new ArrayList<>(frame.textures().size());
+        for (DynamicSceneFrame.SceneTexture texture : frame.textures()) {
+            if (!(texture.view() instanceof VulkanGpuTextureView view)
+                    || !(texture.sampler() instanceof VulkanGpuSampler sampler)) {
+                throw new IllegalStateException(
+                        "Prime expected Vulkan dynamic scene textures");
+            }
+            textures.add(new RayTracingPipeline.SceneTexture(
+                    view.texture().vkImage(),
+                    view.vkImageView(),
+                    sampler.vkSampler()));
+        }
+        List<RayTracingPipeline.SceneTexture> capturedTextures =
+                List.copyOf(textures);
+        if (this.terrain.updateDynamic(frame)) {
+            this.sceneTextures = capturedTextures;
+        }
+    }
+
     public boolean isReady() {
         return this.terrain.isNearCameraReady() && this.terrain.residentScene() != null;
     }
@@ -317,7 +343,8 @@ public final class VulkanRenderer implements AutoCloseable {
                     requestedQualityMode,
                     scene.tlas(),
                     atlasView,
-                    atlasSampler);
+                    atlasSampler,
+                    this.sceneTextures);
         } catch (RuntimeException exception) {
             if (effectiveMode != PostProcessingMode.DLSS_RR) {
                 throw exception;
@@ -337,7 +364,8 @@ public final class VulkanRenderer implements AutoCloseable {
                     requestedQualityMode,
                     scene.tlas(),
                     atlasView,
-                    atlasSampler);
+                    atlasSampler,
+                    this.sceneTextures);
         }
         RealtimeRenderResources images = this.realtimeResources;
         if (images == null) {
@@ -424,6 +452,7 @@ public final class VulkanRenderer implements AutoCloseable {
                 target,
                 history,
                 atlasView,
+                this.sceneTextures,
                 blockAtlas.textureRevision(),
                 mainColor);
         this.realtimeSampleState = sampleFrame.committedState();
@@ -440,6 +469,7 @@ public final class VulkanRenderer implements AutoCloseable {
                         settings.oklabOverexposure(),
                         atlasView,
                         atlasSampler,
+                        this.sceneTextures,
                         blockAtlas.textureRevision(),
                         images.stableRadiance,
                         this.labPbrAtlas.normalAtlas(),
@@ -519,6 +549,7 @@ public final class VulkanRenderer implements AutoCloseable {
                 images.runningMean,
                 atlasView,
                 atlasSampler,
+                this.screenshotSceneTextures,
                 this.labPbrAtlas.normalAtlas(),
                 this.labPbrAtlas.specularAtlas(),
                 this.atmosphere,
@@ -547,6 +578,7 @@ public final class VulkanRenderer implements AutoCloseable {
                 images.rawFrame,
                 images.display,
                 atlasView,
+                this.screenshotSceneTextures,
                 this.screenshotTextureRevision,
                 mainColor);
         this.screenshotSampleCount = framePlan.nextSampleCount();
@@ -587,6 +619,7 @@ public final class VulkanRenderer implements AutoCloseable {
             this.screenshotAtlasView = atlas.view().vkImageView();
             this.screenshotAtlasSampler = atlas.sampler().vkSampler();
             this.screenshotTextureRevision = atlas.textureRevision();
+            this.screenshotSceneTextures = this.sceneTextures;
             this.screenshotSampleCount = 0L;
             PrimeClient.LOGGER.info(
                     "Entered Prime screenshot mode at scene revision {}",
@@ -608,6 +641,7 @@ public final class VulkanRenderer implements AutoCloseable {
         this.screenshotAtlasView = 0L;
         this.screenshotAtlasSampler = 0L;
         this.screenshotTextureRevision = Long.MIN_VALUE;
+        this.screenshotSceneTextures = List.of();
         this.screenshotSampleCount = 0L;
         ScreenshotRenderResources retiredResources = this.screenshotResources;
         this.screenshotResources = null;
@@ -826,7 +860,8 @@ public final class VulkanRenderer implements AutoCloseable {
             ReconstructionQualityMode qualityMode,
             long tlas,
             VulkanGpuTextureView atlasView,
-            VulkanGpuSampler atlasSampler) {
+            VulkanGpuSampler atlasSampler,
+            List<RayTracingPipeline.SceneTexture> sceneTextures) {
         RealtimeRenderResources current = this.realtimeResources;
         if (current != null && current.matches(
                 displayWidth, displayHeight, renderWidth, renderHeight, mode, qualityMode)) {
@@ -836,6 +871,7 @@ public final class VulkanRenderer implements AutoCloseable {
                     current.stableRadiance,
                     atlasView,
                     atlasSampler,
+                    sceneTextures,
                     this.labPbrAtlas.normalAtlas(),
                     this.labPbrAtlas.specularAtlas(),
                     this.atmosphere,
@@ -859,6 +895,7 @@ public final class VulkanRenderer implements AutoCloseable {
                     replacement.stableRadiance,
                     atlasView,
                     atlasSampler,
+                    sceneTextures,
                     this.labPbrAtlas.normalAtlas(),
                     this.labPbrAtlas.specularAtlas(),
                     this.atmosphere,

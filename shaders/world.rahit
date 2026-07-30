@@ -13,7 +13,7 @@ void main() {
     vec3 normal = primeUnpackOctahedralNormal(primitive.normal);
     float textureLodValue = primeRayConeTextureLod(primitive, normal);
     float opacity = primeEvaluateOpacity(
-            primeInterpolateUv(section, primitive), textureLodValue);
+            primitive, primeInterpolateUv(section, primitive), textureLodValue);
     if (opacity < PRIME_CUTOUT_ALPHA_THRESHOLD) {
         ignoreIntersectionEXT;
     }

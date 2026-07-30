@@ -1,6 +1,8 @@
 #ifndef PRIME_MATERIAL_GLSL
 #define PRIME_MATERIAL_GLSL
 
+#extension GL_EXT_nonuniform_qualifier : require
+
 #include "color_space.glsl"
 #include "default_material.glsl"
 #include "labpbr.glsl"
@@ -25,8 +27,26 @@ uint primePrimitiveFlags(PrimitiveRecord primitive) {
     return (primitive.tint >> 24u) | ((primitive.flagsEmitter & 1u) << 8u);
 }
 
+const uint PRIME_DYNAMIC_TEXTURE_FLAG = 0x80000000u;
+const uint PRIME_VISIBLE_EMISSION_FLAG = 0x40000000u;
+const uint PRIME_DYNAMIC_TEXTURE_INDEX_MASK = 0x1fffffffu;
+
+uint primePrimitiveTextureIndex(PrimitiveRecord primitive) {
+    return (primitive.flagsEmitter & PRIME_DYNAMIC_TEXTURE_FLAG) != 0u
+            ? ((primitive.flagsEmitter >> 1u) & PRIME_DYNAMIC_TEXTURE_INDEX_MASK)
+            : 0u;
+}
+
+vec4 primeSamplePrimitiveTexture(
+        PrimitiveRecord primitive, vec2 uv, float textureLodValue) {
+    uint textureIndex = min(
+            primePrimitiveTextureIndex(primitive), PRIME_SCENE_TEXTURE_COUNT - 1u);
+    return textureLod(
+            primeSceneTextures[nonuniformEXT(textureIndex)], uv, textureLodValue);
+}
+
 vec3 primeAtlasBaseColor(uint packedTint, vec2 uv, float textureLodValue, out float opacity) {
-    vec4 textureSample = textureLod(primeBlockAtlas, uv, textureLodValue);
+    vec4 textureSample = textureLod(primeSceneTextures[0], uv, textureLodValue);
     vec4 tint = primeUnpackTint(packedTint);
     opacity = textureSample.a;
     vec3 linearSrgbAlbedo = primeDecodeSrgb(textureSample.rgb) * primeDecodeSrgb(tint.rgb);
@@ -38,8 +58,17 @@ MaterialEvaluation primeEvaluateMaterial(PrimitiveRecord primitive, vec2 uv, flo
     // Minecraft stores both atlas texels and tint RGB as display-encoded sRGB in UNORM values.
     // Decode both before multiplication, then cross the single material boundary into the
     // integrator's linear Rec.2020 working space. Alpha is coverage and is never color-decoded.
-    result.baseColor = primeAtlasBaseColor(primitive.tint, uv, textureLodValue, result.opacity);
+    vec4 textureSample = primeSamplePrimitiveTexture(primitive, uv, textureLodValue);
+    vec4 tint = primeUnpackTint(primitive.tint);
+    result.opacity = textureSample.a;
+    result.baseColor = primeLinearSrgbToLinearRec2020(
+            primeDecodeSrgb(textureSample.rgb) * primeDecodeSrgb(tint.rgb));
     uint primitiveFlags = primePrimitiveFlags(primitive);
+    if ((primitive.flagsEmitter
+            & (PRIME_DYNAMIC_TEXTURE_FLAG | PRIME_VISIBLE_EMISSION_FLAG))
+            == (PRIME_DYNAMIC_TEXTURE_FLAG | PRIME_VISIBLE_EMISSION_FLAG)) {
+        primitiveFlags |= PRIME_MATERIAL_FLAG_VISIBLE_EMISSION;
+    }
     result.flags = primitiveFlags;
     vec4 normalSample = primeHasLabPbrNormal(primitiveFlags)
             ? textureLod(primeLabPbrNormalAtlas, uv, textureLodValue)
@@ -96,8 +125,9 @@ vec3 primeEvaluateEmitterRadiance(LightEmitter emitter, vec2 uv) {
     return primeEvaluateEmitterRadiance(emitter, uv, 0.0);
 }
 
-float primeEvaluateOpacity(vec2 uv, float textureLodValue) {
-    return textureLod(primeBlockAtlas, uv, textureLodValue).a;
+float primeEvaluateOpacity(
+        PrimitiveRecord primitive, vec2 uv, float textureLodValue) {
+    return primeSamplePrimitiveTexture(primitive, uv, textureLodValue).a;
 }
 
 #endif

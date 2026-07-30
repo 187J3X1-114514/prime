@@ -6,6 +6,7 @@ import dev.prime.render.RealtimeFramePlan;
 import dev.prime.render.ResourceCleanup;
 import dev.prime.render.post.RealtimePostProcessor;
 import dev.prime.render.terrain.TerrainScene;
+import java.util.List;
 import java.util.Objects;
 import org.lwjgl.system.MemoryStack;
 import org.lwjgl.vulkan.VK12;
@@ -40,6 +41,7 @@ public final class RealtimeFrameExecutor {
             VulkanImage output,
             VulkanImage stableRadiance,
             VulkanGpuTextureView atlasView,
+            List<RayTracingPipeline.SceneTexture> sceneTextures,
             long textureRevision,
             VulkanGpuTexture mainColor) {
         Objects.requireNonNull(processor, "processor");
@@ -59,6 +61,7 @@ public final class RealtimeFrameExecutor {
             Objects.requireNonNull(output, "output");
             Objects.requireNonNull(stableRadiance, "stableRadiance");
             Objects.requireNonNull(atlasView, "atlasView");
+            Objects.requireNonNull(sceneTextures, "sceneTextures");
             Objects.requireNonNull(mainColor, "mainColor");
             plan.requireSceneRevision(scene.revision());
             plan.requireTextureRevision(textureRevision);
@@ -85,6 +88,8 @@ public final class RealtimeFrameExecutor {
                     commandBuffer, this.imageInitialization);
             VulkanImageTransitions.prepareAtlasForTrace(
                     commandBuffer, atlasView.texture());
+            VulkanImageTransitions.prepareSceneTexturesForTrace(
+                    commandBuffer, sceneTextures);
             labPbrFrame = labPbrAtlas.prepare(commandBuffer);
             try (MemoryStack stack = MemoryStack.stackPush()) {
                 pipeline.trace(commandBuffer, plan.integrator(), scene);
@@ -95,6 +100,8 @@ public final class RealtimeFrameExecutor {
                         this.imageInitialization);
                 VulkanImageTransitions.finishAtlasRead(
                         commandBuffer, atlasView.texture());
+                VulkanImageTransitions.finishSceneTextureReads(
+                        commandBuffer, sceneTextures);
                 VulkanImageTransitions.prepareImagesForCopy(
                         commandBuffer, output, mainColor);
                 VkImageCopy.Buffer copy = VkImageCopy.calloc(1, stack);

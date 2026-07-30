@@ -26,6 +26,7 @@ import dev.prime.render.vulkan.RayTracingPipeline;
 import dev.prime.render.vulkan.VulkanContext;
 import dev.prime.render.vulkan.VulkanImage;
 import java.util.ArrayList;
+import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicReference;
@@ -141,6 +142,7 @@ public final class ReplayProbeController implements Destroyable {
                         input.stableRadiance,
                         input.atlasView,
                         input.atlasSampler,
+                        input.sceneTextures,
                         input.labPbrNormalAtlas,
                         input.labPbrSpecularAtlas,
                         input.atmosphere,
@@ -172,6 +174,7 @@ public final class ReplayProbeController implements Destroyable {
                     probe.stableRadiance(),
                     input.atlasView,
                     input.atlasSampler,
+                    input.sceneTextures,
                     input.labPbrNormalAtlas,
                     input.labPbrSpecularAtlas,
                     input.atmosphere,
@@ -256,6 +259,7 @@ public final class ReplayProbeController implements Destroyable {
                 frameInput,
                 replayInput,
                 input.atlasView,
+                input.sceneTextures,
                 input.lighting.sunMultiplier(),
                 input.displayOverexposure,
                 platform,
@@ -297,6 +301,7 @@ public final class ReplayProbeController implements Destroyable {
             float displayOverexposure,
             VulkanGpuTextureView atlasView,
             VulkanGpuSampler atlasSampler,
+            List<RayTracingPipeline.SceneTexture> sceneTextures,
             long textureRevision,
             VulkanImage stableRadiance,
             VulkanImage labPbrNormalAtlas,
@@ -312,6 +317,7 @@ public final class ReplayProbeController implements Destroyable {
             Objects.requireNonNull(material, "material");
             Objects.requireNonNull(atlasView, "atlasView");
             Objects.requireNonNull(atlasSampler, "atlasSampler");
+            sceneTextures = List.copyOf(sceneTextures);
             Objects.requireNonNull(stableRadiance, "stableRadiance");
             Objects.requireNonNull(
                     labPbrNormalAtlas, "labPbrNormalAtlas");

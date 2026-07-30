@@ -58,6 +58,8 @@ public final class TerrainScene implements AutoCloseable {
             double cameraY,
             double cameraZ) {
         boolean contentChanged = this.hasActualContentChange(uploads, evictions);
+        boolean staticContentChanged =
+                this.hasActualStaticContentChange(uploads, evictions);
         LongOpenHashSet removedKeys = removedKeys(uploads, evictions);
         boolean hasReadyCompaction = this.hasReadyCompaction(removedKeys);
         boolean needsRebase = this.currentTlas == null
@@ -111,7 +113,11 @@ public final class TerrainScene implements AutoCloseable {
          * and accumulated SAH degradation on the GPU. Rebuild to exactly 2L-1 nodes; BLAS
          * compaction changes only addresses and deliberately reuses the committed tree.
          */
-        boolean rebuildWorldLights = contentChanged || needsRebase;
+        /*
+         * The reserved dynamic instance sorts after every terrain cluster and cannot carry
+         * emitters. Replacing it cannot change static cluster indices or light-tree topology.
+         */
+        boolean rebuildWorldLights = staticContentChanged || needsRebase;
         boolean needsWorldStaging = rebuildWorldLights && finalClusterCount > 0 && hasPotentialLights;
         long clusterStagingBytes = 0L;
         for (CompiledCluster upload : uploads) {
@@ -300,7 +306,9 @@ public final class TerrainScene implements AutoCloseable {
                                 worldLightForwardAddress,
                                 cluster.blas().opaqueTriangleCount(),
                                 cluster.blas().cutoutTriangleCount(),
-                                worldLightTree.leafNode(clusterIndex),
+                                cluster.dynamic()
+                                        ? CpuLightTree.NO_INDEX
+                                        : worldLightTree.leafNode(clusterIndex),
                                 cluster.lights().emitterCount(),
                                 worldLightNodeCount,
                                 (cluster.clusterX() << 4) - nextOriginX,
@@ -532,6 +540,22 @@ public final class TerrainScene implements AutoCloseable {
         return false;
     }
 
+    private boolean hasActualStaticContentChange(
+            List<CompiledCluster> uploads, long[] evictions) {
+        for (long key : evictions) {
+            if (key != CompiledCluster.DYNAMIC_KEY && this.resident.containsKey(key)) {
+                return true;
+            }
+        }
+        for (CompiledCluster upload : uploads) {
+            if (!upload.dynamic()
+                    && (!upload.isEmpty() || this.resident.containsKey(upload.key()))) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     private boolean hasReadyCompaction(LongOpenHashSet removedKeys) {
         for (GpuCluster cluster : this.resident.values()) {
             if (!removedKeys.contains(cluster.key())
@@ -738,7 +762,8 @@ public final class TerrainScene implements AutoCloseable {
                     upload.clusterZ(),
                     blas,
                     lights,
-                    lightSummary);
+                    lightSummary,
+                    upload.dynamic());
         } catch (RuntimeException exception) {
             RuntimeException failure = exception;
             if (blas != null) {

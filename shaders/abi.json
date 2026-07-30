@@ -200,6 +200,7 @@
     "wavefrontPaths": 36,
     "wavefrontQueue": 37
   },
+  "sceneTextureCount": 64,
   "wavefrontContract": {
     "rounds": 12,
     "pathRecordSize": 144,

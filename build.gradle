@@ -164,8 +164,9 @@ abstract class GenerateShaderAbi extends DefaultTask {
 				|| sectionLightHeader.size != 48
 				|| integrator.size != 32 || pathState.size != 96 || tracePayload.size != 64
 				|| surfaceInteraction.size != 80 || push.size != 128
-				|| nrdMotionPush.size != 208) {
-			throw new GradleException('Prime shader ABI sizes changed without a coordinated migration')
+				|| nrdMotionPush.size != 208 || schema.sceneTextureCount != 64) {
+			throw new GradleException(
+					'Prime shader ABI sizes or scene texture count changed without a coordinated migration')
 		}
 		if (colorContract.workingSpace != 'linear-rec2020-d65'
 				|| colorContract.textureEncoding != 'srgb'
@@ -383,6 +384,7 @@ public final class ShaderAbi {
     public static final int DESCRIPTOR_STARMAP = ${schema.descriptors.starmap};
     public static final int DESCRIPTOR_WAVEFRONT_PATHS = ${schema.descriptors.wavefrontPaths};
     public static final int DESCRIPTOR_WAVEFRONT_QUEUE = ${schema.descriptors.wavefrontQueue};
+    public static final int SCENE_TEXTURE_COUNT = ${schema.sceneTextureCount};
     public static final int WAVEFRONT_ROUNDS = ${wavefrontContract.rounds};
     public static final int WAVEFRONT_PATH_RECORD_SIZE = ${wavefrontContract.pathRecordSize};
     public static final int WAVEFRONT_PATH_SLOTS_PER_PIXEL = ${wavefrontContract.pathSlotsPerPixel};
@@ -481,6 +483,7 @@ ${javaOffsets}
 #define PRIME_DESCRIPTOR_TRANSMISSION_GGX_ENERGY ${schema.descriptors.transmissionGgxEnergy}
 #define PRIME_DESCRIPTOR_WAVEFRONT_PATHS ${schema.descriptors.wavefrontPaths}
 #define PRIME_DESCRIPTOR_WAVEFRONT_QUEUE ${schema.descriptors.wavefrontQueue}
+#define PRIME_SCENE_TEXTURE_COUNT ${schema.sceneTextureCount}u
 #define PRIME_WAVEFRONT_ROUNDS ${wavefrontContract.rounds}
 #define PRIME_WAVEFRONT_PATH_RECORD_SIZE ${wavefrontContract.pathRecordSize}
 #define PRIME_WAVEFRONT_PATH_SLOTS_PER_PIXEL ${wavefrontContract.pathSlotsPerPixel}u
@@ -609,7 +612,7 @@ ${glslPushFields}
 } primePush;
 
 layout(set = 0, binding = ${schema.descriptors.tlas}) uniform accelerationStructureEXT primeScene;
-layout(set = 0, binding = ${schema.descriptors.blockAtlas}) uniform sampler2D primeBlockAtlas;
+layout(set = 0, binding = ${schema.descriptors.blockAtlas}) uniform sampler2D primeSceneTextures[PRIME_SCENE_TEXTURE_COUNT];
 layout(set = 0, binding = ${schema.descriptors.labPbrNormalAtlas}) uniform sampler2D primeLabPbrNormalAtlas;
 layout(set = 0, binding = ${schema.descriptors.labPbrSpecularAtlas}) uniform sampler2D primeLabPbrSpecularAtlas;
 layout(set = 0, binding = ${schema.descriptors.stableRadiance}, rgba32f) uniform image2D primeStableRadiance;

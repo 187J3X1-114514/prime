@@ -23,7 +23,7 @@
     "OptionsSubScreenAccessor",
     "PlayerTicketTrackerMixin",
     "SpriteContentsAccessor",
-    "SubmitNodeStorageMixin",
+    "SubmitNodeCollectionMixin",
     "TextureAtlasAccessor",
     "TextureAtlasMixin",
     "TextureAtlasSpriteAccessor",

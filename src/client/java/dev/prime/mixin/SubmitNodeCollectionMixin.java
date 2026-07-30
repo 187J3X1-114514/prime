@@ -4,8 +4,8 @@ import com.mojang.blaze3d.vertex.PoseStack;
 import dev.prime.render.scene.vanilla.DynamicSceneCapture;
 import java.util.List;
 import net.minecraft.client.model.Model;
+import net.minecraft.client.renderer.SubmitNodeCollection;
 import net.minecraft.client.renderer.SubmitNodeCollector;
-import net.minecraft.client.renderer.SubmitNodeStorage;
 import net.minecraft.client.renderer.block.dispatch.BlockStateModelPart;
 import net.minecraft.client.renderer.feature.ModelFeatureRenderer;
 import net.minecraft.client.renderer.item.ItemStackRenderState;
@@ -20,8 +20,8 @@ import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
-@Mixin(SubmitNodeStorage.class)
-public abstract class SubmitNodeStorageMixin {
+@Mixin(SubmitNodeCollection.class)
+public abstract class SubmitNodeCollectionMixin {
     @Inject(method = "submitModel", at = @At("HEAD"))
     private <S> void prime$captureModel(
             Model<? super S> model,

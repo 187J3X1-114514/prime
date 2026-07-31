@@ -108,21 +108,25 @@ void main() {
                 frame, values.y, values.z);
         vec2 roundTrip =
                 primeCelestialEquatorialCoordinates(frame, direction);
-        float rightAscensionTolerance =
-                abs(values.z) > 1.5 ? 2.0e-4 : 8.0e-6;
+        vec3 reconstructed = primeTestEquatorialDirection(
+                frame, roundTrip.x, roundTrip.y);
+        bool stableCoordinates = abs(values.z) <= 1.4;
         first = vec4(direction, length(direction));
         second = vec4(roundTrip, values.y, values.z);
         mask |= primeTestClassify(direction) | primeTestClassify(roundTrip);
         if (!primeTestClose(length(direction), 1.0, 3.0e-6, 3.0e-6)
+                // Vulkan permits 2^-11 sin/cos error and 4096 ULP atan error.
+                // Check coordinates only away from their polar singularity.
+                || (stableCoordinates
+                    && (!primeTestClose(
+                            primeAngleDifference(roundTrip.x, values.y),
+                            0.0,
+                            1.0e-3,
+                            0.0)
+                        || !primeTestClose(
+                            roundTrip.y, values.z, 1.0e-3, 0.0)))
                 || !primeTestClose(
-                    primeAngleDifference(roundTrip.x, values.y),
-                    0.0,
-                    rightAscensionTolerance,
-                    0.0)
-                // Both angular coordinates are conditionally sensitive near a celestial pole.
-                // Keep explicit pole bounds while the direction itself remains unit length.
-                || !primeTestClose(
-                    roundTrip.y, values.z, 2.0e-4, 0.0)) {
+                    reconstructed, direction, 4.0e-3, 0.0)) {
             mask |= PRIME_TEST_FAILURE_ROUND_TRIP;
         }
     } else if (kind == 3u) {

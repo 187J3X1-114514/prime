@@ -133,18 +133,10 @@ final class ClusterSceneTranslator {
         if (!(squaredNormalLength > 1.0e-20F)) {
             return false;
         }
-        float centerX =
-                0.25F * (quad.x[0] + quad.x[1] + quad.x[2] + quad.x[3]);
-        float centerY =
-                0.25F * (quad.y[0] + quad.y[1] + quad.y[2] + quad.y[3]);
-        float centerZ =
-                0.25F * (quad.z[0] + quad.z[1] + quad.z[2] + quad.z[3]);
-        float outward = normalX * (centerX - fluid.localX() - 0.5F)
-                + normalY * (centerY - fluid.localY() - 0.5F)
-                + normalZ * (centerZ - fluid.localZ() - 0.5F);
-        if (!(outward > 1.0e-7F)) {
-            return false;
-        }
+        // FluidRenderer emits the outward quad first and optionally appends its exact reversed
+        // raster back face. TwoSidedQuadReducer removes that duplicate before this method. Do not
+        // infer sidedness from the quad center: a valid shallow or sloped top can lie below the
+        // owning block's midpoint, which would invert water medium transitions and lava emission.
         Direction direction =
                 Direction.getApproximateNearest(normalX, normalY, normalZ);
         if (settings.suppressFluidFaceAgainstFullCollision()

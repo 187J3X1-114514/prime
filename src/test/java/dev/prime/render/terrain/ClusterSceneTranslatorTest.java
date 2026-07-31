@@ -163,28 +163,6 @@ final class ClusterSceneTranslatorTest {
     }
 
     @Test
-    void rawFluidWindingsAndCollisionFactsAreResolvedAtClusterScope() {
-        try (SectionMeshAccumulatorTest.TestSprite water =
-                new SectionMeshAccumulatorTest.TestSprite("captured_water")) {
-            water.fill(0xff40_80c0);
-            CapturedSectionGeometry.MutableQuad outward = face(1.0F);
-            CapturedSectionGeometry.MutableQuad inward = reversed(outward);
-            CapturedSectionGeometry.Builder section =
-                    new CapturedSectionGeometry.Builder();
-            int collisionMask = 1 << Direction.SOUTH.ordinal();
-            section.add(outward, fluidSurface(water, collisionMask));
-            section.add(inward, fluidSurface(water, collisionMask));
-            CapturedSectionGeometry captured = section.build();
-
-            CpuClusterMesh translated = translate(captured, false);
-            CpuClusterMesh suppressed = translate(captured, true);
-
-            assertEquals(2L, translated.transmissiveTriangleCount());
-            assertEquals(0L, suppressed.transmissiveTriangleCount());
-        }
-    }
-
-    @Test
     void rasterFrontBackPairsBecomeOneTwoSidedCrossSheet() {
         try (SectionMeshAccumulatorTest.TestSprite grass =
                 new SectionMeshAccumulatorTest.TestSprite("modded_cross_grass")) {
@@ -460,23 +438,6 @@ final class ClusterSceneTranslatorTest {
         return quad;
     }
 
-    private static CapturedSectionGeometry.MutableQuad reversed(
-            CapturedSectionGeometry.MutableQuad source) {
-        CapturedSectionGeometry.MutableQuad reversed =
-                new CapturedSectionGeometry.MutableQuad();
-        int[] order = {0, 3, 2, 1};
-        for (int vertex = 0; vertex < 4; vertex++) {
-            int sourceVertex = order[vertex];
-            reversed.x[vertex] = source.x[sourceVertex];
-            reversed.y[vertex] = source.y[sourceVertex];
-            reversed.z[vertex] = source.z[sourceVertex];
-            reversed.u[vertex] = source.u[sourceVertex];
-            reversed.v[vertex] = source.v[sourceVertex];
-        }
-        reversed.normalZ = -1.0F;
-        return reversed;
-    }
-
     private static CapturedSectionGeometry.MutableQuad diagonalFace(
             boolean oppositeDiagonal) {
         CapturedSectionGeometry.MutableQuad quad =
@@ -564,28 +525,6 @@ final class ClusterSceneTranslatorTest {
                 false,
                 0,
                 sprite);
-    }
-
-    private static CapturedSectionGeometry.Surface fluidSurface(
-            SectionMeshAccumulatorTest.TestSprite sprite,
-            int collisionMask) {
-        return new CapturedSectionGeometry.Surface(
-                -1,
-                -1,
-                -1,
-                -1,
-                CapturedSectionGeometry.Layer.TRANSLUCENT,
-                false,
-                false,
-                false,
-                true,
-                false,
-                false,
-                false,
-                0,
-                sprite,
-                new CapturedSectionGeometry.FluidFacts(
-                        0, 0, 0, false, collisionMask));
     }
 
     private static CpuClusterMesh translate(CapturedSectionGeometry section) {

@@ -11,11 +11,11 @@ import java.util.Objects;
 /**
  * Collapses raster front/back quad pairs into one physical ray-tracing sheet.
  *
- * <p>Minecraft's cross models author two coincident faces because rasterization culls back faces.
- * Prime traces triangles from both sides, so retaining both mappings makes alpha testing union the
- * front texture with its mirrored back texture. The first authored face remains authoritative:
- * its winding defines the stored outward normal, and the integrator orients the shading normal to
- * the incident side at a hit.
+ * <p>Minecraft's cross models and fluid renderer author coincident reverse faces because
+ * rasterization culls back faces. Prime traces triangles from both sides, so retaining both
+ * mappings either unions mirrored alpha coverage or leaves an ambiguous fluid boundary. The first
+ * authored face remains authoritative: its winding defines the stored outward normal, and the
+ * integrator orients only non-volume shading normals to the incident side at a hit.
  */
 final class TwoSidedQuadReducer {
     private TwoSidedQuadReducer() {
@@ -68,7 +68,7 @@ final class TwoSidedQuadReducer {
 
     private static boolean eligible(CapturedSectionGeometry.Quad quad) {
         CapturedSectionGeometry.Surface surface = quad.surface();
-        return surface.fluid() == null && ClusterSceneTranslator.isCutout(surface);
+        return surface.fluid() != null || ClusterSceneTranslator.isCutout(surface);
     }
 
     private static boolean formsRasterPair(

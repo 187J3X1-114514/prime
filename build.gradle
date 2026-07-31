@@ -226,8 +226,9 @@ abstract class GenerateShaderAbi extends DefaultTask {
 			throw new GradleException('Prime FSR signal and projection contracts changed without a coordinated migration')
 		}
 		if (wavefrontContract.rounds != 12
-				|| wavefrontContract.pathRecordSize != 144
+				|| wavefrontContract.pathRecordSize != 112
 				|| wavefrontContract.pathSlotsPerPixel != 2
+				|| wavefrontContract.areaRecordSize != 16
 				|| wavefrontContract.queueCount != 2
 				|| wavefrontContract.queueCommandStride != 16
 				|| wavefrontContract.queueIndexSize != 4
@@ -410,6 +411,7 @@ public final class ShaderAbi {
     public static final int WAVEFRONT_ROUNDS = ${wavefrontContract.rounds};
     public static final int WAVEFRONT_PATH_RECORD_SIZE = ${wavefrontContract.pathRecordSize};
     public static final int WAVEFRONT_PATH_SLOTS_PER_PIXEL = ${wavefrontContract.pathSlotsPerPixel};
+    public static final int WAVEFRONT_AREA_RECORD_SIZE = ${wavefrontContract.areaRecordSize};
     public static final int WAVEFRONT_QUEUE_COUNT = ${wavefrontContract.queueCount};
     public static final int WAVEFRONT_QUEUE_COMMAND_STRIDE = ${wavefrontContract.queueCommandStride};
     public static final int WAVEFRONT_QUEUE_INDEX_SIZE = ${wavefrontContract.queueIndexSize};
@@ -529,6 +531,7 @@ ${javaOffsets}
 #define PRIME_WAVEFRONT_ROUNDS ${wavefrontContract.rounds}
 #define PRIME_WAVEFRONT_PATH_RECORD_SIZE ${wavefrontContract.pathRecordSize}
 #define PRIME_WAVEFRONT_PATH_SLOTS_PER_PIXEL ${wavefrontContract.pathSlotsPerPixel}u
+#define PRIME_WAVEFRONT_AREA_RECORD_SIZE ${wavefrontContract.areaRecordSize}u
 #define PRIME_WAVEFRONT_QUEUE_COUNT ${wavefrontContract.queueCount}u
 #define PRIME_WAVEFRONT_QUEUE_COMMAND_STRIDE ${wavefrontContract.queueCommandStride}u
 #define PRIME_WAVEFRONT_QUEUE_INDEX_SIZE ${wavefrontContract.queueIndexSize}u

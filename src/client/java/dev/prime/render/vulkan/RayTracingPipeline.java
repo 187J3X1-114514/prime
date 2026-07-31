@@ -404,8 +404,8 @@ public final class RayTracingPipeline implements Destroyable {
             this.bind(
                     commandBuffer,
                     RayTracingPushConstants.encode(stack, input, scene));
-            long queueOffset = wavefrontQueueOffset(width, height);
-            this.initializeWavefrontQueues(commandBuffer, stack, queueOffset);
+            long queueCommandOffset = wavefrontQueueCommandOffset(width, height);
+            this.initializeWavefrontQueues(commandBuffer, stack, queueCommandOffset);
             this.trace(commandBuffer, stack, width, height, WAVEFRONT_HEAD_GROUP);
             this.wavefrontBarrier(commandBuffer, stack);
             int sourceQueue = 0;
@@ -414,26 +414,26 @@ public final class RayTracingPipeline implements Destroyable {
                         commandBuffer,
                         stack,
                         wavefrontStepGroup(sourceQueue),
-                        queueOffset,
+                        queueCommandOffset,
                         sourceQueue);
                 this.advanceWavefrontQueue(
-                        commandBuffer, stack, queueOffset, sourceQueue);
+                        commandBuffer, stack, queueCommandOffset, sourceQueue);
                 sourceQueue ^= 1;
             }
             this.traceIndirect(
                     commandBuffer,
                     stack,
                     wavefrontTransitionGroup(sourceQueue),
-                    queueOffset,
+                    queueCommandOffset,
                     sourceQueue);
             this.advanceWavefrontQueue(
-                    commandBuffer, stack, queueOffset, sourceQueue);
+                    commandBuffer, stack, queueCommandOffset, sourceQueue);
             sourceQueue ^= 1;
             this.traceIndirect(
                     commandBuffer,
                     stack,
                     wavefrontTailGroup(sourceQueue),
-                    queueOffset,
+                    queueCommandOffset,
                     sourceQueue);
             this.wavefrontBarrier(commandBuffer, stack);
             this.trace(commandBuffer, stack, width, height, resolveGroup);
@@ -490,7 +490,7 @@ public final class RayTracingPipeline implements Destroyable {
             VkCommandBuffer commandBuffer,
             MemoryStack stack,
             int raygenGroup,
-            long queueOffset,
+            long queueCommandOffset,
             int sourceQueue) {
         VkStridedDeviceAddressRegionKHR raygen = VkStridedDeviceAddressRegionKHR.calloc(stack)
                 .deviceAddress(this.tracePipeline.raygenAddress(raygenGroup))
@@ -506,7 +506,7 @@ public final class RayTracingPipeline implements Destroyable {
                 .size(this.tracePipeline.recordStride * HIT_GROUP_COUNT);
         VkStridedDeviceAddressRegionKHR callable = VkStridedDeviceAddressRegionKHR.calloc(stack);
         long indirectAddress = this.wavefrontPaths.deviceAddress()
-                + queueOffset
+                + queueCommandOffset
                 + Math.multiplyExact(
                         (long) sourceQueue,
                         (long) ShaderAbi.WAVEFRONT_QUEUE_COMMAND_STRIDE);
@@ -517,7 +517,7 @@ public final class RayTracingPipeline implements Destroyable {
     private void initializeWavefrontQueues(
             VkCommandBuffer commandBuffer,
             MemoryStack stack,
-            long queueOffset) {
+            long queueCommandOffset) {
         this.wavefrontToTransferBarrier(commandBuffer, stack);
         ByteBuffer commands = stack.calloc(
                 ShaderAbi.WAVEFRONT_QUEUE_COUNT
@@ -532,7 +532,7 @@ public final class RayTracingPipeline implements Destroyable {
         VK12.vkCmdUpdateBuffer(
                 commandBuffer,
                 this.wavefrontPaths.handle(),
-                queueOffset,
+                queueCommandOffset,
                 commands);
         this.transferToWavefrontBarrier(commandBuffer, stack);
     }
@@ -572,7 +572,7 @@ public final class RayTracingPipeline implements Destroyable {
     private void advanceWavefrontQueue(
             VkCommandBuffer commandBuffer,
             MemoryStack stack,
-            long queueOffset,
+            long queueCommandOffset,
             int completedSourceQueue) {
         VkMemoryBarrier2.Buffer barrier = VkMemoryBarrier2.calloc(1, stack);
         barrier.get(0)
@@ -594,7 +594,7 @@ public final class RayTracingPipeline implements Destroyable {
         VK12.vkCmdFillBuffer(
                 commandBuffer,
                 this.wavefrontPaths.handle(),
-                queueOffset
+                queueCommandOffset
                         + Math.multiplyExact(
                                 (long) completedSourceQueue,
                                 (long) ShaderAbi.WAVEFRONT_QUEUE_COMMAND_STRIDE),
@@ -652,6 +652,8 @@ public final class RayTracingPipeline implements Destroyable {
         long pixels = Math.multiplyExact((long) width, (long) height);
         long capacity = Math.multiplyExact(
                 pixels, (long) ShaderAbi.WAVEFRONT_PATH_SLOTS_PER_PIXEL);
+        long areaRecords = Math.multiplyExact(
+                pixels, (long) ShaderAbi.WAVEFRONT_AREA_RECORD_SIZE);
         long commands = Math.multiplyExact(
                 (long) ShaderAbi.WAVEFRONT_QUEUE_COUNT,
                 (long) ShaderAbi.WAVEFRONT_QUEUE_COMMAND_STRIDE);
@@ -660,7 +662,14 @@ public final class RayTracingPipeline implements Destroyable {
                         (long) ShaderAbi.WAVEFRONT_QUEUE_COUNT,
                         capacity),
                 (long) ShaderAbi.WAVEFRONT_QUEUE_INDEX_SIZE);
-        return Math.addExact(commands, indices);
+        return Math.addExact(areaRecords, Math.addExact(commands, indices));
+    }
+
+    static long wavefrontQueueCommandOffset(int width, int height) {
+        long pixels = Math.multiplyExact((long) width, (long) height);
+        long areaRecords = Math.multiplyExact(
+                pixels, (long) ShaderAbi.WAVEFRONT_AREA_RECORD_SIZE);
+        return Math.addExact(wavefrontQueueOffset(width, height), areaRecords);
     }
 
     static void validateWavefrontRanges(int width, int height, long maxStorageBufferRange) {

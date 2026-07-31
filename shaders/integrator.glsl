@@ -901,17 +901,19 @@ bool primeAdvancePath(
     return primeRussianRoulette(path, rouletteSample);
 }
 
-// Queue-resident PSR state stores the same bounded delta chain as an incremental path length and
-// orthogonal direction transform. Its persisted representation is 32 bytes rather than eight
-// full position/normal pairs, making two parallel transparent branches practical.
+// Queue-resident PSR state stores the bounded delta chain as an incremental path length and
+// orthogonal direction transform. The last delta position is exactly path.physicalOrigin at every
+// queue boundary, so keeping a second vec3 would increase both slot size and live registers.
 
 void primeAppendQueuedPsrDelta(
         inout PrimeQueuedPsrState state,
+        vec3 previousPosition,
         SurfaceInteraction surface,
         BsdfSample bsdf) {
     primeAppendQueuedPsrState(
             state,
             primePush.cameraPosition,
+            previousPosition,
             surface.position,
             surface.geometricNormal,
             (bsdf.eventFlags & PRIME_BSDF_EVENT_REFLECTION) != 0u);
@@ -935,13 +937,19 @@ void primeSetQueuedPsrGuide(
         float linearRoughness,
         PrimeDenoiseAlbedos albedos,
         vec3 guideThroughput,
+        vec3 lastPosition,
         PrimeQueuedPsrState state) {
     vec3 position = surface.position - primePush.cameraPosition;
     vec3 normal = shadingNormal;
     vec3 virtualPosition;
     vec3 virtualNormal;
     if (primeBuildQueuedPsrGuideValue(
-            state, surface.position, normal, virtualPosition, virtualNormal)) {
+            state,
+            lastPosition,
+            surface.position,
+            normal,
+            virtualPosition,
+            virtualNormal)) {
         position = virtualPosition;
         normal = virtualNormal;
     }
@@ -1120,6 +1128,7 @@ bool primeIntegrateTransparentWavefrontSurface(
                 surfaceLinearRoughness,
                 surfaceAlbedos,
                 path.throughput,
+                path.physicalOrigin,
                 psrState);
         if (transmissionBranch) {
             result.anchorDistance = primeQueuedPsrAnchorDistance(
@@ -1151,7 +1160,8 @@ bool primeIntegrateTransparentWavefrontSurface(
         }
     } else if (guideEnabled && !hasGuide && pureDeltaInterface
             && (bsdf.eventFlags & PRIME_BSDF_EVENT_DELTA) != 0u) {
-        primeAppendQueuedPsrDelta(psrState, surface, bsdf);
+        primeAppendQueuedPsrDelta(
+                psrState, path.physicalOrigin, surface, bsdf);
     }
     volumeStack = scatter.volumeStack;
     if (!primeAdvancePath(

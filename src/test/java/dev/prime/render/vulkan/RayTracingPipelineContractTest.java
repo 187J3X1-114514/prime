@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import dev.prime.render.shader.ShaderAbi;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.ByteBuffer;
@@ -22,9 +23,16 @@ final class RayTracingPipelineContractTest {
     private static final int SPIRV_OP_TYPE_INT = 21;
     private static final int SPIRV_OP_TYPE_FLOAT = 22;
     private static final int SPIRV_OP_TYPE_VECTOR = 23;
+    private static final int SPIRV_OP_TYPE_RUNTIME_ARRAY = 29;
     private static final int SPIRV_OP_TYPE_STRUCT = 30;
     private static final int SPIRV_OP_TYPE_POINTER = 32;
     private static final int SPIRV_OP_VARIABLE = 59;
+    private static final int SPIRV_OP_DECORATE = 71;
+    private static final int SPIRV_OP_MEMBER_DECORATE = 72;
+    private static final int SPIRV_DECORATION_ARRAY_STRIDE = 6;
+    private static final int SPIRV_DECORATION_BINDING = 33;
+    private static final int SPIRV_DECORATION_OFFSET = 35;
+    private static final int SPIRV_STORAGE_BUFFER = 12;
     private static final int SPIRV_STORAGE_RAY_PAYLOAD = 5338;
     private static final int SPIRV_STORAGE_INCOMING_RAY_PAYLOAD = 5342;
 
@@ -136,14 +144,17 @@ final class RayTracingPipelineContractTest {
     @Test
     void fixedWavefrontSlotsScaleExactlyWithTheRenderExtent() {
         assertEquals(
-                2_521_497_632L,
+                2_123_366_432L,
                 RayTracingPipeline.wavefrontPathBytes(3840, 2160));
         assertEquals(
-                2_388_787_200L,
+                1_857_945_600L,
                 RayTracingPipeline.wavefrontQueueOffset(3840, 2160));
         assertEquals(
-                132_710_432L,
+                265_420_832L,
                 RayTracingPipeline.wavefrontQueueBytes(3840, 2160));
+        assertEquals(
+                1_990_656_000L,
+                RayTracingPipeline.wavefrontQueueCommandOffset(3840, 2160));
         assertThrows(
                 IllegalArgumentException.class,
                 () -> RayTracingPipeline.wavefrontPathBytes(0, 2160));
@@ -163,6 +174,79 @@ final class RayTracingPipelineContractTest {
     }
 
     @Test
+    void compiledWavefrontStorageUsesTheCompactedRecordAbi() throws IOException {
+        int[] words = spirvWords("wavefront_step.rgen.spv");
+        Map<Integer, SpirvType> types = new HashMap<>();
+        Map<Integer, Integer> bindings = new HashMap<>();
+        Map<Integer, Integer> arrayStrides = new HashMap<>();
+        Map<Long, Integer> memberOffsets = new HashMap<>();
+        List<SpirvVariable> variables = new ArrayList<>();
+        for (int offset = 5; offset < words.length; ) {
+            int instruction = words[offset];
+            int wordCount = instruction >>> 16;
+            int opcode = instruction & 0xffff;
+            if (wordCount <= 0 || offset + wordCount > words.length) {
+                throw new IllegalArgumentException("Malformed SPIR-V instruction");
+            }
+            if (opcode == SPIRV_OP_TYPE_RUNTIME_ARRAY
+                    || opcode == SPIRV_OP_TYPE_STRUCT
+                    || opcode == SPIRV_OP_TYPE_POINTER) {
+                types.put(
+                        words[offset + 1],
+                        new SpirvType(
+                                opcode,
+                                Arrays.copyOfRange(
+                                        words, offset + 2, offset + wordCount)));
+            } else if (opcode == SPIRV_OP_VARIABLE) {
+                variables.add(new SpirvVariable(
+                        words[offset + 1], words[offset + 2], words[offset + 3]));
+            } else if (opcode == SPIRV_OP_DECORATE && wordCount >= 4) {
+                int target = words[offset + 1];
+                int decoration = words[offset + 2];
+                if (decoration == SPIRV_DECORATION_BINDING) {
+                    bindings.put(target, words[offset + 3]);
+                } else if (decoration == SPIRV_DECORATION_ARRAY_STRIDE) {
+                    arrayStrides.put(target, words[offset + 3]);
+                }
+            } else if (opcode == SPIRV_OP_MEMBER_DECORATE
+                    && wordCount >= 5
+                    && words[offset + 3] == SPIRV_DECORATION_OFFSET) {
+                memberOffsets.put(
+                        spirvMember(words[offset + 1], words[offset + 2]),
+                        words[offset + 4]);
+            }
+            offset += wordCount;
+        }
+
+        SpirvVariable paths = variables.stream()
+                .filter(variable -> variable.storageClass() == SPIRV_STORAGE_BUFFER)
+                .filter(variable -> bindings.getOrDefault(variable.identifier(), -1)
+                        == ShaderAbi.DESCRIPTOR_WAVEFRONT_PATHS)
+                .findFirst()
+                .orElseThrow();
+        SpirvType pointer = requireType(types, paths.type());
+        SpirvType block = requireType(types, pointer.operands()[1]);
+        int arrayIdentifier = block.operands()[0];
+        SpirvType array = requireType(types, arrayIdentifier);
+        int recordIdentifier = array.operands()[0];
+        SpirvType record = requireType(types, recordIdentifier);
+        int transportIdentifier = record.operands()[0];
+        SpirvType transport = requireType(types, transportIdentifier);
+
+        assertEquals(SPIRV_OP_TYPE_RUNTIME_ARRAY, array.opcode());
+        assertEquals(ShaderAbi.WAVEFRONT_PATH_RECORD_SIZE, arrayStrides.get(arrayIdentifier));
+        assertEquals(2, record.operands().length);
+        assertEquals(0, memberOffsets.get(spirvMember(recordIdentifier, 0)));
+        assertEquals(96, memberOffsets.get(spirvMember(recordIdentifier, 1)));
+        assertEquals(6, transport.operands().length);
+        for (int member = 0; member < transport.operands().length; member++) {
+            assertEquals(
+                    member * 16,
+                    memberOffsets.get(spirvMember(transportIdentifier, member)));
+        }
+    }
+
+    @Test
     void deferredCompilationClampsDriverConcurrencyToTheHost() {
         assertEquals(1, RayTracingPipeline.deferredWorkerCount(0, 32));
         assertEquals(2, RayTracingPipeline.deferredWorkerCount(2, 32));
@@ -173,27 +257,7 @@ final class RayTracingPipelineContractTest {
 
     private static Set<String> payloadShapes(
             String shader, int storageClass) throws IOException {
-        String resource = "/prime/shaders/" + shader;
-        byte[] bytes;
-        try (InputStream input =
-                RayTracingPipelineContractTest.class.getResourceAsStream(resource)) {
-            if (input == null) {
-                throw new IllegalArgumentException(
-                        "Missing compiled shader resource " + resource);
-            }
-            bytes = input.readAllBytes();
-        }
-        if ((bytes.length & 3) != 0) {
-            throw new IllegalArgumentException("Malformed SPIR-V byte length");
-        }
-        int[] words = new int[bytes.length / Integer.BYTES];
-        ByteBuffer.wrap(bytes)
-                .order(ByteOrder.LITTLE_ENDIAN)
-                .asIntBuffer()
-                .get(words);
-        if (words.length < 5 || words[0] != 0x0723_0203) {
-            throw new IllegalArgumentException("Malformed SPIR-V header");
-        }
+        int[] words = spirvWords(shader);
 
         Map<Integer, SpirvType> types = new HashMap<>();
         List<SpirvVariable> variables = new ArrayList<>();
@@ -220,6 +284,7 @@ final class RayTracingPipelineContractTest {
             } else if (opcode == SPIRV_OP_VARIABLE) {
                 variables.add(new SpirvVariable(
                         words[offset + 1],
+                        words[offset + 2],
                         words[offset + 3]));
             }
             offset += wordCount;
@@ -238,6 +303,35 @@ final class RayTracingPipelineContractTest {
             result.add(typeShape(types, pointer.operands()[1]));
         }
         return result;
+    }
+
+    private static int[] spirvWords(String shader) throws IOException {
+        String resource = "/prime/shaders/" + shader;
+        byte[] bytes;
+        try (InputStream input =
+                RayTracingPipelineContractTest.class.getResourceAsStream(resource)) {
+            if (input == null) {
+                throw new IllegalArgumentException(
+                        "Missing compiled shader resource " + resource);
+            }
+            bytes = input.readAllBytes();
+        }
+        if ((bytes.length & 3) != 0) {
+            throw new IllegalArgumentException("Malformed SPIR-V byte length");
+        }
+        int[] words = new int[bytes.length / Integer.BYTES];
+        ByteBuffer.wrap(bytes)
+                .order(ByteOrder.LITTLE_ENDIAN)
+                .asIntBuffer()
+                .get(words);
+        if (words.length < 5 || words[0] != 0x0723_0203) {
+            throw new IllegalArgumentException("Malformed SPIR-V header");
+        }
+        return words;
+    }
+
+    private static long spirvMember(int type, int member) {
+        return (Integer.toUnsignedLong(type) << 32) | Integer.toUnsignedLong(member);
     }
 
     private static String typeShape(
@@ -272,5 +366,5 @@ final class RayTracingPipelineContractTest {
 
     private record SpirvType(int opcode, int[] operands) {}
 
-    private record SpirvVariable(int type, int storageClass) {}
+    private record SpirvVariable(int type, int identifier, int storageClass) {}
 }

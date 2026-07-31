@@ -27,6 +27,7 @@ void main() {
     vec3 positions[PRIME_QUEUED_PSR_CAPACITY];
     vec3 normals[PRIME_QUEUED_PSR_CAPACITY];
     PrimeQueuedPsrState state = primeEmptyQueuedPsrState();
+    vec3 previousPosition = cameraPosition;
     for (uint index = 0u; index < count; ++index) {
         positions[index] = uintBitsToFloat(
                 primeTestInput.words[inputOffset + 5u + index]).xyz;
@@ -36,13 +37,20 @@ void main() {
         primeAppendQueuedPsrState(
                 state,
                 cameraPosition,
+                previousPosition,
                 positions[index],
                 normals[index],
                 (reflectionMask & (1u << index)) != 0u);
+        previousPosition = positions[index];
     }
     if (forceOverflow) {
         primeAppendQueuedPsrState(
-                state, cameraPosition, target, targetNormal, false);
+                state,
+                cameraPosition,
+                previousPosition,
+                target,
+                targetNormal,
+                false);
     }
 
     vec3 expectedDirection = direction;
@@ -69,7 +77,12 @@ void main() {
     vec3 virtualPosition = vec3(0.0);
     vec3 virtualNormal = vec3(0.0);
     bool built = primeBuildQueuedPsrGuideValue(
-            state, target, targetNormal, virtualPosition, virtualNormal);
+            state,
+            previousPosition,
+            target,
+            targetNormal,
+            virtualPosition,
+            virtualNormal);
     if (!built) {
         // An out payload is unspecified when the public result says no guide was built.
         virtualPosition = vec3(0.0);

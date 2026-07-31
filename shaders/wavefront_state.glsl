@@ -2,18 +2,21 @@
 #define PRIME_WAVEFRONT_STATE_GLSL
 
 // Two fixed slots belong to each realtime pixel so a primary transparent interface can enqueue
-// reflection and transmission as independent invocations. Nine aligned 16-byte lanes keep hot
-// transport in f32, bounded medium/guide state in f16, and a compact queue-resident PSR transform.
-// The 144-byte std430 stride is a CPU/GPU ABI and needs no scalar-block-layout feature.
-struct PrimeWavefrontPathRecord {
+// reflection and transmission as independent invocations. The execution-local type contains only
+// the six hot transport lanes; the storage record adds one cold queued-PSR lane. Primary area-light
+// moments are immutable pixel state and live once per pixel in the queue-buffer prefix.
+struct PrimeWavefrontTransportRecord {
     vec4 physicalOriginAndPreviousBsdfPdf;
     vec4 traceOriginAndPathControl;
     vec4 rayDirectionAndDenoiserControl;
     vec4 throughputAndNumericalFlags;
     uvec4 medium0;
     uvec4 medium1;
-    uvec4 primaryAreaRadianceAndDirection;
-    vec4 psrLastPositionControl;
+};
+
+// Seven aligned lanes give the std430 storage record its explicit 112-byte CPU/GPU ABI.
+struct PrimeWavefrontPathRecord {
+    PrimeWavefrontTransportRecord transport;
     uvec4 psrPacked;
 };
 
@@ -31,57 +34,42 @@ layout(
     uint words[];
 } primeWavefrontQueue;
 
-// Active rounds only need the six transport/medium lanes. Area-light moments are immutable after
-// head, while queued PSR is cold state used only by transparent paths before a guide is found.
-// Member-wise access prevents the SPIR-V front end from emitting a 144-byte aggregate load/store
-// for every ordinary continuation.
-PrimeWavefrontPathRecord primeLoadWavefrontTransportRecord(uint pathIndex) {
-    PrimeWavefrontPathRecord record;
+// Member-wise access keeps cold PSR state out of ordinary continuations and prevents a storage
+// record aggregate from remaining live across the integrator call tree.
+PrimeWavefrontTransportRecord primeLoadWavefrontTransportRecord(uint pathIndex) {
+    PrimeWavefrontTransportRecord record;
     record.physicalOriginAndPreviousBsdfPdf =
-            primeWavefrontPaths.records[pathIndex].physicalOriginAndPreviousBsdfPdf;
+            primeWavefrontPaths.records[pathIndex]
+                    .transport.physicalOriginAndPreviousBsdfPdf;
     record.traceOriginAndPathControl =
-            primeWavefrontPaths.records[pathIndex].traceOriginAndPathControl;
+            primeWavefrontPaths.records[pathIndex].transport.traceOriginAndPathControl;
     record.rayDirectionAndDenoiserControl =
-            primeWavefrontPaths.records[pathIndex].rayDirectionAndDenoiserControl;
+            primeWavefrontPaths.records[pathIndex]
+                    .transport.rayDirectionAndDenoiserControl;
     record.throughputAndNumericalFlags =
-            primeWavefrontPaths.records[pathIndex].throughputAndNumericalFlags;
-    record.medium0 = primeWavefrontPaths.records[pathIndex].medium0;
-    record.medium1 = primeWavefrontPaths.records[pathIndex].medium1;
-    record.primaryAreaRadianceAndDirection = uvec4(0u);
-    record.psrLastPositionControl = vec4(0.0);
-    record.psrPacked = uvec4(0u);
+            primeWavefrontPaths.records[pathIndex]
+                    .transport.throughputAndNumericalFlags;
+    record.medium0 = primeWavefrontPaths.records[pathIndex].transport.medium0;
+    record.medium1 = primeWavefrontPaths.records[pathIndex].transport.medium1;
     return record;
-}
-
-void primeLoadWavefrontPsrRecord(
-        uint pathIndex,
-        inout PrimeWavefrontPathRecord record) {
-    record.psrLastPositionControl =
-            primeWavefrontPaths.records[pathIndex].psrLastPositionControl;
-    record.psrPacked = primeWavefrontPaths.records[pathIndex].psrPacked;
 }
 
 void primeStoreWavefrontTransportRecord(
         uint pathIndex,
-        PrimeWavefrontPathRecord record) {
-    primeWavefrontPaths.records[pathIndex].physicalOriginAndPreviousBsdfPdf =
+        PrimeWavefrontTransportRecord record) {
+    primeWavefrontPaths.records[pathIndex]
+            .transport.physicalOriginAndPreviousBsdfPdf =
             record.physicalOriginAndPreviousBsdfPdf;
-    primeWavefrontPaths.records[pathIndex].traceOriginAndPathControl =
+    primeWavefrontPaths.records[pathIndex].transport.traceOriginAndPathControl =
             record.traceOriginAndPathControl;
-    primeWavefrontPaths.records[pathIndex].rayDirectionAndDenoiserControl =
+    primeWavefrontPaths.records[pathIndex]
+            .transport.rayDirectionAndDenoiserControl =
             record.rayDirectionAndDenoiserControl;
-    primeWavefrontPaths.records[pathIndex].throughputAndNumericalFlags =
+    primeWavefrontPaths.records[pathIndex]
+            .transport.throughputAndNumericalFlags =
             record.throughputAndNumericalFlags;
-    primeWavefrontPaths.records[pathIndex].medium0 = record.medium0;
-    primeWavefrontPaths.records[pathIndex].medium1 = record.medium1;
-}
-
-void primeStoreWavefrontPsrRecord(
-        uint pathIndex,
-        PrimeWavefrontPathRecord record) {
-    primeWavefrontPaths.records[pathIndex].psrLastPositionControl =
-            record.psrLastPositionControl;
-    primeWavefrontPaths.records[pathIndex].psrPacked = record.psrPacked;
+    primeWavefrontPaths.records[pathIndex].transport.medium0 = record.medium0;
+    primeWavefrontPaths.records[pathIndex].transport.medium1 = record.medium1;
 }
 
 const uint PRIME_WAVEFRONT_REACHED_NON_DELTA = 2u;
@@ -105,6 +93,8 @@ const uint PRIME_WAVEFRONT_PRIMARY_FLAGS_MASK = 0x3fffu;
 const uint PRIME_WAVEFRONT_NUMERICAL_FLAGS_MASK = 0x1ffu;
 const uint PRIME_WAVEFRONT_NUMERICAL_CONTEXT_SHIFT = 9u;
 const uint PRIME_WAVEFRONT_NUMERICAL_CONTEXT_MASK = 0x7fffu;
+const uint PRIME_WAVEFRONT_PSR_CONTROL_SHIFT = 18u;
+const uint PRIME_WAVEFRONT_PSR_CONTROL_MASK = 0x3fu;
 
 uint primeWavefrontIndex(uvec2 pixel) {
     return pixel.y * primePush.outputExtent.x + pixel.x;
@@ -130,13 +120,19 @@ uvec2 primeWavefrontPixel(uint pathIndex) {
 }
 
 uint primeWavefrontQueueCommandWord(uint queue) {
-    return queue * (PRIME_WAVEFRONT_QUEUE_COMMAND_STRIDE / 4u);
+    uint areaWords = primeWavefrontPixelCount()
+            * (PRIME_WAVEFRONT_AREA_RECORD_SIZE / 4u);
+    return areaWords + queue * (PRIME_WAVEFRONT_QUEUE_COMMAND_STRIDE / 4u);
 }
 
 uint primeWavefrontQueueWord(uint queue, uint entry) {
-    uint commandWords = PRIME_WAVEFRONT_QUEUE_COUNT
-            * (PRIME_WAVEFRONT_QUEUE_COMMAND_STRIDE / 4u);
-    return commandWords + queue * primeWavefrontPathCapacity() + entry;
+    uint indexWords = primeWavefrontQueueCommandWord(PRIME_WAVEFRONT_QUEUE_COUNT);
+    return indexWords + queue * primeWavefrontPathCapacity() + entry;
+}
+
+uint primeWavefrontAreaWord(uvec2 pixel, uint component) {
+    return primeWavefrontIndex(pixel)
+            * (PRIME_WAVEFRONT_AREA_RECORD_SIZE / 4u) + component;
 }
 
 uint primeWavefrontQueuedPath(uint queue, uint entry) {
@@ -231,6 +227,35 @@ void primeUnpackWavefrontPair(uvec3 packedPair, out vec3 first, out vec3 second)
     second = vec3(first2Second0.y, second12);
 }
 
+void primeStoreWavefrontArea(uvec2 pixel, PrimeDenoiserGuides guides) {
+    uvec3 radiance = primePackWavefrontPair(
+            primeNrdSanitizeRadiance(guides.primaryAreaDiffuse),
+            primeNrdSanitizeRadiance(guides.primaryAreaSpecular));
+    vec3 direction = guides.primaryAreaDirection;
+    if (!(dot(direction, direction) > 0.0)) {
+        direction = vec3(0.0, 1.0, 0.0);
+    }
+    primeWavefrontQueue.words[primeWavefrontAreaWord(pixel, 0u)] = radiance.x;
+    primeWavefrontQueue.words[primeWavefrontAreaWord(pixel, 1u)] = radiance.y;
+    primeWavefrontQueue.words[primeWavefrontAreaWord(pixel, 2u)] = radiance.z;
+    primeWavefrontQueue.words[primeWavefrontAreaWord(pixel, 3u)] =
+            primePackOctahedralNormal(direction);
+}
+
+void primeLoadWavefrontArea(
+        uvec2 pixel,
+        out vec3 diffuse,
+        out vec3 specular,
+        out vec3 direction) {
+    uvec3 radiance = uvec3(
+            primeWavefrontQueue.words[primeWavefrontAreaWord(pixel, 0u)],
+            primeWavefrontQueue.words[primeWavefrontAreaWord(pixel, 1u)],
+            primeWavefrontQueue.words[primeWavefrontAreaWord(pixel, 2u)]);
+    primeUnpackWavefrontPair(radiance, diffuse, specular);
+    direction = primeUnpackOctahedralNormal(
+            primeWavefrontQueue.words[primeWavefrontAreaWord(pixel, 3u)]);
+}
+
 uint primePackWavefrontPathControl(PathState path) {
     return (min(path.bounce, PRIME_WAVEFRONT_BYTE_MASK)
                     << PRIME_WAVEFRONT_BOUNCE_SHIFT)
@@ -249,13 +274,14 @@ uint primePackWavefrontDiagnostic() {
                     << PRIME_WAVEFRONT_NUMERICAL_CONTEXT_SHIFT);
 }
 
-bool primeWavefrontActive(PrimeWavefrontPathRecord record) {
+bool primeWavefrontActive(PrimeWavefrontTransportRecord record) {
     uint denoiserControl =
             floatBitsToUint(record.rayDirectionAndDenoiserControl.w);
     return (denoiserControl & PRIME_WAVEFRONT_ACTIVE_MASK) != 0u;
 }
 
-void primeSetWavefrontActive(inout PrimeWavefrontPathRecord record, bool enabled) {
+void primeSetWavefrontActive(
+        inout PrimeWavefrontTransportRecord record, bool enabled) {
     uint denoiserControl =
             floatBitsToUint(record.rayDirectionAndDenoiserControl.w);
     if (enabled) {
@@ -266,28 +292,71 @@ void primeSetWavefrontActive(inout PrimeWavefrontPathRecord record, bool enabled
     record.rayDirectionAndDenoiserControl.w = uintBitsToFloat(denoiserControl);
 }
 
-void primeSetWavefrontQueuedPsrState(
-        inout PrimeWavefrontPathRecord record,
-        PrimeQueuedPsrState state) {
-    record.psrLastPositionControl = state.lastPositionControl;
+void primeSetWavefrontQueuedPsrControl(
+        inout PrimeWavefrontTransportRecord record,
+        uint control) {
+    uint pathControl = floatBitsToUint(record.traceOriginAndPathControl.w);
+    pathControl &= ~(PRIME_WAVEFRONT_PSR_CONTROL_MASK
+            << PRIME_WAVEFRONT_PSR_CONTROL_SHIFT);
+    pathControl |= (control & PRIME_WAVEFRONT_PSR_CONTROL_MASK)
+            << PRIME_WAVEFRONT_PSR_CONTROL_SHIFT;
+    record.traceOriginAndPathControl.w = uintBitsToFloat(pathControl);
+}
+
+uvec4 primePackWavefrontPsrState(PrimeQueuedPsrState state) {
     vec3 firstDirection = state.firstDirectionLength.xyz;
     if (!(dot(firstDirection, firstDirection) > 0.0)) {
         firstDirection = vec3(0.0, 0.0, 1.0);
     }
-    record.psrPacked = uvec4(
+    return uvec4(
             primePackOctahedralNormal(firstDirection),
             floatBitsToUint(state.firstDirectionLength.w),
             packSnorm2x16(clamp(state.rotation.xy, vec2(-1.0), vec2(1.0))),
             packSnorm2x16(clamp(state.rotation.zw, vec2(-1.0), vec2(1.0))));
 }
 
-PrimeWavefrontPathRecord primeMakeWavefrontRecord(
+void primeSetWavefrontQueuedPsrState(
+        inout PrimeWavefrontPathRecord record,
+        PrimeQueuedPsrState state) {
+    primeSetWavefrontQueuedPsrControl(record.transport, state.control);
+    record.psrPacked = primePackWavefrontPsrState(state);
+}
+
+PrimeQueuedPsrState primeLoadWavefrontPsrState(
+        uint pathIndex,
+        PrimeWavefrontTransportRecord record) {
+    uvec4 packed = primeWavefrontPaths.records[pathIndex].psrPacked;
+    PrimeQueuedPsrState state;
+    state.firstDirectionLength = vec4(
+            primeUnpackOctahedralNormal(packed.x),
+            uintBitsToFloat(packed.y));
+    state.rotation = vec4(
+            unpackSnorm2x16(packed.z),
+            unpackSnorm2x16(packed.w));
+    float rotationLengthSquared = dot(state.rotation, state.rotation);
+    state.rotation = rotationLengthSquared > 0.0
+            ? state.rotation * inversesqrt(rotationLengthSquared)
+            : vec4(0.0, 0.0, 0.0, 1.0);
+    uint pathControl = floatBitsToUint(record.traceOriginAndPathControl.w);
+    state.control = (pathControl >> PRIME_WAVEFRONT_PSR_CONTROL_SHIFT)
+            & PRIME_WAVEFRONT_PSR_CONTROL_MASK;
+    return state;
+}
+
+void primeStoreWavefrontPsrState(
+        uint pathIndex,
+        PrimeQueuedPsrState state) {
+    primeWavefrontPaths.records[pathIndex].psrPacked =
+            primePackWavefrontPsrState(state);
+}
+
+PrimeWavefrontTransportRecord primeMakeWavefrontTransportRecord(
         PathState path,
         PrimeRcVolumeStack volumeStack,
         PrimeDenoiserState denoiserState,
-        PrimeIntegrationResult result,
+        uint primaryMaterialFlags,
         bool enabled) {
-    PrimeWavefrontPathRecord record;
+    PrimeWavefrontTransportRecord record;
     record.physicalOriginAndPreviousBsdfPdf =
             vec4(path.physicalOrigin, path.previousBsdfPdf);
     record.traceOriginAndPathControl =
@@ -306,29 +375,34 @@ PrimeWavefrontPathRecord primeMakeWavefrontRecord(
                     << PRIME_WAVEFRONT_PRIMARY_BOUNCE_SHIFT)
             | (min(volumeStack.count, 2u)
                     << PRIME_WAVEFRONT_MEDIUM_COUNT_SHIFT)
-            | ((result.guides.primaryMaterialFlags
-                    & PRIME_WAVEFRONT_PRIMARY_FLAGS_MASK)
+            | ((primaryMaterialFlags & PRIME_WAVEFRONT_PRIMARY_FLAGS_MASK)
                     << PRIME_WAVEFRONT_PRIMARY_FLAGS_SHIFT);
     record.rayDirectionAndDenoiserControl =
             vec4(path.rayDirection, uintBitsToFloat(denoiserControl));
     record.throughputAndNumericalFlags =
             vec4(path.throughput, uintBitsToFloat(primePackWavefrontDiagnostic()));
-    uvec3 primaryAreaRadiance = primePackWavefrontPair(
-            primeNrdSanitizeRadiance(result.guides.primaryAreaDiffuse),
-            primeNrdSanitizeRadiance(result.guides.primaryAreaSpecular));
-    vec3 primaryAreaDirection = result.guides.primaryAreaDirection;
-    if (!(dot(primaryAreaDirection, primaryAreaDirection) > 0.0)) {
-        primaryAreaDirection = vec3(0.0, 1.0, 0.0);
-    }
-    record.primaryAreaRadianceAndDirection = uvec4(
-            primaryAreaRadiance,
-            primePackOctahedralNormal(primaryAreaDirection));
+    return record;
+}
+
+PrimeWavefrontPathRecord primeMakeWavefrontRecord(
+        PathState path,
+        PrimeRcVolumeStack volumeStack,
+        PrimeDenoiserState denoiserState,
+        uint primaryMaterialFlags,
+        bool enabled) {
+    PrimeWavefrontPathRecord record;
+    record.transport = primeMakeWavefrontTransportRecord(
+            path,
+            volumeStack,
+            denoiserState,
+            primaryMaterialFlags,
+            enabled);
     primeSetWavefrontQueuedPsrState(record, primeEmptyQueuedPsrState());
     return record;
 }
 
 PathState primeWavefrontPath(
-        uvec2 pixel, PrimeWavefrontPathRecord record) {
+        uvec2 pixel, PrimeWavefrontTransportRecord record) {
     PathState path;
     uint pathControl = floatBitsToUint(record.traceOriginAndPathControl.w);
     path.physicalOrigin = record.physicalOriginAndPreviousBsdfPdf.xyz;
@@ -354,7 +428,8 @@ PathState primeWavefrontPath(
     return path;
 }
 
-PrimeRcVolumeStack primeWavefrontVolumeStack(PrimeWavefrontPathRecord record) {
+PrimeRcVolumeStack primeWavefrontVolumeStack(
+        PrimeWavefrontTransportRecord record) {
     PrimeRcVolumeStack volumeStack;
     volumeStack.values[0] = primeUnpackWavefrontMedium(record.medium0);
     volumeStack.values[1] = primeUnpackWavefrontMedium(record.medium1);
@@ -368,11 +443,9 @@ PrimeRcVolumeStack primeWavefrontVolumeStack(PrimeWavefrontPathRecord record) {
 }
 
 PrimeDenoiserState primeWavefrontDenoiserState(
-        PrimeWavefrontPathRecord record,
+        uint denoiserControl,
         PrimeIntegrationResult result) {
     PrimeDenoiserState state;
-    uint denoiserControl =
-            floatBitsToUint(record.rayDirectionAndDenoiserControl.w);
     state.hasPrimarySurface = true;
     state.reachedNonDelta =
             (denoiserControl & PRIME_WAVEFRONT_REACHED_NON_DELTA) != 0u;
@@ -386,7 +459,7 @@ PrimeDenoiserState primeWavefrontDenoiserState(
     return state;
 }
 
-void primeRestoreWavefrontDiagnostic(PrimeWavefrontPathRecord record) {
+void primeRestoreWavefrontDiagnostic(PrimeWavefrontTransportRecord record) {
     if (primeWritesRawNumericalDiagnostic()) {
         uint packedDiagnostic =
                 floatBitsToUint(record.throughputAndNumericalFlags.w);
@@ -398,80 +471,46 @@ void primeRestoreWavefrontDiagnostic(PrimeWavefrontPathRecord record) {
     }
 }
 
-void primeUpdateWavefrontRecord(
-        inout PrimeWavefrontPathRecord record,
+PrimeWavefrontTransportRecord primeMakeUpdatedWavefrontRecord(
         PathState path,
         PrimeRcVolumeStack volumeStack,
         PrimeDenoiserState denoiserState,
+        uint previousDenoiserControl,
+        uint psrControl,
         bool enabled) {
-    record.physicalOriginAndPreviousBsdfPdf =
-            vec4(path.physicalOrigin, path.previousBsdfPdf);
-    record.traceOriginAndPathControl =
-            vec4(path.traceOrigin, uintBitsToFloat(primePackWavefrontPathControl(path)));
-    record.medium0 = primePackWavefrontMedium(volumeStack.values[0]);
-    record.medium1 = primePackWavefrontMedium(volumeStack.values[1]);
-    uint previousDenoiserControl =
-            floatBitsToUint(record.rayDirectionAndDenoiserControl.w);
     uint persistedControl =
             previousDenoiserControl & PRIME_WAVEFRONT_BRANCH_CONTROL_MASK;
-    uint persistedPrimaryFlags =
-            previousDenoiserControl & (PRIME_WAVEFRONT_PRIMARY_FLAGS_MASK
-                            << PRIME_WAVEFRONT_PRIMARY_FLAGS_SHIFT);
+    uint primaryMaterialFlags = (previousDenoiserControl
+            >> PRIME_WAVEFRONT_PRIMARY_FLAGS_SHIFT)
+            & PRIME_WAVEFRONT_PRIMARY_FLAGS_MASK;
+    PrimeWavefrontTransportRecord record = primeMakeWavefrontTransportRecord(
+            path,
+            volumeStack,
+            denoiserState,
+            primaryMaterialFlags,
+            enabled);
     uint denoiserControl =
-            (enabled ? PRIME_WAVEFRONT_ACTIVE_MASK : 0u) | persistedControl;
-    if (denoiserState.reachedNonDelta) {
-        denoiserControl |= PRIME_WAVEFRONT_REACHED_NON_DELTA;
-    }
-    if (denoiserState.diffusePath) {
-        denoiserControl |= PRIME_WAVEFRONT_DIFFUSE_PATH;
-    }
-    denoiserControl = denoiserControl
-            | (min(denoiserState.primaryBounce, PRIME_WAVEFRONT_BYTE_MASK)
-                    << PRIME_WAVEFRONT_PRIMARY_BOUNCE_SHIFT)
-            | (min(volumeStack.count, 2u)
-                    << PRIME_WAVEFRONT_MEDIUM_COUNT_SHIFT)
-            | persistedPrimaryFlags;
-    record.rayDirectionAndDenoiserControl =
-            vec4(path.rayDirection, uintBitsToFloat(denoiserControl));
-    record.throughputAndNumericalFlags =
-            vec4(path.throughput, uintBitsToFloat(primePackWavefrontDiagnostic()));
+            floatBitsToUint(record.rayDirectionAndDenoiserControl.w)
+                    | persistedControl;
+    record.rayDirectionAndDenoiserControl.w = uintBitsToFloat(denoiserControl);
+    primeSetWavefrontQueuedPsrControl(record, psrControl);
+    return record;
 }
 
-PrimeQueuedPsrState primeWavefrontQueuedPsrState(
-        PrimeWavefrontPathRecord record) {
-    PrimeQueuedPsrState state;
-    state.firstDirectionLength = vec4(
-            primeUnpackOctahedralNormal(record.psrPacked.x),
-            uintBitsToFloat(record.psrPacked.y));
-    state.lastPositionControl = record.psrLastPositionControl;
-    state.rotation = vec4(
-            unpackSnorm2x16(record.psrPacked.z),
-            unpackSnorm2x16(record.psrPacked.w));
-    float rotationLengthSquared = dot(state.rotation, state.rotation);
-    state.rotation = rotationLengthSquared > 0.0
-            ? state.rotation * inversesqrt(rotationLengthSquared)
-            : vec4(0.0, 0.0, 0.0, 1.0);
-    return state;
+bool primeWavefrontTransparentBranch(uint control) {
+    return (control & PRIME_WAVEFRONT_TRANSPARENT_BRANCH) != 0u;
 }
 
-bool primeWavefrontTransparentBranch(PrimeWavefrontPathRecord record) {
-    return (floatBitsToUint(record.rayDirectionAndDenoiserControl.w)
-            & PRIME_WAVEFRONT_TRANSPARENT_BRANCH) != 0u;
+bool primeWavefrontTransmissionBranch(uint control) {
+    return (control & PRIME_WAVEFRONT_TRANSMISSION_BRANCH) != 0u;
 }
 
-bool primeWavefrontTransmissionBranch(PrimeWavefrontPathRecord record) {
-    return (floatBitsToUint(record.rayDirectionAndDenoiserControl.w)
-            & PRIME_WAVEFRONT_TRANSMISSION_BRANCH) != 0u;
+bool primeWavefrontGuideEnabled(uint control) {
+    return (control & PRIME_WAVEFRONT_GUIDE_ENABLED) != 0u;
 }
 
-bool primeWavefrontGuideEnabled(PrimeWavefrontPathRecord record) {
-    return (floatBitsToUint(record.rayDirectionAndDenoiserControl.w)
-            & PRIME_WAVEFRONT_GUIDE_ENABLED) != 0u;
-}
-
-bool primeWavefrontDirectionalGuide(PrimeWavefrontPathRecord record) {
-    return (floatBitsToUint(record.rayDirectionAndDenoiserControl.w)
-            & PRIME_WAVEFRONT_DIRECTIONAL_GUIDE) != 0u;
+bool primeWavefrontDirectionalGuide(uint control) {
+    return (control & PRIME_WAVEFRONT_DIRECTIONAL_GUIDE) != 0u;
 }
 
 PrimeWavefrontPathRecord primeMakeTransparentWavefrontRecord(
@@ -493,11 +532,14 @@ PrimeWavefrontPathRecord primeMakeTransparentWavefrontRecord(
             branchResult.guides.primarySpecularAlbedo;
     denoiserState.diffusePath = diffusePath;
     denoiserState.primaryBounce = guideBounce;
-    PrimeIntegrationResult placeholder = primeEmptyIntegrationResult();
-    placeholder.guides = branchResult.guides;
     PrimeWavefrontPathRecord record = primeMakeWavefrontRecord(
-            path, volumeStack, denoiserState, placeholder, enabled);
-    uint control = floatBitsToUint(record.rayDirectionAndDenoiserControl.w)
+            path,
+            volumeStack,
+            denoiserState,
+            branchResult.guides.primaryMaterialFlags,
+            enabled);
+    uint control = floatBitsToUint(
+            record.transport.rayDirectionAndDenoiserControl.w)
             | PRIME_WAVEFRONT_TRANSPARENT_BRANCH;
     if (transmissionBranch) {
         control |= PRIME_WAVEFRONT_TRANSMISSION_BRANCH;
@@ -508,13 +550,12 @@ PrimeWavefrontPathRecord primeMakeTransparentWavefrontRecord(
     if (branchResult.directionalGuide) {
         control |= PRIME_WAVEFRONT_DIRECTIONAL_GUIDE;
     }
-    record.rayDirectionAndDenoiserControl.w = uintBitsToFloat(control);
+    record.transport.rayDirectionAndDenoiserControl.w = uintBitsToFloat(control);
     primeSetWavefrontQueuedPsrState(record, psrState);
     return record;
 }
 
-void primeUpdateTransparentWavefrontRecord(
-        inout PrimeWavefrontPathRecord record,
+PrimeWavefrontTransportRecord primeMakeUpdatedTransparentWavefrontRecord(
         PathState path,
         PrimeRcVolumeStack volumeStack,
         PrimeTransparentBranchResult branchResult,
@@ -523,6 +564,7 @@ void primeUpdateTransparentWavefrontRecord(
         bool diffusePath,
         uint guideBounce,
         bool directionalGuide,
+        uint previousDenoiserControl,
         bool enabled) {
     PrimeDenoiserState denoiserState;
     denoiserState.hasPrimarySurface = true;
@@ -532,8 +574,13 @@ void primeUpdateTransparentWavefrontRecord(
             branchResult.guides.primarySpecularAlbedo;
     denoiserState.diffusePath = diffusePath;
     denoiserState.primaryBounce = guideBounce;
-    primeUpdateWavefrontRecord(
-            record, path, volumeStack, denoiserState, enabled);
+    PrimeWavefrontTransportRecord record = primeMakeUpdatedWavefrontRecord(
+            path,
+            volumeStack,
+            denoiserState,
+            previousDenoiserControl,
+            psrState.control,
+            enabled);
     uint control = floatBitsToUint(record.rayDirectionAndDenoiserControl.w);
     control = directionalGuide
             ? control | PRIME_WAVEFRONT_DIRECTIONAL_GUIDE
@@ -544,9 +591,7 @@ void primeUpdateTransparentWavefrontRecord(
             & PRIME_WAVEFRONT_PRIMARY_FLAGS_MASK)
             << PRIME_WAVEFRONT_PRIMARY_FLAGS_SHIFT;
     record.rayDirectionAndDenoiserControl.w = uintBitsToFloat(control);
-    primeSetWavefrontQueuedPsrState(record, psrState);
-    // The final transparent topology uses the visible interface's direct-light SH moment. Preserve
-    // the value installed by head; later virtual-guide surfaces only contribute radiance.
+    return record;
 }
 
 void primeStoreWavefrontVisibleScratch(
@@ -585,14 +630,14 @@ void primeStoreWavefrontVisibleScratch(
 }
 
 bool primeWavefrontPixelTransparent(uvec2 pixel) {
-    return primeWavefrontTransparentBranch(
-            primeWavefrontPaths.records[primeWavefrontIndex(pixel, 0u)]);
+    uint control = floatBitsToUint(
+            primeWavefrontPaths.records[primeWavefrontIndex(pixel, 0u)]
+                    .transport.rayDirectionAndDenoiserControl.w);
+    return primeWavefrontTransparentBranch(control);
 }
 
 PrimeDenoiserGuides primeLoadWavefrontVisibleGuides(
         uvec2 pixel,
-        PrimeWavefrontPathRecord transmissionRecord,
-        PrimeWavefrontPathRecord reflectionRecord,
         PrimeTransparentBranchResult transmission,
         PrimeTransparentBranchResult reflection) {
     ivec2 coordinate = ivec2(pixel);
@@ -623,18 +668,11 @@ PrimeDenoiserGuides primeLoadWavefrontVisibleGuides(
     }
     guides.diffuseDirection = transmission.guides.diffuseDirection;
     guides.specularDirection = reflection.guides.specularDirection;
-    vec3 transmissionAreaSpecular;
-    vec3 reflectionAreaDiffuse;
-    primeUnpackWavefrontPair(
-            transmissionRecord.primaryAreaRadianceAndDirection.xyz,
+    primeLoadWavefrontArea(
+            pixel,
             guides.primaryAreaDiffuse,
-            transmissionAreaSpecular);
-    primeUnpackWavefrontPair(
-            reflectionRecord.primaryAreaRadianceAndDirection.xyz,
-            reflectionAreaDiffuse,
-            guides.primaryAreaSpecular);
-    guides.primaryAreaDirection = primeUnpackOctahedralNormal(
-            transmissionRecord.primaryAreaRadianceAndDirection.w);
+            guides.primaryAreaSpecular,
+            guides.primaryAreaDirection);
     return guides;
 }
 
@@ -700,7 +738,7 @@ void primeStoreWavefrontIntermediate(
 
 PrimeIntegrationResult primeLoadWavefrontIntermediate(
         uvec2 pixel,
-        PrimeWavefrontPathRecord record) {
+        PrimeWavefrontTransportRecord record) {
     ivec2 coordinate = ivec2(pixel);
     vec4 diffuse = imageLoad(primeNrdNoisyDiffuse, coordinate);
     vec4 specular = imageLoad(primeNrdNoisySpecular, coordinate);
@@ -745,13 +783,11 @@ PrimeIntegrationResult primeLoadWavefrontIntermediate(
                 primeRestoreFp16Direction(
                         imageLoad(primeNrdSpecularDirection, coordinate).xyz);
     }
-    primeUnpackWavefrontPair(
-            record.primaryAreaRadianceAndDirection.xyz,
+    primeLoadWavefrontArea(
+            pixel,
             result.guides.primaryAreaDiffuse,
-            result.guides.primaryAreaSpecular);
-    result.guides.primaryAreaDirection =
-            primeUnpackOctahedralNormal(
-                    record.primaryAreaRadianceAndDirection.w);
+            result.guides.primaryAreaSpecular,
+            result.guides.primaryAreaDirection);
     result.reflectionDiffuseRadiance = vec3(0.0);
     result.reflectionSpecularRadiance = vec3(0.0);
     result.transmissionGuides = primeEmptyDenoiserGuides();
@@ -767,12 +803,10 @@ PrimeIntegrationResult primeLoadWavefrontIntermediate(
 // its albedo products, but no other immutable guide field participates in transport.
 PrimeIntegrationResult primeLoadWavefrontActiveIntermediate(
         uvec2 pixel,
-        PrimeWavefrontPathRecord record) {
+        uint control) {
     ivec2 coordinate = ivec2(pixel);
     vec4 diffuse = imageLoad(primeNrdNoisyDiffuse, coordinate);
     vec4 specular = imageLoad(primeNrdNoisySpecular, coordinate);
-    uint control = floatBitsToUint(record.rayDirectionAndDenoiserControl.w);
-
     PrimeIntegrationResult result = primeEmptyIntegrationResult();
     result.radiance.diffuse = diffuse.rgb;
     result.radiance.specular = specular.rgb;
@@ -940,11 +974,10 @@ void primeStoreTransparentBranchIntermediate(
 // reads only radiance, hit metadata and the two fallback directions required until PSR resolves.
 PrimeTransparentBranchResult primeLoadTransparentBranchActiveIntermediate(
         uvec2 pixel,
-        PrimeWavefrontPathRecord record) {
+        bool transmissionBranch,
+        uint control) {
     ivec2 coordinate = ivec2(pixel);
-    bool transmissionBranch = primeWavefrontTransmissionBranch(record);
     bool nrdShInputs = primeWritesNrdShInputs();
-    uint control = floatBitsToUint(record.rayDirectionAndDenoiserControl.w);
     bool hasGuide = (control & PRIME_WAVEFRONT_REACHED_NON_DELTA) != 0u;
     vec4 diffuse = transmissionBranch
             ? imageLoad(primeNrdNoisyDiffuse, coordinate)
@@ -992,7 +1025,7 @@ PrimeTransparentBranchResult primeLoadTransparentBranchActiveIntermediate(
         result.firstHitDistance =
                 imageLoad(primeNrdSunPenumbra, coordinate).r;
     }
-    result.directionalGuide = primeWavefrontDirectionalGuide(record);
+    result.directionalGuide = primeWavefrontDirectionalGuide(control);
     return result;
 }
 
@@ -1142,9 +1175,9 @@ void primeStoreTransparentBranchActiveIntermediate(
 
 PrimeTransparentBranchResult primeLoadTransparentBranchIntermediate(
         uvec2 pixel,
-        PrimeWavefrontPathRecord record) {
+        bool transmissionBranch,
+        uint control) {
     ivec2 coordinate = ivec2(pixel);
-    bool transmissionBranch = primeWavefrontTransmissionBranch(record);
     bool nrdShInputs = primeWritesNrdShInputs();
     vec4 diffuse = transmissionBranch
             ? imageLoad(primeNrdNoisyDiffuse, coordinate)
@@ -1174,8 +1207,6 @@ PrimeTransparentBranchResult primeLoadTransparentBranchIntermediate(
     vec4 branchMetadata = transmissionBranch
             ? imageLoad(primeWavefrontTransportMetadata, coordinate)
             : position;
-    uint control = floatBitsToUint(record.rayDirectionAndDenoiserControl.w);
-
     PrimeTransparentBranchResult result;
     result.diffuseRadiance = diffuse.rgb;
     result.specularRadiance = specular.rgb;
@@ -1225,36 +1256,34 @@ PrimeTransparentBranchResult primeLoadTransparentBranchIntermediate(
                             coordinate).xyz);
         }
     }
-    primeUnpackWavefrontPair(
-            record.primaryAreaRadianceAndDirection.xyz,
+    primeLoadWavefrontArea(
+            pixel,
             result.guides.primaryAreaDiffuse,
-            result.guides.primaryAreaSpecular);
-    result.guides.primaryAreaDirection = primeUnpackOctahedralNormal(
-            record.primaryAreaRadianceAndDirection.w);
+            result.guides.primaryAreaSpecular,
+            result.guides.primaryAreaDirection);
     result.anchorDistance = transmissionBranch ? branchMetadata.x : -1.0;
     result.firstHitDistance = transmissionBranch
             ? branchMetadata.y
             : imageLoad(primeNrdSunPenumbra, coordinate).r;
-    result.directionalGuide = primeWavefrontDirectionalGuide(record);
+    result.directionalGuide = primeWavefrontDirectionalGuide(control);
     return result;
 }
 
 void primeFinalizeTransparentBranchGuide(
-        PrimeWavefrontPathRecord record,
+        uint control,
         inout PrimeTransparentBranchResult result) {
-    uint control = floatBitsToUint(record.rayDirectionAndDenoiserControl.w);
     bool hasGuide =
             (control & PRIME_WAVEFRONT_REACHED_NON_DELTA) != 0u;
-    if (!primeWavefrontGuideEnabled(record) || hasGuide) {
+    if (!primeWavefrontGuideEnabled(control) || hasGuide) {
         return;
     }
-    vec3 branchDirection = primeWavefrontTransmissionBranch(record)
+    vec3 branchDirection = primeWavefrontTransmissionBranch(control)
             ? result.guides.diffuseDirection
             : result.guides.specularDirection;
     result.guides.primaryAreaDiffuse = vec3(0.0);
     result.guides.primaryAreaSpecular = vec3(0.0);
     result.guides.primaryAreaDirection = vec3(0.0);
-    if (primeWavefrontTransmissionBranch(record)) {
+    if (primeWavefrontTransmissionBranch(control)) {
         result.guides.diffuseDirection = branchDirection;
         result.guides.diffuseHitDistance = PRIME_NRD_FP16_MAX;
     } else {
@@ -1264,25 +1293,27 @@ void primeFinalizeTransparentBranchGuide(
 }
 
 PrimeIntegrationResult primeResolveTransparentWavefrontResult(uvec2 pixel) {
-    PrimeWavefrontPathRecord transmissionRecord =
-            primeWavefrontPaths.records[primeWavefrontIndex(pixel, 0u)];
-    PrimeWavefrontPathRecord reflectionRecord =
-            primeWavefrontPaths.records[primeWavefrontIndex(pixel, 1u)];
+    uint transmissionControl = floatBitsToUint(
+            primeWavefrontPaths.records[primeWavefrontIndex(pixel, 0u)]
+                    .transport.rayDirectionAndDenoiserControl.w);
+    uint reflectionControl = floatBitsToUint(
+            primeWavefrontPaths.records[primeWavefrontIndex(pixel, 1u)]
+                    .transport.rayDirectionAndDenoiserControl.w);
     PrimeTransparentBranchResult transmission =
-            primeLoadTransparentBranchIntermediate(pixel, transmissionRecord);
+            primeLoadTransparentBranchIntermediate(
+                    pixel, true, transmissionControl);
     PrimeTransparentBranchResult reflection =
-            primeLoadTransparentBranchIntermediate(pixel, reflectionRecord);
+            primeLoadTransparentBranchIntermediate(
+                    pixel, false, reflectionControl);
     PrimeDenoiserGuides visibleGuides =
             primeLoadWavefrontVisibleGuides(
                     pixel,
-                    transmissionRecord,
-                    reflectionRecord,
                     transmission,
                     reflection);
     primeFinalizeTransparentBranchGuide(
-            transmissionRecord, transmission);
+            transmissionControl, transmission);
     primeFinalizeTransparentBranchGuide(
-            reflectionRecord, reflection);
+            reflectionControl, reflection);
 
     PrimeIntegrationResult result = primeEmptyIntegrationResult();
     result.radiance.diffuse = transmission.diffuseRadiance;

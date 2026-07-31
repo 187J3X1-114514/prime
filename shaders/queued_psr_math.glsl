@@ -8,12 +8,12 @@ const uint PRIME_QUEUED_PSR_ODD_REFLECTION = 0x20u;
 
 struct PrimeQueuedPsrState {
     vec4 firstDirectionLength;
-    vec4 lastPositionControl;
     vec4 rotation;
+    uint control;
 };
 
 uint primeQueuedPsrControl(PrimeQueuedPsrState state) {
-    return floatBitsToUint(state.lastPositionControl.w);
+    return state.control;
 }
 
 uint primeQueuedPsrCount(PrimeQueuedPsrState state) {
@@ -27,8 +27,8 @@ bool primeQueuedPsrOverflowed(PrimeQueuedPsrState state) {
 PrimeQueuedPsrState primeEmptyQueuedPsrState() {
     PrimeQueuedPsrState state;
     state.firstDirectionLength = vec4(0.0);
-    state.lastPositionControl = vec4(0.0);
     state.rotation = vec4(0.0, 0.0, 0.0, 1.0);
+    state.control = 0u;
     return state;
 }
 
@@ -50,14 +50,14 @@ vec3 primeQueuedPsrQuaternionRotate(vec4 quaternion, vec3 direction) {
 void primeAppendQueuedPsrState(
         inout PrimeQueuedPsrState state,
         vec3 cameraPosition,
+        vec3 previousPosition,
         vec3 position,
         vec3 normal,
         bool reflection) {
     uint control = primeQueuedPsrControl(state);
     uint count = control & PRIME_QUEUED_PSR_COUNT_MASK;
     if (count == PRIME_QUEUED_PSR_CAPACITY) {
-        state.lastPositionControl.w =
-                uintBitsToFloat(control | PRIME_QUEUED_PSR_OVERFLOW);
+        state.control = control | PRIME_QUEUED_PSR_OVERFLOW;
         return;
     }
     if (count == 0u) {
@@ -68,9 +68,8 @@ void primeAppendQueuedPsrState(
                 firstLength);
     } else {
         state.firstDirectionLength.w +=
-                length(position - state.lastPositionControl.xyz);
+                length(position - previousPosition);
     }
-    state.lastPositionControl.xyz = position;
     if (reflection) {
         vec4 halfTurn = vec4(normal, 0.0);
         vec4 rotation =
@@ -82,7 +81,7 @@ void primeAppendQueuedPsrState(
         control ^= PRIME_QUEUED_PSR_ODD_REFLECTION;
     }
     control = (control & ~PRIME_QUEUED_PSR_COUNT_MASK) | (count + 1u);
-    state.lastPositionControl.w = uintBitsToFloat(control);
+    state.control = control;
 }
 
 vec3 primeQueuedPsrVirtualDirection(
@@ -96,6 +95,7 @@ vec3 primeQueuedPsrVirtualDirection(
 
 bool primeBuildQueuedPsrGuideValue(
         PrimeQueuedPsrState state,
+        vec3 lastPosition,
         vec3 target,
         vec3 targetNormal,
         out vec3 virtualPosition,
@@ -104,7 +104,7 @@ bool primeBuildQueuedPsrGuideValue(
         return false;
     }
     float pathLength = state.firstDirectionLength.w
-            + length(target - state.lastPositionControl.xyz);
+            + length(target - lastPosition);
     if (!(dot(state.firstDirectionLength.xyz, state.firstDirectionLength.xyz) > 0.0)
             || !(pathLength > 0.0)) {
         return false;

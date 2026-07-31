@@ -1,6 +1,5 @@
 package dev.prime.render.terrain;
 
-import com.mojang.blaze3d.vulkan.VulkanCommandEncoder;
 import dev.prime.render.ResourceCleanup;
 import dev.prime.render.vulkan.PreparedBlas;
 import dev.prime.render.vulkan.StagingArena;
@@ -9,7 +8,6 @@ import dev.prime.render.vulkan.VulkanBuffer;
 import dev.prime.render.vulkan.VulkanContext;
 import it.unimi.dsi.fastutil.longs.Long2ObjectOpenHashMap;
 import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
-import java.nio.LongBuffer;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.IdentityHashMap;
@@ -33,6 +31,8 @@ public final class TerrainScene implements AutoCloseable {
 
     private final VulkanContext context;
     private final StagingArena stagingArena;
+    private final BlasCompactionScheduler compactionScheduler =
+            new BlasCompactionScheduler();
     private Long2ObjectOpenHashMap<GpuCluster> resident = new Long2ObjectOpenHashMap<>();
     private final List<TopLevelAccelerationStructure> tlasSlots = new ArrayList<>(TLAS_SLOT_COUNT);
     private TopLevelAccelerationStructure currentTlas;
@@ -66,7 +66,6 @@ public final class TerrainScene implements AutoCloseable {
         List<TerrainOccluderChange> occluderChanges = staticContentChanged
                 ? this.occluderChanges(uploads, evictions)
                 : List.of();
-        boolean hasReadyCompaction = this.hasReadyCompaction(removedKeys);
         boolean needsRebase = this.currentTlas == null
                 ? contentChanged
                 : RenderOrigin.needsRebase(
@@ -78,7 +77,7 @@ public final class TerrainScene implements AutoCloseable {
                         this.originZ,
                         REBASE_DISTANCE);
         boolean invalidateTemporalHistory = invalidatesTemporalHistory(needsRebase);
-        if (!contentChanged && !needsRebase && !hasReadyCompaction) {
+        if (!contentChanged && !needsRebase) {
             return true;
         }
         int finalClusterCount = this.estimateFinalClusterCount(uploads, removedKeys);
@@ -155,36 +154,12 @@ public final class TerrainScene implements AutoCloseable {
         }
 
         List<GpuCluster> replacements = new ArrayList<>(nonEmptyUploadCount);
-        List<PreparedBlas.Compaction> compactions = new ArrayList<>();
-        Map<PreparedBlas, PreparedBlas.Compaction> compactionByBlas = new IdentityHashMap<>();
         VulkanBuffer replacementWorldLights = null;
         VkCommandBuffer commandBuffer = null;
         boolean submitted = false;
         boolean ownershipTransferred = false;
         boolean cleanupHandled = false;
         try {
-            if (hasReadyCompaction) {
-                for (GpuCluster cluster : this.resident.values()) {
-                    if (removedKeys.contains(cluster.key())) {
-                        continue;
-                    }
-                    cluster.forEachBlas(blas -> {
-                        PreparedBlas.Compaction compaction =
-                                blas.prepareCompaction();
-                        if (compaction != null) {
-                            compactions.add(compaction);
-                            compactionByBlas.put(blas, compaction);
-                        }
-                    });
-                }
-                if (compactions.isEmpty() && !contentChanged && !needsRebase) {
-                    if (replacementTlas != null) {
-                        replacementTlas.release();
-                        replacementTlas = null;
-                    }
-                    return true;
-                }
-            }
             if (nonEmptyUploadCount > 0 || replacementTlas != null) {
                 commandBuffer = this.context.commandEncoder().allocateAndBeginTransientCommandBuffer();
                 this.context.device().instance().debug().beginDebugGroup(commandBuffer, () -> "Prime terrain scene update");
@@ -273,103 +248,20 @@ public final class TerrainScene implements AutoCloseable {
                 }
             }
 
-            for (PreparedBlas.Compaction compaction : compactions) {
-                compaction.recordCopy(commandBuffer);
-            }
-            if (!compactions.isEmpty()) {
-                // A compact BLAS is a new acceleration structure, not an in-place allocation.
-                // Make every GPU copy visible before the replacement TLAS reads its device address;
-                // the old BLAS remains alive until this submission's real timeline point retires.
-                memoryBarrier(
-                        commandBuffer,
-                        KHRAccelerationStructure.VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR,
-                        KHRAccelerationStructure.VK_ACCESS_ACCELERATION_STRUCTURE_WRITE_BIT_KHR,
-                        KHRAccelerationStructure.VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR,
-                        KHRAccelerationStructure.VK_ACCESS_ACCELERATION_STRUCTURE_READ_BIT_KHR);
-            }
-
             if (replacementTlas != null) {
                 VulkanBuffer effectiveWorldLights = rebuildWorldLights
                         ? replacementWorldLights
                         : this.currentWorldLights;
-                long worldLightAddress = effectiveWorldLights == null
-                        ? 0L
-                        : effectiveWorldLights.deviceAddress();
-                long worldLightForwardAddress = effectiveWorldLights == null
-                        ? 0L
-                        : effectiveWorldLights.deviceAddress() + worldLightTree.forwardByteOffset();
-                int worldLightNodeCount = effectiveWorldLights == null
-                        ? 0
-                        : worldLightTree.nodeCount();
-                replacementTlas.populate(finalInstanceCount, writer -> {
-                    for (int clusterIndex = 0; clusterIndex < finalClusters.size(); clusterIndex++) {
-                        GpuCluster cluster = finalClusters.get(clusterIndex);
-                        PreparedBlas base = cluster.baseBlas();
-                        PreparedBlas.Compaction compaction = compactionByBlas.get(base);
-                        float sectionX = (cluster.clusterX() << 4) - nextOriginX;
-                        float sectionY = (cluster.clusterY() << 4) - nextOriginY;
-                        float sectionZ = (cluster.clusterZ() << 4) - nextOriginZ;
-                        writer.writeInstanced(
-                                compaction == null
-                                        ? base.accelerationStructure().deviceAddress()
-                                        : compaction.targetDeviceAddress(),
-                                base.primitives().deviceAddress(),
-                                cluster.lightAddress(),
-                                worldLightAddress,
-                                worldLightForwardAddress,
-                                base.opaqueTriangleCount(),
-                                base.cutoutTriangleCount(),
-                                cluster.dynamic()
-                                        ? CpuLightTree.NO_INDEX
-                                        : worldLightTree.leafNode(clusterIndex),
-                                cluster.lights().emitterCount(),
-                                worldLightNodeCount,
-                                cluster.blas() == null ? 0 : 0xff,
-                                0,
-                                sectionX,
-                                sectionY,
-                                sectionZ,
-                                sectionX,
-                                sectionY,
-                                sectionZ);
-                    }
-                    for (int clusterIndex = 0; clusterIndex < finalClusters.size(); clusterIndex++) {
-                        GpuCluster cluster = finalClusters.get(clusterIndex);
-                        float sectionX = (cluster.clusterX() << 4) - nextOriginX;
-                        float sectionY = (cluster.clusterY() << 4) - nextOriginY;
-                        float sectionZ = (cluster.clusterZ() << 4) - nextOriginZ;
-                        CpuVoxelInstances instances = cluster.voxelInstances();
-                        for (int index = 0; index < instances.count(); index++) {
-                            PreparedBlas voxel =
-                                    cluster.voxelBlases().get(instances.meshIndex(index));
-                            PreparedBlas.Compaction compaction =
-                                    compactionByBlas.get(voxel);
-                            writer.writeInstanced(
-                                    compaction == null
-                                            ? voxel.accelerationStructure().deviceAddress()
-                                            : compaction.targetDeviceAddress(),
-                                    voxel.primitives().deviceAddress(),
-                                    cluster.lightAddress(),
-                                    worldLightAddress,
-                                    worldLightForwardAddress,
-                                    voxel.opaqueTriangleCount(),
-                                    voxel.cutoutTriangleCount(),
-                                    cluster.dynamic()
-                                            ? CpuLightTree.NO_INDEX
-                                            : worldLightTree.leafNode(clusterIndex),
-                                    cluster.lights().emitterCount(),
-                                    worldLightNodeCount,
-                                    0xff,
-                                    0x8000_0000 | instances.packedTint(index),
-                                    sectionX + instances.translationX(index),
-                                    sectionY + instances.translationY(index),
-                                    sectionZ + instances.translationZ(index),
-                                    sectionX,
-                                    sectionY,
-                                    sectionZ);
-                        }
-                    }
-                });
+                populateTlas(
+                        replacementTlas,
+                        finalInstanceCount,
+                        finalClusters,
+                        Map.of(),
+                        effectiveWorldLights,
+                        worldLightTree,
+                        nextOriginX,
+                        nextOriginY,
+                        nextOriginZ);
                 memoryBarrier(
                         commandBuffer,
                         VK12.VK_PIPELINE_STAGE_HOST_BIT,
@@ -399,9 +291,6 @@ public final class TerrainScene implements AutoCloseable {
                     nextOriginX,
                     nextOriginY,
                     nextOriginZ);
-            for (PreparedBlas.Compaction compaction : compactions) {
-                compaction.requirePublishable();
-            }
             if (commandBuffer != null) {
                 this.context.device().instance().debug().endDebugGroup(commandBuffer);
                 VulkanContext.check(VK12.vkEndCommandBuffer(commandBuffer), "end Prime terrain command buffer");
@@ -424,9 +313,6 @@ public final class TerrainScene implements AutoCloseable {
                 }
                 ResourceCleanup.throwIfFailed(stagingFailure);
             }
-            for (PreparedBlas.Compaction compaction : compactions) {
-                compaction.publish();
-            }
             this.publish(preparedUpdate);
             ownershipTransferred = true;
             replacementTlas = null;
@@ -435,10 +321,12 @@ public final class TerrainScene implements AutoCloseable {
             for (GpuCluster replacement : replacements) {
                 retirementFailure = ResourceCleanup.run(
                         replacement::submitted, retirementFailure);
-            }
-            for (PreparedBlas.Compaction compaction : compactions) {
                 retirementFailure = ResourceCleanup.run(
-                        compaction::retireSource, retirementFailure);
+                        () -> this.compactionScheduler.register(replacement),
+                        retirementFailure);
+            }
+            for (GpuCluster retired : preparedUpdate.retired()) {
+                this.compactionScheduler.unregister(retired);
             }
             retirementFailure = this.retire(preparedUpdate, retirementFailure);
             ResourceCleanup.throwIfFailed(retirementFailure);
@@ -446,12 +334,6 @@ public final class TerrainScene implements AutoCloseable {
         } catch (RuntimeException exception) {
             RuntimeException failure = exception;
             if (!ownershipTransferred) {
-                if (submitted) {
-                    for (PreparedBlas.Compaction compaction : compactions) {
-                        failure = ResourceCleanup.run(
-                                compaction::abandonAfterSubmission, failure);
-                    }
-                }
                 for (GpuCluster replacement : replacements) {
                     if (submitted) {
                         failure = ResourceCleanup.run(
@@ -481,9 +363,6 @@ public final class TerrainScene implements AutoCloseable {
                     }
                 }
             }
-            for (PreparedBlas.Compaction compaction : compactions) {
-                failure = ResourceCleanup.close(compaction, failure);
-            }
             failure = ResourceCleanup.close(clusterStagingBatch, failure);
             failure = ResourceCleanup.close(worldStagingBatch, failure);
             cleanupHandled = true;
@@ -491,9 +370,6 @@ public final class TerrainScene implements AutoCloseable {
         } finally {
             if (!cleanupHandled) {
                 RuntimeException failure = null;
-                for (PreparedBlas.Compaction compaction : compactions) {
-                    failure = ResourceCleanup.close(compaction, failure);
-                }
                 failure = ResourceCleanup.close(clusterStagingBatch, failure);
                 failure = ResourceCleanup.close(worldStagingBatch, failure);
                 ResourceCleanup.throwIfFailed(failure);
@@ -501,8 +377,168 @@ public final class TerrainScene implements AutoCloseable {
         }
     }
 
+    /** Advances ready static BLAS compactions after uploads have had first access to frame resources. */
+    void advanceCompactions() {
+        if (this.currentTlas == null
+                || this.resident.isEmpty()
+                || !this.compactionScheduler.hasReadyWork()) {
+            return;
+        }
+
+        int instanceCount = 0;
+        for (GpuCluster cluster : this.resident.values()) {
+            instanceCount = Math.addExact(instanceCount, cluster.tlasInstanceCount());
+        }
+        TopLevelAccelerationStructure replacementTlas =
+                this.acquireCompactionTlas(instanceCount);
+        if (replacementTlas == null) {
+            return;
+        }
+
+        BlasCompactionScheduler.Batch batch = null;
+        boolean submitted = false;
+        boolean ownershipTransferred = false;
+        try {
+            batch = this.compactionScheduler.prepareBatch();
+            if (batch.isEmpty()) {
+                replacementTlas.release();
+                replacementTlas = null;
+                return;
+            }
+
+            LongOpenHashSet noRemovedKeys = new LongOpenHashSet();
+            List<GpuCluster> finalClusters = this.buildFinalClusterList(
+                    noRemovedKeys, List.of(), this.resident.size());
+            IdentityHashMap<PreparedBlas, PreparedBlas.Compaction> replacements =
+                    new IdentityHashMap<>(batch.compactions().size());
+            for (PreparedBlas.Compaction compaction : batch.compactions()) {
+                if (replacements.put(compaction.owner(), compaction) != null) {
+                    throw new IllegalStateException(
+                            "A BLAS was selected for compaction more than once");
+                }
+            }
+
+            VkCommandBuffer commandBuffer =
+                    this.context.commandEncoder().allocateAndBeginTransientCommandBuffer();
+            this.context.device().instance().debug().beginDebugGroup(
+                    commandBuffer, () -> "Prime BLAS compaction");
+            for (PreparedBlas.Compaction compaction : batch.compactions()) {
+                compaction.recordCopy(commandBuffer);
+            }
+            memoryBarrier(
+                    commandBuffer,
+                    KHRAccelerationStructure.VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR,
+                    KHRAccelerationStructure.VK_ACCESS_ACCELERATION_STRUCTURE_WRITE_BIT_KHR,
+                    KHRAccelerationStructure.VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR,
+                    KHRAccelerationStructure.VK_ACCESS_ACCELERATION_STRUCTURE_READ_BIT_KHR);
+            populateTlas(
+                    replacementTlas,
+                    instanceCount,
+                    finalClusters,
+                    replacements,
+                    this.currentWorldLights,
+                    this.currentWorldLightTree,
+                    this.originX,
+                    this.originY,
+                    this.originZ);
+            memoryBarrier(
+                    commandBuffer,
+                    VK12.VK_PIPELINE_STAGE_HOST_BIT,
+                    VK12.VK_ACCESS_HOST_WRITE_BIT,
+                    KHRAccelerationStructure.VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR
+                            | KHRRayTracingPipeline.VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR,
+                    KHRAccelerationStructure.VK_ACCESS_ACCELERATION_STRUCTURE_READ_BIT_KHR
+                            | VK12.VK_ACCESS_SHADER_READ_BIT);
+            replacementTlas.recordBuild(commandBuffer);
+            memoryBarrier(
+                    commandBuffer,
+                    KHRAccelerationStructure.VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR,
+                    KHRAccelerationStructure.VK_ACCESS_ACCELERATION_STRUCTURE_WRITE_BIT_KHR,
+                    KHRRayTracingPipeline.VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR,
+                    KHRAccelerationStructure.VK_ACCESS_ACCELERATION_STRUCTURE_READ_BIT_KHR);
+
+            // Address-only publication reuses lighting and preserves temporal/occluder identity.
+            PreparedUpdate preparedUpdate = this.prepareUpdate(
+                    finalClusters,
+                    noRemovedKeys,
+                    replacementTlas,
+                    null,
+                    this.currentWorldLightTree,
+                    false,
+                    false,
+                    List.of(),
+                    this.originX,
+                    this.originY,
+                    this.originZ);
+            for (PreparedBlas.Compaction compaction : batch.compactions()) {
+                compaction.requirePublishable();
+            }
+            this.context.device().instance().debug().endDebugGroup(commandBuffer);
+            VulkanContext.check(
+                    VK12.vkEndCommandBuffer(commandBuffer),
+                    "end Prime BLAS compaction command buffer");
+            this.context.commandEncoder().execute(commandBuffer);
+            submitted = true;
+
+            for (PreparedBlas.Compaction compaction : batch.compactions()) {
+                compaction.publish();
+            }
+            this.publish(preparedUpdate);
+            batch.commitPublished();
+            ownershipTransferred = true;
+            replacementTlas = null;
+
+            RuntimeException retirementFailure = null;
+            for (PreparedBlas.Compaction compaction : batch.compactions()) {
+                retirementFailure = ResourceCleanup.run(
+                        compaction::retireSource, retirementFailure);
+            }
+            retirementFailure = this.retire(preparedUpdate, retirementFailure);
+            ResourceCleanup.throwIfFailed(retirementFailure);
+        } catch (RuntimeException exception) {
+            RuntimeException failure = exception;
+            if (!ownershipTransferred) {
+                if (batch != null) {
+                    if (submitted) {
+                        failure = ResourceCleanup.run(
+                                batch::abandonAfterSubmission, failure);
+                    } else {
+                        failure = ResourceCleanup.close(batch, failure);
+                    }
+                }
+                if (replacementTlas != null) {
+                    if (submitted) {
+                        TopLevelAccelerationStructure failedTlas = replacementTlas;
+                        failure = ResourceCleanup.run(
+                                () -> this.context.defer(failedTlas::release), failure);
+                    } else {
+                        failure = ResourceCleanup.run(replacementTlas::release, failure);
+                    }
+                }
+            }
+            throw failure;
+        } finally {
+            if (ownershipTransferred) {
+                ResourceCleanup.close(batch, null);
+            }
+        }
+    }
+
     public ResidentSceneView residentView() {
         return this.currentView;
+    }
+
+    public CompactionStats compactionStats() {
+        BlasCompactionScheduler.Snapshot snapshot =
+                this.compactionScheduler.snapshot();
+        return new CompactionStats(
+                snapshot.waiting(),
+                snapshot.ready(),
+                snapshot.retiring(),
+                snapshot.reservedTargetBytes(),
+                snapshot.highWaterTargetBytes(),
+                snapshot.reclaimedBytes(),
+                snapshot.completedCount());
     }
 
     static boolean requiresWorldLightUpload(
@@ -530,7 +566,7 @@ public final class TerrainScene implements AutoCloseable {
 
     @Override
     public void close() {
-        RuntimeException failure = null;
+        RuntimeException failure = ResourceCleanup.close(this.compactionScheduler, null);
         for (GpuCluster cluster : this.resident.values()) {
             failure = ResourceCleanup.run(cluster::destroy, failure);
         }
@@ -660,16 +696,6 @@ public final class TerrainScene implements AutoCloseable {
         return false;
     }
 
-    private boolean hasReadyCompaction(LongOpenHashSet removedKeys) {
-        for (GpuCluster cluster : this.resident.values()) {
-            if (!removedKeys.contains(cluster.key())
-                    && cluster.hasReadyCompaction()) {
-                return true;
-            }
-        }
-        return false;
-    }
-
     private List<GpuCluster> buildFinalClusterList(
             LongOpenHashSet removedKeys,
             List<GpuCluster> replacements,
@@ -683,6 +709,98 @@ public final class TerrainScene implements AutoCloseable {
         result.addAll(replacements);
         result.sort(Comparator.comparingLong(GpuCluster::key));
         return result;
+    }
+
+    private static void populateTlas(
+            TopLevelAccelerationStructure tlas,
+            int instanceCount,
+            List<GpuCluster> clusters,
+            Map<PreparedBlas, PreparedBlas.Compaction> compactions,
+            VulkanBuffer worldLights,
+            CpuWorldLightTree.Result worldLightTree,
+            int originX,
+            int originY,
+            int originZ) {
+        long worldLightAddress = worldLights == null
+                ? 0L
+                : worldLights.deviceAddress();
+        long worldLightForwardAddress = worldLights == null
+                ? 0L
+                : worldLights.deviceAddress() + worldLightTree.forwardByteOffset();
+        int worldLightNodeCount = worldLights == null
+                ? 0
+                : worldLightTree.nodeCount();
+        tlas.populate(instanceCount, writer -> {
+            for (int clusterIndex = 0; clusterIndex < clusters.size(); clusterIndex++) {
+                GpuCluster cluster = clusters.get(clusterIndex);
+                PreparedBlas base = cluster.baseBlas();
+                float sectionX = (cluster.clusterX() << 4) - originX;
+                float sectionY = (cluster.clusterY() << 4) - originY;
+                float sectionZ = (cluster.clusterZ() << 4) - originZ;
+                writer.writeInstanced(
+                        compactionAddress(base, compactions),
+                        base.primitives().deviceAddress(),
+                        cluster.lightAddress(),
+                        worldLightAddress,
+                        worldLightForwardAddress,
+                        base.opaqueTriangleCount(),
+                        base.cutoutTriangleCount(),
+                        cluster.dynamic()
+                                ? CpuLightTree.NO_INDEX
+                                : worldLightTree.leafNode(clusterIndex),
+                        cluster.lights().emitterCount(),
+                        worldLightNodeCount,
+                        cluster.blas() == null ? 0 : 0xff,
+                        0,
+                        sectionX,
+                        sectionY,
+                        sectionZ,
+                        sectionX,
+                        sectionY,
+                        sectionZ);
+            }
+            for (int clusterIndex = 0; clusterIndex < clusters.size(); clusterIndex++) {
+                GpuCluster cluster = clusters.get(clusterIndex);
+                float sectionX = (cluster.clusterX() << 4) - originX;
+                float sectionY = (cluster.clusterY() << 4) - originY;
+                float sectionZ = (cluster.clusterZ() << 4) - originZ;
+                CpuVoxelInstances instances = cluster.voxelInstances();
+                for (int index = 0; index < instances.count(); index++) {
+                    PreparedBlas voxel =
+                            cluster.voxelBlases().get(instances.meshIndex(index));
+                    writer.writeInstanced(
+                            compactionAddress(voxel, compactions),
+                            voxel.primitives().deviceAddress(),
+                            cluster.lightAddress(),
+                            worldLightAddress,
+                            worldLightForwardAddress,
+                            voxel.opaqueTriangleCount(),
+                            voxel.cutoutTriangleCount(),
+                            cluster.dynamic()
+                                    ? CpuLightTree.NO_INDEX
+                                    : worldLightTree.leafNode(clusterIndex),
+                            cluster.lights().emitterCount(),
+                            worldLightNodeCount,
+                            0xff,
+                            0x8000_0000 | instances.packedTint(index),
+                            sectionX + instances.translationX(index),
+                            sectionY + instances.translationY(index),
+                            sectionZ + instances.translationZ(index),
+                            sectionX,
+                            sectionY,
+                            sectionZ);
+                }
+            }
+        });
+    }
+
+    private static long compactionAddress(
+            PreparedBlas blas,
+            Map<PreparedBlas, PreparedBlas.Compaction> compactions) {
+        PreparedBlas.Compaction compaction = compactions.get(blas);
+        return compaction == null
+                ? blas.accelerationStructure().deviceAddress()
+                : compaction.targetDeviceAddress();
     }
 
     private PreparedUpdate prepareUpdate(
@@ -820,11 +938,38 @@ public final class TerrainScene implements AutoCloseable {
         return slot;
     }
 
+    private TopLevelAccelerationStructure acquireCompactionTlas(int capacity) {
+        TopLevelAccelerationStructure replacement = this.acquireTlas(capacity);
+        if (replacement == null) {
+            return null;
+        }
+        /*
+         * Dynamic capture occurs later in the frame and has the same immediate-publication
+         * priority as terrain uploads. Prove that one additional TLAS slot is available before
+         * compact targets consume memory; no other render-thread work can claim it in between.
+         */
+        TopLevelAccelerationStructure dynamicReserve;
+        try {
+            dynamicReserve = this.acquireTlas(capacity);
+        } catch (RuntimeException exception) {
+            replacement.release();
+            throw exception;
+        }
+        if (dynamicReserve == null) {
+            replacement.release();
+            return null;
+        }
+        dynamicReserve.release();
+        return replacement;
+    }
+
     private GpuCluster prepareCluster(
             CompiledCluster upload,
             StagingArena.Batch stagingBatch,
             VkCommandBuffer commandBuffer) {
         CpuClusterMesh mesh = upload.mesh();
+        PreparedBlas.CompactionPolicy compactionPolicy =
+                compactionPolicy(upload.dynamic());
         VulkanBuffer positions = null;
         VulkanBuffer primitives = null;
         VulkanBuffer lights = null;
@@ -857,6 +1002,7 @@ public final class TerrainScene implements AutoCloseable {
                         mesh.opaqueTriangleCount(),
                         mesh.cutoutTriangleCount(),
                         mesh.transmissiveTriangleCount(),
+                        compactionPolicy,
                         "Prime cluster " + upload.key() + " BLAS");
             }
             if (!mesh.lights().isEmpty()) {
@@ -878,6 +1024,7 @@ public final class TerrainScene implements AutoCloseable {
                         mesh.voxelMeshes().get(index),
                         stagingBatch,
                         commandBuffer,
+                        compactionPolicy,
                         "Prime cluster " + upload.key()
                                 + " voxel mesh " + index));
             }
@@ -913,6 +1060,7 @@ public final class TerrainScene implements AutoCloseable {
             CpuVoxelMesh mesh,
             StagingArena.Batch stagingBatch,
             VkCommandBuffer commandBuffer,
+            PreparedBlas.CompactionPolicy compactionPolicy,
             String label) {
         VulkanBuffer positions = null;
         VulkanBuffer primitives = null;
@@ -948,6 +1096,7 @@ public final class TerrainScene implements AutoCloseable {
                     mesh.opaqueTriangleCount(),
                     mesh.cutoutTriangleCount(),
                     mesh.transmissiveTriangleCount(),
+                    compactionPolicy,
                     label + " BLAS");
             return blas;
         } catch (RuntimeException exception) {
@@ -1067,6 +1216,12 @@ public final class TerrainScene implements AutoCloseable {
         return needsRebase;
     }
 
+    static PreparedBlas.CompactionPolicy compactionPolicy(boolean dynamic) {
+        return dynamic
+                ? PreparedBlas.CompactionPolicy.DISABLED
+                : PreparedBlas.CompactionPolicy.ENABLED;
+    }
+
     private record PreparedUpdate(
             Long2ObjectOpenHashMap<GpuCluster> resident,
             TopLevelAccelerationStructure tlas,
@@ -1123,4 +1278,13 @@ public final class TerrainScene implements AutoCloseable {
                     List.of());
         }
     }
+
+    public record CompactionStats(
+            int waiting,
+            int ready,
+            int retiring,
+            long reservedTargetBytes,
+            long highWaterTargetBytes,
+            long reclaimedBytes,
+            long completedCount) {}
 }

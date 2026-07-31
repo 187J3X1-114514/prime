@@ -174,6 +174,8 @@ public final class TerrainStreamer implements AutoCloseable {
         this.drainInvalidations();
         this.drainCompleted();
         this.uploadReady(cameraX, cameraY, cameraZ);
+        // Upload publication owns the first chance at staging/TLAS resources each frame.
+        this.scene.advanceCompactions();
         this.dispatchSnapshots(minecraft, currentWorld);
     }
 

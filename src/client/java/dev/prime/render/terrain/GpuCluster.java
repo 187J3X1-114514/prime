@@ -102,18 +102,6 @@ record GpuCluster(
         this.voxelBlases.forEach(consumer);
     }
 
-    boolean hasReadyCompaction() {
-        if (this.blas != null && this.blas.hasReadyCompaction()) {
-            return true;
-        }
-        for (PreparedBlas voxelBlas : this.voxelBlases) {
-            if (voxelBlas.hasReadyCompaction()) {
-                return true;
-            }
-        }
-        return false;
-    }
-
     boolean hasOpacityMicromapBuild() {
         if (this.blas != null && this.blas.hasOpacityMicromapBuild()) {
             return true;

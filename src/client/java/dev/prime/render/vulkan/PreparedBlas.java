@@ -24,9 +24,8 @@ public final class PreparedBlas {
     private static final int GEOMETRY_COUNT = 3;
     private static final long MAX_TRIANGLES_PER_GEOMETRY = 0x1_0000_0000L / 3L;
     private static final long MAX_PRIMITIVE_RECORDS = 0x1_0000_0000L;
-    private static final int BUILD_FLAGS =
-            KHRAccelerationStructure.VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT_KHR
-                    | KHRAccelerationStructure.VK_BUILD_ACCELERATION_STRUCTURE_ALLOW_COMPACTION_BIT_KHR;
+    private static final int BASE_BUILD_FLAGS =
+            KHRAccelerationStructure.VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT_KHR;
 
     private final VulkanContext context;
     private AccelerationStructure accelerationStructure;
@@ -36,8 +35,10 @@ public final class PreparedBlas {
     private final OpacityMicromap opacityMicromap;
     private VulkanBuffer compactionResult;
     private long compactionQueryPool;
-    private volatile boolean compactionReady;
-    private boolean compactionResolved;
+    private final CompactionPolicy compactionPolicy;
+    private CompactionState compactionState;
+    private long compactionSourceSize;
+    private long compactedSize;
     private final String label;
     private final long opaqueTriangleCount;
     private final long cutoutTriangleCount;
@@ -55,6 +56,7 @@ public final class PreparedBlas {
             long opaqueTriangleCount,
             long cutoutTriangleCount,
             long transmissiveTriangleCount,
+            CompactionPolicy compactionPolicy,
             String label) {
         this.context = context;
         this.accelerationStructure = accelerationStructure;
@@ -67,7 +69,45 @@ public final class PreparedBlas {
         this.opaqueTriangleCount = opaqueTriangleCount;
         this.cutoutTriangleCount = cutoutTriangleCount;
         this.transmissiveTriangleCount = transmissiveTriangleCount;
+        this.compactionPolicy = compactionPolicy;
+        this.compactionState = compactionPolicy == CompactionPolicy.ENABLED
+                ? CompactionState.BUILD_PENDING
+                : CompactionState.DISABLED;
         this.label = label;
+    }
+
+    public enum CompactionPolicy {
+        ENABLED,
+        DISABLED
+    }
+
+    public enum CompactionState {
+        DISABLED,
+        BUILD_PENDING,
+        QUERY_PENDING,
+        QUERY_READY,
+        READY,
+        PREPARED,
+        ABANDONING_TARGET,
+        RETIRING_SOURCE,
+        COMPACTED,
+        NOT_BENEFICIAL,
+        DESTROYED
+    }
+
+    enum CompactionEvent {
+        BUILD_SUBMITTED,
+        BUILD_SUBMISSION_FAILED,
+        QUERY_COMPLETED,
+        BENEFICIAL_SIZE_RESOLVED,
+        UNBENEFICIAL_SIZE_RESOLVED,
+        TARGET_PREPARED,
+        PREPARED_TARGET_ROLLED_BACK,
+        TARGET_ABANDONED,
+        ABANDONED_TARGET_RETIRED,
+        TARGET_PUBLISHED,
+        SOURCE_RETIRED,
+        DESTROYED
     }
 
     public static PreparedBlas create(
@@ -80,7 +120,11 @@ public final class PreparedBlas {
             long opaqueTriangleCount,
             long cutoutTriangleCount,
             long transmissiveTriangleCount,
+            CompactionPolicy compactionPolicy,
             String label) {
+        if (compactionPolicy == null) {
+            throw new IllegalArgumentException("BLAS compaction policy must not be null");
+        }
         validateCounts(
                 opaqueTriangleCount,
                 cutoutTriangleCount,
@@ -103,7 +147,7 @@ public final class PreparedBlas {
             VkAccelerationStructureBuildGeometryInfoKHR buildInfo = VkAccelerationStructureBuildGeometryInfoKHR.calloc(stack)
                     .sType$Default()
                     .type(KHRAccelerationStructure.VK_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL_KHR)
-                    .flags(BUILD_FLAGS)
+                    .flags(buildFlags(compactionPolicy))
                     .mode(KHRAccelerationStructure.VK_BUILD_ACCELERATION_STRUCTURE_MODE_BUILD_KHR)
                     .geometryCount(GEOMETRY_COUNT)
                     .pGeometries(geometries);
@@ -133,20 +177,22 @@ public final class PreparedBlas {
                         VK12.VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
                         false,
                         label + " scratch");
-                compactionResult = context.createBuffer(
-                        Long.BYTES,
-                        VK12.VK_BUFFER_USAGE_TRANSFER_DST_BIT,
-                        true,
-                        label + " compacted size");
-                VkQueryPoolCreateInfo queryInfo = VkQueryPoolCreateInfo.calloc(stack)
-                        .sType$Default()
-                        .queryType(KHRAccelerationStructure.VK_QUERY_TYPE_ACCELERATION_STRUCTURE_COMPACTED_SIZE_KHR)
-                        .queryCount(1);
-                LongBuffer queryPointer = stack.mallocLong(1);
-                VulkanContext.check(
-                        VK10.vkCreateQueryPool(context.vkDevice(), queryInfo, null, queryPointer),
-                        "create " + label + " compaction query");
-                compactionQueryPool = queryPointer.get(0);
+                if (compactionPolicy == CompactionPolicy.ENABLED) {
+                    compactionResult = context.createBuffer(
+                            Long.BYTES,
+                            VK12.VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+                            true,
+                            label + " compacted size");
+                    VkQueryPoolCreateInfo queryInfo = VkQueryPoolCreateInfo.calloc(stack)
+                            .sType$Default()
+                            .queryType(KHRAccelerationStructure.VK_QUERY_TYPE_ACCELERATION_STRUCTURE_COMPACTED_SIZE_KHR)
+                            .queryCount(1);
+                    LongBuffer queryPointer = stack.mallocLong(1);
+                    VulkanContext.check(
+                            VK10.vkCreateQueryPool(context.vkDevice(), queryInfo, null, queryPointer),
+                            "create " + label + " compaction query");
+                    compactionQueryPool = queryPointer.get(0);
+                }
                 return new PreparedBlas(
                         context,
                         accelerationStructure,
@@ -159,6 +205,7 @@ public final class PreparedBlas {
                         opaqueTriangleCount,
                         cutoutTriangleCount,
                         transmissiveTriangleCount,
+                        compactionPolicy,
                         label);
             } catch (RuntimeException exception) {
                 RuntimeException failure = ResourceCleanup.destroy(
@@ -189,7 +236,7 @@ public final class PreparedBlas {
             buildInfo.get(0)
                     .sType$Default()
                     .type(KHRAccelerationStructure.VK_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL_KHR)
-                    .flags(BUILD_FLAGS)
+                    .flags(buildFlags(this.compactionPolicy))
                     .mode(KHRAccelerationStructure.VK_BUILD_ACCELERATION_STRUCTURE_MODE_BUILD_KHR)
                     .geometryCount(GEOMETRY_COUNT)
                     .pGeometries(geometries)
@@ -217,36 +264,53 @@ public final class PreparedBlas {
                     .firstVertex(0)
                     .transformOffset(0);
             PointerBuffer rangePointers = stack.mallocPointer(1).put(0, ranges.address());
-            VK10.vkCmdResetQueryPool(commandBuffer, this.compactionQueryPool, 0, 1);
+            if (this.compactionQueryPool != 0L) {
+                VK10.vkCmdResetQueryPool(commandBuffer, this.compactionQueryPool, 0, 1);
+            }
             KHRAccelerationStructure.vkCmdBuildAccelerationStructuresKHR(commandBuffer, buildInfo, rangePointers);
-            LongBuffer structures = stack.longs(this.accelerationStructure.handle());
-            KHRAccelerationStructure.vkCmdWriteAccelerationStructuresPropertiesKHR(
-                    commandBuffer,
-                    structures,
-                    KHRAccelerationStructure.VK_QUERY_TYPE_ACCELERATION_STRUCTURE_COMPACTED_SIZE_KHR,
-                    this.compactionQueryPool,
-                    0);
-            VK10.vkCmdCopyQueryPoolResults(
-                    commandBuffer,
-                    this.compactionQueryPool,
-                    0,
-                    1,
-                    this.compactionResult.handle(),
-                    0L,
-                    Long.BYTES,
-                    VK10.VK_QUERY_RESULT_64_BIT | VK10.VK_QUERY_RESULT_WAIT_BIT);
+            if (this.compactionQueryPool != 0L) {
+                LongBuffer structures = stack.longs(this.accelerationStructure.handle());
+                KHRAccelerationStructure.vkCmdWriteAccelerationStructuresPropertiesKHR(
+                        commandBuffer,
+                        structures,
+                        KHRAccelerationStructure.VK_QUERY_TYPE_ACCELERATION_STRUCTURE_COMPACTED_SIZE_KHR,
+                        this.compactionQueryPool,
+                        0);
+                VK10.vkCmdCopyQueryPoolResults(
+                        commandBuffer,
+                        this.compactionQueryPool,
+                        0,
+                        1,
+                        this.compactionResult.handle(),
+                        0L,
+                        Long.BYTES,
+                        VK10.VK_QUERY_RESULT_64_BIT | VK10.VK_QUERY_RESULT_WAIT_BIT);
+            }
         }
     }
 
     /** Registers readiness only after the build/query submission has completed on the real queue. */
     public void onBuildSubmitted() {
-        this.context.afterSubmission(() -> {
-            synchronized (PreparedBlas.this) {
-                if (PreparedBlas.this.compactionQueryPool != 0L) {
-                    PreparedBlas.this.compactionReady = true;
+        synchronized (this) {
+            if (this.compactionState == CompactionState.DISABLED) {
+                return;
+            }
+            this.transition(CompactionEvent.BUILD_SUBMITTED);
+        }
+        try {
+            this.context.afterSubmission(() -> {
+                synchronized (PreparedBlas.this) {
+                    PreparedBlas.this.transition(CompactionEvent.QUERY_COMPLETED);
+                }
+            });
+        } catch (RuntimeException exception) {
+            synchronized (this) {
+                if (this.compactionState == CompactionState.QUERY_PENDING) {
+                    this.transition(CompactionEvent.BUILD_SUBMISSION_FAILED);
                 }
             }
-        });
+            throw exception;
+        }
     }
 
     public void recordOpacityMicromapBuild(VkCommandBuffer commandBuffer) {
@@ -259,24 +323,53 @@ public final class PreparedBlas {
         return this.opacityMicromap != null && this.opacityMicromap.requiresBuild();
     }
 
-    public synchronized boolean hasReadyCompaction() {
-        return this.compactionReady && !this.compactionResolved;
+    public synchronized CompactionState compactionState() {
+        return this.compactionState;
+    }
+
+    public synchronized void resolveCompactionSize() {
+        requireState(CompactionState.QUERY_READY);
+        this.compactionResult.invalidate(0L, Long.BYTES);
+        this.compactionSourceSize = this.accelerationStructure.backingSize();
+        this.compactedSize = MemoryUtil.memGetLong(this.compactionResult.mappedAddress());
+        this.destroyCompactionQuery();
+        this.transition(this.compactedSize > 0L
+                        && this.compactedSize < this.compactionSourceSize
+                ? CompactionEvent.BENEFICIAL_SIZE_RESOLVED
+                : CompactionEvent.UNBENEFICIAL_SIZE_RESOLVED);
+    }
+
+    public synchronized long compactedSize() {
+        requireState(CompactionState.READY);
+        return this.compactedSize;
+    }
+
+    public synchronized long compactionReclaimedBytes() {
+        requireState(CompactionState.READY);
+        return this.compactionSourceSize - this.compactedSize;
+    }
+
+    public boolean compactionEnabled() {
+        return this.compactionPolicy == CompactionPolicy.ENABLED;
     }
 
     public synchronized Compaction prepareCompaction() {
-        if (!this.hasReadyCompaction()) {
-            return null;
-        }
-        this.compactionResult.invalidate(0L, Long.BYTES);
-        long compactedSize = MemoryUtil.memGetLong(this.compactionResult.mappedAddress());
-        this.destroyCompactionQuery();
-        this.compactionResolved = true;
-        if (compactedSize <= 0L || compactedSize >= this.accelerationStructure.backingSize()) {
-            return null;
-        }
+        requireState(CompactionState.READY);
+        AccelerationStructure source = this.accelerationStructure;
         AccelerationStructure compacted = createAccelerationStructure(
-                this.context, compactedSize, this.label + " compacted");
-        return new Compaction(this, this.accelerationStructure, compacted);
+                this.context, this.compactedSize, this.label + " compacted");
+        this.transition(CompactionEvent.TARGET_PREPARED);
+        return new Compaction(this, source, compacted);
+    }
+
+    static int buildFlags(CompactionPolicy policy) {
+        if (policy == null) {
+            throw new IllegalArgumentException("BLAS compaction policy must not be null");
+        }
+        return policy == CompactionPolicy.ENABLED
+                ? BASE_BUILD_FLAGS
+                        | KHRAccelerationStructure.VK_BUILD_ACCELERATION_STRUCTURE_ALLOW_COMPACTION_BIT_KHR
+                : BASE_BUILD_FLAGS;
     }
 
     public AccelerationStructure accelerationStructure() {
@@ -321,6 +414,9 @@ public final class PreparedBlas {
     }
 
     public void destroyPersistentResources() {
+        synchronized (this) {
+            this.transition(CompactionEvent.DESTROYED);
+        }
         RuntimeException failure = ResourceCleanup.destroy(this.accelerationStructure, null);
         failure = ResourceCleanup.destroy(this.primitives, failure);
         failure = ResourceCleanup.destroy(this.opacityMicromap, failure);
@@ -350,6 +446,101 @@ public final class PreparedBlas {
         if (this.compactionQueryPool != 0L) {
             VK10.vkDestroyQueryPool(this.context.vkDevice(), this.compactionQueryPool, null);
             this.compactionQueryPool = 0L;
+        }
+    }
+
+    private void requireState(CompactionState expected) {
+        if (this.compactionState != expected) {
+            throw new IllegalStateException(
+                    "BLAS compaction state is " + this.compactionState + ", expected " + expected);
+        }
+    }
+
+    private void transition(CompactionEvent event) {
+        this.compactionState = transition(this.compactionState, event);
+    }
+
+    static CompactionState transition(
+            CompactionState state, CompactionEvent event) {
+        if (state == null || event == null) {
+            throw new IllegalArgumentException(
+                    "BLAS compaction state and event must not be null");
+        }
+        if (state == CompactionState.DESTROYED
+                && (event == CompactionEvent.QUERY_COMPLETED
+                        || event == CompactionEvent.ABANDONED_TARGET_RETIRED
+                        || event == CompactionEvent.SOURCE_RETIRED
+                        || event == CompactionEvent.DESTROYED)) {
+            return CompactionState.DESTROYED;
+        }
+        CompactionState next = switch (event) {
+            case BUILD_SUBMITTED -> state == CompactionState.BUILD_PENDING
+                    ? CompactionState.QUERY_PENDING
+                    : null;
+            case BUILD_SUBMISSION_FAILED -> state == CompactionState.QUERY_PENDING
+                    ? CompactionState.BUILD_PENDING
+                    : null;
+            case QUERY_COMPLETED -> state == CompactionState.QUERY_PENDING
+                    ? CompactionState.QUERY_READY
+                    : null;
+            case BENEFICIAL_SIZE_RESOLVED -> state == CompactionState.QUERY_READY
+                    ? CompactionState.READY
+                    : null;
+            case UNBENEFICIAL_SIZE_RESOLVED -> state == CompactionState.QUERY_READY
+                    ? CompactionState.NOT_BENEFICIAL
+                    : null;
+            case TARGET_PREPARED -> state == CompactionState.READY
+                    ? CompactionState.PREPARED
+                    : null;
+            case PREPARED_TARGET_ROLLED_BACK -> state == CompactionState.PREPARED
+                    ? CompactionState.READY
+                    : null;
+            case TARGET_ABANDONED -> state == CompactionState.PREPARED
+                    ? CompactionState.ABANDONING_TARGET
+                    : null;
+            case ABANDONED_TARGET_RETIRED -> state == CompactionState.ABANDONING_TARGET
+                    ? CompactionState.READY
+                    : null;
+            case TARGET_PUBLISHED -> state == CompactionState.PREPARED
+                    ? CompactionState.RETIRING_SOURCE
+                    : null;
+            case SOURCE_RETIRED -> state == CompactionState.RETIRING_SOURCE
+                    ? CompactionState.COMPACTED
+                    : null;
+            case DESTROYED -> CompactionState.DESTROYED;
+        };
+        if (next == null) {
+            throw new IllegalStateException(
+                    "BLAS compaction event " + event + " is invalid from " + state);
+        }
+        return next;
+    }
+
+    private synchronized void preparedCompactionClosed(
+            AccelerationStructure source) {
+        if (this.compactionState == CompactionState.PREPARED
+                && this.accelerationStructure == source) {
+            this.transition(CompactionEvent.PREPARED_TARGET_ROLLED_BACK);
+        }
+    }
+
+    private synchronized void compactionTargetAbandoned(
+            AccelerationStructure source) {
+        if (this.compactionState == CompactionState.ABANDONING_TARGET
+                && this.accelerationStructure == source) {
+            this.transition(CompactionEvent.ABANDONED_TARGET_RETIRED);
+        } else if (this.compactionState == CompactionState.DESTROYED) {
+            this.transition(CompactionEvent.ABANDONED_TARGET_RETIRED);
+        }
+    }
+
+    private synchronized void compactionSourceRetired(
+            AccelerationStructure source) {
+        if (this.compactionState == CompactionState.RETIRING_SOURCE
+                && this.accelerationStructure != source) {
+            this.transition(CompactionEvent.SOURCE_RETIRED);
+        } else if (this.compactionState == CompactionState.DESTROYED) {
+            this.transition(CompactionEvent.SOURCE_RETIRED);
         }
     }
 
@@ -400,6 +591,7 @@ public final class PreparedBlas {
         private final AccelerationStructure target;
         private boolean published;
         private boolean retired;
+        private volatile boolean retirementComplete;
 
         private Compaction(
                 PreparedBlas owner,
@@ -412,6 +604,22 @@ public final class PreparedBlas {
 
         public long targetDeviceAddress() {
             return this.target.deviceAddress();
+        }
+
+        public PreparedBlas owner() {
+            return this.owner;
+        }
+
+        public long targetSize() {
+            return this.target.backingSize();
+        }
+
+        public long reclaimedBytes() {
+            return this.source.backingSize() - this.target.backingSize();
+        }
+
+        public boolean retirementComplete() {
+            return this.retirementComplete;
         }
 
         public void recordCopy(VkCommandBuffer commandBuffer) {
@@ -429,7 +637,8 @@ public final class PreparedBlas {
             synchronized (this.owner) {
                 if (this.published
                         || this.retired
-                        || this.owner.accelerationStructure != this.source) {
+                        || this.owner.accelerationStructure != this.source
+                        || this.owner.compactionState != CompactionState.PREPARED) {
                     throw new IllegalStateException("BLAS changed before compaction publication");
                 }
             }
@@ -445,10 +654,12 @@ public final class PreparedBlas {
             synchronized (this.owner) {
                 if (this.published
                         || this.retired
-                        || this.owner.accelerationStructure != this.source) {
+                        || this.owner.accelerationStructure != this.source
+                        || this.owner.compactionState != CompactionState.PREPARED) {
                     throw new IllegalStateException("BLAS changed before compaction publication");
                 }
                 this.owner.accelerationStructure = this.target;
+                this.owner.transition(CompactionEvent.TARGET_PUBLISHED);
             }
             this.published = true;
         }
@@ -460,13 +671,33 @@ public final class PreparedBlas {
                         "Compaction source can be retired only once after publication");
             }
             this.retired = true;
-            this.owner.context.defer(this.source);
+            this.owner.context.defer(() -> {
+                try {
+                    this.source.destroy();
+                } finally {
+                    this.owner.compactionSourceRetired(this.source);
+                    this.retirementComplete = true;
+                }
+            });
         }
 
         public void abandonAfterSubmission() {
             if (!this.published && !this.retired) {
+                synchronized (this.owner) {
+                    if (this.owner.compactionState == CompactionState.PREPARED
+                            && this.owner.accelerationStructure == this.source) {
+                        this.owner.transition(CompactionEvent.TARGET_ABANDONED);
+                    }
+                }
                 this.retired = true;
-                this.owner.context.defer(this.target);
+                this.owner.context.defer(() -> {
+                    try {
+                        this.target.destroy();
+                    } finally {
+                        this.owner.compactionTargetAbandoned(this.source);
+                        this.retirementComplete = true;
+                    }
+                });
             }
         }
 
@@ -474,7 +705,12 @@ public final class PreparedBlas {
         public void close() {
             if (!this.published && !this.retired) {
                 this.retired = true;
-                this.target.destroy();
+                try {
+                    this.target.destroy();
+                } finally {
+                    this.owner.preparedCompactionClosed(this.source);
+                    this.retirementComplete = true;
+                }
             }
         }
     }

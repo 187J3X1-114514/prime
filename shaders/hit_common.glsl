@@ -36,7 +36,8 @@ PrimitiveRecord primePrimitive() {
 }
 
 bool primeUsesRepeatedUv(PrimitiveRecord primitive) {
-    return uintBitsToFloat(primitive.uvDensity) < 0.0;
+    return primeUsesRasterComposite(primitive)
+            || uintBitsToFloat(primitive.uvDensity) < 0.0;
 }
 
 bool primeUsesConstantFloatUv(PrimitiveRecord primitive) {
@@ -73,7 +74,24 @@ vec2 primeInterpolateUv(SectionRecord section, PrimitiveRecord primitive) {
 
 float primeRayConeTextureLod(PrimitiveRecord primitive, vec3 geometricNormal) {
     vec2 rayCone = unpackHalf2x16(primePush.rayCone);
-    float normalizedUvDensity = abs(uintBitsToFloat(primitive.uvDensity));
+    float normalizedUvDensity;
+    if (primeUsesRasterComposite(primitive)) {
+        vec2 first = primeUnpackHalf2(primitive.uv1)
+                - primeUnpackHalf2(primitive.uv0);
+        vec2 second = primeUnpackHalf2(primitive.uv2)
+                - primeUnpackHalf2(primitive.uv0);
+        float trace = dot(first, first) + dot(second, second);
+        float determinant =
+                first.x * second.y - first.y * second.x;
+        normalizedUvDensity = sqrt(max(
+                0.5 * (trace + sqrt(max(
+                        trace * trace
+                                - 4.0 * determinant * determinant,
+                        0.0))),
+                0.0));
+    } else {
+        normalizedUvDensity = abs(uintBitsToFloat(primitive.uvDensity));
+    }
     uint textureIndex = min(
             primePrimitiveTextureIndex(primitive), PRIME_SCENE_TEXTURE_COUNT - 1u);
     int mipLevels = textureQueryLevels(

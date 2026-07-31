@@ -704,7 +704,11 @@ final class TextureVoxelMeshBuilder {
             this.transmissive =
                     (key.flags & PrimitivePacking.FLAG_TRANSMISSIVE) != 0;
             this.cutoutGeometry = this.cutout && !this.transmissive;
-            this.opacityMicromap = this.cutoutGeometry && buildOpacityMicromap
+            boolean frontFaceOnly =
+                    (key.flags & PrimitivePacking.FLAG_FRONT_FACE_ONLY) != 0;
+            this.opacityMicromap = this.cutoutGeometry
+                            && buildOpacityMicromap
+                            && !frontFaceOnly
                     ? new OpacityMicromapData.Builder()
                     : null;
         }

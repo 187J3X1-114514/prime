@@ -166,7 +166,15 @@ public final class SectionMeshAccumulator {
         int packedUv1 = PrimitivePacking.packHalf2(uv1U, uv1V);
         int packedUv2 = PrimitivePacking.packHalf2(uv2U, uv2V);
         if (destination == this.cutout && this.opacityMicromap != null) {
-            this.opacityMicromap.addTriangle(surface.sprite(), packedUv0, packedUv1, packedUv2);
+            if (surface.frontFaceOnly()) {
+                // Opaque/transparent OMM states may skip any-hit. Directional material sheets
+                // require any-hit to reject the authored back side, so every microtriangle must
+                // remain unknown.
+                this.opacityMicromap.addFullyUnknownTriangle();
+            } else {
+                this.opacityMicromap.addTriangle(
+                        surface.sprite(), packedUv0, packedUv1, packedUv2);
+            }
         }
         int packedTint = PrimitivePacking.packTint(surface.tint());
         destination.primitives.add(packedUv0);
@@ -219,6 +227,9 @@ public final class SectionMeshAccumulator {
                 surface.thinWalled(),
                 surface.water(),
                 surface.foliage());
+        if (surface.frontFaceOnly()) {
+            flags |= PrimitivePacking.FLAG_FRONT_FACE_ONLY;
+        }
         flags = PrimitivePacking.withLabPbr(
                 flags,
                 this.labPbrMaterials.hasNormal(surface.sprite().contents().name()),
@@ -304,6 +315,7 @@ public final class SectionMeshAccumulator {
         private boolean foliage;
         private boolean mergeable;
         private boolean rasterOverlay;
+        private boolean frontFaceOnly;
         private int lightEmission;
         private TextureAtlasSprite sprite;
 
@@ -328,6 +340,7 @@ public final class SectionMeshAccumulator {
                     foliage,
                     mergeable,
                     false,
+                    false,
                     lightEmission,
                     sprite);
         }
@@ -344,6 +357,34 @@ public final class SectionMeshAccumulator {
                 boolean rasterOverlay,
                 int lightEmission,
                 TextureAtlasSprite sprite) {
+            return this.set(
+                    tint,
+                    cutout,
+                    animated,
+                    transmissive,
+                    thinWalled,
+                    water,
+                    foliage,
+                    mergeable,
+                    rasterOverlay,
+                    false,
+                    lightEmission,
+                    sprite);
+        }
+
+        public Surface set(
+                int tint,
+                boolean cutout,
+                boolean animated,
+                boolean transmissive,
+                boolean thinWalled,
+                boolean water,
+                boolean foliage,
+                boolean mergeable,
+                boolean rasterOverlay,
+                boolean frontFaceOnly,
+                int lightEmission,
+                TextureAtlasSprite sprite) {
             this.tint = tint;
             this.cutout = cutout;
             this.animated = animated;
@@ -353,6 +394,7 @@ public final class SectionMeshAccumulator {
             this.foliage = foliage;
             this.mergeable = mergeable;
             this.rasterOverlay = rasterOverlay;
+            this.frontFaceOnly = frontFaceOnly;
             this.lightEmission = lightEmission;
             this.sprite = Objects.requireNonNull(sprite, "sprite");
             return this;
@@ -396,6 +438,10 @@ public final class SectionMeshAccumulator {
 
         boolean rasterOverlay() {
             return this.rasterOverlay;
+        }
+
+        boolean frontFaceOnly() {
+            return this.frontFaceOnly;
         }
 
         int lightEmission() {

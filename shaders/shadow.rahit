@@ -9,6 +9,11 @@ layout(location = 1) rayPayloadInEXT PrimeShadowPayload primeShadowPayload;
 void main() {
     SectionRecord section = primeSection();
     PrimitiveRecord primitive = primePrimitive(section);
+    if (primePrimitiveIsFrontFaceOnly(primitive)
+            && gl_HitKindEXT == gl_HitKindBackFacingTriangleEXT) {
+        ignoreIntersectionEXT;
+        return;
+    }
     uint flags = primePrimitiveFlags(primitive);
     vec3 outwardNormal = primeUnpackOctahedralNormal(primitive.normal);
     float textureLodValue = primeRayConeTextureLod(primitive, outwardNormal);

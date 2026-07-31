@@ -56,6 +56,64 @@ final class CompiledClusterCodecTest {
     }
 
     @Test
+    void versionThreePrimitivePackingMigratesWithoutInventingFrontFaceSelection() {
+        int flags = PrimitivePacking.FLAG_CUTOUT
+                | PrimitivePacking.FLAG_LABPBR_SPECULAR;
+        int[] primitive = {
+            PrimitivePacking.packHalf2(0.0F, 0.0F),
+            PrimitivePacking.packHalf2(1.0F, 0.0F),
+            PrimitivePacking.packHalf2(0.0F, 1.0F),
+            PrimitivePacking.packTintFlags(
+                    PrimitivePacking.packTint(-1), flags),
+            PrimitivePacking.packOctahedralNormal(0.0F, 0.0F, 1.0F),
+            PrimitivePacking.packDynamicFlags(flags, 17, true),
+            Float.floatToRawIntBits(1.0F),
+            PrimitivePacking.packOctahedralNormal(1.0F, 0.0F, 0.0F)
+        };
+        CpuSectionMesh section = new CpuSectionMesh(
+                new float[] {
+                    0.0F, 0.0F, 0.0F,
+                    1.0F, 0.0F, 0.0F,
+                    0.0F, 1.0F, 0.0F
+                },
+                primitive,
+                0,
+                1,
+                0,
+                OpacityMicromapData.fullyUnknown(1),
+                CpuSectionLights.EMPTY);
+        byte[] encoded = CompiledClusterCodec.encode(new CompiledCluster(
+                0L,
+                0,
+                0,
+                0,
+                CpuClusterMesh.fromSegments(List.of(section))));
+        PayloadOffsets offsets = firstPayloadOffsets(encoded);
+        ByteBuffer legacy = littleEndian(encoded);
+        legacy.putInt(4, 3);
+        legacy.putInt(
+                offsets.primitives() + 5 * Integer.BYTES,
+                flags >>> 8
+                        | 17 << 1
+                        | PrimitivePacking.VISIBLE_EMISSION_FLAG
+                        | PrimitivePacking.DYNAMIC_TEXTURE_FLAG);
+
+        CompiledCluster decoded = CompiledClusterCodec.decode(encoded);
+        int[] decodedPrimitive =
+                decoded.mesh().segments().getFirst().primitiveRecords();
+        int decodedFlags = PrimitivePacking.unpackFlags(
+                decodedPrimitive[3], decodedPrimitive[5]);
+
+        assertEquals(flags, decodedFlags);
+        assertEquals(
+                0, decodedFlags & PrimitivePacking.FLAG_FRONT_FACE_ONLY);
+        assertEquals(
+                17,
+                PrimitivePacking.unpackDynamicTextureIndex(
+                        decodedPrimitive[5]));
+    }
+
+    @Test
     void malformedOrTruncatedPayloadsFailBeforePublication() {
         CpuSectionMesh section = new CpuSectionMesh(
                 new float[9],

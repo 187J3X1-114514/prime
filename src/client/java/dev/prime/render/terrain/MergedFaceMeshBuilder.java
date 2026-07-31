@@ -54,50 +54,60 @@ final class MergedFaceMeshBuilder {
     }
 
     List<CpuSectionMesh> build(List<MergeFace> faces) {
-        TextureVoxelMeshBuilder voxelBuilder = this.voxelSurfacesEnabled
+        TextureVoxelMeshBuilder detailBuilder = this.voxelSurfacesEnabled
                 ? new TextureVoxelMeshBuilder(
                         faces.stream().anyMatch(MergeFace::buildOpacityMicromap),
                         this.voxelSurfaceMaximumHeight)
                 : null;
         Set<MergeFace> composited = Collections.newSetFromMap(new IdentityHashMap<>());
-        if (voxelBuilder != null) {
-            Map<FaceLocation, MergeFace> opaqueFaces = new HashMap<>();
-            Map<FaceLocation, MergeFace> cutoutFaces = new HashMap<>();
-            Set<FaceLocation> ambiguous = new HashSet<>();
-            for (MergeFace face : faces) {
-                requireInGrid(face);
-                if (usesVoxelSurface(face) && !face.cutout() && !face.transmissive()) {
-                    putUnique(opaqueFaces, ambiguous, face);
-                } else if (usesVoxelSurface(face)
-                        && face.cutout()
-                        && !face.transmissive()
-                        && face.rasterOverlay()) {
-                    putUnique(cutoutFaces, ambiguous, face);
-                }
-            }
-            for (Map.Entry<FaceLocation, MergeFace> entry : opaqueFaces.entrySet()) {
-                if (ambiguous.contains(entry.getKey())) {
-                    continue;
-                }
-                MergeFace overlay = cutoutFaces.get(entry.getKey());
-                if (overlay != null
-                        && voxelBuilder.addComposite(entry.getValue(), overlay)) {
-                    composited.add(entry.getValue());
-                    composited.add(overlay);
-                }
+        ArrayList<MergeFace> macroComposites = new ArrayList<>();
+        Map<FaceLocation, MergeFace> opaqueFaces = new HashMap<>();
+        Map<FaceLocation, MergeFace> cutoutFaces = new HashMap<>();
+        Set<FaceLocation> ambiguous = new HashSet<>();
+        for (MergeFace face : faces) {
+            requireInGrid(face);
+            if (usesVoxelSurface(face) && !face.cutout() && !face.transmissive()) {
+                putUnique(opaqueFaces, ambiguous, face);
+            } else if (usesVoxelSurface(face)
+                    && face.cutout()
+                    && !face.transmissive()
+                    && face.rasterOverlay()) {
+                putUnique(cutoutFaces, ambiguous, face);
             }
         }
-        ArrayList<MergeFace> ordinaryFaces = new ArrayList<>(faces.size());
+        for (Map.Entry<FaceLocation, MergeFace> entry : opaqueFaces.entrySet()) {
+            if (ambiguous.contains(entry.getKey())) {
+                continue;
+            }
+            MergeFace overlay = cutoutFaces.get(entry.getKey());
+            if (overlay == null) {
+                continue;
+            }
+            MergeFace base = entry.getValue();
+            boolean resolved = detailBuilder != null
+                    && detailBuilder.addComposite(base, overlay);
+            if (!resolved) {
+                MergeFace composite = MergeFace.tryComposite(base, overlay);
+                if (composite != null) {
+                    macroComposites.add(composite);
+                    resolved = true;
+                }
+            }
+            if (resolved) {
+                composited.add(base);
+                composited.add(overlay);
+            }
+        }
+        ArrayList<MergeFace> ordinaryFaces =
+                new ArrayList<>(faces.size() + macroComposites.size());
+        ordinaryFaces.addAll(macroComposites);
         ArrayList<MergeFace> unmergedFallbacks = new ArrayList<>();
         for (MergeFace face : faces) {
-            if (voxelBuilder == null) {
-                requireInGrid(face);
-            }
             if (composited.contains(face)) {
                 continue;
             }
-            if (voxelBuilder != null && usesVoxelSurface(face)) {
-                if (!voxelBuilder.add(face)) {
+            if (detailBuilder != null && usesVoxelSurface(face)) {
+                if (!detailBuilder.add(face)) {
                     unmergedFallbacks.add(face);
                 }
             } else {
@@ -128,8 +138,8 @@ final class MergedFaceMeshBuilder {
             this.emit(fallback, fallback.cellU(), fallback.cellV(), 1, 1);
         }
         this.finishSegment();
-        if (voxelBuilder != null) {
-            TextureVoxelMeshBuilder.ListResult result = voxelBuilder.build();
+        if (detailBuilder != null) {
+            TextureVoxelMeshBuilder.ListResult result = detailBuilder.build();
             this.voxelMeshes = result.meshes();
             this.voxelInstances = result.instances();
         }
@@ -307,7 +317,7 @@ final class MergedFaceMeshBuilder {
                 this.transmissiveTriangles += 2;
             } else if (face.cutout()) {
                 this.cutoutTriangles += 2;
-                if (face.buildOpacityMicromap()) {
+                if (face.buildOpacityMicromap() && !face.frontFaceOnly()) {
                     this.addMicromapTriangle(face, u, v, width, corners, 0, 1, 2);
                     this.addMicromapTriangle(face, u, v, width, corners, 0, 2, 3);
                 } else {

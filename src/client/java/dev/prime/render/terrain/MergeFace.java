@@ -8,8 +8,9 @@ import net.minecraft.client.renderer.texture.TextureAtlasSprite;
  *
  * <p>The three UV words encode the atlas coordinates at projected corners (0,0), (1,0), and
  * (0,1). Exact float coordinates are retained alongside them because half-precision atlas UVs
- * cannot address individual texels in a large atlas. A negative UV-density word tags the
- * primitive as periodic without expanding the primitive ABI.
+ * cannot address individual texels in a large atlas. A negative UV-density word normally tags
+ * the primitive as periodic. Raster composites instead use that word for an exact signed atlas
+ * pixel offset under an explicit primitive flag.
  */
 public final class MergeFace {
     private static final int PLANE_GRID_SCALE = 16;
@@ -203,6 +204,9 @@ public final class MergeFace {
                 surface.thinWalled(),
                 false,
                 surface.foliage());
+        if (surface.frontFaceOnly()) {
+            flags |= PrimitivePacking.FLAG_FRONT_FACE_ONLY;
+        }
         flags = PrimitivePacking.withLabPbr(
                 flags,
                 labPbrMaterials.hasNormal(surface.sprite().contents().name()),
@@ -252,6 +256,107 @@ public final class MergeFace {
                 buildOpacityMicromap,
                 labPbrMaterials.heightMap(surface.sprite().contents().name()),
                 labPbrMaterials.materialMap(surface.sprite().contents().name()));
+    }
+
+    static MergeFace tryComposite(MergeFace base, MergeFace overlay) {
+        if (base.planeAxis != overlay.planeAxis
+                || base.normalSign != overlay.normalSign
+                || base.planeCell != overlay.planeCell
+                || base.cellU != overlay.cellU
+                || base.cellV != overlay.cellV) {
+            throw new IllegalArgumentException(
+                    "Raster material layers are not coincident");
+        }
+        int baseFlags = PrimitivePacking.unpackFlags(
+                base.primitive[3], base.primitive[5]);
+        int overlayFlags = PrimitivePacking.unpackFlags(
+                overlay.primitive[3], overlay.primitive[5]);
+        if ((baseFlags
+                                & (PrimitivePacking.FLAG_CUTOUT
+                                        | PrimitivePacking.FLAG_ANIMATED_TEXTURE
+                                        | PrimitivePacking.FLAG_TRANSMISSIVE
+                                        | PrimitivePacking.FLAG_THIN_WALLED
+                                        | PrimitivePacking.FLAG_WATER
+                                        | PrimitivePacking.FLAG_FOLIAGE
+                                        | PrimitivePacking.FLAG_FRONT_FACE_ONLY
+                                        | PrimitivePacking.FLAG_RASTER_COMPOSITE))
+                        != 0
+                || (overlayFlags & PrimitivePacking.FLAG_CUTOUT) == 0
+                || ((overlayFlags
+                                & (PrimitivePacking.FLAG_ANIMATED_TEXTURE
+                                        | PrimitivePacking.FLAG_TRANSMISSIVE
+                                        | PrimitivePacking.FLAG_THIN_WALLED
+                                        | PrimitivePacking.FLAG_WATER
+                                        | PrimitivePacking.FLAG_FOLIAGE
+                                        | PrimitivePacking.FLAG_FRONT_FACE_ONLY
+                                        | PrimitivePacking.FLAG_RASTER_COMPOSITE))
+                        != 0)
+                || base.sprite.contents().isAnimated()
+                || overlay.sprite.contents().isAnimated()) {
+            return null;
+        }
+
+        float deltaU = overlay.uv0U - base.uv0U;
+        float deltaV = overlay.uv0V - base.uv0V;
+        if (!near(overlay.uv1U - base.uv1U, deltaU, UV_EPSILON)
+                || !near(overlay.uv2U - base.uv2U, deltaU, UV_EPSILON)
+                || !near(overlay.uv1V - base.uv1V, deltaV, UV_EPSILON)
+                || !near(overlay.uv2V - base.uv2V, deltaV, UV_EPSILON)) {
+            return null;
+        }
+        int atlasWidth = commonAtlasExtent(
+                base.sprite.contents().width(),
+                base.sprite.getU1() - base.sprite.getU0(),
+                overlay.sprite.contents().width(),
+                overlay.sprite.getU1() - overlay.sprite.getU0());
+        int atlasHeight = commonAtlasExtent(
+                base.sprite.contents().height(),
+                base.sprite.getV1() - base.sprite.getV0(),
+                overlay.sprite.contents().height(),
+                overlay.sprite.getV1() - overlay.sprite.getV0());
+        int pixelOffsetU = exactPixelOffset(deltaU, atlasWidth);
+        int pixelOffsetV = exactPixelOffset(deltaV, atlasHeight);
+        if (pixelOffsetU < Short.MIN_VALUE
+                || pixelOffsetU > Short.MAX_VALUE
+                || pixelOffsetV < Short.MIN_VALUE
+                || pixelOffsetV > Short.MAX_VALUE) {
+            return null;
+        }
+
+        int labPbrMask = PrimitivePacking.FLAG_LABPBR_NORMAL
+                | PrimitivePacking.FLAG_LABPBR_SPECULAR
+                | PrimitivePacking.FLAG_TANGENT_NEGATIVE;
+        int flags = baseFlags
+                | overlayFlags & labPbrMask
+                | PrimitivePacking.FLAG_RASTER_COMPOSITE;
+        PrimitivePacking.requireValidFlags(flags);
+        int[] primitive = base.primitive.clone();
+        primitive[3] = PrimitivePacking.packTintFlags(
+                primitive[3], flags);
+        primitive[5] = PrimitivePacking.packRasterCompositeFlags(
+                flags, overlay.primitive[3]);
+        primitive[6] = pixelOffsetU & 0xffff
+                | (pixelOffsetV & 0xffff) << 16;
+        return new MergeFace(
+                base.planeAxis,
+                base.normalSign,
+                base.planeCell,
+                base.cellU,
+                base.cellV,
+                base.sprite,
+                primitive,
+                base.uv0U,
+                base.uv0V,
+                base.uv1U,
+                base.uv1V,
+                base.uv2U,
+                base.uv2V,
+                false,
+                false,
+                false,
+                false,
+                base.labPbrHeightMap,
+                base.labPbrMaterialMap);
     }
 
     MergeFace translated(int x, int y, int z) {
@@ -350,6 +455,13 @@ public final class MergeFace {
         return this.buildOpacityMicromap;
     }
 
+    boolean frontFaceOnly() {
+        return (PrimitivePacking.unpackFlags(
+                        this.primitive[3], this.primitive[5])
+                        & PrimitivePacking.FLAG_FRONT_FACE_ONLY)
+                != 0;
+    }
+
     LabPbrHeightMap labPbrHeightMap() {
         return this.labPbrHeightMap;
     }
@@ -410,5 +522,47 @@ public final class MergeFace {
 
     private static boolean near(float first, float second, float epsilon) {
         return Math.abs(first - second) <= epsilon;
+    }
+
+    private static int commonAtlasExtent(
+            int firstPixels,
+            float firstSpan,
+            int secondPixels,
+            float secondSpan) {
+        if (!(Math.abs(firstSpan) > 1.0e-12F)
+                || !(Math.abs(secondSpan) > 1.0e-12F)) {
+            return -1;
+        }
+        int firstExtent = Math.round(firstPixels / Math.abs(firstSpan));
+        int secondExtent = Math.round(secondPixels / Math.abs(secondSpan));
+        return firstExtent > 0
+                        && firstExtent == secondExtent
+                        && near(
+                                Math.abs(firstSpan),
+                                firstPixels / (float) firstExtent,
+                                atlasTolerance(firstExtent))
+                        && near(
+                                Math.abs(secondSpan),
+                                secondPixels / (float) secondExtent,
+                                atlasTolerance(secondExtent))
+                ? firstExtent
+                : -1;
+    }
+
+    private static int exactPixelOffset(float delta, int atlasExtent) {
+        if (atlasExtent <= 0 || !Float.isFinite(delta)) {
+            return Integer.MAX_VALUE;
+        }
+        int pixels = Math.round(delta * atlasExtent);
+        return near(
+                        delta,
+                        pixels / (float) atlasExtent,
+                        atlasTolerance(atlasExtent))
+                ? pixels
+                : Integer.MAX_VALUE;
+    }
+
+    private static float atlasTolerance(int atlasExtent) {
+        return Math.min(UV_EPSILON, 0.25F / atlasExtent);
     }
 }

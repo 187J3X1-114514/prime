@@ -10,12 +10,16 @@ public final class PrimitivePacking {
     public static final int FLAG_LABPBR_NORMAL = 1 << 6;
     public static final int FLAG_LABPBR_SPECULAR = 1 << 7;
     public static final int FLAG_TANGENT_NEGATIVE = 1 << 8;
-    public static final int FLAG_MASK = (1 << 9) - 1;
+    /** Accept only the authored winding's front side during any-hit traversal. */
+    public static final int FLAG_FRONT_FACE_ONLY = 1 << 9;
+    /** Resolve a static base/overlay atlas pair as one material evaluation. */
+    public static final int FLAG_RASTER_COMPOSITE = 1 << 10;
+    public static final int FLAG_MASK = (1 << 11) - 1;
     public static final int DYNAMIC_TEXTURE_FLAG = 1 << 31;
     public static final int VISIBLE_EMISSION_FLAG = 1 << 30;
-    public static final int DYNAMIC_TEXTURE_INDEX_MASK = (1 << 29) - 1;
+    public static final int DYNAMIC_TEXTURE_INDEX_MASK = (1 << 27) - 1;
     public static final int NO_EMITTER_INDEX = -1;
-    public static final int MAX_EMITTER_INDEX = (1 << 29) - 2;
+    public static final int MAX_EMITTER_INDEX = (1 << 27) - 2;
     /**
      * Negative zero tags a constant UV stored as two full-precision floats in uv0 and uv1.
      * Ordinary negative densities remain the periodic macro-face encoding.
@@ -32,41 +36,49 @@ public final class PrimitivePacking {
     }
 
     /**
-     * Packs the high material-flag bit and the local light-emitter index without truncation.
-     * The tint alpha byte owns the other eight flags; tint alpha is not a shading input.
+     * Packs the three high primitive-flag bits and the local light-emitter index without
+     * truncation. The tint alpha byte owns the other eight flags; tint alpha is not a shading
+     * input.
      */
     public static int packFlagsEmitter(int flags, int emitterIndex) {
         if ((flags & ~FLAG_MASK) != 0) {
-            throw new IllegalArgumentException("Primitive flags exceed their nine-bit ABI field");
+            throw new IllegalArgumentException("Primitive flags exceed their eleven-bit ABI field");
         }
         if (emitterIndex < NO_EMITTER_INDEX || emitterIndex > MAX_EMITTER_INDEX) {
-            throw new IllegalArgumentException("Primitive emitter index exceeds its 29-bit ABI field");
+            throw new IllegalArgumentException("Primitive emitter index exceeds its 27-bit ABI field");
         }
         int encodedEmitter = emitterIndex == NO_EMITTER_INDEX ? 0 : emitterIndex + 1;
-        return flags >>> 8 | encodedEmitter << 1;
+        return flags >>> 8 | encodedEmitter << 3;
     }
 
     public static int packTintFlags(int packedTint, int flags) {
         if ((flags & ~FLAG_MASK) != 0) {
-            throw new IllegalArgumentException("Primitive flags exceed their nine-bit ABI field");
+            throw new IllegalArgumentException("Primitive flags exceed their eleven-bit ABI field");
         }
         return (packedTint & 0x00ff_ffff) | (flags & 0xff) << 24;
     }
 
     public static int unpackFlags(int packedTint, int packedFlagsEmitter) {
-        return packedTint >>> 24 | (packedFlagsEmitter & 1) << 8;
+        return packedTint >>> 24 | (packedFlagsEmitter & 7) << 8;
     }
 
     public static int unpackEmitterIndex(int packed) {
         if ((packed & DYNAMIC_TEXTURE_FLAG) != 0) {
             return NO_EMITTER_INDEX;
         }
-        int encoded = packed >>> 1;
+        if ((packed & (FLAG_RASTER_COMPOSITE >>> 8)) != 0) {
+            return NO_EMITTER_INDEX;
+        }
+        int encoded = packed >>> 3;
         return encoded == 0 ? NO_EMITTER_INDEX : encoded - 1;
     }
 
     public static int withEmitterIndex(int packed, int emitterIndex) {
-        return packFlagsEmitter((packed & 1) << 8, emitterIndex);
+        if ((packed & (FLAG_RASTER_COMPOSITE >>> 8)) != 0) {
+            throw new IllegalArgumentException(
+                    "Raster composite payload cannot carry an emitter");
+        }
+        return packFlagsEmitter((packed & 7) << 8, emitterIndex);
     }
 
     /**
@@ -78,13 +90,18 @@ public final class PrimitivePacking {
     public static int packDynamicFlags(
             int flags, int textureIndex, boolean visibleEmission) {
         if ((flags & ~FLAG_MASK) != 0) {
-            throw new IllegalArgumentException("Primitive flags exceed their nine-bit ABI field");
+            throw new IllegalArgumentException(
+                    "Primitive flags exceed their eleven-bit ABI field");
         }
         if (textureIndex <= 0 || textureIndex > DYNAMIC_TEXTURE_INDEX_MASK) {
             throw new IllegalArgumentException("Dynamic texture index exceeds its ABI field");
         }
+        if ((flags & FLAG_RASTER_COMPOSITE) != 0) {
+            throw new IllegalArgumentException(
+                    "Dynamic textures cannot use a static raster composite");
+        }
         return flags >>> 8
-                | textureIndex << 1
+                | textureIndex << 3
                 | (visibleEmission ? VISIBLE_EMISSION_FLAG : 0)
                 | DYNAMIC_TEXTURE_FLAG;
     }
@@ -92,7 +109,7 @@ public final class PrimitivePacking {
     public static int unpackDynamicTextureIndex(int packed) {
         return (packed & DYNAMIC_TEXTURE_FLAG) == 0
                 ? 0
-                : packed >>> 1 & DYNAMIC_TEXTURE_INDEX_MASK;
+                : packed >>> 3 & DYNAMIC_TEXTURE_INDEX_MASK;
     }
 
     public static boolean hasVisibleEmission(int packed) {
@@ -146,13 +163,28 @@ public final class PrimitivePacking {
 
     static void requireValidFlags(int flags) {
         if ((flags & ~FLAG_MASK) != 0) {
-            throw new IllegalArgumentException("Primitive flags exceed their nine-bit ABI field");
+            throw new IllegalArgumentException("Primitive flags exceed their eleven-bit ABI field");
         }
         boolean cutout = (flags & FLAG_CUTOUT) != 0;
         boolean transmissive = (flags & FLAG_TRANSMISSIVE) != 0;
         boolean thinWalled = (flags & FLAG_THIN_WALLED) != 0;
         boolean water = (flags & FLAG_WATER) != 0;
         boolean foliage = (flags & FLAG_FOLIAGE) != 0;
+        boolean rasterComposite =
+                (flags & FLAG_RASTER_COMPOSITE) != 0;
+        if (rasterComposite
+                && ((flags
+                                & (FLAG_CUTOUT
+                                        | FLAG_ANIMATED_TEXTURE
+                                        | FLAG_TRANSMISSIVE
+                                        | FLAG_THIN_WALLED
+                                        | FLAG_WATER
+                                        | FLAG_FOLIAGE
+                                        | FLAG_FRONT_FACE_ONLY))
+                        != 0)) {
+            throw new IllegalArgumentException(
+                    "Raster composites must be static, opaque, and two-sided");
+        }
         if (foliage && (!cutout || !thinWalled || transmissive || water)) {
             throw new IllegalArgumentException(
                     "Foliage must be a cutout, non-volume thin-walled primitive");
@@ -180,6 +212,16 @@ public final class PrimitivePacking {
                 | (normalMap ? FLAG_LABPBR_NORMAL : 0)
                 | (specularMap ? FLAG_LABPBR_SPECULAR : 0)
                 | (normalMap && tangentNegative ? FLAG_TANGENT_NEGATIVE : 0);
+    }
+
+    public static int packRasterCompositeFlags(
+            int flags, int packedOverlayTint) {
+        if ((flags & FLAG_RASTER_COMPOSITE) == 0) {
+            throw new IllegalArgumentException(
+                    "Raster composite payload requires its primitive flag");
+        }
+        requireValidFlags(flags);
+        return flags >>> 8 | (packedOverlayTint & 0x00ff_ffff) << 3;
     }
 
     /**

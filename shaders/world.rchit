@@ -52,7 +52,9 @@ void main() {
             : material.baseColor;
     primePayload.traceKind = material.flags;
     primePayload.sectionIndex = gl_InstanceCustomIndexEXT;
-    uint encodedEmitter = primitive.flagsEmitter >> 1u;
+    uint encodedEmitter = primeUsesRasterComposite(primitive)
+            ? 0u
+            : primitive.flagsEmitter >> 3u;
     primePayload.emitterIndex = encodedEmitter == 0u
             ? 0xffffffffu
             : encodedEmitter - 1u;

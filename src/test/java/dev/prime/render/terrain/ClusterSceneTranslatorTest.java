@@ -155,10 +155,15 @@ final class ClusterSceneTranslatorTest {
             CapturedSectionGeometry.Builder section = new CapturedSectionGeometry.Builder();
             section.add(quad, surface(base, -1, false, false));
             section.add(quad, surface(cutout, -1, true, false));
+            CapturedSectionGeometry captured = section.build();
 
-            CpuClusterMesh cluster = translate(section.build());
+            CpuClusterMesh detailed = translate(captured);
+            CpuClusterMesh ordinary = translate(captured, false, false);
 
-            assertEquals(2, cluster.voxelInstances().count());
+            assertEquals(2, detailed.voxelInstances().count());
+            assertEquals(0, ordinary.voxelInstances().count());
+            assertEquals(2L, ordinary.opaqueTriangleCount());
+            assertEquals(2L, ordinary.cutoutTriangleCount());
         }
     }
 
@@ -205,6 +210,62 @@ final class ClusterSceneTranslatorTest {
                     PrimitivePacking.packOctahedralNormal(
                             -0.70710677F, 0.0F, 0.70710677F),
                     primitives[4]);
+            assertTwoSided(cluster);
+        }
+    }
+
+    @Test
+    void grassSideOverlayBecomesOneMacroMaterialWhenReliefIsDisabled() {
+        try (SectionMeshAccumulatorTest.TestSprite base =
+                        new SectionMeshAccumulatorTest.TestSprite(
+                                "flat_grass_side", 32, 16, 0, 0);
+                SectionMeshAccumulatorTest.TestSprite overlay =
+                        new SectionMeshAccumulatorTest.TestSprite(
+                                "flat_grass_side_overlay", 32, 16, 16, 0)) {
+            base.fill(0xff70_5030);
+            overlay.fill(0);
+            overlay.setPixel(0, 0, 0xff80_c060);
+            CapturedSectionGeometry section = capturedLayeredFace(
+                    base,
+                    overlay,
+                    4.0F,
+                    new int[] {
+                        0xff70_d050,
+                        0xff70_d050,
+                        0xff70_d050,
+                        0xff70_d050
+                    });
+
+            CpuClusterMesh cluster = translate(section, false, false);
+
+            assertEquals(2L, cluster.opaqueTriangleCount());
+            assertEquals(0L, cluster.cutoutTriangleCount());
+            assertEquals(0, cluster.voxelMeshes().size());
+            assertEquals(0, cluster.voxelInstances().count());
+            CpuClusterMesh.Segment segment = cluster.segments().getFirst();
+            assertEquals(2, segment.opaqueTriangleCount());
+            int[] primitives = segment.primitiveRecords();
+            for (int record = 0;
+                    record < primitives.length;
+                    record += CpuSectionMesh.PRIMITIVE_WORDS) {
+                int flags = PrimitivePacking.unpackFlags(
+                        primitives[record + 3], primitives[record + 5]);
+                assertTrue(
+                        (flags & PrimitivePacking.FLAG_RASTER_COMPOSITE) != 0);
+                assertEquals(
+                        PrimitivePacking.NO_EMITTER_INDEX,
+                        PrimitivePacking.unpackEmitterIndex(
+                                primitives[record + 5]));
+                assertEquals(16, (short) primitives[record + 6]);
+                assertEquals(0, (short) (primitives[record + 6] >>> 16));
+            }
+            CompiledCluster compiled =
+                    new CompiledCluster(0L, 0, 0, 0, cluster);
+            CompiledCluster decoded = CompiledClusterCodec.decode(
+                    CompiledClusterCodec.encode(compiled));
+            assertEquals(
+                    CompiledClusterFingerprint.sha256Hex(compiled),
+                    CompiledClusterFingerprint.sha256Hex(decoded));
         }
     }
 
@@ -319,6 +380,86 @@ final class ClusterSceneTranslatorTest {
             CpuClusterMesh cluster = translate(section.build());
 
             assertEquals(4L, cluster.cutoutTriangleCount());
+            assertFrontFaceOnly(cluster);
+            assertEquals(0, cluster.opacityMicromap().blockCount());
+            for (int index : cluster.opacityMicromap().triangleIndices()) {
+                assertTrue(index < 0);
+            }
+        }
+    }
+
+    @Test
+    void vanillaSunflowerDiscKeepsDistinctDirectionalMaterialsWithoutHitCompetition() {
+        try (SectionMeshAccumulatorTest.TestSprite front =
+                        new SectionMeshAccumulatorTest.TestSprite(
+                                "sunflower_front");
+                SectionMeshAccumulatorTest.TestSprite back =
+                        new SectionMeshAccumulatorTest.TestSprite(
+                                "sunflower_back")) {
+            front.fill(0xffff_c040);
+            back.fill(0xff60_5020);
+            BakedQuad.MaterialInfo frontMaterial = new BakedQuad.MaterialInfo(
+                    front,
+                    ChunkSectionLayer.CUTOUT,
+                    null,
+                    0,
+                    false,
+                    0);
+            BakedQuad.MaterialInfo backMaterial = new BakedQuad.MaterialInfo(
+                    back,
+                    ChunkSectionLayer.CUTOUT,
+                    null,
+                    0,
+                    false,
+                    0);
+            CuboidFace.UVs uvs = new CuboidFace.UVs(
+                    0.0F, 0.0F, 16.0F, 16.0F);
+            CuboidRotation rotation = new CuboidRotation(
+                    new Vector3f(0.5F, 0.5F, 0.5F),
+                    () -> new Matrix4f().rotationZ(
+                            (float) Math.toRadians(22.5)),
+                    true);
+            ModelBaker.Interner interner = passthroughInterner();
+            ModelState modelState = new ModelState() {
+            };
+            Vector3f from = new Vector3f(9.6F, -1.0F, 1.0F);
+            Vector3f to = new Vector3f(9.6F, 15.0F, 15.0F);
+            BakedQuad west = FaceBakery.bakeQuad(
+                    interner,
+                    from,
+                    to,
+                    uvs,
+                    Quadrant.R0,
+                    backMaterial,
+                    Direction.WEST,
+                    modelState,
+                    rotation);
+            BakedQuad east = FaceBakery.bakeQuad(
+                    interner,
+                    from,
+                    to,
+                    uvs,
+                    Quadrant.R0,
+                    frontMaterial,
+                    Direction.EAST,
+                    modelState,
+                    rotation);
+            CapturedSectionGeometry.Builder section =
+                    new CapturedSectionGeometry.Builder();
+            section.add(captured(west), crossSurface(back));
+            section.add(captured(east), crossSurface(front));
+            CapturedSectionGeometry captured = section.build();
+
+            java.util.List<TwoSidedQuadReducer.ResolvedQuad> resolved =
+                    TwoSidedQuadReducer.resolve(captured.quads());
+            CpuClusterMesh cluster = translate(captured, false, false);
+
+            assertEquals(2, resolved.size());
+            assertTrue(resolved.get(0).frontFaceOnly());
+            assertTrue(resolved.get(1).frontFaceOnly());
+            assertEquals(4L, cluster.cutoutTriangleCount());
+            assertFrontFaceOnly(cluster);
+            assertEquals(0, cluster.opacityMicromap().blockCount());
         }
     }
 
@@ -366,10 +507,13 @@ final class ClusterSceneTranslatorTest {
             SectionMeshAccumulatorTest.TestSprite overlay,
             float plane,
             int[] overlayColors) {
-        CapturedSectionGeometry.MutableQuad scratch = face(plane);
+        CapturedSectionGeometry.MutableQuad baseQuad = face(plane);
+        setSpriteUv(baseQuad, base);
+        CapturedSectionGeometry.MutableQuad overlayQuad = face(plane);
+        setSpriteUv(overlayQuad, overlay);
         CapturedSectionGeometry.Builder section = new CapturedSectionGeometry.Builder();
-        section.add(scratch, surface(base, -1, false, false));
-        section.add(scratch, new CapturedSectionGeometry.Surface(
+        section.add(baseQuad, surface(base, -1, false, false));
+        section.add(overlayQuad, new CapturedSectionGeometry.Surface(
                 overlayColors[0],
                 overlayColors[1],
                 overlayColors[2],
@@ -386,9 +530,23 @@ final class ClusterSceneTranslatorTest {
                 overlay,
                 null));
         for (int vertex = 0; vertex < 4; vertex++) {
-            scratch.z[vertex] = plane + 7.0F;
+            baseQuad.z[vertex] = plane + 7.0F;
+            overlayQuad.z[vertex] = plane + 7.0F;
         }
         return section.build();
+    }
+
+    private static void setSpriteUv(
+            CapturedSectionGeometry.MutableQuad quad,
+            SectionMeshAccumulatorTest.TestSprite sprite) {
+        quad.u[0] = sprite.getU0();
+        quad.v[0] = sprite.getV0();
+        quad.u[1] = sprite.getU1();
+        quad.v[1] = sprite.getV0();
+        quad.u[2] = sprite.getU1();
+        quad.v[2] = sprite.getV1();
+        quad.u[3] = sprite.getU0();
+        quad.v[3] = sprite.getV1();
     }
 
     private static CapturedSectionGeometry.Surface surface(
@@ -511,6 +669,49 @@ final class ClusterSceneTranslatorTest {
         return captured;
     }
 
+    private static ModelBaker.Interner passthroughInterner() {
+        return new ModelBaker.Interner() {
+            @Override
+            public Vector3fc vector(Vector3fc vector) {
+                return vector;
+            }
+
+            @Override
+            public BakedQuad.MaterialInfo materialInfo(
+                    BakedQuad.MaterialInfo materialInfo) {
+                return materialInfo;
+            }
+        };
+    }
+
+    private static void assertFrontFaceOnly(CpuClusterMesh cluster) {
+        for (CpuClusterMesh.Segment segment : cluster.segments()) {
+            int[] primitives = segment.primitiveRecords();
+            for (int record = 0;
+                    record < primitives.length;
+                    record += CpuSectionMesh.PRIMITIVE_WORDS) {
+                int flags = PrimitivePacking.unpackFlags(
+                        primitives[record + 3], primitives[record + 5]);
+                assertTrue(
+                        (flags & PrimitivePacking.FLAG_FRONT_FACE_ONLY) != 0);
+            }
+        }
+    }
+
+    private static void assertTwoSided(CpuClusterMesh cluster) {
+        for (CpuClusterMesh.Segment segment : cluster.segments()) {
+            int[] primitives = segment.primitiveRecords();
+            for (int record = 0;
+                    record < primitives.length;
+                    record += CpuSectionMesh.PRIMITIVE_WORDS) {
+                int flags = PrimitivePacking.unpackFlags(
+                        primitives[record + 3], primitives[record + 5]);
+                assertEquals(
+                        0, flags & PrimitivePacking.FLAG_FRONT_FACE_ONLY);
+            }
+        }
+    }
+
     private static CapturedSectionGeometry.Surface crossSurface(
             SectionMeshAccumulatorTest.TestSprite sprite) {
         return CapturedSectionGeometry.Surface.uniform(
@@ -533,13 +734,28 @@ final class ClusterSceneTranslatorTest {
 
     private static CpuClusterMesh translate(
             CapturedSectionGeometry section, boolean suppressFluidFace) {
+        return translate(section, suppressFluidFace, true);
+    }
+
+    private static CpuClusterMesh translate(
+            CapturedSectionGeometry section,
+            boolean suppressFluidFace,
+            boolean voxelSurfacesEnabled) {
         CapturedCluster.Builder captured = new CapturedCluster.Builder(0, 0, 0);
         captured.add(0, 0, 0, section);
-        return translate(captured.build(), suppressFluidFace);
+        return translate(
+                captured.build(), suppressFluidFace, voxelSurfacesEnabled);
     }
 
     private static CpuClusterMesh translate(
             CapturedCluster captured, boolean suppressFluidFace) {
+        return translate(captured, suppressFluidFace, true);
+    }
+
+    private static CpuClusterMesh translate(
+            CapturedCluster captured,
+            boolean suppressFluidFace,
+            boolean voxelSurfacesEnabled) {
         return ClusterSceneTranslator.translate(
                 captured,
                 LabPbrMaterialSet.EMPTY,
@@ -547,7 +763,7 @@ final class ClusterSceneTranslatorTest {
                         false,
                         TerrainMemoryBudget.TARGET_SEGMENT_TRIANGLES,
                         OpacityMicromapData.SUBDIVISION_LEVEL + 2,
-                        true,
+                        voxelSurfacesEnabled,
                         VoxelSurfaceSettings.BASE_HEIGHT,
                         false,
                         suppressFluidFace));

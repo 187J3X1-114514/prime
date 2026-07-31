@@ -9,7 +9,7 @@ import java.util.Objects;
 /** Versioned canonical binary encoding of one {@link CompiledCluster}. */
 public final class CompiledClusterCodec {
     private static final int MAGIC = 0x3143_4350;
-    private static final int VERSION = 3;
+    private static final int VERSION = 4;
     private static final int MAX_SEGMENTS = 4_096;
     private static final int MAX_VOXEL_MESHES = 4_096;
     private static final int MAX_VOXEL_INSTANCES = 4_194_304;
@@ -126,6 +126,9 @@ public final class CompiledClusterCodec {
                         input,
                         Math.multiplyExact(triangles, CpuSectionMesh.PRIMITIVE_WORDS),
                         "segment primitive records");
+                if (version < 4) {
+                    upgradePrimitivePacking(primitives);
+                }
                 segments.add(new CpuClusterMesh.Segment(
                         positions,
                         primitives,
@@ -173,6 +176,9 @@ public final class CompiledClusterCodec {
                             Math.multiplyExact(
                                     triangles, CpuSectionMesh.PRIMITIVE_WORDS),
                             "voxel mesh primitive records");
+                    if (version < 4) {
+                        upgradePrimitivePacking(meshPrimitives);
+                    }
                     voxelMeshes.add(new CpuVoxelMesh(
                             meshPositions,
                             meshPrimitives,
@@ -271,6 +277,30 @@ public final class CompiledClusterCodec {
                     "Compiled cluster is too large for the replay format");
         }
         return result;
+    }
+
+    private static void upgradePrimitivePacking(int[] records) {
+        for (int record = 0;
+                record < records.length;
+                record += CpuSectionMesh.PRIMITIVE_WORDS) {
+            int oldPacked = records[record + 5];
+            int flags = records[record + 3] >>> 24
+                    | (oldPacked & 1) << 8;
+            if ((oldPacked & PrimitivePacking.DYNAMIC_TEXTURE_FLAG) != 0) {
+                int textureIndex = oldPacked >>> 1 & 0x1fff_ffff;
+                boolean visibleEmission =
+                        (oldPacked & PrimitivePacking.VISIBLE_EMISSION_FLAG) != 0;
+                records[record + 5] = PrimitivePacking.packDynamicFlags(
+                        flags, textureIndex, visibleEmission);
+            } else {
+                int encodedEmitter = oldPacked >>> 1;
+                int emitterIndex = encodedEmitter == 0
+                        ? PrimitivePacking.NO_EMITTER_INDEX
+                        : encodedEmitter - 1;
+                records[record + 5] = PrimitivePacking.packFlagsEmitter(
+                        flags, emitterIndex);
+            }
+        }
     }
 
     private static long opacityEncodedByteSize(
@@ -386,8 +416,14 @@ public final class CompiledClusterCodec {
         for (int triangle = 0; triangle < triangleCount; triangle++) {
             int record = Math.multiplyExact(
                     triangle, CpuSectionMesh.PRIMITIVE_WORDS);
-            boolean constantUv =
-                    records[record + 6] == PrimitivePacking.CONSTANT_UV_DENSITY;
+            int flags = PrimitivePacking.unpackFlags(
+                    records[record + 3], records[record + 5]);
+            PrimitivePacking.requireValidFlags(flags);
+            boolean rasterComposite =
+                    (flags & PrimitivePacking.FLAG_RASTER_COMPOSITE) != 0;
+            boolean constantUv = !rasterComposite
+                    && records[record + 6]
+                            == PrimitivePacking.CONSTANT_UV_DENSITY;
             int constantMode = 0;
             if (constantUv) {
                 constantMode = records[record + 2];
@@ -408,9 +444,6 @@ public final class CompiledClusterCodec {
                     requireFiniteHalf2(records[record + vertex]);
                 }
             }
-            int flags = PrimitivePacking.unpackFlags(
-                    records[record + 3], records[record + 5]);
-            PrimitivePacking.requireValidFlags(flags);
             boolean cutout = (flags & PrimitivePacking.FLAG_CUTOUT) != 0;
             boolean transmissive =
                     (flags & PrimitivePacking.FLAG_TRANSMISSIVE) != 0;
@@ -434,10 +467,13 @@ public final class CompiledClusterCodec {
                 throw new IllegalArgumentException(
                         "Compiled-cluster primitive references an invalid emitter");
             }
-            float uvDensity = Float.intBitsToFloat(records[record + 6]);
-            if (!(uvDensity >= 0.0F) || !Float.isFinite(uvDensity)) {
-                throw new IllegalArgumentException(
-                        "Compiled-cluster UV density must be finite and nonnegative");
+            if (!rasterComposite) {
+                float uvDensity =
+                        Float.intBitsToFloat(records[record + 6]);
+                if (!(uvDensity >= 0.0F) || !Float.isFinite(uvDensity)) {
+                    throw new IllegalArgumentException(
+                            "Compiled-cluster UV density must be finite and nonnegative");
+                }
             }
         }
     }

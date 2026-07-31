@@ -79,7 +79,8 @@ final class PrimitivePackingTest {
     void flagsAndEmitterIndexRoundTripAcrossTheWholeAbiRange() {
         int flags = PrimitivePacking.FLAG_CUTOUT
                 | PrimitivePacking.FLAG_LABPBR_SPECULAR
-                | PrimitivePacking.FLAG_TANGENT_NEGATIVE;
+                | PrimitivePacking.FLAG_TANGENT_NEGATIVE
+                | PrimitivePacking.FLAG_FRONT_FACE_ONLY;
         int tint = PrimitivePacking.packTintFlags(
                 PrimitivePacking.packTint(0x80402010), flags);
         assertEquals(0x00102040, tint & 0x00ff_ffff);
@@ -95,12 +96,13 @@ final class PrimitivePackingTest {
                 () -> PrimitivePacking.packFlagsEmitter(flags, PrimitivePacking.MAX_EMITTER_INDEX + 1));
         assertThrows(
                 IllegalArgumentException.class,
-                () -> PrimitivePacking.packFlagsEmitter(1 << 9, 0));
+                () -> PrimitivePacking.packFlagsEmitter(1 << 11, 0));
     }
 
     @Test
     void dynamicTextureAndVisibleEmissionNeverDecodeAsALightTreeEmitter() {
-        int flags = PrimitivePacking.FLAG_CUTOUT;
+        int flags = PrimitivePacking.FLAG_CUTOUT
+                | PrimitivePacking.FLAG_FRONT_FACE_ONLY;
         int visible = PrimitivePacking.packDynamicFlags(flags, 63, true);
         int dark = PrimitivePacking.packDynamicFlags(flags, 1, false);
 
@@ -117,6 +119,24 @@ final class PrimitivePackingTest {
         assertThrows(
                 IllegalArgumentException.class,
                 () -> PrimitivePacking.packDynamicFlags(flags, 0, false));
+    }
+
+    @Test
+    void rasterCompositeOwnsTheStaticPayloadWithoutBecomingAnEmitter() {
+        int flags = PrimitivePacking.FLAG_RASTER_COMPOSITE
+                | PrimitivePacking.FLAG_LABPBR_SPECULAR;
+        int tint = PrimitivePacking.packTintFlags(
+                PrimitivePacking.packTint(-1), flags);
+        int packed = PrimitivePacking.packRasterCompositeFlags(
+                flags, PrimitivePacking.packTint(0xff40_a060));
+
+        assertEquals(flags, PrimitivePacking.unpackFlags(tint, packed));
+        assertEquals(
+                PrimitivePacking.NO_EMITTER_INDEX,
+                PrimitivePacking.unpackEmitterIndex(packed));
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> PrimitivePacking.packDynamicFlags(flags, 1, false));
     }
 
     @Test

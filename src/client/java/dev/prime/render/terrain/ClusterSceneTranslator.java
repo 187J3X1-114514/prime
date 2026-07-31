@@ -59,8 +59,9 @@ final class ClusterSceneTranslator {
                 settings.segmentTriangleTarget());
         SectionMeshAccumulator.Quad quad = new SectionMeshAccumulator.Quad();
         SectionMeshAccumulator.Surface surface = new SectionMeshAccumulator.Surface();
-        for (CapturedSectionGeometry.Quad capturedQuad
-                : TwoSidedQuadReducer.reduce(captured.quads())) {
+        for (TwoSidedQuadReducer.ResolvedQuad resolved
+                : TwoSidedQuadReducer.resolve(captured.quads())) {
+            CapturedSectionGeometry.Quad capturedQuad = resolved.quad();
             for (int vertex = 0; vertex < 4; vertex++) {
                 quad.x[vertex] = capturedQuad.x(vertex);
                 quad.y[vertex] = capturedQuad.y(vertex);
@@ -90,6 +91,7 @@ final class ClusterSceneTranslator {
                     capturedSurface.foliage(),
                     capturedSurface.mergeable(),
                     capturedSurface.rasterOverlay(),
+                    resolved.frontFaceOnly(),
                     capturedSurface.lightEmission(),
                     capturedSurface.sprite()));
         }

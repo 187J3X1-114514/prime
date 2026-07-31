@@ -5,6 +5,11 @@
 void main() {
     SectionRecord section = primeSection();
     PrimitiveRecord primitive = primePrimitive(section);
+    if (primePrimitiveIsFrontFaceOnly(primitive)
+            && gl_HitKindEXT == gl_HitKindBackFacingTriangleEXT) {
+        ignoreIntersectionEXT;
+        return;
+    }
     if (primeMaterialIsTransmissive(primePrimitiveFlags(primitive))) {
         // Radiance rays keep transparent geometry as explicit path vertices. Shadow rays use
         // shadow.rahit instead, where straight glass and water transmission are accumulated.

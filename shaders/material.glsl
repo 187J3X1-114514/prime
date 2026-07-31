@@ -25,19 +25,45 @@ const uint PRIME_EMITTER_FLAG_LABPBR_EMISSION = 2u;
 const uint PRIME_CONSTANT_UV_DENSITY = 0x80000000u;
 const uint PRIME_CONSTANT_UV_OWN_TINT = 1u;
 const uint PRIME_CONSTANT_UV_BAKED_MATERIAL = 2u;
+const uint PRIME_PACKED_FLAG_FRONT_FACE_ONLY = 1u << 9u;
+const uint PRIME_PACKED_FLAG_RASTER_COMPOSITE = 1u << 10u;
 
 uint primePrimitiveFlags(PrimitiveRecord primitive) {
-    return (primitive.tint >> 24u) | ((primitive.flagsEmitter & 1u) << 8u);
+    uint packedFlags =
+            (primitive.tint >> 24u) | ((primitive.flagsEmitter & 7u) << 8u);
+    // Traversal and raster-composition bits are primitive translation properties, not material
+    // model inputs. Keep them out of MaterialEvaluation, where bit 9 and above are reserved for
+    // translated LabPBR state.
+    return packedFlags & (PRIME_PACKED_FLAG_FRONT_FACE_ONLY - 1u);
+}
+
+bool primePrimitiveIsFrontFaceOnly(PrimitiveRecord primitive) {
+    return (primitive.flagsEmitter & 2u) != 0u;
+}
+
+bool primeUsesRasterComposite(PrimitiveRecord primitive) {
+    return (primitive.flagsEmitter & 4u) != 0u;
+}
+
+uint primeRasterCompositeTint(PrimitiveRecord primitive) {
+    return (primitive.flagsEmitter >> 3u) & 0x00ffffffu;
 }
 
 const uint PRIME_DYNAMIC_TEXTURE_FLAG = 0x80000000u;
 const uint PRIME_VISIBLE_EMISSION_FLAG = 0x40000000u;
-const uint PRIME_DYNAMIC_TEXTURE_INDEX_MASK = 0x1fffffffu;
+const uint PRIME_DYNAMIC_TEXTURE_INDEX_MASK = 0x07ffffffu;
 
 uint primePrimitiveTextureIndex(PrimitiveRecord primitive) {
     return (primitive.flagsEmitter & PRIME_DYNAMIC_TEXTURE_FLAG) != 0u
-            ? ((primitive.flagsEmitter >> 1u) & PRIME_DYNAMIC_TEXTURE_INDEX_MASK)
+            ? ((primitive.flagsEmitter >> 3u) & PRIME_DYNAMIC_TEXTURE_INDEX_MASK)
             : 0u;
+}
+
+vec2 primeRasterCompositeUvOffset(PrimitiveRecord primitive) {
+    int x = int(primitive.uvDensity << 16u) >> 16;
+    int y = int(primitive.uvDensity) >> 16;
+    ivec2 atlasExtent = textureSize(primeSceneTextures[0], 0);
+    return vec2(x, y) / vec2(max(atlasExtent, ivec2(1)));
 }
 
 vec4 primeSamplePrimitiveTexture(
@@ -76,6 +102,23 @@ MaterialEvaluation primeEvaluateMaterial(
         }
         result.baseColor = primeLinearSrgbToLinearRec2020(linearSrgbAlbedo);
         result.opacity = 1.0;
+    } else if (primeUsesRasterComposite(primitive)) {
+        vec4 baseSample =
+                primeSamplePrimitiveTexture(primitive, uv, textureLodValue);
+        vec2 overlayUv = uv + primeRasterCompositeUvOffset(primitive);
+        vec4 overlaySample = primeSamplePrimitiveTexture(
+                primitive, overlayUv, textureLodValue);
+        bool overlayCovered =
+                overlaySample.a >= PRIME_CUTOUT_ALPHA_THRESHOLD;
+        vec4 textureSample = overlayCovered ? overlaySample : baseSample;
+        uint packedTint = overlayCovered
+                ? primeRasterCompositeTint(primitive)
+                : primitive.tint;
+        result.opacity = 1.0;
+        result.baseColor = primeLinearSrgbToLinearRec2020(
+                primeDecodeSrgb(textureSample.rgb)
+                        * primeDecodeSrgb(primeUnpackTint(packedTint).rgb));
+        uv = overlayCovered ? overlayUv : uv;
     } else {
         vec4 textureSample =
                 primeSamplePrimitiveTexture(primitive, uv, textureLodValue);

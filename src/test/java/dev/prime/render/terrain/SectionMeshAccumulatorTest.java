@@ -166,14 +166,37 @@ final class SectionMeshAccumulatorTest {
             this(Identifier.fromNamespaceAndPath("prime", path));
         }
 
+        TestSprite(
+                String path,
+                int atlasWidth,
+                int atlasHeight,
+                int x,
+                int y) {
+            this(
+                    Identifier.fromNamespaceAndPath("prime", path),
+                    atlasWidth,
+                    atlasHeight,
+                    x,
+                    y);
+        }
+
         private TestSprite(Identifier name) {
+            this(name, 16, 16, 0, 0);
+        }
+
+        private TestSprite(
+                Identifier name,
+                int atlasWidth,
+                int atlasHeight,
+                int x,
+                int y) {
             super(
                     Identifier.fromNamespaceAndPath("prime", "test_atlas"),
                     new TestSpriteContents(name),
-                    16,
-                    16,
-                    0,
-                    0,
+                    atlasWidth,
+                    atlasHeight,
+                    x,
+                    y,
                     0);
         }
 

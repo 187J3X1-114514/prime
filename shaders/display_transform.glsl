@@ -43,10 +43,21 @@ vec3 primeOklabToLinearBt709(vec3 color) {
             dot(PRIME_OKLAB_BLUE_ROW, lms));
 }
 
+float primeOklabShoulderCoefficient(float overexposure) {
+    float scale = overexposure
+            / (overexposure - PRIME_OKLAB_MIDDLE_GRAY);
+    return (scale * scale - 1.0) / PRIME_OKLAB_MIDDLE_GRAY;
+}
+
 float primeOklabMapLightness(float lightness, float overexposure) {
     float brightness = lightness * lightness * lightness;
-    float mappedBrightness = overexposure * brightness
-            / (overexposure - PRIME_OKLAB_MIDDLE_GRAY + brightness);
+    float x = primeOklabShoulderCoefficient(overexposure) * brightness;
+    float inverseRoot = inversesqrt(1.0 + x);
+
+    // p=1/2 reciprocal-power shoulder. This conjugate form keeps middle gray
+    // fixed and avoids cancellation as brightness approaches black.
+    float mappedBrightness = overexposure
+            * x * inverseRoot * inverseRoot / (1.0 + inverseRoot);
     return pow(mappedBrightness, 1.0 / 3.0);
 }
 

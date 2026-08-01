@@ -29,7 +29,7 @@ void main() {
                         / max(range, 2.0)
                 : 0.0;
         expected.x = clamp(
-                log2(0.16) + 0.5 - values.x + keyBiasEv,
+                log2(0.16) - 0.25 - values.x + keyBiasEv,
                 -4.0,
                 4.0);
         if (actual.x < -4.0 || actual.x > 4.0) {

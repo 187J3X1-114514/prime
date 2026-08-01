@@ -9,7 +9,7 @@ final class AutoExposureMath {
     static final float MIN_LOG_LUMINANCE = -16.0F;
     static final float MAX_LOG_LUMINANCE = 20.0F;
     static final float KEY_LUMINANCE = 0.16F;
-    static final float BASELINE_EV = 0.5F;
+    static final float BASELINE_EV = -0.25F;
     static final float MIN_EV = -4.0F;
     static final float MAX_EV = 4.0F;
     static final float DARKEN_T90_SECONDS = 0.5F;

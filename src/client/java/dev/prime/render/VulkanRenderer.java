@@ -400,6 +400,7 @@ public final class VulkanRenderer implements AutoCloseable {
                 material,
                 processor.rawFrame().usesShInputs(),
                 this.frameControls.triangleDebug(),
+                this.frameControls.wavefrontDebugMode(),
                 settings.display(),
                 this.frameControls.nrdDebugView(),
                 this.frameControls.fsrDebugView(),

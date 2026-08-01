@@ -12,6 +12,7 @@ import dev.prime.render.IntegratorFrameInput;
 import dev.prime.render.LightingSettings;
 import dev.prime.render.MaterialSettings;
 import dev.prime.render.SunDirection;
+import dev.prime.render.WavefrontDebugMode;
 import dev.prime.render.post.PostProcessingMode;
 import dev.prime.render.shader.ShaderAbi;
 import dev.prime.render.terrain.TerrainScene;
@@ -189,7 +190,8 @@ final class RayTraceReplayInputCodecTest {
                 input.material(),
                 input.shInput(),
                 input.rawNumericalDiagnostic(),
-                input.triangleDebug());
+                input.triangleDebug(),
+                input.wavefrontDebugMode());
     }
 
     private static Fixture input() {
@@ -236,7 +238,8 @@ final class RayTraceReplayInputCodecTest {
                 new MaterialSettings.Snapshot(90, 8L),
                 true,
                 true,
-                true);
+                true,
+                WavefrontDebugMode.NO_PRIMARY_TRANSPARENT_REFLECTION_OR_SECONDARY_AREA_NEE);
         return new Fixture(input, scene);
     }
 

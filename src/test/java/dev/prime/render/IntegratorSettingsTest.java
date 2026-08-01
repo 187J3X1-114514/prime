@@ -89,6 +89,36 @@ final class IntegratorSettingsTest {
     }
 
     @Test
+    void sampleControlPacksIndependentWavefrontCostFlags() {
+        AstronomySettings astronomy = AstronomySettings.defaults();
+        int baseline = IntegratorSettings.packSampleControl(
+                7, astronomy, WavefrontDebugMode.BASELINE);
+        int reflection = IntegratorSettings.packSampleControl(
+                7,
+                astronomy,
+                WavefrontDebugMode.NO_PRIMARY_TRANSPARENT_REFLECTION);
+        int areaNee = IntegratorSettings.packSampleControl(
+                7, astronomy, WavefrontDebugMode.NO_SECONDARY_AREA_NEE);
+        int both = IntegratorSettings.packSampleControl(
+                7,
+                astronomy,
+                WavefrontDebugMode
+                        .NO_PRIMARY_TRANSPARENT_REFLECTION_OR_SECONDARY_AREA_NEE);
+        int debugMask = ShaderAbi.PATH_SUPPRESS_PRIMARY_TRANSPARENT_REFLECTION_MASK
+                | ShaderAbi.PATH_SUPPRESS_SECONDARY_AREA_NEE_MASK;
+
+        assertEquals(0, baseline & debugMask);
+        assertEquals(
+                ShaderAbi.PATH_SUPPRESS_PRIMARY_TRANSPARENT_REFLECTION_MASK,
+                reflection & debugMask);
+        assertEquals(
+                ShaderAbi.PATH_SUPPRESS_SECONDARY_AREA_NEE_MASK,
+                areaNee & debugMask);
+        assertEquals(debugMask, both & debugMask);
+        assertEquals(baseline, both & ~debugMask);
+    }
+
+    @Test
     void materialLightingControlStoresIndependentEvAndRoughnessFields() {
         int packed = IntegratorSettings.packMaterialLightingControl(
                 -16, 32, 16, 73, false, false);

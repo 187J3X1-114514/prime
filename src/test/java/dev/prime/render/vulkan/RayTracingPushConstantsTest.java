@@ -12,6 +12,7 @@ import dev.prime.render.IntegratorSettings;
 import dev.prime.render.LightingSettings;
 import dev.prime.render.MaterialSettings;
 import dev.prime.render.SunDirection;
+import dev.prime.render.WavefrontDebugMode;
 import dev.prime.render.post.PostProcessingMode;
 import dev.prime.render.shader.ShaderAbi;
 import dev.prime.render.terrain.TerrainScene;
@@ -46,7 +47,9 @@ final class RayTracingPushConstantsTest {
                 firstBuffer.getInt(ShaderAbi.PUSH_OUTPUT_EXTENT_OFFSET + Integer.BYTES));
         assertEquals(
                 IntegratorSettings.packSampleControl(
-                        input.sampleIndex(), input.astronomy().settings()),
+                        input.sampleIndex(),
+                        input.astronomy().settings(),
+                        input.wavefrontDebugMode()),
                 firstBuffer.getInt(ShaderAbi.PUSH_PATH_OFFSET));
         assertEquals(
                 IntegratorSettings.packSampleEpoch(input.sampleEpoch(), input.triangleDebug()),
@@ -74,7 +77,8 @@ final class RayTracingPushConstantsTest {
                         valid.material(),
                         valid.shInput(),
                         valid.rawNumericalDiagnostic(),
-                        valid.triangleDebug()));
+                        valid.triangleDebug(),
+                        valid.wavefrontDebugMode()));
     }
 
     private static Fixture input(int sampleIndex) {
@@ -113,7 +117,8 @@ final class RayTracingPushConstantsTest {
                 material,
                 true,
                 true,
-                true);
+                true,
+                WavefrontDebugMode.NO_PRIMARY_TRANSPARENT_REFLECTION_OR_SECONDARY_AREA_NEE);
         return new Fixture(input, scene);
     }
 

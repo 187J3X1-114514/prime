@@ -7,6 +7,7 @@ import dev.prime.render.DisplaySettings;
 import dev.prime.render.LightingSettings;
 import dev.prime.render.MaterialSettings;
 import dev.prime.render.RayTracingRuntime;
+import dev.prime.render.WavefrontDebugMode;
 import dev.prime.render.fsr.FsrDebugView;
 import dev.prime.render.fsr.FsrQualityMode;
 import dev.prime.render.post.DlssRrDebugView;
@@ -30,6 +31,8 @@ public final class PrimeVideoOptions {
     private static final List<FsrDebugView> FSR_DEBUG_VIEWS = List.of(FsrDebugView.values());
     private static final List<NrdDiagnostics.Mode> NRD_DEBUG_VIEWS =
             List.of(NrdDiagnostics.Mode.values());
+    private static final List<WavefrontDebugMode> WAVEFRONT_DEBUG_MODES =
+            List.of(WavefrontDebugMode.values());
 
     private PrimeVideoOptions() {
     }
@@ -103,6 +106,25 @@ public final class PrimeVideoOptions {
                         "prime.options.debug.triangle_distribution.tooltip")),
                 runtime.triangleDebug(),
                 runtime::setTriangleDebug);
+    }
+
+    public static OptionInstance<WavefrontDebugMode> wavefrontDebugMode() {
+        RayTracingRuntime runtime = RayTracingRuntime.instance();
+        return new OptionInstance<>(
+                "prime.options.debug.wavefront_cost",
+                OptionInstance.cachedConstantTooltip(Component.translatable(
+                        "prime.options.debug.wavefront_cost.tooltip")),
+                (caption, mode) -> Options.genericValueLabel(
+                        caption,
+                        Component.translatable(
+                                "prime.options.debug.wavefront_cost." + mode.id())),
+                new OptionInstance.Enum<>(
+                        WAVEFRONT_DEBUG_MODES,
+                        Codec.STRING.xmap(
+                                WavefrontDebugMode::fromId,
+                                WavefrontDebugMode::id)),
+                runtime.wavefrontDebugMode(),
+                runtime::setWavefrontDebugMode);
     }
 
     public static OptionInstance<ReconstructionQualityMode> qualityMode() {

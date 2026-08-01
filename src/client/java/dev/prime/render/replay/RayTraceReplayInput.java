@@ -5,6 +5,7 @@ import dev.prime.render.IntegratorFrameInput;
 import dev.prime.render.LightingSettings;
 import dev.prime.render.MaterialSettings;
 import dev.prime.render.SunDirection;
+import dev.prime.render.WavefrontDebugMode;
 import dev.prime.render.post.PostProcessingMode;
 import dev.prime.render.terrain.TerrainScene;
 import java.util.Objects;
@@ -31,7 +32,8 @@ public record RayTraceReplayInput(
         MaterialSettings.Snapshot material,
         boolean shInput,
         boolean rawNumericalDiagnostic,
-        boolean triangleDebug) {
+        boolean triangleDebug,
+        WavefrontDebugMode wavefrontDebugMode) {
     public RayTraceReplayInput {
         Objects.requireNonNull(camera, "camera");
         Objects.requireNonNull(scene, "scene");
@@ -39,6 +41,7 @@ public record RayTraceReplayInput(
         Objects.requireNonNull(postProcessingMode, "postProcessingMode");
         Objects.requireNonNull(lighting, "lighting");
         Objects.requireNonNull(material, "material");
+        Objects.requireNonNull(wavefrontDebugMode, "wavefrontDebugMode");
         if (!camera.isFinite()) {
             throw new IllegalArgumentException(
                     "Ray-tracing replay camera must be finite");
@@ -73,7 +76,8 @@ public record RayTraceReplayInput(
                 input.material(),
                 input.shInput(),
                 input.rawNumericalDiagnostic(),
-                input.triangleDebug());
+                input.triangleDebug(),
+                input.wavefrontDebugMode());
     }
 
     public IntegratorFrameInput bind(
@@ -94,7 +98,8 @@ public record RayTraceReplayInput(
                 this.material,
                 this.shInput,
                 this.rawNumericalDiagnostic,
-                this.triangleDebug);
+                this.triangleDebug,
+                this.wavefrontDebugMode);
     }
 
     public SunDirection sunDirection() {

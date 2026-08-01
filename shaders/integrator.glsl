@@ -611,18 +611,20 @@ vec3 primeEstimateDirectLighting(
                     PRIME_SAMPLE_EFFECT_DIRECT_SUN,
                     PRIME_SAMPLE_DIMENSION_PRIMARY),
             volumeStack);
-    result += primeEstimateDirectAreaLight(
-            surface,
-            viewDirection,
-            primeSobolSample3D(
-                    preparedSample,
-                    PRIME_SAMPLE_EFFECT_DIRECT_AREA_LIGHT,
-                    PRIME_SAMPLE_DIMENSION_PRIMARY),
-            primeSobolSample2D(
-                    preparedSample,
-                    PRIME_SAMPLE_EFFECT_DIRECT_AREA_LIGHT,
-                    PRIME_SAMPLE_DIMENSION_SECONDARY),
-            volumeStack);
+    if (!primeSuppressesSecondaryAreaNee()) {
+        result += primeEstimateDirectAreaLight(
+                surface,
+                viewDirection,
+                primeSobolSample3D(
+                        preparedSample,
+                        PRIME_SAMPLE_EFFECT_DIRECT_AREA_LIGHT,
+                        PRIME_SAMPLE_DIMENSION_PRIMARY),
+                primeSobolSample2D(
+                        preparedSample,
+                        PRIME_SAMPLE_EFFECT_DIRECT_AREA_LIGHT,
+                        PRIME_SAMPLE_DIMENSION_SECONDARY),
+                volumeStack);
+    }
     return result;
 }
 

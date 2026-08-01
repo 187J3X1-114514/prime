@@ -229,12 +229,16 @@ void primeInitializeTransparentWavefront(
         branchPath.sampleDimension = transmissionBranch ? 1u : 0u;
         bool branchPureDelta = transmissionBranch || pureDeltaInterface;
         bool continuation = hasScatter
-                && primeAdvancePath(
-                        branchPath,
-                        surface,
-                        bsdf,
-                        preparedSample,
-                        branchPureDelta);
+                && (transmissionBranch
+                        || !primeSuppressesPrimaryTransparentReflection());
+        if (continuation) {
+            continuation = primeAdvancePath(
+                    branchPath,
+                    surface,
+                    bsdf,
+                    preparedSample,
+                    branchPureDelta);
+        }
         if (continuation) {
             branchPath.bounce = path.bounce + 1u;
             continuation = branchPath.bounce < maximumBounces;

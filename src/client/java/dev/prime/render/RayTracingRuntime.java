@@ -258,6 +258,14 @@ public final class RayTracingRuntime {
         this.controls = this.controls.withTriangleDebug(value);
     }
 
+    public WavefrontDebugMode wavefrontDebugMode() {
+        return this.controls.wavefrontDebugMode();
+    }
+
+    public void setWavefrontDebugMode(WavefrontDebugMode value) {
+        this.controls = this.controls.withWavefrontDebugMode(value);
+    }
+
     public NrdDiagnostics.Mode nrdDebugView() {
         return this.controls.nrdDebugView();
     }

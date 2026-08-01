@@ -5,6 +5,7 @@ import dev.prime.render.AstronomyState;
 import dev.prime.render.LightingSettings;
 import dev.prime.render.MaterialSettings;
 import dev.prime.render.SunDirection;
+import dev.prime.render.WavefrontDebugMode;
 import dev.prime.render.post.PostProcessingMode;
 import java.nio.BufferUnderflowException;
 import java.nio.ByteBuffer;
@@ -14,16 +15,20 @@ import java.util.Objects;
 /** Versioned fixed-width encoding of {@link RayTraceReplayInput}. */
 public final class RayTraceReplayInputCodec {
     private static final int MAGIC = 0x3146_5250;
-    private static final int VERSION = 2;
+    private static final int VERSION = 3;
     private static final int ENCODED_BYTES = 384;
     private static final int FLAG_CAMERA_IN_WATER = 1;
     private static final int FLAG_SH_INPUT = 1 << 1;
     private static final int FLAG_RAW_NUMERICAL = 1 << 2;
     private static final int FLAG_TRIANGLE_DEBUG = 1 << 3;
+    private static final int FLAG_SUPPRESS_PRIMARY_TRANSPARENT_REFLECTION = 1 << 4;
+    private static final int FLAG_SUPPRESS_SECONDARY_AREA_NEE = 1 << 5;
     private static final int VALID_FLAGS = FLAG_CAMERA_IN_WATER
             | FLAG_SH_INPUT
             | FLAG_RAW_NUMERICAL
-            | FLAG_TRIANGLE_DEBUG;
+            | FLAG_TRIANGLE_DEBUG
+            | FLAG_SUPPRESS_PRIMARY_TRANSPARENT_REFLECTION
+            | FLAG_SUPPRESS_SECONDARY_AREA_NEE;
 
     private RayTraceReplayInputCodec() {
     }
@@ -167,7 +172,10 @@ public final class RayTraceReplayInputCodec {
                     material,
                     (flags & FLAG_SH_INPUT) != 0,
                     (flags & FLAG_RAW_NUMERICAL) != 0,
-                    (flags & FLAG_TRIANGLE_DEBUG) != 0);
+                    (flags & FLAG_TRIANGLE_DEBUG) != 0,
+                    WavefrontDebugMode.of(
+                            (flags & FLAG_SUPPRESS_PRIMARY_TRANSPARENT_REFLECTION) != 0,
+                            (flags & FLAG_SUPPRESS_SECONDARY_AREA_NEE) != 0));
         } catch (BufferUnderflowException exception) {
             throw new IllegalArgumentException(
                     "Ray-trace replay is truncated", exception);
@@ -187,6 +195,12 @@ public final class RayTraceReplayInputCodec {
         }
         if (input.triangleDebug()) {
             result |= FLAG_TRIANGLE_DEBUG;
+        }
+        if (input.wavefrontDebugMode().suppressPrimaryTransparentReflection()) {
+            result |= FLAG_SUPPRESS_PRIMARY_TRANSPARENT_REFLECTION;
+        }
+        if (input.wavefrontDebugMode().suppressSecondaryAreaNee()) {
+            result |= FLAG_SUPPRESS_SECONDARY_AREA_NEE;
         }
         return result;
     }

@@ -9,11 +9,13 @@ import java.util.Objects;
 public record SessionControls(
         boolean screenshotRequested,
         boolean triangleDebug,
+        WavefrontDebugMode wavefrontDebugMode,
         NrdDiagnostics.Mode nrdDebugView,
         FsrDebugView fsrDebugView,
         DlssRrDebugView rrDebugView,
         boolean rrDebugFullscreen) {
     public SessionControls {
+        wavefrontDebugMode = Objects.requireNonNull(wavefrontDebugMode, "wavefrontDebugMode");
         nrdDebugView = Objects.requireNonNull(nrdDebugView, "nrdDebugView");
         fsrDebugView = Objects.requireNonNull(fsrDebugView, "fsrDebugView");
         rrDebugView = Objects.requireNonNull(rrDebugView, "rrDebugView");
@@ -23,6 +25,7 @@ public record SessionControls(
         return new SessionControls(
                 false,
                 false,
+                WavefrontDebugMode.BASELINE,
                 NrdDiagnostics.Mode.OFF,
                 FsrDebugView.OFF,
                 DlssRrDebugView.OFF,
@@ -35,6 +38,7 @@ public record SessionControls(
                 : new SessionControls(
                         value,
                         this.triangleDebug,
+                        this.wavefrontDebugMode,
                         this.nrdDebugView,
                         this.fsrDebugView,
                         this.rrDebugView,
@@ -46,6 +50,21 @@ public record SessionControls(
                 ? this
                 : new SessionControls(
                         this.screenshotRequested,
+                        value,
+                        this.wavefrontDebugMode,
+                        this.nrdDebugView,
+                        this.fsrDebugView,
+                        this.rrDebugView,
+                        this.rrDebugFullscreen);
+    }
+
+    public SessionControls withWavefrontDebugMode(WavefrontDebugMode value) {
+        Objects.requireNonNull(value, "value");
+        return value == this.wavefrontDebugMode
+                ? this
+                : new SessionControls(
+                        this.screenshotRequested,
+                        this.triangleDebug,
                         value,
                         this.nrdDebugView,
                         this.fsrDebugView,
@@ -60,6 +79,7 @@ public record SessionControls(
                 : new SessionControls(
                         this.screenshotRequested,
                         this.triangleDebug,
+                        this.wavefrontDebugMode,
                         value,
                         this.fsrDebugView,
                         this.rrDebugView,
@@ -73,6 +93,7 @@ public record SessionControls(
                 : new SessionControls(
                         this.screenshotRequested,
                         this.triangleDebug,
+                        this.wavefrontDebugMode,
                         this.nrdDebugView,
                         value,
                         this.rrDebugView,
@@ -86,6 +107,7 @@ public record SessionControls(
                 : new SessionControls(
                         this.screenshotRequested,
                         this.triangleDebug,
+                        this.wavefrontDebugMode,
                         this.nrdDebugView,
                         this.fsrDebugView,
                         value,
@@ -98,6 +120,7 @@ public record SessionControls(
                 : new SessionControls(
                         this.screenshotRequested,
                         this.triangleDebug,
+                        this.wavefrontDebugMode,
                         this.nrdDebugView,
                         this.fsrDebugView,
                         this.rrDebugView,

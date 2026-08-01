@@ -38,19 +38,33 @@ public final class IntegratorSettings {
     public static int packSampleControl(
             int sampleIndex,
             AstronomySettings astronomy) {
+        return packSampleControl(sampleIndex, astronomy, WavefrontDebugMode.BASELINE);
+    }
+
+    public static int packSampleControl(
+            int sampleIndex,
+            AstronomySettings astronomy,
+            WavefrontDebugMode wavefrontDebugMode) {
         if (sampleIndex < 0
                 || (sampleIndex & ~ShaderAbi.PATH_SAMPLE_INDEX_MASK) != 0) {
             throw new IllegalArgumentException(
                     "Sample index does not fit the Sobol sequence");
         }
         java.util.Objects.requireNonNull(astronomy, "astronomy");
+        java.util.Objects.requireNonNull(wavefrontDebugMode, "wavefrontDebugMode");
         int solarLongitude = astronomy.solarLongitudeDegrees();
         if ((solarLongitude & ~ShaderAbi.PATH_SOLAR_LONGITUDE_MASK) != 0) {
             throw new IllegalArgumentException(
                     "Solar longitude does not fit the path-control ABI");
         }
         return sampleIndex
-                | solarLongitude << ShaderAbi.PATH_SOLAR_LONGITUDE_SHIFT;
+                | solarLongitude << ShaderAbi.PATH_SOLAR_LONGITUDE_SHIFT
+                | (wavefrontDebugMode.suppressPrimaryTransparentReflection()
+                        ? ShaderAbi.PATH_SUPPRESS_PRIMARY_TRANSPARENT_REFLECTION_MASK
+                        : 0)
+                | (wavefrontDebugMode.suppressSecondaryAreaNee()
+                        ? ShaderAbi.PATH_SUPPRESS_SECONDARY_AREA_NEE_MASK
+                        : 0);
     }
 
     public static int packSampleEpoch(int sampleEpoch, boolean triangleDebug) {

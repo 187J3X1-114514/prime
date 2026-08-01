@@ -60,7 +60,8 @@ public record ScreenshotFrameInput(
                         this.material,
                         false,
                         false,
-                        false));
+                        false,
+                        WavefrontDebugMode.BASELINE));
     }
 
     public SunDirection sunDirection() {

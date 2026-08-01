@@ -11,6 +11,7 @@ import dev.prime.render.IntegratorFrameInput;
 import dev.prime.render.LightingSettings;
 import dev.prime.render.MaterialSettings;
 import dev.prime.render.SunDirection;
+import dev.prime.render.WavefrontDebugMode;
 import dev.prime.render.post.PostProcessingMode;
 import dev.prime.render.terrain.TerrainScene;
 import java.util.List;
@@ -387,7 +388,8 @@ final class NrdInputSemanticValidatorTest {
                 new MaterialSettings.Snapshot(90, 1L),
                 true,
                 false,
-                false);
+                false,
+                WavefrontDebugMode.BASELINE);
         return new RenderReplayCapture(
                 platform(),
                 binary(),

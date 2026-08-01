@@ -18,6 +18,7 @@ final class SessionControlsTest {
         SessionControls changed = defaults
                 .withScreenshotRequested(true)
                 .withTriangleDebug(true)
+                .withWavefrontDebugMode(WavefrontDebugMode.NO_SECONDARY_AREA_NEE)
                 .withNrdDebugView(NrdDiagnostics.Mode.NATIVE_VALIDATION)
                 .withFsrDebugView(FsrDebugView.OVERVIEW)
                 .withRrDebugView(DlssRrDebugView.MOTION)
@@ -25,12 +26,16 @@ final class SessionControlsTest {
 
         assertFalse(defaults.screenshotRequested());
         assertFalse(defaults.triangleDebug());
+        assertEquals(WavefrontDebugMode.BASELINE, defaults.wavefrontDebugMode());
         assertEquals(NrdDiagnostics.Mode.OFF, defaults.nrdDebugView());
         assertEquals(FsrDebugView.OFF, defaults.fsrDebugView());
         assertEquals(DlssRrDebugView.OFF, defaults.rrDebugView());
         assertFalse(defaults.rrDebugFullscreen());
         assertTrue(changed.screenshotRequested());
         assertTrue(changed.triangleDebug());
+        assertEquals(
+                WavefrontDebugMode.NO_SECONDARY_AREA_NEE,
+                changed.wavefrontDebugMode());
         assertEquals(NrdDiagnostics.Mode.NATIVE_VALIDATION, changed.nrdDebugView());
         assertEquals(
                 FsrDebugView.OVERVIEW,

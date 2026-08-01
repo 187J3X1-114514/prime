@@ -24,11 +24,11 @@ void primeWriteScreenshotOutput(
             uint(round(primeNrdMaterialId(
                     meteringGuides.primaryMaterialFlags) * 3.0)),
             meteringGuides.primaryDistance);
-    float meteredLuminance = primeAutoExposureMeteredLuminance(
+    float meteredBrightness = primeAutoExposureMeteredBrightness(
             radiance,
             primeNrdSanitizeAlbedo(meteringGuides.primaryAlbedo),
             confidence);
-    vec4 mean = vec4(radiance, meteredLuminance);
+    vec4 mean = vec4(radiance, meteredBrightness);
     if (zeroBasedSample != uint64_t(0)) {
         vec4 previous = imageLoad(
                 primeScreenshotRunningMean, ivec2(pixel));

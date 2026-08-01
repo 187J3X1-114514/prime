@@ -85,9 +85,8 @@ public final class PrimeVideoOptions {
                 "prime.options.post_processing.mode",
                 OptionInstance.cachedConstantTooltip(
                         Component.translatable("prime.options.post_processing.mode.tooltip")),
-                (caption, mode) -> Options.genericValueLabel(
-                        caption,
-                        Component.translatable("prime.options.post_processing.mode." + mode.id())),
+                (caption, mode) -> Component.translatable(
+                        "prime.options.post_processing.mode." + mode.id()),
                 new OptionInstance.Enum<>(
                         POST_PROCESSING_MODES,
                         Codec.STRING.xmap(PostProcessingMode::fromId, PostProcessingMode::id)),

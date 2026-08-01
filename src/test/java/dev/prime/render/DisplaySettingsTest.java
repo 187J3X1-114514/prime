@@ -29,8 +29,8 @@ final class DisplaySettingsTest {
         assertEquals(1.0F, DisplaySettings.overexposure(32));
         assertEquals(1.03125F, DisplaySettings.overexposure(33));
         assertEquals(2.0F, DisplaySettings.overexposure(64));
-        assertEquals(35, DisplaySettings.DEFAULT_OVEREXPOSURE_STEPS);
-        assertEquals(1.09375F, DisplaySettings.overexposure(
+        assertEquals(32, DisplaySettings.DEFAULT_OVEREXPOSURE_STEPS);
+        assertEquals(1.0F, DisplaySettings.overexposure(
                 DisplaySettings.DEFAULT_OVEREXPOSURE_STEPS));
         assertThrows(IllegalArgumentException.class, () -> DisplaySettings.overexposure(31));
         assertThrows(IllegalArgumentException.class, () -> DisplaySettings.overexposure(65));

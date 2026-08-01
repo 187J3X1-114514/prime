@@ -14,7 +14,7 @@ layout(std430, set = 0, binding = 4) buffer PrimeAutoExposureState {
     float exposureEv;
     uint initialized;
     float targetEv;
-    float measuredLogLuminance;
+    float measuredLogBrightness;
 } primeAutoExposureState;
 
 layout(push_constant) uniform PrimeAutoExposureUpdatePushConstants {
@@ -33,7 +33,7 @@ void main() {
             primeAutoExposureState.exposureEv = 0.0;
             primeAutoExposureState.initialized = 1u;
             primeAutoExposureState.targetEv = 0.0;
-            primeAutoExposureState.measuredLogLuminance = 0.0;
+            primeAutoExposureState.measuredLogBrightness = 0.0;
         }
         return;
     }
@@ -44,9 +44,9 @@ void main() {
     uint keepEnd = validCount - tailCount;
     uint cursor = 0u;
     uint retainedCount = 0u;
-    float weightedLogLuminance = 0.0;
-    float minimumLogLuminance = 0.0;
-    float maximumLogLuminance = 0.0;
+    float weightedLogBrightness = 0.0;
+    float minimumLogBrightness = 0.0;
+    float maximumLogBrightness = 0.0;
     for (uint bin = 0u; bin < 256u; ++bin) {
         uint binCount = primeAutoExposureHistogram.bins[bin];
         uint binBegin = cursor;
@@ -55,13 +55,13 @@ void main() {
         uint retainedEnd = min(binEnd, keepEnd);
         if (retainedEnd > retainedBegin) {
             uint retained = retainedEnd - retainedBegin;
-            float binLogLuminance =
-                    primeAutoExposureBinLogLuminance(bin);
+            float binLogBrightness =
+                    primeAutoExposureBinLogBrightness(bin);
             if (retainedCount == 0u) {
-                minimumLogLuminance = binLogLuminance;
+                minimumLogBrightness = binLogBrightness;
             }
-            maximumLogLuminance = binLogLuminance;
-            weightedLogLuminance += binLogLuminance * float(retained);
+            maximumLogBrightness = binLogBrightness;
+            weightedLogBrightness += binLogBrightness * float(retained);
             retainedCount += retained;
         }
         cursor = binEnd;
@@ -69,13 +69,13 @@ void main() {
     if (retainedCount == 0u) {
         return;
     }
-    float measuredLogLuminance =
-            weightedLogLuminance / float(retainedCount);
+    float measuredLogBrightness =
+            weightedLogBrightness / float(retainedCount);
     float targetEv =
             primeAutoExposureTargetEv(
-                    measuredLogLuminance,
-                    minimumLogLuminance,
-                    maximumLogLuminance);
+                    measuredLogBrightness,
+                    minimumLogBrightness,
+                    maximumLogBrightness);
     float exposureEv = targetEv;
     if (primeAutoExposureUpdatePush.reset == 0u
             && primeAutoExposureUpdatePush.instant == 0u
@@ -89,5 +89,5 @@ void main() {
     primeAutoExposureState.exposureEv = exposureEv;
     primeAutoExposureState.initialized = 1u;
     primeAutoExposureState.targetEv = targetEv;
-    primeAutoExposureState.measuredLogLuminance = measuredLogLuminance;
+    primeAutoExposureState.measuredLogBrightness = measuredLogBrightness;
 }

@@ -20,7 +20,7 @@ layout(std430, set = 0, binding = 10) readonly buffer PrimeAutoExposureState {
     float exposureEv;
     uint initialized;
     float targetEv;
-    float measuredLogLuminance;
+    float measuredLogBrightness;
 } primeAutoExposureState;
 
 layout(push_constant) uniform PrimeRrDebugPushConstants {

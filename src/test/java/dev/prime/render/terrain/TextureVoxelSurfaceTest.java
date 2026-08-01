@@ -18,18 +18,18 @@ final class TextureVoxelSurfaceTest {
     void bt601LumaMapsBlackAndWhiteToTheDeclaredOutwardRange() {
         assertEquals(0.0F, TextureVoxelMeshBuilder.heightFromArgb(0xff00_0000));
         assertEquals(
-                1.0F / 32.0F,
+                1.0F / 16.0F,
                 TextureVoxelMeshBuilder.heightFromArgb(0xffff_ffff));
         assertEquals(
-                77.0F / 256.0F / 32.0F,
+                77.0F / 256.0F / 16.0F,
                 TextureVoxelMeshBuilder.heightFromArgb(0xffff_0000),
                 1.0E-7F);
         assertEquals(
-                150.0F / 256.0F / 32.0F,
+                150.0F / 256.0F / 16.0F,
                 TextureVoxelMeshBuilder.heightFromArgb(0xff00_ff00),
                 1.0E-7F);
         assertEquals(
-                29.0F / 256.0F / 32.0F,
+                29.0F / 256.0F / 16.0F,
                 TextureVoxelMeshBuilder.heightFromArgb(0xff00_00ff),
                 1.0E-7F);
     }
@@ -142,10 +142,10 @@ final class TextureVoxelSurfaceTest {
     }
 
     @Test
-    void voxelSurfaceStrengthKeepsOneThirtySecondAsTheDefault() {
+    void voxelSurfaceStrengthDefaultsToOneSixteenth() {
         assertEquals(0.0F, VoxelSurfaceSettings.maximumHeight(0));
         assertEquals(
-                1.0F / 32.0F,
+                1.0F / 16.0F,
                 VoxelSurfaceSettings.maximumHeight(
                         VoxelSurfaceSettings.DEFAULT_STEPS));
         assertEquals(
@@ -366,7 +366,7 @@ final class TextureVoxelSurfaceTest {
         // Four top quads and four walls around the one raised corner column.
         assertEquals(16, stepped.triangleCount());
         assertEquals(0.0F, minimumAxis(stepped.positions(), 1));
-        assertEquals(1.0F / 32.0F, maximumAxis(stepped.positions(), 1));
+        assertEquals(1.0F / 16.0F, maximumAxis(stepped.positions(), 1));
         assertNondegenerate(stepped.positions());
     }
 

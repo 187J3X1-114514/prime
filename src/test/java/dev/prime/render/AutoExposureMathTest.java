@@ -11,13 +11,13 @@ import org.junit.jupiter.api.Test;
 
 final class AutoExposureMathTest {
     private static final float BIN_HALF_WIDTH_EV =
-            (AutoExposureMath.MAX_LOG_LUMINANCE
-                    - AutoExposureMath.MIN_LOG_LUMINANCE)
+            (AutoExposureMath.MAX_LOG_BRIGHTNESS
+                    - AutoExposureMath.MIN_LOG_BRIGHTNESS)
                     / AutoExposureMath.BIN_COUNT
                     * 0.5F;
 
     @Test
-    void histogramUsesRec2020LuminanceAndRejectsNonFinitePixels() {
+    void histogramUsesOklabLightnessCubedAndRejectsNonFinitePixels() {
         OptionalInt red = AutoExposureMath.histogramBin(1.0F, 0.0F, 0.0F);
         OptionalInt green = AutoExposureMath.histogramBin(0.0F, 1.0F, 0.0F);
         OptionalInt blue = AutoExposureMath.histogramBin(0.0F, 0.0F, 1.0F);
@@ -27,6 +27,18 @@ final class AutoExposureMathTest {
         assertTrue(blue.isPresent());
         assertTrue(green.getAsInt() > red.getAsInt());
         assertTrue(red.getAsInt() > blue.getAsInt());
+        assertEquals(
+                1.0F,
+                AutoExposureMath.meteringBrightness(1.0F, 1.0F, 1.0F),
+                2.0e-6F);
+        assertEquals(
+                0.411171F,
+                AutoExposureMath.meteringBrightness(1.0F, 0.0F, 0.0F),
+                2.0e-6F);
+        assertEquals(
+                0.103319F,
+                AutoExposureMath.meteringBrightness(0.0F, 0.0F, 1.0F),
+                2.0e-6F);
         assertEquals(0, AutoExposureMath.histogramBin(0.0F, 0.0F, 0.0F)
                 .orElseThrow());
         assertFalse(AutoExposureMath.histogramBin(
@@ -36,7 +48,7 @@ final class AutoExposureMathTest {
     }
 
     @Test
-    void diffuseAlbedoCorrectionNeutralizesLuminance() {
+    void diffuseAlbedoCorrectionNeutralizesBrightness() {
         int reference = AutoExposureMath.histogramBin(
                 0.18F,
                 0.18F,
@@ -94,7 +106,7 @@ final class AutoExposureMathTest {
     }
 
     @Test
-    void albedoCorrectionUsesFullProtectedNeutralizedLuminance() {
+    void albedoCorrectionUsesFullProtectedNeutralizedBrightness() {
         assertEquals(
                 1.0F + (AutoExposureMath.REFERENCE_ALBEDO - 1.0F)
                         * AutoExposureMath.ALBEDO_BLEND,
@@ -146,7 +158,7 @@ final class AutoExposureMathTest {
     @Test
     void robustMeterDiscardsTheDarkestAndBrightestHalfPercent() {
         int[] histogram = new int[AutoExposureMath.BIN_COUNT];
-        int keyBin = binForGray(AutoExposureMath.KEY_LUMINANCE);
+        int keyBin = binForGray(AutoExposureMath.KEY_BRIGHTNESS);
         histogram[0] = 1;
         histogram[1] = 1;
         histogram[keyBin] = 197;
@@ -160,18 +172,18 @@ final class AutoExposureMathTest {
                 false);
 
         float binWidth = (
-                AutoExposureMath.MAX_LOG_LUMINANCE
-                        - AutoExposureMath.MIN_LOG_LUMINANCE)
+                AutoExposureMath.MAX_LOG_BRIGHTNESS
+                        - AutoExposureMath.MIN_LOG_BRIGHTNESS)
                 / AutoExposureMath.BIN_COUNT;
         float innerDarkLog =
-                AutoExposureMath.MIN_LOG_LUMINANCE + 1.5F * binWidth;
-        float keyLog = AutoExposureMath.MIN_LOG_LUMINANCE
+                AutoExposureMath.MIN_LOG_BRIGHTNESS + 1.5F * binWidth;
+        float keyLog = AutoExposureMath.MIN_LOG_BRIGHTNESS
                 + (keyBin + 0.5F) * binWidth;
         float expectedMeasuredLog =
                 (innerDarkLog + 197.0F * keyLog) / 198.0F;
         assertEquals(
                 expectedMeasuredLog,
-                result.measuredLogLuminance(),
+                result.measuredLogBrightness(),
                 1.0e-6F);
         assertEquals(result.targetEv(), result.exposureEv());
     }
@@ -213,7 +225,7 @@ final class AutoExposureMathTest {
 
     @Test
     void reinhardSceneKeyPreservesDominantBrightAndDarkCompositions() {
-        int center = binForGray(AutoExposureMath.KEY_LUMINANCE);
+        int center = binForGray(AutoExposureMath.KEY_BRIGHTNESS);
         int low = center - 8;
         int high = center + 8;
         int[] highKeyHistogram = new int[AutoExposureMath.BIN_COUNT];
@@ -224,7 +236,7 @@ final class AutoExposureMathTest {
         lowKeyHistogram[high] = 20;
 
         AutoExposureMath.State averageKey =
-                instantForGray(AutoExposureMath.KEY_LUMINANCE);
+                instantForGray(AutoExposureMath.KEY_BRIGHTNESS);
         AutoExposureMath.State highKey = AutoExposureMath.update(
                 AutoExposureMath.State.initial(),
                 highKeyHistogram,
@@ -239,30 +251,27 @@ final class AutoExposureMathTest {
                 true);
 
         assertTrue(highKey.targetEv() > averageKey.targetEv());
-        assertTrue(lowKey.targetEv() < averageKey.targetEv());
-        assertEquals(
-                2.0F * averageKey.targetEv(),
-                highKey.targetEv() + lowKey.targetEv(),
-                BIN_HALF_WIDTH_EV);
+        assertEquals(0.0F, lowKey.targetEv());
+        assertTrue(lowKey.targetEv() <= averageKey.targetEv());
     }
 
     @Test
-    void baselineSubtractsQuarterEvAndExposureUsesBothBounds() {
+    void baselineIsNeutralAndAutomaticExposureOnlyCompensates() {
         AutoExposureMath.State day = instantForGray(0.08F);
         AutoExposureMath.State dark = instantForGray(
-                Math.scalb(AutoExposureMath.KEY_LUMINANCE, -8));
+                Math.scalb(AutoExposureMath.KEY_BRIGHTNESS, -8));
         AutoExposureMath.State middle = instantForGray(
-                AutoExposureMath.KEY_LUMINANCE);
+                AutoExposureMath.KEY_BRIGHTNESS);
         AutoExposureMath.State bright = instantForGray(
-                Math.scalb(AutoExposureMath.KEY_LUMINANCE, 8));
+                Math.scalb(AutoExposureMath.KEY_BRIGHTNESS, 8));
 
-        assertEquals(0.75F, day.targetEv(), BIN_HALF_WIDTH_EV);
+        assertEquals(1.0F, day.targetEv(), BIN_HALF_WIDTH_EV);
         assertEquals(4.0F, dark.targetEv());
         assertEquals(
                 AutoExposureMath.BASELINE_EV,
                 middle.targetEv(),
                 BIN_HALF_WIDTH_EV);
-        assertEquals(-4.0F, bright.targetEv());
+        assertEquals(0.0F, bright.targetEv());
         assertTrue(dark.targetEv() > middle.targetEv());
         assertTrue(middle.targetEv() >= bright.targetEv());
     }
@@ -296,11 +305,11 @@ final class AutoExposureMathTest {
         AutoExposureMath.State zero =
                 AutoExposureMath.State.initializedAtZero();
         AutoExposureMath.State darkTarget = instantForGray(
-                Math.scalb(AutoExposureMath.KEY_LUMINANCE, -4));
+                Math.scalb(AutoExposureMath.KEY_BRIGHTNESS, -4));
         AutoExposureMath.State brightening = AutoExposureMath.update(
                 zero,
                 histogramForGray(Math.scalb(
-                        AutoExposureMath.KEY_LUMINANCE, -4)),
+                        AutoExposureMath.KEY_BRIGHTNESS, -4)),
                 AutoExposureMath.BRIGHTEN_T90_SECONDS,
                 false,
                 false);
@@ -312,10 +321,10 @@ final class AutoExposureMathTest {
         AutoExposureMath.State fourEv =
                 new AutoExposureMath.State(4.0F, true, 4.0F, -8.0F);
         AutoExposureMath.State brightTarget = instantForGray(
-                AutoExposureMath.KEY_LUMINANCE);
+                AutoExposureMath.KEY_BRIGHTNESS);
         AutoExposureMath.State darkening = AutoExposureMath.update(
                 fourEv,
-                histogramForGray(AutoExposureMath.KEY_LUMINANCE),
+                histogramForGray(AutoExposureMath.KEY_BRIGHTNESS),
                 AutoExposureMath.DARKEN_T90_SECONDS,
                 false,
                 false);
@@ -326,23 +335,23 @@ final class AutoExposureMathTest {
                 2.0e-3F);
     }
 
-    private static AutoExposureMath.State instantForGray(float luminance) {
+    private static AutoExposureMath.State instantForGray(float brightness) {
         return AutoExposureMath.update(
                 AutoExposureMath.State.initial(),
-                histogramForGray(luminance),
+                histogramForGray(brightness),
                 0.0F,
                 true,
                 true);
     }
 
-    private static int[] histogramForGray(float luminance) {
+    private static int[] histogramForGray(float brightness) {
         int[] histogram = new int[AutoExposureMath.BIN_COUNT];
-        histogram[binForGray(luminance)] = 100;
+        histogram[binForGray(brightness)] = 100;
         return histogram;
     }
 
-    private static int binForGray(float luminance) {
+    private static int binForGray(float brightness) {
         return AutoExposureMath.histogramBin(
-                luminance, luminance, luminance).orElseThrow();
+                brightness, brightness, brightness).orElseThrow();
     }
 }

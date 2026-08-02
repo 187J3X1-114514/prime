@@ -38,7 +38,6 @@ final class ShaderAbiTest {
         assertEquals(19, ShaderAbi.DESCRIPTOR_LABPBR_SPECULAR_ATLAS);
         assertEquals(20, ShaderAbi.DESCRIPTOR_NRD_SUN_LIGHTING);
         assertEquals(21, ShaderAbi.DESCRIPTOR_NRD_SUN_PENUMBRA);
-        assertEquals(35, ShaderAbi.DESCRIPTOR_SCREENSHOT_RUNNING_MEAN);
         assertEquals(128, ShaderAbi.MAXIMUM_BOUNCES);
         assertEquals(24, ShaderAbi.DESCRIPTOR_RAW_NUMERICAL_DIAGNOSTIC);
         assertEquals(22, ShaderAbi.DESCRIPTOR_NRD_DIFFUSE_DIRECTION);
@@ -56,6 +55,15 @@ final class ShaderAbiTest {
         assertEquals(16, ShaderAbi.WAVEFRONT_QUEUE_COMMAND_STRIDE);
         assertEquals(4, ShaderAbi.WAVEFRONT_QUEUE_INDEX_SIZE);
         assertEquals(1, ShaderAbi.WAVEFRONT_ACTIVE_MASK);
+        assertEquals(0, ShaderAbi.OFFLINE_DESCRIPTOR_RUNNING_MEAN);
+        assertEquals(1, ShaderAbi.OFFLINE_DESCRIPTOR_WAVEFRONT_PATHS);
+        assertEquals(2, ShaderAbi.OFFLINE_DESCRIPTOR_WAVEFRONT_QUEUE);
+        assertEquals(12, ShaderAbi.OFFLINE_WAVEFRONT_ROUNDS);
+        assertEquals(144, ShaderAbi.OFFLINE_WAVEFRONT_PATH_RECORD_SIZE);
+        assertEquals(1, ShaderAbi.OFFLINE_WAVEFRONT_PATH_SLOTS_PER_PIXEL);
+        assertEquals(2, ShaderAbi.OFFLINE_WAVEFRONT_QUEUE_COUNT);
+        assertEquals(16, ShaderAbi.OFFLINE_WAVEFRONT_QUEUE_COMMAND_STRIDE);
+        assertEquals(4, ShaderAbi.OFFLINE_WAVEFRONT_QUEUE_INDEX_SIZE);
         assertEquals(0xffff, ShaderAbi.PATH_SAMPLE_INDEX_MASK);
         assertEquals(16, ShaderAbi.PATH_SOLAR_LONGITUDE_SHIFT);
         assertEquals(0x1ff, ShaderAbi.PATH_SOLAR_LONGITUDE_MASK);

@@ -1,28 +1,33 @@
 #ifndef PRIME_CAMERA_GLSL
 #define PRIME_CAMERA_GLSL
 
-// This is the single camera-sampling contract shared by realtime and screenshot paths.
-// FSR 3.1's base-2/base-3 Halton sample is screen-constant for a frame; using another jitter or
-// pixel-centre convention in either path would detach the reconstructed edges from traced depth.
-vec2 primeCameraSample() {
+vec2 primeSobolCameraSample() {
+    PrimeSampleBase base;
+    base.pixel = gl_LaunchIDEXT.xy;
+    base.sampleIndex = primeSampleIndex();
+    base.sampleEpoch = primeSampleEpoch();
+    base.vertexIndex = 0u;
+    base.pathIndex = 0u;
+    return primeSobolSample2D(
+            primePrepareSampleBase(base),
+            PRIME_SAMPLE_EFFECT_CAMERA,
+            PRIME_SAMPLE_DIMENSION_PRIMARY);
+}
+
+vec2 primeOfflineCameraSample() {
+    // The offline primary sample belongs to the same Owen-scrambled Sobol contract as every
+    // later path decision; a finite reconstruction jitter cycle would stop improving the mean.
+    return primeSobolCameraSample();
+}
+
+vec2 primeRealtimeCameraSample() {
     uint jitterPhase =
             (primePush.path.z >> 16u) & PRIME_PATH_JITTER_PHASE_MASK;
     if (jitterPhase == 0u) {
-        // Screenshot mode is an actual Monte Carlo accumulator, so its primary sample belongs to
-        // the same Owen-scrambled Sobol contract as every later path decision. It deliberately
-        // does not reuse FSR's short, repeating Halton phase: FSR is absent and a finite temporal
-        // jitter cycle would stop improving pixel integration after only a few frames.
-        PrimeSampleBase base;
-        base.pixel = gl_LaunchIDEXT.xy;
-        base.sampleIndex = primeSampleIndex();
-        base.sampleEpoch = primeSampleEpoch();
-        base.vertexIndex = 0u;
-        base.pathIndex = 0u;
-        return primeSobolSample2D(
-                primePrepareSampleBase(base),
-                PRIME_SAMPLE_EFFECT_CAMERA,
-                PRIME_SAMPLE_DIMENSION_PRIMARY);
+        return primeSobolCameraSample();
     }
+    // FSR 3.1's base-2/base-3 Halton sample is screen-constant for a frame. Its convention must
+    // remain identical for the traced color, depth and reconstruction inputs.
     float halton2 = 0.0;
     float halton3 = 0.0;
     float fraction2 = 1.0;
@@ -40,10 +45,6 @@ vec2 primeCameraSample() {
         index3 /= 3u;
     }
     return vec2(halton2, halton3);
-}
-
-bool primeScreenshotMode() {
-    return ((primePush.path.z >> 16u) & PRIME_PATH_JITTER_PHASE_MASK) == 0u;
 }
 
 vec3 primeCameraRayDirection(uvec2 pixel, vec2 cameraSample) {

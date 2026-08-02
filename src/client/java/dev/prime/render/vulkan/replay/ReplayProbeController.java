@@ -23,7 +23,8 @@ import dev.prime.render.replay.RenderReplayVerification;
 import dev.prime.render.terrain.TerrainScene;
 import dev.prime.render.vulkan.AtmospherePipeline;
 import dev.prime.render.vulkan.RawWavefrontFrame;
-import dev.prime.render.vulkan.RayTracingPipeline;
+import dev.prime.render.vulkan.RealtimeRayTracingPipeline;
+import dev.prime.render.vulkan.TraceBackend;
 import dev.prime.render.vulkan.VulkanContext;
 import dev.prime.render.vulkan.VulkanImage;
 import java.util.ArrayList;
@@ -140,7 +141,6 @@ public final class ReplayProbeController implements Destroyable {
                 input.pipeline.ensureDescriptors(
                         input.scene.tlas(),
                         input.stableRadiance,
-                        input.stableRadiance,
                         input.atlasView,
                         input.atlasSampler,
                         input.sceneTextures,
@@ -171,7 +171,6 @@ public final class ReplayProbeController implements Destroyable {
         try {
             input.pipeline.ensureDescriptors(
                     input.scene.tlas(),
-                    probe.stableRadiance(),
                     probe.stableRadiance(),
                     input.atlasView,
                     input.atlasSampler,
@@ -292,7 +291,7 @@ public final class ReplayProbeController implements Destroyable {
 
     /** Immutable render-thread snapshot required to execute one pending request. */
     public record RunInput(
-            RayTracingPipeline pipeline,
+            RealtimeRayTracingPipeline pipeline,
             AtmospherePipeline atmosphere,
             TerrainScene.ResidentSceneView scene,
             FrameCamera camera,
@@ -303,7 +302,7 @@ public final class ReplayProbeController implements Destroyable {
             float displayOverexposure,
             VulkanGpuTextureView atlasView,
             VulkanGpuSampler atlasSampler,
-            List<RayTracingPipeline.SceneTexture> sceneTextures,
+            List<TraceBackend.SceneTexture> sceneTextures,
             long textureRevision,
             VulkanImage stableRadiance,
             VulkanImage labPbrNormalAtlas,

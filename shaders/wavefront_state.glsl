@@ -24,14 +24,14 @@ struct PrimeWavefrontPathRecord {
 };
 
 layout(
-        set = 0,
+        set = PRIME_RENDERER_DESCRIPTOR_SET,
         binding = PRIME_DESCRIPTOR_WAVEFRONT_PATHS,
         std430) buffer PrimeWavefrontPathBuffer {
     PrimeWavefrontPathRecord records[];
 } primeWavefrontPaths;
 
 layout(
-        set = 0,
+        set = PRIME_RENDERER_DESCRIPTOR_SET,
         binding = PRIME_DESCRIPTOR_WAVEFRONT_QUEUE,
         std430) buffer PrimeWavefrontQueueBuffer {
     uint words[];
@@ -651,7 +651,7 @@ PrimeDenoiserGuides primeLoadWavefrontVisibleGuides(
         guides.primaryMaterialFlags = floatBitsToUint(displayPosition.w);
     } else {
         guides.primaryPosition = primeCameraRayDirection(
-                pixel, primeCameraSample()) * guides.primaryDistance;
+                pixel, primeRealtimeCameraSample()) * guides.primaryDistance;
         vec4 visibleMaterial = imageLoad(primeNrdSunLighting, coordinate);
         guides.primarySpecularAlbedo = visibleMaterial.rgb;
         guides.primaryLinearRoughness = visibleMaterial.a;

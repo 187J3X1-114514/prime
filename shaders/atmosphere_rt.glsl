@@ -68,7 +68,7 @@ void primeApplyAerialPerspective(
             distanceKm / max(ATM_AERIAL_MAX_DISTANCE_KM, 1.0e-6), 0.0, 1.0)));
     float nearWeight = clamp(
             distanceKm / max(firstSliceDistanceKm, 1.0e-6), 0.0, 1.0);
-    // Screenshot accumulation integrates the pixel filter. Sampling this direction-dependent
+    // Offline accumulation integrates the pixel filter. Sampling this direction-dependent
     // term at pixel centre would leave a deterministic sub-pixel bias in the reference image.
     vec2 screenUv = (vec2(pixel) + cameraSample) / vec2(primePush.outputExtent);
     vec3 uvw = vec3(screenUv, normalizedDepth);
@@ -102,7 +102,7 @@ void primeApplyAerialPerspective(
             invalidTransmittance);
     // Atmosphere LUT construction is linear in the extraterrestrial source. Match sky and direct
     // sun evaluation by applying the same runtime EV scale before this deterministic term enters
-    // a screenshot sample; otherwise non-zero sun EV would change terrain and sky but leave
+    // an offline sample; otherwise non-zero sun EV would change terrain and sky but leave
     // aerial in-scattering at the calibrated base intensity.
     inscatter *= nearWeight * primeSunRadianceMultiplier();
     transmittance = mix(vec3(1.0), transmittance, nearWeight);

@@ -50,6 +50,26 @@ void primeRecordDirection(vec3 value) {
 
 #include "bsdf.glsl"
 
+struct SurfaceInteraction {
+    vec3 baseColor;
+    uint materialFlags;
+    float t;
+    uint opacity;
+    uint shadingNormal;
+    uint labPbrNormal;
+    uint labPbrSpecular;
+};
+
+vec3 primeSurfaceOutwardShadingNormal(SurfaceInteraction surface) {
+    return vec3(0.0, 0.0, 1.0);
+}
+
+float primeSurfaceOpacity(SurfaceInteraction surface) {
+    return clamp(uintBitsToFloat(surface.opacity), 0.0, 1.0);
+}
+
+#include "offline_bsdf.glsl"
+
 const uint PRIME_ADAPTER_INPUT_WORDS = 7u;
 const uint PRIME_ADAPTER_WITNESS_WORDS = 12u;
 
@@ -57,6 +77,7 @@ const uint PRIME_ADAPTER_OPAQUE = 0u;
 const uint PRIME_ADAPTER_TRANSMISSION = 1u;
 const uint PRIME_ADAPTER_FOLIAGE = 2u;
 const uint PRIME_ADAPTER_PRIMARY_SPLIT = 3u;
+const uint PRIME_ADAPTER_OFFLINE_TRANSMISSION = 4u;
 
 struct PrimeAdapterResult {
     uint mask;
@@ -493,7 +514,7 @@ void primeAdapterProperties(
                                 result.first, outwardNormal, viewDirection))) {
             result.mask |= PRIME_TEST_FAILURE_IDENTITY;
         }
-    } else {
+    } else if (kind == PRIME_ADAPTER_PRIMARY_SPLIT) {
         PrimeTransmissivePrimarySample sampled =
                 primeSampleMinecraftTransmissionPrimary(
                 baseColor,
@@ -660,6 +681,76 @@ void primeAdapterProperties(
                 probeDirection,
                 rayT,
                 stack);
+    } else {
+        PrimeRcState state = primeMinecraftTransmissionState(
+                baseColor,
+                opacity,
+                outwardNormal,
+                materialFlags,
+                packedNormal,
+                packedSpecular,
+                viewDirection,
+                rayT,
+                stack);
+        PrimeTransmissiveBsdfSample sampled =
+                primeSampleOfflineMinecraftTransmissionFromState(
+                        state,
+                        baseColor,
+                        opacity,
+                        materialFlags,
+                        viewDirection,
+                        firstSample,
+                        stack);
+        result.first = sampled.bsdfSample;
+        result.stackCounts.x = sampled.volumeStack.count;
+
+        state.samplingFlags = PRIME_RC_FLAG_ALL;
+        vec3 localView = primeRcOnbToLocal(
+                state.material.geometry.onb, viewDirection);
+        PrimeRcSampleResult reference = primeRcPrimeTransmissionSample(
+                localView, firstSample, state, stack);
+        BsdfSample expected = primeInvalidBsdfSample();
+        if (primeRcHasSample(reference.bsdfSample)) {
+            expected.direction = primeRcOnbToWorld(
+                    state.material.geometry.onb, reference.bsdfSample.wo);
+            expected.response = reference.bsdfSample.throughput.value;
+            expected.pdf = reference.bsdfSample.pdf;
+            expected.relativeEta = reference.bsdfSample.eta;
+            expected.eventFlags = primeRcToBsdfEventFlags(
+                    reference.bsdfSample.throughput.flags);
+            if ((expected.eventFlags & PRIME_BSDF_EVENT_TRANSMISSION) != 0u) {
+                expected.response *= primeMinecraftSurfaceTransmittance(
+                        baseColor, opacity, materialFlags);
+            }
+            expected = primeSanitizeBsdfSample(expected);
+        }
+        PrimeRcVolumeStack expectedStack = expected.eventFlags == 0u
+                ? stack
+                : reference.volumeStack;
+        if (!primeAdapterSameSample(result.first, expected)
+                || !primeAdapterSameStack(sampled.volumeStack, expectedStack)
+                || ((result.first.eventFlags & PRIME_BSDF_EVENT_REFLECTION) != 0u
+                        && !primeAdapterSameStack(sampled.volumeStack, stack))
+                || primeOfflineSkipsRussianRoulette(result.first)
+                || primeOfflineHasNonDeltaLobe(
+                        PRIME_MATERIAL_FLAG_TRANSMISSIVE,
+                        vec3(1.0),
+                        0.0)
+                || primeOfflineHasNonDeltaLobe(
+                        PRIME_MATERIAL_FLAG_LABPBR_METAL,
+                        vec3(1.0),
+                        0.0)
+                || !primeOfflineHasNonDeltaLobe(
+                        PRIME_MATERIAL_FLAG_LABPBR_METAL,
+                        vec3(1.0),
+                        0.01)
+                || !primeOfflineHasNonDeltaLobe(0u, vec3(1.0), 0.0)
+                || !primeOfflineHasNonDeltaLobe(
+                        PRIME_MATERIAL_FLAG_FOLIAGE,
+                        vec3(0.0),
+                        0.0)) {
+            result.mask |= PRIME_TEST_FAILURE_IDENTITY;
+        }
     }
 
     primeAdapterCheckSample(

@@ -3,8 +3,8 @@ package dev.prime.render;
 import dev.prime.render.post.PostProcessingMode;
 import java.util.Objects;
 
-/** Complete device-address-free semantic input captured for one screenshot sample. */
-public record ScreenshotFrameInput(
+/** Complete device-address-free semantic input captured for one offline sample. */
+public record OfflineFrameInput(
         FrameCamera camera,
         int width,
         int height,
@@ -16,7 +16,7 @@ public record ScreenshotFrameInput(
         MaterialSettings.Snapshot material,
         long sampleCount,
         DisplaySettings.Snapshot display) {
-    public ScreenshotFrameInput {
+    public OfflineFrameInput {
         Objects.requireNonNull(camera, "camera");
         Objects.requireNonNull(astronomy, "astronomy");
         Objects.requireNonNull(lighting, "lighting");
@@ -24,22 +24,22 @@ public record ScreenshotFrameInput(
         Objects.requireNonNull(display, "display");
         if (width <= 0 || height <= 0) {
             throw new IllegalArgumentException(
-                    "Screenshot extent must be positive");
+                    "Offline extent must be positive");
         }
         if (sampleCount < 0L) {
             throw new IllegalArgumentException(
-                    "Screenshot sample count must be non-negative");
+                    "Offline sample count must be non-negative");
         }
         if (sceneRevision < 0L || textureRevision < 0L) {
             throw new IllegalArgumentException(
-                    "Screenshot scene and texture revisions must be non-negative");
+                    "Offline scene and texture revisions must be non-negative");
         }
     }
 
-    public ScreenshotFramePlan plan() {
+    public OfflineFramePlan plan() {
         int sampleIndex = (int) (this.sampleCount & 0xffffL);
         int sampleEpoch = (int) (this.sampleCount >>> 16);
-        return new ScreenshotFramePlan(
+        return new OfflineFramePlan(
                 this,
                 new IntegratorFrameInput(
                         this.camera,
@@ -78,9 +78,9 @@ public record ScreenshotFrameInput(
         float spread = Math.max(x, y);
         if (!Float.isFinite(spread) || spread <= 0.0F) {
             throw new IllegalArgumentException(
-                    "Screenshot ray-cone projection must be finite and non-zero");
+                    "Offline ray-cone projection must be finite and non-zero");
         }
-        // Native screenshot accumulation has no upscaler-specific LOD bias.
+        // Native offline accumulation has no upscaler-specific LOD bias.
         return Float.floatToFloat16(spread) & 0xffff;
     }
 }

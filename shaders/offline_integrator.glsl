@@ -1,0 +1,333 @@
+#ifndef PRIME_OFFLINE_INTEGRATOR_GLSL
+#define PRIME_OFFLINE_INTEGRATOR_GLSL
+
+struct PrimeOfflineAreaRequest {
+    vec3 direction;
+    float distance;
+    vec3 contribution;
+    bool valid;
+    bool startsInMedium;
+};
+
+PrimeOfflineAreaRequest primeEmptyOfflineAreaRequest() {
+    PrimeOfflineAreaRequest request;
+    request.direction = vec3(0.0);
+    request.distance = 0.0;
+    request.contribution = vec3(0.0);
+    request.valid = false;
+    request.startsInMedium = false;
+    return request;
+}
+
+vec3 primeEvaluateOfflineDirect(
+        SurfaceInteraction surface,
+        vec3 viewDirection,
+        LightSample light,
+        vec3 radiance,
+        PrimeRcVolumeStack volumeStack) {
+    vec3 shadingNormal = primeSurfaceShadingNormal(surface, viewDirection);
+    if (!primeDirectSampleEligible(surface, shadingNormal, light)
+            || all(lessThanEqual(radiance, vec3(0.0)))) {
+        return vec3(0.0);
+    }
+    if (primeMaterialIsTransmissive(surface.materialFlags)) {
+        BsdfEvaluation evaluation = primeEvaluateOfflineMinecraftTransmission(
+                surface, viewDirection, light.direction, volumeStack);
+        return primeTripleProduct(
+                radiance,
+                evaluation.response,
+                primePowerHeuristicOverPdf(light.pdf, evaluation.pdf));
+    }
+    PrimeBsdfComponents components;
+    if (primeMaterialIsFoliage(surface.materialFlags)) {
+        components = primeEvaluateMinecraftFoliageComponents(
+                surface.baseColor,
+                shadingNormal,
+                surface.labPbrNormal,
+                surface.labPbrSpecular,
+                surface.materialFlags,
+                viewDirection,
+                light.direction,
+                0.0,
+                volumeStack);
+    } else {
+        components = primeEvaluateOpaqueComponents(
+                surface.baseColor,
+                shadingNormal,
+                surface.labPbrNormal,
+                surface.labPbrSpecular,
+                surface.materialFlags,
+                viewDirection,
+                light.direction,
+                0.0,
+                volumeStack);
+    }
+    float weightedInversePdf = primePowerHeuristicOverPdf(
+            light.pdf, components.pdf);
+    return primeTripleProduct(
+            radiance,
+            components.diffuseResponse + components.specularResponse,
+            weightedInversePdf);
+}
+
+vec3 primeEstimateOfflineSun(
+        PathState path,
+        IntegratorRecord integrator,
+        SurfaceInteraction surface,
+        vec3 viewDirection,
+        PrimePreparedSampleBase preparedSample,
+        PrimeRcVolumeStack volumeStack) {
+    LightSample light = primeSampleSun(
+            integrator,
+            surface.position,
+            primeSobolSample2D(
+                    preparedSample,
+                    PRIME_SAMPLE_EFFECT_DIRECT_SUN,
+                    PRIME_SAMPLE_DIMENSION_PRIMARY));
+    vec3 shadingNormal = primeSurfaceShadingNormal(surface, viewDirection);
+    if (!primeDirectSampleEligible(surface, shadingNormal, light)) {
+        return vec3(0.0);
+    }
+    PrimeShadowTrace shadow = primeTraceShadow(
+            surface.position, surface.geometricNormal, light, volumeStack);
+    if (shadow.hitDistance < PRIME_NRD_FP16_MAX) {
+        return vec3(0.0);
+    }
+    vec3 radiance = primeResolveSampledSunRadiance(
+            integrator, surface.position, light) * shadow.transmittance;
+    return path.throughput * primeEvaluateOfflineDirect(
+            surface, viewDirection, light, radiance, volumeStack);
+}
+
+PrimeOfflineAreaRequest primePrepareOfflineArea(
+        PathState path,
+        SurfaceInteraction surface,
+        vec3 viewDirection,
+        PrimePreparedSampleBase preparedSample,
+        PrimeRcVolumeStack volumeStack) {
+    PrimeOfflineAreaRequest request = primeEmptyOfflineAreaRequest();
+    AreaLightSample area = primeSampleAreaLight(
+            surface.position,
+            primeSobolSample3D(
+                    preparedSample,
+                    PRIME_SAMPLE_EFFECT_DIRECT_AREA_LIGHT,
+                    PRIME_SAMPLE_DIMENSION_PRIMARY),
+            primeSobolSample2D(
+                    preparedSample,
+                    PRIME_SAMPLE_EFFECT_DIRECT_AREA_LIGHT,
+                    PRIME_SAMPLE_DIMENSION_SECONDARY));
+    vec3 radiance = primeResolveSampledAreaLightRadiance(area);
+    vec3 contribution = path.throughput * primeEvaluateOfflineDirect(
+            surface, viewDirection, area.light, radiance, volumeStack);
+    request.valid = area.light.pdf > 0.0
+            && area.light.distance > 0.0
+            && any(greaterThan(contribution, vec3(0.0)));
+    if (request.valid) {
+        request.direction = area.light.direction;
+        request.distance = area.light.distance;
+        request.contribution = contribution;
+        request.startsInMedium = volumeStack.count > 0u;
+    }
+    return request;
+}
+
+PrimeShadowTrace primeTraceOfflineAreaShadow(
+        vec3 physicalPosition,
+        PrimeOfflineAreaRequest request) {
+    primeShadowPayload.transmittance = vec3(1.0);
+    primeShadowPayload.waterDistance =
+            request.startsInMedium ? request.distance : 0.0;
+    primeShadowPayload.hitDistance = 0.0;
+    traceRayEXT(
+            primeScene,
+            gl_RayFlagsNoneEXT,
+            0xff,
+            3,
+            1,
+            1,
+            physicalPosition + request.direction * 0.001,
+            0.001,
+            request.direction,
+            request.distance,
+            1);
+    float waterDistance = primeShadowWaterDistance(
+            primeShadowPayload.waterDistance, request.distance);
+    PrimeShadowTrace result;
+    result.transmittance = clamp(
+            primeShadowPayload.transmittance
+                    * exp(-PRIME_PURE_WATER_ABSORPTION_M_INV * waterDistance),
+            vec3(0.0),
+            vec3(1.0));
+    result.hitDistance = primeNrdSanitizeHitDistance(
+            primeShadowPayload.hitDistance);
+    return result;
+}
+
+PrimePathScatter primeSampleOfflinePathSurface(
+        SurfaceInteraction surface,
+        vec3 viewDirection,
+        vec3 sampleValue,
+        PrimeRcVolumeStack volumeStack) {
+    PrimePathScatter result;
+    result.volumeStack = volumeStack;
+    if (primeMaterialIsFoliage(surface.materialFlags)) {
+        PrimeRcState state = primeMinecraftFoliageState(
+                surface.baseColor,
+                primeSurfaceShadingNormal(surface, viewDirection),
+                surface.labPbrNormal,
+                surface.labPbrSpecular,
+                surface.materialFlags,
+                viewDirection,
+                surface.t,
+                volumeStack);
+        result.bsdf = primeSampleMinecraftFoliageFromState(
+                state, viewDirection, sampleValue, volumeStack);
+    } else if (primeMaterialIsTransmissive(surface.materialFlags)) {
+        PrimeRcState state = primeMinecraftTransmissionState(
+                surface.baseColor,
+                primeSurfaceOpacity(surface),
+                primeSurfaceOutwardShadingNormal(surface),
+                surface.materialFlags,
+                surface.labPbrNormal,
+                surface.labPbrSpecular,
+                viewDirection,
+                surface.t,
+                volumeStack);
+        PrimeTransmissiveBsdfSample sampled =
+                primeSampleOfflineMinecraftTransmissionFromState(
+                        state,
+                        surface.baseColor,
+                        primeSurfaceOpacity(surface),
+                        surface.materialFlags,
+                        viewDirection,
+                        sampleValue,
+                        volumeStack);
+        result.bsdf = sampled.bsdfSample;
+        result.volumeStack = sampled.volumeStack;
+    } else {
+        vec3 shadingNormal = primeSurfaceShadingNormal(surface, viewDirection);
+        PrimeRcState state = primeOpaqueState(
+                surface.baseColor,
+                shadingNormal,
+                surface.labPbrNormal,
+                surface.labPbrSpecular,
+                surface.materialFlags,
+                viewDirection,
+                surface.t,
+                volumeStack);
+        result.bsdf = primeSampleOpaqueFromState(
+                state, shadingNormal, viewDirection, sampleValue, volumeStack);
+    }
+    return result;
+}
+
+bool primeIntegrateOfflineSurface(
+        inout PathState path,
+        IntegratorRecord integrator,
+        inout PrimeRcVolumeStack volumeStack,
+        inout vec3 radiance,
+        inout float primaryDistance,
+        inout vec3 primaryAlbedo,
+        inout uint primaryMaterialFlags,
+        SurfaceInteraction surface,
+        bool deferArea,
+        out PrimeOfflineAreaRequest areaRequest) {
+    areaRequest = primeEmptyOfflineAreaRequest();
+    if (!primeKnownHitKind(surface)) {
+        return false;
+    }
+    if (surface.hitKind == PRIME_HIT_NONE) {
+        primeAccumulate(radiance, primeEvaluateEnvironmentContribution(path, integrator));
+        return false;
+    }
+    if (!primeApplySegmentMedium(path, surface, volumeStack)) {
+        return false;
+    }
+
+    bool previousUsedAreaNee =
+            (path.flags & PRIME_OFFLINE_PATH_PREVIOUS_AREA_NEE) != 0u;
+    primeAccumulate(
+            radiance,
+            primeEvaluateHitEmission(path, surface, previousUsedAreaNee));
+    vec3 viewDirection = -path.rayDirection;
+    if (!(primaryDistance >= 0.0)) {
+        primaryDistance = length(surface.position - primePush.cameraPosition);
+        primaryAlbedo = surface.baseColor;
+        primaryMaterialFlags = surface.materialFlags;
+    }
+
+    PrimePreparedSampleBase preparedSample =
+            primePrepareSampleBase(primeMakeSampleBase(path, path.bounce + 1u));
+    bool neeEligible = primeOfflineHasNonDeltaLobe(
+            surface.materialFlags,
+            surface.baseColor,
+            primeSurfaceLinearRoughness(surface));
+    if (neeEligible) {
+        primeAccumulate(
+                radiance,
+                primeEstimateOfflineSun(
+                        path,
+                        integrator,
+                        surface,
+                        viewDirection,
+                        preparedSample,
+                        volumeStack));
+        areaRequest = primePrepareOfflineArea(
+                path,
+                surface,
+                viewDirection,
+                preparedSample,
+                volumeStack);
+    }
+    // Reverse MIS depends on whether the competing light-sampling technique existed at this
+    // vertex, not on whether this particular random Area sample produced a non-zero request.
+    bool usedAreaNee = neeEligible;
+    if (areaRequest.valid && !deferArea) {
+        PrimeShadowTrace shadow = primeTraceShadow(
+                surface.position,
+                surface.geometricNormal,
+                LightSample(
+                        areaRequest.direction,
+                        areaRequest.distance,
+                        vec3(0.0),
+                        1.0,
+                        0u),
+                volumeStack);
+        if (shadow.hitDistance >= PRIME_NRD_FP16_MAX) {
+            primeAccumulate(
+                    radiance,
+                    areaRequest.contribution * shadow.transmittance);
+        }
+        areaRequest = primeEmptyOfflineAreaRequest();
+    }
+
+    PrimePathScatter scatter = primeSampleOfflinePathSurface(
+            surface,
+            viewDirection,
+            primeSobolSample3D(
+                    preparedSample,
+                    PRIME_SAMPLE_EFFECT_SCATTER_BSDF,
+                    PRIME_SAMPLE_DIMENSION_PRIMARY),
+            volumeStack);
+    BsdfSample bsdf = scatter.bsdf;
+    volumeStack = scatter.volumeStack;
+    if (!primeHasScatter(bsdf)) {
+        path.physicalOrigin = surface.position;
+        path.flags = usedAreaNee ? PRIME_OFFLINE_PATH_PREVIOUS_AREA_NEE : 0u;
+        return false;
+    }
+    if (!primeAdvancePath(
+            path,
+            surface,
+            bsdf,
+            preparedSample,
+            primeOfflineSkipsRussianRoulette(bsdf))) {
+        path.flags = usedAreaNee ? PRIME_OFFLINE_PATH_PREVIOUS_AREA_NEE : 0u;
+        return false;
+    }
+    path.flags |= usedAreaNee ? PRIME_OFFLINE_PATH_PREVIOUS_AREA_NEE : 0u;
+    path.bounce++;
+    return true;
+}
+
+#endif

@@ -2,11 +2,11 @@ package dev.prime.render;
 
 import java.util.Objects;
 
-/** Immutable semantic plan for one native screenshot accumulation sample. */
-public record ScreenshotFramePlan(
-        ScreenshotFrameInput input,
+/** Immutable semantic plan for one native offline accumulation sample. */
+public record OfflineFramePlan(
+        OfflineFrameInput input,
         IntegratorFrameInput integrator) {
-    public ScreenshotFramePlan {
+    public OfflineFramePlan {
         Objects.requireNonNull(input, "input");
         Objects.requireNonNull(integrator, "integrator");
     }
@@ -18,14 +18,14 @@ public record ScreenshotFramePlan(
     public void requireSceneRevision(long revision) {
         if (revision != this.input.sceneRevision()) {
             throw new IllegalStateException(
-                    "Screenshot frame plan does not match its resident scene");
+                    "Offline frame plan does not match its resident scene");
         }
     }
 
     public void requireTextureRevision(long revision) {
         if (revision != this.input.textureRevision()) {
             throw new IllegalStateException(
-                    "Screenshot frame plan does not match its texture snapshot");
+                    "Offline frame plan does not match its texture snapshot");
         }
     }
 }

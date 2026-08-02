@@ -1,4 +1,5 @@
 #version 460
+#define PRIME_REALTIME_ABI 1
 #extension GL_GOOGLE_include_directive : require
 #extension GL_EXT_control_flow_attributes : require
 #if defined(PRIME_ENABLE_SUBGROUP_QUEUE)
@@ -30,7 +31,6 @@ const uint PRIME_WAVEFRONT_STAGE_HEAD = 0u;
 const uint PRIME_WAVEFRONT_STAGE_STEP = 1u;
 const uint PRIME_WAVEFRONT_STAGE_TAIL = 2u;
 const uint PRIME_WAVEFRONT_STAGE_RESOLVE = 3u;
-const uint PRIME_WAVEFRONT_SCREENSHOT_OUTPUT = 1u << 9u;
 layout(constant_id = 0) const uint primeWavefrontSpecializedStage =
         PRIME_WAVEFRONT_STAGE_HEAD;
 
@@ -273,7 +273,7 @@ void primeWavefrontHead() {
     primeSetNumericalContext(PRIME_NUMERICAL_STAGE_CAMERA, 0u);
 
     if (maximumBounces == 0u) {
-        vec2 cameraSample = primeCameraSample();
+        vec2 cameraSample = primeRealtimeCameraSample();
         PathState path = primeCameraPath(pixel, 0u, cameraSample);
         PrimeRcVolumeStack volumeStack =
                 (primePush.path.z & PRIME_PATH_CAMERA_IN_WATER_MASK) != 0u
@@ -294,7 +294,7 @@ void primeWavefrontHead() {
         return;
     }
 
-    vec2 traceCameraSample = primeCameraSample();
+    vec2 traceCameraSample = primeRealtimeCameraSample();
     vec3 traceDirection = primeCameraRayDirection(pixel, traceCameraSample);
     primeSetNumericalContext(PRIME_NUMERICAL_STAGE_TRACE, 0u);
     SurfaceInteraction surface =
@@ -302,7 +302,7 @@ void primeWavefrontHead() {
 
     // Build transport, medium and denoiser state only after SER has executed the primary hit.
     // This keeps the largest realtime records out of the implementation's reorder spill set.
-    vec2 cameraSample = primeCameraSample();
+    vec2 cameraSample = primeRealtimeCameraSample();
     PathState path = primeCameraPath(pixel, 0u, cameraSample);
     IntegratorRecord integrator;
     integrator.sunDirectionIntensity = vec4(
@@ -644,13 +644,8 @@ void primeWavefrontResolve() {
             : primeLoadWavefrontIntermediate(
                     pixel,
                     primaryRecord);
-    vec2 cameraSample = primeCameraSample();
-    if ((primeWavefrontShaderRecord.control
-            & PRIME_WAVEFRONT_SCREENSHOT_OUTPUT) != 0u) {
-        primeWriteScreenshotOutput(pixel, cameraSample, result);
-    } else {
-        primeWriteRealtimeOutput(pixel, cameraSample, result);
-    }
+    vec2 cameraSample = primeRealtimeCameraSample();
+    primeWriteRealtimeOutput(pixel, cameraSample, result);
 }
 
 void main() {

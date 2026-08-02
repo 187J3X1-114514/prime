@@ -15,7 +15,7 @@ import dev.prime.render.vulkan.dlss.DlssRrPostProcessor;
 /**
  * Owns the complete size-dependent resource graph for Prime's interactive render path.
  *
- * <p>This boundary is deliberately independent from the screenshot accumulator. NRD and FSR
+ * <p>This boundary is deliberately independent from the offline accumulator. NRD and FSR
  * histories are meaningful only to the interactive path and must never become implicit inputs to
  * a raw accumulated sample of Prime's declared material model. VulkanRenderer remains the frame
  * orchestrator while each render path owns and retires its own resources as one idempotent unit.

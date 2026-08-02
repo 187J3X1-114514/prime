@@ -8,7 +8,8 @@ import dev.prime.render.replay.RenderBinaryFingerprint;
 import dev.prime.render.replay.RenderPlatformFingerprint;
 import dev.prime.render.replay.RenderReplayCapture;
 import dev.prime.render.terrain.TerrainScene;
-import dev.prime.render.vulkan.RayTracingPipeline;
+import dev.prime.render.vulkan.RealtimeRayTracingPipeline;
+import dev.prime.render.vulkan.TraceBackend;
 import dev.prime.render.vulkan.VulkanContext;
 import dev.prime.render.vulkan.VulkanImageInitializationBatch;
 import dev.prime.render.vulkan.VulkanImageTransitions;
@@ -30,14 +31,14 @@ public final class ReplayProbeFrameExecutor {
 
     public CompletableFuture<RenderReplayCapture> execute(
             String debugLabel,
-            RayTracingPipeline pipeline,
+            RealtimeRayTracingPipeline pipeline,
             NrdReplayProbe probe,
             NrdReplayProbe.PlannedFrame nrdFrame,
             TerrainScene.ResidentSceneView scene,
             IntegratorFrameInput integrator,
             RayTraceReplayInput replayInput,
             VulkanGpuTextureView atlasView,
-            List<RayTracingPipeline.SceneTexture> sceneTextures,
+            List<TraceBackend.SceneTexture> sceneTextures,
             float sunRadianceMultiplier,
             float displayOverexposure,
             RenderPlatformFingerprint platform,

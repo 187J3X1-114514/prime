@@ -162,15 +162,31 @@
       ]
     }
   },
-  "descriptors": {
+  "sharedDescriptors": {
     "tlas": 0,
     "blockAtlas": 2,
-    "stableRadiance": 3,
     "skyView": 4,
     "transmittanceLow": 5,
     "transmittanceHigh": 6,
     "aerialRadiance": 7,
     "aerialTransmittance": 8,
+    "transmissionGgxEnergy": 17,
+    "labPbrNormalAtlas": 18,
+    "labPbrSpecularAtlas": 19,
+    "starmap": 34,
+    "sunShadowDepth0": 38,
+    "sunShadowDepth1": 39,
+    "sunShadowDepth2": 40,
+    "sunShadowDepth3": 41,
+    "sunShadowDepth4": 42,
+    "sunShadowDepth5": 43,
+    "sunShadowDepth6": 44,
+    "sunShadowDepth7": 45,
+    "sunShadowDepth8": 46,
+    "sunShadowDepth9": 47
+  },
+  "realtimeDescriptors": {
+    "stableRadiance": 3,
     "nrdNoisyDiffuse": 9,
     "nrdNormalRoughness": 10,
     "nrdViewZ": 11,
@@ -179,9 +195,6 @@
     "nrdPrimaryPosition": 14,
     "nrdNoisySpecular": 15,
     "nrdSpecularMaterial": 16,
-    "transmissionGgxEnergy": 17,
-    "labPbrNormalAtlas": 18,
-    "labPbrSpecularAtlas": 19,
     "nrdSunLighting": 20,
     "nrdSunPenumbra": 21,
     "nrdDiffuseDirection": 22,
@@ -196,27 +209,30 @@
     "nrdReflectionDiffuseDirection": 31,
     "nrdReflectionSpecularDirection": 32,
     "nrdDisplayPosition": 33,
-    "starmap": 34,
-    "screenshotRunningMean": 35,
     "wavefrontPaths": 36,
-    "wavefrontQueue": 37,
-    "sunShadowDepth0": 38,
-    "sunShadowDepth1": 39,
-    "sunShadowDepth2": 40,
-    "sunShadowDepth3": 41,
-    "sunShadowDepth4": 42,
-    "sunShadowDepth5": 43,
-    "sunShadowDepth6": 44,
-    "sunShadowDepth7": 45,
-    "sunShadowDepth8": 46,
-    "sunShadowDepth9": 47
+    "wavefrontQueue": 37
+  },
+  "offlineDescriptors": {
+    "runningMean": 0,
+    "wavefrontPaths": 1,
+    "wavefrontQueue": 2
   },
   "sceneTextureCount": 64,
-  "wavefrontContract": {
+  "realtimeWavefrontContract": {
     "rounds": 12,
     "pathRecordSize": 96,
     "pathSlotsPerPixel": 2,
     "areaRecordSize": 16,
+    "queueCount": 2,
+    "queueCommandStride": 16,
+    "queueIndexSize": 4,
+    "activeMask": "0x1"
+  },
+  "offlineWavefrontContract": {
+    "rounds": 12,
+    "pathRecordSize": 144,
+    "pathSlotsPerPixel": 1,
+    "areaRecordSize": 0,
     "queueCount": 2,
     "queueCommandStride": 16,
     "queueIndexSize": 4,

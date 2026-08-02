@@ -115,7 +115,7 @@ final class SunShadowClipmap implements Destroyable {
      */
     boolean prepare(
             VkCommandBuffer commandBuffer,
-            RayTracingPipeline pipeline,
+            SunShadowPipeline pipeline,
             IntegratorFrameInput input,
             TerrainScene.ResidentSceneView scene,
             boolean forceComplete) {
@@ -324,7 +324,7 @@ final class SunShadowClipmap implements Destroyable {
 
     private boolean invalidateChanges(
             VkCommandBuffer commandBuffer,
-            RayTracingPipeline pipeline,
+            SunShadowPipeline pipeline,
             IntegratorFrameInput input,
             TerrainScene.ResidentSceneView scene,
             List<TerrainOccluderChange> changes) {
@@ -402,7 +402,7 @@ final class SunShadowClipmap implements Destroyable {
 
     private boolean scrollBank(
             VkCommandBuffer commandBuffer,
-            RayTracingPipeline pipeline,
+            SunShadowPipeline pipeline,
             IntegratorFrameInput input,
             TerrainScene.ResidentSceneView scene,
             int bankIndex,
@@ -470,7 +470,7 @@ final class SunShadowClipmap implements Destroyable {
 
     private boolean buildPrimaryTile(
             VkCommandBuffer commandBuffer,
-            RayTracingPipeline pipeline,
+            SunShadowPipeline pipeline,
             IntegratorFrameInput input,
             TerrainScene.ResidentSceneView scene,
             int bankIndex,
@@ -497,7 +497,7 @@ final class SunShadowClipmap implements Destroyable {
 
     private boolean buildOneDirtyTilePerCascade(
             VkCommandBuffer commandBuffer,
-            RayTracingPipeline pipeline,
+            SunShadowPipeline pipeline,
             IntegratorFrameInput input,
             TerrainScene.ResidentSceneView scene,
             int bankIndex,
@@ -526,7 +526,7 @@ final class SunShadowClipmap implements Destroyable {
 
     private void traceRegion(
             VkCommandBuffer commandBuffer,
-            RayTracingPipeline pipeline,
+            SunShadowPipeline pipeline,
             IntegratorFrameInput input,
             TerrainScene.ResidentSceneView scene,
             int bankIndex,
@@ -591,7 +591,7 @@ final class SunShadowClipmap implements Destroyable {
             int storageOffset = Math.floorMod(bank.minimumU[cascade], RESOLUTION)
                     | (Math.floorMod(bank.minimumV[cascade], RESOLUTION) << 9);
             push.putInt(pathOffset + 3 * Integer.BYTES, storageOffset);
-            pipeline.traceSunShadow(
+            pipeline.trace(
                     commandBuffer,
                     push.position(0).limit(ShaderAbi.PUSH_CONSTANT_SIZE),
                     region.width,

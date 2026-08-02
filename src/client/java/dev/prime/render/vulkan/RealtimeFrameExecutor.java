@@ -31,7 +31,8 @@ public final class RealtimeFrameExecutor {
 
     public void execute(
             String debugLabel,
-            RayTracingPipeline pipeline,
+            RealtimeRayTracingPipeline pipeline,
+            SunShadowPipeline sunShadow,
             AtmospherePipeline atmosphere,
             LabPbrTextureAtlas labPbrAtlas,
             TerrainScene.ResidentSceneView scene,
@@ -41,7 +42,7 @@ public final class RealtimeFrameExecutor {
             VulkanImage output,
             VulkanImage stableRadiance,
             VulkanGpuTextureView atlasView,
-            List<RayTracingPipeline.SceneTexture> sceneTextures,
+            List<TraceBackend.SceneTexture> sceneTextures,
             long textureRevision,
             VulkanGpuTexture mainColor) {
         Objects.requireNonNull(processor, "processor");
@@ -54,6 +55,7 @@ public final class RealtimeFrameExecutor {
         try {
             Objects.requireNonNull(debugLabel, "debugLabel");
             Objects.requireNonNull(pipeline, "pipeline");
+            Objects.requireNonNull(sunShadow, "sunShadow");
             Objects.requireNonNull(atmosphere, "atmosphere");
             Objects.requireNonNull(labPbrAtlas, "labPbrAtlas");
             Objects.requireNonNull(scene, "scene");
@@ -91,7 +93,7 @@ public final class RealtimeFrameExecutor {
             // Every image named by that set must have its declared layout before this call.
             atmosphereFrame = atmosphere.prepare(
                     commandBuffer,
-                    pipeline,
+                    sunShadow,
                     plan.integrator(),
                     scene,
                     false);

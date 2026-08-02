@@ -70,24 +70,39 @@ public final class DisplayTransformPass implements Destroyable {
             VulkanImage linearInput,
             RawWavefrontFrame meteringGuide,
             VulkanImage displayOutput) {
-        return create(context, linearInput, meteringGuide, displayOutput, false);
+        return create(
+                context,
+                linearInput,
+                meteringGuide.material(),
+                meteringGuide.normalRoughness(),
+                displayOutput,
+                false);
     }
 
-    public static DisplayTransformPass createScreenshot(
+    public static DisplayTransformPass createOffline(
             VulkanContext context,
             VulkanImage linearInput,
-            RawWavefrontFrame meteringGuide,
+            VulkanImage unusedAlbedo,
+            VulkanImage unusedNormalRoughness,
             VulkanImage displayOutput) {
-        return create(context, linearInput, meteringGuide, displayOutput, true);
+        return create(
+                context,
+                linearInput,
+                unusedAlbedo,
+                unusedNormalRoughness,
+                displayOutput,
+                true);
     }
 
     private static DisplayTransformPass create(
             VulkanContext context,
             VulkanImage linearInput,
-            RawWavefrontFrame meteringGuide,
+            VulkanImage albedo,
+            VulkanImage normalRoughness,
             VulkanImage displayOutput,
             boolean accumulatedMetering) {
-        java.util.Objects.requireNonNull(meteringGuide, "meteringGuide");
+        java.util.Objects.requireNonNull(albedo, "albedo");
+        java.util.Objects.requireNonNull(normalRoughness, "normalRoughness");
         if (linearInput.width() != displayOutput.width()
                 || linearInput.height() != displayOutput.height()) {
             throw new IllegalArgumentException("Display transform input and output extents differ");
@@ -100,8 +115,8 @@ public final class DisplayTransformPass implements Destroyable {
                 AutoExposurePass.create(
                         context,
                         linearInput,
-                        meteringGuide.material(),
-                        meteringGuide.normalRoughness(),
+                        albedo,
+                        normalRoughness,
                         accumulatedMetering);
         try (MemoryStack stack = MemoryStack.stackPush()) {
             VkDescriptorSetLayoutBinding.Buffer bindings = VkDescriptorSetLayoutBinding.calloc(3, stack);

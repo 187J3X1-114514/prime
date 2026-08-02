@@ -614,9 +614,8 @@ void primeAccumulateAfterPrimary(
     }
 }
 
-// Realtime and screenshot rendering share this one complete path estimator. Keeping segment
-// attenuation, emitter MIS, BSDF dispatch and path advancement here prevents their model rules
-// from drifting between the two modes.
+// Renderer-specific integrators compose these terminal estimators. Their caller supplies whether
+// the competing Area technique existed, so realtime and offline can keep independent NEE rules.
 vec3 primeEvaluateEnvironmentContribution(
         PathState path, IntegratorRecord integrator) {
     primeSetNumericalContext(PRIME_NUMERICAL_STAGE_EMISSION, path.bounce);
@@ -643,8 +642,8 @@ vec3 primeEvaluateHitEmission(
                 * PRIME_LEVEL_15_BLOCK_INTENSITY
                 * primeBlockLightRadianceMultiplier();
     }
-    // Reconstruct the two-level reverse tree PDF only for the one continuation whose previous
-    // primary vertex actually had an Area NEE technique.
+    // Reconstruct the two-level reverse tree PDF only when the previous renderer-specific
+    // transport vertex actually had a competing Area NEE technique.
     bool evaluateAreaPdf = previousUsedAreaNee
             && !primePreviousCannotUseMis(path);
     LightEvaluation hitAreaLight = primeEvaluateAreaLight(

@@ -9,7 +9,7 @@ import org.lwjgl.vulkan.VK12;
 import org.lwjgl.vulkan.VkDependencyInfo;
 import org.lwjgl.vulkan.VkImageMemoryBarrier2;
 
-/** Minimal image-backed wavefront signal set for screenshot scratch and unfiltered presentation. */
+/** Minimal image-backed wavefront signal set for unfiltered realtime presentation. */
 public final class BasicRawWavefrontFrame implements RawWavefrontFrame, Destroyable {
     private static final int SIGNAL_USAGE = VK12.VK_IMAGE_USAGE_STORAGE_BIT;
     private static final int LINEAR_OUTPUT_USAGE =
@@ -50,12 +50,6 @@ public final class BasicRawWavefrontFrame implements RawWavefrontFrame, Destroya
             VulkanContext context, int width, int height) {
         return create(
                 context, width, height, "Prime unfiltered", true);
-    }
-
-    public static BasicRawWavefrontFrame createScreenshotScratch(
-            VulkanContext context, int width, int height) {
-        return create(
-                context, width, height, "Prime screenshot scratch", false);
     }
 
     private static BasicRawWavefrontFrame create(
@@ -180,7 +174,7 @@ public final class BasicRawWavefrontFrame implements RawWavefrontFrame, Destroya
         if (linearOutput) {
             if (!hasLinearOutput) {
                 throw new IllegalArgumentException(
-                        "Screenshot scratch has no linear output image");
+                        "Raw wavefront scratch has no linear output image");
             }
             return VK12.VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT;
         }

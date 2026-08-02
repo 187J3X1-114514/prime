@@ -3,7 +3,7 @@ package dev.prime.render.vulkan;
 import com.mojang.blaze3d.vulkan.VulkanGpuTexture;
 import com.mojang.blaze3d.vulkan.VulkanGpuTextureView;
 import dev.prime.render.ResourceCleanup;
-import dev.prime.render.ScreenshotFramePlan;
+import dev.prime.render.OfflineFramePlan;
 import dev.prime.render.terrain.TerrainScene;
 import java.util.List;
 import java.util.Objects;
@@ -12,40 +12,42 @@ import org.lwjgl.vulkan.VK12;
 import org.lwjgl.vulkan.VkCommandBuffer;
 import org.lwjgl.vulkan.VkImageCopy;
 
-/** Device side effects for one already-planned native screenshot sample. */
-public final class ScreenshotFrameExecutor {
+/** Device side effects for one already-planned native offline sample. */
+public final class OfflineFrameExecutor {
     private final VulkanContext context;
     private final VulkanImageInitializationBatch imageInitialization =
             new VulkanImageInitializationBatch();
 
-    public ScreenshotFrameExecutor(VulkanContext context) {
+    public OfflineFrameExecutor(VulkanContext context) {
         this.context = Objects.requireNonNull(context, "context");
     }
 
     public void execute(
-            RayTracingPipeline pipeline,
+            OfflineRayTracingPipeline pipeline,
+            SunShadowPipeline sunShadow,
             AtmospherePipeline atmosphere,
             LabPbrTextureAtlas labPbrAtlas,
             TerrainScene.ResidentSceneView scene,
-            ScreenshotFramePlan plan,
+            OfflineFramePlan plan,
             VulkanImage displayOutput,
-            VulkanImage stableRadiance,
             VulkanImage runningMean,
-            BasicRawWavefrontFrame rawFrame,
+            VulkanImage meteringAlbedo,
+            VulkanImage meteringNormalRoughness,
             DisplayTransformPass display,
             VulkanGpuTextureView atlasView,
-            List<RayTracingPipeline.SceneTexture> sceneTextures,
+            List<TraceBackend.SceneTexture> sceneTextures,
             long textureRevision,
             VulkanGpuTexture mainColor) {
         Objects.requireNonNull(pipeline, "pipeline");
+        Objects.requireNonNull(sunShadow, "sunShadow");
         Objects.requireNonNull(atmosphere, "atmosphere");
         Objects.requireNonNull(labPbrAtlas, "labPbrAtlas");
         Objects.requireNonNull(scene, "scene");
         Objects.requireNonNull(plan, "plan");
         Objects.requireNonNull(displayOutput, "displayOutput");
-        Objects.requireNonNull(stableRadiance, "stableRadiance");
         Objects.requireNonNull(runningMean, "runningMean");
-        Objects.requireNonNull(rawFrame, "rawFrame");
+        Objects.requireNonNull(meteringAlbedo, "meteringAlbedo");
+        Objects.requireNonNull(meteringNormalRoughness, "meteringNormalRoughness");
         Objects.requireNonNull(display, "display");
         Objects.requireNonNull(atlasView, "atlasView");
         Objects.requireNonNull(sceneTextures, "sceneTextures");
@@ -55,7 +57,6 @@ public final class ScreenshotFrameExecutor {
         validateExtents(
                 plan,
                 displayOutput,
-                stableRadiance,
                 runningMean,
                 mainColor);
 
@@ -74,32 +75,31 @@ public final class ScreenshotFrameExecutor {
                     commandBuffer, this.imageInitialization);
             this.context.device().instance().debug().beginDebugGroup(
                     commandBuffer,
-                    () -> "Prime raw-model screenshot accumulation");
+                    () -> "Prime offline path accumulation");
             VulkanImageTransitions.prepareOutputForComposite(
                     commandBuffer, this.imageInitialization, displayOutput);
             VulkanImageTransitions.prepareAccumulationForTrace(
-                    commandBuffer, this.imageInitialization, stableRadiance);
-            VulkanImageTransitions.prepareAccumulationForTrace(
                     commandBuffer, this.imageInitialization, runningMean);
-            rawFrame.prepareForRayTrace(
-                    commandBuffer, this.imageInitialization);
+            VulkanImageTransitions.prepareAccumulationForTrace(
+                    commandBuffer, this.imageInitialization, meteringAlbedo);
+            VulkanImageTransitions.prepareAccumulationForTrace(
+                    commandBuffer, this.imageInitialization, meteringNormalRoughness);
             VulkanImageTransitions.prepareAtlasForTrace(
                     commandBuffer, atlasView.texture());
             VulkanImageTransitions.prepareSceneTexturesForTrace(
                     commandBuffer, sceneTextures);
             labPbrFrame = labPbrAtlas.prepare(commandBuffer);
-            // The sun-cache raygen uses the shared RT descriptor set, including screenshot
-            // accumulation and raw-frame resources initialized immediately above.
+            // The sun-cache raygen borrows the shared scene descriptor set prepared above.
             atmosphereFrame = atmosphere.prepare(
                     commandBuffer,
-                    pipeline,
+                    sunShadow,
                     plan.integrator(),
                     scene,
                     true);
             try (MemoryStack stack = MemoryStack.stackPush()) {
-                pipeline.traceScreenshot(
+                pipeline.trace(
                         commandBuffer, plan.integrator(), scene);
-                VulkanImageTransitions.prepareScreenshotDisplay(
+                VulkanImageTransitions.prepareOfflineDisplay(
                         commandBuffer, runningMean);
                 display.record(
                         commandBuffer,
@@ -143,7 +143,7 @@ public final class ScreenshotFrameExecutor {
                     commandBuffer);
             VulkanContext.check(
                     VK12.vkEndCommandBuffer(commandBuffer),
-                    "end Prime screenshot accumulation command buffer");
+                    "end Prime offline accumulation command buffer");
             encoder.execute(commandBuffer);
             // execute() transfers this command buffer to Minecraft's open Submission only after
             // its validation succeeds; failed calls still own and must abandon recorded state.
@@ -191,23 +191,20 @@ public final class ScreenshotFrameExecutor {
     }
 
     private static void validateExtents(
-            ScreenshotFramePlan plan,
+            OfflineFramePlan plan,
             VulkanImage displayOutput,
-            VulkanImage stableRadiance,
             VulkanImage runningMean,
             VulkanGpuTexture mainColor) {
         int width = plan.input().width();
         int height = plan.input().height();
         if (displayOutput.width() != width
                 || displayOutput.height() != height
-                || stableRadiance.width() != width
-                || stableRadiance.height() != height
                 || runningMean.width() != width
                 || runningMean.height() != height
                 || mainColor.getWidth(0) != width
                 || mainColor.getHeight(0) != height) {
             throw new IllegalArgumentException(
-                    "Screenshot device resources do not match the semantic frame extent");
+                    "Offline device resources do not match the semantic frame extent");
         }
     }
 }

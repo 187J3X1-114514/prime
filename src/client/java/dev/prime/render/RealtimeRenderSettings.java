@@ -1,0 +1,34 @@
+package dev.prime.render;
+
+import dev.prime.config.PrimeSettings;
+import dev.prime.render.post.PostProcessingMode;
+import dev.prime.render.post.ReconstructionQualityMode;
+import java.util.Objects;
+
+/** Immutable settings consumed only by the interactive renderer. */
+record RealtimeRenderSettings(
+        PostProcessingMode postProcessing,
+        ReconstructionQualityMode reconstructionQuality,
+        LightingSettings.Snapshot lighting,
+        MaterialSettings.Snapshot material,
+        DisplaySettings.Snapshot display,
+        float oklabOverexposure) {
+    RealtimeRenderSettings {
+        Objects.requireNonNull(postProcessing, "postProcessing");
+        Objects.requireNonNull(reconstructionQuality, "reconstructionQuality");
+        Objects.requireNonNull(lighting, "lighting");
+        Objects.requireNonNull(material, "material");
+        Objects.requireNonNull(display, "display");
+    }
+
+    static RealtimeRenderSettings capture(PrimeSettings settings) {
+        Objects.requireNonNull(settings, "settings");
+        return new RealtimeRenderSettings(
+                settings.postProcessingMode(),
+                settings.reconstructionQuality(),
+                settings.lighting(),
+                settings.material(),
+                settings.display(),
+                settings.oklabOverexposure());
+    }
+}

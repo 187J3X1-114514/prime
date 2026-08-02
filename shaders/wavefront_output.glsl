@@ -3,40 +3,8 @@
 
 #include "auto_exposure.glsl"
 
-// Output adapters consume one resolved raw model sample. They may encode reconstruction signals or
-// a screenshot running mean, but never feed data back into transport.
-
-void primeWriteScreenshotOutput(
-        uvec2 pixel,
-        vec2 cameraSample,
-        PrimeIntegrationResult result) {
-    vec3 radiance = primeResolveIntegrationRadiance(result);
-    primeApplyAerialPerspective(
-            pixel, cameraSample, result.guides.primaryDistance, radiance);
-    uint64_t zeroBasedSample = (uint64_t(primeSampleEpoch()) << 16u)
-            | uint64_t(primeSampleIndex());
-    PrimeDenoiserGuides meteringGuides =
-            result.transparentPrimary
-                    && result.transmissionGuides.primaryHitKind == PRIME_HIT_SURFACE
-            ? result.transmissionGuides
-            : result.guides;
-    float confidence = primeAutoExposureMaterialConfidence(
-            uint(round(primeNrdMaterialId(
-                    meteringGuides.primaryMaterialFlags) * 3.0)),
-            meteringGuides.primaryDistance);
-    float meteredLuminance = primeAutoExposureMeteredLuminance(
-            radiance,
-            primeNrdSanitizeAlbedo(meteringGuides.primaryAlbedo),
-            confidence);
-    vec4 mean = vec4(radiance, meteredLuminance);
-    if (zeroBasedSample != uint64_t(0)) {
-        vec4 previous = imageLoad(
-                primeScreenshotRunningMean, ivec2(pixel));
-        float sampleCount = float(zeroBasedSample + uint64_t(1));
-        mean = previous + (mean - previous) / sampleCount;
-    }
-    imageStore(primeScreenshotRunningMean, ivec2(pixel), mean);
-}
+// The realtime output adapter encodes reconstruction signals from one resolved model sample and
+// never feeds output data back into transport.
 
 uint primeClassifyRawOutput(PrimeIntegrationResult result) {
     uint flags = primeClassifyRadiance(result.radiance.diffuse)

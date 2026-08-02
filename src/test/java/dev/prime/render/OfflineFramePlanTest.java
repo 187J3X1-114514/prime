@@ -8,11 +8,11 @@ import dev.prime.render.post.PostProcessingMode;
 import org.joml.Matrix4f;
 import org.junit.jupiter.api.Test;
 
-final class ScreenshotFramePlanTest {
+final class OfflineFramePlanTest {
     @Test
     void sobolIndexAndEpochAreDerivedBeforeDeviceExecution() {
-        ScreenshotFramePlan lastFirstEpoch = input(0xffffL).plan();
-        ScreenshotFramePlan firstSecondEpoch = input(0x1_0000L).plan();
+        OfflineFramePlan lastFirstEpoch = input(0xffffL).plan();
+        OfflineFramePlan firstSecondEpoch = input(0x1_0000L).plan();
 
         assertEquals(0xffff, lastFirstEpoch.integrator().sampleIndex());
         assertEquals(0, lastFirstEpoch.integrator().sampleEpoch());
@@ -22,10 +22,10 @@ final class ScreenshotFramePlanTest {
     }
 
     @Test
-    void screenshotPlanPreservesNativeUnfilteredIntegratorContract() {
-        ScreenshotFrameInput input = input(7L);
-        ScreenshotFramePlan first = input.plan();
-        ScreenshotFramePlan second = input.plan();
+    void offlinePlanPreservesNativeUnfilteredIntegratorContract() {
+        OfflineFrameInput input = input(7L);
+        OfflineFramePlan first = input.plan();
+        OfflineFramePlan second = input.plan();
 
         assertEquals(first, second);
         assertEquals(PostProcessingMode.DISABLED,
@@ -58,8 +58,8 @@ final class ScreenshotFramePlanTest {
 
     @Test
     void finalExposureChangesPreserveAccumulationIdentityAndSampleCount() {
-        ScreenshotFrameInput initial = input(37L);
-        ScreenshotFrameInput adjusted = new ScreenshotFrameInput(
+        OfflineFrameInput initial = input(37L);
+        OfflineFrameInput adjusted = new OfflineFrameInput(
                 initial.camera(),
                 initial.width(),
                 initial.height(),
@@ -79,8 +79,8 @@ final class ScreenshotFramePlanTest {
         assertEquals(8, adjusted.display().finalExposureQuarterSteps());
     }
 
-    private static ScreenshotFrameInput input(long sampleCount) {
-        return new ScreenshotFrameInput(
+    private static OfflineFrameInput input(long sampleCount) {
+        return new OfflineFrameInput(
                 new FrameCamera(new Matrix4f(), 1.0, 2.0, 3.0),
                 64,
                 48,

@@ -81,7 +81,7 @@ public final class IntegratorSettings {
             throw new IllegalArgumentException(
                     "Maximum bounce count exceeds the integrator limit");
         }
-        // Zero selects the screenshot pixel filter. Realtime reconstruction uses the exact
+        // Zero selects the offline pixel filter. Realtime reconstruction uses the exact
         // one-based jitter phase supplied by FSR or RR.
         if (jitterPhase < 0 || jitterPhase > ShaderAbi.PATH_JITTER_PHASE_MASK) {
             throw new IllegalArgumentException("Jitter phase does not fit in 13 bits");

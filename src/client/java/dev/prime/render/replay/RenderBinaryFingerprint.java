@@ -56,11 +56,21 @@ public record RenderBinaryFingerprint(
             "/prime/starmap/starmap_2020_8k_3.rgba16f.gz");
     private static final List<String> EXECUTION_CLASS_RESOURCES = List.of(
             "/dev/prime/render/VulkanRenderer.class",
-            "/dev/prime/render/VulkanRenderer$1.class",
             "/dev/prime/render/VulkanRenderer$BlockAtlasFrame.class",
-            "/dev/prime/render/vulkan/RayTracingPipeline.class",
-            "/dev/prime/render/vulkan/RayTracingPipeline$DescriptorBindings.class",
-            "/dev/prime/render/vulkan/RayTracingPipeline$TracePipeline.class",
+            "/dev/prime/render/RealtimeRenderer.class",
+            "/dev/prime/render/RealtimeRenderer$1.class",
+            "/dev/prime/render/RealtimeRenderer$RenderInput.class",
+            "/dev/prime/render/RealtimeFrameInput.class",
+            "/dev/prime/render/RealtimeFramePlan.class",
+            "/dev/prime/render/RealtimeRenderSettings.class",
+            "/dev/prime/render/vulkan/RealtimeRayTracingPipeline.class",
+            "/dev/prime/render/vulkan/RealtimeRayTracingPipeline$OutputBindings.class",
+            "/dev/prime/render/vulkan/RealtimeFrameExecutor.class",
+            "/dev/prime/render/vulkan/SunShadowPipeline.class",
+            "/dev/prime/render/vulkan/TraceBackend.class",
+            "/dev/prime/render/vulkan/TraceBackend$SceneBindings.class",
+            "/dev/prime/render/vulkan/TraceBackend$SceneTexture.class",
+            "/dev/prime/render/vulkan/TraceProgram.class",
             "/dev/prime/render/vulkan/RayTracingPushConstants.class",
             "/dev/prime/render/vulkan/nrd/NrdDenoiser.class",
             "/dev/prime/render/vulkan/nrd/NrdDenoiser$CompositePipeline.class",
@@ -110,10 +120,10 @@ public record RenderBinaryFingerprint(
         ArrayList<String> names = new ArrayList<>(COMMON_RESOURCES);
         String suffix = ser ? "_ser.rgen.spv" : ".rgen.spv";
         for (String stage : List.of(
-                "wavefront_head",
-                "wavefront_step",
-                "wavefront_tail",
-                "wavefront_resolve")) {
+                "realtime_wavefront_head",
+                "realtime_wavefront_step",
+                "realtime_wavefront_tail",
+                "realtime_wavefront_resolve")) {
             names.add("/prime/shaders/" + stage + suffix);
         }
         names.sort(String::compareTo);

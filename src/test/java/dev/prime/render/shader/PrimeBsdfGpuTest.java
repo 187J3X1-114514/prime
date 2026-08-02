@@ -19,7 +19,7 @@ final class PrimeBsdfGpuTest {
     private static final int INPUT_WORDS = 7;
     private static final int WITNESS_WORDS = 12;
     private static final int CASES_PER_KIND = 16_384;
-    private static final int KIND_COUNT = 4;
+    private static final int KIND_COUNT = 5;
     private static final int CASE_COUNT = CASES_PER_KIND * KIND_COUNT;
 
     private static final float[] COSINES = {
@@ -170,7 +170,7 @@ final class PrimeBsdfGpuTest {
         if ((localCase & 1) != 0) flags |= PrimitivePacking.FLAG_LABPBR_NORMAL;
         if ((localCase & 2) != 0) flags |= PrimitivePacking.FLAG_LABPBR_SPECULAR;
         if ((localCase & 4) != 0) flags |= PrimitivePacking.FLAG_TANGENT_NEGATIVE;
-        if (kind == 1 || kind == 3) {
+        if (kind == 1 || kind == 3 || kind == 4) {
             flags |= PrimitivePacking.FLAG_TRANSMISSIVE;
             if ((localCase & 8) != 0) flags |= PrimitivePacking.FLAG_WATER;
             if ((localCase & 16) != 0) {

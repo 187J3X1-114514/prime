@@ -336,7 +336,7 @@ public final class AtmospherePipeline implements Destroyable {
 
     public long prepare(
             VkCommandBuffer commandBuffer,
-            RayTracingPipeline pipeline,
+            SunShadowPipeline pipeline,
             IntegratorFrameInput input,
             TerrainScene.ResidentSceneView scene,
             boolean forceCompleteSunShadow) {

@@ -46,8 +46,8 @@ public final class VulkanImageTransitions {
 
     public static void prepareSceneTexturesForTrace(
             VkCommandBuffer commandBuffer,
-            List<RayTracingPipeline.SceneTexture> textures) {
-        for (RayTracingPipeline.SceneTexture texture : textures) {
+            List<TraceBackend.SceneTexture> textures) {
+        for (TraceBackend.SceneTexture texture : textures) {
             imageBarrier(
                     commandBuffer,
                     texture.image(),
@@ -62,8 +62,8 @@ public final class VulkanImageTransitions {
 
     public static void finishSceneTextureReads(
             VkCommandBuffer commandBuffer,
-            List<RayTracingPipeline.SceneTexture> textures) {
-        for (RayTracingPipeline.SceneTexture texture : textures) {
+            List<TraceBackend.SceneTexture> textures) {
+        for (TraceBackend.SceneTexture texture : textures) {
             imageBarrier(
                     commandBuffer,
                     texture.image(),
@@ -128,7 +128,7 @@ public final class VulkanImageTransitions {
                 VK12.VK_ACCESS_SHADER_READ_BIT | VK12.VK_ACCESS_SHADER_WRITE_BIT);
     }
 
-    public static void prepareScreenshotDisplay(
+    public static void prepareOfflineDisplay(
             VkCommandBuffer commandBuffer, VulkanImage accumulation) {
         imageBarrier(
                 commandBuffer,

@@ -59,6 +59,7 @@ PrimeRcVolumeStack primeOfflineInitialVolumeStack() {
 PrimeOfflinePathRecord primeMakeOfflineRecord(
         PathState path,
         PrimeRcVolumeStack volumeStack,
+        float etaScale,
         vec3 radiance,
         float primaryDistance,
         vec3 primaryAlbedo,
@@ -66,7 +67,8 @@ PrimeOfflinePathRecord primeMakeOfflineRecord(
         PrimeOfflineAreaRequest request,
         bool enabled) {
     PrimeOfflinePathRecord record;
-    record.transport = primeMakeOfflineTransport(path, volumeStack, enabled);
+    record.transport = primeMakeOfflineTransport(
+            path, volumeStack, etaScale, enabled);
     record.radianceAndPrimaryDistance = vec4(radiance, primaryDistance);
     record.primaryAlbedoAndMaterialFlags = vec4(
             primaryAlbedo, uintBitsToFloat(primaryMaterialFlags));
@@ -82,6 +84,7 @@ void primeWavefrontHead() {
     uint pathIndex = primeOfflineIndex(pixel);
     vec2 cameraSample = primeOfflineCameraSample();
     PathState path = primeCameraPath(pixel, 0u, cameraSample);
+    float etaScale = 1.0;
     PrimeRcVolumeStack volumeStack = primeOfflineInitialVolumeStack();
     vec3 radiance = vec3(0.0);
     float primaryDistance = -1.0;
@@ -96,6 +99,7 @@ void primeWavefrontHead() {
                 primePush.cameraPosition, path.rayDirection);
         continuation = primeIntegrateOfflineSurface(
                 path,
+                etaScale,
                 primeOfflineIntegrator(),
                 volumeStack,
                 radiance,
@@ -110,6 +114,7 @@ void primeWavefrontHead() {
     primeOfflinePaths.records[pathIndex] = primeMakeOfflineRecord(
             path,
             volumeStack,
+            etaScale,
             radiance,
             primaryDistance,
             primaryAlbedo,
@@ -135,6 +140,7 @@ void primeWavefrontStep(uint sourceQueue) {
     PrimeOfflinePathRecord record = primeOfflinePaths.records[pathIndex];
     uvec2 pixel = primeOfflinePixel(pathIndex);
     PathState path = primeOfflinePath(pixel, record.transport);
+    float etaScale = primeOfflineEtaScale(record.transport);
     PrimeRcVolumeStack volumeStack = primeOfflineVolumeStack(record.transport);
     vec3 radiance = record.radianceAndPrimaryDistance.xyz;
     float primaryDistance = record.radianceAndPrimaryDistance.w;
@@ -144,6 +150,7 @@ void primeWavefrontStep(uint sourceQueue) {
     PrimeOfflineAreaRequest request;
     bool continuation = primeIntegrateOfflineSurface(
             path,
+            etaScale,
             primeOfflineIntegrator(),
             volumeStack,
             radiance,
@@ -157,6 +164,7 @@ void primeWavefrontStep(uint sourceQueue) {
     primeOfflinePaths.records[pathIndex] = primeMakeOfflineRecord(
             path,
             volumeStack,
+            etaScale,
             radiance,
             primaryDistance,
             primaryAlbedo,
@@ -196,6 +204,7 @@ void primeWavefrontTail(uint sourceQueue) {
     PrimeOfflinePathRecord record = primeOfflinePaths.records[pathIndex];
     uvec2 pixel = primeOfflinePixel(pathIndex);
     PathState path = primeOfflinePath(pixel, record.transport);
+    float etaScale = primeOfflineEtaScale(record.transport);
     PrimeRcVolumeStack volumeStack = primeOfflineVolumeStack(record.transport);
     vec3 radiance = record.radianceAndPrimaryDistance.xyz;
     float primaryDistance = record.radianceAndPrimaryDistance.w;
@@ -210,6 +219,7 @@ void primeWavefrontTail(uint sourceQueue) {
                 path.traceOrigin, path.rayDirection);
         if (!primeIntegrateOfflineSurface(
                 path,
+                etaScale,
                 primeOfflineIntegrator(),
                 volumeStack,
                 radiance,
@@ -225,6 +235,7 @@ void primeWavefrontTail(uint sourceQueue) {
     primeOfflinePaths.records[pathIndex] = primeMakeOfflineRecord(
             path,
             volumeStack,
+            etaScale,
             radiance,
             primaryDistance,
             primaryAlbedo,

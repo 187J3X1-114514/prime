@@ -33,11 +33,18 @@ final class AtmosphereScaleGpuTest {
             return;
         }
 
+        float altitude = 10.0F;
+        float horizonRadius = 6_360.0F + altitude - 0.01F;
+        float tangent = (float) -Math.sqrt(
+                1.0 - 6_360.0F * 6_360.0F
+                        / (horizonRadius * horizonRadius));
         float[][] cases = {
             {0.0F, 0.0F, 1.0F, 1.0F},
             {0.5F, 1.0F, 0.2F, 16.0F},
             {1.5F, 0.0F, 0.0F, 64.0F},
             {10.0F, 1.0F, -0.2F, 256.0F},
+            {altitude, 0.0F, tangent + 1.0e-4F, 256.0F},
+            {altitude, 1.0F, tangent - 1.0e-4F, 256.0F},
             {50.0F, 0.0F, 0.7F, 1_024.0F},
             {99.0F, 1.0F, -0.7F, 2_048.0F}
         };

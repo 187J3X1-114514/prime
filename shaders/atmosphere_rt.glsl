@@ -17,6 +17,11 @@ vec3 primeAtmosphereSky(vec3 direction, vec3 sunDirection) {
     return max(primeSampleSkyView(uv).rgb, vec3(0.0));
 }
 
+bool primeAtmosphereDistantDirectionVisible(vec3 direction) {
+    return atmDistantDirectionVisible(
+            primePush.atmosphereEyeRadiusKm, direction);
+}
+
 vec3 primeAtmosphereDistantTransmittance(
         vec3 surfacePosition,
         vec3 direction) {
@@ -32,10 +37,7 @@ vec3 primeAtmosphereDistantTransmittance(
     // sample independently. Testing at surface radius makes lower terrain enter the planet shadow
     // while an elevated camera still sees the sun, producing a hard altitude boundary where only
     // direct light vanishes. Surface radius remains correct for the transmittance lookup below.
-    vec3 horizonPosition = vec3(0.0, primePush.atmosphereEyeRadiusKm, 0.0);
-    if (atmRaySegment(horizonPosition
-            - vec3(0.0, ATM_PLANET_RADIUS_OFFSET_KM, 0.0),
-            direction).hitsGround) {
+    if (!primeAtmosphereDistantDirectionVisible(direction)) {
         return vec3(0.0);
     }
     float normalizedAltitude = (radius - ATM_BOTTOM_RADIUS_KM) / ATM_THICKNESS_KM;

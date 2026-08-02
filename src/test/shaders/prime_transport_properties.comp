@@ -128,6 +128,50 @@ void primeCheckRoulette(
     result.second = vec4(throughput, sampleValue);
 }
 
+void primeCheckOfflineRoulette(
+        inout PrimeTransportResult result,
+        vec3 throughput,
+        float etaScale,
+        float relativeEta) {
+    float transmittedScale = primeOfflineEtaScaleAfterScatter(
+            etaScale, relativeEta, true);
+    float reflectedScale = primeOfflineEtaScaleAfterScatter(
+            etaScale, relativeEta, false);
+    float restoredScale = primeOfflineEtaScaleAfterScatter(
+            transmittedScale, 1.0 / relativeEta, true);
+    float metric = primeOfflineRussianRouletteMetric(
+            throughput, etaScale);
+    float survival = primeOfflineRussianRouletteSurvival(
+            throughput, etaScale);
+    float expectedMetric = max(
+            throughput.r, max(throughput.g, throughput.b)) * etaScale;
+    float expectedSurvival = min(sqrt(max(expectedMetric, 0.0)), 1.0);
+    primeTransportClassify(result.mask, vec3(
+            transmittedScale, restoredScale, survival));
+    if (survival < 0.0 || survival > 1.0
+            || transmittedScale < 0.0 || restoredScale < 0.0) {
+        result.mask |= PRIME_TEST_FAILURE_RANGE;
+    }
+    if (!primeTestClose(reflectedScale, etaScale, 0.0, 0.0)
+            || !primeTestClose(restoredScale, etaScale, 2.0e-6, 2.0e-6)
+            || !primeTestClose(metric, expectedMetric, 0.0, 0.0)
+            || !primeTestClose(survival, expectedSurvival, 0.0, 0.0)) {
+        result.mask |= PRIME_TEST_FAILURE_IDENTITY;
+    }
+    if (survival > 0.0) {
+        vec3 reweighted = primeRussianRouletteReweight(
+                throughput, survival);
+        primeTransportClassify(result.mask, reweighted);
+        if (!primeTestClose(
+                throughput, reweighted * survival, 1.0e-7, 2.0e-6)) {
+            result.mask |= PRIME_TEST_FAILURE_IDENTITY;
+        }
+    }
+    result.first = vec4(transmittedScale, restoredScale, metric, survival);
+    result.second = vec4(throughput, etaScale);
+    result.third = vec4(relativeEta, expectedMetric, expectedSurvival, 0.0);
+}
+
 void primeCheckAreaPdf(
         inout PrimeTransportResult result,
         float areaPdf,
@@ -362,6 +406,9 @@ void main() {
                 (caseIndex & 2u) != 0u,
                 first.x,
                 first.y);
+    } else if (kind == 10u) {
+        primeCheckOfflineRoulette(
+                result, first.xyz, first.w, second.x);
     } else {
         result.mask |= PRIME_TEST_FAILURE_EVENT;
     }

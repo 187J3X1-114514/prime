@@ -84,6 +84,9 @@ vec3 primeEstimateOfflineSun(
                     preparedSample,
                     PRIME_SAMPLE_EFFECT_DIRECT_SUN,
                     PRIME_SAMPLE_DIMENSION_PRIMARY));
+    if (!primeAtmosphereDistantDirectionVisible(light.direction)) {
+        return vec3(0.0);
+    }
     vec3 shadingNormal = primeSurfaceShadingNormal(surface, viewDirection);
     if (!primeDirectSampleEligible(surface, shadingNormal, light)) {
         return vec3(0.0);
@@ -221,8 +224,55 @@ PrimePathScatter primeSampleOfflinePathSurface(
     return result;
 }
 
+bool primeAdvanceOfflinePath(
+        inout PathState path,
+        inout float etaScale,
+        SurfaceInteraction surface,
+        BsdfSample bsdf,
+        PrimePreparedSampleBase bounceSample) {
+    primeSetNumericalContext(PRIME_NUMERICAL_STAGE_PATH_ADVANCE, path.bounce);
+    vec3 nextThroughput = primeProductOver(path.throughput, bsdf.response, bsdf.pdf);
+    primeRecordNonnegative(nextThroughput);
+    if (all(equal(nextThroughput, vec3(0.0)))) {
+        return false;
+    }
+    path.throughput = nextThroughput;
+    etaScale = primeOfflineEtaScaleAfterScatter(
+            etaScale,
+            bsdf.relativeEta,
+            (bsdf.eventFlags & PRIME_BSDF_EVENT_TRANSMISSION) != 0u);
+    primeRecordNonnegative(etaScale);
+    path.physicalOrigin = surface.position;
+    path.traceOrigin = primeOffsetRayOrigin(
+            path.physicalOrigin, surface.geometricNormal, bsdf.direction);
+    path.rayDirection = bsdf.direction;
+    path.previousBsdfPdf = bsdf.pdf;
+    path.flags = (bsdf.eventFlags & PRIME_BSDF_EVENT_DELTA) != 0u
+            ? PRIME_PATH_PREVIOUS_DELTA
+            : 0u;
+
+    uint rrDepth = path.rrDepth++;
+    if (rrDepth < PRIME_RUSSIAN_ROULETTE_START) {
+        return true;
+    }
+    float survival = primeOfflineRussianRouletteSurvival(
+            path.throughput, etaScale);
+    primeRecordUnit(survival);
+    float rouletteSample = primeHashSample1D(
+            bounceSample,
+            PRIME_SAMPLE_EFFECT_RUSSIAN_ROULETTE,
+            PRIME_SAMPLE_DIMENSION_PRIMARY);
+    if (rouletteSample >= survival) {
+        return false;
+    }
+    path.throughput = primeRussianRouletteReweight(path.throughput, survival);
+    primeRecordNonnegative(path.throughput);
+    return true;
+}
+
 bool primeIntegrateOfflineSurface(
         inout PathState path,
+        inout float etaScale,
         IntegratorRecord integrator,
         inout PrimeRcVolumeStack volumeStack,
         inout vec3 radiance,
@@ -316,12 +366,8 @@ bool primeIntegrateOfflineSurface(
         path.flags = usedAreaNee ? PRIME_OFFLINE_PATH_PREVIOUS_AREA_NEE : 0u;
         return false;
     }
-    if (!primeAdvancePath(
-            path,
-            surface,
-            bsdf,
-            preparedSample,
-            primeOfflineSkipsRussianRoulette(bsdf))) {
+    if (!primeAdvanceOfflinePath(
+            path, etaScale, surface, bsdf, preparedSample)) {
         path.flags = usedAreaNee ? PRIME_OFFLINE_PATH_PREVIOUS_AREA_NEE : 0u;
         return false;
     }

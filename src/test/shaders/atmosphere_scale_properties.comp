@@ -86,6 +86,19 @@ void main() {
             6460.0);
     float geometryError = abs(topDistance - referenceTopDistance)
             / max(abs(referenceTopDistance), 1.0e-5);
+    float horizonRadius = ATM_BOTTOM_RADIUS_KM + altitude
+            - ATM_PLANET_RADIUS_OFFSET_KM;
+    float horizonDiscriminant = horizonRadius * horizonRadius * mu * mu
+            - (horizonRadius * horizonRadius
+                    - ATM_BOTTOM_RADIUS_KM * ATM_BOTTOM_RADIUS_KM);
+    bool expectedDistantVisible = !(mu < 0.0 && horizonDiscriminant >= 0.0);
+    float horizonError = altitude > ATM_PLANET_RADIUS_OFFSET_KM
+            && atmDistantDirectionVisible(
+                            ATM_BOTTOM_RADIUS_KM + altitude, direction)
+                    != expectedDistantVisible
+            ? 1.0
+            : 0.0;
+    geometryError = max(geometryError, horizonError);
     float modelError = max(
             relativeError(
                     actual.aerosolScattering,

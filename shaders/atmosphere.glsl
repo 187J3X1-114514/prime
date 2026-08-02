@@ -68,6 +68,12 @@ AtmRaySegment atmRaySegment(vec3 origin, vec3 direction) {
     return segment;
 }
 
+bool atmDistantDirectionVisible(float eyeRadiusKm, vec3 direction) {
+    vec3 horizonPosition = vec3(
+            0.0, eyeRadiusKm - ATM_PLANET_RADIUS_OFFSET_KM, 0.0);
+    return !atmRaySegment(horizonPosition, direction).hitsGround;
+}
+
 vec3 atmMoveToTop(vec3 position, vec3 direction) {
     float radius = length(position);
     if (radius <= ATM_TOP_RADIUS_KM) {

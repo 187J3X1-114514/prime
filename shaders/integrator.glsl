@@ -455,6 +455,9 @@ PrimePrimarySunSample primeEstimatePrimaryDirectSun(
     result.penumbra = 0.0;
     result.visibility = 0.0;
     LightSample light = primeSampleSun(integrator, surface.position, sampleValue);
+    if (!primeAtmosphereDistantDirectionVisible(light.direction)) {
+        return result;
+    }
     vec3 shadingNormal = primeSurfaceShadingNormal(surface, viewDirection);
     if (!primeDirectSampleEligible(surface, shadingNormal, light)) {
         return result;
@@ -521,6 +524,9 @@ vec3 primeEstimateDirectSun(
         vec2 sampleValue,
         PrimeRcVolumeStack volumeStack) {
     LightSample light = primeSampleSun(integrator, surface.position, sampleValue);
+    if (!primeAtmosphereDistantDirectionVisible(light.direction)) {
+        return vec3(0.0);
+    }
     vec3 shadingNormal = primeSurfaceShadingNormal(surface, viewDirection);
     if (!primeDirectSampleEligible(surface, shadingNormal, light)) {
         return vec3(0.0);

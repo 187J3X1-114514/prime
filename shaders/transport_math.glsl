@@ -89,6 +89,20 @@ float primeRussianRouletteSurvival(vec3 throughput) {
     return clamp(max(throughput.r, max(throughput.g, throughput.b)), 0.05, 0.95);
 }
 
+float primeOfflineEtaScaleAfterScatter(
+        float etaScale, float relativeEta, bool transmission) {
+    return transmission ? etaScale * relativeEta * relativeEta : etaScale;
+}
+
+float primeOfflineRussianRouletteMetric(vec3 throughput, float etaScale) {
+    return max(throughput.r, max(throughput.g, throughput.b)) * etaScale;
+}
+
+float primeOfflineRussianRouletteSurvival(vec3 throughput, float etaScale) {
+    return min(sqrt(max(
+            primeOfflineRussianRouletteMetric(throughput, etaScale), 0.0)), 1.0);
+}
+
 vec3 primeRussianRouletteReweight(vec3 throughput, float survival) {
     return throughput / survival;
 }

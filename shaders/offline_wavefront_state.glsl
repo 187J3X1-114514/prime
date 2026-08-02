@@ -131,6 +131,7 @@ uint primePackOfflinePathControl(PathState path) {
 PrimeOfflineTransportRecord primeMakeOfflineTransport(
         PathState path,
         PrimeRcVolumeStack volumeStack,
+        float etaScale,
         bool enabled) {
     PrimeOfflineTransportRecord record;
     record.physicalOriginAndPreviousBsdfPdf =
@@ -141,7 +142,7 @@ PrimeOfflineTransportRecord primeMakeOfflineTransport(
     control |= min(volumeStack.count, 2u) << PRIME_OFFLINE_CONTROL_MEDIUM_SHIFT;
     record.rayDirectionAndControl =
             vec4(path.rayDirection, uintBitsToFloat(control));
-    record.throughput = vec4(path.throughput, 0.0);
+    record.throughput = vec4(path.throughput, etaScale);
     record.medium0 = primePackWavefrontMedium(volumeStack.values[0]);
     record.medium1 = primePackWavefrontMedium(volumeStack.values[1]);
     return record;
@@ -166,6 +167,10 @@ PathState primeOfflinePath(uvec2 pixel, PrimeOfflineTransportRecord record) {
     path.sampleIndex = primeSampleIndex();
     path.sampleEpoch = primeSampleEpoch();
     return path;
+}
+
+float primeOfflineEtaScale(PrimeOfflineTransportRecord record) {
+    return record.throughput.w;
 }
 
 PrimeRcVolumeStack primeOfflineVolumeStack(PrimeOfflineTransportRecord record) {

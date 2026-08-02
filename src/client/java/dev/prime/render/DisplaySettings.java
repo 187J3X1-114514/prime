@@ -11,7 +11,7 @@ public final class DisplaySettings {
     public static final int STEPS_PER_UNIT = 32;
     public static final int MINIMUM_OVEREXPOSURE_STEPS = STEPS_PER_UNIT;
     public static final int MAXIMUM_OVEREXPOSURE_STEPS = 2 * STEPS_PER_UNIT;
-    public static final int DEFAULT_OVEREXPOSURE_STEPS = 35;
+    public static final int DEFAULT_OVEREXPOSURE_STEPS = 32;
 
     private DisplaySettings() {
     }

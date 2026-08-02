@@ -4,9 +4,9 @@ package dev.prime.render.terrain;
 public final class VoxelSurfaceSettings {
     public static final int STEPS_PER_UNIT = 100;
     public static final int MINIMUM_STEPS = 0;
-    public static final int MAXIMUM_STEPS = 400;
+    public static final int MAXIMUM_STEPS = 200;
     public static final int DEFAULT_STEPS = 100;
-    public static final float BASE_HEIGHT = 1.0F / 32.0F;
+    public static final float BASE_HEIGHT = 1.0F / 16.0F;
 
     private VoxelSurfaceSettings() {
     }

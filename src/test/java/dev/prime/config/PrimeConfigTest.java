@@ -125,14 +125,14 @@ final class PrimeConfigTest {
     void persistedVoxelSurfaceStrengthAcceptsExactPercentSteps() {
         assertEquals(0, PrimeConfig.parseVoxelSurfaceStrengthSteps("0"));
         assertEquals(100, PrimeConfig.parseVoxelSurfaceStrengthSteps("1"));
-        assertEquals(400, PrimeConfig.parseVoxelSurfaceStrengthSteps("4"));
+        assertEquals(200, PrimeConfig.parseVoxelSurfaceStrengthSteps("2"));
         assertEquals("1", PrimeConfig.formatVoxelSurfaceStrength(100));
         assertThrows(
                 IllegalArgumentException.class,
                 () -> PrimeConfig.parseVoxelSurfaceStrengthSteps("1.005"));
         assertThrows(
                 IllegalArgumentException.class,
-                () -> PrimeConfig.parseVoxelSurfaceStrengthSteps("4.01"));
+                () -> PrimeConfig.parseVoxelSurfaceStrengthSteps("2.01"));
     }
 
     @Test
@@ -175,6 +175,7 @@ final class PrimeConfigTest {
         assertTrue(serialized.contains("astronomy.solar_longitude_degrees=0\n"));
         assertTrue(serialized.contains("lighting.star_ev=0\n"));
         assertTrue(serialized.contains("display.final_exposure_ev=0\n"));
+        assertTrue(serialized.contains("display.oklab_overexposure=1\n"));
 
         Properties properties = new Properties();
         assertFalse(PrimeConfig.hasLegacyDebugProperties(properties));

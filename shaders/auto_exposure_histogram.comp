@@ -25,15 +25,15 @@ layout(push_constant) uniform PrimeAutoExposureHistogramPushConstants {
 shared uint primeWorkgroupBins[256];
 shared uint primeWorkgroupValidCount;
 
-uint primeAutoExposureBin(float luminance) {
-    float logLuminance = clamp(
-            log2(max(luminance, exp2(PRIME_AUTO_EXPOSURE_MIN_LOG_LUMINANCE))),
-            PRIME_AUTO_EXPOSURE_MIN_LOG_LUMINANCE,
-            PRIME_AUTO_EXPOSURE_MAX_LOG_LUMINANCE);
+uint primeAutoExposureBin(float brightness) {
+    float logBrightness = clamp(
+            log2(max(brightness, exp2(PRIME_AUTO_EXPOSURE_MIN_LOG_BRIGHTNESS))),
+            PRIME_AUTO_EXPOSURE_MIN_LOG_BRIGHTNESS,
+            PRIME_AUTO_EXPOSURE_MAX_LOG_BRIGHTNESS);
     return min(
             uint(floor(
-                    (logLuminance - PRIME_AUTO_EXPOSURE_MIN_LOG_LUMINANCE)
-                            * (256.0 / PRIME_AUTO_EXPOSURE_LOG_LUMINANCE_RANGE))),
+                    (logBrightness - PRIME_AUTO_EXPOSURE_MIN_LOG_BRIGHTNESS)
+                            * (256.0 / PRIME_AUTO_EXPOSURE_LOG_BRIGHTNESS_RANGE))),
             255u);
 }
 
@@ -56,9 +56,9 @@ void main() {
             if (any(isnan(radiance)) || any(isinf(radiance))) {
                 continue;
             }
-            float luminance;
+            float brightness;
             if (primeAutoExposureHistogramPush.accumulatedMetering != 0u) {
-                luminance =
+                brightness =
                         texelFetch(primeAutoExposureInput, ivec2(pixel), 0).a;
             } else {
                 ivec2 guideExtent = imageSize(primeAutoExposureAlbedo);
@@ -83,17 +83,17 @@ void main() {
                 float confidence = primeAutoExposureMaterialConfidence(
                         materialClass,
                         material.a);
-                luminance = primeAutoExposureMeteredLuminance(
+                brightness = primeAutoExposureMeteredBrightness(
                         radiance,
                         material.rgb,
                         confidence);
             }
-            if (isnan(luminance) || isinf(luminance)) {
+            if (isnan(brightness) || isinf(brightness)) {
                 continue;
             }
             atomicAdd(
                     primeWorkgroupBins[
-                            primeAutoExposureBin(luminance)],
+                            primeAutoExposureBin(brightness)],
                     1u);
             atomicAdd(primeWorkgroupValidCount, 1u);
         }

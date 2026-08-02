@@ -1,13 +1,17 @@
 #ifndef PRIME_AUTO_EXPOSURE_GLSL
 #define PRIME_AUTO_EXPOSURE_GLSL
 
-const float PRIME_AUTO_EXPOSURE_MIN_LOG_LUMINANCE = -16.0;
-const float PRIME_AUTO_EXPOSURE_MAX_LOG_LUMINANCE = 20.0;
-const float PRIME_AUTO_EXPOSURE_LOG_LUMINANCE_RANGE =
-        PRIME_AUTO_EXPOSURE_MAX_LOG_LUMINANCE - PRIME_AUTO_EXPOSURE_MIN_LOG_LUMINANCE;
+#include "prime_color_contract.glsl"
+#include "color_space.glsl"
+#include "oklab.glsl"
+
+const float PRIME_AUTO_EXPOSURE_MIN_LOG_BRIGHTNESS = -16.0;
+const float PRIME_AUTO_EXPOSURE_MAX_LOG_BRIGHTNESS = 20.0;
+const float PRIME_AUTO_EXPOSURE_LOG_BRIGHTNESS_RANGE =
+        PRIME_AUTO_EXPOSURE_MAX_LOG_BRIGHTNESS - PRIME_AUTO_EXPOSURE_MIN_LOG_BRIGHTNESS;
 const float PRIME_AUTO_EXPOSURE_KEY = 0.16;
-const float PRIME_AUTO_EXPOSURE_BASELINE_EV = 0.5;
-const float PRIME_AUTO_EXPOSURE_MIN_EV = -4.0;
+const float PRIME_AUTO_EXPOSURE_BASELINE_EV = 0.0;
+const float PRIME_AUTO_EXPOSURE_MIN_EV = 0.0;
 const float PRIME_AUTO_EXPOSURE_MAX_EV = 4.0;
 const float PRIME_AUTO_EXPOSURE_LN_10 = 2.302585092994046;
 const float PRIME_AUTO_EXPOSURE_DARKEN_T90 = 0.5;
@@ -20,8 +24,12 @@ const float PRIME_AUTO_EXPOSURE_SCENE_KEY_MIN_RANGE_EV = 2.0;
 const uint PRIME_AUTO_EXPOSURE_MATERIAL_DIELECTRIC = 0u;
 const uint PRIME_AUTO_EXPOSURE_MATERIAL_FOLIAGE = 3u;
 
-float primeAutoExposureLuminance(vec3 radiance) {
-    return dot(max(radiance, vec3(0.0)), vec3(0.2627, 0.6780, 0.0593));
+float primeAutoExposureBrightness(vec3 radiance) {
+    vec3 linearBt709 = max(
+            primeLinearRec2020ToLinearBt709(max(radiance, vec3(0.0))),
+            vec3(0.0));
+    float lightness = primeLinearBt709ToOklab(linearBt709).x;
+    return lightness * lightness * lightness;
 }
 
 float primeAutoExposureMaterialConfidence(
@@ -33,58 +41,58 @@ float primeAutoExposureMaterialConfidence(
 }
 
 float primeAutoExposureAlbedoScale(vec3 albedo, float confidence) {
-    float albedoLuminance =
-            primeAutoExposureLuminance(clamp(albedo, vec3(0.0), vec3(1.0)));
+    float albedoBrightness =
+            primeAutoExposureBrightness(clamp(albedo, vec3(0.0), vec3(1.0)));
     float fullScale = PRIME_AUTO_EXPOSURE_REFERENCE_ALBEDO
-            / max(albedoLuminance, PRIME_AUTO_EXPOSURE_MIN_ALBEDO);
+            / max(albedoBrightness, PRIME_AUTO_EXPOSURE_MIN_ALBEDO);
     float blendedScale = mix(
             1.0, fullScale, PRIME_AUTO_EXPOSURE_ALBEDO_BLEND);
     return mix(1.0, blendedScale, clamp(confidence, 0.0, 1.0));
 }
 
-float primeAutoExposureMeteredLuminance(
+float primeAutoExposureMeteredBrightness(
         vec3 radiance,
         vec3 albedo,
         float confidence) {
-    return primeAutoExposureLuminance(radiance)
+    return primeAutoExposureBrightness(radiance)
             * primeAutoExposureAlbedoScale(albedo, confidence);
 }
 
-float primeAutoExposureBinLogLuminance(uint bin) {
-    return PRIME_AUTO_EXPOSURE_MIN_LOG_LUMINANCE
+float primeAutoExposureBinLogBrightness(uint bin) {
+    return PRIME_AUTO_EXPOSURE_MIN_LOG_BRIGHTNESS
             + (float(bin) + 0.5)
-                    * (PRIME_AUTO_EXPOSURE_LOG_LUMINANCE_RANGE / 256.0);
+                    * (PRIME_AUTO_EXPOSURE_LOG_BRIGHTNESS_RANGE / 256.0);
 }
 
 float primeAutoExposureSceneKeyBiasEv(
-        float measuredLogLuminance,
-        float minimumLogLuminance,
-        float maximumLogLuminance) {
-    float range = maximumLogLuminance - minimumLogLuminance;
+        float measuredLogBrightness,
+        float minimumLogBrightness,
+        float maximumLogBrightness) {
+    float range = maximumLogBrightness - minimumLogBrightness;
     if (range <= 0.0) {
         return 0.0;
     }
     // Reinhard 2002 automatic key: alpha = key * 4^q, or 2q in EV.
     // A range floor removes its singular sensitivity on nearly uniform images.
     float q = (
-            2.0 * measuredLogLuminance
-                    - minimumLogLuminance
-                    - maximumLogLuminance)
+            2.0 * measuredLogBrightness
+                    - minimumLogBrightness
+                    - maximumLogBrightness)
             / max(range, PRIME_AUTO_EXPOSURE_SCENE_KEY_MIN_RANGE_EV);
     return 2.0 * q;
 }
 
 float primeAutoExposureTargetEv(
-        float measuredLogLuminance,
-        float minimumLogLuminance,
-        float maximumLogLuminance) {
+        float measuredLogBrightness,
+        float minimumLogBrightness,
+        float maximumLogBrightness) {
     return clamp(
             log2(PRIME_AUTO_EXPOSURE_KEY) + PRIME_AUTO_EXPOSURE_BASELINE_EV
-                    - measuredLogLuminance
+                    - measuredLogBrightness
                     + primeAutoExposureSceneKeyBiasEv(
-                            measuredLogLuminance,
-                            minimumLogLuminance,
-                            maximumLogLuminance),
+                            measuredLogBrightness,
+                            minimumLogBrightness,
+                            maximumLogBrightness),
             PRIME_AUTO_EXPOSURE_MIN_EV,
             PRIME_AUTO_EXPOSURE_MAX_EV);
 }

@@ -84,11 +84,11 @@ public abstract class VideoSettingsScreenMixin {
                             button -> this.prime$restoreDefaults())
                     .build());
             list.addBig(this.prime$pathTracingEnabled);
-            list.addBig(this.prime$voxelTextureSurfaces);
-            list.addBig(this.prime$voxelTextureSurfaceStrength);
+            list.addSmall(
+                    this.prime$voxelTextureSurfaces,
+                    this.prime$voxelTextureSurfaceStrength);
             list.addBig(this.prime$screenshotMode);
-            list.addBig(this.prime$postProcessingMode);
-            list.addBig(this.prime$qualityMode);
+            list.addSmall(this.prime$postProcessingMode, this.prime$qualityMode);
             list.addSmall(this.prime$latitude, this.prime$season);
             list.addBig(this.prime$sunExposure);
             list.addBig(this.prime$starExposure);

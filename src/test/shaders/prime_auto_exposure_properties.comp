@@ -29,10 +29,10 @@ void main() {
                         / max(range, 2.0)
                 : 0.0;
         expected.x = clamp(
-                log2(0.16) + 0.5 - values.x + keyBiasEv,
-                -4.0,
+                log2(0.16) - values.x + keyBiasEv,
+                0.0,
                 4.0);
-        if (actual.x < -4.0 || actual.x > 4.0) {
+        if (actual.x < 0.0 || actual.x > 4.0) {
             mask |= PRIME_TEST_FAILURE_RANGE;
         }
         if (!primeTestClose(actual.x, expected.x, 1.0e-6, 1.0e-6)) {
@@ -80,6 +80,17 @@ void main() {
             mask |= PRIME_TEST_FAILURE_RANGE;
         }
         if (!primeTestClose(actual.x, expected.x, 1.0e-6, 1.0e-6)) {
+            mask |= PRIME_TEST_FAILURE_IDENTITY;
+        }
+    } else if (kind == 5u) {
+        float exposure = exp2(values.w);
+        actual.x = primeAutoExposureBrightness(values.xyz);
+        actual.y = primeAutoExposureBrightness(values.xyz * exposure);
+        expected.x = actual.x * exposure;
+        if (actual.x < 0.0 || actual.y < 0.0) {
+            mask |= PRIME_TEST_FAILURE_RANGE;
+        }
+        if (!primeTestClose(actual.y, expected.x, 2.0e-5, 2.0e-6)) {
             mask |= PRIME_TEST_FAILURE_IDENTITY;
         }
     } else {

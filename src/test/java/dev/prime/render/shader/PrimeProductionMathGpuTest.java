@@ -56,15 +56,15 @@ final class PrimeProductionMathGpuTest {
 
     @Test
     void integratorAndLightTransportMathKeepsItsNumericalContracts() throws IOException {
-        int kinds = 8;
-        int inputWords = 3;
+        int kinds = 9;
+        int inputWords = 6;
         ShaderPropertyBatch.assertProperties(
                 runner,
                 shader("prime_transport_properties.comp.spv"),
                 transportCases(kinds, inputWords),
                 CASES_PER_KIND * kinds,
                 inputWords,
-                7,
+                10,
                 TRANSPORT_SEED);
     }
 
@@ -339,6 +339,8 @@ final class PrimeProductionMathGpuTest {
                             random.nextFloat(),
                             random.nextFloat(),
                             random.nextFloat() * 1.98F - 0.99F);
+                } else if (kind == 8) {
+                    putLightBranchCase(input, index, words, local, random);
                 } else {
                     putVec4(
                             input,
@@ -353,6 +355,87 @@ final class PrimeProductionMathGpuTest {
             }
         }
         return input;
+    }
+
+    private static void putLightBranchCase(
+            ByteBuffer input,
+            int index,
+            int words,
+            int local,
+            SplittableRandom random) {
+        float firstPower = positiveFloat(random, -20, 20);
+        float secondPower = positiveFloat(random, -20, 20);
+        float firstSoftening = positiveFloat(random, -20, 6);
+        float secondSoftening = positiveFloat(random, -20, 6);
+        float firstX = random.nextFloat() * 128.0F - 64.0F;
+        float firstY = random.nextFloat() * 128.0F - 64.0F;
+        float firstZ = random.nextFloat() * 128.0F - 64.0F;
+        float secondX = random.nextFloat() * 128.0F - 64.0F;
+        float secondY = random.nextFloat() * 128.0F - 64.0F;
+        float secondZ = random.nextFloat() * 128.0F - 64.0F;
+        float firstExtent = random.nextFloat() * 32.0F;
+        float secondExtent = random.nextFloat() * 32.0F;
+        float pointX = random.nextFloat() * 256.0F - 128.0F;
+        float pointY = random.nextFloat() * 256.0F - 128.0F;
+        float pointZ = random.nextFloat() * 256.0F - 128.0F;
+        if (local == 0) {
+            firstPower = 0.0F;
+            secondPower = 0.0F;
+            firstSoftening = 0.0F;
+            secondSoftening = 0.0F;
+        } else if (local == 1) {
+            firstPower = 0.0F;
+        } else if (local == 2) {
+            secondPower = 0.0F;
+        } else if (local == 3) {
+            firstX = secondX = pointX = 0.0F;
+            firstY = secondY = pointY = 0.0F;
+            firstZ = secondZ = pointZ = 0.0F;
+            firstExtent = secondExtent = 1.0F;
+            firstSoftening = secondSoftening = 0.0F;
+            firstPower = secondPower = 1.0F;
+        } else if (local == 4) {
+            firstPower = Float.MAX_VALUE;
+            secondPower = Float.MIN_NORMAL;
+            pointX = pointY = pointZ = 65_536.0F;
+        }
+        putVec4(
+                input,
+                index,
+                words,
+                1,
+                firstX,
+                firstY,
+                firstZ,
+                firstPower);
+        putVec4(
+                input,
+                index,
+                words,
+                2,
+                firstX + firstExtent,
+                firstY + firstExtent,
+                firstZ + firstExtent,
+                firstSoftening);
+        putVec4(
+                input,
+                index,
+                words,
+                3,
+                secondX,
+                secondY,
+                secondZ,
+                secondPower);
+        putVec4(
+                input,
+                index,
+                words,
+                4,
+                secondX + secondExtent,
+                secondY + secondExtent,
+                secondZ + secondExtent,
+                secondSoftening);
+        putVec4(input, index, words, 5, pointX, pointY, pointZ, 0.0F);
     }
 
     private static ByteBuffer celestialCases(int kinds, int words) {

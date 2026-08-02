@@ -6,9 +6,10 @@
 #include "transparent_material.glsl"
 #include "robocute_bsdf_common.glsl"
 #include "wavefront_medium.glsl"
+#include "light_tree_math.glsl"
 
-const uint PRIME_TRANSPORT_INPUT_WORDS = 3u;
-const uint PRIME_TRANSPORT_WITNESS_WORDS = 7u;
+const uint PRIME_TRANSPORT_INPUT_WORDS = 6u;
+const uint PRIME_TRANSPORT_WITNESS_WORDS = 10u;
 
 struct PrimeTransportResult {
     uint mask;
@@ -232,6 +233,71 @@ void primeCheckWavefrontMedium(
     result.third = vec4(restored.albedo, restored.anisotropy);
 }
 
+float primeLegacyLightBranchProbability(
+        vec4 firstBoundsMinPower,
+        vec4 firstBoundsMaxSoftening,
+        vec4 secondBoundsMinPower,
+        vec4 secondBoundsMaxSoftening,
+        vec3 point) {
+    vec3 firstClosest = clamp(
+            point, firstBoundsMinPower.xyz, firstBoundsMaxSoftening.xyz);
+    vec3 firstDelta = point - firstClosest;
+    float firstDistanceSquared =
+            dot(firstDelta, firstDelta) + firstBoundsMaxSoftening.w;
+    vec3 secondClosest = clamp(
+            point, secondBoundsMinPower.xyz, secondBoundsMaxSoftening.xyz);
+    vec3 secondDelta = point - secondClosest;
+    float secondDistanceSquared =
+            dot(secondDelta, secondDelta) + secondBoundsMaxSoftening.w;
+    float firstPower = max(firstBoundsMinPower.w, 0.0);
+    float secondPower = max(secondBoundsMinPower.w, 0.0);
+    float powerScale = max(firstPower, secondPower);
+    if (powerScale == 0.0) return -1.0;
+    float firstPowerRatio = firstPower / powerScale;
+    float secondPowerRatio = secondPower / powerScale;
+    float distanceScale = max(firstDistanceSquared, secondDistanceSquared);
+    if (distanceScale == 0.0) {
+        return firstPowerRatio / (firstPowerRatio + secondPowerRatio);
+    }
+    float firstScore = firstPowerRatio * (secondDistanceSquared / distanceScale);
+    float secondScore = secondPowerRatio * (firstDistanceSquared / distanceScale);
+    float sum = firstScore + secondScore;
+    return sum > 0.0 ? firstScore / sum : -1.0;
+}
+
+void primeCheckLightBranch(
+        inout PrimeTransportResult result,
+        vec4 firstBoundsMinPower,
+        vec4 firstBoundsMaxSoftening,
+        vec4 secondBoundsMinPower,
+        vec4 secondBoundsMaxSoftening,
+        vec3 point) {
+    vec2 firstMetrics = primeLightNodeMetrics(
+            firstBoundsMinPower, firstBoundsMaxSoftening, point);
+    vec2 secondMetrics = primeLightNodeMetrics(
+            secondBoundsMinPower, secondBoundsMaxSoftening, point);
+    float probability = primeLightBranchProbability(firstMetrics, secondMetrics);
+    float legacy = primeLegacyLightBranchProbability(
+            firstBoundsMinPower,
+            firstBoundsMaxSoftening,
+            secondBoundsMinPower,
+            secondBoundsMaxSoftening,
+            point);
+    float reverse = primeLightBranchProbability(secondMetrics, firstMetrics);
+    primeTransportClassify(result.mask, vec3(probability, legacy, reverse));
+    if (floatBitsToUint(probability) != floatBitsToUint(legacy)
+            || probability < -1.0
+            || probability > 1.0 + 2.0e-6
+            || (probability >= 0.0 && reverse >= 0.0
+                    && !primeTestClose(
+                            probability + reverse, 1.0, 2.0e-7, 2.0e-6))) {
+        result.mask |= PRIME_TEST_FAILURE_IDENTITY;
+    }
+    result.first = vec4(firstMetrics, secondMetrics);
+    result.second = vec4(probability, legacy, reverse, 0.0);
+    result.third = vec4(point, 0.0);
+}
+
 void main() {
     uint caseIndex;
     if (!primeTestBegin(caseIndex)) return;
@@ -239,6 +305,9 @@ void main() {
     uvec4 control = primeTestInput.words[inputOffset];
     vec4 first = uintBitsToFloat(primeTestInput.words[inputOffset + 1u]);
     vec4 second = uintBitsToFloat(primeTestInput.words[inputOffset + 2u]);
+    vec4 third = uintBitsToFloat(primeTestInput.words[inputOffset + 3u]);
+    vec4 fourth = uintBitsToFloat(primeTestInput.words[inputOffset + 4u]);
+    vec4 fifth = uintBitsToFloat(primeTestInput.words[inputOffset + 5u]);
 
     PrimeTransportResult result;
     result.mask = 0u;
@@ -262,6 +331,8 @@ void main() {
         primeCheckShadowWaterDistance(result, first, second);
     } else if (kind == 7u) {
         primeCheckWavefrontMedium(result, first, second);
+    } else if (kind == 8u) {
+        primeCheckLightBranch(result, first, second, third, fourth, fifth.xyz);
     } else {
         result.mask |= PRIME_TEST_FAILURE_EVENT;
     }
@@ -273,8 +344,11 @@ void main() {
         primeTestOutput.words[outputOffset + 1u] = control;
         primeTestOutput.words[outputOffset + 2u] = floatBitsToUint(first);
         primeTestOutput.words[outputOffset + 3u] = floatBitsToUint(second);
-        primeTestOutput.words[outputOffset + 4u] = floatBitsToUint(result.first);
-        primeTestOutput.words[outputOffset + 5u] = floatBitsToUint(result.second);
-        primeTestOutput.words[outputOffset + 6u] = floatBitsToUint(result.third);
+        primeTestOutput.words[outputOffset + 4u] = floatBitsToUint(third);
+        primeTestOutput.words[outputOffset + 5u] = floatBitsToUint(fourth);
+        primeTestOutput.words[outputOffset + 6u] = floatBitsToUint(fifth);
+        primeTestOutput.words[outputOffset + 7u] = floatBitsToUint(result.first);
+        primeTestOutput.words[outputOffset + 8u] = floatBitsToUint(result.second);
+        primeTestOutput.words[outputOffset + 9u] = floatBitsToUint(result.third);
     }
 }

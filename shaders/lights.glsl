@@ -2,6 +2,7 @@
 #define PRIME_LIGHTS_GLSL
 
 #include "material.glsl"
+#include "light_tree_math.glsl"
 
 struct LightSample {
     vec3 direction;
@@ -160,31 +161,11 @@ AreaLightSample primeInvalidAreaLightSample() {
     return result;
 }
 
-float primeLightNodeDistanceSquared(LightNode node, vec3 point) {
-    vec3 closest = clamp(point, node.boundsMinPower.xyz, node.boundsMaxSoftening.xyz);
-    vec3 delta = point - closest;
-    return dot(delta, delta) + node.boundsMaxSoftening.w;
-}
-
-float primeLightBranchProbability(LightNode first, LightNode second, vec3 point) {
-    float firstDistanceSquared = primeLightNodeDistanceSquared(first, point);
-    float secondDistanceSquared = primeLightNodeDistanceSquared(second, point);
-    // This is normalized power/distance^2 with the common division removed. Forward and reverse
-    // traversal both read these exact f32 node records, which is required for valid MIS.
-    float firstPower = max(first.boundsMinPower.w, 0.0);
-    float secondPower = max(second.boundsMinPower.w, 0.0);
-    float powerScale = max(firstPower, secondPower);
-    if (powerScale == 0.0) return -1.0;
-    float firstPowerRatio = firstPower / powerScale;
-    float secondPowerRatio = secondPower / powerScale;
-    float distanceScale = max(firstDistanceSquared, secondDistanceSquared);
-    if (distanceScale == 0.0) {
-        return firstPowerRatio / (firstPowerRatio + secondPowerRatio);
-    }
-    float firstScore = firstPowerRatio * (secondDistanceSquared / distanceScale);
-    float secondScore = secondPowerRatio * (firstDistanceSquared / distanceScale);
-    float sum = firstScore + secondScore;
-    return sum > 0.0 ? firstScore / sum : -1.0;
+vec2 primeLoadLightNodeMetrics(LightNodeBuffer nodes, uint index, vec3 point) {
+    // Returning two scalars keeps a complete 32-byte node out of the traversal loop state.
+    vec4 boundsMinPower = nodes.nodes[index].boundsMinPower;
+    vec4 boundsMaxSoftening = nodes.nodes[index].boundsMaxSoftening;
+    return primeLightNodeMetrics(boundsMinPower, boundsMaxSoftening, point);
 }
 
 LightTreePick primePickLightTree(
@@ -197,7 +178,7 @@ LightTreePick primePickLightTree(
     // the reverse-only stream, so ordinary light sampling cannot pull reverse-MIS metadata into
     // its cache working set.
     uint nodeIndex = root;
-    LightNode node = nodes.nodes[root];
+    float nodePower = nodes.nodes[root].boundsMinPower.w;
     float lowerBound = 0.0;
     float pdf = 1.0;
     // This bound is a traversal safety limit, not an invitation to duplicate 64 levels of the
@@ -205,7 +186,7 @@ LightTreePick primePickLightTree(
     // pipeline compilation without changing traversal order.
     [[dont_unroll]]
     for (uint depth = 0u; depth < PRIME_LIGHT_TREE_MAX_DEPTH; ++depth) {
-        if (!(node.boundsMinPower.w > 0.0)) {
+        if (!(nodePower > 0.0)) {
             return primeInvalidLightTreePick();
         }
         uint childOrLeaf = forwardNodes.nodes[nodeIndex].childOrLeaf;
@@ -219,9 +200,9 @@ LightTreePick primePickLightTree(
         // CPU linearization guarantees that these mandatory sibling records are consecutive.
         uint leftIndex = childOrLeaf;
         uint rightIndex = leftIndex + 1u;
-        LightNode left = nodes.nodes[leftIndex];
-        LightNode right = nodes.nodes[rightIndex];
-        float leftProbability = primeLightBranchProbability(left, right, point);
+        vec2 leftMetrics = primeLoadLightNodeMetrics(nodes, leftIndex, point);
+        vec2 rightMetrics = primeLoadLightNodeMetrics(nodes, rightIndex, point);
+        float leftProbability = primeLightBranchProbability(leftMetrics, rightMetrics);
         if (!(leftProbability >= 0.0)) {
             return primeInvalidLightTreePick();
         }
@@ -230,19 +211,14 @@ LightTreePick primePickLightTree(
         // traversal as repeatedly remapping value to [0, 1), but replaces one division per tree
         // level with a multiply-add. pdf is also the current interval width.
         float split = lowerBound + pdf * leftProbability;
-        if (seed < split || rightProbability <= 0.0) {
-            if (leftProbability <= 0.0) {
-                return primeInvalidLightTreePick();
-            }
-            pdf *= leftProbability;
-            node = left;
-            nodeIndex = leftIndex;
-        } else {
-            pdf *= rightProbability;
-            lowerBound = split;
-            node = right;
-            nodeIndex = rightIndex;
+        bool selectLeft = seed < split || rightProbability <= 0.0;
+        if (selectLeft && leftProbability <= 0.0) {
+            return primeInvalidLightTreePick();
         }
+        pdf *= selectLeft ? leftProbability : rightProbability;
+        lowerBound = selectLeft ? lowerBound : split;
+        nodePower = selectLeft ? leftMetrics.y : rightMetrics.y;
+        nodeIndex = selectLeft ? leftIndex : rightIndex;
     }
     return primeInvalidLightTreePick();
 }
@@ -262,8 +238,8 @@ float primeLightTreeSelectionPdf(
     float pdf = 1.0;
     [[dont_unroll]]
     for (uint depth = 0u; depth < PRIME_LIGHT_TREE_MAX_DEPTH; ++depth) {
-        LightNode node = nodes.nodes[nodeIndex];
-        if (!(node.boundsMinPower.w > 0.0)) {
+        vec2 nodeMetrics = primeLoadLightNodeMetrics(nodes, nodeIndex, point);
+        if (!(nodeMetrics.y > 0.0)) {
             return 0.0;
         }
         if (depth == 0u) {
@@ -283,8 +259,8 @@ float primeLightTreeSelectionPdf(
         // Root is node zero. Every other node was allocated as one member of an odd/even sibling
         // pair, making the exact sibling index implicit and removing it from the reverse stream.
         uint siblingIndex = (nodeIndex & 1u) != 0u ? nodeIndex + 1u : nodeIndex - 1u;
-        LightNode sibling = nodes.nodes[siblingIndex];
-        float branchProbability = primeLightBranchProbability(node, sibling, point);
+        vec2 siblingMetrics = primeLoadLightNodeMetrics(nodes, siblingIndex, point);
+        float branchProbability = primeLightBranchProbability(nodeMetrics, siblingMetrics);
         if (!(branchProbability >= 0.0)) {
             return 0.0;
         }
@@ -336,18 +312,21 @@ uint primeLightCellIndex(vec2 parentBarycentric) {
     return rowBase + 2u * coordinate.x + (upper ? 1u : 0u);
 }
 
-vec2 primeEmitterUv(LightEmitter emitter, vec2 parentBarycentric) {
-    vec2 uv0 = primeUnpackHalf2(emitter.uvsTint.x);
-    vec2 uv1 = primeUnpackHalf2(emitter.uvsTint.y);
-    vec2 uv2 = primeUnpackHalf2(emitter.uvsTint.z);
+vec2 primeEmitterUv(uvec3 packedUvs, vec2 parentBarycentric) {
+    vec2 uv0 = primeUnpackHalf2(packedUvs.x);
+    vec2 uv1 = primeUnpackHalf2(packedUvs.y);
+    vec2 uv2 = primeUnpackHalf2(packedUvs.z);
     return uv0 * (1.0 - parentBarycentric.x - parentBarycentric.y)
             + uv1 * parentBarycentric.x
             + uv2 * parentBarycentric.y;
 }
 
-float primeEmitterCosine(LightEmitter emitter, vec3 directionFromSurfaceToLight) {
-    float cosine = dot(emitter.normalPadding.xyz, -directionFromSurfaceToLight);
-    return (emitter.metadata.z & PRIME_EMITTER_TWO_SIDED) != 0u
+float primeEmitterCosine(
+        vec3 emitterNormal,
+        uint emitterFlags,
+        vec3 directionFromSurfaceToLight) {
+    float cosine = dot(emitterNormal, -directionFromSurfaceToLight);
+    return (emitterFlags & PRIME_EMITTER_TWO_SIDED) != 0u
             ? abs(cosine)
             : max(cosine, 0.0);
 }
@@ -372,47 +351,53 @@ AreaLightSample primeSampleAreaLight(
         vec3 treeSample,
         vec2 positionSample) {
     SectionTable sections = SectionTable(primePush.sectionTableAddress);
-    SectionRecord firstSection = sections.sections[0];
-    if (firstSection.worldLightAddress == uint64_t(0)
-            || firstSection.worldLightForwardAddress == uint64_t(0)
-            || firstSection.worldLightNodeCount == 0u) {
+    uint64_t worldNodeAddress = sections.sections[0].worldLightAddress;
+    uint64_t worldForwardAddress = sections.sections[0].worldLightForwardAddress;
+    uint worldNodeCount = sections.sections[0].worldLightNodeCount;
+    if (worldNodeAddress == uint64_t(0)
+            || worldForwardAddress == uint64_t(0)
+            || worldNodeCount == 0u) {
         return primeInvalidAreaLightSample();
     }
-    LightNodeBuffer worldNodes = LightNodeBuffer(firstSection.worldLightAddress);
-    LightNodeForwardBuffer worldForwardNodes = LightNodeForwardBuffer(
-            firstSection.worldLightForwardAddress);
+    LightNodeBuffer worldNodes = LightNodeBuffer(worldNodeAddress);
+    LightNodeForwardBuffer worldForwardNodes = LightNodeForwardBuffer(worldForwardAddress);
     LightTreePick worldPick = primePickLightTree(
             worldNodes, worldForwardNodes, 0u, surfacePosition, treeSample.x);
     if (worldPick.valid == 0u) {
         return primeInvalidAreaLightSample();
     }
-    SectionRecord section = sections.sections[worldPick.leaf];
-    if (section.lightAddress == uint64_t(0)) {
+    uint64_t sectionLightAddress = sections.sections[worldPick.leaf].lightAddress;
+    if (sectionLightAddress == uint64_t(0)) {
         return primeInvalidAreaLightSample();
     }
-    SectionLightHeaderBuffer sectionBuffer = SectionLightHeaderBuffer(section.lightAddress);
-    SectionLightHeader header = sectionBuffer.header;
-    LightNodeBuffer sectionNodes = LightNodeBuffer(header.nodeAddress);
-    LightNodeForwardBuffer sectionForwardNodes = LightNodeForwardBuffer(header.forwardAddress);
-    vec3 localSurfacePosition = surfacePosition - section.translation;
+    SectionLightHeaderBuffer sectionBuffer = SectionLightHeaderBuffer(sectionLightAddress);
+    uint64_t sectionNodeAddress = sectionBuffer.header.nodeAddress;
+    uint64_t sectionForwardAddress = sectionBuffer.header.forwardAddress;
+    uint sectionRoot = sectionBuffer.header.root;
+    uint emitterCount = sectionBuffer.header.emitterCount;
+    LightNodeBuffer sectionNodes = LightNodeBuffer(sectionNodeAddress);
+    LightNodeForwardBuffer sectionForwardNodes = LightNodeForwardBuffer(sectionForwardAddress);
+    vec3 sectionTranslation = sections.sections[worldPick.leaf].translation;
+    vec3 localSurfacePosition = surfacePosition - sectionTranslation;
     LightTreePick sectionPick = primePickLightTree(
-            sectionNodes, sectionForwardNodes, header.root, localSurfacePosition, treeSample.y);
-    if (sectionPick.valid == 0u || sectionPick.leaf >= header.emitterCount) {
+            sectionNodes, sectionForwardNodes, sectionRoot, localSurfacePosition, treeSample.y);
+    if (sectionPick.valid == 0u || sectionPick.leaf >= emitterCount) {
         return primeInvalidAreaLightSample();
     }
 
-    LightEmitterBuffer emitters = LightEmitterBuffer(header.emitterAddress);
-    LightCellBuffer cells = LightCellBuffer(header.cellAddress);
-    LightEmitter emitter = emitters.emitters[sectionPick.leaf];
+    LightEmitterBuffer emitters = LightEmitterBuffer(sectionBuffer.header.emitterAddress);
+    LightCellBuffer cells = LightCellBuffer(sectionBuffer.header.cellAddress);
+    uint emitterCellBase = emitters.emitters[sectionPick.leaf].metadata.x;
     float aliasValue = treeSample.z * float(PRIME_LIGHT_CELL_COUNT);
     // Sobol conversion is strictly below one, so aliasValue is strictly below CELL_COUNT.
     uint column = uint(aliasValue);
-    LightCell aliasCell = cells.cells[emitter.metadata.x + column];
+    LightCell aliasCell = cells.cells[emitterCellBase + column];
     uint cellIndex = aliasValue - float(column) < aliasCell.aliasProbability
             ? column
             : aliasCell.aliasGeometry & 0xffu;
-    LightCell selectedCell = cells.cells[emitter.metadata.x + cellIndex];
-    if (!(selectedCell.probabilityMass > 0.0) || !(emitter.cornerArea.w > 0.0)) {
+    LightCell selectedCell = cells.cells[emitterCellBase + cellIndex];
+    vec4 emitterCornerArea = emitters.emitters[sectionPick.leaf].cornerArea;
+    if (!(selectedCell.probabilityMass > 0.0) || !(emitterCornerArea.w > 0.0)) {
         return primeInvalidAreaLightSample();
     }
 
@@ -428,10 +413,15 @@ AreaLightSample primeSampleAreaLight(
     vec2 parentBarycentric = cellFirst * cellBarycentric.x
             + cellSecond * cellBarycentric.y
             + cellThird * cellBarycentric.z;
-    vec3 localLightPosition = emitter.cornerArea.xyz
-            + emitter.edgeOneScale.xyz * parentBarycentric.x
-            + emitter.edgeTwoPower.xyz * parentBarycentric.y;
-    vec3 lightPosition = localLightPosition + section.translation;
+    vec3 localLightPosition;
+    {
+        vec3 edgeOne = emitters.emitters[sectionPick.leaf].edgeOneScale.xyz;
+        vec3 edgeTwo = emitters.emitters[sectionPick.leaf].edgeTwoPower.xyz;
+        localLightPosition = emitterCornerArea.xyz
+                + edgeOne * parentBarycentric.x
+                + edgeTwo * parentBarycentric.y;
+    }
+    vec3 lightPosition = localLightPosition + sectionTranslation;
     vec3 toLight = lightPosition - surfacePosition;
     float distanceSquared = dot(toLight, toLight);
     if (!(distanceSquared > 0.0)) {
@@ -439,11 +429,14 @@ AreaLightSample primeSampleAreaLight(
     }
     float distance = sqrt(distanceSquared);
     vec3 direction = toLight / distance;
-    float lightCosine = primeEmitterCosine(emitter, direction);
+    float lightCosine = primeEmitterCosine(
+            emitters.emitters[sectionPick.leaf].normalPadding.xyz,
+            emitters.emitters[sectionPick.leaf].metadata.z,
+            direction);
     if (!(lightCosine > 0.0)) {
         return primeInvalidAreaLightSample();
     }
-    float cellArea = emitter.cornerArea.w / float(PRIME_LIGHT_CELL_COUNT);
+    float cellArea = emitterCornerArea.w / float(PRIME_LIGHT_CELL_COUNT);
     float areaPdf = worldPick.pdf * sectionPick.pdf
             * selectedCell.probabilityMass / cellArea;
     float pdf = primeAreaSolidAnglePdf(
@@ -460,7 +453,9 @@ AreaLightSample primeSampleAreaLight(
     result.light.isDelta = 0u;
     result.sectionIndex = worldPick.leaf;
     result.emitterIndex = sectionPick.leaf;
-    result.uv = primeEmitterUv(emitter, parentBarycentric);
+    result.uv = primeEmitterUv(
+            emitters.emitters[sectionPick.leaf].uvsTint.xyz,
+            parentBarycentric);
     return result;
 }
 
@@ -470,18 +465,20 @@ vec3 primeResolveSampledAreaLightRadiance(AreaLightSample areaSample) {
         return vec3(0.0);
     }
     SectionTable sections = SectionTable(primePush.sectionTableAddress);
-    SectionRecord section = sections.sections[areaSample.sectionIndex];
-    if (section.lightAddress == uint64_t(0)) {
+    uint64_t sectionLightAddress = sections.sections[areaSample.sectionIndex].lightAddress;
+    if (sectionLightAddress == uint64_t(0)) {
         return vec3(0.0);
     }
-    SectionLightHeaderBuffer sectionBuffer = SectionLightHeaderBuffer(section.lightAddress);
-    SectionLightHeader header = sectionBuffer.header;
-    if (areaSample.emitterIndex >= header.emitterCount) {
+    SectionLightHeaderBuffer sectionBuffer = SectionLightHeaderBuffer(sectionLightAddress);
+    if (areaSample.emitterIndex >= sectionBuffer.header.emitterCount) {
         return vec3(0.0);
     }
-    LightEmitterBuffer emitters = LightEmitterBuffer(header.emitterAddress);
+    LightEmitterBuffer emitters = LightEmitterBuffer(sectionBuffer.header.emitterAddress);
     return primeEvaluateEmitterRadiance(
-            emitters.emitters[areaSample.emitterIndex], areaSample.uv);
+            emitters.emitters[areaSample.emitterIndex].uvsTint.w,
+            emitters.emitters[areaSample.emitterIndex].metadata.z,
+            emitters.emitters[areaSample.emitterIndex].edgeOneScale.w,
+            areaSample.uv);
 }
 
 LightEvaluation primeEvaluateAreaLight(
@@ -495,77 +492,99 @@ LightEvaluation primeEvaluateAreaLight(
         return result;
     }
     SectionTable sections = SectionTable(primePush.sectionTableAddress);
-    SectionRecord section = sections.sections[surface.sectionIndex];
-    if (section.lightAddress == uint64_t(0)
-            || section.worldLightAddress == uint64_t(0)
-            || section.worldLightForwardAddress == uint64_t(0)
-            || section.worldLightNodeCount == 0u
-            || section.worldLeafNode == PRIME_NO_LIGHT_INDEX) {
+    uint64_t sectionLightAddress = sections.sections[surface.sectionIndex].lightAddress;
+    uint64_t worldNodeAddress = sections.sections[surface.sectionIndex].worldLightAddress;
+    uint64_t worldForwardAddress =
+            sections.sections[surface.sectionIndex].worldLightForwardAddress;
+    uint worldNodeCount = sections.sections[surface.sectionIndex].worldLightNodeCount;
+    uint worldLeafNode = sections.sections[surface.sectionIndex].worldLeafNode;
+    if (sectionLightAddress == uint64_t(0)
+            || worldNodeAddress == uint64_t(0)
+            || worldForwardAddress == uint64_t(0)
+            || worldNodeCount == 0u
+            || worldLeafNode == PRIME_NO_LIGHT_INDEX) {
         return result;
     }
-    SectionLightHeaderBuffer sectionBuffer = SectionLightHeaderBuffer(section.lightAddress);
-    SectionLightHeader header = sectionBuffer.header;
-    if (surface.emitterIndex >= header.emitterCount) {
+    SectionLightHeaderBuffer sectionBuffer = SectionLightHeaderBuffer(sectionLightAddress);
+    if (surface.emitterIndex >= sectionBuffer.header.emitterCount) {
         return result;
     }
-    LightEmitterBuffer emitters = LightEmitterBuffer(header.emitterAddress);
-    LightCellBuffer cells = LightCellBuffer(header.cellAddress);
-    LightEmitter emitter = emitters.emitters[surface.emitterIndex];
-    float lightCosine = primeEmitterCosine(emitter, rayDirection);
-    if (!(lightCosine > 0.0) || !(emitter.cornerArea.w > 0.0)) {
+    LightEmitterBuffer emitters = LightEmitterBuffer(sectionBuffer.header.emitterAddress);
+    LightCellBuffer cells = LightCellBuffer(sectionBuffer.header.cellAddress);
+    vec4 emitterCornerArea = emitters.emitters[surface.emitterIndex].cornerArea;
+    float lightCosine = primeEmitterCosine(
+            emitters.emitters[surface.emitterIndex].normalPadding.xyz,
+            emitters.emitters[surface.emitterIndex].metadata.z,
+            rayDirection);
+    if (!(lightCosine > 0.0) || !(emitterCornerArea.w > 0.0)) {
         return result;
     }
 
-    vec3 localPosition = surface.position - section.translation;
-    vec3 relative = localPosition - emitter.cornerArea.xyz;
-    vec3 firstEdge = emitter.edgeOneScale.xyz;
-    vec3 secondEdge = emitter.edgeTwoPower.xyz;
+    vec3 sectionTranslation = sections.sections[surface.sectionIndex].translation;
+    vec3 localPosition = surface.position - sectionTranslation;
+    vec3 relative = localPosition - emitterCornerArea.xyz;
+    vec3 firstEdge = emitters.emitters[surface.emitterIndex].edgeOneScale.xyz;
+    vec3 secondEdge = emitters.emitters[surface.emitterIndex].edgeTwoPower.xyz;
     vec3 edgeCross = cross(firstEdge, secondEdge);
     float denominator = dot(edgeCross, edgeCross);
     vec2 parentBarycentric = vec2(
             dot(cross(relative, secondEdge), edgeCross) / denominator,
             dot(cross(firstEdge, relative), edgeCross) / denominator);
     uint cellIndex = primeLightCellIndex(parentBarycentric);
-    LightCell cell = cells.cells[emitter.metadata.x + cellIndex];
-    float cellArea = emitter.cornerArea.w / float(PRIME_LIGHT_CELL_COUNT);
-    if (!(cell.probabilityMass > 0.0) || !(cellArea > 0.0)) {
+    uint emitterCellBase = emitters.emitters[surface.emitterIndex].metadata.x;
+    float cellProbabilityMass = cells.cells[emitterCellBase + cellIndex].probabilityMass;
+    float cellArea = emitterCornerArea.w / float(PRIME_LIGHT_CELL_COUNT);
+    if (!(cellProbabilityMass > 0.0) || !(cellArea > 0.0)) {
         return result;
     }
 
-    LightNodeBuffer worldNodes = LightNodeBuffer(section.worldLightAddress);
-    LightNodeForwardBuffer worldForwardNodes = LightNodeForwardBuffer(
-            section.worldLightForwardAddress);
-    uint64_t worldReverseAddress = section.worldLightForwardAddress
-            + uint64_t(section.worldLightNodeCount) * uint64_t(PRIME_LIGHT_NODE_FORWARD_SIZE);
-    LightNodeReverseBuffer worldReverseNodes = LightNodeReverseBuffer(worldReverseAddress);
-    float worldPdf = primeLightTreeSelectionPdf(
-            worldNodes,
-            worldForwardNodes,
-            worldReverseNodes,
-            0u,
-            section.worldLeafNode,
-            surface.sectionIndex,
-            rayOrigin);
-    LightNodeBuffer sectionNodes = LightNodeBuffer(header.nodeAddress);
-    LightNodeForwardBuffer sectionForwardNodes = LightNodeForwardBuffer(header.forwardAddress);
-    LightNodeReverseBuffer sectionReverseNodes = LightNodeReverseBuffer(header.reverseAddress);
-    float sectionPdf = primeLightTreeSelectionPdf(
-            sectionNodes,
-            sectionForwardNodes,
-            sectionReverseNodes,
-            header.root,
-            emitter.metadata.y,
-            surface.emitterIndex,
-            rayOrigin - section.translation);
+    float worldPdf;
+    {
+        LightNodeBuffer worldNodes = LightNodeBuffer(worldNodeAddress);
+        LightNodeForwardBuffer worldForwardNodes =
+                LightNodeForwardBuffer(worldForwardAddress);
+        uint64_t worldReverseAddress = worldForwardAddress
+                + uint64_t(worldNodeCount) * uint64_t(PRIME_LIGHT_NODE_FORWARD_SIZE);
+        LightNodeReverseBuffer worldReverseNodes =
+                LightNodeReverseBuffer(worldReverseAddress);
+        worldPdf = primeLightTreeSelectionPdf(
+                worldNodes,
+                worldForwardNodes,
+                worldReverseNodes,
+                0u,
+                worldLeafNode,
+                surface.sectionIndex,
+                rayOrigin);
+    }
+    float sectionPdf;
+    {
+        LightNodeBuffer sectionNodes = LightNodeBuffer(sectionBuffer.header.nodeAddress);
+        LightNodeForwardBuffer sectionForwardNodes =
+                LightNodeForwardBuffer(sectionBuffer.header.forwardAddress);
+        LightNodeReverseBuffer sectionReverseNodes =
+                LightNodeReverseBuffer(sectionBuffer.header.reverseAddress);
+        sectionPdf = primeLightTreeSelectionPdf(
+                sectionNodes,
+                sectionForwardNodes,
+                sectionReverseNodes,
+                sectionBuffer.header.root,
+                emitters.emitters[surface.emitterIndex].metadata.y,
+                surface.emitterIndex,
+                rayOrigin - sectionTranslation);
+    }
     vec3 emitterRadiance = primeEvaluateEmitterRadiance(
-            emitter,
-            primeEmitterUv(emitter, parentBarycentric),
+            emitters.emitters[surface.emitterIndex].uvsTint.w,
+            emitters.emitters[surface.emitterIndex].metadata.z,
+            emitters.emitters[surface.emitterIndex].edgeOneScale.w,
+            primeEmitterUv(
+                    emitters.emitters[surface.emitterIndex].uvsTint.xyz,
+                    parentBarycentric),
             uintBitsToFloat(surface.textureLod));
     if (!(worldPdf > 0.0) || !(sectionPdf > 0.0)) {
         result.radiance = emitterRadiance;
         return result;
     }
-    float areaPdf = worldPdf * sectionPdf * cell.probabilityMass / cellArea;
+    float areaPdf = worldPdf * sectionPdf * cellProbabilityMass / cellArea;
     result.radiance = emitterRadiance;
     result.pdf = primeAreaSolidAnglePdf(
             rayOrigin, surface.position, lightCosine, areaPdf);

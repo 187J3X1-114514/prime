@@ -161,10 +161,15 @@ MaterialEvaluation primeEvaluateMaterial(
     return result;
 }
 
-vec3 primeEvaluateEmitterRadiance(LightEmitter emitter, vec2 uv, float textureLodValue) {
+vec3 primeEvaluateEmitterRadiance(
+        uint atlasTint,
+        uint emitterFlags,
+        float fallbackRadiance,
+        vec2 uv,
+        float textureLodValue) {
     float opacity;
-    vec3 color = primeAtlasBaseColor(emitter.uvsTint.w, uv, textureLodValue, opacity);
-    bool cutout = (emitter.metadata.z & PRIME_EMITTER_FLAG_TWO_SIDED) != 0u;
+    vec3 color = primeAtlasBaseColor(atlasTint, uv, textureLodValue, opacity);
+    bool cutout = (emitterFlags & PRIME_EMITTER_FLAG_TWO_SIDED) != 0u;
     if (cutout && opacity < PRIME_CUTOUT_ALPHA_THRESHOLD) {
         return vec3(0.0);
     }
@@ -175,23 +180,28 @@ vec3 primeEvaluateEmitterRadiance(LightEmitter emitter, vec2 uv, float textureLo
     // This global radiometric scale is uniform over every emitter. It therefore changes neither
     // light-tree selection probabilities nor their PDFs and does not require rebuilding the tree.
     float authoredEmission = 0.0;
-    if ((emitter.metadata.z & PRIME_EMITTER_FLAG_LABPBR_EMISSION) != 0u) {
+    if ((emitterFlags & PRIME_EMITTER_FLAG_LABPBR_EMISSION) != 0u) {
         authoredEmission = primeDecodeLabPbrEmission(
                 textureLod(primeLabPbrSpecularAtlas, uv, textureLodValue).a);
     }
     // LabPBR defines only a normalized emissiveness, not absolute radiometry. Prime maps 100%
     // to the same calibrated radiance as a white vanilla level-15 source. Once authored, this
     // channel replaces Minecraft's block-light value; alpha 0 can intentionally turn it off.
-    float radianceScale = (emitter.metadata.z & PRIME_EMITTER_FLAG_LABPBR_EMISSION) != 0u
+    float radianceScale = (emitterFlags & PRIME_EMITTER_FLAG_LABPBR_EMISSION) != 0u
             ? authoredEmission * PRIME_LEVEL_15_BLOCK_INTENSITY
-            : max(emitter.edgeOneScale.w, 0.0);
+            : max(fallbackRadiance, 0.0);
     return color * radianceScale * primeBlockLightRadianceMultiplier();
 }
 
-vec3 primeEvaluateEmitterRadiance(LightEmitter emitter, vec2 uv) {
+vec3 primeEvaluateEmitterRadiance(
+        uint atlasTint,
+        uint emitterFlags,
+        float fallbackRadiance,
+        vec2 uv) {
     // A sampled light point has no screen-space ray footprint. The distribution was constructed
     // from mip 0, so evaluating that same radiometric function preserves its PDF contract.
-    return primeEvaluateEmitterRadiance(emitter, uv, 0.0);
+    return primeEvaluateEmitterRadiance(
+            atlasTint, emitterFlags, fallbackRadiance, uv, 0.0);
 }
 
 float primeEvaluateOpacity(

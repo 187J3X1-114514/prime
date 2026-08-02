@@ -89,7 +89,7 @@ final class IntegratorSettingsTest {
     }
 
     @Test
-    void sampleControlPacksIndependentWavefrontCostFlags() {
+    void sampleControlPacksPrimaryReflectionCostFlag() {
         AstronomySettings astronomy = AstronomySettings.defaults();
         int baseline = IntegratorSettings.packSampleControl(
                 7, astronomy, WavefrontDebugMode.BASELINE);
@@ -97,25 +97,23 @@ final class IntegratorSettingsTest {
                 7,
                 astronomy,
                 WavefrontDebugMode.NO_PRIMARY_TRANSPARENT_REFLECTION);
-        int areaNee = IntegratorSettings.packSampleControl(
-                7, astronomy, WavefrontDebugMode.NO_SECONDARY_AREA_NEE);
-        int both = IntegratorSettings.packSampleControl(
-                7,
-                astronomy,
-                WavefrontDebugMode
-                        .NO_PRIMARY_TRANSPARENT_REFLECTION_OR_SECONDARY_AREA_NEE);
-        int debugMask = ShaderAbi.PATH_SUPPRESS_PRIMARY_TRANSPARENT_REFLECTION_MASK
-                | ShaderAbi.PATH_SUPPRESS_SECONDARY_AREA_NEE_MASK;
+        int debugMask = ShaderAbi.PATH_SUPPRESS_PRIMARY_TRANSPARENT_REFLECTION_MASK;
 
         assertEquals(0, baseline & debugMask);
         assertEquals(
                 ShaderAbi.PATH_SUPPRESS_PRIMARY_TRANSPARENT_REFLECTION_MASK,
                 reflection & debugMask);
+        assertEquals(baseline, reflection & ~debugMask);
         assertEquals(
-                ShaderAbi.PATH_SUPPRESS_SECONDARY_AREA_NEE_MASK,
-                areaNee & debugMask);
-        assertEquals(debugMask, both & debugMask);
-        assertEquals(baseline, both & ~debugMask);
+                WavefrontDebugMode.BASELINE,
+                WavefrontDebugMode.fromId("no_secondary_area_nee"));
+        assertEquals(
+                WavefrontDebugMode.NO_PRIMARY_TRANSPARENT_REFLECTION,
+                WavefrontDebugMode.fromId(
+                        "no_primary_transparent_reflection_or_secondary_area_nee"));
+        assertEquals(
+                WavefrontDebugMode.BASELINE,
+                WavefrontDebugMode.of(false, true));
     }
 
     @Test

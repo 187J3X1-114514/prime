@@ -29,10 +29,6 @@ bool primeSuppressesPrimaryTransparentReflection() {
             & PRIME_PATH_SUPPRESS_PRIMARY_TRANSPARENT_REFLECTION_MASK) != 0u;
 }
 
-bool primeSuppressesSecondaryAreaNee() {
-    return (primePush.path.x & PRIME_PATH_SUPPRESS_SECONDARY_AREA_NEE_MASK) != 0u;
-}
-
 float primeObserverLatitudeRadians() {
     uint encoded = (primePush.path.z >> PRIME_PATH_LATITUDE_SHIFT)
             & PRIME_PATH_LATITUDE_MASK;

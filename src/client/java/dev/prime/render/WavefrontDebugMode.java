@@ -2,24 +2,18 @@ package dev.prime.render;
 
 /** Session-only wavefront cost-isolation modes for profiler captures. */
 public enum WavefrontDebugMode {
-    BASELINE("baseline", false, false),
+    BASELINE("baseline", false),
     NO_PRIMARY_TRANSPARENT_REFLECTION(
-            "no_primary_transparent_reflection", true, false),
-    NO_SECONDARY_AREA_NEE("no_secondary_area_nee", false, true),
-    NO_PRIMARY_TRANSPARENT_REFLECTION_OR_SECONDARY_AREA_NEE(
-            "no_primary_transparent_reflection_or_secondary_area_nee", true, true);
+            "no_primary_transparent_reflection", true);
 
     private final String id;
     private final boolean suppressPrimaryTransparentReflection;
-    private final boolean suppressSecondaryAreaNee;
 
     WavefrontDebugMode(
             String id,
-            boolean suppressPrimaryTransparentReflection,
-            boolean suppressSecondaryAreaNee) {
+            boolean suppressPrimaryTransparentReflection) {
         this.id = id;
         this.suppressPrimaryTransparentReflection = suppressPrimaryTransparentReflection;
-        this.suppressSecondaryAreaNee = suppressSecondaryAreaNee;
     }
 
     public String id() {
@@ -30,11 +24,13 @@ public enum WavefrontDebugMode {
         return this.suppressPrimaryTransparentReflection;
     }
 
-    public boolean suppressSecondaryAreaNee() {
-        return this.suppressSecondaryAreaNee;
-    }
-
     public static WavefrontDebugMode fromId(String id) {
+        if ("no_secondary_area_nee".equals(id)) {
+            return BASELINE;
+        }
+        if ("no_primary_transparent_reflection_or_secondary_area_nee".equals(id)) {
+            return NO_PRIMARY_TRANSPARENT_REFLECTION;
+        }
         for (WavefrontDebugMode mode : values()) {
             if (mode.id.equals(id)) {
                 return mode;
@@ -45,12 +41,11 @@ public enum WavefrontDebugMode {
 
     public static WavefrontDebugMode of(
             boolean suppressPrimaryTransparentReflection,
-            boolean suppressSecondaryAreaNee) {
-        if (suppressPrimaryTransparentReflection) {
-            return suppressSecondaryAreaNee
-                    ? NO_PRIMARY_TRANSPARENT_REFLECTION_OR_SECONDARY_AREA_NEE
-                    : NO_PRIMARY_TRANSPARENT_REFLECTION;
-        }
-        return suppressSecondaryAreaNee ? NO_SECONDARY_AREA_NEE : BASELINE;
+            boolean ignoredSuppressSecondaryAreaNee) {
+        // The second flag is accepted only to normalize v3 replay files recorded before
+        // secondary block-light NEE became the fixed estimator policy.
+        return suppressPrimaryTransparentReflection
+                ? NO_PRIMARY_TRANSPARENT_REFLECTION
+                : BASELINE;
     }
 }

@@ -67,39 +67,33 @@ final class RayTracingPipelineContractTest {
         assertEquals(39, RayTracingPipeline.STORAGE_IMAGE_DESCRIPTOR_COUNT);
         assertEquals(2, RayTracingPipeline.MISS_GROUP_COUNT);
         assertEquals(6, RayTracingPipeline.HIT_GROUP_COUNT);
-        assertEquals(10, RayTracingPipeline.RAYGEN_GROUP_COUNT);
-        assertEquals(6, RayTracingPipeline.RAYGEN_MODULE_COUNT);
-        assertEquals(6, RayTracingPipeline.RAYGEN_SHADER_STAGE_COUNT);
+        assertEquals(8, RayTracingPipeline.RAYGEN_GROUP_COUNT);
+        assertEquals(5, RayTracingPipeline.RAYGEN_MODULE_COUNT);
+        assertEquals(5, RayTracingPipeline.RAYGEN_SHADER_STAGE_COUNT);
         assertEquals(6, RayTracingPipeline.FIXED_SHADER_MODULE_COUNT);
         assertEquals(2, RayTracingPipeline.ANY_HIT_SHADER_STAGE_COUNT);
         assertEquals(12, RayTracingPipeline.WAVEFRONT_STEP_DISPATCH_COUNT);
-        assertEquals(27, RayTracingPipeline.WAVEFRONT_DISPATCH_COUNT);
-        assertEquals(4, RayTracingPipeline.raygenShaderStage(0));
+        assertEquals(15, RayTracingPipeline.WAVEFRONT_DISPATCH_COUNT);
+        assertEquals(3, RayTracingPipeline.raygenShaderStage(0));
         assertEquals(0, RayTracingPipeline.raygenShaderStage(1));
         assertEquals(1, RayTracingPipeline.raygenShaderStage(2));
         assertEquals(1, RayTracingPipeline.raygenShaderStage(3));
         assertEquals(2, RayTracingPipeline.raygenShaderStage(4));
         assertEquals(2, RayTracingPipeline.raygenShaderStage(5));
         assertEquals(3, RayTracingPipeline.raygenShaderStage(6));
-        assertEquals(3, RayTracingPipeline.raygenShaderStage(7));
-        assertEquals(4, RayTracingPipeline.raygenShaderStage(8));
-        assertEquals(5, RayTracingPipeline.raygenShaderStage(9));
-        assertEquals(516, RayTracingPipeline.raygenRecordStage(0));
+        assertEquals(4, RayTracingPipeline.raygenShaderStage(7));
+        assertEquals(515, RayTracingPipeline.raygenRecordStage(0));
         assertEquals(0, RayTracingPipeline.raygenRecordStage(1));
         assertEquals(1, RayTracingPipeline.raygenRecordStage(2));
         assertEquals(257, RayTracingPipeline.raygenRecordStage(3));
         assertEquals(2, RayTracingPipeline.raygenRecordStage(4));
         assertEquals(258, RayTracingPipeline.raygenRecordStage(5));
         assertEquals(3, RayTracingPipeline.raygenRecordStage(6));
-        assertEquals(259, RayTracingPipeline.raygenRecordStage(7));
-        assertEquals(4, RayTracingPipeline.raygenRecordStage(8));
-        assertEquals(0, RayTracingPipeline.raygenRecordStage(9));
+        assertEquals(0, RayTracingPipeline.raygenRecordStage(7));
         assertEquals(2, RayTracingPipeline.wavefrontStepGroup(0));
         assertEquals(3, RayTracingPipeline.wavefrontStepGroup(1));
-        assertEquals(4, RayTracingPipeline.wavefrontAreaGroup(0));
-        assertEquals(5, RayTracingPipeline.wavefrontAreaGroup(1));
-        assertEquals(6, RayTracingPipeline.wavefrontTailGroup(0));
-        assertEquals(7, RayTracingPipeline.wavefrontTailGroup(1));
+        assertEquals(4, RayTracingPipeline.wavefrontTailGroup(0));
+        assertEquals(5, RayTracingPipeline.wavefrontTailGroup(1));
     }
 
     @Test
@@ -138,14 +132,6 @@ final class RayTracingPipelineContractTest {
             Set<String> payloads = payloadShapes(shader, SPIRV_STORAGE_RAY_PAYLOAD);
             assertTrue(payloads.contains(tracePayload), shader);
             assertTrue(payloads.contains(shadowPayload), shader);
-        }
-        for (String shader : List.of(
-                "wavefront_area.rgen.spv",
-                "wavefront_area_ser.rgen.spv")) {
-            assertEquals(
-                    Set.of(shadowPayload),
-                    payloadShapes(shader, SPIRV_STORAGE_RAY_PAYLOAD),
-                    shader);
         }
     }
 

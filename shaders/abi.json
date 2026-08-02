@@ -227,7 +227,6 @@
     "solarLongitudeShift": 16,
     "solarLongitudeMask": "0x1ff",
     "suppressPrimaryTransparentReflectionMask": "0x02000000",
-    "suppressSecondaryAreaNeeMask": "0x04000000",
     "sampleEpochMask": "0x7fffffff",
     "triangleDebugMask": "0x80000000",
     "maximumBouncesMask": "0xff",

@@ -238,7 +238,6 @@ abstract class GenerateShaderAbi extends DefaultTask {
 		}
 		if (!schema.pathControl.sampleEpochMask.toString().equalsIgnoreCase('0x7fffffff')
 				|| !schema.pathControl.suppressPrimaryTransparentReflectionMask.toString().equalsIgnoreCase('0x02000000')
-				|| !schema.pathControl.suppressSecondaryAreaNeeMask.toString().equalsIgnoreCase('0x04000000')
 				|| !schema.pathControl.triangleDebugMask.toString().equalsIgnoreCase('0x80000000')
 				|| !schema.pathControl.cameraInWaterMask.toString().equalsIgnoreCase('0x80000000')
 				|| !schema.pathControl.jitterPhaseMask.toString().equalsIgnoreCase('0x1fff')
@@ -422,7 +421,6 @@ public final class ShaderAbi {
     public static final int PATH_SOLAR_LONGITUDE_SHIFT = ${schema.pathControl.solarLongitudeShift};
     public static final int PATH_SOLAR_LONGITUDE_MASK = ${schema.pathControl.solarLongitudeMask};
     public static final int PATH_SUPPRESS_PRIMARY_TRANSPARENT_REFLECTION_MASK = ${schema.pathControl.suppressPrimaryTransparentReflectionMask};
-    public static final int PATH_SUPPRESS_SECONDARY_AREA_NEE_MASK = ${schema.pathControl.suppressSecondaryAreaNeeMask};
     public static final int PATH_SAMPLE_EPOCH_MASK = ${schema.pathControl.sampleEpochMask};
     public static final int PATH_TRIANGLE_DEBUG_MASK = ${schema.pathControl.triangleDebugMask};
     public static final int PATH_MAXIMUM_BOUNCES_MASK = ${schema.pathControl.maximumBouncesMask};
@@ -544,7 +542,6 @@ ${javaOffsets}
 #define PRIME_PATH_SOLAR_LONGITUDE_SHIFT ${schema.pathControl.solarLongitudeShift}u
 #define PRIME_PATH_SOLAR_LONGITUDE_MASK ${schema.pathControl.solarLongitudeMask}u
 #define PRIME_PATH_SUPPRESS_PRIMARY_TRANSPARENT_REFLECTION_MASK ${schema.pathControl.suppressPrimaryTransparentReflectionMask}u
-#define PRIME_PATH_SUPPRESS_SECONDARY_AREA_NEE_MASK ${schema.pathControl.suppressSecondaryAreaNeeMask}u
 #define PRIME_PATH_SAMPLE_EPOCH_MASK ${schema.pathControl.sampleEpochMask}u
 #define PRIME_PATH_TRIANGLE_DEBUG_MASK ${schema.pathControl.triangleDebugMask}u
 #define PRIME_PATH_MAXIMUM_BOUNCES_MASK ${schema.pathControl.maximumBouncesMask}u
@@ -906,15 +903,14 @@ abstract class CompilePrimeShaders extends DefaultTask {
 		}
 		sources.each { source ->
 			if (source.name == 'wavefront.rgen') {
-				// Freeze the five uniform scheduler stages before the driver sees them. The source
+				// Freeze the four uniform scheduler stages before the driver sees them. The source
 				// and glslang front end remain shared, while dead stage call trees are removed once
 				// per baseline/SER variant instead of being rediscovered during every cold start.
 				def stages = [
-						[name: 'head', value: 0, deferredArea: false],
-						[name: 'step', value: 1, deferredArea: true],
-						[name: 'area', value: 2, deferredArea: true],
-						[name: 'tail', value: 3, deferredArea: false],
-						[name: 'resolve', value: 4, deferredArea: false]
+						[name: 'head', value: 0],
+						[name: 'step', value: 1],
+						[name: 'tail', value: 2],
+						[name: 'resolve', value: 3]
 				]
 				def variants = [
 						[name: '', definitions: []],
@@ -924,23 +920,17 @@ abstract class CompilePrimeShaders extends DefaultTask {
 						]]
 				]
 				variants.each { variant ->
-					[false, true].each { deferredArea ->
-						def generic = new File(
+					def generic = new File(
+							scratch,
+							"wavefront${variant.name}.generic.rgen.spv")
+					compileShader(source, generic, variant.definitions)
+					stages.each { stage ->
+						def output = new File(
 								scratch,
-								"wavefront${variant.name}.${deferredArea ? 'area' : 'regular'}.generic.rgen.spv")
-						def definitions = new ArrayList<String>(variant.definitions)
-						if (deferredArea) {
-							definitions.add('-DPRIME_DEFER_SECONDARY_AREA_NEE=1')
-						}
-						compileShader(source, generic, definitions)
-						stages.findAll { it.deferredArea == deferredArea }.each { stage ->
-							def output = new File(
-									scratch,
-									"wavefront_${stage.name}${variant.name}.rgen.spv")
-							specializeWavefront(generic, output, stage.value)
-						}
-						java.nio.file.Files.delete(generic.toPath())
+								"wavefront_${stage.name}${variant.name}.rgen.spv")
+						specializeWavefront(generic, output, stage.value)
 					}
+					java.nio.file.Files.delete(generic.toPath())
 				}
 			} else {
 				def output = new File(scratch, source.name + '.spv')
@@ -1164,12 +1154,10 @@ def verifyDistributionJar = tasks.register('verifyDistributionJar') {
 			'prime/natives/windows-x86_64/nvngx_dlssd.dll',
 			'prime/shaders/wavefront_head.rgen.spv',
 			'prime/shaders/wavefront_step.rgen.spv',
-			'prime/shaders/wavefront_area.rgen.spv',
 			'prime/shaders/wavefront_tail.rgen.spv',
 			'prime/shaders/wavefront_resolve.rgen.spv',
 			'prime/shaders/wavefront_head_ser.rgen.spv',
 			'prime/shaders/wavefront_step_ser.rgen.spv',
-			'prime/shaders/wavefront_area_ser.rgen.spv',
 			'prime/shaders/wavefront_tail_ser.rgen.spv',
 			'prime/shaders/wavefront_resolve_ser.rgen.spv',
 			'prime/shaders/auto_exposure_histogram.comp.spv',
@@ -1194,9 +1182,9 @@ def verifyDistributionJar = tasks.register('verifyDistributionJar') {
 		}
 
 		def shaderNames = names.findAll { it.startsWith('prime/shaders/') && it.endsWith('.spv') }
-		if (shaderNames.size() != 35) {
+		if (shaderNames.size() != 33) {
 			throw new GradleException(
-					"Distribution jar must contain 35 Prime shaders; found ${shaderNames.size()}")
+					"Distribution jar must contain 33 Prime shaders; found ${shaderNames.size()}")
 		}
 
 		new java.util.zip.ZipFile(archive).withCloseable { zip ->

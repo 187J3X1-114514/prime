@@ -62,7 +62,6 @@ final class ShaderAbiTest {
         assertEquals(
                 0x02000000,
                 ShaderAbi.PATH_SUPPRESS_PRIMARY_TRANSPARENT_REFLECTION_MASK);
-        assertEquals(0x04000000, ShaderAbi.PATH_SUPPRESS_SECONDARY_AREA_NEE_MASK);
         assertEquals(0x7fffffff, ShaderAbi.PATH_SAMPLE_EPOCH_MASK);
         assertEquals(0x80000000, ShaderAbi.PATH_TRIANGLE_DEBUG_MASK);
         assertEquals(0xff, ShaderAbi.PATH_MAXIMUM_BOUNCES_MASK);

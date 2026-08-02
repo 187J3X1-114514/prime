@@ -42,7 +42,7 @@ final class RealtimeSampleStateTest {
                 7L,
                 new AstronomyState(AstronomySettings.defaults(), NOON),
                 false,
-                WavefrontDebugMode.NO_SECONDARY_AREA_NEE,
+                WavefrontDebugMode.NO_PRIMARY_TRANSPARENT_REFLECTION,
                 false);
 
         RealtimeSampleState.Plan reset = state.plan(isolated);

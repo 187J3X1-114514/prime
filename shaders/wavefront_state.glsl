@@ -5,9 +5,8 @@
 
 // Two fixed slots belong to each realtime pixel so a primary transparent interface can enqueue
 // reflection and transmission as independent invocations. The execution-local type contains only
-// the six hot transport lanes; the storage record adds one cold lane shared by queued PSR and the
-// later mutually exclusive deferred-area request. Primary area-light moments are immutable pixel
-// state and live once per pixel in the queue-buffer prefix.
+// the six hot transport lanes; the storage record adds one cold queued-PSR lane. Primary area-light
+// moments are immutable pixel state and live once per pixel in the queue-buffer prefix.
 struct PrimeWavefrontTransportRecord {
     vec4 physicalOriginAndPreviousBsdfPdf;
     vec4 traceOriginAndPathControl;
@@ -333,106 +332,11 @@ void primeStoreWavefrontPsrState(
             primePackWavefrontPsrState(state);
 }
 
-struct PrimeDeferredAreaLightRequest {
-    vec3 direction;
-    float distance;
-    vec3 contribution;
-    bool valid;
-};
-
-void primeClearDeferredAreaLightRequest(uint pathIndex) {
-    primeWavefrontPaths.records[pathIndex].psrPacked = uvec4(0u);
-}
-
-void primeStoreDeferredAreaLightRequest(
-        uint pathIndex,
-        vec3 direction,
-        float distance,
-        vec3 contribution) {
-    // The estimator images quantize every queued vertex to fp16 already. Reusing that encoding
-    // keeps this transient request at 16 bytes without adding another resolution-sized buffer.
-    vec3 packedContribution = primeNrdSanitizeRadiance(contribution);
-    primeWavefrontPaths.records[pathIndex].psrPacked = uvec4(
-            primePackOctahedralNormal(direction),
-            floatBitsToUint(distance),
-            packHalf2x16(packedContribution.xy),
-            packHalf2x16(vec2(packedContribution.z, 0.0)));
-}
-
-PrimeDeferredAreaLightRequest primeLoadDeferredAreaLightRequest(
-        uint pathIndex) {
-    uvec4 packed = primeWavefrontPaths.records[pathIndex].psrPacked;
-    PrimeDeferredAreaLightRequest request;
-    request.direction = primeUnpackOctahedralNormal(packed.x);
-    request.distance = uintBitsToFloat(packed.y);
-    vec2 contribution01 = unpackHalf2x16(packed.z);
-    request.contribution = vec3(
-            contribution01,
-            unpackHalf2x16(packed.w).x);
-    request.valid = (packed.z != 0u || packed.w != 0u)
-            && primeNrdIsFinite(request.distance)
-            && request.distance > 0.0;
-    return request;
-}
-
 void primeStoreWavefrontDiagnostic(uint pathIndex) {
     if (primeWritesRawNumericalDiagnostic()) {
         primeWavefrontPaths.records[pathIndex]
                 .transport.throughputAndNumericalFlags.w =
                 uintBitsToFloat(primePackWavefrontDiagnostic());
-    }
-}
-
-void primeAccumulateDeferredAreaLight(
-        uvec2 pixel,
-        uint control,
-        vec3 contribution) {
-    ivec2 coordinate = ivec2(pixel);
-    bool transparent = (control & PRIME_WAVEFRONT_TRANSPARENT_BRANCH) != 0u;
-    bool transmission = (control & PRIME_WAVEFRONT_TRANSMISSION_BRANCH) != 0u;
-    bool guideEnabled = (control & PRIME_WAVEFRONT_GUIDE_ENABLED) != 0u;
-    bool diffuse = transparent && !guideEnabled
-            ? transmission
-            : (control & PRIME_WAVEFRONT_DIFFUSE_PATH) != 0u;
-    vec4 current;
-    if (!transparent) {
-        current = diffuse
-                ? imageLoad(primeNrdNoisyDiffuse, coordinate)
-                : imageLoad(primeNrdNoisySpecular, coordinate);
-    } else if (transmission) {
-        current = diffuse
-                ? imageLoad(primeNrdNoisyDiffuse, coordinate)
-                : imageLoad(primeNrdNoisySpecular, coordinate);
-    } else if (primeWritesNrdShInputs()) {
-        current = diffuse
-                ? imageLoad(primeNrdReflectionNoisyDiffuse, coordinate)
-                : imageLoad(primeNrdReflectionNoisySpecular, coordinate);
-    } else {
-        current = imageLoad(primeStableRadiance, coordinate);
-    }
-
-    primeAccumulate(current.rgb, contribution);
-    current.rgb = primeNrdSanitizeRadiance(current.rgb);
-    if (!transparent) {
-        if (diffuse) {
-            imageStore(primeNrdNoisyDiffuse, coordinate, current);
-        } else {
-            imageStore(primeNrdNoisySpecular, coordinate, current);
-        }
-    } else if (transmission) {
-        if (diffuse) {
-            imageStore(primeNrdNoisyDiffuse, coordinate, current);
-        } else {
-            imageStore(primeNrdNoisySpecular, coordinate, current);
-        }
-    } else if (primeWritesNrdShInputs()) {
-        if (diffuse) {
-            imageStore(primeNrdReflectionNoisyDiffuse, coordinate, current);
-        } else {
-            imageStore(primeNrdReflectionNoisySpecular, coordinate, current);
-        }
-    } else {
-        imageStore(primeStableRadiance, coordinate, current);
     }
 }
 

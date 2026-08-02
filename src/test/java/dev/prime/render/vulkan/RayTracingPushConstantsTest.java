@@ -118,7 +118,7 @@ final class RayTracingPushConstantsTest {
                 true,
                 true,
                 true,
-                WavefrontDebugMode.NO_PRIMARY_TRANSPARENT_REFLECTION_OR_SECONDARY_AREA_NEE);
+                WavefrontDebugMode.NO_PRIMARY_TRANSPARENT_REFLECTION);
         return new Fixture(input, scene);
     }
 

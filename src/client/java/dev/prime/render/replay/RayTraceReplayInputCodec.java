@@ -199,9 +199,6 @@ public final class RayTraceReplayInputCodec {
         if (input.wavefrontDebugMode().suppressPrimaryTransparentReflection()) {
             result |= FLAG_SUPPRESS_PRIMARY_TRANSPARENT_REFLECTION;
         }
-        if (input.wavefrontDebugMode().suppressSecondaryAreaNee()) {
-            result |= FLAG_SUPPRESS_SECONDARY_AREA_NEE;
-        }
         return result;
     }
 

@@ -63,6 +63,16 @@ float primePowerHeuristicOverPdfValue(float sampledPdf, float otherPdf) {
     return (ratio / otherPdf) / (1.0 + ratio * ratio);
 }
 
+float primeAreaHitMisWeightValue(
+        bool previousUsedAreaNee,
+        bool previousCannotUseMis,
+        float bsdfPdf,
+        float lightPdf) {
+    return !previousUsedAreaNee || previousCannotUseMis
+            ? 1.0
+            : primePowerHeuristicValue(bsdfPdf, lightPdf);
+}
+
 float primeAreaSolidAnglePdfValue(
         float areaPdf, float distanceSquared, float lightCosine) {
     if (distanceSquared <= 0.0 || lightCosine <= 0.0 || areaPdf <= 0.0) {

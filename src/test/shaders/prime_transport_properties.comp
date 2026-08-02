@@ -63,6 +63,28 @@ void primeCheckMis(
     result.first = vec4(first, second, scaled, overPdf);
 }
 
+void primeCheckAreaHitMis(
+        inout PrimeTransportResult result,
+        bool previousUsedAreaNee,
+        bool previousCannotUseMis,
+        float bsdfPdf,
+        float lightPdf) {
+    float value = primeAreaHitMisWeightValue(
+            previousUsedAreaNee,
+            previousCannotUseMis,
+            bsdfPdf,
+            lightPdf);
+    float expected = previousUsedAreaNee && !previousCannotUseMis
+            ? primePowerHeuristicValue(bsdfPdf, lightPdf)
+            : 1.0;
+    primeTransportClassify(result.mask, value);
+    if (value < 0.0 || value > 1.0
+            || floatBitsToUint(value) != floatBitsToUint(expected)) {
+        result.mask |= PRIME_TEST_FAILURE_IDENTITY;
+    }
+    result.first = vec4(value, expected, bsdfPdf, lightPdf);
+}
+
 void primeCheckTransmittance(
         inout PrimeTransportResult result, vec3 extinction, float distance) {
     vec3 full = primeSegmentTransmittance(extinction, distance);
@@ -333,6 +355,13 @@ void main() {
         primeCheckWavefrontMedium(result, first, second);
     } else if (kind == 8u) {
         primeCheckLightBranch(result, first, second, third, fourth, fifth.xyz);
+    } else if (kind == 9u) {
+        primeCheckAreaHitMis(
+                result,
+                (caseIndex & 1u) != 0u,
+                (caseIndex & 2u) != 0u,
+                first.x,
+                first.y);
     } else {
         result.mask |= PRIME_TEST_FAILURE_EVENT;
     }

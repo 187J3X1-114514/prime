@@ -61,9 +61,6 @@ public final class IntegratorSettings {
                 | solarLongitude << ShaderAbi.PATH_SOLAR_LONGITUDE_SHIFT
                 | (wavefrontDebugMode.suppressPrimaryTransparentReflection()
                         ? ShaderAbi.PATH_SUPPRESS_PRIMARY_TRANSPARENT_REFLECTION_MASK
-                        : 0)
-                | (wavefrontDebugMode.suppressSecondaryAreaNee()
-                        ? ShaderAbi.PATH_SUPPRESS_SECONDARY_AREA_NEE_MASK
                         : 0);
     }
 

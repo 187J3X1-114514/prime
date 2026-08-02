@@ -173,6 +173,26 @@ final class RayTraceReplayInputCodecTest {
                 () -> RayTraceReplayInputCodec.decode(encoded));
     }
 
+    @Test
+    void legacySecondaryAreaFlagNormalizesToTheCurrentEstimatorPolicy() {
+        Fixture fixture = input();
+        byte[] encoded = RayTraceReplayInputCodec.encode(
+                RayTraceReplayInput.capture(fixture.input(), fixture.scene()));
+        int sceneBytes = 3 * Integer.BYTES + 3 * Long.BYTES;
+        int flagsOffset = 2 * Integer.BYTES
+                + sceneBytes
+                + FrameCameraSnapshot.ENCODED_BYTES
+                + 11 * Integer.BYTES;
+        ByteBuffer buffer = ByteBuffer.wrap(encoded).order(ByteOrder.LITTLE_ENDIAN);
+        buffer.putInt(flagsOffset, buffer.getInt(flagsOffset) | (1 << 5));
+
+        RayTraceReplayInput decoded = RayTraceReplayInputCodec.decode(encoded);
+
+        assertEquals(
+                WavefrontDebugMode.NO_PRIMARY_TRANSPARENT_REFLECTION,
+                decoded.wavefrontDebugMode());
+    }
+
     private static IntegratorFrameInput withSampleIndex(
             IntegratorFrameInput input, int sampleIndex) {
         return new IntegratorFrameInput(
@@ -239,7 +259,7 @@ final class RayTraceReplayInputCodecTest {
                 true,
                 true,
                 true,
-                WavefrontDebugMode.NO_PRIMARY_TRANSPARENT_REFLECTION_OR_SECONDARY_AREA_NEE);
+                WavefrontDebugMode.NO_PRIMARY_TRANSPARENT_REFLECTION);
         return new Fixture(input, scene);
     }
 

@@ -46,15 +46,13 @@ public final class RayTracingPipeline implements Destroyable {
     private static final int WAVEFRONT_HEAD_GROUP = 1;
     private static final int WAVEFRONT_STEP_QUEUE_0_GROUP = 2;
     private static final int WAVEFRONT_STEP_QUEUE_1_GROUP = 3;
-    private static final int WAVEFRONT_AREA_QUEUE_0_GROUP = 4;
-    private static final int WAVEFRONT_AREA_QUEUE_1_GROUP = 5;
-    private static final int WAVEFRONT_TAIL_QUEUE_0_GROUP = 6;
-    private static final int WAVEFRONT_TAIL_QUEUE_1_GROUP = 7;
-    private static final int WAVEFRONT_RESOLVE_GROUP = 8;
-    private static final int SUN_SHADOW_GROUP = 9;
-    static final int RAYGEN_GROUP_COUNT = 10;
-    static final int RAYGEN_MODULE_COUNT = 6;
-    static final int RAYGEN_SHADER_STAGE_COUNT = 6;
+    private static final int WAVEFRONT_TAIL_QUEUE_0_GROUP = 4;
+    private static final int WAVEFRONT_TAIL_QUEUE_1_GROUP = 5;
+    private static final int WAVEFRONT_RESOLVE_GROUP = 6;
+    private static final int SUN_SHADOW_GROUP = 7;
+    static final int RAYGEN_GROUP_COUNT = 8;
+    static final int RAYGEN_MODULE_COUNT = 5;
+    static final int RAYGEN_SHADER_STAGE_COUNT = 5;
     static final int MISS_GROUP_COUNT = 2;
     static final int HIT_GROUP_COUNT = 6;
     static final int FIXED_SHADER_MODULE_COUNT = 6;
@@ -64,7 +62,7 @@ public final class RayTracingPipeline implements Destroyable {
     static final int RAYGEN_RECORD_DATA_SIZE = Integer.BYTES;
     private static final long WAVEFRONT_QUEUE_OFFSET_ALIGNMENT = 256L;
     static final int WAVEFRONT_STEP_DISPATCH_COUNT = ShaderAbi.WAVEFRONT_ROUNDS;
-    static final int WAVEFRONT_DISPATCH_COUNT = 2 * ShaderAbi.WAVEFRONT_ROUNDS + 3;
+    static final int WAVEFRONT_DISPATCH_COUNT = ShaderAbi.WAVEFRONT_ROUNDS + 3;
     private static final int GROUP_COUNT = RAYGEN_GROUP_COUNT + MISS_GROUP_COUNT + HIT_GROUP_COUNT;
     private static final int ALL_RT_STAGES =
             KHRRayTracingPipeline.VK_SHADER_STAGE_RAYGEN_BIT_KHR
@@ -113,7 +111,6 @@ public final class RayTracingPipeline implements Destroyable {
                 String[] raygens = new String[] {
                     "/prime/shaders/wavefront_head" + suffix,
                     "/prime/shaders/wavefront_step" + suffix,
-                    "/prime/shaders/wavefront_area" + suffix,
                     "/prime/shaders/wavefront_tail" + suffix,
                     "/prime/shaders/wavefront_resolve" + suffix,
                     "/prime/shaders/sun_shadow.rgen.spv"
@@ -410,8 +407,6 @@ public final class RayTracingPipeline implements Destroyable {
             this.trace(commandBuffer, stack, width, height, WAVEFRONT_HEAD_GROUP);
             this.wavefrontBarrier(commandBuffer, stack);
             int sourceQueue = 0;
-            boolean tracesSecondaryArea =
-                    !input.wavefrontDebugMode().suppressSecondaryAreaNee();
             for (int round = 0; round < WAVEFRONT_STEP_DISPATCH_COUNT; round++) {
                 this.traceIndirect(
                         commandBuffer,
@@ -419,15 +414,6 @@ public final class RayTracingPipeline implements Destroyable {
                         wavefrontStepGroup(sourceQueue),
                         queueCommandOffset,
                         sourceQueue);
-                if (tracesSecondaryArea) {
-                    this.wavefrontBarrier(commandBuffer, stack);
-                    this.traceIndirect(
-                            commandBuffer,
-                            stack,
-                            wavefrontAreaGroup(sourceQueue),
-                            queueCommandOffset,
-                            sourceQueue);
-                }
                 this.advanceWavefrontQueue(
                         commandBuffer, stack, queueCommandOffset, sourceQueue);
                 sourceQueue ^= 1;
@@ -1109,13 +1095,11 @@ public final class RayTracingPipeline implements Destroyable {
             case WAVEFRONT_HEAD_GROUP -> 0;
             case WAVEFRONT_STEP_QUEUE_0_GROUP,
                     WAVEFRONT_STEP_QUEUE_1_GROUP -> 1;
-            case WAVEFRONT_AREA_QUEUE_0_GROUP,
-                    WAVEFRONT_AREA_QUEUE_1_GROUP -> 2;
             case WAVEFRONT_TAIL_QUEUE_0_GROUP,
-                    WAVEFRONT_TAIL_QUEUE_1_GROUP -> 3;
+                    WAVEFRONT_TAIL_QUEUE_1_GROUP -> 2;
             case WAVEFRONT_SCREENSHOT_RESOLVE_GROUP,
-                    WAVEFRONT_RESOLVE_GROUP -> 4;
-            case SUN_SHADOW_GROUP -> 5;
+                    WAVEFRONT_RESOLVE_GROUP -> 3;
+            case SUN_SHADOW_GROUP -> 4;
             default -> throw new IllegalArgumentException(
                     "Invalid Prime raygen group " + group);
         };
@@ -1126,12 +1110,10 @@ public final class RayTracingPipeline implements Destroyable {
             case WAVEFRONT_HEAD_GROUP -> 0;
             case WAVEFRONT_STEP_QUEUE_0_GROUP -> 1;
             case WAVEFRONT_STEP_QUEUE_1_GROUP -> 1 | (1 << 8);
-            case WAVEFRONT_AREA_QUEUE_0_GROUP -> 2;
-            case WAVEFRONT_AREA_QUEUE_1_GROUP -> 2 | (1 << 8);
-            case WAVEFRONT_TAIL_QUEUE_0_GROUP -> 3;
-            case WAVEFRONT_TAIL_QUEUE_1_GROUP -> 3 | (1 << 8);
-            case WAVEFRONT_RESOLVE_GROUP -> 4;
-            case WAVEFRONT_SCREENSHOT_RESOLVE_GROUP -> 4 | (1 << 9);
+            case WAVEFRONT_TAIL_QUEUE_0_GROUP -> 2;
+            case WAVEFRONT_TAIL_QUEUE_1_GROUP -> 2 | (1 << 8);
+            case WAVEFRONT_RESOLVE_GROUP -> 3;
+            case WAVEFRONT_SCREENSHOT_RESOLVE_GROUP -> 3 | (1 << 9);
             case SUN_SHADOW_GROUP -> 0;
             default -> throw new IllegalArgumentException(
                     "Invalid Prime raygen group " + group);
@@ -1142,14 +1124,6 @@ public final class RayTracingPipeline implements Destroyable {
         return switch (queue) {
             case 0 -> WAVEFRONT_STEP_QUEUE_0_GROUP;
             case 1 -> WAVEFRONT_STEP_QUEUE_1_GROUP;
-            default -> throw new IllegalArgumentException("Invalid wavefront queue " + queue);
-        };
-    }
-
-    static int wavefrontAreaGroup(int queue) {
-        return switch (queue) {
-            case 0 -> WAVEFRONT_AREA_QUEUE_0_GROUP;
-            case 1 -> WAVEFRONT_AREA_QUEUE_1_GROUP;
             default -> throw new IllegalArgumentException("Invalid wavefront queue " + queue);
         };
     }

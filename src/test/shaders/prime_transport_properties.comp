@@ -4,6 +4,8 @@
 #include "prime_test_abi.glsl"
 #include "transport_math.glsl"
 #include "transparent_material.glsl"
+#include "robocute_bsdf_common.glsl"
+#include "wavefront_medium.glsl"
 
 const uint PRIME_TRANSPORT_INPUT_WORDS = 3u;
 const uint PRIME_TRANSPORT_WITNESS_WORDS = 7u;
@@ -207,6 +209,29 @@ void primeCheckShadowWaterDistance(
     result.third = vec4(expectedOutside, expectedInside, distanceTolerance, 0.0);
 }
 
+void primeCheckWavefrontMedium(
+        inout PrimeTransportResult result,
+        vec4 transport,
+        vec4 coldVolumeFields) {
+    PrimeRcVolume medium;
+    medium.extinction = transport.xyz;
+    medium.ior = transport.w;
+    medium.albedo = coldVolumeFields.xyz;
+    medium.anisotropy = coldVolumeFields.w;
+    uvec2 packed = primePackWavefrontMedium(medium);
+    PrimeRcVolume restored = primeUnpackWavefrontMedium(packed);
+    primeTransportClassify(result.mask, restored.extinction);
+    primeTransportClassify(result.mask, restored.ior);
+    if (any(notEqual(primePackWavefrontMedium(restored), packed))
+            || any(notEqual(restored.albedo, vec3(0.0)))
+            || restored.anisotropy != 0.0) {
+        result.mask |= PRIME_TEST_FAILURE_STATE;
+    }
+    result.first = vec4(restored.extinction, restored.ior);
+    result.second = transport;
+    result.third = vec4(restored.albedo, restored.anisotropy);
+}
+
 void main() {
     uint caseIndex;
     if (!primeTestBegin(caseIndex)) return;
@@ -235,6 +260,8 @@ void main() {
         primeCheckGlassFilter(result, first.xyz, first.w);
     } else if (kind == 6u) {
         primeCheckShadowWaterDistance(result, first, second);
+    } else if (kind == 7u) {
+        primeCheckWavefrontMedium(result, first, second);
     } else {
         result.mask |= PRIME_TEST_FAILURE_EVENT;
     }

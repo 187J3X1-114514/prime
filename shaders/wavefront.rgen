@@ -20,6 +20,15 @@ layout(location = 1) rayPayloadEXT PrimeShadowPayload primeShadowPayload;
 #include "sampling.glsl"
 #include "bsdf.glsl"
 #include "lights.glsl"
+
+// The step-specialized integrator writes a compact request directly into the cold path lane so
+// sampled light state does not remain live across BSDF sampling and path advancement.
+void primeStoreDeferredAreaLightRequest(
+        uint pathIndex,
+        vec3 direction,
+        float distance,
+        vec3 contribution);
+
 #include "integrator.glsl"
 #include "camera.glsl"
 #include "wavefront_output.glsl"
@@ -27,6 +36,7 @@ layout(location = 1) rayPayloadEXT PrimeShadowPayload primeShadowPayload;
 
 const uint PRIME_WAVEFRONT_STAGE_HEAD = 0u;
 const uint PRIME_WAVEFRONT_STAGE_STEP = 1u;
+const uint PRIME_WAVEFRONT_STAGE_AREA = 2u;
 const uint PRIME_WAVEFRONT_STAGE_TAIL = 3u;
 const uint PRIME_WAVEFRONT_STAGE_RESOLVE = 4u;
 const uint PRIME_WAVEFRONT_SCREENSHOT_OUTPUT = 1u << 9u;
@@ -332,7 +342,8 @@ void primeWavefrontHead() {
             volumeStack,
             denoiserState,
             result,
-            surface);
+            surface,
+            0u);
     continuation = continuation && path.bounce < maximumBounces;
     PrimeWavefrontPathRecord record = primeMakeWavefrontRecord(
             path,
@@ -412,6 +423,7 @@ void primeWavefrontStep(uint sourceQueue) {
                 needsPsr
                         ? primeLoadWavefrontPsrState(recordIndex, record)
                         : primeEmptyQueuedPsrState();
+        primeClearDeferredAreaLightRequest(recordIndex);
         bool hasGuide =
                 hadGuide;
         bool diffusePath =
@@ -433,7 +445,8 @@ void primeWavefrontStep(uint sourceQueue) {
                 directionalGuide,
                 surface,
                 transmissionBranch,
-                guideEnabled);
+                guideEnabled,
+                recordIndex);
         continuation = continuation && path.bounce < maximumBounces;
         PrimeWavefrontTransportRecord updatedRecord =
                 primeMakeUpdatedTransparentWavefrontRecord(
@@ -465,13 +478,15 @@ void primeWavefrontStep(uint sourceQueue) {
                 primeLoadWavefrontActiveIntermediate(pixel, control);
         PrimeDenoiserState denoiserState =
                 primeWavefrontDenoiserState(control, result);
+        primeClearDeferredAreaLightRequest(recordIndex);
         bool continuation = primeIntegrateWavefrontSurface(
                 path,
                 integrator,
                 volumeStack,
                 denoiserState,
                 result,
-                surface);
+                surface,
+                recordIndex);
         continuation = continuation && path.bounce < maximumBounces;
         PrimeWavefrontTransportRecord updatedRecord =
                 primeMakeUpdatedWavefrontRecord(
@@ -488,6 +503,48 @@ void primeWavefrontStep(uint sourceQueue) {
     }
     primeAppendWavefrontContinuation(
             sourceQueue ^ 1u, recordIndex, queueContinuation);
+}
+
+void primeWavefrontArea(uint sourceQueue) {
+    uint recordIndex =
+            primeWavefrontQueuedPath(sourceQueue, gl_LaunchIDEXT.x);
+    PrimeWavefrontTransportRecord record =
+            primeLoadWavefrontTransportRecord(recordIndex);
+    uint control = floatBitsToUint(record.rayDirectionAndDenoiserControl.w);
+    // A guide-pending transparent path owns this lane as queued PSR state. Its first non-delta
+    // vertex is a primary-guide replacement and therefore never emits a secondary NEE request.
+    if (primeWavefrontTransparentBranch(control)
+            && primeWavefrontGuideEnabled(control)
+            && (control & PRIME_WAVEFRONT_REACHED_NON_DELTA) == 0u) {
+        return;
+    }
+    PrimeDeferredAreaLightRequest request =
+            primeLoadDeferredAreaLightRequest(recordIndex);
+    if (!request.valid) {
+        return;
+    }
+
+    primeRestoreWavefrontDiagnostic(record);
+    uint bounce = floatBitsToUint(record.traceOriginAndPathControl.w)
+            & PRIME_WAVEFRONT_BYTE_MASK;
+    primeSetNumericalContext(PRIME_NUMERICAL_STAGE_DIRECT_LIGHT, bounce);
+    LightSample light;
+    light.direction = request.direction;
+    light.distance = request.distance;
+    light.radiance = vec3(0.0);
+    light.pdf = 0.0;
+    light.isDelta = 0u;
+    PrimeShadowTrace shadow = primeTraceDeferredShadow(
+            record.physicalOriginAndPreviousBsdfPdf.xyz,
+            light,
+            primeWavefrontVolumeStack(record));
+    if (shadow.hitDistance >= PRIME_NRD_FP16_MAX) {
+        primeAccumulateDeferredAreaLight(
+                primeWavefrontPixel(recordIndex),
+                control,
+                request.contribution * shadow.transmittance);
+    }
+    primeStoreWavefrontDiagnostic(recordIndex);
 }
 
 void primeWavefrontTail(uint sourceQueue) {
@@ -549,7 +606,8 @@ void primeWavefrontTail(uint sourceQueue) {
                     directionalGuide,
                     surface,
                     transmissionBranch,
-                    guideEnabled)) {
+                    guideEnabled,
+                    recordIndex)) {
                 break;
             }
         }
@@ -595,7 +653,8 @@ void primeWavefrontTail(uint sourceQueue) {
                 volumeStack,
                 denoiserState,
                 result,
-                surface)) {
+                surface,
+                recordIndex)) {
             break;
         }
     }
@@ -660,6 +719,9 @@ void main() {
             break;
         case PRIME_WAVEFRONT_STAGE_STEP:
             primeWavefrontStep(sourceQueue);
+            break;
+        case PRIME_WAVEFRONT_STAGE_AREA:
+            primeWavefrontArea(sourceQueue);
             break;
         case PRIME_WAVEFRONT_STAGE_TAIL:
             primeWavefrontTail(sourceQueue);

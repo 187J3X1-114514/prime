@@ -56,7 +56,7 @@ final class PrimeProductionMathGpuTest {
 
     @Test
     void integratorAndLightTransportMathKeepsItsNumericalContracts() throws IOException {
-        int kinds = 7;
+        int kinds = 8;
         int inputWords = 3;
         ShaderPropertyBatch.assertProperties(
                 runner,
@@ -320,6 +320,25 @@ final class PrimeProductionMathGpuTest {
                             -rayDistance,
                             2.0F * rayDistance,
                             0.0F);
+                } else if (kind == 7) {
+                    putVec4(
+                            input,
+                            index,
+                            words,
+                            1,
+                            random.nextFloat() * 32.0F,
+                            random.nextFloat() * 32.0F,
+                            random.nextFloat() * 32.0F,
+                            1.0F + random.nextFloat());
+                    putVec4(
+                            input,
+                            index,
+                            words,
+                            2,
+                            random.nextFloat(),
+                            random.nextFloat(),
+                            random.nextFloat(),
+                            random.nextFloat() * 1.98F - 0.99F);
                 } else {
                     putVec4(
                             input,

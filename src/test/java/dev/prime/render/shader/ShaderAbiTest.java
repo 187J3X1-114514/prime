@@ -49,7 +49,7 @@ final class ShaderAbiTest {
         assertEquals(38, ShaderAbi.DESCRIPTOR_SUN_SHADOW_DEPTH_0);
         assertEquals(47, ShaderAbi.DESCRIPTOR_SUN_SHADOW_DEPTH_9);
         assertEquals(12, ShaderAbi.WAVEFRONT_ROUNDS);
-        assertEquals(112, ShaderAbi.WAVEFRONT_PATH_RECORD_SIZE);
+        assertEquals(96, ShaderAbi.WAVEFRONT_PATH_RECORD_SIZE);
         assertEquals(2, ShaderAbi.WAVEFRONT_PATH_SLOTS_PER_PIXEL);
         assertEquals(16, ShaderAbi.WAVEFRONT_AREA_RECORD_SIZE);
         assertEquals(2, ShaderAbi.WAVEFRONT_QUEUE_COUNT);

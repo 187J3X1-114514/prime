@@ -14,6 +14,7 @@ import dev.prime.render.terrain.TerrainStreamer;
 import dev.prime.render.replay.RenderReplayVerification;
 import dev.prime.render.scene.vanilla.DynamicSceneFrame;
 import dev.prime.render.vulkan.AtmospherePipeline;
+import dev.prime.render.vulkan.FrozenExposureState;
 import dev.prime.render.vulkan.LabPbrTextureAtlas;
 import dev.prime.render.vulkan.StagingArena;
 import dev.prime.render.vulkan.SunShadowPipeline;
@@ -47,6 +48,7 @@ public final class VulkanRenderer implements AutoCloseable {
     private List<TraceBackend.SceneTexture> sceneTextures = List.of();
     private FrameCamera camera;
     private AstronomyState astronomyState;
+    private OfflineSession pendingOfflineSession;
     // Resource-reload apply can publish this request off the render thread; all GPU mutation is
     // still consumed and owned by beginFrame on the render thread.
     private volatile boolean shaderReloadRequested;
@@ -116,6 +118,9 @@ public final class VulkanRenderer implements AutoCloseable {
         if (this.screenshotActive()) {
             return screenshotRequested;
         }
+        if (this.pendingOfflineSession != null) {
+            return screenshotRequested;
+        }
         FrameCamera frameCamera = this.camera;
         if (frameCamera != null) {
             this.terrain.update(minecraft, frameCamera.x(), frameCamera.y(), frameCamera.z());
@@ -173,6 +178,11 @@ public final class VulkanRenderer implements AutoCloseable {
             double y,
             double z,
             float sunAngleRadians) {
+        OfflineSession pending = this.pendingOfflineSession;
+        if (pending != null) {
+            pending.updateProjection(baseProjection);
+            return;
+        }
         if (this.screenshotActive()) {
             if (this.offlineRenderer.updateProjection(baseProjection)) {
                 this.modeLifecycle = this.modeLifecycle.releaseOfflineSized();
@@ -189,7 +199,7 @@ public final class VulkanRenderer implements AutoCloseable {
     }
 
     public void captureDynamicScene(DynamicSceneFrame frame) {
-        if (this.screenshotActive()) {
+        if (this.screenshotActive() || this.pendingOfflineSession != null) {
             return;
         }
         ArrayList<TraceBackend.SceneTexture> textures =
@@ -326,11 +336,12 @@ public final class VulkanRenderer implements AutoCloseable {
 
     private boolean updateOfflineSession(Minecraft minecraft, boolean requested) {
         OfflineSession current = this.offlineRenderer.session();
-        boolean worldChanged = current != null && !current.matchesWorld(minecraft.level);
+        OfflineSession tracked = current != null ? current : this.pendingOfflineSession;
+        boolean worldChanged = tracked != null && !tracked.matchesWorld(minecraft.level);
         BlockAtlasFrame atlas = this.blockAtlasFrame;
-        boolean resourcesChanged = current != null
+        boolean resourcesChanged = tracked != null
                 && (atlas == null
-                        || !current.matchesAtlas(
+                        || !tracked.matchesAtlas(
                                 atlas.view().vkImageView(),
                                 atlas.sampler().vkSampler(),
                                 atlas.textureRevision()));
@@ -341,7 +352,28 @@ public final class VulkanRenderer implements AutoCloseable {
                 && (!requested || worldChanged || resourcesChanged)) {
             this.stopOfflineSession();
         }
+        OfflineSession pending = this.pendingOfflineSession;
+        if (pending != null && (!requested || worldChanged || resourcesChanged)) {
+            this.pendingOfflineSession = null;
+            pending.destroy();
+            pending = null;
+        }
+        if (pending != null && pending.exposure().ready()) {
+            this.context.awaitIdle();
+            this.context.drainDeferredAfterIdle();
+            this.realtimeRenderer.releaseSizedResourcesAfterIdle();
+            this.modeLifecycle = this.modeLifecycle
+                    .releaseRealtimeSized()
+                    .enterOffline();
+            this.pendingOfflineSession = null;
+            this.offlineRenderer.begin(pending);
+            PrimeClient.LOGGER.info(
+                    "Entered Prime screenshot mode at scene revision {}",
+                    pending.scene().revision());
+            return requested;
+        }
         if (!this.screenshotActive()
+                && pending == null
                 && requested
                 && minecraft.level != null
                 && this.camera != null
@@ -351,27 +383,30 @@ public final class VulkanRenderer implements AutoCloseable {
                 && this.blockAtlasFrame != null) {
             PrimeSettings settings = PrimeConfig.settings();
             BlockAtlasFrame frozenAtlas = this.blockAtlasFrame;
-            OfflineSession session = new OfflineSession(
-                    minecraft.level,
-                    this.terrain.residentScene(),
-                    this.camera,
-                    this.astronomyState,
-                    OfflineRenderSettings.capture(settings),
-                    this.isCameraInWater(minecraft, this.camera),
-                    frozenAtlas.view().vkImageView(),
-                    frozenAtlas.sampler().vkSampler(),
-                    frozenAtlas.textureRevision(),
-                    this.sceneTextures);
-            this.context.awaitIdle();
-            this.context.drainDeferredAfterIdle();
-            this.realtimeRenderer.releaseSizedResourcesAfterIdle();
-            this.modeLifecycle = this.modeLifecycle
-                    .releaseRealtimeSized()
-                    .enterOffline();
-            this.offlineRenderer.begin(session);
-            PrimeClient.LOGGER.info(
-                    "Entered Prime screenshot mode at scene revision {}",
-                    session.scene().revision());
+            FrozenExposureState exposure = FrozenExposureState.capture(
+                    this.context,
+                    this.realtimeRenderer.displayExposureStateBuffer());
+            OfflineSession session = null;
+            try {
+                session = new OfflineSession(
+                        minecraft.level,
+                        this.terrain.residentScene(),
+                        this.camera,
+                        this.astronomyState,
+                        OfflineRenderSettings.capture(settings),
+                        this.isCameraInWater(minecraft, this.camera),
+                        frozenAtlas.view().vkImageView(),
+                        frozenAtlas.sampler().vkSampler(),
+                        frozenAtlas.textureRevision(),
+                        this.sceneTextures,
+                        exposure);
+                this.pendingOfflineSession = session;
+            } catch (RuntimeException exception) {
+                if (session != null) {
+                    throw ResourceCleanup.destroy(session, exception);
+                }
+                throw ResourceCleanup.destroy(exposure, exception);
+            }
         }
         return requested;
     }
@@ -442,6 +477,7 @@ public final class VulkanRenderer implements AutoCloseable {
         this.context.awaitIdle();
         RuntimeException failure = null;
         failure = ResourceCleanup.run(this.context::drainDeferredAfterIdle, failure);
+        failure = ResourceCleanup.destroy(this.pendingOfflineSession, failure);
         failure = ResourceCleanup.destroy(this.offlineRenderer, failure);
         failure = ResourceCleanup.destroy(this.realtimeRenderer, failure);
         failure = ResourceCleanup.close(this.terrain, failure);
@@ -450,6 +486,7 @@ public final class VulkanRenderer implements AutoCloseable {
         failure = ResourceCleanup.destroy(this.atmosphere, failure);
         failure = ResourceCleanup.close(this.stagingArena, failure);
         this.debugLines = List.of();
+        this.pendingOfflineSession = null;
         this.closed = true;
         ResourceCleanup.throwIfFailed(failure);
     }

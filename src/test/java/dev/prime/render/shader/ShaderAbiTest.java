@@ -114,7 +114,7 @@ final class ShaderAbiTest {
                 "dual-reblur-diffuse-specular-sh-plus-sigma-sun-shadow",
                 ShaderAbi.NRD_DENOISER);
         assertEquals("hillaire-8wave-rec2020-d65", ShaderAbi.ATMOSPHERE_SPECTRAL_MODEL);
-        assertTrue(ShaderAbi.ATMOSPHERE_WORLD_TO_ATMOSPHERE_SCALE > 0.0F);
+        assertEquals(2.0F, ShaderAbi.ATMOSPHERE_WORLD_TO_ATMOSPHERE_SCALE);
         assertEquals(
                 6_360.0F,
                 ShaderAbi.ATMOSPHERE_BOTTOM_RADIUS_KM);

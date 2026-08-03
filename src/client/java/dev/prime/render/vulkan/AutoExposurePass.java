@@ -40,7 +40,7 @@ final class AutoExposurePass implements Destroyable {
     private static final int HISTOGRAM_BIN_COUNT = 256;
     private static final int HISTOGRAM_SIZE =
             (HISTOGRAM_BIN_COUNT + 1) * Integer.BYTES;
-    private static final int EXPOSURE_STATE_SIZE = 16;
+    static final int EXPOSURE_STATE_SIZE = 16;
     private static final int HISTOGRAM_TILE_SIZE = 64;
     private static final String HISTOGRAM_SHADER =
             "/prime/shaders/auto_exposure_histogram.comp.spv";
@@ -111,7 +111,8 @@ final class AutoExposurePass implements Destroyable {
             exposureState = context.createBuffer(
                     EXPOSURE_STATE_SIZE,
                     VK12.VK_BUFFER_USAGE_STORAGE_BUFFER_BIT
-                            | VK12.VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+                            | VK12.VK_BUFFER_USAGE_TRANSFER_DST_BIT
+                            | VK12.VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
                     false,
                     "Prime auto-exposure state");
             try (MemoryStack stack = MemoryStack.stackPush()) {

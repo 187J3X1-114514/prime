@@ -75,6 +75,9 @@ public final class NoisyPostProcessor implements RealtimePostProcessor {
     @Override public int displayHeight() { return this.height; }
     @Override public RawWavefrontFrame rawFrame() { return this.rawFrame; }
     @Override public VulkanImage linearHdrOutput() { return this.rawFrame.linearOutput(); }
+    @Override public long displayExposureStateBuffer() {
+        return this.displayTransform.exposureState().handle();
+    }
 
     @Override
     public void requestReset() {

@@ -81,6 +81,14 @@ final class RealtimeRenderer implements Destroyable {
         return this.resources != null;
     }
 
+    long displayExposureStateBuffer() {
+        RealtimeRenderResources current = this.resources;
+        if (current == null) {
+            throw new IllegalStateException("Realtime exposure requires sized resources");
+        }
+        return current.processor.displayExposureStateBuffer();
+    }
+
     RealtimeSampleState.Plan planSample(RealtimeSampleState.Input input) {
         return this.sampleState.plan(input);
     }

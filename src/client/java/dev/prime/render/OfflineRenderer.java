@@ -52,18 +52,18 @@ final class OfflineRenderer implements Destroyable {
         this.session = Objects.requireNonNull(value, "value");
     }
 
-    OfflineSession stopAfterIdle() {
+    void stopAfterIdle() {
         OfflineSession previous = this.session;
         this.session = null;
         OfflineRenderResources previousResources = this.resources;
         this.resources = null;
-        if (previousResources != null) {
-            previousResources.destroy();
-        }
+        RuntimeException failure = ResourceCleanup.destroy(previousResources, null);
         if (this.pipeline != null) {
-            this.pipeline.releaseSizedResourcesAfterIdle();
+            failure = ResourceCleanup.run(
+                    this.pipeline::releaseSizedResourcesAfterIdle, failure);
         }
-        return previous;
+        failure = ResourceCleanup.destroy(previous, failure);
+        ResourceCleanup.throwIfFailed(failure);
     }
 
     boolean updateProjection(Matrix4fc projection) {
@@ -105,7 +105,11 @@ final class OfflineRenderer implements Destroyable {
             return current;
         }
         OfflineRenderResources replacement =
-                OfflineRenderResources.create(this.context, width, height);
+                OfflineRenderResources.create(
+                        this.context,
+                        width,
+                        height,
+                        this.session.exposure().buffer());
         this.resources = replacement;
         this.session.resetAccumulation();
         if (current != null) {
@@ -175,8 +179,6 @@ final class OfflineRenderer implements Destroyable {
                 framePlan,
                 images.displayOutput,
                 images.runningMean,
-                images.meteringAlbedo,
-                images.meteringNormalRoughness,
                 images.display,
                 input.atlasView(),
                 current.sceneTextures(),
@@ -239,7 +241,8 @@ final class OfflineRenderer implements Destroyable {
                 replacementResources = OfflineRenderResources.create(
                         this.context,
                         current.displayOutput.width(),
-                        current.displayOutput.height());
+                        current.displayOutput.height(),
+                        this.session.exposure().buffer());
             }
         } catch (RuntimeException exception) {
             ResourceCleanup.destroy(replacementResources, exception);
@@ -286,6 +289,7 @@ final class OfflineRenderer implements Destroyable {
         RuntimeException failure = null;
         failure = ResourceCleanup.destroy(this.resources, failure);
         failure = ResourceCleanup.destroy(this.pipeline, failure);
+        failure = ResourceCleanup.destroy(this.session, failure);
         this.resources = null;
         this.session = null;
         this.destroyed = true;

@@ -1,0 +1,131 @@
+package dev.prime.render.vulkan;
+
+import com.mojang.blaze3d.vulkan.Destroyable;
+import dev.prime.render.ResourceCleanup;
+import org.lwjgl.system.MemoryStack;
+import org.lwjgl.vulkan.KHRSynchronization2;
+import org.lwjgl.vulkan.VK12;
+import org.lwjgl.vulkan.VkBufferCopy;
+import org.lwjgl.vulkan.VkCommandBuffer;
+import org.lwjgl.vulkan.VkDependencyInfo;
+import org.lwjgl.vulkan.VkMemoryBarrier2;
+
+/** Immutable device-local exposure snapshot owned by one offline session. */
+public final class FrozenExposureState implements Destroyable {
+    private final VulkanContext context;
+    private final VulkanBuffer buffer;
+    private volatile boolean ready;
+    private boolean destroyed;
+
+    private FrozenExposureState(VulkanContext context, VulkanBuffer buffer) {
+        this.context = context;
+        this.buffer = buffer;
+    }
+
+    public static FrozenExposureState capture(
+            VulkanContext context, long sourceBuffer) {
+        if (sourceBuffer == 0L) {
+            throw new IllegalArgumentException("Exposure source buffer is null");
+        }
+        VulkanBuffer snapshot = context.createBuffer(
+                AutoExposurePass.EXPOSURE_STATE_SIZE,
+                VK12.VK_BUFFER_USAGE_STORAGE_BUFFER_BIT
+                        | VK12.VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+                false,
+                "Prime frozen offline exposure");
+        FrozenExposureState result = new FrozenExposureState(context, snapshot);
+        boolean submitted = false;
+        try {
+            var encoder = context.commandEncoder();
+            VkCommandBuffer commandBuffer =
+                    encoder.allocateAndBeginTransientCommandBuffer();
+            memoryBarrier(
+                    commandBuffer,
+                    VK12.VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
+                    VK12.VK_ACCESS_MEMORY_WRITE_BIT,
+                    VK12.VK_PIPELINE_STAGE_TRANSFER_BIT,
+                    VK12.VK_ACCESS_TRANSFER_READ_BIT);
+            try (MemoryStack stack = MemoryStack.stackPush()) {
+                VkBufferCopy.Buffer copy = VkBufferCopy.calloc(1, stack)
+                        .srcOffset(0L)
+                        .dstOffset(0L)
+                        .size(AutoExposurePass.EXPOSURE_STATE_SIZE);
+                VK12.vkCmdCopyBuffer(
+                        commandBuffer, sourceBuffer, snapshot.handle(), copy);
+            }
+            memoryBarrier(
+                    commandBuffer,
+                    VK12.VK_PIPELINE_STAGE_TRANSFER_BIT,
+                    VK12.VK_ACCESS_TRANSFER_WRITE_BIT,
+                    VK12.VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                    VK12.VK_ACCESS_SHADER_READ_BIT);
+            VulkanContext.check(
+                    VK12.vkEndCommandBuffer(commandBuffer),
+                    "end frozen exposure copy command buffer");
+            encoder.execute(commandBuffer);
+            submitted = true;
+            context.afterSubmission(result::markReady);
+            return result;
+        } catch (RuntimeException exception) {
+            if (!submitted) {
+                ResourceCleanup.destroy(snapshot, exception);
+            } else {
+                ResourceCleanup.destroy(result, exception);
+            }
+            throw exception;
+        }
+    }
+
+    public boolean ready() {
+        return this.ready;
+    }
+
+    public VulkanBuffer buffer() {
+        if (this.destroyed) {
+            throw new IllegalStateException("Frozen exposure state is destroyed");
+        }
+        if (!this.ready) {
+            throw new IllegalStateException("Frozen exposure copy is still pending");
+        }
+        return this.buffer;
+    }
+
+    private void markReady() {
+        this.ready = true;
+    }
+
+    private static void memoryBarrier(
+            VkCommandBuffer commandBuffer,
+            long sourceStage,
+            long sourceAccess,
+            long destinationStage,
+            long destinationAccess) {
+        try (MemoryStack stack = MemoryStack.stackPush()) {
+            VkMemoryBarrier2.Buffer barrier = VkMemoryBarrier2.calloc(1, stack);
+            barrier.get(0).sType$Default()
+                    .srcStageMask(sourceStage)
+                    .srcAccessMask(sourceAccess)
+                    .dstStageMask(destinationStage)
+                    .dstAccessMask(destinationAccess);
+            KHRSynchronization2.vkCmdPipelineBarrier2KHR(
+                    commandBuffer,
+                    VkDependencyInfo.calloc(stack)
+                            .sType$Default()
+                            .pMemoryBarriers(barrier));
+        }
+    }
+
+    @Override
+    public void destroy() {
+        if (!this.destroyed) {
+            this.destroyed = true;
+            if (this.ready) {
+                this.buffer.destroy();
+            } else {
+                // The copy lives in Minecraft's current Submission. Retire its destination on
+                // that same queue timeline instead of invalidating the recorded command buffer.
+                this.context.defer(this.buffer);
+            }
+        }
+    }
+}

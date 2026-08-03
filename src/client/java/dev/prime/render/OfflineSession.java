@@ -1,6 +1,8 @@
 package dev.prime.render;
 
+import com.mojang.blaze3d.vulkan.Destroyable;
 import dev.prime.render.terrain.TerrainScene;
+import dev.prime.render.vulkan.FrozenExposureState;
 import dev.prime.render.vulkan.TraceBackend;
 import java.util.List;
 import java.util.Objects;
@@ -9,7 +11,7 @@ import org.joml.Matrix4f;
 import org.joml.Matrix4fc;
 
 /** Frozen scene and transport identity for one offline accumulation. */
-final class OfflineSession {
+final class OfflineSession implements Destroyable {
     private final ClientLevel world;
     private final TerrainScene.ResidentSceneView scene;
     private final AstronomyState astronomy;
@@ -19,8 +21,10 @@ final class OfflineSession {
     private final long atlasSampler;
     private final long textureRevision;
     private final List<TraceBackend.SceneTexture> sceneTextures;
+    private final FrozenExposureState exposure;
     private FrameCamera camera;
     private long sampleCount;
+    private boolean destroyed;
 
     OfflineSession(
             ClientLevel world,
@@ -32,7 +36,8 @@ final class OfflineSession {
             long atlasView,
             long atlasSampler,
             long textureRevision,
-            List<TraceBackend.SceneTexture> sceneTextures) {
+            List<TraceBackend.SceneTexture> sceneTextures,
+            FrozenExposureState exposure) {
         this.world = Objects.requireNonNull(world, "world");
         this.scene = Objects.requireNonNull(scene, "scene");
         this.camera = Objects.requireNonNull(camera, "camera");
@@ -46,6 +51,7 @@ final class OfflineSession {
         this.atlasSampler = atlasSampler;
         this.textureRevision = textureRevision;
         this.sceneTextures = List.copyOf(sceneTextures);
+        this.exposure = Objects.requireNonNull(exposure, "exposure");
     }
 
     ClientLevel world() { return this.world; }
@@ -56,6 +62,7 @@ final class OfflineSession {
     boolean cameraInWater() { return this.cameraInWater; }
     long textureRevision() { return this.textureRevision; }
     List<TraceBackend.SceneTexture> sceneTextures() { return this.sceneTextures; }
+    FrozenExposureState exposure() { return this.exposure; }
     long sampleCount() { return this.sampleCount; }
 
     boolean matchesWorld(ClientLevel current) {
@@ -105,5 +112,13 @@ final class OfflineSession {
                 fixed.renderZ());
         this.sampleCount = 0L;
         return true;
+    }
+
+    @Override
+    public void destroy() {
+        if (!this.destroyed) {
+            this.destroyed = true;
+            this.exposure.destroy();
+        }
     }
 }

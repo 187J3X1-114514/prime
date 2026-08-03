@@ -329,6 +329,11 @@ final class RealtimeFramePlanTest {
         }
 
         @Override
+        public long displayExposureStateBuffer() {
+            return 1L;
+        }
+
+        @Override
         public void requestReset() {
             throw new UnsupportedOperationException();
         }

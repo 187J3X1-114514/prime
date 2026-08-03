@@ -145,6 +145,10 @@ public final class Fsr3Upscaler implements Destroyable {
         return this.linearOutput;
     }
 
+    public long displayExposureStateBuffer() {
+        return this.displayPass.exposureState().handle();
+    }
+
     public void requestReset() {
         this.history.requestReset();
     }

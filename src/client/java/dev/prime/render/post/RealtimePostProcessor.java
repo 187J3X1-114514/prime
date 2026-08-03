@@ -37,6 +37,9 @@ public interface RealtimePostProcessor extends Destroyable {
 
     VulkanImage linearHdrOutput();
 
+    /** Device-local 16-byte auto-exposure state used by the current display transform. */
+    long displayExposureStateBuffer();
+
     void requestReset();
 
     Frame beginFrame(FrameParameters parameters);

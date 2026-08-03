@@ -31,8 +31,6 @@ public final class OfflineFrameExecutor {
             OfflineFramePlan plan,
             VulkanImage displayOutput,
             VulkanImage runningMean,
-            VulkanImage meteringAlbedo,
-            VulkanImage meteringNormalRoughness,
             DisplayTransformPass display,
             VulkanGpuTextureView atlasView,
             List<TraceBackend.SceneTexture> sceneTextures,
@@ -46,8 +44,6 @@ public final class OfflineFrameExecutor {
         Objects.requireNonNull(plan, "plan");
         Objects.requireNonNull(displayOutput, "displayOutput");
         Objects.requireNonNull(runningMean, "runningMean");
-        Objects.requireNonNull(meteringAlbedo, "meteringAlbedo");
-        Objects.requireNonNull(meteringNormalRoughness, "meteringNormalRoughness");
         Objects.requireNonNull(display, "display");
         Objects.requireNonNull(atlasView, "atlasView");
         Objects.requireNonNull(sceneTextures, "sceneTextures");
@@ -80,10 +76,6 @@ public final class OfflineFrameExecutor {
                     commandBuffer, this.imageInitialization, displayOutput);
             VulkanImageTransitions.prepareAccumulationForTrace(
                     commandBuffer, this.imageInitialization, runningMean);
-            VulkanImageTransitions.prepareAccumulationForTrace(
-                    commandBuffer, this.imageInitialization, meteringAlbedo);
-            VulkanImageTransitions.prepareAccumulationForTrace(
-                    commandBuffer, this.imageInitialization, meteringNormalRoughness);
             VulkanImageTransitions.prepareAtlasForTrace(
                     commandBuffer, atlasView.texture());
             VulkanImageTransitions.prepareSceneTexturesForTrace(
@@ -101,13 +93,7 @@ public final class OfflineFrameExecutor {
                         commandBuffer, plan.integrator(), scene);
                 VulkanImageTransitions.prepareOfflineDisplay(
                         commandBuffer, runningMean);
-                display.record(
-                        commandBuffer,
-                        false,
-                        0.0F,
-                        plan.input().sampleCount() == 0L,
-                        true,
-                        plan.input().display());
+                display.recordFrozen(commandBuffer, plan.input().display());
                 VulkanImageTransitions.finishAtlasRead(
                         commandBuffer, atlasView.texture());
                 VulkanImageTransitions.finishSceneTextureReads(

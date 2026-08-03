@@ -35,6 +35,7 @@ public final class DisplayTransformPass implements Destroyable {
 
     private final VulkanContext context;
     private final AutoExposurePass autoExposure;
+    private final VulkanBuffer exposureState;
     private final long descriptorSetLayout;
     private final long descriptorPool;
     private final long descriptorSet;
@@ -47,6 +48,7 @@ public final class DisplayTransformPass implements Destroyable {
     private DisplayTransformPass(
             VulkanContext context,
             AutoExposurePass autoExposure,
+            VulkanBuffer exposureState,
             long descriptorSetLayout,
             long descriptorPool,
             long descriptorSet,
@@ -56,6 +58,7 @@ public final class DisplayTransformPass implements Destroyable {
             int height) {
         this.context = context;
         this.autoExposure = autoExposure;
+        this.exposureState = exposureState;
         this.descriptorSetLayout = descriptorSetLayout;
         this.descriptorPool = descriptorPool;
         this.descriptorSet = descriptorSet;
@@ -76,22 +79,23 @@ public final class DisplayTransformPass implements Destroyable {
                 meteringGuide.material(),
                 meteringGuide.normalRoughness(),
                 displayOutput,
-                false);
+                false,
+                null);
     }
 
     public static DisplayTransformPass createOffline(
             VulkanContext context,
             VulkanImage linearInput,
-            VulkanImage unusedAlbedo,
-            VulkanImage unusedNormalRoughness,
+            VulkanBuffer frozenExposure,
             VulkanImage displayOutput) {
         return create(
                 context,
                 linearInput,
-                unusedAlbedo,
-                unusedNormalRoughness,
+                null,
+                null,
                 displayOutput,
-                true);
+                false,
+                java.util.Objects.requireNonNull(frozenExposure, "frozenExposure"));
     }
 
     private static DisplayTransformPass create(
@@ -100,24 +104,31 @@ public final class DisplayTransformPass implements Destroyable {
             VulkanImage albedo,
             VulkanImage normalRoughness,
             VulkanImage displayOutput,
-            boolean accumulatedMetering) {
-        java.util.Objects.requireNonNull(albedo, "albedo");
-        java.util.Objects.requireNonNull(normalRoughness, "normalRoughness");
+            boolean accumulatedMetering,
+            VulkanBuffer frozenExposure) {
         if (linearInput.width() != displayOutput.width()
                 || linearInput.height() != displayOutput.height()) {
             throw new IllegalArgumentException("Display transform input and output extents differ");
+        }
+        if (frozenExposure != null
+                && frozenExposure.size() < AutoExposurePass.EXPOSURE_STATE_SIZE) {
+            throw new IllegalArgumentException("Frozen exposure state is incomplete");
         }
         long setLayout = 0L;
         long descriptorPool = 0L;
         long pipelineLayout = 0L;
         long pipeline = 0L;
-        AutoExposurePass autoExposure =
-                AutoExposurePass.create(
+        AutoExposurePass autoExposure = frozenExposure == null
+                ? AutoExposurePass.create(
                         context,
                         linearInput,
-                        albedo,
-                        normalRoughness,
-                        accumulatedMetering);
+                        java.util.Objects.requireNonNull(albedo, "albedo"),
+                        java.util.Objects.requireNonNull(normalRoughness, "normalRoughness"),
+                        accumulatedMetering)
+                : null;
+        VulkanBuffer exposureState = frozenExposure == null
+                ? autoExposure.exposureState()
+                : frozenExposure;
         try (MemoryStack stack = MemoryStack.stackPush()) {
             VkDescriptorSetLayoutBinding.Buffer bindings = VkDescriptorSetLayoutBinding.calloc(3, stack);
             bindings.get(0).binding(0)
@@ -203,9 +214,9 @@ public final class DisplayTransformPass implements Destroyable {
             VkDescriptorBufferInfo.Buffer exposureInfo =
                     VkDescriptorBufferInfo.calloc(1, stack);
             exposureInfo.get(0)
-                    .buffer(autoExposure.exposureState().handle())
+                    .buffer(exposureState.handle())
                     .offset(0L)
-                    .range(autoExposure.exposureState().size());
+                    .range(AutoExposurePass.EXPOSURE_STATE_SIZE);
             VkWriteDescriptorSet.Buffer writes = VkWriteDescriptorSet.calloc(3, stack);
             writes.get(0).sType$Default().dstSet(descriptorSet).dstBinding(0)
                     .descriptorCount(1).descriptorType(VK12.VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE)
@@ -220,6 +231,7 @@ public final class DisplayTransformPass implements Destroyable {
             return new DisplayTransformPass(
                     context,
                     autoExposure,
+                    exposureState,
                     setLayout,
                     descriptorPool,
                     descriptorSet,
@@ -238,7 +250,7 @@ public final class DisplayTransformPass implements Destroyable {
     }
 
     public VulkanBuffer exposureState() {
-        return this.autoExposure.exposureState();
+        return this.exposureState;
     }
 
     public void record(
@@ -249,6 +261,9 @@ public final class DisplayTransformPass implements Destroyable {
             boolean instant,
             DisplaySettings.Snapshot display) {
         java.util.Objects.requireNonNull(display, "display");
+        if (this.autoExposure == null) {
+            throw new IllegalStateException("Frozen display transform cannot adapt exposure");
+        }
         this.autoExposure.record(
                 commandBuffer,
                 this.width,
@@ -257,6 +272,23 @@ public final class DisplayTransformPass implements Destroyable {
                 reset,
                 instant,
                 diagnostic);
+        this.recordDisplay(commandBuffer, diagnostic, display);
+    }
+
+    public void recordFrozen(
+            VkCommandBuffer commandBuffer,
+            DisplaySettings.Snapshot display) {
+        java.util.Objects.requireNonNull(display, "display");
+        if (this.autoExposure != null) {
+            throw new IllegalStateException("Adaptive display transform requires exposure update");
+        }
+        this.recordDisplay(commandBuffer, false, display);
+    }
+
+    private void recordDisplay(
+            VkCommandBuffer commandBuffer,
+            boolean diagnostic,
+            DisplaySettings.Snapshot display) {
         try (MemoryStack stack = MemoryStack.stackPush()) {
             ByteBuffer push = stack.malloc(PUSH_SIZE).order(ByteOrder.nativeOrder());
             push.putInt(0, this.width);
@@ -322,6 +354,8 @@ public final class DisplayTransformPass implements Destroyable {
         VK12.vkDestroyPipeline(this.context.vkDevice(), this.pipeline, null);
         VK12.vkDestroyPipelineLayout(this.context.vkDevice(), this.pipelineLayout, null);
         VK12.vkDestroyDescriptorSetLayout(this.context.vkDevice(), this.descriptorSetLayout, null);
-        this.autoExposure.destroy();
+        if (this.autoExposure != null) {
+            this.autoExposure.destroy();
+        }
     }
 }

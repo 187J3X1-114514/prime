@@ -302,7 +302,7 @@
   },
   "atmosphereContract": {
     "spectralModel": "hillaire-8wave-rec2020-d65",
-    "worldToAtmosphereScale": 4.0,
+    "worldToAtmosphereScale": 2.0,
     "bottomRadiusKm": 6360.0,
     "topRadiusKm": 6460.0,
     "worldSeaLevelY": -128.0,

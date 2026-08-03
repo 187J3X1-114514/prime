@@ -5,6 +5,7 @@ import com.mojang.blaze3d.platform.InputConstants;
 import com.mojang.blaze3d.systems.RenderSystem;
 import com.mojang.blaze3d.vulkan.VulkanDevice;
 import dev.prime.PrimeClient;
+import dev.prime.client.ViewDistanceLimits;
 import dev.prime.config.PrimeConfig;
 import dev.prime.render.fsr.FsrDebugView;
 import dev.prime.render.post.DlssRrDebugView;
@@ -13,6 +14,7 @@ import dev.prime.render.replay.RenderReplayVerification;
 import dev.prime.render.scene.vanilla.DynamicSceneFrame;
 import dev.prime.render.vulkan.VulkanBootstrap;
 import dev.prime.render.vulkan.VulkanCapabilities;
+import dev.prime.render.vulkan.VulkanContext;
 import dev.prime.render.vulkan.nrd.NrdDiagnostics;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
@@ -44,10 +46,15 @@ public final class RayTracingRuntime {
     // Resource reload preparation may observe the renderer off the client thread. The renderer
     // itself remains client-thread owned; volatile only publishes attachment and detachment.
     private volatile VulkanRenderer renderer;
+    // Kept across normal renderer toggles. It owns only Prime's allocator/device boundary; every
+    // scene, staging page, texture, pipeline and sized renderer resource belongs to renderer.
+    private VulkanContext context;
     // Failure transfers the sole renderer ownership here until the next frame boundary. Closing
     // it inside renderWorld would invalidate resources referenced by that frame's command buffers.
     private VulkanRenderer retiringRenderer;
     private ClientLevel world;
+    private ClientLevel terrainWorld;
+    private boolean primeOwnsTerrain;
 
     private RayTracingRuntime() {
     }
@@ -58,14 +65,12 @@ public final class RayTracingRuntime {
 
     public void initialize() {
         this.initialized = true;
-        if (PrimeConfig.settings().pathTracingEnabled()) {
-            this.tryInitializeRenderer();
-        } else {
+        if (!PrimeConfig.settings().pathTracingEnabled()) {
             this.states.disabled();
         }
     }
 
-    private void tryInitializeRenderer() {
+    private void tryInitializeRenderer(Minecraft minecraft) {
         if (this.renderer != null
                 || this.retiringRenderer != null
                 || this.shuttingDown
@@ -78,14 +83,27 @@ public final class RayTracingRuntime {
         if (!capabilities.available() || device == null) {
             this.failureReason = capabilities.unavailableReason();
             this.states.unavailable();
+            this.restoreVanillaTerrain(minecraft, true);
         } else {
             try {
-                this.renderer = new VulkanRenderer(device, capabilities);
+                if (this.context == null) {
+                    this.context = new VulkanContext(device, capabilities);
+                }
+                if (minecraft.level == null || minecraft.player == null) {
+                    this.states.rendererReady();
+                    return;
+                }
+                this.acquirePrimeTerrain(minecraft);
+                this.renderer = new VulkanRenderer(this.context);
                 this.failureReason = "";
                 this.states.rendererReady();
             } catch (RuntimeException exception) {
                 this.failureReason = "Unable to initialize Vulkan ray tracing: " + exception.getMessage();
                 this.states.fail();
+                this.restoreVanillaTerrain(minecraft, true);
+                VulkanContext failedContext = this.context;
+                this.context = null;
+                ResourceCleanup.close(failedContext, exception);
                 PrimeClient.LOGGER.error("Prime Vulkan initialization failed", exception);
             }
         }
@@ -99,6 +117,15 @@ public final class RayTracingRuntime {
         return this.states.current() == RuntimeState.ACTIVE;
     }
 
+    public boolean shouldMaintainVanillaTerrain() {
+        return !this.primeOwnsTerrain;
+    }
+
+    public int vanillaTerrainDistance(int configuredDistance) {
+        return ViewDistanceLimits.vanillaTerrainDistance(
+                configuredDistance, this.primeOwnsTerrain);
+    }
+
     public boolean shouldCaptureDynamicScene() {
         VulkanRenderer activeRenderer = this.renderer;
         return activeRenderer != null
@@ -107,16 +134,20 @@ public final class RayTracingRuntime {
     }
 
     public void beginFrame(Minecraft minecraft) {
-        this.retireFailedRenderer();
+        this.retireFailedRenderer(minecraft);
         if (!this.initialized) {
             return;
         }
         this.updateSessionShortcuts(minecraft);
         if (!PrimeConfig.settings().pathTracingEnabled()) {
-            this.disableRenderer();
+            this.disableRenderer(minecraft);
             return;
         }
-        this.tryInitializeRenderer();
+        if ((minecraft.level == null || minecraft.player == null)
+                && this.renderer != null) {
+            this.suspendRenderer(minecraft);
+        }
+        this.tryInitializeRenderer(minecraft);
         this.finalizeUnavailableReason();
         this.showFailureNotificationOnce(minecraft);
         if (this.states.current() == RuntimeState.FAILED) {
@@ -128,6 +159,7 @@ public final class RayTracingRuntime {
         }
         try {
             ClientLevel currentWorld = minecraft.level;
+            this.acquirePrimeTerrain(minecraft);
             if (this.world != currentWorld) {
                 this.world = currentWorld;
                 this.states.worldChanged();
@@ -258,6 +290,14 @@ public final class RayTracingRuntime {
         this.controls = this.controls.withTriangleDebug(value);
     }
 
+    public boolean blasCompactionDebug() {
+        return this.controls.blasCompactionDebug();
+    }
+
+    public void setBlasCompactionDebug(boolean value) {
+        this.controls = this.controls.withBlasCompactionDebug(value);
+    }
+
     public WavefrontDebugMode wavefrontDebugMode() {
         return this.controls.wavefrontDebugMode();
     }
@@ -374,6 +414,7 @@ public final class RayTracingRuntime {
         this.replayTest = null;
         VulkanRenderer activeRenderer = this.renderer;
         VulkanRenderer failedRenderer = this.retiringRenderer;
+        VulkanContext activeContext = this.context;
         this.world = null;
         this.controls = SessionControls.defaults();
         RuntimeException failure = null;
@@ -388,6 +429,12 @@ public final class RayTracingRuntime {
                 failure = ResourceCleanup.close(failedRenderer, failure);
                 if (this.retiringRenderer == failedRenderer) {
                     this.retiringRenderer = null;
+                }
+            }
+            if (activeContext != null) {
+                failure = ResourceCleanup.close(activeContext, failure);
+                if (this.context == activeContext) {
+                    this.context = null;
                 }
             }
         } finally {
@@ -412,7 +459,7 @@ public final class RayTracingRuntime {
         PrimeClient.LOGGER.error("Prime ray tracing failed; returning to vanilla rendering", failure);
     }
 
-    private void retireFailedRenderer() {
+    private void retireFailedRenderer(Minecraft minecraft) {
         VulkanRenderer failedRenderer = this.retiringRenderer;
         if (failedRenderer == null) {
             return;
@@ -422,27 +469,94 @@ public final class RayTracingRuntime {
             if (this.retiringRenderer == failedRenderer) {
                 this.retiringRenderer = null;
             }
+            this.restoreVanillaTerrain(minecraft, true);
         } catch (RuntimeException exception) {
             PrimeClient.LOGGER.error("Failed to retire Prime Vulkan resources", exception);
         }
     }
 
-    private void disableRenderer() {
+    private void disableRenderer(Minecraft minecraft) {
         VulkanRenderer activeRenderer = this.renderer;
         this.world = null;
         this.states.disabled();
         this.replayTest = null;
+        if (activeRenderer != null) {
+            this.renderer = null;
+            try {
+                activeRenderer.close();
+                this.restoreVanillaTerrain(minecraft, true);
+            } catch (RuntimeException exception) {
+                this.retiringRenderer = activeRenderer;
+                PrimeClient.LOGGER.error(
+                        "Failed to stop Prime after path tracing was disabled", exception);
+            }
+        } else if (this.retiringRenderer == null) {
+            this.restoreVanillaTerrain(minecraft, true);
+        }
+    }
+
+    private void suspendRenderer(Minecraft minecraft) {
+        VulkanRenderer activeRenderer = this.renderer;
         if (activeRenderer == null) {
             return;
         }
         this.renderer = null;
+        this.world = null;
         try {
             activeRenderer.close();
         } catch (RuntimeException exception) {
             this.retiringRenderer = activeRenderer;
-            PrimeClient.LOGGER.error(
-                    "Failed to stop Prime after path tracing was disabled", exception);
+            this.fail(exception);
+            return;
         }
+        this.restoreVanillaTerrain(minecraft, false);
+        this.states.rendererReady();
+        this.states.worldAbsent();
+    }
+
+    private void acquirePrimeTerrain(Minecraft minecraft) {
+        ClientLevel currentWorld = minecraft.level;
+        boolean ownershipChanged = !this.primeOwnsTerrain;
+        boolean worldChanged = this.terrainWorld != currentWorld;
+        this.primeOwnsTerrain = true;
+        this.terrainWorld = currentWorld;
+        if (currentWorld != null && (ownershipChanged || worldChanged)) {
+            rebuildVanillaTerrainShell(minecraft);
+        }
+        if (ownershipChanged) {
+            minecraft.options.broadcastOptions();
+        }
+    }
+
+    private void restoreVanillaTerrain(Minecraft minecraft, boolean clampDistance) {
+        boolean ownershipChanged = this.primeOwnsTerrain;
+        this.primeOwnsTerrain = false;
+        this.terrainWorld = minecraft.level;
+        int configuredDistance = minecraft.options.renderDistance().get();
+        if (clampDistance
+                && configuredDistance > ViewDistanceLimits.VANILLA_MAXIMUM_RENDER_DISTANCE) {
+            minecraft.options.renderDistance().set(
+                    ViewDistanceLimits.VANILLA_MAXIMUM_RENDER_DISTANCE);
+        }
+        if (ownershipChanged && minecraft.level != null) {
+            rebuildVanillaTerrainShell(minecraft);
+        }
+        if (ownershipChanged) {
+            minecraft.options.broadcastOptions();
+        }
+    }
+
+    private static void rebuildVanillaTerrainShell(Minecraft minecraft) {
+        ClientLevel level = minecraft.level;
+        if (level == null) {
+            return;
+        }
+        minecraft.levelRenderer.resetLevelRenderData();
+        minecraft.levelRenderer.invalidateCompiledGeometry(
+                level,
+                minecraft.options,
+                minecraft.gameRenderer.mainCamera(),
+                minecraft.getBlockColors());
     }
 
     private void showFailureNotificationOnce(Minecraft minecraft) {

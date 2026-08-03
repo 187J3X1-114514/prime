@@ -9,7 +9,7 @@ import org.lwjgl.system.MemoryUtil;
 import org.lwjgl.vulkan.VK12;
 
 public final class StagingArena implements AutoCloseable {
-    public static final long PAGE_SIZE = 16L * 1024L * 1024L;
+    public static final long PAGE_SIZE = 64L * 1024L * 1024L;
     private static final int MAX_PAGES = 3;
 
     private final VulkanContext context;

@@ -5,6 +5,7 @@
   "compatibilityLevel": "JAVA_25",
   "client": [
     "BufferBuilderMixin",
+    "ClientInformationMixin",
     "ChunkMapMixin",
     "ChunkTaskPriorityQueueMixin",
     "DistanceManagerMixin",

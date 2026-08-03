@@ -683,6 +683,10 @@ public final class PreparedBlas {
             return this.target.backingSize();
         }
 
+        public long sourceSize() {
+            return this.source.backingSize();
+        }
+
         public long reclaimedBytes() {
             return this.source.backingSize() - this.target.backingSize();
         }

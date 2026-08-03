@@ -1,6 +1,7 @@
 package dev.prime.render.terrain;
 
 import dev.prime.PrimeClient;
+import dev.prime.client.ViewDistanceLimits;
 import dev.prime.render.ResourceCleanup;
 import dev.prime.render.scene.CapturedSectionGeometry;
 import dev.prime.render.scene.vanilla.VanillaAssetSnapshot;
@@ -137,7 +138,8 @@ public final class TerrainStreamer implements AutoCloseable {
         int previousCenterX = this.centerSectionX;
         int previousCenterY = this.centerSectionY;
         int previousCenterZ = this.centerSectionZ;
-        int viewDistance = minecraft.options.getEffectiveRenderDistance();
+        int viewDistance = ViewDistanceLimits.primeDistance(
+                minecraft.options.getEffectiveRenderDistance(), minecraft.isLocalServer());
         int minSectionY = currentWorld.getMinY() >> 4;
         int maxSectionY = currentWorld.getMinY() + currentWorld.getHeight() - 1 >> 4;
         if (playerSectionX != this.centerSectionX
@@ -181,6 +183,10 @@ public final class TerrainStreamer implements AutoCloseable {
 
     public TerrainScene.ResidentSceneView residentScene() {
         return this.scene.residentView();
+    }
+
+    public TerrainScene.CompactionStats compactionStats() {
+        return this.scene.compactionStats();
     }
 
     /**

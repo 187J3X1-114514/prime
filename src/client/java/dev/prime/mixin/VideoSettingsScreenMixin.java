@@ -47,6 +47,7 @@ public abstract class VideoSettingsScreenMixin {
     @Unique private OptionInstance<Integer> prime$oklabOverexposure;
     @Unique private OptionInstance<Integer> prime$defaultRoughness;
     @Unique private OptionInstance<Boolean> prime$triangleDebug;
+    @Unique private OptionInstance<Boolean> prime$blasCompactionDebug;
     @Unique private OptionInstance<WavefrontDebugMode> prime$wavefrontDebugMode;
     @Unique private OptionInstance<NrdDiagnostics.Mode> prime$nrdDebugView;
     @Unique private OptionInstance<FsrDebugView> prime$fsrDebugView;
@@ -73,6 +74,7 @@ public abstract class VideoSettingsScreenMixin {
             this.prime$oklabOverexposure = PrimeVideoOptions.oklabOverexposure();
             this.prime$defaultRoughness = PrimeVideoOptions.defaultRoughness();
             this.prime$triangleDebug = PrimeVideoOptions.triangleDebug();
+            this.prime$blasCompactionDebug = PrimeVideoOptions.blasCompactionDebug();
             this.prime$wavefrontDebugMode = PrimeVideoOptions.wavefrontDebugMode();
             this.prime$nrdDebugView = PrimeVideoOptions.nrdDebugView();
             this.prime$fsrDebugView = PrimeVideoOptions.fsrDebugView();
@@ -97,6 +99,7 @@ public abstract class VideoSettingsScreenMixin {
             list.addBig(this.prime$oklabOverexposure);
             list.addBig(this.prime$defaultRoughness);
             list.addBig(this.prime$triangleDebug);
+            list.addBig(this.prime$blasCompactionDebug);
             list.addBig(this.prime$wavefrontDebugMode);
             list.addSmall(this.prime$nrdDebugView, this.prime$fsrDebugView);
             list.addSmall(this.prime$rrDebugView, this.prime$rrDebugFullscreen);
@@ -144,6 +147,7 @@ public abstract class VideoSettingsScreenMixin {
                 this.prime$defaultRoughness,
                 MaterialSettings.DEFAULT_ROUGHNESS_STEPS);
         this.prime$refresh(this.prime$triangleDebug, false);
+        this.prime$refresh(this.prime$blasCompactionDebug, false);
         this.prime$refresh(this.prime$wavefrontDebugMode, WavefrontDebugMode.BASELINE);
         this.prime$refresh(this.prime$nrdDebugView, NrdDiagnostics.Mode.OFF);
         this.prime$refresh(this.prime$fsrDebugView, FsrDebugView.OFF);

@@ -18,12 +18,12 @@ import dev.prime.render.vulkan.LabPbrTextureAtlas;
 import dev.prime.render.vulkan.StagingArena;
 import dev.prime.render.vulkan.SunShadowPipeline;
 import dev.prime.render.vulkan.TraceBackend;
-import dev.prime.render.vulkan.VulkanCapabilities;
 import dev.prime.render.vulkan.VulkanContext;
 import dev.prime.render.vulkan.dlss.DlssRrBootstrap;
 import dev.prime.render.vulkan.dlss.DlssRrNative;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.concurrent.CompletableFuture;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.texture.TextureAtlas;
@@ -55,8 +55,8 @@ public final class VulkanRenderer implements AutoCloseable {
     private RendererModeLifecycle modeLifecycle = RendererModeLifecycle.initial();
     private boolean screenshotRequestRejected;
     private boolean closed;
-    public VulkanRenderer(com.mojang.blaze3d.vulkan.VulkanDevice device, VulkanCapabilities capabilities) {
-        VulkanContext newContext = new VulkanContext(device, capabilities);
+    public VulkanRenderer(VulkanContext context) {
+        VulkanContext newContext = java.util.Objects.requireNonNull(context, "context");
         StagingArena newStagingArena = null;
         AtmospherePipeline newAtmosphere = null;
         TraceBackend newTraceBackend = null;
@@ -96,7 +96,6 @@ public final class VulkanRenderer implements AutoCloseable {
             ResourceCleanup.destroy(newTraceBackend, exception);
             ResourceCleanup.destroy(newAtmosphere, exception);
             ResourceCleanup.close(newStagingArena, exception);
-            ResourceCleanup.close(newContext, exception);
             throw exception;
         }
     }
@@ -262,7 +261,7 @@ public final class VulkanRenderer implements AutoCloseable {
             this.debugLines = List.of();
             return;
         }
-        this.debugLines = this.realtimeRenderer.render(
+        List<String> rendererDebugLines = this.realtimeRenderer.render(
                 new RealtimeRenderer.RenderInput(
                         mainTarget,
                         scene,
@@ -278,10 +277,53 @@ public final class VulkanRenderer implements AutoCloseable {
                         atlas.sampler(),
                         atlas.textureRevision(),
                         this.sceneTextures));
+        this.debugLines = this.withCompactionDiagnostics(rendererDebugLines);
         if (this.realtimeRenderer.hasSizedResources()) {
             this.modeLifecycle = this.modeLifecycle.allocateRealtimeSized();
         }
     }
+
+    private List<String> withCompactionDiagnostics(List<String> rendererLines) {
+        if (!this.frameControls.blasCompactionDebug()) {
+            return rendererLines;
+        }
+        TerrainScene.CompactionStats stats = this.terrain.compactionStats();
+        long sourceBytes = Math.addExact(
+                Math.addExact(stats.waitingSourceBytes(), stats.readySourceBytes()),
+                stats.inFlightSourceBytes());
+        ArrayList<String> lines = new ArrayList<>(rendererLines.size() + 4);
+        lines.addAll(rendererLines);
+        lines.add(String.format(
+                Locale.ROOT,
+                "Prime BLAS compact  jobs W/R/F %d/%d/%d",
+                stats.waiting(),
+                stats.ready(),
+                stats.retiring()));
+        lines.add(String.format(
+                Locale.ROOT,
+                "Raw source W/R/F %.1f/%.1f/%.1f MiB  total %.1f MiB",
+                mebibytes(stats.waitingSourceBytes()),
+                mebibytes(stats.readySourceBytes()),
+                mebibytes(stats.inFlightSourceBytes()),
+                mebibytes(sourceBytes)));
+        lines.add(String.format(
+                Locale.ROOT,
+                "Known reclaim %.1f MiB  reclaimed %.1f MiB  completed %d",
+                mebibytes(stats.knownReclaimableBytes()),
+                mebibytes(stats.reclaimedBytes()),
+                stats.completedCount()));
+        lines.add(String.format(
+                Locale.ROOT,
+                "Compact target %.1f MiB  high-water %.1f MiB",
+                mebibytes(stats.reservedTargetBytes()),
+                mebibytes(stats.highWaterTargetBytes())));
+        return List.copyOf(lines);
+    }
+
+    private static double mebibytes(long bytes) {
+        return bytes / (1024.0 * 1024.0);
+    }
+
     private boolean updateOfflineSession(Minecraft minecraft, boolean requested) {
         OfflineSession current = this.offlineRenderer.session();
         boolean worldChanged = current != null && !current.matchesWorld(minecraft.level);
@@ -407,7 +449,6 @@ public final class VulkanRenderer implements AutoCloseable {
         failure = ResourceCleanup.destroy(this.traceBackend, failure);
         failure = ResourceCleanup.destroy(this.atmosphere, failure);
         failure = ResourceCleanup.close(this.stagingArena, failure);
-        failure = ResourceCleanup.close(this.context, failure);
         this.debugLines = List.of();
         this.closed = true;
         ResourceCleanup.throwIfFailed(failure);

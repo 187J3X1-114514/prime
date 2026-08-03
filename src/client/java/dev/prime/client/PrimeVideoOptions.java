@@ -107,6 +107,16 @@ public final class PrimeVideoOptions {
                 runtime::setTriangleDebug);
     }
 
+    public static OptionInstance<Boolean> blasCompactionDebug() {
+        RayTracingRuntime runtime = RayTracingRuntime.instance();
+        return OptionInstance.createBoolean(
+                "prime.options.debug.blas_compaction",
+                OptionInstance.cachedConstantTooltip(Component.translatable(
+                        "prime.options.debug.blas_compaction.tooltip")),
+                runtime.blasCompactionDebug(),
+                runtime::setBlasCompactionDebug);
+    }
+
     public static OptionInstance<WavefrontDebugMode> wavefrontDebugMode() {
         RayTracingRuntime runtime = RayTracingRuntime.instance();
         return new OptionInstance<>(

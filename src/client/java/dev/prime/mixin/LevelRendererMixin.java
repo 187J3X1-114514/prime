@@ -6,8 +6,10 @@ import com.mojang.blaze3d.vertex.PoseStack;
 import dev.prime.render.RayTracingRuntime;
 import dev.prime.render.scene.vanilla.DynamicSceneCapture;
 import dev.prime.render.scene.vanilla.VanillaSceneBoundary;
+import net.minecraft.client.Options;
 import net.minecraft.client.renderer.LevelRenderer;
 import net.minecraft.client.renderer.SubmitNodeCollector;
+import net.minecraft.client.renderer.chunk.SectionRenderDispatcher;
 import net.minecraft.client.renderer.state.level.LevelRenderState;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
@@ -17,6 +19,36 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 @Mixin(LevelRenderer.class)
 public abstract class LevelRendererMixin {
+    @Redirect(
+            method = "invalidateCompiledGeometry",
+            at = @At(
+                    value = "INVOKE",
+                    target = "Lnet/minecraft/client/Options;getEffectiveRenderDistance()I"))
+    private int prime$routeVanillaTerrainDistance(Options options) {
+        return RayTracingRuntime.instance().vanillaTerrainDistance(
+                options.getEffectiveRenderDistance());
+    }
+
+    @Inject(method = "compileSections", at = @At("HEAD"), cancellable = true)
+    private void prime$skipVanillaTerrainCompilation(
+            net.minecraft.client.renderer.state.level.CameraRenderState camera,
+            CallbackInfo callback) {
+        if (!RayTracingRuntime.instance().shouldMaintainVanillaTerrain()) {
+            callback.cancel();
+        }
+    }
+
+    @Redirect(
+            method = "render",
+            at = @At(
+                    value = "INVOKE",
+                    target = "Lnet/minecraft/client/renderer/chunk/SectionRenderDispatcher;uploadTerrainBuffersToGpu()V"))
+    private void prime$routeVanillaTerrainUpload(SectionRenderDispatcher dispatcher) {
+        if (RayTracingRuntime.instance().shouldMaintainVanillaTerrain()) {
+            dispatcher.uploadTerrainBuffersToGpu();
+        }
+    }
+
     @Inject(method = "submitFeatures", at = @At("HEAD"))
     private void prime$beginDynamicCapture(
             LevelRenderState levelRenderState,

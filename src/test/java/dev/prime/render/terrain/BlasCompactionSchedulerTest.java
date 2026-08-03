@@ -22,8 +22,8 @@ final class BlasCompactionSchedulerTest {
 
     @Test
     void admitsMultipleReadyJobsUpToTheExactBudgetBoundary() {
-        Job first = new Job(1, 4L * MIB, true);
-        Job second = new Job(2, 12L * MIB, true);
+        Job first = new Job(1, 16L * MIB, true);
+        Job second = new Job(2, 48L * MIB, true);
         Job third = new Job(3, 1L, true);
 
         assertEquals(
@@ -38,14 +38,14 @@ final class BlasCompactionSchedulerTest {
 
         assertEquals(
                 List.of(),
-                admit(8L * MIB, List.of(head, younger)));
+                admit(56L * MIB, List.of(head, younger)));
     }
 
     @Test
     void olderUnreadyOrCancelledJobsDoNotBlockReadyWork() {
-        Job unready = new Job(1, 15L * MIB, false);
-        Job ready = new Job(2, 8L * MIB, true);
-        Job alsoReady = new Job(3, 8L * MIB, true);
+        Job unready = new Job(1, 63L * MIB, false);
+        Job ready = new Job(2, 32L * MIB, true);
+        Job alsoReady = new Job(3, 32L * MIB, true);
 
         assertEquals(
                 List.of(ready, alsoReady),
@@ -54,7 +54,7 @@ final class BlasCompactionSchedulerTest {
 
     @Test
     void oversizedHeadRunsAloneOnlyWhenNothingElseIsInFlight() {
-        Job oversized = new Job(1, 17L * MIB, true);
+        Job oversized = new Job(1, 65L * MIB, true);
         Job younger = new Job(2, 1L * MIB, true);
 
         assertEquals(
@@ -69,15 +69,15 @@ final class BlasCompactionSchedulerTest {
     void retirementReleasesReservationWithoutReducingHighWater() {
         BlasCompactionScheduler.TargetBudget budget =
                 new BlasCompactionScheduler.TargetBudget();
-        budget.reserve(6L * MIB);
-        budget.reserve(10L * MIB);
+        budget.reserve(24L * MIB);
+        budget.reserve(40L * MIB);
 
-        assertEquals(16L * MIB, budget.reservedBytes());
-        assertEquals(16L * MIB, budget.highWaterBytes());
-        budget.release(6L * MIB);
-        budget.release(10L * MIB);
+        assertEquals(64L * MIB, budget.reservedBytes());
+        assertEquals(64L * MIB, budget.highWaterBytes());
+        budget.release(24L * MIB);
+        budget.release(40L * MIB);
         assertEquals(0L, budget.reservedBytes());
-        assertEquals(16L * MIB, budget.highWaterBytes());
+        assertEquals(64L * MIB, budget.highWaterBytes());
         assertThrows(IllegalStateException.class, () -> budget.release(1L));
     }
 

@@ -6,8 +6,11 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import org.junit.jupiter.api.Test;
 
 final class StagingArenaTest {
+    private static final long MIB = 1024L * 1024L;
+
     @Test
     void indivisibleUploadsRoundToWholePages() {
+        assertEquals(64L * MIB, StagingArena.PAGE_SIZE);
         assertEquals(StagingArena.PAGE_SIZE, StagingArena.allocationCapacity(0L));
         assertEquals(StagingArena.PAGE_SIZE, StagingArena.allocationCapacity(StagingArena.PAGE_SIZE));
         assertEquals(

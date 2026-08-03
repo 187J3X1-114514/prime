@@ -74,6 +74,8 @@
   "prime.options.material.default_roughness.tooltip": "粗糙度决定表面高光是清晰还是分散，仅用于没有提供 PBR 粗糙度贴图的方块。数值越低越光滑、反射越集中，数值越高越粗糙、反光越柔和。它不会覆盖材质包明确提供的粗糙度。建议保持默认值 0.90；只有普通方块整体显得过亮像塑料或过于暗哑时再调整。",
   "prime.options.debug.triangle_distribution": "三角面分布（临时）",
   "prime.options.debug.triangle_distribution.tooltip": "将最终光追几何的每个三角面分配稳定随机色，并与原始材质颜色各按 50% 混合，以检查合并和化简后的三角面分布。照明、透明和降噪仍按正常路径运行；该选项仅对本次游戏会话生效，参考累积截图不受影响。",
+  "prime.options.debug.blas_compaction": "BLAS 压缩诊断",
+  "prime.options.debug.blas_compaction.tooltip": "显示当前静态 BLAS 压缩积压、backing 字节、已知可回收字节、target 重叠和 source 退休后累计实际回收量。该只读诊断仅对本次游戏会话生效。",
   "prime.options.debug.wavefront_cost": "Wavefront 开销隔离",
   "prime.options.debug.wavefront_cost.tooltip": "临时移除指定的 Wavefront 工作，用于性能分析 A/B 抓帧。切换模式会重置实时历史；primary guides 和发光表面命中仍保留，参考累积截图不受影响。",
   "prime.options.debug.wavefront_cost.baseline": "基线",

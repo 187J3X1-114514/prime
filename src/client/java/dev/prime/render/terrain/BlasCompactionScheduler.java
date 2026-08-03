@@ -10,7 +10,7 @@ import java.util.function.ToLongFunction;
 
 /** Render-thread-owned FIFO admission and lifetime accounting for BLAS compaction. */
 final class BlasCompactionScheduler implements AutoCloseable {
-    static final long TARGET_BUDGET_BYTES = 16L * 1024L * 1024L;
+    static final long TARGET_BUDGET_BYTES = 64L * 1024L * 1024L;
 
     private final ArrayList<Job> jobs = new ArrayList<>();
     private final IdentityHashMap<PreparedBlas, Job> byBlas = new IdentityHashMap<>();
@@ -88,24 +88,44 @@ final class BlasCompactionScheduler implements AutoCloseable {
         int waiting = 0;
         int ready = 0;
         int retiring = 0;
+        long waitingSourceBytes = 0L;
+        long readySourceBytes = 0L;
+        long inFlightSourceBytes = 0L;
+        long knownReclaimableBytes = 0L;
         for (Job job : this.jobs) {
             PreparedBlas.CompactionState state = job.blas.compactionState();
             if (job.compaction != null) {
                 retiring++;
+                inFlightSourceBytes = Math.addExact(
+                        inFlightSourceBytes, job.compaction.sourceSize());
+                if (job.published || !job.cancelled) {
+                    knownReclaimableBytes = Math.addExact(
+                            knownReclaimableBytes, job.compaction.reclaimedBytes());
+                }
             } else if (job.cancelled) {
                 continue;
             } else if (state == PreparedBlas.CompactionState.READY) {
                 ready++;
+                readySourceBytes = Math.addExact(
+                        readySourceBytes, job.blas.accelerationStructure().backingSize());
+                knownReclaimableBytes = Math.addExact(
+                        knownReclaimableBytes, job.blas.compactionReclaimedBytes());
             } else if (state != PreparedBlas.CompactionState.NOT_BENEFICIAL
                     && state != PreparedBlas.CompactionState.COMPACTED
                     && state != PreparedBlas.CompactionState.DESTROYED) {
                 waiting++;
+                waitingSourceBytes = Math.addExact(
+                        waitingSourceBytes, job.blas.accelerationStructure().backingSize());
             }
         }
         return new Snapshot(
                 waiting,
                 ready,
                 retiring,
+                waitingSourceBytes,
+                readySourceBytes,
+                inFlightSourceBytes,
+                knownReclaimableBytes,
                 this.targetBudget.reservedBytes(),
                 this.targetBudget.highWaterBytes(),
                 this.reclaimedBytes,
@@ -206,6 +226,10 @@ final class BlasCompactionScheduler implements AutoCloseable {
             int waiting,
             int ready,
             int retiring,
+            long waitingSourceBytes,
+            long readySourceBytes,
+            long inFlightSourceBytes,
+            long knownReclaimableBytes,
             long reservedTargetBytes,
             long highWaterTargetBytes,
             long reclaimedBytes,

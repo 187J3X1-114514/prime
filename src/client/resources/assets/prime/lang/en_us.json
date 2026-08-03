@@ -74,6 +74,8 @@
   "prime.options.material.default_roughness.tooltip": "Roughness controls whether highlights are sharp or spread out and applies only to blocks without a PBR roughness texture. Lower values look smoother with tighter reflections; higher values look rougher with softer highlights. It never overrides roughness explicitly supplied by a resource pack. Keep the default 0.90 unless ordinary blocks look broadly too glossy or too matte.",
   "prime.options.debug.triangle_distribution": "Triangle Distribution (Temporary)",
   "prime.options.debug.triangle_distribution.tooltip": "Assigns each final ray-tracing triangle a stable random color and mixes it 50/50 with the original material color to inspect triangle distribution after merging and simplification. Lighting, transparency, and denoising continue normally. This setting lasts only for the current game session and does not affect reference screenshots.",
+  "prime.options.debug.blas_compaction": "BLAS Compaction Diagnostics",
+  "prime.options.debug.blas_compaction.tooltip": "Shows the current static-BLAS compaction backlog, backing bytes, known reclaimable bytes, target overlap, and cumulative bytes actually reclaimed after source retirement. This read-only diagnostic lasts only for the current game session.",
   "prime.options.debug.wavefront_cost": "Wavefront Cost Isolation",
   "prime.options.debug.wavefront_cost.tooltip": "Temporarily removes selected wavefront work for profiler A/B captures. Changing the mode resets realtime history. Primary guides and emissive-surface visibility remain enabled; reference screenshots are unaffected.",
   "prime.options.debug.wavefront_cost.baseline": "Baseline",

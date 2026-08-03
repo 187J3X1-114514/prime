@@ -828,6 +828,10 @@ public final class TerrainScene implements AutoCloseable {
         List<GpuCluster> retired = new ArrayList<>();
         Long2ObjectOpenHashMap<GpuCluster> nextResident =
                 new Long2ObjectOpenHashMap<>(finalClusters.size());
+        int tlasInstances = 0;
+        long uniqueTriangles = 0L;
+        long instancedTriangles = 0L;
+        int areaLightEmitters = 0;
         for (var entry : this.resident.long2ObjectEntrySet()) {
             if (removedKeys.contains(entry.getLongKey())) {
                 retired.add(entry.getValue());
@@ -838,7 +842,21 @@ public final class TerrainScene implements AutoCloseable {
                 throw new IllegalStateException(
                         "Prepared terrain scene contains a duplicate logical cluster");
             }
+            tlasInstances = Math.addExact(
+                    tlasInstances, cluster.tlasInstanceCount());
+            uniqueTriangles = Math.addExact(
+                    uniqueTriangles, cluster.uniqueBlasTriangleCount());
+            instancedTriangles = Math.addExact(
+                    instancedTriangles, cluster.instancedTriangleCount());
+            areaLightEmitters = Math.addExact(
+                    areaLightEmitters, cluster.lights().emitterCount());
         }
+        SceneStatistics statistics = new SceneStatistics(
+                tlasInstances,
+                uniqueTriangles,
+                instancedTriangles,
+                areaLightEmitters,
+                replacementWorldLightTree.nodeCount());
 
         TopLevelAccelerationStructure previousTlas = this.currentTlas;
         VulkanBuffer previousWorldLights = replaceWorldLights ? this.currentWorldLights : null;
@@ -861,7 +879,8 @@ public final class TerrainScene implements AutoCloseable {
                         this.resetRevision,
                         nextTemporalRevision,
                         nextOccluderRevision,
-                        occluderChanges);
+                        occluderChanges,
+                        statistics);
 
         return new PreparedUpdate(
                 nextResident,
@@ -1269,9 +1288,36 @@ public final class TerrainScene implements AutoCloseable {
             long resetRevision,
             long temporalRevision,
             long occluderRevision,
-            List<TerrainOccluderChange> occluderChanges) {
+            List<TerrainOccluderChange> occluderChanges,
+            SceneStatistics statistics) {
         public ResidentSceneView {
             occluderChanges = List.copyOf(occluderChanges);
+            statistics = java.util.Objects.requireNonNull(statistics, "statistics");
+        }
+
+        public ResidentSceneView(
+                long tlas,
+                long sectionTableAddress,
+                int originX,
+                int originY,
+                int originZ,
+                long revision,
+                long resetRevision,
+                long temporalRevision,
+                long occluderRevision,
+                List<TerrainOccluderChange> occluderChanges) {
+            this(
+                    tlas,
+                    sectionTableAddress,
+                    originX,
+                    originY,
+                    originZ,
+                    revision,
+                    resetRevision,
+                    temporalRevision,
+                    occluderRevision,
+                    occluderChanges,
+                    SceneStatistics.EMPTY);
         }
 
         public ResidentSceneView(
@@ -1293,7 +1339,29 @@ public final class TerrainScene implements AutoCloseable {
                     resetRevision,
                     temporalRevision,
                     revision,
-                    List.of());
+                    List.of(),
+                    SceneStatistics.EMPTY);
+        }
+    }
+
+    public record SceneStatistics(
+            int tlasInstanceCount,
+            long uniqueBlasTriangleCount,
+            long instancedTriangleCount,
+            int areaLightEmitterCount,
+            int topLevelLightTreeNodeCount) {
+        static final SceneStatistics EMPTY =
+                new SceneStatistics(0, 0L, 0L, 0, 0);
+
+        public SceneStatistics {
+            if (tlasInstanceCount < 0
+                    || uniqueBlasTriangleCount < 0L
+                    || instancedTriangleCount < 0L
+                    || areaLightEmitterCount < 0
+                    || topLevelLightTreeNodeCount < 0) {
+                throw new IllegalArgumentException(
+                        "Resident scene statistics must be non-negative");
+            }
         }
     }
 

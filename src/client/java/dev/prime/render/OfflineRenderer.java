@@ -96,6 +96,22 @@ final class OfflineRenderer implements Destroyable {
         return this.resources != null;
     }
 
+    DiagnosticSnapshot diagnosticSnapshot() {
+        OfflineSession currentSession = this.session;
+        if (currentSession == null) {
+            return null;
+        }
+        OfflineRenderResources currentResources = this.resources;
+        int width = currentResources == null
+                ? 0
+                : currentResources.displayOutput.width();
+        int height = currentResources == null
+                ? 0
+                : currentResources.displayOutput.height();
+        return new DiagnosticSnapshot(
+                width, height, currentSession.sampleCount());
+    }
+
     OfflineRenderResources ensureResources(int width, int height) {
         if (this.session == null) {
             throw new IllegalStateException("Offline resources require an active session");
@@ -227,6 +243,8 @@ final class OfflineRenderer implements Destroyable {
             }
         }
     }
+
+    record DiagnosticSnapshot(int width, int height, long accumulatedSamples) {}
 
     void reloadActive() {
         if (this.session == null) {

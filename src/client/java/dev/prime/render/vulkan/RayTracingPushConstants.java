@@ -62,8 +62,7 @@ public final class RayTracingPushConstants {
                 pathOffset,
                 IntegratorSettings.packSampleControl(
                         input.sampleIndex(),
-                        input.astronomy().settings(),
-                        input.wavefrontDebugMode()));
+                        input.astronomy().settings()));
         buffer.putInt(
                 pathOffset + Integer.BYTES,
                 IntegratorSettings.packSampleEpoch(

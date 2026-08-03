@@ -256,6 +256,7 @@ public final class VulkanRenderer implements AutoCloseable {
                 if (this.offlineRenderer.hasSizedResources()) {
                     this.modeLifecycle = this.modeLifecycle.allocateOfflineSized();
                 }
+                this.debugLines = this.withRendererDiagnostics(List.of());
                 return;
             }
             this.cancelOfflineSession();
@@ -287,47 +288,155 @@ public final class VulkanRenderer implements AutoCloseable {
                         atlas.sampler(),
                         atlas.textureRevision(),
                         this.sceneTextures));
-        this.debugLines = this.withCompactionDiagnostics(rendererDebugLines);
+        this.debugLines = this.withRendererDiagnostics(rendererDebugLines);
         if (this.realtimeRenderer.hasSizedResources()) {
             this.modeLifecycle = this.modeLifecycle.allocateRealtimeSized();
         }
     }
 
-    private List<String> withCompactionDiagnostics(List<String> rendererLines) {
-        if (!this.frameControls.blasCompactionDebug()) {
+    private List<String> withRendererDiagnostics(List<String> rendererLines) {
+        if (!this.frameControls.rendererDiagnostics()) {
+            return rendererLines;
+        }
+        OfflineSession offlineSession = this.offlineRenderer.session();
+        TerrainScene.ResidentSceneView scene = offlineSession == null
+                ? this.terrain.residentScene()
+                : offlineSession.scene();
+        if (scene == null) {
             return rendererLines;
         }
         TerrainScene.CompactionStats stats = this.terrain.compactionStats();
+        TerrainScene.SceneStatistics sceneStats = scene.statistics();
         long sourceBytes = Math.addExact(
                 Math.addExact(stats.waitingSourceBytes(), stats.readySourceBytes()),
                 stats.inFlightSourceBytes());
-        ArrayList<String> lines = new ArrayList<>(rendererLines.size() + 4);
+        ArrayList<String> lines = new ArrayList<>(rendererLines.size() + 12);
         lines.addAll(rendererLines);
+        lines.add("Prime renderer diagnostics");
         lines.add(String.format(
                 Locale.ROOT,
-                "Prime BLAS compact  jobs W/R/F %d/%d/%d",
+                "Graphics device: %s; shader execution reordering: %s; opacity micromaps: %s",
+                this.context.capabilities().deviceName(),
+                this.context.capabilities().invocationReorderSupported()
+                        ? "enabled"
+                        : "unavailable",
+                this.context.capabilities().opacityMicromapSupported()
+                        ? "enabled"
+                        : "unavailable"));
+        OfflineRenderer.DiagnosticSnapshot offline =
+                this.offlineRenderer.diagnosticSnapshot();
+        if (offline != null) {
+            lines.add(String.format(
+                    Locale.ROOT,
+                    "Rendering path: offline path-tracing accumulation; resolution: %d x %d; accumulated samples: %,d",
+                    offline.width(),
+                    offline.height(),
+                    offline.accumulatedSamples()));
+        } else {
+            RealtimeRenderer.DiagnosticSnapshot realtime =
+                    this.realtimeRenderer.diagnosticSnapshot();
+            if (realtime != null) {
+                lines.add(String.format(
+                        Locale.ROOT,
+                        "Rendering path: %s; quality: %s",
+                        renderingPath(realtime.postProcessingMode()),
+                        reconstructionQuality(realtime.quality())));
+                lines.add(String.format(
+                        Locale.ROOT,
+                        "Render resolution: %d x %d; display resolution: %d x %d; accumulated samples: %,d",
+                        realtime.renderWidth(),
+                        realtime.renderHeight(),
+                        realtime.displayWidth(),
+                        realtime.displayHeight(),
+                        realtime.accumulatedSamples()));
+            }
+        }
+        lines.add(String.format(
+                Locale.ROOT,
+                "Top-level acceleration structure instances: %,d; area-light emitters: %,d; top-level light-tree nodes: %,d",
+                sceneStats.tlasInstanceCount(),
+                sceneStats.areaLightEmitterCount(),
+                sceneStats.topLevelLightTreeNodeCount()));
+        lines.add(String.format(
+                Locale.ROOT,
+                "Triangle references after instancing: %,d; unique bottom-level geometry triangles: %,d",
+                sceneStats.instancedTriangleCount(),
+                sceneStats.uniqueBlasTriangleCount()));
+        var exposure = offlineSession == null
+                ? this.realtimeRenderer.exposureDiagnosticSnapshot()
+                : offlineSession.exposure().diagnosticSnapshot();
+        if (exposure == null) {
+            lines.add("Automatic exposure metering: waiting for asynchronous GPU readback");
+        } else if (!exposure.initialized()) {
+            lines.add("Automatic exposure metering: state is not initialized");
+        } else if (!exposure.finite()) {
+            lines.add(String.format(
+                    Locale.ROOT,
+                    "Automatic exposure metering: non-finite state (current=%s, target=%s, measured log brightness=%s)",
+                    exposure.automaticExposureEv(),
+                    exposure.targetExposureEv(),
+                    exposure.measuredLogBrightness()));
+        } else {
+            lines.add(String.format(
+                    Locale.ROOT,
+                    "Automatic exposure value: %+.2f stops; target: %+.2f stops; metered Oklab lightness-cubed log2 brightness: %+.2f",
+                    exposure.automaticExposureEv(),
+                    exposure.targetExposureEv(),
+                    exposure.measuredLogBrightness()));
+            float manualExposure =
+                    PrimeConfig.settings().display().finalExposureQuarterSteps() * 0.25F;
+            lines.add(String.format(
+                    Locale.ROOT,
+                    "Manual final exposure: %+.2f stops; combined display exposure: %+.2f stops",
+                    manualExposure,
+                    exposure.automaticExposureEv() + manualExposure));
+        }
+        lines.add(String.format(
+                Locale.ROOT,
+                "Bottom-level acceleration structure compaction jobs - query pending: %,d; ready: %,d; source retirement pending: %,d",
                 stats.waiting(),
                 stats.ready(),
                 stats.retiring()));
         lines.add(String.format(
                 Locale.ROOT,
-                "Raw source W/R/F %.1f/%.1f/%.1f MiB  total %.1f MiB",
+                "Uncompacted source backing - query pending: %.1f MiB; ready: %.1f MiB; source retirement pending: %.1f MiB; total: %.1f MiB",
                 mebibytes(stats.waitingSourceBytes()),
                 mebibytes(stats.readySourceBytes()),
                 mebibytes(stats.inFlightSourceBytes()),
                 mebibytes(sourceBytes)));
         lines.add(String.format(
                 Locale.ROOT,
-                "Known reclaim %.1f MiB  reclaimed %.1f MiB  completed %d",
+                "Known reclaimable backing: %.1f MiB; cumulatively reclaimed: %.1f MiB; completed compactions: %,d",
                 mebibytes(stats.knownReclaimableBytes()),
                 mebibytes(stats.reclaimedBytes()),
                 stats.completedCount()));
         lines.add(String.format(
                 Locale.ROOT,
-                "Compact target %.1f MiB  high-water %.1f MiB",
+                "Compacted-target overlap reserved: %.1f MiB; reserved high-water mark: %.1f MiB",
                 mebibytes(stats.reservedTargetBytes()),
                 mebibytes(stats.highWaterTargetBytes())));
         return List.copyOf(lines);
+    }
+
+    private static String renderingPath(
+            dev.prime.render.post.PostProcessingMode mode) {
+        return switch (mode) {
+            case DLSS_RR -> "DLSS Ray Reconstruction";
+            case NRD_FSR ->
+                    "NVIDIA Real-time Denoisers and FidelityFX Super Resolution 3.1.4";
+            case DISABLED -> "native-resolution noisy path tracing";
+        };
+    }
+
+    private static String reconstructionQuality(
+            dev.prime.render.post.ReconstructionQualityMode quality) {
+        return switch (quality) {
+            case NATIVE_AA -> "native anti-aliasing";
+            case QUALITY -> "quality";
+            case BALANCED -> "balanced";
+            case PERFORMANCE -> "performance";
+            case ULTRA_PERFORMANCE -> "ultra performance";
+        };
     }
 
     private static double mebibytes(long bytes) {

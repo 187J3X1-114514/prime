@@ -10,7 +10,6 @@ import dev.prime.render.IntegratorFrameInput;
 import dev.prime.render.LightingSettings;
 import dev.prime.render.MaterialSettings;
 import dev.prime.render.ResourceCleanup;
-import dev.prime.render.WavefrontDebugMode;
 import dev.prime.render.post.PostProcessingMode;
 import dev.prime.render.post.ReconstructionQualityMode;
 import dev.prime.render.fsr.FsrSettings;
@@ -244,8 +243,7 @@ public final class ReplayProbeController implements Destroyable {
                 input.material,
                 true,
                 false,
-                false,
-                WavefrontDebugMode.BASELINE);
+                false);
         RayTraceReplayInput replayInput =
                 RayTraceReplayInput.capture(frameInput, input.scene);
         return this.executor.execute(

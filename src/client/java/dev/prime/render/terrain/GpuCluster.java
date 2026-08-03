@@ -95,6 +95,31 @@ record GpuCluster(
         return Math.addExact(1, this.voxelInstances.count());
     }
 
+    long uniqueBlasTriangleCount() {
+        long count = this.blas == null ? 0L : triangleCount(this.blas);
+        for (PreparedBlas voxelBlas : this.voxelBlases) {
+            count = Math.addExact(count, triangleCount(voxelBlas));
+        }
+        return count;
+    }
+
+    long instancedTriangleCount() {
+        long count = this.blas == null ? 0L : triangleCount(this.blas);
+        for (int meshIndex : this.voxelInstances.meshIndices()) {
+            count = Math.addExact(
+                    count, triangleCount(this.voxelBlases.get(meshIndex)));
+        }
+        return count;
+    }
+
+    private static long triangleCount(PreparedBlas blas) {
+        return Math.addExact(
+                Math.addExact(
+                        blas.opaqueTriangleCount(),
+                        blas.cutoutTriangleCount()),
+                blas.transmissiveTriangleCount());
+    }
+
     void forEachBlas(Consumer<PreparedBlas> consumer) {
         if (this.blas != null) {
             consumer.accept(this.blas);

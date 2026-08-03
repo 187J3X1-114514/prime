@@ -229,9 +229,7 @@ void primeInitializeTransparentWavefront(
         PathState branchPath = path;
         branchPath.sampleDimension = transmissionBranch ? 1u : 0u;
         bool branchPureDelta = transmissionBranch || pureDeltaInterface;
-        bool continuation = hasScatter
-                && (transmissionBranch
-                        || !primeSuppressesPrimaryTransparentReflection());
+        bool continuation = hasScatter;
         if (continuation) {
             continuation = primeAdvancePath(
                     branchPath,

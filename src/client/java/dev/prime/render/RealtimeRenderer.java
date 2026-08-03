@@ -13,6 +13,7 @@ import dev.prime.render.post.ReconstructionQualityMode;
 import dev.prime.render.post.DlssRrDebugStatus;
 import dev.prime.render.terrain.TerrainScene;
 import dev.prime.render.vulkan.AtmospherePipeline;
+import dev.prime.render.vulkan.DisplayExposureDiagnostics;
 import dev.prime.render.vulkan.LabPbrTextureAtlas;
 import dev.prime.render.vulkan.RealtimeFrameExecutor;
 import dev.prime.render.vulkan.RealtimeRayTracingPipeline;
@@ -32,6 +33,7 @@ final class RealtimeRenderer implements Destroyable {
     private final TraceBackend backend;
     private final RealtimeFrameExecutor executor;
     private final ReplayProbeController replay;
+    private final DisplayExposureDiagnostics exposureDiagnostics;
     private final DlssRrNative.Context ngxContext;
     private RealtimeRayTracingPipeline pipeline;
     private RealtimeRenderResources resources;
@@ -54,6 +56,7 @@ final class RealtimeRenderer implements Destroyable {
         this.pipeline = new RealtimeRayTracingPipeline(context, backend);
         this.executor = new RealtimeFrameExecutor(context);
         this.replay = new ReplayProbeController(context);
+        this.exposureDiagnostics = new DisplayExposureDiagnostics(context);
     }
 
     RealtimeRayTracingPipeline pipeline() {
@@ -99,6 +102,26 @@ final class RealtimeRenderer implements Destroyable {
 
     int sampleIndex() {
         return this.sampleState.sampleIndex();
+    }
+
+    DiagnosticSnapshot diagnosticSnapshot() {
+        RealtimeRenderResources current = this.resources;
+        if (current == null) {
+            return null;
+        }
+        return new DiagnosticSnapshot(
+                current.mode,
+                current.qualityMode,
+                current.stableRadiance.width(),
+                current.stableRadiance.height(),
+                current.output.width(),
+                current.output.height(),
+                this.sampleIndex(),
+                this.exposureDiagnostics.latest());
+    }
+
+    DisplayExposureDiagnostics.Snapshot exposureDiagnosticSnapshot() {
+        return this.exposureDiagnostics.latest();
     }
 
     void invalidateHistory() {
@@ -332,7 +355,6 @@ final class RealtimeRenderer implements Destroyable {
                 settings.material(),
                 processor.rawFrame().usesShInputs(),
                 input.controls().triangleDebug(),
-                input.controls().wavefrontDebugMode(),
                 settings.display(),
                 input.controls().nrdDebugView(),
                 input.controls().fsrDebugView(),
@@ -387,6 +409,10 @@ final class RealtimeRenderer implements Destroyable {
                 input.sceneTextures(),
                 input.textureRevision(),
                 mainColor);
+        if (input.controls().rendererDiagnostics()) {
+            this.exposureDiagnostics.capture(
+                    processor.displayExposureStateBuffer());
+        }
         this.commitSample(sampleFrame);
         this.replay.run(new ReplayProbeController.RunInput(
                 this.pipeline(),
@@ -462,6 +488,16 @@ final class RealtimeRenderer implements Destroyable {
         }
     }
 
+    record DiagnosticSnapshot(
+            PostProcessingMode postProcessingMode,
+            ReconstructionQualityMode quality,
+            int renderWidth,
+            int renderHeight,
+            int displayWidth,
+            int displayHeight,
+            int accumulatedSamples,
+            DisplayExposureDiagnostics.Snapshot exposure) {}
+
     void releaseSizedResourcesAfterIdle() {
         RealtimeRenderResources current = this.resources;
         this.resources = null;
@@ -529,6 +565,7 @@ final class RealtimeRenderer implements Destroyable {
             return;
         }
         RuntimeException failure = null;
+        failure = ResourceCleanup.destroy(this.exposureDiagnostics, failure);
         failure = ResourceCleanup.destroy(this.replay, failure);
         failure = ResourceCleanup.destroy(this.resources, failure);
         failure = ResourceCleanup.destroy(this.pipeline, failure);

@@ -29,32 +29,6 @@ final class RealtimeSampleStateTest {
     }
 
     @Test
-    void changingWavefrontCostModeResetsRealtimeHistoryOnce() {
-        FrameCamera camera = camera(1.0);
-        RealtimeSampleState state = commit(
-                RealtimeSampleState.initial(),
-                input(camera, 3L, 11L, NOON, false));
-        RealtimeSampleState.Input isolated = new RealtimeSampleState.Input(
-                camera,
-                3L,
-                11L,
-                5L,
-                7L,
-                new AstronomyState(AstronomySettings.defaults(), NOON),
-                false,
-                WavefrontDebugMode.NO_PRIMARY_TRANSPARENT_REFLECTION,
-                false);
-
-        RealtimeSampleState.Plan reset = state.plan(isolated);
-        assertTrue(reset.reset());
-        assertEquals(0, reset.sampleIndex());
-        RealtimeSampleState.Plan continuation =
-                reset.committedState().plan(isolated);
-        assertFalse(continuation.reset());
-        assertEquals(1, continuation.sampleIndex());
-    }
-
-    @Test
     void unsubmittedPlansDoNotConsumeSamples() {
         RealtimeSampleState state = RealtimeSampleState.initial();
         FrameCamera camera = camera(1.0);
@@ -206,7 +180,6 @@ final class RealtimeSampleStateTest {
                         7L,
                         september,
                         false,
-                        WavefrontDebugMode.BASELINE,
                         false));
 
         assertTrue(plan.reset());
@@ -255,7 +228,6 @@ final class RealtimeSampleStateTest {
                 7L,
                 new AstronomyState(AstronomySettings.defaults(), sun),
                 false,
-                WavefrontDebugMode.BASELINE,
                 forceReset);
     }
 
@@ -276,7 +248,6 @@ final class RealtimeSampleStateTest {
                 materialRevision,
                 new AstronomyState(AstronomySettings.defaults(), sun),
                 cameraInWater,
-                WavefrontDebugMode.BASELINE,
                 forceReset);
     }
 

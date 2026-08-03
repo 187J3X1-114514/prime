@@ -2,6 +2,8 @@ package dev.prime.render.vulkan;
 
 import com.mojang.blaze3d.vulkan.Destroyable;
 import dev.prime.render.ResourceCleanup;
+import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
 import org.lwjgl.system.MemoryStack;
 import org.lwjgl.vulkan.KHRSynchronization2;
 import org.lwjgl.vulkan.VK12;
@@ -10,16 +12,22 @@ import org.lwjgl.vulkan.VkCommandBuffer;
 import org.lwjgl.vulkan.VkDependencyInfo;
 import org.lwjgl.vulkan.VkMemoryBarrier2;
 
-/** Immutable device-local exposure snapshot owned by one offline session. */
+/** Device-local exposure snapshot and diagnostic readback owned by one offline session. */
 public final class FrozenExposureState implements Destroyable {
     private final VulkanContext context;
     private final VulkanBuffer buffer;
+    private VulkanBuffer diagnosticReadback;
+    private volatile DisplayExposureDiagnostics.Snapshot diagnosticSnapshot;
     private volatile boolean ready;
     private boolean destroyed;
 
-    private FrozenExposureState(VulkanContext context, VulkanBuffer buffer) {
+    private FrozenExposureState(
+            VulkanContext context,
+            VulkanBuffer buffer,
+            VulkanBuffer diagnosticReadback) {
         this.context = context;
         this.buffer = buffer;
+        this.diagnosticReadback = diagnosticReadback;
     }
 
     public static FrozenExposureState capture(
@@ -33,7 +41,17 @@ public final class FrozenExposureState implements Destroyable {
                         | VK12.VK_BUFFER_USAGE_TRANSFER_DST_BIT,
                 false,
                 "Prime frozen offline exposure");
-        FrozenExposureState result = new FrozenExposureState(context, snapshot);
+        VulkanBuffer readback;
+        try {
+            readback = context.createReadbackBuffer(
+                    AutoExposurePass.EXPOSURE_STATE_SIZE,
+                    VK12.VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+                    "Prime frozen exposure diagnostics");
+        } catch (RuntimeException exception) {
+            throw ResourceCleanup.destroy(snapshot, exception);
+        }
+        FrozenExposureState result =
+                new FrozenExposureState(context, snapshot, readback);
         boolean submitted = false;
         try {
             var encoder = context.commandEncoder();
@@ -52,6 +70,8 @@ public final class FrozenExposureState implements Destroyable {
                         .size(AutoExposurePass.EXPOSURE_STATE_SIZE);
                 VK12.vkCmdCopyBuffer(
                         commandBuffer, sourceBuffer, snapshot.handle(), copy);
+                VK12.vkCmdCopyBuffer(
+                        commandBuffer, sourceBuffer, readback.handle(), copy);
             }
             memoryBarrier(
                     commandBuffer,
@@ -64,11 +84,12 @@ public final class FrozenExposureState implements Destroyable {
                     "end frozen exposure copy command buffer");
             encoder.execute(commandBuffer);
             submitted = true;
-            context.afterSubmission(result::markReady);
+            context.afterSubmission(result::complete);
             return result;
         } catch (RuntimeException exception) {
             if (!submitted) {
-                ResourceCleanup.destroy(snapshot, exception);
+                RuntimeException failure = ResourceCleanup.destroy(readback, exception);
+                ResourceCleanup.destroy(snapshot, failure);
             } else {
                 ResourceCleanup.destroy(result, exception);
             }
@@ -90,8 +111,33 @@ public final class FrozenExposureState implements Destroyable {
         return this.buffer;
     }
 
-    private void markReady() {
-        this.ready = true;
+    public DisplayExposureDiagnostics.Snapshot diagnosticSnapshot() {
+        return this.diagnosticSnapshot;
+    }
+
+    private void complete() {
+        if (this.destroyed) {
+            return;
+        }
+        VulkanBuffer readback = this.diagnosticReadback;
+        if (readback == null) {
+            throw new IllegalStateException(
+                    "Frozen exposure diagnostic readback is missing");
+        }
+        try {
+            ByteBuffer state = ByteBuffer.wrap(
+                            readback.read(0L, AutoExposurePass.EXPOSURE_STATE_SIZE))
+                    .order(ByteOrder.nativeOrder());
+            this.diagnosticSnapshot = new DisplayExposureDiagnostics.Snapshot(
+                    state.getFloat(0),
+                    state.getInt(4) != 0,
+                    state.getFloat(8),
+                    state.getFloat(12));
+        } finally {
+            this.diagnosticReadback = null;
+            readback.destroy();
+            this.ready = true;
+        }
     }
 
     private static void memoryBarrier(
@@ -119,12 +165,20 @@ public final class FrozenExposureState implements Destroyable {
     public void destroy() {
         if (!this.destroyed) {
             this.destroyed = true;
+            VulkanBuffer readback = this.diagnosticReadback;
+            this.diagnosticReadback = null;
             if (this.ready) {
                 this.buffer.destroy();
+                if (readback != null) {
+                    readback.destroy();
+                }
             } else {
                 // The copy lives in Minecraft's current Submission. Retire its destination on
                 // that same queue timeline instead of invalidating the recorded command buffer.
                 this.context.defer(this.buffer);
+                if (readback != null) {
+                    this.context.defer(readback);
+                }
             }
         }
     }

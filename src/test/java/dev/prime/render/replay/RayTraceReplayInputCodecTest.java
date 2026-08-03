@@ -12,7 +12,6 @@ import dev.prime.render.IntegratorFrameInput;
 import dev.prime.render.LightingSettings;
 import dev.prime.render.MaterialSettings;
 import dev.prime.render.SunDirection;
-import dev.prime.render.WavefrontDebugMode;
 import dev.prime.render.post.PostProcessingMode;
 import dev.prime.render.shader.ShaderAbi;
 import dev.prime.render.terrain.TerrainScene;
@@ -173,26 +172,6 @@ final class RayTraceReplayInputCodecTest {
                 () -> RayTraceReplayInputCodec.decode(encoded));
     }
 
-    @Test
-    void legacySecondaryAreaFlagNormalizesToTheCurrentEstimatorPolicy() {
-        Fixture fixture = input();
-        byte[] encoded = RayTraceReplayInputCodec.encode(
-                RayTraceReplayInput.capture(fixture.input(), fixture.scene()));
-        int sceneBytes = 3 * Integer.BYTES + 3 * Long.BYTES;
-        int flagsOffset = 2 * Integer.BYTES
-                + sceneBytes
-                + FrameCameraSnapshot.ENCODED_BYTES
-                + 11 * Integer.BYTES;
-        ByteBuffer buffer = ByteBuffer.wrap(encoded).order(ByteOrder.LITTLE_ENDIAN);
-        buffer.putInt(flagsOffset, buffer.getInt(flagsOffset) | (1 << 5));
-
-        RayTraceReplayInput decoded = RayTraceReplayInputCodec.decode(encoded);
-
-        assertEquals(
-                WavefrontDebugMode.NO_PRIMARY_TRANSPARENT_REFLECTION,
-                decoded.wavefrontDebugMode());
-    }
-
     private static IntegratorFrameInput withSampleIndex(
             IntegratorFrameInput input, int sampleIndex) {
         return new IntegratorFrameInput(
@@ -210,8 +189,7 @@ final class RayTraceReplayInputCodecTest {
                 input.material(),
                 input.shInput(),
                 input.rawNumericalDiagnostic(),
-                input.triangleDebug(),
-                input.wavefrontDebugMode());
+                input.triangleDebug());
     }
 
     private static Fixture input() {
@@ -258,8 +236,7 @@ final class RayTraceReplayInputCodecTest {
                 new MaterialSettings.Snapshot(90, 8L),
                 true,
                 true,
-                true,
-                WavefrontDebugMode.NO_PRIMARY_TRANSPARENT_REFLECTION);
+                true);
         return new Fixture(input, scene);
     }
 

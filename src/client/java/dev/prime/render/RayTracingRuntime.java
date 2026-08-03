@@ -290,20 +290,12 @@ public final class RayTracingRuntime {
         this.controls = this.controls.withTriangleDebug(value);
     }
 
-    public boolean blasCompactionDebug() {
-        return this.controls.blasCompactionDebug();
+    public boolean rendererDiagnostics() {
+        return this.controls.rendererDiagnostics();
     }
 
-    public void setBlasCompactionDebug(boolean value) {
-        this.controls = this.controls.withBlasCompactionDebug(value);
-    }
-
-    public WavefrontDebugMode wavefrontDebugMode() {
-        return this.controls.wavefrontDebugMode();
-    }
-
-    public void setWavefrontDebugMode(WavefrontDebugMode value) {
-        this.controls = this.controls.withWavefrontDebugMode(value);
+    public void setRendererDiagnostics(boolean value) {
+        this.controls = this.controls.withRendererDiagnostics(value);
     }
 
     public NrdDiagnostics.Mode nrdDebugView() {

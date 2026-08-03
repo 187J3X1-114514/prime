@@ -249,7 +249,6 @@ abstract class GenerateShaderAbi extends DefaultTask {
 					'Prime offline scheduler must preserve its single-slot 144-byte queue ABI')
 		}
 		if (!schema.pathControl.sampleEpochMask.toString().equalsIgnoreCase('0x7fffffff')
-				|| !schema.pathControl.suppressPrimaryTransparentReflectionMask.toString().equalsIgnoreCase('0x02000000')
 				|| !schema.pathControl.triangleDebugMask.toString().equalsIgnoreCase('0x80000000')
 				|| !schema.pathControl.cameraInWaterMask.toString().equalsIgnoreCase('0x80000000')
 				|| !schema.pathControl.jitterPhaseMask.toString().equalsIgnoreCase('0x1fff')
@@ -440,7 +439,6 @@ public final class ShaderAbi {
     public static final int PATH_SAMPLE_INDEX_MASK = ${schema.pathControl.sampleIndexMask};
     public static final int PATH_SOLAR_LONGITUDE_SHIFT = ${schema.pathControl.solarLongitudeShift};
     public static final int PATH_SOLAR_LONGITUDE_MASK = ${schema.pathControl.solarLongitudeMask};
-    public static final int PATH_SUPPRESS_PRIMARY_TRANSPARENT_REFLECTION_MASK = ${schema.pathControl.suppressPrimaryTransparentReflectionMask};
     public static final int PATH_SAMPLE_EPOCH_MASK = ${schema.pathControl.sampleEpochMask};
     public static final int PATH_TRIANGLE_DEBUG_MASK = ${schema.pathControl.triangleDebugMask};
     public static final int PATH_MAXIMUM_BOUNCES_MASK = ${schema.pathControl.maximumBouncesMask};
@@ -576,7 +574,6 @@ ${javaOffsets}
 #define PRIME_PATH_SAMPLE_INDEX_MASK ${schema.pathControl.sampleIndexMask}u
 #define PRIME_PATH_SOLAR_LONGITUDE_SHIFT ${schema.pathControl.solarLongitudeShift}u
 #define PRIME_PATH_SOLAR_LONGITUDE_MASK ${schema.pathControl.solarLongitudeMask}u
-#define PRIME_PATH_SUPPRESS_PRIMARY_TRANSPARENT_REFLECTION_MASK ${schema.pathControl.suppressPrimaryTransparentReflectionMask}u
 #define PRIME_PATH_SAMPLE_EPOCH_MASK ${schema.pathControl.sampleEpochMask}u
 #define PRIME_PATH_TRIANGLE_DEBUG_MASK ${schema.pathControl.triangleDebugMask}u
 #define PRIME_PATH_MAXIMUM_BOUNCES_MASK ${schema.pathControl.maximumBouncesMask}u

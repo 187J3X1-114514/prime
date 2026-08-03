@@ -33,7 +33,6 @@ public record RealtimeFrameInput(
         MaterialSettings.Snapshot material,
         boolean shInput,
         boolean triangleDebug,
-        WavefrontDebugMode wavefrontDebugMode,
         DisplaySettings.Snapshot display,
         NrdDiagnostics.Mode nrdDebugView,
         FsrDebugView fsrDebugView,
@@ -47,7 +46,6 @@ public record RealtimeFrameInput(
         Objects.requireNonNull(quality, "quality");
         Objects.requireNonNull(lighting, "lighting");
         Objects.requireNonNull(material, "material");
-        Objects.requireNonNull(wavefrontDebugMode, "wavefrontDebugMode");
         Objects.requireNonNull(display, "display");
         Objects.requireNonNull(nrdDebugView, "nrdDebugView");
         Objects.requireNonNull(fsrDebugView, "fsrDebugView");
@@ -87,7 +85,6 @@ public record RealtimeFrameInput(
                 this.material.revision(),
                 this.astronomy,
                 this.cameraInWater,
-                this.wavefrontDebugMode,
                 this.forceReset);
     }
 
@@ -157,8 +154,7 @@ public record RealtimeFrameInput(
                 this.shInput,
                 this.postProcessingMode == PostProcessingMode.NRD_FSR
                         && this.nrdDebugView.rawNumerical(),
-                this.triangleDebug,
-                this.wavefrontDebugMode);
+                this.triangleDebug);
     }
 
     public SunDirection sunDirection() {

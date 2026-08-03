@@ -24,15 +24,13 @@ public record IntegratorFrameInput(
         MaterialSettings.Snapshot material,
         boolean shInput,
         boolean rawNumericalDiagnostic,
-        boolean triangleDebug,
-        WavefrontDebugMode wavefrontDebugMode) {
+        boolean triangleDebug) {
     public IntegratorFrameInput {
         Objects.requireNonNull(camera, "camera");
         Objects.requireNonNull(astronomy, "astronomy");
         Objects.requireNonNull(postProcessingMode, "postProcessingMode");
         Objects.requireNonNull(lighting, "lighting");
         Objects.requireNonNull(material, "material");
-        Objects.requireNonNull(wavefrontDebugMode, "wavefrontDebugMode");
         if (width <= 0 || height <= 0) {
             throw new IllegalArgumentException(
                     "Integrator extent must be positive");
@@ -55,8 +53,7 @@ public record IntegratorFrameInput(
             throw new IllegalArgumentException(
                     "Integrator camera must be finite");
         }
-        IntegratorSettings.packSampleControl(
-                sampleIndex, astronomy.settings(), wavefrontDebugMode);
+        IntegratorSettings.packSampleControl(sampleIndex, astronomy.settings());
         IntegratorSettings.packSampleEpoch(sampleEpoch, triangleDebug);
         IntegratorSettings.packPathControl(
                 IntegratorSettings.MAXIMUM_BOUNCES,

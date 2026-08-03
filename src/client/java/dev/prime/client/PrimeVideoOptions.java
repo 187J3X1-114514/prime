@@ -7,7 +7,6 @@ import dev.prime.render.DisplaySettings;
 import dev.prime.render.LightingSettings;
 import dev.prime.render.MaterialSettings;
 import dev.prime.render.RayTracingRuntime;
-import dev.prime.render.WavefrontDebugMode;
 import dev.prime.render.fsr.FsrDebugView;
 import dev.prime.render.fsr.FsrQualityMode;
 import dev.prime.render.post.DlssRrDebugView;
@@ -31,8 +30,6 @@ public final class PrimeVideoOptions {
     private static final List<FsrDebugView> FSR_DEBUG_VIEWS = List.of(FsrDebugView.values());
     private static final List<NrdDiagnostics.Mode> NRD_DEBUG_VIEWS =
             List.of(NrdDiagnostics.Mode.values());
-    private static final List<WavefrontDebugMode> WAVEFRONT_DEBUG_MODES =
-            List.of(WavefrontDebugMode.values());
 
     private PrimeVideoOptions() {
     }
@@ -107,33 +104,14 @@ public final class PrimeVideoOptions {
                 runtime::setTriangleDebug);
     }
 
-    public static OptionInstance<Boolean> blasCompactionDebug() {
+    public static OptionInstance<Boolean> rendererDiagnostics() {
         RayTracingRuntime runtime = RayTracingRuntime.instance();
         return OptionInstance.createBoolean(
-                "prime.options.debug.blas_compaction",
+                "prime.options.debug.renderer_diagnostics",
                 OptionInstance.cachedConstantTooltip(Component.translatable(
-                        "prime.options.debug.blas_compaction.tooltip")),
-                runtime.blasCompactionDebug(),
-                runtime::setBlasCompactionDebug);
-    }
-
-    public static OptionInstance<WavefrontDebugMode> wavefrontDebugMode() {
-        RayTracingRuntime runtime = RayTracingRuntime.instance();
-        return new OptionInstance<>(
-                "prime.options.debug.wavefront_cost",
-                OptionInstance.cachedConstantTooltip(Component.translatable(
-                        "prime.options.debug.wavefront_cost.tooltip")),
-                (caption, mode) -> Options.genericValueLabel(
-                        caption,
-                        Component.translatable(
-                                "prime.options.debug.wavefront_cost." + mode.id())),
-                new OptionInstance.Enum<>(
-                        WAVEFRONT_DEBUG_MODES,
-                        Codec.STRING.xmap(
-                                WavefrontDebugMode::fromId,
-                                WavefrontDebugMode::id)),
-                runtime.wavefrontDebugMode(),
-                runtime::setWavefrontDebugMode);
+                        "prime.options.debug.renderer_diagnostics.tooltip")),
+                runtime.rendererDiagnostics(),
+                runtime::setRendererDiagnostics);
     }
 
     public static OptionInstance<ReconstructionQualityMode> qualityMode() {

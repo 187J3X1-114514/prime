@@ -18,8 +18,7 @@ final class SessionControlsTest {
         SessionControls changed = defaults
                 .withScreenshotRequested(true)
                 .withTriangleDebug(true)
-                .withWavefrontDebugMode(
-                        WavefrontDebugMode.NO_PRIMARY_TRANSPARENT_REFLECTION)
+                .withRendererDiagnostics(true)
                 .withNrdDebugView(NrdDiagnostics.Mode.NATIVE_VALIDATION)
                 .withFsrDebugView(FsrDebugView.OVERVIEW)
                 .withRrDebugView(DlssRrDebugView.MOTION)
@@ -27,16 +26,14 @@ final class SessionControlsTest {
 
         assertFalse(defaults.screenshotRequested());
         assertFalse(defaults.triangleDebug());
-        assertEquals(WavefrontDebugMode.BASELINE, defaults.wavefrontDebugMode());
+        assertFalse(defaults.rendererDiagnostics());
         assertEquals(NrdDiagnostics.Mode.OFF, defaults.nrdDebugView());
         assertEquals(FsrDebugView.OFF, defaults.fsrDebugView());
         assertEquals(DlssRrDebugView.OFF, defaults.rrDebugView());
         assertFalse(defaults.rrDebugFullscreen());
         assertTrue(changed.screenshotRequested());
         assertTrue(changed.triangleDebug());
-        assertEquals(
-                WavefrontDebugMode.NO_PRIMARY_TRANSPARENT_REFLECTION,
-                changed.wavefrontDebugMode());
+        assertTrue(changed.rendererDiagnostics());
         assertEquals(NrdDiagnostics.Mode.NATIVE_VALIDATION, changed.nrdDebugView());
         assertEquals(
                 FsrDebugView.OVERVIEW,
@@ -45,5 +42,6 @@ final class SessionControlsTest {
         assertTrue(changed.rrDebugFullscreen());
         assertNotSame(defaults, changed);
         assertSame(changed, changed.withRrDebugFullscreen(true));
+        assertSame(changed, changed.withRendererDiagnostics(true));
     }
 }

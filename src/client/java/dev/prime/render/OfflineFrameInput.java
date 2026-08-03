@@ -60,8 +60,7 @@ public record OfflineFrameInput(
                         this.material,
                         false,
                         false,
-                        false,
-                        WavefrontDebugMode.BASELINE));
+                        false));
     }
 
     public SunDirection sunDirection() {

@@ -22,7 +22,6 @@ final class RealtimeSampleState {
     private final long materialRevision;
     private final AstronomyState astronomy;
     private final boolean cameraInWater;
-    private final WavefrontDebugMode wavefrontDebugMode;
     private final int sampleIndex;
     private final int epoch;
     private final boolean resetRequested;
@@ -35,7 +34,6 @@ final class RealtimeSampleState {
             long materialRevision,
             AstronomyState astronomy,
             boolean cameraInWater,
-            WavefrontDebugMode wavefrontDebugMode,
             int sampleIndex,
             int epoch,
             boolean resetRequested) {
@@ -46,7 +44,6 @@ final class RealtimeSampleState {
         this.materialRevision = materialRevision;
         this.astronomy = astronomy;
         this.cameraInWater = cameraInWater;
-        this.wavefrontDebugMode = wavefrontDebugMode;
         this.sampleIndex = sampleIndex;
         this.epoch = epoch;
         this.resetRequested = resetRequested;
@@ -61,7 +58,6 @@ final class RealtimeSampleState {
                 Long.MIN_VALUE,
                 null,
                 false,
-                WavefrontDebugMode.BASELINE,
                 0,
                 0,
                 true);
@@ -80,7 +76,6 @@ final class RealtimeSampleState {
                 || input.materialRevision() != this.materialRevision
                 || (this.camera != null
                         && input.cameraInWater() != this.cameraInWater)
-                || input.wavefrontDebugMode() != this.wavefrontDebugMode
                 || astronomyDiscontinuous(input.astronomy(), this.astronomy);
         int plannedSample = reset ? 0 : this.sampleIndex;
         int plannedEpoch = reset ? this.epoch + 1 : this.epoch;
@@ -96,7 +91,6 @@ final class RealtimeSampleState {
                 input.materialRevision(),
                 input.astronomy(),
                 input.cameraInWater(),
-                input.wavefrontDebugMode(),
                 plannedSample + 1,
                 plannedEpoch,
                 false);
@@ -115,7 +109,6 @@ final class RealtimeSampleState {
                 this.materialRevision,
                 this.astronomy,
                 this.cameraInWater,
-                this.wavefrontDebugMode,
                 this.sampleIndex,
                 this.epoch,
                 true);
@@ -154,12 +147,10 @@ final class RealtimeSampleState {
             long materialRevision,
             AstronomyState astronomy,
             boolean cameraInWater,
-            WavefrontDebugMode wavefrontDebugMode,
             boolean forceReset) {
         Input {
             Objects.requireNonNull(camera, "camera");
             Objects.requireNonNull(astronomy, "astronomy");
-            Objects.requireNonNull(wavefrontDebugMode, "wavefrontDebugMode");
         }
     }
 

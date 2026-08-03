@@ -43,6 +43,9 @@ public final class PreparedBlas {
     private final long opaqueTriangleCount;
     private final long cutoutTriangleCount;
     private final long transmissiveTriangleCount;
+    private final long opaqueMacroTriangleCount;
+    private final long cutoutMacroTriangleCount;
+    private final long transmissiveMacroTriangleCount;
 
     private PreparedBlas(
             VulkanContext context,
@@ -56,6 +59,9 @@ public final class PreparedBlas {
             long opaqueTriangleCount,
             long cutoutTriangleCount,
             long transmissiveTriangleCount,
+            long opaqueMacroTriangleCount,
+            long cutoutMacroTriangleCount,
+            long transmissiveMacroTriangleCount,
             CompactionPolicy compactionPolicy,
             String label) {
         this.context = context;
@@ -69,6 +75,9 @@ public final class PreparedBlas {
         this.opaqueTriangleCount = opaqueTriangleCount;
         this.cutoutTriangleCount = cutoutTriangleCount;
         this.transmissiveTriangleCount = transmissiveTriangleCount;
+        this.opaqueMacroTriangleCount = opaqueMacroTriangleCount;
+        this.cutoutMacroTriangleCount = cutoutMacroTriangleCount;
+        this.transmissiveMacroTriangleCount = transmissiveMacroTriangleCount;
         this.compactionPolicy = compactionPolicy;
         this.compactionState = compactionPolicy == CompactionPolicy.ENABLED
                 ? CompactionState.BUILD_PENDING
@@ -122,6 +131,38 @@ public final class PreparedBlas {
             long transmissiveTriangleCount,
             CompactionPolicy compactionPolicy,
             String label) {
+        return create(
+                context,
+                positions,
+                primitives,
+                opacityMicromapData,
+                staging,
+                commandBuffer,
+                opaqueTriangleCount,
+                cutoutTriangleCount,
+                transmissiveTriangleCount,
+                0L,
+                0L,
+                0L,
+                compactionPolicy,
+                label);
+    }
+
+    public static PreparedBlas create(
+            VulkanContext context,
+            VulkanBuffer positions,
+            VulkanBuffer primitives,
+            OpacityMicromapData opacityMicromapData,
+            StagingArena.Batch staging,
+            VkCommandBuffer commandBuffer,
+            long opaqueTriangleCount,
+            long cutoutTriangleCount,
+            long transmissiveTriangleCount,
+            long opaqueMacroTriangleCount,
+            long cutoutMacroTriangleCount,
+            long transmissiveMacroTriangleCount,
+            CompactionPolicy compactionPolicy,
+            String label) {
         if (compactionPolicy == null) {
             throw new IllegalArgumentException("BLAS compaction policy must not be null");
         }
@@ -130,6 +171,9 @@ public final class PreparedBlas {
                 cutoutTriangleCount,
                 transmissiveTriangleCount,
                 context.capabilities().maxAccelerationStructurePrimitiveCount());
+        requireMacroCount(opaqueTriangleCount, opaqueMacroTriangleCount);
+        requireMacroCount(cutoutTriangleCount, cutoutMacroTriangleCount);
+        requireMacroCount(transmissiveTriangleCount, transmissiveMacroTriangleCount);
         OpacityMicromap opacityMicromap = OpacityMicromap.create(
                 context,
                 opacityMicromapData,
@@ -205,6 +249,9 @@ public final class PreparedBlas {
                         opaqueTriangleCount,
                         cutoutTriangleCount,
                         transmissiveTriangleCount,
+                        opaqueMacroTriangleCount,
+                        cutoutMacroTriangleCount,
+                        transmissiveMacroTriangleCount,
                         compactionPolicy,
                         label);
             } catch (RuntimeException exception) {
@@ -390,6 +437,28 @@ public final class PreparedBlas {
 
     public long transmissiveTriangleCount() {
         return this.transmissiveTriangleCount;
+    }
+
+    public long cutoutPrimitiveBase() {
+        return primitiveCount(this.opaqueTriangleCount, this.opaqueMacroTriangleCount);
+    }
+
+    public long transmissivePrimitiveBase() {
+        return Math.addExact(
+                this.cutoutPrimitiveBase(),
+                primitiveCount(this.cutoutTriangleCount, this.cutoutMacroTriangleCount));
+    }
+
+    public long opaqueMacroTriangleBase() {
+        return this.opaqueTriangleCount - this.opaqueMacroTriangleCount;
+    }
+
+    public long cutoutMacroTriangleBase() {
+        return this.cutoutTriangleCount - this.cutoutMacroTriangleCount;
+    }
+
+    public long transmissiveMacroTriangleBase() {
+        return this.transmissiveTriangleCount - this.transmissiveMacroTriangleCount;
     }
 
     /** The vertex and scratch buffers are build inputs only and are retired on the real queue timeline. */
@@ -838,5 +907,18 @@ public final class PreparedBlas {
                     "BLAS primitive records exceed the shader uint address space");
         }
         return total;
+    }
+
+    private static long primitiveCount(long triangleCount, long macroTriangleCount) {
+        return Math.subtractExact(triangleCount, macroTriangleCount / 2L);
+    }
+
+    private static void requireMacroCount(long triangleCount, long macroTriangleCount) {
+        if (macroTriangleCount < 0L
+                || macroTriangleCount > triangleCount
+                || (macroTriangleCount & 1L) != 0L) {
+            throw new IllegalArgumentException(
+                    "Macro triangle counts must be even and inside their geometry partition");
+        }
     }
 }

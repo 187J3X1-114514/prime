@@ -168,6 +168,10 @@ final class ShaderAbiTest {
         assertEquals(40, ShaderAbi.SECTION_WORLD_LIGHT_FORWARD_ADDRESS_OFFSET);
         assertEquals(48, ShaderAbi.SECTION_TRANSLATION_OFFSET);
         assertEquals(60, ShaderAbi.SECTION_WORLD_LIGHT_NODE_COUNT_OFFSET);
+        assertEquals(64, ShaderAbi.SECTION_INSTANCE_TINT_OFFSET);
+        assertEquals(68, ShaderAbi.SECTION_OPAQUE_MACRO_TRIANGLE_BASE_OFFSET);
+        assertEquals(72, ShaderAbi.SECTION_CUTOUT_MACRO_TRIANGLE_BASE_OFFSET);
+        assertEquals(76, ShaderAbi.SECTION_TRANSMISSIVE_MACRO_TRIANGLE_BASE_OFFSET);
         assertEquals(0, ShaderAbi.LIGHT_NODE_BOUNDS_MIN_POWER_OFFSET);
         assertEquals(0, ShaderAbi.LIGHT_NODE_FORWARD_CHILD_OR_LEAF_OFFSET);
         assertEquals(0, ShaderAbi.LIGHT_NODE_REVERSE_PARENT_OFFSET);

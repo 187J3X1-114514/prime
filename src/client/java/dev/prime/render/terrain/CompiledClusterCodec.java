@@ -9,7 +9,7 @@ import java.util.Objects;
 /** Versioned canonical binary encoding of one {@link CompiledCluster}. */
 public final class CompiledClusterCodec {
     private static final int MAGIC = 0x3143_4350;
-    private static final int VERSION = 4;
+    private static final int VERSION = 5;
     private static final int MAX_SEGMENTS = 4_096;
     private static final int MAX_VOXEL_MESHES = 4_096;
     private static final int MAX_VOXEL_INSTANCES = 4_194_304;
@@ -41,6 +41,9 @@ public final class CompiledClusterCodec {
             output.putInt(segment.opaqueTriangleCount());
             output.putInt(segment.cutoutTriangleCount());
             output.putInt(segment.transmissiveTriangleCount());
+            output.putInt(segment.opaqueMacroTriangleCount());
+            output.putInt(segment.cutoutMacroTriangleCount());
+            output.putInt(segment.transmissiveMacroTriangleCount());
             putFloats(output, segment.positions());
             putInts(output, segment.primitiveRecords());
         }
@@ -115,16 +118,38 @@ public final class CompiledClusterCodec {
                         input.getInt(), "segment cutout triangle count");
                 int segmentTransmissive = nonnegative(
                         input.getInt(), "segment transmissive triangle count");
+                int segmentOpaqueMacro = version >= 5
+                        ? nonnegative(input.getInt(), "segment opaque macro triangle count")
+                        : 0;
+                int segmentCutoutMacro = version >= 5
+                        ? nonnegative(input.getInt(), "segment cutout macro triangle count")
+                        : 0;
+                int segmentTransmissiveMacro = version >= 5
+                        ? nonnegative(
+                                input.getInt(), "segment transmissive macro triangle count")
+                        : 0;
+                requireMacroCount(segmentOpaque, segmentOpaqueMacro);
+                requireMacroCount(segmentCutout, segmentCutoutMacro);
+                requireMacroCount(segmentTransmissive, segmentTransmissiveMacro);
                 int triangles = Math.addExact(
                         Math.addExact(segmentOpaque, segmentCutout),
                         segmentTransmissive);
+                int primitiveCount = Math.addExact(
+                        Math.addExact(
+                                CpuSectionMesh.primitiveCount(
+                                        segmentOpaque, segmentOpaqueMacro),
+                                CpuSectionMesh.primitiveCount(
+                                        segmentCutout, segmentCutoutMacro)),
+                        CpuSectionMesh.primitiveCount(
+                                segmentTransmissive, segmentTransmissiveMacro));
                 float[] positions = getFloats(
                         input,
                         Math.multiplyExact(triangles, 9),
                         "segment positions");
                 int[] primitives = getInts(
                         input,
-                        Math.multiplyExact(triangles, CpuSectionMesh.PRIMITIVE_WORDS),
+                        Math.multiplyExact(
+                                primitiveCount, CpuSectionMesh.PRIMITIVE_WORDS),
                         "segment primitive records");
                 if (version < 4) {
                     upgradePrimitivePacking(primitives);
@@ -134,7 +159,10 @@ public final class CompiledClusterCodec {
                         primitives,
                         segmentOpaque,
                         segmentCutout,
-                        segmentTransmissive));
+                        segmentTransmissive,
+                        segmentOpaqueMacro,
+                        segmentCutoutMacro,
+                        segmentTransmissiveMacro));
             }
 
             byte[] opacityBlocks = getBytes(input, "opacity blocks");
@@ -238,7 +266,7 @@ public final class CompiledClusterCodec {
     private static long encodedByteSize(CompiledCluster cluster) {
         long result = 56L;
         for (CpuClusterMesh.Segment segment : cluster.mesh().segments()) {
-            result = Math.addExact(result, 12L);
+            result = Math.addExact(result, 24L);
             result = arrayBytes(result, segment.positions().length, Float.BYTES);
             result = arrayBytes(
                     result, segment.primitiveRecords().length, Integer.BYTES);
@@ -392,6 +420,9 @@ public final class CompiledClusterCodec {
                     segment.opaqueTriangleCount(),
                     segment.cutoutTriangleCount(),
                     segment.transmissiveTriangleCount(),
+                    segment.opaqueMacroTriangleCount(),
+                    segment.cutoutMacroTriangleCount(),
+                    segment.transmissiveMacroTriangleCount(),
                     emitterCount);
         }
         for (CpuVoxelMesh voxelMesh : mesh.voxelMeshes()) {
@@ -400,6 +431,9 @@ public final class CompiledClusterCodec {
                     voxelMesh.opaqueTriangleCount(),
                     voxelMesh.cutoutTriangleCount(),
                     voxelMesh.transmissiveTriangleCount(),
+                    0,
+                    0,
+                    0,
                     0);
         }
     }
@@ -409,13 +443,21 @@ public final class CompiledClusterCodec {
             int opaqueCount,
             int cutoutCount,
             int transmissiveCount,
+            int opaqueMacroCount,
+            int cutoutMacroCount,
+            int transmissiveMacroCount,
             int emitterCount) {
-        int opaqueEnd = opaqueCount;
-        int cutoutEnd = Math.addExact(opaqueEnd, cutoutCount);
-        int triangleCount = Math.addExact(cutoutEnd, transmissiveCount);
-        for (int triangle = 0; triangle < triangleCount; triangle++) {
+        int opaqueEnd = CpuSectionMesh.primitiveCount(opaqueCount, opaqueMacroCount);
+        int cutoutEnd = Math.addExact(
+                opaqueEnd,
+                CpuSectionMesh.primitiveCount(cutoutCount, cutoutMacroCount));
+        int primitiveCount = Math.addExact(
+                cutoutEnd,
+                CpuSectionMesh.primitiveCount(
+                        transmissiveCount, transmissiveMacroCount));
+        for (int primitiveIndex = 0; primitiveIndex < primitiveCount; primitiveIndex++) {
             int record = Math.multiplyExact(
-                    triangle, CpuSectionMesh.PRIMITIVE_WORDS);
+                    primitiveIndex, CpuSectionMesh.PRIMITIVE_WORDS);
             int flags = PrimitivePacking.unpackFlags(
                     records[record + 3], records[record + 5]);
             PrimitivePacking.requireValidFlags(flags);
@@ -452,9 +494,9 @@ public final class CompiledClusterCodec {
                 throw new IllegalArgumentException(
                         "Compiled-cluster baked material must be opaque");
             }
-            boolean categoryMismatch = triangle < opaqueEnd
+            boolean categoryMismatch = primitiveIndex < opaqueEnd
                     ? cutout || transmissive
-                    : triangle < cutoutEnd
+                    : primitiveIndex < cutoutEnd
                             ? !cutout || transmissive
                             : !transmissive;
             if (categoryMismatch) {
@@ -470,9 +512,9 @@ public final class CompiledClusterCodec {
             if (!rasterComposite) {
                 float uvDensity =
                         Float.intBitsToFloat(records[record + 6]);
-                if (!(uvDensity >= 0.0F) || !Float.isFinite(uvDensity)) {
+                if (!Float.isFinite(uvDensity)) {
                     throw new IllegalArgumentException(
-                            "Compiled-cluster UV density must be finite and nonnegative");
+                            "Compiled-cluster UV density must be finite");
                 }
             }
         }
@@ -552,6 +594,13 @@ public final class CompiledClusterCodec {
                     "Compiled-cluster " + label + " is negative");
         }
         return value;
+    }
+
+    private static void requireMacroCount(int triangleCount, int macroTriangleCount) {
+        if (macroTriangleCount > triangleCount || (macroTriangleCount & 1) != 0) {
+            throw new IllegalArgumentException(
+                    "Compiled-cluster macro triangle count is invalid");
+        }
     }
 
     private static long nonnegative(long value, String label) {

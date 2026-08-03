@@ -26,7 +26,10 @@
         { "name": "worldLightForwardAddress", "type": "uint64_t", "offset": 40 },
         { "name": "translation", "type": "vec3", "offset": 48 },
         { "name": "worldLightNodeCount", "type": "uint", "offset": 60 },
-        { "name": "instanceTint", "type": "uint", "offset": 64 }
+        { "name": "instanceTint", "type": "uint", "offset": 64 },
+        { "name": "opaqueMacroTriangleBase", "type": "uint", "offset": 68 },
+        { "name": "cutoutMacroTriangleBase", "type": "uint", "offset": 72 },
+        { "name": "transmissiveMacroTriangleBase", "type": "uint", "offset": 76 }
       ]
     },
     "lightNode": {

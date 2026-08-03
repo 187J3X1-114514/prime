@@ -330,14 +330,60 @@ public final class TopLevelAccelerationStructure {
                 float sectionX,
                 float sectionY,
                 float sectionZ) {
+            this.writeInstanced(
+                    blasAddress,
+                    primitiveAddress,
+                    lightAddress,
+                    worldLightAddress,
+                    worldLightForwardAddress,
+                    opaqueTriangleCount,
+                    Math.addExact(opaqueTriangleCount, cutoutTriangleCount),
+                    0xffff_ffffL,
+                    0xffff_ffffL,
+                    0xffff_ffffL,
+                    worldLeafNode,
+                    lightCount,
+                    worldLightNodeCount,
+                    mask,
+                    instanceTint,
+                    transformX,
+                    transformY,
+                    transformZ,
+                    sectionX,
+                    sectionY,
+                    sectionZ);
+        }
+
+        public void writeInstanced(
+                long blasAddress,
+                long primitiveAddress,
+                long lightAddress,
+                long worldLightAddress,
+                long worldLightForwardAddress,
+                long cutoutPrimitiveBase,
+                long transmissivePrimitiveBase,
+                long opaqueMacroTriangleBase,
+                long cutoutMacroTriangleBase,
+                long transmissiveMacroTriangleBase,
+                int worldLeafNode,
+                int lightCount,
+                int worldLightNodeCount,
+                int mask,
+                int instanceTint,
+                float transformX,
+                float transformY,
+                float transformZ,
+                float sectionX,
+                float sectionY,
+                float sectionZ) {
             if (this.index >= this.capacity) {
                 throw new IllegalStateException("TLAS populator wrote too many instances");
             }
-            long transmissiveBase = Math.addExact(
-                    opaqueTriangleCount, cutoutTriangleCount);
-            if (opaqueTriangleCount < 0L
-                    || Long.compareUnsigned(opaqueTriangleCount, 0xffff_ffffL) > 0
-                    || Long.compareUnsigned(transmissiveBase, 0xffff_ffffL) > 0) {
+            if (!isShaderUint(cutoutPrimitiveBase)
+                    || !isShaderUint(transmissivePrimitiveBase)
+                    || !isShaderUint(opaqueMacroTriangleBase)
+                    || !isShaderUint(cutoutMacroTriangleBase)
+                    || !isShaderUint(transmissiveMacroTriangleBase)) {
                 throw new IllegalArgumentException(
                         "Cluster primitive bases exceed the shader uint ABI");
             }
@@ -376,10 +422,10 @@ public final class TopLevelAccelerationStructure {
                     worldLightAddress);
             MemoryUtil.memPutInt(
                     sectionAddress + ShaderAbi.SECTION_CUTOUT_BASE_OFFSET,
-                    (int) opaqueTriangleCount);
+                    (int) cutoutPrimitiveBase);
             MemoryUtil.memPutInt(
                     sectionAddress + ShaderAbi.SECTION_TRANSMISSIVE_BASE_OFFSET,
-                    (int) transmissiveBase);
+                    (int) transmissivePrimitiveBase);
             MemoryUtil.memPutInt(
                     sectionAddress + ShaderAbi.SECTION_WORLD_LEAF_NODE_OFFSET,
                     worldLeafNode);
@@ -404,7 +450,20 @@ public final class TopLevelAccelerationStructure {
             MemoryUtil.memPutInt(
                     sectionAddress + ShaderAbi.SECTION_INSTANCE_TINT_OFFSET,
                     instanceTint);
+            MemoryUtil.memPutInt(
+                    sectionAddress + ShaderAbi.SECTION_OPAQUE_MACRO_TRIANGLE_BASE_OFFSET,
+                    (int) opaqueMacroTriangleBase);
+            MemoryUtil.memPutInt(
+                    sectionAddress + ShaderAbi.SECTION_CUTOUT_MACRO_TRIANGLE_BASE_OFFSET,
+                    (int) cutoutMacroTriangleBase);
+            MemoryUtil.memPutInt(
+                    sectionAddress + ShaderAbi.SECTION_TRANSMISSIVE_MACRO_TRIANGLE_BASE_OFFSET,
+                    (int) transmissiveMacroTriangleBase);
             this.index++;
+        }
+
+        private static boolean isShaderUint(long value) {
+            return value >= 0L && value <= 0xffff_ffffL;
         }
     }
 }

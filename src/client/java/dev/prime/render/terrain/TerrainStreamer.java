@@ -669,11 +669,17 @@ public final class TerrainStreamer implements AutoCloseable {
         long result = cursor;
         for (CpuClusterMesh.Segment segment : mesh.segments()) {
             result = segmentStagingEndOffset(
-                    result, segment.opaqueTriangleCount());
+                    result,
+                    segment.opaqueTriangleCount(),
+                    segment.opaquePrimitiveCount());
             result = segmentStagingEndOffset(
-                    result, segment.cutoutTriangleCount());
+                    result,
+                    segment.cutoutTriangleCount(),
+                    segment.cutoutPrimitiveCount());
             result = segmentStagingEndOffset(
-                    result, segment.transmissiveTriangleCount());
+                    result,
+                    segment.transmissiveTriangleCount(),
+                    segment.transmissivePrimitiveCount());
         }
         result = opacityStagingEndOffset(
                 result, mesh.opacityMicromap(), includeOpacityMicromap);
@@ -713,7 +719,8 @@ public final class TerrainStreamer implements AutoCloseable {
                         : 0L);
     }
 
-    private static long segmentStagingEndOffset(long cursor, int triangleCount) {
+    private static long segmentStagingEndOffset(
+            long cursor, int triangleCount, int primitiveCount) {
         if (triangleCount == 0) {
             return cursor;
         }
@@ -721,7 +728,7 @@ public final class TerrainStreamer implements AutoCloseable {
                 cursor, (long) triangleCount * 9L * Float.BYTES, Float.BYTES);
         return StagingArena.requiredEndOffset(
                 result,
-                (long) triangleCount * CpuSectionMesh.PRIMITIVE_WORDS * Integer.BYTES,
+                (long) primitiveCount * CpuSectionMesh.PRIMITIVE_WORDS * Integer.BYTES,
                 Integer.BYTES);
     }
 

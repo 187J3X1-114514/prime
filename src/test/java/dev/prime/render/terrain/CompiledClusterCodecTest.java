@@ -12,6 +12,46 @@ import org.junit.jupiter.api.Test;
 
 final class CompiledClusterCodecTest {
     @Test
+    void roundTripPreservesSharedMacroPrimitiveLayout() {
+        int[] primitive = {
+            PrimitivePacking.packHalf2(0.0F, 0.0F),
+            PrimitivePacking.packHalf2(1.0F, 0.0F),
+            PrimitivePacking.packHalf2(0.0F, 1.0F),
+            PrimitivePacking.packTintFlags(PrimitivePacking.packTint(-1), 0),
+            PrimitivePacking.packOctahedralNormal(0.0F, 0.0F, 1.0F),
+            PrimitivePacking.packFlagsEmitter(0, PrimitivePacking.NO_EMITTER_INDEX),
+            Float.floatToRawIntBits(-1.0F),
+            PrimitivePacking.packOctahedralNormal(1.0F, 0.0F, 0.0F)
+        };
+        CpuSectionMesh section = new CpuSectionMesh(
+                new float[] {
+                    0, 0, 0, 1, 0, 0, 1, 1, 0,
+                    0, 0, 0, 1, 1, 0, 0, 1, 0
+                },
+                primitive,
+                2,
+                0,
+                0,
+                2,
+                0,
+                0,
+                OpacityMicromapData.EMPTY,
+                CpuSectionLights.EMPTY);
+        CompiledCluster source = new CompiledCluster(
+                0L, 0, 0, 0, CpuClusterMesh.fromSegments(List.of(section)));
+
+        byte[] encoded = CompiledClusterCodec.encode(source);
+        CpuClusterMesh decoded = CompiledClusterCodec.decode(encoded).mesh();
+
+        assertArrayEquals(encoded, CompiledClusterCodec.encode(
+                new CompiledCluster(0L, 0, 0, 0, decoded)));
+        assertEquals(2L, decoded.opaqueMacroTriangleCount());
+        assertEquals(1L, decoded.primitiveCount());
+        assertEquals(CpuSectionMesh.PRIMITIVE_WORDS,
+                decoded.segments().getFirst().primitiveRecords().length);
+    }
+
+    @Test
     void canonicalRoundTripPreservesTheCompleteUploadInput() {
         int flags = PrimitivePacking.packFlags(true, false);
         CpuSectionMesh section = new CpuSectionMesh(
@@ -89,16 +129,17 @@ final class CompiledClusterCodecTest {
                 0,
                 CpuClusterMesh.fromSegments(List.of(section))));
         PayloadOffsets offsets = firstPayloadOffsets(encoded);
-        ByteBuffer legacy = littleEndian(encoded);
+        byte[] legacyBytes = withoutCurrentSegmentMacroCounts(encoded);
+        ByteBuffer legacy = littleEndian(legacyBytes);
         legacy.putInt(4, 3);
         legacy.putInt(
-                offsets.primitives() + 5 * Integer.BYTES,
+                offsets.primitives() - 3 * Integer.BYTES + 5 * Integer.BYTES,
                 flags >>> 8
                         | 17 << 1
                         | PrimitivePacking.VISIBLE_EMISSION_FLAG
                         | PrimitivePacking.DYNAMIC_TEXTURE_FLAG);
 
-        CompiledCluster decoded = CompiledClusterCodec.decode(encoded);
+        CompiledCluster decoded = CompiledClusterCodec.decode(legacyBytes);
         int[] decodedPrimitive =
                 decoded.mesh().segments().getFirst().primitiveRecords();
         int decodedFlags = PrimitivePacking.unpackFlags(
@@ -210,19 +251,19 @@ final class CompiledClusterCodecTest {
                 IllegalArgumentException.class,
                 () -> CompiledClusterCodec.decode(wrongCategory));
 
-        byte[] negativeUvDensity = valid.clone();
-        littleEndian(negativeUvDensity).putInt(
+        byte[] nonFiniteUvDensity = valid.clone();
+        littleEndian(nonFiniteUvDensity).putInt(
                 offsets.primitives() + 6 * Integer.BYTES,
-                Float.floatToRawIntBits(-1.0F));
+                Float.floatToRawIntBits(Float.POSITIVE_INFINITY));
         assertThrows(
                 IllegalArgumentException.class,
-                () -> CompiledClusterCodec.decode(negativeUvDensity));
+                () -> CompiledClusterCodec.decode(nonFiniteUvDensity));
     }
 
     private static PayloadOffsets firstPayloadOffsets(byte[] encoded) {
         ByteBuffer input = littleEndian(encoded);
         input.position(56);
-        input.position(input.position() + 3 * Integer.BYTES);
+        input.position(input.position() + 6 * Integer.BYTES);
         int positionCount = input.getInt();
         int positions = input.position();
         input.position(Math.addExact(
@@ -232,6 +273,20 @@ final class CompiledClusterCodecTest {
             throw new AssertionError("Unexpected single-triangle fixture layout");
         }
         return new PayloadOffsets(positions, input.position());
+    }
+
+    private static byte[] withoutCurrentSegmentMacroCounts(byte[] encoded) {
+        int macroCounts = 3 * Integer.BYTES;
+        int macroOffset = 56 + 3 * Integer.BYTES;
+        byte[] result = new byte[encoded.length - macroCounts];
+        System.arraycopy(encoded, 0, result, 0, macroOffset);
+        System.arraycopy(
+                encoded,
+                macroOffset + macroCounts,
+                result,
+                macroOffset,
+                encoded.length - macroOffset - macroCounts);
+        return result;
     }
 
     private static ByteBuffer littleEndian(byte[] data) {

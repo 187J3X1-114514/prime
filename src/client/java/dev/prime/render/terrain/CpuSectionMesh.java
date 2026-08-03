@@ -16,6 +16,9 @@ public record CpuSectionMesh(
         int opaqueTriangleCount,
         int cutoutTriangleCount,
         int transmissiveTriangleCount,
+        int opaqueMacroTriangleCount,
+        int cutoutMacroTriangleCount,
+        int transmissiveMacroTriangleCount,
         OpacityMicromapData opacityMicromap,
         CpuSectionLights lights) {
 
@@ -31,18 +34,47 @@ public record CpuSectionMesh(
         if (opaqueTriangleCount < 0 || cutoutTriangleCount < 0 || transmissiveTriangleCount < 0) {
             throw new IllegalArgumentException("Triangle counts must not be negative");
         }
+        requireValidMacroCount(opaqueTriangleCount, opaqueMacroTriangleCount);
+        requireValidMacroCount(cutoutTriangleCount, cutoutMacroTriangleCount);
+        requireValidMacroCount(transmissiveTriangleCount, transmissiveMacroTriangleCount);
         int triangleCount = Math.addExact(
                 Math.addExact(opaqueTriangleCount, cutoutTriangleCount),
                 transmissiveTriangleCount);
         if (positions.length != Math.multiplyExact(triangleCount, 9)) {
             throw new IllegalArgumentException("Position array does not match triangle count");
         }
-        if (primitiveRecords.length != Math.multiplyExact(triangleCount, PRIMITIVE_WORDS)) {
+        int primitiveCount = Math.addExact(
+                Math.addExact(
+                        primitiveCount(opaqueTriangleCount, opaqueMacroTriangleCount),
+                        primitiveCount(cutoutTriangleCount, cutoutMacroTriangleCount)),
+                primitiveCount(transmissiveTriangleCount, transmissiveMacroTriangleCount));
+        if (primitiveRecords.length != Math.multiplyExact(primitiveCount, PRIMITIVE_WORDS)) {
             throw new IllegalArgumentException("Primitive array does not match triangle count");
         }
         if (opacityMicromap.triangleCount() != cutoutTriangleCount) {
             throw new IllegalArgumentException("Opacity micromap does not match cutout geometry");
         }
+    }
+
+    public CpuSectionMesh(
+            float[] positions,
+            int[] primitiveRecords,
+            int opaqueTriangleCount,
+            int cutoutTriangleCount,
+            int transmissiveTriangleCount,
+            OpacityMicromapData opacityMicromap,
+            CpuSectionLights lights) {
+        this(
+                positions,
+                primitiveRecords,
+                opaqueTriangleCount,
+                cutoutTriangleCount,
+                transmissiveTriangleCount,
+                0,
+                0,
+                0,
+                opacityMicromap,
+                lights);
     }
 
     /** Borrowed read-only backing storage; ownership remains with this mesh. */
@@ -67,10 +99,54 @@ public record CpuSectionMesh(
                 this.transmissiveTriangleCount);
     }
 
+    public int opaquePrimitiveCount() {
+        return primitiveCount(this.opaqueTriangleCount, this.opaqueMacroTriangleCount);
+    }
+
+    public int cutoutPrimitiveCount() {
+        return primitiveCount(this.cutoutTriangleCount, this.cutoutMacroTriangleCount);
+    }
+
+    public int transmissivePrimitiveCount() {
+        return primitiveCount(
+                this.transmissiveTriangleCount, this.transmissiveMacroTriangleCount);
+    }
+
+    public int primitiveCount() {
+        return Math.addExact(
+                Math.addExact(this.opaquePrimitiveCount(), this.cutoutPrimitiveCount()),
+                this.transmissivePrimitiveCount());
+    }
+
+    public int opaqueMacroTriangleBase() {
+        return this.opaqueTriangleCount - this.opaqueMacroTriangleCount;
+    }
+
+    public int cutoutMacroTriangleBase() {
+        return this.cutoutTriangleCount - this.cutoutMacroTriangleCount;
+    }
+
+    public int transmissiveMacroTriangleBase() {
+        return this.transmissiveTriangleCount - this.transmissiveMacroTriangleCount;
+    }
+
     public long byteSize() {
         return (long) this.positions.length * Float.BYTES
                 + (long) this.primitiveRecords.length * Integer.BYTES
                 + this.opacityMicromap.byteSize()
                 + this.lights.byteSize();
+    }
+
+    static int primitiveCount(int triangleCount, int macroTriangleCount) {
+        return Math.subtractExact(triangleCount, macroTriangleCount / 2);
+    }
+
+    private static void requireValidMacroCount(int triangleCount, int macroTriangleCount) {
+        if (macroTriangleCount < 0
+                || macroTriangleCount > triangleCount
+                || (macroTriangleCount & 1) != 0) {
+            throw new IllegalArgumentException(
+                    "Macro triangle counts must be even and inside their geometry partition");
+        }
     }
 }

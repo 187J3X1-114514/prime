@@ -24,6 +24,9 @@ final class SectionClusterMeshBuilder {
     private int opaqueTriangleCount;
     private int cutoutTriangleCount;
     private int transmissiveTriangleCount;
+    private int opaqueMacroTriangleCount;
+    private int cutoutMacroTriangleCount;
+    private int transmissiveMacroTriangleCount;
     private int emitterCount;
     private int totalEmitterCount;
     private long inputBytes;
@@ -149,6 +152,18 @@ final class SectionClusterMeshBuilder {
                 this.inputBytes, triangleCount, mesh, this.segmentTriangleTarget)) {
             this.finishSegment();
         }
+        requireMacroTail(
+                this.opaqueMacroTriangleCount,
+                mesh.opaqueTriangleCount(),
+                mesh.opaqueMacroTriangleCount());
+        requireMacroTail(
+                this.cutoutMacroTriangleCount,
+                mesh.cutoutTriangleCount(),
+                mesh.cutoutMacroTriangleCount());
+        requireMacroTail(
+                this.transmissiveMacroTriangleCount,
+                mesh.transmissiveTriangleCount(),
+                mesh.transmissiveMacroTriangleCount());
         int lightOffset = this.totalEmitterCount;
         this.entries.add(new Entry(
                 sectionX,
@@ -162,6 +177,13 @@ final class SectionClusterMeshBuilder {
                 this.cutoutTriangleCount, mesh.cutoutTriangleCount());
         this.transmissiveTriangleCount = Math.addExact(
                 this.transmissiveTriangleCount, mesh.transmissiveTriangleCount());
+        this.opaqueMacroTriangleCount = Math.addExact(
+                this.opaqueMacroTriangleCount, mesh.opaqueMacroTriangleCount());
+        this.cutoutMacroTriangleCount = Math.addExact(
+                this.cutoutMacroTriangleCount, mesh.cutoutMacroTriangleCount());
+        this.transmissiveMacroTriangleCount = Math.addExact(
+                this.transmissiveMacroTriangleCount,
+                mesh.transmissiveMacroTriangleCount());
         this.emitterCount = Math.addExact(this.emitterCount, mesh.lights().emitterCount());
         this.totalEmitterCount = Math.addExact(
                 this.totalEmitterCount, mesh.lights().emitterCount());
@@ -202,6 +224,9 @@ final class SectionClusterMeshBuilder {
         this.opaqueTriangleCount = 0;
         this.cutoutTriangleCount = 0;
         this.transmissiveTriangleCount = 0;
+        this.opaqueMacroTriangleCount = 0;
+        this.cutoutMacroTriangleCount = 0;
+        this.transmissiveMacroTriangleCount = 0;
         this.emitterCount = 0;
         this.inputBytes = 0L;
     }
@@ -212,19 +237,28 @@ final class SectionClusterMeshBuilder {
                 this.transmissiveTriangleCount);
         float[] positions = new float[Math.multiplyExact(
                 triangleCount, POSITION_WORDS_PER_TRIANGLE)];
+        int opaquePrimitiveCount = CpuSectionMesh.primitiveCount(
+                this.opaqueTriangleCount, this.opaqueMacroTriangleCount);
+        int cutoutPrimitiveCount = CpuSectionMesh.primitiveCount(
+                this.cutoutTriangleCount, this.cutoutMacroTriangleCount);
+        int transmissivePrimitiveCount = CpuSectionMesh.primitiveCount(
+                this.transmissiveTriangleCount, this.transmissiveMacroTriangleCount);
+        int primitiveCount = Math.addExact(
+                Math.addExact(opaquePrimitiveCount, cutoutPrimitiveCount),
+                transmissivePrimitiveCount);
         int[] primitives = new int[Math.multiplyExact(
-                triangleCount, PRIMITIVE_WORDS_PER_TRIANGLE)];
+                primitiveCount, PRIMITIVE_WORDS_PER_TRIANGLE)];
         int opaquePositionCursor = 0;
         int opaquePrimitiveCursor = 0;
         int cutoutPositionCursor = Math.multiplyExact(
                 this.opaqueTriangleCount, POSITION_WORDS_PER_TRIANGLE);
         int cutoutPrimitiveCursor = Math.multiplyExact(
-                this.opaqueTriangleCount, PRIMITIVE_WORDS_PER_TRIANGLE);
+                opaquePrimitiveCount, PRIMITIVE_WORDS_PER_TRIANGLE);
         int transmissivePositionCursor = Math.multiplyExact(
                 Math.addExact(this.opaqueTriangleCount, this.cutoutTriangleCount),
                 POSITION_WORDS_PER_TRIANGLE);
         int transmissivePrimitiveCursor = Math.multiplyExact(
-                Math.addExact(this.opaqueTriangleCount, this.cutoutTriangleCount),
+                Math.addExact(opaquePrimitiveCount, cutoutPrimitiveCount),
                 PRIMITIVE_WORDS_PER_TRIANGLE);
         ArrayList<CpuSectionLights.Translated> lightSources = new ArrayList<>();
         OpacityMicromapData.Builder opacityMicromap = new OpacityMicromapData.Builder();
@@ -241,11 +275,11 @@ final class SectionClusterMeshBuilder {
             int transmissivePositionWords = Math.multiplyExact(
                     mesh.transmissiveTriangleCount(), POSITION_WORDS_PER_TRIANGLE);
             int opaquePrimitiveWords = Math.multiplyExact(
-                    mesh.opaqueTriangleCount(), PRIMITIVE_WORDS_PER_TRIANGLE);
+                    mesh.opaquePrimitiveCount(), PRIMITIVE_WORDS_PER_TRIANGLE);
             int cutoutPrimitiveWords = Math.multiplyExact(
-                    mesh.cutoutTriangleCount(), PRIMITIVE_WORDS_PER_TRIANGLE);
+                    mesh.cutoutPrimitiveCount(), PRIMITIVE_WORDS_PER_TRIANGLE);
             int transmissivePrimitiveWords = Math.multiplyExact(
-                    mesh.transmissiveTriangleCount(), PRIMITIVE_WORDS_PER_TRIANGLE);
+                    mesh.transmissivePrimitiveCount(), PRIMITIVE_WORDS_PER_TRIANGLE);
 
             copyTranslatedPositions(
                     mesh.positions(),
@@ -319,9 +353,22 @@ final class SectionClusterMeshBuilder {
                 this.opaqueTriangleCount,
                 this.cutoutTriangleCount,
                 this.transmissiveTriangleCount,
+                this.opaqueMacroTriangleCount,
+                this.cutoutMacroTriangleCount,
+                this.transmissiveMacroTriangleCount,
                 opacityMicromap.build(),
                 lights);
         return result;
+    }
+
+    private static void requireMacroTail(
+            int accumulatedMacroTriangles,
+            int triangleCount,
+            int macroTriangleCount) {
+        if (accumulatedMacroTriangles != 0 && triangleCount != macroTriangleCount) {
+            throw new IllegalArgumentException(
+                    "Macro triangles must remain at the tail of each geometry partition");
+        }
     }
 
     private static void copyTranslatedPositions(

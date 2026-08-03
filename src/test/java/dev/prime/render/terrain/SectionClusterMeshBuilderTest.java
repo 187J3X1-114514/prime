@@ -92,13 +92,42 @@ final class SectionClusterMeshBuilderTest {
             CpuClusterMesh cluster = builder.build();
 
             assertEquals(2, cluster.triangleCount());
-            assertEquals(2, cluster.segments().getFirst().opaqueTriangleCount());
+            CpuClusterMesh.Segment segment = cluster.segments().getFirst();
+            assertEquals(2, segment.opaqueTriangleCount());
+            assertEquals(2, segment.opaqueMacroTriangleCount());
+            assertEquals(CpuSectionMesh.PRIMITIVE_WORDS, segment.primitiveRecords().length);
+            assertEquals(32L, cluster.primitiveBytes());
+            assertEquals(0L, cluster.opaqueMacroTriangleBase());
             assertArrayEquals(
                     new float[] {
                         15, 2, 3, 17, 2, 3, 17, 3, 3,
                         15, 2, 3, 17, 3, 3, 15, 3, 3
                     },
                     cluster.segments().getFirst().positions());
+        }
+    }
+
+    @Test
+    void keepsOrdinaryRecordsBeforeSharedMacroRecords() {
+        try (SectionMeshAccumulatorTest.TestSprite sprite =
+                new SectionMeshAccumulatorTest.TestSprite()) {
+            SectionClusterMeshBuilder builder = new SectionClusterMeshBuilder(0, 0, 0);
+            builder.add(0, 0, 0, List.of(opaqueMesh(1)));
+            SectionMeshAccumulator accumulator = new SectionMeshAccumulator(
+                    LabPbrMaterialSet.EMPTY, false);
+            accumulator.addQuad(
+                    SectionMeshAccumulatorTest.horizontalQuad(0.0F, 0.0F, 1.0F, 1.0F),
+                    SectionMeshAccumulatorTest.opaqueSurface(sprite));
+            builder.add(1, 0, 0, accumulator.build());
+
+            CpuClusterMesh cluster = builder.build();
+            CpuClusterMesh.Segment segment = cluster.segments().getFirst();
+
+            assertEquals(3, segment.opaqueTriangleCount());
+            assertEquals(2, segment.opaqueMacroTriangleCount());
+            assertEquals(2, segment.opaquePrimitiveCount());
+            assertEquals(1L, cluster.opaqueMacroTriangleBase());
+            assertEquals(2L * 32L, cluster.primitiveBytes());
         }
     }
 
@@ -151,6 +180,7 @@ final class SectionClusterMeshBuilderTest {
 
             assertEquals(2, cluster.triangleCount());
             assertEquals(2, cluster.segments().getFirst().cutoutTriangleCount());
+            assertEquals(2, cluster.segments().getFirst().cutoutMacroTriangleCount());
             assertEquals(
                     2,
                     cluster.opacityMicromap().triangleIndices().length);
@@ -291,6 +321,7 @@ final class SectionClusterMeshBuilderTest {
             assertEquals(0, cluster.opaqueTriangleCount());
             assertEquals(0, cluster.cutoutTriangleCount());
             assertEquals(2, cluster.transmissiveTriangleCount());
+            assertEquals(2, cluster.transmissiveMacroTriangleCount());
             int[] primitives = cluster.segments().getFirst().primitiveRecords();
             int flags = PrimitivePacking.unpackFlags(primitives[3], primitives[5]);
             assertEquals(

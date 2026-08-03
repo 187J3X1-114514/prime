@@ -14,13 +14,21 @@ SectionRecord primeSection() {
 
 PrimitiveRecord primePrimitive(SectionRecord section) {
     // BLAS geometries and the primitive buffer share one semantic order:
-    // opaque, alpha-tested cutout, then transmissive. Opaque starts at zero, so the
-    // two saved bases fit the existing 64-byte Section ABI without an otherwise-useless zero.
+    // opaque, alpha-tested cutout, then transmissive. Macro rectangles occupy adjacent triangle
+    // pairs at each geometry tail, where both triangles share one projected-UV primitive record.
     uint base = gl_GeometryIndexEXT == 0
             ? 0u
             : (gl_GeometryIndexEXT == 1 ? section.cutoutBase : section.transmissiveBase);
+    uint macroBase = gl_GeometryIndexEXT == 0
+            ? section.opaqueMacroTriangleBase
+            : (gl_GeometryIndexEXT == 1
+                    ? section.cutoutMacroTriangleBase
+                    : section.transmissiveMacroTriangleBase);
+    uint primitiveIndex = gl_PrimitiveID < macroBase
+            ? gl_PrimitiveID
+            : macroBase + ((gl_PrimitiveID - macroBase) >> 1u);
     PrimitiveBuffer primitives = PrimitiveBuffer(section.primitiveAddress);
-    PrimitiveRecord primitive = primitives.records[base + gl_PrimitiveID];
+    PrimitiveRecord primitive = primitives.records[base + primitiveIndex];
     // Baked material primitives may mix an untinted base with a tinted overlay in one BLAS.
     // Their instance tint is applied after per-primitive color selection in material.glsl.
     if ((section.instanceTint & 0x80000000u) != 0u

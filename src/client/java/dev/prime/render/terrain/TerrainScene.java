@@ -743,8 +743,11 @@ public final class TerrainScene implements AutoCloseable {
                         cluster.lightAddress(),
                         worldLightAddress,
                         worldLightForwardAddress,
-                        base.opaqueTriangleCount(),
-                        base.cutoutTriangleCount(),
+                        base.cutoutPrimitiveBase(),
+                        base.transmissivePrimitiveBase(),
+                        base.opaqueMacroTriangleBase(),
+                        base.cutoutMacroTriangleBase(),
+                        base.transmissiveMacroTriangleBase(),
                         cluster.dynamic()
                                 ? CpuLightTree.NO_INDEX
                                 : worldLightTree.leafNode(clusterIndex),
@@ -774,8 +777,11 @@ public final class TerrainScene implements AutoCloseable {
                             cluster.lightAddress(),
                             worldLightAddress,
                             worldLightForwardAddress,
-                            voxel.opaqueTriangleCount(),
-                            voxel.cutoutTriangleCount(),
+                            voxel.cutoutPrimitiveBase(),
+                            voxel.transmissivePrimitiveBase(),
+                            voxel.opaqueMacroTriangleBase(),
+                            voxel.cutoutMacroTriangleBase(),
+                            voxel.transmissiveMacroTriangleBase(),
                             cluster.dynamic()
                                     ? CpuLightTree.NO_INDEX
                                     : worldLightTree.leafNode(clusterIndex),
@@ -1002,6 +1008,9 @@ public final class TerrainScene implements AutoCloseable {
                         mesh.opaqueTriangleCount(),
                         mesh.cutoutTriangleCount(),
                         mesh.transmissiveTriangleCount(),
+                        mesh.opaqueMacroTriangleCount(),
+                        mesh.cutoutMacroTriangleCount(),
+                        mesh.transmissiveMacroTriangleCount(),
                         compactionPolicy,
                         "Prime cluster " + upload.key() + " BLAS");
             }
@@ -1128,10 +1137,10 @@ public final class TerrainScene implements AutoCloseable {
         long[] primitiveCursors = new long[] {
             0L,
             Math.multiplyExact(
-                    mesh.opaqueTriangleCount(),
+                    mesh.opaquePrimitiveCount(),
                     (long) CpuSectionMesh.PRIMITIVE_WORDS * Integer.BYTES),
             Math.multiplyExact(
-                    Math.addExact(mesh.opaqueTriangleCount(), mesh.cutoutTriangleCount()),
+                    Math.addExact(mesh.opaquePrimitiveCount(), mesh.cutoutPrimitiveCount()),
                     (long) CpuSectionMesh.PRIMITIVE_WORDS * Integer.BYTES)
         };
         for (CpuClusterMesh.Segment segment : mesh.segments()) {
@@ -1143,9 +1152,14 @@ public final class TerrainScene implements AutoCloseable {
                     case 1 -> segment.cutoutTriangleCount();
                     default -> segment.transmissiveTriangleCount();
                 };
+                int primitiveCount = switch (category) {
+                    case 0 -> segment.opaquePrimitiveCount();
+                    case 1 -> segment.cutoutPrimitiveCount();
+                    default -> segment.transmissivePrimitiveCount();
+                };
                 int positionWords = Math.multiplyExact(triangleCount, 9);
                 int primitiveWords = Math.multiplyExact(
-                        triangleCount, CpuSectionMesh.PRIMITIVE_WORDS);
+                        primitiveCount, CpuSectionMesh.PRIMITIVE_WORDS);
                 if (triangleCount != 0) {
                     StagingArena.Slice positionSlice = staging.write(
                             segment.positions(), sourcePosition, positionWords, Float.BYTES);

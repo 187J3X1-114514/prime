@@ -309,10 +309,11 @@ final class MergedFaceMeshBuilder {
             IntBuilder primitives = face.transmissive()
                     ? this.transmissivePrimitives
                     : (face.cutout() ? this.cutoutPrimitives : this.opaquePrimitives);
-            addTriangle(positions, primitives, corners[0], corners[1], corners[2],
-                    face.primitive());
-            addTriangle(positions, primitives, corners[0], corners[2], corners[3],
-                    face.primitive());
+            addTriangle(positions, corners[0], corners[1], corners[2]);
+            addTriangle(positions, corners[0], corners[2], corners[3]);
+            // Repeated/projected UVs make both triangles of the rectangle semantically identical.
+            // The shader maps this adjacent pair back to this single record.
+            primitives.add(face.primitive());
             if (face.transmissive()) {
                 this.transmissiveTriangles += 2;
             } else if (face.cutout()) {
@@ -369,6 +370,9 @@ final class MergedFaceMeshBuilder {
                     this.opaqueTriangles,
                     this.cutoutTriangles,
                     this.transmissiveTriangles,
+                    this.opaqueTriangles,
+                    this.cutoutTriangles,
+                    this.transmissiveTriangles,
                     this.opacityMicromap.build(),
                     CpuSectionLights.EMPTY);
         }
@@ -404,15 +408,12 @@ final class MergedFaceMeshBuilder {
 
         private static void addTriangle(
                 FloatBuilder positions,
-                IntBuilder primitives,
                 float[] first,
                 float[] second,
-                float[] third,
-                int[] primitive) {
+                float[] third) {
             positions.add(first);
             positions.add(second);
             positions.add(third);
-            primitives.add(primitive);
         }
 
         private static float[] concatenate(

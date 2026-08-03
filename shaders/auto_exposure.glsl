@@ -2,8 +2,6 @@
 #define PRIME_AUTO_EXPOSURE_GLSL
 
 #include "prime_color_contract.glsl"
-#include "color_space.glsl"
-#include "oklab.glsl"
 
 const float PRIME_AUTO_EXPOSURE_MIN_LOG_BRIGHTNESS = -16.0;
 const float PRIME_AUTO_EXPOSURE_MAX_LOG_BRIGHTNESS = 20.0;
@@ -11,8 +9,9 @@ const float PRIME_AUTO_EXPOSURE_LOG_BRIGHTNESS_RANGE =
         PRIME_AUTO_EXPOSURE_MAX_LOG_BRIGHTNESS - PRIME_AUTO_EXPOSURE_MIN_LOG_BRIGHTNESS;
 const float PRIME_AUTO_EXPOSURE_KEY = 0.16;
 const float PRIME_AUTO_EXPOSURE_BASELINE_EV = 0.0;
-const float PRIME_AUTO_EXPOSURE_MIN_EV = 0.0;
-const float PRIME_AUTO_EXPOSURE_MAX_EV = 4.0;
+const float PRIME_AUTO_EXPOSURE_FULL_MIN_EV = -16.0;
+const float PRIME_AUTO_EXPOSURE_FULL_MAX_EV = 16.0;
+const float PRIME_AUTO_EXPOSURE_STRENGTH = 0.5;
 const float PRIME_AUTO_EXPOSURE_LN_10 = 2.302585092994046;
 const float PRIME_AUTO_EXPOSURE_DARKEN_T90 = 0.5;
 const float PRIME_AUTO_EXPOSURE_BRIGHTEN_T90 = 2.0;
@@ -25,11 +24,10 @@ const uint PRIME_AUTO_EXPOSURE_MATERIAL_DIELECTRIC = 0u;
 const uint PRIME_AUTO_EXPOSURE_MATERIAL_FOLIAGE = 3u;
 
 float primeAutoExposureBrightness(vec3 radiance) {
-    vec3 linearBt709 = max(
-            primeLinearRec2020ToLinearBt709(max(radiance, vec3(0.0))),
-            vec3(0.0));
-    float lightness = primeLinearBt709ToOklab(linearBt709).x;
-    return lightness * lightness * lightness;
+    // Rec.2020 relative luminance, equivalent to CIE XYZ Y for the D65 basis.
+    return dot(
+            max(radiance, vec3(0.0)),
+            vec3(0.2627, 0.6780, 0.0593));
 }
 
 float primeAutoExposureMaterialConfidence(
@@ -86,15 +84,20 @@ float primeAutoExposureTargetEv(
         float measuredLogBrightness,
         float minimumLogBrightness,
         float maximumLogBrightness) {
-    return clamp(
+    float fullTargetEv = clamp(
             log2(PRIME_AUTO_EXPOSURE_KEY) + PRIME_AUTO_EXPOSURE_BASELINE_EV
                     - measuredLogBrightness
                     + primeAutoExposureSceneKeyBiasEv(
                             measuredLogBrightness,
                             minimumLogBrightness,
                             maximumLogBrightness),
-            PRIME_AUTO_EXPOSURE_MIN_EV,
-            PRIME_AUTO_EXPOSURE_MAX_EV);
+            PRIME_AUTO_EXPOSURE_FULL_MIN_EV,
+            PRIME_AUTO_EXPOSURE_FULL_MAX_EV);
+    // Preserve half of the measured log-domain distance from the neutral exposure.
+    return mix(
+            PRIME_AUTO_EXPOSURE_BASELINE_EV,
+            fullTargetEv,
+            PRIME_AUTO_EXPOSURE_STRENGTH);
 }
 
 float primeAutoExposureAdapt(

@@ -10,8 +10,9 @@ final class AutoExposureMath {
     static final float MAX_LOG_BRIGHTNESS = 20.0F;
     static final float KEY_BRIGHTNESS = 0.16F;
     static final float BASELINE_EV = 0.0F;
-    static final float MIN_EV = 0.0F;
-    static final float MAX_EV = 4.0F;
+    static final float FULL_MIN_EV = -16.0F;
+    static final float FULL_MAX_EV = 16.0F;
+    static final float STRENGTH = 0.5F;
     static final float DARKEN_T90_SECONDS = 0.5F;
     static final float BRIGHTEN_T90_SECONDS = 2.0F;
     static final int TAIL_DENOMINATOR = 200;
@@ -85,37 +86,9 @@ final class AutoExposureMath {
     }
 
     static float meteringBrightness(float red, float green, float blue) {
-        float nonNegativeRed = Math.max(red, 0.0F);
-        float nonNegativeGreen = Math.max(green, 0.0F);
-        float nonNegativeBlue = Math.max(blue, 0.0F);
-        float bt709Red = Math.max(
-                1.6604910F * nonNegativeRed
-                        - 0.5876411F * nonNegativeGreen
-                        - 0.0728499F * nonNegativeBlue,
-                0.0F);
-        float bt709Green = Math.max(
-                -0.1245505F * nonNegativeRed
-                        + 1.1328999F * nonNegativeGreen
-                        - 0.0083494F * nonNegativeBlue,
-                0.0F);
-        float bt709Blue = Math.max(
-                -0.0181508F * nonNegativeRed
-                        - 0.1005789F * nonNegativeGreen
-                        + 1.1187297F * nonNegativeBlue,
-                0.0F);
-        float l = 0.4122214708F * bt709Red
-                + 0.5363325363F * bt709Green
-                + 0.0514459929F * bt709Blue;
-        float m = 0.2119034982F * bt709Red
-                + 0.6806995451F * bt709Green
-                + 0.1073969566F * bt709Blue;
-        float s = 0.0883024619F * bt709Red
-                + 0.2817188376F * bt709Green
-                + 0.6299787005F * bt709Blue;
-        float lightness = 0.2104542553F * (float) Math.cbrt(l)
-                + 0.7936177850F * (float) Math.cbrt(m)
-                - 0.0040720468F * (float) Math.cbrt(s);
-        return lightness * lightness * lightness;
+        return 0.2627F * Math.max(red, 0.0F)
+                + 0.6780F * Math.max(green, 0.0F)
+                + 0.0593F * Math.max(blue, 0.0F);
     }
 
     private static OptionalInt histogramBinForBrightness(float brightness) {
@@ -236,7 +209,7 @@ final class AutoExposureMath {
             float measuredLogBrightness,
             float minimumLogBrightness,
             float maximumLogBrightness) {
-        return Math.clamp(
+        float fullTargetEv = Math.clamp(
                 log2(KEY_BRIGHTNESS)
                         + BASELINE_EV
                         - measuredLogBrightness
@@ -244,8 +217,9 @@ final class AutoExposureMath {
                                 measuredLogBrightness,
                                 minimumLogBrightness,
                                 maximumLogBrightness),
-                MIN_EV,
-                MAX_EV);
+                FULL_MIN_EV,
+                FULL_MAX_EV);
+        return BASELINE_EV + (fullTargetEv - BASELINE_EV) * STRENGTH;
     }
 
     private static float log2(float value) {

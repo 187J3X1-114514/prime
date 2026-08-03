@@ -379,7 +379,7 @@ public final class VulkanRenderer implements AutoCloseable {
         } else {
             lines.add(String.format(
                     Locale.ROOT,
-                    "Automatic exposure value: %+.2f stops; target: %+.2f stops; metered Oklab lightness-cubed log2 brightness: %+.2f",
+                    "Automatic exposure value: %+.2f stops; target: %+.2f stops; metered linear Rec.2020 relative luminance (log2): %+.2f",
                     exposure.automaticExposureEv(),
                     exposure.targetExposureEv(),
                     exposure.measuredLogBrightness()));

@@ -17,7 +17,7 @@ final class AutoExposureMathTest {
                     * 0.5F;
 
     @Test
-    void histogramUsesOklabLightnessCubedAndRejectsNonFinitePixels() {
+    void histogramUsesLinearRec2020LuminanceAndRejectsNonFinitePixels() {
         OptionalInt red = AutoExposureMath.histogramBin(1.0F, 0.0F, 0.0F);
         OptionalInt green = AutoExposureMath.histogramBin(0.0F, 1.0F, 0.0F);
         OptionalInt blue = AutoExposureMath.histogramBin(0.0F, 0.0F, 1.0F);
@@ -32,12 +32,21 @@ final class AutoExposureMathTest {
                 AutoExposureMath.meteringBrightness(1.0F, 1.0F, 1.0F),
                 2.0e-6F);
         assertEquals(
-                0.411171F,
+                0.2627F,
                 AutoExposureMath.meteringBrightness(1.0F, 0.0F, 0.0F),
                 2.0e-6F);
         assertEquals(
-                0.103319F,
+                0.6780F,
+                AutoExposureMath.meteringBrightness(0.0F, 1.0F, 0.0F),
+                2.0e-6F);
+        assertEquals(
+                0.0593F,
                 AutoExposureMath.meteringBrightness(0.0F, 0.0F, 1.0F),
+                2.0e-6F);
+        assertEquals(
+                4.0F * AutoExposureMath.meteringBrightness(
+                        0.2F, 0.5F, 0.8F),
+                AutoExposureMath.meteringBrightness(0.8F, 2.0F, 3.2F),
                 2.0e-6F);
         assertEquals(0, AutoExposureMath.histogramBin(0.0F, 0.0F, 0.0F)
                 .orElseThrow());
@@ -251,13 +260,14 @@ final class AutoExposureMathTest {
                 true);
 
         assertTrue(highKey.targetEv() > averageKey.targetEv());
-        assertEquals(0.0F, lowKey.targetEv());
-        assertTrue(lowKey.targetEv() <= averageKey.targetEv());
+        assertTrue(lowKey.targetEv() < averageKey.targetEv());
     }
 
     @Test
-    void baselineIsNeutralAndAutomaticExposureOnlyCompensates() {
+    void baselineIsNeutralAndHalfStrengthExposureIsSymmetricallyBounded() {
         AutoExposureMath.State day = instantForGray(0.08F);
+        AutoExposureMath.State moderatelyDark = instantForGray(
+                Math.scalb(AutoExposureMath.KEY_BRIGHTNESS, -4));
         AutoExposureMath.State dark = instantForGray(
                 Math.scalb(AutoExposureMath.KEY_BRIGHTNESS, -8));
         AutoExposureMath.State middle = instantForGray(
@@ -265,13 +275,14 @@ final class AutoExposureMathTest {
         AutoExposureMath.State bright = instantForGray(
                 Math.scalb(AutoExposureMath.KEY_BRIGHTNESS, 8));
 
-        assertEquals(1.0F, day.targetEv(), BIN_HALF_WIDTH_EV);
-        assertEquals(4.0F, dark.targetEv());
+        assertEquals(0.5F, day.targetEv(), BIN_HALF_WIDTH_EV);
+        assertEquals(2.0F, moderatelyDark.targetEv(), BIN_HALF_WIDTH_EV);
+        assertEquals(4.0F, dark.targetEv(), BIN_HALF_WIDTH_EV);
         assertEquals(
                 AutoExposureMath.BASELINE_EV,
                 middle.targetEv(),
                 BIN_HALF_WIDTH_EV);
-        assertEquals(0.0F, bright.targetEv());
+        assertEquals(-4.0F, bright.targetEv(), BIN_HALF_WIDTH_EV);
         assertTrue(dark.targetEv() > middle.targetEv());
         assertTrue(middle.targetEv() >= bright.targetEv());
     }

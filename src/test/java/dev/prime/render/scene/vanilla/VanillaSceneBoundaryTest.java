@@ -31,4 +31,11 @@ final class VanillaSceneBoundaryTest {
         assertFalse(VanillaSceneBoundary.includes(
                 VanillaSceneBoundary.Element.SCREEN_OVERLAY, false, true));
     }
+
+    @Test
+    void primeOwnedTerrainDoesNotRequireVanillaSectionCompilation() {
+        assertTrue(VanillaSceneBoundary.includesEntitySection(true, false));
+        assertTrue(VanillaSceneBoundary.includesEntitySection(false, true));
+        assertFalse(VanillaSceneBoundary.includesEntitySection(false, false));
+    }
 }

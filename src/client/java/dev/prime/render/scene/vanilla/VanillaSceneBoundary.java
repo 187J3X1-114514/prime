@@ -14,6 +14,12 @@ public final class VanillaSceneBoundary {
         };
     }
 
+    /** Prime-owned terrain has no vanilla compiled section to authorize an already-visible entity. */
+    public static boolean includesEntitySection(
+            boolean replacingWorld, boolean vanillaSectionVisible) {
+        return replacingWorld || vanillaSectionVisible;
+    }
+
     public enum Element {
         ENTITY,
         BLOCK_ENTITY,

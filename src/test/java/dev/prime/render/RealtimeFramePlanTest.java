@@ -97,7 +97,6 @@ final class RealtimeFramePlanTest {
                 firstInput.cameraInWater(),
                 firstInput.postProcessingMode(),
                 firstInput.quality(),
-                firstInput.secondaryAreaNee(),
                 firstInput.lighting(),
                 firstInput.material(),
                 firstInput.shInput(),
@@ -259,7 +258,6 @@ final class RealtimeFramePlanTest {
                 false,
                 mode,
                 quality,
-                false,
                 new LightingSettings.Snapshot(
                         0, 0, 0, 13L),
                 new MaterialSettings.Snapshot(90, 17L),
@@ -290,7 +288,6 @@ final class RealtimeFramePlanTest {
                 input.cameraInWater(),
                 input.postProcessingMode(),
                 input.quality(),
-                input.secondaryAreaNee(),
                 input.lighting(),
                 input.material(),
                 input.shInput(),

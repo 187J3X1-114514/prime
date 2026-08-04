@@ -350,7 +350,7 @@ void primeStoreDeferredAreaLightRequest(
         float distance,
         vec3 contribution) {
     // A guide-pending delta path and a secondary Area request are mutually exclusive. Reusing the
-    // cold PSR lane keeps the 96-byte realtime path ABI and default-mode memory footprint fixed.
+    // cold PSR lane keeps the 96-byte realtime path ABI and memory footprint fixed.
     vec3 packedContribution = primeNrdSanitizeRadiance(contribution);
     primeWavefrontPaths.records[pathIndex].psrPacked = uvec4(
             primePackOctahedralNormal(direction),

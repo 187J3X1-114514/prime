@@ -20,7 +20,6 @@ public record IntegratorFrameInput(
         int jitterPhase,
         boolean cameraInWater,
         PostProcessingMode postProcessingMode,
-        boolean realtimeSecondaryAreaNee,
         LightingSettings.Snapshot lighting,
         MaterialSettings.Snapshot material,
         boolean shInput,

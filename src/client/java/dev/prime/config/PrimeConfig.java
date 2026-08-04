@@ -41,8 +41,6 @@ public final class PrimeConfig {
     private static final String SUN_EV_KEY = "lighting.sun_ev";
     private static final String STAR_EV_KEY = "lighting.star_ev";
     private static final String BLOCK_LIGHT_EV_KEY = "lighting.block_light_ev";
-    private static final String REALTIME_SECONDARY_AREA_NEE_KEY =
-            "lighting.realtime_secondary_area_nee";
     private static final String LATITUDE_DEGREES_KEY = "astronomy.latitude_degrees";
     private static final String SOLAR_LONGITUDE_DEGREES_KEY =
             "astronomy.solar_longitude_degrees";
@@ -70,7 +68,6 @@ public final class PrimeConfig {
         int sunQuarterSteps = LightingSettings.DEFAULT_SUN_QUARTER_STEPS;
         int starQuarterSteps = LightingSettings.DEFAULT_STAR_QUARTER_STEPS;
         int blockLightQuarterSteps = LightingSettings.DEFAULT_BLOCK_LIGHT_QUARTER_STEPS;
-        boolean realtimeSecondaryAreaNee = false;
         int finalExposureQuarterSteps =
                 DisplaySettings.DEFAULT_FINAL_EXPOSURE_QUARTER_STEPS;
         int oklabOverexposureSteps = DisplaySettings.DEFAULT_OVEREXPOSURE_STEPS;
@@ -201,20 +198,6 @@ public final class PrimeConfig {
                 } else {
                     rewriteNeeded = true;
                 }
-                String secondaryAreaNee = properties.getProperty(
-                        REALTIME_SECONDARY_AREA_NEE_KEY);
-                if (secondaryAreaNee != null) {
-                    try {
-                        realtimeSecondaryAreaNee = parseBoolean(secondaryAreaNee);
-                    } catch (IllegalArgumentException exception) {
-                        PrimeClient.LOGGER.warn(
-                                "Invalid Prime realtime secondary Area NEE switch '{}'; disabling it",
-                                secondaryAreaNee);
-                        rewriteNeeded = true;
-                    }
-                } else {
-                    rewriteNeeded = true;
-                }
                 String finalExposureEv = properties.getProperty(FINAL_EXPOSURE_EV_KEY);
                 if (finalExposureEv != null) {
                     try {
@@ -276,12 +259,11 @@ public final class PrimeConfig {
                 finalExposureQuarterSteps,
                 oklabOverexposureSteps,
                 defaultRoughnessSteps,
-                realtimeSecondaryAreaNee,
                 0L,
                 0L);
         dirty = rewriteNeeded;
         PrimeClient.LOGGER.info(
-                "Prime settings: path tracing {}, voxel surfaces {} at {}x, post-processing {} quality {} (NRD-FSR {}x), latitude {} degrees, solar longitude {} degrees, sun {} EV, stars {} EV, block lights {} EV, realtime secondary Area NEE {}, final exposure {} EV, Oklab DRT overexposure {}, default roughness {}",
+                "Prime settings: path tracing {}, voxel surfaces {} at {}x, post-processing {} quality {} (NRD-FSR {}x), latitude {} degrees, solar longitude {} degrees, sun {} EV, stars {} EV, block lights {} EV, final exposure {} EV, Oklab DRT overexposure {}, default roughness {}",
                 pathTracingEnabled ? "enabled" : "disabled",
                 voxelTextureSurfaces ? "enabled" : "disabled",
                 formatVoxelSurfaceStrength(voxelTextureSurfaceStrengthSteps),
@@ -293,7 +275,6 @@ public final class PrimeConfig {
                 formatEv(sunQuarterSteps),
                 formatStarEv(starQuarterSteps),
                 formatEv(blockLightQuarterSteps),
-                realtimeSecondaryAreaNee ? "enabled" : "disabled",
                 formatFinalExposure(finalExposureQuarterSteps),
                 formatOverexposure(oklabOverexposureSteps),
                 formatRoughness(defaultRoughnessSteps));
@@ -347,10 +328,6 @@ public final class PrimeConfig {
         update(settings.withBlockLightQuarterSteps(quarterSteps));
     }
 
-    public static void setRealtimeSecondaryAreaNee(boolean enabled) {
-        update(settings.withRealtimeSecondaryAreaNee(enabled));
-    }
-
     public static void setFinalExposureQuarterSteps(int quarterSteps) {
         update(settings.withFinalExposureQuarterSteps(quarterSteps));
     }
@@ -375,7 +352,6 @@ public final class PrimeConfig {
         setSunQuarterSteps(LightingSettings.DEFAULT_SUN_QUARTER_STEPS);
         setStarQuarterSteps(LightingSettings.DEFAULT_STAR_QUARTER_STEPS);
         setBlockLightQuarterSteps(LightingSettings.DEFAULT_BLOCK_LIGHT_QUARTER_STEPS);
-        setRealtimeSecondaryAreaNee(false);
         setFinalExposureQuarterSteps(
                 DisplaySettings.DEFAULT_FINAL_EXPOSURE_QUARTER_STEPS);
         setOklabOverexposureSteps(DisplaySettings.DEFAULT_OVEREXPOSURE_STEPS);
@@ -441,8 +417,6 @@ public final class PrimeConfig {
                     + STAR_EV_KEY + "=" + formatStarEv(current.starQuarterSteps()) + "\n"
                     + BLOCK_LIGHT_EV_KEY + "="
                     + formatEv(current.blockLightQuarterSteps()) + "\n"
-                    + REALTIME_SECONDARY_AREA_NEE_KEY + "="
-                    + current.realtimeSecondaryAreaNee() + "\n"
                     + FINAL_EXPOSURE_EV_KEY + "="
                     + formatFinalExposure(current.finalExposureQuarterSteps()) + "\n"
                     + OKLAB_OVEREXPOSURE_KEY + "="

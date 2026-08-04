@@ -14,18 +14,16 @@ import java.util.Objects;
 /** Versioned fixed-width encoding of {@link RayTraceReplayInput}. */
 public final class RayTraceReplayInputCodec {
     private static final int MAGIC = 0x3146_5250;
-    private static final int VERSION = 5;
+    private static final int VERSION = 4;
     private static final int ENCODED_BYTES = 384;
     private static final int FLAG_CAMERA_IN_WATER = 1;
     private static final int FLAG_SH_INPUT = 1 << 1;
     private static final int FLAG_RAW_NUMERICAL = 1 << 2;
     private static final int FLAG_TRIANGLE_DEBUG = 1 << 3;
-    private static final int FLAG_REALTIME_SECONDARY_AREA_NEE = 1 << 4;
     private static final int VALID_FLAGS = FLAG_CAMERA_IN_WATER
             | FLAG_SH_INPUT
             | FLAG_RAW_NUMERICAL
-            | FLAG_TRIANGLE_DEBUG
-            | FLAG_REALTIME_SECONDARY_AREA_NEE;
+            | FLAG_TRIANGLE_DEBUG;
 
     private RayTraceReplayInputCodec() {
     }
@@ -165,7 +163,6 @@ public final class RayTraceReplayInputCodec {
                     jitterPhase,
                     (flags & FLAG_CAMERA_IN_WATER) != 0,
                     mode,
-                    (flags & FLAG_REALTIME_SECONDARY_AREA_NEE) != 0,
                     lighting,
                     material,
                     (flags & FLAG_SH_INPUT) != 0,
@@ -190,9 +187,6 @@ public final class RayTraceReplayInputCodec {
         }
         if (input.triangleDebug()) {
             result |= FLAG_TRIANGLE_DEBUG;
-        }
-        if (input.realtimeSecondaryAreaNee()) {
-            result |= FLAG_REALTIME_SECONDARY_AREA_NEE;
         }
         return result;
     }

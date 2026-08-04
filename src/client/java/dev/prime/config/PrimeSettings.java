@@ -23,7 +23,6 @@ public record PrimeSettings(
         int finalExposureQuarterSteps,
         int oklabOverexposureSteps,
         int defaultRoughnessSteps,
-        boolean realtimeSecondaryAreaNee,
         long lightingRevision,
         long materialRevision) {
     public PrimeSettings {
@@ -57,7 +56,6 @@ public record PrimeSettings(
                 DisplaySettings.DEFAULT_FINAL_EXPOSURE_QUARTER_STEPS,
                 DisplaySettings.DEFAULT_OVEREXPOSURE_STEPS,
                 MaterialSettings.DEFAULT_ROUGHNESS_STEPS,
-                false,
                 0L,
                 0L);
     }
@@ -78,7 +76,6 @@ public record PrimeSettings(
                         this.finalExposureQuarterSteps,
                         this.oklabOverexposureSteps,
                         this.defaultRoughnessSteps,
-                        this.realtimeSecondaryAreaNee,
                         this.lightingRevision,
                         this.materialRevision);
     }
@@ -99,7 +96,6 @@ public record PrimeSettings(
                         this.finalExposureQuarterSteps,
                         this.oklabOverexposureSteps,
                         this.defaultRoughnessSteps,
-                        this.realtimeSecondaryAreaNee,
                         this.lightingRevision,
                         this.materialRevision);
     }
@@ -121,7 +117,6 @@ public record PrimeSettings(
                         this.finalExposureQuarterSteps,
                         this.oklabOverexposureSteps,
                         this.defaultRoughnessSteps,
-                        this.realtimeSecondaryAreaNee,
                         this.lightingRevision,
                         this.materialRevision);
     }
@@ -143,7 +138,6 @@ public record PrimeSettings(
                         this.finalExposureQuarterSteps,
                         this.oklabOverexposureSteps,
                         this.defaultRoughnessSteps,
-                        this.realtimeSecondaryAreaNee,
                         this.lightingRevision,
                         this.materialRevision);
     }
@@ -165,7 +159,6 @@ public record PrimeSettings(
                         this.finalExposureQuarterSteps,
                         this.oklabOverexposureSteps,
                         this.defaultRoughnessSteps,
-                        this.realtimeSecondaryAreaNee,
                         this.lightingRevision,
                         this.materialRevision);
     }
@@ -187,7 +180,6 @@ public record PrimeSettings(
                         this.finalExposureQuarterSteps,
                         this.oklabOverexposureSteps,
                         this.defaultRoughnessSteps,
-                        this.realtimeSecondaryAreaNee,
                         Math.incrementExact(this.lightingRevision),
                         this.materialRevision);
     }
@@ -210,7 +202,6 @@ public record PrimeSettings(
                         this.finalExposureQuarterSteps,
                         this.oklabOverexposureSteps,
                         this.defaultRoughnessSteps,
-                        this.realtimeSecondaryAreaNee,
                         Math.incrementExact(this.lightingRevision),
                         this.materialRevision);
     }
@@ -232,7 +223,6 @@ public record PrimeSettings(
                         this.finalExposureQuarterSteps,
                         this.oklabOverexposureSteps,
                         this.defaultRoughnessSteps,
-                        this.realtimeSecondaryAreaNee,
                         Math.incrementExact(this.lightingRevision),
                         this.materialRevision);
     }
@@ -254,7 +244,6 @@ public record PrimeSettings(
                         this.finalExposureQuarterSteps,
                         this.oklabOverexposureSteps,
                         this.defaultRoughnessSteps,
-                        this.realtimeSecondaryAreaNee,
                         Math.incrementExact(this.lightingRevision),
                         this.materialRevision);
     }
@@ -276,7 +265,6 @@ public record PrimeSettings(
                         this.finalExposureQuarterSteps,
                         this.oklabOverexposureSteps,
                         this.defaultRoughnessSteps,
-                        this.realtimeSecondaryAreaNee,
                         Math.incrementExact(this.lightingRevision),
                         this.materialRevision);
     }
@@ -298,7 +286,6 @@ public record PrimeSettings(
                         value,
                         this.oklabOverexposureSteps,
                         this.defaultRoughnessSteps,
-                        this.realtimeSecondaryAreaNee,
                         this.lightingRevision,
                         this.materialRevision);
     }
@@ -320,7 +307,6 @@ public record PrimeSettings(
                         this.finalExposureQuarterSteps,
                         value,
                         this.defaultRoughnessSteps,
-                        this.realtimeSecondaryAreaNee,
                         this.lightingRevision,
                         this.materialRevision);
     }
@@ -342,30 +328,8 @@ public record PrimeSettings(
                         this.finalExposureQuarterSteps,
                         this.oklabOverexposureSteps,
                         value,
-                        this.realtimeSecondaryAreaNee,
                         this.lightingRevision,
                         Math.incrementExact(this.materialRevision));
-    }
-
-    public PrimeSettings withRealtimeSecondaryAreaNee(boolean value) {
-        return value == this.realtimeSecondaryAreaNee
-                ? this
-                : new PrimeSettings(
-                        this.pathTracingEnabled,
-                        this.voxelTextureSurfaces,
-                        this.voxelTextureSurfaceStrengthSteps,
-                        this.postProcessingMode,
-                        this.reconstructionQuality,
-                        this.astronomy,
-                        this.sunQuarterSteps,
-                        this.starQuarterSteps,
-                        this.blockLightQuarterSteps,
-                        this.finalExposureQuarterSteps,
-                        this.oklabOverexposureSteps,
-                        this.defaultRoughnessSteps,
-                        value,
-                        Math.incrementExact(this.lightingRevision),
-                        this.materialRevision);
     }
 
     public LightingSettings.Snapshot lighting() {

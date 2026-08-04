@@ -9,7 +9,6 @@ import java.util.Objects;
 record RealtimeRenderSettings(
         PostProcessingMode postProcessing,
         ReconstructionQualityMode reconstructionQuality,
-        boolean secondaryAreaNee,
         LightingSettings.Snapshot lighting,
         MaterialSettings.Snapshot material,
         DisplaySettings.Snapshot display,
@@ -27,7 +26,6 @@ record RealtimeRenderSettings(
         return new RealtimeRenderSettings(
                 settings.postProcessingMode(),
                 settings.reconstructionQuality(),
-                settings.realtimeSecondaryAreaNee(),
                 settings.lighting(),
                 settings.material(),
                 settings.display(),

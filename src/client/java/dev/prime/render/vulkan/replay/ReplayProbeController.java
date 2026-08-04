@@ -239,7 +239,6 @@ public final class ReplayProbeController implements Destroyable {
                         .fsrJitterPhase(frameIndex),
                 input.cameraInWater,
                 PostProcessingMode.NRD_FSR,
-                false,
                 input.lighting,
                 input.material,
                 true,

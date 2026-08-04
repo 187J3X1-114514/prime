@@ -185,7 +185,6 @@ final class RayTraceReplayInputCodecTest {
                 input.jitterPhase(),
                 input.cameraInWater(),
                 input.postProcessingMode(),
-                input.realtimeSecondaryAreaNee(),
                 input.lighting(),
                 input.material(),
                 input.shInput(),
@@ -232,7 +231,6 @@ final class RayTraceReplayInputCodecTest {
                 7,
                 true,
                 PostProcessingMode.NRD_FSR,
-                true,
                 new LightingSettings.Snapshot(
                         4, -8, 12, 7L),
                 new MaterialSettings.Snapshot(90, 8L),

@@ -529,7 +529,6 @@ PrimeDirectLightingSplit primeEstimatePrimaryDirectAreaLight(
             conditionalTransparentBranch);
 }
 
-#if defined(PRIME_ENABLE_SECONDARY_AREA_NEE)
 vec3 primeEstimateDirectAreaLight(
         SurfaceInteraction surface,
         vec3 viewDirection,
@@ -559,7 +558,6 @@ vec3 primeEstimateDirectAreaLight(
             false);
     return split.diffuse + split.specular;
 }
-#endif
 
 #if defined(PRIME_DEFER_SECONDARY_AREA_NEE)
 void primePrepareDeferredDirectAreaLight(
@@ -668,7 +666,6 @@ vec3 primeEstimateDirectLighting(
                     PRIME_SAMPLE_EFFECT_DIRECT_SUN,
                     PRIME_SAMPLE_DIMENSION_PRIMARY),
             volumeStack);
-#if defined(PRIME_ENABLE_SECONDARY_AREA_NEE)
 #if defined(PRIME_DEFER_SECONDARY_AREA_NEE)
     primePrepareDeferredDirectAreaLight(
             surface,
@@ -697,7 +694,6 @@ vec3 primeEstimateDirectLighting(
                     PRIME_SAMPLE_EFFECT_DIRECT_AREA_LIGHT,
                     PRIME_SAMPLE_DIMENSION_SECONDARY),
             volumeStack);
-#endif
 #endif
     return result;
 }
@@ -1141,11 +1137,7 @@ bool primeIntegrateTransparentWavefrontSurface(
     bool contributionDiffuse = guideEnabled
             ? (primarySurfaceReplacement || diffusePath)
             : transmissionBranch;
-    bool previousUsedAreaNee = path.bounce == 1u
-            || (hasGuide && path.bounce == guideBounce + 1u);
-#if defined(PRIME_ENABLE_SECONDARY_AREA_NEE)
-    previousUsedAreaNee = previousUsedAreaNee || path.bounce > 0u;
-#endif
+    bool previousUsedAreaNee = path.bounce > 0u;
     vec3 emitted = primeEvaluateHitEmission(
             path, surface, previousUsedAreaNee);
     primeAccumulateTransparentBranch(
@@ -1345,11 +1337,7 @@ bool primeIntegrateWavefrontSurface(
     }
 
     vec3 viewDirection = -path.rayDirection;
-    bool previousUsedAreaNee = denoiserState.hasPrimarySurface
-            && path.bounce == denoiserState.primaryBounce + 1u;
-#if defined(PRIME_ENABLE_SECONDARY_AREA_NEE)
-    previousUsedAreaNee = previousUsedAreaNee || denoiserState.hasPrimarySurface;
-#endif
+    bool previousUsedAreaNee = denoiserState.hasPrimarySurface;
     vec3 emitted = primeEvaluateHitEmission(
             path, surface, previousUsedAreaNee);
     if (!denoiserState.hasPrimarySurface) {

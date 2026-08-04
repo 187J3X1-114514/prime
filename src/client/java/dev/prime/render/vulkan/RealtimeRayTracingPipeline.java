@@ -33,26 +33,20 @@ public final class RealtimeRayTracingPipeline implements Destroyable {
     private static final int HEAD_GROUP = 0;
     private static final int STEP_QUEUE_0_GROUP = 1;
     private static final int STEP_QUEUE_1_GROUP = 2;
-    private static final int TAIL_QUEUE_0_GROUP = 3;
-    private static final int TAIL_QUEUE_1_GROUP = 4;
-    private static final int RESOLVE_GROUP = 5;
-    private static final int SECONDARY_AREA_STEP_QUEUE_0_GROUP = 6;
-    private static final int SECONDARY_AREA_STEP_QUEUE_1_GROUP = 7;
-    private static final int SECONDARY_AREA_QUEUE_0_GROUP = 8;
-    private static final int SECONDARY_AREA_QUEUE_1_GROUP = 9;
-    private static final int SECONDARY_AREA_TAIL_QUEUE_0_GROUP = 10;
-    private static final int SECONDARY_AREA_TAIL_QUEUE_1_GROUP = 11;
-    static final int RAYGEN_GROUP_COUNT = 12;
-    static final int RAYGEN_MODULE_COUNT = 7;
-    static final int DISPATCH_COUNT = ShaderAbi.WAVEFRONT_ROUNDS + 3;
-    static final int SECONDARY_AREA_DISPATCH_COUNT =
-            2 * ShaderAbi.WAVEFRONT_ROUNDS + 3;
+    private static final int AREA_QUEUE_0_GROUP = 3;
+    private static final int AREA_QUEUE_1_GROUP = 4;
+    private static final int TAIL_QUEUE_0_GROUP = 5;
+    private static final int TAIL_QUEUE_1_GROUP = 6;
+    private static final int RESOLVE_GROUP = 7;
+    static final int RAYGEN_GROUP_COUNT = 8;
+    static final int RAYGEN_MODULE_COUNT = 5;
+    static final int DISPATCH_COUNT = 2 * ShaderAbi.WAVEFRONT_ROUNDS + 3;
     static final int DESCRIPTOR_BINDING_COUNT = 25;
     private static final int[] RAYGEN_MODULES = {
-        0, 1, 1, 2, 2, 3, 4, 4, 5, 5, 6, 6
+        0, 1, 1, 2, 2, 3, 3, 4
     };
     private static final int[] RAYGEN_CONTROLS = {
-        0, 1, 257, 2, 258, 3, 1, 257, 4, 260, 2, 258
+        0, 1, 257, 4, 260, 2, 258, 3
     };
     private static final int STORAGE_IMAGE_DESCRIPTOR_COUNT = 23;
     private static final long QUEUE_OFFSET_ALIGNMENT = 256L;
@@ -93,11 +87,9 @@ public final class RealtimeRayTracingPipeline implements Destroyable {
                     new String[] {
                         prefix + "head" + suffix,
                         prefix + "step" + suffix,
+                        prefix + "area" + suffix,
                         prefix + "tail" + suffix,
-                        prefix + "resolve" + suffix,
-                        prefix + "step_secondary_area" + suffix,
-                        prefix + "area_secondary_area" + suffix,
-                        prefix + "tail_secondary_area" + suffix
+                        prefix + "resolve" + suffix
                     },
                     RAYGEN_MODULES,
                     RAYGEN_CONTROLS,
@@ -232,31 +224,28 @@ public final class RealtimeRayTracingPipeline implements Destroyable {
             this.initializeQueues(commandBuffer, stack, commandOffset);
             this.trace(commandBuffer, stack, width, height, HEAD_GROUP);
             this.wavefrontBarrier(commandBuffer, stack);
-            boolean secondaryAreaNee = input.realtimeSecondaryAreaNee();
             int sourceQueue = 0;
             for (int round = 0; round < ShaderAbi.WAVEFRONT_ROUNDS; round++) {
                 this.traceIndirect(
                         commandBuffer,
                         stack,
-                        stepGroup(sourceQueue, secondaryAreaNee),
+                        stepGroup(sourceQueue),
                         commandOffset,
                         sourceQueue);
-                if (secondaryAreaNee) {
-                    this.wavefrontBarrier(commandBuffer, stack);
-                    this.traceIndirect(
-                            commandBuffer,
-                            stack,
-                            areaGroup(sourceQueue),
-                            commandOffset,
-                            sourceQueue);
-                }
+                this.wavefrontBarrier(commandBuffer, stack);
+                this.traceIndirect(
+                        commandBuffer,
+                        stack,
+                        areaGroup(sourceQueue),
+                        commandOffset,
+                        sourceQueue);
                 this.advanceQueue(commandBuffer, stack, commandOffset, sourceQueue);
                 sourceQueue ^= 1;
             }
             this.traceIndirect(
                     commandBuffer,
                     stack,
-                    tailGroup(sourceQueue, secondaryAreaNee),
+                    tailGroup(sourceQueue),
                     commandOffset,
                     sourceQueue);
             this.wavefrontBarrier(commandBuffer, stack);
@@ -471,38 +460,26 @@ public final class RealtimeRayTracingPipeline implements Destroyable {
         return RAYGEN_CONTROLS[group];
     }
 
-    static int dispatchCount(boolean secondaryAreaNee) {
-        return secondaryAreaNee ? SECONDARY_AREA_DISPATCH_COUNT : DISPATCH_COUNT;
-    }
-
-    private static int stepGroup(int queue, boolean secondaryAreaNee) {
+    private static int stepGroup(int queue) {
         return switch (queue) {
-            case 0 -> secondaryAreaNee
-                    ? SECONDARY_AREA_STEP_QUEUE_0_GROUP
-                    : STEP_QUEUE_0_GROUP;
-            case 1 -> secondaryAreaNee
-                    ? SECONDARY_AREA_STEP_QUEUE_1_GROUP
-                    : STEP_QUEUE_1_GROUP;
+            case 0 -> STEP_QUEUE_0_GROUP;
+            case 1 -> STEP_QUEUE_1_GROUP;
             default -> throw new IllegalArgumentException("Invalid realtime wavefront queue");
         };
     }
 
     private static int areaGroup(int queue) {
         return switch (queue) {
-            case 0 -> SECONDARY_AREA_QUEUE_0_GROUP;
-            case 1 -> SECONDARY_AREA_QUEUE_1_GROUP;
+            case 0 -> AREA_QUEUE_0_GROUP;
+            case 1 -> AREA_QUEUE_1_GROUP;
             default -> throw new IllegalArgumentException("Invalid realtime wavefront queue");
         };
     }
 
-    private static int tailGroup(int queue, boolean secondaryAreaNee) {
+    private static int tailGroup(int queue) {
         return switch (queue) {
-            case 0 -> secondaryAreaNee
-                    ? SECONDARY_AREA_TAIL_QUEUE_0_GROUP
-                    : TAIL_QUEUE_0_GROUP;
-            case 1 -> secondaryAreaNee
-                    ? SECONDARY_AREA_TAIL_QUEUE_1_GROUP
-                    : TAIL_QUEUE_1_GROUP;
+            case 0 -> TAIL_QUEUE_0_GROUP;
+            case 1 -> TAIL_QUEUE_1_GROUP;
             default -> throw new IllegalArgumentException("Invalid realtime wavefront queue");
         };
     }

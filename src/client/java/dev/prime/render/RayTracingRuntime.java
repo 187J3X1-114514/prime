@@ -656,6 +656,27 @@ public final class RayTracingRuntime {
                     "Prime deterministic NRD replay self-test failed",
                     failure);
         } else {
+            var replayDirectory = minecraft.gameDirectory
+                    .toPath()
+                    .resolve("prime/replay");
+            var referenceFixture = replayDirectory
+                    .resolve("last-failure-reference.prseq");
+            var replayFixture = replayDirectory
+                    .resolve("last-failure-replay.prseq");
+            try {
+                RenderReplayFixtureStore.save(
+                        referenceFixture, verification.reference());
+                RenderReplayFixtureStore.save(
+                        replayFixture, verification.replay());
+                PrimeClient.LOGGER.info(
+                        "Saved failed Prime replay captures to reference={} and replay={}",
+                        referenceFixture.toAbsolutePath().normalize(),
+                        replayFixture.toAbsolutePath().normalize());
+            } catch (java.io.IOException | RuntimeException exception) {
+                PrimeClient.LOGGER.warn(
+                        "Prime replay self-test failed, and its captures could not be saved",
+                        exception);
+            }
             PrimeClient.LOGGER.error(
                     "Prime deterministic NRD jitter replay self-test failed: semantic reference={}, semantic replay={}, jitter reference={}, jitter replay={}, first divergence={}",
                     verification.referenceSemantics(),

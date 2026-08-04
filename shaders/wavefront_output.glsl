@@ -118,6 +118,10 @@ void primeWriteRealtimeOutput(
     bool hasVisibleSurface = sampleResult.guides.primaryHitKind == PRIME_HIT_SURFACE;
     float visibleDistance = primeNrdSanitizePrimaryDistance(
             sampleResult.guides.primaryDistance, hasVisibleSurface);
+    uint primaryMaterialFlags = primeNrdPrimaryMaterialFlags(
+            nrdGuides.primaryMaterialFlags,
+            sampleResult.guides.primaryMaterialFlags,
+            nrdShInputs && sampleResult.transparentPrimary);
     vec3 primaryPosition = primeNrdIsFinite(nrdGuides.primaryPosition)
             ? nrdGuides.primaryPosition
             : vec3(0.0);
@@ -192,7 +196,7 @@ void primeWriteRealtimeOutput(
             primeNrdPackNormalRoughness(
                     nrdGuides.primaryNormal,
                     nrdGuides.primaryLinearRoughness,
-                    primeNrdMaterialId(nrdGuides.primaryMaterialFlags)));
+                    primeNrdMaterialId(primaryMaterialFlags)));
     imageStore(
             primeNrdSpecularMaterial,
             ivec2(pixel),

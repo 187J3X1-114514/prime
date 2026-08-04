@@ -570,6 +570,10 @@ final class PrimeProductionMathGpuTest {
                 int index = kind * CASES_PER_KIND + local;
                 putInt(input, index, words, 0, 0, kind);
                 putInt(input, index, words, 0, 1, local & 0x3ff);
+                if (kind == 6) {
+                    putInt(input, index, words, 0, 2, (local >> 1) & 0x7ff);
+                    putInt(input, index, words, 0, 3, local & 1);
+                }
                 if (kind == 1) {
                     putVec4(
                             input,

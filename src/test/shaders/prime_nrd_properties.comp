@@ -203,11 +203,22 @@ void main() {
         result2 = vec4(c, primeNrdRadiancePeak(sum));
         result3 = vec4(pairA + pairB, pairScale);
     } else if (kind == 6u) {
-        float id = primeNrdMaterialId(control.y);
+        bool preserveVisibleInterface = control.w != 0u;
+        uint primaryMaterialFlags = primeNrdPrimaryMaterialFlags(
+                control.y,
+                control.z,
+                preserveVisibleInterface);
+        uint expectedFlags = preserveVisibleInterface
+                && primeMaterialIsTransmissive(control.z)
+                ? control.z
+                : control.y;
+        float id = primeNrdMaterialId(primaryMaterialFlags);
         primeNrdCheckUnit(mask, id);
         bool exact = id == 0.0 || id == 1.0 / 3.0 || id == 2.0 / 3.0 || id == 1.0;
-        if (!exact) mask |= PRIME_TEST_FAILURE_EVENT;
-        result0 = vec4(id, 0.0, 0.0, 0.0);
+        if (!exact || primaryMaterialFlags != expectedFlags) {
+            mask |= PRIME_TEST_FAILURE_EVENT;
+        }
+        result0 = vec4(id, float(primaryMaterialFlags), 0.0, 0.0);
     } else if (kind == 7u) {
         uint classification = primeClassifyOptionalDirection(first.xyz);
         uint expected = control.y == 0u || control.y == 1u
@@ -272,6 +283,18 @@ void main() {
                 westNormal,
                 northNormal,
                 southNormal);
+        vec2 cornerScale = primeNrdSgReJitter(
+                diffuseSg,
+                specularSg,
+                view,
+                0.35,
+                10.0,
+                neighborViewZ,
+                normal,
+                vec3(1.0, 0.0, 0.0),
+                normal,
+                normal,
+                normal);
         PrimeNrdResolvedSg resolved = primeNrdResolveFilteredSg(
                 diffuseSg,
                 specularSg,
@@ -299,8 +322,12 @@ void main() {
                 || all(lessThanEqual(abs(scale - vec2(1.0)), vec2(1.0e-4)))) {
             mask |= PRIME_TEST_FAILURE_IDENTITY;
         }
+        if (any(notEqual(cornerScale, vec2(1.0)))) {
+            mask |= PRIME_TEST_FAILURE_EVENT;
+        }
         result0 = vec4(resolved.diffuse, scale.x);
         result1 = vec4(resolved.specular, scale.y);
+        result2 = vec4(cornerScale, 0.0, 0.0);
     } else {
         mask |= PRIME_TEST_FAILURE_EVENT;
     }

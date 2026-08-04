@@ -166,6 +166,21 @@ vec2 primeNrdSgReJitter(
         vec3 westNormal,
         vec3 northNormal,
         vec3 southNormal) {
+    float noV = abs(dot(normal, view));
+    float threshold = PRIME_NRD_REJITTER_VIEW_Z_THRESHOLD * abs(viewZ)
+            / (noV * 0.95 + 0.05);
+    bvec4 withinSurface = lessThanEqual(abs(neighborViewZ - viewZ), vec4(threshold));
+    vec4 neighborAlignment = vec4(
+            dot(normal, eastNormal),
+            dot(normal, westNormal),
+            dot(normal, northNormal),
+            dot(normal, southNormal));
+    bool symmetrical = all(withinSurface)
+            && all(greaterThan(neighborAlignment, vec4(PRIME_NRD_EPS)));
+    if (!symmetrical) {
+        return vec2(1.0);
+    }
+
     vec3 diffuseLight = primeNrdSgExtractDirection(diffuseSg);
     vec3 specularLight = normalize(mix(view, primeNrdSgExtractDirection(specularSg), roughness));
     vec2 center = primeNrdComputeBrdfs(
@@ -184,13 +199,7 @@ vec2 primeNrdSgReJitter(
             scale,
             vec2(1.0 / PRIME_NRD_REJITTER_AMPLITUDE),
             vec2(PRIME_NRD_REJITTER_AMPLITUDE));
-
-    float noV = abs(dot(normal, view));
-    float threshold = PRIME_NRD_REJITTER_VIEW_Z_THRESHOLD * abs(viewZ)
-            / (noV * 0.95 + 0.05);
-    bvec4 withinSurface = lessThanEqual(abs(neighborViewZ - viewZ), vec4(threshold));
-    bool symmetrical = all(withinSurface);
-    return symmetrical && primeNrdIsFinite(scale) ? scale : vec2(1.0);
+    return primeNrdIsFinite(scale) ? scale : vec2(1.0);
 }
 
 PrimeNrdResolvedSg primeNrdResolveFilteredSg(

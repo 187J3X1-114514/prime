@@ -93,6 +93,18 @@ float primeNrdMaterialId(uint materialFlags) {
     return (materialFlags & PRIME_MATERIAL_FLAG_LABPBR_METAL) != 0u ? 1.0 / 3.0 : 0.0;
 }
 
+uint primeNrdPrimaryMaterialFlags(
+        uint guideMaterialFlags,
+        uint visibleMaterialFlags,
+        bool preserveVisibleInterface) {
+    // A transparent PSR guide describes the surface behind the interface. NRD must still retain
+    // the visible interface class or its history can cross into a direct view of that surface.
+    return preserveVisibleInterface
+            && primeMaterialIsTransmissive(visibleMaterialFlags)
+            ? visibleMaterialFlags
+            : guideMaterialFlags;
+}
+
 vec4 primeNrdPackNormalRoughness(vec3 normal, float roughness, float materialId) {
     vec3 encodedNormal = primeNrdSafeNormalize(normal, vec3(0.0, 0.0, 1.0));
     encodedNormal /= max(abs(encodedNormal.x) + abs(encodedNormal.y) + abs(encodedNormal.z), 1.0e-9);

@@ -62,7 +62,6 @@ const uint PRIME_DIAGNOSTIC_MOTION = 3u;
 const uint PRIME_DIAGNOSTIC_SPECULAR_INPUT = 4u;
 const uint PRIME_DIAGNOSTIC_SPECULAR_OUTPUT = 5u;
 const uint PRIME_DIAGNOSTIC_SPECULAR_REMODULATED = 6u;
-const uint PRIME_COMPOSITE_COMPATIBILITY_ALL = 0x1ffu;
 
 #ifndef PRIME_ENABLE_FILTERED_SUN_SHADOW
 #define PRIME_ENABLE_FILTERED_SUN_SHADOW 1
@@ -205,7 +204,6 @@ struct PrimeCompositeResolveGuide {
     vec3 diffuseAlbedo;
     vec3 specularAlbedo;
     vec3 sun;
-    uint materialId;
     vec3 normal;
     float roughness;
     vec3 view;
@@ -215,7 +213,6 @@ struct PrimeCompositeResolveGuide {
     vec3 westNormal;
     vec3 northNormal;
     vec3 southNormal;
-    uvec4 neighborMaterialId;
 };
 
 PrimeCompositeResolveGuide primeCompositeLoadResolveGuide(
@@ -223,8 +220,7 @@ PrimeCompositeResolveGuide primeCompositeLoadResolveGuide(
         bool reflection,
         vec4 material,
         bool includeSun) {
-    // All translated SH taps are evaluated against this one current-frame guide. Hoisting its
-    // material and ReJitter neighborhood avoids reloading the same center data four times.
+    // Resolve and official ReJitter use one current-frame guide and its four-neighbor geometry.
     PrimeCompositeResolveGuide guide;
     guide.valid = primeNrdIsFinite(material.a)
             && material.a >= 0.0;
@@ -238,8 +234,6 @@ PrimeCompositeResolveGuide primeCompositeLoadResolveGuide(
                     pixel, reflection);
     primeNrdUnpackNormalRoughness(
             normalRoughness, guide.normal, guide.roughness);
-    guide.materialId =
-            uint(round(normalRoughness.a * 3.0));
     guide.view = primeNrdSafeNormalize(
             -primeCompositeLoadPosition(pixel, reflection),
             guide.normal);
@@ -266,8 +260,6 @@ PrimeCompositeResolveGuide primeCompositeLoadResolveGuide(
             neighborNormalRoughness,
             guide.eastNormal,
             neighborRoughness);
-    guide.neighborMaterialId.x =
-            uint(round(neighborNormalRoughness.a * 3.0));
     neighborNormalRoughness =
             primeCompositeLoadNormalRoughness(
                     west, reflection);
@@ -275,8 +267,6 @@ PrimeCompositeResolveGuide primeCompositeLoadResolveGuide(
             neighborNormalRoughness,
             guide.westNormal,
             neighborRoughness);
-    guide.neighborMaterialId.y =
-            uint(round(neighborNormalRoughness.a * 3.0));
     neighborNormalRoughness =
             primeCompositeLoadNormalRoughness(
                     north, reflection);
@@ -284,8 +274,6 @@ PrimeCompositeResolveGuide primeCompositeLoadResolveGuide(
             neighborNormalRoughness,
             guide.northNormal,
             neighborRoughness);
-    guide.neighborMaterialId.z =
-            uint(round(neighborNormalRoughness.a * 3.0));
     neighborNormalRoughness =
             primeCompositeLoadNormalRoughness(
                     south, reflection);
@@ -293,8 +281,6 @@ PrimeCompositeResolveGuide primeCompositeLoadResolveGuide(
             neighborNormalRoughness,
             guide.southNormal,
             neighborRoughness);
-    guide.neighborMaterialId.w =
-            uint(round(neighborNormalRoughness.a * 3.0));
     guide.specularAlbedo = primeNrdSanitizeAlbedo(
             primeCompositeLoadSpecularAlbedo(
                     pixel, reflection));
@@ -357,255 +343,6 @@ vec3 primeCompositeResolveBranchValue(
             guide.sun);
 }
 
-bool primeCompositeCompatibleViewZ(
-        float sampleViewZ,
-        PrimeCompositeResolveGuide guide) {
-    float threshold = PRIME_NRD_REJITTER_VIEW_Z_THRESHOLD
-            * max(abs(sampleViewZ), abs(guide.viewZ))
-            + 1.0e-4;
-    return primeNrdIsFinite(sampleViewZ)
-            && primeNrdIsFinite(guide.viewZ)
-            && abs(sampleViewZ - guide.viewZ) <= threshold;
-}
-
-bool primeCompositePreloadedGuideCompatibility(
-        ivec2 samplePixel,
-        bool reflection,
-        uint sampleMaterialId,
-        float sampleViewZ,
-        PrimeCompositeResolveGuide guide) {
-    vec4 sampleMaterial = primeCompositeLoadMaterial(
-            samplePixel, reflection);
-    if (!primeNrdIsFinite(sampleMaterial.a)
-            || sampleMaterial.a < 0.0) {
-        return false;
-    }
-    return sampleMaterialId == guide.materialId
-            && primeCompositeCompatibleViewZ(sampleViewZ, guide);
-}
-
-bool primeCompositeLoadGuideCompatibility(
-        ivec2 samplePixel,
-        bool reflection,
-        PrimeCompositeResolveGuide guide) {
-    vec4 sampleMaterial = primeCompositeLoadMaterial(
-            samplePixel, reflection);
-    if (!primeNrdIsFinite(sampleMaterial.a)
-            || sampleMaterial.a < 0.0) {
-        return false;
-    }
-    vec4 sampleNormalRoughness =
-            primeCompositeLoadNormalRoughness(
-                    samplePixel, reflection);
-    uint sampleMaterialId =
-            uint(round(sampleNormalRoughness.a * 3.0));
-    if (sampleMaterialId != guide.materialId) {
-        return false;
-    }
-    float sampleViewZ =
-            primeCompositeLoadViewZ(samplePixel, reflection);
-    return primeCompositeCompatibleViewZ(sampleViewZ, guide);
-}
-
-uint primeCompositeCompatibilityMask(
-        ivec2 guidePixel,
-        bool reflection,
-        PrimeCompositeResolveGuide guide) {
-    // The four ReJitter neighbors already supplied their packed class and view-Z to the center
-    // guide. Reuse them here; only the branch-valid marker still needs a material load.
-    uint compatibility = primeNrdIsFinite(guide.viewZ)
-            ? (1u << 4u)
-            : 0u;
-    compatibility |= primeCompositePreloadedGuideCompatibility(
-            primeCompositeNeighbor(guidePixel, ivec2(1, 0)),
-            reflection,
-            guide.neighborMaterialId.x,
-            guide.neighborViewZ.x,
-            guide)
-            ? (1u << 5u) : 0u;
-    compatibility |= primeCompositePreloadedGuideCompatibility(
-            primeCompositeNeighbor(guidePixel, ivec2(-1, 0)),
-            reflection,
-            guide.neighborMaterialId.y,
-            guide.neighborViewZ.y,
-            guide)
-            ? (1u << 3u) : 0u;
-    compatibility |= primeCompositePreloadedGuideCompatibility(
-            primeCompositeNeighbor(guidePixel, ivec2(0, 1)),
-            reflection,
-            guide.neighborMaterialId.z,
-            guide.neighborViewZ.z,
-            guide)
-            ? (1u << 7u) : 0u;
-    compatibility |= primeCompositePreloadedGuideCompatibility(
-            primeCompositeNeighbor(guidePixel, ivec2(0, -1)),
-            reflection,
-            guide.neighborMaterialId.w,
-            guide.neighborViewZ.w,
-            guide)
-            ? (1u << 1u) : 0u;
-    compatibility |= primeCompositeLoadGuideCompatibility(
-            primeCompositeNeighbor(guidePixel, ivec2(-1, -1)),
-            reflection,
-            guide)
-            ? (1u << 0u) : 0u;
-    compatibility |= primeCompositeLoadGuideCompatibility(
-            primeCompositeNeighbor(guidePixel, ivec2(1, -1)),
-            reflection,
-            guide)
-            ? (1u << 2u) : 0u;
-    compatibility |= primeCompositeLoadGuideCompatibility(
-            primeCompositeNeighbor(guidePixel, ivec2(-1, 1)),
-            reflection,
-            guide)
-            ? (1u << 6u) : 0u;
-    compatibility |= primeCompositeLoadGuideCompatibility(
-            primeCompositeNeighbor(guidePixel, ivec2(1, 1)),
-            reflection,
-            guide)
-            ? (1u << 8u) : 0u;
-    return compatibility;
-}
-
-vec4 primeCompositeBilinearWeights(vec2 weight) {
-    return vec4(
-            (1.0 - weight.x) * (1.0 - weight.y),
-            weight.x * (1.0 - weight.y),
-            (1.0 - weight.x) * weight.y,
-            weight.x * weight.y);
-}
-
-float primeCompositeCompatibilityValue(
-        uint compatibility,
-        ivec2 offset) {
-    ivec2 index = clamp(
-            offset + ivec2(1), ivec2(0), ivec2(2));
-    uint bit = uint(index.x + index.y * 3);
-    return float((compatibility >> bit) & 1u);
-}
-
-float primeCompositeSignalCoverage(
-        ivec2 signalPixel,
-        ivec2 signalOrigin,
-        ivec2 coverageBaseOffset,
-        vec4 coverageWeight,
-        uint compatibility) {
-    ivec2 baseOffset = coverageBaseOffset
-            + signalPixel - signalOrigin;
-    vec4 values = vec4(
-            primeCompositeCompatibilityValue(
-                    compatibility, baseOffset),
-            primeCompositeCompatibilityValue(
-                    compatibility, baseOffset + ivec2(1, 0)),
-            primeCompositeCompatibilityValue(
-                    compatibility, baseOffset + ivec2(0, 1)),
-            primeCompositeCompatibilityValue(
-                    compatibility, baseOffset + ivec2(1, 1)));
-    return dot(values, coverageWeight);
-}
-
-vec3 primeCompositeSampleResolvedBranch(
-        ivec2 pixel,
-        bool reflection,
-        PrimeCompositeResolveGuide guide,
-        bool remodulatedSpecular) {
-    if (!guide.valid) {
-        return vec3(0.0);
-    }
-    vec2 jitter = primeCompositePush.currentJitterPixels;
-    ivec2 base = pixel + ivec2(floor(jitter));
-    vec2 weight = fract(jitter);
-    ivec2 signal00 = primeCompositeNeighbor(
-            base, ivec2(0, 0));
-    ivec2 signal10 = primeCompositeNeighbor(
-            base, ivec2(1, 0));
-    ivec2 signal01 = primeCompositeNeighbor(
-            base, ivec2(0, 1));
-    ivec2 signal11 = primeCompositeNeighbor(
-            base, ivec2(1, 1));
-    vec4 tapWeight = primeCompositeBilinearWeights(weight);
-    uint compatibility = primeCompositeCompatibilityMask(
-            pixel, reflection, guide);
-    if (compatibility != PRIME_COMPOSITE_COMPATIBILITY_ALL) {
-        // All four inverse-jittered footprints have the same fractional position. Derive it once
-        // from the first clamped signal tap; the other bases differ only by integer offsets.
-        vec2 guidePosition = vec2(signal00) - jitter;
-        ivec2 coverageBaseOffset =
-                ivec2(floor(guidePosition)) - pixel;
-        vec4 coverageWeight =
-                primeCompositeBilinearWeights(
-                        fract(guidePosition));
-        tapWeight *= vec4(
-                primeCompositeSignalCoverage(
-                        signal00,
-                        signal00,
-                        coverageBaseOffset,
-                        coverageWeight,
-                        compatibility),
-                primeCompositeSignalCoverage(
-                        signal10,
-                        signal00,
-                        coverageBaseOffset,
-                        coverageWeight,
-                        compatibility),
-                primeCompositeSignalCoverage(
-                        signal01,
-                        signal00,
-                        coverageBaseOffset,
-                        coverageWeight,
-                        compatibility),
-                primeCompositeSignalCoverage(
-                        signal11,
-                        signal00,
-                        coverageBaseOffset,
-                        coverageWeight,
-                        compatibility));
-    }
-    float weightSum = dot(tapWeight, vec4(1.0));
-    if (!(weightSum > 1.0e-6)) {
-        return primeCompositeResolveBranchValue(
-                pixel,
-                reflection,
-                guide,
-                remodulatedSpecular);
-    }
-    tapWeight /= weightSum;
-    // The current guide and material already contain the FSR camera jitter. Only NRD's stabilized
-    // SH signal needs translation; moving both produced the measured 1.6x-2x interior phase.
-    // Resolve every translated signal tap independently against the one current guide. The
-    // inverse-jittered coverage reconstruction preserves NRD's exact material classes and 1%
-    // surface-depth boundary without switching whole taps as the jitter phase changes.
-    vec3 branch = tapWeight.x > 0.0
-            ? primeCompositeResolveBranchValue(
-                    signal00,
-                    reflection,
-                    guide,
-                    remodulatedSpecular) * tapWeight.x
-            : vec3(0.0);
-    if (tapWeight.y > 0.0) {
-        branch += primeCompositeResolveBranchValue(
-                signal10,
-                reflection,
-                guide,
-                remodulatedSpecular) * tapWeight.y;
-    }
-    if (tapWeight.z > 0.0) {
-        branch += primeCompositeResolveBranchValue(
-                signal01,
-                reflection,
-                guide,
-                remodulatedSpecular) * tapWeight.z;
-    }
-    if (tapWeight.w > 0.0) {
-        branch += primeCompositeResolveBranchValue(
-                signal11,
-                reflection,
-                guide,
-                remodulatedSpecular) * tapWeight.w;
-    }
-    return branch;
-}
-
 vec3 primeCompositeRadiance(
         uvec2 pixel,
         vec4 material,
@@ -618,27 +355,22 @@ vec3 primeCompositeRadiance(
                 imageLoad(primeStableAccumulation, ivec2(pixel)).rgb,
                 PRIME_NRD_FP16_MAX);
     }
-    bool restoreTransparentPhase =
+    bool transparent =
             primeMaterialIsTransmissive(visibleMaterialFlags);
     PrimeCompositeResolveGuide primaryGuide =
             primeCompositeLoadResolveGuide(
                     ivec2(pixel),
                     false,
                     material,
-                    !restoreTransparentPhase);
-    vec3 radiance =
-            restoreTransparentPhase
-                    ? primeCompositeSampleResolvedBranch(
-                            ivec2(pixel),
-                            false,
-                            primaryGuide,
-                            false)
-                    : primeCompositeResolveBranchValue(
-                            ivec2(pixel),
-                            false,
-                            primaryGuide,
-                            false);
-    if (restoreTransparentPhase) {
+                    !transparent);
+    // Official SG ReJitter restores the current sampling phase multiplicatively at this pixel.
+    // Spatially translating the already re-jittered SH applies camera jitter a second time.
+    vec3 radiance = primeCompositeResolveBranchValue(
+            ivec2(pixel),
+            false,
+            primaryGuide,
+            false);
+    if (transparent) {
         vec4 reflectionMaterial =
                 primeCompositeLoadMaterial(
                         ivec2(pixel), true);
@@ -648,7 +380,7 @@ vec3 primeCompositeRadiance(
                         true,
                         reflectionMaterial,
                         false);
-        radiance += primeCompositeSampleResolvedBranch(
+        radiance += primeCompositeResolveBranchValue(
                 ivec2(pixel),
                 true,
                 reflectionGuide,
@@ -671,27 +403,18 @@ vec3 primeCompositeSh0Color(vec4 sh0) {
 
 vec3 primeCompositeRemodulatedSpecular(
         uvec2 pixel,
-        vec4 material,
-        uint visibleMaterialFlags) {
-    bool restoreTransparentPhase =
-            primeMaterialIsTransmissive(visibleMaterialFlags);
+        vec4 material) {
     PrimeCompositeResolveGuide guide =
             primeCompositeLoadResolveGuide(
                     ivec2(pixel),
                     false,
                     material,
                     false);
-    return restoreTransparentPhase
-            ? primeCompositeSampleResolvedBranch(
-                    ivec2(pixel),
-                    false,
-                    guide,
-                    true)
-            : primeCompositeResolveBranchValue(
-                    ivec2(pixel),
-                    false,
-                    guide,
-                    true);
+    return primeCompositeResolveBranchValue(
+            ivec2(pixel),
+            false,
+            guide,
+            true);
 }
 
 vec3 primeCompositeDisplayDiagnostic(vec3 radiance) {
@@ -756,8 +479,7 @@ void main() {
                 vec4(primeCompositeDisplayDiagnostic(
                         primeCompositeRemodulatedSpecular(
                                 pixel,
-                                material,
-                                visibleMaterialFlags)), 1.0));
+                                material)), 1.0));
         return;
     }
     if (primeCompositePush.diagnosticMode == PRIME_DIAGNOSTIC_REPROJECTION_ERROR) {

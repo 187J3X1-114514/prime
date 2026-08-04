@@ -66,6 +66,8 @@
   "prime.options.lighting.star_ev.tooltip": "独立调节内嵌 Gaia 夜空的亮度。每格为 0.25 EV，增加 1 EV 等于亮度翻倍；星空会在白天淡出，并在夜晚参与表面照明。",
   "prime.options.lighting.block_light_ev": "方块光源亮度（EV）",
   "prime.options.lighting.block_light_ev.tooltip": "曝光值（EV）会调节火把、荧石等发光方块产生的照明，不会改变哪些方块会发光。每格为 0.25 EV，增加 1 EV 等于亮度翻倍。建议先使用默认的 0 EV。",
+  "prime.options.lighting.secondary_area_nee": "多次反弹方块光采样",
+  "prime.options.lighting.secondary_area_nee.tooltip": "允许实时路径在主表面之后的每个合格非镜面反弹继续从灯光树采样方块面光。开启可减少夜晚、室内和间接灯光中的噪点与闪烁，并改善降噪稳定性；但会额外遍历灯光树并发射阴影射线，复杂场景可能显著降低帧率。默认关闭。参考累积截图始终使用完整多反弹采样，不受此选项影响。",
   "prime.options.display.oklab_overexposure": "Oklab DRT 高光过曝量",
   "prime.options.display.oklab_overexposure.tooltip": "高光过曝量控制 Oklab 显示变换为明亮区域保留多少亮度余量，不会改变场景中的真实照明。默认 1.0× 不启用额外过曝；提高数值会使太阳、灯光和反射等高光更明亮，过高可能使细节变白。",
   "prime.options.display.final_exposure_ev": "最终曝光度",

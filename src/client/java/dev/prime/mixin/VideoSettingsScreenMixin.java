@@ -42,6 +42,7 @@ public abstract class VideoSettingsScreenMixin {
     @Unique private OptionInstance<Integer> prime$sunExposure;
     @Unique private OptionInstance<Integer> prime$starExposure;
     @Unique private OptionInstance<Integer> prime$blockLightExposure;
+    @Unique private OptionInstance<Boolean> prime$secondaryAreaNee;
     @Unique private OptionInstance<Integer> prime$finalExposure;
     @Unique private OptionInstance<Integer> prime$oklabOverexposure;
     @Unique private OptionInstance<Integer> prime$defaultRoughness;
@@ -68,6 +69,7 @@ public abstract class VideoSettingsScreenMixin {
             this.prime$sunExposure = PrimeVideoOptions.sunExposure();
             this.prime$starExposure = PrimeVideoOptions.starExposure();
             this.prime$blockLightExposure = PrimeVideoOptions.blockLightExposure();
+            this.prime$secondaryAreaNee = PrimeVideoOptions.realtimeSecondaryAreaNee();
             this.prime$finalExposure = PrimeVideoOptions.finalExposure();
             this.prime$oklabOverexposure = PrimeVideoOptions.oklabOverexposure();
             this.prime$defaultRoughness = PrimeVideoOptions.defaultRoughness();
@@ -92,6 +94,7 @@ public abstract class VideoSettingsScreenMixin {
             list.addBig(this.prime$sunExposure);
             list.addBig(this.prime$starExposure);
             list.addBig(this.prime$blockLightExposure);
+            list.addBig(this.prime$secondaryAreaNee);
             list.addBig(this.prime$finalExposure);
             list.addBig(this.prime$oklabOverexposure);
             list.addBig(this.prime$defaultRoughness);
@@ -133,6 +136,7 @@ public abstract class VideoSettingsScreenMixin {
         this.prime$refresh(
                 this.prime$blockLightExposure,
                 LightingSettings.DEFAULT_BLOCK_LIGHT_QUARTER_STEPS);
+        this.prime$refresh(this.prime$secondaryAreaNee, false);
         this.prime$refresh(
                 this.prime$finalExposure,
                 DisplaySettings.DEFAULT_FINAL_EXPOSURE_QUARTER_STEPS);

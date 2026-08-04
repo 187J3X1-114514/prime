@@ -351,6 +351,7 @@ final class RealtimeRenderer implements Destroyable {
                 input.cameraInWater(),
                 images.mode,
                 images.qualityMode,
+                settings.secondaryAreaNee(),
                 settings.lighting(),
                 settings.material(),
                 processor.rawFrame().usesShInputs(),

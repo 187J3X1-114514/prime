@@ -56,6 +56,7 @@ public record OfflineFrameInput(
                         0,
                         this.cameraInWater,
                         PostProcessingMode.DISABLED,
+                        false,
                         this.lighting,
                         this.material,
                         false,

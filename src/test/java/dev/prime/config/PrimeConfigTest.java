@@ -174,6 +174,9 @@ final class PrimeConfigTest {
         assertTrue(serialized.contains("astronomy.latitude_degrees=30\n"));
         assertTrue(serialized.contains("astronomy.solar_longitude_degrees=0\n"));
         assertTrue(serialized.contains("lighting.star_ev=0\n"));
+        assertTrue(serialized.contains(
+                "lighting.realtime_secondary_area_nee=false\n"));
+        assertFalse(PrimeSettings.defaults().realtimeSecondaryAreaNee());
         assertTrue(serialized.contains("display.final_exposure_ev=0\n"));
         assertTrue(serialized.contains("display.oklab_overexposure=1\n"));
 

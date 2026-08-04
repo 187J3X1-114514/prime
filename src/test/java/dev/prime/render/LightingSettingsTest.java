@@ -54,6 +54,10 @@ final class LightingSettingsTest {
         assertTrue(stars.lightingRevision() > sun.lightingRevision());
         PrimeSettings block = stars.withBlockLightQuarterSteps(-1);
         assertTrue(block.lightingRevision() > stars.lightingRevision());
+        PrimeSettings secondaryArea = block.withRealtimeSecondaryAreaNee(true);
+        assertTrue(secondaryArea.lightingRevision() > block.lightingRevision());
+        assertTrue(secondaryArea.realtimeSecondaryAreaNee());
+        assertEquals(secondaryArea, secondaryArea.withRealtimeSecondaryAreaNee(true));
         assertEquals(1, block.lighting().sunQuarterSteps());
         assertEquals(2, block.lighting().starQuarterSteps());
         assertEquals(-1, block.lighting().blockLightQuarterSteps());

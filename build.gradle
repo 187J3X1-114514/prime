@@ -976,6 +976,37 @@ abstract class CompilePrimeShaders extends DefaultTask {
 						specializeWavefront(generic, output, stage.value)
 					}
 					java.nio.file.Files.delete(generic.toPath())
+					if (!offline) {
+						def deferredDefinitions = new ArrayList<String>(variant.definitions)
+						deferredDefinitions.add('-DPRIME_ENABLE_SECONDARY_AREA_NEE=1')
+						deferredDefinitions.add('-DPRIME_DEFER_SECONDARY_AREA_NEE=1')
+						def deferred = new File(
+								scratch,
+								"${prefix}_secondary_area_deferred${variant.name}.generic.rgen.spv")
+						compileShader(source, deferred, deferredDefinitions)
+						[
+								[name: 'step_secondary_area', value: 1],
+								[name: 'area_secondary_area', value: 4]
+						].each { stage ->
+							def output = new File(
+									scratch,
+									"${prefix}_${stage.name}${variant.name}.rgen.spv")
+							specializeWavefront(deferred, output, stage.value)
+						}
+						java.nio.file.Files.delete(deferred.toPath())
+
+						def inlineDefinitions = new ArrayList<String>(variant.definitions)
+						inlineDefinitions.add('-DPRIME_ENABLE_SECONDARY_AREA_NEE=1')
+						def inline = new File(
+								scratch,
+								"${prefix}_secondary_area_inline${variant.name}.generic.rgen.spv")
+						compileShader(source, inline, inlineDefinitions)
+						def inlineOutput = new File(
+								scratch,
+								"${prefix}_tail_secondary_area${variant.name}.rgen.spv")
+						specializeWavefront(inline, inlineOutput, 2)
+						java.nio.file.Files.delete(inline.toPath())
+					}
 				}
 			} else {
 				def output = new File(scratch, source.name + '.spv')
@@ -1201,10 +1232,16 @@ def verifyDistributionJar = tasks.register('verifyDistributionJar') {
 			'prime/shaders/realtime_wavefront_step.rgen.spv',
 			'prime/shaders/realtime_wavefront_tail.rgen.spv',
 			'prime/shaders/realtime_wavefront_resolve.rgen.spv',
+			'prime/shaders/realtime_wavefront_step_secondary_area.rgen.spv',
+			'prime/shaders/realtime_wavefront_area_secondary_area.rgen.spv',
+			'prime/shaders/realtime_wavefront_tail_secondary_area.rgen.spv',
 			'prime/shaders/realtime_wavefront_head_ser.rgen.spv',
 			'prime/shaders/realtime_wavefront_step_ser.rgen.spv',
 			'prime/shaders/realtime_wavefront_tail_ser.rgen.spv',
 			'prime/shaders/realtime_wavefront_resolve_ser.rgen.spv',
+			'prime/shaders/realtime_wavefront_step_secondary_area_ser.rgen.spv',
+			'prime/shaders/realtime_wavefront_area_secondary_area_ser.rgen.spv',
+			'prime/shaders/realtime_wavefront_tail_secondary_area_ser.rgen.spv',
 			'prime/shaders/offline_wavefront_head.rgen.spv',
 			'prime/shaders/offline_wavefront_step.rgen.spv',
 			'prime/shaders/offline_wavefront_area.rgen.spv',
@@ -1237,9 +1274,9 @@ def verifyDistributionJar = tasks.register('verifyDistributionJar') {
 		}
 
 		def shaderNames = names.findAll { it.startsWith('prime/shaders/') && it.endsWith('.spv') }
-		if (shaderNames.size() != 43) {
+		if (shaderNames.size() != 49) {
 			throw new GradleException(
-					"Distribution jar must contain 43 Prime shaders; found ${shaderNames.size()}")
+					"Distribution jar must contain 49 Prime shaders; found ${shaderNames.size()}")
 		}
 
 		new java.util.zip.ZipFile(archive).withCloseable { zip ->

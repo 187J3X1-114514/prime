@@ -332,6 +332,93 @@ void primeStoreWavefrontPsrState(
             primePackWavefrontPsrState(state);
 }
 
+#if defined(PRIME_DEFER_SECONDARY_AREA_NEE)
+struct PrimeDeferredAreaLightRequest {
+    vec3 direction;
+    float distance;
+    vec3 contribution;
+    bool valid;
+};
+
+void primeClearDeferredAreaLightRequest(uint pathIndex) {
+    primeWavefrontPaths.records[pathIndex].psrPacked = uvec4(0u);
+}
+
+void primeStoreDeferredAreaLightRequest(
+        uint pathIndex,
+        vec3 direction,
+        float distance,
+        vec3 contribution) {
+    // A guide-pending delta path and a secondary Area request are mutually exclusive. Reusing the
+    // cold PSR lane keeps the 96-byte realtime path ABI and default-mode memory footprint fixed.
+    vec3 packedContribution = primeNrdSanitizeRadiance(contribution);
+    primeWavefrontPaths.records[pathIndex].psrPacked = uvec4(
+            primePackOctahedralNormal(direction),
+            floatBitsToUint(distance),
+            packHalf2x16(packedContribution.xy),
+            packHalf2x16(vec2(packedContribution.z, 0.0)));
+}
+
+PrimeDeferredAreaLightRequest primeLoadDeferredAreaLightRequest(
+        uint pathIndex) {
+    uvec4 packed = primeWavefrontPaths.records[pathIndex].psrPacked;
+    PrimeDeferredAreaLightRequest request;
+    request.direction = primeUnpackOctahedralNormal(packed.x);
+    request.distance = uintBitsToFloat(packed.y);
+    vec2 contribution01 = unpackHalf2x16(packed.z);
+    request.contribution = vec3(
+            contribution01,
+            unpackHalf2x16(packed.w).x);
+    request.valid = (packed.z != 0u || packed.w != 0u)
+            && primeNrdIsFinite(request.distance)
+            && request.distance > 0.0;
+    return request;
+}
+
+void primeAccumulateDeferredAreaLight(
+        uvec2 pixel,
+        uint control,
+        vec3 contribution) {
+    ivec2 coordinate = ivec2(pixel);
+    bool transparent = (control & PRIME_WAVEFRONT_TRANSPARENT_BRANCH) != 0u;
+    bool transmission = (control & PRIME_WAVEFRONT_TRANSMISSION_BRANCH) != 0u;
+    bool guideEnabled = (control & PRIME_WAVEFRONT_GUIDE_ENABLED) != 0u;
+    bool diffuse = transparent && !guideEnabled
+            ? transmission
+            : (control & PRIME_WAVEFRONT_DIFFUSE_PATH) != 0u;
+    vec4 current;
+    if (!transparent || transmission) {
+        current = diffuse
+                ? imageLoad(primeNrdNoisyDiffuse, coordinate)
+                : imageLoad(primeNrdNoisySpecular, coordinate);
+    } else if (primeWritesNrdShInputs()) {
+        current = diffuse
+                ? imageLoad(primeNrdReflectionNoisyDiffuse, coordinate)
+                : imageLoad(primeNrdReflectionNoisySpecular, coordinate);
+    } else {
+        current = imageLoad(primeStableRadiance, coordinate);
+    }
+
+    primeAccumulate(current.rgb, contribution);
+    current.rgb = primeNrdSanitizeRadiance(current.rgb);
+    if (!transparent || transmission) {
+        if (diffuse) {
+            imageStore(primeNrdNoisyDiffuse, coordinate, current);
+        } else {
+            imageStore(primeNrdNoisySpecular, coordinate, current);
+        }
+    } else if (primeWritesNrdShInputs()) {
+        if (diffuse) {
+            imageStore(primeNrdReflectionNoisyDiffuse, coordinate, current);
+        } else {
+            imageStore(primeNrdReflectionNoisySpecular, coordinate, current);
+        }
+    } else {
+        imageStore(primeStableRadiance, coordinate, current);
+    }
+}
+#endif
+
 void primeStoreWavefrontDiagnostic(uint pathIndex) {
     if (primeWritesRawNumericalDiagnostic()) {
         primeWavefrontPaths.records[pathIndex]

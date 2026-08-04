@@ -66,6 +66,8 @@
   "prime.options.lighting.star_ev.tooltip": "Adjusts the embedded Gaia night sky independently. Each step is 0.25 EV; adding 1 EV doubles star brightness. Stars fade out during daylight and illuminate surfaces at night.",
   "prime.options.lighting.block_light_ev": "Block-light Brightness (EV)",
   "prime.options.lighting.block_light_ev.tooltip": "Exposure value (EV) changes illumination from emissive blocks such as torches and glowstone without changing which blocks emit light. Each step is 0.25 EV; adding 1 EV doubles brightness. Start with the default 0 EV.",
+  "prime.options.lighting.secondary_area_nee": "Multi-bounce Block-light Sampling",
+  "prime.options.lighting.secondary_area_nee.tooltip": "Lets realtime paths keep sampling block area lights from the light tree at every eligible non-specular bounce after the primary surface. Enabling it can reduce noise and flicker and improve denoiser stability in nighttime, interiors, and indirect lighting, but it adds light-tree traversal and shadow rays and may significantly reduce frame rate in complex scenes. It is disabled by default. Reference screenshot accumulation always uses full multi-bounce sampling and is unaffected.",
   "prime.options.display.oklab_overexposure": "Oklab DRT Highlight Overexposure",
   "prime.options.display.oklab_overexposure.tooltip": "Highlight overexposure controls how much brightness headroom the Oklab display transform gives to bright areas without changing the scene's physical lighting. The default 1.0× adds no overexposure. Higher values make the sun, lamps, and reflections brighter; excessive values can wash out detail.",
   "prime.options.display.final_exposure_ev": "Final Exposure",

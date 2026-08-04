@@ -214,6 +214,15 @@ public final class PrimeVideoOptions {
                 PrimeConfig::setBlockLightQuarterSteps);
     }
 
+    public static OptionInstance<Boolean> realtimeSecondaryAreaNee() {
+        return OptionInstance.createBoolean(
+                "prime.options.lighting.secondary_area_nee",
+                OptionInstance.cachedConstantTooltip(Component.translatable(
+                        "prime.options.lighting.secondary_area_nee.tooltip")),
+                PrimeConfig.settings().realtimeSecondaryAreaNee(),
+                PrimeConfig::setRealtimeSecondaryAreaNee);
+    }
+
     public static OptionInstance<Integer> finalExposure() {
         return exposureOption(
                 "prime.options.display.final_exposure_ev",

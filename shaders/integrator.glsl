@@ -326,6 +326,18 @@ PrimeShadowTrace primeTraceShadow(
     return result;
 }
 
+#if defined(PRIME_DEFER_SECONDARY_AREA_NEE)
+PrimeShadowTrace primeTraceDeferredShadow(
+        vec3 physicalPosition,
+        LightSample light,
+        PrimeRcVolumeStack volumeStack) {
+    // The compact request has no normal lane. Advancing along the shadow direction preserves the
+    // bounded geometric epsilon without quantizing either the shading normal or light distance.
+    return primeTraceShadow(
+            physicalPosition, light.direction, light, volumeStack);
+}
+#endif
+
 PrimeDirectLightingSplit primeEvaluateVisibleDirectSplit(
         SurfaceInteraction surface,
         vec3 viewDirection,
@@ -517,6 +529,73 @@ PrimeDirectLightingSplit primeEstimatePrimaryDirectAreaLight(
             conditionalTransparentBranch);
 }
 
+#if defined(PRIME_ENABLE_SECONDARY_AREA_NEE)
+vec3 primeEstimateDirectAreaLight(
+        SurfaceInteraction surface,
+        vec3 viewDirection,
+        vec3 treeSample,
+        vec2 positionSample,
+        PrimeRcVolumeStack volumeStack) {
+    AreaLightSample area = primeSampleAreaLight(
+            surface.position, treeSample, positionSample);
+    vec3 shadingNormal = primeSurfaceShadingNormal(surface, viewDirection);
+    if (!primeDirectSampleEligible(surface, shadingNormal, area.light)) {
+        return vec3(0.0);
+    }
+    PrimeShadowTrace shadow = primeTraceShadow(
+            surface.position, surface.geometricNormal, area.light, volumeStack);
+    if (shadow.hitDistance < PRIME_NRD_FP16_MAX) {
+        return vec3(0.0);
+    }
+    vec3 radiance =
+            primeResolveSampledAreaLightRadiance(area) * shadow.transmittance;
+    PrimeDirectLightingSplit split = primeEvaluateVisibleDirectSplit(
+            surface,
+            viewDirection,
+            shadingNormal,
+            area.light,
+            radiance,
+            volumeStack,
+            false);
+    return split.diffuse + split.specular;
+}
+#endif
+
+#if defined(PRIME_DEFER_SECONDARY_AREA_NEE)
+void primePrepareDeferredDirectAreaLight(
+        SurfaceInteraction surface,
+        vec3 viewDirection,
+        vec3 treeSample,
+        vec2 positionSample,
+        PrimeRcVolumeStack volumeStack,
+        vec3 pathThroughput,
+        uint pathIndex) {
+    AreaLightSample area = primeSampleAreaLight(
+            surface.position, treeSample, positionSample);
+    vec3 shadingNormal = primeSurfaceShadingNormal(surface, viewDirection);
+    if (!primeDirectSampleEligible(surface, shadingNormal, area.light)) {
+        return;
+    }
+    vec3 radiance = primeResolveSampledAreaLightRadiance(area);
+    PrimeDirectLightingSplit split = primeEvaluateVisibleDirectSplit(
+            surface,
+            viewDirection,
+            shadingNormal,
+            area.light,
+            radiance,
+            volumeStack,
+            false);
+    vec3 contribution = pathThroughput * (split.diffuse + split.specular);
+    if (any(greaterThan(contribution, vec3(0.0)))) {
+        primeStoreDeferredAreaLightRequest(
+                pathIndex,
+                area.light.direction,
+                area.light.distance,
+                contribution);
+    }
+}
+#endif
+
 vec3 primeEstimateDirectSun(
         IntegratorRecord integrator,
         SurfaceInteraction surface,
@@ -577,10 +656,10 @@ vec3 primeEstimateDirectLighting(
         SurfaceInteraction surface,
         vec3 viewDirection,
         PrimePreparedSampleBase preparedSample,
-        PrimeRcVolumeStack volumeStack) {
-    // Block-light NEE is deliberately restricted to the primary guide surface. Later vertices
-    // retain sun NEE and can still reach emissive geometry through their BSDF continuation.
-    return primeEstimateDirectSun(
+        PrimeRcVolumeStack volumeStack,
+        vec3 pathThroughput,
+        uint pathIndex) {
+    vec3 result = primeEstimateDirectSun(
             integrator,
             surface,
             viewDirection,
@@ -589,6 +668,38 @@ vec3 primeEstimateDirectLighting(
                     PRIME_SAMPLE_EFFECT_DIRECT_SUN,
                     PRIME_SAMPLE_DIMENSION_PRIMARY),
             volumeStack);
+#if defined(PRIME_ENABLE_SECONDARY_AREA_NEE)
+#if defined(PRIME_DEFER_SECONDARY_AREA_NEE)
+    primePrepareDeferredDirectAreaLight(
+            surface,
+            viewDirection,
+            primeSobolSample3D(
+                    preparedSample,
+                    PRIME_SAMPLE_EFFECT_DIRECT_AREA_LIGHT,
+                    PRIME_SAMPLE_DIMENSION_PRIMARY),
+            primeSobolSample2D(
+                    preparedSample,
+                    PRIME_SAMPLE_EFFECT_DIRECT_AREA_LIGHT,
+                    PRIME_SAMPLE_DIMENSION_SECONDARY),
+            volumeStack,
+            pathThroughput,
+            pathIndex);
+#else
+    result += primeEstimateDirectAreaLight(
+            surface,
+            viewDirection,
+            primeSobolSample3D(
+                    preparedSample,
+                    PRIME_SAMPLE_EFFECT_DIRECT_AREA_LIGHT,
+                    PRIME_SAMPLE_DIMENSION_PRIMARY),
+            primeSobolSample2D(
+                    preparedSample,
+                    PRIME_SAMPLE_EFFECT_DIRECT_AREA_LIGHT,
+                    PRIME_SAMPLE_DIMENSION_SECONDARY),
+            volumeStack);
+#endif
+#endif
+    return result;
 }
 
 bool primeRussianRoulette(
@@ -969,7 +1080,8 @@ bool primeIntegrateTransparentWavefrontSurface(
         inout bool directionalGuide,
         SurfaceInteraction surface,
         bool transmissionBranch,
-        bool guideEnabled) {
+        bool guideEnabled,
+        uint pathIndex) {
     primeSetNumericalContext(PRIME_NUMERICAL_STAGE_SURFACE, path.bounce);
     primeRecordNonFinite(surface.position);
     primeRecordNonnegative(surface.t);
@@ -1031,6 +1143,9 @@ bool primeIntegrateTransparentWavefrontSurface(
             : transmissionBranch;
     bool previousUsedAreaNee = path.bounce == 1u
             || (hasGuide && path.bounce == guideBounce + 1u);
+#if defined(PRIME_ENABLE_SECONDARY_AREA_NEE)
+    previousUsedAreaNee = previousUsedAreaNee || path.bounce > 0u;
+#endif
     vec3 emitted = primeEvaluateHitEmission(
             path, surface, previousUsedAreaNee);
     primeAccumulateTransparentBranch(
@@ -1074,7 +1189,9 @@ bool primeIntegrateTransparentWavefrontSurface(
                     surface,
                     viewDirection,
                     preparedSample,
-                    volumeStack);
+                    volumeStack,
+                    path.throughput,
+                    pathIndex);
             primeAccumulateTransparentBranch(
                     result,
                     guideEnabled ? diffusePath : transmissionBranch,
@@ -1121,6 +1238,10 @@ bool primeIntegrateTransparentWavefrontSurface(
     }
     BsdfSample bsdf = scatter.bsdf;
     if (!primeHasScatter(bsdf)) {
+#if defined(PRIME_DEFER_SECONDARY_AREA_NEE)
+        // A deferred shadow request still needs the current shading point after this path ends.
+        path.physicalOrigin = surface.position;
+#endif
         return false;
     }
     primeRecordDirection(bsdf.direction);
@@ -1188,7 +1309,8 @@ bool primeIntegrateWavefrontSurface(
         inout PrimeRcVolumeStack volumeStack,
         inout PrimeDenoiserState denoiserState,
         inout PrimeIntegrationResult result,
-        SurfaceInteraction surface) {
+        SurfaceInteraction surface,
+        uint pathIndex) {
     primeSetNumericalContext(PRIME_NUMERICAL_STAGE_SURFACE, path.bounce);
     primeRecordNonFinite(surface.position);
     primeRecordNonnegative(surface.t);
@@ -1225,6 +1347,9 @@ bool primeIntegrateWavefrontSurface(
     vec3 viewDirection = -path.rayDirection;
     bool previousUsedAreaNee = denoiserState.hasPrimarySurface
             && path.bounce == denoiserState.primaryBounce + 1u;
+#if defined(PRIME_ENABLE_SECONDARY_AREA_NEE)
+    previousUsedAreaNee = previousUsedAreaNee || denoiserState.hasPrimarySurface;
+#endif
     vec3 emitted = primeEvaluateHitEmission(
             path, surface, previousUsedAreaNee);
     if (!denoiserState.hasPrimarySurface) {
@@ -1282,7 +1407,9 @@ bool primeIntegrateWavefrontSurface(
                     surface,
                     viewDirection,
                     preparedSample,
-                    volumeStack);
+                    volumeStack,
+                    path.throughput,
+                    pathIndex);
             primeAccumulateAfterPrimary(
                     result,
                     denoiserState.diffusePath,
@@ -1372,6 +1499,10 @@ bool primeIntegrateWavefrontSurface(
     if (!hasScatter
             || !primeAdvancePath(
                     path, surface, bsdf, preparedSample, pureDeltaInterface)) {
+#if defined(PRIME_DEFER_SECONDARY_AREA_NEE)
+        // A deferred shadow request still needs the current shading point after this path ends.
+        path.physicalOrigin = surface.position;
+#endif
         return false;
     }
     path.bounce++;

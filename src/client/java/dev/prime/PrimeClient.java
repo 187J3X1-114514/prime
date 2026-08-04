@@ -2,6 +2,7 @@ package dev.prime;
 
 import dev.prime.config.PrimeConfig;
 import dev.prime.render.RayTracingRuntime;
+import dev.prime.render.scene.vanilla.ItemFrameModelFallback;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.resource.v1.ResourceLoader;
 import net.fabricmc.fabric.api.resource.v1.reloader.ResourceReloaderKeys;
@@ -20,6 +21,7 @@ public final class PrimeClient implements ClientModInitializer {
     public void onInitializeClient() {
         PrimeConfig.load();
         LOGGER.info("Initializing Prime ray tracing framework");
+        ItemFrameModelFallback.register();
         RayTracingRuntime.instance().initialize();
         ResourceLoader resourceLoader = ResourceLoader.get(PackType.CLIENT_RESOURCES);
         resourceLoader.registerReloadListener(RELOAD_LISTENER_ID, new SimpleReloadListener<Boolean>() {

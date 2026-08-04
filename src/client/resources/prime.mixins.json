@@ -5,6 +5,7 @@
   "compatibilityLevel": "JAVA_25",
   "client": [
     "BufferBuilderMixin",
+    "BlockModelRenderStateAccessor",
     "ClientInformationMixin",
     "ChunkMapMixin",
     "ChunkTaskPriorityQueueMixin",
@@ -16,6 +17,7 @@
     "GuiMixin",
     "GpuDeviceAccessor",
     "IndigoAltModelBlockRendererMixin",
+    "ItemFrameRendererMixin",
     "LevelExtractorMixin",
     "LevelRendererMixin",
     "MinecraftMixin",

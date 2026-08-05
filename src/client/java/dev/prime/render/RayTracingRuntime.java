@@ -377,27 +377,36 @@ public final class RayTracingRuntime {
         }
     }
 
-    /** Thread-safe prepare-phase invalidation; GPU ownership remains on the render thread. */
-    public void beginResourceReload() {
+    /** Retires the exact renderer resource epoch observed by the prepare executor. */
+    public ResourceReload beginResourceReload() {
         VulkanRenderer activeRenderer = this.renderer;
-        if (activeRenderer != null && this.states.current() != RuntimeState.FAILED) {
-            activeRenderer.requestResourceReload();
+        if (activeRenderer == null) {
+            return ResourceReload.inactive();
+        }
+        return new ResourceReload(activeRenderer, activeRenderer.beginResourceReload());
+    }
+
+    /** Applies only the renderer epoch captured by {@link #beginResourceReload()}. */
+    public void finishResourceReload(ResourceReload reload, boolean reloadShaders) {
+        if (reload == null) {
+            throw new NullPointerException("reload");
+        }
+        if (reload.renderer == null) {
+            return;
+        }
+        reload.renderer.finishResourceReload(reload.rendererReload, reloadShaders);
+        if (reloadShaders && this.renderer == reload.renderer) {
+            this.requestScreenshot(false);
         }
     }
 
-    /** Applies the completed reload without issuing a second material-atlas invalidation. */
-    public void finishResourceReload(boolean reloadShaders) {
-        VulkanRenderer activeRenderer = this.renderer;
-        if (activeRenderer != null && this.states.current() != RuntimeState.FAILED) {
-            // Minecraft's initial resource load completes after Prime has already constructed all
-            // pipelines from the packaged SPIR-V. Rebuilding those identical pipelines here made
-            // every cold start pay the driver compilation cost twice. Later explicit resource
-            // reloads still replace every pipeline before rendering resumes.
-            if (reloadShaders) {
-                this.requestScreenshot(false);
-                activeRenderer.requestShaderReload();
-            }
-            activeRenderer.invalidateAll();
+    /** Reopens the retired owner after a failed or cancelled Minecraft reload. */
+    public void abortResourceReload(ResourceReload reload) {
+        if (reload == null) {
+            throw new NullPointerException("reload");
+        }
+        if (reload.renderer != null) {
+            reload.renderer.abortResourceReload(reload.rendererReload);
         }
     }
 
@@ -433,6 +442,28 @@ public final class RayTracingRuntime {
             this.states.shutdown();
         }
         ResourceCleanup.throwIfFailed(failure);
+    }
+
+    public static final class ResourceReload {
+        private final VulkanRenderer renderer;
+        private final VulkanRenderer.ResourceReload rendererReload;
+
+        private ResourceReload(
+                VulkanRenderer renderer,
+                VulkanRenderer.ResourceReload rendererReload) {
+            this.renderer = renderer;
+            this.rendererReload = rendererReload;
+        }
+
+        private static ResourceReload inactive() {
+            return new ResourceReload(null, null);
+        }
+
+        public CompletableFuture<Void> ready() {
+            return this.rendererReload == null
+                    ? CompletableFuture.completedFuture(null)
+                    : this.rendererReload.ready();
+        }
     }
 
     public void fail(Throwable failure) {

@@ -71,6 +71,7 @@ public final class TerrainStreamer implements AutoCloseable {
     // Workers publish one immutable result per accepted job. The render-thread-owned count is
     // never reset across worlds, so the fixed queue remains a proof-backed bound during churn.
     private final ArrayBlockingQueue<CompletedCluster> completed;
+    private final ResourceEpochCoordinator resourceEpoch = new ResourceEpochCoordinator();
     private final BoundedDirtySections externalDirty =
             new BoundedDirtySections(MAX_EXTERNAL_DIRTY_SECTIONS);
     private final LongOpenHashSet desired = new LongOpenHashSet();
@@ -267,11 +268,24 @@ public final class TerrainStreamer implements AutoCloseable {
         this.externalDirty.invalidateAll();
     }
 
+    public ResourceReload beginResourceReload() {
+        return new ResourceReload(this.resourceEpoch.pause());
+    }
+
+    public void finishResourceReload(ResourceReload reload) {
+        this.resourceEpoch.finish(requireReload(reload));
+    }
+
+    public void abortResourceReload(ResourceReload reload) {
+        this.resourceEpoch.abort(requireReload(reload));
+    }
+
     @Override
     public void close() {
         // The executor belongs to Minecraft and is shut down by Minecraft. World epochs and the
         // interpreter's closed flag make late results harmless without taking ownership here.
-        RuntimeException failure = ResourceCleanup.close(this.sceneInterpreter, null);
+        RuntimeException failure = ResourceCleanup.close(this.resourceEpoch, null);
+        failure = ResourceCleanup.close(this.sceneInterpreter, failure);
         failure = ResourceCleanup.close(this.scene, failure);
         this.completed.clear();
         this.externalDirty.clear();
@@ -377,6 +391,19 @@ public final class TerrainStreamer implements AutoCloseable {
     }
 
     private void dispatchSnapshots(Minecraft minecraft, ClientLevel level) {
+        ResourceEpochCoordinator.Lease lease = this.resourceEpoch.tryAcquire();
+        if (lease == null) {
+            return;
+        }
+        try (lease) {
+            this.dispatchSnapshots(minecraft, level, lease.epoch());
+        }
+    }
+
+    private void dispatchSnapshots(
+            Minecraft minecraft,
+            ClientLevel level,
+            ResourceEpochCoordinator.Epoch resourceEpoch) {
         // Count every stage after snapshot capture so a temporarily busy GPU cannot turn the
         // shared executor into an unbounded producer of completed cluster payloads.
         int outstanding = this.workerJobs + this.readyForUpload.size();
@@ -494,8 +521,8 @@ public final class TerrainStreamer implements AutoCloseable {
                             clusterX,
                             clusterY,
                             clusterZ,
-                            CpuClusterMesh.empty(),
-                            null);
+                            request.priority(),
+                            new WorkerSuccess(CpuClusterMesh.empty()));
                     if (this.pipelineState.completeToReady(
                             result.key(), result.generation())) {
                         this.readyForUpload.addLast(result);
@@ -510,31 +537,35 @@ public final class TerrainStreamer implements AutoCloseable {
             long worldEpoch = this.generations.worldEpoch();
             try {
                 this.workers.execute(() -> {
-                    CpuClusterMesh mesh = CpuClusterMesh.empty();
-                    Throwable failure = null;
-                    try {
-                        CapturedCluster.Builder captured =
-                                new CapturedCluster.Builder(
-                                        clusterX, clusterY, clusterZ);
-                        for (VanillaSectionSnapshot snapshot : snapshots) {
-                            CapturedSectionGeometry section =
-                                    TerrainStreamer.this.sceneInterpreter
-                                    .compileSection(
-                                            new VanillaSectionCompileInput(
-                                                    snapshot,
-                                                    assetSnapshot));
-                            captured.add(
-                                    snapshot.sectionX(),
-                                    snapshot.sectionY(),
-                                    snapshot.sectionZ(),
-                                    section);
+                    WorkerResult workerResult;
+                    ResourceEpochCoordinator.Lease workerLease =
+                            TerrainStreamer.this.resourceEpoch.tryAcquire(resourceEpoch);
+                    if (workerLease == null) {
+                        workerResult = WorkerCancelled.INSTANCE;
+                    } else {
+                        try (workerLease) {
+                            CapturedCluster.Builder captured = new CapturedCluster.Builder(
+                                    clusterX, clusterY, clusterZ);
+                            for (VanillaSectionSnapshot snapshot : snapshots) {
+                                CapturedSectionGeometry section =
+                                        TerrainStreamer.this.sceneInterpreter.compileSection(
+                                                new VanillaSectionCompileInput(
+                                                        snapshot,
+                                                        assetSnapshot));
+                                captured.add(
+                                        snapshot.sectionX(),
+                                        snapshot.sectionY(),
+                                        snapshot.sectionZ(),
+                                        section);
+                            }
+                            CpuClusterMesh mesh = ClusterSceneTranslator.translate(
+                                    captured.build(),
+                                    materialSnapshot,
+                                    translationSettings);
+                            workerResult = new WorkerSuccess(mesh);
+                        } catch (Throwable throwable) {
+                            workerResult = new WorkerFailure(throwable);
                         }
-                        mesh = ClusterSceneTranslator.translate(
-                                captured.build(),
-                                materialSnapshot,
-                                translationSettings);
-                    } catch (Throwable throwable) {
-                        failure = throwable;
                     }
                     CompletedCluster completedCluster = new CompletedCluster(
                             worldEpoch,
@@ -543,8 +574,8 @@ public final class TerrainStreamer implements AutoCloseable {
                             clusterX,
                             clusterY,
                             clusterZ,
-                            mesh,
-                            failure);
+                            request.priority(),
+                            workerResult);
                     TerrainStreamer.this.completed.add(completedCluster);
                 });
                 this.workerJobs++;
@@ -594,17 +625,23 @@ public final class TerrainStreamer implements AutoCloseable {
                     || !this.generations.isCurrent(result.key(), result.generation())) {
                 continue;
             }
-            if (result.failure() != null) {
-                // A completed job is immutable and retrying the same generation cannot repair a
-                // deterministic compiler/capture failure. Immediate requeue previously left Prime
-                // in STREAMING forever and could emit hundreds of megabytes of identical stacks.
-                // Escalate once on the render thread so the runtime performs its defined FAILED ->
-                // vanilla fallback and presents the actionable reason to the user.
-                String message = result.failure() instanceof OutOfMemoryError
-                        ? "Terrain resources exhausted while extracting virtual cluster "
-                                + result.key()
-                        : "Terrain extraction failed for virtual cluster " + result.key();
-                throw new IllegalStateException(message, result.failure());
+            switch (result.result().status()) {
+                case CANCELLED -> {
+                    this.enqueue(result.key(), result.priority(), result.generation());
+                    continue;
+                }
+                case FAILURE -> {
+                    WorkerFailure failed = (WorkerFailure) result.result();
+                    // Retrying the same immutable work cannot repair a deterministic failure.
+                    // Escalate once so the runtime performs its defined vanilla fallback.
+                    String message = failed.failure() instanceof OutOfMemoryError
+                            ? "Terrain resources exhausted while extracting virtual cluster "
+                                    + result.key()
+                            : "Terrain extraction failed for virtual cluster " + result.key();
+                    throw new IllegalStateException(message, failed.failure());
+                }
+                case SUCCESS -> {
+                }
             }
             if (this.pipelineState.completeToReady(result.key(), result.generation())) {
                 this.readyForUpload.addLast(result);
@@ -623,8 +660,9 @@ public final class TerrainStreamer implements AutoCloseable {
                 this.pipelineState.consumeReady(next.key(), next.generation());
                 continue;
             }
+            CpuClusterMesh mesh = next.mesh();
             long nextEndOffset = stagingEndOffset(
-                    uploadBytes, next.mesh(), this.opacityMicromapSupported);
+                    uploadBytes, mesh, this.opacityMicromapSupported);
             if (!uploads.isEmpty() && nextEndOffset > TARGET_UPLOAD_BYTES_PER_FRAME) {
                 break;
             }
@@ -632,7 +670,7 @@ public final class TerrainStreamer implements AutoCloseable {
             this.pipelineState.consumeReady(next.key(), next.generation());
             uploadBytes = nextEndOffset;
             uploads.add(new CompiledCluster(
-                    next.key(), next.clusterX(), next.clusterY(), next.clusterZ(), next.mesh()));
+                    next.key(), next.clusterX(), next.clusterY(), next.clusterZ(), mesh));
         }
         long[] evictions = this.pendingEvictions.isEmpty()
                 ? EMPTY_EVICTIONS
@@ -648,8 +686,8 @@ public final class TerrainStreamer implements AutoCloseable {
                         upload.clusterX(),
                         upload.clusterY(),
                         upload.clusterZ(),
-                        upload.mesh(),
-                        null);
+                        0,
+                        new WorkerSuccess(upload.mesh()));
                 if (this.pipelineState.completeToReady(
                         result.key(), result.generation())) {
                     this.readyForUpload.addFirst(result);
@@ -868,6 +906,59 @@ public final class TerrainStreamer implements AutoCloseable {
     private record ClusterRequest(long key, long generation, int priority, long distanceSquared) {
     }
 
+    public static final class ResourceReload {
+        private final ResourceEpochCoordinator.Reload reload;
+
+        private ResourceReload(ResourceEpochCoordinator.Reload reload) {
+            this.reload = reload;
+        }
+
+        public java.util.concurrent.CompletableFuture<Void> ready() {
+            return this.reload.ready();
+        }
+    }
+
+    private static ResourceEpochCoordinator.Reload requireReload(ResourceReload reload) {
+        if (reload == null) {
+            throw new NullPointerException("reload");
+        }
+        return reload.reload;
+    }
+
+    private sealed interface WorkerResult
+            permits WorkerSuccess, WorkerFailure, WorkerCancelled {
+        WorkerStatus status();
+    }
+
+    private record WorkerSuccess(CpuClusterMesh mesh) implements WorkerResult {
+        @Override
+        public WorkerStatus status() {
+            return WorkerStatus.SUCCESS;
+        }
+    }
+
+    private record WorkerFailure(Throwable failure) implements WorkerResult {
+        @Override
+        public WorkerStatus status() {
+            return WorkerStatus.FAILURE;
+        }
+    }
+
+    private enum WorkerCancelled implements WorkerResult {
+        INSTANCE;
+
+        @Override
+        public WorkerStatus status() {
+            return WorkerStatus.CANCELLED;
+        }
+    }
+
+    private enum WorkerStatus {
+        SUCCESS,
+        CANCELLED,
+        FAILURE
+    }
+
     private record CompletedCluster(
             long worldEpoch,
             long key,
@@ -875,7 +966,14 @@ public final class TerrainStreamer implements AutoCloseable {
             int clusterX,
             int clusterY,
             int clusterZ,
-            CpuClusterMesh mesh,
-            Throwable failure) {
+            int priority,
+            WorkerResult result) {
+
+        private CpuClusterMesh mesh() {
+            if (this.result instanceof WorkerSuccess success) {
+                return success.mesh();
+            }
+            throw new IllegalStateException("Only successful terrain work has a mesh");
+        }
     }
 }

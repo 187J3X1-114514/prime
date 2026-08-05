@@ -58,6 +58,7 @@ public final class VulkanRenderer implements AutoCloseable {
     private List<String> debugLines = List.of();
     private RendererModeLifecycle modeLifecycle = RendererModeLifecycle.initial();
     private boolean screenshotRequestRejected;
+    private volatile boolean acceptsResourceReloadEffects = true;
     private boolean closed;
     public VulkanRenderer(VulkanContext context) {
         VulkanContext newContext = java.util.Objects.requireNonNull(context, "context");
@@ -566,8 +567,37 @@ public final class VulkanRenderer implements AutoCloseable {
         this.shaderReloadRequested = true;
     }
 
-    public void requestResourceReload() {
+    public ResourceReload beginResourceReload() {
+        return new ResourceReload(this, this.terrain.beginResourceReload());
+    }
+
+    public void finishResourceReload(ResourceReload reload, boolean reloadShaders) {
+        TerrainStreamer.ResourceReload terrainReload = this.requireReload(reload);
+        this.terrain.finishResourceReload(terrainReload);
+        if (!this.acceptsResourceReloadEffects) {
+            return;
+        }
         this.labPbrAtlas.requestReload();
+        // Minecraft's initial resource load completes after Prime has already constructed all
+        // pipelines from packaged SPIR-V. Later explicit reloads replace them before rendering.
+        if (reloadShaders) {
+            this.requestShaderReload();
+        }
+        this.invalidateAll();
+    }
+
+    public void abortResourceReload(ResourceReload reload) {
+        this.terrain.abortResourceReload(this.requireReload(reload));
+    }
+
+    private TerrainStreamer.ResourceReload requireReload(ResourceReload reload) {
+        if (reload == null) {
+            throw new NullPointerException("reload");
+        }
+        if (reload.owner != this) {
+            throw new IllegalArgumentException("Resource reload belongs to another renderer");
+        }
+        return reload.terrainReload;
     }
 
     /**
@@ -584,6 +614,7 @@ public final class VulkanRenderer implements AutoCloseable {
         if (this.closed) {
             return;
         }
+        this.acceptsResourceReloadEffects = false;
         // A failed wait leaves every GPU child live and permits a later close attempt. After a
         // successful wait, every child is attempted once and failures are aggregated.
         this.context.awaitIdle();
@@ -664,6 +695,22 @@ public final class VulkanRenderer implements AutoCloseable {
             VulkanGpuSampler sampler,
             long sourceGeneration,
             long textureRevision) {
+    }
+
+    public static final class ResourceReload {
+        private final VulkanRenderer owner;
+        private final TerrainStreamer.ResourceReload terrainReload;
+
+        private ResourceReload(
+                VulkanRenderer owner,
+                TerrainStreamer.ResourceReload terrainReload) {
+            this.owner = owner;
+            this.terrainReload = terrainReload;
+        }
+
+        public CompletableFuture<Void> ready() {
+            return this.terrainReload.ready();
+        }
     }
 
 }

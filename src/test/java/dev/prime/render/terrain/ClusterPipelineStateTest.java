@@ -36,4 +36,19 @@ final class ClusterPipelineStateTest {
         assertTrue(state.isQueued(key, 5L));
         assertFalse(state.isQueued(key, 4L));
     }
+
+    @Test
+    void cancelledWorkerReleasesInFlightAndRequeuesTheSameGeneration() {
+        ClusterPipelineState state = new ClusterPipelineState();
+        long key = 29L;
+        long generation = 7L;
+
+        assertTrue(state.enqueue(key, generation));
+        state.beginInFlight(key, generation);
+        state.cancelInFlight(key, generation);
+
+        assertFalse(state.hasInFlight(key));
+        assertTrue(state.enqueue(key, generation));
+        assertTrue(state.isQueued(key, generation));
+    }
 }

@@ -1,7 +1,7 @@
 package dev.prime.mixin;
 
 import com.mojang.blaze3d.platform.InputConstants;
-import dev.prime.render.RayTracingRuntime;
+import dev.prime.client.PrimeRuntime;
 import net.minecraft.client.Minecraft;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
@@ -17,7 +17,7 @@ public abstract class MinecraftMixin {
             boolean controlDown,
             CallbackInfoReturnable<Boolean> callbackInfo) {
         Minecraft minecraft = (Minecraft) (Object) this;
-        if (RayTracingRuntime.instance().handleScreenshotShortcut(
+        if (PrimeRuntime.instance().handleScreenshotShortcut(
                 minecraft, key, controlDown)) {
             callbackInfo.setReturnValue(true);
         }
@@ -25,6 +25,6 @@ public abstract class MinecraftMixin {
 
     @Inject(method = "close()V", at = @At("HEAD"))
     private void prime$shutdown(CallbackInfo ci) {
-        RayTracingRuntime.instance().shutdown();
+        PrimeRuntime.instance().shutdown();
     }
 }

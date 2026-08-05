@@ -5,7 +5,7 @@ import com.mojang.blaze3d.vulkan.VulkanGpuTextureView;
 import dev.prime.render.RealtimeFramePlan;
 import dev.prime.render.ResourceCleanup;
 import dev.prime.render.vulkan.reconstruction.VulkanReconstructionProcessor;
-import dev.prime.render.terrain.TerrainScene;
+import dev.prime.render.vulkan.terrain.TerrainScene;
 import java.util.List;
 import java.util.Objects;
 import org.lwjgl.system.MemoryStack;
@@ -50,7 +50,7 @@ public final class RealtimeFrameExecutor {
         long atmosphereFrame = 0L;
         long pipelineFrame = 0L;
         LabPbrTextureAtlas.FrameToken labPbrFrame = null;
-        boolean submissionAccepted = false;
+        MinecraftHostSubmission hostSubmission = new MinecraftHostSubmission();
         boolean initializationActive = false;
         try {
             Objects.requireNonNull(debugLabel, "debugLabel");
@@ -141,9 +141,8 @@ public final class RealtimeFrameExecutor {
                     VK12.vkEndCommandBuffer(commandBuffer),
                     "end Prime realtime command buffer");
             encoder.execute(commandBuffer);
-            // Minecraft's execute() first validates the encoder, then appends this command buffer
-            // to its open Submission. Only a normal return transfers recorded-resource ownership.
-            submissionAccepted = true;
+            hostSubmission.acceptedByMinecraftHostSubmission();
+            // A normal return transfers command/resource ownership and advances Prime histories.
             this.imageInitialization.submitted();
             initializationActive = false;
             long submittedPipelineFrame = pipelineFrame;
@@ -162,7 +161,7 @@ public final class RealtimeFrameExecutor {
                     commitFailure);
             ResourceCleanup.throwIfFailed(commitFailure);
         } catch (RuntimeException exception) {
-            if (!submissionAccepted) {
+            if (!hostSubmission.wasAcceptedByMinecraftHostSubmission()) {
                 RuntimeException failure = exception;
                 if (initializationActive) {
                     failure = ResourceCleanup.run(

@@ -1,7 +1,7 @@
 package dev.prime.render.terrain;
 
 /** Explicit policy inputs for one captured-cluster translation. */
-record ClusterTranslationSettings(
+public record ClusterTranslationSettings(
         boolean buildOpacityMicromap,
         int segmentTriangleTarget,
         int maxOpacityMicromapSubdivisionLevel,
@@ -9,7 +9,7 @@ record ClusterTranslationSettings(
         float voxelSurfaceMaximumHeight,
         boolean closeCoveredFluidGap,
         boolean suppressFluidFaceAgainstFullCollision) {
-    ClusterTranslationSettings {
+    public ClusterTranslationSettings {
         if (segmentTriangleTarget < 2 || (segmentTriangleTarget & 1) != 0) {
             throw new IllegalArgumentException(
                     "Cluster segment capacity must contain whole quads");

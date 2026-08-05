@@ -8,9 +8,10 @@ import dev.prime.render.replay.RayTraceReplayInput;
 import dev.prime.render.replay.RenderBinaryFingerprint;
 import dev.prime.render.replay.RenderPlatformFingerprint;
 import dev.prime.render.replay.RenderReplayCapture;
-import dev.prime.render.terrain.TerrainScene;
+import dev.prime.render.vulkan.terrain.TerrainScene;
 import dev.prime.render.vulkan.RealtimeRayTracingPipeline;
 import dev.prime.render.vulkan.TraceBackend;
+import dev.prime.render.vulkan.MinecraftHostSubmission;
 import dev.prime.render.vulkan.VulkanContext;
 import dev.prime.render.vulkan.VulkanImageInitializationBatch;
 import dev.prime.render.vulkan.VulkanImageTransitions;
@@ -50,7 +51,7 @@ public final class ReplayProbeFrameExecutor {
         NrdReplayProbe.RecordedFrame recorded = null;
         long pipelineFrame = 0L;
         boolean recordingAttempted = false;
-        boolean submissionAccepted = false;
+        MinecraftHostSubmission hostSubmission = new MinecraftHostSubmission();
         boolean initializationActive = false;
         try {
             Objects.requireNonNull(debugLabel, "debugLabel");
@@ -96,7 +97,7 @@ public final class ReplayProbeFrameExecutor {
                     VK12.vkEndCommandBuffer(commandBuffer),
                     "end Prime replay-probe command buffer");
             encoder.execute(commandBuffer);
-            submissionAccepted = true;
+            hostSubmission.acceptedByMinecraftHostSubmission();
             this.imageInitialization.submitted();
             initializationActive = false;
             pipeline.submitted(pipelineFrame);
@@ -106,7 +107,7 @@ public final class ReplayProbeFrameExecutor {
                     binary,
                     replayInput);
         } catch (RuntimeException exception) {
-            if (!submissionAccepted) {
+            if (!hostSubmission.wasAcceptedByMinecraftHostSubmission()) {
                 RuntimeException failure = exception;
                 if (initializationActive) {
                     failure = ResourceCleanup.run(

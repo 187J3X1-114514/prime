@@ -1,6 +1,5 @@
 package dev.prime.render.replay;
 
-import dev.prime.render.vulkan.VulkanCapabilities;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.BufferUnderflowException;
@@ -9,13 +8,11 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.HexFormat;
 import java.util.Objects;
-import org.lwjgl.vulkan.VK10;
-import org.lwjgl.vulkan.VkPhysicalDeviceProperties;
 
 /**
  * Canonical device and feature identity required for strict replay comparisons.
  *
- * <p>This is captured once at Vulkan-context creation. It contains no handles and is safe to
+ * <p>The Vulkan replay adapter captures it on demand. It contains no handles and is safe to
  * persist with a replay.
  */
 public record RenderPlatformFingerprint(
@@ -41,7 +38,7 @@ public record RenderPlatformFingerprint(
         int maxOpacityMicromapSubdivisionLevel,
         boolean fsrFp16Supported) {
     private static final int FORMAT_VERSION = 1;
-    private static final int PIPELINE_CACHE_UUID_BYTES = VK10.VK_UUID_SIZE;
+    private static final int PIPELINE_CACHE_UUID_BYTES = 16;
 
     public RenderPlatformFingerprint {
         Objects.requireNonNull(deviceName, "deviceName");
@@ -51,44 +48,6 @@ public record RenderPlatformFingerprint(
             throw new IllegalArgumentException(
                     "Pipeline-cache UUID must be sixteen lowercase hexadecimal bytes");
         }
-    }
-
-    public static RenderPlatformFingerprint capture(
-            VkPhysicalDeviceProperties properties,
-            VulkanCapabilities capabilities) {
-        Objects.requireNonNull(properties, "properties");
-        Objects.requireNonNull(capabilities, "capabilities");
-        if (!capabilities.available()) {
-            throw new IllegalArgumentException(
-                    "Cannot fingerprint an unavailable Vulkan device");
-        }
-        byte[] uuid = new byte[PIPELINE_CACHE_UUID_BYTES];
-        ByteBuffer source = properties.pipelineCacheUUID();
-        for (int index = 0; index < uuid.length; index++) {
-            uuid[index] = source.get(index);
-        }
-        return new RenderPlatformFingerprint(
-                properties.deviceNameString(),
-                properties.vendorID(),
-                properties.deviceID(),
-                properties.deviceType(),
-                properties.driverVersion(),
-                properties.apiVersion(),
-                HexFormat.of().formatHex(uuid),
-                capabilities.shaderGroupHandleSize(),
-                capabilities.shaderGroupHandleAlignment(),
-                capabilities.shaderGroupBaseAlignment(),
-                capabilities.maxShaderGroupStride(),
-                capabilities.maxRayDispatchInvocationCount(),
-                capabilities.maxRayRecursionDepth(),
-                capabilities.maxAccelerationStructurePrimitiveCount(),
-                capabilities.maxAccelerationStructureInstanceCount(),
-                capabilities.accelerationStructureScratchAlignment(),
-                capabilities.wavefrontSubgroupSupported(),
-                capabilities.invocationReorderSupported(),
-                capabilities.opacityMicromapSupported(),
-                capabilities.maxOpacityMicromapSubdivisionLevel(),
-                capabilities.fsrFp16Supported());
     }
 
     public byte[] canonicalBytes() {

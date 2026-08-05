@@ -9,7 +9,7 @@ import java.util.Objects;
  * <p>Entries are strictly key-sorted so collection iteration and GPU residency identity cannot
  * affect the packed topology.
  */
-final class WorldLightTreeInput {
+public final class WorldLightTreeInput {
     private final int originX;
     private final int originY;
     private final int originZ;
@@ -33,8 +33,8 @@ final class WorldLightTreeInput {
         validate();
     }
 
-    static WorldLightTreeInput capture(
-            List<GpuCluster> sortedClusters,
+    public static WorldLightTreeInput capture(
+            List<Entry> sortedClusters,
             int originX,
             int originY,
             int originZ) {
@@ -45,7 +45,7 @@ final class WorldLightTreeInput {
         CompiledClusterLights.Summary[] lights =
                 new CompiledClusterLights.Summary[count];
         for (int index = 0; index < count; index++) {
-            GpuCluster cluster = Objects.requireNonNull(
+            Entry cluster = Objects.requireNonNull(
                     sortedClusters.get(index), "cluster");
             keys[index] = cluster.key();
             int coordinate = index * 3;
@@ -61,6 +61,17 @@ final class WorldLightTreeInput {
                 keys,
                 coordinates,
                 lights);
+    }
+
+    public record Entry(
+            long key,
+            int clusterX,
+            int clusterY,
+            int clusterZ,
+            CompiledClusterLights.Summary lights) {
+        public Entry {
+            lights = Objects.requireNonNull(lights, "lights");
+        }
     }
 
     int clusterCount() {

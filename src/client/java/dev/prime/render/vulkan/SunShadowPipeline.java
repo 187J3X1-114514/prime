@@ -21,14 +21,14 @@ public final class SunShadowPipeline implements Destroyable {
                     | KHRRayTracingPipeline.VK_SHADER_STAGE_ANY_HIT_BIT_KHR;
 
     private final VulkanContext context;
-    private final TraceBackend backend;
+    private final TraceBindings bindings;
     private final long pipelineLayout;
     private final TraceProgram program;
     private boolean destroyed;
 
-    public SunShadowPipeline(VulkanContext context, TraceBackend backend) {
+    public SunShadowPipeline(VulkanContext context, TraceBindings bindings) {
         this.context = context;
-        this.backend = java.util.Objects.requireNonNull(backend, "backend");
+        this.bindings = java.util.Objects.requireNonNull(bindings, "bindings");
         long layout = 0L;
         TraceProgram traceProgram = null;
         try {
@@ -40,7 +40,7 @@ public final class SunShadowPipeline implements Destroyable {
                         .size(ShaderAbi.PUSH_CONSTANT_SIZE);
                 VkPipelineLayoutCreateInfo info = VkPipelineLayoutCreateInfo.calloc(stack)
                         .sType$Default()
-                        .pSetLayouts(stack.longs(backend.descriptorSetLayout()))
+                        .pSetLayouts(stack.longs(bindings.descriptorSetLayout()))
                         .pPushConstantRanges(range);
                 LongBuffer pointer = stack.mallocLong(1);
                 VulkanContext.check(
@@ -78,7 +78,7 @@ public final class SunShadowPipeline implements Destroyable {
         if (width <= 0 || height <= 0) {
             throw new IllegalArgumentException("Sun-shadow trace extent must be positive");
         }
-        if (!this.backend.staticResourcesPrepared()) {
+        if (!this.bindings.ready()) {
             throw new IllegalStateException("Trace-backend resources are not prepared");
         }
         try (MemoryStack stack = MemoryStack.stackPush()) {
@@ -91,7 +91,7 @@ public final class SunShadowPipeline implements Destroyable {
                     KHRRayTracingPipeline.VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR,
                     this.pipelineLayout,
                     0,
-                    stack.longs(this.backend.descriptorSet()),
+                    stack.longs(this.bindings.descriptorSet()),
                     null);
             VK12.vkCmdPushConstants(
                     commandBuffer,

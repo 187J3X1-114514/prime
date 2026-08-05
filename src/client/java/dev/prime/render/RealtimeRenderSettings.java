@@ -5,13 +5,13 @@ import dev.prime.render.post.ReconstructionQualityMode;
 import java.util.Objects;
 
 /** Immutable settings consumed only by the interactive renderer. */
-record RealtimeRenderSettings(
+public record RealtimeRenderSettings(
         PostProcessingMode postProcessing,
         ReconstructionQualityMode reconstructionQuality,
         LightingSettings.Snapshot lighting,
         MaterialSettings.Snapshot material,
         DisplaySettings.Snapshot display) {
-    RealtimeRenderSettings {
+    public RealtimeRenderSettings {
         Objects.requireNonNull(postProcessing, "postProcessing");
         Objects.requireNonNull(reconstructionQuality, "reconstructionQuality");
         Objects.requireNonNull(lighting, "lighting");
@@ -19,7 +19,7 @@ record RealtimeRenderSettings(
         Objects.requireNonNull(display, "display");
     }
 
-    static RealtimeRenderSettings capture(RendererSettings settings) {
+    public static RealtimeRenderSettings capture(RendererSettings settings) {
         Objects.requireNonNull(settings, "settings");
         return new RealtimeRenderSettings(
                 settings.postProcessingMode(),

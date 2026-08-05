@@ -2,6 +2,7 @@ package dev.prime.render.terrain;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
+import dev.prime.render.vulkan.terrain.TerrainScene;
 import org.junit.jupiter.api.Test;
 
 final class TerrainTemporalHistoryTest {

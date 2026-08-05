@@ -1,16 +1,16 @@
 package dev.prime.render.terrain;
 
-final class RenderOrigin {
+public final class RenderOrigin {
     private static final int SECTION_SIZE = 16;
 
     private RenderOrigin() {
     }
 
-    static int alignToSection(double coordinate) {
+    public static int alignToSection(double coordinate) {
         return Math.floorDiv((int) Math.floor(coordinate), SECTION_SIZE) * SECTION_SIZE;
     }
 
-    static boolean needsRebase(
+    public static boolean needsRebase(
             double cameraX,
             double cameraY,
             double cameraZ,

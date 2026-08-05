@@ -38,6 +38,7 @@ public final class TraceBackend implements Destroyable {
     private final StarmapTexture starmap;
     private final BsdfLookupTable bsdfLookup;
     private final long descriptorSetLayout;
+    private final TraceBindings bindings;
     private SunShadowPipeline sunShadowPipeline;
     private SceneBindings sceneBindings;
     private long nextFrameToken;
@@ -60,7 +61,8 @@ public final class TraceBackend implements Destroyable {
             this.starmap = starTexture;
             this.bsdfLookup = lookup;
             this.descriptorSetLayout = layout;
-            this.sunShadowPipeline = new SunShadowPipeline(context, this);
+            this.bindings = new TraceBindings(layout);
+            this.sunShadowPipeline = new SunShadowPipeline(context, this.bindings);
         } catch (RuntimeException exception) {
             ResourceCleanup.destroy(this.sunShadowPipeline, exception);
             if (layout != 0L) {
@@ -72,19 +74,8 @@ public final class TraceBackend implements Destroyable {
         }
     }
 
-    long descriptorSetLayout() {
-        return this.descriptorSetLayout;
-    }
-
-    long descriptorSet() {
-        if (this.sceneBindings == null) {
-            throw new IllegalStateException("Shared trace descriptors have not been initialized");
-        }
-        return this.sceneBindings.descriptorSet;
-    }
-
-    boolean staticResourcesPrepared() {
-        return this.staticResourcesPrepared || this.pendingFrameToken != 0L;
+    public TraceBindings bindings() {
+        return this.bindings;
     }
 
     public SunShadowPipeline sunShadowPipeline() {
@@ -92,7 +83,7 @@ public final class TraceBackend implements Destroyable {
     }
 
     public SunShadowPipeline prepareSunShadowReload() {
-        return new SunShadowPipeline(this.context, this);
+        return new SunShadowPipeline(this.context, this.bindings);
     }
 
     /** Publishes a prepared replacement and returns the previous pipeline for deferred retirement. */
@@ -138,6 +129,7 @@ public final class TraceBackend implements Destroyable {
                 this.starmap);
         SceneBindings previous = this.sceneBindings;
         this.sceneBindings = replacement;
+        this.bindings.publishDescriptorSet(replacement.descriptorSet);
         if (previous != null) {
             this.context.defer(previous);
         }
@@ -159,6 +151,7 @@ public final class TraceBackend implements Destroyable {
             }
             if (uploads == 0) {
                 this.staticResourcesPrepared = true;
+                this.bindings.setReady(true);
                 return 0L;
             }
             long token = ++this.nextFrameToken;
@@ -167,6 +160,7 @@ public final class TraceBackend implements Destroyable {
             }
             this.pendingFrameToken = token;
             this.pendingUploads = uploads;
+            this.bindings.setReady(true);
             return token;
         } catch (RuntimeException exception) {
             RuntimeException failure = exception;
@@ -195,6 +189,7 @@ public final class TraceBackend implements Destroyable {
         this.staticResourcesPrepared = failure == null;
         this.pendingFrameToken = 0L;
         this.pendingUploads = 0;
+        this.bindings.setReady(this.staticResourcesPrepared);
         ResourceCleanup.throwIfFailed(failure);
     }
 
@@ -212,6 +207,7 @@ public final class TraceBackend implements Destroyable {
         }
         this.pendingFrameToken = 0L;
         this.pendingUploads = 0;
+        this.bindings.setReady(this.staticResourcesPrepared);
         ResourceCleanup.throwIfFailed(failure);
     }
 
@@ -306,6 +302,7 @@ public final class TraceBackend implements Destroyable {
                 this.sceneBindings = null;
             }
             this.sunShadowPipeline.destroy();
+            this.bindings.close();
             VK12.vkDestroyDescriptorSetLayout(
                     this.context.vkDevice(), this.descriptorSetLayout, null);
             this.bsdfLookup.destroy();

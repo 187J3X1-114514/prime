@@ -2,7 +2,7 @@ package dev.prime.mixin;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
-import dev.prime.client.ViewDistanceLimits;
+import dev.prime.render.terrain.ViewDistanceLimits;
 import org.junit.jupiter.api.Test;
 
 final class ViewDistanceContractTest {

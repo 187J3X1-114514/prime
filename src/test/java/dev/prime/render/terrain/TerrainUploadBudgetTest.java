@@ -2,6 +2,7 @@ package dev.prime.render.terrain;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
+import dev.prime.render.vulkan.terrain.ClusterStagingLayout;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 
@@ -12,11 +13,11 @@ final class TerrainUploadBudgetTest {
         // 12-byte light record starts at 80, not at the raw payload sum of 68.
         assertEquals(
                 184L,
-                TerrainStreamer.stagingEndOffset(
+                ClusterStagingLayout.endOffset(
                         0L, 36L, 32L, 12L, 8L, 64L, 8L));
         assertEquals(
                 252L,
-                TerrainStreamer.stagingEndOffset(
+                ClusterStagingLayout.endOffset(
                         184L, 36L, 32L, 0L, 0L, 0L, 0L));
     }
 
@@ -26,7 +27,7 @@ final class TerrainUploadBudgetTest {
                 mesh(1, 1, 0),
                 mesh(0, 0, 1)));
 
-        assertEquals(204L, TerrainStreamer.stagingEndOffset(0L, mesh, false));
+        assertEquals(204L, ClusterStagingLayout.endOffset(0L, mesh, false));
         assertEquals(2, mesh.segments().size());
     }
 
@@ -52,7 +53,7 @@ final class TerrainUploadBudgetTest {
                         new int[] {0x00ff_ffff},
                         new float[] {0.0F, 0.0F, 0.0F}));
 
-        assertEquals(68L, TerrainStreamer.stagingEndOffset(0L, mesh, false));
+        assertEquals(68L, ClusterStagingLayout.endOffset(0L, mesh, false));
     }
 
     private static CpuSectionMesh mesh(int opaque, int cutout, int transmissive) {

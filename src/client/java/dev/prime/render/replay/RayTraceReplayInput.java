@@ -7,7 +7,7 @@ import dev.prime.render.MaterialSettings;
 import dev.prime.render.SunDirection;
 import dev.prime.render.post.PostProcessingMode;
 import dev.prime.render.post.TransparentGuideMode;
-import dev.prime.render.terrain.TerrainScene;
+import dev.prime.render.scene.SceneRevisionView;
 import java.util.Objects;
 
 /**
@@ -55,7 +55,7 @@ public record RayTraceReplayInput(
 
     public static RayTraceReplayInput capture(
             IntegratorFrameInput input,
-            TerrainScene.ResidentSceneView scene) {
+            SceneRevisionView scene) {
         Objects.requireNonNull(input, "input");
         Objects.requireNonNull(scene, "scene");
         if (input.transparentGuideMode() != guideMode(input.postProcessingMode())) {
@@ -82,7 +82,7 @@ public record RayTraceReplayInput(
     }
 
     public IntegratorFrameInput bind(
-            TerrainScene.ResidentSceneView residentScene) {
+            SceneRevisionView residentScene) {
         this.scene.requireMatch(residentScene);
         return new IntegratorFrameInput(
                 this.camera.materialize(),
@@ -117,7 +117,7 @@ public record RayTraceReplayInput(
 
     public void requireMatch(
             IntegratorFrameInput input,
-            TerrainScene.ResidentSceneView residentScene) {
+            SceneRevisionView residentScene) {
         if (!this.equals(capture(input, residentScene))) {
             throw new IllegalArgumentException(
                     "Integrator input does not match its replay capture");
@@ -132,7 +132,7 @@ public record RayTraceReplayInput(
             long resetRevision,
             long temporalRevision) {
         public static SceneIdentity capture(
-                TerrainScene.ResidentSceneView scene) {
+                SceneRevisionView scene) {
             Objects.requireNonNull(scene, "scene");
             return new SceneIdentity(
                     scene.originX(),
@@ -143,7 +143,7 @@ public record RayTraceReplayInput(
                     scene.temporalRevision());
         }
 
-        void requireMatch(TerrainScene.ResidentSceneView scene) {
+        void requireMatch(SceneRevisionView scene) {
             Objects.requireNonNull(scene, "scene");
             if (scene.originX() != this.originX
                     || scene.originY() != this.originY

@@ -6,7 +6,7 @@ import dev.prime.render.AstronomySettings;
 import dev.prime.render.DisplaySettings;
 import dev.prime.render.LightingSettings;
 import dev.prime.render.MaterialSettings;
-import dev.prime.render.RayTracingRuntime;
+import dev.prime.client.PrimeRuntime;
 import dev.prime.render.RendererSettings;
 import dev.prime.render.fsr.FsrDebugView;
 import dev.prime.render.post.nrd.NrdDiagnostics;
@@ -116,7 +116,7 @@ public abstract class VideoSettingsScreenMixin {
         RendererSettings previous = PrimeConfig.rendererSettings();
         PrimeConfig.restoreDefaults();
         RendererSettings current = PrimeConfig.rendererSettings();
-        RayTracingRuntime runtime = RayTracingRuntime.instance();
+        PrimeRuntime runtime = PrimeRuntime.instance();
         runtime.restoreSessionDefaults();
         if (previous.pathTracingEnabled() != current.pathTracingEnabled()) {
             runtime.pathTracingChanged(current.pathTracingEnabled());

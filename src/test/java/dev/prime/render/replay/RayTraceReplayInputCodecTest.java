@@ -15,7 +15,7 @@ import dev.prime.render.SunDirection;
 import dev.prime.render.post.PostProcessingMode;
 import dev.prime.render.post.TransparentGuideMode;
 import dev.prime.render.shader.ShaderAbi;
-import dev.prime.render.terrain.TerrainScene;
+import dev.prime.render.vulkan.terrain.TerrainScene;
 import dev.prime.render.vulkan.RayTracingPushConstants;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;

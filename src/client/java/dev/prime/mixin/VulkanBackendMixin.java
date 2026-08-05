@@ -15,6 +15,7 @@ import dev.prime.render.vulkan.VulkanDeviceNegotiator;
 import java.util.Collection;
 import java.util.Set;
 import org.spongepowered.asm.mixin.Mixin;
+import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.ModifyArgs;
@@ -26,6 +27,9 @@ public abstract class VulkanBackendMixin {
     private static final String CREATE_DEVICE_DESCRIPTOR =
             "createDevice(JLcom/mojang/blaze3d/shaders/ShaderSource;Lcom/mojang/blaze3d/shaders/GpuDebugOptions;Ljava/lang/Runnable;)Lcom/mojang/blaze3d/systems/GpuDevice;";
 
+    @Unique
+    private VulkanBootstrap.Negotiation prime$negotiation;
+
     @ModifyArgs(
             method = CREATE_DEVICE_DESCRIPTOR,
             at = @At(
@@ -35,8 +39,10 @@ public abstract class VulkanBackendMixin {
         Collection<String> extensions = args.get(0);
         VulkanPhysicalDevice physicalDevice = args.get(1);
         Set<VulkanFeature> features = args.get(2);
+        VulkanBootstrap.Negotiation negotiation = VulkanBootstrap.beginNegotiation();
         VulkanCapabilities capabilities = VulkanDeviceNegotiator.negotiate(physicalDevice, extensions, features);
-        VulkanBootstrap.recordNegotiation(capabilities);
+        VulkanBootstrap.recordNegotiation(negotiation, capabilities);
+        this.prime$negotiation = negotiation;
         if (capabilities.available()) {
             PrimeInfo.LOGGER.info("Enabled Vulkan ray tracing on {}", capabilities.deviceName());
             PrimeInfo.LOGGER.info(
@@ -67,7 +73,13 @@ public abstract class VulkanBackendMixin {
             CallbackInfoReturnable<GpuDevice> cir) {
         GpuDeviceBackend backend = ((GpuDeviceAccessor) (Object) cir.getReturnValue()).prime$getBackend();
         if (backend instanceof VulkanDevice vulkanDevice) {
-            VulkanBootstrap.attachDevice(vulkanDevice);
+            VulkanBootstrap.Negotiation negotiation = this.prime$negotiation;
+            if (negotiation == null) {
+                throw new IllegalStateException(
+                        "Minecraft returned a Vulkan device without a Prime negotiation");
+            }
+            VulkanBootstrap.attachDevice(negotiation, vulkanDevice);
+            this.prime$negotiation = null;
         }
     }
 }

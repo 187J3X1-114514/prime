@@ -27,7 +27,7 @@ public record RealtimeFramePlan(
         }
     }
 
-    static RealtimeFramePlan complete(
+    public static RealtimeFramePlan complete(
             RealtimeFrameInput input,
             RealtimeSampleState.Plan sample,
             ReconstructionFrameParameters reconstruction,

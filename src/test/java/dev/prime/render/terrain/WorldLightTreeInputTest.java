@@ -30,7 +30,7 @@ final class WorldLightTreeInputTest {
 
     @Test
     void identicalInputBuildsExactTopology() {
-        ArrayList<GpuCluster> clusters = new ArrayList<>();
+        ArrayList<WorldLightTreeInput.Entry> clusters = new ArrayList<>();
         for (int index = 0; index < 8; index++) {
             clusters.add(cluster(index, index + 1.0F));
         }
@@ -50,11 +50,11 @@ final class WorldLightTreeInputTest {
 
     @Test
     void buildDependsOnlyOnCurrentInput() {
-        ArrayList<GpuCluster> initial = new ArrayList<>();
+        ArrayList<WorldLightTreeInput.Entry> initial = new ArrayList<>();
         for (int index = 0; index < 8; index++) {
             initial.add(cluster(index, index + 1.0F));
         }
-        ArrayList<GpuCluster> changed = new ArrayList<>(
+        ArrayList<WorldLightTreeInput.Entry> changed = new ArrayList<>(
                 initial.subList(1, initial.size()));
         changed.add(cluster(9, 3.0F));
         WorldLightTreeInput changedInput =
@@ -75,14 +75,12 @@ final class WorldLightTreeInputTest {
 
     @Test
     void dynamicGeometryWithVisibleEmissionHasNoWorldLightTreeLeaf() {
-        GpuCluster staticCluster = cluster(1, 2.0F);
-        GpuCluster dynamicCluster = new GpuCluster(
+        WorldLightTreeInput.Entry staticCluster = cluster(1, 2.0F);
+        WorldLightTreeInput.Entry dynamicCluster = new WorldLightTreeInput.Entry(
                 CompiledCluster.DYNAMIC_KEY,
                 0,
                 0,
                 0,
-                null,
-                null,
                 new CompiledClusterLights.Summary(
                         0,
                         0.0F,
@@ -91,8 +89,7 @@ final class WorldLightTreeInputTest {
                         0.0F,
                         0.0F,
                         0.0F,
-                        0.0F),
-                true);
+                        0.0F));
 
         CpuWorldLightTree.Result tree = CpuWorldLightTree.build(
                 WorldLightTreeInput.capture(
@@ -102,14 +99,12 @@ final class WorldLightTreeInputTest {
         assertEquals(CpuLightTree.NO_INDEX, tree.leafNode(1));
     }
 
-    private static GpuCluster cluster(int index, float power) {
-        return new GpuCluster(
+    private static WorldLightTreeInput.Entry cluster(int index, float power) {
+        return new WorldLightTreeInput.Entry(
                 index,
                 index,
                 0,
                 0,
-                null,
-                null,
                 new CompiledClusterLights.Summary(
                         1,
                         0.0F,
@@ -118,7 +113,6 @@ final class WorldLightTreeInputTest {
                         1.0F,
                         1.0F,
                         1.0F,
-                        power),
-                false);
+                        power));
     }
 }

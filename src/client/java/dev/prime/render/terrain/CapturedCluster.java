@@ -4,7 +4,7 @@ import dev.prime.render.scene.CapturedSectionGeometry;
 import java.util.Objects;
 
 /** Immutable fixed-slot capture value for one logical 4x4x4 Section cluster. */
-final class CapturedCluster {
+public final class CapturedCluster {
     private final int clusterX;
     private final int clusterY;
     private final int clusterZ;
@@ -37,7 +37,7 @@ final class CapturedCluster {
         return this.sections[localIndex];
     }
 
-    static final class Builder {
+    public static final class Builder {
         private final int clusterX;
         private final int clusterY;
         private final int clusterZ;
@@ -45,7 +45,7 @@ final class CapturedCluster {
                 new CapturedSectionGeometry[SectionCluster.SECTION_COUNT];
         private boolean built;
 
-        Builder(int clusterX, int clusterY, int clusterZ) {
+        public Builder(int clusterX, int clusterY, int clusterZ) {
             if (SectionCluster.origin(clusterX) != clusterX
                     || SectionCluster.origin(clusterY) != clusterY
                     || SectionCluster.origin(clusterZ) != clusterZ) {
@@ -57,7 +57,7 @@ final class CapturedCluster {
             this.clusterZ = clusterZ;
         }
 
-        void add(
+        public void add(
                 int sectionX,
                 int sectionY,
                 int sectionZ,
@@ -82,7 +82,7 @@ final class CapturedCluster {
             this.sections[localIndex] = Objects.requireNonNull(section, "section");
         }
 
-        CapturedCluster build() {
+        public CapturedCluster build() {
             if (this.built) {
                 throw new IllegalStateException("Captured cluster was already built");
             }

@@ -2,11 +2,12 @@ package dev.prime.render.vulkan;
 
 import com.mojang.blaze3d.vulkan.Destroyable;
 import dev.prime.render.AerialEpipolarMapping;
+import dev.prime.render.AtmosphereCoordinates;
 import dev.prime.render.FrameCamera;
 import dev.prime.render.IntegratorFrameInput;
 import dev.prime.render.SunDirection;
 import dev.prime.render.shader.ShaderAbi;
-import dev.prime.render.terrain.TerrainScene;
+import dev.prime.render.vulkan.terrain.TerrainScene;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.ByteBuffer;
@@ -46,12 +47,8 @@ import org.lwjgl.vulkan.VkWriteDescriptorSet;
  * push constants.
  */
 public final class AtmospherePipeline implements Destroyable {
-    public static final float WORLD_SEA_LEVEL_Y = ShaderAbi.ATMOSPHERE_WORLD_SEA_LEVEL_Y;
-    public static final float WORLD_UNIT_SCALE_KM = ShaderAbi.ATMOSPHERE_WORLD_UNIT_SCALE_KM;
     public static final float AERIAL_MAX_DISTANCE_KM = ShaderAbi.ATMOSPHERE_AERIAL_MAX_DISTANCE_KM;
 
-    private static final float BOTTOM_RADIUS_KM = ShaderAbi.ATMOSPHERE_BOTTOM_RADIUS_KM;
-    private static final float TOP_RADIUS_KM = ShaderAbi.ATMOSPHERE_TOP_RADIUS_KM;
     private static final int PUSH_CONSTANT_SIZE = 128;
     private static final int IMAGE_COUNT = 7;
     private static final int PHASE_LUT_BINDING = 7;
@@ -316,24 +313,6 @@ public final class AtmospherePipeline implements Destroyable {
         return this.sunShadow.depth(bank, cascade);
     }
 
-    public static float eyeRadiusKm(double worldY) {
-        float radius = BOTTOM_RADIUS_KM + worldAltitudeKm(worldY);
-        float shellMarginKm = WORLD_UNIT_SCALE_KM;
-        return Math.max(
-                BOTTOM_RADIUS_KM + shellMarginKm,
-                Math.min(TOP_RADIUS_KM - shellMarginKm, radius));
-    }
-
-    /**
-     * Maps Minecraft height into the physical atmosphere coordinate system.
-     *
-     * <p>Y=-128 remains the virtual planet surface. The generated scale controls how many
-     * atmosphere metres one Minecraft block represents; the atmosphere model itself is unchanged.
-     */
-    public static float worldAltitudeKm(double worldY) {
-        return (float) ((worldY - WORLD_SEA_LEVEL_Y) * WORLD_UNIT_SCALE_KM);
-    }
-
     public long prepare(
             VkCommandBuffer commandBuffer,
             SunShadowPipeline pipeline,
@@ -360,7 +339,7 @@ public final class AtmospherePipeline implements Destroyable {
                     input,
                     scene,
                     forceCompleteSunShadow);
-            eyeRadiusKm = AtmospherePipeline.eyeRadiusKm(camera.y());
+            eyeRadiusKm = AtmosphereCoordinates.eyeRadiusKm(camera.y());
             eyeRadiusBits = Float.floatToIntBits(eyeRadiusKm);
             sunElevationBits = Float.floatToIntBits(sunDirection.y());
             fillAerialKey(

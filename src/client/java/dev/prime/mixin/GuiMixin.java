@@ -1,6 +1,6 @@
 package dev.prime.mixin;
 
-import dev.prime.render.RayTracingRuntime;
+import dev.prime.client.PrimeRuntime;
 import java.util.List;
 import net.minecraft.client.DeltaTracker;
 import net.minecraft.client.Minecraft;
@@ -27,7 +27,7 @@ public abstract class GuiMixin {
             boolean renderLevel,
             boolean renderScreens,
             CallbackInfo ci) {
-        List<String> lines = RayTracingRuntime.instance().debugLines();
+        List<String> lines = PrimeRuntime.instance().debugLines();
         if (lines.isEmpty() || this.guiRenderState.isHudHidden) {
             return;
         }

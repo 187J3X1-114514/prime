@@ -1,8 +1,10 @@
 package dev.prime.mixin;
 
 import com.mojang.blaze3d.pipeline.RenderTarget;
+import com.llamalad7.mixinextras.injector.wrapmethod.WrapMethod;
+import com.llamalad7.mixinextras.injector.wrapoperation.Operation;
 import dev.prime.config.PrimeConfig;
-import dev.prime.render.RayTracingRuntime;
+import dev.prime.client.PrimeRuntime;
 import net.minecraft.client.DeltaTracker;
 import net.minecraft.client.renderer.GameRenderer;
 import net.minecraft.client.renderer.state.GameRenderState;
@@ -24,10 +26,21 @@ public abstract class GameRendererMixin {
     @Shadow
     public abstract GameRenderState gameRenderState();
 
+    @WrapMethod(method = "renderLevel")
+    private void prime$retireAfterHostSubmissionFailure(
+            DeltaTracker deltaTracker, Operation<Void> original) {
+        try {
+            original.call(deltaTracker);
+        } catch (RuntimeException exception) {
+            PrimeRuntime.instance().minecraftHostSubmissionFailed(exception);
+            throw exception;
+        }
+    }
+
     @Inject(method = "extract(Lnet/minecraft/client/DeltaTracker;Z)V", at = @At("HEAD"))
     private void prime$beginFrame(DeltaTracker deltaTracker, boolean advanceGameTime, CallbackInfo ci) {
         var minecraft = net.minecraft.client.Minecraft.getInstance();
-        RayTracingRuntime.instance().beginFrame(minecraft, PrimeConfig.rendererSettings());
+        PrimeRuntime.instance().beginFrame(minecraft, PrimeConfig.rendererSettings());
     }
 
     @ModifyArg(
@@ -39,7 +52,7 @@ public abstract class GameRendererMixin {
             index = 0)
     private Matrix4f prime$captureCamera(Matrix4f projection) {
         var camera = this.gameRenderState().levelRenderState.cameraRenderState;
-        RayTracingRuntime.instance().captureCamera(
+        PrimeRuntime.instance().captureCamera(
                 projection,
                 camera.projectionMatrix,
                 camera.viewRotationMatrix,
@@ -57,6 +70,6 @@ public abstract class GameRendererMixin {
                     target = "Lnet/minecraft/client/renderer/LevelRenderer;render(Lcom/mojang/blaze3d/resource/GraphicsResourceAllocator;Lnet/minecraft/client/DeltaTracker;ZLnet/minecraft/client/renderer/state/level/CameraRenderState;Lorg/joml/Matrix4fc;Lcom/mojang/blaze3d/buffers/GpuBufferSlice;Lorg/joml/Vector4f;Z)V",
                     shift = At.Shift.AFTER))
     private void prime$renderRayTracedWorld(DeltaTracker deltaTracker, CallbackInfo ci) {
-        RayTracingRuntime.instance().renderWorld(this.mainRenderTarget);
+        PrimeRuntime.instance().renderWorld(this.mainRenderTarget);
     }
 }

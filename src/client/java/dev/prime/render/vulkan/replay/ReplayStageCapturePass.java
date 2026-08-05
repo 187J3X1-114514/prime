@@ -4,6 +4,7 @@ import com.mojang.blaze3d.vulkan.Destroyable;
 import dev.prime.render.ResourceCleanup;
 import dev.prime.render.replay.CapturedRenderStage;
 import dev.prime.render.replay.RenderStageSchema;
+import dev.prime.render.replay.RenderPixelFormat;
 import dev.prime.render.vulkan.RawWavefrontFrame;
 import dev.prime.render.vulkan.VulkanBuffer;
 import dev.prime.render.vulkan.VulkanContext;
@@ -190,7 +191,7 @@ public final class ReplayStageCapturePass implements Destroyable {
                 throw new IllegalArgumentException(
                         "Replay capture images have different extents");
             }
-            if (image.format() != schema.format(index)) {
+            if (image.format() != vulkanFormat(schema.format(index))) {
                 throw new IllegalArgumentException(
                         "Replay capture image "
                                 + schema.signals().get(index)
@@ -391,6 +392,17 @@ public final class ReplayStageCapturePass implements Destroyable {
             }
             throw exception;
         }
+    }
+
+    private static int vulkanFormat(RenderPixelFormat format) {
+        return switch (format) {
+            case R8_UNORM -> VK12.VK_FORMAT_R8_UNORM;
+            case R16_FLOAT -> VK12.VK_FORMAT_R16_SFLOAT;
+            case R32_FLOAT -> VK12.VK_FORMAT_R32_SFLOAT;
+            case RGB10_A2_UNORM -> VK12.VK_FORMAT_A2B10G10R10_UNORM_PACK32;
+            case RGBA16_FLOAT -> VK12.VK_FORMAT_R16G16B16A16_SFLOAT;
+            case RGBA32_FLOAT -> VK12.VK_FORMAT_R32G32B32A32_SFLOAT;
+        };
     }
 
     public void recordAfterRayTrace(VkCommandBuffer commandBuffer) {

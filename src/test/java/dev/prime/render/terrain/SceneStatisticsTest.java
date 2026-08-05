@@ -3,6 +3,7 @@ package dev.prime.render.terrain;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
+import dev.prime.render.vulkan.terrain.TerrainScene;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 

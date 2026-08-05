@@ -10,7 +10,7 @@ import java.util.Objects;
  * Only whole-scene continuity lives here. Material, lighting and local scene changes retain the
  * sequence so temporal reconstruction can reject changed pixels without flashing the whole frame.
  */
-final class RealtimeSampleState {
+public final class RealtimeSampleState {
     private static final int SOBOL_SEQUENCE_LENGTH = 1 << 16;
     private final FrameCamera camera;
     private final long resetRevision;
@@ -31,7 +31,7 @@ final class RealtimeSampleState {
         this.resetRequested = resetRequested;
     }
 
-    static RealtimeSampleState initial() {
+    public static RealtimeSampleState initial() {
         return new RealtimeSampleState(
                 null,
                 Long.MIN_VALUE,
@@ -40,7 +40,7 @@ final class RealtimeSampleState {
                 true);
     }
 
-    Plan plan(Input input) {
+    public Plan plan(Input input) {
         Objects.requireNonNull(input, "input");
         // Motion vectors preserve ordinary camera motion. Restarting on every translated or
         // rotated frame destroys temporal Sobol stratification and raises 1 spp noise.
@@ -63,7 +63,7 @@ final class RealtimeSampleState {
         return new Plan(plannedSample, plannedEpoch, reset, committed);
     }
 
-    RealtimeSampleState invalidated() {
+    public RealtimeSampleState invalidated() {
         if (this.resetRequested) {
             return this;
         }
@@ -75,29 +75,29 @@ final class RealtimeSampleState {
                 true);
     }
 
-    int sampleIndex() {
+    public int sampleIndex() {
         return this.sampleIndex;
     }
 
-    int epoch() {
+    public int epoch() {
         return this.epoch;
     }
 
-    record Input(
+    public record Input(
             FrameCamera camera,
             long resetRevision,
             boolean forceReset) {
-        Input {
+        public Input {
             Objects.requireNonNull(camera, "camera");
         }
     }
 
-    record Plan(
+    public record Plan(
             int sampleIndex,
             int epoch,
             boolean reset,
             RealtimeSampleState committedState) {
-        Plan {
+        public Plan {
             if (sampleIndex < 0 || sampleIndex >= SOBOL_SEQUENCE_LENGTH) {
                 throw new IllegalArgumentException("Sobol sample index is outside its sequence");
             }

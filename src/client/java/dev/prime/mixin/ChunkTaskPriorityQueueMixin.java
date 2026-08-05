@@ -1,6 +1,6 @@
 package dev.prime.mixin;
 
-import dev.prime.client.ViewDistanceLimits;
+import dev.prime.render.terrain.ViewDistanceLimits;
 import net.minecraft.server.level.ChunkTaskPriorityQueue;
 import org.spongepowered.asm.mixin.Final;
 import org.spongepowered.asm.mixin.Mixin;

@@ -10,11 +10,11 @@ import net.minecraft.core.Direction;
  * <p>Mutable accumulators are invocation-local implementation details. No input is mutated and no
  * state escapes except the returned immutable payload.
  */
-final class ClusterSceneTranslator {
+public final class ClusterSceneTranslator {
     private ClusterSceneTranslator() {
     }
 
-    static CpuClusterMesh translate(
+    public static CpuClusterMesh translate(
             CapturedCluster captured,
             LabPbrMaterialSet materials,
             ClusterTranslationSettings settings) {

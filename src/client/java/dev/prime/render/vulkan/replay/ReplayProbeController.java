@@ -22,7 +22,7 @@ import dev.prime.render.replay.RenderPlatformFingerprint;
 import dev.prime.render.replay.RenderReplayCapture;
 import dev.prime.render.replay.RenderReplaySequence;
 import dev.prime.render.replay.RenderReplayVerification;
-import dev.prime.render.terrain.TerrainScene;
+import dev.prime.render.vulkan.terrain.TerrainScene;
 import dev.prime.render.vulkan.AtmospherePipeline;
 import dev.prime.render.vulkan.RawWavefrontFrame;
 import dev.prime.render.vulkan.RealtimeRayTracingPipeline;
@@ -81,7 +81,7 @@ public final class ReplayProbeController implements Destroyable {
             requireRayDispatchCapacity(
                     pending.width(), pending.height());
             RenderPlatformFingerprint platform =
-                    this.context.platformFingerprint();
+                    PlatformFingerprintProbe.capture(this.context);
             RenderBinaryFingerprint binary =
                     RenderBinaryFingerprint.capture(
                             platform.invocationReorderSupported()

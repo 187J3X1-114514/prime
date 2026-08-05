@@ -40,7 +40,7 @@ final class TextureVoxelSurfaceTest {
         for (int z = -8; z <= 8; z += SectionCluster.SECTION_SIZE) {
             for (int y = -8; y <= 8; y += SectionCluster.SECTION_SIZE) {
                 for (int x = -8; x <= 8; x += SectionCluster.SECTION_SIZE) {
-                    if (TerrainStreamer.clusterUsesVoxelSurfaces(
+                    if (VoxelSurfaceCoverage.includes(
                             x, y, z, 0, 0, 0)) {
                         count++;
                     }
@@ -48,19 +48,19 @@ final class TextureVoxelSurfaceTest {
             }
         }
         assertEquals(27, count);
-        assertTrue(TerrainStreamer.clusterUsesVoxelSurfaces(
+        assertTrue(VoxelSurfaceCoverage.includes(
                 -4, -4, -4, 0, 0, 0));
-        assertTrue(TerrainStreamer.clusterUsesVoxelSurfaces(
+        assertTrue(VoxelSurfaceCoverage.includes(
                 4, 4, 4, 3, 3, 3));
-        assertFalse(TerrainStreamer.clusterUsesVoxelSurfaces(
+        assertFalse(VoxelSurfaceCoverage.includes(
                 8, 0, 0, 0, 0, 0));
-        assertFalse(TerrainStreamer.clusterUsesVoxelSurfaces(
+        assertFalse(VoxelSurfaceCoverage.includes(
                 -8, 0, 0, 0, 0, 0));
-        assertFalse(TerrainStreamer.clusterUsesVoxelSurfaces(
+        assertFalse(VoxelSurfaceCoverage.includes(
                 0, 8, 0, 0, 0, 0));
-        assertTrue(TerrainStreamer.clusterUsesVoxelSurfaces(
+        assertTrue(VoxelSurfaceCoverage.includes(
                 -8, 0, 0, -1, -1, -1));
-        assertFalse(TerrainStreamer.clusterUsesVoxelSurfaces(
+        assertFalse(VoxelSurfaceCoverage.includes(
                 4, 0, 0, -1, -1, -1));
     }
 
@@ -70,7 +70,7 @@ final class TextureVoxelSurfaceTest {
         for (int z = -8; z <= 12; z += SectionCluster.SECTION_SIZE) {
             for (int y = -8; y <= 12; y += SectionCluster.SECTION_SIZE) {
                 for (int x = -8; x <= 12; x += SectionCluster.SECTION_SIZE) {
-                    if (TerrainStreamer.voxelSurfaceStateChanges(
+                    if (VoxelSurfaceCoverage.changes(
                             x, y, z, 0, 0, 0, 4, 0, 0)) {
                         changed++;
                     }
@@ -79,7 +79,7 @@ final class TextureVoxelSurfaceTest {
         }
 
         assertEquals(18, changed);
-        assertFalse(TerrainStreamer.voxelSurfaceStateChanges(
+        assertFalse(VoxelSurfaceCoverage.changes(
                 0, 0, 0, 0, 0, 0, 4, 0, 0));
     }
 

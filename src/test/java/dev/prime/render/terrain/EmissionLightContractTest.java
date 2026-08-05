@@ -8,6 +8,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import dev.prime.render.shader.ShaderAbi;
+import dev.prime.render.vulkan.terrain.TerrainScene;
 import java.util.ArrayList;
 import java.util.List;
 import org.junit.jupiter.api.Test;
@@ -341,7 +342,7 @@ final class EmissionLightContractTest {
 
     @Test
     void worldTreeRebuildKeepsExactForwardAndReverseLeafMapping() {
-        ArrayList<GpuCluster> clusters = new ArrayList<>();
+        ArrayList<WorldLightTreeInput.Entry> clusters = new ArrayList<>();
         for (int index = 0; index < 8; index++) {
             clusters.add(cluster(index, index + 1.0F));
         }
@@ -364,7 +365,7 @@ final class EmissionLightContractTest {
 
     @Test
     void worldWithoutEmittersMapsEveryResidentClusterToNoLight() {
-        List<GpuCluster> clusters = List.of(
+        List<WorldLightTreeInput.Entry> clusters = List.of(
                 emptyCluster(1),
                 emptyCluster(2),
                 emptyCluster(3));
@@ -392,16 +393,14 @@ final class EmissionLightContractTest {
         }
     }
 
-    private static GpuCluster cluster(int index, float power) {
+    private static WorldLightTreeInput.Entry cluster(int index, float power) {
         CpuLightTree.Bounds bounds = new CpuLightTree.Bounds(
                 0.0F, 0.0F, 0.0F, 1.0F, 1.0F, 1.0F);
-        return new GpuCluster(
+        return new WorldLightTreeInput.Entry(
                 index,
                 index,
                 0,
                 0,
-                null,
-                null,
                 new CompiledClusterLights.Summary(
                         1,
                         bounds.minX(),
@@ -410,12 +409,11 @@ final class EmissionLightContractTest {
                         bounds.maxX(),
                         bounds.maxY(),
                         bounds.maxZ(),
-                        power),
-                false);
+                        power));
     }
 
     private static WorldLightTreeInput worldLightInput(
-            List<GpuCluster> clusters,
+            List<WorldLightTreeInput.Entry> clusters,
             int originX,
             int originY,
             int originZ) {
@@ -423,16 +421,13 @@ final class EmissionLightContractTest {
                 clusters, originX, originY, originZ);
     }
 
-    private static GpuCluster emptyCluster(int index) {
-        return new GpuCluster(
+    private static WorldLightTreeInput.Entry emptyCluster(int index) {
+        return new WorldLightTreeInput.Entry(
                 index,
                 index,
                 0,
                 0,
-                null,
-                null,
-                CompiledClusterLights.EMPTY.summary(),
-                false);
+                CompiledClusterLights.EMPTY.summary());
     }
 
     private static CpuLightTree.Leaf leaf(float x, float power, int index) {

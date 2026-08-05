@@ -6,7 +6,6 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Map;
-import org.lwjgl.vulkan.EXTOpacityMicromap;
 
 /**
  * Logically immutable CPU build input for alpha-cutout geometry's mixed-format Vulkan opacity
@@ -18,10 +17,9 @@ import org.lwjgl.vulkan.EXTOpacityMicromap;
 public final class OpacityMicromapData {
     public static final int SUBDIVISION_LEVEL = 4;
     public static final int MICRO_TRIANGLE_COUNT = 1 << (2 * SUBDIVISION_LEVEL);
-    public static final int TWO_STATE_FORMAT =
-            EXTOpacityMicromap.VK_OPACITY_MICROMAP_FORMAT_2_STATE_EXT;
-    public static final int FOUR_STATE_FORMAT =
-            EXTOpacityMicromap.VK_OPACITY_MICROMAP_FORMAT_4_STATE_EXT;
+    // Stable VK_EXT_opacity_micromap wire values consumed only at the Vulkan adapter.
+    public static final int TWO_STATE_FORMAT = 1;
+    public static final int FOUR_STATE_FORMAT = 2;
     public static final int TWO_STATE_BYTES_PER_BLOCK =
             (MICRO_TRIANGLE_COUNT + Byte.SIZE - 1) / Byte.SIZE;
     public static final int FOUR_STATE_BYTES_PER_BLOCK =
@@ -30,6 +28,11 @@ public final class OpacityMicromapData {
     private static final int STATE_TRANSPARENT = 0;
     private static final int STATE_OPAQUE = 1;
     private static final int STATE_UNKNOWN_OPAQUE = 3;
+    private static final int SPECIAL_FULLY_TRANSPARENT = -1;
+    private static final int SPECIAL_FULLY_OPAQUE = -2;
+    private static final int SPECIAL_FULLY_UNKNOWN_TRANSPARENT = -3;
+    private static final int SPECIAL_FULLY_UNKNOWN_OPAQUE = -4;
+    private static final int MICROMAP_TRIANGLE_DESCRIPTOR_BYTES = 8;
 
     public static final OpacityMicromapData EMPTY =
             new OpacityMicromapData(
@@ -175,7 +178,7 @@ public final class OpacityMicromapData {
 
     public long byteSize() {
         return (long) this.blocks.length
-                + (long) this.blockCount() * org.lwjgl.vulkan.VkMicromapTriangleEXT.SIZEOF
+                + (long) this.blockCount() * MICROMAP_TRIANGLE_DESCRIPTOR_BYTES
                 + (long) this.triangleIndices.length * Integer.BYTES;
     }
 
@@ -189,7 +192,7 @@ public final class OpacityMicromapData {
         int[] indices = new int[triangleCount];
         Arrays.fill(
                 indices,
-                EXTOpacityMicromap.VK_OPACITY_MICROMAP_SPECIAL_INDEX_FULLY_UNKNOWN_OPAQUE_EXT);
+                SPECIAL_FULLY_UNKNOWN_OPAQUE);
         return new OpacityMicromapData(
                 new byte[0], new int[0], new int[0], new int[0], indices);
     }
@@ -198,8 +201,7 @@ public final class OpacityMicromapData {
             int[] triangleIndices, int blockCount) {
         for (int index : triangleIndices) {
             if (index >= blockCount
-                    || index < EXTOpacityMicromap
-                            .VK_OPACITY_MICROMAP_SPECIAL_INDEX_FULLY_UNKNOWN_OPAQUE_EXT) {
+                    || index < SPECIAL_FULLY_UNKNOWN_OPAQUE) {
                 throw new IllegalArgumentException(
                         "Opacity micromap triangle references an invalid block: " + index);
             }
@@ -231,8 +233,7 @@ public final class OpacityMicromapData {
             SpriteAlphaFrames frames =
                     this.alphaFrames.computeIfAbsent(sprite, SpriteAlphaFrames::create);
             if (frames == null) {
-                int index = EXTOpacityMicromap
-                        .VK_OPACITY_MICROMAP_SPECIAL_INDEX_FULLY_UNKNOWN_OPAQUE_EXT;
+                int index = SPECIAL_FULLY_UNKNOWN_OPAQUE;
                 this.bakedTriangles.put(key, index);
                 this.addIndex(index);
                 return;
@@ -256,8 +257,7 @@ public final class OpacityMicromapData {
             SpriteAlphaFrames frames =
                     this.alphaFrames.computeIfAbsent(sprite, SpriteAlphaFrames::create);
             int index = frames == null
-                    ? EXTOpacityMicromap
-                            .VK_OPACITY_MICROMAP_SPECIAL_INDEX_FULLY_UNKNOWN_OPAQUE_EXT
+                    ? SPECIAL_FULLY_UNKNOWN_OPAQUE
                     : this.intern(bakeConstant(frames, atlasU, atlasV));
             this.bakedConstantTriangles.put(key, index);
             this.addIndex(index);
@@ -300,8 +300,7 @@ public final class OpacityMicromapData {
                     this.alphaFrames.computeIfAbsent(sprite, SpriteAlphaFrames::create);
             int subdivisionLevel = SUBDIVISION_LEVEL + Integer.numberOfTrailingZeros(size);
             int index = frames == null
-                    ? EXTOpacityMicromap
-                            .VK_OPACITY_MICROMAP_SPECIAL_INDEX_FULLY_UNKNOWN_OPAQUE_EXT
+                    ? SPECIAL_FULLY_UNKNOWN_OPAQUE
                     : this.intern(bakeRepeated(
                             frames,
                             packedUv0,
@@ -319,8 +318,7 @@ public final class OpacityMicromapData {
         }
 
         public void addFullyUnknownTriangle() {
-            this.addIndex(EXTOpacityMicromap
-                    .VK_OPACITY_MICROMAP_SPECIAL_INDEX_FULLY_UNKNOWN_OPAQUE_EXT);
+            this.addIndex(SPECIAL_FULLY_UNKNOWN_OPAQUE);
         }
 
         public void append(OpacityMicromapData data) {
@@ -372,15 +370,13 @@ public final class OpacityMicromapData {
                 allUnknownOpaque &= state == STATE_UNKNOWN_OPAQUE;
             }
             if (allOpaque) {
-                return EXTOpacityMicromap.VK_OPACITY_MICROMAP_SPECIAL_INDEX_FULLY_OPAQUE_EXT;
+                return SPECIAL_FULLY_OPAQUE;
             }
             if (allTransparent) {
-                return EXTOpacityMicromap
-                        .VK_OPACITY_MICROMAP_SPECIAL_INDEX_FULLY_TRANSPARENT_EXT;
+                return SPECIAL_FULLY_TRANSPARENT;
             }
             if (allUnknownOpaque) {
-                return EXTOpacityMicromap
-                        .VK_OPACITY_MICROMAP_SPECIAL_INDEX_FULLY_UNKNOWN_OPAQUE_EXT;
+                return SPECIAL_FULLY_UNKNOWN_OPAQUE;
             }
             BlockKey key = new BlockKey(
                     block.format, block.subdivisionLevel, block.states);

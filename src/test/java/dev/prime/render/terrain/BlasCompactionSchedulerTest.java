@@ -1,4 +1,4 @@
-package dev.prime.render.terrain;
+package dev.prime.render.vulkan.terrain;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;

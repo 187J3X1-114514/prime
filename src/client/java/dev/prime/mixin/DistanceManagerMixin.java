@@ -1,6 +1,6 @@
 package dev.prime.mixin;
 
-import dev.prime.client.ViewDistanceLimits;
+import dev.prime.render.terrain.ViewDistanceLimits;
 import net.minecraft.server.level.DistanceManager;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;

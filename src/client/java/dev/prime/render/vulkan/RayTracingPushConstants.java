@@ -1,9 +1,10 @@
 package dev.prime.render.vulkan;
 
 import dev.prime.render.IntegratorFrameInput;
+import dev.prime.render.AtmosphereCoordinates;
 import dev.prime.render.IntegratorSettings;
 import dev.prime.render.shader.ShaderAbi;
-import dev.prime.render.terrain.TerrainScene;
+import dev.prime.render.vulkan.terrain.TerrainScene;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import org.lwjgl.system.MemoryStack;
@@ -44,7 +45,7 @@ public final class RayTracingPushConstants {
                 (float) (input.camera().renderZ() - scene.originZ()));
         buffer.putFloat(
                 ShaderAbi.PUSH_ATMOSPHERE_EYE_RADIUS_KM_OFFSET,
-                AtmospherePipeline.eyeRadiusKm(input.camera().y()));
+                AtmosphereCoordinates.eyeRadiusKm(input.camera().y()));
         buffer.putLong(
                 ShaderAbi.PUSH_SECTION_TABLE_ADDRESS_OFFSET,
                 scene.sectionTableAddress());

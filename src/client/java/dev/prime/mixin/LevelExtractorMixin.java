@@ -1,6 +1,6 @@
 package dev.prime.mixin;
 
-import dev.prime.render.RayTracingRuntime;
+import dev.prime.client.PrimeRuntime;
 import dev.prime.render.scene.vanilla.PrimeEntityFrustum;
 import dev.prime.render.scene.vanilla.VanillaSceneBoundary;
 import net.minecraft.client.renderer.LevelRenderer;
@@ -38,7 +38,7 @@ public abstract class LevelExtractorMixin {
             double cameraZ) {
         return dispatcher.shouldRender(
                 entity,
-                RayTracingRuntime.instance().shouldReplaceWorld()
+                PrimeRuntime.instance().shouldReplaceWorld()
                         ? PrimeEntityFrustum.INSTANCE
                         : frustum,
                 cameraX,
@@ -54,13 +54,13 @@ public abstract class LevelExtractorMixin {
     private boolean prime$routeEntitySectionVisibility(
             LevelRenderer renderer, BlockPos position) {
         return VanillaSceneBoundary.includesEntitySection(
-                RayTracingRuntime.instance().shouldReplaceWorld(),
+                PrimeRuntime.instance().shouldReplaceWorld(),
                 renderer.isSectionCompiledAndVisible(position));
     }
 
     @Inject(method = "blockChanged(Lnet/minecraft/core/BlockPos;I)V", at = @At("HEAD"))
     private void prime$markBlockDirty(BlockPos position, int updateFlags, CallbackInfo ci) {
-        RayTracingRuntime.instance().invalidateBlocks(
+        PrimeRuntime.instance().invalidateBlocks(
                 position.getX(),
                 position.getY(),
                 position.getZ(),
@@ -78,12 +78,12 @@ public abstract class LevelExtractorMixin {
             int maximumY,
             int maximumZ,
             CallbackInfo ci) {
-        RayTracingRuntime.instance().invalidateBlocks(
+        PrimeRuntime.instance().invalidateBlocks(
                 minimumX, minimumY, minimumZ, maximumX, maximumY, maximumZ);
     }
 
     @Inject(method = "allChanged()V", at = @At("TAIL"))
     private void prime$invalidateTerrain(CallbackInfo ci) {
-        RayTracingRuntime.instance().invalidateAll();
+        PrimeRuntime.instance().invalidateAll();
     }
 }

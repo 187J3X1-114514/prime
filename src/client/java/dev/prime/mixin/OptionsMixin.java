@@ -1,6 +1,6 @@
 package dev.prime.mixin;
 
-import dev.prime.client.ViewDistanceLimits;
+import dev.prime.render.terrain.ViewDistanceLimits;
 import dev.prime.config.PrimeConfig;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.Options;

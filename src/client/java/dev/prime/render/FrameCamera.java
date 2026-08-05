@@ -147,7 +147,7 @@ public final class FrameCamera {
                 && Double.isFinite(this.renderZ);
     }
 
-    static FrameCamera tryCreate(
+    public static FrameCamera tryCreate(
             Matrix4fc renderedProjection,
             Matrix4fc baseProjection,
             Matrix4fc cameraViewRotation,

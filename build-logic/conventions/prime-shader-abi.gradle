@@ -1,0 +1,1125 @@
+def shaderAbiJavaRoot = layout.buildDirectory.dir('generated/sources/shaderAbi/java')
+def shaderAbiIncludeRoot = layout.buildDirectory.dir('generated/sources/shaderAbi/glsl')
+def compiledShaderRoot = layout.buildDirectory.dir('generated/resources/shaders')
+def compiledTestShaderRoot = layout.buildDirectory.dir('generated/testShaders')
+
+def verifyRoboCutePort = tasks.register('verifyRoboCutePort') {
+	group = 'verification'
+	description = 'Verifies the approved RoboCute port revision and protected source hashes.'
+	def lockFile = file('shaders/robocute.lock.json')
+	def protectedFiles = fileTree('shaders') {
+		include 'robocute_bsdf_*.glsl'
+	}
+	def authorityOverlayDirectory =
+			file('third_party/robocute/author-bsdf-hotfix-2026-07-24')
+	inputs.file(lockFile)
+	inputs.files(protectedFiles)
+	inputs.dir(authorityOverlayDirectory)
+
+	doLast {
+		def lock = new groovy.json.JsonSlurper().parse(lockFile)
+		if (lock.repository != 'https://github.com/RoboCute/RoboCute'
+				|| lock.commit != '0d982c77b3fd26c2c5a3c0852be3bd05e5860bd8') {
+			throw new GradleException('RoboCute lock must name the approved repository and commit')
+		}
+		def overlay = lock.authorityOverlay
+		if (overlay == null
+				|| overlay.path != 'third_party/robocute/author-bsdf-hotfix-2026-07-24') {
+			throw new GradleException('RoboCute lock must name the approved author hotfix overlay')
+		}
+		def expectedOverlay = new TreeSet<String>(overlay.files.keySet())
+		def actualOverlay = new TreeSet<String>(fileTree(authorityOverlayDirectory) {
+			include '*.hpp', '*.bytes'
+		}.files.collect { it.name })
+		if (actualOverlay != expectedOverlay) {
+			throw new GradleException(
+					"RoboCute author hotfix file set changed: expected ${expectedOverlay}, found ${actualOverlay}")
+		}
+		fileTree(authorityOverlayDirectory) {
+			include '*.hpp', '*.bytes'
+		}.files.each { source ->
+			def digest = java.security.MessageDigest.getInstance('SHA-256')
+					.digest(source.bytes).encodeHex().toString()
+			if (digest != overlay.files[source.name]) {
+				throw new GradleException(
+						"RoboCute author hotfix changed: ${source.name}")
+			}
+		}
+		def expected = new TreeSet<String>(lock.files.keySet())
+		def actual = new TreeSet<String>(protectedFiles.files.collect { it.name })
+		if (actual != expected) {
+			throw new GradleException(
+					"Protected RoboCute file set changed: expected ${expected}, found ${actual}")
+		}
+		protectedFiles.files.each { source ->
+			def normalized = source.getText('UTF-8')
+					.replace('\r\n', '\n')
+					.replace('\r', '\n')
+					.getBytes('UTF-8')
+			def digest = java.security.MessageDigest.getInstance('SHA-256')
+					.digest(normalized).encodeHex().toString()
+			if (digest != lock.files[source.name]) {
+				throw new GradleException(
+						"Protected RoboCute source changed without updating its approved lock: ${source.name}")
+			}
+		}
+	}
+}
+
+abstract class GenerateShaderAbi extends DefaultTask {
+	@InputFile
+	abstract RegularFileProperty getSchemaFile()
+
+	@OutputDirectory
+	abstract DirectoryProperty getJavaOutputDirectory()
+
+	@OutputDirectory
+	abstract DirectoryProperty getGlslOutputDirectory()
+
+	@TaskAction
+	void generate() {
+		def schema = new groovy.json.JsonSlurper().parse(schemaFile.get().asFile)
+		def primitive = schema.structs.primitiveRecord
+		def section = schema.structs.sectionRecord
+		def lightNode = schema.structs.lightNode
+		def lightNodeForward = schema.structs.lightNodeForward
+		def lightNodeReverse = schema.structs.lightNodeReverse
+		def lightEmitter = schema.structs.lightEmitter
+		def lightCell = schema.structs.lightCell
+		def sectionLightHeader = schema.structs.sectionLightHeader
+		def integrator = schema.structs.integratorRecord
+		def pathState = schema.structs.pathState
+		def tracePayload = schema.structs.tracePayload
+		def surfaceInteraction = schema.structs.surfaceInteraction
+		def push = schema.structs.pushConstants
+		def nrdMotionPush = schema.structs.nrdMotionPushConstants
+		def colorContract = schema.colorContract
+		def emissionContract = schema.emissionContract
+		def atmosphereContract = schema.atmosphereContract
+		def astronomyContract = schema.astronomyContract
+		def starmapContract = schema.starmapContract
+		def nrdContract = schema.nrdContract
+		def fsrContract = schema.fsrContract
+		def wavefrontContract = schema.realtimeWavefrontContract
+		def offlineWavefrontContract = schema.offlineWavefrontContract
+
+		if (primitive.size != 32 || section.size != 80 || lightNode.size != 32
+				|| lightNodeForward.size != 8 || lightNodeReverse.size != 4
+				|| lightEmitter.size != 96 || lightCell.size != 12
+				|| sectionLightHeader.size != 48
+				|| integrator.size != 32 || pathState.size != 96 || tracePayload.size != 64
+				|| surfaceInteraction.size != 80 || push.size != 128
+				|| nrdMotionPush.size != 208 || schema.sceneTextureCount != 64) {
+			throw new GradleException(
+					'Prime shader ABI sizes or scene texture count changed without a coordinated migration')
+		}
+		if (colorContract.workingSpace != 'linear-rec2020-d65'
+				|| colorContract.textureEncoding != 'srgb'
+				|| colorContract.displayEncoding != 'srgb'
+				|| colorContract.displayColorSpace != 'rec709-d65'
+				|| colorContract.defaultDisplayTransform != 'oklab-drt'
+				|| colorContract.displayExposure != 1.0) {
+			throw new GradleException(
+					'Prime color contract must remain sRGB input -> linear Rec.2020 D65 -> Oklab DRT -> sRGB Rec.709 display')
+		}
+		if (emissionContract.level15BlockIntensity != 1.5) {
+			throw new GradleException(
+					'Prime emission contract must preserve a 1.5-unit white level-15 block source')
+		}
+		if (atmosphereContract.spectralModel != 'hillaire-8wave-rec2020-d65'
+				|| atmosphereContract.worldToAtmosphereScale <= 0.0
+				|| atmosphereContract.worldSeaLevelY != -128.0
+				|| atmosphereContract.worldUnitScaleKm != 0.001
+				|| atmosphereContract.spaceSunIntensity != 12.5
+				|| atmosphereContract.sunAngularRadiusRadians != 0.00471) {
+			throw new GradleException(
+					'Prime atmosphere contract must remain the eight-wave Rec.2020 model, '
+							+ 'the -128 virtual ground with positive world-to-atmosphere scale, '
+							+ 'and a 12.5-unit space sun')
+		}
+		if (starmapContract.width != 8192
+				|| starmapContract.height != 4096
+				|| starmapContract.baseRadianceScale != 0.075
+				|| starmapContract.sourceSha256 != 'dc6c4f413e85707a29a25a9451148154554ecca2c996f84fa8f47b65ef9ff7c4') {
+			throw new GradleException(
+					'Prime starmap contract must preserve the full NASA source and its calibrated radiance baseline')
+		}
+		if (astronomyContract.axialTiltDegrees != 23.43928
+				|| astronomyContract.minimumLatitudeDegrees != -90
+				|| astronomyContract.maximumLatitudeDegrees != 90
+				|| astronomyContract.defaultLatitudeDegrees != 30
+				|| astronomyContract.minimumSolarLongitudeDegrees != 0
+				|| astronomyContract.maximumSolarLongitudeDegrees != 359
+				|| astronomyContract.defaultSolarLongitudeDegrees != 0) {
+			throw new GradleException(
+					'Prime astronomy contract must preserve the axial tilt and complete integer-degree control domains')
+		}
+		if (nrdContract.version != '4.17.4'
+                || nrdContract.denoiser != 'dual-reblur-diffuse-specular-sh-plus-sigma-sun-shadow'
+				|| nrdContract.normalEncoding != 'r10g10b10a2-unorm'
+				|| nrdContract.roughnessEncoding != 'linear'
+				|| nrdContract.motionSpace != 'screen-pixel-2.5d'
+				|| nrdContract.signalSpace != 'demodulated-linear-rec2020-d65') {
+			throw new GradleException('Prime NRD signal and native-library contracts changed without a coordinated migration')
+		}
+		if (fsrContract.version != '3.1.4'
+				|| fsrContract.motionSpace != 'normalized-uv-current-to-previous'
+				|| fsrContract.depthSpace != 'reversed-infinite'
+				|| fsrContract.nearPlane != 0.05
+				|| fsrContract.viewSpaceToMetersFactor != 1.0) {
+			throw new GradleException('Prime FSR signal and projection contracts changed without a coordinated migration')
+		}
+		if (wavefrontContract.rounds != 12
+				|| wavefrontContract.pathRecordSize != 96
+				|| wavefrontContract.pathSlotsPerPixel != 2
+				|| wavefrontContract.areaRecordSize != 16
+				|| wavefrontContract.queueCount != 2
+				|| wavefrontContract.queueCommandStride != 16
+				|| wavefrontContract.queueIndexSize != 4
+				|| !wavefrontContract.activeMask.toString().equalsIgnoreCase('0x1')) {
+			throw new GradleException(
+					'Prime realtime scheduler must preserve twelve wavefront rounds and its queue ABI')
+		}
+		if (offlineWavefrontContract.rounds != 12
+				|| offlineWavefrontContract.pathRecordSize != 144
+				|| offlineWavefrontContract.pathSlotsPerPixel != 1
+				|| offlineWavefrontContract.areaRecordSize != 0
+				|| offlineWavefrontContract.queueCount != 2
+				|| offlineWavefrontContract.queueCommandStride != 16
+				|| offlineWavefrontContract.queueIndexSize != 4
+				|| !offlineWavefrontContract.activeMask.toString().equalsIgnoreCase('0x1')) {
+			throw new GradleException(
+					'Prime offline scheduler must preserve its single-slot 144-byte queue ABI')
+		}
+		if (!schema.pathControl.sampleEpochMask.toString().equalsIgnoreCase('0x7fffffff')
+				|| !schema.pathControl.triangleDebugMask.toString().equalsIgnoreCase('0x80000000')
+				|| !schema.pathControl.cameraInWaterMask.toString().equalsIgnoreCase('0x80000000')
+				|| !schema.pathControl.jitterPhaseMask.toString().equalsIgnoreCase('0x1fff')
+				|| schema.pathControl.transparentGuideModeShift != 29
+				|| !schema.pathControl.transparentGuideModeMask.toString().equalsIgnoreCase('0x3')
+				|| schema.pathControl.transparentGuideModeNrd != 0
+				|| schema.pathControl.transparentGuideModeDlssRr != 1
+				|| schema.pathControl.transparentGuideModeDisabled != 2
+				|| schema.pathControl.sunEvQuarterShift != 0
+				|| schema.pathControl.blockLightEvQuarterShift != 8
+				|| !schema.pathControl.evQuarterMask.toString().equalsIgnoreCase('0xff')
+				|| schema.pathControl.evQuarterBias != 128
+				|| schema.pathControl.materialRoughnessShift != 16
+				|| !schema.pathControl.materialRoughnessMask.toString().equalsIgnoreCase('0x7f')
+				|| schema.pathControl.materialRoughnessStepsPerUnit != 100
+				|| !schema.pathControl.shInputMask.toString().equalsIgnoreCase('0x00800000')
+				|| !schema.pathControl.rawNumericalMask.toString().equalsIgnoreCase('0x01000000')
+				|| schema.pathControl.starEvQuarterShift != 25
+				|| !schema.pathControl.starEvQuarterMask.toString().equalsIgnoreCase('0x7f')
+				|| schema.pathControl.starEvQuarterBias != 32
+				|| schema.pathControl.maximumBounces != 128
+				|| schema.pathControl.russianRouletteStart != 1) {
+			throw new GradleException(
+					'Prime path controls must preserve sampling, diagnostics, camera, lighting, material, jitter, and one-guaranteed-continuation roulette ABI')
+		}
+		def typeLayout = [
+			float: [size: 4, alignment: 4],
+			uint: [size: 4, alignment: 4],
+			uint64_t: [size: 8, alignment: 8],
+			mat4: [size: 64, alignment: 16],
+			vec2: [size: 8, alignment: 8],
+			vec3: [size: 12, alignment: 16],
+			vec4: [size: 16, alignment: 16],
+			uvec2: [size: 8, alignment: 8],
+			uvec4: [size: 16, alignment: 16]
+		]
+		def validateStruct = { String name, def definition ->
+			int cursor = 0
+			int maximumAlignment = 1
+			definition.fields.each { field ->
+				def layout = typeLayout[field.type]
+				if (layout == null) {
+					throw new GradleException("Unsupported ABI field type ${field.type}")
+				}
+				cursor = (cursor + layout.alignment - 1).intdiv(layout.alignment) * layout.alignment
+				if (field.offset != cursor) {
+					throw new GradleException("${name}.${field.name} must have offset ${cursor}, found ${field.offset}")
+				}
+				cursor += layout.size
+				maximumAlignment = Math.max(maximumAlignment, layout.alignment)
+			}
+			cursor = (cursor + maximumAlignment - 1).intdiv(maximumAlignment) * maximumAlignment
+			if (definition.size != cursor) {
+				throw new GradleException("${name} must have size ${cursor}, found ${definition.size}")
+			}
+		}
+		validateStruct('PrimitiveRecord', primitive)
+		validateStruct('SectionRecord', section)
+		validateStruct('LightNode', lightNode)
+		validateStruct('LightNodeForward', lightNodeForward)
+		validateStruct('LightNodeReverse', lightNodeReverse)
+		validateStruct('LightEmitter', lightEmitter)
+		validateStruct('LightCell', lightCell)
+		validateStruct('SectionLightHeader', sectionLightHeader)
+		validateStruct('IntegratorRecord', integrator)
+		validateStruct('PathState', pathState)
+		validateStruct('TracePayload', tracePayload)
+		validateStruct('SurfaceInteraction', surfaceInteraction)
+		validateStruct('PushConstants', push)
+		validateStruct('NrdMotionPushConstants', nrdMotionPush)
+
+		def constantName = { String value ->
+			value.replaceAll('([a-z0-9])([A-Z])', '$1_$2').toUpperCase(java.util.Locale.ROOT)
+		}
+		def javaOffsets = new StringBuilder()
+		[
+			PRIMITIVE: primitive,
+			SECTION: section,
+			LIGHT_NODE: lightNode,
+			LIGHT_NODE_FORWARD: lightNodeForward,
+			LIGHT_NODE_REVERSE: lightNodeReverse,
+			LIGHT_EMITTER: lightEmitter,
+			LIGHT_CELL: lightCell,
+			SECTION_LIGHT_HEADER: sectionLightHeader,
+			INTEGRATOR: integrator,
+			PATH_STATE: pathState,
+			TRACE_PAYLOAD: tracePayload,
+			SURFACE: surfaceInteraction,
+			PUSH: push,
+			NRD_MOTION_PUSH: nrdMotionPush
+		].each { prefix, definition ->
+			definition.fields.each { field ->
+				javaOffsets.append("    public static final int ${prefix}_${constantName(field.name)}_OFFSET = ${field.offset};\n")
+			}
+		}
+		def glslStructFields = { def definition ->
+			definition.fields.collect { field -> "    ${field.type} ${field.name};" }.join('\n')
+		}
+		def glslPushFields = push.fields.collect { field ->
+			"    layout(offset = ${field.offset}) ${field.type} ${field.name};"
+		}.join('\n')
+
+		def javaPackageDir = new File(javaOutputDirectory.get().asFile, 'dev/prime/render/shader')
+		javaPackageDir.mkdirs()
+		new File(javaPackageDir, 'ShaderAbi.java').text = """\
+package dev.prime.render.shader;
+
+/** Generated from shaders/abi.json. Do not edit by hand. */
+public final class ShaderAbi {
+    public static final int PRIMITIVE_RECORD_SIZE = ${primitive.size};
+    public static final int SECTION_RECORD_SIZE = ${section.size};
+    public static final int LIGHT_NODE_SIZE = ${lightNode.size};
+    public static final int LIGHT_NODE_FORWARD_SIZE = ${lightNodeForward.size};
+    public static final int LIGHT_NODE_REVERSE_SIZE = ${lightNodeReverse.size};
+    public static final int LIGHT_EMITTER_SIZE = ${lightEmitter.size};
+    public static final int LIGHT_CELL_SIZE = ${lightCell.size};
+    public static final int SECTION_LIGHT_HEADER_SIZE = ${sectionLightHeader.size};
+    public static final int INTEGRATOR_RECORD_SIZE = ${integrator.size};
+    public static final int PATH_STATE_SIZE = ${pathState.size};
+    public static final int TRACE_PAYLOAD_SIZE = ${tracePayload.size};
+    public static final int SURFACE_INTERACTION_SIZE = ${surfaceInteraction.size};
+    public static final int PUSH_CONSTANT_SIZE = ${push.size};
+    public static final int NRD_MOTION_PUSH_CONSTANT_SIZE = ${nrdMotionPush.size};
+    public static final int DESCRIPTOR_TLAS = ${schema.sharedDescriptors.tlas};
+    public static final int DESCRIPTOR_BLOCK_ATLAS = ${schema.sharedDescriptors.blockAtlas};
+    public static final int DESCRIPTOR_STABLE_RADIANCE = ${schema.realtimeDescriptors.stableRadiance};
+    public static final int DESCRIPTOR_SKY_VIEW = ${schema.sharedDescriptors.skyView};
+    public static final int DESCRIPTOR_TRANSMITTANCE_LOW = ${schema.sharedDescriptors.transmittanceLow};
+    public static final int DESCRIPTOR_TRANSMITTANCE_HIGH = ${schema.sharedDescriptors.transmittanceHigh};
+    public static final int DESCRIPTOR_AERIAL_RADIANCE = ${schema.sharedDescriptors.aerialRadiance};
+    public static final int DESCRIPTOR_AERIAL_TRANSMITTANCE = ${schema.sharedDescriptors.aerialTransmittance};
+    public static final int DESCRIPTOR_NRD_NOISY_DIFFUSE = ${schema.realtimeDescriptors.nrdNoisyDiffuse};
+    public static final int DESCRIPTOR_NRD_NORMAL_ROUGHNESS = ${schema.realtimeDescriptors.nrdNormalRoughness};
+    public static final int DESCRIPTOR_NRD_VIEW_Z = ${schema.realtimeDescriptors.nrdViewZ};
+    public static final int DESCRIPTOR_WAVEFRONT_TRANSPORT_METADATA = ${schema.realtimeDescriptors.wavefrontTransportMetadata};
+    public static final int DESCRIPTOR_NRD_MATERIAL = ${schema.realtimeDescriptors.nrdMaterial};
+    public static final int DESCRIPTOR_NRD_PRIMARY_POSITION = ${schema.realtimeDescriptors.nrdPrimaryPosition};
+    public static final int DESCRIPTOR_NRD_NOISY_SPECULAR = ${schema.realtimeDescriptors.nrdNoisySpecular};
+    public static final int DESCRIPTOR_NRD_SPECULAR_MATERIAL = ${schema.realtimeDescriptors.nrdSpecularMaterial};
+    public static final int DESCRIPTOR_TRANSMISSION_GGX_ENERGY = ${schema.sharedDescriptors.transmissionGgxEnergy};
+    public static final int DESCRIPTOR_LABPBR_NORMAL_ATLAS = ${schema.sharedDescriptors.labPbrNormalAtlas};
+    public static final int DESCRIPTOR_LABPBR_SPECULAR_ATLAS = ${schema.sharedDescriptors.labPbrSpecularAtlas};
+    public static final int DESCRIPTOR_NRD_SUN_LIGHTING = ${schema.realtimeDescriptors.nrdSunLighting};
+    public static final int DESCRIPTOR_NRD_SUN_PENUMBRA = ${schema.realtimeDescriptors.nrdSunPenumbra};
+    public static final int DESCRIPTOR_NRD_DIFFUSE_DIRECTION = ${schema.realtimeDescriptors.nrdDiffuseDirection};
+    public static final int DESCRIPTOR_NRD_SPECULAR_DIRECTION = ${schema.realtimeDescriptors.nrdSpecularDirection};
+    public static final int DESCRIPTOR_RAW_NUMERICAL_DIAGNOSTIC = ${schema.realtimeDescriptors.rawNumericalDiagnostic};
+    public static final int DESCRIPTOR_NRD_REFLECTION_NOISY_DIFFUSE = ${schema.realtimeDescriptors.nrdReflectionNoisyDiffuse};
+    public static final int DESCRIPTOR_NRD_REFLECTION_NOISY_SPECULAR = ${schema.realtimeDescriptors.nrdReflectionNoisySpecular};
+    public static final int DESCRIPTOR_NRD_REFLECTION_NORMAL_ROUGHNESS = ${schema.realtimeDescriptors.nrdReflectionNormalRoughness};
+    public static final int DESCRIPTOR_NRD_REFLECTION_MATERIAL = ${schema.realtimeDescriptors.nrdReflectionMaterial};
+    public static final int DESCRIPTOR_NRD_REFLECTION_SPECULAR_MATERIAL = ${schema.realtimeDescriptors.nrdReflectionSpecularMaterial};
+    public static final int DESCRIPTOR_NRD_REFLECTION_POSITION = ${schema.realtimeDescriptors.nrdReflectionPosition};
+    public static final int DESCRIPTOR_NRD_REFLECTION_DIFFUSE_DIRECTION = ${schema.realtimeDescriptors.nrdReflectionDiffuseDirection};
+    public static final int DESCRIPTOR_NRD_REFLECTION_SPECULAR_DIRECTION = ${schema.realtimeDescriptors.nrdReflectionSpecularDirection};
+    public static final int DESCRIPTOR_NRD_DISPLAY_POSITION = ${schema.realtimeDescriptors.nrdDisplayPosition};
+    public static final int DESCRIPTOR_STARMAP = ${schema.sharedDescriptors.starmap};
+    public static final int DESCRIPTOR_WAVEFRONT_PATHS = ${schema.realtimeDescriptors.wavefrontPaths};
+    public static final int DESCRIPTOR_WAVEFRONT_QUEUE = ${schema.realtimeDescriptors.wavefrontQueue};
+    public static final int OFFLINE_DESCRIPTOR_RUNNING_MEAN = ${schema.offlineDescriptors.runningMean};
+    public static final int OFFLINE_DESCRIPTOR_WAVEFRONT_PATHS = ${schema.offlineDescriptors.wavefrontPaths};
+    public static final int OFFLINE_DESCRIPTOR_WAVEFRONT_QUEUE = ${schema.offlineDescriptors.wavefrontQueue};
+    public static final int DESCRIPTOR_SUN_SHADOW_DEPTH_0 = ${schema.sharedDescriptors.sunShadowDepth0};
+    public static final int DESCRIPTOR_SUN_SHADOW_DEPTH_1 = ${schema.sharedDescriptors.sunShadowDepth1};
+    public static final int DESCRIPTOR_SUN_SHADOW_DEPTH_2 = ${schema.sharedDescriptors.sunShadowDepth2};
+    public static final int DESCRIPTOR_SUN_SHADOW_DEPTH_3 = ${schema.sharedDescriptors.sunShadowDepth3};
+    public static final int DESCRIPTOR_SUN_SHADOW_DEPTH_4 = ${schema.sharedDescriptors.sunShadowDepth4};
+    public static final int DESCRIPTOR_SUN_SHADOW_DEPTH_5 = ${schema.sharedDescriptors.sunShadowDepth5};
+    public static final int DESCRIPTOR_SUN_SHADOW_DEPTH_6 = ${schema.sharedDescriptors.sunShadowDepth6};
+    public static final int DESCRIPTOR_SUN_SHADOW_DEPTH_7 = ${schema.sharedDescriptors.sunShadowDepth7};
+    public static final int DESCRIPTOR_SUN_SHADOW_DEPTH_8 = ${schema.sharedDescriptors.sunShadowDepth8};
+    public static final int DESCRIPTOR_SUN_SHADOW_DEPTH_9 = ${schema.sharedDescriptors.sunShadowDepth9};
+    public static final int SCENE_TEXTURE_COUNT = ${schema.sceneTextureCount};
+    public static final int WAVEFRONT_ROUNDS = ${wavefrontContract.rounds};
+    public static final int WAVEFRONT_PATH_RECORD_SIZE = ${wavefrontContract.pathRecordSize};
+    public static final int WAVEFRONT_PATH_SLOTS_PER_PIXEL = ${wavefrontContract.pathSlotsPerPixel};
+    public static final int OFFLINE_WAVEFRONT_ROUNDS = ${offlineWavefrontContract.rounds};
+    public static final int OFFLINE_WAVEFRONT_PATH_RECORD_SIZE = ${offlineWavefrontContract.pathRecordSize};
+    public static final int OFFLINE_WAVEFRONT_PATH_SLOTS_PER_PIXEL = ${offlineWavefrontContract.pathSlotsPerPixel};
+    public static final int OFFLINE_WAVEFRONT_QUEUE_COUNT = ${offlineWavefrontContract.queueCount};
+    public static final int OFFLINE_WAVEFRONT_QUEUE_COMMAND_STRIDE = ${offlineWavefrontContract.queueCommandStride};
+    public static final int OFFLINE_WAVEFRONT_QUEUE_INDEX_SIZE = ${offlineWavefrontContract.queueIndexSize};
+    public static final int WAVEFRONT_AREA_RECORD_SIZE = ${wavefrontContract.areaRecordSize};
+    public static final int WAVEFRONT_QUEUE_COUNT = ${wavefrontContract.queueCount};
+    public static final int WAVEFRONT_QUEUE_COMMAND_STRIDE = ${wavefrontContract.queueCommandStride};
+    public static final int WAVEFRONT_QUEUE_INDEX_SIZE = ${wavefrontContract.queueIndexSize};
+    public static final int WAVEFRONT_ACTIVE_MASK = ${wavefrontContract.activeMask};
+    public static final int PATH_SAMPLE_INDEX_MASK = ${schema.pathControl.sampleIndexMask};
+    public static final int PATH_SOLAR_LONGITUDE_SHIFT = ${schema.pathControl.solarLongitudeShift};
+    public static final int PATH_SOLAR_LONGITUDE_MASK = ${schema.pathControl.solarLongitudeMask};
+    public static final int PATH_SAMPLE_EPOCH_MASK = ${schema.pathControl.sampleEpochMask};
+    public static final int PATH_TRIANGLE_DEBUG_MASK = ${schema.pathControl.triangleDebugMask};
+    public static final int PATH_MAXIMUM_BOUNCES_MASK = ${schema.pathControl.maximumBouncesMask};
+    public static final int PATH_LATITUDE_SHIFT = ${schema.pathControl.latitudeShift};
+    public static final int PATH_LATITUDE_MASK = ${schema.pathControl.latitudeMask};
+    public static final int PATH_LATITUDE_BIAS = ${schema.pathControl.latitudeBias};
+    public static final int PATH_CAMERA_IN_WATER_MASK = ${schema.pathControl.cameraInWaterMask};
+    public static final int PATH_JITTER_PHASE_MASK = ${schema.pathControl.jitterPhaseMask};
+    public static final int PATH_TRANSPARENT_GUIDE_MODE_SHIFT = ${schema.pathControl.transparentGuideModeShift};
+    public static final int PATH_TRANSPARENT_GUIDE_MODE_MASK = ${schema.pathControl.transparentGuideModeMask};
+    public static final int PATH_TRANSPARENT_GUIDE_MODE_NRD = ${schema.pathControl.transparentGuideModeNrd};
+    public static final int PATH_TRANSPARENT_GUIDE_MODE_DLSS_RR = ${schema.pathControl.transparentGuideModeDlssRr};
+    public static final int PATH_TRANSPARENT_GUIDE_MODE_DISABLED = ${schema.pathControl.transparentGuideModeDisabled};
+    public static final int PATH_SUN_EV_QUARTER_SHIFT = ${schema.pathControl.sunEvQuarterShift};
+    public static final int PATH_BLOCK_LIGHT_EV_QUARTER_SHIFT = ${schema.pathControl.blockLightEvQuarterShift};
+    public static final int PATH_EV_QUARTER_MASK = ${schema.pathControl.evQuarterMask};
+    public static final int PATH_EV_QUARTER_BIAS = ${schema.pathControl.evQuarterBias};
+    public static final int PATH_MATERIAL_ROUGHNESS_SHIFT = ${schema.pathControl.materialRoughnessShift};
+    public static final int PATH_MATERIAL_ROUGHNESS_MASK = ${schema.pathControl.materialRoughnessMask};
+    public static final int PATH_MATERIAL_ROUGHNESS_STEPS_PER_UNIT = ${schema.pathControl.materialRoughnessStepsPerUnit};
+    public static final int PATH_SH_INPUT_MASK = ${schema.pathControl.shInputMask};
+    public static final int PATH_RAW_NUMERICAL_MASK = ${schema.pathControl.rawNumericalMask};
+    public static final int PATH_STAR_EV_QUARTER_SHIFT = ${schema.pathControl.starEvQuarterShift};
+    public static final int PATH_STAR_EV_QUARTER_MASK = ${schema.pathControl.starEvQuarterMask};
+    public static final int PATH_STAR_EV_QUARTER_BIAS = ${schema.pathControl.starEvQuarterBias};
+    public static final int MAXIMUM_BOUNCES = ${schema.pathControl.maximumBounces};
+    public static final int RUSSIAN_ROULETTE_START = ${schema.pathControl.russianRouletteStart};
+    public static final float CUTOUT_ALPHA_THRESHOLD = ${schema.cutoutAlphaThreshold}f;
+    public static final String WORKING_COLOR_SPACE = "${colorContract.workingSpace}";
+    public static final String TEXTURE_COLOR_ENCODING = "${colorContract.textureEncoding}";
+    public static final String DISPLAY_COLOR_ENCODING = "${colorContract.displayEncoding}";
+    public static final String DISPLAY_COLOR_SPACE = "${colorContract.displayColorSpace}";
+    public static final String DEFAULT_DISPLAY_TRANSFORM = "${colorContract.defaultDisplayTransform}";
+    public static final float DISPLAY_EXPOSURE = ${colorContract.displayExposure}f;
+    public static final float LEVEL_15_BLOCK_INTENSITY = ${emissionContract.level15BlockIntensity}f;
+    public static final String NRD_VERSION = "${nrdContract.version}";
+    public static final String NRD_DENOISER = "${nrdContract.denoiser}";
+    public static final String NRD_NORMAL_ENCODING = "${nrdContract.normalEncoding}";
+    public static final String NRD_ROUGHNESS_ENCODING = "${nrdContract.roughnessEncoding}";
+    public static final String NRD_MOTION_SPACE = "${nrdContract.motionSpace}";
+    public static final String NRD_SIGNAL_SPACE = "${nrdContract.signalSpace}";
+    public static final String FSR_VERSION = "${fsrContract.version}";
+    public static final String FSR_MOTION_SPACE = "${fsrContract.motionSpace}";
+    public static final String FSR_DEPTH_SPACE = "${fsrContract.depthSpace}";
+    public static final float FSR_NEAR_PLANE = ${fsrContract.nearPlane}f;
+    public static final float FSR_VIEW_SPACE_TO_METERS_FACTOR = ${fsrContract.viewSpaceToMetersFactor}f;
+    public static final String ATMOSPHERE_SPECTRAL_MODEL = "${atmosphereContract.spectralModel}";
+    public static final float ATMOSPHERE_WORLD_TO_ATMOSPHERE_SCALE = ${atmosphereContract.worldToAtmosphereScale}f;
+    public static final float ATMOSPHERE_BOTTOM_RADIUS_KM = ${atmosphereContract.bottomRadiusKm}f;
+    public static final float ATMOSPHERE_TOP_RADIUS_KM = ${atmosphereContract.topRadiusKm}f;
+    public static final float ATMOSPHERE_WORLD_SEA_LEVEL_Y = ${atmosphereContract.worldSeaLevelY}f;
+    public static final float ATMOSPHERE_WORLD_UNIT_SCALE_KM = ${atmosphereContract.worldUnitScaleKm * atmosphereContract.worldToAtmosphereScale}f;
+    public static final float ATMOSPHERE_SPACE_SUN_INTENSITY = ${atmosphereContract.spaceSunIntensity}f;
+    public static final float ATMOSPHERE_SUN_ANGULAR_RADIUS_RADIANS = ${atmosphereContract.sunAngularRadiusRadians}f;
+    public static final float ATMOSPHERE_AERIAL_MAX_DISTANCE_KM = ${atmosphereContract.aerialMaxDistanceKm * atmosphereContract.worldToAtmosphereScale}f;
+    public static final int ATMOSPHERE_AERIAL_WIDTH = ${atmosphereContract.aerialWidth};
+    public static final int ATMOSPHERE_AERIAL_HEIGHT = ${atmosphereContract.aerialHeight};
+    public static final int ATMOSPHERE_AERIAL_EPIPOLAR_SAMPLES = ${atmosphereContract.aerialEpipolarSamples};
+    public static final int ATMOSPHERE_AERIAL_EPIPOLAR_SLICES = ${atmosphereContract.aerialEpipolarSlices};
+    public static final int ATMOSPHERE_AERIAL_DEPTH = ${atmosphereContract.aerialDepth};
+    public static final int ATMOSPHERE_AERIAL_SEGMENT_SAMPLES = ${atmosphereContract.aerialSegmentSamples};
+    public static final float ASTRONOMY_AXIAL_TILT_DEGREES = ${astronomyContract.axialTiltDegrees}f;
+    public static final int ASTRONOMY_MINIMUM_LATITUDE_DEGREES = ${astronomyContract.minimumLatitudeDegrees};
+    public static final int ASTRONOMY_MAXIMUM_LATITUDE_DEGREES = ${astronomyContract.maximumLatitudeDegrees};
+    public static final int ASTRONOMY_DEFAULT_LATITUDE_DEGREES = ${astronomyContract.defaultLatitudeDegrees};
+    public static final int ASTRONOMY_MINIMUM_SOLAR_LONGITUDE_DEGREES = ${astronomyContract.minimumSolarLongitudeDegrees};
+    public static final int ASTRONOMY_MAXIMUM_SOLAR_LONGITUDE_DEGREES = ${astronomyContract.maximumSolarLongitudeDegrees};
+    public static final int ASTRONOMY_DEFAULT_SOLAR_LONGITUDE_DEGREES = ${astronomyContract.defaultSolarLongitudeDegrees};
+    public static final int STARMAP_WIDTH = ${starmapContract.width};
+    public static final int STARMAP_HEIGHT = ${starmapContract.height};
+    public static final float STARMAP_BASE_RADIANCE_SCALE = ${starmapContract.baseRadianceScale}f;
+    public static final String STARMAP_SOURCE_SHA256 = "${starmapContract.sourceSha256}";
+${javaOffsets}
+
+    private ShaderAbi() {
+    }
+}
+"""
+
+		def glslDir = glslOutputDirectory.get().asFile
+		glslDir.mkdirs()
+		new File(glslDir, 'prime_abi.glsl').text = """\
+#ifndef PRIME_ABI_GLSL
+#define PRIME_ABI_GLSL
+
+#extension GL_EXT_ray_tracing : require
+#extension GL_EXT_buffer_reference2 : require
+#extension GL_EXT_shader_explicit_arithmetic_types_int64 : require
+
+#include "prime_color_contract.glsl"
+
+#define PRIME_LEVEL_15_BLOCK_INTENSITY ${emissionContract.level15BlockIntensity}
+#define PRIME_PRIMITIVE_RECORD_SIZE ${primitive.size}
+#define PRIME_SECTION_RECORD_SIZE ${section.size}
+#define PRIME_LIGHT_NODE_SIZE ${lightNode.size}
+#define PRIME_LIGHT_NODE_FORWARD_SIZE ${lightNodeForward.size}
+#define PRIME_LIGHT_NODE_REVERSE_SIZE ${lightNodeReverse.size}
+#define PRIME_LIGHT_EMITTER_SIZE ${lightEmitter.size}
+#define PRIME_LIGHT_CELL_SIZE ${lightCell.size}
+#define PRIME_SECTION_LIGHT_HEADER_SIZE ${sectionLightHeader.size}
+#define PRIME_INTEGRATOR_RECORD_SIZE ${integrator.size}
+#define PRIME_PATH_STATE_SIZE ${pathState.size}
+#define PRIME_TRACE_PAYLOAD_SIZE ${tracePayload.size}
+#define PRIME_SURFACE_INTERACTION_SIZE ${surfaceInteraction.size}
+#define PRIME_PUSH_CONSTANT_SIZE ${push.size}
+#define PRIME_DESCRIPTOR_TRANSMISSION_GGX_ENERGY ${schema.sharedDescriptors.transmissionGgxEnergy}
+#if defined(PRIME_OFFLINE_ABI)
+#define PRIME_RENDERER_DESCRIPTOR_SET 1
+#define PRIME_DESCRIPTOR_WAVEFRONT_PATHS ${schema.offlineDescriptors.wavefrontPaths}
+#define PRIME_DESCRIPTOR_WAVEFRONT_QUEUE ${schema.offlineDescriptors.wavefrontQueue}
+#define PRIME_WAVEFRONT_PATH_RECORD_SIZE ${offlineWavefrontContract.pathRecordSize}
+#define PRIME_WAVEFRONT_PATH_SLOTS_PER_PIXEL ${offlineWavefrontContract.pathSlotsPerPixel}u
+#define PRIME_WAVEFRONT_ROUNDS ${offlineWavefrontContract.rounds}
+#define PRIME_WAVEFRONT_AREA_RECORD_SIZE ${offlineWavefrontContract.areaRecordSize}u
+#define PRIME_WAVEFRONT_QUEUE_COUNT ${offlineWavefrontContract.queueCount}u
+#define PRIME_WAVEFRONT_QUEUE_COMMAND_STRIDE ${offlineWavefrontContract.queueCommandStride}u
+#define PRIME_WAVEFRONT_QUEUE_INDEX_SIZE ${offlineWavefrontContract.queueIndexSize}u
+#define PRIME_WAVEFRONT_ACTIVE_MASK ${offlineWavefrontContract.activeMask}u
+#else
+#define PRIME_RENDERER_DESCRIPTOR_SET 1
+#define PRIME_DESCRIPTOR_WAVEFRONT_PATHS ${schema.realtimeDescriptors.wavefrontPaths}
+#define PRIME_DESCRIPTOR_WAVEFRONT_QUEUE ${schema.realtimeDescriptors.wavefrontQueue}
+#define PRIME_WAVEFRONT_PATH_RECORD_SIZE ${wavefrontContract.pathRecordSize}
+#define PRIME_WAVEFRONT_PATH_SLOTS_PER_PIXEL ${wavefrontContract.pathSlotsPerPixel}u
+#define PRIME_WAVEFRONT_ROUNDS ${wavefrontContract.rounds}
+#define PRIME_WAVEFRONT_AREA_RECORD_SIZE ${wavefrontContract.areaRecordSize}u
+#define PRIME_WAVEFRONT_QUEUE_COUNT ${wavefrontContract.queueCount}u
+#define PRIME_WAVEFRONT_QUEUE_COMMAND_STRIDE ${wavefrontContract.queueCommandStride}u
+#define PRIME_WAVEFRONT_QUEUE_INDEX_SIZE ${wavefrontContract.queueIndexSize}u
+#define PRIME_WAVEFRONT_ACTIVE_MASK ${wavefrontContract.activeMask}u
+#endif
+#define PRIME_SCENE_TEXTURE_COUNT ${schema.sceneTextureCount}u
+#define PRIME_PATH_SAMPLE_INDEX_MASK ${schema.pathControl.sampleIndexMask}u
+#define PRIME_PATH_SOLAR_LONGITUDE_SHIFT ${schema.pathControl.solarLongitudeShift}u
+#define PRIME_PATH_SOLAR_LONGITUDE_MASK ${schema.pathControl.solarLongitudeMask}u
+#define PRIME_PATH_SAMPLE_EPOCH_MASK ${schema.pathControl.sampleEpochMask}u
+#define PRIME_PATH_TRIANGLE_DEBUG_MASK ${schema.pathControl.triangleDebugMask}u
+#define PRIME_PATH_MAXIMUM_BOUNCES_MASK ${schema.pathControl.maximumBouncesMask}u
+#define PRIME_PATH_LATITUDE_SHIFT ${schema.pathControl.latitudeShift}u
+#define PRIME_PATH_LATITUDE_MASK ${schema.pathControl.latitudeMask}u
+#define PRIME_PATH_LATITUDE_BIAS ${schema.pathControl.latitudeBias}
+#define PRIME_PATH_CAMERA_IN_WATER_MASK ${schema.pathControl.cameraInWaterMask}u
+#define PRIME_PATH_JITTER_PHASE_MASK ${schema.pathControl.jitterPhaseMask}u
+#define PRIME_PATH_TRANSPARENT_GUIDE_MODE_SHIFT ${schema.pathControl.transparentGuideModeShift}u
+#define PRIME_PATH_TRANSPARENT_GUIDE_MODE_MASK ${schema.pathControl.transparentGuideModeMask}u
+#define PRIME_PATH_TRANSPARENT_GUIDE_MODE_NRD ${schema.pathControl.transparentGuideModeNrd}u
+#define PRIME_PATH_TRANSPARENT_GUIDE_MODE_DLSS_RR ${schema.pathControl.transparentGuideModeDlssRr}u
+#define PRIME_PATH_TRANSPARENT_GUIDE_MODE_DISABLED ${schema.pathControl.transparentGuideModeDisabled}u
+#define PRIME_PATH_SUN_EV_QUARTER_SHIFT ${schema.pathControl.sunEvQuarterShift}u
+#define PRIME_PATH_BLOCK_LIGHT_EV_QUARTER_SHIFT ${schema.pathControl.blockLightEvQuarterShift}u
+#define PRIME_PATH_EV_QUARTER_MASK ${schema.pathControl.evQuarterMask}u
+#define PRIME_PATH_EV_QUARTER_BIAS ${schema.pathControl.evQuarterBias}
+#define PRIME_PATH_MATERIAL_ROUGHNESS_SHIFT ${schema.pathControl.materialRoughnessShift}u
+#define PRIME_PATH_MATERIAL_ROUGHNESS_MASK ${schema.pathControl.materialRoughnessMask}u
+#define PRIME_PATH_MATERIAL_ROUGHNESS_STEPS_PER_UNIT ${schema.pathControl.materialRoughnessStepsPerUnit}.0
+#define PRIME_PATH_SH_INPUT_MASK ${schema.pathControl.shInputMask}u
+#define PRIME_PATH_RAW_NUMERICAL_MASK ${schema.pathControl.rawNumericalMask}u
+#define PRIME_PATH_STAR_EV_QUARTER_SHIFT ${schema.pathControl.starEvQuarterShift}u
+#define PRIME_PATH_STAR_EV_QUARTER_MASK ${schema.pathControl.starEvQuarterMask}u
+#define PRIME_PATH_STAR_EV_QUARTER_BIAS ${schema.pathControl.starEvQuarterBias}
+#define PRIME_ASTRONOMY_AXIAL_TILT_RADIANS (${astronomyContract.axialTiltDegrees} * 0.017453292519943295)
+#define PRIME_STARMAP_WIDTH ${starmapContract.width}
+#define PRIME_STARMAP_HEIGHT ${starmapContract.height}
+#define PRIME_STARMAP_BASE_RADIANCE_SCALE ${starmapContract.baseRadianceScale}
+#define PRIME_MAXIMUM_BOUNCES ${schema.pathControl.maximumBounces}u
+#define PRIME_RUSSIAN_ROULETTE_START ${schema.pathControl.russianRouletteStart}u
+#define PRIME_CUTOUT_ALPHA_THRESHOLD ${schema.cutoutAlphaThreshold}
+struct PrimitiveRecord {
+${glslStructFields(primitive)}
+};
+
+struct SectionRecord {
+${glslStructFields(section)}
+};
+
+struct LightNode {
+${glslStructFields(lightNode)}
+};
+
+struct LightNodeForward {
+${glslStructFields(lightNodeForward)}
+};
+
+struct LightNodeReverse {
+${glslStructFields(lightNodeReverse)}
+};
+
+struct LightEmitter {
+${glslStructFields(lightEmitter)}
+};
+
+struct LightCell {
+${glslStructFields(lightCell)}
+};
+
+struct SectionLightHeader {
+${glslStructFields(sectionLightHeader)}
+};
+
+// These explicit records deliberately contain no execution-local state. They can be moved to
+// storage-buffer queues by a future wavefront scheduler without changing integrator semantics.
+// Every color or radiance field in these records is linear Rec.2020 D65. This is part of the
+// estimator ABI, not a presentation choice; changing it requires a coordinated ABI migration.
+struct IntegratorRecord {
+${glslStructFields(integrator)}
+};
+
+struct PathState {
+${glslStructFields(pathState)}
+};
+
+struct TracePayload {
+${glslStructFields(tracePayload)}
+};
+
+struct SurfaceInteraction {
+${glslStructFields(surfaceInteraction)}
+};
+
+layout(buffer_reference, buffer_reference_align = 8) readonly buffer PrimitiveBuffer {
+    PrimitiveRecord records[];
+};
+
+layout(buffer_reference, buffer_reference_align = 8) readonly buffer SectionTable {
+    SectionRecord sections[];
+};
+
+layout(buffer_reference, buffer_reference_align = 16) readonly buffer LightNodeBuffer {
+    LightNode nodes[];
+};
+
+layout(buffer_reference, buffer_reference_align = 4) readonly buffer LightNodeForwardBuffer {
+    LightNodeForward nodes[];
+};
+
+layout(buffer_reference, buffer_reference_align = 4) readonly buffer LightNodeReverseBuffer {
+    LightNodeReverse nodes[];
+};
+
+layout(buffer_reference, buffer_reference_align = 16) readonly buffer LightEmitterBuffer {
+    LightEmitter emitters[];
+};
+
+layout(buffer_reference, buffer_reference_align = 16) readonly buffer LightCellBuffer {
+    LightCell cells[];
+};
+
+layout(buffer_reference, buffer_reference_align = 8) readonly buffer SectionLightHeaderBuffer {
+    SectionLightHeader header;
+};
+
+layout(buffer_reference, buffer_reference_align = 16) readonly buffer IntegratorBuffer {
+    IntegratorRecord record;
+};
+
+layout(push_constant) uniform PrimePushConstants {
+${glslPushFields}
+} primePush;
+
+layout(set = 0, binding = ${schema.sharedDescriptors.tlas}) uniform accelerationStructureEXT primeScene;
+layout(set = 0, binding = ${schema.sharedDescriptors.blockAtlas}) uniform sampler2D primeSceneTextures[PRIME_SCENE_TEXTURE_COUNT];
+layout(set = 0, binding = ${schema.sharedDescriptors.labPbrNormalAtlas}) uniform sampler2D primeLabPbrNormalAtlas;
+layout(set = 0, binding = ${schema.sharedDescriptors.labPbrSpecularAtlas}) uniform sampler2D primeLabPbrSpecularAtlas;
+layout(set = 0, binding = ${schema.sharedDescriptors.skyView}, rgba16f) uniform readonly image2D primeSkyView;
+layout(set = 0, binding = ${schema.sharedDescriptors.transmittanceLow}, rgba16f) uniform readonly image2D primeTransmittanceLow;
+layout(set = 0, binding = ${schema.sharedDescriptors.transmittanceHigh}, rgba16f) uniform readonly image2D primeTransmittanceHigh;
+layout(set = 0, binding = ${schema.sharedDescriptors.aerialRadiance}, rgba16f) uniform readonly image3D primeAerialRadiance;
+layout(set = 0, binding = ${schema.sharedDescriptors.aerialTransmittance}, rgba16f) uniform readonly image3D primeAerialTransmittance;
+layout(set = 0, binding = ${schema.sharedDescriptors.sunShadowDepth0}, r32f) uniform image2D primeSunShadowDepth0;
+layout(set = 0, binding = ${schema.sharedDescriptors.sunShadowDepth1}, r32f) uniform image2D primeSunShadowDepth1;
+layout(set = 0, binding = ${schema.sharedDescriptors.sunShadowDepth2}, r32f) uniform image2D primeSunShadowDepth2;
+layout(set = 0, binding = ${schema.sharedDescriptors.sunShadowDepth3}, r32f) uniform image2D primeSunShadowDepth3;
+layout(set = 0, binding = ${schema.sharedDescriptors.sunShadowDepth4}, r32f) uniform image2D primeSunShadowDepth4;
+layout(set = 0, binding = ${schema.sharedDescriptors.sunShadowDepth5}, r32f) uniform image2D primeSunShadowDepth5;
+layout(set = 0, binding = ${schema.sharedDescriptors.sunShadowDepth6}, r32f) uniform image2D primeSunShadowDepth6;
+layout(set = 0, binding = ${schema.sharedDescriptors.sunShadowDepth7}, r32f) uniform image2D primeSunShadowDepth7;
+layout(set = 0, binding = ${schema.sharedDescriptors.sunShadowDepth8}, r32f) uniform image2D primeSunShadowDepth8;
+layout(set = 0, binding = ${schema.sharedDescriptors.sunShadowDepth9}, r32f) uniform image2D primeSunShadowDepth9;
+layout(set = 0, binding = ${schema.sharedDescriptors.starmap}) uniform sampler2D primeStarmap;
+#if defined(PRIME_REALTIME_ABI)
+layout(set = 1, binding = ${schema.realtimeDescriptors.stableRadiance}, rgba32f) uniform image2D primeStableRadiance;
+// NRD is part of the integrator boundary. Raygen first writes private raw signals to a subset of
+// these images; nrd_motion.comp converts them in place to demodulated scene-linear Rec.2020
+// radiance and matching primary guides before NRD reads them. Changing the final encoding, units
+// or previous-minus-current motion sign silently invalidates reprojection and edge stopping.
+layout(set = 1, binding = ${schema.realtimeDescriptors.nrdNoisyDiffuse}, rgba16f) uniform image2D primeNrdNoisyDiffuse;
+layout(set = 1, binding = ${schema.realtimeDescriptors.nrdNoisySpecular}, rgba16f) uniform image2D primeNrdNoisySpecular;
+layout(set = 1, binding = ${schema.realtimeDescriptors.nrdNormalRoughness}, rgb10_a2) uniform image2D primeNrdNormalRoughness;
+layout(set = 1, binding = ${schema.realtimeDescriptors.nrdViewZ}, r32f) uniform image2D primeNrdViewZ;
+layout(set = 1, binding = ${schema.realtimeDescriptors.wavefrontTransportMetadata}, rgba16f) uniform image2D primeWavefrontTransportMetadata;
+layout(set = 1, binding = ${schema.realtimeDescriptors.nrdMaterial}, rgba16f) uniform image2D primeNrdMaterial;
+layout(set = 1, binding = ${schema.realtimeDescriptors.nrdSpecularMaterial}, rgba16f) uniform image2D primeNrdSpecularMaterial;
+layout(set = 1, binding = ${schema.realtimeDescriptors.nrdPrimaryPosition}, rgba32f) uniform image2D primeNrdPrimaryPosition;
+layout(set = 1, binding = ${schema.realtimeDescriptors.nrdSunLighting}, rgba16f) uniform image2D primeNrdSunLighting;
+layout(set = 1, binding = ${schema.realtimeDescriptors.nrdSunPenumbra}, r16f) uniform image2D primeNrdSunPenumbra;
+layout(set = 1, binding = ${schema.realtimeDescriptors.nrdDiffuseDirection}, rgba16f) uniform image2D primeNrdDiffuseDirection;
+layout(set = 1, binding = ${schema.realtimeDescriptors.nrdSpecularDirection}, rgba16f) uniform image2D primeNrdSpecularDirection;
+layout(set = 1, binding = ${schema.realtimeDescriptors.rawNumericalDiagnostic}, rgba16f) uniform writeonly image2D primeRawNumericalDiagnostic;
+layout(set = 1, binding = ${schema.realtimeDescriptors.nrdReflectionNoisyDiffuse}, rgba16f) uniform image2D primeNrdReflectionNoisyDiffuse;
+layout(set = 1, binding = ${schema.realtimeDescriptors.nrdReflectionNoisySpecular}, rgba16f) uniform image2D primeNrdReflectionNoisySpecular;
+layout(set = 1, binding = ${schema.realtimeDescriptors.nrdReflectionNormalRoughness}, rgb10_a2) uniform image2D primeNrdReflectionNormalRoughness;
+layout(set = 1, binding = ${schema.realtimeDescriptors.nrdReflectionMaterial}, rgba16f) uniform image2D primeNrdReflectionMaterial;
+layout(set = 1, binding = ${schema.realtimeDescriptors.nrdReflectionSpecularMaterial}, rgba16f) uniform image2D primeNrdReflectionSpecularMaterial;
+layout(set = 1, binding = ${schema.realtimeDescriptors.nrdReflectionPosition}, rgba32f) uniform image2D primeNrdReflectionPosition;
+layout(set = 1, binding = ${schema.realtimeDescriptors.nrdReflectionDiffuseDirection}, rgba16f) uniform image2D primeNrdReflectionDiffuseDirection;
+layout(set = 1, binding = ${schema.realtimeDescriptors.nrdReflectionSpecularDirection}, rgba16f) uniform image2D primeNrdReflectionSpecularDirection;
+layout(set = 1, binding = ${schema.realtimeDescriptors.nrdDisplayPosition}, rgba32f) uniform image2D primeNrdDisplayPosition;
+#elif defined(PRIME_OFFLINE_ABI)
+layout(set = 1, binding = ${schema.offlineDescriptors.runningMean}, rgba32f) uniform image2D primeOfflineRunningMean;
+#endif
+#endif
+"""
+		new File(glslDir, 'prime_atmosphere_contract.glsl').text = """\
+#ifndef PRIME_ATMOSPHERE_CONTRACT_GLSL
+#define PRIME_ATMOSPHERE_CONTRACT_GLSL
+
+// Generated from shaders/abi.json. Atmosphere compute and ray tracing must share these values.
+#define PRIME_ATMOSPHERE_WORLD_TO_ATMOSPHERE_SCALE ${atmosphereContract.worldToAtmosphereScale}
+#define PRIME_ATMOSPHERE_BOTTOM_RADIUS_KM ${atmosphereContract.bottomRadiusKm}
+#define PRIME_ATMOSPHERE_TOP_RADIUS_KM ${atmosphereContract.topRadiusKm}
+#define PRIME_ATMOSPHERE_WORLD_SEA_LEVEL_Y ${atmosphereContract.worldSeaLevelY}
+#define PRIME_ATMOSPHERE_WORLD_UNIT_SCALE_KM ${atmosphereContract.worldUnitScaleKm * atmosphereContract.worldToAtmosphereScale}
+#define PRIME_ATMOSPHERE_SPACE_SUN_INTENSITY ${atmosphereContract.spaceSunIntensity}
+#define PRIME_ATMOSPHERE_SUN_ANGULAR_RADIUS_RADIANS ${atmosphereContract.sunAngularRadiusRadians}
+#define PRIME_ATMOSPHERE_AERIAL_MAX_DISTANCE_KM ${atmosphereContract.aerialMaxDistanceKm * atmosphereContract.worldToAtmosphereScale}
+#define PRIME_ATMOSPHERE_AERIAL_WIDTH ${atmosphereContract.aerialWidth}
+#define PRIME_ATMOSPHERE_AERIAL_HEIGHT ${atmosphereContract.aerialHeight}
+#define PRIME_ATMOSPHERE_AERIAL_EPIPOLAR_SAMPLES ${atmosphereContract.aerialEpipolarSamples}
+#define PRIME_ATMOSPHERE_AERIAL_EPIPOLAR_SLICES ${atmosphereContract.aerialEpipolarSlices}
+#define PRIME_ATMOSPHERE_AERIAL_DEPTH ${atmosphereContract.aerialDepth}
+#define PRIME_ATMOSPHERE_AERIAL_SEGMENT_SAMPLES ${atmosphereContract.aerialSegmentSamples}
+
+#endif
+"""
+		new File(glslDir, 'prime_color_contract.glsl').text = """\
+#ifndef PRIME_COLOR_CONTRACT_GLSL
+#define PRIME_COLOR_CONTRACT_GLSL
+
+// Generated from shaders/abi.json. FSR and the display transform must share this exposure.
+#define PRIME_COLOR_WORKING_SPACE_LINEAR_REC2020_D65 1
+#define PRIME_COLOR_TEXTURE_ENCODING_SRGB 1
+#define PRIME_COLOR_DISPLAY_ENCODING_SRGB 1
+#define PRIME_COLOR_DISPLAY_SPACE_REC709_D65 1
+#define PRIME_COLOR_DISPLAY_TRANSFORM_OKLAB_DRT 1
+#define PRIME_DISPLAY_EXPOSURE ${colorContract.displayExposure}
+
+#endif
+"""
+		new File(glslDir, 'prime_fsr_contract.glsl').text = """\
+#ifndef PRIME_FSR_CONTRACT_GLSL
+#define PRIME_FSR_CONTRACT_GLSL
+
+// Generated from shaders/abi.json. FSR host parameters and shader guides share these values.
+#define PRIME_FSR_NEAR_PLANE ${fsrContract.nearPlane}
+#define PRIME_FSR_VIEW_SPACE_TO_METERS_FACTOR ${fsrContract.viewSpaceToMetersFactor}
+
+#endif
+"""
+		def glslNrdMotionPushFields = nrdMotionPush.fields.collect { field ->
+			"    layout(offset = ${field.offset}) ${field.type} ${field.name};"
+		}.join('\n')
+		new File(glslDir, 'prime_nrd_motion_contract.glsl').text = """\
+#ifndef PRIME_NRD_MOTION_CONTRACT_GLSL
+#define PRIME_NRD_MOTION_CONTRACT_GLSL
+
+// Generated from shaders/abi.json. The Vulkan range and shader block share this layout.
+layout(push_constant) uniform PrimeMotionPushConstants {
+${glslNrdMotionPushFields}
+} primeMotionPush;
+
+#endif
+"""
+	}
+}
+
+abstract class CompilePrimeShaders extends DefaultTask {
+	@InputDirectory
+	abstract DirectoryProperty getSourceDirectory()
+
+	@InputDirectory
+	abstract DirectoryProperty getIncludeDirectory()
+
+	@Optional
+	@InputDirectory
+	abstract DirectoryProperty getAdditionalIncludeDirectory()
+
+	@OutputDirectory
+	abstract DirectoryProperty getOutputDirectory()
+
+	@Input
+	abstract Property<String> getGlslangValidator()
+
+	@Input
+	abstract Property<String> getSpirvValidator()
+
+	@Input
+	abstract Property<String> getSpirvOptimizer()
+
+	@Input
+	abstract Property<Boolean> getDebugInfo()
+
+	@javax.inject.Inject
+	abstract org.gradle.process.ExecOperations getExecOperations()
+
+	@javax.inject.Inject
+	abstract org.gradle.api.file.FileSystemOperations getFileSystemOperations()
+
+	@TaskAction
+	void compile() {
+		def sources = sourceDirectory.get().asFileTree.matching {
+			include '**/*.rgen', '**/*.rmiss', '**/*.rchit', '**/*.rahit', '**/*.comp'
+		}.files.sort { it.absolutePath }
+		if (sources.empty) {
+			throw new GradleException('No Prime Vulkan shaders were found')
+		}
+
+		def scratch = new File(temporaryDir, 'spv')
+		fileSystemOperations.delete { delete scratch }
+		scratch.mkdirs()
+		def compileShader = { File source, File output, List<String> definitions ->
+			def arguments = ['-V', '--target-env', 'vulkan1.2',
+					debugInfo.get() ? '-g' : '-g0']
+			arguments.addAll(definitions)
+			arguments.add("-I${includeDirectory.get().asFile.absolutePath}")
+			if (additionalIncludeDirectory.isPresent()) {
+				arguments.add(
+						"-I${additionalIncludeDirectory.get().asFile.absolutePath}")
+			}
+			arguments.add(source.absolutePath)
+			arguments.addAll(['-o', output.absolutePath])
+			execOperations.exec {
+				commandLine glslangValidator.get(), *arguments
+			}
+			if (!debugInfo.get()) {
+				def optimized = new File(output.parentFile, output.name + '.optimized')
+				// These passes only canonicalize SPIR-V structure and remove redundant operations.
+				// Do not add aggressive inlining here: it greatly increases driver compile time.
+				// Dead functions may be removed after glslang has compiled the complete standalone
+				// RoboCute validation module. Function-local DCE removes inactive mode branches and
+				// unconsumed aggregate fields without changing live floating-point evaluation order.
+				def optimizerArguments = [
+						'--remove-duplicates',
+						'--eliminate-local-single-block',
+						'--eliminate-local-single-store',
+						'--ssa-rewrite',
+						'--redundancy-elimination',
+						'--simplify-instructions',
+						'--eliminate-dead-branches',
+						'--eliminate-dead-code-aggressive',
+						'--eliminate-dead-inserts']
+				// Hit and miss modules are compiled independently from their raygen caller. Pruning
+				// an incoming payload member renumbers the remaining struct fields and changes the
+				// cross-stage payload ABI even though each standalone module still validates.
+				if (!(source.name.endsWith('.rmiss')
+						|| source.name.endsWith('.rchit')
+						|| source.name.endsWith('.rahit'))) {
+					optimizerArguments.add('--eliminate-dead-members')
+				}
+				optimizerArguments.addAll([
+						'--simplify-instructions',
+						'--eliminate-dead-functions',
+						'--merge-blocks',
+						'--compact-ids',
+						output.absolutePath,
+						'-o', optimized.absolutePath])
+				execOperations.exec {
+					commandLine spirvOptimizer.get(), *optimizerArguments
+				}
+				java.nio.file.Files.move(
+						optimized.toPath(), output.toPath(),
+						java.nio.file.StandardCopyOption.REPLACE_EXISTING)
+			}
+			execOperations.exec {
+				commandLine spirvValidator.get(), '--target-env', 'vulkan1.2', output.absolutePath
+			}
+		}
+		def specializeWavefront = { File input, File output, int stage ->
+			execOperations.exec {
+				commandLine spirvOptimizer.get(),
+						'--set-spec-const-default-value', "0:${stage}",
+						'--freeze-spec-const',
+						'--fold-spec-const-op-composite',
+						'--eliminate-dead-branches',
+						'--eliminate-dead-code-aggressive',
+						'--eliminate-dead-inserts',
+						'--eliminate-dead-members',
+						'--simplify-instructions',
+						'--eliminate-dead-functions',
+						'--merge-blocks',
+						'--compact-ids',
+						input.absolutePath,
+						'-o', output.absolutePath
+			}
+			execOperations.exec {
+				commandLine spirvValidator.get(), '--target-env', 'vulkan1.2', output.absolutePath
+			}
+		}
+		sources.each { source ->
+			if (source.name == 'realtime_wavefront.rgen'
+					|| source.name == 'offline_wavefront.rgen') {
+				// Freeze every scheduler stage before the driver sees it. Realtime and offline
+				// remain separate programs while each profile still shares its own GLSL front end.
+				def offline = source.name == 'offline_wavefront.rgen'
+				def stages = offline
+						? [
+							[name: 'head', value: 0],
+							[name: 'step', value: 1],
+							[name: 'area', value: 2],
+							[name: 'tail', value: 3],
+							[name: 'resolve', value: 4]
+						]
+						: [
+							[name: 'head', value: 0],
+							[name: 'tail', value: 2],
+							[name: 'resolve', value: 3]
+						]
+				def prefix = offline ? 'offline_wavefront' : 'realtime_wavefront'
+				def variants = [
+						[name: '', definitions: []],
+						[name: '_ser', definitions: [
+								'-DPRIME_ENABLE_SER=1',
+								'-DPRIME_ENABLE_SUBGROUP_QUEUE=1'
+						]]
+				]
+				variants.each { variant ->
+					def generic = new File(
+							scratch,
+							"${prefix}${variant.name}.generic.rgen.spv")
+					compileShader(source, generic, variant.definitions)
+					stages.each { stage ->
+						def output = new File(
+								scratch,
+								"${prefix}_${stage.name}${variant.name}.rgen.spv")
+						specializeWavefront(generic, output, stage.value)
+					}
+					java.nio.file.Files.delete(generic.toPath())
+					if (!offline) {
+						def deferredDefinitions = new ArrayList<String>(variant.definitions)
+						deferredDefinitions.add('-DPRIME_DEFER_SECONDARY_AREA_NEE=1')
+						def deferred = new File(
+								scratch,
+								"${prefix}_deferred${variant.name}.generic.rgen.spv")
+						compileShader(source, deferred, deferredDefinitions)
+						[
+								[name: 'step', value: 1],
+								[name: 'area', value: 4]
+						].each { stage ->
+							def output = new File(
+									scratch,
+									"${prefix}_${stage.name}${variant.name}.rgen.spv")
+							specializeWavefront(deferred, output, stage.value)
+						}
+						java.nio.file.Files.delete(deferred.toPath())
+					}
+				}
+			} else {
+				def output = new File(scratch, source.name + '.spv')
+				compileShader(source, output, [])
+				// Conformance-only shaders force otherwise dormant libraries through glslang and
+				// spirv-val, but are never loaded at runtime and must not inflate the distributable
+				// jar.
+				if (source.name.endsWith('_validation.comp')) {
+					java.nio.file.Files.delete(output.toPath())
+				}
+			}
+		}
+
+		def published = new File(outputDirectory.get().asFile, 'prime/shaders')
+		fileSystemOperations.delete { delete published }
+		published.mkdirs()
+		scratch.listFiles().each { source ->
+			java.nio.file.Files.move(source.toPath(), new File(published, source.name).toPath(),
+					java.nio.file.StandardCopyOption.REPLACE_EXISTING)
+		}
+	}
+}
+
+def resolveVulkanTool = { String name ->
+	def windows = System.getProperty('os.name').toLowerCase(java.util.Locale.ROOT).contains('win')
+	def extension = windows ? '.exe' : ''
+	def sdk = System.getenv('VULKAN_SDK')
+	if (sdk) {
+		def binDirectories = windows ? ['Bin', 'bin'] : ['bin', 'Bin']
+		for (def binDirectory : binDirectories) {
+			def candidate = file("${sdk}/${binDirectory}/${name}${extension}")
+			if (candidate.exists()) {
+				return candidate.absolutePath
+			}
+		}
+	}
+	return "${name}${extension}"
+}
+
+def generateShaderAbi = tasks.register('generateShaderAbi', GenerateShaderAbi) {
+	schemaFile = file('shaders/abi.json')
+	javaOutputDirectory = shaderAbiJavaRoot
+	glslOutputDirectory = shaderAbiIncludeRoot
+}
+
+def shaderIncludeReport = layout.buildDirectory.file(
+		'reports/prime-shaders/include-graph.txt')
+def verifyShaderIncludeGraph = tasks.register('verifyShaderIncludeGraph') {
+	group = 'verification'
+	description = 'Verifies that Prime production and test shader includes are resolvable and acyclic.'
+	dependsOn generateShaderAbi
+	inputs.files(fileTree('shaders'), fileTree('src/test/shaders'), shaderAbiIncludeRoot)
+	outputs.file(shaderIncludeReport)
+
+	doLast {
+		def sources = []
+		[file('shaders'), file('src/test/shaders'), shaderAbiIncludeRoot.get().asFile]
+				.each { root ->
+			if (root.isDirectory()) {
+				sources.addAll(fileTree(root).files.findAll { source ->
+					source.name.endsWith('.glsl')
+							|| source.name.endsWith('.rgen')
+							|| source.name.endsWith('.rmiss')
+							|| source.name.endsWith('.rchit')
+							|| source.name.endsWith('.rahit')
+							|| source.name.endsWith('.comp')
+				})
+			}
+		}
+		def byName = new TreeMap<String, File>()
+		sources.each { source ->
+			def previous = byName.put(source.name, source)
+			if (previous != null) {
+				throw new GradleException(
+						"Shader include name is ambiguous: ${source.name}")
+			}
+		}
+		def graph = new TreeMap<String, Set<String>>()
+		def includePattern = java.util.regex.Pattern.compile(
+				'(?m)^\\s*#\\s*include\\s+"([^"]+)"')
+		sources.each { source ->
+			def sourceName = source.name
+			def targets = graph.computeIfAbsent(sourceName) { new TreeSet<String>() }
+			def matcher = includePattern.matcher(source.getText('UTF-8'))
+			while (matcher.find()) {
+				def includeName = new File(matcher.group(1)).name
+				if (!byName.containsKey(includeName)) {
+					throw new GradleException(
+							"Unresolved shader include ${matcher.group(1)} from ${source}")
+				}
+				targets.add(includeName)
+			}
+		}
+
+		def state = new HashMap<String, Integer>()
+		def stack = []
+		Closure<Void> visit
+		visit = { String source ->
+			if (state[source] == 1) {
+				int start = stack.indexOf(source)
+				def cycle = stack.subList(start, stack.size()) + source
+				throw new GradleException(
+						"Shader include cycle: ${cycle.join(' -> ')}")
+			}
+			if (state[source] == 2) {
+				return
+			}
+			state[source] = 1
+			stack.add(source)
+			(graph[source] ?: Collections.emptySet()).each { visit(it) }
+			stack.remove(stack.size() - 1)
+			state[source] = 2
+		}
+		graph.keySet().each { visit(it) }
+
+		def report = shaderIncludeReport.get().asFile
+		report.parentFile.mkdirs()
+		report.setText(
+				graph.collectMany { source, targets ->
+					targets.collect { "${source} -> ${it}" }
+				}.join(System.lineSeparator()) + System.lineSeparator(),
+				'UTF-8')
+	}
+}
+
+def compileShaders = tasks.register('compileShaders', CompilePrimeShaders) {
+	dependsOn generateShaderAbi, verifyRoboCutePort, verifyShaderIncludeGraph
+	sourceDirectory = file('shaders')
+	includeDirectory = shaderAbiIncludeRoot
+	outputDirectory = compiledShaderRoot
+	glslangValidator = resolveVulkanTool('glslangValidator')
+	spirvValidator = resolveVulkanTool('spirv-val')
+	spirvOptimizer = resolveVulkanTool('spirv-opt')
+	debugInfo = providers.gradleProperty('primeShaderDebug')
+			.map { value -> value.toBoolean() }
+			.orElse(false)
+}
+
+def compileTestShaders = tasks.register('compileTestShaders', CompilePrimeShaders) {
+	dependsOn generateShaderAbi, verifyRoboCutePort, verifyShaderIncludeGraph
+	sourceDirectory = file('src/test/shaders')
+	includeDirectory = file('shaders')
+	additionalIncludeDirectory = shaderAbiIncludeRoot
+	outputDirectory = compiledTestShaderRoot
+	glslangValidator = resolveVulkanTool('glslangValidator')
+	spirvValidator = resolveVulkanTool('spirv-val')
+	spirvOptimizer = resolveVulkanTool('spirv-opt')
+	debugInfo = false
+}
+
+sourceSets.client.java.srcDir(files(shaderAbiJavaRoot).builtBy(generateShaderAbi))
+sourceSets.client.resources.srcDir(files(compiledShaderRoot).builtBy(compileShaders))
+sourceSets.test.compileClasspath += sourceSets.client.output
+sourceSets.test.runtimeClasspath += sourceSets.client.output
+
+tasks.withType(Test).configureEach {
+	dependsOn compileTestShaders
+	inputs.dir(compiledTestShaderRoot)
+	useJUnitPlatform()
+	// The NRD ABI tests intentionally load the bundled bridge through LWJGL. Declare native and
+	// LWJGL legacy-memory access explicitly on Java 25, and keep JOML on its supported safe path, so
+	// dependency warnings do not hide actionable test failures.
+	jvmArgs '--enable-native-access=ALL-UNNAMED', '--sun-misc-unsafe-memory-access=allow'
+	systemProperty 'joml.nounsafe', 'true'
+	doFirst {
+		systemProperty 'prime.test.shaderDirectory',
+				new File(compiledTestShaderRoot.get().asFile, 'prime/shaders').absolutePath
+	}
+}
+
+tasks.named('test') {
+	useJUnitPlatform {
+		excludeTags 'gpu-shader'
+	}
+}
+
+tasks.register('shaderTest', Test) {
+	group = 'verification'
+	description = 'Runs GPU shader property tests and requires a usable Vulkan compute device.'
+	testClassesDirs = sourceSets.test.output.classesDirs
+	classpath = sourceSets.test.runtimeClasspath
+	useJUnitPlatform {
+		includeTags 'gpu-shader'
+	}
+	systemProperty 'prime.shaderTests.required', 'true'
+	outputs.upToDateWhen { false }
+}

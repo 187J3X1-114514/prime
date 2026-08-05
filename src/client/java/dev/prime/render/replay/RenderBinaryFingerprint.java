@@ -55,10 +55,10 @@ public record RenderBinaryFingerprint(
             "/prime/starmap/starmap_2020_8k_2.rgba16f.gz",
             "/prime/starmap/starmap_2020_8k_3.rgba16f.gz");
     private static final List<String> EXECUTION_CLASS_RESOURCES = List.of(
-            "/dev/prime/render/VulkanRenderer.class",
-            "/dev/prime/render/VulkanRenderer$BlockAtlasFrame.class",
-            "/dev/prime/render/RealtimeRenderer.class",
-            "/dev/prime/render/RealtimeRenderer$RenderInput.class",
+            "/dev/prime/render/runtime/VulkanRenderer.class",
+            "/dev/prime/render/runtime/VulkanRenderer$BlockAtlasFrame.class",
+            "/dev/prime/render/runtime/RealtimeRenderer.class",
+            "/dev/prime/render/runtime/RealtimeRenderer$RenderInput.class",
             "/dev/prime/render/RealtimeFrameInput.class",
             "/dev/prime/render/RealtimeFramePlan.class",
             "/dev/prime/render/RealtimeRenderSettings.class",

@@ -5,7 +5,7 @@ import dev.prime.render.IntegratorFrameInput;
 import dev.prime.render.SunDirection;
 import dev.prime.render.shader.ShaderAbi;
 import dev.prime.render.terrain.TerrainOccluderChange;
-import dev.prime.render.terrain.TerrainScene;
+import dev.prime.render.vulkan.terrain.TerrainScene;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.util.ArrayList;

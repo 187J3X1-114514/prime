@@ -4,10 +4,10 @@ import dev.prime.render.shader.ShaderAbi;
 import java.util.Arrays;
 
 /** Pure CPU builder for the packed top-level world light tree. */
-final class CpuWorldLightTree {
+public final class CpuWorldLightTree {
     private CpuWorldLightTree() {}
 
-    static Result build(WorldLightTreeInput input) {
+    public static Result build(WorldLightTreeInput input) {
         int lightCount = lightCount(input);
         if (lightCount == 0) {
             return Result.empty(input.clusterCount());
@@ -64,7 +64,7 @@ final class CpuWorldLightTree {
         return count;
     }
 
-    static final class Result {
+    public static final class Result {
         private final int[] packedWords;
         private final int nodeWordCount;
         private final int forwardWordCount;
@@ -115,7 +115,7 @@ final class CpuWorldLightTree {
             Arrays.fill(this.leafNodes, CpuLightTree.NO_INDEX);
         }
 
-        static Result empty(int clusterCount) {
+        public static Result empty(int clusterCount) {
             if (clusterCount < 0) {
                 throw new IllegalArgumentException("Negative world light cluster count");
             }
@@ -148,27 +148,27 @@ final class CpuWorldLightTree {
                     this.nodeWordCount + this.forwardWordCount);
         }
 
-        boolean isEmpty() {
+        public boolean isEmpty() {
             return this.nodeWordCount == 0;
         }
 
-        int[] pack() {
+        public int[] pack() {
             return this.packedWords;
         }
 
-        long forwardByteOffset() {
+        public long forwardByteOffset() {
             return (long) this.nodeWordCount * Integer.BYTES;
         }
 
-        long reverseByteOffset() {
+        public long reverseByteOffset() {
             return (long) (this.nodeWordCount + this.forwardWordCount) * Integer.BYTES;
         }
 
-        int nodeCount() {
+        public int nodeCount() {
             return this.nodeWordCount / (ShaderAbi.LIGHT_NODE_SIZE / Integer.BYTES);
         }
 
-        int leafNode(int clusterIndex) {
+        public int leafNode(int clusterIndex) {
             if (clusterIndex < 0 || clusterIndex >= this.leafNodes.length) {
                 throw new IndexOutOfBoundsException(clusterIndex);
             }

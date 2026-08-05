@@ -6,7 +6,7 @@ import dev.prime.render.AstronomySettings;
 import dev.prime.render.DisplaySettings;
 import dev.prime.render.LightingSettings;
 import dev.prime.render.MaterialSettings;
-import dev.prime.render.RayTracingRuntime;
+import dev.prime.client.PrimeRuntime;
 import dev.prime.render.RendererSettings;
 import dev.prime.render.fsr.FsrDebugView;
 import dev.prime.render.fsr.FsrQualityMode;
@@ -69,7 +69,7 @@ public final class PrimeVideoOptions {
     }
 
     public static OptionInstance<Boolean> screenshotMode() {
-        RayTracingRuntime runtime = RayTracingRuntime.instance();
+        PrimeRuntime runtime = PrimeRuntime.instance();
         return OptionInstance.createBoolean(
                 "prime.options.screenshot_mode",
                 OptionInstance.cachedConstantTooltip(
@@ -93,7 +93,7 @@ public final class PrimeVideoOptions {
     }
 
     public static OptionInstance<Boolean> triangleDebug() {
-        RayTracingRuntime runtime = RayTracingRuntime.instance();
+        PrimeRuntime runtime = PrimeRuntime.instance();
         return OptionInstance.createBoolean(
                 "prime.options.debug.triangle_distribution",
                 OptionInstance.cachedConstantTooltip(Component.translatable(
@@ -103,7 +103,7 @@ public final class PrimeVideoOptions {
     }
 
     public static OptionInstance<Boolean> rendererDiagnostics() {
-        RayTracingRuntime runtime = RayTracingRuntime.instance();
+        PrimeRuntime runtime = PrimeRuntime.instance();
         return OptionInstance.createBoolean(
                 "prime.options.debug.renderer_diagnostics",
                 OptionInstance.cachedConstantTooltip(Component.translatable(
@@ -158,7 +158,7 @@ public final class PrimeVideoOptions {
     }
 
     public static OptionInstance<DlssRrDebugView> dlssRrDebugView() {
-        RayTracingRuntime runtime = RayTracingRuntime.instance();
+        PrimeRuntime runtime = PrimeRuntime.instance();
         return new OptionInstance<>(
                 "prime.options.dlss_rr.debug_view",
                 OptionInstance.cachedConstantTooltip(
@@ -173,7 +173,7 @@ public final class PrimeVideoOptions {
     }
 
     public static OptionInstance<Boolean> dlssRrDebugFullscreen() {
-        RayTracingRuntime runtime = RayTracingRuntime.instance();
+        PrimeRuntime runtime = PrimeRuntime.instance();
         return OptionInstance.createBoolean(
                 "prime.options.dlss_rr.debug_fullscreen",
                 OptionInstance.cachedConstantTooltip(
@@ -278,7 +278,7 @@ public final class PrimeVideoOptions {
     }
 
     public static OptionInstance<NrdDiagnostics.Mode> nrdDebugView() {
-        RayTracingRuntime runtime = RayTracingRuntime.instance();
+        PrimeRuntime runtime = PrimeRuntime.instance();
         return new OptionInstance<>(
                 "prime.options.nrd.debug_view",
                 OptionInstance.cachedConstantTooltip(
@@ -293,7 +293,7 @@ public final class PrimeVideoOptions {
     }
 
     public static OptionInstance<FsrDebugView> fsrDebugView() {
-        RayTracingRuntime runtime = RayTracingRuntime.instance();
+        PrimeRuntime runtime = PrimeRuntime.instance();
         return new OptionInstance<>(
                 "prime.options.fsr.debug_view",
                 OptionInstance.cachedConstantTooltip(
@@ -332,7 +332,7 @@ public final class PrimeVideoOptions {
         PrimeConfig.setPathTracingEnabled(enabled);
         RendererSettings current = PrimeConfig.rendererSettings();
         if (previous.pathTracingEnabled() != current.pathTracingEnabled()) {
-            RayTracingRuntime.instance().pathTracingChanged(current.pathTracingEnabled());
+            PrimeRuntime.instance().pathTracingChanged(current.pathTracingEnabled());
         }
     }
 
@@ -341,7 +341,7 @@ public final class PrimeVideoOptions {
         PrimeConfig.setVoxelTextureSurfaces(enabled);
         RendererSettings current = PrimeConfig.rendererSettings();
         if (previous.voxelTextureSurfaces() != current.voxelTextureSurfaces()) {
-            RayTracingRuntime.instance().voxelTextureSurfacesChanged(
+            PrimeRuntime.instance().voxelTextureSurfacesChanged(
                     current.voxelTextureSurfaces());
         }
     }
@@ -352,7 +352,7 @@ public final class PrimeVideoOptions {
         RendererSettings current = PrimeConfig.rendererSettings();
         if (previous.voxelTextureSurfaceStrengthSteps()
                 != current.voxelTextureSurfaceStrengthSteps()) {
-            RayTracingRuntime.instance().voxelTextureSurfaceStrengthChanged(
+            PrimeRuntime.instance().voxelTextureSurfaceStrengthChanged(
                     current.voxelTextureSurfaces(),
                     current.voxelTextureSurfaceStrengthSteps());
         }

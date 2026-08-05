@@ -1,0 +1,25 @@
+plugins {
+    id 'groovy-gradle-plugin'
+}
+
+repositories {
+    gradlePluginPortal()
+    mavenCentral()
+}
+
+gradlePlugin {
+    plugins {
+        architectureConventions {
+            id = 'prime.architecture-conventions'
+            implementationClass = 'dev.prime.gradle.PrimeArchitecturePlugin'
+        }
+        shaderAbiConventions {
+            id = 'prime.shader-abi-conventions'
+            implementationClass = 'dev.prime.gradle.PrimeShaderAbiPlugin'
+        }
+        nativePackagingConventions {
+            id = 'prime.native-packaging-conventions'
+            implementationClass = 'dev.prime.gradle.PrimeNativePackagingPlugin'
+        }
+    }
+}

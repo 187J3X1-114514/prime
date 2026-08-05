@@ -4,7 +4,7 @@ import com.mojang.blaze3d.vulkan.VulkanGpuTexture;
 import com.mojang.blaze3d.vulkan.VulkanGpuTextureView;
 import dev.prime.render.ResourceCleanup;
 import dev.prime.render.OfflineFramePlan;
-import dev.prime.render.terrain.TerrainScene;
+import dev.prime.render.vulkan.terrain.TerrainScene;
 import java.util.List;
 import java.util.Objects;
 import org.lwjgl.system.MemoryStack;
@@ -62,7 +62,7 @@ public final class OfflineFrameExecutor {
         long atmosphereFrame = 0L;
         long pipelineFrame = 0L;
         LabPbrTextureAtlas.FrameToken labPbrFrame = null;
-        boolean submissionAccepted = false;
+        MinecraftHostSubmission hostSubmission = new MinecraftHostSubmission();
         boolean initializationActive = false;
         try {
             this.imageInitialization.begin();
@@ -131,9 +131,8 @@ public final class OfflineFrameExecutor {
                     VK12.vkEndCommandBuffer(commandBuffer),
                     "end Prime offline accumulation command buffer");
             encoder.execute(commandBuffer);
-            // execute() transfers this command buffer to Minecraft's open Submission only after
-            // its validation succeeds; failed calls still own and must abandon recorded state.
-            submissionAccepted = true;
+            hostSubmission.acceptedByMinecraftHostSubmission();
+            // Prime histories advance only after Minecraft's open host submission accepts it.
             this.imageInitialization.submitted();
             initializationActive = false;
             long submittedPipelineFrame = pipelineFrame;
@@ -150,7 +149,7 @@ public final class OfflineFrameExecutor {
                     commitFailure);
             ResourceCleanup.throwIfFailed(commitFailure);
         } catch (RuntimeException exception) {
-            if (!submissionAccepted) {
+            if (!hostSubmission.wasAcceptedByMinecraftHostSubmission()) {
                 RuntimeException failure = exception;
                 if (initializationActive) {
                     failure = ResourceCleanup.run(

@@ -47,12 +47,12 @@ public record RealtimeFrameInput(
         }
     }
 
-    RealtimeSampleState.Input sampleStateInput() {
+    public RealtimeSampleState.Input sampleStateInput() {
         return new RealtimeSampleState.Input(
                 this.camera, this.sceneRevision, this.forceReset);
     }
 
-    ReconstructionFrameParameters reconstructionInput(boolean forceRestart) {
+    public ReconstructionFrameParameters reconstructionInput(boolean forceRestart) {
         return new ReconstructionFrameParameters(
                 this.camera,
                 this.frameTimeNanos,

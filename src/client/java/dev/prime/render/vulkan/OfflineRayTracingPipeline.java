@@ -5,7 +5,7 @@ import com.mojang.blaze3d.vulkan.VulkanGpuSampler;
 import com.mojang.blaze3d.vulkan.VulkanGpuTextureView;
 import dev.prime.render.IntegratorFrameInput;
 import dev.prime.render.shader.ShaderAbi;
-import dev.prime.render.terrain.TerrainScene;
+import dev.prime.render.vulkan.terrain.TerrainScene;
 import java.nio.ByteBuffer;
 import java.nio.LongBuffer;
 import java.util.List;
@@ -70,7 +70,7 @@ public final class OfflineRayTracingPipeline implements Destroyable {
             try (MemoryStack stack = MemoryStack.stackPush()) {
                 setLayout = createDescriptorSetLayout(context, stack);
                 layout = createPipelineLayout(
-                        context, stack, backend.descriptorSetLayout(), setLayout);
+                        context, stack, backend.bindings().descriptorSetLayout(), setLayout);
             }
             boolean ser = context.capabilities().invocationReorderSupported()
                     && context.capabilities().wavefrontSubgroupSupported();
@@ -208,7 +208,7 @@ public final class OfflineRayTracingPipeline implements Destroyable {
         if (this.wavefront == null || this.wavefront.size() != wavefrontBytes(width, height)) {
             throw new IllegalStateException("Offline wavefront extent mismatch");
         }
-        if (!this.backend.staticResourcesPrepared()) {
+        if (!this.backend.bindings().ready()) {
             throw new IllegalStateException("Trace-backend resources are not prepared");
         }
         try (MemoryStack stack = MemoryStack.stackPush()) {
@@ -262,7 +262,7 @@ public final class OfflineRayTracingPipeline implements Destroyable {
                 KHRRayTracingPipeline.VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR,
                 this.pipelineLayout,
                 0,
-                stack.longs(this.backend.descriptorSet(), this.bindings.descriptorSet),
+                stack.longs(this.backend.bindings().descriptorSet(), this.bindings.descriptorSet),
                 null);
         VK12.vkCmdPushConstants(
                 commandBuffer,

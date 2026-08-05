@@ -1,6 +1,6 @@
 package dev.prime.mixin;
 
-import dev.prime.render.RayTracingRuntime;
+import dev.prime.client.PrimeRuntime;
 import net.minecraft.client.renderer.texture.TextureAtlas;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
@@ -14,7 +14,7 @@ public abstract class TextureAtlasMixin {
     @Inject(method = "tick", at = @At("HEAD"), cancellable = true)
     private void prime$freezeBlockAnimations(CallbackInfo callbackInfo) {
         TextureAtlas atlas = (TextureAtlas) (Object) this;
-        if (RayTracingRuntime.instance().screenshotActive()
+        if (PrimeRuntime.instance().screenshotActive()
                 && TextureAtlas.LOCATION_BLOCKS.equals(atlas.location())) {
             callbackInfo.cancel();
         }

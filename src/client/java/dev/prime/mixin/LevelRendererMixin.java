@@ -3,7 +3,7 @@ package dev.prime.mixin;
 import com.mojang.blaze3d.framegraph.FrameGraphBuilder;
 import com.mojang.blaze3d.resource.GraphicsResourceAllocator;
 import com.mojang.blaze3d.vertex.PoseStack;
-import dev.prime.render.RayTracingRuntime;
+import dev.prime.client.PrimeRuntime;
 import dev.prime.render.scene.vanilla.DynamicSceneCapture;
 import dev.prime.render.scene.vanilla.PrimeEntityRenderState;
 import dev.prime.render.scene.vanilla.VanillaSceneBoundary;
@@ -31,7 +31,7 @@ public abstract class LevelRendererMixin {
                     value = "INVOKE",
                     target = "Lnet/minecraft/client/Options;getEffectiveRenderDistance()I"))
     private int prime$routeVanillaTerrainDistance(Options options) {
-        return RayTracingRuntime.instance().vanillaTerrainDistance(
+        return PrimeRuntime.instance().vanillaTerrainDistance(
                 options.getEffectiveRenderDistance());
     }
 
@@ -39,7 +39,7 @@ public abstract class LevelRendererMixin {
     private void prime$skipVanillaTerrainCompilation(
             net.minecraft.client.renderer.state.level.CameraRenderState camera,
             CallbackInfo callback) {
-        if (!RayTracingRuntime.instance().shouldMaintainVanillaTerrain()) {
+        if (!PrimeRuntime.instance().shouldMaintainVanillaTerrain()) {
             callback.cancel();
         }
     }
@@ -50,7 +50,7 @@ public abstract class LevelRendererMixin {
                     value = "INVOKE",
                     target = "Lnet/minecraft/client/renderer/chunk/SectionRenderDispatcher;uploadTerrainBuffersToGpu()V"))
     private void prime$routeVanillaTerrainUpload(SectionRenderDispatcher dispatcher) {
-        if (RayTracingRuntime.instance().shouldMaintainVanillaTerrain()) {
+        if (PrimeRuntime.instance().shouldMaintainVanillaTerrain()) {
             dispatcher.uploadTerrainBuffersToGpu();
         }
     }
@@ -61,7 +61,7 @@ public abstract class LevelRendererMixin {
             SubmitNodeCollector submitNodeCollector,
             boolean renderOutline,
             CallbackInfo ci) {
-        if (RayTracingRuntime.instance().shouldCaptureDynamicScene()) {
+        if (PrimeRuntime.instance().shouldCaptureDynamicScene()) {
             DynamicSceneCapture.begin(levelRenderState.cameraRenderState.pos);
         }
     }
@@ -73,7 +73,7 @@ public abstract class LevelRendererMixin {
             boolean renderOutline,
             CallbackInfo ci) {
         if (DynamicSceneCapture.active()) {
-            RayTracingRuntime.instance().captureDynamicScene(
+            PrimeRuntime.instance().captureDynamicScene(
                     DynamicSceneCapture.finish());
         }
     }
@@ -199,7 +199,7 @@ public abstract class LevelRendererMixin {
             FrameGraphBuilder frame,
             GraphicsResourceAllocator resourceAllocator,
             FrameGraphBuilder.Inspector inspector) {
-        if (!RayTracingRuntime.instance().shouldReplaceWorld()) {
+        if (!PrimeRuntime.instance().shouldReplaceWorld()) {
             frame.execute(resourceAllocator, inspector);
         }
     }

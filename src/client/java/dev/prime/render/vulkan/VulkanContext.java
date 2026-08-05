@@ -3,7 +3,6 @@ package dev.prime.render.vulkan;
 import com.mojang.blaze3d.vulkan.Destroyable;
 import com.mojang.blaze3d.vulkan.VulkanCommandEncoder;
 import com.mojang.blaze3d.vulkan.VulkanDevice;
-import dev.prime.render.replay.RenderPlatformFingerprint;
 import java.nio.LongBuffer;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -31,7 +30,6 @@ public final class VulkanContext implements AutoCloseable {
     private final long allocator;
     private final long uniformBufferOffsetAlignment;
     private final long maxStorageBufferRange;
-    private final RenderPlatformFingerprint platformFingerprint;
     private final Set<Destroyable> deferred = Collections.newSetFromMap(new IdentityHashMap<>());
     private boolean closed;
 
@@ -58,8 +56,6 @@ public final class VulkanContext implements AutoCloseable {
             this.uniformBufferOffsetAlignment = properties.limits().minUniformBufferOffsetAlignment();
             this.maxStorageBufferRange =
                     Integer.toUnsignedLong(properties.limits().maxStorageBufferRange());
-            this.platformFingerprint =
-                    RenderPlatformFingerprint.capture(properties, capabilities);
         }
     }
 
@@ -86,10 +82,6 @@ public final class VulkanContext implements AutoCloseable {
 
     public long maxStorageBufferRange() {
         return this.maxStorageBufferRange;
-    }
-
-    public RenderPlatformFingerprint platformFingerprint() {
-        return this.platformFingerprint;
     }
 
     public VulkanBuffer createBuffer(long size, int usage, boolean hostVisible, String label) {

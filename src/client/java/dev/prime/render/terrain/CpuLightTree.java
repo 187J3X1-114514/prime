@@ -12,8 +12,8 @@ import java.util.List;
  * stream and derives the sibling from the consecutive-pair invariant instead of reconstructing
  * probabilities from higher-precision CPU state.
  */
-final class CpuLightTree {
-    static final int NO_INDEX = -1;
+public final class CpuLightTree {
+    public static final int NO_INDEX = -1;
     // A uniformly populated AABB has spatial variance diagonal^2 / 12. These retain the
     // previous diagonal^2 / 128 and / 64 calibration while responding to actual power spread.
     static final float LOCAL_SOFTENING_SCALE = 3.0F / 32.0F;

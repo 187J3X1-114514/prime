@@ -3,15 +3,15 @@ package dev.prime.render;
 import java.util.Objects;
 
 /** Transport settings frozen for one offline accumulation session. */
-record OfflineRenderSettings(
+public record OfflineRenderSettings(
         LightingSettings.Snapshot lighting,
         MaterialSettings.Snapshot material,
         int maximumBounces,
         int russianRouletteStart) {
-    static final int DEFAULT_MAXIMUM_BOUNCES = 128;
-    static final int DEFAULT_RUSSIAN_ROULETTE_START = 1;
+    public static final int DEFAULT_MAXIMUM_BOUNCES = 128;
+    public static final int DEFAULT_RUSSIAN_ROULETTE_START = 1;
 
-    OfflineRenderSettings {
+    public OfflineRenderSettings {
         Objects.requireNonNull(lighting, "lighting");
         Objects.requireNonNull(material, "material");
         if (maximumBounces != IntegratorSettings.MAXIMUM_BOUNCES) {
@@ -24,7 +24,7 @@ record OfflineRenderSettings(
         }
     }
 
-    static OfflineRenderSettings capture(RendererSettings settings) {
+    public static OfflineRenderSettings capture(RendererSettings settings) {
         Objects.requireNonNull(settings, "settings");
         return new OfflineRenderSettings(
                 settings.lighting(),

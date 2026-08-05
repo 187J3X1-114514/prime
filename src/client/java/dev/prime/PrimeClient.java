@@ -2,7 +2,8 @@ package dev.prime;
 
 import dev.prime.config.PrimeConfig;
 import dev.prime.infrastructure.PrimeInfo;
-import dev.prime.render.RayTracingRuntime;
+import dev.prime.client.PrimeRuntime;
+import dev.prime.render.runtime.RendererLifecycle;
 import dev.prime.render.scene.vanilla.ItemFrameModelFallback;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executor;
@@ -22,7 +23,7 @@ public final class PrimeClient implements ClientModInitializer {
         PrimeConfig.load();
         PrimeInfo.LOGGER.info("Initializing Prime ray tracing framework");
         ItemFrameModelFallback.register();
-        RayTracingRuntime.instance().initialize(PrimeConfig.rendererSettings());
+        PrimeRuntime.instance().initialize(PrimeConfig.rendererSettings());
         ResourceLoader resourceLoader = ResourceLoader.get(PackType.CLIENT_RESOURCES);
         resourceLoader.registerReloadListener(RELOAD_LISTENER_ID, new PreparableReloadListener() {
             private boolean initialReload = true;
@@ -33,12 +34,12 @@ public final class PrimeClient implements ClientModInitializer {
                     Executor preparationExecutor,
                     PreparationBarrier preparationBarrier,
                     Executor applyExecutor) {
-                RayTracingRuntime runtime = RayTracingRuntime.instance();
-                AtomicReference<RayTracingRuntime.ResourceReload> reload =
+                PrimeRuntime runtime = PrimeRuntime.instance();
+                AtomicReference<RendererLifecycle.ResourceReload> reload =
                         new AtomicReference<>();
-                CompletableFuture<RayTracingRuntime.ResourceReload> retired =
+                CompletableFuture<RendererLifecycle.ResourceReload> retired =
                         CompletableFuture.supplyAsync(() -> {
-                            RayTracingRuntime.ResourceReload ticket =
+                            RendererLifecycle.ResourceReload ticket =
                                     runtime.beginResourceReload();
                             reload.set(ticket);
                             return ticket;
@@ -55,7 +56,7 @@ public final class PrimeClient implements ClientModInitializer {
                     if (failure == null) {
                         return;
                     }
-                    RayTracingRuntime.ResourceReload ticket = reload.get();
+                    RendererLifecycle.ResourceReload ticket = reload.get();
                     if (ticket == null) {
                         return;
                     }

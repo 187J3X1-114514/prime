@@ -2,6 +2,7 @@ package dev.prime.render.vulkan;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
+import dev.prime.render.AtmosphereCoordinates;
 import dev.prime.render.shader.ShaderAbi;
 import java.io.InputStream;
 import java.security.MessageDigest;
@@ -30,22 +31,22 @@ final class AtmospherePipelineTest {
     void minecraftBuildRangeUsesInternalAtmosphereScale() {
         float scale =
                 ShaderAbi.ATMOSPHERE_WORLD_TO_ATMOSPHERE_SCALE;
-        assertEquals(0.0F, AtmospherePipeline.worldAltitudeKm(-128.0));
-        assertEquals(0.064F * scale, AtmospherePipeline.worldAltitudeKm(-64.0));
-        assertEquals(0.448F * scale, AtmospherePipeline.worldAltitudeKm(320.0));
+        assertEquals(0.0F, AtmosphereCoordinates.worldAltitudeKm(-128.0));
+        assertEquals(0.064F * scale, AtmosphereCoordinates.worldAltitudeKm(-64.0));
+        assertEquals(0.448F * scale, AtmosphereCoordinates.worldAltitudeKm(320.0));
         // The one-block radius offset keeps ray/sphere tests numerically outside the ground while
         // the conceptual virtual-ground altitude remains exactly zero.
         assertEquals(
                 ShaderAbi.ATMOSPHERE_BOTTOM_RADIUS_KM + 0.001F * scale,
-                AtmospherePipeline.eyeRadiusKm(-128.0),
+                AtmosphereCoordinates.eyeRadiusKm(-128.0),
                 0.001F);
         assertEquals(
                 ShaderAbi.ATMOSPHERE_BOTTOM_RADIUS_KM + 0.064F * scale,
-                AtmospherePipeline.eyeRadiusKm(-64.0),
+                AtmosphereCoordinates.eyeRadiusKm(-64.0),
                 0.001F);
         assertEquals(
                 ShaderAbi.ATMOSPHERE_BOTTOM_RADIUS_KM + 0.448F * scale,
-                AtmospherePipeline.eyeRadiusKm(320.0),
+                AtmosphereCoordinates.eyeRadiusKm(320.0),
                 0.001F);
     }
 
@@ -54,11 +55,11 @@ final class AtmospherePipelineTest {
         float shellMargin = ShaderAbi.ATMOSPHERE_WORLD_UNIT_SCALE_KM;
         assertEquals(
                 ShaderAbi.ATMOSPHERE_BOTTOM_RADIUS_KM + shellMargin,
-                AtmospherePipeline.eyeRadiusKm(-1.0e9),
+                AtmosphereCoordinates.eyeRadiusKm(-1.0e9),
                 0.001F);
         assertEquals(
                 ShaderAbi.ATMOSPHERE_TOP_RADIUS_KM - shellMargin,
-                AtmospherePipeline.eyeRadiusKm(1.0e9),
+                AtmosphereCoordinates.eyeRadiusKm(1.0e9),
                 0.001F);
     }
 }

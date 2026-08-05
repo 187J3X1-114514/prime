@@ -1,51 +1,50 @@
 package dev.prime.render.replay;
 
 import java.util.List;
-import org.lwjgl.vulkan.VK12;
 
 /** Stable signal order and image-format contract used by canonical GPU stage captures. */
 public enum RenderStageSchema {
     RAW_WAVEFRONT(List.of(
-            signal("primary.view_z", VK12.VK_FORMAT_R32_SFLOAT),
-            signal("primary.position", VK12.VK_FORMAT_R32G32B32A32_SFLOAT),
-            signal("primary.diffuse", VK12.VK_FORMAT_R16G16B16A16_SFLOAT),
-            signal("primary.specular", VK12.VK_FORMAT_R16G16B16A16_SFLOAT),
-            signal("primary.normal_roughness", VK12.VK_FORMAT_A2B10G10R10_UNORM_PACK32),
-            signal("primary.material", VK12.VK_FORMAT_R16G16B16A16_SFLOAT),
-            signal("primary.specular_material", VK12.VK_FORMAT_R16G16B16A16_SFLOAT),
-            signal("primary.diffuse_direction", VK12.VK_FORMAT_R16G16B16A16_SFLOAT),
-            signal("primary.specular_direction", VK12.VK_FORMAT_R16G16B16A16_SFLOAT),
-            signal("reflection.position", VK12.VK_FORMAT_R32G32B32A32_SFLOAT),
-            signal("reflection.diffuse", VK12.VK_FORMAT_R16G16B16A16_SFLOAT),
-            signal("reflection.specular", VK12.VK_FORMAT_R16G16B16A16_SFLOAT),
-            signal("reflection.normal_roughness", VK12.VK_FORMAT_A2B10G10R10_UNORM_PACK32),
-            signal("reflection.material", VK12.VK_FORMAT_R16G16B16A16_SFLOAT),
-            signal("reflection.specular_material", VK12.VK_FORMAT_R16G16B16A16_SFLOAT),
-            signal("reflection.diffuse_direction", VK12.VK_FORMAT_R16G16B16A16_SFLOAT),
-            signal("reflection.specular_direction", VK12.VK_FORMAT_R16G16B16A16_SFLOAT),
-            signal("display.position", VK12.VK_FORMAT_R32G32B32A32_SFLOAT))),
+            signal("primary.view_z", RenderPixelFormat.R32_FLOAT),
+            signal("primary.position", RenderPixelFormat.RGBA32_FLOAT),
+            signal("primary.diffuse", RenderPixelFormat.RGBA16_FLOAT),
+            signal("primary.specular", RenderPixelFormat.RGBA16_FLOAT),
+            signal("primary.normal_roughness", RenderPixelFormat.RGB10_A2_UNORM),
+            signal("primary.material", RenderPixelFormat.RGBA16_FLOAT),
+            signal("primary.specular_material", RenderPixelFormat.RGBA16_FLOAT),
+            signal("primary.diffuse_direction", RenderPixelFormat.RGBA16_FLOAT),
+            signal("primary.specular_direction", RenderPixelFormat.RGBA16_FLOAT),
+            signal("reflection.position", RenderPixelFormat.RGBA32_FLOAT),
+            signal("reflection.diffuse", RenderPixelFormat.RGBA16_FLOAT),
+            signal("reflection.specular", RenderPixelFormat.RGBA16_FLOAT),
+            signal("reflection.normal_roughness", RenderPixelFormat.RGB10_A2_UNORM),
+            signal("reflection.material", RenderPixelFormat.RGBA16_FLOAT),
+            signal("reflection.specular_material", RenderPixelFormat.RGBA16_FLOAT),
+            signal("reflection.diffuse_direction", RenderPixelFormat.RGBA16_FLOAT),
+            signal("reflection.specular_direction", RenderPixelFormat.RGBA16_FLOAT),
+            signal("display.position", RenderPixelFormat.RGBA32_FLOAT))),
     PREPARED_NRD(List.of(
-            signal("primary.motion", VK12.VK_FORMAT_R16G16B16A16_SFLOAT),
-            signal("primary.normal_roughness", VK12.VK_FORMAT_A2B10G10R10_UNORM_PACK32),
-            signal("primary.view_z", VK12.VK_FORMAT_R32_SFLOAT),
-            signal("primary.diffuse_sh0", VK12.VK_FORMAT_R16G16B16A16_SFLOAT),
-            signal("primary.specular_sh0", VK12.VK_FORMAT_R16G16B16A16_SFLOAT),
-            signal("primary.diffuse_sh1", VK12.VK_FORMAT_R16G16B16A16_SFLOAT),
-            signal("primary.specular_sh1", VK12.VK_FORMAT_R16G16B16A16_SFLOAT),
-            signal("reflection.motion", VK12.VK_FORMAT_R16G16B16A16_SFLOAT),
-            signal("reflection.normal_roughness", VK12.VK_FORMAT_A2B10G10R10_UNORM_PACK32),
-            signal("reflection.view_z", VK12.VK_FORMAT_R32_SFLOAT),
-            signal("reflection.diffuse_sh0", VK12.VK_FORMAT_R16G16B16A16_SFLOAT),
-            signal("reflection.specular_sh0", VK12.VK_FORMAT_R16G16B16A16_SFLOAT),
-            signal("reflection.diffuse_sh1", VK12.VK_FORMAT_R16G16B16A16_SFLOAT),
-            signal("reflection.specular_sh1", VK12.VK_FORMAT_R16G16B16A16_SFLOAT),
-            signal("sun.penumbra", VK12.VK_FORMAT_R16_SFLOAT),
-            signal("fsr.depth", VK12.VK_FORMAT_R32_SFLOAT),
-            signal("fsr.motion", VK12.VK_FORMAT_R16G16B16A16_SFLOAT))),
+            signal("primary.motion", RenderPixelFormat.RGBA16_FLOAT),
+            signal("primary.normal_roughness", RenderPixelFormat.RGB10_A2_UNORM),
+            signal("primary.view_z", RenderPixelFormat.R32_FLOAT),
+            signal("primary.diffuse_sh0", RenderPixelFormat.RGBA16_FLOAT),
+            signal("primary.specular_sh0", RenderPixelFormat.RGBA16_FLOAT),
+            signal("primary.diffuse_sh1", RenderPixelFormat.RGBA16_FLOAT),
+            signal("primary.specular_sh1", RenderPixelFormat.RGBA16_FLOAT),
+            signal("reflection.motion", RenderPixelFormat.RGBA16_FLOAT),
+            signal("reflection.normal_roughness", RenderPixelFormat.RGB10_A2_UNORM),
+            signal("reflection.view_z", RenderPixelFormat.R32_FLOAT),
+            signal("reflection.diffuse_sh0", RenderPixelFormat.RGBA16_FLOAT),
+            signal("reflection.specular_sh0", RenderPixelFormat.RGBA16_FLOAT),
+            signal("reflection.diffuse_sh1", RenderPixelFormat.RGBA16_FLOAT),
+            signal("reflection.specular_sh1", RenderPixelFormat.RGBA16_FLOAT),
+            signal("sun.penumbra", RenderPixelFormat.R16_FLOAT),
+            signal("fsr.depth", RenderPixelFormat.R32_FLOAT),
+            signal("fsr.motion", RenderPixelFormat.RGBA16_FLOAT))),
     POST_NRD(List.of(
-            signal("composite.color", VK12.VK_FORMAT_R16G16B16A16_SFLOAT),
-            signal("fsr.reactive", VK12.VK_FORMAT_R8_UNORM),
-            signal("fsr.transparency_composition", VK12.VK_FORMAT_R8_UNORM)));
+            signal("composite.color", RenderPixelFormat.RGBA16_FLOAT),
+            signal("fsr.reactive", RenderPixelFormat.R8_UNORM),
+            signal("fsr.transparency_composition", RenderPixelFormat.R8_UNORM)));
 
     private final List<Signal> layout;
     private final List<String> signals;
@@ -72,14 +71,14 @@ public enum RenderStageSchema {
         return index;
     }
 
-    public int format(int signalIndex) {
+    public RenderPixelFormat format(int signalIndex) {
         return this.layout.get(signalIndex).format();
     }
 
-    private static Signal signal(String name, int format) {
+    private static Signal signal(String name, RenderPixelFormat format) {
         return new Signal(name, format);
     }
 
-    private record Signal(String name, int format) {
+    private record Signal(String name, RenderPixelFormat format) {
     }
 }

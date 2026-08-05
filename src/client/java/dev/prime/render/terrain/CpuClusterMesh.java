@@ -181,7 +181,7 @@ public final class CpuClusterMesh {
                 voxelInstances);
     }
 
-    static CpuClusterMesh empty() {
+    public static CpuClusterMesh empty() {
         return new CpuClusterMesh(
                 List.of(),
                 0L,

@@ -125,6 +125,12 @@ void primeWriteRealtimeOutput(
     vec3 primaryPosition = primeNrdIsFinite(nrdGuides.primaryPosition)
             ? nrdGuides.primaryPosition
             : vec3(0.0);
+    bool primaryHasMotion = nrdGuides.primaryHasMotion
+            && !usesTransmissionAnchor
+            && primeNrdIsFinite(nrdGuides.primaryPreviousPosition);
+    vec3 primaryPreviousPosition = primaryHasMotion
+            ? nrdGuides.primaryPreviousPosition
+            : primaryPosition;
     if (usesTransmissionAnchor) {
         // A refracted hit does not project to this pixel under the camera's straight projection.
         // Put its plane intersection on the visible primary ray so a static camera has zero
@@ -158,7 +164,11 @@ void primeWriteRealtimeOutput(
             primeNrdPrimaryPosition,
             ivec2(pixel),
             vec4(
-                    primaryDistance < 0.0 ? vec3(0.0) : primaryPosition,
+                    primaryDistance < 0.0
+                            ? vec3(0.0)
+                            : (!nrdShInputs && primaryHasMotion
+                                    ? primaryPreviousPosition
+                                    : primaryPosition),
                     nrdShInputs
                             ? uintBitsToFloat(packHalf2x16(cameraSample))
                             : visibleDistance));
@@ -206,15 +216,28 @@ void primeWriteRealtimeOutput(
                             : nrdGuides.primarySpecularAlbedo),
                     nrdShInputs
                             ? float(nrdGuides.primaryMaterialFlags)
-                            : sampleResult.guides.primaryLinearRoughness));
+                            : (primaryHasMotion
+                                    ? -sampleResult.guides.primaryLinearRoughness - 1.0
+                                    : sampleResult.guides.primaryLinearRoughness)));
     if (nrdShInputs) {
+        bool visibleHasMotion = sampleResult.guides.primaryHasMotion
+                && hasVisibleSurface
+                && primeNrdIsFinite(
+                        sampleResult.guides.primaryPreviousPosition);
         imageStore(
                 primeNrdDisplayPosition,
                 ivec2(pixel),
                 vec4(
-                        hasVisibleSurface ? sampleResult.guides.primaryPosition : vec3(0.0),
+                        hasVisibleSurface
+                                ? (visibleHasMotion
+                                        ? sampleResult.guides.primaryPreviousPosition
+                                        : sampleResult.guides.primaryPosition)
+                                : vec3(0.0),
                         uintBitsToFloat(hasVisibleSurface
                                 ? sampleResult.guides.primaryMaterialFlags
+                                        | (visibleHasMotion
+                                                ? PRIME_DISPLAY_MOTION_FLAG
+                                                : 0u)
                                 : 0u)));
 
         PrimeDenoiserGuides reflectionGuides = sampleResult.reflectionGuides;

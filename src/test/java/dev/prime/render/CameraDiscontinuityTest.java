@@ -8,25 +8,25 @@ import org.junit.jupiter.api.Test;
 
 final class CameraDiscontinuityTest {
     @Test
-    void ordinaryMovementAndTurningKeepTemporalHistory() {
+    void movementTurningAndProjectionChangesKeepTemporalHistory() {
         FrameCamera previous = camera(0.0, 64.0, 0.0, 0.0F, 70.0F);
         assertFalse(CameraDiscontinuity.isCut(
                 previous,
                 camera(1.0, 64.5, -2.0, 20.0F, 70.0F)));
+        assertFalse(CameraDiscontinuity.isCut(
+                previous,
+                camera(0.0, 64.0, 0.0, 180.0F, 70.0F)));
+        assertFalse(CameraDiscontinuity.isCut(
+                previous,
+                camera(0.0, 64.0, 0.0, 0.0F, 110.0F)));
     }
 
     @Test
-    void teleportAbruptTurnAndProjectionJumpResetHistory() {
+    void teleportResetsHistory() {
         FrameCamera previous = camera(0.0, 64.0, 0.0, 0.0F, 70.0F);
         assertTrue(CameraDiscontinuity.isCut(
                 previous,
                 camera(33.0, 64.0, 0.0, 0.0F, 70.0F)));
-        assertTrue(CameraDiscontinuity.isCut(
-                previous,
-                camera(0.0, 64.0, 0.0, 61.0F, 70.0F)));
-        assertTrue(CameraDiscontinuity.isCut(
-                previous,
-                camera(0.0, 64.0, 0.0, 0.0F, 95.0F)));
     }
 
     private static FrameCamera camera(

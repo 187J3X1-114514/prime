@@ -150,6 +150,22 @@ public final class DynamicSceneCapture {
         sink.finish();
     }
 
+    public static void beginMotionObject(
+            VanillaSceneBoundary.Element element, long key) {
+        Session session = ACTIVE.get();
+        if (session != null) {
+            session.beginMotionObject(element, key);
+        }
+    }
+
+    public static void endMotionObject(
+            VanillaSceneBoundary.Element element, long key) {
+        Session session = ACTIVE.get();
+        if (session != null) {
+            session.endMotionObject(element, key);
+        }
+    }
+
     public static void captureItem(
             PoseStack poseStack,
             ItemDisplayContext displayContext,
@@ -302,6 +318,24 @@ public final class DynamicSceneCapture {
                         "Dynamic scene element capture closed out of order");
             }
             this.element = null;
+        }
+
+        private void beginMotionObject(
+                VanillaSceneBoundary.Element element, long key) {
+            if (this.element != element) {
+                throw new IllegalStateException(
+                        "Dynamic motion object opened outside its element scope");
+            }
+            this.builder.beginMotionObject(element, key);
+        }
+
+        private void endMotionObject(
+                VanillaSceneBoundary.Element element, long key) {
+            if (this.element != element) {
+                throw new IllegalStateException(
+                        "Dynamic motion object closed outside its element scope");
+            }
+            this.builder.endMotionObject(element, key);
         }
 
         private int textureIndex(RenderType renderType) {

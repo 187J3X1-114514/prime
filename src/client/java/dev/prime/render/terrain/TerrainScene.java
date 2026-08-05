@@ -76,7 +76,6 @@ public final class TerrainScene implements AutoCloseable {
                         this.originY,
                         this.originZ,
                         REBASE_DISTANCE);
-        boolean invalidateTemporalHistory = invalidatesTemporalHistory(needsRebase);
         if (!contentChanged && !needsRebase) {
             return true;
         }
@@ -130,6 +129,12 @@ public final class TerrainScene implements AutoCloseable {
                     clusterStagingBytes,
                     upload.mesh(),
                     this.context.capabilities().opacityMicromapSupported());
+            if (upload.dynamic() && !upload.isEmpty()) {
+                clusterStagingBytes = StagingArena.requiredEndOffset(
+                        clusterStagingBytes,
+                        (long) upload.motionPositions().length * Float.BYTES,
+                        Float.BYTES);
+            }
         }
         StagingArena.Batch clusterStagingBatch = needsClusterStaging
                 ? this.stagingArena.tryBeginBatch(clusterStagingBytes)
@@ -286,7 +291,6 @@ public final class TerrainScene implements AutoCloseable {
                     replacementWorldLights,
                     worldLightTree,
                     rebuildWorldLights,
-                    invalidateTemporalHistory,
                     occluderChanges,
                     nextOriginX,
                     nextOriginY,
@@ -465,7 +469,6 @@ public final class TerrainScene implements AutoCloseable {
                     null,
                     this.currentWorldLightTree,
                     false,
-                    false,
                     List.of(),
                     this.originX,
                     this.originY,
@@ -557,7 +560,8 @@ public final class TerrainScene implements AutoCloseable {
     /** Marks every temporal consumer as unrelated to its previous world. */
     void beginUnrelatedWorld() {
         this.resetRevision++;
-        this.temporalRevision++;
+        this.temporalRevision = nextTemporalRevision(
+                this.temporalRevision, TemporalContinuity.UNRELATED_WORLD);
     }
 
     public int residentCount() {
@@ -820,7 +824,6 @@ public final class TerrainScene implements AutoCloseable {
             VulkanBuffer replacementWorldLights,
             CpuWorldLightTree.Result replacementWorldLightTree,
             boolean replaceWorldLights,
-            boolean invalidateTemporalHistory,
             List<TerrainOccluderChange> occluderChanges,
             int nextOriginX,
             int nextOriginY,
@@ -861,9 +864,8 @@ public final class TerrainScene implements AutoCloseable {
         TopLevelAccelerationStructure previousTlas = this.currentTlas;
         VulkanBuffer previousWorldLights = replaceWorldLights ? this.currentWorldLights : null;
         long nextRevision = this.revision + 1L;
-        long nextTemporalRevision = invalidateTemporalHistory
-                ? this.temporalRevision + 1L
-                : this.temporalRevision;
+        long nextTemporalRevision = nextTemporalRevision(
+                this.temporalRevision, TemporalContinuity.RELATED_UPDATE);
         long nextOccluderRevision = occluderChanges.isEmpty()
                 ? this.occluderRevision
                 : this.occluderRevision + 1L;
@@ -1002,6 +1004,7 @@ public final class TerrainScene implements AutoCloseable {
         VulkanBuffer positions = null;
         VulkanBuffer primitives = null;
         VulkanBuffer lights = null;
+        VulkanBuffer motion = null;
         PreparedBlas blas = null;
         ArrayList<PreparedBlas> voxelBlases =
                 new ArrayList<>(mesh.voxelMeshes().size());
@@ -1060,6 +1063,19 @@ public final class TerrainScene implements AutoCloseable {
                         "Prime cluster " + upload.key()
                                 + " voxel mesh " + index));
             }
+            if (upload.dynamic() && mesh.triangleCount() != 0L) {
+                motion = this.context.createBuffer(
+                        (long) upload.motionPositions().length * Float.BYTES,
+                        VK12.VK_BUFFER_USAGE_TRANSFER_DST_BIT
+                                | VK12.VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
+                        false,
+                        "Prime dynamic previous positions");
+                copyBuffer(
+                        commandBuffer,
+                        stagingBatch.write(
+                                upload.motionPositions(), Float.BYTES),
+                        motion);
+            }
             return new GpuCluster(
                     upload.key(),
                     upload.clusterX(),
@@ -1069,6 +1085,7 @@ public final class TerrainScene implements AutoCloseable {
                     voxelBlases,
                     mesh.voxelInstances(),
                     lights,
+                    motion,
                     lightSummary,
                     upload.dynamic());
         } catch (RuntimeException exception) {
@@ -1084,6 +1101,7 @@ public final class TerrainScene implements AutoCloseable {
                         voxelBlas::destroyAllResources, failure);
             }
             failure = ResourceCleanup.destroy(lights, failure);
+            failure = ResourceCleanup.destroy(motion, failure);
             throw failure;
         }
     }
@@ -1249,14 +1267,22 @@ public final class TerrainScene implements AutoCloseable {
         }
     }
 
-    static boolean invalidatesTemporalHistory(boolean needsRebase) {
-        return needsRebase;
-    }
-
     static PreparedBlas.CompactionPolicy compactionPolicy(boolean dynamic) {
         return dynamic
                 ? PreparedBlas.CompactionPolicy.DISABLED
                 : PreparedBlas.CompactionPolicy.ENABLED;
+    }
+
+    static long nextTemporalRevision(
+            long revision, TemporalContinuity continuity) {
+        return continuity == TemporalContinuity.UNRELATED_WORLD
+                ? revision + 1L
+                : revision;
+    }
+
+    enum TemporalContinuity {
+        RELATED_UPDATE,
+        UNRELATED_WORLD
     }
 
     private record PreparedUpdate(

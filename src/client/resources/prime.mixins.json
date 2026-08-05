@@ -10,6 +10,8 @@
     "ChunkMapMixin",
     "ChunkTaskPriorityQueueMixin",
     "DistanceManagerMixin",
+    "EntityRenderDispatcherMixin",
+    "EntityRenderStateMixin",
     "FixedPlayerDistanceChunkTrackerAccessor",
     "FixedPlayerDistanceChunkTrackerMixin",
     "FluidRendererMixin",

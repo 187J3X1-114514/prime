@@ -6,12 +6,34 @@
 #include "numerical.glsl"
 #include "transport_math.glsl"
 
+const uint PRIME_HIT_KIND_MASK = 0xffu;
+const uint PRIME_SURFACE_MOTION_FLAG = 0x100u;
+
 vec2 primeUnpackHalf2(uint packedValue) {
     return unpackHalf2x16(packedValue);
 }
 
 vec4 primeUnpackTint(uint packedValue) {
     return unpackUnorm4x8(packedValue);
+}
+
+bool primeSurfaceHasMotion(SurfaceInteraction surface) {
+    return (surface.motionZFlags & PRIME_SURFACE_MOTION_FLAG) != 0u;
+}
+
+uint primeSurfaceEmitterIndex(SurfaceInteraction surface) {
+    // Dynamic geometry cannot be a light-tree emitter. Its payload emitter lane therefore carries
+    // two FP16 motion components until this semantic accessor restores the no-emitter contract.
+    return primeSurfaceHasMotion(surface) ? 0xffffffffu : surface.emitterIndex;
+}
+
+vec3 primeSurfacePreviousPosition(SurfaceInteraction surface) {
+    if (!primeSurfaceHasMotion(surface)) {
+        return surface.position;
+    }
+    vec2 xy = unpackHalf2x16(surface.emitterIndex);
+    float z = unpackHalf2x16(surface.motionZFlags).y;
+    return surface.position + vec3(xy, z);
 }
 
 uint primeSampleIndex() {

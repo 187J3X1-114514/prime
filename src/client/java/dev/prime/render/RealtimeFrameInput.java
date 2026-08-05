@@ -80,11 +80,6 @@ public record RealtimeFrameInput(
         return new RealtimeSampleState.Input(
                 this.camera,
                 this.sceneRevision,
-                this.textureRevision,
-                this.lighting.revision(),
-                this.material.revision(),
-                this.astronomy,
-                this.cameraInWater,
                 this.forceReset);
     }
 

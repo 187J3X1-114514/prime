@@ -146,6 +146,9 @@ void primeInitializeTransparentWavefront(
             length(surface.position - primePush.cameraPosition);
     initialResult.guides.primaryPosition =
             surface.position - primePush.cameraPosition;
+    initialResult.guides.primaryPreviousPosition =
+            primeSurfacePreviousPosition(surface) - primePush.cameraPosition;
+    initialResult.guides.primaryHasMotion = primeSurfaceHasMotion(surface);
     initialResult.guides.primaryAlbedo = albedos.diffuse;
     initialResult.guides.primaryNormal = shadingNormal;
     initialResult.guides.primaryHitKind = surface.hitKind;
@@ -399,7 +402,7 @@ void primeWavefrontStep(uint sourceQueue) {
     PrimeWavefrontTransportRecord record =
             primeLoadWavefrontTransportRecord(recordIndex);
     PathState path = primeWavefrontPath(pixel, record);
-    if (surface.emitterIndex != PRIME_NO_LIGHT_INDEX
+    if (primeSurfaceEmitterIndex(surface) != PRIME_NO_LIGHT_INDEX
             && !primePreviousCannotUseMis(path)) {
         path.previousLightNormal =
                 primeLoadWavefrontPreviousLightNormal(recordIndex);

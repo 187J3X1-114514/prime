@@ -174,7 +174,6 @@ public final class DlssRrPostProcessor implements RealtimePostProcessor {
                         camera,
                         frameTimeNanos,
                         sceneRevision,
-                        textureRevision,
                         forceRestart));
         FsrSettings.Jitter jitter = this.quality.rrJitter(
                 temporal.plan().frameIndex());

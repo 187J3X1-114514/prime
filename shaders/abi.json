@@ -140,7 +140,8 @@
         { "name": "opacity", "type": "uint", "offset": 60 },
         { "name": "shadingNormal", "type": "uint", "offset": 64 },
         { "name": "labPbrNormal", "type": "uint", "offset": 68 },
-        { "name": "labPbrSpecular", "type": "uint", "offset": 72 }
+        { "name": "labPbrSpecular", "type": "uint", "offset": 72 },
+        { "name": "motionZFlags", "type": "uint", "offset": 76 }
       ]
     },
     "pushConstants": {

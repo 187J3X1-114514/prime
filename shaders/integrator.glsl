@@ -41,6 +41,8 @@ struct PrimeDenoiserGuides {
     vec3 primarySpecularAlbedo;
     float primaryLinearRoughness;
     vec3 primaryPosition;
+    vec3 primaryPreviousPosition;
+    bool primaryHasMotion;
     vec3 diffuseDirection;
     vec3 specularDirection;
     vec3 primaryAreaDiffuse;
@@ -102,6 +104,8 @@ PrimeDenoiserGuides primeEmptyDenoiserGuides() {
     guides.primarySpecularAlbedo = vec3(0.0);
     guides.primaryLinearRoughness = PRIME_DEFAULT_REFERENCE_LINEAR_ROUGHNESS;
     guides.primaryPosition = vec3(0.0);
+    guides.primaryPreviousPosition = vec3(0.0);
+    guides.primaryHasMotion = false;
     guides.diffuseDirection = vec3(0.0);
     guides.specularDirection = vec3(0.0);
     guides.primaryAreaDiffuse = vec3(0.0);
@@ -169,12 +173,13 @@ SurfaceInteraction primeTraceSurfaceClassified(
             origin, 0.0, direction, 1000000.0, 0);
 #endif
     SurfaceInteraction surface;
-    surface.position = primePayload.hitKind == PRIME_HIT_NONE
+    uint packedHitKind = primePayload.hitKind;
+    surface.position = (packedHitKind & PRIME_HIT_KIND_MASK) == PRIME_HIT_NONE
             ? vec3(0.0)
             : origin + direction * primePayload.t;
     surface.t = primePayload.t;
     surface.geometricNormal = primePayload.geometricNormal;
-    surface.hitKind = primePayload.hitKind;
+    surface.hitKind = packedHitKind & PRIME_HIT_KIND_MASK;
     surface.baseColor = primePayload.baseColor;
     surface.materialFlags = primePayload.traceKind;
     surface.sectionIndex = primePayload.sectionIndex;
@@ -184,6 +189,7 @@ SurfaceInteraction primeTraceSurfaceClassified(
     surface.shadingNormal = primePayload.shadingNormal;
     surface.labPbrNormal = primePayload.labPbrNormal;
     surface.labPbrSpecular = primePayload.labPbrSpecular;
+    surface.motionZFlags = packedHitKind & ~PRIME_HIT_KIND_MASK;
     return surface;
 }
 
@@ -227,12 +233,13 @@ SurfaceInteraction primeTraceSurfaceWithoutReorder(vec3 origin, vec3 direction) 
             0);
 
     SurfaceInteraction surface;
-    surface.position = primePayload.hitKind == PRIME_HIT_NONE
+    uint packedHitKind = primePayload.hitKind;
+    surface.position = (packedHitKind & PRIME_HIT_KIND_MASK) == PRIME_HIT_NONE
             ? vec3(0.0)
             : origin + direction * primePayload.t;
     surface.t = primePayload.t;
     surface.geometricNormal = primePayload.geometricNormal;
-    surface.hitKind = primePayload.hitKind;
+    surface.hitKind = packedHitKind & PRIME_HIT_KIND_MASK;
     surface.baseColor = primePayload.baseColor;
     surface.materialFlags = primePayload.traceKind;
     surface.sectionIndex = primePayload.sectionIndex;
@@ -242,6 +249,7 @@ SurfaceInteraction primeTraceSurfaceWithoutReorder(vec3 origin, vec3 direction) 
     surface.shadingNormal = primePayload.shadingNormal;
     surface.labPbrNormal = primePayload.labPbrNormal;
     surface.labPbrSpecular = primePayload.labPbrSpecular;
+    surface.motionZFlags = packedHitKind & ~PRIME_HIT_KIND_MASK;
     return surface;
 #endif
 }
@@ -1061,6 +1069,8 @@ void primeSetQueuedPsrGuide(
     }
     guides.primaryDistance = length(position);
     guides.primaryPosition = position;
+    guides.primaryPreviousPosition = position;
+    guides.primaryHasMotion = false;
     guides.primaryAlbedo = guideThroughput * albedos.diffuse;
     guides.primaryNormal = normal;
     guides.primaryHitKind = surface.hitKind;
@@ -1473,6 +1483,9 @@ bool primeIntegrateWavefrontSurface(
             result.guides.primaryDistance = length(
                     surface.position - primePush.cameraPosition);
             result.guides.primaryPosition = surface.position - primePush.cameraPosition;
+            result.guides.primaryPreviousPosition =
+                    primeSurfacePreviousPosition(surface) - primePush.cameraPosition;
+            result.guides.primaryHasMotion = primeSurfaceHasMotion(surface);
             result.guides.primaryAlbedo = primeSanitizeDenoiseAlbedo(
                     denoiserState.diffuseAlbedoProduct);
             result.guides.primaryNormal =

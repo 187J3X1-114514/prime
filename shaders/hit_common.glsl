@@ -7,6 +7,10 @@
 
 hitAttributeEXT vec2 primeBarycentrics;
 
+layout(buffer_reference, buffer_reference_align = 4) readonly buffer PrimeMotionPositionBuffer {
+    float values[];
+};
+
 SectionRecord primeSection() {
     SectionTable sections = SectionTable(primePush.sectionTableAddress);
     return sections.sections[gl_InstanceCustomIndexEXT];
@@ -41,6 +45,29 @@ PrimitiveRecord primePrimitive(SectionRecord section) {
 
 PrimitiveRecord primePrimitive() {
     return primePrimitive(primeSection());
+}
+
+vec3 primePreviousDynamicPosition(SectionRecord section) {
+    PrimeMotionPositionBuffer positions = PrimeMotionPositionBuffer(section.lightAddress);
+    uint vertexBase = gl_PrimitiveID * 9u;
+    vec3 barycentric = vec3(
+            1.0 - primeBarycentrics.x - primeBarycentrics.y,
+            primeBarycentrics.x,
+            primeBarycentrics.y);
+    vec3 first = vec3(
+            positions.values[vertexBase],
+            positions.values[vertexBase + 1u],
+            positions.values[vertexBase + 2u]);
+    vec3 second = vec3(
+            positions.values[vertexBase + 3u],
+            positions.values[vertexBase + 4u],
+            positions.values[vertexBase + 5u]);
+    vec3 third = vec3(
+            positions.values[vertexBase + 6u],
+            positions.values[vertexBase + 7u],
+            positions.values[vertexBase + 8u]);
+    return first * barycentric.x + second * barycentric.y + third * barycentric.z
+            + section.translation;
 }
 
 bool primeUsesRepeatedUv(PrimitiveRecord primitive) {

@@ -23,13 +23,38 @@ final class DynamicMeshBuilder {
     private final double offsetZ;
     private final FloatWords positions = new FloatWords();
     private final IntWords primitives = new IntWords();
+    private final ArrayList<DynamicSceneFrame.MotionSegment> motionSegments =
+            new ArrayList<>();
     private final int[] trianglesByElement =
             new int[VanillaSceneBoundary.Element.values().length];
+    private OpenMotionObject openMotionObject;
 
     DynamicMeshBuilder(double offsetX, double offsetY, double offsetZ) {
         this.offsetX = offsetX;
         this.offsetY = offsetY;
         this.offsetZ = offsetZ;
+    }
+
+    void beginMotionObject(VanillaSceneBoundary.Element element, long key) {
+        if (this.openMotionObject != null) {
+            throw new IllegalStateException("Nested dynamic motion object capture");
+        }
+        this.openMotionObject = new OpenMotionObject(
+                element, key, this.positions.size / 9);
+    }
+
+    void endMotionObject(VanillaSceneBoundary.Element element, long key) {
+        OpenMotionObject object = this.openMotionObject;
+        if (object == null || object.element != element || object.key != key) {
+            throw new IllegalStateException(
+                    "Dynamic motion object capture closed out of order");
+        }
+        this.openMotionObject = null;
+        this.motionSegments.add(new DynamicSceneFrame.MotionSegment(
+                element,
+                key,
+                object.firstTriangle,
+                this.positions.size / 9 - object.firstTriangle));
     }
 
     VertexSink open(
@@ -45,6 +70,10 @@ final class DynamicMeshBuilder {
             int clusterY,
             int clusterZ,
             List<DynamicSceneFrame.SceneTexture> textures) {
+        if (this.openMotionObject != null) {
+            throw new IllegalStateException(
+                    "Dynamic mesh was built inside a motion object");
+        }
         int triangleCount = this.positions.size / 9;
         CpuSectionMesh section = new CpuSectionMesh(
                 this.positions.toArray(),
@@ -60,6 +89,7 @@ final class DynamicMeshBuilder {
                 clusterZ,
                 CpuClusterMesh.fromSegments(List.of(section)),
                 textures,
+                this.motionSegments,
                 this.trianglesByElement[VanillaSceneBoundary.Element.ENTITY.ordinal()],
                 this.trianglesByElement[VanillaSceneBoundary.Element.BLOCK_ENTITY.ordinal()],
                 this.trianglesByElement[VanillaSceneBoundary.Element.PARTICLE.ordinal()]);
@@ -301,6 +331,9 @@ final class DynamicMeshBuilder {
             }
         }
     }
+
+    private record OpenMotionObject(
+            VanillaSceneBoundary.Element element, long key, int firstTriangle) {}
 
     private static final class Vertex {
         private final float x;

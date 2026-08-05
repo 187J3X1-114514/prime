@@ -52,14 +52,13 @@ final class NrdTemporalStateTest {
     }
 
     @Test
-    void everyTemporalIdentityChangeRestartsAtFrameZero() {
+    void localSceneAndLightingChangesKeepHistoryUntilOuterPolicyRestarts() {
         FrameCamera firstCamera = camera(0.0);
         NrdTemporalState state = NrdTemporalState.initial().plan(
                 input(firstCamera, 1L, 1L, 2L, NOON, 0.0F, 0.0F, false))
                 .committedState();
         FrameCamera currentCamera = camera(1.0);
-        NrdFrameInput[] discontinuities = {
-            input(currentCamera, 2L, 1L, 2L, NOON, 0.0F, 0.0F, true),
+        NrdFrameInput[] relatedChanges = {
             input(currentCamera, 2L, 9L, 2L, NOON, 0.0F, 0.0F, false),
             input(currentCamera, 2L, 1L, 9L, NOON, 0.0F, 0.0F, false),
             input(
@@ -73,12 +72,18 @@ final class NrdTemporalStateTest {
                     false)
         };
 
-        for (NrdFrameInput input : discontinuities) {
+        for (NrdFrameInput input : relatedChanges) {
             NrdTemporalState.Plan plan = state.plan(input);
-            assertTrue(plan.restart());
-            assertEquals(0, plan.currentFrameIndex());
-            assertSame(currentCamera, plan.historyCamera());
+            assertFalse(plan.restart());
+            assertEquals(1, plan.currentFrameIndex());
+            assertSame(firstCamera, plan.historyCamera());
         }
+
+        NrdTemporalState.Plan forced = state.plan(
+                input(currentCamera, 2L, 1L, 2L, NOON, 0.0F, 0.0F, true));
+        assertTrue(forced.restart());
+        assertEquals(0, forced.currentFrameIndex());
+        assertSame(currentCamera, forced.historyCamera());
     }
 
     @Test

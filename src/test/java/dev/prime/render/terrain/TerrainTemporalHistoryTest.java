@@ -1,14 +1,23 @@
 package dev.prime.render.terrain;
 
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import org.junit.jupiter.api.Test;
 
 final class TerrainTemporalHistoryTest {
     @Test
-    void onlyRenderOriginChangesInvalidateTheCurrentWorldHistory() {
-        assertFalse(TerrainScene.invalidatesTemporalHistory(false));
-        assertTrue(TerrainScene.invalidatesTemporalHistory(true));
+    void onlyAnUnrelatedWorldAdvancesTemporalIdentity() {
+        long revision = 17L;
+
+        assertEquals(
+                revision,
+                TerrainScene.nextTemporalRevision(
+                        revision,
+                        TerrainScene.TemporalContinuity.RELATED_UPDATE));
+        assertEquals(
+                revision + 1L,
+                TerrainScene.nextTemporalRevision(
+                        revision,
+                        TerrainScene.TemporalContinuity.UNRELATED_WORLD));
     }
 }

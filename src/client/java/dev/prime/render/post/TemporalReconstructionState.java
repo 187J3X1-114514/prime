@@ -14,7 +14,6 @@ import java.util.Objects;
 public final class TemporalReconstructionState {
     private final FrameCamera camera;
     private final long sceneRevision;
-    private final long textureRevision;
     private final int nextFrameIndex;
     private final long frameTimeNanos;
     private final boolean restartRequested;
@@ -22,13 +21,11 @@ public final class TemporalReconstructionState {
     private TemporalReconstructionState(
             FrameCamera camera,
             long sceneRevision,
-            long textureRevision,
             int nextFrameIndex,
             long frameTimeNanos,
             boolean restartRequested) {
         this.camera = camera;
         this.sceneRevision = sceneRevision;
-        this.textureRevision = textureRevision;
         this.nextFrameIndex = nextFrameIndex;
         this.frameTimeNanos = frameTimeNanos;
         this.restartRequested = restartRequested;
@@ -36,7 +33,7 @@ public final class TemporalReconstructionState {
 
     public static TemporalReconstructionState initial() {
         return new TemporalReconstructionState(
-                null, Long.MIN_VALUE, Long.MIN_VALUE, 0, 0L, true);
+                null, Long.MIN_VALUE, 0, 0L, true);
     }
 
     public TemporalReconstructionState invalidated() {
@@ -45,7 +42,6 @@ public final class TemporalReconstructionState {
                 : new TemporalReconstructionState(
                         this.camera,
                         this.sceneRevision,
-                        this.textureRevision,
                         this.nextFrameIndex,
                         this.frameTimeNanos,
                         true);
@@ -60,15 +56,13 @@ public final class TemporalReconstructionState {
                 || input.forceRestart()
                 || !initialized
                 || cameraCut
-                || input.sceneRevision() != this.sceneRevision
-                || input.textureRevision() != this.textureRevision;
+                || input.sceneRevision() != this.sceneRevision;
         int currentFrameIndex = restart ? 0 : this.nextFrameIndex;
         float deltaMilliseconds = FrameTime.deltaMilliseconds(
                 initialized, input.frameTimeNanos(), this.frameTimeNanos);
         TemporalReconstructionState committed = new TemporalReconstructionState(
                 input.camera(),
                 input.sceneRevision(),
-                input.textureRevision(),
                 currentFrameIndex + 1,
                 input.frameTimeNanos(),
                 false);
@@ -86,7 +80,6 @@ public final class TemporalReconstructionState {
             FrameCamera camera,
             long frameTimeNanos,
             long sceneRevision,
-            long textureRevision,
             boolean forceRestart) {
         public Input {
             Objects.requireNonNull(camera, "camera");

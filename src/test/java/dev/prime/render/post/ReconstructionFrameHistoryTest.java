@@ -111,7 +111,6 @@ final class ReconstructionFrameHistoryTest {
                 camera,
                 frameTimeNanos,
                 1L,
-                2L,
                 forceRestart);
     }
 

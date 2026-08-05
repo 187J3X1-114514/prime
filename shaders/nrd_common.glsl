@@ -1,6 +1,8 @@
 #ifndef PRIME_NRD_COMMON_GLSL
 #define PRIME_NRD_COMMON_GLSL
 
+const uint PRIME_DISPLAY_MOTION_FLAG = 0x80000000u;
+
 #include "default_material.glsl"
 
 // These encoders are the shader half of the immutable NRD 4.17 contract declared in abi.json.

@@ -55,9 +55,19 @@ void main() {
     uint encodedEmitter = primeUsesRasterComposite(primitive)
             ? 0u
             : primitive.flagsEmitter >> 3u;
-    primePayload.emitterIndex = encodedEmitter == 0u
-            ? 0xffffffffu
-            : encodedEmitter - 1u;
+    if ((primitive.flagsEmitter & PRIME_DYNAMIC_TEXTURE_FLAG) != 0u
+            && section.lightAddress != uint64_t(0)) {
+        vec3 currentPosition = gl_WorldRayOriginEXT
+                + gl_HitTEXT * gl_WorldRayDirectionEXT;
+        vec3 motion = primePreviousDynamicPosition(section) - currentPosition;
+        primePayload.emitterIndex = packHalf2x16(motion.xy);
+        primePayload.hitKind |= PRIME_SURFACE_MOTION_FLAG
+                | (packHalf2x16(vec2(0.0, motion.z)) & 0xffff0000u);
+    } else {
+        primePayload.emitterIndex = encodedEmitter == 0u
+                ? 0xffffffffu
+                : encodedEmitter - 1u;
+    }
     primePayload.textureLod = floatBitsToUint(textureLodValue);
     primePayload.opacity = floatBitsToUint(material.opacity);
     primePayload.shadingNormal = primePackOctahedralNormal(material.shadingNormal);

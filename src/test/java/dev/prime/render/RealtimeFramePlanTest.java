@@ -29,15 +29,9 @@ final class RealtimeFramePlanTest {
                 RealtimeFrameInput input = input(mode, quality);
                 RealtimeSampleState.Input sampleInput =
                         input.sampleStateInput();
-                assertEquals(
-                        input.lighting().revision(),
-                        sampleInput.lightingRevision());
-                assertEquals(
-                        input.material().revision(),
-                        sampleInput.materialRevision());
-                assertEquals(
-                        input.cameraInWater(),
-                        sampleInput.cameraInWater());
+                assertSame(input.camera(), sampleInput.camera());
+                assertEquals(input.sceneRevision(), sampleInput.resetRevision());
+                assertFalse(sampleInput.forceReset());
                 RealtimeSampleState.Plan sample =
                         RealtimeSampleState.initial().plan(
                                 sampleInput);
@@ -134,13 +128,13 @@ final class RealtimeFramePlanTest {
     }
 
     @Test
-    void displayControlsDoNotRestartIntegratorHistory() {
+    void relatedAppearanceChangesDoNotRestartIntegratorHistory() {
         RealtimeFrameInput initial = input(
                 PostProcessingMode.NRD_FSR,
                 ReconstructionQualityMode.QUALITY);
         RealtimeSampleState.Plan first =
                 RealtimeSampleState.initial().plan(initial.sampleStateInput());
-        RealtimeFrameInput adjusted = withDisplay(
+        RealtimeFrameInput adjusted = withRelatedAppearanceChanges(
                 initial,
                 new DisplaySettings.Snapshot(4, 64, 100, 100));
 
@@ -271,7 +265,7 @@ final class RealtimeFramePlanTest {
                 false);
     }
 
-    private static RealtimeFrameInput withDisplay(
+    private static RealtimeFrameInput withRelatedAppearanceChanges(
             RealtimeFrameInput input,
             DisplaySettings.Snapshot display) {
         return new RealtimeFrameInput(
@@ -279,17 +273,20 @@ final class RealtimeFramePlanTest {
                 input.frameTimeNanos() + 1L,
                 input.sceneRevision(),
                 input.residentSceneRevision(),
-                input.textureRevision(),
+                input.textureRevision() + 1L,
                 input.width(),
                 input.height(),
                 input.displayWidth(),
                 input.displayHeight(),
-                input.astronomy(),
-                input.cameraInWater(),
+                AstronomyState.atSolarHourAngle(
+                        (float) (Math.PI * 0.5), AstronomySettings.defaults()),
+                !input.cameraInWater(),
                 input.postProcessingMode(),
                 input.quality(),
-                input.lighting(),
-                input.material(),
+                new LightingSettings.Snapshot(
+                        4, -4, 2, input.lighting().revision() + 1L),
+                new MaterialSettings.Snapshot(
+                        40, input.material().revision() + 1L),
                 input.shInput(),
                 input.triangleDebug(),
                 display,

@@ -518,7 +518,8 @@ LightEvaluation primeEvaluateAreaLight(
     LightEvaluation result;
     result.radiance = vec3(0.0);
     result.pdf = 0.0;
-    if (surface.emitterIndex == PRIME_NO_LIGHT_INDEX) {
+    uint emitterIndex = primeSurfaceEmitterIndex(surface);
+    if (emitterIndex == PRIME_NO_LIGHT_INDEX) {
         return result;
     }
     SectionTable sections = SectionTable(primePush.sectionTableAddress);
@@ -527,14 +528,14 @@ LightEvaluation primeEvaluateAreaLight(
         return result;
     }
     SectionLightHeaderBuffer sectionBuffer = SectionLightHeaderBuffer(sectionLightAddress);
-    if (surface.emitterIndex >= sectionBuffer.header.emitterCount) {
+    if (emitterIndex >= sectionBuffer.header.emitterCount) {
         return result;
     }
     LightEmitterBuffer emitters = LightEmitterBuffer(sectionBuffer.header.emitterAddress);
-    vec4 emitterCornerArea = emitters.emitters[surface.emitterIndex].cornerArea;
+    vec4 emitterCornerArea = emitters.emitters[emitterIndex].cornerArea;
     float lightCosine = primeEmitterCosine(
-            emitters.emitters[surface.emitterIndex].normalPadding.xyz,
-            emitters.emitters[surface.emitterIndex].metadata.z,
+            emitters.emitters[emitterIndex].normalPadding.xyz,
+            emitters.emitters[emitterIndex].metadata.z,
             rayDirection);
     if (!(lightCosine > 0.0) || !(emitterCornerArea.w > 0.0)) {
         return result;
@@ -543,19 +544,19 @@ LightEvaluation primeEvaluateAreaLight(
     vec3 sectionTranslation = sections.sections[surface.sectionIndex].translation;
     vec3 localPosition = surface.position - sectionTranslation;
     vec3 relative = localPosition - emitterCornerArea.xyz;
-    vec3 firstEdge = emitters.emitters[surface.emitterIndex].edgeOneScale.xyz;
-    vec3 secondEdge = emitters.emitters[surface.emitterIndex].edgeTwoPower.xyz;
+    vec3 firstEdge = emitters.emitters[emitterIndex].edgeOneScale.xyz;
+    vec3 secondEdge = emitters.emitters[emitterIndex].edgeTwoPower.xyz;
     vec3 edgeCross = cross(firstEdge, secondEdge);
     float denominator = dot(edgeCross, edgeCross);
     vec2 parentBarycentric = vec2(
             dot(cross(relative, secondEdge), edgeCross) / denominator,
             dot(cross(firstEdge, relative), edgeCross) / denominator);
     result.radiance = primeEvaluateEmitterRadiance(
-            emitters.emitters[surface.emitterIndex].uvsTint.w,
-            emitters.emitters[surface.emitterIndex].metadata.z,
-            emitters.emitters[surface.emitterIndex].edgeOneScale.w,
+            emitters.emitters[emitterIndex].uvsTint.w,
+            emitters.emitters[emitterIndex].metadata.z,
+            emitters.emitters[emitterIndex].edgeOneScale.w,
             primeEmitterUv(
-                    emitters.emitters[surface.emitterIndex].uvsTint.xyz,
+                    emitters.emitters[emitterIndex].uvsTint.xyz,
                     parentBarycentric),
             uintBitsToFloat(surface.textureLod));
     if (!evaluatePdf) {
@@ -576,7 +577,7 @@ LightEvaluation primeEvaluateAreaLight(
     }
     LightCellBuffer cells = LightCellBuffer(sectionBuffer.header.cellAddress);
     uint cellIndex = primeLightCellIndex(parentBarycentric);
-    uint emitterCellBase = emitters.emitters[surface.emitterIndex].metadata.x;
+    uint emitterCellBase = emitters.emitters[emitterIndex].metadata.x;
     float cellProbabilityMass = cells.cells[emitterCellBase + cellIndex].probabilityMass;
     float cellArea = emitterCornerArea.w / float(PRIME_LIGHT_CELL_COUNT);
     if (!(cellProbabilityMass > 0.0) || !(cellArea > 0.0)) {
@@ -613,8 +614,8 @@ LightEvaluation primeEvaluateAreaLight(
                 sectionForwardNodes,
                 sectionReverseNodes,
                 sectionBuffer.header.root,
-                emitters.emitters[surface.emitterIndex].metadata.y,
-                surface.emitterIndex,
+                emitters.emitters[emitterIndex].metadata.y,
+                emitterIndex,
                 rayOrigin - sectionTranslation,
                 receiverNormal);
     }

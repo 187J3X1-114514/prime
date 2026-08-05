@@ -13,6 +13,7 @@ import dev.prime.render.terrain.TerrainScene;
 import dev.prime.render.terrain.TerrainStreamer;
 import dev.prime.render.replay.RenderReplayVerification;
 import dev.prime.render.scene.vanilla.DynamicSceneFrame;
+import dev.prime.render.scene.vanilla.DynamicSceneMotion;
 import dev.prime.render.vulkan.AtmospherePipeline;
 import dev.prime.render.vulkan.FrozenExposureState;
 import dev.prime.render.vulkan.LabPbrTextureAtlas;
@@ -46,6 +47,7 @@ public final class VulkanRenderer implements AutoCloseable {
     private BlockAtlasFrame blockAtlasFrame;
     private long blockAtlasTextureRevision;
     private List<TraceBackend.SceneTexture> sceneTextures = List.of();
+    private DynamicSceneFrame publishedDynamicFrame;
     private FrameCamera camera;
     private AstronomyState astronomyState;
     private OfflineSession pendingOfflineSession;
@@ -217,8 +219,11 @@ public final class VulkanRenderer implements AutoCloseable {
         }
         List<TraceBackend.SceneTexture> capturedTextures =
                 List.copyOf(textures);
-        if (this.terrain.updateDynamic(frame)) {
+        DynamicSceneMotion motion = DynamicSceneMotion.prepare(
+                frame, this.publishedDynamicFrame);
+        if (this.terrain.updateDynamic(motion)) {
             this.sceneTextures = capturedTextures;
+            this.publishedDynamicFrame = frame;
         }
     }
 
@@ -534,7 +539,6 @@ public final class VulkanRenderer implements AutoCloseable {
         // exit also covers animation-driven or external changes that do not expose a precise
         // block range, without invalidating the frozen screenshot while it is converging.
         this.terrain.invalidateAll();
-        this.realtimeRenderer.invalidateHistory();
         PrimeClient.LOGGER.info("Left Prime screenshot mode; scheduled a full terrain resync");
     }
 
@@ -556,7 +560,6 @@ public final class VulkanRenderer implements AutoCloseable {
 
     public void invalidateAll() {
         this.terrain.invalidateAll();
-        this.realtimeRenderer.invalidateHistory();
     }
 
     public void requestShaderReload() {

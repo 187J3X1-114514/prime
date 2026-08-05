@@ -2,6 +2,7 @@ package dev.prime.render.scene.vanilla;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.mojang.blaze3d.PrimitiveTopology;
@@ -73,6 +74,118 @@ final class DynamicMeshBuilderTest {
         assertEquals(3, PrimitivePacking.unpackDynamicTextureIndex(flagsTexture));
         assertFalse(PrimitivePacking.hasVisibleEmission(flagsTexture));
         assertTrue(frame.mesh().lights().isEmpty());
+    }
+
+    @Test
+    void pairsReorderedEntitiesByStableIdentity() {
+        DynamicSceneFrame previous = twoEntities(0.0F, 10.0F, false);
+        DynamicSceneFrame current = twoEntities(20.0F, 5.0F, true);
+
+        DynamicSceneMotion motion = DynamicSceneMotion.prepare(current, previous);
+
+        float[] expected = new float[18];
+        System.arraycopy(
+                previous.mesh().segments().getFirst().positions(),
+                9,
+                expected,
+                0,
+                9);
+        System.arraycopy(
+                previous.mesh().segments().getFirst().positions(),
+                0,
+                expected,
+                9,
+                9);
+        assertArrayEquals(expected, motion.previousPositions());
+    }
+
+    @Test
+    void topologyChangeUsesZeroObjectMotionForLocalHistoryRejection() {
+        DynamicSceneFrame previous = oneEntity(7L, 0.0F, 0.0F);
+        DynamicSceneFrame current = oneEntity(7L, 3.0F, 0.25F);
+
+        DynamicSceneMotion motion = DynamicSceneMotion.prepare(current, previous);
+
+        assertArrayEquals(
+                current.mesh().segments().getFirst().positions(),
+                motion.previousPositions());
+    }
+
+    @Test
+    void removedEntityDoesNotRequireAFullFrameMotionPayload() {
+        DynamicSceneFrame previous = oneEntity(7L, 0.0F, 0.0F);
+        DynamicSceneFrame current = new DynamicMeshBuilder(0.0, 0.0, 0.0)
+                .build(0, 0, 0, List.of());
+
+        DynamicSceneMotion motion = DynamicSceneMotion.prepare(current, previous);
+
+        assertEquals(0, motion.previousPositions().length);
+    }
+
+    @Test
+    void particlesDoNotForcePerFrameHistoryResets() {
+        DynamicMeshBuilder previousBuilder = new DynamicMeshBuilder(0.0, 0.0, 0.0);
+        triangle(
+                previousBuilder,
+                VanillaSceneBoundary.Element.PARTICLE,
+                0.0F,
+                0.0F);
+        DynamicMeshBuilder currentBuilder = new DynamicMeshBuilder(0.0, 0.0, 0.0);
+        triangle(
+                currentBuilder,
+                VanillaSceneBoundary.Element.PARTICLE,
+                4.0F,
+                0.0F);
+
+        DynamicSceneMotion motion = DynamicSceneMotion.prepare(
+                currentBuilder.build(0, 0, 0, List.of()),
+                previousBuilder.build(0, 0, 0, List.of()));
+
+        assertArrayEquals(
+                motion.frame().mesh().segments().getFirst().positions(),
+                motion.previousPositions());
+    }
+
+    private static DynamicSceneFrame twoEntities(
+            float firstX, float secondX, boolean reverse) {
+        DynamicMeshBuilder builder = new DynamicMeshBuilder(0.0, 0.0, 0.0);
+        if (reverse) {
+            entity(builder, 2L, firstX, 0.0F);
+            entity(builder, 1L, secondX, 0.0F);
+        } else {
+            entity(builder, 1L, firstX, 0.0F);
+            entity(builder, 2L, secondX, 0.0F);
+        }
+        return builder.build(0, 0, 0, List.of());
+    }
+
+    private static DynamicSceneFrame oneEntity(long key, float x, float secondU) {
+        DynamicMeshBuilder builder = new DynamicMeshBuilder(0.0, 0.0, 0.0);
+        entity(builder, key, x, secondU);
+        return builder.build(0, 0, 0, List.of());
+    }
+
+    private static void entity(
+            DynamicMeshBuilder builder, long key, float x, float secondU) {
+        builder.beginMotionObject(VanillaSceneBoundary.Element.ENTITY, key);
+        triangle(builder, VanillaSceneBoundary.Element.ENTITY, x, secondU);
+        builder.endMotionObject(VanillaSceneBoundary.Element.ENTITY, key);
+    }
+
+    private static void triangle(
+            DynamicMeshBuilder builder,
+            VanillaSceneBoundary.Element element,
+            float x,
+            float secondU) {
+        DynamicMeshBuilder.VertexSink sink = builder.open(
+                element,
+                PrimitiveTopology.TRIANGLES,
+                1,
+                0);
+        vertex(sink, x, 0.0F, 0.0F, 0.0F, 0.0F);
+        vertex(sink, x + 1.0F, 0.0F, 0.0F, secondU, 0.0F);
+        vertex(sink, x, 1.0F, 0.0F, 0.0F, 1.0F);
+        sink.finish();
     }
 
     private static void vertex(

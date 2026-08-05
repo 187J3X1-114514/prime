@@ -8,21 +8,17 @@ import org.joml.Matrix4f;
 import org.junit.jupiter.api.Test;
 
 final class RealtimeSampleStateTest {
-    private static final SunDirection NOON =
-            AstronomyState.atSolarHourAngle(
-                    0.0F, AstronomySettings.defaults()).sunDirection();
-
     @Test
     void stableCommittedFramesAdvanceWithoutReset() {
         RealtimeSampleState state = RealtimeSampleState.initial();
         FrameCamera camera = camera(1.0);
-        RealtimeSampleState.Plan first = state.plan(input(camera, 3L, 11L, NOON, false));
+        RealtimeSampleState.Plan first = state.plan(input(camera, 3L, false));
         assertTrue(first.reset());
         assertEquals(0, first.sampleIndex());
         int epoch = first.epoch();
 
         RealtimeSampleState.Plan second =
-                first.committedState().plan(input(camera, 3L, 11L, NOON, false));
+                first.committedState().plan(input(camera, 3L, false));
         assertFalse(second.reset());
         assertEquals(1, second.sampleIndex());
         assertEquals(epoch, second.epoch());
@@ -32,64 +28,43 @@ final class RealtimeSampleStateTest {
     void unsubmittedPlansDoNotConsumeSamples() {
         RealtimeSampleState state = RealtimeSampleState.initial();
         FrameCamera camera = camera(1.0);
-        RealtimeSampleState.Plan first = state.plan(input(camera, 1L, 2L, NOON, false));
-        RealtimeSampleState.Plan retried = state.plan(input(camera, 1L, 2L, NOON, false));
+        RealtimeSampleState.Plan first = state.plan(input(camera, 1L, false));
+        RealtimeSampleState.Plan retried = state.plan(input(camera, 1L, false));
 
         assertEquals(first.sampleIndex(), retried.sampleIndex());
         assertEquals(first.epoch(), retried.epoch());
         assertTrue(retried.reset());
         RealtimeSampleState.Plan firstContinuation =
-                first.committedState().plan(input(camera, 1L, 2L, NOON, false));
+                first.committedState().plan(input(camera, 1L, false));
         RealtimeSampleState.Plan retryContinuation =
-                retried.committedState().plan(input(camera, 1L, 2L, NOON, false));
+                retried.committedState().plan(input(camera, 1L, false));
         assertEquals(firstContinuation.sampleIndex(), retryContinuation.sampleIndex());
         assertEquals(firstContinuation.epoch(), retryContinuation.epoch());
     }
 
     @Test
-    void allTransportIdentityChangesResetSequence() {
+    void onlyWholeSceneTransitionsResetSequence() {
         FrameCamera camera = camera(1.0);
         RealtimeSampleState state = commit(
-                RealtimeSampleState.initial(), input(camera, 1L, 2L, NOON, false));
+                RealtimeSampleState.initial(), input(camera, 1L, false));
 
-        RealtimeSampleState.Plan world =
-                state.plan(input(camera, 2L, 2L, NOON, false));
+        RealtimeSampleState.Plan world = state.plan(input(camera, 2L, false));
         assertTrue(world.reset());
         state = world.committedState();
 
         RealtimeSampleState.Plan ordinaryMotion =
-                state.plan(input(camera(2.0), 2L, 2L, NOON, false));
+                state.plan(input(camera(2.0), 2L, false));
         assertFalse(ordinaryMotion.reset());
         state = ordinaryMotion.committedState();
         assertEquals(2, state.sampleIndex());
 
         RealtimeSampleState.Plan cameraCut =
-                state.plan(input(camera(35.0), 2L, 2L, NOON, false));
+                state.plan(input(camera(35.0), 2L, false));
         assertTrue(cameraCut.reset());
         state = cameraCut.committedState();
 
-        RealtimeSampleState.Plan atlas =
-                state.plan(input(camera(35.0), 2L, 4L, NOON, false));
-        assertTrue(atlas.reset());
-        state = atlas.committedState();
-
-        RealtimeSampleState.Plan lighting =
-                state.plan(input(camera(35.0), 2L, 4L, 6L, 7L, NOON, false, false));
-        assertTrue(lighting.reset());
-        state = lighting.committedState();
-
-        RealtimeSampleState.Plan material =
-                state.plan(input(camera(35.0), 2L, 4L, 6L, 8L, NOON, false, false));
-        assertTrue(material.reset());
-        state = material.committedState();
-
-        RealtimeSampleState.Plan medium =
-                state.plan(input(camera(35.0), 2L, 4L, 6L, 8L, NOON, true, false));
-        assertTrue(medium.reset());
-        state = medium.committedState();
-
         RealtimeSampleState.Plan forced =
-                state.plan(input(camera(35.0), 2L, 4L, 6L, 8L, NOON, true, true));
+                state.plan(input(camera(35.0), 2L, true));
         assertTrue(forced.reset());
         assertEquals(0, forced.sampleIndex());
 
@@ -97,7 +72,7 @@ final class RealtimeSampleStateTest {
         assertEquals(state.sampleIndex(), invalidated.sampleIndex());
         assertEquals(state.epoch(), invalidated.epoch());
         RealtimeSampleState.Plan invalidation =
-                invalidated.plan(input(camera(35.0), 2L, 4L, 6L, 8L, NOON, true, false));
+                invalidated.plan(input(camera(35.0), 2L, false));
         assertTrue(invalidation.reset());
         assertEquals(0, invalidation.sampleIndex());
         assertEquals(state.epoch() + 1, invalidation.epoch());
@@ -107,82 +82,20 @@ final class RealtimeSampleStateTest {
     void repeatedInvalidationIsConsumedOnceByTheNextPlan() {
         FrameCamera camera = camera(1.0);
         RealtimeSampleState state = commit(
-                RealtimeSampleState.initial(), input(camera, 1L, 2L, NOON, false));
+                RealtimeSampleState.initial(), input(camera, 1L, false));
 
         RealtimeSampleState invalidated = state.invalidated().invalidated();
         RealtimeSampleState.Plan reset =
-                invalidated.plan(input(camera, 1L, 2L, NOON, false));
+                invalidated.plan(input(camera, 1L, false));
         assertTrue(reset.reset());
         assertEquals(0, reset.sampleIndex());
         assertEquals(state.epoch() + 1, reset.epoch());
 
         RealtimeSampleState.Plan continuation =
-                reset.committedState().plan(input(camera, 1L, 2L, NOON, false));
+                reset.committedState().plan(input(camera, 1L, false));
         assertFalse(continuation.reset());
         assertEquals(1, continuation.sampleIndex());
         assertEquals(reset.epoch(), continuation.epoch());
-    }
-
-    @Test
-    void gradualSunMotionKeepsAdvancingTheSampleSequence() {
-        FrameCamera camera = camera(1.0);
-        RealtimeSampleState state = commit(
-                RealtimeSampleState.initial(), input(camera, 1L, 2L, NOON, false));
-        int epoch = state.epoch();
-
-        for (int step = 1; step <= 20; step++) {
-            SunDirection movingSun =
-                    AstronomyState.atSolarHourAngle(
-                            (float) Math.toRadians(step * 0.01),
-                            AstronomySettings.defaults())
-                            .sunDirection();
-            RealtimeSampleState.Plan plan =
-                    state.plan(input(camera, 1L, 2L, movingSun, false));
-            assertFalse(plan.reset());
-            assertEquals(epoch, plan.epoch());
-            state = plan.committedState();
-            assertEquals(step + 1, state.sampleIndex());
-        }
-    }
-
-    @Test
-    void changingSunDirectionInvalidatesAccumulatedRadiance() {
-        FrameCamera camera = camera(1.0);
-        RealtimeSampleState state = commit(
-                RealtimeSampleState.initial(), input(camera, 1L, 2L, NOON, false));
-        int epoch = state.epoch();
-
-        SunDirection sunset = AstronomyState.atSolarHourAngle(
-                (float) (Math.PI * 0.5),
-                AstronomySettings.defaults()).sunDirection();
-        RealtimeSampleState.Plan plan =
-                state.plan(input(camera, 1L, 2L, sunset, false));
-        assertTrue(plan.reset());
-        assertEquals(0, plan.sampleIndex());
-        assertEquals(epoch + 1, plan.epoch());
-    }
-
-    @Test
-    void changingSeasonInvalidatesStarsEvenWhenSunDirectionIsContinuous() {
-        FrameCamera camera = camera(1.0);
-        RealtimeSampleState state = commit(
-                RealtimeSampleState.initial(),
-                input(camera, 1L, 2L, NOON, false));
-        AstronomyState september = AstronomyState.atSolarHourAngle(
-                0.0F,
-                new AstronomySettings(30, 180));
-        RealtimeSampleState.Plan plan = state.plan(
-                new RealtimeSampleState.Input(
-                        camera,
-                        1L,
-                        2L,
-                        5L,
-                        7L,
-                        september,
-                        false,
-                        false));
-
-        assertTrue(plan.reset());
     }
 
     @Test
@@ -191,8 +104,7 @@ final class RealtimeSampleStateTest {
         RealtimeSampleState state = RealtimeSampleState.initial();
         int initialEpoch = -1;
         for (int index = 0; index < (1 << 16); index++) {
-            RealtimeSampleState.Plan plan =
-                    state.plan(input(camera, 1L, 2L, NOON, false));
+            RealtimeSampleState.Plan plan = state.plan(input(camera, 1L, false));
             if (index == 0) {
                 initialEpoch = plan.epoch();
             } else {
@@ -202,8 +114,7 @@ final class RealtimeSampleStateTest {
             state = plan.committedState();
         }
 
-        RealtimeSampleState.Plan wrapped =
-                state.plan(input(camera, 1L, 2L, NOON, false));
+        RealtimeSampleState.Plan wrapped = state.plan(input(camera, 1L, false));
         assertFalse(wrapped.reset());
         assertEquals(0, wrapped.sampleIndex());
         assertEquals(initialEpoch + 1, wrapped.epoch());
@@ -215,40 +126,8 @@ final class RealtimeSampleStateTest {
     }
 
     private static RealtimeSampleState.Input input(
-            FrameCamera camera,
-            long revision,
-            long textureRevision,
-            SunDirection sun,
-            boolean forceReset) {
-        return new RealtimeSampleState.Input(
-                camera,
-                revision,
-                textureRevision,
-                5L,
-                7L,
-                new AstronomyState(AstronomySettings.defaults(), sun),
-                false,
-                forceReset);
-    }
-
-    private static RealtimeSampleState.Input input(
-            FrameCamera camera,
-            long revision,
-            long textureRevision,
-            long lightingRevision,
-            long materialRevision,
-            SunDirection sun,
-            boolean cameraInWater,
-            boolean forceReset) {
-        return new RealtimeSampleState.Input(
-                camera,
-                revision,
-                textureRevision,
-                lightingRevision,
-                materialRevision,
-                new AstronomyState(AstronomySettings.defaults(), sun),
-                cameraInWater,
-                forceReset);
+            FrameCamera camera, long revision, boolean forceReset) {
+        return new RealtimeSampleState.Input(camera, revision, forceReset);
     }
 
     private static FrameCamera camera(double x) {

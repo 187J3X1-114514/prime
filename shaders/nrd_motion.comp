@@ -160,7 +160,9 @@ void primePrepareBranch(
         ivec2 extent,
         vec2 currentSampleUv,
         vec3 cameraForward,
-        bool reflection) {
+        bool reflection,
+        bool primaryHasMotion,
+        vec3 primaryPreviousPosition) {
     vec4 rawMaterial = primeLoadMaterial(pixel, reflection);
     float primaryDistance = rawMaterial.a;
     if (!primeNrdIsFinite(primaryDistance) || primaryDistance < 0.0) {
@@ -180,8 +182,11 @@ void primePrepareBranch(
 
     // Finish matrix work before loading material and lighting vectors. Position and clip
     // temporaries then die before demodulation, keeping the two largest live ranges disjoint.
+    vec3 reprojectionPosition = !reflection && primaryHasMotion
+            ? primaryPreviousPosition
+            : position;
     vec4 previousClip = primeMotionPush.previousWorldToClip
-            * vec4(position, directional ? 0.0 : 1.0);
+            * vec4(reprojectionPosition, directional ? 0.0 : 1.0);
     bool validPreviousClip = abs(previousClip.w) > 1.0e-6
             && !any(isnan(previousClip)) && !any(isinf(previousClip));
     vec2 previousUv = vec2(0.0);
@@ -198,7 +203,7 @@ void primePrepareBranch(
             && !reflection
             && primeMotionPush.diagnosticMode == PRIME_DIAGNOSTIC_REPROJECTION_ERROR) {
         vec4 exactPreviousClip = primeMotionPush.previousRenderedWorldToClip
-                * vec4(position, directional ? 0.0 : 1.0);
+                * vec4(reprojectionPosition, directional ? 0.0 : 1.0);
         vec3 error = vec3(1.0);
         if (abs(exactPreviousClip.w) > 1.0e-6
                 && !any(isnan(exactPreviousClip)) && !any(isinf(exactPreviousClip))) {
@@ -256,11 +261,12 @@ void primePrepareBranch(
 void primePrepareFsrGuide(
         ivec2 pixel,
         ivec2 extent,
-        vec4 display,
+        vec3 currentPosition,
+        vec3 previousPosition,
+        bool hasMotion,
         vec2 currentSampleUv,
         vec3 cameraForward) {
-    vec3 position = display.xyz;
-    if (all(equal(position, vec3(0.0)))) {
+    if (all(equal(currentPosition, vec3(0.0)))) {
         vec3 rayDirection = primeMotionRayDirection(currentSampleUv);
         vec4 previousClip = primeMotionPush.previousWorldToClip * vec4(rayDirection, 0.0);
         vec2 motion = vec2(0.0);
@@ -275,9 +281,10 @@ void primePrepareFsrGuide(
         return;
     }
 
-    float viewZ = primeFsrSurfaceViewZ(position, cameraForward);
+    float viewZ = primeFsrSurfaceViewZ(currentPosition, cameraForward);
     imageStore(primeFsrDepth, pixel, vec4(primeFsrReversedInfiniteDepth(viewZ)));
-    vec4 previousClip = primeMotionPush.previousWorldToClip * vec4(position, 1.0);
+    vec4 previousClip = primeMotionPush.previousWorldToClip
+            * vec4(hasMotion ? previousPosition : currentPosition, 1.0);
     vec2 motion = vec2(0.0);
     if (abs(previousClip.w) > 1.0e-6
             && !any(isnan(previousClip)) && !any(isinf(previousClip))) {
@@ -299,13 +306,39 @@ void main() {
     }
     vec2 currentSampleUv = primeMotionSampleUv(pixel, extent);
     vec4 display = imageLoad(primeDisplayPosition, pixel);
-    bool sky = all(equal(display.xyz, vec3(0.0)));
+    bool displayHasMotion = (floatBitsToUint(display.w)
+            & PRIME_DISPLAY_MOTION_FLAG) != 0u;
+    vec3 currentDisplayPosition = displayHasMotion
+            ? imageLoad(primePrimaryPosition, pixel).xyz
+            : display.xyz;
+    bool sky = all(equal(currentDisplayPosition, vec3(0.0)));
     // Surface branches and the FSR depth guide share the same center ray. Sky only needs its
     // per-pixel direction, avoiding an otherwise unused matrix reconstruction.
     vec3 cameraForward = sky
             ? vec3(0.0, 0.0, 1.0)
             : primeMotionRayDirection(vec2(0.5));
-    primePrepareBranch(pixel, extent, currentSampleUv, cameraForward, false);
-    primePrepareBranch(pixel, extent, currentSampleUv, cameraForward, true);
-    primePrepareFsrGuide(pixel, extent, display, currentSampleUv, cameraForward);
+    primePrepareBranch(
+            pixel,
+            extent,
+            currentSampleUv,
+            cameraForward,
+            false,
+            displayHasMotion,
+            display.xyz);
+    primePrepareBranch(
+            pixel,
+            extent,
+            currentSampleUv,
+            cameraForward,
+            true,
+            false,
+            vec3(0.0));
+    primePrepareFsrGuide(
+            pixel,
+            extent,
+            currentDisplayPosition,
+            display.xyz,
+            displayHasMotion,
+            currentSampleUv,
+            cameraForward);
 }

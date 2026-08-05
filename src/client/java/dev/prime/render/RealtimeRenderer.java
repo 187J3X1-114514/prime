@@ -124,13 +124,6 @@ final class RealtimeRenderer implements Destroyable {
         return this.exposureDiagnostics.latest();
     }
 
-    void invalidateHistory() {
-        this.sampleState = this.sampleState.invalidated();
-        if (this.resources != null) {
-            this.resources.requestReset();
-        }
-    }
-
     DlssRrNative.OptimalSettings optimalSettings(
             int displayWidth,
             int displayHeight,

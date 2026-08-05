@@ -168,7 +168,6 @@ public final class Fsr3Upscaler implements Destroyable {
                         camera,
                         frameTimeNanos,
                         sceneResetRevision,
-                        textureRevision,
                         forceRestart));
         FsrSettings.Jitter jitter = this.qualityMode.jitter(
                 temporal.plan().frameIndex());

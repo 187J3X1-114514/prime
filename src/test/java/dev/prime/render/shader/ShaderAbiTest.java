@@ -21,6 +21,7 @@ final class ShaderAbiTest {
         assertEquals(96, ShaderAbi.PATH_STATE_SIZE);
         assertEquals(64, ShaderAbi.TRACE_PAYLOAD_SIZE);
         assertEquals(80, ShaderAbi.SURFACE_INTERACTION_SIZE);
+        assertEquals(76, ShaderAbi.SURFACE_MOTION_ZFLAGS_OFFSET);
         assertEquals(128, ShaderAbi.PUSH_CONSTANT_SIZE);
         assertEquals(0, ShaderAbi.DESCRIPTOR_TLAS);
         assertEquals(2, ShaderAbi.DESCRIPTOR_BLOCK_ATLAS);

@@ -17,6 +17,7 @@ record GpuCluster(
         List<PreparedBlas> voxelBlases,
         CpuVoxelInstances voxelInstances,
         VulkanBuffer lightBuffer,
+        VulkanBuffer motionBuffer,
         CompiledClusterLights.Summary lights,
         boolean dynamic) {
     GpuCluster {
@@ -24,6 +25,11 @@ record GpuCluster(
         voxelInstances = Objects.requireNonNull(
                 voxelInstances, "voxelInstances");
         lights = Objects.requireNonNull(lights, "lights");
+        if (lightBuffer != null && motionBuffer != null
+                || motionBuffer != null && !dynamic) {
+            throw new IllegalArgumentException(
+                    "Only a dynamic cluster may own previous-position storage");
+        }
         if (voxelBlases.isEmpty() != (voxelInstances.count() == 0)) {
             throw new IllegalArgumentException(
                     "GPU voxel meshes and their instances must be present together");
@@ -73,11 +79,17 @@ record GpuCluster(
                 List.of(),
                 CpuVoxelInstances.EMPTY,
                 lightBuffer,
+                null,
                 lights,
                 dynamic);
     }
     long lightAddress() {
-        return this.lightBuffer == null ? 0L : this.lightBuffer.deviceAddress();
+        // Dynamic clusters have no emitters, so this section slot carries the previous-position
+        // address consumed only after closest hit has identified a dynamic primitive.
+        VulkanBuffer payload = this.lightBuffer != null
+                ? this.lightBuffer
+                : this.motionBuffer;
+        return payload == null ? 0L : payload.deviceAddress();
     }
 
     PreparedBlas baseBlas() {
@@ -183,6 +195,7 @@ record GpuCluster(
                     voxelBlas::destroyPersistentResources, failure);
         }
         failure = ResourceCleanup.destroy(this.lightBuffer, failure);
+        failure = ResourceCleanup.destroy(this.motionBuffer, failure);
         ResourceCleanup.throwIfFailed(failure);
     }
 
@@ -197,6 +210,7 @@ record GpuCluster(
                     voxelBlas::destroyAllResources, failure);
         }
         failure = ResourceCleanup.destroy(this.lightBuffer, failure);
+        failure = ResourceCleanup.destroy(this.motionBuffer, failure);
         ResourceCleanup.throwIfFailed(failure);
     }
 }

@@ -805,10 +805,17 @@ void primeStoreWavefrontIntermediate(
             vec4(
                     primeNrdSanitizeRadiance(result.radiance.specular),
                     primeNrdSanitizeHitDistance(result.guides.specularHitDistance)));
+    // Stable alpha and the pre-NRD normal scratch preserve three FP16 motion components without
+    // adding a full-resolution image; both are overwritten by final output/preparation.
+    vec3 primaryMotion = result.guides.primaryHasMotion
+            ? result.guides.primaryPreviousPosition - result.guides.primaryPosition
+            : vec3(0.0);
     imageStore(
             primeStableRadiance,
             coordinate,
-            vec4(primeNrdSanitizeRadiance(result.radiance.stable), 1.0));
+            vec4(
+                    primeNrdSanitizeRadiance(result.radiance.stable),
+                    uintBitsToFloat(packHalf2x16(primaryMotion.xy))));
     imageStore(
             primeNrdSunLighting,
             coordinate,
@@ -832,11 +839,16 @@ void primeStoreWavefrontIntermediate(
     imageStore(
             primeNrdSpecularMaterial,
             coordinate,
-            vec4(result.guides.primarySpecularAlbedo, primaryNormalOctahedral.y));
+            vec4(
+                    result.guides.primarySpecularAlbedo,
+                    primaryNormalOctahedral.y
+                            + (result.guides.primaryHasMotion ? 4.0 : 0.0)));
     imageStore(
             primeNrdViewZ,
             coordinate,
-            vec4(primaryNormalOctahedral.x));
+            vec4(uintBitsToFloat(packHalf2x16(vec2(
+                    primaryNormalOctahedral.x,
+                    primaryMotion.z)))));
     if (primeWritesNrdShInputs()) {
         imageStore(
                 primeNrdDiffuseDirection,
@@ -878,16 +890,23 @@ PrimeIntegrationResult primeLoadWavefrontIntermediate(
     result.guides.primaryHitKind = position.w >= 0.0
             ? PRIME_HIT_SURFACE
             : PRIME_HIT_NONE;
+    vec2 packedNormalMotion = unpackHalf2x16(floatBitsToUint(
+            imageLoad(primeNrdViewZ, coordinate).r));
+    bool primaryHasMotion = specularMaterial.a > 2.0;
+    float primaryNormalY = specularMaterial.a
+            - (primaryHasMotion ? 4.0 : 0.0);
     result.guides.primaryNormal = primeUnpackOctahedralNormal(
-            packSnorm2x16(vec2(
-                    imageLoad(primeNrdViewZ, coordinate).r,
-                    specularMaterial.a)));
+            packSnorm2x16(vec2(packedNormalMotion.x, primaryNormalY)));
     result.guides.primaryMaterialFlags =
             (denoiserControl >> PRIME_WAVEFRONT_PRIMARY_FLAGS_SHIFT)
                     & PRIME_WAVEFRONT_PRIMARY_FLAGS_MASK;
     result.guides.primarySpecularAlbedo = specularMaterial.rgb;
     result.guides.primaryLinearRoughness = material.w;
     result.guides.primaryPosition = position.xyz;
+    vec2 primaryMotionXY = unpackHalf2x16(floatBitsToUint(stable.a));
+    result.guides.primaryPreviousPosition = position.xyz
+            + vec3(primaryMotionXY, packedNormalMotion.y);
+    result.guides.primaryHasMotion = primaryHasMotion;
     if (primeWritesNrdShInputs()) {
         result.guides.diffuseDirection =
                 primeRestoreFp16Direction(

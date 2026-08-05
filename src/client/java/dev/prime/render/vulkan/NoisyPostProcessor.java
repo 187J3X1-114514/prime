@@ -93,7 +93,6 @@ public final class NoisyPostProcessor implements RealtimePostProcessor {
                         parameters.camera(),
                         parameters.frameTimeNanos(),
                         parameters.sceneRevision(),
-                        parameters.textureRevision(),
                         parameters.forceRestart()));
         int index = temporal.plan().frameIndex();
         return new FrameToken(

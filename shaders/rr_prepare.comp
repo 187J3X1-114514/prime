@@ -145,7 +145,14 @@ void main() {
             imageLoad(rrPackedNormalRoughness, pixel), normal, roughness);
     imageStore(rrNormalRoughness, pixel, vec4(normal, roughness));
     // The transmitted PSR and visible reflection interface can have different roughness.
-    float reflectionRoughness = specularMaterial.a;
+    bool primaryHasMotion = specularMaterial.a < 0.0;
+    float reflectionRoughness = primaryHasMotion
+            ? -specularMaterial.a - 1.0
+            : specularMaterial.a;
+    imageStore(
+            rrSpecularMaterial,
+            pixel,
+            vec4(specularMaterial.rgb, reflectionRoughness));
     vec4 noisyDiffuse = imageLoad(rrNoisyDiffuse, pixel);
     vec4 noisySpecular = imageLoad(rrNoisySpecular, pixel);
     vec4 sun = imageLoad(rrSunLighting, pixel);
@@ -163,20 +170,24 @@ void main() {
     // The position is not needed by material decode or lighting. Loading it here keeps four
     // components out of the color/aerial live range.
     vec4 primary = imageLoad(rrPrimaryPosition, pixel);
-    vec4 viewPosition = rrPush.currentWorldToView * vec4(primary.xyz, 1.0);
+    vec2 currentSampleUv = (vec2(pixel) + vec2(0.5) + rrPush.currentJitterPixels)
+            / vec2(extent);
+    vec3 currentPrimaryPosition = primaryHasMotion
+            ? rrRayDirection(currentSampleUv) * material.a
+            : primary.xyz;
+    vec4 viewPosition = rrPush.currentWorldToView
+            * vec4(currentPrimaryPosition, 1.0);
     float viewZ = abs(viewPosition.z);
     if (!(viewZ > 0.0) || isnan(viewZ) || isinf(viewZ)) {
         viewZ = PRIME_RR_SKY_VIEW_Z;
     }
     imageStore(rrLinearViewZ, pixel, vec4(viewZ));
-    vec2 currentSampleUv = (vec2(pixel) + vec2(0.5) + rrPush.currentJitterPixels)
-            / vec2(extent);
     vec2 primaryMotion = rrMotionVector(currentSampleUv, primary.xyz, false);
     imageStore(rrMotion, pixel, vec4(
             primeNrdSanitizeMotion(vec3(primaryMotion, 0.0)), 0.0));
 
     vec2 specularMotion = primaryMotion;
-    float guideDistance = length(primary.xyz);
+    float guideDistance = length(currentPrimaryPosition);
     float visibleDistance = primary.w;
     if (specularHitDistance > 1.0e-3
             && reflectionRoughness < PRIME_RR_SPECULAR_MOTION_ROUGHNESS
@@ -186,9 +197,11 @@ void main() {
             && visibleDistance > 0.0) {
         // Planar-reflector virtual image: the secondary segment is mirrored behind the
         // visible interface. primary.xyz may independently describe a transmitted PSR.
-        vec3 virtualPosition = primary.xyz / guideDistance
+        vec3 virtualPosition = currentPrimaryPosition / guideDistance
                 * (visibleDistance + specularHitDistance);
-        specularMotion = rrMotionVector(currentSampleUv, virtualPosition, false);
+        specularMotion = primaryHasMotion
+                ? primaryMotion
+                : rrMotionVector(currentSampleUv, virtualPosition, false);
     }
     imageStore(rrSpecularMotion, pixel, vec4(
             primeNrdSanitizeMotion(vec3(specularMotion, 0.0)), 0.0));

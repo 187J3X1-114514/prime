@@ -3,7 +3,7 @@ package dev.prime.render.vulkan.dlss;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import dev.prime.render.AerialEpipolarMapping;
-import dev.prime.render.fsr.FsrSettings;
+import dev.prime.render.post.SubpixelJitter;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import org.joml.Matrix4f;
@@ -15,7 +15,7 @@ final class DlssRrPrepareConstantsTest {
         Matrix4f current = sequence(1.0F);
         Matrix4f previous = sequence(17.0F);
         Matrix4f rotation = sequence(33.0F);
-        FsrSettings.Jitter jitter = new FsrSettings.Jitter(0.25F, -0.375F);
+        SubpixelJitter jitter = new SubpixelJitter(0.25F, -0.375F);
         ByteBuffer bytes = ByteBuffer.allocateDirect(DlssRrPrepareConstants.SIZE)
                 .order(ByteOrder.nativeOrder());
 

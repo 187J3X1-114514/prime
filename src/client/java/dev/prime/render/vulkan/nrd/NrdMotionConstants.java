@@ -1,5 +1,7 @@
 package dev.prime.render.vulkan.nrd;
 
+import dev.prime.render.post.nrd.NrdDiagnostics;
+
 import dev.prime.render.shader.ShaderAbi;
 import java.nio.ByteBuffer;
 import java.util.Objects;

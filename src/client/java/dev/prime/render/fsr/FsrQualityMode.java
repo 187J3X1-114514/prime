@@ -1,5 +1,6 @@
 package dev.prime.render.fsr;
 
+import dev.prime.render.post.SubpixelJitter;
 import java.util.Arrays;
 import java.util.Optional;
 
@@ -15,17 +16,17 @@ public enum FsrQualityMode {
     private final float upscaleRatio;
     private final int jitterPhaseCount;
     private final float mipBias;
-    private final FsrSettings.Jitter[] jitterSequence;
+    private final SubpixelJitter[] jitterSequence;
 
     FsrQualityMode(String id, float upscaleRatio) {
         this.id = id;
         this.upscaleRatio = upscaleRatio;
         this.jitterPhaseCount = Math.max(1, (int) (8.0F * upscaleRatio * upscaleRatio));
         this.mipBias = (float) (Math.log(1.0 / upscaleRatio) / Math.log(2.0) - 1.0);
-        this.jitterSequence = new FsrSettings.Jitter[this.jitterPhaseCount];
+        this.jitterSequence = new SubpixelJitter[this.jitterPhaseCount];
         for (int index = 0; index < this.jitterSequence.length; index++) {
             int phase = index + 1;
-            this.jitterSequence[index] = new FsrSettings.Jitter(
+            this.jitterSequence[index] = new SubpixelJitter(
                     halton(phase, 2) - 0.5F,
                     halton(phase, 3) - 0.5F);
         }
@@ -60,7 +61,7 @@ public enum FsrQualityMode {
         return this.renderDimension(displayHeight);
     }
 
-    public FsrSettings.Jitter jitter(int frameIndex) {
+    public SubpixelJitter jitter(int frameIndex) {
         return this.jitterSequence[this.jitterPhase(frameIndex) - 1];
     }
 

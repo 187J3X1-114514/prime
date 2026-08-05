@@ -1,7 +1,7 @@
 package dev.prime.render.vulkan;
 
 import com.mojang.blaze3d.vulkan.Destroyable;
-import dev.prime.render.vulkan.nrd.NrdDiagnostics;
+import dev.prime.render.post.nrd.NrdDiagnostics;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.ByteBuffer;

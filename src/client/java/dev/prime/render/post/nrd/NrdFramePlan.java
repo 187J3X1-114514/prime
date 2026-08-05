@@ -1,4 +1,4 @@
-package dev.prime.render.vulkan.nrd;
+package dev.prime.render.post.nrd;
 
 import dev.prime.render.FrameCamera;
 import dev.prime.render.FrameTime;

@@ -7,6 +7,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import dev.prime.render.post.PostProcessingMode;
+import dev.prime.render.post.TransparentGuideMode;
 import dev.prime.render.shader.ShaderAbi;
 import org.junit.jupiter.api.Test;
 
@@ -30,9 +31,9 @@ final class IntegratorSettingsTest {
     void pathControlKeepsCameraMediumSeparateFromJitterAndBounceFields() {
         AstronomySettings astronomy = new AstronomySettings(-73, 271);
         int dry = IntegratorSettings.packPathControl(
-                128, 18, astronomy, false, PostProcessingMode.NRD_FSR);
+                128, 18, astronomy, false, TransparentGuideMode.REFLECTION_AND_TRANSMISSION);
         int submerged = IntegratorSettings.packPathControl(
-                128, 18, astronomy, true, PostProcessingMode.NRD_FSR);
+                128, 18, astronomy, true, TransparentGuideMode.REFLECTION_AND_TRANSMISSION);
         assertEquals(
                 128,
                 dry & ShaderAbi.PATH_MAXIMUM_BOUNCES_MASK);
@@ -46,10 +47,10 @@ final class IntegratorSettingsTest {
         assertEquals(ShaderAbi.PATH_CAMERA_IN_WATER_MASK,
                 submerged & ShaderAbi.PATH_CAMERA_IN_WATER_MASK);
         int screenshot = IntegratorSettings.packPathControl(
-                128, 0, astronomy, false, PostProcessingMode.DISABLED);
+                128, 0, astronomy, false, TransparentGuideMode.DISABLED);
         assertEquals(0, (screenshot >>> 16) & ShaderAbi.PATH_JITTER_PHASE_MASK);
         int dlss = IntegratorSettings.packPathControl(
-                128, 18, astronomy, false, PostProcessingMode.DLSS_RR);
+                128, 18, astronomy, false, TransparentGuideMode.TRANSMISSION_ONLY);
         assertEquals(
                 ShaderAbi.PATH_TRANSPARENT_GUIDE_MODE_NRD,
                 dry >>> ShaderAbi.PATH_TRANSPARENT_GUIDE_MODE_SHIFT
@@ -64,13 +65,16 @@ final class IntegratorSettingsTest {
                         & ShaderAbi.PATH_TRANSPARENT_GUIDE_MODE_MASK);
         assertThrows(IllegalArgumentException.class,
                 () -> IntegratorSettings.packPathControl(
-                        128, -1, astronomy, false, PostProcessingMode.NRD_FSR));
+                        128, -1, astronomy, false,
+                        TransparentGuideMode.REFLECTION_AND_TRANSMISSION));
         assertThrows(IllegalArgumentException.class,
                 () -> IntegratorSettings.packPathControl(
-                        128, 0x2000, astronomy, false, PostProcessingMode.NRD_FSR));
+                        128, 0x2000, astronomy, false,
+                        TransparentGuideMode.REFLECTION_AND_TRANSMISSION));
         assertThrows(IllegalArgumentException.class,
                 () -> IntegratorSettings.packPathControl(
-                        129, 0, astronomy, false, PostProcessingMode.NRD_FSR));
+                        129, 0, astronomy, false,
+                        TransparentGuideMode.REFLECTION_AND_TRANSMISSION));
     }
 
     @Test

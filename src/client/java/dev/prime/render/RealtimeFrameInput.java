@@ -1,20 +1,12 @@
 package dev.prime.render;
 
-import dev.prime.render.fsr.FsrDebugView;
-import dev.prime.render.fsr.FsrSettings;
-import dev.prime.render.post.DlssRrDebugView;
 import dev.prime.render.post.PostProcessingMode;
-import dev.prime.render.post.RealtimePostProcessor;
+import dev.prime.render.post.ReconstructionFrameParameters;
 import dev.prime.render.post.ReconstructionQualityMode;
-import dev.prime.render.vulkan.nrd.NrdDiagnostics;
+import dev.prime.render.post.TransparentGuideMode;
 import java.util.Objects;
 
-/**
- * Device-address-free semantic input captured once for an interactive frame.
- *
- * <p>Sample and reconstruction histories derive their plans from this value. GPU residency,
- * backend frame tokens and command buffers are deliberately outside the record.
- */
+/** Device-address-free semantic input captured once for an interactive frame. */
 public record RealtimeFrameInput(
         FrameCamera camera,
         long frameTimeNanos,
@@ -29,31 +21,23 @@ public record RealtimeFrameInput(
         boolean cameraInWater,
         PostProcessingMode postProcessingMode,
         ReconstructionQualityMode quality,
+        TransparentGuideMode transparentGuideMode,
         LightingSettings.Snapshot lighting,
         MaterialSettings.Snapshot material,
         boolean shInput,
         boolean triangleDebug,
         DisplaySettings.Snapshot display,
-        NrdDiagnostics.Mode nrdDebugView,
-        FsrDebugView fsrDebugView,
-        DlssRrDebugView rrDebugView,
-        boolean rrDebugFullscreen,
         boolean forceReset) {
     public RealtimeFrameInput {
         Objects.requireNonNull(camera, "camera");
         Objects.requireNonNull(astronomy, "astronomy");
         Objects.requireNonNull(postProcessingMode, "postProcessingMode");
         Objects.requireNonNull(quality, "quality");
+        Objects.requireNonNull(transparentGuideMode, "transparentGuideMode");
         Objects.requireNonNull(lighting, "lighting");
         Objects.requireNonNull(material, "material");
         Objects.requireNonNull(display, "display");
-        Objects.requireNonNull(nrdDebugView, "nrdDebugView");
-        Objects.requireNonNull(fsrDebugView, "fsrDebugView");
-        Objects.requireNonNull(rrDebugView, "rrDebugView");
-        if (width <= 0
-                || height <= 0
-                || displayWidth <= 0
-                || displayHeight <= 0) {
+        if (width <= 0 || height <= 0 || displayWidth <= 0 || displayHeight <= 0) {
             throw new IllegalArgumentException(
                     "Realtime render and display extents must be positive");
         }
@@ -63,29 +47,13 @@ public record RealtimeFrameInput(
         }
     }
 
-    void requireCompatible(RealtimePostProcessor processor) {
-        Objects.requireNonNull(processor, "processor");
-        if (this.postProcessingMode != processor.mode()
-                || this.quality != processor.quality()
-                || this.width != processor.renderWidth()
-                || this.height != processor.renderHeight()
-                || this.displayWidth != processor.displayWidth()
-                || this.displayHeight != processor.displayHeight()) {
-            throw new IllegalStateException(
-                    "Realtime frame input does not match its reconstruction backend");
-        }
-    }
-
     RealtimeSampleState.Input sampleStateInput() {
         return new RealtimeSampleState.Input(
-                this.camera,
-                this.sceneRevision,
-                this.forceReset);
+                this.camera, this.sceneRevision, this.forceReset);
     }
 
-    RealtimePostProcessor.FrameParameters reconstructionInput(
-            boolean forceRestart) {
-        return new RealtimePostProcessor.FrameParameters(
+    ReconstructionFrameParameters reconstructionInput(boolean forceRestart) {
+        return new ReconstructionFrameParameters(
                 this.camera,
                 this.frameTimeNanos,
                 this.sceneRevision,
@@ -93,16 +61,11 @@ public record RealtimeFrameInput(
                 forceRestart,
                 this.sunDirection(),
                 this.lighting,
-                this.display,
-                this.nrdDebugView,
-                this.fsrDebugView,
-                this.rrDebugView,
-                this.rrDebugFullscreen);
+                this.display);
     }
 
     void requireReconstructionInput(
-            RealtimePostProcessor.FrameParameters parameters,
-            boolean forceRestart) {
+            ReconstructionFrameParameters parameters, boolean forceRestart) {
         Objects.requireNonNull(parameters, "parameters");
         if (!this.camera.equals(parameters.camera())
                 || this.frameTimeNanos != parameters.frameTimeNanos()
@@ -111,11 +74,7 @@ public record RealtimeFrameInput(
                 || forceRestart != parameters.forceRestart()
                 || !this.sunDirection().equals(parameters.sunDirection())
                 || !this.lighting.equals(parameters.lighting())
-                || !this.display.equals(parameters.display())
-                || this.nrdDebugView != parameters.nrdDebugView()
-                || this.fsrDebugView != parameters.fsrDebugView()
-                || this.rrDebugView != parameters.rrDebugView()
-                || this.rrDebugFullscreen != parameters.rrDebugFullscreen()) {
+                || !this.display.equals(parameters.display())) {
             throw new IllegalStateException(
                     "Reconstruction parameters do not match the captured frame input");
         }
@@ -124,51 +83,29 @@ public record RealtimeFrameInput(
     IntegratorFrameInput integratorInput(
             int sampleIndex,
             int sampleEpoch,
-            int reconstructionFrameIndex) {
-        ReconstructionQualityMode rayQuality =
-                this.postProcessingMode == PostProcessingMode.DISABLED
-                        ? ReconstructionQualityMode.NATIVE_AA
-                        : this.quality;
+            int jitterPhase,
+            int packedRayCone,
+            boolean rawNumericalDiagnostic) {
         return new IntegratorFrameInput(
                 this.camera,
                 this.width,
                 this.height,
                 this.astronomy,
-                rayQuality.packedRayCone(
-                        this.camera.projection().m00(),
-                        this.camera.projection().m11(),
-                        this.width,
-                        this.height),
+                packedRayCone,
                 sampleIndex,
                 sampleEpoch,
-                this.jitterPhase(reconstructionFrameIndex),
+                jitterPhase,
                 this.cameraInWater,
                 this.postProcessingMode,
+                this.transparentGuideMode,
                 this.lighting,
                 this.material,
                 this.shInput,
-                this.postProcessingMode == PostProcessingMode.NRD_FSR
-                        && this.nrdDebugView.rawNumerical(),
+                rawNumericalDiagnostic,
                 this.triangleDebug);
     }
 
     public SunDirection sunDirection() {
         return this.astronomy.sunDirection();
-    }
-
-    FsrSettings.Jitter expectedJitter(int reconstructionFrameIndex) {
-        if (reconstructionFrameIndex < 0) {
-            throw new IllegalArgumentException(
-                    "Reconstruction frame index must be non-negative");
-        }
-        return this.postProcessingMode == PostProcessingMode.NRD_FSR
-                ? this.quality.fsrJitter(reconstructionFrameIndex)
-                : this.quality.rrJitter(reconstructionFrameIndex);
-    }
-
-    private int jitterPhase(int reconstructionFrameIndex) {
-        return this.postProcessingMode == PostProcessingMode.NRD_FSR
-                ? this.quality.fsrJitterPhase(reconstructionFrameIndex)
-                : this.quality.rrJitterPhase(reconstructionFrameIndex);
     }
 }

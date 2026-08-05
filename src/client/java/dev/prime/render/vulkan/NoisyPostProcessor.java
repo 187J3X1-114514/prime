@@ -1,12 +1,16 @@
 package dev.prime.render.vulkan;
 
 import dev.prime.render.ResourceCleanup;
-import dev.prime.render.fsr.FsrSettings;
+import dev.prime.render.post.ReconstructionFrame;
+import dev.prime.render.post.ReconstructionFrameParameters;
 import dev.prime.render.post.PostProcessingMode;
 import dev.prime.render.post.ReconstructionFrameHistory;
-import dev.prime.render.post.RealtimePostProcessor;
 import dev.prime.render.post.ReconstructionQualityMode;
+import dev.prime.render.post.SubpixelJitter;
 import dev.prime.render.post.TemporalReconstructionState;
+import dev.prime.render.vulkan.dlss.DlssRrProfile;
+import dev.prime.render.vulkan.reconstruction.ReconstructionDebugSettings;
+import dev.prime.render.vulkan.reconstruction.VulkanReconstructionProcessor;
 import org.lwjgl.vulkan.VkCommandBuffer;
 
 /**
@@ -14,7 +18,7 @@ import org.lwjgl.vulkan.VkCommandBuffer;
  *
  * <p>The shared history state controls only jitter identity and reset/submit semantics.
  */
-public final class NoisyPostProcessor implements RealtimePostProcessor {
+public final class NoisyPostProcessor implements VulkanReconstructionProcessor {
     private final ReconstructionQualityMode quality;
     private final int width;
     private final int height;
@@ -86,7 +90,9 @@ public final class NoisyPostProcessor implements RealtimePostProcessor {
     }
 
     @Override
-    public Frame beginFrame(FrameParameters parameters) {
+    public Frame beginFrame(
+            ReconstructionFrameParameters parameters,
+            ReconstructionDebugSettings debugSettings) {
         requireOpen();
         ReconstructionFrameHistory.PlannedFrame temporal = this.history.plan(
                 new TemporalReconstructionState.Input(
@@ -98,7 +104,7 @@ public final class NoisyPostProcessor implements RealtimePostProcessor {
         return new FrameToken(
                 this,
                 temporal,
-                this.quality.rrJitter(index),
+                DlssRrProfile.jitter(this.quality, index),
                 temporal.plan().restart());
     }
 
@@ -114,7 +120,7 @@ public final class NoisyPostProcessor implements RealtimePostProcessor {
     public void record(
             VkCommandBuffer commandBuffer,
             Frame frame,
-            FrameParameters parameters,
+            ReconstructionFrameParameters parameters,
             VulkanImageInitializationBatch initialization) {
         FrameToken token = requireFrame(frame);
         token.recorded = true;
@@ -193,8 +199,7 @@ public final class NoisyPostProcessor implements RealtimePostProcessor {
     private static final class FrameToken implements Frame {
         private final NoisyPostProcessor owner;
         private final ReconstructionFrameHistory.PlannedFrame temporal;
-        private final FsrSettings.Jitter jitter;
-        private final boolean reset;
+        private final ReconstructionFrame semantic;
         private boolean recorded;
         private boolean submitted;
         private boolean abandoned;
@@ -202,16 +207,14 @@ public final class NoisyPostProcessor implements RealtimePostProcessor {
         private FrameToken(
                 NoisyPostProcessor owner,
                 ReconstructionFrameHistory.PlannedFrame temporal,
-                FsrSettings.Jitter jitter,
+                SubpixelJitter jitter,
                 boolean reset) {
             this.owner = owner;
             this.temporal = temporal;
-            this.jitter = jitter;
-            this.reset = reset;
+            this.semantic = new ReconstructionFrame(
+                    temporal.plan().frameIndex(), jitter, reset);
         }
 
-        @Override public int frameIndex() { return this.temporal.plan().frameIndex(); }
-        @Override public FsrSettings.Jitter jitter() { return this.jitter; }
-        @Override public boolean reset() { return this.reset; }
+        @Override public ReconstructionFrame semantic() { return this.semantic; }
     }
 }

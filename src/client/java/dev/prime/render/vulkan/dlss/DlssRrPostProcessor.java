@@ -4,11 +4,12 @@ import dev.prime.render.FrameCamera;
 import dev.prime.render.DisplaySettings;
 import dev.prime.render.ResourceCleanup;
 import dev.prime.render.SunDirection;
-import dev.prime.render.fsr.FsrSettings;
 import dev.prime.render.post.DlssRrDebugView;
 import dev.prime.render.post.PostProcessingMode;
-import dev.prime.render.post.RealtimePostProcessor;
+import dev.prime.render.post.ReconstructionFrame;
+import dev.prime.render.post.ReconstructionFrameParameters;
 import dev.prime.render.post.ReconstructionQualityMode;
+import dev.prime.render.post.SubpixelJitter;
 import dev.prime.render.post.TemporalReconstructionState;
 import dev.prime.render.post.ReconstructionFrameHistory;
 import dev.prime.render.vulkan.AtmospherePipeline;
@@ -16,7 +17,9 @@ import dev.prime.render.vulkan.DisplayTransformPass;
 import dev.prime.render.vulkan.VulkanContext;
 import dev.prime.render.vulkan.VulkanImage;
 import dev.prime.render.vulkan.VulkanImageInitializationBatch;
-import dev.prime.render.vulkan.nrd.NrdCameraTransform;
+import dev.prime.render.post.nrd.NrdCameraTransform;
+import dev.prime.render.vulkan.reconstruction.ReconstructionDebugSettings;
+import dev.prime.render.vulkan.reconstruction.VulkanReconstructionProcessor;
 import java.util.Objects;
 import org.joml.Matrix4f;
 import org.lwjgl.system.MemoryStack;
@@ -27,7 +30,7 @@ import org.lwjgl.vulkan.VkDependencyInfo;
 import org.lwjgl.vulkan.VkMemoryBarrier2;
 
 /** Prime's complete real-time path-tracing to DLSS Ray Reconstruction frame boundary. */
-public final class DlssRrPostProcessor implements RealtimePostProcessor {
+public final class DlssRrPostProcessor implements VulkanReconstructionProcessor {
     private final VulkanContext context;
     private final DlssRrNative.Context ngxContext;
     private final ReconstructionQualityMode quality;
@@ -175,8 +178,8 @@ public final class DlssRrPostProcessor implements RealtimePostProcessor {
                         frameTimeNanos,
                         sceneRevision,
                         forceRestart));
-        FsrSettings.Jitter jitter = this.quality.rrJitter(
-                temporal.plan().frameIndex());
+        SubpixelJitter jitter = DlssRrProfile.jitter(
+                this.quality, temporal.plan().frameIndex());
         return new FrameToken(
                 this,
                 temporal,
@@ -186,15 +189,17 @@ public final class DlssRrPostProcessor implements RealtimePostProcessor {
     }
 
     @Override
-    public FrameToken beginFrame(FrameParameters parameters) {
+    public FrameToken beginFrame(
+            ReconstructionFrameParameters parameters,
+            ReconstructionDebugSettings debugSettings) {
         return this.beginFrame(
                 parameters.camera(),
                 parameters.frameTimeNanos(),
                 parameters.sceneRevision(),
                 parameters.textureRevision(),
                 parameters.forceRestart(),
-                parameters.rrDebugView(),
-                parameters.rrDebugFullscreen());
+                debugSettings.dlssRr(),
+                debugSettings.dlssRrFullscreen());
     }
 
     public void prepareForRayTrace(
@@ -265,7 +270,7 @@ public final class DlssRrPostProcessor implements RealtimePostProcessor {
                     token.debugView,
                     token.debugFullscreen,
                     temporal.frameIndex(),
-                    this.quality.rrJitterPhaseCount(),
+                    DlssRrProfile.jitterPhaseCount(this.quality),
                     display);
         }
     }
@@ -274,7 +279,7 @@ public final class DlssRrPostProcessor implements RealtimePostProcessor {
     public void record(
             VkCommandBuffer commandBuffer,
             Frame frame,
-            FrameParameters parameters,
+            ReconstructionFrameParameters parameters,
             VulkanImageInitializationBatch initialization) {
         if (!(frame instanceof FrameToken token)) {
             throw new IllegalArgumentException("DLSS RR received another processor's frame token");
@@ -362,7 +367,8 @@ public final class DlssRrPostProcessor implements RealtimePostProcessor {
     public static final class FrameToken implements Frame {
         private final DlssRrPostProcessor owner;
         private final ReconstructionFrameHistory.PlannedFrame temporal;
-        private final FsrSettings.Jitter jitter;
+        private final SubpixelJitter jitter;
+        private final ReconstructionFrame semantic;
         private final DlssRrDebugView debugView;
         private final boolean debugFullscreen;
         private boolean recorded;
@@ -372,18 +378,20 @@ public final class DlssRrPostProcessor implements RealtimePostProcessor {
         private FrameToken(
                 DlssRrPostProcessor owner,
                 ReconstructionFrameHistory.PlannedFrame temporal,
-                FsrSettings.Jitter jitter,
+                SubpixelJitter jitter,
                 DlssRrDebugView debugView,
                 boolean debugFullscreen) {
             this.owner = owner;
             this.temporal = temporal;
             this.jitter = jitter;
+            this.semantic = new ReconstructionFrame(
+                    temporal.plan().frameIndex(), jitter, temporal.plan().restart());
             this.debugView = debugView;
             this.debugFullscreen = debugFullscreen;
         }
 
-        @Override public int frameIndex() { return this.temporal.plan().frameIndex(); }
-        @Override public FsrSettings.Jitter jitter() { return this.jitter; }
-        @Override public boolean reset() { return this.temporal.plan().restart(); }
+        @Override public ReconstructionFrame semantic() {
+            return this.semantic;
+        }
     }
 }

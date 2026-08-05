@@ -8,7 +8,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import dev.prime.render.fsr.FsrDebugView;
 import dev.prime.render.post.DlssRrDebugView;
-import dev.prime.render.vulkan.nrd.NrdDiagnostics;
+import dev.prime.render.post.nrd.NrdDiagnostics;
 import org.junit.jupiter.api.Test;
 
 final class SessionControlsTest {

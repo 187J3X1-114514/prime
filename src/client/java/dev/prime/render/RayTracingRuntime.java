@@ -14,7 +14,7 @@ import dev.prime.render.scene.vanilla.DynamicSceneFrame;
 import dev.prime.render.vulkan.VulkanBootstrap;
 import dev.prime.render.vulkan.VulkanCapabilities;
 import dev.prime.render.vulkan.VulkanContext;
-import dev.prime.render.vulkan.nrd.NrdDiagnostics;
+import dev.prime.render.post.nrd.NrdDiagnostics;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import net.minecraft.client.Minecraft;

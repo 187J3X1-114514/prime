@@ -74,7 +74,7 @@ public final class RayTracingPushConstants {
                         input.jitterPhase(),
                         input.astronomy().settings(),
                         input.cameraInWater(),
-                        input.postProcessingMode()));
+                        input.transparentGuideMode()));
         buffer.putInt(
                 pathOffset + 3 * Integer.BYTES,
                 IntegratorSettings.packMaterialLightingControl(

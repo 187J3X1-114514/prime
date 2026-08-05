@@ -1,7 +1,7 @@
 package dev.prime.render.replay;
 
 import dev.prime.render.FrameCamera;
-import dev.prime.render.vulkan.nrd.NrdCameraTransform;
+import dev.prime.render.post.nrd.NrdCameraTransform;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;

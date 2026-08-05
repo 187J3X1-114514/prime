@@ -2,6 +2,7 @@ package dev.prime.render.fsr;
 
 import dev.prime.render.FrameCamera;
 import dev.prime.render.FrameTime;
+import dev.prime.render.post.SubpixelJitter;
 import dev.prime.render.shader.ShaderAbi;
 import java.util.Objects;
 
@@ -17,7 +18,7 @@ public record FsrDispatchPlan(
         int renderHeight,
         int displayWidth,
         int displayHeight,
-        FsrSettings.Jitter jitterOffset,
+        SubpixelJitter jitterOffset,
         float motionScaleX,
         float motionScaleY,
         boolean sharpening,
@@ -80,7 +81,7 @@ public record FsrDispatchPlan(
             int renderHeight,
             int displayWidth,
             int displayHeight,
-            FsrSettings.Jitter sampleJitter,
+            SubpixelJitter sampleJitter,
             float frameTimeMilliseconds,
             boolean reset,
             FsrDebugView debugView) {

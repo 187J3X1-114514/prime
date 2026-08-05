@@ -1,7 +1,7 @@
 package dev.prime.render.vulkan.dlss;
 
 import dev.prime.render.AerialEpipolarMapping;
-import dev.prime.render.fsr.FsrSettings;
+import dev.prime.render.post.SubpixelJitter;
 import java.nio.ByteBuffer;
 import org.joml.Matrix4fc;
 
@@ -26,7 +26,7 @@ final class DlssRrPrepareConstants {
             Matrix4fc viewRotation,
             float sunRadiance,
             AerialEpipolarMapping.Epipole epipole,
-            FsrSettings.Jitter jitter) {
+            SubpixelJitter jitter) {
         currentClipToWorld.get(CURRENT_CLIP_TO_WORLD, target);
         previousWorldToClip.get(PREVIOUS_WORLD_TO_CLIP, target);
         viewRotation.get(VIEW_ROTATION, target);

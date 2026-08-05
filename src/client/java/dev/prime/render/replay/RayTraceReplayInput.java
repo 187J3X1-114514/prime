@@ -6,6 +6,7 @@ import dev.prime.render.LightingSettings;
 import dev.prime.render.MaterialSettings;
 import dev.prime.render.SunDirection;
 import dev.prime.render.post.PostProcessingMode;
+import dev.prime.render.post.TransparentGuideMode;
 import dev.prime.render.terrain.TerrainScene;
 import java.util.Objects;
 
@@ -57,6 +58,10 @@ public record RayTraceReplayInput(
             TerrainScene.ResidentSceneView scene) {
         Objects.requireNonNull(input, "input");
         Objects.requireNonNull(scene, "scene");
+        if (input.transparentGuideMode() != guideMode(input.postProcessingMode())) {
+            throw new IllegalArgumentException(
+                    "Replay wire mode cannot represent a non-canonical transparent guide");
+        }
         return new RayTraceReplayInput(
                 FrameCameraSnapshot.capture(input.camera()),
                 SceneIdentity.capture(scene),
@@ -90,6 +95,7 @@ public record RayTraceReplayInput(
                 this.jitterPhase,
                 this.cameraInWater,
                 this.postProcessingMode,
+                guideMode(this.postProcessingMode),
                 this.lighting,
                 this.material,
                 this.shInput,
@@ -99,6 +105,14 @@ public record RayTraceReplayInput(
 
     public SunDirection sunDirection() {
         return this.astronomy.sunDirection();
+    }
+
+    private static TransparentGuideMode guideMode(PostProcessingMode mode) {
+        return switch (mode) {
+            case NRD_FSR -> TransparentGuideMode.REFLECTION_AND_TRANSMISSION;
+            case DLSS_RR -> TransparentGuideMode.TRANSMISSION_ONLY;
+            case DISABLED -> TransparentGuideMode.DISABLED;
+        };
     }
 
     public void requireMatch(

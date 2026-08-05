@@ -4,6 +4,8 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import dev.prime.render.fsr.FsrQualityMode;
+import dev.prime.render.fsr.FsrReconstructionProfile;
+import dev.prime.render.vulkan.dlss.DlssRrProfile;
 import java.util.Arrays;
 import java.util.Map;
 import java.util.Set;
@@ -51,10 +53,13 @@ final class ReconstructionModesTest {
         assertEquals(ReconstructionQualityMode.PERFORMANCE, ReconstructionQualityMode.DEFAULT);
         for (ReconstructionQualityMode quality : ReconstructionQualityMode.values()) {
             assertEquals(quality, ReconstructionQualityMode.fromId(quality.id()));
-            assertEquals(fsr.get(quality), quality.fsrMode());
-            assertEquals(ngx.get(quality), quality.ngxPerfQualityValue());
-            assertTrue(quality.rrJitterPhaseCount() >= 64);
-            assertEquals(quality.rrJitter(0), quality.rrJitter(quality.rrJitterPhaseCount()));
+            assertEquals(fsr.get(quality), FsrReconstructionProfile.forQuality(quality).mode());
+            assertEquals(ngx.get(quality), DlssRrProfile.ngxPerfQualityValue(quality));
+            assertTrue(DlssRrProfile.jitterPhaseCount(quality) >= 64);
+            assertEquals(
+                    DlssRrProfile.jitter(quality, 0),
+                    DlssRrProfile.jitter(
+                            quality, DlssRrProfile.jitterPhaseCount(quality)));
         }
     }
 }

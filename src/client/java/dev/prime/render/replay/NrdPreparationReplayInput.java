@@ -3,7 +3,7 @@ package dev.prime.render.replay;
 import dev.prime.render.FrameCamera;
 import dev.prime.render.FrameTime;
 import dev.prime.render.SunDirection;
-import dev.prime.render.vulkan.nrd.NrdFramePlan;
+import dev.prime.render.post.nrd.NrdFramePlan;
 import java.util.Objects;
 
 /** Complete planned temporal input used by Prime's raygen-to-NRD adapter. */
@@ -53,7 +53,7 @@ public record NrdPreparationReplayInput(
         }
         if (diagnosticMode < 0
                 || diagnosticMode
-                        > dev.prime.render.vulkan.nrd.NrdDiagnostics
+                        > dev.prime.render.post.nrd.NrdDiagnostics
                                 .MAX_OUTPUT_SELECTOR) {
             throw new IllegalArgumentException(
                     "NRD replay diagnostic selector is invalid");

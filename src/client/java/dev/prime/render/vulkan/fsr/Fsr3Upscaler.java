@@ -9,6 +9,7 @@ import dev.prime.render.fsr.FsrDispatchPlan;
 import dev.prime.render.fsr.FsrQualityMode;
 import dev.prime.render.fsr.FsrSettings;
 import dev.prime.render.post.ReconstructionFrameHistory;
+import dev.prime.render.post.SubpixelJitter;
 import dev.prime.render.post.TemporalReconstructionState;
 import dev.prime.render.vulkan.DisplayTransformPass;
 import dev.prime.render.vulkan.RawWavefrontFrame;
@@ -169,7 +170,7 @@ public final class Fsr3Upscaler implements Destroyable {
                         frameTimeNanos,
                         sceneResetRevision,
                         forceRestart));
-        FsrSettings.Jitter jitter = this.qualityMode.jitter(
+        SubpixelJitter jitter = this.qualityMode.jitter(
                 temporal.plan().frameIndex());
         return new FrameToken(
                 this,
@@ -352,7 +353,7 @@ public final class Fsr3Upscaler implements Destroyable {
     public static final class FrameToken {
         private final Fsr3Upscaler owner;
         private final ReconstructionFrameHistory.PlannedFrame temporal;
-        private final FsrSettings.Jitter jitter;
+        private final SubpixelJitter jitter;
         private final FsrDebugView fsrDebugView;
         private boolean recorded;
         private boolean submitted;
@@ -361,7 +362,7 @@ public final class Fsr3Upscaler implements Destroyable {
         private FrameToken(
                 Fsr3Upscaler owner,
                 ReconstructionFrameHistory.PlannedFrame temporal,
-                FsrSettings.Jitter jitter,
+                SubpixelJitter jitter,
                 FsrDebugView fsrDebugView) {
             this.owner = owner;
             this.temporal = temporal;
@@ -373,7 +374,7 @@ public final class Fsr3Upscaler implements Destroyable {
             return this.temporal.plan().frameIndex();
         }
 
-        public FsrSettings.Jitter jitter() {
+        public SubpixelJitter jitter() {
             return this.jitter;
         }
 

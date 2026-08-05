@@ -12,6 +12,7 @@ import dev.prime.render.LightingSettings;
 import dev.prime.render.MaterialSettings;
 import dev.prime.render.SunDirection;
 import dev.prime.render.post.PostProcessingMode;
+import dev.prime.render.post.TransparentGuideMode;
 import dev.prime.render.terrain.TerrainScene;
 import java.util.List;
 import org.joml.Matrix4f;
@@ -382,6 +383,7 @@ final class NrdInputSemanticValidatorTest {
                 0,
                 false,
                 PostProcessingMode.NRD_FSR,
+                TransparentGuideMode.REFLECTION_AND_TRANSMISSION,
                 new LightingSettings.Snapshot(
                         0, 0, 0, 1L),
                 new MaterialSettings.Snapshot(90, 1L),

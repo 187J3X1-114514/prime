@@ -1,6 +1,6 @@
 package dev.prime.render;
 
-import dev.prime.render.post.PostProcessingMode;
+import dev.prime.render.post.TransparentGuideMode;
 import dev.prime.render.shader.ShaderAbi;
 
 /**
@@ -64,7 +64,7 @@ public final class IntegratorSettings {
             int jitterPhase,
             AstronomySettings astronomy,
             boolean cameraInWater,
-            PostProcessingMode postProcessingMode) {
+            TransparentGuideMode transparentGuideMode) {
         if (maximumBounces < 0 || maximumBounces > MAXIMUM_BOUNCES) {
             throw new IllegalArgumentException(
                     "Maximum bounce count exceeds the integrator limit");
@@ -81,13 +81,10 @@ public final class IntegratorSettings {
             throw new IllegalArgumentException(
                     "Observer latitude does not fit the path-control ABI");
         }
-        int transparentGuideMode = switch (postProcessingMode) {
-            case NRD_FSR -> ShaderAbi.PATH_TRANSPARENT_GUIDE_MODE_NRD;
-            case DLSS_RR -> ShaderAbi.PATH_TRANSPARENT_GUIDE_MODE_DLSS_RR;
-            case DISABLED -> ShaderAbi.PATH_TRANSPARENT_GUIDE_MODE_DISABLED;
-        };
+        java.util.Objects.requireNonNull(transparentGuideMode, "transparentGuideMode");
         return (cameraInWater ? ShaderAbi.PATH_CAMERA_IN_WATER_MASK : 0)
-                | transparentGuideMode << ShaderAbi.PATH_TRANSPARENT_GUIDE_MODE_SHIFT
+                | transparentGuideMode.abiValue()
+                        << ShaderAbi.PATH_TRANSPARENT_GUIDE_MODE_SHIFT
                 | (jitterPhase << 16)
                 | encodedLatitude << ShaderAbi.PATH_LATITUDE_SHIFT
                 | maximumBounces;

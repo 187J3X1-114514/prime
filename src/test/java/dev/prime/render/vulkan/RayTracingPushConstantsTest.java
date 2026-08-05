@@ -13,6 +13,7 @@ import dev.prime.render.LightingSettings;
 import dev.prime.render.MaterialSettings;
 import dev.prime.render.SunDirection;
 import dev.prime.render.post.PostProcessingMode;
+import dev.prime.render.post.TransparentGuideMode;
 import dev.prime.render.shader.ShaderAbi;
 import dev.prime.render.terrain.TerrainScene;
 import java.nio.ByteBuffer;
@@ -71,6 +72,7 @@ final class RayTracingPushConstantsTest {
                         valid.jitterPhase(),
                         valid.cameraInWater(),
                         valid.postProcessingMode(),
+                        valid.transparentGuideMode(),
                         valid.lighting(),
                         valid.material(),
                         valid.shInput(),
@@ -110,6 +112,7 @@ final class RayTracingPushConstantsTest {
                 7,
                 true,
                 PostProcessingMode.NRD_FSR,
+                TransparentGuideMode.REFLECTION_AND_TRANSMISSION,
                 lighting,
                 material,
                 true,

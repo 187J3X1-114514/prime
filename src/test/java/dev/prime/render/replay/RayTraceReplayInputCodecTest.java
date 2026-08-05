@@ -13,6 +13,7 @@ import dev.prime.render.LightingSettings;
 import dev.prime.render.MaterialSettings;
 import dev.prime.render.SunDirection;
 import dev.prime.render.post.PostProcessingMode;
+import dev.prime.render.post.TransparentGuideMode;
 import dev.prime.render.shader.ShaderAbi;
 import dev.prime.render.terrain.TerrainScene;
 import dev.prime.render.vulkan.RayTracingPushConstants;
@@ -46,6 +47,32 @@ final class RayTraceReplayInputCodecTest {
         RayTracingPushConstants.write(
                 rebound, fixture.scene(), actual);
         assertArrayEquals(expected.array(), actual.array());
+    }
+
+    @Test
+    void allThreeProductModesKeepTheV4SizeAndWireCodes() {
+        Fixture fixture = input();
+        for (PostProcessingMode mode : PostProcessingMode.values()) {
+            IntegratorFrameInput input = withMode(fixture.input(), mode);
+            byte[] encoded = RayTraceReplayInputCodec.encode(
+                    RayTraceReplayInput.capture(input, fixture.scene()));
+            int expectedCode = switch (mode) {
+                case NRD_FSR -> 0;
+                case DLSS_RR -> 1;
+                case DISABLED -> 2;
+            };
+
+            assertEquals(384, encoded.length);
+            assertEquals(
+                    expectedCode,
+                    ByteBuffer.wrap(encoded)
+                            .order(ByteOrder.LITTLE_ENDIAN)
+                            .getInt(332));
+            assertArrayEquals(
+                    encoded,
+                    RayTraceReplayInputCodec.encode(
+                            RayTraceReplayInputCodec.decode(encoded)));
+        }
     }
 
     @Test
@@ -185,6 +212,33 @@ final class RayTraceReplayInputCodecTest {
                 input.jitterPhase(),
                 input.cameraInWater(),
                 input.postProcessingMode(),
+                input.transparentGuideMode(),
+                input.lighting(),
+                input.material(),
+                input.shInput(),
+                input.rawNumericalDiagnostic(),
+                input.triangleDebug());
+    }
+
+    private static IntegratorFrameInput withMode(
+            IntegratorFrameInput input, PostProcessingMode mode) {
+        TransparentGuideMode guide = switch (mode) {
+            case NRD_FSR -> TransparentGuideMode.REFLECTION_AND_TRANSMISSION;
+            case DLSS_RR -> TransparentGuideMode.TRANSMISSION_ONLY;
+            case DISABLED -> TransparentGuideMode.DISABLED;
+        };
+        return new IntegratorFrameInput(
+                input.camera(),
+                input.width(),
+                input.height(),
+                input.astronomy(),
+                input.packedRayCone(),
+                input.sampleIndex(),
+                input.sampleEpoch(),
+                input.jitterPhase(),
+                input.cameraInWater(),
+                mode,
+                guide,
                 input.lighting(),
                 input.material(),
                 input.shInput(),
@@ -231,6 +285,7 @@ final class RayTraceReplayInputCodecTest {
                 7,
                 true,
                 PostProcessingMode.NRD_FSR,
+                TransparentGuideMode.REFLECTION_AND_TRANSMISSION,
                 new LightingSettings.Snapshot(
                         4, -8, 12, 7L),
                 new MaterialSettings.Snapshot(90, 8L),

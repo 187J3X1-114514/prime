@@ -7,6 +7,7 @@ import dev.prime.render.FrameCamera;
 import dev.prime.render.fsr.FsrDebugView;
 import dev.prime.render.fsr.FsrDispatchPlan;
 import dev.prime.render.fsr.FsrSettings;
+import dev.prime.render.post.SubpixelJitter;
 import dev.prime.render.shader.ShaderAbi;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
@@ -37,7 +38,7 @@ final class FsrDispatchConstantsTest {
                 1080,
                 3840,
                 2160,
-                new FsrSettings.Jitter(-0.25F, 0.375F),
+                new SubpixelJitter(-0.25F, 0.375F),
                 12.5F,
                 true,
                 FsrDebugView.OVERVIEW);

@@ -3,6 +3,8 @@ package dev.prime.render.fsr;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+
+import dev.prime.render.post.SubpixelJitter;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.Map;
@@ -92,9 +94,9 @@ final class FsrSettingsTest {
                 () -> new FsrSettings.Extent(0, 1));
         assertThrows(
                 IllegalArgumentException.class,
-                () -> new FsrSettings.Jitter(Float.NaN, 0.0F));
+                () -> new SubpixelJitter(Float.NaN, 0.0F));
         assertThrows(
                 IllegalArgumentException.class,
-                () -> new FsrSettings.Jitter(0.0F, -0.5001F));
+                () -> new SubpixelJitter(0.0F, -0.5001F));
     }
 }

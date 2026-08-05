@@ -9,7 +9,7 @@ import dev.prime.render.MaterialSettings;
 import dev.prime.render.RayTracingRuntime;
 import dev.prime.render.RendererSettings;
 import dev.prime.render.fsr.FsrDebugView;
-import dev.prime.render.vulkan.nrd.NrdDiagnostics;
+import dev.prime.render.post.nrd.NrdDiagnostics;
 import dev.prime.render.post.DlssRrDebugView;
 import dev.prime.render.post.PostProcessingMode;
 import dev.prime.render.post.ReconstructionQualityMode;

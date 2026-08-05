@@ -13,7 +13,9 @@ import dev.prime.render.MaterialSettings;
 import dev.prime.render.ResourceCleanup;
 import dev.prime.render.post.PostProcessingMode;
 import dev.prime.render.post.ReconstructionQualityMode;
-import dev.prime.render.fsr.FsrSettings;
+import dev.prime.render.fsr.FsrReconstructionProfile;
+import dev.prime.render.post.SubpixelJitter;
+import dev.prime.render.post.TransparentGuideMode;
 import dev.prime.render.replay.RayTraceReplayInput;
 import dev.prime.render.replay.RenderBinaryFingerprint;
 import dev.prime.render.replay.RenderPlatformFingerprint;
@@ -213,8 +215,9 @@ public final class ReplayProbeController implements Destroyable {
             int frameIndex,
             long frameTimeNanos,
             boolean forceRestart) {
-        FsrSettings.Jitter jitter =
-                ReconstructionQualityMode.NATIVE_AA.fsrJitter(frameIndex);
+        FsrReconstructionProfile profile = FsrReconstructionProfile.forQuality(
+                ReconstructionQualityMode.NATIVE_AA);
+        SubpixelJitter jitter = profile.jitter(frameIndex);
         NrdReplayProbe.PlannedFrame nrdFrame = probe.planFrame(
                 camera,
                 frameTimeNanos,
@@ -229,17 +232,17 @@ public final class ReplayProbeController implements Destroyable {
                 width,
                 height,
                 input.astronomy,
-                ReconstructionQualityMode.NATIVE_AA.packedRayCone(
+                profile.packedRayCone(
                         camera.projection().m00(),
                         camera.projection().m11(),
                         width,
                         height),
                 0,
                 1,
-                ReconstructionQualityMode.NATIVE_AA
-                        .fsrJitterPhase(frameIndex),
+                profile.jitterPhase(frameIndex),
                 input.cameraInWater,
                 PostProcessingMode.NRD_FSR,
+                TransparentGuideMode.REFLECTION_AND_TRANSMISSION,
                 input.lighting,
                 input.material,
                 true,

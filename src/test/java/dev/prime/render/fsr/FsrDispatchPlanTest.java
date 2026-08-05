@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import dev.prime.render.FrameCamera;
+import dev.prime.render.post.SubpixelJitter;
 import dev.prime.render.shader.ShaderAbi;
 import org.joml.Matrix4f;
 import org.junit.jupiter.api.Test;
@@ -19,7 +20,7 @@ final class FsrDispatchPlanTest {
                 1440,
                 3840,
                 2160,
-                new FsrSettings.Jitter(-0.25F, 1.0F / 6.0F),
+                new SubpixelJitter(-0.25F, 1.0F / 6.0F),
                 16.5F,
                 true,
                 FsrDebugView.OVERVIEW);
@@ -55,7 +56,7 @@ final class FsrDispatchPlanTest {
                         2160,
                         3840,
                         2160,
-                        new FsrSettings.Jitter(0.0F, 0.0F),
+                        new SubpixelJitter(0.0F, 0.0F),
                         16.0F,
                         false,
                         FsrDebugView.OFF));
@@ -67,7 +68,7 @@ final class FsrDispatchPlanTest {
                         1080,
                         3840,
                         2160,
-                        new FsrSettings.Jitter(0.0F, 0.0F),
+                        new SubpixelJitter(0.0F, 0.0F),
                         Float.NaN,
                         false,
                         FsrDebugView.OFF));
@@ -88,13 +89,13 @@ final class FsrDispatchPlanTest {
                         1080,
                         3840,
                         2160,
-                        new FsrSettings.Jitter(0.0F, 0.0F),
+                        new SubpixelJitter(0.0F, 0.0F),
                         16.0F,
                         false,
                         FsrDebugView.OFF));
         assertThrows(
                 IllegalArgumentException.class,
-                () -> new FsrSettings.Jitter(0.75F, 0.0F));
+                () -> new SubpixelJitter(0.75F, 0.0F));
         assertThrows(
                 IllegalArgumentException.class,
                 () -> new FsrSettings.Extent(0, 1));
@@ -105,7 +106,7 @@ final class FsrDispatchPlanTest {
                 1080,
                 3840,
                 2160,
-                new FsrSettings.Jitter(0.0F, 0.0F),
+                new SubpixelJitter(0.0F, 0.0F),
                 0.0F,
                 false,
                 FsrDebugView.OFF);

@@ -2,11 +2,11 @@ package dev.prime.render.replay;
 
 import dev.prime.render.FrameCamera;
 import dev.prime.render.shader.ShaderAbi;
-import dev.prime.render.vulkan.nrd.NrdCameraTransform;
-import dev.prime.render.vulkan.nrd.NrdDiagnostics;
-import dev.prime.render.vulkan.nrd.NrdFrameHistory;
-import dev.prime.render.vulkan.nrd.NrdFrameInput;
-import dev.prime.render.vulkan.nrd.NrdFramePlan;
+import dev.prime.render.post.nrd.NrdCameraTransform;
+import dev.prime.render.post.nrd.NrdDiagnostics;
+import dev.prime.render.post.nrd.NrdFrameHistory;
+import dev.prime.render.post.nrd.NrdFrameInput;
+import dev.prime.render.post.nrd.NrdFramePlan;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;

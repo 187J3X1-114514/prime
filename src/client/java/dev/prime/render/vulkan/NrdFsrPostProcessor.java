@@ -2,14 +2,18 @@ package dev.prime.render.vulkan;
 
 import dev.prime.render.ResourceCleanup;
 import dev.prime.render.fsr.FsrDebugView;
+import dev.prime.render.fsr.FsrReconstructionProfile;
 import dev.prime.render.post.PostProcessingMode;
-import dev.prime.render.post.RealtimePostProcessor;
+import dev.prime.render.post.ReconstructionFrame;
+import dev.prime.render.post.ReconstructionFrameParameters;
 import dev.prime.render.post.ReconstructionQualityMode;
 import dev.prime.render.vulkan.fsr.Fsr3Upscaler;
 import dev.prime.render.vulkan.nrd.NrdDenoiser;
-import dev.prime.render.vulkan.nrd.NrdDiagnostics;
-import dev.prime.render.vulkan.nrd.NrdFrameHistory;
-import dev.prime.render.vulkan.nrd.NrdFrameInput;
+import dev.prime.render.post.nrd.NrdDiagnostics;
+import dev.prime.render.post.nrd.NrdFrameHistory;
+import dev.prime.render.post.nrd.NrdFrameInput;
+import dev.prime.render.vulkan.reconstruction.ReconstructionDebugSettings;
+import dev.prime.render.vulkan.reconstruction.VulkanReconstructionProcessor;
 import org.lwjgl.vulkan.VK12;
 import org.lwjgl.vulkan.VkCommandBuffer;
 import org.lwjgl.system.MemoryStack;
@@ -18,7 +22,7 @@ import org.lwjgl.vulkan.VkDependencyInfo;
 import org.lwjgl.vulkan.VkImageMemoryBarrier2;
 
 /** Existing REBLUR/SIGMA + FidelityFX FSR 3.1.4 implementation of the shared boundary. */
-public final class NrdFsrPostProcessor implements RealtimePostProcessor {
+public final class NrdFsrPostProcessor implements VulkanReconstructionProcessor {
     private final ReconstructionQualityMode quality;
     private final int renderWidth;
     private final int renderHeight;
@@ -81,7 +85,7 @@ public final class NrdFsrPostProcessor implements RealtimePostProcessor {
                     renderHeight,
                     displayWidth,
                     displayHeight,
-                    quality.fsrMode(),
+                    FsrReconstructionProfile.forQuality(quality).mode(),
                     sceneColor,
                     denoiser.fsrMotion(),
                     denoiser.fsrDepth(),
@@ -133,7 +137,9 @@ public final class NrdFsrPostProcessor implements RealtimePostProcessor {
     }
 
     @Override
-    public FrameToken beginFrame(FrameParameters parameters) {
+    public FrameToken beginFrame(
+            ReconstructionFrameParameters parameters,
+            ReconstructionDebugSettings debugSettings) {
         requireOpen();
         Fsr3Upscaler.FrameToken fsr = this.upscaler.beginFrame(
                 parameters.camera(),
@@ -141,7 +147,7 @@ public final class NrdFsrPostProcessor implements RealtimePostProcessor {
                 parameters.sceneRevision(),
                 parameters.textureRevision(),
                 parameters.forceRestart(),
-                parameters.fsrDebugView());
+                debugSettings.fsr());
         try {
             NrdFrameHistory.PlannedFrame nrd = this.nrdHistory.plan(
                     new NrdFrameInput(
@@ -153,9 +159,9 @@ public final class NrdFsrPostProcessor implements RealtimePostProcessor {
                             fsr.jitter().x(),
                             fsr.jitter().y(),
                             fsr.reset(),
-                            parameters.nrdDebugView()));
+                            debugSettings.nrd()));
             return new FrameToken(
-                    this, fsr, nrd);
+                    this, fsr, nrd, debugSettings);
         } catch (RuntimeException exception) {
             throw ResourceCleanup.run(
                     () -> this.upscaler.abandon(fsr), exception);
@@ -200,7 +206,7 @@ public final class NrdFsrPostProcessor implements RealtimePostProcessor {
     public void record(
             VkCommandBuffer commandBuffer,
             Frame frame,
-            FrameParameters parameters,
+            ReconstructionFrameParameters parameters,
             VulkanImageInitializationBatch initialization) {
         FrameToken token = requireFrame(frame);
         if (token.recorded) {
@@ -220,7 +226,7 @@ public final class NrdFsrPostProcessor implements RealtimePostProcessor {
                 parameters.display().curveCoefficient());
         boolean displayDiagnostic =
                 token.nrdPlan.plan().input().diagnostic() != NrdDiagnostics.Mode.OFF
-                        || parameters.fsrDebugView() != FsrDebugView.OFF;
+                        || token.debugSettings.fsr() != FsrDebugView.OFF;
         this.upscaler.record(
                 commandBuffer,
                 token.fsr,
@@ -316,6 +322,8 @@ public final class NrdFsrPostProcessor implements RealtimePostProcessor {
         private final NrdFsrPostProcessor owner;
         private final Fsr3Upscaler.FrameToken fsr;
         private final NrdFrameHistory.PlannedFrame nrdPlan;
+        private final ReconstructionDebugSettings debugSettings;
+        private final ReconstructionFrame semantic;
         private NrdDenoiser.PreparedFrame nrdPrepared;
         private NrdDenoiser.FrameToken nrd;
         private boolean recorded;
@@ -325,14 +333,18 @@ public final class NrdFsrPostProcessor implements RealtimePostProcessor {
         private FrameToken(
                 NrdFsrPostProcessor owner,
                 Fsr3Upscaler.FrameToken fsr,
-                NrdFrameHistory.PlannedFrame nrdPlan) {
+                NrdFrameHistory.PlannedFrame nrdPlan,
+                ReconstructionDebugSettings debugSettings) {
             this.owner = owner;
             this.fsr = fsr;
             this.nrdPlan = nrdPlan;
+            this.debugSettings = debugSettings;
+            this.semantic = new ReconstructionFrame(
+                    fsr.frameIndex(), fsr.jitter(), fsr.reset());
         }
 
-        @Override public int frameIndex() { return this.fsr.frameIndex(); }
-        @Override public dev.prime.render.fsr.FsrSettings.Jitter jitter() { return this.fsr.jitter(); }
-        @Override public boolean reset() { return this.fsr.reset(); }
+        @Override public ReconstructionFrame semantic() {
+            return this.semantic;
+        }
     }
 }

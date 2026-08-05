@@ -4,9 +4,9 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import dev.prime.render.FrameCamera;
-import dev.prime.render.fsr.FsrSettings;
 import dev.prime.render.post.ReconstructionQualityMode;
-import dev.prime.render.vulkan.nrd.NrdCameraTransform;
+import dev.prime.render.post.SubpixelJitter;
+import dev.prime.render.post.nrd.NrdCameraTransform;
 import org.joml.Matrix4f;
 import org.joml.Vector2f;
 import org.joml.Vector3f;
@@ -34,8 +34,8 @@ final class DlssRrMotionContractTest {
         FrameCamera camera = camera(new Matrix4f(), 0.0, 0.0, 0.0);
 
         for (ReconstructionQualityMode quality : ReconstructionQualityMode.values()) {
-            for (int frame = 0; frame < quality.rrJitterPhaseCount(); frame++) {
-                FsrSettings.Jitter jitter = quality.rrJitter(frame);
+            for (int frame = 0; frame < DlssRrProfile.jitterPhaseCount(quality); frame++) {
+                SubpixelJitter jitter = DlssRrProfile.jitter(quality, frame);
                 Vector2f sampleUv = sampleUv(jitter);
                 Vector3f sampledDirection = rayDirection(camera, sampleUv);
                 Vector3f primaryPosition = new Vector3f(sampledDirection).mul(20.0F);
@@ -61,7 +61,8 @@ final class DlssRrMotionContractTest {
     void resetFrameUsesTheSameZeroMotionContractAtPhaseZero() {
         FrameCamera resetCamera = camera(
                 new Matrix4f().rotateY((float) Math.toRadians(7.0)), 4.0, 2.0, -3.0);
-        FsrSettings.Jitter jitter = ReconstructionQualityMode.PERFORMANCE.rrJitter(0);
+        SubpixelJitter jitter = DlssRrProfile.jitter(
+                ReconstructionQualityMode.PERFORMANCE, 0);
         Vector2f sampleUv = sampleUv(jitter);
         Vector3f primaryPosition = rayDirection(resetCamera, sampleUv).mul(12.0F);
 
@@ -83,7 +84,8 @@ final class DlssRrMotionContractTest {
                 0.4,
                 0.6,
                 -0.8);
-        FsrSettings.Jitter jitter = ReconstructionQualityMode.PERFORMANCE.rrJitter(17);
+        SubpixelJitter jitter = DlssRrProfile.jitter(
+                ReconstructionQualityMode.PERFORMANCE, 17);
         Vector2f currentSampleUv = sampleUv(jitter);
         Vector3f primaryPosition = rayDirection(current, currentSampleUv).mul(18.0F);
         Vector2f previousUv = projectSurface(current, previous, primaryPosition);
@@ -114,7 +116,8 @@ final class DlssRrMotionContractTest {
                 0.7,
                 0.2,
                 -0.5);
-        FsrSettings.Jitter jitter = ReconstructionQualityMode.QUALITY.rrJitter(9);
+        SubpixelJitter jitter = DlssRrProfile.jitter(
+                ReconstructionQualityMode.QUALITY, 9);
         Vector2f currentSampleUv = sampleUv(jitter);
         Vector3f primaryPosition = rayDirection(current, currentSampleUv).mul(7.0F);
         float hitDistance = 24.0F;
@@ -147,7 +150,8 @@ final class DlssRrMotionContractTest {
                 0.3,
                 0.4,
                 -0.6);
-        FsrSettings.Jitter jitter = ReconstructionQualityMode.BALANCED.rrJitter(4);
+        SubpixelJitter jitter = DlssRrProfile.jitter(
+                ReconstructionQualityMode.BALANCED, 4);
         Vector2f currentSampleUv = sampleUv(jitter);
         Vector3f ray = rayDirection(current, currentSampleUv);
         Vector3f transmittedVirtualPosition = new Vector3f(ray).mul(40.0F);
@@ -170,7 +174,7 @@ final class DlssRrMotionContractTest {
         assertVectorEquals(expected, actual);
     }
 
-    private static Vector2f sampleUv(FsrSettings.Jitter jitter) {
+    private static Vector2f sampleUv(SubpixelJitter jitter) {
         return new Vector2f(
                 (PIXEL_X + 0.5F + jitter.x()) / WIDTH,
                 (PIXEL_Y + 0.5F + jitter.y()) / HEIGHT);

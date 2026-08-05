@@ -4,7 +4,7 @@ import com.mojang.blaze3d.vulkan.VulkanGpuTexture;
 import com.mojang.blaze3d.vulkan.VulkanGpuTextureView;
 import dev.prime.render.RealtimeFramePlan;
 import dev.prime.render.ResourceCleanup;
-import dev.prime.render.post.RealtimePostProcessor;
+import dev.prime.render.vulkan.reconstruction.VulkanReconstructionProcessor;
 import dev.prime.render.terrain.TerrainScene;
 import java.util.List;
 import java.util.Objects;
@@ -37,8 +37,8 @@ public final class RealtimeFrameExecutor {
             LabPbrTextureAtlas labPbrAtlas,
             TerrainScene.ResidentSceneView scene,
             RealtimeFramePlan plan,
-            RealtimePostProcessor processor,
-            RealtimePostProcessor.Frame processorFrame,
+            VulkanReconstructionProcessor processor,
+            VulkanReconstructionProcessor.Frame processorFrame,
             VulkanImage output,
             VulkanImage stableRadiance,
             VulkanGpuTextureView atlasView,
@@ -198,7 +198,7 @@ public final class RealtimeFrameExecutor {
 
     private static void validateExtents(
             RealtimeFramePlan plan,
-            RealtimePostProcessor processor,
+            VulkanReconstructionProcessor processor,
             VulkanImage output,
             VulkanImage stableRadiance,
             VulkanGpuTexture mainColor) {

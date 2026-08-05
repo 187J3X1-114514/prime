@@ -2,7 +2,7 @@ package dev.prime.render;
 
 import dev.prime.render.fsr.FsrDebugView;
 import dev.prime.render.post.DlssRrDebugView;
-import dev.prime.render.vulkan.nrd.NrdDiagnostics;
+import dev.prime.render.post.nrd.NrdDiagnostics;
 import java.util.Objects;
 
 /** Immutable, non-persistent controls owned by the client runtime. */

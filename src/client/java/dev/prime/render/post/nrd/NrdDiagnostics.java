@@ -1,4 +1,4 @@
-package dev.prime.render.vulkan.nrd;
+package dev.prime.render.post.nrd;
 
 import java.util.Arrays;
 import java.util.Optional;

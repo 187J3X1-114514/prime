@@ -1,6 +1,7 @@
 package dev.prime.render;
 
 import dev.prime.render.post.PostProcessingMode;
+import dev.prime.render.post.TransparentGuideMode;
 import java.util.Objects;
 
 /** Complete device-address-free semantic input captured for one offline sample. */
@@ -56,6 +57,7 @@ public record OfflineFrameInput(
                         0,
                         this.cameraInWater,
                         PostProcessingMode.DISABLED,
+                        TransparentGuideMode.DISABLED,
                         this.lighting,
                         this.material,
                         false,

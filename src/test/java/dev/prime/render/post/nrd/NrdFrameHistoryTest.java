@@ -1,4 +1,4 @@
-package dev.prime.render.vulkan.nrd;
+package dev.prime.render.post.nrd;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;

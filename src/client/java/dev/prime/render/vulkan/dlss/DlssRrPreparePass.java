@@ -3,11 +3,11 @@ package dev.prime.render.vulkan.dlss;
 import com.mojang.blaze3d.vulkan.Destroyable;
 import dev.prime.render.FrameCamera;
 import dev.prime.render.SunDirection;
-import dev.prime.render.fsr.FsrSettings;
+import dev.prime.render.post.SubpixelJitter;
 import dev.prime.render.vulkan.AtmospherePipeline;
 import dev.prime.render.vulkan.VulkanContext;
 import dev.prime.render.vulkan.VulkanImage;
-import dev.prime.render.vulkan.nrd.NrdCameraTransform;
+import dev.prime.render.post.nrd.NrdCameraTransform;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.ByteBuffer;
@@ -203,7 +203,7 @@ final class DlssRrPreparePass implements Destroyable {
             VkCommandBuffer commandBuffer,
             FrameCamera camera,
             FrameCamera previousCamera,
-            FsrSettings.Jitter currentJitterPixels,
+            SubpixelJitter currentJitterPixels,
             SunDirection sunDirection,
             float sunRadianceMultiplier) {
         barrier(

@@ -8,9 +8,9 @@ import com.mojang.blaze3d.vulkan.VulkanGpuTexture;
 import com.mojang.blaze3d.vulkan.VulkanGpuTextureView;
 import dev.prime.infrastructure.PrimeInfo;
 import dev.prime.render.post.PostProcessingMode;
-import dev.prime.render.post.RealtimePostProcessor;
+import dev.prime.render.post.ReconstructionFrame;
+import dev.prime.render.post.ReconstructionFrameParameters;
 import dev.prime.render.post.ReconstructionQualityMode;
-import dev.prime.render.post.DlssRrDebugStatus;
 import dev.prime.render.terrain.TerrainScene;
 import dev.prime.render.vulkan.AtmospherePipeline;
 import dev.prime.render.vulkan.DisplayExposureDiagnostics;
@@ -23,6 +23,11 @@ import dev.prime.render.vulkan.VulkanContext;
 import dev.prime.render.vulkan.VulkanImage;
 import dev.prime.render.vulkan.dlss.DlssRrNative;
 import dev.prime.render.vulkan.dlss.DlssRrBootstrap;
+import dev.prime.render.vulkan.reconstruction.ReconstructionBackendRegistry;
+import dev.prime.render.vulkan.reconstruction.ReconstructionDebugSettings;
+import dev.prime.render.vulkan.reconstruction.ResolvedReconstruction;
+import dev.prime.render.vulkan.reconstruction.VulkanReconstructionProcessor;
+import dev.prime.render.vulkan.reconstruction.VulkanReconstructionResources;
 import dev.prime.render.vulkan.replay.ReplayProbeController;
 import java.util.List;
 import java.util.Objects;
@@ -35,14 +40,10 @@ final class RealtimeRenderer implements Destroyable {
     private final ReplayProbeController replay;
     private final DisplayExposureDiagnostics exposureDiagnostics;
     private final DlssRrNative.Context ngxContext;
+    private final ReconstructionBackendRegistry reconstructionRegistry;
     private RealtimeRayTracingPipeline pipeline;
-    private RealtimeRenderResources resources;
+    private VulkanReconstructionResources resources;
     private RealtimeSampleState sampleState = RealtimeSampleState.initial();
-    private DlssRrNative.OptimalSettings optimalSettings;
-    private ReconstructionQualityMode optimalQuality;
-    private int optimalDisplayWidth;
-    private int optimalDisplayHeight;
-    private boolean rrFallbackReported;
     private boolean pipelineInvalid;
     private boolean destroyed;
 
@@ -53,6 +54,7 @@ final class RealtimeRenderer implements Destroyable {
         this.context = Objects.requireNonNull(context, "context");
         this.backend = Objects.requireNonNull(backend, "backend");
         this.ngxContext = ngxContext;
+        this.reconstructionRegistry = new ReconstructionBackendRegistry(context, ngxContext);
         this.pipeline = new RealtimeRayTracingPipeline(context, backend);
         this.executor = new RealtimeFrameExecutor(context);
         this.replay = new ReplayProbeController(context);
@@ -72,7 +74,7 @@ final class RealtimeRenderer implements Destroyable {
         return this.replay;
     }
 
-    RealtimeRenderResources resources() {
+    VulkanReconstructionResources resources() {
         return this.resources;
     }
 
@@ -85,11 +87,11 @@ final class RealtimeRenderer implements Destroyable {
     }
 
     long displayExposureStateBuffer() {
-        RealtimeRenderResources current = this.resources;
+        VulkanReconstructionResources current = this.resources;
         if (current == null) {
             throw new IllegalStateException("Realtime exposure requires sized resources");
         }
-        return current.processor.displayExposureStateBuffer();
+        return current.processor().displayExposureStateBuffer();
     }
 
     RealtimeSampleState.Plan planSample(RealtimeSampleState.Input input) {
@@ -105,17 +107,17 @@ final class RealtimeRenderer implements Destroyable {
     }
 
     DiagnosticSnapshot diagnosticSnapshot() {
-        RealtimeRenderResources current = this.resources;
+        VulkanReconstructionResources current = this.resources;
         if (current == null) {
             return null;
         }
         return new DiagnosticSnapshot(
-                current.mode,
-                current.qualityMode,
-                current.stableRadiance.width(),
-                current.stableRadiance.height(),
-                current.output.width(),
-                current.output.height(),
+                current.selection().effectiveMode(),
+                current.selection().quality(),
+                current.stableRadiance().width(),
+                current.stableRadiance().height(),
+                current.output().width(),
+                current.output().height(),
                 this.sampleIndex(),
                 this.exposureDiagnostics.latest());
     }
@@ -124,78 +126,45 @@ final class RealtimeRenderer implements Destroyable {
         return this.exposureDiagnostics.latest();
     }
 
-    DlssRrNative.OptimalSettings optimalSettings(
-            int displayWidth,
-            int displayHeight,
-            ReconstructionQualityMode quality) {
-        if (this.ngxContext == null) {
-            throw new IllegalStateException("DLSS RR is unavailable");
-        }
-        if (this.optimalSettings != null
-                && this.optimalDisplayWidth == displayWidth
-                && this.optimalDisplayHeight == displayHeight
-                && this.optimalQuality == quality) {
-            return this.optimalSettings;
-        }
-        DlssRrNative.OptimalSettings replacement =
-                this.ngxContext.optimalSettings(displayWidth, displayHeight, quality);
-        this.optimalDisplayWidth = displayWidth;
-        this.optimalDisplayHeight = displayHeight;
-        this.optimalQuality = quality;
-        this.optimalSettings = replacement;
-        return replacement;
-    }
-
     boolean ensureResources(
             AtmospherePipeline atmosphere,
             LabPbrTextureAtlas labPbrAtlas,
-            int displayWidth,
-            int displayHeight,
-            int renderWidth,
-            int renderHeight,
-            PostProcessingMode mode,
-            ReconstructionQualityMode quality,
+            ResolvedReconstruction selection,
             long tlas,
             VulkanGpuTextureView atlasView,
             VulkanGpuSampler atlasSampler,
             List<TraceBackend.SceneTexture> sceneTextures) {
         this.ensurePipeline();
-        RealtimeRenderResources current = this.resources;
-        if (current != null && current.matches(
-                displayWidth, displayHeight, renderWidth, renderHeight, mode, quality)) {
+        VulkanReconstructionResources current = this.resources;
+        if (current != null && current.matches(selection)) {
             this.pipeline.ensureDescriptors(
                     tlas,
-                    current.stableRadiance,
+                    current.stableRadiance(),
                     atlasView,
                     atlasSampler,
                     sceneTextures,
                     labPbrAtlas.normalAtlas(),
                     labPbrAtlas.specularAtlas(),
                     atmosphere,
-                    current.processor.rawFrame());
+                    current.processor().rawFrame());
             return false;
         }
-        RealtimeRenderResources replacement = RealtimeRenderResources.create(
-                this.context,
-                atmosphere,
-                displayWidth,
-                displayHeight,
-                renderWidth,
-                renderHeight,
-                mode,
-                quality,
-                this.ngxContext);
+        VulkanReconstructionResources replacement =
+                this.reconstructionRegistry.createResources(atmosphere, selection);
+        this.requireRayDispatchCapacity(
+                replacement.selection().extent().width(),
+                replacement.selection().extent().height());
         try {
             this.pipeline.ensureDescriptors(
                     tlas,
-                    replacement.stableRadiance,
+                    replacement.stableRadiance(),
                     atlasView,
                     atlasSampler,
                     sceneTextures,
                     labPbrAtlas.normalAtlas(),
                     labPbrAtlas.specularAtlas(),
                     atmosphere,
-                    replacement.processor.rawFrame());
+                    replacement.processor().rawFrame());
         } catch (RuntimeException exception) {
             ResourceCleanup.destroy(replacement, exception);
             throw exception;
@@ -226,87 +195,28 @@ final class RealtimeRenderer implements Destroyable {
         }
 
         RealtimeRenderSettings settings = input.settings();
-        ReconstructionQualityMode requestedQuality = settings.reconstructionQuality();
-        PostProcessingMode effectiveMode = settings.postProcessing();
-        int renderWidth;
-        int renderHeight;
-        if (effectiveMode == PostProcessingMode.DLSS_RR
-                && this.ngxContext != null
-                && DlssRrBootstrap.deviceReady()) {
-            try {
-                DlssRrNative.OptimalSettings optimal =
-                        this.optimalSettings(width, height, requestedQuality);
-                renderWidth = optimal.renderWidth();
-                renderHeight = optimal.renderHeight();
-                this.rrFallbackReported = false;
-            } catch (RuntimeException exception) {
-                DlssRrBootstrap.failSession(
-                        "DLSS RR optimal-size query failed; using NRD-FSR", exception);
-                effectiveMode = PostProcessingMode.NRD_FSR;
-                renderWidth = requestedQuality.renderWidth(width);
-                renderHeight = requestedQuality.renderHeight(height);
-            }
-        } else if (effectiveMode == PostProcessingMode.DISABLED) {
-            renderWidth = width;
-            renderHeight = height;
-        } else {
-            if (effectiveMode == PostProcessingMode.DLSS_RR) {
-                effectiveMode = PostProcessingMode.NRD_FSR;
-                if (!this.rrFallbackReported) {
-                    this.rrFallbackReported = true;
-                    PrimeInfo.LOGGER.warn(
-                            "DLSS RR selected but unavailable; using NRD-FSR for this session: {}",
-                            DlssRrBootstrap.unavailableReason());
-                }
-            }
-            renderWidth = requestedQuality.renderWidth(width);
-            renderHeight = requestedQuality.renderHeight(height);
-        }
-        this.requireRayDispatchCapacity(renderWidth, renderHeight);
-
-        boolean resized;
-        try {
-            resized = this.ensureResources(
-                    input.atmosphere(),
-                    input.labPbrAtlas(),
-                    width,
-                    height,
-                    renderWidth,
-                    renderHeight,
-                    effectiveMode,
-                    requestedQuality,
-                    input.scene().tlas(),
-                    input.atlasView(),
-                    input.atlasSampler(),
-                    input.sceneTextures());
-        } catch (RuntimeException exception) {
-            if (effectiveMode != PostProcessingMode.DLSS_RR) {
-                throw exception;
-            }
-            DlssRrBootstrap.failSession(
-                    "DLSS RR feature creation failed; using NRD-FSR", exception);
-            effectiveMode = PostProcessingMode.NRD_FSR;
-            renderWidth = requestedQuality.renderWidth(width);
-            renderHeight = requestedQuality.renderHeight(height);
-            this.requireRayDispatchCapacity(renderWidth, renderHeight);
-            resized = this.ensureResources(
-                    input.atmosphere(),
-                    input.labPbrAtlas(),
-                    width,
-                    height,
-                    renderWidth,
-                    renderHeight,
-                    effectiveMode,
-                    requestedQuality,
-                    input.scene().tlas(),
-                    input.atlasView(),
-                    input.atlasSampler(),
-                    input.sceneTextures());
-        }
-        RealtimeRenderResources images = this.resources;
+        ResolvedReconstruction requestedSelection = this.reconstructionRegistry.resolve(
+                settings.postProcessing(),
+                settings.reconstructionQuality(),
+                width,
+                height);
+        this.requireRayDispatchCapacity(
+                requestedSelection.extent().width(), requestedSelection.extent().height());
+        boolean resized = this.ensureResources(
+                input.atmosphere(),
+                input.labPbrAtlas(),
+                requestedSelection,
+                input.scene().tlas(),
+                input.atlasView(),
+                input.atlasSampler(),
+                input.sceneTextures());
+        VulkanReconstructionResources images = this.resources;
         if (images == null) {
             return List.of();
         }
+        ResolvedReconstruction selection = images.selection();
+        int renderWidth = selection.extent().width();
+        int renderHeight = selection.extent().height();
         if (resized) {
             PrimeInfo.LOGGER.debug(
                     "Recreated Prime realtime images at display {}x{}, render {}x{}, {} {} "
@@ -316,20 +226,20 @@ final class RealtimeRenderer implements Destroyable {
                     height,
                     renderWidth,
                     renderHeight,
-                    effectiveMode.id(),
-                    requestedQuality.id(),
-                    hex(images.output.image()),
-                    hex(images.output.view()),
-                    hex(images.stableRadiance.image()),
-                    hex(images.stableRadiance.view()),
+                    selection.effectiveMode().id(),
+                    selection.quality().id(),
+                    hex(images.output().image()),
+                    hex(images.output().view()),
+                    hex(images.stableRadiance().image()),
+                    hex(images.stableRadiance().view()),
                     hex(input.atlasView().texture().vkImage()),
                     hex(input.atlasView().vkImageView()),
                     hex(input.atlasSampler().vkSampler()));
         }
 
-        VulkanImage target = images.output;
-        VulkanImage history = images.stableRadiance;
-        RealtimePostProcessor processor = images.processor;
+        VulkanImage target = images.output();
+        VulkanImage history = images.stableRadiance();
+        VulkanReconstructionProcessor processor = images.processor();
         RealtimeFrameInput frameInput = new RealtimeFrameInput(
                 input.camera(),
                 System.nanoTime(),
@@ -342,52 +252,46 @@ final class RealtimeRenderer implements Destroyable {
                 height,
                 input.astronomy(),
                 input.cameraInWater(),
-                images.mode,
-                images.qualityMode,
+                selection.effectiveMode(),
+                selection.quality(),
+                selection.transparentGuideMode(),
                 settings.lighting(),
                 settings.material(),
                 processor.rawFrame().usesShInputs(),
                 input.controls().triangleDebug(),
                 settings.display(),
+                resized);
+        RealtimeSampleState.Plan sampleFrame = this.planSample(frameInput.sampleStateInput());
+        ReconstructionFrameParameters postParameters =
+                frameInput.reconstructionInput(sampleFrame.reset());
+        ReconstructionDebugSettings debugSettings = new ReconstructionDebugSettings(
                 input.controls().nrdDebugView(),
                 input.controls().fsrDebugView(),
                 input.controls().rrDebugView(),
-                input.controls().rrDebugFullscreen(),
-                resized);
-        frameInput.requireCompatible(processor);
-        RealtimeSampleState.Plan sampleFrame = this.planSample(frameInput.sampleStateInput());
-        RealtimePostProcessor.FrameParameters postParameters =
-                frameInput.reconstructionInput(sampleFrame.reset());
-        RealtimePostProcessor.Frame postFrame = processor.beginFrame(postParameters);
+                input.controls().rrDebugFullscreen());
+        VulkanReconstructionProcessor.Frame postFrame =
+                processor.beginFrame(postParameters, debugSettings);
+        ReconstructionFrame reconstructionFrame = postFrame.semantic();
         RealtimeFramePlan framePlan;
         List<String> debugLines;
         try {
             framePlan = RealtimeFramePlan.complete(
-                    frameInput, sampleFrame, postParameters, postFrame);
-            debugLines = images.mode == PostProcessingMode.DLSS_RR
-                    ? DlssRrDebugStatus.lines(
-                            images.qualityMode,
-                            renderWidth,
-                            renderHeight,
-                            width,
-                            height,
-                            true,
-                            postFrame.reset(),
-                            input.controls().rrDebugView(),
-                            input.controls().rrDebugFullscreen())
-                    : List.of();
+                    frameInput,
+                    sampleFrame,
+                    postParameters,
+                    reconstructionFrame,
+                    selection.jitter(reconstructionFrame.frameIndex()),
+                    selection.jitterPhase(reconstructionFrame.frameIndex()),
+                    selection.packedRayCone(
+                            input.camera().projection().m00(),
+                            input.camera().projection().m11()),
+                    selection.rawNumericalDiagnostic(debugSettings));
+            debugLines = selection.debugLines(reconstructionFrame, debugSettings);
         } catch (RuntimeException exception) {
             throw ResourceCleanup.run(() -> processor.abandon(postFrame), exception);
         }
         this.executor.execute(
-                switch (images.mode) {
-                    case DLSS_RR ->
-                            "Prime 1spp path tracing and DLSS Ray Reconstruction";
-                    case NRD_FSR ->
-                            "Prime 1spp path tracing, NRD, and FidelityFX FSR 3.1.4";
-                    case DISABLED ->
-                            "Prime native 1spp path tracing without post-processing";
-                },
+                selection.executionLabel(),
                 this.pipeline(),
                 input.sunShadow(),
                 input.atmosphere(),
@@ -421,10 +325,10 @@ final class RealtimeRenderer implements Destroyable {
                 input.atlasSampler(),
                 input.sceneTextures(),
                 input.textureRevision(),
-                images.stableRadiance,
+                images.stableRadiance(),
                 input.labPbrAtlas().normalAtlas(),
                 input.labPbrAtlas().specularAtlas(),
-                images.processor.rawFrame()));
+                images.processor().rawFrame()));
         int accumulatedSamples = this.sampleIndex();
         if (accumulatedSamples >= 16
                 && (accumulatedSamples & (accumulatedSamples - 1)) == 0) {
@@ -492,7 +396,7 @@ final class RealtimeRenderer implements Destroyable {
             DisplayExposureDiagnostics.Snapshot exposure) {}
 
     void releaseSizedResourcesAfterIdle() {
-        RealtimeRenderResources current = this.resources;
+        VulkanReconstructionResources current = this.resources;
         this.resources = null;
         if (current != null) {
             current.destroy();
@@ -503,21 +407,13 @@ final class RealtimeRenderer implements Destroyable {
 
     void reloadActive(AtmospherePipeline atmosphere) {
         RealtimeRayTracingPipeline replacementPipeline = null;
-        RealtimeRenderResources replacementResources = null;
+        VulkanReconstructionResources replacementResources = null;
         try {
             replacementPipeline = new RealtimeRayTracingPipeline(this.context, this.backend);
-            RealtimeRenderResources current = this.resources;
+            VulkanReconstructionResources current = this.resources;
             if (current != null) {
-                replacementResources = RealtimeRenderResources.create(
-                        this.context,
-                        atmosphere,
-                        current.output.width(),
-                        current.output.height(),
-                        current.stableRadiance.width(),
-                        current.stableRadiance.height(),
-                        current.mode,
-                        current.qualityMode,
-                        this.ngxContext);
+                replacementResources = this.reconstructionRegistry.createResources(
+                        atmosphere, current.selection());
             }
         } catch (RuntimeException exception) {
             ResourceCleanup.destroy(replacementResources, exception);
@@ -525,7 +421,7 @@ final class RealtimeRenderer implements Destroyable {
             throw exception;
         }
         RealtimeRayTracingPipeline previousPipeline = this.pipeline;
-        RealtimeRenderResources previousResources = this.resources;
+        VulkanReconstructionResources previousResources = this.resources;
         this.pipeline = replacementPipeline;
         this.resources = replacementResources;
         this.pipelineInvalid = false;

@@ -1,6 +1,7 @@
 package dev.prime.render;
 
 import dev.prime.render.post.PostProcessingMode;
+import dev.prime.render.post.TransparentGuideMode;
 import java.util.Objects;
 
 /**
@@ -20,6 +21,7 @@ public record IntegratorFrameInput(
         int jitterPhase,
         boolean cameraInWater,
         PostProcessingMode postProcessingMode,
+        TransparentGuideMode transparentGuideMode,
         LightingSettings.Snapshot lighting,
         MaterialSettings.Snapshot material,
         boolean shInput,
@@ -29,6 +31,7 @@ public record IntegratorFrameInput(
         Objects.requireNonNull(camera, "camera");
         Objects.requireNonNull(astronomy, "astronomy");
         Objects.requireNonNull(postProcessingMode, "postProcessingMode");
+        Objects.requireNonNull(transparentGuideMode, "transparentGuideMode");
         Objects.requireNonNull(lighting, "lighting");
         Objects.requireNonNull(material, "material");
         if (width <= 0 || height <= 0) {
@@ -60,7 +63,7 @@ public record IntegratorFrameInput(
                 jitterPhase,
                 astronomy.settings(),
                 cameraInWater,
-                postProcessingMode);
+                transparentGuideMode);
         IntegratorSettings.packMaterialLightingControl(
                 lighting.sunQuarterSteps(),
                 lighting.starQuarterSteps(),

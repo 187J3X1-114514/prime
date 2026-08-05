@@ -285,7 +285,7 @@ public final class DlssRrNative {
                 settings.putLong(0, context);
                 settings.putInt(8, outputWidth);
                 settings.putInt(12, outputHeight);
-                settings.putInt(16, quality.ngxPerfQualityValue());
+                settings.putInt(16, DlssRrProfile.ngxPerfQualityValue(quality));
                 checkResult(
                         JNI.invokePI(
                                 MemoryUtil.memAddress(settings),
@@ -330,7 +330,7 @@ public final class DlssRrNative {
                 description.putInt(20, renderHeight);
                 description.putInt(24, outputWidth);
                 description.putInt(28, outputHeight);
-                description.putInt(32, quality.ngxPerfQualityValue());
+                description.putInt(32, DlssRrProfile.ngxPerfQualityValue(quality));
                 ByteBuffer output = stack.calloc(Long.BYTES).order(ByteOrder.nativeOrder());
                 description.putLong(40, MemoryUtil.memAddress(output));
                 checkResult(

@@ -14,7 +14,7 @@ import dev.prime.render.post.DlssRrDebugView;
 import dev.prime.render.post.PostProcessingMode;
 import dev.prime.render.post.ReconstructionQualityMode;
 import dev.prime.render.terrain.VoxelSurfaceSettings;
-import dev.prime.render.vulkan.nrd.NrdDiagnostics;
+import dev.prime.render.post.nrd.NrdDiagnostics;
 import java.util.List;
 import java.util.Locale;
 import net.minecraft.client.OptionInstance;

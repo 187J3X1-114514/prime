@@ -1,21 +1,17 @@
 package dev.prime.render;
 
-import dev.prime.render.fsr.FsrSettings;
-import dev.prime.render.post.RealtimePostProcessor;
+import dev.prime.render.post.ReconstructionFrame;
+import dev.prime.render.post.ReconstructionFrameParameters;
+import dev.prime.render.post.SubpixelJitter;
 import java.util.Objects;
 
-/**
- * Immutable semantic plan shared by wavefront integration and temporal reconstruction.
- *
- * <p>The backend token is copied into plain values and remains outside this type. A plan can
- * therefore be compared or serialized without device ownership becoming part of frame identity.
- */
+/** Immutable backend-neutral plan shared by integration and temporal reconstruction. */
 public record RealtimeFramePlan(
         IntegratorFrameInput integrator,
-        RealtimePostProcessor.FrameParameters reconstruction,
+        ReconstructionFrameParameters reconstruction,
         long residentSceneRevision,
         int reconstructionFrameIndex,
-        FsrSettings.Jitter jitter,
+        SubpixelJitter jitter,
         boolean reconstructionReset) {
     public RealtimeFramePlan {
         Objects.requireNonNull(integrator, "integrator");
@@ -29,40 +25,41 @@ public record RealtimeFramePlan(
             throw new IllegalArgumentException(
                     "Realtime resident scene revision must be non-negative");
         }
-        if (!Float.isFinite(jitter.x()) || !Float.isFinite(jitter.y())) {
-            throw new IllegalArgumentException(
-                    "Reconstruction jitter must be finite");
-        }
     }
 
     static RealtimeFramePlan complete(
             RealtimeFrameInput input,
             RealtimeSampleState.Plan sample,
-            RealtimePostProcessor.FrameParameters reconstruction,
-            RealtimePostProcessor.Frame reconstructionFrame) {
+            ReconstructionFrameParameters reconstruction,
+            ReconstructionFrame reconstructionFrame,
+            SubpixelJitter expectedJitter,
+            int jitterPhase,
+            int packedRayCone,
+            boolean rawNumericalDiagnostic) {
         Objects.requireNonNull(input, "input");
         Objects.requireNonNull(sample, "sample");
         input.requireReconstructionInput(reconstruction, sample.reset());
         Objects.requireNonNull(reconstructionFrame, "reconstructionFrame");
+        Objects.requireNonNull(expectedJitter, "expectedJitter");
         if (sample.reset() && !reconstructionFrame.reset()) {
             throw new IllegalStateException(
                     "Reconstruction history must restart with the integrator sample sequence");
         }
-        FsrSettings.Jitter expected =
-                input.expectedJitter(reconstructionFrame.frameIndex());
-        FsrSettings.Jitter actual = reconstructionFrame.jitter();
+        SubpixelJitter actual = reconstructionFrame.jitter();
         if (Float.floatToRawIntBits(actual.x())
-                        != Float.floatToRawIntBits(expected.x())
+                        != Float.floatToRawIntBits(expectedJitter.x())
                 || Float.floatToRawIntBits(actual.y())
-                        != Float.floatToRawIntBits(expected.y())) {
+                        != Float.floatToRawIntBits(expectedJitter.y())) {
             throw new IllegalStateException(
-                    "Reconstruction jitter does not match the frame semantic input");
+                    "Reconstruction jitter does not match the resolved backend policy");
         }
         return new RealtimeFramePlan(
                 input.integratorInput(
                         sample.sampleIndex(),
                         sample.epoch(),
-                        reconstructionFrame.frameIndex()),
+                        jitterPhase,
+                        packedRayCone,
+                        rawNumericalDiagnostic),
                 reconstruction,
                 input.residentSceneRevision(),
                 reconstructionFrame.frameIndex(),

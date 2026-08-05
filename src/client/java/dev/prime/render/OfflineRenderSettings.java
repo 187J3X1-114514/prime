@@ -1,6 +1,5 @@
 package dev.prime.render;
 
-import dev.prime.config.PrimeSettings;
 import java.util.Objects;
 
 /** Transport settings frozen for one offline accumulation session. */
@@ -25,7 +24,7 @@ record OfflineRenderSettings(
         }
     }
 
-    static OfflineRenderSettings capture(PrimeSettings settings) {
+    static OfflineRenderSettings capture(RendererSettings settings) {
         Objects.requireNonNull(settings, "settings");
         return new OfflineRenderSettings(
                 settings.lighting(),

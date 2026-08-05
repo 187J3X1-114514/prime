@@ -7,6 +7,7 @@ import dev.prime.render.DisplaySettings;
 import dev.prime.render.LightingSettings;
 import dev.prime.render.MaterialSettings;
 import dev.prime.render.RayTracingRuntime;
+import dev.prime.render.RendererSettings;
 import dev.prime.render.fsr.FsrDebugView;
 import dev.prime.render.fsr.FsrQualityMode;
 import dev.prime.render.post.DlssRrDebugView;
@@ -35,27 +36,24 @@ public final class PrimeVideoOptions {
     }
 
     public static OptionInstance<Boolean> pathTracingEnabled() {
-        RayTracingRuntime runtime = RayTracingRuntime.instance();
         return OptionInstance.createBoolean(
                 "prime.options.path_tracing",
                 OptionInstance.cachedConstantTooltip(
                         Component.translatable("prime.options.path_tracing.tooltip")),
                 PrimeConfig.settings().pathTracingEnabled(),
-                runtime::setPathTracingEnabled);
+                PrimeVideoOptions::setPathTracingEnabled);
     }
 
     public static OptionInstance<Boolean> voxelTextureSurfaces() {
-        RayTracingRuntime runtime = RayTracingRuntime.instance();
         return OptionInstance.createBoolean(
                 "prime.options.experimental.voxel_texture_surfaces",
                 OptionInstance.cachedConstantTooltip(Component.translatable(
                         "prime.options.experimental.voxel_texture_surfaces.tooltip")),
                 PrimeConfig.settings().voxelTextureSurfaces(),
-                runtime::setVoxelTextureSurfaces);
+                PrimeVideoOptions::setVoxelTextureSurfaces);
     }
 
     public static OptionInstance<Integer> voxelTextureSurfaceStrength() {
-        RayTracingRuntime runtime = RayTracingRuntime.instance();
         return new OptionInstance<>(
                 "prime.options.experimental.voxel_texture_surface_strength",
                 OptionInstance.cachedConstantTooltip(Component.translatable(
@@ -67,7 +65,7 @@ public final class PrimeVideoOptions {
                         VoxelSurfaceSettings.MINIMUM_STEPS,
                         VoxelSurfaceSettings.MAXIMUM_STEPS),
                 PrimeConfig.settings().voxelTextureSurfaceStrengthSteps(),
-                runtime::setVoxelTextureSurfaceStrengthSteps);
+                PrimeVideoOptions::setVoxelTextureSurfaceStrengthSteps);
     }
 
     public static OptionInstance<Boolean> screenshotMode() {
@@ -327,6 +325,37 @@ public final class PrimeVideoOptions {
                         maximumQuarterSteps),
                 initialQuarterSteps,
                 listener);
+    }
+
+    private static void setPathTracingEnabled(boolean enabled) {
+        RendererSettings previous = PrimeConfig.rendererSettings();
+        PrimeConfig.setPathTracingEnabled(enabled);
+        RendererSettings current = PrimeConfig.rendererSettings();
+        if (previous.pathTracingEnabled() != current.pathTracingEnabled()) {
+            RayTracingRuntime.instance().pathTracingChanged(current.pathTracingEnabled());
+        }
+    }
+
+    private static void setVoxelTextureSurfaces(boolean enabled) {
+        RendererSettings previous = PrimeConfig.rendererSettings();
+        PrimeConfig.setVoxelTextureSurfaces(enabled);
+        RendererSettings current = PrimeConfig.rendererSettings();
+        if (previous.voxelTextureSurfaces() != current.voxelTextureSurfaces()) {
+            RayTracingRuntime.instance().voxelTextureSurfacesChanged(
+                    current.voxelTextureSurfaces());
+        }
+    }
+
+    private static void setVoxelTextureSurfaceStrengthSteps(int steps) {
+        RendererSettings previous = PrimeConfig.rendererSettings();
+        PrimeConfig.setVoxelTextureSurfaceStrengthSteps(steps);
+        RendererSettings current = PrimeConfig.rendererSettings();
+        if (previous.voxelTextureSurfaceStrengthSteps()
+                != current.voxelTextureSurfaceStrengthSteps()) {
+            RayTracingRuntime.instance().voxelTextureSurfaceStrengthChanged(
+                    current.voxelTextureSurfaces(),
+                    current.voxelTextureSurfaceStrengthSteps());
+        }
     }
 
     private static OptionInstance<Integer> decimalOption(

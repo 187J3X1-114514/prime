@@ -1,10 +1,11 @@
 package dev.prime.config;
 
-import dev.prime.PrimeClient;
+import dev.prime.infrastructure.PrimeInfo;
 import dev.prime.render.AstronomySettings;
 import dev.prime.render.DisplaySettings;
 import dev.prime.render.LightingSettings;
 import dev.prime.render.MaterialSettings;
+import dev.prime.render.RendererSettings;
 import dev.prime.render.fsr.FsrQualityMode;
 import dev.prime.render.post.PostProcessingMode;
 import dev.prime.render.post.ReconstructionQualityMode;
@@ -53,6 +54,7 @@ public final class PrimeConfig {
     // Fabric initializes and mutates video options on the client thread. One immutable snapshot
     // keeps every renderer read coherent without a shared lock or independently mutable globals.
     private static PrimeSettings settings = PrimeSettings.defaults();
+    private static long rendererRevision;
     private static boolean dirty;
 
     private PrimeConfig() {
@@ -88,7 +90,7 @@ public final class PrimeConfig {
                     try {
                         pathTracingEnabled = parseBoolean(pathTracing);
                     } catch (IllegalArgumentException exception) {
-                        PrimeClient.LOGGER.warn(
+                        PrimeInfo.LOGGER.warn(
                                 "Invalid Prime path-tracing switch '{}'; enabling path tracing",
                                 pathTracing);
                         rewriteNeeded = true;
@@ -102,7 +104,7 @@ public final class PrimeConfig {
                     try {
                         voxelTextureSurfaces = parseBoolean(voxelSurfaces);
                     } catch (IllegalArgumentException exception) {
-                        PrimeClient.LOGGER.warn(
+                        PrimeInfo.LOGGER.warn(
                                 "Invalid Prime voxel-texture surface switch '{}'; disabling it",
                                 voxelSurfaces);
                         rewriteNeeded = true;
@@ -117,7 +119,7 @@ public final class PrimeConfig {
                         voxelTextureSurfaceStrengthSteps =
                                 parseVoxelSurfaceStrengthSteps(voxelSurfaceStrength);
                     } catch (IllegalArgumentException exception) {
-                        PrimeClient.LOGGER.warn(
+                        PrimeInfo.LOGGER.warn(
                                 "Invalid Prime voxel-surface strength '{}'; using the default",
                                 voxelSurfaceStrength);
                         rewriteNeeded = true;
@@ -129,7 +131,7 @@ public final class PrimeConfig {
                 if (postProcessingId != null) {
                     PostProcessingMode parsed = PostProcessingMode.findById(postProcessingId).orElse(null);
                     if (parsed == null) {
-                        PrimeClient.LOGGER.warn(
+                        PrimeInfo.LOGGER.warn(
                                 "Unknown Prime post-processing mode '{}'; using {}",
                                 postProcessingId,
                                 PostProcessingMode.DEFAULT.id());
@@ -148,7 +150,7 @@ public final class PrimeConfig {
                     ReconstructionQualityMode parsed =
                             ReconstructionQualityMode.findById(qualityId).orElse(null);
                     if (parsed == null) {
-                        PrimeClient.LOGGER.warn(
+                        PrimeInfo.LOGGER.warn(
                                 "Unknown Prime reconstruction quality '{}'; using {}",
                                 qualityId,
                                 ReconstructionQualityMode.DEFAULT.id());
@@ -170,7 +172,7 @@ public final class PrimeConfig {
                     try {
                         sunQuarterSteps = parseEvQuarterSteps(sunEv);
                     } catch (IllegalArgumentException exception) {
-                        PrimeClient.LOGGER.warn(
+                        PrimeInfo.LOGGER.warn(
                                 "Invalid Prime sun exposure '{}'; using 0 EV",
                                 sunEv);
                         rewriteNeeded = true;
@@ -183,7 +185,7 @@ public final class PrimeConfig {
                     try {
                         starQuarterSteps = parseStarEvQuarterSteps(starEv);
                     } catch (IllegalArgumentException exception) {
-                        PrimeClient.LOGGER.warn(
+                        PrimeInfo.LOGGER.warn(
                                 "Invalid Prime star exposure '{}'; using 0 EV",
                                 starEv);
                         rewriteNeeded = true;
@@ -196,7 +198,7 @@ public final class PrimeConfig {
                     try {
                         blockLightQuarterSteps = parseEvQuarterSteps(blockLightEv);
                     } catch (IllegalArgumentException exception) {
-                        PrimeClient.LOGGER.warn(
+                        PrimeInfo.LOGGER.warn(
                                 "Invalid Prime block-light exposure '{}'; using 0 EV",
                                 blockLightEv);
                         rewriteNeeded = true;
@@ -210,7 +212,7 @@ public final class PrimeConfig {
                         finalExposureQuarterSteps =
                                 parseFinalExposureQuarterSteps(finalExposureEv);
                     } catch (IllegalArgumentException exception) {
-                        PrimeClient.LOGGER.warn(
+                        PrimeInfo.LOGGER.warn(
                                 "Invalid Prime final exposure '{}'; using 0 EV",
                                 finalExposureEv);
                         rewriteNeeded = true;
@@ -223,7 +225,7 @@ public final class PrimeConfig {
                     try {
                         oklabOverexposureSteps = parseOverexposureSteps(oklabOverexposure);
                     } catch (IllegalArgumentException exception) {
-                        PrimeClient.LOGGER.warn(
+                        PrimeInfo.LOGGER.warn(
                                 "Invalid Prime Oklab DRT overexposure '{}'; using the default",
                                 oklabOverexposure);
                         rewriteNeeded = true;
@@ -236,7 +238,7 @@ public final class PrimeConfig {
                     try {
                         curveExponentSteps = parseCurveExponentSteps(curveExponent);
                     } catch (IllegalArgumentException exception) {
-                        PrimeClient.LOGGER.warn(
+                        PrimeInfo.LOGGER.warn(
                                 "Invalid Prime Oklab DRT curve exponent '{}'; using the default",
                                 curveExponent);
                         rewriteNeeded = true;
@@ -251,7 +253,7 @@ public final class PrimeConfig {
                         autoExposureCompensationSteps =
                                 parseAutoExposureCompensationSteps(autoExposureCompensation);
                     } catch (IllegalArgumentException exception) {
-                        PrimeClient.LOGGER.warn(
+                        PrimeInfo.LOGGER.warn(
                                 "Invalid Prime auto-exposure compensation '{}'; using the default",
                                 autoExposureCompensation);
                         rewriteNeeded = true;
@@ -264,7 +266,7 @@ public final class PrimeConfig {
                     try {
                         defaultRoughnessSteps = parseRoughnessSteps(defaultRoughness);
                     } catch (IllegalArgumentException exception) {
-                        PrimeClient.LOGGER.warn(
+                        PrimeInfo.LOGGER.warn(
                                 "Invalid Prime default material roughness '{}'; using the default",
                                 defaultRoughness);
                         rewriteNeeded = true;
@@ -273,7 +275,7 @@ public final class PrimeConfig {
                     rewriteNeeded = true;
                 }
             } catch (IOException | IllegalArgumentException exception) {
-                PrimeClient.LOGGER.warn(
+                PrimeInfo.LOGGER.warn(
                         "Could not read {}; using the default Prime settings",
                         path,
                         exception);
@@ -297,8 +299,9 @@ public final class PrimeConfig {
                 defaultRoughnessSteps,
                 0L,
                 0L);
+        rendererRevision = 0L;
         dirty = rewriteNeeded;
-        PrimeClient.LOGGER.info(
+        PrimeInfo.LOGGER.info(
                 "Prime settings: path tracing {}, voxel surfaces {} at {}x, post-processing {} quality {} (NRD-FSR {}x), latitude {} degrees, solar longitude {} degrees, sun {} EV, stars {} EV, block lights {} EV, final exposure {} EV, Oklab DRT overexposure {}, curve exponent {}, auto-exposure compensation {}, default roughness {}",
                 pathTracingEnabled ? "enabled" : "disabled",
                 voxelTextureSurfaces ? "enabled" : "disabled",
@@ -324,6 +327,26 @@ public final class PrimeConfig {
 
     public static PrimeSettings settings() {
         return settings;
+    }
+
+    public static RendererSettings rendererSettings() {
+        PrimeSettings current = settings;
+        long revision = rendererRevision;
+        return rendererSettings(current, revision);
+    }
+
+    static RendererSettings rendererSettings(PrimeSettings current, long revision) {
+        return new RendererSettings(
+                current.pathTracingEnabled(),
+                current.voxelTextureSurfaces(),
+                current.voxelTextureSurfaceStrengthSteps(),
+                current.postProcessingMode(),
+                current.reconstructionQuality(),
+                current.astronomy(),
+                current.lighting(),
+                current.material(),
+                current.display(),
+                revision);
     }
 
     public static void setPathTracingEnabled(boolean enabled) {
@@ -387,24 +410,28 @@ public final class PrimeConfig {
     }
 
     public static void restoreDefaults() {
-        setPathTracingEnabled(true);
-        setVoxelTextureSurfaces(false);
-        setVoxelTextureSurfaceStrengthSteps(VoxelSurfaceSettings.DEFAULT_STEPS);
-        setPostProcessingMode(PostProcessingMode.DEFAULT);
-        setReconstructionQualityMode(ReconstructionQualityMode.DEFAULT);
-        setLatitudeDegrees(AstronomySettings.DEFAULT_LATITUDE_DEGREES);
-        setSolarLongitudeDegrees(
-                AstronomySettings.DEFAULT_SOLAR_LONGITUDE_DEGREES);
-        setSunQuarterSteps(LightingSettings.DEFAULT_SUN_QUARTER_STEPS);
-        setStarQuarterSteps(LightingSettings.DEFAULT_STAR_QUARTER_STEPS);
-        setBlockLightQuarterSteps(LightingSettings.DEFAULT_BLOCK_LIGHT_QUARTER_STEPS);
-        setFinalExposureQuarterSteps(
-                DisplaySettings.DEFAULT_FINAL_EXPOSURE_QUARTER_STEPS);
-        setOklabOverexposureSteps(DisplaySettings.DEFAULT_OVEREXPOSURE_STEPS);
-        setCurveExponentSteps(DisplaySettings.DEFAULT_CURVE_EXPONENT_STEPS);
-        setAutoExposureCompensationSteps(
-                DisplaySettings.DEFAULT_AUTO_EXPOSURE_COMPENSATION_STEPS);
-        setDefaultRoughnessSteps(MaterialSettings.DEFAULT_ROUGHNESS_STEPS);
+        update(restoredDefaults(settings));
+    }
+
+    static PrimeSettings restoredDefaults(PrimeSettings current) {
+        return current
+                .withPathTracingEnabled(true)
+                .withVoxelTextureSurfaces(false)
+                .withVoxelTextureSurfaceStrengthSteps(VoxelSurfaceSettings.DEFAULT_STEPS)
+                .withPostProcessingMode(PostProcessingMode.DEFAULT)
+                .withReconstructionQuality(ReconstructionQualityMode.DEFAULT)
+                .withLatitudeDegrees(AstronomySettings.DEFAULT_LATITUDE_DEGREES)
+                .withSolarLongitudeDegrees(AstronomySettings.DEFAULT_SOLAR_LONGITUDE_DEGREES)
+                .withSunQuarterSteps(LightingSettings.DEFAULT_SUN_QUARTER_STEPS)
+                .withStarQuarterSteps(LightingSettings.DEFAULT_STAR_QUARTER_STEPS)
+                .withBlockLightQuarterSteps(LightingSettings.DEFAULT_BLOCK_LIGHT_QUARTER_STEPS)
+                .withFinalExposureQuarterSteps(
+                        DisplaySettings.DEFAULT_FINAL_EXPOSURE_QUARTER_STEPS)
+                .withOklabOverexposureSteps(DisplaySettings.DEFAULT_OVEREXPOSURE_STEPS)
+                .withCurveExponentSteps(DisplaySettings.DEFAULT_CURVE_EXPONENT_STEPS)
+                .withAutoExposureCompensationSteps(
+                        DisplaySettings.DEFAULT_AUTO_EXPOSURE_COMPENSATION_STEPS)
+                .withDefaultRoughnessSteps(MaterialSettings.DEFAULT_ROUGHNESS_STEPS);
     }
 
     public static void save() {
@@ -437,7 +464,7 @@ public final class PrimeConfig {
             } catch (IOException cleanupException) {
                 exception.addSuppressed(cleanupException);
             }
-            PrimeClient.LOGGER.error("Could not save Prime settings to {}", path, exception);
+            PrimeInfo.LOGGER.error("Could not save Prime settings to {}", path, exception);
         }
     }
 
@@ -525,7 +552,7 @@ public final class PrimeConfig {
             try {
                 latitudeDegrees = parseLatitudeDegrees(latitude);
             } catch (IllegalArgumentException exception) {
-                PrimeClient.LOGGER.warn(
+                PrimeInfo.LOGGER.warn(
                         "Invalid Prime observer latitude '{}'; using {} degrees north",
                         latitude,
                         AstronomySettings.DEFAULT_LATITUDE_DEGREES);
@@ -541,7 +568,7 @@ public final class PrimeConfig {
                 solarLongitudeDegrees =
                         parseSolarLongitudeDegrees(solarLongitude);
             } catch (IllegalArgumentException exception) {
-                PrimeClient.LOGGER.warn(
+                PrimeInfo.LOGGER.warn(
                         "Invalid Prime solar longitude '{}'; using the March equinox",
                         solarLongitude);
                 rewriteNeeded = true;
@@ -564,6 +591,7 @@ public final class PrimeConfig {
     private static void update(PrimeSettings replacement) {
         if (replacement != settings) {
             settings = replacement;
+            rendererRevision = Math.incrementExact(rendererRevision);
             dirty = true;
         }
     }

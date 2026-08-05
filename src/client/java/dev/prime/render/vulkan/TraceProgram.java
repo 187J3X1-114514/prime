@@ -1,7 +1,7 @@
 package dev.prime.render.vulkan;
 
 import com.mojang.blaze3d.vulkan.Destroyable;
-import dev.prime.PrimeClient;
+import dev.prime.infrastructure.PrimeInfo;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.ByteBuffer;
@@ -145,7 +145,7 @@ final class TraceProgram implements Destroyable {
             String[] raygenResources,
             int[] raygenShaderStages,
             String debugName) {
-        PrimeClient.LOGGER.info("Compiling {}", debugName);
+        PrimeInfo.LOGGER.info("Compiling {}", debugName);
         long start = System.nanoTime();
         long[] modules = new long[raygenResources.length + FIXED_MODULE_COUNT];
         long deferredOperation = 0L;
@@ -262,7 +262,7 @@ final class TraceProgram implements Destroyable {
                     VK12.VK_OBJECT_TYPE_PIPELINE,
                     pipeline,
                     debugName);
-            PrimeClient.LOGGER.info(
+            PrimeInfo.LOGGER.info(
                     "{} compiled in {} ms using {} host thread(s)",
                     debugName,
                     (System.nanoTime() - start) / 1_000_000L,
@@ -304,7 +304,7 @@ final class TraceProgram implements Destroyable {
                 startedWorkers++;
             }
         } catch (RuntimeException | OutOfMemoryError exception) {
-            PrimeClient.LOGGER.warn(
+            PrimeInfo.LOGGER.warn(
                     "Started only {} of {} Prime RT compiler worker thread(s)",
                     startedWorkers,
                     workers.length,

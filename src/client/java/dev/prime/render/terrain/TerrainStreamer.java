@@ -1,6 +1,6 @@
 package dev.prime.render.terrain;
 
-import dev.prime.PrimeClient;
+import dev.prime.infrastructure.PrimeInfo;
 import dev.prime.client.ViewDistanceLimits;
 import dev.prime.render.ResourceCleanup;
 import dev.prime.render.scene.CapturedSectionGeometry;
@@ -582,7 +582,7 @@ public final class TerrainStreamer implements AutoCloseable {
             } catch (RejectedExecutionException ignored) {
                 this.pipelineState.cancelInFlight(request.key(), request.generation());
                 this.enqueue(request.key(), request.priority(), request.generation());
-                PrimeClient.LOGGER.debug("Terrain executor is temporarily saturated");
+                PrimeInfo.LOGGER.debug("Terrain executor is temporarily saturated");
                 break;
             }
             accepted++;

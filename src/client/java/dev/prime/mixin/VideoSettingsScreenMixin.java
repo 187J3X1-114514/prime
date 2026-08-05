@@ -7,6 +7,7 @@ import dev.prime.render.DisplaySettings;
 import dev.prime.render.LightingSettings;
 import dev.prime.render.MaterialSettings;
 import dev.prime.render.RayTracingRuntime;
+import dev.prime.render.RendererSettings;
 import dev.prime.render.fsr.FsrDebugView;
 import dev.prime.render.vulkan.nrd.NrdDiagnostics;
 import dev.prime.render.post.DlssRrDebugView;
@@ -112,11 +113,22 @@ public abstract class VideoSettingsScreenMixin {
 
     @Unique
     private void prime$restoreDefaults() {
-        boolean voxelSurfacesChanged = PrimeConfig.settings().voxelTextureSurfaces();
+        RendererSettings previous = PrimeConfig.rendererSettings();
         PrimeConfig.restoreDefaults();
-        RayTracingRuntime.instance().restoreSessionDefaults();
-        if (voxelSurfacesChanged) {
-            RayTracingRuntime.instance().invalidateAll();
+        RendererSettings current = PrimeConfig.rendererSettings();
+        RayTracingRuntime runtime = RayTracingRuntime.instance();
+        runtime.restoreSessionDefaults();
+        if (previous.pathTracingEnabled() != current.pathTracingEnabled()) {
+            runtime.pathTracingChanged(current.pathTracingEnabled());
+        }
+        if (previous.voxelTextureSurfaces() != current.voxelTextureSurfaces()) {
+            runtime.voxelTextureSurfacesChanged(
+                    current.voxelTextureSurfaces());
+        } else if (previous.voxelTextureSurfaceStrengthSteps()
+                != current.voxelTextureSurfaceStrengthSteps()) {
+            runtime.voxelTextureSurfaceStrengthChanged(
+                    current.voxelTextureSurfaces(),
+                    current.voxelTextureSurfaceStrengthSteps());
         }
         this.prime$refresh(this.prime$pathTracingEnabled, true);
         this.prime$refresh(this.prime$voxelTextureSurfaces, false);

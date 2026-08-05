@@ -8,7 +8,7 @@ import com.mojang.blaze3d.vulkan.VulkanBackend;
 import com.mojang.blaze3d.vulkan.VulkanDevice;
 import com.mojang.blaze3d.vulkan.VulkanPhysicalDevice;
 import com.mojang.blaze3d.vulkan.init.VulkanFeature;
-import dev.prime.PrimeClient;
+import dev.prime.infrastructure.PrimeInfo;
 import dev.prime.render.vulkan.VulkanBootstrap;
 import dev.prime.render.vulkan.VulkanCapabilities;
 import dev.prime.render.vulkan.VulkanDeviceNegotiator;
@@ -38,23 +38,23 @@ public abstract class VulkanBackendMixin {
         VulkanCapabilities capabilities = VulkanDeviceNegotiator.negotiate(physicalDevice, extensions, features);
         VulkanBootstrap.recordNegotiation(capabilities);
         if (capabilities.available()) {
-            PrimeClient.LOGGER.info("Enabled Vulkan ray tracing on {}", capabilities.deviceName());
-            PrimeClient.LOGGER.info(
+            PrimeInfo.LOGGER.info("Enabled Vulkan ray tracing on {}", capabilities.deviceName());
+            PrimeInfo.LOGGER.info(
                     "Prime FidelityFX optional FP16 device features: {}",
                     capabilities.fsrFp16Supported() ? "enabled" : "unavailable");
-            PrimeClient.LOGGER.info(
+            PrimeInfo.LOGGER.info(
                     "Prime ray tracing invocation reorder: {}",
                     capabilities.invocationReorderSupported()
                             ? "VK_EXT_ray_tracing_invocation_reorder"
                             : "unavailable (standard mega-kernel)");
-            PrimeClient.LOGGER.info(
+            PrimeInfo.LOGGER.info(
                     "Prime terrain opacity micromaps: {}",
                     capabilities.opacityMicromapSupported()
                             ? "VK_EXT_opacity_micromap, subdivision "
                                     + capabilities.maxOpacityMicromapSubdivisionLevel()
                             : "unavailable (cutout any-hit fallback)");
         } else {
-            PrimeClient.LOGGER.warn("Prime ray tracing unavailable on {}: {}", capabilities.deviceName(), capabilities.unavailableReason());
+            PrimeInfo.LOGGER.warn("Prime ray tracing unavailable on {}: {}", capabilities.deviceName(), capabilities.unavailableReason());
         }
     }
 

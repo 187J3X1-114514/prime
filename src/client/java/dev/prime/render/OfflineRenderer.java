@@ -6,7 +6,7 @@ import com.mojang.blaze3d.vulkan.Destroyable;
 import com.mojang.blaze3d.vulkan.VulkanGpuSampler;
 import com.mojang.blaze3d.vulkan.VulkanGpuTexture;
 import com.mojang.blaze3d.vulkan.VulkanGpuTextureView;
-import dev.prime.PrimeClient;
+import dev.prime.infrastructure.PrimeInfo;
 import dev.prime.render.vulkan.AtmospherePipeline;
 import dev.prime.render.vulkan.LabPbrTextureAtlas;
 import dev.prime.render.vulkan.OfflineRayTracingPipeline;
@@ -203,7 +203,7 @@ final class OfflineRenderer implements Destroyable {
         current.commitSample();
         if (current.sampleCount() > 0L
                 && (current.sampleCount() & (current.sampleCount() - 1L)) == 0L) {
-            PrimeClient.LOGGER.info(
+            PrimeInfo.LOGGER.info(
                     "Prime screenshot accumulation reached {} samples",
                     current.sampleCount());
         }

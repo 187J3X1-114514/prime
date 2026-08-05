@@ -4,9 +4,8 @@ import com.mojang.blaze3d.pipeline.RenderTarget;
 import com.mojang.blaze3d.platform.InputConstants;
 import com.mojang.blaze3d.systems.RenderSystem;
 import com.mojang.blaze3d.vulkan.VulkanDevice;
-import dev.prime.PrimeClient;
+import dev.prime.infrastructure.PrimeInfo;
 import dev.prime.client.ViewDistanceLimits;
-import dev.prime.config.PrimeConfig;
 import dev.prime.render.fsr.FsrDebugView;
 import dev.prime.render.post.DlssRrDebugView;
 import dev.prime.render.replay.RenderReplayFixtureStore;
@@ -32,6 +31,7 @@ public final class RayTracingRuntime {
             new SystemToast.SystemToastId(8_001L);
 
     private final RuntimeStateMachine states = new RuntimeStateMachine();
+    private final RendererFrameSettings frameSettings = new RendererFrameSettings();
     private String failureReason = "Prime has not initialized";
     private boolean initialized;
     private boolean notificationShown;
@@ -63,9 +63,10 @@ public final class RayTracingRuntime {
         return INSTANCE;
     }
 
-    public void initialize() {
+    public void initialize(RendererSettings settings) {
         this.initialized = true;
-        if (!PrimeConfig.settings().pathTracingEnabled()) {
+        this.frameSettings.beginFrame(settings);
+        if (!settings.pathTracingEnabled()) {
             this.states.disabled();
         }
     }
@@ -104,7 +105,7 @@ public final class RayTracingRuntime {
                 VulkanContext failedContext = this.context;
                 this.context = null;
                 ResourceCleanup.close(failedContext, exception);
-                PrimeClient.LOGGER.error("Prime Vulkan initialization failed", exception);
+                PrimeInfo.LOGGER.error("Prime Vulkan initialization failed", exception);
             }
         }
     }
@@ -133,13 +134,14 @@ public final class RayTracingRuntime {
                 && !activeRenderer.screenshotActive();
     }
 
-    public void beginFrame(Minecraft minecraft) {
+    public void beginFrame(Minecraft minecraft, RendererSettings settings) {
+        this.frameSettings.beginFrame(settings);
         this.retireFailedRenderer(minecraft);
         if (!this.initialized) {
             return;
         }
         this.updateSessionShortcuts(minecraft);
-        if (!PrimeConfig.settings().pathTracingEnabled()) {
+        if (!settings.pathTracingEnabled()) {
             this.disableRenderer(minecraft);
             return;
         }
@@ -165,7 +167,8 @@ public final class RayTracingRuntime {
                 this.states.worldChanged();
             }
             SessionControls frameControls = this.controls;
-            boolean screenshotRequested = activeRenderer.beginFrame(minecraft, frameControls);
+            boolean screenshotRequested = activeRenderer.beginFrame(
+                    minecraft, frameControls, settings);
             if (screenshotRequested != frameControls.screenshotRequested()) {
                 this.controls = this.controls.withScreenshotRequested(screenshotRequested);
             }
@@ -188,7 +191,10 @@ public final class RayTracingRuntime {
             double z,
             float sunAngleRadians) {
         VulkanRenderer activeRenderer = this.renderer;
-        if (activeRenderer != null && this.states.current() != RuntimeState.FAILED) {
+        RendererSettings settings = this.frameSettings.forCamera();
+        if (activeRenderer != null
+                && settings != null
+                && this.states.current() != RuntimeState.FAILED) {
             activeRenderer.captureCamera(
                     renderedProjection,
                     baseProjection,
@@ -196,17 +202,21 @@ public final class RayTracingRuntime {
                     x,
                     y,
                     z,
-                    sunAngleRadians);
+                    sunAngleRadians,
+                    settings);
         }
     }
 
     public void renderWorld(RenderTarget mainTarget) {
         VulkanRenderer activeRenderer = this.renderer;
-        if (activeRenderer == null || this.states.current() != RuntimeState.ACTIVE) {
+        RendererSettings settings = this.frameSettings.forRender();
+        if (activeRenderer == null
+                || settings == null
+                || this.states.current() != RuntimeState.ACTIVE) {
             return;
         }
         try {
-            activeRenderer.render(mainTarget);
+            activeRenderer.render(mainTarget, settings);
         } catch (RuntimeException exception) {
             this.fail(exception);
         }
@@ -245,30 +255,23 @@ public final class RayTracingRuntime {
         return this.controls.screenshotRequested();
     }
 
-    public void setPathTracingEnabled(boolean enabled) {
-        boolean changed = PrimeConfig.settings().pathTracingEnabled() != enabled;
-        PrimeConfig.setPathTracingEnabled(enabled);
+    public void pathTracingChanged(boolean enabled) {
         if (!enabled) {
             this.requestScreenshot(false);
-        } else if (changed && this.states.current() == RuntimeState.DISABLED) {
+        } else if (this.states.current() == RuntimeState.DISABLED) {
             // Enabling after an explicit stop is a fresh initialization attempt.
             this.notificationShown = false;
             this.unavailabilityLogged = false;
         }
     }
 
-    public void setVoxelTextureSurfaces(boolean enabled) {
-        boolean changed = PrimeConfig.settings().voxelTextureSurfaces() != enabled;
-        PrimeConfig.setVoxelTextureSurfaces(enabled);
-        if (changed) {
-            this.invalidateAll();
-        }
+    public void voxelTextureSurfacesChanged(boolean enabled) {
+        this.invalidateAll();
     }
 
-    public void setVoxelTextureSurfaceStrengthSteps(int steps) {
-        boolean changed = PrimeConfig.settings().voxelTextureSurfaceStrengthSteps() != steps;
-        PrimeConfig.setVoxelTextureSurfaceStrengthSteps(steps);
-        if (changed && PrimeConfig.settings().voxelTextureSurfaces()) {
+    public void voxelTextureSurfaceStrengthChanged(boolean enabled, int strengthSteps) {
+        dev.prime.render.terrain.VoxelSurfaceSettings.maximumHeight(strengthSteps);
+        if (enabled) {
             this.invalidateAll();
         }
     }
@@ -418,6 +421,7 @@ public final class RayTracingRuntime {
         VulkanContext activeContext = this.context;
         this.world = null;
         this.controls = SessionControls.defaults();
+        this.frameSettings.clear();
         RuntimeException failure = null;
         try {
             if (activeRenderer != null) {
@@ -479,7 +483,7 @@ public final class RayTracingRuntime {
             }
             this.retiringRenderer = failedRenderer;
         }
-        PrimeClient.LOGGER.error("Prime ray tracing failed; returning to vanilla rendering", failure);
+        PrimeInfo.LOGGER.error("Prime ray tracing failed; returning to vanilla rendering", failure);
     }
 
     private void retireFailedRenderer(Minecraft minecraft) {
@@ -494,7 +498,7 @@ public final class RayTracingRuntime {
             }
             this.restoreVanillaTerrain(minecraft, true);
         } catch (RuntimeException exception) {
-            PrimeClient.LOGGER.error("Failed to retire Prime Vulkan resources", exception);
+            PrimeInfo.LOGGER.error("Failed to retire Prime Vulkan resources", exception);
         }
     }
 
@@ -503,18 +507,31 @@ public final class RayTracingRuntime {
         this.world = null;
         this.states.disabled();
         this.replayTest = null;
+        this.renderer = null;
+
+        RuntimeException failure = null;
+        try {
+            // Minecraft must regain terrain ownership independently of Prime GPU retirement.
+            // Otherwise a failed Vulkan close leaves vanilla compilation disabled.
+            this.restoreVanillaTerrain(minecraft, true);
+        } catch (RuntimeException exception) {
+            failure = exception;
+        }
         if (activeRenderer != null) {
-            this.renderer = null;
             try {
                 activeRenderer.close();
-                this.restoreVanillaTerrain(minecraft, true);
             } catch (RuntimeException exception) {
                 this.retiringRenderer = activeRenderer;
-                PrimeClient.LOGGER.error(
-                        "Failed to stop Prime after path tracing was disabled", exception);
+                if (failure == null) {
+                    failure = exception;
+                } else {
+                    failure.addSuppressed(exception);
+                }
             }
-        } else if (this.retiringRenderer == null) {
-            this.restoreVanillaTerrain(minecraft, true);
+        }
+        if (failure != null) {
+            PrimeInfo.LOGGER.error(
+                    "Failed to stop Prime after path tracing was disabled", failure);
         }
     }
 
@@ -570,16 +587,12 @@ public final class RayTracingRuntime {
     }
 
     private static void rebuildVanillaTerrainShell(Minecraft minecraft) {
-        ClientLevel level = minecraft.level;
-        if (level == null) {
+        if (minecraft.level == null) {
             return;
         }
-        minecraft.levelRenderer.resetLevelRenderData();
-        minecraft.levelRenderer.invalidateCompiledGeometry(
-                level,
-                minecraft.options,
-                minecraft.gameRenderer.mainCamera(),
-                minecraft.getBlockColors());
+        // LevelExtractor owns the SectionUpdateTracker that feeds compilation. Rebuilding only
+        // LevelRenderer creates fresh RenderSections with no corresponding dirty states.
+        minecraft.levelExtractor.allChanged();
     }
 
     private void showFailureNotificationOnce(Minecraft minecraft) {
@@ -607,7 +620,7 @@ public final class RayTracingRuntime {
             this.failureReason = "Minecraft is using " + backend + "; select the Vulkan graphics backend";
         }
         this.unavailabilityLogged = true;
-        PrimeClient.LOGGER.warn("Prime will use vanilla rendering: {}", this.failureReason);
+        PrimeInfo.LOGGER.warn("Prime will use vanilla rendering: {}", this.failureReason);
     }
 
     private void updateSessionShortcuts(Minecraft minecraft) {
@@ -671,19 +684,19 @@ public final class RayTracingRuntime {
             try {
                 RenderReplayFixtureStore.save(
                         fixture, verification.reference());
-                PrimeClient.LOGGER.info(
+                PrimeInfo.LOGGER.info(
                         "Saved validated Prime replay fixture to {}",
                         fixture.toAbsolutePath().normalize());
             } catch (java.io.IOException | RuntimeException exception) {
-                PrimeClient.LOGGER.warn(
+                PrimeInfo.LOGGER.warn(
                         "Prime replay self-test passed, but its fixture could not be saved",
                         exception);
             }
-            PrimeClient.LOGGER.info(
+            PrimeInfo.LOGGER.info(
                     "Prime 64x64 deterministic NRD jitter replay self-test passed: {}",
                     verification.referenceJitterPhase());
         } else if (failure != null) {
-            PrimeClient.LOGGER.error(
+            PrimeInfo.LOGGER.error(
                     "Prime deterministic NRD replay self-test failed",
                     failure);
         } else {
@@ -699,16 +712,16 @@ public final class RayTracingRuntime {
                         referenceFixture, verification.reference());
                 RenderReplayFixtureStore.save(
                         replayFixture, verification.replay());
-                PrimeClient.LOGGER.info(
+                PrimeInfo.LOGGER.info(
                         "Saved failed Prime replay captures to reference={} and replay={}",
                         referenceFixture.toAbsolutePath().normalize(),
                         replayFixture.toAbsolutePath().normalize());
             } catch (java.io.IOException | RuntimeException exception) {
-                PrimeClient.LOGGER.warn(
+                PrimeInfo.LOGGER.warn(
                         "Prime replay self-test failed, and its captures could not be saved",
                         exception);
             }
-            PrimeClient.LOGGER.error(
+            PrimeInfo.LOGGER.error(
                     "Prime deterministic NRD jitter replay self-test failed: semantic reference={}, semantic replay={}, jitter reference={}, jitter replay={}, first divergence={}",
                     verification.referenceSemantics(),
                     verification.replaySemantics(),

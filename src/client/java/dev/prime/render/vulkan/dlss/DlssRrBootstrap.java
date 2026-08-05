@@ -1,7 +1,7 @@
 package dev.prime.render.vulkan.dlss;
 
 import com.mojang.blaze3d.vulkan.VulkanPhysicalDevice;
-import dev.prime.PrimeClient;
+import dev.prime.infrastructure.PrimeInfo;
 import dev.prime.render.vulkan.VulkanContext;
 import java.nio.IntBuffer;
 import java.util.Collection;
@@ -49,7 +49,7 @@ public final class DlssRrBootstrap {
                     true,
                     false,
                     state.initialization());
-            PrimeClient.LOGGER.info(
+            PrimeInfo.LOGGER.info(
                     "Enabled {} NVIDIA NGX Vulkan instance extension(s)", required.size());
         } catch (RuntimeException | LinkageError exception) {
             disable("Unable to query NVIDIA NGX Vulkan instance requirements", exception);
@@ -82,7 +82,7 @@ public final class DlssRrBootstrap {
                     true,
                     true,
                     state.initialization());
-            PrimeClient.LOGGER.info(
+            PrimeInfo.LOGGER.info(
                     "Enabled {} NVIDIA NGX Vulkan device extension(s)", required.size());
         } catch (RuntimeException | LinkageError exception) {
             disable("Unable to query NVIDIA NGX Vulkan device requirements", exception);
@@ -101,7 +101,7 @@ public final class DlssRrBootstrap {
                     state.instanceReady(),
                     state.deviceReady(),
                     state.initialization().initialized());
-            PrimeClient.LOGGER.info("NVIDIA NGX DLSS Ray Reconstruction is available");
+            PrimeInfo.LOGGER.info("NVIDIA NGX DLSS Ray Reconstruction is available");
             return Optional.of(ngx);
         } catch (RuntimeException | LinkageError exception) {
             disable("NVIDIA NGX DLSS RR initialization failed", exception);
@@ -180,9 +180,9 @@ public final class DlssRrBootstrap {
                 false,
                 state.initialization());
         if (cause == null) {
-            PrimeClient.LOGGER.warn("DLSS RR unavailable for this session: {}", reason);
+            PrimeInfo.LOGGER.warn("DLSS RR unavailable for this session: {}", reason);
         } else {
-            PrimeClient.LOGGER.warn("DLSS RR unavailable for this session: {}", reason, cause);
+            PrimeInfo.LOGGER.warn("DLSS RR unavailable for this session: {}", reason, cause);
         }
     }
 

@@ -1,6 +1,5 @@
 package dev.prime.render;
 
-import dev.prime.config.PrimeSettings;
 import dev.prime.render.post.PostProcessingMode;
 import dev.prime.render.post.ReconstructionQualityMode;
 import java.util.Objects;
@@ -20,7 +19,7 @@ record RealtimeRenderSettings(
         Objects.requireNonNull(display, "display");
     }
 
-    static RealtimeRenderSettings capture(PrimeSettings settings) {
+    static RealtimeRenderSettings capture(RendererSettings settings) {
         Objects.requireNonNull(settings, "settings");
         return new RealtimeRenderSettings(
                 settings.postProcessingMode(),

@@ -3,7 +3,7 @@ package dev.prime.render.vulkan.replay;
 import com.mojang.blaze3d.vulkan.Destroyable;
 import com.mojang.blaze3d.vulkan.VulkanGpuSampler;
 import com.mojang.blaze3d.vulkan.VulkanGpuTextureView;
-import dev.prime.PrimeClient;
+import dev.prime.infrastructure.PrimeInfo;
 import dev.prime.render.AstronomyState;
 import dev.prime.render.DisplaySettings;
 import dev.prime.render.FrameCamera;
@@ -133,7 +133,7 @@ public final class ReplayProbeController implements Destroyable {
             session = null;
         } catch (RuntimeException exception) {
             this.requests.fail(pending, exception);
-            PrimeClient.LOGGER.error(
+            PrimeInfo.LOGGER.error(
                     "Prime replay verification failed without affecting the interactive frame",
                     exception);
         } finally {

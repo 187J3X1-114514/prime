@@ -6,7 +6,7 @@ import com.mojang.blaze3d.vulkan.Destroyable;
 import com.mojang.blaze3d.vulkan.VulkanGpuSampler;
 import com.mojang.blaze3d.vulkan.VulkanGpuTexture;
 import com.mojang.blaze3d.vulkan.VulkanGpuTextureView;
-import dev.prime.PrimeClient;
+import dev.prime.infrastructure.PrimeInfo;
 import dev.prime.render.post.PostProcessingMode;
 import dev.prime.render.post.RealtimePostProcessor;
 import dev.prime.render.post.ReconstructionQualityMode;
@@ -254,7 +254,7 @@ final class RealtimeRenderer implements Destroyable {
                 effectiveMode = PostProcessingMode.NRD_FSR;
                 if (!this.rrFallbackReported) {
                     this.rrFallbackReported = true;
-                    PrimeClient.LOGGER.warn(
+                    PrimeInfo.LOGGER.warn(
                             "DLSS RR selected but unavailable; using NRD-FSR for this session: {}",
                             DlssRrBootstrap.unavailableReason());
                 }
@@ -308,7 +308,7 @@ final class RealtimeRenderer implements Destroyable {
             return List.of();
         }
         if (resized) {
-            PrimeClient.LOGGER.debug(
+            PrimeInfo.LOGGER.debug(
                     "Recreated Prime realtime images at display {}x{}, render {}x{}, {} {} "
                             + "(output image={}, view={}; accumulation image={}, view={}; "
                             + "atlas image={}, view={}, sampler={})",
@@ -428,7 +428,7 @@ final class RealtimeRenderer implements Destroyable {
         int accumulatedSamples = this.sampleIndex();
         if (accumulatedSamples >= 16
                 && (accumulatedSamples & (accumulatedSamples - 1)) == 0) {
-            PrimeClient.LOGGER.debug(
+            PrimeInfo.LOGGER.debug(
                     "Prime accumulation reached {} samples for scene revision {}",
                     accumulatedSamples,
                     input.scene().revision());

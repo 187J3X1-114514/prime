@@ -1,6 +1,7 @@
 package dev.prime;
 
 import dev.prime.config.PrimeConfig;
+import dev.prime.infrastructure.PrimeInfo;
 import dev.prime.render.RayTracingRuntime;
 import dev.prime.render.scene.vanilla.ItemFrameModelFallback;
 import java.util.concurrent.CompletableFuture;
@@ -12,19 +13,16 @@ import net.fabricmc.fabric.api.resource.v1.reloader.ResourceReloaderKeys;
 import net.minecraft.resources.Identifier;
 import net.minecraft.server.packs.PackType;
 import net.minecraft.server.packs.resources.PreparableReloadListener;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 public final class PrimeClient implements ClientModInitializer {
-    public static final String MOD_ID = "prime";
-    public static final Logger LOGGER = LoggerFactory.getLogger(MOD_ID);
-    private static final Identifier RELOAD_LISTENER_ID = Identifier.fromNamespaceAndPath(MOD_ID, "ray_tracing_resources");
+    private static final Identifier RELOAD_LISTENER_ID = Identifier.fromNamespaceAndPath(
+            PrimeInfo.MOD_ID, "ray_tracing_resources");
     @Override
     public void onInitializeClient() {
         PrimeConfig.load();
-        LOGGER.info("Initializing Prime ray tracing framework");
+        PrimeInfo.LOGGER.info("Initializing Prime ray tracing framework");
         ItemFrameModelFallback.register();
-        RayTracingRuntime.instance().initialize();
+        RayTracingRuntime.instance().initialize(PrimeConfig.rendererSettings());
         ResourceLoader resourceLoader = ResourceLoader.get(PackType.CLIENT_RESOURCES);
         resourceLoader.registerReloadListener(RELOAD_LISTENER_ID, new PreparableReloadListener() {
             private boolean initialReload = true;

@@ -1,7 +1,7 @@
 package dev.prime.render.vulkan;
 
 import com.mojang.blaze3d.platform.NativeImage;
-import dev.prime.PrimeClient;
+import dev.prime.infrastructure.PrimeInfo;
 import dev.prime.mixin.SpriteContentsAccessor;
 import dev.prime.mixin.TextureAtlasAccessor;
 import dev.prime.mixin.TextureAtlasSpriteAccessor;
@@ -426,7 +426,7 @@ public final class LabPbrTextureAtlas implements AutoCloseable {
                     emissionMaps,
                     heightMaps,
                     materialMaps);
-            PrimeClient.LOGGER.info(
+            PrimeInfo.LOGGER.info(
                     "Loaded LabPBR 1.3 material atlas: {} normal maps, {} specular maps, {} emissive maps, {} animated sprites",
                     normalSprites.size(), specularSprites.size(), emissionMaps.size(), animated.size());
             return new Resources(
@@ -459,12 +459,12 @@ public final class LabPbrTextureAtlas implements AutoCloseable {
         try (InputStream input = resource.orElseThrow().open()) {
             properties.load(input);
         } catch (IOException exception) {
-            PrimeClient.LOGGER.warn("Unable to read LabPBR format declaration", exception);
+            PrimeInfo.LOGGER.warn("Unable to read LabPBR format declaration", exception);
             return false;
         }
         String format = properties.getProperty("format", "").trim();
         if (!SUPPORTED_FORMAT.equalsIgnoreCase(format)) {
-            PrimeClient.LOGGER.warn(
+            PrimeInfo.LOGGER.warn(
                     "Ignoring unsupported material format '{}'; Prime currently requires {}",
                     format,
                     SUPPORTED_FORMAT);
@@ -542,7 +542,7 @@ public final class LabPbrTextureAtlas implements AutoCloseable {
                     baseImage.getWidth(),
                     baseImage.getHeight());
         } catch (IOException | RuntimeException exception) {
-            PrimeClient.LOGGER.warn("Unable to read LabPBR material {}", resourceId, exception);
+            PrimeInfo.LOGGER.warn("Unable to read LabPBR material {}", resourceId, exception);
             return null;
         }
     }

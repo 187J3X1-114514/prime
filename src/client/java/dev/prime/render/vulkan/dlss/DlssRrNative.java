@@ -1,6 +1,6 @@
 package dev.prime.render.vulkan.dlss;
 
-import dev.prime.PrimeClient;
+import dev.prime.infrastructure.PrimeInfo;
 import dev.prime.render.post.ReconstructionQualityMode;
 import dev.prime.render.vulkan.NativeRuntimeFiles;
 import dev.prime.render.vulkan.VulkanContext;
@@ -59,7 +59,7 @@ public final class DlssRrNative {
         this.featureDirectory = runtime.directory();
         this.applicationDataDirectory = createApplicationDataDirectory();
         this.engineVersion = FabricLoader.getInstance()
-                .getModContainer(PrimeClient.MOD_ID)
+                .getModContainer(PrimeInfo.MOD_ID)
                 .map(container -> container.getMetadata().getVersion().getFriendlyString())
                 .orElse("unknown");
         if (this.engineVersion.isBlank()) {

@@ -5,9 +5,7 @@ import com.mojang.blaze3d.vulkan.Destroyable;
 import com.mojang.blaze3d.vulkan.VulkanGpuSampler;
 import com.mojang.blaze3d.vulkan.VulkanGpuTexture;
 import com.mojang.blaze3d.vulkan.VulkanGpuTextureView;
-import dev.prime.PrimeClient;
-import dev.prime.config.PrimeConfig;
-import dev.prime.config.PrimeSettings;
+import dev.prime.infrastructure.PrimeInfo;
 import dev.prime.mixin.TextureAtlasAccessor;
 import dev.prime.render.terrain.TerrainScene;
 import dev.prime.render.terrain.TerrainStreamer;
@@ -105,8 +103,12 @@ public final class VulkanRenderer implements AutoCloseable {
         }
     }
 
-    public boolean beginFrame(Minecraft minecraft, SessionControls controls) {
+    public boolean beginFrame(
+            Minecraft minecraft,
+            SessionControls controls,
+            RendererSettings settings) {
         this.frameControls = java.util.Objects.requireNonNull(controls, "controls");
+        java.util.Objects.requireNonNull(settings, "settings");
         boolean screenshotRequested = controls.screenshotRequested();
         if (this.screenshotRequestRejected) {
             screenshotRequested = false;
@@ -115,9 +117,10 @@ public final class VulkanRenderer implements AutoCloseable {
         this.reloadPipelineIfRequested();
         this.synchronizeLabPbr(minecraft);
         this.terrain.setVoxelTextureSurfaces(
-                PrimeConfig.settings().voxelTextureSurfaces(),
-                PrimeConfig.settings().voxelTextureSurfaceStrengthSteps());
-        screenshotRequested = this.updateOfflineSession(minecraft, screenshotRequested);
+                settings.voxelTextureSurfaces(),
+                settings.voxelTextureSurfaceStrengthSteps());
+        screenshotRequested = this.updateOfflineSession(
+                minecraft, screenshotRequested, settings);
         if (this.screenshotActive()) {
             return screenshotRequested;
         }
@@ -180,7 +183,9 @@ public final class VulkanRenderer implements AutoCloseable {
             double x,
             double y,
             double z,
-            float sunAngleRadians) {
+            float sunAngleRadians,
+            RendererSettings settings) {
+        java.util.Objects.requireNonNull(settings, "settings");
         OfflineSession pending = this.pendingOfflineSession;
         if (pending != null) {
             pending.updateProjection(baseProjection);
@@ -189,7 +194,7 @@ public final class VulkanRenderer implements AutoCloseable {
         if (this.screenshotActive()) {
             if (this.offlineRenderer.updateProjection(baseProjection)) {
                 this.modeLifecycle = this.modeLifecycle.releaseOfflineSized();
-                PrimeClient.LOGGER.info(
+                PrimeInfo.LOGGER.info(
                         "Restarted Prime offline accumulation for a new aspect ratio");
             }
             return;
@@ -198,7 +203,7 @@ public final class VulkanRenderer implements AutoCloseable {
                 renderedProjection, baseProjection, viewRotation, x, y, z);
         this.astronomyState = AstronomyState.atSolarHourAngle(
                 sunAngleRadians,
-                PrimeConfig.settings().astronomy());
+                settings.astronomy());
     }
 
     public void captureDynamicScene(DynamicSceneFrame frame) {
@@ -240,7 +245,8 @@ public final class VulkanRenderer implements AutoCloseable {
         return this.debugLines;
     }
 
-    public void render(RenderTarget mainTarget) {
+    public void render(RenderTarget mainTarget, RendererSettings settings) {
+        java.util.Objects.requireNonNull(settings, "settings");
         BlockAtlasFrame atlas = this.blockAtlasFrame;
         if (atlas == null) {
             this.debugLines = List.of();
@@ -251,7 +257,7 @@ public final class VulkanRenderer implements AutoCloseable {
             boolean sessionValid = this.offlineRenderer.render(
                     new OfflineRenderer.RenderInput(
                             mainTarget,
-                            PrimeConfig.settings().display(),
+                            settings.display(),
                             this.atmosphere,
                             this.traceBackend.sunShadowPipeline(),
                             this.labPbrAtlas,
@@ -262,15 +268,18 @@ public final class VulkanRenderer implements AutoCloseable {
                 if (this.offlineRenderer.hasSizedResources()) {
                     this.modeLifecycle = this.modeLifecycle.allocateOfflineSized();
                 }
-                this.debugLines = this.withRendererDiagnostics(List.of());
+                this.debugLines = this.withRendererDiagnostics(List.of(), settings);
                 return;
             }
             this.cancelOfflineSession();
         }
-        this.renderRealtime(mainTarget, atlas);
+        this.renderRealtime(mainTarget, atlas, settings);
     }
 
-    private void renderRealtime(RenderTarget mainTarget, BlockAtlasFrame atlas) {
+    private void renderRealtime(
+            RenderTarget mainTarget,
+            BlockAtlasFrame atlas,
+            RendererSettings settings) {
         TerrainScene.ResidentSceneView scene = this.terrain.residentScene();
         FrameCamera frameCamera = this.camera;
         AstronomyState frameAstronomy = this.astronomyState;
@@ -284,7 +293,7 @@ public final class VulkanRenderer implements AutoCloseable {
                         scene,
                         frameCamera,
                         frameAstronomy,
-                        RealtimeRenderSettings.capture(PrimeConfig.settings()),
+                        RealtimeRenderSettings.capture(settings),
                         this.frameControls,
                         this.isCameraInWater(Minecraft.getInstance(), frameCamera),
                         this.atmosphere,
@@ -294,13 +303,15 @@ public final class VulkanRenderer implements AutoCloseable {
                         atlas.sampler(),
                         atlas.textureRevision(),
                         this.sceneTextures));
-        this.debugLines = this.withRendererDiagnostics(rendererDebugLines);
+        this.debugLines = this.withRendererDiagnostics(rendererDebugLines, settings);
         if (this.realtimeRenderer.hasSizedResources()) {
             this.modeLifecycle = this.modeLifecycle.allocateRealtimeSized();
         }
     }
 
-    private List<String> withRendererDiagnostics(List<String> rendererLines) {
+    private List<String> withRendererDiagnostics(
+            List<String> rendererLines,
+            RendererSettings settings) {
         if (!this.frameControls.rendererDiagnostics()) {
             return rendererLines;
         }
@@ -390,7 +401,7 @@ public final class VulkanRenderer implements AutoCloseable {
                     exposure.targetExposureEv(),
                     exposure.measuredLogBrightness()));
             float manualExposure =
-                    PrimeConfig.settings().display().finalExposureQuarterSteps() * 0.25F;
+                    settings.display().finalExposureQuarterSteps() * 0.25F;
             lines.add(String.format(
                     Locale.ROOT,
                     "Manual final exposure: %+.2f stops; combined display exposure: %+.2f stops",
@@ -449,7 +460,10 @@ public final class VulkanRenderer implements AutoCloseable {
         return bytes / (1024.0 * 1024.0);
     }
 
-    private boolean updateOfflineSession(Minecraft minecraft, boolean requested) {
+    private boolean updateOfflineSession(
+            Minecraft minecraft,
+            boolean requested,
+            RendererSettings settings) {
         OfflineSession current = this.offlineRenderer.session();
         OfflineSession tracked = current != null ? current : this.pendingOfflineSession;
         boolean worldChanged = tracked != null && !tracked.matchesWorld(minecraft.level);
@@ -482,7 +496,7 @@ public final class VulkanRenderer implements AutoCloseable {
                     .enterOffline();
             this.pendingOfflineSession = null;
             this.offlineRenderer.begin(pending);
-            PrimeClient.LOGGER.info(
+            PrimeInfo.LOGGER.info(
                     "Entered Prime screenshot mode at scene revision {}",
                     pending.scene().revision());
             return requested;
@@ -496,7 +510,6 @@ public final class VulkanRenderer implements AutoCloseable {
                 && this.terrain.residentScene() != null
                 && this.realtimeRenderer.hasSizedResources()
                 && this.blockAtlasFrame != null) {
-            PrimeSettings settings = PrimeConfig.settings();
             BlockAtlasFrame frozenAtlas = this.blockAtlasFrame;
             FrozenExposureState exposure = FrozenExposureState.capture(
                     this.context,
@@ -540,7 +553,7 @@ public final class VulkanRenderer implements AutoCloseable {
         // exit also covers animation-driven or external changes that do not expose a precise
         // block range, without invalidating the frozen screenshot while it is converging.
         this.terrain.invalidateAll();
-        PrimeClient.LOGGER.info("Left Prime screenshot mode; scheduled a full terrain resync");
+        PrimeInfo.LOGGER.info("Left Prime screenshot mode; scheduled a full terrain resync");
     }
 
     private void cancelOfflineSession() {
@@ -655,7 +668,7 @@ public final class VulkanRenderer implements AutoCloseable {
         } catch (RuntimeException exception) {
             ResourceCleanup.destroy(replacementSunShadow, exception);
             ResourceCleanup.destroy(replacementAtmosphere, exception);
-            PrimeClient.LOGGER.error("Prime shader reload failed; keeping the previous pipeline", exception);
+            PrimeInfo.LOGGER.error("Prime shader reload failed; keeping the previous pipeline", exception);
             return;
         }
         SunShadowPipeline previousSunShadow =
@@ -667,7 +680,7 @@ public final class VulkanRenderer implements AutoCloseable {
         retirementFailure = ResourceCleanup.run(
                 () -> this.context.defer(previousAtmosphere), retirementFailure);
         ResourceCleanup.throwIfFailed(retirementFailure);
-        PrimeClient.LOGGER.info(
+        PrimeInfo.LOGGER.info(
                 "Reloaded Prime {} ray tracing and atmosphere shaders",
                 offlineActive ? "offline" : "realtime");
     }

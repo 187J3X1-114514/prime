@@ -111,6 +111,7 @@ PrimeOfflineAreaRequest primePrepareOfflineArea(
     PrimeOfflineAreaRequest request = primeEmptyOfflineAreaRequest();
     AreaLightSample area = primeSampleAreaLight(
             surface.position,
+            primeAreaLightReceiverNormal(surface, viewDirection),
             primeSobolSample3D(
                     preparedSample,
                     PRIME_SAMPLE_EFFECT_DIRECT_AREA_LIGHT,
@@ -332,6 +333,9 @@ bool primeIntegrateOfflineSurface(
     // Reverse MIS depends on whether the competing light-sampling technique existed at this
     // vertex, not on whether this particular random Area sample produced a non-zero request.
     bool usedAreaNee = neeEligible;
+    path.previousLightNormal = usedAreaNee
+            ? primeAreaLightReceiverNormal(surface, viewDirection)
+            : 0u;
     if (areaRequest.valid && !deferArea) {
         PrimeShadowTrace shadow = primeTraceShadow(
                 surface.position,

@@ -75,7 +75,10 @@ PrimeOfflinePathRecord primeMakeOfflineRecord(
     record.areaDirectionAndDistance = vec4(request.direction, request.distance);
     record.areaContributionAndValid = vec4(
             request.contribution,
-            request.valid ? (request.startsInMedium ? 2.0 : 1.0) : 0.0);
+            uintBitsToFloat(primeOfflineAreaControl(
+                    path.previousLightNormal,
+                    request.valid,
+                    request.startsInMedium)));
     return record;
 }
 
@@ -139,7 +142,10 @@ void primeWavefrontStep(uint sourceQueue) {
 
     PrimeOfflinePathRecord record = primeOfflinePaths.records[pathIndex];
     uvec2 pixel = primeOfflinePixel(pathIndex);
-    PathState path = primeOfflinePath(pixel, record.transport);
+    PathState path = primeOfflinePath(
+            pixel,
+            record.transport,
+            primeOfflinePreviousLightNormal(record));
     float etaScale = primeOfflineEtaScale(record.transport);
     PrimeRcVolumeStack volumeStack = primeOfflineVolumeStack(record.transport);
     vec3 radiance = record.radianceAndPrimaryDistance.xyz;
@@ -176,13 +182,15 @@ void primeWavefrontStep(uint sourceQueue) {
 void primeWavefrontArea(uint sourceQueue) {
     uint pathIndex = primeOfflineQueuedPath(sourceQueue, gl_LaunchIDEXT.x);
     PrimeOfflinePathRecord record = primeOfflinePaths.records[pathIndex];
-    if (record.areaContributionAndValid.w != 0.0) {
+    uint areaControl = floatBitsToUint(record.areaContributionAndValid.w);
+    if ((areaControl & PRIME_OFFLINE_AREA_VALID) != 0u) {
         PrimeOfflineAreaRequest request;
         request.direction = record.areaDirectionAndDistance.xyz;
         request.distance = record.areaDirectionAndDistance.w;
         request.contribution = record.areaContributionAndValid.xyz;
         request.valid = true;
-        request.startsInMedium = record.areaContributionAndValid.w > 1.5;
+        request.startsInMedium =
+                (areaControl & PRIME_OFFLINE_AREA_STARTS_IN_MEDIUM) != 0u;
         PrimeShadowTrace shadow = primeTraceOfflineAreaShadow(
                 record.transport.physicalOriginAndPreviousBsdfPdf.xyz,
                 request);
@@ -203,7 +211,10 @@ void primeWavefrontTail(uint sourceQueue) {
     uint pathIndex = primeOfflineQueuedPath(sourceQueue, gl_LaunchIDEXT.x);
     PrimeOfflinePathRecord record = primeOfflinePaths.records[pathIndex];
     uvec2 pixel = primeOfflinePixel(pathIndex);
-    PathState path = primeOfflinePath(pixel, record.transport);
+    PathState path = primeOfflinePath(
+            pixel,
+            record.transport,
+            primeOfflinePreviousLightNormal(record));
     float etaScale = primeOfflineEtaScale(record.transport);
     PrimeRcVolumeStack volumeStack = primeOfflineVolumeStack(record.transport);
     vec3 radiance = record.radianceAndPrimaryDistance.xyz;

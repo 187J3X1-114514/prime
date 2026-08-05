@@ -399,6 +399,11 @@ void primeWavefrontStep(uint sourceQueue) {
     PrimeWavefrontTransportRecord record =
             primeLoadWavefrontTransportRecord(recordIndex);
     PathState path = primeWavefrontPath(pixel, record);
+    if (surface.emitterIndex != PRIME_NO_LIGHT_INDEX
+            && !primePreviousCannotUseMis(path)) {
+        path.previousLightNormal =
+                primeLoadWavefrontPreviousLightNormal(recordIndex);
+    }
     PrimeRcVolumeStack volumeStack = primeWavefrontVolumeStack(record);
     uint control = floatBitsToUint(record.rayDirectionAndDenoiserControl.w);
     IntegratorRecord integrator;
@@ -465,6 +470,9 @@ void primeWavefrontStep(uint sourceQueue) {
         primeStoreWavefrontTransportRecord(recordIndex, updatedRecord);
         if (continuation && guideEnabled && !hasGuide) {
             primeStoreWavefrontPsrState(recordIndex, psrState);
+        } else {
+            primeStoreWavefrontPreviousLightNormal(
+                    recordIndex, path.previousLightNormal);
         }
         primeStoreTransparentBranchActiveIntermediate(
                 pixel,
@@ -501,6 +509,8 @@ void primeWavefrontStep(uint sourceQueue) {
                         0u,
                         continuation);
         primeStoreWavefrontTransportRecord(recordIndex, updatedRecord);
+        primeStoreWavefrontPreviousLightNormal(
+                recordIndex, path.previousLightNormal);
         primeStoreWavefrontActiveIntermediate(
                 pixel, guideWasPending, result);
         queueContinuation = continuation;
@@ -562,6 +572,8 @@ void primeWavefrontTail(uint sourceQueue) {
     primeRestoreWavefrontDiagnostic(record);
 
     PathState path = primeWavefrontPath(pixel, record);
+    path.previousLightNormal =
+            primeLoadWavefrontPreviousLightNormal(recordIndex);
     PrimeRcVolumeStack volumeStack = primeWavefrontVolumeStack(record);
     uint control = floatBitsToUint(record.rayDirectionAndDenoiserControl.w);
     IntegratorRecord integrator;

@@ -299,12 +299,34 @@ void primeCheckWavefrontMedium(
     result.third = vec4(restored.albedo, restored.anisotropy);
 }
 
+float primeLegacyLightReceiverCosineBound(
+        vec3 boundsMin,
+        vec3 boundsMax,
+        vec3 point,
+        vec3 receiverNormal) {
+    if (!(dot(receiverNormal, receiverNormal) > 0.0)) return 1.0;
+    vec3 support = vec3(
+            receiverNormal.x >= 0.0 ? boundsMax.x : boundsMin.x,
+            receiverNormal.y >= 0.0 ? boundsMax.y : boundsMin.y,
+            receiverNormal.z >= 0.0 ? boundsMax.z : boundsMin.z);
+    float maximumProjection = dot(receiverNormal, support - point);
+    if (!(maximumProjection > 0.0)) return 1.0 / 256.0;
+    vec3 closest = clamp(point, boundsMin, boundsMax);
+    vec3 delta = point - closest;
+    float distanceSquared = dot(delta, delta);
+    float bound = distanceSquared > maximumProjection * maximumProjection
+            ? maximumProjection * inversesqrt(distanceSquared)
+            : 1.0;
+    return max(bound, 1.0 / 256.0);
+}
+
 float primeLegacyLightBranchProbability(
         vec4 firstBoundsMinPower,
         vec4 firstBoundsMaxSoftening,
         vec4 secondBoundsMinPower,
         vec4 secondBoundsMaxSoftening,
-        vec3 point) {
+        vec3 point,
+        vec3 receiverNormal) {
     vec3 firstClosest = clamp(
             point, firstBoundsMinPower.xyz, firstBoundsMaxSoftening.xyz);
     vec3 firstDelta = point - firstClosest;
@@ -321,12 +343,27 @@ float primeLegacyLightBranchProbability(
     if (powerScale == 0.0) return -1.0;
     float firstPowerRatio = firstPower / powerScale;
     float secondPowerRatio = secondPower / powerScale;
+    float firstImportance = primeLegacyLightReceiverCosineBound(
+            firstBoundsMinPower.xyz,
+            firstBoundsMaxSoftening.xyz,
+            point,
+            receiverNormal);
+    float secondImportance = primeLegacyLightReceiverCosineBound(
+            secondBoundsMinPower.xyz,
+            secondBoundsMaxSoftening.xyz,
+            point,
+            receiverNormal);
     float distanceScale = max(firstDistanceSquared, secondDistanceSquared);
     if (distanceScale == 0.0) {
-        return firstPowerRatio / (firstPowerRatio + secondPowerRatio);
+        float firstScore = firstPowerRatio * firstImportance;
+        float secondScore = secondPowerRatio * secondImportance;
+        float sum = firstScore + secondScore;
+        return sum > 0.0 ? firstScore / sum : -1.0;
     }
-    float firstScore = firstPowerRatio * (secondDistanceSquared / distanceScale);
-    float secondScore = secondPowerRatio * (firstDistanceSquared / distanceScale);
+    float firstScore = firstPowerRatio * firstImportance
+            * (secondDistanceSquared / distanceScale);
+    float secondScore = secondPowerRatio * secondImportance
+            * (firstDistanceSquared / distanceScale);
     float sum = firstScore + secondScore;
     return sum > 0.0 ? firstScore / sum : -1.0;
 }
@@ -337,31 +374,62 @@ void primeCheckLightBranch(
         vec4 firstBoundsMaxSoftening,
         vec4 secondBoundsMinPower,
         vec4 secondBoundsMaxSoftening,
-        vec3 point) {
-    vec2 firstMetrics = primeLightNodeMetrics(
-            firstBoundsMinPower, firstBoundsMaxSoftening, point);
-    vec2 secondMetrics = primeLightNodeMetrics(
-            secondBoundsMinPower, secondBoundsMaxSoftening, point);
+        vec3 point,
+        vec3 receiverNormal) {
+    vec3 firstMetrics = primeLightNodeMetrics(
+            firstBoundsMinPower,
+            firstBoundsMaxSoftening,
+            point,
+            receiverNormal);
+    vec3 secondMetrics = primeLightNodeMetrics(
+            secondBoundsMinPower,
+            secondBoundsMaxSoftening,
+            point,
+            receiverNormal);
     float probability = primeLightBranchProbability(firstMetrics, secondMetrics);
     float legacy = primeLegacyLightBranchProbability(
             firstBoundsMinPower,
             firstBoundsMaxSoftening,
             secondBoundsMinPower,
             secondBoundsMaxSoftening,
-            point);
+            point,
+            receiverNormal);
     float reverse = primeLightBranchProbability(secondMetrics, firstMetrics);
     primeTransportClassify(result.mask, vec3(probability, legacy, reverse));
     if (floatBitsToUint(probability) != floatBitsToUint(legacy)
             || probability < -1.0
             || probability > 1.0 + 2.0e-6
+            || (all(equal(receiverNormal, vec3(1.0, 0.0, 0.0)))
+                    && probability < 0.99)
             || (probability >= 0.0 && reverse >= 0.0
                     && !primeTestClose(
                             probability + reverse, 1.0, 2.0e-7, 2.0e-6))) {
         result.mask |= PRIME_TEST_FAILURE_IDENTITY;
     }
-    result.first = vec4(firstMetrics, secondMetrics);
+    result.first = vec4(firstMetrics, secondMetrics.x);
     result.second = vec4(probability, legacy, reverse, 0.0);
-    result.third = vec4(point, 0.0);
+    result.third = vec4(receiverNormal, 0.0);
+}
+
+void primeCheckLightReceiverNormal(
+        inout PrimeTransportResult result, vec3 receiverNormal) {
+    uint packed = primePackLightReceiverNormal(receiverNormal);
+    vec3 decoded = primeUnpackLightReceiverNormal(packed);
+    vec3 disabled = primeUnpackLightReceiverNormal(0u);
+    primeTransportClassify(result.mask, decoded);
+    if ((packed & PRIME_LIGHT_RECEIVER_NORMAL_ACTIVE) == 0u
+            || any(notEqual(disabled, vec3(0.0)))
+            || abs(dot(decoded, decoded) - 1.0) > 2.0e-6
+            || dot(receiverNormal, decoded) < 0.998) {
+        result.mask |= PRIME_TEST_FAILURE_STATE;
+    }
+    result.first = vec4(decoded, 0.0);
+    result.second = vec4(receiverNormal, 0.0);
+    result.third = vec4(
+            uintBitsToFloat(packed),
+            0.0,
+            0.0,
+            0.0);
 }
 
 void main() {
@@ -398,7 +466,14 @@ void main() {
     } else if (kind == 7u) {
         primeCheckWavefrontMedium(result, first, second);
     } else if (kind == 8u) {
-        primeCheckLightBranch(result, first, second, third, fourth, fifth.xyz);
+        primeCheckLightBranch(
+                result,
+                first,
+                second,
+                third,
+                fourth,
+                fifth.xyz,
+                uintBitsToFloat(control.yzw));
     } else if (kind == 9u) {
         primeCheckAreaHitMis(
                 result,
@@ -409,6 +484,8 @@ void main() {
     } else if (kind == 10u) {
         primeCheckOfflineRoulette(
                 result, first.xyz, first.w, second.x);
+    } else if (kind == 11u) {
+        primeCheckLightReceiverNormal(result, first.xyz);
     } else {
         result.mask |= PRIME_TEST_FAILURE_EVENT;
     }

@@ -190,6 +190,7 @@ final class ShaderAbiTest {
         assertEquals(0, ShaderAbi.PATH_STATE_PHYSICAL_ORIGIN_OFFSET);
         assertEquals(16, ShaderAbi.PATH_STATE_TRACE_ORIGIN_OFFSET);
         assertEquals(64, ShaderAbi.PATH_STATE_RR_DEPTH_OFFSET);
+        assertEquals(68, ShaderAbi.PATH_STATE_PREVIOUS_LIGHT_NORMAL_OFFSET);
         assertEquals(72, ShaderAbi.PATH_STATE_PIXEL_OFFSET);
         assertEquals(84, ShaderAbi.PATH_STATE_SAMPLE_EPOCH_OFFSET);
         assertEquals(0, ShaderAbi.TRACE_PAYLOAD_GEOMETRIC_NORMAL_OFFSET);

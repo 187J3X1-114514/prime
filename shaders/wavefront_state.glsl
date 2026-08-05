@@ -5,8 +5,9 @@
 
 // Two fixed slots belong to each realtime pixel so a primary transparent interface can enqueue
 // reflection and transmission as independent invocations. The execution-local type contains only
-// the six hot transport lanes; the storage record adds one cold queued-PSR lane. Primary area-light
-// moments are immutable pixel state and live once per pixel in the queue-buffer prefix.
+// the six hot transport lanes; the storage record adds one cold lane shared by queued PSR, deferred
+// Area data and the previous receiver normal. Primary area-light moments are immutable pixel state
+// and live once per pixel in the queue-buffer prefix.
 struct PrimeWavefrontTransportRecord {
     vec4 physicalOriginAndPreviousBsdfPdf;
     vec4 traceOriginAndPathControl;
@@ -98,6 +99,8 @@ const uint PRIME_WAVEFRONT_NUMERICAL_CONTEXT_SHIFT = 9u;
 const uint PRIME_WAVEFRONT_NUMERICAL_CONTEXT_MASK = 0x7fffu;
 const uint PRIME_WAVEFRONT_PSR_CONTROL_SHIFT = 18u;
 const uint PRIME_WAVEFRONT_PSR_CONTROL_MASK = 0x3fu;
+const uint PRIME_WAVEFRONT_LIGHT_NORMAL_SHIFT = 16u;
+const uint PRIME_WAVEFRONT_LIGHT_NORMAL_MASK = 0xffffu;
 
 uint primeWavefrontIndex(uvec2 pixel) {
     return pixel.y * primePush.outputExtent.x + pixel.x;
@@ -304,6 +307,28 @@ void primeSetWavefrontQueuedPsrState(
     record.psrPacked = primePackWavefrontPsrState(state);
 }
 
+uint primeLoadWavefrontPreviousLightNormal(uint pathIndex) {
+    return (primeWavefrontPaths.records[pathIndex].psrPacked.w
+            >> PRIME_WAVEFRONT_LIGHT_NORMAL_SHIFT)
+            & PRIME_WAVEFRONT_LIGHT_NORMAL_MASK;
+}
+
+void primeSetWavefrontPreviousLightNormal(
+        inout PrimeWavefrontPathRecord record, uint packedNormal) {
+    record.psrPacked.w = (record.psrPacked.w & PRIME_WAVEFRONT_LIGHT_NORMAL_MASK)
+            | ((packedNormal & PRIME_WAVEFRONT_LIGHT_NORMAL_MASK)
+                    << PRIME_WAVEFRONT_LIGHT_NORMAL_SHIFT);
+}
+
+void primeStoreWavefrontPreviousLightNormal(
+        uint pathIndex, uint packedNormal) {
+    uint packed = primeWavefrontPaths.records[pathIndex].psrPacked.w;
+    primeWavefrontPaths.records[pathIndex].psrPacked.w =
+            (packed & PRIME_WAVEFRONT_LIGHT_NORMAL_MASK)
+            | ((packedNormal & PRIME_WAVEFRONT_LIGHT_NORMAL_MASK)
+                    << PRIME_WAVEFRONT_LIGHT_NORMAL_SHIFT);
+}
+
 PrimeQueuedPsrState primeLoadWavefrontPsrState(
         uint pathIndex,
         PrimeWavefrontTransportRecord record) {
@@ -341,7 +366,11 @@ struct PrimeDeferredAreaLightRequest {
 };
 
 void primeClearDeferredAreaLightRequest(uint pathIndex) {
-    primeWavefrontPaths.records[pathIndex].psrPacked = uvec4(0u);
+    uint packedNormal = primeWavefrontPaths.records[pathIndex].psrPacked.w
+            & (PRIME_WAVEFRONT_LIGHT_NORMAL_MASK
+                    << PRIME_WAVEFRONT_LIGHT_NORMAL_SHIFT);
+    primeWavefrontPaths.records[pathIndex].psrPacked =
+            uvec4(0u, 0u, 0u, packedNormal);
 }
 
 void primeStoreDeferredAreaLightRequest(
@@ -352,11 +381,15 @@ void primeStoreDeferredAreaLightRequest(
     // A guide-pending delta path and a secondary Area request are mutually exclusive. Reusing the
     // cold PSR lane keeps the 96-byte realtime path ABI and memory footprint fixed.
     vec3 packedContribution = primeNrdSanitizeRadiance(contribution);
+    uint packedNormal = primeWavefrontPaths.records[pathIndex].psrPacked.w
+            & (PRIME_WAVEFRONT_LIGHT_NORMAL_MASK
+                    << PRIME_WAVEFRONT_LIGHT_NORMAL_SHIFT);
     primeWavefrontPaths.records[pathIndex].psrPacked = uvec4(
             primePackOctahedralNormal(direction),
             floatBitsToUint(distance),
             packHalf2x16(packedContribution.xy),
-            packHalf2x16(vec2(packedContribution.z, 0.0)));
+            packedNormal | (packHalf2x16(vec2(packedContribution.z, 0.0))
+                    & PRIME_WAVEFRONT_LIGHT_NORMAL_MASK));
 }
 
 PrimeDeferredAreaLightRequest primeLoadDeferredAreaLightRequest(
@@ -369,7 +402,8 @@ PrimeDeferredAreaLightRequest primeLoadDeferredAreaLightRequest(
     request.contribution = vec3(
             contribution01,
             unpackHalf2x16(packed.w).x);
-    request.valid = (packed.z != 0u || packed.w != 0u)
+    request.valid = (packed.z != 0u
+            || (packed.w & PRIME_WAVEFRONT_LIGHT_NORMAL_MASK) != 0u)
             && primeNrdIsFinite(request.distance)
             && request.distance > 0.0;
     return request;
@@ -475,6 +509,7 @@ PrimeWavefrontPathRecord primeMakeWavefrontRecord(
             primaryMaterialFlags,
             enabled);
     primeSetWavefrontQueuedPsrState(record, primeEmptyQueuedPsrState());
+    primeSetWavefrontPreviousLightNormal(record, path.previousLightNormal);
     return record;
 }
 
@@ -499,6 +534,7 @@ PathState primeWavefrontPath(
     path.previousBsdfPdf = record.physicalOriginAndPreviousBsdfPdf.w;
     path.rrDepth = (pathControl >> PRIME_WAVEFRONT_RR_DEPTH_SHIFT)
             & PRIME_WAVEFRONT_BYTE_MASK;
+    path.previousLightNormal = 0u;
     path.pixel = pixel;
     path.sampleIndex = primeSampleIndex();
     path.sampleEpoch = primeSampleEpoch();

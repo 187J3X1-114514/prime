@@ -269,6 +269,16 @@ vec3 primeSurfaceShadingNormal(SurfaceInteraction surface, vec3 viewDirection) {
             : -shadingNormal;
 }
 
+uint primeAreaLightReceiverNormal(
+        SurfaceInteraction surface, vec3 viewDirection) {
+    if (primeMaterialIsTransmissive(surface.materialFlags)
+            || primeMaterialIsFoliage(surface.materialFlags)) {
+        return 0u;
+    }
+    return primePackLightReceiverNormal(
+            primeSurfaceShadingNormal(surface, viewDirection));
+}
+
 float primeSurfaceOpacity(SurfaceInteraction surface) {
     return clamp(uintBitsToFloat(surface.opacity), 0.0, 1.0);
 }
@@ -498,9 +508,12 @@ PrimeDirectLightingSplit primeEstimatePrimaryDirectAreaLight(
         vec2 positionSample,
         PrimeRcVolumeStack volumeStack,
         bool conditionalTransparentBranch) {
-    AreaLightSample area = primeSampleAreaLight(
-            surface.position, treeSample, positionSample);
     vec3 shadingNormal = primeSurfaceShadingNormal(surface, viewDirection);
+    AreaLightSample area = primeSampleAreaLight(
+            surface.position,
+            primeAreaLightReceiverNormal(surface, viewDirection),
+            treeSample,
+            positionSample);
     if (!primeDirectSampleEligible(surface, shadingNormal, area.light)) {
         PrimeDirectLightingSplit result;
         result.diffuse = vec3(0.0);
@@ -535,9 +548,12 @@ vec3 primeEstimateDirectAreaLight(
         vec3 treeSample,
         vec2 positionSample,
         PrimeRcVolumeStack volumeStack) {
-    AreaLightSample area = primeSampleAreaLight(
-            surface.position, treeSample, positionSample);
     vec3 shadingNormal = primeSurfaceShadingNormal(surface, viewDirection);
+    AreaLightSample area = primeSampleAreaLight(
+            surface.position,
+            primeAreaLightReceiverNormal(surface, viewDirection),
+            treeSample,
+            positionSample);
     if (!primeDirectSampleEligible(surface, shadingNormal, area.light)) {
         return vec3(0.0);
     }
@@ -568,9 +584,12 @@ void primePrepareDeferredDirectAreaLight(
         PrimeRcVolumeStack volumeStack,
         vec3 pathThroughput,
         uint pathIndex) {
-    AreaLightSample area = primeSampleAreaLight(
-            surface.position, treeSample, positionSample);
     vec3 shadingNormal = primeSurfaceShadingNormal(surface, viewDirection);
+    AreaLightSample area = primeSampleAreaLight(
+            surface.position,
+            primeAreaLightReceiverNormal(surface, viewDirection),
+            treeSample,
+            positionSample);
     if (!primeDirectSampleEligible(surface, shadingNormal, area.light)) {
         return;
     }
@@ -763,6 +782,7 @@ vec3 primeEvaluateHitEmission(
             surface,
             path.physicalOrigin,
             path.rayDirection,
+            path.previousLightNormal,
             evaluateAreaPdf);
     float hitAreaWeight = primeAreaHitMisWeightValue(
             previousUsedAreaNee,
@@ -957,12 +977,16 @@ bool primeAdvancePath(
     if (all(equal(nextThroughput, vec3(0.0)))) {
         return false;
     }
+    uint previousLightNormal = pureDeltaInterface
+            ? 0u
+            : primeAreaLightReceiverNormal(surface, -path.rayDirection);
     path.throughput = nextThroughput;
     path.physicalOrigin = surface.position;
     path.traceOrigin = primeOffsetRayOrigin(
             path.physicalOrigin, surface.geometricNormal, bsdf.direction);
     path.rayDirection = bsdf.direction;
     path.previousBsdfPdf = bsdf.pdf;
+    path.previousLightNormal = previousLightNormal;
     path.flags = (bsdf.eventFlags & PRIME_BSDF_EVENT_DELTA) != 0u
             ? PRIME_PATH_PREVIOUS_DELTA
             : 0u;

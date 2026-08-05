@@ -13,7 +13,8 @@ struct PrimeOfflineTransportRecord {
 };
 
 // 80 bytes of transport and two-entry medium state, 32 bytes of beauty/primary metadata, and
-// one full-f32 32-byte deferred Area request. The record is exactly 144-byte std430 ABI.
+// one 32-byte deferred Area request whose control lane also retains the previous receiver normal.
+// The record is exactly 144-byte std430 ABI.
 struct PrimeOfflinePathRecord {
     PrimeOfflineTransportRecord transport;
     vec4 radianceAndPrimaryDistance;
@@ -45,6 +46,29 @@ const uint PRIME_OFFLINE_PATH_RR_DEPTH_SHIFT = 8u;
 const uint PRIME_OFFLINE_PATH_FLAGS_SHIFT = 16u;
 const uint PRIME_OFFLINE_PATH_BYTE_MASK = 0xffu;
 const uint PRIME_OFFLINE_PATH_FLAGS_MASK = 0x3u;
+const uint PRIME_OFFLINE_AREA_VALID = 1u;
+const uint PRIME_OFFLINE_AREA_STARTS_IN_MEDIUM = 2u;
+const uint PRIME_OFFLINE_LIGHT_NORMAL_SHIFT = 16u;
+const uint PRIME_OFFLINE_LIGHT_NORMAL_MASK = 0xffffu;
+
+uint primeOfflineAreaControl(
+        uint packedNormal, bool valid, bool startsInMedium) {
+    uint control = (packedNormal & PRIME_OFFLINE_LIGHT_NORMAL_MASK)
+            << PRIME_OFFLINE_LIGHT_NORMAL_SHIFT;
+    if (valid) {
+        control |= PRIME_OFFLINE_AREA_VALID;
+        if (startsInMedium) {
+            control |= PRIME_OFFLINE_AREA_STARTS_IN_MEDIUM;
+        }
+    }
+    return control;
+}
+
+uint primeOfflinePreviousLightNormal(PrimeOfflinePathRecord record) {
+    return (floatBitsToUint(record.areaContributionAndValid.w)
+            >> PRIME_OFFLINE_LIGHT_NORMAL_SHIFT)
+            & PRIME_OFFLINE_LIGHT_NORMAL_MASK;
+}
 
 uint primeOfflinePixelCount() {
     return primePush.outputExtent.x * primePush.outputExtent.y;
@@ -148,7 +172,10 @@ PrimeOfflineTransportRecord primeMakeOfflineTransport(
     return record;
 }
 
-PathState primeOfflinePath(uvec2 pixel, PrimeOfflineTransportRecord record) {
+PathState primeOfflinePath(
+        uvec2 pixel,
+        PrimeOfflineTransportRecord record,
+        uint previousLightNormal) {
     PathState path;
     uint pathControl = floatBitsToUint(record.traceOriginAndPathControl.w);
     path.physicalOrigin = record.physicalOriginAndPreviousBsdfPdf.xyz;
@@ -163,6 +190,7 @@ PathState primeOfflinePath(uvec2 pixel, PrimeOfflineTransportRecord record) {
     path.previousBsdfPdf = record.physicalOriginAndPreviousBsdfPdf.w;
     path.rrDepth = (pathControl >> PRIME_OFFLINE_PATH_RR_DEPTH_SHIFT)
             & PRIME_OFFLINE_PATH_BYTE_MASK;
+    path.previousLightNormal = previousLightNormal;
     path.pixel = pixel;
     path.sampleIndex = primeSampleIndex();
     path.sampleEpoch = primeSampleEpoch();
@@ -192,7 +220,11 @@ bool primeOfflineIsActive(PrimeOfflinePathRecord record) {
 
 void primeClearOfflineAreaRequest(inout PrimeOfflinePathRecord record) {
     record.areaDirectionAndDistance = vec4(0.0);
-    record.areaContributionAndValid = vec4(0.0);
+    uint packedNormal = floatBitsToUint(record.areaContributionAndValid.w)
+            & (PRIME_OFFLINE_LIGHT_NORMAL_MASK
+                    << PRIME_OFFLINE_LIGHT_NORMAL_SHIFT);
+    record.areaContributionAndValid = vec4(
+            0.0, 0.0, 0.0, uintBitsToFloat(packedNormal));
 }
 
 #endif

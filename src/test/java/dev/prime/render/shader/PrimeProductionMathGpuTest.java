@@ -56,7 +56,7 @@ final class PrimeProductionMathGpuTest {
 
     @Test
     void integratorAndLightTransportMathKeepsItsNumericalContracts() throws IOException {
-        int kinds = 11;
+        int kinds = 12;
         int inputWords = 6;
         ShaderPropertyBatch.assertProperties(
                 runner,
@@ -384,6 +384,23 @@ final class PrimeProductionMathGpuTest {
                             0.0F,
                             0.0F,
                             0.0F);
+                } else if (kind == 11) {
+                    float[] normal = local == 0
+                            ? new float[] {1.0F, 0.0F, 0.0F}
+                            : local == 1
+                                    ? new float[] {0.0F, 1.0F, 0.0F}
+                                    : local == 2
+                                            ? new float[] {0.0F, 0.0F, -1.0F}
+                                            : randomUnitVector(random);
+                    putVec4(
+                            input,
+                            index,
+                            words,
+                            1,
+                            normal[0],
+                            normal[1],
+                            normal[2],
+                            0.0F);
                 } else {
                     putVec4(
                             input,
@@ -441,7 +458,24 @@ final class PrimeProductionMathGpuTest {
             firstPower = Float.MAX_VALUE;
             secondPower = Float.MIN_NORMAL;
             pointX = pointY = pointZ = 65_536.0F;
+        } else if (local == 6) {
+            firstPower = secondPower = 1.0F;
+            firstSoftening = secondSoftening = 0.0F;
+            firstX = 4.0F;
+            firstY = firstZ = -0.5F;
+            secondX = -5.0F;
+            secondY = secondZ = -0.5F;
+            firstExtent = secondExtent = 1.0F;
+            pointX = pointY = pointZ = 0.0F;
         }
+        float[] receiverNormal = local == 5
+                ? new float[] {0.0F, 0.0F, 0.0F}
+                : local == 6
+                        ? new float[] {1.0F, 0.0F, 0.0F}
+                        : randomUnitVector(random);
+        putFloat(input, index, words, 0, 1, receiverNormal[0]);
+        putFloat(input, index, words, 0, 2, receiverNormal[1]);
+        putFloat(input, index, words, 0, 3, receiverNormal[2]);
         putVec4(
                 input,
                 index,

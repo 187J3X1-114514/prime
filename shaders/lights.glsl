@@ -161,11 +161,13 @@ AreaLightSample primeInvalidAreaLightSample() {
     return result;
 }
 
-vec2 primeLoadLightNodeMetrics(LightNodeBuffer nodes, uint index, vec3 point) {
-    // Returning two scalars keeps a complete 32-byte node out of the traversal loop state.
+vec3 primeLoadLightNodeMetrics(
+        LightNodeBuffer nodes, uint index, vec3 point, vec3 receiverNormal) {
+    // Returning three scalars keeps a complete 32-byte node out of the traversal loop state.
     vec4 boundsMinPower = nodes.nodes[index].boundsMinPower;
     vec4 boundsMaxSoftening = nodes.nodes[index].boundsMaxSoftening;
-    return primeLightNodeMetrics(boundsMinPower, boundsMaxSoftening, point);
+    return primeLightNodeMetrics(
+            boundsMinPower, boundsMaxSoftening, point, receiverNormal);
 }
 
 LightTreePick primePickLightTree(
@@ -173,6 +175,7 @@ LightTreePick primePickLightTree(
         LightNodeForwardBuffer forwardNodes,
         uint root,
         vec3 point,
+        vec3 receiverNormal,
         float seed) {
     // Bounds/power and forward metadata are the only hot streams. Parent information is kept in
     // the reverse-only stream, so ordinary light sampling cannot pull reverse-MIS metadata into
@@ -200,8 +203,10 @@ LightTreePick primePickLightTree(
         // CPU linearization guarantees that these mandatory sibling records are consecutive.
         uint leftIndex = childOrLeaf;
         uint rightIndex = leftIndex + 1u;
-        vec2 leftMetrics = primeLoadLightNodeMetrics(nodes, leftIndex, point);
-        vec2 rightMetrics = primeLoadLightNodeMetrics(nodes, rightIndex, point);
+        vec3 leftMetrics = primeLoadLightNodeMetrics(
+                nodes, leftIndex, point, receiverNormal);
+        vec3 rightMetrics = primeLoadLightNodeMetrics(
+                nodes, rightIndex, point, receiverNormal);
         float leftProbability = primeLightBranchProbability(leftMetrics, rightMetrics);
         if (!(leftProbability >= 0.0)) {
             return primeInvalidLightTreePick();
@@ -230,7 +235,8 @@ float primeLightTreeSelectionPdf(
         uint root,
         uint leafNode,
         uint expectedLeaf,
-        vec3 point) {
+        vec3 point,
+        vec3 receiverNormal) {
     if (leafNode == PRIME_NO_LIGHT_INDEX) {
         return 0.0;
     }
@@ -238,7 +244,8 @@ float primeLightTreeSelectionPdf(
     float pdf = 1.0;
     [[dont_unroll]]
     for (uint depth = 0u; depth < PRIME_LIGHT_TREE_MAX_DEPTH; ++depth) {
-        vec2 nodeMetrics = primeLoadLightNodeMetrics(nodes, nodeIndex, point);
+        vec3 nodeMetrics = primeLoadLightNodeMetrics(
+                nodes, nodeIndex, point, receiverNormal);
         if (!(nodeMetrics.y > 0.0)) {
             return 0.0;
         }
@@ -259,7 +266,8 @@ float primeLightTreeSelectionPdf(
         // Root is node zero. Every other node was allocated as one member of an odd/even sibling
         // pair, making the exact sibling index implicit and removing it from the reverse stream.
         uint siblingIndex = (nodeIndex & 1u) != 0u ? nodeIndex + 1u : nodeIndex - 1u;
-        vec2 siblingMetrics = primeLoadLightNodeMetrics(nodes, siblingIndex, point);
+        vec3 siblingMetrics = primeLoadLightNodeMetrics(
+                nodes, siblingIndex, point, receiverNormal);
         float branchProbability = primeLightBranchProbability(nodeMetrics, siblingMetrics);
         if (!(branchProbability >= 0.0)) {
             return 0.0;
@@ -348,8 +356,10 @@ float primeAreaSolidAnglePdf(
 
 AreaLightSample primeSampleAreaLight(
         vec3 surfacePosition,
+        uint packedReceiverNormal,
         vec3 treeSample,
         vec2 positionSample) {
+    vec3 receiverNormal = primeUnpackLightReceiverNormal(packedReceiverNormal);
     SectionTable sections = SectionTable(primePush.sectionTableAddress);
     uint64_t worldNodeAddress = sections.sections[0].worldLightAddress;
     uint64_t worldForwardAddress = sections.sections[0].worldLightForwardAddress;
@@ -362,7 +372,12 @@ AreaLightSample primeSampleAreaLight(
     LightNodeBuffer worldNodes = LightNodeBuffer(worldNodeAddress);
     LightNodeForwardBuffer worldForwardNodes = LightNodeForwardBuffer(worldForwardAddress);
     LightTreePick worldPick = primePickLightTree(
-            worldNodes, worldForwardNodes, 0u, surfacePosition, treeSample.x);
+            worldNodes,
+            worldForwardNodes,
+            0u,
+            surfacePosition,
+            receiverNormal,
+            treeSample.x);
     if (worldPick.valid == 0u) {
         return primeInvalidAreaLightSample();
     }
@@ -380,7 +395,12 @@ AreaLightSample primeSampleAreaLight(
     vec3 sectionTranslation = sections.sections[worldPick.leaf].translation;
     vec3 localSurfacePosition = surfacePosition - sectionTranslation;
     LightTreePick sectionPick = primePickLightTree(
-            sectionNodes, sectionForwardNodes, sectionRoot, localSurfacePosition, treeSample.y);
+            sectionNodes,
+            sectionForwardNodes,
+            sectionRoot,
+            localSurfacePosition,
+            receiverNormal,
+            treeSample.y);
     if (sectionPick.valid == 0u || sectionPick.leaf >= emitterCount) {
         return primeInvalidAreaLightSample();
     }
@@ -485,6 +505,7 @@ LightEvaluation primeEvaluateAreaLight(
         SurfaceInteraction surface,
         vec3 rayOrigin,
         vec3 rayDirection,
+        uint packedReceiverNormal,
         bool evaluatePdf) {
     LightEvaluation result;
     result.radiance = vec3(0.0);
@@ -532,6 +553,7 @@ LightEvaluation primeEvaluateAreaLight(
     if (!evaluatePdf) {
         return result;
     }
+    vec3 receiverNormal = primeUnpackLightReceiverNormal(packedReceiverNormal);
 
     uint64_t worldNodeAddress = sections.sections[surface.sectionIndex].worldLightAddress;
     uint64_t worldForwardAddress =
@@ -568,7 +590,8 @@ LightEvaluation primeEvaluateAreaLight(
                 0u,
                 worldLeafNode,
                 surface.sectionIndex,
-                rayOrigin);
+                rayOrigin,
+                receiverNormal);
     }
     float sectionPdf;
     {
@@ -584,7 +607,8 @@ LightEvaluation primeEvaluateAreaLight(
                 sectionBuffer.header.root,
                 emitters.emitters[surface.emitterIndex].metadata.y,
                 surface.emitterIndex,
-                rayOrigin - sectionTranslation);
+                rayOrigin - sectionTranslation,
+                receiverNormal);
     }
     if (!(worldPdf > 0.0) || !(sectionPdf > 0.0)) {
         return result;

@@ -1,7 +1,7 @@
 package dev.prime.render.terrain;
 
+import dev.prime.render.scene.CapturedSprite;
 import java.util.Arrays;
-import net.minecraft.client.renderer.texture.TextureAtlasSprite;
 
 /**
  * One exact axis-aligned unit face retained until the enclosing 64-block cluster is assembled.
@@ -23,7 +23,7 @@ public final class MergeFace {
     private final int planeCell;
     private final int cellU;
     private final int cellV;
-    private final TextureAtlasSprite sprite;
+    private final CapturedSprite sprite;
     private final int[] primitive;
     private final float uv0U;
     private final float uv0V;
@@ -44,7 +44,7 @@ public final class MergeFace {
             int planeCell,
             int cellU,
             int cellV,
-            TextureAtlasSprite sprite,
+            CapturedSprite sprite,
             int[] primitive,
             float uv0U,
             float uv0V,
@@ -209,8 +209,8 @@ public final class MergeFace {
         }
         flags = PrimitivePacking.withLabPbr(
                 flags,
-                labPbrMaterials.hasNormal(surface.sprite().contents().name()),
-                labPbrMaterials.hasSpecular(surface.sprite().contents().name()),
+                labPbrMaterials.hasNormal(surface.sprite().id()),
+                labPbrMaterials.hasSpecular(surface.sprite().id()),
                 (packedTangent & 0x1_0000_0000L) != 0L);
         int density = PrimitivePacking.packUvDensity(
                 edgeUX,
@@ -254,8 +254,8 @@ public final class MergeFace {
                 surface.transmissive(),
                 surface.rasterOverlay(),
                 buildOpacityMicromap,
-                labPbrMaterials.heightMap(surface.sprite().contents().name()),
-                labPbrMaterials.materialMap(surface.sprite().contents().name()));
+                labPbrMaterials.heightMap(surface.sprite().id()),
+                labPbrMaterials.materialMap(surface.sprite().id()));
     }
 
     static MergeFace tryComposite(MergeFace base, MergeFace overlay) {
@@ -291,8 +291,8 @@ public final class MergeFace {
                                         | PrimitivePacking.FLAG_FRONT_FACE_ONLY
                                         | PrimitivePacking.FLAG_RASTER_COMPOSITE))
                         != 0)
-                || base.sprite.contents().isAnimated()
-                || overlay.sprite.contents().isAnimated()) {
+                || base.sprite.animated()
+                || overlay.sprite.animated()) {
             return null;
         }
 
@@ -305,15 +305,15 @@ public final class MergeFace {
             return null;
         }
         int atlasWidth = commonAtlasExtent(
-                base.sprite.contents().width(),
-                base.sprite.getU1() - base.sprite.getU0(),
-                overlay.sprite.contents().width(),
-                overlay.sprite.getU1() - overlay.sprite.getU0());
+                base.sprite.frameWidth(),
+                base.sprite.u1() - base.sprite.u0(),
+                overlay.sprite.frameWidth(),
+                overlay.sprite.u1() - overlay.sprite.u0());
         int atlasHeight = commonAtlasExtent(
-                base.sprite.contents().height(),
-                base.sprite.getV1() - base.sprite.getV0(),
-                overlay.sprite.contents().height(),
-                overlay.sprite.getV1() - overlay.sprite.getV0());
+                base.sprite.frameHeight(),
+                base.sprite.v1() - base.sprite.v0(),
+                overlay.sprite.frameHeight(),
+                overlay.sprite.v1() - overlay.sprite.v0());
         int pixelOffsetU = exactPixelOffset(deltaU, atlasWidth);
         int pixelOffsetV = exactPixelOffset(deltaV, atlasHeight);
         if (pixelOffsetU < Short.MIN_VALUE
@@ -407,7 +407,7 @@ public final class MergeFace {
         return this.cellV;
     }
 
-    TextureAtlasSprite sprite() {
+    CapturedSprite sprite() {
         return this.sprite;
     }
 
@@ -471,8 +471,7 @@ public final class MergeFace {
     }
 
     boolean sameMaterial(MergeFace other) {
-        return this.sprite.contents().name().equals(
-                        other.sprite.contents().name())
+        return this.sprite.equals(other.sprite)
                 && this.cutout == other.cutout
                 && this.transmissive == other.transmissive
                 && this.buildOpacityMicromap == other.buildOpacityMicromap
@@ -486,7 +485,7 @@ public final class MergeFace {
     }
 
     int materialHash() {
-        int hash = this.sprite.contents().name().hashCode();
+        int hash = this.sprite.hashCode();
         hash = 31 * hash + Boolean.hashCode(this.cutout);
         hash = 31 * hash + Boolean.hashCode(this.transmissive);
         hash = 31 * hash + Boolean.hashCode(this.buildOpacityMicromap);

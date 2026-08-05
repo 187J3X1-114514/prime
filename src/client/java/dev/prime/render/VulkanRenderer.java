@@ -6,7 +6,6 @@ import com.mojang.blaze3d.vulkan.VulkanGpuSampler;
 import com.mojang.blaze3d.vulkan.VulkanGpuTexture;
 import com.mojang.blaze3d.vulkan.VulkanGpuTextureView;
 import dev.prime.infrastructure.PrimeInfo;
-import dev.prime.mixin.TextureAtlasAccessor;
 import dev.prime.render.terrain.TerrainScene;
 import dev.prime.render.terrain.TerrainStreamer;
 import dev.prime.render.replay.RenderReplayVerification;
@@ -147,9 +146,7 @@ public final class VulkanRenderer implements AutoCloseable {
         // Atlas objects exist before their GPU texture is uploaded. getTextureView() deliberately
         // throws during that short interval, which is normal startup state rather than a renderer
         // failure. The stitch map becomes non-empty in the same upload that creates the view.
-        if (((TextureAtlasAccessor) (Object) atlas)
-                .prime$texturesByName()
-                .isEmpty()) {
+        if (!LabPbrTextureAtlas.hasStitchedSprites(atlas)) {
             this.blockAtlasFrame = null;
             return;
         }

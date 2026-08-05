@@ -29,7 +29,8 @@ public final class VanillaSceneInterpreter implements AutoCloseable {
     public VanillaSceneInterpreter() {
     }
 
-    public CapturedSectionGeometry compileSection(VanillaSectionCompileInput input) {
+    public CapturedSectionGeometry compileSection(
+            VanillaSectionCompileInput input, VanillaSpriteResolver spriteResolver) {
         if (this.closed) {
             throw new IllegalStateException("Vanilla scene interpreter is closed");
         }
@@ -38,7 +39,7 @@ public final class VanillaSceneInterpreter implements AutoCloseable {
             buffers = new SectionBufferBuilderPack();
         }
         try {
-            return VanillaSectionMesher.compile(input, buffers);
+            return VanillaSectionMesher.compile(input, buffers, spriteResolver);
         } finally {
             if (this.closed) {
                 buffers.close();

@@ -1,9 +1,9 @@
 package dev.prime.render.terrain;
 
+import dev.prime.render.scene.CapturedSprite;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Objects;
-import net.minecraft.client.renderer.texture.TextureAtlasSprite;
 
 /**
  * Invocation-local lowering stage used by the cluster scene translator.
@@ -232,8 +232,8 @@ public final class SectionMeshAccumulator {
         }
         flags = PrimitivePacking.withLabPbr(
                 flags,
-                this.labPbrMaterials.hasNormal(surface.sprite().contents().name()),
-                this.labPbrMaterials.hasSpecular(surface.sprite().contents().name()),
+                this.labPbrMaterials.hasNormal(surface.sprite().id()),
+                this.labPbrMaterials.hasSpecular(surface.sprite().id()),
                 (packedTangent & 0x1_0000_0000L) != 0L);
         packedTint = PrimitivePacking.packTintFlags(packedTint, flags);
         int encodedEmitterIndex = this.lights.addTriangle(
@@ -257,7 +257,7 @@ public final class SectionMeshAccumulator {
                 surface.cutout(),
                 surface.lightEmission(),
                 surface.sprite(),
-                this.labPbrMaterials.emissionMap(surface.sprite().contents().name()));
+                this.labPbrMaterials.emissionMap(surface.sprite().id()));
         destination.primitives.add(packedTint);
         destination.primitives.add(packedNormal);
         destination.primitives.add(PrimitivePacking.packFlagsEmitter(
@@ -317,7 +317,7 @@ public final class SectionMeshAccumulator {
         private boolean rasterOverlay;
         private boolean frontFaceOnly;
         private int lightEmission;
-        private TextureAtlasSprite sprite;
+        private CapturedSprite sprite;
 
         public Surface set(
                 int tint,
@@ -329,7 +329,7 @@ public final class SectionMeshAccumulator {
                 boolean foliage,
                 boolean mergeable,
                 int lightEmission,
-                TextureAtlasSprite sprite) {
+                CapturedSprite sprite) {
             return this.set(
                     tint,
                     cutout,
@@ -356,7 +356,7 @@ public final class SectionMeshAccumulator {
                 boolean mergeable,
                 boolean rasterOverlay,
                 int lightEmission,
-                TextureAtlasSprite sprite) {
+                CapturedSprite sprite) {
             return this.set(
                     tint,
                     cutout,
@@ -384,7 +384,7 @@ public final class SectionMeshAccumulator {
                 boolean rasterOverlay,
                 boolean frontFaceOnly,
                 int lightEmission,
-                TextureAtlasSprite sprite) {
+                CapturedSprite sprite) {
             this.tint = tint;
             this.cutout = cutout;
             this.animated = animated;
@@ -448,7 +448,7 @@ public final class SectionMeshAccumulator {
             return this.lightEmission;
         }
 
-        TextureAtlasSprite sprite() {
+        CapturedSprite sprite() {
             return this.sprite;
         }
     }

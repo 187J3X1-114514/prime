@@ -74,7 +74,9 @@ final class SectionClusterMeshBuilderTest {
     @Test
     void mergesCompatibleFacesAcrossSectionBoundaries() {
         try (SectionMeshAccumulatorTest.TestSprite sprite =
-                new SectionMeshAccumulatorTest.TestSprite()) {
+                        new SectionMeshAccumulatorTest.TestSprite();
+                SectionMeshAccumulatorTest.TestSprite equivalentSprite =
+                        new SectionMeshAccumulatorTest.TestSprite()) {
             SectionMeshAccumulator left = new SectionMeshAccumulator(
                     LabPbrMaterialSet.EMPTY, false);
             left.addQuad(
@@ -84,7 +86,7 @@ final class SectionClusterMeshBuilderTest {
                     LabPbrMaterialSet.EMPTY, false);
             right.addQuad(
                     SectionMeshAccumulatorTest.horizontalQuad(0.0F, 2.0F, 3.0F, 1.0F),
-                    SectionMeshAccumulatorTest.opaqueSurface(sprite));
+                    SectionMeshAccumulatorTest.opaqueSurface(equivalentSprite));
 
             SectionClusterMeshBuilder builder = new SectionClusterMeshBuilder(0, 0, 0);
             builder.add(0, 0, 0, left.build());
@@ -210,7 +212,7 @@ final class SectionClusterMeshBuilderTest {
                             false,
                             true,
                             0,
-                            sprite));
+                            sprite.sprite()));
             SectionMeshAccumulator.Quad rotated =
                     SectionMeshAccumulatorTest.horizontalQuad(2.0F, 0.0F, 2.0F, 1.0F);
             for (int vertex = 0; vertex < 4; vertex++) {

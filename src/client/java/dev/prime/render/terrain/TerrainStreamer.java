@@ -4,6 +4,7 @@ import dev.prime.infrastructure.PrimeInfo;
 import dev.prime.client.ViewDistanceLimits;
 import dev.prime.render.ResourceCleanup;
 import dev.prime.render.scene.CapturedSectionGeometry;
+import dev.prime.render.scene.vanilla.VanillaSpriteResolver;
 import dev.prime.render.scene.vanilla.VanillaAssetSnapshot;
 import dev.prime.render.scene.vanilla.VanillaGeometryPolicy;
 import dev.prime.render.scene.vanilla.VanillaSceneInterpreter;
@@ -544,6 +545,7 @@ public final class TerrainStreamer implements AutoCloseable {
                         workerResult = WorkerCancelled.INSTANCE;
                     } else {
                         try (workerLease) {
+                            VanillaSpriteResolver spriteResolver = new VanillaSpriteResolver();
                             CapturedCluster.Builder captured = new CapturedCluster.Builder(
                                     clusterX, clusterY, clusterZ);
                             for (VanillaSectionSnapshot snapshot : snapshots) {
@@ -551,7 +553,8 @@ public final class TerrainStreamer implements AutoCloseable {
                                         TerrainStreamer.this.sceneInterpreter.compileSection(
                                                 new VanillaSectionCompileInput(
                                                         snapshot,
-                                                        assetSnapshot));
+                                                        assetSnapshot),
+                                                spriteResolver);
                                 captured.add(
                                         snapshot.sectionX(),
                                         snapshot.sectionY(),

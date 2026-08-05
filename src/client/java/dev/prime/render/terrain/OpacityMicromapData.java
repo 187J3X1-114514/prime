@@ -1,15 +1,11 @@
 package dev.prime.render.terrain;
 
-import com.mojang.blaze3d.platform.NativeImage;
-import dev.prime.mixin.SpriteContentsAccessor;
-import it.unimi.dsi.fastutil.ints.IntList;
+import dev.prime.render.scene.CapturedSprite;
+import dev.prime.render.scene.SpritePixelView;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
-import java.util.IdentityHashMap;
 import java.util.Map;
-import net.minecraft.client.renderer.texture.SpriteContents;
-import net.minecraft.client.renderer.texture.TextureAtlasSprite;
 import org.lwjgl.vulkan.EXTOpacityMicromap;
 
 /**
@@ -217,13 +213,12 @@ public final class OpacityMicromapData {
         private final Map<BakeKey, Integer> bakedTriangles = new HashMap<>();
         private final Map<ConstantBakeKey, Integer> bakedConstantTriangles = new HashMap<>();
         private final Map<RepeatedBakeKey, Integer> bakedRepeatedTriangles = new HashMap<>();
-        private final Map<TextureAtlasSprite, SpriteAlphaFrames> alphaFrames =
-                new IdentityHashMap<>();
+        private final Map<CapturedSprite, SpriteAlphaFrames> alphaFrames = new HashMap<>();
         private int[] triangleIndices = new int[32];
         private int triangleCount;
 
         public void addTriangle(
-                TextureAtlasSprite sprite,
+                CapturedSprite sprite,
                 int packedUv0,
                 int packedUv1,
                 int packedUv2) {
@@ -233,28 +228,22 @@ public final class OpacityMicromapData {
                 this.addIndex(cached);
                 return;
             }
-            int index;
-            BakedBlock block;
-            try {
-                SpriteAlphaFrames frames =
-                        this.alphaFrames.computeIfAbsent(sprite, SpriteAlphaFrames::create);
-                block = bake(frames, packedUv0, packedUv1, packedUv2);
-            } catch (RuntimeException exception) {
-                // A cancelled mesh task can overlap resource teardown. Unknown-opaque preserves
-                // the existing any-hit path and therefore remains correct during reload races.
-                index = EXTOpacityMicromap
+            SpriteAlphaFrames frames =
+                    this.alphaFrames.computeIfAbsent(sprite, SpriteAlphaFrames::create);
+            if (frames == null) {
+                int index = EXTOpacityMicromap
                         .VK_OPACITY_MICROMAP_SPECIAL_INDEX_FULLY_UNKNOWN_OPAQUE_EXT;
                 this.bakedTriangles.put(key, index);
                 this.addIndex(index);
                 return;
             }
-            index = this.intern(block);
+            int index = this.intern(bake(frames, packedUv0, packedUv1, packedUv2));
             this.bakedTriangles.put(key, index);
             this.addIndex(index);
         }
 
         public void addConstantTriangle(
-                TextureAtlasSprite sprite, float atlasU, float atlasV) {
+                CapturedSprite sprite, float atlasU, float atlasV) {
             ConstantBakeKey key = new ConstantBakeKey(
                     sprite,
                     Float.floatToRawIntBits(atlasU),
@@ -264,21 +253,18 @@ public final class OpacityMicromapData {
                 this.addIndex(cached);
                 return;
             }
-            int index;
-            try {
-                SpriteAlphaFrames frames =
-                        this.alphaFrames.computeIfAbsent(sprite, SpriteAlphaFrames::create);
-                index = this.intern(bakeConstant(frames, atlasU, atlasV));
-            } catch (RuntimeException exception) {
-                index = EXTOpacityMicromap
-                        .VK_OPACITY_MICROMAP_SPECIAL_INDEX_FULLY_UNKNOWN_OPAQUE_EXT;
-            }
+            SpriteAlphaFrames frames =
+                    this.alphaFrames.computeIfAbsent(sprite, SpriteAlphaFrames::create);
+            int index = frames == null
+                    ? EXTOpacityMicromap
+                            .VK_OPACITY_MICROMAP_SPECIAL_INDEX_FULLY_UNKNOWN_OPAQUE_EXT
+                    : this.intern(bakeConstant(frames, atlasU, atlasV));
             this.bakedConstantTriangles.put(key, index);
             this.addIndex(index);
         }
 
         public void addRepeatedTriangle(
-                TextureAtlasSprite sprite,
+                CapturedSprite sprite,
                 int packedUv0,
                 int packedUv1,
                 int packedUv2,
@@ -310,28 +296,24 @@ public final class OpacityMicromapData {
                 this.addIndex(cached);
                 return;
             }
-            int index;
-            try {
-                SpriteAlphaFrames frames =
-                        this.alphaFrames.computeIfAbsent(sprite, SpriteAlphaFrames::create);
-                int subdivisionLevel =
-                        SUBDIVISION_LEVEL + Integer.numberOfTrailingZeros(size);
-                index = this.intern(bakeRepeated(
-                        frames,
-                        packedUv0,
-                        packedUv1,
-                        packedUv2,
-                        subdivisionLevel,
-                        projectedU0,
-                        projectedV0,
-                        projectedU1,
-                        projectedV1,
-                        projectedU2,
-                        projectedV2));
-            } catch (RuntimeException exception) {
-                index = EXTOpacityMicromap
-                        .VK_OPACITY_MICROMAP_SPECIAL_INDEX_FULLY_UNKNOWN_OPAQUE_EXT;
-            }
+            SpriteAlphaFrames frames =
+                    this.alphaFrames.computeIfAbsent(sprite, SpriteAlphaFrames::create);
+            int subdivisionLevel = SUBDIVISION_LEVEL + Integer.numberOfTrailingZeros(size);
+            int index = frames == null
+                    ? EXTOpacityMicromap
+                            .VK_OPACITY_MICROMAP_SPECIAL_INDEX_FULLY_UNKNOWN_OPAQUE_EXT
+                    : this.intern(bakeRepeated(
+                            frames,
+                            packedUv0,
+                            packedUv1,
+                            packedUv2,
+                            subdivisionLevel,
+                            projectedU0,
+                            projectedV0,
+                            projectedU1,
+                            projectedV1,
+                            projectedU2,
+                            projectedV2));
             this.bakedRepeatedTriangles.put(key, index);
             this.addIndex(index);
         }
@@ -684,7 +666,7 @@ public final class OpacityMicromapData {
     }
 
     private record SpriteAlphaFrames(
-            NativeImage image,
+            SpritePixelView pixels,
             int width,
             int height,
             int[] frameXs,
@@ -693,38 +675,35 @@ public final class OpacityMicromapData {
             float atlasV0,
             float atlasUSpan,
             float atlasVSpan) implements AlphaSampler {
-        static SpriteAlphaFrames create(TextureAtlasSprite sprite) {
-            SpriteContents contents = sprite.contents();
-            SpriteContentsAccessor accessor = (SpriteContentsAccessor) (Object) contents;
-            NativeImage image = accessor.prime$originalImage();
-            int width = contents.width();
-            int height = contents.height();
-            if (image == null || width <= 0 || height <= 0) {
-                throw new IllegalStateException("Sprite alpha source is unavailable");
+        static SpriteAlphaFrames create(CapturedSprite sprite) {
+            SpritePixelView pixels = sprite.pixelView();
+            if (pixels == null) {
+                return null;
             }
-            float uSpan = sprite.getU1() - sprite.getU0();
-            float vSpan = sprite.getV1() - sprite.getV0();
+            int width = sprite.frameWidth();
+            int height = sprite.frameHeight();
+            float uSpan = sprite.u1() - sprite.u0();
+            float vSpan = sprite.v1() - sprite.v0();
             if (!(Math.abs(uSpan) > 1.0E-12F) || !(Math.abs(vSpan) > 1.0E-12F)) {
                 throw new IllegalArgumentException("Sprite atlas span is degenerate");
             }
-            IntList frames = contents.isAnimated() ? contents.getUniqueFrames() : null;
-            int frameCount = frames == null || frames.isEmpty() ? 1 : frames.size();
-            int columns = Math.max(image.getWidth() / width, 1);
+            int frameCount = sprite.uniqueFrameCount();
+            int columns = Math.max(pixels.imageWidth() / width, 1);
             int[] frameXs = new int[frameCount];
             int[] frameYs = new int[frameCount];
             for (int index = 0; index < frameCount; index++) {
-                int frame = frames == null || frames.isEmpty() ? 0 : frames.getInt(index);
+                int frame = sprite.uniqueFrame(index);
                 frameXs[index] = frame % columns * width;
                 frameYs[index] = frame / columns * height;
             }
             return new SpriteAlphaFrames(
-                    image,
+                    pixels,
                     width,
                     height,
                     frameXs,
                     frameYs,
-                    sprite.getU0(),
-                    sprite.getV0(),
+                    sprite.u0(),
+                    sprite.v0(),
                     uSpan,
                     vSpan);
         }
@@ -733,7 +712,7 @@ public final class OpacityMicromapData {
         public boolean opaque(int frame, float u, float v) {
             int pixelX = Math.min((int) (clampUnit(u) * this.width), this.width - 1);
             int pixelY = Math.min((int) (clampUnit(v) * this.height), this.height - 1);
-            return this.image.getPixel(
+            return this.pixels.argb(
                     this.frameXs[frame] + pixelX,
                     this.frameYs[frame] + pixelY) >>> 24 >= 128;
         }
@@ -843,15 +822,15 @@ public final class OpacityMicromapData {
     }
 
     private record BakeKey(
-            TextureAtlasSprite sprite, int packedUv0, int packedUv1, int packedUv2) {
+            CapturedSprite sprite, int packedUv0, int packedUv1, int packedUv2) {
     }
 
     private record ConstantBakeKey(
-            TextureAtlasSprite sprite, int floatU, int floatV) {
+            CapturedSprite sprite, int floatU, int floatV) {
     }
 
     private record RepeatedBakeKey(
-            TextureAtlasSprite sprite,
+            CapturedSprite sprite,
             int packedUv0,
             int packedUv1,
             int packedUv2,

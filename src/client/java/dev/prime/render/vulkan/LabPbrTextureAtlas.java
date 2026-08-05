@@ -6,6 +6,7 @@ import dev.prime.mixin.SpriteContentsAccessor;
 import dev.prime.mixin.TextureAtlasAccessor;
 import dev.prime.mixin.TextureAtlasSpriteAccessor;
 import dev.prime.render.ResourceCleanup;
+import dev.prime.render.scene.SpriteId;
 import dev.prime.render.terrain.LabPbrEmissionMap;
 import dev.prime.render.terrain.LabPbrHeightMap;
 import dev.prime.render.terrain.LabPbrMaterialMap;
@@ -47,6 +48,10 @@ import org.lwjgl.vulkan.VkImageMemoryBarrier2;
  * source-frame sequence; a single-frame auxiliary map is intentionally reused for every frame.
  */
 public final class LabPbrTextureAtlas implements AutoCloseable {
+    public static boolean hasStitchedSprites(TextureAtlas atlas) {
+        return !((TextureAtlasAccessor) (Object) atlas).prime$texturesByName().isEmpty();
+    }
+
     private static final Identifier FORMAT_RESOURCE = Identifier.withDefaultNamespace(
             "optifine/texture.properties");
     private static final String SUPPORTED_FORMAT = "lab-pbr/1.3";
@@ -320,20 +325,21 @@ public final class LabPbrTextureAtlas implements AutoCloseable {
         int atlasMipLevels = Math.max(1, atlasAccess.prime$maxMipLevel() + 1);
         boolean supported = readsLabPbr13(resourceManager);
         Map<Identifier, TextureAtlasSprite> sprites = atlasAccess.prime$texturesByName();
-        Set<Identifier> normalSprites = new HashSet<>();
-        Set<Identifier> specularSprites = new HashSet<>();
-        Map<Identifier, LabPbrEmissionMap> emissionMaps = new java.util.HashMap<>();
-        Map<Identifier, LabPbrHeightMap> heightMaps = new java.util.HashMap<>();
-        Map<Identifier, LabPbrMaterialMap> materialMaps = new java.util.HashMap<>();
+        Set<SpriteId> normalSprites = new HashSet<>();
+        Set<SpriteId> specularSprites = new HashSet<>();
+        Map<SpriteId, LabPbrEmissionMap> emissionMaps = new java.util.HashMap<>();
+        Map<SpriteId, LabPbrHeightMap> heightMaps = new java.util.HashMap<>();
+        Map<SpriteId, LabPbrMaterialMap> materialMaps = new java.util.HashMap<>();
         ArrayList<MaterialSprite> materialSprites = new ArrayList<>();
         if (supported) {
             for (TextureAtlasSprite sprite : sprites.values()) {
                 Identifier name = sprite.contents().name();
+                SpriteId spriteId = spriteId(name);
                 MaterialSource normal = readMaterial(resourceManager, materialResource(name, "_n"), sprite);
                 MaterialSource specular = readMaterial(resourceManager, materialResource(name, "_s"), sprite);
                 if (normal != null) {
-                    normalSprites.add(name);
-                    heightMaps.put(name, LabPbrHeightMap.fromNormal(
+                    normalSprites.add(spriteId);
+                    heightMaps.put(spriteId, LabPbrHeightMap.fromNormal(
                             normal.pixels(),
                             normal.width(),
                             normal.height(),
@@ -343,7 +349,7 @@ public final class LabPbrTextureAtlas implements AutoCloseable {
                             normal.frameCount()));
                 }
                 if (specular != null) {
-                    specularSprites.add(name);
+                    specularSprites.add(spriteId);
                     LabPbrEmissionMap emission = LabPbrEmissionMap.fromSpecular(
                             specular.pixels(),
                             specular.width(),
@@ -353,13 +359,13 @@ public final class LabPbrTextureAtlas implements AutoCloseable {
                             specular.columns(),
                             specular.frameCount());
                     if (emission != null) {
-                        emissionMaps.put(name, emission);
+                        emissionMaps.put(spriteId, emission);
                     }
                 }
                 if (normal != null || specular != null) {
                     SpriteContents contents = sprite.contents();
                     if (!contents.isAnimated()) {
-                        materialMaps.put(name, new LabPbrMaterialMap(
+                        materialMaps.put(spriteId, new LabPbrMaterialMap(
                                 materialPixels(
                                         normal,
                                         contents.width(),
@@ -476,6 +482,10 @@ public final class LabPbrTextureAtlas implements AutoCloseable {
     private static Identifier materialResource(Identifier sprite, String suffix) {
         return Identifier.fromNamespaceAndPath(
                 sprite.getNamespace(), "textures/" + sprite.getPath() + suffix + ".png");
+    }
+
+    private static SpriteId spriteId(Identifier identifier) {
+        return new SpriteId(identifier.getNamespace(), identifier.getPath());
     }
 
     private static LabPbrMaterialMap.Pixels materialPixels(

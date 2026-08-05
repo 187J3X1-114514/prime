@@ -23,7 +23,9 @@ public final class VanillaSectionMesher {
     }
 
     public static CapturedSectionGeometry compile(
-            VanillaSectionCompileInput input, SectionBufferBuilderPack builders) {
+            VanillaSectionCompileInput input,
+            SectionBufferBuilderPack builders,
+            VanillaSpriteResolver spriteResolver) {
         // AO and the light map affect only raster vertex illumination. Disabling AO here avoids
         // doing expensive work that the side channel deliberately does not consume; geometry,
         // model selection, culling, UVs, fluid surfaces and render layers still come from vanilla.
@@ -43,6 +45,7 @@ public final class VanillaSectionMesher {
                 input.assets().blockModels(),
                 input.assets().blockColors(),
                 input.assets().blockSpriteFinder(),
+                spriteResolver,
                 input.assets().cutoutLeaves())) {
             SectionCompiler.Results results = compiler.compile(
                     section,

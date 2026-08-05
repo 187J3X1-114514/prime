@@ -3,7 +3,6 @@ package dev.prime.render.scene;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
-import net.minecraft.client.renderer.texture.TextureAtlasSprite;
 
 /**
  * Immutable geometry facts observed while Minecraft compiles one Section.
@@ -114,7 +113,7 @@ public final class CapturedSectionGeometry {
             boolean mergeable,
             boolean rasterOverlay,
             int lightEmission,
-            TextureAtlasSprite sprite,
+            CapturedSprite sprite,
             FluidFacts fluid) {
         public Surface {
             Objects.requireNonNull(layer, "layer");
@@ -146,7 +145,7 @@ public final class CapturedSectionGeometry {
                 boolean mergeable,
                 boolean rasterOverlay,
                 int lightEmission,
-                TextureAtlasSprite sprite) {
+                CapturedSprite sprite) {
             return new Surface(
                     color,
                     color,

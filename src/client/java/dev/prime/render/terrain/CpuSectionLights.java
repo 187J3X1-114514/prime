@@ -1,12 +1,12 @@
 package dev.prime.render.terrain;
 
+import dev.prime.render.scene.CapturedSprite;
 import dev.prime.render.shader.ShaderAbi;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import net.minecraft.client.renderer.texture.TextureAtlasSprite;
 
 /** Immutable light surfaces, local-tree streams and texture distributions for one geometry unit. */
 public final class CpuSectionLights {
@@ -256,7 +256,7 @@ public final class CpuSectionLights {
                 int packedTint,
                 boolean cutout,
                 int lightEmission,
-                TextureAtlasSprite sprite,
+                CapturedSprite sprite,
                 LabPbrEmissionMap labPbrEmission) {
             if (lightEmission <= 0 && labPbrEmission == null) {
                 return 0;

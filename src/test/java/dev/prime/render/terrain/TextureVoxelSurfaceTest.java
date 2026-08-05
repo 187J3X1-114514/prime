@@ -207,16 +207,16 @@ final class TextureVoxelSurfaceTest {
                             overlaySpecular, 16, 16, 16, 1, 1));
             LabPbrMaterialSet materials = new LabPbrMaterialSet(
                     Set.of(
-                            baseSprite.contents().name(),
-                            overlaySprite.contents().name()),
+                            baseSprite.id(),
+                            overlaySprite.id()),
                     Set.of(
-                            baseSprite.contents().name(),
-                            overlaySprite.contents().name()),
+                            baseSprite.id(),
+                            overlaySprite.id()),
                     Map.of(),
-                    Map.of(baseSprite.contents().name(), baseHeight),
+                    Map.of(baseSprite.id(), baseHeight),
                     Map.of(
-                            baseSprite.contents().name(), baseMaterial,
-                            overlaySprite.contents().name(), overlayMaterial));
+                            baseSprite.id(), baseMaterial,
+                            overlaySprite.id(), overlayMaterial));
             SectionMeshAccumulator.Quad face =
                     SectionMeshAccumulatorTest.horizontalQuad(
                             2.0F, 3.0F, 4.0F, 1.0F);
@@ -247,7 +247,7 @@ final class TextureVoxelSurfaceTest {
                             true,
                             false,
                             0,
-                            baseSprite));
+                            baseSprite.sprite()));
             section.add(
                     capturedFace,
                     CapturedSectionGeometry.Surface.uniform(
@@ -261,7 +261,7 @@ final class TextureVoxelSurfaceTest {
                             true,
                             true,
                             0,
-                            overlaySprite));
+                            overlaySprite.sprite()));
             CapturedCluster.Builder captured =
                     new CapturedCluster.Builder(0, 0, 0);
             captured.add(0, 0, 0, section.build());

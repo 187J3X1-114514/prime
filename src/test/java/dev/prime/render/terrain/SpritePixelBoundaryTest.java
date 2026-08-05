@@ -1,0 +1,267 @@
+package dev.prime.render.terrain;
+
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import dev.prime.render.scene.CapturedSectionGeometry;
+import dev.prime.render.scene.CapturedSprite;
+import dev.prime.render.scene.SpriteId;
+import dev.prime.render.scene.SpritePixelView;
+import java.util.Arrays;
+import org.junit.jupiter.api.Test;
+import org.lwjgl.vulkan.EXTOpacityMicromap;
+
+final class SpritePixelBoundaryTest {
+    @Test
+    void missingPixelsUseUnknownOpacityAndUniformEmission() {
+        CapturedSprite sprite = sprite(
+                "missing", 0.0F, 0.0F, 1.0F, 1.0F, false, new int[] {0}, null);
+        OpacityMicromapData.Builder opacity = new OpacityMicromapData.Builder();
+        opacity.addTriangle(sprite, uv(0.0F, 0.0F), uv(1.0F, 0.0F), uv(0.0F, 1.0F));
+
+        OpacityMicromapData data = opacity.build();
+        EmissionDistribution emission = EmissionDistribution.build(new EmissionDistribution.Key(
+                sprite,
+                uv(0.0F, 0.0F),
+                uv(1.0F, 0.0F),
+                uv(0.0F, 1.0F),
+                -1,
+                true,
+                1.0F,
+                null));
+
+        assertEquals(0, data.blockCount());
+        assertEquals(
+                EXTOpacityMicromap.VK_OPACITY_MICROMAP_SPECIAL_INDEX_FULLY_UNKNOWN_OPAQUE_EXT,
+                data.triangleIndices()[0]);
+        assertSame(EmissionDistribution.uniform(), emission);
+    }
+
+    @Test
+    void animatedFrameFactsDriveAtlasOpacityWithoutMinecraftObjects() {
+        int[] pixels = new int[32 * 16];
+        for (int y = 0; y < 16; y++) {
+            Arrays.fill(pixels, y * 32, y * 32 + 16, 0xffff_ffff);
+        }
+        ArrayPixels view = new ArrayPixels(pixels, 32, 16);
+        CapturedSprite animated = sprite(
+                "animated", 0.0F, 0.0F, 1.0F, 1.0F, true, new int[] {0, 1}, view);
+        CapturedSprite singleUniqueFrame = sprite(
+                "single_unique", 0.0F, 0.0F, 1.0F, 1.0F, true, new int[] {0}, view);
+
+        assertEquals(
+                EXTOpacityMicromap.VK_OPACITY_MICROMAP_SPECIAL_INDEX_FULLY_UNKNOWN_OPAQUE_EXT,
+                bakeTriangle(animated));
+        assertEquals(
+                EXTOpacityMicromap.VK_OPACITY_MICROMAP_SPECIAL_INDEX_FULLY_OPAQUE_EXT,
+                bakeTriangle(singleUniqueFrame));
+    }
+
+    @Test
+    void absentVoxelPixelsPreserveTheStandardQuad() {
+        CapturedSprite sprite = sprite(
+                "voxel_missing", 0.0F, 0.0F, 1.0F, 1.0F, false, new int[] {0}, null);
+
+        CpuClusterMesh cluster = translate(sprite, CapturedSectionGeometry.Layer.OPAQUE);
+
+        assertTrue(cluster.voxelMeshes().isEmpty());
+        assertEquals(0, cluster.voxelInstances().count());
+        assertEquals(2L, cluster.opaqueTriangleCount());
+    }
+
+    @Test
+    void invalidLayoutsAndPixelFailuresRemainFailFast() {
+        ArrayPixels pixels = new ArrayPixels(new int[16 * 16], 16, 16);
+        CapturedSprite degenerate = sprite(
+                "degenerate", 0.5F, 0.0F, 0.5F, 1.0F, false, new int[] {0}, pixels);
+        OpacityMicromapData.Builder degenerateOpacity = new OpacityMicromapData.Builder();
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> degenerateOpacity.addTriangle(
+                        degenerate,
+                        uv(0.5F, 0.0F),
+                        uv(0.5F, 0.0F),
+                        uv(0.5F, 1.0F)));
+
+        CapturedSprite failing = sprite(
+                "failing",
+                0.0F,
+                0.0F,
+                1.0F,
+                1.0F,
+                false,
+                new int[] {0},
+                new FailingPixels());
+        OpacityMicromapData.Builder failingOpacity = new OpacityMicromapData.Builder();
+        assertThrows(
+                PixelFailure.class,
+                () -> failingOpacity.addTriangle(
+                        failing,
+                        uv(0.0F, 0.0F),
+                        uv(1.0F, 0.0F),
+                        uv(0.0F, 1.0F)));
+        assertThrows(
+                PixelFailure.class,
+                () -> EmissionDistribution.build(new EmissionDistribution.Key(
+                        failing,
+                        uv(0.0F, 0.0F),
+                        uv(1.0F, 0.0F),
+                        uv(0.0F, 1.0F),
+                        -1,
+                        true,
+                        1.0F,
+                        null)));
+        assertThrows(
+                PixelFailure.class,
+                () -> translate(failing, CapturedSectionGeometry.Layer.OPAQUE));
+    }
+
+    @Test
+    void compiledOutputNeverReadsBorrowedPixelsAfterTranslation() {
+        GuardedPixels pixels = new GuardedPixels();
+        CapturedSprite sprite = sprite(
+                "lease_bound", 0.0F, 0.0F, 1.0F, 1.0F, false, new int[] {0}, pixels);
+        CpuClusterMesh mesh = translate(sprite, CapturedSectionGeometry.Layer.OPAQUE);
+        assertTrue(pixels.readCount > 0);
+        int readsAtLeaseClose = pixels.readCount;
+        pixels.active = false;
+        CompiledCluster compiled = new CompiledCluster(0L, 0, 0, 0, mesh);
+
+        assertDoesNotThrow(() -> CompiledClusterCodec.decode(
+                CompiledClusterCodec.encode(compiled)));
+        assertEquals(readsAtLeaseClose, pixels.readCount);
+    }
+
+    private static int bakeTriangle(CapturedSprite sprite) {
+        OpacityMicromapData.Builder builder = new OpacityMicromapData.Builder();
+        builder.addTriangle(sprite, uv(0.0F, 0.0F), uv(1.0F, 0.0F), uv(0.0F, 1.0F));
+        return builder.build().triangleIndices()[0];
+    }
+
+    private static CpuClusterMesh translate(
+            CapturedSprite sprite, CapturedSectionGeometry.Layer layer) {
+        SectionMeshAccumulator.Quad source = SectionMeshAccumulatorTest.horizontalQuad(
+                0.0F, 0.0F, 0.0F, 1.0F);
+        CapturedSectionGeometry.MutableQuad quad = new CapturedSectionGeometry.MutableQuad();
+        for (int vertex = 0; vertex < 4; vertex++) {
+            quad.x[vertex] = source.x[vertex];
+            quad.y[vertex] = source.y[vertex];
+            quad.z[vertex] = source.z[vertex];
+            quad.u[vertex] = source.u[vertex];
+            quad.v[vertex] = source.v[vertex];
+        }
+        quad.normalX = source.normalX;
+        quad.normalY = source.normalY;
+        quad.normalZ = source.normalZ;
+        CapturedSectionGeometry.Builder section = new CapturedSectionGeometry.Builder();
+        section.add(
+                quad,
+                CapturedSectionGeometry.Surface.uniform(
+                        -1,
+                        layer,
+                        false,
+                        false,
+                        sprite.animated(),
+                        false,
+                        false,
+                        true,
+                        false,
+                        0,
+                        sprite));
+        CapturedCluster.Builder cluster = new CapturedCluster.Builder(0, 0, 0);
+        cluster.add(0, 0, 0, section.build());
+        return ClusterSceneTranslator.translate(
+                cluster.build(),
+                LabPbrMaterialSet.EMPTY,
+                new ClusterTranslationSettings(
+                        true,
+                        TerrainMemoryBudget.TARGET_SEGMENT_TRIANGLES,
+                        OpacityMicromapData.SUBDIVISION_LEVEL + 2,
+                        true,
+                        VoxelSurfaceSettings.BASE_HEIGHT,
+                        false,
+                        false));
+    }
+
+    private static CapturedSprite sprite(
+            String path,
+            float u0,
+            float v0,
+            float u1,
+            float v1,
+            boolean animated,
+            int[] frames,
+            SpritePixelView pixels) {
+        return new CapturedSprite(
+                new SpriteId("fixture", path),
+                u0,
+                v0,
+                u1,
+                v1,
+                16,
+                16,
+                animated,
+                frames,
+                pixels);
+    }
+
+    private static int uv(float u, float v) {
+        return PrimitivePacking.packHalf2(u, v);
+    }
+
+    private record ArrayPixels(int[] pixels, int imageWidth, int imageHeight)
+            implements SpritePixelView {
+        @Override
+        public int argb(int x, int y) {
+            return this.pixels[x + y * this.imageWidth];
+        }
+    }
+
+    private static final class FailingPixels implements SpritePixelView {
+        @Override
+        public int imageWidth() {
+            return 16;
+        }
+
+        @Override
+        public int imageHeight() {
+            return 16;
+        }
+
+        @Override
+        public int argb(int x, int y) {
+            throw new PixelFailure();
+        }
+    }
+
+    private static final class GuardedPixels implements SpritePixelView {
+        private boolean active = true;
+        private int readCount;
+
+        @Override
+        public int imageWidth() {
+            return 16;
+        }
+
+        @Override
+        public int imageHeight() {
+            return 16;
+        }
+
+        @Override
+        public int argb(int x, int y) {
+            if (!this.active) {
+                throw new AssertionError("Borrowed pixels were read after the resource lease");
+            }
+            this.readCount++;
+            return 0xffff_ffff;
+        }
+    }
+
+    private static final class PixelFailure extends RuntimeException {
+        private static final long serialVersionUID = 1L;
+    }
+}

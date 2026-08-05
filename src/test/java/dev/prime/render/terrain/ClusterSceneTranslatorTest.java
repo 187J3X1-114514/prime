@@ -6,17 +6,23 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.mojang.blaze3d.platform.NativeImage;
 import com.mojang.math.Quadrant;
 import dev.prime.render.scene.CapturedSectionGeometry;
+import dev.prime.render.scene.CapturedSprite;
 import net.minecraft.client.model.geom.builders.UVPair;
 import net.minecraft.client.renderer.block.dispatch.ModelState;
 import net.minecraft.client.renderer.chunk.ChunkSectionLayer;
+import net.minecraft.client.renderer.texture.SpriteContents;
+import net.minecraft.client.renderer.texture.TextureAtlasSprite;
+import net.minecraft.client.resources.metadata.animation.FrameSize;
 import net.minecraft.client.resources.model.ModelBaker;
 import net.minecraft.client.resources.model.cuboid.CuboidFace;
 import net.minecraft.client.resources.model.cuboid.CuboidRotation;
 import net.minecraft.client.resources.model.cuboid.FaceBakery;
 import net.minecraft.client.resources.model.geometry.BakedQuad;
 import net.minecraft.core.Direction;
+import net.minecraft.resources.Identifier;
 import org.joml.Matrix4f;
 import org.joml.Vector3f;
 import org.joml.Vector3fc;
@@ -39,7 +45,7 @@ final class ClusterSceneTranslatorTest {
                             true,
                             false,
                             0,
-                            sprite);
+                            sprite.sprite());
             CapturedSectionGeometry.Surface alphaCut =
                     CapturedSectionGeometry.Surface.uniform(
                             -1,
@@ -52,7 +58,7 @@ final class ClusterSceneTranslatorTest {
                             true,
                             false,
                             0,
-                            sprite);
+                            sprite.sprite());
 
             assertFalse(ClusterSceneTranslator.isCutout(translucent));
             assertTrue(ClusterSceneTranslator.isTransmissive(translucent));
@@ -271,10 +277,11 @@ final class ClusterSceneTranslatorTest {
 
     @Test
     void vanillaFaceBakeryCrossPairMeetsReductionContract() {
-        try (SectionMeshAccumulatorTest.TestSprite grass =
-                new SectionMeshAccumulatorTest.TestSprite("vanilla_cross")) {
+        try (FaceBakerySprite bakedSprite = new FaceBakerySprite();
+                SectionMeshAccumulatorTest.TestSprite grass =
+                        new SectionMeshAccumulatorTest.TestSprite("vanilla_cross")) {
             BakedQuad.MaterialInfo material = new BakedQuad.MaterialInfo(
-                    grass,
+                    bakedSprite,
                     ChunkSectionLayer.CUTOUT,
                     null,
                     0,
@@ -390,7 +397,8 @@ final class ClusterSceneTranslatorTest {
 
     @Test
     void vanillaSunflowerDiscKeepsDistinctDirectionalMaterialsWithoutHitCompetition() {
-        try (SectionMeshAccumulatorTest.TestSprite front =
+        try (FaceBakerySprite bakedSprite = new FaceBakerySprite();
+                SectionMeshAccumulatorTest.TestSprite front =
                         new SectionMeshAccumulatorTest.TestSprite(
                                 "sunflower_front");
                 SectionMeshAccumulatorTest.TestSprite back =
@@ -399,14 +407,14 @@ final class ClusterSceneTranslatorTest {
             front.fill(0xffff_c040);
             back.fill(0xff60_5020);
             BakedQuad.MaterialInfo frontMaterial = new BakedQuad.MaterialInfo(
-                    front,
+                    bakedSprite,
                     ChunkSectionLayer.CUTOUT,
                     null,
                     0,
                     false,
                     0);
             BakedQuad.MaterialInfo backMaterial = new BakedQuad.MaterialInfo(
-                    back,
+                    bakedSprite,
                     ChunkSectionLayer.CUTOUT,
                     null,
                     0,
@@ -527,7 +535,7 @@ final class ClusterSceneTranslatorTest {
                 true,
                 true,
                 0,
-                overlay,
+                overlay.sprite(),
                 null));
         for (int vertex = 0; vertex < 4; vertex++) {
             baseQuad.z[vertex] = plane + 7.0F;
@@ -539,14 +547,15 @@ final class ClusterSceneTranslatorTest {
     private static void setSpriteUv(
             CapturedSectionGeometry.MutableQuad quad,
             SectionMeshAccumulatorTest.TestSprite sprite) {
-        quad.u[0] = sprite.getU0();
-        quad.v[0] = sprite.getV0();
-        quad.u[1] = sprite.getU1();
-        quad.v[1] = sprite.getV0();
-        quad.u[2] = sprite.getU1();
-        quad.v[2] = sprite.getV1();
-        quad.u[3] = sprite.getU0();
-        quad.v[3] = sprite.getV1();
+        CapturedSprite captured = sprite.sprite();
+        quad.u[0] = captured.u0();
+        quad.v[0] = captured.v0();
+        quad.u[1] = captured.u1();
+        quad.v[1] = captured.v0();
+        quad.u[2] = captured.u1();
+        quad.v[2] = captured.v1();
+        quad.u[3] = captured.u0();
+        quad.v[3] = captured.v1();
     }
 
     private static CapturedSectionGeometry.Surface surface(
@@ -567,7 +576,7 @@ final class ClusterSceneTranslatorTest {
                 true,
                 rasterOverlay,
                 0,
-                sprite);
+                sprite.sprite());
     }
 
     private static CapturedSectionGeometry.MutableQuad face(float plane) {
@@ -684,6 +693,22 @@ final class ClusterSceneTranslatorTest {
         };
     }
 
+    private static final class FaceBakerySprite extends TextureAtlasSprite {
+        private FaceBakerySprite() {
+            super(
+                    Identifier.fromNamespaceAndPath("prime", "test_atlas"),
+                    new SpriteContents(
+                            Identifier.fromNamespaceAndPath("prime", "face_bakery"),
+                            new FrameSize(16, 16),
+                            new NativeImage(16, 16, true)),
+                    16,
+                    16,
+                    0,
+                    0,
+                    0);
+        }
+    }
+
     private static void assertFrontFaceOnly(CpuClusterMesh cluster) {
         for (CpuClusterMesh.Segment segment : cluster.segments()) {
             int[] primitives = segment.primitiveRecords();
@@ -725,7 +750,7 @@ final class ClusterSceneTranslatorTest {
                 true,
                 false,
                 0,
-                sprite);
+                sprite.sprite());
     }
 
     private static CpuClusterMesh translate(CapturedSectionGeometry section) {

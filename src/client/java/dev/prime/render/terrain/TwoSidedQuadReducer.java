@@ -208,7 +208,7 @@ final class TwoSidedQuadReducer {
                 && first.mergeable() == second.mergeable()
                 && first.rasterOverlay() == second.rasterOverlay()
                 && first.lightEmission() == second.lightEmission()
-                && first.sprite() == second.sprite()
+                && first.sprite().equals(second.sprite())
                 && Objects.equals(first.fluid(), second.fluid());
     }
 

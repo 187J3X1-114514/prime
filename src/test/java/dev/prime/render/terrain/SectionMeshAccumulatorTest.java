@@ -4,12 +4,9 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
-import com.mojang.blaze3d.platform.NativeImage;
-import dev.prime.mixin.SpriteContentsAccessor;
-import net.minecraft.client.renderer.texture.SpriteContents;
-import net.minecraft.client.renderer.texture.TextureAtlasSprite;
-import net.minecraft.client.resources.metadata.animation.FrameSize;
-import net.minecraft.resources.Identifier;
+import dev.prime.render.scene.CapturedSprite;
+import dev.prime.render.scene.SpriteId;
+import dev.prime.render.scene.SpritePixelView;
 import org.junit.jupiter.api.Test;
 
 final class SectionMeshAccumulatorTest {
@@ -46,7 +43,7 @@ final class SectionMeshAccumulatorTest {
                             false,
                             false,
                             0,
-                            sprite));
+                            sprite.sprite()));
 
             CpuSectionGeometry geometry = accumulator.build();
 
@@ -141,29 +138,33 @@ final class SectionMeshAccumulatorTest {
         return quad;
     }
 
-    static SectionMeshAccumulator.Surface opaqueSurface(TextureAtlasSprite sprite) {
+    static SectionMeshAccumulator.Surface opaqueSurface(TestSprite sprite) {
         return new SectionMeshAccumulator.Surface().set(
-                -1, false, false, false, false, false, false, true, 0, sprite);
+                -1, false, false, false, false, false, false, true, 0, sprite.sprite());
     }
 
-    static SectionMeshAccumulator.Surface cutoutSurface(TextureAtlasSprite sprite) {
+    static SectionMeshAccumulator.Surface cutoutSurface(TestSprite sprite) {
         return new SectionMeshAccumulator.Surface().set(
-                -1, true, false, false, false, false, false, true, 0, sprite);
+                -1, true, false, false, false, false, false, true, 0, sprite.sprite());
     }
 
     static SectionMeshAccumulator.Surface transmissiveSurface(
-            TextureAtlasSprite sprite, boolean water) {
+            TestSprite sprite, boolean water) {
         return new SectionMeshAccumulator.Surface().set(
-                -1, false, false, true, false, water, false, true, 0, sprite);
+                -1, false, false, true, false, water, false, true, 0, sprite.sprite());
     }
 
-    static final class TestSprite extends TextureAtlasSprite {
+    static final class TestSprite implements AutoCloseable {
+        private static final int FRAME_SIZE = 16;
+        private final int[] pixels = new int[FRAME_SIZE * FRAME_SIZE];
+        private final CapturedSprite sprite;
+
         TestSprite() {
             this("merge_test");
         }
 
         TestSprite(String path) {
-            this(Identifier.fromNamespaceAndPath("prime", path));
+            this(path, FRAME_SIZE, FRAME_SIZE, 0, 0);
         }
 
         TestSprite(
@@ -172,70 +173,45 @@ final class SectionMeshAccumulatorTest {
                 int atlasHeight,
                 int x,
                 int y) {
-            this(
-                    Identifier.fromNamespaceAndPath("prime", path),
-                    atlasWidth,
-                    atlasHeight,
-                    x,
-                    y);
-        }
-
-        private TestSprite(Identifier name) {
-            this(name, 16, 16, 0, 0);
-        }
-
-        private TestSprite(
-                Identifier name,
-                int atlasWidth,
-                int atlasHeight,
-                int x,
-                int y) {
-            super(
-                    Identifier.fromNamespaceAndPath("prime", "test_atlas"),
-                    new TestSpriteContents(name),
-                    atlasWidth,
-                    atlasHeight,
-                    x,
-                    y,
-                    0);
+            this.sprite = new CapturedSprite(
+                    new SpriteId("prime", path),
+                    x / (float) atlasWidth,
+                    y / (float) atlasHeight,
+                    (x + FRAME_SIZE) / (float) atlasWidth,
+                    (y + FRAME_SIZE) / (float) atlasHeight,
+                    FRAME_SIZE,
+                    FRAME_SIZE,
+                    false,
+                    new int[] {0},
+                    new ArrayPixels(this.pixels, FRAME_SIZE, FRAME_SIZE));
         }
 
         void fill(int argb) {
-            TestSpriteContents contents = (TestSpriteContents) this.contents();
-            for (int y = 0; y < 16; y++) {
-                for (int x = 0; x < 16; x++) {
-                    contents.image.setPixel(x, y, argb);
-                }
-            }
+            java.util.Arrays.fill(this.pixels, argb);
         }
 
         void setPixel(int x, int y, int argb) {
-            ((TestSpriteContents) this.contents()).image.setPixel(x, y, argb);
+            this.pixels[x + y * FRAME_SIZE] = argb;
+        }
+
+        CapturedSprite sprite() {
+            return this.sprite;
+        }
+
+        SpriteId id() {
+            return this.sprite.id();
+        }
+
+        @Override
+        public void close() {
         }
     }
 
-    private static final class TestSpriteContents
-            extends SpriteContents
-            implements SpriteContentsAccessor {
-        private final NativeImage image;
-
-        TestSpriteContents(Identifier name) {
-            this(name, new NativeImage(16, 16, true));
-        }
-
-        private TestSpriteContents(Identifier name, NativeImage image) {
-            super(name, new FrameSize(16, 16), image);
-            this.image = image;
-        }
-
+    private record ArrayPixels(int[] pixels, int imageWidth, int imageHeight)
+            implements SpritePixelView {
         @Override
-        public NativeImage prime$originalImage() {
-            return this.image;
-        }
-
-        @Override
-        public NativeImage[] prime$byMipLevel() {
-            return new NativeImage[] {this.image};
+        public int argb(int x, int y) {
+            return this.pixels[x + y * this.imageWidth];
         }
     }
 }

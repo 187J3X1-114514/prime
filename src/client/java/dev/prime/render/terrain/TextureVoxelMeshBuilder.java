@@ -1,8 +1,7 @@
 package dev.prime.render.terrain;
 
-import com.mojang.blaze3d.platform.NativeImage;
-import dev.prime.mixin.SpriteContentsAccessor;
-import it.unimi.dsi.fastutil.ints.IntList;
+import dev.prime.render.scene.CapturedSprite;
+import dev.prime.render.scene.SpritePixelView;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
@@ -10,8 +9,6 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import net.minecraft.client.renderer.texture.SpriteContents;
-import net.minecraft.client.renderer.texture.TextureAtlasSprite;
 
 /**
  * Interns one pixel-height mesh per texture/UV/orientation and records lightweight face instances.
@@ -93,8 +90,8 @@ final class TextureVoxelMeshBuilder {
                                         | PrimitivePacking.FLAG_THIN_WALLED
                                         | PrimitivePacking.FLAG_FOLIAGE))
                         != 0
-                || base.sprite().contents().isAnimated()
-                || overlay.sprite().contents().isAnimated()) {
+                || base.sprite().animated()
+                || overlay.sprite().animated()) {
             return false;
         }
         int resolvedOverlayFlags = overlayFlags & ~PrimitivePacking.FLAG_CUTOUT;
@@ -149,18 +146,14 @@ final class TextureVoxelMeshBuilder {
         }
         Integer meshIndex = this.meshIndices.get(key);
         if (meshIndex == null) {
-            CpuVoxelMesh mesh;
-            try {
-                mesh = buildMesh(
-                        key,
-                        heightMap,
-                        materialMap,
-                        overlayMaterialMap,
-                        this.maximumHeight,
-                        this.buildOpacityMicromap);
-            } catch (IllegalArgumentException
-                    | IllegalStateException
-                    | ArithmeticException exception) {
+            CpuVoxelMesh mesh = buildMesh(
+                    key,
+                    heightMap,
+                    materialMap,
+                    overlayMaterialMap,
+                    this.maximumHeight,
+                    this.buildOpacityMicromap);
+            if (mesh == null) {
                 this.rejected.add(key);
                 return false;
             }
@@ -222,6 +215,9 @@ final class TextureVoxelMeshBuilder {
             float maximumHeight,
             boolean buildOpacityMicromap) {
         SpritePixels reliefPixels = SpritePixels.create(key.reliefSprite);
+        if (reliefPixels == null) {
+            return null;
+        }
         if (reliefPixels.width != reliefPixels.height) {
             throw new IllegalArgumentException(
                     "Voxel-surface textures must have square animation frames");
@@ -229,9 +225,12 @@ final class TextureVoxelMeshBuilder {
         int size = reliefPixels.width;
         float[] heights = new float[Math.multiplyExact(size, size)];
         MaterialSample[] materials = new MaterialSample[heights.length];
-        SpritePixels materialPixels = key.sprite == key.reliefSprite
+        SpritePixels materialPixels = key.sprite.equals(key.reliefSprite)
                 ? reliefPixels
                 : SpritePixels.create(key.sprite);
+        if (materialPixels == null) {
+            return null;
+        }
         UvTransform materialUv = new UvTransform(
                 key.uv0U,
                 key.uv0V,
@@ -249,6 +248,9 @@ final class TextureVoxelMeshBuilder {
         Overlay overlay = key.overlay;
         SpritePixels overlayPixels =
                 overlay == null ? null : SpritePixels.create(overlay.sprite);
+        if (overlay != null && overlayPixels == null) {
+            return null;
+        }
         boolean bakeBase = overlay != null
                 || canBakeMaterial(key.sprite, key.flags);
         UvTransform overlayUv = overlay == null
@@ -333,17 +335,17 @@ final class TextureVoxelMeshBuilder {
                 buildOpacityMicromap);
     }
 
-    private static boolean canBakeMaterial(TextureAtlasSprite sprite, int flags) {
+    private static boolean canBakeMaterial(CapturedSprite sprite, int flags) {
         return (flags
                                 & (PrimitivePacking.FLAG_CUTOUT
                                         | PrimitivePacking.FLAG_ANIMATED_TEXTURE
                                         | PrimitivePacking.FLAG_TRANSMISSIVE))
                         == 0
-                && !sprite.contents().isAnimated();
+                && !sprite.animated();
     }
 
     private static MaterialSample sampledMaterial(
-            TextureAtlasSprite sprite, float atlasU, float atlasV, int flags) {
+            CapturedSprite sprite, float atlasU, float atlasV, int flags) {
         return new MaterialSample(
                 sprite,
                 atlasU,
@@ -356,7 +358,7 @@ final class TextureVoxelMeshBuilder {
     }
 
     private static MaterialSample bakedMaterial(
-            TextureAtlasSprite sprite,
+            CapturedSprite sprite,
             SpritePixels pixels,
             float atlasU,
             float atlasV,
@@ -575,7 +577,7 @@ final class TextureVoxelMeshBuilder {
     }
 
     private record Key(
-            TextureAtlasSprite sprite,
+            CapturedSprite sprite,
             int planeAxis,
             int normalSign,
             float uv0U,
@@ -584,7 +586,7 @@ final class TextureVoxelMeshBuilder {
             float uv1V,
             float uv2U,
             float uv2V,
-            TextureAtlasSprite reliefSprite,
+            CapturedSprite reliefSprite,
             float reliefUv0U,
             float reliefUv0V,
             float reliefUv1U,
@@ -596,7 +598,7 @@ final class TextureVoxelMeshBuilder {
     }
 
     private record Overlay(
-            TextureAtlasSprite sprite,
+            CapturedSprite sprite,
             float uv0U,
             float uv0V,
             float uv1U,
@@ -608,7 +610,7 @@ final class TextureVoxelMeshBuilder {
     }
 
     private record MaterialSample(
-            TextureAtlasSprite sprite,
+            CapturedSprite sprite,
             float atlasU,
             float atlasV,
             int flags,
@@ -633,27 +635,23 @@ final class TextureVoxelMeshBuilder {
     }
 
     private record SpritePixels(
-            NativeImage image,
+            SpritePixelView pixels,
             int width,
             int height,
             int firstFrame,
             int frameX,
             int frameY) {
-        static SpritePixels create(TextureAtlasSprite sprite) {
-            SpriteContents contents = sprite.contents();
-            NativeImage image =
-                    ((SpriteContentsAccessor) (Object) contents).prime$originalImage();
-            int width = contents.width();
-            int height = contents.height();
-            if (image == null || image.isClosed() || width <= 0 || height <= 0) {
-                throw new IllegalStateException(
-                        "Voxel-surface texture pixels are unavailable");
+        static SpritePixels create(CapturedSprite sprite) {
+            SpritePixelView pixels = sprite.pixelView();
+            if (pixels == null) {
+                return null;
             }
-            IntList frames = contents.isAnimated() ? contents.getUniqueFrames() : null;
-            int firstFrame = frames == null || frames.isEmpty() ? 0 : frames.getInt(0);
-            int columns = Math.max(image.getWidth() / width, 1);
+            int width = sprite.frameWidth();
+            int height = sprite.frameHeight();
+            int firstFrame = sprite.uniqueFrame(0);
+            int columns = Math.max(pixels.imageWidth() / width, 1);
             return new SpritePixels(
-                    image,
+                    pixels,
                     width,
                     height,
                     firstFrame,
@@ -661,30 +659,30 @@ final class TextureVoxelMeshBuilder {
                     firstFrame / columns * height);
         }
 
-        int sample(float atlasU, float atlasV, TextureAtlasSprite sprite) {
+        int sample(float atlasU, float atlasV, CapturedSprite sprite) {
             float localU = this.localU(atlasU, sprite);
             float localV = this.localV(atlasV, sprite);
             int x = Math.min((int) (localU * this.width), this.width - 1);
             int y = Math.min((int) (localV * this.height), this.height - 1);
-            return this.image.getPixel(this.frameX + x, this.frameY + y);
+            return this.pixels.argb(this.frameX + x, this.frameY + y);
         }
 
-        float localU(float atlasU, TextureAtlasSprite sprite) {
-            float uSpan = sprite.getU1() - sprite.getU0();
+        float localU(float atlasU, CapturedSprite sprite) {
+            float uSpan = sprite.u1() - sprite.u0();
             if (!(Math.abs(uSpan) > 1.0E-12F)) {
                 throw new IllegalArgumentException(
                         "Voxel-surface sprite atlas span is degenerate");
             }
-            return clampUnit((atlasU - sprite.getU0()) / uSpan);
+            return clampUnit((atlasU - sprite.u0()) / uSpan);
         }
 
-        float localV(float atlasV, TextureAtlasSprite sprite) {
-            float vSpan = sprite.getV1() - sprite.getV0();
+        float localV(float atlasV, CapturedSprite sprite) {
+            float vSpan = sprite.v1() - sprite.v0();
             if (!(Math.abs(vSpan) > 1.0E-12F)) {
                 throw new IllegalArgumentException(
                         "Voxel-surface sprite atlas span is degenerate");
             }
-            return clampUnit((atlasV - sprite.getV0()) / vSpan);
+            return clampUnit((atlasV - sprite.v0()) / vSpan);
         }
     }
 

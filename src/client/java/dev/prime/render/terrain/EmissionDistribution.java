@@ -1,11 +1,8 @@
 package dev.prime.render.terrain;
 
-import com.mojang.blaze3d.platform.NativeImage;
-import dev.prime.mixin.SpriteContentsAccessor;
-import it.unimi.dsi.fastutil.ints.IntList;
+import dev.prime.render.scene.CapturedSprite;
+import dev.prime.render.scene.SpritePixelView;
 import java.util.Arrays;
-import net.minecraft.client.renderer.texture.SpriteContents;
-import net.minecraft.client.renderer.texture.TextureAtlasSprite;
 
 /** A resolution-independent, surface-local importance distribution for an emissive triangle. */
 final class EmissionDistribution {
@@ -55,21 +52,15 @@ final class EmissionDistribution {
     }
 
     static EmissionDistribution build(Key key) {
+        if (key.sprite == null || key.sprite.pixelView() == null) {
+            return UNIFORM;
+        }
         BuildWorkspace workspace = BUILD_WORKSPACE.get();
         float[] weights = workspace.weights;
-        boolean hasSourceSupport;
-        try {
-            fillTextureImportance(key, weights, workspace);
-            hasSourceSupport = false;
-            for (float weight : weights) {
-                hasSourceSupport |= weight > 0.0F;
-            }
-        } catch (RuntimeException exception) {
-            // A resource reload can retire SpriteContents while an already-cancelled mesh job is
-            // winding down. Uniform support is still unbiased because radiance is read from the
-            // live atlas; it only loses the variance reduction of the static importance table.
-            java.util.Arrays.fill(weights, 1.0F);
-            hasSourceSupport = true;
+        fillTextureImportance(key, weights, workspace);
+        boolean hasSourceSupport = false;
+        for (float weight : weights) {
+            hasSourceSupport |= weight > 0.0F;
         }
         for (int index = 0; index < weights.length; index++) {
             weights[index] = Math.max(weights[index], MINIMUM_CELL_IMPORTANCE);
@@ -89,24 +80,29 @@ final class EmissionDistribution {
 
     private static void fillTextureImportance(
             Key key, float[] weights, BuildWorkspace workspace) {
-        TextureAtlasSprite sprite = key.sprite;
-        SpriteContents contents = sprite.contents();
-        NativeImage image = ((SpriteContentsAccessor) (Object) contents).prime$originalImage();
-        IntList frames = contents.isAnimated() ? contents.getUniqueFrames() : null;
-        int frameCount = frames == null ? 1 : frames.size();
-        int contentWidth = contents.width();
-        int contentHeight = contents.height();
-        int columns = Math.max(image.getWidth() / contentWidth, 1);
+        CapturedSprite sprite = key.sprite;
+        SpritePixelView pixels = sprite.pixelView();
+        if (pixels == null) {
+            throw new IllegalStateException("Emission pixels were not checked before sampling");
+        }
+        int frameCount = sprite.uniqueFrameCount();
+        int contentWidth = sprite.frameWidth();
+        int contentHeight = sprite.frameHeight();
+        int columns = Math.max(pixels.imageWidth() / contentWidth, 1);
         float triangleU0 = key.u0();
         float triangleV0 = key.v0();
         float triangleU1 = key.u1();
         float triangleV1 = key.v1();
         float triangleU2 = key.u2();
         float triangleV2 = key.v2();
-        float spriteU0 = sprite.getU0();
-        float spriteV0 = sprite.getV0();
-        float spriteUSpan = sprite.getU1() - spriteU0;
-        float spriteVSpan = sprite.getV1() - spriteV0;
+        float spriteU0 = sprite.u0();
+        float spriteV0 = sprite.v0();
+        float spriteUSpan = sprite.u1() - spriteU0;
+        float spriteVSpan = sprite.v1() - spriteV0;
+        if (!(Math.abs(spriteUSpan) > 1.0E-12F)
+                || !(Math.abs(spriteVSpan) > 1.0E-12F)) {
+            throw new IllegalArgumentException("Emission sprite atlas span is degenerate");
+        }
         float[] tint = workspace.tint;
         fillLinearTint(key.tintArgb, tint);
         float[] barycentric = workspace.barycentric;
@@ -125,10 +121,10 @@ final class EmissionDistribution {
                 int pixelY = Math.min((int) (localV * contentHeight), contentHeight - 1);
                 float maximum = 0.0F;
                 for (int frameIndex = 0; frameIndex < frameCount; frameIndex++) {
-                    int frame = frames == null ? 0 : frames.getInt(frameIndex);
+                    int frame = sprite.uniqueFrame(frameIndex);
                     int sourceX = frame % columns * contentWidth + pixelX;
                     int sourceY = frame / columns * contentHeight + pixelY;
-                    int argb = image.getPixel(sourceX, sourceY);
+                    int argb = pixels.argb(sourceX, sourceY);
                     int alpha = argb >>> 24;
                     if (key.cutout && alpha < 128) {
                         continue;
@@ -323,7 +319,7 @@ final class EmissionDistribution {
     }
 
     record Key(
-            TextureAtlasSprite sprite,
+            CapturedSprite sprite,
             int packedUv0,
             int packedUv1,
             int packedUv2,

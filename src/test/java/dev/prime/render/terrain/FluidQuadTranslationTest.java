@@ -246,7 +246,7 @@ final class FluidQuadTranslationTest {
                 false,
                 false,
                 lightEmission,
-                sprite,
+                sprite.sprite(),
                 new CapturedSectionGeometry.FluidFacts(
                         0, 0, 0, false, collisionMask));
     }

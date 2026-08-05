@@ -52,6 +52,7 @@ public final class VanillaSectionCapture implements AutoCloseable {
     private final BlockStateModelSet blockModels;
     private final BlockColors blockColors;
     private final SpriteFinder blockSpriteFinder;
+    private final VanillaSpriteResolver spriteResolver;
     private final boolean cutoutLeaves;
     private final CapturedSectionGeometry.Builder geometry =
             new CapturedSectionGeometry.Builder();
@@ -88,11 +89,13 @@ public final class VanillaSectionCapture implements AutoCloseable {
             BlockStateModelSet blockModels,
             BlockColors blockColors,
             SpriteFinder blockSpriteFinder,
+            VanillaSpriteResolver spriteResolver,
             boolean cutoutLeaves) {
         this.region = region;
         this.blockModels = blockModels;
         this.blockColors = blockColors;
         this.blockSpriteFinder = blockSpriteFinder;
+        this.spriteResolver = spriteResolver;
         this.cutoutLeaves = cutoutLeaves;
     }
 
@@ -101,6 +104,7 @@ public final class VanillaSectionCapture implements AutoCloseable {
             BlockStateModelSet blockModels,
             BlockColors blockColors,
             SpriteFinder blockSpriteFinder,
+            VanillaSpriteResolver spriteResolver,
             boolean cutoutLeaves) {
         if (ACTIVE.get() != null) {
             throw new IllegalStateException("Nested vanilla Section capture is not supported");
@@ -110,6 +114,7 @@ public final class VanillaSectionCapture implements AutoCloseable {
                 blockModels,
                 blockColors,
                 blockSpriteFinder,
+                spriteResolver,
                 cutoutLeaves);
         ACTIVE.set(capture);
         return capture;
@@ -319,7 +324,7 @@ public final class VanillaSectionCapture implements AutoCloseable {
                 this.blockMergeable,
                 rasterOverlay,
                 Math.max(state.getLightEmission(), bakedQuad.materialInfo().lightEmission()),
-                sprite));
+                this.spriteResolver.resolve(sprite)));
     }
 
     private void openFabricBlock(
@@ -436,7 +441,7 @@ public final class VanillaSectionCapture implements AutoCloseable {
                 this.fabricMergeable,
                 rasterOverlay,
                 Math.max(state.getLightEmission(), source.emissive() ? 15 : 0),
-                sprite,
+                this.spriteResolver.resolve(sprite),
                 null));
     }
 
@@ -659,7 +664,7 @@ public final class VanillaSectionCapture implements AutoCloseable {
                     false,
                     false,
                     this.lightEmission,
-                    sprite,
+                    this.owner.spriteResolver.resolve(sprite),
                     new CapturedSectionGeometry.FluidFacts(
                             this.localX,
                             this.localY,

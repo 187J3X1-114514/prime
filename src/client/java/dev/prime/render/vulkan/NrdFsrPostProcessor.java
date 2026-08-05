@@ -215,7 +215,9 @@ public final class NrdFsrPostProcessor implements RealtimePostProcessor {
                 commandBuffer,
                 token.nrdPrepared,
                 parameters.sunRadianceMultiplier(),
-                parameters.display().oklabOverexposure());
+                parameters.display().oklabOverexposure(),
+                parameters.display().curveExponent(),
+                parameters.display().curveCoefficient());
         boolean displayDiagnostic =
                 token.nrdPlan.plan().input().diagnostic() != NrdDiagnostics.Mode.OFF
                         || parameters.fsrDebugView() != FsrDebugView.OFF;

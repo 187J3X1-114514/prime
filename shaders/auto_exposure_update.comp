@@ -21,7 +21,7 @@ layout(push_constant) uniform PrimeAutoExposureUpdatePushConstants {
     float deltaSeconds;
     uint reset;
     uint instant;
-    uint reserved;
+    float compensation;
 } primeAutoExposureUpdatePush;
 
 void main() {
@@ -75,7 +75,8 @@ void main() {
             primeAutoExposureTargetEv(
                     measuredLogBrightness,
                     minimumLogBrightness,
-                    maximumLogBrightness);
+                    maximumLogBrightness,
+                    primeAutoExposureUpdatePush.compensation);
     float exposureEv = targetEv;
     if (primeAutoExposureUpdatePush.reset == 0u
             && primeAutoExposureUpdatePush.instant == 0u

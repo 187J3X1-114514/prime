@@ -66,7 +66,7 @@ public final class NrdDenoiser implements Destroyable {
     static final int MOTION_BINDING_COUNT = 24;
     private static final int MOTION_PUSH_SIZE = ShaderAbi.NRD_MOTION_PUSH_CONSTANT_SIZE;
     private static final int COMPOSITE_BINDING_COUNT = 31;
-    private static final int COMPOSITE_PUSH_SIZE = 40;
+    private static final int COMPOSITE_PUSH_SIZE = 44;
     // Wavefront resolve writes 65504 for a sky view-Z. Keep the valid range below that sentinel while
     // remaining far beyond Minecraft's usable terrain and Prime's 16,000-block aerial volume.
     private static final float DENOISING_RANGE = 60_000.0f;
@@ -326,7 +326,9 @@ public final class NrdDenoiser implements Destroyable {
             VkCommandBuffer commandBuffer,
             PreparedFrame frame,
             float sunRadianceMultiplier,
-            float displayOverexposure) {
+            float displayOverexposure,
+            float displayCurveExponent,
+            float displayCurveCoefficient) {
         this.requireOpen();
         Objects.requireNonNull(commandBuffer, "commandBuffer");
         if (frame.owner != this || frame.consumed) {
@@ -397,6 +399,8 @@ public final class NrdDenoiser implements Destroyable {
                     input.cameraJitterX(),
                     input.cameraJitterY(),
                     displayOverexposure,
+                    displayCurveExponent,
+                    displayCurveCoefficient,
                     epipole.x(),
                     epipole.y());
             return new FrameToken(
@@ -2174,6 +2178,8 @@ public final class NrdDenoiser implements Destroyable {
                 float cameraJitterX,
                 float cameraJitterY,
                 float displayOverexposure,
+                float displayCurveExponent,
+                float displayCurveCoefficient,
                 float epipoleX,
                 float epipoleY) {
             try (MemoryStack stack = MemoryStack.stackPush()) {
@@ -2194,9 +2200,10 @@ public final class NrdDenoiser implements Destroyable {
                 push.putFloat(16, cameraJitterX);
                 push.putFloat(20, cameraJitterY);
                 push.putFloat(24, displayOverexposure);
-                push.putFloat(28, 0.0F);
+                push.putFloat(28, displayCurveExponent);
                 push.putFloat(32, epipoleX);
                 push.putFloat(36, epipoleY);
+                push.putFloat(40, displayCurveCoefficient);
                 VK12.vkCmdPushConstants(
                         commandBuffer,
                         this.pipelineLayout,

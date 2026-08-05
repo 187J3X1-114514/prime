@@ -239,6 +239,31 @@ public final class PrimeVideoOptions {
                 PrimeConfig::setOklabOverexposureSteps);
     }
 
+    public static OptionInstance<Integer> curveExponent() {
+        return decimalOption(
+                "prime.options.display.oklab_curve_exponent",
+                "prime.options.display.oklab_curve_exponent.tooltip",
+                PrimeConfig.settings().curveExponentSteps(),
+                DisplaySettings.MINIMUM_CURVE_EXPONENT_STEPS,
+                DisplaySettings.MAXIMUM_CURVE_EXPONENT_STEPS,
+                PrimeConfig::setCurveExponentSteps);
+    }
+
+    public static OptionInstance<Integer> autoExposureCompensation() {
+        return new OptionInstance<>(
+                "prime.options.display.auto_exposure_compensation",
+                OptionInstance.cachedConstantTooltip(Component.translatable(
+                        "prime.options.display.auto_exposure_compensation.tooltip")),
+                (caption, steps) -> Options.genericValueLabel(
+                        caption,
+                        Component.literal(steps + "%")),
+                new OptionInstance.IntRange(
+                        DisplaySettings.MINIMUM_AUTO_EXPOSURE_COMPENSATION_STEPS,
+                        DisplaySettings.MAXIMUM_AUTO_EXPOSURE_COMPENSATION_STEPS),
+                PrimeConfig.settings().autoExposureCompensationSteps(),
+                PrimeConfig::setAutoExposureCompensationSteps);
+    }
+
     public static OptionInstance<Integer> defaultRoughness() {
         return new OptionInstance<>(
                 "prime.options.material.default_roughness",
@@ -301,6 +326,27 @@ public final class PrimeVideoOptions {
                         minimumQuarterSteps,
                         maximumQuarterSteps),
                 initialQuarterSteps,
+                listener);
+    }
+
+    private static OptionInstance<Integer> decimalOption(
+            String captionKey,
+            String tooltipKey,
+            int initialSteps,
+            int minimumSteps,
+            int maximumSteps,
+            OptionInstance.ValueUpdateListener<Integer> listener) {
+        return new OptionInstance<>(
+                captionKey,
+                OptionInstance.cachedConstantTooltip(Component.translatable(tooltipKey)),
+                (caption, steps) -> Options.genericValueLabel(
+                        caption,
+                        Component.literal(String.format(
+                                Locale.ROOT,
+                                "%.2f",
+                                steps / (float) DisplaySettings.HUNDREDTH_STEPS_PER_UNIT))),
+                new OptionInstance.IntRange(minimumSteps, maximumSteps),
+                initialSteps,
                 listener);
     }
 

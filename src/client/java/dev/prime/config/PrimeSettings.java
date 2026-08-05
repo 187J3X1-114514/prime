@@ -22,6 +22,8 @@ public record PrimeSettings(
         int blockLightQuarterSteps,
         int finalExposureQuarterSteps,
         int oklabOverexposureSteps,
+        int curveExponentSteps,
+        int autoExposureCompensationSteps,
         int defaultRoughnessSteps,
         long lightingRevision,
         long materialRevision) {
@@ -35,6 +37,8 @@ public record PrimeSettings(
         LightingSettings.linearMultiplier(blockLightQuarterSteps);
         DisplaySettings.finalExposureMultiplier(finalExposureQuarterSteps);
         DisplaySettings.overexposure(oklabOverexposureSteps);
+        DisplaySettings.curveExponent(curveExponentSteps);
+        DisplaySettings.autoExposureCompensation(autoExposureCompensationSteps);
         MaterialSettings.linearRoughness(defaultRoughnessSteps);
         VoxelSurfaceSettings.maximumHeight(voxelTextureSurfaceStrengthSteps);
         if (lightingRevision < 0L || materialRevision < 0L) {
@@ -55,6 +59,8 @@ public record PrimeSettings(
                 LightingSettings.DEFAULT_BLOCK_LIGHT_QUARTER_STEPS,
                 DisplaySettings.DEFAULT_FINAL_EXPOSURE_QUARTER_STEPS,
                 DisplaySettings.DEFAULT_OVEREXPOSURE_STEPS,
+                DisplaySettings.DEFAULT_CURVE_EXPONENT_STEPS,
+                DisplaySettings.DEFAULT_AUTO_EXPOSURE_COMPENSATION_STEPS,
                 MaterialSettings.DEFAULT_ROUGHNESS_STEPS,
                 0L,
                 0L);
@@ -75,6 +81,8 @@ public record PrimeSettings(
                         this.blockLightQuarterSteps,
                         this.finalExposureQuarterSteps,
                         this.oklabOverexposureSteps,
+                        this.curveExponentSteps,
+                        this.autoExposureCompensationSteps,
                         this.defaultRoughnessSteps,
                         this.lightingRevision,
                         this.materialRevision);
@@ -95,6 +103,8 @@ public record PrimeSettings(
                         this.blockLightQuarterSteps,
                         this.finalExposureQuarterSteps,
                         this.oklabOverexposureSteps,
+                        this.curveExponentSteps,
+                        this.autoExposureCompensationSteps,
                         this.defaultRoughnessSteps,
                         this.lightingRevision,
                         this.materialRevision);
@@ -116,6 +126,8 @@ public record PrimeSettings(
                         this.blockLightQuarterSteps,
                         this.finalExposureQuarterSteps,
                         this.oklabOverexposureSteps,
+                        this.curveExponentSteps,
+                        this.autoExposureCompensationSteps,
                         this.defaultRoughnessSteps,
                         this.lightingRevision,
                         this.materialRevision);
@@ -137,6 +149,8 @@ public record PrimeSettings(
                         this.blockLightQuarterSteps,
                         this.finalExposureQuarterSteps,
                         this.oklabOverexposureSteps,
+                        this.curveExponentSteps,
+                        this.autoExposureCompensationSteps,
                         this.defaultRoughnessSteps,
                         this.lightingRevision,
                         this.materialRevision);
@@ -158,6 +172,8 @@ public record PrimeSettings(
                         this.blockLightQuarterSteps,
                         this.finalExposureQuarterSteps,
                         this.oklabOverexposureSteps,
+                        this.curveExponentSteps,
+                        this.autoExposureCompensationSteps,
                         this.defaultRoughnessSteps,
                         this.lightingRevision,
                         this.materialRevision);
@@ -179,6 +195,8 @@ public record PrimeSettings(
                         this.blockLightQuarterSteps,
                         this.finalExposureQuarterSteps,
                         this.oklabOverexposureSteps,
+                        this.curveExponentSteps,
+                        this.autoExposureCompensationSteps,
                         this.defaultRoughnessSteps,
                         Math.incrementExact(this.lightingRevision),
                         this.materialRevision);
@@ -201,6 +219,8 @@ public record PrimeSettings(
                         this.blockLightQuarterSteps,
                         this.finalExposureQuarterSteps,
                         this.oklabOverexposureSteps,
+                        this.curveExponentSteps,
+                        this.autoExposureCompensationSteps,
                         this.defaultRoughnessSteps,
                         Math.incrementExact(this.lightingRevision),
                         this.materialRevision);
@@ -222,6 +242,8 @@ public record PrimeSettings(
                         this.blockLightQuarterSteps,
                         this.finalExposureQuarterSteps,
                         this.oklabOverexposureSteps,
+                        this.curveExponentSteps,
+                        this.autoExposureCompensationSteps,
                         this.defaultRoughnessSteps,
                         Math.incrementExact(this.lightingRevision),
                         this.materialRevision);
@@ -243,6 +265,8 @@ public record PrimeSettings(
                         this.blockLightQuarterSteps,
                         this.finalExposureQuarterSteps,
                         this.oklabOverexposureSteps,
+                        this.curveExponentSteps,
+                        this.autoExposureCompensationSteps,
                         this.defaultRoughnessSteps,
                         Math.incrementExact(this.lightingRevision),
                         this.materialRevision);
@@ -264,6 +288,8 @@ public record PrimeSettings(
                         value,
                         this.finalExposureQuarterSteps,
                         this.oklabOverexposureSteps,
+                        this.curveExponentSteps,
+                        this.autoExposureCompensationSteps,
                         this.defaultRoughnessSteps,
                         Math.incrementExact(this.lightingRevision),
                         this.materialRevision);
@@ -285,6 +311,8 @@ public record PrimeSettings(
                         this.blockLightQuarterSteps,
                         value,
                         this.oklabOverexposureSteps,
+                        this.curveExponentSteps,
+                        this.autoExposureCompensationSteps,
                         this.defaultRoughnessSteps,
                         this.lightingRevision,
                         this.materialRevision);
@@ -305,6 +333,54 @@ public record PrimeSettings(
                         this.starQuarterSteps,
                         this.blockLightQuarterSteps,
                         this.finalExposureQuarterSteps,
+                        value,
+                        this.curveExponentSteps,
+                        this.autoExposureCompensationSteps,
+                        this.defaultRoughnessSteps,
+                        this.lightingRevision,
+                        this.materialRevision);
+    }
+
+    public PrimeSettings withCurveExponentSteps(int value) {
+        DisplaySettings.curveExponent(value);
+        return value == this.curveExponentSteps
+                ? this
+                : new PrimeSettings(
+                        this.pathTracingEnabled,
+                        this.voxelTextureSurfaces,
+                        this.voxelTextureSurfaceStrengthSteps,
+                        this.postProcessingMode,
+                        this.reconstructionQuality,
+                        this.astronomy,
+                        this.sunQuarterSteps,
+                        this.starQuarterSteps,
+                        this.blockLightQuarterSteps,
+                        this.finalExposureQuarterSteps,
+                        this.oklabOverexposureSteps,
+                        value,
+                        this.autoExposureCompensationSteps,
+                        this.defaultRoughnessSteps,
+                        this.lightingRevision,
+                        this.materialRevision);
+    }
+
+    public PrimeSettings withAutoExposureCompensationSteps(int value) {
+        DisplaySettings.autoExposureCompensation(value);
+        return value == this.autoExposureCompensationSteps
+                ? this
+                : new PrimeSettings(
+                        this.pathTracingEnabled,
+                        this.voxelTextureSurfaces,
+                        this.voxelTextureSurfaceStrengthSteps,
+                        this.postProcessingMode,
+                        this.reconstructionQuality,
+                        this.astronomy,
+                        this.sunQuarterSteps,
+                        this.starQuarterSteps,
+                        this.blockLightQuarterSteps,
+                        this.finalExposureQuarterSteps,
+                        this.oklabOverexposureSteps,
+                        this.curveExponentSteps,
                         value,
                         this.defaultRoughnessSteps,
                         this.lightingRevision,
@@ -327,6 +403,8 @@ public record PrimeSettings(
                         this.blockLightQuarterSteps,
                         this.finalExposureQuarterSteps,
                         this.oklabOverexposureSteps,
+                        this.curveExponentSteps,
+                        this.autoExposureCompensationSteps,
                         value,
                         this.lightingRevision,
                         Math.incrementExact(this.materialRevision));
@@ -349,10 +427,8 @@ public record PrimeSettings(
     public DisplaySettings.Snapshot display() {
         return new DisplaySettings.Snapshot(
                 this.finalExposureQuarterSteps,
-                this.oklabOverexposureSteps);
-    }
-
-    public float oklabOverexposure() {
-        return DisplaySettings.overexposure(this.oklabOverexposureSteps);
+                this.oklabOverexposureSteps,
+                this.curveExponentSteps,
+                this.autoExposureCompensationSteps);
     }
 }

@@ -46,6 +46,9 @@ public final class PrimeConfig {
             "astronomy.solar_longitude_degrees";
     private static final String FINAL_EXPOSURE_EV_KEY = "display.final_exposure_ev";
     private static final String OKLAB_OVEREXPOSURE_KEY = "display.oklab_overexposure";
+    private static final String OKLAB_CURVE_EXPONENT_KEY = "display.oklab_curve_exponent";
+    private static final String AUTO_EXPOSURE_COMPENSATION_KEY =
+            "display.auto_exposure_compensation";
     private static final String DEFAULT_ROUGHNESS_KEY = "material.default_roughness";
     // Fabric initializes and mutates video options on the client thread. One immutable snapshot
     // keeps every renderer read coherent without a shared lock or independently mutable globals.
@@ -71,6 +74,9 @@ public final class PrimeConfig {
         int finalExposureQuarterSteps =
                 DisplaySettings.DEFAULT_FINAL_EXPOSURE_QUARTER_STEPS;
         int oklabOverexposureSteps = DisplaySettings.DEFAULT_OVEREXPOSURE_STEPS;
+        int curveExponentSteps = DisplaySettings.DEFAULT_CURVE_EXPONENT_STEPS;
+        int autoExposureCompensationSteps =
+                DisplaySettings.DEFAULT_AUTO_EXPOSURE_COMPENSATION_STEPS;
         int defaultRoughnessSteps = MaterialSettings.DEFAULT_ROUGHNESS_STEPS;
         boolean rewriteNeeded = false;
         if (Files.isRegularFile(path)) {
@@ -225,6 +231,34 @@ public final class PrimeConfig {
                 } else {
                     rewriteNeeded = true;
                 }
+                String curveExponent = properties.getProperty(OKLAB_CURVE_EXPONENT_KEY);
+                if (curveExponent != null) {
+                    try {
+                        curveExponentSteps = parseCurveExponentSteps(curveExponent);
+                    } catch (IllegalArgumentException exception) {
+                        PrimeClient.LOGGER.warn(
+                                "Invalid Prime Oklab DRT curve exponent '{}'; using the default",
+                                curveExponent);
+                        rewriteNeeded = true;
+                    }
+                } else {
+                    rewriteNeeded = true;
+                }
+                String autoExposureCompensation =
+                        properties.getProperty(AUTO_EXPOSURE_COMPENSATION_KEY);
+                if (autoExposureCompensation != null) {
+                    try {
+                        autoExposureCompensationSteps =
+                                parseAutoExposureCompensationSteps(autoExposureCompensation);
+                    } catch (IllegalArgumentException exception) {
+                        PrimeClient.LOGGER.warn(
+                                "Invalid Prime auto-exposure compensation '{}'; using the default",
+                                autoExposureCompensation);
+                        rewriteNeeded = true;
+                    }
+                } else {
+                    rewriteNeeded = true;
+                }
                 String defaultRoughness = properties.getProperty(DEFAULT_ROUGHNESS_KEY);
                 if (defaultRoughness != null) {
                     try {
@@ -258,12 +292,14 @@ public final class PrimeConfig {
                 blockLightQuarterSteps,
                 finalExposureQuarterSteps,
                 oklabOverexposureSteps,
+                curveExponentSteps,
+                autoExposureCompensationSteps,
                 defaultRoughnessSteps,
                 0L,
                 0L);
         dirty = rewriteNeeded;
         PrimeClient.LOGGER.info(
-                "Prime settings: path tracing {}, voxel surfaces {} at {}x, post-processing {} quality {} (NRD-FSR {}x), latitude {} degrees, solar longitude {} degrees, sun {} EV, stars {} EV, block lights {} EV, final exposure {} EV, Oklab DRT overexposure {}, default roughness {}",
+                "Prime settings: path tracing {}, voxel surfaces {} at {}x, post-processing {} quality {} (NRD-FSR {}x), latitude {} degrees, solar longitude {} degrees, sun {} EV, stars {} EV, block lights {} EV, final exposure {} EV, Oklab DRT overexposure {}, curve exponent {}, auto-exposure compensation {}, default roughness {}",
                 pathTracingEnabled ? "enabled" : "disabled",
                 voxelTextureSurfaces ? "enabled" : "disabled",
                 formatVoxelSurfaceStrength(voxelTextureSurfaceStrengthSteps),
@@ -277,6 +313,8 @@ public final class PrimeConfig {
                 formatEv(blockLightQuarterSteps),
                 formatFinalExposure(finalExposureQuarterSteps),
                 formatOverexposure(oklabOverexposureSteps),
+                formatCurveExponent(curveExponentSteps),
+                formatAutoExposureCompensation(autoExposureCompensationSteps),
                 formatRoughness(defaultRoughnessSteps));
     }
 
@@ -336,6 +374,14 @@ public final class PrimeConfig {
         update(settings.withOklabOverexposureSteps(steps));
     }
 
+    public static void setCurveExponentSteps(int steps) {
+        update(settings.withCurveExponentSteps(steps));
+    }
+
+    public static void setAutoExposureCompensationSteps(int steps) {
+        update(settings.withAutoExposureCompensationSteps(steps));
+    }
+
     public static void setDefaultRoughnessSteps(int steps) {
         update(settings.withDefaultRoughnessSteps(steps));
     }
@@ -355,6 +401,9 @@ public final class PrimeConfig {
         setFinalExposureQuarterSteps(
                 DisplaySettings.DEFAULT_FINAL_EXPOSURE_QUARTER_STEPS);
         setOklabOverexposureSteps(DisplaySettings.DEFAULT_OVEREXPOSURE_STEPS);
+        setCurveExponentSteps(DisplaySettings.DEFAULT_CURVE_EXPONENT_STEPS);
+        setAutoExposureCompensationSteps(
+                DisplaySettings.DEFAULT_AUTO_EXPOSURE_COMPENSATION_STEPS);
         setDefaultRoughnessSteps(MaterialSettings.DEFAULT_ROUGHNESS_STEPS);
     }
 
@@ -421,6 +470,11 @@ public final class PrimeConfig {
                     + formatFinalExposure(current.finalExposureQuarterSteps()) + "\n"
                     + OKLAB_OVEREXPOSURE_KEY + "="
                     + formatOverexposure(current.oklabOverexposureSteps()) + "\n"
+                    + OKLAB_CURVE_EXPONENT_KEY + "="
+                    + formatCurveExponent(current.curveExponentSteps()) + "\n"
+                    + AUTO_EXPOSURE_COMPENSATION_KEY + "="
+                    + formatAutoExposureCompensation(
+                            current.autoExposureCompensationSteps()) + "\n"
                     + DEFAULT_ROUGHNESS_KEY + "="
                     + formatRoughness(current.defaultRoughnessSteps()) + "\n";
     }
@@ -612,6 +666,52 @@ public final class PrimeConfig {
         DisplaySettings.overexposure(steps);
         return BigDecimal.valueOf(steps)
                 .divide(BigDecimal.valueOf(DisplaySettings.STEPS_PER_UNIT))
+                .toPlainString();
+    }
+
+    static int parseCurveExponentSteps(String value) {
+        try {
+            int steps = parseHundredthSteps(value);
+            DisplaySettings.curveExponent(steps);
+            return steps;
+        } catch (ArithmeticException | NumberFormatException exception) {
+            throw new IllegalArgumentException(
+                    "Oklab DRT curve exponent must be an exact 0.01 step",
+                    exception);
+        }
+    }
+
+    static String formatCurveExponent(int steps) {
+        DisplaySettings.curveExponent(steps);
+        return formatHundredthSteps(steps);
+    }
+
+    static int parseAutoExposureCompensationSteps(String value) {
+        try {
+            int steps = parseHundredthSteps(value);
+            DisplaySettings.autoExposureCompensation(steps);
+            return steps;
+        } catch (ArithmeticException | NumberFormatException exception) {
+            throw new IllegalArgumentException(
+                    "Auto-exposure compensation must be an exact 0.01 step",
+                    exception);
+        }
+    }
+
+    static String formatAutoExposureCompensation(int steps) {
+        DisplaySettings.autoExposureCompensation(steps);
+        return formatHundredthSteps(steps);
+    }
+
+    private static int parseHundredthSteps(String value) {
+        return new BigDecimal(value)
+                .multiply(BigDecimal.valueOf(DisplaySettings.HUNDREDTH_STEPS_PER_UNIT))
+                .intValueExact();
+    }
+
+    private static String formatHundredthSteps(int steps) {
+        return BigDecimal.valueOf(steps)
+                .divide(BigDecimal.valueOf(DisplaySettings.HUNDREDTH_STEPS_PER_UNIT))
                 .toPlainString();
     }
 

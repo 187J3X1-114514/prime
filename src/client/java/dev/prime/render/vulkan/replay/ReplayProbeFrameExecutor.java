@@ -1,6 +1,7 @@
 package dev.prime.render.vulkan.replay;
 
 import com.mojang.blaze3d.vulkan.VulkanGpuTextureView;
+import dev.prime.render.DisplaySettings;
 import dev.prime.render.IntegratorFrameInput;
 import dev.prime.render.ResourceCleanup;
 import dev.prime.render.replay.RayTraceReplayInput;
@@ -40,11 +41,12 @@ public final class ReplayProbeFrameExecutor {
             VulkanGpuTextureView atlasView,
             List<TraceBackend.SceneTexture> sceneTextures,
             float sunRadianceMultiplier,
-            float displayOverexposure,
+            DisplaySettings.Snapshot display,
             RenderPlatformFingerprint platform,
             RenderBinaryFingerprint binary) {
         Objects.requireNonNull(probe, "probe");
         Objects.requireNonNull(nrdFrame, "nrdFrame");
+        Objects.requireNonNull(display, "display");
         NrdReplayProbe.RecordedFrame recorded = null;
         long pipelineFrame = 0L;
         boolean recordingAttempted = false;
@@ -83,7 +85,7 @@ public final class ReplayProbeFrameExecutor {
                     commandBuffer,
                     nrdFrame,
                     sunRadianceMultiplier,
-                    displayOverexposure);
+                    display);
             VulkanImageTransitions.finishAtlasRead(
                     commandBuffer, atlasView.texture());
             VulkanImageTransitions.finishSceneTextureReads(

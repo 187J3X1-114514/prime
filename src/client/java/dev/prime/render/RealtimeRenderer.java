@@ -423,7 +423,7 @@ final class RealtimeRenderer implements Destroyable {
                 input.cameraInWater(),
                 settings.lighting(),
                 settings.material(),
-                settings.oklabOverexposure(),
+                settings.display(),
                 input.atlasView(),
                 input.atlasSampler(),
                 input.sceneTextures(),

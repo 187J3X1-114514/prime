@@ -134,7 +134,7 @@ final class RealtimeFramePlanTest {
     }
 
     @Test
-    void finalExposureChangesDoNotRestartIntegratorHistory() {
+    void displayControlsDoNotRestartIntegratorHistory() {
         RealtimeFrameInput initial = input(
                 PostProcessingMode.NRD_FSR,
                 ReconstructionQualityMode.QUALITY);
@@ -142,9 +142,7 @@ final class RealtimeFramePlanTest {
                 RealtimeSampleState.initial().plan(initial.sampleStateInput());
         RealtimeFrameInput adjusted = withDisplay(
                 initial,
-                new DisplaySettings.Snapshot(
-                        4,
-                        initial.display().oklabOverexposureSteps()));
+                new DisplaySettings.Snapshot(4, 64, 100, 100));
 
         RealtimeSampleState.Plan second =
                 first.committedState().plan(adjusted.sampleStateInput());
@@ -152,6 +150,8 @@ final class RealtimeFramePlanTest {
         assertFalse(second.reset());
         assertEquals(first.sampleIndex() + 1, second.sampleIndex());
         assertEquals(4, adjusted.display().finalExposureQuarterSteps());
+        assertEquals(100, adjusted.display().curveExponentSteps());
+        assertEquals(100, adjusted.display().autoExposureCompensationSteps());
     }
 
     @Test
@@ -263,7 +263,7 @@ final class RealtimeFramePlanTest {
                 new MaterialSettings.Snapshot(90, 17L),
                 true,
                 false,
-                new DisplaySettings.Snapshot(0, 32),
+                new DisplaySettings.Snapshot(0, 32, 75, 50),
                 NrdDiagnostics.Mode.RAW_NUMERICAL,
                 FsrDebugView.OFF,
                 DlssRrDebugView.OFF,

@@ -275,7 +275,8 @@ final class AutoExposurePass implements Destroyable {
             float deltaSeconds,
             boolean reset,
             boolean instant,
-            boolean diagnostic) {
+            boolean diagnostic,
+            float compensation) {
         if (this.destroyed) {
             throw new IllegalStateException("Auto-exposure pass is destroyed");
         }
@@ -285,6 +286,10 @@ final class AutoExposurePass implements Destroyable {
         if (!Float.isFinite(deltaSeconds) || deltaSeconds < 0.0F) {
             throw new IllegalArgumentException(
                     "Auto-exposure frame delta must be finite and non-negative");
+        }
+        if (!Float.isFinite(compensation) || compensation < 0.0F || compensation > 1.0F) {
+            throw new IllegalArgumentException(
+                    "Auto-exposure compensation must be finite and between zero and one");
         }
         if (diagnostic) {
             if (reset) {
@@ -343,7 +348,7 @@ final class AutoExposurePass implements Destroyable {
             updatePush.putFloat(0, deltaSeconds);
             updatePush.putInt(4, reset ? 1 : 0);
             updatePush.putInt(8, instant ? 1 : 0);
-            updatePush.putInt(12, 0);
+            updatePush.putFloat(12, compensation);
             VK12.vkCmdPushConstants(
                     commandBuffer,
                     this.pipelineLayout,

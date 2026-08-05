@@ -20,6 +20,8 @@ layout(push_constant) uniform PrimeFsrDisplayPushConstants {
     uint debugView;
     float oklabOverexposure;
     float finalExposureMultiplier;
+    float curveExponent;
+    float curveCoefficient;
 } primeFsrDisplayPush;
 
 void main() {
@@ -46,5 +48,7 @@ void main() {
                     max(radiance, vec3(0.0)),
                     exp2(primeAutoExposureState.exposureEv)
                             * primeFsrDisplayPush.finalExposureMultiplier,
-                    primeFsrDisplayPush.oklabOverexposure), 1.0));
+                    primeFsrDisplayPush.oklabOverexposure,
+                    primeFsrDisplayPush.curveExponent,
+                    primeFsrDisplayPush.curveCoefficient), 1.0));
 }

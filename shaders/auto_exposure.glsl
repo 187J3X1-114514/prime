@@ -11,7 +11,6 @@ const float PRIME_AUTO_EXPOSURE_KEY = 0.16;
 const float PRIME_AUTO_EXPOSURE_BASELINE_EV = 0.0;
 const float PRIME_AUTO_EXPOSURE_FULL_MIN_EV = -16.0;
 const float PRIME_AUTO_EXPOSURE_FULL_MAX_EV = 16.0;
-const float PRIME_AUTO_EXPOSURE_STRENGTH = 0.5;
 const float PRIME_AUTO_EXPOSURE_LN_10 = 2.302585092994046;
 const float PRIME_AUTO_EXPOSURE_DARKEN_T90 = 0.5;
 const float PRIME_AUTO_EXPOSURE_BRIGHTEN_T90 = 2.0;
@@ -83,7 +82,8 @@ float primeAutoExposureSceneKeyBiasEv(
 float primeAutoExposureTargetEv(
         float measuredLogBrightness,
         float minimumLogBrightness,
-        float maximumLogBrightness) {
+        float maximumLogBrightness,
+        float compensation) {
     float fullTargetEv = clamp(
             log2(PRIME_AUTO_EXPOSURE_KEY) + PRIME_AUTO_EXPOSURE_BASELINE_EV
                     - measuredLogBrightness
@@ -93,11 +93,10 @@ float primeAutoExposureTargetEv(
                             maximumLogBrightness),
             PRIME_AUTO_EXPOSURE_FULL_MIN_EV,
             PRIME_AUTO_EXPOSURE_FULL_MAX_EV);
-    // Preserve half of the measured log-domain distance from the neutral exposure.
     return mix(
             PRIME_AUTO_EXPOSURE_BASELINE_EV,
             fullTargetEv,
-            PRIME_AUTO_EXPOSURE_STRENGTH);
+            compensation);
 }
 
 float primeAutoExposureAdapt(

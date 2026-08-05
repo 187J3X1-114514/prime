@@ -1,6 +1,7 @@
 package dev.prime.render.vulkan.replay;
 
 import com.mojang.blaze3d.vulkan.Destroyable;
+import dev.prime.render.DisplaySettings;
 import dev.prime.render.FrameCamera;
 import dev.prime.render.ResourceCleanup;
 import dev.prime.render.SunDirection;
@@ -154,8 +155,9 @@ public final class NrdReplayProbe implements Destroyable {
             VkCommandBuffer commandBuffer,
             PlannedFrame frame,
             float sunRadianceMultiplier,
-            float displayOverexposure) {
+            DisplaySettings.Snapshot display) {
         requireOpen();
+        Objects.requireNonNull(display, "display");
         if (frame == null
                 || frame.owner != this
                 || frame != this.planned
@@ -185,7 +187,9 @@ public final class NrdReplayProbe implements Destroyable {
                     commandBuffer,
                     prepared,
                     sunRadianceMultiplier,
-                    displayOverexposure);
+                    display.oklabOverexposure(),
+                    display.curveExponent(),
+                    display.curveCoefficient());
             postNrdCapture = ReplayStageCapturePass.createPostNrd(
                     this.context, this.denoiser.compositeFrame());
             postNrdCapture.recordAfterCompute(commandBuffer);

@@ -3,6 +3,7 @@
 
 #include "prime_test_abi.glsl"
 #include "auto_exposure.glsl"
+#include "display_transform.glsl"
 
 const uint PRIME_AUTO_EXPOSURE_INPUT_WORDS = 2u;
 const uint PRIME_AUTO_EXPOSURE_WITNESS_WORDS = 4u;
@@ -21,18 +22,18 @@ void main() {
 
     if (kind == 0u) {
         actual.x = primeAutoExposureTargetEv(
-                values.x, values.y, values.z);
+                values.x, values.y, values.z, values.w);
         float range = values.z - values.y;
         float keyBiasEv = range > 0.0
                 ? 2.0 * (
                         2.0 * values.x - values.y - values.z)
                         / max(range, 2.0)
                 : 0.0;
-        expected.x = 0.5 * clamp(
+        expected.x = values.w * clamp(
                 log2(0.16) - values.x + keyBiasEv,
                 -16.0,
                 16.0);
-        if (actual.x < -8.0 || actual.x > 8.0) {
+        if (actual.x < -16.0 || actual.x > 16.0) {
             mask |= PRIME_TEST_FAILURE_RANGE;
         }
         if (!primeTestClose(actual.x, expected.x, 1.0e-6, 1.0e-6)) {
@@ -96,6 +97,32 @@ void main() {
         if (!primeTestClose(actual.x, expected.y, 2.0e-6, 2.0e-6)
                 || !primeTestClose(actual.y, expected.x, 2.0e-5, 2.0e-6)) {
             mask |= PRIME_TEST_FAILURE_IDENTITY;
+        }
+    } else if (kind == 6u) {
+        float middleGrayLightness = pow(0.18, 1.0 / 3.0);
+        actual.x = primeOklabMapLightness(
+                middleGrayLightness, values.x, values.y, values.w);
+        actual.y = primeOklabMapLightness(
+                values.z, values.x, values.y, values.w);
+        expected.x = middleGrayLightness;
+        if (!primeTestClose(actual.x, expected.x, 2.0e-5, 2.0e-5)) {
+            mask |= PRIME_TEST_FAILURE_IDENTITY;
+        }
+        if (actual.y < 0.0 || actual.y > pow(values.x, 1.0 / 3.0)) {
+            mask |= PRIME_TEST_FAILURE_RANGE;
+        }
+        if (values.y == 0.5) {
+            float scale = values.x / (values.x - 0.18);
+            float x = (scale * scale - 1.0) / 0.18
+                    * values.z * values.z * values.z;
+            float inverseRoot = inversesqrt(1.0 + x);
+            expected.y = pow(
+                    values.x * x * inverseRoot * inverseRoot
+                            / (1.0 + inverseRoot),
+                    1.0 / 3.0);
+            if (!primeTestClose(actual.y, expected.y, 2.0e-5, 2.0e-5)) {
+                mask |= PRIME_TEST_FAILURE_STATE;
+            }
         }
     } else {
         mask |= PRIME_TEST_FAILURE_EVENT;

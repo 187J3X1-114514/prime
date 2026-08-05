@@ -11,8 +11,7 @@ record RealtimeRenderSettings(
         ReconstructionQualityMode reconstructionQuality,
         LightingSettings.Snapshot lighting,
         MaterialSettings.Snapshot material,
-        DisplaySettings.Snapshot display,
-        float oklabOverexposure) {
+        DisplaySettings.Snapshot display) {
     RealtimeRenderSettings {
         Objects.requireNonNull(postProcessing, "postProcessing");
         Objects.requireNonNull(reconstructionQuality, "reconstructionQuality");
@@ -28,7 +27,6 @@ record RealtimeRenderSettings(
                 settings.reconstructionQuality(),
                 settings.lighting(),
                 settings.material(),
-                settings.display(),
-                settings.oklabOverexposure());
+                settings.display());
     }
 }

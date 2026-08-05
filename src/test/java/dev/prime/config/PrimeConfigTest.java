@@ -95,6 +95,31 @@ final class PrimeConfigTest {
     }
 
     @Test
+    void persistedDisplayRatiosAcceptOnlyExactHundredthsInRange() {
+        assertEquals(50, PrimeConfig.parseCurveExponentSteps("0.5"));
+        assertEquals(75, PrimeConfig.parseCurveExponentSteps("0.75"));
+        assertEquals(100, PrimeConfig.parseCurveExponentSteps("1"));
+        assertEquals("0.75", PrimeConfig.formatCurveExponent(75));
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> PrimeConfig.parseCurveExponentSteps("0.755"));
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> PrimeConfig.parseCurveExponentSteps("0.49"));
+
+        assertEquals(0, PrimeConfig.parseAutoExposureCompensationSteps("0"));
+        assertEquals(50, PrimeConfig.parseAutoExposureCompensationSteps("0.5"));
+        assertEquals(100, PrimeConfig.parseAutoExposureCompensationSteps("1"));
+        assertEquals("0.5", PrimeConfig.formatAutoExposureCompensation(50));
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> PrimeConfig.parseAutoExposureCompensationSteps("0.505"));
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> PrimeConfig.parseAutoExposureCompensationSteps("1.01"));
+    }
+
+    @Test
     void persistedFinalExposureAcceptsOnlyExactQuarterStopsInRange() {
         assertEquals(5, PrimeConfig.parseFinalExposureQuarterSteps("1.25"));
         assertEquals(-32, PrimeConfig.parseFinalExposureQuarterSteps("-8"));
@@ -176,6 +201,8 @@ final class PrimeConfigTest {
         assertTrue(serialized.contains("lighting.star_ev=0\n"));
         assertTrue(serialized.contains("display.final_exposure_ev=0\n"));
         assertTrue(serialized.contains("display.oklab_overexposure=1\n"));
+        assertTrue(serialized.contains("display.oklab_curve_exponent=0.75\n"));
+        assertTrue(serialized.contains("display.auto_exposure_compensation=0.5\n"));
 
         Properties properties = new Properties();
         assertFalse(PrimeConfig.hasLegacyDebugProperties(properties));

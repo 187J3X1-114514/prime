@@ -44,6 +44,8 @@ public abstract class VideoSettingsScreenMixin {
     @Unique private OptionInstance<Integer> prime$blockLightExposure;
     @Unique private OptionInstance<Integer> prime$finalExposure;
     @Unique private OptionInstance<Integer> prime$oklabOverexposure;
+    @Unique private OptionInstance<Integer> prime$curveExponent;
+    @Unique private OptionInstance<Integer> prime$autoExposureCompensation;
     @Unique private OptionInstance<Integer> prime$defaultRoughness;
     @Unique private OptionInstance<Boolean> prime$triangleDebug;
     @Unique private OptionInstance<Boolean> prime$rendererDiagnostics;
@@ -70,6 +72,9 @@ public abstract class VideoSettingsScreenMixin {
             this.prime$blockLightExposure = PrimeVideoOptions.blockLightExposure();
             this.prime$finalExposure = PrimeVideoOptions.finalExposure();
             this.prime$oklabOverexposure = PrimeVideoOptions.oklabOverexposure();
+            this.prime$curveExponent = PrimeVideoOptions.curveExponent();
+            this.prime$autoExposureCompensation =
+                    PrimeVideoOptions.autoExposureCompensation();
             this.prime$defaultRoughness = PrimeVideoOptions.defaultRoughness();
             this.prime$triangleDebug = PrimeVideoOptions.triangleDebug();
             this.prime$rendererDiagnostics = PrimeVideoOptions.rendererDiagnostics();
@@ -93,7 +98,10 @@ public abstract class VideoSettingsScreenMixin {
             list.addBig(this.prime$starExposure);
             list.addBig(this.prime$blockLightExposure);
             list.addBig(this.prime$finalExposure);
-            list.addBig(this.prime$oklabOverexposure);
+            list.addBig(this.prime$autoExposureCompensation);
+            list.addSmall(
+                    this.prime$oklabOverexposure,
+                    this.prime$curveExponent);
             list.addBig(this.prime$defaultRoughness);
             list.addBig(this.prime$triangleDebug);
             list.addBig(this.prime$rendererDiagnostics);
@@ -139,6 +147,12 @@ public abstract class VideoSettingsScreenMixin {
         this.prime$refresh(
                 this.prime$oklabOverexposure,
                 DisplaySettings.DEFAULT_OVEREXPOSURE_STEPS);
+        this.prime$refresh(
+                this.prime$curveExponent,
+                DisplaySettings.DEFAULT_CURVE_EXPONENT_STEPS);
+        this.prime$refresh(
+                this.prime$autoExposureCompensation,
+                DisplaySettings.DEFAULT_AUTO_EXPOSURE_COMPENSATION_STEPS);
         this.prime$refresh(
                 this.prime$defaultRoughness,
                 MaterialSettings.DEFAULT_ROUGHNESS_STEPS);

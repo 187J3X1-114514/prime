@@ -35,4 +35,33 @@ final class DisplaySettingsTest {
         assertThrows(IllegalArgumentException.class, () -> DisplaySettings.overexposure(31));
         assertThrows(IllegalArgumentException.class, () -> DisplaySettings.overexposure(65));
     }
+
+    @Test
+    void curveExponentUsesHundredthStepsAcrossTheSupportedCurveFamily() {
+        assertEquals(0.5F, DisplaySettings.curveExponent(50));
+        assertEquals(0.75F, DisplaySettings.curveExponent(75));
+        assertEquals(1.0F, DisplaySettings.curveExponent(100));
+        assertEquals(75, DisplaySettings.DEFAULT_CURVE_EXPONENT_STEPS);
+        assertThrows(IllegalArgumentException.class, () -> DisplaySettings.curveExponent(49));
+        assertThrows(IllegalArgumentException.class, () -> DisplaySettings.curveExponent(101));
+        float scale = 1.0F / (1.0F - 0.18F);
+        assertEquals(
+                (scale * scale - 1.0F) / 0.18F,
+                DisplaySettings.curveCoefficient(32, 50),
+                2.0e-6F);
+    }
+
+    @Test
+    void autoExposureCompensationCoversDisabledThroughFullMetering() {
+        assertEquals(0.0F, DisplaySettings.autoExposureCompensation(0));
+        assertEquals(0.5F, DisplaySettings.autoExposureCompensation(50));
+        assertEquals(1.0F, DisplaySettings.autoExposureCompensation(100));
+        assertEquals(50, DisplaySettings.DEFAULT_AUTO_EXPOSURE_COMPENSATION_STEPS);
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> DisplaySettings.autoExposureCompensation(-1));
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> DisplaySettings.autoExposureCompensation(101));
+    }
 }

@@ -13,23 +13,27 @@
 // integrator's linear Rec.2020 HDR result to the configured sRGB Rec.709 display and must never
 // be applied to PathState, light transport, or the RGBA32F accumulation history.
 const float PRIME_OKLAB_RGB_HEADROOM = 0.99999;
-const float PRIME_OKLAB_MIDDLE_GRAY = 0.18;
 
-float primeOklabShoulderCoefficient(float overexposure) {
-    float scale = overexposure
-            / (overexposure - PRIME_OKLAB_MIDDLE_GRAY);
-    return (scale * scale - 1.0) / PRIME_OKLAB_MIDDLE_GRAY;
+float primeOklabReciprocalPowerShoulder(float x, float curveExponent) {
+    if (x < 0.01) {
+        // The cubic expansion avoids cancellation in 1 - (1 + x)^-p near black.
+        float nextExponent = curveExponent + 1.0;
+        return curveExponent * x * (
+                1.0 - 0.5 * nextExponent * x
+                        + nextExponent * (curveExponent + 2.0) * x * x / 6.0);
+    }
+    return 1.0 - pow(1.0 + x, -curveExponent);
 }
 
-float primeOklabMapLightness(float lightness, float overexposure) {
+float primeOklabMapLightness(
+        float lightness,
+        float overexposure,
+        float curveExponent,
+        float curveCoefficient) {
     float brightness = lightness * lightness * lightness;
-    float x = primeOklabShoulderCoefficient(overexposure) * brightness;
-    float inverseRoot = inversesqrt(1.0 + x);
-
-    // p=1/2 reciprocal-power shoulder. This conjugate form keeps middle gray
-    // fixed and avoids cancellation as brightness approaches black.
+    float x = curveCoefficient * brightness;
     float mappedBrightness = overexposure
-            * x * inverseRoot * inverseRoot / (1.0 + inverseRoot);
+            * primeOklabReciprocalPowerShoulder(x, curveExponent);
     return pow(mappedBrightness, 1.0 / 3.0);
 }
 
@@ -202,13 +206,18 @@ float primeOklabRoundingPower(float lightness) {
     return 32.0 - 256.0 * endpointDistance * endpointDistance;
 }
 
-vec3 primeOklabTonemapCurve(vec3 color, float overexposure) {
+vec3 primeOklabTonemapCurve(
+        vec3 color,
+        float overexposure,
+        float curveExponent,
+        float curveCoefficient) {
     vec3 oklab = primeLinearBt709ToOklab(color);
     if (oklab.x <= 0.0) {
         return vec3(0.0);
     }
 
-    float outputLightness = primeOklabMapLightness(oklab.x, overexposure);
+    float outputLightness = primeOklabMapLightness(
+            oklab.x, overexposure, curveExponent, curveCoefficient);
     float inputChroma = length(oklab.yz);
     if (inputChroma <= 1.0e-8) {
         return PRIME_OKLAB_RGB_HEADROOM
@@ -236,11 +245,14 @@ vec3 primeOklabTonemapCurve(vec3 color, float overexposure) {
 vec3 primeDisplayTransformToSrgb(
         vec3 hdrRec2020,
         float exposureMultiplier,
-        float overexposure) {
+        float overexposure,
+        float curveExponent,
+        float curveCoefficient) {
     vec3 exposedRec2020 = max(hdrRec2020, vec3(0.0))
             * (PRIME_DISPLAY_EXPOSURE * exposureMultiplier);
     vec3 linearBt709 = max(primeLinearRec2020ToLinearBt709(exposedRec2020), vec3(0.0));
-    vec3 encodedSrgb = primeEncodeSrgb(primeOklabTonemapCurve(linearBt709, overexposure));
+    vec3 encodedSrgb = primeEncodeSrgb(primeOklabTonemapCurve(
+            linearBt709, overexposure, curveExponent, curveCoefficient));
     return clamp(encodedSrgb, vec3(0.0), vec3(1.0));
 }
 

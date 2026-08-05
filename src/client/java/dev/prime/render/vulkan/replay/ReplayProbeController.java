@@ -5,6 +5,7 @@ import com.mojang.blaze3d.vulkan.VulkanGpuSampler;
 import com.mojang.blaze3d.vulkan.VulkanGpuTextureView;
 import dev.prime.PrimeClient;
 import dev.prime.render.AstronomyState;
+import dev.prime.render.DisplaySettings;
 import dev.prime.render.FrameCamera;
 import dev.prime.render.IntegratorFrameInput;
 import dev.prime.render.LightingSettings;
@@ -260,7 +261,7 @@ public final class ReplayProbeController implements Destroyable {
                 input.atlasView,
                 input.sceneTextures,
                 input.lighting.sunMultiplier(),
-                input.displayOverexposure,
+                input.display,
                 platform,
                 binary);
     }
@@ -297,7 +298,7 @@ public final class ReplayProbeController implements Destroyable {
             boolean cameraInWater,
             LightingSettings.Snapshot lighting,
             MaterialSettings.Snapshot material,
-            float displayOverexposure,
+            DisplaySettings.Snapshot display,
             VulkanGpuTextureView atlasView,
             VulkanGpuSampler atlasSampler,
             List<TraceBackend.SceneTexture> sceneTextures,
@@ -314,6 +315,7 @@ public final class ReplayProbeController implements Destroyable {
             Objects.requireNonNull(astronomy, "astronomy");
             Objects.requireNonNull(lighting, "lighting");
             Objects.requireNonNull(material, "material");
+            Objects.requireNonNull(display, "display");
             Objects.requireNonNull(atlasView, "atlasView");
             Objects.requireNonNull(atlasSampler, "atlasSampler");
             sceneTextures = List.copyOf(sceneTextures);
@@ -324,10 +326,6 @@ public final class ReplayProbeController implements Destroyable {
                     labPbrSpecularAtlas, "labPbrSpecularAtlas");
             Objects.requireNonNull(
                     interactiveRawFrame, "interactiveRawFrame");
-            if (!Float.isFinite(displayOverexposure)) {
-                throw new IllegalArgumentException(
-                        "Replay display exposure must be finite");
-            }
         }
     }
 

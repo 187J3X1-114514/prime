@@ -1,5 +1,6 @@
 package dev.prime.render.shader;
 
+import dev.prime.render.DisplaySettings;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.file.Path;
@@ -148,9 +149,9 @@ final class PrimeProductionMathGpuTest {
     }
 
     @Test
-    void autoExposureTargetAdaptationAndAlbedoMeteringUseTheProductionContract()
+    void exposureAndDisplayCurvesUseTheProductionContract()
             throws IOException {
-        int kinds = 6;
+        int kinds = 7;
         int inputWords = 2;
         ByteBuffer input = ShaderTestBuffer.inputs(
                 CASES_PER_KIND * kinds, inputWords);
@@ -171,6 +172,12 @@ final class PrimeProductionMathGpuTest {
                         maximum = minimum;
                         measured = minimum;
                     }
+                    float compensation = switch (local & 3) {
+                        case 0 -> 0.0F;
+                        case 1 -> 0.5F;
+                        case 2 -> 1.0F;
+                        default -> random.nextFloat();
+                    };
                     putVec4(
                             input,
                             index,
@@ -179,7 +186,7 @@ final class PrimeProductionMathGpuTest {
                             measured,
                             minimum,
                             maximum,
-                            0.0F);
+                            compensation);
                 } else if (kind == 1) {
                     putVec4(
                             input,
@@ -210,7 +217,7 @@ final class PrimeProductionMathGpuTest {
                             random.nextFloat() * 2.0F - 1.0F,
                             0.0F,
                             0.0F);
-                } else {
+                } else if (kind == 5) {
                     float red = random.nextFloat() * 64.0F;
                     float green = random.nextFloat() * 64.0F;
                     float blue = random.nextFloat() * 64.0F;
@@ -228,6 +235,35 @@ final class PrimeProductionMathGpuTest {
                             green,
                             blue,
                             random.nextInt(-12, 13));
+                } else {
+                    int overexposureSteps = switch (local & 3) {
+                        case 0 -> 32;
+                        case 1 -> 64;
+                        default -> random.nextInt(32, 65);
+                    };
+                    int curveExponentSteps = switch ((local >> 2) & 3) {
+                        case 0 -> 50;
+                        case 1 -> 75;
+                        case 2 -> 100;
+                        default -> random.nextInt(50, 101);
+                    };
+                    float lightness = switch ((local >> 4) & 3) {
+                        case 0 -> 0.0F;
+                        case 1 -> 1.0e-3F;
+                        case 2 -> (float) Math.cbrt(0.18);
+                        default -> random.nextFloat() * 8.0F;
+                    };
+                    putVec4(
+                            input,
+                            index,
+                            inputWords,
+                            1,
+                            DisplaySettings.overexposure(overexposureSteps),
+                            DisplaySettings.curveExponent(curveExponentSteps),
+                            lightness,
+                            DisplaySettings.curveCoefficient(
+                                    overexposureSteps,
+                                    curveExponentSteps));
                 }
             }
         }

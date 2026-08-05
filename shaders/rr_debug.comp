@@ -30,6 +30,8 @@ layout(push_constant) uniform PrimeRrDebugPushConstants {
     uint jitterPhaseCount;
     float oklabOverexposure;
     float finalExposureMultiplier;
+    float curveExponent;
+    float curveCoefficient;
 } rrDebugPush;
 
 const uint RR_OVERVIEW = 1u;
@@ -80,7 +82,9 @@ vec3 rrHdr(vec3 radiance) {
             max(radiance, vec3(0.0)),
             exp2(primeAutoExposureState.exposureEv)
                     * rrDebugPush.finalExposureMultiplier,
-            rrDebugPush.oklabOverexposure);
+            rrDebugPush.oklabOverexposure,
+            rrDebugPush.curveExponent,
+            rrDebugPush.curveCoefficient);
 }
 
 vec3 rrJitterPlot(vec2 uv) {

@@ -370,28 +370,46 @@ public final class CpuSectionLights {
             float cornerX = emitters.values[base + CORNER_X];
             float cornerY = emitters.values[base + CORNER_Y];
             float cornerZ = emitters.values[base + CORNER_Z];
-            float secondX = cornerX + emitters.values[base + EDGE_ONE_X];
-            float secondY = cornerY + emitters.values[base + EDGE_ONE_Y];
-            float secondZ = cornerZ + emitters.values[base + EDGE_ONE_Z];
-            float thirdX = cornerX + emitters.values[base + EDGE_TWO_X];
-            float thirdY = cornerY + emitters.values[base + EDGE_TWO_Y];
-            float thirdZ = cornerZ + emitters.values[base + EDGE_TWO_Z];
+            float edgeOneX = emitters.values[base + EDGE_ONE_X];
+            float edgeOneY = emitters.values[base + EDGE_ONE_Y];
+            float edgeOneZ = emitters.values[base + EDGE_ONE_Z];
+            float edgeTwoX = emitters.values[base + EDGE_TWO_X];
+            float edgeTwoY = emitters.values[base + EDGE_TWO_Y];
+            float edgeTwoZ = emitters.values[base + EDGE_TWO_Z];
+            float secondX = cornerX + edgeOneX;
+            float secondY = cornerY + edgeOneY;
+            float secondZ = cornerZ + edgeOneZ;
+            float thirdX = cornerX + edgeTwoX;
+            float thirdY = cornerY + edgeTwoY;
+            float thirdZ = cornerZ + edgeTwoZ;
             float minX = Math.min(cornerX, Math.min(secondX, thirdX));
             float minY = Math.min(cornerY, Math.min(secondY, thirdY));
             float minZ = Math.min(cornerZ, Math.min(secondZ, thirdZ));
             float maxX = Math.max(cornerX, Math.max(secondX, thirdX));
             float maxY = Math.max(cornerY, Math.max(secondY, thirdY));
             float maxZ = Math.max(cornerZ, Math.max(secondZ, thirdZ));
-            leaves.add(
+            EmissionDistribution.SpatialMoments moments = distributions.get(
+                    emitters.metadata[index * EMITTER_INTS + DISTRIBUTION]).spatialMoments();
+            float centerX = cornerX + edgeOneX * moments.meanU() + edgeTwoX * moments.meanV();
+            float centerY = cornerY + edgeOneY * moments.meanU() + edgeTwoY * moments.meanV();
+            float centerZ = cornerZ + edgeOneZ * moments.meanU() + edgeTwoZ * moments.meanV();
+            leaves.addWithSpatialVariance(
                     minX,
                     minY,
                     minZ,
                     maxX,
                     maxY,
                     maxZ,
-                    (minX + maxX) * 0.5F,
-                    (minY + maxY) * 0.5F,
-                    (minZ + maxZ) * 0.5F,
+                    centerX,
+                    centerY,
+                    centerZ,
+                    moments.positionVariance(
+                            edgeOneX,
+                            edgeOneY,
+                            edgeOneZ,
+                            edgeTwoX,
+                            edgeTwoY,
+                            edgeTwoZ),
                     emitters.values[base + POWER],
                     index,
                     LightDirection.fromNormal(

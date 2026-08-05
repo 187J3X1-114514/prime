@@ -90,17 +90,17 @@ float primeLightEmissionLobe(uint packedValue, uint shift) {
     return float((packedValue >> shift) & PRIME_LIGHT_DIRECTION_LOBE_MASK) / 31.0;
 }
 
-float primeLightEmitterCosineBound(
+float primeLightEmitterCosineBoundWithInverse(
         vec3 boundsMin,
         vec3 boundsMax,
         vec3 point,
         float distanceSquared,
+        float inverseDistance,
         uint packedDirection) {
     uint mode = packedDirection >> PRIME_LIGHT_DIRECTION_MODE_SHIFT;
     if (mode == PRIME_LIGHT_DIRECTION_MODE_FULL) {
         return 1.0;
     }
-    float inverseDistance = distanceSquared > 0.0 ? inversesqrt(distanceSquared) : 0.0;
     if (mode == PRIME_LIGHT_DIRECTION_MODE_LOBES) {
         if (!(distanceSquared > 0.0)) {
             return 1.0;
@@ -136,12 +136,61 @@ float primeLightEmitterCosineBound(
     return 0.5 * max(forward, backward);
 }
 
-float primeLightReceiverCosineBound(
+float primeLightEmitterCosineBound(
+        vec3 boundsMin,
+        vec3 boundsMax,
+        vec3 point,
+        float distanceSquared,
+        uint packedDirection) {
+    float inverseDistance = distanceSquared > 0.0 ? inversesqrt(distanceSquared) : 0.0;
+    return primeLightEmitterCosineBoundWithInverse(
+            boundsMin,
+            boundsMax,
+            point,
+            distanceSquared,
+            inverseDistance,
+            packedDirection);
+}
+
+float primeLightEmitterCosineEstimate(
+        vec3 directionFromLight,
+        uint packedDirection) {
+    uint mode = packedDirection >> PRIME_LIGHT_DIRECTION_MODE_SHIFT;
+    if (mode == PRIME_LIGHT_DIRECTION_MODE_FULL) {
+        return 1.0;
+    }
+    if (mode == PRIME_LIGHT_DIRECTION_MODE_LOBES) {
+        vec3 positive = max(directionFromLight, vec3(0.0));
+        vec3 negative = max(-directionFromLight, vec3(0.0));
+        return min(
+                primeLightEmissionLobe(packedDirection, 0u) * positive.x
+                        + primeLightEmissionLobe(packedDirection, 5u) * negative.x
+                        + primeLightEmissionLobe(packedDirection, 10u) * positive.y
+                        + primeLightEmissionLobe(packedDirection, 15u) * negative.y
+                        + primeLightEmissionLobe(packedDirection, 20u) * positive.z
+                        + primeLightEmissionLobe(packedDirection, 25u) * negative.z,
+                1.0);
+    }
+    vec3 axis = primeUnpackLightEmissionAxis(packedDirection);
+    float sineHalfAngle = float((packedDirection >> 20u) & 0x3ffu) / 1023.0;
+    float cosineHalfAngle = sqrt(max(1.0 - sineHalfAngle * sineHalfAngle, 0.0));
+    float forward = primeLightExpandedEmissionConeBound(
+            dot(axis, directionFromLight), sineHalfAngle, cosineHalfAngle);
+    if (mode == 0u) {
+        return forward;
+    }
+    float backward = primeLightExpandedEmissionConeBound(
+            dot(-axis, directionFromLight), sineHalfAngle, cosineHalfAngle);
+    return 0.5 * max(forward, backward);
+}
+
+float primeLightReceiverCosineBoundWithInverse(
         vec3 boundsMin,
         vec3 boundsMax,
         vec3 point,
         vec3 receiverNormal,
-        float distanceSquared) {
+        float distanceSquared,
+        float inverseDistance) {
     if (!(dot(receiverNormal, receiverNormal) > 0.0)) {
         return 1.0;
     }
@@ -154,9 +203,33 @@ float primeLightReceiverCosineBound(
         return 0.0;
     }
     float bound = distanceSquared > maximumProjection * maximumProjection
-            ? maximumProjection * inversesqrt(distanceSquared)
+            ? maximumProjection * inverseDistance
             : 1.0;
     return bound;
+}
+
+float primeLightReceiverCosineBound(
+        vec3 boundsMin,
+        vec3 boundsMax,
+        vec3 point,
+        vec3 receiverNormal,
+        float distanceSquared) {
+    float inverseDistance = distanceSquared > 0.0 ? inversesqrt(distanceSquared) : 0.0;
+    return primeLightReceiverCosineBoundWithInverse(
+            boundsMin,
+            boundsMax,
+            point,
+            receiverNormal,
+            distanceSquared,
+            inverseDistance);
+}
+
+float primeLightReceiverCosineEstimate(
+        vec3 directionToLight,
+        vec3 receiverNormal) {
+    return dot(receiverNormal, receiverNormal) > 0.0
+            ? max(dot(receiverNormal, directionToLight), 0.0)
+            : 1.0;
 }
 
 vec3 primeLightNodeMetrics(
@@ -168,23 +241,54 @@ vec3 primeLightNodeMetrics(
     vec3 closest = clamp(point, boundsMinPower.xyz, boundsMaxSoftening.xyz);
     vec3 delta = point - closest;
     float distanceSquared = dot(delta, delta);
-    float receiverBound = primeLightReceiverCosineBound(
+    float inverseDistance = distanceSquared > 0.0 ? inversesqrt(distanceSquared) : 0.0;
+    float receiverBound = primeLightReceiverCosineBoundWithInverse(
             boundsMinPower.xyz,
             boundsMaxSoftening.xyz,
             point,
             receiverNormal,
-            distanceSquared);
-    float emitterBound = primeLightEmitterCosineBound(
+            distanceSquared,
+            inverseDistance);
+    float emitterBound = primeLightEmitterCosineBoundWithInverse(
             boundsMinPower.xyz,
             boundsMaxSoftening.xyz,
             point,
             distanceSquared,
+            inverseDistance,
             packedEmissionDirection);
+    vec3 center = (boundsMinPower.xyz + boundsMaxSoftening.xyz) * 0.5;
+    vec3 centerDelta = center - point;
+    float centerDistanceSquared = dot(centerDelta, centerDelta);
+    float inverseCenterDistance = centerDistanceSquared > 0.0
+            ? inversesqrt(centerDistanceSquared)
+            : 0.0;
+    vec3 directionToLight = centerDelta * inverseCenterDistance;
+    float representativeImportance = centerDistanceSquared > 0.0
+            ? primeLightReceiverCosineEstimate(directionToLight, receiverNormal)
+                    * primeLightEmitterCosineEstimate(
+                            -directionToLight, packedEmissionDirection)
+            : receiverBound * emitterBound;
+    vec3 extent = boundsMaxSoftening.xyz - boundsMinPower.xyz;
+    float radiusSquared = 0.25 * dot(extent, extent);
+    // Angular size decides whether the center ray is representative. Nearby or enclosing nodes
+    // retain the conservative bounds; compact far nodes use the joint direction at one point.
+    float uncertainty = centerDistanceSquared > 0.0
+            ? min(radiusSquared * inverseCenterDistance * inverseCenterDistance, 1.0)
+            : 1.0;
+    float boundedImportance = receiverBound * emitterBound;
+    float angularImportance = mix(representativeImportance, boundedImportance, uncertainty);
+    float softeningDistanceSquared = max(boundsMaxSoftening.w, 0.0);
+    float effectiveDistanceSquared = mix(
+            centerDistanceSquared + softeningDistanceSquared,
+            distanceSquared + softeningDistanceSquared,
+            uncertainty);
     return vec3(
-            distanceSquared + boundsMaxSoftening.w,
+            effectiveDistanceSquared,
             boundsMinPower.w,
-            // One shared floor preserves support without compounding receiver and emitter floors.
-            max(receiverBound * emitterBound, PRIME_LIGHT_RECEIVER_COSINE_FLOOR));
+            // A smooth baseline preserves support without flattening all low-cosine branches.
+            PRIME_LIGHT_RECEIVER_COSINE_FLOOR
+                    + (1.0 - PRIME_LIGHT_RECEIVER_COSINE_FLOOR)
+                            * clamp(angularImportance, 0.0, 1.0));
 }
 
 float primeLightBranchProbability(vec3 firstMetrics, vec3 secondMetrics) {

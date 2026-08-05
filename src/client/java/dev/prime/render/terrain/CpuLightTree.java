@@ -14,12 +14,16 @@ import java.util.List;
  */
 final class CpuLightTree {
     static final int NO_INDEX = -1;
-    static final float LOCAL_SOFTENING_SCALE = 1.0F / 128.0F;
-    static final float WORLD_SOFTENING_SCALE = 1.0F / 64.0F;
+    // A uniformly populated AABB has spatial variance diagonal^2 / 12. These retain the
+    // previous diagonal^2 / 128 and / 64 calibration while responding to actual power spread.
+    static final float LOCAL_SOFTENING_SCALE = 3.0F / 32.0F;
+    static final float WORLD_SOFTENING_SCALE = 3.0F / 16.0F;
     static final float MINIMUM_SOFTENING_DISTANCE_SQUARED = 0.25F;
     static final int LEAF_FLAG = Integer.MIN_VALUE;
     static final int INDEX_MASK = Integer.MAX_VALUE;
     private static final int SAH_BIN_COUNT = 16;
+    private static final int SAH_CANDIDATE_COUNT = 3 * (SAH_BIN_COUNT - 1);
+    private static final float DIRECTIONAL_TIE_RATIO = 1.04F;
     private static final int BOUNDS_WORDS_PER_NODE = 8;
     private static final int FORWARD_WORDS_PER_NODE = 2;
     private static final int REVERSE_WORDS_PER_NODE = 1;
@@ -122,9 +126,7 @@ final class CpuLightTree {
 
     private static int partition(Leaves leaves, int start, int end, Workspace workspace) {
         workspace.findCentroidBounds(leaves, start, end);
-        float bestCost = Float.POSITIVE_INFINITY;
-        int bestAxis = -1;
-        int bestSplit = -1;
+        workspace.resetCandidates();
         for (int axis = 0; axis < 3; axis++) {
             float minimum = workspace.centroidMinimum(axis);
             float extent = workspace.centroidMaximum(axis) - minimum;
@@ -162,14 +164,17 @@ final class CpuLightTree {
                                 workspace.suffixMaxY[split + 1],
                                 workspace.suffixMaxZ[split + 1])
                                 * workspace.suffixPower[split + 1];
-                if (cost < bestCost) {
-                    bestCost = cost;
-                    bestAxis = axis;
-                    bestSplit = split;
-                }
+                float directionCost = workspace.prefixPower[split]
+                                * LightDirection.spread(workspace.prefixDirection[split])
+                        + workspace.suffixPower[split + 1]
+                                * LightDirection.spread(workspace.suffixDirection[split + 1]);
+                workspace.addCandidate(axis, split, cost, directionCost);
             }
         }
 
+        int bestCandidate = workspace.bestCandidate();
+        int bestAxis = bestCandidate >= 0 ? workspace.candidateAxis[bestCandidate] : -1;
+        int bestSplit = bestCandidate >= 0 ? workspace.candidateSplit[bestCandidate] : -1;
         if (bestAxis >= 0) {
             float minimum = workspace.centroidMinimum(bestAxis);
             float extent = workspace.centroidMaximum(bestAxis) - minimum;
@@ -239,6 +244,33 @@ final class CpuLightTree {
         float y = Math.max(maxY - minY, 0.0F);
         float z = Math.max(maxZ - minZ, 0.0F);
         return 2.0F * (x * y + y * z + z * x);
+    }
+
+    private static float uniformBoundsVariance(
+            float minX,
+            float minY,
+            float minZ,
+            float maxX,
+            float maxY,
+            float maxZ) {
+        float x = maxX - minX;
+        float y = maxY - minY;
+        float z = maxZ - minZ;
+        return (x * x + y * y + z * z) / 12.0F;
+    }
+
+    private static LightDirection.Bounds combineDirections(
+            LightDirection.Bounds first,
+            float firstPower,
+            LightDirection.Bounds second,
+            float secondPower) {
+        if (!(firstPower > 0.0F)) {
+            return secondPower > 0.0F ? second : null;
+        }
+        if (!(secondPower > 0.0F)) {
+            return first;
+        }
+        return LightDirection.combine(first, firstPower, second, secondPower);
     }
 
     static record Leaf(
@@ -312,7 +344,19 @@ final class CpuLightTree {
                 throw new IllegalStateException("Light slot does not reference a leaf");
             }
             this.nodes.setBounds(
-                    node, minX, minY, minZ, maxX, maxY, maxZ, power, this.softeningScale);
+                    node,
+                    minX,
+                    minY,
+                    minZ,
+                    maxX,
+                    maxY,
+                    maxZ,
+                    (minX + maxX) * 0.5F,
+                    (minY + maxY) * 0.5F,
+                    (minZ + maxZ) * 0.5F,
+                    uniformBoundsVariance(minX, minY, minZ, maxX, maxY, maxZ),
+                    power,
+                    this.softeningScale);
             this.nodes.direction[node] = LightDirection.full();
             this.nodes.firstChildOrLeaf[node] = outputIndex;
         }
@@ -467,6 +511,7 @@ final class CpuLightTree {
         private final float[] centerX;
         private final float[] centerY;
         private final float[] centerZ;
+        private final float[] spatialVariance;
         private final float[] power;
         private final int[] index;
         private final LightDirection.Bounds[] direction;
@@ -485,6 +530,7 @@ final class CpuLightTree {
             this.centerX = new float[capacity];
             this.centerY = new float[capacity];
             this.centerZ = new float[capacity];
+            this.spatialVariance = new float[capacity];
             this.power = new float[capacity];
             this.index = new int[capacity];
             this.direction = new LightDirection.Bounds[capacity];
@@ -545,6 +591,7 @@ final class CpuLightTree {
                     (minX + maxX) * 0.5F,
                     (minY + maxY) * 0.5F,
                     (minZ + maxZ) * 0.5F,
+                    uniformBoundsVariance(minX, minY, minZ, maxX, maxY, maxZ),
                     0.0F,
                     index,
                     LightDirection.full());
@@ -611,6 +658,51 @@ final class CpuLightTree {
                     centerX,
                     centerY,
                     centerZ,
+                    uniformBoundsVariance(minX, minY, minZ, maxX, maxY, maxZ),
+                    power,
+                    index,
+                    direction);
+        }
+
+        void addWithSpatialVariance(
+                float minX,
+                float minY,
+                float minZ,
+                float maxX,
+                float maxY,
+                float maxZ,
+                float centerX,
+                float centerY,
+                float centerZ,
+                float spatialVariance,
+                float power,
+                int index,
+                LightDirection.Bounds direction) {
+            validateLeaf(
+                    minX,
+                    minY,
+                    minZ,
+                    maxX,
+                    maxY,
+                    maxZ,
+                    centerX,
+                    centerY,
+                    centerZ,
+                    power);
+            if (!(spatialVariance >= 0.0F) || !Float.isFinite(spatialVariance)) {
+                throw new IllegalArgumentException("Light spatial variance must be finite and nonnegative");
+            }
+            append(
+                    minX,
+                    minY,
+                    minZ,
+                    maxX,
+                    maxY,
+                    maxZ,
+                    centerX,
+                    centerY,
+                    centerZ,
+                    spatialVariance,
                     power,
                     index,
                     direction);
@@ -626,6 +718,7 @@ final class CpuLightTree {
                 float centerX,
                 float centerY,
                 float centerZ,
+                float spatialVariance,
                 float power,
                 int index,
                 LightDirection.Bounds direction) {
@@ -642,6 +735,7 @@ final class CpuLightTree {
             this.centerX[slot] = centerX;
             this.centerY[slot] = centerY;
             this.centerZ[slot] = centerZ;
+            this.spatialVariance[slot] = spatialVariance;
             this.power[slot] = power;
             this.index[slot] = index;
             this.direction[slot] = direction;
@@ -674,6 +768,7 @@ final class CpuLightTree {
             swap(this.centerX, first, second);
             swap(this.centerY, first, second);
             swap(this.centerZ, first, second);
+            swap(this.spatialVariance, first, second);
             swap(this.power, first, second);
             LightDirection.Bounds direction = this.direction[first];
             this.direction[first] = this.direction[second];
@@ -757,6 +852,10 @@ final class CpuLightTree {
         private final float[] maxX;
         private final float[] maxY;
         private final float[] maxZ;
+        private final float[] centerX;
+        private final float[] centerY;
+        private final float[] centerZ;
+        private final float[] spatialVariance;
         private final float[] power;
         private final float[] softeningDistanceSquared;
         private final int[] parent;
@@ -772,6 +871,10 @@ final class CpuLightTree {
             this.maxX = new float[capacity];
             this.maxY = new float[capacity];
             this.maxZ = new float[capacity];
+            this.centerX = new float[capacity];
+            this.centerY = new float[capacity];
+            this.centerZ = new float[capacity];
+            this.spatialVariance = new float[capacity];
             this.power = new float[capacity];
             this.softeningDistanceSquared = new float[capacity];
             this.parent = new int[capacity];
@@ -791,6 +894,15 @@ final class CpuLightTree {
             System.arraycopy(this.maxX, 0, copy.maxX, 0, this.maxX.length);
             System.arraycopy(this.maxY, 0, copy.maxY, 0, this.maxY.length);
             System.arraycopy(this.maxZ, 0, copy.maxZ, 0, this.maxZ.length);
+            System.arraycopy(this.centerX, 0, copy.centerX, 0, this.centerX.length);
+            System.arraycopy(this.centerY, 0, copy.centerY, 0, this.centerY.length);
+            System.arraycopy(this.centerZ, 0, copy.centerZ, 0, this.centerZ.length);
+            System.arraycopy(
+                    this.spatialVariance,
+                    0,
+                    copy.spatialVariance,
+                    0,
+                    this.spatialVariance.length);
             System.arraycopy(this.power, 0, copy.power, 0, this.power.length);
             System.arraycopy(
                     this.softeningDistanceSquared,
@@ -835,6 +947,11 @@ final class CpuLightTree {
             float maxY = Float.NEGATIVE_INFINITY;
             float maxZ = Float.NEGATIVE_INFINITY;
             float power = 0.0F;
+            double momentPower = 0.0;
+            double meanX = 0.0;
+            double meanY = 0.0;
+            double meanZ = 0.0;
+            double varianceMoment = 0.0;
             for (int leaf = start; leaf < end; leaf++) {
                 float leafPower = leaves.power[leaf];
                 if (leafPower > 0.0F) {
@@ -845,8 +962,24 @@ final class CpuLightTree {
                     maxY = Math.max(maxY, leaves.maxY[leaf]);
                     maxZ = Math.max(maxZ, leaves.maxZ[leaf]);
                     power += leafPower;
+                    double nextPower = momentPower + leafPower;
+                    double deltaX = leaves.centerX[leaf] - meanX;
+                    double deltaY = leaves.centerY[leaf] - meanY;
+                    double deltaZ = leaves.centerZ[leaf] - meanZ;
+                    varianceMoment += (double) leafPower * leaves.spatialVariance[leaf]
+                            + momentPower * leafPower / nextPower
+                                    * (deltaX * deltaX + deltaY * deltaY + deltaZ * deltaZ);
+                    double centerWeight = leafPower / nextPower;
+                    meanX += centerWeight * deltaX;
+                    meanY += centerWeight * deltaY;
+                    meanZ += centerWeight * deltaZ;
+                    momentPower = nextPower;
                 }
             }
+            float centerX;
+            float centerY;
+            float centerZ;
+            float spatialVariance;
             if (power == 0.0F) {
                 minX = leaves.minX[start];
                 minY = leaves.minY[start];
@@ -854,10 +987,32 @@ final class CpuLightTree {
                 maxX = leaves.maxX[start];
                 maxY = leaves.maxY[start];
                 maxZ = leaves.maxZ[start];
+                centerX = leaves.centerX[start];
+                centerY = leaves.centerY[start];
+                centerZ = leaves.centerZ[start];
+                spatialVariance = leaves.spatialVariance[start];
             } else if (!Float.isFinite(power)) {
                 throw new IllegalArgumentException("Aggregate light power exceeds f32 range");
+            } else {
+                centerX = (float) meanX;
+                centerY = (float) meanY;
+                centerZ = (float) meanZ;
+                spatialVariance = (float) Math.max(varianceMoment / momentPower, 0.0);
             }
-            setBounds(index, minX, minY, minZ, maxX, maxY, maxZ, power, softeningScale);
+            setBounds(
+                    index,
+                    minX,
+                    minY,
+                    minZ,
+                    maxX,
+                    maxY,
+                    maxZ,
+                    centerX,
+                    centerY,
+                    centerZ,
+                    spatialVariance,
+                    power,
+                    softeningScale);
             this.parent[index] = parent;
             return index;
         }
@@ -872,6 +1027,23 @@ final class CpuLightTree {
                 throw new IllegalArgumentException("Aggregate light power exceeds f32 range");
             }
             if (firstPower > 0.0F && secondPower > 0.0F) {
+                double momentPower = (double) firstPower + secondPower;
+                float centerX = (float) (((double) firstPower * this.centerX[first]
+                                + (double) secondPower * this.centerX[second])
+                        / momentPower);
+                float centerY = (float) (((double) firstPower * this.centerY[first]
+                                + (double) secondPower * this.centerY[second])
+                        / momentPower);
+                float centerZ = (float) (((double) firstPower * this.centerZ[first]
+                                + (double) secondPower * this.centerZ[second])
+                        / momentPower);
+                float spatialVariance = (float) (((double) firstPower
+                                        * (this.spatialVariance[first]
+                                                + squaredDistance(first, centerX, centerY, centerZ))
+                                + (double) secondPower
+                                        * (this.spatialVariance[second]
+                                                + squaredDistance(second, centerX, centerY, centerZ)))
+                        / momentPower);
                 setBounds(
                         index,
                         Math.min(this.minX[first], this.minX[second]),
@@ -880,6 +1052,10 @@ final class CpuLightTree {
                         Math.max(this.maxX[first], this.maxX[second]),
                         Math.max(this.maxY[first], this.maxY[second]),
                         Math.max(this.maxZ[first], this.maxZ[second]),
+                        centerX,
+                        centerY,
+                        centerZ,
+                        spatialVariance,
                         combinedPower,
                         softeningScale);
             } else {
@@ -892,6 +1068,10 @@ final class CpuLightTree {
                         this.maxX[source],
                         this.maxY[source],
                         this.maxZ[source],
+                        this.centerX[source],
+                        this.centerY[source],
+                        this.centerZ[source],
+                        this.spatialVariance[source],
                         combinedPower,
                         softeningScale);
             }
@@ -916,21 +1096,37 @@ final class CpuLightTree {
                 float maxX,
                 float maxY,
                 float maxZ,
+                float centerX,
+                float centerY,
+                float centerZ,
+                float spatialVariance,
                 float power,
                 float softeningScale) {
+            if (!(spatialVariance >= 0.0F) || !Float.isFinite(spatialVariance)) {
+                throw new IllegalArgumentException(
+                        "Aggregate light spatial variance exceeds f32 range");
+            }
             this.minX[index] = minX;
             this.minY[index] = minY;
             this.minZ[index] = minZ;
             this.maxX[index] = maxX;
             this.maxY[index] = maxY;
             this.maxZ[index] = maxZ;
+            this.centerX[index] = centerX;
+            this.centerY[index] = centerY;
+            this.centerZ[index] = centerZ;
+            this.spatialVariance[index] = spatialVariance;
             this.power[index] = power;
-            float x = maxX - minX;
-            float y = maxY - minY;
-            float z = maxZ - minZ;
             this.softeningDistanceSquared[index] = Math.max(
-                    (x * x + y * y + z * z) * softeningScale,
+                    spatialVariance * softeningScale,
                     MINIMUM_SOFTENING_DISTANCE_SQUARED);
+        }
+
+        private double squaredDistance(int index, float x, float y, float z) {
+            double deltaX = (double) this.centerX[index] - x;
+            double deltaY = (double) this.centerY[index] - y;
+            double deltaZ = (double) this.centerZ[index] - z;
+            return deltaX * deltaX + deltaY * deltaY + deltaZ * deltaZ;
         }
 
         private Bounds bounds(int index) {
@@ -952,6 +1148,7 @@ final class CpuLightTree {
         private float maxY;
         private float maxZ;
         private float power;
+        private LightDirection.Bounds direction;
         private int count;
 
         private void reset() {
@@ -962,6 +1159,7 @@ final class CpuLightTree {
             this.maxY = Float.NEGATIVE_INFINITY;
             this.maxZ = Float.NEGATIVE_INFINITY;
             this.power = 0.0F;
+            this.direction = null;
             this.count = 0;
         }
 
@@ -972,7 +1170,10 @@ final class CpuLightTree {
             this.maxX = Math.max(this.maxX, leaves.maxX[index]);
             this.maxY = Math.max(this.maxY, leaves.maxY[index]);
             this.maxZ = Math.max(this.maxZ, leaves.maxZ[index]);
-            this.power += leaves.power[index];
+            float leafPower = leaves.power[index];
+            this.direction = combineDirections(
+                    this.direction, this.power, leaves.direction[index], leafPower);
+            this.power += leafPower;
             this.count++;
         }
     }
@@ -986,6 +1187,8 @@ final class CpuLightTree {
         private final float[] prefixMaxY = new float[SAH_BIN_COUNT];
         private final float[] prefixMaxZ = new float[SAH_BIN_COUNT];
         private final float[] prefixPower = new float[SAH_BIN_COUNT];
+        private final LightDirection.Bounds[] prefixDirection =
+                new LightDirection.Bounds[SAH_BIN_COUNT];
         private final int[] prefixCount = new int[SAH_BIN_COUNT];
         private final float[] suffixMinX = new float[SAH_BIN_COUNT];
         private final float[] suffixMinY = new float[SAH_BIN_COUNT];
@@ -994,7 +1197,14 @@ final class CpuLightTree {
         private final float[] suffixMaxY = new float[SAH_BIN_COUNT];
         private final float[] suffixMaxZ = new float[SAH_BIN_COUNT];
         private final float[] suffixPower = new float[SAH_BIN_COUNT];
+        private final LightDirection.Bounds[] suffixDirection =
+                new LightDirection.Bounds[SAH_BIN_COUNT];
         private final int[] suffixCount = new int[SAH_BIN_COUNT];
+        private final int[] candidateAxis = new int[SAH_CANDIDATE_COUNT];
+        private final int[] candidateSplit = new int[SAH_CANDIDATE_COUNT];
+        private final float[] candidateCost = new float[SAH_CANDIDATE_COUNT];
+        private final float[] candidateDirectionCost = new float[SAH_CANDIDATE_COUNT];
+        private int candidateCount;
         private float centroidMinX;
         private float centroidMinY;
         private float centroidMinZ;
@@ -1008,6 +1218,48 @@ final class CpuLightTree {
             }
         }
 
+        private void resetCandidates() {
+            this.candidateCount = 0;
+        }
+
+        private void addCandidate(int axis, int split, float cost, float directionCost) {
+            if (!Float.isFinite(cost)) {
+                return;
+            }
+            int index = this.candidateCount++;
+            this.candidateAxis[index] = axis;
+            this.candidateSplit[index] = split;
+            this.candidateCost[index] = cost;
+            this.candidateDirectionCost[index] = directionCost;
+        }
+
+        private int bestCandidate() {
+            if (this.candidateCount == 0) {
+                return -1;
+            }
+            float minimumCost = Float.POSITIVE_INFINITY;
+            for (int index = 0; index < this.candidateCount; index++) {
+                minimumCost = Math.min(minimumCost, this.candidateCost[index]);
+            }
+            float permittedCost = minimumCost * DIRECTIONAL_TIE_RATIO;
+            int best = -1;
+            for (int index = 0; index < this.candidateCount; index++) {
+                float cost = this.candidateCost[index];
+                if (cost > permittedCost) {
+                    continue;
+                }
+                if (best < 0
+                        || this.candidateDirectionCost[index]
+                                < this.candidateDirectionCost[best]
+                        || (this.candidateDirectionCost[index]
+                                        == this.candidateDirectionCost[best]
+                                && cost < this.candidateCost[best])) {
+                    best = index;
+                }
+            }
+            return best;
+        }
+
         private void aggregate() {
             float minX = Float.POSITIVE_INFINITY;
             float minY = Float.POSITIVE_INFINITY;
@@ -1016,6 +1268,7 @@ final class CpuLightTree {
             float maxY = Float.NEGATIVE_INFINITY;
             float maxZ = Float.NEGATIVE_INFINITY;
             float power = 0.0F;
+            LightDirection.Bounds direction = null;
             int count = 0;
             for (int index = 0; index < SAH_BIN_COUNT; index++) {
                 Bin bin = this.bins[index];
@@ -1026,6 +1279,7 @@ final class CpuLightTree {
                     maxX = Math.max(maxX, bin.maxX);
                     maxY = Math.max(maxY, bin.maxY);
                     maxZ = Math.max(maxZ, bin.maxZ);
+                    direction = combineDirections(direction, power, bin.direction, bin.power);
                     power += bin.power;
                     count += bin.count;
                 }
@@ -1036,6 +1290,7 @@ final class CpuLightTree {
                 this.prefixMaxY[index] = maxY;
                 this.prefixMaxZ[index] = maxZ;
                 this.prefixPower[index] = power;
+                this.prefixDirection[index] = direction;
                 this.prefixCount[index] = count;
             }
 
@@ -1046,6 +1301,7 @@ final class CpuLightTree {
             maxY = Float.NEGATIVE_INFINITY;
             maxZ = Float.NEGATIVE_INFINITY;
             power = 0.0F;
+            direction = null;
             count = 0;
             for (int index = SAH_BIN_COUNT - 1; index >= 0; index--) {
                 Bin bin = this.bins[index];
@@ -1056,6 +1312,7 @@ final class CpuLightTree {
                     maxX = Math.max(maxX, bin.maxX);
                     maxY = Math.max(maxY, bin.maxY);
                     maxZ = Math.max(maxZ, bin.maxZ);
+                    direction = combineDirections(direction, power, bin.direction, bin.power);
                     power += bin.power;
                     count += bin.count;
                 }
@@ -1066,6 +1323,7 @@ final class CpuLightTree {
                 this.suffixMaxY[index] = maxY;
                 this.suffixMaxZ[index] = maxZ;
                 this.suffixPower[index] = power;
+                this.suffixDirection[index] = direction;
                 this.suffixCount[index] = count;
             }
         }

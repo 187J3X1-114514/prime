@@ -222,6 +222,30 @@ final class LightDirection {
         return packed >>> MODE_SHIFT;
     }
 
+    /** Excess spherical integral of the packed cosine envelope over an exact diffuse lobe. */
+    static float spread(Bounds bounds) {
+        if (bounds == null) {
+            return 0.0F;
+        }
+        if (bounds.mode == MODE_FULL) {
+            return 3.0F;
+        }
+        if (bounds.mode == MODE_LOBES) {
+            return Math.max(
+                    bounds.positiveX
+                            + bounds.negativeX
+                            + bounds.positiveY
+                            + bounds.negativeY
+                            + bounds.positiveZ
+                            + bounds.negativeZ
+                            - 1.0F,
+                    0.0F);
+        }
+        return 1.0F
+                - (float) Math.cos(bounds.halfAngle)
+                + 0.5F * (float) Math.PI * (float) Math.sin(bounds.halfAngle);
+    }
+
     private static Cone union(Bounds first, Bounds second, int mode) {
         float secondX = second.x;
         float secondY = second.y;

@@ -179,6 +179,70 @@ final class LightDirectionTest {
                 LightDirection.mode(forward[tree.leafNode(1) * 2 + 1]));
     }
 
+    @Test
+    void spatialSahTiesKeepCoherentSlantedEmittersTogether() {
+        float inverseRootTwo = 1.0F / (float) Math.sqrt(2.0);
+        LightDirection.Bounds positive = LightDirection.fromNormal(
+                inverseRootTwo, inverseRootTwo, 0.0F, false);
+        LightDirection.Bounds negative = LightDirection.fromNormal(
+                inverseRootTwo, -inverseRootTwo, 0.0F, false);
+        CpuLightTree.Result tree = CpuLightTree.build(
+                List.of(
+                        directionalLeaf(0.0F, 0.0F, 0, positive),
+                        directionalLeaf(0.0F, 4.0F, 1, negative),
+                        directionalLeaf(4.0F, 0.0F, 2, positive),
+                        directionalLeaf(4.0F, 4.0F, 3, negative)),
+                4,
+                CpuLightTree.LOCAL_SOFTENING_SCALE);
+
+        int[] forward = tree.packNodeForward();
+        int firstChild = forward[0];
+        assertEquals(
+                LightDirection.MODE_ONE_SIDED_CONE,
+                LightDirection.mode(forward[firstChild * 2 + 1]));
+        assertEquals(
+                LightDirection.MODE_ONE_SIDED_CONE,
+                LightDirection.mode(forward[(firstChild + 1) * 2 + 1]));
+    }
+
+    @Test
+    void directionalPreferenceCannotReplaceAClearlyBetterSpatialSplit() {
+        float inverseRootTwo = 1.0F / (float) Math.sqrt(2.0);
+        LightDirection.Bounds positive = LightDirection.fromNormal(
+                inverseRootTwo, inverseRootTwo, 0.0F, false);
+        LightDirection.Bounds negative = LightDirection.fromNormal(
+                inverseRootTwo, -inverseRootTwo, 0.0F, false);
+        CpuLightTree.Result tree = CpuLightTree.build(
+                List.of(
+                        directionalLeaf(0.0F, 0.0F, 0, positive),
+                        directionalLeaf(0.0F, 1.0F, 1, negative),
+                        directionalLeaf(100.0F, 0.0F, 2, positive),
+                        directionalLeaf(100.0F, 1.0F, 3, negative)),
+                4,
+                CpuLightTree.LOCAL_SOFTENING_SCALE);
+
+        int[] forward = tree.packNodeForward();
+        int firstChild = forward[0];
+        assertEquals(
+                LightDirection.MODE_LOBES,
+                LightDirection.mode(forward[firstChild * 2 + 1]));
+        assertEquals(
+                LightDirection.MODE_LOBES,
+                LightDirection.mode(forward[(firstChild + 1) * 2 + 1]));
+    }
+
+    private static CpuLightTree.Leaf directionalLeaf(
+            float x, float y, int index, LightDirection.Bounds direction) {
+        return new CpuLightTree.Leaf(
+                new CpuLightTree.Bounds(x, y, 0.0F, x + 1.0F, y + 1.0F, 1.0F),
+                x + 0.5F,
+                y + 0.5F,
+                0.5F,
+                1.0F,
+                index,
+                direction);
+    }
+
     private static CpuLightTree.Bounds randomBounds(SplittableRandom random) {
         float minX = random.nextFloat() * 16.0F - 8.0F;
         float minY = random.nextFloat() * 16.0F - 8.0F;

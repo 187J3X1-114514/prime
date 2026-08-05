@@ -56,7 +56,7 @@ final class PrimeProductionMathGpuTest {
 
     @Test
     void integratorAndLightTransportMathKeepsItsNumericalContracts() throws IOException {
-        int kinds = 13;
+        int kinds = 14;
         int inputWords = 6;
         ShaderPropertyBatch.assertProperties(
                 runner,
@@ -403,6 +403,44 @@ final class PrimeProductionMathGpuTest {
                             0.0F);
                 } else if (kind == 12) {
                     putLightEmissionBoundCase(input, index, words, local, random);
+                } else if (kind == 13) {
+                    float[] point = {
+                        random.nextFloat() * 128.0F - 64.0F,
+                        random.nextFloat() * 128.0F - 64.0F,
+                        random.nextFloat() * 128.0F - 64.0F
+                    };
+                    float[] direction = randomUnitVector(random);
+                    float distance = 0.25F + random.nextFloat() * 128.0F;
+                    float[] receiverNormal = local == 0
+                            ? new float[] {0.0F, 0.0F, 0.0F}
+                            : randomUnitVector(random);
+                    putVec4(
+                            input,
+                            index,
+                            words,
+                            1,
+                            point[0] + direction[0] * distance,
+                            point[1] + direction[1] * distance,
+                            point[2] + direction[2] * distance,
+                            positiveFloat(random, -20, 20));
+                    putVec4(
+                            input,
+                            index,
+                            words,
+                            2,
+                            point[0],
+                            point[1],
+                            point[2],
+                            local == 1 ? 0.0F : positiveFloat(random, -20, 6));
+                    putVec4(
+                            input,
+                            index,
+                            words,
+                            3,
+                            receiverNormal[0],
+                            receiverNormal[1],
+                            receiverNormal[2],
+                            0.0F);
                 } else {
                     putVec4(
                             input,

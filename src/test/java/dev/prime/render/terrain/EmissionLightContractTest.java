@@ -93,6 +93,24 @@ final class EmissionLightContractTest {
     }
 
     @Test
+    void uniformTriangleDistributionHasExactPositionMoments() {
+        EmissionDistribution.SpatialMoments moments =
+                EmissionDistribution.uniform().spatialMoments();
+
+        assertEquals(1.0F / 3.0F, moments.meanU(), 1.0E-6F);
+        assertEquals(1.0F / 3.0F, moments.meanV(), 1.0E-6F);
+        assertEquals(1.0F / 6.0F, moments.meanSquareU(), 1.0E-6F);
+        assertEquals(1.0F / 12.0F, moments.meanProductUv(), 1.0E-6F);
+        assertEquals(1.0F / 6.0F, moments.meanSquareV(), 1.0E-6F);
+        assertEquals(
+                1.0F / 9.0F,
+                moments.positionVariance(
+                        1.0F, 0.0F, 0.0F,
+                        0.0F, 1.0F, 0.0F),
+                1.0E-6F);
+    }
+
+    @Test
     void sectionRetainsMoreThan1024DistinctImportanceDistributions() {
         int count = 1026;
         CpuSectionLights.Builder builder = new CpuSectionLights.Builder();
@@ -234,6 +252,45 @@ final class EmissionLightContractTest {
             assertEquals(leaf, forward[node * 2] & CpuLightTree.INDEX_MASK);
             assertNotEquals(CpuLightTree.NO_INDEX, reverse[node]);
         }
+    }
+
+    @Test
+    void treeSofteningTracksPowerWeightedSpatialVariance() {
+        CpuLightTree.Leaves leaves = new CpuLightTree.Leaves(2);
+        leaves.addWithSpatialVariance(
+                0.0F,
+                0.0F,
+                0.0F,
+                0.0F,
+                0.0F,
+                0.0F,
+                0.0F,
+                0.0F,
+                0.0F,
+                1.0F,
+                1.0F,
+                0,
+                LightDirection.full());
+        leaves.addWithSpatialVariance(
+                10.0F,
+                0.0F,
+                0.0F,
+                10.0F,
+                0.0F,
+                0.0F,
+                10.0F,
+                0.0F,
+                0.0F,
+                3.0F,
+                3.0F,
+                1,
+                LightDirection.full());
+
+        CpuLightTree.Result tree = CpuLightTree.buildOwned(
+                leaves, 2, CpuLightTree.LOCAL_SOFTENING_SCALE);
+        float rootSoftening = Float.intBitsToFloat(tree.packNodeBounds()[7]);
+
+        assertEquals(21.25F * CpuLightTree.LOCAL_SOFTENING_SCALE, rootSoftening, 1.0E-6F);
     }
 
     @Test

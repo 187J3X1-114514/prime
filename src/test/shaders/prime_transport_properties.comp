@@ -380,12 +380,14 @@ void primeCheckLightBranch(
             firstBoundsMinPower,
             firstBoundsMaxSoftening,
             point,
-            receiverNormal);
+            receiverNormal,
+            0xc0000000u);
     vec3 secondMetrics = primeLightNodeMetrics(
             secondBoundsMinPower,
             secondBoundsMaxSoftening,
             point,
-            receiverNormal);
+            receiverNormal,
+            0xc0000000u);
     float probability = primeLightBranchProbability(firstMetrics, secondMetrics);
     float legacy = primeLegacyLightBranchProbability(
             firstBoundsMinPower,
@@ -430,6 +432,37 @@ void primeCheckLightReceiverNormal(
             0.0,
             0.0,
             0.0);
+}
+
+void primeCheckLightEmissionBound(
+        inout PrimeTransportResult result,
+        uint packedDirection,
+        vec3 boundsMin,
+        vec3 boundsMax,
+        vec3 point,
+        vec3 lightPoint,
+        vec3 normal,
+        bool twoSided) {
+    vec3 closest = clamp(point, boundsMin, boundsMax);
+    vec3 closestDelta = point - closest;
+    float bound = primeLightEmitterCosineBound(
+            boundsMin,
+            boundsMax,
+            point,
+            dot(closestDelta, closestDelta),
+            packedDirection);
+    vec3 delta = point - lightPoint;
+    float actual = dot(delta, delta) > 1.0e-12
+            ? dot(normal, normalize(delta))
+            : 1.0;
+    actual = twoSided ? 0.5 * abs(actual) : max(actual, 0.0);
+    primeTransportClassify(result.mask, vec3(bound, actual, 0.0));
+    if (bound < 0.0 || bound > 1.0 || bound + 2.0e-5 < actual) {
+        result.mask |= PRIME_TEST_FAILURE_RANGE;
+    }
+    result.first = vec4(bound, actual, uintBitsToFloat(packedDirection), 0.0);
+    result.second = vec4(boundsMin, 0.0);
+    result.third = vec4(boundsMax, 0.0);
 }
 
 void main() {
@@ -486,6 +519,16 @@ void main() {
                 result, first.xyz, first.w, second.x);
     } else if (kind == 11u) {
         primeCheckLightReceiverNormal(result, first.xyz);
+    } else if (kind == 12u) {
+        primeCheckLightEmissionBound(
+                result,
+                control.y,
+                first.xyz,
+                second.xyz,
+                third.xyz,
+                fourth.xyz,
+                fifth.xyz,
+                fifth.w != 0.0);
     } else {
         result.mask |= PRIME_TEST_FAILURE_EVENT;
     }

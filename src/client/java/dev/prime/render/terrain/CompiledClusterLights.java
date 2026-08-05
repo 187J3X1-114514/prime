@@ -40,7 +40,8 @@ public final class CompiledClusterLights {
                         sourceSummary.bounds().maxX(),
                         sourceSummary.bounds().maxY(),
                         sourceSummary.bounds().maxZ(),
-                        sourceSummary.power()));
+                        sourceSummary.power(),
+                        sourceSummary.packedDirection()));
     }
 
     static CompiledClusterLights fromEncoded(int[] relativeWords, Summary summary) {
@@ -70,8 +71,83 @@ public final class CompiledClusterLights {
             throw new IllegalArgumentException(
                     "Compiled light header disagrees with its emitter summary");
         }
-        validateLayout(relativeWords, offsets, byteSize, summary.emitterCount());
+        validateLayout(
+                relativeWords,
+                offsets,
+                byteSize,
+                summary.emitterCount(),
+                summary.packedDirection());
         return new CompiledClusterLights(relativeWords.clone(), summary);
+    }
+
+    /** Upgrades the pre-v6 one-word forward stream with conservative full-direction metadata. */
+    static int[] addFullDirectionStream(int[] oldWords) {
+        Objects.requireNonNull(oldWords, "oldWords");
+        if (oldWords.length < HEADER_WORDS) {
+            throw new IllegalArgumentException("Compiled light payload is smaller than its header");
+        }
+        long nodeStart = getLong(oldWords, 0);
+        long forwardStart = getLong(oldWords, 2);
+        long reverseStart = getLong(oldWords, 4);
+        long emitterStart = getLong(oldWords, 6);
+        long cellStart = getLong(oldWords, 8);
+        long byteSize = (long) oldWords.length * Integer.BYTES;
+        if (nodeStart < 0L
+                || forwardStart < 0L
+                || reverseStart < 0L
+                || emitterStart < 0L
+                || cellStart < 0L
+                || (nodeStart | forwardStart | reverseStart | emitterStart | cellStart) % 4L != 0L
+                || nodeStart != (long) HEADER_WORDS * Integer.BYTES
+                || forwardStart < nodeStart
+                || emitterStart < reverseStart
+                || cellStart < emitterStart
+                || cellStart > byteSize
+                || (forwardStart - nodeStart) % ShaderAbi.LIGHT_NODE_SIZE != 0L) {
+            throw new IllegalArgumentException("Legacy compiled light payload is inconsistent");
+        }
+        long nodeCount = (forwardStart - nodeStart) / ShaderAbi.LIGHT_NODE_SIZE;
+        long oldReverseStart = Math.addExact(
+                forwardStart, Math.multiplyExact(nodeCount, Integer.BYTES));
+        long oldReverseEnd = Math.addExact(
+                reverseStart, Math.multiplyExact(nodeCount, Integer.BYTES));
+        if (reverseStart != oldReverseStart || emitterStart != alignUp(oldReverseEnd, 16L)) {
+            throw new IllegalArgumentException("Legacy compiled light streams disagree");
+        }
+        long newReverseStart = Math.addExact(
+                forwardStart,
+                Math.multiplyExact(nodeCount, ShaderAbi.LIGHT_NODE_FORWARD_SIZE));
+        long newReverseEnd = Math.addExact(
+                newReverseStart,
+                Math.multiplyExact(nodeCount, ShaderAbi.LIGHT_NODE_REVERSE_SIZE));
+        long newEmitterStart = alignUp(newReverseEnd, 16L);
+        long emitterShift = newEmitterStart - emitterStart;
+        long newCellStart = Math.addExact(cellStart, emitterShift);
+        int newWordCount = Math.toIntExact(
+                Math.addExact(byteSize, emitterShift) / Integer.BYTES);
+        int[] upgraded = new int[newWordCount];
+        int forwardWord = Math.toIntExact(forwardStart / Integer.BYTES);
+        System.arraycopy(oldWords, 0, upgraded, 0, forwardWord);
+        int nodeCountInt = Math.toIntExact(nodeCount);
+        for (int node = 0; node < nodeCountInt; node++) {
+            upgraded[forwardWord + node * 2] = oldWords[forwardWord + node];
+            upgraded[forwardWord + node * 2 + 1] = LightDirection.FULL;
+        }
+        int oldReverseWord = Math.toIntExact(reverseStart / Integer.BYTES);
+        int newReverseWord = Math.toIntExact(newReverseStart / Integer.BYTES);
+        System.arraycopy(oldWords, oldReverseWord, upgraded, newReverseWord, nodeCountInt);
+        int oldEmitterWord = Math.toIntExact(emitterStart / Integer.BYTES);
+        int newEmitterWord = Math.toIntExact(newEmitterStart / Integer.BYTES);
+        System.arraycopy(
+                oldWords,
+                oldEmitterWord,
+                upgraded,
+                newEmitterWord,
+                oldWords.length - oldEmitterWord);
+        putLong(upgraded, 4, newReverseStart);
+        putLong(upgraded, 6, newEmitterStart);
+        putLong(upgraded, 8, newCellStart);
+        return upgraded;
     }
 
     public boolean isEmpty() {
@@ -125,7 +201,11 @@ public final class CompiledClusterLights {
     }
 
     private static void validateLayout(
-            int[] words, long[] offsets, int byteSize, int emitterCount) {
+            int[] words,
+            long[] offsets,
+            int byteSize,
+            int emitterCount,
+            int packedDirection) {
         long nodeStart = offsets[0];
         long forwardStart = offsets[1];
         long reverseStart = offsets[2];
@@ -175,6 +255,13 @@ public final class CompiledClusterLights {
             throw new IllegalArgumentException(
                     "Compiled light payload disagrees with the shader ABI");
         }
+        int rootDirectionWord = Math.toIntExact(
+                (forwardStart + ShaderAbi.LIGHT_NODE_FORWARD_EMISSION_DIRECTION_OFFSET)
+                        / Integer.BYTES);
+        if (words[rootDirectionWord] != packedDirection) {
+            throw new IllegalArgumentException(
+                    "Compiled light summary disagrees with its root direction");
+        }
         validateTreeAndEmitterReferences(
                 words,
                 forwardStart,
@@ -195,8 +282,11 @@ public final class CompiledClusterLights {
             long distributionCount) {
         int forwardWord = Math.toIntExact(forwardStart / Integer.BYTES);
         int reverseWord = Math.toIntExact(reverseStart / Integer.BYTES);
+        int forwardWords = ShaderAbi.LIGHT_NODE_FORWARD_SIZE / Integer.BYTES;
+        int childOrLeafWord = ShaderAbi.LIGHT_NODE_FORWARD_CHILD_OR_LEAF_OFFSET
+                / Integer.BYTES;
         for (int node = 0; node < nodeCount; node++) {
-            int childOrLeaf = words[forwardWord + node];
+            int childOrLeaf = words[forwardWord + node * forwardWords + childOrLeafWord];
             int parent = words[reverseWord + node];
             if ((childOrLeaf & CpuLightTree.LEAF_FLAG) != 0) {
                 if ((childOrLeaf & CpuLightTree.INDEX_MASK) >= emitterCount) {
@@ -234,10 +324,14 @@ public final class CompiledClusterLights {
                     || firstCell / EmissionDistribution.CELL_COUNT
                             >= distributionCount
                     || leafNode >= nodeCount
-                    || (words[forwardWord + (int) leafNode]
+                    || (words[forwardWord
+                                    + (int) leafNode * forwardWords
+                                    + childOrLeafWord]
                                     & CpuLightTree.LEAF_FLAG)
                             == 0
-                    || (words[forwardWord + (int) leafNode]
+                    || (words[forwardWord
+                                    + (int) leafNode * forwardWords
+                                    + childOrLeafWord]
                                     & CpuLightTree.INDEX_MASK)
                             != emitter) {
                 throw new IllegalArgumentException(
@@ -258,9 +352,40 @@ public final class CompiledClusterLights {
             float maxX,
             float maxY,
             float maxZ,
-            float power) {
+            float power,
+            int packedDirection) {
         private static final Summary EMPTY =
-                new Summary(0, 0.0F, 0.0F, 0.0F, 0.0F, 0.0F, 0.0F, 0.0F);
+                new Summary(
+                        0,
+                        0.0F,
+                        0.0F,
+                        0.0F,
+                        0.0F,
+                        0.0F,
+                        0.0F,
+                        0.0F,
+                        LightDirection.FULL);
+
+        public Summary(
+                int emitterCount,
+                float minX,
+                float minY,
+                float minZ,
+                float maxX,
+                float maxY,
+                float maxZ,
+                float power) {
+            this(
+                    emitterCount,
+                    minX,
+                    minY,
+                    minZ,
+                    maxX,
+                    maxY,
+                    maxZ,
+                    power,
+                    LightDirection.FULL);
+        }
 
         public Summary {
             if (emitterCount < 0) {
@@ -276,9 +401,9 @@ public final class CompiledClusterLights {
                 throw new IllegalArgumentException("Compiled light summary must be finite");
             }
             if (emitterCount == 0) {
-                if (power != 0.0F) {
+                if (power != 0.0F || packedDirection != LightDirection.FULL) {
                     throw new IllegalArgumentException(
-                            "Empty compiled lights must have zero power");
+                            "Empty compiled lights must have zero power and full directional support");
                 }
             } else if (!(power > 0.0F)
                     || minX > maxX

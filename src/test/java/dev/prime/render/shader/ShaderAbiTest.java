@@ -12,7 +12,7 @@ final class ShaderAbiTest {
         assertEquals(80, ShaderAbi.SECTION_RECORD_SIZE);
         assertEquals(64, ShaderAbi.SECTION_INSTANCE_TINT_OFFSET);
         assertEquals(32, ShaderAbi.LIGHT_NODE_SIZE);
-        assertEquals(4, ShaderAbi.LIGHT_NODE_FORWARD_SIZE);
+        assertEquals(8, ShaderAbi.LIGHT_NODE_FORWARD_SIZE);
         assertEquals(4, ShaderAbi.LIGHT_NODE_REVERSE_SIZE);
         assertEquals(96, ShaderAbi.LIGHT_EMITTER_SIZE);
         assertEquals(12, ShaderAbi.LIGHT_CELL_SIZE);
@@ -171,6 +171,7 @@ final class ShaderAbiTest {
         assertEquals(76, ShaderAbi.SECTION_TRANSMISSIVE_MACRO_TRIANGLE_BASE_OFFSET);
         assertEquals(0, ShaderAbi.LIGHT_NODE_BOUNDS_MIN_POWER_OFFSET);
         assertEquals(0, ShaderAbi.LIGHT_NODE_FORWARD_CHILD_OR_LEAF_OFFSET);
+        assertEquals(4, ShaderAbi.LIGHT_NODE_FORWARD_EMISSION_DIRECTION_OFFSET);
         assertEquals(0, ShaderAbi.LIGHT_NODE_REVERSE_PARENT_OFFSET);
         assertEquals(0, ShaderAbi.LIGHT_EMITTER_CORNER_AREA_OFFSET);
         assertEquals(64, ShaderAbi.LIGHT_EMITTER_UVS_TINT_OFFSET);

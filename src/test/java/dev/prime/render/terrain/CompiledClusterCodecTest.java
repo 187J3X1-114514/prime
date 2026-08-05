@@ -278,14 +278,25 @@ final class CompiledClusterCodecTest {
     private static byte[] withoutCurrentSegmentMacroCounts(byte[] encoded) {
         int macroCounts = 3 * Integer.BYTES;
         int macroOffset = 56 + 3 * Integer.BYTES;
-        byte[] result = new byte[encoded.length - macroCounts];
-        System.arraycopy(encoded, 0, result, 0, macroOffset);
+        byte[] withoutMacros = new byte[encoded.length - macroCounts];
+        System.arraycopy(encoded, 0, withoutMacros, 0, macroOffset);
         System.arraycopy(
                 encoded,
                 macroOffset + macroCounts,
-                result,
+                withoutMacros,
                 macroOffset,
                 encoded.length - macroOffset - macroCounts);
+        // This fixture has empty lights, so the v6 direction summary is immediately before the
+        // final zero-length light-word array.
+        int directionOffset = withoutMacros.length - 2 * Integer.BYTES;
+        byte[] result = new byte[withoutMacros.length - Integer.BYTES];
+        System.arraycopy(withoutMacros, 0, result, 0, directionOffset);
+        System.arraycopy(
+                withoutMacros,
+                directionOffset + Integer.BYTES,
+                result,
+                directionOffset,
+                Integer.BYTES);
         return result;
     }
 

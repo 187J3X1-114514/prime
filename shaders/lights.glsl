@@ -162,12 +162,20 @@ AreaLightSample primeInvalidAreaLightSample() {
 }
 
 vec3 primeLoadLightNodeMetrics(
-        LightNodeBuffer nodes, uint index, vec3 point, vec3 receiverNormal) {
+        LightNodeBuffer nodes,
+        LightNodeForwardBuffer forwardNodes,
+        uint index,
+        vec3 point,
+        vec3 receiverNormal) {
     // Returning three scalars keeps a complete 32-byte node out of the traversal loop state.
     vec4 boundsMinPower = nodes.nodes[index].boundsMinPower;
     vec4 boundsMaxSoftening = nodes.nodes[index].boundsMaxSoftening;
     return primeLightNodeMetrics(
-            boundsMinPower, boundsMaxSoftening, point, receiverNormal);
+            boundsMinPower,
+            boundsMaxSoftening,
+            point,
+            receiverNormal,
+            forwardNodes.nodes[index].emissionDirection);
 }
 
 LightTreePick primePickLightTree(
@@ -204,9 +212,9 @@ LightTreePick primePickLightTree(
         uint leftIndex = childOrLeaf;
         uint rightIndex = leftIndex + 1u;
         vec3 leftMetrics = primeLoadLightNodeMetrics(
-                nodes, leftIndex, point, receiverNormal);
+                nodes, forwardNodes, leftIndex, point, receiverNormal);
         vec3 rightMetrics = primeLoadLightNodeMetrics(
-                nodes, rightIndex, point, receiverNormal);
+                nodes, forwardNodes, rightIndex, point, receiverNormal);
         float leftProbability = primeLightBranchProbability(leftMetrics, rightMetrics);
         if (!(leftProbability >= 0.0)) {
             return primeInvalidLightTreePick();
@@ -245,7 +253,7 @@ float primeLightTreeSelectionPdf(
     [[dont_unroll]]
     for (uint depth = 0u; depth < PRIME_LIGHT_TREE_MAX_DEPTH; ++depth) {
         vec3 nodeMetrics = primeLoadLightNodeMetrics(
-                nodes, nodeIndex, point, receiverNormal);
+                nodes, forwardNodes, nodeIndex, point, receiverNormal);
         if (!(nodeMetrics.y > 0.0)) {
             return 0.0;
         }
@@ -267,7 +275,7 @@ float primeLightTreeSelectionPdf(
         // pair, making the exact sibling index implicit and removing it from the reverse stream.
         uint siblingIndex = (nodeIndex & 1u) != 0u ? nodeIndex + 1u : nodeIndex - 1u;
         vec3 siblingMetrics = primeLoadLightNodeMetrics(
-                nodes, siblingIndex, point, receiverNormal);
+                nodes, forwardNodes, siblingIndex, point, receiverNormal);
         float branchProbability = primeLightBranchProbability(nodeMetrics, siblingMetrics);
         if (!(branchProbability >= 0.0)) {
             return 0.0;

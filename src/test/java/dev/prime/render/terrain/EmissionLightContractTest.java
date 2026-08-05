@@ -214,11 +214,11 @@ final class EmissionLightContractTest {
                 java.util.Arrays.copyOfRange(
                         combined, bounds.length + forward.length, combined.length));
         assertEquals(tree.nodeCount() * 8, bounds.length);
-        assertEquals(tree.nodeCount(), forward.length);
+        assertEquals(tree.nodeCount() * 2, forward.length);
         assertEquals(tree.nodeCount(), reverse.length);
         assertEquals(CpuLightTree.NO_INDEX, reverse[0]);
         for (int node = 0; node < tree.nodeCount(); node++) {
-            int childOrLeaf = forward[node];
+            int childOrLeaf = forward[node * 2];
             if ((childOrLeaf & CpuLightTree.LEAF_FLAG) == 0) {
                 int left = childOrLeaf;
                 int right = left + 1;
@@ -230,8 +230,8 @@ final class EmissionLightContractTest {
         }
         for (int leaf = 0; leaf < leaves.size(); leaf++) {
             int node = tree.leafNode(leaf);
-            assertNotEquals(0, forward[node] & CpuLightTree.LEAF_FLAG);
-            assertEquals(leaf, forward[node] & CpuLightTree.INDEX_MASK);
+            assertNotEquals(0, forward[node * 2] & CpuLightTree.LEAF_FLAG);
+            assertEquals(leaf, forward[node * 2] & CpuLightTree.INDEX_MASK);
             assertNotEquals(CpuLightTree.NO_INDEX, reverse[node]);
         }
     }
@@ -239,7 +239,9 @@ final class EmissionLightContractTest {
     @Test
     void worldTreePacksBoundsForwardAndReverseStreamsInAddressOrder() {
         int[] bounds = new int[16];
-        int[] forward = {3, CpuLightTree.LEAF_FLAG};
+        int[] forward = {
+            3, LightDirection.FULL, CpuLightTree.LEAF_FLAG, LightDirection.FULL
+        };
         int[] reverse = {CpuLightTree.NO_INDEX, 0};
         CpuWorldLightTree.Result tree = new CpuWorldLightTree.Result(
                 bounds, forward, reverse, new int[] {1});
@@ -247,17 +249,17 @@ final class EmissionLightContractTest {
 
         assertEquals(2, tree.nodeCount());
         assertEquals(64L, tree.forwardByteOffset());
-        assertEquals(72L, tree.reverseByteOffset());
+        assertEquals(80L, tree.reverseByteOffset());
         assertArrayEquals(bounds, java.util.Arrays.copyOfRange(packed, 0, 16));
-        assertArrayEquals(forward, java.util.Arrays.copyOfRange(packed, 16, 18));
-        assertArrayEquals(reverse, java.util.Arrays.copyOfRange(packed, 18, 20));
+        assertArrayEquals(forward, java.util.Arrays.copyOfRange(packed, 16, 20));
+        assertArrayEquals(reverse, java.util.Arrays.copyOfRange(packed, 20, 22));
     }
 
     @Test
     void compactionOnlyUpdateReusesExistingWorldLightUpload() {
         CpuWorldLightTree.Result existingTree = new CpuWorldLightTree.Result(
                 new int[8],
-                new int[] {CpuLightTree.LEAF_FLAG},
+                new int[] {CpuLightTree.LEAF_FLAG, LightDirection.FULL},
                 new int[] {CpuLightTree.NO_INDEX},
                 new int[] {0});
         CpuWorldLightTree.Result emptyTree =
@@ -329,7 +331,7 @@ final class EmissionLightContractTest {
             assertNotEquals(CpuLightTree.NO_INDEX, leafNode);
             assertEquals(
                     CpuLightTree.LEAF_FLAG | clusterIndex,
-                    tree.pack()[forwardOffset + leafNode]);
+                    tree.pack()[forwardOffset + leafNode * 2]);
         }
     }
 

@@ -56,7 +56,7 @@ final class PrimeProductionMathGpuTest {
 
     @Test
     void integratorAndLightTransportMathKeepsItsNumericalContracts() throws IOException {
-        int kinds = 12;
+        int kinds = 13;
         int inputWords = 6;
         ShaderPropertyBatch.assertProperties(
                 runner,
@@ -401,6 +401,8 @@ final class PrimeProductionMathGpuTest {
                             normal[1],
                             normal[2],
                             0.0F);
+                } else if (kind == 12) {
+                    putLightEmissionBoundCase(input, index, words, local, random);
                 } else {
                     putVec4(
                             input,
@@ -415,6 +417,62 @@ final class PrimeProductionMathGpuTest {
             }
         }
         return input;
+    }
+
+    private static void putLightEmissionBoundCase(
+            ByteBuffer input,
+            int index,
+            int words,
+            int local,
+            SplittableRandom random) {
+        float minX = random.nextFloat() * 16.0F - 8.0F;
+        float minY = random.nextFloat() * 16.0F - 8.0F;
+        float minZ = random.nextFloat() * 16.0F - 8.0F;
+        float maxX = minX + random.nextFloat() * 4.0F;
+        float maxY = minY + random.nextFloat() * 4.0F;
+        float maxZ = minZ + random.nextFloat() * 4.0F;
+        float pointX = minX - 8.0F + random.nextFloat() * 20.0F;
+        float pointY = minY - 8.0F + random.nextFloat() * 20.0F;
+        float pointZ = minZ - 8.0F + random.nextFloat() * 20.0F;
+        float lightX = minX + (maxX - minX) * random.nextFloat();
+        float lightY = minY + (maxY - minY) * random.nextFloat();
+        float lightZ = minZ + (maxZ - minZ) * random.nextFloat();
+        int directionCase = local & 3;
+        int axisX = 1023 | 512 << 10 | 4 << 20;
+        int packed;
+        float normalX;
+        float normalY;
+        float normalZ;
+        float twoSided;
+        if (directionCase == 0) {
+            packed = axisX;
+            normalX = 1.0F;
+            normalY = normalZ = 0.0F;
+            twoSided = 0.0F;
+        } else if (directionCase == 1) {
+            packed = axisX | 1 << 30;
+            normalX = 1.0F;
+            normalY = normalZ = 0.0F;
+            twoSided = 1.0F;
+        } else if (directionCase == 2) {
+            packed = 2 << 30 | 18 | 18 << 10 | 18 << 20;
+            float component = 1.0F / (float) Math.sqrt(3.0);
+            normalX = normalY = normalZ = component;
+            twoSided = 0.0F;
+        } else {
+            packed = 3 << 30;
+            float[] normal = randomUnitVector(random);
+            normalX = normal[0];
+            normalY = normal[1];
+            normalZ = normal[2];
+            twoSided = 0.0F;
+        }
+        putInt(input, index, words, 0, 1, packed);
+        putVec4(input, index, words, 1, minX, minY, minZ, 0.0F);
+        putVec4(input, index, words, 2, maxX, maxY, maxZ, 0.0F);
+        putVec4(input, index, words, 3, pointX, pointY, pointZ, 0.0F);
+        putVec4(input, index, words, 4, lightX, lightY, lightZ, 0.0F);
+        putVec4(input, index, words, 5, normalX, normalY, normalZ, twoSided);
     }
 
     private static void putLightBranchCase(

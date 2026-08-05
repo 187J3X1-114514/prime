@@ -3,6 +3,11 @@
 
 const uint PRIME_LIGHT_RECEIVER_NORMAL_ACTIVE = 0x8000u;
 const float PRIME_LIGHT_RECEIVER_COSINE_FLOOR = 1.0 / 256.0;
+const uint PRIME_LIGHT_DIRECTION_MODE_SHIFT = 30u;
+const uint PRIME_LIGHT_DIRECTION_MODE_LOBES = 2u;
+const uint PRIME_LIGHT_DIRECTION_MODE_FULL = 3u;
+const uint PRIME_LIGHT_DIRECTION_OCT_MASK = 0x3ffu;
+const uint PRIME_LIGHT_DIRECTION_LOBE_MASK = 0x1fu;
 
 vec2 primeLightTreeSignNotZero(vec2 value) {
     return vec2(value.x >= 0.0 ? 1.0 : -1.0, value.y >= 0.0 ? 1.0 : -1.0);
@@ -37,6 +42,100 @@ vec3 primeUnpackLightReceiverNormal(uint packedValue) {
     return normalize(normal);
 }
 
+vec3 primeUnpackLightEmissionAxis(uint packedValue) {
+    vec2 encoded = vec2(
+            float(packedValue & PRIME_LIGHT_DIRECTION_OCT_MASK),
+            float((packedValue >> 10u) & PRIME_LIGHT_DIRECTION_OCT_MASK))
+            / 1023.0 * 2.0 - 1.0;
+    vec3 axis = vec3(encoded, 1.0 - abs(encoded.x) - abs(encoded.y));
+    if (axis.z < 0.0) {
+        axis.xy = (1.0 - abs(axis.yx)) * primeLightTreeSignNotZero(axis.xy);
+    }
+    return normalize(axis);
+}
+
+float primeLightEmissionAxisCosineBound(
+        vec3 boundsMin,
+        vec3 boundsMax,
+        vec3 point,
+        vec3 axis,
+        float distanceSquared,
+        float inverseDistance) {
+    if (!(distanceSquared > 0.0)) {
+        return 1.0;
+    }
+    vec3 support = mix(boundsMax, boundsMin, greaterThanEqual(axis, vec3(0.0)));
+    float maximumProjection = dot(axis, point - support);
+    if (!(maximumProjection > 0.0)) {
+        return 0.0;
+    }
+    return distanceSquared > maximumProjection * maximumProjection
+            ? maximumProjection * inverseDistance
+            : 1.0;
+}
+
+float primeLightExpandedEmissionConeBound(
+        float axisCosineBound, float sineHalfAngle, float cosineHalfAngle) {
+    if (axisCosineBound >= cosineHalfAngle) {
+        return 1.0;
+    }
+    float sine = sqrt(max(1.0 - axisCosineBound * axisCosineBound, 0.0));
+    return clamp(
+            axisCosineBound * cosineHalfAngle + sine * sineHalfAngle,
+            0.0,
+            1.0);
+}
+
+float primeLightEmissionLobe(uint packedValue, uint shift) {
+    return float((packedValue >> shift) & PRIME_LIGHT_DIRECTION_LOBE_MASK) / 31.0;
+}
+
+float primeLightEmitterCosineBound(
+        vec3 boundsMin,
+        vec3 boundsMax,
+        vec3 point,
+        float distanceSquared,
+        uint packedDirection) {
+    uint mode = packedDirection >> PRIME_LIGHT_DIRECTION_MODE_SHIFT;
+    if (mode == PRIME_LIGHT_DIRECTION_MODE_FULL) {
+        return 1.0;
+    }
+    float inverseDistance = distanceSquared > 0.0 ? inversesqrt(distanceSquared) : 0.0;
+    if (mode == PRIME_LIGHT_DIRECTION_MODE_LOBES) {
+        if (!(distanceSquared > 0.0)) {
+            return 1.0;
+        }
+        // Axis-aligned support shares one inverse distance; mixed nodes need no per-lobe SFU work.
+        vec3 positive = min(max(point - boundsMin, vec3(0.0)) * inverseDistance, vec3(1.0));
+        vec3 negative = min(max(boundsMax - point, vec3(0.0)) * inverseDistance, vec3(1.0));
+        float result = primeLightEmissionLobe(packedDirection, 0u) * positive.x
+                + primeLightEmissionLobe(packedDirection, 5u) * negative.x
+                + primeLightEmissionLobe(packedDirection, 10u) * positive.y
+                + primeLightEmissionLobe(packedDirection, 15u) * negative.y
+                + primeLightEmissionLobe(packedDirection, 20u) * positive.z
+                + primeLightEmissionLobe(packedDirection, 25u) * negative.z;
+        return min(result, 1.0);
+    }
+    vec3 axis = primeUnpackLightEmissionAxis(packedDirection);
+    float sineHalfAngle = float((packedDirection >> 20u) & 0x3ffu) / 1023.0;
+    float cosineHalfAngle = sqrt(max(1.0 - sineHalfAngle * sineHalfAngle, 0.0));
+    float forward = primeLightExpandedEmissionConeBound(
+            primeLightEmissionAxisCosineBound(
+                    boundsMin, boundsMax, point, axis, distanceSquared, inverseDistance),
+            sineHalfAngle,
+            cosineHalfAngle);
+    if (mode == 0u) {
+        return forward;
+    }
+    float backward = primeLightExpandedEmissionConeBound(
+            primeLightEmissionAxisCosineBound(
+                    boundsMin, boundsMax, point, -axis, distanceSquared, inverseDistance),
+            sineHalfAngle,
+            cosineHalfAngle);
+    // Two-sided power integrates both hemispheres, so either directional lobe owns half of it.
+    return 0.5 * max(forward, backward);
+}
+
 float primeLightReceiverCosineBound(
         vec3 boundsMin,
         vec3 boundsMax,
@@ -52,32 +151,40 @@ float primeLightReceiverCosineBound(
             greaterThanEqual(receiverNormal, vec3(0.0)));
     float maximumProjection = dot(receiverNormal, support - point);
     if (!(maximumProjection > 0.0)) {
-        return PRIME_LIGHT_RECEIVER_COSINE_FLOOR;
+        return 0.0;
     }
     float bound = distanceSquared > maximumProjection * maximumProjection
             ? maximumProjection * inversesqrt(distanceSquared)
             : 1.0;
-    // Quantization and floating-point boundary cases must not remove support from a contributing
-    // leaf. The floor only affects importance; the exact light PDF remains unbiased.
-    return max(bound, PRIME_LIGHT_RECEIVER_COSINE_FLOOR);
+    return bound;
 }
 
 vec3 primeLightNodeMetrics(
         vec4 boundsMinPower,
         vec4 boundsMaxSoftening,
         vec3 point,
-        vec3 receiverNormal) {
+        vec3 receiverNormal,
+        uint packedEmissionDirection) {
     vec3 closest = clamp(point, boundsMinPower.xyz, boundsMaxSoftening.xyz);
     vec3 delta = point - closest;
+    float distanceSquared = dot(delta, delta);
+    float receiverBound = primeLightReceiverCosineBound(
+            boundsMinPower.xyz,
+            boundsMaxSoftening.xyz,
+            point,
+            receiverNormal,
+            distanceSquared);
+    float emitterBound = primeLightEmitterCosineBound(
+            boundsMinPower.xyz,
+            boundsMaxSoftening.xyz,
+            point,
+            distanceSquared,
+            packedEmissionDirection);
     return vec3(
-            dot(delta, delta) + boundsMaxSoftening.w,
+            distanceSquared + boundsMaxSoftening.w,
             boundsMinPower.w,
-            primeLightReceiverCosineBound(
-                    boundsMinPower.xyz,
-                    boundsMaxSoftening.xyz,
-                    point,
-                    receiverNormal,
-                    dot(delta, delta)));
+            // One shared floor preserves support without compounding receiver and emitter floors.
+            max(receiverBound * emitterBound, PRIME_LIGHT_RECEIVER_COSINE_FLOOR));
 }
 
 float primeLightBranchProbability(vec3 firstMetrics, vec3 secondMetrics) {

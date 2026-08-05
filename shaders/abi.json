@@ -40,9 +40,10 @@
       ]
     },
     "lightNodeForward": {
-      "size": 4,
+      "size": 8,
       "fields": [
-        { "name": "childOrLeaf", "type": "uint", "offset": 0 }
+        { "name": "childOrLeaf", "type": "uint", "offset": 0 },
+        { "name": "emissionDirection", "type": "uint", "offset": 4 }
       ]
     },
     "lightNodeReverse": {

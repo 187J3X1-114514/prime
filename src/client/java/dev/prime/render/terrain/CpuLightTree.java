@@ -7,10 +7,10 @@ import java.util.List;
  * Pure CPU builder for both levels of Prime's light tree.
  *
  * <p>Selection uses the same packed node power and bounds in both directions on the GPU. Bounds
- * and traversal metadata are emitted as separate streams: forward sampling reads both child bounds
- * and one compact child-or-leaf word for each visited node. Reverse MIS reads a separate exact
- * parent stream and derives the sibling from the consecutive-pair invariant instead of
- * reconstructing probabilities from higher-precision CPU state.
+ * and traversal metadata are emitted as separate streams: forward sampling reads both child bounds,
+ * child-or-leaf indices and packed emission bounds. Reverse MIS reads a separate exact parent
+ * stream and derives the sibling from the consecutive-pair invariant instead of reconstructing
+ * probabilities from higher-precision CPU state.
  */
 final class CpuLightTree {
     static final int NO_INDEX = -1;
@@ -21,7 +21,7 @@ final class CpuLightTree {
     static final int INDEX_MASK = Integer.MAX_VALUE;
     private static final int SAH_BIN_COUNT = 16;
     private static final int BOUNDS_WORDS_PER_NODE = 8;
-    private static final int FORWARD_WORDS_PER_NODE = 1;
+    private static final int FORWARD_WORDS_PER_NODE = 2;
     private static final int REVERSE_WORDS_PER_NODE = 1;
     private CpuLightTree() {
     }
@@ -35,7 +35,8 @@ final class CpuLightTree {
                     leaf.centerY,
                     leaf.centerZ,
                     leaf.power,
-                    leaf.index);
+                    leaf.index,
+                    leaf.direction);
         }
         return buildOwned(leaves, indexCapacity, softeningScale);
     }
@@ -92,6 +93,7 @@ final class CpuLightTree {
                 throw new IllegalStateException("Invalid or duplicate light leaf index " + leaf);
             }
             nodes.firstChildOrLeaf[nodeIndex] = leaf;
+            nodes.direction[nodeIndex] = leaves.direction[start];
             leafNodes[leaf] = nodeIndex;
             return;
         }
@@ -105,6 +107,7 @@ final class CpuLightTree {
         nodes.secondChild[nodeIndex] = right;
         populateNode(leaves, start, middle, left, softeningScale, nodes, leafNodes, workspace);
         populateNode(leaves, middle, end, right, softeningScale, nodes, leafNodes, workspace);
+        nodes.refitDirection(nodeIndex);
     }
 
     private static int createNode(
@@ -238,9 +241,23 @@ final class CpuLightTree {
         return 2.0F * (x * y + y * z + z * x);
     }
 
-    static record Leaf(Bounds bounds, float centerX, float centerY, float centerZ, float power, int index) {
+    static record Leaf(
+            Bounds bounds,
+            float centerX,
+            float centerY,
+            float centerZ,
+            float power,
+            int index,
+            LightDirection.Bounds direction) {
+        Leaf(Bounds bounds, float centerX, float centerY, float centerZ, float power, int index) {
+            this(bounds, centerX, centerY, centerZ, power, index, LightDirection.full());
+        }
+
         Leaf {
             validateLeaf(bounds, centerX, centerY, centerZ, power);
+            if (direction == null) {
+                throw new IllegalArgumentException("Light direction must not be null");
+            }
         }
     }
 
@@ -296,6 +313,7 @@ final class CpuLightTree {
             }
             this.nodes.setBounds(
                     node, minX, minY, minZ, maxX, maxY, maxZ, power, this.softeningScale);
+            this.nodes.direction[node] = LightDirection.full();
             this.nodes.firstChildOrLeaf[node] = outputIndex;
         }
 
@@ -305,6 +323,7 @@ final class CpuLightTree {
                 throw new IllegalStateException("Light slot does not reference a leaf");
             }
             this.nodes.power[node] = 0.0F;
+            this.nodes.direction[node] = LightDirection.full();
             this.nodes.firstChildOrLeaf[node] = 0;
         }
 
@@ -367,6 +386,7 @@ final class CpuLightTree {
                     }
                     result[cursor++] = firstChildOrLeaf;
                 }
+                result[cursor++] = LightDirection.pack(this.nodes.direction[node]);
             }
             return result;
         }
@@ -411,6 +431,7 @@ final class CpuLightTree {
                     }
                     target[forwardCursor++] = firstChildOrLeaf;
                 }
+                target[forwardCursor++] = LightDirection.pack(this.nodes.direction[node]);
                 target[reverseCursor++] = this.nodes.parent[node];
             }
         }
@@ -425,6 +446,10 @@ final class CpuLightTree {
 
         float power() {
             return this.nodes.power[0];
+        }
+
+        int packedDirection() {
+            return LightDirection.pack(this.nodes.direction[0]);
         }
 
         int nodeCount() {
@@ -444,6 +469,7 @@ final class CpuLightTree {
         private final float[] centerZ;
         private final float[] power;
         private final int[] index;
+        private final LightDirection.Bounds[] direction;
         int size;
 
         Leaves(int capacity) {
@@ -461,6 +487,7 @@ final class CpuLightTree {
             this.centerZ = new float[capacity];
             this.power = new float[capacity];
             this.index = new int[capacity];
+            this.direction = new LightDirection.Bounds[capacity];
         }
 
         void add(
@@ -470,6 +497,17 @@ final class CpuLightTree {
                 float centerZ,
                 float power,
                 int index) {
+            add(bounds, centerX, centerY, centerZ, power, index, LightDirection.full());
+        }
+
+        void add(
+                Bounds bounds,
+                float centerX,
+                float centerY,
+                float centerZ,
+                float power,
+                int index,
+                LightDirection.Bounds direction) {
             if (bounds == null) {
                 throw new IllegalArgumentException("Light bounds must not be null");
             }
@@ -484,7 +522,8 @@ final class CpuLightTree {
                     centerY,
                     centerZ,
                     power,
-                    index);
+                    index,
+                    direction);
         }
 
         void addInactive(
@@ -507,7 +546,8 @@ final class CpuLightTree {
                     (minY + maxY) * 0.5F,
                     (minZ + maxZ) * 0.5F,
                     0.0F,
-                    index);
+                    index,
+                    LightDirection.full());
         }
 
         void add(
@@ -522,6 +562,34 @@ final class CpuLightTree {
                 float centerZ,
                 float power,
                 int index) {
+            add(
+                    minX,
+                    minY,
+                    minZ,
+                    maxX,
+                    maxY,
+                    maxZ,
+                    centerX,
+                    centerY,
+                    centerZ,
+                    power,
+                    index,
+                    LightDirection.full());
+        }
+
+        void add(
+                float minX,
+                float minY,
+                float minZ,
+                float maxX,
+                float maxY,
+                float maxZ,
+                float centerX,
+                float centerY,
+                float centerZ,
+                float power,
+                int index,
+                LightDirection.Bounds direction) {
             validateLeaf(
                     minX,
                     minY,
@@ -544,7 +612,8 @@ final class CpuLightTree {
                     centerY,
                     centerZ,
                     power,
-                    index);
+                    index,
+                    direction);
         }
 
         private void append(
@@ -558,7 +627,11 @@ final class CpuLightTree {
                 float centerY,
                 float centerZ,
                 float power,
-                int index) {
+                int index,
+                LightDirection.Bounds direction) {
+            if (direction == null) {
+                throw new IllegalArgumentException("Light direction must not be null");
+            }
             int slot = this.size++;
             this.minX[slot] = minX;
             this.minY[slot] = minY;
@@ -571,6 +644,7 @@ final class CpuLightTree {
             this.centerZ[slot] = centerZ;
             this.power[slot] = power;
             this.index[slot] = index;
+            this.direction[slot] = direction;
         }
 
         private float center(int slot, int axis) {
@@ -601,6 +675,9 @@ final class CpuLightTree {
             swap(this.centerY, first, second);
             swap(this.centerZ, first, second);
             swap(this.power, first, second);
+            LightDirection.Bounds direction = this.direction[first];
+            this.direction[first] = this.direction[second];
+            this.direction[second] = direction;
             int index = this.index[first];
             this.index[first] = this.index[second];
             this.index[second] = index;
@@ -685,6 +762,7 @@ final class CpuLightTree {
         private final int[] parent;
         private final int[] firstChildOrLeaf;
         private final int[] secondChild;
+        private final LightDirection.Bounds[] direction;
         private int size;
 
         private Nodes(int capacity) {
@@ -699,8 +777,10 @@ final class CpuLightTree {
             this.parent = new int[capacity];
             this.firstChildOrLeaf = new int[capacity];
             this.secondChild = new int[capacity];
+            this.direction = new LightDirection.Bounds[capacity];
             Arrays.fill(this.firstChildOrLeaf, NO_INDEX);
             Arrays.fill(this.secondChild, NO_INDEX);
+            Arrays.fill(this.direction, LightDirection.full());
         }
 
         private Nodes copy() {
@@ -731,6 +811,12 @@ final class CpuLightTree {
                     copy.secondChild,
                     0,
                     this.secondChild.length);
+            System.arraycopy(
+                    this.direction,
+                    0,
+                    copy.direction,
+                    0,
+                    this.direction.length);
             copy.size = this.size;
             return copy;
         }
@@ -809,6 +895,17 @@ final class CpuLightTree {
                         combinedPower,
                         softeningScale);
             }
+            refitDirection(index);
+        }
+
+        private void refitDirection(int index) {
+            int first = this.firstChildOrLeaf[index];
+            int second = this.secondChild[index];
+            this.direction[index] = LightDirection.combine(
+                    this.direction[first],
+                    this.power[first],
+                    this.direction[second],
+                    this.power[second]);
         }
 
         private void setBounds(

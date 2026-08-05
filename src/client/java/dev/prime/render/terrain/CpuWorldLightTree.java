@@ -40,7 +40,8 @@ final class CpuWorldLightTree {
                     (minY + maxY) * 0.5F,
                     (minZ + maxZ) * 0.5F,
                     lights.power(),
-                    clusterIndex);
+                    clusterIndex,
+                    LightDirection.unpack(lights.packedDirection()));
         }
 
         CpuLightTree.Result tree = CpuLightTree.buildOwned(

@@ -211,7 +211,11 @@ public final class CpuSectionLights {
     Summary summary() {
         return this.isEmpty()
                 ? Summary.EMPTY
-                : new Summary(this.emitters.size, this.tree.bounds(), this.tree.power());
+                : new Summary(
+                        this.emitters.size,
+                        this.tree.bounds(),
+                        this.tree.power(),
+                        this.tree.packedDirection());
     }
 
     private static void putLong(int[] target, int wordOffset, long value) {
@@ -389,7 +393,14 @@ public final class CpuSectionLights {
                     (minY + maxY) * 0.5F,
                     (minZ + maxZ) * 0.5F,
                     emitters.values[base + POWER],
-                    index);
+                    index,
+                    LightDirection.fromNormal(
+                            emitters.values[base + NORMAL_X],
+                            emitters.values[base + NORMAL_Y],
+                            emitters.values[base + NORMAL_Z],
+                            (emitters.metadata[index * EMITTER_INTS + FLAGS]
+                                            & EMITTER_FLAG_TWO_SIDED)
+                                    != 0));
         }
         CpuLightTree.Result tree = CpuLightTree.buildOwned(
                 leaves, emitters.size, CpuLightTree.LOCAL_SOFTENING_SCALE);
@@ -404,8 +415,12 @@ public final class CpuSectionLights {
                 / (15.0F * 15.0F);
     }
 
-    record Summary(int emitterCount, CpuLightTree.Bounds bounds, float power) {
-        private static final Summary EMPTY = new Summary(0, null, 0.0F);
+    record Summary(
+            int emitterCount,
+            CpuLightTree.Bounds bounds,
+            float power,
+            int packedDirection) {
+        private static final Summary EMPTY = new Summary(0, null, 0.0F, LightDirection.FULL);
 
         boolean isEmpty() {
             return this.emitterCount == 0;

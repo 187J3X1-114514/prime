@@ -9,7 +9,7 @@ import java.util.Objects;
 /** Versioned canonical binary encoding of one {@link CompiledCluster}. */
 public final class CompiledClusterCodec {
     private static final int MAGIC = 0x3143_4350;
-    private static final int VERSION = 5;
+    private static final int VERSION = 6;
     private static final int MAX_SEGMENTS = 4_096;
     private static final int MAX_VOXEL_MESHES = 4_096;
     private static final int MAX_VOXEL_INSTANCES = 4_194_304;
@@ -76,6 +76,7 @@ public final class CompiledClusterCodec {
         output.putFloat(lights.maxY());
         output.putFloat(lights.maxZ());
         output.putFloat(lights.power());
+        output.putInt(lights.packedDirection());
         putInts(output, mesh.lights().encodedWords());
         if (output.hasRemaining()) {
             throw new AssertionError("Compiled-cluster size calculation is incomplete");
@@ -229,18 +230,31 @@ public final class CompiledClusterCodec {
                         meshIndices, packedTints, translations);
             }
 
-            CompiledClusterLights.Summary lightSummary =
-                    new CompiledClusterLights.Summary(
-                            nonnegative(input.getInt(), "light emitter count"),
-                            input.getFloat(),
-                            input.getFloat(),
-                            input.getFloat(),
-                            input.getFloat(),
-                            input.getFloat(),
-                            input.getFloat(),
-                            input.getFloat());
+            int lightEmitterCount = nonnegative(input.getInt(), "light emitter count");
+            float lightMinX = input.getFloat();
+            float lightMinY = input.getFloat();
+            float lightMinZ = input.getFloat();
+            float lightMaxX = input.getFloat();
+            float lightMaxY = input.getFloat();
+            float lightMaxZ = input.getFloat();
+            float lightPower = input.getFloat();
+            int packedLightDirection = version >= 6 ? input.getInt() : LightDirection.FULL;
+            CompiledClusterLights.Summary lightSummary = new CompiledClusterLights.Summary(
+                    lightEmitterCount,
+                    lightMinX,
+                    lightMinY,
+                    lightMinZ,
+                    lightMaxX,
+                    lightMaxY,
+                    lightMaxZ,
+                    lightPower,
+                    packedLightDirection);
+            int[] encodedLights = getInts(input, "compiled light words");
+            if (version < 6 && lightEmitterCount != 0) {
+                encodedLights = CompiledClusterLights.addFullDirectionStream(encodedLights);
+            }
             CompiledClusterLights lights = CompiledClusterLights.fromEncoded(
-                    getInts(input, "compiled light words"), lightSummary);
+                    encodedLights, lightSummary);
             if (input.hasRemaining()) {
                 throw new IllegalArgumentException(
                         "Compiled-cluster replay contains trailing data");
@@ -295,7 +309,7 @@ public final class CompiledClusterCodec {
         result = arrayBytes(result, instances.meshIndices().length, Integer.BYTES);
         result = arrayBytes(result, instances.packedTints().length, Integer.BYTES);
         result = arrayBytes(result, instances.translations().length, Float.BYTES);
-        result = Math.addExact(result, 32L);
+        result = Math.addExact(result, 36L);
         result = arrayBytes(
                 result,
                 cluster.mesh().lights().encodedWords().length,

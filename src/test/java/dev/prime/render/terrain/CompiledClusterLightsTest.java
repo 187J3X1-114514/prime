@@ -11,7 +11,7 @@ final class CompiledClusterLightsTest {
     @Test
     void relocationChangesOnlyTheFiveHeaderPointers() {
         int[] relative = validOneEmitterPayload();
-        long[] offsets = {48L, 80L, 84L, 96L, 192L};
+        long[] offsets = {48L, 80L, 88L, 96L, 192L};
         relative[40] = 0x1234_5678;
         CompiledClusterLights lights = CompiledClusterLights.fromEncoded(
                 relative,
@@ -78,15 +78,61 @@ final class CompiledClusterLightsTest {
                 () -> CompiledClusterLights.fromEncoded(relative, oneEmitter));
     }
 
+    @Test
+    void encodedPayloadValidationRejectsRootDirectionSummaryMismatch() {
+        int[] relative = validOneEmitterPayload();
+        relative[21] = 0;
+
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> CompiledClusterLights.fromEncoded(
+                        relative,
+                        new CompiledClusterLights.Summary(
+                                1,
+                                0.0F,
+                                0.0F,
+                                0.0F,
+                                1.0F,
+                                1.0F,
+                                1.0F,
+                                1.0F)));
+    }
+
+    @Test
+    void legacyForwardStreamUpgradesWithFullDirectionalSupport() {
+        int[] legacy = new int[816];
+        long[] offsets = {48L, 80L, 84L, 96L, 192L};
+        for (int pointer = 0; pointer < offsets.length; pointer++) {
+            putLong(legacy, pointer * 2, offsets[pointer]);
+        }
+        legacy[11] = 1;
+        legacy[20] = CpuLightTree.LEAF_FLAG;
+        legacy[21] = CpuLightTree.NO_INDEX;
+        legacy[44] = 0;
+        legacy[45] = 0;
+
+        int[] upgraded = CompiledClusterLights.addFullDirectionStream(legacy);
+        CompiledClusterLights lights = CompiledClusterLights.fromEncoded(
+                upgraded,
+                new CompiledClusterLights.Summary(
+                        1, 0.0F, 0.0F, 0.0F, 1.0F, 1.0F, 1.0F, 1.0F));
+
+        assertEquals(88L, getLong(upgraded, 4));
+        assertEquals(96L, getLong(upgraded, 6));
+        assertEquals(LightDirection.FULL, upgraded[21]);
+        assertArrayEquals(upgraded, lights.encodedWords());
+    }
+
     private static int[] validOneEmitterPayload() {
         int[] relative = new int[816];
-        long[] offsets = {48L, 80L, 84L, 96L, 192L};
+        long[] offsets = {48L, 80L, 88L, 96L, 192L};
         for (int pointer = 0; pointer < offsets.length; pointer++) {
             putLong(relative, pointer * 2, offsets[pointer]);
         }
         relative[11] = 1;
         relative[20] = CpuLightTree.LEAF_FLAG;
-        relative[21] = CpuLightTree.NO_INDEX;
+        relative[21] = LightDirection.FULL;
+        relative[22] = CpuLightTree.NO_INDEX;
         relative[44] = 0;
         relative[45] = 0;
         return relative;

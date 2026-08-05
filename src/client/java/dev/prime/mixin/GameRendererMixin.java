@@ -23,7 +23,7 @@ public abstract class GameRendererMixin {
     @Shadow
     public abstract GameRenderState gameRenderState();
 
-    @Inject(method = "render(Lnet/minecraft/client/DeltaTracker;Z)V", at = @At("HEAD"))
+    @Inject(method = "extract(Lnet/minecraft/client/DeltaTracker;Z)V", at = @At("HEAD"))
     private void prime$beginFrame(DeltaTracker deltaTracker, boolean advanceGameTime, CallbackInfo ci) {
         var minecraft = net.minecraft.client.Minecraft.getInstance();
         RayTracingRuntime.instance().beginFrame(minecraft);

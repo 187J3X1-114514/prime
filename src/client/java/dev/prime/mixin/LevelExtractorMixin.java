@@ -1,10 +1,14 @@
 package dev.prime.mixin;
 
 import dev.prime.render.RayTracingRuntime;
+import dev.prime.render.scene.vanilla.PrimeEntityFrustum;
 import dev.prime.render.scene.vanilla.VanillaSceneBoundary;
 import net.minecraft.client.renderer.LevelRenderer;
+import net.minecraft.client.renderer.culling.Frustum;
+import net.minecraft.client.renderer.entity.EntityRenderDispatcher;
 import net.minecraft.client.renderer.extract.LevelExtractor;
 import net.minecraft.core.BlockPos;
+import net.minecraft.world.entity.Entity;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
@@ -20,6 +24,28 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
  */
 @Mixin(LevelExtractor.class)
 public abstract class LevelExtractorMixin {
+    @Redirect(
+            method = "isEntityVisible",
+            at = @At(
+                    value = "INVOKE",
+                    target = "Lnet/minecraft/client/renderer/entity/EntityRenderDispatcher;shouldRender(Lnet/minecraft/world/entity/Entity;Lnet/minecraft/client/renderer/culling/Frustum;DDD)Z"))
+    private boolean prime$routeEntityFrustum(
+            EntityRenderDispatcher dispatcher,
+            Entity entity,
+            Frustum frustum,
+            double cameraX,
+            double cameraY,
+            double cameraZ) {
+        return dispatcher.shouldRender(
+                entity,
+                RayTracingRuntime.instance().shouldReplaceWorld()
+                        ? PrimeEntityFrustum.INSTANCE
+                        : frustum,
+                cameraX,
+                cameraY,
+                cameraZ);
+    }
+
     @Redirect(
             method = "isEntityVisible",
             at = @At(

@@ -9,6 +9,7 @@ import java.util.Objects;
 public record RendererSettings(
         boolean pathTracingEnabled,
         RealtimeIntegratorMode realtimeIntegrator,
+        int lightweightMaximumScatters,
         boolean voxelTextureSurfaces,
         int voxelTextureSurfaceStrengthSteps,
         PostProcessingMode postProcessingMode,
@@ -20,6 +21,7 @@ public record RendererSettings(
         long revision) {
     public RendererSettings {
         realtimeIntegrator = Objects.requireNonNull(realtimeIntegrator, "realtimeIntegrator");
+        LightweightIntegratorSettings.validateScatters(lightweightMaximumScatters);
         postProcessingMode = Objects.requireNonNull(postProcessingMode, "postProcessingMode");
         reconstructionQuality = Objects.requireNonNull(
                 reconstructionQuality, "reconstructionQuality");

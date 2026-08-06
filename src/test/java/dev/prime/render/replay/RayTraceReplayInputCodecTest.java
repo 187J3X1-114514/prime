@@ -9,6 +9,7 @@ import dev.prime.render.AstronomySettings;
 import dev.prime.render.AstronomyState;
 import dev.prime.render.FrameCamera;
 import dev.prime.render.IntegratorFrameInput;
+import dev.prime.render.IntegratorSettings;
 import dev.prime.render.LightingSettings;
 import dev.prime.render.MaterialSettings;
 import dev.prime.render.RealtimeIntegratorMode;
@@ -51,11 +52,15 @@ final class RayTraceReplayInputCodecTest {
     }
 
     @Test
-    void productAndIntegratorModesKeepTheV5SizeAndWireCodes() {
+    void productAndIntegratorModesKeepTheV6SizeAndWireCodes() {
         Fixture fixture = input();
         for (PostProcessingMode mode : PostProcessingMode.values()) {
             for (RealtimeIntegratorMode integrator : RealtimeIntegratorMode.values()) {
-                IntegratorFrameInput input = withMode(fixture.input(), mode);
+                IntegratorFrameInput input = withMaximumBounces(
+                        withMode(fixture.input(), mode),
+                        integrator == RealtimeIntegratorMode.LIGHTWEIGHT
+                                ? 4
+                                : IntegratorSettings.MAXIMUM_BOUNCES);
                 byte[] encoded = RayTraceReplayInputCodec.encode(
                         RayTraceReplayInput.capture(
                                 integrator, input, fixture.scene()));
@@ -68,17 +73,17 @@ final class RayTraceReplayInputCodecTest {
                         ? 0
                         : 1;
 
-                assertEquals(388, encoded.length);
+                assertEquals(392, encoded.length);
                 assertEquals(
                         expectedMode,
                         ByteBuffer.wrap(encoded)
                                 .order(ByteOrder.LITTLE_ENDIAN)
-                                .getInt(332));
+                                .getInt(336));
                 assertEquals(
                         expectedIntegrator,
                         ByteBuffer.wrap(encoded)
                                 .order(ByteOrder.LITTLE_ENDIAN)
-                                .getInt(336));
+                                .getInt(340));
                 assertArrayEquals(
                         encoded,
                         RayTraceReplayInputCodec.encode(
@@ -134,20 +139,40 @@ final class RayTraceReplayInputCodecTest {
     @Test
     void replayIdentityRejectsAnotherIntegrator() {
         Fixture fixture = input();
+        IntegratorFrameInput lightweight = withMaximumBounces(fixture.input(), 4);
         RayTraceReplayInput captured = RayTraceReplayInput.capture(
                 RealtimeIntegratorMode.LIGHTWEIGHT,
-                fixture.input(),
+                lightweight,
                 fixture.scene());
 
         captured.requireMatch(
                 RealtimeIntegratorMode.LIGHTWEIGHT,
-                fixture.input(),
+                lightweight,
                 fixture.scene());
         assertThrows(
                 IllegalArgumentException.class,
                 () -> captured.requireMatch(
                         RealtimeIntegratorMode.WAVEFRONT,
-                        fixture.input(),
+                        lightweight,
+                        fixture.scene()));
+    }
+
+    @Test
+    void replayIdentityRejectsAnotherLightweightBounceLimit() {
+        Fixture fixture = input();
+        IntegratorFrameInput fourBounces = withMaximumBounces(fixture.input(), 4);
+        RayTraceReplayInput captured = RayTraceReplayInput.capture(
+                RealtimeIntegratorMode.LIGHTWEIGHT,
+                fourBounces,
+                fixture.scene());
+
+        assertEquals(4, RayTraceReplayInputCodec.decode(
+                RayTraceReplayInputCodec.encode(captured)).maximumBounces());
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> captured.requireMatch(
+                        RealtimeIntegratorMode.LIGHTWEIGHT,
+                        withMaximumBounces(fourBounces, 3),
                         fixture.scene()));
     }
 
@@ -157,7 +182,7 @@ final class RayTraceReplayInputCodecTest {
         byte[] encoded = RayTraceReplayInputCodec.encode(
                 RayTraceReplayInput.capture(fixture.input(), fixture.scene()));
         int sceneBytes = 3 * Integer.BYTES + 3 * Long.BYTES;
-        int frameWordsBeforeLighting = 14;
+        int frameWordsBeforeLighting = 15;
         int lightingStepWords = 3;
         int sunMultiplierOffset = 2 * Integer.BYTES
                 + sceneBytes
@@ -239,6 +264,7 @@ final class RayTraceReplayInputCodecTest {
                 input.height(),
                 input.astronomy(),
                 input.packedRayCone(),
+                input.maximumBounces(),
                 sampleIndex,
                 input.sampleEpoch(),
                 input.jitterPhase(),
@@ -265,6 +291,7 @@ final class RayTraceReplayInputCodecTest {
                 input.height(),
                 input.astronomy(),
                 input.packedRayCone(),
+                input.maximumBounces(),
                 input.sampleIndex(),
                 input.sampleEpoch(),
                 input.jitterPhase(),
@@ -312,6 +339,7 @@ final class RayTraceReplayInputCodecTest {
                         0.7F,
                         new AstronomySettings(-45, 270)),
                 0x1234_5678,
+                IntegratorSettings.MAXIMUM_BOUNCES,
                 37,
                 19,
                 7,
@@ -325,6 +353,28 @@ final class RayTraceReplayInputCodecTest {
                 true,
                 true);
         return new Fixture(input, scene);
+    }
+
+    private static IntegratorFrameInput withMaximumBounces(
+            IntegratorFrameInput input, int maximumBounces) {
+        return new IntegratorFrameInput(
+                input.camera(),
+                input.width(),
+                input.height(),
+                input.astronomy(),
+                input.packedRayCone(),
+                maximumBounces,
+                input.sampleIndex(),
+                input.sampleEpoch(),
+                input.jitterPhase(),
+                input.cameraInWater(),
+                input.postProcessingMode(),
+                input.transparentGuideMode(),
+                input.lighting(),
+                input.material(),
+                input.shInput(),
+                input.rawNumericalDiagnostic(),
+                input.triangleDebug());
     }
 
     private record Fixture(

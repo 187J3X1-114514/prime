@@ -355,7 +355,7 @@ PrimeLightweightTransmissionGuide primeTraceLightweightTransmissionGuide(
     path.bounce = 1u;
 
     for (uint bounce = 1u;
-            bounce < PRIME_LIGHTWEIGHT_MAXIMUM_SCATTERS;
+            bounce < primeLightweightMaximumScatters();
             ++bounce) {
         primeSetNumericalContext(PRIME_NUMERICAL_STAGE_TRACE, bounce);
         SurfaceInteraction surface = primeTraceSurfaceWithoutReorder(

@@ -15,8 +15,8 @@ import java.util.Objects;
 /** Versioned fixed-width encoding of {@link RayTraceReplayInput}. */
 public final class RayTraceReplayInputCodec {
     private static final int MAGIC = 0x3146_5250;
-    private static final int VERSION = 5;
-    private static final int ENCODED_BYTES = 388;
+    private static final int VERSION = 6;
+    private static final int ENCODED_BYTES = 392;
     private static final int FLAG_CAMERA_IN_WATER = 1;
     private static final int FLAG_SH_INPUT = 1 << 1;
     private static final int FLAG_RAW_NUMERICAL = 1 << 2;
@@ -50,6 +50,7 @@ public final class RayTraceReplayInputCodec {
         output.putInt(input.astronomy().latitudeDegrees());
         output.putInt(input.astronomy().solarLongitudeDegrees());
         output.putInt(input.packedRayCone());
+        output.putInt(input.maximumBounces());
         output.putInt(input.sampleIndex());
         output.putInt(input.sampleEpoch());
         output.putInt(input.jitterPhase());
@@ -106,6 +107,7 @@ public final class RayTraceReplayInputCodec {
                     new AstronomySettings(input.getInt(), input.getInt()),
                     sun);
             int packedRayCone = input.getInt();
+            int maximumBounces = input.getInt();
             int sampleIndex = input.getInt();
             int sampleEpoch = input.getInt();
             int jitterPhase = input.getInt();
@@ -162,6 +164,7 @@ public final class RayTraceReplayInputCodec {
                     height,
                     astronomy,
                     packedRayCone,
+                    maximumBounces,
                     sampleIndex,
                     sampleEpoch,
                     jitterPhase,

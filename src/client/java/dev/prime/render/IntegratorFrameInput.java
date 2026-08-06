@@ -16,6 +16,7 @@ public record IntegratorFrameInput(
         int height,
         AstronomyState astronomy,
         int packedRayCone,
+        int maximumBounces,
         int sampleIndex,
         int sampleEpoch,
         int jitterPhase,
@@ -59,7 +60,7 @@ public record IntegratorFrameInput(
         IntegratorSettings.packSampleControl(sampleIndex, astronomy.settings());
         IntegratorSettings.packSampleEpoch(sampleEpoch, triangleDebug);
         IntegratorSettings.packPathControl(
-                IntegratorSettings.MAXIMUM_BOUNCES,
+                maximumBounces,
                 jitterPhase,
                 astronomy.settings(),
                 cameraInWater,

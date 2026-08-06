@@ -48,6 +48,8 @@ final class RealtimeRenderer implements Destroyable {
     private RealtimeIntegratorPipeline pipeline;
     private VulkanReconstructionResources resources;
     private RealtimeSampleState sampleState = RealtimeSampleState.initial();
+    private int lightweightMaximumScatters =
+            LightweightIntegratorSettings.DEFAULT_SCATTERS;
     private boolean pipelineInvalid;
     private boolean destroyed;
 
@@ -253,6 +255,9 @@ final class RealtimeRenderer implements Destroyable {
                 input.atlasView(),
                 input.atlasSampler(),
                 input.sceneTextures());
+        boolean scatterLimitChanged = this.applyLightweightMaximumScatters(
+                settings.lightweightMaximumScatters(), resized);
+        boolean reconfigured = resized || scatterLimitChanged;
         VulkanReconstructionResources images = this.resources;
         if (images == null) {
             return List.of();
@@ -260,7 +265,7 @@ final class RealtimeRenderer implements Destroyable {
         ResolvedReconstruction selection = images.selection();
         int renderWidth = selection.extent().width();
         int renderHeight = selection.extent().height();
-        if (resized) {
+        if (reconfigured) {
             PrimeInfo.LOGGER.debug(
                     "Reconfigured Prime realtime path at display {}x{}, render {}x{}, {} {} "
                             + "(output image={}, view={}; accumulation image={}, view={}; "
@@ -298,12 +303,15 @@ final class RealtimeRenderer implements Destroyable {
                 selection.effectiveMode(),
                 selection.quality(),
                 selection.transparentGuideMode(),
+                settings.integrator() == RealtimeIntegratorMode.LIGHTWEIGHT
+                        ? settings.lightweightMaximumScatters()
+                        : IntegratorSettings.MAXIMUM_BOUNCES,
                 settings.lighting(),
                 settings.material(),
                 processor.rawFrame().usesShInputs(),
                 input.controls().triangleDebug(),
                 settings.display(),
-                resized);
+                reconfigured);
         RealtimeSampleState.Plan sampleFrame = this.planSample(frameInput.sampleStateInput());
         ReconstructionFrameParameters postParameters =
                 frameInput.reconstructionInput(sampleFrame.reset());
@@ -361,6 +369,7 @@ final class RealtimeRenderer implements Destroyable {
                 input.camera(),
                 input.astronomy(),
                 input.cameraInWater(),
+                framePlan.integrator().maximumBounces(),
                 settings.lighting(),
                 settings.material(),
                 settings.display(),
@@ -381,6 +390,24 @@ final class RealtimeRenderer implements Destroyable {
                     input.scene().revision());
         }
         return debugLines;
+    }
+
+    private boolean applyLightweightMaximumScatters(
+            int value, boolean resourcesReconfigured) {
+        LightweightIntegratorSettings.validateScatters(value);
+        if (this.pipeline.mode() != RealtimeIntegratorMode.LIGHTWEIGHT) {
+            this.lightweightMaximumScatters = value;
+            return false;
+        }
+        if (value == this.lightweightMaximumScatters) {
+            return false;
+        }
+        this.lightweightMaximumScatters = value;
+        if (!resourcesReconfigured) {
+            this.sampleState = this.sampleState.invalidated();
+            this.resources.requestReset();
+        }
+        return true;
     }
 
     private void requireRayDispatchCapacity(int width, int height) {

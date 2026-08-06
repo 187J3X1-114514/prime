@@ -4,6 +4,7 @@ import com.mojang.blaze3d.vulkan.Destroyable;
 import com.mojang.blaze3d.vulkan.VulkanGpuSampler;
 import com.mojang.blaze3d.vulkan.VulkanGpuTextureView;
 import dev.prime.render.IntegratorFrameInput;
+import dev.prime.render.LightweightIntegratorSettings;
 import dev.prime.render.RealtimeIntegratorMode;
 import dev.prime.render.shader.ShaderAbi;
 import dev.prime.render.vulkan.terrain.TerrainScene;
@@ -65,6 +66,7 @@ public final class RealtimeRayTracingPipeline implements RealtimeIntegratorPipel
     private final TraceProgram program;
     private VulkanBuffer wavefront;
     private OutputBindings bindings;
+    private int lastRecordedPassCount;
     private boolean destroyed;
 
     public RealtimeRayTracingPipeline(VulkanContext context, TraceBackend backend) {
@@ -127,6 +129,9 @@ public final class RealtimeRayTracingPipeline implements RealtimeIntegratorPipel
             this.descriptorSetLayout = setLayout;
             this.pipelineLayout = layout;
             this.program = traceProgram;
+            this.lastRecordedPassCount = lightweight
+                    ? LightweightRayTracingPipeline.MAXIMUM_DISPATCH_COUNT
+                    : DISPATCH_COUNT;
         } catch (RuntimeException exception) {
             if (traceProgram != null) {
                 traceProgram.destroy();
@@ -150,9 +155,7 @@ public final class RealtimeRayTracingPipeline implements RealtimeIntegratorPipel
 
     @Override
     public int passCount() {
-        return this.lightweight
-                ? ShaderAbi.LIGHTWEIGHT_WAVEFRONT_ROUNDS + 2
-                : DISPATCH_COUNT;
+        return this.lastRecordedPassCount;
     }
 
     @Override
@@ -277,8 +280,11 @@ public final class RealtimeRayTracingPipeline implements RealtimeIntegratorPipel
             this.wavefrontBarrier(commandBuffer, stack);
             int sourceQueue = 0;
             int rounds = this.lightweight
-                    ? ShaderAbi.LIGHTWEIGHT_WAVEFRONT_ROUNDS
+                    ? lightweightRounds(input.maximumBounces())
                     : ShaderAbi.WAVEFRONT_ROUNDS;
+            this.lastRecordedPassCount = this.lightweight
+                    ? rounds + 2
+                    : DISPATCH_COUNT;
             for (int round = 0; round < rounds; round++) {
                 this.traceIndirect(
                         commandBuffer,
@@ -311,6 +317,10 @@ public final class RealtimeRayTracingPipeline implements RealtimeIntegratorPipel
                 this.trace(commandBuffer, stack, width, height, RESOLVE_GROUP);
             }
         }
+    }
+
+    static int lightweightRounds(int maximumScatters) {
+        return LightweightIntegratorSettings.validateScatters(maximumScatters) - 1;
     }
 
     private void bind(

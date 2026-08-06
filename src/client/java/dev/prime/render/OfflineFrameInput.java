@@ -52,6 +52,7 @@ public record OfflineFrameInput(
                                 this.camera.projection().m11(),
                                 this.width,
                                 this.height),
+                        IntegratorSettings.MAXIMUM_BOUNCES,
                         sampleIndex,
                         sampleEpoch,
                         0,

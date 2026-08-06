@@ -8,6 +8,8 @@ import dev.prime.render.AstronomySettings;
 import dev.prime.render.DisplaySettings;
 import dev.prime.render.LightingSettings;
 import dev.prime.render.MaterialSettings;
+import dev.prime.render.RealtimeIntegratorMode;
+import dev.prime.render.RealtimeRenderSettings;
 import dev.prime.render.RendererSettings;
 import dev.prime.render.post.PostProcessingMode;
 import dev.prime.render.post.ReconstructionQualityMode;
@@ -18,7 +20,9 @@ final class RendererSettingsMappingTest {
     @Test
     void mapsEveryRendererFieldAndDerivedValueFromOnePrimeSnapshot() {
         PrimeSettings source = PrimeSettings.defaults()
+                .withLightweightMaximumScatters(6)
                 .withPathTracingEnabled(false)
+                .withRealtimeIntegrator(RealtimeIntegratorMode.LIGHTWEIGHT)
                 .withVoxelTextureSurfaces(true)
                 .withVoxelTextureSurfaceStrengthSteps(173)
                 .withPostProcessingMode(PostProcessingMode.NRD_FSR)
@@ -37,6 +41,12 @@ final class RendererSettingsMappingTest {
         RendererSettings mapped = PrimeConfig.rendererSettings(source, 42L);
 
         assertFalse(mapped.pathTracingEnabled());
+        assertEquals(RealtimeIntegratorMode.LIGHTWEIGHT, mapped.realtimeIntegrator());
+        assertEquals(6, mapped.lightweightMaximumScatters());
+        assertEquals(
+                6,
+                RealtimeRenderSettings.capture(mapped)
+                        .lightweightMaximumScatters());
         assertTrue(mapped.voxelTextureSurfaces());
         assertEquals(173, mapped.voxelTextureSurfaceStrengthSteps());
         assertEquals(PostProcessingMode.NRD_FSR, mapped.postProcessingMode());
@@ -83,6 +93,7 @@ final class RendererSettingsMappingTest {
         PrimeSettings defaults = PrimeSettings.defaults();
         RendererSettings mappedDefaults = PrimeConfig.rendererSettings(defaults, 0L);
         assertTrue(mappedDefaults.pathTracingEnabled());
+        assertEquals(4, mappedDefaults.lightweightMaximumScatters());
         assertFalse(mappedDefaults.voxelTextureSurfaces());
         assertEquals(PostProcessingMode.DEFAULT, mappedDefaults.postProcessingMode());
         assertEquals(ReconstructionQualityMode.DEFAULT, mappedDefaults.reconstructionQuality());
@@ -91,6 +102,7 @@ final class RendererSettingsMappingTest {
 
         PrimeSettings changed = defaults
                 .withPathTracingEnabled(false)
+                .withLightweightMaximumScatters(7)
                 .withVoxelTextureSurfaces(true)
                 .withVoxelTextureSurfaceStrengthSteps(150)
                 .withLatitudeDegrees(-45)
@@ -100,6 +112,7 @@ final class RendererSettingsMappingTest {
 
         RendererSettings mapped = PrimeConfig.rendererSettings(restored, 9L);
         assertTrue(mapped.pathTracingEnabled());
+        assertEquals(4, mapped.lightweightMaximumScatters());
         assertFalse(mapped.voxelTextureSurfaces());
         assertEquals(VoxelSurfaceSettings.DEFAULT_STEPS, mapped.voxelTextureSurfaceStrengthSteps());
         assertEquals(AstronomySettings.defaults(), mapped.astronomy());

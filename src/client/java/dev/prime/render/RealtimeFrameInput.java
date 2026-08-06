@@ -22,6 +22,7 @@ public record RealtimeFrameInput(
         PostProcessingMode postProcessingMode,
         ReconstructionQualityMode quality,
         TransparentGuideMode transparentGuideMode,
+        int maximumBounces,
         LightingSettings.Snapshot lighting,
         MaterialSettings.Snapshot material,
         boolean shInput,
@@ -34,6 +35,12 @@ public record RealtimeFrameInput(
         Objects.requireNonNull(postProcessingMode, "postProcessingMode");
         Objects.requireNonNull(quality, "quality");
         Objects.requireNonNull(transparentGuideMode, "transparentGuideMode");
+        IntegratorSettings.packPathControl(
+                maximumBounces,
+                0,
+                astronomy.settings(),
+                cameraInWater,
+                transparentGuideMode);
         Objects.requireNonNull(lighting, "lighting");
         Objects.requireNonNull(material, "material");
         Objects.requireNonNull(display, "display");
@@ -92,6 +99,7 @@ public record RealtimeFrameInput(
                 this.height,
                 this.astronomy,
                 packedRayCone,
+                this.maximumBounces,
                 sampleIndex,
                 sampleEpoch,
                 jitterPhase,

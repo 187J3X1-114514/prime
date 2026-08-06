@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import dev.prime.render.AstronomySettings;
+import dev.prime.render.LightweightIntegratorSettings;
 import dev.prime.render.RealtimeIntegratorMode;
 import dev.prime.render.post.DlssRrDebugView;
 import dev.prime.render.post.PostProcessingMode;
@@ -201,6 +202,34 @@ final class PrimeConfigTest {
     }
 
     @Test
+    void lightweightBounceLimitDefaultsToFourAndAcceptsOneThroughEight() {
+        assertEquals(4, LightweightIntegratorSettings.DEFAULT_SCATTERS);
+        assertEquals(4, PrimeSettings.defaults().lightweightMaximumScatters());
+        assertEquals(1, PrimeConfig.parseLightweightMaximumScatters("1"));
+        assertEquals(8, PrimeConfig.parseLightweightMaximumScatters("8"));
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> PrimeConfig.parseLightweightMaximumScatters("0"));
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> PrimeConfig.parseLightweightMaximumScatters("9"));
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> PrimeConfig.parseLightweightMaximumScatters("4.0"));
+
+        PrimeSettings changed = PrimeSettings.defaults()
+                .withLightweightMaximumScatters(7);
+        assertEquals(
+                7,
+                PrimeConfig.rendererSettings(changed, 1L)
+                        .lightweightMaximumScatters());
+        assertEquals(
+                4,
+                PrimeConfig.restoredDefaults(changed)
+                        .lightweightMaximumScatters());
+    }
+
+    @Test
     void legacyFsrQualityMigratesUnlessTheSharedKeyExists() {
         Properties legacy = new Properties();
         legacy.setProperty("fsr.quality", "balanced");
@@ -215,6 +244,7 @@ final class PrimeConfigTest {
         String serialized = PrimeConfig.serializedContents();
         assertTrue(serialized.contains("renderer.path_tracing=true\n"));
         assertTrue(serialized.contains("renderer.integrator=wavefront\n"));
+        assertTrue(serialized.contains("renderer.lightweight_maximum_bounces=4\n"));
         assertTrue(serialized.contains(
                 "experimental.voxel_texture_surfaces=false\n"));
         assertTrue(serialized.contains(

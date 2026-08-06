@@ -13,7 +13,7 @@ import org.lwjgl.vulkan.VkCommandBuffer;
 public final class LightweightRayTracingPipeline implements RealtimeIntegratorPipeline {
     static final int RAYGEN_GROUP_COUNT = 4;
     static final int RAYGEN_MODULE_COUNT = 3;
-    static final int DISPATCH_COUNT = 9;
+    static final int MAXIMUM_DISPATCH_COUNT = 9;
     static final int[] RAYGEN_MODULES = {0, 1, 1, 2};
     static final int[] RAYGEN_CONTROLS = {0, 1, 257, 2};
 

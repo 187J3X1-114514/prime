@@ -53,6 +53,14 @@ final class RayTracingPushConstantsTest {
         assertEquals(
                 IntegratorSettings.packSampleEpoch(input.sampleEpoch(), input.triangleDebug()),
                 firstBuffer.getInt(ShaderAbi.PUSH_PATH_OFFSET + Integer.BYTES));
+        assertEquals(
+                IntegratorSettings.packPathControl(
+                        input.maximumBounces(),
+                        input.jitterPhase(),
+                        input.astronomy().settings(),
+                        input.cameraInWater(),
+                        input.transparentGuideMode()),
+                firstBuffer.getInt(ShaderAbi.PUSH_PATH_OFFSET + 2 * Integer.BYTES));
     }
 
     @Test
@@ -67,6 +75,7 @@ final class RayTracingPushConstantsTest {
                         valid.height(),
                         valid.astronomy(),
                         valid.packedRayCone(),
+                        valid.maximumBounces(),
                         valid.sampleIndex(),
                         valid.sampleEpoch(),
                         valid.jitterPhase(),
@@ -107,6 +116,7 @@ final class RayTracingPushConstantsTest {
                         0.7F,
                         new AstronomySettings(-45, 270)),
                 0x1234_5678,
+                4,
                 sampleIndex,
                 19,
                 7,

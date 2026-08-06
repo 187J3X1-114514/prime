@@ -5,6 +5,7 @@ import dev.prime.config.PrimeConfig;
 import dev.prime.render.AstronomySettings;
 import dev.prime.render.DisplaySettings;
 import dev.prime.render.LightingSettings;
+import dev.prime.render.LightweightIntegratorSettings;
 import dev.prime.render.MaterialSettings;
 import dev.prime.client.PrimeRuntime;
 import dev.prime.render.RealtimeIntegratorMode;
@@ -61,6 +62,21 @@ public final class PrimeVideoOptions {
                                 RealtimeIntegratorMode::id)),
                 PrimeConfig.settings().realtimeIntegrator(),
                 PrimeConfig::setRealtimeIntegrator);
+    }
+
+    public static OptionInstance<Integer> lightweightMaximumScatters() {
+        return new OptionInstance<>(
+                "prime.options.lightweight_maximum_bounces",
+                OptionInstance.cachedConstantTooltip(Component.translatable(
+                        "prime.options.lightweight_maximum_bounces.tooltip")),
+                (caption, scatters) -> Options.genericValueLabel(
+                        caption,
+                        Component.literal(Integer.toString(scatters))),
+                new OptionInstance.IntRange(
+                        LightweightIntegratorSettings.MINIMUM_SCATTERS,
+                        LightweightIntegratorSettings.MAXIMUM_SCATTERS),
+                PrimeConfig.settings().lightweightMaximumScatters(),
+                PrimeConfig::setLightweightMaximumScatters);
     }
 
     public static OptionInstance<Boolean> voxelTextureSurfaces() {

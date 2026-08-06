@@ -80,7 +80,7 @@ void primeLightweightHead() {
             previousSunNee,
             surface);
     continuation = continuation
-            && path.bounce < PRIME_LIGHTWEIGHT_MAXIMUM_SCATTERS;
+            && path.bounce < primeLightweightMaximumScatters();
     PrimeLightweightPathRecord record = primeMakeLightweightRecord(
             path,
             volumeStack,
@@ -127,7 +127,7 @@ void primeLightweightStep(uint sourceQueue) {
             previousSunNee,
             surface);
     continuation = continuation
-            && path.bounce < PRIME_LIGHTWEIGHT_MAXIMUM_SCATTERS;
+            && path.bounce < primeLightweightMaximumScatters();
     primeLightweightPaths.records[pathIndex] = primeMakeLightweightRecord(
             path,
             volumeStack,
@@ -150,7 +150,8 @@ void primeLightweightResolve() {
             pixel, record);
     PrimeLightweightTransmissionGuide transmissionGuide =
             primeEmptyLightweightTransmissionGuide();
-    if (primeMaterialIsTransmissive(result.guides.primaryMaterialFlags)) {
+    if (primeLightweightMaximumScatters() > 1u
+            && primeMaterialIsTransmissive(result.guides.primaryMaterialFlags)) {
         // Re-tracing only transparent primary pixels avoids a persistent guide sidecar. Several
         // non-NRD backends alias reflection descriptors to the main signals, so image scratch is
         // not a portable option; this bounded guide-only chain keeps the 80-byte path ABI intact.

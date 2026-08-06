@@ -2,7 +2,9 @@ package dev.prime.render.replay;
 
 import dev.prime.render.AstronomyState;
 import dev.prime.render.IntegratorFrameInput;
+import dev.prime.render.IntegratorSettings;
 import dev.prime.render.LightingSettings;
+import dev.prime.render.LightweightIntegratorSettings;
 import dev.prime.render.MaterialSettings;
 import dev.prime.render.RealtimeIntegratorMode;
 import dev.prime.render.SunDirection;
@@ -25,6 +27,7 @@ public record RayTraceReplayInput(
         int height,
         AstronomyState astronomy,
         int packedRayCone,
+        int maximumBounces,
         int sampleIndex,
         int sampleEpoch,
         int jitterPhase,
@@ -54,6 +57,18 @@ public record RayTraceReplayInput(
             throw new IllegalArgumentException(
                     "Sample index must fit the Sobol sequence");
         }
+        if (integratorMode == RealtimeIntegratorMode.LIGHTWEIGHT) {
+            LightweightIntegratorSettings.validateScatters(maximumBounces);
+        } else if (maximumBounces != IntegratorSettings.MAXIMUM_BOUNCES) {
+            throw new IllegalArgumentException(
+                    "The full integrator requires its fixed maximum bounce count");
+        }
+        IntegratorSettings.packPathControl(
+                maximumBounces,
+                jitterPhase,
+                astronomy.settings(),
+                cameraInWater,
+                guideMode(postProcessingMode));
     }
 
     public static RayTraceReplayInput capture(
@@ -81,6 +96,7 @@ public record RayTraceReplayInput(
                 input.height(),
                 input.astronomy(),
                 input.packedRayCone(),
+                input.maximumBounces(),
                 input.sampleIndex(),
                 input.sampleEpoch(),
                 input.jitterPhase(),
@@ -102,6 +118,7 @@ public record RayTraceReplayInput(
                 this.height,
                 this.astronomy,
                 this.packedRayCone,
+                this.maximumBounces,
                 this.sampleIndex,
                 this.sampleEpoch,
                 this.jitterPhase,

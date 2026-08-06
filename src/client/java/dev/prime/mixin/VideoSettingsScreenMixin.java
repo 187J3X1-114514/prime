@@ -5,6 +5,7 @@ import dev.prime.config.PrimeConfig;
 import dev.prime.render.AstronomySettings;
 import dev.prime.render.DisplaySettings;
 import dev.prime.render.LightingSettings;
+import dev.prime.render.LightweightIntegratorSettings;
 import dev.prime.render.MaterialSettings;
 import dev.prime.client.PrimeRuntime;
 import dev.prime.render.RealtimeIntegratorMode;
@@ -35,6 +36,7 @@ public abstract class VideoSettingsScreenMixin {
             Component.translatable("prime.options.header");
     @Unique private OptionInstance<Boolean> prime$pathTracingEnabled;
     @Unique private OptionInstance<RealtimeIntegratorMode> prime$realtimeIntegrator;
+    @Unique private OptionInstance<Integer> prime$lightweightMaximumScatters;
     @Unique private OptionInstance<Boolean> prime$voxelTextureSurfaces;
     @Unique private OptionInstance<Integer> prime$voxelTextureSurfaceStrength;
     @Unique private OptionInstance<Boolean> prime$screenshotMode;
@@ -63,6 +65,8 @@ public abstract class VideoSettingsScreenMixin {
         if (list != null) {
             this.prime$pathTracingEnabled = PrimeVideoOptions.pathTracingEnabled();
             this.prime$realtimeIntegrator = PrimeVideoOptions.realtimeIntegrator();
+            this.prime$lightweightMaximumScatters =
+                    PrimeVideoOptions.lightweightMaximumScatters();
             this.prime$voxelTextureSurfaces = PrimeVideoOptions.voxelTextureSurfaces();
             this.prime$voxelTextureSurfaceStrength =
                     PrimeVideoOptions.voxelTextureSurfaceStrength();
@@ -92,7 +96,9 @@ public abstract class VideoSettingsScreenMixin {
                             button -> this.prime$restoreDefaults())
                     .build());
             list.addBig(this.prime$pathTracingEnabled);
-            list.addBig(this.prime$realtimeIntegrator);
+            list.addSmall(
+                    this.prime$realtimeIntegrator,
+                    this.prime$lightweightMaximumScatters);
             list.addSmall(
                     this.prime$voxelTextureSurfaces,
                     this.prime$voxelTextureSurfaceStrength);
@@ -137,6 +143,9 @@ public abstract class VideoSettingsScreenMixin {
         this.prime$refresh(this.prime$pathTracingEnabled, true);
         this.prime$refresh(
                 this.prime$realtimeIntegrator, RealtimeIntegratorMode.DEFAULT);
+        this.prime$refresh(
+                this.prime$lightweightMaximumScatters,
+                LightweightIntegratorSettings.DEFAULT_SCATTERS);
         this.prime$refresh(this.prime$voxelTextureSurfaces, false);
         this.prime$refresh(
                 this.prime$voxelTextureSurfaceStrength,

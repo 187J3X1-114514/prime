@@ -4,6 +4,7 @@ import dev.prime.infrastructure.PrimeInfo;
 import dev.prime.render.AstronomySettings;
 import dev.prime.render.DisplaySettings;
 import dev.prime.render.LightingSettings;
+import dev.prime.render.LightweightIntegratorSettings;
 import dev.prime.render.MaterialSettings;
 import dev.prime.render.RealtimeIntegratorMode;
 import dev.prime.render.RendererSettings;
@@ -27,6 +28,8 @@ import net.fabricmc.loader.api.FabricLoader;
 public final class PrimeConfig {
     private static final String PATH_TRACING_ENABLED_KEY = "renderer.path_tracing";
     private static final String INTEGRATOR_KEY = "renderer.integrator";
+    private static final String LIGHTWEIGHT_MAXIMUM_SCATTERS_KEY =
+            "renderer.lightweight_maximum_bounces";
     private static final String VOXEL_TEXTURE_SURFACES_KEY =
             "experimental.voxel_texture_surfaces";
     private static final String VOXEL_TEXTURE_SURFACE_STRENGTH_KEY =
@@ -67,6 +70,7 @@ public final class PrimeConfig {
         Path path = configPath();
         boolean pathTracingEnabled = true;
         RealtimeIntegratorMode realtimeIntegrator = RealtimeIntegratorMode.DEFAULT;
+        int lightweightMaximumScatters = LightweightIntegratorSettings.DEFAULT_SCATTERS;
         boolean voxelTextureSurfaces = false;
         int voxelTextureSurfaceStrengthSteps = VoxelSurfaceSettings.DEFAULT_STEPS;
         PostProcessingMode postProcessingMode = PostProcessingMode.DEFAULT;
@@ -114,6 +118,21 @@ public final class PrimeConfig {
                         rewriteNeeded = true;
                     } else {
                         realtimeIntegrator = parsed;
+                    }
+                } else {
+                    rewriteNeeded = true;
+                }
+                String lightweightScatters = properties.getProperty(
+                        LIGHTWEIGHT_MAXIMUM_SCATTERS_KEY);
+                if (lightweightScatters != null) {
+                    try {
+                        lightweightMaximumScatters =
+                                parseLightweightMaximumScatters(lightweightScatters);
+                    } catch (IllegalArgumentException exception) {
+                        PrimeInfo.LOGGER.warn(
+                                "Invalid Prime lightweight bounce limit '{}'; using the default",
+                                lightweightScatters);
+                        rewriteNeeded = true;
                     }
                 } else {
                     rewriteNeeded = true;
@@ -305,6 +324,7 @@ public final class PrimeConfig {
         settings = new PrimeSettings(
                 pathTracingEnabled,
                 realtimeIntegrator,
+                lightweightMaximumScatters,
                 voxelTextureSurfaces,
                 voxelTextureSurfaceStrengthSteps,
                 postProcessingMode,
@@ -323,9 +343,10 @@ public final class PrimeConfig {
         rendererRevision = 0L;
         dirty = rewriteNeeded;
         PrimeInfo.LOGGER.info(
-                "Prime settings: path tracing {}, realtime integrator {}, voxel surfaces {} at {}x, post-processing {} quality {} (NRD-FSR {}x), latitude {} degrees, solar longitude {} degrees, sun {} EV, stars {} EV, block lights {} EV, final exposure {} EV, Oklab DRT overexposure {}, curve exponent {}, auto-exposure compensation {}, default roughness {}",
+                "Prime settings: path tracing {}, realtime integrator {}, lightweight limit {} bounces, voxel surfaces {} at {}x, post-processing {} quality {} (NRD-FSR {}x), latitude {} degrees, solar longitude {} degrees, sun {} EV, stars {} EV, block lights {} EV, final exposure {} EV, Oklab DRT overexposure {}, curve exponent {}, auto-exposure compensation {}, default roughness {}",
                 pathTracingEnabled ? "enabled" : "disabled",
                 realtimeIntegrator.id(),
+                lightweightMaximumScatters,
                 voxelTextureSurfaces ? "enabled" : "disabled",
                 formatVoxelSurfaceStrength(voxelTextureSurfaceStrengthSteps),
                 postProcessingMode.id(),
@@ -361,6 +382,7 @@ public final class PrimeConfig {
         return new RendererSettings(
                 current.pathTracingEnabled(),
                 current.realtimeIntegrator(),
+                current.lightweightMaximumScatters(),
                 current.voxelTextureSurfaces(),
                 current.voxelTextureSurfaceStrengthSteps(),
                 current.postProcessingMode(),
@@ -378,6 +400,10 @@ public final class PrimeConfig {
 
     public static void setRealtimeIntegrator(RealtimeIntegratorMode mode) {
         update(settings.withRealtimeIntegrator(mode));
+    }
+
+    public static void setLightweightMaximumScatters(int value) {
+        update(settings.withLightweightMaximumScatters(value));
     }
 
     public static void setVoxelTextureSurfaces(boolean enabled) {
@@ -444,6 +470,8 @@ public final class PrimeConfig {
         return current
                 .withPathTracingEnabled(true)
                 .withRealtimeIntegrator(RealtimeIntegratorMode.DEFAULT)
+                .withLightweightMaximumScatters(
+                        LightweightIntegratorSettings.DEFAULT_SCATTERS)
                 .withVoxelTextureSurfaces(false)
                 .withVoxelTextureSurfaceStrengthSteps(VoxelSurfaceSettings.DEFAULT_STEPS)
                 .withPostProcessingMode(PostProcessingMode.DEFAULT)
@@ -507,6 +535,8 @@ public final class PrimeConfig {
         PrimeSettings current = settings;
         return PATH_TRACING_ENABLED_KEY + "=" + current.pathTracingEnabled() + "\n"
                     + INTEGRATOR_KEY + "=" + current.realtimeIntegrator().id() + "\n"
+                    + LIGHTWEIGHT_MAXIMUM_SCATTERS_KEY + "="
+                    + current.lightweightMaximumScatters() + "\n"
                     + VOXEL_TEXTURE_SURFACES_KEY + "="
                     + current.voxelTextureSurfaces() + "\n"
                     + VOXEL_TEXTURE_SURFACE_STRENGTH_KEY + "="
@@ -648,6 +678,16 @@ public final class PrimeConfig {
             throw new IllegalArgumentException(
                     "Voxel-surface strength must be an exact 0.01 step",
                     exception);
+        }
+    }
+
+    static int parseLightweightMaximumScatters(String value) {
+        try {
+            return LightweightIntegratorSettings.validateScatters(
+                    Integer.parseInt(value));
+        } catch (NumberFormatException exception) {
+            throw new IllegalArgumentException(
+                    "Lightweight bounce limit must be an integer", exception);
         }
     }
 

@@ -175,6 +175,11 @@ final class TracePipelinesContractTest {
                 assertTrue(payloads.contains(shadowPayload), "lightweight " + stage + suffix);
             }
             assertEquals(
+                    Set.of(tracePayload),
+                    payloadShapes(
+                            wavefrontShader("realtime", "resolve", suffix),
+                            STORAGE_RAY_PAYLOAD));
+            assertEquals(
                     Set.of(shadowPayload),
                     payloadShapes(
                             wavefrontShader("offline", "area", suffix),

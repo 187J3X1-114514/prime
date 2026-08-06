@@ -24,9 +24,9 @@ Prime 自有的材质翻译、资源绑定、状态转换和回归入口位于�
 - 辐亮度 BSDF response 中的 `1/η²` 属于传输闭包本身；
 - path-state `etaScale` 只修正 Russian roulette 的存活度量，不写回真实 throughput。
 
-实时透明主路径使用首接口双分支和后续确定性折射，不直接等同于完整 rough-transmission
-closure。离线 renderer 与 BSDF 属性测试仍使用完整 RoboCute 透射闭包，因此上述契约和
-reference lock 仍是有效的生产边界。
+完整实时透明主路径使用首接口双分支；两支的后续透明顶点与离线 renderer 都使用完整
+RoboCute 透射闭包的随机单分支，因此 `/η²`、事件 PDF、`relativeEta` 和介质栈契约重新进入
+实时生产路径。首接口的固定折射适配仍不直接等同于完整 rough-transmission closure。
 
 ## 自动门禁
 

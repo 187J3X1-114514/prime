@@ -37,6 +37,7 @@ public final class DlssRrTargets implements RawWavefrontFrame, Destroyable {
     private final VulkanImage inputColor;
     private final VulkanImage normalRoughness;
     private final VulkanImage specularMotion;
+    private final VulkanImage reflectionPosition;
     private final VulkanImage rrOutput;
     private final VulkanImage[] owned;
     private boolean destroyed;
@@ -55,7 +56,8 @@ public final class DlssRrTargets implements RawWavefrontFrame, Destroyable {
         this.inputColor = images.get(10);
         this.normalRoughness = images.get(11);
         this.specularMotion = images.get(12);
-        this.rrOutput = images.get(13);
+        this.reflectionPosition = images.get(13);
+        this.rrOutput = images.get(14);
         this.owned = images.toArray(VulkanImage[]::new);
     }
 
@@ -93,6 +95,9 @@ public final class DlssRrTargets implements RawWavefrontFrame, Destroyable {
                     NORMAL_ROUGHNESS_FORMAT, "Prime RR world normal and roughness");
             add(context, images, renderWidth, renderHeight,
                     SPECULAR_MOTION_FORMAT, "Prime RR reflection motion");
+            add(context, images, renderWidth, renderHeight,
+                    VK12.VK_FORMAT_R32G32B32A32_SFLOAT,
+                    "Prime RR reflection previous virtual position");
             add(context, images, displayWidth, displayHeight,
                     COLOR_FORMAT, "Prime RR linear HDR output");
             return new DlssRrTargets(images);
@@ -164,6 +169,7 @@ public final class DlssRrTargets implements RawWavefrontFrame, Destroyable {
     @Override public VulkanImage material() { return this.material; }
     @Override public VulkanImage specularMaterial() { return this.specularMaterial; }
     @Override public VulkanImage primaryPosition() { return this.primaryPosition; }
+    @Override public VulkanImage reflectionPosition() { return this.reflectionPosition; }
     @Override public VulkanImage sunLighting() { return this.sunLighting; }
     @Override public VulkanImage sunPenumbra() { return this.sunPenumbra; }
 

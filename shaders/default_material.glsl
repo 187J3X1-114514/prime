@@ -46,9 +46,9 @@ float primeMaterialLinearRoughness(uint flags) {
         // Vanilla glass, panes and water have no authored micro-normal distribution. Treating
         // their visually sharp interface as a tiny non-zero GGX lobe creates stochastic tail
         // samples and fireflies without representing any Minecraft material detail. Zero is a
-        // material-model contract: the first transparent camera hit uses exact delta reflection,
-        // while its paired transmission branch and all later transparent hits refract
-        // deterministically.
+        // material-model contract: the first transparent camera hit evaluates both exact delta
+        // events, while queued single-path continuations randomly select one complete-closure
+        // reflection or refraction event.
         return 0.0;
     }
     return primeDefaultLinearRoughness();

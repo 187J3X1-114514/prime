@@ -14,9 +14,9 @@
 #endif
 #include "prime_bsdf_specializations.glsl"
 
-// Minecraft's translucent render layer uses RoboCute only for the first visible interface's
-// Fresnel and conditional mirror/GGX reflection. This adapter owns deterministic geometric
-// refraction, per-surface glass filtering and water-only medium transitions.
+// Minecraft's translucent render layer keeps an explicit first-visible-interface split for
+// reconstruction, then uses RoboCute's complete closure for queued single-path continuation.
+// The adapter owns the fixed primary refraction, per-surface glass filtering and medium handoff.
 struct PrimeTransmissiveBsdfSample {
     BsdfSample bsdfSample;
     PrimeRcVolumeStack volumeStack;
@@ -72,8 +72,8 @@ PrimeRcMaterial primeMinecraftTransmissionMaterial(
     bool water = (materialFlags & PRIME_MATERIAL_FLAG_WATER) != 0u;
     bool thinWalled = (materialFlags & PRIME_MATERIAL_FLAG_THIN_WALLED) != 0u;
     // Vanilla translucent materials have no authored rough interface and are therefore exact
-    // smooth reflectors. Prime uses this reference state only for first-interface Fresnel
-    // reflection; deterministic refraction is implemented in the adapter below.
+    // smooth interfaces. The first-visible split supplies its own refraction event; queued
+    // single-path transport samples this same state through the complete closure.
     PrimeTranslatedLabPbrMaterial translated = primeDecodeAndTranslateLabPbr(
             packedNormal, packedSpecular, materialFlags);
     float roughness = primeHasLabPbrSpecular(materialFlags)
@@ -485,9 +485,9 @@ PrimeTransmissiveBsdfSample primeSampleMinecraftRefractedTransmissionFromState(
             -viewDirection,
             outwardNormal);
     if (refracted.valid == 0u) {
-        // A forced transmission proposal has no support under TIR. Later deterministic
-        // continuations use the only valid delta event instead; the primary transmission slot
-        // stays empty because its paired Fresnel reflection already carries this energy.
+        // A forced transmission proposal has no support under TIR. Guide-only continuations use
+        // the sole valid delta event instead; the primary transmission slot stays empty because
+        // its paired Fresnel reflection already carries this energy.
         if (!reflectOnTotalInternalReflection) {
             return result;
         }
@@ -616,6 +616,71 @@ PrimeTransmissiveBsdfSample primeSampleMinecraftTransparentContinuation(
             outwardNormal,
             viewDirection,
             volumeStack);
+}
+
+// A queued single-path integrator samples the complete transmissive closure instead of forcing a
+// hemisphere. The closure's reflection/transmission selection probability remains in the PDF,
+// and only a sampled transmission event may replace the medium stack.
+PrimeTransmissiveBsdfSample primeSampleMinecraftTransmissionCompleteFromState(
+        PrimeRcState state,
+        vec3 baseColor,
+        float opacity,
+        uint materialFlags,
+        vec3 viewDirection,
+        vec3 sampleValue,
+        PrimeRcVolumeStack volumeStack) {
+    PrimeTransmissiveBsdfSample result;
+    result.bsdfSample = primeInvalidBsdfSample();
+    result.volumeStack = volumeStack;
+    state.samplingFlags = PRIME_RC_FLAG_ALL;
+    vec3 localView = primeRcOnbToLocal(state.material.geometry.onb, viewDirection);
+    PrimeRcSampleResult sampled = primeRcPrimeTransmissionSample(
+            localView, sampleValue, state, volumeStack);
+    if (!primeRcHasSample(sampled.bsdfSample)) {
+        return result;
+    }
+    result.bsdfSample.direction = primeRcOnbToWorld(
+            state.material.geometry.onb, sampled.bsdfSample.wo);
+    result.bsdfSample.response = sampled.bsdfSample.throughput.value;
+    result.bsdfSample.pdf = sampled.bsdfSample.pdf;
+    result.bsdfSample.relativeEta = sampled.bsdfSample.eta;
+    result.bsdfSample.eventFlags = primeRcToBsdfEventFlags(
+            sampled.bsdfSample.throughput.flags);
+    if ((result.bsdfSample.eventFlags & PRIME_BSDF_EVENT_TRANSMISSION) != 0u) {
+        result.bsdfSample.response *= primeMinecraftSurfaceTransmittance(
+                baseColor, opacity, materialFlags);
+    }
+    result.volumeStack = sampled.volumeStack;
+    result.bsdfSample = primeSanitizeBsdfSample(result.bsdfSample);
+    if (result.bsdfSample.eventFlags == 0u) {
+        result.volumeStack = volumeStack;
+    }
+    return result;
+}
+
+BsdfEvaluation primeEvaluateMinecraftTransmissionCompleteFromState(
+        PrimeRcState state,
+        vec3 baseColor,
+        float opacity,
+        uint materialFlags,
+        vec3 viewDirection,
+        vec3 scatterDirection) {
+    state.samplingFlags = PRIME_RC_FLAG_ALL;
+    vec3 localView = primeRcOnbToLocal(state.material.geometry.onb, viewDirection);
+    vec3 localScatter = primeRcOnbToLocal(
+            state.material.geometry.onb, scatterDirection);
+    PrimeRcEval evaluated = primeRcPrimeTransmissionEvaluate(
+            localView, localScatter, state);
+    BsdfEvaluation result = primeInvalidBsdfEvaluation();
+    if (evaluated.throughput.flags != PRIME_RC_FLAG_NONE) {
+        result.response = evaluated.throughput.value;
+        result.pdf = evaluated.pdf;
+        if (primeRcIsTransmissive(evaluated.throughput.flags)) {
+            result.response *= primeMinecraftSurfaceTransmittance(
+                    baseColor, opacity, materialFlags);
+        }
+    }
+    return primeSanitizeBsdfEvaluation(result);
 }
 
 PrimeTransmissiveBsdfSplit primeSampleMinecraftTransmissionSplitFromState(

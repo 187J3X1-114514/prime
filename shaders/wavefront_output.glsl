@@ -78,7 +78,8 @@ vec3 primeNrdEffectiveDirection(
 void primeWriteRealtimeOutput(
         uvec2 pixel,
         vec2 cameraSample,
-        PrimeIntegrationResult sampleResult) {
+        PrimeIntegrationResult sampleResult,
+        vec4 reflectionPreviousVirtualPosition) {
     if (primeWritesRawNumericalDiagnostic()) {
         primeSetNumericalContext(PRIME_NUMERICAL_STAGE_FINAL_OUTPUT, 0u);
         primeRecordNumerical(
@@ -126,7 +127,6 @@ void primeWriteRealtimeOutput(
             ? nrdGuides.primaryPosition
             : vec3(0.0);
     bool primaryHasMotion = nrdGuides.primaryHasMotion
-            && !usesTransmissionAnchor
             && primeNrdIsFinite(nrdGuides.primaryPreviousPosition);
     vec3 primaryPreviousPosition = primaryHasMotion
             ? nrdGuides.primaryPreviousPosition
@@ -171,7 +171,7 @@ void primeWriteRealtimeOutput(
                                     : primaryPosition),
                     nrdShInputs
                             ? uintBitsToFloat(packHalf2x16(cameraSample))
-                            : visibleDistance));
+                            : primaryDistance));
     if (nrdShInputs) {
         vec3 primaryAreaDiffuse = nrdGuides.primaryAreaDiffuse * rawSignalScale;
         vec3 primaryAreaSpecular = nrdGuides.primaryAreaSpecular * rawSignalScale;
@@ -315,6 +315,12 @@ void primeWriteRealtimeOutput(
                     ivec2(pixel),
                     vec4(1.0, 1.0, 1.0, -1.0));
         }
+    } else if (primeTransparentGuideMode()
+            == PRIME_PATH_TRANSPARENT_GUIDE_MODE_DLSS_RR) {
+        imageStore(
+                primeNrdReflectionPosition,
+                ivec2(pixel),
+                reflectionPreviousVirtualPosition);
     }
     imageStore(
             primeNrdSunLighting,
@@ -333,6 +339,17 @@ void primeWriteRealtimeOutput(
             primeStableRadiance,
             ivec2(pixel),
             vec4(primeNrdSanitizeRadiance(sampleResult.radiance.stable), 1.0));
+}
+
+void primeWriteRealtimeOutput(
+        uvec2 pixel,
+        vec2 cameraSample,
+        PrimeIntegrationResult sampleResult) {
+    primeWriteRealtimeOutput(
+            pixel,
+            cameraSample,
+            sampleResult,
+            vec4(0.0, 0.0, 0.0, -1.0));
 }
 
 #endif

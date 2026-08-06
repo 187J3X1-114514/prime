@@ -43,9 +43,9 @@ the quadrature reference.
 `PrimeBsdfGpuTest` includes the production `bsdf.glsl` adapter, not only the
 protected reference fragments. It sweeps opaque, transmissive, foliage, and
 fixed primary-split entry points. It checks first-interface Snell direction,
-relative IOR and complementary Fresnel response, rough-reflection
-sample/eval/PDF consistency, random-independent deterministic refraction, TIR,
-per-surface glass filtering, and water-only stack transitions. Rejected
+relative IOR and complementary Fresnel response, complete single-path
+reflection/transmission sample/eval/PDF consistency, random-independent primary
+refraction, TIR, per-surface glass filtering, and medium-stack transitions. Rejected
 proposals must become Prime's canonical zero-event sample; every accepted public
 payload must be finite, nonnegative, directionally valid, and keep its
 volume-stack transition within the fixed ABI capacity.

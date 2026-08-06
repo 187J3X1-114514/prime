@@ -109,7 +109,7 @@ final class DlssRrMotionContractTest {
     }
 
     @Test
-    void smoothReflectionsUseVirtualMotionAndRoughSurfacesUsePrimaryMotion() {
+    void smoothReflectionsUseProbedVirtualMotionAndRoughSurfacesUsePrimaryMotion() {
         FrameCamera previous = camera(new Matrix4f(), 0.0, 0.0, 0.0);
         FrameCamera current = camera(
                 new Matrix4f().rotateY((float) Math.toRadians(6.0)),
@@ -119,31 +119,64 @@ final class DlssRrMotionContractTest {
         SubpixelJitter jitter = DlssRrProfile.jitter(
                 ReconstructionQualityMode.QUALITY, 9);
         Vector2f currentSampleUv = sampleUv(jitter);
-        Vector3f primaryPosition = rayDirection(current, currentSampleUv).mul(7.0F);
-        float hitDistance = 24.0F;
-        Vector3f virtualPosition = new Vector3f(primaryPosition).fma(
-                hitDistance,
-                new Vector3f(primaryPosition).normalize());
-        Vector2f expectedVirtual = projectSurface(current, previous, virtualPosition)
+        Vector3f ray = rayDirection(current, currentSampleUv);
+        Vector3f primaryPosition = new Vector3f(ray).mul(7.0F);
+        Vector3f planeNormal = new Vector3f(0.15F, 0.25F, 1.0F).normalize();
+        Vector3f reflectionDirection = reflect(ray, planeNormal);
+        Vector3f targetPosition = new Vector3f(primaryPosition)
+                .fma(24.0F, reflectionDirection);
+        Vector3f currentVirtualPosition = mirrorPoint(
+                targetPosition, primaryPosition, planeNormal);
+        assertTrue(new Vector3f(currentVirtualPosition).cross(ray)
+                .lengthSquared() < 1.0e-8F);
+        Vector3f primaryPreviousPosition = new Vector3f(primaryPosition)
+                .add(0.15F, -0.05F, 0.2F);
+        Vector3f targetPreviousPosition = new Vector3f(targetPosition)
+                .add(-0.4F, 0.3F, 0.1F);
+        Vector3f previousVirtualPosition = mirrorPoint(
+                targetPreviousPosition, primaryPreviousPosition, planeNormal);
+        Vector2f expectedVirtual = projectSurface(
+                        current, previous, previousVirtualPosition)
                 .sub(currentSampleUv, new Vector2f());
         Vector2f primary = motion(
-                current, previous, currentSampleUv, primaryPosition, false);
+                current, previous, currentSampleUv, primaryPreviousPosition, false);
 
         Vector2f smooth = specularMotion(
-                current, previous, currentSampleUv, primaryPosition, 7.0F, hitDistance, 0.1F);
+                current,
+                previous,
+                currentSampleUv,
+                primaryPreviousPosition,
+                previousVirtualPosition,
+                false,
+                true,
+                0.1F);
         Vector2f rough = specularMotion(
-                current, previous, currentSampleUv, primaryPosition, 7.0F, hitDistance, 0.25F);
-        Vector2f missingHit = specularMotion(
-                current, previous, currentSampleUv, primaryPosition, 7.0F, 0.0F, 0.1F);
+                current,
+                previous,
+                currentSampleUv,
+                primaryPreviousPosition,
+                previousVirtualPosition,
+                false,
+                true,
+                0.25F);
+        Vector2f missingProbe = specularMotion(
+                current,
+                previous,
+                currentSampleUv,
+                primaryPreviousPosition,
+                previousVirtualPosition,
+                false,
+                false,
+                0.1F);
 
         assertVectorEquals(expectedVirtual, smooth);
         assertVectorEquals(primary, rough);
-        assertVectorEquals(primary, missingHit);
+        assertVectorEquals(primary, missingProbe);
         assertTrue(new Vector2f(smooth).sub(primary).lengthSquared() > 1.0e-8F);
     }
 
     @Test
-    void transmittedPrimaryGuideKeepsReflectionAnchoredAtTheVisibleInterface() {
+    void transmittedPrimaryGuideCannotReplaceIndependentReflectionProbe() {
         FrameCamera previous = camera(new Matrix4f(), 0.0, 0.0, 0.0);
         FrameCamera current = camera(
                 new Matrix4f().rotateX((float) Math.toRadians(5.0)),
@@ -153,23 +186,81 @@ final class DlssRrMotionContractTest {
         SubpixelJitter jitter = DlssRrProfile.jitter(
                 ReconstructionQualityMode.BALANCED, 4);
         Vector2f currentSampleUv = sampleUv(jitter);
-        Vector3f ray = rayDirection(current, currentSampleUv);
-        Vector3f transmittedVirtualPosition = new Vector3f(ray).mul(40.0F);
-        float visibleInterfaceDistance = 6.0F;
-        float reflectionHitDistance = 13.0F;
-        Vector3f expectedReflectionPosition = new Vector3f(ray).mul(
-                visibleInterfaceDistance + reflectionHitDistance);
-        Vector2f expected = motion(
-                current, previous, currentSampleUv, expectedReflectionPosition, false);
+        Vector3f transmittedPreviousPosition = new Vector3f(
+                rayDirection(current, currentSampleUv)).mul(40.0F);
+        Vector3f reflectionPreviousVirtualPosition = new Vector3f(
+                -3.0F, 8.0F, -19.0F);
+        Vector2f expected = projectSurface(
+                        current, previous, reflectionPreviousVirtualPosition)
+                .sub(currentSampleUv, new Vector2f());
 
         Vector2f actual = specularMotion(
                 current,
                 previous,
                 currentSampleUv,
-                transmittedVirtualPosition,
-                visibleInterfaceDistance,
-                reflectionHitDistance,
+                transmittedPreviousPosition,
+                reflectionPreviousVirtualPosition,
+                false,
+                true,
                 0.05F);
+
+        assertVectorEquals(expected, actual);
+        assertTrue(new Vector2f(actual).sub(motion(
+                current,
+                previous,
+                currentSampleUv,
+                transmittedPreviousPosition,
+                false)).lengthSquared() > 1.0e-8F);
+    }
+
+    @Test
+    void transmissionAnchorPreservesIndependentTargetMotion() {
+        FrameCamera camera = camera(new Matrix4f(), 0.0, 0.0, 0.0);
+        SubpixelJitter jitter = DlssRrProfile.jitter(
+                ReconstructionQualityMode.BALANCED, 6);
+        Vector2f currentSampleUv = sampleUv(jitter);
+        Vector3f currentAnchorPosition = rayDirection(camera, currentSampleUv)
+                .mul(28.0F);
+        Vector3f previousVirtualPosition = new Vector3f(currentAnchorPosition)
+                .add(0.45F, -0.2F, 0.1F);
+
+        Vector2f targetMotion = motion(
+                camera,
+                camera,
+                currentSampleUv,
+                previousVirtualPosition,
+                false);
+        Vector2f oldAnchorMotion = motion(
+                camera,
+                camera,
+                currentSampleUv,
+                currentAnchorPosition,
+                false);
+
+        assertTrue(targetMotion.lengthSquared() > 1.0e-8F);
+        assertVectorEquals(new Vector2f(), oldAnchorMotion);
+    }
+
+    @Test
+    void directionalReflectionProbeUsesTranslationFreeProjection() {
+        FrameCamera previous = camera(new Matrix4f(), 0.0, 0.0, 0.0);
+        FrameCamera current = camera(new Matrix4f(), 3.0, -2.0, 1.0);
+        SubpixelJitter jitter = DlssRrProfile.jitter(
+                ReconstructionQualityMode.QUALITY, 3);
+        Vector2f currentSampleUv = sampleUv(jitter);
+        Vector3f direction = new Vector3f(0.2F, 0.1F, -1.0F).normalize();
+        Vector2f expected = projectSky(current, previous, direction)
+                .sub(currentSampleUv, new Vector2f());
+
+        Vector2f actual = specularMotion(
+                current,
+                previous,
+                currentSampleUv,
+                new Vector3f(1.0F, 2.0F, -8.0F),
+                direction,
+                true,
+                true,
+                0.0F);
 
         assertVectorEquals(expected, actual);
     }
@@ -196,16 +287,35 @@ final class DlssRrMotionContractTest {
             FrameCamera current,
             FrameCamera previous,
             Vector2f currentSampleUv,
-            Vector3f primaryPosition,
-            float visibleInterfaceDistance,
-            float hitDistance,
+            Vector3f primaryPreviousPosition,
+            Vector3f reflectionPreviousVirtualPosition,
+            boolean directional,
+            boolean valid,
             float roughness) {
-        if (!(hitDistance > 1.0e-3F) || !(roughness < 0.25F)) {
-            return motion(current, previous, currentSampleUv, primaryPosition, false);
+        if (!valid || !(roughness < 0.25F)) {
+            return motion(
+                    current,
+                    previous,
+                    currentSampleUv,
+                    primaryPreviousPosition,
+                    false);
         }
-        Vector3f virtualPosition = new Vector3f(primaryPosition).normalize()
-                .mul(visibleInterfaceDistance + hitDistance);
-        return motion(current, previous, currentSampleUv, virtualPosition, false);
+        Vector2f previousUv = directional
+                ? projectSky(current, previous, reflectionPreviousVirtualPosition)
+                : projectSurface(current, previous, reflectionPreviousVirtualPosition);
+        return previousUv.sub(currentSampleUv, new Vector2f());
+    }
+
+    private static Vector3f reflect(Vector3f direction, Vector3f normal) {
+        return new Vector3f(direction).fma(
+                -2.0F * direction.dot(normal), normal);
+    }
+
+    private static Vector3f mirrorPoint(
+            Vector3f point, Vector3f planePoint, Vector3f normal) {
+        return new Vector3f(point).fma(
+                -2.0F * new Vector3f(point).sub(planePoint).dot(normal),
+                normal);
     }
 
     private static Vector2f projectSurface(

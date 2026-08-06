@@ -77,7 +77,7 @@ const uint PRIME_ADAPTER_OPAQUE = 0u;
 const uint PRIME_ADAPTER_TRANSMISSION = 1u;
 const uint PRIME_ADAPTER_FOLIAGE = 2u;
 const uint PRIME_ADAPTER_PRIMARY_SPLIT = 3u;
-const uint PRIME_ADAPTER_OFFLINE_TRANSMISSION = 4u;
+const uint PRIME_ADAPTER_COMPLETE_TRANSMISSION = 4u;
 
 struct PrimeAdapterResult {
     uint mask;
@@ -693,6 +693,15 @@ void primeAdapterProperties(
                 rayT,
                 stack);
         PrimeTransmissiveBsdfSample sampled =
+                primeSampleMinecraftTransmissionCompleteFromState(
+                        state,
+                        baseColor,
+                        opacity,
+                        materialFlags,
+                        viewDirection,
+                        firstSample,
+                        stack);
+        PrimeTransmissiveBsdfSample offline =
                 primeSampleOfflineMinecraftTransmissionFromState(
                         state,
                         baseColor,
@@ -729,6 +738,10 @@ void primeAdapterProperties(
                 : reference.volumeStack;
         if (!primeAdapterSameSample(result.first, expected)
                 || !primeAdapterSameStack(sampled.volumeStack, expectedStack)
+                || !primeAdapterSameSample(
+                        sampled.bsdfSample, offline.bsdfSample)
+                || !primeAdapterSameStack(
+                        sampled.volumeStack, offline.volumeStack)
                 || ((result.first.eventFlags & PRIME_BSDF_EVENT_REFLECTION) != 0u
                         && !primeAdapterSameStack(sampled.volumeStack, stack))
                 || primeOfflineSkipsRussianRoulette(result.first)
@@ -750,6 +763,44 @@ void primeAdapterProperties(
                         vec3(0.0),
                         0.0)) {
             result.mask |= PRIME_TEST_FAILURE_IDENTITY;
+        }
+        result.probeEvaluation =
+                primeEvaluateMinecraftTransmissionCompleteFromState(
+                        state,
+                        baseColor,
+                        opacity,
+                        materialFlags,
+                        viewDirection,
+                        probeDirection);
+        if (result.first.eventFlags != 0u
+                && (result.first.eventFlags & PRIME_BSDF_EVENT_DELTA) == 0u) {
+            result.sampledEvaluation =
+                    primeEvaluateMinecraftTransmissionCompleteFromState(
+                            state,
+                            baseColor,
+                            opacity,
+                            materialFlags,
+                            viewDirection,
+                            result.first.direction);
+            vec3 localScatter = primeRcOnbToLocal(
+                    state.material.geometry.onb, result.first.direction);
+            bool stableReconstruction = min(
+                    state.transmissionMicrofacet.alpha.x,
+                    state.transmissionMicrofacet.alpha.y) >= 5.0e-3
+                    && abs(localView.z) >= 1.0e-1
+                    && abs(localScatter.z) >= 5.0e-2;
+            if (stableReconstruction && (!primeTestClose(
+                            result.first.response,
+                            result.sampledEvaluation.response,
+                            3.0e-6,
+                            2.0e-3)
+                    || !primeTestClose(
+                            result.first.pdf,
+                            result.sampledEvaluation.pdf,
+                            3.0e-6,
+                            2.0e-3))) {
+                result.mask |= PRIME_TEST_FAILURE_PDF;
+            }
         }
     }
 

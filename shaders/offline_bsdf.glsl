@@ -1,9 +1,9 @@
 #ifndef PRIME_OFFLINE_BSDF_GLSL
 #define PRIME_OFFLINE_BSDF_GLSL
 
-// Offline transport samples the complete transmissive closure once. Unlike the realtime
-// adapter, no event is split or forced, so the reference PDF includes reflection/transmission
-// selection and remains directly usable by throughput and MIS.
+// Offline transport uses the shared complete single-path closure. No event is split or forced, so
+// the reference PDF includes reflection/transmission selection and remains directly usable by
+// throughput and MIS.
 PrimeTransmissiveBsdfSample primeSampleOfflineMinecraftTransmissionFromState(
         PrimeRcState state,
         vec3 baseColor,
@@ -12,33 +12,14 @@ PrimeTransmissiveBsdfSample primeSampleOfflineMinecraftTransmissionFromState(
         vec3 viewDirection,
         vec3 sampleValue,
         PrimeRcVolumeStack volumeStack) {
-    PrimeTransmissiveBsdfSample result;
-    result.bsdfSample = primeInvalidBsdfSample();
-    result.volumeStack = volumeStack;
-    state.samplingFlags = PRIME_RC_FLAG_ALL;
-    vec3 localView = primeRcOnbToLocal(state.material.geometry.onb, viewDirection);
-    PrimeRcSampleResult sampled = primeRcPrimeTransmissionSample(
-            localView, sampleValue, state, volumeStack);
-    if (!primeRcHasSample(sampled.bsdfSample)) {
-        return result;
-    }
-    result.bsdfSample.direction = primeRcOnbToWorld(
-            state.material.geometry.onb, sampled.bsdfSample.wo);
-    result.bsdfSample.response = sampled.bsdfSample.throughput.value;
-    result.bsdfSample.pdf = sampled.bsdfSample.pdf;
-    result.bsdfSample.relativeEta = sampled.bsdfSample.eta;
-    result.bsdfSample.eventFlags = primeRcToBsdfEventFlags(
-            sampled.bsdfSample.throughput.flags);
-    if ((result.bsdfSample.eventFlags & PRIME_BSDF_EVENT_TRANSMISSION) != 0u) {
-        result.bsdfSample.response *= primeMinecraftSurfaceTransmittance(
-                baseColor, opacity, materialFlags);
-    }
-    result.volumeStack = sampled.volumeStack;
-    result.bsdfSample = primeSanitizeBsdfSample(result.bsdfSample);
-    if (result.bsdfSample.eventFlags == 0u) {
-        result.volumeStack = volumeStack;
-    }
-    return result;
+    return primeSampleMinecraftTransmissionCompleteFromState(
+            state,
+            baseColor,
+            opacity,
+            materialFlags,
+            viewDirection,
+            sampleValue,
+            volumeStack);
 }
 
 BsdfEvaluation primeEvaluateOfflineMinecraftTransmission(
@@ -57,24 +38,13 @@ BsdfEvaluation primeEvaluateOfflineMinecraftTransmission(
             viewDirection,
             surface.t,
             volumeStack);
-    state.samplingFlags = PRIME_RC_FLAG_ALL;
-    vec3 localView = primeRcOnbToLocal(state.material.geometry.onb, viewDirection);
-    vec3 localScatter = primeRcOnbToLocal(
-            state.material.geometry.onb, scatterDirection);
-    PrimeRcEval evaluated = primeRcPrimeTransmissionEvaluate(
-            localView, localScatter, state);
-    BsdfEvaluation result = primeInvalidBsdfEvaluation();
-    if (evaluated.throughput.flags != PRIME_RC_FLAG_NONE) {
-        result.response = evaluated.throughput.value;
-        result.pdf = evaluated.pdf;
-        if (primeRcIsTransmissive(evaluated.throughput.flags)) {
-            result.response *= primeMinecraftSurfaceTransmittance(
-                    surface.baseColor,
-                    primeSurfaceOpacity(surface),
-                    surface.materialFlags);
-        }
-    }
-    return primeSanitizeBsdfEvaluation(result);
+    return primeEvaluateMinecraftTransmissionCompleteFromState(
+            state,
+            surface.baseColor,
+            primeSurfaceOpacity(surface),
+            surface.materialFlags,
+            viewDirection,
+            scatterDirection);
 }
 
 // Offline transport has one global guaranteed continuation. Interface type never grants an

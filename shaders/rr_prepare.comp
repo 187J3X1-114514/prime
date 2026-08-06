@@ -23,6 +23,8 @@ layout(set = 0, binding = 11, rgba16f) uniform writeonly image2D rrInputColor;
 layout(set = 0, binding = 12, rg16f) uniform writeonly image2D rrMotion;
 layout(set = 0, binding = 13, rgba16f) uniform writeonly image2D rrNormalRoughness;
 layout(set = 0, binding = 14, rg16f) uniform writeonly image2D rrSpecularMotion;
+layout(set = 0, binding = 15, rgba32f) uniform readonly image2D
+        rrReflectionPreviousVirtualPosition;
 
 layout(push_constant) uniform PrimeRrPreparePushConstants {
     mat4 currentClipToWorld;
@@ -49,13 +51,13 @@ vec3 rrRayDirection(vec2 screenUv) {
     return normalize(farPoint.xyz / farPoint.w - nearPoint.xyz / nearPoint.w);
 }
 
-vec2 rrMotionVector(vec2 currentSampleUv, vec3 position, bool sky) {
+vec2 rrPreviousMotion(
+        vec2 currentSampleUv, vec3 previousTarget, bool directional) {
     // The primary point was traced through pixel center + the current camera jitter. Projecting
     // that point with a non-jittered matrix therefore lands at this sample UV, not at pixel center.
     // Subtracting pixel center would leak the current Halton offset into every static motion vector.
-    vec4 previousClip = sky
-            ? rrPush.previousWorldToClip * vec4(rrRayDirection(currentSampleUv), 0.0)
-            : rrPush.previousWorldToClip * vec4(position, 1.0);
+    vec4 previousClip = rrPush.previousWorldToClip
+            * vec4(previousTarget, directional ? 0.0 : 1.0);
     if (!(abs(previousClip.w) > 1.0e-6)
             || any(isnan(previousClip))
             || any(isinf(previousClip))) {
@@ -67,6 +69,13 @@ vec2 rrMotionVector(vec2 currentSampleUv, vec3 position, bool sky) {
     // Static geometry projects back to currentSampleUv, so its vector is zero. The bridge supplies
     // renderWidth/renderHeight as MV scales to convert actual camera motion to pixel space.
     return previousUv - currentSampleUv;
+}
+
+vec2 rrMotionVector(vec2 currentSampleUv, vec3 position, bool sky) {
+    return rrPreviousMotion(
+            currentSampleUv,
+            sky ? rrRayDirection(currentSampleUv) : position,
+            sky);
 }
 
 void rrApplyAerial(ivec2 pixel, ivec2 extent, float primaryDistance, inout vec3 radiance) {
@@ -156,7 +165,6 @@ void main() {
     vec4 noisyDiffuse = imageLoad(rrNoisyDiffuse, pixel);
     vec4 noisySpecular = imageLoad(rrNoisySpecular, pixel);
     vec4 sun = imageLoad(rrSunLighting, pixel);
-    float specularHitDistance = noisySpecular.a;
     vec3 inputRadiance = noisyDiffuse.rgb
             + noisySpecular.rgb
             + sun.rgb * sun.a
@@ -173,7 +181,7 @@ void main() {
     vec2 currentSampleUv = (vec2(pixel) + vec2(0.5) + rrPush.currentJitterPixels)
             / vec2(extent);
     vec3 currentPrimaryPosition = primaryHasMotion
-            ? rrRayDirection(currentSampleUv) * material.a
+            ? rrRayDirection(currentSampleUv) * primary.w
             : primary.xyz;
     vec4 viewPosition = rrPush.currentWorldToView
             * vec4(currentPrimaryPosition, 1.0);
@@ -187,21 +195,18 @@ void main() {
             primeNrdSanitizeMotion(vec3(primaryMotion, 0.0)), 0.0));
 
     vec2 specularMotion = primaryMotion;
-    float guideDistance = length(currentPrimaryPosition);
-    float visibleDistance = primary.w;
-    if (specularHitDistance > 1.0e-3
-            && reflectionRoughness < PRIME_RR_SPECULAR_MOTION_ROUGHNESS
-            && primeNrdIsFinite(guideDistance)
-            && guideDistance > 1.0e-6
-            && primeNrdIsFinite(visibleDistance)
-            && visibleDistance > 0.0) {
-        // Planar-reflector virtual image: the secondary segment is mirrored behind the
-        // visible interface. primary.xyz may independently describe a transmitted PSR.
-        vec3 virtualPosition = currentPrimaryPosition / guideDistance
-                * (visibleDistance + specularHitDistance);
-        specularMotion = primaryHasMotion
-                ? primaryMotion
-                : rrMotionVector(currentSampleUv, virtualPosition, false);
+    vec4 reflectionPreviousVirtualPosition = imageLoad(
+            rrReflectionPreviousVirtualPosition, pixel);
+    bool hasReflectionProbe = reflectionPreviousVirtualPosition.w >= 0.0
+            && primeNrdIsFinite(reflectionPreviousVirtualPosition);
+    if (hasReflectionProbe
+            && reflectionRoughness < PRIME_RR_SPECULAR_MOTION_ROUGHNESS) {
+        // The raygen probe supplies the previous-frame virtual target itself. Its w lane selects
+        // a finite mirrored hit (zero) or an environment direction (one).
+        specularMotion = rrPreviousMotion(
+                currentSampleUv,
+                reflectionPreviousVirtualPosition.xyz,
+                reflectionPreviousVirtualPosition.w > 0.5);
     }
     imageStore(rrSpecularMotion, pixel, vec4(
             primeNrdSanitizeMotion(vec3(specularMotion, 0.0)), 0.0));

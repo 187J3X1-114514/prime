@@ -34,6 +34,7 @@ void primeStoreDeferredAreaLightRequest(
 
 #include "integrator.glsl"
 #include "camera.glsl"
+#include "transparent_guide_probe.glsl"
 #include "wavefront_output.glsl"
 #include "wavefront_state.glsl"
 
@@ -724,7 +725,45 @@ void primeWavefrontResolve() {
                     pixel,
                     primaryRecord);
     vec2 cameraSample = primeRealtimeCameraSample();
-    primeWriteRealtimeOutput(pixel, cameraSample, result);
+    vec4 reflectionPreviousVirtualPosition = vec4(0.0, 0.0, 0.0, -1.0);
+    if (transparentPrimary
+            && primeTransparentGuideMode()
+                    != PRIME_PATH_TRANSPARENT_GUIDE_MODE_DISABLED) {
+        PathState cameraPath = primeCameraPath(pixel, 0u, cameraSample);
+        SurfaceInteraction primarySurface = primeTraceSurfaceWithoutReorder(
+                primePush.cameraPosition, cameraPath.rayDirection);
+        if (primarySurface.hitKind == PRIME_HIT_SURFACE
+                && primeMaterialIsTransmissive(primarySurface.materialFlags)) {
+            PrimeRcVolumeStack volumeStack =
+                    (primePush.path.z & PRIME_PATH_CAMERA_IN_WATER_MASK) != 0u
+                    ? primeCameraWaterVolumeStack()
+                    : primeEmptyVolumeStack();
+            PrimeTransparentGuideProbeResult probes =
+                    primeTraceTransparentGuideProbes(
+                            cameraPath,
+                            primarySurface,
+                            volumeStack,
+                            primeMaximumBounces());
+            primeApplyProbeSurfaceGuide(
+                    result.transmissionGuides, probes.transmission);
+            if (probes.transmission.primaryHitKind == PRIME_HIT_SURFACE) {
+                result.transmissionAnchorDistance =
+                        probes.transmissionAnchorDistance;
+            }
+            primeApplyProbeSurfaceGuide(
+                    result.reflectionGuides, probes.reflection);
+            if (probes.reflection.primaryHitKind == PRIME_HIT_SURFACE) {
+                result.reflectionDirectionalGuide = false;
+            }
+            reflectionPreviousVirtualPosition =
+                    probes.reflectionPreviousVirtualPosition;
+        }
+    }
+    primeWriteRealtimeOutput(
+            pixel,
+            cameraSample,
+            result,
+            reflectionPreviousVirtualPosition);
 }
 
 void main() {

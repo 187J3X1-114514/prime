@@ -51,6 +51,7 @@ PrimeTranslatedLabPbrMaterial primeTranslateLabPbr(
     // remain deliberately ignored.
     result.metalId = authored
             && !transmissive
+            && !primeMaterialIsColorlessGlass(flags)
             && primeLabPbrIsSupportedMetalId(encoded.metalId)
             ? encoded.metalId
             : 0u;

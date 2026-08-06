@@ -347,13 +347,37 @@ final class PrimeProductionMathGpuTest {
                             random.nextFloat(),
                             random.nextFloat(),
                             random.nextFloat());
+                } else if (kind == 5) {
+                    float opacity = switch (local & 7) {
+                        case 0 -> 0.0F;
+                        case 1 -> Math.nextUp(0.0F);
+                        case 2 -> 0.4F;
+                        case 3 -> 0.5F;
+                        case 4 -> Math.nextUp(0.5F);
+                        case 5 -> 155.0F / 255.0F;
+                        case 6 -> 163.0F / 255.0F;
+                        default -> 1.0F;
+                    };
+                    putVec4(
+                            input,
+                            index,
+                            words,
+                            1,
+                            random.nextFloat(),
+                            random.nextFloat(),
+                            random.nextFloat(),
+                            opacity);
                 } else if (kind == 6) {
-                    float rayDistance = powerOfTwo(random.nextInt(-10, 13));
+                    boolean sunRay = (local & 3) == 0;
+                    float rayDistance = sunRay
+                            ? 1_000_000.0F
+                            : powerOfTwo(random.nextInt(-10, 13));
+                    float boundaryRange = sunRay ? 64.0F : rayDistance;
                     float[] hits = {
-                        random.nextFloat() * rayDistance,
-                        random.nextFloat() * rayDistance,
-                        random.nextFloat() * rayDistance,
-                        random.nextFloat() * rayDistance
+                        random.nextFloat() * boundaryRange,
+                        random.nextFloat() * boundaryRange,
+                        random.nextFloat() * boundaryRange,
+                        random.nextFloat() * boundaryRange
                     };
                     Arrays.sort(hits);
                     putVec4(

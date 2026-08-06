@@ -215,6 +215,12 @@ void primeCheckGlassVolume(
             vec3(1.0));
     vec3 extinction = primeGlassVolumeExtinction(baseColor, opacity);
     vec3 shadowExtinction = primeGlassShadowExtinction(baseColor, opacity);
+    bool stained = primeGlassReferenceIsStained(opacity);
+    bool rough = primeGlassTexelIsRough(opacity);
+    vec3 expectedShadowExtinction = stained
+            ? primeGlassVolumeExtinction(
+                    baseColor, PRIME_STAINED_GLASS_ABSORPTION_OPACITY)
+            : vec3(0.0);
     vec3 oneMetre = exp(-extinction);
     vec3 twoMetres = exp(-extinction * 2.0);
     vec3 encodedRoundTrip = primeEncodeSrgb(clamp(
@@ -237,7 +243,10 @@ void primeCheckGlassVolume(
                     -log(max(vec3(1.0e-3), transmittance)),
                     2.0e-6, 2.0e-6)
             || !primeTestClose(
-                    shadowExtinction, extinction, 0.0, 0.0)
+                    shadowExtinction, expectedShadowExtinction, 0.0, 0.0)
+            || stained
+                    != (opacity >= PRIME_GLASS_STAINED_REFERENCE_THRESHOLD)
+            || rough != (opacity > PRIME_GLASS_ROUGH_OPACITY_THRESHOLD)
             || !primeTestClose(oneMetre, transmittance, 2.0e-6, 2.0e-6)
             || !primeTestClose(
                     twoMetres,
@@ -265,37 +274,70 @@ void primeCheckShadowOpticalDepth(
     float secondHit = clamp(first.z, firstHit, rayDistance);
     float thirdHit = clamp(first.w, secondHit, rayDistance);
     float fourthHit = clamp(second.x, thirdHit, rayDistance);
-    vec3 firstExtinction = PRIME_PURE_WATER_ABSORPTION_M_INV;
-    vec3 secondExtinction = max(second.yzw, vec3(0.0));
-    vec3 forward = primeShadowBoundaryOpticalDepth(
-            vec3(0.0), firstExtinction, rayDistance, firstHit, true);
-    forward = primeShadowBoundaryOpticalDepth(
-            forward, secondExtinction, rayDistance, secondHit, true);
-    forward = primeShadowBoundaryOpticalDepth(
-            forward, secondExtinction, rayDistance, thirdHit, false);
-    forward = primeShadowBoundaryOpticalDepth(
-            forward, firstExtinction, rayDistance, fourthHit, false);
-    vec3 reverse = primeShadowBoundaryOpticalDepth(
-            vec3(0.0), firstExtinction, rayDistance, fourthHit, false);
-    reverse = primeShadowBoundaryOpticalDepth(
-            reverse, secondExtinction, rayDistance, thirdHit, false);
-    reverse = primeShadowBoundaryOpticalDepth(
-            reverse, secondExtinction, rayDistance, secondHit, true);
-    reverse = primeShadowBoundaryOpticalDepth(
-            reverse, firstExtinction, rayDistance, firstHit, true);
-    vec3 inside = primeShadowBoundaryOpticalDepth(
-            firstExtinction * rayDistance,
-            firstExtinction, rayDistance, firstHit, false);
-    inside = primeShadowBoundaryOpticalDepth(
-            inside, secondExtinction, rayDistance, secondHit, true);
-    inside = primeShadowBoundaryOpticalDepth(
-            inside, secondExtinction, rayDistance, thirdHit, false);
+    vec3 firstExtinction = primeShadowCanonicalExtinction(
+            PRIME_PURE_WATER_ABSORPTION_M_INV);
+    vec3 secondExtinction = primeShadowCanonicalExtinction(
+            max(second.yzw, vec3(0.0)));
+    vec3 forwardMoment = primeShadowBoundaryOpticalDepthMoment(
+            vec3(0.0), firstExtinction, firstHit, true);
+    int forwardWaterWinding = 1;
+    vec3 forwardTerminal = vec3(0.0);
+    forwardMoment = primeShadowBoundaryOpticalDepthMoment(
+            forwardMoment, secondExtinction, secondHit, true);
+    forwardTerminal = primeShadowBoundaryTerminalExtinction(
+            forwardTerminal, secondExtinction, true);
+    forwardMoment = primeShadowBoundaryOpticalDepthMoment(
+            forwardMoment, secondExtinction, thirdHit, false);
+    forwardTerminal = primeShadowBoundaryTerminalExtinction(
+            forwardTerminal, secondExtinction, false);
+    forwardMoment = primeShadowBoundaryOpticalDepthMoment(
+            forwardMoment, firstExtinction, fourthHit, false);
+    forwardWaterWinding--;
+    vec3 reverseMoment = primeShadowBoundaryOpticalDepthMoment(
+            vec3(0.0), firstExtinction, fourthHit, false);
+    int reverseWaterWinding = -1;
+    vec3 reverseTerminal = vec3(0.0);
+    reverseMoment = primeShadowBoundaryOpticalDepthMoment(
+            reverseMoment, secondExtinction, thirdHit, false);
+    reverseTerminal = primeShadowBoundaryTerminalExtinction(
+            reverseTerminal, secondExtinction, false);
+    reverseMoment = primeShadowBoundaryOpticalDepthMoment(
+            reverseMoment, secondExtinction, secondHit, true);
+    reverseTerminal = primeShadowBoundaryTerminalExtinction(
+            reverseTerminal, secondExtinction, true);
+    reverseMoment = primeShadowBoundaryOpticalDepthMoment(
+            reverseMoment, firstExtinction, firstHit, true);
+    reverseWaterWinding++;
+    vec3 insideMoment = primeShadowBoundaryOpticalDepthMoment(
+            vec3(0.0), firstExtinction, firstHit, false);
+    PrimeRcVolume queuedFirstMedium;
+    queuedFirstMedium.extinction = PRIME_PURE_WATER_ABSORPTION_M_INV;
+    queuedFirstMedium.ior = 1.333;
+    queuedFirstMedium.albedo = vec3(0.0);
+    queuedFirstMedium.anisotropy = 0.0;
+    vec3 queuedFirstExtinction = primeUnpackWavefrontMedium(
+            primePackWavefrontMedium(queuedFirstMedium)).extinction;
+    int insideWaterWinding = 0;
+    vec3 insideTerminal = vec3(0.0);
+    insideMoment = primeShadowBoundaryOpticalDepthMoment(
+            insideMoment, secondExtinction, secondHit, true);
+    insideTerminal = primeShadowBoundaryTerminalExtinction(
+            insideTerminal, secondExtinction, true);
+    insideMoment = primeShadowBoundaryOpticalDepthMoment(
+            insideMoment, secondExtinction, thirdHit, false);
+    insideTerminal = primeShadowBoundaryTerminalExtinction(
+            insideTerminal, secondExtinction, false);
     float thinCosine = max((secondHit - firstHit) / rayDistance, 1.0e-3);
     vec3 thin = primeShadowThinOpticalDepth(
             vec3(0.0), secondExtinction, rayDistance, thinCosine);
-    forward = primeShadowOpticalDepth(forward);
-    reverse = primeShadowOpticalDepth(reverse);
-    inside = primeShadowOpticalDepth(inside);
+    vec3 forward = primeShadowOpticalDepth(
+            forwardMoment, forwardTerminal, forwardWaterWinding, rayDistance);
+    vec3 reverse = primeShadowOpticalDepth(
+            reverseMoment, reverseTerminal, reverseWaterWinding, rayDistance);
+    vec3 inside = primeShadowOpticalDepth(
+            insideMoment, insideTerminal, insideWaterWinding, rayDistance);
+    vec3 unboundedWater = primeShadowOpticalDepth(
+            vec3(0.0), vec3(0.0), 1, rayDistance);
     vec3 transmittance = exp(-forward);
     vec3 expectedOutside = firstExtinction * (fourthHit - firstHit)
             + secondExtinction * (thirdHit - secondHit);
@@ -304,7 +346,9 @@ void primeCheckShadowOpticalDepth(
     vec3 expectedThin = secondExtinction * min(
             PRIME_THIN_WALLED_THICKNESS_M / thinCosine,
             rayDistance);
-    float distanceTolerance = 2.0e-6 + 1.0e-6 * rayDistance;
+    // Error scales with the boundary coordinates, not with a remote light's tMax. In particular,
+    // a nearby water exit on a 1,000,000 m sun ray must retain its short RGB optical depth.
+    float distanceTolerance = 2.0e-6 + 2.0e-6 * fourthHit;
     primeTransportClassify(result.mask, forward);
     primeTransportClassify(result.mask, reverse);
     primeTransportClassify(result.mask, inside);
@@ -312,9 +356,16 @@ void primeCheckShadowOpticalDepth(
     primeTransportClassify(result.mask, transmittance);
     if (!primeTestClose(forward, expectedOutside, distanceTolerance, 2.0e-6)
             || !primeTestClose(forward, reverse, distanceTolerance, 2.0e-6)
+            || !all(equal(queuedFirstExtinction, firstExtinction))
             || !primeTestClose(inside, expectedInside, distanceTolerance, 2.0e-6)
+            || !primeTestClose(
+                    unboundedWater,
+                    firstExtinction * rayDistance,
+                    distanceTolerance,
+                    2.0e-6)
             || !primeTestClose(thin, expectedThin, distanceTolerance, 2.0e-6)
-            || !all(equal(primeShadowOpticalDepth(vec3(-rayDistance)), vec3(0.0)))
+            || !all(equal(primeShadowOpticalDepth(
+                    vec3(-rayDistance), vec3(0.0), 0, rayDistance), vec3(0.0)))
             || any(lessThan(transmittance, vec3(0.0)))
             || any(greaterThan(transmittance, vec3(1.0)))) {
         result.mask |= PRIME_TEST_FAILURE_IDENTITY;

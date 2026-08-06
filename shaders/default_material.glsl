@@ -18,6 +18,9 @@ const uint PRIME_MATERIAL_FLAG_TANGENT_NEGATIVE = 256u;
 const uint PRIME_MATERIAL_FLAG_LABPBR_METAL = 512u;
 // Full-bright dynamic surfaces contribute only when actually hit; neither light tree samples them.
 const uint PRIME_MATERIAL_FLAG_VISIBLE_EMISSION = 1024u;
+// Per-texel glass semantics produced by material.glsl; neither bit is stored in terrain geometry.
+const uint PRIME_MATERIAL_FLAG_COLORLESS_GLASS = 2048u;
+const uint PRIME_MATERIAL_FLAG_ROUGH_GLASS = 4096u;
 
 const float PRIME_DEFAULT_DIELECTRIC_F0 = 0.04;
 // Standalone preparation shaders do not share the ray-tracing push constants. They use this
@@ -41,15 +44,22 @@ bool primeMaterialIsFoliage(uint flags) {
     return (flags & PRIME_MATERIAL_FLAG_FOLIAGE) != 0u;
 }
 
+bool primeMaterialIsColorlessGlass(uint flags) {
+    return (flags & PRIME_MATERIAL_FLAG_COLORLESS_GLASS) != 0u;
+}
+
+bool primeMaterialIsRoughGlass(uint flags) {
+    return (flags & PRIME_MATERIAL_FLAG_ROUGH_GLASS) != 0u;
+}
+
 float primeMaterialLinearRoughness(uint flags) {
     if (primeMaterialIsTransmissive(flags)) {
-        // Vanilla glass, panes and water have no authored micro-normal distribution. Treating
-        // their visually sharp interface as a tiny non-zero GGX lobe creates stochastic tail
-        // samples and fireflies without representing any Minecraft material detail. Zero is a
-        // material-model contract: the first transparent camera hit evaluates both exact delta
-        // events, while queued single-path continuations randomly select one complete-closure
-        // reflection or refraction event.
-        return 0.0;
+        // Water and glass body texels are exact interfaces. The decorative stained-glass texels
+        // selected by material.glsl intentionally use the configured fallback when no LabPBR
+        // roughness is authored.
+        return primeMaterialIsRoughGlass(flags)
+                ? primeDefaultLinearRoughness()
+                : 0.0;
     }
     return primeDefaultLinearRoughness();
 }

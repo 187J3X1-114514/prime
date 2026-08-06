@@ -2,6 +2,7 @@
 #define PRIME_INTEGRATOR_GLSL
 
 #include "queued_psr_math.glsl"
+#include "transparent_checkerboard.glsl"
 
 // The entire estimator operates in linear Rec.2020 D65. Scheduling changes may move this state
 // between kernels, but they must not reinterpret it as encoded sRGB or another RGB basis.
@@ -292,6 +293,10 @@ float primeSurfaceOpacity(SurfaceInteraction surface) {
 }
 
 float primeSurfaceLinearRoughness(SurfaceInteraction surface) {
+    if (primeMaterialIsTransmissive(surface.materialFlags)
+            && !primeMaterialIsRoughGlass(surface.materialFlags)) {
+        return 0.0;
+    }
     if (primeHasLabPbrSpecular(surface.materialFlags)) {
         // RoboCute squares this value to obtain the microfacet alpha. NRD's LINEAR encoding
         // expects the same pre-squared roughness, not alpha itself.
@@ -313,11 +318,17 @@ PrimeShadowTrace primeTraceShadow(
         vec3 normal,
         LightSample light,
         PrimeRcVolumeStack volumeStack) {
-    primeShadowPayload.opticalDepth = volumeStack.count > 0u
-            ? volumeStack.values[volumeStack.count - 1u].extinction * light.distance
+    vec3 startingExtinction = volumeStack.count > 0u
+            ? primeShadowCanonicalExtinction(
+                    volumeStack.values[volumeStack.count - 1u].extinction)
             : vec3(0.0);
-    primeShadowPayload.hitDistance = 0.0;
-    primeShadowPayload.rayDistance = light.distance;
+    bool startsInWater = volumeStack.count > 0u
+            && primeShadowMediumIsWater(startingExtinction);
+    primeShadowPayload.opticalDepthMomentHitDistance = vec4(0.0);
+    primeShadowPayload.terminalExtinctionRayDistance = vec4(
+            startsInWater ? vec3(0.0) : startingExtinction,
+            light.distance);
+    primeShadowPayload.waterWinding = startsInWater ? 1 : 0;
     vec3 traceOrigin = primeOffsetRayOrigin(physicalPosition, normal, light.direction);
     traceRayEXT(
             primeScene,
@@ -333,11 +344,14 @@ PrimeShadowTrace primeTraceShadow(
             1);
     PrimeShadowTrace result;
     result.transmittance = clamp(exp(-primeShadowOpticalDepth(
-                    primeShadowPayload.opticalDepth)),
+                    primeShadowPayload.opticalDepthMomentHitDistance.xyz,
+                    primeShadowPayload.terminalExtinctionRayDistance.xyz,
+                    primeShadowPayload.waterWinding,
+                    primeShadowPayload.terminalExtinctionRayDistance.w)),
             vec3(0.0),
             vec3(1.0));
     result.hitDistance = primeNrdSanitizeHitDistance(
-            primeShadowPayload.hitDistance);
+            primeShadowPayload.opticalDepthMomentHitDistance.w);
     primeRecordUnit(result.transmittance);
     return result;
 }
@@ -381,23 +395,32 @@ PrimeDirectLightingSplit primeEvaluateVisibleDirectSplit(
                 * dot(outwardNormal, light.direction) >= 0.0;
         BsdfEvaluation evaluation;
         if (conditionalTransparentBranch) {
-            // The first visible interface exposes conditional checkerboard events. Its
-            // transmission proposal is delta, so only conditional reflection competes with
-            // direct-light sampling; this NEE estimator is independent of the continuation cell.
-            if (!reflection) {
-                return result;
-            }
-            evaluation = primeEvaluateMinecraftTransparentReflection(
-                    surface.baseColor,
-                    primeSurfaceOpacity(surface),
-                    outwardNormal,
-                    surface.materialFlags,
-                    surface.labPbrNormal,
-                    surface.labPbrSpecular,
-                    viewDirection,
-                    light.direction,
-                    0.0,
-                    volumeStack);
+            // The first visible interface exposes conditional checkerboard proposals. Smooth
+            // transmission remains delta; a rough stained-glass texel has a finite conditional
+            // transmission lobe and therefore participates in NEE from the opposite hemisphere.
+            evaluation = reflection
+                    ? primeEvaluateMinecraftTransparentReflection(
+                            surface.baseColor,
+                            primeSurfaceOpacity(surface),
+                            outwardNormal,
+                            surface.materialFlags,
+                            surface.labPbrNormal,
+                            surface.labPbrSpecular,
+                            viewDirection,
+                            light.direction,
+                            0.0,
+                            volumeStack)
+                    : primeEvaluateMinecraftTransparentTransmission(
+                            surface.baseColor,
+                            primeSurfaceOpacity(surface),
+                            outwardNormal,
+                            surface.materialFlags,
+                            surface.labPbrNormal,
+                            surface.labPbrSpecular,
+                            viewDirection,
+                            light.direction,
+                            0.0,
+                            volumeStack);
         } else {
             PrimeRcState state = primeMinecraftTransmissionState(
                     surface.baseColor,
@@ -416,6 +439,11 @@ PrimeDirectLightingSplit primeEvaluateVisibleDirectSplit(
                     surface.materialFlags,
                     viewDirection,
                     light.direction);
+        }
+        if (conditionalTransparentBranch) {
+            // The competing continuation first selects this disjoint hemisphere with probability
+            // 1/2, then samples its conditional proposal. MIS must use that complete technique PDF.
+            evaluation.pdf = primeTransparentCheckerboardPdf(evaluation.pdf);
         }
         float weightedInversePdf = primePowerHeuristicOverPdf(
                 light.pdf, evaluation.pdf);

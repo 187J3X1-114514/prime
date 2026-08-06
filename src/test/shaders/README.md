@@ -62,7 +62,9 @@ one-solar-day phase wrap. It also executes the
 production auto-exposure bin mapping, target-EV clamp, and asymmetric temporal
 adaptation contract. The transport batch additionally checks stained-glass
 white-background sRGB compositing as one-metre transmittance, nonnegative extinction, distance attenuation, and RGB
-outside/inside, nested, out-of-order straight shadow optical-depth segments. Replay capture additionally
+outside/inside, nested, out-of-order straight shadow optical-depth segments, including exact water
+winding for short underwater segments on million-unit sun rays after an fp16 Wavefront round trip.
+Replay capture additionally
 observes the production FSR depth and motion images emitted by `nrd_motion.comp`;
 Java tests cover the NRD and FSR native scalar ABI encoders without invoking a
 driver or SDK.

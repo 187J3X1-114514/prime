@@ -138,6 +138,35 @@ MaterialEvaluation primeEvaluateMaterial(
                 primeDecodeSrgb(textureSample.rgb) * primeDecodeSrgb(tint.rgb));
     }
     uint primitiveFlags = primePrimitiveFlags(primitive);
+    if (primeMaterialIsTransmissive(primitiveFlags)
+            && (primitiveFlags & PRIME_MATERIAL_FLAG_WATER) == 0u
+            && !bakedMaterial
+            && !primeUsesRasterComposite(primitive)) {
+        float referenceOpacity;
+        vec3 referenceBaseColor = primeAtlasBaseColor(
+                primitive.tint,
+                primePrimitiveMaterialReferenceUv(primitive),
+                0.0,
+                referenceOpacity);
+        bool stained = primeGlassReferenceIsStained(referenceOpacity);
+        bool rough = primeGlassTexelIsRough(result.opacity);
+        if (stained) {
+            // Both boundaries of a closed medium must agree on its color even when they hit
+            // different decorative texels. Shadow rays use this same stable material reference.
+            result.baseColor = referenceBaseColor;
+        } else {
+            primitiveFlags |= PRIME_MATERIAL_FLAG_COLORLESS_GLASS;
+        }
+        if (rough) {
+            primitiveFlags |= PRIME_MATERIAL_FLAG_ROUGH_GLASS;
+        }
+        if (!stained && rough) {
+            // Vanilla clear-glass borders are opaque blue-grey paint, not a second dielectric
+            // volume. Keep the primitive in the transmissive BLAS but shade this texel as rough
+            // diffuse so the transparent body remains a closed colorless medium.
+            primitiveFlags &= ~PRIME_MATERIAL_FLAG_TRANSMISSIVE;
+        }
+    }
     if ((primitive.flagsEmitter
             & (PRIME_DYNAMIC_TEXTURE_FLAG | PRIME_VISIBLE_EMISSION_FLAG))
             == (PRIME_DYNAMIC_TEXTURE_FLAG | PRIME_VISIBLE_EMISSION_FLAG)) {

@@ -59,9 +59,9 @@ void main() {
     vec3 directionToSun = normalize(primePush.sunDirection);
 
     float traceDistance = 2.0 * halfTraceDistance;
-    primeShadowPayload.opticalDepth = vec3(0.0);
-    primeShadowPayload.hitDistance = 0.0;
-    primeShadowPayload.rayDistance = traceDistance;
+    primeShadowPayload.opticalDepthMomentHitDistance = vec4(0.0);
+    primeShadowPayload.terminalExtinctionRayDistance = vec4(0.0, 0.0, 0.0, traceDistance);
+    primeShadowPayload.waterWinding = 0;
     traceRayEXT(
             primeScene,
             gl_RayFlagsNoneEXT,
@@ -75,11 +75,12 @@ void main() {
             traceDistance,
             1);
 
-    float depth = primeShadowPayload.hitDistance >= 65504.0
+    float hitDistance = primeShadowPayload.opticalDepthMomentHitDistance.w;
+    float depth = hitDistance >= 65504.0
             ? PRIME_SUN_SHADOW_NO_HIT_DEPTH
             : dot(
                     rayOrigin
-                            - directionToSun * primeShadowPayload.hitDistance,
+                            - directionToSun * hitDistance,
                     directionToSun);
     primeStoreSunShadowDepth(imageIndex, storageCoordinate, depth);
 }

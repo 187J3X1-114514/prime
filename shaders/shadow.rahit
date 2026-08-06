@@ -17,11 +17,11 @@ void main() {
     uint flags = primePrimitiveFlags(primitive);
     vec3 outwardNormal = primeUnpackOctahedralNormal(primitive.normal);
     float textureLodValue = primeRayConeTextureLod(primitive, outwardNormal);
+    vec2 materialUv = primeInterpolateUv(section, primitive);
+    float surfaceOpacity = primeEvaluateOpacity(
+            primitive, materialUv, textureLodValue);
     if ((flags & PRIME_MATERIAL_FLAG_CUTOUT) != 0u
-            && primeEvaluateOpacity(
-                    primitive,
-                    primeInterpolateUv(section, primitive),
-                    textureLodValue) < PRIME_CUTOUT_ALPHA_THRESHOLD) {
+            && surfaceOpacity < PRIME_CUTOUT_ALPHA_THRESHOLD) {
         ignoreIntersectionEXT;
         return;
     }
@@ -38,24 +38,39 @@ void main() {
                 primePrimitiveMaterialReferenceUv(primitive),
                 0.0,
                 opacity);
+        if (!primeGlassReferenceIsStained(opacity)
+                && primeGlassTexelIsRough(surfaceOpacity)) {
+            // Clear-glass decoration is an opaque diffuse border, not part of the dielectric
+            // volume. Accepting the candidate lets the ordinary closest-hit record occlusion.
+            return;
+        }
         extinction = primeGlassShadowExtinction(baseColor, opacity);
     }
+    extinction = primeShadowCanonicalExtinction(extinction);
     float cosine = dot(outwardNormal, gl_WorldRayDirectionEXT);
     if ((flags & PRIME_MATERIAL_FLAG_THIN_WALLED) != 0u) {
-        primeShadowPayload.opticalDepth = primeShadowThinOpticalDepth(
-                primeShadowPayload.opticalDepth,
+        primeShadowPayload.opticalDepthMomentHitDistance.xyz = primeShadowThinOpticalDepth(
+                primeShadowPayload.opticalDepthMomentHitDistance.xyz,
                 extinction,
-                primeShadowPayload.rayDistance,
+                primeShadowPayload.terminalExtinctionRayDistance.w,
                 cosine);
     } else {
-        // In any-hit, gl_RayTmaxEXT equals the current candidate distance, not TraceRay's tMax.
-        // Preserve the original light distance explicitly so closed boundaries integrate volume.
-        primeShadowPayload.opticalDepth = primeShadowBoundaryOpticalDepth(
-                primeShadowPayload.opticalDepth,
+        bool entering = cosine < 0.0;
+        primeShadowPayload.opticalDepthMomentHitDistance.xyz =
+                primeShadowBoundaryOpticalDepthMoment(
+                primeShadowPayload.opticalDepthMomentHitDistance.xyz,
                 extinction,
-                primeShadowPayload.rayDistance,
                 gl_HitTEXT,
-                cosine < 0.0);
+                entering);
+        if ((flags & PRIME_MATERIAL_FLAG_WATER) != 0u) {
+            primeShadowPayload.waterWinding += entering ? 1 : -1;
+        } else {
+            primeShadowPayload.terminalExtinctionRayDistance.xyz =
+                    primeShadowBoundaryTerminalExtinction(
+                    primeShadowPayload.terminalExtinctionRayDistance.xyz,
+                    extinction,
+                    entering);
+        }
     }
     ignoreIntersectionEXT;
 }

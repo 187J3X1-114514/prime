@@ -21,6 +21,8 @@ final class PrimeBsdfGpuTest {
     private static final int CASES_PER_KIND = 16_384;
     private static final int KIND_COUNT = 5;
     private static final int CASE_COUNT = CASES_PER_KIND * KIND_COUNT;
+    private static final int FLAG_COLORLESS_GLASS = 1 << 11;
+    private static final int FLAG_ROUGH_GLASS = 1 << 12;
 
     private static final float[] COSINES = {
         1.0e-6F, 1.0e-4F, 0.001F, 0.01F, 0.1F, 0.5F, 0.9F, 1.0F
@@ -176,6 +178,10 @@ final class PrimeBsdfGpuTest {
             if ((localCase & 16) != 0) {
                 flags |= PrimitivePacking.FLAG_THIN_WALLED;
                 flags &= ~PrimitivePacking.FLAG_WATER;
+            }
+            if ((flags & PrimitivePacking.FLAG_WATER) == 0) {
+                if ((localCase & 32) != 0) flags |= FLAG_ROUGH_GLASS;
+                if ((localCase & 64) != 0) flags |= FLAG_COLORLESS_GLASS;
             }
         } else if (kind == 2) {
             flags |= PrimitivePacking.FLAG_FOLIAGE | PrimitivePacking.FLAG_CUTOUT;

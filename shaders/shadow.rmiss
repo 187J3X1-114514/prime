@@ -7,5 +7,5 @@
 layout(location = 1) rayPayloadInEXT PrimeShadowPayload primeShadowPayload;
 
 void main() {
-    primeShadowPayload.hitDistance = 65504.0;
+    primeShadowPayload.opticalDepthMomentHitDistance.w = 65504.0;
 }

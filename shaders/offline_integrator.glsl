@@ -143,9 +143,15 @@ PrimeOfflineAreaRequest primePrepareOfflineArea(
 PrimeShadowTrace primeTraceOfflineAreaShadow(
         vec3 physicalPosition,
         PrimeOfflineAreaRequest request) {
-    primeShadowPayload.opticalDepth = request.startingExtinction * request.distance;
-    primeShadowPayload.hitDistance = 0.0;
-    primeShadowPayload.rayDistance = request.distance;
+    vec3 startingExtinction = primeShadowCanonicalExtinction(
+            request.startingExtinction);
+    bool startsInWater = request.startingMediumCount > 0u
+            && primeShadowMediumIsWater(startingExtinction);
+    primeShadowPayload.opticalDepthMomentHitDistance = vec4(0.0);
+    primeShadowPayload.terminalExtinctionRayDistance = vec4(
+            startsInWater ? vec3(0.0) : startingExtinction,
+            request.distance);
+    primeShadowPayload.waterWinding = startsInWater ? 1 : 0;
     traceRayEXT(
             primeScene,
             gl_RayFlagsNoneEXT,
@@ -160,11 +166,14 @@ PrimeShadowTrace primeTraceOfflineAreaShadow(
             1);
     PrimeShadowTrace result;
     result.transmittance = clamp(exp(-primeShadowOpticalDepth(
-                    primeShadowPayload.opticalDepth)),
+                    primeShadowPayload.opticalDepthMomentHitDistance.xyz,
+                    primeShadowPayload.terminalExtinctionRayDistance.xyz,
+                    primeShadowPayload.waterWinding,
+                    primeShadowPayload.terminalExtinctionRayDistance.w)),
             vec3(0.0),
             vec3(1.0));
     result.hitDistance = primeNrdSanitizeHitDistance(
-            primeShadowPayload.hitDistance);
+            primeShadowPayload.opticalDepthMomentHitDistance.w);
     return result;
 }
 

@@ -12,19 +12,12 @@ vec3 primeEvaluateLightweightDirect(
         vec3 viewDirection,
         LightSample light,
         vec3 radiance,
-        PrimeRcVolumeStack volumeStack) {
+        PrimeRcVolumeStack volumeStack,
+        bool conditionalTransparentBranch) {
     vec3 shadingNormal = primeSurfaceShadingNormal(surface, viewDirection);
     if (!primeDirectSampleEligible(surface, shadingNormal, light)
             || all(lessThanEqual(radiance, vec3(0.0)))) {
         return vec3(0.0);
-    }
-    if (primeMaterialIsTransmissive(surface.materialFlags)) {
-        BsdfEvaluation evaluation = primeEvaluateOfflineMinecraftTransmission(
-                surface, viewDirection, light.direction, volumeStack);
-        return primeTripleProduct(
-                radiance,
-                evaluation.response,
-                primePowerHeuristicOverPdf(light.pdf, evaluation.pdf));
     }
     PrimeDirectLightingSplit split = primeEvaluateVisibleDirectSplit(
             surface,
@@ -33,7 +26,7 @@ vec3 primeEvaluateLightweightDirect(
             light,
             radiance,
             volumeStack,
-            false);
+            conditionalTransparentBranch);
     return split.diffuse + split.specular;
 }
 
@@ -63,7 +56,7 @@ PrimeLightweightSunSample primeEstimateLightweightPrimarySun(
     vec3 radiance = primeResolveSampledSunRadiance(
             integrator, surface.position, light) * shadow.transmittance;
     result.lighting = primeEvaluateLightweightDirect(
-            surface, viewDirection, light, radiance, volumeStack);
+            surface, viewDirection, light, radiance, volumeStack, true);
     return result;
 }
 
@@ -96,7 +89,7 @@ vec3 primeEstimateLightweightSun(
     vec3 radiance = primeResolveSampledSunRadiance(
             integrator, surface.position, light) * shadow.transmittance;
     return path.throughput * primeEvaluateLightweightDirect(
-            surface, viewDirection, light, radiance, volumeStack);
+            surface, viewDirection, light, radiance, volumeStack, false);
 }
 
 vec3 primeEvaluateLightweightEnvironment(
@@ -227,12 +220,13 @@ void primeSampleLightweightGuidedSurface(
                     sampleValue,
                     volumeStack);
         } else {
-            sampled = primeSampleMinecraftRefractedTransmissionFromState(
+            sampled = primeSampleMinecraftTransparentTransmissionFromState(
                     state,
+                    mirror,
                     outwardNormal,
                     viewDirection,
-                    vec3(1.0) - mirror.reflectance,
-                    false,
+                    localView,
+                    sampleValue,
                     volumeStack);
         }
         sampled.bsdfSample.pdf = primeTransparentCheckerboardPdf(

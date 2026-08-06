@@ -88,6 +88,19 @@ bool primeAdvanceProbeThroughput(
             && any(greaterThan(throughput, vec3(0.0)));
 }
 
+bool primeAdvanceProbeMedium(
+        inout vec3 throughput,
+        SurfaceInteraction surface,
+        PrimeRcVolumeStack volumeStack) {
+    if (volumeStack.count > 0u) {
+        throughput *= primeSegmentTransmittance(
+                volumeStack.values[volumeStack.count - 1u].extinction,
+                surface.t);
+    }
+    return primeNrdIsFinite(throughput)
+            && any(greaterThan(throughput, vec3(0.0)));
+}
+
 void primeSetProbeSurfaceGuide(
         inout PrimeDenoiserGuides guides,
         SurfaceInteraction surface,
@@ -179,6 +192,12 @@ void primeTraceDeterministicTransmissionGuide(
         SurfaceInteraction surface = primeTraceSurfaceWithoutReorder(
                 traceOrigin, direction);
         if (!primeKnownHitKind(surface) || surface.hitKind == PRIME_HIT_NONE) {
+            return;
+        }
+        // The reconstruction probe observes the same filtered target as the radiance path.
+        // Omitting segment absorption turns medium color into apparent illumination and lets
+        // denoisers exchange complementary hues across water and stained-glass boundaries.
+        if (!primeAdvanceProbeMedium(throughput, surface, volumeStack)) {
             return;
         }
         vec3 viewDirection = -direction;
@@ -329,6 +348,9 @@ void primeTracePlanarReflectionGuide(
                 vec4(virtualDirection, 1.0);
         result.reflectionPreviousVirtualPosition =
                 vec4(virtualDirection, 1.0);
+        return;
+    }
+    if (!primeAdvanceProbeMedium(throughput, target, initialVolumeStack)) {
         return;
     }
 

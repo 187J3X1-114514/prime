@@ -142,16 +142,27 @@ PrimeOfflineAreaRequest primePrepareOfflineArea(
 
 PrimeShadowTrace primeTraceOfflineAreaShadow(
         vec3 physicalPosition,
-        PrimeOfflineAreaRequest request) {
-    vec3 startingExtinction = primeShadowCanonicalExtinction(
-            request.startingExtinction);
-    bool startsInWater = request.startingMediumCount > 0u
-            && primeShadowMediumIsWater(startingExtinction);
+        PrimeOfflineAreaRequest request,
+        PrimeRcVolumeStack startingVolumeStack) {
+    uint startingMediumCount = min(
+            request.startingMediumCount, PRIME_RC_MAX_VOLUME_STACK_SIZE);
+    vec3 startingExtinction0 = startingMediumCount > 0u
+            ? primeShadowCanonicalExtinction(
+                    startingVolumeStack.values[0].extinction)
+            : vec3(0.0);
+    vec3 startingExtinction1 = startingMediumCount > 1u
+            ? primeShadowCanonicalExtinction(
+                    startingVolumeStack.values[1].extinction)
+            : vec3(0.0);
     primeShadowPayload.opticalDepthMomentHitDistance = vec4(0.0);
     primeShadowPayload.terminalExtinctionRayDistance = vec4(
-            startsInWater ? vec3(0.0) : startingExtinction,
+            vec3(0.0),
             request.distance);
-    primeShadowPayload.waterWinding = startsInWater ? 1 : 0;
+    primeShadowPayload.startingExtinction0Winding = vec4(
+            startingExtinction0, startingMediumCount > 0u ? 1.0 : 0.0);
+    primeShadowPayload.startingExtinction1Winding = vec4(
+            startingExtinction1, startingMediumCount > 1u ? 1.0 : 0.0);
+    primeShadowPayload.startingMediumCount = startingMediumCount;
     traceRayEXT(
             primeScene,
             gl_RayFlagsNoneEXT,
@@ -168,7 +179,9 @@ PrimeShadowTrace primeTraceOfflineAreaShadow(
     result.transmittance = clamp(exp(-primeShadowOpticalDepth(
                     primeShadowPayload.opticalDepthMomentHitDistance.xyz,
                     primeShadowPayload.terminalExtinctionRayDistance.xyz,
-                    primeShadowPayload.waterWinding,
+                    primeShadowPayload.startingExtinction0Winding,
+                    primeShadowPayload.startingExtinction1Winding,
+                    primeShadowPayload.startingMediumCount,
                     primeShadowPayload.terminalExtinctionRayDistance.w)),
             vec3(0.0),
             vec3(1.0));

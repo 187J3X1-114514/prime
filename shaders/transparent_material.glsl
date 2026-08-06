@@ -30,14 +30,51 @@ vec3 primeShadowCanonicalExtinction(vec3 extinction) {
     return vec3(extinction01, extinction2);
 }
 
-vec3 primeShadowWaterExtinction() {
-    return primeShadowCanonicalExtinction(PRIME_PURE_WATER_ABSORPTION_M_INV);
+bool primeShadowSameMedium(vec3 firstExtinction, vec3 secondExtinction) {
+    // A path carries fp16 extinction reconstructed from the interface it crossed, while another
+    // face of the same voxel may reconstruct a neighbouring fp16 value. One fp16-scale tolerance
+    // identifies that shared medium without merging the substantially different stained palette.
+    vec3 scale = max(
+            max(abs(firstExtinction), abs(secondExtinction)),
+            vec3(1.0));
+    return all(lessThanEqual(
+            abs(firstExtinction - secondExtinction),
+            scale * (1.0 / 1024.0)));
 }
 
-bool primeShadowMediumIsWater(vec3 extinction) {
-    return all(equal(
-            primeShadowCanonicalExtinction(extinction),
-            primeShadowWaterExtinction()));
+vec3 primeShadowStartingMediumCoefficient(
+        vec3 outerExtinction,
+        vec3 innerExtinction,
+        uint mediumIndex) {
+    // Nested media replace rather than add to their parent. Expressing the stack as E0 and
+    // E1-E0 makes each boundary an order-independent additive moment while reconstructing
+    // E1 inside the inner medium, E0 after its exit, and zero after the outer exit.
+    return mediumIndex == 0u
+            ? outerExtinction
+            : innerExtinction - outerExtinction;
+}
+
+int primeShadowStartingMediumIndex(
+        vec3 boundaryExtinction,
+        vec4 outerExtinctionWinding,
+        vec4 innerExtinctionWinding,
+        uint mediumCount,
+        bool entering) {
+    bool matchesOuter = mediumCount > 0u
+            && primeShadowSameMedium(
+                    boundaryExtinction, outerExtinctionWinding.xyz);
+    bool matchesInner = mediumCount > 1u
+            && primeShadowSameMedium(
+                    boundaryExtinction, innerExtinctionWinding.xyz);
+    if (matchesOuter && matchesInner) {
+        // Equal nested media have a zero inner difference coefficient. Prefer the deepest active
+        // layer on exit and the shallowest inactive layer on entry to preserve stack topology.
+        if (entering) {
+            return outerExtinctionWinding.w <= 0.0 ? 0 : 1;
+        }
+        return innerExtinctionWinding.w > 0.0 ? 1 : 0;
+    }
+    return matchesInner ? 1 : (matchesOuter ? 0 : -1);
 }
 
 // Calibrate one metre of glass to vanilla's encoded-sRGB alpha blend over white. Storing that
@@ -100,13 +137,26 @@ vec3 primeShadowThinOpticalDepth(
 vec3 primeShadowOpticalDepth(
         vec3 opticalDepthMoment,
         vec3 terminalExtinction,
-        int waterWinding,
+        vec4 outerExtinctionWinding,
+        vec4 innerExtinctionWinding,
+        uint startingMediumCount,
         float rayDistance) {
     // Each boundary contributes extinction * -t on entry and extinction * t on exit. Only a
-    // medium that still encloses the ray endpoint contributes the terminal tMax term. Water's
-    // signed winding makes its endpoint state exact; other media use canonical fp16 extinction.
-    vec3 endpointExtinction = terminalExtinction
-            + primeShadowWaterExtinction() * float(waterWinding);
+    // medium that still encloses the ray endpoint contributes the terminal tMax term. The ray's
+    // starting stack uses path-provided extinction and exact integer-valued windings. The inner
+    // difference coefficient restores the outer medium instead of adding both absorptions.
+    vec3 endpointExtinction = terminalExtinction;
+    if (startingMediumCount > 1u) {
+        // Evaluate the layered endpoint directly. When both windings are one this returns the
+        // inner extinction without an E0 + (E1-E0) cancellation before multiplication by tMax.
+        endpointExtinction += innerExtinctionWinding.xyz
+                * innerExtinctionWinding.w;
+        endpointExtinction += outerExtinctionWinding.xyz
+                * (outerExtinctionWinding.w - innerExtinctionWinding.w);
+    } else if (startingMediumCount > 0u) {
+        endpointExtinction += outerExtinctionWinding.xyz
+                * outerExtinctionWinding.w;
+    }
     vec3 opticalDepth = opticalDepthMoment + endpointExtinction * rayDistance;
     // Malformed or clipped boundary sequences may leave a negative residue. They must never turn
     // absorption into energy gain.

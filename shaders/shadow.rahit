@@ -56,19 +56,33 @@ void main() {
                 cosine);
     } else {
         bool entering = cosine < 0.0;
+        int startingMediumIndex = primeShadowStartingMediumIndex(
+                extinction,
+                primeShadowPayload.startingExtinction0Winding,
+                primeShadowPayload.startingExtinction1Winding,
+                primeShadowPayload.startingMediumCount,
+                entering);
+        vec3 boundaryExtinction = startingMediumIndex >= 0
+                ? primeShadowStartingMediumCoefficient(
+                        primeShadowPayload.startingExtinction0Winding.xyz,
+                        primeShadowPayload.startingExtinction1Winding.xyz,
+                        uint(startingMediumIndex))
+                : extinction;
         primeShadowPayload.opticalDepthMomentHitDistance.xyz =
                 primeShadowBoundaryOpticalDepthMoment(
                 primeShadowPayload.opticalDepthMomentHitDistance.xyz,
-                extinction,
+                boundaryExtinction,
                 gl_HitTEXT,
                 entering);
-        if ((flags & PRIME_MATERIAL_FLAG_WATER) != 0u) {
-            primeShadowPayload.waterWinding += entering ? 1 : -1;
+        if (startingMediumIndex == 0) {
+            primeShadowPayload.startingExtinction0Winding.w += entering ? 1.0 : -1.0;
+        } else if (startingMediumIndex == 1) {
+            primeShadowPayload.startingExtinction1Winding.w += entering ? 1.0 : -1.0;
         } else {
             primeShadowPayload.terminalExtinctionRayDistance.xyz =
                     primeShadowBoundaryTerminalExtinction(
                     primeShadowPayload.terminalExtinctionRayDistance.xyz,
-                    extinction,
+                    boundaryExtinction,
                     entering);
         }
     }

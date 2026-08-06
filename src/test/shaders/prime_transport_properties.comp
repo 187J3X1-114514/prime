@@ -280,8 +280,8 @@ void primeCheckShadowOpticalDepth(
             max(second.yzw, vec3(0.0)));
     vec3 forwardMoment = primeShadowBoundaryOpticalDepthMoment(
             vec3(0.0), firstExtinction, firstHit, true);
-    int forwardWaterWinding = 1;
-    vec3 forwardTerminal = vec3(0.0);
+    vec3 forwardTerminal = primeShadowBoundaryTerminalExtinction(
+            vec3(0.0), firstExtinction, true);
     forwardMoment = primeShadowBoundaryOpticalDepthMoment(
             forwardMoment, secondExtinction, secondHit, true);
     forwardTerminal = primeShadowBoundaryTerminalExtinction(
@@ -292,11 +292,12 @@ void primeCheckShadowOpticalDepth(
             forwardTerminal, secondExtinction, false);
     forwardMoment = primeShadowBoundaryOpticalDepthMoment(
             forwardMoment, firstExtinction, fourthHit, false);
-    forwardWaterWinding--;
+    forwardTerminal = primeShadowBoundaryTerminalExtinction(
+            forwardTerminal, firstExtinction, false);
     vec3 reverseMoment = primeShadowBoundaryOpticalDepthMoment(
             vec3(0.0), firstExtinction, fourthHit, false);
-    int reverseWaterWinding = -1;
-    vec3 reverseTerminal = vec3(0.0);
+    vec3 reverseTerminal = primeShadowBoundaryTerminalExtinction(
+            vec3(0.0), firstExtinction, false);
     reverseMoment = primeShadowBoundaryOpticalDepthMoment(
             reverseMoment, secondExtinction, thirdHit, false);
     reverseTerminal = primeShadowBoundaryTerminalExtinction(
@@ -307,9 +308,8 @@ void primeCheckShadowOpticalDepth(
             reverseTerminal, secondExtinction, true);
     reverseMoment = primeShadowBoundaryOpticalDepthMoment(
             reverseMoment, firstExtinction, firstHit, true);
-    reverseWaterWinding++;
-    vec3 insideMoment = primeShadowBoundaryOpticalDepthMoment(
-            vec3(0.0), firstExtinction, firstHit, false);
+    reverseTerminal = primeShadowBoundaryTerminalExtinction(
+            reverseTerminal, firstExtinction, true);
     PrimeRcVolume queuedFirstMedium;
     queuedFirstMedium.extinction = PRIME_PURE_WATER_ABSORPTION_M_INV;
     queuedFirstMedium.ior = 1.333;
@@ -317,7 +317,11 @@ void primeCheckShadowOpticalDepth(
     queuedFirstMedium.anisotropy = 0.0;
     vec3 queuedFirstExtinction = primeUnpackWavefrontMedium(
             primePackWavefrontMedium(queuedFirstMedium)).extinction;
-    int insideWaterWinding = 0;
+    vec3 nearbyBoundaryExtinction = queuedFirstExtinction
+            + vec3(0.25, -0.25, 0.125) * (1.0 / 1024.0);
+    vec3 insideMoment = primeShadowBoundaryOpticalDepthMoment(
+            vec3(0.0), queuedFirstExtinction, firstHit, false);
+    float insideStartingWinding = 0.0;
     vec3 insideTerminal = vec3(0.0);
     insideMoment = primeShadowBoundaryOpticalDepthMoment(
             insideMoment, secondExtinction, secondHit, true);
@@ -331,18 +335,60 @@ void primeCheckShadowOpticalDepth(
     vec3 thin = primeShadowThinOpticalDepth(
             vec3(0.0), secondExtinction, rayDistance, thinCosine);
     vec3 forward = primeShadowOpticalDepth(
-            forwardMoment, forwardTerminal, forwardWaterWinding, rayDistance);
+            forwardMoment,
+            forwardTerminal,
+            vec4(0.0),
+            vec4(0.0),
+            0u,
+            rayDistance);
     vec3 reverse = primeShadowOpticalDepth(
-            reverseMoment, reverseTerminal, reverseWaterWinding, rayDistance);
+            reverseMoment,
+            reverseTerminal,
+            vec4(0.0),
+            vec4(0.0),
+            0u,
+            rayDistance);
     vec3 inside = primeShadowOpticalDepth(
-            insideMoment, insideTerminal, insideWaterWinding, rayDistance);
-    vec3 unboundedWater = primeShadowOpticalDepth(
-            vec3(0.0), vec3(0.0), 1, rayDistance);
+            insideMoment,
+            insideTerminal,
+            vec4(queuedFirstExtinction, insideStartingWinding),
+            vec4(0.0),
+            1u,
+            rayDistance);
+    vec3 unboundedStartingMedium = primeShadowOpticalDepth(
+            vec3(0.0),
+            vec3(0.0),
+            vec4(queuedFirstExtinction, 1.0),
+            vec4(0.0),
+            1u,
+            rayDistance);
+    vec3 innerCoefficient = primeShadowStartingMediumCoefficient(
+            firstExtinction, secondExtinction, 1u);
+    vec3 nestedMoment = primeShadowBoundaryOpticalDepthMoment(
+            vec3(0.0), innerCoefficient, firstHit, false);
+    nestedMoment = primeShadowBoundaryOpticalDepthMoment(
+            nestedMoment, firstExtinction, fourthHit, false);
+    vec3 nested = primeShadowOpticalDepth(
+            nestedMoment,
+            vec3(0.0),
+            vec4(firstExtinction, 0.0),
+            vec4(secondExtinction, 0.0),
+            2u,
+            rayDistance);
+    vec3 unboundedNested = primeShadowOpticalDepth(
+            vec3(0.0),
+            vec3(0.0),
+            vec4(firstExtinction, 1.0),
+            vec4(secondExtinction, 1.0),
+            2u,
+            rayDistance);
     vec3 transmittance = exp(-forward);
     vec3 expectedOutside = firstExtinction * (fourthHit - firstHit)
             + secondExtinction * (thirdHit - secondHit);
     vec3 expectedInside = firstExtinction * firstHit
             + secondExtinction * (thirdHit - secondHit);
+    vec3 expectedNested = secondExtinction * firstHit
+            + firstExtinction * (fourthHit - firstHit);
     vec3 expectedThin = secondExtinction * min(
             PRIME_THIN_WALLED_THICKNESS_M / thinCosine,
             rayDistance);
@@ -352,27 +398,41 @@ void primeCheckShadowOpticalDepth(
     primeTransportClassify(result.mask, forward);
     primeTransportClassify(result.mask, reverse);
     primeTransportClassify(result.mask, inside);
+    primeTransportClassify(result.mask, nested);
     primeTransportClassify(result.mask, thin);
     primeTransportClassify(result.mask, transmittance);
     if (!primeTestClose(forward, expectedOutside, distanceTolerance, 2.0e-6)
             || !primeTestClose(forward, reverse, distanceTolerance, 2.0e-6)
             || !all(equal(queuedFirstExtinction, firstExtinction))
+            || !primeShadowSameMedium(
+                    queuedFirstExtinction, nearbyBoundaryExtinction)
             || !primeTestClose(inside, expectedInside, distanceTolerance, 2.0e-6)
+            || !primeTestClose(nested, expectedNested, distanceTolerance, 2.0e-6)
             || !primeTestClose(
-                    unboundedWater,
+                    unboundedNested,
+                    secondExtinction * rayDistance,
+                    distanceTolerance,
+                    2.0e-6)
+            || !primeTestClose(
+                    unboundedStartingMedium,
                     firstExtinction * rayDistance,
                     distanceTolerance,
                     2.0e-6)
             || !primeTestClose(thin, expectedThin, distanceTolerance, 2.0e-6)
             || !all(equal(primeShadowOpticalDepth(
-                    vec3(-rayDistance), vec3(0.0), 0, rayDistance), vec3(0.0)))
+                    vec3(-rayDistance),
+                    vec3(0.0),
+                    vec4(0.0),
+                    vec4(0.0),
+                    0u,
+                    rayDistance), vec3(0.0)))
             || any(lessThan(transmittance, vec3(0.0)))
             || any(greaterThan(transmittance, vec3(1.0)))) {
         result.mask |= PRIME_TEST_FAILURE_IDENTITY;
     }
     result.first = vec4(forward, rayDistance);
     result.second = vec4(transmittance, 0.0);
-    result.third = vec4(expectedOutside, distanceTolerance);
+    result.third = vec4(nested, distanceTolerance);
 }
 
 void primeCheckWavefrontMedium(

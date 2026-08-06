@@ -2,12 +2,14 @@
 #define PRIME_SHADOW_PAYLOAD_GLSL
 
 struct PrimeShadowPayload {
-    // Keep cross-stage payload lanes explicitly four-wide. The final integer tracks water as a
-    // signed winding number so entering and exiting the ray's starting medium cancel exactly;
+    // Keep cross-stage payload lanes explicitly four-wide. The final lanes track Prime's two
+    // starting stack entries and signed windings so exits reuse the path's exact extinction;
     // a tiny RGB residual would otherwise be magnified by a distant-light endpoint.
     vec4 opticalDepthMomentHitDistance;
     vec4 terminalExtinctionRayDistance;
-    int waterWinding;
+    vec4 startingExtinction0Winding;
+    vec4 startingExtinction1Winding;
+    uint startingMediumCount;
 };
 
 #endif

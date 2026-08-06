@@ -212,7 +212,8 @@ void primeWavefrontArea(uint sourceQueue) {
                 : vec3(0.0);
         PrimeShadowTrace shadow = primeTraceOfflineAreaShadow(
                 record.transport.physicalOriginAndPreviousBsdfPdf.xyz,
-                request);
+                request,
+                storedMedia);
         if (shadow.hitDistance >= PRIME_NRD_FP16_MAX) {
             record.radianceAndPrimaryDistance.xyz +=
                     request.contribution * shadow.transmittance;

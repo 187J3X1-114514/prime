@@ -61,7 +61,9 @@ void main() {
     float traceDistance = 2.0 * halfTraceDistance;
     primeShadowPayload.opticalDepthMomentHitDistance = vec4(0.0);
     primeShadowPayload.terminalExtinctionRayDistance = vec4(0.0, 0.0, 0.0, traceDistance);
-    primeShadowPayload.waterWinding = 0;
+    primeShadowPayload.startingExtinction0Winding = vec4(0.0);
+    primeShadowPayload.startingExtinction1Winding = vec4(0.0);
+    primeShadowPayload.startingMediumCount = 0u;
     traceRayEXT(
             primeScene,
             gl_RayFlagsNoneEXT,

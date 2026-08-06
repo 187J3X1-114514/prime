@@ -44,21 +44,21 @@ final class TracePipelinesContractTest {
         assertEquals(27, RealtimeRayTracingPipeline.DISPATCH_COUNT);
         assertEquals(25, RealtimeRayTracingPipeline.DESCRIPTOR_BINDING_COUNT);
 
-        assertEquals(4, LightweightRayTracingPipeline.RAYGEN_GROUP_COUNT);
-        assertEquals(3, LightweightRayTracingPipeline.RAYGEN_MODULE_COUNT);
-        assertEquals(9, LightweightRayTracingPipeline.MAXIMUM_DISPATCH_COUNT);
-        assertEquals(0, RealtimeRayTracingPipeline.lightweightRounds(1));
-        assertEquals(3, RealtimeRayTracingPipeline.lightweightRounds(4));
-        assertEquals(7, RealtimeRayTracingPipeline.lightweightRounds(8));
-        assertEquals(2, RealtimeRayTracingPipeline.lightweightRounds(1) + 2);
-        assertEquals(5, RealtimeRayTracingPipeline.lightweightRounds(4) + 2);
-        assertEquals(9, RealtimeRayTracingPipeline.lightweightRounds(8) + 2);
+        assertEquals(4, PerformanceRayTracingPipeline.RAYGEN_GROUP_COUNT);
+        assertEquals(3, PerformanceRayTracingPipeline.RAYGEN_MODULE_COUNT);
+        assertEquals(9, PerformanceRayTracingPipeline.MAXIMUM_DISPATCH_COUNT);
+        assertEquals(0, RealtimeRayTracingPipeline.performanceRounds(1));
+        assertEquals(3, RealtimeRayTracingPipeline.performanceRounds(4));
+        assertEquals(7, RealtimeRayTracingPipeline.performanceRounds(8));
+        assertEquals(2, RealtimeRayTracingPipeline.performanceRounds(1) + 2);
+        assertEquals(5, RealtimeRayTracingPipeline.performanceRounds(4) + 2);
+        assertEquals(9, RealtimeRayTracingPipeline.performanceRounds(8) + 2);
         assertThrows(
                 IllegalArgumentException.class,
-                () -> RealtimeRayTracingPipeline.lightweightRounds(0));
+                () -> RealtimeRayTracingPipeline.performanceRounds(0));
         assertThrows(
                 IllegalArgumentException.class,
-                () -> RealtimeRayTracingPipeline.lightweightRounds(9));
+                () -> RealtimeRayTracingPipeline.performanceRounds(9));
 
         assertEquals(8, OfflineRayTracingPipeline.RAYGEN_GROUP_COUNT);
         assertEquals(5, OfflineRayTracingPipeline.RAYGEN_MODULE_COUNT);
@@ -79,14 +79,14 @@ final class TracePipelinesContractTest {
                 .toList());
         assertEquals(List.of(0, 1, 1, 2),
                 java.util.stream.IntStream
-                .range(0, LightweightRayTracingPipeline.RAYGEN_GROUP_COUNT)
-                .map(LightweightRayTracingPipeline::raygenModule)
+                .range(0, PerformanceRayTracingPipeline.RAYGEN_GROUP_COUNT)
+                .map(PerformanceRayTracingPipeline::raygenModule)
                 .boxed()
                 .toList());
         assertEquals(List.of(0, 1, 257, 2),
                 java.util.stream.IntStream
-                .range(0, LightweightRayTracingPipeline.RAYGEN_GROUP_COUNT)
-                .map(LightweightRayTracingPipeline::raygenControl)
+                .range(0, PerformanceRayTracingPipeline.RAYGEN_GROUP_COUNT)
+                .map(PerformanceRayTracingPipeline::raygenControl)
                 .boxed()
                 .toList());
         assertEquals(List.of(0, 1, 1, 2, 2, 3, 3, 4), java.util.stream.IntStream
@@ -199,9 +199,9 @@ final class TracePipelinesContractTest {
         assertEquals(1_260_748_832L,
                 OfflineRayTracingPipeline.wavefrontBytes(3840, 2160));
         assertEquals(729_907_232L,
-                LightweightRayTracingPipeline.wavefrontBytes(3840, 2160));
+                PerformanceRayTracingPipeline.wavefrontBytes(3840, 2160));
         assertEquals(182_476_832L,
-                LightweightRayTracingPipeline.wavefrontBytes(1920, 1080));
+                PerformanceRayTracingPipeline.wavefrontBytes(1920, 1080));
         assertEquals(
                 1202.3437805175781,
                 OfflineRayTracingPipeline.wavefrontBytes(3840, 2160)
@@ -216,9 +216,9 @@ final class TracePipelinesContractTest {
         RealtimeRayTracingPipeline.validateRanges(3840, 2160, 0xffff_ffffL);
         OfflineRayTracingPipeline.validateRanges(3840, 2160, 0xffff_ffffL);
         RealtimeRayTracingPipeline.validateDispatch(3840, 2160, 1 << 25);
-        RealtimeRayTracingPipeline.validateLightweightRanges(
+        RealtimeRayTracingPipeline.validatePerformanceRanges(
                 3840, 2160, 0xffff_ffffL);
-        RealtimeRayTracingPipeline.validateLightweightDispatch(
+        RealtimeRayTracingPipeline.validatePerformanceDispatch(
                 3840, 2160, 1 << 24);
         OfflineRayTracingPipeline.validateDispatch(3840, 2160, 1 << 24);
     }

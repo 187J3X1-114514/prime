@@ -238,7 +238,7 @@ void primeSampleLightweightGuidedSurface(
                     false,
                     volumeStack);
         }
-        sampled.bsdfSample.pdf = primeLightweightTransparentBranchPdf(
+        sampled.bsdfSample.pdf = primeTransparentCheckerboardPdf(
                 sampled.bsdfSample.pdf);
         scatter.bsdf = sampled.bsdfSample;
         scatter.volumeStack = sampled.volumeStack;
@@ -383,7 +383,7 @@ bool primeIntegrateLightweightSurface(
                 surface,
                 viewDirection,
                 scatterSample,
-                primeLightweightPrimarySamplesReflection(
+                primeTransparentCheckerboardSamplesReflection(
                         path.pixel, path.sampleIndex),
                 volumeStack,
                 scatter,

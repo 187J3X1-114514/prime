@@ -226,15 +226,15 @@ public final class RayTraceReplayInputCodec {
 
     private static int integratorMode(RealtimeIntegratorMode mode) {
         return switch (mode) {
-            case WAVEFRONT -> 0;
-            case LIGHTWEIGHT -> 1;
+            case QUALITY -> 0;
+            case PERFORMANCE -> 1;
         };
     }
 
     private static RealtimeIntegratorMode integratorMode(int encoded) {
         return switch (encoded) {
-            case 0 -> RealtimeIntegratorMode.WAVEFRONT;
-            case 1 -> RealtimeIntegratorMode.LIGHTWEIGHT;
+            case 0 -> RealtimeIntegratorMode.QUALITY;
+            case 1 -> RealtimeIntegratorMode.PERFORMANCE;
             default -> throw new IllegalArgumentException(
                     "Ray-trace replay contains an unknown integrator mode");
         };

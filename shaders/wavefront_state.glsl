@@ -3,11 +3,11 @@
 
 #include "wavefront_medium.glsl"
 
-// Two fixed slots belong to each realtime pixel so a primary transparent interface can enqueue
-// reflection and transmission as independent invocations. The execution-local type contains only
-// the six hot transport lanes; the storage record adds one cold lane shared by queued PSR, deferred
-// Area data and the previous receiver normal. Primary area-light moments are immutable pixel state
-// and live once per pixel in the queue-buffer prefix.
+// Two signal slots belong to each quality-mode pixel so transparent reflection and transmission
+// keep independent reconstruction histories. Only the checkerboard-selected slot can enqueue
+// transport. The execution-local type contains six hot transport lanes; storage adds one cold lane
+// shared by queued PSR, deferred Area data and the previous receiver normal. Primary area-light
+// moments are immutable pixel state and live once per pixel in the queue-buffer prefix.
 struct PrimeWavefrontTransportRecord {
     vec4 physicalOriginAndPreviousBsdfPdf;
     vec4 traceOriginAndPathControl;

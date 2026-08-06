@@ -58,7 +58,7 @@ final class RayTraceReplayInputCodecTest {
             for (RealtimeIntegratorMode integrator : RealtimeIntegratorMode.values()) {
                 IntegratorFrameInput input = withMaximumBounces(
                         withMode(fixture.input(), mode),
-                        integrator == RealtimeIntegratorMode.LIGHTWEIGHT
+                        integrator == RealtimeIntegratorMode.PERFORMANCE
                                 ? 4
                                 : IntegratorSettings.MAXIMUM_BOUNCES);
                 byte[] encoded = RayTraceReplayInputCodec.encode(
@@ -69,7 +69,7 @@ final class RayTraceReplayInputCodecTest {
                     case DLSS_RR -> 1;
                     case DISABLED -> 2;
                 };
-                int expectedIntegrator = integrator == RealtimeIntegratorMode.WAVEFRONT
+                int expectedIntegrator = integrator == RealtimeIntegratorMode.QUALITY
                         ? 0
                         : 1;
 
@@ -139,21 +139,21 @@ final class RayTraceReplayInputCodecTest {
     @Test
     void replayIdentityRejectsAnotherIntegrator() {
         Fixture fixture = input();
-        IntegratorFrameInput lightweight = withMaximumBounces(fixture.input(), 4);
+        IntegratorFrameInput performance = withMaximumBounces(fixture.input(), 4);
         RayTraceReplayInput captured = RayTraceReplayInput.capture(
-                RealtimeIntegratorMode.LIGHTWEIGHT,
-                lightweight,
+                RealtimeIntegratorMode.PERFORMANCE,
+                performance,
                 fixture.scene());
 
         captured.requireMatch(
-                RealtimeIntegratorMode.LIGHTWEIGHT,
-                lightweight,
+                RealtimeIntegratorMode.PERFORMANCE,
+                performance,
                 fixture.scene());
         assertThrows(
                 IllegalArgumentException.class,
                 () -> captured.requireMatch(
-                        RealtimeIntegratorMode.WAVEFRONT,
-                        lightweight,
+                        RealtimeIntegratorMode.QUALITY,
+                        performance,
                         fixture.scene()));
     }
 
@@ -162,7 +162,7 @@ final class RayTraceReplayInputCodecTest {
         Fixture fixture = input();
         IntegratorFrameInput fourBounces = withMaximumBounces(fixture.input(), 4);
         RayTraceReplayInput captured = RayTraceReplayInput.capture(
-                RealtimeIntegratorMode.LIGHTWEIGHT,
+                RealtimeIntegratorMode.PERFORMANCE,
                 fourBounces,
                 fixture.scene());
 
@@ -171,7 +171,7 @@ final class RayTraceReplayInputCodecTest {
         assertThrows(
                 IllegalArgumentException.class,
                 () -> captured.requireMatch(
-                        RealtimeIntegratorMode.LIGHTWEIGHT,
+                        RealtimeIntegratorMode.PERFORMANCE,
                         withMaximumBounces(fourBounces, 3),
                         fixture.scene()));
     }

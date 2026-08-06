@@ -173,7 +173,7 @@ final class RealtimeFramePlanTest {
                 mode,
                 ReconstructionQualityMode.QUALITY,
                 guide,
-                LightweightIntegratorSettings.DEFAULT_SCATTERS,
+                PerformanceIntegratorSettings.DEFAULT_SCATTERS,
                 new LightingSettings.Snapshot(0, 0, 0, 13L),
                 new MaterialSettings.Snapshot(90, 17L),
                 true,

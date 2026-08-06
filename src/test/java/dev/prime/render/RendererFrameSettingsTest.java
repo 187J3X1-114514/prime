@@ -37,7 +37,7 @@ final class RendererFrameSettingsTest {
         return new RendererSettings(
                 true,
                 RealtimeIntegratorMode.DEFAULT,
-                LightweightIntegratorSettings.DEFAULT_SCATTERS,
+                PerformanceIntegratorSettings.DEFAULT_SCATTERS,
                 false,
                 VoxelSurfaceSettings.DEFAULT_STEPS,
                 mode,

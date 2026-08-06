@@ -4,7 +4,7 @@ import com.mojang.blaze3d.vulkan.Destroyable;
 import com.mojang.blaze3d.vulkan.VulkanGpuSampler;
 import com.mojang.blaze3d.vulkan.VulkanGpuTextureView;
 import dev.prime.render.IntegratorFrameInput;
-import dev.prime.render.LightweightIntegratorSettings;
+import dev.prime.render.PerformanceIntegratorSettings;
 import dev.prime.render.RealtimeIntegratorMode;
 import dev.prime.render.shader.ShaderAbi;
 import dev.prime.render.vulkan.terrain.TerrainScene;
@@ -60,7 +60,7 @@ public final class RealtimeRayTracingPipeline implements RealtimeIntegratorPipel
 
     private final VulkanContext context;
     private final TraceBackend backend;
-    private final boolean lightweight;
+    private final boolean performance;
     private final long descriptorSetLayout;
     private final long pipelineLayout;
     private final TraceProgram program;
@@ -76,10 +76,10 @@ public final class RealtimeRayTracingPipeline implements RealtimeIntegratorPipel
     RealtimeRayTracingPipeline(
             VulkanContext context,
             TraceBackend backend,
-            boolean lightweight) {
+            boolean performance) {
         this.context = context;
         this.backend = java.util.Objects.requireNonNull(backend, "backend");
-        this.lightweight = lightweight;
+        this.performance = performance;
         long setLayout = 0L;
         long layout = 0L;
         TraceProgram traceProgram = null;
@@ -92,10 +92,10 @@ public final class RealtimeRayTracingPipeline implements RealtimeIntegratorPipel
             boolean ser = context.capabilities().invocationReorderSupported()
                     && context.capabilities().wavefrontSubgroupSupported();
             String suffix = ser ? "_ser.rgen.spv" : ".rgen.spv";
-            String prefix = lightweight
+            String prefix = performance
                     ? "/prime/shaders/lightweight_wavefront_"
                     : "/prime/shaders/realtime_wavefront_";
-            String[] raygenShaders = lightweight
+            String[] raygenShaders = performance
                     ? new String[] {
                         prefix + "head" + suffix,
                         prefix + "step" + suffix,
@@ -108,11 +108,11 @@ public final class RealtimeRayTracingPipeline implements RealtimeIntegratorPipel
                         prefix + "tail" + suffix,
                         prefix + "resolve" + suffix
                     };
-            int[] raygenModules = lightweight
-                    ? LightweightRayTracingPipeline.RAYGEN_MODULES
+            int[] raygenModules = performance
+                    ? PerformanceRayTracingPipeline.RAYGEN_MODULES
                     : RAYGEN_MODULES;
-            int[] raygenControls = lightweight
-                    ? LightweightRayTracingPipeline.RAYGEN_CONTROLS
+            int[] raygenControls = performance
+                    ? PerformanceRayTracingPipeline.RAYGEN_CONTROLS
                     : RAYGEN_CONTROLS;
             traceProgram = TraceProgram.create(
                     context,
@@ -120,17 +120,17 @@ public final class RealtimeRayTracingPipeline implements RealtimeIntegratorPipel
                     raygenShaders,
                     raygenModules,
                     raygenControls,
-                    lightweight
-                            ? "Prime lightweight ray tracing pipeline"
+                    performance
+                            ? "Prime performance ray tracing pipeline"
                             : "Prime realtime ray tracing pipeline",
-                    lightweight
-                            ? "Prime lightweight shader binding table"
+                    performance
+                            ? "Prime performance shader binding table"
                             : "Prime realtime shader binding table");
             this.descriptorSetLayout = setLayout;
             this.pipelineLayout = layout;
             this.program = traceProgram;
-            this.lastRecordedPassCount = lightweight
-                    ? LightweightRayTracingPipeline.MAXIMUM_DISPATCH_COUNT
+            this.lastRecordedPassCount = performance
+                    ? PerformanceRayTracingPipeline.MAXIMUM_DISPATCH_COUNT
                     : DISPATCH_COUNT;
         } catch (RuntimeException exception) {
             if (traceProgram != null) {
@@ -148,9 +148,9 @@ public final class RealtimeRayTracingPipeline implements RealtimeIntegratorPipel
 
     @Override
     public RealtimeIntegratorMode mode() {
-        return this.lightweight
-                ? RealtimeIntegratorMode.LIGHTWEIGHT
-                : RealtimeIntegratorMode.WAVEFRONT;
+        return this.performance
+                ? RealtimeIntegratorMode.PERFORMANCE
+                : RealtimeIntegratorMode.QUALITY;
     }
 
     @Override
@@ -198,8 +198,8 @@ public final class RealtimeRayTracingPipeline implements RealtimeIntegratorPipel
                             | VK12.VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT
                             | VK12.VK_BUFFER_USAGE_TRANSFER_DST_BIT,
                     false,
-                    this.lightweight
-                            ? "Prime lightweight wavefront slots"
+                    this.performance
+                            ? "Prime performance wavefront slots"
                             : "Prime realtime wavefront slots");
         }
         if (this.bindings != null
@@ -279,10 +279,10 @@ public final class RealtimeRayTracingPipeline implements RealtimeIntegratorPipel
             this.trace(commandBuffer, stack, width, height, HEAD_GROUP);
             this.wavefrontBarrier(commandBuffer, stack);
             int sourceQueue = 0;
-            int rounds = this.lightweight
-                    ? lightweightRounds(input.maximumBounces())
+            int rounds = this.performance
+                    ? performanceRounds(input.maximumBounces())
                     : ShaderAbi.WAVEFRONT_ROUNDS;
-            this.lastRecordedPassCount = this.lightweight
+            this.lastRecordedPassCount = this.performance
                     ? rounds + 2
                     : DISPATCH_COUNT;
             for (int round = 0; round < rounds; round++) {
@@ -293,7 +293,7 @@ public final class RealtimeRayTracingPipeline implements RealtimeIntegratorPipel
                         commandOffset,
                         sourceQueue);
                 this.wavefrontBarrier(commandBuffer, stack);
-                if (!this.lightweight) {
+                if (!this.performance) {
                     this.traceIndirect(
                             commandBuffer,
                             stack,
@@ -304,7 +304,7 @@ public final class RealtimeRayTracingPipeline implements RealtimeIntegratorPipel
                 this.advanceQueue(commandBuffer, stack, commandOffset, sourceQueue);
                 sourceQueue ^= 1;
             }
-            if (this.lightweight) {
+            if (this.performance) {
                 this.trace(commandBuffer, stack, width, height, 3);
             } else {
                 this.traceIndirect(
@@ -319,8 +319,8 @@ public final class RealtimeRayTracingPipeline implements RealtimeIntegratorPipel
         }
     }
 
-    static int lightweightRounds(int maximumScatters) {
-        return LightweightIntegratorSettings.validateScatters(maximumScatters) - 1;
+    static int performanceRounds(int maximumScatters) {
+        return PerformanceIntegratorSettings.validateScatters(maximumScatters) - 1;
     }
 
     private void bind(
@@ -522,15 +522,15 @@ public final class RealtimeRayTracingPipeline implements RealtimeIntegratorPipel
         return Math.addExact(queueOffset(width, height), queueBytes(width, height));
     }
 
-    static long lightweightWavefrontBytes(int width, int height) {
+    static long performanceWavefrontBytes(int width, int height) {
         return Math.addExact(
-                lightweightQueueOffset(width, height),
-                lightweightQueueBytes(width, height));
+                performanceQueueOffset(width, height),
+                performanceQueueBytes(width, height));
     }
 
     private long wavefrontBytesForMode(int width, int height) {
-        return this.lightweight
-                ? lightweightWavefrontBytes(width, height)
+        return this.performance
+                ? performanceWavefrontBytes(width, height)
                 : wavefrontBytes(width, height);
     }
 
@@ -597,7 +597,7 @@ public final class RealtimeRayTracingPipeline implements RealtimeIntegratorPipel
                 Math.multiplyExact(pixels, ShaderAbi.WAVEFRONT_AREA_RECORD_SIZE));
     }
 
-    static long lightweightQueueOffset(int width, int height) {
+    static long performanceQueueOffset(int width, int height) {
         requireExtent(width, height);
         long pixels = Math.multiplyExact((long) width, (long) height);
         long bytes = Math.multiplyExact(
@@ -608,7 +608,7 @@ public final class RealtimeRayTracingPipeline implements RealtimeIntegratorPipel
         return VulkanContext.alignUp(bytes, QUEUE_OFFSET_ALIGNMENT);
     }
 
-    static long lightweightQueueBytes(int width, int height) {
+    static long performanceQueueBytes(int width, int height) {
         requireExtent(width, height);
         long pixels = Math.multiplyExact((long) width, (long) height);
         long capacity = Math.multiplyExact(
@@ -625,19 +625,19 @@ public final class RealtimeRayTracingPipeline implements RealtimeIntegratorPipel
         return Math.addExact(commands, indices);
     }
 
-    static long lightweightQueueCommandOffset(int width, int height) {
-        return lightweightQueueOffset(width, height);
+    static long performanceQueueCommandOffset(int width, int height) {
+        return performanceQueueOffset(width, height);
     }
 
     private long queueOffsetForMode(int width, int height) {
-        return this.lightweight
-                ? lightweightQueueOffset(width, height)
+        return this.performance
+                ? performanceQueueOffset(width, height)
                 : queueOffset(width, height);
     }
 
     private long queueCommandOffsetForMode(int width, int height) {
-        return this.lightweight
-                ? lightweightQueueCommandOffset(width, height)
+        return this.performance
+                ? performanceQueueCommandOffset(width, height)
                 : queueCommandOffset(width, height);
     }
 
@@ -659,31 +659,31 @@ public final class RealtimeRayTracingPipeline implements RealtimeIntegratorPipel
         }
     }
 
-    static void validateLightweightRanges(
+    static void validatePerformanceRanges(
             int width, int height, long maximumRange) {
-        long paths = lightweightQueueOffset(width, height);
-        long queue = lightweightQueueBytes(width, height);
+        long paths = performanceQueueOffset(width, height);
+        long queue = performanceQueueBytes(width, height);
         if (paths > maximumRange || queue > maximumRange) {
             throw new IllegalStateException(
-                    "Lightweight wavefront descriptor exceeds maxStorageBufferRange");
+                    "Performance wavefront descriptor exceeds maxStorageBufferRange");
         }
     }
 
-    static void validateLightweightDispatch(
+    static void validatePerformanceDispatch(
             int width, int height, int maximumInvocations) {
         long capacity = Math.multiplyExact(
                 Math.multiplyExact((long) width, (long) height),
                 ShaderAbi.LIGHTWEIGHT_WAVEFRONT_PATH_SLOTS_PER_PIXEL);
         if (capacity > Integer.toUnsignedLong(maximumInvocations)) {
             throw new IllegalStateException(
-                    "Lightweight wavefront queue exceeds dispatch capacity");
+                    "Performance wavefront queue exceeds dispatch capacity");
         }
     }
 
     private void validateRangesForMode(
             int width, int height, long maximumRange) {
-        if (this.lightweight) {
-            validateLightweightRanges(width, height, maximumRange);
+        if (this.performance) {
+            validatePerformanceRanges(width, height, maximumRange);
         } else {
             validateRanges(width, height, maximumRange);
         }
@@ -691,8 +691,8 @@ public final class RealtimeRayTracingPipeline implements RealtimeIntegratorPipel
 
     private void validateDispatchForMode(
             int width, int height, int maximumInvocations) {
-        if (this.lightweight) {
-            validateLightweightDispatch(width, height, maximumInvocations);
+        if (this.performance) {
+            validatePerformanceDispatch(width, height, maximumInvocations);
         } else {
             validateDispatch(width, height, maximumInvocations);
         }

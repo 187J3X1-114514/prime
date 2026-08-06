@@ -6,7 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import dev.prime.render.AstronomySettings;
-import dev.prime.render.LightweightIntegratorSettings;
+import dev.prime.render.PerformanceIntegratorSettings;
 import dev.prime.render.RealtimeIntegratorMode;
 import dev.prime.render.post.DlssRrDebugView;
 import dev.prime.render.post.PostProcessingMode;
@@ -176,57 +176,65 @@ final class PrimeConfigTest {
 
     @Test
     void realtimeIntegratorDefaultsAndParsesStableIds() {
-        assertEquals(RealtimeIntegratorMode.WAVEFRONT, RealtimeIntegratorMode.DEFAULT);
+        assertEquals(RealtimeIntegratorMode.QUALITY, RealtimeIntegratorMode.DEFAULT);
         assertEquals(
-                RealtimeIntegratorMode.LIGHTWEIGHT,
-                RealtimeIntegratorMode.fromId("LIGHTWEIGHT"));
+                RealtimeIntegratorMode.PERFORMANCE,
+                RealtimeIntegratorMode.fromId("PERFORMANCE"));
         assertEquals(
-                RealtimeIntegratorMode.WAVEFRONT,
+                RealtimeIntegratorMode.PERFORMANCE,
+                RealtimeIntegratorMode.fromId("lightweight"));
+        assertEquals(
+                RealtimeIntegratorMode.QUALITY,
+                RealtimeIntegratorMode.fromId("wavefront"));
+        assertEquals("quality", RealtimeIntegratorMode.QUALITY.id());
+        assertEquals("performance", RealtimeIntegratorMode.PERFORMANCE.id());
+        assertEquals(
+                RealtimeIntegratorMode.QUALITY,
                 RealtimeIntegratorMode.fromId("future_integrator"));
         assertEquals(
-                RealtimeIntegratorMode.WAVEFRONT,
+                RealtimeIntegratorMode.QUALITY,
                 PrimeSettings.defaults().realtimeIntegrator());
         assertEquals(
-                RealtimeIntegratorMode.LIGHTWEIGHT,
+                RealtimeIntegratorMode.PERFORMANCE,
                 PrimeConfig.rendererSettings(
                         PrimeSettings.defaults().withRealtimeIntegrator(
-                                RealtimeIntegratorMode.LIGHTWEIGHT),
+                                RealtimeIntegratorMode.PERFORMANCE),
                         3L)
                         .realtimeIntegrator());
         assertEquals(
-                RealtimeIntegratorMode.WAVEFRONT,
+                RealtimeIntegratorMode.QUALITY,
                 PrimeConfig.restoredDefaults(
                         PrimeSettings.defaults().withRealtimeIntegrator(
-                                RealtimeIntegratorMode.LIGHTWEIGHT))
+                                RealtimeIntegratorMode.PERFORMANCE))
                         .realtimeIntegrator());
     }
 
     @Test
-    void lightweightBounceLimitDefaultsToFourAndAcceptsOneThroughEight() {
-        assertEquals(4, LightweightIntegratorSettings.DEFAULT_SCATTERS);
-        assertEquals(4, PrimeSettings.defaults().lightweightMaximumScatters());
-        assertEquals(1, PrimeConfig.parseLightweightMaximumScatters("1"));
-        assertEquals(8, PrimeConfig.parseLightweightMaximumScatters("8"));
+    void performanceBounceLimitDefaultsToFourAndAcceptsOneThroughEight() {
+        assertEquals(4, PerformanceIntegratorSettings.DEFAULT_SCATTERS);
+        assertEquals(4, PrimeSettings.defaults().performanceMaximumScatters());
+        assertEquals(1, PrimeConfig.parsePerformanceMaximumScatters("1"));
+        assertEquals(8, PrimeConfig.parsePerformanceMaximumScatters("8"));
         assertThrows(
                 IllegalArgumentException.class,
-                () -> PrimeConfig.parseLightweightMaximumScatters("0"));
+                () -> PrimeConfig.parsePerformanceMaximumScatters("0"));
         assertThrows(
                 IllegalArgumentException.class,
-                () -> PrimeConfig.parseLightweightMaximumScatters("9"));
+                () -> PrimeConfig.parsePerformanceMaximumScatters("9"));
         assertThrows(
                 IllegalArgumentException.class,
-                () -> PrimeConfig.parseLightweightMaximumScatters("4.0"));
+                () -> PrimeConfig.parsePerformanceMaximumScatters("4.0"));
 
         PrimeSettings changed = PrimeSettings.defaults()
-                .withLightweightMaximumScatters(7);
+                .withPerformanceMaximumScatters(7);
         assertEquals(
                 7,
                 PrimeConfig.rendererSettings(changed, 1L)
-                        .lightweightMaximumScatters());
+                        .performanceMaximumScatters());
         assertEquals(
                 4,
                 PrimeConfig.restoredDefaults(changed)
-                        .lightweightMaximumScatters());
+                        .performanceMaximumScatters());
     }
 
     @Test
@@ -243,8 +251,9 @@ final class PrimeConfigTest {
     void debugSelectionsAreSessionOnlyAndLegacyKeysAreRemovedOnRewrite() {
         String serialized = PrimeConfig.serializedContents();
         assertTrue(serialized.contains("renderer.path_tracing=true\n"));
-        assertTrue(serialized.contains("renderer.integrator=wavefront\n"));
-        assertTrue(serialized.contains("renderer.lightweight_maximum_bounces=4\n"));
+        assertTrue(serialized.contains("renderer.integrator=quality\n"));
+        assertTrue(serialized.contains("renderer.performance_maximum_bounces=4\n"));
+        assertFalse(serialized.contains("renderer.lightweight_maximum_bounces"));
         assertTrue(serialized.contains(
                 "experimental.voxel_texture_surfaces=false\n"));
         assertTrue(serialized.contains(

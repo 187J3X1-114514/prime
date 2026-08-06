@@ -14,9 +14,10 @@
 #endif
 #include "prime_bsdf_specializations.glsl"
 
-// Minecraft's translucent render layer keeps an explicit first-visible-interface split for
-// reconstruction, then uses RoboCute's complete closure for queued single-path continuation.
-// The adapter owns the fixed primary refraction, per-surface glass filtering and medium handoff.
+// Minecraft's translucent render layer exposes conditional reflection/transmission proposals for
+// the first-visible checkerboard choice, then uses RoboCute's complete closure for later queued
+// continuation. The adapter owns deterministic primary refraction, per-surface glass filtering
+// and medium handoff.
 struct PrimeTransmissiveBsdfSample {
     BsdfSample bsdfSample;
     PrimeRcVolumeStack volumeStack;

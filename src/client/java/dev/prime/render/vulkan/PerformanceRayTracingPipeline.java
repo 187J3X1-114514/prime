@@ -9,8 +9,8 @@ import java.util.List;
 import java.util.Objects;
 import org.lwjgl.vulkan.VkCommandBuffer;
 
-/** Experimental bounded single-path realtime wavefront integrator. */
-public final class LightweightRayTracingPipeline implements RealtimeIntegratorPipeline {
+/** Bounded single-path performance realtime wavefront integrator. */
+public final class PerformanceRayTracingPipeline implements RealtimeIntegratorPipeline {
     static final int RAYGEN_GROUP_COUNT = 4;
     static final int RAYGEN_MODULE_COUNT = 3;
     static final int MAXIMUM_DISPATCH_COUNT = 9;
@@ -19,7 +19,7 @@ public final class LightweightRayTracingPipeline implements RealtimeIntegratorPi
 
     private final RealtimeRayTracingPipeline scheduler;
 
-    public LightweightRayTracingPipeline(VulkanContext context, TraceBackend backend) {
+    public PerformanceRayTracingPipeline(VulkanContext context, TraceBackend backend) {
         this.scheduler = new RealtimeRayTracingPipeline(
                 Objects.requireNonNull(context, "context"),
                 Objects.requireNonNull(backend, "backend"),
@@ -28,7 +28,7 @@ public final class LightweightRayTracingPipeline implements RealtimeIntegratorPi
 
     @Override
     public RealtimeIntegratorMode mode() {
-        return RealtimeIntegratorMode.LIGHTWEIGHT;
+        return RealtimeIntegratorMode.PERFORMANCE;
     }
 
     @Override
@@ -95,7 +95,7 @@ public final class LightweightRayTracingPipeline implements RealtimeIntegratorPi
     }
 
     static long wavefrontBytes(int width, int height) {
-        return RealtimeRayTracingPipeline.lightweightWavefrontBytes(width, height);
+        return RealtimeRayTracingPipeline.performanceWavefrontBytes(width, height);
     }
 
     static int raygenModule(int group) {
@@ -107,15 +107,15 @@ public final class LightweightRayTracingPipeline implements RealtimeIntegratorPi
     }
 
     static long queueOffset(int width, int height) {
-        return RealtimeRayTracingPipeline.lightweightQueueOffset(width, height);
+        return RealtimeRayTracingPipeline.performanceQueueOffset(width, height);
     }
 
     static long queueBytes(int width, int height) {
-        return RealtimeRayTracingPipeline.lightweightQueueBytes(width, height);
+        return RealtimeRayTracingPipeline.performanceQueueBytes(width, height);
     }
 
     static long queueCommandOffset(int width, int height) {
-        return RealtimeRayTracingPipeline.lightweightQueueCommandOffset(width, height);
+        return RealtimeRayTracingPipeline.performanceQueueCommandOffset(width, height);
     }
 
     @Override

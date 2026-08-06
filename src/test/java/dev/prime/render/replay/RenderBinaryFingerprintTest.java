@@ -46,15 +46,15 @@ final class RenderBinaryFingerprintTest {
 
     @Test
     void integratorModesFingerprintTheirOwnRaygenModules() {
-        RenderBinaryFingerprint wavefront = RenderBinaryFingerprint.capture(
-                false, RealtimeIntegratorMode.WAVEFRONT);
-        RenderBinaryFingerprint lightweight = RenderBinaryFingerprint.capture(
-                false, RealtimeIntegratorMode.LIGHTWEIGHT);
+        RenderBinaryFingerprint quality = RenderBinaryFingerprint.capture(
+                false, RealtimeIntegratorMode.QUALITY);
+        RenderBinaryFingerprint performance = RenderBinaryFingerprint.capture(
+                false, RealtimeIntegratorMode.PERFORMANCE);
 
-        assertFalse(wavefront.isStrictlyCompatibleWith(lightweight));
-        assertTrue(wavefront.resources().stream()
+        assertFalse(quality.isStrictlyCompatibleWith(performance));
+        assertTrue(quality.resources().stream()
                 .anyMatch(resource -> resource.name().contains("realtime_wavefront_area")));
-        assertTrue(lightweight.resources().stream()
+        assertTrue(performance.resources().stream()
                 .anyMatch(resource -> resource.name().contains("lightweight_wavefront_step")));
     }
 }

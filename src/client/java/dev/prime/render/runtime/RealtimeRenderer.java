@@ -19,7 +19,7 @@ import dev.prime.render.vulkan.DisplayExposureDiagnostics;
 import dev.prime.render.vulkan.LabPbrTextureAtlas;
 import dev.prime.render.vulkan.RealtimeFrameExecutor;
 import dev.prime.render.vulkan.RealtimeIntegratorPipeline;
-import dev.prime.render.vulkan.LightweightRayTracingPipeline;
+import dev.prime.render.vulkan.PerformanceRayTracingPipeline;
 import dev.prime.render.vulkan.RealtimeRayTracingPipeline;
 import dev.prime.render.vulkan.SunShadowPipeline;
 import dev.prime.render.vulkan.TraceBackend;
@@ -48,8 +48,8 @@ final class RealtimeRenderer implements Destroyable {
     private RealtimeIntegratorPipeline pipeline;
     private VulkanReconstructionResources resources;
     private RealtimeSampleState sampleState = RealtimeSampleState.initial();
-    private int lightweightMaximumScatters =
-            LightweightIntegratorSettings.DEFAULT_SCATTERS;
+    private int performanceMaximumScatters =
+            PerformanceIntegratorSettings.DEFAULT_SCATTERS;
     private boolean pipelineInvalid;
     private boolean destroyed;
 
@@ -255,8 +255,8 @@ final class RealtimeRenderer implements Destroyable {
                 input.atlasView(),
                 input.atlasSampler(),
                 input.sceneTextures());
-        boolean scatterLimitChanged = this.applyLightweightMaximumScatters(
-                settings.lightweightMaximumScatters(), resized);
+        boolean scatterLimitChanged = this.applyPerformanceMaximumScatters(
+                settings.performanceMaximumScatters(), resized);
         boolean reconfigured = resized || scatterLimitChanged;
         VulkanReconstructionResources images = this.resources;
         if (images == null) {
@@ -303,8 +303,8 @@ final class RealtimeRenderer implements Destroyable {
                 selection.effectiveMode(),
                 selection.quality(),
                 selection.transparentGuideMode(),
-                settings.integrator() == RealtimeIntegratorMode.LIGHTWEIGHT
-                        ? settings.lightweightMaximumScatters()
+                settings.integrator() == RealtimeIntegratorMode.PERFORMANCE
+                        ? settings.performanceMaximumScatters()
                         : IntegratorSettings.MAXIMUM_BOUNCES,
                 settings.lighting(),
                 settings.material(),
@@ -392,17 +392,17 @@ final class RealtimeRenderer implements Destroyable {
         return debugLines;
     }
 
-    private boolean applyLightweightMaximumScatters(
+    private boolean applyPerformanceMaximumScatters(
             int value, boolean resourcesReconfigured) {
-        LightweightIntegratorSettings.validateScatters(value);
-        if (this.pipeline.mode() != RealtimeIntegratorMode.LIGHTWEIGHT) {
-            this.lightweightMaximumScatters = value;
+        PerformanceIntegratorSettings.validateScatters(value);
+        if (this.pipeline.mode() != RealtimeIntegratorMode.PERFORMANCE) {
+            this.performanceMaximumScatters = value;
             return false;
         }
-        if (value == this.lightweightMaximumScatters) {
+        if (value == this.performanceMaximumScatters) {
             return false;
         }
-        this.lightweightMaximumScatters = value;
+        this.performanceMaximumScatters = value;
         if (!resourcesReconfigured) {
             this.sampleState = this.sampleState.invalidated();
             this.resources.requestReset();
@@ -522,8 +522,8 @@ final class RealtimeRenderer implements Destroyable {
 
     private RealtimeIntegratorPipeline createPipeline(RealtimeIntegratorMode mode) {
         return switch (mode) {
-            case WAVEFRONT -> new RealtimeRayTracingPipeline(this.context, this.backend);
-            case LIGHTWEIGHT -> new LightweightRayTracingPipeline(this.context, this.backend);
+            case QUALITY -> new RealtimeRayTracingPipeline(this.context, this.backend);
+            case PERFORMANCE -> new PerformanceRayTracingPipeline(this.context, this.backend);
         };
     }
 

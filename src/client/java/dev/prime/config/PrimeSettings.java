@@ -3,7 +3,7 @@ package dev.prime.config;
 import dev.prime.render.AstronomySettings;
 import dev.prime.render.DisplaySettings;
 import dev.prime.render.LightingSettings;
-import dev.prime.render.LightweightIntegratorSettings;
+import dev.prime.render.PerformanceIntegratorSettings;
 import dev.prime.render.MaterialSettings;
 import dev.prime.render.RealtimeIntegratorMode;
 import dev.prime.render.post.PostProcessingMode;
@@ -15,7 +15,7 @@ import java.util.Objects;
 public record PrimeSettings(
         boolean pathTracingEnabled,
         RealtimeIntegratorMode realtimeIntegrator,
-        int lightweightMaximumScatters,
+        int performanceMaximumScatters,
         boolean voxelTextureSurfaces,
         int voxelTextureSurfaceStrengthSteps,
         PostProcessingMode postProcessingMode,
@@ -33,7 +33,7 @@ public record PrimeSettings(
         long materialRevision) {
     public PrimeSettings {
         realtimeIntegrator = Objects.requireNonNull(realtimeIntegrator, "realtimeIntegrator");
-        LightweightIntegratorSettings.validateScatters(lightweightMaximumScatters);
+        PerformanceIntegratorSettings.validateScatters(performanceMaximumScatters);
         postProcessingMode = Objects.requireNonNull(postProcessingMode, "postProcessingMode");
         reconstructionQuality = Objects.requireNonNull(
                 reconstructionQuality, "reconstructionQuality");
@@ -56,7 +56,7 @@ public record PrimeSettings(
         return new PrimeSettings(
                 true,
                 RealtimeIntegratorMode.DEFAULT,
-                LightweightIntegratorSettings.DEFAULT_SCATTERS,
+                PerformanceIntegratorSettings.DEFAULT_SCATTERS,
                 false,
                 VoxelSurfaceSettings.DEFAULT_STEPS,
                 PostProcessingMode.DEFAULT,
@@ -80,7 +80,7 @@ public record PrimeSettings(
                 : new PrimeSettings(
                         value,
                         this.realtimeIntegrator,
-                        this.lightweightMaximumScatters,
+                        this.performanceMaximumScatters,
                         this.voxelTextureSurfaces,
                         this.voxelTextureSurfaceStrengthSteps,
                         this.postProcessingMode,
@@ -105,7 +105,7 @@ public record PrimeSettings(
                 : new PrimeSettings(
                         this.pathTracingEnabled,
                         value,
-                        this.lightweightMaximumScatters,
+                        this.performanceMaximumScatters,
                         this.voxelTextureSurfaces,
                         this.voxelTextureSurfaceStrengthSteps,
                         this.postProcessingMode,
@@ -123,9 +123,9 @@ public record PrimeSettings(
                         this.materialRevision);
     }
 
-    public PrimeSettings withLightweightMaximumScatters(int value) {
-        LightweightIntegratorSettings.validateScatters(value);
-        return value == this.lightweightMaximumScatters
+    public PrimeSettings withPerformanceMaximumScatters(int value) {
+        PerformanceIntegratorSettings.validateScatters(value);
+        return value == this.performanceMaximumScatters
                 ? this
                 : new PrimeSettings(
                         this.pathTracingEnabled,
@@ -154,7 +154,7 @@ public record PrimeSettings(
                 : new PrimeSettings(
                         this.pathTracingEnabled,
                         this.realtimeIntegrator,
-                        this.lightweightMaximumScatters,
+                        this.performanceMaximumScatters,
                         value,
                         this.voxelTextureSurfaceStrengthSteps,
                         this.postProcessingMode,
@@ -179,7 +179,7 @@ public record PrimeSettings(
                 : new PrimeSettings(
                         this.pathTracingEnabled,
                         this.realtimeIntegrator,
-                        this.lightweightMaximumScatters,
+                        this.performanceMaximumScatters,
                         this.voxelTextureSurfaces,
                         value,
                         this.postProcessingMode,
@@ -204,7 +204,7 @@ public record PrimeSettings(
                 : new PrimeSettings(
                         this.pathTracingEnabled,
                         this.realtimeIntegrator,
-                        this.lightweightMaximumScatters,
+                        this.performanceMaximumScatters,
                         this.voxelTextureSurfaces,
                         this.voxelTextureSurfaceStrengthSteps,
                         value,
@@ -229,7 +229,7 @@ public record PrimeSettings(
                 : new PrimeSettings(
                         this.pathTracingEnabled,
                         this.realtimeIntegrator,
-                        this.lightweightMaximumScatters,
+                        this.performanceMaximumScatters,
                         this.voxelTextureSurfaces,
                         this.voxelTextureSurfaceStrengthSteps,
                         this.postProcessingMode,
@@ -254,7 +254,7 @@ public record PrimeSettings(
                 : new PrimeSettings(
                         this.pathTracingEnabled,
                         this.realtimeIntegrator,
-                        this.lightweightMaximumScatters,
+                        this.performanceMaximumScatters,
                         this.voxelTextureSurfaces,
                         this.voxelTextureSurfaceStrengthSteps,
                         this.postProcessingMode,
@@ -280,7 +280,7 @@ public record PrimeSettings(
                 : new PrimeSettings(
                         this.pathTracingEnabled,
                         this.realtimeIntegrator,
-                        this.lightweightMaximumScatters,
+                        this.performanceMaximumScatters,
                         this.voxelTextureSurfaces,
                         this.voxelTextureSurfaceStrengthSteps,
                         this.postProcessingMode,
@@ -305,7 +305,7 @@ public record PrimeSettings(
                 : new PrimeSettings(
                         this.pathTracingEnabled,
                         this.realtimeIntegrator,
-                        this.lightweightMaximumScatters,
+                        this.performanceMaximumScatters,
                         this.voxelTextureSurfaces,
                         this.voxelTextureSurfaceStrengthSteps,
                         this.postProcessingMode,
@@ -330,7 +330,7 @@ public record PrimeSettings(
                 : new PrimeSettings(
                         this.pathTracingEnabled,
                         this.realtimeIntegrator,
-                        this.lightweightMaximumScatters,
+                        this.performanceMaximumScatters,
                         this.voxelTextureSurfaces,
                         this.voxelTextureSurfaceStrengthSteps,
                         this.postProcessingMode,
@@ -355,7 +355,7 @@ public record PrimeSettings(
                 : new PrimeSettings(
                         this.pathTracingEnabled,
                         this.realtimeIntegrator,
-                        this.lightweightMaximumScatters,
+                        this.performanceMaximumScatters,
                         this.voxelTextureSurfaces,
                         this.voxelTextureSurfaceStrengthSteps,
                         this.postProcessingMode,
@@ -380,7 +380,7 @@ public record PrimeSettings(
                 : new PrimeSettings(
                         this.pathTracingEnabled,
                         this.realtimeIntegrator,
-                        this.lightweightMaximumScatters,
+                        this.performanceMaximumScatters,
                         this.voxelTextureSurfaces,
                         this.voxelTextureSurfaceStrengthSteps,
                         this.postProcessingMode,
@@ -405,7 +405,7 @@ public record PrimeSettings(
                 : new PrimeSettings(
                         this.pathTracingEnabled,
                         this.realtimeIntegrator,
-                        this.lightweightMaximumScatters,
+                        this.performanceMaximumScatters,
                         this.voxelTextureSurfaces,
                         this.voxelTextureSurfaceStrengthSteps,
                         this.postProcessingMode,
@@ -430,7 +430,7 @@ public record PrimeSettings(
                 : new PrimeSettings(
                         this.pathTracingEnabled,
                         this.realtimeIntegrator,
-                        this.lightweightMaximumScatters,
+                        this.performanceMaximumScatters,
                         this.voxelTextureSurfaces,
                         this.voxelTextureSurfaceStrengthSteps,
                         this.postProcessingMode,
@@ -455,7 +455,7 @@ public record PrimeSettings(
                 : new PrimeSettings(
                         this.pathTracingEnabled,
                         this.realtimeIntegrator,
-                        this.lightweightMaximumScatters,
+                        this.performanceMaximumScatters,
                         this.voxelTextureSurfaces,
                         this.voxelTextureSurfaceStrengthSteps,
                         this.postProcessingMode,
@@ -480,7 +480,7 @@ public record PrimeSettings(
                 : new PrimeSettings(
                         this.pathTracingEnabled,
                         this.realtimeIntegrator,
-                        this.lightweightMaximumScatters,
+                        this.performanceMaximumScatters,
                         this.voxelTextureSurfaces,
                         this.voxelTextureSurfaceStrengthSteps,
                         this.postProcessingMode,

@@ -383,9 +383,9 @@ PrimeDirectLightingSplit primeEvaluateVisibleDirectSplit(
                 * dot(outwardNormal, light.direction) >= 0.0;
         BsdfEvaluation evaluation;
         if (conditionalTransparentBranch) {
-            // The first visible interface keeps its deterministic two-branch estimator. Its
-            // transmission event is delta, so only the conditional reflection branch competes
-            // with direct-light sampling.
+            // The first visible interface exposes conditional checkerboard events. Its
+            // transmission proposal is delta, so only conditional reflection competes with
+            // direct-light sampling; this NEE estimator is independent of the continuation cell.
             if (!reflection) {
                 return result;
             }
@@ -1117,9 +1117,9 @@ uint primeTransparentGuideMode() {
             & PRIME_PATH_TRANSPARENT_GUIDE_MODE_MASK;
 }
 
-// Advances one of the two fixed primary-transparent branches by one queued vertex. Reflection and
-// transmission invoke this function independently, so traversal/SER can sort them with every
-// other active path while their radiance and guides remain branch-owned.
+// Advances the checkerboard-selected primary-transparent branch by one queued vertex. Its signal
+// lane remains branch-owned while traversal/SER sorts the sole active continuation with every
+// other path.
 bool primeIntegrateTransparentWavefrontSurface(
         inout PathState path,
         IntegratorRecord integrator,
@@ -1347,8 +1347,9 @@ PrimeDenoiserState primeInitialDenoiserState() {
 }
 
 // Processes exactly one ordinary realtime path vertex. Primary transparent interfaces remain a
-// local island because their two material-model branches and PSR records share one output pixel. Every
-// other continuation can cross this boundary without carrying invocation-local BSDF state.
+// local island because two reconstruction records share one output pixel, although only the
+// checkerboard-selected record carries transport. Every other continuation can cross this
+// boundary without carrying invocation-local BSDF state.
 bool primeIntegrateWavefrontSurface(
         inout PathState path,
         IntegratorRecord integrator,

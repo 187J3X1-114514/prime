@@ -19,6 +19,7 @@ layout(location = 0) rayPayloadEXT TracePayload primePayload;
 layout(location = 1) rayPayloadEXT PrimeShadowPayload primeShadowPayload;
 
 #include "sampling.glsl"
+#include "transparent_checkerboard.glsl"
 #include "bsdf.glsl"
 #include "lights.glsl"
 
@@ -170,14 +171,24 @@ void primeInitializeTransparentWavefront(
             PrimeTransmissiveBsdfSample[2](
                     primarySample.paths.transmission,
                     primarySample.paths.reflection);
+    bool sampleReflection = primeTransparentCheckerboardSamplesReflection(
+            pixel, path.sampleIndex);
 
     for (uint branch = 0u; branch < 2u; ++branch) {
         bool transmissionBranch = branch == 0u;
+        bool selectedBranch = transmissionBranch != sampleReflection;
         bool guideEnabled = transmissionBranch
                 ? transmissionGuideEnabled
                 : reflectionGuideEnabled;
         PrimeTransmissiveBsdfSample selected = branches[branch];
-        BsdfSample bsdf = selected.bsdfSample;
+        BsdfSample bsdf = selectedBranch
+                ? selected.bsdfSample
+                : primeInvalidBsdfSample();
+        if (selectedBranch) {
+            bsdf.pdf = primeTransparentCheckerboardPdf(bsdf.pdf);
+        } else {
+            selected.volumeStack = volumeStack;
+        }
         PrimeTransparentBranchResult branchResult;
         branchResult.diffuseRadiance = transmissionBranch
                 ? initialResult.radiance.diffuse
@@ -242,7 +253,7 @@ void primeInitializeTransparentWavefront(
                 initialResult.guides.primaryAreaDirection;
 
         PathState branchPath = path;
-        branchPath.sampleDimension = transmissionBranch ? 1u : 0u;
+        branchPath.sampleDimension = 0u;
         bool branchPureDelta = transmissionBranch || pureDeltaInterface;
         bool continuation = hasScatter;
         if (continuation) {

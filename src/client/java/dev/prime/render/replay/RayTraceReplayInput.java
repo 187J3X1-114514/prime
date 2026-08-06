@@ -4,7 +4,7 @@ import dev.prime.render.AstronomyState;
 import dev.prime.render.IntegratorFrameInput;
 import dev.prime.render.IntegratorSettings;
 import dev.prime.render.LightingSettings;
-import dev.prime.render.LightweightIntegratorSettings;
+import dev.prime.render.PerformanceIntegratorSettings;
 import dev.prime.render.MaterialSettings;
 import dev.prime.render.RealtimeIntegratorMode;
 import dev.prime.render.SunDirection;
@@ -57,11 +57,11 @@ public record RayTraceReplayInput(
             throw new IllegalArgumentException(
                     "Sample index must fit the Sobol sequence");
         }
-        if (integratorMode == RealtimeIntegratorMode.LIGHTWEIGHT) {
-            LightweightIntegratorSettings.validateScatters(maximumBounces);
+        if (integratorMode == RealtimeIntegratorMode.PERFORMANCE) {
+            PerformanceIntegratorSettings.validateScatters(maximumBounces);
         } else if (maximumBounces != IntegratorSettings.MAXIMUM_BOUNCES) {
             throw new IllegalArgumentException(
-                    "The full integrator requires its fixed maximum bounce count");
+                    "The quality integrator requires its fixed maximum bounce count");
         }
         IntegratorSettings.packPathControl(
                 maximumBounces,

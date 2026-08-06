@@ -21,6 +21,7 @@ layout(location = 0) rayPayloadEXT TracePayload primePayload;
 layout(location = 1) rayPayloadEXT PrimeShadowPayload primeShadowPayload;
 
 #include "sampling.glsl"
+#include "transparent_checkerboard.glsl"
 #include "bsdf.glsl"
 #include "lights.glsl"
 #include "integrator.glsl"

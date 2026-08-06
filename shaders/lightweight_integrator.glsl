@@ -179,6 +179,7 @@ void primeSampleLightweightGuidedSurface(
         SurfaceInteraction surface,
         vec3 viewDirection,
         vec3 sampleValue,
+        bool sampleTransparentReflection,
         PrimeRcVolumeStack volumeStack,
         out PrimePathScatter scatter,
         out PrimeDenoiseAlbedos albedos) {
@@ -210,15 +211,35 @@ void primeSampleLightweightGuidedSurface(
                 volumeStack);
         albedos = primeDenoiseAlbedosFromState(
                 state, viewDirection, PRIME_DENOISE_CLOSURE_TRANSMISSIVE);
-        PrimeTransmissiveBsdfSample sampled =
-                primeSampleOfflineMinecraftTransmissionFromState(
-                        state,
-                        surface.baseColor,
-                        primeSurfaceOpacity(surface),
-                        surface.materialFlags,
-                        viewDirection,
-                        sampleValue,
-                        volumeStack);
+        vec3 outwardNormal = primeSurfaceOutwardShadingNormal(surface);
+        vec3 localView = primeRcOnbToLocal(
+                state.material.geometry.onb, viewDirection);
+        PrimeMinecraftMirrorSplit mirror = primeMinecraftMirrorSplit(
+                state, localView);
+        PrimeTransmissiveBsdfSample sampled;
+        if (sampleTransparentReflection) {
+            sampled = primeSampleMinecraftTransparentReflectionFromState(
+                    state,
+                    mirror,
+                    outwardNormal,
+                    viewDirection,
+                    localView,
+                    sampleValue,
+                    volumeStack);
+        } else {
+            sampled = primeSampleMinecraftRefractedTransmissionFromState(
+                    state,
+                    surface.baseColor,
+                    primeSurfaceOpacity(surface),
+                    surface.materialFlags,
+                    outwardNormal,
+                    viewDirection,
+                    vec3(1.0) - mirror.reflectance,
+                    false,
+                    volumeStack);
+        }
+        sampled.bsdfSample.pdf = primeLightweightTransparentBranchPdf(
+                sampled.bsdfSample.pdf);
         scatter.bsdf = sampled.bsdfSample;
         scatter.volumeStack = sampled.volumeStack;
     } else {
@@ -261,6 +282,162 @@ bool primeAdvanceLightweightPath(
             ? PRIME_PATH_PREVIOUS_DELTA
             : 0u;
     return true;
+}
+
+struct PrimeLightweightTransmissionGuide {
+    PrimeDenoiserGuides guides;
+    float anchorDistance;
+};
+
+PrimeLightweightTransmissionGuide primeEmptyLightweightTransmissionGuide() {
+    PrimeLightweightTransmissionGuide result;
+    result.guides = primeEmptyDenoiserGuides();
+    result.anchorDistance = -1.0;
+    return result;
+}
+
+PrimeLightweightTransmissionGuide primeTraceLightweightTransmissionGuide(
+        PathState cameraPath,
+        SurfaceInteraction primarySurface,
+        PrimeRcVolumeStack volumeStack) {
+    PrimeLightweightTransmissionGuide result =
+            primeEmptyLightweightTransmissionGuide();
+    PathState path = cameraPath;
+    path.sampleDimension = 1u;
+    if (!primeApplySegmentMedium(path, primarySurface, volumeStack)) {
+        return result;
+    }
+
+    vec3 viewDirection = -path.rayDirection;
+    vec3 outwardNormal = primeSurfaceOutwardShadingNormal(primarySurface);
+    PrimeRcState primaryState = primeMinecraftTransmissionState(
+            primarySurface.baseColor,
+            primeSurfaceOpacity(primarySurface),
+            outwardNormal,
+            primarySurface.materialFlags,
+            primarySurface.labPbrNormal,
+            primarySurface.labPbrSpecular,
+            viewDirection,
+            primarySurface.t,
+            volumeStack);
+    vec3 localView = primeRcOnbToLocal(
+            primaryState.material.geometry.onb, viewDirection);
+    PrimeMinecraftMirrorSplit mirror = primeMinecraftMirrorSplit(
+            primaryState, localView);
+    // Reconstruction albedo carries physical Fresnel energy, not the checker's 2x estimator
+    // weight. The branch remains conditional here and therefore keeps a unit selection PDF.
+    PrimeTransmissiveBsdfSample transmitted =
+            primeSampleMinecraftRefractedTransmissionFromState(
+                    primaryState,
+                    primarySurface.baseColor,
+                    primeSurfaceOpacity(primarySurface),
+                    primarySurface.materialFlags,
+                    outwardNormal,
+                    viewDirection,
+                    vec3(1.0) - mirror.reflectance,
+                    false,
+                    volumeStack);
+    if (!primeHasScatter(transmitted.bsdfSample)) {
+        return result;
+    }
+
+    PrimeQueuedPsrState psrState = primeEmptyQueuedPsrState();
+    primeAppendQueuedPsrDelta(
+            psrState,
+            path.physicalOrigin,
+            primarySurface,
+            transmitted.bsdfSample);
+    volumeStack = transmitted.volumeStack;
+    if (!primeAdvanceLightweightPath(
+            path, primarySurface, transmitted.bsdfSample)) {
+        return result;
+    }
+    path.bounce = 1u;
+
+    for (uint bounce = 1u;
+            bounce < PRIME_LIGHTWEIGHT_MAXIMUM_SCATTERS;
+            ++bounce) {
+        primeSetNumericalContext(PRIME_NUMERICAL_STAGE_TRACE, bounce);
+        SurfaceInteraction surface = primeTraceSurfaceWithoutReorder(
+                path.traceOrigin, path.rayDirection);
+        if (!primeKnownHitKind(surface) || surface.hitKind == PRIME_HIT_NONE) {
+            return result;
+        }
+        if (!primeApplySegmentMedium(path, surface, volumeStack)) {
+            return result;
+        }
+
+        viewDirection = -path.rayDirection;
+        if (!primeMaterialIsTransmissive(surface.materialFlags)) {
+            PrimePreparedSampleBase preparedSample = primePrepareSampleBase(
+                    primeMakeSampleBase(path, bounce + 1u));
+            PrimePathScatter scatter;
+            PrimeDenoiseAlbedos albedos;
+            primeSampleLightweightGuidedSurface(
+                    surface,
+                    viewDirection,
+                    primeSobolSample3D(
+                            preparedSample,
+                            PRIME_SAMPLE_EFFECT_SCATTER_BSDF,
+                            PRIME_SAMPLE_DIMENSION_PRIMARY),
+                    false,
+                    volumeStack,
+                    scatter,
+                    albedos);
+            primeSetQueuedPsrGuide(
+                    result.guides,
+                    surface,
+                    primeSurfaceShadingNormal(surface, viewDirection),
+                    primeSurfaceLinearRoughness(surface),
+                    albedos,
+                    path.throughput,
+                    path.physicalOrigin,
+                    psrState);
+            result.anchorDistance = primeQueuedPsrAnchorDistance(
+                    psrState, surface.position, surface.geometricNormal);
+            if (primeHasScatter(scatter.bsdf)) {
+                vec3 direction = primeQueuedPsrVirtualDirection(
+                        psrState, scatter.bsdf.direction);
+                if ((scatter.bsdf.eventFlags & PRIME_BSDF_EVENT_DIFFUSE) != 0u) {
+                    result.guides.diffuseDirection = direction;
+                } else {
+                    result.guides.specularDirection = direction;
+                }
+            }
+            return result;
+        }
+
+        outwardNormal = primeSurfaceOutwardShadingNormal(surface);
+        PrimeRcState state = primeMinecraftTransmissionState(
+                surface.baseColor,
+                primeSurfaceOpacity(surface),
+                outwardNormal,
+                surface.materialFlags,
+                surface.labPbrNormal,
+                surface.labPbrSpecular,
+                viewDirection,
+                surface.t,
+                volumeStack);
+        transmitted = primeSampleMinecraftTransparentContinuationFromState(
+                state,
+                surface.baseColor,
+                primeSurfaceOpacity(surface),
+                surface.materialFlags,
+                outwardNormal,
+                viewDirection,
+                volumeStack);
+        if (!primeHasScatter(transmitted.bsdfSample)) {
+            return result;
+        }
+        primeAppendQueuedPsrDelta(
+                psrState, path.physicalOrigin, surface, transmitted.bsdfSample);
+        volumeStack = transmitted.volumeStack;
+        if (!primeAdvanceLightweightPath(path, surface, transmitted.bsdfSample)) {
+            return result;
+        }
+        path.bounce = bounce + 1u;
+    }
+    return result;
 }
 
 bool primeIntegrateLightweightSurface(
@@ -362,6 +539,8 @@ bool primeIntegrateLightweightSurface(
                 surface,
                 viewDirection,
                 scatterSample,
+                primeLightweightPrimarySamplesReflection(
+                        path.pixel, path.sampleIndex),
                 volumeStack,
                 scatter,
                 albedos);

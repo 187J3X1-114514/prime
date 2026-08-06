@@ -27,6 +27,7 @@ layout(location = 1) rayPayloadEXT PrimeShadowPayload primeShadowPayload;
 #include "camera.glsl"
 #include "wavefront_output.glsl"
 #include "offline_bsdf.glsl"
+#include "lightweight_sampling.glsl"
 #include "lightweight_integrator.glsl"
 #include "lightweight_wavefront_state.glsl"
 
@@ -147,6 +148,28 @@ void primeLightweightResolve() {
     primeRestoreLightweightDiagnostic(record);
     PrimeIntegrationResult result = primeLoadLightweightIntermediate(
             pixel, record);
+    PrimeLightweightTransmissionGuide transmissionGuide =
+            primeEmptyLightweightTransmissionGuide();
+    if (primeMaterialIsTransmissive(result.guides.primaryMaterialFlags)) {
+        // Re-tracing only transparent primary pixels avoids a persistent guide sidecar. Several
+        // non-NRD backends alias reflection descriptors to the main signals, so image scratch is
+        // not a portable option; this bounded guide-only chain keeps the 80-byte path ABI intact.
+        vec2 cameraSample = primeRealtimeCameraSample();
+        PathState cameraPath = primeCameraPath(pixel, 0u, cameraSample);
+        vec3 cameraDirection = primeCameraRayDirection(pixel, cameraSample);
+        primeSetNumericalContext(PRIME_NUMERICAL_STAGE_TRACE, 0u);
+        SurfaceInteraction primarySurface = primeTraceSurfaceWithoutReorder(
+                primePush.cameraPosition, cameraDirection);
+        if (primarySurface.hitKind == PRIME_HIT_SURFACE
+                && primeMaterialIsTransmissive(primarySurface.materialFlags)) {
+            transmissionGuide = primeTraceLightweightTransmissionGuide(
+                    cameraPath,
+                    primarySurface,
+                    primeLightweightInitialVolumeStack());
+        }
+    }
+    primePrepareLightweightTransparentOutput(
+            record, transmissionGuide, result);
     primeWriteRealtimeOutput(
             pixel, primeRealtimeCameraSample(), result);
 }

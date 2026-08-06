@@ -234,6 +234,37 @@ void primeRestoreLightweightDiagnostic(PrimeLightweightPathRecord record) {
     }
 }
 
+bool primeLightweightDiffusePath(PrimeLightweightPathRecord record) {
+    uint control = floatBitsToUint(record.rayDirectionAndDenoiserControl.w);
+    return (control & PRIME_LIGHTWEIGHT_DIFFUSE_PATH) != 0u;
+}
+
+void primePrepareLightweightTransparentOutput(
+        PrimeLightweightPathRecord record,
+        PrimeLightweightTransmissionGuide transmissionGuide,
+        inout PrimeIntegrationResult result) {
+    if (!primeMaterialIsTransmissive(result.guides.primaryMaterialFlags)) {
+        return;
+    }
+    result.transparentPrimary = true;
+    bool hasTransmissionGuide =
+            transmissionGuide.guides.primaryHitKind == PRIME_HIT_SURFACE;
+    result.transmissionGuides = hasTransmissionGuide
+            ? transmissionGuide.guides
+            : result.guides;
+    result.transmissionAnchorDistance = hasTransmissionGuide
+            ? transmissionGuide.anchorDistance
+            : -1.0;
+    result.reflectionGuides = result.guides;
+    result.reflectionDirectionalGuide = false;
+    // The main lightweight lanes own transmission. A sampled primary reflection moves to the
+    // existing reflection signal only at resolve, keeping every queued transport record unchanged.
+    if (!primeLightweightDiffusePath(record)) {
+        result.reflectionSpecularRadiance = result.radiance.specular;
+        result.radiance.specular = vec3(0.0);
+    }
+}
+
 void primeStoreLightweightIntermediate(
         uvec2 pixel,
         PrimeIntegrationResult result) {

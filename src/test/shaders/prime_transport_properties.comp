@@ -7,6 +7,7 @@
 #include "robocute_bsdf_common.glsl"
 #include "wavefront_medium.glsl"
 #include "light_tree_math.glsl"
+#include "lightweight_sampling.glsl"
 
 const uint PRIME_TRANSPORT_INPUT_WORDS = 6u;
 const uint PRIME_TRANSPORT_WITNESS_WORDS = 10u;
@@ -504,6 +505,34 @@ void primeCheckPointLightNodeMetric(
     result.third = vec4(receiverNormal, 0.0);
 }
 
+void primeCheckLightweightTransparentChecker(
+        inout PrimeTransportResult result,
+        uvec2 pixel,
+        uint sampleIndex,
+        float conditionalPdf) {
+    bool selected = primeLightweightPrimarySamplesReflection(pixel, sampleIndex);
+    bool horizontal = primeLightweightPrimarySamplesReflection(
+            pixel + uvec2(1u, 0u), sampleIndex);
+    bool vertical = primeLightweightPrimarySamplesReflection(
+            pixel + uvec2(0u, 1u), sampleIndex);
+    bool nextFrame = primeLightweightPrimarySamplesReflection(
+            pixel, sampleIndex + 1u);
+    float pdf = primeLightweightTransparentBranchPdf(conditionalPdf);
+    if (selected == horizontal || selected == vertical || selected == nextFrame) {
+        result.mask |= PRIME_TEST_FAILURE_EVENT;
+    }
+    if (!primeTestClose(
+            pdf,
+            conditionalPdf * 0.5,
+            0.0,
+            0.0)) {
+        result.mask |= PRIME_TEST_FAILURE_PDF;
+    }
+    result.first = vec4(
+            float(selected), float(horizontal), float(vertical), float(nextFrame));
+    result.second = vec4(pdf, conditionalPdf, 0.0, 0.0);
+}
+
 void main() {
     uint caseIndex;
     if (!primeTestBegin(caseIndex)) return;
@@ -570,6 +599,12 @@ void main() {
                 fifth.w != 0.0);
     } else if (kind == 13u) {
         primeCheckPointLightNodeMetric(result, first, second, third.xyz);
+    } else if (kind == 14u) {
+        primeCheckLightweightTransparentChecker(
+                result,
+                uvec2(caseIndex, caseIndex * 0x9e3779b9u),
+                caseIndex * 0x85ebca6bu,
+                first.z);
     } else {
         result.mask |= PRIME_TEST_FAILURE_EVENT;
     }

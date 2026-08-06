@@ -150,8 +150,7 @@ uint primeAdapterExpectedTransparentStackCount(
         PrimeRcState state,
         uint materialFlags,
         PrimeRcVolumeStack stack) {
-    if ((materialFlags & PRIME_MATERIAL_FLAG_WATER) == 0u
-            || state.geometryThinWalled != 0u) {
+    if (state.geometryThinWalled != 0u) {
         return stack.count;
     }
     if (state.entering != 0u) {
@@ -164,13 +163,7 @@ float primeAdapterExpectedInterfaceIor(
         PrimeRcState state,
         uint materialFlags,
         PrimeRcVolumeStack stack) {
-    if ((materialFlags & PRIME_MATERIAL_FLAG_WATER) != 0u) {
-        return state.specularFresnel.ior;
-    }
-    float outsideIor = stack.count > 0u
-            ? stack.values[stack.count - 1u].ior
-            : 1.0;
-    return state.originalIor / outsideIor;
+    return state.specularFresnel.ior;
 }
 
 float primeAdapterExpectedRelativeIor(
@@ -457,9 +450,7 @@ void primeAdapterProperties(
                 viewDirection,
                 rayT,
                 stack);
-        vec3 transmittance = primeMinecraftSurfaceTransmittance(
-                baseColor, opacity, materialFlags);
-        result.albedos.diffuse = transmittance;
+        result.albedos.diffuse = state.transmissionTint;
         result.albedos.specular = vec3(0.0);
         bool thinWalled = state.geometryThinWalled != 0u;
         bool canRefract = primeAdapterCanRefract(
@@ -482,36 +473,45 @@ void primeAdapterProperties(
                                 outwardNormal,
                                 viewDirection,
                                 stack));
-        vec3 expectedResponse =
-                totalInternalReflection ? vec3(1.0) : transmittance;
         float expectedRelativeIor = thinWalled || totalInternalReflection
                 ? 1.0
                 : primeAdapterExpectedRelativeIor(
                         state, materialFlags, stack);
+        vec3 expectedResponse = totalInternalReflection
+                ? vec3(1.0)
+                : state.transmissionTint
+                        / primeRcSquare(expectedRelativeIor);
         uint expectedStackCount = totalInternalReflection
                 ? stack.count
                 : primeAdapterExpectedTransparentStackCount(
                         state, materialFlags, stack);
         if (!primeAdapterSameSample(result.first, repeated.bsdfSample)
-                || !primeAdapterSameStack(sampled.volumeStack, repeated.volumeStack)
-                || !primeTestClose(
-                        result.first.direction,
-                        expectedDirection,
-                        2.0e-6,
-                        2.0e-6)
-                || !all(equal(result.first.response, expectedResponse))
-                || result.first.pdf != 1.0
-                || !primeTestClose(
-                        result.first.relativeEta,
-                        expectedRelativeIor,
-                        2.0e-6,
-                        2.0e-6)
-                || result.first.eventFlags != expectedEvents
-                || sampled.volumeStack.count != expectedStackCount
-                || (!thinWalled
-                        && !totalInternalReflection
-                        && !primeAdapterSnellConsistent(
-                                result.first, outwardNormal, viewDirection))) {
+                || !primeAdapterSameStack(sampled.volumeStack, repeated.volumeStack)) {
+            result.mask |= PRIME_TEST_FAILURE_STATE;
+        }
+        if (!primeTestClose(
+                result.first.direction, expectedDirection, 2.0e-6, 2.0e-6)) {
+            result.mask |= PRIME_TEST_FAILURE_HEMISPHERE;
+        }
+        if (!primeTestClose(
+                result.first.response, expectedResponse, 2.0e-6, 2.0e-6)) {
+            result.mask |= PRIME_TEST_FAILURE_VALUE;
+        }
+        if (result.first.pdf != 1.0) result.mask |= PRIME_TEST_FAILURE_PDF;
+        if (!primeTestClose(
+                result.first.relativeEta, expectedRelativeIor, 2.0e-6, 2.0e-6)) {
+            result.mask |= PRIME_TEST_FAILURE_ROUND_TRIP;
+        }
+        if (result.first.eventFlags != expectedEvents) {
+            result.mask |= PRIME_TEST_FAILURE_EVENT;
+        }
+        if (sampled.volumeStack.count != expectedStackCount) {
+            result.mask |= PRIME_TEST_FAILURE_INDEX;
+        }
+        if (!thinWalled
+                && !totalInternalReflection
+                && !primeAdapterSnellConsistent(
+                        result.first, outwardNormal, viewDirection)) {
             result.mask |= PRIME_TEST_FAILURE_IDENTITY;
         }
     } else if (kind == PRIME_ADAPTER_PRIMARY_SPLIT) {
@@ -547,8 +547,6 @@ void primeAdapterProperties(
                 primeRcOnbToLocal(state.material.geometry.onb, viewDirection);
         PrimeMinecraftMirrorSplit mirror =
                 primeMinecraftMirrorSplit(state, localView);
-        vec3 surfaceTransmittance = primeMinecraftSurfaceTransmittance(
-                baseColor, opacity, materialFlags);
         PrimeTransmissivePrimarySample repeated =
                 primeSampleMinecraftTransmissionPrimary(
                         baseColor,
@@ -590,36 +588,44 @@ void primeAdapterProperties(
                         repeated.paths.transmission.volumeStack)
                 || !primeAdapterSameStack(
                         sampled.paths.reflection.volumeStack, stack)
-                || !all(equal(result.albedos.diffuse, surfaceTransmittance))
+                || !all(equal(result.albedos.diffuse, state.transmissionTint))
                 || !all(equal(result.albedos.specular, mirror.reflectance))) {
             result.mask |= PRIME_TEST_FAILURE_IDENTITY;
         }
         if (validTransmission) {
             uint expectedEvents = PRIME_BSDF_EVENT_TRANSMISSION
                     | PRIME_BSDF_EVENT_DELTA;
+            vec3 expectedResponse = (vec3(1.0) - mirror.reflectance)
+                    * state.transmissionTint
+                    / primeRcSquare(expectedRelativeIor);
             if (!primeTestClose(
-                            result.second.direction,
-                            expectedDirection,
-                            2.0e-6,
-                            2.0e-6)
-                    || !all(equal(
-                            result.second.response,
-                            (vec3(1.0) - mirror.reflectance)
-                                    * surfaceTransmittance))
-                    || result.second.pdf != 1.0
-                    || !primeTestClose(
-                            result.second.relativeEta,
-                            expectedRelativeIor,
-                            2.0e-6,
-                            2.0e-6)
-                    || result.second.eventFlags != expectedEvents
-                    || sampled.paths.transmission.volumeStack.count
-                            != expectedStackCount
-                    || (!thinWalled
-                            && !primeAdapterSnellConsistent(
-                                    result.second,
-                                    outwardNormal,
-                                    viewDirection))) {
+                    result.second.direction, expectedDirection, 2.0e-6, 2.0e-6)) {
+                result.mask |= PRIME_TEST_FAILURE_HEMISPHERE;
+            }
+            if (!primeTestClose(
+                    result.second.response,
+                    expectedResponse,
+                    2.0e-6,
+                    2.0e-6)) {
+                result.mask |= PRIME_TEST_FAILURE_VALUE;
+            }
+            if (result.second.pdf != 1.0) result.mask |= PRIME_TEST_FAILURE_PDF;
+            if (!primeTestClose(
+                    result.second.relativeEta,
+                    expectedRelativeIor,
+                    2.0e-6,
+                    2.0e-6)) {
+                result.mask |= PRIME_TEST_FAILURE_ROUND_TRIP;
+            }
+            if (result.second.eventFlags != expectedEvents) {
+                result.mask |= PRIME_TEST_FAILURE_EVENT;
+            }
+            if (sampled.paths.transmission.volumeStack.count != expectedStackCount) {
+                result.mask |= PRIME_TEST_FAILURE_INDEX;
+            }
+            if (!thinWalled
+                    && !primeAdapterSnellConsistent(
+                            result.second, outwardNormal, viewDirection)) {
                 result.mask |= PRIME_TEST_FAILURE_IDENTITY;
             }
         } else if (result.second.eventFlags != 0u
@@ -727,10 +733,6 @@ void primeAdapterProperties(
             expected.relativeEta = reference.bsdfSample.eta;
             expected.eventFlags = primeRcToBsdfEventFlags(
                     reference.bsdfSample.throughput.flags);
-            if ((expected.eventFlags & PRIME_BSDF_EVENT_TRANSMISSION) != 0u) {
-                expected.response *= primeMinecraftSurfaceTransmittance(
-                        baseColor, opacity, materialFlags);
-            }
             expected = primeSanitizeBsdfSample(expected);
         }
         PrimeRcVolumeStack expectedStack = expected.eventFlags == 0u

@@ -2,9 +2,9 @@
 #define PRIME_SHADOW_PAYLOAD_GLSL
 
 struct PrimeShadowPayload {
-    vec3 transmittance;
-    float waterDistance;
+    vec3 opticalDepth;
     float hitDistance;
+    float rayDistance;
 };
 
 #endif

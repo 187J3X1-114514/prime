@@ -6,7 +6,8 @@ struct PrimeOfflineAreaRequest {
     float distance;
     vec3 contribution;
     bool valid;
-    bool startsInMedium;
+    vec3 startingExtinction;
+    uint startingMediumCount;
 };
 
 PrimeOfflineAreaRequest primeEmptyOfflineAreaRequest() {
@@ -15,7 +16,8 @@ PrimeOfflineAreaRequest primeEmptyOfflineAreaRequest() {
     request.distance = 0.0;
     request.contribution = vec3(0.0);
     request.valid = false;
-    request.startsInMedium = false;
+    request.startingExtinction = vec3(0.0);
+    request.startingMediumCount = 0u;
     return request;
 }
 
@@ -130,7 +132,10 @@ PrimeOfflineAreaRequest primePrepareOfflineArea(
         request.direction = area.light.direction;
         request.distance = area.light.distance;
         request.contribution = contribution;
-        request.startsInMedium = volumeStack.count > 0u;
+        request.startingExtinction = volumeStack.count > 0u
+                ? volumeStack.values[volumeStack.count - 1u].extinction
+                : vec3(0.0);
+        request.startingMediumCount = volumeStack.count;
     }
     return request;
 }
@@ -138,10 +143,9 @@ PrimeOfflineAreaRequest primePrepareOfflineArea(
 PrimeShadowTrace primeTraceOfflineAreaShadow(
         vec3 physicalPosition,
         PrimeOfflineAreaRequest request) {
-    primeShadowPayload.transmittance = vec3(1.0);
-    primeShadowPayload.waterDistance =
-            request.startsInMedium ? request.distance : 0.0;
+    primeShadowPayload.opticalDepth = request.startingExtinction * request.distance;
     primeShadowPayload.hitDistance = 0.0;
+    primeShadowPayload.rayDistance = request.distance;
     traceRayEXT(
             primeScene,
             gl_RayFlagsNoneEXT,
@@ -154,12 +158,9 @@ PrimeShadowTrace primeTraceOfflineAreaShadow(
             request.direction,
             request.distance,
             1);
-    float waterDistance = primeShadowWaterDistance(
-            primeShadowPayload.waterDistance, request.distance);
     PrimeShadowTrace result;
-    result.transmittance = clamp(
-            primeShadowPayload.transmittance
-                    * exp(-PRIME_PURE_WATER_ABSORPTION_M_INV * waterDistance),
+    result.transmittance = clamp(exp(-primeShadowOpticalDepth(
+                    primeShadowPayload.opticalDepth)),
             vec3(0.0),
             vec3(1.0));
     result.hitDistance = primeNrdSanitizeHitDistance(

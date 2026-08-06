@@ -45,7 +45,7 @@ protected reference fragments. It sweeps opaque, transmissive, foliage, and
 conditional primary-proposal entry points. It checks first-interface Snell direction,
 relative IOR and complementary Fresnel response, complete single-path
 reflection/transmission sample/eval/PDF consistency, random-independent primary
-refraction, TIR, per-surface glass filtering, and medium-stack transitions. Rejected
+refraction with radiance eta scaling, TIR, and solid glass/water medium-stack transitions. Rejected
 proposals must become Prime's canonical zero-event sample; every accepted public
 payload must be finite, nonnegative, directionally valid, and keep its
 volume-stack transition within the fixed ABI capacity.
@@ -60,9 +60,9 @@ the production equatorial-frame conversion across both poles, all seasonal
 landmarks and randomized right ascension/declination round trips, including the
 one-solar-day phase wrap. It also executes the
 production auto-exposure bin mapping, target-EV clamp, and asymmetric temporal
-adaptation contract. The transport batch additionally checks the gamma-2
-glass-filter endpoints, strength, and products plus outside/inside, multiple,
-out-of-order, and clamped shadow-water segments. Replay capture additionally
+adaptation contract. The transport batch additionally checks stained-glass
+white-background sRGB compositing as one-metre transmittance, nonnegative extinction, distance attenuation, and RGB
+outside/inside, nested, out-of-order straight shadow optical-depth segments. Replay capture additionally
 observes the production FSR depth and motion images emitted by `nrd_motion.comp`;
 Java tests cover the NRD and FSR native scalar ABI encoders without invoking a
 driver or SDK.

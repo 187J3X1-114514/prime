@@ -58,9 +58,10 @@ void main() {
             + basisV * ((float(regionCoordinate.y) + 0.5) * texelSize);
     vec3 directionToSun = normalize(primePush.sunDirection);
 
-    primeShadowPayload.transmittance = vec3(1.0);
-    primeShadowPayload.waterDistance = 0.0;
+    float traceDistance = 2.0 * halfTraceDistance;
+    primeShadowPayload.opticalDepth = vec3(0.0);
     primeShadowPayload.hitDistance = 0.0;
+    primeShadowPayload.rayDistance = traceDistance;
     traceRayEXT(
             primeScene,
             gl_RayFlagsNoneEXT,
@@ -71,7 +72,7 @@ void main() {
             rayOrigin,
             0.001,
             -directionToSun,
-            2.0 * halfTraceDistance,
+            traceDistance,
             1);
 
     float depth = primeShadowPayload.hitDistance >= 65504.0

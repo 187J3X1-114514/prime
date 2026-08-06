@@ -1,6 +1,10 @@
 #version 460
 #extension GL_GOOGLE_include_directive : require
 
+#define PRIME_COLOR_WORKING_SPACE_LINEAR_REC2020_D65 1
+#define PRIME_COLOR_TEXTURE_ENCODING_SRGB 1
+#define PRIME_COLOR_DISPLAY_ENCODING_SRGB 1
+#define PRIME_COLOR_DISPLAY_SPACE_REC709_D65 1
 #include "prime_test_abi.glsl"
 #include "transport_math.glsl"
 #include "transparent_material.glsl"
@@ -189,40 +193,70 @@ void primeCheckAreaPdf(
     result.first = vec4(value, rescaled, areaPdf, cosine);
 }
 
-void primeCheckGlassFilter(
+void primeCheckGlassVolume(
         inout PrimeTransportResult result, vec3 baseColor, float opacity) {
-    vec3 transmittance = primeGlassSurfaceTransmittance(baseColor, opacity);
-    vec3 clear = primeGlassSurfaceTransmittance(baseColor, 0.0);
-    vec3 solid = primeGlassSurfaceTransmittance(baseColor, 1.0);
-    vec3 linearColor = clamp(baseColor, vec3(0.0), vec3(1.0));
+    vec3 transmittance = primeGlassVolumeTransmittance(baseColor, opacity);
+    vec3 lowCoverage = primeGlassVolumeTransmittance(baseColor, 0.0);
+    vec3 fullCoverage = primeGlassVolumeTransmittance(baseColor, 1.0);
+    vec3 linearSrgb = clamp(
+            primeLinearRec2020ToLinearBt709(baseColor),
+            vec3(0.0),
+            vec3(1.0));
+    vec3 encodedSrgb = primeEncodeSrgb(linearSrgb);
     float coverage = clamp(opacity, 0.0, 1.0);
-    vec3 encodedBlend = mix(vec3(1.0), sqrt(linearColor), coverage);
-    vec3 expected = encodedBlend * encodedBlend;
-    vec3 linearBlend = mix(vec3(1.0), linearColor, coverage);
-    vec3 twice = transmittance * transmittance;
+    vec3 expected = clamp(
+            primeLinearSrgbToLinearRec2020(primeDecodeSrgb(
+                    mix(vec3(1.0), encodedSrgb, coverage))),
+            vec3(0.0),
+            vec3(1.0));
+    vec3 fullExpected = clamp(
+            primeLinearSrgbToLinearRec2020(linearSrgb),
+            vec3(0.0),
+            vec3(1.0));
+    vec3 extinction = primeGlassVolumeExtinction(baseColor, opacity);
+    vec3 shadowExtinction = primeGlassShadowExtinction(baseColor, opacity);
+    vec3 oneMetre = exp(-extinction);
+    vec3 twoMetres = exp(-extinction * 2.0);
+    vec3 encodedRoundTrip = primeEncodeSrgb(clamp(
+            primeLinearRec2020ToLinearBt709(transmittance),
+            vec3(0.0),
+            vec3(1.0)));
     primeTransportClassify(result.mask, transmittance);
-    primeTransportClassify(result.mask, twice);
+    primeTransportClassify(result.mask, extinction);
+    primeTransportClassify(result.mask, shadowExtinction);
+    primeTransportClassify(result.mask, twoMetres);
     if (any(lessThan(transmittance, vec3(0.0)))
             || any(greaterThan(transmittance, vec3(1.0)))
-            || !primeTestClose(clear, vec3(1.0), 0.0, 0.0)
+            || any(lessThan(extinction, vec3(0.0)))
+            || !primeTestClose(lowCoverage, vec3(1.0), 2.0e-6, 2.0e-6)
+            || !primeTestClose(fullCoverage, fullExpected, 2.0e-6, 2.0e-6)
             || !primeTestClose(
-                    solid,
-                    linearColor,
+                    transmittance, expected, 2.0e-6, 2.0e-6)
+            || !primeTestClose(
+                    extinction,
+                    -log(max(vec3(1.0e-3), transmittance)),
+                    2.0e-6, 2.0e-6)
+            || !primeTestClose(
+                    shadowExtinction, extinction, 0.0, 0.0)
+            || !primeTestClose(oneMetre, transmittance, 2.0e-6, 2.0e-6)
+            || !primeTestClose(
+                    twoMetres,
+                    transmittance * transmittance,
                     2.0e-6,
                     2.0e-6)
             || !primeTestClose(
-                    transmittance, expected, 2.0e-6, 2.0e-6)
-            || any(greaterThan(
-                    transmittance, linearBlend + vec3(2.0e-6)))
-            || any(greaterThan(twice, transmittance))) {
+                    encodedRoundTrip,
+                    mix(vec3(1.0), encodedSrgb, coverage),
+                    3.0e-6,
+                    3.0e-6)) {
         result.mask |= PRIME_TEST_FAILURE_IDENTITY;
     }
     result.first = vec4(transmittance, opacity);
-    result.second = vec4(twice, 0.0);
-    result.third = vec4(linearBlend, 0.0);
+    result.second = vec4(extinction, 0.0);
+    result.third = vec4(twoMetres, 0.0);
 }
 
-void primeCheckShadowWaterDistance(
+void primeCheckShadowOpticalDepth(
         inout PrimeTransportResult result,
         vec4 first,
         vec4 second) {
@@ -231,50 +265,63 @@ void primeCheckShadowWaterDistance(
     float secondHit = clamp(first.z, firstHit, rayDistance);
     float thirdHit = clamp(first.w, secondHit, rayDistance);
     float fourthHit = clamp(second.x, thirdHit, rayDistance);
-    float forward = primeShadowWaterBoundaryDistance(
-            0.0, rayDistance, firstHit, true);
-    forward = primeShadowWaterBoundaryDistance(
-            forward, rayDistance, secondHit, false);
-    forward = primeShadowWaterBoundaryDistance(
-            forward, rayDistance, thirdHit, true);
-    forward = primeShadowWaterBoundaryDistance(
-            forward, rayDistance, fourthHit, false);
-    float reverse = primeShadowWaterBoundaryDistance(
-            0.0, rayDistance, fourthHit, false);
-    reverse = primeShadowWaterBoundaryDistance(
-            reverse, rayDistance, thirdHit, true);
-    reverse = primeShadowWaterBoundaryDistance(
-            reverse, rayDistance, secondHit, false);
-    reverse = primeShadowWaterBoundaryDistance(
-            reverse, rayDistance, firstHit, true);
-    float inside = primeShadowWaterBoundaryDistance(
-            rayDistance, rayDistance, firstHit, false);
-    inside = primeShadowWaterBoundaryDistance(
-            inside, rayDistance, secondHit, true);
-    inside = primeShadowWaterBoundaryDistance(
-            inside, rayDistance, thirdHit, false);
-    forward = primeShadowWaterDistance(forward, rayDistance);
-    reverse = primeShadowWaterDistance(reverse, rayDistance);
-    inside = primeShadowWaterDistance(inside, rayDistance);
-    vec3 transmittance = exp(-PRIME_PURE_WATER_ABSORPTION_M_INV * forward);
-    float expectedOutside =
-            (secondHit - firstHit) + (fourthHit - thirdHit);
-    float expectedInside = firstHit + (thirdHit - secondHit);
+    vec3 firstExtinction = PRIME_PURE_WATER_ABSORPTION_M_INV;
+    vec3 secondExtinction = max(second.yzw, vec3(0.0));
+    vec3 forward = primeShadowBoundaryOpticalDepth(
+            vec3(0.0), firstExtinction, rayDistance, firstHit, true);
+    forward = primeShadowBoundaryOpticalDepth(
+            forward, secondExtinction, rayDistance, secondHit, true);
+    forward = primeShadowBoundaryOpticalDepth(
+            forward, secondExtinction, rayDistance, thirdHit, false);
+    forward = primeShadowBoundaryOpticalDepth(
+            forward, firstExtinction, rayDistance, fourthHit, false);
+    vec3 reverse = primeShadowBoundaryOpticalDepth(
+            vec3(0.0), firstExtinction, rayDistance, fourthHit, false);
+    reverse = primeShadowBoundaryOpticalDepth(
+            reverse, secondExtinction, rayDistance, thirdHit, false);
+    reverse = primeShadowBoundaryOpticalDepth(
+            reverse, secondExtinction, rayDistance, secondHit, true);
+    reverse = primeShadowBoundaryOpticalDepth(
+            reverse, firstExtinction, rayDistance, firstHit, true);
+    vec3 inside = primeShadowBoundaryOpticalDepth(
+            firstExtinction * rayDistance,
+            firstExtinction, rayDistance, firstHit, false);
+    inside = primeShadowBoundaryOpticalDepth(
+            inside, secondExtinction, rayDistance, secondHit, true);
+    inside = primeShadowBoundaryOpticalDepth(
+            inside, secondExtinction, rayDistance, thirdHit, false);
+    float thinCosine = max((secondHit - firstHit) / rayDistance, 1.0e-3);
+    vec3 thin = primeShadowThinOpticalDepth(
+            vec3(0.0), secondExtinction, rayDistance, thinCosine);
+    forward = primeShadowOpticalDepth(forward);
+    reverse = primeShadowOpticalDepth(reverse);
+    inside = primeShadowOpticalDepth(inside);
+    vec3 transmittance = exp(-forward);
+    vec3 expectedOutside = firstExtinction * (fourthHit - firstHit)
+            + secondExtinction * (thirdHit - secondHit);
+    vec3 expectedInside = firstExtinction * firstHit
+            + secondExtinction * (thirdHit - secondHit);
+    vec3 expectedThin = secondExtinction * min(
+            PRIME_THIN_WALLED_THICKNESS_M / thinCosine,
+            rayDistance);
     float distanceTolerance = 2.0e-6 + 1.0e-6 * rayDistance;
-    primeTransportClassify(result.mask, vec3(forward, reverse, inside));
+    primeTransportClassify(result.mask, forward);
+    primeTransportClassify(result.mask, reverse);
+    primeTransportClassify(result.mask, inside);
+    primeTransportClassify(result.mask, thin);
     primeTransportClassify(result.mask, transmittance);
     if (!primeTestClose(forward, expectedOutside, distanceTolerance, 2.0e-6)
             || !primeTestClose(forward, reverse, distanceTolerance, 2.0e-6)
             || !primeTestClose(inside, expectedInside, distanceTolerance, 2.0e-6)
-            || primeShadowWaterDistance(-rayDistance, rayDistance) != 0.0
-            || primeShadowWaterDistance(2.0 * rayDistance, rayDistance) != rayDistance
+            || !primeTestClose(thin, expectedThin, distanceTolerance, 2.0e-6)
+            || !all(equal(primeShadowOpticalDepth(vec3(-rayDistance)), vec3(0.0)))
             || any(lessThan(transmittance, vec3(0.0)))
             || any(greaterThan(transmittance, vec3(1.0)))) {
         result.mask |= PRIME_TEST_FAILURE_IDENTITY;
     }
-    result.first = vec4(forward, reverse, inside, rayDistance);
+    result.first = vec4(forward, rayDistance);
     result.second = vec4(transmittance, 0.0);
-    result.third = vec4(expectedOutside, expectedInside, distanceTolerance, 0.0);
+    result.third = vec4(expectedOutside, distanceTolerance);
 }
 
 void primeCheckWavefrontMedium(
@@ -561,9 +608,9 @@ void main() {
     } else if (kind == 4u) {
         primeCheckAreaPdf(result, first.x, first.y, first.z);
     } else if (kind == 5u) {
-        primeCheckGlassFilter(result, first.xyz, first.w);
+        primeCheckGlassVolume(result, first.xyz, first.w);
     } else if (kind == 6u) {
-        primeCheckShadowWaterDistance(result, first, second);
+        primeCheckShadowOpticalDepth(result, first, second);
     } else if (kind == 7u) {
         primeCheckWavefrontMedium(result, first, second);
     } else if (kind == 8u) {

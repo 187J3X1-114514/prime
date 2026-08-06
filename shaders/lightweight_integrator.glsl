@@ -229,9 +229,6 @@ void primeSampleLightweightGuidedSurface(
         } else {
             sampled = primeSampleMinecraftRefractedTransmissionFromState(
                     state,
-                    surface.baseColor,
-                    primeSurfaceOpacity(surface),
-                    surface.materialFlags,
                     outwardNormal,
                     viewDirection,
                     vec3(1.0) - mirror.reflectance,

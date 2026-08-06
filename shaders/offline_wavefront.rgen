@@ -69,6 +69,22 @@ PrimeOfflinePathRecord primeMakeOfflineRecord(
     PrimeOfflinePathRecord record;
     record.transport = primeMakeOfflineTransport(
             path, volumeStack, etaScale, enabled);
+    if (request.valid && request.startingMediumCount > volumeStack.count) {
+        // Deferred Area visibility starts before the BSDF event, while transport stores the
+        // post-event stack. An exiting event frees exactly the old top slot; retain its RGB
+        // extinction there so Area can reconstruct the pre-event medium without growing ABI.
+        PrimeRcVolume startingMedium;
+        startingMedium.extinction = request.startingExtinction;
+        startingMedium.albedo = vec3(0.0);
+        startingMedium.anisotropy = 0.0;
+        startingMedium.ior = 1.0;
+        uint startingIndex = request.startingMediumCount - 1u;
+        if (startingIndex == 0u) {
+            record.transport.medium0 = primePackWavefrontMedium(startingMedium);
+        } else {
+            record.transport.medium1 = primePackWavefrontMedium(startingMedium);
+        }
+    }
     record.radianceAndPrimaryDistance = vec4(radiance, primaryDistance);
     record.primaryAlbedoAndMaterialFlags = vec4(
             primaryAlbedo, uintBitsToFloat(primaryMaterialFlags));
@@ -78,7 +94,7 @@ PrimeOfflinePathRecord primeMakeOfflineRecord(
             uintBitsToFloat(primeOfflineAreaControl(
                     path.previousLightNormal,
                     request.valid,
-                    request.startsInMedium)));
+                    request.startingMediumCount)));
     return record;
 }
 
@@ -189,8 +205,11 @@ void primeWavefrontArea(uint sourceQueue) {
         request.distance = record.areaDirectionAndDistance.w;
         request.contribution = record.areaContributionAndValid.xyz;
         request.valid = true;
-        request.startsInMedium =
-                (areaControl & PRIME_OFFLINE_AREA_STARTS_IN_MEDIUM) != 0u;
+        PrimeRcVolumeStack storedMedia = primeOfflineVolumeStack(record.transport);
+        request.startingMediumCount = primeOfflineAreaStartingMediumCount(record);
+        request.startingExtinction = request.startingMediumCount > 0u
+                ? storedMedia.values[request.startingMediumCount - 1u].extinction
+                : vec3(0.0);
         PrimeShadowTrace shadow = primeTraceOfflineAreaShadow(
                 record.transport.physicalOriginAndPreviousBsdfPdf.xyz,
                 request);

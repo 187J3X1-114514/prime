@@ -13,8 +13,8 @@ struct PrimeOfflineTransportRecord {
 };
 
 // 80 bytes of transport and two-entry medium state, 32 bytes of beauty/primary metadata, and
-// one 32-byte deferred Area request whose control lane also retains the previous receiver normal.
-// The record is exactly 144-byte std430 ABI.
+// one 32-byte deferred Area request whose control lane retains the previous receiver normal and
+// pre-scatter medium depth. The record is exactly 144-byte std430 ABI.
 struct PrimeOfflinePathRecord {
     PrimeOfflineTransportRecord transport;
     vec4 radianceAndPrimaryDistance;
@@ -47,21 +47,27 @@ const uint PRIME_OFFLINE_PATH_FLAGS_SHIFT = 16u;
 const uint PRIME_OFFLINE_PATH_BYTE_MASK = 0xffu;
 const uint PRIME_OFFLINE_PATH_FLAGS_MASK = 0x3u;
 const uint PRIME_OFFLINE_AREA_VALID = 1u;
-const uint PRIME_OFFLINE_AREA_STARTS_IN_MEDIUM = 2u;
+const uint PRIME_OFFLINE_AREA_MEDIUM_SHIFT = 1u;
+const uint PRIME_OFFLINE_AREA_MEDIUM_MASK = 0x3u;
 const uint PRIME_OFFLINE_LIGHT_NORMAL_SHIFT = 16u;
 const uint PRIME_OFFLINE_LIGHT_NORMAL_MASK = 0xffffu;
 
 uint primeOfflineAreaControl(
-        uint packedNormal, bool valid, bool startsInMedium) {
+        uint packedNormal, bool valid, uint startingMediumCount) {
     uint control = (packedNormal & PRIME_OFFLINE_LIGHT_NORMAL_MASK)
             << PRIME_OFFLINE_LIGHT_NORMAL_SHIFT;
     if (valid) {
         control |= PRIME_OFFLINE_AREA_VALID;
-        if (startsInMedium) {
-            control |= PRIME_OFFLINE_AREA_STARTS_IN_MEDIUM;
-        }
+        control |= min(startingMediumCount, PRIME_RC_MAX_VOLUME_STACK_SIZE)
+                << PRIME_OFFLINE_AREA_MEDIUM_SHIFT;
     }
     return control;
+}
+
+uint primeOfflineAreaStartingMediumCount(PrimeOfflinePathRecord record) {
+    return (floatBitsToUint(record.areaContributionAndValid.w)
+            >> PRIME_OFFLINE_AREA_MEDIUM_SHIFT)
+            & PRIME_OFFLINE_AREA_MEDIUM_MASK;
 }
 
 uint primeOfflinePreviousLightNormal(PrimeOfflinePathRecord record) {

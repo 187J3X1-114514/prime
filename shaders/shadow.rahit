@@ -28,23 +28,34 @@ void main() {
     if (!primeMaterialIsTransmissive(flags)) {
         return;
     }
-
+    vec3 extinction;
     if ((flags & PRIME_MATERIAL_FLAG_WATER) != 0u) {
-        bool entering = dot(outwardNormal, gl_WorldRayDirectionEXT) < 0.0;
-        primeShadowPayload.waterDistance = primeShadowWaterBoundaryDistance(
-                primeShadowPayload.waterDistance,
-                gl_RayTmaxEXT,
-                gl_HitTEXT,
-                entering);
+        extinction = PRIME_PURE_WATER_ABSORPTION_M_INV;
     } else {
         float opacity;
         vec3 baseColor = primeAtlasBaseColor(
                 primitive.tint,
-                primeInterpolateUv(section, primitive),
-                textureLodValue,
+                primePrimitiveMaterialReferenceUv(primitive),
+                0.0,
                 opacity);
-        primeShadowPayload.transmittance *=
-                primeGlassSurfaceTransmittance(baseColor, opacity);
+        extinction = primeGlassShadowExtinction(baseColor, opacity);
+    }
+    float cosine = dot(outwardNormal, gl_WorldRayDirectionEXT);
+    if ((flags & PRIME_MATERIAL_FLAG_THIN_WALLED) != 0u) {
+        primeShadowPayload.opticalDepth = primeShadowThinOpticalDepth(
+                primeShadowPayload.opticalDepth,
+                extinction,
+                primeShadowPayload.rayDistance,
+                cosine);
+    } else {
+        // In any-hit, gl_RayTmaxEXT equals the current candidate distance, not TraceRay's tMax.
+        // Preserve the original light distance explicitly so closed boundaries integrate volume.
+        primeShadowPayload.opticalDepth = primeShadowBoundaryOpticalDepth(
+                primeShadowPayload.opticalDepth,
+                extinction,
+                primeShadowPayload.rayDistance,
+                gl_HitTEXT,
+                cosine < 0.0);
     }
     ignoreIntersectionEXT;
 }

@@ -87,6 +87,16 @@ vec3 primeAtlasBaseColor(uint packedTint, vec2 uv, float textureLodValue, out fl
     return primeLinearSrgbToLinearRec2020(linearSrgbAlbedo);
 }
 
+vec2 primePrimitiveMaterialReferenceUv(PrimitiveRecord primitive) {
+    if (primitive.uvDensity == PRIME_CONSTANT_UV_DENSITY) {
+        return vec2(uintBitsToFloat(primitive.uv0), uintBitsToFloat(primitive.uv1));
+    }
+    vec2 first = primeUnpackHalf2(primitive.uv0);
+    vec2 second = primeUnpackHalf2(primitive.uv1);
+    vec2 third = primeUnpackHalf2(primitive.uv2);
+    return 0.5 * (min(first, min(second, third)) + max(first, max(second, third)));
+}
+
 MaterialEvaluation primeEvaluateMaterial(
         PrimitiveRecord primitive, vec2 uv, float textureLodValue, uint instanceTint) {
     MaterialEvaluation result;

@@ -313,10 +313,11 @@ PrimeShadowTrace primeTraceShadow(
         vec3 normal,
         LightSample light,
         PrimeRcVolumeStack volumeStack) {
-    primeShadowPayload.transmittance = vec3(1.0);
-    primeShadowPayload.waterDistance =
-            volumeStack.count > 0u ? light.distance : 0.0;
+    primeShadowPayload.opticalDepth = volumeStack.count > 0u
+            ? volumeStack.values[volumeStack.count - 1u].extinction * light.distance
+            : vec3(0.0);
     primeShadowPayload.hitDistance = 0.0;
+    primeShadowPayload.rayDistance = light.distance;
     vec3 traceOrigin = primeOffsetRayOrigin(physicalPosition, normal, light.direction);
     traceRayEXT(
             primeScene,
@@ -330,12 +331,9 @@ PrimeShadowTrace primeTraceShadow(
             light.direction,
             light.distance,
             1);
-    float waterDistance = primeShadowWaterDistance(
-            primeShadowPayload.waterDistance, light.distance);
     PrimeShadowTrace result;
-    result.transmittance = clamp(
-            primeShadowPayload.transmittance
-                    * exp(-PRIME_PURE_WATER_ABSORPTION_M_INV * waterDistance),
+    result.transmittance = clamp(exp(-primeShadowOpticalDepth(
+                    primeShadowPayload.opticalDepth)),
             vec3(0.0),
             vec3(1.0));
     result.hitDistance = primeNrdSanitizeHitDistance(

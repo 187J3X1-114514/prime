@@ -371,9 +371,9 @@ final class PrimeProductionMathGpuTest {
                             words,
                             2,
                             hits[3],
-                            -rayDistance,
-                            2.0F * rayDistance,
-                            0.0F);
+                            random.nextFloat() * 2.0F,
+                            random.nextFloat() * 2.0F,
+                            random.nextFloat() * 2.0F);
                 } else if (kind == 7) {
                     putVec4(
                             input,

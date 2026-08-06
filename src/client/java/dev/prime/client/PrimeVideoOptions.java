@@ -7,6 +7,7 @@ import dev.prime.render.DisplaySettings;
 import dev.prime.render.LightingSettings;
 import dev.prime.render.MaterialSettings;
 import dev.prime.client.PrimeRuntime;
+import dev.prime.render.RealtimeIntegratorMode;
 import dev.prime.render.RendererSettings;
 import dev.prime.render.fsr.FsrDebugView;
 import dev.prime.render.fsr.FsrQualityMode;
@@ -25,6 +26,8 @@ import net.minecraft.network.chat.Component;
 public final class PrimeVideoOptions {
     private static final List<PostProcessingMode> POST_PROCESSING_MODES =
             List.of(PostProcessingMode.values());
+    private static final List<RealtimeIntegratorMode> REALTIME_INTEGRATORS =
+            List.of(RealtimeIntegratorMode.values());
     private static final List<ReconstructionQualityMode> QUALITY_MODES =
             List.of(ReconstructionQualityMode.values());
     private static final List<DlssRrDebugView> RR_DEBUG_VIEWS = List.of(DlssRrDebugView.values());
@@ -42,6 +45,22 @@ public final class PrimeVideoOptions {
                         Component.translatable("prime.options.path_tracing.tooltip")),
                 PrimeConfig.settings().pathTracingEnabled(),
                 PrimeVideoOptions::setPathTracingEnabled);
+    }
+
+    public static OptionInstance<RealtimeIntegratorMode> realtimeIntegrator() {
+        return new OptionInstance<>(
+                "prime.options.realtime_integrator",
+                OptionInstance.cachedConstantTooltip(
+                        Component.translatable("prime.options.realtime_integrator.tooltip")),
+                (caption, mode) -> Component.translatable(
+                        "prime.options.realtime_integrator." + mode.id()),
+                new OptionInstance.Enum<>(
+                        REALTIME_INTEGRATORS,
+                        Codec.STRING.xmap(
+                                RealtimeIntegratorMode::fromId,
+                                RealtimeIntegratorMode::id)),
+                PrimeConfig.settings().realtimeIntegrator(),
+                PrimeConfig::setRealtimeIntegrator);
     }
 
     public static OptionInstance<Boolean> voxelTextureSurfaces() {

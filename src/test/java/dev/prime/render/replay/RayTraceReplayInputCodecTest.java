@@ -11,6 +11,7 @@ import dev.prime.render.FrameCamera;
 import dev.prime.render.IntegratorFrameInput;
 import dev.prime.render.LightingSettings;
 import dev.prime.render.MaterialSettings;
+import dev.prime.render.RealtimeIntegratorMode;
 import dev.prime.render.SunDirection;
 import dev.prime.render.post.PostProcessingMode;
 import dev.prime.render.post.TransparentGuideMode;
@@ -50,28 +51,39 @@ final class RayTraceReplayInputCodecTest {
     }
 
     @Test
-    void allThreeProductModesKeepTheV4SizeAndWireCodes() {
+    void productAndIntegratorModesKeepTheV5SizeAndWireCodes() {
         Fixture fixture = input();
         for (PostProcessingMode mode : PostProcessingMode.values()) {
-            IntegratorFrameInput input = withMode(fixture.input(), mode);
-            byte[] encoded = RayTraceReplayInputCodec.encode(
-                    RayTraceReplayInput.capture(input, fixture.scene()));
-            int expectedCode = switch (mode) {
-                case NRD_FSR -> 0;
-                case DLSS_RR -> 1;
-                case DISABLED -> 2;
-            };
+            for (RealtimeIntegratorMode integrator : RealtimeIntegratorMode.values()) {
+                IntegratorFrameInput input = withMode(fixture.input(), mode);
+                byte[] encoded = RayTraceReplayInputCodec.encode(
+                        RayTraceReplayInput.capture(
+                                integrator, input, fixture.scene()));
+                int expectedMode = switch (mode) {
+                    case NRD_FSR -> 0;
+                    case DLSS_RR -> 1;
+                    case DISABLED -> 2;
+                };
+                int expectedIntegrator = integrator == RealtimeIntegratorMode.WAVEFRONT
+                        ? 0
+                        : 1;
 
-            assertEquals(384, encoded.length);
-            assertEquals(
-                    expectedCode,
-                    ByteBuffer.wrap(encoded)
-                            .order(ByteOrder.LITTLE_ENDIAN)
-                            .getInt(332));
-            assertArrayEquals(
-                    encoded,
-                    RayTraceReplayInputCodec.encode(
-                            RayTraceReplayInputCodec.decode(encoded)));
+                assertEquals(388, encoded.length);
+                assertEquals(
+                        expectedMode,
+                        ByteBuffer.wrap(encoded)
+                                .order(ByteOrder.LITTLE_ENDIAN)
+                                .getInt(332));
+                assertEquals(
+                        expectedIntegrator,
+                        ByteBuffer.wrap(encoded)
+                                .order(ByteOrder.LITTLE_ENDIAN)
+                                .getInt(336));
+                assertArrayEquals(
+                        encoded,
+                        RayTraceReplayInputCodec.encode(
+                                RayTraceReplayInputCodec.decode(encoded)));
+            }
         }
     }
 
@@ -120,12 +132,32 @@ final class RayTraceReplayInputCodecTest {
     }
 
     @Test
+    void replayIdentityRejectsAnotherIntegrator() {
+        Fixture fixture = input();
+        RayTraceReplayInput captured = RayTraceReplayInput.capture(
+                RealtimeIntegratorMode.LIGHTWEIGHT,
+                fixture.input(),
+                fixture.scene());
+
+        captured.requireMatch(
+                RealtimeIntegratorMode.LIGHTWEIGHT,
+                fixture.input(),
+                fixture.scene());
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> captured.requireMatch(
+                        RealtimeIntegratorMode.WAVEFRONT,
+                        fixture.input(),
+                        fixture.scene()));
+    }
+
+    @Test
     void decodeRejectsAStoredDerivedValueThatDisagreesWithCanonicalSteps() {
         Fixture fixture = input();
         byte[] encoded = RayTraceReplayInputCodec.encode(
                 RayTraceReplayInput.capture(fixture.input(), fixture.scene()));
         int sceneBytes = 3 * Integer.BYTES + 3 * Long.BYTES;
-        int frameWordsBeforeLighting = 13;
+        int frameWordsBeforeLighting = 14;
         int lightingStepWords = 3;
         int sunMultiplierOffset = 2 * Integer.BYTES
                 + sceneBytes

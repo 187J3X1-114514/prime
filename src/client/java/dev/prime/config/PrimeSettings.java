@@ -4,6 +4,7 @@ import dev.prime.render.AstronomySettings;
 import dev.prime.render.DisplaySettings;
 import dev.prime.render.LightingSettings;
 import dev.prime.render.MaterialSettings;
+import dev.prime.render.RealtimeIntegratorMode;
 import dev.prime.render.post.PostProcessingMode;
 import dev.prime.render.post.ReconstructionQualityMode;
 import dev.prime.render.terrain.VoxelSurfaceSettings;
@@ -12,6 +13,7 @@ import java.util.Objects;
 /** Immutable product settings and renderer revision markers owned by {@link PrimeConfig}. */
 public record PrimeSettings(
         boolean pathTracingEnabled,
+        RealtimeIntegratorMode realtimeIntegrator,
         boolean voxelTextureSurfaces,
         int voxelTextureSurfaceStrengthSteps,
         PostProcessingMode postProcessingMode,
@@ -28,6 +30,7 @@ public record PrimeSettings(
         long lightingRevision,
         long materialRevision) {
     public PrimeSettings {
+        realtimeIntegrator = Objects.requireNonNull(realtimeIntegrator, "realtimeIntegrator");
         postProcessingMode = Objects.requireNonNull(postProcessingMode, "postProcessingMode");
         reconstructionQuality = Objects.requireNonNull(
                 reconstructionQuality, "reconstructionQuality");
@@ -49,6 +52,7 @@ public record PrimeSettings(
     public static PrimeSettings defaults() {
         return new PrimeSettings(
                 true,
+                RealtimeIntegratorMode.DEFAULT,
                 false,
                 VoxelSurfaceSettings.DEFAULT_STEPS,
                 PostProcessingMode.DEFAULT,
@@ -70,6 +74,31 @@ public record PrimeSettings(
         return value == this.pathTracingEnabled
                 ? this
                 : new PrimeSettings(
+                        value,
+                        this.realtimeIntegrator,
+                        this.voxelTextureSurfaces,
+                        this.voxelTextureSurfaceStrengthSteps,
+                        this.postProcessingMode,
+                        this.reconstructionQuality,
+                        this.astronomy,
+                        this.sunQuarterSteps,
+                        this.starQuarterSteps,
+                        this.blockLightQuarterSteps,
+                        this.finalExposureQuarterSteps,
+                        this.oklabOverexposureSteps,
+                        this.curveExponentSteps,
+                        this.autoExposureCompensationSteps,
+                        this.defaultRoughnessSteps,
+                        this.lightingRevision,
+                        this.materialRevision);
+    }
+
+    public PrimeSettings withRealtimeIntegrator(RealtimeIntegratorMode value) {
+        Objects.requireNonNull(value, "value");
+        return value == this.realtimeIntegrator
+                ? this
+                : new PrimeSettings(
+                        this.pathTracingEnabled,
                         value,
                         this.voxelTextureSurfaces,
                         this.voxelTextureSurfaceStrengthSteps,
@@ -93,6 +122,7 @@ public record PrimeSettings(
                 ? this
                 : new PrimeSettings(
                         this.pathTracingEnabled,
+                        this.realtimeIntegrator,
                         value,
                         this.voxelTextureSurfaceStrengthSteps,
                         this.postProcessingMode,
@@ -116,6 +146,7 @@ public record PrimeSettings(
                 ? this
                 : new PrimeSettings(
                         this.pathTracingEnabled,
+                        this.realtimeIntegrator,
                         this.voxelTextureSurfaces,
                         value,
                         this.postProcessingMode,
@@ -139,6 +170,7 @@ public record PrimeSettings(
                 ? this
                 : new PrimeSettings(
                         this.pathTracingEnabled,
+                        this.realtimeIntegrator,
                         this.voxelTextureSurfaces,
                         this.voxelTextureSurfaceStrengthSteps,
                         value,
@@ -162,6 +194,7 @@ public record PrimeSettings(
                 ? this
                 : new PrimeSettings(
                         this.pathTracingEnabled,
+                        this.realtimeIntegrator,
                         this.voxelTextureSurfaces,
                         this.voxelTextureSurfaceStrengthSteps,
                         this.postProcessingMode,
@@ -185,6 +218,7 @@ public record PrimeSettings(
                 ? this
                 : new PrimeSettings(
                         this.pathTracingEnabled,
+                        this.realtimeIntegrator,
                         this.voxelTextureSurfaces,
                         this.voxelTextureSurfaceStrengthSteps,
                         this.postProcessingMode,
@@ -209,6 +243,7 @@ public record PrimeSettings(
                 ? this
                 : new PrimeSettings(
                         this.pathTracingEnabled,
+                        this.realtimeIntegrator,
                         this.voxelTextureSurfaces,
                         this.voxelTextureSurfaceStrengthSteps,
                         this.postProcessingMode,
@@ -232,6 +267,7 @@ public record PrimeSettings(
                 ? this
                 : new PrimeSettings(
                         this.pathTracingEnabled,
+                        this.realtimeIntegrator,
                         this.voxelTextureSurfaces,
                         this.voxelTextureSurfaceStrengthSteps,
                         this.postProcessingMode,
@@ -255,6 +291,7 @@ public record PrimeSettings(
                 ? this
                 : new PrimeSettings(
                         this.pathTracingEnabled,
+                        this.realtimeIntegrator,
                         this.voxelTextureSurfaces,
                         this.voxelTextureSurfaceStrengthSteps,
                         this.postProcessingMode,
@@ -278,6 +315,7 @@ public record PrimeSettings(
                 ? this
                 : new PrimeSettings(
                         this.pathTracingEnabled,
+                        this.realtimeIntegrator,
                         this.voxelTextureSurfaces,
                         this.voxelTextureSurfaceStrengthSteps,
                         this.postProcessingMode,
@@ -301,6 +339,7 @@ public record PrimeSettings(
                 ? this
                 : new PrimeSettings(
                         this.pathTracingEnabled,
+                        this.realtimeIntegrator,
                         this.voxelTextureSurfaces,
                         this.voxelTextureSurfaceStrengthSteps,
                         this.postProcessingMode,
@@ -324,6 +363,7 @@ public record PrimeSettings(
                 ? this
                 : new PrimeSettings(
                         this.pathTracingEnabled,
+                        this.realtimeIntegrator,
                         this.voxelTextureSurfaces,
                         this.voxelTextureSurfaceStrengthSteps,
                         this.postProcessingMode,
@@ -347,6 +387,7 @@ public record PrimeSettings(
                 ? this
                 : new PrimeSettings(
                         this.pathTracingEnabled,
+                        this.realtimeIntegrator,
                         this.voxelTextureSurfaces,
                         this.voxelTextureSurfaceStrengthSteps,
                         this.postProcessingMode,
@@ -370,6 +411,7 @@ public record PrimeSettings(
                 ? this
                 : new PrimeSettings(
                         this.pathTracingEnabled,
+                        this.realtimeIntegrator,
                         this.voxelTextureSurfaces,
                         this.voxelTextureSurfaceStrengthSteps,
                         this.postProcessingMode,
@@ -393,6 +435,7 @@ public record PrimeSettings(
                 ? this
                 : new PrimeSettings(
                         this.pathTracingEnabled,
+                        this.realtimeIntegrator,
                         this.voxelTextureSurfaces,
                         this.voxelTextureSurfaceStrengthSteps,
                         this.postProcessingMode,

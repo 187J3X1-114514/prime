@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import dev.prime.render.AstronomySettings;
+import dev.prime.render.RealtimeIntegratorMode;
 import dev.prime.render.post.DlssRrDebugView;
 import dev.prime.render.post.PostProcessingMode;
 import dev.prime.render.post.ReconstructionQualityMode;
@@ -173,6 +174,33 @@ final class PrimeConfigTest {
     }
 
     @Test
+    void realtimeIntegratorDefaultsAndParsesStableIds() {
+        assertEquals(RealtimeIntegratorMode.WAVEFRONT, RealtimeIntegratorMode.DEFAULT);
+        assertEquals(
+                RealtimeIntegratorMode.LIGHTWEIGHT,
+                RealtimeIntegratorMode.fromId("LIGHTWEIGHT"));
+        assertEquals(
+                RealtimeIntegratorMode.WAVEFRONT,
+                RealtimeIntegratorMode.fromId("future_integrator"));
+        assertEquals(
+                RealtimeIntegratorMode.WAVEFRONT,
+                PrimeSettings.defaults().realtimeIntegrator());
+        assertEquals(
+                RealtimeIntegratorMode.LIGHTWEIGHT,
+                PrimeConfig.rendererSettings(
+                        PrimeSettings.defaults().withRealtimeIntegrator(
+                                RealtimeIntegratorMode.LIGHTWEIGHT),
+                        3L)
+                        .realtimeIntegrator());
+        assertEquals(
+                RealtimeIntegratorMode.WAVEFRONT,
+                PrimeConfig.restoredDefaults(
+                        PrimeSettings.defaults().withRealtimeIntegrator(
+                                RealtimeIntegratorMode.LIGHTWEIGHT))
+                        .realtimeIntegrator());
+    }
+
+    @Test
     void legacyFsrQualityMigratesUnlessTheSharedKeyExists() {
         Properties legacy = new Properties();
         legacy.setProperty("fsr.quality", "balanced");
@@ -186,6 +214,7 @@ final class PrimeConfigTest {
     void debugSelectionsAreSessionOnlyAndLegacyKeysAreRemovedOnRewrite() {
         String serialized = PrimeConfig.serializedContents();
         assertTrue(serialized.contains("renderer.path_tracing=true\n"));
+        assertTrue(serialized.contains("renderer.integrator=wavefront\n"));
         assertTrue(serialized.contains(
                 "experimental.voxel_texture_surfaces=false\n"));
         assertTrue(serialized.contains(

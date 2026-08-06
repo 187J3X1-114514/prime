@@ -9,7 +9,7 @@ import dev.prime.render.replay.RenderBinaryFingerprint;
 import dev.prime.render.replay.RenderPlatformFingerprint;
 import dev.prime.render.replay.RenderReplayCapture;
 import dev.prime.render.vulkan.terrain.TerrainScene;
-import dev.prime.render.vulkan.RealtimeRayTracingPipeline;
+import dev.prime.render.vulkan.RealtimeIntegratorPipeline;
 import dev.prime.render.vulkan.TraceBackend;
 import dev.prime.render.vulkan.MinecraftHostSubmission;
 import dev.prime.render.vulkan.VulkanContext;
@@ -33,7 +33,7 @@ public final class ReplayProbeFrameExecutor {
 
     public CompletableFuture<RenderReplayCapture> execute(
             String debugLabel,
-            RealtimeRayTracingPipeline pipeline,
+            RealtimeIntegratorPipeline pipeline,
             NrdReplayProbe probe,
             NrdReplayProbe.PlannedFrame nrdFrame,
             TerrainScene.ResidentSceneView scene,
@@ -63,7 +63,7 @@ public final class ReplayProbeFrameExecutor {
             Objects.requireNonNull(sceneTextures, "sceneTextures");
             Objects.requireNonNull(platform, "platform");
             Objects.requireNonNull(binary, "binary");
-            replayInput.requireMatch(integrator, scene);
+            replayInput.requireMatch(pipeline.mode(), integrator, scene);
             this.imageInitialization.begin();
             initializationActive = true;
 

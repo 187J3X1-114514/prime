@@ -44,6 +44,10 @@ final class TracePipelinesContractTest {
         assertEquals(27, RealtimeRayTracingPipeline.DISPATCH_COUNT);
         assertEquals(25, RealtimeRayTracingPipeline.DESCRIPTOR_BINDING_COUNT);
 
+        assertEquals(4, LightweightRayTracingPipeline.RAYGEN_GROUP_COUNT);
+        assertEquals(3, LightweightRayTracingPipeline.RAYGEN_MODULE_COUNT);
+        assertEquals(9, LightweightRayTracingPipeline.DISPATCH_COUNT);
+
         assertEquals(8, OfflineRayTracingPipeline.RAYGEN_GROUP_COUNT);
         assertEquals(5, OfflineRayTracingPipeline.RAYGEN_MODULE_COUNT);
         assertEquals(27, OfflineRayTracingPipeline.DISPATCH_COUNT);
@@ -59,6 +63,18 @@ final class TracePipelinesContractTest {
                 java.util.stream.IntStream
                 .range(0, RealtimeRayTracingPipeline.RAYGEN_GROUP_COUNT)
                 .map(RealtimeRayTracingPipeline::raygenControl)
+                .boxed()
+                .toList());
+        assertEquals(List.of(0, 1, 1, 2),
+                java.util.stream.IntStream
+                .range(0, LightweightRayTracingPipeline.RAYGEN_GROUP_COUNT)
+                .map(LightweightRayTracingPipeline::raygenModule)
+                .boxed()
+                .toList());
+        assertEquals(List.of(0, 1, 257, 2),
+                java.util.stream.IntStream
+                .range(0, LightweightRayTracingPipeline.RAYGEN_GROUP_COUNT)
+                .map(LightweightRayTracingPipeline::raygenControl)
                 .boxed()
                 .toList());
         assertEquals(List.of(0, 1, 1, 2, 2, 3, 3, 4), java.util.stream.IntStream
@@ -88,6 +104,17 @@ final class TracePipelinesContractTest {
             assertFalse(realtime.contains(ShaderAbi.OFFLINE_DESCRIPTOR_RUNNING_MEAN));
             assertFalse(realtime.contains(ShaderAbi.OFFLINE_DESCRIPTOR_WAVEFRONT_PATHS));
             assertFalse(realtime.contains(ShaderAbi.OFFLINE_DESCRIPTOR_WAVEFRONT_QUEUE));
+
+            Set<Integer> lightweight = descriptorBindings(
+                    wavefrontShaders(
+                            "lightweight",
+                            suffix,
+                            List.of("head", "step", "resolve")),
+                    1);
+            HashSet<Integer> lightweightExpected = new HashSet<>(realtime);
+            lightweightExpected.remove(
+                    ShaderAbi.DESCRIPTOR_WAVEFRONT_TRANSPORT_METADATA);
+            assertEquals(lightweightExpected, lightweight);
 
             Set<Integer> offline = descriptorBindings(
                     wavefrontShaders(
@@ -128,6 +155,13 @@ final class TracePipelinesContractTest {
                     assertTrue(payloads.contains(shadowPayload), prefix + " " + stage + suffix);
                 }
             }
+            for (String stage : List.of("head", "step")) {
+                Set<String> payloads = payloadShapes(
+                        wavefrontShader("lightweight", stage, suffix),
+                        STORAGE_RAY_PAYLOAD);
+                assertTrue(payloads.contains(tracePayload), "lightweight " + stage + suffix);
+                assertTrue(payloads.contains(shadowPayload), "lightweight " + stage + suffix);
+            }
             assertEquals(
                     Set.of(shadowPayload),
                     payloadShapes(
@@ -147,6 +181,10 @@ final class TracePipelinesContractTest {
                 RealtimeRayTracingPipeline.wavefrontBytes(3840, 2160));
         assertEquals(1_260_748_832L,
                 OfflineRayTracingPipeline.wavefrontBytes(3840, 2160));
+        assertEquals(729_907_232L,
+                LightweightRayTracingPipeline.wavefrontBytes(3840, 2160));
+        assertEquals(182_476_832L,
+                LightweightRayTracingPipeline.wavefrontBytes(1920, 1080));
         assertEquals(
                 1202.3437805175781,
                 OfflineRayTracingPipeline.wavefrontBytes(3840, 2160)
@@ -161,6 +199,10 @@ final class TracePipelinesContractTest {
         RealtimeRayTracingPipeline.validateRanges(3840, 2160, 0xffff_ffffL);
         OfflineRayTracingPipeline.validateRanges(3840, 2160, 0xffff_ffffL);
         RealtimeRayTracingPipeline.validateDispatch(3840, 2160, 1 << 25);
+        RealtimeRayTracingPipeline.validateLightweightRanges(
+                3840, 2160, 0xffff_ffffL);
+        RealtimeRayTracingPipeline.validateLightweightDispatch(
+                3840, 2160, 1 << 24);
         OfflineRayTracingPipeline.validateDispatch(3840, 2160, 1 << 24);
     }
 
@@ -184,6 +226,10 @@ final class TracePipelinesContractTest {
                     wavefrontShader("offline", "step", suffix),
                     ShaderAbi.OFFLINE_DESCRIPTOR_WAVEFRONT_PATHS,
                     ShaderAbi.OFFLINE_WAVEFRONT_PATH_RECORD_SIZE);
+            assertRecordStride(
+                    wavefrontShader("lightweight", "step", suffix),
+                    ShaderAbi.DESCRIPTOR_WAVEFRONT_PATHS,
+                    ShaderAbi.LIGHTWEIGHT_WAVEFRONT_PATH_RECORD_SIZE);
         }
     }
 

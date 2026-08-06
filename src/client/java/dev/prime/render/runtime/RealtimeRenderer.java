@@ -18,6 +18,8 @@ import dev.prime.render.vulkan.AtmospherePipeline;
 import dev.prime.render.vulkan.DisplayExposureDiagnostics;
 import dev.prime.render.vulkan.LabPbrTextureAtlas;
 import dev.prime.render.vulkan.RealtimeFrameExecutor;
+import dev.prime.render.vulkan.RealtimeIntegratorPipeline;
+import dev.prime.render.vulkan.LightweightRayTracingPipeline;
 import dev.prime.render.vulkan.RealtimeRayTracingPipeline;
 import dev.prime.render.vulkan.SunShadowPipeline;
 import dev.prime.render.vulkan.TraceBackend;
@@ -43,7 +45,7 @@ final class RealtimeRenderer implements Destroyable {
     private final DisplayExposureDiagnostics exposureDiagnostics;
     private final DlssRrNative.Context ngxContext;
     private final ReconstructionBackendRegistry reconstructionRegistry;
-    private RealtimeRayTracingPipeline pipeline;
+    private RealtimeIntegratorPipeline pipeline;
     private VulkanReconstructionResources resources;
     private RealtimeSampleState sampleState = RealtimeSampleState.initial();
     private boolean pipelineInvalid;
@@ -63,7 +65,7 @@ final class RealtimeRenderer implements Destroyable {
         this.exposureDiagnostics = new DisplayExposureDiagnostics(context);
     }
 
-    RealtimeRayTracingPipeline pipeline() {
+    RealtimeIntegratorPipeline pipeline() {
         this.ensurePipeline();
         return this.pipeline;
     }
@@ -114,6 +116,7 @@ final class RealtimeRenderer implements Destroyable {
             return null;
         }
         return new DiagnosticSnapshot(
+                this.pipeline.mode(),
                 current.selection().effectiveMode(),
                 current.selection().quality(),
                 current.stableRadiance().width(),
@@ -121,6 +124,8 @@ final class RealtimeRenderer implements Destroyable {
                 current.output().width(),
                 current.output().height(),
                 this.sampleIndex(),
+                this.pipeline.passCount(),
+                this.pipeline.sizedResourceBytes(),
                 this.exposureDiagnostics.latest());
     }
 
@@ -132,13 +137,17 @@ final class RealtimeRenderer implements Destroyable {
             AtmospherePipeline atmosphere,
             LabPbrTextureAtlas labPbrAtlas,
             ResolvedReconstruction selection,
+            RealtimeIntegratorMode requestedIntegrator,
             long tlas,
             VulkanGpuTextureView atlasView,
             VulkanGpuSampler atlasSampler,
             List<TraceBackend.SceneTexture> sceneTextures) {
-        this.ensurePipeline();
+        Objects.requireNonNull(requestedIntegrator, "requestedIntegrator");
         VulkanReconstructionResources current = this.resources;
-        if (current != null && current.matches(selection)) {
+        boolean resourcesMatch = current != null && current.matches(selection);
+        boolean replacePipeline = this.pipeline.mode() != requestedIntegrator
+                || this.pipelineInvalid;
+        if (resourcesMatch && !replacePipeline) {
             this.pipeline.ensureDescriptors(
                     tlas,
                     current.stableRadiance(),
@@ -151,32 +160,63 @@ final class RealtimeRenderer implements Destroyable {
                     current.processor().rawFrame());
             return false;
         }
-        VulkanReconstructionResources replacement =
-                this.reconstructionRegistry.createResources(atmosphere, selection);
-        this.requireRayDispatchCapacity(
-                replacement.selection().extent().width(),
-                replacement.selection().extent().height());
+        VulkanReconstructionResources replacementResources = null;
+        RealtimeIntegratorPipeline replacementPipeline = null;
         try {
-            this.pipeline.ensureDescriptors(
+            if (!resourcesMatch) {
+                replacementResources =
+                        this.reconstructionRegistry.createResources(atmosphere, selection);
+                this.requireRayDispatchCapacity(
+                        replacementResources.selection().extent().width(),
+                        replacementResources.selection().extent().height());
+            }
+            if (replacePipeline) {
+                replacementPipeline = this.createPipeline(requestedIntegrator);
+            }
+            VulkanReconstructionResources targetResources = resourcesMatch
+                    ? current
+                    : replacementResources;
+            RealtimeIntegratorPipeline targetPipeline = replacePipeline
+                    ? replacementPipeline
+                    : this.pipeline;
+            targetPipeline.ensureDescriptors(
                     tlas,
-                    replacement.stableRadiance(),
+                    targetResources.stableRadiance(),
                     atlasView,
                     atlasSampler,
                     sceneTextures,
                     labPbrAtlas.normalAtlas(),
                     labPbrAtlas.specularAtlas(),
                     atmosphere,
-                    replacement.processor().rawFrame());
+                    targetResources.processor().rawFrame());
         } catch (RuntimeException exception) {
-            ResourceCleanup.destroy(replacement, exception);
+            ResourceCleanup.destroy(replacementPipeline, exception);
+            ResourceCleanup.destroy(replacementResources, exception);
+            if (replacePipeline) {
+                PrimeInfo.LOGGER.error(
+                        "Prime could not initialize realtime integrator {}; keeping {}",
+                        requestedIntegrator.id(),
+                        this.pipeline.mode().id(),
+                        exception);
+            }
             throw exception;
         }
-        this.resources = replacement;
-        this.sampleState = this.sampleState.invalidated();
-        if (current != null) {
-            this.context.defer(current);
+        if (!resourcesMatch) {
+            this.resources = replacementResources;
+            this.sampleState = this.sampleState.invalidated();
+            if (current != null) {
+                this.context.defer(current);
+            }
         }
-        return true;
+        if (replacePipeline) {
+            RealtimeIntegratorPipeline previous = this.pipeline;
+            this.pipeline = replacementPipeline;
+            this.pipelineInvalid = false;
+            this.sampleState = this.sampleState.invalidated();
+            this.resources.requestReset();
+            this.context.defer(previous);
+        }
+        return !resourcesMatch || replacePipeline;
     }
 
     List<String> render(RenderInput input) {
@@ -208,6 +248,7 @@ final class RealtimeRenderer implements Destroyable {
                 input.atmosphere(),
                 input.labPbrAtlas(),
                 requestedSelection,
+                settings.integrator(),
                 input.scene().tlas(),
                 input.atlasView(),
                 input.atlasSampler(),
@@ -221,7 +262,7 @@ final class RealtimeRenderer implements Destroyable {
         int renderHeight = selection.extent().height();
         if (resized) {
             PrimeInfo.LOGGER.debug(
-                    "Recreated Prime realtime images at display {}x{}, render {}x{}, {} {} "
+                    "Reconfigured Prime realtime path at display {}x{}, render {}x{}, {} {} "
                             + "(output image={}, view={}; accumulation image={}, view={}; "
                             + "atlas image={}, view={}, sampler={})",
                     width,
@@ -388,6 +429,7 @@ final class RealtimeRenderer implements Destroyable {
     }
 
     record DiagnosticSnapshot(
+            RealtimeIntegratorMode integrator,
             PostProcessingMode postProcessingMode,
             ReconstructionQualityMode quality,
             int renderWidth,
@@ -395,6 +437,8 @@ final class RealtimeRenderer implements Destroyable {
             int displayWidth,
             int displayHeight,
             int accumulatedSamples,
+            int integratorPassCount,
+            long integratorResourceBytes,
             DisplayExposureDiagnostics.Snapshot exposure) {}
 
     void releaseSizedResourcesAfterIdle() {
@@ -408,10 +452,10 @@ final class RealtimeRenderer implements Destroyable {
     }
 
     void reloadActive(AtmospherePipeline atmosphere) {
-        RealtimeRayTracingPipeline replacementPipeline = null;
+        RealtimeIntegratorPipeline replacementPipeline = null;
         VulkanReconstructionResources replacementResources = null;
         try {
-            replacementPipeline = new RealtimeRayTracingPipeline(this.context, this.backend);
+            replacementPipeline = this.createPipeline(this.pipeline.mode());
             VulkanReconstructionResources current = this.resources;
             if (current != null) {
                 replacementResources = this.reconstructionRegistry.createResources(
@@ -422,7 +466,7 @@ final class RealtimeRenderer implements Destroyable {
             ResourceCleanup.destroy(replacementPipeline, exception);
             throw exception;
         }
-        RealtimeRayTracingPipeline previousPipeline = this.pipeline;
+        RealtimeIntegratorPipeline previousPipeline = this.pipeline;
         VulkanReconstructionResources previousResources = this.resources;
         this.pipeline = replacementPipeline;
         this.resources = replacementResources;
@@ -442,12 +486,18 @@ final class RealtimeRenderer implements Destroyable {
         if (!this.pipelineInvalid) {
             return;
         }
-        RealtimeRayTracingPipeline replacement =
-                new RealtimeRayTracingPipeline(this.context, this.backend);
-        RealtimeRayTracingPipeline previous = this.pipeline;
+        RealtimeIntegratorPipeline replacement = this.createPipeline(this.pipeline.mode());
+        RealtimeIntegratorPipeline previous = this.pipeline;
         this.pipeline = replacement;
         this.pipelineInvalid = false;
         this.context.defer(previous);
+    }
+
+    private RealtimeIntegratorPipeline createPipeline(RealtimeIntegratorMode mode) {
+        return switch (mode) {
+            case WAVEFRONT -> new RealtimeRayTracingPipeline(this.context, this.backend);
+            case LIGHTWEIGHT -> new LightweightRayTracingPipeline(this.context, this.backend);
+        };
     }
 
     @Override

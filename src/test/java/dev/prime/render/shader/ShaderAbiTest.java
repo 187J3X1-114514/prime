@@ -56,6 +56,15 @@ final class ShaderAbiTest {
         assertEquals(16, ShaderAbi.WAVEFRONT_QUEUE_COMMAND_STRIDE);
         assertEquals(4, ShaderAbi.WAVEFRONT_QUEUE_INDEX_SIZE);
         assertEquals(1, ShaderAbi.WAVEFRONT_ACTIVE_MASK);
+        assertEquals(8, ShaderAbi.LIGHTWEIGHT_MAXIMUM_SCATTERS);
+        assertEquals(7, ShaderAbi.LIGHTWEIGHT_WAVEFRONT_ROUNDS);
+        assertEquals(80, ShaderAbi.LIGHTWEIGHT_WAVEFRONT_PATH_RECORD_SIZE);
+        assertEquals(1, ShaderAbi.LIGHTWEIGHT_WAVEFRONT_PATH_SLOTS_PER_PIXEL);
+        assertEquals(0, ShaderAbi.LIGHTWEIGHT_WAVEFRONT_AREA_RECORD_SIZE);
+        assertEquals(2, ShaderAbi.LIGHTWEIGHT_WAVEFRONT_QUEUE_COUNT);
+        assertEquals(16, ShaderAbi.LIGHTWEIGHT_WAVEFRONT_QUEUE_COMMAND_STRIDE);
+        assertEquals(4, ShaderAbi.LIGHTWEIGHT_WAVEFRONT_QUEUE_INDEX_SIZE);
+        assertEquals(1, ShaderAbi.LIGHTWEIGHT_WAVEFRONT_ACTIVE_MASK);
         assertEquals(0, ShaderAbi.OFFLINE_DESCRIPTOR_RUNNING_MEAN);
         assertEquals(1, ShaderAbi.OFFLINE_DESCRIPTOR_WAVEFRONT_PATHS);
         assertEquals(2, ShaderAbi.OFFLINE_DESCRIPTOR_WAVEFRONT_QUEUE);

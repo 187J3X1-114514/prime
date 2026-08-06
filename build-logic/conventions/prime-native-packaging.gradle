@@ -64,6 +64,12 @@ def verifyDistributionJar = tasks.register('verifyDistributionJar') {
 			'prime/shaders/realtime_wavefront_area_ser.rgen.spv',
 			'prime/shaders/realtime_wavefront_tail_ser.rgen.spv',
 			'prime/shaders/realtime_wavefront_resolve_ser.rgen.spv',
+			'prime/shaders/lightweight_wavefront_head.rgen.spv',
+			'prime/shaders/lightweight_wavefront_step.rgen.spv',
+			'prime/shaders/lightweight_wavefront_resolve.rgen.spv',
+			'prime/shaders/lightweight_wavefront_head_ser.rgen.spv',
+			'prime/shaders/lightweight_wavefront_step_ser.rgen.spv',
+			'prime/shaders/lightweight_wavefront_resolve_ser.rgen.spv',
 			'prime/shaders/offline_wavefront_head.rgen.spv',
 			'prime/shaders/offline_wavefront_step.rgen.spv',
 			'prime/shaders/offline_wavefront_area.rgen.spv',
@@ -96,9 +102,9 @@ def verifyDistributionJar = tasks.register('verifyDistributionJar') {
 		}
 
 		def shaderNames = names.findAll { it.startsWith('prime/shaders/') && it.endsWith('.spv') }
-		if (shaderNames.size() != 45) {
+		if (shaderNames.size() != 51) {
 			throw new GradleException(
-					"Distribution jar must contain 45 Prime shaders; found ${shaderNames.size()}")
+					"Distribution jar must contain 51 Prime shaders; found ${shaderNames.size()}")
 		}
 
 		new java.util.zip.ZipFile(archive).withCloseable { zip ->

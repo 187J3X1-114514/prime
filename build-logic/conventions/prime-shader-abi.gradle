@@ -101,6 +101,7 @@ abstract class GenerateShaderAbi extends DefaultTask {
 		def nrdContract = schema.nrdContract
 		def fsrContract = schema.fsrContract
 		def wavefrontContract = schema.realtimeWavefrontContract
+		def lightweightWavefrontContract = schema.lightweightWavefrontContract
 		def offlineWavefrontContract = schema.offlineWavefrontContract
 
 		if (primitive.size != 32 || section.size != 80 || lightNode.size != 32
@@ -190,6 +191,18 @@ abstract class GenerateShaderAbi extends DefaultTask {
 				|| !offlineWavefrontContract.activeMask.toString().equalsIgnoreCase('0x1')) {
 			throw new GradleException(
 					'Prime offline scheduler must preserve its single-slot 144-byte queue ABI')
+		}
+		if (lightweightWavefrontContract.maximumScatters != 8
+				|| lightweightWavefrontContract.rounds != 7
+				|| lightweightWavefrontContract.pathRecordSize != 80
+				|| lightweightWavefrontContract.pathSlotsPerPixel != 1
+				|| lightweightWavefrontContract.areaRecordSize != 0
+				|| lightweightWavefrontContract.queueCount != 2
+				|| lightweightWavefrontContract.queueCommandStride != 16
+				|| lightweightWavefrontContract.queueIndexSize != 4
+				|| !lightweightWavefrontContract.activeMask.toString().equalsIgnoreCase('0x1')) {
+			throw new GradleException(
+					'Prime lightweight scheduler must preserve its bounded single-slot queue ABI')
 		}
 		if (!schema.pathControl.sampleEpochMask.toString().equalsIgnoreCase('0x7fffffff')
 				|| !schema.pathControl.triangleDebugMask.toString().equalsIgnoreCase('0x80000000')
@@ -368,6 +381,15 @@ public final class ShaderAbi {
     public static final int WAVEFRONT_ROUNDS = ${wavefrontContract.rounds};
     public static final int WAVEFRONT_PATH_RECORD_SIZE = ${wavefrontContract.pathRecordSize};
     public static final int WAVEFRONT_PATH_SLOTS_PER_PIXEL = ${wavefrontContract.pathSlotsPerPixel};
+    public static final int LIGHTWEIGHT_MAXIMUM_SCATTERS = ${lightweightWavefrontContract.maximumScatters};
+    public static final int LIGHTWEIGHT_WAVEFRONT_ROUNDS = ${lightweightWavefrontContract.rounds};
+    public static final int LIGHTWEIGHT_WAVEFRONT_PATH_RECORD_SIZE = ${lightweightWavefrontContract.pathRecordSize};
+    public static final int LIGHTWEIGHT_WAVEFRONT_PATH_SLOTS_PER_PIXEL = ${lightweightWavefrontContract.pathSlotsPerPixel};
+    public static final int LIGHTWEIGHT_WAVEFRONT_AREA_RECORD_SIZE = ${lightweightWavefrontContract.areaRecordSize};
+    public static final int LIGHTWEIGHT_WAVEFRONT_QUEUE_COUNT = ${lightweightWavefrontContract.queueCount};
+    public static final int LIGHTWEIGHT_WAVEFRONT_QUEUE_COMMAND_STRIDE = ${lightweightWavefrontContract.queueCommandStride};
+    public static final int LIGHTWEIGHT_WAVEFRONT_QUEUE_INDEX_SIZE = ${lightweightWavefrontContract.queueIndexSize};
+    public static final int LIGHTWEIGHT_WAVEFRONT_ACTIVE_MASK = ${lightweightWavefrontContract.activeMask};
     public static final int OFFLINE_WAVEFRONT_ROUNDS = ${offlineWavefrontContract.rounds};
     public static final int OFFLINE_WAVEFRONT_PATH_RECORD_SIZE = ${offlineWavefrontContract.pathRecordSize};
     public static final int OFFLINE_WAVEFRONT_PATH_SLOTS_PER_PIXEL = ${offlineWavefrontContract.pathSlotsPerPixel};
@@ -500,6 +522,19 @@ ${javaOffsets}
 #define PRIME_WAVEFRONT_QUEUE_COMMAND_STRIDE ${offlineWavefrontContract.queueCommandStride}u
 #define PRIME_WAVEFRONT_QUEUE_INDEX_SIZE ${offlineWavefrontContract.queueIndexSize}u
 #define PRIME_WAVEFRONT_ACTIVE_MASK ${offlineWavefrontContract.activeMask}u
+#elif defined(PRIME_LIGHTWEIGHT_ABI)
+#define PRIME_RENDERER_DESCRIPTOR_SET 1
+#define PRIME_DESCRIPTOR_WAVEFRONT_PATHS ${schema.realtimeDescriptors.wavefrontPaths}
+#define PRIME_DESCRIPTOR_WAVEFRONT_QUEUE ${schema.realtimeDescriptors.wavefrontQueue}
+#define PRIME_WAVEFRONT_PATH_RECORD_SIZE ${lightweightWavefrontContract.pathRecordSize}
+#define PRIME_WAVEFRONT_PATH_SLOTS_PER_PIXEL ${lightweightWavefrontContract.pathSlotsPerPixel}u
+#define PRIME_WAVEFRONT_ROUNDS ${lightweightWavefrontContract.rounds}
+#define PRIME_WAVEFRONT_AREA_RECORD_SIZE ${lightweightWavefrontContract.areaRecordSize}u
+#define PRIME_WAVEFRONT_QUEUE_COUNT ${lightweightWavefrontContract.queueCount}u
+#define PRIME_WAVEFRONT_QUEUE_COMMAND_STRIDE ${lightweightWavefrontContract.queueCommandStride}u
+#define PRIME_WAVEFRONT_QUEUE_INDEX_SIZE ${lightweightWavefrontContract.queueIndexSize}u
+#define PRIME_WAVEFRONT_ACTIVE_MASK ${lightweightWavefrontContract.activeMask}u
+#define PRIME_LIGHTWEIGHT_MAXIMUM_SCATTERS ${lightweightWavefrontContract.maximumScatters}u
 #else
 #define PRIME_RENDERER_DESCRIPTOR_SET 1
 #define PRIME_DESCRIPTOR_WAVEFRONT_PATHS ${schema.realtimeDescriptors.wavefrontPaths}
@@ -881,10 +916,12 @@ abstract class CompilePrimeShaders extends DefaultTask {
 		}
 		sources.each { source ->
 			if (source.name == 'realtime_wavefront.rgen'
+					|| source.name == 'lightweight_wavefront.rgen'
 					|| source.name == 'offline_wavefront.rgen') {
-				// Freeze every scheduler stage before the driver sees it. Realtime and offline
-				// remain separate programs while each profile still shares its own GLSL front end.
+				// Freeze every scheduler stage before the driver sees it. Each transport profile
+				// remains a separate program while sharing one GLSL front end within that profile.
 				def offline = source.name == 'offline_wavefront.rgen'
+				def lightweight = source.name == 'lightweight_wavefront.rgen'
 				def stages = offline
 						? [
 							[name: 'head', value: 0],
@@ -893,12 +930,20 @@ abstract class CompilePrimeShaders extends DefaultTask {
 							[name: 'tail', value: 3],
 							[name: 'resolve', value: 4]
 						]
+						: lightweight
+						? [
+							[name: 'head', value: 0],
+							[name: 'step', value: 1],
+							[name: 'resolve', value: 2]
+						]
 						: [
 							[name: 'head', value: 0],
 							[name: 'tail', value: 2],
 							[name: 'resolve', value: 3]
 						]
-				def prefix = offline ? 'offline_wavefront' : 'realtime_wavefront'
+				def prefix = offline
+						? 'offline_wavefront'
+						: lightweight ? 'lightweight_wavefront' : 'realtime_wavefront'
 				def variants = [
 						[name: '', definitions: []],
 						[name: '_ser', definitions: [
@@ -918,7 +963,7 @@ abstract class CompilePrimeShaders extends DefaultTask {
 						specializeWavefront(generic, output, stage.value)
 					}
 					java.nio.file.Files.delete(generic.toPath())
-					if (!offline) {
+					if (!offline && !lightweight) {
 						def deferredDefinitions = new ArrayList<String>(variant.definitions)
 						deferredDefinitions.add('-DPRIME_DEFER_SECONDARY_AREA_NEE=1')
 						def deferred = new File(

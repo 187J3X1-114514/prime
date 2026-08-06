@@ -25,7 +25,7 @@ import dev.prime.render.replay.RenderReplayVerification;
 import dev.prime.render.vulkan.terrain.TerrainScene;
 import dev.prime.render.vulkan.AtmospherePipeline;
 import dev.prime.render.vulkan.RawWavefrontFrame;
-import dev.prime.render.vulkan.RealtimeRayTracingPipeline;
+import dev.prime.render.vulkan.RealtimeIntegratorPipeline;
 import dev.prime.render.vulkan.TraceBackend;
 import dev.prime.render.vulkan.VulkanContext;
 import dev.prime.render.vulkan.VulkanImage;
@@ -85,7 +85,8 @@ public final class ReplayProbeController implements Destroyable {
             RenderBinaryFingerprint binary =
                     RenderBinaryFingerprint.capture(
                             platform.invocationReorderSupported()
-                                    && platform.wavefrontSubgroupSupported());
+                                    && platform.wavefrontSubgroupSupported(),
+                            input.pipeline.mode());
             referenceProbe = NrdReplayProbe.create(
                     this.context,
                     input.atmosphere,
@@ -249,7 +250,8 @@ public final class ReplayProbeController implements Destroyable {
                 false,
                 false);
         RayTraceReplayInput replayInput =
-                RayTraceReplayInput.capture(frameInput, input.scene);
+                RayTraceReplayInput.capture(
+                        input.pipeline.mode(), frameInput, input.scene);
         return this.executor.execute(
                 forceRestart
                         ? "Prime deterministic replay jitter restart"
@@ -293,7 +295,7 @@ public final class ReplayProbeController implements Destroyable {
 
     /** Immutable render-thread snapshot required to execute one pending request. */
     public record RunInput(
-            RealtimeRayTracingPipeline pipeline,
+            RealtimeIntegratorPipeline pipeline,
             AtmospherePipeline atmosphere,
             TerrainScene.ResidentSceneView scene,
             FrameCamera camera,

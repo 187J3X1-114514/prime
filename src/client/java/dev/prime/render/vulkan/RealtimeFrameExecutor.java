@@ -31,7 +31,7 @@ public final class RealtimeFrameExecutor {
 
     public void execute(
             String debugLabel,
-            RealtimeRayTracingPipeline pipeline,
+            RealtimeIntegratorPipeline pipeline,
             SunShadowPipeline sunShadow,
             AtmospherePipeline atmosphere,
             LabPbrTextureAtlas labPbrAtlas,

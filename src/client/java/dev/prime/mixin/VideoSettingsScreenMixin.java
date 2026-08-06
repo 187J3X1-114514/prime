@@ -7,6 +7,7 @@ import dev.prime.render.DisplaySettings;
 import dev.prime.render.LightingSettings;
 import dev.prime.render.MaterialSettings;
 import dev.prime.client.PrimeRuntime;
+import dev.prime.render.RealtimeIntegratorMode;
 import dev.prime.render.RendererSettings;
 import dev.prime.render.fsr.FsrDebugView;
 import dev.prime.render.post.nrd.NrdDiagnostics;
@@ -33,6 +34,7 @@ public abstract class VideoSettingsScreenMixin {
     private static final Component PRIME$HEADER =
             Component.translatable("prime.options.header");
     @Unique private OptionInstance<Boolean> prime$pathTracingEnabled;
+    @Unique private OptionInstance<RealtimeIntegratorMode> prime$realtimeIntegrator;
     @Unique private OptionInstance<Boolean> prime$voxelTextureSurfaces;
     @Unique private OptionInstance<Integer> prime$voxelTextureSurfaceStrength;
     @Unique private OptionInstance<Boolean> prime$screenshotMode;
@@ -60,6 +62,7 @@ public abstract class VideoSettingsScreenMixin {
         OptionsList list = ((OptionsSubScreenAccessor) this).prime$getList();
         if (list != null) {
             this.prime$pathTracingEnabled = PrimeVideoOptions.pathTracingEnabled();
+            this.prime$realtimeIntegrator = PrimeVideoOptions.realtimeIntegrator();
             this.prime$voxelTextureSurfaces = PrimeVideoOptions.voxelTextureSurfaces();
             this.prime$voxelTextureSurfaceStrength =
                     PrimeVideoOptions.voxelTextureSurfaceStrength();
@@ -89,6 +92,7 @@ public abstract class VideoSettingsScreenMixin {
                             button -> this.prime$restoreDefaults())
                     .build());
             list.addBig(this.prime$pathTracingEnabled);
+            list.addBig(this.prime$realtimeIntegrator);
             list.addSmall(
                     this.prime$voxelTextureSurfaces,
                     this.prime$voxelTextureSurfaceStrength);
@@ -131,6 +135,8 @@ public abstract class VideoSettingsScreenMixin {
                     current.voxelTextureSurfaceStrengthSteps());
         }
         this.prime$refresh(this.prime$pathTracingEnabled, true);
+        this.prime$refresh(
+                this.prime$realtimeIntegrator, RealtimeIntegratorMode.DEFAULT);
         this.prime$refresh(this.prime$voxelTextureSurfaces, false);
         this.prime$refresh(
                 this.prime$voxelTextureSurfaceStrength,

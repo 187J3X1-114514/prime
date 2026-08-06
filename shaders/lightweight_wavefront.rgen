@@ -1,0 +1,167 @@
+#version 460
+#define PRIME_REALTIME_ABI 1
+#define PRIME_LIGHTWEIGHT_ABI 1
+#extension GL_GOOGLE_include_directive : require
+#extension GL_EXT_control_flow_attributes : require
+#if defined(PRIME_ENABLE_SUBGROUP_QUEUE)
+#extension GL_KHR_shader_subgroup_basic : require
+#extension GL_KHR_shader_subgroup_ballot : require
+#endif
+#if defined(PRIME_ENABLE_SER)
+#extension GL_EXT_buffer_reference_uvec2 : require
+#extension GL_EXT_shader_invocation_reorder : require
+#endif
+
+#include "common.glsl"
+#include "atmosphere_rt.glsl"
+#include "nrd_common.glsl"
+#include "shadow_payload.glsl"
+
+layout(location = 0) rayPayloadEXT TracePayload primePayload;
+layout(location = 1) rayPayloadEXT PrimeShadowPayload primeShadowPayload;
+
+#include "sampling.glsl"
+#include "bsdf.glsl"
+#include "lights.glsl"
+#include "integrator.glsl"
+#include "camera.glsl"
+#include "wavefront_output.glsl"
+#include "offline_bsdf.glsl"
+#include "lightweight_integrator.glsl"
+#include "lightweight_wavefront_state.glsl"
+
+const uint PRIME_LIGHTWEIGHT_STAGE_HEAD = 0u;
+const uint PRIME_LIGHTWEIGHT_STAGE_STEP = 1u;
+const uint PRIME_LIGHTWEIGHT_STAGE_RESOLVE = 2u;
+layout(constant_id = 0) const uint primeLightweightSpecializedStage =
+        PRIME_LIGHTWEIGHT_STAGE_HEAD;
+
+layout(shaderRecordEXT, std430) buffer PrimeLightweightShaderRecord {
+    uint control;
+} primeLightweightShaderRecord;
+
+IntegratorRecord primeLightweightIntegrator() {
+    IntegratorRecord integrator;
+    integrator.sunDirectionIntensity = vec4(
+            primePush.sunDirection,
+            ATM_SPACE_SUN_INTENSITY * primeSunRadianceMultiplier());
+    integrator.environmentRadiance = vec4(0.0);
+    return integrator;
+}
+
+PrimeRcVolumeStack primeLightweightInitialVolumeStack() {
+    return (primePush.path.z & PRIME_PATH_CAMERA_IN_WATER_MASK) != 0u
+            ? primeCameraWaterVolumeStack()
+            : primeEmptyVolumeStack();
+}
+
+void primeLightweightHead() {
+    uvec2 pixel = gl_LaunchIDEXT.xy;
+    uint pathIndex = primeLightweightIndex(pixel);
+    vec2 traceCameraSample = primeRealtimeCameraSample();
+    vec3 traceDirection = primeCameraRayDirection(pixel, traceCameraSample);
+    primeSetNumericalContext(PRIME_NUMERICAL_STAGE_TRACE, 0u);
+    SurfaceInteraction surface = primeTraceSurface(
+            primePush.cameraPosition, traceDirection);
+
+    PathState path = primeCameraPath(
+            pixel, 0u, primeRealtimeCameraSample());
+    PrimeRcVolumeStack volumeStack = primeLightweightInitialVolumeStack();
+    PrimeDenoiserState denoiserState = primeInitialDenoiserState();
+    PrimeIntegrationResult result = primeEmptyIntegrationResult();
+    bool previousSunNee = false;
+    bool continuation = primeIntegrateLightweightSurface(
+            path,
+            primeLightweightIntegrator(),
+            volumeStack,
+            denoiserState,
+            result,
+            previousSunNee,
+            surface);
+    continuation = continuation
+            && path.bounce < PRIME_LIGHTWEIGHT_MAXIMUM_SCATTERS;
+    PrimeLightweightPathRecord record = primeMakeLightweightRecord(
+            path,
+            volumeStack,
+            denoiserState,
+            result.guides.primaryMaterialFlags,
+            previousSunNee,
+            continuation);
+    primeLightweightPaths.records[pathIndex] = record;
+    primeStoreLightweightIntermediate(pixel, result);
+    if (continuation) {
+        primeAppendLightweightPath(0u, pathIndex);
+    }
+}
+
+void primeLightweightStep(uint sourceQueue) {
+    uint pathIndex = primeLightweightQueuedPath(
+            sourceQueue, gl_LaunchIDEXT.x);
+    PrimeLightweightPathRecord traceRecord =
+            primeLightweightPaths.records[pathIndex];
+    uint bounce = floatBitsToUint(traceRecord.traceOriginAndPathControl.w)
+            & PRIME_LIGHTWEIGHT_BOUNCE_MASK;
+    primeSetNumericalContext(PRIME_NUMERICAL_STAGE_TRACE, bounce);
+    SurfaceInteraction surface = primeTraceSurface(
+            traceRecord.traceOriginAndPathControl.xyz,
+            traceRecord.rayDirectionAndDenoiserControl.xyz);
+
+    PrimeLightweightPathRecord record =
+            primeLightweightPaths.records[pathIndex];
+    primeRestoreLightweightDiagnostic(record);
+    uvec2 pixel = primeLightweightPixel(pathIndex);
+    PathState path = primeLightweightPath(pixel, record);
+    PrimeRcVolumeStack volumeStack = primeLightweightVolumeStack(record);
+    PrimeIntegrationResult result = primeLoadLightweightIntermediate(
+            pixel, record);
+    PrimeDenoiserState denoiserState = primeLightweightDenoiserState(
+            record, result);
+    bool previousSunNee = primeLightweightPreviousSunNee(record);
+    bool continuation = primeIntegrateLightweightSurface(
+            path,
+            primeLightweightIntegrator(),
+            volumeStack,
+            denoiserState,
+            result,
+            previousSunNee,
+            surface);
+    continuation = continuation
+            && path.bounce < PRIME_LIGHTWEIGHT_MAXIMUM_SCATTERS;
+    primeLightweightPaths.records[pathIndex] = primeMakeLightweightRecord(
+            path,
+            volumeStack,
+            denoiserState,
+            result.guides.primaryMaterialFlags,
+            previousSunNee,
+            continuation);
+    primeStoreLightweightIntermediate(pixel, result);
+    primeAppendLightweightContinuation(
+            sourceQueue ^ 1u, pathIndex, continuation);
+}
+
+void primeLightweightResolve() {
+    uvec2 pixel = gl_LaunchIDEXT.xy;
+    uint pathIndex = primeLightweightIndex(pixel);
+    PrimeLightweightPathRecord record =
+            primeLightweightPaths.records[pathIndex];
+    primeRestoreLightweightDiagnostic(record);
+    PrimeIntegrationResult result = primeLoadLightweightIntermediate(
+            pixel, record);
+    primeWriteRealtimeOutput(
+            pixel, primeRealtimeCameraSample(), result);
+}
+
+void main() {
+    uint sourceQueue = (primeLightweightShaderRecord.control >> 8u) & 1u;
+    switch (primeLightweightSpecializedStage) {
+        case PRIME_LIGHTWEIGHT_STAGE_HEAD:
+            primeLightweightHead();
+            break;
+        case PRIME_LIGHTWEIGHT_STAGE_STEP:
+            primeLightweightStep(sourceQueue);
+            break;
+        case PRIME_LIGHTWEIGHT_STAGE_RESOLVE:
+            primeLightweightResolve();
+            break;
+    }
+}

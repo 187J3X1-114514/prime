@@ -4,6 +4,7 @@ import dev.prime.render.AstronomySettings;
 import dev.prime.render.AstronomyState;
 import dev.prime.render.LightingSettings;
 import dev.prime.render.MaterialSettings;
+import dev.prime.render.RealtimeIntegratorMode;
 import dev.prime.render.SunDirection;
 import dev.prime.render.post.PostProcessingMode;
 import java.nio.BufferUnderflowException;
@@ -14,8 +15,8 @@ import java.util.Objects;
 /** Versioned fixed-width encoding of {@link RayTraceReplayInput}. */
 public final class RayTraceReplayInputCodec {
     private static final int MAGIC = 0x3146_5250;
-    private static final int VERSION = 4;
-    private static final int ENCODED_BYTES = 384;
+    private static final int VERSION = 5;
+    private static final int ENCODED_BYTES = 388;
     private static final int FLAG_CAMERA_IN_WATER = 1;
     private static final int FLAG_SH_INPUT = 1 << 1;
     private static final int FLAG_RAW_NUMERICAL = 1 << 2;
@@ -54,6 +55,7 @@ public final class RayTraceReplayInputCodec {
         output.putInt(input.jitterPhase());
         output.putInt(flags(input));
         output.putInt(mode(input.postProcessingMode()));
+        output.putInt(integratorMode(input.integratorMode()));
         output.putInt(input.lighting().sunQuarterSteps());
         output.putInt(input.lighting().starQuarterSteps());
         output.putInt(input.lighting().blockLightQuarterSteps());
@@ -113,6 +115,7 @@ public final class RayTraceReplayInputCodec {
                         "Ray-trace replay contains unknown flags");
             }
             PostProcessingMode mode = mode(input.getInt());
+            RealtimeIntegratorMode integratorMode = integratorMode(input.getInt());
             int sunQuarterSteps = input.getInt();
             int starQuarterSteps = input.getInt();
             int blockLightQuarterSteps = input.getInt();
@@ -154,6 +157,7 @@ public final class RayTraceReplayInputCodec {
             return new RayTraceReplayInput(
                     camera,
                     scene,
+                    integratorMode,
                     width,
                     height,
                     astronomy,
@@ -214,6 +218,22 @@ public final class RayTraceReplayInputCodec {
             case 2 -> PostProcessingMode.DISABLED;
             default -> throw new IllegalArgumentException(
                     "Ray-trace replay contains an unknown post-processing mode");
+        };
+    }
+
+    private static int integratorMode(RealtimeIntegratorMode mode) {
+        return switch (mode) {
+            case WAVEFRONT -> 0;
+            case LIGHTWEIGHT -> 1;
+        };
+    }
+
+    private static RealtimeIntegratorMode integratorMode(int encoded) {
+        return switch (encoded) {
+            case 0 -> RealtimeIntegratorMode.WAVEFRONT;
+            case 1 -> RealtimeIntegratorMode.LIGHTWEIGHT;
+            default -> throw new IllegalArgumentException(
+                    "Ray-trace replay contains an unknown integrator mode");
         };
     }
 }

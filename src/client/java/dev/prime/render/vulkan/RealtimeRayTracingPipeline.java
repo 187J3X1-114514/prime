@@ -4,6 +4,7 @@ import com.mojang.blaze3d.vulkan.Destroyable;
 import com.mojang.blaze3d.vulkan.VulkanGpuSampler;
 import com.mojang.blaze3d.vulkan.VulkanGpuTextureView;
 import dev.prime.render.IntegratorFrameInput;
+import dev.prime.render.RealtimeIntegratorMode;
 import dev.prime.render.shader.ShaderAbi;
 import dev.prime.render.vulkan.terrain.TerrainScene;
 import java.nio.ByteBuffer;
@@ -29,7 +30,7 @@ import org.lwjgl.vulkan.VkStridedDeviceAddressRegionKHR;
 import org.lwjgl.vulkan.VkWriteDescriptorSet;
 
 /** Realtime-only pipeline, queue ABI and reconstruction outputs. */
-public final class RealtimeRayTracingPipeline implements Destroyable {
+public final class RealtimeRayTracingPipeline implements RealtimeIntegratorPipeline {
     private static final int HEAD_GROUP = 0;
     private static final int STEP_QUEUE_0_GROUP = 1;
     private static final int STEP_QUEUE_1_GROUP = 2;
@@ -58,6 +59,7 @@ public final class RealtimeRayTracingPipeline implements Destroyable {
 
     private final VulkanContext context;
     private final TraceBackend backend;
+    private final boolean lightweight;
     private final long descriptorSetLayout;
     private final long pipelineLayout;
     private final TraceProgram program;
@@ -66,8 +68,16 @@ public final class RealtimeRayTracingPipeline implements Destroyable {
     private boolean destroyed;
 
     public RealtimeRayTracingPipeline(VulkanContext context, TraceBackend backend) {
+        this(context, backend, false);
+    }
+
+    RealtimeRayTracingPipeline(
+            VulkanContext context,
+            TraceBackend backend,
+            boolean lightweight) {
         this.context = context;
         this.backend = java.util.Objects.requireNonNull(backend, "backend");
+        this.lightweight = lightweight;
         long setLayout = 0L;
         long layout = 0L;
         TraceProgram traceProgram = null;
@@ -80,21 +90,40 @@ public final class RealtimeRayTracingPipeline implements Destroyable {
             boolean ser = context.capabilities().invocationReorderSupported()
                     && context.capabilities().wavefrontSubgroupSupported();
             String suffix = ser ? "_ser.rgen.spv" : ".rgen.spv";
-            String prefix = "/prime/shaders/realtime_wavefront_";
-            traceProgram = TraceProgram.create(
-                    context,
-                    layout,
-                    new String[] {
+            String prefix = lightweight
+                    ? "/prime/shaders/lightweight_wavefront_"
+                    : "/prime/shaders/realtime_wavefront_";
+            String[] raygenShaders = lightweight
+                    ? new String[] {
+                        prefix + "head" + suffix,
+                        prefix + "step" + suffix,
+                        prefix + "resolve" + suffix
+                    }
+                    : new String[] {
                         prefix + "head" + suffix,
                         prefix + "step" + suffix,
                         prefix + "area" + suffix,
                         prefix + "tail" + suffix,
                         prefix + "resolve" + suffix
-                    },
-                    RAYGEN_MODULES,
-                    RAYGEN_CONTROLS,
-                    "Prime realtime ray tracing pipeline",
-                    "Prime realtime shader binding table");
+                    };
+            int[] raygenModules = lightweight
+                    ? LightweightRayTracingPipeline.RAYGEN_MODULES
+                    : RAYGEN_MODULES;
+            int[] raygenControls = lightweight
+                    ? LightweightRayTracingPipeline.RAYGEN_CONTROLS
+                    : RAYGEN_CONTROLS;
+            traceProgram = TraceProgram.create(
+                    context,
+                    layout,
+                    raygenShaders,
+                    raygenModules,
+                    raygenControls,
+                    lightweight
+                            ? "Prime lightweight ray tracing pipeline"
+                            : "Prime realtime ray tracing pipeline",
+                    lightweight
+                            ? "Prime lightweight shader binding table"
+                            : "Prime realtime shader binding table");
             this.descriptorSetLayout = setLayout;
             this.pipelineLayout = layout;
             this.program = traceProgram;
@@ -110,6 +139,25 @@ public final class RealtimeRayTracingPipeline implements Destroyable {
             }
             throw exception;
         }
+    }
+
+    @Override
+    public RealtimeIntegratorMode mode() {
+        return this.lightweight
+                ? RealtimeIntegratorMode.LIGHTWEIGHT
+                : RealtimeIntegratorMode.WAVEFRONT;
+    }
+
+    @Override
+    public int passCount() {
+        return this.lightweight
+                ? ShaderAbi.LIGHTWEIGHT_WAVEFRONT_ROUNDS + 2
+                : DISPATCH_COUNT;
+    }
+
+    @Override
+    public long sizedResourceBytes() {
+        return this.wavefront == null ? 0L : this.wavefront.size();
     }
 
     public void ensureDescriptors(
@@ -132,9 +180,9 @@ public final class RealtimeRayTracingPipeline implements Destroyable {
                 atmosphere);
         int width = signals.noisyDiffuse().width();
         int height = signals.noisyDiffuse().height();
-        long requiredBytes = wavefrontBytes(width, height);
-        validateRanges(width, height, this.context.maxStorageBufferRange());
-        validateDispatch(
+        long requiredBytes = this.wavefrontBytesForMode(width, height);
+        this.validateRangesForMode(width, height, this.context.maxStorageBufferRange());
+        this.validateDispatchForMode(
                 width,
                 height,
                 this.context.capabilities().maxRayDispatchInvocationCount());
@@ -147,7 +195,9 @@ public final class RealtimeRayTracingPipeline implements Destroyable {
                             | VK12.VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT
                             | VK12.VK_BUFFER_USAGE_TRANSFER_DST_BIT,
                     false,
-                    "Prime realtime wavefront slots");
+                    this.lightweight
+                            ? "Prime lightweight wavefront slots"
+                            : "Prime realtime wavefront slots");
         }
         if (this.bindings != null
                 && this.bindings.matches(stableRadiance, signals, candidate.handle())) {
@@ -161,7 +211,7 @@ public final class RealtimeRayTracingPipeline implements Destroyable {
                     stableRadiance,
                     signals,
                     candidate,
-                    queueOffset(width, height));
+                    this.queueOffsetForMode(width, height));
         } catch (RuntimeException exception) {
             if (replaces) {
                 candidate.destroy();
@@ -212,7 +262,8 @@ public final class RealtimeRayTracingPipeline implements Destroyable {
             TerrainScene.ResidentSceneView scene) {
         int width = input.width();
         int height = input.height();
-        if (this.wavefront == null || this.wavefront.size() != wavefrontBytes(width, height)) {
+        if (this.wavefront == null
+                || this.wavefront.size() != this.wavefrontBytesForMode(width, height)) {
             throw new IllegalStateException("Realtime wavefront extent mismatch");
         }
         if (!this.backend.bindings().ready()) {
@@ -220,12 +271,15 @@ public final class RealtimeRayTracingPipeline implements Destroyable {
         }
         try (MemoryStack stack = MemoryStack.stackPush()) {
             this.bind(commandBuffer, stack, RayTracingPushConstants.encode(stack, input, scene));
-            long commandOffset = queueCommandOffset(width, height);
+            long commandOffset = this.queueCommandOffsetForMode(width, height);
             this.initializeQueues(commandBuffer, stack, commandOffset);
             this.trace(commandBuffer, stack, width, height, HEAD_GROUP);
             this.wavefrontBarrier(commandBuffer, stack);
             int sourceQueue = 0;
-            for (int round = 0; round < ShaderAbi.WAVEFRONT_ROUNDS; round++) {
+            int rounds = this.lightweight
+                    ? ShaderAbi.LIGHTWEIGHT_WAVEFRONT_ROUNDS
+                    : ShaderAbi.WAVEFRONT_ROUNDS;
+            for (int round = 0; round < rounds; round++) {
                 this.traceIndirect(
                         commandBuffer,
                         stack,
@@ -233,23 +287,29 @@ public final class RealtimeRayTracingPipeline implements Destroyable {
                         commandOffset,
                         sourceQueue);
                 this.wavefrontBarrier(commandBuffer, stack);
-                this.traceIndirect(
-                        commandBuffer,
-                        stack,
-                        areaGroup(sourceQueue),
-                        commandOffset,
-                        sourceQueue);
+                if (!this.lightweight) {
+                    this.traceIndirect(
+                            commandBuffer,
+                            stack,
+                            areaGroup(sourceQueue),
+                            commandOffset,
+                            sourceQueue);
+                }
                 this.advanceQueue(commandBuffer, stack, commandOffset, sourceQueue);
                 sourceQueue ^= 1;
             }
-            this.traceIndirect(
-                    commandBuffer,
-                    stack,
-                    tailGroup(sourceQueue),
-                    commandOffset,
-                    sourceQueue);
-            this.wavefrontBarrier(commandBuffer, stack);
-            this.trace(commandBuffer, stack, width, height, RESOLVE_GROUP);
+            if (this.lightweight) {
+                this.trace(commandBuffer, stack, width, height, 3);
+            } else {
+                this.traceIndirect(
+                        commandBuffer,
+                        stack,
+                        tailGroup(sourceQueue),
+                        commandOffset,
+                        sourceQueue);
+                this.wavefrontBarrier(commandBuffer, stack);
+                this.trace(commandBuffer, stack, width, height, RESOLVE_GROUP);
+            }
         }
     }
 
@@ -452,6 +512,18 @@ public final class RealtimeRayTracingPipeline implements Destroyable {
         return Math.addExact(queueOffset(width, height), queueBytes(width, height));
     }
 
+    static long lightweightWavefrontBytes(int width, int height) {
+        return Math.addExact(
+                lightweightQueueOffset(width, height),
+                lightweightQueueBytes(width, height));
+    }
+
+    private long wavefrontBytesForMode(int width, int height) {
+        return this.lightweight
+                ? lightweightWavefrontBytes(width, height)
+                : wavefrontBytes(width, height);
+    }
+
     static int raygenModule(int group) {
         return RAYGEN_MODULES[group];
     }
@@ -515,6 +587,50 @@ public final class RealtimeRayTracingPipeline implements Destroyable {
                 Math.multiplyExact(pixels, ShaderAbi.WAVEFRONT_AREA_RECORD_SIZE));
     }
 
+    static long lightweightQueueOffset(int width, int height) {
+        requireExtent(width, height);
+        long pixels = Math.multiplyExact((long) width, (long) height);
+        long bytes = Math.multiplyExact(
+                Math.multiplyExact(
+                        pixels,
+                        ShaderAbi.LIGHTWEIGHT_WAVEFRONT_PATH_SLOTS_PER_PIXEL),
+                ShaderAbi.LIGHTWEIGHT_WAVEFRONT_PATH_RECORD_SIZE);
+        return VulkanContext.alignUp(bytes, QUEUE_OFFSET_ALIGNMENT);
+    }
+
+    static long lightweightQueueBytes(int width, int height) {
+        requireExtent(width, height);
+        long pixels = Math.multiplyExact((long) width, (long) height);
+        long capacity = Math.multiplyExact(
+                pixels,
+                ShaderAbi.LIGHTWEIGHT_WAVEFRONT_PATH_SLOTS_PER_PIXEL);
+        long commands = Math.multiplyExact(
+                ShaderAbi.LIGHTWEIGHT_WAVEFRONT_QUEUE_COUNT,
+                ShaderAbi.LIGHTWEIGHT_WAVEFRONT_QUEUE_COMMAND_STRIDE);
+        long indices = Math.multiplyExact(
+                Math.multiplyExact(
+                        ShaderAbi.LIGHTWEIGHT_WAVEFRONT_QUEUE_COUNT,
+                        capacity),
+                ShaderAbi.LIGHTWEIGHT_WAVEFRONT_QUEUE_INDEX_SIZE);
+        return Math.addExact(commands, indices);
+    }
+
+    static long lightweightQueueCommandOffset(int width, int height) {
+        return lightweightQueueOffset(width, height);
+    }
+
+    private long queueOffsetForMode(int width, int height) {
+        return this.lightweight
+                ? lightweightQueueOffset(width, height)
+                : queueOffset(width, height);
+    }
+
+    private long queueCommandOffsetForMode(int width, int height) {
+        return this.lightweight
+                ? lightweightQueueCommandOffset(width, height)
+                : queueCommandOffset(width, height);
+    }
+
     static void validateRanges(int width, int height, long maximumRange) {
         long paths = queueOffset(width, height);
         long queue = queueBytes(width, height);
@@ -530,6 +646,45 @@ public final class RealtimeRayTracingPipeline implements Destroyable {
                 ShaderAbi.WAVEFRONT_PATH_SLOTS_PER_PIXEL);
         if (capacity > Integer.toUnsignedLong(maximumInvocations)) {
             throw new IllegalStateException("Realtime wavefront queue exceeds dispatch capacity");
+        }
+    }
+
+    static void validateLightweightRanges(
+            int width, int height, long maximumRange) {
+        long paths = lightweightQueueOffset(width, height);
+        long queue = lightweightQueueBytes(width, height);
+        if (paths > maximumRange || queue > maximumRange) {
+            throw new IllegalStateException(
+                    "Lightweight wavefront descriptor exceeds maxStorageBufferRange");
+        }
+    }
+
+    static void validateLightweightDispatch(
+            int width, int height, int maximumInvocations) {
+        long capacity = Math.multiplyExact(
+                Math.multiplyExact((long) width, (long) height),
+                ShaderAbi.LIGHTWEIGHT_WAVEFRONT_PATH_SLOTS_PER_PIXEL);
+        if (capacity > Integer.toUnsignedLong(maximumInvocations)) {
+            throw new IllegalStateException(
+                    "Lightweight wavefront queue exceeds dispatch capacity");
+        }
+    }
+
+    private void validateRangesForMode(
+            int width, int height, long maximumRange) {
+        if (this.lightweight) {
+            validateLightweightRanges(width, height, maximumRange);
+        } else {
+            validateRanges(width, height, maximumRange);
+        }
+    }
+
+    private void validateDispatchForMode(
+            int width, int height, int maximumInvocations) {
+        if (this.lightweight) {
+            validateLightweightDispatch(width, height, maximumInvocations);
+        } else {
+            validateDispatch(width, height, maximumInvocations);
         }
     }
 

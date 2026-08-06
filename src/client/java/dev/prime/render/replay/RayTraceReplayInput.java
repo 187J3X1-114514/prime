@@ -4,6 +4,7 @@ import dev.prime.render.AstronomyState;
 import dev.prime.render.IntegratorFrameInput;
 import dev.prime.render.LightingSettings;
 import dev.prime.render.MaterialSettings;
+import dev.prime.render.RealtimeIntegratorMode;
 import dev.prime.render.SunDirection;
 import dev.prime.render.post.PostProcessingMode;
 import dev.prime.render.post.TransparentGuideMode;
@@ -19,6 +20,7 @@ import java.util.Objects;
 public record RayTraceReplayInput(
         FrameCameraSnapshot camera,
         SceneIdentity scene,
+        RealtimeIntegratorMode integratorMode,
         int width,
         int height,
         AstronomyState astronomy,
@@ -36,6 +38,7 @@ public record RayTraceReplayInput(
     public RayTraceReplayInput {
         Objects.requireNonNull(camera, "camera");
         Objects.requireNonNull(scene, "scene");
+        Objects.requireNonNull(integratorMode, "integratorMode");
         Objects.requireNonNull(astronomy, "astronomy");
         Objects.requireNonNull(postProcessingMode, "postProcessingMode");
         Objects.requireNonNull(lighting, "lighting");
@@ -56,6 +59,14 @@ public record RayTraceReplayInput(
     public static RayTraceReplayInput capture(
             IntegratorFrameInput input,
             SceneRevisionView scene) {
+        return capture(RealtimeIntegratorMode.DEFAULT, input, scene);
+    }
+
+    public static RayTraceReplayInput capture(
+            RealtimeIntegratorMode integratorMode,
+            IntegratorFrameInput input,
+            SceneRevisionView scene) {
+        Objects.requireNonNull(integratorMode, "integratorMode");
         Objects.requireNonNull(input, "input");
         Objects.requireNonNull(scene, "scene");
         if (input.transparentGuideMode() != guideMode(input.postProcessingMode())) {
@@ -65,6 +76,7 @@ public record RayTraceReplayInput(
         return new RayTraceReplayInput(
                 FrameCameraSnapshot.capture(input.camera()),
                 SceneIdentity.capture(scene),
+                integratorMode,
                 input.width(),
                 input.height(),
                 input.astronomy(),
@@ -118,7 +130,14 @@ public record RayTraceReplayInput(
     public void requireMatch(
             IntegratorFrameInput input,
             SceneRevisionView residentScene) {
-        if (!this.equals(capture(input, residentScene))) {
+        this.requireMatch(RealtimeIntegratorMode.DEFAULT, input, residentScene);
+    }
+
+    public void requireMatch(
+            RealtimeIntegratorMode integratorMode,
+            IntegratorFrameInput input,
+            SceneRevisionView residentScene) {
+        if (!this.equals(capture(integratorMode, input, residentScene))) {
             throw new IllegalArgumentException(
                     "Integrator input does not match its replay capture");
         }

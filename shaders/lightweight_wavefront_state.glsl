@@ -241,22 +241,30 @@ bool primeLightweightDiffusePath(PrimeLightweightPathRecord record) {
 
 void primePrepareLightweightTransparentOutput(
         PrimeLightweightPathRecord record,
-        PrimeLightweightTransmissionGuide transmissionGuide,
+        PrimeTransparentGuideProbeResult probes,
         inout PrimeIntegrationResult result) {
     if (!primeMaterialIsTransmissive(result.guides.primaryMaterialFlags)) {
         return;
     }
     result.transparentPrimary = true;
-    bool hasTransmissionGuide =
-            transmissionGuide.guides.primaryHitKind == PRIME_HIT_SURFACE;
-    result.transmissionGuides = hasTransmissionGuide
-            ? transmissionGuide.guides
-            : result.guides;
-    result.transmissionAnchorDistance = hasTransmissionGuide
-            ? transmissionGuide.anchorDistance
+    result.transmissionGuides = result.guides;
+    primeApplyProbeSurfaceGuide(
+            result.transmissionGuides, probes.transmission);
+    result.transmissionAnchorDistance =
+            probes.transmission.primaryHitKind == PRIME_HIT_SURFACE
+            ? probes.transmissionAnchorDistance
             : -1.0;
     result.reflectionGuides = result.guides;
     result.reflectionDirectionalGuide = false;
+    primeApplyProbeSurfaceGuide(
+            result.reflectionGuides, probes.reflection);
+    if (probes.reflection.primaryHitKind == PRIME_HIT_SURFACE) {
+        result.reflectionDirectionalGuide = false;
+    } else if (probes.reflectionCurrentVirtualPosition.w > 0.5) {
+        result.reflectionGuides.primaryPosition =
+                probes.reflectionCurrentVirtualPosition.xyz;
+        result.reflectionDirectionalGuide = true;
+    }
     // The main lightweight lanes own transmission. A sampled primary reflection moves to the
     // existing reflection signal only at resolve, keeping every queued transport record unchanged.
     if (!primeLightweightDiffusePath(record)) {

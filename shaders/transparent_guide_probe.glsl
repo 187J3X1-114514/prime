@@ -8,6 +8,7 @@ struct PrimeTransparentGuideProbeResult {
     PrimeDenoiserGuides transmission;
     PrimeDenoiserGuides reflection;
     float transmissionAnchorDistance;
+    vec4 reflectionCurrentVirtualPosition;
     vec4 reflectionPreviousVirtualPosition;
 };
 
@@ -16,8 +17,9 @@ PrimeTransparentGuideProbeResult primeEmptyTransparentGuideProbeResult() {
     result.transmission = primeEmptyDenoiserGuides();
     result.reflection = primeEmptyDenoiserGuides();
     result.transmissionAnchorDistance = -1.0;
-    // Negative w is the private RR marker for an unavailable reflection probe. Zero denotes a
-    // finite point and one denotes a direction at infinity.
+    // Negative w marks an unavailable reflection probe. Zero denotes a finite point and one a
+    // direction at infinity. Current geometry feeds NRD; previous geometry feeds RR motion.
+    result.reflectionCurrentVirtualPosition = vec4(0.0, 0.0, 0.0, -1.0);
     result.reflectionPreviousVirtualPosition = vec4(0.0, 0.0, 0.0, -1.0);
     return result;
 }
@@ -320,11 +322,13 @@ void primeTracePlanarReflectionGuide(
         return;
     }
     if (target.hitKind == PRIME_HIT_NONE) {
-        vec3 previousDirection = primeNrdSafeNormalize(
+        vec3 virtualDirection = primeNrdSafeNormalize(
                 primeMirrorDirectionAcrossPlane(bsdf.direction, planeNormal),
                 -bsdf.direction);
+        result.reflectionCurrentVirtualPosition =
+                vec4(virtualDirection, 1.0);
         result.reflectionPreviousVirtualPosition =
-                vec4(previousDirection, 1.0);
+                vec4(virtualDirection, 1.0);
         return;
     }
 
@@ -352,6 +356,8 @@ void primeTracePlanarReflectionGuide(
             throughput,
             albedos,
             hasMotion);
+    result.reflectionCurrentVirtualPosition = vec4(
+            currentVirtualPosition, 0.0);
     result.reflectionPreviousVirtualPosition = vec4(
             hasMotion ? previousVirtualPosition : currentVirtualPosition,
             0.0);

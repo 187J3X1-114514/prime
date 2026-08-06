@@ -3,7 +3,7 @@
   "prime.options.path_tracing": "Prime Path Tracing",
   "prime.options.path_tracing.tooltip": "Switches between vanilla rasterization and Prime path tracing. The next frame boundary safely stops or recreates Prime's complete GPU pipeline, making this an in-game renderer restart; vanilla mode retains and runs no Prime path-tracing, denoising, or upscaling resources.",
   "prime.options.realtime_integrator": "Realtime Integrator",
-  "prime.options.realtime_integrator.tooltip": "Selects the realtime transport implementation. Lightweight Wavefront is experimental: it uses the configured 1–8 surface-vertex limit, samples only the sun directly, reaches local emissive lights only by chance, and samples one reflection or refraction branch. Changing this resets temporal history.",
+  "prime.options.realtime_integrator.tooltip": "Selects the realtime transport implementation. Lightweight Wavefront is experimental: it uses the configured 1–8 surface-vertex limit, samples only the sun directly, reaches local emissive lights only by chance, and selects one reflection or refraction branch with a spatiotemporal checkerboard; independent transparent probes still guide both reconstruction signals. Changing this resets temporal history.",
   "prime.options.realtime_integrator.wavefront": "Full Wavefront",
   "prime.options.realtime_integrator.lightweight": "Lightweight Wavefront (Experimental)",
   "prime.options.lightweight_maximum_bounces": "Lightweight Max Bounces",

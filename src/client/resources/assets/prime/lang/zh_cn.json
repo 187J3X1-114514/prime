@@ -3,7 +3,7 @@
   "prime.options.path_tracing": "Prime 路径追踪",
   "prime.options.path_tracing.tooltip": "在原版光栅化渲染和 Prime 路径追踪之间切换。切换在下一帧边界安全停止或重新创建整套 Prime GPU 管线，可当作不退出游戏的渲染器重启；使用原版时不会保留或运行 Prime 的路径追踪、降噪和超分资源。",
   "prime.options.realtime_integrator": "实时积分器",
-  "prime.options.realtime_integrator.tooltip": "选择实时光传输实现。轻量 Wavefront 为实验模式：使用所设置的 1–8 个表面顶点上限，仅主动采样太阳，局部发光体只靠路径命中，并在反射与折射间随机选择单分支。切换会重置时域历史。",
+  "prime.options.realtime_integrator.tooltip": "选择实时光传输实现。轻量 Wavefront 为实验模式：使用所设置的 1–8 个表面顶点上限，仅主动采样太阳，局部发光体只靠路径命中，并以时空棋盘格在反射与折射间选择单分支；两路重建仍使用独立透明探针。切换会重置时域历史。",
   "prime.options.realtime_integrator.wavefront": "完整 Wavefront",
   "prime.options.realtime_integrator.lightweight": "轻量 Wavefront（实验性）",
   "prime.options.lightweight_maximum_bounces": "轻量最大反弹次数",

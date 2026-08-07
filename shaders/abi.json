@@ -225,7 +225,7 @@
   },
   "sceneTextureCount": 64,
   "realtimeWavefrontContract": {
-    "rounds": 12,
+    "rounds": 8,
     "pathRecordSize": 96,
     "pathSlotsPerPixel": 2,
     "areaRecordSize": 16,
@@ -235,7 +235,7 @@
     "activeMask": "0x1"
   },
   "offlineWavefrontContract": {
-    "rounds": 12,
+    "rounds": 8,
     "pathRecordSize": 144,
     "pathSlotsPerPixel": 1,
     "areaRecordSize": 0,

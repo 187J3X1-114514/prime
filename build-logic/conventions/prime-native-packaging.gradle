@@ -59,6 +59,11 @@ def verifyDistributionJar = tasks.register('verifyDistributionJar') {
 			'prime/shaders/realtime_wavefront_area.rgen.spv',
 			'prime/shaders/realtime_wavefront_tail.rgen.spv',
 			'prime/shaders/realtime_wavefront_resolve.rgen.spv',
+			'prime/shaders/realtime_wavefront_head_subgroup.rgen.spv',
+			'prime/shaders/realtime_wavefront_step_subgroup.rgen.spv',
+			'prime/shaders/realtime_wavefront_area_subgroup.rgen.spv',
+			'prime/shaders/realtime_wavefront_tail_subgroup.rgen.spv',
+			'prime/shaders/realtime_wavefront_resolve_subgroup.rgen.spv',
 			'prime/shaders/realtime_wavefront_head_ser.rgen.spv',
 			'prime/shaders/realtime_wavefront_step_ser.rgen.spv',
 			'prime/shaders/realtime_wavefront_area_ser.rgen.spv',
@@ -69,6 +74,11 @@ def verifyDistributionJar = tasks.register('verifyDistributionJar') {
 			'prime/shaders/offline_wavefront_area.rgen.spv',
 			'prime/shaders/offline_wavefront_tail.rgen.spv',
 			'prime/shaders/offline_wavefront_resolve.rgen.spv',
+			'prime/shaders/offline_wavefront_head_subgroup.rgen.spv',
+			'prime/shaders/offline_wavefront_step_subgroup.rgen.spv',
+			'prime/shaders/offline_wavefront_area_subgroup.rgen.spv',
+			'prime/shaders/offline_wavefront_tail_subgroup.rgen.spv',
+			'prime/shaders/offline_wavefront_resolve_subgroup.rgen.spv',
 			'prime/shaders/offline_wavefront_head_ser.rgen.spv',
 			'prime/shaders/offline_wavefront_step_ser.rgen.spv',
 			'prime/shaders/offline_wavefront_area_ser.rgen.spv',
@@ -96,9 +106,9 @@ def verifyDistributionJar = tasks.register('verifyDistributionJar') {
 		}
 
 		def shaderNames = names.findAll { it.startsWith('prime/shaders/') && it.endsWith('.spv') }
-		if (shaderNames.size() != 45) {
+		if (shaderNames.size() != 55) {
 			throw new GradleException(
-					"Distribution jar must contain 45 Prime shaders; found ${shaderNames.size()}")
+					"Distribution jar must contain 55 Prime shaders; found ${shaderNames.size()}")
 		}
 
 		new java.util.zip.ZipFile(archive).withCloseable { zip ->

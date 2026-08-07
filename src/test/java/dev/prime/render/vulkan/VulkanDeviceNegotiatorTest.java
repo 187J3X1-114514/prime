@@ -1,14 +1,28 @@
 package dev.prime.render.vulkan;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import dev.prime.render.WavefrontShaderPermutation;
 import dev.prime.render.shader.ShaderAbi;
 import org.junit.jupiter.api.Test;
 import org.lwjgl.vulkan.KHRRayTracingPipeline;
 import org.lwjgl.vulkan.VK11;
 
 final class VulkanDeviceNegotiatorTest {
+    @Test
+    void wavefrontShaderPermutationSelectsSubgroupsWithoutSer() {
+        assertEquals(".rgen.spv",
+                WavefrontShaderPermutation.suffix(false, false));
+        assertEquals(".rgen.spv",
+                WavefrontShaderPermutation.suffix(false, true));
+        assertEquals("_subgroup.rgen.spv",
+                WavefrontShaderPermutation.suffix(true, false));
+        assertEquals("_ser.rgen.spv",
+                WavefrontShaderPermutation.suffix(true, true));
+    }
+
     @Test
     void wavefrontSubgroupsRequireRaygenBallotAndBasicOperations() {
         int raygen = KHRRayTracingPipeline.VK_SHADER_STAGE_RAYGEN_BIT_KHR;

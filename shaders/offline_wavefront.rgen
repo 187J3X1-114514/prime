@@ -136,9 +136,7 @@ void primeWavefrontHead() {
             primaryMaterialFlags,
             request,
             continuation);
-    if (continuation) {
-        primeAppendOfflinePath(0u, pathIndex);
-    }
+    primeAppendOfflineContinuation(0u, pathIndex, continuation);
 }
 
 void primeWavefrontStep(uint sourceQueue) {

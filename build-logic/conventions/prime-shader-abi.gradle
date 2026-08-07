@@ -169,7 +169,7 @@ abstract class GenerateShaderAbi extends DefaultTask {
 				|| fsrContract.viewSpaceToMetersFactor != 1.0) {
 			throw new GradleException('Prime FSR signal and projection contracts changed without a coordinated migration')
 		}
-		if (wavefrontContract.rounds != 12
+		if (wavefrontContract.rounds != 8
 				|| wavefrontContract.pathRecordSize != 96
 				|| wavefrontContract.pathSlotsPerPixel != 2
 				|| wavefrontContract.areaRecordSize != 16
@@ -178,9 +178,9 @@ abstract class GenerateShaderAbi extends DefaultTask {
 				|| wavefrontContract.queueIndexSize != 4
 				|| !wavefrontContract.activeMask.toString().equalsIgnoreCase('0x1')) {
 			throw new GradleException(
-					'Prime realtime scheduler must preserve twelve wavefront rounds and its queue ABI')
+					'Prime realtime scheduler must preserve eight wavefront rounds and its queue ABI')
 		}
-		if (offlineWavefrontContract.rounds != 12
+		if (offlineWavefrontContract.rounds != 8
 				|| offlineWavefrontContract.pathRecordSize != 144
 				|| offlineWavefrontContract.pathSlotsPerPixel != 1
 				|| offlineWavefrontContract.areaRecordSize != 0
@@ -906,6 +906,9 @@ abstract class CompilePrimeShaders extends DefaultTask {
 						: 'realtime_wavefront'
 				def variants = [
 						[name: '', definitions: []],
+						[name: '_subgroup', definitions: [
+								'-DPRIME_ENABLE_SUBGROUP_QUEUE=1'
+						]],
 						[name: '_ser', definitions: [
 								'-DPRIME_ENABLE_SER=1',
 								'-DPRIME_ENABLE_SUBGROUP_QUEUE=1'

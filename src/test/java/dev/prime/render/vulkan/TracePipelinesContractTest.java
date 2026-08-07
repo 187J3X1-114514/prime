@@ -41,12 +41,12 @@ final class TracePipelinesContractTest {
     void realtimeAndOfflineHaveIndependentSchedulesAndDescriptors() {
         assertEquals(8, RealtimeRayTracingPipeline.RAYGEN_GROUP_COUNT);
         assertEquals(5, RealtimeRayTracingPipeline.RAYGEN_MODULE_COUNT);
-        assertEquals(27, RealtimeRayTracingPipeline.DISPATCH_COUNT);
+        assertEquals(19, RealtimeRayTracingPipeline.DISPATCH_COUNT);
         assertEquals(25, RealtimeRayTracingPipeline.DESCRIPTOR_BINDING_COUNT);
 
         assertEquals(8, OfflineRayTracingPipeline.RAYGEN_GROUP_COUNT);
         assertEquals(5, OfflineRayTracingPipeline.RAYGEN_MODULE_COUNT);
-        assertEquals(27, OfflineRayTracingPipeline.DISPATCH_COUNT);
+        assertEquals(19, OfflineRayTracingPipeline.DISPATCH_COUNT);
         assertEquals(3, OfflineRayTracingPipeline.DESCRIPTOR_BINDING_COUNT);
 
         assertEquals(List.of(0, 1, 1, 2, 2, 3, 3, 4),
@@ -75,7 +75,7 @@ final class TracePipelinesContractTest {
 
     @Test
     void setOneAbiDoesNotCrossRendererBoundary() throws IOException {
-        for (String suffix : List.of("", "_ser")) {
+        for (String suffix : List.of("", "_subgroup", "_ser")) {
             Set<Integer> realtime = descriptorBindings(
                     wavefrontShaders(
                             "realtime",
@@ -118,7 +118,7 @@ final class TracePipelinesContractTest {
                     Set.of(shadowPayload),
                     payloadShapes(shader, STORAGE_INCOMING_RAY_PAYLOAD));
         }
-        for (String suffix : List.of("", "_ser")) {
+        for (String suffix : List.of("", "_subgroup", "_ser")) {
             for (String prefix : List.of("realtime", "offline")) {
                 for (String stage : List.of("head", "step", "tail")) {
                     Set<String> payloads = payloadShapes(
@@ -180,7 +180,7 @@ final class TracePipelinesContractTest {
 
     @Test
     void compiledPathRecordsUseIndependentStrides() throws IOException {
-        for (String suffix : List.of("", "_ser")) {
+        for (String suffix : List.of("", "_subgroup", "_ser")) {
             assertRecordStride(
                     wavefrontShader("realtime", "step", suffix),
                     ShaderAbi.DESCRIPTOR_WAVEFRONT_PATHS,

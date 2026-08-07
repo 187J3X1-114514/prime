@@ -85,8 +85,8 @@ public final class ReplayProbeController implements Destroyable {
                     PlatformFingerprintProbe.capture(this.context);
             RenderBinaryFingerprint binary =
                     RenderBinaryFingerprint.capture(
-                            platform.invocationReorderSupported()
-                                    && platform.wavefrontSubgroupSupported());
+                            platform.wavefrontSubgroupSupported(),
+                            platform.invocationReorderSupported());
             referenceProbe = NrdReplayProbe.create(
                     this.context,
                     input.atmosphere,

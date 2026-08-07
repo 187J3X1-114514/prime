@@ -1,5 +1,6 @@
 package dev.prime.render.replay;
 
+import dev.prime.render.WavefrontShaderPermutation;
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.URISyntaxException;
@@ -9,6 +10,7 @@ import java.nio.ByteOrder;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.security.CodeSource;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
@@ -17,7 +19,6 @@ import java.util.HashSet;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.Objects;
-import java.security.CodeSource;
 
 /**
  * Prime executable and static-resource identity used by strict same-platform replay.
@@ -69,6 +70,7 @@ public record RenderBinaryFingerprint(
             "/dev/prime/render/post/TransparentGuideMode.class",
             "/dev/prime/render/vulkan/RealtimeRayTracingPipeline.class",
             "/dev/prime/render/vulkan/RealtimeRayTracingPipeline$OutputBindings.class",
+            "/dev/prime/render/WavefrontShaderPermutation.class",
             "/dev/prime/render/vulkan/RealtimeIntegratorPipeline.class",
             "/dev/prime/render/vulkan/RealtimeFrameExecutor.class",
             "/dev/prime/render/vulkan/SunShadowPipeline.class",
@@ -141,9 +143,11 @@ public record RenderBinaryFingerprint(
         resources = List.copyOf(ordered);
     }
 
-    public static RenderBinaryFingerprint capture(boolean ser) {
+    public static RenderBinaryFingerprint capture(
+            boolean subgroupSupported, boolean invocationReorderSupported) {
         ArrayList<String> names = new ArrayList<>(COMMON_RESOURCES);
-        String suffix = ser ? "_ser.rgen.spv" : ".rgen.spv";
+        String suffix = WavefrontShaderPermutation.suffix(
+                subgroupSupported, invocationReorderSupported);
         List<String> stages = List.of(
                 "realtime_wavefront_head",
                 "realtime_wavefront_step",

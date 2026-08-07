@@ -13,7 +13,7 @@ final class RenderBinaryFingerprintTest {
     @Test
     void activeBinaryAndResourcesRoundTripCanonically() {
         RenderBinaryFingerprint fingerprint =
-                RenderBinaryFingerprint.capture(false);
+                RenderBinaryFingerprint.capture(false, false);
         byte[] encoded = fingerprint.canonicalBytes();
         RenderBinaryFingerprint decoded =
                 RenderBinaryFingerprint.decode(encoded);
@@ -45,7 +45,8 @@ final class RenderBinaryFingerprintTest {
 
     @Test
     void realtimeFingerprintIncludesTheCompleteWavefrontSchedule() {
-        RenderBinaryFingerprint fingerprint = RenderBinaryFingerprint.capture(false);
+        RenderBinaryFingerprint fingerprint =
+                RenderBinaryFingerprint.capture(false, false);
 
         assertTrue(fingerprint.resources().stream()
                 .anyMatch(resource -> resource.name().contains("realtime_wavefront_area")));
@@ -53,5 +54,15 @@ final class RenderBinaryFingerprintTest {
                 .anyMatch(resource -> resource.name().contains("realtime_wavefront_tail")));
         assertFalse(fingerprint.resources().stream()
                 .anyMatch(resource -> resource.name().contains("lightweight_wavefront")));
+    }
+
+    @Test
+    void subgroupOnlyFingerprintSelectsItsOwnWavefrontPermutation() {
+        RenderBinaryFingerprint fingerprint =
+                RenderBinaryFingerprint.capture(true, false);
+
+        assertTrue(fingerprint.resources().stream()
+                .filter(resource -> resource.name().contains("realtime_wavefront"))
+                .allMatch(resource -> resource.name().contains("_subgroup.rgen.spv")));
     }
 }

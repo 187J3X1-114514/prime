@@ -1,5 +1,7 @@
 package dev.prime.render.vulkan;
 
+import dev.prime.render.WavefrontShaderPermutation;
+
 public record VulkanCapabilities(
         boolean available,
         String deviceName,
@@ -19,6 +21,12 @@ public record VulkanCapabilities(
         int maxOpacity2StateSubdivisionLevel,
         int maxOpacity4StateSubdivisionLevel,
         boolean fsrFp16Supported) {
+
+    public String wavefrontShaderSuffix() {
+        return WavefrontShaderPermutation.suffix(
+                this.wavefrontSubgroupSupported,
+                this.invocationReorderSupported);
+    }
 
     public static VulkanCapabilities unavailable(String deviceName, String reason) {
         return new VulkanCapabilities(

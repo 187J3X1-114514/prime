@@ -72,9 +72,7 @@ public final class OfflineRayTracingPipeline implements Destroyable {
                 layout = createPipelineLayout(
                         context, stack, backend.bindings().descriptorSetLayout(), setLayout);
             }
-            boolean ser = context.capabilities().invocationReorderSupported()
-                    && context.capabilities().wavefrontSubgroupSupported();
-            String suffix = ser ? "_ser.rgen.spv" : ".rgen.spv";
+            String suffix = context.capabilities().wavefrontShaderSuffix();
             String prefix = "/prime/shaders/offline_wavefront_";
             traceProgram = TraceProgram.create(
                     context,

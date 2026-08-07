@@ -78,9 +78,7 @@ public final class RealtimeRayTracingPipeline implements RealtimeIntegratorPipel
                 layout = createPipelineLayout(
                         context, stack, backend.bindings().descriptorSetLayout(), setLayout);
             }
-            boolean ser = context.capabilities().invocationReorderSupported()
-                    && context.capabilities().wavefrontSubgroupSupported();
-            String suffix = ser ? "_ser.rgen.spv" : ".rgen.spv";
+            String suffix = context.capabilities().wavefrontShaderSuffix();
             String prefix = "/prime/shaders/realtime_wavefront_";
             String[] raygenShaders = new String[] {
                 prefix + "head" + suffix,

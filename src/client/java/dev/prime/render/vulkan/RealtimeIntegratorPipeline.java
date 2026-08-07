@@ -4,15 +4,12 @@ import com.mojang.blaze3d.vulkan.Destroyable;
 import com.mojang.blaze3d.vulkan.VulkanGpuSampler;
 import com.mojang.blaze3d.vulkan.VulkanGpuTextureView;
 import dev.prime.render.IntegratorFrameInput;
-import dev.prime.render.RealtimeIntegratorMode;
 import dev.prime.render.vulkan.terrain.TerrainScene;
 import java.util.List;
 import org.lwjgl.vulkan.VkCommandBuffer;
 
-/** Recording and lifetime contract shared by independent realtime integrators. */
+/** Recording and lifetime boundary for the realtime integrator. */
 public interface RealtimeIntegratorPipeline extends Destroyable {
-    RealtimeIntegratorMode mode();
-
     void ensureDescriptors(
             long tlas,
             VulkanImage stableRadiance,

@@ -4,8 +4,6 @@ import com.mojang.blaze3d.vulkan.Destroyable;
 import com.mojang.blaze3d.vulkan.VulkanGpuSampler;
 import com.mojang.blaze3d.vulkan.VulkanGpuTextureView;
 import dev.prime.render.IntegratorFrameInput;
-import dev.prime.render.PerformanceIntegratorSettings;
-import dev.prime.render.RealtimeIntegratorMode;
 import dev.prime.render.shader.ShaderAbi;
 import dev.prime.render.vulkan.terrain.TerrainScene;
 import java.nio.ByteBuffer;
@@ -60,7 +58,6 @@ public final class RealtimeRayTracingPipeline implements RealtimeIntegratorPipel
 
     private final VulkanContext context;
     private final TraceBackend backend;
-    private final boolean performance;
     private final long descriptorSetLayout;
     private final long pipelineLayout;
     private final TraceProgram program;
@@ -70,16 +67,8 @@ public final class RealtimeRayTracingPipeline implements RealtimeIntegratorPipel
     private boolean destroyed;
 
     public RealtimeRayTracingPipeline(VulkanContext context, TraceBackend backend) {
-        this(context, backend, false);
-    }
-
-    RealtimeRayTracingPipeline(
-            VulkanContext context,
-            TraceBackend backend,
-            boolean performance) {
         this.context = context;
         this.backend = java.util.Objects.requireNonNull(backend, "backend");
-        this.performance = performance;
         long setLayout = 0L;
         long layout = 0L;
         TraceProgram traceProgram = null;
@@ -92,46 +81,26 @@ public final class RealtimeRayTracingPipeline implements RealtimeIntegratorPipel
             boolean ser = context.capabilities().invocationReorderSupported()
                     && context.capabilities().wavefrontSubgroupSupported();
             String suffix = ser ? "_ser.rgen.spv" : ".rgen.spv";
-            String prefix = performance
-                    ? "/prime/shaders/lightweight_wavefront_"
-                    : "/prime/shaders/realtime_wavefront_";
-            String[] raygenShaders = performance
-                    ? new String[] {
-                        prefix + "head" + suffix,
-                        prefix + "step" + suffix,
-                        prefix + "resolve" + suffix
-                    }
-                    : new String[] {
-                        prefix + "head" + suffix,
-                        prefix + "step" + suffix,
-                        prefix + "area" + suffix,
-                        prefix + "tail" + suffix,
-                        prefix + "resolve" + suffix
-                    };
-            int[] raygenModules = performance
-                    ? PerformanceRayTracingPipeline.RAYGEN_MODULES
-                    : RAYGEN_MODULES;
-            int[] raygenControls = performance
-                    ? PerformanceRayTracingPipeline.RAYGEN_CONTROLS
-                    : RAYGEN_CONTROLS;
+            String prefix = "/prime/shaders/realtime_wavefront_";
+            String[] raygenShaders = new String[] {
+                prefix + "head" + suffix,
+                prefix + "step" + suffix,
+                prefix + "area" + suffix,
+                prefix + "tail" + suffix,
+                prefix + "resolve" + suffix
+            };
             traceProgram = TraceProgram.create(
                     context,
                     layout,
                     raygenShaders,
-                    raygenModules,
-                    raygenControls,
-                    performance
-                            ? "Prime performance ray tracing pipeline"
-                            : "Prime realtime ray tracing pipeline",
-                    performance
-                            ? "Prime performance shader binding table"
-                            : "Prime realtime shader binding table");
+                    RAYGEN_MODULES,
+                    RAYGEN_CONTROLS,
+                    "Prime realtime ray tracing pipeline",
+                    "Prime realtime shader binding table");
             this.descriptorSetLayout = setLayout;
             this.pipelineLayout = layout;
             this.program = traceProgram;
-            this.lastRecordedPassCount = performance
-                    ? PerformanceRayTracingPipeline.MAXIMUM_DISPATCH_COUNT
-                    : DISPATCH_COUNT;
+            this.lastRecordedPassCount = DISPATCH_COUNT;
         } catch (RuntimeException exception) {
             if (traceProgram != null) {
                 traceProgram.destroy();
@@ -144,13 +113,6 @@ public final class RealtimeRayTracingPipeline implements RealtimeIntegratorPipel
             }
             throw exception;
         }
-    }
-
-    @Override
-    public RealtimeIntegratorMode mode() {
-        return this.performance
-                ? RealtimeIntegratorMode.PERFORMANCE
-                : RealtimeIntegratorMode.QUALITY;
     }
 
     @Override
@@ -183,9 +145,9 @@ public final class RealtimeRayTracingPipeline implements RealtimeIntegratorPipel
                 atmosphere);
         int width = signals.noisyDiffuse().width();
         int height = signals.noisyDiffuse().height();
-        long requiredBytes = this.wavefrontBytesForMode(width, height);
-        this.validateRangesForMode(width, height, this.context.maxStorageBufferRange());
-        this.validateDispatchForMode(
+        long requiredBytes = wavefrontBytes(width, height);
+        validateRanges(width, height, this.context.maxStorageBufferRange());
+        validateDispatch(
                 width,
                 height,
                 this.context.capabilities().maxRayDispatchInvocationCount());
@@ -198,9 +160,7 @@ public final class RealtimeRayTracingPipeline implements RealtimeIntegratorPipel
                             | VK12.VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT
                             | VK12.VK_BUFFER_USAGE_TRANSFER_DST_BIT,
                     false,
-                    this.performance
-                            ? "Prime performance wavefront slots"
-                            : "Prime realtime wavefront slots");
+                    "Prime realtime wavefront slots");
         }
         if (this.bindings != null
                 && this.bindings.matches(stableRadiance, signals, candidate.handle())) {
@@ -214,7 +174,7 @@ public final class RealtimeRayTracingPipeline implements RealtimeIntegratorPipel
                     stableRadiance,
                     signals,
                     candidate,
-                    this.queueOffsetForMode(width, height));
+                    queueOffset(width, height));
         } catch (RuntimeException exception) {
             if (replaces) {
                 candidate.destroy();
@@ -266,7 +226,7 @@ public final class RealtimeRayTracingPipeline implements RealtimeIntegratorPipel
         int width = input.width();
         int height = input.height();
         if (this.wavefront == null
-                || this.wavefront.size() != this.wavefrontBytesForMode(width, height)) {
+                || this.wavefront.size() != wavefrontBytes(width, height)) {
             throw new IllegalStateException("Realtime wavefront extent mismatch");
         }
         if (!this.backend.bindings().ready()) {
@@ -274,18 +234,13 @@ public final class RealtimeRayTracingPipeline implements RealtimeIntegratorPipel
         }
         try (MemoryStack stack = MemoryStack.stackPush()) {
             this.bind(commandBuffer, stack, RayTracingPushConstants.encode(stack, input, scene));
-            long commandOffset = this.queueCommandOffsetForMode(width, height);
+            long commandOffset = queueCommandOffset(width, height);
             this.initializeQueues(commandBuffer, stack, commandOffset);
             this.trace(commandBuffer, stack, width, height, HEAD_GROUP);
             this.wavefrontBarrier(commandBuffer, stack);
             int sourceQueue = 0;
-            int rounds = this.performance
-                    ? performanceRounds(input.maximumBounces())
-                    : ShaderAbi.WAVEFRONT_ROUNDS;
-            this.lastRecordedPassCount = this.performance
-                    ? rounds + 2
-                    : DISPATCH_COUNT;
-            for (int round = 0; round < rounds; round++) {
+            this.lastRecordedPassCount = DISPATCH_COUNT;
+            for (int round = 0; round < ShaderAbi.WAVEFRONT_ROUNDS; round++) {
                 this.traceIndirect(
                         commandBuffer,
                         stack,
@@ -293,34 +248,24 @@ public final class RealtimeRayTracingPipeline implements RealtimeIntegratorPipel
                         commandOffset,
                         sourceQueue);
                 this.wavefrontBarrier(commandBuffer, stack);
-                if (!this.performance) {
-                    this.traceIndirect(
-                            commandBuffer,
-                            stack,
-                            areaGroup(sourceQueue),
-                            commandOffset,
-                            sourceQueue);
-                }
-                this.advanceQueue(commandBuffer, stack, commandOffset, sourceQueue);
-                sourceQueue ^= 1;
-            }
-            if (this.performance) {
-                this.trace(commandBuffer, stack, width, height, 3);
-            } else {
                 this.traceIndirect(
                         commandBuffer,
                         stack,
-                        tailGroup(sourceQueue),
+                        areaGroup(sourceQueue),
                         commandOffset,
                         sourceQueue);
-                this.wavefrontBarrier(commandBuffer, stack);
-                this.trace(commandBuffer, stack, width, height, RESOLVE_GROUP);
+                this.advanceQueue(commandBuffer, stack, commandOffset, sourceQueue);
+                sourceQueue ^= 1;
             }
+            this.traceIndirect(
+                    commandBuffer,
+                    stack,
+                    tailGroup(sourceQueue),
+                    commandOffset,
+                    sourceQueue);
+            this.wavefrontBarrier(commandBuffer, stack);
+            this.trace(commandBuffer, stack, width, height, RESOLVE_GROUP);
         }
-    }
-
-    static int performanceRounds(int maximumScatters) {
-        return PerformanceIntegratorSettings.validateScatters(maximumScatters) - 1;
     }
 
     private void bind(
@@ -522,18 +467,6 @@ public final class RealtimeRayTracingPipeline implements RealtimeIntegratorPipel
         return Math.addExact(queueOffset(width, height), queueBytes(width, height));
     }
 
-    static long performanceWavefrontBytes(int width, int height) {
-        return Math.addExact(
-                performanceQueueOffset(width, height),
-                performanceQueueBytes(width, height));
-    }
-
-    private long wavefrontBytesForMode(int width, int height) {
-        return this.performance
-                ? performanceWavefrontBytes(width, height)
-                : wavefrontBytes(width, height);
-    }
-
     static int raygenModule(int group) {
         return RAYGEN_MODULES[group];
     }
@@ -597,50 +530,6 @@ public final class RealtimeRayTracingPipeline implements RealtimeIntegratorPipel
                 Math.multiplyExact(pixels, ShaderAbi.WAVEFRONT_AREA_RECORD_SIZE));
     }
 
-    static long performanceQueueOffset(int width, int height) {
-        requireExtent(width, height);
-        long pixels = Math.multiplyExact((long) width, (long) height);
-        long bytes = Math.multiplyExact(
-                Math.multiplyExact(
-                        pixels,
-                        ShaderAbi.LIGHTWEIGHT_WAVEFRONT_PATH_SLOTS_PER_PIXEL),
-                ShaderAbi.LIGHTWEIGHT_WAVEFRONT_PATH_RECORD_SIZE);
-        return VulkanContext.alignUp(bytes, QUEUE_OFFSET_ALIGNMENT);
-    }
-
-    static long performanceQueueBytes(int width, int height) {
-        requireExtent(width, height);
-        long pixels = Math.multiplyExact((long) width, (long) height);
-        long capacity = Math.multiplyExact(
-                pixels,
-                ShaderAbi.LIGHTWEIGHT_WAVEFRONT_PATH_SLOTS_PER_PIXEL);
-        long commands = Math.multiplyExact(
-                ShaderAbi.LIGHTWEIGHT_WAVEFRONT_QUEUE_COUNT,
-                ShaderAbi.LIGHTWEIGHT_WAVEFRONT_QUEUE_COMMAND_STRIDE);
-        long indices = Math.multiplyExact(
-                Math.multiplyExact(
-                        ShaderAbi.LIGHTWEIGHT_WAVEFRONT_QUEUE_COUNT,
-                        capacity),
-                ShaderAbi.LIGHTWEIGHT_WAVEFRONT_QUEUE_INDEX_SIZE);
-        return Math.addExact(commands, indices);
-    }
-
-    static long performanceQueueCommandOffset(int width, int height) {
-        return performanceQueueOffset(width, height);
-    }
-
-    private long queueOffsetForMode(int width, int height) {
-        return this.performance
-                ? performanceQueueOffset(width, height)
-                : queueOffset(width, height);
-    }
-
-    private long queueCommandOffsetForMode(int width, int height) {
-        return this.performance
-                ? performanceQueueCommandOffset(width, height)
-                : queueCommandOffset(width, height);
-    }
-
     static void validateRanges(int width, int height, long maximumRange) {
         long paths = queueOffset(width, height);
         long queue = queueBytes(width, height);
@@ -656,45 +545,6 @@ public final class RealtimeRayTracingPipeline implements RealtimeIntegratorPipel
                 ShaderAbi.WAVEFRONT_PATH_SLOTS_PER_PIXEL);
         if (capacity > Integer.toUnsignedLong(maximumInvocations)) {
             throw new IllegalStateException("Realtime wavefront queue exceeds dispatch capacity");
-        }
-    }
-
-    static void validatePerformanceRanges(
-            int width, int height, long maximumRange) {
-        long paths = performanceQueueOffset(width, height);
-        long queue = performanceQueueBytes(width, height);
-        if (paths > maximumRange || queue > maximumRange) {
-            throw new IllegalStateException(
-                    "Performance wavefront descriptor exceeds maxStorageBufferRange");
-        }
-    }
-
-    static void validatePerformanceDispatch(
-            int width, int height, int maximumInvocations) {
-        long capacity = Math.multiplyExact(
-                Math.multiplyExact((long) width, (long) height),
-                ShaderAbi.LIGHTWEIGHT_WAVEFRONT_PATH_SLOTS_PER_PIXEL);
-        if (capacity > Integer.toUnsignedLong(maximumInvocations)) {
-            throw new IllegalStateException(
-                    "Performance wavefront queue exceeds dispatch capacity");
-        }
-    }
-
-    private void validateRangesForMode(
-            int width, int height, long maximumRange) {
-        if (this.performance) {
-            validatePerformanceRanges(width, height, maximumRange);
-        } else {
-            validateRanges(width, height, maximumRange);
-        }
-    }
-
-    private void validateDispatchForMode(
-            int width, int height, int maximumInvocations) {
-        if (this.performance) {
-            validatePerformanceDispatch(width, height, maximumInvocations);
-        } else {
-            validateDispatch(width, height, maximumInvocations);
         }
     }
 

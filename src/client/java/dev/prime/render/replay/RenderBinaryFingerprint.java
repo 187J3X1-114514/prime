@@ -1,6 +1,5 @@
 package dev.prime.render.replay;
 
-import dev.prime.render.RealtimeIntegratorMode;
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.URISyntaxException;
@@ -63,7 +62,6 @@ public record RenderBinaryFingerprint(
             "/dev/prime/render/RealtimeFrameInput.class",
             "/dev/prime/render/RealtimeFramePlan.class",
             "/dev/prime/render/RealtimeRenderSettings.class",
-            "/dev/prime/render/RealtimeIntegratorMode.class",
             "/dev/prime/render/fsr/FsrReconstructionProfile.class",
             "/dev/prime/render/post/ReconstructionFrame.class",
             "/dev/prime/render/post/ReconstructionFrameParameters.class",
@@ -72,7 +70,6 @@ public record RenderBinaryFingerprint(
             "/dev/prime/render/vulkan/RealtimeRayTracingPipeline.class",
             "/dev/prime/render/vulkan/RealtimeRayTracingPipeline$OutputBindings.class",
             "/dev/prime/render/vulkan/RealtimeIntegratorPipeline.class",
-            "/dev/prime/render/vulkan/PerformanceRayTracingPipeline.class",
             "/dev/prime/render/vulkan/RealtimeFrameExecutor.class",
             "/dev/prime/render/vulkan/SunShadowPipeline.class",
             "/dev/prime/render/vulkan/TraceBackend.class",
@@ -145,26 +142,14 @@ public record RenderBinaryFingerprint(
     }
 
     public static RenderBinaryFingerprint capture(boolean ser) {
-        return capture(ser, RealtimeIntegratorMode.DEFAULT);
-    }
-
-    public static RenderBinaryFingerprint capture(
-            boolean ser, RealtimeIntegratorMode integratorMode) {
-        Objects.requireNonNull(integratorMode, "integratorMode");
         ArrayList<String> names = new ArrayList<>(COMMON_RESOURCES);
         String suffix = ser ? "_ser.rgen.spv" : ".rgen.spv";
-        List<String> stages = switch (integratorMode) {
-            case QUALITY -> List.of(
-                    "realtime_wavefront_head",
-                    "realtime_wavefront_step",
-                    "realtime_wavefront_area",
-                    "realtime_wavefront_tail",
-                    "realtime_wavefront_resolve");
-            case PERFORMANCE -> List.of(
-                    "lightweight_wavefront_head",
-                    "lightweight_wavefront_step",
-                    "lightweight_wavefront_resolve");
-        };
+        List<String> stages = List.of(
+                "realtime_wavefront_head",
+                "realtime_wavefront_step",
+                "realtime_wavefront_area",
+                "realtime_wavefront_tail",
+                "realtime_wavefront_resolve");
         for (String stage : stages) {
             names.add("/prime/shaders/" + stage + suffix);
         }

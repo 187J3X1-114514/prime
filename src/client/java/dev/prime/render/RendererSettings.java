@@ -8,8 +8,6 @@ import java.util.Objects;
 /** Immutable renderer configuration captured once at the client frame boundary. */
 public record RendererSettings(
         boolean pathTracingEnabled,
-        RealtimeIntegratorMode realtimeIntegrator,
-        int performanceMaximumScatters,
         boolean voxelTextureSurfaces,
         int voxelTextureSurfaceStrengthSteps,
         PostProcessingMode postProcessingMode,
@@ -20,8 +18,6 @@ public record RendererSettings(
         DisplaySettings.Snapshot display,
         long revision) {
     public RendererSettings {
-        realtimeIntegrator = Objects.requireNonNull(realtimeIntegrator, "realtimeIntegrator");
-        PerformanceIntegratorSettings.validateScatters(performanceMaximumScatters);
         postProcessingMode = Objects.requireNonNull(postProcessingMode, "postProcessingMode");
         reconstructionQuality = Objects.requireNonNull(
                 reconstructionQuality, "reconstructionQuality");

@@ -4,7 +4,6 @@ import dev.prime.render.AstronomySettings;
 import dev.prime.render.AstronomyState;
 import dev.prime.render.LightingSettings;
 import dev.prime.render.MaterialSettings;
-import dev.prime.render.RealtimeIntegratorMode;
 import dev.prime.render.SunDirection;
 import dev.prime.render.post.PostProcessingMode;
 import java.nio.BufferUnderflowException;
@@ -58,7 +57,8 @@ public final class RayTraceReplayInputCodec {
         output.putInt(input.jitterPhase());
         output.putInt(flags(input));
         output.putInt(mode(input.postProcessingMode()));
-        output.putInt(integratorMode(input.integratorMode()));
+        // Version 7 reserved this slot for the removed integrator selector.
+        output.putInt(0);
         output.putInt(input.lighting().sunQuarterSteps());
         output.putInt(input.lighting().starQuarterSteps());
         output.putInt(input.lighting().blockLightQuarterSteps());
@@ -119,7 +119,7 @@ public final class RayTraceReplayInputCodec {
                         "Ray-trace replay contains unknown flags");
             }
             PostProcessingMode mode = mode(input.getInt());
-            RealtimeIntegratorMode integratorMode = integratorMode(input.getInt());
+            requireQualityIntegrator(input.getInt());
             int sunQuarterSteps = input.getInt();
             int starQuarterSteps = input.getInt();
             int blockLightQuarterSteps = input.getInt();
@@ -162,7 +162,6 @@ public final class RayTraceReplayInputCodec {
             return new RayTraceReplayInput(
                     camera,
                     scene,
-                    integratorMode,
                     width,
                     height,
                     astronomy,
@@ -230,19 +229,12 @@ public final class RayTraceReplayInputCodec {
         };
     }
 
-    private static int integratorMode(RealtimeIntegratorMode mode) {
-        return switch (mode) {
-            case QUALITY -> 0;
-            case PERFORMANCE -> 1;
-        };
-    }
-
-    private static RealtimeIntegratorMode integratorMode(int encoded) {
-        return switch (encoded) {
-            case 0 -> RealtimeIntegratorMode.QUALITY;
-            case 1 -> RealtimeIntegratorMode.PERFORMANCE;
-            default -> throw new IllegalArgumentException(
-                    "Ray-trace replay contains an unknown integrator mode");
-        };
+    private static void requireQualityIntegrator(int encoded) {
+        if (encoded != 0) {
+            throw new IllegalArgumentException(
+                    encoded == 1
+                            ? "Ray-trace replay requires the removed performance integrator"
+                            : "Ray-trace replay contains an unknown integrator mode");
+        }
     }
 }

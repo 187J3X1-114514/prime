@@ -63,7 +63,7 @@ public final class ReplayProbeFrameExecutor {
             Objects.requireNonNull(sceneTextures, "sceneTextures");
             Objects.requireNonNull(platform, "platform");
             Objects.requireNonNull(binary, "binary");
-            replayInput.requireMatch(pipeline.mode(), integrator, scene);
+            replayInput.requireMatch(integrator, scene);
             this.imageInitialization.begin();
             initializationActive = true;
 

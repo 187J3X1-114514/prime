@@ -12,8 +12,6 @@ import dev.prime.render.IntegratorFrameInput;
 import dev.prime.render.IntegratorSettings;
 import dev.prime.render.LightingSettings;
 import dev.prime.render.MaterialSettings;
-import dev.prime.render.PerformanceIntegratorSettings;
-import dev.prime.render.RealtimeIntegratorMode;
 import dev.prime.render.SunDirection;
 import dev.prime.render.post.PostProcessingMode;
 import dev.prime.render.post.TransparentGuideMode;
@@ -53,43 +51,33 @@ final class RayTraceReplayInputCodecTest {
     }
 
     @Test
-    void productAndIntegratorModesKeepTheV7SizeAndWireCodes() {
+    void productModesKeepTheV7SizeAndLegacyIntegratorSlot() {
         Fixture fixture = input();
         for (PostProcessingMode mode : PostProcessingMode.values()) {
-            for (RealtimeIntegratorMode integrator : RealtimeIntegratorMode.values()) {
-                IntegratorFrameInput input = withMaximumBounces(
-                        withMode(fixture.input(), mode),
-                        integrator == RealtimeIntegratorMode.PERFORMANCE
-                                ? 4
-                                : IntegratorSettings.MAXIMUM_BOUNCES);
-                byte[] encoded = RayTraceReplayInputCodec.encode(
-                        RayTraceReplayInput.capture(
-                                integrator, input, fixture.scene()));
-                int expectedMode = switch (mode) {
-                    case NRD_FSR -> 0;
-                    case DLSS_RR -> 1;
-                    case DISABLED -> 2;
-                };
-                int expectedIntegrator = integrator == RealtimeIntegratorMode.QUALITY
-                        ? 0
-                        : 1;
+            IntegratorFrameInput input = withMode(fixture.input(), mode);
+            byte[] encoded = RayTraceReplayInputCodec.encode(
+                    RayTraceReplayInput.capture(input, fixture.scene()));
+            int expectedMode = switch (mode) {
+                case NRD_FSR -> 0;
+                case DLSS_RR -> 1;
+                case DISABLED -> 2;
+            };
 
-                assertEquals(392, encoded.length);
-                assertEquals(
-                        expectedMode,
-                        ByteBuffer.wrap(encoded)
-                                .order(ByteOrder.LITTLE_ENDIAN)
-                                .getInt(336));
-                assertEquals(
-                        expectedIntegrator,
-                        ByteBuffer.wrap(encoded)
-                                .order(ByteOrder.LITTLE_ENDIAN)
-                                .getInt(340));
-                assertArrayEquals(
-                        encoded,
-                        RayTraceReplayInputCodec.encode(
-                                RayTraceReplayInputCodec.decode(encoded)));
-            }
+            assertEquals(392, encoded.length);
+            assertEquals(
+                    expectedMode,
+                    ByteBuffer.wrap(encoded)
+                            .order(ByteOrder.LITTLE_ENDIAN)
+                            .getInt(336));
+            assertEquals(
+                    0,
+                    ByteBuffer.wrap(encoded)
+                            .order(ByteOrder.LITTLE_ENDIAN)
+                            .getInt(340));
+            assertArrayEquals(
+                    encoded,
+                    RayTraceReplayInputCodec.encode(
+                            RayTraceReplayInputCodec.decode(encoded)));
         }
     }
 
@@ -138,43 +126,43 @@ final class RayTraceReplayInputCodecTest {
     }
 
     @Test
-    void replayIdentityRejectsAnotherIntegrator() {
+    void replayIdentityRequiresTheFixedBounceBudget() {
         Fixture fixture = input();
-        IntegratorFrameInput performance = withMaximumBounces(fixture.input(), 4);
         RayTraceReplayInput captured = RayTraceReplayInput.capture(
-                RealtimeIntegratorMode.PERFORMANCE,
-                performance,
-                fixture.scene());
+                fixture.input(), fixture.scene());
 
-        captured.requireMatch(
-                RealtimeIntegratorMode.PERFORMANCE,
-                performance,
-                fixture.scene());
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> RayTraceReplayInput.capture(
+                        withMaximumBounces(fixture.input(), 4),
+                        fixture.scene()));
         assertThrows(
                 IllegalArgumentException.class,
                 () -> captured.requireMatch(
-                        RealtimeIntegratorMode.QUALITY,
-                        performance,
+                        withMaximumBounces(fixture.input(), 4),
                         fixture.scene()));
     }
 
     @Test
-    void replayIdentityRejectsAnotherLightweightBounceLimit() {
+    void decodeRejectsRemovedAndUnknownIntegratorWireCodes() {
         Fixture fixture = input();
-        IntegratorFrameInput fourBounces = withMaximumBounces(fixture.input(), 4);
-        RayTraceReplayInput captured = RayTraceReplayInput.capture(
-                RealtimeIntegratorMode.PERFORMANCE,
-                fourBounces,
-                fixture.scene());
+        byte[] removed = RayTraceReplayInputCodec.encode(
+                RayTraceReplayInput.capture(fixture.input(), fixture.scene()));
+        ByteBuffer.wrap(removed)
+                .order(ByteOrder.LITTLE_ENDIAN)
+                .putInt(340, 1);
 
-        assertEquals(4, RayTraceReplayInputCodec.decode(
-                RayTraceReplayInputCodec.encode(captured)).maximumBounces());
         assertThrows(
                 IllegalArgumentException.class,
-                () -> captured.requireMatch(
-                        RealtimeIntegratorMode.PERFORMANCE,
-                        withMaximumBounces(fourBounces, 3),
-                        fixture.scene()));
+                () -> RayTraceReplayInputCodec.decode(removed));
+
+        byte[] unknown = removed.clone();
+        ByteBuffer.wrap(unknown)
+                .order(ByteOrder.LITTLE_ENDIAN)
+                .putInt(340, 2);
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> RayTraceReplayInputCodec.decode(unknown));
     }
 
     @Test
@@ -340,7 +328,7 @@ final class RayTraceReplayInputCodecTest {
                         0.7F,
                         new AstronomySettings(-45, 270)),
                 0x1234_5678,
-                PerformanceIntegratorSettings.DEFAULT_SCATTERS,
+                IntegratorSettings.MAXIMUM_BOUNCES,
                 37,
                 19,
                 7,

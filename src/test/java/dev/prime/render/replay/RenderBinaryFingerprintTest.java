@@ -6,7 +6,6 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import dev.prime.render.RealtimeIntegratorMode;
 import java.util.Arrays;
 import org.junit.jupiter.api.Test;
 
@@ -45,16 +44,14 @@ final class RenderBinaryFingerprintTest {
     }
 
     @Test
-    void integratorModesFingerprintTheirOwnRaygenModules() {
-        RenderBinaryFingerprint quality = RenderBinaryFingerprint.capture(
-                false, RealtimeIntegratorMode.QUALITY);
-        RenderBinaryFingerprint performance = RenderBinaryFingerprint.capture(
-                false, RealtimeIntegratorMode.PERFORMANCE);
+    void realtimeFingerprintIncludesTheCompleteWavefrontSchedule() {
+        RenderBinaryFingerprint fingerprint = RenderBinaryFingerprint.capture(false);
 
-        assertFalse(quality.isStrictlyCompatibleWith(performance));
-        assertTrue(quality.resources().stream()
+        assertTrue(fingerprint.resources().stream()
                 .anyMatch(resource -> resource.name().contains("realtime_wavefront_area")));
-        assertTrue(performance.resources().stream()
-                .anyMatch(resource -> resource.name().contains("lightweight_wavefront_step")));
+        assertTrue(fingerprint.resources().stream()
+                .anyMatch(resource -> resource.name().contains("realtime_wavefront_tail")));
+        assertFalse(fingerprint.resources().stream()
+                .anyMatch(resource -> resource.name().contains("lightweight_wavefront")));
     }
 }

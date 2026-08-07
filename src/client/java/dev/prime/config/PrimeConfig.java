@@ -4,9 +4,7 @@ import dev.prime.infrastructure.PrimeInfo;
 import dev.prime.render.AstronomySettings;
 import dev.prime.render.DisplaySettings;
 import dev.prime.render.LightingSettings;
-import dev.prime.render.PerformanceIntegratorSettings;
 import dev.prime.render.MaterialSettings;
-import dev.prime.render.RealtimeIntegratorMode;
 import dev.prime.render.RendererSettings;
 import dev.prime.render.fsr.FsrQualityMode;
 import dev.prime.render.fsr.FsrReconstructionProfile;
@@ -27,11 +25,11 @@ import net.fabricmc.loader.api.FabricLoader;
 /** Small, version-tolerant owner for Prime's user-facing settings. */
 public final class PrimeConfig {
     private static final String PATH_TRACING_ENABLED_KEY = "renderer.path_tracing";
-    private static final String INTEGRATOR_KEY = "renderer.integrator";
-    private static final String PERFORMANCE_MAXIMUM_SCATTERS_KEY =
-            "renderer.performance_maximum_bounces";
-    private static final String LEGACY_LIGHTWEIGHT_MAXIMUM_SCATTERS_KEY =
-            "renderer.lightweight_maximum_bounces";
+    private static final String[] LEGACY_INTEGRATOR_KEYS = {
+        "renderer.integrator",
+        "renderer.performance_maximum_bounces",
+        "renderer.lightweight_maximum_bounces"
+    };
     private static final String VOXEL_TEXTURE_SURFACES_KEY =
             "experimental.voxel_texture_surfaces";
     private static final String VOXEL_TEXTURE_SURFACE_STRENGTH_KEY =
@@ -72,8 +70,6 @@ public final class PrimeConfig {
     public static void load() {
         Path path = configPath();
         boolean pathTracingEnabled = true;
-        RealtimeIntegratorMode realtimeIntegrator = RealtimeIntegratorMode.DEFAULT;
-        int performanceMaximumScatters = PerformanceIntegratorSettings.DEFAULT_SCATTERS;
         boolean voxelTextureSurfaces = false;
         int voxelTextureSurfaceStrengthSteps = VoxelSurfaceSettings.DEFAULT_STEPS;
         PostProcessingMode postProcessingMode = PostProcessingMode.DEFAULT;
@@ -110,45 +106,8 @@ public final class PrimeConfig {
                 } else {
                     rewriteNeeded = true;
                 }
-                String integratorId = properties.getProperty(INTEGRATOR_KEY);
-                if (integratorId != null) {
-                    RealtimeIntegratorMode parsed =
-                            RealtimeIntegratorMode.findById(integratorId).orElse(null);
-                    if (parsed == null) {
-                        PrimeInfo.LOGGER.warn(
-                                "Unknown Prime realtime integrator '{}'; using {}",
-                                integratorId,
-                                RealtimeIntegratorMode.DEFAULT.id());
-                        rewriteNeeded = true;
-                    } else {
-                        realtimeIntegrator = parsed;
-                        if (!parsed.id().equalsIgnoreCase(integratorId)) {
-                            rewriteNeeded = true;
-                        }
-                    }
-                } else {
+                if (hasLegacyIntegratorProperties(properties)) {
                     rewriteNeeded = true;
-                }
-                String performanceScatters = properties.getProperty(
-                        PERFORMANCE_MAXIMUM_SCATTERS_KEY);
-                if (performanceScatters == null) {
-                    performanceScatters = properties.getProperty(
-                            LEGACY_LIGHTWEIGHT_MAXIMUM_SCATTERS_KEY);
-                    rewriteNeeded = true;
-                } else if (properties.containsKey(
-                        LEGACY_LIGHTWEIGHT_MAXIMUM_SCATTERS_KEY)) {
-                    rewriteNeeded = true;
-                }
-                if (performanceScatters != null) {
-                    try {
-                        performanceMaximumScatters =
-                                parsePerformanceMaximumScatters(performanceScatters);
-                    } catch (IllegalArgumentException exception) {
-                        PrimeInfo.LOGGER.warn(
-                                "Invalid Prime performance bounce limit '{}'; using the default",
-                                performanceScatters);
-                        rewriteNeeded = true;
-                    }
                 }
                 String voxelSurfaces = properties.getProperty(
                         VOXEL_TEXTURE_SURFACES_KEY);
@@ -349,8 +308,6 @@ public final class PrimeConfig {
         }
         settings = new PrimeSettings(
                 pathTracingEnabled,
-                realtimeIntegrator,
-                performanceMaximumScatters,
                 voxelTextureSurfaces,
                 voxelTextureSurfaceStrengthSteps,
                 postProcessingMode,
@@ -370,10 +327,8 @@ public final class PrimeConfig {
         rendererRevision = 0L;
         dirty = rewriteNeeded;
         PrimeInfo.LOGGER.info(
-                "Prime settings: path tracing {}, realtime integrator {}, performance limit {} bounces, voxel surfaces {} at {}x, post-processing {} quality {} (NRD-FSR {}x), latitude {} degrees, solar longitude {} degrees, sun {} EV, stars {} EV, block lights {} EV, final exposure {} EV, Oklab DRT overexposure {}, curve exponent {}, auto-exposure compensation {}, default roughness {}, seamless glass {}",
+                "Prime settings: path tracing {}, voxel surfaces {} at {}x, post-processing {} quality {} (NRD-FSR {}x), latitude {} degrees, solar longitude {} degrees, sun {} EV, stars {} EV, block lights {} EV, final exposure {} EV, Oklab DRT overexposure {}, curve exponent {}, auto-exposure compensation {}, default roughness {}, seamless glass {}",
                 pathTracingEnabled ? "enabled" : "disabled",
-                realtimeIntegrator.id(),
-                performanceMaximumScatters,
                 voxelTextureSurfaces ? "enabled" : "disabled",
                 formatVoxelSurfaceStrength(voxelTextureSurfaceStrengthSteps),
                 postProcessingMode.id(),
@@ -409,8 +364,6 @@ public final class PrimeConfig {
     static RendererSettings rendererSettings(PrimeSettings current, long revision) {
         return new RendererSettings(
                 current.pathTracingEnabled(),
-                current.realtimeIntegrator(),
-                current.performanceMaximumScatters(),
                 current.voxelTextureSurfaces(),
                 current.voxelTextureSurfaceStrengthSteps(),
                 current.postProcessingMode(),
@@ -424,14 +377,6 @@ public final class PrimeConfig {
 
     public static void setPathTracingEnabled(boolean enabled) {
         update(settings.withPathTracingEnabled(enabled));
-    }
-
-    public static void setRealtimeIntegrator(RealtimeIntegratorMode mode) {
-        update(settings.withRealtimeIntegrator(mode));
-    }
-
-    public static void setPerformanceMaximumScatters(int value) {
-        update(settings.withPerformanceMaximumScatters(value));
     }
 
     public static void setVoxelTextureSurfaces(boolean enabled) {
@@ -501,9 +446,6 @@ public final class PrimeConfig {
     static PrimeSettings restoredDefaults(PrimeSettings current) {
         return current
                 .withPathTracingEnabled(true)
-                .withRealtimeIntegrator(RealtimeIntegratorMode.DEFAULT)
-                .withPerformanceMaximumScatters(
-                        PerformanceIntegratorSettings.DEFAULT_SCATTERS)
                 .withVoxelTextureSurfaces(false)
                 .withVoxelTextureSurfaceStrengthSteps(VoxelSurfaceSettings.DEFAULT_STEPS)
                 .withPostProcessingMode(PostProcessingMode.DEFAULT)
@@ -564,12 +506,16 @@ public final class PrimeConfig {
         return false;
     }
 
+    static boolean hasLegacyIntegratorProperties(Properties properties) {
+        for (String key : LEGACY_INTEGRATOR_KEYS) {
+            if (properties.containsKey(key)) return true;
+        }
+        return false;
+    }
+
     static String serializedContents() {
         PrimeSettings current = settings;
         return PATH_TRACING_ENABLED_KEY + "=" + current.pathTracingEnabled() + "\n"
-                    + INTEGRATOR_KEY + "=" + current.realtimeIntegrator().id() + "\n"
-                    + PERFORMANCE_MAXIMUM_SCATTERS_KEY + "="
-                    + current.performanceMaximumScatters() + "\n"
                     + VOXEL_TEXTURE_SURFACES_KEY + "="
                     + current.voxelTextureSurfaces() + "\n"
                     + VOXEL_TEXTURE_SURFACE_STRENGTH_KEY + "="
@@ -712,16 +658,6 @@ public final class PrimeConfig {
             throw new IllegalArgumentException(
                     "Voxel-surface strength must be an exact 0.01 step",
                     exception);
-        }
-    }
-
-    static int parsePerformanceMaximumScatters(String value) {
-        try {
-            return PerformanceIntegratorSettings.validateScatters(
-                    Integer.parseInt(value));
-        } catch (NumberFormatException exception) {
-            throw new IllegalArgumentException(
-                    "Performance bounce limit must be an integer", exception);
         }
     }
 

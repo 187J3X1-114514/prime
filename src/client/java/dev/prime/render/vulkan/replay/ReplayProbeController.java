@@ -10,9 +10,7 @@ import dev.prime.render.FrameCamera;
 import dev.prime.render.IntegratorFrameInput;
 import dev.prime.render.IntegratorSettings;
 import dev.prime.render.LightingSettings;
-import dev.prime.render.PerformanceIntegratorSettings;
 import dev.prime.render.MaterialSettings;
-import dev.prime.render.RealtimeIntegratorMode;
 import dev.prime.render.ResourceCleanup;
 import dev.prime.render.post.PostProcessingMode;
 import dev.prime.render.post.ReconstructionQualityMode;
@@ -88,8 +86,7 @@ public final class ReplayProbeController implements Destroyable {
             RenderBinaryFingerprint binary =
                     RenderBinaryFingerprint.capture(
                             platform.invocationReorderSupported()
-                                    && platform.wavefrontSubgroupSupported(),
-                            input.pipeline.mode());
+                                    && platform.wavefrontSubgroupSupported());
             referenceProbe = NrdReplayProbe.create(
                     this.context,
                     input.atmosphere,
@@ -254,8 +251,7 @@ public final class ReplayProbeController implements Destroyable {
                 false,
                 false);
         RayTraceReplayInput replayInput =
-                RayTraceReplayInput.capture(
-                        input.pipeline.mode(), frameInput, input.scene);
+                RayTraceReplayInput.capture(frameInput, input.scene);
         return this.executor.execute(
                 forceRestart
                         ? "Prime deterministic replay jitter restart"
@@ -323,11 +319,9 @@ public final class ReplayProbeController implements Destroyable {
             Objects.requireNonNull(scene, "scene");
             Objects.requireNonNull(camera, "camera");
             Objects.requireNonNull(astronomy, "astronomy");
-            if (pipeline.mode() == RealtimeIntegratorMode.PERFORMANCE) {
-                PerformanceIntegratorSettings.validateScatters(maximumBounces);
-            } else if (maximumBounces != IntegratorSettings.MAXIMUM_BOUNCES) {
+            if (maximumBounces != IntegratorSettings.MAXIMUM_BOUNCES) {
                 throw new IllegalArgumentException(
-                        "The quality integrator requires its fixed maximum bounce count");
+                        "The realtime integrator requires its fixed maximum bounce count");
             }
             Objects.requireNonNull(lighting, "lighting");
             Objects.requireNonNull(material, "material");

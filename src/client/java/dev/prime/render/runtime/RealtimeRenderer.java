@@ -19,7 +19,6 @@ import dev.prime.render.vulkan.DisplayExposureDiagnostics;
 import dev.prime.render.vulkan.LabPbrTextureAtlas;
 import dev.prime.render.vulkan.RealtimeFrameExecutor;
 import dev.prime.render.vulkan.RealtimeIntegratorPipeline;
-import dev.prime.render.vulkan.PerformanceRayTracingPipeline;
 import dev.prime.render.vulkan.RealtimeRayTracingPipeline;
 import dev.prime.render.vulkan.SunShadowPipeline;
 import dev.prime.render.vulkan.TraceBackend;
@@ -48,8 +47,6 @@ final class RealtimeRenderer implements Destroyable {
     private RealtimeIntegratorPipeline pipeline;
     private VulkanReconstructionResources resources;
     private RealtimeSampleState sampleState = RealtimeSampleState.initial();
-    private int performanceMaximumScatters =
-            PerformanceIntegratorSettings.DEFAULT_SCATTERS;
     private MaterialSettings.Snapshot materialSettings;
     private boolean pipelineInvalid;
     private boolean destroyed;
@@ -119,7 +116,6 @@ final class RealtimeRenderer implements Destroyable {
             return null;
         }
         return new DiagnosticSnapshot(
-                this.pipeline.mode(),
                 current.selection().effectiveMode(),
                 current.selection().quality(),
                 current.stableRadiance().width(),
@@ -140,16 +136,13 @@ final class RealtimeRenderer implements Destroyable {
             AtmospherePipeline atmosphere,
             LabPbrTextureAtlas labPbrAtlas,
             ResolvedReconstruction selection,
-            RealtimeIntegratorMode requestedIntegrator,
             long tlas,
             VulkanGpuTextureView atlasView,
             VulkanGpuSampler atlasSampler,
             List<TraceBackend.SceneTexture> sceneTextures) {
-        Objects.requireNonNull(requestedIntegrator, "requestedIntegrator");
         VulkanReconstructionResources current = this.resources;
         boolean resourcesMatch = current != null && current.matches(selection);
-        boolean replacePipeline = this.pipeline.mode() != requestedIntegrator
-                || this.pipelineInvalid;
+        boolean replacePipeline = this.pipelineInvalid;
         if (resourcesMatch && !replacePipeline) {
             this.pipeline.ensureDescriptors(
                     tlas,
@@ -174,7 +167,7 @@ final class RealtimeRenderer implements Destroyable {
                         replacementResources.selection().extent().height());
             }
             if (replacePipeline) {
-                replacementPipeline = this.createPipeline(requestedIntegrator);
+                replacementPipeline = new RealtimeRayTracingPipeline(this.context, this.backend);
             }
             VulkanReconstructionResources targetResources = resourcesMatch
                     ? current
@@ -197,9 +190,7 @@ final class RealtimeRenderer implements Destroyable {
             ResourceCleanup.destroy(replacementResources, exception);
             if (replacePipeline) {
                 PrimeInfo.LOGGER.error(
-                        "Prime could not initialize realtime integrator {}; keeping {}",
-                        requestedIntegrator.id(),
-                        this.pipeline.mode().id(),
+                        "Prime could not reload the realtime integrator; keeping the current pipeline",
                         exception);
             }
             throw exception;
@@ -251,16 +242,13 @@ final class RealtimeRenderer implements Destroyable {
                 input.atmosphere(),
                 input.labPbrAtlas(),
                 requestedSelection,
-                settings.integrator(),
                 input.scene().tlas(),
                 input.atlasView(),
                 input.atlasSampler(),
                 input.sceneTextures());
-        boolean scatterLimitChanged = this.applyPerformanceMaximumScatters(
-                settings.performanceMaximumScatters(), resized);
         boolean materialChanged = !settings.material().equals(this.materialSettings);
         this.materialSettings = settings.material();
-        boolean reconfigured = resized || scatterLimitChanged || materialChanged;
+        boolean reconfigured = resized || materialChanged;
         VulkanReconstructionResources images = this.resources;
         if (images == null) {
             return List.of();
@@ -306,9 +294,7 @@ final class RealtimeRenderer implements Destroyable {
                 selection.effectiveMode(),
                 selection.quality(),
                 selection.transparentGuideMode(),
-                settings.integrator() == RealtimeIntegratorMode.PERFORMANCE
-                        ? settings.performanceMaximumScatters()
-                        : IntegratorSettings.MAXIMUM_BOUNCES,
+                IntegratorSettings.MAXIMUM_BOUNCES,
                 settings.lighting(),
                 settings.material(),
                 processor.rawFrame().usesShInputs(),
@@ -395,24 +381,6 @@ final class RealtimeRenderer implements Destroyable {
         return debugLines;
     }
 
-    private boolean applyPerformanceMaximumScatters(
-            int value, boolean resourcesReconfigured) {
-        PerformanceIntegratorSettings.validateScatters(value);
-        if (this.pipeline.mode() != RealtimeIntegratorMode.PERFORMANCE) {
-            this.performanceMaximumScatters = value;
-            return false;
-        }
-        if (value == this.performanceMaximumScatters) {
-            return false;
-        }
-        this.performanceMaximumScatters = value;
-        if (!resourcesReconfigured) {
-            this.sampleState = this.sampleState.invalidated();
-            this.resources.requestReset();
-        }
-        return true;
-    }
-
     private void requireRayDispatchCapacity(int width, int height) {
         long invocationCount = (long) width * height;
         if (invocationCount
@@ -459,7 +427,6 @@ final class RealtimeRenderer implements Destroyable {
     }
 
     record DiagnosticSnapshot(
-            RealtimeIntegratorMode integrator,
             PostProcessingMode postProcessingMode,
             ReconstructionQualityMode quality,
             int renderWidth,
@@ -485,7 +452,7 @@ final class RealtimeRenderer implements Destroyable {
         RealtimeIntegratorPipeline replacementPipeline = null;
         VulkanReconstructionResources replacementResources = null;
         try {
-            replacementPipeline = this.createPipeline(this.pipeline.mode());
+            replacementPipeline = new RealtimeRayTracingPipeline(this.context, this.backend);
             VulkanReconstructionResources current = this.resources;
             if (current != null) {
                 replacementResources = this.reconstructionRegistry.createResources(
@@ -516,18 +483,12 @@ final class RealtimeRenderer implements Destroyable {
         if (!this.pipelineInvalid) {
             return;
         }
-        RealtimeIntegratorPipeline replacement = this.createPipeline(this.pipeline.mode());
+        RealtimeIntegratorPipeline replacement =
+                new RealtimeRayTracingPipeline(this.context, this.backend);
         RealtimeIntegratorPipeline previous = this.pipeline;
         this.pipeline = replacement;
         this.pipelineInvalid = false;
         this.context.defer(previous);
-    }
-
-    private RealtimeIntegratorPipeline createPipeline(RealtimeIntegratorMode mode) {
-        return switch (mode) {
-            case QUALITY -> new RealtimeRayTracingPipeline(this.context, this.backend);
-            case PERFORMANCE -> new PerformanceRayTracingPipeline(this.context, this.backend);
-        };
     }
 
     @Override

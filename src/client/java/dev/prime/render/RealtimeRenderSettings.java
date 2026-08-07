@@ -6,16 +6,12 @@ import java.util.Objects;
 
 /** Immutable settings consumed only by the interactive renderer. */
 public record RealtimeRenderSettings(
-        RealtimeIntegratorMode integrator,
-        int performanceMaximumScatters,
         PostProcessingMode postProcessing,
         ReconstructionQualityMode reconstructionQuality,
         LightingSettings.Snapshot lighting,
         MaterialSettings.Snapshot material,
         DisplaySettings.Snapshot display) {
     public RealtimeRenderSettings {
-        Objects.requireNonNull(integrator, "integrator");
-        PerformanceIntegratorSettings.validateScatters(performanceMaximumScatters);
         Objects.requireNonNull(postProcessing, "postProcessing");
         Objects.requireNonNull(reconstructionQuality, "reconstructionQuality");
         Objects.requireNonNull(lighting, "lighting");
@@ -26,8 +22,6 @@ public record RealtimeRenderSettings(
     public static RealtimeRenderSettings capture(RendererSettings settings) {
         Objects.requireNonNull(settings, "settings");
         return new RealtimeRenderSettings(
-                settings.realtimeIntegrator(),
-                settings.performanceMaximumScatters(),
                 settings.postProcessingMode(),
                 settings.reconstructionQuality(),
                 settings.lighting(),

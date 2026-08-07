@@ -48,7 +48,8 @@ final class RayTracingPushConstantsTest {
         assertEquals(
                 IntegratorSettings.packSampleControl(
                         input.sampleIndex(),
-                        input.astronomy().settings()),
+                        input.astronomy().settings(),
+                        input.material().seamlessGlass()),
                 firstBuffer.getInt(ShaderAbi.PUSH_PATH_OFFSET));
         assertEquals(
                 IntegratorSettings.packSampleEpoch(input.sampleEpoch(), input.triangleDebug()),
@@ -107,7 +108,7 @@ final class RayTracingPushConstantsTest {
         LightingSettings.Snapshot lighting =
                 new LightingSettings.Snapshot(4, -8, 12, 7L);
         MaterialSettings.Snapshot material =
-                new MaterialSettings.Snapshot(90, 8L);
+                new MaterialSettings.Snapshot(90, true, 8L);
         IntegratorFrameInput input = new IntegratorFrameInput(
                 camera,
                 320,

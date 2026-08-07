@@ -12,6 +12,7 @@ import dev.prime.render.IntegratorFrameInput;
 import dev.prime.render.IntegratorSettings;
 import dev.prime.render.LightingSettings;
 import dev.prime.render.MaterialSettings;
+import dev.prime.render.PerformanceIntegratorSettings;
 import dev.prime.render.RealtimeIntegratorMode;
 import dev.prime.render.SunDirection;
 import dev.prime.render.post.PostProcessingMode;
@@ -52,7 +53,7 @@ final class RayTraceReplayInputCodecTest {
     }
 
     @Test
-    void productAndIntegratorModesKeepTheV6SizeAndWireCodes() {
+    void productAndIntegratorModesKeepTheV7SizeAndWireCodes() {
         Fixture fixture = input();
         for (PostProcessingMode mode : PostProcessingMode.values()) {
             for (RealtimeIntegratorMode integrator : RealtimeIntegratorMode.values()) {
@@ -339,7 +340,7 @@ final class RayTraceReplayInputCodecTest {
                         0.7F,
                         new AstronomySettings(-45, 270)),
                 0x1234_5678,
-                IntegratorSettings.MAXIMUM_BOUNCES,
+                PerformanceIntegratorSettings.DEFAULT_SCATTERS,
                 37,
                 19,
                 7,
@@ -348,7 +349,7 @@ final class RayTraceReplayInputCodecTest {
                 TransparentGuideMode.REFLECTION_AND_TRANSMISSION,
                 new LightingSettings.Snapshot(
                         4, -8, 12, 7L),
-                new MaterialSettings.Snapshot(90, 8L),
+                new MaterialSettings.Snapshot(90, true, 8L),
                 true,
                 true,
                 true);

@@ -50,6 +50,7 @@ final class RealtimeRenderer implements Destroyable {
     private RealtimeSampleState sampleState = RealtimeSampleState.initial();
     private int performanceMaximumScatters =
             PerformanceIntegratorSettings.DEFAULT_SCATTERS;
+    private MaterialSettings.Snapshot materialSettings;
     private boolean pipelineInvalid;
     private boolean destroyed;
 
@@ -257,7 +258,9 @@ final class RealtimeRenderer implements Destroyable {
                 input.sceneTextures());
         boolean scatterLimitChanged = this.applyPerformanceMaximumScatters(
                 settings.performanceMaximumScatters(), resized);
-        boolean reconfigured = resized || scatterLimitChanged;
+        boolean materialChanged = !settings.material().equals(this.materialSettings);
+        this.materialSettings = settings.material();
+        boolean reconfigured = resized || scatterLimitChanged || materialChanged;
         VulkanReconstructionResources images = this.resources;
         if (images == null) {
             return List.of();

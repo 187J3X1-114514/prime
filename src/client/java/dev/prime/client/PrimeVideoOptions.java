@@ -312,6 +312,15 @@ public final class PrimeVideoOptions {
                 PrimeConfig::setDefaultRoughnessSteps);
     }
 
+    public static OptionInstance<Boolean> seamlessGlass() {
+        return OptionInstance.createBoolean(
+                "prime.options.material.seamless_glass",
+                OptionInstance.cachedConstantTooltip(Component.translatable(
+                        "prime.options.material.seamless_glass.tooltip")),
+                PrimeConfig.settings().seamlessGlass(),
+                PrimeConfig::setSeamlessGlass);
+    }
+
     public static OptionInstance<NrdDiagnostics.Mode> nrdDebugView() {
         PrimeRuntime runtime = PrimeRuntime.instance();
         return new OptionInstance<>(

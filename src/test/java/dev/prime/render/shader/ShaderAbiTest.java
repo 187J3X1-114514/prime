@@ -56,8 +56,8 @@ final class ShaderAbiTest {
         assertEquals(16, ShaderAbi.WAVEFRONT_QUEUE_COMMAND_STRIDE);
         assertEquals(4, ShaderAbi.WAVEFRONT_QUEUE_INDEX_SIZE);
         assertEquals(1, ShaderAbi.WAVEFRONT_ACTIVE_MASK);
-        assertEquals(8, ShaderAbi.LIGHTWEIGHT_MAXIMUM_SCATTERS);
-        assertEquals(7, ShaderAbi.LIGHTWEIGHT_WAVEFRONT_ROUNDS);
+        assertEquals(12, ShaderAbi.LIGHTWEIGHT_MAXIMUM_SCATTERS);
+        assertEquals(11, ShaderAbi.LIGHTWEIGHT_WAVEFRONT_ROUNDS);
         assertEquals(80, ShaderAbi.LIGHTWEIGHT_WAVEFRONT_PATH_RECORD_SIZE);
         assertEquals(1, ShaderAbi.LIGHTWEIGHT_WAVEFRONT_PATH_SLOTS_PER_PIXEL);
         assertEquals(0, ShaderAbi.LIGHTWEIGHT_WAVEFRONT_AREA_RECORD_SIZE);
@@ -77,6 +77,7 @@ final class ShaderAbiTest {
         assertEquals(0xffff, ShaderAbi.PATH_SAMPLE_INDEX_MASK);
         assertEquals(16, ShaderAbi.PATH_SOLAR_LONGITUDE_SHIFT);
         assertEquals(0x1ff, ShaderAbi.PATH_SOLAR_LONGITUDE_MASK);
+        assertEquals(0x02000000, ShaderAbi.PATH_SEAMLESS_GLASS_MASK);
         assertEquals(0x7fffffff, ShaderAbi.PATH_SAMPLE_EPOCH_MASK);
         assertEquals(0x80000000, ShaderAbi.PATH_TRIANGLE_DEBUG_MASK);
         assertEquals(0xff, ShaderAbi.PATH_MAXIMUM_BOUNCES_MASK);

@@ -8,9 +8,9 @@ import dev.prime.render.AstronomySettings;
 import dev.prime.render.AstronomyState;
 import dev.prime.render.FrameCamera;
 import dev.prime.render.IntegratorFrameInput;
-import dev.prime.render.IntegratorSettings;
 import dev.prime.render.LightingSettings;
 import dev.prime.render.MaterialSettings;
+import dev.prime.render.PerformanceIntegratorSettings;
 import dev.prime.render.SunDirection;
 import dev.prime.render.post.PostProcessingMode;
 import dev.prime.render.post.TransparentGuideMode;
@@ -379,7 +379,7 @@ final class NrdInputSemanticValidatorTest {
                 1,
                 astronomy,
                 Short.toUnsignedInt(Float.floatToFloat16(1.0F)),
-                IntegratorSettings.MAXIMUM_BOUNCES,
+                PerformanceIntegratorSettings.DEFAULT_SCATTERS,
                 0,
                 1,
                 0,

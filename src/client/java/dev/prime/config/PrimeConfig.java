@@ -59,6 +59,7 @@ public final class PrimeConfig {
     private static final String AUTO_EXPOSURE_COMPENSATION_KEY =
             "display.auto_exposure_compensation";
     private static final String DEFAULT_ROUGHNESS_KEY = "material.default_roughness";
+    private static final String SEAMLESS_GLASS_KEY = "material.seamless_glass";
     // Fabric initializes and mutates video options on the client thread. One immutable snapshot
     // keeps every renderer read coherent without a shared lock or independently mutable globals.
     private static PrimeSettings settings = PrimeSettings.defaults();
@@ -90,6 +91,7 @@ public final class PrimeConfig {
         int autoExposureCompensationSteps =
                 DisplaySettings.DEFAULT_AUTO_EXPOSURE_COMPENSATION_STEPS;
         int defaultRoughnessSteps = MaterialSettings.DEFAULT_ROUGHNESS_STEPS;
+        boolean seamlessGlass = MaterialSettings.DEFAULT_SEAMLESS_GLASS;
         boolean rewriteNeeded = false;
         if (Files.isRegularFile(path)) {
             try (Reader reader = Files.newBufferedReader(path, StandardCharsets.UTF_8)) {
@@ -324,6 +326,19 @@ public final class PrimeConfig {
                 } else {
                     rewriteNeeded = true;
                 }
+                String seamlessGlassValue = properties.getProperty(SEAMLESS_GLASS_KEY);
+                if (seamlessGlassValue != null) {
+                    try {
+                        seamlessGlass = parseBoolean(seamlessGlassValue);
+                    } catch (IllegalArgumentException exception) {
+                        PrimeInfo.LOGGER.warn(
+                                "Invalid Prime seamless-glass switch '{}'; disabling it",
+                                seamlessGlassValue);
+                        rewriteNeeded = true;
+                    }
+                } else {
+                    rewriteNeeded = true;
+                }
             } catch (IOException | IllegalArgumentException exception) {
                 PrimeInfo.LOGGER.warn(
                         "Could not read {}; using the default Prime settings",
@@ -349,12 +364,13 @@ public final class PrimeConfig {
                 curveExponentSteps,
                 autoExposureCompensationSteps,
                 defaultRoughnessSteps,
+                seamlessGlass,
                 0L,
                 0L);
         rendererRevision = 0L;
         dirty = rewriteNeeded;
         PrimeInfo.LOGGER.info(
-                "Prime settings: path tracing {}, realtime integrator {}, performance limit {} bounces, voxel surfaces {} at {}x, post-processing {} quality {} (NRD-FSR {}x), latitude {} degrees, solar longitude {} degrees, sun {} EV, stars {} EV, block lights {} EV, final exposure {} EV, Oklab DRT overexposure {}, curve exponent {}, auto-exposure compensation {}, default roughness {}",
+                "Prime settings: path tracing {}, realtime integrator {}, performance limit {} bounces, voxel surfaces {} at {}x, post-processing {} quality {} (NRD-FSR {}x), latitude {} degrees, solar longitude {} degrees, sun {} EV, stars {} EV, block lights {} EV, final exposure {} EV, Oklab DRT overexposure {}, curve exponent {}, auto-exposure compensation {}, default roughness {}, seamless glass {}",
                 pathTracingEnabled ? "enabled" : "disabled",
                 realtimeIntegrator.id(),
                 performanceMaximumScatters,
@@ -372,7 +388,8 @@ public final class PrimeConfig {
                 formatOverexposure(oklabOverexposureSteps),
                 formatCurveExponent(curveExponentSteps),
                 formatAutoExposureCompensation(autoExposureCompensationSteps),
-                formatRoughness(defaultRoughnessSteps));
+                formatRoughness(defaultRoughnessSteps),
+                seamlessGlass ? "enabled" : "disabled");
     }
 
     public static void setFsrQualityMode(FsrQualityMode mode) {
@@ -473,6 +490,10 @@ public final class PrimeConfig {
         update(settings.withDefaultRoughnessSteps(steps));
     }
 
+    public static void setSeamlessGlass(boolean enabled) {
+        update(settings.withSeamlessGlass(enabled));
+    }
+
     public static void restoreDefaults() {
         update(restoredDefaults(settings));
     }
@@ -498,7 +519,8 @@ public final class PrimeConfig {
                 .withCurveExponentSteps(DisplaySettings.DEFAULT_CURVE_EXPONENT_STEPS)
                 .withAutoExposureCompensationSteps(
                         DisplaySettings.DEFAULT_AUTO_EXPOSURE_COMPENSATION_STEPS)
-                .withDefaultRoughnessSteps(MaterialSettings.DEFAULT_ROUGHNESS_STEPS);
+                .withDefaultRoughnessSteps(MaterialSettings.DEFAULT_ROUGHNESS_STEPS)
+                .withSeamlessGlass(MaterialSettings.DEFAULT_SEAMLESS_GLASS);
     }
 
     public static void save() {
@@ -573,7 +595,8 @@ public final class PrimeConfig {
                     + formatAutoExposureCompensation(
                             current.autoExposureCompensationSteps()) + "\n"
                     + DEFAULT_ROUGHNESS_KEY + "="
-                    + formatRoughness(current.defaultRoughnessSteps()) + "\n";
+                    + formatRoughness(current.defaultRoughnessSteps()) + "\n"
+                    + SEAMLESS_GLASS_KEY + "=" + current.seamlessGlass() + "\n";
     }
 
     static boolean parseBoolean(String value) {

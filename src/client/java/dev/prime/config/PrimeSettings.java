@@ -29,6 +29,7 @@ public record PrimeSettings(
         int curveExponentSteps,
         int autoExposureCompensationSteps,
         int defaultRoughnessSteps,
+        boolean seamlessGlass,
         long lightingRevision,
         long materialRevision) {
     public PrimeSettings {
@@ -70,6 +71,7 @@ public record PrimeSettings(
                 DisplaySettings.DEFAULT_CURVE_EXPONENT_STEPS,
                 DisplaySettings.DEFAULT_AUTO_EXPOSURE_COMPENSATION_STEPS,
                 MaterialSettings.DEFAULT_ROUGHNESS_STEPS,
+                MaterialSettings.DEFAULT_SEAMLESS_GLASS,
                 0L,
                 0L);
     }
@@ -94,6 +96,7 @@ public record PrimeSettings(
                         this.curveExponentSteps,
                         this.autoExposureCompensationSteps,
                         this.defaultRoughnessSteps,
+                        this.seamlessGlass,
                         this.lightingRevision,
                         this.materialRevision);
     }
@@ -119,6 +122,7 @@ public record PrimeSettings(
                         this.curveExponentSteps,
                         this.autoExposureCompensationSteps,
                         this.defaultRoughnessSteps,
+                        this.seamlessGlass,
                         this.lightingRevision,
                         this.materialRevision);
     }
@@ -144,6 +148,7 @@ public record PrimeSettings(
                         this.curveExponentSteps,
                         this.autoExposureCompensationSteps,
                         this.defaultRoughnessSteps,
+                        this.seamlessGlass,
                         this.lightingRevision,
                         this.materialRevision);
     }
@@ -168,6 +173,7 @@ public record PrimeSettings(
                         this.curveExponentSteps,
                         this.autoExposureCompensationSteps,
                         this.defaultRoughnessSteps,
+                        this.seamlessGlass,
                         this.lightingRevision,
                         this.materialRevision);
     }
@@ -193,6 +199,7 @@ public record PrimeSettings(
                         this.curveExponentSteps,
                         this.autoExposureCompensationSteps,
                         this.defaultRoughnessSteps,
+                        this.seamlessGlass,
                         this.lightingRevision,
                         this.materialRevision);
     }
@@ -218,6 +225,7 @@ public record PrimeSettings(
                         this.curveExponentSteps,
                         this.autoExposureCompensationSteps,
                         this.defaultRoughnessSteps,
+                        this.seamlessGlass,
                         this.lightingRevision,
                         this.materialRevision);
     }
@@ -243,6 +251,7 @@ public record PrimeSettings(
                         this.curveExponentSteps,
                         this.autoExposureCompensationSteps,
                         this.defaultRoughnessSteps,
+                        this.seamlessGlass,
                         this.lightingRevision,
                         this.materialRevision);
     }
@@ -268,6 +277,7 @@ public record PrimeSettings(
                         this.curveExponentSteps,
                         this.autoExposureCompensationSteps,
                         this.defaultRoughnessSteps,
+                        this.seamlessGlass,
                         Math.incrementExact(this.lightingRevision),
                         this.materialRevision);
     }
@@ -294,6 +304,7 @@ public record PrimeSettings(
                         this.curveExponentSteps,
                         this.autoExposureCompensationSteps,
                         this.defaultRoughnessSteps,
+                        this.seamlessGlass,
                         Math.incrementExact(this.lightingRevision),
                         this.materialRevision);
     }
@@ -319,6 +330,7 @@ public record PrimeSettings(
                         this.curveExponentSteps,
                         this.autoExposureCompensationSteps,
                         this.defaultRoughnessSteps,
+                        this.seamlessGlass,
                         Math.incrementExact(this.lightingRevision),
                         this.materialRevision);
     }
@@ -344,6 +356,7 @@ public record PrimeSettings(
                         this.curveExponentSteps,
                         this.autoExposureCompensationSteps,
                         this.defaultRoughnessSteps,
+                        this.seamlessGlass,
                         Math.incrementExact(this.lightingRevision),
                         this.materialRevision);
     }
@@ -369,6 +382,7 @@ public record PrimeSettings(
                         this.curveExponentSteps,
                         this.autoExposureCompensationSteps,
                         this.defaultRoughnessSteps,
+                        this.seamlessGlass,
                         Math.incrementExact(this.lightingRevision),
                         this.materialRevision);
     }
@@ -394,6 +408,7 @@ public record PrimeSettings(
                         this.curveExponentSteps,
                         this.autoExposureCompensationSteps,
                         this.defaultRoughnessSteps,
+                        this.seamlessGlass,
                         this.lightingRevision,
                         this.materialRevision);
     }
@@ -419,6 +434,7 @@ public record PrimeSettings(
                         this.curveExponentSteps,
                         this.autoExposureCompensationSteps,
                         this.defaultRoughnessSteps,
+                        this.seamlessGlass,
                         this.lightingRevision,
                         this.materialRevision);
     }
@@ -444,6 +460,7 @@ public record PrimeSettings(
                         value,
                         this.autoExposureCompensationSteps,
                         this.defaultRoughnessSteps,
+                        this.seamlessGlass,
                         this.lightingRevision,
                         this.materialRevision);
     }
@@ -469,6 +486,7 @@ public record PrimeSettings(
                         this.curveExponentSteps,
                         value,
                         this.defaultRoughnessSteps,
+                        this.seamlessGlass,
                         this.lightingRevision,
                         this.materialRevision);
     }
@@ -494,6 +512,32 @@ public record PrimeSettings(
                         this.curveExponentSteps,
                         this.autoExposureCompensationSteps,
                         value,
+                        this.seamlessGlass,
+                        this.lightingRevision,
+                        Math.incrementExact(this.materialRevision));
+    }
+
+    public PrimeSettings withSeamlessGlass(boolean value) {
+        return value == this.seamlessGlass
+                ? this
+                : new PrimeSettings(
+                        this.pathTracingEnabled,
+                        this.realtimeIntegrator,
+                        this.performanceMaximumScatters,
+                        this.voxelTextureSurfaces,
+                        this.voxelTextureSurfaceStrengthSteps,
+                        this.postProcessingMode,
+                        this.reconstructionQuality,
+                        this.astronomy,
+                        this.sunQuarterSteps,
+                        this.starQuarterSteps,
+                        this.blockLightQuarterSteps,
+                        this.finalExposureQuarterSteps,
+                        this.oklabOverexposureSteps,
+                        this.curveExponentSteps,
+                        this.autoExposureCompensationSteps,
+                        this.defaultRoughnessSteps,
+                        value,
                         this.lightingRevision,
                         Math.incrementExact(this.materialRevision));
     }
@@ -509,6 +553,7 @@ public record PrimeSettings(
     public MaterialSettings.Snapshot material() {
         return new MaterialSettings.Snapshot(
                 this.defaultRoughnessSteps,
+                this.seamlessGlass,
                 this.materialRevision);
     }
 

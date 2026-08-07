@@ -64,7 +64,8 @@ adaptation contract. The transport batch additionally checks stained-glass
 white-background sRGB compositing as one-metre transmittance, nonnegative extinction, distance attenuation, and RGB
 outside/inside, nested, out-of-order straight shadow optical-depth segments, including exact
 two-entry starting-stack winding and replacement semantics for short water or stained-glass
-segments on million-unit sun rays after an fp16 Wavefront round trip.
+segments on million-unit sun rays after an fp16 Wavefront round trip. It also verifies that
+seamless glass disables the opacity-driven rough classification without changing volume math.
 Replay capture additionally
 observes the production FSR depth and motion images emitted by `nrd_motion.comp`;
 Java tests cover the NRD and FSR native scalar ABI encoders without invoking a

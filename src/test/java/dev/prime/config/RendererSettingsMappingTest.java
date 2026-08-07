@@ -36,7 +36,8 @@ final class RendererSettingsMappingTest {
                 .withOklabOverexposureSteps(47)
                 .withCurveExponentSteps(83)
                 .withAutoExposureCompensationSteps(61)
-                .withDefaultRoughnessSteps(37);
+                .withDefaultRoughnessSteps(37)
+                .withSeamlessGlass(false);
 
         RendererSettings mapped = PrimeConfig.rendererSettings(source, 42L);
 
@@ -71,6 +72,7 @@ final class RendererSettingsMappingTest {
         assertRawEquals(
                 MaterialSettings.linearRoughness(37),
                 mapped.material().linearRoughness());
+        assertFalse(mapped.material().seamlessGlass());
         assertRawEquals(
                 DisplaySettings.finalExposureMultiplier(-3),
                 mapped.display().finalExposureMultiplier());
@@ -93,26 +95,35 @@ final class RendererSettingsMappingTest {
         PrimeSettings defaults = PrimeSettings.defaults();
         RendererSettings mappedDefaults = PrimeConfig.rendererSettings(defaults, 0L);
         assertTrue(mappedDefaults.pathTracingEnabled());
-        assertEquals(4, mappedDefaults.performanceMaximumScatters());
+        assertEquals(
+                RealtimeIntegratorMode.PERFORMANCE,
+                mappedDefaults.realtimeIntegrator());
+        assertEquals(6, mappedDefaults.performanceMaximumScatters());
         assertFalse(mappedDefaults.voxelTextureSurfaces());
         assertEquals(PostProcessingMode.DEFAULT, mappedDefaults.postProcessingMode());
         assertEquals(ReconstructionQualityMode.DEFAULT, mappedDefaults.reconstructionQuality());
         assertEquals(AstronomySettings.defaults(), mappedDefaults.astronomy());
+        assertTrue(mappedDefaults.material().seamlessGlass());
         assertEquals(0L, mappedDefaults.revision());
 
         PrimeSettings changed = defaults
                 .withPathTracingEnabled(false)
+                .withRealtimeIntegrator(RealtimeIntegratorMode.QUALITY)
                 .withPerformanceMaximumScatters(7)
                 .withVoxelTextureSurfaces(true)
                 .withVoxelTextureSurfaceStrengthSteps(150)
                 .withLatitudeDegrees(-45)
                 .withSunQuarterSteps(4)
-                .withDefaultRoughnessSteps(25);
+                .withDefaultRoughnessSteps(25)
+                .withSeamlessGlass(false);
         PrimeSettings restored = PrimeConfig.restoredDefaults(changed);
 
         RendererSettings mapped = PrimeConfig.rendererSettings(restored, 9L);
         assertTrue(mapped.pathTracingEnabled());
-        assertEquals(4, mapped.performanceMaximumScatters());
+        assertEquals(
+                RealtimeIntegratorMode.PERFORMANCE,
+                mapped.realtimeIntegrator());
+        assertEquals(6, mapped.performanceMaximumScatters());
         assertFalse(mapped.voxelTextureSurfaces());
         assertEquals(VoxelSurfaceSettings.DEFAULT_STEPS, mapped.voxelTextureSurfaceStrengthSteps());
         assertEquals(AstronomySettings.defaults(), mapped.astronomy());
@@ -122,6 +133,7 @@ final class RendererSettingsMappingTest {
         assertEquals(
                 MaterialSettings.DEFAULT_ROUGHNESS_STEPS,
                 mapped.material().roughnessSteps());
+        assertTrue(mapped.material().seamlessGlass());
         assertTrue(restored.lightingRevision() > changed.lightingRevision());
         assertTrue(restored.materialRevision() > changed.materialRevision());
         assertEquals(9L, mapped.revision());

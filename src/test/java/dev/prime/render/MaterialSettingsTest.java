@@ -1,6 +1,8 @@
 package dev.prime.render;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import dev.prime.config.PrimeSettings;
@@ -31,11 +33,25 @@ final class MaterialSettingsTest {
     }
 
     @Test
+    void seamlessGlassIsOnByDefaultAndOwnsMaterialRevision() {
+        PrimeSettings defaults = PrimeSettings.defaults();
+        assertTrue(MaterialSettings.DEFAULT_SEAMLESS_GLASS);
+        assertTrue(defaults.material().seamlessGlass());
+
+        PrimeSettings bordered = defaults.withSeamlessGlass(false);
+        assertFalse(bordered.material().seamlessGlass());
+        assertEquals(defaults.materialRevision() + 1L, bordered.materialRevision());
+        assertEquals(bordered, bordered.withSeamlessGlass(false));
+        assertFalse(bordered.withSunQuarterSteps(1).material().seamlessGlass());
+    }
+
+    @Test
     void snapshotDerivesLinearRoughnessFromItsCanonicalSteps() {
         MaterialSettings.Snapshot snapshot =
-                new MaterialSettings.Snapshot(37, 2L);
+                new MaterialSettings.Snapshot(37, true, 2L);
 
         assertEquals(0.37F, snapshot.linearRoughness());
+        assertTrue(snapshot.seamlessGlass());
         assertThrows(
                 IllegalArgumentException.class,
                 () -> new MaterialSettings.Snapshot(101, 0L));

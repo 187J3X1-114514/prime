@@ -235,8 +235,8 @@
     "activeMask": "0x1"
   },
   "lightweightWavefrontContract": {
-    "maximumScatters": 8,
-    "rounds": 7,
+    "maximumScatters": 12,
+    "rounds": 11,
     "pathRecordSize": 80,
     "pathSlotsPerPixel": 1,
     "areaRecordSize": 0,
@@ -259,6 +259,7 @@
     "sampleIndexMask": "0xffff",
     "solarLongitudeShift": 16,
     "solarLongitudeMask": "0x1ff",
+    "seamlessGlassMask": "0x02000000",
     "sampleEpochMask": "0x7fffffff",
     "triangleDebugMask": "0x80000000",
     "maximumBouncesMask": "0xff",

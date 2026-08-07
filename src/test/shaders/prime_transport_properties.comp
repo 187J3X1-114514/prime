@@ -216,7 +216,8 @@ void primeCheckGlassVolume(
     vec3 extinction = primeGlassVolumeExtinction(baseColor, opacity);
     vec3 shadowExtinction = primeGlassShadowExtinction(baseColor, opacity);
     bool stained = primeGlassReferenceIsStained(opacity);
-    bool rough = primeGlassTexelIsRough(opacity);
+    bool rough = primeGlassTexelIsRough(opacity, false);
+    bool seamlessRough = primeGlassTexelIsRough(opacity, true);
     vec3 expectedShadowExtinction = stained
             ? primeGlassVolumeExtinction(
                     baseColor, PRIME_STAINED_GLASS_ABSORPTION_OPACITY)
@@ -247,6 +248,7 @@ void primeCheckGlassVolume(
             || stained
                     != (opacity >= PRIME_GLASS_STAINED_REFERENCE_THRESHOLD)
             || rough != (opacity > PRIME_GLASS_ROUGH_OPACITY_THRESHOLD)
+            || seamlessRough
             || !primeTestClose(oneMetre, transmittance, 2.0e-6, 2.0e-6)
             || !primeTestClose(
                     twoMetres,

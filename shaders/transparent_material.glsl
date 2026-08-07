@@ -18,8 +18,8 @@ bool primeGlassReferenceIsStained(float opacity) {
     return opacity >= PRIME_GLASS_STAINED_REFERENCE_THRESHOLD;
 }
 
-bool primeGlassTexelIsRough(float opacity) {
-    return opacity > PRIME_GLASS_ROUGH_OPACITY_THRESHOLD;
+bool primeGlassTexelIsRough(float opacity, bool seamlessGlass) {
+    return !seamlessGlass && opacity > PRIME_GLASS_ROUGH_OPACITY_THRESHOLD;
 }
 
 vec3 primeShadowCanonicalExtinction(vec3 extinction) {

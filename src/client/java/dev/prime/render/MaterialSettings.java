@@ -1,11 +1,12 @@
 package dev.prime.render;
 
-/** Runtime controls for Minecraft materials that have no authored PBR roughness. */
+/** Runtime controls for Minecraft material translation. */
 public final class MaterialSettings {
     public static final int STEPS_PER_UNIT = 100;
     public static final int MINIMUM_ROUGHNESS_STEPS = 0;
     public static final int MAXIMUM_ROUGHNESS_STEPS = STEPS_PER_UNIT;
     public static final int DEFAULT_ROUGHNESS_STEPS = 90;
+    public static final boolean DEFAULT_SEAMLESS_GLASS = true;
 
     private MaterialSettings() {
     }
@@ -22,7 +23,11 @@ public final class MaterialSettings {
         }
     }
 
-    public record Snapshot(int roughnessSteps, long revision) {
+    public record Snapshot(int roughnessSteps, boolean seamlessGlass, long revision) {
+        public Snapshot(int roughnessSteps, long revision) {
+            this(roughnessSteps, DEFAULT_SEAMLESS_GLASS, revision);
+        }
+
         public Snapshot {
             requireValid(roughnessSteps);
             if (revision < 0L) {

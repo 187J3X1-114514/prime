@@ -46,19 +46,19 @@ final class TracePipelinesContractTest {
 
         assertEquals(4, PerformanceRayTracingPipeline.RAYGEN_GROUP_COUNT);
         assertEquals(3, PerformanceRayTracingPipeline.RAYGEN_MODULE_COUNT);
-        assertEquals(9, PerformanceRayTracingPipeline.MAXIMUM_DISPATCH_COUNT);
+        assertEquals(13, PerformanceRayTracingPipeline.MAXIMUM_DISPATCH_COUNT);
         assertEquals(0, RealtimeRayTracingPipeline.performanceRounds(1));
         assertEquals(3, RealtimeRayTracingPipeline.performanceRounds(4));
-        assertEquals(7, RealtimeRayTracingPipeline.performanceRounds(8));
+        assertEquals(11, RealtimeRayTracingPipeline.performanceRounds(12));
         assertEquals(2, RealtimeRayTracingPipeline.performanceRounds(1) + 2);
         assertEquals(5, RealtimeRayTracingPipeline.performanceRounds(4) + 2);
-        assertEquals(9, RealtimeRayTracingPipeline.performanceRounds(8) + 2);
+        assertEquals(13, RealtimeRayTracingPipeline.performanceRounds(12) + 2);
         assertThrows(
                 IllegalArgumentException.class,
                 () -> RealtimeRayTracingPipeline.performanceRounds(0));
         assertThrows(
                 IllegalArgumentException.class,
-                () -> RealtimeRayTracingPipeline.performanceRounds(9));
+                () -> RealtimeRayTracingPipeline.performanceRounds(13));
 
         assertEquals(8, OfflineRayTracingPipeline.RAYGEN_GROUP_COUNT);
         assertEquals(5, OfflineRayTracingPipeline.RAYGEN_MODULE_COUNT);

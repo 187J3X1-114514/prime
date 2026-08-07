@@ -15,16 +15,18 @@ import java.util.Objects;
 /** Versioned fixed-width encoding of {@link RayTraceReplayInput}. */
 public final class RayTraceReplayInputCodec {
     private static final int MAGIC = 0x3146_5250;
-    private static final int VERSION = 6;
+    private static final int VERSION = 7;
     private static final int ENCODED_BYTES = 392;
     private static final int FLAG_CAMERA_IN_WATER = 1;
     private static final int FLAG_SH_INPUT = 1 << 1;
     private static final int FLAG_RAW_NUMERICAL = 1 << 2;
     private static final int FLAG_TRIANGLE_DEBUG = 1 << 3;
+    private static final int FLAG_SEAMLESS_GLASS = 1 << 4;
     private static final int VALID_FLAGS = FLAG_CAMERA_IN_WATER
             | FLAG_SH_INPUT
             | FLAG_RAW_NUMERICAL
-            | FLAG_TRIANGLE_DEBUG;
+            | FLAG_TRIANGLE_DEBUG
+            | FLAG_SEAMLESS_GLASS;
 
     private RayTraceReplayInputCodec() {
     }
@@ -147,6 +149,7 @@ public final class RayTraceReplayInputCodec {
             MaterialSettings.Snapshot material =
                     new MaterialSettings.Snapshot(
                             roughnessSteps,
+                            (flags & FLAG_SEAMLESS_GLASS) != 0,
                             input.getLong());
             requireDerivedValue(
                     linearRoughnessBits,
@@ -194,6 +197,9 @@ public final class RayTraceReplayInputCodec {
         }
         if (input.triangleDebug()) {
             result |= FLAG_TRIANGLE_DEBUG;
+        }
+        if (input.material().seamlessGlass()) {
+            result |= FLAG_SEAMLESS_GLASS;
         }
         return result;
     }

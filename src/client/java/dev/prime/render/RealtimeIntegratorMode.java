@@ -8,7 +8,7 @@ public enum RealtimeIntegratorMode {
     QUALITY("quality"),
     PERFORMANCE("performance");
 
-    public static final RealtimeIntegratorMode DEFAULT = QUALITY;
+    public static final RealtimeIntegratorMode DEFAULT = PERFORMANCE;
 
     private final String id;
 

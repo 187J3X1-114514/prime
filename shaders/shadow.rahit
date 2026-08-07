@@ -39,7 +39,8 @@ void main() {
                 0.0,
                 opacity);
         if (!primeGlassReferenceIsStained(opacity)
-                && primeGlassTexelIsRough(surfaceOpacity)) {
+                && primeGlassTexelIsRough(
+                        surfaceOpacity, primeUsesSeamlessGlass())) {
             // Clear-glass decoration is an opaque diffuse border, not part of the dielectric
             // volume. Accepting the candidate lets the ordinary closest-hit record occlusion.
             return;

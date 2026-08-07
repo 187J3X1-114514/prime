@@ -149,7 +149,8 @@ MaterialEvaluation primeEvaluateMaterial(
                 0.0,
                 referenceOpacity);
         bool stained = primeGlassReferenceIsStained(referenceOpacity);
-        bool rough = primeGlassTexelIsRough(result.opacity);
+        bool rough = primeGlassTexelIsRough(
+                result.opacity, primeUsesSeamlessGlass());
         if (stained) {
             // Both boundaries of a closed medium must agree on its color even when they hit
             // different decorative texels. Shadow rays use this same stable material reference.

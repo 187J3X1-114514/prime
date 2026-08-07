@@ -46,6 +46,10 @@ float primeSolarLongitudeRadians() {
     return radians(float(encoded));
 }
 
+bool primeUsesSeamlessGlass() {
+    return (primePush.path.x & PRIME_PATH_SEAMLESS_GLASS_MASK) != 0u;
+}
+
 float primeObserverLatitudeRadians() {
     uint encoded = (primePush.path.z >> PRIME_PATH_LATITUDE_SHIFT)
             & PRIME_PATH_LATITUDE_MASK;

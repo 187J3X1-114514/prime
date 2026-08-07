@@ -176,7 +176,7 @@ final class PrimeConfigTest {
 
     @Test
     void realtimeIntegratorDefaultsAndParsesStableIds() {
-        assertEquals(RealtimeIntegratorMode.QUALITY, RealtimeIntegratorMode.DEFAULT);
+        assertEquals(RealtimeIntegratorMode.PERFORMANCE, RealtimeIntegratorMode.DEFAULT);
         assertEquals(
                 RealtimeIntegratorMode.PERFORMANCE,
                 RealtimeIntegratorMode.fromId("PERFORMANCE"));
@@ -189,10 +189,10 @@ final class PrimeConfigTest {
         assertEquals("quality", RealtimeIntegratorMode.QUALITY.id());
         assertEquals("performance", RealtimeIntegratorMode.PERFORMANCE.id());
         assertEquals(
-                RealtimeIntegratorMode.QUALITY,
+                RealtimeIntegratorMode.PERFORMANCE,
                 RealtimeIntegratorMode.fromId("future_integrator"));
         assertEquals(
-                RealtimeIntegratorMode.QUALITY,
+                RealtimeIntegratorMode.PERFORMANCE,
                 PrimeSettings.defaults().realtimeIntegrator());
         assertEquals(
                 RealtimeIntegratorMode.PERFORMANCE,
@@ -202,25 +202,25 @@ final class PrimeConfigTest {
                         3L)
                         .realtimeIntegrator());
         assertEquals(
-                RealtimeIntegratorMode.QUALITY,
+                RealtimeIntegratorMode.PERFORMANCE,
                 PrimeConfig.restoredDefaults(
                         PrimeSettings.defaults().withRealtimeIntegrator(
-                                RealtimeIntegratorMode.PERFORMANCE))
+                                RealtimeIntegratorMode.QUALITY))
                         .realtimeIntegrator());
     }
 
     @Test
-    void performanceBounceLimitDefaultsToFourAndAcceptsOneThroughEight() {
-        assertEquals(4, PerformanceIntegratorSettings.DEFAULT_SCATTERS);
-        assertEquals(4, PrimeSettings.defaults().performanceMaximumScatters());
+    void performanceBounceLimitDefaultsToSixAndAcceptsOneThroughTwelve() {
+        assertEquals(6, PerformanceIntegratorSettings.DEFAULT_SCATTERS);
+        assertEquals(6, PrimeSettings.defaults().performanceMaximumScatters());
         assertEquals(1, PrimeConfig.parsePerformanceMaximumScatters("1"));
-        assertEquals(8, PrimeConfig.parsePerformanceMaximumScatters("8"));
+        assertEquals(12, PrimeConfig.parsePerformanceMaximumScatters("12"));
         assertThrows(
                 IllegalArgumentException.class,
                 () -> PrimeConfig.parsePerformanceMaximumScatters("0"));
         assertThrows(
                 IllegalArgumentException.class,
-                () -> PrimeConfig.parsePerformanceMaximumScatters("9"));
+                () -> PrimeConfig.parsePerformanceMaximumScatters("13"));
         assertThrows(
                 IllegalArgumentException.class,
                 () -> PrimeConfig.parsePerformanceMaximumScatters("4.0"));
@@ -232,7 +232,7 @@ final class PrimeConfigTest {
                 PrimeConfig.rendererSettings(changed, 1L)
                         .performanceMaximumScatters());
         assertEquals(
-                4,
+                6,
                 PrimeConfig.restoredDefaults(changed)
                         .performanceMaximumScatters());
     }
@@ -251,8 +251,8 @@ final class PrimeConfigTest {
     void debugSelectionsAreSessionOnlyAndLegacyKeysAreRemovedOnRewrite() {
         String serialized = PrimeConfig.serializedContents();
         assertTrue(serialized.contains("renderer.path_tracing=true\n"));
-        assertTrue(serialized.contains("renderer.integrator=quality\n"));
-        assertTrue(serialized.contains("renderer.performance_maximum_bounces=4\n"));
+        assertTrue(serialized.contains("renderer.integrator=performance\n"));
+        assertTrue(serialized.contains("renderer.performance_maximum_bounces=6\n"));
         assertFalse(serialized.contains("renderer.lightweight_maximum_bounces"));
         assertTrue(serialized.contains(
                 "experimental.voxel_texture_surfaces=false\n"));
@@ -271,6 +271,8 @@ final class PrimeConfigTest {
         assertTrue(serialized.contains("display.oklab_overexposure=1\n"));
         assertTrue(serialized.contains("display.oklab_curve_exponent=0.75\n"));
         assertTrue(serialized.contains("display.auto_exposure_compensation=0.5\n"));
+        assertTrue(serialized.contains("material.seamless_glass=true\n"));
+        assertTrue(PrimeSettings.defaults().seamlessGlass());
 
         Properties properties = new Properties();
         assertFalse(PrimeConfig.hasLegacyDebugProperties(properties));

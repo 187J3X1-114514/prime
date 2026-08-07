@@ -192,8 +192,8 @@ abstract class GenerateShaderAbi extends DefaultTask {
 			throw new GradleException(
 					'Prime offline scheduler must preserve its single-slot 144-byte queue ABI')
 		}
-		if (lightweightWavefrontContract.maximumScatters != 8
-				|| lightweightWavefrontContract.rounds != 7
+		if (lightweightWavefrontContract.maximumScatters != 12
+				|| lightweightWavefrontContract.rounds != 11
 				|| lightweightWavefrontContract.pathRecordSize != 80
 				|| lightweightWavefrontContract.pathSlotsPerPixel != 1
 				|| lightweightWavefrontContract.areaRecordSize != 0
@@ -205,6 +205,7 @@ abstract class GenerateShaderAbi extends DefaultTask {
 					'Prime lightweight scheduler must preserve its bounded single-slot queue ABI')
 		}
 		if (!schema.pathControl.sampleEpochMask.toString().equalsIgnoreCase('0x7fffffff')
+				|| !schema.pathControl.seamlessGlassMask.toString().equalsIgnoreCase('0x02000000')
 				|| !schema.pathControl.triangleDebugMask.toString().equalsIgnoreCase('0x80000000')
 				|| !schema.pathControl.cameraInWaterMask.toString().equalsIgnoreCase('0x80000000')
 				|| !schema.pathControl.jitterPhaseMask.toString().equalsIgnoreCase('0x1fff')
@@ -404,6 +405,7 @@ public final class ShaderAbi {
     public static final int PATH_SAMPLE_INDEX_MASK = ${schema.pathControl.sampleIndexMask};
     public static final int PATH_SOLAR_LONGITUDE_SHIFT = ${schema.pathControl.solarLongitudeShift};
     public static final int PATH_SOLAR_LONGITUDE_MASK = ${schema.pathControl.solarLongitudeMask};
+    public static final int PATH_SEAMLESS_GLASS_MASK = ${schema.pathControl.seamlessGlassMask};
     public static final int PATH_SAMPLE_EPOCH_MASK = ${schema.pathControl.sampleEpochMask};
     public static final int PATH_TRIANGLE_DEBUG_MASK = ${schema.pathControl.triangleDebugMask};
     public static final int PATH_MAXIMUM_BOUNCES_MASK = ${schema.pathControl.maximumBouncesMask};
@@ -552,6 +554,7 @@ ${javaOffsets}
 #define PRIME_PATH_SAMPLE_INDEX_MASK ${schema.pathControl.sampleIndexMask}u
 #define PRIME_PATH_SOLAR_LONGITUDE_SHIFT ${schema.pathControl.solarLongitudeShift}u
 #define PRIME_PATH_SOLAR_LONGITUDE_MASK ${schema.pathControl.solarLongitudeMask}u
+#define PRIME_PATH_SEAMLESS_GLASS_MASK ${schema.pathControl.seamlessGlassMask}u
 #define PRIME_PATH_SAMPLE_EPOCH_MASK ${schema.pathControl.sampleEpochMask}u
 #define PRIME_PATH_TRIANGLE_DEBUG_MASK ${schema.pathControl.triangleDebugMask}u
 #define PRIME_PATH_MAXIMUM_BOUNCES_MASK ${schema.pathControl.maximumBouncesMask}u

@@ -56,8 +56,10 @@ public abstract class VulkanBackendMixin {
             PrimeInfo.LOGGER.info(
                     "Prime terrain opacity micromaps: {}",
                     capabilities.opacityMicromapSupported()
-                            ? "VK_EXT_opacity_micromap, subdivision "
-                                    + capabilities.maxOpacityMicromapSubdivisionLevel()
+                            ? "VK_EXT_opacity_micromap, subdivisions 2-state="
+                                    + capabilities.maxOpacity2StateSubdivisionLevel()
+                                    + ", 4-state="
+                                    + capabilities.maxOpacity4StateSubdivisionLevel()
                             : "unavailable (cutout any-hit fallback)");
         } else {
             PrimeInfo.LOGGER.warn("Prime ray tracing unavailable on {}: {}", capabilities.deviceName(), capabilities.unavailableReason());

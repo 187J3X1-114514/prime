@@ -4,7 +4,8 @@ package dev.prime.render.terrain;
 public record ClusterTranslationSettings(
         boolean buildOpacityMicromap,
         int segmentTriangleTarget,
-        int maxOpacityMicromapSubdivisionLevel,
+        int maxOpacity2StateSubdivisionLevel,
+        int maxOpacity4StateSubdivisionLevel,
         boolean voxelSurfacesEnabled,
         float voxelSurfaceMaximumHeight,
         boolean closeCoveredFluidGap,
@@ -14,7 +15,8 @@ public record ClusterTranslationSettings(
             throw new IllegalArgumentException(
                     "Cluster segment capacity must contain whole quads");
         }
-        if (maxOpacityMicromapSubdivisionLevel < 0) {
+        if (maxOpacity2StateSubdivisionLevel < 0
+                || maxOpacity4StateSubdivisionLevel < 0) {
             throw new IllegalArgumentException(
                     "Opacity-micromap subdivision level must be nonnegative");
         }
@@ -23,5 +25,24 @@ public record ClusterTranslationSettings(
             throw new IllegalArgumentException(
                     "Voxel-surface maximum height must be finite and nonnegative");
         }
+    }
+
+    public ClusterTranslationSettings(
+            boolean buildOpacityMicromap,
+            int segmentTriangleTarget,
+            int maxOpacityMicromapSubdivisionLevel,
+            boolean voxelSurfacesEnabled,
+            float voxelSurfaceMaximumHeight,
+            boolean closeCoveredFluidGap,
+            boolean suppressFluidFaceAgainstFullCollision) {
+        this(
+                buildOpacityMicromap,
+                segmentTriangleTarget,
+                maxOpacityMicromapSubdivisionLevel,
+                maxOpacityMicromapSubdivisionLevel,
+                voxelSurfacesEnabled,
+                voxelSurfaceMaximumHeight,
+                closeCoveredFluidGap,
+                suppressFluidFaceAgainstFullCollision);
     }
 }

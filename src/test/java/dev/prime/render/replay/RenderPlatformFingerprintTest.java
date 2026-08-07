@@ -5,6 +5,8 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
 import java.util.Arrays;
 import java.util.List;
 import org.junit.jupiter.api.Test;
@@ -51,6 +53,7 @@ final class RenderPlatformFingerprintTest {
                         false,
                         true,
                         4,
+                        4,
                         true));
     }
 
@@ -63,6 +66,21 @@ final class RenderPlatformFingerprintTest {
                     () -> RenderPlatformFingerprint.decode(
                             Arrays.copyOf(encoded, length)));
         }
+    }
+
+    @Test
+    void legacySingleLimitIdentityDecodesBothOpacityFormats() {
+        byte[] current = fingerprint(false).canonicalBytes();
+        int prefixBytes = current.length - 2 * Integer.BYTES - 1;
+        byte[] legacy = new byte[current.length - Integer.BYTES];
+        System.arraycopy(current, 0, legacy, 0, prefixBytes + Integer.BYTES);
+        legacy[legacy.length - 1] = current[current.length - 1];
+        ByteBuffer.wrap(legacy).order(ByteOrder.LITTLE_ENDIAN).putInt(0, 1);
+
+        RenderPlatformFingerprint decoded = RenderPlatformFingerprint.decode(legacy);
+
+        assertEquals(12, decoded.maxOpacity2StateSubdivisionLevel());
+        assertEquals(12, decoded.maxOpacity4StateSubdivisionLevel());
     }
 
     private static RenderPlatformFingerprint fingerprint(boolean ser) {
@@ -87,6 +105,7 @@ final class RenderPlatformFingerprintTest {
                 ser,
                 true,
                 12,
+                10,
                 true);
     }
 }

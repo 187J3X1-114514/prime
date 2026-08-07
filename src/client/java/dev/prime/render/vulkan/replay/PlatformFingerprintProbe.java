@@ -52,7 +52,8 @@ public final class PlatformFingerprintProbe {
                     capabilities.wavefrontSubgroupSupported(),
                     capabilities.invocationReorderSupported(),
                     capabilities.opacityMicromapSupported(),
-                    capabilities.maxOpacityMicromapSubdivisionLevel(),
+                    capabilities.maxOpacity2StateSubdivisionLevel(),
+                    capabilities.maxOpacity4StateSubdivisionLevel(),
                     capabilities.fsrFp16Supported());
         }
     }

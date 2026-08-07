@@ -16,6 +16,8 @@ import java.util.Map;
  */
 public final class OpacityMicromapData {
     public static final int SUBDIVISION_LEVEL = 4;
+    public static final int MAX_TEXTURE_SUBDIVISION_LEVEL = 8;
+    public static final int MAX_SUBDIVISION_LEVEL = MAX_TEXTURE_SUBDIVISION_LEVEL + 2;
     public static final int MICRO_TRIANGLE_COUNT = 1 << (2 * SUBDIVISION_LEVEL);
     // Stable VK_EXT_opacity_micromap wire values consumed only at the Vulkan adapter.
     public static final int TWO_STATE_FORMAT = 1;
@@ -33,6 +35,8 @@ public final class OpacityMicromapData {
     private static final int SPECIAL_FULLY_UNKNOWN_TRANSPARENT = -3;
     private static final int SPECIAL_FULLY_UNKNOWN_OPAQUE = -4;
     private static final int MICROMAP_TRIANGLE_DESCRIPTOR_BYTES = 8;
+    private static final int MISALIGNED_UV_REFINEMENT_LEVELS = 2;
+    private static final float TEXEL_ALIGNMENT_EPSILON = 1.0E-2F;
 
     public static final OpacityMicromapData EMPTY =
             new OpacityMicromapData(
@@ -216,8 +220,32 @@ public final class OpacityMicromapData {
         private final Map<ConstantBakeKey, Integer> bakedConstantTriangles = new HashMap<>();
         private final Map<RepeatedBakeKey, Integer> bakedRepeatedTriangles = new HashMap<>();
         private final Map<CapturedSprite, SpriteAlphaFrames> alphaFrames = new HashMap<>();
+        private final int maxTwoStateSubdivisionLevel;
+        private final int maxFourStateSubdivisionLevel;
         private int[] triangleIndices = new int[32];
         private int triangleCount;
+
+        public Builder() {
+            this(MAX_SUBDIVISION_LEVEL, MAX_SUBDIVISION_LEVEL);
+        }
+
+        public Builder(int maxSubdivisionLevel) {
+            this(maxSubdivisionLevel, maxSubdivisionLevel);
+        }
+
+        public Builder(
+                int maxTwoStateSubdivisionLevel,
+                int maxFourStateSubdivisionLevel) {
+            if (maxTwoStateSubdivisionLevel < 0
+                    || maxFourStateSubdivisionLevel < 0) {
+                throw new IllegalArgumentException(
+                        "Opacity micromap subdivision limit must be nonnegative");
+            }
+            this.maxTwoStateSubdivisionLevel = Math.min(
+                    maxTwoStateSubdivisionLevel, MAX_SUBDIVISION_LEVEL);
+            this.maxFourStateSubdivisionLevel = Math.min(
+                    maxFourStateSubdivisionLevel, MAX_SUBDIVISION_LEVEL);
+        }
 
         public void addTriangle(
                 CapturedSprite sprite,
@@ -238,7 +266,14 @@ public final class OpacityMicromapData {
                 this.addIndex(index);
                 return;
             }
-            int index = this.intern(bake(frames, packedUv0, packedUv1, packedUv2));
+            int index = this.intern(bake(
+                    frames,
+                    packedUv0,
+                    packedUv1,
+                    packedUv2,
+                    frames.staticPowerOfTwo()
+                            ? this.maxTwoStateSubdivisionLevel
+                            : this.maxFourStateSubdivisionLevel));
             this.bakedTriangles.put(key, index);
             this.addIndex(index);
         }
@@ -298,7 +333,6 @@ public final class OpacityMicromapData {
             }
             SpriteAlphaFrames frames =
                     this.alphaFrames.computeIfAbsent(sprite, SpriteAlphaFrames::create);
-            int subdivisionLevel = SUBDIVISION_LEVEL + Integer.numberOfTrailingZeros(size);
             int index = frames == null
                     ? SPECIAL_FULLY_UNKNOWN_OPAQUE
                     : this.intern(bakeRepeated(
@@ -306,7 +340,10 @@ public final class OpacityMicromapData {
                             packedUv0,
                             packedUv1,
                             packedUv2,
-                            subdivisionLevel,
+                            frames.staticPowerOfTwo()
+                                    ? this.maxTwoStateSubdivisionLevel
+                                    : this.maxFourStateSubdivisionLevel,
+                            size,
                             projectedU0,
                             projectedV0,
                             projectedU1,
@@ -427,7 +464,11 @@ public final class OpacityMicromapData {
     }
 
     private static BakedBlock bake(
-            SpriteAlphaFrames frames, int packedUv0, int packedUv1, int packedUv2) {
+            SpriteAlphaFrames frames,
+            int packedUv0,
+            int packedUv1,
+            int packedUv2,
+            int maxSubdivisionLevel) {
         float u0 = frames.localU(unpackHalf(packedUv0, false));
         float v0 = frames.localV(unpackHalf(packedUv0, true));
         float u1 = frames.localU(unpackHalf(packedUv1, false));
@@ -435,7 +476,17 @@ public final class OpacityMicromapData {
         float u2 = frames.localU(unpackHalf(packedUv2, false));
         float v2 = frames.localV(unpackHalf(packedUv2, true));
         return bakeCoverage(
-                u0, v0, u1, v1, u2, v2, frames.frameCount(), frames);
+                u0,
+                v0,
+                u1,
+                v1,
+                u2,
+                v2,
+                frames.subdivisionLevel(
+                        u0, v0, u1, v1, u2, v2, maxSubdivisionLevel, 0),
+                frames.frameCount(),
+                frames.staticPowerOfTwo(),
+                frames);
     }
 
     private static BakedBlock bakeConstant(
@@ -451,7 +502,8 @@ public final class OpacityMicromapData {
             int packedUv0,
             int packedUv1,
             int packedUv2,
-            int subdivisionLevel,
+            int maxSubdivisionLevel,
+            int size,
             float projectedU0,
             float projectedV0,
             float projectedU1,
@@ -465,8 +517,17 @@ public final class OpacityMicromapData {
         float u2 = frames.localU(unpackHalf(packedUv2, false));
         float v2 = frames.localV(unpackHalf(packedUv2, true));
         return bakeMapped(
-                subdivisionLevel,
+                frames.subdivisionLevel(
+                        u0,
+                        v0,
+                        u1,
+                        v1,
+                        u2,
+                        v2,
+                        maxSubdivisionLevel,
+                        Integer.numberOfTrailingZeros(size)),
                 frames.frameCount(),
+                frames.staticPowerOfTwo(),
                 (frame, barycentric) -> {
                     float projectedU = interpolate(
                             projectedU0, projectedU1, projectedU2, barycentric);
@@ -511,9 +572,34 @@ public final class OpacityMicromapData {
             int subdivisionLevel,
             int frameCount,
             AlphaSampler alphaSampler) {
+        return bakeCoverage(
+                u0,
+                v0,
+                u1,
+                v1,
+                u2,
+                v2,
+                subdivisionLevel,
+                frameCount,
+                false,
+                alphaSampler);
+    }
+
+    private static BakedBlock bakeCoverage(
+            float u0,
+            float v0,
+            float u1,
+            float v1,
+            float u2,
+            float v2,
+            int subdivisionLevel,
+            int frameCount,
+            boolean forceTwoState,
+            AlphaSampler alphaSampler) {
         return bakeMapped(
                 subdivisionLevel,
                 frameCount,
+                forceTwoState,
                 (frame, barycentric) -> alphaSampler.opaque(
                         frame,
                         interpolate(u0, u1, u2, barycentric),
@@ -523,50 +609,76 @@ public final class OpacityMicromapData {
     private static BakedBlock bakeMapped(
             int subdivisionLevel,
             int frameCount,
+            boolean forceTwoState,
             BarycentricAlphaSampler alphaSampler) {
         if (frameCount <= 0) {
             throw new IllegalArgumentException("Alpha coverage must contain at least one frame");
         }
         int microTriangleCount = microTriangleCount(subdivisionLevel);
-        byte[] fourState = new byte[blockByteSize(FOUR_STATE_FORMAT, subdivisionLevel)];
+        byte[] twoState = forceTwoState
+                ? new byte[blockByteSize(TWO_STATE_FORMAT, subdivisionLevel)]
+                : null;
+        byte[] fourState = forceTwoState
+                ? null
+                : new byte[blockByteSize(FOUR_STATE_FORMAT, subdivisionLevel)];
         float[] barycentric = new float[3];
         boolean hasUnknown = false;
+        int subdivision = 1 << subdivisionLevel;
+        int row = 0;
+        int rowStart = 0;
+        int rowEnd = 2 * subdivision - 1;
         for (int cellIndex = 0; cellIndex < microTriangleCount; cellIndex++) {
+            if (cellIndex == rowEnd) {
+                rowStart = rowEnd;
+                row++;
+                rowEnd += 2 * (subdivision - row) - 1;
+            }
             int birdIndex = 0;
-            boolean firstFrameOpaque = false;
-            boolean frameMismatch = false;
+            boolean firstSampleOpaque = false;
+            boolean sampleMismatch = false;
             for (int frame = 0; frame < frameCount; frame++) {
-                int opaqueSamples = 0;
-                for (int sample = 0; sample < 4; sample++) {
-                    samplePoint(cellIndex, subdivisionLevel, sample, barycentric);
+                int sampleCount = forceTwoState ? 1 : 4;
+                for (int sample = 0; sample < sampleCount; sample++) {
+                    samplePoint(
+                            row,
+                            cellIndex - rowStart,
+                            subdivision,
+                            sample,
+                            barycentric);
                     if (frame == 0 && sample == 0) {
                         birdIndex = barycentricsToSpaceFillingCurveIndex(
                                 barycentric[1], barycentric[2], subdivisionLevel);
                     }
-                    if (alphaSampler.opaque(frame, barycentric)) {
-                        opaqueSamples++;
+                    boolean opaque = alphaSampler.opaque(frame, barycentric);
+                    if (frame == 0 && sample == 0) {
+                        firstSampleOpaque = opaque;
+                    } else {
+                        sampleMismatch |= opaque != firstSampleOpaque;
                     }
                 }
-                // At native Minecraft resolution both microtriangles of a texel agree exactly.
-                // Higher-resolution packs receive a coverage-majority approximation instead of
-                // the old neighbour veto, which systematically eroded cutout boundaries.
-                boolean frameOpaque = opaqueSamples * 2 >= 4;
-                if (frame == 0) {
-                    firstFrameOpaque = frameOpaque;
-                } else {
-                    frameMismatch |= frameOpaque != firstFrameOpaque;
-                }
             }
-            int state = frameMismatch
+            // Static power-of-two sprites stay on the two-state fast path. Their adaptive grid is
+            // exact for dyadic UVs; non-dyadic model slices receive two refinement levels so the
+            // unavoidable binary-grid boundary approximation remains sub-texel. Other inputs use
+            // UNKNOWN whenever spatial samples or animation frames disagree.
+            boolean opaque = firstSampleOpaque;
+            int state = !forceTwoState && sampleMismatch
                     ? STATE_UNKNOWN_OPAQUE
-                    : (firstFrameOpaque ? STATE_OPAQUE : STATE_TRANSPARENT);
-            hasUnknown |= frameMismatch;
-            fourState[birdIndex >>> 2] |= (byte) (state << ((birdIndex & 3) * 2));
+                    : (opaque ? STATE_OPAQUE : STATE_TRANSPARENT);
+            hasUnknown |= !forceTwoState && sampleMismatch;
+            if (forceTwoState) {
+                twoState[birdIndex >>> 3] |= (byte) (state << (birdIndex & 7));
+            } else {
+                fourState[birdIndex >>> 2] |= (byte) (state << ((birdIndex & 3) * 2));
+            }
+        }
+        if (forceTwoState) {
+            return new BakedBlock(TWO_STATE_FORMAT, subdivisionLevel, twoState);
         }
         if (hasUnknown) {
             return new BakedBlock(FOUR_STATE_FORMAT, subdivisionLevel, fourState);
         }
-        byte[] twoState = new byte[blockByteSize(TWO_STATE_FORMAT, subdivisionLevel)];
+        twoState = new byte[blockByteSize(TWO_STATE_FORMAT, subdivisionLevel)];
         for (int index = 0; index < microTriangleCount; index++) {
             int state = fourState[index >>> 2] >>> ((index & 3) * 2) & 3;
             twoState[index >>> 3] |= (byte) ((state & 1) << (index & 7));
@@ -575,23 +687,13 @@ public final class OpacityMicromapData {
     }
 
     private static void samplePoint(
-            int cellIndex, int subdivisionLevel, int sampleIndex, float[] target) {
+            int row,
+            int remaining,
+            int subdivision,
+            int sampleIndex,
+            float[] target) {
         if (sampleIndex < 0 || sampleIndex >= 4) {
             throw new IndexOutOfBoundsException(sampleIndex);
-        }
-        int subdivision = 1 << subdivisionLevel;
-        int remaining = cellIndex;
-        int row = 0;
-        while (row < subdivision) {
-            int rowCount = 2 * (subdivision - row) - 1;
-            if (remaining < rowCount) {
-                break;
-            }
-            remaining -= rowCount;
-            row++;
-        }
-        if (row == subdivision) {
-            throw new IndexOutOfBoundsException(cellIndex);
         }
         int column = remaining / 2;
         boolean upper = (remaining & 1) != 0;
@@ -626,8 +728,10 @@ public final class OpacityMicromapData {
             vertex1 = vertex == 1 ? x + inverse : x;
             vertex2 = vertex == 2 ? y + inverse : y;
         }
-        target[1] = (centroid1 + vertex1) * 0.5F;
-        target[2] = (centroid2 + vertex2) * 0.5F;
+        // Shared microtriangle vertices lie exactly on texel boundaries. Move toward this cell's
+        // centroid by one representable float while retaining conservative near-vertex coverage.
+        target[1] = Math.nextAfter(vertex1, centroid1);
+        target[2] = Math.nextAfter(vertex2, centroid2);
         target[0] = 1.0F - target[1] - target[2];
     }
 
@@ -717,6 +821,42 @@ public final class OpacityMicromapData {
             return this.frameXs.length;
         }
 
+        boolean staticPowerOfTwo() {
+            return this.frameXs.length == 1
+                    && isPowerOfTwo(this.width)
+                    && isPowerOfTwo(this.height);
+        }
+
+        int subdivisionLevel(
+                float u0,
+                float v0,
+                float u1,
+                float v1,
+                float u2,
+                float v2,
+                int maximum,
+                int repeatedLevel) {
+            int textureLevel = ceilLog2(Math.max(this.width, this.height));
+            textureLevel = Math.min(textureLevel, MAX_TEXTURE_SUBDIVISION_LEVEL);
+            int refinement = this.staticPowerOfTwo()
+                            && !dyadicUvMapping(
+                                    this.width,
+                                    this.height,
+                                    u0,
+                                    v0,
+                                    u1,
+                                    v1,
+                                    u2,
+                                    v2)
+                    ? MISALIGNED_UV_REFINEMENT_LEVELS
+                    : 0;
+            return Math.min(
+                    maximum,
+                    Math.min(
+                            MAX_SUBDIVISION_LEVEL,
+                            textureLevel + refinement + repeatedLevel));
+        }
+
         float localU(float atlasU) {
             return clampUnit((atlasU - this.atlasU0) / this.atlasUSpan);
         }
@@ -724,6 +864,107 @@ public final class OpacityMicromapData {
         float localV(float atlasV) {
             return clampUnit((atlasV - this.atlasV0) / this.atlasVSpan);
         }
+    }
+
+    static int maximumRepeatedSize(
+            CapturedSprite sprite,
+            int packedUv0,
+            int packedUv1,
+            int packedUv2,
+            int maximumSubdivisionLevel) {
+        return maximumRepeatedSize(
+                sprite,
+                packedUv0,
+                packedUv1,
+                packedUv2,
+                maximumSubdivisionLevel,
+                maximumSubdivisionLevel);
+    }
+
+    static int maximumRepeatedSize(
+            CapturedSprite sprite,
+            int packedUv0,
+            int packedUv1,
+            int packedUv2,
+            int maxTwoStateSubdivisionLevel,
+            int maxFourStateSubdivisionLevel) {
+        SpriteAlphaFrames frames = SpriteAlphaFrames.create(sprite);
+        if (frames == null) {
+            return 4;
+        }
+        int effectiveMaximum = Math.min(
+                frames.staticPowerOfTwo()
+                        ? maxTwoStateSubdivisionLevel
+                        : maxFourStateSubdivisionLevel,
+                MAX_SUBDIVISION_LEVEL);
+        float u0 = frames.localU(unpackHalf(packedUv0, false));
+        float v0 = frames.localV(unpackHalf(packedUv0, true));
+        float u1 = frames.localU(unpackHalf(packedUv1, false));
+        float v1 = frames.localV(unpackHalf(packedUv1, true));
+        float u2 = frames.localU(unpackHalf(packedUv2, false));
+        float v2 = frames.localV(unpackHalf(packedUv2, true));
+        int baseLevel = frames.subdivisionLevel(
+                u0,
+                v0,
+                u1,
+                v1,
+                u2,
+                v2,
+                effectiveMaximum,
+                0);
+        return 1 << Math.max(
+                0,
+                Math.min(2, effectiveMaximum - baseLevel));
+    }
+
+    private static boolean dyadicUvMapping(
+            int width,
+            int height,
+            float u0,
+            float v0,
+            float u1,
+            float v1,
+            float u2,
+            float v2) {
+        int[] coordinates = {
+            alignedTexel(u0 * width),
+            alignedTexel(v0 * height),
+            alignedTexel(u1 * width),
+            alignedTexel(v1 * height),
+            alignedTexel(u2 * width),
+            alignedTexel(v2 * height)
+        };
+        for (int coordinate : coordinates) {
+            if (coordinate == Integer.MIN_VALUE) {
+                return false;
+            }
+        }
+        return dyadicDelta(coordinates[0] - coordinates[2])
+                && dyadicDelta(coordinates[0] - coordinates[4])
+                && dyadicDelta(coordinates[2] - coordinates[4])
+                && dyadicDelta(coordinates[1] - coordinates[3])
+                && dyadicDelta(coordinates[1] - coordinates[5])
+                && dyadicDelta(coordinates[3] - coordinates[5]);
+    }
+
+    private static int alignedTexel(float coordinate) {
+        int rounded = Math.round(coordinate);
+        return Math.abs(coordinate - rounded) <= TEXEL_ALIGNMENT_EPSILON
+                ? rounded
+                : Integer.MIN_VALUE;
+    }
+
+    private static boolean dyadicDelta(int value) {
+        int magnitude = Math.abs(value);
+        return magnitude == 0 || isPowerOfTwo(magnitude);
+    }
+
+    private static boolean isPowerOfTwo(int value) {
+        return value > 0 && (value & value - 1) == 0;
+    }
+
+    private static int ceilLog2(int value) {
+        return value <= 1 ? 0 : Integer.SIZE - Integer.numberOfLeadingZeros(value - 1);
     }
 
     /** Khronos' normative barycentric-to-bird-curve reference mapping. */

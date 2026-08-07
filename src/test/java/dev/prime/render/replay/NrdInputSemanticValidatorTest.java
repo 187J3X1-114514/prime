@@ -497,6 +497,7 @@ final class NrdInputSemanticValidatorTest {
                 false,
                 true,
                 4,
+                4,
                 true);
     }
 

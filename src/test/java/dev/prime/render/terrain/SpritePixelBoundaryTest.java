@@ -61,6 +61,106 @@ final class SpritePixelBoundaryTest {
     }
 
     @Test
+    void staticPowerOfTwoSpritesUseAdaptiveTwoStateMicromaps() {
+        assertAdaptiveTwoState(8, 8, 3);
+        assertAdaptiveTwoState(16, 16, 4);
+        assertAdaptiveTwoState(32, 32, 5);
+        assertAdaptiveTwoState(16, 32, 5);
+        assertAdaptiveTwoState(64, 64, 6);
+        assertAdaptiveTwoState(128, 128, 7);
+        assertAdaptiveTwoState(256, 256, 8);
+    }
+
+    @Test
+    void ironChainUvSliceStaysTwoStateAtRefinedResolution() {
+        CapturedSprite chain = patternedSprite("iron_chain_128", 128, 128);
+        OpacityMicromapData.Builder builder = new OpacityMicromapData.Builder();
+        int first = uv(0.0F, 0.0F);
+        int second = uv(3.0F / 16.0F, 0.0F);
+        int third = uv(0.0F, 1.0F);
+        builder.addTriangle(chain, first, second, third);
+
+        OpacityMicromapData data = builder.build();
+
+        assertEquals(1, data.blockCount());
+        assertEquals(OpacityMicromapData.TWO_STATE_FORMAT, data.blockFormats()[0]);
+        assertEquals(9, data.blockSubdivisionLevels()[0]);
+        assertEquals(2, OpacityMicromapData.maximumRepeatedSize(
+                chain,
+                first,
+                second,
+                third,
+                OpacityMicromapData.MAX_SUBDIVISION_LEVEL + 2));
+    }
+
+    @Test
+    void nonPowerOfTwoCoverageUsesUnknownAtUnrepresentableBoundaries() {
+        CapturedSprite sprite = patternedSprite("non_power_of_two", 24, 24);
+        OpacityMicromapData.Builder builder = new OpacityMicromapData.Builder();
+        builder.addTriangle(sprite, uv(0.0F, 0.0F), uv(1.0F, 0.0F), uv(0.0F, 1.0F));
+
+        OpacityMicromapData data = builder.build();
+
+        assertEquals(1, data.blockCount());
+        assertEquals(OpacityMicromapData.FOUR_STATE_FORMAT, data.blockFormats()[0]);
+        assertEquals(5, data.blockSubdivisionLevels()[0]);
+    }
+
+    @Test
+    void deviceLimitCapsExtremeTexturesWithoutChangingStaticFormat() {
+        int size = 512;
+        int[] pixels = new int[size * size];
+        for (int y = 0; y < size; y++) {
+            Arrays.fill(pixels, y * size, y * size + size / 2, 0xffff_ffff);
+        }
+        CapturedSprite sprite = sprite(
+                "extreme",
+                0.0F,
+                0.0F,
+                1.0F,
+                1.0F,
+                size,
+                size,
+                false,
+                new int[] {0},
+                new ArrayPixels(pixels, size, size));
+        OpacityMicromapData.Builder builder = new OpacityMicromapData.Builder(8);
+        builder.addTriangle(sprite, uv(0.0F, 0.0F), uv(1.0F, 0.0F), uv(0.0F, 1.0F));
+
+        OpacityMicromapData data = builder.build();
+
+        assertEquals(1, data.blockCount());
+        assertEquals(OpacityMicromapData.TWO_STATE_FORMAT, data.blockFormats()[0]);
+        assertEquals(8, data.blockSubdivisionLevels()[0]);
+    }
+
+    @Test
+    void formatSpecificDeviceLimitsDoNotCapStaticTwoStateTextures() {
+        OpacityMicromapData.Builder staticBuilder = new OpacityMicromapData.Builder(8, 4);
+        staticBuilder.addTriangle(
+                patternedSprite("static_128", 128, 128),
+                uv(0.0F, 0.0F),
+                uv(1.0F, 0.0F),
+                uv(0.0F, 1.0F));
+        OpacityMicromapData staticData = staticBuilder.build();
+
+        OpacityMicromapData.Builder irregularBuilder = new OpacityMicromapData.Builder(8, 4);
+        irregularBuilder.addTriangle(
+                patternedSprite("irregular_24", 24, 24),
+                uv(0.0F, 0.0F),
+                uv(1.0F, 0.0F),
+                uv(0.0F, 1.0F));
+        OpacityMicromapData irregularData = irregularBuilder.build();
+
+        assertEquals(OpacityMicromapData.TWO_STATE_FORMAT, staticData.blockFormats()[0]);
+        assertEquals(7, staticData.blockSubdivisionLevels()[0]);
+        assertEquals(0, irregularData.blockCount());
+        assertEquals(
+                EXTOpacityMicromap.VK_OPACITY_MICROMAP_SPECIAL_INDEX_FULLY_UNKNOWN_OPAQUE_EXT,
+                irregularData.triangleIndices()[0]);
+    }
+
+    @Test
     void absentVoxelPixelsPreserveTheStandardQuad() {
         CapturedSprite sprite = sprite(
                 "voxel_missing", 0.0F, 0.0F, 1.0F, 1.0F, false, new int[] {0}, null);
@@ -141,6 +241,37 @@ final class SpritePixelBoundaryTest {
         return builder.build().triangleIndices()[0];
     }
 
+    private static void assertAdaptiveTwoState(int width, int height, int expectedLevel) {
+        CapturedSprite sprite = patternedSprite(
+                "adaptive_" + width + "x" + height, width, height);
+        OpacityMicromapData.Builder builder = new OpacityMicromapData.Builder();
+        builder.addTriangle(sprite, uv(0.0F, 0.0F), uv(1.0F, 0.0F), uv(0.0F, 1.0F));
+        OpacityMicromapData data = builder.build();
+        assertEquals(1, data.blockCount());
+        assertEquals(OpacityMicromapData.TWO_STATE_FORMAT, data.blockFormats()[0]);
+        assertEquals(expectedLevel, data.blockSubdivisionLevels()[0]);
+    }
+
+    private static CapturedSprite patternedSprite(String path, int width, int height) {
+        int[] pixels = new int[Math.multiplyExact(width, height)];
+        for (int y = 0; y < height; y++) {
+            for (int x = 0; x < width; x++) {
+                pixels[x + y * width] = ((x ^ y) & 1) == 0 ? 0xffff_ffff : 0;
+            }
+        }
+        return sprite(
+                path,
+                0.0F,
+                0.0F,
+                1.0F,
+                1.0F,
+                width,
+                height,
+                false,
+                new int[] {0},
+                new ArrayPixels(pixels, width, height));
+    }
+
     private static CpuClusterMesh translate(
             CapturedSprite sprite, CapturedSectionGeometry.Layer layer) {
         SectionMeshAccumulator.Quad source = SectionMeshAccumulatorTest.horizontalQuad(
@@ -195,14 +326,29 @@ final class SpritePixelBoundaryTest {
             boolean animated,
             int[] frames,
             SpritePixelView pixels) {
+        return sprite(
+                path, u0, v0, u1, v1, 16, 16, animated, frames, pixels);
+    }
+
+    private static CapturedSprite sprite(
+            String path,
+            float u0,
+            float v0,
+            float u1,
+            float v1,
+            int width,
+            int height,
+            boolean animated,
+            int[] frames,
+            SpritePixelView pixels) {
         return new CapturedSprite(
                 new SpriteId("fixture", path),
                 u0,
                 v0,
                 u1,
                 v1,
-                16,
-                16,
+                width,
+                height,
                 animated,
                 frames,
                 pixels);

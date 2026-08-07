@@ -19,6 +19,8 @@ public final class SectionMeshAccumulator {
     private final boolean buildOpacityMicromap;
     private final LabPbrMaterialSet labPbrMaterials;
     private final int segmentTriangleTarget;
+    private final int maxOpacity2StateSubdivisionLevel;
+    private final int maxOpacity4StateSubdivisionLevel;
     private final ArrayList<CpuSectionMesh> segments = new ArrayList<>();
     private final ArrayList<MergeFace> mergeFaces = new ArrayList<>();
     private MeshBuilder opaque;
@@ -32,21 +34,56 @@ public final class SectionMeshAccumulator {
     public SectionMeshAccumulator(
             LabPbrMaterialSet labPbrMaterials, boolean buildOpacityMicromap) {
         this(labPbrMaterials, buildOpacityMicromap,
-                TerrainMemoryBudget.TARGET_SEGMENT_TRIANGLES);
+                TerrainMemoryBudget.TARGET_SEGMENT_TRIANGLES,
+                OpacityMicromapData.MAX_SUBDIVISION_LEVEL);
     }
 
     public SectionMeshAccumulator(
             LabPbrMaterialSet labPbrMaterials,
             boolean buildOpacityMicromap,
             int segmentTriangleTarget) {
+        this(
+                labPbrMaterials,
+                buildOpacityMicromap,
+                segmentTriangleTarget,
+                OpacityMicromapData.MAX_SUBDIVISION_LEVEL,
+                OpacityMicromapData.MAX_SUBDIVISION_LEVEL);
+    }
+
+    public SectionMeshAccumulator(
+            LabPbrMaterialSet labPbrMaterials,
+            boolean buildOpacityMicromap,
+            int segmentTriangleTarget,
+            int maxOpacityMicromapSubdivisionLevel) {
+        this(
+                labPbrMaterials,
+                buildOpacityMicromap,
+                segmentTriangleTarget,
+                maxOpacityMicromapSubdivisionLevel,
+                maxOpacityMicromapSubdivisionLevel);
+    }
+
+    public SectionMeshAccumulator(
+            LabPbrMaterialSet labPbrMaterialSet,
+            boolean buildOpacityMicromap,
+            int segmentTriangleTarget,
+            int maxOpacity2StateSubdivisionLevel,
+            int maxOpacity4StateSubdivisionLevel) {
         if (segmentTriangleTarget < 2 || (segmentTriangleTarget & 1) != 0) {
             throw new IllegalArgumentException(
                     "Section mesh segment capacity must contain whole quads");
         }
         this.labPbrMaterials = Objects.requireNonNull(
-                labPbrMaterials, "labPbrMaterials");
+                labPbrMaterialSet, "labPbrMaterials");
         this.buildOpacityMicromap = buildOpacityMicromap;
         this.segmentTriangleTarget = segmentTriangleTarget;
+        if (maxOpacity2StateSubdivisionLevel < 0
+                || maxOpacity4StateSubdivisionLevel < 0) {
+            throw new IllegalArgumentException(
+                    "Opacity-micromap subdivision limit must be nonnegative");
+        }
+        this.maxOpacity2StateSubdivisionLevel = maxOpacity2StateSubdivisionLevel;
+        this.maxOpacity4StateSubdivisionLevel = maxOpacity4StateSubdivisionLevel;
         this.beginSegment();
     }
 
@@ -104,7 +141,9 @@ public final class SectionMeshAccumulator {
         this.cutout = new MeshBuilder();
         this.transmissive = new MeshBuilder();
         this.opacityMicromap = this.buildOpacityMicromap
-                ? new OpacityMicromapData.Builder()
+                ? new OpacityMicromapData.Builder(
+                        this.maxOpacity2StateSubdivisionLevel,
+                        this.maxOpacity4StateSubdivisionLevel)
                 : null;
         this.lights = new CpuSectionLights.Builder();
         this.triangleCount = 0;

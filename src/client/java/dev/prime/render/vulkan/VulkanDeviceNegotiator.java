@@ -361,7 +361,7 @@ public final class VulkanDeviceNegotiator {
 
             boolean opacityMicromapSupported = opacityMicromapExtension
                     && opacityMicromap.micromap()
-                    && opacityMicromapProperties.maxOpacity4StateSubdivisionLevel()
+                    && opacityMicromapProperties.maxOpacity2StateSubdivisionLevel()
                             >= dev.prime.render.terrain.OpacityMicromapData.SUBDIVISION_LEVEL;
             if (opacityMicromapSupported) {
                 enabledExtensions.add(EXTOpacityMicromap.VK_EXT_OPACITY_MICROMAP_EXTENSION_NAME);
@@ -384,6 +384,9 @@ public final class VulkanDeviceNegotiator {
                     wavefrontSubgroupSupported,
                     invocationReorderSupported,
                     opacityMicromapSupported,
+                    opacityMicromapSupported
+                            ? opacityMicromapProperties.maxOpacity2StateSubdivisionLevel()
+                            : 0,
                     opacityMicromapSupported
                             ? opacityMicromapProperties.maxOpacity4StateSubdivisionLevel()
                             : 0,

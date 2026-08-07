@@ -246,7 +246,18 @@ vec3 primeEvaluateEmitterRadiance(
 
 float primeEvaluateOpacity(
         PrimitiveRecord primitive, vec2 uv, float textureLodValue) {
-    return primeSamplePrimitiveTexture(primitive, uv, textureLodValue).a;
+    uint textureIndex = min(
+            primePrimitiveTextureIndex(primitive), PRIME_SCENE_TEXTURE_COUNT - 1u);
+    ivec2 extent = textureSize(
+            primeSceneTextures[nonuniformEXT(textureIndex)], 0);
+    ivec2 texel = clamp(
+            ivec2(floor(uv * vec2(extent))),
+            ivec2(0),
+            max(extent - 1, ivec2(0)));
+    // OMMs are baked from mip-0 alpha. Exact texel fetches keep unknown any-hit decisions and
+    // known OMM states on the same coverage function, independent of ray-cone LOD and filtering.
+    return texelFetch(
+            primeSceneTextures[nonuniformEXT(textureIndex)], texel, 0).a;
 }
 
 #endif

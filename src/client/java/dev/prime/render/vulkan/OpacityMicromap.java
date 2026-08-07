@@ -124,14 +124,18 @@ final class OpacityMicromap implements Destroyable {
             int[] fourStateBlockCounts = new int[16];
             for (int index = 0; index < blockCount; index++) {
                 int level = source.blockSubdivisionLevels()[index];
-                if (level > context.capabilities().maxOpacityMicromapSubdivisionLevel()) {
-                    throw new IllegalArgumentException(
-                            "Opacity micromap subdivision level exceeds the device limit");
-                }
                 if (source.blockFormats()[index] == OpacityMicromapData.TWO_STATE_FORMAT) {
+                    if (level > context.capabilities().maxOpacity2StateSubdivisionLevel()) {
+                        throw new IllegalArgumentException(
+                                "Two-state opacity micromap subdivision level exceeds the device limit");
+                    }
                     twoStateBlockCounts[level]++;
                 } else if (source.blockFormats()[index]
                         == OpacityMicromapData.FOUR_STATE_FORMAT) {
+                    if (level > context.capabilities().maxOpacity4StateSubdivisionLevel()) {
+                        throw new IllegalArgumentException(
+                                "Four-state opacity micromap subdivision level exceeds the device limit");
+                    }
                     fourStateBlockCounts[level]++;
                 }
             }

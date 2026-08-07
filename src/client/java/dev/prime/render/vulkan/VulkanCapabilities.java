@@ -16,7 +16,8 @@ public record VulkanCapabilities(
         boolean wavefrontSubgroupSupported,
         boolean invocationReorderSupported,
         boolean opacityMicromapSupported,
-        int maxOpacityMicromapSubdivisionLevel,
+        int maxOpacity2StateSubdivisionLevel,
+        int maxOpacity4StateSubdivisionLevel,
         boolean fsrFp16Supported) {
 
     public static VulkanCapabilities unavailable(String deviceName, String reason) {
@@ -36,6 +37,7 @@ public record VulkanCapabilities(
                 false,
                 false,
                 false,
+                0,
                 0,
                 false);
     }

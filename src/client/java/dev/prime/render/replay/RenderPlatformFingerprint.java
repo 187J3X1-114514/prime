@@ -35,9 +35,10 @@ public record RenderPlatformFingerprint(
         boolean wavefrontSubgroupSupported,
         boolean invocationReorderSupported,
         boolean opacityMicromapSupported,
-        int maxOpacityMicromapSubdivisionLevel,
+        int maxOpacity2StateSubdivisionLevel,
+        int maxOpacity4StateSubdivisionLevel,
         boolean fsrFp16Supported) {
-    private static final int FORMAT_VERSION = 1;
+    private static final int FORMAT_VERSION = 2;
     private static final int PIPELINE_CACHE_UUID_BYTES = 16;
 
     public RenderPlatformFingerprint {
@@ -57,7 +58,7 @@ public record RenderPlatformFingerprint(
                         8 + name.length
                                 + 6 * Integer.BYTES
                                 + uuid.length
-                                + 8 * Integer.BYTES
+                                + 9 * Integer.BYTES
                                 + 2 * Long.BYTES
                                 + 4)
                 .order(ByteOrder.LITTLE_ENDIAN);
@@ -83,7 +84,8 @@ public record RenderPlatformFingerprint(
         output.put((byte) (this.wavefrontSubgroupSupported ? 1 : 0));
         output.put((byte) (this.invocationReorderSupported ? 1 : 0));
         output.put((byte) (this.opacityMicromapSupported ? 1 : 0));
-        output.putInt(this.maxOpacityMicromapSubdivisionLevel);
+        output.putInt(this.maxOpacity2StateSubdivisionLevel);
+        output.putInt(this.maxOpacity4StateSubdivisionLevel);
         output.put((byte) (this.fsrFp16Supported ? 1 : 0));
         if (output.hasRemaining()) {
             throw new AssertionError("Platform fingerprint size calculation is incomplete");
@@ -96,8 +98,12 @@ public record RenderPlatformFingerprint(
         try {
             ByteBuffer input =
                     ByteBuffer.wrap(encoded).order(ByteOrder.LITTLE_ENDIAN);
-            if (input.remaining() < 2 * Integer.BYTES
-                    || input.getInt() != FORMAT_VERSION) {
+            if (input.remaining() < 2 * Integer.BYTES) {
+                throw new IllegalArgumentException(
+                        "Unsupported platform-fingerprint header");
+            }
+            int formatVersion = input.getInt();
+            if (formatVersion < 1 || formatVersion > FORMAT_VERSION) {
                 throw new IllegalArgumentException(
                         "Unsupported platform-fingerprint header");
             }
@@ -116,6 +122,22 @@ public record RenderPlatformFingerprint(
             }
             byte[] uuid = new byte[uuidLength];
             input.get(uuid);
+            int shaderGroupHandleSize = input.getInt();
+            int shaderGroupHandleAlignment = input.getInt();
+            int shaderGroupBaseAlignment = input.getInt();
+            int maxShaderGroupStride = input.getInt();
+            int maxRayDispatchInvocationCount = input.getInt();
+            int maxRayRecursionDepth = input.getInt();
+            long maxAccelerationStructurePrimitiveCount = input.getLong();
+            long maxAccelerationStructureInstanceCount = input.getLong();
+            int accelerationStructureScratchAlignment = input.getInt();
+            boolean wavefrontSubgroupSupported = readBoolean(input, "wavefront subgroup");
+            boolean invocationReorderSupported = readBoolean(input, "invocation reorder");
+            boolean opacityMicromapSupported = readBoolean(input, "opacity micromap");
+            int maxOpacity2StateSubdivisionLevel = input.getInt();
+            int maxOpacity4StateSubdivisionLevel = formatVersion >= 2
+                    ? input.getInt()
+                    : maxOpacity2StateSubdivisionLevel;
             RenderPlatformFingerprint result =
                     new RenderPlatformFingerprint(
                             new String(name, StandardCharsets.UTF_8),
@@ -125,19 +147,20 @@ public record RenderPlatformFingerprint(
                             driverVersion,
                             apiVersion,
                             HexFormat.of().formatHex(uuid),
-                            input.getInt(),
-                            input.getInt(),
-                            input.getInt(),
-                            input.getInt(),
-                            input.getInt(),
-                            input.getInt(),
-                            input.getLong(),
-                            input.getLong(),
-                            input.getInt(),
-                            readBoolean(input, "wavefront subgroup"),
-                            readBoolean(input, "invocation reorder"),
-                            readBoolean(input, "opacity micromap"),
-                            input.getInt(),
+                            shaderGroupHandleSize,
+                            shaderGroupHandleAlignment,
+                            shaderGroupBaseAlignment,
+                            maxShaderGroupStride,
+                            maxRayDispatchInvocationCount,
+                            maxRayRecursionDepth,
+                            maxAccelerationStructurePrimitiveCount,
+                            maxAccelerationStructureInstanceCount,
+                            accelerationStructureScratchAlignment,
+                            wavefrontSubgroupSupported,
+                            invocationReorderSupported,
+                            opacityMicromapSupported,
+                            maxOpacity2StateSubdivisionLevel,
+                            maxOpacity4StateSubdivisionLevel,
                             readBoolean(input, "FSR fp16"));
             if (input.hasRemaining()) {
                 throw new IllegalArgumentException(

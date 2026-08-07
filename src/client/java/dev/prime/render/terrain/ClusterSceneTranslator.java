@@ -27,7 +27,8 @@ public final class ClusterSceneTranslator {
                 captured.clusterY(),
                 captured.clusterZ(),
                 settings.segmentTriangleTarget(),
-                settings.maxOpacityMicromapSubdivisionLevel(),
+                settings.maxOpacity2StateSubdivisionLevel(),
+                settings.maxOpacity4StateSubdivisionLevel(),
                 settings.voxelSurfacesEnabled(),
                 settings.voxelSurfaceMaximumHeight());
         for (int localIndex = 0;
@@ -56,7 +57,9 @@ public final class ClusterSceneTranslator {
         SectionMeshAccumulator accumulator = new SectionMeshAccumulator(
                 materials,
                 settings.buildOpacityMicromap(),
-                settings.segmentTriangleTarget());
+                settings.segmentTriangleTarget(),
+                settings.maxOpacity2StateSubdivisionLevel(),
+                settings.maxOpacity4StateSubdivisionLevel());
         SectionMeshAccumulator.Quad quad = new SectionMeshAccumulator.Quad();
         SectionMeshAccumulator.Surface surface = new SectionMeshAccumulator.Surface();
         for (TwoSidedQuadReducer.ResolvedQuad resolved

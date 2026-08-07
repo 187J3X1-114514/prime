@@ -24,11 +24,12 @@ final class MergedFaceMeshBuilder {
     private static final int[] CUTOUT_SIZES = {4, 2, 1};
 
     private final int segmentTriangleTarget;
-    private final int maxOpacityMicromapSubdivisionLevel;
+    private final int maxOpacity2StateSubdivisionLevel;
+    private final int maxOpacity4StateSubdivisionLevel;
     private final boolean voxelSurfacesEnabled;
     private final float voxelSurfaceMaximumHeight;
     private final ArrayList<CpuSectionMesh> segments = new ArrayList<>();
-    private Segment segment = new Segment();
+    private Segment segment;
     private OptimalCover optimalCover;
     private List<CpuVoxelMesh> voxelMeshes = List.of();
     private CpuVoxelInstances voxelInstances = CpuVoxelInstances.EMPTY;
@@ -47,10 +48,28 @@ final class MergedFaceMeshBuilder {
             int maxOpacityMicromapSubdivisionLevel,
             boolean voxelSurfacesEnabled,
             float voxelSurfaceMaximumHeight) {
+        this(
+                segmentTriangleTarget,
+                maxOpacityMicromapSubdivisionLevel,
+                maxOpacityMicromapSubdivisionLevel,
+                voxelSurfacesEnabled,
+                voxelSurfaceMaximumHeight);
+    }
+
+    MergedFaceMeshBuilder(
+            int segmentTriangleTarget,
+            int maxOpacity2StateSubdivisionLevel,
+            int maxOpacity4StateSubdivisionLevel,
+            boolean voxelSurfacesEnabled,
+            float voxelSurfaceMaximumHeight) {
         this.segmentTriangleTarget = segmentTriangleTarget;
-        this.maxOpacityMicromapSubdivisionLevel = maxOpacityMicromapSubdivisionLevel;
+        this.maxOpacity2StateSubdivisionLevel = maxOpacity2StateSubdivisionLevel;
+        this.maxOpacity4StateSubdivisionLevel = maxOpacity4StateSubdivisionLevel;
         this.voxelSurfacesEnabled = voxelSurfacesEnabled;
         this.voxelSurfaceMaximumHeight = voxelSurfaceMaximumHeight;
+        this.segment = new Segment(
+                maxOpacity2StateSubdivisionLevel,
+                maxOpacity4StateSubdivisionLevel);
     }
 
     List<CpuSectionMesh> build(List<MergeFace> faces) {
@@ -243,12 +262,13 @@ final class MergedFaceMeshBuilder {
     private void coverCutout(FaceGrid grid) {
         MergeFace first = grid.first();
         int maximumSize = first.buildOpacityMicromap()
-                ? 1 << Math.max(
-                        0,
-                        Math.min(
-                                2,
-                                this.maxOpacityMicromapSubdivisionLevel
-                                        - OpacityMicromapData.SUBDIVISION_LEVEL))
+                ? OpacityMicromapData.maximumRepeatedSize(
+                        first.sprite(),
+                        first.primitive()[0],
+                        first.primitive()[1],
+                        first.primitive()[2],
+                        this.maxOpacity2StateSubdivisionLevel,
+                        this.maxOpacity4StateSubdivisionLevel)
                 : 4;
         for (int size : CUTOUT_SIZES) {
             if (size > maximumSize) {
@@ -279,7 +299,9 @@ final class MergedFaceMeshBuilder {
             return;
         }
         this.segments.add(this.segment.build());
-        this.segment = new Segment();
+        this.segment = new Segment(
+                this.maxOpacity2StateSubdivisionLevel,
+                this.maxOpacity4StateSubdivisionLevel);
     }
 
     private static final class Segment {
@@ -289,11 +311,18 @@ final class MergedFaceMeshBuilder {
         private final IntBuilder cutoutPrimitives = new IntBuilder();
         private final FloatBuilder transmissivePositions = new FloatBuilder();
         private final IntBuilder transmissivePrimitives = new IntBuilder();
-        private final OpacityMicromapData.Builder opacityMicromap =
-                new OpacityMicromapData.Builder();
+        private final OpacityMicromapData.Builder opacityMicromap;
         private int opaqueTriangles;
         private int cutoutTriangles;
         private int transmissiveTriangles;
+
+        private Segment(
+                int maxOpacity2StateSubdivisionLevel,
+                int maxOpacity4StateSubdivisionLevel) {
+            this.opacityMicromap = new OpacityMicromapData.Builder(
+                    maxOpacity2StateSubdivisionLevel,
+                    maxOpacity4StateSubdivisionLevel);
+        }
 
         int triangleCount() {
             return Math.addExact(

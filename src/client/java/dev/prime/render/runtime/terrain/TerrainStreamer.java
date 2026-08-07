@@ -67,7 +67,8 @@ public final class TerrainStreamer implements AutoCloseable {
     private final TerrainScene scene;
     private final VanillaSceneInterpreter sceneInterpreter;
     private final boolean opacityMicromapSupported;
-    private final int maxOpacityMicromapSubdivisionLevel;
+    private final int maxOpacity2StateSubdivisionLevel;
+    private final int maxOpacity4StateSubdivisionLevel;
     private final int segmentTriangleTarget;
     private final Executor workers;
     private final int maximumInFlight;
@@ -109,8 +110,10 @@ public final class TerrainStreamer implements AutoCloseable {
     public TerrainStreamer(VulkanContext context, StagingArena stagingArena) {
         this.scene = new TerrainScene(context, stagingArena);
         this.opacityMicromapSupported = context.capabilities().opacityMicromapSupported();
-        this.maxOpacityMicromapSubdivisionLevel =
-                context.capabilities().maxOpacityMicromapSubdivisionLevel();
+        this.maxOpacity2StateSubdivisionLevel =
+                context.capabilities().maxOpacity2StateSubdivisionLevel();
+        this.maxOpacity4StateSubdivisionLevel =
+                context.capabilities().maxOpacity4StateSubdivisionLevel();
         this.segmentTriangleTarget = TerrainMemoryBudget.segmentTriangleTarget(
                 context.capabilities().maxAccelerationStructurePrimitiveCount());
         this.sceneInterpreter = new VanillaSceneInterpreter();
@@ -467,7 +470,8 @@ public final class TerrainStreamer implements AutoCloseable {
                     new ClusterTranslationSettings(
                             this.opacityMicromapSupported,
                             this.segmentTriangleTarget,
-                            this.maxOpacityMicromapSubdivisionLevel,
+                            this.maxOpacity2StateSubdivisionLevel,
+                            this.maxOpacity4StateSubdivisionLevel,
                             voxelSurfaces,
                             voxelSurfaceMaximumHeight,
                             VanillaGeometryPolicy.VANILLA_PARITY.closeCoveredFluidGap(),

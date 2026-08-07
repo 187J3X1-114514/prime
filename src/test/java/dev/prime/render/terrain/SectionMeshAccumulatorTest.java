@@ -7,6 +7,8 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import dev.prime.render.scene.CapturedSprite;
 import dev.prime.render.scene.SpriteId;
 import dev.prime.render.scene.SpritePixelView;
+import java.util.Map;
+import java.util.Set;
 import org.junit.jupiter.api.Test;
 
 final class SectionMeshAccumulatorTest {
@@ -73,6 +75,52 @@ final class SectionMeshAccumulatorTest {
             assertTrue(geometry.mergeFaces().getFirst().transmissive());
             assertEquals(1, geometry.meshes().size());
             assertEquals(2, geometry.meshes().getFirst().transmissiveTriangleCount());
+        }
+    }
+
+    @Test
+    void labPbrEmissionBypassesMergingAndBuildsTriangleLights() {
+        try (TestSprite sprite = new TestSprite()) {
+            sprite.fill(0xffffffff);
+            int[] specular = new int[16 * 16];
+            java.util.Arrays.fill(specular, 0xe7000000);
+            LabPbrEmissionMap emission = LabPbrEmissionMap.fromSpecular(
+                    specular, 16, 16, 16, 16, 1, 1);
+            LabPbrMaterialSet materials = new LabPbrMaterialSet(
+                    Set.of(), Set.of(sprite.id()), Map.of(sprite.id(), emission));
+            SectionMeshAccumulator accumulator = new SectionMeshAccumulator(
+                    materials, false);
+
+            accumulator.addQuad(
+                    horizontalQuad(0.0F, 0.0F, 0.0F, 1.0F),
+                    opaqueSurface(sprite));
+            CpuSectionGeometry geometry = accumulator.build();
+
+            assertTrue(geometry.mergeFaces().isEmpty());
+            assertEquals(1, geometry.meshes().size());
+            CpuSectionMesh mesh = geometry.meshes().getFirst();
+            assertEquals(2, mesh.opaqueTriangleCount());
+            assertEquals(2, mesh.lights().emitterCount());
+        }
+    }
+
+    @Test
+    void authoredZeroEmissionRemainsMergeableForNonVanillaSurfaces() {
+        try (TestSprite sprite = new TestSprite()) {
+            LabPbrEmissionMap emission = LabPbrEmissionMap.fromSpecular(
+                    new int[16 * 16], 16, 16, 16, 16, 1, 1);
+            LabPbrMaterialSet materials = new LabPbrMaterialSet(
+                    Set.of(), Set.of(sprite.id()), Map.of(sprite.id(), emission));
+            SectionMeshAccumulator accumulator = new SectionMeshAccumulator(
+                    materials, false);
+
+            accumulator.addQuad(
+                    horizontalQuad(0.0F, 0.0F, 0.0F, 1.0F),
+                    opaqueSurface(sprite));
+            CpuSectionGeometry geometry = accumulator.build();
+
+            assertEquals(1, geometry.mergeFaces().size());
+            assertTrue(geometry.meshes().isEmpty());
         }
     }
 

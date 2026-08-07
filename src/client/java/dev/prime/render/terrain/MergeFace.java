@@ -84,9 +84,12 @@ public final class MergeFace {
             SectionMeshAccumulator.Surface surface,
             LabPbrMaterialSet labPbrMaterials,
             boolean buildOpacityMicromap) {
+        LabPbrEmissionMap emission =
+                labPbrMaterials.emissionMap(surface.sprite().id());
         if (!surface.mergeable()
                 || surface.water()
-                || surface.lightEmission() != 0) {
+                || surface.lightEmission() != 0
+                || (emission != null && emission.hasPositiveEmission())) {
             return null;
         }
         float[][] coordinates = {quad.x, quad.y, quad.z};

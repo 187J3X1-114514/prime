@@ -1,7 +1,10 @@
 package dev.prime.render.terrain;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import org.junit.jupiter.api.Test;
 
@@ -23,14 +26,31 @@ final class LabPbrEmissionMapTest {
                 1,
                 1,
                 1));
-        org.junit.jupiter.api.Assertions.assertNotNull(LabPbrEmissionMap.fromSpecular(
+        LabPbrEmissionMap authoredZero = LabPbrEmissionMap.fromSpecular(
                 new int[] {0xff000000, 0x00000000},
                 2,
                 1,
                 2,
                 1,
                 1,
-                1));
+                1);
+        assertNotNull(authoredZero);
+        assertFalse(authoredZero.hasPositiveEmission());
+    }
+
+    @Test
+    void reportsWhetherAnyTexelActuallyEmits() {
+        LabPbrEmissionMap map = LabPbrEmissionMap.fromSpecular(
+                new int[] {0xff000000, 0xe7000000},
+                2,
+                1,
+                2,
+                1,
+                1,
+                1);
+
+        assertNotNull(map);
+        assertTrue(map.hasPositiveEmission());
     }
 
     @Test

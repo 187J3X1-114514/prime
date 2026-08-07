@@ -9,18 +9,21 @@ public final class LabPbrEmissionMap {
     private final int frameHeight;
     private final int columns;
     private final int frameCount;
+    private final boolean hasPositiveEmission;
 
     private LabPbrEmissionMap(
             byte[] encoded,
             int frameWidth,
             int frameHeight,
             int columns,
-            int frameCount) {
+            int frameCount,
+            boolean hasPositiveEmission) {
         this.encoded = encoded;
         this.frameWidth = frameWidth;
         this.frameHeight = frameHeight;
         this.columns = columns;
         this.frameCount = frameCount;
+        this.hasPositiveEmission = hasPositiveEmission;
     }
 
     /** Returns null only when every texel uses LabPBR's 255 "not authored" sentinel. */
@@ -37,15 +40,21 @@ public final class LabPbrEmissionMap {
         }
         byte[] encoded = new byte[argb.length];
         boolean authored = false;
+        boolean positive = false;
         for (int index = 0; index < argb.length; index++) {
             int alpha = argb[index] >>> 24;
             encoded[index] = (byte) alpha;
             authored |= alpha < 255;
+            positive |= alpha > 0 && alpha < 255;
         }
         return authored
                 ? new LabPbrEmissionMap(
-                        encoded, frameWidth, frameHeight, columns, frameCount)
+                        encoded, frameWidth, frameHeight, columns, frameCount, positive)
                 : null;
+    }
+
+    boolean hasPositiveEmission() {
+        return this.hasPositiveEmission;
     }
 
     /** Samples the same clamped source frame and normalized sprite coordinates as the GPU atlas. */

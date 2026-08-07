@@ -37,6 +37,27 @@ final class PrimitivePackingTest {
     }
 
     @Test
+    void atlasUvPreservesAThreeTexelChainSliceOnA4096Atlas() {
+        int atlasSize = 4096;
+        float first = 3072.0F / atlasSize;
+        float second = 3075.0F / atlasSize;
+        int packedFirst = PrimitivePacking.packUv(first, 0.0F);
+        int packedSecond = PrimitivePacking.packUv(second, 1.0F);
+
+        float decodedFirst = PrimitivePacking.unpackUv(packedFirst, false);
+        float decodedSecond = PrimitivePacking.unpackUv(packedSecond, false);
+
+        assertEquals(3.0F, (decodedSecond - decodedFirst) * atlasSize);
+        assertEquals(0.0F, PrimitivePacking.unpackUv(packedFirst, true));
+        assertEquals(1.0F, PrimitivePacking.unpackUv(packedSecond, true));
+        assertEquals(
+                4.0F,
+                (Float.float16ToFloat(Float.floatToFloat16(second))
+                                - Float.float16ToFloat(Float.floatToFloat16(first)))
+                        * atlasSize);
+    }
+
+    @Test
     void convertsArgbTintToRgba8() {
         assertEquals(0x80102040, PrimitivePacking.packTint(0x80402010));
         assertEquals(0xffffffff, PrimitivePacking.packTint(-1));

@@ -329,9 +329,9 @@ uint primeLightCellIndex(vec2 parentBarycentric) {
 }
 
 vec2 primeEmitterUv(uvec3 packedUvs, vec2 parentBarycentric) {
-    vec2 uv0 = primeUnpackHalf2(packedUvs.x);
-    vec2 uv1 = primeUnpackHalf2(packedUvs.y);
-    vec2 uv2 = primeUnpackHalf2(packedUvs.z);
+    vec2 uv0 = primeUnpackUv(packedUvs.x);
+    vec2 uv1 = primeUnpackUv(packedUvs.y);
+    vec2 uv2 = primeUnpackUv(packedUvs.z);
     return uv0 * (1.0 - parentBarycentric.x - parentBarycentric.y)
             + uv1 * parentBarycentric.x
             + uv2 * parentBarycentric.y;

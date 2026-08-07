@@ -114,7 +114,13 @@ final class DynamicMeshBuilder {
                 firstX, firstY, firstZ,
                 secondX, secondY, secondZ,
                 thirdX, thirdY, thirdZ,
-                first.u, first.v, second.u, second.v, third.u, third.v)) {
+                first.u, first.v, second.u, second.v, third.u, third.v)
+                || !unit(first.u)
+                || !unit(first.v)
+                || !unit(second.u)
+                || !unit(second.v)
+                || !unit(third.u)
+                || !unit(third.v)) {
             return;
         }
 
@@ -135,9 +141,9 @@ final class DynamicMeshBuilder {
         this.positions.add(firstX, firstY, firstZ);
         this.positions.add(secondX, secondY, secondZ);
         this.positions.add(thirdX, thirdY, thirdZ);
-        int uv0 = PrimitivePacking.packHalf2(first.u, first.v);
-        int uv1 = PrimitivePacking.packHalf2(second.u, second.v);
-        int uv2 = PrimitivePacking.packHalf2(third.u, third.v);
+        int uv0 = PrimitivePacking.packUv(first.u, first.v);
+        int uv1 = PrimitivePacking.packUv(second.u, second.v);
+        int uv2 = PrimitivePacking.packUv(third.u, third.v);
         float fallbackX = first.normalX + second.normalX + third.normalX;
         float fallbackY = first.normalY + second.normalY + third.normalY;
         float fallbackZ = first.normalZ + second.normalZ + third.normalZ;
@@ -199,6 +205,10 @@ final class DynamicMeshBuilder {
             }
         }
         return true;
+    }
+
+    private static boolean unit(float value) {
+        return value >= 0.0F && value <= 1.0F;
     }
 
     static final class VertexSink implements VertexConsumer {

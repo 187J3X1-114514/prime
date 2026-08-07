@@ -3,6 +3,7 @@ package dev.prime.render.vulkan;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import dev.prime.render.shader.ShaderAbi;
 import org.junit.jupiter.api.Test;
 import org.lwjgl.vulkan.KHRRayTracingPipeline;
 import org.lwjgl.vulkan.VK11;
@@ -20,5 +21,23 @@ final class VulkanDeviceNegotiatorTest {
                 0, required));
         assertFalse(VulkanDeviceNegotiator.supportsWavefrontSubgroups(
                 raygen, VK11.VK_SUBGROUP_FEATURE_BASIC_BIT));
+    }
+
+    @Test
+    void sceneTextureDescriptorLimitsAreUnsignedAndCoverBothDescriptorClasses() {
+        int required = ShaderAbi.SCENE_TEXTURE_COUNT + 4;
+
+        assertTrue(VulkanDeviceNegotiator.supportsSceneTextureDescriptors(
+                -1, -1, -1, -1));
+        assertTrue(VulkanDeviceNegotiator.supportsSceneTextureDescriptors(
+                required, required, required, required));
+        assertFalse(VulkanDeviceNegotiator.supportsSceneTextureDescriptors(
+                required - 1, required, required, required));
+        assertFalse(VulkanDeviceNegotiator.supportsSceneTextureDescriptors(
+                required, required - 1, required, required));
+        assertFalse(VulkanDeviceNegotiator.supportsSceneTextureDescriptors(
+                required, required, required - 1, required));
+        assertFalse(VulkanDeviceNegotiator.supportsSceneTextureDescriptors(
+                required, required, required, required - 1));
     }
 }

@@ -1,6 +1,8 @@
 package dev.prime.render.terrain;
 
 public final class PrimitivePacking {
+    private static final float UV_FIXED_SCALE = 65_536.0F;
+    private static final int UV_FIXED_ONE = 0xffff;
     public static final int FLAG_CUTOUT = 1;
     public static final int FLAG_ANIMATED_TEXTURE = 1 << 1;
     public static final int FLAG_TRANSMISSIVE = 1 << 2;
@@ -121,6 +123,37 @@ public final class PrimitivePacking {
         int low = Float.floatToFloat16(x) & 0xffff;
         int high = Float.floatToFloat16(y) & 0xffff;
         return low | high << 16;
+    }
+
+    /**
+     * Packs normalized atlas coordinates as UQ0.16, reserving {@code 0xffff} for the inclusive
+     * endpoint. Power-of-two atlas texel boundaries remain exact up to 32,768 pixels.
+     */
+    public static int packUv(float u, float v) {
+        return packUv(u) | packUv(v) << 16;
+    }
+
+    public static float unpackUv(int packed, boolean high) {
+        int fixed = high ? packed >>> 16 : packed & 0xffff;
+        return fixed == UV_FIXED_ONE ? 1.0F : fixed / UV_FIXED_SCALE;
+    }
+
+    static int upgradeHalfUv(int packed) {
+        return packUv(
+                Float.float16ToFloat((short) packed),
+                Float.float16ToFloat((short) (packed >>> 16)));
+    }
+
+    private static int packUv(float coordinate) {
+        if (!(coordinate >= 0.0F && coordinate <= 1.0F)
+                || !Float.isFinite(coordinate)) {
+            throw new IllegalArgumentException(
+                    "Atlas UV must be finite and normalized");
+        }
+        if (coordinate == 1.0F) {
+            return UV_FIXED_ONE;
+        }
+        return Math.min(Math.round(coordinate * UV_FIXED_SCALE), UV_FIXED_ONE - 1);
     }
 
     public static int packConstantUv(float coordinate) {

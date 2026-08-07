@@ -150,6 +150,45 @@ public final class CompiledClusterLights {
         return upgraded;
     }
 
+    /** Converts pre-v7 emitter UV words from FP16 to the fixed atlas-coordinate encoding. */
+    static int[] upgradeUvPacking(int[] oldWords, int emitterCount) {
+        Objects.requireNonNull(oldWords, "oldWords");
+        if (emitterCount <= 0 || oldWords.length < HEADER_WORDS) {
+            throw new IllegalArgumentException("Legacy compiled light payload is inconsistent");
+        }
+        long emitterStart = getLong(oldWords, 6);
+        long emitterEnd = Math.addExact(
+                emitterStart,
+                Math.multiplyExact((long) emitterCount, ShaderAbi.LIGHT_EMITTER_SIZE));
+        long byteSize = (long) oldWords.length * Integer.BYTES;
+        if (emitterStart < (long) HEADER_WORDS * Integer.BYTES
+                || emitterEnd > byteSize
+                || (emitterStart & 3L) != 0L) {
+            throw new IllegalArgumentException("Legacy compiled light payload is inconsistent");
+        }
+        int[] upgraded = oldWords.clone();
+        int emitterWords = ShaderAbi.LIGHT_EMITTER_SIZE / Integer.BYTES;
+        int uvWord = Math.toIntExact(
+                (emitterStart + ShaderAbi.LIGHT_EMITTER_UVS_TINT_OFFSET)
+                        / Integer.BYTES);
+        for (int emitter = 0; emitter < emitterCount; emitter++) {
+            int base = uvWord + emitter * emitterWords;
+            for (int vertex = 0; vertex < 3; vertex++) {
+                int legacy = upgraded[base + vertex];
+                int fixed = PrimitivePacking.upgradeHalfUv(legacy);
+                float legacyU = Float.float16ToFloat((short) legacy);
+                float legacyV = Float.float16ToFloat((short) (legacy >>> 16));
+                if (PrimitivePacking.unpackUv(fixed, false) != legacyU
+                        || PrimitivePacking.unpackUv(fixed, true) != legacyV) {
+                    throw new IllegalArgumentException(
+                            "Legacy emitter UV cannot be upgraded exactly");
+                }
+                upgraded[base + vertex] = fixed;
+            }
+        }
+        return upgraded;
+    }
+
     public boolean isEmpty() {
         return this.summary.isEmpty();
     }

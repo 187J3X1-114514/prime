@@ -231,13 +231,15 @@ public final class VulkanDeviceNegotiator {
             accelerationProperties.pNext(optionalPropertyChain);
             VK12.vkGetPhysicalDeviceProperties2(physicalDevice.vkPhysicalDevice(), properties);
 
-            if (properties.properties().limits().maxPerStageDescriptorSamplers()
-                            < dev.prime.render.shader.ShaderAbi.SCENE_TEXTURE_COUNT + 3
-                    || properties.properties().limits().maxDescriptorSetSamplers()
-                            < dev.prime.render.shader.ShaderAbi.SCENE_TEXTURE_COUNT + 4) {
+            var limits = properties.properties().limits();
+            if (!supportsSceneTextureDescriptors(
+                    limits.maxPerStageDescriptorSamplers(),
+                    limits.maxPerStageDescriptorSampledImages(),
+                    limits.maxDescriptorSetSamplers(),
+                    limits.maxDescriptorSetSampledImages())) {
                 return VulkanCapabilities.unavailable(
                         deviceName,
-                        "Insufficient sampled-image descriptors for dynamic scene textures");
+                        "Insufficient sampler or sampled-image descriptors for dynamic scene textures");
             }
             if (rayProperties.maxRayRecursionDepth() < 1) {
                 return VulkanCapabilities.unavailable(deviceName, "Ray tracing recursion depth 1 is not supported");
@@ -416,5 +418,18 @@ public final class VulkanDeviceNegotiator {
             throw new IllegalArgumentException("SBT record index must be non-negative");
         }
         return Integer.compareUnsigned(unsignedMaximum, requiredIndex) >= 0;
+    }
+
+    static boolean supportsSceneTextureDescriptors(
+            int perStageSamplerLimit,
+            int perStageSampledImageLimit,
+            int descriptorSetSamplerLimit,
+            int descriptorSetSampledImageLimit) {
+        // TraceBackend exposes its four fixed combined samplers to every RT stage.
+        int required = dev.prime.render.shader.ShaderAbi.SCENE_TEXTURE_COUNT + 4;
+        return Integer.compareUnsigned(perStageSamplerLimit, required) >= 0
+                && Integer.compareUnsigned(perStageSampledImageLimit, required) >= 0
+                && Integer.compareUnsigned(descriptorSetSamplerLimit, required) >= 0
+                && Integer.compareUnsigned(descriptorSetSampledImageLimit, required) >= 0;
     }
 }

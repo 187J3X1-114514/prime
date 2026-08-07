@@ -9,8 +9,12 @@
 const uint PRIME_HIT_KIND_MASK = 0xffu;
 const uint PRIME_SURFACE_MOTION_FLAG = 0x100u;
 
-vec2 primeUnpackHalf2(uint packedValue) {
-    return unpackHalf2x16(packedValue);
+vec2 primeUnpackUv(uint packedValue) {
+    uvec2 fixedUv = uvec2(packedValue & 0xffffu, packedValue >> 16u);
+    vec2 uv = vec2(fixedUv) * (1.0 / 65536.0);
+    return vec2(
+            fixedUv.x == 0xffffu ? 1.0 : uv.x,
+            fixedUv.y == 0xffffu ? 1.0 : uv.y);
 }
 
 vec4 primeUnpackTint(uint packedValue) {

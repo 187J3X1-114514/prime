@@ -14,9 +14,9 @@ final class CompiledClusterCodecTest {
     @Test
     void roundTripPreservesSharedMacroPrimitiveLayout() {
         int[] primitive = {
-            PrimitivePacking.packHalf2(0.0F, 0.0F),
-            PrimitivePacking.packHalf2(1.0F, 0.0F),
-            PrimitivePacking.packHalf2(0.0F, 1.0F),
+            PrimitivePacking.packUv(0.0F, 0.0F),
+            PrimitivePacking.packUv(1.0F, 0.0F),
+            PrimitivePacking.packUv(0.0F, 1.0F),
             PrimitivePacking.packTintFlags(PrimitivePacking.packTint(-1), 0),
             PrimitivePacking.packOctahedralNormal(0.0F, 0.0F, 1.0F),
             PrimitivePacking.packFlagsEmitter(0, PrimitivePacking.NO_EMITTER_INDEX),
@@ -61,9 +61,9 @@ final class CompiledClusterCodecTest {
                     0.0F, 1.0F, 0.0F
                 },
                 new int[] {
-                    PrimitivePacking.packHalf2(0.0F, 0.0F),
-                    PrimitivePacking.packHalf2(1.0F, 0.0F),
-                    PrimitivePacking.packHalf2(0.0F, 1.0F),
+                    PrimitivePacking.packUv(0.0F, 0.0F),
+                    PrimitivePacking.packUv(1.0F, 0.0F),
+                    PrimitivePacking.packUv(0.0F, 1.0F),
                     PrimitivePacking.packTintFlags(
                             PrimitivePacking.packTint(-1), flags),
                     PrimitivePacking.packOctahedralNormal(0.0F, 0.0F, 1.0F),
@@ -100,9 +100,9 @@ final class CompiledClusterCodecTest {
         int flags = PrimitivePacking.FLAG_CUTOUT
                 | PrimitivePacking.FLAG_LABPBR_SPECULAR;
         int[] primitive = {
-            PrimitivePacking.packHalf2(0.0F, 0.0F),
-            PrimitivePacking.packHalf2(1.0F, 0.0F),
-            PrimitivePacking.packHalf2(0.0F, 1.0F),
+            PrimitivePacking.packUv(0.0F, 0.0F),
+            PrimitivePacking.packUv(1.0F, 0.0F),
+            PrimitivePacking.packUv(0.0F, 1.0F),
             PrimitivePacking.packTintFlags(
                     PrimitivePacking.packTint(-1), flags),
             PrimitivePacking.packOctahedralNormal(0.0F, 0.0F, 1.0F),
@@ -132,8 +132,16 @@ final class CompiledClusterCodecTest {
         byte[] legacyBytes = withoutCurrentSegmentMacroCounts(encoded);
         ByteBuffer legacy = littleEndian(legacyBytes);
         legacy.putInt(4, 3);
+        int legacyPrimitive = offsets.primitives() - 3 * Integer.BYTES;
+        legacy.putInt(legacyPrimitive, PrimitivePacking.packHalf2(0.0F, 0.0F));
         legacy.putInt(
-                offsets.primitives() - 3 * Integer.BYTES + 5 * Integer.BYTES,
+                legacyPrimitive + Integer.BYTES,
+                PrimitivePacking.packHalf2(1.0F, 0.0F));
+        legacy.putInt(
+                legacyPrimitive + 2 * Integer.BYTES,
+                PrimitivePacking.packHalf2(0.0F, 1.0F));
+        legacy.putInt(
+                legacyPrimitive + 5 * Integer.BYTES,
                 flags >>> 8
                         | 17 << 1
                         | PrimitivePacking.VISIBLE_EMISSION_FLAG
@@ -152,6 +160,9 @@ final class CompiledClusterCodecTest {
                 17,
                 PrimitivePacking.unpackDynamicTextureIndex(
                         decodedPrimitive[5]));
+        assertEquals(PrimitivePacking.packUv(0.0F, 0.0F), decodedPrimitive[0]);
+        assertEquals(PrimitivePacking.packUv(1.0F, 0.0F), decodedPrimitive[1]);
+        assertEquals(PrimitivePacking.packUv(0.0F, 1.0F), decodedPrimitive[2]);
     }
 
     @Test
@@ -191,9 +202,9 @@ final class CompiledClusterCodecTest {
                     0.0F, 1.0F, 0.0F
                 },
                 new int[] {
-                    PrimitivePacking.packHalf2(0.0F, 0.0F),
-                    PrimitivePacking.packHalf2(1.0F, 0.0F),
-                    PrimitivePacking.packHalf2(0.0F, 1.0F),
+                    PrimitivePacking.packUv(0.0F, 0.0F),
+                    PrimitivePacking.packUv(1.0F, 0.0F),
+                    PrimitivePacking.packUv(0.0F, 1.0F),
                     PrimitivePacking.packTintFlags(
                             PrimitivePacking.packTint(-1), 0),
                     PrimitivePacking.packOctahedralNormal(0.0F, 0.0F, 1.0F),
@@ -223,7 +234,15 @@ final class CompiledClusterCodecTest {
                 () -> CompiledClusterCodec.decode(nonFinitePosition));
 
         byte[] nonFiniteUv = valid.clone();
-        littleEndian(nonFiniteUv).putInt(offsets.primitives(), 0x0000_7c00);
+        ByteBuffer legacyUv = littleEndian(nonFiniteUv);
+        legacyUv.putInt(4, 6);
+        legacyUv.putInt(offsets.primitives(), 0x0000_7c00);
+        legacyUv.putInt(
+                offsets.primitives() + Integer.BYTES,
+                PrimitivePacking.packHalf2(1.0F, 0.0F));
+        legacyUv.putInt(
+                offsets.primitives() + 2 * Integer.BYTES,
+                PrimitivePacking.packHalf2(0.0F, 1.0F));
         assertThrows(
                 IllegalArgumentException.class,
                 () -> CompiledClusterCodec.decode(nonFiniteUv));

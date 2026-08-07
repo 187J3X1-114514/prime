@@ -9,7 +9,7 @@ import java.util.Objects;
 /** Versioned canonical binary encoding of one {@link CompiledCluster}. */
 public final class CompiledClusterCodec {
     private static final int MAGIC = 0x3143_4350;
-    private static final int VERSION = 6;
+    private static final int VERSION = 7;
     private static final int MAX_SEGMENTS = 4_096;
     private static final int MAX_VOXEL_MESHES = 4_096;
     private static final int MAX_VOXEL_INSTANCES = 4_194_304;
@@ -155,6 +155,9 @@ public final class CompiledClusterCodec {
                 if (version < 4) {
                     upgradePrimitivePacking(primitives);
                 }
+                if (version < 7) {
+                    upgradeUvPacking(primitives);
+                }
                 segments.add(new CpuClusterMesh.Segment(
                         positions,
                         primitives,
@@ -173,12 +176,14 @@ public final class CompiledClusterCodec {
                     input, "opacity subdivision levels");
             int[] opacityTriangles = getInts(
                     input, "opacity triangle indices");
-            OpacityMicromapData opacity = OpacityMicromapData.fromEncoded(
-                    opacityBlocks,
-                    opacityOffsets,
-                    opacityFormats,
-                    opacitySubdivisions,
-                    opacityTriangles);
+            OpacityMicromapData opacity = version < 7
+                    ? OpacityMicromapData.fullyUnknown(Math.toIntExact(cutout))
+                    : OpacityMicromapData.fromEncoded(
+                            opacityBlocks,
+                            opacityOffsets,
+                            opacityFormats,
+                            opacitySubdivisions,
+                            opacityTriangles);
 
             ArrayList<CpuVoxelMesh> voxelMeshes = new ArrayList<>();
             CpuVoxelInstances voxelInstances = CpuVoxelInstances.EMPTY;
@@ -208,13 +213,20 @@ public final class CompiledClusterCodec {
                     if (version < 4) {
                         upgradePrimitivePacking(meshPrimitives);
                     }
+                    if (version < 7) {
+                        upgradeUvPacking(meshPrimitives);
+                    }
+                    OpacityMicromapData meshOpacity = getOpacity(input);
+                    if (version < 7) {
+                        meshOpacity = OpacityMicromapData.fullyUnknown(meshCutout);
+                    }
                     voxelMeshes.add(new CpuVoxelMesh(
                             meshPositions,
                             meshPrimitives,
                             meshOpaque,
                             meshCutout,
                             meshTransmissive,
-                            getOpacity(input)));
+                            meshOpacity));
                 }
                 int[] meshIndices = getInts(input, "voxel instance mesh indices");
                 if (meshIndices.length > MAX_VOXEL_INSTANCES) {
@@ -252,6 +264,10 @@ public final class CompiledClusterCodec {
             int[] encodedLights = getInts(input, "compiled light words");
             if (version < 6 && lightEmitterCount != 0) {
                 encodedLights = CompiledClusterLights.addFullDirectionStream(encodedLights);
+            }
+            if (version < 7 && lightEmitterCount != 0) {
+                encodedLights = CompiledClusterLights.upgradeUvPacking(
+                        encodedLights, lightEmitterCount);
             }
             CompiledClusterLights lights = CompiledClusterLights.fromEncoded(
                     encodedLights, lightSummary);
@@ -341,6 +357,26 @@ public final class CompiledClusterCodec {
                         : encodedEmitter - 1;
                 records[record + 5] = PrimitivePacking.packFlagsEmitter(
                         flags, emitterIndex);
+            }
+        }
+    }
+
+    private static void upgradeUvPacking(int[] records) {
+        for (int record = 0;
+                record < records.length;
+                record += CpuSectionMesh.PRIMITIVE_WORDS) {
+            int flags = PrimitivePacking.unpackFlags(
+                    records[record + 3], records[record + 5]);
+            boolean rasterComposite =
+                    (flags & PrimitivePacking.FLAG_RASTER_COMPOSITE) != 0;
+            boolean constantUv = !rasterComposite
+                    && records[record + 6] == PrimitivePacking.CONSTANT_UV_DENSITY;
+            if (constantUv) {
+                continue;
+            }
+            for (int vertex = 0; vertex < 3; vertex++) {
+                records[record + vertex] = PrimitivePacking.upgradeHalfUv(
+                        records[record + vertex]);
             }
         }
     }
@@ -495,10 +531,6 @@ public final class CompiledClusterCodec {
                     requireNormalizedFloatUv(records[record]);
                     requireNormalizedFloatUv(records[record + 1]);
                 }
-            } else {
-                for (int vertex = 0; vertex < 3; vertex++) {
-                    requireFiniteHalf2(records[record + vertex]);
-                }
             }
             boolean cutout = (flags & PrimitivePacking.FLAG_CUTOUT) != 0;
             boolean transmissive =
@@ -531,15 +563,6 @@ public final class CompiledClusterCodec {
                             "Compiled-cluster UV density must be finite");
                 }
             }
-        }
-    }
-
-    private static void requireFiniteHalf2(int packed) {
-        float low = Float.float16ToFloat((short) packed);
-        float high = Float.float16ToFloat((short) (packed >>> 16));
-        if (!Float.isFinite(low) || !Float.isFinite(high)) {
-            throw new IllegalArgumentException(
-                    "Compiled-cluster texture coordinates must be finite");
         }
     }
 

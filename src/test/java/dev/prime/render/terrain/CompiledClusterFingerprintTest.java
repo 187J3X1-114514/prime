@@ -65,9 +65,9 @@ final class CompiledClusterFingerprintTest {
 
     private static int[] opaquePrimitive(int tangentMarker) {
         return new int[] {
-            PrimitivePacking.packHalf2(0.0F, 0.0F),
-            PrimitivePacking.packHalf2(1.0F, 0.0F),
-            PrimitivePacking.packHalf2(0.0F, 1.0F),
+            PrimitivePacking.packUv(0.0F, 0.0F),
+            PrimitivePacking.packUv(1.0F, 0.0F),
+            PrimitivePacking.packUv(0.0F, 1.0F),
             PrimitivePacking.packTintFlags(PrimitivePacking.packTint(-1), 0),
             PrimitivePacking.packOctahedralNormal(0.0F, 0.0F, 1.0F),
             PrimitivePacking.packFlagsEmitter(

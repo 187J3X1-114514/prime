@@ -72,25 +72,118 @@ final class SpritePixelBoundaryTest {
     }
 
     @Test
-    void ironChainUvSliceStaysTwoStateAtRefinedResolution() {
-        CapturedSprite chain = patternedSprite("iron_chain_128", 128, 128);
+    void ironChainUvSliceUsesUnknownAtNonDyadicBoundaries() {
+        int atlasSize = 4096;
+        float atlasU0 = 3072.0F / atlasSize;
+        float atlasV0 = 2048.0F / atlasSize;
+        float atlasU1 = (3072.0F + 16.0F) / atlasSize;
+        float atlasV1 = (2048.0F + 16.0F) / atlasSize;
+        CapturedSprite chain = patternedSprite(
+                "iron_chain", 16, 16, atlasU0, atlasV0, atlasU1, atlasV1);
         OpacityMicromapData.Builder builder = new OpacityMicromapData.Builder();
-        int first = uv(0.0F, 0.0F);
-        int second = uv(3.0F / 16.0F, 0.0F);
-        int third = uv(0.0F, 1.0F);
+        int first = uv(atlasU0, atlasV0);
+        int second = uv(atlasU0 + 3.0F / atlasSize, atlasV0);
+        int third = uv(atlasU0, atlasV1);
         builder.addTriangle(chain, first, second, third);
 
         OpacityMicromapData data = builder.build();
 
         assertEquals(1, data.blockCount());
-        assertEquals(OpacityMicromapData.TWO_STATE_FORMAT, data.blockFormats()[0]);
-        assertEquals(9, data.blockSubdivisionLevels()[0]);
-        assertEquals(2, OpacityMicromapData.maximumRepeatedSize(
+        assertEquals(OpacityMicromapData.FOUR_STATE_FORMAT, data.blockFormats()[0]);
+        assertEquals(6, data.blockSubdivisionLevels()[0]);
+        OpacityMicromapData.BakedBlock block = new OpacityMicromapData.BakedBlock(
+                data.blockFormats()[0], data.blockSubdivisionLevels()[0], data.blocks());
+        int unknown = 0;
+        for (int index = 0;
+                index < OpacityMicromapData.microTriangleCount(block.subdivisionLevel());
+                index++) {
+            unknown += block.state(index) == 3 ? 1 : 0;
+        }
+        assertTrue(unknown > 0);
+        assertEquals(4, OpacityMicromapData.maximumRepeatedSize(
                 chain,
                 first,
                 second,
                 third,
                 OpacityMicromapData.MAX_SUBDIVISION_LEVEL + 2));
+    }
+
+    @Test
+    void nonDyadicMicrotriangleAccountsForInteriorTexels() {
+        CapturedSprite sprite = patternedSprite("interior_overlap", 16, 16);
+        OpacityMicromapData.Builder builder = new OpacityMicromapData.Builder();
+        builder.addTriangle(
+                sprite,
+                uv(4.0F / 16.0F, 15.0F / 16.0F),
+                uv(8.0F / 16.0F, 12.0F / 16.0F),
+                uv(1.0F / 16.0F, 1.0F));
+
+        OpacityMicromapData data = builder.build();
+        OpacityMicromapData.BakedBlock block = new OpacityMicromapData.BakedBlock(
+                data.blockFormats()[0], data.blockSubdivisionLevels()[0], data.blocks());
+        int level = block.subdivisionLevel();
+        int birdIndex = OpacityMicromapData.barycentricsToSpaceFillingCurveIndex(
+                1.0F / 96.0F, 1.0F / 96.0F, level);
+
+        assertEquals(6, level);
+        assertEquals(OpacityMicromapData.FOUR_STATE_FORMAT, block.format());
+        assertEquals(3, block.state(birdIndex));
+    }
+
+    @Test
+    void skewedDyadicCoordinatesUseConservativeFourStateCoverage() {
+        CapturedSprite sprite = patternedSprite("skewed_dyadic", 16, 16);
+        OpacityMicromapData.Builder builder = new OpacityMicromapData.Builder();
+        builder.addTriangle(
+                sprite,
+                uv(0.0F, 0.0F),
+                uv(1.0F, 0.5F),
+                uv(0.0F, 1.0F));
+
+        OpacityMicromapData data = builder.build();
+
+        assertEquals(1, data.blockCount());
+        assertEquals(OpacityMicromapData.FOUR_STATE_FORMAT, data.blockFormats()[0]);
+        assertEquals(6, data.blockSubdivisionLevels()[0]);
+    }
+
+    @Test
+    void repeatedUvUsesTwoStateOnlyForExactlyAlignedMappings() {
+        CapturedSprite sprite = patternedSprite("repeated", 16, 16);
+        OpacityMicromapData.Builder alignedBuilder = new OpacityMicromapData.Builder();
+        alignedBuilder.addRepeatedTriangle(
+                sprite,
+                uv(0.0F, 0.0F),
+                uv(1.0F, 0.0F),
+                uv(0.0F, 1.0F),
+                2,
+                0.0F,
+                0.0F,
+                2.0F,
+                0.0F,
+                0.0F,
+                2.0F);
+        OpacityMicromapData aligned = alignedBuilder.build();
+
+        OpacityMicromapData.Builder misalignedBuilder = new OpacityMicromapData.Builder();
+        misalignedBuilder.addRepeatedTriangle(
+                sprite,
+                uv(0.0F, 0.0F),
+                uv(3.0F / 16.0F, 0.0F),
+                uv(0.0F, 1.0F),
+                2,
+                0.0F,
+                0.0F,
+                2.0F,
+                0.0F,
+                0.0F,
+                2.0F);
+        OpacityMicromapData misaligned = misalignedBuilder.build();
+
+        assertEquals(OpacityMicromapData.TWO_STATE_FORMAT, aligned.blockFormats()[0]);
+        assertEquals(5, aligned.blockSubdivisionLevels()[0]);
+        assertEquals(OpacityMicromapData.FOUR_STATE_FORMAT, misaligned.blockFormats()[0]);
+        assertEquals(7, misaligned.blockSubdivisionLevels()[0]);
     }
 
     @Test
@@ -107,7 +200,7 @@ final class SpritePixelBoundaryTest {
     }
 
     @Test
-    void deviceLimitCapsExtremeTexturesWithoutChangingStaticFormat() {
+    void deviceLimitUsesUnknownWhereTwoStateCannotResolveEveryTexel() {
         int size = 512;
         int[] pixels = new int[size * size];
         for (int y = 0; y < size; y++) {
@@ -130,7 +223,7 @@ final class SpritePixelBoundaryTest {
         OpacityMicromapData data = builder.build();
 
         assertEquals(1, data.blockCount());
-        assertEquals(OpacityMicromapData.TWO_STATE_FORMAT, data.blockFormats()[0]);
+        assertEquals(OpacityMicromapData.FOUR_STATE_FORMAT, data.blockFormats()[0]);
         assertEquals(8, data.blockSubdivisionLevels()[0]);
     }
 
@@ -158,6 +251,33 @@ final class SpritePixelBoundaryTest {
         assertEquals(
                 EXTOpacityMicromap.VK_OPACITY_MICROMAP_SPECIAL_INDEX_FULLY_UNKNOWN_OPAQUE_EXT,
                 irregularData.triangleIndices()[0]);
+
+        int size = 128;
+        int[] pixels = new int[size * size];
+        for (int y = 0; y < size; y++) {
+            Arrays.fill(pixels, y * size, y * size + 11, 0xffff_ffff);
+        }
+        CapturedSprite slice = sprite(
+                "misaligned_static_128",
+                0.0F,
+                0.0F,
+                1.0F,
+                1.0F,
+                size,
+                size,
+                false,
+                new int[] {0},
+                new ArrayPixels(pixels, size, size));
+        OpacityMicromapData.Builder sliceBuilder = new OpacityMicromapData.Builder(8, 4);
+        sliceBuilder.addTriangle(
+                slice,
+                uv(0.0F, 0.0F),
+                uv(3.0F / 16.0F, 0.0F),
+                uv(0.0F, 1.0F));
+        OpacityMicromapData sliceData = sliceBuilder.build();
+
+        assertEquals(OpacityMicromapData.FOUR_STATE_FORMAT, sliceData.blockFormats()[0]);
+        assertEquals(4, sliceData.blockSubdivisionLevels()[0]);
     }
 
     @Test
@@ -253,6 +373,17 @@ final class SpritePixelBoundaryTest {
     }
 
     private static CapturedSprite patternedSprite(String path, int width, int height) {
+        return patternedSprite(path, width, height, 0.0F, 0.0F, 1.0F, 1.0F);
+    }
+
+    private static CapturedSprite patternedSprite(
+            String path,
+            int width,
+            int height,
+            float u0,
+            float v0,
+            float u1,
+            float v1) {
         int[] pixels = new int[Math.multiplyExact(width, height)];
         for (int y = 0; y < height; y++) {
             for (int x = 0; x < width; x++) {
@@ -261,10 +392,10 @@ final class SpritePixelBoundaryTest {
         }
         return sprite(
                 path,
-                0.0F,
-                0.0F,
-                1.0F,
-                1.0F,
+                u0,
+                v0,
+                u1,
+                v1,
                 width,
                 height,
                 false,
@@ -355,7 +486,7 @@ final class SpritePixelBoundaryTest {
     }
 
     private static int uv(float u, float v) {
-        return PrimitivePacking.packHalf2(u, v);
+        return PrimitivePacking.packUv(u, v);
     }
 
     private record ArrayPixels(int[] pixels, int imageWidth, int imageHeight)

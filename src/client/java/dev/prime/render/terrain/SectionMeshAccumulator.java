@@ -91,7 +91,7 @@ public final class SectionMeshAccumulator {
         if (this.built) {
             throw new IllegalStateException("Section mesh was already built");
         }
-        requireFinite(Objects.requireNonNull(quad, "quad"));
+        requireValidAttributes(Objects.requireNonNull(quad, "quad"));
         Objects.requireNonNull(surface, "surface").requireComplete();
         MergeFace mergeFace = MergeFace.tryCreate(
                 quad, surface, this.labPbrMaterials, this.buildOpacityMicromap);
@@ -110,20 +110,29 @@ public final class SectionMeshAccumulator {
         this.triangleCount += 2;
     }
 
-    private static void requireFinite(Quad quad) {
+    private static void requireValidAttributes(Quad quad) {
         boolean finite = Float.isFinite(quad.normalX)
                 && Float.isFinite(quad.normalY)
                 && Float.isFinite(quad.normalZ);
+        boolean normalizedUv = true;
         for (int index = 0; index < 4; index++) {
             finite &= Float.isFinite(quad.x[index])
                     && Float.isFinite(quad.y[index])
                     && Float.isFinite(quad.z[index])
                     && Float.isFinite(quad.u[index])
                     && Float.isFinite(quad.v[index]);
+            normalizedUv &= quad.u[index] >= 0.0F
+                    && quad.u[index] <= 1.0F
+                    && quad.v[index] >= 0.0F
+                    && quad.v[index] <= 1.0F;
         }
         if (!finite) {
             throw new IllegalArgumentException(
                     "Captured Section quad contains a non-finite vertex attribute");
+        }
+        if (!normalizedUv) {
+            throw new IllegalArgumentException(
+                    "Captured Section quad contains a non-normalized atlas UV");
         }
     }
 
@@ -201,9 +210,9 @@ public final class SectionMeshAccumulator {
         float uv1V = quad.v[secondIndex];
         float uv2U = quad.u[thirdIndex];
         float uv2V = quad.v[thirdIndex];
-        int packedUv0 = PrimitivePacking.packHalf2(uv0U, uv0V);
-        int packedUv1 = PrimitivePacking.packHalf2(uv1U, uv1V);
-        int packedUv2 = PrimitivePacking.packHalf2(uv2U, uv2V);
+        int packedUv0 = PrimitivePacking.packUv(uv0U, uv0V);
+        int packedUv1 = PrimitivePacking.packUv(uv1U, uv1V);
+        int packedUv2 = PrimitivePacking.packUv(uv2U, uv2V);
         if (destination == this.cutout && this.opacityMicromap != null) {
             if (surface.frontFaceOnly()) {
                 // Opaque/transparent OMM states may skip any-hit. Directional material sheets

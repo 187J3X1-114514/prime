@@ -123,6 +123,35 @@ final class CompiledClusterLightsTest {
         assertArrayEquals(upgraded, lights.encodedWords());
     }
 
+    @Test
+    void legacyEmitterUvsUpgradeFromHalfToFixedAtlasCoordinates() {
+        int[] legacy = validOneEmitterPayload();
+        legacy[40] = PrimitivePacking.packHalf2(0.75F, 0.5F);
+        legacy[41] = PrimitivePacking.packHalf2(0.875F, 0.5F);
+        legacy[42] = PrimitivePacking.packHalf2(0.75F, 0.625F);
+
+        int[] upgraded = CompiledClusterLights.upgradeUvPacking(legacy, 1);
+        CompiledClusterLights lights = CompiledClusterLights.fromEncoded(
+                upgraded,
+                new CompiledClusterLights.Summary(
+                        1, 0.0F, 0.0F, 0.0F, 1.0F, 1.0F, 1.0F, 1.0F));
+
+        assertEquals(PrimitivePacking.packUv(0.75F, 0.5F), upgraded[40]);
+        assertEquals(PrimitivePacking.packUv(0.875F, 0.5F), upgraded[41]);
+        assertEquals(PrimitivePacking.packUv(0.75F, 0.625F), upgraded[42]);
+        assertArrayEquals(upgraded, lights.encodedWords());
+    }
+
+    @Test
+    void legacyEmitterUvUpgradeRejectsAChangedSamplingDistribution() {
+        int[] legacy = validOneEmitterPayload();
+        legacy[40] = 1;
+
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> CompiledClusterLights.upgradeUvPacking(legacy, 1));
+    }
+
     private static int[] validOneEmitterPayload() {
         int[] relative = new int[816];
         long[] offsets = {48L, 80L, 88L, 96L, 192L};

@@ -7,8 +7,8 @@ import java.util.Arrays;
  * One exact axis-aligned unit face retained until the enclosing 64-block cluster is assembled.
  *
  * <p>The three UV words encode the atlas coordinates at projected corners (0,0), (1,0), and
- * (0,1). Exact float coordinates are retained alongside them because half-precision atlas UVs
- * cannot address individual texels in a large atlas. A negative UV-density word normally tags
+ * (0,1). Exact float coordinates are retained alongside the fixed-point atlas UVs for merge
+ * compatibility and CPU material translation. A negative UV-density word normally tags
  * the primitive as periodic. Raster composites instead use that word for an exact signed atlas
  * pixel offset under an explicit primitive flag.
  */
@@ -165,9 +165,9 @@ public final class MergeFace {
             return null;
         }
 
-        int packedUv0 = PrimitivePacking.packHalf2(quad.u[corner00], quad.v[corner00]);
-        int packedUv1 = PrimitivePacking.packHalf2(quad.u[corner10], quad.v[corner10]);
-        int packedUv2 = PrimitivePacking.packHalf2(quad.u[corner01], quad.v[corner01]);
+        int packedUv0 = PrimitivePacking.packUv(quad.u[corner00], quad.v[corner00]);
+        int packedUv1 = PrimitivePacking.packUv(quad.u[corner10], quad.v[corner10]);
+        int packedUv2 = PrimitivePacking.packUv(quad.u[corner01], quad.v[corner01]);
         float edgeUX = axisU == 0 ? 1.0F : 0.0F;
         float edgeUY = axisU == 1 ? 1.0F : 0.0F;
         float edgeUZ = axisU == 2 ? 1.0F : 0.0F;

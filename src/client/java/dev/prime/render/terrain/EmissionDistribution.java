@@ -328,35 +328,27 @@ final class EmissionDistribution {
             float vanillaEmissionFraction,
             LabPbrEmissionMap emission) {
         float u0() {
-            return unpackLow(this.packedUv0);
+            return PrimitivePacking.unpackUv(this.packedUv0, false);
         }
 
         float v0() {
-            return unpackHigh(this.packedUv0);
+            return PrimitivePacking.unpackUv(this.packedUv0, true);
         }
 
         float u1() {
-            return unpackLow(this.packedUv1);
+            return PrimitivePacking.unpackUv(this.packedUv1, false);
         }
 
         float v1() {
-            return unpackHigh(this.packedUv1);
+            return PrimitivePacking.unpackUv(this.packedUv1, true);
         }
 
         float u2() {
-            return unpackLow(this.packedUv2);
+            return PrimitivePacking.unpackUv(this.packedUv2, false);
         }
 
         float v2() {
-            return unpackHigh(this.packedUv2);
-        }
-
-        private static float unpackLow(int packed) {
-            return Float.float16ToFloat((short) (packed & 0xffff));
-        }
-
-        private static float unpackHigh(int packed) {
-            return Float.float16ToFloat((short) (packed >>> 16));
+            return PrimitivePacking.unpackUv(this.packedUv2, true);
         }
     }
 

@@ -201,15 +201,15 @@ final class ClusterSceneTranslatorTest {
             assertEquals(0L, cluster.transmissiveTriangleCount());
             int[] primitives = cluster.segments().getFirst().primitiveRecords();
             assertEquals(
-                    PrimitivePacking.packHalf2(
+                    PrimitivePacking.packUv(
                             firstPlane.u[0], firstPlane.v[0]),
                     primitives[0]);
             assertEquals(
-                    PrimitivePacking.packHalf2(
+                    PrimitivePacking.packUv(
                             firstPlane.u[1], firstPlane.v[1]),
                     primitives[1]);
             assertEquals(
-                    PrimitivePacking.packHalf2(
+                    PrimitivePacking.packUv(
                             firstPlane.u[2], firstPlane.v[2]),
                     primitives[2]);
             assertEquals(

@@ -93,28 +93,28 @@ vec2 primeInterpolateUv(SectionRecord section, PrimitiveRecord primitive) {
                 ? localPosition.yz
                 : (normal.y > normal.z ? localPosition.xz : localPosition.xy);
         vec2 repeatedPosition = fract(projectedPosition);
-        vec2 uv0 = primeUnpackHalf2(primitive.uv0);
-        vec2 uv1 = primeUnpackHalf2(primitive.uv1);
-        vec2 uv2 = primeUnpackHalf2(primitive.uv2);
+        vec2 uv0 = primeUnpackUv(primitive.uv0);
+        vec2 uv1 = primeUnpackUv(primitive.uv1);
+        vec2 uv2 = primeUnpackUv(primitive.uv2);
         return uv0
                 + repeatedPosition.x * (uv1 - uv0)
                 + repeatedPosition.y * (uv2 - uv0);
     }
     vec3 barycentric = vec3(1.0 - primeBarycentrics.x - primeBarycentrics.y,
             primeBarycentrics.x, primeBarycentrics.y);
-    return primeUnpackHalf2(primitive.uv0) * barycentric.x
-            + primeUnpackHalf2(primitive.uv1) * barycentric.y
-            + primeUnpackHalf2(primitive.uv2) * barycentric.z;
+    return primeUnpackUv(primitive.uv0) * barycentric.x
+            + primeUnpackUv(primitive.uv1) * barycentric.y
+            + primeUnpackUv(primitive.uv2) * barycentric.z;
 }
 
 float primeRayConeTextureLod(PrimitiveRecord primitive, vec3 geometricNormal) {
     vec2 rayCone = unpackHalf2x16(primePush.rayCone);
     float normalizedUvDensity;
     if (primeUsesRasterComposite(primitive)) {
-        vec2 first = primeUnpackHalf2(primitive.uv1)
-                - primeUnpackHalf2(primitive.uv0);
-        vec2 second = primeUnpackHalf2(primitive.uv2)
-                - primeUnpackHalf2(primitive.uv0);
+        vec2 first = primeUnpackUv(primitive.uv1)
+                - primeUnpackUv(primitive.uv0);
+        vec2 second = primeUnpackUv(primitive.uv2)
+                - primeUnpackUv(primitive.uv0);
         float trace = dot(first, first) + dot(second, second);
         float determinant =
                 first.x * second.y - first.y * second.x;

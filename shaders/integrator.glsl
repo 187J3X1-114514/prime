@@ -790,7 +790,9 @@ vec3 primeEstimateDirectLighting(
 bool primeRussianRoulette(
         inout PathState path,
         float sampleValue) {
-    float survival = primeRussianRouletteSurvival(path.throughput);
+    float survival = primeRussianRouletteSurvival(
+            path.throughput, path.etaScale);
+    primeRecordUnit(survival);
     if (sampleValue >= survival) {
         return false;
     }
@@ -1056,14 +1058,14 @@ bool primeAdvancePath(
     path.flags = (bsdf.eventFlags & PRIME_BSDF_EVENT_DELTA) != 0u
             ? PRIME_PATH_PREVIOUS_DELTA
             : 0u;
-    // A pure delta transparent interface has no NEE vertex. Excluding it from RR avoids turning
-    // long glass chains into mostly-zero samples without adding expensive light-tree work.
-    // Cutout/null coverage is rejected by any-hit and never reaches this state transition.
-    if (pureDeltaInterface) {
-        return true;
-    }
-    uint rrDepth = path.rrDepth++;
-    if (rrDepth < PRIME_RUSSIAN_ROULETTE_START) {
+    path.etaScale = primeEtaScaleAfterScatter(
+            path.etaScale,
+            bsdf.relativeEta,
+            (bsdf.eventFlags & PRIME_BSDF_EVENT_TRANSMISSION) != 0u);
+    primeRecordNonnegative(path.etaScale);
+    // bounce counts every completed scatter, including pure-delta transparent interfaces.
+    if (!primeRussianRouletteApplies(
+            path.bounce, PRIME_RUSSIAN_ROULETTE_START)) {
         return true;
     }
     float rouletteSample = primeHashSample1D(

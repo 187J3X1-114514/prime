@@ -20,7 +20,7 @@ public record OfflineRenderSettings(
         }
         if (russianRouletteStart != DEFAULT_RUSSIAN_ROULETTE_START) {
             throw new IllegalArgumentException(
-                    "Offline transport guarantees exactly one continuation before roulette");
+                    "Offline transport begins roulette at the second scatter");
         }
     }
 

@@ -84,8 +84,9 @@ const uint PRIME_WAVEFRONT_GUIDE_ENABLED = 32u;
 const uint PRIME_WAVEFRONT_DIRECTIONAL_GUIDE = 64u;
 const uint PRIME_WAVEFRONT_BRANCH_CONTROL_MASK = 0x78u;
 const uint PRIME_WAVEFRONT_BOUNCE_SHIFT = 0u;
-const uint PRIME_WAVEFRONT_RR_DEPTH_SHIFT = 8u;
-const uint PRIME_WAVEFRONT_PATH_FLAGS_SHIFT = 17u;
+const uint PRIME_WAVEFRONT_ETA_SCALE_SHIFT = 8u;
+const uint PRIME_WAVEFRONT_ETA_SCALE_MASK = 0xffffu;
+const uint PRIME_WAVEFRONT_PATH_FLAGS_SHIFT = 24u;
 const uint PRIME_WAVEFRONT_PRIMARY_BOUNCE_SHIFT = 8u;
 const uint PRIME_WAVEFRONT_MEDIUM_COUNT_SHIFT = 16u;
 // Bits 18..31 are the complete current material-flag domain. Extending material flags beyond
@@ -97,7 +98,7 @@ const uint PRIME_WAVEFRONT_PRIMARY_FLAGS_MASK = 0x3fffu;
 const uint PRIME_WAVEFRONT_NUMERICAL_FLAGS_MASK = 0x1ffu;
 const uint PRIME_WAVEFRONT_NUMERICAL_CONTEXT_SHIFT = 9u;
 const uint PRIME_WAVEFRONT_NUMERICAL_CONTEXT_MASK = 0x7fffu;
-const uint PRIME_WAVEFRONT_PSR_CONTROL_SHIFT = 18u;
+const uint PRIME_WAVEFRONT_PSR_CONTROL_SHIFT = 25u;
 const uint PRIME_WAVEFRONT_PSR_CONTROL_MASK = 0x3fu;
 const uint PRIME_WAVEFRONT_LIGHT_NORMAL_SHIFT = 16u;
 const uint PRIME_WAVEFRONT_LIGHT_NORMAL_MASK = 0xffffu;
@@ -242,10 +243,13 @@ void primeLoadWavefrontArea(
 }
 
 uint primePackWavefrontPathControl(PathState path) {
+    // FP16 keeps the two 96-byte path slots unchanged. Quantization only changes the roulette
+    // probability; survivor reweighting preserves the estimator's expectation.
     return (min(path.bounce, PRIME_WAVEFRONT_BYTE_MASK)
                     << PRIME_WAVEFRONT_BOUNCE_SHIFT)
-            | (min(path.rrDepth, PRIME_WAVEFRONT_BYTE_MASK)
-                    << PRIME_WAVEFRONT_RR_DEPTH_SHIFT)
+            | ((primePackWavefrontEtaScale(path.etaScale)
+                    & PRIME_WAVEFRONT_ETA_SCALE_MASK)
+                    << PRIME_WAVEFRONT_ETA_SCALE_SHIFT)
             | ((path.flags & PRIME_PATH_PREVIOUS_DELTA)
                     << PRIME_WAVEFRONT_PATH_FLAGS_SHIFT);
 }
@@ -532,8 +536,9 @@ PathState primeWavefrontPath(
             & PRIME_PATH_PREVIOUS_DELTA;
     path.throughput = record.throughputAndNumericalFlags.xyz;
     path.previousBsdfPdf = record.physicalOriginAndPreviousBsdfPdf.w;
-    path.rrDepth = (pathControl >> PRIME_WAVEFRONT_RR_DEPTH_SHIFT)
-            & PRIME_WAVEFRONT_BYTE_MASK;
+    path.etaScale = primeUnpackWavefrontEtaScale(
+            (pathControl >> PRIME_WAVEFRONT_ETA_SCALE_SHIFT)
+                    & PRIME_WAVEFRONT_ETA_SCALE_MASK);
     path.previousLightNormal = 0u;
     path.pixel = pixel;
     path.sampleIndex = primeSampleIndex();

@@ -42,7 +42,6 @@ const uint PRIME_OFFLINE_CONTROL_ACTIVE = PRIME_WAVEFRONT_ACTIVE_MASK;
 const uint PRIME_OFFLINE_CONTROL_MEDIUM_SHIFT = 1u;
 const uint PRIME_OFFLINE_CONTROL_MEDIUM_MASK = 0x3u;
 const uint PRIME_OFFLINE_PATH_BOUNCE_SHIFT = 0u;
-const uint PRIME_OFFLINE_PATH_RR_DEPTH_SHIFT = 8u;
 const uint PRIME_OFFLINE_PATH_FLAGS_SHIFT = 16u;
 const uint PRIME_OFFLINE_PATH_BYTE_MASK = 0xffu;
 const uint PRIME_OFFLINE_PATH_FLAGS_MASK = 0x3u;
@@ -152,8 +151,6 @@ void primeAppendOfflineContinuation(
 uint primePackOfflinePathControl(PathState path) {
     return (min(path.bounce, PRIME_OFFLINE_PATH_BYTE_MASK)
                     << PRIME_OFFLINE_PATH_BOUNCE_SHIFT)
-            | (min(path.rrDepth, PRIME_OFFLINE_PATH_BYTE_MASK)
-                    << PRIME_OFFLINE_PATH_RR_DEPTH_SHIFT)
             | ((path.flags & PRIME_OFFLINE_PATH_FLAGS_MASK)
                     << PRIME_OFFLINE_PATH_FLAGS_SHIFT);
 }
@@ -161,7 +158,6 @@ uint primePackOfflinePathControl(PathState path) {
 PrimeOfflineTransportRecord primeMakeOfflineTransport(
         PathState path,
         PrimeRcVolumeStack volumeStack,
-        float etaScale,
         bool enabled) {
     PrimeOfflineTransportRecord record;
     record.physicalOriginAndPreviousBsdfPdf =
@@ -172,7 +168,7 @@ PrimeOfflineTransportRecord primeMakeOfflineTransport(
     control |= min(volumeStack.count, 2u) << PRIME_OFFLINE_CONTROL_MEDIUM_SHIFT;
     record.rayDirectionAndControl =
             vec4(path.rayDirection, uintBitsToFloat(control));
-    record.throughput = vec4(path.throughput, etaScale);
+    record.throughput = vec4(path.throughput, path.etaScale);
     record.medium0 = primePackWavefrontMedium(volumeStack.values[0]);
     record.medium1 = primePackWavefrontMedium(volumeStack.values[1]);
     return record;
@@ -194,17 +190,12 @@ PathState primeOfflinePath(
             & PRIME_OFFLINE_PATH_FLAGS_MASK;
     path.throughput = record.throughput.xyz;
     path.previousBsdfPdf = record.physicalOriginAndPreviousBsdfPdf.w;
-    path.rrDepth = (pathControl >> PRIME_OFFLINE_PATH_RR_DEPTH_SHIFT)
-            & PRIME_OFFLINE_PATH_BYTE_MASK;
+    path.etaScale = record.throughput.w;
     path.previousLightNormal = previousLightNormal;
     path.pixel = pixel;
     path.sampleIndex = primeSampleIndex();
     path.sampleEpoch = primeSampleEpoch();
     return path;
-}
-
-float primeOfflineEtaScale(PrimeOfflineTransportRecord record) {
-    return record.throughput.w;
 }
 
 PrimeRcVolumeStack primeOfflineVolumeStack(PrimeOfflineTransportRecord record) {

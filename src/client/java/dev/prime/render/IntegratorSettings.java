@@ -155,8 +155,8 @@ public final class IntegratorSettings {
         return ratioSquared / (1.0F + ratioSquared);
     }
 
-    static float rouletteSurvival(float maximumThroughput) {
-        return Math.max(0.05F, Math.min(0.95F, maximumThroughput));
+    static float rouletteSurvival(float maximumThroughput, float etaScale) {
+        return Math.max(0.0F, Math.min(1.0F, maximumThroughput * etaScale));
     }
 
     static float updateMean(float previousMean, float sample, int sampleIndex) {

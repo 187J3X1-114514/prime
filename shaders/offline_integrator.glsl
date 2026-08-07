@@ -250,7 +250,6 @@ PrimePathScatter primeSampleOfflinePathSurface(
 
 bool primeAdvanceOfflinePath(
         inout PathState path,
-        inout float etaScale,
         SurfaceInteraction surface,
         BsdfSample bsdf,
         PrimePreparedSampleBase bounceSample) {
@@ -261,11 +260,11 @@ bool primeAdvanceOfflinePath(
         return false;
     }
     path.throughput = nextThroughput;
-    etaScale = primeOfflineEtaScaleAfterScatter(
-            etaScale,
+    path.etaScale = primeEtaScaleAfterScatter(
+            path.etaScale,
             bsdf.relativeEta,
             (bsdf.eventFlags & PRIME_BSDF_EVENT_TRANSMISSION) != 0u);
-    primeRecordNonnegative(etaScale);
+    primeRecordNonnegative(path.etaScale);
     path.physicalOrigin = surface.position;
     path.traceOrigin = primeOffsetRayOrigin(
             path.physicalOrigin, surface.geometricNormal, bsdf.direction);
@@ -275,12 +274,12 @@ bool primeAdvanceOfflinePath(
             ? PRIME_PATH_PREVIOUS_DELTA
             : 0u;
 
-    uint rrDepth = path.rrDepth++;
-    if (rrDepth < PRIME_RUSSIAN_ROULETTE_START) {
+    if (!primeRussianRouletteApplies(
+            path.bounce, PRIME_RUSSIAN_ROULETTE_START)) {
         return true;
     }
     float survival = primeOfflineRussianRouletteSurvival(
-            path.throughput, etaScale);
+            path.throughput, path.etaScale);
     primeRecordUnit(survival);
     float rouletteSample = primeHashSample1D(
             bounceSample,
@@ -296,7 +295,6 @@ bool primeAdvanceOfflinePath(
 
 bool primeIntegrateOfflineSurface(
         inout PathState path,
-        inout float etaScale,
         IntegratorRecord integrator,
         inout PrimeRcVolumeStack volumeStack,
         inout vec3 radiance,
@@ -393,8 +391,7 @@ bool primeIntegrateOfflineSurface(
         path.flags = usedAreaNee ? PRIME_OFFLINE_PATH_PREVIOUS_AREA_NEE : 0u;
         return false;
     }
-    if (!primeAdvanceOfflinePath(
-            path, etaScale, surface, bsdf, preparedSample)) {
+    if (!primeAdvanceOfflinePath(path, surface, bsdf, preparedSample)) {
         path.flags = usedAreaNee ? PRIME_OFFLINE_PATH_PREVIOUS_AREA_NEE : 0u;
         return false;
     }

@@ -101,7 +101,7 @@
         { "name": "flags", "type": "uint", "offset": 44 },
         { "name": "throughput", "type": "vec3", "offset": 48 },
         { "name": "previousBsdfPdf", "type": "float", "offset": 60 },
-        { "name": "rrDepth", "type": "uint", "offset": 64 },
+        { "name": "etaScale", "type": "float", "offset": 64 },
         { "name": "previousLightNormal", "type": "uint", "offset": 68 },
         { "name": "pixel", "type": "uvec2", "offset": 72 },
         { "name": "sampleIndex", "type": "uint", "offset": 80 },

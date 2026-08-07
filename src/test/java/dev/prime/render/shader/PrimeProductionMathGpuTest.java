@@ -346,7 +346,16 @@ final class PrimeProductionMathGpuTest {
                             random.nextFloat(),
                             random.nextFloat(),
                             random.nextFloat(),
-                            random.nextFloat());
+                            0.0625F + random.nextFloat() * 15.9375F);
+                    putVec4(
+                            input,
+                            index,
+                            words,
+                            2,
+                            random.nextFloat(),
+                            0.0F,
+                            0.0F,
+                            0.0F);
                 } else if (kind == 5) {
                     float opacity = switch (local & 7) {
                         case 0 -> 0.0F;

@@ -85,22 +85,35 @@ vec3 primeSegmentTransmittance(vec3 extinction, float distance) {
     return exp(-extinction * distance);
 }
 
-float primeRussianRouletteSurvival(vec3 throughput) {
-    return clamp(max(throughput.r, max(throughput.g, throughput.b)), 0.05, 0.95);
-}
-
-float primeOfflineEtaScaleAfterScatter(
+float primeEtaScaleAfterScatter(
         float etaScale, float relativeEta, bool transmission) {
     return transmission ? etaScale * relativeEta * relativeEta : etaScale;
 }
 
-float primeOfflineRussianRouletteMetric(vec3 throughput, float etaScale) {
+float primeRussianRouletteMetric(vec3 throughput, float etaScale) {
     return max(throughput.r, max(throughput.g, throughput.b)) * etaScale;
+}
+
+float primeRussianRouletteSurvival(vec3 throughput, float etaScale) {
+    return min(max(primeRussianRouletteMetric(throughput, etaScale), 0.0), 1.0);
+}
+
+bool primeRussianRouletteApplies(
+        uint completedScatters, uint minimumCompletedScatters) {
+    return completedScatters >= minimumCompletedScatters;
 }
 
 float primeOfflineRussianRouletteSurvival(vec3 throughput, float etaScale) {
     return min(sqrt(max(
-            primeOfflineRussianRouletteMetric(throughput, etaScale), 0.0)), 1.0);
+            primeRussianRouletteMetric(throughput, etaScale), 0.0)), 1.0);
+}
+
+uint primePackWavefrontEtaScale(float etaScale) {
+    return packHalf2x16(vec2(etaScale, 0.0)) & 0xffffu;
+}
+
+float primeUnpackWavefrontEtaScale(uint packedEtaScale) {
+    return unpackHalf2x16(packedEtaScale & 0xffffu).x;
 }
 
 vec3 primeRussianRouletteReweight(vec3 throughput, float survival) {

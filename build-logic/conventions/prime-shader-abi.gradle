@@ -787,10 +787,25 @@ abstract class CompilePrimeShaders extends DefaultTask {
 	abstract Property<Boolean> getDebugInfo()
 
 	@javax.inject.Inject
-	abstract org.gradle.process.ExecOperations getExecOperations()
-
-	@javax.inject.Inject
 	abstract org.gradle.api.file.FileSystemOperations getFileSystemOperations()
+
+	private static void runCommand(List<String> arguments) {
+		def command = arguments.collect { it.toString() }
+		def process = new ProcessBuilder(command)
+				.inheritIO()
+				.start()
+		try {
+			def exitCode = process.waitFor()
+			if (exitCode != 0) {
+				throw new GradleException(
+						"Shader tool failed with exit code ${exitCode}: ${command[0]}")
+			}
+		} catch (InterruptedException exception) {
+			process.destroyForcibly()
+			Thread.currentThread().interrupt()
+			throw new GradleException("Shader tool was interrupted: ${command[0]}", exception)
+		}
+	}
 
 	@TaskAction
 	void compile() {
@@ -804,21 +819,26 @@ abstract class CompilePrimeShaders extends DefaultTask {
 		def scratch = new File(temporaryDir, 'spv')
 		fileSystemOperations.delete { delete scratch }
 		scratch.mkdirs()
+		def glslang = glslangValidator.get()
+		def validator = spirvValidator.get()
+		def optimizer = spirvOptimizer.get()
+		def include = includeDirectory.get().asFile.absolutePath
+		def additionalInclude = additionalIncludeDirectory.isPresent()
+				? additionalIncludeDirectory.get().asFile.absolutePath
+				: null
+		def emitDebugInfo = debugInfo.get()
 		def compileShader = { File source, File output, List<String> definitions ->
 			def arguments = ['-V', '--target-env', 'vulkan1.2',
-					debugInfo.get() ? '-g' : '-g0']
+					emitDebugInfo ? '-g' : '-g0']
 			arguments.addAll(definitions)
-			arguments.add("-I${includeDirectory.get().asFile.absolutePath}")
-			if (additionalIncludeDirectory.isPresent()) {
-				arguments.add(
-						"-I${additionalIncludeDirectory.get().asFile.absolutePath}")
+			arguments.add("-I${include}")
+			if (additionalInclude != null) {
+				arguments.add("-I${additionalInclude}")
 			}
 			arguments.add(source.absolutePath)
 			arguments.addAll(['-o', output.absolutePath])
-			execOperations.exec {
-				commandLine glslangValidator.get(), *arguments
-			}
-			if (!debugInfo.get()) {
+			CompilePrimeShaders.runCommand([glslang, *arguments])
+			if (!emitDebugInfo) {
 				def optimized = new File(output.parentFile, output.name + '.optimized')
 				// These passes only canonicalize SPIR-V structure and remove redundant operations.
 				// Do not add aggressive inlining here: it greatly increases driver compile time.
@@ -850,20 +870,16 @@ abstract class CompilePrimeShaders extends DefaultTask {
 						'--compact-ids',
 						output.absolutePath,
 						'-o', optimized.absolutePath])
-				execOperations.exec {
-					commandLine spirvOptimizer.get(), *optimizerArguments
-				}
+				CompilePrimeShaders.runCommand([optimizer, *optimizerArguments])
 				java.nio.file.Files.move(
 						optimized.toPath(), output.toPath(),
 						java.nio.file.StandardCopyOption.REPLACE_EXISTING)
 			}
-			execOperations.exec {
-				commandLine spirvValidator.get(), '--target-env', 'vulkan1.2', output.absolutePath
-			}
+			CompilePrimeShaders.runCommand(
+					[validator, '--target-env', 'vulkan1.2', output.absolutePath])
 		}
 		def specializeWavefront = { File input, File output, int stage ->
-			execOperations.exec {
-				commandLine spirvOptimizer.get(),
+			CompilePrimeShaders.runCommand([optimizer,
 						'--set-spec-const-default-value', "0:${stage}",
 						'--freeze-spec-const',
 						'--fold-spec-const-op-composite',
@@ -876,85 +892,114 @@ abstract class CompilePrimeShaders extends DefaultTask {
 						'--merge-blocks',
 						'--compact-ids',
 						input.absolutePath,
-						'-o', output.absolutePath
-			}
-			execOperations.exec {
-				commandLine spirvValidator.get(), '--target-env', 'vulkan1.2', output.absolutePath
-			}
+						'-o', output.absolutePath])
+			CompilePrimeShaders.runCommand(
+					[validator, '--target-env', 'vulkan1.2', output.absolutePath])
 		}
-		sources.each { source ->
-			if (source.name == 'realtime_wavefront.rgen'
-					|| source.name == 'offline_wavefront.rgen') {
-				// Freeze every scheduler stage before the driver sees it. Each transport profile
-				// remains a separate program while sharing one GLSL front end within that profile.
-				def offline = source.name == 'offline_wavefront.rgen'
-				def stages = offline
-						? [
-							[name: 'head', value: 0],
-							[name: 'step', value: 1],
-							[name: 'area', value: 2],
-							[name: 'tail', value: 3],
-							[name: 'resolve', value: 4]
-						]
-						: [
-							[name: 'head', value: 0],
-							[name: 'tail', value: 2],
-							[name: 'resolve', value: 3]
-						]
-				def prefix = offline
-						? 'offline_wavefront'
-						: 'realtime_wavefront'
-				def variants = [
-						[name: '', definitions: []],
-						[name: '_subgroup', definitions: [
-								'-DPRIME_ENABLE_SUBGROUP_QUEUE=1'
-						]],
-						[name: '_ser', definitions: [
-								'-DPRIME_ENABLE_SER=1',
-								'-DPRIME_ENABLE_SUBGROUP_QUEUE=1'
-						]]
-				]
-				variants.each { variant ->
-					def generic = new File(
+		def compilationUnits = []
+		def addWavefrontCompilation = {
+				File source, String genericName, String prefix, def variant,
+				List<String> definitions, List<Map<String, Object>> stages ->
+			compilationUnits.add({
+				def generic = new File(scratch, genericName)
+				compileShader(source, generic, definitions)
+				stages.each { stage ->
+					def output = new File(
 							scratch,
-							"${prefix}${variant.name}.generic.rgen.spv")
-					compileShader(source, generic, variant.definitions)
-					stages.each { stage ->
-						def output = new File(
-								scratch,
-								"${prefix}_${stage.name}${variant.name}.rgen.spv")
-						specializeWavefront(generic, output, stage.value)
-					}
-					java.nio.file.Files.delete(generic.toPath())
-					if (!offline) {
-						def deferredDefinitions = new ArrayList<String>(variant.definitions)
-						deferredDefinitions.add('-DPRIME_DEFER_SECONDARY_AREA_NEE=1')
-						def deferred = new File(
-								scratch,
-								"${prefix}_deferred${variant.name}.generic.rgen.spv")
-						compileShader(source, deferred, deferredDefinitions)
-						[
-								[name: 'step', value: 1],
-								[name: 'area', value: 4]
-						].each { stage ->
-							def output = new File(
-									scratch,
-									"${prefix}_${stage.name}${variant.name}.rgen.spv")
-							specializeWavefront(deferred, output, stage.value)
-						}
-						java.nio.file.Files.delete(deferred.toPath())
-					}
+							"${prefix}_${stage.name}${variant.name}.rgen.spv")
+					specializeWavefront(generic, output, stage.value as int)
+				}
+				java.nio.file.Files.delete(generic.toPath())
+				return null
+			} as java.util.concurrent.Callable<Void>)
+		}
+		def variants = [
+				[name: '', definitions: []],
+				[name: '_subgroup', definitions: [
+						'-DPRIME_ENABLE_SUBGROUP_QUEUE=1'
+				]],
+				[name: '_ser', definitions: [
+						'-DPRIME_ENABLE_SER=1',
+						'-DPRIME_ENABLE_SUBGROUP_QUEUE=1'
+				]]
+		]
+		sources.each { source ->
+			if (source.name == 'offline_wavefront.rgen') {
+				// Each transport variant retains one GLSL front end and five frozen stages.
+				variants.each { variant ->
+					addWavefrontCompilation(
+							source,
+							"offline_wavefront${variant.name}.generic.rgen.spv",
+							'offline_wavefront', variant, variant.definitions,
+							[
+									[name: 'head', value: 0],
+									[name: 'step', value: 1],
+									[name: 'area', value: 2],
+									[name: 'tail', value: 3],
+									[name: 'resolve', value: 4]
+							])
+				}
+			} else if (source.name == 'realtime_wavefront.rgen') {
+				variants.each { variant ->
+					addWavefrontCompilation(
+							source,
+							"realtime_wavefront${variant.name}.generic.rgen.spv",
+							'realtime_wavefront', variant, variant.definitions,
+							[
+									[name: 'head', value: 0],
+									[name: 'tail', value: 2],
+									[name: 'resolve', value: 3]
+							])
+					def deferredDefinitions = new ArrayList<String>(variant.definitions)
+					deferredDefinitions.add('-DPRIME_DEFER_SECONDARY_AREA_NEE=1')
+					addWavefrontCompilation(
+							source,
+							"realtime_wavefront_deferred${variant.name}.generic.rgen.spv",
+							'realtime_wavefront', variant, deferredDefinitions,
+							[
+									[name: 'step', value: 1],
+									[name: 'area', value: 4]
+							])
 				}
 			} else {
-				def output = new File(scratch, source.name + '.spv')
-				compileShader(source, output, [])
-				// Conformance-only shaders force otherwise dormant libraries through glslang and
-				// spirv-val, but are never loaded at runtime and must not inflate the distributable
-				// jar.
-				if (source.name.endsWith('_validation.comp')) {
-					java.nio.file.Files.delete(output.toPath())
+				compilationUnits.add({
+					def output = new File(scratch, source.name + '.spv')
+					compileShader(source, output, [])
+					// Conformance-only shaders force otherwise dormant libraries through glslang and
+					// spirv-val, but are never loaded at runtime and must not inflate the distributable
+					// jar.
+					if (source.name.endsWith('_validation.comp')) {
+						java.nio.file.Files.delete(output.toPath())
+					}
+					return null
+				} as java.util.concurrent.Callable<Void>)
+			}
+		}
+
+		// The pool is task-local and bounded because each worker owns its output files but may run a
+		// memory-heavy glslang process. Wavefront variants are separate units so no source-level
+		// long tail leaves the other workers idle. Every worker is joined before publication.
+		def compilerCount = Math.min(compilationUnits.size(),
+				Math.min(8, Runtime.runtime.availableProcessors()))
+		def compilerPool = java.util.concurrent.Executors.newFixedThreadPool(compilerCount)
+		try {
+			def compilations = compilationUnits.collect { compilerPool.submit(it) }
+			compilations.each { compilation ->
+				try {
+					compilation.get()
+				} catch (InterruptedException exception) {
+					Thread.currentThread().interrupt()
+					throw new GradleException('Shader compilation was interrupted', exception)
+				} catch (java.util.concurrent.ExecutionException exception) {
+					def cause = exception.cause
+					if (cause instanceof RuntimeException) {
+						throw cause
+					}
+					throw new GradleException('Shader compilation failed', cause)
 				}
 			}
+		} finally {
+			compilerPool.shutdownNow()
 		}
 
 		def published = new File(outputDirectory.get().asFile, 'prime/shaders')

@@ -63,6 +63,26 @@ public final class AtmospherePipeline implements Destroyable {
     private static final int PHASE_LUT_BYTE_SIZE = 131_072;
     private static final int AERIAL_KEY_SIZE = 21;
     private static final int COMPUTE_STAGE = VK12.VK_SHADER_STAGE_COMPUTE_BIT;
+    private static final PipelineSource[] PIPELINE_SOURCES = {
+        new PipelineSource(
+                "/prime/shaders/atmosphere_transmittance.comp.spv",
+                "Prime atmosphere transmittance pipeline"),
+        new PipelineSource(
+                "/prime/shaders/atmosphere_multi_scattering.comp.spv",
+                "Prime atmosphere multiple scattering pipeline"),
+        new PipelineSource(
+                "/prime/shaders/atmosphere_sky.comp.spv",
+                "Prime atmosphere sky pipeline"),
+        new PipelineSource(
+                "/prime/shaders/atmosphere_aerial.comp.spv",
+                "Prime atmosphere epipolar aerial-radiance pipeline"),
+        new PipelineSource(
+                "/prime/shaders/atmosphere_aerial_transmittance.comp.spv",
+                "Prime atmosphere aerial-transmittance pipeline"),
+        new PipelineSource(
+                "/prime/shaders/sun_shadow_hierarchy.comp.spv",
+                "Prime sun shadow hierarchy pipeline")
+    };
 
     private final VulkanContext context;
     private final VulkanImage transmittanceLow;
@@ -147,42 +167,13 @@ public final class AtmospherePipeline implements Destroyable {
             try (MemoryStack stack = MemoryStack.stackPush()) {
                 newDescriptorSetLayout = createDescriptorSetLayout(context, stack);
                 newPipelineLayout = createPipelineLayout(context, stack, newDescriptorSetLayout);
-                newTransmittancePipeline = createComputePipeline(
-                        context,
-                        stack,
-                        newPipelineLayout,
-                        "/prime/shaders/atmosphere_transmittance.comp.spv",
-                        "Prime atmosphere transmittance pipeline");
-                newMultiScatteringPipeline = createComputePipeline(
-                        context,
-                        stack,
-                        newPipelineLayout,
-                        "/prime/shaders/atmosphere_multi_scattering.comp.spv",
-                        "Prime atmosphere multiple scattering pipeline");
-                newSkyPipeline = createComputePipeline(
-                        context,
-                        stack,
-                        newPipelineLayout,
-                        "/prime/shaders/atmosphere_sky.comp.spv",
-                        "Prime atmosphere sky pipeline");
-                newAerialPipeline = createComputePipeline(
-                        context,
-                        stack,
-                        newPipelineLayout,
-                        "/prime/shaders/atmosphere_aerial.comp.spv",
-                        "Prime atmosphere epipolar aerial-radiance pipeline");
-                newAerialTransmittancePipeline = createComputePipeline(
-                        context,
-                        stack,
-                        newPipelineLayout,
-                        "/prime/shaders/atmosphere_aerial_transmittance.comp.spv",
-                        "Prime atmosphere aerial-transmittance pipeline");
-                newSunShadowHierarchyPipeline = createComputePipeline(
-                        context,
-                        stack,
-                        newPipelineLayout,
-                        "/prime/shaders/sun_shadow_hierarchy.comp.spv",
-                        "Prime sun shadow hierarchy pipeline");
+                long[] pipelines = createComputePipelines(context, newPipelineLayout);
+                newTransmittancePipeline = pipelines[0];
+                newMultiScatteringPipeline = pipelines[1];
+                newSkyPipeline = pipelines[2];
+                newAerialPipeline = pipelines[3];
+                newAerialTransmittancePipeline = pipelines[4];
+                newSunShadowHierarchyPipeline = pipelines[5];
                 DescriptorAllocation allocation = createDescriptors(
                         context,
                         stack,
@@ -786,36 +777,62 @@ public final class AtmospherePipeline implements Destroyable {
         return pointer.get(0);
     }
 
+    private static long[] createComputePipelines(
+            VulkanContext context, long pipelineLayout) {
+        long[] pipelines = new long[PIPELINE_SOURCES.length];
+        try {
+            ParallelPipelineCreation.run(
+                    "atmosphere compute pipelines",
+                    pipelines.length,
+                    index -> {
+                        PipelineSource source = PIPELINE_SOURCES[index];
+                        pipelines[index] = createComputePipeline(
+                                context, pipelineLayout, source.resourceName(), source.label());
+                    });
+            return pipelines;
+        } catch (RuntimeException exception) {
+            for (int index = pipelines.length - 1; index >= 0; index--) {
+                destroyPipeline(context, pipelines[index]);
+            }
+            throw exception;
+        }
+    }
+
     private static long createComputePipeline(
             VulkanContext context,
-            MemoryStack stack,
             long pipelineLayout,
             String resourceName,
             String label) {
-        long module = VulkanShaderModules.create(context, resourceName);
-        try {
-            VkPipelineShaderStageCreateInfo stage = VkPipelineShaderStageCreateInfo.calloc(stack)
-                    .sType$Default()
-                    .stage(COMPUTE_STAGE)
-                    .module(module)
-                    .pName(stack.UTF8("main"));
-            VkComputePipelineCreateInfo.Buffer createInfo = VkComputePipelineCreateInfo.calloc(1, stack);
-            createInfo.get(0)
-                    .sType$Default()
-                    .stage(stage)
-                    .layout(pipelineLayout);
-            LongBuffer pointer = stack.mallocLong(1);
-            VulkanContext.check(
-                    VK12.vkCreateComputePipelines(
-                            context.vkDevice(), 0L, createInfo, null, pointer),
-                    "create " + label);
-            long pipeline = pointer.get(0);
-            context.device().instance().debug().setObjectName(
-                    context.vkDevice(), VK12.VK_OBJECT_TYPE_PIPELINE, pipeline, label);
-            return pipeline;
-        } finally {
-            VK12.vkDestroyShaderModule(context.vkDevice(), module, null);
+        try (MemoryStack stack = MemoryStack.stackPush()) {
+            long module = VulkanShaderModules.create(context, stack, resourceName);
+            try {
+                VkPipelineShaderStageCreateInfo stage = VkPipelineShaderStageCreateInfo.calloc(stack)
+                        .sType$Default()
+                        .stage(COMPUTE_STAGE)
+                        .module(module)
+                        .pName(stack.UTF8("main"));
+                VkComputePipelineCreateInfo.Buffer createInfo =
+                        VkComputePipelineCreateInfo.calloc(1, stack);
+                createInfo.get(0)
+                        .sType$Default()
+                        .stage(stage)
+                        .layout(pipelineLayout);
+                LongBuffer pointer = stack.mallocLong(1);
+                VulkanContext.check(
+                        VK12.vkCreateComputePipelines(
+                                context.vkDevice(), 0L, createInfo, null, pointer),
+                        "create " + label);
+                long pipeline = pointer.get(0);
+                context.device().instance().debug().setObjectName(
+                        context.vkDevice(), VK12.VK_OBJECT_TYPE_PIPELINE, pipeline, label);
+                return pipeline;
+            } finally {
+                VK12.vkDestroyShaderModule(context.vkDevice(), module, null);
+            }
         }
+    }
+
+    private record PipelineSource(String resourceName, String label) {
     }
 
     private static DescriptorAllocation createDescriptors(

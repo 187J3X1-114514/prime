@@ -12,6 +12,7 @@ import dev.prime.render.ResourceCleanup;
 import dev.prime.render.SunDirection;
 import dev.prime.render.shader.ShaderAbi;
 import dev.prime.render.vulkan.AtmospherePipeline;
+import dev.prime.render.vulkan.ParallelPipelineCreation;
 import dev.prime.render.vulkan.VulkanBuffer;
 import dev.prime.render.vulkan.VulkanContext;
 import dev.prime.render.vulkan.VulkanImage;
@@ -628,15 +629,16 @@ public final class NrdDenoiser implements Destroyable {
             long linearSampler) {
         ComputePipeline[] pipelines = new ComputePipeline[description.pipelines().size()];
         try {
-            for (int index = 0; index < pipelines.length; index++) {
-                pipelines[index] = ComputePipeline.create(
-                        context,
-                        description,
-                        description.pipelines().get(index),
-                        nearestSampler,
-                        linearSampler,
-                        index);
-            }
+            ParallelPipelineCreation.run(
+                    "NRD compute pipelines",
+                    pipelines.length,
+                    index -> pipelines[index] = ComputePipeline.create(
+                            context,
+                            description,
+                            description.pipelines().get(index),
+                            nearestSampler,
+                            linearSampler,
+                            index));
             return pipelines;
         } catch (RuntimeException exception) {
             destroyPipelines(pipelines, exception);

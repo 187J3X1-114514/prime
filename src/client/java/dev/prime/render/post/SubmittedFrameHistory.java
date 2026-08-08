@@ -9,6 +9,7 @@ public final class SubmittedFrameHistory<S, I, P> {
     private final BiFunction<S, I, Transition<S, P>> planner;
     private S state;
     private SubmittedFrame<P> pending;
+    private S pendingState;
 
     public SubmittedFrameHistory(
             S initialState,
@@ -24,11 +25,12 @@ public final class SubmittedFrameHistory<S, I, P> {
         }
         Transition<S, P> transition = Objects.requireNonNull(
                 this.planner.apply(this.state, input), "transition");
+        S committedState = Objects.requireNonNull(
+                transition.committedState(), "committedState");
         SubmittedFrame<P> frame = new SubmittedFrame<>(
-                this,
-                Objects.requireNonNull(transition.plan(), "plan"),
-                Objects.requireNonNull(transition.committedState(), "committedState"));
+                Objects.requireNonNull(transition.plan(), "plan"));
         this.pending = frame;
+        this.pendingState = committedState;
         return frame;
     }
 
@@ -41,30 +43,23 @@ public final class SubmittedFrameHistory<S, I, P> {
     }
 
     public void submitted(SubmittedFrame<P> frame) {
-        if (!owns(frame) || !frame.consumed || frame.submitted) {
+        if (frame == null || frame != this.pending) {
             throw new IllegalArgumentException(
                     "Frame does not belong to this submitted history");
         }
-        frame.submitted = true;
-        this.state = committedState(frame);
+        frame.submitted();
+        this.state = this.pendingState;
         this.pending = null;
+        this.pendingState = null;
     }
 
     public void abandon(SubmittedFrame<P> frame) {
-        if (!owns(frame) || frame.submitted) {
+        if (frame == null || frame != this.pending) {
             throw new IllegalArgumentException("Frame does not belong to this history");
         }
-        frame.abandoned = true;
+        frame.abandon();
         this.pending = null;
-    }
-
-    private boolean owns(SubmittedFrame<P> frame) {
-        return frame != null && frame.owner == this && frame == this.pending;
-    }
-
-    @SuppressWarnings("unchecked")
-    private S committedState(SubmittedFrame<P> frame) {
-        return (S) frame.committedState;
+        this.pendingState = null;
     }
 
     public record Transition<S, P>(P plan, S committedState) {

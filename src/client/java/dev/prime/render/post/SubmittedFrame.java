@@ -2,20 +2,11 @@ package dev.prime.render.post;
 
 /** One device-free temporal version consumed exactly once by device execution. */
 public final class SubmittedFrame<P> {
-    final SubmittedFrameHistory<?, ?, P> owner;
-    final Object committedState;
     private final P plan;
-    boolean consumed;
-    boolean submitted;
-    boolean abandoned;
+    private State state = State.PLANNED;
 
-    SubmittedFrame(
-            SubmittedFrameHistory<?, ?, P> owner,
-            P plan,
-            Object committedState) {
-        this.owner = owner;
+    SubmittedFrame(P plan) {
         this.plan = plan;
-        this.committedState = committedState;
     }
 
     public P plan() {
@@ -23,10 +14,31 @@ public final class SubmittedFrame<P> {
     }
 
     public P claimForExecution() {
-        if (this.consumed || this.submitted || this.abandoned) {
+        if (this.state != State.PLANNED) {
             throw new IllegalArgumentException("Submitted frame was already consumed");
         }
-        this.consumed = true;
+        this.state = State.CLAIMED;
         return this.plan;
+    }
+
+    void submitted() {
+        if (this.state != State.CLAIMED) {
+            throw new IllegalArgumentException("Submitted frame was not claimed for execution");
+        }
+        this.state = State.SUBMITTED;
+    }
+
+    void abandon() {
+        if (this.state == State.SUBMITTED || this.state == State.ABANDONED) {
+            throw new IllegalArgumentException("Submitted frame was already completed");
+        }
+        this.state = State.ABANDONED;
+    }
+
+    private enum State {
+        PLANNED,
+        CLAIMED,
+        SUBMITTED,
+        ABANDONED
     }
 }

@@ -149,10 +149,9 @@ final class AutoExposurePass implements Destroyable {
                                 pointer),
                         "create auto-exposure pipeline layout");
                 pipelineLayout = pointer.get(0);
-                histogramPipeline = createPipeline(
-                        context, stack, pipelineLayout, HISTOGRAM_SHADER);
-                updatePipeline = createPipeline(
-                        context, stack, pipelineLayout, UPDATE_SHADER);
+                long[] pipelines = createPipelines(context, pipelineLayout);
+                histogramPipeline = pipelines[0];
+                updatePipeline = pipelines[1];
 
                 VkDescriptorPoolSize.Buffer poolSizes =
                         VkDescriptorPoolSize.calloc(3, stack);
@@ -353,31 +352,52 @@ final class AutoExposurePass implements Destroyable {
         computeBarrier(commandBuffer);
     }
 
+    private static long[] createPipelines(VulkanContext context, long pipelineLayout) {
+        String[] shaders = {HISTOGRAM_SHADER, UPDATE_SHADER};
+        long[] pipelines = new long[shaders.length];
+        try {
+            ParallelPipelineCreation.run(
+                    "auto-exposure compute pipelines",
+                    pipelines.length,
+                    index -> pipelines[index] = createPipeline(
+                            context, pipelineLayout, shaders[index]));
+            return pipelines;
+        } catch (RuntimeException exception) {
+            for (int index = pipelines.length - 1; index >= 0; index--) {
+                if (pipelines[index] != 0L) {
+                    VK12.vkDestroyPipeline(context.vkDevice(), pipelines[index], null);
+                }
+            }
+            throw exception;
+        }
+    }
+
     private static long createPipeline(
             VulkanContext context,
-            MemoryStack stack,
             long pipelineLayout,
             String shaderResource) {
-        long shader = VulkanShaderModules.create(context, stack, shaderResource);
-        try {
-            VkPipelineShaderStageCreateInfo stage =
-                    VkPipelineShaderStageCreateInfo.calloc(stack)
-                            .sType$Default()
-                            .stage(COMPUTE_STAGE)
-                            .module(shader)
-                            .pName(stack.UTF8("main"));
-            VkComputePipelineCreateInfo.Buffer pipelineInfo =
-                    VkComputePipelineCreateInfo.calloc(1, stack);
-            pipelineInfo.get(0).sType$Default()
-                    .stage(stage).layout(pipelineLayout);
-            LongBuffer pointer = stack.mallocLong(1);
-            VulkanContext.check(
-                    VK12.vkCreateComputePipelines(
-                            context.vkDevice(), 0L, pipelineInfo, null, pointer),
-                    "create " + shaderResource);
-            return pointer.get(0);
-        } finally {
-            VK12.vkDestroyShaderModule(context.vkDevice(), shader, null);
+        try (MemoryStack stack = MemoryStack.stackPush()) {
+            long shader = VulkanShaderModules.create(context, stack, shaderResource);
+            try {
+                VkPipelineShaderStageCreateInfo stage =
+                        VkPipelineShaderStageCreateInfo.calloc(stack)
+                                .sType$Default()
+                                .stage(COMPUTE_STAGE)
+                                .module(shader)
+                                .pName(stack.UTF8("main"));
+                VkComputePipelineCreateInfo.Buffer pipelineInfo =
+                        VkComputePipelineCreateInfo.calloc(1, stack);
+                pipelineInfo.get(0).sType$Default()
+                        .stage(stage).layout(pipelineLayout);
+                LongBuffer pointer = stack.mallocLong(1);
+                VulkanContext.check(
+                        VK12.vkCreateComputePipelines(
+                                context.vkDevice(), 0L, pipelineInfo, null, pointer),
+                        "create " + shaderResource);
+                return pointer.get(0);
+            } finally {
+                VK12.vkDestroyShaderModule(context.vkDevice(), shader, null);
+            }
         }
     }
 

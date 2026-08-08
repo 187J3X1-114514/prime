@@ -19,6 +19,14 @@ final class TraceProgram implements Destroyable {
     static final int MISS_GROUP_COUNT = 2;
     static final int HIT_GROUP_COUNT = 6;
     private static final int FIXED_MODULE_COUNT = 6;
+    private static final String[] FIXED_RESOURCES = {
+        "/prime/shaders/world.rmiss.spv",
+        "/prime/shaders/shadow.rmiss.spv",
+        "/prime/shaders/world.rchit.spv",
+        "/prime/shaders/world.rahit.spv",
+        "/prime/shaders/shadow.rahit.spv",
+        "/prime/shaders/shadow.rchit.spv"
+    };
     private static final int RECORD_DATA_SIZE = Integer.BYTES;
 
     private final VulkanContext context;
@@ -147,21 +155,15 @@ final class TraceProgram implements Destroyable {
         long[] modules = new long[raygenResources.length + FIXED_MODULE_COUNT];
         long deferredOperation = 0L;
         try {
-            for (int index = 0; index < raygenResources.length; index++) {
-                modules[index] = VulkanShaderModules.create(context, raygenResources[index]);
-            }
-            String[] fixedResources = new String[] {
-                "/prime/shaders/world.rmiss.spv",
-                "/prime/shaders/shadow.rmiss.spv",
-                "/prime/shaders/world.rchit.spv",
-                "/prime/shaders/world.rahit.spv",
-                "/prime/shaders/shadow.rahit.spv",
-                "/prime/shaders/shadow.rchit.spv"
-            };
-            for (int index = 0; index < fixedResources.length; index++) {
-                modules[raygenResources.length + index] =
-                        VulkanShaderModules.create(context, fixedResources[index]);
-            }
+            ParallelPipelineCreation.run(
+                    "ray tracing shader modules",
+                    modules.length,
+                    index -> {
+                        String resource = index < raygenResources.length
+                                ? raygenResources[index]
+                                : FIXED_RESOURCES[index - raygenResources.length];
+                        modules[index] = VulkanShaderModules.create(context, resource);
+                    });
             int raygenStageCount = raygenResources.length;
             int missStage = raygenStageCount;
             int shadowMissStage = missStage + 1;

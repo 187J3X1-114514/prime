@@ -332,7 +332,7 @@ public final class TerrainStreamer implements AutoCloseable {
         }
 
         for (long key : this.scene.residentKeys()) {
-            if (!replacement.contains(key)) {
+            if (isOutsideStaticWindow(key, replacement)) {
                 this.pendingEvictions.add(key);
             }
         }
@@ -341,6 +341,10 @@ public final class TerrainStreamer implements AutoCloseable {
         this.desired.clear();
         this.desired.addAll(replacement);
         this.rebuildRequestQueue(1);
+    }
+
+    static boolean isOutsideStaticWindow(long key, LongOpenHashSet window) {
+        return key != CompiledCluster.DYNAMIC_KEY && !window.contains(key);
     }
 
     private void drainInvalidations() {

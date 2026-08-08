@@ -1,29 +1,46 @@
 package dev.prime.mixin;
 
+import com.mojang.blaze3d.vertex.PoseStack;
 import dev.prime.client.PrimeRuntime;
 import dev.prime.render.scene.vanilla.PrimeEntityFrustum;
 import dev.prime.render.scene.vanilla.VanillaSceneBoundary;
+import java.util.Iterator;
+import java.util.SortedSet;
+import net.minecraft.client.Camera;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.multiplayer.ClientChunkCache;
+import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.client.renderer.LevelRenderer;
+import net.minecraft.client.renderer.blockentity.BlockEntityRenderDispatcher;
+import net.minecraft.client.renderer.blockentity.state.BlockEntityRenderState;
 import net.minecraft.client.renderer.culling.Frustum;
 import net.minecraft.client.renderer.entity.EntityRenderDispatcher;
 import net.minecraft.client.renderer.extract.LevelExtractor;
+import net.minecraft.client.renderer.feature.ModelFeatureRenderer;
+import net.minecraft.client.renderer.state.level.LevelRenderState;
 import net.minecraft.core.BlockPos;
+import net.minecraft.server.level.BlockDestructionProgress;
 import net.minecraft.world.entity.Entity;
+import net.minecraft.world.level.block.entity.BlockEntity;
+import net.minecraft.world.level.chunk.LevelChunk;
+import net.minecraft.world.level.chunk.status.ChunkStatus;
+import net.minecraft.world.phys.Vec3;
+import org.jspecify.annotations.Nullable;
+import org.spongepowered.asm.mixin.Final;
 import org.spongepowered.asm.mixin.Mixin;
+import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.Redirect;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
-/**
- * Forwards invalidation events without making vanilla a geometry source or scheduling authority.
- *
- * <p>{@code setSectionDirty} is intentionally not intercepted: chunk light updates call it even
- * though Prime does not consume the vanilla light volume. Treating that signal as geometry would
- * repeatedly rebuild resident BLASes and restart temporal history while chunks stream in.
- */
+/** Adapts vanilla scene extraction to Prime's independently maintained terrain. */
 @Mixin(LevelExtractor.class)
 public abstract class LevelExtractorMixin {
+    @Shadow @Final private Minecraft minecraft;
+    @Shadow @Final private LevelRenderer levelRenderer;
+    @Shadow private @Nullable ClientLevel level;
+
     @Redirect(
             method = "isEntityVisible",
             at = @At(
@@ -58,6 +75,91 @@ public abstract class LevelExtractorMixin {
                 renderer.isSectionCompiledAndVisible(position));
     }
 
+    @Inject(method = "extractVisibleBlockEntities", at = @At("HEAD"), cancellable = true)
+    private void prime$extractLoadedBlockEntities(
+            Camera camera,
+            float partialTick,
+            LevelRenderState output,
+            CallbackInfo ci) {
+        if (!PrimeRuntime.instance().shouldReplaceWorld()) {
+            return;
+        }
+        ClientLevel currentLevel = this.level;
+        if (currentLevel == null) {
+            ci.cancel();
+            return;
+        }
+
+        Vec3 cameraPos = camera.position();
+        int centerChunkX = (int) Math.floor(cameraPos.x()) >> 4;
+        int centerChunkZ = (int) Math.floor(cameraPos.z()) >> 4;
+        int radius = this.minecraft.options.getEffectiveRenderDistance();
+        ClientChunkCache chunks = currentLevel.getChunkSource();
+        BlockEntityRenderDispatcher dispatcher =
+                this.levelRenderer.blockEntityRenderDispatcher();
+        PoseStack poseStack = new PoseStack();
+        for (int chunkZ = centerChunkZ - radius; chunkZ <= centerChunkZ + radius; chunkZ++) {
+            for (int chunkX = centerChunkX - radius; chunkX <= centerChunkX + radius; chunkX++) {
+                LevelChunk chunk = chunks.getChunk(
+                        chunkX, chunkZ, ChunkStatus.FULL, false);
+                if (chunk == null) {
+                    continue;
+                }
+                for (BlockEntity blockEntity : chunk.getBlockEntities().values()) {
+                    BlockEntityRenderState state = dispatcher.tryExtractRenderState(
+                            blockEntity,
+                            partialTick,
+                            prime$crumblingOverlay(
+                                    currentLevel, blockEntity, cameraPos, poseStack),
+                            false);
+                    if (state != null) {
+                        output.blockEntityRenderStates.add(state);
+                    }
+                }
+            }
+        }
+
+        Iterator<BlockEntity> globallyRendered =
+                currentLevel.getGloballyRenderedBlockEntities().iterator();
+        while (globallyRendered.hasNext()) {
+            BlockEntity blockEntity = globallyRendered.next();
+            if (blockEntity.isRemoved()) {
+                globallyRendered.remove();
+                continue;
+            }
+            BlockEntityRenderState state = dispatcher.tryExtractRenderState(
+                    blockEntity, partialTick, null, true);
+            if (state != null) {
+                output.blockEntityRenderStates.add(state);
+            }
+        }
+        ci.cancel();
+    }
+
+    private static ModelFeatureRenderer.@Nullable CrumblingOverlay prime$crumblingOverlay(
+            ClientLevel level,
+            BlockEntity blockEntity,
+            Vec3 cameraPos,
+            PoseStack poseStack) {
+        BlockPos position = blockEntity.getBlockPos();
+        SortedSet<BlockDestructionProgress> progresses =
+                level.destructionProgress().get(position.asLong());
+        if (progresses == null || progresses.isEmpty()) {
+            return null;
+        }
+        poseStack.pushPose();
+        poseStack.translate(
+                position.getX() - cameraPos.x(),
+                position.getY() - cameraPos.y(),
+                position.getZ() - cameraPos.z());
+        ModelFeatureRenderer.CrumblingOverlay result =
+                new ModelFeatureRenderer.CrumblingOverlay(
+                        progresses.last().getProgress(), poseStack.last());
+        poseStack.popPose();
+        return result;
+    }
+
+    // setSectionDirty also reports light-only updates; Prime does not consume vanilla light data.
     @Inject(method = "blockChanged(Lnet/minecraft/core/BlockPos;I)V", at = @At("HEAD"))
     private void prime$markBlockDirty(BlockPos position, int updateFlags, CallbackInfo ci) {
         PrimeRuntime.instance().invalidateBlocks(

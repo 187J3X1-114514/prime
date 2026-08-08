@@ -3,6 +3,7 @@ package dev.prime.mixin;
 import com.mojang.blaze3d.vertex.PoseStack;
 import dev.prime.render.scene.vanilla.DynamicSceneCapture;
 import java.util.List;
+import net.minecraft.client.gui.Font;
 import net.minecraft.client.model.Model;
 import net.minecraft.client.renderer.SubmitNodeCollection;
 import net.minecraft.client.renderer.SubmitNodeCollector;
@@ -15,6 +16,7 @@ import net.minecraft.client.renderer.rendertype.RenderType;
 import net.minecraft.client.renderer.state.level.QuadParticleRenderState;
 import net.minecraft.client.renderer.texture.TextureAtlasSprite;
 import net.minecraft.client.resources.model.geometry.BakedQuad;
+import net.minecraft.util.FormattedCharSequence;
 import net.minecraft.world.item.ItemDisplayContext;
 import org.joml.Quaternionf;
 import org.jspecify.annotations.Nullable;
@@ -25,6 +27,32 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 @Mixin(SubmitNodeCollection.class)
 public abstract class SubmitNodeCollectionMixin {
+    @Inject(method = "submitText", at = @At("HEAD"))
+    private void prime$captureText(
+            PoseStack poseStack,
+            float x,
+            float y,
+            FormattedCharSequence text,
+            boolean dropShadow,
+            Font.DisplayMode displayMode,
+            int lightCoords,
+            int color,
+            int backgroundColor,
+            int outlineColor,
+            CallbackInfo ci) {
+        DynamicSceneCapture.captureText(
+                poseStack,
+                x,
+                y,
+                text,
+                dropShadow,
+                displayMode,
+                lightCoords,
+                color,
+                backgroundColor,
+                outlineColor);
+    }
+
     @Inject(method = "submitMovingBlock", at = @At("HEAD"))
     private void prime$captureMovingBlock(
             PoseStack poseStack,

@@ -142,6 +142,13 @@ final class PrimitivePackingTest {
         assertEquals(
                 PrimitivePacking.NO_EMITTER_INDEX,
                 PrimitivePacking.unpackEmitterIndex(untextured));
+        int redAlpha = PrimitivePacking.packDynamicFlags(flags, 7, false, true);
+        assertTrue(PrimitivePacking.usesDynamicRedAlpha(redAlpha));
+        assertEquals(7, PrimitivePacking.unpackDynamicTextureIndex(redAlpha));
+        assertFalse(PrimitivePacking.usesDynamicRedAlpha(dark));
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> PrimitivePacking.packDynamicFlags(flags, 0, false, true));
     }
 
     @Test

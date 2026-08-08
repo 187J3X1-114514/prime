@@ -65,15 +65,31 @@ final class DynamicMeshBuilder {
             PrimitiveTopology topology,
             int textureIndex,
             int fallbackLight) {
+        return this.open(element, topology, textureIndex, fallbackLight, false);
+    }
+
+    VertexSink open(
+            VanillaSceneBoundary.Element element,
+            PrimitiveTopology topology,
+            int textureIndex,
+            int fallbackLight,
+            boolean redAlpha) {
         return new VertexSink(
-                this, element, topology, textureIndex, fallbackLight, false);
+                this,
+                element,
+                topology,
+                textureIndex,
+                fallbackLight,
+                false,
+                redAlpha);
     }
 
     VertexSink openUntextured(
             VanillaSceneBoundary.Element element,
             PrimitiveTopology topology,
             int fallbackLight) {
-        return new VertexSink(this, element, topology, 0, fallbackLight, true);
+        return new VertexSink(
+                this, element, topology, 0, fallbackLight, true, false);
     }
 
     void report(DynamicSceneFrame.CompatibilityIssue issue) {
@@ -118,7 +134,8 @@ final class DynamicMeshBuilder {
             Vertex second,
             Vertex third,
             int textureIndex,
-            boolean bakedMaterial) {
+            boolean bakedMaterial,
+            boolean redAlpha) {
         float firstX = (float) (first.x + this.offsetX);
         float firstY = (float) (first.y + this.offsetY);
         float firstZ = (float) (first.z + this.offsetZ);
@@ -203,7 +220,8 @@ final class DynamicMeshBuilder {
         this.primitives.add(uv0, uv1, uv2, tint);
         this.primitives.add(
                 normal,
-                PrimitivePacking.packDynamicFlags(flags, textureIndex, visibleEmission),
+                PrimitivePacking.packDynamicFlags(
+                        flags, textureIndex, visibleEmission, redAlpha),
                 bakedMaterial
                         ? PrimitivePacking.CONSTANT_UV_DENSITY
                         : PrimitivePacking.packUvDensity(
@@ -245,6 +263,7 @@ final class DynamicMeshBuilder {
         private final int textureIndex;
         private final int fallbackLight;
         private final boolean bakedMaterial;
+        private final boolean redAlpha;
         private final ArrayList<Vertex> vertices = new ArrayList<>();
         private Vertex current;
         private boolean finished;
@@ -255,13 +274,15 @@ final class DynamicMeshBuilder {
                 PrimitiveTopology topology,
                 int textureIndex,
                 int fallbackLight,
-                boolean bakedMaterial) {
+                boolean bakedMaterial,
+                boolean redAlpha) {
             this.owner = owner;
             this.element = element;
             this.topology = topology;
             this.textureIndex = textureIndex;
             this.fallbackLight = fallbackLight;
             this.bakedMaterial = bakedMaterial;
+            this.redAlpha = redAlpha;
         }
 
         @Override
@@ -358,7 +379,8 @@ final class DynamicMeshBuilder {
                     this.vertices.get(second),
                     this.vertices.get(third),
                     this.textureIndex,
-                    this.bakedMaterial);
+                    this.bakedMaterial,
+                    this.redAlpha);
         }
 
         private Vertex requireCurrent() {

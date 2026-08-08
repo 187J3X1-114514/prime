@@ -9,6 +9,7 @@ import dev.prime.render.shader.ShaderAbi;
 import java.util.ArrayList;
 import java.util.List;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.Font;
 import net.minecraft.client.model.Model;
 import net.minecraft.client.particle.SingleQuadParticle;
 import net.minecraft.client.renderer.SubmitNodeCollector;
@@ -35,6 +36,7 @@ import net.minecraft.core.Direction;
 import net.minecraft.util.ARGB;
 import net.minecraft.util.LightCoordsUtil;
 import net.minecraft.util.Mth;
+import net.minecraft.util.FormattedCharSequence;
 import net.minecraft.world.item.ItemDisplayContext;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.Vec3;
@@ -299,6 +301,50 @@ public final class DynamicSceneCapture {
         sink.finish();
     }
 
+    public static void captureText(
+            PoseStack poseStack,
+            float x,
+            float y,
+            FormattedCharSequence text,
+            boolean dropShadow,
+            Font.DisplayMode displayMode,
+            int lightCoords,
+            int color,
+            int backgroundColor,
+            int outlineColor) {
+        Session session = activeSession();
+        if (session == null) {
+            return;
+        }
+        Font font = Minecraft.getInstance().font;
+        Matrix4f pose = new Matrix4f(poseStack.last().pose());
+        if (outlineColor == 0) {
+            capturePreparedText(
+                    pose,
+                    font.prepareText(
+                            text,
+                            x,
+                            y,
+                            color,
+                            dropShadow,
+                            false,
+                            backgroundColor),
+                    displayMode,
+                    lightCoords);
+            return;
+        }
+        capturePreparedText(
+                pose,
+                font.prepare8xTextOutline(text, x, y, outlineColor),
+                Font.DisplayMode.NORMAL,
+                lightCoords);
+        capturePreparedText(
+                pose,
+                font.prepareText(text, x, y, color, false, false, 0),
+                Font.DisplayMode.POLYGON_OFFSET,
+                lightCoords);
+    }
+
     public static boolean tryBeginMotionObject(
             VanillaSceneBoundary.Element element, long key) {
         Session session = ACTIVE.get();
@@ -408,6 +454,19 @@ public final class DynamicSceneCapture {
                             : -1);
             sink.putBakedQuad(poseStack.last(), quad, instance);
         }
+    }
+
+    static void capturePreparedText(
+            Matrix4f pose,
+            Font.PreparedText text,
+            Font.DisplayMode displayMode,
+            int lightCoords) {
+        Session session = activeSession();
+        if (session == null) {
+            return;
+        }
+        DynamicTextCapture.capture(
+                pose, text, displayMode, lightCoords, session::open);
     }
 
     private static void captureMovingQuad(
@@ -585,6 +644,13 @@ public final class DynamicSceneCapture {
 
         private DynamicMeshBuilder.@Nullable VertexSink open(
                 RenderType renderType, int fallbackLight) {
+            return this.open(renderType, fallbackLight, false);
+        }
+
+        private DynamicMeshBuilder.@Nullable VertexSink open(
+                RenderType renderType,
+                int fallbackLight,
+                boolean redAlpha) {
             int textureIndex = this.textureIndex(renderType);
             if (textureIndex < 0) {
                 return null;
@@ -598,7 +664,8 @@ public final class DynamicSceneCapture {
                             this.element,
                             renderType.primitiveTopology(),
                             textureIndex,
-                            fallbackLight);
+                            fallbackLight,
+                            redAlpha);
         }
 
         private int textureIndex(GpuTextureView view, GpuSampler sampler) {

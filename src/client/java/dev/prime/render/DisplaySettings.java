@@ -9,11 +9,10 @@ public final class DisplaySettings {
     public static final int MAXIMUM_FINAL_EXPOSURE_QUARTER_STEPS =
             8 * QUARTER_STEPS_PER_EV;
     public static final int DEFAULT_FINAL_EXPOSURE_QUARTER_STEPS = 0;
-    public static final int STEPS_PER_UNIT = 32;
-    public static final int MINIMUM_OVEREXPOSURE_STEPS = STEPS_PER_UNIT;
-    public static final int MAXIMUM_OVEREXPOSURE_STEPS = 2 * STEPS_PER_UNIT;
-    public static final int DEFAULT_OVEREXPOSURE_STEPS = 32;
     public static final int HUNDREDTH_STEPS_PER_UNIT = 100;
+    public static final int MINIMUM_OVEREXPOSURE_STEPS = HUNDREDTH_STEPS_PER_UNIT;
+    public static final int MAXIMUM_OVEREXPOSURE_STEPS = 2 * HUNDREDTH_STEPS_PER_UNIT;
+    public static final int DEFAULT_OVEREXPOSURE_STEPS = HUNDREDTH_STEPS_PER_UNIT;
     public static final int MINIMUM_CURVE_EXPONENT_STEPS = 50;
     public static final int MAXIMUM_CURVE_EXPONENT_STEPS = HUNDREDTH_STEPS_PER_UNIT;
     public static final int DEFAULT_CURVE_EXPONENT_STEPS = 75;
@@ -35,7 +34,7 @@ public final class DisplaySettings {
 
     public static float overexposure(int steps) {
         requireValidOverexposure(steps);
-        return steps / (float) STEPS_PER_UNIT;
+        return steps / (float) HUNDREDTH_STEPS_PER_UNIT;
     }
 
     public static float curveExponent(int steps) {

@@ -14,11 +14,13 @@ import dev.prime.render.post.DlssRrDebugView;
 import dev.prime.render.post.PostProcessingMode;
 import dev.prime.render.post.ReconstructionQualityMode;
 import dev.prime.render.terrain.VoxelSurfaceSettings;
+import java.net.URI;
 import net.minecraft.client.OptionInstance;
 import net.minecraft.client.gui.components.AbstractWidget;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.components.CycleButton;
 import net.minecraft.client.gui.components.OptionsList;
+import net.minecraft.client.gui.screens.ConfirmLinkScreen;
 import net.minecraft.client.gui.screens.options.VideoSettingsScreen;
 import net.minecraft.network.chat.Component;
 import org.spongepowered.asm.mixin.Mixin;
@@ -30,8 +32,20 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 /** Adds Prime's live controls to the vanilla Video Settings screen. */
 @Mixin(VideoSettingsScreen.class)
 public abstract class VideoSettingsScreenMixin {
+    private static final URI PRIME$REPOSITORY =
+            URI.create("https://github.com/bWFuanVzYWth/prime");
     private static final Component PRIME$HEADER =
             Component.translatable("prime.options.header");
+    private static final Component PRIME$RENDERING_HEADER =
+            Component.translatable("prime.options.header.rendering");
+    private static final Component PRIME$LIGHTING_HEADER =
+            Component.translatable("prime.options.header.lighting");
+    private static final Component PRIME$DISPLAY_HEADER =
+            Component.translatable("prime.options.header.display");
+    private static final Component PRIME$MATERIAL_HEADER =
+            Component.translatable("prime.options.header.material");
+    private static final Component PRIME$DIAGNOSTICS_HEADER =
+            Component.translatable("prime.options.header.diagnostics");
     @Unique private OptionInstance<Boolean> prime$pathTracingEnabled;
     @Unique private OptionInstance<Boolean> prime$voxelTextureSurfaces;
     @Unique private OptionInstance<Integer> prime$voxelTextureSurfaceStrength;
@@ -90,26 +104,37 @@ public abstract class VideoSettingsScreenMixin {
                             Component.translatable("prime.options.restore_defaults"),
                             button -> this.prime$restoreDefaults())
                     .build());
+            list.addHeader(PRIME$RENDERING_HEADER);
             list.addBig(this.prime$pathTracingEnabled);
             list.addSmall(
                     this.prime$voxelTextureSurfaces,
                     this.prime$voxelTextureSurfaceStrength);
             list.addBig(this.prime$screenshotMode);
             list.addSmall(this.prime$postProcessingMode, this.prime$qualityMode);
+            list.addHeader(PRIME$LIGHTING_HEADER);
             list.addSmall(this.prime$latitude, this.prime$season);
             list.addBig(this.prime$sunExposure);
             list.addBig(this.prime$starExposure);
             list.addBig(this.prime$blockLightExposure);
-            list.addBig(this.prime$finalExposure);
+            list.addHeader(PRIME$DISPLAY_HEADER);
             list.addBig(this.prime$autoExposureCompensation);
+            list.addBig(this.prime$finalExposure);
             list.addSmall(
                     this.prime$oklabOverexposure,
                     this.prime$curveExponent);
+            list.addHeader(PRIME$MATERIAL_HEADER);
             list.addSmall(this.prime$defaultRoughness, this.prime$seamlessGlass);
+            list.addHeader(PRIME$DIAGNOSTICS_HEADER);
             list.addBig(this.prime$triangleDebug);
             list.addBig(this.prime$rendererDiagnostics);
             list.addSmall(this.prime$nrdDebugView, this.prime$fsrDebugView);
             list.addSmall(this.prime$rrDebugView, this.prime$rrDebugFullscreen);
+            list.addBig(Button.builder(
+                            Component.translatable("prime.options.open_repository"),
+                            ConfirmLinkScreen.confirmLink(
+                                    (VideoSettingsScreen) (Object) this,
+                                    PRIME$REPOSITORY))
+                    .build());
         }
     }
 

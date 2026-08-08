@@ -19,7 +19,8 @@ public final class PrimitivePacking {
     public static final int FLAG_MASK = (1 << 11) - 1;
     public static final int DYNAMIC_TEXTURE_FLAG = 1 << 31;
     public static final int VISIBLE_EMISSION_FLAG = 1 << 30;
-    public static final int DYNAMIC_TEXTURE_INDEX_MASK = (1 << 27) - 1;
+    public static final int DYNAMIC_RED_ALPHA_FLAG = 1 << 29;
+    public static final int DYNAMIC_TEXTURE_INDEX_MASK = (1 << 26) - 1;
     public static final int NO_EMITTER_INDEX = -1;
     public static final int MAX_EMITTER_INDEX = (1 << 27) - 2;
     /**
@@ -91,6 +92,14 @@ public final class PrimitivePacking {
      */
     public static int packDynamicFlags(
             int flags, int textureIndex, boolean visibleEmission) {
+        return packDynamicFlags(flags, textureIndex, visibleEmission, false);
+    }
+
+    public static int packDynamicFlags(
+            int flags,
+            int textureIndex,
+            boolean visibleEmission,
+            boolean redAlpha) {
         if ((flags & ~FLAG_MASK) != 0) {
             throw new IllegalArgumentException(
                     "Primitive flags exceed their eleven-bit ABI field");
@@ -102,9 +111,14 @@ public final class PrimitivePacking {
             throw new IllegalArgumentException(
                     "Dynamic textures cannot use a static raster composite");
         }
+        if (redAlpha && textureIndex == 0) {
+            throw new IllegalArgumentException(
+                    "Red-channel coverage requires a dynamic texture");
+        }
         return flags >>> 8
                 | textureIndex << 3
                 | (visibleEmission ? VISIBLE_EMISSION_FLAG : 0)
+                | (redAlpha ? DYNAMIC_RED_ALPHA_FLAG : 0)
                 | DYNAMIC_TEXTURE_FLAG;
     }
 
@@ -123,6 +137,11 @@ public final class PrimitivePacking {
         int low = Float.floatToFloat16(x) & 0xffff;
         int high = Float.floatToFloat16(y) & 0xffff;
         return low | high << 16;
+    }
+
+    public static boolean usesDynamicRedAlpha(int packed) {
+        return (packed & (DYNAMIC_TEXTURE_FLAG | DYNAMIC_RED_ALPHA_FLAG))
+                == (DYNAMIC_TEXTURE_FLAG | DYNAMIC_RED_ALPHA_FLAG);
     }
 
     /**

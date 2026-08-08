@@ -432,7 +432,7 @@ public final class PrimeVideoOptions {
     }
 
     static String formatOverexposure(int steps) {
-        return String.format(Locale.ROOT, "%.5f×", DisplaySettings.overexposure(steps));
+        return String.format(Locale.ROOT, "%.2f×", DisplaySettings.overexposure(steps));
     }
 
     static String formatRoughness(int steps) {

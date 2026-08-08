@@ -83,15 +83,29 @@ final class PrimeConfigTest {
     }
 
     @Test
-    void persistedOklabOverexposureAcceptsOnlyExactThirtySeconds() {
-        assertEquals(32, PrimeConfig.parseOverexposureSteps("1"));
-        assertEquals(33, PrimeConfig.parseOverexposureSteps("1.03125"));
-        assertEquals(64, PrimeConfig.parseOverexposureSteps("2"));
-        assertEquals("1.03125", PrimeConfig.formatOverexposure(33));
+    void persistedOklabOverexposureAcceptsOnlyExactHundredths() {
+        assertEquals(100, PrimeConfig.parseOverexposureSteps("1"));
+        assertEquals(103, PrimeConfig.parseOverexposureSteps("1.03"));
+        assertEquals(200, PrimeConfig.parseOverexposureSteps("2"));
+        assertEquals("1.03", PrimeConfig.formatOverexposure(103));
         assertThrows(IllegalArgumentException.class,
-                () -> PrimeConfig.parseOverexposureSteps("1.03"));
+                () -> PrimeConfig.parseOverexposureSteps("1.03125"));
         assertThrows(IllegalArgumentException.class,
-                () -> PrimeConfig.parseOverexposureSteps("2.03125"));
+                () -> PrimeConfig.parseOverexposureSteps("2.01"));
+    }
+
+    @Test
+    void legacyThirtySecondOverexposureMigratesToTheNearestHundredth() {
+        assertEquals(100, PrimeConfig.migrateLegacyOverexposureSteps("1"));
+        assertEquals(103, PrimeConfig.migrateLegacyOverexposureSteps("1.03125"));
+        assertEquals(150, PrimeConfig.migrateLegacyOverexposureSteps("1.5"));
+        assertEquals(200, PrimeConfig.migrateLegacyOverexposureSteps("2"));
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> PrimeConfig.migrateLegacyOverexposureSteps("1.03"));
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> PrimeConfig.migrateLegacyOverexposureSteps("2.03125"));
     }
 
     @Test

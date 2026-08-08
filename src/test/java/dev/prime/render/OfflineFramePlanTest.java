@@ -94,6 +94,6 @@ final class OfflineFramePlanTest {
                         0, 0, 0, 1L),
                 new MaterialSettings.Snapshot(90, 1L),
                 sampleCount,
-                new DisplaySettings.Snapshot(0, 32, 75, 50));
+                new DisplaySettings.Snapshot(0, 100, 75, 50));
     }
 }

@@ -12,6 +12,7 @@ import dev.prime.render.terrain.VoxelSurfaceSettings;
 import java.io.IOException;
 import java.io.Reader;
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Files;
@@ -234,10 +235,16 @@ public final class PrimeConfig {
                     try {
                         oklabOverexposureSteps = parseOverexposureSteps(oklabOverexposure);
                     } catch (IllegalArgumentException exception) {
-                        PrimeInfo.LOGGER.warn(
-                                "Invalid Prime Oklab DRT overexposure '{}'; using the default",
-                                oklabOverexposure);
-                        rewriteNeeded = true;
+                        try {
+                            oklabOverexposureSteps =
+                                    migrateLegacyOverexposureSteps(oklabOverexposure);
+                            rewriteNeeded = true;
+                        } catch (IllegalArgumentException legacyException) {
+                            PrimeInfo.LOGGER.warn(
+                                    "Invalid Prime Oklab DRT overexposure '{}'; using the default",
+                                    oklabOverexposure);
+                            rewriteNeeded = true;
+                        }
                     }
                 } else {
                     rewriteNeeded = true;
@@ -712,13 +719,36 @@ public final class PrimeConfig {
     static int parseOverexposureSteps(String value) {
         try {
             int steps = new BigDecimal(value)
-                    .multiply(BigDecimal.valueOf(DisplaySettings.STEPS_PER_UNIT))
+                    .multiply(BigDecimal.valueOf(DisplaySettings.HUNDREDTH_STEPS_PER_UNIT))
                     .intValueExact();
             DisplaySettings.overexposure(steps);
             return steps;
         } catch (ArithmeticException | NumberFormatException exception) {
             throw new IllegalArgumentException(
-                    "Oklab DRT overexposure must be an exact 1/32 step",
+                    "Oklab DRT overexposure must be an exact 0.01 step",
+                    exception);
+        }
+    }
+
+    static int migrateLegacyOverexposureSteps(String value) {
+        try {
+            BigDecimal overexposure = new BigDecimal(value);
+            int legacySteps = overexposure
+                    .multiply(BigDecimal.valueOf(32))
+                    .intValueExact();
+            if (legacySteps < 32 || legacySteps > 64) {
+                throw new IllegalArgumentException(
+                        "Legacy Oklab DRT overexposure must be between 1.0 and 2.0");
+            }
+            int steps = overexposure
+                    .multiply(BigDecimal.valueOf(DisplaySettings.HUNDREDTH_STEPS_PER_UNIT))
+                    .setScale(0, RoundingMode.HALF_UP)
+                    .intValueExact();
+            DisplaySettings.overexposure(steps);
+            return steps;
+        } catch (ArithmeticException | NumberFormatException exception) {
+            throw new IllegalArgumentException(
+                    "Legacy Oklab DRT overexposure must be an exact 1/32 step",
                     exception);
         }
     }
@@ -726,7 +756,7 @@ public final class PrimeConfig {
     static String formatOverexposure(int steps) {
         DisplaySettings.overexposure(steps);
         return BigDecimal.valueOf(steps)
-                .divide(BigDecimal.valueOf(DisplaySettings.STEPS_PER_UNIT))
+                .divide(BigDecimal.valueOf(DisplaySettings.HUNDREDTH_STEPS_PER_UNIT))
                 .toPlainString();
     }
 

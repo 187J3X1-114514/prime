@@ -237,9 +237,9 @@ final class PrimeProductionMathGpuTest {
                             random.nextInt(-12, 13));
                 } else {
                     int overexposureSteps = switch (local & 3) {
-                        case 0 -> 32;
-                        case 1 -> 64;
-                        default -> random.nextInt(32, 65);
+                        case 0 -> 100;
+                        case 1 -> 200;
+                        default -> random.nextInt(100, 201);
                     };
                     int curveExponentSteps = switch ((local >> 2) & 3) {
                         case 0 -> 50;

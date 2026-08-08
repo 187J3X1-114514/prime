@@ -51,12 +51,19 @@ uint primeRasterCompositeTint(PrimitiveRecord primitive) {
 
 const uint PRIME_DYNAMIC_TEXTURE_FLAG = 0x80000000u;
 const uint PRIME_VISIBLE_EMISSION_FLAG = 0x40000000u;
-const uint PRIME_DYNAMIC_TEXTURE_INDEX_MASK = 0x07ffffffu;
+const uint PRIME_DYNAMIC_RED_ALPHA_FLAG = 0x20000000u;
+const uint PRIME_DYNAMIC_TEXTURE_INDEX_MASK = 0x03ffffffu;
 
 uint primePrimitiveTextureIndex(PrimitiveRecord primitive) {
     return (primitive.flagsEmitter & PRIME_DYNAMIC_TEXTURE_FLAG) != 0u
             ? ((primitive.flagsEmitter >> 3u) & PRIME_DYNAMIC_TEXTURE_INDEX_MASK)
             : 0u;
+}
+
+bool primeUsesDynamicRedAlpha(PrimitiveRecord primitive) {
+    return (primitive.flagsEmitter
+            & (PRIME_DYNAMIC_TEXTURE_FLAG | PRIME_DYNAMIC_RED_ALPHA_FLAG))
+            == (PRIME_DYNAMIC_TEXTURE_FLAG | PRIME_DYNAMIC_RED_ALPHA_FLAG);
 }
 
 vec2 primeRasterCompositeUvOffset(PrimitiveRecord primitive) {
@@ -133,9 +140,16 @@ MaterialEvaluation primeEvaluateMaterial(
         vec4 textureSample =
                 primeSamplePrimitiveTexture(primitive, uv, textureLodValue);
         vec4 tint = primeUnpackTint(primitive.tint);
-        result.opacity = textureSample.a;
-        result.baseColor = primeLinearSrgbToLinearRec2020(
-                primeDecodeSrgb(textureSample.rgb) * primeDecodeSrgb(tint.rgb));
+        if (primeUsesDynamicRedAlpha(primitive)) {
+            result.opacity = textureSample.r;
+            result.baseColor = primeLinearSrgbToLinearRec2020(
+                    primeDecodeSrgb(tint.rgb));
+        } else {
+            result.opacity = textureSample.a;
+            result.baseColor = primeLinearSrgbToLinearRec2020(
+                    primeDecodeSrgb(textureSample.rgb)
+                            * primeDecodeSrgb(tint.rgb));
+        }
     }
     uint primitiveFlags = primePrimitiveFlags(primitive);
     if (primeMaterialIsTransmissive(primitiveFlags)

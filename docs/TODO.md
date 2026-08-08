@@ -20,7 +20,6 @@
 
 ## 兼容性与产品体验
 
-- 系统审校中英文设置名称、范围、步进、性能影响、后端适用性和 history reset 语义；
 - 调查机械动力飞跃版等 mod 的实体捕获、render type、动态 geometry 和 TLAS 路径；
 - 改进未按 `texture.properties` 标准声明的 LabPBR 资源包检测，同时避免误判普通纹理；
 - 为高分辨率纹理体素表面测量 CPU 建网、BLAS、staging/显存和 instance 增长，随后定义可诊断

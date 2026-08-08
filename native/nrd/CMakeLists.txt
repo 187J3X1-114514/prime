@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.22...3.30)
 
-project(PrimeNrdBridge VERSION 0.1.0 LANGUAGES CXX)
+project(PrimeNrdBridge VERSION 1.0.0 LANGUAGES CXX)
 
 if(MSVC)
     # The mod extracts a single native library from its JAR. Statically link the MSVC runtime so

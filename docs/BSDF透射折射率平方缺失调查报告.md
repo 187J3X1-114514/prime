@@ -32,7 +32,8 @@ Prime 自有的材质翻译、资源绑定、状态转换和回归入口位于�
 ## 自动门禁
 
 - `verifyRoboCutePort` 验证锁定 commit、overlay 路径、参考文件和 LUT 哈希；
-- `compileShaders` 与 `spirv-val` 验证生产 Shader；
+- `compileShaders` 使用 `glslangValidator`、`spirv-opt` 与 `spirv-val` 编译、特化并验证生产
+  Shader；
 - `shaderTest` 覆盖 slab 两界面、入射/出射、Snell、TIR、sample/eval/PDF、薄壁/厚壁和
   eta-aware Russian roulette；
 - `verifyDistributionJar` 检查发行 JAR 中的 Shader、LUT 和许可归属。

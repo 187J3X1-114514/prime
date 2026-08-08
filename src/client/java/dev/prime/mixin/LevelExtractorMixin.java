@@ -4,7 +4,7 @@ import com.mojang.blaze3d.vertex.PoseStack;
 import dev.prime.client.PrimeRuntime;
 import dev.prime.render.scene.vanilla.PrimeEntityFrustum;
 import dev.prime.render.scene.vanilla.VanillaSceneBoundary;
-import java.util.Iterator;
+import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
 import java.util.SortedSet;
 import net.minecraft.client.Camera;
 import net.minecraft.client.Minecraft;
@@ -75,8 +75,8 @@ public abstract class LevelExtractorMixin {
                 renderer.isSectionCompiledAndVisible(position));
     }
 
-    @Inject(method = "extractVisibleBlockEntities", at = @At("HEAD"), cancellable = true)
-    private void prime$extractLoadedBlockEntities(
+    @Inject(method = "extractVisibleBlockEntities", at = @At("RETURN"))
+    private void prime$supplementLoadedBlockEntities(
             Camera camera,
             float partialTick,
             LevelRenderState output,
@@ -86,10 +86,14 @@ public abstract class LevelExtractorMixin {
         }
         ClientLevel currentLevel = this.level;
         if (currentLevel == null) {
-            ci.cancel();
             return;
         }
 
+        LongOpenHashSet extractedPositions = new LongOpenHashSet(
+                output.blockEntityRenderStates.size());
+        for (BlockEntityRenderState state : output.blockEntityRenderStates) {
+            extractedPositions.add(state.blockPos.asLong());
+        }
         Vec3 cameraPos = camera.position();
         int centerChunkX = (int) Math.floor(cameraPos.x()) >> 4;
         int centerChunkZ = (int) Math.floor(cameraPos.z()) >> 4;
@@ -106,6 +110,10 @@ public abstract class LevelExtractorMixin {
                     continue;
                 }
                 for (BlockEntity blockEntity : chunk.getBlockEntities().values()) {
+                    long position = blockEntity.getBlockPos().asLong();
+                    if (extractedPositions.contains(position)) {
+                        continue;
+                    }
                     BlockEntityRenderState state = dispatcher.tryExtractRenderState(
                             blockEntity,
                             partialTick,
@@ -114,26 +122,11 @@ public abstract class LevelExtractorMixin {
                             false);
                     if (state != null) {
                         output.blockEntityRenderStates.add(state);
+                        extractedPositions.add(position);
                     }
                 }
             }
         }
-
-        Iterator<BlockEntity> globallyRendered =
-                currentLevel.getGloballyRenderedBlockEntities().iterator();
-        while (globallyRendered.hasNext()) {
-            BlockEntity blockEntity = globallyRendered.next();
-            if (blockEntity.isRemoved()) {
-                globallyRendered.remove();
-                continue;
-            }
-            BlockEntityRenderState state = dispatcher.tryExtractRenderState(
-                    blockEntity, partialTick, null, true);
-            if (state != null) {
-                output.blockEntityRenderStates.add(state);
-            }
-        }
-        ci.cancel();
     }
 
     private static ModelFeatureRenderer.@Nullable CrumblingOverlay prime$crumblingOverlay(

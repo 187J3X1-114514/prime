@@ -12,6 +12,16 @@ import org.junit.jupiter.api.Test;
 
 final class CompiledClusterCodecTest {
     @Test
+    void dynamicClustersCannotEnterThePersistentCacheFormat() {
+        CompiledCluster dynamic = CompiledCluster.dynamic(
+                0, 0, 0, CpuClusterMesh.empty(), new float[0]);
+
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> CompiledClusterCodec.encode(dynamic));
+    }
+
+    @Test
     void roundTripPreservesSharedMacroPrimitiveLayout() {
         int[] primitive = {
             PrimitivePacking.packUv(0.0F, 0.0F),

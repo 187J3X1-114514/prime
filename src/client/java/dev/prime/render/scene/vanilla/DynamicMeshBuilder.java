@@ -8,6 +8,7 @@ import dev.prime.render.terrain.CpuSectionMesh;
 import dev.prime.render.terrain.OpacityMicromapData;
 import dev.prime.render.terrain.PrimitivePacking;
 import java.util.ArrayList;
+import java.util.EnumSet;
 import java.util.List;
 import net.minecraft.util.LightCoordsUtil;
 
@@ -27,6 +28,8 @@ final class DynamicMeshBuilder {
             new ArrayList<>();
     private final int[] trianglesByElement =
             new int[VanillaSceneBoundary.Element.values().length];
+    private final EnumSet<DynamicSceneFrame.CompatibilityIssue> compatibilityIssues =
+            EnumSet.noneOf(DynamicSceneFrame.CompatibilityIssue.class);
     private OpenMotionObject openMotionObject;
 
     DynamicMeshBuilder(double offsetX, double offsetY, double offsetZ) {
@@ -62,7 +65,19 @@ final class DynamicMeshBuilder {
             PrimitiveTopology topology,
             int textureIndex,
             int fallbackLight) {
-        return new VertexSink(this, element, topology, textureIndex, fallbackLight);
+        return new VertexSink(
+                this, element, topology, textureIndex, fallbackLight, false);
+    }
+
+    VertexSink openUntextured(
+            VanillaSceneBoundary.Element element,
+            PrimitiveTopology topology,
+            int fallbackLight) {
+        return new VertexSink(this, element, topology, 0, fallbackLight, true);
+    }
+
+    void report(DynamicSceneFrame.CompatibilityIssue issue) {
+        this.compatibilityIssues.add(issue);
     }
 
     DynamicSceneFrame build(
@@ -92,7 +107,9 @@ final class DynamicMeshBuilder {
                 this.motionSegments,
                 this.trianglesByElement[VanillaSceneBoundary.Element.ENTITY.ordinal()],
                 this.trianglesByElement[VanillaSceneBoundary.Element.BLOCK_ENTITY.ordinal()],
-                this.trianglesByElement[VanillaSceneBoundary.Element.PARTICLE.ordinal()]);
+                this.trianglesByElement[VanillaSceneBoundary.Element.PARTICLE.ordinal()],
+                this.trianglesByElement[VanillaSceneBoundary.Element.FEATURE.ordinal()],
+                this.compatibilityIssues);
     }
 
     private void addTriangle(
@@ -100,7 +117,8 @@ final class DynamicMeshBuilder {
             Vertex first,
             Vertex second,
             Vertex third,
-            int textureIndex) {
+            int textureIndex,
+            boolean bakedMaterial) {
         float firstX = (float) (first.x + this.offsetX);
         float firstY = (float) (first.y + this.offsetY);
         float firstZ = (float) (first.z + this.offsetZ);
@@ -141,9 +159,16 @@ final class DynamicMeshBuilder {
         this.positions.add(firstX, firstY, firstZ);
         this.positions.add(secondX, secondY, secondZ);
         this.positions.add(thirdX, thirdY, thirdZ);
-        int uv0 = PrimitivePacking.packUv(first.u, first.v);
-        int uv1 = PrimitivePacking.packUv(second.u, second.v);
-        int uv2 = PrimitivePacking.packUv(third.u, third.v);
+        int uv0 = bakedMaterial
+                ? PrimitivePacking.packConstantUv(0.0F)
+                : PrimitivePacking.packUv(first.u, first.v);
+        int uv1 = bakedMaterial
+                ? PrimitivePacking.packConstantUv(0.0F)
+                : PrimitivePacking.packUv(second.u, second.v);
+        int uv2 = bakedMaterial
+                ? PrimitivePacking.CONSTANT_UV_OWN_TINT
+                        | PrimitivePacking.CONSTANT_UV_BAKED_MATERIAL
+                : PrimitivePacking.packUv(third.u, third.v);
         float fallbackX = first.normalX + second.normalX + third.normalX;
         float fallbackY = first.normalY + second.normalY + third.normalY;
         float fallbackZ = first.normalZ + second.normalZ + third.normalZ;
@@ -179,17 +204,19 @@ final class DynamicMeshBuilder {
         this.primitives.add(
                 normal,
                 PrimitivePacking.packDynamicFlags(flags, textureIndex, visibleEmission),
-                PrimitivePacking.packUvDensity(
-                        edgeOneX,
-                        edgeOneY,
-                        edgeOneZ,
-                        edgeTwoX,
-                        edgeTwoY,
-                        edgeTwoZ,
-                        second.u - first.u,
-                        second.v - first.v,
-                        third.u - first.u,
-                        third.v - first.v),
+                bakedMaterial
+                        ? PrimitivePacking.CONSTANT_UV_DENSITY
+                        : PrimitivePacking.packUvDensity(
+                                edgeOneX,
+                                edgeOneY,
+                                edgeOneZ,
+                                edgeTwoX,
+                                edgeTwoY,
+                                edgeTwoZ,
+                                second.u - first.u,
+                                second.v - first.v,
+                                third.u - first.u,
+                                third.v - first.v),
                 (int) tangent);
         this.trianglesByElement[element.ordinal()]++;
     }
@@ -217,6 +244,7 @@ final class DynamicMeshBuilder {
         private final PrimitiveTopology topology;
         private final int textureIndex;
         private final int fallbackLight;
+        private final boolean bakedMaterial;
         private final ArrayList<Vertex> vertices = new ArrayList<>();
         private Vertex current;
         private boolean finished;
@@ -226,12 +254,14 @@ final class DynamicMeshBuilder {
                 VanillaSceneBoundary.Element element,
                 PrimitiveTopology topology,
                 int textureIndex,
-                int fallbackLight) {
+                int fallbackLight,
+                boolean bakedMaterial) {
             this.owner = owner;
             this.element = element;
             this.topology = topology;
             this.textureIndex = textureIndex;
             this.fallbackLight = fallbackLight;
+            this.bakedMaterial = bakedMaterial;
         }
 
         @Override
@@ -315,6 +345,9 @@ final class DynamicMeshBuilder {
                 for (int index = 1; index + 1 < count; index++) {
                     this.emit(0, index, index + 1);
                 }
+            } else {
+                this.owner.report(
+                        DynamicSceneFrame.CompatibilityIssue.UNSUPPORTED_TOPOLOGY);
             }
         }
 
@@ -324,7 +357,8 @@ final class DynamicMeshBuilder {
                     this.vertices.get(first),
                     this.vertices.get(second),
                     this.vertices.get(third),
-                    this.textureIndex);
+                    this.textureIndex,
+                    this.bakedMaterial);
         }
 
         private Vertex requireCurrent() {

@@ -35,6 +35,7 @@ final class DynamicMeshBuilderTest {
         assertEquals(2, frame.blockEntityTriangles());
         assertEquals(0, frame.entityTriangles());
         assertEquals(0, frame.particleTriangles());
+        assertEquals(0, frame.featureTriangles());
         assertTrue(mesh.lights().isEmpty());
         assertFalse(mesh.opacityMicromap().isEmpty());
 
@@ -71,9 +72,52 @@ final class DynamicMeshBuilderTest {
                 frame.mesh().segments().getFirst().primitiveRecords()[5];
 
         assertEquals(1, frame.particleTriangles());
+        assertEquals(0, frame.featureTriangles());
         assertEquals(3, PrimitivePacking.unpackDynamicTextureIndex(flagsTexture));
         assertFalse(PrimitivePacking.hasVisibleEmission(flagsTexture));
         assertTrue(frame.mesh().lights().isEmpty());
+    }
+
+    @Test
+    void capturesTexturelessFeatureAsAnOwnedConstantMaterial() {
+        DynamicMeshBuilder builder = new DynamicMeshBuilder(0.0, 0.0, 0.0);
+        DynamicMeshBuilder.VertexSink sink = builder.openUntextured(
+                VanillaSceneBoundary.Element.FEATURE,
+                PrimitiveTopology.TRIANGLES,
+                0);
+        vertex(sink, 0.0F, 0.0F, 0.0F, 0.0F, 0.0F);
+        vertex(sink, 1.0F, 0.0F, 0.0F, 0.0F, 0.0F);
+        vertex(sink, 0.0F, 1.0F, 0.0F, 0.0F, 0.0F);
+        sink.finish();
+
+        DynamicSceneFrame frame = builder.build(0, 0, 0, List.of());
+        int[] primitive = frame.mesh().segments().getFirst().primitiveRecords();
+
+        assertEquals(1, frame.featureTriangles());
+        assertEquals(0, PrimitivePacking.unpackDynamicTextureIndex(primitive[5]));
+        assertEquals(PrimitivePacking.CONSTANT_UV_DENSITY, primitive[6]);
+        assertEquals(
+                PrimitivePacking.CONSTANT_UV_OWN_TINT
+                        | PrimitivePacking.CONSTANT_UV_BAKED_MATERIAL,
+                primitive[2]);
+    }
+
+    @Test
+    void reportsUnsupportedNonTriangleTopology() {
+        DynamicMeshBuilder builder = new DynamicMeshBuilder(0.0, 0.0, 0.0);
+        DynamicMeshBuilder.VertexSink sink = builder.openUntextured(
+                VanillaSceneBoundary.Element.FEATURE,
+                PrimitiveTopology.LINES,
+                0);
+        vertex(sink, 0.0F, 0.0F, 0.0F, 0.0F, 0.0F);
+        vertex(sink, 1.0F, 0.0F, 0.0F, 0.0F, 0.0F);
+        sink.finish();
+
+        DynamicSceneFrame frame = builder.build(0, 0, 0, List.of());
+
+        assertTrue(frame.isEmpty());
+        assertTrue(frame.compatibilityIssues().contains(
+                DynamicSceneFrame.CompatibilityIssue.UNSUPPORTED_TOPOLOGY));
     }
 
     @Test

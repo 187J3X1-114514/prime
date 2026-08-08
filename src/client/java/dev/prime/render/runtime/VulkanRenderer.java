@@ -24,6 +24,7 @@ import dev.prime.render.vulkan.dlss.DlssRrNative;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.texture.TextureAtlas;
@@ -46,6 +47,8 @@ public final class VulkanRenderer implements AutoCloseable {
     private long blockAtlasTextureRevision;
     private List<TraceBackend.SceneTexture> sceneTextures = List.of();
     private DynamicSceneFrame publishedDynamicFrame;
+    private Set<DynamicSceneFrame.CompatibilityIssue> dynamicCompatibilityIssues =
+            Set.of();
     private FrameCamera camera;
     private AstronomyState astronomyState;
     private OfflineSession pendingOfflineSession;
@@ -207,6 +210,15 @@ public final class VulkanRenderer implements AutoCloseable {
     public void captureDynamicScene(DynamicSceneFrame frame) {
         if (this.screenshotActive() || this.pendingOfflineSession != null) {
             return;
+        }
+        if (!frame.compatibilityIssues().equals(this.dynamicCompatibilityIssues)) {
+            this.dynamicCompatibilityIssues = frame.compatibilityIssues();
+            for (DynamicSceneFrame.CompatibilityIssue issue
+                    : this.dynamicCompatibilityIssues) {
+                PrimeInfo.LOGGER.warn(
+                        "Prime dynamic scene compatibility: {}",
+                        issue.description());
+            }
         }
         ArrayList<TraceBackend.SceneTexture> textures =
                 new ArrayList<>(frame.textures().size());

@@ -17,8 +17,6 @@ public record CompiledCluster(
         CpuClusterMesh mesh,
         boolean dynamic,
         float[] motionPositions) {
-    public static final long DYNAMIC_KEY = Long.MAX_VALUE;
-
     public CompiledCluster(
             long key,
             int clusterX,
@@ -34,9 +32,7 @@ public record CompiledCluster(
         if (SectionCluster.origin(clusterX) != clusterX
                 || SectionCluster.origin(clusterY) != clusterY
                 || SectionCluster.origin(clusterZ) != clusterZ
-                || (dynamic
-                        ? key != DYNAMIC_KEY
-                        : key != SectionPos.asLong(clusterX, clusterY, clusterZ))) {
+                || key != SectionPos.asLong(clusterX, clusterY, clusterZ)) {
             throw new IllegalArgumentException(
                     "Compiled cluster key and origin must identify one aligned cluster");
         }
@@ -54,7 +50,7 @@ public record CompiledCluster(
             CpuClusterMesh mesh,
             float[] motionPositions) {
         return new CompiledCluster(
-                DYNAMIC_KEY,
+                SectionPos.asLong(clusterX, clusterY, clusterZ),
                 clusterX,
                 clusterY,
                 clusterZ,

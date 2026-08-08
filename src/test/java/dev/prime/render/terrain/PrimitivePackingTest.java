@@ -137,9 +137,11 @@ final class PrimitivePackingTest {
         assertFalse(PrimitivePacking.hasVisibleEmission(dark));
         assertEquals(0, PrimitivePacking.unpackDynamicTextureIndex(
                 PrimitivePacking.packFlagsEmitter(flags, 0)));
-        assertThrows(
-                IllegalArgumentException.class,
-                () -> PrimitivePacking.packDynamicFlags(flags, 0, false));
+        int untextured = PrimitivePacking.packDynamicFlags(flags, 0, false);
+        assertEquals(0, PrimitivePacking.unpackDynamicTextureIndex(untextured));
+        assertEquals(
+                PrimitivePacking.NO_EMITTER_INDEX,
+                PrimitivePacking.unpackEmitterIndex(untextured));
     }
 
     @Test

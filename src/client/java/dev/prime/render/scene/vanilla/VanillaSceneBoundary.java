@@ -9,7 +9,7 @@ public final class VanillaSceneBoundary {
             Element element, boolean localPlayer, boolean firstPersonCamera) {
         return switch (element) {
             case ENTITY -> !localPlayer || !firstPersonCamera;
-            case BLOCK_ENTITY, PARTICLE, WEATHER -> true;
+            case BLOCK_ENTITY, PARTICLE, FEATURE, WEATHER -> true;
             case FIRST_PERSON_HAND, FIRST_PERSON_ITEM, SCREEN_OVERLAY -> false;
         };
     }
@@ -24,6 +24,7 @@ public final class VanillaSceneBoundary {
         ENTITY,
         BLOCK_ENTITY,
         PARTICLE,
+        FEATURE,
         WEATHER,
         FIRST_PERSON_HAND,
         FIRST_PERSON_ITEM,

@@ -17,6 +17,7 @@ import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
 import net.minecraft.core.SectionPos;
+import org.jspecify.annotations.Nullable;
 import org.lwjgl.system.MemoryStack;
 import org.lwjgl.vulkan.KHRAccelerationStructure;
 import org.lwjgl.vulkan.KHRRayTracingPipeline;
@@ -26,6 +27,7 @@ import org.lwjgl.vulkan.VkBufferCopy;
 import org.lwjgl.vulkan.VkCommandBuffer;
 
 public final class TerrainScene implements AutoCloseable {
+    private static final long[] EMPTY_EVICTIONS = new long[0];
     private static final int TLAS_SLOT_COUNT = 3;
     private static final int REBASE_DISTANCE = 256;
 
@@ -34,6 +36,7 @@ public final class TerrainScene implements AutoCloseable {
     private final BlasCompactionScheduler compactionScheduler =
             new BlasCompactionScheduler();
     private Long2ObjectOpenHashMap<GpuCluster> resident = new Long2ObjectOpenHashMap<>();
+    private @Nullable GpuCluster dynamicResident;
     private final List<TopLevelAccelerationStructure> tlasSlots = new ArrayList<>(TLAS_SLOT_COUNT);
     private TopLevelAccelerationStructure currentTlas;
     private VulkanBuffer currentWorldLights;
@@ -53,18 +56,73 @@ public final class TerrainScene implements AutoCloseable {
         this.stagingArena = stagingArena;
     }
 
-    public boolean update(
+    public boolean updateStatic(
             List<CompiledCluster> uploads,
             long[] evictions,
             double cameraX,
             double cameraY,
             double cameraZ) {
-        boolean contentChanged = this.hasActualContentChange(uploads, evictions);
+        for (CompiledCluster upload : uploads) {
+            if (upload.dynamic()) {
+                throw new IllegalArgumentException(
+                        "Static scene update contains a dynamic cluster");
+            }
+        }
+        return this.update(
+                uploads, evictions, null, false, cameraX, cameraY, cameraZ);
+    }
+
+    public boolean updateDynamic(
+            CompiledCluster upload,
+            double cameraX,
+            double cameraY,
+            double cameraZ) {
+        if (!upload.dynamic()) {
+            throw new IllegalArgumentException(
+                    "Dynamic scene update contains a static cluster");
+        }
+        return this.update(
+                List.of(), EMPTY_EVICTIONS, upload, true, cameraX, cameraY, cameraZ);
+    }
+
+    public boolean clear(double cameraX, double cameraY, double cameraZ) {
+        return this.update(
+                List.of(),
+                this.resident.keySet().toLongArray(),
+                null,
+                true,
+                cameraX,
+                cameraY,
+                cameraZ);
+    }
+
+    private boolean update(
+            List<CompiledCluster> staticUploads,
+            long[] evictions,
+            @Nullable CompiledCluster dynamicUpload,
+            boolean replaceDynamic,
+            double cameraX,
+            double cameraY,
+            double cameraZ) {
+        List<CompiledCluster> uploads;
+        if (dynamicUpload == null) {
+            uploads = staticUploads;
+        } else if (staticUploads.isEmpty()) {
+            uploads = List.of(dynamicUpload);
+        } else {
+            ArrayList<CompiledCluster> combined =
+                    new ArrayList<>(staticUploads.size() + 1);
+            combined.addAll(staticUploads);
+            combined.add(dynamicUpload);
+            uploads = combined;
+        }
+        boolean contentChanged = this.hasActualContentChange(
+                staticUploads, evictions, dynamicUpload, replaceDynamic);
         boolean staticContentChanged =
-                this.hasActualStaticContentChange(uploads, evictions);
-        LongOpenHashSet removedKeys = removedKeys(uploads, evictions);
+                this.hasActualStaticContentChange(staticUploads, evictions);
+        LongOpenHashSet removedKeys = removedKeys(staticUploads, evictions);
         List<TerrainOccluderChange> occluderChanges = staticContentChanged
-                ? this.occluderChanges(uploads, evictions)
+                ? this.occluderChanges(staticUploads, evictions)
                 : List.of();
         boolean needsRebase = this.currentTlas == null
                 ? contentChanged
@@ -79,8 +137,10 @@ public final class TerrainScene implements AutoCloseable {
         if (!contentChanged && !needsRebase) {
             return true;
         }
-        int finalClusterCount = this.estimateFinalClusterCount(uploads, removedKeys);
-        int finalInstanceCount = this.estimateFinalInstanceCount(uploads, removedKeys);
+        int finalClusterCount = this.estimateFinalClusterCount(
+                staticUploads, removedKeys, dynamicUpload, replaceDynamic);
+        int finalInstanceCount = this.estimateFinalInstanceCount(
+                staticUploads, removedKeys, dynamicUpload, replaceDynamic);
         TopLevelAccelerationStructure replacementTlas = null;
         if (finalClusterCount > 0) {
             replacementTlas = this.acquireTlas(finalInstanceCount);
@@ -180,7 +240,7 @@ public final class TerrainScene implements AutoCloseable {
             }
 
             List<GpuCluster> finalClusters = this.buildFinalClusterList(
-                    removedKeys, replacements, finalClusterCount);
+                    removedKeys, replacements, finalClusterCount, replaceDynamic);
             int nextOriginX = needsRebase ? RenderOrigin.alignToSection(cameraX) : this.originX;
             int nextOriginY = needsRebase ? RenderOrigin.alignToSection(cameraY) : this.originY;
             int nextOriginZ = needsRebase ? RenderOrigin.alignToSection(cameraZ) : this.originZ;
@@ -188,6 +248,7 @@ public final class TerrainScene implements AutoCloseable {
                     ? CpuWorldLightTree.build(
                             WorldLightTreeInput.capture(
                                     finalClusters.stream()
+                                            .filter(cluster -> !cluster.dynamic())
                                             .map(cluster -> new WorldLightTreeInput.Entry(
                                                     cluster.key(),
                                                     cluster.clusterX(),
@@ -301,7 +362,8 @@ public final class TerrainScene implements AutoCloseable {
                     occluderChanges,
                     nextOriginX,
                     nextOriginY,
-                    nextOriginZ);
+                    nextOriginZ,
+                    replaceDynamic);
             if (commandBuffer != null) {
                 this.context.device().instance().debug().endDebugGroup(commandBuffer);
                 VulkanContext.check(VK12.vkEndCommandBuffer(commandBuffer), "end Prime terrain command buffer");
@@ -400,6 +462,10 @@ public final class TerrainScene implements AutoCloseable {
         for (GpuCluster cluster : this.resident.values()) {
             instanceCount = Math.addExact(instanceCount, cluster.tlasInstanceCount());
         }
+        if (this.dynamicResident != null) {
+            instanceCount = Math.addExact(
+                    instanceCount, this.dynamicResident.tlasInstanceCount());
+        }
         TopLevelAccelerationStructure replacementTlas =
                 this.acquireCompactionTlas(instanceCount);
         if (replacementTlas == null) {
@@ -419,7 +485,10 @@ public final class TerrainScene implements AutoCloseable {
 
             LongOpenHashSet noRemovedKeys = new LongOpenHashSet();
             List<GpuCluster> finalClusters = this.buildFinalClusterList(
-                    noRemovedKeys, List.of(), this.resident.size());
+                    noRemovedKeys,
+                    List.of(),
+                    this.resident.size() + (this.dynamicResident == null ? 0 : 1),
+                    false);
             IdentityHashMap<PreparedBlas, PreparedBlas.Compaction> replacements =
                     new IdentityHashMap<>(batch.compactions().size());
             for (PreparedBlas.Compaction compaction : batch.compactions()) {
@@ -479,7 +548,8 @@ public final class TerrainScene implements AutoCloseable {
                     List.of(),
                     this.originX,
                     this.originY,
-                    this.originZ);
+                    this.originZ,
+                    false);
             for (PreparedBlas.Compaction compaction : batch.compactions()) {
                 compaction.requirePublishable();
             }
@@ -572,10 +642,10 @@ public final class TerrainScene implements AutoCloseable {
     }
 
     public int residentCount() {
-        return this.resident.size();
+        return this.resident.size() + (this.dynamicResident == null ? 0 : 1);
     }
 
-    public long[] residentKeys() {
+    public long[] residentStaticKeys() {
         return this.resident.keySet().toLongArray();
     }
 
@@ -586,6 +656,11 @@ public final class TerrainScene implements AutoCloseable {
             failure = ResourceCleanup.run(cluster::destroy, failure);
         }
         this.resident.clear();
+        if (this.dynamicResident != null) {
+            failure = ResourceCleanup.run(
+                    this.dynamicResident::destroy, failure);
+            this.dynamicResident = null;
+        }
         for (TopLevelAccelerationStructure slot : this.tlasSlots) {
             failure = ResourceCleanup.run(slot::destroy, failure);
         }
@@ -605,6 +680,10 @@ public final class TerrainScene implements AutoCloseable {
         LongOpenHashSet result = new LongOpenHashSet(evictions);
         LongOpenHashSet uploadKeys = new LongOpenHashSet();
         for (CompiledCluster upload : uploads) {
+            if (upload.dynamic()) {
+                throw new IllegalArgumentException(
+                        "Static removal set contains a dynamic cluster");
+            }
             if (!uploadKeys.add(upload.key())) {
                 throw new IllegalArgumentException(
                         "A logical cluster was replaced more than once in one update");
@@ -615,7 +694,10 @@ public final class TerrainScene implements AutoCloseable {
     }
 
     private int estimateFinalClusterCount(
-            List<CompiledCluster> uploads, LongOpenHashSet removedKeys) {
+            List<CompiledCluster> uploads,
+            LongOpenHashSet removedKeys,
+            @Nullable CompiledCluster dynamicUpload,
+            boolean replaceDynamic) {
         int count = this.resident.size();
         for (long key : removedKeys) {
             if (this.resident.containsKey(key)) {
@@ -627,11 +709,21 @@ public final class TerrainScene implements AutoCloseable {
                 count++;
             }
         }
+        if (replaceDynamic) {
+            if (dynamicUpload != null && !dynamicUpload.isEmpty()) {
+                count++;
+            }
+        } else if (this.dynamicResident != null) {
+            count++;
+        }
         return count;
     }
 
     private int estimateFinalInstanceCount(
-            List<CompiledCluster> uploads, LongOpenHashSet removedKeys) {
+            List<CompiledCluster> uploads,
+            LongOpenHashSet removedKeys,
+            @Nullable CompiledCluster dynamicUpload,
+            boolean replaceDynamic) {
         int count = 0;
         for (GpuCluster cluster : this.resident.values()) {
             if (!removedKeys.contains(cluster.key())) {
@@ -645,10 +737,22 @@ public final class TerrainScene implements AutoCloseable {
                         Math.addExact(1, upload.mesh().voxelInstances().count()));
             }
         }
+        GpuCluster retainedDynamic = replaceDynamic ? null : this.dynamicResident;
+        if (retainedDynamic != null) {
+            count = Math.addExact(count, retainedDynamic.tlasInstanceCount());
+        } else if (dynamicUpload != null && !dynamicUpload.isEmpty()) {
+            count = Math.addExact(
+                    count,
+                    Math.addExact(1, dynamicUpload.mesh().voxelInstances().count()));
+        }
         return count;
     }
 
-    private boolean hasActualContentChange(List<CompiledCluster> uploads, long[] evictions) {
+    private boolean hasActualContentChange(
+            List<CompiledCluster> uploads,
+            long[] evictions,
+            @Nullable CompiledCluster dynamicUpload,
+            boolean replaceDynamic) {
         for (long key : evictions) {
             if (this.resident.containsKey(key)) {
                 return true;
@@ -659,22 +763,22 @@ public final class TerrainScene implements AutoCloseable {
                 return true;
             }
         }
-        return false;
+        return replaceDynamic
+                && (this.dynamicResident != null
+                        || dynamicUpload != null && !dynamicUpload.isEmpty());
     }
 
     private List<TerrainOccluderChange> occluderChanges(
             List<CompiledCluster> uploads, long[] evictions) {
         LongOpenHashSet changedKeys = new LongOpenHashSet();
         for (long key : evictions) {
-            if (key != CompiledCluster.DYNAMIC_KEY
-                    && this.resident.containsKey(key)) {
+            if (this.resident.containsKey(key)) {
                 changedKeys.add(key);
             }
         }
         for (CompiledCluster upload : uploads) {
-            if (!upload.dynamic()
-                    && (!upload.isEmpty()
-                            || this.resident.containsKey(upload.key()))) {
+            if (!upload.isEmpty()
+                    || this.resident.containsKey(upload.key())) {
                 changedKeys.add(upload.key());
             }
         }
@@ -698,13 +802,12 @@ public final class TerrainScene implements AutoCloseable {
     private boolean hasActualStaticContentChange(
             List<CompiledCluster> uploads, long[] evictions) {
         for (long key : evictions) {
-            if (key != CompiledCluster.DYNAMIC_KEY && this.resident.containsKey(key)) {
+            if (this.resident.containsKey(key)) {
                 return true;
             }
         }
         for (CompiledCluster upload : uploads) {
-            if (!upload.dynamic()
-                    && (!upload.isEmpty() || this.resident.containsKey(upload.key()))) {
+            if (!upload.isEmpty() || this.resident.containsKey(upload.key())) {
                 return true;
             }
         }
@@ -714,15 +817,37 @@ public final class TerrainScene implements AutoCloseable {
     private List<GpuCluster> buildFinalClusterList(
             LongOpenHashSet removedKeys,
             List<GpuCluster> replacements,
-            int finalClusterCount) {
+            int finalClusterCount,
+            boolean replaceDynamic) {
         List<GpuCluster> result = new ArrayList<>(finalClusterCount);
         for (GpuCluster cluster : this.resident.values()) {
             if (!removedKeys.contains(cluster.key())) {
                 result.add(cluster);
             }
         }
-        result.addAll(replacements);
+        GpuCluster replacementDynamic = null;
+        for (GpuCluster replacement : replacements) {
+            if (replacement.dynamic()) {
+                if (replacementDynamic != null) {
+                    throw new IllegalArgumentException(
+                            "A scene update contains more than one dynamic cluster");
+                }
+                replacementDynamic = replacement;
+            } else {
+                result.add(replacement);
+            }
+        }
         result.sort(Comparator.comparingLong(GpuCluster::key));
+        GpuCluster finalDynamic = replaceDynamic
+                ? replacementDynamic
+                : this.dynamicResident;
+        if (finalDynamic != null) {
+            result.add(finalDynamic);
+        }
+        if (result.size() != finalClusterCount) {
+            throw new IllegalStateException(
+                    "Final scene cluster count changed during preparation");
+        }
         return result;
     }
 
@@ -834,10 +959,12 @@ public final class TerrainScene implements AutoCloseable {
             List<TerrainOccluderChange> occluderChanges,
             int nextOriginX,
             int nextOriginY,
-            int nextOriginZ) {
+            int nextOriginZ,
+            boolean replaceDynamic) {
         List<GpuCluster> retired = new ArrayList<>();
         Long2ObjectOpenHashMap<GpuCluster> nextResident =
                 new Long2ObjectOpenHashMap<>(finalClusters.size());
+        GpuCluster nextDynamic = null;
         int tlasInstances = 0;
         long uniqueTriangles = 0L;
         long instancedTriangles = 0L;
@@ -848,7 +975,13 @@ public final class TerrainScene implements AutoCloseable {
             }
         }
         for (GpuCluster cluster : finalClusters) {
-            if (nextResident.put(cluster.key(), cluster) != null) {
+            if (cluster.dynamic()) {
+                if (nextDynamic != null) {
+                    throw new IllegalStateException(
+                            "Prepared scene contains more than one dynamic cluster");
+                }
+                nextDynamic = cluster;
+            } else if (nextResident.put(cluster.key(), cluster) != null) {
                 throw new IllegalStateException(
                         "Prepared terrain scene contains a duplicate logical cluster");
             }
@@ -860,6 +993,11 @@ public final class TerrainScene implements AutoCloseable {
                     instancedTriangles, cluster.instancedTriangleCount());
             areaLightEmitters = Math.addExact(
                     areaLightEmitters, cluster.lights().emitterCount());
+        }
+        if (replaceDynamic
+                && this.dynamicResident != null
+                && this.dynamicResident != nextDynamic) {
+            retired.add(this.dynamicResident);
         }
         SceneStatistics statistics = new SceneStatistics(
                 tlasInstances,
@@ -876,7 +1014,7 @@ public final class TerrainScene implements AutoCloseable {
         long nextOccluderRevision = occluderChanges.isEmpty()
                 ? this.occluderRevision
                 : this.occluderRevision + 1L;
-        ResidentSceneView nextView = replacementTlas == null || nextResident.isEmpty()
+        ResidentSceneView nextView = replacementTlas == null || finalClusters.isEmpty()
                 ? null
                 : new ResidentSceneView(
                         replacementTlas.handle(),
@@ -893,6 +1031,7 @@ public final class TerrainScene implements AutoCloseable {
 
         return new PreparedUpdate(
                 nextResident,
+                nextDynamic,
                 replacementTlas,
                 replacementWorldLights,
                 replacementWorldLightTree,
@@ -912,6 +1051,7 @@ public final class TerrainScene implements AutoCloseable {
     /** Publishes a fully allocated scene state; this path must remain allocation- and I/O-free. */
     private void publish(PreparedUpdate update) {
         this.resident = update.resident();
+        this.dynamicResident = update.dynamicResident();
         this.currentTlas = update.tlas();
         if (update.replaceWorldLights()) {
             this.currentWorldLights = update.worldLights();
@@ -1287,6 +1427,7 @@ public final class TerrainScene implements AutoCloseable {
 
     private record PreparedUpdate(
             Long2ObjectOpenHashMap<GpuCluster> resident,
+            @Nullable GpuCluster dynamicResident,
             TopLevelAccelerationStructure tlas,
             VulkanBuffer worldLights,
             CpuWorldLightTree.Result worldLightTree,

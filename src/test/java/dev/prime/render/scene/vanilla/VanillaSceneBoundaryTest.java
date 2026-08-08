@@ -23,6 +23,8 @@ final class VanillaSceneBoundaryTest {
         assertTrue(VanillaSceneBoundary.includes(
                 VanillaSceneBoundary.Element.PARTICLE, false, true));
         assertTrue(VanillaSceneBoundary.includes(
+                VanillaSceneBoundary.Element.FEATURE, false, true));
+        assertTrue(VanillaSceneBoundary.includes(
                 VanillaSceneBoundary.Element.WEATHER, false, true));
         assertFalse(VanillaSceneBoundary.includes(
                 VanillaSceneBoundary.Element.FIRST_PERSON_HAND, false, true));

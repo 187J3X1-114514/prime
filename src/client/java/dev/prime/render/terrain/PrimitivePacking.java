@@ -95,7 +95,7 @@ public final class PrimitivePacking {
             throw new IllegalArgumentException(
                     "Primitive flags exceed their eleven-bit ABI field");
         }
-        if (textureIndex <= 0 || textureIndex > DYNAMIC_TEXTURE_INDEX_MASK) {
+        if (textureIndex < 0 || textureIndex > DYNAMIC_TEXTURE_INDEX_MASK) {
             throw new IllegalArgumentException("Dynamic texture index exceeds its ABI field");
         }
         if ((flags & FLAG_RASTER_COMPOSITE) != 0) {

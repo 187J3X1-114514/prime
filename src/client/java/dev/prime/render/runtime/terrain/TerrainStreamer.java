@@ -214,12 +214,7 @@ public final class TerrainStreamer implements AutoCloseable {
         double cameraX = (frame.clusterX() << 4) + 32.0;
         double cameraY = (frame.clusterY() << 4) + 32.0;
         double cameraZ = (frame.clusterZ() << 4) + 32.0;
-        return this.scene.update(
-                List.of(dynamic),
-                EMPTY_EVICTIONS,
-                cameraX,
-                cameraY,
-                cameraZ);
+        return this.scene.updateDynamic(dynamic, cameraX, cameraY, cameraZ);
     }
 
     public void setLabPbrMaterials(LabPbrMaterialSet materials) {
@@ -331,8 +326,8 @@ public final class TerrainStreamer implements AutoCloseable {
             }
         }
 
-        for (long key : this.scene.residentKeys()) {
-            if (isOutsideStaticWindow(key, replacement)) {
+        for (long key : this.scene.residentStaticKeys()) {
+            if (!replacement.contains(key)) {
                 this.pendingEvictions.add(key);
             }
         }
@@ -341,10 +336,6 @@ public final class TerrainStreamer implements AutoCloseable {
         this.desired.clear();
         this.desired.addAll(replacement);
         this.rebuildRequestQueue(1);
-    }
-
-    static boolean isOutsideStaticWindow(long key, LongOpenHashSet window) {
-        return key != CompiledCluster.DYNAMIC_KEY && !window.contains(key);
     }
 
     private void drainInvalidations() {
@@ -688,7 +679,8 @@ public final class TerrainStreamer implements AutoCloseable {
         long[] evictions = this.pendingEvictions.isEmpty()
                 ? EMPTY_EVICTIONS
                 : this.pendingEvictions.toLongArray();
-        boolean updated = this.scene.update(uploads, evictions, cameraX, cameraY, cameraZ);
+        boolean updated = this.scene.updateStatic(
+                uploads, evictions, cameraX, cameraY, cameraZ);
         if (!updated) {
             for (int index = uploads.size() - 1; index >= 0; index--) {
                 CompiledCluster upload = uploads.get(index);
@@ -723,7 +715,7 @@ public final class TerrainStreamer implements AutoCloseable {
 
     private void clearWorld(double cameraX, double cameraY, double cameraZ) {
         this.scene.beginUnrelatedWorld();
-        this.scene.update(List.of(), this.scene.residentKeys(), cameraX, cameraY, cameraZ);
+        this.scene.clear(cameraX, cameraY, cameraZ);
         this.world = null;
         this.desired.clear();
         this.empty.clear();

@@ -5,6 +5,7 @@
   "compatibilityLevel": "JAVA_25",
   "client": [
     "BufferBuilderMixin",
+    "BlockEntityRenderDispatcherMixin",
     "BlockModelRenderStateAccessor",
     "ClientInformationMixin",
     "ChunkMapMixin",
@@ -29,6 +30,7 @@
     "PlayerTicketTrackerMixin",
     "SpriteContentsAccessor",
     "SubmitNodeCollectionMixin",
+    "SubmitRenderPhaseMixin",
     "TextureAtlasAccessor",
     "TextureAtlasMixin",
     "TextureAtlasSpriteAccessor",

@@ -12,20 +12,34 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.model.Model;
 import net.minecraft.client.particle.SingleQuadParticle;
 import net.minecraft.client.renderer.SubmitNodeCollector;
+import net.minecraft.client.renderer.block.BlockQuadOutput;
+import net.minecraft.client.renderer.block.ModelBlockRenderer;
+import net.minecraft.client.renderer.block.MovingBlockRenderState;
+import net.minecraft.client.renderer.block.dispatch.BlockStateModel;
 import net.minecraft.client.renderer.block.dispatch.BlockStateModelPart;
+import net.minecraft.client.renderer.chunk.ChunkSectionLayer;
+import net.minecraft.client.renderer.entity.state.EntityRenderState;
 import net.minecraft.client.renderer.feature.ModelFeatureRenderer;
 import net.minecraft.client.renderer.item.ItemStackRenderState;
 import net.minecraft.client.renderer.rendertype.PreparedRenderType;
 import net.minecraft.client.renderer.rendertype.RenderType;
+import net.minecraft.client.renderer.rendertype.RenderTypes;
 import net.minecraft.client.renderer.state.level.QuadParticleRenderState;
 import net.minecraft.client.renderer.texture.OverlayTexture;
+import net.minecraft.client.renderer.texture.TextureAtlas;
 import net.minecraft.client.renderer.texture.TextureAtlasSprite;
+import net.minecraft.client.resources.model.ModelBakery;
+import net.minecraft.data.AtlasIds;
 import net.minecraft.client.resources.model.geometry.BakedQuad;
 import net.minecraft.core.Direction;
 import net.minecraft.util.ARGB;
 import net.minecraft.util.LightCoordsUtil;
+import net.minecraft.util.Mth;
 import net.minecraft.world.item.ItemDisplayContext;
+import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.Vec3;
+import org.joml.Matrix4f;
+import org.joml.Quaternionf;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -53,6 +67,14 @@ public final class DynamicSceneCapture {
 
     public static boolean active() {
         return ACTIVE.get() != null;
+    }
+
+    public static void reportCompatibilityIssue(
+            DynamicSceneFrame.CompatibilityIssue issue) {
+        Session session = ACTIVE.get();
+        if (session != null) {
+            session.builder.report(issue);
+        }
     }
 
     public static void beginElement(VanillaSceneBoundary.Element element) {
@@ -93,15 +115,10 @@ public final class DynamicSceneCapture {
         if (session == null || renderType.isOutline()) {
             return;
         }
-        int textureIndex = session.textureIndex(renderType);
-        if (textureIndex < 0) {
+        DynamicMeshBuilder.VertexSink sink = session.open(renderType, lightCoords);
+        if (sink == null) {
             return;
         }
-        DynamicMeshBuilder.VertexSink sink = session.builder.open(
-                session.element,
-                renderType.primitiveTopology(),
-                textureIndex,
-                lightCoords);
         var consumer = sprite == null ? sink : sprite.wrap(sink);
         PoseStack capturePose = new PoseStack();
         capturePose.last().set(poseStack.last());
@@ -123,15 +140,10 @@ public final class DynamicSceneCapture {
         if (session == null || renderType.isOutline()) {
             return;
         }
-        int textureIndex = session.textureIndex(renderType);
-        if (textureIndex < 0) {
+        DynamicMeshBuilder.VertexSink sink = session.open(renderType, lightCoords);
+        if (sink == null) {
             return;
         }
-        DynamicMeshBuilder.VertexSink sink = session.builder.open(
-                session.element,
-                renderType.primitiveTopology(),
-                textureIndex,
-                lightCoords);
         QuadInstance instance = new QuadInstance();
         instance.setLightCoords(lightCoords);
         instance.setOverlayCoords(overlayCoords);
@@ -150,12 +162,151 @@ public final class DynamicSceneCapture {
         sink.finish();
     }
 
-    public static void beginMotionObject(
+    public static void captureMovingBlock(
+            PoseStack poseStack, MovingBlockRenderState state) {
+        Session session = activeSession();
+        if (session == null) {
+            return;
+        }
+        Minecraft minecraft = Minecraft.getInstance();
+        BlockState blockState = state.blockState;
+        BlockStateModel model = minecraft.getModelManager()
+                .getBlockStateModelSet()
+                .get(blockState);
+        ModelBlockRenderer renderer = new ModelBlockRenderer(
+                minecraft.options.ambientOcclusion().get(),
+                false,
+                minecraft.getBlockColors());
+        PoseStack capturePose = copyPoseStack(poseStack);
+        BlockQuadOutput layered = (x, y, z, quad, instance) -> captureMovingQuad(
+                session,
+                capturePose,
+                x,
+                y,
+                z,
+                quad,
+                instance,
+                quad.materialInfo().layer());
+        BlockQuadOutput solid = (x, y, z, quad, instance) -> captureMovingQuad(
+                session,
+                capturePose,
+                x,
+                y,
+                z,
+                quad,
+                instance,
+                ChunkSectionLayer.SOLID);
+        BlockQuadOutput output = ModelBlockRenderer.forceOpaque(
+                minecraft.options.cutoutLeaves().get(), blockState)
+                ? solid
+                : layered;
+        renderer.tesselateBlock(
+                output,
+                0.0F,
+                0.0F,
+                0.0F,
+                state,
+                state.blockPos,
+                blockState,
+                model,
+                blockState.getSeed(state.randomSeedPos));
+    }
+
+    public static void captureFlame(
+            PoseStack poseStack,
+            EntityRenderState state,
+            Quaternionf rotation) {
+        Session session = activeSession();
+        if (session == null) {
+            return;
+        }
+        Minecraft minecraft = Minecraft.getInstance();
+        TextureAtlas blockAtlas = minecraft.getAtlasManager()
+                .getAtlasOrThrow(AtlasIds.BLOCKS);
+        int textureIndex = session.textureIndex(
+                blockAtlas.getTextureView(), blockAtlas.getSampler());
+        DynamicMeshBuilder.VertexSink sink = textureIndex < 0
+                ? null
+                : session.builder.open(
+                        session.element,
+                        PrimitiveTopology.QUADS,
+                        textureIndex,
+                        LightCoordsUtil.withBlock(state.lightCoords, 15));
+        if (sink == null) {
+            return;
+        }
+        TextureAtlasSprite fire0 = minecraft.getAtlasManager().get(ModelBakery.FIRE_0);
+        TextureAtlasSprite fire1 = minecraft.getAtlasManager().get(ModelBakery.FIRE_1);
+        PoseStack.Pose pose = copyPoseStack(poseStack).last();
+        float scale = state.boundingBoxWidth * 1.4F;
+        pose.scale(scale, scale, scale);
+        float radius = 0.5F;
+        float remainingHeight = state.boundingBoxHeight / scale;
+        float yOffset = 0.0F;
+        pose.rotate(rotation);
+        pose.translate(0.0F, 0.0F, 0.3F - (int) remainingHeight * 0.02F);
+        float zOffset = 0.0F;
+        int layer = 0;
+        int lightCoords = LightCoordsUtil.withBlock(state.lightCoords, 15);
+        while (remainingHeight > 0.0F) {
+            TextureAtlasSprite sprite = (layer & 1) == 0 ? fire0 : fire1;
+            float u0 = sprite.getU0();
+            float v0 = sprite.getV0();
+            float u1 = sprite.getU1();
+            float v1 = sprite.getV1();
+            if ((layer / 2 & 1) == 0) {
+                float swap = u1;
+                u1 = u0;
+                u0 = swap;
+            }
+            fireVertex(pose, sink, -radius, -yOffset, zOffset, u1, v1, lightCoords);
+            fireVertex(pose, sink, radius, -yOffset, zOffset, u0, v1, lightCoords);
+            fireVertex(pose, sink, radius, 1.4F - yOffset, zOffset, u0, v0, lightCoords);
+            fireVertex(pose, sink, -radius, 1.4F - yOffset, zOffset, u1, v0, lightCoords);
+            remainingHeight -= 0.45F;
+            yOffset -= 0.45F;
+            radius *= 0.9F;
+            zOffset -= 0.03F;
+            layer++;
+        }
+        sink.finish();
+    }
+
+    public static void captureLeash(
+            PoseStack poseStack, EntityRenderState.LeashState state) {
+        Session session = activeSession();
+        if (session == null) {
+            return;
+        }
+        DynamicMeshBuilder.VertexSink sink = session.builder.openUntextured(
+                session.element, PrimitiveTopology.TRIANGLE_STRIP, 0);
+        Matrix4f pose = new Matrix4f(poseStack.last().pose());
+        float dx = (float) (state.end.x - state.start.x);
+        float dy = (float) (state.end.y - state.start.y);
+        float dz = (float) (state.end.z - state.start.z);
+        float offsetFactor = Mth.invSqrt(dx * dx + dz * dz) * 0.025F;
+        float dxOffset = dz * offsetFactor;
+        float dzOffset = dx * offsetFactor;
+        pose.translate((float) state.offset.x, (float) state.offset.y, (float) state.offset.z);
+        for (int step = 0; step <= 24; step++) {
+            leashVertexPair(
+                    sink, pose, dx, dy, dz, 0.05F, dxOffset, dzOffset, step, false, state);
+        }
+        for (int step = 24; step >= 0; step--) {
+            leashVertexPair(
+                    sink, pose, dx, dy, dz, 0.0F, dxOffset, dzOffset, step, true, state);
+        }
+        sink.finish();
+    }
+
+    public static boolean tryBeginMotionObject(
             VanillaSceneBoundary.Element element, long key) {
         Session session = ACTIVE.get();
-        if (session != null) {
-            session.beginMotionObject(element, key);
+        if (session == null || session.element != element) {
+            return false;
         }
+        session.beginMotionObject(element, key);
+        return true;
     }
 
     public static void endMotionObject(
@@ -185,8 +336,8 @@ public final class DynamicSceneCapture {
         for (BakedQuad quad : quads) {
             BakedQuad.MaterialInfo material = quad.materialInfo();
             RenderType renderType = material.itemRenderType();
-            int textureIndex = session.textureIndex(renderType);
-            if (textureIndex < 0) {
+            DynamicMeshBuilder.VertexSink sink = session.open(renderType, lightCoords);
+            if (sink == null) {
                 continue;
             }
             int tint = material.isTinted()
@@ -198,11 +349,6 @@ public final class DynamicSceneCapture {
             instance.setLightCoords(
                     LightCoordsUtil.lightCoordsWithEmission(
                             lightCoords, material.lightEmission()));
-            DynamicMeshBuilder.VertexSink sink = session.builder.open(
-                    session.element,
-                    renderType.primitiveTopology(),
-                    textureIndex,
-                    lightCoords);
             sink.putBakedQuad(poseStack.last(), quad, instance);
             sink.finish();
         }
@@ -216,15 +362,10 @@ public final class DynamicSceneCapture {
         if (session == null || renderType.isOutline()) {
             return;
         }
-        int textureIndex = session.textureIndex(renderType);
-        if (textureIndex < 0) {
+        DynamicMeshBuilder.VertexSink sink = session.open(renderType, 0);
+        if (sink == null) {
             return;
         }
-        DynamicMeshBuilder.VertexSink sink = session.builder.open(
-                session.element,
-                renderType.primitiveTopology(),
-                textureIndex,
-                0);
         renderer.render(poseStack.last().copy(), sink);
         sink.finish();
     }
@@ -269,9 +410,90 @@ public final class DynamicSceneCapture {
         }
     }
 
+    private static void captureMovingQuad(
+            Session session,
+            PoseStack poseStack,
+            float x,
+            float y,
+            float z,
+            BakedQuad quad,
+            QuadInstance instance,
+            ChunkSectionLayer layer) {
+        RenderType renderType = switch (layer) {
+            case SOLID -> RenderTypes.solidMovingBlock();
+            case CUTOUT -> RenderTypes.cutoutMovingBlock();
+            case TRANSLUCENT -> RenderTypes.translucentMovingBlock();
+        };
+        DynamicMeshBuilder.VertexSink sink = session.open(renderType, 0);
+        if (sink == null) {
+            return;
+        }
+        poseStack.pushPose();
+        poseStack.translate(x, y, z);
+        sink.putBakedQuad(poseStack.last(), quad, instance);
+        poseStack.popPose();
+        sink.finish();
+    }
+
+    private static void fireVertex(
+            PoseStack.Pose pose,
+            DynamicMeshBuilder.VertexSink sink,
+            float x,
+            float y,
+            float z,
+            float u,
+            float v,
+            int lightCoords) {
+        sink.addVertex(pose, x, y, z)
+                .setColor(-1)
+                .setUv(u, v)
+                .setUv1(0, 10)
+                .setLight(lightCoords)
+                .setNormal(pose, 0.0F, 1.0F, 0.0F);
+    }
+
+    private static void leashVertexPair(
+            DynamicMeshBuilder.VertexSink sink,
+            Matrix4f pose,
+            float dx,
+            float dy,
+            float dz,
+            float fudge,
+            float dxOffset,
+            float dzOffset,
+            int step,
+            boolean backwards,
+            EntityRenderState.LeashState state) {
+        float progress = step / 24.0F;
+        int block = (int) Mth.lerp(
+                progress, state.startBlockLight, state.endBlockLight);
+        int sky = (int) Mth.lerp(
+                progress, state.startSkyLight, state.endSkyLight);
+        int lightCoords = LightCoordsUtil.pack(block, sky);
+        float modifier = step % 2 == (backwards ? 1 : 0) ? 0.7F : 1.0F;
+        float x = dx * progress;
+        float y = state.slack
+                ? dy > 0.0F
+                        ? dy * progress * progress
+                        : dy - dy * (1.0F - progress) * (1.0F - progress)
+                : dy * progress;
+        float z = dz * progress;
+        sink.addVertex(pose, x - dxOffset, y + fudge, z + dzOffset)
+                .setColor(0.5F * modifier, 0.4F * modifier, 0.3F * modifier, 1.0F)
+                .setLight(lightCoords);
+        sink.addVertex(pose, x + dxOffset, y + 0.05F - fudge, z - dzOffset)
+                .setColor(0.5F * modifier, 0.4F * modifier, 0.3F * modifier, 1.0F)
+                .setLight(lightCoords);
+    }
+
+    private static PoseStack copyPoseStack(PoseStack source) {
+        PoseStack result = new PoseStack();
+        result.last().set(source.last());
+        return result;
+    }
+
     private static @Nullable Session activeSession() {
-        Session session = ACTIVE.get();
-        return session == null || session.element == null ? null : session;
+        return ACTIVE.get();
     }
 
     private static final class Session {
@@ -281,7 +503,8 @@ public final class DynamicSceneCapture {
         private final DynamicMeshBuilder builder;
         private final ArrayList<DynamicSceneFrame.SceneTexture> textures =
                 new ArrayList<>();
-        private VanillaSceneBoundary.Element element;
+        private VanillaSceneBoundary.Element element =
+                VanillaSceneBoundary.Element.FEATURE;
 
         private Session(Vec3 cameraPosition) {
             int sectionX = (int) Math.floor(cameraPosition.x) >> 4;
@@ -300,7 +523,7 @@ public final class DynamicSceneCapture {
         }
 
         private void beginElement(VanillaSceneBoundary.Element element) {
-            if (this.element != null) {
+            if (this.element != VanillaSceneBoundary.Element.FEATURE) {
                 throw new IllegalStateException("Nested dynamic scene element capture");
             }
             if (element != VanillaSceneBoundary.Element.ENTITY
@@ -317,7 +540,7 @@ public final class DynamicSceneCapture {
                 throw new IllegalStateException(
                         "Dynamic scene element capture closed out of order");
             }
-            this.element = null;
+            this.element = VanillaSceneBoundary.Element.FEATURE;
         }
 
         private void beginMotionObject(
@@ -339,6 +562,10 @@ public final class DynamicSceneCapture {
         }
 
         private int textureIndex(RenderType renderType) {
+            if (renderType.hasBlending()) {
+                this.builder.report(
+                        DynamicSceneFrame.CompatibilityIssue.BLENDED_MATERIAL_APPROXIMATED);
+            }
             PreparedRenderType prepared = renderType.prepare();
             PreparedRenderType.Texture albedo = null;
             for (PreparedRenderType.Texture texture : prepared.textures()) {
@@ -347,9 +574,31 @@ public final class DynamicSceneCapture {
                     break;
                 }
             }
-            return albedo == null
-                    ? -1
-                    : this.textureIndex(albedo.textureView(), albedo.sampler());
+            if (albedo != null) {
+                return this.textureIndex(albedo.textureView(), albedo.sampler());
+            }
+            this.builder.report(prepared.textures().isEmpty()
+                    ? DynamicSceneFrame.CompatibilityIssue.TEXTURELESS_MATERIAL_APPROXIMATED
+                    : DynamicSceneFrame.CompatibilityIssue.MISSING_ALBEDO_TEXTURE);
+            return prepared.textures().isEmpty() ? 0 : -1;
+        }
+
+        private DynamicMeshBuilder.@Nullable VertexSink open(
+                RenderType renderType, int fallbackLight) {
+            int textureIndex = this.textureIndex(renderType);
+            if (textureIndex < 0) {
+                return null;
+            }
+            return textureIndex == 0
+                    ? this.builder.openUntextured(
+                            this.element,
+                            renderType.primitiveTopology(),
+                            fallbackLight)
+                    : this.builder.open(
+                            this.element,
+                            renderType.primitiveTopology(),
+                            textureIndex,
+                            fallbackLight);
         }
 
         private int textureIndex(GpuTextureView view, GpuSampler sampler) {
@@ -360,6 +609,8 @@ public final class DynamicSceneCapture {
                 }
             }
             if (this.textures.size() + 1 >= ShaderAbi.SCENE_TEXTURE_COUNT) {
+                this.builder.report(
+                        DynamicSceneFrame.CompatibilityIssue.SCENE_TEXTURE_LIMIT);
                 return -1;
             }
             this.textures.add(new DynamicSceneFrame.SceneTexture(view, sampler));
@@ -367,7 +618,7 @@ public final class DynamicSceneCapture {
         }
 
         private DynamicSceneFrame finish() {
-            if (this.element != null) {
+            if (this.element != VanillaSceneBoundary.Element.FEATURE) {
                 throw new IllegalStateException(
                         "Dynamic scene capture ended inside an element");
             }

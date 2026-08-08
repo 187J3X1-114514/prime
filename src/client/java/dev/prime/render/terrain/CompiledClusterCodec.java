@@ -20,6 +20,10 @@ public final class CompiledClusterCodec {
 
     public static byte[] encode(CompiledCluster cluster) {
         Objects.requireNonNull(cluster, "cluster");
+        if (cluster.dynamic()) {
+            throw new IllegalArgumentException(
+                    "Dynamic clusters are frame-local and cannot be encoded");
+        }
         CpuClusterMesh mesh = cluster.mesh();
         validatePrimitiveRecords(mesh);
         OpacityMicromapData opacity = mesh.opacityMicromap();

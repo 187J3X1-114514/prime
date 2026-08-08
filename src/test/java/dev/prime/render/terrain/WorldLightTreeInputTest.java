@@ -74,10 +74,10 @@ final class WorldLightTreeInputTest {
     }
 
     @Test
-    void dynamicGeometryWithVisibleEmissionHasNoWorldLightTreeLeaf() {
+    void clusterWithoutEmittersHasNoWorldLightTreeLeaf() {
         WorldLightTreeInput.Entry staticCluster = cluster(1, 2.0F);
-        WorldLightTreeInput.Entry dynamicCluster = new WorldLightTreeInput.Entry(
-                CompiledCluster.DYNAMIC_KEY,
+        WorldLightTreeInput.Entry unlitCluster = new WorldLightTreeInput.Entry(
+                2,
                 0,
                 0,
                 0,
@@ -93,7 +93,7 @@ final class WorldLightTreeInputTest {
 
         CpuWorldLightTree.Result tree = CpuWorldLightTree.build(
                 WorldLightTreeInput.capture(
-                        List.of(staticCluster, dynamicCluster), 0, 0, 0));
+                        List.of(staticCluster, unlitCluster), 0, 0, 0));
 
         assertNotEquals(CpuLightTree.NO_INDEX, tree.leafNode(0));
         assertEquals(CpuLightTree.NO_INDEX, tree.leafNode(1));

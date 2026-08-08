@@ -8,6 +8,7 @@ import dev.prime.render.vulkan.StagingArena;
 import dev.prime.render.vulkan.TopLevelAccelerationStructure;
 import dev.prime.render.vulkan.VulkanBuffer;
 import dev.prime.render.vulkan.VulkanContext;
+import dev.prime.render.vulkan.VulkanSync;
 import it.unimi.dsi.fastutil.longs.Long2ObjectOpenHashMap;
 import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
 import java.util.ArrayList;
@@ -19,13 +20,10 @@ import net.minecraft.core.SectionPos;
 import org.lwjgl.system.MemoryStack;
 import org.lwjgl.vulkan.KHRAccelerationStructure;
 import org.lwjgl.vulkan.KHRRayTracingPipeline;
-import org.lwjgl.vulkan.KHRSynchronization2;
 import org.lwjgl.vulkan.EXTOpacityMicromap;
 import org.lwjgl.vulkan.VK12;
 import org.lwjgl.vulkan.VkBufferCopy;
 import org.lwjgl.vulkan.VkCommandBuffer;
-import org.lwjgl.vulkan.VkDependencyInfo;
-import org.lwjgl.vulkan.VkMemoryBarrier2;
 
 public final class TerrainScene implements AutoCloseable {
     private static final int TLAS_SLOT_COUNT = 3;
@@ -1261,19 +1259,12 @@ public final class TerrainScene implements AutoCloseable {
             long sourceAccess,
             long destinationStage,
             long destinationAccess) {
-        try (MemoryStack stack = MemoryStack.stackPush()) {
-            VkMemoryBarrier2.Buffer barrier = VkMemoryBarrier2.calloc(1, stack);
-            barrier.get(0)
-                    .sType$Default()
-                    .srcStageMask(sourceStage)
-                    .srcAccessMask(sourceAccess)
-                    .dstStageMask(destinationStage)
-                    .dstAccessMask(destinationAccess);
-            VkDependencyInfo dependency = VkDependencyInfo.calloc(stack)
-                    .sType$Default()
-                    .pMemoryBarriers(barrier);
-            KHRSynchronization2.vkCmdPipelineBarrier2KHR(commandBuffer, dependency);
-        }
+        VulkanSync.memoryBarrier(
+                commandBuffer,
+                sourceStage,
+                sourceAccess,
+                destinationStage,
+                destinationAccess);
     }
 
     public static PreparedBlas.CompactionPolicy compactionPolicy(boolean dynamic) {

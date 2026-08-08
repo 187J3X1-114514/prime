@@ -34,7 +34,6 @@ import org.lwjgl.vulkan.VkImageMemoryBarrier2;
 import org.lwjgl.vulkan.VkPipelineLayoutCreateInfo;
 import org.lwjgl.vulkan.VkPipelineShaderStageCreateInfo;
 import org.lwjgl.vulkan.VkPushConstantRange;
-import org.lwjgl.vulkan.VkShaderModuleCreateInfo;
 import org.lwjgl.vulkan.VkWriteDescriptorSet;
 
 /**
@@ -793,7 +792,7 @@ public final class AtmospherePipeline implements Destroyable {
             long pipelineLayout,
             String resourceName,
             String label) {
-        long module = createShaderModule(context, resourceName);
+        long module = VulkanShaderModules.create(context, resourceName);
         try {
             VkPipelineShaderStageCreateInfo stage = VkPipelineShaderStageCreateInfo.calloc(stack)
                     .sType$Default()
@@ -929,34 +928,6 @@ public final class AtmospherePipeline implements Destroyable {
         } catch (RuntimeException exception) {
             VK12.vkDestroyDescriptorPool(context.vkDevice(), pool, null);
             throw exception;
-        }
-    }
-
-    private static long createShaderModule(VulkanContext context, String resourceName) {
-        byte[] bytes;
-        try (InputStream input = AtmospherePipeline.class.getResourceAsStream(resourceName)) {
-            if (input == null) {
-                throw new IllegalStateException("Missing shader resource " + resourceName);
-            }
-            bytes = input.readAllBytes();
-        } catch (IOException exception) {
-            throw new IllegalStateException("Unable to read shader resource " + resourceName, exception);
-        }
-        ByteBuffer code = MemoryUtil.memAlloc(bytes.length);
-        try {
-            code.put(bytes).flip();
-            try (MemoryStack stack = MemoryStack.stackPush()) {
-                VkShaderModuleCreateInfo createInfo = VkShaderModuleCreateInfo.calloc(stack)
-                        .sType$Default()
-                        .pCode(code);
-                LongBuffer pointer = stack.mallocLong(1);
-                VulkanContext.check(
-                        VK12.vkCreateShaderModule(context.vkDevice(), createInfo, null, pointer),
-                        "create shader module " + resourceName);
-                return pointer.get(0);
-            }
-        } finally {
-            MemoryUtil.memFree(code);
         }
     }
 

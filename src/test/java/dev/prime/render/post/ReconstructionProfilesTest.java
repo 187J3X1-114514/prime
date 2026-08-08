@@ -3,7 +3,6 @@ package dev.prime.render.post;
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
-import dev.prime.render.fsr.FsrReconstructionProfile;
 import dev.prime.render.vulkan.dlss.DlssRrProfile;
 import org.junit.jupiter.api.Test;
 
@@ -22,19 +21,18 @@ final class ReconstructionProfilesTest {
 
         ReconstructionQualityMode[] qualities = ReconstructionQualityMode.values();
         for (int index = 0; index < qualities.length; index++) {
-            FsrReconstructionProfile profile =
-                    FsrReconstructionProfile.forQuality(qualities[index]);
-            assertEquals(widths[index], profile.renderExtent(3840, 2160).width());
-            assertEquals(heights[index], profile.renderExtent(3840, 2160).height());
-            assertEquals(mipBits[index], Float.floatToRawIntBits(profile.mipBias()));
-            assertEquals(phases[index], profile.mode().jitterPhaseCount());
-            assertEquals(coneBits[index], profile.packedRayCone(
+            ReconstructionQualityMode quality = qualities[index];
+            assertEquals(widths[index], quality.renderExtent(3840, 2160).width());
+            assertEquals(heights[index], quality.renderExtent(3840, 2160).height());
+            assertEquals(mipBits[index], Float.floatToRawIntBits(quality.mipBias()));
+            assertEquals(phases[index], quality.jitterPhaseCount());
+            assertEquals(coneBits[index], quality.packedRayCone(
                     1.25F,
                     1.5F,
                     widths[index],
                     heights[index]));
-            assertEquals(0x0000_0000, Float.floatToRawIntBits(profile.jitter(0).x()));
-            assertEquals(0xbe2a_aaaa, Float.floatToRawIntBits(profile.jitter(0).y()));
+            assertEquals(0x0000_0000, Float.floatToRawIntBits(quality.jitter(0).x()));
+            assertEquals(0xbe2a_aaaa, Float.floatToRawIntBits(quality.jitter(0).y()));
         }
     }
 

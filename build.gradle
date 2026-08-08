@@ -79,41 +79,6 @@ tasks.withType(JavaCompile).configureEach {
 }
 
 
-tasks.register('validateReplayFixture', JavaExec) {
-	group = 'verification'
-	description = 'Validates one captured low-resolution replay fixture.'
-	dependsOn tasks.named('compileClientJava')
-	classpath = sourceSets.client.runtimeClasspath
-	mainClass = 'dev.prime.render.replay.RenderReplayFixtureTool'
-	doFirst {
-		def fixture = providers.gradleProperty('primeReplayFixture').orNull
-		if (fixture == null || fixture.isBlank()) {
-			throw new GradleException(
-					'Pass -PprimeReplayFixture=<path> to validateReplayFixture')
-		}
-		args 'validate', file(fixture).absolutePath
-	}
-}
-
-tasks.register('compareReplayFixtures', JavaExec) {
-	group = 'verification'
-	description = 'Strictly compares two same-platform replay fixtures.'
-	dependsOn tasks.named('compileClientJava')
-	classpath = sourceSets.client.runtimeClasspath
-	mainClass = 'dev.prime.render.replay.RenderReplayFixtureTool'
-	doFirst {
-		def expected = providers.gradleProperty('primeReplayExpected').orNull
-		def actual = providers.gradleProperty('primeReplayActual').orNull
-		if (expected == null || expected.isBlank()
-				|| actual == null || actual.isBlank()) {
-			throw new GradleException(
-					'Pass -PprimeReplayExpected=<path> and '
-							+ '-PprimeReplayActual=<path> to compareReplayFixtures')
-		}
-		args 'compare', file(expected).absolutePath, file(actual).absolutePath
-	}
-}
-
 java {
 	withSourcesJar()
 	sourceCompatibility = JavaVersion.VERSION_25

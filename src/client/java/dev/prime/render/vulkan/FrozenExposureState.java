@@ -5,12 +5,9 @@ import dev.prime.render.ResourceCleanup;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import org.lwjgl.system.MemoryStack;
-import org.lwjgl.vulkan.KHRSynchronization2;
 import org.lwjgl.vulkan.VK12;
 import org.lwjgl.vulkan.VkBufferCopy;
 import org.lwjgl.vulkan.VkCommandBuffer;
-import org.lwjgl.vulkan.VkDependencyInfo;
-import org.lwjgl.vulkan.VkMemoryBarrier2;
 
 /** Device-local exposure snapshot and diagnostic readback owned by one offline session. */
 public final class FrozenExposureState implements Destroyable {
@@ -146,19 +143,12 @@ public final class FrozenExposureState implements Destroyable {
             long sourceAccess,
             long destinationStage,
             long destinationAccess) {
-        try (MemoryStack stack = MemoryStack.stackPush()) {
-            VkMemoryBarrier2.Buffer barrier = VkMemoryBarrier2.calloc(1, stack);
-            barrier.get(0).sType$Default()
-                    .srcStageMask(sourceStage)
-                    .srcAccessMask(sourceAccess)
-                    .dstStageMask(destinationStage)
-                    .dstAccessMask(destinationAccess);
-            KHRSynchronization2.vkCmdPipelineBarrier2KHR(
-                    commandBuffer,
-                    VkDependencyInfo.calloc(stack)
-                            .sType$Default()
-                            .pMemoryBarriers(barrier));
-        }
+        VulkanSync.memoryBarrier(
+                commandBuffer,
+                sourceStage,
+                sourceAccess,
+                destinationStage,
+                destinationAccess);
     }
 
     @Override

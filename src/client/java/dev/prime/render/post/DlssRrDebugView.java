@@ -1,6 +1,6 @@
 package dev.prime.render.post;
 
-import java.util.Arrays;
+import dev.prime.render.StableIds;
 import java.util.Optional;
 
 /** Prime-owned visualizations of the exact resources submitted to DLSS Ray Reconstruction. */
@@ -41,10 +41,7 @@ public enum DlssRrDebugView {
     }
 
     public static Optional<DlssRrDebugView> findById(String id) {
-        if (id == null) {
-            return Optional.empty();
-        }
-        return Arrays.stream(values()).filter(value -> value.id.equals(id)).findFirst();
+        return StableIds.find(values(), id, DlssRrDebugView::id);
     }
 
     public static DlssRrDebugView fromId(String id) {

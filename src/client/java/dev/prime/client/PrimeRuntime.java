@@ -13,11 +13,9 @@ import dev.prime.render.runtime.TerrainOwnership;
 import dev.prime.render.runtime.VulkanRenderer;
 import dev.prime.render.fsr.FsrDebugView;
 import dev.prime.render.post.DlssRrDebugView;
-import dev.prime.render.replay.RenderReplayVerification;
 import dev.prime.render.scene.vanilla.DynamicSceneFrame;
 import dev.prime.render.post.nrd.NrdDiagnostics;
 import java.util.List;
-import java.util.concurrent.CompletableFuture;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
 import org.joml.Matrix4fc;
@@ -75,7 +73,6 @@ public final class PrimeRuntime {
         this.updateSessionShortcuts(minecraft);
         if (!settings.pathTracingEnabled()) {
             this.lifecycle.disable(minecraft, this.terrain);
-            this.diagnostics.clearReplay();
             return;
         }
         if ((minecraft.level == null || minecraft.player == null)
@@ -272,23 +269,6 @@ public final class PrimeRuntime {
         return activeRenderer == null ? List.of() : activeRenderer.debugLines();
     }
 
-    /** Executes two production sequences from one frame snapshot and compares their outputs. */
-    public CompletableFuture<RenderReplayVerification> verifyReplayProbe(
-            int width, int height) {
-        VulkanRenderer activeRenderer = this.lifecycle.renderer();
-        if (activeRenderer == null
-                || this.lifecycle.state() != RuntimeState.ACTIVE) {
-            return CompletableFuture.failedFuture(
-                    new IllegalStateException(
-                            "Prime renderer is not active"));
-        }
-        try {
-            return activeRenderer.verifyReplayProbe(width, height);
-        } catch (RuntimeException exception) {
-            return CompletableFuture.failedFuture(exception);
-        }
-    }
-
     public void invalidateBlocks(
             int minimumX,
             int minimumY,
@@ -329,7 +309,6 @@ public final class PrimeRuntime {
     }
 
     public void shutdown() {
-        this.diagnostics.clearReplay();
         this.session.restoreDefaults();
         this.frameSettings.clear();
         this.lifecycle.shutdown();
@@ -337,7 +316,6 @@ public final class PrimeRuntime {
 
     public void fail(Throwable failure) {
         this.lifecycle.fail(failure);
-        this.diagnostics.clearReplay();
         this.session.restoreDefaults();
     }
 
@@ -357,16 +335,9 @@ public final class PrimeRuntime {
                 || pressed(window, GLFW.GLFW_KEY_RIGHT_ALT);
         boolean rrCycle = control && alt && pressed(window, GLFW.GLFW_KEY_F12);
         boolean rrLayout = control && alt && pressed(window, GLFW.GLFW_KEY_F11);
-        boolean replayTest =
-                control && alt && pressed(window, GLFW.GLFW_KEY_F10);
-        SessionController.Actions actions = this.session.update(
-                new SessionController.KeyState(
-                        escape, rrCycle, rrLayout, replayTest),
+        this.session.update(
+                new SessionController.KeyState(escape, rrCycle, rrLayout),
                 this.screenshotActive());
-        if (actions.replayRequested()) {
-            this.diagnostics.requestReplay(
-                    minecraft, () -> this.verifyReplayProbe(64, 64));
-        }
     }
 
     private static boolean pressed(long window, int key) {

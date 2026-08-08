@@ -1,6 +1,6 @@
 package dev.prime.render.post.nrd;
 
-import java.util.Arrays;
+import dev.prime.render.StableIds;
 import java.util.Optional;
 
 /** NRD diagnostic modes and their native output selectors. */
@@ -87,9 +87,7 @@ public final class NrdDiagnostics {
                 case "raw_nonfinite" -> "raw_numerical";
                 default -> id;
             };
-            return Arrays.stream(values())
-                    .filter(value -> value.id.equals(canonicalId))
-                    .findFirst();
+            return StableIds.find(values(), canonicalId, Mode::id);
         }
 
         public static Mode fromId(String id) {

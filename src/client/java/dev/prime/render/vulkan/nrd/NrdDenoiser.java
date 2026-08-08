@@ -1,9 +1,9 @@
 package dev.prime.render.vulkan.nrd;
 
 import dev.prime.render.post.nrd.NrdCameraTransform;
-import dev.prime.render.post.nrd.NrdFrameHistory;
 import dev.prime.render.post.nrd.NrdFrameInput;
 import dev.prime.render.post.nrd.NrdFramePlan;
+import dev.prime.render.post.SubmittedFrame;
 
 import com.mojang.blaze3d.vulkan.Destroyable;
 import dev.prime.render.AerialEpipolarMapping;
@@ -17,8 +17,8 @@ import dev.prime.render.vulkan.VulkanContext;
 import dev.prime.render.vulkan.VulkanImage;
 import dev.prime.render.vulkan.RawWavefrontFrame;
 import dev.prime.render.vulkan.VulkanImageInitializationBatch;
-import java.io.IOException;
-import java.io.InputStream;
+import dev.prime.render.vulkan.VulkanShaderModules;
+import dev.prime.render.vulkan.VulkanSync;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.LongBuffer;
@@ -47,12 +47,10 @@ import org.lwjgl.vulkan.VkDescriptorSetAllocateInfo;
 import org.lwjgl.vulkan.VkDescriptorSetLayoutBinding;
 import org.lwjgl.vulkan.VkDescriptorSetLayoutCreateInfo;
 import org.lwjgl.vulkan.VkImageMemoryBarrier2;
-import org.lwjgl.vulkan.VkMemoryBarrier2;
 import org.lwjgl.vulkan.VkPipelineLayoutCreateInfo;
 import org.lwjgl.vulkan.VkPipelineShaderStageCreateInfo;
 import org.lwjgl.vulkan.VkPushConstantRange;
 import org.lwjgl.vulkan.VkSamplerCreateInfo;
-import org.lwjgl.vulkan.VkShaderModuleCreateInfo;
 import org.lwjgl.vulkan.VkWriteDescriptorSet;
 
 /**
@@ -301,7 +299,7 @@ public final class NrdDenoiser implements Destroyable {
      */
     public PreparedFrame prepareInputs(
             VkCommandBuffer commandBuffer,
-            NrdFrameHistory.PlannedFrame frame) {
+            SubmittedFrame<NrdFramePlan> frame) {
         this.requireOpen();
         Objects.requireNonNull(commandBuffer, "commandBuffer");
         // Preparation may fail after commands are emitted. Never retry one semantic version.
@@ -419,7 +417,7 @@ public final class NrdDenoiser implements Destroyable {
     }
 
     /** Must be called immediately after the command buffer containing {@code token} is submitted. */
-    public NrdFrameHistory.PlannedFrame submitted(FrameToken token) {
+    public SubmittedFrame<NrdFramePlan> submitted(FrameToken token) {
         this.requireOpen();
         if (token.owner != this || token.submitted || token.abandoned) {
             throw new IllegalArgumentException("NRD frame token does not belong to this submission");
@@ -658,7 +656,7 @@ public final class NrdDenoiser implements Destroyable {
     }
 
     private static void rayTraceToComputeBarrier(VkCommandBuffer commandBuffer) {
-        memoryBarrier(
+        VulkanSync.memoryBarrier(
                 commandBuffer,
                 KHRRayTracingPipeline.VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR,
                 VK12.VK_ACCESS_SHADER_WRITE_BIT,
@@ -667,33 +665,12 @@ public final class NrdDenoiser implements Destroyable {
     }
 
     private static void computeToComputeBarrier(VkCommandBuffer commandBuffer) {
-        memoryBarrier(
+        VulkanSync.memoryBarrier(
                 commandBuffer,
                 VK12.VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
                 VK12.VK_ACCESS_SHADER_WRITE_BIT,
                 VK12.VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
                 VK12.VK_ACCESS_SHADER_READ_BIT | VK12.VK_ACCESS_SHADER_WRITE_BIT);
-    }
-
-    private static void memoryBarrier(
-            VkCommandBuffer commandBuffer,
-            long sourceStage,
-            long sourceAccess,
-            long destinationStage,
-            long destinationAccess) {
-        try (MemoryStack stack = MemoryStack.stackPush()) {
-            VkMemoryBarrier2.Buffer barrier = VkMemoryBarrier2.calloc(1, stack);
-            barrier.get(0)
-                    .sType$Default()
-                    .srcStageMask(sourceStage)
-                    .srcAccessMask(sourceAccess)
-                    .dstStageMask(destinationStage)
-                    .dstAccessMask(destinationAccess);
-            VkDependencyInfo dependency = VkDependencyInfo.calloc(stack)
-                    .sType$Default()
-                    .pMemoryBarriers(barrier);
-            KHRSynchronization2.vkCmdPipelineBarrier2KHR(commandBuffer, dependency);
-        }
     }
 
     private static void issueImageBarrier(
@@ -759,13 +736,13 @@ public final class NrdDenoiser implements Destroyable {
     /** One command-stream version after input preparation and before native reconstruction. */
     public static final class PreparedFrame {
         private final NrdDenoiser owner;
-        private final NrdFrameHistory.PlannedFrame planned;
+        private final SubmittedFrame<NrdFramePlan> planned;
         private final PreparedNrdFrame inputs;
         private boolean consumed;
 
         private PreparedFrame(
                 NrdDenoiser owner,
-                NrdFrameHistory.PlannedFrame planned,
+                SubmittedFrame<NrdFramePlan> planned,
                 PreparedNrdFrame inputs) {
             this.owner = owner;
             this.planned = planned;
@@ -824,14 +801,14 @@ public final class NrdDenoiser implements Destroyable {
     public static final class FrameToken {
         private final NrdDenoiser owner;
         private final FrameBindings bindings;
-        private final NrdFrameHistory.PlannedFrame planned;
+        private final SubmittedFrame<NrdFramePlan> planned;
         private boolean submitted;
         private boolean abandoned;
 
         private FrameToken(
                 NrdDenoiser owner,
                 FrameBindings bindings,
-                NrdFrameHistory.PlannedFrame planned) {
+                SubmittedFrame<NrdFramePlan> planned) {
             this.owner = owner;
             this.bindings = bindings;
             this.planned = planned;
@@ -1298,7 +1275,7 @@ public final class NrdDenoiser implements Destroyable {
                         VK12.vkCreatePipelineLayout(context.vkDevice(), layoutInfo, null, layoutPointer),
                         "create Prime NRD pipeline layout " + pipelineIndex);
                 pipelineLayout = layoutPointer.get(0);
-                long shaderModule = createShaderModule(
+                long shaderModule = VulkanShaderModules.create(
                         context, stack, pipelineDescription.spirv(), "Prime NRD shader " + pipelineIndex);
                 try {
                     VkPipelineShaderStageCreateInfo stage = VkPipelineShaderStageCreateInfo.calloc(stack)
@@ -1447,30 +1424,6 @@ public final class NrdDenoiser implements Destroyable {
                 VK12.vkCreateDescriptorSetLayout(context.vkDevice(), createInfo, null, pointer),
                 "create Prime NRD constants descriptor set layout");
         return pointer.get(0);
-    }
-
-    private static long createShaderModule(
-            VulkanContext context,
-            MemoryStack stack,
-            byte[] bytes,
-            String label) {
-        // NRD embeds several large compute shaders. MemoryStack is deliberately reserved for the
-        // small Vulkan structs below: putting SPIR-V there can exhaust LWJGL's fixed per-thread
-        // stack while all NRD pipelines are created during the first rendered frame.
-        ByteBuffer code = MemoryUtil.memAlloc(bytes.length);
-        try {
-            code.put(bytes).flip();
-            VkShaderModuleCreateInfo createInfo = VkShaderModuleCreateInfo.calloc(stack)
-                    .sType$Default()
-                    .pCode(code);
-            LongBuffer pointer = stack.mallocLong(1);
-            VulkanContext.check(
-                    VK12.vkCreateShaderModule(context.vkDevice(), createInfo, null, pointer),
-                    "create " + label);
-            return pointer.get(0);
-        } finally {
-            MemoryUtil.memFree(code);
-        }
     }
 
     private static final class FrameBindings implements Destroyable {
@@ -2235,15 +2188,6 @@ public final class NrdDenoiser implements Destroyable {
             VulkanContext context,
             MemoryStack stack,
             String resourceName) {
-        byte[] bytes;
-        try (InputStream input = NrdDenoiser.class.getResourceAsStream(resourceName)) {
-            if (input == null) {
-                throw new IllegalStateException("Missing shader resource " + resourceName);
-            }
-            bytes = input.readAllBytes();
-        } catch (IOException exception) {
-            throw new IllegalStateException("Unable to read shader resource " + resourceName, exception);
-        }
-        return createShaderModule(context, stack, bytes, resourceName);
+        return VulkanShaderModules.create(context, stack, resourceName);
     }
 }

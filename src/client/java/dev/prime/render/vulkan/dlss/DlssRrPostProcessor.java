@@ -10,6 +10,7 @@ import dev.prime.render.post.ReconstructionFrame;
 import dev.prime.render.post.ReconstructionFrameParameters;
 import dev.prime.render.post.ReconstructionQualityMode;
 import dev.prime.render.post.SubpixelJitter;
+import dev.prime.render.post.SubmittedFrame;
 import dev.prime.render.post.TemporalReconstructionState;
 import dev.prime.render.post.ReconstructionFrameHistory;
 import dev.prime.render.vulkan.AtmospherePipeline;
@@ -17,17 +18,14 @@ import dev.prime.render.vulkan.DisplayTransformPass;
 import dev.prime.render.vulkan.VulkanContext;
 import dev.prime.render.vulkan.VulkanImage;
 import dev.prime.render.vulkan.VulkanImageInitializationBatch;
+import dev.prime.render.vulkan.VulkanSync;
 import dev.prime.render.post.nrd.NrdCameraTransform;
 import dev.prime.render.vulkan.reconstruction.ReconstructionDebugSettings;
 import dev.prime.render.vulkan.reconstruction.VulkanReconstructionProcessor;
 import java.util.Objects;
 import org.joml.Matrix4f;
-import org.lwjgl.system.MemoryStack;
-import org.lwjgl.vulkan.KHRSynchronization2;
 import org.lwjgl.vulkan.VK12;
 import org.lwjgl.vulkan.VkCommandBuffer;
-import org.lwjgl.vulkan.VkDependencyInfo;
-import org.lwjgl.vulkan.VkMemoryBarrier2;
 
 /** Prime's complete real-time path-tracing to DLSS Ray Reconstruction frame boundary. */
 public final class DlssRrPostProcessor implements VulkanReconstructionProcessor {
@@ -172,7 +170,7 @@ public final class DlssRrPostProcessor implements VulkanReconstructionProcessor 
         requireOpen();
         Objects.requireNonNull(camera, "camera");
         Objects.requireNonNull(debugView, "debugView");
-        ReconstructionFrameHistory.PlannedFrame temporal = this.history.plan(
+        SubmittedFrame<TemporalReconstructionState.Plan> temporal = this.history.plan(
                 new TemporalReconstructionState.Input(
                         camera,
                         frameTimeNanos,
@@ -293,17 +291,12 @@ public final class DlssRrPostProcessor implements VulkanReconstructionProcessor 
     }
 
     private static void allCommandsToCompute(VkCommandBuffer commandBuffer) {
-        try (MemoryStack stack = MemoryStack.stackPush()) {
-            VkMemoryBarrier2.Buffer barrier = VkMemoryBarrier2.calloc(1, stack);
-            barrier.get(0).sType$Default()
-                    .srcStageMask(VK12.VK_PIPELINE_STAGE_ALL_COMMANDS_BIT)
-                    .srcAccessMask(VK12.VK_ACCESS_MEMORY_WRITE_BIT)
-                    .dstStageMask(VK12.VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT)
-                    .dstAccessMask(VK12.VK_ACCESS_SHADER_READ_BIT | VK12.VK_ACCESS_SHADER_WRITE_BIT);
-            KHRSynchronization2.vkCmdPipelineBarrier2KHR(
-                    commandBuffer,
-                    VkDependencyInfo.calloc(stack).sType$Default().pMemoryBarriers(barrier));
-        }
+        VulkanSync.memoryBarrier(
+                commandBuffer,
+                VK12.VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
+                VK12.VK_ACCESS_MEMORY_WRITE_BIT,
+                VK12.VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                VK12.VK_ACCESS_SHADER_READ_BIT | VK12.VK_ACCESS_SHADER_WRITE_BIT);
     }
 
     public void submitted(FrameToken token) {
@@ -366,7 +359,7 @@ public final class DlssRrPostProcessor implements VulkanReconstructionProcessor 
 
     public static final class FrameToken implements Frame {
         private final DlssRrPostProcessor owner;
-        private final ReconstructionFrameHistory.PlannedFrame temporal;
+        private final SubmittedFrame<TemporalReconstructionState.Plan> temporal;
         private final SubpixelJitter jitter;
         private final ReconstructionFrame semantic;
         private final DlssRrDebugView debugView;
@@ -377,7 +370,7 @@ public final class DlssRrPostProcessor implements VulkanReconstructionProcessor 
 
         private FrameToken(
                 DlssRrPostProcessor owner,
-                ReconstructionFrameHistory.PlannedFrame temporal,
+                SubmittedFrame<TemporalReconstructionState.Plan> temporal,
                 SubpixelJitter jitter,
                 DlssRrDebugView debugView,
                 boolean debugFullscreen) {

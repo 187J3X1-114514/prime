@@ -2,16 +2,17 @@ package dev.prime.render.vulkan;
 
 import dev.prime.render.ResourceCleanup;
 import dev.prime.render.fsr.FsrDebugView;
-import dev.prime.render.fsr.FsrReconstructionProfile;
 import dev.prime.render.post.PostProcessingMode;
 import dev.prime.render.post.ReconstructionFrame;
 import dev.prime.render.post.ReconstructionFrameParameters;
 import dev.prime.render.post.ReconstructionQualityMode;
+import dev.prime.render.post.SubmittedFrame;
 import dev.prime.render.vulkan.fsr.Fsr3Upscaler;
 import dev.prime.render.vulkan.nrd.NrdDenoiser;
 import dev.prime.render.post.nrd.NrdDiagnostics;
 import dev.prime.render.post.nrd.NrdFrameHistory;
 import dev.prime.render.post.nrd.NrdFrameInput;
+import dev.prime.render.post.nrd.NrdFramePlan;
 import dev.prime.render.vulkan.reconstruction.ReconstructionDebugSettings;
 import dev.prime.render.vulkan.reconstruction.VulkanReconstructionProcessor;
 import org.lwjgl.vulkan.VK12;
@@ -85,7 +86,7 @@ public final class NrdFsrPostProcessor implements VulkanReconstructionProcessor 
                     renderHeight,
                     displayWidth,
                     displayHeight,
-                    FsrReconstructionProfile.forQuality(quality).mode(),
+                    quality,
                     sceneColor,
                     denoiser.fsrMotion(),
                     denoiser.fsrDepth(),
@@ -149,7 +150,7 @@ public final class NrdFsrPostProcessor implements VulkanReconstructionProcessor 
                 parameters.forceRestart(),
                 debugSettings.fsr());
         try {
-            NrdFrameHistory.PlannedFrame nrd = this.nrdHistory.plan(
+            SubmittedFrame<NrdFramePlan> nrd = this.nrdHistory.plan(
                     new NrdFrameInput(
                             parameters.camera(),
                             parameters.frameTimeNanos(),
@@ -252,14 +253,14 @@ public final class NrdFsrPostProcessor implements VulkanReconstructionProcessor 
         }
         token.submitted = true;
         RuntimeException failure = null;
-        NrdFrameHistory.PlannedFrame submittedNrd = null;
+        SubmittedFrame<NrdFramePlan> submittedNrd = null;
         try {
             submittedNrd = this.denoiser.submitted(token.nrd);
         } catch (RuntimeException exception) {
             failure = exception;
         }
         if (submittedNrd != null) {
-            NrdFrameHistory.PlannedFrame committedNrd = submittedNrd;
+            SubmittedFrame<NrdFramePlan> committedNrd = submittedNrd;
             failure = ResourceCleanup.run(
                     () -> this.nrdHistory.submitted(committedNrd), failure);
         }
@@ -321,7 +322,7 @@ public final class NrdFsrPostProcessor implements VulkanReconstructionProcessor 
     public static final class FrameToken implements Frame {
         private final NrdFsrPostProcessor owner;
         private final Fsr3Upscaler.FrameToken fsr;
-        private final NrdFrameHistory.PlannedFrame nrdPlan;
+        private final SubmittedFrame<NrdFramePlan> nrdPlan;
         private final ReconstructionDebugSettings debugSettings;
         private final ReconstructionFrame semantic;
         private NrdDenoiser.PreparedFrame nrdPrepared;
@@ -333,7 +334,7 @@ public final class NrdFsrPostProcessor implements VulkanReconstructionProcessor 
         private FrameToken(
                 NrdFsrPostProcessor owner,
                 Fsr3Upscaler.FrameToken fsr,
-                NrdFrameHistory.PlannedFrame nrdPlan,
+                SubmittedFrame<NrdFramePlan> nrdPlan,
                 ReconstructionDebugSettings debugSettings) {
             this.owner = owner;
             this.fsr = fsr;

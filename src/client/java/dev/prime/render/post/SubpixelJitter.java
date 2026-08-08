@@ -16,4 +16,25 @@ public record SubpixelJitter(float x, float y) {
     public SubpixelJitter forFsrDispatch() {
         return new SubpixelJitter(-this.x, -this.y);
     }
+
+    public static SubpixelJitter halton(int phase) {
+        if (phase <= 0) {
+            throw new IllegalArgumentException("Halton phase must be positive");
+        }
+        return new SubpixelJitter(
+                halton(phase, 2) - 0.5F,
+                halton(phase, 3) - 0.5F);
+    }
+
+    private static float halton(int index, int base) {
+        float result = 0.0F;
+        float fraction = 1.0F;
+        int value = index;
+        while (value > 0) {
+            fraction /= base;
+            result += fraction * (value % base);
+            value /= base;
+        }
+        return result;
+    }
 }

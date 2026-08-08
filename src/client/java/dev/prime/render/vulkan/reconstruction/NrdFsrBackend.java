@@ -1,6 +1,5 @@
 package dev.prime.render.vulkan.reconstruction;
 
-import dev.prime.render.fsr.FsrReconstructionProfile;
 import dev.prime.render.post.PostProcessingMode;
 import dev.prime.render.post.ReconstructionExtent;
 import dev.prime.render.post.ReconstructionQualityMode;
@@ -22,8 +21,7 @@ final class NrdFsrBackend implements ReconstructionBackend {
     @Override
     public ReconstructionExtent renderExtent(
             ReconstructionQualityMode quality, int displayWidth, int displayHeight) {
-        return FsrReconstructionProfile.forQuality(quality)
-                .renderExtent(displayWidth, displayHeight);
+        return quality.renderExtent(displayWidth, displayHeight);
     }
 
     @Override
@@ -38,12 +36,12 @@ final class NrdFsrBackend implements ReconstructionBackend {
 
     @Override
     public SubpixelJitter jitter(ReconstructionQualityMode quality, int frameIndex) {
-        return FsrReconstructionProfile.forQuality(quality).jitter(frameIndex);
+        return quality.jitter(frameIndex);
     }
 
     @Override
     public int jitterPhase(ReconstructionQualityMode quality, int frameIndex) {
-        return FsrReconstructionProfile.forQuality(quality).jitterPhase(frameIndex);
+        return quality.jitterPhase(frameIndex);
     }
 
     @Override

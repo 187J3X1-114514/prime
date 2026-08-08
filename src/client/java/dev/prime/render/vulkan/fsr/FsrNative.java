@@ -2,16 +2,11 @@ package dev.prime.render.vulkan.fsr;
 
 import dev.prime.render.fsr.FsrDispatchPlan;
 import dev.prime.render.fsr.FsrSettings;
-import dev.prime.render.vulkan.NativeRuntimeFiles;
+import dev.prime.render.vulkan.NativeLibraries;
 import dev.prime.render.vulkan.VulkanContext;
 import dev.prime.render.vulkan.VulkanImage;
-import java.io.IOException;
-import java.io.InputStream;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
-import java.nio.file.Path;
-import java.util.Locale;
-import org.lwjgl.system.APIUtil;
 import org.lwjgl.system.JNI;
 import org.lwjgl.system.MemoryStack;
 import org.lwjgl.system.MemoryUtil;
@@ -318,15 +313,11 @@ final class FsrNative {
     }
 
     static boolean isSupportedPlatform() {
-        return isSupportedPlatform(System.getProperty("os.name", ""), System.getProperty("os.arch", ""));
+        return NativeLibraries.isWindowsX64();
     }
 
     static boolean isSupportedPlatform(String osName, String architecture) {
-        String normalizedOs = osName.toLowerCase(Locale.ROOT);
-        String normalizedArchitecture = architecture.toLowerCase(Locale.ROOT);
-        return normalizedOs.startsWith("windows")
-                && (normalizedArchitecture.equals("amd64")
-                        || normalizedArchitecture.equals("x86_64"));
+        return NativeLibraries.isWindowsX64(osName, architecture);
     }
 
     private static SharedLibrary loadLibrary() {
@@ -334,33 +325,20 @@ final class FsrNative {
             throw new IllegalStateException(
                     "The bundled FidelityFX Vulkan library supports Windows x86-64 only");
         }
-        byte[] bytes;
-        try (InputStream input = FsrNative.class.getResourceAsStream(WINDOWS_RESOURCE)) {
-            if (input == null) {
-                throw new IllegalStateException("Missing bundled FidelityFX library " + WINDOWS_RESOURCE);
-            }
-            bytes = input.readAllBytes();
-        } catch (IOException exception) {
-            throw new IllegalStateException("Unable to read the bundled FidelityFX library", exception);
-        }
-        Path directory = NativeRuntimeFiles.directory("prime-fsr", bytes);
-        Path libraryPath = directory.resolve("amd_fidelityfx_vk.dll");
-        NativeRuntimeFiles.publish(libraryPath, bytes);
-        return APIUtil.apiCreateLibrary(libraryPath.toAbsolutePath().toString());
+        return NativeLibraries.loadBundled(
+                "prime-fsr",
+                WINDOWS_RESOURCE,
+                "amd_fidelityfx_vk.dll",
+                "FidelityFX library");
     }
 
     private static long requireFunction(SharedLibrary library, String name) {
-        long address = library.getFunctionAddress(name);
-        if (address == MemoryUtil.NULL) {
-            throw new IllegalStateException("The FidelityFX native library is missing " + name);
-        }
-        return address;
+        return NativeLibraries.requireFunction(
+                library, name, "The FidelityFX native library");
     }
 
     private static void checkResult(int result, String operation) {
-        if (result != 0) {
-            throw new IllegalStateException(operation + " failed with native result " + result);
-        }
+        NativeLibraries.checkResult(result, operation);
     }
 
     record Dispatch(

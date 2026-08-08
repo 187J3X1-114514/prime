@@ -9,14 +9,12 @@ final class SessionControllerTest {
     @Test
     void shortcutsAreRisingEdgeTriggered() {
         SessionController controller = new SessionController();
-        SessionController.KeyState pressed = new SessionController.KeyState(false, true, true, true);
+        SessionController.KeyState pressed = new SessionController.KeyState(false, true, true);
 
-        SessionController.Actions first = controller.update(pressed, false);
+        controller.update(pressed, false);
         var firstControls = controller.controls();
-        SessionController.Actions held = controller.update(pressed, false);
+        controller.update(pressed, false);
 
-        assertTrue(first.replayRequested());
-        assertFalse(held.replayRequested());
         assertTrue(firstControls.rrDebugFullscreen());
         assertTrue(controller.controls().rrDebugFullscreen());
     }
@@ -26,7 +24,7 @@ final class SessionControllerTest {
         SessionController controller = new SessionController();
         controller.requestScreenshot(true);
 
-        controller.update(new SessionController.KeyState(true, false, false, false), false);
+        controller.update(new SessionController.KeyState(true, false, false), false);
 
         assertFalse(controller.controls().screenshotRequested());
     }

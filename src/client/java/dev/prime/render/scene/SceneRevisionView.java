@@ -1,6 +1,6 @@
 package dev.prime.render.scene;
 
-/** Device-free scene identity observed by plans and replay codecs. */
+/** Device-free scene identity observed by render plans. */
 public interface SceneRevisionView {
     int originX();
     int originY();

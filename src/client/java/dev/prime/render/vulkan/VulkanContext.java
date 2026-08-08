@@ -95,8 +95,8 @@ public final class VulkanContext implements AutoCloseable {
     /**
      * Creates a host-readable GPU output buffer.
      *
-     * <p>This is reserved for explicit diagnostics and replay capture; production frame resources
-     * remain device local.
+     * <p>This is reserved for explicit diagnostics; production frame resources remain device
+     * local.
      */
     public VulkanBuffer createReadbackBuffer(long size, int usage, String label) {
         return createBuffer(

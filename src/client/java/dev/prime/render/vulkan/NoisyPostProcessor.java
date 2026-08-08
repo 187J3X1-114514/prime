@@ -7,6 +7,7 @@ import dev.prime.render.post.PostProcessingMode;
 import dev.prime.render.post.ReconstructionFrameHistory;
 import dev.prime.render.post.ReconstructionQualityMode;
 import dev.prime.render.post.SubpixelJitter;
+import dev.prime.render.post.SubmittedFrame;
 import dev.prime.render.post.TemporalReconstructionState;
 import dev.prime.render.vulkan.dlss.DlssRrProfile;
 import dev.prime.render.vulkan.reconstruction.ReconstructionDebugSettings;
@@ -94,7 +95,7 @@ public final class NoisyPostProcessor implements VulkanReconstructionProcessor {
             ReconstructionFrameParameters parameters,
             ReconstructionDebugSettings debugSettings) {
         requireOpen();
-        ReconstructionFrameHistory.PlannedFrame temporal = this.history.plan(
+        SubmittedFrame<TemporalReconstructionState.Plan> temporal = this.history.plan(
                 new TemporalReconstructionState.Input(
                         parameters.camera(),
                         parameters.frameTimeNanos(),
@@ -198,7 +199,7 @@ public final class NoisyPostProcessor implements VulkanReconstructionProcessor {
 
     private static final class FrameToken implements Frame {
         private final NoisyPostProcessor owner;
-        private final ReconstructionFrameHistory.PlannedFrame temporal;
+        private final SubmittedFrame<TemporalReconstructionState.Plan> temporal;
         private final ReconstructionFrame semantic;
         private boolean recorded;
         private boolean submitted;
@@ -206,7 +207,7 @@ public final class NoisyPostProcessor implements VulkanReconstructionProcessor {
 
         private FrameToken(
                 NoisyPostProcessor owner,
-                ReconstructionFrameHistory.PlannedFrame temporal,
+                SubmittedFrame<TemporalReconstructionState.Plan> temporal,
                 SubpixelJitter jitter,
                 boolean reset) {
             this.owner = owner;

@@ -5,12 +5,9 @@ import dev.prime.render.ResourceCleanup;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import org.lwjgl.system.MemoryStack;
-import org.lwjgl.vulkan.KHRSynchronization2;
 import org.lwjgl.vulkan.VK12;
 import org.lwjgl.vulkan.VkBufferCopy;
 import org.lwjgl.vulkan.VkCommandBuffer;
-import org.lwjgl.vulkan.VkDependencyInfo;
-import org.lwjgl.vulkan.VkMemoryBarrier2;
 
 /** Asynchronous, non-stalling readback of the four-word automatic-exposure state. */
 public final class DisplayExposureDiagnostics implements Destroyable {
@@ -94,19 +91,12 @@ public final class DisplayExposureDiagnostics implements Destroyable {
     }
 
     private static void memoryBarrier(VkCommandBuffer commandBuffer) {
-        try (MemoryStack stack = MemoryStack.stackPush()) {
-            VkMemoryBarrier2.Buffer barrier = VkMemoryBarrier2.calloc(1, stack);
-            barrier.get(0).sType$Default()
-                    .srcStageMask(VK12.VK_PIPELINE_STAGE_ALL_COMMANDS_BIT)
-                    .srcAccessMask(VK12.VK_ACCESS_MEMORY_WRITE_BIT)
-                    .dstStageMask(VK12.VK_PIPELINE_STAGE_TRANSFER_BIT)
-                    .dstAccessMask(VK12.VK_ACCESS_TRANSFER_READ_BIT);
-            KHRSynchronization2.vkCmdPipelineBarrier2KHR(
-                    commandBuffer,
-                    VkDependencyInfo.calloc(stack)
-                            .sType$Default()
-                            .pMemoryBarriers(barrier));
-        }
+        VulkanSync.memoryBarrier(
+                commandBuffer,
+                VK12.VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
+                VK12.VK_ACCESS_MEMORY_WRITE_BIT,
+                VK12.VK_PIPELINE_STAGE_TRANSFER_BIT,
+                VK12.VK_ACCESS_TRANSFER_READ_BIT);
     }
 
     @Override

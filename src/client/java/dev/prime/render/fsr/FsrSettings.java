@@ -8,20 +8,9 @@ public final class FsrSettings {
     public static final String UPSCALER_VERSION = ShaderAbi.FSR_VERSION;
     public static final boolean DEFAULT_ENABLED = true;
     public static final boolean FRAME_GENERATION_ENABLED = false;
-    public static final FsrQualityMode DEFAULT_QUALITY_MODE = FsrQualityMode.PERFORMANCE;
     public static final float RCAS_SHARPNESS = 0.2F;
     /** Prime's display transform currently uses a fixed scene-linear exposure multiplier. */
     public static final float EXPOSURE = ShaderAbi.DISPLAY_EXPOSURE;
     private FsrSettings() {
     }
-
-    public record Extent(int width, int height) {
-        public Extent {
-            if (width <= 0 || height <= 0) {
-                throw new IllegalArgumentException(
-                        "FSR extent must be positive");
-            }
-        }
-    }
-
 }

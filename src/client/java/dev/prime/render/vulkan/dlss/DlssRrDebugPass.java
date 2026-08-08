@@ -6,14 +6,13 @@ import dev.prime.render.post.DlssRrDebugView;
 import dev.prime.render.vulkan.VulkanBuffer;
 import dev.prime.render.vulkan.VulkanContext;
 import dev.prime.render.vulkan.VulkanImage;
-import java.io.IOException;
-import java.io.InputStream;
+import dev.prime.render.vulkan.DispatchMath;
+import dev.prime.render.vulkan.VulkanShaderModules;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.LongBuffer;
 import java.util.List;
 import org.lwjgl.system.MemoryStack;
-import org.lwjgl.system.MemoryUtil;
 import org.lwjgl.vulkan.VK12;
 import org.lwjgl.vulkan.VkCommandBuffer;
 import org.lwjgl.vulkan.VkComputePipelineCreateInfo;
@@ -27,7 +26,6 @@ import org.lwjgl.vulkan.VkDescriptorSetLayoutCreateInfo;
 import org.lwjgl.vulkan.VkPipelineLayoutCreateInfo;
 import org.lwjgl.vulkan.VkPipelineShaderStageCreateInfo;
 import org.lwjgl.vulkan.VkPushConstantRange;
-import org.lwjgl.vulkan.VkShaderModuleCreateInfo;
 import org.lwjgl.vulkan.VkWriteDescriptorSet;
 
 /** Prime-owned release-safe visualizer over RR inputs and reflection-MV construction guides. */
@@ -63,8 +61,8 @@ final class DlssRrDebugPass implements Destroyable {
         this.descriptorSet = descriptorSet;
         this.pipelineLayout = pipelineLayout;
         this.pipeline = pipeline;
-        this.dispatchX = divideRoundUp(width, LOCAL_SIZE);
-        this.dispatchY = divideRoundUp(height, LOCAL_SIZE);
+        this.dispatchX = DispatchMath.divideRoundUp(width, LOCAL_SIZE);
+        this.dispatchY = DispatchMath.divideRoundUp(height, LOCAL_SIZE);
     }
 
     static DlssRrDebugPass create(
@@ -122,7 +120,7 @@ final class DlssRrDebugPass implements Destroyable {
                             pointer),
                     "create RR debug pipeline layout");
             pipelineLayout = pointer.get(0);
-            long shader = createShader(context, stack);
+            long shader = VulkanShaderModules.create(context, stack, SHADER);
             try {
                 VkPipelineShaderStageCreateInfo stage = VkPipelineShaderStageCreateInfo.calloc(stack)
                         .sType$Default().stage(COMPUTE_STAGE).module(shader).pName(stack.UTF8("main"));
@@ -232,35 +230,6 @@ final class DlssRrDebugPass implements Destroyable {
                     commandBuffer, this.pipelineLayout, COMPUTE_STAGE, 0, push);
             VK12.vkCmdDispatch(commandBuffer, this.dispatchX, this.dispatchY, 1);
         }
-    }
-
-    private static long createShader(VulkanContext context, MemoryStack stack) {
-        byte[] bytes;
-        try (InputStream input = DlssRrDebugPass.class.getResourceAsStream(SHADER)) {
-            if (input == null) throw new IllegalStateException("Missing shader resource " + SHADER);
-            bytes = input.readAllBytes();
-        } catch (IOException exception) {
-            throw new IllegalStateException("Unable to read shader resource " + SHADER, exception);
-        }
-        ByteBuffer code = MemoryUtil.memAlloc(bytes.length);
-        try {
-            code.put(bytes).flip();
-            LongBuffer pointer = stack.mallocLong(1);
-            VulkanContext.check(
-                    VK12.vkCreateShaderModule(
-                            context.vkDevice(),
-                            VkShaderModuleCreateInfo.calloc(stack).sType$Default().pCode(code),
-                            null,
-                            pointer),
-                    "create " + SHADER);
-            return pointer.get(0);
-        } finally {
-            MemoryUtil.memFree(code);
-        }
-    }
-
-    private static int divideRoundUp(int value, int divisor) {
-        return Math.max(1, (value + divisor - 1) / divisor);
     }
 
     @Override

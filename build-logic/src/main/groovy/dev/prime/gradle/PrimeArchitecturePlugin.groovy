@@ -103,7 +103,6 @@ def forbiddenEdges = { Map<String, Set<String>> graph ->
             String targetPackage = packageName(target)
             boolean pureSource = sourcePackage == 'dev.prime.render'
                     || sourcePackage.startsWith('dev.prime.render.terrain')
-                    || sourcePackage.startsWith('dev.prime.render.replay')
                     || sourcePackage.startsWith('dev.prime.render.post')
                     || sourcePackage.startsWith('dev.prime.render.scene')
                             && !sourcePackage.startsWith('dev.prime.render.scene.vanilla')
@@ -125,19 +124,6 @@ def forbiddenEdges = { Map<String, Set<String>> graph ->
                     || targetPackage == 'org.lwjgl.vulkan'
                     || targetPackage.startsWith('org.lwjgl.vulkan.'))) {
                 violations.add("pure terrain depends on Vulkan: ${source} -> ${target}")
-            }
-            if ((sourcePackage == 'dev.prime.render.replay'
-                    || sourcePackage.startsWith('dev.prime.render.replay.'))
-                    && (targetPackage == 'dev.prime.render.vulkan'
-                    || targetPackage.startsWith('dev.prime.render.vulkan.')
-                    || targetPackage == 'org.lwjgl.vulkan'
-                    || targetPackage.startsWith('org.lwjgl.vulkan.'))) {
-                violations.add("pure replay depends on Vulkan: ${source} -> ${target}")
-            }
-            if (source == 'dev.prime.render.vulkan.VulkanContext'
-                    && (targetPackage == 'dev.prime.render.replay'
-                    || targetPackage.startsWith('dev.prime.render.replay.'))) {
-                violations.add("base Vulkan context depends on replay: ${source} -> ${target}")
             }
         }
     }

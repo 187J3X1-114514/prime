@@ -2,7 +2,6 @@ package dev.prime.render;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
-import dev.prime.render.replay.FrameCameraSnapshot;
 import org.joml.Matrix4f;
 import org.junit.jupiter.api.Test;
 
@@ -14,6 +13,9 @@ final class FrameCameraTest {
         Matrix4f viewRotation = new Matrix4f().rotateY(0.25F);
         Matrix4f inverseViewProjection =
                 new Matrix4f(projection).mul(viewRotation).invert();
+        Matrix4f expectedProjection = new Matrix4f(projection);
+        Matrix4f expectedViewRotation = new Matrix4f(viewRotation);
+        Matrix4f expectedInverseViewProjection = new Matrix4f(inverseViewProjection);
         FrameCamera camera = new FrameCamera(
                 projection,
                 viewRotation,
@@ -24,13 +26,13 @@ final class FrameCameraTest {
                 1.25,
                 2.5,
                 3.75);
-        FrameCameraSnapshot expected = FrameCameraSnapshot.capture(camera);
-
         projection.zero();
         viewRotation.zero();
         inverseViewProjection.zero();
 
-        assertEquals(expected, FrameCameraSnapshot.capture(camera));
+        assertEquals(expectedProjection, camera.projection());
+        assertEquals(expectedViewRotation, camera.viewRotation());
+        assertEquals(expectedInverseViewProjection, camera.inverseViewProjection());
     }
 
     @Test

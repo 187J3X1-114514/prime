@@ -2,8 +2,6 @@ package dev.prime.render.vulkan;
 
 import com.mojang.blaze3d.vulkan.Destroyable;
 import dev.prime.infrastructure.PrimeInfo;
-import java.io.IOException;
-import java.io.InputStream;
 import java.nio.ByteBuffer;
 import java.nio.LongBuffer;
 import org.lwjgl.system.MemoryStack;
@@ -15,7 +13,6 @@ import org.lwjgl.vulkan.VK12;
 import org.lwjgl.vulkan.VkPipelineShaderStageCreateInfo;
 import org.lwjgl.vulkan.VkRayTracingPipelineCreateInfoKHR;
 import org.lwjgl.vulkan.VkRayTracingShaderGroupCreateInfoKHR;
-import org.lwjgl.vulkan.VkShaderModuleCreateInfo;
 
 /** Shared construction and SBT ownership for independent Prime ray-tracing programs. */
 final class TraceProgram implements Destroyable {
@@ -151,7 +148,7 @@ final class TraceProgram implements Destroyable {
         long deferredOperation = 0L;
         try {
             for (int index = 0; index < raygenResources.length; index++) {
-                modules[index] = createShaderModule(context, raygenResources[index]);
+                modules[index] = VulkanShaderModules.create(context, raygenResources[index]);
             }
             String[] fixedResources = new String[] {
                 "/prime/shaders/world.rmiss.spv",
@@ -163,7 +160,7 @@ final class TraceProgram implements Destroyable {
             };
             for (int index = 0; index < fixedResources.length; index++) {
                 modules[raygenResources.length + index] =
-                        createShaderModule(context, fixedResources[index]);
+                        VulkanShaderModules.create(context, fixedResources[index]);
             }
             int raygenStageCount = raygenResources.length;
             int missStage = raygenStageCount;
@@ -420,34 +417,6 @@ final class TraceProgram implements Destroyable {
                 .closestHitShader(closestHit)
                 .anyHitShader(anyHit)
                 .intersectionShader(KHRRayTracingPipeline.VK_SHADER_UNUSED_KHR);
-    }
-
-    private static long createShaderModule(VulkanContext context, String resourceName) {
-        byte[] bytes;
-        try (InputStream input = TraceProgram.class.getResourceAsStream(resourceName)) {
-            if (input == null) {
-                throw new IllegalStateException("Missing shader resource " + resourceName);
-            }
-            bytes = input.readAllBytes();
-        } catch (IOException exception) {
-            throw new IllegalStateException("Unable to read shader resource " + resourceName, exception);
-        }
-        ByteBuffer code = MemoryUtil.memAlloc(bytes.length);
-        try {
-            code.put(bytes).flip();
-            try (MemoryStack stack = MemoryStack.stackPush()) {
-                VkShaderModuleCreateInfo createInfo = VkShaderModuleCreateInfo.calloc(stack)
-                        .sType$Default()
-                        .pCode(code);
-                LongBuffer pointer = stack.mallocLong(1);
-                VulkanContext.check(
-                        VK12.vkCreateShaderModule(context.vkDevice(), createInfo, null, pointer),
-                        "create shader module " + resourceName);
-                return pointer.get(0);
-            }
-        } finally {
-            MemoryUtil.memFree(code);
-        }
     }
 
     @Override

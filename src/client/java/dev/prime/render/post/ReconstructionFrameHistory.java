@@ -1,7 +1,5 @@
 package dev.prime.render.post;
 
-import java.util.Objects;
-
 /**
  * Single owner of one reconstruction backend's submitted temporal identity.
  *
@@ -9,88 +7,32 @@ import java.util.Objects;
  * consumed once by command recording, and only successful submission advances history.
  */
 public final class ReconstructionFrameHistory {
-    private TemporalReconstructionState state =
-            TemporalReconstructionState.initial();
-    private PlannedFrame pending;
+    private final SubmittedFrameHistory<
+                    TemporalReconstructionState,
+                    TemporalReconstructionState.Input,
+                    TemporalReconstructionState.Plan> history =
+            new SubmittedFrameHistory<>(
+                    TemporalReconstructionState.initial(),
+                    (state, input) -> {
+                        TemporalReconstructionState.Plan transition = state.plan(input);
+                        return new SubmittedFrameHistory.Transition<>(
+                                transition, transition.committedState());
+                    });
 
-    public PlannedFrame plan(TemporalReconstructionState.Input input) {
-        Objects.requireNonNull(input, "input");
-        if (this.pending != null) {
-            throw new IllegalStateException(
-                    "Previous reconstruction frame has not been submitted");
-        }
-        TemporalReconstructionState.Plan transition =
-                this.state.plan(input);
-        PlannedFrame frame = new PlannedFrame(
-                this,
-                transition,
-                transition.committedState());
-        this.pending = frame;
-        return frame;
+    public SubmittedFrame<TemporalReconstructionState.Plan> plan(
+            TemporalReconstructionState.Input input) {
+        return this.history.plan(input);
     }
 
     public void requestReset() {
-        if (this.pending != null) {
-            throw new IllegalStateException(
-                    "Cannot reset reconstruction history with an outstanding frame");
-        }
-        this.state = this.state.invalidated();
+        this.history.reset(TemporalReconstructionState::invalidated);
     }
 
-    public void submitted(PlannedFrame frame) {
-        if (frame == null
-                || frame.owner != this
-                || frame != this.pending
-                || !frame.consumed
-                || frame.submitted) {
-            throw new IllegalArgumentException(
-                    "Reconstruction frame does not belong to this submitted history");
-        }
-        frame.submitted = true;
-        this.state = frame.committedState;
-        this.pending = null;
+    public void submitted(SubmittedFrame<TemporalReconstructionState.Plan> frame) {
+        this.history.submitted(frame);
     }
 
-    public void abandon(PlannedFrame frame) {
-        if (frame == null
-                || frame.owner != this
-                || frame != this.pending
-                || frame.submitted) {
-            throw new IllegalArgumentException(
-                    "Reconstruction frame does not belong to this history");
-        }
-        frame.abandoned = true;
-        this.pending = null;
-    }
-
-    public static final class PlannedFrame {
-        private final ReconstructionFrameHistory owner;
-        private final TemporalReconstructionState.Plan plan;
-        private final TemporalReconstructionState committedState;
-        private boolean consumed;
-        private boolean submitted;
-        private boolean abandoned;
-
-        private PlannedFrame(
-                ReconstructionFrameHistory owner,
-                TemporalReconstructionState.Plan plan,
-                TemporalReconstructionState committedState) {
-            this.owner = owner;
-            this.plan = plan;
-            this.committedState = committedState;
-        }
-
-        public TemporalReconstructionState.Plan plan() {
-            return this.plan;
-        }
-
-        public TemporalReconstructionState.Plan claimForExecution() {
-            if (this.consumed || this.submitted || this.abandoned) {
-                throw new IllegalArgumentException(
-                        "Reconstruction frame was already consumed");
-            }
-            this.consumed = true;
-            return this.plan;
-        }
+    public void abandon(SubmittedFrame<TemporalReconstructionState.Plan> frame) {
+        this.history.abandon(frame);
     }
 }

@@ -1,6 +1,5 @@
 package dev.prime.render.vulkan.dlss;
 
-import dev.prime.render.fsr.FsrReconstructionProfile;
 import dev.prime.render.post.ReconstructionQualityMode;
 import dev.prime.render.post.SubpixelJitter;
 import java.util.Objects;
@@ -26,9 +25,7 @@ public final class DlssRrProfile {
     public static int jitterPhaseCount(ReconstructionQualityMode quality) {
         return Math.max(
                 64,
-                FsrReconstructionProfile.forQuality(quality)
-                        .mode()
-                        .jitterPhaseCount());
+                quality.jitterPhaseCount());
     }
 
     public static int jitterPhase(ReconstructionQualityMode quality, int frameIndex) {
@@ -38,20 +35,6 @@ public final class DlssRrProfile {
     public static SubpixelJitter jitter(
             ReconstructionQualityMode quality, int frameIndex) {
         int phase = jitterPhase(quality, frameIndex);
-        return new SubpixelJitter(
-                halton(phase, 2) - 0.5F,
-                halton(phase, 3) - 0.5F);
-    }
-
-    private static float halton(int index, int base) {
-        float result = 0.0F;
-        float fraction = 1.0F;
-        int value = index;
-        while (value > 0) {
-            fraction /= base;
-            result += fraction * (value % base);
-            value /= base;
-        }
-        return result;
+        return SubpixelJitter.halton(phase);
     }
 }

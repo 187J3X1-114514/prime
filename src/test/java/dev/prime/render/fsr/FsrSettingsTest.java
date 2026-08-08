@@ -5,6 +5,8 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import dev.prime.render.post.SubpixelJitter;
+import dev.prime.render.post.ReconstructionExtent;
+import dev.prime.render.post.ReconstructionQualityMode;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.Map;
@@ -16,29 +18,29 @@ final class FsrSettingsTest {
         assertEquals("3.1.4", FsrSettings.UPSCALER_VERSION);
         assertTrue(FsrSettings.DEFAULT_ENABLED);
         assertFalse(FsrSettings.FRAME_GENERATION_ENABLED);
-        assertEquals(FsrQualityMode.PERFORMANCE, FsrSettings.DEFAULT_QUALITY_MODE);
-        assertEquals(new FsrSettings.Extent(1920, 1080),
-                FsrSettings.DEFAULT_QUALITY_MODE.renderExtent(3840, 2160));
+        assertEquals(new ReconstructionExtent(1920, 1080),
+                ReconstructionQualityMode.DEFAULT.renderExtent(3840, 2160));
         assertEquals(0.2F, FsrSettings.RCAS_SHARPNESS);
         assertEquals(1.0F, FsrSettings.EXPOSURE);
     }
 
     @Test
     void everyVideoPresetOwnsItsResolutionAndTemporalContract() {
-        Map<FsrQualityMode, FsrSettings.Extent> expectedExtents = Map.of(
-                FsrQualityMode.NATIVE_AA, new FsrSettings.Extent(3840, 2160),
-                FsrQualityMode.QUALITY, new FsrSettings.Extent(2560, 1440),
-                FsrQualityMode.BALANCED, new FsrSettings.Extent(2258, 1270),
-                FsrQualityMode.PERFORMANCE, new FsrSettings.Extent(1920, 1080),
-                FsrQualityMode.ULTRA_PERFORMANCE, new FsrSettings.Extent(1280, 720));
-        Map<FsrQualityMode, Integer> expectedPhases = Map.of(
-                FsrQualityMode.NATIVE_AA, 8,
-                FsrQualityMode.QUALITY, 18,
-                FsrQualityMode.BALANCED, 23,
-                FsrQualityMode.PERFORMANCE, 32,
-                FsrQualityMode.ULTRA_PERFORMANCE, 72);
+        Map<ReconstructionQualityMode, ReconstructionExtent> expectedExtents = Map.of(
+                ReconstructionQualityMode.NATIVE_AA, new ReconstructionExtent(3840, 2160),
+                ReconstructionQualityMode.QUALITY, new ReconstructionExtent(2560, 1440),
+                ReconstructionQualityMode.BALANCED, new ReconstructionExtent(2258, 1270),
+                ReconstructionQualityMode.PERFORMANCE, new ReconstructionExtent(1920, 1080),
+                ReconstructionQualityMode.ULTRA_PERFORMANCE,
+                        new ReconstructionExtent(1280, 720));
+        Map<ReconstructionQualityMode, Integer> expectedPhases = Map.of(
+                ReconstructionQualityMode.NATIVE_AA, 8,
+                ReconstructionQualityMode.QUALITY, 18,
+                ReconstructionQualityMode.BALANCED, 23,
+                ReconstructionQualityMode.PERFORMANCE, 32,
+                ReconstructionQualityMode.ULTRA_PERFORMANCE, 72);
 
-        for (FsrQualityMode mode : FsrQualityMode.values()) {
+        for (ReconstructionQualityMode mode : ReconstructionQualityMode.values()) {
             assertEquals(expectedExtents.get(mode), mode.renderExtent(3840, 2160));
             assertEquals(expectedPhases.get(mode), mode.jitterPhaseCount());
             assertEquals(
@@ -50,7 +52,7 @@ final class FsrSettingsTest {
 
     @Test
     void jitterUsesTheCanonicalHaltonPhaseForEachMode() {
-        FsrQualityMode mode = FsrQualityMode.QUALITY;
+        ReconstructionQualityMode mode = ReconstructionQualityMode.QUALITY;
         assertEquals(0.0F, mode.jitter(0).x(), 1.0e-7F);
         assertEquals(-1.0F / 6.0F, mode.jitter(0).y(), 1.0e-7F);
         assertEquals(-0.25F, mode.jitter(1).x(), 1.0e-7F);
@@ -67,7 +69,7 @@ final class FsrSettingsTest {
 
     @Test
     void rayConeCarriesProjectionFootprintAndModeMipBias() {
-        FsrQualityMode mode = FsrQualityMode.QUALITY;
+        ReconstructionQualityMode mode = ReconstructionQualityMode.QUALITY;
         int packed = mode.packedRayCone(1.0F, 1.0F, 1920, 1080);
         float spread = Float.float16ToFloat((short) packed);
         float bias = Float.float16ToFloat((short) (packed >>> 16));
@@ -77,10 +79,12 @@ final class FsrSettingsTest {
 
     @Test
     void persistedIdsRoundTripAndUnknownValuesUseDefault() {
-        for (FsrQualityMode mode : FsrQualityMode.values()) {
-            assertEquals(mode, FsrQualityMode.fromId(mode.id()));
+        for (ReconstructionQualityMode mode : ReconstructionQualityMode.values()) {
+            assertEquals(mode, ReconstructionQualityMode.fromId(mode.id()));
         }
-        assertEquals(FsrQualityMode.PERFORMANCE, FsrQualityMode.fromId("future_mode"));
+        assertEquals(
+                ReconstructionQualityMode.PERFORMANCE,
+                ReconstructionQualityMode.fromId("future_mode"));
         for (FsrDebugView mode : FsrDebugView.values()) {
             assertEquals(mode, FsrDebugView.fromId(mode.id()));
         }
@@ -91,7 +95,7 @@ final class FsrSettingsTest {
     void valueTypesRejectOutOfContractExtentsAndJitter() {
         assertThrows(
                 IllegalArgumentException.class,
-                () -> new FsrSettings.Extent(0, 1));
+                () -> new ReconstructionExtent(0, 1));
         assertThrows(
                 IllegalArgumentException.class,
                 () -> new SubpixelJitter(Float.NaN, 0.0F));

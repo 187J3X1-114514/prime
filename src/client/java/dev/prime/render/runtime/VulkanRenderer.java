@@ -10,7 +10,6 @@ import com.mojang.blaze3d.vulkan.VulkanGpuTextureView;
 import dev.prime.infrastructure.PrimeInfo;
 import dev.prime.render.vulkan.terrain.TerrainScene;
 import dev.prime.render.runtime.terrain.TerrainStreamer;
-import dev.prime.render.replay.RenderReplayVerification;
 import dev.prime.render.scene.vanilla.DynamicSceneFrame;
 import dev.prime.render.scene.vanilla.DynamicSceneMotion;
 import dev.prime.render.vulkan.AtmospherePipeline;
@@ -612,15 +611,6 @@ public final class VulkanRenderer implements AutoCloseable {
             throw new IllegalArgumentException("Resource reload belongs to another renderer");
         }
         return reload.terrainReload;
-    }
-
-    /**
-     * Executes two deterministic low-resolution restart/motion sequences from one rendered-world
-     * snapshot and compares their production outputs.
-     */
-    public CompletableFuture<RenderReplayVerification> verifyReplayProbe(
-            int width, int height) {
-        return this.realtimeRenderer.replay().request(width, height);
     }
 
     @Override

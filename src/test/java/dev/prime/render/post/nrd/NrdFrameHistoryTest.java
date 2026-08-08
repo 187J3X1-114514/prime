@@ -8,6 +8,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import dev.prime.render.FrameCamera;
 import dev.prime.render.SunDirection;
+import dev.prime.render.post.SubmittedFrame;
 import org.joml.Matrix4f;
 import org.junit.jupiter.api.Test;
 
@@ -18,7 +19,7 @@ final class NrdFrameHistoryTest {
     @Test
     void onlyOnePlanMayBeOutstandingAndOnlyExecutionMaySubmitIt() {
         NrdFrameHistory history = new NrdFrameHistory();
-        NrdFrameHistory.PlannedFrame first =
+        SubmittedFrame<NrdFramePlan> first =
                 history.plan(input(camera(0.0), 1_000_000L));
 
         assertThrows(
@@ -42,13 +43,13 @@ final class NrdFrameHistoryTest {
     void submittedPlanAloneAdvancesTheNextHistoryVersion() {
         NrdFrameHistory history = new NrdFrameHistory();
         FrameCamera firstCamera = camera(0.0);
-        NrdFrameHistory.PlannedFrame first =
+        SubmittedFrame<NrdFramePlan> first =
                 history.plan(input(firstCamera, 1_000_000L));
         assertTrue(first.plan().restart());
         first.claimForExecution();
         history.submitted(first);
 
-        NrdFrameHistory.PlannedFrame second =
+        SubmittedFrame<NrdFramePlan> second =
                 history.plan(input(camera(1.0), 11_000_000L));
         assertFalse(second.plan().restart());
         assertSame(firstCamera, second.plan().historyCamera());
@@ -63,7 +64,7 @@ final class NrdFrameHistoryTest {
     void foreignHistoryCannotCommitAPlan() {
         NrdFrameHistory owner = new NrdFrameHistory();
         NrdFrameHistory foreign = new NrdFrameHistory();
-        NrdFrameHistory.PlannedFrame frame =
+        SubmittedFrame<NrdFramePlan> frame =
                 owner.plan(input(camera(0.0), 1L));
         frame.claimForExecution();
 
@@ -75,7 +76,7 @@ final class NrdFrameHistoryTest {
     @Test
     void abandoningConsumedWorkKeepsTheCommittedHistory() {
         NrdFrameHistory history = new NrdFrameHistory();
-        NrdFrameHistory.PlannedFrame abandoned =
+        SubmittedFrame<NrdFramePlan> abandoned =
                 history.plan(input(camera(0.0), 1_000_000L));
         abandoned.claimForExecution();
         history.abandon(abandoned);
@@ -87,7 +88,7 @@ final class NrdFrameHistoryTest {
                 IllegalArgumentException.class,
                 () -> history.abandon(abandoned));
 
-        NrdFrameHistory.PlannedFrame retry =
+        SubmittedFrame<NrdFramePlan> retry =
                 history.plan(input(camera(1.0), 2_000_000L));
         assertTrue(retry.plan().restart());
         assertEquals(0, retry.plan().frameIndex());

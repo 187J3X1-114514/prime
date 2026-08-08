@@ -15,7 +15,7 @@ final class ReconstructionFrameHistoryTest {
     void outstandingFrameIsSingleUseAndMustExecuteBeforeSubmission() {
         ReconstructionFrameHistory history =
                 new ReconstructionFrameHistory();
-        ReconstructionFrameHistory.PlannedFrame frame =
+        SubmittedFrame<TemporalReconstructionState.Plan> frame =
                 history.plan(input(camera(0.0), 1L, false));
 
         assertThrows(
@@ -43,13 +43,13 @@ final class ReconstructionFrameHistoryTest {
         ReconstructionFrameHistory history =
                 new ReconstructionFrameHistory();
         FrameCamera firstCamera = camera(0.0);
-        ReconstructionFrameHistory.PlannedFrame first =
+        SubmittedFrame<TemporalReconstructionState.Plan> first =
                 history.plan(input(firstCamera, 1_000_000L, false));
         assertTrue(first.plan().restart());
         first.claimForExecution();
         history.submitted(first);
 
-        ReconstructionFrameHistory.PlannedFrame second =
+        SubmittedFrame<TemporalReconstructionState.Plan> second =
                 history.plan(input(camera(1.0), 11_000_000L, false));
         assertFalse(second.plan().restart());
         assertSame(firstCamera, second.plan().historyCamera());
@@ -58,7 +58,7 @@ final class ReconstructionFrameHistoryTest {
         history.submitted(second);
 
         history.requestReset();
-        ReconstructionFrameHistory.PlannedFrame reset =
+        SubmittedFrame<TemporalReconstructionState.Plan> reset =
                 history.plan(input(camera(2.0), 21_000_000L, false));
         assertTrue(reset.plan().restart());
         assertEquals(0, reset.plan().frameIndex());
@@ -71,7 +71,7 @@ final class ReconstructionFrameHistoryTest {
                 new ReconstructionFrameHistory();
         ReconstructionFrameHistory foreign =
                 new ReconstructionFrameHistory();
-        ReconstructionFrameHistory.PlannedFrame frame =
+        SubmittedFrame<TemporalReconstructionState.Plan> frame =
                 owner.plan(input(camera(0.0), 1L, false));
         frame.claimForExecution();
 
@@ -84,7 +84,7 @@ final class ReconstructionFrameHistoryTest {
     void abandoningConsumedWorkKeepsTheCommittedHistory() {
         ReconstructionFrameHistory history =
                 new ReconstructionFrameHistory();
-        ReconstructionFrameHistory.PlannedFrame abandoned =
+        SubmittedFrame<TemporalReconstructionState.Plan> abandoned =
                 history.plan(input(camera(0.0), 1_000_000L, false));
         abandoned.claimForExecution();
         history.abandon(abandoned);
@@ -96,7 +96,7 @@ final class ReconstructionFrameHistoryTest {
                 IllegalArgumentException.class,
                 () -> history.abandon(abandoned));
 
-        ReconstructionFrameHistory.PlannedFrame retry =
+        SubmittedFrame<TemporalReconstructionState.Plan> retry =
                 history.plan(input(camera(1.0), 2_000_000L, false));
         assertTrue(retry.plan().restart());
         assertEquals(0, retry.plan().frameIndex());

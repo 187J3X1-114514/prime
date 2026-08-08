@@ -3,17 +3,16 @@ package dev.prime.render.vulkan.dlss;
 import dev.prime.infrastructure.PrimeInfo;
 import dev.prime.render.post.ReconstructionQualityMode;
 import dev.prime.render.vulkan.NativeRuntimeFiles;
+import dev.prime.render.vulkan.NativeLibraries;
 import dev.prime.render.vulkan.VulkanContext;
 import dev.prime.render.vulkan.VulkanImage;
 import java.io.IOException;
-import java.io.InputStream;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.LinkedHashSet;
 import java.util.List;
-import java.util.Locale;
 import java.util.Objects;
 import net.fabricmc.loader.api.FabricLoader;
 import org.joml.Matrix4fc;
@@ -88,14 +87,11 @@ public final class DlssRrNative {
     }
 
     public static boolean isSupportedPlatform() {
-        return isSupportedPlatform(
-                System.getProperty("os.name", ""), System.getProperty("os.arch", ""));
+        return NativeLibraries.isWindowsX64();
     }
 
     static boolean isSupportedPlatform(String osName, String architecture) {
-        String os = osName.toLowerCase(Locale.ROOT);
-        String arch = architecture.toLowerCase(Locale.ROOT);
-        return os.startsWith("windows") && (arch.equals("amd64") || arch.equals("x86_64"));
+        return NativeLibraries.isWindowsX64(osName, architecture);
     }
 
     public static List<String> instanceExtensions() {
@@ -205,11 +201,7 @@ public final class DlssRrNative {
     }
 
     private static long requireFunction(SharedLibrary library, String name) {
-        long function = library.getFunctionAddress(name);
-        if (function == MemoryUtil.NULL) {
-            throw new IllegalStateException("The DLSS RR bridge is missing " + name);
-        }
-        return function;
+        return NativeLibraries.requireFunction(library, name, "The DLSS RR bridge");
     }
 
     private static ExtractedRuntime extractRuntime() {
@@ -241,20 +233,11 @@ public final class DlssRrNative {
     }
 
     private static byte[] readResource(String name) {
-        try (InputStream input = DlssRrNative.class.getResourceAsStream(name)) {
-            if (input == null) {
-                throw new IllegalStateException("Missing bundled DLSS RR runtime " + name);
-            }
-            return input.readAllBytes();
-        } catch (IOException exception) {
-            throw new IllegalStateException("Unable to read bundled DLSS RR runtime " + name, exception);
-        }
+        return NativeLibraries.readResource(name, "DLSS RR runtime");
     }
 
     private static void checkResult(int result, String operation) {
-        if (result != 0) {
-            throw new IllegalStateException(operation + " failed with native result " + result);
-        }
+        NativeLibraries.checkResult(result, operation);
     }
 
     static void putMatrixForNgx(ByteBuffer target, int offset, Matrix4fc matrix) {

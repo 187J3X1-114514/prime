@@ -3,13 +3,10 @@ package dev.prime.render.vulkan;
 import com.mojang.blaze3d.vulkan.Destroyable;
 import dev.prime.render.DisplaySettings;
 import dev.prime.render.ResourceCleanup;
-import java.io.IOException;
-import java.io.InputStream;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.LongBuffer;
 import org.lwjgl.system.MemoryStack;
-import org.lwjgl.system.MemoryUtil;
 import org.lwjgl.vulkan.VK12;
 import org.lwjgl.vulkan.VkCommandBuffer;
 import org.lwjgl.vulkan.VkComputePipelineCreateInfo;
@@ -23,7 +20,6 @@ import org.lwjgl.vulkan.VkDescriptorSetLayoutCreateInfo;
 import org.lwjgl.vulkan.VkPipelineLayoutCreateInfo;
 import org.lwjgl.vulkan.VkPipelineShaderStageCreateInfo;
 import org.lwjgl.vulkan.VkPushConstantRange;
-import org.lwjgl.vulkan.VkShaderModuleCreateInfo;
 import org.lwjgl.vulkan.VkWriteDescriptorSet;
 
 /** Prime's common linear Rec.2020 HDR to Oklab DRT / sRGB Rec.709 display boundary. */
@@ -166,7 +162,7 @@ public final class DisplayTransformPass implements Destroyable {
                     "create common display-transform pipeline layout");
             pipelineLayout = pointer.get(0);
 
-            long shader = createShaderModule(context, stack, SHADER);
+            long shader = VulkanShaderModules.create(context, stack, SHADER);
             try {
                 VkPipelineShaderStageCreateInfo stage = VkPipelineShaderStageCreateInfo.calloc(stack)
                         .sType$Default().stage(COMPUTE_STAGE).module(shader).pName(stack.UTF8("main"));
@@ -311,42 +307,10 @@ public final class DisplayTransformPass implements Destroyable {
                     commandBuffer, this.pipelineLayout, COMPUTE_STAGE, 0, push);
             VK12.vkCmdDispatch(
                     commandBuffer,
-                    divideRoundUp(this.width, LOCAL_SIZE),
-                    divideRoundUp(this.height, LOCAL_SIZE),
+                    DispatchMath.divideRoundUp(this.width, LOCAL_SIZE),
+                    DispatchMath.divideRoundUp(this.height, LOCAL_SIZE),
                     1);
         }
-    }
-
-    private static long createShaderModule(
-            VulkanContext context, MemoryStack stack, String resourceName) {
-        byte[] bytes;
-        try (InputStream input = DisplayTransformPass.class.getResourceAsStream(resourceName)) {
-            if (input == null) {
-                throw new IllegalStateException("Missing shader resource " + resourceName);
-            }
-            bytes = input.readAllBytes();
-        } catch (IOException exception) {
-            throw new IllegalStateException("Unable to read shader resource " + resourceName, exception);
-        }
-        ByteBuffer code = MemoryUtil.memAlloc(bytes.length);
-        try {
-            code.put(bytes).flip();
-            LongBuffer pointer = stack.mallocLong(1);
-            VulkanContext.check(
-                    VK12.vkCreateShaderModule(
-                            context.vkDevice(),
-                            VkShaderModuleCreateInfo.calloc(stack).sType$Default().pCode(code),
-                            null,
-                            pointer),
-                    "create " + resourceName);
-            return pointer.get(0);
-        } finally {
-            MemoryUtil.memFree(code);
-        }
-    }
-
-    private static int divideRoundUp(int value, int divisor) {
-        return Math.max(1, (value + divisor - 1) / divisor);
     }
 
     @Override

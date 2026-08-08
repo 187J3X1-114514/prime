@@ -2,29 +2,22 @@ package dev.prime.render.vulkan;
 
 import com.mojang.blaze3d.vulkan.Destroyable;
 import dev.prime.render.post.nrd.NrdDiagnostics;
-import java.io.IOException;
-import java.io.InputStream;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.LongBuffer;
 import org.lwjgl.system.MemoryStack;
-import org.lwjgl.system.MemoryUtil;
-import org.lwjgl.vulkan.KHRSynchronization2;
 import org.lwjgl.vulkan.VK12;
 import org.lwjgl.vulkan.VkCommandBuffer;
 import org.lwjgl.vulkan.VkComputePipelineCreateInfo;
-import org.lwjgl.vulkan.VkDependencyInfo;
 import org.lwjgl.vulkan.VkDescriptorImageInfo;
 import org.lwjgl.vulkan.VkDescriptorPoolCreateInfo;
 import org.lwjgl.vulkan.VkDescriptorPoolSize;
 import org.lwjgl.vulkan.VkDescriptorSetAllocateInfo;
 import org.lwjgl.vulkan.VkDescriptorSetLayoutBinding;
 import org.lwjgl.vulkan.VkDescriptorSetLayoutCreateInfo;
-import org.lwjgl.vulkan.VkMemoryBarrier2;
 import org.lwjgl.vulkan.VkPipelineLayoutCreateInfo;
 import org.lwjgl.vulkan.VkPipelineShaderStageCreateInfo;
 import org.lwjgl.vulkan.VkPushConstantRange;
-import org.lwjgl.vulkan.VkShaderModuleCreateInfo;
 import org.lwjgl.vulkan.VkWriteDescriptorSet;
 
 /** Nearest-neighbor presentation and decoding for native diagnostic images. */
@@ -109,7 +102,7 @@ final class NativeDebugPresentPass implements Destroyable {
                             pointer),
                     "create native-debug presentation pipeline layout");
             pipelineLayout = pointer.get(0);
-            long shader = createShaderModule(context, stack);
+            long shader = VulkanShaderModules.create(context, stack, SHADER);
             try {
                 VkPipelineShaderStageCreateInfo stage = VkPipelineShaderStageCreateInfo.calloc(stack)
                         .sType$Default().stage(COMPUTE_STAGE).module(shader).pName(stack.UTF8("main"));
@@ -210,15 +203,12 @@ final class NativeDebugPresentPass implements Destroyable {
                     "Invalid native debug presentation " + presentation);
         }
         try (MemoryStack stack = MemoryStack.stackPush()) {
-            VkMemoryBarrier2.Buffer barrier = VkMemoryBarrier2.calloc(1, stack);
-            barrier.get(0).sType$Default()
-                    .srcStageMask(VK12.VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT)
-                    .srcAccessMask(VK12.VK_ACCESS_SHADER_WRITE_BIT)
-                    .dstStageMask(VK12.VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT)
-                    .dstAccessMask(VK12.VK_ACCESS_SHADER_READ_BIT | VK12.VK_ACCESS_SHADER_WRITE_BIT);
-            KHRSynchronization2.vkCmdPipelineBarrier2KHR(
+            VulkanSync.memoryBarrier(
                     commandBuffer,
-                    VkDependencyInfo.calloc(stack).sType$Default().pMemoryBarriers(barrier));
+                    VK12.VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                    VK12.VK_ACCESS_SHADER_WRITE_BIT,
+                    VK12.VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                    VK12.VK_ACCESS_SHADER_READ_BIT | VK12.VK_ACCESS_SHADER_WRITE_BIT);
 
             ByteBuffer push = stack.malloc(PUSH_SIZE).order(ByteOrder.nativeOrder());
             push.putInt(0, this.sourceWidths[source]);
@@ -241,31 +231,6 @@ final class NativeDebugPresentPass implements Destroyable {
                     (this.outputWidth + 7) / 8,
                     (this.outputHeight + 7) / 8,
                     1);
-        }
-    }
-
-    private static long createShaderModule(VulkanContext context, MemoryStack stack) {
-        byte[] bytes;
-        try (InputStream input = NativeDebugPresentPass.class.getResourceAsStream(SHADER)) {
-            if (input == null) throw new IllegalStateException("Missing shader resource " + SHADER);
-            bytes = input.readAllBytes();
-        } catch (IOException exception) {
-            throw new IllegalStateException("Unable to read shader resource " + SHADER, exception);
-        }
-        ByteBuffer code = MemoryUtil.memAlloc(bytes.length);
-        try {
-            code.put(bytes).flip();
-            LongBuffer pointer = stack.mallocLong(1);
-            VulkanContext.check(
-                    VK12.vkCreateShaderModule(
-                            context.vkDevice(),
-                            VkShaderModuleCreateInfo.calloc(stack).sType$Default().pCode(code),
-                            null,
-                            pointer),
-                    "create " + SHADER);
-            return pointer.get(0);
-        } finally {
-            MemoryUtil.memFree(code);
         }
     }
 

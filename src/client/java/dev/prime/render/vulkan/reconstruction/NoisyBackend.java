@@ -1,6 +1,5 @@
 package dev.prime.render.vulkan.reconstruction;
 
-import dev.prime.render.fsr.FsrReconstructionProfile;
 import dev.prime.render.post.PostProcessingMode;
 import dev.prime.render.post.ReconstructionExtent;
 import dev.prime.render.post.ReconstructionQualityMode;
@@ -53,8 +52,8 @@ final class NoisyBackend implements ReconstructionBackend {
             float projectionM11,
             int width,
             int height) {
-        return FsrReconstructionProfile.forQuality(ReconstructionQualityMode.NATIVE_AA)
-                .packedRayCone(projectionM00, projectionM11, width, height);
+        return ReconstructionQualityMode.NATIVE_AA.packedRayCone(
+                projectionM00, projectionM11, width, height);
     }
 
     @Override

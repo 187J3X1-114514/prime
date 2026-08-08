@@ -3,8 +3,6 @@ package dev.prime.render.post;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import dev.prime.render.fsr.FsrQualityMode;
-import dev.prime.render.fsr.FsrReconstructionProfile;
 import dev.prime.render.vulkan.dlss.DlssRrProfile;
 import java.util.Arrays;
 import java.util.Map;
@@ -36,12 +34,6 @@ final class ReconstructionModesTest {
 
     @Test
     void fiveSharedQualityModesMapToFsrAndNgxWithoutChangingTheDefault() {
-        Map<ReconstructionQualityMode, FsrQualityMode> fsr = Map.of(
-                ReconstructionQualityMode.NATIVE_AA, FsrQualityMode.NATIVE_AA,
-                ReconstructionQualityMode.QUALITY, FsrQualityMode.QUALITY,
-                ReconstructionQualityMode.BALANCED, FsrQualityMode.BALANCED,
-                ReconstructionQualityMode.PERFORMANCE, FsrQualityMode.PERFORMANCE,
-                ReconstructionQualityMode.ULTRA_PERFORMANCE, FsrQualityMode.ULTRA_PERFORMANCE);
         Map<ReconstructionQualityMode, Integer> ngx = Map.of(
                 ReconstructionQualityMode.NATIVE_AA, 5,
                 ReconstructionQualityMode.QUALITY, 2,
@@ -53,7 +45,6 @@ final class ReconstructionModesTest {
         assertEquals(ReconstructionQualityMode.PERFORMANCE, ReconstructionQualityMode.DEFAULT);
         for (ReconstructionQualityMode quality : ReconstructionQualityMode.values()) {
             assertEquals(quality, ReconstructionQualityMode.fromId(quality.id()));
-            assertEquals(fsr.get(quality), FsrReconstructionProfile.forQuality(quality).mode());
             assertEquals(ngx.get(quality), DlssRrProfile.ngxPerfQualityValue(quality));
             assertTrue(DlssRrProfile.jitterPhaseCount(quality) >= 64);
             assertEquals(

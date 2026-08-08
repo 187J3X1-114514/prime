@@ -31,16 +31,14 @@ import dev.prime.render.vulkan.reconstruction.ReconstructionDebugSettings;
 import dev.prime.render.vulkan.reconstruction.ResolvedReconstruction;
 import dev.prime.render.vulkan.reconstruction.VulkanReconstructionProcessor;
 import dev.prime.render.vulkan.reconstruction.VulkanReconstructionResources;
-import dev.prime.render.vulkan.replay.ReplayProbeController;
 import java.util.List;
 import java.util.Objects;
 
-/** Owns the complete interactive pipeline, scheduler state, replay, and sized resources. */
+/** Owns the complete interactive pipeline, scheduler state, and sized resources. */
 final class RealtimeRenderer implements Destroyable {
     private final VulkanContext context;
     private final TraceBackend backend;
     private final RealtimeFrameExecutor executor;
-    private final ReplayProbeController replay;
     private final DisplayExposureDiagnostics exposureDiagnostics;
     private final DlssRrNative.Context ngxContext;
     private final ReconstructionBackendRegistry reconstructionRegistry;
@@ -61,7 +59,6 @@ final class RealtimeRenderer implements Destroyable {
         this.reconstructionRegistry = new ReconstructionBackendRegistry(context, ngxContext);
         this.pipeline = new RealtimeRayTracingPipeline(context, backend);
         this.executor = new RealtimeFrameExecutor(context);
-        this.replay = new ReplayProbeController(context);
         this.exposureDiagnostics = new DisplayExposureDiagnostics(context);
     }
 
@@ -72,10 +69,6 @@ final class RealtimeRenderer implements Destroyable {
 
     RealtimeFrameExecutor executor() {
         return this.executor;
-    }
-
-    ReplayProbeController replay() {
-        return this.replay;
     }
 
     VulkanReconstructionResources resources() {
@@ -351,25 +344,6 @@ final class RealtimeRenderer implements Destroyable {
                     processor.displayExposureStateBuffer());
         }
         this.commitSample(sampleFrame);
-        this.replay.run(new ReplayProbeController.RunInput(
-                this.pipeline(),
-                input.atmosphere(),
-                input.scene(),
-                input.camera(),
-                input.astronomy(),
-                input.cameraInWater(),
-                framePlan.integrator().maximumBounces(),
-                settings.lighting(),
-                settings.material(),
-                settings.display(),
-                input.atlasView(),
-                input.atlasSampler(),
-                input.sceneTextures(),
-                input.textureRevision(),
-                images.stableRadiance(),
-                input.labPbrAtlas().normalAtlas(),
-                input.labPbrAtlas().specularAtlas(),
-                images.processor().rawFrame()));
         int accumulatedSamples = this.sampleIndex();
         if (accumulatedSamples >= 16
                 && (accumulatedSamples & (accumulatedSamples - 1)) == 0) {
@@ -498,7 +472,6 @@ final class RealtimeRenderer implements Destroyable {
         }
         RuntimeException failure = null;
         failure = ResourceCleanup.destroy(this.exposureDiagnostics, failure);
-        failure = ResourceCleanup.destroy(this.replay, failure);
         failure = ResourceCleanup.destroy(this.resources, failure);
         failure = ResourceCleanup.destroy(this.pipeline, failure);
         if (this.ngxContext != null) {

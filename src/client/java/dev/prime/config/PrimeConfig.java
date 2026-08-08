@@ -6,8 +6,6 @@ import dev.prime.render.DisplaySettings;
 import dev.prime.render.LightingSettings;
 import dev.prime.render.MaterialSettings;
 import dev.prime.render.RendererSettings;
-import dev.prime.render.fsr.FsrQualityMode;
-import dev.prime.render.fsr.FsrReconstructionProfile;
 import dev.prime.render.post.PostProcessingMode;
 import dev.prime.render.post.ReconstructionQualityMode;
 import dev.prime.render.terrain.VoxelSurfaceSettings;
@@ -333,7 +331,7 @@ public final class PrimeConfig {
                 formatVoxelSurfaceStrength(voxelTextureSurfaceStrengthSteps),
                 postProcessingMode.id(),
                 quality.id(),
-                FsrReconstructionProfile.forQuality(quality).upscaleRatio(),
+                quality.upscaleRatio(),
                 latitudeDegrees,
                 solarLongitudeDegrees,
                 formatEv(sunQuarterSteps),
@@ -345,10 +343,6 @@ public final class PrimeConfig {
                 formatAutoExposureCompensation(autoExposureCompensationSteps),
                 formatRoughness(defaultRoughnessSteps),
                 seamlessGlass ? "enabled" : "disabled");
-    }
-
-    public static void setFsrQualityMode(FsrQualityMode mode) {
-        setReconstructionQualityMode(ReconstructionQualityMode.fromId(mode.id()));
     }
 
     public static PrimeSettings settings() {

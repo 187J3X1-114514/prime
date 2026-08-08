@@ -1,17 +1,12 @@
 package dev.prime.render.vulkan.nrd;
 
-import dev.prime.render.vulkan.NativeRuntimeFiles;
-import java.io.IOException;
-import java.io.InputStream;
+import dev.prime.render.vulkan.NativeLibraries;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
-import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Locale;
 import java.util.Objects;
 import org.joml.Matrix4fc;
-import org.lwjgl.system.APIUtil;
 import org.lwjgl.system.JNI;
 import org.lwjgl.system.MemoryStack;
 import org.lwjgl.system.MemoryUtil;
@@ -139,15 +134,11 @@ public final class NrdNative {
     }
 
     static boolean isSupportedPlatform() {
-        return isSupportedPlatform(
-                System.getProperty("os.name", ""), System.getProperty("os.arch", ""));
+        return NativeLibraries.isWindowsX64();
     }
 
     static boolean isSupportedPlatform(String osName, String architecture) {
-        String normalizedOsName = osName.toLowerCase(Locale.ROOT);
-        String normalizedArchitecture = architecture.toLowerCase(Locale.ROOT);
-        return normalizedOsName.startsWith("windows")
-                && (normalizedArchitecture.equals("amd64") || normalizedArchitecture.equals("x86_64"));
+        return NativeLibraries.isWindowsX64(osName, architecture);
     }
 
     private Description readDescription(MemoryStack stack, long handle) {
@@ -266,33 +257,16 @@ public final class NrdNative {
         if (!isSupportedPlatform()) {
             throw new IllegalStateException("The bundled NRD native library currently supports Windows x86-64 only");
         }
-        byte[] libraryBytes;
-        try (InputStream input = NrdNative.class.getResourceAsStream(WINDOWS_RESOURCE)) {
-            if (input == null) {
-                throw new IllegalStateException("Missing bundled NRD native library " + WINDOWS_RESOURCE);
-            }
-            libraryBytes = input.readAllBytes();
-        } catch (IOException exception) {
-            throw new IllegalStateException("Unable to read the bundled NRD native library", exception);
-        }
-        Path directory = NativeRuntimeFiles.directory("prime-nrd", libraryBytes);
-        Path libraryPath = directory.resolve("prime_nrd.dll");
-        NativeRuntimeFiles.publish(libraryPath, libraryBytes);
-        return APIUtil.apiCreateLibrary(libraryPath.toAbsolutePath().toString());
+        return NativeLibraries.loadBundled(
+                "prime-nrd", WINDOWS_RESOURCE, "prime_nrd.dll", "NRD native library");
     }
 
     private static long requireFunction(SharedLibrary library, String name) {
-        long address = library.getFunctionAddress(name);
-        if (address == MemoryUtil.NULL) {
-            throw new IllegalStateException("The NRD native library is missing " + name);
-        }
-        return address;
+        return NativeLibraries.requireFunction(library, name, "The NRD native library");
     }
 
     private static void checkResult(int result, String operation) {
-        if (result != 0) {
-            throw new IllegalStateException(operation + " failed with native result " + result);
-        }
+        NativeLibraries.checkResult(result, operation);
     }
 
     private static String formatVersion(int packedVersion) {

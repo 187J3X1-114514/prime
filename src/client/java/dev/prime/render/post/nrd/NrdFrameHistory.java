@@ -1,6 +1,7 @@
 package dev.prime.render.post.nrd;
 
-import java.util.Objects;
+import dev.prime.render.post.SubmittedFrame;
+import dev.prime.render.post.SubmittedFrameHistory;
 
 /**
  * Single owner of NRD's logical temporal history.
@@ -9,79 +10,22 @@ import java.util.Objects;
  * it has been submitted successfully.
  */
 public final class NrdFrameHistory {
-    private NrdTemporalState state = NrdTemporalState.initial();
-    private PlannedFrame pending;
+    private final SubmittedFrameHistory<NrdTemporalState, NrdFrameInput, NrdFramePlan> history =
+            new SubmittedFrameHistory<>(NrdTemporalState.initial(), (state, input) -> {
+                NrdTemporalState.Plan transition = state.plan(input);
+                return new SubmittedFrameHistory.Transition<>(
+                        transition.semanticPlan(input), transition.committedState());
+            });
 
-    public PlannedFrame plan(NrdFrameInput input) {
-        Objects.requireNonNull(input, "input");
-        if (this.pending != null) {
-            throw new IllegalStateException(
-                    "Previous NRD frame plan has not been submitted");
-        }
-        NrdTemporalState.Plan transition = this.state.plan(input);
-        PlannedFrame frame = new PlannedFrame(
-                this,
-                transition.semanticPlan(input),
-                transition.committedState());
-        this.pending = frame;
-        return frame;
+    public SubmittedFrame<NrdFramePlan> plan(NrdFrameInput input) {
+        return this.history.plan(input);
     }
 
-    public void submitted(PlannedFrame frame) {
-        if (frame == null
-                || frame.owner != this
-                || frame != this.pending
-                || !frame.consumed
-                || frame.submitted) {
-            throw new IllegalArgumentException(
-                    "NRD frame plan does not belong to this submitted history");
-        }
-        frame.submitted = true;
-        this.state = frame.committedState;
-        this.pending = null;
+    public void submitted(SubmittedFrame<NrdFramePlan> frame) {
+        this.history.submitted(frame);
     }
 
-    public void abandon(PlannedFrame frame) {
-        if (frame == null
-                || frame.owner != this
-                || frame != this.pending
-                || frame.submitted) {
-            throw new IllegalArgumentException(
-                    "NRD frame plan does not belong to this history");
-        }
-        frame.abandoned = true;
-        this.pending = null;
-    }
-
-    /** One device-free temporal version, consumed exactly once by an NRD device execution. */
-    public static final class PlannedFrame {
-        private final NrdFrameHistory owner;
-        private final NrdFramePlan plan;
-        private final NrdTemporalState committedState;
-        private boolean consumed;
-        private boolean submitted;
-        private boolean abandoned;
-
-        private PlannedFrame(
-                NrdFrameHistory owner,
-                NrdFramePlan plan,
-                NrdTemporalState committedState) {
-            this.owner = owner;
-            this.plan = plan;
-            this.committedState = committedState;
-        }
-
-        public NrdFramePlan plan() {
-            return this.plan;
-        }
-
-        public NrdFramePlan claimForExecution() {
-            if (this.consumed || this.submitted || this.abandoned) {
-                throw new IllegalArgumentException(
-                        "NRD frame plan was already consumed");
-            }
-            this.consumed = true;
-            return this.plan;
-        }
+    public void abandon(SubmittedFrame<NrdFramePlan> frame) {
+        this.history.abandon(frame);
     }
 }

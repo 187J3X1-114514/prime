@@ -14,7 +14,7 @@ public final class SessionController {
         return this.controls;
     }
 
-    public Actions update(KeyState current, boolean screenshotActive) {
+    public void update(KeyState current, boolean screenshotActive) {
         Objects.requireNonNull(current, "current");
         if (current.escape()
                 && !this.previous.escape()
@@ -27,9 +27,7 @@ public final class SessionController {
         if (current.rrLayout() && !this.previous.rrLayout()) {
             setRrDebugFullscreen(!this.controls.rrDebugFullscreen());
         }
-        boolean replayRequested = current.replayTest() && !this.previous.replayTest();
         this.previous = current;
-        return new Actions(replayRequested);
     }
 
     public void requestScreenshot(boolean value) {
@@ -67,11 +65,7 @@ public final class SessionController {
     public record KeyState(
             boolean escape,
             boolean rrCycle,
-            boolean rrLayout,
-            boolean replayTest) {
-        public static final KeyState NONE = new KeyState(false, false, false, false);
-    }
-
-    public record Actions(boolean replayRequested) {
+            boolean rrLayout) {
+        public static final KeyState NONE = new KeyState(false, false, false);
     }
 }

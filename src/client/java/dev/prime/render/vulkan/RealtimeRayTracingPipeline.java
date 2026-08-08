@@ -11,10 +11,8 @@ import java.nio.LongBuffer;
 import java.util.List;
 import org.lwjgl.system.MemoryStack;
 import org.lwjgl.vulkan.KHRRayTracingPipeline;
-import org.lwjgl.vulkan.KHRSynchronization2;
 import org.lwjgl.vulkan.VK12;
 import org.lwjgl.vulkan.VkCommandBuffer;
-import org.lwjgl.vulkan.VkDependencyInfo;
 import org.lwjgl.vulkan.VkDescriptorBufferInfo;
 import org.lwjgl.vulkan.VkDescriptorImageInfo;
 import org.lwjgl.vulkan.VkDescriptorPoolCreateInfo;
@@ -22,39 +20,28 @@ import org.lwjgl.vulkan.VkDescriptorPoolSize;
 import org.lwjgl.vulkan.VkDescriptorSetAllocateInfo;
 import org.lwjgl.vulkan.VkDescriptorSetLayoutBinding;
 import org.lwjgl.vulkan.VkDescriptorSetLayoutCreateInfo;
-import org.lwjgl.vulkan.VkMemoryBarrier2;
 import org.lwjgl.vulkan.VkPipelineLayoutCreateInfo;
 import org.lwjgl.vulkan.VkPushConstantRange;
-import org.lwjgl.vulkan.VkStridedDeviceAddressRegionKHR;
 import org.lwjgl.vulkan.VkWriteDescriptorSet;
 
 /** Realtime-only pipeline, queue ABI and reconstruction outputs. */
 public final class RealtimeRayTracingPipeline implements RealtimeIntegratorPipeline {
-    private static final int HEAD_GROUP = 0;
-    private static final int STEP_QUEUE_0_GROUP = 1;
-    private static final int STEP_QUEUE_1_GROUP = 2;
-    private static final int AREA_QUEUE_0_GROUP = 3;
-    private static final int AREA_QUEUE_1_GROUP = 4;
-    private static final int TAIL_QUEUE_0_GROUP = 5;
-    private static final int TAIL_QUEUE_1_GROUP = 6;
-    private static final int RESOLVE_GROUP = 7;
-    static final int RAYGEN_GROUP_COUNT = 8;
-    static final int RAYGEN_MODULE_COUNT = 5;
+    static final int RAYGEN_GROUP_COUNT = WavefrontGroups.GROUP_COUNT;
+    static final int RAYGEN_MODULE_COUNT = WavefrontGroups.MODULE_COUNT;
     static final int DISPATCH_COUNT = 2 * ShaderAbi.WAVEFRONT_ROUNDS + 3;
     static final int DESCRIPTOR_BINDING_COUNT = 25;
-    private static final int[] RAYGEN_MODULES = {
-        0, 1, 1, 2, 2, 3, 3, 4
-    };
     private static final int[] RAYGEN_CONTROLS = {
         0, 1, 257, 4, 260, 2, 258, 3
     };
     private static final int STORAGE_IMAGE_DESCRIPTOR_COUNT = 23;
-    private static final long QUEUE_OFFSET_ALIGNMENT = 256L;
-    private static final int ALL_RT_STAGES =
-            KHRRayTracingPipeline.VK_SHADER_STAGE_RAYGEN_BIT_KHR
-                    | KHRRayTracingPipeline.VK_SHADER_STAGE_MISS_BIT_KHR
-                    | KHRRayTracingPipeline.VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR
-                    | KHRRayTracingPipeline.VK_SHADER_STAGE_ANY_HIT_BIT_KHR;
+    private static final WavefrontLayout WAVEFRONT_LAYOUT = new WavefrontLayout(
+            ShaderAbi.WAVEFRONT_PATH_SLOTS_PER_PIXEL,
+            ShaderAbi.WAVEFRONT_PATH_RECORD_SIZE,
+            ShaderAbi.WAVEFRONT_AREA_RECORD_SIZE,
+            ShaderAbi.WAVEFRONT_QUEUE_COUNT,
+            ShaderAbi.WAVEFRONT_QUEUE_COMMAND_STRIDE,
+            ShaderAbi.WAVEFRONT_QUEUE_INDEX_SIZE,
+            "Realtime");
 
     private final VulkanContext context;
     private final TraceBackend backend;
@@ -75,8 +62,12 @@ public final class RealtimeRayTracingPipeline implements RealtimeIntegratorPipel
         try {
             try (MemoryStack stack = MemoryStack.stackPush()) {
                 setLayout = createDescriptorSetLayout(context, stack);
-                layout = createPipelineLayout(
-                        context, stack, backend.bindings().descriptorSetLayout(), setLayout);
+                layout = TracePipelineLayouts.create(
+                        context,
+                        stack,
+                        backend.bindings().descriptorSetLayout(),
+                        setLayout,
+                        "realtime");
             }
             String suffix = context.capabilities().wavefrontShaderSuffix();
             String prefix = "/prime/shaders/realtime_wavefront_";
@@ -91,7 +82,7 @@ public final class RealtimeRayTracingPipeline implements RealtimeIntegratorPipel
                     context,
                     layout,
                     raygenShaders,
-                    RAYGEN_MODULES,
+                    WavefrontGroups.MODULES,
                     RAYGEN_CONTROLS,
                     "Prime realtime ray tracing pipeline",
                     "Prime realtime shader binding table");
@@ -234,7 +225,7 @@ public final class RealtimeRayTracingPipeline implements RealtimeIntegratorPipel
             this.bind(commandBuffer, stack, RayTracingPushConstants.encode(stack, input, scene));
             long commandOffset = queueCommandOffset(width, height);
             this.initializeQueues(commandBuffer, stack, commandOffset);
-            this.trace(commandBuffer, stack, width, height, HEAD_GROUP);
+            this.trace(commandBuffer, stack, width, height, WavefrontGroups.HEAD);
             this.wavefrontBarrier(commandBuffer, stack);
             int sourceQueue = 0;
             this.lastRecordedPassCount = DISPATCH_COUNT;
@@ -242,14 +233,14 @@ public final class RealtimeRayTracingPipeline implements RealtimeIntegratorPipel
                 this.traceIndirect(
                         commandBuffer,
                         stack,
-                        stepGroup(sourceQueue),
+                        WavefrontGroups.step(sourceQueue),
                         commandOffset,
                         sourceQueue);
                 this.wavefrontBarrier(commandBuffer, stack);
                 this.traceIndirect(
                         commandBuffer,
                         stack,
-                        areaGroup(sourceQueue),
+                        WavefrontGroups.area(sourceQueue),
                         commandOffset,
                         sourceQueue);
                 this.advanceQueue(commandBuffer, stack, commandOffset, sourceQueue);
@@ -258,11 +249,11 @@ public final class RealtimeRayTracingPipeline implements RealtimeIntegratorPipel
             this.traceIndirect(
                     commandBuffer,
                     stack,
-                    tailGroup(sourceQueue),
+                    WavefrontGroups.tail(sourceQueue),
                     commandOffset,
                     sourceQueue);
             this.wavefrontBarrier(commandBuffer, stack);
-            this.trace(commandBuffer, stack, width, height, RESOLVE_GROUP);
+            this.trace(commandBuffer, stack, width, height, WavefrontGroups.RESOLVE);
         }
     }
 
@@ -287,7 +278,7 @@ public final class RealtimeRayTracingPipeline implements RealtimeIntegratorPipel
         VK12.vkCmdPushConstants(
                 commandBuffer,
                 this.pipelineLayout,
-                ALL_RT_STAGES,
+                TracePipelineLayouts.ALL_RT_STAGES,
                 0,
                 pushConstants);
     }
@@ -298,30 +289,8 @@ public final class RealtimeRayTracingPipeline implements RealtimeIntegratorPipel
             int width,
             int height,
             int group) {
-        VkStridedDeviceAddressRegionKHR raygen =
-                VkStridedDeviceAddressRegionKHR.calloc(stack)
-                        .deviceAddress(this.program.raygenAddress(group))
-                        .stride(this.program.raygenRecordStride)
-                        .size(this.program.raygenRecordStride);
-        VkStridedDeviceAddressRegionKHR miss =
-                VkStridedDeviceAddressRegionKHR.calloc(stack)
-                        .deviceAddress(this.program.missAddress)
-                        .stride(this.program.recordStride)
-                        .size(this.program.recordStride * TraceProgram.MISS_GROUP_COUNT);
-        VkStridedDeviceAddressRegionKHR hit =
-                VkStridedDeviceAddressRegionKHR.calloc(stack)
-                        .deviceAddress(this.program.hitAddress)
-                        .stride(this.program.recordStride)
-                        .size(this.program.recordStride * TraceProgram.HIT_GROUP_COUNT);
-        KHRRayTracingPipeline.vkCmdTraceRaysKHR(
-                commandBuffer,
-                raygen,
-                miss,
-                hit,
-                VkStridedDeviceAddressRegionKHR.calloc(stack),
-                width,
-                height,
-                1);
+        WavefrontCommands.trace(
+                commandBuffer, stack, this.program, width, height, group);
     }
 
     private void traceIndirect(
@@ -330,87 +299,32 @@ public final class RealtimeRayTracingPipeline implements RealtimeIntegratorPipel
             int group,
             long commandOffset,
             int sourceQueue) {
-        VkStridedDeviceAddressRegionKHR raygen =
-                VkStridedDeviceAddressRegionKHR.calloc(stack)
-                        .deviceAddress(this.program.raygenAddress(group))
-                        .stride(this.program.raygenRecordStride)
-                        .size(this.program.raygenRecordStride);
-        VkStridedDeviceAddressRegionKHR miss =
-                VkStridedDeviceAddressRegionKHR.calloc(stack)
-                        .deviceAddress(this.program.missAddress)
-                        .stride(this.program.recordStride)
-                        .size(this.program.recordStride * TraceProgram.MISS_GROUP_COUNT);
-        VkStridedDeviceAddressRegionKHR hit =
-                VkStridedDeviceAddressRegionKHR.calloc(stack)
-                        .deviceAddress(this.program.hitAddress)
-                        .stride(this.program.recordStride)
-                        .size(this.program.recordStride * TraceProgram.HIT_GROUP_COUNT);
-        long indirectAddress = this.wavefront.deviceAddress()
-                + commandOffset
-                + (long) sourceQueue * ShaderAbi.WAVEFRONT_QUEUE_COMMAND_STRIDE;
-        KHRRayTracingPipeline.vkCmdTraceRaysIndirectKHR(
+        WavefrontCommands.traceIndirect(
                 commandBuffer,
-                raygen,
-                miss,
-                hit,
-                VkStridedDeviceAddressRegionKHR.calloc(stack),
-                indirectAddress);
+                stack,
+                this.program,
+                this.wavefront,
+                group,
+                commandOffset,
+                sourceQueue,
+                ShaderAbi.WAVEFRONT_QUEUE_COMMAND_STRIDE);
     }
 
     private void initializeQueues(
             VkCommandBuffer commandBuffer,
             MemoryStack stack,
             long commandOffset) {
-        this.wavefrontToTransferBarrier(commandBuffer, stack);
-        ByteBuffer commands = stack.calloc(
-                ShaderAbi.WAVEFRONT_QUEUE_COUNT
-                        * ShaderAbi.WAVEFRONT_QUEUE_COMMAND_STRIDE);
-        for (int queue = 0; queue < ShaderAbi.WAVEFRONT_QUEUE_COUNT; queue++) {
-            int offset = queue * ShaderAbi.WAVEFRONT_QUEUE_COMMAND_STRIDE;
-            commands.putInt(offset + Integer.BYTES, 1);
-            commands.putInt(offset + 2 * Integer.BYTES, 1);
-        }
-        VK12.vkCmdUpdateBuffer(
-                commandBuffer, this.wavefront.handle(), commandOffset, commands);
-        this.transferToWavefrontBarrier(commandBuffer, stack);
-    }
-
-    private void wavefrontToTransferBarrier(
-            VkCommandBuffer commandBuffer, MemoryStack stack) {
-        this.barrier(
+        WavefrontCommands.initializeQueues(
                 commandBuffer,
                 stack,
-                KHRRayTracingPipeline.VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR,
-                VK12.VK_ACCESS_SHADER_READ_BIT | VK12.VK_ACCESS_SHADER_WRITE_BIT,
-                VK12.VK_PIPELINE_STAGE_TRANSFER_BIT,
-                VK12.VK_ACCESS_TRANSFER_WRITE_BIT);
-    }
-
-    private void transferToWavefrontBarrier(
-            VkCommandBuffer commandBuffer, MemoryStack stack) {
-        this.barrier(
-                commandBuffer,
-                stack,
-                VK12.VK_PIPELINE_STAGE_TRANSFER_BIT,
-                VK12.VK_ACCESS_TRANSFER_WRITE_BIT,
-                KHRRayTracingPipeline.VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR
-                        | VK12.VK_PIPELINE_STAGE_DRAW_INDIRECT_BIT,
-                VK12.VK_ACCESS_SHADER_READ_BIT
-                        | VK12.VK_ACCESS_SHADER_WRITE_BIT
-                        | VK12.VK_ACCESS_INDIRECT_COMMAND_READ_BIT);
+                this.wavefront,
+                commandOffset,
+                ShaderAbi.WAVEFRONT_QUEUE_COUNT,
+                ShaderAbi.WAVEFRONT_QUEUE_COMMAND_STRIDE);
     }
 
     private void wavefrontBarrier(VkCommandBuffer commandBuffer, MemoryStack stack) {
-        this.barrier(
-                commandBuffer,
-                stack,
-                KHRRayTracingPipeline.VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR,
-                VK12.VK_ACCESS_SHADER_WRITE_BIT,
-                KHRRayTracingPipeline.VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR
-                        | VK12.VK_PIPELINE_STAGE_DRAW_INDIRECT_BIT,
-                VK12.VK_ACCESS_SHADER_READ_BIT
-                        | VK12.VK_ACCESS_SHADER_WRITE_BIT
-                        | VK12.VK_ACCESS_INDIRECT_COMMAND_READ_BIT);
+        WavefrontCommands.wavefrontBarrier(commandBuffer, stack);
     }
 
     private void advanceQueue(
@@ -418,138 +332,45 @@ public final class RealtimeRayTracingPipeline implements RealtimeIntegratorPipel
             MemoryStack stack,
             long commandOffset,
             int sourceQueue) {
-        this.barrier(
+        WavefrontCommands.advanceQueue(
                 commandBuffer,
                 stack,
-                KHRRayTracingPipeline.VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR,
-                VK12.VK_ACCESS_SHADER_READ_BIT | VK12.VK_ACCESS_SHADER_WRITE_BIT,
-                KHRRayTracingPipeline.VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR
-                        | VK12.VK_PIPELINE_STAGE_DRAW_INDIRECT_BIT
-                        | VK12.VK_PIPELINE_STAGE_TRANSFER_BIT,
-                VK12.VK_ACCESS_SHADER_READ_BIT
-                        | VK12.VK_ACCESS_SHADER_WRITE_BIT
-                        | VK12.VK_ACCESS_INDIRECT_COMMAND_READ_BIT
-                        | VK12.VK_ACCESS_TRANSFER_WRITE_BIT);
-        VK12.vkCmdFillBuffer(
-                commandBuffer,
-                this.wavefront.handle(),
-                commandOffset
-                        + (long) sourceQueue * ShaderAbi.WAVEFRONT_QUEUE_COMMAND_STRIDE,
-                Integer.BYTES,
-                0);
-        this.transferToWavefrontBarrier(commandBuffer, stack);
-    }
-
-    private void barrier(
-            VkCommandBuffer commandBuffer,
-            MemoryStack stack,
-            long sourceStage,
-            long sourceAccess,
-            long destinationStage,
-            long destinationAccess) {
-        VkMemoryBarrier2.Buffer barriers = VkMemoryBarrier2.calloc(1, stack);
-        barriers.get(0)
-                .sType$Default()
-                .srcStageMask(sourceStage)
-                .srcAccessMask(sourceAccess)
-                .dstStageMask(destinationStage)
-                .dstAccessMask(destinationAccess);
-        KHRSynchronization2.vkCmdPipelineBarrier2KHR(
-                commandBuffer,
-                VkDependencyInfo.calloc(stack)
-                        .sType$Default()
-                        .pMemoryBarriers(barriers));
+                this.wavefront,
+                commandOffset,
+                sourceQueue,
+                ShaderAbi.WAVEFRONT_QUEUE_COMMAND_STRIDE);
     }
 
     static long wavefrontBytes(int width, int height) {
-        return Math.addExact(queueOffset(width, height), queueBytes(width, height));
+        return WAVEFRONT_LAYOUT.wavefrontBytes(width, height);
     }
 
     static int raygenModule(int group) {
-        return RAYGEN_MODULES[group];
+        return WavefrontGroups.MODULES[group];
     }
 
     static int raygenControl(int group) {
         return RAYGEN_CONTROLS[group];
     }
 
-    private static int stepGroup(int queue) {
-        return switch (queue) {
-            case 0 -> STEP_QUEUE_0_GROUP;
-            case 1 -> STEP_QUEUE_1_GROUP;
-            default -> throw new IllegalArgumentException("Invalid realtime wavefront queue");
-        };
-    }
-
-    private static int areaGroup(int queue) {
-        return switch (queue) {
-            case 0 -> AREA_QUEUE_0_GROUP;
-            case 1 -> AREA_QUEUE_1_GROUP;
-            default -> throw new IllegalArgumentException("Invalid realtime wavefront queue");
-        };
-    }
-
-    private static int tailGroup(int queue) {
-        return switch (queue) {
-            case 0 -> TAIL_QUEUE_0_GROUP;
-            case 1 -> TAIL_QUEUE_1_GROUP;
-            default -> throw new IllegalArgumentException("Invalid realtime wavefront queue");
-        };
-    }
-
     static long queueOffset(int width, int height) {
-        requireExtent(width, height);
-        long pixels = Math.multiplyExact((long) width, (long) height);
-        long bytes = Math.multiplyExact(
-                Math.multiplyExact(pixels, ShaderAbi.WAVEFRONT_PATH_SLOTS_PER_PIXEL),
-                ShaderAbi.WAVEFRONT_PATH_RECORD_SIZE);
-        return VulkanContext.alignUp(bytes, QUEUE_OFFSET_ALIGNMENT);
+        return WAVEFRONT_LAYOUT.queueOffset(width, height);
     }
 
     static long queueBytes(int width, int height) {
-        requireExtent(width, height);
-        long pixels = Math.multiplyExact((long) width, (long) height);
-        long capacity = Math.multiplyExact(
-                pixels, ShaderAbi.WAVEFRONT_PATH_SLOTS_PER_PIXEL);
-        long areas = Math.multiplyExact(pixels, ShaderAbi.WAVEFRONT_AREA_RECORD_SIZE);
-        long commands = Math.multiplyExact(
-                ShaderAbi.WAVEFRONT_QUEUE_COUNT,
-                ShaderAbi.WAVEFRONT_QUEUE_COMMAND_STRIDE);
-        long indices = Math.multiplyExact(
-                Math.multiplyExact(ShaderAbi.WAVEFRONT_QUEUE_COUNT, capacity),
-                ShaderAbi.WAVEFRONT_QUEUE_INDEX_SIZE);
-        return Math.addExact(areas, Math.addExact(commands, indices));
+        return WAVEFRONT_LAYOUT.queueBytes(width, height);
     }
 
     static long queueCommandOffset(int width, int height) {
-        long pixels = Math.multiplyExact((long) width, (long) height);
-        return Math.addExact(
-                queueOffset(width, height),
-                Math.multiplyExact(pixels, ShaderAbi.WAVEFRONT_AREA_RECORD_SIZE));
+        return WAVEFRONT_LAYOUT.queueCommandOffset(width, height);
     }
 
     static void validateRanges(int width, int height, long maximumRange) {
-        long paths = queueOffset(width, height);
-        long queue = queueBytes(width, height);
-        if (paths > maximumRange || queue > maximumRange) {
-            throw new IllegalStateException(
-                    "Realtime wavefront descriptor exceeds maxStorageBufferRange");
-        }
+        WAVEFRONT_LAYOUT.validateRanges(width, height, maximumRange);
     }
 
     static void validateDispatch(int width, int height, int maximumInvocations) {
-        long capacity = Math.multiplyExact(
-                Math.multiplyExact((long) width, (long) height),
-                ShaderAbi.WAVEFRONT_PATH_SLOTS_PER_PIXEL);
-        if (capacity > Integer.toUnsignedLong(maximumInvocations)) {
-            throw new IllegalStateException("Realtime wavefront queue exceeds dispatch capacity");
-        }
-    }
-
-    private static void requireExtent(int width, int height) {
-        if (width <= 0 || height <= 0) {
-            throw new IllegalArgumentException("Wavefront extent must be positive");
-        }
+        WAVEFRONT_LAYOUT.validateDispatch(width, height, maximumInvocations);
     }
 
     private static long createDescriptorSetLayout(
@@ -583,24 +404,6 @@ public final class RealtimeRayTracingPipeline implements RealtimeIntegratorPipel
                 VK12.vkCreateDescriptorSetLayout(
                         context.vkDevice(), info, null, pointer),
                 "create realtime trace descriptor layout");
-        return pointer.get(0);
-    }
-
-    private static long createPipelineLayout(
-            VulkanContext context,
-            MemoryStack stack,
-            long sharedSetLayout,
-            long realtimeSetLayout) {
-        VkPushConstantRange.Buffer range = VkPushConstantRange.calloc(1, stack);
-        range.get(0).stageFlags(ALL_RT_STAGES).offset(0).size(ShaderAbi.PUSH_CONSTANT_SIZE);
-        VkPipelineLayoutCreateInfo info = VkPipelineLayoutCreateInfo.calloc(stack)
-                .sType$Default()
-                .pSetLayouts(stack.longs(sharedSetLayout, realtimeSetLayout))
-                .pPushConstantRanges(range);
-        LongBuffer pointer = stack.mallocLong(1);
-        VulkanContext.check(
-                VK12.vkCreatePipelineLayout(context.vkDevice(), info, null, pointer),
-                "create realtime trace pipeline layout");
         return pointer.get(0);
     }
 

@@ -1,6 +1,6 @@
 package dev.prime.render.fsr;
 
-import java.util.Arrays;
+import dev.prime.render.StableIds;
 import java.util.Optional;
 
 /** Developer-facing FSR visualization modes exposed through Minecraft's video settings. */
@@ -19,7 +19,7 @@ public enum FsrDebugView {
     }
 
     public static Optional<FsrDebugView> findById(String id) {
-        return Arrays.stream(values()).filter(value -> value.id.equals(id)).findFirst();
+        return StableIds.find(values(), id, FsrDebugView::id);
     }
 
     public static FsrDebugView fromId(String id) {

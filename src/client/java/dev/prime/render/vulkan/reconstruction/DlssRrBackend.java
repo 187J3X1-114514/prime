@@ -1,6 +1,5 @@
 package dev.prime.render.vulkan.reconstruction;
 
-import dev.prime.render.fsr.FsrReconstructionProfile;
 import dev.prime.render.post.DlssRrDebugStatus;
 import dev.prime.render.post.PostProcessingMode;
 import dev.prime.render.post.ReconstructionExtent;
@@ -86,8 +85,7 @@ final class DlssRrBackend implements ReconstructionBackend {
             float projectionM11,
             int width,
             int height) {
-        return FsrReconstructionProfile.forQuality(quality).packedRayCone(
-                projectionM00, projectionM11, width, height);
+        return quality.packedRayCone(projectionM00, projectionM11, width, height);
     }
 
     @Override

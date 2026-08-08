@@ -6,16 +6,17 @@ import dev.prime.render.DisplaySettings;
 import dev.prime.render.ResourceCleanup;
 import dev.prime.render.fsr.FsrDebugView;
 import dev.prime.render.fsr.FsrDispatchPlan;
-import dev.prime.render.fsr.FsrQualityMode;
-import dev.prime.render.fsr.FsrSettings;
 import dev.prime.render.post.ReconstructionFrameHistory;
+import dev.prime.render.post.ReconstructionQualityMode;
 import dev.prime.render.post.SubpixelJitter;
+import dev.prime.render.post.SubmittedFrame;
 import dev.prime.render.post.TemporalReconstructionState;
 import dev.prime.render.vulkan.DisplayTransformPass;
 import dev.prime.render.vulkan.RawWavefrontFrame;
 import dev.prime.render.vulkan.VulkanContext;
 import dev.prime.render.vulkan.VulkanImage;
 import dev.prime.render.vulkan.VulkanImageInitializationBatch;
+import dev.prime.render.vulkan.VulkanSync;
 import java.util.Objects;
 import org.lwjgl.system.MemoryStack;
 import org.lwjgl.vulkan.KHRSynchronization2;
@@ -23,7 +24,6 @@ import org.lwjgl.vulkan.VK12;
 import org.lwjgl.vulkan.VkCommandBuffer;
 import org.lwjgl.vulkan.VkDependencyInfo;
 import org.lwjgl.vulkan.VkImageMemoryBarrier2;
-import org.lwjgl.vulkan.VkMemoryBarrier2;
 
 /**
  * FidelityFX FSR upscaling through AMD's signed Vulkan DLL.
@@ -38,7 +38,7 @@ public final class Fsr3Upscaler implements Destroyable {
     private final int renderHeight;
     private final int displayWidth;
     private final int displayHeight;
-    private final FsrQualityMode qualityMode;
+    private final ReconstructionQualityMode qualityMode;
     private final VulkanImage sceneColor;
     private final VulkanImage inputMotion;
     private final VulkanImage inputDepth;
@@ -57,7 +57,7 @@ public final class Fsr3Upscaler implements Destroyable {
             int renderHeight,
             int displayWidth,
             int displayHeight,
-            FsrQualityMode qualityMode,
+            ReconstructionQualityMode qualityMode,
             VulkanImage sceneColor,
             VulkanImage inputMotion,
             VulkanImage inputDepth,
@@ -87,7 +87,7 @@ public final class Fsr3Upscaler implements Destroyable {
             int renderHeight,
             int displayWidth,
             int displayHeight,
-            FsrQualityMode qualityMode,
+            ReconstructionQualityMode qualityMode,
             VulkanImage sceneColor,
             VulkanImage inputMotion,
             VulkanImage inputDepth,
@@ -164,7 +164,7 @@ public final class Fsr3Upscaler implements Destroyable {
         this.requireOpen();
         Objects.requireNonNull(camera, "camera");
         Objects.requireNonNull(fsrDebugView, "fsrDebugView");
-        ReconstructionFrameHistory.PlannedFrame temporal = this.history.plan(
+        SubmittedFrame<TemporalReconstructionState.Plan> temporal = this.history.plan(
                 new TemporalReconstructionState.Input(
                         camera,
                         frameTimeNanos,
@@ -297,19 +297,12 @@ public final class Fsr3Upscaler implements Destroyable {
     }
 
     private static void computeBarrier(VkCommandBuffer commandBuffer) {
-        try (MemoryStack stack = MemoryStack.stackPush()) {
-            VkMemoryBarrier2.Buffer barrier = VkMemoryBarrier2.calloc(1, stack);
-            barrier.get(0)
-                    .sType$Default()
-                    .srcStageMask(VK12.VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT)
-                    .srcAccessMask(VK12.VK_ACCESS_SHADER_WRITE_BIT)
-                    .dstStageMask(VK12.VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT)
-                    .dstAccessMask(VK12.VK_ACCESS_SHADER_READ_BIT | VK12.VK_ACCESS_SHADER_WRITE_BIT);
-            VkDependencyInfo dependency = VkDependencyInfo.calloc(stack)
-                    .sType$Default()
-                    .pMemoryBarriers(barrier);
-            KHRSynchronization2.vkCmdPipelineBarrier2KHR(commandBuffer, dependency);
-        }
+        VulkanSync.memoryBarrier(
+                commandBuffer,
+                VK12.VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                VK12.VK_ACCESS_SHADER_WRITE_BIT,
+                VK12.VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                VK12.VK_ACCESS_SHADER_READ_BIT | VK12.VK_ACCESS_SHADER_WRITE_BIT);
     }
 
     private static void requireExtent(
@@ -352,7 +345,7 @@ public final class Fsr3Upscaler implements Destroyable {
     /** Immutable temporal inputs chosen before ray generation plus submission bookkeeping. */
     public static final class FrameToken {
         private final Fsr3Upscaler owner;
-        private final ReconstructionFrameHistory.PlannedFrame temporal;
+        private final SubmittedFrame<TemporalReconstructionState.Plan> temporal;
         private final SubpixelJitter jitter;
         private final FsrDebugView fsrDebugView;
         private boolean recorded;
@@ -361,7 +354,7 @@ public final class Fsr3Upscaler implements Destroyable {
 
         private FrameToken(
                 Fsr3Upscaler owner,
-                ReconstructionFrameHistory.PlannedFrame temporal,
+                SubmittedFrame<TemporalReconstructionState.Plan> temporal,
                 SubpixelJitter jitter,
                 FsrDebugView fsrDebugView) {
             this.owner = owner;

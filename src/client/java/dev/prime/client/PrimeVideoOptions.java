@@ -9,7 +9,6 @@ import dev.prime.render.MaterialSettings;
 import dev.prime.client.PrimeRuntime;
 import dev.prime.render.RendererSettings;
 import dev.prime.render.fsr.FsrDebugView;
-import dev.prime.render.fsr.FsrQualityMode;
 import dev.prime.render.post.DlssRrDebugView;
 import dev.prime.render.post.PostProcessingMode;
 import dev.prime.render.post.ReconstructionQualityMode;

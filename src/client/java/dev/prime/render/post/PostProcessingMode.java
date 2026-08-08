@@ -1,6 +1,6 @@
 package dev.prime.render.post;
 
-import java.util.Arrays;
+import dev.prime.render.StableIds;
 import java.util.Optional;
 
 /** Selects one complete realtime denoising and reconstruction pipeline. */
@@ -23,10 +23,7 @@ public enum PostProcessingMode {
     }
 
     public static Optional<PostProcessingMode> findById(String id) {
-        if (id == null) {
-            return Optional.empty();
-        }
-        return Arrays.stream(values()).filter(value -> value.id.equals(id)).findFirst();
+        return StableIds.find(values(), id, PostProcessingMode::id);
     }
 
     public static PostProcessingMode fromId(String id) {

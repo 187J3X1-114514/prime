@@ -4,30 +4,23 @@ import com.mojang.blaze3d.vulkan.Destroyable;
 import dev.prime.render.AerialEpipolarMapping;
 import dev.prime.render.FrameCamera;
 import dev.prime.render.SunDirection;
-import java.io.IOException;
-import java.io.InputStream;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.LongBuffer;
 import java.util.List;
 import org.lwjgl.system.MemoryStack;
-import org.lwjgl.system.MemoryUtil;
-import org.lwjgl.vulkan.KHRSynchronization2;
 import org.lwjgl.vulkan.VK12;
 import org.lwjgl.vulkan.VkCommandBuffer;
 import org.lwjgl.vulkan.VkComputePipelineCreateInfo;
-import org.lwjgl.vulkan.VkDependencyInfo;
 import org.lwjgl.vulkan.VkDescriptorImageInfo;
 import org.lwjgl.vulkan.VkDescriptorPoolCreateInfo;
 import org.lwjgl.vulkan.VkDescriptorPoolSize;
 import org.lwjgl.vulkan.VkDescriptorSetAllocateInfo;
 import org.lwjgl.vulkan.VkDescriptorSetLayoutBinding;
 import org.lwjgl.vulkan.VkDescriptorSetLayoutCreateInfo;
-import org.lwjgl.vulkan.VkMemoryBarrier2;
 import org.lwjgl.vulkan.VkPipelineLayoutCreateInfo;
 import org.lwjgl.vulkan.VkPipelineShaderStageCreateInfo;
 import org.lwjgl.vulkan.VkPushConstantRange;
-import org.lwjgl.vulkan.VkShaderModuleCreateInfo;
 import org.lwjgl.vulkan.VkWriteDescriptorSet;
 
 /** Sums the raw estimator partitions into native-resolution linear HDR without filtering. */
@@ -118,7 +111,7 @@ final class NoisyCompositePass implements Destroyable {
                             pointer),
                     "create noisy-composite pipeline layout");
             pipelineLayout = pointer.get(0);
-            long shader = createShaderModule(context, stack);
+            long shader = VulkanShaderModules.create(context, stack, SHADER);
             try {
                 VkPipelineShaderStageCreateInfo stage = VkPipelineShaderStageCreateInfo.calloc(stack)
                         .sType$Default().stage(COMPUTE_STAGE).module(shader).pName(stack.UTF8("main"));
@@ -199,7 +192,7 @@ final class NoisyCompositePass implements Destroyable {
             FrameCamera camera,
             SunDirection sunDirection,
             float sunRadianceMultiplier) {
-        memoryBarrier(
+        VulkanSync.memoryBarrier(
                 commandBuffer,
                 VK12.VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
                 VK12.VK_ACCESS_MEMORY_WRITE_BIT,
@@ -227,54 +220,12 @@ final class NoisyCompositePass implements Destroyable {
             VK12.vkCmdDispatch(
                     commandBuffer, (this.width + 7) / 8, (this.height + 7) / 8, 1);
         }
-        memoryBarrier(
+        VulkanSync.memoryBarrier(
                 commandBuffer,
                 VK12.VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
                 VK12.VK_ACCESS_SHADER_WRITE_BIT,
                 VK12.VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
                 VK12.VK_ACCESS_SHADER_READ_BIT);
-    }
-
-    private static void memoryBarrier(
-            VkCommandBuffer commandBuffer,
-            long sourceStage,
-            long sourceAccess,
-            long destinationStage,
-            long destinationAccess) {
-        try (MemoryStack stack = MemoryStack.stackPush()) {
-            VkMemoryBarrier2.Buffer barrier = VkMemoryBarrier2.calloc(1, stack);
-            barrier.get(0).sType$Default()
-                    .srcStageMask(sourceStage).srcAccessMask(sourceAccess)
-                    .dstStageMask(destinationStage).dstAccessMask(destinationAccess);
-            KHRSynchronization2.vkCmdPipelineBarrier2KHR(
-                    commandBuffer,
-                    VkDependencyInfo.calloc(stack).sType$Default().pMemoryBarriers(barrier));
-        }
-    }
-
-    private static long createShaderModule(VulkanContext context, MemoryStack stack) {
-        byte[] bytes;
-        try (InputStream input = NoisyCompositePass.class.getResourceAsStream(SHADER)) {
-            if (input == null) throw new IllegalStateException("Missing shader resource " + SHADER);
-            bytes = input.readAllBytes();
-        } catch (IOException exception) {
-            throw new IllegalStateException("Unable to read shader resource " + SHADER, exception);
-        }
-        ByteBuffer code = MemoryUtil.memAlloc(bytes.length);
-        try {
-            code.put(bytes).flip();
-            LongBuffer pointer = stack.mallocLong(1);
-            VulkanContext.check(
-                    VK12.vkCreateShaderModule(
-                            context.vkDevice(),
-                            VkShaderModuleCreateInfo.calloc(stack).sType$Default().pCode(code),
-                            null,
-                            pointer),
-                    "create " + SHADER);
-            return pointer.get(0);
-        } finally {
-            MemoryUtil.memFree(code);
-        }
     }
 
     @Override

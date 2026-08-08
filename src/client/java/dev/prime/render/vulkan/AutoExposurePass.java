@@ -2,18 +2,13 @@ package dev.prime.render.vulkan;
 
 import com.mojang.blaze3d.vulkan.Destroyable;
 import dev.prime.render.ResourceCleanup;
-import java.io.IOException;
-import java.io.InputStream;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.LongBuffer;
 import org.lwjgl.system.MemoryStack;
-import org.lwjgl.system.MemoryUtil;
-import org.lwjgl.vulkan.KHRSynchronization2;
 import org.lwjgl.vulkan.VK12;
 import org.lwjgl.vulkan.VkCommandBuffer;
 import org.lwjgl.vulkan.VkComputePipelineCreateInfo;
-import org.lwjgl.vulkan.VkDependencyInfo;
 import org.lwjgl.vulkan.VkDescriptorBufferInfo;
 import org.lwjgl.vulkan.VkDescriptorImageInfo;
 import org.lwjgl.vulkan.VkDescriptorPoolCreateInfo;
@@ -21,11 +16,9 @@ import org.lwjgl.vulkan.VkDescriptorPoolSize;
 import org.lwjgl.vulkan.VkDescriptorSetAllocateInfo;
 import org.lwjgl.vulkan.VkDescriptorSetLayoutBinding;
 import org.lwjgl.vulkan.VkDescriptorSetLayoutCreateInfo;
-import org.lwjgl.vulkan.VkMemoryBarrier2;
 import org.lwjgl.vulkan.VkPipelineLayoutCreateInfo;
 import org.lwjgl.vulkan.VkPipelineShaderStageCreateInfo;
 import org.lwjgl.vulkan.VkPushConstantRange;
-import org.lwjgl.vulkan.VkShaderModuleCreateInfo;
 import org.lwjgl.vulkan.VkWriteDescriptorSet;
 
 /**
@@ -83,8 +76,8 @@ final class AutoExposurePass implements Destroyable {
         this.pipelineLayout = pipelineLayout;
         this.histogramPipeline = histogramPipeline;
         this.updatePipeline = updatePipeline;
-        this.dispatchX = divideRoundUp(width, HISTOGRAM_TILE_SIZE);
-        this.dispatchY = divideRoundUp(height, HISTOGRAM_TILE_SIZE);
+        this.dispatchX = DispatchMath.divideRoundUp(width, HISTOGRAM_TILE_SIZE);
+        this.dispatchY = DispatchMath.divideRoundUp(height, HISTOGRAM_TILE_SIZE);
         this.accumulatedMetering = accumulatedMetering;
     }
 
@@ -365,7 +358,7 @@ final class AutoExposurePass implements Destroyable {
             MemoryStack stack,
             long pipelineLayout,
             String shaderResource) {
-        long shader = createShaderModule(context, stack, shaderResource);
+        long shader = VulkanShaderModules.create(context, stack, shaderResource);
         try {
             VkPipelineShaderStageCreateInfo stage =
                     VkPipelineShaderStageCreateInfo.calloc(stack)
@@ -388,41 +381,8 @@ final class AutoExposurePass implements Destroyable {
         }
     }
 
-    private static long createShaderModule(
-            VulkanContext context, MemoryStack stack, String resourceName) {
-        byte[] bytes;
-        try (InputStream input =
-                AutoExposurePass.class.getResourceAsStream(resourceName)) {
-            if (input == null) {
-                throw new IllegalStateException(
-                        "Missing shader resource " + resourceName);
-            }
-            bytes = input.readAllBytes();
-        } catch (IOException exception) {
-            throw new IllegalStateException(
-                    "Unable to read shader resource " + resourceName,
-                    exception);
-        }
-        ByteBuffer code = MemoryUtil.memAlloc(bytes.length);
-        try {
-            code.put(bytes).flip();
-            LongBuffer pointer = stack.mallocLong(1);
-            VulkanContext.check(
-                    VK12.vkCreateShaderModule(
-                            context.vkDevice(),
-                            VkShaderModuleCreateInfo.calloc(stack)
-                                    .sType$Default().pCode(code),
-                            null,
-                            pointer),
-                    "create " + resourceName);
-            return pointer.get(0);
-        } finally {
-            MemoryUtil.memFree(code);
-        }
-    }
-
     private static void writesToCompute(VkCommandBuffer commandBuffer) {
-        memoryBarrier(
+        VulkanSync.memoryBarrier(
                 commandBuffer,
                 VK12.VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
                 VK12.VK_ACCESS_MEMORY_WRITE_BIT,
@@ -432,38 +392,13 @@ final class AutoExposurePass implements Destroyable {
     }
 
     private static void computeBarrier(VkCommandBuffer commandBuffer) {
-        memoryBarrier(
+        VulkanSync.memoryBarrier(
                 commandBuffer,
                 VK12.VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
                 VK12.VK_ACCESS_SHADER_WRITE_BIT,
                 VK12.VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
                 VK12.VK_ACCESS_SHADER_READ_BIT
                         | VK12.VK_ACCESS_SHADER_WRITE_BIT);
-    }
-
-    private static void memoryBarrier(
-            VkCommandBuffer commandBuffer,
-            long sourceStage,
-            long sourceAccess,
-            long destinationStage,
-            long destinationAccess) {
-        try (MemoryStack stack = MemoryStack.stackPush()) {
-            VkMemoryBarrier2.Buffer barrier =
-                    VkMemoryBarrier2.calloc(1, stack);
-            barrier.get(0).sType$Default()
-                    .srcStageMask(sourceStage)
-                    .srcAccessMask(sourceAccess)
-                    .dstStageMask(destinationStage)
-                    .dstAccessMask(destinationAccess);
-            KHRSynchronization2.vkCmdPipelineBarrier2KHR(
-                    commandBuffer,
-                    VkDependencyInfo.calloc(stack)
-                            .sType$Default().pMemoryBarriers(barrier));
-        }
-    }
-
-    private static int divideRoundUp(int value, int divisor) {
-        return Math.max(1, (value + divisor - 1) / divisor);
     }
 
     @Override

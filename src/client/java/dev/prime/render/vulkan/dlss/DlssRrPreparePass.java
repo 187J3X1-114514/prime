@@ -7,33 +7,29 @@ import dev.prime.render.post.SubpixelJitter;
 import dev.prime.render.vulkan.AtmospherePipeline;
 import dev.prime.render.vulkan.VulkanContext;
 import dev.prime.render.vulkan.VulkanImage;
+import dev.prime.render.vulkan.DispatchMath;
+import dev.prime.render.vulkan.VulkanShaderModules;
+import dev.prime.render.vulkan.VulkanSync;
 import dev.prime.render.post.nrd.NrdCameraTransform;
-import java.io.IOException;
-import java.io.InputStream;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.LongBuffer;
 import java.util.List;
 import org.joml.Matrix4f;
 import org.lwjgl.system.MemoryStack;
-import org.lwjgl.system.MemoryUtil;
 import org.lwjgl.vulkan.KHRRayTracingPipeline;
-import org.lwjgl.vulkan.KHRSynchronization2;
 import org.lwjgl.vulkan.VK12;
 import org.lwjgl.vulkan.VkCommandBuffer;
 import org.lwjgl.vulkan.VkComputePipelineCreateInfo;
-import org.lwjgl.vulkan.VkDependencyInfo;
 import org.lwjgl.vulkan.VkDescriptorImageInfo;
 import org.lwjgl.vulkan.VkDescriptorPoolCreateInfo;
 import org.lwjgl.vulkan.VkDescriptorPoolSize;
 import org.lwjgl.vulkan.VkDescriptorSetAllocateInfo;
 import org.lwjgl.vulkan.VkDescriptorSetLayoutBinding;
 import org.lwjgl.vulkan.VkDescriptorSetLayoutCreateInfo;
-import org.lwjgl.vulkan.VkMemoryBarrier2;
 import org.lwjgl.vulkan.VkPipelineLayoutCreateInfo;
 import org.lwjgl.vulkan.VkPipelineShaderStageCreateInfo;
 import org.lwjgl.vulkan.VkPushConstantRange;
-import org.lwjgl.vulkan.VkShaderModuleCreateInfo;
 import org.lwjgl.vulkan.VkWriteDescriptorSet;
 
 /** Converts raw path-tracing signals into the exact low-resolution image set submitted to NGX. */
@@ -73,8 +69,8 @@ final class DlssRrPreparePass implements Destroyable {
         this.pipelineLayout = pipelineLayout;
         this.pipeline = pipeline;
         this.atmosphere = atmosphere;
-        this.dispatchX = divideRoundUp(width, LOCAL_SIZE);
-        this.dispatchY = divideRoundUp(height, LOCAL_SIZE);
+        this.dispatchX = DispatchMath.divideRoundUp(width, LOCAL_SIZE);
+        this.dispatchY = DispatchMath.divideRoundUp(height, LOCAL_SIZE);
     }
 
     static DlssRrPreparePass create(
@@ -136,7 +132,7 @@ final class DlssRrPreparePass implements Destroyable {
                             pointer),
                     "create RR prepare pipeline layout");
             pipelineLayout = pointer.get(0);
-            long shader = createShaderModule(context, stack);
+            long shader = VulkanShaderModules.create(context, stack, SHADER);
             try {
                 VkPipelineShaderStageCreateInfo stage = VkPipelineShaderStageCreateInfo.calloc(stack)
                         .sType$Default().stage(COMPUTE_STAGE).module(shader).pName(stack.UTF8("main"));
@@ -207,7 +203,7 @@ final class DlssRrPreparePass implements Destroyable {
             SubpixelJitter currentJitterPixels,
             SunDirection sunDirection,
             float sunRadianceMultiplier) {
-        barrier(
+        VulkanSync.memoryBarrier(
                 commandBuffer,
                 KHRRayTracingPipeline.VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR,
                 VK12.VK_ACCESS_SHADER_WRITE_BIT,
@@ -239,58 +235,12 @@ final class DlssRrPreparePass implements Destroyable {
                     commandBuffer, this.pipelineLayout, COMPUTE_STAGE, 0, push);
             VK12.vkCmdDispatch(commandBuffer, this.dispatchX, this.dispatchY, 1);
         }
-        barrier(
+        VulkanSync.memoryBarrier(
                 commandBuffer,
                 VK12.VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
                 VK12.VK_ACCESS_SHADER_WRITE_BIT,
                 VK12.VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
                 VK12.VK_ACCESS_MEMORY_READ_BIT | VK12.VK_ACCESS_MEMORY_WRITE_BIT);
-    }
-
-    private static void barrier(
-            VkCommandBuffer commandBuffer,
-            long sourceStage,
-            long sourceAccess,
-            long destinationStage,
-            long destinationAccess) {
-        try (MemoryStack stack = MemoryStack.stackPush()) {
-            VkMemoryBarrier2.Buffer barrier = VkMemoryBarrier2.calloc(1, stack);
-            barrier.get(0).sType$Default()
-                    .srcStageMask(sourceStage).srcAccessMask(sourceAccess)
-                    .dstStageMask(destinationStage).dstAccessMask(destinationAccess);
-            KHRSynchronization2.vkCmdPipelineBarrier2KHR(
-                    commandBuffer,
-                    VkDependencyInfo.calloc(stack).sType$Default().pMemoryBarriers(barrier));
-        }
-    }
-
-    private static long createShaderModule(VulkanContext context, MemoryStack stack) {
-        byte[] bytes;
-        try (InputStream input = DlssRrPreparePass.class.getResourceAsStream(SHADER)) {
-            if (input == null) throw new IllegalStateException("Missing shader resource " + SHADER);
-            bytes = input.readAllBytes();
-        } catch (IOException exception) {
-            throw new IllegalStateException("Unable to read shader resource " + SHADER, exception);
-        }
-        ByteBuffer code = MemoryUtil.memAlloc(bytes.length);
-        try {
-            code.put(bytes).flip();
-            LongBuffer pointer = stack.mallocLong(1);
-            VulkanContext.check(
-                    VK12.vkCreateShaderModule(
-                            context.vkDevice(),
-                            VkShaderModuleCreateInfo.calloc(stack).sType$Default().pCode(code),
-                            null,
-                            pointer),
-                    "create " + SHADER);
-            return pointer.get(0);
-        } finally {
-            MemoryUtil.memFree(code);
-        }
-    }
-
-    private static int divideRoundUp(int value, int divisor) {
-        return Math.max(1, (value + divisor - 1) / divisor);
     }
 
     @Override

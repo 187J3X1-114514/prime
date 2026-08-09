@@ -65,6 +65,7 @@ public abstract class VideoSettingsScreenMixin {
     @Unique private OptionInstance<Integer> prime$defaultRoughness;
     @Unique private OptionInstance<Boolean> prime$seamlessGlass;
     @Unique private OptionInstance<Boolean> prime$airGap;
+    @Unique private OptionInstance<Boolean> prime$vanillaPbrPresets;
     @Unique private OptionInstance<Boolean> prime$triangleDebug;
     @Unique private OptionInstance<Boolean> prime$rendererDiagnostics;
     @Unique private OptionInstance<NrdDiagnostics.Mode> prime$nrdDebugView;
@@ -97,6 +98,7 @@ public abstract class VideoSettingsScreenMixin {
             this.prime$defaultRoughness = PrimeVideoOptions.defaultRoughness();
             this.prime$seamlessGlass = PrimeVideoOptions.seamlessGlass();
             this.prime$airGap = PrimeVideoOptions.airGap();
+            this.prime$vanillaPbrPresets = PrimeVideoOptions.vanillaPbrPresets();
             this.prime$triangleDebug = PrimeVideoOptions.triangleDebug();
             this.prime$rendererDiagnostics = PrimeVideoOptions.rendererDiagnostics();
             this.prime$nrdDebugView = PrimeVideoOptions.nrdDebugView();
@@ -129,7 +131,7 @@ public abstract class VideoSettingsScreenMixin {
                     this.prime$curveExponent);
             list.addHeader(PRIME$MATERIAL_HEADER);
             list.addSmall(this.prime$defaultRoughness, this.prime$seamlessGlass);
-            list.addBig(this.prime$airGap);
+            list.addSmall(this.prime$airGap, this.prime$vanillaPbrPresets);
             list.addHeader(PRIME$DIAGNOSTICS_HEADER);
             list.addBig(this.prime$triangleDebug);
             list.addBig(this.prime$rendererDiagnostics);
@@ -206,6 +208,9 @@ public abstract class VideoSettingsScreenMixin {
                 this.prime$seamlessGlass,
                 MaterialSettings.DEFAULT_SEAMLESS_GLASS);
         this.prime$refresh(this.prime$airGap, MaterialSettings.DEFAULT_AIR_GAP);
+        this.prime$refresh(
+                this.prime$vanillaPbrPresets,
+                MaterialSettings.DEFAULT_VANILLA_PBR_PRESETS);
         this.prime$refresh(this.prime$triangleDebug, false);
         this.prime$refresh(this.prime$rendererDiagnostics, false);
         this.prime$refresh(this.prime$nrdDebugView, NrdDiagnostics.Mode.OFF);

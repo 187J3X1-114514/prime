@@ -27,7 +27,7 @@ void main() {
                 ? vec2(0.0, 1.0)
                 : vec2(
                         0.0,
-                        (flags & PRIME_MATERIAL_FLAG_ANIMATED_TEXTURE) != 0u
+                        (flags & PRIME_MATERIAL_ANIMATED) != 0u
                                 ? 0.75
                                 : 0.0);
         if (!primeTestClose(actual.x, expected.x, 0.0, 0.0)

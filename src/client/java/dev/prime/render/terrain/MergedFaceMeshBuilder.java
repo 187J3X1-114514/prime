@@ -174,13 +174,11 @@ final class MergedFaceMeshBuilder {
     }
 
     private static boolean usesVoxelSurface(MergeFace face) {
-        int flags = PrimitivePacking.unpackFlags(
+        int flags = PrimitivePacking.unpackControl(
                 face.primitive()[3], face.primitive()[5]);
-        boolean transmissive =
-                (flags & PrimitivePacking.FLAG_TRANSMISSIVE) != 0;
-        boolean cutout = (flags & PrimitivePacking.FLAG_CUTOUT) != 0;
-        boolean thinWalled =
-                (flags & PrimitivePacking.FLAG_THIN_WALLED) != 0;
+        boolean transmissive = PrimitivePacking.isTransmissive(flags);
+        boolean cutout = PrimitivePacking.isCutout(flags);
+        boolean thinWalled = PrimitivePacking.isThinWalled(flags);
         if (transmissive && !cutout && !thinWalled) {
             return false;
         }

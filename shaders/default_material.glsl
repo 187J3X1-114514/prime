@@ -1,72 +1,103 @@
 #ifndef PRIME_DEFAULT_MATERIAL_GLSL
 #define PRIME_DEFAULT_MATERIAL_GLSL
 
-// Shared contract for vanilla terrain until a LabPBR decoder supplies explicit parameters.
-// Keep this independent of atlas declarations: raygen and the post-raygen NRD preparation pass
-// both consume it, and neither side may silently derive a different roughness or FSR mask.
-const uint PRIME_MATERIAL_FLAG_CUTOUT = 1u;
-const uint PRIME_MATERIAL_FLAG_ANIMATED_TEXTURE = 2u;
-const uint PRIME_MATERIAL_FLAG_TRANSMISSIVE = 4u;
-const uint PRIME_MATERIAL_FLAG_THIN_WALLED = 8u;
-const uint PRIME_MATERIAL_FLAG_WATER = 16u;
-const uint PRIME_MATERIAL_FLAG_FOLIAGE = 32u;
-const uint PRIME_MATERIAL_FLAG_LABPBR_NORMAL = 64u;
-const uint PRIME_MATERIAL_FLAG_LABPBR_SPECULAR = 128u;
-const uint PRIME_MATERIAL_FLAG_TANGENT_NEGATIVE = 256u;
-// Per-texel flag produced by the LabPBR decoder. Unlike the atlas-presence bits above this is
-// never stored in terrain geometry; it follows the sampled green channel into NRD and FSR guides.
-const uint PRIME_MATERIAL_FLAG_LABPBR_METAL = 512u;
-// Full-bright dynamic surfaces contribute only when actually hit; neither light tree samples them.
-const uint PRIME_MATERIAL_FLAG_VISIBLE_EMISSION = 1024u;
-// Per-texel glass semantics produced by material.glsl; neither bit is stored in terrain geometry.
-const uint PRIME_MATERIAL_FLAG_COLORLESS_GLASS = 2048u;
-const uint PRIME_MATERIAL_FLAG_ROUGH_GLASS = 4096u;
+// Canonical, source-neutral material state carried beyond the material adapter.
+const uint PRIME_MATERIAL_FAMILY_MASK = 3u;
+const uint PRIME_MATERIAL_FAMILY_OPAQUE = 0u;
+const uint PRIME_MATERIAL_FAMILY_DIELECTRIC = 1u;
+const uint PRIME_MATERIAL_FAMILY_FOLIAGE = 2u;
+const uint PRIME_MATERIAL_MEDIUM_SHIFT = 2u;
+const uint PRIME_MATERIAL_MEDIUM_MASK = 3u << PRIME_MATERIAL_MEDIUM_SHIFT;
+const uint PRIME_MATERIAL_MEDIUM_NONE = 0u;
+const uint PRIME_MATERIAL_MEDIUM_COLORLESS_GLASS = 1u << PRIME_MATERIAL_MEDIUM_SHIFT;
+const uint PRIME_MATERIAL_MEDIUM_STAINED_GLASS = 2u << PRIME_MATERIAL_MEDIUM_SHIFT;
+const uint PRIME_MATERIAL_MEDIUM_WATER = 3u << PRIME_MATERIAL_MEDIUM_SHIFT;
+const uint PRIME_MATERIAL_THIN_WALLED = 1u << 4u;
+const uint PRIME_MATERIAL_ANIMATED = 1u << 5u;
+const uint PRIME_MATERIAL_VISIBLE_EMISSION = 1u << 6u;
+const uint PRIME_MATERIAL_DECORATIVE_INTERFACE = 1u << 7u;
+
+const uint PRIME_OPTICAL_FRESNEL_MASK = 0xffu;
+const uint PRIME_OPTICAL_SUBSURFACE_SHIFT = 8u;
+const uint PRIME_OPTICAL_POROSITY_SHIFT = 16u;
+const uint PRIME_FRESNEL_DEFAULT_DIELECTRIC = 0u;
+const uint PRIME_FRESNEL_IRON = 231u;
+const uint PRIME_FRESNEL_GOLD = 232u;
+const uint PRIME_FRESNEL_ALUMINIUM = 233u;
+const uint PRIME_FRESNEL_CHROME = 234u;
+const uint PRIME_FRESNEL_COPPER = 235u;
+const uint PRIME_FRESNEL_LEAD = 236u;
+const uint PRIME_FRESNEL_PLATINUM = 237u;
+const uint PRIME_FRESNEL_SILVER = 238u;
+const uint PRIME_FRESNEL_CUSTOM_CONDUCTOR = 239u;
 
 const float PRIME_DEFAULT_DIELECTRIC_F0 = 0.04;
-// Standalone preparation shaders do not share the ray-tracing push constants. They use this
-// reference only for invalid/sky fallbacks; ray-tracing stages replace it with the user setting.
 const float PRIME_DEFAULT_REFERENCE_LINEAR_ROUGHNESS = 0.9;
 #ifndef PRIME_RUNTIME_DEFAULT_LINEAR_ROUGHNESS
 #define PRIME_RUNTIME_DEFAULT_LINEAR_ROUGHNESS PRIME_DEFAULT_REFERENCE_LINEAR_ROUGHNESS
 #endif
 
 float primeDefaultLinearRoughness() {
-    // Base color is not a material parameter: equally bright texels can represent stone, cloth,
-    // paint, or metal. Missing roughness therefore has one explicit, user-controlled meaning.
     return clamp(PRIME_RUNTIME_DEFAULT_LINEAR_ROUGHNESS, 0.0, 1.0);
 }
 
-bool primeMaterialIsTransmissive(uint flags) {
-    return (flags & PRIME_MATERIAL_FLAG_TRANSMISSIVE) != 0u;
+float primeBuiltinRoughness(uint materialClass) {
+    const float values[13] = float[](
+            0.9, 0.82, 0.48, 0.96, 0.72, 0.98, 0.62,
+            0.28, 0.90, 0.38, 0.30, 0.34, 0.78);
+    return materialClass < 13u
+            ? values[materialClass]
+            : primeDefaultLinearRoughness();
 }
 
-bool primeMaterialIsFoliage(uint flags) {
-    return (flags & PRIME_MATERIAL_FLAG_FOLIAGE) != 0u;
+uint primeBuiltinFresnelCode(uint materialClass) {
+    return materialClass == 9u
+            ? PRIME_FRESNEL_IRON
+            : materialClass == 10u
+                    ? PRIME_FRESNEL_GOLD
+                    : materialClass == 11u ? PRIME_FRESNEL_COPPER : 0u;
 }
 
-bool primeMaterialIsColorlessGlass(uint flags) {
-    return (flags & PRIME_MATERIAL_FLAG_COLORLESS_GLASS) != 0u;
+uint primeMaterialFamily(uint control) {
+    return control & PRIME_MATERIAL_FAMILY_MASK;
 }
 
-bool primeMaterialIsRoughGlass(uint flags) {
-    return (flags & PRIME_MATERIAL_FLAG_ROUGH_GLASS) != 0u;
+uint primeMaterialMedium(uint control) {
+    return control & PRIME_MATERIAL_MEDIUM_MASK;
 }
 
-float primeMaterialLinearRoughness(uint flags) {
-    if (primeMaterialIsTransmissive(flags)) {
-        // Water and glass body texels are exact interfaces. The decorative stained-glass texels
-        // selected by material.glsl intentionally use the configured fallback when no LabPBR
-        // roughness is authored.
-        return primeMaterialIsRoughGlass(flags)
-                ? primeDefaultLinearRoughness()
-                : 0.0;
-    }
-    return primeDefaultLinearRoughness();
+bool primeMaterialIsTransmissive(uint control) {
+    return primeMaterialFamily(control) == PRIME_MATERIAL_FAMILY_DIELECTRIC;
 }
 
-float primeMaterialDielectricF0(uint flags) {
-    // Water uses eta=1.333; other vanilla translucent models use the ordinary glass boundary.
-    return (flags & PRIME_MATERIAL_FLAG_WATER) != 0u ? 0.02037 : PRIME_DEFAULT_DIELECTRIC_F0;
+bool primeMaterialIsFoliage(uint control) {
+    return primeMaterialFamily(control) == PRIME_MATERIAL_FAMILY_FOLIAGE;
+}
+
+bool primeMaterialIsColorlessGlass(uint control) {
+    return primeMaterialMedium(control) == PRIME_MATERIAL_MEDIUM_COLORLESS_GLASS;
+}
+
+bool primeMaterialIsWater(uint control) {
+    return primeMaterialMedium(control) == PRIME_MATERIAL_MEDIUM_WATER;
+}
+
+bool primeMaterialIsRoughGlass(uint control) {
+    return (control & PRIME_MATERIAL_DECORATIVE_INTERFACE) != 0u;
+}
+
+bool primeFresnelIsConductor(uint fresnelCode) {
+    return fresnelCode >= PRIME_FRESNEL_IRON
+            && fresnelCode <= PRIME_FRESNEL_CUSTOM_CONDUCTOR;
+}
+
+float primeDecodeDielectricF0(uint fresnelCode) {
+    return fresnelCode == PRIME_FRESNEL_DEFAULT_DIELECTRIC
+            ? PRIME_DEFAULT_DIELECTRIC_F0
+            : clamp(
+                    float(fresnelCode - 1u) / 255.0,
+                    0.02,
+                    0.17);
 }
 
 struct PrimeFsrMasks {
@@ -74,21 +105,16 @@ struct PrimeFsrMasks {
     float transparencyAndComposition;
 };
 
-PrimeFsrMasks primeFsrMasks(uint flags) {
+PrimeFsrMasks primeFsrMasks(uint control) {
     PrimeFsrMasks masks;
-    if (primeMaterialIsTransmissive(flags)) {
-        // The traced composite writes interface depth and motion. FidelityFX recommends the T&C
-        // mask as the softer alternative for reflective shading whose color motion can differ;
-        // a near-one reactive mask would instead discard history and expose the FSR jitter.
+    if (primeMaterialIsTransmissive(control)) {
         masks.reactive = 0.0;
         masks.transparencyAndComposition = 1.0;
         return masks;
     }
-    // Alpha-tested foliage writes matching depth and motion. Marking it here would fully remove
-    // FSR's thin-feature lock and turn sub-pixel coverage changes into visible edge shimmer.
     masks.reactive = 0.0;
     masks.transparencyAndComposition =
-            (flags & PRIME_MATERIAL_FLAG_ANIMATED_TEXTURE) != 0u ? 0.75 : 0.0;
+            (control & PRIME_MATERIAL_ANIMATED) != 0u ? 0.75 : 0.0;
     return masks;
 }
 

@@ -1,28 +1,43 @@
 package dev.prime.render.terrain;
 
+import dev.prime.render.material.BuiltinMaterialClass;
+import dev.prime.render.material.CoverageMode;
+import dev.prime.render.material.MaterialDetail;
+import dev.prime.render.material.MaterialRecipe;
+import dev.prime.render.material.MediumHint;
+import dev.prime.render.material.PrimitiveControl;
+import dev.prime.render.material.ScatteringFamily;
+
 public final class PrimitivePacking {
     private static final float UV_FIXED_SCALE = 65_536.0F;
     private static final int UV_FIXED_ONE = 0xffff;
-    public static final int FLAG_CUTOUT = 1;
-    public static final int FLAG_ANIMATED_TEXTURE = 1 << 1;
-    public static final int FLAG_TRANSMISSIVE = 1 << 2;
-    public static final int FLAG_THIN_WALLED = 1 << 3;
-    public static final int FLAG_WATER = 1 << 4;
-    public static final int FLAG_FOLIAGE = 1 << 5;
-    public static final int FLAG_LABPBR_NORMAL = 1 << 6;
-    public static final int FLAG_LABPBR_SPECULAR = 1 << 7;
-    public static final int FLAG_TANGENT_NEGATIVE = 1 << 8;
+    public static final int CONTROL_ALPHA_CUTOUT = 1;
+    public static final int CONTROL_ANIMATED = 1 << 1;
+    public static final int CONTROL_SCATTERING_SHIFT = 2;
+    public static final int CONTROL_SCATTERING_MASK = 3 << CONTROL_SCATTERING_SHIFT;
+    public static final int CONTROL_OPAQUE = 0;
+    public static final int CONTROL_DIELECTRIC_SOLID = 1 << CONTROL_SCATTERING_SHIFT;
+    public static final int CONTROL_DIELECTRIC_THIN = 2 << CONTROL_SCATTERING_SHIFT;
+    public static final int CONTROL_FOLIAGE_THIN = 3 << CONTROL_SCATTERING_SHIFT;
+    public static final int CONTROL_WATER_MEDIUM = 1 << 4;
+    public static final int CONTROL_NORMAL_TEXTURE = 1 << 5;
+    public static final int CONTROL_OPTICAL_TEXTURE = 1 << 6;
+    public static final int CONTROL_TANGENT_NEGATIVE = 1 << 7;
     /** Accept only the authored winding's front side during any-hit traversal. */
-    public static final int FLAG_FRONT_FACE_ONLY = 1 << 9;
+    public static final int CONTROL_FRONT_FACE_ONLY = 1 << 8;
     /** Resolve a static base/overlay atlas pair as one material evaluation. */
-    public static final int FLAG_RASTER_COMPOSITE = 1 << 10;
-    public static final int FLAG_MASK = (1 << 11) - 1;
+    public static final int CONTROL_RASTER_COMPOSITE = 1 << 9;
+    private static final int CONTROL_RESERVED = 1 << 10;
+    public static final int CONTROL_BUILTIN_SHIFT = 11;
+    public static final int CONTROL_BUILTIN_MASK = 15 << CONTROL_BUILTIN_SHIFT;
+    public static final int CONTROL_MASK = (1 << 15) - 1;
+    public static final int MATERIAL_RECIPE_MASK = 0xff | CONTROL_BUILTIN_MASK;
     public static final int DYNAMIC_TEXTURE_FLAG = 1 << 31;
-    public static final int VISIBLE_EMISSION_FLAG = 1 << 30;
-    public static final int DYNAMIC_RED_ALPHA_FLAG = 1 << 29;
-    public static final int DYNAMIC_TEXTURE_INDEX_MASK = (1 << 26) - 1;
+    public static final int VISIBLE_EMISSION_FLAG = 1 << 10;
+    public static final int DYNAMIC_RED_ALPHA_FLAG = 1 << 9;
+    public static final int DYNAMIC_TEXTURE_INDEX_MASK = 63;
     public static final int NO_EMITTER_INDEX = -1;
-    public static final int MAX_EMITTER_INDEX = (1 << 27) - 2;
+    public static final int MAX_EMITTER_INDEX = (1 << 24) - 2;
     /**
      * Negative zero tags a constant UV stored as two full-precision floats in uv0 and uv1.
      * Ordinary negative densities remain the periodic macro-face encoding.
@@ -38,50 +53,50 @@ public final class PrimitivePacking {
     private PrimitivePacking() {
     }
 
-    /**
-     * Packs the three high primitive-flag bits and the local light-emitter index without
-     * truncation. The tint alpha byte owns the other eight flags; tint alpha is not a shading
-     * input.
-     */
-    public static int packFlagsEmitter(int flags, int emitterIndex) {
-        if ((flags & ~FLAG_MASK) != 0) {
-            throw new IllegalArgumentException("Primitive flags exceed their eleven-bit ABI field");
+    /** Packs geometry controls, the preset class, and a local light-emitter index. */
+    public static int packControlEmitter(int control, int emitterIndex) {
+        requireValidControl(control);
+        if ((control & CONTROL_RASTER_COMPOSITE) != 0) {
+            throw new IllegalArgumentException(
+                    "Raster composite payload cannot carry an emitter");
         }
         if (emitterIndex < NO_EMITTER_INDEX || emitterIndex > MAX_EMITTER_INDEX) {
-            throw new IllegalArgumentException("Primitive emitter index exceeds its 27-bit ABI field");
+            throw new IllegalArgumentException("Primitive emitter index exceeds its 24-bit ABI field");
         }
         int encodedEmitter = emitterIndex == NO_EMITTER_INDEX ? 0 : emitterIndex + 1;
-        return flags >>> 8 | encodedEmitter << 3;
+        return physicalControl(control) | encodedEmitter << 3;
     }
 
-    public static int packTintFlags(int packedTint, int flags) {
-        if ((flags & ~FLAG_MASK) != 0) {
-            throw new IllegalArgumentException("Primitive flags exceed their eleven-bit ABI field");
-        }
-        return (packedTint & 0x00ff_ffff) | (flags & 0xff) << 24;
+    public static int packTintControl(int packedTint, int control) {
+        requireValidControl(control);
+        return (packedTint & 0x00ff_ffff) | (control & 0xff) << 24;
     }
 
-    public static int unpackFlags(int packedTint, int packedFlagsEmitter) {
-        return packedTint >>> 24 | (packedFlagsEmitter & 7) << 8;
+    public static int unpackControl(int packedTint, int packedFlagsEmitter) {
+        return packedTint >>> 24
+                | (packedFlagsEmitter & 7) << 8
+                | (packedFlagsEmitter >>> 16 & CONTROL_BUILTIN_MASK);
     }
 
     public static int unpackEmitterIndex(int packed) {
         if ((packed & DYNAMIC_TEXTURE_FLAG) != 0) {
             return NO_EMITTER_INDEX;
         }
-        if ((packed & (FLAG_RASTER_COMPOSITE >>> 8)) != 0) {
+        if ((packed & (CONTROL_RASTER_COMPOSITE >>> 8)) != 0) {
             return NO_EMITTER_INDEX;
         }
-        int encoded = packed >>> 3;
+        int encoded = packed >>> 3 & 0x00ff_ffff;
         return encoded == 0 ? NO_EMITTER_INDEX : encoded - 1;
     }
 
     public static int withEmitterIndex(int packed, int emitterIndex) {
-        if ((packed & (FLAG_RASTER_COMPOSITE >>> 8)) != 0) {
+        if ((packed & (CONTROL_RASTER_COMPOSITE >>> 8)) != 0) {
             throw new IllegalArgumentException(
                     "Raster composite payload cannot carry an emitter");
         }
-        return packFlagsEmitter((packed & 7) << 8, emitterIndex);
+        int control = (packed & 7) << 8
+                | (packed >>> 16 & CONTROL_BUILTIN_MASK);
+        return packControlEmitter(control, emitterIndex);
     }
 
     /**
@@ -90,24 +105,21 @@ public final class PrimitivePacking {
      * <p>Dynamic geometry never carries a local emitter index. Its otherwise-unused high payload
      * bits select a scene texture and optionally mark directly visible emission.
      */
-    public static int packDynamicFlags(
-            int flags, int textureIndex, boolean visibleEmission) {
-        return packDynamicFlags(flags, textureIndex, visibleEmission, false);
+    public static int packDynamicControl(
+            int control, int textureIndex, boolean visibleEmission) {
+        return packDynamicControl(control, textureIndex, visibleEmission, false);
     }
 
-    public static int packDynamicFlags(
-            int flags,
+    public static int packDynamicControl(
+            int control,
             int textureIndex,
             boolean visibleEmission,
             boolean redAlpha) {
-        if ((flags & ~FLAG_MASK) != 0) {
-            throw new IllegalArgumentException(
-                    "Primitive flags exceed their eleven-bit ABI field");
-        }
+        requireValidControl(control);
         if (textureIndex < 0 || textureIndex > DYNAMIC_TEXTURE_INDEX_MASK) {
             throw new IllegalArgumentException("Dynamic texture index exceeds its ABI field");
         }
-        if ((flags & FLAG_RASTER_COMPOSITE) != 0) {
+        if ((control & CONTROL_RASTER_COMPOSITE) != 0) {
             throw new IllegalArgumentException(
                     "Dynamic textures cannot use a static raster composite");
         }
@@ -115,7 +127,7 @@ public final class PrimitivePacking {
             throw new IllegalArgumentException(
                     "Red-channel coverage requires a dynamic texture");
         }
-        return flags >>> 8
+        return physicalControl(control)
                 | textureIndex << 3
                 | (visibleEmission ? VISIBLE_EMISSION_FLAG : 0)
                 | (redAlpha ? DYNAMIC_RED_ALPHA_FLAG : 0)
@@ -192,88 +204,179 @@ public final class PrimitivePacking {
         return red | green << 8 | blue << 16 | alpha << 24;
     }
 
-    public static int packFlags(boolean cutout, boolean animatedTexture) {
-        return packFlags(cutout, animatedTexture, false, false, false, false);
+    public static int encode(PrimitiveControl value) {
+        MaterialRecipe material = value.material();
+        int control = (material.coverage() == CoverageMode.ALPHA_CUTOUT
+                        ? CONTROL_ALPHA_CUTOUT
+                        : 0)
+                | (value.animated() ? CONTROL_ANIMATED : 0)
+                | material.scattering().encoded() << CONTROL_SCATTERING_SHIFT
+                | (material.medium() == MediumHint.WATER ? CONTROL_WATER_MEDIUM : 0)
+                | (material.hasDetail(MaterialDetail.NORMAL_TEXTURE)
+                        ? CONTROL_NORMAL_TEXTURE
+                        : 0)
+                | (material.hasDetail(MaterialDetail.OPTICAL_TEXTURE)
+                        ? CONTROL_OPTICAL_TEXTURE
+                        : 0)
+                | (value.tangentNegative() ? CONTROL_TANGENT_NEGATIVE : 0)
+                | (value.frontFaceOnly() ? CONTROL_FRONT_FACE_ONLY : 0)
+                | (value.rasterComposite() ? CONTROL_RASTER_COMPOSITE : 0)
+                | material.builtinClass().id() << CONTROL_BUILTIN_SHIFT;
+        requireValidControl(control);
+        return control;
     }
 
-    public static int packFlags(
+    public static PrimitiveControl decode(int control) {
+        requireValidControl(control);
+        ScatteringFamily scattering = ScatteringFamily.fromEncoded(
+                control >>> CONTROL_SCATTERING_SHIFT & 3);
+        MediumHint medium = (control & CONTROL_WATER_MEDIUM) != 0
+                ? MediumHint.WATER
+                : scattering == ScatteringFamily.DIELECTRIC_SOLID
+                                || scattering == ScatteringFamily.DIELECTRIC_THIN
+                        ? MediumHint.GLASS
+                        : MediumHint.NONE;
+        int details = ((control & CONTROL_NORMAL_TEXTURE) != 0
+                        ? MaterialDetail.NORMAL_TEXTURE.bit()
+                        : 0)
+                | ((control & CONTROL_OPTICAL_TEXTURE) != 0
+                        ? MaterialDetail.OPTICAL_TEXTURE.bit()
+                        : 0);
+        MaterialRecipe recipe = new MaterialRecipe(
+                (control & CONTROL_ALPHA_CUTOUT) != 0
+                        ? CoverageMode.ALPHA_CUTOUT
+                        : CoverageMode.OPAQUE,
+                scattering,
+                medium,
+                details,
+                BuiltinMaterialClass.fromId(
+                        control >>> CONTROL_BUILTIN_SHIFT & 15));
+        return new PrimitiveControl(
+                recipe,
+                (control & CONTROL_ANIMATED) != 0,
+                (control & CONTROL_TANGENT_NEGATIVE) != 0,
+                (control & CONTROL_FRONT_FACE_ONLY) != 0,
+                (control & CONTROL_RASTER_COMPOSITE) != 0);
+    }
+
+    public static int materialRecipeControl(int control) {
+        requireValidControl(control);
+        return control & MATERIAL_RECIPE_MASK;
+    }
+
+    public static boolean isCutout(int control) {
+        return (control & CONTROL_ALPHA_CUTOUT) != 0;
+    }
+
+    public static boolean isTransmissive(int control) {
+        int scattering = control & CONTROL_SCATTERING_MASK;
+        return scattering == ScatteringFamily.DIELECTRIC_SOLID.encoded()
+                        << CONTROL_SCATTERING_SHIFT
+                || scattering == ScatteringFamily.DIELECTRIC_THIN.encoded()
+                        << CONTROL_SCATTERING_SHIFT;
+    }
+
+    public static boolean isFoliage(int control) {
+        return (control & CONTROL_SCATTERING_MASK)
+                == ScatteringFamily.FOLIAGE_THIN.encoded() << CONTROL_SCATTERING_SHIFT;
+    }
+
+    public static boolean isThinWalled(int control) {
+        int scattering = control & CONTROL_SCATTERING_MASK;
+        return scattering == CONTROL_DIELECTRIC_THIN
+                || scattering == CONTROL_FOLIAGE_THIN;
+    }
+
+    public static int encodeLegacySemantics(
             boolean cutout,
             boolean animatedTexture,
             boolean transmissive,
             boolean thinWalled,
             boolean water,
             boolean foliage) {
-        int flags = (cutout ? FLAG_CUTOUT : 0)
-                | (animatedTexture ? FLAG_ANIMATED_TEXTURE : 0)
-                | (transmissive ? FLAG_TRANSMISSIVE : 0)
-                | (thinWalled ? FLAG_THIN_WALLED : 0)
-                | (water ? FLAG_WATER : 0)
-                | (foliage ? FLAG_FOLIAGE : 0);
-        requireValidFlags(flags);
-        return flags;
+        ScatteringFamily scattering = foliage
+                ? ScatteringFamily.FOLIAGE_THIN
+                : transmissive
+                        ? thinWalled
+                                ? ScatteringFamily.DIELECTRIC_THIN
+                                : ScatteringFamily.DIELECTRIC_SOLID
+                        : ScatteringFamily.OPAQUE;
+        MediumHint medium = water
+                ? MediumHint.WATER
+                : transmissive ? MediumHint.GLASS : MediumHint.NONE;
+        return encode(new PrimitiveControl(
+                new MaterialRecipe(
+                        cutout ? CoverageMode.ALPHA_CUTOUT : CoverageMode.OPAQUE,
+                        scattering,
+                        medium,
+                        0,
+                        BuiltinMaterialClass.DEFAULT),
+                animatedTexture,
+                false,
+                false,
+                false));
     }
 
-    static void requireValidFlags(int flags) {
-        if ((flags & ~FLAG_MASK) != 0) {
-            throw new IllegalArgumentException("Primitive flags exceed their eleven-bit ABI field");
+    static void requireValidControl(int control) {
+        if ((control & ~CONTROL_MASK) != 0 || (control & CONTROL_RESERVED) != 0) {
+            throw new IllegalArgumentException("Primitive control contains reserved ABI bits");
         }
-        boolean cutout = (flags & FLAG_CUTOUT) != 0;
-        boolean transmissive = (flags & FLAG_TRANSMISSIVE) != 0;
-        boolean thinWalled = (flags & FLAG_THIN_WALLED) != 0;
-        boolean water = (flags & FLAG_WATER) != 0;
-        boolean foliage = (flags & FLAG_FOLIAGE) != 0;
-        boolean rasterComposite =
-                (flags & FLAG_RASTER_COMPOSITE) != 0;
-        if (rasterComposite
-                && ((flags
-                                & (FLAG_CUTOUT
-                                        | FLAG_ANIMATED_TEXTURE
-                                        | FLAG_TRANSMISSIVE
-                                        | FLAG_THIN_WALLED
-                                        | FLAG_WATER
-                                        | FLAG_FOLIAGE
-                                        | FLAG_FRONT_FACE_ONLY))
-                        != 0)) {
-            throw new IllegalArgumentException(
-                    "Raster composites must be static, opaque, and two-sided");
-        }
-        if (foliage && (!cutout || !thinWalled || transmissive || water)) {
-            throw new IllegalArgumentException(
-                    "Foliage must be a cutout, non-volume thin-walled primitive");
-        }
-        if (thinWalled && !transmissive && !foliage) {
-            throw new IllegalArgumentException(
-                    "Only transmissive or foliage primitives may be thin-walled");
-        }
-        if (water && (!transmissive || thinWalled)) {
-            throw new IllegalArgumentException("Water must be a solid transmissive medium");
-        }
-        if ((flags & FLAG_TANGENT_NEGATIVE) != 0
-                && (flags & FLAG_LABPBR_NORMAL) == 0) {
-            throw new IllegalArgumentException(
-                    "Negative tangent handedness requires a LabPBR normal map");
-        }
+        decodeUnchecked(control);
     }
 
-    public static int withLabPbr(
-            int flags,
+    public static int withMaterialDetails(
+            int control,
             boolean normalMap,
-            boolean specularMap,
+            boolean opticalMap,
             boolean tangentNegative) {
-        return flags
-                | (normalMap ? FLAG_LABPBR_NORMAL : 0)
-                | (specularMap ? FLAG_LABPBR_SPECULAR : 0)
-                | (normalMap && tangentNegative ? FLAG_TANGENT_NEGATIVE : 0);
+        int result = control
+                | (normalMap ? CONTROL_NORMAL_TEXTURE : 0)
+                | (opticalMap ? CONTROL_OPTICAL_TEXTURE : 0)
+                | (normalMap && tangentNegative ? CONTROL_TANGENT_NEGATIVE : 0);
+        requireValidControl(result);
+        return result;
     }
 
-    public static int packRasterCompositeFlags(
-            int flags, int packedOverlayTint) {
-        if ((flags & FLAG_RASTER_COMPOSITE) == 0) {
+    public static int packRasterCompositeControl(
+            int control, int packedOverlayTint) {
+        if ((control & CONTROL_RASTER_COMPOSITE) == 0) {
             throw new IllegalArgumentException(
                     "Raster composite payload requires its primitive flag");
         }
-        requireValidFlags(flags);
-        return flags >>> 8 | (packedOverlayTint & 0x00ff_ffff) << 3;
+        requireValidControl(control);
+        return physicalControl(control) | (packedOverlayTint & 0x00ff_ffff) << 3;
+    }
+
+    private static int physicalControl(int control) {
+        return (control >>> 8 & 7) | (control & CONTROL_BUILTIN_MASK) << 16;
+    }
+
+    private static void decodeUnchecked(int control) {
+        int scattering = control >>> CONTROL_SCATTERING_SHIFT & 3;
+        boolean cutout = (control & CONTROL_ALPHA_CUTOUT) != 0;
+        boolean water = (control & CONTROL_WATER_MEDIUM) != 0;
+        boolean foliage = scattering == ScatteringFamily.FOLIAGE_THIN.encoded();
+        boolean dielectricSolid = scattering == ScatteringFamily.DIELECTRIC_SOLID.encoded();
+        boolean rasterComposite = (control & CONTROL_RASTER_COMPOSITE) != 0;
+        if (water && !dielectricSolid) {
+            throw new IllegalArgumentException("Water must be a solid dielectric");
+        }
+        if (foliage && !cutout) {
+            throw new IllegalArgumentException("Foliage must use alpha-cutout coverage");
+        }
+        if ((control & CONTROL_TANGENT_NEGATIVE) != 0
+                && (control & CONTROL_NORMAL_TEXTURE) == 0) {
+            throw new IllegalArgumentException(
+                    "Negative tangent handedness requires a normal texture");
+        }
+        if (rasterComposite
+                && (cutout
+                        || scattering != ScatteringFamily.OPAQUE.encoded()
+                        || (control & (CONTROL_ANIMATED | CONTROL_FRONT_FACE_ONLY)) != 0)) {
+            throw new IllegalArgumentException(
+                    "Raster composites must be static, opaque, and two-sided");
+        }
+        BuiltinMaterialClass.fromId(control >>> CONTROL_BUILTIN_SHIFT & 15);
     }
 
     /**

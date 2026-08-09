@@ -10,7 +10,7 @@ public record SharcDiagnosticsSnapshot(
         long referenceCaptureCount,
         double referenceQueryMilliseconds,
         long sampledQueries,
-        long deltaSkips,
+        long discreteSkips,
         long shortSegmentSkips,
         long glossyFootprintSkips,
         long lookupAttempts,

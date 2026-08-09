@@ -82,17 +82,26 @@ vec3 primeNrdYCoCgToLinear(vec3 color) {
     return max(vec3(t + color.y, color.x + color.z, t - color.y), vec3(0.0));
 }
 
-float primeNrdMaterialId(uint materialFlags) {
+const uint PRIME_NRD_GUIDE_CONDUCTOR = 1u << 8u;
+
+uint primeNrdGuideControl(uint materialControl, uint opticalControl) {
+    return materialControl
+            | (primeFresnelIsConductor(opticalControl & PRIME_OPTICAL_FRESNEL_MASK)
+                    ? PRIME_NRD_GUIDE_CONDUCTOR
+                    : 0u);
+}
+
+float primeNrdMaterialId(uint materialControl) {
     // R10_G10_B10_A2_UNORM provides four exact classes. These categories deliberately describe
     // reconstruction behavior, not every authored material: ordinary dielectrics, conductors,
     // transmissive interfaces, and strand-like foliage must not exchange temporal history.
-    if (primeMaterialIsFoliage(materialFlags)) {
+    if (primeMaterialIsFoliage(materialControl)) {
         return 1.0;
     }
-    if (primeMaterialIsTransmissive(materialFlags)) {
+    if (primeMaterialIsTransmissive(materialControl)) {
         return 2.0 / 3.0;
     }
-    return (materialFlags & PRIME_MATERIAL_FLAG_LABPBR_METAL) != 0u ? 1.0 / 3.0 : 0.0;
+    return (materialControl & PRIME_NRD_GUIDE_CONDUCTOR) != 0u ? 1.0 / 3.0 : 0.0;
 }
 
 uint primeNrdPrimaryMaterialFlags(

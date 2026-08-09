@@ -90,6 +90,9 @@ final class IntegratorSettingsTest {
         assertEquals(0, packed & ShaderAbi.PATH_SEAMLESS_GLASS_MASK);
         assertEquals(0, packed & ShaderAbi.PATH_AIR_GAP_MASK);
         assertEquals(
+                ShaderAbi.PATH_VANILLA_PBR_PRESETS_MASK,
+                packed & ShaderAbi.PATH_VANILLA_PBR_PRESETS_MASK);
+        assertEquals(
                 ShaderAbi.PATH_SEAMLESS_GLASS_MASK,
                 IntegratorSettings.packSampleControl(0xabcd, astronomy, true, false)
                         & ShaderAbi.PATH_SEAMLESS_GLASS_MASK);
@@ -97,6 +100,11 @@ final class IntegratorSettingsTest {
                 ShaderAbi.PATH_AIR_GAP_MASK,
                 IntegratorSettings.packSampleControl(0xabcd, astronomy, false, true)
                         & ShaderAbi.PATH_AIR_GAP_MASK);
+        assertEquals(
+                0,
+                IntegratorSettings.packSampleControl(
+                                0xabcd, astronomy, false, false, false)
+                        & ShaderAbi.PATH_VANILLA_PBR_PRESETS_MASK);
         assertThrows(
                 IllegalArgumentException.class,
                 () -> IntegratorSettings.packSampleControl(

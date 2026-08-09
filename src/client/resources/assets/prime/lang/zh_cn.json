@@ -80,6 +80,8 @@
   "prime.options.material.seamless_glass.tooltip": "让玻璃边框和内部使用一致的光滑透光材质，减少方块接缝和磨砂区域。关闭后恢复材质包纹理原有的边框与表面差异。",
   "prime.options.material.air_gap": "透明材质空气微缝",
   "prime.options.material.air_gap.tooltip": "在不同的等折射率实体透明材质之间加入分辨率以下的空气薄层，保留切割反射。水、粗糙度不兼容及不同折射率的接触仍使用直接介质边界。",
+  "prime.options.material.vanilla_pbr_presets": "原版 PBR 预设",
+  "prime.options.material.vanilla_pbr_presets.tooltip": "为没有提供 PBR 参数的原版同质材质应用保守预设。材质包提供的逐纹理参数始终优先。",
   "prime.options.debug.triangle_distribution": "三角形可视化",
   "prime.options.debug.triangle_distribution.tooltip": "用不同颜色标出实际参与光线追踪的三角形，便于检查几何合并和细节分布。仅用于调试，且只在本次游戏会话中有效。",
   "prime.options.debug.renderer_diagnostics": "渲染诊断信息",

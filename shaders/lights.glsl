@@ -558,7 +558,7 @@ LightEvaluation primeEvaluateAreaLight(
             primeEmitterUv(
                     emitters.emitters[emitterIndex].uvsTint.xyz,
                     parentBarycentric),
-            uintBitsToFloat(surface.textureLod));
+            surface.textureLod);
     if (!evaluatePdf) {
         return result;
     }

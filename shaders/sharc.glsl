@@ -21,7 +21,7 @@
 const uint PRIME_SHARC_DIAGNOSTICS_ENABLED = 1u;
 const uint PRIME_SHARC_DIAGNOSTIC_SAMPLE_MASK = 255u;
 const uint PRIME_SHARC_DIAGNOSTIC_QUERY = 0u;
-const uint PRIME_SHARC_DIAGNOSTIC_DELTA_SKIP = 1u;
+const uint PRIME_SHARC_DIAGNOSTIC_DISCRETE_SKIP = 1u;
 const uint PRIME_SHARC_DIAGNOSTIC_SHORT_SKIP = 2u;
 const uint PRIME_SHARC_DIAGNOSTIC_GLOSSY_SKIP = 3u;
 const uint PRIME_SHARC_DIAGNOSTIC_LOOKUP = 4u;
@@ -61,18 +61,18 @@ float primeSharcLuminance(vec3 value) {
 }
 
 vec3 primeSharcMaterialDemodulation(SurfaceInteraction surface) {
-    if (primeMaterialIsTransmissive(surface.materialFlags)) {
+    if (primeMaterialIsTransmissive(surface.materialControl)) {
         return vec3(1.0);
     }
 
-    PrimeTranslatedLabPbrMaterial translated = primeDecodeAndTranslateLabPbr(
-            surface.labPbrNormal,
-            surface.labPbrSpecular,
-            surface.materialFlags);
-    bool metal = primeTranslatedLabPbrIsMetal(translated);
+    PrimeOpticalMaterial translated = primeDecodeOpticalMaterial(
+            surface.roughness,
+            surface.opticalControl,
+            surface.materialControl);
+    bool metal = primeOpticalMaterialIsMetal(translated);
     vec3 diffuseAlbedo = metal ? vec3(0.0) : surface.baseColor;
     vec3 specularF0 = metal
-            ? primeLabPbrMetalFresnel(surface.baseColor, translated.metalId).f0
+            ? primeConductorFresnel(surface.baseColor, translated.fresnelCode).f0
             : vec3(translated.dielectricF0);
     vec3 averageSpecularFresnel = specularF0
             + (vec3(1.0) - specularF0) * (1.0 / 21.0);

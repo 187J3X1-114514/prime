@@ -3,6 +3,7 @@ package dev.prime.render.terrain;
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.List;
 import org.junit.jupiter.api.Test;
@@ -325,10 +326,8 @@ final class SectionClusterMeshBuilderTest {
             assertEquals(2, cluster.transmissiveTriangleCount());
             assertEquals(2, cluster.transmissiveMacroTriangleCount());
             int[] primitives = cluster.segments().getFirst().primitiveRecords();
-            int flags = PrimitivePacking.unpackFlags(primitives[3], primitives[5]);
-            assertEquals(
-                    PrimitivePacking.FLAG_TRANSMISSIVE,
-                    flags & PrimitivePacking.FLAG_TRANSMISSIVE);
+            int flags = PrimitivePacking.unpackControl(primitives[3], primitives[5]);
+            assertTrue(PrimitivePacking.isTransmissive(flags));
         }
     }
 

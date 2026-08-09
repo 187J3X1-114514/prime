@@ -1,6 +1,8 @@
 package dev.prime.render.shader;
 
 import dev.prime.render.DisplaySettings;
+import dev.prime.render.MaterialSettings;
+import dev.prime.render.material.BuiltinMaterialClass;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.file.Path;
@@ -755,7 +757,28 @@ final class PrimeProductionMathGpuTest {
                         random.nextFloat(),
                         random.nextFloat(),
                         random.nextFloat());
+                int builtinId = local & 15;
+                float builtinRoughness = builtinId < BuiltinMaterialClass.values().length
+                        ? BuiltinMaterialClass.values()[builtinId].roughness()
+                        : MaterialSettings.linearRoughness(
+                                MaterialSettings.DEFAULT_ROUGHNESS_STEPS);
+                if (!Float.isFinite(builtinRoughness)) {
+                    builtinRoughness = MaterialSettings.linearRoughness(
+                            MaterialSettings.DEFAULT_ROUGHNESS_STEPS);
+                }
+                int builtinFresnel = builtinId < BuiltinMaterialClass.values().length
+                        ? BuiltinMaterialClass.values()[builtinId].fresnelCode()
+                        : 0;
                 putInt(input, index, words, 2, 0, local & 0xff);
+                putInt(input, index, words, 2, 1, builtinId);
+                putInt(
+                        input,
+                        index,
+                        words,
+                        2,
+                        2,
+                        Float.floatToRawIntBits(builtinRoughness));
+                putInt(input, index, words, 2, 3, builtinFresnel);
             }
         }
         return input;

@@ -425,8 +425,8 @@ public final class VulkanRenderer implements AutoCloseable {
                                 percentage(sharc.terminationRate())));
                         lines.add(String.format(
                                 Locale.ROOT,
-                                "SHARC sampled eligibility skips - delta: %,d; short segment: %,d; narrow glossy footprint: %,d; captures: %,d",
-                                sharc.deltaSkips(),
+                                "SHARC sampled eligibility skips - discrete: %,d; short segment: %,d; narrow glossy footprint: %,d; captures: %,d",
+                                sharc.discreteSkips(),
                                 sharc.shortSegmentSkips(),
                                 sharc.glossyFootprintSkips(),
                                 sharc.captureCount()));

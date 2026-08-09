@@ -76,7 +76,7 @@ void primeStoreWavefrontTransportRecord(
     primeWavefrontPaths.records[pathIndex].transport.medium1 = record.medium1;
 }
 
-const uint PRIME_WAVEFRONT_REACHED_NON_DELTA = 2u;
+const uint PRIME_WAVEFRONT_REACHED_SOLID_ANGLE = 2u;
 const uint PRIME_WAVEFRONT_DIFFUSE_PATH = 4u;
 const uint PRIME_WAVEFRONT_TRANSPARENT_BRANCH = 8u;
 const uint PRIME_WAVEFRONT_TRANSMISSION_BRANCH = 16u;
@@ -254,7 +254,7 @@ uint primePackWavefrontPathControl(PathState path) {
             | ((primePackWavefrontEtaScale(path.etaScale)
                     & PRIME_WAVEFRONT_ETA_SCALE_MASK)
                     << PRIME_WAVEFRONT_ETA_SCALE_SHIFT)
-            | ((path.flags & PRIME_PATH_PREVIOUS_DELTA)
+            | ((path.flags & PRIME_PATH_PREVIOUS_DISCRETE)
                     << PRIME_WAVEFRONT_PATH_FLAGS_SHIFT);
 }
 
@@ -395,7 +395,7 @@ void primeStoreDeferredAreaLightRequest(
         vec3 direction,
         float distance,
         vec3 contribution) {
-    // A guide-pending delta path and a secondary Area request are mutually exclusive. Reusing the
+    // A guide-pending discrete path and a secondary Area request are mutually exclusive. Reusing the
     // cold PSR lane keeps the 96-byte realtime path ABI and memory footprint fixed.
     vec3 packedContribution = primeNrdSanitizeRadiance(contribution);
     uint packedNormal = primeWavefrontPaths.records[pathIndex].psrPacked.w
@@ -496,8 +496,8 @@ PrimeWavefrontTransportRecord primeMakeWavefrontTransportRecord(
     record.medium0 = primePackWavefrontMedium(volumeStack.values[0]);
     record.medium1 = primePackWavefrontMedium(volumeStack.values[1]);
     uint denoiserControl = enabled ? PRIME_WAVEFRONT_ACTIVE_MASK : 0u;
-    if (denoiserState.reachedNonDelta) {
-        denoiserControl |= PRIME_WAVEFRONT_REACHED_NON_DELTA;
+    if (denoiserState.reachedSolidAngle) {
+        denoiserControl |= PRIME_WAVEFRONT_REACHED_SOLID_ANGLE;
     }
     if (denoiserState.diffusePath) {
         denoiserControl |= PRIME_WAVEFRONT_DIFFUSE_PATH;
@@ -554,7 +554,7 @@ PathState primeWavefrontPath(
             : 0u;
     path.rayDirection = record.rayDirectionAndDenoiserControl.xyz;
     path.flags = (pathControl >> PRIME_WAVEFRONT_PATH_FLAGS_SHIFT)
-            & PRIME_PATH_PREVIOUS_DELTA;
+            & PRIME_PATH_PREVIOUS_DISCRETE;
     path.throughput = record.throughputAndNumericalFlags.xyz;
     path.previousBsdfPdf = record.physicalOriginAndPreviousBsdfPdf.w;
     path.etaScale = primeUnpackWavefrontEtaScale(
@@ -592,8 +592,8 @@ PrimeDenoiserState primeWavefrontDenoiserState(
         PrimeIntegrationResult result) {
     PrimeDenoiserState state;
     state.hasPrimarySurface = true;
-    state.reachedNonDelta =
-            (denoiserControl & PRIME_WAVEFRONT_REACHED_NON_DELTA) != 0u;
+    state.reachedSolidAngle =
+            (denoiserControl & PRIME_WAVEFRONT_REACHED_SOLID_ANGLE) != 0u;
     state.diffuseAlbedoProduct = result.guides.primaryAlbedo;
     state.specularAlbedoProduct = result.guides.primarySpecularAlbedo;
     state.diffusePath =
@@ -671,7 +671,7 @@ PrimeWavefrontPathRecord primeMakeTransparentWavefrontRecord(
         bool enabled) {
     PrimeDenoiserState denoiserState;
     denoiserState.hasPrimarySurface = true;
-    denoiserState.reachedNonDelta = hasGuide;
+    denoiserState.reachedSolidAngle = hasGuide;
     denoiserState.diffuseAlbedoProduct = branchResult.guides.primaryAlbedo;
     denoiserState.specularAlbedoProduct =
             branchResult.guides.primarySpecularAlbedo;
@@ -713,7 +713,7 @@ PrimeWavefrontTransportRecord primeMakeUpdatedTransparentWavefrontRecord(
         bool enabled) {
     PrimeDenoiserState denoiserState;
     denoiserState.hasPrimarySurface = true;
-    denoiserState.reachedNonDelta = hasGuide;
+    denoiserState.reachedSolidAngle = hasGuide;
     denoiserState.diffuseAlbedoProduct = branchResult.guides.primaryAlbedo;
     denoiserState.specularAlbedoProduct =
             branchResult.guides.primarySpecularAlbedo;
@@ -963,7 +963,7 @@ PrimeIntegrationResult primeLoadWavefrontIntermediate(
 }
 
 // A queued ordinary continuation already owns a primary guide. Only radiance and the two
-// first-bounce hit distances evolve on every vertex. The pre-guide delta chain additionally needs
+// first-bounce hit distances evolve on every vertex. The pre-guide discrete chain additionally needs
 // its albedo products, but no other immutable guide field participates in transport.
 PrimeIntegrationResult primeLoadWavefrontActiveIntermediate(
         uvec2 pixel,
@@ -976,7 +976,7 @@ PrimeIntegrationResult primeLoadWavefrontActiveIntermediate(
     result.radiance.specular = specular.rgb;
     result.guides.diffuseHitDistance = diffuse.a;
     result.guides.specularHitDistance = specular.a;
-    if ((control & PRIME_WAVEFRONT_REACHED_NON_DELTA) == 0u) {
+    if ((control & PRIME_WAVEFRONT_REACHED_SOLID_ANGLE) == 0u) {
         result.guides.primaryAlbedo =
                 imageLoad(primeNrdMaterial, coordinate).rgb;
         result.guides.primarySpecularAlbedo =
@@ -1142,7 +1142,7 @@ PrimeTransparentBranchResult primeLoadTransparentBranchActiveIntermediate(
         uint control) {
     ivec2 coordinate = ivec2(pixel);
     bool nrdShInputs = primeWritesNrdShInputs();
-    bool hasGuide = (control & PRIME_WAVEFRONT_REACHED_NON_DELTA) != 0u;
+    bool hasGuide = (control & PRIME_WAVEFRONT_REACHED_SOLID_ANGLE) != 0u;
     vec4 diffuse = transmissionBranch
             ? imageLoad(primeNrdNoisyDiffuse, coordinate)
             : nrdShInputs
@@ -1437,7 +1437,7 @@ void primeFinalizeTransparentBranchGuide(
         uint control,
         inout PrimeTransparentBranchResult result) {
     bool hasGuide =
-            (control & PRIME_WAVEFRONT_REACHED_NON_DELTA) != 0u;
+            (control & PRIME_WAVEFRONT_REACHED_SOLID_ANGLE) != 0u;
     if (!primeWavefrontGuideEnabled(control) || hasGuide) {
         return;
     }

@@ -201,18 +201,19 @@ public final class MergeFace {
                 deltaU2,
                 deltaV2,
                 packedNormal);
-        int flags = PrimitivePacking.packFlags(
-                surface.cutout(),
+        int flags = PrimitivePacking.encode(MaterialRecipeResolver.resolve(
+                surface.sprite(),
+                surface.builtinMaterialClass(),
                 surface.animated(),
+                false,
+                surface.foliage(),
+                labPbrMaterials,
+                surface.cutout(),
                 surface.transmissive(),
                 surface.thinWalled(),
+                (packedTangent & 0x1_0000_0000L) != 0L,
                 false,
-                surface.foliage());
-        flags = PrimitivePacking.withLabPbr(
-                flags,
-                labPbrMaterials.hasNormal(surface.sprite().id()),
-                labPbrMaterials.hasSpecular(surface.sprite().id()),
-                (packedTangent & 0x1_0000_0000L) != 0L);
+                false));
         int density = PrimitivePacking.packUvDensity(
                 edgeUX,
                 edgeUY,
@@ -231,9 +232,9 @@ public final class MergeFace {
             packedUv0,
             packedUv1,
             packedUv2,
-            PrimitivePacking.packTintFlags(PrimitivePacking.packTint(surface.tint()), flags),
+            PrimitivePacking.packTintControl(PrimitivePacking.packTint(surface.tint()), flags),
             packedNormal,
-            PrimitivePacking.packFlagsEmitter(flags, PrimitivePacking.NO_EMITTER_INDEX),
+            PrimitivePacking.packControlEmitter(flags, PrimitivePacking.NO_EMITTER_INDEX),
             density | Integer.MIN_VALUE,
             (int) packedTangent
         };
@@ -268,30 +269,30 @@ public final class MergeFace {
             throw new IllegalArgumentException(
                     "Raster material layers are not coincident");
         }
-        int baseFlags = PrimitivePacking.unpackFlags(
+        int baseFlags = PrimitivePacking.unpackControl(
                 base.primitive[3], base.primitive[5]);
-        int overlayFlags = PrimitivePacking.unpackFlags(
+        int overlayFlags = PrimitivePacking.unpackControl(
                 overlay.primitive[3], overlay.primitive[5]);
         if ((baseFlags
-                                & (PrimitivePacking.FLAG_CUTOUT
-                                        | PrimitivePacking.FLAG_ANIMATED_TEXTURE
-                                        | PrimitivePacking.FLAG_TRANSMISSIVE
-                                        | PrimitivePacking.FLAG_THIN_WALLED
-                                        | PrimitivePacking.FLAG_WATER
-                                        | PrimitivePacking.FLAG_FOLIAGE
-                                        | PrimitivePacking.FLAG_FRONT_FACE_ONLY
-                                        | PrimitivePacking.FLAG_RASTER_COMPOSITE))
+                                & (PrimitivePacking.CONTROL_ALPHA_CUTOUT
+                                        | PrimitivePacking.CONTROL_ANIMATED
+                                        | PrimitivePacking.CONTROL_SCATTERING_MASK
+                                        | PrimitivePacking.CONTROL_WATER_MEDIUM
+                                        | PrimitivePacking.CONTROL_FRONT_FACE_ONLY
+                                        | PrimitivePacking.CONTROL_RASTER_COMPOSITE))
                         != 0
-                || (overlayFlags & PrimitivePacking.FLAG_CUTOUT) == 0
+                || (overlayFlags & PrimitivePacking.CONTROL_ALPHA_CUTOUT) == 0
                 || ((overlayFlags
-                                & (PrimitivePacking.FLAG_ANIMATED_TEXTURE
-                                        | PrimitivePacking.FLAG_TRANSMISSIVE
-                                        | PrimitivePacking.FLAG_THIN_WALLED
-                                        | PrimitivePacking.FLAG_WATER
-                                        | PrimitivePacking.FLAG_FOLIAGE
-                                        | PrimitivePacking.FLAG_FRONT_FACE_ONLY
-                                        | PrimitivePacking.FLAG_RASTER_COMPOSITE))
+                                & (PrimitivePacking.CONTROL_ANIMATED
+                                        | PrimitivePacking.CONTROL_SCATTERING_MASK
+                                        | PrimitivePacking.CONTROL_WATER_MEDIUM
+                                        | PrimitivePacking.CONTROL_FRONT_FACE_ONLY
+                                        | PrimitivePacking.CONTROL_RASTER_COMPOSITE))
                         != 0)
+                || (PrimitivePacking.materialRecipeControl(baseFlags)
+                                & ~PrimitivePacking.CONTROL_ALPHA_CUTOUT)
+                        != (PrimitivePacking.materialRecipeControl(overlayFlags)
+                                & ~PrimitivePacking.CONTROL_ALPHA_CUTOUT)
                 || base.sprite.animated()
                 || overlay.sprite.animated()) {
             return null;
@@ -324,17 +325,12 @@ public final class MergeFace {
             return null;
         }
 
-        int labPbrMask = PrimitivePacking.FLAG_LABPBR_NORMAL
-                | PrimitivePacking.FLAG_LABPBR_SPECULAR
-                | PrimitivePacking.FLAG_TANGENT_NEGATIVE;
-        int flags = baseFlags
-                | overlayFlags & labPbrMask
-                | PrimitivePacking.FLAG_RASTER_COMPOSITE;
-        PrimitivePacking.requireValidFlags(flags);
+        int flags = baseFlags | PrimitivePacking.CONTROL_RASTER_COMPOSITE;
+        PrimitivePacking.requireValidControl(flags);
         int[] primitive = base.primitive.clone();
-        primitive[3] = PrimitivePacking.packTintFlags(
+        primitive[3] = PrimitivePacking.packTintControl(
                 primitive[3], flags);
-        primitive[5] = PrimitivePacking.packRasterCompositeFlags(
+        primitive[5] = PrimitivePacking.packRasterCompositeControl(
                 flags, overlay.primitive[3]);
         primitive[6] = pixelOffsetU & 0xffff
                 | (pixelOffsetV & 0xffff) << 16;
@@ -457,9 +453,9 @@ public final class MergeFace {
     }
 
     boolean frontFaceOnly() {
-        return (PrimitivePacking.unpackFlags(
+        return (PrimitivePacking.unpackControl(
                         this.primitive[3], this.primitive[5])
-                        & PrimitivePacking.FLAG_FRONT_FACE_ONLY)
+                        & PrimitivePacking.CONTROL_FRONT_FACE_ONLY)
                 != 0;
     }
 

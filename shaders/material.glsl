@@ -11,13 +11,13 @@
 
 // Minimal Minecraft adapter. The integrator consumes only this result, so future material
 // models can replace atlas/tint decoding without changing path scheduling or traversal.
-struct MaterialEvaluation {
+struct PrimeMaterialSample {
     vec3 baseColor;
     float opacity;
-    uint flags;
     vec3 shadingNormal;
-    uint labPbrNormal;
-    uint labPbrSpecular;
+    float roughness;
+    uint materialControl;
+    uint opticalControl;
 };
 
 const uint PRIME_EMITTER_FLAG_TWO_SIDED = 1u;
@@ -25,24 +25,46 @@ const uint PRIME_EMITTER_FLAG_LABPBR_EMISSION = 2u;
 const uint PRIME_CONSTANT_UV_DENSITY = 0x80000000u;
 const uint PRIME_CONSTANT_UV_OWN_TINT = 1u;
 const uint PRIME_CONSTANT_UV_BAKED_MATERIAL = 2u;
-const uint PRIME_PACKED_FLAG_FRONT_FACE_ONLY = 1u << 9u;
-const uint PRIME_PACKED_FLAG_RASTER_COMPOSITE = 1u << 10u;
+const uint PRIME_RECIPE_ALPHA_CUTOUT = 1u;
+const uint PRIME_RECIPE_ANIMATED = 1u << 1u;
+const uint PRIME_RECIPE_SCATTERING_SHIFT = 2u;
+const uint PRIME_RECIPE_SCATTERING_MASK = 3u << PRIME_RECIPE_SCATTERING_SHIFT;
+const uint PRIME_RECIPE_OPAQUE = 0u;
+const uint PRIME_RECIPE_DIELECTRIC_SOLID = 1u << PRIME_RECIPE_SCATTERING_SHIFT;
+const uint PRIME_RECIPE_DIELECTRIC_THIN = 2u << PRIME_RECIPE_SCATTERING_SHIFT;
+const uint PRIME_RECIPE_FOLIAGE_THIN = 3u << PRIME_RECIPE_SCATTERING_SHIFT;
+const uint PRIME_RECIPE_WATER = 1u << 4u;
+const uint PRIME_RECIPE_TANGENT_NEGATIVE = 1u << 7u;
+const uint PRIME_RECIPE_FRONT_FACE_ONLY = 1u << 8u;
+const uint PRIME_RECIPE_RASTER_COMPOSITE = 1u << 9u;
+const uint PRIME_RECIPE_BUILTIN_SHIFT = 11u;
+const uint PRIME_RECIPE_BUILTIN_MASK = 15u << PRIME_RECIPE_BUILTIN_SHIFT;
+const uint PRIME_RECIPE_MATERIAL_MASK = 0xffu | PRIME_RECIPE_BUILTIN_MASK;
 
-uint primePrimitiveFlags(PrimitiveRecord primitive) {
-    uint packedFlags =
-            (primitive.tint >> 24u) | ((primitive.flagsEmitter & 7u) << 8u);
-    // Traversal and raster-composition bits are primitive translation properties, not material
-    // model inputs. Keep them out of MaterialEvaluation, where bit 9 and above are reserved for
-    // translated LabPBR state.
-    return packedFlags & (PRIME_PACKED_FLAG_FRONT_FACE_ONLY - 1u);
+uint primePrimitiveControl(PrimitiveRecord primitive) {
+    return (primitive.tint >> 24u)
+            | ((primitive.flagsEmitter & 7u) << 8u)
+            | ((primitive.flagsEmitter >> 16u) & PRIME_RECIPE_BUILTIN_MASK);
+}
+
+bool primeRecipeIsTransmissive(uint control) {
+    uint scattering = control & PRIME_RECIPE_SCATTERING_MASK;
+    return scattering == PRIME_RECIPE_DIELECTRIC_SOLID
+            || scattering == PRIME_RECIPE_DIELECTRIC_THIN;
+}
+
+bool primeRecipeIsThinWalled(uint control) {
+    uint scattering = control & PRIME_RECIPE_SCATTERING_MASK;
+    return scattering == PRIME_RECIPE_DIELECTRIC_THIN
+            || scattering == PRIME_RECIPE_FOLIAGE_THIN;
 }
 
 bool primePrimitiveIsFrontFaceOnly(PrimitiveRecord primitive) {
-    return (primitive.flagsEmitter & 2u) != 0u;
+    return (primitive.flagsEmitter & 1u) != 0u;
 }
 
 bool primeUsesRasterComposite(PrimitiveRecord primitive) {
-    return (primitive.flagsEmitter & 4u) != 0u;
+    return (primitive.flagsEmitter & 2u) != 0u;
 }
 
 uint primeRasterCompositeTint(PrimitiveRecord primitive) {
@@ -50,9 +72,9 @@ uint primeRasterCompositeTint(PrimitiveRecord primitive) {
 }
 
 const uint PRIME_DYNAMIC_TEXTURE_FLAG = 0x80000000u;
-const uint PRIME_VISIBLE_EMISSION_FLAG = 0x40000000u;
-const uint PRIME_DYNAMIC_RED_ALPHA_FLAG = 0x20000000u;
-const uint PRIME_DYNAMIC_TEXTURE_INDEX_MASK = 0x03ffffffu;
+const uint PRIME_VISIBLE_EMISSION_FLAG = 1u << 10u;
+const uint PRIME_DYNAMIC_RED_ALPHA_FLAG = 1u << 9u;
+const uint PRIME_DYNAMIC_TEXTURE_INDEX_MASK = 0x3fu;
 
 uint primePrimitiveTextureIndex(PrimitiveRecord primitive) {
     return (primitive.flagsEmitter & PRIME_DYNAMIC_TEXTURE_FLAG) != 0u
@@ -104,9 +126,9 @@ vec2 primePrimitiveMaterialReferenceUv(PrimitiveRecord primitive) {
     return 0.5 * (min(first, min(second, third)) + max(first, max(second, third)));
 }
 
-MaterialEvaluation primeEvaluateMaterial(
+PrimeMaterialSample primeEvaluateMaterial(
         PrimitiveRecord primitive, vec2 uv, float textureLodValue, uint instanceTint) {
-    MaterialEvaluation result;
+    PrimeMaterialSample result;
     bool bakedMaterial = primeUsesBakedMaterial(primitive);
     // Minecraft stores both atlas texels and tint RGB as display-encoded sRGB in UNORM values.
     // Decode both before multiplication, then cross the single material boundary into the
@@ -151,9 +173,42 @@ MaterialEvaluation primeEvaluateMaterial(
                             * primeDecodeSrgb(tint.rgb));
         }
     }
-    uint primitiveFlags = primePrimitiveFlags(primitive);
-    if (primeMaterialIsTransmissive(primitiveFlags)
-            && (primitiveFlags & PRIME_MATERIAL_FLAG_WATER) == 0u
+    uint recipeControl = primePrimitiveControl(primitive);
+    uint recipeScattering = recipeControl & PRIME_RECIPE_SCATTERING_MASK;
+    bool recipeTransmissive = recipeScattering == PRIME_RECIPE_DIELECTRIC_SOLID
+            || recipeScattering == PRIME_RECIPE_DIELECTRIC_THIN;
+    uint materialControl = recipeScattering == PRIME_RECIPE_FOLIAGE_THIN
+            ? PRIME_MATERIAL_FAMILY_FOLIAGE | PRIME_MATERIAL_THIN_WALLED
+            : recipeTransmissive
+                    ? PRIME_MATERIAL_FAMILY_DIELECTRIC
+                            | (recipeScattering == PRIME_RECIPE_DIELECTRIC_THIN
+                                    ? PRIME_MATERIAL_THIN_WALLED
+                                    : 0u)
+                    : PRIME_MATERIAL_FAMILY_OPAQUE;
+    materialControl |= (recipeControl & PRIME_RECIPE_ANIMATED) != 0u
+            ? PRIME_MATERIAL_ANIMATED
+            : 0u;
+    uint builtinClass = recipeControl >> PRIME_RECIPE_BUILTIN_SHIFT & 15u;
+    result.roughness = primeUsesVanillaPbrPresets() && builtinClass != 0u
+            ? primeBuiltinRoughness(builtinClass)
+            : primeDefaultLinearRoughness();
+    result.opticalControl = primeUsesVanillaPbrPresets()
+            ? primeBuiltinFresnelCode(builtinClass)
+            : 0u;
+    if (bakedMaterial && (recipeControl & PRIME_RECIPE_OPTICAL_TEXTURE) != 0u) {
+        PrimeCanonicalOptics optics = primeAdaptLabPbrSpecular(
+                unpackUnorm4x8(primitive.uv1));
+        result.roughness = optics.roughness;
+        result.opticalControl = optics.opticalControl;
+    } else if (!bakedMaterial
+            && (recipeControl & PRIME_RECIPE_OPTICAL_TEXTURE) != 0u) {
+        PrimeCanonicalOptics optics = primeAdaptLabPbrSpecular(
+                textureLod(primeLabPbrSpecularAtlas, uv, textureLodValue));
+        result.roughness = optics.roughness;
+        result.opticalControl = optics.opticalControl;
+    }
+    if (recipeTransmissive
+            && (recipeControl & PRIME_RECIPE_WATER) == 0u
             && !bakedMaterial
             && !primeUsesRasterComposite(primitive)) {
         float referenceOpacity;
@@ -169,50 +224,57 @@ MaterialEvaluation primeEvaluateMaterial(
             // Both boundaries of a closed medium must agree on its color even when they hit
             // different decorative texels. Shadow rays use this same stable material reference.
             result.baseColor = referenceBaseColor;
+            materialControl |= PRIME_MATERIAL_MEDIUM_STAINED_GLASS;
         } else {
-            primitiveFlags |= PRIME_MATERIAL_FLAG_COLORLESS_GLASS;
+            materialControl |= PRIME_MATERIAL_MEDIUM_COLORLESS_GLASS;
         }
         if (rough) {
-            primitiveFlags |= PRIME_MATERIAL_FLAG_ROUGH_GLASS;
+            materialControl |= PRIME_MATERIAL_DECORATIVE_INTERFACE;
+        } else {
+            result.roughness = 0.0;
         }
         if (!stained && rough) {
             // Vanilla clear-glass borders are opaque blue-grey paint, not a second dielectric
             // volume. Keep the primitive in the transmissive BLAS but shade this texel as rough
             // diffuse so the transparent body remains a closed colorless medium.
-            primitiveFlags &= ~PRIME_MATERIAL_FLAG_TRANSMISSIVE;
+            materialControl = (materialControl & ~PRIME_MATERIAL_FAMILY_MASK)
+                    | PRIME_MATERIAL_FAMILY_OPAQUE;
         }
+    } else if ((recipeControl & PRIME_RECIPE_WATER) != 0u) {
+        materialControl |= PRIME_MATERIAL_MEDIUM_WATER;
     }
     if ((primitive.flagsEmitter
             & (PRIME_DYNAMIC_TEXTURE_FLAG | PRIME_VISIBLE_EMISSION_FLAG))
             == (PRIME_DYNAMIC_TEXTURE_FLAG | PRIME_VISIBLE_EMISSION_FLAG)) {
-        primitiveFlags |= PRIME_MATERIAL_FLAG_VISIBLE_EMISSION;
+        materialControl |= PRIME_MATERIAL_VISIBLE_EMISSION;
     }
-    result.flags = primitiveFlags;
-    if (bakedMaterial) {
-        result.labPbrNormal = primitive.uv0;
-        result.labPbrSpecular = primitive.uv1;
-    } else {
-        vec4 normalSample = primeHasLabPbrNormal(primitiveFlags)
-                ? textureLod(primeLabPbrNormalAtlas, uv, textureLodValue)
-                : vec4(0.5, 0.5, 1.0, 1.0);
-        vec4 specularSample = primeHasLabPbrSpecular(primitiveFlags)
-                ? textureLod(primeLabPbrSpecularAtlas, uv, textureLodValue)
-                : vec4(0.0, 4.0 / 255.0, 0.0, 1.0);
-        result.labPbrNormal = packUnorm4x8(normalSample);
-        result.labPbrSpecular = packUnorm4x8(specularSample);
+    uint subsurfaceCode = result.opticalControl
+            >> PRIME_OPTICAL_SUBSURFACE_SHIFT & 0xffu;
+    if ((recipeControl & PRIME_RECIPE_ALPHA_CUTOUT) != 0u
+            && subsurfaceCode != 0u) {
+        materialControl |= PRIME_MATERIAL_THIN_WALLED;
     }
-    PrimeTranslatedLabPbrMaterial translated = primeDecodeAndTranslateLabPbr(
-            result.labPbrNormal, result.labPbrSpecular, primitiveFlags);
-    if (primeTranslatedLabPbrIsMetal(translated)) {
-        result.flags |= PRIME_MATERIAL_FLAG_LABPBR_METAL;
-    }
+    result.materialControl = materialControl;
     vec3 geometricNormal = primeUnpackOctahedralNormal(primitive.normal);
-    // The normal atlas is intentionally transported and decoded but not applied yet. Normal-map
-    // filtering, tangent continuity and NRD's world-normal guide must be introduced as one
-    // validated contract; partially connecting it here would make BSDF and temporal geometry
-    // disagree. This assignment is therefore deliberate, not dead code.
+    // Normal-map filtering and the temporal normal contract remain intentionally disconnected.
     result.shadingNormal = geometricNormal;
     return result;
+}
+
+PrimeMaterialSample primeEvaluateMaterialReference(
+        uint recipeControl, uint packedTint, vec2 uv) {
+    PrimitiveRecord primitive;
+    primitive.uv0 = floatBitsToUint(uv.x);
+    primitive.uv1 = floatBitsToUint(uv.y);
+    primitive.uv2 = 0u;
+    primitive.tint = (packedTint & 0x00ffffffu)
+            | ((recipeControl & 0xffu) << 24u);
+    primitive.normal = 0u;
+    primitive.flagsEmitter = ((recipeControl >> 8u) & 7u)
+            | ((recipeControl & PRIME_RECIPE_BUILTIN_MASK) << 16u);
+    primitive.uvDensity = PRIME_CONSTANT_UV_DENSITY;
+    primitive.tangent = 0u;
+    return primeEvaluateMaterial(primitive, uv, 0.0, 0u);
 }
 
 vec3 primeEvaluateEmitterRadiance(

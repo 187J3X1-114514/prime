@@ -97,10 +97,14 @@ void primeInitializeTransparentWavefront(
             initialResult.reflectionSpecularRadiance,
             primeEvaluateHitEmission(path, surface, false));
     float surfaceLinearRoughness = primeSurfaceLinearRoughness(surface);
-    bool pureDeltaInterface = surfaceLinearRoughness == 0.0;
+    PrimeClosureTraits closureTraits = primeSurfaceClosureTraits(
+            surface, viewDirection, volumeStack);
+    bool supportsSolidAngle = primeClosureSupports(
+            closureTraits, PRIME_MEASURE_SOLID_ANGLE);
+    bool discreteOnlyInterface = primeClosureIsDiscreteOnly(closureTraits);
     PrimePreparedSampleBase preparedSample =
             primePrepareSampleBase(primeMakeSampleBase(path, path.bounce + 1u));
-    if (!pureDeltaInterface) {
+    if (supportsSolidAngle) {
         primeSetNumericalContext(
                 PRIME_NUMERICAL_STAGE_DIRECT_LIGHT, path.bounce);
         PrimePrimarySunSample sun = primeEstimatePrimaryDirectSun(
@@ -150,9 +154,9 @@ void primeInitializeTransparentWavefront(
             surface.baseColor,
             primeSurfaceOpacity(surface),
             primeSurfaceOutwardShadingNormal(surface),
-            surface.materialFlags,
-            surface.labPbrNormal,
-            surface.labPbrSpecular,
+            surface.materialControl,
+            surface.roughness,
+            surface.opticalControl,
             viewDirection,
             primeSobolSample3D(
                     preparedSample,
@@ -161,7 +165,7 @@ void primeInitializeTransparentWavefront(
             surface.t,
             volumeStack,
             surface.adjacentBaseColor,
-            surface.adjacentSpecularControl);
+            surface.adjacentInterfaceControl);
     PrimeDenoiseAlbedos albedos = primarySample.albedos;
     vec3 shadingNormal = primeSurfaceShadingNormal(surface, viewDirection);
     initialResult.guides.primaryDistance =
@@ -174,7 +178,7 @@ void primeInitializeTransparentWavefront(
     initialResult.guides.primaryAlbedo = albedos.diffuse;
     initialResult.guides.primaryNormal = shadingNormal;
     initialResult.guides.primaryHitKind = surface.hitKind;
-    initialResult.guides.primaryMaterialFlags = surface.materialFlags;
+    initialResult.guides.primaryMaterialFlags = surface.materialControl;
     initialResult.guides.primarySpecularAlbedo = albedos.specular;
     initialResult.guides.primaryLinearRoughness = surfaceLinearRoughness;
     initialResult.transparentPrimary = true;
@@ -216,7 +220,7 @@ void primeInitializeTransparentWavefront(
         branchResult.specularRadiance = transmissionBranch
                 ? initialResult.radiance.specular
                 : initialResult.reflectionSpecularRadiance;
-        // Until a later finite non-delta surface replaces the branch guide, the visible interface
+        // Until a later solid-angle surface replaces the branch guide, the visible interface
         // itself is the exact fallback. This removes the need for a third 96-byte guide record.
         branchResult.guides = initialResult.guides;
         branchResult.firstHitDistance = 0.0;
@@ -226,7 +230,7 @@ void primeInitializeTransparentWavefront(
         bool hasScatter = primeHasScatter(bsdf);
         bool hasGuide = guideEnabled
                 && hasScatter
-                && (bsdf.eventFlags & PRIME_BSDF_EVENT_DELTA) == 0u;
+                && (bsdf.eventFlags & PRIME_BSDF_EVENT_DISCRETE) == 0u;
         bool diffusePath = transmissionBranch;
         uint guideBounce = path.bounce;
 
@@ -258,8 +262,8 @@ void primeInitializeTransparentWavefront(
                         psrState, surface.position, surface.geometricNormal);
             }
         } else if (guideEnabled && hasScatter
-                && (bsdf.eventFlags & PRIME_BSDF_EVENT_DELTA) != 0u) {
-            primeAppendQueuedPsrDelta(
+                && (bsdf.eventFlags & PRIME_BSDF_EVENT_DISCRETE) != 0u) {
+            primeAppendQueuedPsrDiscrete(
                     psrState, path.physicalOrigin, surface, bsdf);
         }
         if (transmissionBranch) {
@@ -274,7 +278,7 @@ void primeInitializeTransparentWavefront(
 
         PathState branchPath = path;
         branchPath.sampleDimension = 0u;
-        bool branchPureDelta = pureDeltaInterface;
+        bool branchDiscreteOnly = discreteOnlyInterface;
         bool continuation = hasScatter;
         if (continuation) {
             continuation = primeAdvancePath(
@@ -282,7 +286,7 @@ void primeInitializeTransparentWavefront(
                     surface,
                     bsdf,
                     preparedSample,
-                    branchPureDelta,
+                    branchDiscreteOnly,
                     surfaceLinearRoughness);
         }
         if (continuation) {
@@ -362,7 +366,7 @@ void primeWavefrontHead() {
         PrimeDenoiserState denoiserState = primeInitialDenoiserState();
         PrimeIntegrationResult result = primeEmptyIntegrationResult();
         if (surface.hitKind == PRIME_HIT_SURFACE
-                && primeMaterialIsTransmissive(surface.materialFlags)) {
+                && primeMaterialIsTransmissive(surface.materialControl)) {
             primeInitializeTransparentWavefront(
                     pixel,
                     path,
@@ -457,7 +461,7 @@ void primeWavefrontStep(uint sourceQueue) {
 
     if (primeWavefrontTransparentBranch(control)) {
         bool hadGuide =
-                (control & PRIME_WAVEFRONT_REACHED_NON_DELTA) != 0u;
+                (control & PRIME_WAVEFRONT_REACHED_SOLID_ANGLE) != 0u;
         bool guideEnabled =
                 (control & PRIME_WAVEFRONT_GUIDE_ENABLED) != 0u;
         bool needsPsr = guideEnabled && !hadGuide;
@@ -524,7 +528,7 @@ void primeWavefrontStep(uint sourceQueue) {
         queueContinuation = continuation;
     } else {
         bool guideWasPending =
-                (control & PRIME_WAVEFRONT_REACHED_NON_DELTA) == 0u;
+                (control & PRIME_WAVEFRONT_REACHED_SOLID_ANGLE) == 0u;
         PrimeIntegrationResult result =
                 primeLoadWavefrontActiveIntermediate(pixel, control);
         PrimeDenoiserState denoiserState =
@@ -568,10 +572,10 @@ void primeWavefrontArea(uint sourceQueue) {
             primeLoadWavefrontTransportRecord(recordIndex);
     uint control = floatBitsToUint(record.rayDirectionAndDenoiserControl.w);
     // A guide-pending transparent path still owns the cold lane as queued PSR state. Its first
-    // non-delta vertex is the primary replacement and never emits a secondary Area request.
+    // solid-angle vertex is the primary replacement and never emits a secondary Area request.
     if (primeWavefrontTransparentBranch(control)
             && primeWavefrontGuideEnabled(control)
-            && (control & PRIME_WAVEFRONT_REACHED_NON_DELTA) == 0u) {
+            && (control & PRIME_WAVEFRONT_REACHED_SOLID_ANGLE) == 0u) {
         return;
     }
     PrimeDeferredAreaLightRequest request =
@@ -626,7 +630,7 @@ void primeWavefrontTail(uint sourceQueue) {
 
     if (primeWavefrontTransparentBranch(control)) {
         bool hadGuide =
-                (control & PRIME_WAVEFRONT_REACHED_NON_DELTA) != 0u;
+                (control & PRIME_WAVEFRONT_REACHED_SOLID_ANGLE) != 0u;
         bool guideEnabled =
                 (control & PRIME_WAVEFRONT_GUIDE_ENABLED) != 0u;
         bool needsPsr = guideEnabled && !hadGuide;
@@ -693,7 +697,7 @@ void primeWavefrontTail(uint sourceQueue) {
     }
 
     bool guideWasPending =
-            (control & PRIME_WAVEFRONT_REACHED_NON_DELTA) == 0u;
+            (control & PRIME_WAVEFRONT_REACHED_SOLID_ANGLE) == 0u;
     PrimeIntegrationResult result =
             primeLoadWavefrontActiveIntermediate(pixel, control);
     PrimeDenoiserState denoiserState =
@@ -770,7 +774,7 @@ void primeWavefrontResolve() {
         SurfaceInteraction primarySurface = primeTraceSurfaceWithoutReorder(
                 primePush.cameraPosition, cameraPath.rayDirection);
         if (primarySurface.hitKind == PRIME_HIT_SURFACE
-                && primeMaterialIsTransmissive(primarySurface.materialFlags)) {
+                && primeMaterialIsTransmissive(primarySurface.materialControl)) {
             PrimeRcVolumeStack volumeStack =
                     (primePush.path.z & PRIME_PATH_CAMERA_IN_WATER_MASK) != 0u
                     ? primeCameraWaterVolumeStack()

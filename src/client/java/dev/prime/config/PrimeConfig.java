@@ -59,6 +59,7 @@ public final class PrimeConfig {
     private static final String DEFAULT_ROUGHNESS_KEY = "material.default_roughness";
     private static final String SEAMLESS_GLASS_KEY = "material.seamless_glass";
     private static final String AIR_GAP_KEY = "material.air_gap";
+    private static final String VANILLA_PBR_PRESETS_KEY = "material.vanilla_pbr_presets";
     // Fabric initializes and mutates video options on the client thread. One immutable snapshot
     // keeps every renderer read coherent without a shared lock or independently mutable globals.
     private static PrimeSettings settings = PrimeSettings.defaults();
@@ -91,6 +92,7 @@ public final class PrimeConfig {
         int defaultRoughnessSteps = MaterialSettings.DEFAULT_ROUGHNESS_STEPS;
         boolean seamlessGlass = MaterialSettings.DEFAULT_SEAMLESS_GLASS;
         boolean airGap = MaterialSettings.DEFAULT_AIR_GAP;
+        boolean vanillaPbrPresets = MaterialSettings.DEFAULT_VANILLA_PBR_PRESETS;
         boolean rewriteNeeded = false;
         if (Files.isRegularFile(path)) {
             try (Reader reader = Files.newBufferedReader(path, StandardCharsets.UTF_8)) {
@@ -333,6 +335,20 @@ public final class PrimeConfig {
                 } else {
                     rewriteNeeded = true;
                 }
+                String vanillaPbrPresetsValue = properties.getProperty(
+                        VANILLA_PBR_PRESETS_KEY);
+                if (vanillaPbrPresetsValue != null) {
+                    try {
+                        vanillaPbrPresets = parseBoolean(vanillaPbrPresetsValue);
+                    } catch (IllegalArgumentException exception) {
+                        PrimeInfo.LOGGER.warn(
+                                "Invalid Prime vanilla-PBR preset switch '{}'; using the default",
+                                vanillaPbrPresetsValue);
+                        rewriteNeeded = true;
+                    }
+                } else {
+                    rewriteNeeded = true;
+                }
             } catch (IOException | IllegalArgumentException exception) {
                 PrimeInfo.LOGGER.warn(
                         "Could not read {}; using the default Prime settings",
@@ -360,11 +376,12 @@ public final class PrimeConfig {
                 airGap,
                 0L,
                 0L,
-                sharcEnabled);
+                sharcEnabled,
+                vanillaPbrPresets);
         rendererRevision = 0L;
         dirty = rewriteNeeded;
         PrimeInfo.LOGGER.info(
-                "Prime settings: path tracing {}, SHARC {}, voxel surfaces {} at {}x, post-processing {} quality {} (NRD-FSR {}x), latitude {} degrees, solar longitude {} degrees, sun {} EV, stars {} EV, block lights {} EV, final exposure {} EV, Oklab DRT overexposure {}, curve exponent {}, auto-exposure compensation {}, default roughness {}, seamless glass {}, air gap {}",
+                "Prime settings: path tracing {}, SHARC {}, voxel surfaces {} at {}x, post-processing {} quality {} (NRD-FSR {}x), latitude {} degrees, solar longitude {} degrees, sun {} EV, stars {} EV, block lights {} EV, final exposure {} EV, Oklab DRT overexposure {}, curve exponent {}, auto-exposure compensation {}, default roughness {}, seamless glass {}, air gap {}, vanilla PBR presets {}",
                 pathTracingEnabled ? "enabled" : "disabled",
                 sharcEnabled ? "enabled" : "disabled",
                 voxelTextureSurfaces ? "enabled" : "disabled",
@@ -383,7 +400,8 @@ public final class PrimeConfig {
                 formatAutoExposureCompensation(autoExposureCompensationSteps),
                 formatRoughness(defaultRoughnessSteps),
                 seamlessGlass ? "enabled" : "disabled",
-                airGap ? "enabled" : "disabled");
+                airGap ? "enabled" : "disabled",
+                vanillaPbrPresets ? "enabled" : "disabled");
     }
 
     public static PrimeSettings settings() {
@@ -483,6 +501,10 @@ public final class PrimeConfig {
         update(settings.withAirGap(enabled));
     }
 
+    public static void setVanillaPbrPresets(boolean enabled) {
+        update(settings.withVanillaPbrPresets(enabled));
+    }
+
     public static void restoreDefaults() {
         update(restoredDefaults(settings));
     }
@@ -508,7 +530,8 @@ public final class PrimeConfig {
                         DisplaySettings.DEFAULT_AUTO_EXPOSURE_COMPENSATION_STEPS)
                 .withDefaultRoughnessSteps(MaterialSettings.DEFAULT_ROUGHNESS_STEPS)
                 .withSeamlessGlass(MaterialSettings.DEFAULT_SEAMLESS_GLASS)
-                .withAirGap(MaterialSettings.DEFAULT_AIR_GAP);
+                .withAirGap(MaterialSettings.DEFAULT_AIR_GAP)
+                .withVanillaPbrPresets(MaterialSettings.DEFAULT_VANILLA_PBR_PRESETS);
     }
 
     public static void save() {
@@ -590,7 +613,9 @@ public final class PrimeConfig {
                     + DEFAULT_ROUGHNESS_KEY + "="
                     + formatRoughness(current.defaultRoughnessSteps()) + "\n"
                     + SEAMLESS_GLASS_KEY + "=" + current.seamlessGlass() + "\n"
-                    + AIR_GAP_KEY + "=" + current.airGap() + "\n";
+                    + AIR_GAP_KEY + "=" + current.airGap() + "\n"
+                    + VANILLA_PBR_PRESETS_KEY + "="
+                    + current.vanillaPbrPresets() + "\n";
     }
 
     static boolean parseBoolean(String value) {

@@ -10,10 +10,10 @@ void primeWriteOfflineOutput(
     vec3 radiance = record.radianceAndPrimaryDistance.xyz;
     float primaryDistance = record.radianceAndPrimaryDistance.w;
     primeApplyAerialPerspective(pixel, cameraSample, primaryDistance, radiance);
-    uint materialFlags = floatBitsToUint(
+    uint materialControl = floatBitsToUint(
             record.primaryAlbedoAndMaterialFlags.w);
     float confidence = primeAutoExposureMaterialConfidence(
-            uint(round(primeNrdMaterialId(materialFlags) * 3.0)),
+            uint(round(primeNrdMaterialId(materialControl) * 3.0)),
             primaryDistance);
     float meteredBrightness = primeAutoExposureMeteredBrightness(
             radiance,

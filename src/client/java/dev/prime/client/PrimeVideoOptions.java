@@ -303,6 +303,15 @@ public final class PrimeVideoOptions {
                 PrimeConfig::setAirGap);
     }
 
+    public static OptionInstance<Boolean> vanillaPbrPresets() {
+        return OptionInstance.createBoolean(
+                "prime.options.material.vanilla_pbr_presets",
+                OptionInstance.cachedConstantTooltip(Component.translatable(
+                        "prime.options.material.vanilla_pbr_presets.tooltip")),
+                PrimeConfig.settings().vanillaPbrPresets(),
+                PrimeConfig::setVanillaPbrPresets);
+    }
+
     public static OptionInstance<NrdDiagnostics.Mode> nrdDebugView() {
         PrimeRuntime runtime = PrimeRuntime.instance();
         return new OptionInstance<>(

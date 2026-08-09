@@ -2,115 +2,84 @@
 #define PRIME_MATERIAL_TRANSLATION_GLSL
 
 #include "default_material.glsl"
-#include "labpbr.glsl"
 #include "color_space.glsl"
 
-// Community texture formats are transport encodings, not Prime's physical material model.
-// This is the only boundary allowed to turn LabPBR channel values into BSDF parameters. Unknown
-// encodings deliberately lose their effect instead of being assigned a plausible but false one.
-struct PrimeTranslatedLabPbrMaterial {
+// Source-neutral optical parameters decoded from Prime's compact canonical control word.
+struct PrimeOpticalMaterial {
     float perceptualRoughness;
     float dielectricF0;
     float subsurfaceWeight;
-    uint metalId;
+    uint fresnelCode;
     uint thinWalled;
 };
 
 const float PRIME_COMMON_DIELECTRIC_F0_MINIMUM = 0.02;
 const float PRIME_COMMON_DIELECTRIC_F0_MAXIMUM = 0.17;
 
-bool primeLabPbrIsStandardMetalId(uint metalId) {
-    return metalId >= 230u && metalId <= 237u;
+bool primeIsStandardConductorCode(uint fresnelCode) {
+    return fresnelCode >= PRIME_FRESNEL_IRON && fresnelCode <= PRIME_FRESNEL_SILVER;
 }
 
-bool primeLabPbrIsCustomMetalId(uint metalId) {
-    return metalId == 255u;
+bool primeIsCustomConductorCode(uint fresnelCode) {
+    return fresnelCode == PRIME_FRESNEL_CUSTOM_CONDUCTOR;
 }
 
-bool primeLabPbrIsSupportedMetalId(uint metalId) {
-    return primeLabPbrIsStandardMetalId(metalId)
-            || primeLabPbrIsCustomMetalId(metalId);
+bool primeIsSupportedConductorCode(uint fresnelCode) {
+    return primeIsStandardConductorCode(fresnelCode)
+            || primeIsCustomConductorCode(fresnelCode);
 }
 
-PrimeTranslatedLabPbrMaterial primeTranslateLabPbr(
-        PrimeLabPbrSample encoded,
-        uint flags) {
-    bool authored = primeHasLabPbrSpecular(flags);
-    bool transmissive = primeMaterialIsTransmissive(flags);
-    bool safeThinSubsurface = authored
-            && (flags & PRIME_MATERIAL_FLAG_CUTOUT) != 0u
-            && encoded.subsurface > 0.0;
-
-    PrimeTranslatedLabPbrMaterial result;
-    result.perceptualRoughness = authored
-            ? clamp(encoded.perceptualRoughness, 0.0, 1.0)
-            : primeDefaultLinearRoughness();
-    // LabPBR gives G=255 an explicit custom-metal meaning: the albedo texture is normal-incidence
-    // reflectance (F0), not diffuse color. Preserve that defined transport semantic alongside the
-    // eight predefined metals. Reserved IDs 238..254 and metal semantics on transmissive models
-    // remain deliberately ignored.
-    result.metalId = authored
-            && !transmissive
-            && !primeMaterialIsColorlessGlass(flags)
-            && primeLabPbrIsSupportedMetalId(encoded.metalId)
-            ? encoded.metalId
-            : 0u;
-
-    // G=0..229 is a dielectric F0 channel. Clamp it to Prime's deliberately broad non-metal
-    // boundary: this accepts uncommon but plausible dielectrics without interpreting them as
-    // metals. Every metal/reserved encoding has no dielectric interpretation and falls back to
-    // Prime's ordinary dielectric boundary if another material rule prevents metal translation.
-    result.dielectricF0 = authored && encoded.metalId == 0u
-            ? clamp(
-                    encoded.dielectricF0,
-                    PRIME_COMMON_DIELECTRIC_F0_MINIMUM,
-                    PRIME_COMMON_DIELECTRIC_F0_MAXIMUM)
+PrimeOpticalMaterial primeDecodeOpticalMaterial(
+        float roughness,
+        uint opticalControl,
+        uint materialControl) {
+    uint fresnelCode = opticalControl & PRIME_OPTICAL_FRESNEL_MASK;
+    uint subsurfaceCode = opticalControl >> PRIME_OPTICAL_SUBSURFACE_SHIFT & 0xffu;
+    bool transmissive = primeMaterialIsTransmissive(materialControl);
+    PrimeOpticalMaterial result;
+    result.perceptualRoughness = clamp(roughness, 0.0, 1.0);
+    result.fresnelCode = !transmissive
+                    && !primeMaterialIsColorlessGlass(materialControl)
+                    && primeIsSupportedConductorCode(fresnelCode)
+            ? fresnelCode
+            : PRIME_FRESNEL_DEFAULT_DIELECTRIC;
+    result.dielectricF0 = fresnelCode <= 230u
+            ? primeDecodeDielectricF0(fresnelCode)
             : PRIME_DEFAULT_DIELECTRIC_F0;
-
-    // Alpha-cut geometry already denotes a zero-thickness surface in Minecraft. Its SSS hint can
-    // safely select RoboCute's thin-wall closure. Solid/translucent SSS has no mean-free-path or
-    // volume semantics in LabPBR, so conservatively discard it.
-    result.subsurfaceWeight = safeThinSubsurface
-            ? clamp(encoded.subsurface, 0.0, 1.0)
-            : 0.0;
-    result.thinWalled = safeThinSubsurface ? 1u : 0u;
+    result.subsurfaceWeight = float(min(subsurfaceCode, 190u)) / 190.0;
+    result.thinWalled = (materialControl & PRIME_MATERIAL_THIN_WALLED) != 0u
+            ? 1u
+            : 0u;
     return result;
 }
 
-PrimeTranslatedLabPbrMaterial primeDecodeAndTranslateLabPbr(
-        uint packedNormal,
-        uint packedSpecular,
-        uint flags) {
-    return primeTranslateLabPbr(
-            primeDecodeLabPbr(packedNormal, packedSpecular, flags),
-            flags);
-}
-
-bool primeTranslatedLabPbrIsMetal(PrimeTranslatedLabPbrMaterial material) {
-    return material.metalId != 0u;
+bool primeOpticalMaterialIsMetal(PrimeOpticalMaterial material) {
+    return primeFresnelIsConductor(material.fresnelCode);
 }
 
 bool primeAirGapCompatible(
         bool enabled,
-        bool seamlessGlass,
-        uint currentFlags,
-        float currentDielectricF0,
-        bool adjacentWater,
-        float adjacentDielectricF0) {
+        uint currentControl,
+        uint currentFresnelCode,
+        uint adjacentControl,
+        uint adjacentFresnelCode) {
     return enabled
-            && seamlessGlass
-            && !adjacentWater
-            && primeMaterialIsTransmissive(currentFlags)
-            && (currentFlags
-                    & (PRIME_MATERIAL_FLAG_THIN_WALLED
-                            | PRIME_MATERIAL_FLAG_WATER
-                            | PRIME_MATERIAL_FLAG_ROUGH_GLASS)) == 0u
-            && currentDielectricF0 == adjacentDielectricF0;
+            && primeMaterialIsTransmissive(currentControl)
+            && primeMaterialIsTransmissive(adjacentControl)
+            && !primeMaterialIsWater(currentControl)
+            && !primeMaterialIsWater(adjacentControl)
+            && (currentControl
+                    & (PRIME_MATERIAL_THIN_WALLED
+                            | PRIME_MATERIAL_DECORATIVE_INTERFACE)) == 0u
+            && (adjacentControl
+                    & (PRIME_MATERIAL_THIN_WALLED
+                            | PRIME_MATERIAL_DECORATIVE_INTERFACE)) == 0u
+            && currentFresnelCode == adjacentFresnelCode;
 }
 
 // LabPBR defines these optical constants in linear sRGB. Translation resolves the two endpoints
 // consumed by RoboCute's fitted conductor Fresnel before crossing into Prime's Rec.2020 space.
-vec3 primeLabPbrConductorReflectance(float cosineIncident, vec3 eta, vec3 k) {
+vec3 primeConductorReflectance(float cosineIncident, vec3 eta, vec3 k) {
     float cosine = abs(cosineIncident);
     float cosine2 = cosine * cosine;
     float sine2 = 1.0 - cosine2;
@@ -142,29 +111,29 @@ vec3 primeLabPbrConductorReflectance(float cosineIncident, vec3 eta, vec3 k) {
     return clamp(0.5 * (rs + rp), vec3(0.0), vec3(1.0));
 }
 
-bool primeLabPbrMetalOpticalConstants(uint metalId, out vec3 eta, out vec3 k) {
-    if (metalId == 230u) {
+bool primeConductorOpticalConstants(uint fresnelCode, out vec3 eta, out vec3 k) {
+    if (fresnelCode == PRIME_FRESNEL_IRON) {
         eta = vec3(2.9114, 2.9497, 2.5845);
         k = vec3(3.0893, 2.9318, 2.7670);
-    } else if (metalId == 231u) {
+    } else if (fresnelCode == PRIME_FRESNEL_GOLD) {
         eta = vec3(0.18299, 0.42108, 1.3734);
         k = vec3(3.4242, 2.3459, 1.7704);
-    } else if (metalId == 232u) {
+    } else if (fresnelCode == PRIME_FRESNEL_ALUMINIUM) {
         eta = vec3(1.3456, 0.96521, 0.61722);
         k = vec3(7.4746, 6.3995, 5.3031);
-    } else if (metalId == 233u) {
+    } else if (fresnelCode == PRIME_FRESNEL_CHROME) {
         eta = vec3(3.1071, 3.1812, 2.3230);
         k = vec3(3.3314, 3.3291, 3.1350);
-    } else if (metalId == 234u) {
+    } else if (fresnelCode == PRIME_FRESNEL_COPPER) {
         eta = vec3(0.27105, 0.67693, 1.3164);
         k = vec3(3.6092, 2.6248, 2.2921);
-    } else if (metalId == 235u) {
+    } else if (fresnelCode == PRIME_FRESNEL_LEAD) {
         eta = vec3(1.9100, 1.8300, 1.4400);
         k = vec3(3.5100, 3.4000, 3.1800);
-    } else if (metalId == 236u) {
+    } else if (fresnelCode == PRIME_FRESNEL_PLATINUM) {
         eta = vec3(2.3757, 2.0847, 1.8453);
         k = vec3(4.2655, 3.7153, 3.1365);
-    } else if (metalId == 237u) {
+    } else if (fresnelCode == PRIME_FRESNEL_SILVER) {
         eta = vec3(0.15943, 0.14512, 0.13547);
         k = vec3(3.9291, 3.1900, 2.3808);
     } else {
@@ -175,21 +144,21 @@ bool primeLabPbrMetalOpticalConstants(uint metalId, out vec3 eta, out vec3 k) {
     return true;
 }
 
-struct PrimeLabPbrFresnel {
+struct PrimeConductorFresnel {
     vec3 f0;
     vec3 f82Tint;
 };
 
-PrimeLabPbrFresnel primeLabPbrMetalFresnel(vec3 baseColor, uint metalId) {
-    PrimeLabPbrFresnel result;
+PrimeConductorFresnel primeConductorFresnel(vec3 baseColor, uint fresnelCode) {
+    PrimeConductorFresnel result;
     vec3 sourceTint = clamp(primeLinearRec2020ToLinearBt709(baseColor), 0.0, 1.0);
     vec3 eta;
     vec3 k;
     const float f82AnchorCosine = 1.0 / 7.0;
     float schlick82Weight = pow(1.0 - f82AnchorCosine, 5.0);
-    if (primeLabPbrMetalOpticalConstants(metalId, eta, k)) {
-        vec3 sourceF0 = primeLabPbrConductorReflectance(1.0, eta, k) * sourceTint;
-        vec3 sourceF82 = primeLabPbrConductorReflectance(
+    if (primeConductorOpticalConstants(fresnelCode, eta, k)) {
+        vec3 sourceF0 = primeConductorReflectance(1.0, eta, k) * sourceTint;
+        vec3 sourceF82 = primeConductorReflectance(
                 f82AnchorCosine, eta, k) * sourceTint;
         result.f0 = clamp(primeLinearSrgbToLinearRec2020(sourceF0), 0.0, 1.0);
         vec3 targetF82 = clamp(
@@ -197,7 +166,7 @@ PrimeLabPbrFresnel primeLabPbrMetalFresnel(vec3 baseColor, uint metalId) {
         vec3 untintedSchlickF82 = mix(result.f0, vec3(1.0), schlick82Weight);
         // RoboCute's f82 stores a relative tint at cos(theta)=1/7, not absolute reflectance.
         result.f82Tint = clamp(targetF82 / untintedSchlickF82, 0.0, 1.0);
-    } else if (primeLabPbrIsCustomMetalId(metalId)) {
+    } else if (primeIsCustomConductorCode(fresnelCode)) {
         result.f0 = clamp(baseColor, 0.0, 1.0);
         result.f82Tint = vec3(1.0);
     } else {

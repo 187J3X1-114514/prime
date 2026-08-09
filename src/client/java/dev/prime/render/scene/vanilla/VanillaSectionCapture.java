@@ -2,6 +2,7 @@ package dev.prime.render.scene.vanilla;
 
 import com.mojang.blaze3d.vertex.MeshData;
 import dev.prime.render.scene.CapturedSectionGeometry;
+import dev.prime.render.scene.CapturedSprite;
 import it.unimi.dsi.fastutil.ints.IntArrayList;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
@@ -364,6 +365,7 @@ public final class VanillaSectionCapture implements AutoCloseable {
                 state.getBlock() == Blocks.REDSTONE_WIRE,
                 requestedTint,
                 quad.normalY);
+        CapturedSprite capturedSprite = this.spriteResolver.resolve(sprite);
         this.geometry.add(quad, CapturedSectionGeometry.Surface.uniform(
                 tint,
                 captureLayer(layer),
@@ -375,10 +377,11 @@ public final class VanillaSectionCapture implements AutoCloseable {
                 this.blockMergeable,
                 rasterOverlay,
                 Math.max(state.getLightEmission(), bakedQuad.materialInfo().lightEmission()),
-                this.spriteResolver.resolve(sprite),
+                capturedSprite,
                 new CapturedSectionGeometry.BlockFacts(
                         position.getX(), position.getY(), position.getZ(),
-                        this.blockMediumFamily)));
+                        this.blockMediumFamily),
+                VanillaMaterialClassifier.classify(state, capturedSprite.id())));
         this.captureClusterPeer(state, position, direction);
     }
 
@@ -484,6 +487,7 @@ public final class VanillaSectionCapture implements AutoCloseable {
                 state.getBlock() == Blocks.REDSTONE_WIRE,
                 source.tintIndex(),
                 quad.normalY);
+        CapturedSprite capturedSprite = this.spriteResolver.resolve(sprite);
         this.geometry.add(quad, new CapturedSectionGeometry.Surface(
                 colors[0],
                 colors[1],
@@ -498,11 +502,12 @@ public final class VanillaSectionCapture implements AutoCloseable {
                 this.fabricMergeable,
                 rasterOverlay,
                 Math.max(state.getLightEmission(), source.emissive() ? 15 : 0),
-                this.spriteResolver.resolve(sprite),
+                capturedSprite,
                 null,
                 new CapturedSectionGeometry.BlockFacts(
                         position.getX(), position.getY(), position.getZ(),
-                        this.fabricMediumFamily)));
+                        this.fabricMediumFamily),
+                VanillaMaterialClassifier.classify(state, capturedSprite.id())));
         Direction direction = cardinalDirection(
                 quad.normalX, quad.normalY, quad.normalZ);
         if (direction != null) {
@@ -592,6 +597,7 @@ public final class VanillaSectionCapture implements AutoCloseable {
                 state.getBlock() == Blocks.REDSTONE_WIRE,
                 bakedQuad.materialInfo().tintIndex(),
                 quad.normalY);
+        CapturedSprite capturedSprite = this.spriteResolver.resolve(sprite);
         this.geometry.addPeer(quad, CapturedSectionGeometry.Surface.uniform(
                 tint,
                 captureLayer(layer),
@@ -603,10 +609,11 @@ public final class VanillaSectionCapture implements AutoCloseable {
                 true,
                 rasterOverlay,
                 Math.max(state.getLightEmission(), bakedQuad.materialInfo().lightEmission()),
-                this.spriteResolver.resolve(sprite),
+                capturedSprite,
                 new CapturedSectionGeometry.BlockFacts(
                         position.getX(), position.getY(), position.getZ(),
-                        mediumFamily(state))));
+                        mediumFamily(state)),
+                VanillaMaterialClassifier.classify(state, capturedSprite.id())));
     }
 
     private int resolvePeerTint(

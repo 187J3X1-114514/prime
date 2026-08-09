@@ -2,6 +2,7 @@ package dev.prime.render.terrain;
 
 import dev.prime.render.scene.CapturedSprite;
 import dev.prime.render.scene.CapturedSectionGeometry;
+import dev.prime.render.material.BuiltinMaterialClass;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Objects;
@@ -276,19 +277,20 @@ public final class SectionMeshAccumulator {
                 uv2U - uv0U,
                 uv2V - uv0V,
                 packedNormal);
-        int flags = PrimitivePacking.packFlags(
-                surface.geometryCutout(),
+        int flags = PrimitivePacking.encode(MaterialRecipeResolver.resolve(
+                surface.sprite(),
+                surface.builtinMaterialClass(),
                 surface.animated(),
+                surface.water(),
+                surface.foliage(),
+                this.labPbrMaterials,
+                surface.geometryCutout(),
                 surface.geometryTransmissive(),
                 surface.thinWalled(),
-                surface.water(),
-                surface.foliage());
-        flags = PrimitivePacking.withLabPbr(
-                flags,
-                this.labPbrMaterials.hasNormal(surface.sprite().id()),
-                this.labPbrMaterials.hasSpecular(surface.sprite().id()),
-                (packedTangent & 0x1_0000_0000L) != 0L);
-        packedTint = PrimitivePacking.packTintFlags(packedTint, flags);
+                (packedTangent & 0x1_0000_0000L) != 0L,
+                false,
+                false));
+        packedTint = PrimitivePacking.packTintControl(packedTint, flags);
         int encodedEmitterIndex = this.lights.addTriangle(
                 firstX,
                 firstY,
@@ -314,7 +316,7 @@ public final class SectionMeshAccumulator {
                 this.labPbrMaterials.emissionMap(surface.sprite().id()));
         destination.primitives.add(packedTint);
         destination.primitives.add(packedNormal);
-        destination.primitives.add(PrimitivePacking.packFlagsEmitter(
+        destination.primitives.add(PrimitivePacking.packControlEmitter(
                 flags,
                 encodedEmitterIndex == 0
                         ? PrimitivePacking.NO_EMITTER_INDEX
@@ -328,7 +330,7 @@ public final class SectionMeshAccumulator {
                 surface.definition != null
                                 && surface.definition.interfaceMode()
                                         == SurfaceDefinition.InterfaceMode.OVERLAY
-                        ? flags | PrimitivePacking.FLAG_CUTOUT
+                        ? flags | PrimitivePacking.CONTROL_ALPHA_CUTOUT
                         : flags));
         destination.triangleCount++;
     }
@@ -353,13 +355,21 @@ public final class SectionMeshAccumulator {
                 return null;
             }
             CapturedSectionGeometry.Surface adjacent = endpoint.surface();
+            int adjacentControl = PrimitivePacking.encode(
+                    MaterialRecipeResolver.resolve(
+                            adjacent,
+                            this.labPbrMaterials,
+                            ClusterSceneTranslator.isCutout(adjacent),
+                            ClusterSceneTranslator.isTransmissive(adjacent),
+                            adjacent.foliage()
+                                    || ClusterSceneTranslator.isTransmissive(adjacent)
+                                            && adjacent.collisionEmpty(),
+                            false,
+                            false,
+                            false));
             int control = CpuSectionMesh.SURFACE_RELATION_BOUNDARY
-                    | (adjacent.water()
-                            ? CpuSectionMesh.SURFACE_RELATION_WATER
-                            : 0)
-                    | (this.labPbrMaterials.hasSpecular(adjacent.sprite().id())
-                            ? CpuSectionMesh.SURFACE_RELATION_LABPBR_SPECULAR
-                            : 0);
+                    | CpuSectionMesh.SURFACE_RELATION_MICRO_GAP_ELIGIBLE
+                    | PrimitivePacking.materialRecipeControl(adjacentControl) << 8;
             return new int[] {
                 control,
                 PrimitivePacking.packUv(endpoint.referenceU(), endpoint.referenceV()),
@@ -380,7 +390,7 @@ public final class SectionMeshAccumulator {
         }
         if (definition.interfaceMode()
                 == SurfaceDefinition.InterfaceMode.OVERLAY) {
-            control |= primaryMaterialFlags << 8;
+            control |= PrimitivePacking.materialRecipeControl(primaryMaterialFlags) << 8;
         }
         int[] primitive = this.packMaterialPrimitive(
                 secondary, quad, indices);
@@ -423,13 +433,19 @@ public final class SectionMeshAccumulator {
                 uv1U - uv0U, uv1V - uv0V,
                 uv2U - uv0U, uv2V - uv0V,
                 packedNormal);
-        int flags = this.materialFlags(binding.surface());
-        flags = PrimitivePacking.withLabPbr(
-                flags,
-                this.labPbrMaterials.hasNormal(binding.surface().sprite().id()),
-                this.labPbrMaterials.hasSpecular(binding.surface().sprite().id()),
-                (packedTangent & 0x1_0000_0000L) != 0L);
-        int packedTint = PrimitivePacking.packTintFlags(
+        CapturedSectionGeometry.Surface captured = binding.surface();
+        int flags = PrimitivePacking.encode(MaterialRecipeResolver.resolve(
+                captured,
+                this.labPbrMaterials,
+                ClusterSceneTranslator.isCutout(captured),
+                ClusterSceneTranslator.isTransmissive(captured),
+                captured.foliage()
+                        || ClusterSceneTranslator.isTransmissive(captured)
+                                && captured.collisionEmpty(),
+                (packedTangent & 0x1_0000_0000L) != 0L,
+                false,
+                false));
+        int packedTint = PrimitivePacking.packTintControl(
                 PrimitivePacking.packTint(
                         ClusterSceneTranslator.averageColor(binding.surface())),
                 flags);
@@ -439,7 +455,7 @@ public final class SectionMeshAccumulator {
             PrimitivePacking.packUv(uv2U, uv2V),
             packedTint,
             packedNormal,
-            PrimitivePacking.packFlagsEmitter(
+            PrimitivePacking.packControlEmitter(
                     flags, PrimitivePacking.NO_EMITTER_INDEX),
             PrimitivePacking.packUvDensity(
                     edge1X, edge1Y, edge1Z,
@@ -448,18 +464,6 @@ public final class SectionMeshAccumulator {
                     uv2U - uv0U, uv2V - uv0V),
             (int) packedTangent
         };
-    }
-
-    private int materialFlags(CapturedSectionGeometry.Surface captured) {
-        return PrimitivePacking.packFlags(
-                ClusterSceneTranslator.isCutout(captured),
-                captured.animated(),
-                ClusterSceneTranslator.isTransmissive(captured),
-                captured.foliage()
-                        || ClusterSceneTranslator.isTransmissive(captured)
-                                && captured.collisionEmpty(),
-                captured.water(),
-                captured.foliage());
     }
 
     private static float[] concatenate(
@@ -510,6 +514,7 @@ public final class SectionMeshAccumulator {
         private int lightEmission;
         private CapturedSprite sprite;
         private SurfaceDefinition definition;
+        private BuiltinMaterialClass builtinMaterialClass;
 
         public Surface set(
                 int tint,
@@ -533,7 +538,8 @@ public final class SectionMeshAccumulator {
                     mergeable,
                     false,
                     lightEmission,
-                    sprite);
+                    sprite,
+                    BuiltinMaterialClass.DEFAULT);
         }
 
         public Surface set(
@@ -548,6 +554,34 @@ public final class SectionMeshAccumulator {
                 boolean rasterOverlay,
                 int lightEmission,
                 CapturedSprite sprite) {
+            return this.set(
+                    tint,
+                    cutout,
+                    animated,
+                    transmissive,
+                    thinWalled,
+                    water,
+                    foliage,
+                    mergeable,
+                    rasterOverlay,
+                    lightEmission,
+                    sprite,
+                    BuiltinMaterialClass.DEFAULT);
+        }
+
+        public Surface set(
+                int tint,
+                boolean cutout,
+                boolean animated,
+                boolean transmissive,
+                boolean thinWalled,
+                boolean water,
+                boolean foliage,
+                boolean mergeable,
+                boolean rasterOverlay,
+                int lightEmission,
+                CapturedSprite sprite,
+                BuiltinMaterialClass builtinMaterialClass) {
             this.tint = tint;
             this.cutout = cutout;
             this.animated = animated;
@@ -559,6 +593,8 @@ public final class SectionMeshAccumulator {
             this.rasterOverlay = rasterOverlay;
             this.lightEmission = lightEmission;
             this.sprite = Objects.requireNonNull(sprite, "sprite");
+            this.builtinMaterialClass = Objects.requireNonNull(
+                    builtinMaterialClass, "builtinMaterialClass");
             this.definition = null;
             return this;
         }
@@ -614,6 +650,10 @@ public final class SectionMeshAccumulator {
 
         CapturedSprite sprite() {
             return this.sprite;
+        }
+
+        BuiltinMaterialClass builtinMaterialClass() {
+            return this.builtinMaterialClass;
         }
 
         boolean geometryCutout() {

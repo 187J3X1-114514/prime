@@ -8,7 +8,7 @@ PrimeTransmissiveBsdfSample primeSampleOfflineMinecraftTransmissionFromState(
         PrimeRcState state,
         vec3 baseColor,
         float opacity,
-        uint materialFlags,
+        uint materialControl,
         vec3 viewDirection,
         vec3 sampleValue,
         PrimeRcVolumeStack volumeStack) {
@@ -16,7 +16,7 @@ PrimeTransmissiveBsdfSample primeSampleOfflineMinecraftTransmissionFromState(
             state,
             baseColor,
             opacity,
-            materialFlags,
+            materialControl,
             viewDirection,
             sampleValue,
             volumeStack);
@@ -32,40 +32,27 @@ BsdfEvaluation primeEvaluateOfflineMinecraftTransmission(
             surface.baseColor,
             primeSurfaceOpacity(surface),
             outwardNormal,
-            surface.materialFlags,
-            surface.labPbrNormal,
-            surface.labPbrSpecular,
+            surface.materialControl,
+            surface.roughness,
+            surface.opticalControl,
             viewDirection,
             surface.t,
             volumeStack,
             surface.adjacentBaseColor,
-            surface.adjacentSpecularControl);
+            surface.adjacentInterfaceControl);
     return primeEvaluateMinecraftTransmissionCompleteFromState(
             state,
             surface.baseColor,
             primeSurfaceOpacity(surface),
-            surface.materialFlags,
+            surface.materialControl,
             viewDirection,
             scatterDirection);
 }
 
 // Offline transport has one global guaranteed continuation. Interface type never grants an
-// additional roulette exemption, including smooth delta reflection and refraction chains.
+// additional roulette exemption, including smooth discrete reflection and refraction chains.
 bool primeOfflineSkipsRussianRoulette(BsdfSample bsdf) {
     return false;
-}
-
-bool primeOfflineHasNonDeltaLobe(
-        uint materialFlags,
-        vec3 baseColor,
-        float linearRoughness) {
-    if (linearRoughness > 0.0
-            || primeMaterialIsFoliage(materialFlags)) {
-        return true;
-    }
-    return !primeMaterialIsTransmissive(materialFlags)
-            && (materialFlags & PRIME_MATERIAL_FLAG_LABPBR_METAL) == 0u
-            && any(greaterThan(baseColor, vec3(0.0)));
 }
 
 #endif

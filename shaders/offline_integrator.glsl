@@ -32,7 +32,7 @@ vec3 primeEvaluateOfflineDirect(
             || all(lessThanEqual(radiance, vec3(0.0)))) {
         return vec3(0.0);
     }
-    if (primeMaterialIsTransmissive(surface.materialFlags)) {
+    if (primeMaterialIsTransmissive(surface.materialControl)) {
         BsdfEvaluation evaluation = primeEvaluateOfflineMinecraftTransmission(
                 surface, viewDirection, light.direction, volumeStack);
         return primeTripleProduct(
@@ -41,13 +41,13 @@ vec3 primeEvaluateOfflineDirect(
                 primePowerHeuristicOverPdf(light.pdf, evaluation.pdf));
     }
     PrimeBsdfComponents components;
-    if (primeMaterialIsFoliage(surface.materialFlags)) {
+    if (primeMaterialIsFoliage(surface.materialControl)) {
         components = primeEvaluateMinecraftFoliageComponents(
                 surface.baseColor,
                 shadingNormal,
-                surface.labPbrNormal,
-                surface.labPbrSpecular,
-                surface.materialFlags,
+                surface.roughness,
+                surface.opticalControl,
+                surface.materialControl,
                 viewDirection,
                 light.direction,
                 0.0,
@@ -56,9 +56,9 @@ vec3 primeEvaluateOfflineDirect(
         components = primeEvaluateOpaqueComponents(
                 surface.baseColor,
                 shadingNormal,
-                surface.labPbrNormal,
-                surface.labPbrSpecular,
-                surface.materialFlags,
+                surface.roughness,
+                surface.opticalControl,
+                surface.materialControl,
                 viewDirection,
                 light.direction,
                 0.0,
@@ -197,37 +197,37 @@ PrimePathScatter primeSampleOfflinePathSurface(
         PrimeRcVolumeStack volumeStack) {
     PrimePathScatter result;
     result.volumeStack = volumeStack;
-    if (primeMaterialIsFoliage(surface.materialFlags)) {
+    if (primeMaterialIsFoliage(surface.materialControl)) {
         PrimeRcState state = primeMinecraftFoliageState(
                 surface.baseColor,
                 primeSurfaceShadingNormal(surface, viewDirection),
-                surface.labPbrNormal,
-                surface.labPbrSpecular,
-                surface.materialFlags,
+                surface.roughness,
+                surface.opticalControl,
+                surface.materialControl,
                 viewDirection,
                 surface.t,
                 volumeStack);
         result.bsdf = primeSampleMinecraftFoliageFromState(
                 state, viewDirection, sampleValue, volumeStack);
-    } else if (primeMaterialIsTransmissive(surface.materialFlags)) {
+    } else if (primeMaterialIsTransmissive(surface.materialControl)) {
         PrimeRcState state = primeMinecraftBoundaryTransmissionState(
                 surface.baseColor,
                 primeSurfaceOpacity(surface),
                 primeSurfaceOutwardShadingNormal(surface),
-                surface.materialFlags,
-                surface.labPbrNormal,
-                surface.labPbrSpecular,
+                surface.materialControl,
+                surface.roughness,
+                surface.opticalControl,
                 viewDirection,
                 surface.t,
                 volumeStack,
                 surface.adjacentBaseColor,
-                surface.adjacentSpecularControl);
+                surface.adjacentInterfaceControl);
         PrimeTransmissiveBsdfSample sampled =
                 primeSampleOfflineMinecraftTransmissionFromState(
                         state,
                         surface.baseColor,
                         primeSurfaceOpacity(surface),
-                        surface.materialFlags,
+                        surface.materialControl,
                         viewDirection,
                         sampleValue,
                         volumeStack);
@@ -237,10 +237,10 @@ PrimePathScatter primeSampleOfflinePathSurface(
                 volumeStack,
                 surface.baseColor,
                 primeSurfaceOpacity(surface),
-                surface.materialFlags,
-                surface.labPbrSpecular,
+                surface.materialControl,
+                surface.opticalControl,
                 surface.adjacentBaseColor,
-                surface.adjacentSpecularControl);
+                surface.adjacentInterfaceControl);
         result.bsdf = sampled.bsdfSample;
         result.volumeStack = sampled.volumeStack;
     } else {
@@ -248,9 +248,9 @@ PrimePathScatter primeSampleOfflinePathSurface(
         PrimeRcState state = primeOpaqueState(
                 surface.baseColor,
                 shadingNormal,
-                surface.labPbrNormal,
-                surface.labPbrSpecular,
-                surface.materialFlags,
+                surface.roughness,
+                surface.opticalControl,
+                surface.materialControl,
                 viewDirection,
                 surface.t,
                 volumeStack);
@@ -282,8 +282,8 @@ bool primeAdvanceOfflinePath(
             path.physicalOrigin, surface.geometricNormal, bsdf.direction);
     path.rayDirection = bsdf.direction;
     path.previousBsdfPdf = bsdf.pdf;
-    path.flags = (bsdf.eventFlags & PRIME_BSDF_EVENT_DELTA) != 0u
-            ? PRIME_PATH_PREVIOUS_DELTA
+    path.flags = (bsdf.eventFlags & PRIME_BSDF_EVENT_DISCRETE) != 0u
+            ? PRIME_PATH_PREVIOUS_DISCRETE
             : 0u;
 
     if (!primeRussianRouletteApplies(
@@ -337,15 +337,16 @@ bool primeIntegrateOfflineSurface(
     if (!(primaryDistance >= 0.0)) {
         primaryDistance = length(surface.position - primePush.cameraPosition);
         primaryAlbedo = surface.baseColor;
-        primaryMaterialFlags = surface.materialFlags;
+        primaryMaterialFlags = primeNrdGuideControl(
+                surface.materialControl, surface.opticalControl);
     }
 
     PrimePreparedSampleBase preparedSample =
             primePrepareSampleBase(primeMakeSampleBase(path, path.bounce + 1u));
-    bool neeEligible = primeOfflineHasNonDeltaLobe(
-            surface.materialFlags,
-            surface.baseColor,
-            primeSurfaceLinearRoughness(surface));
+    PrimeClosureTraits closureTraits = primeSurfaceClosureTraits(
+            surface, viewDirection, volumeStack);
+    bool neeEligible = primeClosureSupports(
+            closureTraits, PRIME_MEASURE_SOLID_ANGLE);
     if (neeEligible) {
         primeAccumulate(
                 radiance,

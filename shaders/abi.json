@@ -117,17 +117,17 @@
         { "name": "geometricNormal", "type": "vec3", "offset": 0 },
         { "name": "t", "type": "float", "offset": 12 },
         { "name": "baseColor", "type": "vec3", "offset": 16 },
-        { "name": "traceKind", "type": "uint", "offset": 28 },
+        { "name": "materialControl", "type": "uint", "offset": 28 },
         { "name": "sectionIndex", "type": "uint", "offset": 32 },
         { "name": "emitterIndex", "type": "uint", "offset": 36 },
-        { "name": "textureLod", "type": "uint", "offset": 40 },
-        { "name": "opacity", "type": "uint", "offset": 44 },
+        { "name": "textureLod", "type": "float", "offset": 40 },
+        { "name": "opacity", "type": "float", "offset": 44 },
         { "name": "shadingNormal", "type": "uint", "offset": 48 },
-        { "name": "labPbrNormal", "type": "uint", "offset": 52 },
-        { "name": "labPbrSpecular", "type": "uint", "offset": 56 },
+        { "name": "roughness", "type": "float", "offset": 52 },
+        { "name": "opticalControl", "type": "uint", "offset": 56 },
         { "name": "hitKind", "type": "uint", "offset": 60 },
         { "name": "adjacentBaseColor", "type": "vec3", "offset": 64 },
-        { "name": "adjacentSpecularControl", "type": "uint", "offset": 76 }
+        { "name": "adjacentInterfaceControl", "type": "uint", "offset": 76 }
       ]
     },
     "surfaceInteraction": {
@@ -138,17 +138,17 @@
         { "name": "geometricNormal", "type": "vec3", "offset": 16 },
         { "name": "hitKind", "type": "uint", "offset": 28 },
         { "name": "baseColor", "type": "vec3", "offset": 32 },
-        { "name": "materialFlags", "type": "uint", "offset": 44 },
+        { "name": "materialControl", "type": "uint", "offset": 44 },
         { "name": "sectionIndex", "type": "uint", "offset": 48 },
         { "name": "emitterIndex", "type": "uint", "offset": 52 },
-        { "name": "textureLod", "type": "uint", "offset": 56 },
-        { "name": "opacity", "type": "uint", "offset": 60 },
+        { "name": "textureLod", "type": "float", "offset": 56 },
+        { "name": "opacity", "type": "float", "offset": 60 },
         { "name": "shadingNormal", "type": "uint", "offset": 64 },
-        { "name": "labPbrNormal", "type": "uint", "offset": 68 },
-        { "name": "labPbrSpecular", "type": "uint", "offset": 72 },
+        { "name": "roughness", "type": "float", "offset": 68 },
+        { "name": "opticalControl", "type": "uint", "offset": 72 },
         { "name": "motionZFlags", "type": "uint", "offset": 76 },
         { "name": "adjacentBaseColor", "type": "vec3", "offset": 80 },
-        { "name": "adjacentSpecularControl", "type": "uint", "offset": 92 }
+        { "name": "adjacentInterfaceControl", "type": "uint", "offset": 92 }
       ]
     },
     "pushConstants": {
@@ -279,6 +279,7 @@
     "solarLongitudeMask": "0x1ff",
     "seamlessGlassMask": "0x02000000",
     "airGapMask": "0x04000000",
+    "vanillaPbrPresetsMask": "0x08000000",
     "sampleEpochMask": "0x7fffffff",
     "triangleDebugMask": "0x80000000",
     "maximumBouncesMask": "0xff",

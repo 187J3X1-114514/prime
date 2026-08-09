@@ -254,9 +254,9 @@ final class ClusterSceneTranslatorTest {
             for (int record = 0;
                     record < primitives.length;
                     record += CpuSectionMesh.PRIMITIVE_WORDS) {
-                int flags = PrimitivePacking.unpackFlags(
+                int flags = PrimitivePacking.unpackControl(
                         primitives[record + 3], primitives[record + 5]);
-                assertEquals(0, flags & PrimitivePacking.FLAG_RASTER_COMPOSITE);
+                assertEquals(0, flags & PrimitivePacking.CONTROL_RASTER_COMPOSITE);
                 assertEquals(
                         PrimitivePacking.NO_EMITTER_INDEX,
                         PrimitivePacking.unpackEmitterIndex(
@@ -273,7 +273,7 @@ final class ClusterSceneTranslatorTest {
                         CpuSectionMesh.SURFACE_RELATION_OVERLAY,
                         relation[0] & CpuSectionMesh.SURFACE_RELATION_KIND_MASK);
                 assertTrue((relation[0] >> 8
-                        & PrimitivePacking.FLAG_CUTOUT) != 0);
+                        & PrimitivePacking.CONTROL_ALPHA_CUTOUT) != 0);
             }
             CompiledCluster compiled =
                     new CompiledCluster(0L, 0, 0, 0, cluster);
@@ -743,10 +743,10 @@ final class ClusterSceneTranslatorTest {
             for (int record = 0;
                     record < primitives.length;
                     record += CpuSectionMesh.PRIMITIVE_WORDS) {
-                int flags = PrimitivePacking.unpackFlags(
+                int flags = PrimitivePacking.unpackControl(
                         primitives[record + 3], primitives[record + 5]);
                 assertTrue(
-                        (flags & PrimitivePacking.FLAG_FRONT_FACE_ONLY) != 0);
+                        (flags & PrimitivePacking.CONTROL_FRONT_FACE_ONLY) != 0);
             }
         }
     }
@@ -757,10 +757,10 @@ final class ClusterSceneTranslatorTest {
             for (int record = 0;
                     record < primitives.length;
                     record += CpuSectionMesh.PRIMITIVE_WORDS) {
-                int flags = PrimitivePacking.unpackFlags(
+                int flags = PrimitivePacking.unpackControl(
                         primitives[record + 3], primitives[record + 5]);
                 assertEquals(
-                        0, flags & PrimitivePacking.FLAG_FRONT_FACE_ONLY);
+                        0, flags & PrimitivePacking.CONTROL_FRONT_FACE_ONLY);
             }
         }
     }

@@ -63,7 +63,7 @@ PathState primeCameraPath(uvec2 pixel, uint pathIndex, vec2 cameraSample) {
     path.traceOrigin = primePush.cameraPosition;
     path.sampleDimension = pathIndex;
     path.rayDirection = primeCameraRayDirection(pixel, cameraSample);
-    path.flags = PRIME_PATH_PREVIOUS_DELTA;
+    path.flags = PRIME_PATH_PREVIOUS_DISCRETE;
     path.throughput = vec3(1.0);
     path.previousBsdfPdf = 0.0;
     path.etaScale = 1.0;

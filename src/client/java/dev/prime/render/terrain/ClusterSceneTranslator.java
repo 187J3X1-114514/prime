@@ -92,7 +92,8 @@ public final class ClusterSceneTranslator {
                     capturedSurface.mergeable(),
                     capturedSurface.rasterOverlay(),
                     capturedSurface.lightEmission(),
-                    capturedSurface.sprite())
+                    capturedSurface.sprite(),
+                    capturedSurface.builtinMaterialClass())
                     .setDefinition(definition);
             accumulator.addQuad(quad, surface);
         }

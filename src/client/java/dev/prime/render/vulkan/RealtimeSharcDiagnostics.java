@@ -39,7 +39,7 @@ final class RealtimeSharcDiagnostics implements Destroyable {
     private long referenceCaptureCount;
     private double referenceQueryMilliseconds;
     private long sampledQueries;
-    private long deltaSkips;
+    private long discreteSkips;
     private long shortSegmentSkips;
     private long glossyFootprintSkips;
     private long lookupAttempts;
@@ -263,7 +263,7 @@ final class RealtimeSharcDiagnostics implements Destroyable {
                             this.queryMilliseconds, query, this.captureCount);
                 }
                 this.sampledQueries += unsignedCounter(data, 0);
-                this.deltaSkips += unsignedCounter(data, 1);
+                this.discreteSkips += unsignedCounter(data, 1);
                 this.shortSegmentSkips += unsignedCounter(data, 2);
                 this.glossyFootprintSkips += unsignedCounter(data, 3);
                 this.lookupAttempts += unsignedCounter(data, 4);
@@ -288,7 +288,7 @@ final class RealtimeSharcDiagnostics implements Destroyable {
                     this.referenceCaptureCount,
                     this.referenceQueryMilliseconds,
                     this.sampledQueries,
-                    this.deltaSkips,
+                    this.discreteSkips,
                     this.shortSegmentSkips,
                     this.glossyFootprintSkips,
                     this.lookupAttempts,

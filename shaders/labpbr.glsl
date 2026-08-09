@@ -18,12 +18,37 @@ struct PrimeLabPbrSample {
     float emission;
 };
 
+const uint PRIME_RECIPE_NORMAL_TEXTURE = 1u << 5u;
+const uint PRIME_RECIPE_OPTICAL_TEXTURE = 1u << 6u;
+
 bool primeHasLabPbrNormal(uint flags) {
-    return (flags & PRIME_MATERIAL_FLAG_LABPBR_NORMAL) != 0u;
+    return (flags & PRIME_RECIPE_NORMAL_TEXTURE) != 0u;
 }
 
 bool primeHasLabPbrSpecular(uint flags) {
-    return (flags & PRIME_MATERIAL_FLAG_LABPBR_SPECULAR) != 0u;
+    return (flags & PRIME_RECIPE_OPTICAL_TEXTURE) != 0u;
+}
+
+struct PrimeCanonicalOptics {
+    float roughness;
+    uint opticalControl;
+};
+
+PrimeCanonicalOptics primeAdaptLabPbrSpecular(vec4 sourceSample) {
+    uvec4 bytes = uvec4(round(clamp(sourceSample, 0.0, 1.0) * 255.0));
+    uint fresnelCode = bytes.y < 230u
+            ? bytes.y + 1u
+            : bytes.y <= 237u
+                    ? bytes.y + 1u
+                    : bytes.y == 255u ? PRIME_FRESNEL_CUSTOM_CONDUCTOR : 0u;
+    uint subsurfaceCode = bytes.z >= 66u ? bytes.z - 65u : 0u;
+    uint porosityCode = bytes.z <= 64u ? bytes.z : 0u;
+    PrimeCanonicalOptics result;
+    result.roughness = clamp(1.0 - float(bytes.x) / 255.0, 0.0, 1.0);
+    result.opticalControl = fresnelCode
+            | subsurfaceCode << PRIME_OPTICAL_SUBSURFACE_SHIFT
+            | porosityCode << PRIME_OPTICAL_POROSITY_SHIFT;
+    return result;
 }
 
 float primeDecodeLabPbrEmission(uint encoded) {

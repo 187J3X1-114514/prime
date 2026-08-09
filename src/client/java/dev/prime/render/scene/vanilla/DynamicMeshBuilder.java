@@ -214,8 +214,9 @@ final class DynamicMeshBuilder {
                 third.u - first.u,
                 third.v - first.v,
                 normal);
-        int flags = PrimitivePacking.packFlags(true, false);
-        int tint = PrimitivePacking.packTintFlags(
+        int flags = PrimitivePacking.encodeLegacySemantics(
+                true, false, false, false, false, false);
+        int tint = PrimitivePacking.packTintControl(
                 PrimitivePacking.packTint(first.color), flags);
         boolean visibleEmission = fullBright(first.light)
                 && fullBright(second.light)
@@ -223,7 +224,7 @@ final class DynamicMeshBuilder {
         this.primitives.add(uv0, uv1, uv2, tint);
         this.primitives.add(
                 normal,
-                PrimitivePacking.packDynamicFlags(
+                PrimitivePacking.packDynamicControl(
                         flags, textureIndex, visibleEmission, redAlpha),
                 bakedMaterial
                         ? PrimitivePacking.CONSTANT_UV_DENSITY

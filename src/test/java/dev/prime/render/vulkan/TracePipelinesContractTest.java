@@ -123,7 +123,7 @@ final class TracePipelinesContractTest {
     @Test
     void optimizedModulesPreservePayloadAbi() throws IOException {
         String tracePayload = "struct(vec3(f32),f32,vec3(f32),"
-                + "u32,u32,u32,u32,u32,u32,u32,u32,u32,vec3(f32),u32)";
+                + "u32,u32,u32,f32,f32,u32,f32,u32,u32,vec3(f32),u32)";
         String shadowPayload = "struct(vec4(f32),vec4(f32),vec4(f32),vec4(f32),u32)";
         for (String shader : List.of("world.rmiss.spv", "world.rchit.spv")) {
             assertEquals(

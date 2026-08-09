@@ -238,8 +238,10 @@ final class PrimeConfigTest {
         assertTrue(serialized.contains("display.auto_exposure_compensation=0.5\n"));
         assertTrue(serialized.contains("material.seamless_glass=true\n"));
         assertTrue(serialized.contains("material.air_gap=true\n"));
+        assertTrue(serialized.contains("material.vanilla_pbr_presets=true\n"));
         assertTrue(PrimeSettings.defaults().seamlessGlass());
         assertTrue(PrimeSettings.defaults().airGap());
+        assertTrue(PrimeSettings.defaults().vanillaPbrPresets());
 
         Properties properties = new Properties();
         assertFalse(PrimeConfig.hasLegacyDebugProperties(properties));

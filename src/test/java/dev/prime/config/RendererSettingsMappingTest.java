@@ -69,6 +69,7 @@ final class RendererSettingsMappingTest {
                 mapped.material().linearRoughness());
         assertFalse(mapped.material().seamlessGlass());
         assertFalse(mapped.material().airGap());
+        assertTrue(mapped.material().vanillaPbrPresets());
         assertRawEquals(
                 DisplaySettings.finalExposureMultiplier(-3),
                 mapped.display().finalExposureMultiplier());
@@ -97,6 +98,7 @@ final class RendererSettingsMappingTest {
         assertEquals(AstronomySettings.defaults(), mappedDefaults.astronomy());
         assertTrue(mappedDefaults.material().seamlessGlass());
         assertTrue(mappedDefaults.material().airGap());
+        assertTrue(mappedDefaults.material().vanillaPbrPresets());
         assertEquals(0L, mappedDefaults.revision());
 
         PrimeSettings changed = defaults
@@ -107,7 +109,8 @@ final class RendererSettingsMappingTest {
                 .withSunQuarterSteps(4)
                 .withDefaultRoughnessSteps(25)
                 .withSeamlessGlass(false)
-                .withAirGap(false);
+                .withAirGap(false)
+                .withVanillaPbrPresets(false);
         PrimeSettings restored = PrimeConfig.restoredDefaults(changed);
 
         RendererSettings mapped = PrimeConfig.rendererSettings(restored, 9L);
@@ -123,6 +126,7 @@ final class RendererSettingsMappingTest {
                 mapped.material().roughnessSteps());
         assertTrue(mapped.material().seamlessGlass());
         assertTrue(mapped.material().airGap());
+        assertTrue(mapped.material().vanillaPbrPresets());
         assertTrue(restored.lightingRevision() > changed.lightingRevision());
         assertTrue(restored.materialRevision() > changed.materialRevision());
         assertEquals(9L, mapped.revision());

@@ -196,6 +196,7 @@ abstract class GenerateShaderAbi extends DefaultTask {
 		if (!schema.pathControl.sampleEpochMask.toString().equalsIgnoreCase('0x7fffffff')
 				|| !schema.pathControl.seamlessGlassMask.toString().equalsIgnoreCase('0x02000000')
 				|| !schema.pathControl.airGapMask.toString().equalsIgnoreCase('0x04000000')
+				|| !schema.pathControl.vanillaPbrPresetsMask.toString().equalsIgnoreCase('0x08000000')
 				|| !schema.pathControl.triangleDebugMask.toString().equalsIgnoreCase('0x80000000')
 				|| !schema.pathControl.cameraInWaterMask.toString().equalsIgnoreCase('0x80000000')
 				|| !schema.pathControl.jitterPhaseMask.toString().equalsIgnoreCase('0x1fff')
@@ -392,6 +393,7 @@ public final class ShaderAbi {
     public static final int PATH_SOLAR_LONGITUDE_MASK = ${schema.pathControl.solarLongitudeMask};
     public static final int PATH_SEAMLESS_GLASS_MASK = ${schema.pathControl.seamlessGlassMask};
     public static final int PATH_AIR_GAP_MASK = ${schema.pathControl.airGapMask};
+    public static final int PATH_VANILLA_PBR_PRESETS_MASK = ${schema.pathControl.vanillaPbrPresetsMask};
     public static final int PATH_SAMPLE_EPOCH_MASK = ${schema.pathControl.sampleEpochMask};
     public static final int PATH_TRIANGLE_DEBUG_MASK = ${schema.pathControl.triangleDebugMask};
     public static final int PATH_MAXIMUM_BOUNCES_MASK = ${schema.pathControl.maximumBouncesMask};
@@ -529,6 +531,7 @@ ${javaOffsets}
 #define PRIME_PATH_SOLAR_LONGITUDE_MASK ${schema.pathControl.solarLongitudeMask}u
 #define PRIME_PATH_SEAMLESS_GLASS_MASK ${schema.pathControl.seamlessGlassMask}u
 #define PRIME_PATH_AIR_GAP_MASK ${schema.pathControl.airGapMask}u
+#define PRIME_PATH_VANILLA_PBR_PRESETS_MASK ${schema.pathControl.vanillaPbrPresetsMask}u
 #define PRIME_PATH_SAMPLE_EPOCH_MASK ${schema.pathControl.sampleEpochMask}u
 #define PRIME_PATH_TRIANGLE_DEBUG_MASK ${schema.pathControl.triangleDebugMask}u
 #define PRIME_PATH_MAXIMUM_BOUNCES_MASK ${schema.pathControl.maximumBouncesMask}u

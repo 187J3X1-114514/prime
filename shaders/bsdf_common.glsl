@@ -7,10 +7,25 @@ const uint PRIME_BSDF_EVENT_REFLECTION = 1u << 0u;
 const uint PRIME_BSDF_EVENT_TRANSMISSION = 1u << 1u;
 const uint PRIME_BSDF_EVENT_DIFFUSE = 1u << 2u;
 const uint PRIME_BSDF_EVENT_GLOSSY = 1u << 3u;
-const uint PRIME_BSDF_EVENT_DELTA = 1u << 4u;
+const uint PRIME_BSDF_EVENT_DISCRETE = 1u << 4u;
+const uint PRIME_MEASURE_SOLID_ANGLE = 1u;
+const uint PRIME_MEASURE_DISCRETE = 2u;
+
+struct PrimeClosureTraits {
+    uint measureMask;
+    uint eventMask;
+};
+
+bool primeClosureSupports(PrimeClosureTraits traits, uint measure) {
+    return (traits.measureMask & measure) != 0u;
+}
+
+bool primeClosureIsDiscreteOnly(PrimeClosureTraits traits) {
+    return traits.measureMask == PRIME_MEASURE_DISCRETE;
+}
 
 // BSDF directions always point away from the shading point. viewDirection points toward the
-// previous path vertex and scatterDirection points toward the next one. All non-delta PDFs use
+// previous path vertex and scatterDirection points toward the next one. All solid-angle PDFs use
 // solid angle at the next direction. response is f * abs(cos(theta)); division by the complete
 // proposal PDF is delayed until path advancement so no adapter introduces a canceling cosine or
 // an unbounded intermediate weight. This convention must survive a wavefront split.

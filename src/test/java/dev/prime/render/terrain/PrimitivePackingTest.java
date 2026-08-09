@@ -6,6 +6,13 @@ import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import dev.prime.render.material.BuiltinMaterialClass;
+import dev.prime.render.material.CoverageMode;
+import dev.prime.render.material.MaterialDetail;
+import dev.prime.render.material.MaterialRecipe;
+import dev.prime.render.material.MediumHint;
+import dev.prime.render.material.PrimitiveControl;
+import dev.prime.render.material.ScatteringFamily;
 import org.junit.jupiter.api.Test;
 
 final class PrimitivePackingTest {
@@ -64,109 +71,132 @@ final class PrimitivePackingTest {
     }
 
     @Test
-    void materialFlagsKeepCoverageAndAnimationIndependent() {
-        assertEquals(0, PrimitivePacking.packFlags(false, false));
-        assertEquals(PrimitivePacking.FLAG_CUTOUT, PrimitivePacking.packFlags(true, false));
+    void canonicalControlKeepsMaterialAndGeometrySemanticsIndependent() {
+        MaterialRecipe recipe = new MaterialRecipe(
+                CoverageMode.ALPHA_CUTOUT,
+                ScatteringFamily.DIELECTRIC_THIN,
+                MediumHint.GLASS,
+                MaterialDetail.NORMAL_TEXTURE.bit() | MaterialDetail.OPTICAL_TEXTURE.bit(),
+                BuiltinMaterialClass.GLAZED_CERAMIC);
+        PrimitiveControl value = new PrimitiveControl(recipe, true, true, true, false);
+        int control = PrimitivePacking.encode(value);
+
+        assertEquals(value, PrimitivePacking.decode(control));
+        assertTrue(PrimitivePacking.isCutout(control));
+        assertTrue(PrimitivePacking.isTransmissive(control));
+        assertTrue(PrimitivePacking.isThinWalled(control));
+        assertFalse(PrimitivePacking.isFoliage(control));
         assertEquals(
-                PrimitivePacking.FLAG_ANIMATED_TEXTURE,
-                PrimitivePacking.packFlags(false, true));
-        assertEquals(3, PrimitivePacking.packFlags(true, true));
-        assertEquals(
-                PrimitivePacking.FLAG_TRANSMISSIVE | PrimitivePacking.FLAG_THIN_WALLED,
-                PrimitivePacking.packFlags(false, false, true, true, false, false));
-        assertEquals(
-                PrimitivePacking.FLAG_TRANSMISSIVE | PrimitivePacking.FLAG_WATER,
-                PrimitivePacking.packFlags(false, false, true, false, true, false));
-        assertEquals(
-                PrimitivePacking.FLAG_CUTOUT
-                        | PrimitivePacking.FLAG_THIN_WALLED
-                        | PrimitivePacking.FLAG_FOLIAGE,
-                PrimitivePacking.packFlags(true, false, false, true, false, true));
-        assertThrows(
-                IllegalArgumentException.class,
-                () -> PrimitivePacking.packFlags(false, false, false, true, false, false));
-        assertThrows(
-                IllegalArgumentException.class,
-                () -> PrimitivePacking.packFlags(false, false, true, true, true, false));
-        assertThrows(
-                IllegalArgumentException.class,
-                () -> PrimitivePacking.packFlags(false, false, false, true, false, true));
-        assertThrows(
-                IllegalArgumentException.class,
-                () -> PrimitivePacking.packFlags(true, false, true, true, false, true));
+                BuiltinMaterialClass.GLAZED_CERAMIC.id(),
+                control >>> PrimitivePacking.CONTROL_BUILTIN_SHIFT & 15);
+    }
+
+    @Test
+    void everyValidControlRoundTripsThroughItsPhysicalPackingMode() {
+        int valid = 0;
+        for (int control = 0; control <= PrimitivePacking.CONTROL_MASK; control++) {
+            PrimitiveControl decoded;
+            try {
+                decoded = PrimitivePacking.decode(control);
+            } catch (IllegalArgumentException ignored) {
+                continue;
+            }
+            valid++;
+            assertEquals(control, PrimitivePacking.encode(decoded));
+            int tint = PrimitivePacking.packTintControl(0x00a0_6040, control);
+            int physical;
+            if (decoded.rasterComposite()) {
+                physical = PrimitivePacking.packRasterCompositeControl(control, 0x0012_3456);
+                assertEquals(PrimitivePacking.NO_EMITTER_INDEX,
+                        PrimitivePacking.unpackEmitterIndex(physical));
+            } else {
+                physical = PrimitivePacking.packControlEmitter(
+                        control, PrimitivePacking.MAX_EMITTER_INDEX);
+                assertEquals(
+                        PrimitivePacking.MAX_EMITTER_INDEX,
+                        PrimitivePacking.unpackEmitterIndex(physical));
+                int dynamic = PrimitivePacking.packDynamicControl(control, 63, true);
+                assertEquals(control, PrimitivePacking.unpackControl(tint, dynamic));
+                assertEquals(63, PrimitivePacking.unpackDynamicTextureIndex(dynamic));
+            }
+            assertEquals(control, PrimitivePacking.unpackControl(tint, physical));
+        }
+        assertTrue(valid > 0);
     }
 
     @Test
     void flagsAndEmitterIndexRoundTripAcrossTheWholeAbiRange() {
-        int flags = PrimitivePacking.FLAG_CUTOUT
-                | PrimitivePacking.FLAG_LABPBR_SPECULAR
-                | PrimitivePacking.FLAG_TANGENT_NEGATIVE
-                | PrimitivePacking.FLAG_FRONT_FACE_ONLY;
-        int tint = PrimitivePacking.packTintFlags(
+        int flags = PrimitivePacking.CONTROL_ALPHA_CUTOUT
+                | PrimitivePacking.CONTROL_NORMAL_TEXTURE
+                | PrimitivePacking.CONTROL_OPTICAL_TEXTURE
+                | PrimitivePacking.CONTROL_TANGENT_NEGATIVE
+                | PrimitivePacking.CONTROL_FRONT_FACE_ONLY
+                | BuiltinMaterialClass.COPPER.id() << PrimitivePacking.CONTROL_BUILTIN_SHIFT;
+        int tint = PrimitivePacking.packTintControl(
                 PrimitivePacking.packTint(0x80402010), flags);
         assertEquals(0x00102040, tint & 0x00ff_ffff);
         for (int emitter : new int[] {
             PrimitivePacking.NO_EMITTER_INDEX, 0, 1, 1024, PrimitivePacking.MAX_EMITTER_INDEX
         }) {
-            int packed = PrimitivePacking.packFlagsEmitter(flags, emitter);
-            assertEquals(flags, PrimitivePacking.unpackFlags(tint, packed));
+            int packed = PrimitivePacking.packControlEmitter(flags, emitter);
+            assertEquals(flags, PrimitivePacking.unpackControl(tint, packed));
             assertEquals(emitter, PrimitivePacking.unpackEmitterIndex(packed));
         }
         assertThrows(
                 IllegalArgumentException.class,
-                () -> PrimitivePacking.packFlagsEmitter(flags, PrimitivePacking.MAX_EMITTER_INDEX + 1));
+                () -> PrimitivePacking.packControlEmitter(flags, PrimitivePacking.MAX_EMITTER_INDEX + 1));
         assertThrows(
                 IllegalArgumentException.class,
-                () -> PrimitivePacking.packFlagsEmitter(1 << 11, 0));
+                () -> PrimitivePacking.packControlEmitter(13 << 11, 0));
     }
 
     @Test
     void dynamicTextureAndVisibleEmissionNeverDecodeAsALightTreeEmitter() {
-        int flags = PrimitivePacking.FLAG_CUTOUT
-                | PrimitivePacking.FLAG_FRONT_FACE_ONLY;
-        int visible = PrimitivePacking.packDynamicFlags(flags, 63, true);
-        int dark = PrimitivePacking.packDynamicFlags(flags, 1, false);
+        int flags = PrimitivePacking.CONTROL_ALPHA_CUTOUT
+                | PrimitivePacking.CONTROL_FRONT_FACE_ONLY;
+        int visible = PrimitivePacking.packDynamicControl(flags, 63, true);
+        int dark = PrimitivePacking.packDynamicControl(flags, 1, false);
 
         assertEquals(63, PrimitivePacking.unpackDynamicTextureIndex(visible));
-        assertEquals(flags, PrimitivePacking.unpackFlags(
-                PrimitivePacking.packTintFlags(-1, flags), visible));
+        assertEquals(flags, PrimitivePacking.unpackControl(
+                PrimitivePacking.packTintControl(-1, flags), visible));
         assertEquals(PrimitivePacking.NO_EMITTER_INDEX,
                 PrimitivePacking.unpackEmitterIndex(visible));
         assertTrue(PrimitivePacking.hasVisibleEmission(visible));
         assertEquals(1, PrimitivePacking.unpackDynamicTextureIndex(dark));
         assertFalse(PrimitivePacking.hasVisibleEmission(dark));
         assertEquals(0, PrimitivePacking.unpackDynamicTextureIndex(
-                PrimitivePacking.packFlagsEmitter(flags, 0)));
-        int untextured = PrimitivePacking.packDynamicFlags(flags, 0, false);
+                PrimitivePacking.packControlEmitter(flags, 0)));
+        int untextured = PrimitivePacking.packDynamicControl(flags, 0, false);
         assertEquals(0, PrimitivePacking.unpackDynamicTextureIndex(untextured));
         assertEquals(
                 PrimitivePacking.NO_EMITTER_INDEX,
                 PrimitivePacking.unpackEmitterIndex(untextured));
-        int redAlpha = PrimitivePacking.packDynamicFlags(flags, 7, false, true);
+        int redAlpha = PrimitivePacking.packDynamicControl(flags, 7, false, true);
         assertTrue(PrimitivePacking.usesDynamicRedAlpha(redAlpha));
         assertEquals(7, PrimitivePacking.unpackDynamicTextureIndex(redAlpha));
         assertFalse(PrimitivePacking.usesDynamicRedAlpha(dark));
         assertThrows(
                 IllegalArgumentException.class,
-                () -> PrimitivePacking.packDynamicFlags(flags, 0, false, true));
+                () -> PrimitivePacking.packDynamicControl(flags, 0, false, true));
     }
 
     @Test
     void rasterCompositeOwnsTheStaticPayloadWithoutBecomingAnEmitter() {
-        int flags = PrimitivePacking.FLAG_RASTER_COMPOSITE
-                | PrimitivePacking.FLAG_LABPBR_SPECULAR;
-        int tint = PrimitivePacking.packTintFlags(
+        int flags = PrimitivePacking.CONTROL_RASTER_COMPOSITE
+                | PrimitivePacking.CONTROL_OPTICAL_TEXTURE;
+        int tint = PrimitivePacking.packTintControl(
                 PrimitivePacking.packTint(-1), flags);
-        int packed = PrimitivePacking.packRasterCompositeFlags(
+        int packed = PrimitivePacking.packRasterCompositeControl(
                 flags, PrimitivePacking.packTint(0xff40_a060));
 
-        assertEquals(flags, PrimitivePacking.unpackFlags(tint, packed));
+        assertEquals(flags, PrimitivePacking.unpackControl(tint, packed));
         assertEquals(
                 PrimitivePacking.NO_EMITTER_INDEX,
                 PrimitivePacking.unpackEmitterIndex(packed));
         assertThrows(
                 IllegalArgumentException.class,
-                () -> PrimitivePacking.packDynamicFlags(flags, 1, false));
+                () -> PrimitivePacking.packDynamicControl(flags, 1, false));
     }
 
     @Test
@@ -178,16 +208,16 @@ final class PrimitivePackingTest {
     }
 
     @Test
-    void labPbrAvailabilityAndTangentHandednessUseIndependentBits() {
-        int flags = PrimitivePacking.withLabPbr(
-                PrimitivePacking.FLAG_CUTOUT, true, true, true);
+    void textureAvailabilityAndTangentHandednessUseIndependentBits() {
+        int flags = PrimitivePacking.withMaterialDetails(
+                PrimitivePacking.CONTROL_ALPHA_CUTOUT, true, true, true);
         assertEquals(
-                PrimitivePacking.FLAG_CUTOUT
-                        | PrimitivePacking.FLAG_LABPBR_NORMAL
-                        | PrimitivePacking.FLAG_LABPBR_SPECULAR
-                        | PrimitivePacking.FLAG_TANGENT_NEGATIVE,
+                PrimitivePacking.CONTROL_ALPHA_CUTOUT
+                        | PrimitivePacking.CONTROL_NORMAL_TEXTURE
+                        | PrimitivePacking.CONTROL_OPTICAL_TEXTURE
+                        | PrimitivePacking.CONTROL_TANGENT_NEGATIVE,
                 flags);
-        assertEquals(0, PrimitivePacking.withLabPbr(0, false, false, true));
+        assertEquals(0, PrimitivePacking.withMaterialDetails(0, false, false, true));
 
         int normal = PrimitivePacking.packOctahedralNormal(0.0F, 0.0F, 1.0F);
         long positive = PrimitivePacking.packTriangleTangent(

@@ -308,9 +308,9 @@ final class TextureVoxelSurfaceTest {
                     baseSpecular[0],
                     true);
             assertEquals(
-                    PrimitivePacking.FLAG_LABPBR_NORMAL
-                            | PrimitivePacking.FLAG_LABPBR_SPECULAR,
-                    PrimitivePacking.unpackFlags(
+                    PrimitivePacking.CONTROL_NORMAL_TEXTURE
+                            | PrimitivePacking.CONTROL_OPTICAL_TEXTURE,
+                    PrimitivePacking.unpackControl(
                             primitives[3], primitives[5]));
         }
     }

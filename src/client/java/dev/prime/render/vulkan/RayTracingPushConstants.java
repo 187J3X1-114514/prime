@@ -65,7 +65,8 @@ public final class RayTracingPushConstants {
                         input.sampleIndex(),
                         input.astronomy().settings(),
                         input.material().seamlessGlass(),
-                        input.material().airGap()));
+                        input.material().airGap(),
+                        input.material().vanillaPbrPresets()));
         buffer.putInt(
                 pathOffset + Integer.BYTES,
                 IntegratorSettings.packSampleEpoch(

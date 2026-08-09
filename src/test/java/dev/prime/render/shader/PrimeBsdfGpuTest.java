@@ -2,7 +2,6 @@ package dev.prime.render.shader;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
-import dev.prime.render.terrain.PrimitivePacking;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.file.Path;
@@ -21,8 +20,13 @@ final class PrimeBsdfGpuTest {
     private static final int CASES_PER_KIND = 16_384;
     private static final int KIND_COUNT = 5;
     private static final int CASE_COUNT = CASES_PER_KIND * KIND_COUNT;
-    private static final int FLAG_COLORLESS_GLASS = 1 << 11;
-    private static final int FLAG_ROUGH_GLASS = 1 << 12;
+    private static final int MATERIAL_FAMILY_DIELECTRIC = 1;
+    private static final int MATERIAL_FAMILY_FOLIAGE = 2;
+    private static final int MATERIAL_MEDIUM_COLORLESS_GLASS = 1 << 2;
+    private static final int MATERIAL_MEDIUM_STAINED_GLASS = 2 << 2;
+    private static final int MATERIAL_MEDIUM_WATER = 3 << 2;
+    private static final int MATERIAL_THIN_WALLED = 1 << 4;
+    private static final int MATERIAL_DECORATIVE_INTERFACE = 1 << 7;
 
     private static final float[] COSINES = {
         1.0e-6F, 1.0e-4F, 0.001F, 0.01F, 0.1F, 0.5F, 0.9F, 1.0F
@@ -42,7 +46,6 @@ final class PrimeBsdfGpuTest {
         238, 254, 255
     };
     private static final int[] SUBSURFACE = {0, 1, 64, 65, 128, 254, 255};
-    private static final int[] EMISSION = {0, 1, 127, 254, 255};
 
     private static ShaderComputeRunner runner;
 
@@ -126,20 +129,20 @@ final class PrimeBsdfGpuTest {
         for (int kind = firstKind; kind < firstKind + kindCount; kind++) {
             for (int localCase = 0; localCase < CASES_PER_KIND; localCase++) {
                 int flags = flags(kind, localCase);
-                int normalX = localCase & 0xff;
-                int normalY = (localCase >>> 6) & 0xff;
-                int packedNormal = packBytes(
-                        normalX,
-                        normalY,
-                        (localCase * 29) & 0xff,
-                        (localCase * 71) & 0xff);
-                int packedSpecular = packBytes(
-                        SMOOTHNESS[localCase % SMOOTHNESS.length],
-                        MATERIAL[(localCase / SMOOTHNESS.length) % MATERIAL.length],
-                        SUBSURFACE[
-                                (localCase / (SMOOTHNESS.length * MATERIAL.length))
-                                        % SUBSURFACE.length],
-                        EMISSION[(localCase / 17) % EMISSION.length]);
+                int smoothness = SMOOTHNESS[localCase % SMOOTHNESS.length];
+                int material = MATERIAL[(localCase / SMOOTHNESS.length) % MATERIAL.length];
+                int subsurface = SUBSURFACE[
+                        (localCase / (SMOOTHNESS.length * MATERIAL.length))
+                                % SUBSURFACE.length];
+                int roughness = Float.floatToRawIntBits(1.0F - smoothness / 255.0F);
+                int fresnelCode = material < 230
+                        ? material + 1
+                        : material <= 237 ? material + 1 : material == 255 ? 239 : 0;
+                int subsurfaceCode = subsurface >= 66 ? subsurface - 65 : 0;
+                int porosityCode = subsurface <= 64 ? subsurface : 0;
+                int opticalControl = fresnelCode
+                        | subsurfaceCode << 8
+                        | porosityCode << 16;
 
                 Vec3 outward = randomUnit(random);
                 float cosine = COSINES[localCase % COSINES.length];
@@ -168,8 +171,8 @@ final class PrimeBsdfGpuTest {
 
                 putInt(input, caseIndex, 0, 0, kind);
                 putInt(input, caseIndex, 0, 1, flags);
-                putInt(input, caseIndex, 0, 2, packedNormal);
-                putInt(input, caseIndex, 0, 3, packedSpecular);
+                putInt(input, caseIndex, 0, 2, roughness);
+                putInt(input, caseIndex, 0, 3, opticalControl);
                 putVec3(input, caseIndex, 1, base[0], base[1], base[2]);
                 putFloat(input, caseIndex, 1, 3, opacity);
                 putVec3(input, caseIndex, 2, outward.x(), outward.y(), outward.z());
@@ -203,28 +206,23 @@ final class PrimeBsdfGpuTest {
 
     private static int flags(int kind, int localCase) {
         int flags = 0;
-        if ((localCase & 1) != 0) flags |= PrimitivePacking.FLAG_LABPBR_NORMAL;
-        if ((localCase & 2) != 0) flags |= PrimitivePacking.FLAG_LABPBR_SPECULAR;
-        if ((localCase & 4) != 0) flags |= PrimitivePacking.FLAG_TANGENT_NEGATIVE;
         if (kind == 1 || kind == 3 || kind == 4 || kind == 5 || kind == 6) {
-            flags |= PrimitivePacking.FLAG_TRANSMISSIVE;
+            flags |= MATERIAL_FAMILY_DIELECTRIC;
             if (kind != 6 && (localCase & 8) != 0) {
-                flags |= PrimitivePacking.FLAG_WATER;
-            }
-            if (kind != 6 && (localCase & 16) != 0) {
-                flags |= PrimitivePacking.FLAG_THIN_WALLED;
-                flags &= ~PrimitivePacking.FLAG_WATER;
-            }
-            if ((flags & PrimitivePacking.FLAG_WATER) == 0) {
-                if (kind != 6 && (localCase & 32) != 0) {
-                    flags |= FLAG_ROUGH_GLASS;
+                flags |= MATERIAL_MEDIUM_WATER;
+            } else {
+                flags |= (localCase & 64) != 0
+                        ? MATERIAL_MEDIUM_COLORLESS_GLASS
+                        : MATERIAL_MEDIUM_STAINED_GLASS;
+                if (kind != 6 && (localCase & 16) != 0) {
+                    flags |= MATERIAL_THIN_WALLED;
                 }
-                if ((localCase & 64) != 0) flags |= FLAG_COLORLESS_GLASS;
+                if (kind != 6 && (localCase & 32) != 0) {
+                    flags |= MATERIAL_DECORATIVE_INTERFACE;
+                }
             }
         } else if (kind == 2) {
-            flags |= PrimitivePacking.FLAG_FOLIAGE | PrimitivePacking.FLAG_CUTOUT;
-        } else if ((localCase & 8) != 0) {
-            flags |= PrimitivePacking.FLAG_CUTOUT;
+            flags |= MATERIAL_FAMILY_FOLIAGE | MATERIAL_THIN_WALLED;
         }
         return flags;
     }
@@ -272,13 +270,6 @@ final class PrimeBsdfGpuTest {
                 .add(tangent.scale(sine * (float) Math.cos(phi)))
                 .add(bitangent.scale(sine * (float) Math.sin(phi)))
                 .normalized();
-    }
-
-    private static int packBytes(int x, int y, int z, int w) {
-        return (x & 0xff)
-                | ((y & 0xff) << 8)
-                | ((z & 0xff) << 16)
-                | ((w & 0xff) << 24);
     }
 
     private static void putVec3(

@@ -108,27 +108,26 @@ final class SurfaceRelationTable {
 
     private static void validateMaterial(
             int[] table, int offset, int relationKind) {
-        int flags = PrimitivePacking.unpackFlags(
+        int flags = PrimitivePacking.unpackControl(
                 table[offset + 3], table[offset + 5]);
-        PrimitivePacking.requireValidFlags(flags);
+        PrimitivePacking.requireValidControl(flags);
         if ((table[offset + 5] & PrimitivePacking.DYNAMIC_TEXTURE_FLAG) != 0
                 || PrimitivePacking.unpackEmitterIndex(table[offset + 5])
                         != PrimitivePacking.NO_EMITTER_INDEX
-                || (flags & (PrimitivePacking.FLAG_FRONT_FACE_ONLY
-                                | PrimitivePacking.FLAG_RASTER_COMPOSITE))
+                || (flags & (PrimitivePacking.CONTROL_FRONT_FACE_ONLY
+                                | PrimitivePacking.CONTROL_RASTER_COMPOSITE))
                         != 0) {
             throw new IllegalArgumentException(
                     "Surface relation embeds an unsupported material primitive");
         }
         if (relationKind == CpuSectionMesh.SURFACE_RELATION_OVERLAY
-                && (flags & (PrimitivePacking.FLAG_CUTOUT
-                                | PrimitivePacking.FLAG_TRANSMISSIVE))
-                        != 0) {
+                && (PrimitivePacking.isCutout(flags)
+                        || PrimitivePacking.isTransmissive(flags))) {
             throw new IllegalArgumentException(
                     "Overlay substrate must be opaque");
         }
         if (relationKind == CpuSectionMesh.SURFACE_RELATION_BILATERAL
-                && (flags & PrimitivePacking.FLAG_CUTOUT) == 0) {
+                && !PrimitivePacking.isCutout(flags)) {
             throw new IllegalArgumentException(
                     "Bilateral fallback material must preserve cutout coverage");
         }
@@ -139,12 +138,14 @@ final class SurfaceRelationTable {
         return switch (kind) {
             case CpuSectionMesh.SURFACE_RELATION_BOUNDARY -> {
                 int allowed = CpuSectionMesh.SURFACE_RELATION_KIND_MASK
-                        | CpuSectionMesh.SURFACE_RELATION_WATER
-                        | CpuSectionMesh.SURFACE_RELATION_LABPBR_SPECULAR;
-                if ((control & ~allowed) != 0) {
+                        | CpuSectionMesh.SURFACE_RELATION_MICRO_GAP_ELIGIBLE;
+                int recipe = control >>> 8;
+                if ((control & 0xff & ~allowed) != 0
+                        || (recipe & ~PrimitivePacking.MATERIAL_RECIPE_MASK) != 0) {
                     throw new IllegalArgumentException(
                             "Boundary relation contains invalid control flags");
                 }
+                PrimitivePacking.requireValidControl(recipe);
                 yield 3;
             }
             case CpuSectionMesh.SURFACE_RELATION_OVERLAY -> {
@@ -152,11 +153,12 @@ final class SurfaceRelationTable {
                         | CpuSectionMesh.SURFACE_RELATION_POSITIVE_ONLY;
                 int primaryFlags = control >>> 8;
                 if ((control & 0xff & ~lowAllowed) != 0
-                        || (primaryFlags & ~PrimitivePacking.FLAG_MASK) != 0
-                        || (primaryFlags & PrimitivePacking.FLAG_CUTOUT) == 0) {
+                        || (primaryFlags & ~PrimitivePacking.MATERIAL_RECIPE_MASK) != 0
+                        || !PrimitivePacking.isCutout(primaryFlags)) {
                     throw new IllegalArgumentException(
                             "Overlay relation contains invalid material flags");
                 }
+                PrimitivePacking.requireValidControl(primaryFlags);
                 yield 9;
             }
             case CpuSectionMesh.SURFACE_RELATION_BILATERAL -> {

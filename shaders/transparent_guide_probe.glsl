@@ -37,41 +37,41 @@ PrimeDenoiseAlbedos primeProbeSurfaceAlbedos(
         SurfaceInteraction surface,
         vec3 viewDirection,
         PrimeRcVolumeStack volumeStack) {
-    if (primeMaterialIsFoliage(surface.materialFlags)) {
+    if (primeMaterialIsFoliage(surface.materialControl)) {
         PrimeRcState state = primeMinecraftFoliageState(
                 surface.baseColor,
                 primeSurfaceShadingNormal(surface, viewDirection),
-                surface.labPbrNormal,
-                surface.labPbrSpecular,
-                surface.materialFlags,
+                surface.roughness,
+                surface.opticalControl,
+                surface.materialControl,
                 viewDirection,
                 surface.t,
                 volumeStack);
         return primeDenoiseAlbedosFromState(
                 state, viewDirection, PRIME_DENOISE_CLOSURE_FOLIAGE);
     }
-    if (primeMaterialIsTransmissive(surface.materialFlags)) {
+    if (primeMaterialIsTransmissive(surface.materialControl)) {
         PrimeRcState state = primeMinecraftBoundaryTransmissionState(
                 surface.baseColor,
                 primeSurfaceOpacity(surface),
                 primeSurfaceOutwardShadingNormal(surface),
-                surface.materialFlags,
-                surface.labPbrNormal,
-                surface.labPbrSpecular,
+                surface.materialControl,
+                surface.roughness,
+                surface.opticalControl,
                 viewDirection,
                 surface.t,
                 volumeStack,
                 surface.adjacentBaseColor,
-                surface.adjacentSpecularControl);
+                surface.adjacentInterfaceControl);
         return primeDenoiseAlbedosFromState(
                 state, viewDirection, PRIME_DENOISE_CLOSURE_TRANSMISSIVE);
     }
     PrimeRcState state = primeOpaqueState(
             surface.baseColor,
             primeSurfaceShadingNormal(surface, viewDirection),
-            surface.labPbrNormal,
-            surface.labPbrSpecular,
-            surface.materialFlags,
+            surface.roughness,
+            surface.opticalControl,
+            surface.materialControl,
             viewDirection,
             surface.t,
             volumeStack);
@@ -121,7 +121,7 @@ void primeSetProbeSurfaceGuide(
     guides.primaryNormal = primeNrdSafeNormalize(
             virtualNormal, vec3(0.0, 1.0, 0.0));
     guides.primaryHitKind = surface.hitKind;
-    guides.primaryMaterialFlags = surface.materialFlags;
+    guides.primaryMaterialFlags = surface.materialControl;
     guides.primarySpecularAlbedo = primeSanitizeDenoiseAlbedo(
             throughput * albedos.specular);
     guides.primaryLinearRoughness = primeSurfaceLinearRoughness(surface);
@@ -154,7 +154,7 @@ void primeTraceDeterministicTransmissionGuide(
         inout PrimeTransparentGuideProbeResult result) {
     BsdfSample initialBsdf = initialSample.bsdfSample;
     vec3 throughput = vec3(1.0);
-    if ((initialBsdf.eventFlags & PRIME_BSDF_EVENT_DELTA) == 0u
+    if ((initialBsdf.eventFlags & PRIME_BSDF_EVENT_DISCRETE) == 0u
             || !primeAdvanceProbeThroughput(throughput, initialBsdf)) {
         return;
     }
@@ -203,9 +203,10 @@ void primeTraceDeterministicTransmissionGuide(
             return;
         }
         vec3 viewDirection = -direction;
-        float roughness = primeSurfaceLinearRoughness(surface);
-        if (!primeMaterialIsTransmissive(surface.materialFlags)
-                || roughness > 0.0) {
+        PrimeClosureTraits closureTraits = primeSurfaceClosureTraits(
+                surface, viewDirection, volumeStack);
+        bool discreteOnlyInterface = primeClosureIsDiscreteOnly(closureTraits);
+        if (!discreteOnlyInterface) {
             vec3 currentVirtualPosition;
             vec3 currentVirtualNormal;
             if (!primeBuildQueuedPsrGuideValue(
@@ -278,16 +279,16 @@ void primeTraceDeterministicTransmissionGuide(
                         surface.baseColor,
                         primeSurfaceOpacity(surface),
                         primeSurfaceOutwardShadingNormal(surface),
-                        surface.materialFlags,
-                        surface.labPbrNormal,
-                        surface.labPbrSpecular,
+                        surface.materialControl,
+                        surface.roughness,
+                        surface.opticalControl,
                         viewDirection,
                         surface.t,
                         volumeStack,
                         surface.adjacentBaseColor,
-                        surface.adjacentSpecularControl);
+                        surface.adjacentInterfaceControl);
         BsdfSample bsdf = continuation.bsdfSample;
-        if ((bsdf.eventFlags & PRIME_BSDF_EVENT_DELTA) == 0u
+        if ((bsdf.eventFlags & PRIME_BSDF_EVENT_DISCRETE) == 0u
                 || !primeAdvanceProbeThroughput(throughput, bsdf)) {
             return;
         }
@@ -326,8 +327,8 @@ void primeTracePlanarReflectionGuide(
     BsdfSample bsdf = initialSample.bsdfSample;
     vec3 throughput = vec3(1.0);
     if ((bsdf.eventFlags
-            & (PRIME_BSDF_EVENT_REFLECTION | PRIME_BSDF_EVENT_DELTA))
-                    != (PRIME_BSDF_EVENT_REFLECTION | PRIME_BSDF_EVENT_DELTA)
+            & (PRIME_BSDF_EVENT_REFLECTION | PRIME_BSDF_EVENT_DISCRETE))
+                    != (PRIME_BSDF_EVENT_REFLECTION | PRIME_BSDF_EVENT_DISCRETE)
             || !primeAdvanceProbeThroughput(throughput, bsdf)) {
         return;
     }
@@ -398,7 +399,7 @@ PrimeTransparentGuideProbeResult primeTraceTransparentGuideProbes(
             primeEmptyTransparentGuideProbeResult();
     if (maximumBounces <= 1u
             || primarySurface.hitKind != PRIME_HIT_SURFACE
-            || !primeMaterialIsTransmissive(primarySurface.materialFlags)) {
+            || !primeMaterialIsTransmissive(primarySurface.materialControl)) {
         return result;
     }
 
@@ -413,9 +414,9 @@ PrimeTransparentGuideProbeResult primeTraceTransparentGuideProbes(
                     primarySurface.baseColor,
                     primeSurfaceOpacity(primarySurface),
                     primeSurfaceOutwardShadingNormal(primarySurface),
-                    primarySurface.materialFlags,
-                    primarySurface.labPbrNormal,
-                    primarySurface.labPbrSpecular,
+                    primarySurface.materialControl,
+                    primarySurface.roughness,
+                    primarySurface.opticalControl,
                     viewDirection,
                     primeSobolSample3D(
                             preparedSample,
@@ -424,7 +425,7 @@ PrimeTransparentGuideProbeResult primeTraceTransparentGuideProbes(
                     primarySurface.t,
                     volumeStack,
                     primarySurface.adjacentBaseColor,
-                    primarySurface.adjacentSpecularControl);
+                    primarySurface.adjacentInterfaceControl);
     primeTraceDeterministicTransmissionGuide(
             primarySurface,
             primarySample.paths.transmission,

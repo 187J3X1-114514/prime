@@ -61,6 +61,19 @@ final class MaterialSettingsTest {
     }
 
     @Test
+    void vanillaPresetsAreOnByDefaultAndOwnMaterialRevision() {
+        PrimeSettings defaults = PrimeSettings.defaults();
+        assertTrue(MaterialSettings.DEFAULT_VANILLA_PBR_PRESETS);
+        assertTrue(defaults.material().vanillaPbrPresets());
+
+        PrimeSettings disabled = defaults.withVanillaPbrPresets(false);
+        assertFalse(disabled.material().vanillaPbrPresets());
+        assertEquals(defaults.materialRevision() + 1L, disabled.materialRevision());
+        assertEquals(disabled, disabled.withVanillaPbrPresets(false));
+        assertFalse(disabled.withSunQuarterSteps(1).material().vanillaPbrPresets());
+    }
+
+    @Test
     void snapshotDerivesLinearRoughnessFromItsCanonicalSteps() {
         MaterialSettings.Snapshot snapshot =
                 new MaterialSettings.Snapshot(37, true, 2L);
@@ -68,6 +81,7 @@ final class MaterialSettingsTest {
         assertEquals(0.37F, snapshot.linearRoughness());
         assertTrue(snapshot.seamlessGlass());
         assertTrue(snapshot.airGap());
+        assertTrue(snapshot.vanillaPbrPresets());
         assertThrows(
                 IllegalArgumentException.class,
                 () -> new MaterialSettings.Snapshot(101, 0L));

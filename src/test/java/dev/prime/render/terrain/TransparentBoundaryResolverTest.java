@@ -167,7 +167,7 @@ final class TransparentBoundaryResolverTest {
             assertTrue((relation[0]
                     & CpuSectionMesh.SURFACE_RELATION_POSITIVE_ONLY) != 0);
             assertTrue((relation[0] >> 8
-                    & PrimitivePacking.FLAG_CUTOUT) != 0);
+                    & PrimitivePacking.CONTROL_ALPHA_CUTOUT) != 0);
             assertEquals(1.0F, segment.positions()[0], 0.0F);
         }
     }

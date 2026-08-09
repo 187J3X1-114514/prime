@@ -1,5 +1,6 @@
 package dev.prime.render.scene;
 
+import dev.prime.render.material.BuiltinMaterialClass;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
@@ -122,14 +123,53 @@ public final class CapturedSectionGeometry {
             int lightEmission,
             CapturedSprite sprite,
             FluidFacts fluid,
-            BlockFacts block) {
+            BlockFacts block,
+            BuiltinMaterialClass builtinMaterialClass) {
         public Surface {
             Objects.requireNonNull(layer, "layer");
             Objects.requireNonNull(sprite, "sprite");
+            Objects.requireNonNull(builtinMaterialClass, "builtinMaterialClass");
             if (lightEmission < 0 || lightEmission > 15) {
                 throw new IllegalArgumentException(
                         "Captured light emission must be in [0, 15]");
             }
+        }
+
+        public Surface(
+                int color0,
+                int color1,
+                int color2,
+                int color3,
+                Layer layer,
+                boolean alphaCutOverride,
+                boolean collisionEmpty,
+                boolean animated,
+                boolean water,
+                boolean foliage,
+                boolean mergeable,
+                boolean rasterOverlay,
+                int lightEmission,
+                CapturedSprite sprite,
+                FluidFacts fluid,
+                BlockFacts block) {
+            this(
+                    color0,
+                    color1,
+                    color2,
+                    color3,
+                    layer,
+                    alphaCutOverride,
+                    collisionEmpty,
+                    animated,
+                    water,
+                    foliage,
+                    mergeable,
+                    rasterOverlay,
+                    lightEmission,
+                    sprite,
+                    fluid,
+                    block,
+                    BuiltinMaterialClass.DEFAULT);
         }
 
         public Surface(
@@ -164,7 +204,8 @@ public final class CapturedSectionGeometry {
                     lightEmission,
                     sprite,
                     fluid,
-                    null);
+                    null,
+                    BuiltinMaterialClass.DEFAULT);
         }
 
         public int color(int vertex) {
@@ -205,7 +246,8 @@ public final class CapturedSectionGeometry {
                     lightEmission,
                     sprite,
                     null,
-                    null);
+                    null,
+                    BuiltinMaterialClass.DEFAULT);
         }
 
         public static Surface uniform(
@@ -221,6 +263,36 @@ public final class CapturedSectionGeometry {
                 int lightEmission,
                 CapturedSprite sprite,
                 BlockFacts block) {
+            return uniform(
+                    color,
+                    layer,
+                    alphaCutOverride,
+                    collisionEmpty,
+                    animated,
+                    water,
+                    foliage,
+                    mergeable,
+                    rasterOverlay,
+                    lightEmission,
+                    sprite,
+                    block,
+                    BuiltinMaterialClass.DEFAULT);
+        }
+
+        public static Surface uniform(
+                int color,
+                Layer layer,
+                boolean alphaCutOverride,
+                boolean collisionEmpty,
+                boolean animated,
+                boolean water,
+                boolean foliage,
+                boolean mergeable,
+                boolean rasterOverlay,
+                int lightEmission,
+                CapturedSprite sprite,
+                BlockFacts block,
+                BuiltinMaterialClass builtinMaterialClass) {
             return new Surface(
                     color,
                     color,
@@ -237,7 +309,8 @@ public final class CapturedSectionGeometry {
                     lightEmission,
                     sprite,
                     null,
-                    block);
+                    block,
+                    builtinMaterialClass);
         }
     }
 

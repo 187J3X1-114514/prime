@@ -96,7 +96,7 @@ void primeWriteRealtimeOutput(
             && primeNrdIsFinite(sampleResult.transmissionAnchorDistance)
             && sampleResult.transmissionAnchorDistance > 0.0;
     // RR cannot represent both the interface and the refracted scene as primary geometry. Keep
-    // the guide topology fixed: a finite transmitted non-delta surface owns the primary guide
+    // the guide topology fixed: a transmitted solid-angle surface owns the primary guide
     // regardless of its current Fresnel energy.
     bool rrUsesTransmissionGuide = !nrdShInputs && usesTransmissionAnchor;
     PrimeDenoiserGuides nrdGuides = sampleResult.transparentPrimary

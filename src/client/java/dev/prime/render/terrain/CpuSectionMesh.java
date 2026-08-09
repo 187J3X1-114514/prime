@@ -28,8 +28,7 @@ public record CpuSectionMesh(
     public static final int SURFACE_RELATION_BOUNDARY = 1;
     public static final int SURFACE_RELATION_OVERLAY = 2;
     public static final int SURFACE_RELATION_BILATERAL = 3;
-    public static final int SURFACE_RELATION_WATER = 1 << 4;
-    public static final int SURFACE_RELATION_LABPBR_SPECULAR = 1 << 5;
+    public static final int SURFACE_RELATION_MICRO_GAP_ELIGIBLE = 1 << 4;
     public static final int SURFACE_RELATION_POSITIVE_ONLY = 1 << 4;
 
     public CpuSectionMesh {

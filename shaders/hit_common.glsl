@@ -27,8 +27,7 @@ const uint PRIME_SURFACE_RELATION_KIND_MASK = 0xfu;
 const uint PRIME_SURFACE_RELATION_BOUNDARY = 1u;
 const uint PRIME_SURFACE_RELATION_OVERLAY = 2u;
 const uint PRIME_SURFACE_RELATION_BILATERAL = 3u;
-const uint PRIME_SURFACE_RELATION_WATER = 1u << 4u;
-const uint PRIME_SURFACE_RELATION_LABPBR_SPECULAR = 1u << 5u;
+const uint PRIME_SURFACE_RELATION_MICRO_GAP_ELIGIBLE = 1u << 4u;
 const uint PRIME_SURFACE_RELATION_POSITIVE_ONLY = 1u << 4u;
 
 SectionRecord primeSection() {
@@ -114,11 +113,14 @@ PrimeSurfaceRelation primeSurfaceRelation(SectionRecord section) {
     return result;
 }
 
-PrimitiveRecord primePrimitiveWithMaterialFlags(
-        PrimitiveRecord primitive, uint flags) {
-    primitive.tint = (primitive.tint & 0x00ffffffu) | ((flags & 0xffu) << 24u);
-    primitive.flagsEmitter = (primitive.flagsEmitter & ~7u)
-            | ((flags >> 8u) & 7u);
+PrimitiveRecord primePrimitiveWithMaterialRecipe(
+        PrimitiveRecord primitive, uint recipe) {
+    uint control = (primePrimitiveControl(primitive) & ~PRIME_RECIPE_MATERIAL_MASK)
+            | (recipe & PRIME_RECIPE_MATERIAL_MASK);
+    primitive.tint = (primitive.tint & 0x00ffffffu) | ((control & 0xffu) << 24u);
+    primitive.flagsEmitter = (primitive.flagsEmitter & ~0x78000007u)
+            | ((control >> 8u) & 7u)
+            | ((control & PRIME_RECIPE_BUILTIN_MASK) << 16u);
     return primitive;
 }
 
@@ -145,7 +147,7 @@ PrimitiveRecord primeResolveSurfacePrimitive(
                     primeInterpolateUv(section, primary),
                     textureLodValue) >= PRIME_CUTOUT_ALPHA_THRESHOLD;
     return overlayCovered
-            ? primePrimitiveWithMaterialFlags(primary, relation.control >> 8u)
+            ? primePrimitiveWithMaterialRecipe(primary, relation.control >> 8u)
             : relation.material;
 }
 

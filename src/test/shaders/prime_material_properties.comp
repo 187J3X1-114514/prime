@@ -6,6 +6,7 @@
 #define PRIME_COLOR_DISPLAY_ENCODING_SRGB 1
 #define PRIME_COLOR_DISPLAY_SPACE_REC709_D65 1
 #include "prime_test_abi.glsl"
+#include "labpbr.glsl"
 #include "material_translation.glsl"
 
 const uint PRIME_MATERIAL_INPUT_WORDS = 3u;
@@ -42,8 +43,35 @@ void main() {
 
     uint mask = 0u;
     PrimeLabPbrSample decoded = primeDecodeLabPbr(packedNormal, packedSpecular, flags);
-    PrimeTranslatedLabPbrMaterial translated =
-            primeTranslateLabPbr(decoded, flags);
+    PrimeCanonicalOptics canonical = primeAdaptLabPbrSpecular(
+            unpackUnorm4x8(packedSpecular));
+    uvec4 specularBytes = uvec4(round(unpackUnorm4x8(packedSpecular) * 255.0));
+    uint expectedFresnelCode = specularBytes.y < 230u
+            ? specularBytes.y + 1u
+            : specularBytes.y <= 237u
+                    ? specularBytes.y + 1u
+                    : specularBytes.y == 255u ? PRIME_FRESNEL_CUSTOM_CONDUCTOR : 0u;
+    uint expectedSubsurfaceCode = specularBytes.z >= 66u
+            ? specularBytes.z - 65u
+            : 0u;
+    uint expectedPorosityCode = specularBytes.z <= 64u
+            ? specularBytes.z
+            : 0u;
+    if (canonical.roughness
+                    != clamp(1.0 - float(specularBytes.x) / 255.0, 0.0, 1.0)
+            || canonical.opticalControl != (expectedFresnelCode
+                    | expectedSubsurfaceCode << PRIME_OPTICAL_SUBSURFACE_SHIFT
+                    | expectedPorosityCode << PRIME_OPTICAL_POROSITY_SHIFT)) {
+        mask |= PRIME_TEST_FAILURE_IDENTITY;
+    }
+    bool hasOpticalTexture = primeHasLabPbrSpecular(flags);
+    float roughness = hasOpticalTexture
+            ? canonical.roughness
+            : PRIME_DEFAULT_REFERENCE_LINEAR_ROUGHNESS;
+    uint opticalControl = hasOpticalTexture ? canonical.opticalControl : 0u;
+    uint materialControl = PRIME_MATERIAL_FAMILY_OPAQUE;
+    PrimeOpticalMaterial translated = primeDecodeOpticalMaterial(
+            roughness, opticalControl, materialControl);
     float normalLengthSquared = dot(decoded.tangentNormal, decoded.tangentNormal);
     primeMaterialClassify(mask, decoded.tangentNormal);
     primeMaterialClassify(mask, normalLengthSquared);
@@ -87,78 +115,62 @@ void main() {
     if (!primeMaterialUnit(translated.perceptualRoughness)
             || !primeMaterialUnit(translated.dielectricF0)
             || !primeMaterialUnit(translated.subsurfaceWeight)
-            || (translated.metalId != 0u
-                    && !primeLabPbrIsSupportedMetalId(translated.metalId))
-            || (primeMaterialIsTransmissive(flags) && translated.metalId != 0u)
-            || ((translated.thinWalled != 0u)
-                    != (translated.subsurfaceWeight > 0.0))) {
+            || (primeFresnelIsConductor(translated.fresnelCode)
+                    && !primeIsSupportedConductorCode(translated.fresnelCode))
+            || translated.thinWalled != 0u) {
         mask |= PRIME_TEST_FAILURE_RANGE;
     }
-    uint solidTransmission = PRIME_MATERIAL_FLAG_TRANSMISSIVE;
-    float otherF0 = translated.dielectricF0 == PRIME_DEFAULT_DIELECTRIC_F0
-            ? PRIME_COMMON_DIELECTRIC_F0_MAXIMUM
-            : PRIME_DEFAULT_DIELECTRIC_F0;
+    uint solidTransmission = PRIME_MATERIAL_FAMILY_DIELECTRIC
+            | PRIME_MATERIAL_MEDIUM_STAINED_GLASS;
+    uint fresnelCode = opticalControl & PRIME_OPTICAL_FRESNEL_MASK;
+    uint otherFresnelCode = fresnelCode == 0u ? 1u : 0u;
     if (!primeAirGapCompatible(
                     true,
-                    true,
                     solidTransmission,
-                    translated.dielectricF0,
-                    false,
-                    translated.dielectricF0)
-            || primeAirGapCompatible(
-                    false,
-                    true,
+                    fresnelCode,
                     solidTransmission,
-                    translated.dielectricF0,
-                    false,
-                    translated.dielectricF0)
+                    fresnelCode)
             || primeAirGapCompatible(
-                    true,
                     false,
                     solidTransmission,
-                    translated.dielectricF0,
-                    false,
-                    translated.dielectricF0)
+                    fresnelCode,
+                    solidTransmission,
+                    fresnelCode)
             || primeAirGapCompatible(
                     true,
-                    true,
-                    solidTransmission | PRIME_MATERIAL_FLAG_THIN_WALLED,
-                    translated.dielectricF0,
-                    false,
-                    translated.dielectricF0)
+                    solidTransmission | PRIME_MATERIAL_THIN_WALLED,
+                    fresnelCode,
+                    solidTransmission,
+                    fresnelCode)
             || primeAirGapCompatible(
                     true,
-                    true,
-                    solidTransmission | PRIME_MATERIAL_FLAG_WATER,
-                    translated.dielectricF0,
-                    false,
-                    translated.dielectricF0)
+                    PRIME_MATERIAL_FAMILY_DIELECTRIC | PRIME_MATERIAL_MEDIUM_WATER,
+                    fresnelCode,
+                    solidTransmission,
+                    fresnelCode)
             || primeAirGapCompatible(
                     true,
-                    true,
-                    solidTransmission | PRIME_MATERIAL_FLAG_ROUGH_GLASS,
-                    translated.dielectricF0,
-                    false,
-                    translated.dielectricF0)
+                    solidTransmission | PRIME_MATERIAL_DECORATIVE_INTERFACE,
+                    fresnelCode,
+                    solidTransmission,
+                    fresnelCode)
             || primeAirGapCompatible(
-                    true,
                     true,
                     solidTransmission,
-                    translated.dielectricF0,
-                    true,
-                    translated.dielectricF0)
+                    fresnelCode,
+                    PRIME_MATERIAL_FAMILY_OPAQUE,
+                    fresnelCode)
             || primeAirGapCompatible(
                     true,
-                    true,
                     solidTransmission,
-                    translated.dielectricF0,
-                    false,
-                    otherF0)) {
+                    fresnelCode,
+                    solidTransmission,
+                    otherFresnelCode)) {
         mask |= PRIME_TEST_FAILURE_STATE;
     }
 
-    PrimeLabPbrFresnel fresnel =
-            primeLabPbrMetalFresnel(baseAndCosine.xyz, expected.x);
+    PrimeConductorFresnel fresnel =
+            primeConductorFresnel(baseAndCosine.xyz, expected.x);
     primeMaterialClassify(mask, fresnel.f0);
     primeMaterialClassify(mask, fresnel.f82Tint);
     if (!primeMaterialUnit(fresnel.f0) || !primeMaterialUnit(fresnel.f82Tint)) {
@@ -166,15 +178,19 @@ void main() {
     }
     vec3 eta;
     vec3 k;
-    bool standard = primeLabPbrMetalOpticalConstants(expected.x, eta, k);
-    if (standard != primeLabPbrIsStandardMetalId(expected.x)) {
+    bool standard = primeConductorOpticalConstants(expected.x, eta, k);
+    if (standard != primeIsStandardConductorCode(expected.x)) {
         mask |= PRIME_TEST_FAILURE_EVENT;
     }
     if (standard) {
         vec3 reflectance =
-                primeLabPbrConductorReflectance(baseAndCosine.w, eta, k);
+                primeConductorReflectance(baseAndCosine.w, eta, k);
         primeMaterialClassify(mask, reflectance);
         if (!primeMaterialUnit(reflectance)) mask |= PRIME_TEST_FAILURE_RANGE;
+    }
+    if (floatBitsToUint(primeBuiltinRoughness(expected.y)) != expected.z
+            || primeBuiltinFresnelCode(expected.y) != expected.w) {
+        mask |= PRIME_TEST_FAILURE_IDENTITY;
     }
     if (kind > 1u) mask |= PRIME_TEST_FAILURE_EVENT;
 
@@ -196,7 +212,7 @@ void main() {
                 translated.perceptualRoughness,
                 translated.dielectricF0,
                 translated.subsurfaceWeight,
-                float(translated.metalId)));
+                float(translated.fresnelCode)));
         primeTestOutput.words[outputOffset + 7u] =
                 floatBitsToUint(vec4(fresnel.f0, fresnel.f82Tint.x));
     }

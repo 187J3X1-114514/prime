@@ -10,7 +10,7 @@ void main() {
     float textureLodValue = primeRayConeTextureLod(primitive, normal);
     primitive = primeResolveSurfacePrimitive(
             section, primitive, relation, textureLodValue);
-    if (primeMaterialIsTransmissive(primePrimitiveFlags(primitive))) {
+    if (primeRecipeIsTransmissive(primePrimitiveControl(primitive))) {
         // Radiance rays keep transparent geometry as explicit path vertices. Shadow rays use
         // shadow.rahit instead, where straight glass and water transmission are accumulated.
         return;

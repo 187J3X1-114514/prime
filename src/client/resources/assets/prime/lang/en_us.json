@@ -80,6 +80,8 @@
   "prime.options.material.seamless_glass.tooltip": "Makes glass borders and interiors use the same smooth transparent material, reducing block seams and frosted areas. Disable it to restore the borders and surface variation authored by the resource pack.",
   "prime.options.material.air_gap": "Transparent Air Gaps",
   "prime.options.material.air_gap.tooltip": "Adds a sub-pixel air sheet between different solid transparent materials with matching IOR, preserving a cut reflection. Water, incompatible roughness, and unequal-IOR contacts keep their direct medium boundary.",
+  "prime.options.material.vanilla_pbr_presets": "Vanilla PBR Presets",
+  "prime.options.material.vanilla_pbr_presets.tooltip": "Applies conservative defaults to homogeneous vanilla materials that have no authored PBR parameters. Per-texture resource-pack parameters always take precedence.",
   "prime.options.debug.triangle_distribution": "Triangle Visualization",
   "prime.options.debug.triangle_distribution.tooltip": "Colors the triangles used for ray tracing so geometry merging and detail distribution are easy to inspect. This debug setting lasts only for the current game session.",
   "prime.options.debug.renderer_diagnostics": "Rendering Diagnostics",

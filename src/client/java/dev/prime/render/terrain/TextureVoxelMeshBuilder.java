@@ -33,9 +33,9 @@ final class TextureVoxelMeshBuilder {
     }
 
     boolean add(MergeFace face) {
-        int flags = PrimitivePacking.unpackFlags(
+        int flags = PrimitivePacking.unpackControl(
                 face.primitive()[3], face.primitive()[5])
-                & ~PrimitivePacking.FLAG_TANGENT_NEGATIVE;
+                & ~PrimitivePacking.CONTROL_TANGENT_NEGATIVE;
         Key key = new Key(
                 face.sprite(),
                 face.planeAxis(),
@@ -73,29 +73,24 @@ final class TextureVoxelMeshBuilder {
             throw new IllegalArgumentException(
                     "Voxel-surface material layers are not coincident");
         }
-        int baseFlags = PrimitivePacking.unpackFlags(
+        int baseFlags = PrimitivePacking.unpackControl(
                 base.primitive()[3], base.primitive()[5])
-                & ~PrimitivePacking.FLAG_TANGENT_NEGATIVE;
-        int overlayFlags = PrimitivePacking.unpackFlags(
+                & ~PrimitivePacking.CONTROL_TANGENT_NEGATIVE;
+        int overlayFlags = PrimitivePacking.unpackControl(
                 overlay.primitive()[3], overlay.primitive()[5])
-                & ~PrimitivePacking.FLAG_TANGENT_NEGATIVE;
-        if ((baseFlags
-                                & (PrimitivePacking.FLAG_CUTOUT
-                                        | PrimitivePacking.FLAG_TRANSMISSIVE))
-                        != 0
-                || (overlayFlags & PrimitivePacking.FLAG_CUTOUT) == 0
-                || ((baseFlags | overlayFlags)
-                                & (PrimitivePacking.FLAG_ANIMATED_TEXTURE
-                                        | PrimitivePacking.FLAG_TRANSMISSIVE
-                                        | PrimitivePacking.FLAG_THIN_WALLED
-                                        | PrimitivePacking.FLAG_FOLIAGE))
-                        != 0
+                & ~PrimitivePacking.CONTROL_TANGENT_NEGATIVE;
+        if (PrimitivePacking.isCutout(baseFlags)
+                || PrimitivePacking.isTransmissive(baseFlags)
+                || !PrimitivePacking.isCutout(overlayFlags)
+                || PrimitivePacking.isTransmissive(overlayFlags)
+                || PrimitivePacking.isFoliage(overlayFlags)
+                || ((baseFlags | overlayFlags) & PrimitivePacking.CONTROL_ANIMATED) != 0
                 || base.sprite().animated()
                 || overlay.sprite().animated()) {
             return false;
         }
-        int resolvedOverlayFlags = overlayFlags & ~PrimitivePacking.FLAG_CUTOUT;
-        PrimitivePacking.requireValidFlags(resolvedOverlayFlags);
+        int resolvedOverlayFlags = overlayFlags & ~PrimitivePacking.CONTROL_ALPHA_CUTOUT;
+        PrimitivePacking.requireValidControl(resolvedOverlayFlags);
         Overlay resolvedOverlay = new Overlay(
                 overlay.sprite(),
                 overlay.uv0U(),
@@ -336,11 +331,9 @@ final class TextureVoxelMeshBuilder {
     }
 
     private static boolean canBakeMaterial(CapturedSprite sprite, int flags) {
-        return (flags
-                                & (PrimitivePacking.FLAG_CUTOUT
-                                        | PrimitivePacking.FLAG_ANIMATED_TEXTURE
-                                        | PrimitivePacking.FLAG_TRANSMISSIVE))
-                        == 0
+        return !PrimitivePacking.isCutout(flags)
+                && !PrimitivePacking.isTransmissive(flags)
+                && (flags & PrimitivePacking.CONTROL_ANIMATED) == 0
                 && !sprite.animated();
     }
 
@@ -698,12 +691,11 @@ final class TextureVoxelMeshBuilder {
 
         Mesh(Key key, boolean buildOpacityMicromap) {
             this.key = key;
-            this.cutout = (key.flags & PrimitivePacking.FLAG_CUTOUT) != 0;
-            this.transmissive =
-                    (key.flags & PrimitivePacking.FLAG_TRANSMISSIVE) != 0;
+            this.cutout = PrimitivePacking.isCutout(key.flags);
+            this.transmissive = PrimitivePacking.isTransmissive(key.flags);
             this.cutoutGeometry = this.cutout && !this.transmissive;
             boolean frontFaceOnly =
-                    (key.flags & PrimitivePacking.FLAG_FRONT_FACE_ONLY) != 0;
+                    (key.flags & PrimitivePacking.CONTROL_FRONT_FACE_ONLY) != 0;
             this.opacityMicromap = this.cutoutGeometry
                             && buildOpacityMicromap
                             && !frontFaceOnly
@@ -829,16 +821,16 @@ final class TextureVoxelMeshBuilder {
                     packedNormal);
             int flags = material.flags;
             if ((tangent & 0x1_0000_0000L) != 0L
-                    && (flags & PrimitivePacking.FLAG_LABPBR_NORMAL) != 0) {
-                flags |= PrimitivePacking.FLAG_TANGENT_NEGATIVE;
+                    && (flags & PrimitivePacking.CONTROL_NORMAL_TEXTURE) != 0) {
+                flags |= PrimitivePacking.CONTROL_TANGENT_NEGATIVE;
             }
             this.primitives.add(firstMaterialWord);
             this.primitives.add(secondMaterialWord);
             this.primitives.add(material.constantMode);
             this.primitives.add(
-                    PrimitivePacking.packTintFlags(material.packedTint, flags));
+                    PrimitivePacking.packTintControl(material.packedTint, flags));
             this.primitives.add(packedNormal);
-            this.primitives.add(PrimitivePacking.packFlagsEmitter(
+            this.primitives.add(PrimitivePacking.packControlEmitter(
                     flags, PrimitivePacking.NO_EMITTER_INDEX));
             this.primitives.add(PrimitivePacking.CONSTANT_UV_DENSITY);
             this.primitives.add((int) tangent);

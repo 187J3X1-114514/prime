@@ -94,6 +94,68 @@ void main() {
                     != (translated.subsurfaceWeight > 0.0))) {
         mask |= PRIME_TEST_FAILURE_RANGE;
     }
+    uint solidTransmission = PRIME_MATERIAL_FLAG_TRANSMISSIVE;
+    float otherF0 = translated.dielectricF0 == PRIME_DEFAULT_DIELECTRIC_F0
+            ? PRIME_COMMON_DIELECTRIC_F0_MAXIMUM
+            : PRIME_DEFAULT_DIELECTRIC_F0;
+    if (!primeAirGapCompatible(
+                    true,
+                    true,
+                    solidTransmission,
+                    translated.dielectricF0,
+                    false,
+                    translated.dielectricF0)
+            || primeAirGapCompatible(
+                    false,
+                    true,
+                    solidTransmission,
+                    translated.dielectricF0,
+                    false,
+                    translated.dielectricF0)
+            || primeAirGapCompatible(
+                    true,
+                    false,
+                    solidTransmission,
+                    translated.dielectricF0,
+                    false,
+                    translated.dielectricF0)
+            || primeAirGapCompatible(
+                    true,
+                    true,
+                    solidTransmission | PRIME_MATERIAL_FLAG_THIN_WALLED,
+                    translated.dielectricF0,
+                    false,
+                    translated.dielectricF0)
+            || primeAirGapCompatible(
+                    true,
+                    true,
+                    solidTransmission | PRIME_MATERIAL_FLAG_WATER,
+                    translated.dielectricF0,
+                    false,
+                    translated.dielectricF0)
+            || primeAirGapCompatible(
+                    true,
+                    true,
+                    solidTransmission | PRIME_MATERIAL_FLAG_ROUGH_GLASS,
+                    translated.dielectricF0,
+                    false,
+                    translated.dielectricF0)
+            || primeAirGapCompatible(
+                    true,
+                    true,
+                    solidTransmission,
+                    translated.dielectricF0,
+                    true,
+                    translated.dielectricF0)
+            || primeAirGapCompatible(
+                    true,
+                    true,
+                    solidTransmission,
+                    translated.dielectricF0,
+                    false,
+                    otherF0)) {
+        mask |= PRIME_TEST_FAILURE_STATE;
+    }
 
     PrimeLabPbrFresnel fresnel =
             primeLabPbrMetalFresnel(baseAndCosine.xyz, expected.x);

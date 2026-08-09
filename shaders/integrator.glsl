@@ -139,6 +139,8 @@ SurfaceInteraction primeTraceSurfaceClassified(
     primePayload.shadingNormal = primePackOctahedralNormal(vec3(0.0, 1.0, 0.0));
     primePayload.labPbrNormal = packUnorm4x8(vec4(0.5, 0.5, 1.0, 1.0));
     primePayload.labPbrSpecular = packUnorm4x8(vec4(0.0, 4.0 / 255.0, 0.0, 1.0));
+    primePayload.adjacentBaseColor = vec3(0.0);
+    primePayload.adjacentSpecularControl = 0u;
 #if defined(PRIME_ENABLE_SER) && !defined(PRIME_DISABLE_SER_REORDER)
     // Hit objects decouple traversal from closest-hit/miss execution. The reorder point groups
     // those continuations by shader first and by the low section-index bits second, improving
@@ -191,6 +193,8 @@ SurfaceInteraction primeTraceSurfaceClassified(
     surface.labPbrNormal = primePayload.labPbrNormal;
     surface.labPbrSpecular = primePayload.labPbrSpecular;
     surface.motionZFlags = packedHitKind & ~PRIME_HIT_KIND_MASK;
+    surface.adjacentBaseColor = primePayload.adjacentBaseColor;
+    surface.adjacentSpecularControl = primePayload.adjacentSpecularControl;
     return surface;
 }
 
@@ -220,6 +224,8 @@ SurfaceInteraction primeTraceSurfaceWithoutReorder(vec3 origin, vec3 direction) 
             packUnorm4x8(vec4(0.5, 0.5, 1.0, 1.0));
     primePayload.labPbrSpecular =
             packUnorm4x8(vec4(0.0, 4.0 / 255.0, 0.0, 1.0));
+    primePayload.adjacentBaseColor = vec3(0.0);
+    primePayload.adjacentSpecularControl = 0u;
     traceRayEXT(
             primeScene,
             gl_RayFlagsNoneEXT,
@@ -251,6 +257,8 @@ SurfaceInteraction primeTraceSurfaceWithoutReorder(vec3 origin, vec3 direction) 
     surface.labPbrNormal = primePayload.labPbrNormal;
     surface.labPbrSpecular = primePayload.labPbrSpecular;
     surface.motionZFlags = packedHitKind & ~PRIME_HIT_KIND_MASK;
+    surface.adjacentBaseColor = primePayload.adjacentBaseColor;
+    surface.adjacentSpecularControl = primePayload.adjacentSpecularControl;
     return surface;
 #endif
 }
@@ -419,7 +427,9 @@ PrimeDirectLightingSplit primeEvaluateVisibleDirectSplit(
                             viewDirection,
                             light.direction,
                             0.0,
-                            volumeStack)
+                            volumeStack,
+                            surface.adjacentBaseColor,
+                            surface.adjacentSpecularControl)
                     : primeEvaluateMinecraftTransparentTransmission(
                             surface.baseColor,
                             primeSurfaceOpacity(surface),
@@ -430,9 +440,11 @@ PrimeDirectLightingSplit primeEvaluateVisibleDirectSplit(
                             viewDirection,
                             light.direction,
                             0.0,
-                            volumeStack);
+                            volumeStack,
+                            surface.adjacentBaseColor,
+                            surface.adjacentSpecularControl);
         } else {
-            PrimeRcState state = primeMinecraftTransmissionState(
+            PrimeRcState state = primeMinecraftBoundaryTransmissionState(
                     surface.baseColor,
                     primeSurfaceOpacity(surface),
                     outwardNormal,
@@ -441,7 +453,9 @@ PrimeDirectLightingSplit primeEvaluateVisibleDirectSplit(
                     surface.labPbrSpecular,
                     viewDirection,
                     surface.t,
-                    volumeStack);
+                    volumeStack,
+                    surface.adjacentBaseColor,
+                    surface.adjacentSpecularControl);
             evaluation = primeEvaluateMinecraftTransmissionCompleteFromState(
                     state,
                     surface.baseColor,
@@ -914,7 +928,7 @@ PrimePathScatter primeSamplePathSurfaceWithMinimumRoughness(
                 state, viewDirection, sampleValue, volumeStack);
     } else if (primeMaterialIsTransmissive(surface.materialFlags)) {
         vec3 outwardNormal = primeSurfaceOutwardShadingNormal(surface);
-        PrimeRcState state = primeMinecraftTransmissionStateWithMinimumRoughness(
+        PrimeRcState state = primeMinecraftBoundaryTransmissionStateWithMinimumRoughness(
                 surface.baseColor,
                 primeSurfaceOpacity(surface),
                 outwardNormal,
@@ -924,7 +938,9 @@ PrimePathScatter primeSamplePathSurfaceWithMinimumRoughness(
                 viewDirection,
                 surface.t,
                 volumeStack,
-                minimumLinearRoughness);
+                minimumLinearRoughness,
+                surface.adjacentBaseColor,
+                surface.adjacentSpecularControl);
         PrimeTransmissiveBsdfSample sampled =
                 primeSampleMinecraftTransmissionCompleteFromState(
                         state,
@@ -934,6 +950,16 @@ PrimePathScatter primeSamplePathSurfaceWithMinimumRoughness(
                         viewDirection,
                         sampleValue,
                         volumeStack);
+        sampled = primeApplyAdjacentMediumTransition(
+                sampled,
+                state,
+                volumeStack,
+                surface.baseColor,
+                primeSurfaceOpacity(surface),
+                surface.materialFlags,
+                surface.labPbrSpecular,
+                surface.adjacentBaseColor,
+                surface.adjacentSpecularControl);
         result.bsdf = sampled.bsdfSample;
         result.volumeStack = sampled.volumeStack;
     } else {
@@ -994,7 +1020,7 @@ void primeSampleGuidedPathSurface(
                 state, viewDirection, sampleValue, volumeStack);
     } else if (primeMaterialIsTransmissive(surface.materialFlags)) {
         vec3 outwardNormal = primeSurfaceOutwardShadingNormal(surface);
-        PrimeRcState state = primeMinecraftTransmissionState(
+        PrimeRcState state = primeMinecraftBoundaryTransmissionState(
                 surface.baseColor,
                 primeSurfaceOpacity(surface),
                 outwardNormal,
@@ -1003,7 +1029,9 @@ void primeSampleGuidedPathSurface(
                 surface.labPbrSpecular,
                 viewDirection,
                 surface.t,
-                volumeStack);
+                volumeStack,
+                surface.adjacentBaseColor,
+                surface.adjacentSpecularControl);
         albedos = primeDenoiseAlbedosFromState(
                 state, viewDirection, PRIME_DENOISE_CLOSURE_TRANSMISSIVE);
         primeSetNumericalContext(PRIME_NUMERICAL_STAGE_BSDF_SAMPLE, bounce);
@@ -1016,6 +1044,16 @@ void primeSampleGuidedPathSurface(
                         viewDirection,
                         sampleValue,
                         volumeStack);
+        sampled = primeApplyAdjacentMediumTransition(
+                sampled,
+                state,
+                volumeStack,
+                surface.baseColor,
+                primeSurfaceOpacity(surface),
+                surface.materialFlags,
+                surface.labPbrSpecular,
+                surface.adjacentBaseColor,
+                surface.adjacentSpecularControl);
         scatter.bsdf = sampled.bsdfSample;
         scatter.volumeStack = sampled.volumeStack;
     } else {

@@ -271,6 +271,10 @@ final class SectionClusterMeshBuilder {
                 transmissivePrimitiveCount);
         int[] primitives = new int[Math.multiplyExact(
                 primitiveCount, PRIMITIVE_WORDS_PER_TRIANGLE)];
+        ArrayList<int[]> opaqueRelations = new ArrayList<>(opaquePrimitiveCount);
+        ArrayList<int[]> cutoutRelations = new ArrayList<>(cutoutPrimitiveCount);
+        ArrayList<int[]> transmissiveRelations =
+                new ArrayList<>(transmissivePrimitiveCount);
         int opaquePositionCursor = 0;
         int opaquePrimitiveCursor = 0;
         int cutoutPositionCursor = Math.multiplyExact(
@@ -352,6 +356,25 @@ final class SectionClusterMeshBuilder {
                     transmissivePrimitiveCursor,
                     transmissivePrimitiveWords,
                     entry.lightOffset);
+            int sourcePrimitiveCount = mesh.primitiveCount();
+            SurfaceRelationTable.appendRange(
+                    opaqueRelations,
+                    mesh.surfaceRelationRecords(),
+                    sourcePrimitiveCount,
+                    0,
+                    mesh.opaquePrimitiveCount());
+            SurfaceRelationTable.appendRange(
+                    cutoutRelations,
+                    mesh.surfaceRelationRecords(),
+                    sourcePrimitiveCount,
+                    mesh.opaquePrimitiveCount(),
+                    mesh.cutoutPrimitiveCount());
+            SurfaceRelationTable.appendRange(
+                    transmissiveRelations,
+                    mesh.surfaceRelationRecords(),
+                    sourcePrimitiveCount,
+                    mesh.opaquePrimitiveCount() + mesh.cutoutPrimitiveCount(),
+                    mesh.transmissivePrimitiveCount());
 
             opaquePositionCursor += opaquePositionWords;
             opaquePrimitiveCursor += opaquePrimitiveWords;
@@ -370,9 +393,14 @@ final class SectionClusterMeshBuilder {
         if (lights.emitterCount() != this.emitterCount) {
             throw new IllegalStateException("Merged cluster light indices disagree with its light tree");
         }
+        ArrayList<int[]> relations = new ArrayList<>(primitiveCount);
+        relations.addAll(opaqueRelations);
+        relations.addAll(cutoutRelations);
+        relations.addAll(transmissiveRelations);
         CpuSectionMesh result = new CpuSectionMesh(
                 positions,
                 primitives,
+                SurfaceRelationTable.encode(relations),
                 this.opaqueTriangleCount,
                 this.cutoutTriangleCount,
                 this.transmissiveTriangleCount,

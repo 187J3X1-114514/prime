@@ -305,6 +305,7 @@ final class CompiledClusterCodecTest {
     }
 
     private static byte[] withoutCurrentSegmentMacroCounts(byte[] encoded) {
+        PayloadOffsets offsets = firstPayloadOffsets(encoded);
         int macroCounts = 3 * Integer.BYTES;
         int macroOffset = 56 + 3 * Integer.BYTES;
         byte[] withoutMacros = new byte[encoded.length - macroCounts];
@@ -315,13 +316,24 @@ final class CompiledClusterCodecTest {
                 withoutMacros,
                 macroOffset,
                 encoded.length - macroOffset - macroCounts);
-        // This fixture has empty lights, so the v6 direction summary is immediately before the
-        // final zero-length light-word array.
-        int directionOffset = withoutMacros.length - 2 * Integer.BYTES;
-        byte[] result = new byte[withoutMacros.length - Integer.BYTES];
-        System.arraycopy(withoutMacros, 0, result, 0, directionOffset);
+        int boundaryLengthOffset = offsets.primitives()
+                + CpuSectionMesh.PRIMITIVE_WORDS * Integer.BYTES
+                - macroCounts;
+        byte[] withoutBoundary = new byte[withoutMacros.length - Integer.BYTES];
+        System.arraycopy(withoutMacros, 0, withoutBoundary, 0, boundaryLengthOffset);
         System.arraycopy(
                 withoutMacros,
+                boundaryLengthOffset + Integer.BYTES,
+                withoutBoundary,
+                boundaryLengthOffset,
+                withoutMacros.length - boundaryLengthOffset - Integer.BYTES);
+        // This fixture has empty lights, so the v6 direction summary is immediately before the
+        // final zero-length light-word array.
+        int directionOffset = withoutBoundary.length - 2 * Integer.BYTES;
+        byte[] result = new byte[withoutBoundary.length - Integer.BYTES];
+        System.arraycopy(withoutBoundary, 0, result, 0, directionOffset);
+        System.arraycopy(
+                withoutBoundary,
                 directionOffset + Integer.BYTES,
                 result,
                 directionOffset,

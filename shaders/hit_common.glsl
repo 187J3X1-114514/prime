@@ -3,6 +3,7 @@
 
 #extension GL_GOOGLE_include_directive : require
 #include "common.glsl"
+#include "medium_boundary.glsl"
 #include "material.glsl"
 
 hitAttributeEXT vec2 primeBarycentrics;
@@ -11,26 +12,49 @@ layout(buffer_reference, buffer_reference_align = 4) readonly buffer PrimeMotion
     float values[];
 };
 
+struct PrimeSurfaceRelation {
+    uint control;
+    uint referenceUv;
+    uint tint;
+    PrimitiveRecord material;
+};
+
+layout(buffer_reference, buffer_reference_align = 4) readonly buffer PrimeSurfaceRelationBuffer {
+    uint values[];
+};
+
+const uint PRIME_SURFACE_RELATION_KIND_MASK = 0xfu;
+const uint PRIME_SURFACE_RELATION_BOUNDARY = 1u;
+const uint PRIME_SURFACE_RELATION_OVERLAY = 2u;
+const uint PRIME_SURFACE_RELATION_BILATERAL = 3u;
+const uint PRIME_SURFACE_RELATION_WATER = 1u << 4u;
+const uint PRIME_SURFACE_RELATION_LABPBR_SPECULAR = 1u << 5u;
+const uint PRIME_SURFACE_RELATION_POSITIVE_ONLY = 1u << 4u;
+
 SectionRecord primeSection() {
     SectionTable sections = SectionTable(primePush.sectionTableAddress);
     return sections.sections[gl_InstanceCustomIndexEXT];
 }
 
-PrimitiveRecord primePrimitive(SectionRecord section) {
+uint primeLocalPrimitiveIndex(SectionRecord section) {
     // BLAS geometries and the primitive buffer share one semantic order:
     // opaque, alpha-tested cutout, then transmissive. Macro rectangles occupy adjacent triangle
     // pairs at each geometry tail, where both triangles share one projected-UV primitive record.
-    uint base = gl_GeometryIndexEXT == 0
-            ? 0u
-            : (gl_GeometryIndexEXT == 1 ? section.cutoutBase : section.transmissiveBase);
     uint macroBase = gl_GeometryIndexEXT == 0
             ? section.opaqueMacroTriangleBase
             : (gl_GeometryIndexEXT == 1
                     ? section.cutoutMacroTriangleBase
                     : section.transmissiveMacroTriangleBase);
-    uint primitiveIndex = gl_PrimitiveID < macroBase
+    return gl_PrimitiveID < macroBase
             ? gl_PrimitiveID
             : macroBase + ((gl_PrimitiveID - macroBase) >> 1u);
+}
+
+PrimitiveRecord primePrimitive(SectionRecord section) {
+    uint base = gl_GeometryIndexEXT == 0
+            ? 0u
+            : (gl_GeometryIndexEXT == 1 ? section.cutoutBase : section.transmissiveBase);
+    uint primitiveIndex = primeLocalPrimitiveIndex(section);
     PrimitiveBuffer primitives = PrimitiveBuffer(section.primitiveAddress);
     PrimitiveRecord primitive = primitives.records[base + primitiveIndex];
     // Baked material primitives may mix an untinted base with a tinted overlay in one BLAS.
@@ -41,6 +65,88 @@ PrimitiveRecord primePrimitive(SectionRecord section) {
                 | (section.instanceTint & 0x00ffffffu);
     }
     return primitive;
+}
+
+uint primeGlobalPrimitiveIndex(SectionRecord section) {
+    uint base = gl_GeometryIndexEXT == 0
+            ? 0u
+            : (gl_GeometryIndexEXT == 1 ? section.cutoutBase : section.transmissiveBase);
+    return base + primeLocalPrimitiveIndex(section);
+}
+
+PrimeSurfaceRelation primeSurfaceRelation(SectionRecord section) {
+    PrimeSurfaceRelation result;
+    result.control = 0u;
+    result.referenceUv = 0u;
+    result.tint = 0u;
+    result.material.uv0 = 0u;
+    result.material.uv1 = 0u;
+    result.material.uv2 = 0u;
+    result.material.tint = 0u;
+    result.material.normal = 0u;
+    result.material.flagsEmitter = 0u;
+    result.material.uvDensity = 0u;
+    result.material.tangent = 0u;
+    if (section.surfaceRelationAddress == uint64_t(0)) {
+        return result;
+    }
+    PrimeSurfaceRelationBuffer relations =
+            PrimeSurfaceRelationBuffer(section.surfaceRelationAddress);
+    uint offset = relations.values[primeGlobalPrimitiveIndex(section)];
+    if (offset == 0u) {
+        return result;
+    }
+    result.control = relations.values[offset];
+    uint kind = result.control & PRIME_SURFACE_RELATION_KIND_MASK;
+    if (kind == PRIME_SURFACE_RELATION_BOUNDARY) {
+        result.referenceUv = relations.values[offset + 1u];
+        result.tint = relations.values[offset + 2u];
+    } else {
+        result.material.uv0 = relations.values[offset + 1u];
+        result.material.uv1 = relations.values[offset + 2u];
+        result.material.uv2 = relations.values[offset + 3u];
+        result.material.tint = relations.values[offset + 4u];
+        result.material.normal = relations.values[offset + 5u];
+        result.material.flagsEmitter = relations.values[offset + 6u];
+        result.material.uvDensity = relations.values[offset + 7u];
+        result.material.tangent = relations.values[offset + 8u];
+    }
+    return result;
+}
+
+PrimitiveRecord primePrimitiveWithMaterialFlags(
+        PrimitiveRecord primitive, uint flags) {
+    primitive.tint = (primitive.tint & 0x00ffffffu) | ((flags & 0xffu) << 24u);
+    primitive.flagsEmitter = (primitive.flagsEmitter & ~7u)
+            | ((flags >> 8u) & 7u);
+    return primitive;
+}
+
+vec2 primeInterpolateUv(SectionRecord section, PrimitiveRecord primitive);
+
+PrimitiveRecord primeResolveSurfacePrimitive(
+        SectionRecord section,
+        PrimitiveRecord primary,
+        PrimeSurfaceRelation relation,
+        float textureLodValue) {
+    uint kind = relation.control & PRIME_SURFACE_RELATION_KIND_MASK;
+    bool backFacing = gl_HitKindEXT == gl_HitKindBackFacingTriangleEXT;
+    if (kind == PRIME_SURFACE_RELATION_BILATERAL && backFacing) {
+        return relation.material;
+    }
+    if (kind != PRIME_SURFACE_RELATION_OVERLAY) {
+        return primary;
+    }
+    bool positiveOnly =
+            (relation.control & PRIME_SURFACE_RELATION_POSITIVE_ONLY) != 0u;
+    bool overlayCovered = !(positiveOnly && backFacing)
+            && primeEvaluateOpacity(
+                    primary,
+                    primeInterpolateUv(section, primary),
+                    textureLodValue) >= PRIME_CUTOUT_ALPHA_THRESHOLD;
+    return overlayCovered
+            ? primePrimitiveWithMaterialFlags(primary, relation.control >> 8u)
+            : relation.material;
 }
 
 PrimitiveRecord primePrimitive() {

@@ -4,8 +4,11 @@ import com.mojang.blaze3d.vertex.MeshData;
 import dev.prime.render.scene.CapturedSectionGeometry;
 import it.unimi.dsi.fastutil.ints.IntArrayList;
 import java.util.ArrayDeque;
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import net.fabricmc.fabric.api.client.renderer.v1.mesh.MutableQuadView;
 import net.fabricmc.fabric.api.client.renderer.v1.mesh.QuadAtlas;
 import net.fabricmc.fabric.api.client.renderer.v1.sprite.SpriteFinder;
@@ -18,6 +21,7 @@ import net.minecraft.client.renderer.block.BlockStateModelSet;
 import net.minecraft.client.renderer.block.FluidModel;
 import net.minecraft.client.renderer.block.ModelBlockRenderer;
 import net.minecraft.client.renderer.block.dispatch.BlockStateModel;
+import net.minecraft.client.renderer.block.dispatch.BlockStateModelPart;
 import net.minecraft.client.renderer.block.dispatch.SingleVariant;
 import net.minecraft.client.renderer.block.dispatch.WeightedVariants;
 import net.minecraft.client.renderer.block.dispatch.multipart.MultiPartModel;
@@ -32,7 +36,10 @@ import net.minecraft.core.SectionPos;
 import net.minecraft.tags.BlockTags;
 import net.minecraft.tags.FluidTags;
 import net.minecraft.util.ARGB;
+import net.minecraft.util.RandomSource;
 import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.StainedGlassBlock;
+import net.minecraft.world.level.block.StainedGlassPaneBlock;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.material.FluidState;
 import org.joml.Vector3fc;
@@ -54,10 +61,24 @@ public final class VanillaSectionCapture implements AutoCloseable {
     private final SpriteFinder blockSpriteFinder;
     private final VanillaSpriteResolver spriteResolver;
     private final boolean cutoutLeaves;
+    private final int sectionX;
+    private final int sectionY;
+    private final int sectionZ;
+    private final int clusterMinimumX;
+    private final int clusterMinimumY;
+    private final int clusterMinimumZ;
+    private final int clusterMaximumX;
+    private final int clusterMaximumY;
+    private final int clusterMaximumZ;
     private final CapturedSectionGeometry.Builder geometry =
             new CapturedSectionGeometry.Builder();
     private final CapturedSectionGeometry.MutableQuad blockQuad =
             new CapturedSectionGeometry.MutableQuad();
+    private final CapturedSectionGeometry.MutableQuad peerQuad =
+            new CapturedSectionGeometry.MutableQuad();
+    private final Set<PeerFaceKey> capturedPeerFaces = new HashSet<>();
+    private final ArrayList<BlockStateModelPart> peerParts = new ArrayList<>();
+    private final RandomSource peerRandom = RandomSource.create();
     private final ArrayDeque<FluidCapture> fluidStack = new ArrayDeque<>();
     private long tintPosition = Long.MIN_VALUE;
     private int tintIndex = -1;
@@ -67,6 +88,7 @@ public final class VanillaSectionCapture implements AutoCloseable {
     private boolean blockForceOpaque;
     private boolean blockFoliage;
     private boolean blockMergeable;
+    private int blockMediumFamily;
     private boolean blockCollisionKnown;
     private boolean blockCollisionEmpty;
     private final int[] fabricBaseColors = new int[4];
@@ -77,6 +99,7 @@ public final class VanillaSectionCapture implements AutoCloseable {
     private BlockPos fabricPosition;
     private BlockState fabricState;
     private boolean fabricMergeable;
+    private int fabricMediumFamily;
     private List<BlockTintSource> fabricTintSources = List.of();
     private BlockTintsFactory fabricTintFactory;
     private boolean fabricDynamicTintsLoaded;
@@ -90,13 +113,28 @@ public final class VanillaSectionCapture implements AutoCloseable {
             BlockColors blockColors,
             SpriteFinder blockSpriteFinder,
             VanillaSpriteResolver spriteResolver,
-            boolean cutoutLeaves) {
+            boolean cutoutLeaves,
+            int sectionX,
+            int sectionY,
+            int sectionZ,
+            int clusterX,
+            int clusterY,
+            int clusterZ) {
         this.region = region;
         this.blockModels = blockModels;
         this.blockColors = blockColors;
         this.blockSpriteFinder = blockSpriteFinder;
         this.spriteResolver = spriteResolver;
         this.cutoutLeaves = cutoutLeaves;
+        this.sectionX = sectionX;
+        this.sectionY = sectionY;
+        this.sectionZ = sectionZ;
+        this.clusterMinimumX = clusterX << 4;
+        this.clusterMinimumY = clusterY << 4;
+        this.clusterMinimumZ = clusterZ << 4;
+        this.clusterMaximumX = (clusterX + 4) << 4;
+        this.clusterMaximumY = (clusterY + 4) << 4;
+        this.clusterMaximumZ = (clusterZ + 4) << 4;
     }
 
     public static VanillaSectionCapture open(
@@ -105,7 +143,13 @@ public final class VanillaSectionCapture implements AutoCloseable {
             BlockColors blockColors,
             SpriteFinder blockSpriteFinder,
             VanillaSpriteResolver spriteResolver,
-            boolean cutoutLeaves) {
+            boolean cutoutLeaves,
+            int sectionX,
+            int sectionY,
+            int sectionZ,
+            int clusterX,
+            int clusterY,
+            int clusterZ) {
         if (ACTIVE.get() != null) {
             throw new IllegalStateException("Nested vanilla Section capture is not supported");
         }
@@ -115,7 +159,13 @@ public final class VanillaSectionCapture implements AutoCloseable {
                 blockColors,
                 blockSpriteFinder,
                 spriteResolver,
-                cutoutLeaves);
+                cutoutLeaves,
+                sectionX,
+                sectionY,
+                sectionZ,
+                clusterX,
+                clusterY,
+                clusterZ);
         ACTIVE.set(capture);
         return capture;
     }
@@ -272,6 +322,7 @@ public final class VanillaSectionCapture implements AutoCloseable {
             // The selected quad, including random orientation, is compared exactly downstream.
             // Admit every built-in model shape but keep arbitrary renderer models conservative.
             this.blockMergeable = mergeableModel(this.blockModels.get(state));
+            this.blockMediumFamily = mediumFamily(state);
             this.blockCollisionKnown = false;
         }
         ChunkSectionLayer layer = this.blockForceOpaque
@@ -324,7 +375,11 @@ public final class VanillaSectionCapture implements AutoCloseable {
                 this.blockMergeable,
                 rasterOverlay,
                 Math.max(state.getLightEmission(), bakedQuad.materialInfo().lightEmission()),
-                this.spriteResolver.resolve(sprite)));
+                this.spriteResolver.resolve(sprite),
+                new CapturedSectionGeometry.BlockFacts(
+                        position.getX(), position.getY(), position.getZ(),
+                        this.blockMediumFamily)));
+        this.captureClusterPeer(state, position, direction);
     }
 
     private void openFabricBlock(
@@ -345,6 +400,7 @@ public final class VanillaSectionCapture implements AutoCloseable {
         // built-in-model gate as direct capture instead of treating every Fabric-rendered quad as
         // custom geometry.
         this.fabricMergeable = mergeableModel(model);
+        this.fabricMediumFamily = mediumFamily(state);
         this.fabricTintSources = this.blockColors.getTintSources(state);
         this.fabricTintFactory = this.fabricTintSources.isEmpty()
                 ? BlockColorRegistry.getFactory(state)
@@ -365,6 +421,7 @@ public final class VanillaSectionCapture implements AutoCloseable {
         this.fabricPosition = null;
         this.fabricState = null;
         this.fabricMergeable = false;
+        this.fabricMediumFamily = 0;
         this.fabricTintSources = List.of();
         this.fabricTintFactory = null;
         this.fabricDynamicTints.clear();
@@ -442,7 +499,156 @@ public final class VanillaSectionCapture implements AutoCloseable {
                 rasterOverlay,
                 Math.max(state.getLightEmission(), source.emissive() ? 15 : 0),
                 this.spriteResolver.resolve(sprite),
-                null));
+                null,
+                new CapturedSectionGeometry.BlockFacts(
+                        position.getX(), position.getY(), position.getZ(),
+                        this.fabricMediumFamily)));
+        Direction direction = cardinalDirection(
+                quad.normalX, quad.normalY, quad.normalZ);
+        if (direction != null) {
+            this.captureClusterPeer(state, position, direction);
+        }
+    }
+
+    private void captureClusterPeer(
+            BlockState ownerState, BlockPos ownerPosition, Direction direction) {
+        int peerX = ownerPosition.getX() + direction.getStepX();
+        int peerY = ownerPosition.getY() + direction.getStepY();
+        int peerZ = ownerPosition.getZ() + direction.getStepZ();
+        if (peerX >= this.clusterMinimumX && peerX < this.clusterMaximumX
+                && peerY >= this.clusterMinimumY && peerY < this.clusterMaximumY
+                && peerZ >= this.clusterMinimumZ && peerZ < this.clusterMaximumZ) {
+            return;
+        }
+        PeerFaceKey key = new PeerFaceKey(
+                ownerPosition.getX(), ownerPosition.getY(), ownerPosition.getZ(), direction);
+        if (!this.capturedPeerFaces.add(key)) {
+            return;
+        }
+
+        BlockPos peerPosition = new BlockPos(peerX, peerY, peerZ);
+        BlockState peerState = this.region.getBlockState(peerPosition);
+        Direction peerDirection = direction.getOpposite();
+        if (!net.minecraft.world.level.block.Block.shouldRenderFace(
+                peerState, ownerState, peerDirection)) {
+            return;
+        }
+        BlockStateModel model = this.blockModels.get(peerState);
+        if (!mergeableModel(model)) {
+            return;
+        }
+        this.peerRandom.setSeed(peerState.getSeed(peerPosition));
+        this.peerParts.clear();
+        model.collectParts(this.peerRandom, this.peerParts);
+        try {
+            for (BlockStateModelPart part : this.peerParts) {
+                for (BakedQuad bakedQuad : part.getQuads(peerDirection)) {
+                    this.addPeerQuad(peerState, peerPosition, bakedQuad);
+                }
+            }
+        } finally {
+            this.peerParts.clear();
+        }
+    }
+
+    private void addPeerQuad(
+            BlockState state, BlockPos position, BakedQuad bakedQuad) {
+        boolean forceOpaque = ModelBlockRenderer.forceOpaque(this.cutoutLeaves, state);
+        ChunkSectionLayer layer = forceOpaque
+                ? ChunkSectionLayer.SOLID
+                : bakedQuad.materialInfo().layer();
+        boolean alphaCutOverride = requiresAlphaCut(state);
+        boolean needsCollision = layer == ChunkSectionLayer.TRANSLUCENT
+                && !alphaCutOverride;
+        boolean collisionEmpty = needsCollision
+                && state.getCollisionShape(this.region, position).isEmpty();
+        int tint = this.resolvePeerTint(
+                state, position, bakedQuad.materialInfo().tintIndex());
+        TextureAtlasSprite sprite = bakedQuad.materialInfo().sprite();
+        Direction direction = bakedQuad.direction();
+        CapturedSectionGeometry.MutableQuad quad = this.peerQuad;
+        quad.normalX = direction.getStepX();
+        quad.normalY = direction.getStepY();
+        quad.normalZ = direction.getStepZ();
+        net.minecraft.world.phys.Vec3 offset = state.getOffset(position);
+        float baseX = position.getX() - (this.sectionX << 4) + (float) offset.x;
+        float baseY = position.getY() - (this.sectionY << 4) + (float) offset.y;
+        float baseZ = position.getZ() - (this.sectionZ << 4) + (float) offset.z;
+        for (int index = 0; index < 4; index++) {
+            Vector3fc vertex = bakedQuad.position(index);
+            quad.x[index] = baseX + vertex.x();
+            quad.y[index] = baseY + vertex.y();
+            quad.z[index] = baseZ + vertex.z();
+            long packedUv = bakedQuad.packedUV(index);
+            quad.u[index] = net.minecraft.client.model.geom.builders.UVPair.unpackU(packedUv);
+            quad.v[index] = net.minecraft.client.model.geom.builders.UVPair.unpackV(packedUv);
+        }
+        boolean foliage = !forceOpaque
+                && (state.is(BlockTags.LEAVES)
+                        || state.getBlock() == Blocks.SHORT_GRASS
+                        || state.getBlock() == Blocks.TALL_GRASS);
+        boolean rasterOverlay = isRasterOverlay(
+                state.getBlock() == Blocks.GRASS_BLOCK,
+                state.getBlock() == Blocks.REDSTONE_WIRE,
+                bakedQuad.materialInfo().tintIndex(),
+                quad.normalY);
+        this.geometry.addPeer(quad, CapturedSectionGeometry.Surface.uniform(
+                tint,
+                captureLayer(layer),
+                alphaCutOverride,
+                collisionEmpty,
+                sprite.contents().isAnimated(),
+                false,
+                foliage,
+                true,
+                rasterOverlay,
+                Math.max(state.getLightEmission(), bakedQuad.materialInfo().lightEmission()),
+                this.spriteResolver.resolve(sprite),
+                new CapturedSectionGeometry.BlockFacts(
+                        position.getX(), position.getY(), position.getZ(),
+                        mediumFamily(state))));
+    }
+
+    private int resolvePeerTint(
+            BlockState state, BlockPos position, int tintIndex) {
+        if (tintIndex < 0) {
+            return -1;
+        }
+        List<BlockTintSource> sources = this.blockColors.getTintSources(state);
+        if (tintIndex < sources.size()) {
+            return sources.get(tintIndex).colorInWorld(state, this.region, position);
+        }
+        if (!sources.isEmpty()) {
+            return -1;
+        }
+        BlockTintsFactory factory = BlockColorRegistry.getFactory(state);
+        if (factory == null) {
+            return -1;
+        }
+        IntArrayList dynamic = new IntArrayList();
+        factory.collect(state, this.region, position, dynamic);
+        return tintIndex < dynamic.size() ? dynamic.getInt(tintIndex) : -1;
+    }
+
+    private static Direction cardinalDirection(float x, float y, float z) {
+        Direction direction = Direction.getApproximateNearest(x, y, z);
+        float dot = x * direction.getStepX()
+                + y * direction.getStepY()
+                + z * direction.getStepZ();
+        return dot > 0.9999F ? direction : null;
+    }
+
+    private static int mediumFamily(BlockState state) {
+        if (state.getBlock() == Blocks.GLASS || state.getBlock() == Blocks.GLASS_PANE) {
+            return 1;
+        }
+        if (state.getBlock() instanceof StainedGlassBlock glass) {
+            return 2 + glass.getColor().getId();
+        }
+        if (state.getBlock() instanceof StainedGlassPaneBlock pane) {
+            return 2 + pane.getColor().getId();
+        }
+        return 0;
     }
 
     static boolean isRasterOverlay(
@@ -670,7 +876,11 @@ public final class VanillaSectionCapture implements AutoCloseable {
                             this.localY,
                             this.localZ,
                             this.fullCeiling,
-                            this.fullCollisionMask)));
+                            this.fullCollisionMask),
+                    new CapturedSectionGeometry.BlockFacts(
+                            (this.owner.sectionX << 4) + this.localX,
+                            (this.owner.sectionY << 4) + this.localY,
+                            (this.owner.sectionZ << 4) + this.localZ)));
         }
 
         private TextureAtlasSprite selectSprite() {
@@ -691,5 +901,8 @@ public final class VanillaSectionCapture implements AutoCloseable {
                     && v >= Math.min(sprite.getV0(), sprite.getV1())
                     && v <= Math.max(sprite.getV0(), sprite.getV1());
         }
+    }
+
+    private record PeerFaceKey(int x, int y, int z, Direction direction) {
     }
 }

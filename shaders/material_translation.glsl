@@ -90,6 +90,24 @@ bool primeTranslatedLabPbrIsMetal(PrimeTranslatedLabPbrMaterial material) {
     return material.metalId != 0u;
 }
 
+bool primeAirGapCompatible(
+        bool enabled,
+        bool seamlessGlass,
+        uint currentFlags,
+        float currentDielectricF0,
+        bool adjacentWater,
+        float adjacentDielectricF0) {
+    return enabled
+            && seamlessGlass
+            && !adjacentWater
+            && primeMaterialIsTransmissive(currentFlags)
+            && (currentFlags
+                    & (PRIME_MATERIAL_FLAG_THIN_WALLED
+                            | PRIME_MATERIAL_FLAG_WATER
+                            | PRIME_MATERIAL_FLAG_ROUGH_GLASS)) == 0u
+            && currentDielectricF0 == adjacentDielectricF0;
+}
+
 // LabPBR defines these optical constants in linear sRGB. Translation resolves the two endpoints
 // consumed by RoboCute's fitted conductor Fresnel before crossing into Prime's Rec.2020 space.
 vec3 primeLabPbrConductorReflectance(float cosineIncident, vec3 eta, vec3 k) {

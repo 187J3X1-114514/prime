@@ -31,6 +31,9 @@ public final class ClusterSceneTranslator {
                 settings.maxOpacity4StateSubdivisionLevel(),
                 settings.voxelSurfacesEnabled(),
                 settings.voxelSurfaceMaximumHeight());
+        TransparentBoundaryResolver.Result boundaries =
+                TransparentBoundaryResolver.resolve(
+                        captured, !settings.voxelSurfacesEnabled());
         for (int localIndex = 0;
                 localIndex < SectionCluster.SECTION_COUNT;
                 localIndex++) {
@@ -45,13 +48,16 @@ public final class ClusterSceneTranslator {
                     sectionX,
                     sectionY,
                     sectionZ,
-                    translateSection(section, materials, settings));
+                    translateSection(
+                            boundaries.section(localIndex),
+                            materials,
+                            settings));
         }
         return cluster.build();
     }
 
     private static CpuSectionGeometry translateSection(
-            CapturedSectionGeometry captured,
+            java.util.List<TransparentBoundaryResolver.ResolvedQuad> resolvedQuads,
             LabPbrMaterialSet materials,
             ClusterTranslationSettings settings) {
         SectionMeshAccumulator accumulator = new SectionMeshAccumulator(
@@ -62,20 +68,11 @@ public final class ClusterSceneTranslator {
                 settings.maxOpacity4StateSubdivisionLevel());
         SectionMeshAccumulator.Quad quad = new SectionMeshAccumulator.Quad();
         SectionMeshAccumulator.Surface surface = new SectionMeshAccumulator.Surface();
-        for (TwoSidedQuadReducer.ResolvedQuad resolved
-                : TwoSidedQuadReducer.resolve(captured.quads())) {
-            CapturedSectionGeometry.Quad capturedQuad = resolved.quad();
-            for (int vertex = 0; vertex < 4; vertex++) {
-                quad.x[vertex] = capturedQuad.x(vertex);
-                quad.y[vertex] = capturedQuad.y(vertex);
-                quad.z[vertex] = capturedQuad.z(vertex);
-                quad.u[vertex] = capturedQuad.u(vertex);
-                quad.v[vertex] = capturedQuad.v(vertex);
-            }
-            quad.normalX = capturedQuad.normalX();
-            quad.normalY = capturedQuad.normalY();
-            quad.normalZ = capturedQuad.normalZ();
-            CapturedSectionGeometry.Surface capturedSurface = capturedQuad.surface();
+        for (TransparentBoundaryResolver.ResolvedQuad resolved : resolvedQuads) {
+            resolved.write(quad);
+            SurfaceDefinition definition = resolved.definition();
+            CapturedSectionGeometry.Surface capturedSurface =
+                    definition.primary().surface();
             if (capturedSurface.fluid() != null
                     && !translateFluidQuad(
                             quad, capturedSurface.fluid(), settings)) {
@@ -83,7 +80,7 @@ public final class ClusterSceneTranslator {
             }
             boolean cutout = isCutout(capturedSurface);
             boolean transmissive = isTransmissive(capturedSurface);
-            accumulator.addQuad(quad, surface.set(
+            surface.set(
                     averageColor(capturedSurface),
                     cutout,
                     capturedSurface.animated(),
@@ -94,9 +91,10 @@ public final class ClusterSceneTranslator {
                     capturedSurface.foliage(),
                     capturedSurface.mergeable(),
                     capturedSurface.rasterOverlay(),
-                    resolved.frontFaceOnly(),
                     capturedSurface.lightEmission(),
-                    capturedSurface.sprite()));
+                    capturedSurface.sprite())
+                    .setDefinition(definition);
+            accumulator.addQuad(quad, surface);
         }
         return accumulator.build();
     }

@@ -14,7 +14,7 @@
       ]
     },
     "sectionRecord": {
-      "size": 80,
+      "size": 96,
       "fields": [
         { "name": "primitiveAddress", "type": "uint64_t", "offset": 0 },
         { "name": "lightAddress", "type": "uint64_t", "offset": 8 },
@@ -29,7 +29,8 @@
         { "name": "instanceTint", "type": "uint", "offset": 64 },
         { "name": "opaqueMacroTriangleBase", "type": "uint", "offset": 68 },
         { "name": "cutoutMacroTriangleBase", "type": "uint", "offset": 72 },
-        { "name": "transmissiveMacroTriangleBase", "type": "uint", "offset": 76 }
+        { "name": "transmissiveMacroTriangleBase", "type": "uint", "offset": 76 },
+        { "name": "surfaceRelationAddress", "type": "uint64_t", "offset": 80 }
       ]
     },
     "lightNode": {
@@ -111,7 +112,7 @@
       ]
     },
     "tracePayload": {
-      "size": 64,
+      "size": 80,
       "fields": [
         { "name": "geometricNormal", "type": "vec3", "offset": 0 },
         { "name": "t", "type": "float", "offset": 12 },
@@ -124,11 +125,13 @@
         { "name": "shadingNormal", "type": "uint", "offset": 48 },
         { "name": "labPbrNormal", "type": "uint", "offset": 52 },
         { "name": "labPbrSpecular", "type": "uint", "offset": 56 },
-        { "name": "hitKind", "type": "uint", "offset": 60 }
+        { "name": "hitKind", "type": "uint", "offset": 60 },
+        { "name": "adjacentBaseColor", "type": "vec3", "offset": 64 },
+        { "name": "adjacentSpecularControl", "type": "uint", "offset": 76 }
       ]
     },
     "surfaceInteraction": {
-      "size": 80,
+      "size": 96,
       "fields": [
         { "name": "position", "type": "vec3", "offset": 0 },
         { "name": "t", "type": "float", "offset": 12 },
@@ -143,7 +146,9 @@
         { "name": "shadingNormal", "type": "uint", "offset": 64 },
         { "name": "labPbrNormal", "type": "uint", "offset": 68 },
         { "name": "labPbrSpecular", "type": "uint", "offset": 72 },
-        { "name": "motionZFlags", "type": "uint", "offset": 76 }
+        { "name": "motionZFlags", "type": "uint", "offset": 76 },
+        { "name": "adjacentBaseColor", "type": "vec3", "offset": 80 },
+        { "name": "adjacentSpecularControl", "type": "uint", "offset": 92 }
       ]
     },
     "pushConstants": {
@@ -273,6 +278,7 @@
     "solarLongitudeShift": 16,
     "solarLongitudeMask": "0x1ff",
     "seamlessGlassMask": "0x02000000",
+    "airGapMask": "0x04000000",
     "sampleEpochMask": "0x7fffffff",
     "triangleDebugMask": "0x80000000",
     "maximumBouncesMask": "0xff",

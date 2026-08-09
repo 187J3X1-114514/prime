@@ -7,6 +7,7 @@ public final class MaterialSettings {
     public static final int MAXIMUM_ROUGHNESS_STEPS = STEPS_PER_UNIT;
     public static final int DEFAULT_ROUGHNESS_STEPS = 90;
     public static final boolean DEFAULT_SEAMLESS_GLASS = true;
+    public static final boolean DEFAULT_AIR_GAP = true;
 
     private MaterialSettings() {
     }
@@ -23,9 +24,21 @@ public final class MaterialSettings {
         }
     }
 
-    public record Snapshot(int roughnessSteps, boolean seamlessGlass, long revision) {
+    public record Snapshot(
+            int roughnessSteps,
+            boolean seamlessGlass,
+            boolean airGap,
+            long revision) {
         public Snapshot(int roughnessSteps, long revision) {
-            this(roughnessSteps, DEFAULT_SEAMLESS_GLASS, revision);
+            this(
+                    roughnessSteps,
+                    DEFAULT_SEAMLESS_GLASS,
+                    DEFAULT_AIR_GAP,
+                    revision);
+        }
+
+        public Snapshot(int roughnessSteps, boolean seamlessGlass, long revision) {
+            this(roughnessSteps, seamlessGlass, DEFAULT_AIR_GAP, revision);
         }
 
         public Snapshot {

@@ -17,6 +17,7 @@ record GpuCluster(
         PreparedBlas blas,
         List<PreparedBlas> voxelBlases,
         CpuVoxelInstances voxelInstances,
+        long surfaceRelationAddress,
         VulkanBuffer lightBuffer,
         VulkanBuffer motionBuffer,
         CompiledClusterLights.Summary lights,
@@ -41,6 +42,33 @@ record GpuCluster(
                         "GPU voxel instance references an invalid BLAS");
             }
         }
+    }
+
+    GpuCluster(
+            long key,
+            int clusterX,
+            int clusterY,
+            int clusterZ,
+            PreparedBlas blas,
+            List<PreparedBlas> voxelBlases,
+            CpuVoxelInstances voxelInstances,
+            VulkanBuffer lightBuffer,
+            VulkanBuffer motionBuffer,
+            CompiledClusterLights.Summary lights,
+            boolean dynamic) {
+        this(
+                key,
+                clusterX,
+                clusterY,
+                clusterZ,
+                blas,
+                voxelBlases,
+                voxelInstances,
+                0L,
+                lightBuffer,
+                motionBuffer,
+                lights,
+                dynamic);
     }
 
     GpuCluster(
@@ -79,6 +107,7 @@ record GpuCluster(
                 blas,
                 List.of(),
                 CpuVoxelInstances.EMPTY,
+                0L,
                 lightBuffer,
                 null,
                 lights,

@@ -294,6 +294,15 @@ public final class PrimeVideoOptions {
                 PrimeConfig::setSeamlessGlass);
     }
 
+    public static OptionInstance<Boolean> airGap() {
+        return OptionInstance.createBoolean(
+                "prime.options.material.air_gap",
+                OptionInstance.cachedConstantTooltip(Component.translatable(
+                        "prime.options.material.air_gap.tooltip")),
+                PrimeConfig.settings().airGap(),
+                PrimeConfig::setAirGap);
+    }
+
     public static OptionInstance<NrdDiagnostics.Mode> nrdDebugView() {
         PrimeRuntime runtime = PrimeRuntime.instance();
         return new OptionInstance<>(

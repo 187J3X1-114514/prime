@@ -79,6 +79,32 @@ final class DynamicMeshBuilderTest {
     }
 
     @Test
+    void exactReverseQuadsCollapseInsideOneMotionDomain() {
+        DynamicMeshBuilder builder = new DynamicMeshBuilder(0.0, 0.0, 0.0);
+        builder.beginMotionObject(VanillaSceneBoundary.Element.ENTITY, 17L);
+        DynamicMeshBuilder.VertexSink sink = builder.open(
+                VanillaSceneBoundary.Element.ENTITY,
+                PrimitiveTopology.QUADS,
+                2,
+                0);
+        vertexNormal(sink, 0.0F, 0.0F, 0.0F, 0.0F, 0.0F, 1.0F);
+        vertexNormal(sink, 1.0F, 0.0F, 0.0F, 1.0F, 0.0F, 1.0F);
+        vertexNormal(sink, 1.0F, 1.0F, 0.0F, 1.0F, 1.0F, 1.0F);
+        vertexNormal(sink, 0.0F, 1.0F, 0.0F, 0.0F, 1.0F, 1.0F);
+        vertexNormal(sink, 0.0F, 0.0F, 0.0F, 0.0F, 0.0F, -1.0F);
+        vertexNormal(sink, 0.0F, 1.0F, 0.0F, 0.0F, 1.0F, -1.0F);
+        vertexNormal(sink, 1.0F, 1.0F, 0.0F, 1.0F, 1.0F, -1.0F);
+        vertexNormal(sink, 1.0F, 0.0F, 0.0F, 1.0F, 0.0F, -1.0F);
+        sink.finish();
+        builder.endMotionObject(VanillaSceneBoundary.Element.ENTITY, 17L);
+
+        DynamicSceneFrame frame = builder.build(0, 0, 0, List.of());
+
+        assertEquals(2L, frame.mesh().triangleCount());
+        assertEquals(2, frame.entityTriangles());
+    }
+
+    @Test
     void capturesTexturelessFeatureAsAnOwnedConstantMaterial() {
         DynamicMeshBuilder builder = new DynamicMeshBuilder(0.0, 0.0, 0.0);
         DynamicMeshBuilder.VertexSink sink = builder.openUntextured(
@@ -243,5 +269,19 @@ final class DynamicMeshBuilderTest {
                 .setColor(-1)
                 .setUv(u, v)
                 .setNormal(0.0F, 0.0F, 1.0F);
+    }
+
+    private static void vertexNormal(
+            DynamicMeshBuilder.VertexSink sink,
+            float x,
+            float y,
+            float z,
+            float u,
+            float v,
+            float normalZ) {
+        sink.addVertex(x, y, z)
+                .setColor(-1)
+                .setUv(u, v)
+                .setNormal(0.0F, 0.0F, normalZ);
     }
 }

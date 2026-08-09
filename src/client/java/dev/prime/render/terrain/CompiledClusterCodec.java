@@ -9,7 +9,7 @@ import java.util.Objects;
 /** Versioned canonical binary encoding of one {@link CompiledCluster}. */
 public final class CompiledClusterCodec {
     private static final int MAGIC = 0x3143_4350;
-    private static final int VERSION = 7;
+    private static final int VERSION = 9;
     private static final int MAX_SEGMENTS = 4_096;
     private static final int MAX_VOXEL_MESHES = 4_096;
     private static final int MAX_VOXEL_INSTANCES = 4_194_304;
@@ -50,6 +50,7 @@ public final class CompiledClusterCodec {
             output.putInt(segment.transmissiveMacroTriangleCount());
             putFloats(output, segment.positions());
             putInts(output, segment.primitiveRecords());
+            putInts(output, segment.surfaceRelationRecords());
         }
 
         putBytes(output, opacity.blocks());
@@ -162,9 +163,27 @@ public final class CompiledClusterCodec {
                 if (version < 7) {
                     upgradeUvPacking(primitives);
                 }
+                int[] encodedRelations = version >= 8
+                        ? getInts(
+                                input,
+                                version >= 9
+                                        ? "segment surface-relation records"
+                                        : "segment medium-boundary records")
+                        : new int[0];
+                int[] surfaceRelations = version >= 9
+                        ? encodedRelations
+                        : upgradeMediumBoundaries(
+                                encodedRelations,
+                                segmentOpaque,
+                                segmentCutout,
+                                segmentTransmissive,
+                                segmentOpaqueMacro,
+                                segmentCutoutMacro,
+                                segmentTransmissiveMacro);
                 segments.add(new CpuClusterMesh.Segment(
                         positions,
                         primitives,
+                        surfaceRelations,
                         segmentOpaque,
                         segmentCutout,
                         segmentTransmissive,
@@ -304,6 +323,8 @@ public final class CompiledClusterCodec {
             result = arrayBytes(result, segment.positions().length, Float.BYTES);
             result = arrayBytes(
                     result, segment.primitiveRecords().length, Integer.BYTES);
+            result = arrayBytes(
+                    result, segment.surfaceRelationRecords().length, Integer.BYTES);
         }
         OpacityMicromapData opacity = cluster.mesh().opacityMicromap();
         result = arrayBytes(result, opacity.blocks().length, Byte.BYTES);
@@ -478,6 +499,11 @@ public final class CompiledClusterCodec {
                     segment.cutoutMacroTriangleCount(),
                     segment.transmissiveMacroTriangleCount(),
                     emitterCount);
+            SurfaceRelationTable.validate(
+                    segment.surfaceRelationRecords(),
+                    segment.opaquePrimitiveCount()
+                            + segment.cutoutPrimitiveCount()
+                            + segment.transmissivePrimitiveCount());
         }
         for (CpuVoxelMesh voxelMesh : mesh.voxelMeshes()) {
             validatePrimitiveRecords(
@@ -490,6 +516,55 @@ public final class CompiledClusterCodec {
                     0,
                     0);
         }
+    }
+
+    private static int[] upgradeMediumBoundaries(
+            int[] records,
+            int opaqueTriangles,
+            int cutoutTriangles,
+            int transmissiveTriangles,
+            int opaqueMacroTriangles,
+            int cutoutMacroTriangles,
+            int transmissiveMacroTriangles) {
+        if (records.length == 0) {
+            return records;
+        }
+        int opaquePrimitives = CpuSectionMesh.primitiveCount(
+                opaqueTriangles, opaqueMacroTriangles);
+        int cutoutPrimitives = CpuSectionMesh.primitiveCount(
+                cutoutTriangles, cutoutMacroTriangles);
+        int transmissivePrimitives = CpuSectionMesh.primitiveCount(
+                transmissiveTriangles, transmissiveMacroTriangles);
+        if (records.length != transmissivePrimitives * 3) {
+            throw new IllegalArgumentException(
+                    "Legacy medium-boundary table has an invalid length");
+        }
+        ArrayList<int[]> relations = new ArrayList<>(
+                opaquePrimitives + cutoutPrimitives + transmissivePrimitives);
+        for (int primitive = 0;
+                primitive < opaquePrimitives + cutoutPrimitives;
+                primitive++) {
+            relations.add(null);
+        }
+        for (int primitive = 0; primitive < transmissivePrimitives; primitive++) {
+            int offset = primitive * 3;
+            int oldControl = records[offset + 2];
+            if (oldControl == 0) {
+                relations.add(null);
+                continue;
+            }
+            int control = CpuSectionMesh.SURFACE_RELATION_BOUNDARY
+                    | ((oldControl & 2) != 0
+                            ? CpuSectionMesh.SURFACE_RELATION_WATER
+                            : 0)
+                    | ((oldControl & 4) != 0
+                            ? CpuSectionMesh.SURFACE_RELATION_LABPBR_SPECULAR
+                            : 0);
+            relations.add(new int[] {
+                control, records[offset], records[offset + 1]
+            });
+        }
+        return SurfaceRelationTable.encode(relations);
     }
 
     private static void validatePrimitiveRecords(

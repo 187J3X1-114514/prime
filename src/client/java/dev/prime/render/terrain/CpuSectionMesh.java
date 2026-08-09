@@ -13,6 +13,7 @@ import java.util.Objects;
 public record CpuSectionMesh(
         float[] positions,
         int[] primitiveRecords,
+        int[] surfaceRelationRecords,
         int opaqueTriangleCount,
         int cutoutTriangleCount,
         int transmissiveTriangleCount,
@@ -23,11 +24,20 @@ public record CpuSectionMesh(
         CpuSectionLights lights) {
 
     public static final int PRIMITIVE_WORDS = 8;
+    public static final int SURFACE_RELATION_KIND_MASK = 0xf;
+    public static final int SURFACE_RELATION_BOUNDARY = 1;
+    public static final int SURFACE_RELATION_OVERLAY = 2;
+    public static final int SURFACE_RELATION_BILATERAL = 3;
+    public static final int SURFACE_RELATION_WATER = 1 << 4;
+    public static final int SURFACE_RELATION_LABPBR_SPECULAR = 1 << 5;
+    public static final int SURFACE_RELATION_POSITIVE_ONLY = 1 << 4;
 
     public CpuSectionMesh {
         positions = Objects.requireNonNull(positions, "positions");
         primitiveRecords = Objects.requireNonNull(
                 primitiveRecords, "primitiveRecords");
+        surfaceRelationRecords = Objects.requireNonNull(
+                surfaceRelationRecords, "surfaceRelationRecords");
         opacityMicromap = Objects.requireNonNull(
                 opacityMicromap, "opacityMicromap");
         lights = Objects.requireNonNull(lights, "lights");
@@ -51,9 +61,58 @@ public record CpuSectionMesh(
         if (primitiveRecords.length != Math.multiplyExact(primitiveCount, PRIMITIVE_WORDS)) {
             throw new IllegalArgumentException("Primitive array does not match triangle count");
         }
+        SurfaceRelationTable.validate(surfaceRelationRecords, primitiveCount);
         if (opacityMicromap.triangleCount() != cutoutTriangleCount) {
             throw new IllegalArgumentException("Opacity micromap does not match cutout geometry");
         }
+    }
+
+    public CpuSectionMesh(
+            float[] positions,
+            int[] primitiveRecords,
+            int[] surfaceRelationRecords,
+            int opaqueTriangleCount,
+            int cutoutTriangleCount,
+            int transmissiveTriangleCount,
+            OpacityMicromapData opacityMicromap,
+            CpuSectionLights lights) {
+        this(
+                positions,
+                primitiveRecords,
+                surfaceRelationRecords,
+                opaqueTriangleCount,
+                cutoutTriangleCount,
+                transmissiveTriangleCount,
+                0,
+                0,
+                0,
+                opacityMicromap,
+                lights);
+    }
+
+    public CpuSectionMesh(
+            float[] positions,
+            int[] primitiveRecords,
+            int opaqueTriangleCount,
+            int cutoutTriangleCount,
+            int transmissiveTriangleCount,
+            int opaqueMacroTriangleCount,
+            int cutoutMacroTriangleCount,
+            int transmissiveMacroTriangleCount,
+            OpacityMicromapData opacityMicromap,
+            CpuSectionLights lights) {
+        this(
+                positions,
+                primitiveRecords,
+                new int[0],
+                opaqueTriangleCount,
+                cutoutTriangleCount,
+                transmissiveTriangleCount,
+                opaqueMacroTriangleCount,
+                cutoutMacroTriangleCount,
+                transmissiveMacroTriangleCount,
+                opacityMicromap,
+                lights);
     }
 
     public CpuSectionMesh(
@@ -67,6 +126,7 @@ public record CpuSectionMesh(
         this(
                 positions,
                 primitiveRecords,
+                new int[0],
                 opaqueTriangleCount,
                 cutoutTriangleCount,
                 transmissiveTriangleCount,
@@ -87,6 +147,12 @@ public record CpuSectionMesh(
     @Override
     public int[] primitiveRecords() {
         return this.primitiveRecords;
+    }
+
+    /** Borrowed read-only sparse backing storage; empty means every primitive is SINGLE. */
+    @Override
+    public int[] surfaceRelationRecords() {
+        return this.surfaceRelationRecords;
     }
 
     public boolean isEmpty() {
@@ -133,6 +199,7 @@ public record CpuSectionMesh(
     public long byteSize() {
         return (long) this.positions.length * Float.BYTES
                 + (long) this.primitiveRecords.length * Integer.BYTES
+                + (long) this.surfaceRelationRecords.length * Integer.BYTES
                 + this.opacityMicromap.byteSize()
                 + this.lights.byteSize();
     }

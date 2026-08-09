@@ -237,7 +237,9 @@ final class PrimeConfigTest {
         assertTrue(serialized.contains("display.oklab_curve_exponent=0.75\n"));
         assertTrue(serialized.contains("display.auto_exposure_compensation=0.5\n"));
         assertTrue(serialized.contains("material.seamless_glass=true\n"));
+        assertTrue(serialized.contains("material.air_gap=true\n"));
         assertTrue(PrimeSettings.defaults().seamlessGlass());
+        assertTrue(PrimeSettings.defaults().airGap());
 
         Properties properties = new Properties();
         assertFalse(PrimeConfig.hasLegacyDebugProperties(properties));

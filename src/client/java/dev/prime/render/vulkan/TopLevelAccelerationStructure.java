@@ -376,6 +376,54 @@ public final class TopLevelAccelerationStructure {
                 float sectionX,
                 float sectionY,
                 float sectionZ) {
+            this.writeInstanced(
+                    blasAddress,
+                    primitiveAddress,
+                    0L,
+                    lightAddress,
+                    worldLightAddress,
+                    worldLightForwardAddress,
+                    cutoutPrimitiveBase,
+                    transmissivePrimitiveBase,
+                    opaqueMacroTriangleBase,
+                    cutoutMacroTriangleBase,
+                    transmissiveMacroTriangleBase,
+                    worldLeafNode,
+                    lightCount,
+                    worldLightNodeCount,
+                    mask,
+                    instanceTint,
+                    transformX,
+                    transformY,
+                    transformZ,
+                    sectionX,
+                    sectionY,
+                    sectionZ);
+        }
+
+        public void writeInstanced(
+                long blasAddress,
+                long primitiveAddress,
+                long surfaceRelationAddress,
+                long lightAddress,
+                long worldLightAddress,
+                long worldLightForwardAddress,
+                long cutoutPrimitiveBase,
+                long transmissivePrimitiveBase,
+                long opaqueMacroTriangleBase,
+                long cutoutMacroTriangleBase,
+                long transmissiveMacroTriangleBase,
+                int worldLeafNode,
+                int lightCount,
+                int worldLightNodeCount,
+                int mask,
+                int instanceTint,
+                float transformX,
+                float transformY,
+                float transformZ,
+                float sectionX,
+                float sectionY,
+                float sectionZ) {
             if (this.index >= this.capacity) {
                 throw new IllegalStateException("TLAS populator wrote too many instances");
             }
@@ -459,6 +507,9 @@ public final class TopLevelAccelerationStructure {
             MemoryUtil.memPutInt(
                     sectionAddress + ShaderAbi.SECTION_TRANSMISSIVE_MACRO_TRIANGLE_BASE_OFFSET,
                     (int) transmissiveMacroTriangleBase);
+            MemoryUtil.memPutLong(
+                    sectionAddress + ShaderAbi.SECTION_SURFACE_RELATION_ADDRESS_OFFSET,
+                    surfaceRelationAddress);
             this.index++;
         }
 

@@ -221,7 +221,7 @@ final class ClusterSceneTranslatorTest {
     }
 
     @Test
-    void grassSideOverlayBecomesOneMacroMaterialWhenReliefIsDisabled() {
+    void grassSideOverlayBecomesOneSurfaceRelationWhenReliefIsDisabled() {
         try (SectionMeshAccumulatorTest.TestSprite base =
                         new SectionMeshAccumulatorTest.TestSprite(
                                 "flat_grass_side", 32, 16, 0, 0);
@@ -256,14 +256,24 @@ final class ClusterSceneTranslatorTest {
                     record += CpuSectionMesh.PRIMITIVE_WORDS) {
                 int flags = PrimitivePacking.unpackFlags(
                         primitives[record + 3], primitives[record + 5]);
-                assertTrue(
-                        (flags & PrimitivePacking.FLAG_RASTER_COMPOSITE) != 0);
+                assertEquals(0, flags & PrimitivePacking.FLAG_RASTER_COMPOSITE);
                 assertEquals(
                         PrimitivePacking.NO_EMITTER_INDEX,
                         PrimitivePacking.unpackEmitterIndex(
                                 primitives[record + 5]));
-                assertEquals(16, (short) primitives[record + 6]);
-                assertEquals(0, (short) (primitives[record + 6] >>> 16));
+            }
+            assertEquals(80L, cluster.surfaceRelationBytes());
+            int primitiveCount = segment.opaquePrimitiveCount();
+            for (int primitive = 0; primitive < primitiveCount; primitive++) {
+                int[] relation = SurfaceRelationTable.record(
+                        segment.surfaceRelationRecords(),
+                        primitiveCount,
+                        primitive);
+                assertEquals(
+                        CpuSectionMesh.SURFACE_RELATION_OVERLAY,
+                        relation[0] & CpuSectionMesh.SURFACE_RELATION_KIND_MASK);
+                assertTrue((relation[0] >> 8
+                        & PrimitivePacking.FLAG_CUTOUT) != 0);
             }
             CompiledCluster compiled =
                     new CompiledCluster(0L, 0, 0, 0, cluster);
@@ -370,7 +380,7 @@ final class ClusterSceneTranslatorTest {
     }
 
     @Test
-    void oppositeCutoutQuadsWithDifferentTextureDomainRemainDistinct() {
+    void oppositeCutoutQuadsWithDifferentTextureDomainBecomeBilateral() {
         try (SectionMeshAccumulatorTest.TestSprite grass =
                 new SectionMeshAccumulatorTest.TestSprite("directional_cross")) {
             grass.fill(0xff40_a040);
@@ -386,8 +396,8 @@ final class ClusterSceneTranslatorTest {
 
             CpuClusterMesh cluster = translate(section.build());
 
-            assertEquals(4L, cluster.cutoutTriangleCount());
-            assertFrontFaceOnly(cluster);
+            assertEquals(2L, cluster.cutoutTriangleCount());
+            assertBilateral(cluster);
             assertEquals(0, cluster.opacityMicromap().blockCount());
             for (int index : cluster.opacityMicromap().triangleIndices()) {
                 assertTrue(index < 0);
@@ -462,12 +472,30 @@ final class ClusterSceneTranslatorTest {
                     TwoSidedQuadReducer.resolve(captured.quads());
             CpuClusterMesh cluster = translate(captured, false, false);
 
-            assertEquals(2, resolved.size());
-            assertTrue(resolved.get(0).frontFaceOnly());
-            assertTrue(resolved.get(1).frontFaceOnly());
-            assertEquals(4L, cluster.cutoutTriangleCount());
-            assertFrontFaceOnly(cluster);
+            assertEquals(1, resolved.size());
+            assertEquals(
+                    SurfaceDefinition.InterfaceMode.BILATERAL,
+                    resolved.getFirst().definition().interfaceMode());
+            assertEquals(2L, cluster.cutoutTriangleCount());
+            assertBilateral(cluster);
             assertEquals(0, cluster.opacityMicromap().blockCount());
+        }
+    }
+
+    private static void assertBilateral(CpuClusterMesh cluster) {
+        CpuClusterMesh.Segment segment = cluster.segments().getFirst();
+        int primitiveCount = segment.opaquePrimitiveCount()
+                + segment.cutoutPrimitiveCount()
+                + segment.transmissivePrimitiveCount();
+        int first = segment.opaquePrimitiveCount();
+        for (int primitive = 0; primitive < segment.cutoutPrimitiveCount(); primitive++) {
+            int[] relation = SurfaceRelationTable.record(
+                    segment.surfaceRelationRecords(),
+                    primitiveCount,
+                    first + primitive);
+            assertEquals(
+                    CpuSectionMesh.SURFACE_RELATION_BILATERAL,
+                    relation[0] & CpuSectionMesh.SURFACE_RELATION_KIND_MASK);
         }
     }
 

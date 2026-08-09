@@ -8,8 +8,11 @@ import dev.prime.render.terrain.CpuSectionMesh;
 import dev.prime.render.terrain.OpacityMicromapData;
 import dev.prime.render.terrain.PrimitivePacking;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.EnumSet;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import net.minecraft.util.LightCoordsUtil;
 
 /**
@@ -288,7 +291,12 @@ final class DynamicMeshBuilder {
         @Override
         public VertexConsumer addVertex(float x, float y, float z) {
             this.commitCurrent();
-            this.current = new Vertex(x, y, z, this.fallbackLight);
+            this.current = new Vertex(
+                    x,
+                    y,
+                    z,
+                    this.fallbackLight,
+                    this.owner.openMotionObject);
             return this;
         }
 
@@ -346,7 +354,11 @@ final class DynamicMeshBuilder {
             this.commitCurrent();
             int count = this.vertices.size();
             if (this.topology == PrimitiveTopology.QUADS) {
+                boolean[] removed = this.resolveReverseQuads(count);
                 for (int index = 0; index + 3 < count; index += 4) {
+                    if (removed[index / 4]) {
+                        continue;
+                    }
                     this.emit(index, index + 1, index + 2);
                     this.emit(index, index + 2, index + 3);
                 }
@@ -370,6 +382,78 @@ final class DynamicMeshBuilder {
                 this.owner.report(
                         DynamicSceneFrame.CompatibilityIssue.UNSUPPORTED_TOPOLOGY);
             }
+        }
+
+        private boolean[] resolveReverseQuads(int vertexCount) {
+            int quadCount = vertexCount / 4;
+            boolean[] removed = new boolean[quadCount];
+            Map<DynamicQuadKey, ArrayList<Integer>> pending = new HashMap<>();
+            for (int quad = 0; quad < quadCount; quad++) {
+                int first = quad * 4;
+                OpenMotionObject motion = this.vertices.get(first).motionObject;
+                if (motion == null || !sameMotionObject(first, motion)) {
+                    continue;
+                }
+                DynamicQuadKey key = DynamicQuadKey.of(this.vertices, first, motion);
+                ArrayList<Integer> candidates =
+                        pending.computeIfAbsent(key, ignored -> new ArrayList<>());
+                int match = -1;
+                for (int candidate = candidates.size() - 1;
+                        candidate >= 0;
+                        candidate--) {
+                    if (sameReverseQuad(candidates.get(candidate) * 4, first)) {
+                        match = candidate;
+                        break;
+                    }
+                }
+                if (match < 0) {
+                    candidates.add(quad);
+                } else {
+                    candidates.remove(match);
+                    removed[quad] = true;
+                }
+            }
+            return removed;
+        }
+
+        private boolean sameMotionObject(int first, OpenMotionObject motion) {
+            for (int vertex = 1; vertex < 4; vertex++) {
+                if (this.vertices.get(first + vertex).motionObject != motion) {
+                    return false;
+                }
+            }
+            return true;
+        }
+
+        private boolean sameReverseQuad(int first, int second) {
+            for (int offset = 0; offset < 4; offset++) {
+                boolean same = true;
+                for (int vertex = 0; vertex < 4; vertex++) {
+                    Vertex a = this.vertices.get(first + vertex);
+                    Vertex b = this.vertices.get(second + (offset - vertex & 3));
+                    if (!sameVertex(a, b)) {
+                        same = false;
+                        break;
+                    }
+                }
+                if (same) {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        private static boolean sameVertex(Vertex first, Vertex second) {
+            return first.x == second.x
+                    && first.y == second.y
+                    && first.z == second.z
+                    && first.u == second.u
+                    && first.v == second.v
+                    && first.color == second.color
+                    && first.light == second.light
+                    && first.normalX == -second.normalX
+                    && first.normalY == -second.normalY
+                    && first.normalZ == -second.normalZ;
         }
 
         private void emit(int first, int second, int third) {
@@ -412,12 +496,54 @@ final class DynamicMeshBuilder {
         private float normalY = 1.0F;
         private float normalZ;
         private int light;
+        private final OpenMotionObject motionObject;
 
-        private Vertex(float x, float y, float z, int light) {
+        private Vertex(
+                float x,
+                float y,
+                float z,
+                int light,
+                OpenMotionObject motionObject) {
             this.x = x;
             this.y = y;
             this.z = z;
             this.light = light;
+            this.motionObject = motionObject;
+        }
+    }
+
+    private record DynamicPosition(int x, int y, int z)
+            implements Comparable<DynamicPosition> {
+        static DynamicPosition of(Vertex vertex) {
+            return new DynamicPosition(
+                    Float.floatToIntBits(vertex.x == 0.0F ? 0.0F : vertex.x),
+                    Float.floatToIntBits(vertex.y == 0.0F ? 0.0F : vertex.y),
+                    Float.floatToIntBits(vertex.z == 0.0F ? 0.0F : vertex.z));
+        }
+
+        @Override
+        public int compareTo(DynamicPosition other) {
+            int result = Integer.compare(this.x, other.x);
+            if (result == 0) {
+                result = Integer.compare(this.y, other.y);
+            }
+            return result == 0 ? Integer.compare(this.z, other.z) : result;
+        }
+    }
+
+    private record DynamicQuadKey(
+            OpenMotionObject motion,
+            List<DynamicPosition> positions) {
+        static DynamicQuadKey of(
+                List<Vertex> vertices,
+                int first,
+                OpenMotionObject motion) {
+            DynamicPosition[] positions = new DynamicPosition[4];
+            for (int vertex = 0; vertex < 4; vertex++) {
+                positions[vertex] = DynamicPosition.of(vertices.get(first + vertex));
+            }
+            Arrays.sort(positions);
+            return new DynamicQuadKey(motion, List.of(positions));
         }
     }
 

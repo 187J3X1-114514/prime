@@ -13,8 +13,8 @@ import java.util.Objects;
  *
  * <p>Minecraft's cross models and fluid renderer author coincident reverse faces because
  * rasterization culls back faces. Equal material mappings collapse to one physical two-sided
- * sheet. Distinct front/back mappings, such as a sunflower disc, retain both authored materials
- * but accept each primitive only from its front side. In both cases authored winding remains the
+ * sheet. Distinct front/back mappings, such as a sunflower disc, become one bilateral surface
+ * definition with independent material mappings. In both cases authored winding remains the
  * normal authority.
  */
 final class TwoSidedQuadReducer {
@@ -66,7 +66,9 @@ final class TwoSidedQuadReducer {
             removed[index] = true;
         }
 
-        boolean[] frontFaceOnly = new boolean[quads.size()];
+        int[] bilateralPeer = new int[quads.size()];
+        int[] bilateralOffset = new int[quads.size()];
+        Arrays.fill(bilateralPeer, -1);
         pending.clear();
         for (int index = 0; index < quads.size(); index++) {
             if (removed[index]) {
@@ -94,16 +96,27 @@ final class TwoSidedQuadReducer {
                 continue;
             }
             int pairedIndex = candidates.remove(match);
-            frontFaceOnly[pairedIndex] = true;
-            frontFaceOnly[index] = true;
+            int reverseOffset = reverseOffset(quads.get(pairedIndex), quad);
+            removed[index] = true;
+            bilateralPeer[pairedIndex] = index;
+            bilateralOffset[pairedIndex] = reverseOffset;
         }
 
         ArrayList<ResolvedQuad> result =
                 new ArrayList<>(quads.size());
         for (int index = 0; index < quads.size(); index++) {
             if (!removed[index]) {
-                result.add(new ResolvedQuad(
-                        quads.get(index), frontFaceOnly[index]));
+                CapturedSectionGeometry.Quad quad = quads.get(index);
+                SurfaceDefinition.MaterialBinding primary =
+                        SurfaceDefinition.MaterialBinding.of(quad);
+                int peer = bilateralPeer[index];
+                SurfaceDefinition definition = peer < 0
+                        ? SurfaceDefinition.single(primary)
+                        : SurfaceDefinition.bilateral(
+                                primary,
+                                bindingInPrimaryOrder(
+                                        quads.get(peer), bilateralOffset[index]));
+                result.add(new ResolvedQuad(quad, definition));
             }
         }
         return List.copyOf(result);
@@ -176,6 +189,22 @@ final class TwoSidedQuadReducer {
         return offset - vertex & 3;
     }
 
+    private static SurfaceDefinition.MaterialBinding bindingInPrimaryOrder(
+            CapturedSectionGeometry.Quad peer,
+            int reverseOffset) {
+        int index0 = reverseIndex(reverseOffset, 0);
+        int index1 = reverseIndex(reverseOffset, 1);
+        int index2 = reverseIndex(reverseOffset, 2);
+        int index3 = reverseIndex(reverseOffset, 3);
+        return new SurfaceDefinition.MaterialBinding(
+                peer.surface(),
+                new SurfaceDefinition.UvMapping(
+                        peer.u(index0), peer.v(index0),
+                        peer.u(index1), peer.v(index1),
+                        peer.u(index2), peer.v(index2),
+                        peer.u(index3), peer.v(index3)));
+    }
+
     private static boolean opposedNormals(
             CapturedSectionGeometry.Quad first,
             CapturedSectionGeometry.Quad second) {
@@ -209,7 +238,8 @@ final class TwoSidedQuadReducer {
                 && first.rasterOverlay() == second.rasterOverlay()
                 && first.lightEmission() == second.lightEmission()
                 && first.sprite().equals(second.sprite())
-                && Objects.equals(first.fluid(), second.fluid());
+                && Objects.equals(first.fluid(), second.fluid())
+                && Objects.equals(first.block(), second.block());
     }
 
     private static boolean sameDirectionalSemantics(
@@ -226,7 +256,8 @@ final class TwoSidedQuadReducer {
                 && first.lightEmission() == 0
                 && second.lightEmission() == 0
                 && first.fluid() == null
-                && second.fluid() == null;
+                && second.fluid() == null
+                && Objects.equals(first.block(), second.block());
     }
 
     private static boolean sameUvCorners(
@@ -266,10 +297,13 @@ final class TwoSidedQuadReducer {
     }
 
     record ResolvedQuad(
-            CapturedSectionGeometry.Quad quad, boolean frontFaceOnly) {
+            CapturedSectionGeometry.Quad quad,
+            SurfaceDefinition definition) {
         ResolvedQuad {
             Objects.requireNonNull(quad, "quad");
+            Objects.requireNonNull(definition, "definition");
         }
+
     }
 
     private record Position(int x, int y, int z) implements Comparable<Position> {

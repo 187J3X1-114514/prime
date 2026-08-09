@@ -880,6 +880,7 @@ public final class TerrainScene implements AutoCloseable {
                 writer.writeInstanced(
                         compactionAddress(base, compactions),
                         base.primitives().deviceAddress(),
+                        cluster.surfaceRelationAddress(),
                         cluster.lightAddress(),
                         worldLightAddress,
                         worldLightForwardAddress,
@@ -914,6 +915,7 @@ public final class TerrainScene implements AutoCloseable {
                     writer.writeInstanced(
                             compactionAddress(voxel, compactions),
                             voxel.primitives().deviceAddress(),
+                            0L,
                             cluster.lightAddress(),
                             worldLightAddress,
                             worldLightForwardAddress,
@@ -1164,7 +1166,8 @@ public final class TerrainScene implements AutoCloseable {
                         false,
                         "Prime cluster " + upload.key() + " positions");
                 primitives = this.context.createBuffer(
-                        mesh.primitiveBytes(),
+                        Math.addExact(
+                                mesh.primitiveBytes(), mesh.surfaceRelationBytes()),
                         VK12.VK_BUFFER_USAGE_TRANSFER_DST_BIT
                                 | VK12.VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
                         false,
@@ -1231,6 +1234,9 @@ public final class TerrainScene implements AutoCloseable {
                     blas,
                     voxelBlases,
                     mesh.voxelInstances(),
+                    mesh.hasSurfaceRelations()
+                            ? primitives.deviceAddress() + mesh.primitiveBytes()
+                            : 0L,
                     lights,
                     motion,
                     lightSummary,
@@ -1372,6 +1378,14 @@ public final class TerrainScene implements AutoCloseable {
                 positionCursors[category] += (long) positionWords * Float.BYTES;
                 primitiveCursors[category] += (long) primitiveWords * Integer.BYTES;
             }
+        }
+        int[] relations = mesh.surfaceRelationRecords();
+        if (relations.length != 0) {
+            copyBuffer(
+                    commandBuffer,
+                    staging.write(relations, Integer.BYTES),
+                    primitives,
+                    mesh.primitiveBytes());
         }
     }
 

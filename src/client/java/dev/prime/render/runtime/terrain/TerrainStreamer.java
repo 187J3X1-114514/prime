@@ -554,7 +554,10 @@ public final class TerrainStreamer implements AutoCloseable {
                                         TerrainStreamer.this.sceneInterpreter.compileSection(
                                                 new VanillaSectionCompileInput(
                                                         snapshot,
-                                                        assetSnapshot),
+                                                        assetSnapshot,
+                                                        clusterX,
+                                                        clusterY,
+                                                        clusterZ),
                                                 spriteResolver);
                                 captured.add(
                                         snapshot.sectionX(),

@@ -155,6 +155,7 @@ public final class CpuClusterMesh {
             segments.add(new Segment(
                     mesh.positions(),
                     mesh.primitiveRecords(),
+                    mesh.surfaceRelationRecords(),
                     mesh.opaqueTriangleCount(),
                     mesh.cutoutTriangleCount(),
                     mesh.transmissiveTriangleCount(),
@@ -296,10 +297,66 @@ public final class CpuClusterMesh {
                 this.primitiveCount(), (long) CpuSectionMesh.PRIMITIVE_WORDS * Integer.BYTES);
     }
 
+    public boolean hasSurfaceRelations() {
+        for (Segment segment : this.segments) {
+            if (segment.surfaceRelationRecords().length != 0) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    public long surfaceRelationBytes() {
+        long words = 0L;
+        for (Segment segment : this.segments) {
+            words = Math.addExact(words, segment.surfaceRelationRecords().length);
+        }
+        return Math.multiplyExact(words, Integer.BYTES);
+    }
+
+    /** Global primitive-order relation table used by the single cluster BLAS section record. */
+    public int[] surfaceRelationRecords() {
+        ArrayList<int[]> opaque = new ArrayList<>();
+        ArrayList<int[]> cutout = new ArrayList<>();
+        ArrayList<int[]> transmissive = new ArrayList<>();
+        for (Segment segment : this.segments) {
+            int primitiveCount = segment.opaquePrimitiveCount()
+                    + segment.cutoutPrimitiveCount()
+                    + segment.transmissivePrimitiveCount();
+            SurfaceRelationTable.appendRange(
+                    opaque,
+                    segment.surfaceRelationRecords(),
+                    primitiveCount,
+                    0,
+                    segment.opaquePrimitiveCount());
+            SurfaceRelationTable.appendRange(
+                    cutout,
+                    segment.surfaceRelationRecords(),
+                    primitiveCount,
+                    segment.opaquePrimitiveCount(),
+                    segment.cutoutPrimitiveCount());
+            SurfaceRelationTable.appendRange(
+                    transmissive,
+                    segment.surfaceRelationRecords(),
+                    primitiveCount,
+                    segment.opaquePrimitiveCount() + segment.cutoutPrimitiveCount(),
+                    segment.transmissivePrimitiveCount());
+        }
+        ArrayList<int[]> records = new ArrayList<>(
+                opaque.size() + cutout.size() + transmissive.size());
+        records.addAll(opaque);
+        records.addAll(cutout);
+        records.addAll(transmissive);
+        return SurfaceRelationTable.encode(records);
+    }
+
     public long byteSize() {
         long result = Math.addExact(
                 Math.addExact(this.positionBytes(), this.primitiveBytes()),
-                Math.addExact(this.opacityMicromap.byteSize(), this.lights.byteSize()));
+                Math.addExact(
+                        this.surfaceRelationBytes(),
+                        Math.addExact(
+                                this.opacityMicromap.byteSize(), this.lights.byteSize())));
         for (CpuVoxelMesh voxelMesh : this.voxelMeshes) {
             result = Math.addExact(result, voxelMesh.byteSize());
         }
@@ -318,6 +375,7 @@ public final class CpuClusterMesh {
     public record Segment(
             float[] positions,
             int[] primitiveRecords,
+            int[] surfaceRelationRecords,
             int opaqueTriangleCount,
             int cutoutTriangleCount,
             int transmissiveTriangleCount,
@@ -328,6 +386,8 @@ public final class CpuClusterMesh {
             positions = Objects.requireNonNull(positions, "positions");
             primitiveRecords = Objects.requireNonNull(
                     primitiveRecords, "primitiveRecords");
+            surfaceRelationRecords = Objects.requireNonNull(
+                    surfaceRelationRecords, "surfaceRelationRecords");
             int triangles = Math.addExact(
                     Math.addExact(opaqueTriangleCount, cutoutTriangleCount),
                     transmissiveTriangleCount);
@@ -350,6 +410,40 @@ public final class CpuClusterMesh {
                                     CpuSectionMesh.PRIMITIVE_WORDS)) {
                 throw new IllegalArgumentException("Invalid cluster mesh segment");
             }
+            SurfaceRelationTable.validate(
+                    surfaceRelationRecords,
+                    Math.addExact(
+                            Math.addExact(
+                                    CpuSectionMesh.primitiveCount(
+                                            opaqueTriangleCount,
+                                            opaqueMacroTriangleCount),
+                                    CpuSectionMesh.primitiveCount(
+                                            cutoutTriangleCount,
+                                            cutoutMacroTriangleCount)),
+                            CpuSectionMesh.primitiveCount(
+                                    transmissiveTriangleCount,
+                                    transmissiveMacroTriangleCount)));
+        }
+
+        public Segment(
+                float[] positions,
+                int[] primitiveRecords,
+                int opaqueTriangleCount,
+                int cutoutTriangleCount,
+                int transmissiveTriangleCount,
+                int opaqueMacroTriangleCount,
+                int cutoutMacroTriangleCount,
+                int transmissiveMacroTriangleCount) {
+            this(
+                    positions,
+                    primitiveRecords,
+                    new int[0],
+                    opaqueTriangleCount,
+                    cutoutTriangleCount,
+                    transmissiveTriangleCount,
+                    opaqueMacroTriangleCount,
+                    cutoutMacroTriangleCount,
+                    transmissiveMacroTriangleCount);
         }
 
         public Segment(
@@ -361,6 +455,7 @@ public final class CpuClusterMesh {
             this(
                     positions,
                     primitiveRecords,
+                    new int[0],
                     opaqueTriangleCount,
                     cutoutTriangleCount,
                     transmissiveTriangleCount,
@@ -379,6 +474,12 @@ public final class CpuClusterMesh {
         @Override
         public int[] primitiveRecords() {
             return this.primitiveRecords;
+        }
+
+        /** Borrowed read-only backing storage; empty means every primitive is SINGLE. */
+        @Override
+        public int[] surfaceRelationRecords() {
+            return this.surfaceRelationRecords;
         }
 
         public int triangleCount() {

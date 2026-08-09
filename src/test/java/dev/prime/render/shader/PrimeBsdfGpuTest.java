@@ -71,7 +71,7 @@ final class PrimeBsdfGpuTest {
     @Test
     void publicPrimeAdaptersCanonicalizeRejectionsAndKeepAcceptedPayloadsFinite()
             throws IOException {
-        ByteBuffer input = createCases();
+        ByteBuffer input = createCases(0, KIND_COUNT);
         Path shader = Path.of(
                 System.getProperty("prime.test.shaderDirectory"),
                 "prime_bsdf_properties.comp.spv");
@@ -85,11 +85,45 @@ final class PrimeBsdfGpuTest {
                 SEED);
     }
 
-    private static ByteBuffer createCases() {
-        ByteBuffer input = ShaderTestBuffer.inputs(CASE_COUNT, INPUT_WORDS);
+    @Test
+    void bilateralMediumBoundariesReplaceOnlyTheCurrentMedium() throws IOException {
+        ByteBuffer input = createCases(KIND_COUNT, 1);
+        Path shader = Path.of(
+                System.getProperty("prime.test.shaderDirectory"),
+                "prime_bsdf_properties.comp.spv");
+        ShaderPropertyBatch.assertProperties(
+                runner,
+                shader,
+                input,
+                CASES_PER_KIND,
+                INPUT_WORDS,
+                WITNESS_WORDS,
+                SEED);
+    }
+
+    @Test
+    void matchedSolidMediaUseStraightThroughAirGapAndSwapOnlyTheCurrentMedium()
+            throws IOException {
+        ByteBuffer input = createCases(KIND_COUNT + 1, 1);
+        Path shader = Path.of(
+                System.getProperty("prime.test.shaderDirectory"),
+                "prime_bsdf_properties.comp.spv");
+        ShaderPropertyBatch.assertProperties(
+                runner,
+                shader,
+                input,
+                CASES_PER_KIND,
+                INPUT_WORDS,
+                WITNESS_WORDS,
+                SEED);
+    }
+
+    private static ByteBuffer createCases(int firstKind, int kindCount) {
+        int caseCount = Math.multiplyExact(CASES_PER_KIND, kindCount);
+        ByteBuffer input = ShaderTestBuffer.inputs(caseCount, INPUT_WORDS);
         SplittableRandom random = new SplittableRandom(SEED);
         int caseIndex = 0;
-        for (int kind = 0; kind < KIND_COUNT; kind++) {
+        for (int kind = firstKind; kind < firstKind + kindCount; kind++) {
             for (int localCase = 0; localCase < CASES_PER_KIND; localCase++) {
                 int flags = flags(kind, localCase);
                 int normalX = localCase & 0xff;
@@ -163,7 +197,7 @@ final class PrimeBsdfGpuTest {
                 caseIndex++;
             }
         }
-        assertEquals(CASE_COUNT, caseIndex, "Prime BSDF property case count");
+        assertEquals(caseCount, caseIndex, "Prime BSDF property case count");
         return input;
     }
 
@@ -172,15 +206,19 @@ final class PrimeBsdfGpuTest {
         if ((localCase & 1) != 0) flags |= PrimitivePacking.FLAG_LABPBR_NORMAL;
         if ((localCase & 2) != 0) flags |= PrimitivePacking.FLAG_LABPBR_SPECULAR;
         if ((localCase & 4) != 0) flags |= PrimitivePacking.FLAG_TANGENT_NEGATIVE;
-        if (kind == 1 || kind == 3 || kind == 4) {
+        if (kind == 1 || kind == 3 || kind == 4 || kind == 5 || kind == 6) {
             flags |= PrimitivePacking.FLAG_TRANSMISSIVE;
-            if ((localCase & 8) != 0) flags |= PrimitivePacking.FLAG_WATER;
-            if ((localCase & 16) != 0) {
+            if (kind != 6 && (localCase & 8) != 0) {
+                flags |= PrimitivePacking.FLAG_WATER;
+            }
+            if (kind != 6 && (localCase & 16) != 0) {
                 flags |= PrimitivePacking.FLAG_THIN_WALLED;
                 flags &= ~PrimitivePacking.FLAG_WATER;
             }
             if ((flags & PrimitivePacking.FLAG_WATER) == 0) {
-                if ((localCase & 32) != 0) flags |= FLAG_ROUGH_GLASS;
+                if (kind != 6 && (localCase & 32) != 0) {
+                    flags |= FLAG_ROUGH_GLASS;
+                }
                 if ((localCase & 64) != 0) flags |= FLAG_COLORLESS_GLASS;
             }
         } else if (kind == 2) {

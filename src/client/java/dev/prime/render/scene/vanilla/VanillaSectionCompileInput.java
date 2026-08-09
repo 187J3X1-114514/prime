@@ -1,5 +1,6 @@
 package dev.prime.render.scene.vanilla;
 
+import dev.prime.render.terrain.SectionCluster;
 import java.util.Objects;
 
 /**
@@ -11,9 +12,23 @@ import java.util.Objects;
  */
 public record VanillaSectionCompileInput(
         VanillaSectionSnapshot section,
-        VanillaAssetSnapshot assets) {
+        VanillaAssetSnapshot assets,
+        int clusterX,
+        int clusterY,
+        int clusterZ) {
     public VanillaSectionCompileInput {
         Objects.requireNonNull(section, "section");
         Objects.requireNonNull(assets, "assets");
+    }
+
+    public VanillaSectionCompileInput(
+            VanillaSectionSnapshot section,
+            VanillaAssetSnapshot assets) {
+        this(
+                section,
+                assets,
+                SectionCluster.origin(section.sectionX()),
+                SectionCluster.origin(section.sectionY()),
+                SectionCluster.origin(section.sectionZ()));
     }
 }

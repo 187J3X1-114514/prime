@@ -46,12 +46,28 @@ final class MaterialSettingsTest {
     }
 
     @Test
+    void airGapIsOnByDefaultAndOwnsMaterialRevision() {
+        PrimeSettings defaults = PrimeSettings.defaults();
+        assertTrue(MaterialSettings.DEFAULT_AIR_GAP);
+        assertTrue(defaults.material().airGap());
+
+        PrimeSettings directBoundary = defaults.withAirGap(false);
+        assertFalse(directBoundary.material().airGap());
+        assertEquals(
+                defaults.materialRevision() + 1L,
+                directBoundary.materialRevision());
+        assertEquals(directBoundary, directBoundary.withAirGap(false));
+        assertFalse(directBoundary.withSunQuarterSteps(1).material().airGap());
+    }
+
+    @Test
     void snapshotDerivesLinearRoughnessFromItsCanonicalSteps() {
         MaterialSettings.Snapshot snapshot =
                 new MaterialSettings.Snapshot(37, true, 2L);
 
         assertEquals(0.37F, snapshot.linearRoughness());
         assertTrue(snapshot.seamlessGlass());
+        assertTrue(snapshot.airGap());
         assertThrows(
                 IllegalArgumentException.class,
                 () -> new MaterialSettings.Snapshot(101, 0L));

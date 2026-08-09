@@ -58,6 +58,8 @@ struct SurfaceInteraction {
     uint shadingNormal;
     uint labPbrNormal;
     uint labPbrSpecular;
+    vec3 adjacentBaseColor;
+    uint adjacentSpecularControl;
 };
 
 vec3 primeSurfaceOutwardShadingNormal(SurfaceInteraction surface) {
@@ -78,6 +80,8 @@ const uint PRIME_ADAPTER_TRANSMISSION = 1u;
 const uint PRIME_ADAPTER_FOLIAGE = 2u;
 const uint PRIME_ADAPTER_PRIMARY_SPLIT = 3u;
 const uint PRIME_ADAPTER_COMPLETE_TRANSMISSION = 4u;
+const uint PRIME_ADAPTER_MEDIUM_BOUNDARY = 5u;
+const uint PRIME_ADAPTER_AIR_GAP = 6u;
 
 struct PrimeAdapterResult {
     uint mask;
@@ -865,6 +869,138 @@ void primeAdapterProperties(
                 probeDirection,
                 rayT,
                 stack);
+    } else if (kind == PRIME_ADAPTER_MEDIUM_BOUNDARY) {
+        uint adjacentSpecularControl = PRIME_ADJACENT_MEDIUM_VALID
+                | ((materialFlags & PRIME_MATERIAL_FLAG_WATER) != 0u
+                        ? PRIME_ADJACENT_MEDIUM_COLORLESS
+                        : PRIME_ADJACENT_MEDIUM_WATER)
+                | (packedSpecular & 0x00ffffffu);
+        vec3 adjacentBaseColor = vec3(0.2, 0.5, 0.8);
+        PrimeRcVolume adjacent = primeAdjacentMediumVolume(
+                adjacentBaseColor, adjacentSpecularControl);
+        PrimeRcState state = primeMinecraftBoundaryTransmissionState(
+                baseColor,
+                opacity,
+                outwardNormal,
+                materialFlags,
+                packedNormal,
+                packedSpecular,
+                viewDirection,
+                rayT,
+                stack,
+                adjacentBaseColor,
+                adjacentSpecularControl);
+        PrimeTransmissiveBsdfSample sampled =
+                primeSampleMinecraftTransparentContinuation(
+                        baseColor,
+                        opacity,
+                        outwardNormal,
+                        materialFlags,
+                        packedNormal,
+                        packedSpecular,
+                        viewDirection,
+                        rayT,
+                        stack,
+                        adjacentBaseColor,
+                        adjacentSpecularControl);
+        result.first = sampled.bsdfSample;
+        result.stackCounts.x = sampled.volumeStack.count;
+        float expectedInterfaceIor = state.originalIor / adjacent.ior;
+        if (state.specularFresnel.ior != expectedInterfaceIor) {
+            result.mask |= PRIME_TEST_FAILURE_STATE;
+        }
+        if ((result.first.eventFlags & PRIME_BSDF_EVENT_TRANSMISSION) != 0u) {
+            PrimeRcVolume target;
+            if (state.entering != 0u) {
+                target = state.transmissionVolume;
+                target.ior = state.originalIor;
+            } else {
+                target = adjacent;
+            }
+            PrimeRcVolumeStack expectedStack = stack;
+            if (expectedStack.count == 0u) {
+                primeRcStackPush(expectedStack, target);
+            } else {
+                expectedStack.values[expectedStack.count - 1u] = target;
+            }
+            if (!primeAdapterSameStack(sampled.volumeStack, expectedStack)) {
+                result.mask |= PRIME_TEST_FAILURE_STATE;
+            }
+        } else if (!primeAdapterSameStack(sampled.volumeStack, stack)) {
+            result.mask |= PRIME_TEST_FAILURE_STATE;
+        }
+        if ((result.first.eventFlags & PRIME_BSDF_EVENT_TRANSMISSION) != 0u
+                && !primeAdapterSnellConsistent(
+                        result.first, outwardNormal, viewDirection)) {
+            result.mask |= PRIME_TEST_FAILURE_IDENTITY;
+        }
+    } else if (kind == PRIME_ADAPTER_AIR_GAP) {
+        uint adjacentSpecularControl = PRIME_ADJACENT_MEDIUM_VALID
+                | PRIME_ADJACENT_MEDIUM_AIR_GAP
+                | ((materialFlags & PRIME_MATERIAL_FLAG_LABPBR_SPECULAR) != 0u
+                        ? PRIME_ADJACENT_MEDIUM_LABPBR_SPECULAR
+                        : 0u)
+                | (packedSpecular & 0x00ffffffu);
+        vec3 adjacentBaseColor = vec3(0.2, 0.5, 0.8);
+        PrimeRcVolume surfaceMedium = primeBoundarySurfaceVolume(
+                baseColor, opacity, materialFlags, packedSpecular);
+        PrimeRcVolume adjacent = primeAdjacentMediumVolume(
+                adjacentBaseColor, adjacentSpecularControl);
+        PrimeRcState state = primeMinecraftBoundaryTransmissionState(
+                baseColor,
+                opacity,
+                outwardNormal,
+                materialFlags,
+                packedNormal,
+                packedSpecular,
+                viewDirection,
+                rayT,
+                stack,
+                adjacentBaseColor,
+                adjacentSpecularControl);
+        PrimeTransmissiveBsdfSample sampled =
+                primeSampleMinecraftTransparentContinuation(
+                        baseColor,
+                        opacity,
+                        outwardNormal,
+                        materialFlags,
+                        packedNormal,
+                        packedSpecular,
+                        viewDirection,
+                        rayT,
+                        stack,
+                        adjacentBaseColor,
+                        adjacentSpecularControl);
+        result.first = sampled.bsdfSample;
+        result.stackCounts.x = sampled.volumeStack.count;
+        bool expectedEntering = dot(outwardNormal, viewDirection) >= 0.0;
+        if (surfaceMedium.ior != adjacent.ior
+                || state.geometryThinWalled == 0u
+                || state.originalIor != 1.0
+                || state.specularFresnel.ior != 1.0 / surfaceMedium.ior
+                || (state.entering != 0u) != expectedEntering) {
+            result.mask |= PRIME_TEST_FAILURE_STATE;
+        }
+        if ((result.first.eventFlags & PRIME_BSDF_EVENT_TRANSMISSION) != 0u) {
+            PrimeRcVolume target = expectedEntering ? surfaceMedium : adjacent;
+            PrimeRcVolumeStack expectedStack = stack;
+            if (expectedStack.count == 0u) {
+                primeRcStackPush(expectedStack, target);
+            } else {
+                expectedStack.values[expectedStack.count - 1u] = target;
+            }
+            if (!primeAdapterSameStack(sampled.volumeStack, expectedStack)
+                    || !primeTestClose(
+                            result.first.direction,
+                            -viewDirection,
+                            3.0e-6,
+                            3.0e-6)
+                    || result.first.relativeEta != 1.0) {
+                result.mask |= PRIME_TEST_FAILURE_IDENTITY;
+            }
+        } else if (!primeAdapterSameStack(sampled.volumeStack, stack)) {
+            result.mask |= PRIME_TEST_FAILURE_STATE;
+        }
     } else {
         PrimeRcState state = primeMinecraftTransmissionState(
                 baseColor,

@@ -28,7 +28,7 @@ BsdfEvaluation primeEvaluateOfflineMinecraftTransmission(
         vec3 scatterDirection,
         PrimeRcVolumeStack volumeStack) {
     vec3 outwardNormal = primeSurfaceOutwardShadingNormal(surface);
-    PrimeRcState state = primeMinecraftTransmissionState(
+    PrimeRcState state = primeMinecraftBoundaryTransmissionState(
             surface.baseColor,
             primeSurfaceOpacity(surface),
             outwardNormal,
@@ -37,7 +37,9 @@ BsdfEvaluation primeEvaluateOfflineMinecraftTransmission(
             surface.labPbrSpecular,
             viewDirection,
             surface.t,
-            volumeStack);
+            volumeStack,
+            surface.adjacentBaseColor,
+            surface.adjacentSpecularControl);
     return primeEvaluateMinecraftTransmissionCompleteFromState(
             state,
             surface.baseColor,

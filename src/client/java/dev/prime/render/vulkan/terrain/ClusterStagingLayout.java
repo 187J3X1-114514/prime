@@ -22,6 +22,10 @@ public final class ClusterStagingLayout {
             result = segmentEndOffset(result, segment.cutoutTriangleCount(), segment.cutoutPrimitiveCount());
             result = segmentEndOffset(result, segment.transmissiveTriangleCount(), segment.transmissivePrimitiveCount());
         }
+        if (mesh.surfaceRelationBytes() != 0L) {
+            result = StagingArena.requiredEndOffset(
+                    result, mesh.surfaceRelationBytes(), Integer.BYTES);
+        }
         result = opacityEndOffset(result, mesh.opacityMicromap(), includeOpacityMicromap);
         if (!mesh.lights().isEmpty()) {
             result = StagingArena.requiredEndOffset(result, mesh.lights().byteSize(), 16L);

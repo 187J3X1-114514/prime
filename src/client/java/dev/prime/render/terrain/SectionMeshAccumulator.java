@@ -1,6 +1,7 @@
 package dev.prime.render.terrain;
 
 import dev.prime.render.scene.CapturedSprite;
+import dev.prime.render.scene.CapturedSectionGeometry;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Objects;
@@ -102,9 +103,9 @@ public final class SectionMeshAccumulator {
         if (this.triangleCount >= this.segmentTriangleTarget) {
             this.finishSegment();
         }
-        MeshBuilder destination = surface.transmissive()
+        MeshBuilder destination = surface.geometryTransmissive()
                 ? this.transmissive
-                : (surface.cutout() ? this.cutout : this.opaque);
+                : (surface.geometryCutout() ? this.cutout : this.opaque);
         this.emitTriangle(destination, quad, FIRST_TRIANGLE, surface);
         this.emitTriangle(destination, quad, SECOND_TRIANGLE, surface);
         this.triangleCount += 2;
@@ -166,9 +167,17 @@ public final class SectionMeshAccumulator {
                 this.opaque.positions, this.cutout.positions, this.transmissive.positions);
         int[] primitives = concatenate(
                 this.opaque.primitives, this.cutout.primitives, this.transmissive.primitives);
+        ArrayList<int[]> relations = new ArrayList<>(
+                this.opaque.relations.size()
+                        + this.cutout.relations.size()
+                        + this.transmissive.relations.size());
+        relations.addAll(this.opaque.relations);
+        relations.addAll(this.cutout.relations);
+        relations.addAll(this.transmissive.relations);
         this.segments.add(new CpuSectionMesh(
                 positions,
                 primitives,
+                SurfaceRelationTable.encode(relations),
                 this.opaque.triangleCount,
                 this.cutout.triangleCount,
                 this.transmissive.triangleCount,
@@ -214,10 +223,9 @@ public final class SectionMeshAccumulator {
         int packedUv1 = PrimitivePacking.packUv(uv1U, uv1V);
         int packedUv2 = PrimitivePacking.packUv(uv2U, uv2V);
         if (destination == this.cutout && this.opacityMicromap != null) {
-            if (surface.frontFaceOnly()) {
+            if (surface.hasSurfaceRelation()) {
                 // Opaque/transparent OMM states may skip any-hit. Directional material sheets
-                // require any-hit to reject the authored back side, so every microtriangle must
-                // remain unknown.
+                // and layered surfaces require any-hit to resolve the selected side/material.
                 this.opacityMicromap.addFullyUnknownTriangle();
             } else {
                 this.opacityMicromap.addTriangle(
@@ -269,15 +277,12 @@ public final class SectionMeshAccumulator {
                 uv2V - uv0V,
                 packedNormal);
         int flags = PrimitivePacking.packFlags(
-                surface.cutout(),
+                surface.geometryCutout(),
                 surface.animated(),
-                surface.transmissive(),
+                surface.geometryTransmissive(),
                 surface.thinWalled(),
                 surface.water(),
                 surface.foliage());
-        if (surface.frontFaceOnly()) {
-            flags |= PrimitivePacking.FLAG_FRONT_FACE_ONLY;
-        }
         flags = PrimitivePacking.withLabPbr(
                 flags,
                 this.labPbrMaterials.hasNormal(surface.sprite().id()),
@@ -303,6 +308,7 @@ public final class SectionMeshAccumulator {
                 surface.tint(),
                 packedTint,
                 surface.cutout(),
+                surface.emitterTwoSided(),
                 surface.lightEmission(),
                 surface.sprite(),
                 this.labPbrMaterials.emissionMap(surface.sprite().id()));
@@ -315,7 +321,145 @@ public final class SectionMeshAccumulator {
                         : encodedEmitterIndex - 1));
         destination.primitives.add(packedUvDensity);
         destination.primitives.add((int) packedTangent);
+        destination.relations.add(this.surfaceRelationRecord(
+                surface,
+                quad,
+                indices,
+                surface.definition != null
+                                && surface.definition.interfaceMode()
+                                        == SurfaceDefinition.InterfaceMode.OVERLAY
+                        ? flags | PrimitivePacking.FLAG_CUTOUT
+                        : flags));
         destination.triangleCount++;
+    }
+
+    private int[] surfaceRelationRecord(
+            Surface surface,
+            Quad quad,
+            int[] indices,
+            int primaryMaterialFlags) {
+        SurfaceDefinition definition = surface.definition;
+        if (definition == null
+                || definition.interfaceMode()
+                        == SurfaceDefinition.InterfaceMode.SINGLE) {
+            return null;
+        }
+        if (definition.interfaceMode()
+                        == SurfaceDefinition.InterfaceMode.BOUNDARY
+                || definition.interfaceMode()
+                        == SurfaceDefinition.InterfaceMode.THIN_AIR_FILM) {
+            SurfaceDefinition.MediumEndpoint endpoint = definition.positiveMedium();
+            if (endpoint == null) {
+                return null;
+            }
+            CapturedSectionGeometry.Surface adjacent = endpoint.surface();
+            int control = CpuSectionMesh.SURFACE_RELATION_BOUNDARY
+                    | (adjacent.water()
+                            ? CpuSectionMesh.SURFACE_RELATION_WATER
+                            : 0)
+                    | (this.labPbrMaterials.hasSpecular(adjacent.sprite().id())
+                            ? CpuSectionMesh.SURFACE_RELATION_LABPBR_SPECULAR
+                            : 0);
+            return new int[] {
+                control,
+                PrimitivePacking.packUv(endpoint.referenceU(), endpoint.referenceV()),
+                PrimitivePacking.packTint(
+                        ClusterSceneTranslator.averageColor(adjacent))
+            };
+        }
+        SurfaceDefinition.MaterialBinding secondary = definition.secondary();
+        if (secondary == null) {
+            return null;
+        }
+        int control = definition.interfaceMode()
+                        == SurfaceDefinition.InterfaceMode.OVERLAY
+                ? CpuSectionMesh.SURFACE_RELATION_OVERLAY
+                : CpuSectionMesh.SURFACE_RELATION_BILATERAL;
+        if (definition.overlayPositiveOnly()) {
+            control |= CpuSectionMesh.SURFACE_RELATION_POSITIVE_ONLY;
+        }
+        if (definition.interfaceMode()
+                == SurfaceDefinition.InterfaceMode.OVERLAY) {
+            control |= primaryMaterialFlags << 8;
+        }
+        int[] primitive = this.packMaterialPrimitive(
+                secondary, quad, indices);
+        int[] relation = new int[1 + CpuSectionMesh.PRIMITIVE_WORDS];
+        relation[0] = control;
+        System.arraycopy(primitive, 0, relation, 1, primitive.length);
+        return relation;
+    }
+
+    private int[] packMaterialPrimitive(
+            SurfaceDefinition.MaterialBinding binding,
+            Quad quad,
+            int[] indices) {
+        SurfaceDefinition.UvMapping uv = binding.uv();
+        int firstIndex = indices[0];
+        int secondIndex = indices[1];
+        int thirdIndex = indices[2];
+        float firstX = quad.x[firstIndex];
+        float firstY = quad.y[firstIndex];
+        float firstZ = quad.z[firstIndex];
+        float edge1X = quad.x[secondIndex] - firstX;
+        float edge1Y = quad.y[secondIndex] - firstY;
+        float edge1Z = quad.z[secondIndex] - firstZ;
+        float edge2X = quad.x[thirdIndex] - firstX;
+        float edge2Y = quad.y[thirdIndex] - firstY;
+        float edge2Z = quad.z[thirdIndex] - firstZ;
+        float uv0U = uv.u(firstIndex);
+        float uv0V = uv.v(firstIndex);
+        float uv1U = uv.u(secondIndex);
+        float uv1V = uv.v(secondIndex);
+        float uv2U = uv.u(thirdIndex);
+        float uv2V = uv.v(thirdIndex);
+        int packedNormal = PrimitivePacking.packTriangleNormal(
+                edge1X, edge1Y, edge1Z,
+                edge2X, edge2Y, edge2Z,
+                quad.normalX, quad.normalY, quad.normalZ);
+        long packedTangent = PrimitivePacking.packTriangleTangent(
+                edge1X, edge1Y, edge1Z,
+                edge2X, edge2Y, edge2Z,
+                uv1U - uv0U, uv1V - uv0V,
+                uv2U - uv0U, uv2V - uv0V,
+                packedNormal);
+        int flags = this.materialFlags(binding.surface());
+        flags = PrimitivePacking.withLabPbr(
+                flags,
+                this.labPbrMaterials.hasNormal(binding.surface().sprite().id()),
+                this.labPbrMaterials.hasSpecular(binding.surface().sprite().id()),
+                (packedTangent & 0x1_0000_0000L) != 0L);
+        int packedTint = PrimitivePacking.packTintFlags(
+                PrimitivePacking.packTint(
+                        ClusterSceneTranslator.averageColor(binding.surface())),
+                flags);
+        return new int[] {
+            PrimitivePacking.packUv(uv0U, uv0V),
+            PrimitivePacking.packUv(uv1U, uv1V),
+            PrimitivePacking.packUv(uv2U, uv2V),
+            packedTint,
+            packedNormal,
+            PrimitivePacking.packFlagsEmitter(
+                    flags, PrimitivePacking.NO_EMITTER_INDEX),
+            PrimitivePacking.packUvDensity(
+                    edge1X, edge1Y, edge1Z,
+                    edge2X, edge2Y, edge2Z,
+                    uv1U - uv0U, uv1V - uv0V,
+                    uv2U - uv0U, uv2V - uv0V),
+            (int) packedTangent
+        };
+    }
+
+    private int materialFlags(CapturedSectionGeometry.Surface captured) {
+        return PrimitivePacking.packFlags(
+                ClusterSceneTranslator.isCutout(captured),
+                captured.animated(),
+                ClusterSceneTranslator.isTransmissive(captured),
+                captured.foliage()
+                        || ClusterSceneTranslator.isTransmissive(captured)
+                                && captured.collisionEmpty(),
+                captured.water(),
+                captured.foliage());
     }
 
     private static float[] concatenate(
@@ -363,9 +507,9 @@ public final class SectionMeshAccumulator {
         private boolean foliage;
         private boolean mergeable;
         private boolean rasterOverlay;
-        private boolean frontFaceOnly;
         private int lightEmission;
         private CapturedSprite sprite;
+        private SurfaceDefinition definition;
 
         public Surface set(
                 int tint,
@@ -388,7 +532,6 @@ public final class SectionMeshAccumulator {
                     foliage,
                     mergeable,
                     false,
-                    false,
                     lightEmission,
                     sprite);
         }
@@ -403,34 +546,6 @@ public final class SectionMeshAccumulator {
                 boolean foliage,
                 boolean mergeable,
                 boolean rasterOverlay,
-                int lightEmission,
-                CapturedSprite sprite) {
-            return this.set(
-                    tint,
-                    cutout,
-                    animated,
-                    transmissive,
-                    thinWalled,
-                    water,
-                    foliage,
-                    mergeable,
-                    rasterOverlay,
-                    false,
-                    lightEmission,
-                    sprite);
-        }
-
-        public Surface set(
-                int tint,
-                boolean cutout,
-                boolean animated,
-                boolean transmissive,
-                boolean thinWalled,
-                boolean water,
-                boolean foliage,
-                boolean mergeable,
-                boolean rasterOverlay,
-                boolean frontFaceOnly,
                 int lightEmission,
                 CapturedSprite sprite) {
             this.tint = tint;
@@ -442,9 +557,14 @@ public final class SectionMeshAccumulator {
             this.foliage = foliage;
             this.mergeable = mergeable;
             this.rasterOverlay = rasterOverlay;
-            this.frontFaceOnly = frontFaceOnly;
             this.lightEmission = lightEmission;
             this.sprite = Objects.requireNonNull(sprite, "sprite");
+            this.definition = null;
+            return this;
+        }
+
+        public Surface setDefinition(SurfaceDefinition definition) {
+            this.definition = Objects.requireNonNull(definition, "definition");
             return this;
         }
 
@@ -488,10 +608,6 @@ public final class SectionMeshAccumulator {
             return this.rasterOverlay;
         }
 
-        boolean frontFaceOnly() {
-            return this.frontFaceOnly;
-        }
-
         int lightEmission() {
             return this.lightEmission;
         }
@@ -499,11 +615,36 @@ public final class SectionMeshAccumulator {
         CapturedSprite sprite() {
             return this.sprite;
         }
+
+        boolean geometryCutout() {
+            return this.definition != null
+                            && this.definition.interfaceMode()
+                                    == SurfaceDefinition.InterfaceMode.OVERLAY
+                    ? false
+                    : this.cutout;
+        }
+
+        boolean geometryTransmissive() {
+            return this.transmissive;
+        }
+
+        boolean hasSurfaceRelation() {
+            return this.definition != null
+                    && this.definition.interfaceMode()
+                            != SurfaceDefinition.InterfaceMode.SINGLE;
+        }
+
+        boolean emitterTwoSided() {
+            return this.cutout
+                    && (this.definition == null
+                            || !this.definition.overlayPositiveOnly());
+        }
     }
 
     private static final class MeshBuilder {
         private final FloatArrayBuilder positions = new FloatArrayBuilder();
         private final IntArrayBuilder primitives = new IntArrayBuilder();
+        private final ArrayList<int[]> relations = new ArrayList<>();
         private int triangleCount;
     }
 

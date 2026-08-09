@@ -258,6 +258,54 @@ public final class CpuSectionLights {
                 int lightEmission,
                 CapturedSprite sprite,
                 LabPbrEmissionMap labPbrEmission) {
+            return this.addTriangle(
+                    cornerX,
+                    cornerY,
+                    cornerZ,
+                    secondX,
+                    secondY,
+                    secondZ,
+                    thirdX,
+                    thirdY,
+                    thirdZ,
+                    outwardNormalX,
+                    outwardNormalY,
+                    outwardNormalZ,
+                    packedUv0,
+                    packedUv1,
+                    packedUv2,
+                    tintArgb,
+                    packedTint,
+                    cutout,
+                    cutout,
+                    lightEmission,
+                    sprite,
+                    labPbrEmission);
+        }
+
+        int addTriangle(
+                float cornerX,
+                float cornerY,
+                float cornerZ,
+                float secondX,
+                float secondY,
+                float secondZ,
+                float thirdX,
+                float thirdY,
+                float thirdZ,
+                float outwardNormalX,
+                float outwardNormalY,
+                float outwardNormalZ,
+                int packedUv0,
+                int packedUv1,
+                int packedUv2,
+                int tintArgb,
+                int packedTint,
+                boolean cutout,
+                boolean twoSided,
+                int lightEmission,
+                CapturedSprite sprite,
+                LabPbrEmissionMap labPbrEmission) {
             if (lightEmission <= 0 && labPbrEmission == null) {
                 return 0;
             }
@@ -313,9 +361,9 @@ public final class CpuSectionLights {
             if (!distribution.hasSourceSupport()) {
                 return 0;
             }
-            int flags = (cutout ? EMITTER_FLAG_TWO_SIDED : 0)
+            int flags = (twoSided ? EMITTER_FLAG_TWO_SIDED : 0)
                     | (labPbrEmission != null ? EMITTER_FLAG_LABPBR_EMISSION : 0);
-            float sidedness = cutout ? 2.0F : 1.0F;
+            float sidedness = twoSided ? 2.0F : 1.0F;
             // The distribution already contains either vanilla / level15 or the overriding
             // authored LabPBR alpha.
             // Restore the shared radiometric calibration exactly once when estimating tree power.

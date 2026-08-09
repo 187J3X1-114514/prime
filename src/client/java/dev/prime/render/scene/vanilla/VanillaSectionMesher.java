@@ -46,7 +46,13 @@ public final class VanillaSectionMesher {
                 input.assets().blockColors(),
                 input.assets().blockSpriteFinder(),
                 spriteResolver,
-                input.assets().cutoutLeaves())) {
+                input.assets().cutoutLeaves(),
+                input.section().sectionX(),
+                input.section().sectionY(),
+                input.section().sectionZ(),
+                input.clusterX(),
+                input.clusterY(),
+                input.clusterZ())) {
             SectionCompiler.Results results = compiler.compile(
                     section,
                     input.section().region(),

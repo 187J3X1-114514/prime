@@ -51,7 +51,7 @@ PrimeDenoiseAlbedos primeProbeSurfaceAlbedos(
                 state, viewDirection, PRIME_DENOISE_CLOSURE_FOLIAGE);
     }
     if (primeMaterialIsTransmissive(surface.materialFlags)) {
-        PrimeRcState state = primeMinecraftTransmissionState(
+        PrimeRcState state = primeMinecraftBoundaryTransmissionState(
                 surface.baseColor,
                 primeSurfaceOpacity(surface),
                 primeSurfaceOutwardShadingNormal(surface),
@@ -60,7 +60,9 @@ PrimeDenoiseAlbedos primeProbeSurfaceAlbedos(
                 surface.labPbrSpecular,
                 viewDirection,
                 surface.t,
-                volumeStack);
+                volumeStack,
+                surface.adjacentBaseColor,
+                surface.adjacentSpecularControl);
         return primeDenoiseAlbedosFromState(
                 state, viewDirection, PRIME_DENOISE_CLOSURE_TRANSMISSIVE);
     }
@@ -281,7 +283,9 @@ void primeTraceDeterministicTransmissionGuide(
                         surface.labPbrSpecular,
                         viewDirection,
                         surface.t,
-                        volumeStack);
+                        volumeStack,
+                        surface.adjacentBaseColor,
+                        surface.adjacentSpecularControl);
         BsdfSample bsdf = continuation.bsdfSample;
         if ((bsdf.eventFlags & PRIME_BSDF_EVENT_DELTA) == 0u
                 || !primeAdvanceProbeThroughput(throughput, bsdf)) {
@@ -418,7 +422,9 @@ PrimeTransparentGuideProbeResult primeTraceTransparentGuideProbes(
                             PRIME_SAMPLE_EFFECT_SCATTER_BSDF,
                             PRIME_SAMPLE_DIMENSION_PRIMARY),
                     primarySurface.t,
-                    volumeStack);
+                    volumeStack,
+                    primarySurface.adjacentBaseColor,
+                    primarySurface.adjacentSpecularControl);
     primeTraceDeterministicTransmissionGuide(
             primarySurface,
             primarySample.paths.transmission,

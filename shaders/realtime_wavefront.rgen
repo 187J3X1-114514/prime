@@ -159,7 +159,9 @@ void primeInitializeTransparentWavefront(
                     PRIME_SAMPLE_EFFECT_SCATTER_BSDF,
                     PRIME_SAMPLE_DIMENSION_PRIMARY),
             surface.t,
-            volumeStack);
+            volumeStack,
+            surface.adjacentBaseColor,
+            surface.adjacentSpecularControl);
     PrimeDenoiseAlbedos albedos = primarySample.albedos;
     vec3 shadingNormal = primeSurfaceShadingNormal(surface, viewDirection);
     initialResult.guides.primaryDistance =

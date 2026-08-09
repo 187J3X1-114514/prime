@@ -33,10 +33,16 @@ vec3 primeTriangleDebugColor(PrimitiveRecord primitive) {
 void main() {
     SectionRecord section = primeSection();
     PrimitiveRecord primitive = primePrimitive(section);
+    PrimeSurfaceRelation relation = primeSurfaceRelation(section);
     primePayload.hitKind = 1u;
     vec3 normal = primeUnpackOctahedralNormal(primitive.normal);
     bool bakedMaterial = primeUsesBakedMaterial(primitive);
     float textureLodValue =
+            bakedMaterial ? 0.0 : primeRayConeTextureLod(primitive, normal);
+    primitive = primeResolveSurfacePrimitive(
+            section, primitive, relation, textureLodValue);
+    bakedMaterial = primeUsesBakedMaterial(primitive);
+    textureLodValue =
             bakedMaterial ? 0.0 : primeRayConeTextureLod(primitive, normal);
     vec2 materialUv = bakedMaterial
             ? vec2(0.0)
@@ -73,4 +79,51 @@ void main() {
     primePayload.shadingNormal = primePackOctahedralNormal(material.shadingNormal);
     primePayload.labPbrNormal = material.labPbrNormal;
     primePayload.labPbrSpecular = material.labPbrSpecular;
+    primePayload.adjacentBaseColor = vec3(0.0);
+    primePayload.adjacentSpecularControl = 0u;
+    if ((relation.control & PRIME_SURFACE_RELATION_KIND_MASK)
+            == PRIME_SURFACE_RELATION_BOUNDARY) {
+        bool water = (relation.control & PRIME_SURFACE_RELATION_WATER) != 0u;
+        float referenceOpacity;
+        primePayload.adjacentBaseColor = primeAtlasBaseColor(
+                relation.tint,
+                primeUnpackUv(relation.referenceUv),
+                0.0,
+                referenceOpacity);
+        uint packedSpecular = (relation.control
+                & PRIME_SURFACE_RELATION_LABPBR_SPECULAR) != 0u
+                ? packUnorm4x8(textureLod(
+                        primeLabPbrSpecularAtlas,
+                        primeUnpackUv(relation.referenceUv),
+                        0.0))
+                : packUnorm4x8(vec4(0.0, 4.0 / 255.0, 0.0, 1.0));
+        bool adjacentHasSpecular = (relation.control
+                & PRIME_SURFACE_RELATION_LABPBR_SPECULAR) != 0u;
+        uint control = PRIME_ADJACENT_MEDIUM_VALID
+                | (water ? PRIME_ADJACENT_MEDIUM_WATER : 0u)
+                | (!water && !primeGlassReferenceIsStained(referenceOpacity)
+                        ? PRIME_ADJACENT_MEDIUM_COLORLESS
+                        : 0u)
+                | (adjacentHasSpecular
+                        ? PRIME_ADJACENT_MEDIUM_LABPBR_SPECULAR
+                        : 0u);
+        uint adjacentFlags = PRIME_MATERIAL_FLAG_TRANSMISSIVE
+                | (adjacentHasSpecular ? PRIME_MATERIAL_FLAG_LABPBR_SPECULAR : 0u);
+        PrimeTranslatedLabPbrMaterial currentMaterial = primeDecodeAndTranslateLabPbr(
+                material.labPbrNormal, material.labPbrSpecular, material.flags);
+        PrimeTranslatedLabPbrMaterial adjacentMaterial = primeDecodeAndTranslateLabPbr(
+                packUnorm4x8(vec4(0.5, 0.5, 1.0, 1.0)),
+                packedSpecular,
+                adjacentFlags);
+        bool airGap = primeAirGapCompatible(
+                primeUsesAirGap(),
+                primeUsesSeamlessGlass(),
+                material.flags,
+                currentMaterial.dielectricF0,
+                water,
+                adjacentMaterial.dielectricF0);
+        control |= airGap ? PRIME_ADJACENT_MEDIUM_AIR_GAP : 0u;
+        primePayload.adjacentSpecularControl =
+                (packedSpecular & 0x00ffffffu) | control;
+    }
 }

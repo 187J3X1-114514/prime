@@ -87,6 +87,7 @@ public final class MergeFace {
         LabPbrEmissionMap emission =
                 labPbrMaterials.emissionMap(surface.sprite().id());
         if (!surface.mergeable()
+                || surface.hasSurfaceRelation()
                 || surface.water()
                 || surface.lightEmission() != 0
                 || (emission != null && emission.hasPositiveEmission())) {
@@ -207,9 +208,6 @@ public final class MergeFace {
                 surface.thinWalled(),
                 false,
                 surface.foliage());
-        if (surface.frontFaceOnly()) {
-            flags |= PrimitivePacking.FLAG_FRONT_FACE_ONLY;
-        }
         flags = PrimitivePacking.withLabPbr(
                 flags,
                 labPbrMaterials.hasNormal(surface.sprite().id()),

@@ -5,18 +5,17 @@
 void main() {
     SectionRecord section = primeSection();
     PrimitiveRecord primitive = primePrimitive(section);
-    if (primePrimitiveIsFrontFaceOnly(primitive)
-            && gl_HitKindEXT == gl_HitKindBackFacingTriangleEXT) {
-        ignoreIntersectionEXT;
-        return;
-    }
+    PrimeSurfaceRelation relation = primeSurfaceRelation(section);
+    vec3 normal = primeUnpackOctahedralNormal(primitive.normal);
+    float textureLodValue = primeRayConeTextureLod(primitive, normal);
+    primitive = primeResolveSurfacePrimitive(
+            section, primitive, relation, textureLodValue);
     if (primeMaterialIsTransmissive(primePrimitiveFlags(primitive))) {
         // Radiance rays keep transparent geometry as explicit path vertices. Shadow rays use
         // shadow.rahit instead, where straight glass and water transmission are accumulated.
         return;
     }
-    vec3 normal = primeUnpackOctahedralNormal(primitive.normal);
-    float textureLodValue = primeRayConeTextureLod(primitive, normal);
+    textureLodValue = primeRayConeTextureLod(primitive, normal);
     float opacity = primeEvaluateOpacity(
             primitive, primeInterpolateUv(section, primitive), textureLodValue);
     if (opacity < PRIME_CUTOUT_ALPHA_THRESHOLD) {

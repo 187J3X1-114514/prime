@@ -210,7 +210,7 @@ PrimePathScatter primeSampleOfflinePathSurface(
         result.bsdf = primeSampleMinecraftFoliageFromState(
                 state, viewDirection, sampleValue, volumeStack);
     } else if (primeMaterialIsTransmissive(surface.materialFlags)) {
-        PrimeRcState state = primeMinecraftTransmissionState(
+        PrimeRcState state = primeMinecraftBoundaryTransmissionState(
                 surface.baseColor,
                 primeSurfaceOpacity(surface),
                 primeSurfaceOutwardShadingNormal(surface),
@@ -219,7 +219,9 @@ PrimePathScatter primeSampleOfflinePathSurface(
                 surface.labPbrSpecular,
                 viewDirection,
                 surface.t,
-                volumeStack);
+                volumeStack,
+                surface.adjacentBaseColor,
+                surface.adjacentSpecularControl);
         PrimeTransmissiveBsdfSample sampled =
                 primeSampleOfflineMinecraftTransmissionFromState(
                         state,
@@ -229,6 +231,16 @@ PrimePathScatter primeSampleOfflinePathSurface(
                         viewDirection,
                         sampleValue,
                         volumeStack);
+        sampled = primeApplyAdjacentMediumTransition(
+                sampled,
+                state,
+                volumeStack,
+                surface.baseColor,
+                primeSurfaceOpacity(surface),
+                surface.materialFlags,
+                surface.labPbrSpecular,
+                surface.adjacentBaseColor,
+                surface.adjacentSpecularControl);
         result.bsdf = sampled.bsdfSample;
         result.volumeStack = sampled.volumeStack;
     } else {

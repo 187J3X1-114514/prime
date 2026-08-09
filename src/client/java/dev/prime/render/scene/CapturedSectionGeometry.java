@@ -45,8 +45,9 @@ public final class CapturedSectionGeometry {
         private final float normalY;
         private final float normalZ;
         private final Surface surface;
+        private final boolean peerOnly;
 
-        private Quad(MutableQuad source, Surface surface) {
+        private Quad(MutableQuad source, Surface surface, boolean peerOnly) {
             this.x = source.x.clone();
             this.y = source.y.clone();
             this.z = source.z.clone();
@@ -56,6 +57,7 @@ public final class CapturedSectionGeometry {
             this.normalY = source.normalY;
             this.normalZ = source.normalZ;
             this.surface = Objects.requireNonNull(surface, "surface");
+            this.peerOnly = peerOnly;
         }
 
         public float x(int vertex) {
@@ -93,6 +95,11 @@ public final class CapturedSectionGeometry {
         public Surface surface() {
             return this.surface;
         }
+
+        /** True for a cluster-halo face captured only to resolve the shared physical boundary. */
+        public boolean peerOnly() {
+            return this.peerOnly;
+        }
     }
 
     /**
@@ -114,7 +121,8 @@ public final class CapturedSectionGeometry {
             boolean rasterOverlay,
             int lightEmission,
             CapturedSprite sprite,
-            FluidFacts fluid) {
+            FluidFacts fluid,
+            BlockFacts block) {
         public Surface {
             Objects.requireNonNull(layer, "layer");
             Objects.requireNonNull(sprite, "sprite");
@@ -122,6 +130,41 @@ public final class CapturedSectionGeometry {
                 throw new IllegalArgumentException(
                         "Captured light emission must be in [0, 15]");
             }
+        }
+
+        public Surface(
+                int color0,
+                int color1,
+                int color2,
+                int color3,
+                Layer layer,
+                boolean alphaCutOverride,
+                boolean collisionEmpty,
+                boolean animated,
+                boolean water,
+                boolean foliage,
+                boolean mergeable,
+                boolean rasterOverlay,
+                int lightEmission,
+                CapturedSprite sprite,
+                FluidFacts fluid) {
+            this(
+                    color0,
+                    color1,
+                    color2,
+                    color3,
+                    layer,
+                    alphaCutOverride,
+                    collisionEmpty,
+                    animated,
+                    water,
+                    foliage,
+                    mergeable,
+                    rasterOverlay,
+                    lightEmission,
+                    sprite,
+                    fluid,
+                    null);
         }
 
         public int color(int vertex) {
@@ -161,7 +204,56 @@ public final class CapturedSectionGeometry {
                     rasterOverlay,
                     lightEmission,
                     sprite,
+                    null,
                     null);
+        }
+
+        public static Surface uniform(
+                int color,
+                Layer layer,
+                boolean alphaCutOverride,
+                boolean collisionEmpty,
+                boolean animated,
+                boolean water,
+                boolean foliage,
+                boolean mergeable,
+                boolean rasterOverlay,
+                int lightEmission,
+                CapturedSprite sprite,
+                BlockFacts block) {
+            return new Surface(
+                    color,
+                    color,
+                    color,
+                    color,
+                    layer,
+                    alphaCutOverride,
+                    collisionEmpty,
+                    animated,
+                    water,
+                    foliage,
+                    mergeable,
+                    rasterOverlay,
+                    lightEmission,
+                    sprite,
+                    null,
+                    block);
+        }
+    }
+
+    /**
+     * Owning world block. A nonzero family joins shape variants of one optical medium, such as a
+     * stained-glass block and its pane; zero keeps sprite identity authoritative.
+     */
+    public record BlockFacts(int x, int y, int z, int mediumFamily) {
+        public BlockFacts(int x, int y, int z) {
+            this(x, y, z, 0);
+        }
+
+        public BlockFacts {
+            if (mediumFamily < 0) {
+                throw new IllegalArgumentException("Block medium family must not be negative");
+            }
         }
     }
 
@@ -206,12 +298,21 @@ public final class CapturedSectionGeometry {
         private boolean built;
 
         public void add(MutableQuad quad, Surface surface) {
+            this.add(quad, surface, false);
+        }
+
+        public void addPeer(MutableQuad quad, Surface surface) {
+            this.add(quad, surface, true);
+        }
+
+        private void add(MutableQuad quad, Surface surface, boolean peerOnly) {
             if (this.built) {
                 throw new IllegalStateException("Captured Section was already built");
             }
             this.quads.add(new Quad(
                     Objects.requireNonNull(quad, "quad"),
-                    Objects.requireNonNull(surface, "surface")));
+                    Objects.requireNonNull(surface, "surface"),
+                    peerOnly));
         }
 
         public CapturedSectionGeometry build() {

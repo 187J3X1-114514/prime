@@ -38,7 +38,8 @@ public final class IntegratorSettings {
     public static int packSampleControl(
             int sampleIndex,
             AstronomySettings astronomy,
-            boolean seamlessGlass) {
+            boolean seamlessGlass,
+            boolean airGap) {
         if (sampleIndex < 0
                 || (sampleIndex & ~ShaderAbi.PATH_SAMPLE_INDEX_MASK) != 0) {
             throw new IllegalArgumentException(
@@ -52,7 +53,8 @@ public final class IntegratorSettings {
         }
         return sampleIndex
                 | solarLongitude << ShaderAbi.PATH_SOLAR_LONGITUDE_SHIFT
-                | (seamlessGlass ? ShaderAbi.PATH_SEAMLESS_GLASS_MASK : 0);
+                | (seamlessGlass ? ShaderAbi.PATH_SEAMLESS_GLASS_MASK : 0)
+                | (airGap ? ShaderAbi.PATH_AIR_GAP_MASK : 0);
     }
 
     public static int packSampleEpoch(int sampleEpoch, boolean triangleDebug) {

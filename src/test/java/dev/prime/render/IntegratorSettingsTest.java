@@ -80,21 +80,27 @@ final class IntegratorSettingsTest {
     @Test
     void sampleControlKeepsSeasonSeparateFromSobolIdentity() {
         AstronomySettings astronomy = new AstronomySettings(30, 359);
-        int packed = IntegratorSettings.packSampleControl(0xabcd, astronomy, false);
+        int packed = IntegratorSettings.packSampleControl(
+                0xabcd, astronomy, false, false);
         assertEquals(0xabcd, packed & ShaderAbi.PATH_SAMPLE_INDEX_MASK);
         assertEquals(
                 359,
                 (packed >>> ShaderAbi.PATH_SOLAR_LONGITUDE_SHIFT)
                         & ShaderAbi.PATH_SOLAR_LONGITUDE_MASK);
         assertEquals(0, packed & ShaderAbi.PATH_SEAMLESS_GLASS_MASK);
+        assertEquals(0, packed & ShaderAbi.PATH_AIR_GAP_MASK);
         assertEquals(
                 ShaderAbi.PATH_SEAMLESS_GLASS_MASK,
-                IntegratorSettings.packSampleControl(0xabcd, astronomy, true)
+                IntegratorSettings.packSampleControl(0xabcd, astronomy, true, false)
                         & ShaderAbi.PATH_SEAMLESS_GLASS_MASK);
+        assertEquals(
+                ShaderAbi.PATH_AIR_GAP_MASK,
+                IntegratorSettings.packSampleControl(0xabcd, astronomy, false, true)
+                        & ShaderAbi.PATH_AIR_GAP_MASK);
         assertThrows(
                 IllegalArgumentException.class,
                 () -> IntegratorSettings.packSampleControl(
-                        1 << 16, astronomy, false));
+                        1 << 16, astronomy, false, false));
     }
 
     @Test

@@ -26,6 +26,7 @@ public record PrimeSettings(
         int autoExposureCompensationSteps,
         int defaultRoughnessSteps,
         boolean seamlessGlass,
+        boolean airGap,
         long lightingRevision,
         long materialRevision,
         boolean sharcEnabled) {
@@ -65,6 +66,7 @@ public record PrimeSettings(
                 DisplaySettings.DEFAULT_AUTO_EXPOSURE_COMPENSATION_STEPS,
                 MaterialSettings.DEFAULT_ROUGHNESS_STEPS,
                 MaterialSettings.DEFAULT_SEAMLESS_GLASS,
+                MaterialSettings.DEFAULT_AIR_GAP,
                 0L,
                 0L,
                 true);
@@ -89,6 +91,7 @@ public record PrimeSettings(
                         this.autoExposureCompensationSteps,
                         this.defaultRoughnessSteps,
                         this.seamlessGlass,
+                        this.airGap,
                         this.lightingRevision,
                         this.materialRevision,
                         this.sharcEnabled);
@@ -113,6 +116,7 @@ public record PrimeSettings(
                         this.autoExposureCompensationSteps,
                         this.defaultRoughnessSteps,
                         this.seamlessGlass,
+                        this.airGap,
                         this.lightingRevision,
                         this.materialRevision,
                         value);
@@ -137,6 +141,7 @@ public record PrimeSettings(
                         this.autoExposureCompensationSteps,
                         this.defaultRoughnessSteps,
                         this.seamlessGlass,
+                        this.airGap,
                         this.lightingRevision,
                         this.materialRevision,
                         this.sharcEnabled);
@@ -162,6 +167,7 @@ public record PrimeSettings(
                         this.autoExposureCompensationSteps,
                         this.defaultRoughnessSteps,
                         this.seamlessGlass,
+                        this.airGap,
                         this.lightingRevision,
                         this.materialRevision,
                         this.sharcEnabled);
@@ -187,6 +193,7 @@ public record PrimeSettings(
                         this.autoExposureCompensationSteps,
                         this.defaultRoughnessSteps,
                         this.seamlessGlass,
+                        this.airGap,
                         this.lightingRevision,
                         this.materialRevision,
                         this.sharcEnabled);
@@ -212,6 +219,7 @@ public record PrimeSettings(
                         this.autoExposureCompensationSteps,
                         this.defaultRoughnessSteps,
                         this.seamlessGlass,
+                        this.airGap,
                         this.lightingRevision,
                         this.materialRevision,
                         this.sharcEnabled);
@@ -237,6 +245,7 @@ public record PrimeSettings(
                         this.autoExposureCompensationSteps,
                         this.defaultRoughnessSteps,
                         this.seamlessGlass,
+                        this.airGap,
                         Math.incrementExact(this.lightingRevision),
                         this.materialRevision,
                         this.sharcEnabled);
@@ -263,6 +272,7 @@ public record PrimeSettings(
                         this.autoExposureCompensationSteps,
                         this.defaultRoughnessSteps,
                         this.seamlessGlass,
+                        this.airGap,
                         Math.incrementExact(this.lightingRevision),
                         this.materialRevision,
                         this.sharcEnabled);
@@ -288,6 +298,7 @@ public record PrimeSettings(
                         this.autoExposureCompensationSteps,
                         this.defaultRoughnessSteps,
                         this.seamlessGlass,
+                        this.airGap,
                         Math.incrementExact(this.lightingRevision),
                         this.materialRevision,
                         this.sharcEnabled);
@@ -313,6 +324,7 @@ public record PrimeSettings(
                         this.autoExposureCompensationSteps,
                         this.defaultRoughnessSteps,
                         this.seamlessGlass,
+                        this.airGap,
                         Math.incrementExact(this.lightingRevision),
                         this.materialRevision,
                         this.sharcEnabled);
@@ -338,6 +350,7 @@ public record PrimeSettings(
                         this.autoExposureCompensationSteps,
                         this.defaultRoughnessSteps,
                         this.seamlessGlass,
+                        this.airGap,
                         Math.incrementExact(this.lightingRevision),
                         this.materialRevision,
                         this.sharcEnabled);
@@ -363,6 +376,7 @@ public record PrimeSettings(
                         this.autoExposureCompensationSteps,
                         this.defaultRoughnessSteps,
                         this.seamlessGlass,
+                        this.airGap,
                         this.lightingRevision,
                         this.materialRevision,
                         this.sharcEnabled);
@@ -388,6 +402,7 @@ public record PrimeSettings(
                         this.autoExposureCompensationSteps,
                         this.defaultRoughnessSteps,
                         this.seamlessGlass,
+                        this.airGap,
                         this.lightingRevision,
                         this.materialRevision,
                         this.sharcEnabled);
@@ -413,6 +428,7 @@ public record PrimeSettings(
                         this.autoExposureCompensationSteps,
                         this.defaultRoughnessSteps,
                         this.seamlessGlass,
+                        this.airGap,
                         this.lightingRevision,
                         this.materialRevision,
                         this.sharcEnabled);
@@ -438,6 +454,7 @@ public record PrimeSettings(
                         value,
                         this.defaultRoughnessSteps,
                         this.seamlessGlass,
+                        this.airGap,
                         this.lightingRevision,
                         this.materialRevision,
                         this.sharcEnabled);
@@ -463,6 +480,7 @@ public record PrimeSettings(
                         this.autoExposureCompensationSteps,
                         value,
                         this.seamlessGlass,
+                        this.airGap,
                         this.lightingRevision,
                         Math.incrementExact(this.materialRevision),
                         this.sharcEnabled);
@@ -487,6 +505,32 @@ public record PrimeSettings(
                         this.autoExposureCompensationSteps,
                         this.defaultRoughnessSteps,
                         value,
+                        this.airGap,
+                        this.lightingRevision,
+                        Math.incrementExact(this.materialRevision),
+                        this.sharcEnabled);
+    }
+
+    public PrimeSettings withAirGap(boolean value) {
+        return value == this.airGap
+                ? this
+                : new PrimeSettings(
+                        this.pathTracingEnabled,
+                        this.voxelTextureSurfaces,
+                        this.voxelTextureSurfaceStrengthSteps,
+                        this.postProcessingMode,
+                        this.reconstructionQuality,
+                        this.astronomy,
+                        this.sunQuarterSteps,
+                        this.starQuarterSteps,
+                        this.blockLightQuarterSteps,
+                        this.finalExposureQuarterSteps,
+                        this.oklabOverexposureSteps,
+                        this.curveExponentSteps,
+                        this.autoExposureCompensationSteps,
+                        this.defaultRoughnessSteps,
+                        this.seamlessGlass,
+                        value,
                         this.lightingRevision,
                         Math.incrementExact(this.materialRevision),
                         this.sharcEnabled);
@@ -504,6 +548,7 @@ public record PrimeSettings(
         return new MaterialSettings.Snapshot(
                 this.defaultRoughnessSteps,
                 this.seamlessGlass,
+                this.airGap,
                 this.materialRevision);
     }
 

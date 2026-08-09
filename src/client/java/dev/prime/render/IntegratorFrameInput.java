@@ -58,7 +58,10 @@ public record IntegratorFrameInput(
                     "Integrator camera must be finite");
         }
         IntegratorSettings.packSampleControl(
-                sampleIndex, astronomy.settings(), material.seamlessGlass());
+                sampleIndex,
+                astronomy.settings(),
+                material.seamlessGlass(),
+                material.airGap());
         IntegratorSettings.packSampleEpoch(sampleEpoch, triangleDebug);
         IntegratorSettings.packPathControl(
                 maximumBounces,

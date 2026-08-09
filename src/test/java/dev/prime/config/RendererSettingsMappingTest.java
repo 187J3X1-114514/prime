@@ -34,7 +34,8 @@ final class RendererSettingsMappingTest {
                 .withCurveExponentSteps(83)
                 .withAutoExposureCompensationSteps(61)
                 .withDefaultRoughnessSteps(37)
-                .withSeamlessGlass(false);
+                .withSeamlessGlass(false)
+                .withAirGap(false);
 
         RendererSettings mapped = PrimeConfig.rendererSettings(source, 42L);
 
@@ -67,6 +68,7 @@ final class RendererSettingsMappingTest {
                 MaterialSettings.linearRoughness(37),
                 mapped.material().linearRoughness());
         assertFalse(mapped.material().seamlessGlass());
+        assertFalse(mapped.material().airGap());
         assertRawEquals(
                 DisplaySettings.finalExposureMultiplier(-3),
                 mapped.display().finalExposureMultiplier());
@@ -94,6 +96,7 @@ final class RendererSettingsMappingTest {
         assertEquals(ReconstructionQualityMode.DEFAULT, mappedDefaults.reconstructionQuality());
         assertEquals(AstronomySettings.defaults(), mappedDefaults.astronomy());
         assertTrue(mappedDefaults.material().seamlessGlass());
+        assertTrue(mappedDefaults.material().airGap());
         assertEquals(0L, mappedDefaults.revision());
 
         PrimeSettings changed = defaults
@@ -103,7 +106,8 @@ final class RendererSettingsMappingTest {
                 .withLatitudeDegrees(-45)
                 .withSunQuarterSteps(4)
                 .withDefaultRoughnessSteps(25)
-                .withSeamlessGlass(false);
+                .withSeamlessGlass(false)
+                .withAirGap(false);
         PrimeSettings restored = PrimeConfig.restoredDefaults(changed);
 
         RendererSettings mapped = PrimeConfig.rendererSettings(restored, 9L);
@@ -118,6 +122,7 @@ final class RendererSettingsMappingTest {
                 MaterialSettings.DEFAULT_ROUGHNESS_STEPS,
                 mapped.material().roughnessSteps());
         assertTrue(mapped.material().seamlessGlass());
+        assertTrue(mapped.material().airGap());
         assertTrue(restored.lightingRevision() > changed.lightingRevision());
         assertTrue(restored.materialRevision() > changed.materialRevision());
         assertEquals(9L, mapped.revision());

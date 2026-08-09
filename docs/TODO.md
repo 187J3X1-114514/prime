@@ -9,17 +9,25 @@
 - 评估把 Section geometry 和 light record 直接写入可增长 staging/native 存储，减少
   Section→cluster 所有权转移期间的 Java 数组驻留，同时保持单 cluster 原子替换和单 base
   BLAS/TLAS instance；
+- 为纹理体素表面设计跨 cluster GPU mesh 池，复用相同纹理、UV 和朝向生成的
+  BLAS、primitive 与 OMM，同时明确 resource epoch、引用所有权、compaction 注册和退休顺序；
 - 评估 TLAS refit 或更有效的批处理；新 geometry 不得在可见性结构外提前发布。
 
 ## 渲染能力
 
-- 云、雾、水和局部体积光的通用体积渲染；
+- 场景几何 LOD；
+- 云渲染（细节待定）；
+- 水渲染（细节待定）；
+- 月亮（月相）：作为夜晚的主光源；月相跟随 Minecraft 原版状态，轨迹取太阳轨迹的
+  相对方向，不采用真实月球轨迹；
+- 雾和局部体积光的通用体积渲染；
 - 将实体及动态发光几何纳入灯光采样，并定义 emitter 捕获、增量 light tree、生命周期和
   前后向 PDF；
 - 评估 NVIDIA Streamline 的能力探测、资源标记和生命周期，保留不支持时的明确回退。
 
 ## 兼容性与产品体验
 
+- 为着色器与管线编译提供可见进度条；
 - 调查机械动力飞跃版等 mod 的实体捕获、render type、动态 geometry 和 TLAS 路径；
 - 改进未按 `texture.properties` 标准声明的 LabPBR 资源包检测，同时避免误判普通纹理；
 - 为高分辨率纹理体素表面测量 CPU 建网、BLAS、staging/显存和 instance 增长，随后定义可诊断

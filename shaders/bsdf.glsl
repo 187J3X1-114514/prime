@@ -62,22 +62,25 @@ PrimeRcVolumeStack primeEmptyVolumeStack() {
     return result;
 }
 
-PrimeRcMaterial primeMinecraftTransmissionMaterial(
+PrimeRcMaterial primeMinecraftTransmissionMaterialWithMinimumRoughness(
         vec3 baseColor,
         float opacity,
         vec3 outwardNormal,
         uint materialFlags,
         uint packedNormal,
-        uint packedSpecular) {
+        uint packedSpecular,
+        float minimumLinearRoughness) {
     bool water = (materialFlags & PRIME_MATERIAL_FLAG_WATER) != 0u;
     bool thinWalled = (materialFlags & PRIME_MATERIAL_FLAG_THIN_WALLED) != 0u;
     PrimeTranslatedLabPbrMaterial translated = primeDecodeAndTranslateLabPbr(
             packedNormal, packedSpecular, materialFlags);
     // Alpha classifies the interface; it never scales roughness. Rough texels use authored
     // LabPBR roughness or the configured fallback resolved by the translation layer.
-    float roughness = primeMaterialIsRoughGlass(materialFlags)
-            ? translated.perceptualRoughness
-            : 0.0;
+    float roughness = max(
+            primeMaterialIsRoughGlass(materialFlags)
+                    ? translated.perceptualRoughness
+                    : 0.0,
+            minimumLinearRoughness);
     PrimeRcMaterial material = primeRcMaterialFromMetallic(
             vec3(1.0), roughness, 0.0, outwardNormal);
     material.weight.transmission = 1.0;
@@ -107,6 +110,23 @@ PrimeRcMaterial primeMinecraftTransmissionMaterial(
     material.transmission.scatterAnisotropy = 0.0;
     material.transmission.dispersionScale = 0.0;
     return material;
+}
+
+PrimeRcMaterial primeMinecraftTransmissionMaterial(
+        vec3 baseColor,
+        float opacity,
+        vec3 outwardNormal,
+        uint materialFlags,
+        uint packedNormal,
+        uint packedSpecular) {
+    return primeMinecraftTransmissionMaterialWithMinimumRoughness(
+            baseColor,
+            opacity,
+            outwardNormal,
+            materialFlags,
+            packedNormal,
+            packedSpecular,
+            0.0);
 }
 
 PrimeRcVolumeStack primeCameraWaterVolumeStack() {
@@ -146,18 +166,19 @@ uint primeRcToBsdfEventFlags(uint flags) {
     return result;
 }
 
-PrimeRcMaterial primeOpaqueMaterial(
+PrimeRcMaterial primeOpaqueMaterialWithMinimumRoughness(
         vec3 baseColor,
         vec3 normal,
         uint packedNormal,
         uint packedSpecular,
-        uint flags) {
+        uint flags,
+        float minimumLinearRoughness) {
     PrimeTranslatedLabPbrMaterial translated = primeDecodeAndTranslateLabPbr(
             packedNormal, packedSpecular, flags);
     bool metal = primeTranslatedLabPbrIsMetal(translated);
     PrimeRcMaterial material = primeRcMaterialFromMetallic(
             baseColor,
-            translated.perceptualRoughness,
+            max(translated.perceptualRoughness, minimumLinearRoughness),
             metal ? 1.0 : 0.0,
             normal);
     if (metal) {
@@ -177,6 +198,16 @@ PrimeRcMaterial primeOpaqueMaterial(
     return material;
 }
 
+PrimeRcMaterial primeOpaqueMaterial(
+        vec3 baseColor,
+        vec3 normal,
+        uint packedNormal,
+        uint packedSpecular,
+        uint flags) {
+    return primeOpaqueMaterialWithMinimumRoughness(
+            baseColor, normal, packedNormal, packedSpecular, flags, 0.0);
+}
+
 PrimeRcMaterial primeMinecraftTransmissionMaterial(
         vec3 baseColor,
         float opacity,
@@ -191,7 +222,7 @@ PrimeRcMaterial primeMinecraftTransmissionMaterial(
             packUnorm4x8(vec4(0.0, 4.0 / 255.0, 0.0, 1.0)));
 }
 
-PrimeRcState primeOpaqueState(
+PrimeRcState primeOpaqueStateWithMinimumRoughness(
         vec3 baseColor,
         vec3 normal,
         uint packedNormal,
@@ -199,9 +230,15 @@ PrimeRcState primeOpaqueState(
         uint flags,
         vec3 viewDirection,
         float rayT,
-        PrimeRcVolumeStack volumeStack) {
-    PrimeRcMaterial material = primeOpaqueMaterial(
-            baseColor, normal, packedNormal, packedSpecular, flags);
+        PrimeRcVolumeStack volumeStack,
+        float minimumLinearRoughness) {
+    PrimeRcMaterial material = primeOpaqueMaterialWithMinimumRoughness(
+            baseColor,
+            normal,
+            packedNormal,
+            packedSpecular,
+            flags,
+            minimumLinearRoughness);
     vec3 localView = primeRcOnbToLocal(material.geometry.onb, viewDirection);
     float inverseOutsideIor = primeRcInverseOutsideIor(localView.z, volumeStack);
     if (material.weight.subsurface > 0.0) {
@@ -226,6 +263,27 @@ PrimeRcState primeOpaqueState(
             0u,
             PRIME_RC_DETAIL_DEFAULT,
             0u);
+}
+
+PrimeRcState primeOpaqueState(
+        vec3 baseColor,
+        vec3 normal,
+        uint packedNormal,
+        uint packedSpecular,
+        uint flags,
+        vec3 viewDirection,
+        float rayT,
+        PrimeRcVolumeStack volumeStack) {
+    return primeOpaqueStateWithMinimumRoughness(
+            baseColor,
+            normal,
+            packedNormal,
+            packedSpecular,
+            flags,
+            viewDirection,
+            rayT,
+            volumeStack,
+            0.0);
 }
 
 struct PrimeBsdfComponents {
@@ -349,7 +407,7 @@ BsdfSample primeSampleOpaque(
             state, normal, viewDirection, sampleValue, volumeStack);
 }
 
-PrimeRcState primeMinecraftTransmissionState(
+PrimeRcState primeMinecraftTransmissionStateWithMinimumRoughness(
         vec3 baseColor,
         float opacity,
         vec3 outwardNormal,
@@ -358,18 +416,20 @@ PrimeRcState primeMinecraftTransmissionState(
         uint packedSpecular,
         vec3 viewDirection,
         float rayT,
-        PrimeRcVolumeStack volumeStack) {
+        PrimeRcVolumeStack volumeStack,
+        float minimumLinearRoughness) {
     bool thinWalled = (materialFlags & PRIME_MATERIAL_FLAG_THIN_WALLED) != 0u;
     vec3 closureNormal = thinWalled && dot(outwardNormal, viewDirection) < 0.0
             ? -outwardNormal
             : outwardNormal;
-    PrimeRcMaterial material = primeMinecraftTransmissionMaterial(
+    PrimeRcMaterial material = primeMinecraftTransmissionMaterialWithMinimumRoughness(
             baseColor,
             opacity,
             closureNormal,
             materialFlags,
             packedNormal,
-            packedSpecular);
+            packedSpecular,
+            minimumLinearRoughness);
     vec3 localView = primeRcOnbToLocal(material.geometry.onb, viewDirection);
     float inverseOutsideIor = primeRcInverseOutsideIor(localView.z, volumeStack);
     PrimeRcState state = primeRcTransmissionStateInit(
@@ -382,6 +442,29 @@ PrimeRcState primeMinecraftTransmissionState(
             PRIME_RC_DETAIL_DEFAULT,
             0u);
     return primeRcPrimeTransmissionInterfaceState(localView, state);
+}
+
+PrimeRcState primeMinecraftTransmissionState(
+        vec3 baseColor,
+        float opacity,
+        vec3 outwardNormal,
+        uint materialFlags,
+        uint packedNormal,
+        uint packedSpecular,
+        vec3 viewDirection,
+        float rayT,
+        PrimeRcVolumeStack volumeStack) {
+    return primeMinecraftTransmissionStateWithMinimumRoughness(
+            baseColor,
+            opacity,
+            outwardNormal,
+            materialFlags,
+            packedNormal,
+            packedSpecular,
+            viewDirection,
+            rayT,
+            volumeStack,
+            0.0);
 }
 
 PrimeRcMicrofacet primeMinecraftTransmissionMicrofacet(PrimeRcState state) {
@@ -849,20 +932,26 @@ PrimeTransmissiveBsdfSample primeSampleMinecraftTransparentReflectionFromState(
 // glass and water, this closure never pushes or pops the path volume stack.
 const float PRIME_FOLIAGE_TRANSMISSION_WEIGHT = 0.15;
 
-PrimeRcMaterial primeMinecraftFoliageMaterial(
+PrimeRcMaterial primeMinecraftFoliageMaterialWithMinimumRoughness(
         vec3 baseColor,
         vec3 normal,
         uint packedNormal,
         uint packedSpecular,
-        uint materialFlags) {
+        uint materialFlags,
+        float minimumLinearRoughness) {
     PrimeRcMaterial material;
     if (primeHasLabPbrSpecular(materialFlags)) {
-        material = primeOpaqueMaterial(
-                baseColor, normal, packedNormal, packedSpecular, materialFlags);
+        material = primeOpaqueMaterialWithMinimumRoughness(
+                baseColor,
+                normal,
+                packedNormal,
+                packedSpecular,
+                materialFlags,
+                minimumLinearRoughness);
     } else {
         material = primeRcMaterialFromMetallic(
                 baseColor,
-                primeDefaultLinearRoughness(),
+                max(primeDefaultLinearRoughness(), minimumLinearRoughness),
                 0.0,
                 normal);
     }
@@ -875,7 +964,22 @@ PrimeRcMaterial primeMinecraftFoliageMaterial(
     return material;
 }
 
-PrimeRcState primeMinecraftFoliageState(
+PrimeRcMaterial primeMinecraftFoliageMaterial(
+        vec3 baseColor,
+        vec3 normal,
+        uint packedNormal,
+        uint packedSpecular,
+        uint materialFlags) {
+    return primeMinecraftFoliageMaterialWithMinimumRoughness(
+            baseColor,
+            normal,
+            packedNormal,
+            packedSpecular,
+            materialFlags,
+            0.0);
+}
+
+PrimeRcState primeMinecraftFoliageStateWithMinimumRoughness(
         vec3 baseColor,
         vec3 outwardNormal,
         uint packedNormal,
@@ -883,12 +987,18 @@ PrimeRcState primeMinecraftFoliageState(
         uint materialFlags,
         vec3 viewDirection,
         float rayT,
-        PrimeRcVolumeStack volumeStack) {
+        PrimeRcVolumeStack volumeStack,
+        float minimumLinearRoughness) {
     vec3 closureNormal = dot(outwardNormal, viewDirection) < 0.0
             ? -outwardNormal
             : outwardNormal;
-    PrimeRcMaterial material = primeMinecraftFoliageMaterial(
-            baseColor, closureNormal, packedNormal, packedSpecular, materialFlags);
+    PrimeRcMaterial material = primeMinecraftFoliageMaterialWithMinimumRoughness(
+            baseColor,
+            closureNormal,
+            packedNormal,
+            packedSpecular,
+            materialFlags,
+            minimumLinearRoughness);
     vec3 localView = primeRcOnbToLocal(material.geometry.onb, viewDirection);
     float inverseOutsideIor = primeRcInverseOutsideIor(localView.z, volumeStack);
     return primeRcPrimeThinWallStateInit(
@@ -900,6 +1010,27 @@ PrimeRcState primeMinecraftFoliageState(
             0u,
             PRIME_RC_DETAIL_DEFAULT,
             0u);
+}
+
+PrimeRcState primeMinecraftFoliageState(
+        vec3 baseColor,
+        vec3 outwardNormal,
+        uint packedNormal,
+        uint packedSpecular,
+        uint materialFlags,
+        vec3 viewDirection,
+        float rayT,
+        PrimeRcVolumeStack volumeStack) {
+    return primeMinecraftFoliageStateWithMinimumRoughness(
+            baseColor,
+            outwardNormal,
+            packedNormal,
+            packedSpecular,
+            materialFlags,
+            viewDirection,
+            rayT,
+            volumeStack,
+            0.0);
 }
 
 BsdfEvaluation primeEvaluateMinecraftFoliage(

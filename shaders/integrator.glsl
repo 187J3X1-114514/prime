@@ -891,15 +891,16 @@ struct PrimePathScatter {
     PrimeRcVolumeStack volumeStack;
 };
 
-PrimePathScatter primeSamplePathSurface(
+PrimePathScatter primeSamplePathSurfaceWithMinimumRoughness(
         SurfaceInteraction surface,
         vec3 viewDirection,
         vec3 sampleValue,
-        PrimeRcVolumeStack volumeStack) {
+        PrimeRcVolumeStack volumeStack,
+        float minimumLinearRoughness) {
     PrimePathScatter result;
     result.volumeStack = volumeStack;
     if (primeMaterialIsFoliage(surface.materialFlags)) {
-        PrimeRcState state = primeMinecraftFoliageState(
+        PrimeRcState state = primeMinecraftFoliageStateWithMinimumRoughness(
                 surface.baseColor,
                 primeSurfaceShadingNormal(surface, viewDirection),
                 surface.labPbrNormal,
@@ -907,12 +908,13 @@ PrimePathScatter primeSamplePathSurface(
                 surface.materialFlags,
                 viewDirection,
                 surface.t,
-                volumeStack);
+                volumeStack,
+                minimumLinearRoughness);
         result.bsdf = primeSampleMinecraftFoliageFromState(
                 state, viewDirection, sampleValue, volumeStack);
     } else if (primeMaterialIsTransmissive(surface.materialFlags)) {
         vec3 outwardNormal = primeSurfaceOutwardShadingNormal(surface);
-        PrimeRcState state = primeMinecraftTransmissionState(
+        PrimeRcState state = primeMinecraftTransmissionStateWithMinimumRoughness(
                 surface.baseColor,
                 primeSurfaceOpacity(surface),
                 outwardNormal,
@@ -921,7 +923,8 @@ PrimePathScatter primeSamplePathSurface(
                 surface.labPbrSpecular,
                 viewDirection,
                 surface.t,
-                volumeStack);
+                volumeStack,
+                minimumLinearRoughness);
         PrimeTransmissiveBsdfSample sampled =
                 primeSampleMinecraftTransmissionCompleteFromState(
                         state,
@@ -935,7 +938,7 @@ PrimePathScatter primeSamplePathSurface(
         result.volumeStack = sampled.volumeStack;
     } else {
         vec3 shadingNormal = primeSurfaceShadingNormal(surface, viewDirection);
-        PrimeRcState state = primeOpaqueState(
+        PrimeRcState state = primeOpaqueStateWithMinimumRoughness(
                 surface.baseColor,
                 shadingNormal,
                 surface.labPbrNormal,
@@ -943,7 +946,8 @@ PrimePathScatter primeSamplePathSurface(
                 surface.materialFlags,
                 viewDirection,
                 surface.t,
-                volumeStack);
+                volumeStack,
+                minimumLinearRoughness);
         result.bsdf = primeSampleOpaqueFromState(
                 state,
                 shadingNormal,
@@ -952,6 +956,15 @@ PrimePathScatter primeSamplePathSurface(
                 volumeStack);
     }
     return result;
+}
+
+PrimePathScatter primeSamplePathSurface(
+        SurfaceInteraction surface,
+        vec3 viewDirection,
+        vec3 sampleValue,
+        PrimeRcVolumeStack volumeStack) {
+    return primeSamplePathSurfaceWithMinimumRoughness(
+            surface, viewDirection, sampleValue, volumeStack, 0.0);
 }
 
 void primeSampleGuidedPathSurface(
@@ -1072,20 +1085,19 @@ bool primeQuerySharc(
 
     float voxelSize = primeSharcVoxelSize(
             surface.position, surface.geometricNormal);
-    if (surface.t < voxelSize) {
+    const float voxelDiagonalScale = 1.7320508075688772;
+    if (surface.t <= voxelSize * voxelDiagonalScale) {
         primeRecordSharcDiagnostic(
                 diagnosticSample, PRIME_SHARC_DIAGNOSTIC_SHORT_SKIP);
         return false;
     }
     if (path.previousSharcEvent == PRIME_SHARC_EVENT_GLOSSY) {
-        float alpha = path.previousSharcRoughness
-                * path.previousSharcRoughness;
+        float roughness = min(path.previousSharcRoughness, 0.99);
+        float alpha = roughness * roughness;
         float alphaSquared = alpha * alpha;
-        float coneDiameter = alphaSquared >= 1.0
-                ? voxelSize
-                : 2.0 * surface.t * sqrt(
-                        0.5 * alphaSquared / (1.0 - alphaSquared));
-        if (coneDiameter < voxelSize) {
+        float footprintRadius = surface.t * sqrt(
+                0.5 * alphaSquared / max(1.0 - alphaSquared, 1.0e-6));
+        if (footprintRadius <= voxelSize) {
             primeRecordSharcDiagnostic(
                     diagnosticSample, PRIME_SHARC_DIAGNOSTIC_GLOSSY_SKIP);
             return false;
@@ -1304,18 +1316,6 @@ bool primeIntegrateTransparentWavefrontSurface(
     if (!primeApplySegmentMedium(path, surface, volumeStack)) {
         return false;
     }
-
-#if defined(PRIME_SHARC_QUERY)
-    vec3 sharcContribution;
-    if (hasGuide && primeQuerySharc(
-            path, surface, path.bounce > 0u, sharcContribution)) {
-        primeAccumulateTransparentBranch(
-                result,
-                diffusePath,
-                sharcContribution);
-        return false;
-    }
-#endif
 
     vec3 viewDirection = -path.rayDirection;
     PrimePreparedSampleBase preparedSample =

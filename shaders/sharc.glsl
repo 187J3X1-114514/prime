@@ -56,13 +56,30 @@ void primeRecordSharcDiagnostic(bool sampled, uint counter) {
 #endif
 
 #if SHARC_UPDATE || SHARC_QUERY
+float primeSharcLuminance(vec3 value) {
+    return dot(value, vec3(0.2627, 0.6780, 0.0593));
+}
+
 vec3 primeSharcMaterialDemodulation(SurfaceInteraction surface) {
-    // Diffuse color is a stable spatial detail; transmission and conductor color are directional.
-    bool coloredDiffuse = !primeMaterialIsTransmissive(surface.materialFlags)
-            && (surface.materialFlags & PRIME_MATERIAL_FLAG_LABPBR_METAL) == 0u;
-    return coloredDiffuse
-            ? max(surface.baseColor, vec3(1.0 / 255.0))
-            : vec3(1.0);
+    if (primeMaterialIsTransmissive(surface.materialFlags)) {
+        return vec3(1.0);
+    }
+
+    PrimeTranslatedLabPbrMaterial translated = primeDecodeAndTranslateLabPbr(
+            surface.labPbrNormal,
+            surface.labPbrSpecular,
+            surface.materialFlags);
+    bool metal = primeTranslatedLabPbrIsMetal(translated);
+    vec3 diffuseAlbedo = metal ? vec3(0.0) : surface.baseColor;
+    vec3 specularF0 = metal
+            ? primeLabPbrMetalFresnel(surface.baseColor, translated.metalId).f0
+            : vec3(translated.dielectricF0);
+    vec3 averageSpecularFresnel = specularF0
+            + (vec3(1.0) - specularF0) * (1.0 / 21.0);
+    float averageSpecular = primeSharcLuminance(averageSpecularFresnel);
+    // Floors keep dark diffuse and weak dielectric materials numerically reconstructable.
+    return max(diffuseAlbedo, vec3(0.05))
+            + max(specularF0, vec3(0.02)) * averageSpecular;
 }
 #endif
 

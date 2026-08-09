@@ -261,6 +261,17 @@ void primeAdapterCheckTransmissionMaterial(
     }
 }
 
+void primeAdapterCheckMinimumRoughness(
+        inout uint mask,
+        PrimeRcMaterial original,
+        PrimeRcMaterial clamped,
+        float minimumLinearRoughness) {
+    float expected = max(original.specular.roughness, minimumLinearRoughness);
+    if (!primeTestClose(clamped.specular.roughness, expected, 0.0, 0.0)) {
+        mask |= PRIME_TEST_FAILURE_STATE;
+    }
+}
+
 void primeAdapterCheckSample(
         inout uint mask,
         BsdfSample sampleValue,
@@ -402,6 +413,23 @@ void primeAdapterProperties(
                 viewDirection,
                 rayT,
                 stack);
+        const float minimumLinearRoughness = 0.4;
+        primeAdapterCheckMinimumRoughness(
+                result.mask,
+                primeOpaqueMaterial(
+                        baseColor,
+                        outwardNormal,
+                        packedNormal,
+                        packedSpecular,
+                        materialFlags),
+                primeOpaqueMaterialWithMinimumRoughness(
+                        baseColor,
+                        outwardNormal,
+                        packedNormal,
+                        packedSpecular,
+                        materialFlags,
+                        minimumLinearRoughness),
+                minimumLinearRoughness);
         result.albedos = primeDenoiseAlbedosFromState(
                 state, viewDirection, PRIME_DENOISE_CLOSURE_OPAQUE);
     } else if (kind == PRIME_ADAPTER_FOLIAGE) {
@@ -446,6 +474,23 @@ void primeAdapterProperties(
                 viewDirection,
                 rayT,
                 stack);
+        const float minimumLinearRoughness = 0.4;
+        primeAdapterCheckMinimumRoughness(
+                result.mask,
+                primeMinecraftFoliageMaterial(
+                        baseColor,
+                        outwardNormal,
+                        packedNormal,
+                        packedSpecular,
+                        materialFlags),
+                primeMinecraftFoliageMaterialWithMinimumRoughness(
+                        baseColor,
+                        outwardNormal,
+                        packedNormal,
+                        packedSpecular,
+                        materialFlags,
+                        minimumLinearRoughness),
+                minimumLinearRoughness);
         result.albedos = primeDenoiseAlbedosFromState(
                 state, viewDirection, PRIME_DENOISE_CLOSURE_FOLIAGE);
     } else if (kind == PRIME_ADAPTER_TRANSMISSION) {
@@ -459,6 +504,25 @@ void primeAdapterProperties(
                 viewDirection,
                 rayT,
                 stack);
+        const float minimumLinearRoughness = 0.4;
+        primeAdapterCheckMinimumRoughness(
+                result.mask,
+                primeMinecraftTransmissionMaterial(
+                        baseColor,
+                        opacity,
+                        outwardNormal,
+                        materialFlags,
+                        packedNormal,
+                        packedSpecular),
+                primeMinecraftTransmissionMaterialWithMinimumRoughness(
+                        baseColor,
+                        opacity,
+                        outwardNormal,
+                        materialFlags,
+                        packedNormal,
+                        packedSpecular,
+                        minimumLinearRoughness),
+                minimumLinearRoughness);
         primeAdapterCheckTransmissionMaterial(
                 result.mask,
                 state,

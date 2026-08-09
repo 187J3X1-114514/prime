@@ -8,6 +8,7 @@ import java.util.Objects;
 /** Immutable renderer configuration captured once at the client frame boundary. */
 public record RendererSettings(
         boolean pathTracingEnabled,
+        boolean sharcEnabled,
         boolean voxelTextureSurfaces,
         int voxelTextureSurfaceStrengthSteps,
         PostProcessingMode postProcessingMode,

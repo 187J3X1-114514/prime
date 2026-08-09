@@ -34,7 +34,8 @@ final class RealtimeFramePlanTest {
                     JITTER,
                     7,
                     PACKED_RAY_CONE,
-                    mode == PostProcessingMode.NRD_FSR);
+                    mode == PostProcessingMode.NRD_FSR,
+                    true);
 
             assertEquals(mode, plan.integrator().postProcessingMode());
             assertEquals(input.transparentGuideMode(), plan.integrator().transparentGuideMode());
@@ -43,6 +44,7 @@ final class RealtimeFramePlanTest {
             assertEquals(7, plan.integrator().jitterPhase());
             assertEquals(JITTER, plan.jitter());
             assertTrue(plan.reconstructionReset());
+            assertTrue(plan.rendererDiagnostics());
             assertEquals(
                     mode == PostProcessingMode.NRD_FSR,
                     plan.integrator().rawNumericalDiagnostic());
@@ -86,6 +88,7 @@ final class RealtimeFramePlanTest {
                 JITTER,
                 8,
                 PACKED_RAY_CONE,
+                false,
                 false);
 
         assertFalse(second.reset());
@@ -118,6 +121,7 @@ final class RealtimeFramePlanTest {
                         JITTER,
                         1,
                         PACKED_RAY_CONE,
+                        false,
                         false));
         assertThrows(
                 IllegalStateException.class,
@@ -129,6 +133,7 @@ final class RealtimeFramePlanTest {
                         JITTER,
                         1,
                         PACKED_RAY_CONE,
+                        false,
                         false));
         ReconstructionFrameParameters wrongTexture = new ReconstructionFrameParameters(
                 parameters.camera(),
@@ -149,6 +154,7 @@ final class RealtimeFramePlanTest {
                         JITTER,
                         1,
                         PACKED_RAY_CONE,
+                        false,
                         false));
     }
 

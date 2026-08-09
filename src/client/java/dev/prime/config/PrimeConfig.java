@@ -24,6 +24,7 @@ import net.fabricmc.loader.api.FabricLoader;
 /** Small, version-tolerant owner for Prime's user-facing settings. */
 public final class PrimeConfig {
     private static final String PATH_TRACING_ENABLED_KEY = "renderer.path_tracing";
+    private static final String SHARC_ENABLED_KEY = "renderer.sharc";
     private static final String[] LEGACY_INTEGRATOR_KEYS = {
         "renderer.integrator",
         "renderer.performance_maximum_bounces",
@@ -69,6 +70,7 @@ public final class PrimeConfig {
     public static void load() {
         Path path = configPath();
         boolean pathTracingEnabled = true;
+        boolean sharcEnabled = true;
         boolean voxelTextureSurfaces = false;
         int voxelTextureSurfaceStrengthSteps = VoxelSurfaceSettings.DEFAULT_STEPS;
         PostProcessingMode postProcessingMode = PostProcessingMode.DEFAULT;
@@ -100,6 +102,19 @@ public final class PrimeConfig {
                         PrimeInfo.LOGGER.warn(
                                 "Invalid Prime path-tracing switch '{}'; enabling path tracing",
                                 pathTracing);
+                        rewriteNeeded = true;
+                    }
+                } else {
+                    rewriteNeeded = true;
+                }
+                String sharc = properties.getProperty(SHARC_ENABLED_KEY);
+                if (sharc != null) {
+                    try {
+                        sharcEnabled = parseBoolean(sharc);
+                    } catch (IllegalArgumentException exception) {
+                        PrimeInfo.LOGGER.warn(
+                                "Invalid Prime SHARC switch '{}'; enabling SHARC",
+                                sharc);
                         rewriteNeeded = true;
                     }
                 } else {
@@ -328,12 +343,14 @@ public final class PrimeConfig {
                 defaultRoughnessSteps,
                 seamlessGlass,
                 0L,
-                0L);
+                0L,
+                sharcEnabled);
         rendererRevision = 0L;
         dirty = rewriteNeeded;
         PrimeInfo.LOGGER.info(
-                "Prime settings: path tracing {}, voxel surfaces {} at {}x, post-processing {} quality {} (NRD-FSR {}x), latitude {} degrees, solar longitude {} degrees, sun {} EV, stars {} EV, block lights {} EV, final exposure {} EV, Oklab DRT overexposure {}, curve exponent {}, auto-exposure compensation {}, default roughness {}, seamless glass {}",
+                "Prime settings: path tracing {}, SHARC {}, voxel surfaces {} at {}x, post-processing {} quality {} (NRD-FSR {}x), latitude {} degrees, solar longitude {} degrees, sun {} EV, stars {} EV, block lights {} EV, final exposure {} EV, Oklab DRT overexposure {}, curve exponent {}, auto-exposure compensation {}, default roughness {}, seamless glass {}",
                 pathTracingEnabled ? "enabled" : "disabled",
+                sharcEnabled ? "enabled" : "disabled",
                 voxelTextureSurfaces ? "enabled" : "disabled",
                 formatVoxelSurfaceStrength(voxelTextureSurfaceStrengthSteps),
                 postProcessingMode.id(),
@@ -365,6 +382,7 @@ public final class PrimeConfig {
     static RendererSettings rendererSettings(PrimeSettings current, long revision) {
         return new RendererSettings(
                 current.pathTracingEnabled(),
+                current.sharcEnabled(),
                 current.voxelTextureSurfaces(),
                 current.voxelTextureSurfaceStrengthSteps(),
                 current.postProcessingMode(),
@@ -378,6 +396,10 @@ public final class PrimeConfig {
 
     public static void setPathTracingEnabled(boolean enabled) {
         update(settings.withPathTracingEnabled(enabled));
+    }
+
+    public static void setSharcEnabled(boolean enabled) {
+        update(settings.withSharcEnabled(enabled));
     }
 
     public static void setVoxelTextureSurfaces(boolean enabled) {
@@ -447,6 +469,7 @@ public final class PrimeConfig {
     static PrimeSettings restoredDefaults(PrimeSettings current) {
         return current
                 .withPathTracingEnabled(true)
+                .withSharcEnabled(true)
                 .withVoxelTextureSurfaces(false)
                 .withVoxelTextureSurfaceStrengthSteps(VoxelSurfaceSettings.DEFAULT_STEPS)
                 .withPostProcessingMode(PostProcessingMode.DEFAULT)
@@ -517,6 +540,7 @@ public final class PrimeConfig {
     static String serializedContents() {
         PrimeSettings current = settings;
         return PATH_TRACING_ENABLED_KEY + "=" + current.pathTracingEnabled() + "\n"
+                    + SHARC_ENABLED_KEY + "=" + current.sharcEnabled() + "\n"
                     + VOXEL_TEXTURE_SURFACES_KEY + "="
                     + current.voxelTextureSurfaces() + "\n"
                     + VOXEL_TEXTURE_SURFACE_STRENGTH_KEY + "="

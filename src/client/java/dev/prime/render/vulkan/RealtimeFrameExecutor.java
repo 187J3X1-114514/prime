@@ -75,7 +75,11 @@ public final class RealtimeFrameExecutor {
             VkCommandBuffer commandBuffer =
                     encoder.allocateAndBeginTransientCommandBuffer();
             pipelineFrame = pipeline.prepareFrame(
-                    commandBuffer, this.imageInitialization);
+                    commandBuffer,
+                    this.imageInitialization,
+                    plan,
+                    scene,
+                    textureRevision);
             this.context.device().instance().debug().beginDebugGroup(
                     commandBuffer, () -> debugLabel);
             VulkanImageTransitions.prepareOutputForComposite(

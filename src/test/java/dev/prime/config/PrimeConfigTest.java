@@ -214,6 +214,8 @@ final class PrimeConfigTest {
     void debugSelectionsAreSessionOnlyAndLegacyKeysAreRemovedOnRewrite() {
         String serialized = PrimeConfig.serializedContents();
         assertTrue(serialized.contains("renderer.path_tracing=true\n"));
+        assertTrue(serialized.contains("renderer.sharc=true\n"));
+        assertTrue(PrimeSettings.defaults().sharcEnabled());
         assertFalse(serialized.contains("renderer.integrator"));
         assertFalse(serialized.contains("renderer.performance_maximum_bounces"));
         assertFalse(serialized.contains("renderer.lightweight_maximum_bounces"));

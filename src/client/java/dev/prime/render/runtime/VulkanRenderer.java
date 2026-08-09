@@ -370,7 +370,7 @@ public final class VulkanRenderer implements AutoCloseable {
                         reconstructionQuality(realtime.quality())));
                 lines.add(String.format(
                         Locale.ROOT,
-                        "Render resolution: %d x %d; display resolution: %d x %d; accumulated samples: %,d; integrator passes: %d; wavefront bytes: %,d",
+                        "Render resolution: %d x %d; display resolution: %d x %d; accumulated samples: %,d; integrator passes: %d; integrator bytes: %,d",
                         realtime.renderWidth(),
                         realtime.renderHeight(),
                         realtime.displayWidth(),
@@ -378,6 +378,60 @@ public final class VulkanRenderer implements AutoCloseable {
                         realtime.accumulatedSamples(),
                         realtime.integratorPassCount(),
                         realtime.integratorResourceBytes()));
+                String sharcStatus = realtime.sharcEffective()
+                        ? "enabled (256 MiB cache)"
+                        : !realtime.sharcRequested()
+                                ? "disabled by user"
+                                : "unavailable: " + realtime.sharcUnavailableReason();
+                lines.add("SHARC radiance cache: " + sharcStatus);
+                if (realtime.sharcEffective()) {
+                    var sharc = realtime.sharcDiagnostics();
+                    if (sharc == null) {
+                        lines.add(
+                                "SHARC diagnostics: waiting for asynchronous GPU readback");
+                    } else {
+                        if (sharc.timestampsSupported()) {
+                            lines.add(String.format(
+                                    Locale.ROOT,
+                                    "SHARC rolling GPU time - update: %.3f ms; resolve: %.3f ms; query render: %.3f ms; total: %.3f ms",
+                                    sharc.updateMilliseconds(),
+                                    sharc.resolveMilliseconds(),
+                                    sharc.queryMilliseconds(),
+                                    sharc.totalMilliseconds()));
+                            if (sharc.referenceCaptureCount() == 0L) {
+                                lines.add(
+                                        "SHARC benefit estimate: keep diagnostics enabled and briefly disable SHARC to capture a reference frame");
+                            } else {
+                                lines.add(String.format(
+                                        Locale.ROOT,
+                                        "SHARC reference query render: %.3f ms; estimated net saving: %+.3f ms (%s); reference captures: %,d",
+                                        sharc.referenceQueryMilliseconds(),
+                                        sharc.estimatedNetSavingMilliseconds(),
+                                        percentage(sharc.estimatedNetSavingRate()),
+                                        sharc.referenceCaptureCount()));
+                            }
+                        } else {
+                            lines.add(
+                                    "SHARC GPU time: unavailable because this queue cannot timestamp graphics and compute stages");
+                        }
+                        lines.add(String.format(
+                                Locale.ROOT,
+                                "SHARC sampled queries (1/%d): %,d; lookups: %,d; hits: %,d; lookup hit rate: %s; path termination rate: %s",
+                                sharc.samplingPeriod(),
+                                sharc.sampledQueries(),
+                                sharc.lookupAttempts(),
+                                sharc.hits(),
+                                percentage(sharc.lookupHitRate()),
+                                percentage(sharc.terminationRate())));
+                        lines.add(String.format(
+                                Locale.ROOT,
+                                "SHARC sampled eligibility skips - delta: %,d; short segment: %,d; narrow glossy footprint: %,d; captures: %,d",
+                                sharc.deltaSkips(),
+                                sharc.shortSegmentSkips(),
+                                sharc.glossyFootprintSkips(),
+                                sharc.captureCount()));
+                    }
+                }
             }
         }
         lines.add(String.format(
@@ -470,6 +524,12 @@ public final class VulkanRenderer implements AutoCloseable {
 
     private static double mebibytes(long bytes) {
         return bytes / (1024.0 * 1024.0);
+    }
+
+    private static String percentage(double ratio) {
+        return Double.isFinite(ratio)
+                ? String.format(Locale.ROOT, "%.1f%%", ratio * 100.0)
+                : "n/a";
     }
 
     private boolean updateOfflineSession(

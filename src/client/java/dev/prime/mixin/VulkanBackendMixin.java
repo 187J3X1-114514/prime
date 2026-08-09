@@ -49,6 +49,11 @@ public abstract class VulkanBackendMixin {
                     "Prime FidelityFX optional FP16 device features: {}",
                     capabilities.fsrFp16Supported() ? "enabled" : "unavailable");
             PrimeInfo.LOGGER.info(
+                    "Prime SHARC: {}",
+                    capabilities.sharcSupported()
+                            ? "enabled"
+                            : capabilities.sharcUnavailableReason());
+            PrimeInfo.LOGGER.info(
                     "Prime ray tracing invocation reorder: {}",
                     capabilities.invocationReorderSupported()
                             ? "VK_EXT_ray_tracing_invocation_reorder"

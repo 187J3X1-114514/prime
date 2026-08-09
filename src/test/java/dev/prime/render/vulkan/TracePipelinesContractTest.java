@@ -42,7 +42,7 @@ final class TracePipelinesContractTest {
         assertEquals(8, RealtimeRayTracingPipeline.RAYGEN_GROUP_COUNT);
         assertEquals(5, RealtimeRayTracingPipeline.RAYGEN_MODULE_COUNT);
         assertEquals(19, RealtimeRayTracingPipeline.DISPATCH_COUNT);
-        assertEquals(25, RealtimeRayTracingPipeline.DESCRIPTOR_BINDING_COUNT);
+        assertEquals(26, RealtimeRayTracingPipeline.DESCRIPTOR_BINDING_COUNT);
 
         assertEquals(8, OfflineRayTracingPipeline.RAYGEN_GROUP_COUNT);
         assertEquals(5, OfflineRayTracingPipeline.RAYGEN_MODULE_COUNT);
@@ -100,6 +100,24 @@ final class TracePipelinesContractTest {
                     ShaderAbi.OFFLINE_DESCRIPTOR_WAVEFRONT_PATHS,
                     ShaderAbi.OFFLINE_DESCRIPTOR_WAVEFRONT_QUEUE), offline);
         }
+    }
+
+    @Test
+    void sharcModulesExposeOnlyTheDeclaredFrameBinding() throws IOException {
+        for (String suffix : List.of("", "_subgroup", "_ser")) {
+            Set<Integer> query = descriptorBindings(
+                    List.of("realtime_wavefront_sharc_step" + suffix + ".rgen.spv"),
+                    1);
+            assertTrue(query.contains(ShaderAbi.DESCRIPTOR_SHARC_FRAME));
+            assertTrue(query.contains(ShaderAbi.DESCRIPTOR_WAVEFRONT_PATHS));
+            assertTrue(query.contains(ShaderAbi.DESCRIPTOR_WAVEFRONT_QUEUE));
+        }
+        assertEquals(
+                Set.of(ShaderAbi.DESCRIPTOR_SHARC_FRAME),
+                descriptorBindings(List.of("sharc_update.rgen.spv"), 1));
+        assertEquals(
+                Set.of(ShaderAbi.DESCRIPTOR_SHARC_FRAME),
+                descriptorBindings(List.of("sharc_resolve.comp.spv"), 1));
     }
 
     @Test

@@ -68,6 +68,10 @@ public final class VulkanDeviceNegotiator {
             VulkanBackend.VK10_FEATURES_STRUCT,
             "shaderInt16",
             VkPhysicalDeviceFeatures.SHADERINT16);
+    private static final VulkanFeature SHADER_BUFFER_INT64_ATOMICS = new VulkanFeature(
+            VulkanBackend.VK12_FEATURES_STRUCT,
+            "shaderBufferInt64Atomics",
+            VkPhysicalDeviceVulkan12Features.SHADERBUFFERINT64ATOMICS);
     private static final VulkanFeature STORAGE_IMAGE_EXTENDED_FORMATS = new VulkanFeature(
             VulkanBackend.VK10_FEATURES_STRUCT,
             "shaderStorageImageExtendedFormats",
@@ -337,6 +341,22 @@ public final class VulkanDeviceNegotiator {
                 enabledFeatures.add(SHADER_SUBGROUP_EXTENDED_TYPES);
             }
 
+            boolean sharcSupported = supportsSharc(
+                    vulkan11.storageBuffer16BitAccess(),
+                    vulkan12.shaderFloat16(),
+                    vulkan12.shaderBufferInt64Atomics());
+            String sharcUnavailableReason = sharcSupported
+                    ? ""
+                    : sharcUnavailableReason(
+                            vulkan11.storageBuffer16BitAccess(),
+                            vulkan12.shaderFloat16(),
+                            vulkan12.shaderBufferInt64Atomics());
+            if (sharcSupported) {
+                enabledFeatures.add(STORAGE_BUFFER_16_BIT_ACCESS);
+                enabledFeatures.add(SHADER_FLOAT16);
+                enabledFeatures.add(SHADER_BUFFER_INT64_ATOMICS);
+            }
+
             // EXT deliberately permits hit objects without real reordering. Prime loads its SER
             // permutation only when the driver advertises both the feature and REORDER mode; a
             // no-op implementation would add live-state save/restore structure without solving
@@ -392,8 +412,34 @@ public final class VulkanDeviceNegotiator {
                     opacityMicromapSupported
                             ? opacityMicromapProperties.maxOpacity4StateSubdivisionLevel()
                             : 0,
-                    fsrFp16Supported);
+                    fsrFp16Supported,
+                    sharcSupported,
+                    sharcUnavailableReason);
         }
+    }
+
+    static boolean supportsSharc(
+            boolean storageBuffer16BitAccess,
+            boolean shaderFloat16,
+            boolean shaderBufferInt64Atomics) {
+        return storageBuffer16BitAccess && shaderFloat16 && shaderBufferInt64Atomics;
+    }
+
+    static String sharcUnavailableReason(
+            boolean storageBuffer16BitAccess,
+            boolean shaderFloat16,
+            boolean shaderBufferInt64Atomics) {
+        List<String> missing = new ArrayList<>();
+        if (!storageBuffer16BitAccess) {
+            missing.add("storageBuffer16BitAccess");
+        }
+        if (!shaderFloat16) {
+            missing.add("shaderFloat16");
+        }
+        if (!shaderBufferInt64Atomics) {
+            missing.add("shaderBufferInt64Atomics");
+        }
+        return "Missing SHARC Vulkan capabilities: " + String.join(", ", missing);
     }
 
     private static boolean isPositivePowerOfTwo(int value) {

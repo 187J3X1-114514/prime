@@ -98,6 +98,10 @@ const uint PRIME_WAVEFRONT_PRIMARY_FLAGS_MASK = 0x3fffu;
 const uint PRIME_WAVEFRONT_NUMERICAL_FLAGS_MASK = 0x1ffu;
 const uint PRIME_WAVEFRONT_NUMERICAL_CONTEXT_SHIFT = 9u;
 const uint PRIME_WAVEFRONT_NUMERICAL_CONTEXT_MASK = 0x7fffu;
+const uint PRIME_WAVEFRONT_SHARC_SHIFT = 24u;
+const uint PRIME_WAVEFRONT_SHARC_ROUGHNESS_MASK = 0x3fu;
+const uint PRIME_WAVEFRONT_SHARC_EVENT_SHIFT = 6u;
+const uint PRIME_WAVEFRONT_LOW_DIAGNOSTIC_MASK = 0xffffffu;
 const uint PRIME_WAVEFRONT_PSR_CONTROL_SHIFT = 25u;
 const uint PRIME_WAVEFRONT_PSR_CONTROL_MASK = 0x3fu;
 const uint PRIME_WAVEFRONT_LIGHT_NORMAL_SHIFT = 16u;
@@ -261,6 +265,15 @@ uint primePackWavefrontDiagnostic() {
             | ((primeRawNumericalFirstContext
                     & PRIME_WAVEFRONT_NUMERICAL_CONTEXT_MASK)
                     << PRIME_WAVEFRONT_NUMERICAL_CONTEXT_SHIFT);
+}
+
+uint primePackWavefrontSharcState(PathState path) {
+    uint roughness = uint(round(
+            clamp(path.previousSharcRoughness, 0.0, 1.0)
+                    * float(PRIME_WAVEFRONT_SHARC_ROUGHNESS_MASK)));
+    return ((path.previousSharcEvent << PRIME_WAVEFRONT_SHARC_EVENT_SHIFT)
+                    | roughness)
+            << PRIME_WAVEFRONT_SHARC_SHIFT;
 }
 
 bool primeWavefrontActive(PrimeWavefrontTransportRecord record) {
@@ -459,9 +472,13 @@ void primeAccumulateDeferredAreaLight(
 
 void primeStoreWavefrontDiagnostic(uint pathIndex) {
     if (primeWritesRawNumericalDiagnostic()) {
+        uint previous = floatBitsToUint(primeWavefrontPaths.records[pathIndex]
+                .transport.throughputAndNumericalFlags.w);
         primeWavefrontPaths.records[pathIndex]
                 .transport.throughputAndNumericalFlags.w =
-                uintBitsToFloat(primePackWavefrontDiagnostic());
+                uintBitsToFloat(
+                        (previous & ~PRIME_WAVEFRONT_LOW_DIAGNOSTIC_MASK)
+                        | primePackWavefrontDiagnostic());
     }
 }
 
@@ -495,7 +512,11 @@ PrimeWavefrontTransportRecord primeMakeWavefrontTransportRecord(
     record.rayDirectionAndDenoiserControl =
             vec4(path.rayDirection, uintBitsToFloat(denoiserControl));
     record.throughputAndNumericalFlags =
-            vec4(path.throughput, uintBitsToFloat(primePackWavefrontDiagnostic()));
+            vec4(
+                    path.throughput,
+                    uintBitsToFloat(
+                            primePackWavefrontDiagnostic()
+                            | primePackWavefrontSharcState(path)));
     return record;
 }
 
@@ -543,6 +564,12 @@ PathState primeWavefrontPath(
     path.pixel = pixel;
     path.sampleIndex = primeSampleIndex();
     path.sampleEpoch = primeSampleEpoch();
+    uint packedSharc = floatBitsToUint(record.throughputAndNumericalFlags.w)
+            >> PRIME_WAVEFRONT_SHARC_SHIFT;
+    path.previousSharcRoughness = float(
+            packedSharc & PRIME_WAVEFRONT_SHARC_ROUGHNESS_MASK)
+            / float(PRIME_WAVEFRONT_SHARC_ROUGHNESS_MASK);
+    path.previousSharcEvent = packedSharc >> PRIME_WAVEFRONT_SHARC_EVENT_SHIFT;
     return path;
 }
 

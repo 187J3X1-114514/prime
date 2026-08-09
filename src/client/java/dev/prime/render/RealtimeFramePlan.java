@@ -12,7 +12,8 @@ public record RealtimeFramePlan(
         long residentSceneRevision,
         int reconstructionFrameIndex,
         SubpixelJitter jitter,
-        boolean reconstructionReset) {
+        boolean reconstructionReset,
+        boolean rendererDiagnostics) {
     public RealtimeFramePlan {
         Objects.requireNonNull(integrator, "integrator");
         Objects.requireNonNull(reconstruction, "reconstruction");
@@ -35,7 +36,8 @@ public record RealtimeFramePlan(
             SubpixelJitter expectedJitter,
             int jitterPhase,
             int packedRayCone,
-            boolean rawNumericalDiagnostic) {
+            boolean rawNumericalDiagnostic,
+            boolean rendererDiagnostics) {
         Objects.requireNonNull(input, "input");
         Objects.requireNonNull(sample, "sample");
         input.requireReconstructionInput(reconstruction, sample.reset());
@@ -64,7 +66,8 @@ public record RealtimeFramePlan(
                 input.residentSceneRevision(),
                 reconstructionFrame.frameIndex(),
                 actual,
-                reconstructionFrame.reset());
+                reconstructionFrame.reset(),
+                rendererDiagnostics);
     }
 
     public void requireSceneRevision(long revision) {

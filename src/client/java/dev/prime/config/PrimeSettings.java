@@ -27,7 +27,8 @@ public record PrimeSettings(
         int defaultRoughnessSteps,
         boolean seamlessGlass,
         long lightingRevision,
-        long materialRevision) {
+        long materialRevision,
+        boolean sharcEnabled) {
     public PrimeSettings {
         postProcessingMode = Objects.requireNonNull(postProcessingMode, "postProcessingMode");
         reconstructionQuality = Objects.requireNonNull(
@@ -65,7 +66,8 @@ public record PrimeSettings(
                 MaterialSettings.DEFAULT_ROUGHNESS_STEPS,
                 MaterialSettings.DEFAULT_SEAMLESS_GLASS,
                 0L,
-                0L);
+                0L,
+                true);
     }
 
     public PrimeSettings withPathTracingEnabled(boolean value) {
@@ -88,7 +90,32 @@ public record PrimeSettings(
                         this.defaultRoughnessSteps,
                         this.seamlessGlass,
                         this.lightingRevision,
-                        this.materialRevision);
+                        this.materialRevision,
+                        this.sharcEnabled);
+    }
+
+    public PrimeSettings withSharcEnabled(boolean value) {
+        return value == this.sharcEnabled
+                ? this
+                : new PrimeSettings(
+                        this.pathTracingEnabled,
+                        this.voxelTextureSurfaces,
+                        this.voxelTextureSurfaceStrengthSteps,
+                        this.postProcessingMode,
+                        this.reconstructionQuality,
+                        this.astronomy,
+                        this.sunQuarterSteps,
+                        this.starQuarterSteps,
+                        this.blockLightQuarterSteps,
+                        this.finalExposureQuarterSteps,
+                        this.oklabOverexposureSteps,
+                        this.curveExponentSteps,
+                        this.autoExposureCompensationSteps,
+                        this.defaultRoughnessSteps,
+                        this.seamlessGlass,
+                        this.lightingRevision,
+                        this.materialRevision,
+                        value);
     }
 
     public PrimeSettings withVoxelTextureSurfaces(boolean value) {
@@ -111,7 +138,8 @@ public record PrimeSettings(
                         this.defaultRoughnessSteps,
                         this.seamlessGlass,
                         this.lightingRevision,
-                        this.materialRevision);
+                        this.materialRevision,
+                        this.sharcEnabled);
     }
 
     public PrimeSettings withVoxelTextureSurfaceStrengthSteps(int value) {
@@ -135,7 +163,8 @@ public record PrimeSettings(
                         this.defaultRoughnessSteps,
                         this.seamlessGlass,
                         this.lightingRevision,
-                        this.materialRevision);
+                        this.materialRevision,
+                        this.sharcEnabled);
     }
 
     public PrimeSettings withPostProcessingMode(PostProcessingMode value) {
@@ -159,7 +188,8 @@ public record PrimeSettings(
                         this.defaultRoughnessSteps,
                         this.seamlessGlass,
                         this.lightingRevision,
-                        this.materialRevision);
+                        this.materialRevision,
+                        this.sharcEnabled);
     }
 
     public PrimeSettings withReconstructionQuality(ReconstructionQualityMode value) {
@@ -183,7 +213,8 @@ public record PrimeSettings(
                         this.defaultRoughnessSteps,
                         this.seamlessGlass,
                         this.lightingRevision,
-                        this.materialRevision);
+                        this.materialRevision,
+                        this.sharcEnabled);
     }
 
     public PrimeSettings withLatitudeDegrees(int value) {
@@ -207,7 +238,8 @@ public record PrimeSettings(
                         this.defaultRoughnessSteps,
                         this.seamlessGlass,
                         Math.incrementExact(this.lightingRevision),
-                        this.materialRevision);
+                        this.materialRevision,
+                        this.sharcEnabled);
     }
 
     public PrimeSettings withSolarLongitudeDegrees(int value) {
@@ -232,7 +264,8 @@ public record PrimeSettings(
                         this.defaultRoughnessSteps,
                         this.seamlessGlass,
                         Math.incrementExact(this.lightingRevision),
-                        this.materialRevision);
+                        this.materialRevision,
+                        this.sharcEnabled);
     }
 
     public PrimeSettings withSunQuarterSteps(int value) {
@@ -256,7 +289,8 @@ public record PrimeSettings(
                         this.defaultRoughnessSteps,
                         this.seamlessGlass,
                         Math.incrementExact(this.lightingRevision),
-                        this.materialRevision);
+                        this.materialRevision,
+                        this.sharcEnabled);
     }
 
     public PrimeSettings withStarQuarterSteps(int value) {
@@ -280,7 +314,8 @@ public record PrimeSettings(
                         this.defaultRoughnessSteps,
                         this.seamlessGlass,
                         Math.incrementExact(this.lightingRevision),
-                        this.materialRevision);
+                        this.materialRevision,
+                        this.sharcEnabled);
     }
 
     public PrimeSettings withBlockLightQuarterSteps(int value) {
@@ -304,7 +339,8 @@ public record PrimeSettings(
                         this.defaultRoughnessSteps,
                         this.seamlessGlass,
                         Math.incrementExact(this.lightingRevision),
-                        this.materialRevision);
+                        this.materialRevision,
+                        this.sharcEnabled);
     }
 
     public PrimeSettings withFinalExposureQuarterSteps(int value) {
@@ -328,7 +364,8 @@ public record PrimeSettings(
                         this.defaultRoughnessSteps,
                         this.seamlessGlass,
                         this.lightingRevision,
-                        this.materialRevision);
+                        this.materialRevision,
+                        this.sharcEnabled);
     }
 
     public PrimeSettings withOklabOverexposureSteps(int value) {
@@ -352,7 +389,8 @@ public record PrimeSettings(
                         this.defaultRoughnessSteps,
                         this.seamlessGlass,
                         this.lightingRevision,
-                        this.materialRevision);
+                        this.materialRevision,
+                        this.sharcEnabled);
     }
 
     public PrimeSettings withCurveExponentSteps(int value) {
@@ -376,7 +414,8 @@ public record PrimeSettings(
                         this.defaultRoughnessSteps,
                         this.seamlessGlass,
                         this.lightingRevision,
-                        this.materialRevision);
+                        this.materialRevision,
+                        this.sharcEnabled);
     }
 
     public PrimeSettings withAutoExposureCompensationSteps(int value) {
@@ -400,7 +439,8 @@ public record PrimeSettings(
                         this.defaultRoughnessSteps,
                         this.seamlessGlass,
                         this.lightingRevision,
-                        this.materialRevision);
+                        this.materialRevision,
+                        this.sharcEnabled);
     }
 
     public PrimeSettings withDefaultRoughnessSteps(int value) {
@@ -424,7 +464,8 @@ public record PrimeSettings(
                         value,
                         this.seamlessGlass,
                         this.lightingRevision,
-                        Math.incrementExact(this.materialRevision));
+                        Math.incrementExact(this.materialRevision),
+                        this.sharcEnabled);
     }
 
     public PrimeSettings withSeamlessGlass(boolean value) {
@@ -447,7 +488,8 @@ public record PrimeSettings(
                         this.defaultRoughnessSteps,
                         value,
                         this.lightingRevision,
-                        Math.incrementExact(this.materialRevision));
+                        Math.incrementExact(this.materialRevision),
+                        this.sharcEnabled);
     }
 
     public LightingSettings.Snapshot lighting() {

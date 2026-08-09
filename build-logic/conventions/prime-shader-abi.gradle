@@ -93,6 +93,7 @@ abstract class GenerateShaderAbi extends DefaultTask {
 		def surfaceInteraction = schema.structs.surfaceInteraction
 		def push = schema.structs.pushConstants
 		def nrdMotionPush = schema.structs.nrdMotionPushConstants
+		def sharcFrame = schema.structs.sharcFrameConstants
 		def colorContract = schema.colorContract
 		def emissionContract = schema.emissionContract
 		def atmosphereContract = schema.atmosphereContract
@@ -109,7 +110,8 @@ abstract class GenerateShaderAbi extends DefaultTask {
 				|| sectionLightHeader.size != 48
 				|| integrator.size != 32 || pathState.size != 96 || tracePayload.size != 64
 				|| surfaceInteraction.size != 80 || push.size != 128
-				|| nrdMotionPush.size != 208 || schema.sceneTextureCount != 64) {
+				|| nrdMotionPush.size != 208 || sharcFrame.size != 96
+				|| schema.sceneTextureCount != 64) {
 			throw new GradleException(
 					'Prime shader ABI sizes or scene texture count changed without a coordinated migration')
 		}
@@ -263,6 +265,7 @@ abstract class GenerateShaderAbi extends DefaultTask {
 		validateStruct('SurfaceInteraction', surfaceInteraction)
 		validateStruct('PushConstants', push)
 		validateStruct('NrdMotionPushConstants', nrdMotionPush)
+		validateStruct('SharcFrameConstants', sharcFrame)
 
 		def constantName = { String value ->
 			value.replaceAll('([a-z0-9])([A-Z])', '$1_$2').toUpperCase(java.util.Locale.ROOT)
@@ -282,7 +285,8 @@ abstract class GenerateShaderAbi extends DefaultTask {
 			TRACE_PAYLOAD: tracePayload,
 			SURFACE: surfaceInteraction,
 			PUSH: push,
-			NRD_MOTION_PUSH: nrdMotionPush
+			NRD_MOTION_PUSH: nrdMotionPush,
+			SHARC_FRAME: sharcFrame
 		].each { prefix, definition ->
 			definition.fields.each { field ->
 				javaOffsets.append("    public static final int ${prefix}_${constantName(field.name)}_OFFSET = ${field.offset};\n")
@@ -316,6 +320,7 @@ public final class ShaderAbi {
     public static final int SURFACE_INTERACTION_SIZE = ${surfaceInteraction.size};
     public static final int PUSH_CONSTANT_SIZE = ${push.size};
     public static final int NRD_MOTION_PUSH_CONSTANT_SIZE = ${nrdMotionPush.size};
+    public static final int SHARC_FRAME_CONSTANT_SIZE = ${sharcFrame.size};
     public static final int DESCRIPTOR_TLAS = ${schema.sharedDescriptors.tlas};
     public static final int DESCRIPTOR_BLOCK_ATLAS = ${schema.sharedDescriptors.blockAtlas};
     public static final int DESCRIPTOR_STABLE_RADIANCE = ${schema.realtimeDescriptors.stableRadiance};
@@ -352,6 +357,7 @@ public final class ShaderAbi {
     public static final int DESCRIPTOR_STARMAP = ${schema.sharedDescriptors.starmap};
     public static final int DESCRIPTOR_WAVEFRONT_PATHS = ${schema.realtimeDescriptors.wavefrontPaths};
     public static final int DESCRIPTOR_WAVEFRONT_QUEUE = ${schema.realtimeDescriptors.wavefrontQueue};
+    public static final int DESCRIPTOR_SHARC_FRAME = ${schema.realtimeDescriptors.sharcFrame};
     public static final int OFFLINE_DESCRIPTOR_RUNNING_MEAN = ${schema.offlineDescriptors.runningMean};
     public static final int OFFLINE_DESCRIPTOR_WAVEFRONT_PATHS = ${schema.offlineDescriptors.wavefrontPaths};
     public static final int OFFLINE_DESCRIPTOR_WAVEFRONT_QUEUE = ${schema.offlineDescriptors.wavefrontQueue};
@@ -692,9 +698,26 @@ layout(set = 1, binding = ${schema.realtimeDescriptors.nrdReflectionPosition}, r
 layout(set = 1, binding = ${schema.realtimeDescriptors.nrdReflectionDiffuseDirection}, rgba16f) uniform image2D primeNrdReflectionDiffuseDirection;
 layout(set = 1, binding = ${schema.realtimeDescriptors.nrdReflectionSpecularDirection}, rgba16f) uniform image2D primeNrdReflectionSpecularDirection;
 layout(set = 1, binding = ${schema.realtimeDescriptors.nrdDisplayPosition}, rgba32f) uniform image2D primeNrdDisplayPosition;
+#if defined(PRIME_SHARC_ABI)
+layout(std140, set = 1, binding = ${schema.realtimeDescriptors.sharcFrame}) uniform PrimeSharcFrameConstants {
+${sharcFrame.fields.collect { field -> "    layout(offset = ${field.offset}) ${field.type} ${field.name};" }.join('\n')}
+} primeSharcFrame;
+#endif
 #elif defined(PRIME_OFFLINE_ABI)
 layout(set = 1, binding = ${schema.offlineDescriptors.runningMean}, rgba32f) uniform image2D primeOfflineRunningMean;
 #endif
+#endif
+"""
+		new File(glslDir, 'prime_sharc_abi.glsl').text = """\
+#ifndef PRIME_SHARC_ABI_GLSL
+#define PRIME_SHARC_ABI_GLSL
+
+#extension GL_EXT_shader_explicit_arithmetic_types_int64 : require
+
+layout(std140, set = 1, binding = ${schema.realtimeDescriptors.sharcFrame}) uniform PrimeSharcFrameConstants {
+${sharcFrame.fields.collect { field -> "    layout(offset = ${field.offset}) ${field.type} ${field.name};" }.join('\n')}
+} primeSharcFrame;
+
 #endif
 """
 		new File(glslDir, 'prime_atmosphere_contract.glsl').text = """\
@@ -764,12 +787,9 @@ abstract class CompilePrimeShaders extends DefaultTask {
 	@InputDirectory
 	abstract DirectoryProperty getSourceDirectory()
 
-	@InputDirectory
-	abstract DirectoryProperty getIncludeDirectory()
-
-	@Optional
-	@InputDirectory
-	abstract DirectoryProperty getAdditionalIncludeDirectory()
+	@InputFiles
+	@PathSensitive(PathSensitivity.RELATIVE)
+	abstract ConfigurableFileCollection getIncludeDirectories()
 
 	@OutputDirectory
 	abstract DirectoryProperty getOutputDirectory()
@@ -822,19 +842,16 @@ abstract class CompilePrimeShaders extends DefaultTask {
 		def glslang = glslangValidator.get()
 		def validator = spirvValidator.get()
 		def optimizer = spirvOptimizer.get()
-		def include = includeDirectory.get().asFile.absolutePath
-		def additionalInclude = additionalIncludeDirectory.isPresent()
-				? additionalIncludeDirectory.get().asFile.absolutePath
-				: null
+		def includes = includeDirectories.files
+				.findAll { it.isDirectory() }
+				.sort { it.absolutePath }
+				.collect { it.absolutePath }
 		def emitDebugInfo = debugInfo.get()
 		def compileShader = { File source, File output, List<String> definitions ->
 			def arguments = ['-V', '--target-env', 'vulkan1.2',
 					emitDebugInfo ? '-g' : '-g0']
 			arguments.addAll(definitions)
-			arguments.add("-I${include}")
-			if (additionalInclude != null) {
-				arguments.add("-I${additionalInclude}")
-			}
+			includes.each { arguments.add("-I${it}") }
 			arguments.add(source.absolutePath)
 			arguments.addAll(['-o', output.absolutePath])
 			CompilePrimeShaders.runCommand([glslang, *arguments])
@@ -960,6 +977,13 @@ abstract class CompilePrimeShaders extends DefaultTask {
 									[name: 'step', value: 1],
 									[name: 'area', value: 4]
 							])
+					def sharcDefinitions = new ArrayList<String>(deferredDefinitions)
+					sharcDefinitions.add('-DPRIME_SHARC_QUERY=1')
+					addWavefrontCompilation(
+							source,
+							"realtime_wavefront_sharc${variant.name}.generic.rgen.spv",
+							'realtime_wavefront_sharc', variant, sharcDefinitions,
+							[[name: 'step', value: 1]])
 				}
 			} else {
 				compilationUnits.add({
@@ -1040,12 +1064,21 @@ def verifyShaderIncludeGraph = tasks.register('verifyShaderIncludeGraph') {
 	group = 'verification'
 	description = 'Verifies that Prime production and test shader includes are resolvable and acyclic.'
 	dependsOn generateShaderAbi
-	inputs.files(fileTree('shaders'), fileTree('src/test/shaders'), shaderAbiIncludeRoot)
+	inputs.files(
+			fileTree('shaders'),
+			fileTree('src/test/shaders'),
+			fileTree('third_party/sharc/include'),
+			shaderAbiIncludeRoot)
 	outputs.file(shaderIncludeReport)
 
 	doLast {
 		def sources = []
-		[file('shaders'), file('src/test/shaders'), shaderAbiIncludeRoot.get().asFile]
+		[
+				file('shaders'),
+				file('src/test/shaders'),
+				file('third_party/sharc/include'),
+				shaderAbiIncludeRoot.get().asFile
+		]
 				.each { root ->
 			if (root.isDirectory()) {
 				sources.addAll(fileTree(root).files.findAll { source ->
@@ -1055,6 +1088,7 @@ def verifyShaderIncludeGraph = tasks.register('verifyShaderIncludeGraph') {
 							|| source.name.endsWith('.rchit')
 							|| source.name.endsWith('.rahit')
 							|| source.name.endsWith('.comp')
+							|| source.name.endsWith('.h')
 				})
 			}
 		}
@@ -1117,7 +1151,7 @@ def verifyShaderIncludeGraph = tasks.register('verifyShaderIncludeGraph') {
 def compileShaders = tasks.register('compileShaders', CompilePrimeShaders) {
 	dependsOn generateShaderAbi, verifyRoboCutePort, verifyShaderIncludeGraph
 	sourceDirectory = file('shaders')
-	includeDirectory = shaderAbiIncludeRoot
+	includeDirectories.from(shaderAbiIncludeRoot, file('third_party/sharc/include'))
 	outputDirectory = compiledShaderRoot
 	glslangValidator = resolveVulkanTool('glslangValidator')
 	spirvValidator = resolveVulkanTool('spirv-val')
@@ -1130,8 +1164,10 @@ def compileShaders = tasks.register('compileShaders', CompilePrimeShaders) {
 def compileTestShaders = tasks.register('compileTestShaders', CompilePrimeShaders) {
 	dependsOn generateShaderAbi, verifyRoboCutePort, verifyShaderIncludeGraph
 	sourceDirectory = file('src/test/shaders')
-	includeDirectory = file('shaders')
-	additionalIncludeDirectory = shaderAbiIncludeRoot
+	includeDirectories.from(
+			file('shaders'),
+			shaderAbiIncludeRoot,
+			file('third_party/sharc/include'))
 	outputDirectory = compiledTestShaderRoot
 	glslangValidator = resolveVulkanTool('glslangValidator')
 	spirvValidator = resolveVulkanTool('spirv-val')

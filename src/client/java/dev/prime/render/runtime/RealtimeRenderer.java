@@ -20,6 +20,7 @@ import dev.prime.render.vulkan.LabPbrTextureAtlas;
 import dev.prime.render.vulkan.RealtimeFrameExecutor;
 import dev.prime.render.vulkan.RealtimeIntegratorPipeline;
 import dev.prime.render.vulkan.RealtimeRayTracingPipeline;
+import dev.prime.render.vulkan.SharcDiagnosticsSnapshot;
 import dev.prime.render.vulkan.SunShadowPipeline;
 import dev.prime.render.vulkan.TraceBackend;
 import dev.prime.render.vulkan.VulkanContext;
@@ -46,6 +47,7 @@ final class RealtimeRenderer implements Destroyable {
     private VulkanReconstructionResources resources;
     private RealtimeSampleState sampleState = RealtimeSampleState.initial();
     private MaterialSettings.Snapshot materialSettings;
+    private boolean sharcRequested;
     private boolean pipelineInvalid;
     private boolean destroyed;
 
@@ -118,6 +120,12 @@ final class RealtimeRenderer implements Destroyable {
                 this.sampleIndex(),
                 this.pipeline.passCount(),
                 this.pipeline.sizedResourceBytes(),
+                this.sharcRequested,
+                this.pipeline.sharcEffective(),
+                this.sharcRequested && !this.context.capabilities().sharcSupported()
+                        ? this.context.capabilities().sharcUnavailableReason()
+                        : "",
+                this.pipeline.sharcDiagnostics(),
                 this.exposureDiagnostics.latest());
     }
 
@@ -132,7 +140,8 @@ final class RealtimeRenderer implements Destroyable {
             long tlas,
             VulkanGpuTextureView atlasView,
             VulkanGpuSampler atlasSampler,
-            List<TraceBackend.SceneTexture> sceneTextures) {
+            List<TraceBackend.SceneTexture> sceneTextures,
+            boolean sharcRequested) {
         VulkanReconstructionResources current = this.resources;
         boolean resourcesMatch = current != null && current.matches(selection);
         boolean replacePipeline = this.pipelineInvalid;
@@ -146,7 +155,8 @@ final class RealtimeRenderer implements Destroyable {
                     labPbrAtlas.normalAtlas(),
                     labPbrAtlas.specularAtlas(),
                     atmosphere,
-                    current.processor().rawFrame());
+                    current.processor().rawFrame(),
+                    sharcRequested);
             return false;
         }
         VulkanReconstructionResources replacementResources = null;
@@ -177,7 +187,8 @@ final class RealtimeRenderer implements Destroyable {
                     labPbrAtlas.normalAtlas(),
                     labPbrAtlas.specularAtlas(),
                     atmosphere,
-                    targetResources.processor().rawFrame());
+                    targetResources.processor().rawFrame(),
+                    sharcRequested);
         } catch (RuntimeException exception) {
             ResourceCleanup.destroy(replacementPipeline, exception);
             ResourceCleanup.destroy(replacementResources, exception);
@@ -224,6 +235,8 @@ final class RealtimeRenderer implements Destroyable {
         }
 
         RealtimeRenderSettings settings = input.settings();
+        boolean sharcChanged = this.sharcRequested != settings.sharcEnabled();
+        this.sharcRequested = settings.sharcEnabled();
         ResolvedReconstruction requestedSelection = this.reconstructionRegistry.resolve(
                 settings.postProcessing(),
                 settings.reconstructionQuality(),
@@ -238,10 +251,11 @@ final class RealtimeRenderer implements Destroyable {
                 input.scene().tlas(),
                 input.atlasView(),
                 input.atlasSampler(),
-                input.sceneTextures());
+                input.sceneTextures(),
+                settings.sharcEnabled());
         boolean materialChanged = !settings.material().equals(this.materialSettings);
         this.materialSettings = settings.material();
-        boolean reconfigured = resized || materialChanged;
+        boolean reconfigured = resized || materialChanged || sharcChanged;
         VulkanReconstructionResources images = this.resources;
         if (images == null) {
             return List.of();
@@ -318,7 +332,8 @@ final class RealtimeRenderer implements Destroyable {
                     selection.packedRayCone(
                             input.camera().projection().m00(),
                             input.camera().projection().m11()),
-                    selection.rawNumericalDiagnostic(debugSettings));
+                    selection.rawNumericalDiagnostic(debugSettings),
+                    input.controls().rendererDiagnostics());
             debugLines = selection.debugLines(reconstructionFrame, debugSettings);
         } catch (RuntimeException exception) {
             throw ResourceCleanup.run(() -> processor.abandon(postFrame), exception);
@@ -410,6 +425,10 @@ final class RealtimeRenderer implements Destroyable {
             int accumulatedSamples,
             int integratorPassCount,
             long integratorResourceBytes,
+            boolean sharcRequested,
+            boolean sharcEffective,
+            String sharcUnavailableReason,
+            SharcDiagnosticsSnapshot sharcDiagnostics,
             DisplayExposureDiagnostics.Snapshot exposure) {}
 
     void releaseSizedResourcesAfterIdle() {

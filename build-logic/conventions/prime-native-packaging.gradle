@@ -6,6 +6,10 @@ jar {
 	from('THIRD_PARTY_LICENSES') {
 		into 'META-INF/licenses'
 	}
+	from('third_party/sharc/License.md') {
+		into 'META-INF/licenses'
+		rename { 'SHARC-LICENSE.md' }
+	}
 }
 
 def distributionVersion = providers.provider { project.version.toString() }
@@ -43,6 +47,7 @@ def verifyDistributionJar = tasks.register('verifyDistributionJar') {
 			'META-INF/licenses/FIDELITYFX-SDK-LICENSE.txt',
 			'META-INF/licenses/NRD-LICENSE.txt',
 			'META-INF/licenses/DLSS-SDK-LICENSE.txt',
+			'META-INF/licenses/SHARC-LICENSE.md',
 			'META-INF/licenses/ROBOCUTE-NOTICE.txt',
 			'META-INF/licenses/NASA-DEEP-STAR-MAPS-2020-NOTICE.md',
 			'prime/starmap/starmap_2020_8k.json',
@@ -69,6 +74,11 @@ def verifyDistributionJar = tasks.register('verifyDistributionJar') {
 			'prime/shaders/realtime_wavefront_area_ser.rgen.spv',
 			'prime/shaders/realtime_wavefront_tail_ser.rgen.spv',
 			'prime/shaders/realtime_wavefront_resolve_ser.rgen.spv',
+			'prime/shaders/realtime_wavefront_sharc_step.rgen.spv',
+			'prime/shaders/realtime_wavefront_sharc_step_subgroup.rgen.spv',
+			'prime/shaders/realtime_wavefront_sharc_step_ser.rgen.spv',
+			'prime/shaders/sharc_update.rgen.spv',
+			'prime/shaders/sharc_resolve.comp.spv',
 			'prime/shaders/offline_wavefront_head.rgen.spv',
 			'prime/shaders/offline_wavefront_step.rgen.spv',
 			'prime/shaders/offline_wavefront_area.rgen.spv',
@@ -103,9 +113,9 @@ def verifyDistributionJar = tasks.register('verifyDistributionJar') {
 		}
 
 		def shaderNames = names.findAll { it.startsWith('prime/shaders/') && it.endsWith('.spv') }
-		if (shaderNames.size() != 52) {
+		if (shaderNames.size() != 57) {
 			throw new GradleException(
-					"Distribution jar must contain 52 Prime shaders; found ${shaderNames.size()}")
+					"Distribution jar must contain 57 Prime shaders; found ${shaderNames.size()}")
 		}
 
 		new java.util.zip.ZipFile(archive).withCloseable { zip ->

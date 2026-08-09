@@ -836,13 +836,13 @@ vec3 primeEvaluateEnvironmentContribution(
             + sun.radiance * sunWeight);
 }
 
-vec3 primeEvaluateHitEmission(
+vec3 primeEvaluateLocalHitEmission(
         PathState path,
         SurfaceInteraction surface,
         bool previousUsedAreaNee) {
     primeSetNumericalContext(PRIME_NUMERICAL_STAGE_EMISSION, path.bounce);
     if ((surface.materialFlags & PRIME_MATERIAL_FLAG_VISIBLE_EMISSION) != 0u) {
-        return path.throughput * surface.baseColor
+        return surface.baseColor
                 * PRIME_LEVEL_15_BLOCK_INTENSITY
                 * primeBlockLightRadianceMultiplier();
     }
@@ -861,7 +861,15 @@ vec3 primeEvaluateHitEmission(
             !evaluateAreaPdf,
             path.previousBsdfPdf,
             hitAreaLight.pdf);
-    return primeTripleProduct(path.throughput, hitAreaLight.radiance, hitAreaWeight);
+    return hitAreaLight.radiance * hitAreaWeight;
+}
+
+vec3 primeEvaluateHitEmission(
+        PathState path,
+        SurfaceInteraction surface,
+        bool previousUsedAreaNee) {
+    return path.throughput * primeEvaluateLocalHitEmission(
+            path, surface, previousUsedAreaNee);
 }
 
 bool primeApplySegmentMedium(
@@ -1033,12 +1041,89 @@ bool primeIsNonDeltaSample(BsdfSample bsdf) {
     return (bsdf.eventFlags & nonDeltaFlags) != 0u && !primeIsDeltaSample(bsdf);
 }
 
+const uint PRIME_SHARC_EVENT_DELTA = 0u;
+const uint PRIME_SHARC_EVENT_DIFFUSE = 1u;
+const uint PRIME_SHARC_EVENT_GLOSSY = 2u;
+
+uint primeSharcEvent(BsdfSample bsdf) {
+    if (primeIsDeltaSample(bsdf)) {
+        return PRIME_SHARC_EVENT_DELTA;
+    }
+    return (bsdf.eventFlags & PRIME_BSDF_EVENT_DIFFUSE) != 0u
+            ? PRIME_SHARC_EVENT_DIFFUSE
+            : PRIME_SHARC_EVENT_GLOSSY;
+}
+
+#if defined(PRIME_SHARC_QUERY)
+bool primeQuerySharc(
+        PathState path,
+        SurfaceInteraction surface,
+        bool previousUsedAreaNee,
+        out vec3 contribution) {
+    contribution = vec3(0.0);
+    bool diagnosticSample = primeSharcDiagnosticSample(path);
+    primeRecordSharcDiagnostic(
+            diagnosticSample, PRIME_SHARC_DIAGNOSTIC_QUERY);
+    if (path.previousSharcEvent == PRIME_SHARC_EVENT_DELTA) {
+        primeRecordSharcDiagnostic(
+                diagnosticSample, PRIME_SHARC_DIAGNOSTIC_DELTA_SKIP);
+        return false;
+    }
+
+    float voxelSize = primeSharcVoxelSize(
+            surface.position, surface.geometricNormal);
+    if (surface.t < voxelSize) {
+        primeRecordSharcDiagnostic(
+                diagnosticSample, PRIME_SHARC_DIAGNOSTIC_SHORT_SKIP);
+        return false;
+    }
+    if (path.previousSharcEvent == PRIME_SHARC_EVENT_GLOSSY) {
+        float alpha = path.previousSharcRoughness
+                * path.previousSharcRoughness;
+        float alphaSquared = alpha * alpha;
+        float coneDiameter = alphaSquared >= 1.0
+                ? voxelSize
+                : 2.0 * surface.t * sqrt(
+                        0.5 * alphaSquared / (1.0 - alphaSquared));
+        if (coneDiameter < voxelSize) {
+            primeRecordSharcDiagnostic(
+                    diagnosticSample, PRIME_SHARC_DIAGNOSTIC_GLOSSY_SKIP);
+            return false;
+        }
+    }
+
+    float directionWeight = path.previousSharcEvent == PRIME_SHARC_EVENT_GLOSSY
+            ? 1.0 - path.previousSharcRoughness
+            : 0.0;
+    SharcHitData hit = primeSharcHitData(
+            surface.position,
+            surface.geometricNormal,
+            -path.rayDirection,
+            directionWeight,
+            primeSharcMaterialDemodulation(surface),
+            primeEvaluateLocalHitEmission(
+                    path, surface, previousUsedAreaNee));
+    vec3 radiance;
+    primeRecordSharcDiagnostic(
+            diagnosticSample, PRIME_SHARC_DIAGNOSTIC_LOOKUP);
+    if (!SharcGetCachedRadiance(
+            primeSharcParameters(), hit, radiance, false)) {
+        return false;
+    }
+    primeRecordSharcDiagnostic(
+            diagnosticSample, PRIME_SHARC_DIAGNOSTIC_HIT);
+    contribution = path.throughput * radiance;
+    return true;
+}
+#endif
+
 bool primeAdvancePath(
         inout PathState path,
         SurfaceInteraction surface,
         BsdfSample bsdf,
         PrimePreparedSampleBase bounceSample,
-        bool pureDeltaInterface) {
+        bool pureDeltaInterface,
+        float surfaceLinearRoughness) {
     primeSetNumericalContext(PRIME_NUMERICAL_STAGE_PATH_ADVANCE, path.bounce);
     vec3 nextThroughput = primeProductOver(path.throughput, bsdf.response, bsdf.pdf);
     primeRecordNonnegative(nextThroughput);
@@ -1055,6 +1140,8 @@ bool primeAdvancePath(
     path.rayDirection = bsdf.direction;
     path.previousBsdfPdf = bsdf.pdf;
     path.previousLightNormal = previousLightNormal;
+    path.previousSharcRoughness = surfaceLinearRoughness;
+    path.previousSharcEvent = primeSharcEvent(bsdf);
     path.flags = (bsdf.eventFlags & PRIME_BSDF_EVENT_DELTA) != 0u
             ? PRIME_PATH_PREVIOUS_DELTA
             : 0u;
@@ -1218,6 +1305,18 @@ bool primeIntegrateTransparentWavefrontSurface(
         return false;
     }
 
+#if defined(PRIME_SHARC_QUERY)
+    vec3 sharcContribution;
+    if (hasGuide && primeQuerySharc(
+            path, surface, path.bounce > 0u, sharcContribution)) {
+        primeAccumulateTransparentBranch(
+                result,
+                diffusePath,
+                sharcContribution);
+        return false;
+    }
+#endif
+
     vec3 viewDirection = -path.rayDirection;
     PrimePreparedSampleBase preparedSample =
             primePrepareSampleBase(primeMakeSampleBase(path, path.bounce + 1u));
@@ -1348,7 +1447,12 @@ bool primeIntegrateTransparentWavefrontSurface(
     }
     volumeStack = scatter.volumeStack;
     if (!primeAdvancePath(
-            path, surface, bsdf, preparedSample, pureDeltaInterface)) {
+            path,
+            surface,
+            bsdf,
+            preparedSample,
+            pureDeltaInterface,
+            surfaceLinearRoughness)) {
         return false;
     }
     path.bounce++;
@@ -1428,6 +1532,23 @@ bool primeIntegrateWavefrontSurface(
     if (!primeApplySegmentMedium(path, surface, volumeStack)) {
         return false;
     }
+
+
+#if defined(PRIME_SHARC_QUERY)
+    vec3 sharcContribution;
+    if (denoiserState.hasPrimarySurface
+            && primeQuerySharc(
+                    path,
+                    surface,
+                    denoiserState.hasPrimarySurface,
+                    sharcContribution)) {
+        primeAccumulateAfterPrimary(
+                result,
+                denoiserState.diffusePath,
+                sharcContribution);
+        return false;
+    }
+#endif
 
     vec3 viewDirection = -path.rayDirection;
     bool previousUsedAreaNee = denoiserState.hasPrimarySurface;
@@ -1580,7 +1701,12 @@ bool primeIntegrateWavefrontSurface(
     }
     if (!hasScatter
             || !primeAdvancePath(
-                    path, surface, bsdf, preparedSample, pureDeltaInterface)) {
+                    path,
+                    surface,
+                    bsdf,
+                    preparedSample,
+                    pureDeltaInterface,
+                    surfaceLinearRoughness)) {
 #if defined(PRIME_DEFER_SECONDARY_AREA_NEE)
         // A deferred shadow request still needs the current shading point after this path ends.
         path.physicalOrigin = surface.position;

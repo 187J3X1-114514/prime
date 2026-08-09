@@ -20,6 +20,15 @@ DLL, standalone DLSS Super Resolution, or Frame Generation libraries.
 NVIDIA, DLSS, GeForce RTX, and their associated logos are trademarks and/or
 registered trademarks of NVIDIA Corporation in the United States and other countries.
 
+Prime releases include SPIR-V shaders compiled from NVIDIA Shader Execution
+Reordering and Caching (SHARC) 1.8.3 at commit
+`4e21b585c33c83d723ca9a1e11bbb1090d145793`. SHARC is not covered by Prime's
+MIT license and remains subject to the NVIDIA RTX SDKs License in
+`SHARC-LICENSE.md`.
+
+NVIDIA, the NVIDIA logo, and SHARC are trademarks and/or registered trademarks
+of NVIDIA Corporation in the United States and other countries.
+
 Prime's OpenPBR closure library and transmission-GGX energy data are derived
 from RoboCute's Apache-2.0-licensed BSDF implementation. See
 `ROBOCUTE-NOTICE.txt` and `APACHE-2.0.txt`.

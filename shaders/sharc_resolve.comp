@@ -1,0 +1,30 @@
+#version 460
+#define PRIME_REALTIME_ABI 1
+#define PRIME_SHARC_ABI 1
+#define SHARC_UPDATE 0
+#define SHARC_QUERY 0
+#extension GL_GOOGLE_include_directive : require
+#extension GL_EXT_buffer_reference : require
+#extension GL_EXT_shader_explicit_arithmetic_types_int64 : require
+#extension GL_EXT_shader_explicit_arithmetic_types_float16 : require
+#extension GL_EXT_shader_atomic_int64 : require
+#extension GL_EXT_shader_16bit_storage : require
+#extension GL_EXT_control_flow_attributes : require
+
+#include "prime_sharc_abi.glsl"
+#include "sharc.glsl"
+
+layout(local_size_x = 256, local_size_y = 1, local_size_z = 1) in;
+
+void main() {
+    SharcResolveParameters resolve;
+    resolve.cameraPositionPrev = primeSharcFrame.previousCameraPosition;
+    resolve.accumulationFrameNum = primeSharcFrame.accumulationFrames;
+    resolve.responsiveFrameNum = 1u;
+    resolve.staleFrameNumMax = primeSharcFrame.staleFrames;
+    resolve.frameIndex = primeSharcFrame.frameIndex;
+    SharcResolveEntry(
+            gl_GlobalInvocationID.x,
+            primeSharcParameters(),
+            resolve);
+}

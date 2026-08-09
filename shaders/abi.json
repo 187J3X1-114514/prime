@@ -105,7 +105,9 @@
         { "name": "previousLightNormal", "type": "uint", "offset": 68 },
         { "name": "pixel", "type": "uvec2", "offset": 72 },
         { "name": "sampleIndex", "type": "uint", "offset": 80 },
-        { "name": "sampleEpoch", "type": "uint", "offset": 84 }
+        { "name": "sampleEpoch", "type": "uint", "offset": 84 },
+        { "name": "previousSharcRoughness", "type": "float", "offset": 88 },
+        { "name": "previousSharcEvent", "type": "uint", "offset": 92 }
       ]
     },
     "tracePayload": {
@@ -166,6 +168,27 @@
         { "name": "diagnosticMode", "type": "uint", "offset": 192 },
         { "name": "currentJitterPixels", "type": "vec2", "offset": 200 }
       ]
+    },
+    "sharcFrameConstants": {
+      "size": 96,
+      "fields": [
+        { "name": "hashEntriesAddress", "type": "uint64_t", "offset": 0 },
+        { "name": "accumulationAddress", "type": "uint64_t", "offset": 8 },
+        { "name": "resolvedAddress", "type": "uint64_t", "offset": 16 },
+        { "name": "diagnosticsAddress", "type": "uint64_t", "offset": 24 },
+        { "name": "cameraPosition", "type": "vec3", "offset": 32 },
+        { "name": "logarithmBase", "type": "float", "offset": 44 },
+        { "name": "previousCameraPosition", "type": "vec3", "offset": 48 },
+        { "name": "sceneScale", "type": "float", "offset": 60 },
+        { "name": "levelBias", "type": "float", "offset": 64 },
+        { "name": "radianceScale", "type": "float", "offset": 68 },
+        { "name": "capacity", "type": "uint", "offset": 72 },
+        { "name": "frameIndex", "type": "uint", "offset": 76 },
+        { "name": "accumulationFrames", "type": "uint", "offset": 80 },
+        { "name": "staleFrames", "type": "uint", "offset": 84 },
+        { "name": "updatePhase", "type": "uint", "offset": 88 },
+        { "name": "flags", "type": "uint", "offset": 92 }
+      ]
     }
   },
   "sharedDescriptors": {
@@ -216,7 +239,8 @@
     "nrdReflectionSpecularDirection": 32,
     "nrdDisplayPosition": 33,
     "wavefrontPaths": 36,
-    "wavefrontQueue": 37
+    "wavefrontQueue": 37,
+    "sharcFrame": 38
   },
   "offlineDescriptors": {
     "runningMean": 0,

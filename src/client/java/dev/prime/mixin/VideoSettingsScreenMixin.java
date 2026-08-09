@@ -47,6 +47,7 @@ public abstract class VideoSettingsScreenMixin {
     private static final Component PRIME$DIAGNOSTICS_HEADER =
             Component.translatable("prime.options.header.diagnostics");
     @Unique private OptionInstance<Boolean> prime$pathTracingEnabled;
+    @Unique private OptionInstance<Boolean> prime$sharcEnabled;
     @Unique private OptionInstance<Boolean> prime$voxelTextureSurfaces;
     @Unique private OptionInstance<Integer> prime$voxelTextureSurfaceStrength;
     @Unique private OptionInstance<Boolean> prime$screenshotMode;
@@ -75,6 +76,7 @@ public abstract class VideoSettingsScreenMixin {
         OptionsList list = ((OptionsSubScreenAccessor) this).prime$getList();
         if (list != null) {
             this.prime$pathTracingEnabled = PrimeVideoOptions.pathTracingEnabled();
+            this.prime$sharcEnabled = PrimeVideoOptions.sharcEnabled();
             this.prime$voxelTextureSurfaces = PrimeVideoOptions.voxelTextureSurfaces();
             this.prime$voxelTextureSurfaceStrength =
                     PrimeVideoOptions.voxelTextureSurfaceStrength();
@@ -106,6 +108,7 @@ public abstract class VideoSettingsScreenMixin {
                     .build());
             list.addHeader(PRIME$RENDERING_HEADER);
             list.addBig(this.prime$pathTracingEnabled);
+            list.addBig(this.prime$sharcEnabled);
             list.addSmall(
                     this.prime$voxelTextureSurfaces,
                     this.prime$voxelTextureSurfaceStrength);
@@ -158,6 +161,7 @@ public abstract class VideoSettingsScreenMixin {
                     current.voxelTextureSurfaceStrengthSteps());
         }
         this.prime$refresh(this.prime$pathTracingEnabled, true);
+        this.prime$refresh(this.prime$sharcEnabled, true);
         this.prime$refresh(this.prime$voxelTextureSurfaces, false);
         this.prime$refresh(
                 this.prime$voxelTextureSurfaceStrength,

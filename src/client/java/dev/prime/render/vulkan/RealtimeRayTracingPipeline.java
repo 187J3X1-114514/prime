@@ -4,6 +4,7 @@ import com.mojang.blaze3d.vulkan.Destroyable;
 import com.mojang.blaze3d.vulkan.VulkanGpuSampler;
 import com.mojang.blaze3d.vulkan.VulkanGpuTextureView;
 import dev.prime.render.IntegratorFrameInput;
+import dev.prime.render.RealtimeFramePlan;
 import dev.prime.render.shader.ShaderAbi;
 import dev.prime.render.vulkan.terrain.TerrainScene;
 import java.nio.ByteBuffer;
@@ -29,7 +30,7 @@ public final class RealtimeRayTracingPipeline implements RealtimeIntegratorPipel
     static final int RAYGEN_GROUP_COUNT = WavefrontGroups.GROUP_COUNT;
     static final int RAYGEN_MODULE_COUNT = WavefrontGroups.MODULE_COUNT;
     static final int DISPATCH_COUNT = 2 * ShaderAbi.WAVEFRONT_ROUNDS + 3;
-    static final int DESCRIPTOR_BINDING_COUNT = 25;
+    static final int DESCRIPTOR_BINDING_COUNT = 26;
     private static final int[] RAYGEN_CONTROLS = {
         0, 1, 257, 4, 260, 2, 258, 3
     };
@@ -48,8 +49,12 @@ public final class RealtimeRayTracingPipeline implements RealtimeIntegratorPipel
     private final long descriptorSetLayout;
     private final long pipelineLayout;
     private final TraceProgram program;
+    private final RealtimeSharcDiagnostics sharcDiagnostics;
     private VulkanBuffer wavefront;
     private OutputBindings bindings;
+    private RealtimeSharc sharc;
+    private PendingFrame pendingFrame;
+    private long nextFrameToken = 1L;
     private int lastRecordedPassCount;
     private boolean destroyed;
 
@@ -59,6 +64,7 @@ public final class RealtimeRayTracingPipeline implements RealtimeIntegratorPipel
         long setLayout = 0L;
         long layout = 0L;
         TraceProgram traceProgram = null;
+        RealtimeSharcDiagnostics diagnostics = null;
         try {
             try (MemoryStack stack = MemoryStack.stackPush()) {
                 setLayout = createDescriptorSetLayout(context, stack);
@@ -86,11 +92,16 @@ public final class RealtimeRayTracingPipeline implements RealtimeIntegratorPipel
                     RAYGEN_CONTROLS,
                     "Prime realtime ray tracing pipeline",
                     "Prime realtime shader binding table");
+            diagnostics = new RealtimeSharcDiagnostics(context);
             this.descriptorSetLayout = setLayout;
             this.pipelineLayout = layout;
             this.program = traceProgram;
+            this.sharcDiagnostics = diagnostics;
             this.lastRecordedPassCount = DISPATCH_COUNT;
         } catch (RuntimeException exception) {
+            if (diagnostics != null) {
+                diagnostics.destroy();
+            }
             if (traceProgram != null) {
                 traceProgram.destroy();
             }
@@ -111,7 +122,10 @@ public final class RealtimeRayTracingPipeline implements RealtimeIntegratorPipel
 
     @Override
     public long sizedResourceBytes() {
-        return this.wavefront == null ? 0L : this.wavefront.size();
+        long wavefrontBytes = this.wavefront == null ? 0L : this.wavefront.size();
+        return wavefrontBytes
+                + this.sharcDiagnostics.resourceBytes()
+                + (this.sharc == null ? 0L : this.sharc.resourceBytes());
     }
 
     public void ensureDescriptors(
@@ -123,7 +137,8 @@ public final class RealtimeRayTracingPipeline implements RealtimeIntegratorPipel
             VulkanImage labPbrNormalAtlas,
             VulkanImage labPbrSpecularAtlas,
             AtmospherePipeline atmosphere,
-            RawWavefrontFrame signals) {
+            RawWavefrontFrame signals,
+            boolean sharcRequested) {
         this.backend.ensureSceneDescriptors(
                 tlas,
                 atlasView,
@@ -140,6 +155,18 @@ public final class RealtimeRayTracingPipeline implements RealtimeIntegratorPipel
                 width,
                 height,
                 this.context.capabilities().maxRayDispatchInvocationCount());
+        boolean sharcEffective = sharcRequested && this.context.capabilities().sharcSupported();
+        if (sharcEffective && this.sharc == null) {
+            this.sharc = new RealtimeSharc(
+                    this.context,
+                    this.pipelineLayout,
+                    this.backend.bindings().descriptorSetLayout(),
+                    this.descriptorSetLayout);
+        } else if (!sharcEffective && this.sharc != null) {
+            RealtimeSharc previous = this.sharc;
+            this.sharc = null;
+            this.context.defer(previous);
+        }
         VulkanBuffer candidate = this.wavefront;
         boolean replaces = candidate == null || candidate.size() != requiredBytes;
         if (replaces) {
@@ -152,7 +179,11 @@ public final class RealtimeRayTracingPipeline implements RealtimeIntegratorPipel
                     "Prime realtime wavefront slots");
         }
         if (this.bindings != null
-                && this.bindings.matches(stableRadiance, signals, candidate.handle())) {
+                && this.bindings.matches(
+                        stableRadiance,
+                        signals,
+                        candidate.handle(),
+                        this.sharc == null ? 0L : this.sharc.frameConstants().handle())) {
             return;
         }
         OutputBindings replacement;
@@ -163,7 +194,8 @@ public final class RealtimeRayTracingPipeline implements RealtimeIntegratorPipel
                     stableRadiance,
                     signals,
                     candidate,
-                    queueOffset(width, height));
+                    queueOffset(width, height),
+                    this.sharc == null ? null : this.sharc.frameConstants());
         } catch (RuntimeException exception) {
             if (replaces) {
                 candidate.destroy();
@@ -184,16 +216,89 @@ public final class RealtimeRayTracingPipeline implements RealtimeIntegratorPipel
 
     public long prepareFrame(
             VkCommandBuffer commandBuffer,
-            VulkanImageInitializationBatch initialization) {
-        return this.backend.prepareFrame(commandBuffer, initialization);
+            VulkanImageInitializationBatch initialization,
+            RealtimeFramePlan plan,
+            TerrainScene.ResidentSceneView scene,
+            long textureRevision) {
+        if (this.pendingFrame != null) {
+            throw new IllegalStateException("Realtime pipeline already has a pending frame");
+        }
+        long backendToken = this.backend.prepareFrame(commandBuffer, initialization);
+        RealtimeSharcDiagnostics.Capture diagnostics = null;
+        RealtimeSharc.Prepared prepared = null;
+        try {
+            diagnostics = this.sharcDiagnostics.prepare(
+                    commandBuffer,
+                    plan.rendererDiagnostics(),
+                    this.sharc != null);
+            if (this.sharc != null) {
+                prepared = this.sharc.prepare(
+                        commandBuffer,
+                        plan.integrator(),
+                        scene,
+                        textureRevision,
+                        plan.reconstructionReset(),
+                        this.sharcDiagnostics.counterAddress(diagnostics),
+                        diagnostics != null);
+            }
+        } catch (RuntimeException exception) {
+            this.sharcDiagnostics.abandon(diagnostics);
+            if (backendToken != 0L) {
+                this.backend.abandon(backendToken);
+            }
+            throw exception;
+        }
+        if (this.sharc == null && diagnostics == null) {
+            return backendToken;
+        }
+        long token = this.nextFrameToken++;
+        if (token == 0L) token = this.nextFrameToken++;
+        this.pendingFrame = new PendingFrame(
+                token, backendToken, this.sharc, prepared, diagnostics);
+        return token;
+    }
+
+    @Override
+    public boolean sharcEffective() {
+        return this.sharc != null;
+    }
+
+    @Override
+    public SharcDiagnosticsSnapshot sharcDiagnostics() {
+        return this.sharcDiagnostics.latest();
     }
 
     public void submitted(long token) {
-        this.backend.submitted(token);
+        PendingFrame pending = this.pendingFrame;
+        if (pending == null) {
+            this.backend.submitted(token);
+            return;
+        }
+        if (pending.token != token) {
+            throw new IllegalStateException("Realtime pipeline frame token mismatch");
+        }
+        this.pendingFrame = null;
+        this.backend.submitted(pending.backendToken);
+        if (pending.owner != null) {
+            pending.owner.submitted(pending.sharcFrame);
+        }
+        this.sharcDiagnostics.submitted(pending.diagnostics);
     }
 
     public void abandon(long token) {
-        this.backend.abandon(token);
+        PendingFrame pending = this.pendingFrame;
+        if (pending == null) {
+            this.backend.abandon(token);
+            return;
+        }
+        if (pending.token != token) {
+            throw new IllegalStateException("Realtime pipeline frame token mismatch");
+        }
+        this.pendingFrame = null;
+        if (pending.backendToken != 0L) {
+            this.backend.abandon(pending.backendToken);
+        }
+        this.sharcDiagnostics.abandon(pending.diagnostics);
     }
 
     /** Releases descriptor bindings and wavefront backing after the device has become idle. */
@@ -205,6 +310,10 @@ public final class RealtimeRayTracingPipeline implements RealtimeIntegratorPipel
         if (this.wavefront != null) {
             this.wavefront.destroy();
             this.wavefront = null;
+        }
+        if (this.sharc != null) {
+            this.sharc.destroy();
+            this.sharc = null;
         }
     }
 
@@ -222,10 +331,30 @@ public final class RealtimeRayTracingPipeline implements RealtimeIntegratorPipel
             throw new IllegalStateException("Trace-backend resources are not prepared");
         }
         try (MemoryStack stack = MemoryStack.stackPush()) {
-            this.bind(commandBuffer, stack, RayTracingPushConstants.encode(stack, input, scene));
+            ByteBuffer pushConstants = RayTracingPushConstants.encode(stack, input, scene);
+            TraceProgram activeProgram = this.program;
+            RealtimeSharcDiagnostics.Capture diagnostics = this.pendingFrame == null
+                    ? null
+                    : this.pendingFrame.diagnostics;
+            if (this.sharc != null) {
+                this.sharc.recordUpdateAndResolve(
+                        commandBuffer,
+                        this.backend.bindings().descriptorSet(),
+                        this.bindings.descriptorSet,
+                        pushConstants,
+                        width,
+                        height,
+                        this.sharcDiagnostics,
+                        diagnostics);
+                activeProgram = this.sharc.queryProgram();
+            } else {
+                this.sharcDiagnostics.recordReferenceQueryStart(
+                        commandBuffer, diagnostics);
+            }
+            this.bind(commandBuffer, stack, pushConstants, activeProgram);
             long commandOffset = queueCommandOffset(width, height);
             this.initializeQueues(commandBuffer, stack, commandOffset);
-            this.trace(commandBuffer, stack, width, height, WavefrontGroups.HEAD);
+            this.trace(commandBuffer, stack, activeProgram, width, height, WavefrontGroups.HEAD);
             this.wavefrontBarrier(commandBuffer, stack);
             int sourceQueue = 0;
             this.lastRecordedPassCount = DISPATCH_COUNT;
@@ -233,6 +362,7 @@ public final class RealtimeRayTracingPipeline implements RealtimeIntegratorPipel
                 this.traceIndirect(
                         commandBuffer,
                         stack,
+                        activeProgram,
                         WavefrontGroups.step(sourceQueue),
                         commandOffset,
                         sourceQueue);
@@ -240,6 +370,7 @@ public final class RealtimeRayTracingPipeline implements RealtimeIntegratorPipel
                 this.traceIndirect(
                         commandBuffer,
                         stack,
+                        activeProgram,
                         WavefrontGroups.area(sourceQueue),
                         commandOffset,
                         sourceQueue);
@@ -249,25 +380,37 @@ public final class RealtimeRayTracingPipeline implements RealtimeIntegratorPipel
             this.traceIndirect(
                     commandBuffer,
                     stack,
+                    activeProgram,
                     WavefrontGroups.tail(sourceQueue),
                     commandOffset,
                     sourceQueue);
             this.wavefrontBarrier(commandBuffer, stack);
-            this.trace(commandBuffer, stack, width, height, WavefrontGroups.RESOLVE);
+            this.trace(
+                    commandBuffer,
+                    stack,
+                    activeProgram,
+                    width,
+                    height,
+                    WavefrontGroups.RESOLVE);
+            this.sharcDiagnostics.finish(commandBuffer, diagnostics);
+            this.lastRecordedPassCount = this.sharc == null
+                    ? DISPATCH_COUNT
+                    : DISPATCH_COUNT + 2;
         }
     }
 
     private void bind(
             VkCommandBuffer commandBuffer,
             MemoryStack stack,
-            ByteBuffer pushConstants) {
+            ByteBuffer pushConstants,
+            TraceProgram activeProgram) {
         if (this.bindings == null) {
             throw new IllegalStateException("Realtime descriptors have not been initialized");
         }
         VK12.vkCmdBindPipeline(
                 commandBuffer,
                 KHRRayTracingPipeline.VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR,
-                this.program.pipeline);
+                activeProgram.pipeline);
         VK12.vkCmdBindDescriptorSets(
                 commandBuffer,
                 KHRRayTracingPipeline.VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR,
@@ -286,23 +429,25 @@ public final class RealtimeRayTracingPipeline implements RealtimeIntegratorPipel
     private void trace(
             VkCommandBuffer commandBuffer,
             MemoryStack stack,
+            TraceProgram activeProgram,
             int width,
             int height,
             int group) {
         WavefrontCommands.trace(
-                commandBuffer, stack, this.program, width, height, group);
+                commandBuffer, stack, activeProgram, width, height, group);
     }
 
     private void traceIndirect(
             VkCommandBuffer commandBuffer,
             MemoryStack stack,
+            TraceProgram activeProgram,
             int group,
             long commandOffset,
             int sourceQueue) {
         WavefrontCommands.traceIndirect(
                 commandBuffer,
                 stack,
-                this.program,
+                activeProgram,
                 this.wavefront,
                 group,
                 commandOffset,
@@ -391,11 +536,17 @@ public final class RealtimeRayTracingPipeline implements RealtimeIntegratorPipel
                 .descriptorType(VK12.VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
                 .descriptorCount(1)
                 .stageFlags(KHRRayTracingPipeline.VK_SHADER_STAGE_RAYGEN_BIT_KHR);
-        bindings.get(cursor)
+        bindings.get(cursor++)
                 .binding(ShaderAbi.DESCRIPTOR_WAVEFRONT_QUEUE)
                 .descriptorType(VK12.VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
                 .descriptorCount(1)
                 .stageFlags(KHRRayTracingPipeline.VK_SHADER_STAGE_RAYGEN_BIT_KHR);
+        bindings.get(cursor)
+                .binding(ShaderAbi.DESCRIPTOR_SHARC_FRAME)
+                .descriptorType(VK12.VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER)
+                .descriptorCount(1)
+                .stageFlags(KHRRayTracingPipeline.VK_SHADER_STAGE_RAYGEN_BIT_KHR
+                        | VK12.VK_SHADER_STAGE_COMPUTE_BIT);
         VkDescriptorSetLayoutCreateInfo info = VkDescriptorSetLayoutCreateInfo.calloc(stack)
                 .sType$Default()
                 .pBindings(bindings);
@@ -447,6 +598,11 @@ public final class RealtimeRayTracingPipeline implements RealtimeIntegratorPipel
                 this.wavefront.destroy();
                 this.wavefront = null;
             }
+            if (this.sharc != null) {
+                this.sharc.destroy();
+                this.sharc = null;
+            }
+            this.sharcDiagnostics.destroy();
             this.program.destroy();
             VK12.vkDestroyPipelineLayout(this.context.vkDevice(), this.pipelineLayout, null);
             VK12.vkDestroyDescriptorSetLayout(
@@ -461,6 +617,7 @@ public final class RealtimeRayTracingPipeline implements RealtimeIntegratorPipel
         private final long stableRadiance;
         private final long[] images;
         private final long wavefront;
+        private final long sharcFrame;
         private boolean destroyed;
 
         private OutputBindings(
@@ -469,13 +626,15 @@ public final class RealtimeRayTracingPipeline implements RealtimeIntegratorPipel
                 long descriptorSet,
                 long stableRadiance,
                 long[] images,
-                long wavefront) {
+                long wavefront,
+                long sharcFrame) {
             this.context = context;
             this.descriptorPool = descriptorPool;
             this.descriptorSet = descriptorSet;
             this.stableRadiance = stableRadiance;
             this.images = images.clone();
             this.wavefront = wavefront;
+            this.sharcFrame = sharcFrame;
         }
 
         private static OutputBindings create(
@@ -484,15 +643,23 @@ public final class RealtimeRayTracingPipeline implements RealtimeIntegratorPipel
                 VulkanImage stableRadiance,
                 RawWavefrontFrame signals,
                 VulkanBuffer wavefront,
-                long queueOffset) {
+                long queueOffset,
+                VulkanBuffer sharcFrame) {
             try (MemoryStack stack = MemoryStack.stackPush()) {
-                VkDescriptorPoolSize.Buffer sizes = VkDescriptorPoolSize.calloc(2, stack);
+                int poolSizeCount = sharcFrame == null ? 2 : 3;
+                VkDescriptorPoolSize.Buffer sizes =
+                        VkDescriptorPoolSize.calloc(poolSizeCount, stack);
                 sizes.get(0)
                         .type(VK12.VK_DESCRIPTOR_TYPE_STORAGE_IMAGE)
                         .descriptorCount(STORAGE_IMAGE_DESCRIPTOR_COUNT);
                 sizes.get(1)
                         .type(VK12.VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
                         .descriptorCount(2);
+                if (sharcFrame != null) {
+                    sizes.get(2)
+                            .type(VK12.VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER)
+                            .descriptorCount(1);
+                }
                 VkDescriptorPoolCreateInfo poolInfo = VkDescriptorPoolCreateInfo.calloc(stack)
                         .sType$Default()
                         .maxSets(1)
@@ -525,8 +692,9 @@ public final class RealtimeRayTracingPipeline implements RealtimeIntegratorPipel
                                 .imageView(views[index])
                                 .imageLayout(VK12.VK_IMAGE_LAYOUT_GENERAL);
                     }
+                    int bufferInfoCount = sharcFrame == null ? 2 : 3;
                     VkDescriptorBufferInfo.Buffer bufferInfos =
-                            VkDescriptorBufferInfo.calloc(2, stack);
+                            VkDescriptorBufferInfo.calloc(bufferInfoCount, stack);
                     bufferInfos.get(0)
                             .buffer(wavefront.handle())
                             .offset(0L)
@@ -535,8 +703,16 @@ public final class RealtimeRayTracingPipeline implements RealtimeIntegratorPipel
                             .buffer(wavefront.handle())
                             .offset(queueOffset)
                             .range(wavefront.size() - queueOffset);
+                    if (sharcFrame != null) {
+                        bufferInfos.get(2)
+                                .buffer(sharcFrame.handle())
+                                .offset(0L)
+                                .range(ShaderAbi.SHARC_FRAME_CONSTANT_SIZE);
+                    }
+                    int writeCount = DESCRIPTOR_BINDING_COUNT
+                            - (sharcFrame == null ? 1 : 0);
                     VkWriteDescriptorSet.Buffer writes =
-                            VkWriteDescriptorSet.calloc(DESCRIPTOR_BINDING_COUNT, stack);
+                            VkWriteDescriptorSet.calloc(writeCount, stack);
                     int[] imageBindings = imageBindings();
                     for (int index = 0; index < imageBindings.length; index++) {
                         writes.get(index)
@@ -564,6 +740,16 @@ public final class RealtimeRayTracingPipeline implements RealtimeIntegratorPipel
                             .descriptorType(VK12.VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
                             .pBufferInfo(VkDescriptorBufferInfo.create(
                                     bufferInfos.get(1).address(), 1));
+                    if (sharcFrame != null) {
+                        writes.get(imageBindings.length + 2)
+                                .sType$Default()
+                                .dstSet(set)
+                                .dstBinding(ShaderAbi.DESCRIPTOR_SHARC_FRAME)
+                                .descriptorCount(1)
+                                .descriptorType(VK12.VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER)
+                                .pBufferInfo(VkDescriptorBufferInfo.create(
+                                        bufferInfos.get(2).address(), 1));
+                    }
                     VK12.vkUpdateDescriptorSets(context.vkDevice(), writes, null);
                     return new OutputBindings(
                             context,
@@ -571,7 +757,8 @@ public final class RealtimeRayTracingPipeline implements RealtimeIntegratorPipel
                             set,
                             stableRadiance.view(),
                             views,
-                            wavefront.handle());
+                            wavefront.handle(),
+                            sharcFrame == null ? 0L : sharcFrame.handle());
                 } catch (RuntimeException exception) {
                     VK12.vkDestroyDescriptorPool(context.vkDevice(), pool, null);
                     throw exception;
@@ -582,9 +769,11 @@ public final class RealtimeRayTracingPipeline implements RealtimeIntegratorPipel
         private boolean matches(
                 VulkanImage candidateStableRadiance,
                 RawWavefrontFrame signals,
-                long candidateWavefront) {
+                long candidateWavefront,
+                long candidateSharcFrame) {
             if (this.stableRadiance != candidateStableRadiance.view()
-                    || this.wavefront != candidateWavefront) {
+                    || this.wavefront != candidateWavefront
+                    || this.sharcFrame != candidateSharcFrame) {
                 return false;
             }
             VulkanImage[] candidates = outputImages(candidateStableRadiance, signals);
@@ -636,6 +825,14 @@ public final class RealtimeRayTracingPipeline implements RealtimeIntegratorPipel
                         this.context.vkDevice(), this.descriptorPool, null);
             }
         }
+    }
+
+    private record PendingFrame(
+            long token,
+            long backendToken,
+            RealtimeSharc owner,
+            RealtimeSharc.Prepared sharcFrame,
+            RealtimeSharcDiagnostics.Capture diagnostics) {
     }
 
 }

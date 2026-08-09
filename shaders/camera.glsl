@@ -71,6 +71,8 @@ PathState primeCameraPath(uvec2 pixel, uint pathIndex, vec2 cameraSample) {
     path.pixel = pixel;
     path.sampleIndex = primeSampleIndex();
     path.sampleEpoch = primeSampleEpoch();
+    path.previousSharcRoughness = 0.0;
+    path.previousSharcEvent = 0u;
     return path;
 }
 

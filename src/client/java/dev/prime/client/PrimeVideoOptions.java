@@ -43,6 +43,15 @@ public final class PrimeVideoOptions {
                 PrimeVideoOptions::setPathTracingEnabled);
     }
 
+    public static OptionInstance<Boolean> sharcEnabled() {
+        return OptionInstance.createBoolean(
+                "prime.options.sharc",
+                OptionInstance.cachedConstantTooltip(
+                        Component.translatable("prime.options.sharc.tooltip")),
+                PrimeConfig.settings().sharcEnabled(),
+                PrimeConfig::setSharcEnabled);
+    }
+
     public static OptionInstance<Boolean> voxelTextureSurfaces() {
         return OptionInstance.createBoolean(
                 "prime.options.experimental.voxel_texture_surfaces",

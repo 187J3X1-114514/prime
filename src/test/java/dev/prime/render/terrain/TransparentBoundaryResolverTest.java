@@ -88,6 +88,45 @@ final class TransparentBoundaryResolverTest {
     }
 
     @Test
+    void globalRelationSizeIncludesRelationFreeSegments() {
+        try (SectionMeshAccumulatorTest.TestSprite glass =
+                        new SectionMeshAccumulatorTest.TestSprite("segmented_contact_glass");
+                SectionMeshAccumulatorTest.TestSprite ice =
+                        new SectionMeshAccumulatorTest.TestSprite("segmented_contact_ice");
+                SectionMeshAccumulatorTest.TestSprite stone =
+                        new SectionMeshAccumulatorTest.TestSprite("segmented_contact_stone")) {
+            CapturedSectionGeometry.Builder boundary =
+                    new CapturedSectionGeometry.Builder();
+            boundary.add(
+                    xFace(1.0F, 0.0F, 1.0F, 0.0F, 1.0F),
+                    surface(glass, 0xff40_80c0, false, false, 0, 0, 0));
+            boundary.add(
+                    xFace(-1.0F, 0.0F, 1.0F, 0.0F, 1.0F),
+                    surface(ice, 0xffc0_e8ff, false, false, 1, 0, 0));
+            CapturedSectionGeometry.Builder ordinary =
+                    new CapturedSectionGeometry.Builder();
+            ordinary.add(
+                    xFace(1.0F, 0.0F, 1.0F, 0.0F, 1.0F),
+                    surface(stone, -1, false, true, 16, 0, 0));
+            CapturedCluster.Builder captured = new CapturedCluster.Builder(0, 0, 0);
+            captured.add(0, 0, 0, boundary.build());
+            captured.add(1, 0, 0, ordinary.build());
+
+            CpuClusterMesh mesh = translate(captured.build(), 2);
+
+            assertEquals(2, mesh.segments().size());
+            assertEquals(0, mesh.segments().get(1).surfaceRelationRecords().length);
+            int[] globalRecords = mesh.surfaceRelationRecords();
+            assertEquals(
+                    (long) globalRecords.length * Integer.BYTES,
+                    mesh.surfaceRelationBytes());
+            assertTrue(mesh.surfaceRelationBytes()
+                    > (long) mesh.segments().getFirst().surfaceRelationRecords().length
+                            * Integer.BYTES);
+        }
+    }
+
+    @Test
     void opaqueSurfaceWinsOverTheCoincidentGlassFace() {
         try (SectionMeshAccumulatorTest.TestSprite glass =
                         new SectionMeshAccumulatorTest.TestSprite("contact_transparent");
@@ -387,12 +426,17 @@ final class TransparentBoundaryResolverTest {
     }
 
     private static CpuClusterMesh translate(CapturedCluster captured) {
+        return translate(captured, TerrainMemoryBudget.TARGET_SEGMENT_TRIANGLES);
+    }
+
+    private static CpuClusterMesh translate(
+            CapturedCluster captured, int segmentTriangleTarget) {
         return ClusterSceneTranslator.translate(
                 captured,
                 LabPbrMaterialSet.EMPTY,
                 new ClusterTranslationSettings(
                         false,
-                        TerrainMemoryBudget.TARGET_SEGMENT_TRIANGLES,
+                        segmentTriangleTarget,
                         OpacityMicromapData.SUBDIVISION_LEVEL + 2,
                         false,
                         VoxelSurfaceSettings.BASE_HEIGHT,

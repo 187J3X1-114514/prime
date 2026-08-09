@@ -1398,6 +1398,12 @@ public final class TerrainScene implements AutoCloseable {
             StagingArena.Slice source,
             VulkanBuffer destination,
             long destinationOffset) {
+        if (destinationOffset < 0L
+                || source.size() > destination.size()
+                || destinationOffset > destination.size() - source.size()) {
+            throw new IndexOutOfBoundsException(
+                    "Vulkan copy exceeds destination buffer");
+        }
         try (MemoryStack stack = MemoryStack.stackPush()) {
             VkBufferCopy.Buffer copy = VkBufferCopy.calloc(1, stack)
                     .srcOffset(source.offset())

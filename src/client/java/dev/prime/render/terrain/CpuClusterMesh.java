@@ -307,11 +307,25 @@ public final class CpuClusterMesh {
     }
 
     public long surfaceRelationBytes() {
-        long words = 0L;
+        long tailWords = 0L;
+        boolean any = false;
         for (Segment segment : this.segments) {
-            words = Math.addExact(words, segment.surfaceRelationRecords().length);
+            int[] records = segment.surfaceRelationRecords();
+            if (records.length == 0) {
+                continue;
+            }
+            any = true;
+            int primitiveCount = segment.opaquePrimitiveCount()
+                    + segment.cutoutPrimitiveCount()
+                    + segment.transmissivePrimitiveCount();
+            tailWords = Math.addExact(
+                    tailWords, (long) records.length - primitiveCount);
         }
-        return Math.multiplyExact(words, Integer.BYTES);
+        if (!any) {
+            return 0L;
+        }
+        return Math.multiplyExact(
+                Math.addExact(this.primitiveCount(), tailWords), Integer.BYTES);
     }
 
     /** Global primitive-order relation table used by the single cluster BLAS section record. */

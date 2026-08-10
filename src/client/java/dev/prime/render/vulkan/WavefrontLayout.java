@@ -3,6 +3,7 @@ package dev.prime.render.vulkan;
 /** Buffer sizing and device-limit validation for a wavefront queue ABI. */
 record WavefrontLayout(
         int pathSlotsPerPixel,
+        int queueEntriesPerPixel,
         int pathRecordSize,
         int areaRecordSize,
         int queueCount,
@@ -25,7 +26,7 @@ record WavefrontLayout(
 
     long queueBytes(int width, int height) {
         long pixels = pixels(width, height);
-        long capacity = Math.multiplyExact(pixels, this.pathSlotsPerPixel);
+        long capacity = Math.multiplyExact(pixels, this.queueEntriesPerPixel);
         long areas = Math.multiplyExact(pixels, this.areaRecordSize);
         long commands = Math.multiplyExact(this.queueCount, this.commandStride);
         long indices = Math.multiplyExact(
@@ -49,7 +50,8 @@ record WavefrontLayout(
     }
 
     void validateDispatch(int width, int height, int maximumInvocations) {
-        long capacity = Math.multiplyExact(pixels(width, height), this.pathSlotsPerPixel);
+        long capacity = Math.multiplyExact(
+                pixels(width, height), this.queueEntriesPerPixel);
         if (capacity > Integer.toUnsignedLong(maximumInvocations)) {
             throw new IllegalStateException(
                     this.label + " wavefront queue exceeds dispatch capacity");

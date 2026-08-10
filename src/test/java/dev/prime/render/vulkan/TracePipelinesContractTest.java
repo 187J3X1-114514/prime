@@ -18,6 +18,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import org.junit.jupiter.api.Test;
+import org.lwjgl.vulkan.KHRRayTracingPipeline;
+import org.lwjgl.vulkan.VK12;
 
 final class TracePipelinesContractTest {
     private static final int OP_TYPE_INT = 21;
@@ -33,13 +35,27 @@ final class TracePipelinesContractTest {
     private static final int DECORATION_BINDING = 33;
     private static final int DECORATION_DESCRIPTOR_SET = 34;
     private static final int DECORATION_OFFSET = 35;
+
     private static final int STORAGE_BUFFER = 12;
     private static final int STORAGE_RAY_PAYLOAD = 5338;
     private static final int STORAGE_INCOMING_RAY_PAYLOAD = 5342;
 
     @Test
+    void commandWritesWaitForShaderAndIndirectConsumers() {
+        long expectedStages =
+                KHRRayTracingPipeline.VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR
+                        | VK12.VK_PIPELINE_STAGE_DRAW_INDIRECT_BIT;
+        long expectedAccesses =
+                VK12.VK_ACCESS_SHADER_READ_BIT
+                        | VK12.VK_ACCESS_SHADER_WRITE_BIT
+                        | VK12.VK_ACCESS_INDIRECT_COMMAND_READ_BIT;
+        assertEquals(expectedStages, WavefrontCommands.COMMAND_WRITE_SOURCE_STAGES);
+        assertEquals(expectedAccesses, WavefrontCommands.COMMAND_WRITE_SOURCE_ACCESSES);
+    }
+
+    @Test
     void realtimeAndOfflineHaveIndependentSchedulesAndDescriptors() {
-        assertEquals(8, RealtimeRayTracingPipeline.RAYGEN_GROUP_COUNT);
+        assertEquals(7, RealtimeRayTracingPipeline.RAYGEN_GROUP_COUNT);
         assertEquals(5, RealtimeRayTracingPipeline.RAYGEN_MODULE_COUNT);
         assertEquals(26, RealtimeRayTracingPipeline.DISPATCH_COUNT);
         assertEquals(26, RealtimeRayTracingPipeline.DESCRIPTOR_BINDING_COUNT);
@@ -49,13 +65,13 @@ final class TracePipelinesContractTest {
         assertEquals(19, OfflineRayTracingPipeline.DISPATCH_COUNT);
         assertEquals(3, OfflineRayTracingPipeline.DESCRIPTOR_BINDING_COUNT);
 
-        assertEquals(List.of(0, 1, 1, 2, 2, 3, 3, 4),
+        assertEquals(List.of(0, 1, 1, 2, 3, 3, 4),
                 java.util.stream.IntStream
                 .range(0, RealtimeRayTracingPipeline.RAYGEN_GROUP_COUNT)
                 .map(RealtimeRayTracingPipeline::raygenModule)
                 .boxed()
                 .toList());
-        assertEquals(List.of(0, 1, 257, 4, 260, 2, 258, 3),
+        assertEquals(List.of(0, 1, 257, 4, 2, 258, 3),
                 java.util.stream.IntStream
                 .range(0, RealtimeRayTracingPipeline.RAYGEN_GROUP_COUNT)
                 .map(RealtimeRayTracingPipeline::raygenControl)
@@ -178,7 +194,7 @@ final class TracePipelinesContractTest {
 
     @Test
     void wavefrontBackingHasDeclaredFourKSize() {
-        assertEquals(2_654_208_032L,
+        assertEquals(2_654_208_064L,
                 RealtimeRayTracingPipeline.wavefrontBytes(3840, 2160));
         assertEquals(1_260_748_832L,
                 OfflineRayTracingPipeline.wavefrontBytes(3840, 2160));
@@ -195,7 +211,7 @@ final class TracePipelinesContractTest {
                         Integer.MAX_VALUE, Integer.MAX_VALUE));
         RealtimeRayTracingPipeline.validateRanges(3840, 2160, 0xffff_ffffL);
         OfflineRayTracingPipeline.validateRanges(3840, 2160, 0xffff_ffffL);
-        RealtimeRayTracingPipeline.validateDispatch(3840, 2160, 1 << 25);
+        RealtimeRayTracingPipeline.validateDispatch(3840, 2160, 3840 * 2160);
         OfflineRayTracingPipeline.validateDispatch(3840, 2160, 1 << 24);
     }
 

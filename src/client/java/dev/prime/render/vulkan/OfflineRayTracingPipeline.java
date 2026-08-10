@@ -33,6 +33,7 @@ public final class OfflineRayTracingPipeline implements Destroyable {
     private static final int[] RAYGEN_CONTROLS = {0, 1, 257, 2, 258, 3, 259, 4};
     private static final WavefrontLayout WAVEFRONT_LAYOUT = new WavefrontLayout(
             ShaderAbi.OFFLINE_WAVEFRONT_PATH_SLOTS_PER_PIXEL,
+            ShaderAbi.OFFLINE_WAVEFRONT_QUEUE_ENTRIES_PER_PIXEL,
             ShaderAbi.OFFLINE_WAVEFRONT_PATH_RECORD_SIZE,
             0,
             ShaderAbi.OFFLINE_WAVEFRONT_QUEUE_COUNT,

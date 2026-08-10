@@ -175,17 +175,23 @@ abstract class GenerateShaderAbi extends DefaultTask {
 				|| wavefrontContract.pathRecordSize != 96
 				|| wavefrontContract.pathSlotsPerPixel != 2
 				|| wavefrontContract.areaRecordSize != 112
-				|| wavefrontContract.queueCount != 2
+				|| wavefrontContract.queueEntriesPerPixel != 1
+				|| wavefrontContract.queueCount != 4
+				|| wavefrontContract.traceQueue0 != 0
+				|| wavefrontContract.traceQueue1 != 1
+				|| wavefrontContract.shadeQueue != 2
+				|| wavefrontContract.areaQueue != 3
 				|| wavefrontContract.queueCommandStride != 16
 				|| wavefrontContract.queueIndexSize != 4
 				|| !wavefrontContract.activeMask.toString().equalsIgnoreCase('0x1')) {
 			throw new GradleException(
-					'Prime realtime scheduler must preserve the split-hit queue ABI')
+					'Prime realtime scheduler must preserve its execution-mode queue ABI')
 		}
 		if (offlineWavefrontContract.rounds != 8
 				|| offlineWavefrontContract.pathRecordSize != 144
 				|| offlineWavefrontContract.pathSlotsPerPixel != 1
 				|| offlineWavefrontContract.areaRecordSize != 0
+				|| offlineWavefrontContract.queueEntriesPerPixel != 1
 				|| offlineWavefrontContract.queueCount != 2
 				|| offlineWavefrontContract.queueCommandStride != 16
 				|| offlineWavefrontContract.queueIndexSize != 4
@@ -380,11 +386,17 @@ public final class ShaderAbi {
     public static final int OFFLINE_WAVEFRONT_ROUNDS = ${offlineWavefrontContract.rounds};
     public static final int OFFLINE_WAVEFRONT_PATH_RECORD_SIZE = ${offlineWavefrontContract.pathRecordSize};
     public static final int OFFLINE_WAVEFRONT_PATH_SLOTS_PER_PIXEL = ${offlineWavefrontContract.pathSlotsPerPixel};
+    public static final int OFFLINE_WAVEFRONT_QUEUE_ENTRIES_PER_PIXEL = ${offlineWavefrontContract.queueEntriesPerPixel};
     public static final int OFFLINE_WAVEFRONT_QUEUE_COUNT = ${offlineWavefrontContract.queueCount};
     public static final int OFFLINE_WAVEFRONT_QUEUE_COMMAND_STRIDE = ${offlineWavefrontContract.queueCommandStride};
     public static final int OFFLINE_WAVEFRONT_QUEUE_INDEX_SIZE = ${offlineWavefrontContract.queueIndexSize};
     public static final int WAVEFRONT_AREA_RECORD_SIZE = ${wavefrontContract.areaRecordSize};
+    public static final int WAVEFRONT_QUEUE_ENTRIES_PER_PIXEL = ${wavefrontContract.queueEntriesPerPixel};
     public static final int WAVEFRONT_QUEUE_COUNT = ${wavefrontContract.queueCount};
+    public static final int WAVEFRONT_TRACE_QUEUE_0 = ${wavefrontContract.traceQueue0};
+    public static final int WAVEFRONT_TRACE_QUEUE_1 = ${wavefrontContract.traceQueue1};
+    public static final int WAVEFRONT_SHADE_QUEUE = ${wavefrontContract.shadeQueue};
+    public static final int WAVEFRONT_AREA_QUEUE = ${wavefrontContract.areaQueue};
     public static final int WAVEFRONT_QUEUE_COMMAND_STRIDE = ${wavefrontContract.queueCommandStride};
     public static final int WAVEFRONT_QUEUE_INDEX_SIZE = ${wavefrontContract.queueIndexSize};
     public static final int WAVEFRONT_ACTIVE_MASK = ${wavefrontContract.activeMask};
@@ -508,6 +520,7 @@ ${javaOffsets}
 #define PRIME_WAVEFRONT_PATH_SLOTS_PER_PIXEL ${offlineWavefrontContract.pathSlotsPerPixel}u
 #define PRIME_WAVEFRONT_ROUNDS ${offlineWavefrontContract.rounds}
 #define PRIME_WAVEFRONT_AREA_RECORD_SIZE ${offlineWavefrontContract.areaRecordSize}u
+#define PRIME_WAVEFRONT_QUEUE_ENTRIES_PER_PIXEL ${offlineWavefrontContract.queueEntriesPerPixel}u
 #define PRIME_WAVEFRONT_QUEUE_COUNT ${offlineWavefrontContract.queueCount}u
 #define PRIME_WAVEFRONT_QUEUE_COMMAND_STRIDE ${offlineWavefrontContract.queueCommandStride}u
 #define PRIME_WAVEFRONT_QUEUE_INDEX_SIZE ${offlineWavefrontContract.queueIndexSize}u
@@ -520,7 +533,12 @@ ${javaOffsets}
 #define PRIME_WAVEFRONT_PATH_SLOTS_PER_PIXEL ${wavefrontContract.pathSlotsPerPixel}u
 #define PRIME_WAVEFRONT_ROUNDS ${wavefrontContract.rounds}
 #define PRIME_WAVEFRONT_AREA_RECORD_SIZE ${wavefrontContract.areaRecordSize}u
+#define PRIME_WAVEFRONT_QUEUE_ENTRIES_PER_PIXEL ${wavefrontContract.queueEntriesPerPixel}u
 #define PRIME_WAVEFRONT_QUEUE_COUNT ${wavefrontContract.queueCount}u
+#define PRIME_WAVEFRONT_TRACE_QUEUE_0 ${wavefrontContract.traceQueue0}u
+#define PRIME_WAVEFRONT_TRACE_QUEUE_1 ${wavefrontContract.traceQueue1}u
+#define PRIME_WAVEFRONT_SHADE_QUEUE ${wavefrontContract.shadeQueue}u
+#define PRIME_WAVEFRONT_AREA_QUEUE ${wavefrontContract.areaQueue}u
 #define PRIME_WAVEFRONT_QUEUE_COMMAND_STRIDE ${wavefrontContract.queueCommandStride}u
 #define PRIME_WAVEFRONT_QUEUE_INDEX_SIZE ${wavefrontContract.queueIndexSize}u
 #define PRIME_WAVEFRONT_ACTIVE_MASK ${wavefrontContract.activeMask}u
@@ -1160,7 +1178,10 @@ def verifyShaderIncludeGraph = tasks.register('verifyShaderIncludeGraph') {
 def compileShaders = tasks.register('compileShaders', CompilePrimeShaders) {
 	dependsOn generateShaderAbi, verifyRoboCutePort, verifyShaderIncludeGraph
 	sourceDirectory = file('shaders')
-	includeDirectories.from(shaderAbiIncludeRoot, file('third_party/sharc/include'))
+	includeDirectories.from(
+			file('shaders'),
+			shaderAbiIncludeRoot,
+			file('third_party/sharc/include'))
 	outputDirectory = compiledShaderRoot
 	glslangValidator = resolveVulkanTool('glslangValidator')
 	spirvValidator = resolveVulkanTool('spirv-val')

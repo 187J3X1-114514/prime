@@ -91,7 +91,7 @@ final class RealtimeSharc implements Destroyable {
                         prefix + "resolve" + suffix
                     },
                     RealtimeWavefrontGroups.MODULES,
-                    new int[] {0, 1, 257, 4, 260, 2, 258, 3},
+                    RealtimeWavefrontGroups.CONTROLS,
                     "Prime SHARC query pipeline",
                     "Prime SHARC query shader binding table");
             try (MemoryStack stack = MemoryStack.stackPush()) {

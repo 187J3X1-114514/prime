@@ -31,12 +31,10 @@ public final class RealtimeRayTracingPipeline implements RealtimeIntegratorPipel
     static final int RAYGEN_MODULE_COUNT = RealtimeWavefrontGroups.MODULE_COUNT;
     static final int DISPATCH_COUNT = 3 * ShaderAbi.WAVEFRONT_ROUNDS + 2;
     static final int DESCRIPTOR_BINDING_COUNT = 26;
-    private static final int[] RAYGEN_CONTROLS = {
-        0, 1, 257, 4, 260, 2, 258, 3
-    };
     private static final int STORAGE_IMAGE_DESCRIPTOR_COUNT = 23;
     private static final WavefrontLayout WAVEFRONT_LAYOUT = new WavefrontLayout(
             ShaderAbi.WAVEFRONT_PATH_SLOTS_PER_PIXEL,
+            ShaderAbi.WAVEFRONT_QUEUE_ENTRIES_PER_PIXEL,
             ShaderAbi.WAVEFRONT_PATH_RECORD_SIZE,
             ShaderAbi.WAVEFRONT_AREA_RECORD_SIZE,
             ShaderAbi.WAVEFRONT_QUEUE_COUNT,
@@ -89,7 +87,7 @@ public final class RealtimeRayTracingPipeline implements RealtimeIntegratorPipel
                     layout,
                     raygenShaders,
                     RealtimeWavefrontGroups.MODULES,
-                    RAYGEN_CONTROLS,
+                    RealtimeWavefrontGroups.CONTROLS,
                     "Prime realtime ray tracing pipeline",
                     "Prime realtime shader binding table");
             diagnostics = new RealtimeSharcDiagnostics(context);
@@ -362,34 +360,36 @@ public final class RealtimeRayTracingPipeline implements RealtimeIntegratorPipel
                     height,
                     RealtimeWavefrontGroups.HEAD);
             this.wavefrontBarrier(commandBuffer, stack);
-            int sourceQueue = 0;
+            int traceQueue = ShaderAbi.WAVEFRONT_TRACE_QUEUE_0;
             this.lastRecordedPassCount = DISPATCH_COUNT;
             for (int round = 0; round < ShaderAbi.WAVEFRONT_ROUNDS; round++) {
                 this.traceIndirect(
                         commandBuffer,
                         stack,
                         activeProgram,
-                        RealtimeWavefrontGroups.step(sourceQueue),
+                        RealtimeWavefrontGroups.step(traceQueue),
                         commandOffset,
-                        sourceQueue);
+                        traceQueue);
                 this.wavefrontBarrier(commandBuffer, stack);
                 this.traceIndirect(
                         commandBuffer,
                         stack,
                         activeProgram,
-                        RealtimeWavefrontGroups.area(sourceQueue),
+                        RealtimeWavefrontGroups.area(),
                         commandOffset,
-                        sourceQueue);
+                        ShaderAbi.WAVEFRONT_AREA_QUEUE);
                 this.wavefrontBarrier(commandBuffer, stack);
                 this.traceIndirect(
                         commandBuffer,
                         stack,
                         activeProgram,
-                        RealtimeWavefrontGroups.shade(sourceQueue),
+                        RealtimeWavefrontGroups.shade(traceQueue),
                         commandOffset,
-                        sourceQueue);
-                this.advanceQueue(commandBuffer, stack, commandOffset, sourceQueue);
-                sourceQueue ^= 1;
+                        ShaderAbi.WAVEFRONT_SHADE_QUEUE);
+                this.resetQueues(commandBuffer, stack, commandOffset, traceQueue);
+                traceQueue = traceQueue == ShaderAbi.WAVEFRONT_TRACE_QUEUE_0
+                        ? ShaderAbi.WAVEFRONT_TRACE_QUEUE_1
+                        : ShaderAbi.WAVEFRONT_TRACE_QUEUE_0;
             }
             this.wavefrontBarrier(commandBuffer, stack);
             this.trace(
@@ -450,7 +450,7 @@ public final class RealtimeRayTracingPipeline implements RealtimeIntegratorPipel
             TraceProgram activeProgram,
             int group,
             long commandOffset,
-            int sourceQueue) {
+            int commandQueue) {
         WavefrontCommands.traceIndirect(
                 commandBuffer,
                 stack,
@@ -458,7 +458,7 @@ public final class RealtimeRayTracingPipeline implements RealtimeIntegratorPipel
                 this.wavefront,
                 group,
                 commandOffset,
-                sourceQueue,
+                commandQueue,
                 ShaderAbi.WAVEFRONT_QUEUE_COMMAND_STRIDE);
     }
 
@@ -479,18 +479,20 @@ public final class RealtimeRayTracingPipeline implements RealtimeIntegratorPipel
         WavefrontCommands.wavefrontBarrier(commandBuffer, stack);
     }
 
-    private void advanceQueue(
+    private void resetQueues(
             VkCommandBuffer commandBuffer,
             MemoryStack stack,
             long commandOffset,
-            int sourceQueue) {
-        WavefrontCommands.advanceQueue(
+            int traceQueue) {
+        WavefrontCommands.resetQueues(
                 commandBuffer,
                 stack,
                 this.wavefront,
                 commandOffset,
-                sourceQueue,
-                ShaderAbi.WAVEFRONT_QUEUE_COMMAND_STRIDE);
+                ShaderAbi.WAVEFRONT_QUEUE_COMMAND_STRIDE,
+                traceQueue,
+                ShaderAbi.WAVEFRONT_SHADE_QUEUE,
+                ShaderAbi.WAVEFRONT_AREA_QUEUE);
     }
 
     static long wavefrontBytes(int width, int height) {
@@ -502,7 +504,7 @@ public final class RealtimeRayTracingPipeline implements RealtimeIntegratorPipel
     }
 
     static int raygenControl(int group) {
-        return RAYGEN_CONTROLS[group];
+        return RealtimeWavefrontGroups.CONTROLS[group];
     }
 
     static long queueOffset(int width, int height) {

@@ -1,12 +1,15 @@
 package dev.prime.render.vulkan;
 
-/** Ray-generation group order for trace, independent Area NEE and shade/scatter stages. */
+import dev.prime.render.shader.ShaderAbi;
+
+/** Ray-generation group order for execution-mode queues. */
 final class RealtimeWavefrontGroups {
     static final int HEAD = 0;
-    static final int RESOLVE = 7;
-    static final int GROUP_COUNT = 8;
+    static final int RESOLVE = 6;
+    static final int GROUP_COUNT = 7;
     static final int MODULE_COUNT = 5;
-    static final int[] MODULES = {0, 1, 1, 2, 2, 3, 3, 4};
+    static final int[] MODULES = {0, 1, 1, 2, 3, 3, 4};
+    static final int[] CONTROLS = {0, 1, 257, 4, 2, 258, 3};
 
     private RealtimeWavefrontGroups() {}
 
@@ -14,18 +17,18 @@ final class RealtimeWavefrontGroups {
         return queued(queue, 1, 2);
     }
 
-    static int area(int queue) {
-        return queued(queue, 3, 4);
+    static int area() {
+        return 3;
     }
 
     static int shade(int queue) {
-        return queued(queue, 5, 6);
+        return queued(queue, 4, 5);
     }
 
     private static int queued(int queue, int first, int second) {
         return switch (queue) {
-            case 0 -> first;
-            case 1 -> second;
+            case ShaderAbi.WAVEFRONT_TRACE_QUEUE_0 -> first;
+            case ShaderAbi.WAVEFRONT_TRACE_QUEUE_1 -> second;
             default -> throw new IllegalArgumentException("Invalid wavefront queue");
         };
     }

@@ -9,6 +9,14 @@ import org.lwjgl.vulkan.VkStridedDeviceAddressRegionKHR;
 
 /** Shared command recording for realtime and offline wavefront queues. */
 final class WavefrontCommands {
+    static final long COMMAND_WRITE_SOURCE_STAGES =
+            KHRRayTracingPipeline.VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR
+                    | VK12.VK_PIPELINE_STAGE_DRAW_INDIRECT_BIT;
+    static final long COMMAND_WRITE_SOURCE_ACCESSES =
+            VK12.VK_ACCESS_SHADER_READ_BIT
+                    | VK12.VK_ACCESS_SHADER_WRITE_BIT
+                    | VK12.VK_ACCESS_INDIRECT_COMMAND_READ_BIT;
+
     private WavefrontCommands() {
     }
 
@@ -37,7 +45,7 @@ final class WavefrontCommands {
             VulkanBuffer wavefront,
             int group,
             long commandOffset,
-            int sourceQueue,
+            int commandQueue,
             int commandStride) {
         KHRRayTracingPipeline.vkCmdTraceRaysIndirectKHR(
                 commandBuffer,
@@ -45,9 +53,9 @@ final class WavefrontCommands {
                 miss(stack, program),
                 hit(stack, program),
                 VkStridedDeviceAddressRegionKHR.calloc(stack),
-                wavefront.deviceAddress()
+                        wavefront.deviceAddress()
                         + commandOffset
-                        + (long) sourceQueue * commandStride);
+                        + (long) commandQueue * commandStride);
     }
 
     static void initializeQueues(
@@ -88,18 +96,7 @@ final class WavefrontCommands {
             long commandOffset,
             int sourceQueue,
             int commandStride) {
-        VulkanSync.memoryBarrier(
-                commandBuffer,
-                stack,
-                KHRRayTracingPipeline.VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR,
-                VK12.VK_ACCESS_SHADER_READ_BIT | VK12.VK_ACCESS_SHADER_WRITE_BIT,
-                KHRRayTracingPipeline.VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR
-                        | VK12.VK_PIPELINE_STAGE_DRAW_INDIRECT_BIT
-                        | VK12.VK_PIPELINE_STAGE_TRANSFER_BIT,
-                VK12.VK_ACCESS_SHADER_READ_BIT
-                        | VK12.VK_ACCESS_SHADER_WRITE_BIT
-                        | VK12.VK_ACCESS_INDIRECT_COMMAND_READ_BIT
-                        | VK12.VK_ACCESS_TRANSFER_WRITE_BIT);
+        wavefrontToQueueResetBarrier(commandBuffer, stack);
         VK12.vkCmdFillBuffer(
                 commandBuffer,
                 wavefront.handle(),
@@ -107,6 +104,36 @@ final class WavefrontCommands {
                 Integer.BYTES,
                 0);
         transferToWavefrontBarrier(commandBuffer, stack);
+    }
+
+    static void resetQueues(
+            VkCommandBuffer commandBuffer,
+            MemoryStack stack,
+            VulkanBuffer wavefront,
+            long commandOffset,
+            int commandStride,
+            int firstQueue,
+            int secondQueue,
+            int thirdQueue) {
+        wavefrontToQueueResetBarrier(commandBuffer, stack);
+        resetQueue(commandBuffer, wavefront, commandOffset, commandStride, firstQueue);
+        resetQueue(commandBuffer, wavefront, commandOffset, commandStride, secondQueue);
+        resetQueue(commandBuffer, wavefront, commandOffset, commandStride, thirdQueue);
+        transferToWavefrontBarrier(commandBuffer, stack);
+    }
+
+    private static void resetQueue(
+            VkCommandBuffer commandBuffer,
+            VulkanBuffer wavefront,
+            long commandOffset,
+            int commandStride,
+            int queue) {
+        VK12.vkCmdFillBuffer(
+                commandBuffer,
+                wavefront.handle(),
+                commandOffset + (long) queue * commandStride,
+                Integer.BYTES,
+                0);
     }
 
     private static VkStridedDeviceAddressRegionKHR raygen(
@@ -138,10 +165,28 @@ final class WavefrontCommands {
         VulkanSync.memoryBarrier(
                 commandBuffer,
                 stack,
-                KHRRayTracingPipeline.VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR,
-                VK12.VK_ACCESS_SHADER_READ_BIT | VK12.VK_ACCESS_SHADER_WRITE_BIT,
+                COMMAND_WRITE_SOURCE_STAGES,
+                COMMAND_WRITE_SOURCE_ACCESSES,
                 VK12.VK_PIPELINE_STAGE_TRANSFER_BIT,
                 VK12.VK_ACCESS_TRANSFER_WRITE_BIT);
+    }
+
+    private static void wavefrontToQueueResetBarrier(
+            VkCommandBuffer commandBuffer, MemoryStack stack) {
+        // Publish the next trace queue while ordering transfer clears after this round's indirect
+        // command reads. Keeping both dependencies here avoids a second barrier between rounds.
+        VulkanSync.memoryBarrier(
+                commandBuffer,
+                stack,
+                COMMAND_WRITE_SOURCE_STAGES,
+                COMMAND_WRITE_SOURCE_ACCESSES,
+                KHRRayTracingPipeline.VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR
+                        | VK12.VK_PIPELINE_STAGE_DRAW_INDIRECT_BIT
+                        | VK12.VK_PIPELINE_STAGE_TRANSFER_BIT,
+                VK12.VK_ACCESS_SHADER_READ_BIT
+                        | VK12.VK_ACCESS_SHADER_WRITE_BIT
+                        | VK12.VK_ACCESS_INDIRECT_COMMAND_READ_BIT
+                        | VK12.VK_ACCESS_TRANSFER_WRITE_BIT);
     }
 
     private static void transferToWavefrontBarrier(

@@ -41,7 +41,7 @@ layout(location = 1) rayPayloadEXT PrimeShadowPayload primeShadowPayload;
 #include "camera.glsl"
 #include "transparent_guide_probe.glsl"
 #include "wavefront_output.glsl"
-#include "wavefront_state.glsl"
+#include "realtime/wavefront_state.glsl"
 
 const uint PRIME_WAVEFRONT_STAGE_HEAD = 0u;
 const uint PRIME_WAVEFRONT_STAGE_STEP = 1u;
@@ -394,7 +394,9 @@ void primeWavefrontHead() {
     }
     // Every head invocation reaches this collective exactly once, including inactive paths.
     primeAppendWavefrontContinuation(
-            0u, queuedPathIndex, queueContinuation);
+            PRIME_WAVEFRONT_TRACE_QUEUE_0,
+            queuedPathIndex,
+            queueContinuation);
 }
 
 void primeWavefrontStep(uint sourceQueue) {
@@ -429,11 +431,18 @@ void primeWavefrontStep(uint sourceQueue) {
             traceOrigin, rayDirection, pathClass);
     primeStoreWavefrontSurface(recordIndex, surface);
     primeStoreWavefrontDiagnostic(recordIndex);
+    // Trace may cross a SER invocation-repack boundary. Keep queue publication scalar until
+    // compaction moves to a separate dispatch with a well-defined subgroup population.
+    primeAppendWavefrontPath(PRIME_WAVEFRONT_SHADE_QUEUE, recordIndex);
+    if (surface.hitKind == PRIME_HIT_SURFACE) {
+        primeAppendWavefrontPath(PRIME_WAVEFRONT_AREA_QUEUE, recordIndex);
+    }
 }
 
 void primeWavefrontShade(uint sourceQueue) {
     uint recordIndex =
-            primeWavefrontQueuedPath(sourceQueue, gl_LaunchIDEXT.x);
+            primeWavefrontQueuedPath(
+                    PRIME_WAVEFRONT_SHADE_QUEUE, gl_LaunchIDEXT.x);
     uvec2 pixel = primeWavefrontPixel(recordIndex);
     PrimeWavefrontTransportRecord record =
             primeLoadWavefrontTransportRecord(recordIndex);
@@ -550,14 +559,18 @@ void primeWavefrontShade(uint sourceQueue) {
                 pixel, guideWasPending, result);
         queueContinuation = continuation;
     }
+    uint targetQueue = sourceQueue == PRIME_WAVEFRONT_TRACE_QUEUE_0
+            ? PRIME_WAVEFRONT_TRACE_QUEUE_1
+            : PRIME_WAVEFRONT_TRACE_QUEUE_0;
     primeAppendWavefrontContinuation(
-            sourceQueue ^ 1u, recordIndex, queueContinuation);
+            targetQueue, recordIndex, queueContinuation);
 }
 
 #if defined(PRIME_DEFER_SECONDARY_AREA_NEE)
-void primeWavefrontArea(uint sourceQueue) {
+void primeWavefrontArea() {
     uint recordIndex =
-            primeWavefrontQueuedPath(sourceQueue, gl_LaunchIDEXT.x);
+            primeWavefrontQueuedPath(
+                    PRIME_WAVEFRONT_AREA_QUEUE, gl_LaunchIDEXT.x);
     PrimeWavefrontTransportRecord record =
             primeLoadWavefrontTransportRecord(recordIndex);
     primeRestoreWavefrontDiagnostic(record);
@@ -706,7 +719,7 @@ void main() {
             break;
 #if defined(PRIME_DEFER_SECONDARY_AREA_NEE)
         case PRIME_WAVEFRONT_STAGE_AREA:
-            primeWavefrontArea(sourceQueue);
+            primeWavefrontArea();
             break;
 #endif
     }

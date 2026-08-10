@@ -115,8 +115,8 @@ uint primeWavefrontPixelCount() {
     return primePush.outputExtent.x * primePush.outputExtent.y;
 }
 
-uint primeWavefrontPathCapacity() {
-    return primeWavefrontPixelCount() * PRIME_WAVEFRONT_PATH_SLOTS_PER_PIXEL;
+uint primeWavefrontQueueCapacity() {
+    return primeWavefrontPixelCount() * PRIME_WAVEFRONT_QUEUE_ENTRIES_PER_PIXEL;
 }
 
 uint primeWavefrontIndex(uvec2 pixel, uint branch) {
@@ -138,7 +138,7 @@ uint primeWavefrontQueueCommandWord(uint queue) {
 
 uint primeWavefrontQueueWord(uint queue, uint entry) {
     uint indexWords = primeWavefrontQueueCommandWord(PRIME_WAVEFRONT_QUEUE_COUNT);
-    return indexWords + queue * primeWavefrontPathCapacity() + entry;
+    return indexWords + queue * primeWavefrontQueueCapacity() + entry;
 }
 
 uint primeWavefrontAreaWord(uvec2 pixel, uint component) {
@@ -220,7 +220,7 @@ uint primeWavefrontQueuedPath(uint queue, uint entry) {
 void primeAppendWavefrontPath(uint queue, uint pathIndex) {
     uint commandWord = primeWavefrontQueueCommandWord(queue);
     uint entry = atomicAdd(primeWavefrontQueue.words[commandWord], 1u);
-    uint capacity = primeWavefrontPathCapacity();
+    uint capacity = primeWavefrontQueueCapacity();
     if (entry < capacity) {
         primeWavefrontQueue.words[
                 primeWavefrontQueueWord(queue, entry)] = pathIndex;
@@ -246,7 +246,7 @@ void primeAppendWavefrontContinuation(
                 activeCount);
     }
     firstEntry = subgroupBroadcastFirst(firstEntry);
-    uint capacity = primeWavefrontPathCapacity();
+    uint capacity = primeWavefrontQueueCapacity();
     bool overflow = activeCount > capacity
             || firstEntry > capacity - min(activeCount, capacity);
     if (subgroupElect() && overflow) {

@@ -48,7 +48,7 @@ public final class CpuWorldLightTree {
                 leaves, input.clusterCount(), CpuLightTree.WORLD_SOFTENING_SCALE);
         Result result = Result.forTree(tree, input.clusterCount());
         for (int clusterIndex = 0; clusterIndex < input.clusterCount(); clusterIndex++) {
-            result.setLeafNode(clusterIndex, tree.leafNode(clusterIndex));
+            result.setLightPath(clusterIndex, tree.leafPath(clusterIndex));
         }
         result.pack(tree);
         return result;
@@ -67,52 +67,48 @@ public final class CpuWorldLightTree {
     public static final class Result {
         private final int[] packedWords;
         private final int nodeWordCount;
-        private final int forwardWordCount;
-        private final int[] leafNodes;
+        private final int leafWordCount;
+        private final int[] lightPaths;
 
-        Result(int[] nodeWords, int[] forwardWords, int[] reverseWords, int[] leafNodes) {
+        Result(int[] nodeWords, int[] leafWords, int[] entryWords, int[] lightPaths) {
             int nodeWordsPerRecord = ShaderAbi.LIGHT_NODE_SIZE / Integer.BYTES;
-            int forwardWordsPerRecord = ShaderAbi.LIGHT_NODE_FORWARD_SIZE / Integer.BYTES;
-            int reverseWordsPerRecord = ShaderAbi.LIGHT_NODE_REVERSE_SIZE / Integer.BYTES;
+            int leafWordsPerRecord = ShaderAbi.LIGHT_LEAF_SIZE / Integer.BYTES;
+            int entryWordsPerRecord = ShaderAbi.LIGHT_LEAF_ENTRY_SIZE / Integer.BYTES;
             if (nodeWords.length % nodeWordsPerRecord != 0
-                    || forwardWords.length % forwardWordsPerRecord != 0
-                    || reverseWords.length % reverseWordsPerRecord != 0
-                    || nodeWords.length / nodeWordsPerRecord
-                            != forwardWords.length / forwardWordsPerRecord
-                    || nodeWords.length / nodeWordsPerRecord
-                            != reverseWords.length / reverseWordsPerRecord) {
-                throw new IllegalArgumentException("World light node streams disagree");
+                    || leafWords.length % leafWordsPerRecord != 0
+                    || entryWords.length % entryWordsPerRecord != 0) {
+                throw new IllegalArgumentException("World light tree streams are misaligned");
             }
             this.nodeWordCount = nodeWords.length;
-            this.forwardWordCount = forwardWords.length;
+            this.leafWordCount = leafWords.length;
             this.packedWords = Arrays.copyOf(
                     nodeWords,
-                    nodeWords.length + forwardWords.length + reverseWords.length);
+                    nodeWords.length + leafWords.length + entryWords.length);
             System.arraycopy(
-                    forwardWords,
+                    leafWords,
                     0,
                     this.packedWords,
                     nodeWords.length,
-                    forwardWords.length);
+                    leafWords.length);
             System.arraycopy(
-                    reverseWords,
+                    entryWords,
                     0,
                     this.packedWords,
-                    nodeWords.length + forwardWords.length,
-                    reverseWords.length);
-            this.leafNodes = leafNodes.clone();
+                    nodeWords.length + leafWords.length,
+                    entryWords.length);
+            this.lightPaths = lightPaths.clone();
         }
 
         private Result(
                 int[] packedWords,
                 int nodeWordCount,
-                int forwardWordCount,
+                int leafWordCount,
                 int clusterCount) {
             this.packedWords = packedWords;
             this.nodeWordCount = nodeWordCount;
-            this.forwardWordCount = forwardWordCount;
-            this.leafNodes = new int[clusterCount];
-            Arrays.fill(this.leafNodes, CpuLightTree.NO_INDEX);
+            this.leafWordCount = leafWordCount;
+            this.lightPaths = new int[clusterCount];
+            Arrays.fill(this.lightPaths, CpuLightTree.NO_INDEX);
         }
 
         public static Result empty(int clusterCount) {
@@ -125,19 +121,19 @@ public final class CpuWorldLightTree {
         private static Result forTree(CpuLightTree.Result tree, int clusterCount) {
             int nodeWordCount = tree.nodeCount()
                     * (ShaderAbi.LIGHT_NODE_SIZE / Integer.BYTES);
-            int forwardWordCount = tree.nodeCount()
-                    * (ShaderAbi.LIGHT_NODE_FORWARD_SIZE / Integer.BYTES);
-            int reverseWordCount = tree.nodeCount()
-                    * (ShaderAbi.LIGHT_NODE_REVERSE_SIZE / Integer.BYTES);
+            int leafWordCount = tree.clusterCount()
+                    * (ShaderAbi.LIGHT_LEAF_SIZE / Integer.BYTES);
+            int entryWordCount = tree.entryCount()
+                    * (ShaderAbi.LIGHT_LEAF_ENTRY_SIZE / Integer.BYTES);
             return new Result(
-                    new int[nodeWordCount + forwardWordCount + reverseWordCount],
+                    new int[nodeWordCount + leafWordCount + entryWordCount],
                     nodeWordCount,
-                    forwardWordCount,
+                    leafWordCount,
                     clusterCount);
         }
 
-        private void setLeafNode(int clusterIndex, int leafNode) {
-            this.leafNodes[clusterIndex] = leafNode;
+        private void setLightPath(int clusterIndex, int lightPath) {
+            this.lightPaths[clusterIndex] = lightPath;
         }
 
         private void pack(CpuLightTree.Result tree) {
@@ -145,7 +141,7 @@ public final class CpuWorldLightTree {
                     this.packedWords,
                     0,
                     this.nodeWordCount,
-                    this.nodeWordCount + this.forwardWordCount);
+                    this.nodeWordCount + this.leafWordCount);
         }
 
         public boolean isEmpty() {
@@ -156,23 +152,27 @@ public final class CpuWorldLightTree {
             return this.packedWords;
         }
 
-        public long forwardByteOffset() {
+        public long leafByteOffset() {
             return (long) this.nodeWordCount * Integer.BYTES;
         }
 
-        public long reverseByteOffset() {
-            return (long) (this.nodeWordCount + this.forwardWordCount) * Integer.BYTES;
+        public long entryByteOffset() {
+            return (long) (this.nodeWordCount + this.leafWordCount) * Integer.BYTES;
         }
 
         public int nodeCount() {
             return this.nodeWordCount / (ShaderAbi.LIGHT_NODE_SIZE / Integer.BYTES);
         }
 
-        public int leafNode(int clusterIndex) {
-            if (clusterIndex < 0 || clusterIndex >= this.leafNodes.length) {
+        public int leafCount() {
+            return this.leafWordCount / (ShaderAbi.LIGHT_LEAF_SIZE / Integer.BYTES);
+        }
+
+        public int lightPath(int clusterIndex) {
+            if (clusterIndex < 0 || clusterIndex >= this.lightPaths.length) {
                 throw new IndexOutOfBoundsException(clusterIndex);
             }
-            return this.leafNodes[clusterIndex];
+            return this.lightPaths[clusterIndex];
         }
     }
 }

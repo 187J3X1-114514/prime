@@ -85,12 +85,12 @@ final class RealtimeSharc implements Destroyable {
                     rayTracingPipelineLayout,
                     new String[] {
                         prefix + "head" + suffix,
-                        "/prime/shaders/realtime_wavefront_sharc_step" + suffix,
-                        prefix + "area" + suffix,
-                        prefix + "tail" + suffix,
+                        prefix + "step" + suffix,
+                        "/prime/shaders/realtime_wavefront_sharc_area" + suffix,
+                        "/prime/shaders/realtime_wavefront_sharc_shade" + suffix,
                         prefix + "resolve" + suffix
                     },
-                    WavefrontGroups.MODULES,
+                    RealtimeWavefrontGroups.MODULES,
                     new int[] {0, 1, 257, 4, 260, 2, 258, 3},
                     "Prime SHARC query pipeline",
                     "Prime SHARC query shader binding table");

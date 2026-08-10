@@ -117,7 +117,7 @@ PrimeOfflineAreaRequest primePrepareOfflineArea(
             primeSobolSample3D(
                     preparedSample,
                     PRIME_SAMPLE_EFFECT_DIRECT_AREA_LIGHT,
-                    PRIME_SAMPLE_DIMENSION_PRIMARY),
+                    PRIME_SAMPLE_DIMENSION_PRIMARY).xy,
             primeSobolSample2D(
                     preparedSample,
                     PRIME_SAMPLE_EFFECT_DIRECT_AREA_LIGHT,

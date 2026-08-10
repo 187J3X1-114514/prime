@@ -21,11 +21,11 @@
         { "name": "worldLightAddress", "type": "uint64_t", "offset": 16 },
         { "name": "cutoutBase", "type": "uint", "offset": 24 },
         { "name": "transmissiveBase", "type": "uint", "offset": 28 },
-        { "name": "worldLeafNode", "type": "uint", "offset": 32 },
+        { "name": "worldLightPath", "type": "uint", "offset": 32 },
         { "name": "lightCount", "type": "uint", "offset": 36 },
-        { "name": "worldLightForwardAddress", "type": "uint64_t", "offset": 40 },
+        { "name": "worldLightLeafAddress", "type": "uint64_t", "offset": 40 },
         { "name": "translation", "type": "vec3", "offset": 48 },
-        { "name": "worldLightNodeCount", "type": "uint", "offset": 60 },
+        { "name": "worldLightLeafCount", "type": "uint", "offset": 60 },
         { "name": "instanceTint", "type": "uint", "offset": 64 },
         { "name": "opaqueMacroTriangleBase", "type": "uint", "offset": 68 },
         { "name": "cutoutMacroTriangleBase", "type": "uint", "offset": 72 },
@@ -36,21 +36,23 @@
     "lightNode": {
       "size": 32,
       "fields": [
-        { "name": "boundsMinPower", "type": "vec4", "offset": 0 },
-        { "name": "boundsMaxSoftening", "type": "vec4", "offset": 16 }
+        { "name": "packedBoundsDirection", "type": "uvec4", "offset": 0 },
+        { "name": "powerSoftening", "type": "vec2", "offset": 16 },
+        { "name": "childReserved", "type": "uvec2", "offset": 24 }
       ]
     },
-    "lightNodeForward": {
+    "lightLeaf": {
       "size": 8,
       "fields": [
-        { "name": "childOrLeaf", "type": "uint", "offset": 0 },
-        { "name": "emissionDirection", "type": "uint", "offset": 4 }
+        { "name": "firstEntry", "type": "uint", "offset": 0 },
+        { "name": "entryCount", "type": "uint", "offset": 4 }
       ]
     },
-    "lightNodeReverse": {
-      "size": 4,
+    "lightLeafEntry": {
+      "size": 8,
       "fields": [
-        { "name": "parent", "type": "uint", "offset": 0 }
+        { "name": "index", "type": "uint", "offset": 0 },
+        { "name": "power", "type": "float", "offset": 4 }
       ]
     },
     "lightEmitter": {
@@ -76,8 +78,8 @@
       "size": 48,
       "fields": [
         { "name": "nodeAddress", "type": "uint64_t", "offset": 0 },
-        { "name": "forwardAddress", "type": "uint64_t", "offset": 8 },
-        { "name": "reverseAddress", "type": "uint64_t", "offset": 16 },
+        { "name": "leafAddress", "type": "uint64_t", "offset": 8 },
+        { "name": "entryAddress", "type": "uint64_t", "offset": 16 },
         { "name": "emitterAddress", "type": "uint64_t", "offset": 24 },
         { "name": "cellAddress", "type": "uint64_t", "offset": 32 },
         { "name": "root", "type": "uint", "offset": 40 },
@@ -257,7 +259,7 @@
     "rounds": 8,
     "pathRecordSize": 96,
     "pathSlotsPerPixel": 2,
-    "areaRecordSize": 16,
+    "areaRecordSize": 112,
     "queueCount": 2,
     "queueCommandStride": 16,
     "queueIndexSize": 4,

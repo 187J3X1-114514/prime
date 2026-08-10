@@ -9,7 +9,7 @@ import java.util.Objects;
 /** Versioned canonical binary encoding of one {@link CompiledCluster}. */
 public final class CompiledClusterCodec {
     private static final int MAGIC = 0x3143_4350;
-    private static final int VERSION = 10;
+    private static final int VERSION = 11;
     private static final int MAX_SEGMENTS = 4_096;
     private static final int MAX_VOXEL_MESHES = 4_096;
     private static final int MAX_VOXEL_INSTANCES = 4_194_304;
@@ -297,6 +297,10 @@ public final class CompiledClusterCodec {
             }
             if (version < 7 && lightEmitterCount != 0) {
                 encodedLights = CompiledClusterLights.upgradeUvPacking(
+                        encodedLights, lightEmitterCount);
+            }
+            if (version < 11 && lightEmitterCount != 0) {
+                encodedLights = CompiledClusterLights.upgradeTreeLayout(
                         encodedLights, lightEmitterCount);
             }
             CompiledClusterLights lights = CompiledClusterLights.fromEncoded(

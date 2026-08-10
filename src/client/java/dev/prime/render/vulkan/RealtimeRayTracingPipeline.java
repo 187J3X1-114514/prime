@@ -27,9 +27,9 @@ import org.lwjgl.vulkan.VkWriteDescriptorSet;
 
 /** Realtime-only pipeline, queue ABI and reconstruction outputs. */
 public final class RealtimeRayTracingPipeline implements RealtimeIntegratorPipeline {
-    static final int RAYGEN_GROUP_COUNT = WavefrontGroups.GROUP_COUNT;
-    static final int RAYGEN_MODULE_COUNT = WavefrontGroups.MODULE_COUNT;
-    static final int DISPATCH_COUNT = 2 * ShaderAbi.WAVEFRONT_ROUNDS + 3;
+    static final int RAYGEN_GROUP_COUNT = RealtimeWavefrontGroups.GROUP_COUNT;
+    static final int RAYGEN_MODULE_COUNT = RealtimeWavefrontGroups.MODULE_COUNT;
+    static final int DISPATCH_COUNT = 3 * ShaderAbi.WAVEFRONT_ROUNDS + 2;
     static final int DESCRIPTOR_BINDING_COUNT = 26;
     private static final int[] RAYGEN_CONTROLS = {
         0, 1, 257, 4, 260, 2, 258, 3
@@ -81,14 +81,14 @@ public final class RealtimeRayTracingPipeline implements RealtimeIntegratorPipel
                 prefix + "head" + suffix,
                 prefix + "step" + suffix,
                 prefix + "area" + suffix,
-                prefix + "tail" + suffix,
+                prefix + "shade" + suffix,
                 prefix + "resolve" + suffix
             };
             traceProgram = TraceProgram.create(
                     context,
                     layout,
                     raygenShaders,
-                    WavefrontGroups.MODULES,
+                    RealtimeWavefrontGroups.MODULES,
                     RAYGEN_CONTROLS,
                     "Prime realtime ray tracing pipeline",
                     "Prime realtime shader binding table");
@@ -354,7 +354,13 @@ public final class RealtimeRayTracingPipeline implements RealtimeIntegratorPipel
             this.bind(commandBuffer, stack, pushConstants, activeProgram);
             long commandOffset = queueCommandOffset(width, height);
             this.initializeQueues(commandBuffer, stack, commandOffset);
-            this.trace(commandBuffer, stack, activeProgram, width, height, WavefrontGroups.HEAD);
+            this.trace(
+                    commandBuffer,
+                    stack,
+                    activeProgram,
+                    width,
+                    height,
+                    RealtimeWavefrontGroups.HEAD);
             this.wavefrontBarrier(commandBuffer, stack);
             int sourceQueue = 0;
             this.lastRecordedPassCount = DISPATCH_COUNT;
@@ -363,7 +369,7 @@ public final class RealtimeRayTracingPipeline implements RealtimeIntegratorPipel
                         commandBuffer,
                         stack,
                         activeProgram,
-                        WavefrontGroups.step(sourceQueue),
+                        RealtimeWavefrontGroups.step(sourceQueue),
                         commandOffset,
                         sourceQueue);
                 this.wavefrontBarrier(commandBuffer, stack);
@@ -371,19 +377,20 @@ public final class RealtimeRayTracingPipeline implements RealtimeIntegratorPipel
                         commandBuffer,
                         stack,
                         activeProgram,
-                        WavefrontGroups.area(sourceQueue),
+                        RealtimeWavefrontGroups.area(sourceQueue),
+                        commandOffset,
+                        sourceQueue);
+                this.wavefrontBarrier(commandBuffer, stack);
+                this.traceIndirect(
+                        commandBuffer,
+                        stack,
+                        activeProgram,
+                        RealtimeWavefrontGroups.shade(sourceQueue),
                         commandOffset,
                         sourceQueue);
                 this.advanceQueue(commandBuffer, stack, commandOffset, sourceQueue);
                 sourceQueue ^= 1;
             }
-            this.traceIndirect(
-                    commandBuffer,
-                    stack,
-                    activeProgram,
-                    WavefrontGroups.tail(sourceQueue),
-                    commandOffset,
-                    sourceQueue);
             this.wavefrontBarrier(commandBuffer, stack);
             this.trace(
                     commandBuffer,
@@ -391,7 +398,7 @@ public final class RealtimeRayTracingPipeline implements RealtimeIntegratorPipel
                     activeProgram,
                     width,
                     height,
-                    WavefrontGroups.RESOLVE);
+                    RealtimeWavefrontGroups.RESOLVE);
             this.sharcDiagnostics.finish(commandBuffer, diagnostics);
             this.lastRecordedPassCount = this.sharc == null
                     ? DISPATCH_COUNT
@@ -491,7 +498,7 @@ public final class RealtimeRayTracingPipeline implements RealtimeIntegratorPipel
     }
 
     static int raygenModule(int group) {
-        return WavefrontGroups.MODULES[group];
+        return RealtimeWavefrontGroups.MODULES[group];
     }
 
     static int raygenControl(int group) {

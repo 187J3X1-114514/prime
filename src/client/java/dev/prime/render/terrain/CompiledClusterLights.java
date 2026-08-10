@@ -7,11 +7,14 @@ import java.util.Objects;
  * Relocatable final light payload produced by cluster compilation.
  *
  * <p>The first five ABI fields are byte offsets when stored here. Upload adds the destination
- * device address without rebuilding emitters, distributions, or either light-tree stream.
+ * device address without rebuilding emitters, distributions, or light-tree records.
  */
 public final class CompiledClusterLights {
     private static final int POINTER_COUNT = 5;
     private static final int HEADER_WORDS = 12;
+    private static final int LEGACY_LIGHT_NODE_SIZE = 32;
+    private static final int LEGACY_LIGHT_NODE_FORWARD_SIZE = 8;
+    private static final int LEGACY_LIGHT_NODE_REVERSE_SIZE = 4;
 
     public static final CompiledClusterLights EMPTY =
             new CompiledClusterLights(new int[0], Summary.EMPTY);
@@ -103,10 +106,10 @@ public final class CompiledClusterLights {
                 || emitterStart < reverseStart
                 || cellStart < emitterStart
                 || cellStart > byteSize
-                || (forwardStart - nodeStart) % ShaderAbi.LIGHT_NODE_SIZE != 0L) {
+                || (forwardStart - nodeStart) % LEGACY_LIGHT_NODE_SIZE != 0L) {
             throw new IllegalArgumentException("Legacy compiled light payload is inconsistent");
         }
-        long nodeCount = (forwardStart - nodeStart) / ShaderAbi.LIGHT_NODE_SIZE;
+        long nodeCount = (forwardStart - nodeStart) / LEGACY_LIGHT_NODE_SIZE;
         long oldReverseStart = Math.addExact(
                 forwardStart, Math.multiplyExact(nodeCount, Integer.BYTES));
         long oldReverseEnd = Math.addExact(
@@ -116,10 +119,10 @@ public final class CompiledClusterLights {
         }
         long newReverseStart = Math.addExact(
                 forwardStart,
-                Math.multiplyExact(nodeCount, ShaderAbi.LIGHT_NODE_FORWARD_SIZE));
+                Math.multiplyExact(nodeCount, LEGACY_LIGHT_NODE_FORWARD_SIZE));
         long newReverseEnd = Math.addExact(
                 newReverseStart,
-                Math.multiplyExact(nodeCount, ShaderAbi.LIGHT_NODE_REVERSE_SIZE));
+                Math.multiplyExact(nodeCount, LEGACY_LIGHT_NODE_REVERSE_SIZE));
         long newEmitterStart = alignUp(newReverseEnd, 16L);
         long emitterShift = newEmitterStart - emitterStart;
         long newCellStart = Math.addExact(cellStart, emitterShift);
@@ -189,6 +192,123 @@ public final class CompiledClusterLights {
         return upgraded;
     }
 
+    /** Rebuilds the v10 tree streams as clustered leaves while preserving emitter and cell data. */
+    static int[] upgradeTreeLayout(int[] oldWords, int emitterCount) {
+        Objects.requireNonNull(oldWords, "oldWords");
+        if (emitterCount <= 0 || oldWords.length < HEADER_WORDS) {
+            throw new IllegalArgumentException("Legacy compiled light payload is inconsistent");
+        }
+        long oldEmitterStart = getLong(oldWords, 6);
+        long oldCellStart = getLong(oldWords, 8);
+        long oldForwardStart = getLong(oldWords, 2);
+        long byteSize = (long) oldWords.length * Integer.BYTES;
+        long oldEmitterEnd = Math.addExact(
+                oldEmitterStart,
+                Math.multiplyExact((long) emitterCount, ShaderAbi.LIGHT_EMITTER_SIZE));
+        long oldRootDirectionEnd = Math.addExact(
+                oldForwardStart, LEGACY_LIGHT_NODE_FORWARD_SIZE);
+        if (oldEmitterStart < (long) HEADER_WORDS * Integer.BYTES
+                || oldForwardStart < (long) HEADER_WORDS * Integer.BYTES
+                || oldRootDirectionEnd > oldEmitterStart
+                || oldEmitterEnd != oldCellStart
+                || oldCellStart > byteSize
+                || ((oldForwardStart | oldEmitterStart) & 3L) != 0L) {
+            throw new IllegalArgumentException("Legacy compiled light payload is inconsistent");
+        }
+
+        int emitterWords = ShaderAbi.LIGHT_EMITTER_SIZE / Integer.BYTES;
+        int emitterWord = Math.toIntExact(oldEmitterStart / Integer.BYTES);
+        CpuLightTree.Leaves leaves = new CpuLightTree.Leaves(emitterCount);
+        EmissionDistribution.SpatialMoments moments = EmissionDistribution.uniform().spatialMoments();
+        for (int emitter = 0; emitter < emitterCount; emitter++) {
+            int base = emitterWord + emitter * emitterWords;
+            float cornerX = Float.intBitsToFloat(oldWords[base]);
+            float cornerY = Float.intBitsToFloat(oldWords[base + 1]);
+            float cornerZ = Float.intBitsToFloat(oldWords[base + 2]);
+            float edgeOneX = Float.intBitsToFloat(oldWords[base + 4]);
+            float edgeOneY = Float.intBitsToFloat(oldWords[base + 5]);
+            float edgeOneZ = Float.intBitsToFloat(oldWords[base + 6]);
+            float edgeTwoX = Float.intBitsToFloat(oldWords[base + 8]);
+            float edgeTwoY = Float.intBitsToFloat(oldWords[base + 9]);
+            float edgeTwoZ = Float.intBitsToFloat(oldWords[base + 10]);
+            float secondX = cornerX + edgeOneX;
+            float secondY = cornerY + edgeOneY;
+            float secondZ = cornerZ + edgeOneZ;
+            float thirdX = cornerX + edgeTwoX;
+            float thirdY = cornerY + edgeTwoY;
+            float thirdZ = cornerZ + edgeTwoZ;
+            int flags = oldWords[base + 22];
+            leaves.addWithSpatialVariance(
+                    Math.min(cornerX, Math.min(secondX, thirdX)),
+                    Math.min(cornerY, Math.min(secondY, thirdY)),
+                    Math.min(cornerZ, Math.min(secondZ, thirdZ)),
+                    Math.max(cornerX, Math.max(secondX, thirdX)),
+                    Math.max(cornerY, Math.max(secondY, thirdY)),
+                    Math.max(cornerZ, Math.max(secondZ, thirdZ)),
+                    cornerX + edgeOneX * moments.meanU() + edgeTwoX * moments.meanV(),
+                    cornerY + edgeOneY * moments.meanU() + edgeTwoY * moments.meanV(),
+                    cornerZ + edgeOneZ * moments.meanU() + edgeTwoZ * moments.meanV(),
+                    moments.positionVariance(
+                            edgeOneX,
+                            edgeOneY,
+                            edgeOneZ,
+                            edgeTwoX,
+                            edgeTwoY,
+                            edgeTwoZ),
+                    Float.intBitsToFloat(oldWords[base + 11]),
+                    emitter,
+                    LightDirection.fromNormal(
+                            Float.intBitsToFloat(oldWords[base + 12]),
+                            Float.intBitsToFloat(oldWords[base + 13]),
+                            Float.intBitsToFloat(oldWords[base + 14]),
+                            (flags & CpuSectionLights.EMITTER_FLAG_TWO_SIDED) != 0));
+        }
+        CpuLightTree.Result tree = CpuLightTree.buildOwned(
+                leaves, emitterCount, CpuLightTree.LOCAL_SOFTENING_SCALE);
+        int headerWords = ShaderAbi.SECTION_LIGHT_HEADER_SIZE / Integer.BYTES;
+        int nodeStart = headerWords;
+        int leafStart = nodeStart
+                + tree.nodeCount() * (ShaderAbi.LIGHT_NODE_SIZE / Integer.BYTES);
+        int entryStart = leafStart
+                + tree.clusterCount() * (ShaderAbi.LIGHT_LEAF_SIZE / Integer.BYTES);
+        int newEmitterStart = Math.toIntExact(alignUp(
+                        (long) (entryStart
+                                        + tree.entryCount()
+                                                * (ShaderAbi.LIGHT_LEAF_ENTRY_SIZE
+                                                        / Integer.BYTES))
+                                * Integer.BYTES,
+                        16L)
+                / Integer.BYTES);
+        int cellWords = oldWords.length - Math.toIntExact(oldCellStart / Integer.BYTES);
+        int newCellStart = newEmitterStart + emitterCount * emitterWords;
+        int[] upgraded = new int[newCellStart + cellWords];
+        putLong(upgraded, 0, (long) nodeStart * Integer.BYTES);
+        putLong(upgraded, 2, (long) leafStart * Integer.BYTES);
+        putLong(upgraded, 4, (long) entryStart * Integer.BYTES);
+        putLong(upgraded, 6, (long) newEmitterStart * Integer.BYTES);
+        putLong(upgraded, 8, (long) newCellStart * Integer.BYTES);
+        upgraded[10] = 0;
+        upgraded[11] = emitterCount;
+        tree.packInto(upgraded, nodeStart, leafStart, entryStart);
+        upgraded[nodeStart + 3] = oldWords[Math.toIntExact(oldForwardStart / Integer.BYTES) + 1];
+        System.arraycopy(
+                oldWords,
+                emitterWord,
+                upgraded,
+                newEmitterStart,
+                emitterCount * emitterWords);
+        System.arraycopy(
+                oldWords,
+                Math.toIntExact(oldCellStart / Integer.BYTES),
+                upgraded,
+                newCellStart,
+                cellWords);
+        for (int emitter = 0; emitter < emitterCount; emitter++) {
+            upgraded[newEmitterStart + emitter * emitterWords + 21] = tree.leafPath(emitter);
+        }
+        return upgraded;
+    }
+
     public boolean isEmpty() {
         return this.summary.isEmpty();
     }
@@ -246,37 +366,37 @@ public final class CompiledClusterLights {
             int emitterCount,
             int packedDirection) {
         long nodeStart = offsets[0];
-        long forwardStart = offsets[1];
-        long reverseStart = offsets[2];
+        long leafStart = offsets[1];
+        long entryStart = offsets[2];
         long emitterStart = offsets[3];
         long cellStart = offsets[4];
         long headerBytes = (long) HEADER_WORDS * Integer.BYTES;
         if (words[10] != 0
                 || nodeStart != headerBytes
-                || forwardStart < nodeStart
-                || reverseStart < forwardStart
-                || emitterStart < reverseStart
+                || leafStart < nodeStart
+                || entryStart < leafStart
+                || emitterStart < entryStart
                 || cellStart < emitterStart) {
             throw new IllegalArgumentException(
                     "Compiled light payload has an invalid section order");
         }
-        long nodeBytes = forwardStart - nodeStart;
+        long nodeBytes = leafStart - nodeStart;
         if (nodeBytes % ShaderAbi.LIGHT_NODE_SIZE != 0L) {
             throw new IllegalArgumentException(
                     "Compiled light node stream is misaligned");
         }
         long nodeCount = nodeBytes / ShaderAbi.LIGHT_NODE_SIZE;
-        long expectedNodeCount = Math.subtractExact(
-                Math.multiplyExact((long) emitterCount, 2L), 1L);
-        long expectedReverse = Math.addExact(
-                forwardStart,
-                Math.multiplyExact(
-                        nodeCount, ShaderAbi.LIGHT_NODE_FORWARD_SIZE));
-        long reverseEnd = Math.addExact(
-                reverseStart,
-                Math.multiplyExact(
-                        nodeCount, ShaderAbi.LIGHT_NODE_REVERSE_SIZE));
-        long expectedEmitter = alignUp(reverseEnd, 16L);
+        long leafBytes = entryStart - leafStart;
+        if (leafBytes % ShaderAbi.LIGHT_LEAF_SIZE != 0L) {
+            throw new IllegalArgumentException("Compiled light leaf streams are misaligned");
+        }
+        long leafCount = leafBytes / ShaderAbi.LIGHT_LEAF_SIZE;
+        long entryCount = emitterCount;
+        long expectedEmitter = alignUp(
+                Math.addExact(
+                        entryStart,
+                        Math.multiplyExact(entryCount, ShaderAbi.LIGHT_LEAF_ENTRY_SIZE)),
+                16L);
         long expectedCells = Math.addExact(
                 emitterStart,
                 Math.multiplyExact(
@@ -285,17 +405,22 @@ public final class CompiledClusterLights {
                 (long) EmissionDistribution.CELL_COUNT,
                 ShaderAbi.LIGHT_CELL_SIZE);
         long distributionCount = (byteSize - cellStart) / distributionBytes;
-        if (reverseStart != expectedReverse
-                || emitterStart != expectedEmitter
+        if (emitterStart != expectedEmitter
                 || cellStart != expectedCells
                 || (byteSize - cellStart) % distributionBytes != 0L
-                || nodeCount != expectedNodeCount
+                || nodeCount <= 0L
+                || nodeCount > Math.subtractExact(Math.multiplyExact((long) emitterCount, 2L), 1L)
+                || leafCount <= 0L
+                || leafCount > emitterCount
+                || entryCount != emitterCount
                 || distributionCount == 0L) {
             throw new IllegalArgumentException(
                     "Compiled light payload disagrees with the shader ABI");
         }
         int rootDirectionWord = Math.toIntExact(
-                (forwardStart + ShaderAbi.LIGHT_NODE_FORWARD_EMISSION_DIRECTION_OFFSET)
+                (nodeStart
+                                + ShaderAbi.LIGHT_NODE_PACKED_BOUNDS_DIRECTION_OFFSET
+                                + 3L * Integer.BYTES)
                         / Integer.BYTES);
         if (words[rootDirectionWord] != packedDirection) {
             throw new IllegalArgumentException(
@@ -303,51 +428,70 @@ public final class CompiledClusterLights {
         }
         validateTreeAndEmitterReferences(
                 words,
-                forwardStart,
-                reverseStart,
+                nodeStart,
+                leafStart,
+                entryStart,
                 emitterStart,
                 nodeCount,
+                leafCount,
                 emitterCount,
                 distributionCount);
     }
 
     private static void validateTreeAndEmitterReferences(
             int[] words,
-            long forwardStart,
-            long reverseStart,
+            long nodeStart,
+            long leafStart,
+            long entryStart,
             long emitterStart,
             long nodeCount,
+            long leafCount,
             int emitterCount,
             long distributionCount) {
-        int forwardWord = Math.toIntExact(forwardStart / Integer.BYTES);
-        int reverseWord = Math.toIntExact(reverseStart / Integer.BYTES);
-        int forwardWords = ShaderAbi.LIGHT_NODE_FORWARD_SIZE / Integer.BYTES;
-        int childOrLeafWord = ShaderAbi.LIGHT_NODE_FORWARD_CHILD_OR_LEAF_OFFSET
-                / Integer.BYTES;
+        int nodeWord = Math.toIntExact(nodeStart / Integer.BYTES);
+        int leafWord = Math.toIntExact(leafStart / Integer.BYTES);
+        int entryWord = Math.toIntExact(entryStart / Integer.BYTES);
+        int nodeWords = ShaderAbi.LIGHT_NODE_SIZE / Integer.BYTES;
+        int leafWords = ShaderAbi.LIGHT_LEAF_SIZE / Integer.BYTES;
+        int entryWords = ShaderAbi.LIGHT_LEAF_ENTRY_SIZE / Integer.BYTES;
+        int childOrLeafWord = ShaderAbi.LIGHT_NODE_CHILD_RESERVED_OFFSET / Integer.BYTES;
         for (int node = 0; node < nodeCount; node++) {
-            int childOrLeaf = words[forwardWord + node * forwardWords + childOrLeafWord];
-            int parent = words[reverseWord + node];
+            int childOrLeaf = words[nodeWord + node * nodeWords + childOrLeafWord];
             if ((childOrLeaf & CpuLightTree.LEAF_FLAG) != 0) {
-                if ((childOrLeaf & CpuLightTree.INDEX_MASK) >= emitterCount) {
+                if ((childOrLeaf & CpuLightTree.INDEX_MASK) >= leafCount) {
                     throw new IllegalArgumentException(
                             "Compiled light tree contains an invalid leaf");
                 }
             } else if (childOrLeaf < 0
                     || childOrLeaf + 1L >= nodeCount
-                    || (childOrLeaf & 1) == 0
-                    || words[reverseWord + childOrLeaf] != node
-                    || words[reverseWord + childOrLeaf + 1] != node) {
+                    || (childOrLeaf & 1) == 0) {
                 throw new IllegalArgumentException(
                         "Compiled light tree contains invalid children");
             }
-            if (node == 0) {
-                if (parent != CpuLightTree.NO_INDEX) {
-                    throw new IllegalArgumentException(
-                            "Compiled light tree root has a parent");
+        }
+
+        boolean[] seenEmitters = new boolean[emitterCount];
+        for (int leaf = 0; leaf < leafCount; leaf++) {
+            int base = leafWord + leaf * leafWords;
+            long first = Integer.toUnsignedLong(words[base]);
+            long count = Integer.toUnsignedLong(words[base + 1]);
+            if (count == 0L
+                    || count > CpuLightTree.MAX_LIGHTS_PER_LEAF
+                    || first + count > emitterCount) {
+                throw new IllegalArgumentException("Compiled light tree contains an invalid leaf range");
+            }
+            for (long offset = 0; offset < count; offset++) {
+                int entry = entryWord + Math.toIntExact(first + offset) * entryWords;
+                int emitter = words[entry];
+                float power = Float.intBitsToFloat(words[entry + 1]);
+                if (emitter < 0
+                        || emitter >= emitterCount
+                        || seenEmitters[emitter]
+                        || !(power > 0.0F)
+                        || !Float.isFinite(power)) {
+                    throw new IllegalArgumentException("Compiled light leaf entry is invalid");
                 }
-            } else if (parent < 0 || parent >= nodeCount) {
-                throw new IllegalArgumentException(
-                        "Compiled light tree contains an invalid parent");
+                seenEmitters[emitter] = true;
             }
         }
 
@@ -358,25 +502,66 @@ public final class CompiledClusterLights {
         for (int emitter = 0; emitter < emitterCount; emitter++) {
             int metadata = emitterWord + emitter * emitterWords + metadataWord;
             long firstCell = Integer.toUnsignedLong(words[metadata]);
-            long leafNode = Integer.toUnsignedLong(words[metadata + 1]);
+            int path = words[metadata + 1];
             if (firstCell % EmissionDistribution.CELL_COUNT != 0L
                     || firstCell / EmissionDistribution.CELL_COUNT
                             >= distributionCount
-                    || leafNode >= nodeCount
-                    || (words[forwardWord
-                                    + (int) leafNode * forwardWords
-                                    + childOrLeafWord]
-                                    & CpuLightTree.LEAF_FLAG)
-                            == 0
-                    || (words[forwardWord
-                                    + (int) leafNode * forwardWords
-                                    + childOrLeafWord]
-                                    & CpuLightTree.INDEX_MASK)
-                            != emitter) {
+                    || !pathContainsEmitter(
+                            words,
+                            nodeWord,
+                            nodeWords,
+                            childOrLeafWord,
+                            leafWord,
+                            leafWords,
+                            entryWord,
+                            entryWords,
+                            path,
+                            emitter)) {
                 throw new IllegalArgumentException(
                         "Compiled light emitter references invalid tree or distribution data");
             }
         }
+    }
+
+    private static boolean pathContainsEmitter(
+            int[] words,
+            int nodeWord,
+            int nodeWords,
+            int childOrLeafWord,
+            int leafWord,
+            int leafWords,
+            int entryWord,
+            int entryWords,
+            int path,
+            int expectedEmitter) {
+        int depth = path >>> CpuLightTree.MAX_PATH_DEPTH;
+        int trailMask = (1 << CpuLightTree.MAX_PATH_DEPTH) - 1;
+        int trail = path & trailMask;
+        if (depth > CpuLightTree.MAX_PATH_DEPTH
+                || (depth < CpuLightTree.MAX_PATH_DEPTH && (trail >>> depth) != 0)) {
+            return false;
+        }
+        int node = 0;
+        for (int level = 0; level < depth; level++) {
+            int child = words[nodeWord + node * nodeWords + childOrLeafWord];
+            if ((child & CpuLightTree.LEAF_FLAG) != 0) {
+                return false;
+            }
+            node = child + ((trail >>> level) & 1);
+        }
+        int childOrLeaf = words[nodeWord + node * nodeWords + childOrLeafWord];
+        if ((childOrLeaf & CpuLightTree.LEAF_FLAG) == 0) {
+            return false;
+        }
+        int leaf = childOrLeaf & CpuLightTree.INDEX_MASK;
+        int first = words[leafWord + leaf * leafWords];
+        int count = words[leafWord + leaf * leafWords + 1];
+        for (int offset = 0; offset < count; offset++) {
+            if (words[entryWord + (first + offset) * entryWords] == expectedEmitter) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private static long alignUp(long value, long alignment) {

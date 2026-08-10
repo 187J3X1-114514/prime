@@ -6,11 +6,9 @@ import java.util.List;
 /**
  * Pure CPU builder for both levels of Prime's light tree.
  *
- * <p>Selection uses the same packed node power and bounds in both directions on the GPU. Bounds
- * and traversal metadata are emitted as separate streams: forward sampling reads both child bounds,
- * child-or-leaf indices and packed emission bounds. Reverse MIS reads a separate exact parent
- * stream and derives the sibling from the consecutive-pair invariant instead of reconstructing
- * probabilities from higher-precision CPU state.
+ * <p>The builder emits compact hot nodes, clustered leaves and an exact bit trail for every input
+ * light. Forward sampling and emissive-hit MIS therefore traverse the same records in the same
+ * order; no reverse parent stream or higher-precision CPU reconstruction is required.
  */
 public final class CpuLightTree {
     public static final int NO_INDEX = -1;
@@ -21,12 +19,15 @@ public final class CpuLightTree {
     static final float MINIMUM_SOFTENING_DISTANCE_SQUARED = 0.25F;
     static final int LEAF_FLAG = Integer.MIN_VALUE;
     static final int INDEX_MASK = Integer.MAX_VALUE;
-    private static final int SAH_BIN_COUNT = 16;
+    static final int MAX_LIGHTS_PER_LEAF = 8;
+    static final int MAX_PATH_DEPTH = 27;
+    private static final int PATH_DEPTH_SHIFT = 27;
+    private static final int PATH_TRAIL_MASK = (1 << PATH_DEPTH_SHIFT) - 1;
+    private static final int SAH_BIN_COUNT = 12;
     private static final int SAH_CANDIDATE_COUNT = 3 * (SAH_BIN_COUNT - 1);
-    private static final float DIRECTIONAL_TIE_RATIO = 1.04F;
-    private static final int BOUNDS_WORDS_PER_NODE = 8;
-    private static final int FORWARD_WORDS_PER_NODE = 2;
-    private static final int REVERSE_WORDS_PER_NODE = 1;
+    private static final int WORDS_PER_NODE = 8;
+    private static final int WORDS_PER_LEAF = 2;
+    private static final int WORDS_PER_ENTRY = 2;
     private CpuLightTree() {
     }
 
@@ -54,21 +55,28 @@ public final class CpuLightTree {
             throw new IllegalArgumentException("Negative light leaf index capacity");
         }
         Nodes nodes = new Nodes(leaves.size * 2 - 1);
+        LeafClusters clusters = new LeafClusters(leaves.size);
         int[] leafNodes = new int[indexCapacity];
+        int[] leafPaths = new int[indexCapacity];
         Arrays.fill(leafNodes, NO_INDEX);
+        Arrays.fill(leafPaths, NO_INDEX);
         Workspace workspace = new Workspace();
         int rootNode = createNode(
-                leaves, 0, leaves.size, NO_INDEX, softeningScale, nodes);
+                leaves, 0, leaves.size, softeningScale, nodes);
         populateNode(
                 leaves,
                 0,
                 leaves.size,
                 rootNode,
+                0,
+                0,
                 softeningScale,
                 nodes,
+                clusters,
                 leafNodes,
+                leafPaths,
                 workspace);
-        return new Result(nodes, leafNodes, softeningScale);
+        return new Result(nodes, clusters, leafNodes, leafPaths);
     }
 
     /**
@@ -83,34 +91,74 @@ public final class CpuLightTree {
             int start,
             int end,
             int nodeIndex,
+            int trail,
+            int depth,
             float softeningScale,
             Nodes nodes,
+            LeafClusters clusters,
             int[] leafNodes,
+            int[] leafPaths,
             Workspace workspace) {
         int count = end - start;
         if (count <= 0) {
             throw new IllegalStateException("Empty light tree range");
         }
-        if (count == 1) {
-            int leaf = leaves.index[start];
-            if (leaf < 0 || leaf >= leafNodes.length || leafNodes[leaf] != NO_INDEX) {
-                throw new IllegalStateException("Invalid or duplicate light leaf index " + leaf);
-            }
+        Split split = chooseSplit(leaves, start, end, nodes, nodeIndex, workspace);
+        if (count == 1 || (count <= MAX_LIGHTS_PER_LEAF && !split.improvesCost())) {
+            int leaf = clusters.add(leaves, start, end);
             nodes.firstChildOrLeaf[nodeIndex] = leaf;
-            nodes.direction[nodeIndex] = leaves.direction[start];
-            leafNodes[leaf] = nodeIndex;
+            nodes.direction[nodeIndex] = aggregateDirection(leaves, start, end);
+            int packedPath = packPath(trail, depth);
+            for (int slot = start; slot < end; slot++) {
+                int inputIndex = leaves.index[slot];
+                if (inputIndex < 0
+                        || inputIndex >= leafNodes.length
+                        || leafNodes[inputIndex] != NO_INDEX) {
+                    throw new IllegalStateException(
+                            "Invalid or duplicate light leaf index " + inputIndex);
+                }
+                leafNodes[inputIndex] = nodeIndex;
+                leafPaths[inputIndex] = packedPath;
+            }
             return;
         }
 
-        int middle = partition(leaves, start, end, workspace);
+        if (depth >= MAX_PATH_DEPTH) {
+            throw new IllegalStateException("Light tree exceeds packed bit-trail depth");
+        }
+        int middle = partition(leaves, start, end, split, workspace);
         int left = createNode(
-                leaves, start, middle, nodeIndex, softeningScale, nodes);
+                leaves, start, middle, softeningScale, nodes);
         int right = createNode(
-                leaves, middle, end, nodeIndex, softeningScale, nodes);
+                leaves, middle, end, softeningScale, nodes);
         nodes.firstChildOrLeaf[nodeIndex] = left;
         nodes.secondChild[nodeIndex] = right;
-        populateNode(leaves, start, middle, left, softeningScale, nodes, leafNodes, workspace);
-        populateNode(leaves, middle, end, right, softeningScale, nodes, leafNodes, workspace);
+        populateNode(
+                leaves,
+                start,
+                middle,
+                left,
+                trail,
+                depth + 1,
+                softeningScale,
+                nodes,
+                clusters,
+                leafNodes,
+                leafPaths,
+                workspace);
+        populateNode(
+                leaves,
+                middle,
+                end,
+                right,
+                trail | (1 << depth),
+                depth + 1,
+                softeningScale,
+                nodes,
+                clusters,
+                leafNodes,
+                leafPaths,
+                workspace);
         nodes.refitDirection(nodeIndex);
     }
 
@@ -118,15 +166,21 @@ public final class CpuLightTree {
             Leaves leaves,
             int start,
             int end,
-            int parent,
             float softeningScale,
             Nodes nodes) {
-        return nodes.add(leaves, start, end, softeningScale, parent);
+        return nodes.add(leaves, start, end, softeningScale);
     }
 
-    private static int partition(Leaves leaves, int start, int end, Workspace workspace) {
+    private static Split chooseSplit(
+            Leaves leaves,
+            int start,
+            int end,
+            Nodes nodes,
+            int nodeIndex,
+            Workspace workspace) {
         workspace.findCentroidBounds(leaves, start, end);
         workspace.resetCandidates();
+        float maximumCentroidExtent = workspace.maximumCentroidExtent();
         for (int axis = 0; axis < 3; axis++) {
             float minimum = workspace.centroidMinimum(axis);
             float extent = workspace.centroidMaximum(axis) - minimum;
@@ -148,33 +202,53 @@ public final class CpuLightTree {
                 if (leftCount == 0 || rightCount == 0) {
                     continue;
                 }
-                float cost = surfaceArea(
+                float cost = saohCost(
                                 workspace.prefixMinX[split],
                                 workspace.prefixMinY[split],
                                 workspace.prefixMinZ[split],
                                 workspace.prefixMaxX[split],
                                 workspace.prefixMaxY[split],
-                                workspace.prefixMaxZ[split])
-                                * workspace.prefixPower[split]
-                        + surfaceArea(
+                                workspace.prefixMaxZ[split],
+                                workspace.prefixPower[split],
+                                workspace.prefixDirection[split])
+                        + saohCost(
                                 workspace.suffixMinX[split + 1],
                                 workspace.suffixMinY[split + 1],
                                 workspace.suffixMinZ[split + 1],
                                 workspace.suffixMaxX[split + 1],
                                 workspace.suffixMaxY[split + 1],
-                                workspace.suffixMaxZ[split + 1])
-                                * workspace.suffixPower[split + 1];
-                float directionCost = workspace.prefixPower[split]
-                                * LightDirection.spread(workspace.prefixDirection[split])
-                        + workspace.suffixPower[split + 1]
-                                * LightDirection.spread(workspace.suffixDirection[split + 1]);
-                workspace.addCandidate(axis, split, cost, directionCost);
+                                workspace.suffixMaxZ[split + 1],
+                                workspace.suffixPower[split + 1],
+                                workspace.suffixDirection[split + 1]);
+                cost *= maximumCentroidExtent / extent;
+                workspace.addCandidate(axis, split, cost);
             }
         }
 
         int bestCandidate = workspace.bestCandidate();
-        int bestAxis = bestCandidate >= 0 ? workspace.candidateAxis[bestCandidate] : -1;
-        int bestSplit = bestCandidate >= 0 ? workspace.candidateSplit[bestCandidate] : -1;
+        float unsplitCost = saohCost(
+                nodes.minX[nodeIndex],
+                nodes.minY[nodeIndex],
+                nodes.minZ[nodeIndex],
+                nodes.maxX[nodeIndex],
+                nodes.maxY[nodeIndex],
+                nodes.maxZ[nodeIndex],
+                nodes.power[nodeIndex],
+                aggregateDirection(leaves, start, end));
+        if (bestCandidate < 0) {
+            return new Split(-1, -1, Float.POSITIVE_INFINITY, unsplitCost);
+        }
+        return new Split(
+                workspace.candidateAxis[bestCandidate],
+                workspace.candidateSplit[bestCandidate],
+                workspace.candidateCost[bestCandidate],
+                unsplitCost);
+    }
+
+    private static int partition(
+            Leaves leaves, int start, int end, Split split, Workspace workspace) {
+        int bestAxis = split.axis;
+        int bestSplit = split.bucket;
         if (bestAxis >= 0) {
             float minimum = workspace.centroidMinimum(bestAxis);
             float extent = workspace.centroidMaximum(bestAxis) - minimum;
@@ -196,6 +270,49 @@ public final class CpuLightTree {
         int fallbackAxis = workspace.longestCentroidAxis();
         sortByAxis(leaves, start, end, fallbackAxis);
         return start + (end - start) / 2;
+    }
+
+    private static float saohCost(
+            float minX,
+            float minY,
+            float minZ,
+            float maxX,
+            float maxY,
+            float maxZ,
+            float power,
+            LightDirection.Bounds direction) {
+        float x = Math.max(maxX - minX, 0.0F);
+        float y = Math.max(maxY - minY, 0.0F);
+        float z = Math.max(maxZ - minZ, 0.0F);
+        float area = 2.0F * (x * y + y * z + z * x);
+        float spatialMeasure = area > 0.0F
+                ? area
+                : (float) Math.sqrt(x * x + y * y + z * z);
+        return power * spatialMeasure * (1.0F + LightDirection.spread(direction));
+    }
+
+    private static LightDirection.Bounds aggregateDirection(Leaves leaves, int start, int end) {
+        float power = 0.0F;
+        LightDirection.Bounds direction = null;
+        for (int index = start; index < end; index++) {
+            direction = combineDirections(
+                    direction, power, leaves.direction[index], leaves.power[index]);
+            power += leaves.power[index];
+        }
+        return direction != null ? direction : LightDirection.full();
+    }
+
+    private static int packPath(int trail, int depth) {
+        if (depth < 0 || depth > MAX_PATH_DEPTH || (trail & ~PATH_TRAIL_MASK) != 0) {
+            throw new IllegalArgumentException("Light tree bit trail is not packable");
+        }
+        return depth << PATH_DEPTH_SHIFT | trail;
+    }
+
+    private record Split(int axis, int bucket, float cost, float unsplitCost) {
+        private boolean improvesCost() {
+            return cost < unsplitCost;
+        }
     }
 
     private static void sortByAxis(Leaves leaves, int start, int end, int axis) {
@@ -259,6 +376,43 @@ public final class CpuLightTree {
         return (x * x + y * y + z * z) / 12.0F;
     }
 
+    private static int packHalfBounds(
+            float first, boolean firstMinimum, float second, boolean secondMinimum) {
+        int low = outwardHalf(first, firstMinimum) & 0xffff;
+        int high = outwardHalf(second, secondMinimum) & 0xffff;
+        return low | high << 16;
+    }
+
+    private static short outwardHalf(float value, boolean minimum) {
+        if (!Float.isFinite(value) || Math.abs(value) > 65504.0F) {
+            throw new IllegalArgumentException("Light-tree bounds exceed finite f16 range");
+        }
+        short packed = Float.floatToFloat16(value);
+        float decoded = Float.float16ToFloat(packed);
+        if (minimum && decoded > value) {
+            packed = nextHalfDown(packed);
+        } else if (!minimum && decoded < value) {
+            packed = nextHalfUp(packed);
+        }
+        return packed;
+    }
+
+    private static short nextHalfDown(short value) {
+        int bits = value & 0xffff;
+        if (bits == 0x0000) {
+            return (short) 0x8001;
+        }
+        return (short) ((bits & 0x8000) == 0 ? bits - 1 : bits + 1);
+    }
+
+    private static short nextHalfUp(short value) {
+        int bits = value & 0xffff;
+        if (bits == 0x8000) {
+            return 0x0001;
+        }
+        return (short) ((bits & 0x8000) == 0 ? bits + 1 : bits - 1);
+    }
+
     private static LightDirection.Bounds combineDirections(
             LightDirection.Bounds first,
             float firstPower,
@@ -298,85 +452,20 @@ public final class CpuLightTree {
 
     static final class Result {
         private final Nodes nodes;
+        private final LeafClusters clusters;
         private final int[] leafNodes;
-        private final float softeningScale;
+        private final int[] leafPaths;
 
-        private Result(Nodes nodes, int[] leafNodes, float softeningScale) {
+        private Result(
+                Nodes nodes, LeafClusters clusters, int[] leafNodes, int[] leafPaths) {
             this.nodes = nodes;
+            this.clusters = clusters;
             this.leafNodes = leafNodes;
-            this.softeningScale = softeningScale;
-        }
-
-        Result copy() {
-            return new Result(
-                    this.nodes.copy(),
-                    this.leafNodes.clone(),
-                    this.softeningScale);
+            this.leafPaths = leafPaths;
         }
 
         int leafCapacity() {
             return this.leafNodes.length;
-        }
-
-        void setLeaf(
-                int slot,
-                float minX,
-                float minY,
-                float minZ,
-                float maxX,
-                float maxY,
-                float maxZ,
-                float power,
-                int outputIndex) {
-            validateLeaf(
-                    minX,
-                    minY,
-                    minZ,
-                    maxX,
-                    maxY,
-                    maxZ,
-                    (minX + maxX) * 0.5F,
-                    (minY + maxY) * 0.5F,
-                    (minZ + maxZ) * 0.5F,
-                    power);
-            int node = this.leafNodes[slot];
-            if (this.nodes.secondChild[node] != NO_INDEX) {
-                throw new IllegalStateException("Light slot does not reference a leaf");
-            }
-            this.nodes.setBounds(
-                    node,
-                    minX,
-                    minY,
-                    minZ,
-                    maxX,
-                    maxY,
-                    maxZ,
-                    (minX + maxX) * 0.5F,
-                    (minY + maxY) * 0.5F,
-                    (minZ + maxZ) * 0.5F,
-                    uniformBoundsVariance(minX, minY, minZ, maxX, maxY, maxZ),
-                    power,
-                    this.softeningScale);
-            this.nodes.direction[node] = LightDirection.full();
-            this.nodes.firstChildOrLeaf[node] = outputIndex;
-        }
-
-        void deactivateLeaf(int slot) {
-            int node = this.leafNodes[slot];
-            if (this.nodes.secondChild[node] != NO_INDEX) {
-                throw new IllegalStateException("Light slot does not reference a leaf");
-            }
-            this.nodes.power[node] = 0.0F;
-            this.nodes.direction[node] = LightDirection.full();
-            this.nodes.firstChildOrLeaf[node] = 0;
-        }
-
-        void refit() {
-            for (int node = this.nodes.size - 1; node >= 0; node--) {
-                if (this.nodes.secondChild[node] != NO_INDEX) {
-                    this.nodes.refit(node, this.softeningScale);
-                }
-            }
         }
 
         double treeCost() {
@@ -396,92 +485,67 @@ public final class CpuLightTree {
             return cost;
         }
 
-        int[] packNodeBounds() {
-            int[] result = new int[this.nodes.size * BOUNDS_WORDS_PER_NODE];
+        int[] packNodes() {
+            int[] result = new int[this.nodes.size * WORDS_PER_NODE];
             int cursor = 0;
             for (int node = 0; node < this.nodes.size; node++) {
-                result[cursor++] = Float.floatToRawIntBits(this.nodes.minX[node]);
-                result[cursor++] = Float.floatToRawIntBits(this.nodes.minY[node]);
-                result[cursor++] = Float.floatToRawIntBits(this.nodes.minZ[node]);
-                result[cursor++] = Float.floatToRawIntBits(this.nodes.power[node]);
-                result[cursor++] = Float.floatToRawIntBits(this.nodes.maxX[node]);
-                result[cursor++] = Float.floatToRawIntBits(this.nodes.maxY[node]);
-                result[cursor++] = Float.floatToRawIntBits(this.nodes.maxZ[node]);
-                result[cursor++] = Float.floatToRawIntBits(
-                        this.nodes.softeningDistanceSquared[node]);
+                cursor = packNode(result, cursor, node);
             }
             return result;
         }
 
-        int[] packNodeForward() {
-            int[] result = new int[this.nodes.size * FORWARD_WORDS_PER_NODE];
-            int cursor = 0;
-            for (int node = 0; node < this.nodes.size; node++) {
-                int firstChildOrLeaf = this.nodes.firstChildOrLeaf[node];
-                int secondChild = this.nodes.secondChild[node];
-                if (firstChildOrLeaf < 0) {
-                    throw new IllegalStateException("Light tree node was not populated");
-                }
-                if (secondChild == NO_INDEX) {
-                    result[cursor++] = firstChildOrLeaf | LEAF_FLAG;
-                } else {
-                    if (secondChild != firstChildOrLeaf + 1) {
-                        throw new IllegalStateException("Light tree siblings must be consecutive");
-                    }
-                    result[cursor++] = firstChildOrLeaf;
-                }
-                result[cursor++] = LightDirection.pack(this.nodes.direction[node]);
-            }
-            return result;
+        int[] packLeaves() {
+            return this.clusters.packLeaves();
         }
 
-        int[] packNodeReverse() {
-            int[] result = new int[this.nodes.size * REVERSE_WORDS_PER_NODE];
-            int cursor = 0;
-            for (int node = 0; node < this.nodes.size; node++) {
-                result[cursor++] = this.nodes.parent[node];
-            }
-            return result;
+        int[] packEntries() {
+            return this.clusters.packEntries();
         }
 
         void packInto(
                 int[] target,
-                int boundsWordOffset,
-                int forwardWordOffset,
-                int reverseWordOffset) {
-            int boundsCursor = boundsWordOffset;
-            int forwardCursor = forwardWordOffset;
-            int reverseCursor = reverseWordOffset;
+                int nodeWordOffset,
+                int leafWordOffset,
+                int entryWordOffset) {
+            int nodeCursor = nodeWordOffset;
             for (int node = 0; node < this.nodes.size; node++) {
-                target[boundsCursor++] = Float.floatToRawIntBits(this.nodes.minX[node]);
-                target[boundsCursor++] = Float.floatToRawIntBits(this.nodes.minY[node]);
-                target[boundsCursor++] = Float.floatToRawIntBits(this.nodes.minZ[node]);
-                target[boundsCursor++] = Float.floatToRawIntBits(this.nodes.power[node]);
-                target[boundsCursor++] = Float.floatToRawIntBits(this.nodes.maxX[node]);
-                target[boundsCursor++] = Float.floatToRawIntBits(this.nodes.maxY[node]);
-                target[boundsCursor++] = Float.floatToRawIntBits(this.nodes.maxZ[node]);
-                target[boundsCursor++] = Float.floatToRawIntBits(
-                        this.nodes.softeningDistanceSquared[node]);
-                int firstChildOrLeaf = this.nodes.firstChildOrLeaf[node];
-                int secondChild = this.nodes.secondChild[node];
-                if (firstChildOrLeaf < 0) {
-                    throw new IllegalStateException("Light tree node was not populated");
-                }
-                if (secondChild == NO_INDEX) {
-                    target[forwardCursor++] = firstChildOrLeaf | LEAF_FLAG;
-                } else {
-                    if (secondChild != firstChildOrLeaf + 1) {
-                        throw new IllegalStateException("Light tree siblings must be consecutive");
-                    }
-                    target[forwardCursor++] = firstChildOrLeaf;
-                }
-                target[forwardCursor++] = LightDirection.pack(this.nodes.direction[node]);
-                target[reverseCursor++] = this.nodes.parent[node];
+                nodeCursor = packNode(target, nodeCursor, node);
             }
+            this.clusters.packInto(target, leafWordOffset, entryWordOffset);
+        }
+
+        private int packNode(int[] target, int cursor, int node) {
+            target[cursor++] = packHalfBounds(
+                    this.nodes.minX[node], true, this.nodes.minY[node], true);
+            target[cursor++] = packHalfBounds(
+                    this.nodes.minZ[node], true, this.nodes.maxX[node], false);
+            target[cursor++] = packHalfBounds(
+                    this.nodes.maxY[node], false, this.nodes.maxZ[node], false);
+            target[cursor++] = LightDirection.pack(this.nodes.direction[node]);
+            target[cursor++] = Float.floatToRawIntBits(this.nodes.power[node]);
+            target[cursor++] = Float.floatToRawIntBits(
+                    this.nodes.softeningDistanceSquared[node]);
+            int childOrLeaf = this.nodes.firstChildOrLeaf[node];
+            int secondChild = this.nodes.secondChild[node];
+            if (childOrLeaf < 0) {
+                throw new IllegalStateException("Light tree node was not populated");
+            }
+            if (secondChild == NO_INDEX) {
+                childOrLeaf |= LEAF_FLAG;
+            } else if (secondChild != childOrLeaf + 1) {
+                throw new IllegalStateException("Light tree siblings must be consecutive");
+            }
+            target[cursor++] = childOrLeaf;
+            target[cursor++] = 0;
+            return cursor;
         }
 
         int leafNode(int leafIndex) {
             return this.leafNodes[leafIndex];
+        }
+
+        int leafPath(int leafIndex) {
+            return this.leafPaths[leafIndex];
         }
 
         Bounds bounds() {
@@ -498,6 +562,79 @@ public final class CpuLightTree {
 
         int nodeCount() {
             return this.nodes.size;
+        }
+
+        int clusterCount() {
+            return this.clusters.leafCount;
+        }
+
+        int entryCount() {
+            return this.clusters.entryCount;
+        }
+    }
+
+    private static final class LeafClusters {
+        private final int[] firstEntry;
+        private final int[] entryCountByLeaf;
+        private final int[] entryIndex;
+        private final float[] entryPower;
+        private int leafCount;
+        private int entryCount;
+
+        private LeafClusters(int capacity) {
+            this.firstEntry = new int[capacity];
+            this.entryCountByLeaf = new int[capacity];
+            this.entryIndex = new int[capacity];
+            this.entryPower = new float[capacity];
+        }
+
+        private int add(Leaves leaves, int start, int end) {
+            int count = end - start;
+            if (count <= 0 || count > MAX_LIGHTS_PER_LEAF) {
+                throw new IllegalStateException("Invalid clustered light leaf size " + count);
+            }
+            int leaf = this.leafCount++;
+            this.firstEntry[leaf] = this.entryCount;
+            this.entryCountByLeaf[leaf] = count;
+            for (int slot = start; slot < end; slot++) {
+                this.entryIndex[this.entryCount] = leaves.index[slot];
+                this.entryPower[this.entryCount] = leaves.power[slot];
+                this.entryCount++;
+            }
+            return leaf;
+        }
+
+        private int[] packLeaves() {
+            int[] result = new int[this.leafCount * WORDS_PER_LEAF];
+            packLeavesInto(result, 0);
+            return result;
+        }
+
+        private int[] packEntries() {
+            int[] result = new int[this.entryCount * WORDS_PER_ENTRY];
+            packEntriesInto(result, 0);
+            return result;
+        }
+
+        private void packInto(int[] target, int leafOffset, int entryOffset) {
+            packLeavesInto(target, leafOffset);
+            packEntriesInto(target, entryOffset);
+        }
+
+        private void packLeavesInto(int[] target, int offset) {
+            int cursor = offset;
+            for (int leaf = 0; leaf < this.leafCount; leaf++) {
+                target[cursor++] = this.firstEntry[leaf];
+                target[cursor++] = this.entryCountByLeaf[leaf];
+            }
+        }
+
+        private void packEntriesInto(int[] target, int offset) {
+            int cursor = offset;
+            for (int entry = 0; entry < this.entryCount; entry++) {
+                target[cursor++] = this.entryIndex[entry];
+                target[cursor++] = Float.floatToRawIntBits(this.entryPower[entry]);
+            }
         }
     }
 
@@ -858,7 +995,6 @@ public final class CpuLightTree {
         private final float[] spatialVariance;
         private final float[] power;
         private final float[] softeningDistanceSquared;
-        private final int[] parent;
         private final int[] firstChildOrLeaf;
         private final int[] secondChild;
         private final LightDirection.Bounds[] direction;
@@ -877,7 +1013,6 @@ public final class CpuLightTree {
             this.spatialVariance = new float[capacity];
             this.power = new float[capacity];
             this.softeningDistanceSquared = new float[capacity];
-            this.parent = new int[capacity];
             this.firstChildOrLeaf = new int[capacity];
             this.secondChild = new int[capacity];
             this.direction = new LightDirection.Bounds[capacity];
@@ -886,59 +1021,11 @@ public final class CpuLightTree {
             Arrays.fill(this.direction, LightDirection.full());
         }
 
-        private Nodes copy() {
-            Nodes copy = new Nodes(this.minX.length);
-            System.arraycopy(this.minX, 0, copy.minX, 0, this.minX.length);
-            System.arraycopy(this.minY, 0, copy.minY, 0, this.minY.length);
-            System.arraycopy(this.minZ, 0, copy.minZ, 0, this.minZ.length);
-            System.arraycopy(this.maxX, 0, copy.maxX, 0, this.maxX.length);
-            System.arraycopy(this.maxY, 0, copy.maxY, 0, this.maxY.length);
-            System.arraycopy(this.maxZ, 0, copy.maxZ, 0, this.maxZ.length);
-            System.arraycopy(this.centerX, 0, copy.centerX, 0, this.centerX.length);
-            System.arraycopy(this.centerY, 0, copy.centerY, 0, this.centerY.length);
-            System.arraycopy(this.centerZ, 0, copy.centerZ, 0, this.centerZ.length);
-            System.arraycopy(
-                    this.spatialVariance,
-                    0,
-                    copy.spatialVariance,
-                    0,
-                    this.spatialVariance.length);
-            System.arraycopy(this.power, 0, copy.power, 0, this.power.length);
-            System.arraycopy(
-                    this.softeningDistanceSquared,
-                    0,
-                    copy.softeningDistanceSquared,
-                    0,
-                    this.softeningDistanceSquared.length);
-            System.arraycopy(this.parent, 0, copy.parent, 0, this.parent.length);
-            System.arraycopy(
-                    this.firstChildOrLeaf,
-                    0,
-                    copy.firstChildOrLeaf,
-                    0,
-                    this.firstChildOrLeaf.length);
-            System.arraycopy(
-                    this.secondChild,
-                    0,
-                    copy.secondChild,
-                    0,
-                    this.secondChild.length);
-            System.arraycopy(
-                    this.direction,
-                    0,
-                    copy.direction,
-                    0,
-                    this.direction.length);
-            copy.size = this.size;
-            return copy;
-        }
-
         private int add(
                 Leaves leaves,
                 int start,
                 int end,
-                float softeningScale,
-                int parent) {
+                float softeningScale) {
             int index = this.size++;
             float minX = Float.POSITIVE_INFINITY;
             float minY = Float.POSITIVE_INFINITY;
@@ -1013,7 +1100,6 @@ public final class CpuLightTree {
                     spatialVariance,
                     power,
                     softeningScale);
-            this.parent[index] = parent;
             return index;
         }
 
@@ -1203,7 +1289,6 @@ public final class CpuLightTree {
         private final int[] candidateAxis = new int[SAH_CANDIDATE_COUNT];
         private final int[] candidateSplit = new int[SAH_CANDIDATE_COUNT];
         private final float[] candidateCost = new float[SAH_CANDIDATE_COUNT];
-        private final float[] candidateDirectionCost = new float[SAH_CANDIDATE_COUNT];
         private int candidateCount;
         private float centroidMinX;
         private float centroidMinY;
@@ -1222,7 +1307,7 @@ public final class CpuLightTree {
             this.candidateCount = 0;
         }
 
-        private void addCandidate(int axis, int split, float cost, float directionCost) {
+        private void addCandidate(int axis, int split, float cost) {
             if (!Float.isFinite(cost)) {
                 return;
             }
@@ -1230,30 +1315,15 @@ public final class CpuLightTree {
             this.candidateAxis[index] = axis;
             this.candidateSplit[index] = split;
             this.candidateCost[index] = cost;
-            this.candidateDirectionCost[index] = directionCost;
         }
 
         private int bestCandidate() {
             if (this.candidateCount == 0) {
                 return -1;
             }
-            float minimumCost = Float.POSITIVE_INFINITY;
-            for (int index = 0; index < this.candidateCount; index++) {
-                minimumCost = Math.min(minimumCost, this.candidateCost[index]);
-            }
-            float permittedCost = minimumCost * DIRECTIONAL_TIE_RATIO;
-            int best = -1;
-            for (int index = 0; index < this.candidateCount; index++) {
-                float cost = this.candidateCost[index];
-                if (cost > permittedCost) {
-                    continue;
-                }
-                if (best < 0
-                        || this.candidateDirectionCost[index]
-                                < this.candidateDirectionCost[best]
-                        || (this.candidateDirectionCost[index]
-                                        == this.candidateDirectionCost[best]
-                                && cost < this.candidateCost[best])) {
+            int best = 0;
+            for (int index = 1; index < this.candidateCount; index++) {
+                if (this.candidateCost[index] < this.candidateCost[best]) {
                     best = index;
                 }
             }
@@ -1371,6 +1441,14 @@ public final class CpuLightTree {
                 return 0;
             }
             return y >= z ? 1 : 2;
+        }
+
+        private float maximumCentroidExtent() {
+            return Math.max(
+                    this.centroidMaxX - this.centroidMinX,
+                    Math.max(
+                            this.centroidMaxY - this.centroidMinY,
+                            this.centroidMaxZ - this.centroidMinZ));
         }
     }
 }

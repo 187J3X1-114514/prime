@@ -555,15 +555,19 @@ void primeCheckLightBranch(
         vec4 secondBoundsMaxSoftening,
         vec3 point,
         vec3 receiverNormal) {
-    vec3 firstMetrics = primeLightNodeMetrics(
-            firstBoundsMinPower,
-            firstBoundsMaxSoftening,
+    vec2 firstMetrics = primeLightNodeMetrics(
+            firstBoundsMinPower.xyz,
+            firstBoundsMaxSoftening.xyz,
+            firstBoundsMinPower.w,
+            firstBoundsMaxSoftening.w,
             point,
             receiverNormal,
             0xc0000000u);
-    vec3 secondMetrics = primeLightNodeMetrics(
-            secondBoundsMinPower,
-            secondBoundsMaxSoftening,
+    vec2 secondMetrics = primeLightNodeMetrics(
+            secondBoundsMinPower.xyz,
+            secondBoundsMaxSoftening.xyz,
+            secondBoundsMinPower.w,
+            secondBoundsMaxSoftening.w,
             point,
             receiverNormal,
             0xc0000000u);
@@ -581,10 +585,8 @@ void primeCheckLightBranch(
             || probability > 1.0 + 2.0e-6
             || firstMetrics.x < 0.0
             || secondMetrics.x < 0.0
-            || firstMetrics.z < PRIME_LIGHT_RECEIVER_COSINE_FLOOR
-            || firstMetrics.z > 1.0
-            || secondMetrics.z < PRIME_LIGHT_RECEIVER_COSINE_FLOOR
-            || secondMetrics.z > 1.0
+            || firstMetrics.y < 0.0
+            || secondMetrics.y < 0.0
             || (all(equal(receiverNormal, vec3(1.0, 0.0, 0.0)))
                     && probability < 0.99)
             || (probability >= 0.0 && reverse >= 0.0
@@ -592,7 +594,7 @@ void primeCheckLightBranch(
                             probability + reverse, 1.0, 2.0e-7, 2.0e-6))) {
         result.mask |= PRIME_TEST_FAILURE_IDENTITY;
     }
-    result.first = vec4(firstMetrics, secondMetrics.x);
+    result.first = vec4(firstMetrics, secondMetrics);
     result.second = vec4(probability, legacy, reverse, 0.0);
     result.third = vec4(receiverNormal, 0.0);
 }
@@ -654,9 +656,11 @@ void primeCheckPointLightNodeMetric(
         vec4 lightPositionPower,
         vec4 pointSoftening,
         vec3 receiverNormal) {
-    vec3 metrics = primeLightNodeMetrics(
-            lightPositionPower,
-            vec4(lightPositionPower.xyz, pointSoftening.w),
+    vec2 metrics = primeLightNodeMetrics(
+            lightPositionPower.xyz,
+            lightPositionPower.xyz,
+            lightPositionPower.w,
+            pointSoftening.w,
             pointSoftening.xyz,
             receiverNormal,
             0xc0000000u);
@@ -668,17 +672,20 @@ void primeCheckPointLightNodeMetric(
             : 1.0;
     float expectedImportance = PRIME_LIGHT_RECEIVER_COSINE_FLOOR
             + (1.0 - PRIME_LIGHT_RECEIVER_COSINE_FLOOR) * receiverCosine;
-    primeTransportClassify(result.mask, metrics);
+    primeTransportClassify(result.mask, vec3(metrics, 0.0));
     if (!primeTestClose(
                     metrics.x,
                     distanceSquared + pointSoftening.w,
                     2.0e-6,
                     2.0e-6)
-            || floatBitsToUint(metrics.y) != floatBitsToUint(lightPositionPower.w)
-            || !primeTestClose(metrics.z, expectedImportance, 2.0e-7, 2.0e-6)) {
+            || !primeTestClose(
+                    metrics.y,
+                    lightPositionPower.w * expectedImportance,
+                    2.0e-7,
+                    2.0e-6)) {
         result.mask |= PRIME_TEST_FAILURE_IDENTITY;
     }
-    result.first = vec4(metrics, 0.0);
+    result.first = vec4(metrics, 0.0, 0.0);
     result.second = vec4(distanceSquared, expectedImportance, receiverCosine, 0.0);
     result.third = vec4(receiverNormal, 0.0);
 }

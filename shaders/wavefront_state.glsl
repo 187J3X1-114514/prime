@@ -6,8 +6,8 @@
 // Two signal slots belong to each quality-mode pixel so transparent reflection and transmission
 // keep independent reconstruction histories. Only the checkerboard-selected slot can enqueue
 // transport. The execution-local type contains six hot transport lanes; storage adds one cold lane
-// shared by queued PSR, deferred Area data and the previous receiver normal. Primary area-light
-// moments are immutable pixel state and live once per pixel in the queue-buffer prefix.
+// for queued PSR and the previous receiver normal. Primary area-light moments are immutable pixel
+// state and live once per pixel in the queue-buffer prefix.
 struct PrimeWavefrontTransportRecord {
     vec4 physicalOriginAndPreviousBsdfPdf;
     vec4 traceOriginAndPathControl;
@@ -144,6 +144,73 @@ uint primeWavefrontQueueWord(uint queue, uint entry) {
 uint primeWavefrontAreaWord(uvec2 pixel, uint component) {
     return primeWavefrontIndex(pixel)
             * (PRIME_WAVEFRONT_AREA_RECORD_SIZE / 4u) + component;
+}
+
+// Only the checkerboard-selected branch can be queued, so one exact hit record per pixel is
+// sufficient even though two independent reconstruction histories retain path records. The first
+// four words remain the primary Area guide; the following 24 words mirror SurfaceInteraction.
+void primeStoreWavefrontSurface(uint pathIndex, SurfaceInteraction surface) {
+    uvec2 pixel = primeWavefrontPixel(pathIndex);
+    uint base = primeWavefrontAreaWord(pixel, 4u);
+    primeWavefrontQueue.words[base + 0u] = floatBitsToUint(surface.position.x);
+    primeWavefrontQueue.words[base + 1u] = floatBitsToUint(surface.position.y);
+    primeWavefrontQueue.words[base + 2u] = floatBitsToUint(surface.position.z);
+    primeWavefrontQueue.words[base + 3u] = floatBitsToUint(surface.t);
+    primeWavefrontQueue.words[base + 4u] = floatBitsToUint(surface.geometricNormal.x);
+    primeWavefrontQueue.words[base + 5u] = floatBitsToUint(surface.geometricNormal.y);
+    primeWavefrontQueue.words[base + 6u] = floatBitsToUint(surface.geometricNormal.z);
+    primeWavefrontQueue.words[base + 7u] = surface.hitKind;
+    primeWavefrontQueue.words[base + 8u] = floatBitsToUint(surface.baseColor.x);
+    primeWavefrontQueue.words[base + 9u] = floatBitsToUint(surface.baseColor.y);
+    primeWavefrontQueue.words[base + 10u] = floatBitsToUint(surface.baseColor.z);
+    primeWavefrontQueue.words[base + 11u] = surface.materialControl;
+    primeWavefrontQueue.words[base + 12u] = surface.sectionIndex;
+    primeWavefrontQueue.words[base + 13u] = surface.emitterIndex;
+    primeWavefrontQueue.words[base + 14u] = floatBitsToUint(surface.textureLod);
+    primeWavefrontQueue.words[base + 15u] = floatBitsToUint(surface.opacity);
+    primeWavefrontQueue.words[base + 16u] = surface.shadingNormal;
+    primeWavefrontQueue.words[base + 17u] = floatBitsToUint(surface.roughness);
+    primeWavefrontQueue.words[base + 18u] = surface.opticalControl;
+    primeWavefrontQueue.words[base + 19u] = surface.motionZFlags;
+    primeWavefrontQueue.words[base + 20u] = floatBitsToUint(surface.adjacentBaseColor.x);
+    primeWavefrontQueue.words[base + 21u] = floatBitsToUint(surface.adjacentBaseColor.y);
+    primeWavefrontQueue.words[base + 22u] = floatBitsToUint(surface.adjacentBaseColor.z);
+    primeWavefrontQueue.words[base + 23u] = surface.adjacentInterfaceControl;
+}
+
+SurfaceInteraction primeLoadWavefrontSurface(uint pathIndex) {
+    uvec2 pixel = primeWavefrontPixel(pathIndex);
+    uint base = primeWavefrontAreaWord(pixel, 4u);
+    SurfaceInteraction surface;
+    surface.position = vec3(
+            uintBitsToFloat(primeWavefrontQueue.words[base + 0u]),
+            uintBitsToFloat(primeWavefrontQueue.words[base + 1u]),
+            uintBitsToFloat(primeWavefrontQueue.words[base + 2u]));
+    surface.t = uintBitsToFloat(primeWavefrontQueue.words[base + 3u]);
+    surface.geometricNormal = vec3(
+            uintBitsToFloat(primeWavefrontQueue.words[base + 4u]),
+            uintBitsToFloat(primeWavefrontQueue.words[base + 5u]),
+            uintBitsToFloat(primeWavefrontQueue.words[base + 6u]));
+    surface.hitKind = primeWavefrontQueue.words[base + 7u];
+    surface.baseColor = vec3(
+            uintBitsToFloat(primeWavefrontQueue.words[base + 8u]),
+            uintBitsToFloat(primeWavefrontQueue.words[base + 9u]),
+            uintBitsToFloat(primeWavefrontQueue.words[base + 10u]));
+    surface.materialControl = primeWavefrontQueue.words[base + 11u];
+    surface.sectionIndex = primeWavefrontQueue.words[base + 12u];
+    surface.emitterIndex = primeWavefrontQueue.words[base + 13u];
+    surface.textureLod = uintBitsToFloat(primeWavefrontQueue.words[base + 14u]);
+    surface.opacity = uintBitsToFloat(primeWavefrontQueue.words[base + 15u]);
+    surface.shadingNormal = primeWavefrontQueue.words[base + 16u];
+    surface.roughness = uintBitsToFloat(primeWavefrontQueue.words[base + 17u]);
+    surface.opticalControl = primeWavefrontQueue.words[base + 18u];
+    surface.motionZFlags = primeWavefrontQueue.words[base + 19u];
+    surface.adjacentBaseColor = vec3(
+            uintBitsToFloat(primeWavefrontQueue.words[base + 20u]),
+            uintBitsToFloat(primeWavefrontQueue.words[base + 21u]),
+            uintBitsToFloat(primeWavefrontQueue.words[base + 22u]));
+    surface.adjacentInterfaceControl = primeWavefrontQueue.words[base + 23u];
+    return surface;
 }
 
 uint primeWavefrontQueuedPath(uint queue, uint entry) {
@@ -375,57 +442,6 @@ void primeStoreWavefrontPsrState(
 }
 
 #if defined(PRIME_DEFER_SECONDARY_AREA_NEE)
-struct PrimeDeferredAreaLightRequest {
-    vec3 direction;
-    float distance;
-    vec3 contribution;
-    bool valid;
-};
-
-void primeClearDeferredAreaLightRequest(uint pathIndex) {
-    uint packedNormal = primeWavefrontPaths.records[pathIndex].psrPacked.w
-            & (PRIME_WAVEFRONT_LIGHT_NORMAL_MASK
-                    << PRIME_WAVEFRONT_LIGHT_NORMAL_SHIFT);
-    primeWavefrontPaths.records[pathIndex].psrPacked =
-            uvec4(0u, 0u, 0u, packedNormal);
-}
-
-void primeStoreDeferredAreaLightRequest(
-        uint pathIndex,
-        vec3 direction,
-        float distance,
-        vec3 contribution) {
-    // A guide-pending discrete path and a secondary Area request are mutually exclusive. Reusing the
-    // cold PSR lane keeps the 96-byte realtime path ABI and memory footprint fixed.
-    vec3 packedContribution = primeNrdSanitizeRadiance(contribution);
-    uint packedNormal = primeWavefrontPaths.records[pathIndex].psrPacked.w
-            & (PRIME_WAVEFRONT_LIGHT_NORMAL_MASK
-                    << PRIME_WAVEFRONT_LIGHT_NORMAL_SHIFT);
-    primeWavefrontPaths.records[pathIndex].psrPacked = uvec4(
-            primePackOctahedralNormal(direction),
-            floatBitsToUint(distance),
-            packHalf2x16(packedContribution.xy),
-            packedNormal | (packHalf2x16(vec2(packedContribution.z, 0.0))
-                    & PRIME_WAVEFRONT_LIGHT_NORMAL_MASK));
-}
-
-PrimeDeferredAreaLightRequest primeLoadDeferredAreaLightRequest(
-        uint pathIndex) {
-    uvec4 packed = primeWavefrontPaths.records[pathIndex].psrPacked;
-    PrimeDeferredAreaLightRequest request;
-    request.direction = primeUnpackOctahedralNormal(packed.x);
-    request.distance = uintBitsToFloat(packed.y);
-    vec2 contribution01 = unpackHalf2x16(packed.z);
-    request.contribution = vec3(
-            contribution01,
-            unpackHalf2x16(packed.w).x);
-    request.valid = (packed.z != 0u
-            || (packed.w & PRIME_WAVEFRONT_LIGHT_NORMAL_MASK) != 0u)
-            && primeNrdIsFinite(request.distance)
-            && request.distance > 0.0;
-    return request;
-}
-
 void primeAccumulateDeferredAreaLight(
         uvec2 pixel,
         uint control,

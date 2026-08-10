@@ -142,7 +142,7 @@ final class LightDirectionTest {
     }
 
     @Test
-    void lightTreePacksOneDirectionWordBesideEveryForwardIndex() {
+    void lightTreePacksOneDirectionWordInEveryCompactNode() {
         CpuLightTree.Bounds firstBounds =
                 new CpuLightTree.Bounds(0.0F, 0.0F, 0.0F, 1.0F, 1.0F, 0.0F);
         CpuLightTree.Bounds secondBounds =
@@ -168,15 +168,15 @@ final class LightDirectionTest {
                 2,
                 CpuLightTree.LOCAL_SOFTENING_SCALE);
 
-        int[] forward = tree.packNodeForward();
-        assertEquals(tree.nodeCount() * 2, forward.length);
-        assertEquals(LightDirection.MODE_LOBES, LightDirection.mode(forward[1]));
+        int[] nodes = tree.packNodes();
+        assertEquals(tree.nodeCount() * 8, nodes.length);
+        assertEquals(LightDirection.MODE_LOBES, LightDirection.mode(nodes[3]));
         assertEquals(
                 LightDirection.MODE_ONE_SIDED_CONE,
-                LightDirection.mode(forward[tree.leafNode(0) * 2 + 1]));
+                LightDirection.mode(nodes[tree.leafNode(0) * 8 + 3]));
         assertEquals(
                 LightDirection.MODE_ONE_SIDED_CONE,
-                LightDirection.mode(forward[tree.leafNode(1) * 2 + 1]));
+                LightDirection.mode(nodes[tree.leafNode(1) * 8 + 3]));
     }
 
     @Test
@@ -195,14 +195,14 @@ final class LightDirectionTest {
                 4,
                 CpuLightTree.LOCAL_SOFTENING_SCALE);
 
-        int[] forward = tree.packNodeForward();
-        int firstChild = forward[0];
+        int[] nodes = tree.packNodes();
+        int firstChild = nodes[6];
         assertEquals(
                 LightDirection.MODE_ONE_SIDED_CONE,
-                LightDirection.mode(forward[firstChild * 2 + 1]));
+                LightDirection.mode(nodes[firstChild * 8 + 3]));
         assertEquals(
                 LightDirection.MODE_ONE_SIDED_CONE,
-                LightDirection.mode(forward[(firstChild + 1) * 2 + 1]));
+                LightDirection.mode(nodes[(firstChild + 1) * 8 + 3]));
     }
 
     @Test
@@ -221,14 +221,14 @@ final class LightDirectionTest {
                 4,
                 CpuLightTree.LOCAL_SOFTENING_SCALE);
 
-        int[] forward = tree.packNodeForward();
-        int firstChild = forward[0];
+        int[] nodes = tree.packNodes();
+        int firstChild = nodes[6];
         assertEquals(
                 LightDirection.MODE_LOBES,
-                LightDirection.mode(forward[firstChild * 2 + 1]));
+                LightDirection.mode(nodes[firstChild * 8 + 3]));
         assertEquals(
                 LightDirection.MODE_LOBES,
-                LightDirection.mode(forward[(firstChild + 1) * 2 + 1]));
+                LightDirection.mode(nodes[(firstChild + 1) * 8 + 3]));
     }
 
     private static CpuLightTree.Leaf directionalLeaf(

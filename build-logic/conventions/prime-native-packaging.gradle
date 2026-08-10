@@ -62,21 +62,24 @@ def verifyDistributionJar = tasks.register('verifyDistributionJar') {
 			'prime/shaders/realtime_wavefront_head.rgen.spv',
 			'prime/shaders/realtime_wavefront_step.rgen.spv',
 			'prime/shaders/realtime_wavefront_area.rgen.spv',
-			'prime/shaders/realtime_wavefront_tail.rgen.spv',
+			'prime/shaders/realtime_wavefront_shade.rgen.spv',
 			'prime/shaders/realtime_wavefront_resolve.rgen.spv',
 			'prime/shaders/realtime_wavefront_head_subgroup.rgen.spv',
 			'prime/shaders/realtime_wavefront_step_subgroup.rgen.spv',
 			'prime/shaders/realtime_wavefront_area_subgroup.rgen.spv',
-			'prime/shaders/realtime_wavefront_tail_subgroup.rgen.spv',
+			'prime/shaders/realtime_wavefront_shade_subgroup.rgen.spv',
 			'prime/shaders/realtime_wavefront_resolve_subgroup.rgen.spv',
 			'prime/shaders/realtime_wavefront_head_ser.rgen.spv',
 			'prime/shaders/realtime_wavefront_step_ser.rgen.spv',
 			'prime/shaders/realtime_wavefront_area_ser.rgen.spv',
-			'prime/shaders/realtime_wavefront_tail_ser.rgen.spv',
+			'prime/shaders/realtime_wavefront_shade_ser.rgen.spv',
 			'prime/shaders/realtime_wavefront_resolve_ser.rgen.spv',
-			'prime/shaders/realtime_wavefront_sharc_step.rgen.spv',
-			'prime/shaders/realtime_wavefront_sharc_step_subgroup.rgen.spv',
-			'prime/shaders/realtime_wavefront_sharc_step_ser.rgen.spv',
+			'prime/shaders/realtime_wavefront_sharc_area.rgen.spv',
+			'prime/shaders/realtime_wavefront_sharc_shade.rgen.spv',
+			'prime/shaders/realtime_wavefront_sharc_area_subgroup.rgen.spv',
+			'prime/shaders/realtime_wavefront_sharc_shade_subgroup.rgen.spv',
+			'prime/shaders/realtime_wavefront_sharc_area_ser.rgen.spv',
+			'prime/shaders/realtime_wavefront_sharc_shade_ser.rgen.spv',
 			'prime/shaders/sharc_update.rgen.spv',
 			'prime/shaders/sharc_resolve.comp.spv',
 			'prime/shaders/offline_wavefront_head.rgen.spv',
@@ -94,18 +97,28 @@ def verifyDistributionJar = tasks.register('verifyDistributionJar') {
 			'prime/shaders/offline_wavefront_area_ser.rgen.spv',
 			'prime/shaders/offline_wavefront_tail_ser.rgen.spv',
 			'prime/shaders/offline_wavefront_resolve_ser.rgen.spv',
+			'prime/shaders/atmosphere_aerial_transmittance.comp.spv',
+			'prime/shaders/atmosphere_aerial.comp.spv',
+			'prime/shaders/atmosphere_multi_scattering.comp.spv',
+			'prime/shaders/atmosphere_sky.comp.spv',
+			'prime/shaders/atmosphere_transmittance.comp.spv',
 			'prime/shaders/auto_exposure_histogram.comp.spv',
 			'prime/shaders/auto_exposure_update.comp.spv',
 			'prime/shaders/shadow.rahit.spv',
 			'prime/shaders/shadow.rchit.spv',
+			'prime/shaders/shadow.rmiss.spv',
 			'prime/shaders/sun_shadow.rgen.spv',
 			'prime/shaders/sun_shadow_hierarchy.comp.spv',
 			'prime/shaders/nrd_motion.comp.spv',
+			'prime/shaders/nrd_composite.comp.spv',
 			'prime/shaders/native_debug_present.comp.spv',
 			'prime/shaders/noisy_composite.comp.spv',
 			'prime/shaders/rr_prepare.comp.spv',
 			'prime/shaders/rr_debug.comp.spv',
-			'prime/shaders/fsr_display.comp.spv'
+			'prime/shaders/fsr_display.comp.spv',
+			'prime/shaders/world.rahit.spv',
+			'prime/shaders/world.rchit.spv',
+			'prime/shaders/world.rmiss.spv'
 		]
 		def missing = required.findAll { !names.contains(it) }
 		if (!missing.isEmpty()) {
@@ -113,9 +126,13 @@ def verifyDistributionJar = tasks.register('verifyDistributionJar') {
 		}
 
 		def shaderNames = names.findAll { it.startsWith('prime/shaders/') && it.endsWith('.spv') }
-		if (shaderNames.size() != 57) {
+		def requiredShaderNames = required.findAll {
+			it.startsWith('prime/shaders/') && it.endsWith('.spv')
+		} as Set
+		def unexpectedShaders = shaderNames.findAll { !requiredShaderNames.contains(it) }
+		if (!unexpectedShaders.isEmpty()) {
 			throw new GradleException(
-					"Distribution jar must contain 57 Prime shaders; found ${shaderNames.size()}")
+					"Distribution jar contains undeclared Prime shaders: ${unexpectedShaders}")
 		}
 
 		new java.util.zip.ZipFile(archive).withCloseable { zip ->

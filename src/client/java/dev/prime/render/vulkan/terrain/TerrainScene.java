@@ -864,12 +864,12 @@ public final class TerrainScene implements AutoCloseable {
         long worldLightAddress = worldLights == null
                 ? 0L
                 : worldLights.deviceAddress();
-        long worldLightForwardAddress = worldLights == null
+        long worldLightLeafAddress = worldLights == null
                 ? 0L
-                : worldLights.deviceAddress() + worldLightTree.forwardByteOffset();
-        int worldLightNodeCount = worldLights == null
+                : worldLights.deviceAddress() + worldLightTree.leafByteOffset();
+        int worldLightLeafCount = worldLights == null
                 ? 0
-                : worldLightTree.nodeCount();
+                : worldLightTree.leafCount();
         tlas.populate(instanceCount, writer -> {
             for (int clusterIndex = 0; clusterIndex < clusters.size(); clusterIndex++) {
                 GpuCluster cluster = clusters.get(clusterIndex);
@@ -883,7 +883,7 @@ public final class TerrainScene implements AutoCloseable {
                         cluster.surfaceRelationAddress(),
                         cluster.lightAddress(),
                         worldLightAddress,
-                        worldLightForwardAddress,
+                        worldLightLeafAddress,
                         base.cutoutPrimitiveBase(),
                         base.transmissivePrimitiveBase(),
                         base.opaqueMacroTriangleBase(),
@@ -891,9 +891,9 @@ public final class TerrainScene implements AutoCloseable {
                         base.transmissiveMacroTriangleBase(),
                         cluster.dynamic()
                                 ? CpuLightTree.NO_INDEX
-                                : worldLightTree.leafNode(clusterIndex),
+                                : worldLightTree.lightPath(clusterIndex),
                         cluster.lights().emitterCount(),
-                        worldLightNodeCount,
+                        worldLightLeafCount,
                         cluster.blas() == null ? 0 : 0xff,
                         0,
                         sectionX,
@@ -918,7 +918,7 @@ public final class TerrainScene implements AutoCloseable {
                             0L,
                             cluster.lightAddress(),
                             worldLightAddress,
-                            worldLightForwardAddress,
+                            worldLightLeafAddress,
                             voxel.cutoutPrimitiveBase(),
                             voxel.transmissivePrimitiveBase(),
                             voxel.opaqueMacroTriangleBase(),
@@ -926,9 +926,9 @@ public final class TerrainScene implements AutoCloseable {
                             voxel.transmissiveMacroTriangleBase(),
                             cluster.dynamic()
                                     ? CpuLightTree.NO_INDEX
-                                    : worldLightTree.leafNode(clusterIndex),
+                                    : worldLightTree.lightPath(clusterIndex),
                             cluster.lights().emitterCount(),
-                            worldLightNodeCount,
+                            worldLightLeafCount,
                             0xff,
                             0x8000_0000 | instances.packedTint(index),
                             sectionX + instances.translationX(index),

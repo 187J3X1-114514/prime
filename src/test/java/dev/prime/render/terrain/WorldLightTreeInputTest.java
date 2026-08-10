@@ -43,8 +43,8 @@ final class WorldLightTreeInputTest {
         assertEquals(expected.nodeCount(), actual.nodeCount());
         for (int index = 0; index < clusters.size(); index++) {
             assertEquals(
-                    expected.leafNode(index),
-                    actual.leafNode(index));
+                    expected.lightPath(index),
+                    actual.lightPath(index));
         }
     }
 
@@ -68,8 +68,8 @@ final class WorldLightTreeInputTest {
         assertArrayEquals(expected.pack(), actual.pack());
         for (int index = 0; index < changed.size(); index++) {
             assertEquals(
-                    expected.leafNode(index),
-                    actual.leafNode(index));
+                    expected.lightPath(index),
+                    actual.lightPath(index));
         }
     }
 
@@ -95,8 +95,8 @@ final class WorldLightTreeInputTest {
                 WorldLightTreeInput.capture(
                         List.of(staticCluster, unlitCluster), 0, 0, 0));
 
-        assertNotEquals(CpuLightTree.NO_INDEX, tree.leafNode(0));
-        assertEquals(CpuLightTree.NO_INDEX, tree.leafNode(1));
+        assertNotEquals(CpuLightTree.NO_INDEX, tree.lightPath(0));
+        assertEquals(CpuLightTree.NO_INDEX, tree.lightPath(1));
     }
 
     private static WorldLightTreeInput.Entry cluster(int index, float power) {

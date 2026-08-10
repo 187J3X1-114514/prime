@@ -232,66 +232,40 @@ float primeLightReceiverCosineEstimate(
             : 1.0;
 }
 
-vec3 primeLightNodeMetrics(
-        vec4 boundsMinPower,
-        vec4 boundsMaxSoftening,
+vec2 primeLightNodeMetrics(
+        vec3 boundsMin,
+        vec3 boundsMax,
+        float power,
+        float softening,
         vec3 point,
         vec3 receiverNormal,
         uint packedEmissionDirection) {
-    vec3 closest = clamp(point, boundsMinPower.xyz, boundsMaxSoftening.xyz);
+    vec3 closest = clamp(point, boundsMin, boundsMax);
     vec3 delta = point - closest;
     float distanceSquared = dot(delta, delta);
     float inverseDistance = distanceSquared > 0.0 ? inversesqrt(distanceSquared) : 0.0;
     float receiverBound = primeLightReceiverCosineBoundWithInverse(
-            boundsMinPower.xyz,
-            boundsMaxSoftening.xyz,
+            boundsMin,
+            boundsMax,
             point,
             receiverNormal,
             distanceSquared,
             inverseDistance);
     float emitterBound = primeLightEmitterCosineBoundWithInverse(
-            boundsMinPower.xyz,
-            boundsMaxSoftening.xyz,
+            boundsMin,
+            boundsMax,
             point,
             distanceSquared,
             inverseDistance,
             packedEmissionDirection);
-    vec3 center = (boundsMinPower.xyz + boundsMaxSoftening.xyz) * 0.5;
-    vec3 centerDelta = center - point;
-    float centerDistanceSquared = dot(centerDelta, centerDelta);
-    float inverseCenterDistance = centerDistanceSquared > 0.0
-            ? inversesqrt(centerDistanceSquared)
-            : 0.0;
-    vec3 directionToLight = centerDelta * inverseCenterDistance;
-    float representativeImportance = centerDistanceSquared > 0.0
-            ? primeLightReceiverCosineEstimate(directionToLight, receiverNormal)
-                    * primeLightEmitterCosineEstimate(
-                            -directionToLight, packedEmissionDirection)
-            : receiverBound * emitterBound;
-    vec3 extent = boundsMaxSoftening.xyz - boundsMinPower.xyz;
-    float radiusSquared = 0.25 * dot(extent, extent);
-    // Angular size decides whether the center ray is representative. Nearby or enclosing nodes
-    // retain the conservative bounds; compact far nodes use the joint direction at one point.
-    float uncertainty = centerDistanceSquared > 0.0
-            ? min(radiusSquared * inverseCenterDistance * inverseCenterDistance, 1.0)
-            : 1.0;
-    float boundedImportance = receiverBound * emitterBound;
-    float angularImportance = mix(representativeImportance, boundedImportance, uncertainty);
-    float softeningDistanceSquared = max(boundsMaxSoftening.w, 0.0);
-    float effectiveDistanceSquared = mix(
-            centerDistanceSquared + softeningDistanceSquared,
-            distanceSquared + softeningDistanceSquared,
-            uncertainty);
-    return vec3(
-            effectiveDistanceSquared,
-            boundsMinPower.w,
-            // A smooth baseline preserves support without flattening all low-cosine branches.
-            PRIME_LIGHT_RECEIVER_COSINE_FLOOR
-                    + (1.0 - PRIME_LIGHT_RECEIVER_COSINE_FLOOR)
-                            * clamp(angularImportance, 0.0, 1.0));
+    float angularImportance = clamp(receiverBound * emitterBound, 0.0, 1.0);
+    float weightedPower = max(power, 0.0)
+            * (PRIME_LIGHT_RECEIVER_COSINE_FLOOR
+                    + (1.0 - PRIME_LIGHT_RECEIVER_COSINE_FLOOR) * angularImportance);
+    return vec2(distanceSquared + max(softening, 0.0), weightedPower);
 }
 
-float primeLightBranchProbability(vec3 firstMetrics, vec3 secondMetrics) {
+float primeLightBranchProbability(vec2 firstMetrics, vec2 secondMetrics) {
     // Keep this order identical for forward selection and reverse MIS reconstruction.
     float firstDistanceSquared = firstMetrics.x;
     float secondDistanceSquared = secondMetrics.x;
@@ -301,19 +275,15 @@ float primeLightBranchProbability(vec3 firstMetrics, vec3 secondMetrics) {
     if (powerScale == 0.0) return -1.0;
     float firstPowerRatio = firstPower / powerScale;
     float secondPowerRatio = secondPower / powerScale;
-    float firstImportance = max(firstMetrics.z, 0.0);
-    float secondImportance = max(secondMetrics.z, 0.0);
     float distanceScale = max(firstDistanceSquared, secondDistanceSquared);
     if (distanceScale == 0.0) {
-        float firstScore = firstPowerRatio * firstImportance;
-        float secondScore = secondPowerRatio * secondImportance;
+        float firstScore = firstPowerRatio;
+        float secondScore = secondPowerRatio;
         float sum = firstScore + secondScore;
         return sum > 0.0 ? firstScore / sum : -1.0;
     }
-    float firstScore = firstPowerRatio * firstImportance
-            * (secondDistanceSquared / distanceScale);
-    float secondScore = secondPowerRatio * secondImportance
-            * (firstDistanceSquared / distanceScale);
+    float firstScore = firstPowerRatio * (secondDistanceSquared / distanceScale);
+    float secondScore = secondPowerRatio * (firstDistanceSquared / distanceScale);
     float sum = firstScore + secondScore;
     return sum > 0.0 ? firstScore / sum : -1.0;
 }

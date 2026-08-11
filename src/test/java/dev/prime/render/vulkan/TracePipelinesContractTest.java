@@ -55,23 +55,23 @@ final class TracePipelinesContractTest {
 
     @Test
     void realtimeAndOfflineHaveIndependentSchedulesAndDescriptors() {
-        assertEquals(7, RealtimeRayTracingPipeline.RAYGEN_GROUP_COUNT);
-        assertEquals(5, RealtimeRayTracingPipeline.RAYGEN_MODULE_COUNT);
-        assertEquals(26, RealtimeRayTracingPipeline.DISPATCH_COUNT);
+        assertEquals(9, RealtimeRayTracingPipeline.RAYGEN_GROUP_COUNT);
+        assertEquals(6, RealtimeRayTracingPipeline.RAYGEN_MODULE_COUNT);
+        assertEquals(51, RealtimeRayTracingPipeline.DISPATCH_COUNT);
         assertEquals(26, RealtimeRayTracingPipeline.DESCRIPTOR_BINDING_COUNT);
 
         assertEquals(8, OfflineRayTracingPipeline.RAYGEN_GROUP_COUNT);
         assertEquals(5, OfflineRayTracingPipeline.RAYGEN_MODULE_COUNT);
-        assertEquals(19, OfflineRayTracingPipeline.DISPATCH_COUNT);
+        assertEquals(35, OfflineRayTracingPipeline.DISPATCH_COUNT);
         assertEquals(3, OfflineRayTracingPipeline.DESCRIPTOR_BINDING_COUNT);
 
-        assertEquals(List.of(0, 1, 1, 2, 3, 3, 4),
+        assertEquals(List.of(0, 1, 1, 2, 3, 3, 4, 4, 5),
                 java.util.stream.IntStream
                 .range(0, RealtimeRayTracingPipeline.RAYGEN_GROUP_COUNT)
                 .map(RealtimeRayTracingPipeline::raygenModule)
                 .boxed()
                 .toList());
-        assertEquals(List.of(0, 1, 257, 4, 2, 258, 3),
+        assertEquals(List.of(0, 1, 257, 4, 2, 258, 5, 261, 3),
                 java.util.stream.IntStream
                 .range(0, RealtimeRayTracingPipeline.RAYGEN_GROUP_COUNT)
                 .map(RealtimeRayTracingPipeline::raygenControl)
@@ -96,7 +96,7 @@ final class TracePipelinesContractTest {
                     wavefrontShaders(
                             "realtime",
                             suffix,
-                            List.of("head", "step", "area", "shade", "resolve")),
+                            List.of("head", "step", "area", "shade", "tail", "resolve")),
                     1);
             assertTrue(realtime.contains(ShaderAbi.DESCRIPTOR_WAVEFRONT_PATHS));
             assertTrue(realtime.contains(ShaderAbi.DESCRIPTOR_WAVEFRONT_QUEUE));
@@ -123,7 +123,8 @@ final class TracePipelinesContractTest {
         for (String suffix : List.of("", "_subgroup", "_ser")) {
             Set<Integer> query = descriptorBindings(List.of(
                     "realtime_wavefront_sharc_area" + suffix + ".rgen.spv",
-                    "realtime_wavefront_sharc_shade" + suffix + ".rgen.spv"), 1);
+                    "realtime_wavefront_sharc_shade" + suffix + ".rgen.spv",
+                    "realtime_wavefront_sharc_tail" + suffix + ".rgen.spv"), 1);
             assertTrue(query.contains(ShaderAbi.DESCRIPTOR_SHARC_FRAME));
             assertTrue(query.contains(ShaderAbi.DESCRIPTOR_WAVEFRONT_PATHS));
             assertTrue(query.contains(ShaderAbi.DESCRIPTOR_WAVEFRONT_QUEUE));

@@ -95,6 +95,16 @@ uint primeOfflineQueuedPath(uint queue, uint entry) {
     return primeOfflineQueue[primeOfflineQueueWord(queue, entry)];
 }
 
+// Queue consumption owns the counter reset. This removes a transfer fill and its two barriers
+// from every round while preserving the indirect command that was fetched for this dispatch.
+void primeResetOfflineQueue(uint queue) {
+    uint ignored;
+    InterlockedExchange(
+            primeOfflineQueue[primeOfflineQueueCommandWord(queue)],
+            0u,
+            ignored);
+}
+
 void primeAppendOfflinePath(uint queue, uint pathIndex) {
     uint commandWord = primeOfflineQueueCommandWord(queue);
     uint entry;

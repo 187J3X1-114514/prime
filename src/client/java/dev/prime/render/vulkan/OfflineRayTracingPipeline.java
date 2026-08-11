@@ -224,7 +224,7 @@ public final class OfflineRayTracingPipeline implements Destroyable {
                         WavefrontGroups.area(sourceQueue),
                         commandOffset,
                         sourceQueue);
-                this.advanceQueue(commandBuffer, stack, commandOffset, sourceQueue);
+                this.wavefrontBarrier(commandBuffer, stack);
                 sourceQueue ^= 1;
             }
             this.traceIndirect(
@@ -306,20 +306,6 @@ public final class OfflineRayTracingPipeline implements Destroyable {
 
     private void wavefrontBarrier(VkCommandBuffer commandBuffer, MemoryStack stack) {
         WavefrontCommands.wavefrontBarrier(commandBuffer, stack);
-    }
-
-    private void advanceQueue(
-            VkCommandBuffer commandBuffer,
-            MemoryStack stack,
-            long commandOffset,
-            int sourceQueue) {
-        WavefrontCommands.advanceQueue(
-                commandBuffer,
-                stack,
-                this.wavefront,
-                commandOffset,
-                sourceQueue,
-                ShaderAbi.OFFLINE_WAVEFRONT_QUEUE_COMMAND_STRIDE);
     }
 
     static long wavefrontBytes(int width, int height) {

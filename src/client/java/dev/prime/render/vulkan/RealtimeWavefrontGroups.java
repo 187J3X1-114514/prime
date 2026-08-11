@@ -5,11 +5,11 @@ import dev.prime.render.shader.ShaderAbi;
 /** Ray-generation group order for execution-mode queues. */
 final class RealtimeWavefrontGroups {
     static final int HEAD = 0;
-    static final int RESOLVE = 6;
-    static final int GROUP_COUNT = 7;
-    static final int MODULE_COUNT = 5;
-    static final int[] MODULES = {0, 1, 1, 2, 3, 3, 4};
-    static final int[] CONTROLS = {0, 1, 257, 4, 2, 258, 3};
+    static final int RESOLVE = 8;
+    static final int GROUP_COUNT = 9;
+    static final int MODULE_COUNT = 6;
+    static final int[] MODULES = {0, 1, 1, 2, 3, 3, 4, 4, 5};
+    static final int[] CONTROLS = {0, 1, 257, 4, 2, 258, 5, 261, 3};
 
     private RealtimeWavefrontGroups() {}
 
@@ -23,6 +23,10 @@ final class RealtimeWavefrontGroups {
 
     static int shade(int queue) {
         return queued(queue, 4, 5);
+    }
+
+    static int tail(int queue) {
+        return queued(queue, 6, 7);
     }
 
     private static int queued(int queue, int first, int second) {

@@ -209,6 +209,16 @@ uint primeWavefrontQueuedPath(uint queue, uint entry) {
     return primeWavefrontQueue[primeWavefrontQueueWord(queue, entry)];
 }
 
+// Indirect width is fetched before ray generation begins. The first consumer can therefore clear
+// only the counter in-shader; the following wavefront barrier publishes the reset before reuse.
+void primeResetWavefrontQueue(uint queue) {
+    uint ignored;
+    InterlockedExchange(
+            primeWavefrontQueue[primeWavefrontQueueCommandWord(queue)],
+            0u,
+            ignored);
+}
+
 void primeAppendWavefrontPath(uint queue, uint pathIndex) {
     uint commandWord = primeWavefrontQueueCommandWord(queue);
     uint entry;

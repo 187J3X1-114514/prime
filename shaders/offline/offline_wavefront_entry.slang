@@ -18,6 +18,9 @@ void primeOfflineWavefrontAreaEntry()
     uint2 launchIndex = DispatchRaysIndex().xy;
     PrimeIntegratorContext context = primeIntegratorContextCreate();
     uint sourceQueue = (primeOfflineShaderRecord.control >> 8u) & 1u;
+    if (launchIndex.x == 0u) {
+        primeResetOfflineQueue(sourceQueue);
+    }
     primeOfflineWavefrontArea(context, launchIndex.x, sourceQueue);
 }
 
@@ -26,6 +29,9 @@ void primeOfflineWavefrontTailEntry()
     uint2 launchIndex = DispatchRaysIndex().xy;
     PrimeIntegratorContext context = primeIntegratorContextCreate();
     uint sourceQueue = (primeOfflineShaderRecord.control >> 8u) & 1u;
+    if (launchIndex.x == 0u) {
+        primeResetOfflineQueue(sourceQueue);
+    }
     primeOfflineWavefrontTail(context, launchIndex.x, sourceQueue);
 }
 

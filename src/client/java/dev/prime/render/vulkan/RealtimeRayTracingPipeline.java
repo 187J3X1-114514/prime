@@ -29,7 +29,7 @@ import org.lwjgl.vulkan.VkWriteDescriptorSet;
 public final class RealtimeRayTracingPipeline implements RealtimeIntegratorPipeline {
     static final int RAYGEN_GROUP_COUNT = RealtimeWavefrontGroups.GROUP_COUNT;
     static final int RAYGEN_MODULE_COUNT = RealtimeWavefrontGroups.MODULE_COUNT;
-    static final int DISPATCH_COUNT = 3 * ShaderAbi.WAVEFRONT_ROUNDS + 2;
+    static final int DISPATCH_COUNT = 3 * ShaderAbi.WAVEFRONT_ROUNDS + 3;
     static final int DESCRIPTOR_BINDING_COUNT = 26;
     private static final int STORAGE_IMAGE_DESCRIPTOR_COUNT = 23;
     private static final WavefrontLayout WAVEFRONT_LAYOUT = new WavefrontLayout(
@@ -80,6 +80,7 @@ public final class RealtimeRayTracingPipeline implements RealtimeIntegratorPipel
                 prefix + "step" + suffix,
                 prefix + "area" + suffix,
                 prefix + "shade" + suffix,
+                prefix + "tail" + suffix,
                 prefix + "resolve" + suffix
             };
             traceProgram = TraceProgram.create(
@@ -386,11 +387,18 @@ public final class RealtimeRayTracingPipeline implements RealtimeIntegratorPipel
                         RealtimeWavefrontGroups.shade(traceQueue),
                         commandOffset,
                         ShaderAbi.WAVEFRONT_SHADE_QUEUE);
-                this.resetQueues(commandBuffer, stack, commandOffset, traceQueue);
+                this.wavefrontBarrier(commandBuffer, stack);
                 traceQueue = traceQueue == ShaderAbi.WAVEFRONT_TRACE_QUEUE_0
                         ? ShaderAbi.WAVEFRONT_TRACE_QUEUE_1
                         : ShaderAbi.WAVEFRONT_TRACE_QUEUE_0;
             }
+            this.traceIndirect(
+                    commandBuffer,
+                    stack,
+                    activeProgram,
+                    RealtimeWavefrontGroups.tail(traceQueue),
+                    commandOffset,
+                    traceQueue);
             this.wavefrontBarrier(commandBuffer, stack);
             this.trace(
                     commandBuffer,
@@ -477,22 +485,6 @@ public final class RealtimeRayTracingPipeline implements RealtimeIntegratorPipel
 
     private void wavefrontBarrier(VkCommandBuffer commandBuffer, MemoryStack stack) {
         WavefrontCommands.wavefrontBarrier(commandBuffer, stack);
-    }
-
-    private void resetQueues(
-            VkCommandBuffer commandBuffer,
-            MemoryStack stack,
-            long commandOffset,
-            int traceQueue) {
-        WavefrontCommands.resetQueues(
-                commandBuffer,
-                stack,
-                this.wavefront,
-                commandOffset,
-                ShaderAbi.WAVEFRONT_QUEUE_COMMAND_STRIDE,
-                traceQueue,
-                ShaderAbi.WAVEFRONT_SHADE_QUEUE,
-                ShaderAbi.WAVEFRONT_AREA_QUEUE);
     }
 
     static long wavefrontBytes(int width, int height) {

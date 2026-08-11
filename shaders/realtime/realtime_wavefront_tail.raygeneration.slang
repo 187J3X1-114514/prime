@@ -1,5 +1,4 @@
-#include "realtime/realtime_wavefront.slang"
-#include "realtime/sharc_query_policy.slang"
+#include "realtime/realtime_wavefront_tail.slang"
 
 [shader("raygeneration")]
 void main()
@@ -8,8 +7,8 @@ void main()
     PrimeIntegratorContext context = primeIntegratorContextCreate();
     uint sourceQueue = (primeWavefrontShaderRecord.control >> 8u) & 1u;
     if (launchIndex == 0u) {
-        primeResetWavefrontQueue(PRIME_WAVEFRONT_SHADE_QUEUE);
+        primeResetWavefrontQueue(sourceQueue);
     }
-    primeWavefrontShade(
-            PrimeSharcIndirectReuse(), context, launchIndex, sourceQueue);
+    primeWavefrontTail(
+            PrimeNoIndirectReuse(), context, launchIndex, sourceQueue);
 }

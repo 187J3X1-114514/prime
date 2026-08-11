@@ -1,13 +1,15 @@
-#ifndef PRIME_ROBOCUTE_OPENPBR_SLANG
-#define PRIME_ROBOCUTE_OPENPBR_SLANG
+#language slang 2026
+module "bsdf/core/robocute_openpbr.slang";
 
-#include "robocute_common.slang"
-#include "robocute_closures.slang"
+import "bsdf/core/robocute_closures.slang";
+import "bsdf/core/robocute_common.slang";
+import "bsdf/core/robocute_microfacet.slang";
+import "bsdf/core/transmission_ggx_energy.slang";
 
 // Mechanical Slang port of the production-reachable declaration closure from
 // robocute_bsdf_openpbr.glsl at RoboCute commit 0d982c77b3fd26c2c5a3c0852be3bd05e5860bd8.
 
-PrimeRcMixState primeRcMakeMixState(float weight, float3 firstEnergy, float3 secondEnergy) {
+public PrimeRcMixState primeRcMakeMixState(float weight, float3 firstEnergy, float3 secondEnergy) {
     PrimeRcMixState result;
     if (weight == 0.0) {
         result.firstSampleWeight = 1.0;
@@ -29,7 +31,7 @@ PrimeRcMixState primeRcMakeMixState(float weight, float3 firstEnergy, float3 sec
     return result;
 }
 
-PrimeRcLayerState primeRcMakeLayerState(
+public PrimeRcLayerState primeRcMakeLayerState(
         float weight, float3 subEnergy, float3 coatTransIn, float3 coatEnergy) {
     PrimeRcLayerState result;
     if (weight == 0.0) {
@@ -50,7 +52,7 @@ PrimeRcLayerState primeRcMakeLayerState(
     return result;
 }
 
-PrimeRcThroughput primeRcMixEvalValues(
+public PrimeRcThroughput primeRcMixEvalValues(
         PrimeRcThroughput first, PrimeRcThroughput second, float weight) {
     PrimeRcThroughput result = primeRcZeroThroughput();
     if (weight < 1.0) { result = first; }
@@ -68,7 +70,7 @@ float3 primeRcMixValues(float3 first, float3 second, float weight) {
     return result;
 }
 
-PrimeRcThroughput primeRcLayerEvalValues(
+public PrimeRcThroughput primeRcLayerEvalValues(
         PrimeRcThroughput sub,
         PrimeRcThroughput coat,
         float3 coatTintOut,
@@ -91,7 +93,7 @@ float3 primeRcLayerEnergyValues(
             + subEnergy * lerp(float3(1.0), layer.coatTransIn, float3(weight));
 }
 
-PrimeRcThroughput primeRcMixedDiffuseEval(float3 wi, float3 wo, PrimeRcState state) {
+public PrimeRcThroughput primeRcMixedDiffuseEval(float3 wi, float3 wo, PrimeRcState state) {
     float weight = state.material.weight.subsurface;
     return primeRcMixEvalValues(
             weight < 1.0 ? primeRcDiffuseEval(wi, wo, state) : primeRcZeroThroughput(),
@@ -139,7 +141,7 @@ float primeRcMixedDiffusePdf(float3 wi, float3 wo, PrimeRcState state) {
     return lerp(first, second, state.mixedDiffuse.secondSampleWeight);
 }
 
-float3 primeRcMixedDiffuseEnergy(float3 wi, PrimeRcState state) {
+public float3 primeRcMixedDiffuseEnergy(float3 wi, PrimeRcState state) {
     return primeRcMixValues(
             primeRcDiffuseEnergy(wi, state),
             primeRcSubsurfaceEnergy(wi, state),
@@ -184,7 +186,7 @@ float primeRcGlossyDiffusePdf(float3 wi, float3 wo, PrimeRcState state) {
     return lerp(subPdf, primeRcSpecularPdf(wi, wo, state), layer.coatSampleWeight);
 }
 
-float3 primeRcGlossyDiffuseEnergy(float3 wi, PrimeRcState state) {
+public float3 primeRcGlossyDiffuseEnergy(float3 wi, PrimeRcState state) {
     float weight = state.material.weight.specular > 0.0 ? 1.0 : 0.0;
     float3 sub = primeRcMixedDiffuseEnergy(wi, state);
     return primeRcLayerEnergyValues(
@@ -229,14 +231,19 @@ float primeRcDielectricBasePdf(float3 wi, float3 wo, PrimeRcState state) {
     return lerp(first, second, state.dielectricBase.secondSampleWeight);
 }
 
-float3 primeRcDielectricBaseEnergy(float3 wi, PrimeRcState state) {
+public float3 primeRcDielectricBaseEnergy<TransmissionGgxEnergy>(
+        TransmissionGgxEnergy transmissionGgxEnergy,
+        float3 wi,
+        PrimeRcState state)
+    where TransmissionGgxEnergy : IPrimeRcTransmissionGgxEnergy
+{
     return primeRcMixValues(
             primeRcGlossyDiffuseEnergy(wi, state),
-            primeRcTransmissionEnergy(wi, state),
+            primeRcTransmissionEnergy(transmissionGgxEnergy, wi, state),
             state.material.weight.transmission);
 }
 
-PrimeRcSampleResult primeRcBaseSubstrateSample(
+public PrimeRcSampleResult primeRcBaseSubstrateSample(
         float3 wi, float3 randomValue, PrimeRcState state, PrimeRcVolumeStack stack) {
     PrimeRcMixState mixState = state.baseSubstrate;
     if (mixState.firstSampleWeight + mixState.secondSampleWeight <= 0.0) {
@@ -264,7 +271,7 @@ PrimeRcSampleResult primeRcBaseSubstrateSample(
     return result;
 }
 
-float primeRcBaseSubstratePdf(float3 wi, float3 wo, PrimeRcState state) {
+public float primeRcBaseSubstratePdf(float3 wi, float3 wo, PrimeRcState state) {
     float weight = state.material.weight.metalness;
     float first = weight < 1.0 ? primeRcDielectricBasePdf(wi, wo, state) : 0.0;
     float second = weight > 0.0 ? primeRcConductorPdf(wi, wo, state) : 0.0;
@@ -274,14 +281,19 @@ float primeRcBaseSubstratePdf(float3 wi, float3 wo, PrimeRcState state) {
     return lerp(first, second, state.baseSubstrate.secondSampleWeight);
 }
 
-float3 primeRcBaseSubstrateEnergy(float3 wi, PrimeRcState state) {
+public float3 primeRcBaseSubstrateEnergy<TransmissionGgxEnergy>(
+        TransmissionGgxEnergy transmissionGgxEnergy,
+        float3 wi,
+        PrimeRcState state)
+    where TransmissionGgxEnergy : IPrimeRcTransmissionGgxEnergy
+{
     return primeRcMixValues(
-            primeRcDielectricBaseEnergy(wi, state),
+            primeRcDielectricBaseEnergy(transmissionGgxEnergy, wi, state),
             primeRcConductorEnergy(wi, state),
             state.material.weight.metalness);
 }
 
-PrimeRcMaterial primeRcMaterialFromMetallic(
+public PrimeRcMaterial primeRcMaterialFromMetallic(
         float3 baseColor, float roughness, float metalness, float3 normal) {
     PrimeRcOnb onb = primeRcOnbFromNormal(normal);
     PrimeRcMaterial material;
@@ -333,7 +345,7 @@ PrimeRcMaterial primeRcMaterialFromMetallic(
     return material;
 }
 
-float primeRcInverseOutsideIor(float wiZ, PrimeRcVolumeStack volumeStack) {
+public float primeRcInverseOutsideIor(float wiZ, PrimeRcVolumeStack volumeStack) {
     if (wiZ > 0.0) {
         if (volumeStack.count > 0u) {
             return 1.0 / volumeStack.values[volumeStack.count - 1u].ior;
@@ -344,7 +356,8 @@ float primeRcInverseOutsideIor(float wiZ, PrimeRcVolumeStack volumeStack) {
     return 1.0;
 }
 
-PrimeRcState primeRcBaseState(
+public PrimeRcState primeRcBaseState<TransmissionGgxEnergy>(
+        TransmissionGgxEnergy transmissionGgxEnergy,
         PrimeRcMaterial inputMaterial,
         float3 wi,
         float inverseOutsideIor,
@@ -353,7 +366,9 @@ PrimeRcState primeRcBaseState(
         uint heroWavelengthIndex,
         uint detail,
         uint spectrumed,
-        bool fullOpenPbr) {
+        bool fullOpenPbr)
+    where TransmissionGgxEnergy : IPrimeRcTransmissionGgxEnergy
+{
     PrimeRcMaterial material = inputMaterial;
     if (detail != PRIME_RC_DETAIL_DEFAULT) {
         if (detail == PRIME_RC_DETAIL_INDIRECT_DIFFUSE) {
@@ -429,6 +444,7 @@ PrimeRcState primeRcBaseState(
     state.specularMicrofacet.alpha = primeRcSpecularNdfRoughnesses(
             specularRoughness, material.specular.roughnessAnisotropy);
     state.specularMultipleScattering = primeRcMicrofacetDielectricMsCompensation(
+            transmissionGgxEnergy,
             state.specularMicrofacet, wi.z, state.specularFresnel.energyIor);
 
     if (fullOpenPbr) {
@@ -471,7 +487,7 @@ PrimeRcState primeRcBaseState(
     return state;
 }
 
-PrimeRcState primeRcInitializeConductor(float3 wi, PrimeRcState state) {
+public PrimeRcState primeRcInitializeConductor(float3 wi, PrimeRcState state) {
     state.conductorEss = 1.0;
     if (!primeRcMicrofacetEffectivelySmooth(state.specularMicrofacet)) {
         state.conductorEss = primeRcMicrofacetDirectionalAlbedoReflection(
@@ -480,7 +496,12 @@ PrimeRcState primeRcInitializeConductor(float3 wi, PrimeRcState state) {
     return state;
 }
 
-PrimeRcState primeRcInitializeTransmission(float3 wi, PrimeRcState state) {
+public PrimeRcState primeRcInitializeTransmission<TransmissionGgxEnergy>(
+        TransmissionGgxEnergy transmissionGgxEnergy,
+        float3 wi,
+        PrimeRcState state)
+    where TransmissionGgxEnergy : IPrimeRcTransmissionGgxEnergy
+{
     state.transmissionTint = state.material.transmission.depth == 0.0
             ? state.material.transmission.color : float3(1.0);
     state.transmissionVolume = primeRcVolumeFromTransmission(state.material.transmission);
@@ -500,6 +521,7 @@ PrimeRcState primeRcInitializeTransmission(float3 wi, PrimeRcState state) {
     } else {
         wi = primeRcTransmissionMaterialFrame(wi, state);
         state.transmissionMultipleScattering = primeRcMicrofacetDielectricMsCompensation(
+                transmissionGgxEnergy,
                 state.specularMicrofacet, wi.z, state.specularFresnel.ior);
     }
     return state;
@@ -554,7 +576,7 @@ float3 primeRcBasicGlossyEnergy(float3 wi, PrimeRcState state) {
             weight);
 }
 
-PrimeRcSampleResult primeRcBasicMetallicSample(
+public PrimeRcSampleResult primeRcBasicMetallicSample(
         float3 wi, float3 randomValue, PrimeRcState state, PrimeRcVolumeStack stack) {
     if (state.basicMetal.firstSampleWeight + state.basicMetal.secondSampleWeight <= 0.0) {
         return primeRcZeroSampleResult(state, stack);
@@ -582,7 +604,7 @@ PrimeRcSampleResult primeRcBasicMetallicSample(
     return result;
 }
 
-float primeRcBasicMetallicPdf(float3 wi, float3 wo, PrimeRcState state) {
+public float primeRcBasicMetallicPdf(float3 wi, float3 wo, PrimeRcState state) {
     float weight = state.material.weight.metalness;
     float first = weight < 1.0 ? primeRcBasicGlossyPdf(wi, wo, state) : 0.0;
     float second = weight > 0.0 ? primeRcConductorPdf(wi, wo, state) : 0.0;
@@ -592,7 +614,7 @@ float primeRcBasicMetallicPdf(float3 wi, float3 wo, PrimeRcState state) {
     return lerp(first, second, state.basicMetal.secondSampleWeight);
 }
 
-float3 primeRcBasicMetallicEnergy(float3 wi, PrimeRcState state) {
+public float3 primeRcBasicMetallicEnergy(float3 wi, PrimeRcState state) {
     float weight = state.material.weight.metalness;
     return primeRcMixValues(
             weight < 1.0 ? primeRcBasicGlossyEnergy(wi, state) : float3(0.0),
@@ -600,7 +622,8 @@ float3 primeRcBasicMetallicEnergy(float3 wi, PrimeRcState state) {
             weight);
 }
 
-PrimeRcState primeRcBasicMetallicStateInit(
+public PrimeRcState primeRcBasicMetallicStateInit<TransmissionGgxEnergy>(
+        TransmissionGgxEnergy transmissionGgxEnergy,
         PrimeRcMaterial material,
         float3 wi,
         float inverseOutsideIor,
@@ -608,8 +631,11 @@ PrimeRcState primeRcBasicMetallicStateInit(
         float3 wavelengthsNm,
         uint heroWavelengthIndex,
         uint detail,
-        uint spectrumed) {
+        uint spectrumed)
+    where TransmissionGgxEnergy : IPrimeRcTransmissionGgxEnergy
+{
     PrimeRcState state = primeRcBaseState(
+            transmissionGgxEnergy,
             material, wi, inverseOutsideIor, rayT, wavelengthsNm,
             heroWavelengthIndex, detail, spectrumed, false);
     if (state.material.weight.metalness < 1.0) {
@@ -635,7 +661,7 @@ PrimeRcState primeRcBasicMetallicStateInit(
     return state;
 }
 
-PrimeRcSampleResult primeRcSubsurfaceGlossySample(
+public PrimeRcSampleResult primeRcSubsurfaceGlossySample(
         float3 wi, float3 randomValue, PrimeRcState state, PrimeRcVolumeStack stack) {
     PrimeRcLayerState layer = state.subsurfaceGlossy;
     if (layer.subSampleWeight + layer.coatSampleWeight <= 0.0) {
@@ -666,7 +692,7 @@ PrimeRcSampleResult primeRcSubsurfaceGlossySample(
     return result;
 }
 
-float primeRcSubsurfaceGlossyPdf(float3 wi, float3 wo, PrimeRcState state) {
+public float primeRcSubsurfaceGlossyPdf(float3 wi, float3 wo, PrimeRcState state) {
     float subPdf = primeRcSubsurfacePdf(wi, wo, state);
     if (state.material.weight.specular <= 0.0) { return subPdf; }
     if (state.subsurfaceGlossy.subSampleWeight
@@ -677,7 +703,7 @@ float primeRcSubsurfaceGlossyPdf(float3 wi, float3 wo, PrimeRcState state) {
             state.subsurfaceGlossy.coatSampleWeight);
 }
 
-float3 primeRcSubsurfaceGlossyEnergy(float3 wi, PrimeRcState state) {
+public float3 primeRcSubsurfaceGlossyEnergy(float3 wi, PrimeRcState state) {
     float weight = state.material.weight.specular > 0.0 ? 1.0 : 0.0;
     return primeRcLayerEnergyValues(
             primeRcSubsurfaceEnergy(wi, state),
@@ -686,7 +712,8 @@ float3 primeRcSubsurfaceGlossyEnergy(float3 wi, PrimeRcState state) {
             weight);
 }
 
-PrimeRcState primeRcSubsurfaceGlossyStateInit(
+public PrimeRcState primeRcSubsurfaceGlossyStateInit<TransmissionGgxEnergy>(
+        TransmissionGgxEnergy transmissionGgxEnergy,
         PrimeRcMaterial material,
         float3 wi,
         float inverseOutsideIor,
@@ -694,8 +721,11 @@ PrimeRcState primeRcSubsurfaceGlossyStateInit(
         float3 wavelengthsNm,
         uint heroWavelengthIndex,
         uint detail,
-        uint spectrumed) {
+        uint spectrumed)
+    where TransmissionGgxEnergy : IPrimeRcTransmissionGgxEnergy
+{
     PrimeRcState state = primeRcBaseState(
+            transmissionGgxEnergy,
             material, wi, inverseOutsideIor, rayT, wavelengthsNm,
             heroWavelengthIndex, detail, spectrumed, false);
     float3 subEnergy = primeRcSubsurfaceEnergy(wi, state);
@@ -710,7 +740,8 @@ PrimeRcState primeRcSubsurfaceGlossyStateInit(
     return state;
 }
 
-PrimeRcState primeRcTransmissionStateInit(
+public PrimeRcState primeRcTransmissionStateInit<TransmissionGgxEnergy>(
+        TransmissionGgxEnergy transmissionGgxEnergy,
         PrimeRcMaterial material,
         float3 wi,
         float inverseOutsideIor,
@@ -718,11 +749,12 @@ PrimeRcState primeRcTransmissionStateInit(
         float3 wavelengthsNm,
         uint heroWavelengthIndex,
         uint detail,
-        uint spectrumed) {
+        uint spectrumed)
+    where TransmissionGgxEnergy : IPrimeRcTransmissionGgxEnergy
+{
     PrimeRcState state = primeRcBaseState(
+            transmissionGgxEnergy,
             material, wi, inverseOutsideIor, rayT, wavelengthsNm,
             heroWavelengthIndex, detail, spectrumed, false);
-    return primeRcInitializeTransmission(wi, state);
+    return primeRcInitializeTransmission(transmissionGgxEnergy, wi, state);
 }
-
-#endif

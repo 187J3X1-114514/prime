@@ -1,38 +1,38 @@
-#ifndef PRIME_MATERIAL_TRANSLATION_SLANG
-#define PRIME_MATERIAL_TRANSLATION_SLANG
+#language slang 2026
+module "material/material_translation.slang";
 
-#include "material/default_material.slang"
+import "material/default_material.slang";
 import "core/color_space.slang";
 
-struct PrimeOpticalMaterial
+public struct PrimeOpticalMaterial
 {
-    float perceptualRoughness;
-    float dielectricF0;
-    float subsurfaceWeight;
-    uint fresnelCode;
-    uint thinWalled;
+    public float perceptualRoughness;
+    public float dielectricF0;
+    public float subsurfaceWeight;
+    public uint fresnelCode;
+    public uint thinWalled;
 };
 
-static const float PRIME_COMMON_DIELECTRIC_F0_MINIMUM = 0.02;
-static const float PRIME_COMMON_DIELECTRIC_F0_MAXIMUM = 0.17;
+public static const float PRIME_COMMON_DIELECTRIC_F0_MINIMUM = 0.02;
+public static const float PRIME_COMMON_DIELECTRIC_F0_MAXIMUM = 0.17;
 
-bool primeIsStandardConductorCode(uint fresnelCode)
+public bool primeIsStandardConductorCode(uint fresnelCode)
 {
     return fresnelCode >= PRIME_FRESNEL_IRON && fresnelCode <= PRIME_FRESNEL_SILVER;
 }
 
-bool primeIsCustomConductorCode(uint fresnelCode)
+public bool primeIsCustomConductorCode(uint fresnelCode)
 {
     return fresnelCode == PRIME_FRESNEL_CUSTOM_CONDUCTOR;
 }
 
-bool primeIsSupportedConductorCode(uint fresnelCode)
+public bool primeIsSupportedConductorCode(uint fresnelCode)
 {
     return primeIsStandardConductorCode(fresnelCode)
             || primeIsCustomConductorCode(fresnelCode);
 }
 
-PrimeOpticalMaterial primeDecodeOpticalMaterial(
+public PrimeOpticalMaterial primeDecodeOpticalMaterial(
         float roughness,
         uint opticalControl,
         uint materialControl)
@@ -55,12 +55,12 @@ PrimeOpticalMaterial primeDecodeOpticalMaterial(
     return result;
 }
 
-bool primeOpticalMaterialIsMetal(PrimeOpticalMaterial material)
+public bool primeOpticalMaterialIsMetal(PrimeOpticalMaterial material)
 {
     return primeFresnelIsConductor(material.fresnelCode);
 }
 
-bool primeAirGapCompatible(
+public bool primeAirGapCompatible(
         bool enabled,
         uint currentControl,
         uint currentFresnelCode,
@@ -81,7 +81,7 @@ bool primeAirGapCompatible(
             && currentFresnelCode == adjacentFresnelCode;
 }
 
-float3 primeConductorReflectance(float cosineIncident, float3 eta, float3 k)
+public float3 primeConductorReflectance(float cosineIncident, float3 eta, float3 k)
 {
     float cosine = abs(cosineIncident);
     float cosine2 = cosine * cosine;
@@ -110,7 +110,7 @@ float3 primeConductorReflectance(float cosineIncident, float3 eta, float3 k)
     return clamp(0.5 * (rs + rp), float3(0.0), float3(1.0));
 }
 
-bool primeConductorOpticalConstants(uint fresnelCode, out float3 eta, out float3 k)
+public bool primeConductorOpticalConstants(uint fresnelCode, out float3 eta, out float3 k)
 {
     if (fresnelCode == PRIME_FRESNEL_IRON) {
         eta = float3(2.9114, 2.9497, 2.5845);
@@ -144,13 +144,13 @@ bool primeConductorOpticalConstants(uint fresnelCode, out float3 eta, out float3
     return true;
 }
 
-struct PrimeConductorFresnel
+public struct PrimeConductorFresnel
 {
-    float3 f0;
-    float3 f82Tint;
+    public float3 f0;
+    public float3 f82Tint;
 };
 
-PrimeConductorFresnel primeConductorFresnel(float3 baseColor, uint fresnelCode)
+public PrimeConductorFresnel primeConductorFresnel(float3 baseColor, uint fresnelCode)
 {
     PrimeConductorFresnel result;
     float3 sourceTint = clamp(
@@ -177,5 +177,3 @@ PrimeConductorFresnel primeConductorFresnel(float3 baseColor, uint fresnelCode)
     }
     return result;
 }
-
-#endif

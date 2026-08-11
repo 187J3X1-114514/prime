@@ -1,7 +1,7 @@
 #ifndef PRIME_OFFLINE_OUTPUT_SLANG
 #define PRIME_OFFLINE_OUTPUT_SLANG
 
-#include "core/auto_exposure.slang"
+import "core/auto_exposure.slang";
 
 void primeWriteOfflineOutput(
         uint2 pixel,
@@ -9,7 +9,8 @@ void primeWriteOfflineOutput(
         PrimeOfflinePathRecord record) {
     float3 radiance = record.radianceAndPrimaryDistance.xyz;
     float primaryDistance = record.radianceAndPrimaryDistance.w;
-    primeApplyAerialPerspective(pixel, cameraSample, primaryDistance, radiance);
+    radiance = primeApplyAerialPerspective(
+            pixel, cameraSample, primaryDistance, radiance);
     uint materialControl = asuint(
             record.primaryAlbedoAndMaterialFlags.w);
     float confidence = primeAutoExposureMaterialConfidence(

@@ -1,23 +1,28 @@
-#include "prime_offline_abi.slang"
-#if defined(PRIME_ENABLE_SUBGROUP_QUEUE)
-#endif
-#if defined(PRIME_ENABLE_SER)
-#endif
+import "prime_offline_abi.slang";
 
-#include "core/common.slang"
-#include "core/atmosphere_rt.slang"
-#include "core/nrd_common.slang"
-#include "rt/shadow_payload.slang"
+import "core/atmosphere_rt.slang";
+import "core/numerical_diagnostics.slang";
+import "core/nrd_common.slang";
+import "core/render_config.slang";
+import "rt/shadow_payload.slang";
 
-#include "core/sampling.slang"
+import "core/sampling.slang";
 #include "bsdf/adapter/bsdf.slang"
-#include "lighting/lights.slang"
+import "lighting/lights.slang";
 #include "integrator/integrator.slang"
-#include "core/camera.slang"
+import "core/camera.slang";
 #include "offline/offline_bsdf.slang"
 #include "offline/wavefront_state.slang"
 #include "offline/offline_integrator.slang"
 #include "offline/offline_output.slang"
+
+#if defined(PRIME_ENABLE_SUBGROUP_QUEUE)
+typealias PrimeOfflineContinuationAppender =
+        PrimeSubgroupOfflineContinuationAppender;
+#else
+typealias PrimeOfflineContinuationAppender =
+        PrimeScalarOfflineContinuationAppender;
+#endif
 
 struct PrimeOfflineShaderRecord {
     uint control;
@@ -100,8 +105,8 @@ void primeOfflineWavefrontHead(
         primeSetNumericalContext(
                 context.diagnostics, PRIME_NUMERICAL_STAGE_TRACE, 0u);
         SurfaceInteraction surface = primeTraceSurface(
-                context, primePush.cameraPosition, path.rayDirection);
-        continuation = primeIntegrateOfflineSurface(
+                primePush.cameraPosition, path.rayDirection);
+        PrimeOfflineSurfaceStep step = primeIntegrateOfflineSurface(
                 context,
                 path,
                 primeOfflineIntegrator(),
@@ -111,8 +116,9 @@ void primeOfflineWavefrontHead(
                 primaryAlbedo,
                 primaryMaterialFlags,
                 surface,
-                false,
-                request);
+                false);
+        request = step.areaRequest;
+        continuation = step.continuation;
         continuation = continuation && path.bounce < maximumBounces;
     }
     primeOfflinePaths[pathIndex] = primeMakeOfflineRecord(
@@ -124,7 +130,11 @@ void primeOfflineWavefrontHead(
             primaryMaterialFlags,
             request,
             continuation);
-    primeAppendOfflineContinuation(0u, pathIndex, continuation);
+    primeAppendOfflineContinuation(
+            PrimeOfflineContinuationAppender(),
+            0u,
+            pathIndex,
+            continuation);
 }
 
 void primeOfflineWavefrontStep(
@@ -139,7 +149,6 @@ void primeOfflineWavefrontStep(
     primeSetNumericalContext(
             context.diagnostics, PRIME_NUMERICAL_STAGE_TRACE, bounce);
     SurfaceInteraction surface = primeTraceSurface(
-            context,
             traceRecord.traceOriginAndPathControl.xyz,
             traceRecord.rayDirectionAndControl.xyz);
 
@@ -155,8 +164,7 @@ void primeOfflineWavefrontStep(
     float3 primaryAlbedo = record.primaryAlbedoAndMaterialFlags.xyz;
     uint primaryMaterialFlags = asuint(
             record.primaryAlbedoAndMaterialFlags.w);
-    PrimeOfflineAreaRequest request;
-    bool continuation = primeIntegrateOfflineSurface(
+    PrimeOfflineSurfaceStep step = primeIntegrateOfflineSurface(
             context,
             path,
             primeOfflineIntegrator(),
@@ -166,8 +174,9 @@ void primeOfflineWavefrontStep(
             primaryAlbedo,
             primaryMaterialFlags,
             surface,
-            true,
-            request);
+            true);
+    PrimeOfflineAreaRequest request = step.areaRequest;
+    bool continuation = step.continuation;
     continuation = continuation && path.bounce < primeMaximumBounces();
     primeOfflinePaths[pathIndex] = primeMakeOfflineRecord(
             path,
@@ -208,9 +217,10 @@ void primeOfflineWavefrontArea(
                     request.contribution * shadow.transmittance;
         }
     }
-    primeClearOfflineAreaRequest(record);
+    record = primeOfflineWithoutAreaRequest(record);
     primeOfflinePaths[pathIndex] = record;
     primeAppendOfflineContinuation(
+            PrimeOfflineContinuationAppender(),
             sourceQueue ^ 1u,
             pathIndex,
             primeOfflineIsActive(record));
@@ -233,14 +243,13 @@ void primeOfflineWavefrontTail(
     float3 primaryAlbedo = record.primaryAlbedoAndMaterialFlags.xyz;
     uint primaryMaterialFlags = asuint(
             record.primaryAlbedoAndMaterialFlags.w);
-    PrimeOfflineAreaRequest request;
     [loop]
     while (path.bounce < primeMaximumBounces()) {
         primeSetNumericalContext(
                 context.diagnostics, PRIME_NUMERICAL_STAGE_TRACE, path.bounce);
         SurfaceInteraction surface = primeTraceSurfaceWithoutReorder(
-                context, path.traceOrigin, path.rayDirection);
-        if (!primeIntegrateOfflineSurface(
+                path.traceOrigin, path.rayDirection);
+        PrimeOfflineSurfaceStep step = primeIntegrateOfflineSurface(
                 context,
                 path,
                 primeOfflineIntegrator(),
@@ -250,8 +259,8 @@ void primeOfflineWavefrontTail(
                 primaryAlbedo,
                 primaryMaterialFlags,
                 surface,
-                false,
-                request)) {
+                false);
+        if (!step.continuation) {
             break;
         }
     }

@@ -1,16 +1,16 @@
-#ifndef PRIME_QUEUED_PSR_MATH_SLANG
-#define PRIME_QUEUED_PSR_MATH_SLANG
+#language slang 2026
+module "core/queued_psr_math.slang";
 
-static const uint PRIME_QUEUED_PSR_CAPACITY = 8;
+public static const uint PRIME_QUEUED_PSR_CAPACITY = 8;
 static const uint PRIME_QUEUED_PSR_COUNT_MASK = 0x0f;
 static const uint PRIME_QUEUED_PSR_OVERFLOW = 0x10;
 static const uint PRIME_QUEUED_PSR_ODD_REFLECTION = 0x20;
 
-struct PrimeQueuedPsrState
+public struct PrimeQueuedPsrState
 {
-    float4 firstDirectionLength;
-    float4 rotation;
-    uint control;
+    public float4 firstDirectionLength;
+    public float4 rotation;
+    public uint control;
 };
 
 uint primeQueuedPsrControl(PrimeQueuedPsrState state)
@@ -18,17 +18,17 @@ uint primeQueuedPsrControl(PrimeQueuedPsrState state)
     return state.control;
 }
 
-uint primeQueuedPsrCount(PrimeQueuedPsrState state)
+public uint primeQueuedPsrCount(PrimeQueuedPsrState state)
 {
     return primeQueuedPsrControl(state) & PRIME_QUEUED_PSR_COUNT_MASK;
 }
 
-bool primeQueuedPsrOverflowed(PrimeQueuedPsrState state)
+public bool primeQueuedPsrOverflowed(PrimeQueuedPsrState state)
 {
     return (primeQueuedPsrControl(state) & PRIME_QUEUED_PSR_OVERFLOW) != 0;
 }
 
-PrimeQueuedPsrState primeEmptyQueuedPsrState()
+public PrimeQueuedPsrState primeEmptyQueuedPsrState()
 {
     PrimeQueuedPsrState state;
     state.firstDirectionLength = float4(0.0);
@@ -54,43 +54,45 @@ float3 primeQueuedPsrQuaternionRotate(float4 quaternion, float3 direction)
             + cross(quaternion.xyz, twiceCross);
 }
 
-void primeAppendQueuedPsrState(
-        inout PrimeQueuedPsrState state,
+public PrimeQueuedPsrState primeAppendQueuedPsrState(
+        PrimeQueuedPsrState state,
         float3 cameraPosition,
         float3 previousPosition,
         float3 position,
         float3 normal,
         bool reflection)
 {
-    uint control = primeQueuedPsrControl(state);
+    PrimeQueuedPsrState result = state;
+    uint control = primeQueuedPsrControl(result);
     uint count = control & PRIME_QUEUED_PSR_COUNT_MASK;
     if (count == PRIME_QUEUED_PSR_CAPACITY) {
-        state.control = control | PRIME_QUEUED_PSR_OVERFLOW;
-        return;
+        result.control = control | PRIME_QUEUED_PSR_OVERFLOW;
+        return result;
     }
     if (count == 0) {
         float3 firstSegment = position - cameraPosition;
         float firstLength = length(firstSegment);
-        state.firstDirectionLength = float4(
+        result.firstDirectionLength = float4(
                 firstLength > 0.0 ? firstSegment / firstLength : float3(0.0),
                 firstLength);
     } else {
-        state.firstDirectionLength.w += length(position - previousPosition);
+        result.firstDirectionLength.w += length(position - previousPosition);
     }
     if (reflection) {
         float4 halfTurn = float4(normal, 0.0);
-        float4 rotation = primeQueuedPsrQuaternionMultiply(state.rotation, halfTurn);
+        float4 rotation = primeQueuedPsrQuaternionMultiply(result.rotation, halfTurn);
         float lengthSquared = dot(rotation, rotation);
-        state.rotation = lengthSquared > 0.0
+        result.rotation = lengthSquared > 0.0
                 ? rotation * rsqrt(lengthSquared)
                 : float4(0.0, 0.0, 0.0, 1.0);
         control ^= PRIME_QUEUED_PSR_ODD_REFLECTION;
     }
     control = (control & ~PRIME_QUEUED_PSR_COUNT_MASK) | (count + 1);
-    state.control = control;
+    result.control = control;
+    return result;
 }
 
-float3 primeQueuedPsrVirtualDirection(PrimeQueuedPsrState state, float3 direction)
+public float3 primeQueuedPsrVirtualDirection(PrimeQueuedPsrState state, float3 direction)
 {
     float3 transformed = primeQueuedPsrQuaternionRotate(state.rotation, direction);
     return (primeQueuedPsrControl(state) & PRIME_QUEUED_PSR_ODD_REFLECTION) != 0
@@ -98,7 +100,7 @@ float3 primeQueuedPsrVirtualDirection(PrimeQueuedPsrState state, float3 directio
             : transformed;
 }
 
-bool primeBuildQueuedPsrGuideValue(
+public bool primeBuildQueuedPsrGuideValue(
         PrimeQueuedPsrState state,
         float3 lastPosition,
         float3 target,
@@ -125,7 +127,7 @@ bool primeQueuedPsrFinite(float value)
     return !isnan(value) && !isinf(value);
 }
 
-float primeQueuedPsrAnchorDistanceValue(
+public float primeQueuedPsrAnchorDistanceValue(
         PrimeQueuedPsrState state,
         float3 cameraPosition,
         float3 target,
@@ -145,5 +147,3 @@ float primeQueuedPsrAnchorDistanceValue(
     float distance = dot(target - cameraPosition, targetNormal) / denominator;
     return primeQueuedPsrFinite(distance) && distance > 0.0 ? distance : -1.0;
 }
-
-#endif

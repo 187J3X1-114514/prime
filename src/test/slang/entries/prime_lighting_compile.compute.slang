@@ -1,4 +1,6 @@
-#include "lighting/lights.slang"
+import "lighting/lights.slang";
+import "prime_abi.slang";
+import "prime_abi_types.slang";
 
 [[vk::binding(0, 3)]] RWStructuredBuffer<float4> primeLightingProbe;
 

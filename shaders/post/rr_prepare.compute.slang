@@ -1,9 +1,9 @@
-#include "core/image_access.slang"
+import "core/image_access.slang";
 
-#include "core/atmosphere.slang"
-#include "core/atmosphere_epipolar.slang"
-#include "material/default_material.slang"
-#include "core/nrd_common.slang"
+import "core/atmosphere.slang";
+import "core/atmosphere_epipolar.slang";
+import "material/default_material.slang";
+import "core/nrd_common.slang";
 
 [[vk::binding(0, 0)]] [[vk::image_format("rgba16f")]] readonly RWTexture2D<float4> rrNoisyDiffuse;
 [[vk::binding(1, 0)]] [[vk::image_format("rgba16f")]] readonly RWTexture2D<float4> rrNoisySpecular;
@@ -36,8 +36,6 @@ struct PrimeRrPreparePushConstants {
 static const float PRIME_RR_SKY_VIEW_Z = 65504.0;
 static const float PRIME_RR_SPECULAR_MOTION_ROUGHNESS = 0.25;
 
-ATM_DECLARE_SAMPLE_EPIPOLAR(rrSampleAerialRadiance, rrAerialRadiance)
-ATM_DECLARE_SAMPLE_3D(rrSampleAerialTransmittance, rrAerialTransmittance)
 // The viewport corner angles are identical for every lane in this 8x8 workgroup.
 groupshared AtmEpipolarRange rrEpipolarRange;
 
@@ -75,9 +73,10 @@ float2 rrMotionVector(float2 currentSampleUv, float3 position, bool sky) {
             sky);
 }
 
-void rrApplyAerial(int2 pixel, int2 extent, float primaryDistance, inout float3 radiance) {
+float3 rrApplyAerial(
+        int2 pixel, int2 extent, float primaryDistance, float3 radiance) {
     if (!primeNrdIsFinite(primaryDistance) || primaryDistance < 0.0) {
-        return;
+        return radiance;
     }
     float distanceKm = primaryDistance * ATM_WORLD_UNIT_SCALE_KM;
     int3 dimensions = primeReadonlyImageSize(rrAerialRadiance);
@@ -90,21 +89,24 @@ void rrApplyAerial(int2 pixel, int2 extent, float primaryDistance, inout float3 
             + rrPush.currentJitterPixels) / float2(extent);
     float3 uvw = float3(screenUv, normalizedDepth);
     float3 inscatter = max(
-            rrSampleAerialRadianceWithRange(
+            atmSampleEpipolarWithRange(
+                    rrAerialRadiance,
                     screenUv,
                     normalizedDepth,
                     rrPush.epipoleNdc,
                     rrEpipolarRange).rgb,
             float3(0.0));
     float3 transmittance = clamp(
-            rrSampleAerialTransmittance(uvw).rgb, float3(0.0), float3(1.0));
+            atmSample3D(rrAerialTransmittance, uvw).rgb,
+            float3(0.0),
+            float3(1.0));
     if (any(isnan(inscatter)) || any(isinf(inscatter))) {
         inscatter = float3(0.0);
     }
     if (any(isnan(transmittance)) || any(isinf(transmittance))) {
         transmittance = float3(1.0);
     }
-    radiance = radiance * lerp(float3(1.0), transmittance, nearWeight)
+    return radiance * lerp(float3(1.0), transmittance, nearWeight)
             + inscatter * nearWeight * rrPush.sunRadianceMultiplier;
 }
 
@@ -169,7 +171,7 @@ void main(uint3 dispatchThreadId : SV_DispatchThreadID, uint groupIndex : SV_Gro
             + primeReadonlyImageLoad(rrStableRadiance, pixel).rgb;
     // Finish and store color before matrix reconstruction so lighting vectors are no longer live
     // while primary and virtual-reflection motion are projected.
-    rrApplyAerial(pixel, extent, material.a, inputRadiance);
+    inputRadiance = rrApplyAerial(pixel, extent, material.a, inputRadiance);
     primeWriteImageStore(rrInputColor, pixel, float4(
             primeNrdClampRadiance(inputRadiance, PRIME_NRD_FP16_MAX), 1.0));
 

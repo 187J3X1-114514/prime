@@ -20,8 +20,11 @@
 #define RW_STRUCTURED_BUFFER(name, type) type* name
 #define BUFFER_AT_OFFSET(name, offset) name[offset]
 
-#include "core/sampling.slang"
-#include "prime_sharc_abi.slang"
+import "core/sampling.slang";
+import "prime_abi_types.slang";
+import "prime_sharc_abi.slang";
+import "material/default_material.slang";
+import "material/material_translation.slang";
 // SHaRC has rejected-query exits that intentionally leave HLSL `out` radiance undefined because
 // callers consume it only on success. Slang validates every `out` exit. Treating vendored outputs
 // as `inout` preserves that conditional contract and leaves the hash-locked header byte-identical.

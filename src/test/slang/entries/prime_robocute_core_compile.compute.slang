@@ -1,5 +1,3 @@
-#define PRIME_RC_TRANSMISSION_GGX_SET 7
-#define PRIME_RC_TRANSMISSION_GGX_BINDING 0
 void primeRecordNonnegative(float value) {}
 void primeRecordNonnegative(float3 value) {}
 void primeRecordUnit(float value) {}

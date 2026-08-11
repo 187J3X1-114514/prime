@@ -1,26 +1,30 @@
-#ifndef PRIME_HIT_COMMON_SLANG
-#define PRIME_HIT_COMMON_SLANG
+#language slang 2026
+module "rt/hit_common.slang";
 
-#include "core/common.slang"
-#include "material/medium_boundary.slang"
-#include "material/material.slang"
+import glsl;
+import "prime_abi.slang";
+import "prime_abi_types.slang";
+import "core/packed_geometry.slang";
+import "material/default_material.slang";
+import "material/medium_boundary.slang";
+import "material/material.slang";
 
 
-struct PrimeSurfaceRelation {
-    uint control;
-    uint referenceUv;
-    uint tint;
-    PrimitiveRecord material;
+public struct PrimeSurfaceRelation {
+    public uint control;
+    public uint referenceUv;
+    public uint tint;
+    public PrimitiveRecord material;
 };
 
-static const uint PRIME_SURFACE_RELATION_KIND_MASK = 0xfu;
-static const uint PRIME_SURFACE_RELATION_BOUNDARY = 1u;
+public static const uint PRIME_SURFACE_RELATION_KIND_MASK = 0xfu;
+public static const uint PRIME_SURFACE_RELATION_BOUNDARY = 1u;
 static const uint PRIME_SURFACE_RELATION_OVERLAY = 2u;
 static const uint PRIME_SURFACE_RELATION_BILATERAL = 3u;
-static const uint PRIME_SURFACE_RELATION_MICRO_GAP_ELIGIBLE = 1u << 4u;
+public static const uint PRIME_SURFACE_RELATION_MICRO_GAP_ELIGIBLE = 1u << 4u;
 static const uint PRIME_SURFACE_RELATION_POSITIVE_ONLY = 1u << 4u;
 
-SectionRecord primeSection() {
+public SectionRecord primeSection() {
     return ((SectionRecord*)primePush.sectionTableAddress)[InstanceID()];
 }
 
@@ -38,7 +42,7 @@ uint primeLocalPrimitiveIndex(SectionRecord section) {
             : macroBase + ((PrimitiveIndex() - macroBase) >> 1u);
 }
 
-PrimitiveRecord primePrimitive(SectionRecord section) {
+public PrimitiveRecord primePrimitive(SectionRecord section) {
     uint base = GeometryIndex() == 0
             ? 0u
             : (GeometryIndex() == 1 ? section.cutoutBase : section.transmissiveBase);
@@ -62,7 +66,7 @@ uint primeGlobalPrimitiveIndex(SectionRecord section) {
     return base + primeLocalPrimitiveIndex(section);
 }
 
-PrimeSurfaceRelation primeSurfaceRelation(SectionRecord section) {
+public PrimeSurfaceRelation primeSurfaceRelation(SectionRecord section) {
     PrimeSurfaceRelation result;
     result.control = 0u;
     result.referenceUv = 0u;
@@ -112,10 +116,10 @@ PrimitiveRecord primePrimitiveWithMaterialRecipe(
     return primitive;
 }
 
-float2 primeInterpolateUv(
+public float2 primeInterpolateUv(
         SectionRecord section, PrimitiveRecord primitive, float2 barycentrics);
 
-PrimitiveRecord primeResolveSurfacePrimitive(
+public PrimitiveRecord primeResolveSurfacePrimitive(
         SectionRecord section,
         PrimitiveRecord primary,
         PrimeSurfaceRelation relation,
@@ -141,11 +145,11 @@ PrimitiveRecord primeResolveSurfacePrimitive(
             : relation.material;
 }
 
-PrimitiveRecord primePrimitive() {
+public PrimitiveRecord primePrimitive() {
     return primePrimitive(primeSection());
 }
 
-float3 primePreviousDynamicPosition(SectionRecord section, float2 barycentrics) {
+public float3 primePreviousDynamicPosition(SectionRecord section, float2 barycentrics) {
     float* positions = (float*)section.lightAddress;
     uint vertexBase = PrimitiveIndex() * 9u;
     float3 barycentric = float3(
@@ -179,7 +183,7 @@ bool primeUsesConstantFloatUv(PrimitiveRecord primitive) {
     return primitive.uvDensity == PRIME_CONSTANT_UV_DENSITY;
 }
 
-float2 primeInterpolateUv(
+public float2 primeInterpolateUv(
         SectionRecord section, PrimitiveRecord primitive, float2 barycentrics) {
     if (primeUsesConstantFloatUv(primitive)) {
         return float2(asfloat(primitive.uv0), asfloat(primitive.uv1));
@@ -208,7 +212,7 @@ float2 primeInterpolateUv(
             + primeUnpackUv(primitive.uv2) * barycentric.z;
 }
 
-float primeRayConeTextureLod(PrimitiveRecord primitive, float3 geometricNormal) {
+public float primeRayConeTextureLod(PrimitiveRecord primitive, float3 geometricNormal) {
     float2 rayCone = unpackHalf2x16ToFloat(primePush.rayCone);
     float normalizedUvDensity;
     if (primeUsesRasterComposite(primitive)) {
@@ -255,5 +259,3 @@ float primeRayConeTextureLod(PrimitiveRecord primitive, float3 geometricNormal) 
     float lod = log2(max(texelFootprint, 1.0e-8)) + rayCone.y;
     return clamp(lod, 0.0, float(mipLevels - 1));
 }
-
-#endif

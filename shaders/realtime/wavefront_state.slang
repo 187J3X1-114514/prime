@@ -1,7 +1,7 @@
 #ifndef PRIME_WAVEFRONT_STATE_SLANG
 #define PRIME_WAVEFRONT_STATE_SLANG
 
-#include "realtime/wavefront_medium.slang"
+import "realtime/wavefront_medium.slang";
 
 // Two signal slots belong to each quality-mode pixel so transparent reflection and transmission
 // keep independent reconstruction histories. Only the checkerboard-selected slot can enqueue
@@ -224,46 +224,63 @@ void primeAppendWavefrontPath(uint queue, uint pathIndex) {
     }
 }
 
-// Must be called by every invocation in the subgroup from uniform control flow. The elected lane
-// reserves one contiguous range, reducing global atomics and preserving subgroup locality.
-void primeAppendWavefrontContinuation(
+interface IPrimeWavefrontContinuationAppender {
+    void append(uint queue, uint pathIndex, bool continuation);
+}
+
+struct PrimeScalarWavefrontContinuationAppender
+        : IPrimeWavefrontContinuationAppender {
+    void append(uint queue, uint pathIndex, bool continuation) {
+        if (continuation) {
+            primeAppendWavefrontPath(queue, pathIndex);
+        }
+    }
+};
+
+struct PrimeSubgroupWavefrontContinuationAppender
+        : IPrimeWavefrontContinuationAppender {
+    // Every invocation must call this from uniform control flow. The elected lane reserves one
+    // contiguous range, reducing global atomics and preserving subgroup locality.
+    void append(uint queue, uint pathIndex, bool continuation) {
+        uint4 activeMask = WaveActiveBallot(continuation);
+        uint activeCount = countbits(activeMask.x) + countbits(activeMask.y)
+                + countbits(activeMask.z) + countbits(activeMask.w);
+        uint firstEntry = 0u;
+        if (WaveIsFirstLane() && activeCount != 0u) {
+            InterlockedAdd(
+                    primeWavefrontQueue[primeWavefrontQueueCommandWord(queue)],
+                    activeCount,
+                    firstEntry);
+        }
+        firstEntry = WaveReadLaneFirst(firstEntry);
+        uint capacity = primeWavefrontQueueCapacity();
+        bool overflow = activeCount > capacity
+                || firstEntry > capacity - min(activeCount, capacity);
+        if (WaveIsFirstLane() && overflow) {
+            uint commandWord = primeWavefrontQueueCommandWord(queue);
+            uint ignored;
+            InterlockedMin(primeWavefrontQueue[commandWord], capacity, ignored);
+            InterlockedOr(primeWavefrontQueue[commandWord + 3u], 1u, ignored);
+        }
+        if (!continuation) {
+            return;
+        }
+
+        uint entry = firstEntry + WavePrefixCountBits(continuation);
+        if (entry < capacity) {
+            primeWavefrontQueue[primeWavefrontQueueWord(queue, entry)] = pathIndex;
+        }
+    }
+};
+
+void primeAppendWavefrontContinuation<Appender>(
+        Appender appender,
         uint queue,
         uint pathIndex,
-        bool continuation) {
-#if defined(PRIME_ENABLE_SUBGROUP_QUEUE)
-    uint4 activeMask = WaveActiveBallot(continuation);
-    uint activeCount = countbits(activeMask.x) + countbits(activeMask.y)
-            + countbits(activeMask.z) + countbits(activeMask.w);
-    uint firstEntry = 0u;
-    if (WaveIsFirstLane() && activeCount != 0u) {
-        InterlockedAdd(
-                primeWavefrontQueue[primeWavefrontQueueCommandWord(queue)],
-                activeCount,
-                firstEntry);
-    }
-    firstEntry = WaveReadLaneFirst(firstEntry);
-    uint capacity = primeWavefrontQueueCapacity();
-    bool overflow = activeCount > capacity
-            || firstEntry > capacity - min(activeCount, capacity);
-    if (WaveIsFirstLane() && overflow) {
-        uint commandWord = primeWavefrontQueueCommandWord(queue);
-        uint ignored;
-        InterlockedMin(primeWavefrontQueue[commandWord], capacity, ignored);
-        InterlockedOr(primeWavefrontQueue[commandWord + 3u], 1u, ignored);
-    }
-    if (!continuation) {
-        return;
-    }
-
-    uint entry = firstEntry + WavePrefixCountBits(continuation);
-    if (entry < capacity) {
-        primeWavefrontQueue[primeWavefrontQueueWord(queue, entry)] = pathIndex;
-    }
-#else
-    if (continuation) {
-        primeAppendWavefrontPath(queue, pathIndex);
-    }
-#endif
+        bool continuation)
+    where Appender : IPrimeWavefrontContinuationAppender
+{
+    appender.append(queue, pathIndex, continuation);
 }
 
 uint3 primePackWavefrontPair(float3 first, float3 second) {
@@ -346,8 +363,8 @@ bool primeWavefrontActive(PrimeWavefrontTransportRecord record) {
     return (denoiserControl & PRIME_WAVEFRONT_ACTIVE_MASK) != 0u;
 }
 
-void primeSetWavefrontActive(
-        inout PrimeWavefrontTransportRecord record, bool enabled) {
+PrimeWavefrontTransportRecord primeWavefrontWithActive(
+        PrimeWavefrontTransportRecord record, bool enabled) {
     uint denoiserControl =
             asuint(record.rayDirectionAndDenoiserControl.w);
     if (enabled) {
@@ -356,10 +373,11 @@ void primeSetWavefrontActive(
         denoiserControl &= ~PRIME_WAVEFRONT_ACTIVE_MASK;
     }
     record.rayDirectionAndDenoiserControl.w = asfloat(denoiserControl);
+    return record;
 }
 
-void primeSetWavefrontQueuedPsrControl(
-        inout PrimeWavefrontTransportRecord record,
+PrimeWavefrontTransportRecord primeWavefrontWithQueuedPsrControl(
+        PrimeWavefrontTransportRecord record,
         uint control) {
     uint pathControl = asuint(record.traceOriginAndPathControl.w);
     pathControl &= ~(PRIME_WAVEFRONT_PSR_CONTROL_MASK
@@ -367,6 +385,7 @@ void primeSetWavefrontQueuedPsrControl(
     pathControl |= (control & PRIME_WAVEFRONT_PSR_CONTROL_MASK)
             << PRIME_WAVEFRONT_PSR_CONTROL_SHIFT;
     record.traceOriginAndPathControl.w = asfloat(pathControl);
+    return record;
 }
 
 uint4 primePackWavefrontPsrState(PrimeQueuedPsrState state) {
@@ -381,11 +400,13 @@ uint4 primePackWavefrontPsrState(PrimeQueuedPsrState state) {
             packSnorm2x16(clamp(state.rotation.zw, float2(-1.0), float2(1.0))));
 }
 
-void primeSetWavefrontQueuedPsrState(
-        inout PrimeWavefrontPathRecord record,
+PrimeWavefrontPathRecord primeWavefrontWithQueuedPsrState(
+        PrimeWavefrontPathRecord record,
         PrimeQueuedPsrState state) {
-    primeSetWavefrontQueuedPsrControl(record.transport, state.control);
+    record.transport = primeWavefrontWithQueuedPsrControl(
+            record.transport, state.control);
     record.psrPacked = primePackWavefrontPsrState(state);
+    return record;
 }
 
 uint primeLoadWavefrontPreviousLightNormal(uint pathIndex) {
@@ -394,11 +415,12 @@ uint primeLoadWavefrontPreviousLightNormal(uint pathIndex) {
             & PRIME_WAVEFRONT_LIGHT_NORMAL_MASK;
 }
 
-void primeSetWavefrontPreviousLightNormal(
-        inout PrimeWavefrontPathRecord record, uint packedNormal) {
+PrimeWavefrontPathRecord primeWavefrontWithPreviousLightNormal(
+        PrimeWavefrontPathRecord record, uint packedNormal) {
     record.psrPacked.w = (record.psrPacked.w & PRIME_WAVEFRONT_LIGHT_NORMAL_MASK)
             | ((packedNormal & PRIME_WAVEFRONT_LIGHT_NORMAL_MASK)
                     << PRIME_WAVEFRONT_LIGHT_NORMAL_SHIFT);
+    return record;
 }
 
 void primeStoreWavefrontPreviousLightNormal(
@@ -438,7 +460,6 @@ void primeStoreWavefrontPsrState(
             primePackWavefrontPsrState(state);
 }
 
-#if defined(PRIME_DEFER_SECONDARY_AREA_NEE)
 void primeAccumulateDeferredAreaLight(
         inout PrimeIntegratorContext context,
         uint2 pixel,
@@ -482,7 +503,6 @@ void primeAccumulateDeferredAreaLight(
         primeImageStore(primeStableRadiance, coordinate, current);
     }
 }
-#endif
 
 void primeStoreWavefrontDiagnostic(
         uint pathIndex, PrimeNumericalDiagnostics diagnostics) {
@@ -551,8 +571,10 @@ PrimeWavefrontPathRecord primeMakeWavefrontRecord(
             denoiserState,
             primaryMaterialFlags,
             enabled);
-    primeSetWavefrontQueuedPsrState(record, primeEmptyQueuedPsrState());
-    primeSetWavefrontPreviousLightNormal(record, path.previousLightNormal);
+    record = primeWavefrontWithQueuedPsrState(
+            record, primeEmptyQueuedPsrState());
+    record = primeWavefrontWithPreviousLightNormal(
+            record, path.previousLightNormal);
     return record;
 }
 
@@ -660,7 +682,7 @@ PrimeWavefrontTransportRecord primeMakeUpdatedWavefrontRecord(
             asuint(record.rayDirectionAndDenoiserControl.w)
                     | persistedControl;
     record.rayDirectionAndDenoiserControl.w = asfloat(denoiserControl);
-    primeSetWavefrontQueuedPsrControl(record, psrControl);
+    record = primeWavefrontWithQueuedPsrControl(record, psrControl);
     return record;
 }
 
@@ -720,7 +742,7 @@ PrimeWavefrontPathRecord primeMakeTransparentWavefrontRecord(
         control |= PRIME_WAVEFRONT_DIRECTIONAL_GUIDE;
     }
     record.transport.rayDirectionAndDenoiserControl.w = asfloat(control);
-    primeSetWavefrontQueuedPsrState(record, psrState);
+    record = primeWavefrontWithQueuedPsrState(record, psrState);
     return record;
 }
 

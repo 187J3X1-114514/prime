@@ -1,5 +1,6 @@
 #include "core/prime_test_abi.slang"
-#include "core/celestial.slang"
+import "core/celestial.slang";
+import "prime_abi_types.slang";
 
 static const float PRIME_PI = 3.14159265358979323846;
 static const uint PRIME_CELESTIAL_INPUT_WORDS = 2;

@@ -1,17 +1,19 @@
-#ifndef PRIME_ATMOSPHERE_PHASE_SLANG
-#define PRIME_ATMOSPHERE_PHASE_SLANG
+#language slang 2026
+module "core/atmosphere_phase.slang";
+
+import "core/atmosphere.slang";
 
 [[vk::binding(7, 0)]] StructuredBuffer<float4> primeAtmospherePhaseLut;
 
-static const int ATM_PHASE_BIN_COUNT = 1024;
-static const int ATM_PHASE_SPECIES_COUNT = 4;
+public static const int ATM_PHASE_BIN_COUNT = 1024;
+public static const int ATM_PHASE_SPECIES_COUNT = 4;
 
 // The baked table stores samples at bin centres for
 // mu = 1 - 2 * ((bin + 0.5) / 1024)^3. Hillaire's phase cosine uses the
 // opposite direction convention, hence (1 + phaseCosine) below. The -0.5
 // restores the bin-centre convention; linear interpolation is essential near
 // the sharply varying forward lobe around the sun.
-float4 atmAerosolPhaseValue(int group, int species, float phaseCosine) {
+public float4 atmAerosolPhaseValue(int group, int species, float phaseCosine) {
     float coordinate = pow(
             clamp(0.5 + 0.5 * phaseCosine, 0.0, 1.0),
             1.0 / 3.0);
@@ -27,7 +29,7 @@ float4 atmAerosolPhaseValue(int group, int species, float phaseCosine) {
     return lerp(lower, upper, fraction);
 }
 
-float4 atmAerosolPhaseScattering(
+public float4 atmAerosolPhaseScattering(
         int group,
         float altitudeKm,
         float phaseCosine) {
@@ -39,5 +41,3 @@ float4 atmAerosolPhaseScattering(
     }
     return result;
 }
-
-#endif

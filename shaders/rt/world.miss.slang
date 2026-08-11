@@ -1,6 +1,5 @@
 import glsl;
-
-#include "core/common.slang"
+import "prime_abi_types.slang";
 
 layout(location = 0) rayPayloadInEXT TracePayload primePayload;
 

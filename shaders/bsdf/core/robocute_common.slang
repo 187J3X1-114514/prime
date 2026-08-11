@@ -1,299 +1,299 @@
-#ifndef PRIME_ROBOCUTE_COMMON_SLANG
-#define PRIME_ROBOCUTE_COMMON_SLANG
+#language slang 2026
+module "bsdf/core/robocute_common.slang";
 
 // Mechanical Slang port of the production-reachable declaration closure from
 // robocute_bsdf_common.glsl at RoboCute commit 0d982c77b3fd26c2c5a3c0852be3bd05e5860bd8.
 
-static const float PRIME_RC_PI = 3.14159265358979323846;
+public static const float PRIME_RC_PI = 3.14159265358979323846;
 
-static const float PRIME_RC_INV_PI = 0.31830988618379067154;
+public static const float PRIME_RC_INV_PI = 0.31830988618379067154;
 
-static const float PRIME_RC_DENOM_TOLERANCE = 1.0e-10;
+public static const float PRIME_RC_DENOM_TOLERANCE = 1.0e-10;
 
-static const uint PRIME_RC_FLAG_NONE = 0u;
+public static const uint PRIME_RC_FLAG_NONE = 0u;
 
-static const uint PRIME_RC_FLAG_DIFFUSE_REFLECTION = 1u << 0u;
+public static const uint PRIME_RC_FLAG_DIFFUSE_REFLECTION = 1u << 0u;
 
-static const uint PRIME_RC_FLAG_DIFFUSE_TRANSMISSION = 1u << 1u;
+public static const uint PRIME_RC_FLAG_DIFFUSE_TRANSMISSION = 1u << 1u;
 
-static const uint PRIME_RC_FLAG_SPECULAR_REFLECTION = 1u << 2u;
+public static const uint PRIME_RC_FLAG_SPECULAR_REFLECTION = 1u << 2u;
 
-static const uint PRIME_RC_FLAG_SPECULAR_TRANSMISSION = 1u << 3u;
+public static const uint PRIME_RC_FLAG_SPECULAR_TRANSMISSION = 1u << 3u;
 
-static const uint PRIME_RC_FLAG_DELTA_REFLECTION = 1u << 4u;
+public static const uint PRIME_RC_FLAG_DELTA_REFLECTION = 1u << 4u;
 
-static const uint PRIME_RC_FLAG_DELTA_TRANSMISSION = 1u << 5u;
+public static const uint PRIME_RC_FLAG_DELTA_TRANSMISSION = 1u << 5u;
 
-static const uint PRIME_RC_FLAG_DIFFUSE =
+public static const uint PRIME_RC_FLAG_DIFFUSE =
         PRIME_RC_FLAG_DIFFUSE_REFLECTION | PRIME_RC_FLAG_DIFFUSE_TRANSMISSION;
 
-static const uint PRIME_RC_FLAG_SPECULAR =
+public static const uint PRIME_RC_FLAG_SPECULAR =
         PRIME_RC_FLAG_SPECULAR_REFLECTION | PRIME_RC_FLAG_SPECULAR_TRANSMISSION;
 
-static const uint PRIME_RC_FLAG_DELTA =
+public static const uint PRIME_RC_FLAG_DELTA =
         PRIME_RC_FLAG_DELTA_REFLECTION | PRIME_RC_FLAG_DELTA_TRANSMISSION;
 
-static const uint PRIME_RC_FLAG_REFLECTION = PRIME_RC_FLAG_DIFFUSE_REFLECTION
+public static const uint PRIME_RC_FLAG_REFLECTION = PRIME_RC_FLAG_DIFFUSE_REFLECTION
         | PRIME_RC_FLAG_SPECULAR_REFLECTION | PRIME_RC_FLAG_DELTA_REFLECTION;
 
-static const uint PRIME_RC_FLAG_TRANSMISSION = PRIME_RC_FLAG_DIFFUSE_TRANSMISSION
+public static const uint PRIME_RC_FLAG_TRANSMISSION = PRIME_RC_FLAG_DIFFUSE_TRANSMISSION
         | PRIME_RC_FLAG_SPECULAR_TRANSMISSION | PRIME_RC_FLAG_DELTA_TRANSMISSION;
 
-static const uint PRIME_RC_FLAG_ALL = PRIME_RC_FLAG_REFLECTION | PRIME_RC_FLAG_TRANSMISSION;
+public static const uint PRIME_RC_FLAG_ALL = PRIME_RC_FLAG_REFLECTION | PRIME_RC_FLAG_TRANSMISSION;
 
-static const uint PRIME_RC_DETAIL_DEFAULT = 0u;
+public static const uint PRIME_RC_DETAIL_DEFAULT = 0u;
 
-static const uint PRIME_RC_DETAIL_INDIRECT_DIFFUSE = 2u;
+public static const uint PRIME_RC_DETAIL_INDIRECT_DIFFUSE = 2u;
 
-static const uint PRIME_RC_DIFFRACTION_RECTANGULAR = 1u;
+public static const uint PRIME_RC_DIFFRACTION_RECTANGULAR = 1u;
 
-static const uint PRIME_RC_MAX_VOLUME_STACK_SIZE = 2u;
+public static const uint PRIME_RC_MAX_VOLUME_STACK_SIZE = 2u;
 
-struct PrimeRcOnb {
-    float3 tangent;
-    float3 bitangent;
-    float3 normal;
+public struct PrimeRcOnb {
+    public float3 tangent;
+    public float3 bitangent;
+    public float3 normal;
 };
 
-struct PrimeRcWeight {
-    float base;
-    float diffuseRoughness;
-    float specular;
-    float metalness;
-    float subsurface;
-    float transmission;
-    float coat;
-    float fuzz;
-    float thinFilm;
-    float diffraction;
+public struct PrimeRcWeight {
+    public float base;
+    public float diffuseRoughness;
+    public float specular;
+    public float metalness;
+    public float subsurface;
+    public float transmission;
+    public float coat;
+    public float fuzz;
+    public float thinFilm;
+    public float diffraction;
 };
 
-struct PrimeRcGeometry {
-    uint thinWalled;
-    float thickness;
-    PrimeRcOnb onb;
+public struct PrimeRcGeometry {
+    public uint thinWalled;
+    public float thickness;
+    public PrimeRcOnb onb;
 };
 
-struct PrimeRcSpecular {
-    float3 color;
-    float roughness;
-    float roughnessAnisotropy;
-    float ior;
+public struct PrimeRcSpecular {
+    public float3 color;
+    public float roughness;
+    public float roughnessAnisotropy;
+    public float ior;
 };
 
-struct PrimeRcEmission { float3 luminance; };
+public struct PrimeRcEmission { public float3 luminance; };
 
-struct PrimeRcBase { float3 color; };
+public struct PrimeRcBase { public float3 color; };
 
-struct PrimeRcSubsurface {
-    float3 color;
-    float3 radius;
-    float scatterAnisotropy;
+public struct PrimeRcSubsurface {
+    public float3 color;
+    public float3 radius;
+    public float scatterAnisotropy;
 };
 
-struct PrimeRcTransmission {
-    float3 color;
-    float depth;
-    float3 scatter;
-    float scatterAnisotropy;
-    float dispersionScale;
-    float dispersionAbbeNumber;
+public struct PrimeRcTransmission {
+    public float3 color;
+    public float depth;
+    public float3 scatter;
+    public float scatterAnisotropy;
+    public float dispersionScale;
+    public float dispersionAbbeNumber;
 };
 
-struct PrimeRcCoat {
-    float3 color;
-    float roughness;
-    float roughnessAnisotropy;
-    float ior;
-    float darkening;
-    float roughening;
-    PrimeRcOnb onb;
+public struct PrimeRcCoat {
+    public float3 color;
+    public float roughness;
+    public float roughnessAnisotropy;
+    public float ior;
+    public float darkening;
+    public float roughening;
+    public PrimeRcOnb onb;
 };
 
-struct PrimeRcFuzz {
-    float3 color;
-    float roughness;
+public struct PrimeRcFuzz {
+    public float3 color;
+    public float roughness;
 };
 
-struct PrimeRcThinFilm {
-    float thickness;
-    float ior;
+public struct PrimeRcThinFilm {
+    public float thickness;
+    public float ior;
 };
 
-struct PrimeRcDiffraction {
-    float3 color;
-    float thickness;
-    float2 invPitch;
-    float angle;
-    uint lobeCount;
-    uint kind;
+public struct PrimeRcDiffraction {
+    public float3 color;
+    public float thickness;
+    public float2 invPitch;
+    public float angle;
+    public uint lobeCount;
+    public uint kind;
 };
 
-struct PrimeRcMaterial {
-    PrimeRcWeight weight;
-    PrimeRcGeometry geometry;
-    PrimeRcSpecular specular;
-    PrimeRcEmission emission;
-    PrimeRcBase base;
-    PrimeRcSubsurface subsurface;
-    PrimeRcTransmission transmission;
-    PrimeRcCoat coat;
-    PrimeRcFuzz fuzz;
-    PrimeRcThinFilm thinFilm;
-    PrimeRcDiffraction diffraction;
+public struct PrimeRcMaterial {
+    public PrimeRcWeight weight;
+    public PrimeRcGeometry geometry;
+    public PrimeRcSpecular specular;
+    public PrimeRcEmission emission;
+    public PrimeRcBase base;
+    public PrimeRcSubsurface subsurface;
+    public PrimeRcTransmission transmission;
+    public PrimeRcCoat coat;
+    public PrimeRcFuzz fuzz;
+    public PrimeRcThinFilm thinFilm;
+    public PrimeRcDiffraction diffraction;
 };
 
-struct PrimeRcThroughput {
-    float3 value;
-    uint flags;
+public struct PrimeRcThroughput {
+    public float3 value;
+    public uint flags;
 };
 
-struct PrimeRcSample {
-    PrimeRcThroughput throughput;
-    float pdf;
-    float eta;
-    float3 wo;
+public struct PrimeRcSample {
+    public PrimeRcThroughput throughput;
+    public float pdf;
+    public float eta;
+    public float3 wo;
 };
 
-struct PrimeRcEval {
-    PrimeRcThroughput throughput;
-    float pdf;
+public struct PrimeRcEval {
+    public PrimeRcThroughput throughput;
+    public float pdf;
 };
 
-struct PrimeRcFloatPair { float first; float second; };
+public struct PrimeRcFloatPair { public float first; public float second; };
 
-struct PrimeRcVecPair { float3 first; float3 second; };
+public struct PrimeRcVecPair { public float3 first; public float3 second; };
 
-struct PrimeRcRefractResult {
-    float3 wo;
-    float relativeIor;
-    uint valid;
+public struct PrimeRcRefractResult {
+    public float3 wo;
+    public float relativeIor;
+    public uint valid;
 };
 
-struct PrimeRcMicrofacet { float2 alpha; };
+public struct PrimeRcMicrofacet { public float2 alpha; };
 
-struct PrimeRcSpecularFresnel {
-    float ior;
-    float energyIor;
-    float3 color;
-    float thinFilmWeight;
-    float thinFilmThickness;
-    float thinFilmIor;
+public struct PrimeRcSpecularFresnel {
+    public float ior;
+    public float energyIor;
+    public float3 color;
+    public float thinFilmWeight;
+    public float thinFilmThickness;
+    public float thinFilmIor;
 };
 
-struct PrimeRcConductorFresnel {
-    float3 f0;
+public struct PrimeRcConductorFresnel {
+    public float3 f0;
     // Preserves RoboCute's source field name. This is the relative Schlick tint at its 1/7
     // cosine anchor, not absolute F(82 degrees); adapters must solve it from a target reflectance.
-    float3 f82;
-    float3 f90;
-    float weight;
-    float3 energyF0;
-    float thinFilmWeight;
-    float thinFilmThickness;
-    float thinFilmIor;
+    public float3 f82;
+    public float3 f90;
+    public float weight;
+    public float3 energyF0;
+    public float thinFilmWeight;
+    public float thinFilmThickness;
+    public float thinFilmIor;
 };
 
-struct PrimeRcVolume {
-    float3 extinction;
-    float3 albedo;
-    float anisotropy;
-    float ior;
+public struct PrimeRcVolume {
+    public float3 extinction;
+    public float3 albedo;
+    public float anisotropy;
+    public float ior;
 };
 
-struct PrimeRcVolumeStack {
-    PrimeRcVolume values[2];
-    uint count;
+public struct PrimeRcVolumeStack {
+    public PrimeRcVolume values[2];
+    public uint count;
 };
 
-struct PrimeRcSampleResult {
-    PrimeRcSample bsdfSample;
-    PrimeRcVolumeStack volumeStack;
-    float rayT;
+public struct PrimeRcSampleResult {
+    public PrimeRcSample bsdfSample;
+    public PrimeRcVolumeStack volumeStack;
+    public float rayT;
 };
 
-struct PrimeRcMixState {
-    float firstSampleWeight;
-    float secondSampleWeight;
+public struct PrimeRcMixState {
+    public float firstSampleWeight;
+    public float secondSampleWeight;
 };
 
-struct PrimeRcLayerState {
-    float3 coatTransIn;
-    float subSampleWeight;
-    float coatSampleWeight;
+public struct PrimeRcLayerState {
+    public float3 coatTransIn;
+    public float subSampleWeight;
+    public float coatSampleWeight;
 };
 
-struct PrimeRcDiffractionState {
-    float directionalAlbedo;
-    float3 h;
-    float2 angleCs;
+public struct PrimeRcDiffractionState {
+    public float directionalAlbedo;
+    public float3 h;
+    public float2 angleCs;
 };
 
-struct PrimeRcState {
-    PrimeRcMaterial material;
-    uint detail;
-    uint spectrumed;
-    uint geometryThinWalled;
-    uint entering;
-    uint selectedWavelength;
-    float3 wavelengthsNm;
-    float rayT;
-    float invOutIor;
-    float originalIor;
-    uint heroWavelengthIndex;
-    uint samplingFlags;
-    float3 randomValue;
-    PrimeRcMicrofacet specularMicrofacet;
-    PrimeRcSpecularFresnel specularFresnel;
-    float3 specularMultipleScattering;
-    PrimeRcConductorFresnel conductorFresnel;
-    PrimeRcOnb coatLocalOnb;
-    float conductorEss;
-    PrimeRcMicrofacet transmissionMicrofacet;
-    float3 transmissionTint;
-    PrimeRcVolume transmissionVolume;
-    float3 transmissionMultipleScattering;
-    PrimeRcMicrofacet coatMicrofacet;
-    float coatFresnelIor;
-    float3 coatTint;
-    float coatDarkening;
-    float coatBaseRoughness;
-    float3 coatMultipleScattering;
-    PrimeRcDiffractionState diffractionState;
-    PrimeRcLayerState basicGlossy;
-    PrimeRcMixState basicMetal;
-    PrimeRcLayerState subsurfaceGlossy;
-    PrimeRcMixState mixedDiffuse;
-    PrimeRcLayerState glossyDiffuse;
-    PrimeRcMixState dielectricBase;
-    PrimeRcMixState baseSubstrate;
-    PrimeRcLayerState diffractionBase;
-    PrimeRcLayerState coatedBase;
-    PrimeRcLayerState surface;
+public struct PrimeRcState {
+    public PrimeRcMaterial material;
+    public uint detail;
+    public uint spectrumed;
+    public uint geometryThinWalled;
+    public uint entering;
+    public uint selectedWavelength;
+    public float3 wavelengthsNm;
+    public float rayT;
+    public float invOutIor;
+    public float originalIor;
+    public uint heroWavelengthIndex;
+    public uint samplingFlags;
+    public float3 randomValue;
+    public PrimeRcMicrofacet specularMicrofacet;
+    public PrimeRcSpecularFresnel specularFresnel;
+    public float3 specularMultipleScattering;
+    public PrimeRcConductorFresnel conductorFresnel;
+    public PrimeRcOnb coatLocalOnb;
+    public float conductorEss;
+    public PrimeRcMicrofacet transmissionMicrofacet;
+    public float3 transmissionTint;
+    public PrimeRcVolume transmissionVolume;
+    public float3 transmissionMultipleScattering;
+    public PrimeRcMicrofacet coatMicrofacet;
+    public float coatFresnelIor;
+    public float3 coatTint;
+    public float coatDarkening;
+    public float coatBaseRoughness;
+    public float3 coatMultipleScattering;
+    public PrimeRcDiffractionState diffractionState;
+    public PrimeRcLayerState basicGlossy;
+    public PrimeRcMixState basicMetal;
+    public PrimeRcLayerState subsurfaceGlossy;
+    public PrimeRcMixState mixedDiffuse;
+    public PrimeRcLayerState glossyDiffuse;
+    public PrimeRcMixState dielectricBase;
+    public PrimeRcMixState baseSubstrate;
+    public PrimeRcLayerState diffractionBase;
+    public PrimeRcLayerState coatedBase;
+    public PrimeRcLayerState surface;
 };
 
-bool primeRcIsReflective(uint flags) { return (flags & PRIME_RC_FLAG_REFLECTION) != 0u; }
+public bool primeRcIsReflective(uint flags) { return (flags & PRIME_RC_FLAG_REFLECTION) != 0u; }
 
-bool primeRcIsTransmissive(uint flags) { return (flags & PRIME_RC_FLAG_TRANSMISSION) != 0u; }
+public bool primeRcIsTransmissive(uint flags) { return (flags & PRIME_RC_FLAG_TRANSMISSION) != 0u; }
 
-bool primeRcIsDiffuse(uint flags) { return (flags & PRIME_RC_FLAG_DIFFUSE) != 0u; }
+public bool primeRcIsDiffuse(uint flags) { return (flags & PRIME_RC_FLAG_DIFFUSE) != 0u; }
 
-bool primeRcIsSpecular(uint flags) { return (flags & PRIME_RC_FLAG_SPECULAR) != 0u; }
+public bool primeRcIsSpecular(uint flags) { return (flags & PRIME_RC_FLAG_SPECULAR) != 0u; }
 
-bool primeRcIsDelta(uint flags) { return (flags & PRIME_RC_FLAG_DELTA) != 0u; }
+public bool primeRcIsDelta(uint flags) { return (flags & PRIME_RC_FLAG_DELTA) != 0u; }
 
-bool primeRcIsNonDelta(uint flags) {
+public bool primeRcIsNonDelta(uint flags) {
     return (flags & (PRIME_RC_FLAG_DIFFUSE | PRIME_RC_FLAG_SPECULAR)) != 0u;
 }
 
-PrimeRcThroughput primeRcZeroThroughput() {
+public PrimeRcThroughput primeRcZeroThroughput() {
     PrimeRcThroughput result;
     result.value = float3(0.0);
     result.flags = PRIME_RC_FLAG_NONE;
     return result;
 }
 
-PrimeRcSample primeRcZeroSample() {
+public PrimeRcSample primeRcZeroSample() {
     PrimeRcSample result;
     result.throughput = primeRcZeroThroughput();
     result.pdf = 0.0;
@@ -302,7 +302,7 @@ PrimeRcSample primeRcZeroSample() {
     return result;
 }
 
-PrimeRcSampleResult primeRcZeroSampleResult(PrimeRcState state, PrimeRcVolumeStack stack) {
+public PrimeRcSampleResult primeRcZeroSampleResult(PrimeRcState state, PrimeRcVolumeStack stack) {
     PrimeRcSampleResult result;
     result.bsdfSample = primeRcZeroSample();
     result.volumeStack = stack;
@@ -310,14 +310,14 @@ PrimeRcSampleResult primeRcZeroSampleResult(PrimeRcState state, PrimeRcVolumeSta
     return result;
 }
 
-PrimeRcThroughput primeRcThroughputAdd(PrimeRcThroughput a, PrimeRcThroughput b) {
+public PrimeRcThroughput primeRcThroughputAdd(PrimeRcThroughput a, PrimeRcThroughput b) {
     PrimeRcThroughput result;
     result.value = a.value + b.value;
     result.flags = a.flags | b.flags;
     return result;
 }
 
-PrimeRcThroughput primeRcThroughputScale(PrimeRcThroughput value, float3 scale) {
+public PrimeRcThroughput primeRcThroughputScale(PrimeRcThroughput value, float3 scale) {
     value.value *= scale;
     if (all(scale == float3(0.0))) {
         value.flags = PRIME_RC_FLAG_NONE;
@@ -325,7 +325,7 @@ PrimeRcThroughput primeRcThroughputScale(PrimeRcThroughput value, float3 scale) 
     return value;
 }
 
-PrimeRcThroughput primeRcThroughputScale(PrimeRcThroughput value, float scale) {
+public PrimeRcThroughput primeRcThroughputScale(PrimeRcThroughput value, float scale) {
     value.value *= scale;
     if (scale == 0.0) {
         value.flags = PRIME_RC_FLAG_NONE;
@@ -333,31 +333,31 @@ PrimeRcThroughput primeRcThroughputScale(PrimeRcThroughput value, float scale) {
     return value;
 }
 
-float primeRcSquare(float value) { return value * value; }
+public float primeRcSquare(float value) { return value * value; }
 
-float2 primeRcSquare(float2 value) { return value * value; }
+public float2 primeRcSquare(float2 value) { return value * value; }
 
-float3 primeRcSquare(float3 value) { return value * value; }
+public float3 primeRcSquare(float3 value) { return value * value; }
 
-float primeRcPow4(float value) { float x = value * value; return x * x; }
+public float primeRcPow4(float value) { float x = value * value; return x * x; }
 
-float primeRcPow5(float value) { return primeRcPow4(value) * value; }
+public float primeRcPow5(float value) { return primeRcPow4(value) * value; }
 
-float primeRcPow6(float value) { float x = value * value * value; return x * x; }
+public float primeRcPow6(float value) { float x = value * value * value; return x * x; }
 
-float primeRcReduceSum(float2 value) { return value.x + value.y; }
+public float primeRcReduceSum(float2 value) { return value.x + value.y; }
 
-float primeRcReduceSum(float3 value) { return value.x + value.y + value.z; }
+public float primeRcReduceSum(float3 value) { return value.x + value.y + value.z; }
 
-float primeRcReduceMax(float2 value) { return max(value.x, value.y); }
+public float primeRcReduceMax(float2 value) { return max(value.x, value.y); }
 
-float primeRcReduceMax(float3 value) { return max(value.x, max(value.y, value.z)); }
+public float primeRcReduceMax(float3 value) { return max(value.x, max(value.y, value.z)); }
 
-float primeRcReduceMin(float3 value) { return min(value.x, min(value.y, value.z)); }
+public float primeRcReduceMin(float3 value) { return min(value.x, min(value.y, value.z)); }
 
-float primeRcSpectrumToWeight(float3 value) { return primeRcReduceSum(value) / 3.0; }
+public float primeRcSpectrumToWeight(float3 value) { return primeRcReduceSum(value) / 3.0; }
 
-PrimeRcOnb primeRcOnbFromNormal(float3 normal) {
+public PrimeRcOnb primeRcOnbFromNormal(float3 normal) {
     float signZ = normal.z >= 0.0 ? 1.0 : -1.0;
     float a = -1.0 / (signZ + normal.z);
     float b = normal.x * normal.y * a;
@@ -371,41 +371,41 @@ PrimeRcOnb primeRcOnbFromNormal(float3 normal) {
     return result;
 }
 
-float3 primeRcOnbToWorld(PrimeRcOnb onb, float3 value) {
+public float3 primeRcOnbToWorld(PrimeRcOnb onb, float3 value) {
     return value.x * onb.tangent + value.y * onb.bitangent + value.z * onb.normal;
 }
 
-float3 primeRcOnbToLocal(PrimeRcOnb onb, float3 value) {
+public float3 primeRcOnbToLocal(PrimeRcOnb onb, float3 value) {
     return float3(dot(onb.tangent, value), dot(onb.bitangent, value), dot(onb.normal, value));
 }
 
-float3 primeRcUniformSampleHemisphere(float2 sampleValue) {
+public float3 primeRcUniformSampleHemisphere(float2 sampleValue) {
     float sine = sqrt(1.0 - sampleValue.x * sampleValue.x);
     float phi = 2.0 * PRIME_RC_PI * sampleValue.y;
     return float3(sine * cos(phi), sine * sin(phi), sampleValue.x);
 }
 
-float3 primeRcCosineSampleHemisphere(float2 sampleValue) {
+public float3 primeRcCosineSampleHemisphere(float2 sampleValue) {
     float radius = sqrt(sampleValue.x);
     float phi = 2.0 * PRIME_RC_PI * sampleValue.y;
     return float3(radius * cos(phi), radius * sin(phi), sqrt(1.0 - sampleValue.x));
 }
 
-float primeRcF0ToIor(float f0) {
+public float primeRcF0ToIor(float f0) {
     float root = sqrt(clamp(f0, 0.0, 0.999));
     return (1.0 + root) / (1.0 - root);
 }
 
-float3 primeRcF0ToIor(float3 f0) {
+public float3 primeRcF0ToIor(float3 f0) {
     float3 root = sqrt(clamp(f0, float3(0.0), float3(0.999)));
     return (float3(1.0) + root) / (float3(1.0) - root);
 }
 
-float primeRcIorToF0(float ior) {
+public float primeRcIorToF0(float ior) {
     return primeRcSquare((ior - 1.0) / (ior + 1.0));
 }
 
-float2 primeRcSpecularNdfRoughnesses(float roughness, float anisotropy) {
+public float2 primeRcSpecularNdfRoughnesses(float roughness, float anisotropy) {
     float2 alpha;
     if (anisotropy == 0.0) {
         return float2(primeRcSquare(roughness));
@@ -419,7 +419,7 @@ float2 primeRcSpecularNdfRoughnesses(float roughness, float anisotropy) {
     return max(alpha, float2(1.0e-4));
 }
 
-float primeRcRoughnessOverlap(float roughness, float coatRoughness, float weight) {
+public float primeRcRoughnessOverlap(float roughness, float coatRoughness, float weight) {
     if (weight == 0.0) {
         return roughness;
     }
@@ -428,7 +428,7 @@ float primeRcRoughnessOverlap(float roughness, float coatRoughness, float weight
     return lerp(roughness, coated, weight);
 }
 
-float primeRcIorAdjustment(float ior, float coatIor, float coatWeight) {
+public float primeRcIorAdjustment(float ior, float coatIor, float coatWeight) {
     if (coatWeight == 0.0) {
         return ior;
     }
@@ -436,18 +436,18 @@ float primeRcIorAdjustment(float ior, float coatIor, float coatWeight) {
     return lerp(ior, boundary, coatWeight);
 }
 
-float primeRcIorAdjustment(float ior, float specularWeight) {
+public float primeRcIorAdjustment(float ior, float specularWeight) {
     float e = sign(ior - 1.0)
             * sqrt(clamp(specularWeight * primeRcIorToF0(ior), 0.0, 0.999));
     return (1.0 + e) / (1.0 - e);
 }
 
-float primeRcThinDielectricRoughnessScaler2(float ior) {
+public float primeRcThinDielectricRoughnessScaler2(float ior) {
     float eta = ior >= 1.0 ? ior : 1.0 / ior;
     return 3.7 * (eta - 1.0) * primeRcSquare(eta - 0.5) / (eta * eta * eta);
 }
 
-float primeRcDispersionIor(float nd, float vd, float scale, float lambda) {
+public float primeRcDispersionIor(float nd, float vd, float scale, float lambda) {
     const float lambdaC = 656.3;
     const float lambdaD = 587.6;
     const float lambdaF = 486.1;
@@ -458,7 +458,7 @@ float primeRcDispersionIor(float nd, float vd, float scale, float lambda) {
     return a + b / primeRcSquare(lambda);
 }
 
-PrimeRcVolume primeRcVolumeFromTransmission(PrimeRcTransmission transmission) {
+public PrimeRcVolume primeRcVolumeFromTransmission(PrimeRcTransmission transmission) {
     PrimeRcVolume result;
     if (transmission.depth > 0.0) {
         float3 muT = -log(max(float3(1.0e-3), transmission.color)) / transmission.depth;
@@ -480,7 +480,7 @@ PrimeRcVolume primeRcVolumeFromTransmission(PrimeRcTransmission transmission) {
     return result;
 }
 
-bool primeRcStackPush(inout PrimeRcVolumeStack stack, PrimeRcVolume volume) {
+public bool primeRcStackPush(inout PrimeRcVolumeStack stack, PrimeRcVolume volume) {
     if (stack.count >= PRIME_RC_MAX_VOLUME_STACK_SIZE) {
         return false;
     }
@@ -489,12 +489,10 @@ bool primeRcStackPush(inout PrimeRcVolumeStack stack, PrimeRcVolume volume) {
     return true;
 }
 
-bool primeRcStackPop(inout PrimeRcVolumeStack stack) {
+public bool primeRcStackPop(inout PrimeRcVolumeStack stack) {
     if (stack.count == 0u) {
         return false;
     }
     stack.count--;
     return true;
 }
-
-#endif

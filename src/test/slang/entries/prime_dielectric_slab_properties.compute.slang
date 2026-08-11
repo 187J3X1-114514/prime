@@ -1,8 +1,12 @@
 
-#define PRIME_RC_TRANSMISSION_GGX_SET 0
-#define PRIME_RC_TRANSMISSION_GGX_BINDING 2
 #include "core/prime_test_abi.slang"
-#include "bsdf/adapter/prime_bsdf_specializations.slang"
+import "bsdf/adapter/prime_bsdf_specializations.slang";
+import "bsdf/adapter/transmission_ggx_energy.slang";
+import "bsdf/core/robocute_closures.slang";
+import "bsdf/core/robocute_common.slang";
+import "bsdf/core/robocute_fresnel.slang";
+import "bsdf/core/robocute_microfacet.slang";
+import "bsdf/core/robocute_openpbr.slang";
 
 static const uint PRIME_SLAB_INPUT_WORDS = 1u;
 static const uint PRIME_SLAB_WITNESS_WORDS = 8u;
@@ -36,6 +40,7 @@ PrimeRcMaterial primeSlabMaterial(float ior) {
 PrimeRcState primeSlabState(
         PrimeRcMaterial material, float3 wi, PrimeRcVolumeStack stack) {
     PrimeRcState state = primeRcTransmissionStateInit(
+            primeTransmissionGgxEnergy(),
             material,
             wi,
             primeRcInverseOutsideIor(wi.z, stack),

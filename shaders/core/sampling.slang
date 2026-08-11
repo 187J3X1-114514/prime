@@ -1,39 +1,39 @@
-#ifndef PRIME_SAMPLING_SLANG
-#define PRIME_SAMPLING_SLANG
+#language slang 2026
+module "core/sampling.slang";
 
-#include "prime_abi_types.slang"
+import "prime_abi_types.slang";
 
-static const uint PRIME_SAMPLE_EFFECT_CAMERA = 0;
-static const uint PRIME_SAMPLE_EFFECT_DIRECT_STARS = 1;
-static const uint PRIME_SAMPLE_EFFECT_DIRECT_SUN = 2;
-static const uint PRIME_SAMPLE_EFFECT_SCATTER_BSDF = 3;
-static const uint PRIME_SAMPLE_EFFECT_RUSSIAN_ROULETTE = 4;
-static const uint PRIME_SAMPLE_EFFECT_DIRECT_AREA_LIGHT = 5;
-static const uint PRIME_SAMPLE_DIMENSION_PRIMARY = 0;
-static const uint PRIME_SAMPLE_DIMENSION_SECONDARY = 1;
+public static const uint PRIME_SAMPLE_EFFECT_CAMERA = 0;
+public static const uint PRIME_SAMPLE_EFFECT_DIRECT_STARS = 1;
+public static const uint PRIME_SAMPLE_EFFECT_DIRECT_SUN = 2;
+public static const uint PRIME_SAMPLE_EFFECT_SCATTER_BSDF = 3;
+public static const uint PRIME_SAMPLE_EFFECT_RUSSIAN_ROULETTE = 4;
+public static const uint PRIME_SAMPLE_EFFECT_DIRECT_AREA_LIGHT = 5;
+public static const uint PRIME_SAMPLE_DIMENSION_PRIMARY = 0;
+public static const uint PRIME_SAMPLE_DIMENSION_SECONDARY = 1;
 
-static const uint PRIME_SOBOL_INDEX_MASK = 0xffff0000;
-static const float PRIME_UINT32_TO_FLOAT_EXCLUSIVE_SCALE = 1.0 / 4294967808.0;
-static const float PRIME_UINT24_TO_FLOAT_SCALE = 1.0 / 16777216.0;
+public static const uint PRIME_SOBOL_INDEX_MASK = 0xffff0000;
+public static const float PRIME_UINT32_TO_FLOAT_EXCLUSIVE_SCALE = 1.0 / 4294967808.0;
+public static const float PRIME_UINT24_TO_FLOAT_SCALE = 1.0 / 16777216.0;
 
-struct PrimeSampleBase
+public struct PrimeSampleBase
 {
-    uint2 pixel;
-    uint sampleIndex;
-    uint sampleEpoch;
-    uint vertexIndex;
-    uint pathIndex;
+    public uint2 pixel;
+    public uint sampleIndex;
+    public uint sampleEpoch;
+    public uint vertexIndex;
+    public uint pathIndex;
 };
 
-struct PrimePreparedSampleBase
+public struct PrimePreparedSampleBase
 {
-    uint sampleIndex;
-    uint seed;
+    public uint sampleIndex;
+    public uint seed;
 };
 
 // Joe-Kuo direction numbers for the first four dimensions, flattened to keep the lookup ABI
 // explicit across Slang backends.
-static const uint PRIME_SOBOL_BURLEY_TABLE[128] = {
+public static const uint PRIME_SOBOL_BURLEY_TABLE[128] = {
     0x00000001, 0x00000002, 0x00000004, 0x00000008,
     0x00000010, 0x00000020, 0x00000040, 0x00000080,
     0x00000100, 0x00000200, 0x00000400, 0x00000800,
@@ -68,7 +68,7 @@ static const uint PRIME_SOBOL_BURLEY_TABLE[128] = {
     0x1f001001, 0x2e003003, 0x45004004, 0xc900a00a
 };
 
-PrimeSampleBase primeMakeSampleBase(PathState path, uint vertexIndex)
+public PrimeSampleBase primeMakeSampleBase(PathState path, uint vertexIndex)
 {
     PrimeSampleBase result;
     result.pixel = path.pixel;
@@ -79,7 +79,7 @@ PrimeSampleBase primeMakeSampleBase(PathState path, uint vertexIndex)
     return result;
 }
 
-uint primeHash32(uint value)
+public uint primeHash32(uint value)
 {
     value ^= value >> 16;
     value *= 0x21f0aaad;
@@ -89,7 +89,7 @@ uint primeHash32(uint value)
     return value;
 }
 
-uint primeHighQualityHash(uint value)
+public uint primeHighQualityHash(uint value)
 {
     value ^= value >> 16;
     value *= 0x21f0aaad;
@@ -99,12 +99,12 @@ uint primeHighQualityHash(uint value)
     return value ^ 0xe6fe3beb;
 }
 
-uint primeHashCombine(uint seed, uint value)
+public uint primeHashCombine(uint seed, uint value)
 {
     return seed ^ (primeHash32(value) + 0x9e3779b9 + (seed << 6) + (seed >> 2));
 }
 
-uint primeSampleBaseSeed(PrimeSampleBase base)
+public uint primeSampleBaseSeed(PrimeSampleBase base)
 {
     uint seed = primeHash32(base.pixel.x);
     seed = primeHashCombine(seed, base.pixel.y);
@@ -113,7 +113,7 @@ uint primeSampleBaseSeed(PrimeSampleBase base)
     return primeHashCombine(seed, base.vertexIndex);
 }
 
-PrimePreparedSampleBase primePrepareSampleBase(PrimeSampleBase base)
+public PrimePreparedSampleBase primePrepareSampleBase(PrimeSampleBase base)
 {
     PrimePreparedSampleBase result;
     result.sampleIndex = base.sampleIndex;
@@ -121,12 +121,12 @@ PrimePreparedSampleBase primePrepareSampleBase(PrimeSampleBase base)
     return result;
 }
 
-uint primeEffectSeed(PrimePreparedSampleBase base, uint effect)
+public uint primeEffectSeed(PrimePreparedSampleBase base, uint effect)
 {
     return primeHashCombine(base.seed, effect);
 }
 
-uint primeReversedBitOwen(uint value, uint seed)
+public uint primeReversedBitOwen(uint value, uint seed)
 {
     value ^= value * 0x3d20adea;
     value += seed;
@@ -136,17 +136,17 @@ uint primeReversedBitOwen(uint value, uint seed)
     return value;
 }
 
-float primeUintToFloatExclusive(uint value)
+public float primeUintToFloatExclusive(uint value)
 {
     return float(value) * PRIME_UINT32_TO_FLOAT_EXCLUSIVE_SCALE;
 }
 
-float primeHashToFloat(uint value)
+public float primeHashToFloat(uint value)
 {
     return float(value >> 8) * PRIME_UINT24_TO_FLOAT_SCALE;
 }
 
-float primeSobolBurley(uint reversedBitIndex, uint dimension, uint seed)
+public float primeSobolBurley(uint reversedBitIndex, uint dimension, uint seed)
 {
     uint result = 0;
     if (dimension == 0) {
@@ -167,7 +167,7 @@ float primeSobolBurley(uint reversedBitIndex, uint dimension, uint seed)
             reversebits(primeReversedBitOwen(result, seed)));
 }
 
-float primeSobolSample1D(
+public float primeSobolSample1D(
         PrimePreparedSampleBase base,
         uint effect,
         uint dimension)
@@ -179,7 +179,7 @@ float primeSobolSample1D(
     return primeSobolBurley(shuffledIndex, 0, mixedSeed ^ 0x635c77bd);
 }
 
-float2 primeSobolSample2D(
+public float2 primeSobolSample2D(
         PrimePreparedSampleBase base,
         uint effect,
         uint dimensionSet)
@@ -193,7 +193,7 @@ float2 primeSobolSample2D(
             primeSobolBurley(shuffledIndex, 1, mixedSeed ^ 0x94964d4e));
 }
 
-float3 primeSobolSample3D(
+public float3 primeSobolSample3D(
         PrimePreparedSampleBase base,
         uint effect,
         uint dimensionSet)
@@ -208,7 +208,7 @@ float3 primeSobolSample3D(
             primeSobolBurley(shuffledIndex, 2, mixedSeed ^ 0x78c395c5));
 }
 
-float4 primeSobolSample4D(
+public float4 primeSobolSample4D(
         PrimePreparedSampleBase base,
         uint effect,
         uint dimensionSet)
@@ -224,7 +224,7 @@ float4 primeSobolSample4D(
             primeSobolBurley(shuffledIndex, 3, mixedSeed ^ 0x1524cc56));
 }
 
-float primeHashSample1D(
+public float primeHashSample1D(
         PrimePreparedSampleBase base,
         uint effect,
         uint streamIndex)
@@ -235,7 +235,7 @@ float primeHashSample1D(
     return primeHashToFloat(primeHash32(seed));
 }
 
-void primeBasis(float3 normal, out float3 tangent, out float3 bitangent)
+public void primeBasis(float3 normal, out float3 tangent, out float3 bitangent)
 {
     float3 helper = abs(normal.z) < 0.999
             ? float3(0.0, 0.0, 1.0)
@@ -244,7 +244,7 @@ void primeBasis(float3 normal, out float3 tangent, out float3 bitangent)
     bitangent = cross(normal, tangent);
 }
 
-float3 primeLocalToWorld(float3 localDirection, float3 normal)
+public float3 primeLocalToWorld(float3 localDirection, float3 normal)
 {
     float3 tangent;
     float3 bitangent;
@@ -255,7 +255,7 @@ float3 primeLocalToWorld(float3 localDirection, float3 normal)
                     + normal * localDirection.z);
 }
 
-float3 primeWorldToLocal(float3 worldDirection, float3 normal)
+public float3 primeWorldToLocal(float3 worldDirection, float3 normal)
 {
     float3 tangent;
     float3 bitangent;
@@ -265,5 +265,3 @@ float3 primeWorldToLocal(float3 worldDirection, float3 normal)
             dot(worldDirection, bitangent),
             dot(worldDirection, normal));
 }
-
-#endif

@@ -1,31 +1,23 @@
-#ifndef PRIME_ROBOCUTE_MICROFACET_SLANG
-#define PRIME_ROBOCUTE_MICROFACET_SLANG
+#language slang 2026
+module "bsdf/core/robocute_microfacet.slang";
 
-#include "robocute_common.slang"
-#include "robocute_fresnel.slang"
+import "bsdf/core/robocute_common.slang";
+import "bsdf/core/robocute_fresnel.slang";
+import "bsdf/core/transmission_ggx_energy.slang";
 
 // Mechanical Slang port of the production-reachable declaration closure from
 // robocute_bsdf_microfacet.glsl at RoboCute commit 0d982c77b3fd26c2c5a3c0852be3bd05e5860bd8.
 
-#ifndef PRIME_RC_TRANSMISSION_GGX_SET
-#define PRIME_RC_TRANSMISSION_GGX_SET 7
-#endif
-#ifndef PRIME_RC_TRANSMISSION_GGX_BINDING
-#define PRIME_RC_TRANSMISSION_GGX_BINDING 0
-#endif
-[[vk::binding(PRIME_RC_TRANSMISSION_GGX_BINDING, PRIME_RC_TRANSMISSION_GGX_SET)]]
-Sampler3D<float4> primeRcTransmissionGgxEnergy;
-
-bool primeRcMicrofacetEffectivelySmooth(PrimeRcMicrofacet microfacet) {
+public bool primeRcMicrofacetEffectivelySmooth(PrimeRcMicrofacet microfacet) {
     return primeRcReduceMax(microfacet.alpha) < 1.0e-4;
 }
 
-float primeRcMicrofacetLambda(PrimeRcMicrofacet microfacet, float3 value) {
+public float primeRcMicrofacetLambda(PrimeRcMicrofacet microfacet, float3 value) {
     return (sqrt(1.0 + primeRcReduceSum(primeRcSquare(microfacet.alpha * value.xy))
             / primeRcSquare(value.z)) - sign(value.z)) * 0.5;
 }
 
-float primeRcMicrofacetD(PrimeRcMicrofacet microfacet, float3 halfVector) {
+public float primeRcMicrofacetD(PrimeRcMicrofacet microfacet, float3 halfVector) {
     float denominator = primeRcReduceSum(primeRcSquare(halfVector.xy / microfacet.alpha))
             + primeRcSquare(halfVector.z);
     float result = 1.0 / (PRIME_RC_PI * microfacet.alpha.x * microfacet.alpha.y
@@ -64,7 +56,7 @@ float primeRcBeta(float first, float second) {
     return primeRcGamma(first) * primeRcGamma(second) / primeRcGamma(first + second);
 }
 
-float primeRcMicrofacetG2t(PrimeRcMicrofacet microfacet, float3 wi, float3 wo) {
+public float primeRcMicrofacetG2t(PrimeRcMicrofacet microfacet, float3 wi, float3 wo) {
     if (wi.z < 0.0) {
         wi = -wi;
         wo = -wo;
@@ -74,7 +66,7 @@ float primeRcMicrofacetG2t(PrimeRcMicrofacet microfacet, float3 wi, float3 wo) {
             primeRcMicrofacetLambda(microfacet, wo));
 }
 
-float3 primeRcMicrofacetSample(
+public float3 primeRcMicrofacetSample(
         PrimeRcMicrofacet microfacet,
         float3 wi,
         float2 sampleValue,
@@ -95,7 +87,7 @@ float3 primeRcMicrofacetSample(
     return normalize(float3(microfacet.alpha * halfVector.xy, max(0.0, halfVector.z)));
 }
 
-float primeRcMicrofacetPdf(
+public float primeRcMicrofacetPdf(
         PrimeRcMicrofacet microfacet,
         float3 wi,
         float3 halfVector,
@@ -117,7 +109,7 @@ float primeRcMicrofacetAlpha2(PrimeRcMicrofacet microfacet) {
     return 0.5 * primeRcReduceSum(primeRcSquare(microfacet.alpha));
 }
 
-float3 primeRcMicrofacetDirectionalAlbedoReflection(
+public float3 primeRcMicrofacetDirectionalAlbedoReflection(
         PrimeRcMicrofacet microfacet,
         float cosineTheta,
         float3 f0,
@@ -139,10 +131,13 @@ float3 primeRcMicrofacetDirectionalAlbedoReflection(
     return f0 * ab.x + f90 * ab.y;
 }
 
-float3 primeRcMicrofacetDielectricMsCompensation(
+public float3 primeRcMicrofacetDielectricMsCompensation<TransmissionGgxEnergy>(
+        TransmissionGgxEnergy transmissionGgxEnergy,
         PrimeRcMicrofacet microfacet,
         float cosineTheta,
-        float ior) {
+        float ior)
+    where TransmissionGgxEnergy : IPrimeRcTransmissionGgxEnergy
+{
     if (ior == 1.0) { return float3(1.0, 1.0, 0.0); }
 
     const float qMin = 5.960464477539063e-8;
@@ -188,7 +183,7 @@ float3 primeRcMicrofacetDielectricMsCompensation(
             (view * 43.0 + 0.5) / 44.0,
             (roughnessCoordinate * 31.0 + 0.5) / 32.0,
             (zOffset + logicalZ * zExtent + 0.5) / 159.0);
-    float4 encoded = primeRcTransmissionGgxEnergy.SampleLevel(uvw, 0.0);
+    float4 encoded = transmissionGgxEnergy.sampleLevel(uvw);
 
     float a = 0.5 * (sqrt(1.0 + primeRcMicrofacetAlpha2(microfacet)
             * (1.0 - mu * mu) / (mu * mu)) + 1.0);
@@ -212,24 +207,24 @@ float3 primeRcMicrofacetDielectricMsCompensation(
     return float3(scale, helperR);
 }
 
-float primeRcMicrofacetDirectionalAlbedoUnity(
+public float primeRcMicrofacetDirectionalAlbedoUnity(
         PrimeRcMicrofacet microfacet, float cosineTheta) {
     return primeRcMicrofacetDirectionalAlbedoReflection(
             microfacet, cosineTheta, float3(1.0), float3(1.0)).x;
 }
 
-struct PrimeRcReflectiveEvalBase {
-    float factor;
-    float microCosine;
-    uint flags;
+public struct PrimeRcReflectiveEvalBase {
+    public float factor;
+    public float microCosine;
+    public uint flags;
 };
 
-struct PrimeRcReflectiveSampleBase {
-    PrimeRcSample bsdfSample;
-    float microCosine;
+public struct PrimeRcReflectiveSampleBase {
+    public PrimeRcSample bsdfSample;
+    public float microCosine;
 };
 
-PrimeRcReflectiveEvalBase primeRcReflectiveEvalBase(
+public PrimeRcReflectiveEvalBase primeRcReflectiveEvalBase(
         float3 wi,
         float3 wo,
         PrimeRcMicrofacet microfacet,
@@ -257,7 +252,7 @@ PrimeRcReflectiveEvalBase primeRcReflectiveEvalBase(
     return result;
 }
 
-PrimeRcReflectiveSampleBase primeRcReflectiveSampleBase(
+public PrimeRcReflectiveSampleBase primeRcReflectiveSampleBase(
         float3 wi,
         float3 randomValue,
         PrimeRcMicrofacet microfacet,
@@ -301,7 +296,7 @@ PrimeRcReflectiveSampleBase primeRcReflectiveSampleBase(
     return result;
 }
 
-float primeRcReflectivePdf(
+public float primeRcReflectivePdf(
         float3 wi,
         float3 wo,
         PrimeRcMicrofacet microfacet,
@@ -322,7 +317,7 @@ float primeRcReflectivePdf(
             / (4.0 * abs(dot(wi, halfVector)));
 }
 
-PrimeRcThroughput primeRcRefractiveEval(float3 wi, float3 wo, PrimeRcState state) {
+public PrimeRcThroughput primeRcRefractiveEval(float3 wi, float3 wo, PrimeRcState state) {
     PrimeRcThroughput result = primeRcZeroThroughput();
     PrimeRcMicrofacet microfacet = state.specularMicrofacet;
     PrimeRcSpecularFresnel fresnel = state.specularFresnel;
@@ -362,7 +357,7 @@ PrimeRcThroughput primeRcRefractiveEval(float3 wi, float3 wo, PrimeRcState state
     return result;
 }
 
-PrimeRcSample primeRcRefractiveSample(float3 wi, float3 randomValue, PrimeRcState state) {
+public PrimeRcSample primeRcRefractiveSample(float3 wi, float3 randomValue, PrimeRcState state) {
     PrimeRcMicrofacet microfacet = state.specularMicrofacet;
     PrimeRcSpecularFresnel fresnel = state.specularFresnel;
     float3 halfVector = float3(0.0, 0.0, 1.0);
@@ -435,7 +430,7 @@ PrimeRcSample primeRcRefractiveSample(float3 wi, float3 randomValue, PrimeRcStat
     return result;
 }
 
-float primeRcRefractivePdf(float3 wi, float3 wo, PrimeRcState state) {
+public float primeRcRefractivePdf(float3 wi, float3 wo, PrimeRcState state) {
     PrimeRcMicrofacet microfacet = state.specularMicrofacet;
     PrimeRcSpecularFresnel fresnel = state.specularFresnel;
     if (primeRcMicrofacetEffectivelySmooth(microfacet)
@@ -470,5 +465,3 @@ float primeRcRefractivePdf(float3 wi, float3 wo, PrimeRcState state) {
     return microfacetPdf * abs(microOutgoing) / denominator
             * transmissionProbability / probabilitySum;
 }
-
-#endif

@@ -1,18 +1,18 @@
 #ifndef PRIME_BSDF_SLANG
 #define PRIME_BSDF_SLANG
 
-#include "bsdf/bsdf_common.slang"
-#include "material/default_material.slang"
-#include "material/material_translation.slang"
-#include "material/medium_boundary.slang"
-#include "material/transparent_material.slang"
-#ifndef PRIME_RC_TRANSMISSION_GGX_SET
-#define PRIME_RC_TRANSMISSION_GGX_SET 0
-#endif
-#ifndef PRIME_RC_TRANSMISSION_GGX_BINDING
-#define PRIME_RC_TRANSMISSION_GGX_BINDING PRIME_DESCRIPTOR_TRANSMISSION_GGX_ENERGY
-#endif
-#include "bsdf/adapter/prime_bsdf_specializations.slang"
+import "bsdf/bsdf_common.slang";
+import "bsdf/adapter/prime_bsdf_specializations.slang";
+import "bsdf/adapter/transmission_ggx_energy.slang";
+import "bsdf/core/robocute_closures.slang";
+import "bsdf/core/robocute_common.slang";
+import "bsdf/core/robocute_fresnel.slang";
+import "bsdf/core/robocute_microfacet.slang";
+import "bsdf/core/robocute_openpbr.slang";
+import "material/default_material.slang";
+import "material/material_translation.slang";
+import "material/medium_boundary.slang";
+import "material/transparent_material.slang";
 
 bool3 lessThan(float3 first, float3 second) { return first < second; }
 bool3 lessThanEqual(float3 first, float3 second) { return first <= second; }
@@ -248,6 +248,7 @@ PrimeRcState primeOpaqueStateWithMinimumRoughness(
         // The conservative alpha-cut SSS translation maps exactly to RoboCute's existing
         // SubsurfaceGlossy polymorphic specialization; it does not need the generic OpenPBR graph.
         return primeRcSubsurfaceGlossyStateInit(
+                primeTransmissionGgxEnergy(),
                 material,
                 localView,
                 inverseOutsideIor,
@@ -258,6 +259,7 @@ PrimeRcState primeOpaqueStateWithMinimumRoughness(
                 0u);
     }
     return primeRcBasicMetallicStateInit(
+            primeTransmissionGgxEnergy(),
             material,
             localView,
             inverseOutsideIor,
@@ -436,6 +438,7 @@ PrimeRcState primeMinecraftTransmissionStateWithMinimumRoughness(
     float3 localView = primeRcOnbToLocal(material.geometry.onb, viewDirection);
     float inverseOutsideIor = primeRcInverseOutsideIor(localView.z, volumeStack);
     PrimeRcState state = primeRcTransmissionStateInit(
+            primeTransmissionGgxEnergy(),
             material,
             localView,
             inverseOutsideIor,
@@ -586,6 +589,7 @@ PrimeRcState primeMinecraftBoundaryTransmissionStateWithMinimumRoughness(
                 closureNormal, minimumLinearRoughness);
         localView = primeRcOnbToLocal(material.geometry.onb, viewDirection);
         PrimeRcState state = primeRcTransmissionStateInit(
+                primeTransmissionGgxEnergy(),
                 material,
                 localView,
                 1.0 / adjacent.ior,
@@ -600,6 +604,7 @@ PrimeRcState primeMinecraftBoundaryTransmissionStateWithMinimumRoughness(
         return state;
     }
     PrimeRcState state = primeRcTransmissionStateInit(
+            primeTransmissionGgxEnergy(),
             material,
             localView,
             1.0 / adjacent.ior,
@@ -703,6 +708,7 @@ PrimeMinecraftMirrorSplit primeMinecraftMirrorSplit(
     // term here makes the split remain correct if a future material decoder tints the interface.
     float directionalReflectance = state.geometryThinWalled != 0u
             ? primeRcMicrofacetDielectricMsCompensation(
+                    primeTransmissionGgxEnergy(),
                     state.specularMicrofacet,
                     abs(localView.z),
                     state.specularFresnel.ior).z
@@ -1603,9 +1609,10 @@ float3 primeRcDenoiseClosureEnergy(
                 : primeRcBasicMetallicEnergy(localView, state);
     }
     if (closureKind == PRIME_DENOISE_CLOSURE_FOLIAGE) {
-        return primeRcBaseSubstrateEnergy(localView, state);
+        return primeRcBaseSubstrateEnergy(
+                primeTransmissionGgxEnergy(), localView, state);
     }
-    return primeRcTransmissionEnergy(localView, state);
+    return primeRcTransmissionEnergy(primeTransmissionGgxEnergy(), localView, state);
 }
 
 PrimeDenoiseAlbedos primeDenoiseAlbedosFromState(

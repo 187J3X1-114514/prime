@@ -1,14 +1,17 @@
-#ifndef PRIME_STARMAP_SLANG
-#define PRIME_STARMAP_SLANG
+#language slang 2026
+module "core/starmap.slang";
 
-#include "core/celestial.slang"
-#include "core/atmosphere_rt.slang"
+import "prime_abi.slang";
+import "prime_abi_types.slang";
+import "core/atmosphere_rt.slang";
+import "core/celestial.slang";
 import "core/color_space.slang";
+import "core/render_config.slang";
 
 static const float PRIME_STARMAP_PI = 3.141592653589793;
 
 // NASA's plate-carree source is ICRF/J2000, centred on RA 0h with RA increasing left.
-float2 primeStarmapUv(IntegratorRecord integrator, float3 direction) {
+public float2 primeStarmapUv(IntegratorRecord integrator, float3 direction) {
     PrimeCelestialFrame frame = primeCelestialFrame(
             integrator.sunDirectionIntensity.xyz,
             primeObserverLatitudeRadians(),
@@ -20,7 +23,7 @@ float2 primeStarmapUv(IntegratorRecord integrator, float3 direction) {
             clamp(0.5 - equatorial.y / PRIME_STARMAP_PI, 0.0, 1.0));
 }
 
-float3 primeStarmapRadianceUv(
+public float3 primeStarmapRadianceUv(
         float3 surfacePosition,
         float3 direction,
         float2 uv,
@@ -34,7 +37,7 @@ float3 primeStarmapRadianceUv(
     return primeLinearSrgbToLinearRec2020(source) * scale * transmittance;
 }
 
-float3 primeStarmapRadiance(
+public float3 primeStarmapRadiance(
         IntegratorRecord integrator,
         float3 surfacePosition,
         float3 direction) {
@@ -48,5 +51,3 @@ float3 primeStarmapRadiance(
                     scale)
             : float3(0.0);
 }
-
-#endif

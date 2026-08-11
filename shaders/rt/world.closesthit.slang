@@ -1,6 +1,11 @@
 import glsl;
+import "prime_abi_types.slang";
+import "core/packed_geometry.slang";
+import "core/render_config.slang";
+import "material/default_material.slang";
+import "material/material.slang";
 
-#include "rt/hit_common.slang"
+import "rt/hit_common.slang";
 
 layout(location = 0) rayPayloadInEXT TracePayload primePayload;
 

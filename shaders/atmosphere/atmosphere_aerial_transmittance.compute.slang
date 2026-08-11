@@ -1,5 +1,6 @@
-#include "core/atmosphere.slang"
-#include "core/image_access.slang"
+import "core/atmosphere.slang";
+import "core/image_access.slang";
+import "prime_abi_types.slang";
 
 [[vk::binding(6, 0)]] [[vk::image_format("rgba16f")]] writeonly RWTexture3D<float4> aerialTransmittance;
 

@@ -1,9 +1,10 @@
-#ifndef PRIME_ROBOCUTE_CLOSURES_SLANG
-#define PRIME_ROBOCUTE_CLOSURES_SLANG
+#language slang 2026
+module "bsdf/core/robocute_closures.slang";
 
-#include "robocute_common.slang"
-#include "robocute_fresnel.slang"
-#include "robocute_microfacet.slang"
+import "bsdf/core/robocute_common.slang";
+import "bsdf/core/robocute_fresnel.slang";
+import "bsdf/core/robocute_microfacet.slang";
+import "bsdf/core/transmission_ggx_energy.slang";
 
 // Mechanical Slang port of the production-reachable declaration closure from
 // robocute_bsdf_closures.glsl at RoboCute commit 0d982c77b3fd26c2c5a3c0852be3bd05e5860bd8.
@@ -92,7 +93,7 @@ float primeRcEonUniformPdf(float mu, float roughness) {
             * (0.162925 + (-0.372058 + (0.538233 - 0.290822 * mu) * mu) * mu);
 }
 
-PrimeRcThroughput primeRcDiffuseEval(float3 wi, float3 wo, PrimeRcState state) {
+public PrimeRcThroughput primeRcDiffuseEval(float3 wi, float3 wo, PrimeRcState state) {
     float muI = wi.z;
     float muO = wo.z;
     float baseWeight = state.material.weight.base;
@@ -119,7 +120,7 @@ PrimeRcThroughput primeRcDiffuseEval(float3 wi, float3 wo, PrimeRcState state) {
     return result;
 }
 
-PrimeRcSampleResult primeRcDiffuseSample(
+public PrimeRcSampleResult primeRcDiffuseSample(
         float3 wi, float3 randomValue, PrimeRcState state, PrimeRcVolumeStack stack) {
     PrimeRcSampleResult result = primeRcZeroSampleResult(state, stack);
     float baseWeight = state.material.weight.base;
@@ -144,7 +145,7 @@ PrimeRcSampleResult primeRcDiffuseSample(
     return result;
 }
 
-float primeRcDiffusePdf(float3 wi, float3 wo, PrimeRcState state) {
+public float primeRcDiffusePdf(float3 wi, float3 wo, PrimeRcState state) {
     float baseWeight = state.material.weight.base;
     float roughness = state.material.weight.diffuseRoughness;
     if (wi.z < 0.0 || wo.z <= 0.0 || baseWeight <= 0.0
@@ -157,7 +158,7 @@ float primeRcDiffusePdf(float3 wi, float3 wo, PrimeRcState state) {
             primeRcEonUniformPdf(wi.z, roughness));
 }
 
-float3 primeRcDiffuseEnergy(float3 wi, PrimeRcState state) {
+public float3 primeRcDiffuseEnergy(float3 wi, PrimeRcState state) {
     float baseWeight = state.material.weight.base;
     float roughness = state.material.weight.diffuseRoughness;
     if ((state.samplingFlags & PRIME_RC_FLAG_DIFFUSE_REFLECTION) == 0u
@@ -173,7 +174,7 @@ float3 primeRcDiffuseEnergy(float3 wi, PrimeRcState state) {
     return lerp(multipleColor, color, directionalEnergy) * baseWeight;
 }
 
-PrimeRcThroughput primeRcLambertEval(float3 wi, float3 wo, PrimeRcState state) {
+public PrimeRcThroughput primeRcLambertEval(float3 wi, float3 wo, PrimeRcState state) {
     float baseWeight = state.material.weight.base;
     if (wi.z < 0.0 || wo.z < 0.0 || baseWeight <= 0.0
             || (state.samplingFlags & PRIME_RC_FLAG_DIFFUSE_REFLECTION) == 0u) {
@@ -185,7 +186,7 @@ PrimeRcThroughput primeRcLambertEval(float3 wi, float3 wo, PrimeRcState state) {
     return result;
 }
 
-PrimeRcSampleResult primeRcLambertSample(
+public PrimeRcSampleResult primeRcLambertSample(
         float3 wi, float3 randomValue, PrimeRcState state, PrimeRcVolumeStack stack) {
     PrimeRcSampleResult result = primeRcZeroSampleResult(state, stack);
     float baseWeight = state.material.weight.base;
@@ -201,12 +202,12 @@ PrimeRcSampleResult primeRcLambertSample(
     return result;
 }
 
-float primeRcLambertPdf(float3 wi, float3 wo, PrimeRcState state) {
+public float primeRcLambertPdf(float3 wi, float3 wo, PrimeRcState state) {
     return wi.z >= 0.0 && wo.z > 0.0 && state.material.weight.base > 0.0
             ? PRIME_RC_INV_PI * wo.z : 0.0;
 }
 
-float3 primeRcLambertEnergy(float3 wi, PrimeRcState state) {
+public float3 primeRcLambertEnergy(float3 wi, PrimeRcState state) {
     if (wi.z < 0.0 || state.material.weight.base <= 0.0
             || (state.samplingFlags & PRIME_RC_FLAG_DIFFUSE_REFLECTION) == 0u) {
         return float3(0.0);
@@ -214,7 +215,7 @@ float3 primeRcLambertEnergy(float3 wi, PrimeRcState state) {
     return state.material.base.color * state.material.weight.base;
 }
 
-PrimeRcSampleResult primeRcSpecularSample(
+public PrimeRcSampleResult primeRcSpecularSample(
         float3 wi, float3 randomValue, PrimeRcState state, PrimeRcVolumeStack stack) {
     PrimeRcSampleResult result = primeRcZeroSampleResult(state, stack);
     PrimeRcReflectiveSampleBase base = primeRcReflectiveSampleBase(
@@ -232,20 +233,20 @@ PrimeRcSampleResult primeRcSpecularSample(
     return result;
 }
 
-float primeRcSpecularPdf(float3 wi, float3 wo, PrimeRcState state) {
+public float primeRcSpecularPdf(float3 wi, float3 wo, PrimeRcState state) {
     return primeRcReflectivePdf(
             wi, wo, state.specularMicrofacet,
             state.samplingFlags, PRIME_RC_FLAG_REFLECTION);
 }
 
-float3 primeRcSpecularTintOut(float3 wo, PrimeRcState state) { return float3(1.0); }
+public float3 primeRcSpecularTintOut(float3 wo, PrimeRcState state) { return float3(1.0); }
 
-float3 primeRcSpecularTrans(float3 wi, PrimeRcState state, float3 baseEnergy) {
+public float3 primeRcSpecularTrans(float3 wi, PrimeRcState state, float3 baseEnergy) {
     if (wi.z < 0.0) { return float3(1.0); }
     return float3(1.0 - state.specularMultipleScattering.z);
 }
 
-float3 primeRcSpecularEnergy(float3 wi, PrimeRcState state) {
+public float3 primeRcSpecularEnergy(float3 wi, PrimeRcState state) {
     if (wi.z < 0.0) { return float3(0.0); }
     if (!primeRcMicrofacetEffectivelySmooth(state.specularMicrofacet)
             && state.specularFresnel.ior != 1.0) {
@@ -257,7 +258,7 @@ float3 primeRcSpecularEnergy(float3 wi, PrimeRcState state) {
     return state.specularMultipleScattering.z * state.specularFresnel.color;
 }
 
-PrimeRcSampleResult primeRcConductorSample(
+public PrimeRcSampleResult primeRcConductorSample(
         float3 wi, float3 randomValue, PrimeRcState state, PrimeRcVolumeStack stack) {
     PrimeRcSampleResult result = primeRcZeroSampleResult(state, stack);
     PrimeRcReflectiveSampleBase base = primeRcReflectiveSampleBase(
@@ -276,13 +277,13 @@ PrimeRcSampleResult primeRcConductorSample(
     return result;
 }
 
-float primeRcConductorPdf(float3 wi, float3 wo, PrimeRcState state) {
+public float primeRcConductorPdf(float3 wi, float3 wo, PrimeRcState state) {
     return primeRcReflectivePdf(
             wi, wo, state.specularMicrofacet,
             state.samplingFlags, PRIME_RC_FLAG_REFLECTION);
 }
 
-float3 primeRcConductorEnergy(float3 wi, PrimeRcState state) {
+public float3 primeRcConductorEnergy(float3 wi, PrimeRcState state) {
     if (wi.z < 0.0) { return float3(0.0); }
     if (primeRcMicrofacetEffectivelySmooth(state.specularMicrofacet)) {
         if ((state.samplingFlags & PRIME_RC_FLAG_DELTA_REFLECTION) == 0u) {
@@ -298,7 +299,7 @@ float3 primeRcConductorEnergy(float3 wi, PrimeRcState state) {
             * (float3(1.0) + f0 * (1.0 - state.conductorEss) / state.conductorEss);
 }
 
-PrimeRcThroughput primeRcSubsurfaceEval(float3 wi, float3 wo, PrimeRcState state) {
+public PrimeRcThroughput primeRcSubsurfaceEval(float3 wi, float3 wo, PrimeRcState state) {
     bool reflected = wo.z * wi.z > 0.0;
     if ((reflected && ((state.samplingFlags & PRIME_RC_FLAG_DIFFUSE_REFLECTION) == 0u
             || state.geometryThinWalled == 0u))
@@ -320,7 +321,7 @@ PrimeRcThroughput primeRcSubsurfaceEval(float3 wi, float3 wo, PrimeRcState state
     return result;
 }
 
-PrimeRcSampleResult primeRcSubsurfaceSample(
+public PrimeRcSampleResult primeRcSubsurfaceSample(
         float3 wi, float3 randomValue, PrimeRcState state, PrimeRcVolumeStack stack) {
     PrimeRcSampleResult result = primeRcZeroSampleResult(state, stack);
     if ((state.samplingFlags & PRIME_RC_FLAG_DIFFUSE) == 0u) { return result; }
@@ -352,7 +353,7 @@ PrimeRcSampleResult primeRcSubsurfaceSample(
     return result;
 }
 
-float primeRcSubsurfacePdf(float3 wi, float3 wo, PrimeRcState state) {
+public float primeRcSubsurfacePdf(float3 wi, float3 wo, PrimeRcState state) {
     float reflectionProbability = state.geometryThinWalled != 0u
             ? (1.0 - state.material.subsurface.scatterAnisotropy) * 0.5 : 0.0;
     float transmissionProbability = state.geometryThinWalled != 0u
@@ -364,7 +365,7 @@ float primeRcSubsurfacePdf(float3 wi, float3 wo, PrimeRcState state) {
             * (wi.z * wo.z > 0.0 ? reflectionProbability : transmissionProbability);
 }
 
-float3 primeRcSubsurfaceEnergy(float3 wi, PrimeRcState state) {
+public float3 primeRcSubsurfaceEnergy(float3 wi, PrimeRcState state) {
     if ((state.samplingFlags & PRIME_RC_FLAG_DIFFUSE_REFLECTION) != 0u) {
         return state.geometryThinWalled == 0u
                 ? float3(1.0) : state.material.subsurface.color;
@@ -399,11 +400,11 @@ PrimeRcVecPair primeRcTransmissionThinWallRt(float cosineTheta, PrimeRcState sta
     return result;
 }
 
-float3 primeRcTransmissionMaterialFrame(float3 w, PrimeRcState state) {
+public float3 primeRcTransmissionMaterialFrame(float3 w, PrimeRcState state) {
     return state.entering != 0u ? w : float3(-w.x, w.y, -w.z);
 }
 
-PrimeRcThroughput primeRcTransmissionEval(float3 wi, float3 inputWo, PrimeRcState state) {
+public PrimeRcThroughput primeRcTransmissionEval(float3 wi, float3 inputWo, PrimeRcState state) {
     if (state.geometryThinWalled != 0u) {
         float3 wo = inputWo;
         bool transmitted = false;
@@ -455,7 +456,7 @@ PrimeRcThroughput primeRcTransmissionEval(float3 wi, float3 inputWo, PrimeRcStat
     return result;
 }
 
-PrimeRcSampleResult primeRcTransmissionSample(
+public PrimeRcSampleResult primeRcTransmissionSample(
         float3 wi, float3 randomValue, PrimeRcState state, PrimeRcVolumeStack stack) {
     PrimeRcSampleResult result = primeRcZeroSampleResult(state, stack);
     if (state.geometryThinWalled != 0u) {
@@ -510,7 +511,7 @@ PrimeRcSampleResult primeRcTransmissionSample(
     return result;
 }
 
-float primeRcTransmissionPdf(float3 wi, float3 inputWo, PrimeRcState state) {
+public float primeRcTransmissionPdf(float3 wi, float3 inputWo, PrimeRcState state) {
     if (state.geometryThinWalled != 0u) {
         float3 wo = inputWo;
         bool transmitted = false;
@@ -539,7 +540,12 @@ float primeRcTransmissionPdf(float3 wi, float3 inputWo, PrimeRcState state) {
             state);
 }
 
-float3 primeRcTransmissionEnergy(float3 wi, PrimeRcState state) {
+public float3 primeRcTransmissionEnergy<TransmissionGgxEnergy>(
+        TransmissionGgxEnergy transmissionGgxEnergy,
+        float3 wi,
+        PrimeRcState state)
+    where TransmissionGgxEnergy : IPrimeRcTransmissionGgxEnergy
+{
     if (!primeRcMicrofacetEffectivelySmooth(state.specularMicrofacet)
             && state.specularFresnel.ior != 1.0) {
         if (!primeRcIsSpecular(state.samplingFlags)) { return float3(0.0); }
@@ -549,6 +555,7 @@ float3 primeRcTransmissionEnergy(float3 wi, PrimeRcState state) {
     float helperR;
     if (state.geometryThinWalled != 0u) {
         helperR = primeRcMicrofacetDielectricMsCompensation(
+                transmissionGgxEnergy,
                 state.specularMicrofacet, abs(wi.z), state.specularFresnel.ior).z;
     } else {
         helperR = state.transmissionMultipleScattering.z;
@@ -558,5 +565,3 @@ float3 primeRcTransmissionEnergy(float3 wi, PrimeRcState state) {
     return reflected * state.specularFresnel.color
             + transmitted * state.transmissionTint;
 }
-
-#endif

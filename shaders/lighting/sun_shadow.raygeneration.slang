@@ -1,6 +1,6 @@
 
-#include "core/common.slang"
-#include "rt/shadow_payload.slang"
+import "prime_abi.slang";
+import "rt/shadow_payload.slang";
 
 import glsl;
 layout(location = 1) rayPayloadEXT PrimeShadowPayload primeShadowPayload;

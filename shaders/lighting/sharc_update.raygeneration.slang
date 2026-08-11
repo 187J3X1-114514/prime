@@ -1,12 +1,12 @@
 #define SHARC_UPDATE 1
 #define SHARC_QUERY 0
 
-#include "core/common.slang"
-#include "core/nrd_common.slang"
-#include "material/material.slang"
+import "core/nrd_common.slang";
+import "core/render_config.slang";
+import "material/material.slang";
 #include "lighting/sharc.slang"
 #include "integrator/integrator.slang"
-#include "core/camera.slang"
+import "core/camera.slang";
 
 float primeSharcSampleDirectionWeight(BsdfSample bsdf, float linearRoughness) {
     if ((bsdf.eventFlags & PRIME_BSDF_EVENT_DISCRETE) != 0u) {
@@ -47,7 +47,7 @@ void main() {
     uint maximumBounces = primeMaximumBounces();
     for (uint bounce = 0u; bounce < maximumBounces; ++bounce) {
         SurfaceInteraction surface = primeTraceSurfaceWithoutReorder(
-                context, path.traceOrigin, path.rayDirection);
+                path.traceOrigin, path.rayDirection);
         if (surface.hitKind == PRIME_HIT_NONE) {
             SharcUpdateMiss(
                     parameters,

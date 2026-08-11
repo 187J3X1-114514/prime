@@ -1,9 +1,9 @@
-#include "core/image_access.slang"
+import "core/image_access.slang";
 
-#include "material/default_material.slang"
-#include "post/fsr_input.slang"
-#include "core/nrd_common.slang"
-#include "prime_nrd_motion_contract.slang"
+import "material/default_material.slang";
+import "post/fsr_input.slang";
+import "core/nrd_common.slang";
+import "prime_nrd_motion_contract.slang";
 
 [[vk::binding(0, 0)]] [[vk::image_format("rgba16f")]] writeonly RWTexture2D<float4> primeMotion;
 [[vk::binding(1, 0)]] [[vk::image_format("r32f")]] RWTexture2D<float4> primeViewZ;

@@ -1,32 +1,29 @@
-#ifndef PRIME_ATMOSPHERE_RT_SLANG
-#define PRIME_ATMOSPHERE_RT_SLANG
+#language slang 2026
+module "core/atmosphere_rt.slang";
 
-#include "core/common.slang"
-#include "core/atmosphere.slang"
-#include "core/atmosphere_epipolar.slang"
+import "prime_abi.slang";
+import "prime_abi_types.slang";
+import "core/atmosphere.slang";
+import "core/atmosphere_epipolar.slang";
+import "core/render_config.slang";
 
-ATM_DECLARE_SAMPLE_2D(primeSampleSkyView, primeSkyView)
-ATM_DECLARE_SAMPLE_2D(primeSampleTransmittanceLow, primeTransmittanceLow)
-ATM_DECLARE_SAMPLE_2D(primeSampleTransmittanceHigh, primeTransmittanceHigh)
-ATM_DECLARE_SAMPLE_EPIPOLAR(primeSampleAerialRadiance, primeAerialRadiance)
-ATM_DECLARE_SAMPLE_3D(primeSampleAerialTransmittance, primeAerialTransmittance)
 
-float3 primeAtmosphereSky(float3 direction, float3 sunDirection) {
+public float3 primeAtmosphereSky(float3 direction, float3 sunDirection) {
     uint width;
     uint height;
     primeSkyView.GetDimensions(width, height);
     float2 dimensions = float2(width, height);
     float2 uv = atmSkyUvFromDirection(
             direction, sunDirection, dimensions, primePush.atmosphereEyeRadiusKm);
-    return max(primeSampleSkyView(uv).rgb, float3(0.0));
+    return max(atmSample2D(primeSkyView, uv).rgb, float3(0.0));
 }
 
-bool primeAtmosphereDistantDirectionVisible(float3 direction) {
+public bool primeAtmosphereDistantDirectionVisible(float3 direction) {
     return atmDistantDirectionVisible(
             primePush.atmosphereEyeRadiusKm, direction);
 }
 
-float3 primeAtmosphereDistantTransmittance(
+public float3 primeAtmosphereDistantTransmittance(
         float3 surfacePosition,
         float3 direction) {
     // The same internal scale maps vertical coordinates and travelled distance. Splitting them
@@ -47,23 +44,23 @@ float3 primeAtmosphereDistantTransmittance(
     float normalizedAltitude = (radius - ATM_BOTTOM_RADIUS_KM) / ATM_THICKNESS_KM;
     float2 uv = atmTransmittanceUv(direction.y, normalizedAltitude);
     return atmRec2020Transmittance(
-            primeSampleTransmittanceLow(uv),
-            primeSampleTransmittanceHigh(uv));
+            atmSample2D(primeTransmittanceLow, uv),
+            atmSample2D(primeTransmittanceHigh, uv));
 }
 
-float3 primeAtmosphereSunTransmittance(
+public float3 primeAtmosphereSunTransmittance(
         float3 surfacePosition,
         float3 directionToSun) {
     return primeAtmosphereDistantTransmittance(surfacePosition, directionToSun);
 }
 
-void primeApplyAerialPerspective(
+public float3 primeApplyAerialPerspective(
         uint2 pixel,
         float2 cameraSample,
         float primaryDistance,
-        inout float3 radiance) {
+        float3 radiance) {
     if (isnan(primaryDistance) || isinf(primaryDistance) || primaryDistance < 0.0) {
-        return;
+        return radiance;
     }
     float distanceKm = primaryDistance * ATM_WORLD_UNIT_SCALE_KM;
     uint aerialWidth;
@@ -87,13 +84,16 @@ void primeApplyAerialPerspective(
             primePush.inverseViewProjection,
             primePush.sunDirection);
     float3 inscatter = max(
-            primeSampleAerialRadiance(
+            atmSampleEpipolar(
+                    primeAerialRadiance,
                     screenUv,
                     normalizedDepth,
                     epipoleNdc).rgb,
             float3(0.0));
     float3 transmittance = clamp(
-            primeSampleAerialTransmittance(uvw).rgb, float3(0.0), float3(1.0));
+            atmSample3D(primeAerialTransmittance, uvw).rgb,
+            float3(0.0),
+            float3(1.0));
     // The LUT has centre-sampled Z slices and therefore has no stored zero-distance value.
     // Blend the first slice back to the exact identity boundary instead of applying a finite fog
     // segment to nearby geometry. Invalid LUT components must also be neutral here: propagating a
@@ -117,7 +117,5 @@ void primeApplyAerialPerspective(
     // aerial in-scattering at the calibrated base intensity.
     inscatter *= nearWeight * primeSunRadianceMultiplier();
     transmittance = lerp(float3(1.0), transmittance, nearWeight);
-    radiance = radiance * transmittance + inscatter;
+    return radiance * transmittance + inscatter;
 }
-
-#endif

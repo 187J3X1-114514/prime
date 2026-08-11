@@ -1,7 +1,7 @@
 #ifndef PRIME_OFFLINE_WAVEFRONT_STATE_SLANG
 #define PRIME_OFFLINE_WAVEFRONT_STATE_SLANG
 
-#include "realtime/wavefront_medium.slang"
+import "realtime/wavefront_medium.slang";
 
 struct PrimeOfflineTransportRecord {
     float4 physicalOriginAndPreviousBsdfPdf;
@@ -109,40 +109,61 @@ void primeAppendOfflinePath(uint queue, uint pathIndex) {
     }
 }
 
-void primeAppendOfflineContinuation(
-        uint queue, uint pathIndex, bool continuation) {
-#if defined(PRIME_ENABLE_SUBGROUP_QUEUE)
-    uint4 activeMask = WaveActiveBallot(continuation);
-    uint activeCount = countbits(activeMask.x) + countbits(activeMask.y)
-            + countbits(activeMask.z) + countbits(activeMask.w);
-    uint firstEntry = 0u;
-    if (WaveIsFirstLane() && activeCount != 0u) {
-        InterlockedAdd(
-                primeOfflineQueue[primeOfflineQueueCommandWord(queue)],
-                activeCount,
-                firstEntry);
-    }
-    firstEntry = WaveReadLaneFirst(firstEntry);
-    uint capacity = primeOfflinePixelCount();
-    bool overflow = activeCount > capacity
-            || firstEntry > capacity - min(activeCount, capacity);
-    if (WaveIsFirstLane() && overflow) {
-        uint commandWord = primeOfflineQueueCommandWord(queue);
-        uint ignored;
-        InterlockedMin(primeOfflineQueue[commandWord], capacity, ignored);
-        InterlockedOr(primeOfflineQueue[commandWord + 3u], 1u, ignored);
-    }
-    if (continuation) {
-        uint entry = firstEntry + WavePrefixCountBits(continuation);
-        if (entry < capacity) {
-            primeOfflineQueue[primeOfflineQueueWord(queue, entry)] = pathIndex;
+interface IPrimeOfflineContinuationAppender {
+    void append(uint queue, uint pathIndex, bool continuation);
+}
+
+struct PrimeScalarOfflineContinuationAppender
+        : IPrimeOfflineContinuationAppender {
+    void append(uint queue, uint pathIndex, bool continuation) {
+        if (continuation) {
+            primeAppendOfflinePath(queue, pathIndex);
         }
     }
-#else
-    if (continuation) {
-        primeAppendOfflinePath(queue, pathIndex);
+};
+
+struct PrimeSubgroupOfflineContinuationAppender
+        : IPrimeOfflineContinuationAppender {
+    // Every invocation must call this from uniform control flow. The elected lane reserves one
+    // contiguous range, reducing global atomics and preserving subgroup locality.
+    void append(uint queue, uint pathIndex, bool continuation) {
+        uint4 activeMask = WaveActiveBallot(continuation);
+        uint activeCount = countbits(activeMask.x) + countbits(activeMask.y)
+                + countbits(activeMask.z) + countbits(activeMask.w);
+        uint firstEntry = 0u;
+        if (WaveIsFirstLane() && activeCount != 0u) {
+            InterlockedAdd(
+                    primeOfflineQueue[primeOfflineQueueCommandWord(queue)],
+                    activeCount,
+                    firstEntry);
+        }
+        firstEntry = WaveReadLaneFirst(firstEntry);
+        uint capacity = primeOfflinePixelCount();
+        bool overflow = activeCount > capacity
+                || firstEntry > capacity - min(activeCount, capacity);
+        if (WaveIsFirstLane() && overflow) {
+            uint commandWord = primeOfflineQueueCommandWord(queue);
+            uint ignored;
+            InterlockedMin(primeOfflineQueue[commandWord], capacity, ignored);
+            InterlockedOr(primeOfflineQueue[commandWord + 3u], 1u, ignored);
+        }
+        if (continuation) {
+            uint entry = firstEntry + WavePrefixCountBits(continuation);
+            if (entry < capacity) {
+                primeOfflineQueue[primeOfflineQueueWord(queue, entry)] = pathIndex;
+            }
+        }
     }
-#endif
+};
+
+void primeAppendOfflineContinuation<Appender>(
+        Appender appender,
+        uint queue,
+        uint pathIndex,
+        bool continuation)
+    where Appender : IPrimeOfflineContinuationAppender
+{
+    appender.append(queue, pathIndex, continuation);
 }
 
 uint primePackOfflinePathControl(PathState path) {
@@ -214,13 +235,15 @@ bool primeOfflineIsActive(PrimeOfflinePathRecord record) {
             & PRIME_OFFLINE_CONTROL_ACTIVE) != 0u;
 }
 
-void primeClearOfflineAreaRequest(inout PrimeOfflinePathRecord record) {
+PrimeOfflinePathRecord primeOfflineWithoutAreaRequest(
+        PrimeOfflinePathRecord record) {
     record.areaDirectionAndDistance = float4(0.0);
     uint packedNormal = asuint(record.areaContributionAndValid.w)
             & (PRIME_OFFLINE_LIGHT_NORMAL_MASK
                     << PRIME_OFFLINE_LIGHT_NORMAL_SHIFT);
     record.areaContributionAndValid = float4(
             0.0, 0.0, 0.0, asfloat(packedNormal));
+    return record;
 }
 
 #endif

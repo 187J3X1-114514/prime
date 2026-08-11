@@ -1,8 +1,7 @@
 #define SHARC_UPDATE 0
 #define SHARC_QUERY 1
 
-#include "core/common.slang"
-#include "material/material.slang"
+import "material/material.slang";
 #include "lighting/sharc.slang"
 
 [shader("compute")]

@@ -1,7 +1,7 @@
 #ifndef PRIME_WAVEFRONT_OUTPUT_SLANG
 #define PRIME_WAVEFRONT_OUTPUT_SLANG
 
-#include "core/auto_exposure.slang"
+import "core/auto_exposure.slang";
 
 // The realtime output adapter encodes reconstruction signals from one resolved model sample and
 // never feeds output data back into transport.

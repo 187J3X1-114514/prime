@@ -1,9 +1,9 @@
-#ifndef PRIME_NRD_COMMON_SLANG
-#define PRIME_NRD_COMMON_SLANG
+#language slang 2026
+module "core/nrd_common.slang";
 
-static const uint PRIME_DISPLAY_MOTION_FLAG = 0x80000000u;
+public static const uint PRIME_DISPLAY_MOTION_FLAG = 0x80000000u;
 
-#include "material/default_material.slang"
+import "material/default_material.slang";
 
 // These encoders are the shader half of the immutable NRD 4.17 contract declared in abi.json.
 // Every radiance value is demodulated linear Rec.2020 D65. Normals remain in Prime's world axes,
@@ -11,31 +11,31 @@ static const uint PRIME_DISPLAY_MOTION_FLAG = 0x80000000u;
 // reciprocal render-size scale, and view Z is positive in Minecraft block units. Changing any
 // one side requires rebuilding the bundled native library.
 
-static const float PRIME_NRD_FP16_MAX = 65504.0;
-static const float PRIME_NRD_MAX_SURFACE_DISTANCE = 65503.0;
-static const float3 PRIME_NRD_HIT_DISTANCE_PARAMETERS = float3(3.0, 0.1, 20.0);
+public static const float PRIME_NRD_FP16_MAX = 65504.0;
+public static const float PRIME_NRD_MAX_SURFACE_DISTANCE = 65503.0;
+public static const float3 PRIME_NRD_HIT_DISTANCE_PARAMETERS = float3(3.0, 0.1, 20.0);
 
-bool primeNrdIsFinite(float value) {
+public bool primeNrdIsFinite(float value) {
     return !isnan(value) && !isinf(value);
 }
 
-bool primeNrdIsFinite(float2 value) {
+public bool primeNrdIsFinite(float2 value) {
     return !any(isnan(value)) && !any(isinf(value));
 }
 
-bool primeNrdIsFinite(float3 value) {
+public bool primeNrdIsFinite(float3 value) {
     return !any(isnan(value)) && !any(isinf(value));
 }
 
-bool primeNrdIsFinite(float4 value) {
+public bool primeNrdIsFinite(float4 value) {
     return !any(isnan(value)) && !any(isinf(value));
 }
 
-float primeNrdSanitizeUnit(float value, float fallback) {
+public float primeNrdSanitizeUnit(float value, float fallback) {
     return clamp(primeNrdIsFinite(value) ? value : fallback, 0.0, 1.0);
 }
 
-float primeNrdSanitizeHitDistance(float hitDistance) {
+public float primeNrdSanitizeHitDistance(float hitDistance) {
     // A non-finite secondary distance is conservatively a miss. Zero has a distinct NRD meaning
     // (no usable hit distance) and would create a false near reflector for a valid noisy signal.
     return primeNrdIsFinite(hitDistance)
@@ -43,13 +43,13 @@ float primeNrdSanitizeHitDistance(float hitDistance) {
             : PRIME_NRD_FP16_MAX;
 }
 
-float primeNrdSanitizePrimaryDistance(float primaryDistance, bool hasSurface) {
+public float primeNrdSanitizePrimaryDistance(float primaryDistance, bool hasSurface) {
     return hasSurface && primeNrdIsFinite(primaryDistance) && primaryDistance >= 0.0
             ? min(primaryDistance, PRIME_NRD_MAX_SURFACE_DISTANCE)
             : -1.0;
 }
 
-float3 primeNrdSafeNormalize(float3 value, float3 fallback) {
+public float3 primeNrdSafeNormalize(float3 value, float3 fallback) {
     float lengthSquared = dot(value, value);
     if (!primeNrdIsFinite(value)
             || !primeNrdIsFinite(lengthSquared)
@@ -60,38 +60,38 @@ float3 primeNrdSafeNormalize(float3 value, float3 fallback) {
     return primeNrdIsFinite(normalized) ? normalized : fallback;
 }
 
-float3 primeNrdSanitizeMotion(float3 motion) {
+public float3 primeNrdSanitizeMotion(float3 motion) {
     return primeNrdIsFinite(motion)
             ? clamp(motion, float3(-PRIME_NRD_FP16_MAX), float3(PRIME_NRD_FP16_MAX))
             : float3(0.0);
 }
 
-float primeNrdY(float3 color) {
+public float primeNrdY(float3 color) {
     return dot(color, float3(0.25, 0.5, 0.25));
 }
 
-float3 primeNrdLinearToYCoCg(float3 color) {
+public float3 primeNrdLinearToYCoCg(float3 color) {
     return float3(
             primeNrdY(color),
             dot(color, float3(0.5, 0.0, -0.5)),
             dot(color, float3(-0.25, 0.5, -0.25)));
 }
 
-float3 primeNrdYCoCgToLinear(float3 color) {
+public float3 primeNrdYCoCgToLinear(float3 color) {
     float t = color.x - color.z;
     return max(float3(t + color.y, color.x + color.z, t - color.y), float3(0.0));
 }
 
-static const uint PRIME_NRD_GUIDE_CONDUCTOR = 1u << 8u;
+public static const uint PRIME_NRD_GUIDE_CONDUCTOR = 1u << 8u;
 
-uint primeNrdGuideControl(uint materialControl, uint opticalControl) {
+public uint primeNrdGuideControl(uint materialControl, uint opticalControl) {
     return materialControl
             | (primeFresnelIsConductor(opticalControl & PRIME_OPTICAL_FRESNEL_MASK)
                     ? PRIME_NRD_GUIDE_CONDUCTOR
                     : 0u);
 }
 
-float primeNrdMaterialId(uint materialControl) {
+public float primeNrdMaterialId(uint materialControl) {
     // R10_G10_B10_A2_UNORM provides four exact classes. These categories deliberately describe
     // reconstruction behavior, not every authored material: ordinary dielectrics, conductors,
     // transmissive interfaces, and strand-like foliage must not exchange temporal history.
@@ -104,7 +104,7 @@ float primeNrdMaterialId(uint materialControl) {
     return (materialControl & PRIME_NRD_GUIDE_CONDUCTOR) != 0u ? 1.0 / 3.0 : 0.0;
 }
 
-uint primeNrdPrimaryMaterialFlags(
+public uint primeNrdPrimaryMaterialFlags(
         uint guideMaterialFlags,
         uint visibleMaterialFlags,
         bool preserveVisibleInterface) {
@@ -116,7 +116,7 @@ uint primeNrdPrimaryMaterialFlags(
             : guideMaterialFlags;
 }
 
-float4 primeNrdPackNormalRoughness(float3 normal, float roughness, float materialId) {
+public float4 primeNrdPackNormalRoughness(float3 normal, float roughness, float materialId) {
     float3 encodedNormal = primeNrdSafeNormalize(normal, float3(0.0, 0.0, 1.0));
     encodedNormal /= max(abs(encodedNormal.x) + abs(encodedNormal.y) + abs(encodedNormal.z), 1.0e-9);
     float3 packed;
@@ -132,7 +132,7 @@ float4 primeNrdPackNormalRoughness(float3 normal, float roughness, float materia
     return float4(packed, primeNrdSanitizeUnit(materialId, 0.0));
 }
 
-void primeNrdUnpackNormalRoughness(
+public void primeNrdUnpackNormalRoughness(
         float4 packedValue, out float3 normal, out float roughness) {
     float3 packed = packedValue.rgb;
     float2 octahedral = float2(
@@ -146,7 +146,7 @@ void primeNrdUnpackNormalRoughness(
             PRIME_DEFAULT_REFERENCE_LINEAR_ROUGHNESS);
 }
 
-float primeNrdNormalizedSanitizedHitDistance(
+public float primeNrdNormalizedSanitizedHitDistance(
         float hitDistance,
         float viewZ,
         float roughness) {
@@ -158,7 +158,7 @@ float primeNrdNormalizedSanitizedHitDistance(
     return clamp(hitDistance / max(scale, 1.0e-6), 0.0, 1.0);
 }
 
-float primeNrdNormalizedHitDistance(float hitDistance, float viewZ, float roughness) {
+public float primeNrdNormalizedHitDistance(float hitDistance, float viewZ, float roughness) {
     // Exact REBLUR_FrontEnd_GetNormHitDist contract. The roughness-dependent scale is essential
     // for specular virtual motion; using the diffuse shortcut here destabilizes highlights.
     return primeNrdNormalizedSanitizedHitDistance(
@@ -168,15 +168,15 @@ float primeNrdNormalizedHitDistance(float hitDistance, float viewZ, float roughn
                     roughness, PRIME_DEFAULT_REFERENCE_LINEAR_ROUGHNESS));
 }
 
-float primeNrdRadiancePeak(float3 radiance) {
+public float primeNrdRadiancePeak(float3 radiance) {
     return max(radiance.x, max(radiance.y, radiance.z));
 }
 
-float primeNrdSanitizeNonnegative(float value) {
+public float primeNrdSanitizeNonnegative(float value) {
     return primeNrdIsFinite(value) ? max(value, 0.0) : 0.0;
 }
 
-float3 primeNrdClampRadiance(float3 radiance, float limit) {
+public float3 primeNrdClampRadiance(float3 radiance, float limit) {
     // Channels are independent estimators. One failed component must not erase the other two.
     radiance = float3(
             primeNrdSanitizeNonnegative(radiance.x),
@@ -188,18 +188,18 @@ float3 primeNrdClampRadiance(float3 radiance, float limit) {
     return min(result, float3(limit));
 }
 
-float3 primeNrdSanitizeRadiance(float3 radiance) {
+public float3 primeNrdSanitizeRadiance(float3 radiance) {
     return primeNrdClampRadiance(radiance, PRIME_NRD_FP16_MAX);
 }
 
-float3 primeNrdSanitizeAlbedo(float3 albedo) {
+public float3 primeNrdSanitizeAlbedo(float3 albedo) {
     return float3(
             primeNrdSanitizeUnit(albedo.x, 0.0),
             primeNrdSanitizeUnit(albedo.y, 0.0),
             primeNrdSanitizeUnit(albedo.z, 0.0));
 }
 
-float primeNrdDemodulateChannel(float radiance, float guide) {
+public float primeNrdDemodulateChannel(float radiance, float guide) {
     if (!(guide > 0.0) || !(radiance > 0.0)) return 0.0;
     // Select the clamped result before division so a valid tiny guide cannot create infinity and
     // then be mistaken for a failed channel by a later sanitizer.
@@ -208,20 +208,20 @@ float primeNrdDemodulateChannel(float radiance, float guide) {
             : radiance / guide;
 }
 
-float3 primeNrdDemodulateSanitized(float3 radiance, float3 guide) {
+public float3 primeNrdDemodulateSanitized(float3 radiance, float3 guide) {
     return float3(
             primeNrdDemodulateChannel(radiance.x, guide.x),
             primeNrdDemodulateChannel(radiance.y, guide.y),
             primeNrdDemodulateChannel(radiance.z, guide.z));
 }
 
-float3 primeNrdDemodulate(float3 radiance, float3 guide) {
+public float3 primeNrdDemodulate(float3 radiance, float3 guide) {
     return primeNrdDemodulateSanitized(
             primeNrdSanitizeRadiance(radiance),
             primeNrdSanitizeAlbedo(guide));
 }
 
-float primeNrdClampRadianceTriple(
+public float primeNrdClampRadianceTriple(
         inout float3 first,
         inout float3 second,
         inout float3 third,
@@ -255,7 +255,7 @@ float primeNrdClampRadianceTriple(
     return scale;
 }
 
-float primeNrdClampRadiancePair(
+public float primeNrdClampRadiancePair(
         inout float3 first,
         inout float3 second,
         float limit) {
@@ -276,7 +276,7 @@ float primeNrdClampRadiancePair(
     return scale;
 }
 
-float primeNrdClampSanitizedRadiancePair(
+public float primeNrdClampSanitizedRadiancePair(
         inout float3 first,
         inout float3 second,
         float limit) {
@@ -289,17 +289,15 @@ float primeNrdClampSanitizedRadiancePair(
     return scale;
 }
 
-float4 primeNrdPackRadianceAndHitDistance(float3 radiance, float normalizedHitDistance) {
+public float4 primeNrdPackRadianceAndHitDistance(float3 radiance, float normalizedHitDistance) {
     float3 sanitized = primeNrdSanitizeRadiance(radiance);
     return float4(
             primeNrdLinearToYCoCg(sanitized),
             primeNrdSanitizeUnit(normalizedHitDistance, 0.0));
 }
 
-float4 primeNrdPackSanitizedRadianceAndHitDistance(
+public float4 primeNrdPackSanitizedRadianceAndHitDistance(
         float3 radiance,
         float normalizedHitDistance) {
     return float4(primeNrdLinearToYCoCg(radiance), normalizedHitDistance);
 }
-
-#endif

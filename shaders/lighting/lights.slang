@@ -1,37 +1,42 @@
-#ifndef PRIME_LIGHTS_SLANG
-#define PRIME_LIGHTS_SLANG
+#language slang 2026
+module "lighting/lights.slang";
 
-#include "core/common.slang"
-#include "core/sampling.slang"
-#include "material/material.slang"
-#include "core/light_tree_math.slang"
+import "prime_abi.slang";
+import "prime_abi_types.slang";
+import "core/atmosphere.slang";
+import "core/atmosphere_rt.slang";
+import "core/numerical_diagnostics.slang";
+import "core/packed_geometry.slang";
+import "core/sampling.slang";
+import "core/transport_math.slang";
+import "material/material.slang";
+import "core/light_tree_math.slang";
+import "core/starmap.slang";
 
 static const float PRIME_LIGHT_PI = 3.141592653589793;
 
-struct LightSample {
-    float3 direction;
-    float distance;
-    float3 radiance;
-    float pdf;
-    uint isDelta;
+public struct LightSample {
+    public float3 direction;
+    public float distance;
+    public float3 radiance;
+    public float pdf;
+    public uint isDelta;
 };
 
 // Area-light geometry selection is deliberately separate from radiance resolution. Most sampled
 // lights are occluded in dense terrain; retaining only stable indices and UVs across traceRayEXT
 // avoids both an atlas read and live emitter state until the visibility test succeeds.
-struct AreaLightSample {
-    LightSample light;
-    uint sectionIndex;
-    uint emitterIndex;
-    float2 uv;
+public struct AreaLightSample {
+    public LightSample light;
+    public uint sectionIndex;
+    public uint emitterIndex;
+    public float2 uv;
 };
 
-struct LightEvaluation {
-    float3 radiance;
-    float pdf;
+public struct LightEvaluation {
+    public float3 radiance;
+    public float pdf;
 };
-
-#include "core/starmap.slang"
 
 // All radiance values in this adapter are linear Rec.2020 D65. pdf is the complete f32 sampling
 // density, including light-selection probability when a future registry introduces one. Reverse
@@ -40,7 +45,7 @@ struct LightEvaluation {
 // The submitted sun direction and all path directions are unit vectors at this boundary.
 // Renormalizing them per vertex would only repeat a square root and three divisions.
 
-float primePowerHeuristic(
+public float primePowerHeuristic(
         inout PrimeNumericalDiagnostics diagnostics,
         float firstPdf,
         float secondPdf) {
@@ -49,7 +54,7 @@ float primePowerHeuristic(
     return primePowerHeuristicValue(firstPdf, secondPdf);
 }
 
-float primePowerHeuristicOverPdf(
+public float primePowerHeuristicOverPdf(
         inout PrimeNumericalDiagnostics diagnostics,
         float sampledPdf,
         float otherPdf) {
@@ -60,7 +65,7 @@ float primePowerHeuristicOverPdf(
     return result;
 }
 
-float3 primeEnvironmentRadiance(IntegratorRecord integrator, float3 direction) {
+public float3 primeEnvironmentRadiance(IntegratorRecord integrator, float3 direction) {
     // Atmosphere LUT construction is linear in its extraterrestrial source. Reusing the calibrated
     // base LUT and applying the same scale as direct sun is exact for this single-source model.
     float sunScale = max(integrator.sunDirectionIntensity.w, 0.0)
@@ -79,7 +84,7 @@ float primeSunSolidAngle() {
     return 4.0 * PRIME_LIGHT_PI * sineHalfRadius * sineHalfRadius;
 }
 
-float primeSunPdf() {
+public float primeSunPdf() {
     return 1.0 / primeSunSolidAngle();
 }
 
@@ -96,14 +101,14 @@ float3 primeSunRadiance(
             * primeAtmosphereSunTransmittance(surfacePosition, direction);
 }
 
-float3 primeResolveSampledSunRadiance(
+public float3 primeResolveSampledSunRadiance(
         IntegratorRecord integrator,
         float3 surfacePosition,
         LightSample light) {
     return primeSunRadiance(integrator, surfacePosition, light.direction);
 }
 
-LightEvaluation primeEvaluateSun(
+public LightEvaluation primeEvaluateSun(
         IntegratorRecord integrator,
         float3 surfacePosition,
         float3 direction) {
@@ -116,7 +121,7 @@ LightEvaluation primeEvaluateSun(
     return result;
 }
 
-LightSample primeSampleSun(
+public LightSample primeSampleSun(
         IntegratorRecord integrator,
         float3 surfacePosition,
         float2 sampleValue) {
@@ -136,7 +141,7 @@ LightSample primeSampleSun(
     return result;
 }
 
-static const uint PRIME_NO_LIGHT_INDEX = 0xffffffffu;
+public static const uint PRIME_NO_LIGHT_INDEX = 0xffffffffu;
 static const uint PRIME_LIGHT_LEAF_FLAG = 0x80000000u;
 static const uint PRIME_LIGHT_INDEX_MASK = 0x7fffffffu;
 static const uint PRIME_LIGHT_TREE_MAX_DEPTH = 27u;
@@ -443,7 +448,7 @@ float primeAreaSolidAnglePdf(
     return primeAreaSolidAnglePdfValue(areaPdf, distanceSquared, lightCosine);
 }
 
-AreaLightSample primeSampleAreaLight(
+public AreaLightSample primeSampleAreaLight(
         inout PrimeNumericalDiagnostics diagnostics,
         float3 surfacePosition,
         uint packedReceiverNormal,
@@ -579,7 +584,7 @@ AreaLightSample primeSampleAreaLight(
     return result;
 }
 
-float3 primeResolveSampledAreaLightRadiance(AreaLightSample areaSample) {
+public float3 primeResolveSampledAreaLightRadiance(AreaLightSample areaSample) {
     if (areaSample.sectionIndex == PRIME_NO_LIGHT_INDEX
             || areaSample.emitterIndex == PRIME_NO_LIGHT_INDEX) {
         return float3(0.0);
@@ -601,7 +606,7 @@ float3 primeResolveSampledAreaLightRadiance(AreaLightSample areaSample) {
             areaSample.uv);
 }
 
-LightEvaluation primeEvaluateAreaLight(
+public LightEvaluation primeEvaluateAreaLight(
         inout PrimeNumericalDiagnostics diagnostics,
         SurfaceInteraction surface,
         float3 rayOrigin,
@@ -721,5 +726,3 @@ LightEvaluation primeEvaluateAreaLight(
             areaPdf);
     return result;
 }
-
-#endif

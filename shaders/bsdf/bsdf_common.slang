@@ -1,74 +1,74 @@
-#ifndef PRIME_BSDF_COMMON_SLANG
-#define PRIME_BSDF_COMMON_SLANG
+#language slang 2026
+module "bsdf/bsdf_common.slang";
 
-static const float PRIME_PI = 3.14159265358979323846;
+public static const float PRIME_PI = 3.14159265358979323846;
 
-static const uint PRIME_BSDF_EVENT_REFLECTION = 1 << 0;
-static const uint PRIME_BSDF_EVENT_TRANSMISSION = 1 << 1;
-static const uint PRIME_BSDF_EVENT_DIFFUSE = 1 << 2;
-static const uint PRIME_BSDF_EVENT_GLOSSY = 1 << 3;
-static const uint PRIME_BSDF_EVENT_DISCRETE = 1 << 4;
-static const uint PRIME_MEASURE_SOLID_ANGLE = 1;
-static const uint PRIME_MEASURE_DISCRETE = 2;
+public static const uint PRIME_BSDF_EVENT_REFLECTION = 1 << 0;
+public static const uint PRIME_BSDF_EVENT_TRANSMISSION = 1 << 1;
+public static const uint PRIME_BSDF_EVENT_DIFFUSE = 1 << 2;
+public static const uint PRIME_BSDF_EVENT_GLOSSY = 1 << 3;
+public static const uint PRIME_BSDF_EVENT_DISCRETE = 1 << 4;
+public static const uint PRIME_MEASURE_SOLID_ANGLE = 1;
+public static const uint PRIME_MEASURE_DISCRETE = 2;
 
-struct PrimeClosureTraits
+public struct PrimeClosureTraits
 {
-    uint measureMask;
-    uint eventMask;
+    public uint measureMask;
+    public uint eventMask;
 };
 
-bool primeClosureSupports(PrimeClosureTraits traits, uint measure)
+public bool primeClosureSupports(PrimeClosureTraits traits, uint measure)
 {
     return (traits.measureMask & measure) != 0;
 }
 
-bool primeClosureIsDiscreteOnly(PrimeClosureTraits traits)
+public bool primeClosureIsDiscreteOnly(PrimeClosureTraits traits)
 {
     return traits.measureMask == PRIME_MEASURE_DISCRETE;
 }
 
-struct BsdfEvaluation
+public struct BsdfEvaluation
 {
-    float3 response;
-    float pdf;
+    public float3 response;
+    public float pdf;
 };
 
-struct BsdfSample
+public struct BsdfSample
 {
-    float3 direction;
-    float3 response;
-    float pdf;
-    float relativeEta;
-    uint eventFlags;
+    public float3 direction;
+    public float3 response;
+    public float pdf;
+    public float relativeEta;
+    public uint eventFlags;
 };
 
-struct EdfEvaluation
+public struct EdfEvaluation
 {
-    float3 radiance;
-    float pdf;
+    public float3 radiance;
+    public float pdf;
 };
 
-struct EdfSample
+public struct EdfSample
 {
-    float3 direction;
-    float3 radiance;
-    float pdf;
+    public float3 direction;
+    public float3 radiance;
+    public float pdf;
 };
 
-struct PhaseEvaluation
+public struct PhaseEvaluation
 {
-    float value;
-    float pdf;
+    public float value;
+    public float pdf;
 };
 
-struct PhaseSample
+public struct PhaseSample
 {
-    float3 direction;
-    float weight;
-    float pdf;
+    public float3 direction;
+    public float weight;
+    public float pdf;
 };
 
-BsdfEvaluation primeInvalidBsdfEvaluation()
+public BsdfEvaluation primeInvalidBsdfEvaluation()
 {
     BsdfEvaluation result;
     result.response = float3(0.0);
@@ -76,7 +76,7 @@ BsdfEvaluation primeInvalidBsdfEvaluation()
     return result;
 }
 
-BsdfSample primeInvalidBsdfSample()
+public BsdfSample primeInvalidBsdfSample()
 {
     BsdfSample result;
     result.direction = float3(0.0);
@@ -87,17 +87,17 @@ BsdfSample primeInvalidBsdfSample()
     return result;
 }
 
-bool primeBsdfFinite(float value)
+public bool primeBsdfFinite(float value)
 {
     return !isnan(value) && !isinf(value);
 }
 
-bool primeBsdfFinite(float3 value)
+public bool primeBsdfFinite(float3 value)
 {
     return !any(isnan(value)) && !any(isinf(value));
 }
 
-bool primeBsdfDirection(float3 value)
+public bool primeBsdfDirection(float3 value)
 {
     if (!primeBsdfFinite(value)) return false;
     float lengthSquared = dot(value, value);
@@ -106,7 +106,7 @@ bool primeBsdfDirection(float3 value)
             && abs(lengthSquared - 1.0) <= 1.0e-3;
 }
 
-BsdfEvaluation primeSanitizeBsdfEvaluation(BsdfEvaluation evaluation)
+public BsdfEvaluation primeSanitizeBsdfEvaluation(BsdfEvaluation evaluation)
 {
     if (!primeBsdfFinite(evaluation.response)
             || !primeBsdfFinite(evaluation.pdf)
@@ -117,7 +117,7 @@ BsdfEvaluation primeSanitizeBsdfEvaluation(BsdfEvaluation evaluation)
     return evaluation;
 }
 
-BsdfSample primeSanitizeBsdfSample(BsdfSample sampleValue)
+public BsdfSample primeSanitizeBsdfSample(BsdfSample sampleValue)
 {
     if (sampleValue.eventFlags == 0) {
         return primeInvalidBsdfSample();
@@ -133,5 +133,3 @@ BsdfSample primeSanitizeBsdfSample(BsdfSample sampleValue)
     }
     return sampleValue;
 }
-
-#endif

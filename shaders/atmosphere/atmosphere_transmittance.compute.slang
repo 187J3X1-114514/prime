@@ -1,5 +1,5 @@
-#include "core/atmosphere.slang"
-#include "core/image_access.slang"
+import "core/atmosphere.slang";
+import "core/image_access.slang";
 
 [[vk::binding(0, 0)]] [[vk::image_format("rgba16f")]] writeonly RWTexture2D<float4> transmittanceLow;
 [[vk::binding(1, 0)]] [[vk::image_format("rgba16f")]] writeonly RWTexture2D<float4> transmittanceHigh;

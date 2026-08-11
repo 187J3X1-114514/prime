@@ -1,13 +1,11 @@
-#ifndef PRIME_SHADOW_PAYLOAD_SLANG
-#define PRIME_SHADOW_PAYLOAD_SLANG
+#language slang 2026
+module "rt/shadow_payload.slang";
 
-struct PrimeShadowPayload
+public struct PrimeShadowPayload
 {
-    float4 opticalDepthMomentHitDistance;
-    float4 terminalExtinctionRayDistance;
-    float4 startingExtinction0Winding;
-    float4 startingExtinction1Winding;
-    uint startingMediumCount;
+    public float4 opticalDepthMomentHitDistance;
+    public float4 terminalExtinctionRayDistance;
+    public float4 startingExtinction0Winding;
+    public float4 startingExtinction1Winding;
+    public uint startingMediumCount;
 };
-
-#endif

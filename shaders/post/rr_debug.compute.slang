@@ -1,8 +1,9 @@
-#include "core/image_access.slang"
+import "core/image_access.slang";
+import "core/color_space.slang";
 
-#include "material/default_material.slang"
-#include "core/auto_exposure.slang"
-#include "post/display_transform.slang"
+import "material/default_material.slang";
+import "core/auto_exposure.slang";
+import "post/display_transform.slang";
 
 [[vk::binding(0, 0)]] [[vk::image_format("rgba16f")]] readonly RWTexture2D<float4> rrDebugInputColor;
 [[vk::binding(1, 0)]] [[vk::image_format("rgba16f")]] readonly RWTexture2D<float4> rrDebugMotion;

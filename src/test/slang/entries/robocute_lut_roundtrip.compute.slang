@@ -1,8 +1,7 @@
 
-#define PRIME_RC_TRANSMISSION_GGX_SET 0
-#define PRIME_RC_TRANSMISSION_GGX_BINDING 2
 #include "core/prime_test_abi.slang"
-#include "bsdf/core/robocute_microfacet.slang"
+import "bsdf/core/robocute_microfacet.slang";
+import "bsdf/adapter/transmission_ggx_energy.slang";
 
 static const uint3 PRIME_TEST_GGX_SIZE = uint3(44u, 32u, 159u);
 
@@ -18,5 +17,5 @@ void main(uint3 dispatchThreadId : SV_DispatchThreadID)
     uint y = yz % PRIME_TEST_GGX_SIZE.y;
     uint z = yz / PRIME_TEST_GGX_SIZE.y;
     primeTestOutput[caseIndex] = asuint(
-            primeRcTransmissionGgxEnergy.Load(int4(x, y, z, 0)));
+            primeLoadTransmissionGgxEnergyTexel(uint3(x, y, z)));
 }

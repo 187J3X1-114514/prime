@@ -1,6 +1,6 @@
 
 
-#include "prime_abi_types.slang"
+import "prime_abi_types.slang";
 
 
 

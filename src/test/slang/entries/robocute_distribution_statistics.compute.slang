@@ -1,8 +1,12 @@
 
-#define PRIME_RC_TRANSMISSION_GGX_SET 0
-#define PRIME_RC_TRANSMISSION_GGX_BINDING 2
 #include "core/prime_test_abi.slang"
-#include "bsdf/adapter/prime_bsdf_specializations.slang"
+import "bsdf/adapter/prime_bsdf_specializations.slang";
+import "bsdf/adapter/transmission_ggx_energy.slang";
+import "bsdf/core/robocute_closures.slang";
+import "bsdf/core/robocute_common.slang";
+import "bsdf/core/robocute_fresnel.slang";
+import "bsdf/core/robocute_microfacet.slang";
+import "bsdf/core/robocute_openpbr.slang";
 
 static const uint PRIME_STAT_SAMPLE = 0u;
 static const uint PRIME_STAT_INTEGRATE = 1u;
@@ -72,10 +76,12 @@ PrimeRcState primeStatState(
     float3 wavelengths = float3(630.0, 532.0, 467.0);
     if (suite == PRIME_STAT_TRANSMISSION) {
         return primeRcTransmissionStateInit(
+                primeTransmissionGgxEnergy(),
                 material, wi, 1.0, 0.0, wavelengths,
                 0u, PRIME_RC_DETAIL_DEFAULT, 0u);
     }
     return primeRcBasicMetallicStateInit(
+            primeTransmissionGgxEnergy(),
             material, wi, 1.0, 0.0, wavelengths,
             0u, PRIME_RC_DETAIL_DEFAULT, 0u);
 }
@@ -148,7 +154,8 @@ void main(uint3 dispatchThreadId : SV_DispatchThreadID)
     float3 directionalEnergy;
     if (suite == PRIME_STAT_TRANSMISSION) {
         evaluated = primeRcPrimeTransmissionEvaluate(wi, wo, state);
-        directionalEnergy = primeRcTransmissionEnergy(wi, state);
+        directionalEnergy = primeRcTransmissionEnergy(
+                primeTransmissionGgxEnergy(), wi, state);
     } else {
         evaluated = primeRcPrimeBasicMetallicEvaluate(wi, wo, state);
         directionalEnergy = primeRcBasicMetallicEnergy(wi, state);

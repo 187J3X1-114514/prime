@@ -1,8 +1,12 @@
 
-#define PRIME_RC_TRANSMISSION_GGX_SET 0
-#define PRIME_RC_TRANSMISSION_GGX_BINDING 2
 #include "core/prime_test_abi.slang"
-#include "bsdf/adapter/prime_bsdf_specializations.slang"
+import "bsdf/adapter/prime_bsdf_specializations.slang";
+import "bsdf/adapter/transmission_ggx_energy.slang";
+import "bsdf/core/robocute_closures.slang";
+import "bsdf/core/robocute_common.slang";
+import "bsdf/core/robocute_fresnel.slang";
+import "bsdf/core/robocute_microfacet.slang";
+import "bsdf/core/robocute_openpbr.slang";
 bool2 greaterThanEqual(float2 first, float2 second) { return first >= second; }
 bool3 greaterThanEqual(float3 first, float3 second) { return first >= second; }
 bool2 lessThanEqual(float2 first, float2 second) { return first <= second; }
@@ -243,14 +247,17 @@ void primeClosureProperties(
     PrimeRcState state;
     if (kind == PRIME_CLOSURE_BASIC_METALLIC) {
         state = primeRcBasicMetallicStateInit(
+                primeTransmissionGgxEnergy(),
                 material, wi, inverseOutsideIor, rayT, wavelengths,
                 0u, PRIME_RC_DETAIL_DEFAULT, 0u);
     } else if (kind == PRIME_CLOSURE_SUBSURFACE_GLOSSY) {
         state = primeRcSubsurfaceGlossyStateInit(
+                primeTransmissionGgxEnergy(),
                 material, wi, inverseOutsideIor, rayT, wavelengths,
                 0u, PRIME_RC_DETAIL_DEFAULT, 0u);
     } else if (kind == PRIME_CLOSURE_TRANSMISSION) {
         state = primeRcTransmissionStateInit(
+                primeTransmissionGgxEnergy(),
                 material, wi, inverseOutsideIor, rayT, wavelengths,
                 0u, PRIME_RC_DETAIL_DEFAULT, 0u);
         state = primeRcPrimeTransmissionInterfaceState(wi, state);

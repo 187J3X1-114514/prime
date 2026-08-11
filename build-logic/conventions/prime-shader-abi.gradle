@@ -323,7 +323,7 @@ abstract class GenerateShaderAbi extends DefaultTask {
 				if (type == null) {
 					throw new GradleException("No Slang ABI type mapping for ${field.type}")
 				}
-				return "    ${type} ${field.name};"
+				return "    public ${type} ${field.name};"
 			}.join('\n')
 		}
 
@@ -508,9 +508,16 @@ ${javaOffsets}
 
 		def slangDir = slangOutputDirectory.get().asFile
 		slangDir.mkdirs()
+		new File(slangDir, 'prime_abi_bindings.slang').text = """\
+#language slang 2026
+module "prime_abi_bindings.slang";
+
+// Generated from shaders/abi.json. Do not edit by hand.
+public static const uint PRIME_TRANSMISSION_GGX_ENERGY_BINDING = ${schema.sharedDescriptors.transmissionGgxEnergy};
+"""
 		new File(slangDir, 'prime_abi_types.slang').text = """\
-#ifndef PRIME_ABI_TYPES_SLANG
-#define PRIME_ABI_TYPES_SLANG
+#language slang 2026
+module "prime_abi_types.slang";
 
 // Generated from shaders/abi.json. Do not edit by hand.
 static const uint PRIME_PRIMITIVE_RECORD_SIZE = ${primitive.size};
@@ -586,304 +593,295 @@ static const uint PRIME_STARMAP_WIDTH = ${starmapContract.width};
 static const uint PRIME_STARMAP_HEIGHT = ${starmapContract.height};
 static const float PRIME_STARMAP_BASE_RADIANCE_SCALE = ${starmapContract.baseRadianceScale};
 
-struct PrimitiveRecord
+public struct PrimitiveRecord
 {
 ${slangStructFields(primitive)}
 };
 
-struct SectionRecord
+public struct SectionRecord
 {
 ${slangStructFields(section)}
 };
 
-struct LightNode
+public struct LightNode
 {
 ${slangStructFields(lightNode)}
 };
 
-struct LightLeaf
+public struct LightLeaf
 {
 ${slangStructFields(lightLeaf)}
 };
 
-struct LightLeafEntry
+public struct LightLeafEntry
 {
 ${slangStructFields(lightLeafEntry)}
 };
 
-struct LightEmitter
+public struct LightEmitter
 {
 ${slangStructFields(lightEmitter)}
 };
 
-struct LightCell
+public struct LightCell
 {
 ${slangStructFields(lightCell)}
 };
 
-struct SectionLightHeader
+public struct SectionLightHeader
 {
 ${slangStructFields(sectionLightHeader)}
 };
 
-struct IntegratorRecord
+public struct IntegratorRecord
 {
 ${slangStructFields(integrator)}
 };
 
-struct PathState
+public struct PathState
 {
 ${slangStructFields(pathState)}
 };
 
-struct TracePayload
+public struct TracePayload
 {
 ${slangStructFields(tracePayload)}
 };
 
-struct SurfaceInteraction
+public struct SurfaceInteraction
 {
 ${slangStructFields(surfaceInteraction)}
 };
 
-struct PrimePushConstants
+public struct PrimePushConstants
 {
 ${slangStructFields(push)}
 };
 
-struct NrdMotionPushConstants
+public struct NrdMotionPushConstants
 {
 ${slangStructFields(nrdMotionPush)}
 };
 
-struct SharcFrameConstants
+public struct SharcFrameConstants
 {
 ${slangStructFields(sharcFrame)}
 };
 
-#endif
-"""
+""".replace('static const ', 'public static const ')
 		new File(slangDir, 'prime_abi.slang').text = """\
-#ifndef PRIME_ABI_SLANG
-#define PRIME_ABI_SLANG
+#language slang 2026
+module "prime_abi.slang";
 
-#include "prime_abi_types.slang"
+import "prime_abi_types.slang";
 
-[[vk::push_constant]] ConstantBuffer<PrimePushConstants> primePush;
+public [[vk::push_constant]] ConstantBuffer<PrimePushConstants> primePush;
 
 [[vk::binding(${schema.sharedDescriptors.tlas}, 0)]]
-RaytracingAccelerationStructure primeScene;
+public RaytracingAccelerationStructure primeScene;
 [[vk::binding(${schema.sharedDescriptors.blockAtlas}, 0)]]
-Sampler2D<float4> primeSceneTextures[PRIME_SCENE_TEXTURE_COUNT];
+public Sampler2D<float4> primeSceneTextures[PRIME_SCENE_TEXTURE_COUNT];
 [[vk::binding(${schema.sharedDescriptors.labPbrNormalAtlas}, 0)]]
-Sampler2D<float4> primeLabPbrNormalAtlas;
+public Sampler2D<float4> primeLabPbrNormalAtlas;
 [[vk::binding(${schema.sharedDescriptors.labPbrSpecularAtlas}, 0)]]
-Sampler2D<float4> primeLabPbrSpecularAtlas;
+public Sampler2D<float4> primeLabPbrSpecularAtlas;
 
 [[vk::binding(${schema.sharedDescriptors.skyView}, 0)]] [[vk::image_format("rgba16f")]]
-readonly RWTexture2D<float4> primeSkyView;
+public readonly RWTexture2D<float4> primeSkyView;
 [[vk::binding(${schema.sharedDescriptors.transmittanceLow}, 0)]] [[vk::image_format("rgba16f")]]
-readonly RWTexture2D<float4> primeTransmittanceLow;
+public readonly RWTexture2D<float4> primeTransmittanceLow;
 [[vk::binding(${schema.sharedDescriptors.transmittanceHigh}, 0)]] [[vk::image_format("rgba16f")]]
-readonly RWTexture2D<float4> primeTransmittanceHigh;
+public readonly RWTexture2D<float4> primeTransmittanceHigh;
 [[vk::binding(${schema.sharedDescriptors.aerialRadiance}, 0)]] [[vk::image_format("rgba16f")]]
-readonly RWTexture3D<float4> primeAerialRadiance;
+public readonly RWTexture3D<float4> primeAerialRadiance;
 [[vk::binding(${schema.sharedDescriptors.aerialTransmittance}, 0)]] [[vk::image_format("rgba16f")]]
-readonly RWTexture3D<float4> primeAerialTransmittance;
+public readonly RWTexture3D<float4> primeAerialTransmittance;
 [[vk::binding(${schema.sharedDescriptors.sunShadowDepth0}, 0)]] [[vk::image_format("r32f")]]
-RWTexture2D<float> primeSunShadowDepth0;
+public RWTexture2D<float> primeSunShadowDepth0;
 [[vk::binding(${schema.sharedDescriptors.sunShadowDepth1}, 0)]] [[vk::image_format("r32f")]]
-RWTexture2D<float> primeSunShadowDepth1;
+public RWTexture2D<float> primeSunShadowDepth1;
 [[vk::binding(${schema.sharedDescriptors.sunShadowDepth2}, 0)]] [[vk::image_format("r32f")]]
-RWTexture2D<float> primeSunShadowDepth2;
+public RWTexture2D<float> primeSunShadowDepth2;
 [[vk::binding(${schema.sharedDescriptors.sunShadowDepth3}, 0)]] [[vk::image_format("r32f")]]
-RWTexture2D<float> primeSunShadowDepth3;
+public RWTexture2D<float> primeSunShadowDepth3;
 [[vk::binding(${schema.sharedDescriptors.sunShadowDepth4}, 0)]] [[vk::image_format("r32f")]]
-RWTexture2D<float> primeSunShadowDepth4;
+public RWTexture2D<float> primeSunShadowDepth4;
 [[vk::binding(${schema.sharedDescriptors.sunShadowDepth5}, 0)]] [[vk::image_format("r32f")]]
-RWTexture2D<float> primeSunShadowDepth5;
+public RWTexture2D<float> primeSunShadowDepth5;
 [[vk::binding(${schema.sharedDescriptors.sunShadowDepth6}, 0)]] [[vk::image_format("r32f")]]
-RWTexture2D<float> primeSunShadowDepth6;
+public RWTexture2D<float> primeSunShadowDepth6;
 [[vk::binding(${schema.sharedDescriptors.sunShadowDepth7}, 0)]] [[vk::image_format("r32f")]]
-RWTexture2D<float> primeSunShadowDepth7;
+public RWTexture2D<float> primeSunShadowDepth7;
 [[vk::binding(${schema.sharedDescriptors.sunShadowDepth8}, 0)]] [[vk::image_format("r32f")]]
-RWTexture2D<float> primeSunShadowDepth8;
+public RWTexture2D<float> primeSunShadowDepth8;
 [[vk::binding(${schema.sharedDescriptors.sunShadowDepth9}, 0)]] [[vk::image_format("r32f")]]
-RWTexture2D<float> primeSunShadowDepth9;
+public RWTexture2D<float> primeSunShadowDepth9;
 [[vk::binding(${schema.sharedDescriptors.starmap}, 0)]]
-Sampler2D<float4> primeStarmap;
-
-#endif
+public Sampler2D<float4> primeStarmap;
 """
 		new File(slangDir, 'prime_fsr_contract.slang').text = """\
-#ifndef PRIME_FSR_CONTRACT_SLANG
-#define PRIME_FSR_CONTRACT_SLANG
+#language slang 2026
+module "prime_fsr_contract.slang";
 
 // Generated from shaders/abi.json. FSR host parameters and shader guides share these values.
-static const float PRIME_FSR_NEAR_PLANE = ${fsrContract.nearPlane};
-static const float PRIME_FSR_VIEW_SPACE_TO_METERS_FACTOR = ${fsrContract.viewSpaceToMetersFactor};
-
-#endif
+public static const float PRIME_FSR_NEAR_PLANE = ${fsrContract.nearPlane};
+public static const float PRIME_FSR_VIEW_SPACE_TO_METERS_FACTOR = ${fsrContract.viewSpaceToMetersFactor};
 """
 		new File(slangDir, 'prime_nrd_motion_contract.slang').text = """\
-#ifndef PRIME_NRD_MOTION_CONTRACT_SLANG
-#define PRIME_NRD_MOTION_CONTRACT_SLANG
+#language slang 2026
+module "prime_nrd_motion_contract.slang";
 
-#include "prime_abi_types.slang"
+import "prime_abi_types.slang";
 
 // Generated from shaders/abi.json. The Vulkan range and shader block share this layout.
-[[vk::push_constant]] ConstantBuffer<NrdMotionPushConstants> primeMotionPush;
-
-#endif
+public [[vk::push_constant]] ConstantBuffer<NrdMotionPushConstants> primeMotionPush;
 """
 		new File(slangDir, 'prime_sharc_abi.slang').text = """\
-#ifndef PRIME_SHARC_ABI_SLANG
-#define PRIME_SHARC_ABI_SLANG
+#language slang 2026
+module "prime_sharc_abi.slang";
 
-#include "prime_abi_types.slang"
+import "prime_abi_types.slang";
 
 [[vk::binding(${schema.realtimeDescriptors.sharcFrame}, 1)]]
-ConstantBuffer<SharcFrameConstants> primeSharcFrame;
-
-#endif
+public ConstantBuffer<SharcFrameConstants> primeSharcFrame;
 """
 		new File(slangDir, 'prime_realtime_abi.slang').text = """\
-#ifndef PRIME_REALTIME_ABI_SLANG
-#define PRIME_REALTIME_ABI_SLANG
+#language slang 2026
+module "prime_realtime_abi.slang";
 
-#include "prime_abi_types.slang"
+import "prime_abi_types.slang";
 
-static const uint PRIME_RENDERER_DESCRIPTOR_SET = 1;
-static const uint PRIME_DESCRIPTOR_WAVEFRONT_PATHS = ${schema.realtimeDescriptors.wavefrontPaths};
-static const uint PRIME_DESCRIPTOR_WAVEFRONT_QUEUE = ${schema.realtimeDescriptors.wavefrontQueue};
-static const uint PRIME_WAVEFRONT_PATH_RECORD_SIZE = ${wavefrontContract.pathRecordSize};
-static const uint PRIME_WAVEFRONT_PATH_SLOTS_PER_PIXEL = ${wavefrontContract.pathSlotsPerPixel};
-static const uint PRIME_WAVEFRONT_ROUNDS = ${wavefrontContract.rounds};
-static const uint PRIME_WAVEFRONT_AREA_RECORD_SIZE = ${wavefrontContract.areaRecordSize};
-static const uint PRIME_WAVEFRONT_QUEUE_ENTRIES_PER_PIXEL = ${wavefrontContract.queueEntriesPerPixel};
-static const uint PRIME_WAVEFRONT_QUEUE_COUNT = ${wavefrontContract.queueCount};
-static const uint PRIME_WAVEFRONT_TRACE_QUEUE_0 = ${wavefrontContract.traceQueue0};
-static const uint PRIME_WAVEFRONT_TRACE_QUEUE_1 = ${wavefrontContract.traceQueue1};
-static const uint PRIME_WAVEFRONT_SHADE_QUEUE = ${wavefrontContract.shadeQueue};
-static const uint PRIME_WAVEFRONT_AREA_QUEUE = ${wavefrontContract.areaQueue};
-static const uint PRIME_WAVEFRONT_QUEUE_COMMAND_STRIDE = ${wavefrontContract.queueCommandStride};
-static const uint PRIME_WAVEFRONT_QUEUE_INDEX_SIZE = ${wavefrontContract.queueIndexSize};
-static const uint PRIME_WAVEFRONT_ACTIVE_MASK = ${wavefrontContract.activeMask};
+public static const uint PRIME_RENDERER_DESCRIPTOR_SET = 1;
+public static const uint PRIME_DESCRIPTOR_WAVEFRONT_PATHS = ${schema.realtimeDescriptors.wavefrontPaths};
+public static const uint PRIME_DESCRIPTOR_WAVEFRONT_QUEUE = ${schema.realtimeDescriptors.wavefrontQueue};
+public static const uint PRIME_WAVEFRONT_PATH_RECORD_SIZE = ${wavefrontContract.pathRecordSize};
+public static const uint PRIME_WAVEFRONT_PATH_SLOTS_PER_PIXEL = ${wavefrontContract.pathSlotsPerPixel};
+public static const uint PRIME_WAVEFRONT_ROUNDS = ${wavefrontContract.rounds};
+public static const uint PRIME_WAVEFRONT_AREA_RECORD_SIZE = ${wavefrontContract.areaRecordSize};
+public static const uint PRIME_WAVEFRONT_QUEUE_ENTRIES_PER_PIXEL = ${wavefrontContract.queueEntriesPerPixel};
+public static const uint PRIME_WAVEFRONT_QUEUE_COUNT = ${wavefrontContract.queueCount};
+public static const uint PRIME_WAVEFRONT_TRACE_QUEUE_0 = ${wavefrontContract.traceQueue0};
+public static const uint PRIME_WAVEFRONT_TRACE_QUEUE_1 = ${wavefrontContract.traceQueue1};
+public static const uint PRIME_WAVEFRONT_SHADE_QUEUE = ${wavefrontContract.shadeQueue};
+public static const uint PRIME_WAVEFRONT_AREA_QUEUE = ${wavefrontContract.areaQueue};
+public static const uint PRIME_WAVEFRONT_QUEUE_COMMAND_STRIDE = ${wavefrontContract.queueCommandStride};
+public static const uint PRIME_WAVEFRONT_QUEUE_INDEX_SIZE = ${wavefrontContract.queueIndexSize};
+public static const uint PRIME_WAVEFRONT_ACTIVE_MASK = ${wavefrontContract.activeMask};
 
 [[vk::binding(${schema.realtimeDescriptors.stableRadiance}, 1)]] [[vk::image_format("rgba32f")]]
-RWTexture2D<float4> primeStableRadiance;
+public RWTexture2D<float4> primeStableRadiance;
 [[vk::binding(${schema.realtimeDescriptors.nrdNoisyDiffuse}, 1)]] [[vk::image_format("rgba16f")]]
-RWTexture2D<float4> primeNrdNoisyDiffuse;
+public RWTexture2D<float4> primeNrdNoisyDiffuse;
 [[vk::binding(${schema.realtimeDescriptors.nrdNoisySpecular}, 1)]] [[vk::image_format("rgba16f")]]
-RWTexture2D<float4> primeNrdNoisySpecular;
+public RWTexture2D<float4> primeNrdNoisySpecular;
 [[vk::binding(${schema.realtimeDescriptors.nrdNormalRoughness}, 1)]] [[vk::image_format("rgb10_a2")]]
-RWTexture2D<float4> primeNrdNormalRoughness;
+public RWTexture2D<float4> primeNrdNormalRoughness;
 [[vk::binding(${schema.realtimeDescriptors.nrdViewZ}, 1)]] [[vk::image_format("r32f")]]
-RWTexture2D<float> primeNrdViewZ;
+public RWTexture2D<float> primeNrdViewZ;
 [[vk::binding(${schema.realtimeDescriptors.wavefrontTransportMetadata}, 1)]] [[vk::image_format("rgba16f")]]
-RWTexture2D<float4> primeWavefrontTransportMetadata;
+public RWTexture2D<float4> primeWavefrontTransportMetadata;
 [[vk::binding(${schema.realtimeDescriptors.nrdMaterial}, 1)]] [[vk::image_format("rgba16f")]]
-RWTexture2D<float4> primeNrdMaterial;
+public RWTexture2D<float4> primeNrdMaterial;
 [[vk::binding(${schema.realtimeDescriptors.nrdSpecularMaterial}, 1)]] [[vk::image_format("rgba16f")]]
-RWTexture2D<float4> primeNrdSpecularMaterial;
+public RWTexture2D<float4> primeNrdSpecularMaterial;
 [[vk::binding(${schema.realtimeDescriptors.nrdPrimaryPosition}, 1)]] [[vk::image_format("rgba32f")]]
-RWTexture2D<float4> primeNrdPrimaryPosition;
+public RWTexture2D<float4> primeNrdPrimaryPosition;
 [[vk::binding(${schema.realtimeDescriptors.nrdSunLighting}, 1)]] [[vk::image_format("rgba16f")]]
-RWTexture2D<float4> primeNrdSunLighting;
+public RWTexture2D<float4> primeNrdSunLighting;
 [[vk::binding(${schema.realtimeDescriptors.nrdSunPenumbra}, 1)]] [[vk::image_format("r16f")]]
-RWTexture2D<float> primeNrdSunPenumbra;
+public RWTexture2D<float> primeNrdSunPenumbra;
 [[vk::binding(${schema.realtimeDescriptors.nrdDiffuseDirection}, 1)]] [[vk::image_format("rgba16f")]]
-RWTexture2D<float4> primeNrdDiffuseDirection;
+public RWTexture2D<float4> primeNrdDiffuseDirection;
 [[vk::binding(${schema.realtimeDescriptors.nrdSpecularDirection}, 1)]] [[vk::image_format("rgba16f")]]
-RWTexture2D<float4> primeNrdSpecularDirection;
+public RWTexture2D<float4> primeNrdSpecularDirection;
 [[vk::binding(${schema.realtimeDescriptors.rawNumericalDiagnostic}, 1)]] [[vk::image_format("rgba16f")]]
-writeonly RWTexture2D<float4> primeRawNumericalDiagnostic;
+public writeonly RWTexture2D<float4> primeRawNumericalDiagnostic;
 [[vk::binding(${schema.realtimeDescriptors.nrdReflectionNoisyDiffuse}, 1)]] [[vk::image_format("rgba16f")]]
-RWTexture2D<float4> primeNrdReflectionNoisyDiffuse;
+public RWTexture2D<float4> primeNrdReflectionNoisyDiffuse;
 [[vk::binding(${schema.realtimeDescriptors.nrdReflectionNoisySpecular}, 1)]] [[vk::image_format("rgba16f")]]
-RWTexture2D<float4> primeNrdReflectionNoisySpecular;
+public RWTexture2D<float4> primeNrdReflectionNoisySpecular;
 [[vk::binding(${schema.realtimeDescriptors.nrdReflectionNormalRoughness}, 1)]] [[vk::image_format("rgb10_a2")]]
-RWTexture2D<float4> primeNrdReflectionNormalRoughness;
+public RWTexture2D<float4> primeNrdReflectionNormalRoughness;
 [[vk::binding(${schema.realtimeDescriptors.nrdReflectionMaterial}, 1)]] [[vk::image_format("rgba16f")]]
-RWTexture2D<float4> primeNrdReflectionMaterial;
+public RWTexture2D<float4> primeNrdReflectionMaterial;
 [[vk::binding(${schema.realtimeDescriptors.nrdReflectionSpecularMaterial}, 1)]] [[vk::image_format("rgba16f")]]
-RWTexture2D<float4> primeNrdReflectionSpecularMaterial;
+public RWTexture2D<float4> primeNrdReflectionSpecularMaterial;
 [[vk::binding(${schema.realtimeDescriptors.nrdReflectionPosition}, 1)]] [[vk::image_format("rgba32f")]]
-RWTexture2D<float4> primeNrdReflectionPosition;
+public RWTexture2D<float4> primeNrdReflectionPosition;
 [[vk::binding(${schema.realtimeDescriptors.nrdReflectionDiffuseDirection}, 1)]] [[vk::image_format("rgba16f")]]
-RWTexture2D<float4> primeNrdReflectionDiffuseDirection;
+public RWTexture2D<float4> primeNrdReflectionDiffuseDirection;
 [[vk::binding(${schema.realtimeDescriptors.nrdReflectionSpecularDirection}, 1)]] [[vk::image_format("rgba16f")]]
-RWTexture2D<float4> primeNrdReflectionSpecularDirection;
+public RWTexture2D<float4> primeNrdReflectionSpecularDirection;
 [[vk::binding(${schema.realtimeDescriptors.nrdDisplayPosition}, 1)]] [[vk::image_format("rgba32f")]]
-RWTexture2D<float4> primeNrdDisplayPosition;
+public RWTexture2D<float4> primeNrdDisplayPosition;
 
-float4 primeImageLoad(RWTexture2D<float4> image, int2 coordinate)
+public float4 primeImageLoad(RWTexture2D<float4> image, int2 coordinate)
 {
     return image[coordinate];
 }
 
-float4 primeImageLoad(RWTexture2D<float> image, int2 coordinate)
+public float4 primeImageLoad(RWTexture2D<float> image, int2 coordinate)
 {
     return float4(image[coordinate], 0.0, 0.0, 0.0);
 }
 
-void primeImageStore(RWTexture2D<float4> image, int2 coordinate, float4 value)
+public void primeImageStore(RWTexture2D<float4> image, int2 coordinate, float4 value)
 {
     image[coordinate] = value;
 }
 
-void primeImageStore(RWTexture2D<float> image, int2 coordinate, float4 value)
+public void primeImageStore(RWTexture2D<float> image, int2 coordinate, float4 value)
 {
     image[coordinate] = value.x;
 }
 
-void primeImageStoreWriteOnly(
+public void primeImageStoreWriteOnly(
         writeonly RWTexture2D<float4> image, int2 coordinate, float4 value)
 {
     image[coordinate] = value;
 }
-
-#endif
 """
 		new File(slangDir, 'prime_offline_abi.slang').text = """\
-#ifndef PRIME_OFFLINE_ABI_SLANG
-#define PRIME_OFFLINE_ABI_SLANG
+#language slang 2026
+module "prime_offline_abi.slang";
 
-#include "prime_abi_types.slang"
+import "prime_abi_types.slang";
 
-static const uint PRIME_RENDERER_DESCRIPTOR_SET = 1;
-static const uint PRIME_DESCRIPTOR_WAVEFRONT_PATHS = ${schema.offlineDescriptors.wavefrontPaths};
-static const uint PRIME_DESCRIPTOR_WAVEFRONT_QUEUE = ${schema.offlineDescriptors.wavefrontQueue};
-static const uint PRIME_WAVEFRONT_PATH_RECORD_SIZE = ${offlineWavefrontContract.pathRecordSize};
-static const uint PRIME_WAVEFRONT_PATH_SLOTS_PER_PIXEL = ${offlineWavefrontContract.pathSlotsPerPixel};
-static const uint PRIME_WAVEFRONT_ROUNDS = ${offlineWavefrontContract.rounds};
-static const uint PRIME_WAVEFRONT_AREA_RECORD_SIZE = ${offlineWavefrontContract.areaRecordSize};
-static const uint PRIME_WAVEFRONT_QUEUE_ENTRIES_PER_PIXEL = ${offlineWavefrontContract.queueEntriesPerPixel};
-static const uint PRIME_WAVEFRONT_QUEUE_COUNT = ${offlineWavefrontContract.queueCount};
-static const uint PRIME_WAVEFRONT_QUEUE_COMMAND_STRIDE = ${offlineWavefrontContract.queueCommandStride};
-static const uint PRIME_WAVEFRONT_QUEUE_INDEX_SIZE = ${offlineWavefrontContract.queueIndexSize};
-static const uint PRIME_WAVEFRONT_ACTIVE_MASK = ${offlineWavefrontContract.activeMask};
+public static const uint PRIME_RENDERER_DESCRIPTOR_SET = 1;
+public static const uint PRIME_DESCRIPTOR_WAVEFRONT_PATHS = ${schema.offlineDescriptors.wavefrontPaths};
+public static const uint PRIME_DESCRIPTOR_WAVEFRONT_QUEUE = ${schema.offlineDescriptors.wavefrontQueue};
+public static const uint PRIME_WAVEFRONT_PATH_RECORD_SIZE = ${offlineWavefrontContract.pathRecordSize};
+public static const uint PRIME_WAVEFRONT_PATH_SLOTS_PER_PIXEL = ${offlineWavefrontContract.pathSlotsPerPixel};
+public static const uint PRIME_WAVEFRONT_ROUNDS = ${offlineWavefrontContract.rounds};
+public static const uint PRIME_WAVEFRONT_AREA_RECORD_SIZE = ${offlineWavefrontContract.areaRecordSize};
+public static const uint PRIME_WAVEFRONT_QUEUE_ENTRIES_PER_PIXEL = ${offlineWavefrontContract.queueEntriesPerPixel};
+public static const uint PRIME_WAVEFRONT_QUEUE_COUNT = ${offlineWavefrontContract.queueCount};
+public static const uint PRIME_WAVEFRONT_QUEUE_COMMAND_STRIDE = ${offlineWavefrontContract.queueCommandStride};
+public static const uint PRIME_WAVEFRONT_QUEUE_INDEX_SIZE = ${offlineWavefrontContract.queueIndexSize};
+public static const uint PRIME_WAVEFRONT_ACTIVE_MASK = ${offlineWavefrontContract.activeMask};
 
 [[vk::binding(${schema.offlineDescriptors.runningMean}, 1)]] [[vk::image_format("rgba32f")]]
-RWTexture2D<float4> primeOfflineRunningMean;
+public RWTexture2D<float4> primeOfflineRunningMean;
 
-float4 primeImageLoad(RWTexture2D<float4> image, int2 coordinate)
+public float4 primeImageLoad(RWTexture2D<float4> image, int2 coordinate)
 {
     return image[coordinate];
 }
 
-void primeImageStore(RWTexture2D<float4> image, int2 coordinate, float4 value)
+public void primeImageStore(RWTexture2D<float4> image, int2 coordinate, float4 value)
 {
     image[coordinate] = value;
 }
-
-#endif
 """
 	}
 }
 
 
 abstract class CompilePrimeSlangComputeShaders extends DefaultTask {
+	private static final java.util.concurrent.ConcurrentHashMap<
+			String, java.util.concurrent.Semaphore> compilerGates =
+			new java.util.concurrent.ConcurrentHashMap<>()
+
 	@InputDirectory
 	abstract DirectoryProperty getSourceDirectory()
 
@@ -911,15 +909,24 @@ abstract class CompilePrimeSlangComputeShaders extends DefaultTask {
 
 	private static void runCommand(List<String> arguments) {
 		def command = arguments.collect { it.toString() }
-		def process = new ProcessBuilder(command).inheritIO().start()
+		def process = new ProcessBuilder(command).redirectErrorStream(true).start()
+		def output = new java.io.ByteArrayOutputStream()
+		def outputDrain = new Thread({
+			process.inputStream.transferTo(output)
+		}, 'prime-shader-tool-output')
+		outputDrain.start()
 		try {
 			def exitCode = process.waitFor()
+			outputDrain.join()
 			if (exitCode != 0) {
 				throw new GradleException(
-						"Shader tool failed with exit code ${exitCode}: ${command.join(' ')}")
+						"Shader tool failed with exit code ${exitCode}: ${command.join(' ')}"
+								+ System.lineSeparator()
+								+ output.toString(java.nio.charset.StandardCharsets.UTF_8))
 			}
 		} catch (InterruptedException exception) {
 			process.destroyForcibly()
+			outputDrain.interrupt()
 			Thread.currentThread().interrupt()
 			throw new GradleException(
 					"Shader tool was interrupted: ${command.join(' ')}", exception)
@@ -947,7 +954,13 @@ abstract class CompilePrimeSlangComputeShaders extends DefaultTask {
 				.sort { it.absolutePath }
 		def compiler = slangCompiler.get()
 		def validator = spirvValidator.get()
+		def processLimit = maxCompilerProcesses.get()
+		def compilerGateKey = "${project.rootProject.projectDir.canonicalPath}|${processLimit}"
+		def compilerGate = compilerGates.computeIfAbsent(compilerGateKey) {
+			new java.util.concurrent.Semaphore(processLimit, true)
+		}
 		def compilationUnits = []
+		def aliases = []
 		sources.each { source ->
 			def stages = [
 					'compute': [slang: 'compute', legacy: 'comp'],
@@ -963,7 +976,7 @@ abstract class CompilePrimeSlangComputeShaders extends DefaultTask {
 			def stage = stages[suffix]
 			def stem = source.name.substring(
 					0, source.name.length() - ".${suffix}.slang".length())
-			def variants = source.name.startsWith('realtime_wavefront_')
+			def allWavefrontVariants = source.name.startsWith('realtime_wavefront_')
 					|| source.name.startsWith('offline_wavefront_')
 					? [
 							[name: '', definitions: []],
@@ -976,6 +989,47 @@ abstract class CompilePrimeSlangComputeShaders extends DefaultTask {
 							]]
 					]
 					: [[name: '', definitions: []]]
+			// Several execution-mode names are ABI compatibility aliases, not distinct programs.
+			// Publish the same validated bytes instead of asking Slang and the driver to optimize
+			// unreachable mode code repeatedly. The map is backed by stripped-SPIR-V comparisons;
+			// update it only when a mode becomes reachable from the corresponding entry point.
+			def wavefrontVariantPlan = [
+					'realtime_wavefront_head':
+							[compile: ['', '_subgroup', '_ser'], alias: [:]],
+					'realtime_wavefront_step':
+							[compile: ['', '_ser'], alias: ['_subgroup': '']],
+					'realtime_wavefront_shade':
+							[compile: ['', '_subgroup'], alias: ['_ser': '_subgroup']],
+					'realtime_wavefront_area':
+							[compile: [''], alias: ['_subgroup': '', '_ser': '']],
+					'realtime_wavefront_resolve':
+							[compile: [''], alias: ['_subgroup': '', '_ser': '']],
+					'realtime_wavefront_sharc_shade':
+							[compile: ['', '_subgroup'], alias: ['_ser': '_subgroup']],
+					'realtime_wavefront_sharc_area':
+							[compile: [''], alias: ['_subgroup': '', '_ser': '']],
+					'offline_wavefront_head':
+							[compile: ['', '_subgroup', '_ser'], alias: [:]],
+					'offline_wavefront_step':
+							[compile: ['', '_ser'], alias: ['_subgroup': '']],
+					'offline_wavefront_area':
+							[compile: ['', '_subgroup'], alias: ['_ser': '_subgroup']],
+					'offline_wavefront_tail':
+							[compile: [''], alias: ['_subgroup': '', '_ser': '']],
+					'offline_wavefront_resolve':
+							[compile: [''], alias: ['_subgroup': '', '_ser': '']]
+			][stem]
+			def variants = wavefrontVariantPlan == null
+					? allWavefrontVariants
+					: allWavefrontVariants.findAll {
+						wavefrontVariantPlan.compile.contains(it.name)
+					}
+			wavefrontVariantPlan?.alias?.each { aliasName, compiledName ->
+				aliases.add([
+						from: new File(scratch, "${stem}${compiledName}.${stage.legacy}.spv"),
+						to: new File(scratch, "${stem}${aliasName}.${stage.legacy}.spv")
+				])
+			}
 			variants.each { variant ->
 				def output = new File(
 						scratch,
@@ -1019,9 +1073,21 @@ abstract class CompilePrimeSlangComputeShaders extends DefaultTask {
 						arguments.addAll(['-I', include.absolutePath])
 					}
 					arguments.addAll(['-o', output.absolutePath])
-					CompilePrimeSlangComputeShaders.runCommand(arguments)
-					CompilePrimeSlangComputeShaders.runCommand(
-							[validator, '--target-env', 'vulkan1.2', output.absolutePath])
+					def permitAcquired = false
+					try {
+						compilerGate.acquire()
+						permitAcquired = true
+						CompilePrimeSlangComputeShaders.runCommand(arguments)
+						CompilePrimeSlangComputeShaders.runCommand(
+								[validator, '--target-env', 'vulkan1.2', output.absolutePath])
+					} catch (InterruptedException exception) {
+						Thread.currentThread().interrupt()
+						throw new GradleException('Slang compiler scheduling was interrupted', exception)
+					} finally {
+						if (permitAcquired) {
+							compilerGate.release()
+						}
+					}
 					return null
 				} as java.util.concurrent.Callable<Void>)
 			}
@@ -1052,6 +1118,12 @@ abstract class CompilePrimeSlangComputeShaders extends DefaultTask {
 			}
 		} finally {
 			compilerPool.shutdownNow()
+		}
+		aliases.each { alias ->
+			java.nio.file.Files.copy(
+					alias.from.toPath(),
+					alias.to.toPath(),
+					java.nio.file.StandardCopyOption.REPLACE_EXISTING)
 		}
 
 		def published = new File(outputDirectory.get().asFile, 'prime/shaders')
@@ -1505,6 +1577,11 @@ def verifyShaderIncludeGraph = tasks.register('verifyShaderIncludeGraph') {
 			}
 		}
 		def sourcePaths = sources.collect { it.canonicalFile }.toSet()
+		def modulePattern = java.util.regex.Pattern.compile(
+				'(?m)^\s*module\s+"[^"]+"\s*;')
+		def modulePaths = sources.findAll { source ->
+			modulePattern.matcher(source.getText('UTF-8')).find()
+		}.collect { it.canonicalPath }.toSet()
 		def graph = new TreeMap<String, Set<String>>()
 		def dependencyPattern = java.util.regex.Pattern.compile(
 				'(?m)^\\s*(?:#\\s*include\\s+"([^"]+)"|import\\s+"([^"]+)"\\s*;)')
@@ -1513,6 +1590,7 @@ def verifyShaderIncludeGraph = tasks.register('verifyShaderIncludeGraph') {
 			def targets = graph.computeIfAbsent(sourceName) { new TreeSet<String>() }
 			def matcher = dependencyPattern.matcher(source.getText('UTF-8'))
 			while (matcher.find()) {
+				def includeDependency = matcher.group(1) != null
 				def dependencyName = matcher.group(1) ?: matcher.group(2)
 				def candidates = ([new File(source.parentFile, dependencyName)]
 						+ includeRoots.collect { new File(it, dependencyName) })
@@ -1526,6 +1604,11 @@ def verifyShaderIncludeGraph = tasks.register('verifyShaderIncludeGraph') {
 				if (candidates.size() != 1) {
 					throw new GradleException(
 							"Ambiguous shader dependency ${dependencyName} from ${source}: ${candidates}")
+				}
+				if (includeDependency
+						&& modulePaths.contains(candidates.first().canonicalPath)) {
+					throw new GradleException(
+							"Explicit shader module ${dependencyName} must be imported, not included, from ${source}")
 				}
 				targets.add(candidates.first().canonicalPath)
 			}
@@ -1572,9 +1655,15 @@ def defaultSlangCompilerProcesses = providers.provider {
 	}
 	// The largest wavefront entry points can make one slangc process consume several GiB.
 	// Keep enough host memory for Gradle and the desktop while exploiting high-memory machines.
-	def reservedMemory = Math.max(8L * gibibyte, physicalMemory.intdiv(4L))
+	// Twelve GiB keeps the desktop and Gradle responsive while allowing four measured worst-case
+	// compiler processes; smaller machines still retain at least half their memory or 8 GiB.
+	def reservedMemory = Math.max(
+			8L * gibibyte,
+			Math.min(12L * gibibyte, physicalMemory.intdiv(2L)))
 	def compilerMemory = Math.max(0L, physicalMemory - reservedMemory)
-	def compilerProcessMemory = (11L * gibibyte).intdiv(2L)
+	// Slang 2026.8 can commit roughly 12 GiB while optimizing a fully specialized wavefront
+	// entry point. This is a build-wide budget: production and test tasks share the same gate.
+	def compilerProcessMemory = 12L * gibibyte
 	def memoryBound = Math.max(1, (int) compilerMemory.intdiv(compilerProcessMemory))
 	return Math.max(1, Math.min(12, Math.min(processors, memoryBound)))
 }

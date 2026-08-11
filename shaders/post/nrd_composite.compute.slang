@@ -1,11 +1,12 @@
-#include "core/image_access.slang"
+import "core/image_access.slang";
 
-#include "core/atmosphere.slang"
-#include "core/atmosphere_epipolar.slang"
-#include "post/display_transform.slang"
-#include "post/fsr_input.slang"
-#include "core/nrd_common.slang"
-#include "core/nrd_sh.slang"
+import "core/atmosphere.slang";
+import "core/atmosphere_epipolar.slang";
+import "post/display_transform.slang";
+import "post/fsr_input.slang";
+import "core/nrd_common.slang";
+import "material/default_material.slang";
+import "core/nrd_sh.slang";
 
 // FSR consumes scene-referred linear Rec.2020 HDR. The Oklab display transform belongs strictly
 // after upscaling; applying it here would make temporal interpolation operate on non-linear,
@@ -62,14 +63,6 @@ static const uint PRIME_DIAGNOSTIC_SPECULAR_INPUT = 4u;
 static const uint PRIME_DIAGNOSTIC_SPECULAR_OUTPUT = 5u;
 static const uint PRIME_DIAGNOSTIC_SPECULAR_REMODULATED = 6u;
 
-#ifndef PRIME_ENABLE_FILTERED_SUN_SHADOW
-#define PRIME_ENABLE_FILTERED_SUN_SHADOW 1
-#endif
-
-ATM_DECLARE_SAMPLE_EPIPOLAR(
-        primeCompositeSampleAerialRadiance,
-        primeCompositeAerialRadiance)
-ATM_DECLARE_SAMPLE_3D(primeCompositeSampleAerialTransmittance, primeCompositeAerialTransmittance)
 // The viewport corner angles are identical for every lane in this 8x8 workgroup.
 groupshared AtmEpipolarRange primeCompositeEpipolarRange;
 
@@ -86,9 +79,10 @@ float3 primeCompositeSurfaceSignal(
     return diffuse + specular + sunSignal;
 }
 
-void primeCompositeApplyAerial(uint2 pixel, float primaryDistance, inout float3 radiance) {
+float3 primeCompositeApplyAerial(
+        uint2 pixel, float primaryDistance, float3 radiance) {
     if (!primeNrdIsFinite(primaryDistance) || primaryDistance < 0.0) {
-        return;
+        return radiance;
     }
     float distanceKm = primaryDistance * ATM_WORLD_UNIT_SCALE_KM;
     int3 dimensions = primeReadonlyImageSize(primeCompositeAerialRadiance);
@@ -102,21 +96,24 @@ void primeCompositeApplyAerial(uint2 pixel, float primaryDistance, inout float3 
             / float2(primeCompositePush.outputExtent);
     float3 uvw = float3(screenUv, normalizedDepth);
     float3 inscatter = max(
-            primeCompositeSampleAerialRadianceWithRange(
+            atmSampleEpipolarWithRange(
+                    primeCompositeAerialRadiance,
                     screenUv,
                     normalizedDepth,
                     primeCompositePush.epipoleNdc,
                     primeCompositeEpipolarRange).rgb,
             float3(0.0));
     float3 transmittance = clamp(
-            primeCompositeSampleAerialTransmittance(uvw).rgb, float3(0.0), float3(1.0));
+            atmSample3D(primeCompositeAerialTransmittance, uvw).rgb,
+            float3(0.0),
+            float3(1.0));
     if (any(isnan(inscatter)) || any(isinf(inscatter))) {
         inscatter = float3(0.0);
     }
     if (any(isnan(transmittance)) || any(isinf(transmittance))) {
         transmittance = float3(1.0);
     }
-    radiance = radiance * lerp(float3(1.0), transmittance, nearWeight)
+    return radiance * lerp(float3(1.0), transmittance, nearWeight)
             + inscatter * nearWeight * primeCompositePush.sunRadianceMultiplier;
 }
 
@@ -186,15 +183,11 @@ float primeCompositeLoadViewZ(int2 pixel, bool reflection) {
 
 float3 primeCompositeSunSignal(int2 pixel) {
     float4 unshadowed = primeReadonlyImageLoad(primeUnshadowedSunLighting, pixel);
-#if PRIME_ENABLE_FILTERED_SUN_SHADOW
     // The filtered shadow is stored as sqrt(visibility).
     float encodedShadow = primeReadonlyImageLoad(primeSigmaSunShadow, pixel).x;
     float visibility = isnan(encodedShadow) || isinf(encodedShadow)
             ? primeNrdSanitizeUnit(unshadowed.a, 0.0)
             : clamp(encodedShadow * encodedShadow, 0.0, 1.0);
-#else
-    float visibility = primeNrdSanitizeUnit(unshadowed.a, 0.0);
-#endif
     return unshadowed.rgb * visibility;
 }
 
@@ -392,7 +385,7 @@ float3 primeCompositeRadiance(
     float displayDistance = all(displayPosition == float3(0.0))
             ? -1.0
             : length(displayPosition);
-    primeCompositeApplyAerial(pixel, displayDistance, radiance);
+    radiance = primeCompositeApplyAerial(pixel, displayDistance, radiance);
     return primeNrdClampRadiance(radiance, PRIME_NRD_FP16_MAX);
 }
 

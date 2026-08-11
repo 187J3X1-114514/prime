@@ -1,24 +1,24 @@
-#ifndef PRIME_CELESTIAL_SLANG
-#define PRIME_CELESTIAL_SLANG
+#language slang 2026
+module "core/celestial.slang";
 
-#include "prime_abi_types.slang"
+import "prime_abi_types.slang";
 
-struct PrimeCelestialFrame
+public struct PrimeCelestialFrame
 {
-    float3 east;
-    float3 pole;
-    float3 meridian;
-    float siderealPhase;
+    public float3 east;
+    public float3 pole;
+    public float3 meridian;
+    public float siderealPhase;
 };
 
-float primeSolarRightAscension(float solarLongitude)
+public float primeSolarRightAscension(float solarLongitude)
 {
     return atan2(
             cos(PRIME_ASTRONOMY_AXIAL_TILT_RADIANS) * sin(solarLongitude),
             cos(solarLongitude));
 }
 
-PrimeCelestialFrame primeCelestialFrame(
+public PrimeCelestialFrame primeCelestialFrame(
         float3 sunDirection,
         float latitude,
         float solarLongitude)
@@ -36,7 +36,7 @@ PrimeCelestialFrame primeCelestialFrame(
     return frame;
 }
 
-float2 primeCelestialEquatorialCoordinates(
+public float2 primeCelestialEquatorialCoordinates(
         PrimeCelestialFrame frame,
         float3 direction)
 {
@@ -46,5 +46,3 @@ float2 primeCelestialEquatorialCoordinates(
             dot(direction, frame.meridian));
     return float2(frame.siderealPhase - hourAngle, declination);
 }
-
-#endif

@@ -1,15 +1,15 @@
-#ifndef PRIME_SUN_SHADOW_HIERARCHY_SLANG
-#define PRIME_SUN_SHADOW_HIERARCHY_SLANG
+#language slang 2026
+module "core/sun_shadow_hierarchy.slang";
 
-static const int PRIME_SUN_SHADOW_RESOLUTION = 512;
-static const int PRIME_SUN_SHADOW_HIERARCHY_LEVELS = 10;
+public static const int PRIME_SUN_SHADOW_RESOLUTION = 512;
+public static const int PRIME_SUN_SHADOW_HIERARCHY_LEVELS = 10;
 
-int primeSunShadowHierarchyResolution(int level)
+public int primeSunShadowHierarchyResolution(int level)
 {
     return PRIME_SUN_SHADOW_RESOLUTION >> level;
 }
 
-int2 primeSunShadowHierarchyOffset(int level)
+public int2 primeSunShadowHierarchyOffset(int level)
 {
     if (level == 0) return int2(0, 0);
     if (level == 1) return int2(512, 0);
@@ -23,7 +23,7 @@ int2 primeSunShadowHierarchyOffset(int level)
     return int2(682, 340);
 }
 
-float primeSunShadowLeafVisibleLength(
+public float primeSunShadowLeafVisibleLength(
         float rayDepthAtZero,
         float rayDepthRate,
         float startDistance,
@@ -42,5 +42,3 @@ float primeSunShadowLeafVisibleLength(
             ? endDistance - clamp(crossing, startDistance, endDistance)
             : clamp(crossing, startDistance, endDistance) - startDistance;
 }
-
-#endif

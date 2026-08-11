@@ -6,7 +6,7 @@ void main()
 {
     PrimeIntegratorContext context = primeIntegratorContextCreate();
     SurfaceInteraction surface = primeTraceSurface(
-            context, float3(0.0), float3(0.0, 0.0, 1.0));
+            float3(0.0), float3(0.0, 0.0, 1.0));
     LightSample shadowLight;
     shadowLight.direction = float3(0.0, 0.0, 1.0);
     shadowLight.distance = 1.0;

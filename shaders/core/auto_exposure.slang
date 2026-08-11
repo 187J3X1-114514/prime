@@ -1,41 +1,41 @@
-#ifndef PRIME_AUTO_EXPOSURE_SLANG
-#define PRIME_AUTO_EXPOSURE_SLANG
+#language slang 2026
+module "core/auto_exposure.slang";
 
-static const float PRIME_AUTO_EXPOSURE_MIN_LOG_BRIGHTNESS = -16.0;
-static const float PRIME_AUTO_EXPOSURE_MAX_LOG_BRIGHTNESS = 20.0;
-static const float PRIME_AUTO_EXPOSURE_LOG_BRIGHTNESS_RANGE =
+public static const float PRIME_AUTO_EXPOSURE_MIN_LOG_BRIGHTNESS = -16.0;
+public static const float PRIME_AUTO_EXPOSURE_MAX_LOG_BRIGHTNESS = 20.0;
+public static const float PRIME_AUTO_EXPOSURE_LOG_BRIGHTNESS_RANGE =
         PRIME_AUTO_EXPOSURE_MAX_LOG_BRIGHTNESS - PRIME_AUTO_EXPOSURE_MIN_LOG_BRIGHTNESS;
-static const float PRIME_AUTO_EXPOSURE_KEY = 0.16;
-static const float PRIME_AUTO_EXPOSURE_BASELINE_EV = 0.0;
-static const float PRIME_AUTO_EXPOSURE_FULL_MIN_EV = -16.0;
-static const float PRIME_AUTO_EXPOSURE_FULL_MAX_EV = 16.0;
-static const float PRIME_AUTO_EXPOSURE_LN_10 = 2.302585092994046;
-static const float PRIME_AUTO_EXPOSURE_DARKEN_T90 = 0.5;
-static const float PRIME_AUTO_EXPOSURE_BRIGHTEN_T90 = 2.0;
-static const uint PRIME_AUTO_EXPOSURE_TAIL_DENOMINATOR = 200;
-static const float PRIME_AUTO_EXPOSURE_REFERENCE_ALBEDO = 0.18;
-static const float PRIME_AUTO_EXPOSURE_MIN_ALBEDO = 0.02;
-static const float PRIME_AUTO_EXPOSURE_ALBEDO_BLEND = 1.0;
-static const float PRIME_AUTO_EXPOSURE_SCENE_KEY_MIN_RANGE_EV = 2.0;
-static const uint PRIME_AUTO_EXPOSURE_MATERIAL_DIELECTRIC = 0;
-static const uint PRIME_AUTO_EXPOSURE_MATERIAL_FOLIAGE = 3;
+public static const float PRIME_AUTO_EXPOSURE_KEY = 0.16;
+public static const float PRIME_AUTO_EXPOSURE_BASELINE_EV = 0.0;
+public static const float PRIME_AUTO_EXPOSURE_FULL_MIN_EV = -16.0;
+public static const float PRIME_AUTO_EXPOSURE_FULL_MAX_EV = 16.0;
+public static const float PRIME_AUTO_EXPOSURE_LN_10 = 2.302585092994046;
+public static const float PRIME_AUTO_EXPOSURE_DARKEN_T90 = 0.5;
+public static const float PRIME_AUTO_EXPOSURE_BRIGHTEN_T90 = 2.0;
+public static const uint PRIME_AUTO_EXPOSURE_TAIL_DENOMINATOR = 200;
+public static const float PRIME_AUTO_EXPOSURE_REFERENCE_ALBEDO = 0.18;
+public static const float PRIME_AUTO_EXPOSURE_MIN_ALBEDO = 0.02;
+public static const float PRIME_AUTO_EXPOSURE_ALBEDO_BLEND = 1.0;
+public static const float PRIME_AUTO_EXPOSURE_SCENE_KEY_MIN_RANGE_EV = 2.0;
+public static const uint PRIME_AUTO_EXPOSURE_MATERIAL_DIELECTRIC = 0;
+public static const uint PRIME_AUTO_EXPOSURE_MATERIAL_FOLIAGE = 3;
 
-struct PrimeAutoExposureState
+public struct PrimeAutoExposureState
 {
-    float exposureEv;
-    uint initialized;
-    float targetEv;
-    float measuredLogBrightness;
+    public float exposureEv;
+    public uint initialized;
+    public float targetEv;
+    public float measuredLogBrightness;
 };
 
-float primeAutoExposureBrightness(float3 radiance)
+public float primeAutoExposureBrightness(float3 radiance)
 {
     return dot(
             max(radiance, float3(0.0)),
             float3(0.2627, 0.6780, 0.0593));
 }
 
-float primeAutoExposureMaterialConfidence(
+public float primeAutoExposureMaterialConfidence(
         uint materialClass,
         float primaryDistance)
 {
@@ -44,7 +44,7 @@ float primeAutoExposureMaterialConfidence(
     return diffuseSurface && primaryDistance >= 0.0 ? 1.0 : 0.0;
 }
 
-float primeAutoExposureAlbedoScale(float3 albedo, float confidence)
+public float primeAutoExposureAlbedoScale(float3 albedo, float confidence)
 {
     float albedoBrightness =
             primeAutoExposureBrightness(clamp(albedo, float3(0.0), float3(1.0)));
@@ -55,7 +55,7 @@ float primeAutoExposureAlbedoScale(float3 albedo, float confidence)
     return lerp(1.0, blendedScale, clamp(confidence, 0.0, 1.0));
 }
 
-float primeAutoExposureMeteredBrightness(
+public float primeAutoExposureMeteredBrightness(
         float3 radiance,
         float3 albedo,
         float confidence)
@@ -64,14 +64,14 @@ float primeAutoExposureMeteredBrightness(
             * primeAutoExposureAlbedoScale(albedo, confidence);
 }
 
-float primeAutoExposureBinLogBrightness(uint bin)
+public float primeAutoExposureBinLogBrightness(uint bin)
 {
     return PRIME_AUTO_EXPOSURE_MIN_LOG_BRIGHTNESS
             + (float(bin) + 0.5)
                     * (PRIME_AUTO_EXPOSURE_LOG_BRIGHTNESS_RANGE / 256.0);
 }
 
-float primeAutoExposureSceneKeyBiasEv(
+public float primeAutoExposureSceneKeyBiasEv(
         float measuredLogBrightness,
         float minimumLogBrightness,
         float maximumLogBrightness)
@@ -86,7 +86,7 @@ float primeAutoExposureSceneKeyBiasEv(
     return 2.0 * q;
 }
 
-float primeAutoExposureTargetEv(
+public float primeAutoExposureTargetEv(
         float measuredLogBrightness,
         float minimumLogBrightness,
         float maximumLogBrightness,
@@ -107,7 +107,7 @@ float primeAutoExposureTargetEv(
             compensation);
 }
 
-float primeAutoExposureAdapt(
+public float primeAutoExposureAdapt(
         float previousEv,
         float targetEv,
         float deltaSeconds)
@@ -119,5 +119,3 @@ float primeAutoExposureAdapt(
             -max(deltaSeconds, 0.0) * PRIME_AUTO_EXPOSURE_LN_10 / t90);
     return lerp(previousEv, targetEv, clamp(blend, 0.0, 1.0));
 }
-
-#endif

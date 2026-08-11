@@ -1,21 +1,21 @@
-#ifndef PRIME_LIGHT_TREE_MATH_SLANG
-#define PRIME_LIGHT_TREE_MATH_SLANG
+#language slang 2026
+module "core/light_tree_math.slang";
 
-static const uint PRIME_LIGHT_RECEIVER_NORMAL_ACTIVE = 0x8000u;
-static const float PRIME_LIGHT_RECEIVER_COSINE_FLOOR = 1.0 / 256.0;
-static const uint PRIME_LIGHT_DIRECTION_MODE_SHIFT = 30u;
-static const uint PRIME_LIGHT_DIRECTION_MODE_LOBES = 2u;
-static const uint PRIME_LIGHT_DIRECTION_MODE_FULL = 3u;
-static const uint PRIME_LIGHT_DIRECTION_OCT_MASK = 0x3ffu;
-static const uint PRIME_LIGHT_DIRECTION_LOBE_MASK = 0x1fu;
+public static const uint PRIME_LIGHT_RECEIVER_NORMAL_ACTIVE = 0x8000u;
+public static const float PRIME_LIGHT_RECEIVER_COSINE_FLOOR = 1.0 / 256.0;
+public static const uint PRIME_LIGHT_DIRECTION_MODE_SHIFT = 30u;
+public static const uint PRIME_LIGHT_DIRECTION_MODE_LOBES = 2u;
+public static const uint PRIME_LIGHT_DIRECTION_MODE_FULL = 3u;
+public static const uint PRIME_LIGHT_DIRECTION_OCT_MASK = 0x3ffu;
+public static const uint PRIME_LIGHT_DIRECTION_LOBE_MASK = 0x1fu;
 
-float2 primeLightTreeSignNotZero(float2 value) {
+public float2 primeLightTreeSignNotZero(float2 value) {
     return float2(value.x >= 0.0 ? 1.0 : -1.0, value.y >= 0.0 ? 1.0 : -1.0);
 }
 
 // The compact normal lives in an otherwise unused cold path lane. Forward sampling uses the
 // decoded value too, so reverse MIS reconstructs the exact same quantized selection density.
-uint primePackLightReceiverNormal(float3 value) {
+public uint primePackLightReceiverNormal(float3 value) {
     float3 normal = normalize(value);
     normal /= max(abs(normal.x) + abs(normal.y) + abs(normal.z), 1.0e-20);
     if (normal.z < 0.0) {
@@ -28,7 +28,7 @@ uint primePackLightReceiverNormal(float3 value) {
             | (quantized.y << 8u);
 }
 
-float3 primeUnpackLightReceiverNormal(uint packedValue) {
+public float3 primeUnpackLightReceiverNormal(uint packedValue) {
     if ((packedValue & PRIME_LIGHT_RECEIVER_NORMAL_ACTIVE) == 0u) {
         return float3(0.0);
     }
@@ -42,7 +42,7 @@ float3 primeUnpackLightReceiverNormal(uint packedValue) {
     return normalize(normal);
 }
 
-float3 primeUnpackLightEmissionAxis(uint packedValue) {
+public float3 primeUnpackLightEmissionAxis(uint packedValue) {
     float2 encoded = float2(
             float(packedValue & PRIME_LIGHT_DIRECTION_OCT_MASK),
             float((packedValue >> 10u) & PRIME_LIGHT_DIRECTION_OCT_MASK))
@@ -54,7 +54,7 @@ float3 primeUnpackLightEmissionAxis(uint packedValue) {
     return normalize(axis);
 }
 
-float primeLightEmissionAxisCosineBound(
+public float primeLightEmissionAxisCosineBound(
         float3 boundsMin,
         float3 boundsMax,
         float3 point,
@@ -74,7 +74,7 @@ float primeLightEmissionAxisCosineBound(
             : 1.0;
 }
 
-float primeLightExpandedEmissionConeBound(
+public float primeLightExpandedEmissionConeBound(
         float axisCosineBound, float sineHalfAngle, float cosineHalfAngle) {
     if (axisCosineBound >= cosineHalfAngle) {
         return 1.0;
@@ -86,11 +86,11 @@ float primeLightExpandedEmissionConeBound(
             1.0);
 }
 
-float primeLightEmissionLobe(uint packedValue, uint shift) {
+public float primeLightEmissionLobe(uint packedValue, uint shift) {
     return float((packedValue >> shift) & PRIME_LIGHT_DIRECTION_LOBE_MASK) / 31.0;
 }
 
-float primeLightEmitterCosineBoundWithInverse(
+public float primeLightEmitterCosineBoundWithInverse(
         float3 boundsMin,
         float3 boundsMax,
         float3 point,
@@ -136,7 +136,7 @@ float primeLightEmitterCosineBoundWithInverse(
     return 0.5 * max(forward, backward);
 }
 
-float primeLightEmitterCosineBound(
+public float primeLightEmitterCosineBound(
         float3 boundsMin,
         float3 boundsMax,
         float3 point,
@@ -152,7 +152,7 @@ float primeLightEmitterCosineBound(
             packedDirection);
 }
 
-float primeLightEmitterCosineEstimate(
+public float primeLightEmitterCosineEstimate(
         float3 directionFromLight,
         uint packedDirection) {
     uint mode = packedDirection >> PRIME_LIGHT_DIRECTION_MODE_SHIFT;
@@ -184,7 +184,7 @@ float primeLightEmitterCosineEstimate(
     return 0.5 * max(forward, backward);
 }
 
-float primeLightReceiverCosineBoundWithInverse(
+public float primeLightReceiverCosineBoundWithInverse(
         float3 boundsMin,
         float3 boundsMax,
         float3 point,
@@ -206,7 +206,7 @@ float primeLightReceiverCosineBoundWithInverse(
     return bound;
 }
 
-float primeLightReceiverCosineBound(
+public float primeLightReceiverCosineBound(
         float3 boundsMin,
         float3 boundsMax,
         float3 point,
@@ -222,7 +222,7 @@ float primeLightReceiverCosineBound(
             inverseDistance);
 }
 
-float primeLightReceiverCosineEstimate(
+public float primeLightReceiverCosineEstimate(
         float3 directionToLight,
         float3 receiverNormal) {
     return dot(receiverNormal, receiverNormal) > 0.0
@@ -230,7 +230,7 @@ float primeLightReceiverCosineEstimate(
             : 1.0;
 }
 
-float2 primeLightNodeMetrics(
+public float2 primeLightNodeMetrics(
         float3 boundsMin,
         float3 boundsMax,
         float power,
@@ -263,7 +263,7 @@ float2 primeLightNodeMetrics(
     return float2(distanceSquared + max(softening, 0.0), weightedPower);
 }
 
-float primeLightBranchProbability(float2 firstMetrics, float2 secondMetrics) {
+public float primeLightBranchProbability(float2 firstMetrics, float2 secondMetrics) {
     // Keep this order identical for forward selection and reverse MIS reconstruction.
     float firstDistanceSquared = firstMetrics.x;
     float secondDistanceSquared = secondMetrics.x;
@@ -285,5 +285,3 @@ float primeLightBranchProbability(float2 firstMetrics, float2 secondMetrics) {
     float sum = firstScore + secondScore;
     return sum > 0.0 ? firstScore / sum : -1.0;
 }
-
-#endif

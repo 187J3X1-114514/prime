@@ -10,6 +10,11 @@ struct PrimeOfflineAreaRequest {
     uint startingMediumCount;
 };
 
+struct PrimeOfflineSurfaceStep {
+    PrimeOfflineAreaRequest areaRequest;
+    bool continuation;
+};
+
 PrimeOfflineAreaRequest primeEmptyOfflineAreaRequest() {
     PrimeOfflineAreaRequest request;
     request.direction = float3(0.0);
@@ -314,7 +319,7 @@ bool primeAdvanceOfflinePath(
     return true;
 }
 
-bool primeIntegrateOfflineSurface(
+PrimeOfflineSurfaceStep primeIntegrateOfflineSurface(
         inout PrimeIntegratorContext context,
         inout PathState path,
         IntegratorRecord integrator,
@@ -324,21 +329,22 @@ bool primeIntegrateOfflineSurface(
         inout float3 primaryAlbedo,
         inout uint primaryMaterialFlags,
         SurfaceInteraction surface,
-        bool deferArea,
-        out PrimeOfflineAreaRequest areaRequest) {
-    areaRequest = primeEmptyOfflineAreaRequest();
+        bool deferArea) {
+    PrimeOfflineSurfaceStep result;
+    result.areaRequest = primeEmptyOfflineAreaRequest();
+    result.continuation = false;
     if (!primeKnownHitKind(surface)) {
-        return false;
+        return result;
     }
     if (surface.hitKind == PRIME_HIT_NONE) {
         primeAccumulate(
                 context,
                 radiance,
                 primeEvaluateEnvironmentContribution(context, path, integrator));
-        return false;
+        return result;
     }
     if (!primeApplySegmentMedium(context, path, surface, volumeStack)) {
-        return false;
+        return result;
     }
 
     bool previousUsedAreaNee =
@@ -374,7 +380,7 @@ bool primeIntegrateOfflineSurface(
                         viewDirection,
                         preparedSample,
                         volumeStack));
-        areaRequest = primePrepareOfflineArea(
+        result.areaRequest = primePrepareOfflineArea(
                 context,
                 path,
                 surface,
@@ -388,14 +394,14 @@ bool primeIntegrateOfflineSurface(
     path.previousLightNormal = usedAreaNee
             ? primeAreaLightReceiverNormal(surface, viewDirection)
             : 0u;
-    if (areaRequest.valid && !deferArea) {
+    if (result.areaRequest.valid && !deferArea) {
         PrimeShadowTrace shadow = primeTraceShadow(
                 context,
                 surface.position,
                 surface.geometricNormal,
                 LightSample(
-                        areaRequest.direction,
-                        areaRequest.distance,
+                        result.areaRequest.direction,
+                        result.areaRequest.distance,
                         float3(0.0),
                         1.0,
                         0u),
@@ -404,9 +410,9 @@ bool primeIntegrateOfflineSurface(
             primeAccumulate(
                     context,
                     radiance,
-                    areaRequest.contribution * shadow.transmittance);
+                    result.areaRequest.contribution * shadow.transmittance);
         }
-        areaRequest = primeEmptyOfflineAreaRequest();
+        result.areaRequest = primeEmptyOfflineAreaRequest();
     }
 
     PrimePathScatter scatter = primeSampleOfflinePathSurface(
@@ -422,16 +428,17 @@ bool primeIntegrateOfflineSurface(
     if (!primeHasScatter(bsdf)) {
         path.physicalOrigin = surface.position;
         path.flags = usedAreaNee ? PRIME_OFFLINE_PATH_PREVIOUS_AREA_NEE : 0u;
-        return false;
+        return result;
     }
     if (!primeAdvanceOfflinePath(
             context, path, surface, bsdf, preparedSample)) {
         path.flags = usedAreaNee ? PRIME_OFFLINE_PATH_PREVIOUS_AREA_NEE : 0u;
-        return false;
+        return result;
     }
     path.flags |= usedAreaNee ? PRIME_OFFLINE_PATH_PREVIOUS_AREA_NEE : 0u;
     path.bounce++;
-    return true;
+    result.continuation = true;
+    return result;
 }
 
 #endif

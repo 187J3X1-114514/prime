@@ -1,8 +1,8 @@
-#include "core/image_access.slang"
+import "core/image_access.slang";
 
-#include "core/atmosphere.slang"
-#include "core/atmosphere_epipolar.slang"
-#include "core/nrd_common.slang"
+import "core/atmosphere.slang";
+import "core/atmosphere_epipolar.slang";
+import "core/nrd_common.slang";
 
 [[vk::binding(0, 0)]] [[vk::image_format("rgba16f")]] readonly RWTexture2D<float4> primeNoisyDiffuse;
 [[vk::binding(1, 0)]] [[vk::image_format("rgba16f")]] readonly RWTexture2D<float4> primeNoisySpecular;
@@ -21,15 +21,11 @@ struct PrimeNoisyCompositePushConstants {
 };
 [[vk::push_constant]] ConstantBuffer<PrimeNoisyCompositePushConstants> primeNoisyPush;
 
-ATM_DECLARE_SAMPLE_EPIPOLAR(
-        primeNoisySampleAerialRadiance,
-        primeNoisyAerialRadiance)
-ATM_DECLARE_SAMPLE_3D(primeNoisySampleAerialTransmittance, primeNoisyAerialTransmittance)
 // The viewport corner angles are identical for every lane in this 8x8 workgroup.
 groupshared AtmEpipolarRange primeNoisyEpipolarRange;
 
-void primeNoisyApplyAerial(uint2 pixel, float primaryDistance, inout float3 radiance) {
-    if (!primeNrdIsFinite(primaryDistance) || primaryDistance < 0.0) return;
+float3 primeNoisyApplyAerial(uint2 pixel, float primaryDistance, float3 radiance) {
+    if (!primeNrdIsFinite(primaryDistance) || primaryDistance < 0.0) return radiance;
     float distanceKm = primaryDistance * ATM_WORLD_UNIT_SCALE_KM;
     int3 dimensions = primeReadonlyImageSize(primeNoisyAerialRadiance);
     float firstSliceDepth = 0.5 / float(max(dimensions.z, 1));
@@ -42,19 +38,22 @@ void primeNoisyApplyAerial(uint2 pixel, float primaryDistance, inout float3 radi
     float2 screenUv = (float2(pixel) + float2(0.5)) / float2(primeNoisyPush.outputExtent);
     float3 uvw = float3(screenUv, normalizedDepth);
     float3 inscatter = max(
-            primeNoisySampleAerialRadianceWithRange(
+            atmSampleEpipolarWithRange(
+                    primeNoisyAerialRadiance,
                     screenUv,
                     normalizedDepth,
                     primeNoisyPush.epipoleNdc,
                     primeNoisyEpipolarRange).rgb,
             float3(0.0));
     float3 transmittance = clamp(
-            primeNoisySampleAerialTransmittance(uvw).rgb, float3(0.0), float3(1.0));
+            atmSample3D(primeNoisyAerialTransmittance, uvw).rgb,
+            float3(0.0),
+            float3(1.0));
     if (any(isnan(inscatter)) || any(isinf(inscatter))) inscatter = float3(0.0);
     if (any(isnan(transmittance)) || any(isinf(transmittance))) {
         transmittance = float3(1.0);
     }
-    radiance = radiance * lerp(float3(1.0), transmittance, nearWeight)
+    return radiance * lerp(float3(1.0), transmittance, nearWeight)
             + inscatter * nearWeight * primeNoisyPush.sunRadianceMultiplier;
 }
 
@@ -89,7 +88,7 @@ void main(uint3 dispatchThreadId : SV_DispatchThreadID, uint groupIndex : SV_Gro
             primeReadonlyImageLoad(primeNoisyStableRadiance, int2(pixel)).rgb,
             PRIME_NRD_FP16_MAX);
     float3 radiance = surface + stable;
-    primeNoisyApplyAerial(pixel, material.a, radiance);
+    radiance = primeNoisyApplyAerial(pixel, material.a, radiance);
     primeWriteImageStore(
             primeNoisyOutput,
             int2(pixel),

@@ -1,39 +1,39 @@
-#ifndef PRIME_TRANSPARENT_MATERIAL_SLANG
-#define PRIME_TRANSPARENT_MATERIAL_SLANG
+#language slang 2026
+module "material/transparent_material.slang";
 
 import "core/color_space.slang";
 
-static const float3 PRIME_PURE_WATER_ABSORPTION_M_INV =
+public static const float3 PRIME_PURE_WATER_ABSORPTION_M_INV =
         float3(0.2916, 0.04444, 0.010182);
-static const float PRIME_THIN_WALLED_THICKNESS_M = 0.0625;
-static const float PRIME_STAINED_GLASS_ABSORPTION_OPACITY = 0.4;
-static const float PRIME_GLASS_ROUGH_OPACITY_THRESHOLD = 0.5;
-static const float PRIME_GLASS_STAINED_REFERENCE_THRESHOLD = 0.5 / 255.0;
+public static const float PRIME_THIN_WALLED_THICKNESS_M = 0.0625;
+public static const float PRIME_STAINED_GLASS_ABSORPTION_OPACITY = 0.4;
+public static const float PRIME_GLASS_ROUGH_OPACITY_THRESHOLD = 0.5;
+public static const float PRIME_GLASS_STAINED_REFERENCE_THRESHOLD = 0.5 / 255.0;
 
-bool primeGlassReferenceIsStained(float opacity)
+public bool primeGlassReferenceIsStained(float opacity)
 {
     return opacity >= PRIME_GLASS_STAINED_REFERENCE_THRESHOLD;
 }
 
-bool primeGlassTexelIsRough(float opacity, bool seamlessGlass)
+public bool primeGlassTexelIsRough(float opacity, bool seamlessGlass)
 {
     return !seamlessGlass && opacity > PRIME_GLASS_ROUGH_OPACITY_THRESHOLD;
 }
 
-float3 primeShadowCanonicalExtinction(float3 extinction)
+public float3 primeShadowCanonicalExtinction(float3 extinction)
 {
     float2 extinction01 = unpackHalf2x16ToFloat(packHalf2x16(extinction.xy));
     float extinction2 = unpackHalf2x16ToFloat(packHalf2x16(float2(extinction.z, 0.0))).x;
     return float3(extinction01, extinction2);
 }
 
-bool primeShadowSameMedium(float3 firstExtinction, float3 secondExtinction)
+public bool primeShadowSameMedium(float3 firstExtinction, float3 secondExtinction)
 {
     float3 scale = max(max(abs(firstExtinction), abs(secondExtinction)), float3(1.0));
     return all(abs(firstExtinction - secondExtinction) <= scale * (1.0 / 1024.0));
 }
 
-float3 primeShadowStartingMediumCoefficient(
+public float3 primeShadowStartingMediumCoefficient(
         float3 outerExtinction,
         float3 innerExtinction,
         uint mediumIndex)
@@ -41,7 +41,7 @@ float3 primeShadowStartingMediumCoefficient(
     return mediumIndex == 0 ? outerExtinction : innerExtinction - outerExtinction;
 }
 
-int primeShadowStartingMediumIndex(
+public int primeShadowStartingMediumIndex(
         float3 boundaryExtinction,
         float4 outerExtinctionWinding,
         float4 innerExtinctionWinding,
@@ -61,7 +61,7 @@ int primeShadowStartingMediumIndex(
     return matchesInner ? 1 : (matchesOuter ? 0 : -1);
 }
 
-float3 primeGlassVolumeTransmittance(float3 baseColor, float opacity)
+public float3 primeGlassVolumeTransmittance(float3 baseColor, float opacity)
 {
     float3 linearSrgb = clamp(
             primeLinearRec2020ToLinearBt709(baseColor), float3(0.0), float3(1.0));
@@ -74,12 +74,12 @@ float3 primeGlassVolumeTransmittance(float3 baseColor, float opacity)
             float3(1.0));
 }
 
-float3 primeGlassVolumeExtinction(float3 baseColor, float opacity)
+public float3 primeGlassVolumeExtinction(float3 baseColor, float opacity)
 {
     return -log(max(float3(1.0e-3), primeGlassVolumeTransmittance(baseColor, opacity)));
 }
 
-float3 primeGlassShadowExtinction(float3 referenceBaseColor, float referenceOpacity)
+public float3 primeGlassShadowExtinction(float3 referenceBaseColor, float referenceOpacity)
 {
     return primeGlassReferenceIsStained(referenceOpacity)
             ? primeGlassVolumeExtinction(
@@ -87,7 +87,7 @@ float3 primeGlassShadowExtinction(float3 referenceBaseColor, float referenceOpac
             : float3(0.0);
 }
 
-float3 primeShadowBoundaryOpticalDepthMoment(
+public float3 primeShadowBoundaryOpticalDepthMoment(
         float3 currentMoment,
         float3 extinction,
         float hitDistance,
@@ -96,7 +96,7 @@ float3 primeShadowBoundaryOpticalDepthMoment(
     return currentMoment + extinction * (entering ? -hitDistance : hitDistance);
 }
 
-float3 primeShadowBoundaryTerminalExtinction(
+public float3 primeShadowBoundaryTerminalExtinction(
         float3 currentExtinction,
         float3 boundaryExtinction,
         bool entering)
@@ -104,7 +104,7 @@ float3 primeShadowBoundaryTerminalExtinction(
     return currentExtinction + boundaryExtinction * (entering ? 1.0 : -1.0);
 }
 
-float3 primeShadowThinOpticalDepth(
+public float3 primeShadowThinOpticalDepth(
         float3 currentMoment,
         float3 extinction,
         float rayDistance,
@@ -115,7 +115,7 @@ float3 primeShadowThinOpticalDepth(
     return currentMoment + extinction * distance;
 }
 
-float3 primeShadowOpticalDepth(
+public float3 primeShadowOpticalDepth(
         float3 opticalDepthMoment,
         float3 terminalExtinction,
         float4 outerExtinctionWinding,
@@ -134,5 +134,3 @@ float3 primeShadowOpticalDepth(
     float3 opticalDepth = opticalDepthMoment + endpointExtinction * rayDistance;
     return max(opticalDepth, float3(0.0));
 }
-
-#endif

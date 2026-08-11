@@ -1,23 +1,37 @@
-#include "realtime/realtime_wavefront.slang"
-
-[shader("raygeneration")]
-void main()
+void primeRealtimeWavefrontHeadEntry()
 {
     uint2 launchIndex = DispatchRaysIndex().xy;
     PrimeIntegratorContext context = primeIntegratorContextCreate();
-#if defined(PRIME_REALTIME_ENTRY_HEAD)
     primeWavefrontHead(context, launchIndex);
-#elif defined(PRIME_REALTIME_ENTRY_STEP)
+}
+
+void primeRealtimeWavefrontStepEntry()
+{
+    uint2 launchIndex = DispatchRaysIndex().xy;
+    PrimeIntegratorContext context = primeIntegratorContextCreate();
     uint sourceQueue = (primeWavefrontShaderRecord.control >> 8u) & 1u;
     primeWavefrontStep(context, launchIndex.x, sourceQueue);
-#elif defined(PRIME_REALTIME_ENTRY_SHADE)
+}
+
+void primeRealtimeWavefrontShadeEntry()
+{
+    uint2 launchIndex = DispatchRaysIndex().xy;
+    PrimeIntegratorContext context = primeIntegratorContextCreate();
     uint sourceQueue = (primeWavefrontShaderRecord.control >> 8u) & 1u;
-    primeWavefrontShade(context, launchIndex.x, sourceQueue);
-#elif defined(PRIME_REALTIME_ENTRY_AREA)
-    primeWavefrontArea(context, launchIndex.x);
-#elif defined(PRIME_REALTIME_ENTRY_RESOLVE)
+    primeWavefrontShade(
+            PrimeNoIndirectReuse(), context, launchIndex.x, sourceQueue);
+}
+
+void primeRealtimeWavefrontAreaEntry()
+{
+    uint2 launchIndex = DispatchRaysIndex().xy;
+    PrimeIntegratorContext context = primeIntegratorContextCreate();
+    primeWavefrontArea(PrimeNoIndirectReuse(), context, launchIndex.x);
+}
+
+void primeRealtimeWavefrontResolveEntry()
+{
+    uint2 launchIndex = DispatchRaysIndex().xy;
+    PrimeIntegratorContext context = primeIntegratorContextCreate();
     primeWavefrontResolve(context, launchIndex);
-#else
-#error A realtime wavefront execution-mode entry must be selected.
-#endif
 }

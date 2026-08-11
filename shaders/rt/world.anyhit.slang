@@ -1,4 +1,8 @@
-#include "rt/hit_common.slang"
+import "prime_abi_types.slang";
+import "core/packed_geometry.slang";
+import "material/default_material.slang";
+import "material/material.slang";
+import "rt/hit_common.slang";
 
 [shader("anyhit")]
 void main(in BuiltInTriangleIntersectionAttributes attributes) {

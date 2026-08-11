@@ -1,10 +1,16 @@
 
 #include "core/prime_test_abi.slang"
+import "bsdf/adapter/transmission_ggx_energy.slang";
+import "bsdf/core/robocute_closures.slang";
+import "bsdf/core/robocute_common.slang";
+import "bsdf/core/robocute_fresnel.slang";
+import "bsdf/core/robocute_microfacet.slang";
+import "bsdf/core/robocute_openpbr.slang";
 bool3 greaterThanEqual(float3 first, float3 second) { return first >= second; }
 bool3 lessThanEqual(float3 first, float3 second) { return first <= second; }
 bool2 lessThan(float2 first, float2 second) { return first < second; }
 bool3 lessThan(float3 first, float3 second) { return first < second; }
-#include "bsdf/adapter/prime_bsdf_specializations.slang"
+import "bsdf/adapter/prime_bsdf_specializations.slang";
 
 static const uint PRIME_CORE_INPUT_WORDS = 4u;
 static const uint PRIME_CORE_WITNESS_WORDS = 8u;

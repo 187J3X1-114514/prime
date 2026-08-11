@@ -1,8 +1,9 @@
-#include "core/atmosphere.slang"
-#include "core/image_access.slang"
-#include "core/atmosphere_epipolar.slang"
-#include "core/atmosphere_phase.slang"
+import "core/atmosphere.slang";
+import "core/image_access.slang";
+import "core/atmosphere_epipolar.slang";
+import "core/atmosphere_phase.slang";
 import "core/sun_shadow_hierarchy.slang";
+import "prime_abi_types.slang";
 
 [[vk::binding(0, 0)]] [[vk::image_format("rgba16f")]] readonly RWTexture2D<float4> transmittanceLow;
 [[vk::binding(1, 0)]] [[vk::image_format("rgba16f")]] readonly RWTexture2D<float4> transmittanceHigh;
@@ -15,10 +16,6 @@ import "core/sun_shadow_hierarchy.slang";
 [[vk::binding(21, 0)]] [[vk::image_format("rg32f")]] readonly RWTexture2D<float2> sunShadowHierarchy3;
 [[vk::binding(22, 0)]] [[vk::image_format("rg32f")]] readonly RWTexture2D<float2> sunShadowHierarchy4;
 
-ATM_DECLARE_SAMPLE_2D(sampleTransmittanceLow, transmittanceLow)
-ATM_DECLARE_SAMPLE_2D(sampleTransmittanceHigh, transmittanceHigh)
-ATM_DECLARE_SAMPLE_2D(sampleMultiScatteringLow, multiScatteringLow)
-ATM_DECLARE_SAMPLE_2D(sampleMultiScatteringHigh, multiScatteringHigh)
 
 struct AtmospherePushConstants {
     float4x4 inverseViewProjection;
@@ -81,16 +78,16 @@ float sunShadowTexelSize(int cascade) {
 float4 aerialTransmittanceToSun(int group, float sunMu, float normalizedAltitude) {
     float2 uv = atmTransmittanceUv(sunMu, normalizedAltitude);
     return group == 0
-            ? sampleTransmittanceLow(uv)
-            : sampleTransmittanceHigh(uv);
+            ? atmSample2D(transmittanceLow, uv)
+            : atmSample2D(transmittanceHigh, uv);
 }
 
 float4 aerialMultiScattering(int group, float sunMu, float normalizedAltitude) {
     float2 dimensions = float2(primeReadonlyImageSize(multiScatteringLow));
     float2 uv = atmMultiUv(sunMu, normalizedAltitude, dimensions);
     return group == 0
-            ? sampleMultiScatteringLow(uv)
-            : sampleMultiScatteringHigh(uv);
+            ? atmSample2D(multiScatteringLow, uv)
+            : atmSample2D(multiScatteringHigh, uv);
 }
 
 struct AerialPhase {

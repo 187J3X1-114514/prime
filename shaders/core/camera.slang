@@ -1,10 +1,13 @@
-#ifndef PRIME_CAMERA_SLANG
-#define PRIME_CAMERA_SLANG
+#language slang 2026
+module "core/camera.slang";
 
-#include "core/common.slang"
-#include "core/sampling.slang"
+import "prime_abi.slang";
+import "prime_abi_types.slang";
+import "core/render_config.slang";
+import "core/sampling.slang";
+import "integrator/path_contract.slang";
 
-float2 primeSobolCameraSample(uint2 launchIndex) {
+public float2 primeSobolCameraSample(uint2 launchIndex) {
     PrimeSampleBase base;
     base.pixel = launchIndex;
     base.sampleIndex = primeSampleIndex();
@@ -17,11 +20,11 @@ float2 primeSobolCameraSample(uint2 launchIndex) {
             PRIME_SAMPLE_DIMENSION_PRIMARY);
 }
 
-float2 primeOfflineCameraSample(uint2 launchIndex) {
+public float2 primeOfflineCameraSample(uint2 launchIndex) {
     return primeSobolCameraSample(launchIndex);
 }
 
-float2 primeRealtimeCameraSample(uint2 launchIndex) {
+public float2 primeRealtimeCameraSample(uint2 launchIndex) {
     uint jitterPhase =
             (primePush.path.z >> 16u) & PRIME_PATH_JITTER_PHASE_MASK;
     if (jitterPhase == 0u) {
@@ -46,7 +49,7 @@ float2 primeRealtimeCameraSample(uint2 launchIndex) {
     return float2(halton2, halton3);
 }
 
-float3 primeCameraRayDirection(uint2 pixel, float2 cameraSample) {
+public float3 primeCameraRayDirection(uint2 pixel, float2 cameraSample) {
     float2 uv = (float2(pixel) + cameraSample) / float2(primePush.outputExtent);
     float2 ndc = float2(uv.x * 2.0 - 1.0, uv.y * 2.0 - 1.0);
     float4 nearPoint = primePush.inverseViewProjection
@@ -56,7 +59,7 @@ float3 primeCameraRayDirection(uint2 pixel, float2 cameraSample) {
     return normalize(farPoint.xyz / farPoint.w - nearPoint.xyz / nearPoint.w);
 }
 
-PathState primeCameraPath(uint2 pixel, uint pathIndex, float2 cameraSample) {
+public PathState primeCameraPath(uint2 pixel, uint pathIndex, float2 cameraSample) {
     PathState path;
     path.physicalOrigin = primePush.cameraPosition;
     path.bounce = 0u;
@@ -75,5 +78,3 @@ PathState primeCameraPath(uint2 pixel, uint pathIndex, float2 cameraSample) {
     path.previousSharcEvent = 0u;
     return path;
 }
-
-#endif

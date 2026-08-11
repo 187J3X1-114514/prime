@@ -1,7 +1,7 @@
-#ifndef PRIME_TRANSPORT_MATH_SLANG
-#define PRIME_TRANSPORT_MATH_SLANG
+#language slang 2026
+module "core/transport_math.slang";
 
-float primeProductOver(float first, float second, float denominator)
+public float primeProductOver(float first, float second, float denominator)
 {
     int firstExponent;
     int secondExponent;
@@ -12,7 +12,7 @@ float primeProductOver(float first, float second, float denominator)
     return ldexp(significand, firstExponent + secondExponent - denominatorExponent);
 }
 
-float3 primeProductOver(float3 first, float3 second, float denominator)
+public float3 primeProductOver(float3 first, float3 second, float denominator)
 {
     int3 firstExponent;
     int3 secondExponent;
@@ -25,7 +25,7 @@ float3 primeProductOver(float3 first, float3 second, float denominator)
             firstExponent + secondExponent - int3(denominatorExponent));
 }
 
-float3 primeTripleProduct(float3 first, float3 second, float third)
+public float3 primeTripleProduct(float3 first, float3 second, float third)
 {
     int3 firstExponent;
     int3 secondExponent;
@@ -36,7 +36,7 @@ float3 primeTripleProduct(float3 first, float3 second, float third)
     return ldexp(significand, firstExponent + secondExponent + int3(thirdExponent));
 }
 
-float primePowerHeuristicValue(float firstPdf, float secondPdf)
+public float primePowerHeuristicValue(float firstPdf, float secondPdf)
 {
     if (firstPdf <= 0.0) return 0.0;
     if (secondPdf <= 0.0) return 1.0;
@@ -49,7 +49,7 @@ float primePowerHeuristicValue(float firstPdf, float secondPdf)
     return ratioSquared / (1.0 + ratioSquared);
 }
 
-float primePowerHeuristicOverPdfValue(float sampledPdf, float otherPdf)
+public float primePowerHeuristicOverPdfValue(float sampledPdf, float otherPdf)
 {
     if (sampledPdf <= 0.0) return 0.0;
     if (otherPdf <= 0.0) return 1.0 / sampledPdf;
@@ -61,7 +61,7 @@ float primePowerHeuristicOverPdfValue(float sampledPdf, float otherPdf)
     return (ratio / otherPdf) / (1.0 + ratio * ratio);
 }
 
-float primeAreaHitMisWeightValue(
+public float primeAreaHitMisWeightValue(
         bool previousUsedAreaNee,
         bool previousCannotUseMis,
         float bsdfPdf,
@@ -72,56 +72,54 @@ float primeAreaHitMisWeightValue(
             : primePowerHeuristicValue(bsdfPdf, lightPdf);
 }
 
-float primeAreaSolidAnglePdfValue(
+public float primeAreaSolidAnglePdfValue(
         float areaPdf, float distanceSquared, float lightCosine)
 {
     if (distanceSquared <= 0.0 || lightCosine <= 0.0 || areaPdf <= 0.0) return 0.0;
     return primeProductOver(areaPdf, distanceSquared, lightCosine);
 }
 
-float3 primeSegmentTransmittance(float3 extinction, float distance)
+public float3 primeSegmentTransmittance(float3 extinction, float distance)
 {
     return exp(-extinction * distance);
 }
 
-float primeEtaScaleAfterScatter(float etaScale, float relativeEta, bool transmission)
+public float primeEtaScaleAfterScatter(float etaScale, float relativeEta, bool transmission)
 {
     return transmission ? etaScale * relativeEta * relativeEta : etaScale;
 }
 
-float primeRussianRouletteMetric(float3 throughput, float etaScale)
+public float primeRussianRouletteMetric(float3 throughput, float etaScale)
 {
     return max(throughput.r, max(throughput.g, throughput.b)) * etaScale;
 }
 
-float primeRussianRouletteSurvival(float3 throughput, float etaScale)
+public float primeRussianRouletteSurvival(float3 throughput, float etaScale)
 {
     return min(max(primeRussianRouletteMetric(throughput, etaScale), 0.0), 1.0);
 }
 
-bool primeRussianRouletteApplies(uint completedScatters, uint minimumCompletedScatters)
+public bool primeRussianRouletteApplies(uint completedScatters, uint minimumCompletedScatters)
 {
     return completedScatters >= minimumCompletedScatters;
 }
 
-float primeOfflineRussianRouletteSurvival(float3 throughput, float etaScale)
+public float primeOfflineRussianRouletteSurvival(float3 throughput, float etaScale)
 {
     return min(sqrt(max(primeRussianRouletteMetric(throughput, etaScale), 0.0)), 1.0);
 }
 
-uint primePackWavefrontEtaScale(float etaScale)
+public uint primePackWavefrontEtaScale(float etaScale)
 {
     return packHalf2x16(float2(etaScale, 0.0)) & 0xffff;
 }
 
-float primeUnpackWavefrontEtaScale(uint packedEtaScale)
+public float primeUnpackWavefrontEtaScale(uint packedEtaScale)
 {
     return unpackHalf2x16ToFloat(packedEtaScale & 0xffff).x;
 }
 
-float3 primeRussianRouletteReweight(float3 throughput, float survival)
+public float3 primeRussianRouletteReweight(float3 throughput, float survival)
 {
     return throughput / survival;
 }
-
-#endif

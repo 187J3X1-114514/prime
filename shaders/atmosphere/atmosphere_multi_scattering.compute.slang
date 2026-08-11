@@ -1,13 +1,11 @@
-#include "core/atmosphere.slang"
-#include "core/image_access.slang"
+import "core/atmosphere.slang";
+import "core/image_access.slang";
 
 [[vk::binding(0, 0)]] [[vk::image_format("rgba16f")]] readonly RWTexture2D<float4> transmittanceLow;
 [[vk::binding(1, 0)]] [[vk::image_format("rgba16f")]] readonly RWTexture2D<float4> transmittanceHigh;
 [[vk::binding(2, 0)]] [[vk::image_format("rgba16f")]] writeonly RWTexture2D<float4> multiScatteringLow;
 [[vk::binding(3, 0)]] [[vk::image_format("rgba16f")]] writeonly RWTexture2D<float4> multiScatteringHigh;
 
-ATM_DECLARE_SAMPLE_2D(sampleTransmittanceLow, transmittanceLow)
-ATM_DECLARE_SAMPLE_2D(sampleTransmittanceHigh, transmittanceHigh)
 
 static const int MULTI_RAY_STEPS = 128;
 static const int MULTI_SQRT_DIRECTION_SAMPLES = 16;
@@ -16,8 +14,8 @@ static const int MULTI_DIRECTION_SAMPLES = 256;
 float4 sampleTransmittance(int group, float sunMu, float normalizedAltitude) {
     float2 uv = atmTransmittanceUv(sunMu, normalizedAltitude);
     return group == 0
-            ? sampleTransmittanceLow(uv)
-            : sampleTransmittanceHigh(uv);
+            ? atmSample2D(transmittanceLow, uv)
+            : atmSample2D(transmittanceHigh, uv);
 }
 
 float3 sphereDirection(int sampleIndex) {

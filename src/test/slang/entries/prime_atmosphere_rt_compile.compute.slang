@@ -1,4 +1,7 @@
-#include "core/starmap.slang"
+import "prime_abi.slang";
+import "prime_abi_types.slang";
+import "core/atmosphere_rt.slang";
+import "core/starmap.slang";
 
 [[vk::binding(0, 3)]] RWStructuredBuffer<float4> primeAtmosphereProbe;
 

@@ -1,5 +1,7 @@
-#ifndef PRIME_NRD_SH_GLSL
-#define PRIME_NRD_SH_GLSL
+#language slang 2026
+module "core/nrd_sh.slang";
+
+import "core/nrd_common.slang";
 
 // Application-side half of NRD 4.17.4's REBLUR SH contract. Keep these operations synchronized
 // with NRD/Shaders/NRD.hlsli when the bundled native version changes.
@@ -8,19 +10,19 @@ static const float PRIME_NRD_EPS = 1.0e-6;
 static const float PRIME_NRD_REJITTER_VIEW_Z_THRESHOLD = 0.01;
 static const float PRIME_NRD_REJITTER_AMPLITUDE = 2.0;
 
-struct PrimeNrdSg {
-    float c0;
-    float2 chroma;
-    float normalizedHitDistance;
-    float3 c1;
+public struct PrimeNrdSg {
+    public float c0;
+    public float2 chroma;
+    public float normalizedHitDistance;
+    public float3 c1;
 };
 
-struct PrimeNrdResolvedSg {
-    float3 diffuse;
-    float3 specular;
+public struct PrimeNrdResolvedSg {
+    public float3 diffuse;
+    public float3 specular;
 };
 
-PrimeNrdSg primeNrdUnpackSg(float4 sh0, float3 sh1) {
+public PrimeNrdSg primeNrdUnpackSg(float4 sh0, float3 sh1) {
     PrimeNrdSg sg;
     sg.c0 = primeNrdIsFinite(sh0.x) ? max(sh0.x, 0.0) : 0.0;
     sg.chroma = primeNrdIsFinite(sh0.yz) ? sh0.yz : float2(0.0);
@@ -28,8 +30,7 @@ PrimeNrdSg primeNrdUnpackSg(float4 sh0, float3 sh1) {
     sg.c1 = primeNrdIsFinite(sh1) ? sh1 : float3(0.0);
     return sg;
 }
-
-float3 primeNrdSgExtractColor(PrimeNrdSg sg) {
+public float3 primeNrdSgExtractColor(PrimeNrdSg sg) {
     return primeNrdYCoCgToLinear(float3(sg.c0, sg.chroma));
 }
 
@@ -86,7 +87,8 @@ float primeNrdSgInnerProduct(
     return 2.0 * PRIME_NRD_PI * value * firstC0 * secondC0;
 }
 
-float3 primeNrdResolveSgDiffuse(PrimeNrdSg sg, float3 normal, float3 view, float roughness) {
+public float3 primeNrdResolveSgDiffuse(
+        PrimeNrdSg sg, float3 normal, float3 view, float roughness) {
     float3 lightDirection = primeNrdSgExtractDirection(sg);
     float noL = clamp(dot(normal, lightDirection), 0.0, 1.0);
     float y = primeNrdSgInnerProduct(
@@ -106,7 +108,8 @@ float3 primeNrdResolveSgDiffuse(PrimeNrdSg sg, float3 normal, float3 view, float
     return primeNrdIsFinite(resolved) ? resolved : primeNrdSgExtractColor(sg);
 }
 
-float3 primeNrdResolveSgSpecular(PrimeNrdSg sg, float3 normal, float3 view, float roughness) {
+public float3 primeNrdResolveSgSpecular(
+        PrimeNrdSg sg, float3 normal, float3 view, float roughness) {
     roughness = max(roughness, 0.05);
     float m = roughness * roughness;
     float m2 = m * m;
@@ -154,7 +157,7 @@ float2 primeNrdComputeBrdfs(
     return float2(diffuse, specular);
 }
 
-float2 primeNrdSgReJitter(
+public float2 primeNrdSgReJitter(
         PrimeNrdSg diffuseSg,
         PrimeNrdSg specularSg,
         float3 view,
@@ -202,7 +205,7 @@ float2 primeNrdSgReJitter(
     return primeNrdIsFinite(scale) ? scale : float2(1.0);
 }
 
-PrimeNrdResolvedSg primeNrdResolveFilteredSg(
+public PrimeNrdResolvedSg primeNrdResolveFilteredSg(
         PrimeNrdSg diffuseSg,
         PrimeNrdSg specularSg,
         float3 view,
@@ -247,5 +250,3 @@ PrimeNrdResolvedSg primeNrdResolveFilteredSg(
     resolved.specular *= scale.y;
     return resolved;
 }
-
-#endif

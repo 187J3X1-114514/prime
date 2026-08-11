@@ -1,6 +1,6 @@
 import glsl;
 
-#include "rt/shadow_payload.slang"
+import "rt/shadow_payload.slang";
 
 layout(location = 1) rayPayloadInEXT PrimeShadowPayload payload;
 

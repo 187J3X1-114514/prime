@@ -1,19 +1,22 @@
-#ifndef PRIME_MATERIAL_SLANG
-#define PRIME_MATERIAL_SLANG
+#language slang 2026
+module "material/material.slang";
 
-
+import "prime_abi.slang";
+import "prime_abi_types.slang";
 import "core/color_space.slang";
-#include "material/default_material.slang"
-#include "material/labpbr.slang"
-#include "material/material_translation.slang"
-#include "material/transparent_material.slang"
+import "core/packed_geometry.slang";
+import "core/render_config.slang";
+import "material/default_material.slang";
+import "material/labpbr.slang";
+import "material/material_translation.slang";
+import "material/transparent_material.slang";
 
 float4 primeSampleSceneTexture(uint index, float2 uv, float lod)
 {
     return primeSceneTextures[NonUniformResourceIndex(index)].SampleLevel(uv, lod);
 }
 
-int2 primeSceneTextureExtent(uint index)
+public int2 primeSceneTextureExtent(uint index)
 {
     uint width;
     uint height;
@@ -23,7 +26,7 @@ int2 primeSceneTextureExtent(uint index)
     return int2(width, height);
 }
 
-int primeSceneTextureMipLevels(uint index)
+public int primeSceneTextureMipLevels(uint index)
 {
     uint width;
     uint height;
@@ -39,21 +42,21 @@ float4 primeLoadSceneTexture(uint index, int2 texel)
 }
 // Minimal Minecraft adapter. The integrator consumes only this result, so future material
 // models can replace atlas/tint decoding without changing path scheduling or traversal.
-struct PrimeMaterialSample {
-    float3 baseColor;
-    float opacity;
-    float3 shadingNormal;
-    float roughness;
-    uint materialControl;
-    uint opticalControl;
+public struct PrimeMaterialSample {
+    public float3 baseColor;
+    public float opacity;
+    public float3 shadingNormal;
+    public float roughness;
+    public uint materialControl;
+    public uint opticalControl;
 };
 
 static const uint PRIME_EMITTER_FLAG_TWO_SIDED = 1u;
 static const uint PRIME_EMITTER_FLAG_LABPBR_EMISSION = 2u;
-static const uint PRIME_CONSTANT_UV_DENSITY = 0x80000000u;
+public static const uint PRIME_CONSTANT_UV_DENSITY = 0x80000000u;
 static const uint PRIME_CONSTANT_UV_OWN_TINT = 1u;
 static const uint PRIME_CONSTANT_UV_BAKED_MATERIAL = 2u;
-static const uint PRIME_RECIPE_ALPHA_CUTOUT = 1u;
+public static const uint PRIME_RECIPE_ALPHA_CUTOUT = 1u;
 static const uint PRIME_RECIPE_ANIMATED = 1u << 1u;
 static const uint PRIME_RECIPE_SCATTERING_SHIFT = 2u;
 static const uint PRIME_RECIPE_SCATTERING_MASK = 3u << PRIME_RECIPE_SCATTERING_SHIFT;
@@ -61,27 +64,27 @@ static const uint PRIME_RECIPE_OPAQUE = 0u;
 static const uint PRIME_RECIPE_DIELECTRIC_SOLID = 1u << PRIME_RECIPE_SCATTERING_SHIFT;
 static const uint PRIME_RECIPE_DIELECTRIC_THIN = 2u << PRIME_RECIPE_SCATTERING_SHIFT;
 static const uint PRIME_RECIPE_FOLIAGE_THIN = 3u << PRIME_RECIPE_SCATTERING_SHIFT;
-static const uint PRIME_RECIPE_WATER = 1u << 4u;
+public static const uint PRIME_RECIPE_WATER = 1u << 4u;
 static const uint PRIME_RECIPE_TANGENT_NEGATIVE = 1u << 7u;
 static const uint PRIME_RECIPE_FRONT_FACE_ONLY = 1u << 8u;
 static const uint PRIME_RECIPE_RASTER_COMPOSITE = 1u << 9u;
 static const uint PRIME_RECIPE_BUILTIN_SHIFT = 11u;
-static const uint PRIME_RECIPE_BUILTIN_MASK = 15u << PRIME_RECIPE_BUILTIN_SHIFT;
-static const uint PRIME_RECIPE_MATERIAL_MASK = 0xffu | PRIME_RECIPE_BUILTIN_MASK;
+public static const uint PRIME_RECIPE_BUILTIN_MASK = 15u << PRIME_RECIPE_BUILTIN_SHIFT;
+public static const uint PRIME_RECIPE_MATERIAL_MASK = 0xffu | PRIME_RECIPE_BUILTIN_MASK;
 
-uint primePrimitiveControl(PrimitiveRecord primitive) {
+public uint primePrimitiveControl(PrimitiveRecord primitive) {
     return (primitive.tint >> 24u)
             | ((primitive.flagsEmitter & 7u) << 8u)
             | ((primitive.flagsEmitter >> 16u) & PRIME_RECIPE_BUILTIN_MASK);
 }
 
-bool primeRecipeIsTransmissive(uint control) {
+public bool primeRecipeIsTransmissive(uint control) {
     uint scattering = control & PRIME_RECIPE_SCATTERING_MASK;
     return scattering == PRIME_RECIPE_DIELECTRIC_SOLID
             || scattering == PRIME_RECIPE_DIELECTRIC_THIN;
 }
 
-bool primeRecipeIsThinWalled(uint control) {
+public bool primeRecipeIsThinWalled(uint control) {
     uint scattering = control & PRIME_RECIPE_SCATTERING_MASK;
     return scattering == PRIME_RECIPE_DIELECTRIC_THIN
             || scattering == PRIME_RECIPE_FOLIAGE_THIN;
@@ -91,7 +94,7 @@ bool primePrimitiveIsFrontFaceOnly(PrimitiveRecord primitive) {
     return (primitive.flagsEmitter & 1u) != 0u;
 }
 
-bool primeUsesRasterComposite(PrimitiveRecord primitive) {
+public bool primeUsesRasterComposite(PrimitiveRecord primitive) {
     return (primitive.flagsEmitter & 2u) != 0u;
 }
 
@@ -99,12 +102,12 @@ uint primeRasterCompositeTint(PrimitiveRecord primitive) {
     return (primitive.flagsEmitter >> 3u) & 0x00ffffffu;
 }
 
-static const uint PRIME_DYNAMIC_TEXTURE_FLAG = 0x80000000u;
+public static const uint PRIME_DYNAMIC_TEXTURE_FLAG = 0x80000000u;
 static const uint PRIME_VISIBLE_EMISSION_FLAG = 1u << 10u;
 static const uint PRIME_DYNAMIC_RED_ALPHA_FLAG = 1u << 9u;
 static const uint PRIME_DYNAMIC_TEXTURE_INDEX_MASK = 0x3fu;
 
-uint primePrimitiveTextureIndex(PrimitiveRecord primitive) {
+public uint primePrimitiveTextureIndex(PrimitiveRecord primitive) {
     return (primitive.flagsEmitter & PRIME_DYNAMIC_TEXTURE_FLAG) != 0u
             ? ((primitive.flagsEmitter >> 3u) & PRIME_DYNAMIC_TEXTURE_INDEX_MASK)
             : 0u;
@@ -130,12 +133,13 @@ float4 primeSamplePrimitiveTexture(
     return primeSampleSceneTexture(textureIndex, uv, textureLodValue);
 }
 
-bool primeUsesBakedMaterial(PrimitiveRecord primitive) {
+public bool primeUsesBakedMaterial(PrimitiveRecord primitive) {
     return primitive.uvDensity == PRIME_CONSTANT_UV_DENSITY
             && (primitive.uv2 & PRIME_CONSTANT_UV_BAKED_MATERIAL) != 0u;
 }
 
-float3 primeAtlasBaseColor(uint packedTint, float2 uv, float textureLodValue, out float opacity) {
+public float3 primeAtlasBaseColor(
+        uint packedTint, float2 uv, float textureLodValue, out float opacity) {
     float4 textureSample = primeSampleSceneTexture(0, uv, textureLodValue);
     float4 tint = primeUnpackTint(packedTint);
     opacity = textureSample.a;
@@ -143,7 +147,7 @@ float3 primeAtlasBaseColor(uint packedTint, float2 uv, float textureLodValue, ou
     return primeLinearSrgbToLinearRec2020(linearSrgbAlbedo);
 }
 
-float2 primePrimitiveMaterialReferenceUv(PrimitiveRecord primitive) {
+public float2 primePrimitiveMaterialReferenceUv(PrimitiveRecord primitive) {
     if (primitive.uvDensity == PRIME_CONSTANT_UV_DENSITY) {
         return float2(asfloat(primitive.uv0), asfloat(primitive.uv1));
     }
@@ -153,7 +157,7 @@ float2 primePrimitiveMaterialReferenceUv(PrimitiveRecord primitive) {
     return 0.5 * (min(first, min(second, third)) + max(first, max(second, third)));
 }
 
-PrimeMaterialSample primeEvaluateMaterial(
+public PrimeMaterialSample primeEvaluateMaterial(
         PrimitiveRecord primitive, float2 uv, float textureLodValue, uint instanceTint) {
     PrimeMaterialSample result;
     bool bakedMaterial = primeUsesBakedMaterial(primitive);
@@ -217,8 +221,10 @@ PrimeMaterialSample primeEvaluateMaterial(
             : 0u;
     uint builtinClass = recipeControl >> PRIME_RECIPE_BUILTIN_SHIFT & 15u;
     result.roughness = primeUsesVanillaPbrPresets() && builtinClass != 0u
-            ? primeBuiltinRoughness(builtinClass)
-            : primeDefaultLinearRoughness();
+            ? primeBuiltinRoughness(
+                    builtinClass,
+                    primeConfiguredDefaultLinearRoughness())
+            : primeConfiguredDefaultLinearRoughness();
     result.opticalControl = primeUsesVanillaPbrPresets()
             ? primeBuiltinFresnelCode(builtinClass)
             : 0u;
@@ -288,7 +294,7 @@ PrimeMaterialSample primeEvaluateMaterial(
     return result;
 }
 
-PrimeMaterialSample primeEvaluateMaterialReference(
+public PrimeMaterialSample primeEvaluateMaterialReference(
         uint recipeControl, uint packedTint, float2 uv) {
     PrimitiveRecord primitive;
     primitive.uv0 = asuint(uv.x);
@@ -304,7 +310,7 @@ PrimeMaterialSample primeEvaluateMaterialReference(
     return primeEvaluateMaterial(primitive, uv, 0.0, 0u);
 }
 
-float3 primeEvaluateEmitterRadiance(
+public float3 primeEvaluateEmitterRadiance(
         uint atlasTint,
         uint emitterFlags,
         float fallbackRadiance,
@@ -336,7 +342,7 @@ float3 primeEvaluateEmitterRadiance(
     return color * radianceScale * primeBlockLightRadianceMultiplier();
 }
 
-float3 primeEvaluateEmitterRadiance(
+public float3 primeEvaluateEmitterRadiance(
         uint atlasTint,
         uint emitterFlags,
         float fallbackRadiance,
@@ -347,7 +353,7 @@ float3 primeEvaluateEmitterRadiance(
             atlasTint, emitterFlags, fallbackRadiance, uv, 0.0);
 }
 
-float primeEvaluateOpacity(
+public float primeEvaluateOpacity(
         PrimitiveRecord primitive, float2 uv, float textureLodValue) {
     uint textureIndex = min(
             primePrimitiveTextureIndex(primitive), PRIME_SCENE_TEXTURE_COUNT - 1u);
@@ -360,5 +366,3 @@ float primeEvaluateOpacity(
     // known OMM states on the same coverage function, independent of ray-cone LOD and filtering.
     return primeLoadSceneTexture(textureIndex, texel).a;
 }
-
-#endif

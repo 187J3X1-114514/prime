@@ -1,8 +1,9 @@
 
 #include "core/prime_test_abi.slang"
 import "core/numerical.slang";
-#include "core/nrd_common.slang"
-#include "core/nrd_sh.slang"
+import "core/nrd_common.slang";
+import "material/default_material.slang";
+import "core/nrd_sh.slang";
 
 static const uint PRIME_NRD_INPUT_WORDS = 4u;
 static const uint PRIME_NRD_WITNESS_WORDS = 9u;

@@ -1,49 +1,49 @@
-#ifndef PRIME_ATMOSPHERE_SLANG
-#define PRIME_ATMOSPHERE_SLANG
+#language slang 2026
+module "core/atmosphere.slang";
 
-#include "prime_abi_types.slang"
+import "prime_abi_types.slang";
 
 // Prime's atmosphere is an eight-wavelength Hillaire-style fit derived from sky_tracer's
 // reference spectral path tracer. Distances in this file are kilometres and all RGB conversion
 // ends in scene-linear Rec.2020 D65. These are estimator contracts, not presentation tuning.
-static const float ATM_PI = 3.141592653589793;
-static const float ATM_INV_PI = 0.3183098861837907;
-static const float ATM_INV_4PI = 0.07957747154594767;
-static const float ATM_RAYLEIGH_PHASE_SCALE = 0.05968310365946075;
+public static const float ATM_PI = 3.141592653589793;
+public static const float ATM_INV_PI = 0.3183098861837907;
+public static const float ATM_INV_4PI = 0.07957747154594767;
+public static const float ATM_RAYLEIGH_PHASE_SCALE = 0.05968310365946075;
 // World positions and travelled distances enter this unchanged physical atmosphere
 // through ATM_WORLD_UNIT_SCALE_KM. The explicit factor documents that coordinate contract.
-static const float ATM_WORLD_TO_ATMOSPHERE_SCALE =
+public static const float ATM_WORLD_TO_ATMOSPHERE_SCALE =
         PRIME_ATMOSPHERE_WORLD_TO_ATMOSPHERE_SCALE;
-static const float ATM_BOTTOM_RADIUS_KM = PRIME_ATMOSPHERE_BOTTOM_RADIUS_KM;
-static const float ATM_TOP_RADIUS_KM = PRIME_ATMOSPHERE_TOP_RADIUS_KM;
-static const float ATM_THICKNESS_KM =
+public static const float ATM_BOTTOM_RADIUS_KM = PRIME_ATMOSPHERE_BOTTOM_RADIUS_KM;
+public static const float ATM_TOP_RADIUS_KM = PRIME_ATMOSPHERE_TOP_RADIUS_KM;
+public static const float ATM_THICKNESS_KM =
         ATM_TOP_RADIUS_KM - ATM_BOTTOM_RADIUS_KM;
-static const float ATM_WORLD_SEA_LEVEL_Y = PRIME_ATMOSPHERE_WORLD_SEA_LEVEL_Y;
-static const float ATM_WORLD_UNIT_SCALE_KM = PRIME_ATMOSPHERE_WORLD_UNIT_SCALE_KM;
-static const float ATM_PLANET_RADIUS_OFFSET_KM = 0.01;
-static const float ATM_MULTI_ALTITUDE_SCALE_KM = 8.0;
-static const float ATM_SKY_FRACTION = 0.75;
-static const float ATM_GROUND_FRACTION = 0.25;
-static const float ATM_AERIAL_MAX_DISTANCE_KM = PRIME_ATMOSPHERE_AERIAL_MAX_DISTANCE_KM;
-static const float ATM_SPACE_SUN_INTENSITY = PRIME_ATMOSPHERE_SPACE_SUN_INTENSITY;
-static const float ATM_SUN_ANGULAR_RADIUS_RADIANS =
+public static const float ATM_WORLD_SEA_LEVEL_Y = PRIME_ATMOSPHERE_WORLD_SEA_LEVEL_Y;
+public static const float ATM_WORLD_UNIT_SCALE_KM = PRIME_ATMOSPHERE_WORLD_UNIT_SCALE_KM;
+public static const float ATM_PLANET_RADIUS_OFFSET_KM = 0.01;
+public static const float ATM_MULTI_ALTITUDE_SCALE_KM = 8.0;
+public static const float ATM_SKY_FRACTION = 0.75;
+public static const float ATM_GROUND_FRACTION = 0.25;
+public static const float ATM_AERIAL_MAX_DISTANCE_KM = PRIME_ATMOSPHERE_AERIAL_MAX_DISTANCE_KM;
+public static const float ATM_SPACE_SUN_INTENSITY = PRIME_ATMOSPHERE_SPACE_SUN_INTENSITY;
+public static const float ATM_SUN_ANGULAR_RADIUS_RADIANS =
         PRIME_ATMOSPHERE_SUN_ANGULAR_RADIUS_RADIANS;
-static const float ATM_REFERENCE_SUN_INTENSITY = 205.0;
+public static const float ATM_REFERENCE_SUN_INTENSITY = 205.0;
 
-struct AtmCoefficients {
-    float4 aerosolScattering;
-    float4 molecularScattering;
-    float4 extinction;
+public struct AtmCoefficients {
+    public float4 aerosolScattering;
+    public float4 molecularScattering;
+    public float4 extinction;
 };
 
-struct AtmRaySegment {
-    float topDistanceKm;
-    float groundDistanceKm;
-    float maximumDistanceKm;
-    bool hitsGround;
+public struct AtmRaySegment {
+    public float topDistanceKm;
+    public float groundDistanceKm;
+    public float maximumDistanceKm;
+    public bool hitsGround;
 };
 
-float atmRaySphere(float3 origin, float3 direction, float radius) {
+public float atmRaySphere(float3 origin, float3 direction, float radius) {
     float b = dot(origin, direction);
     float c = dot(origin, origin) - radius * radius;
     if (c > 0.0 && b > 0.0) {
@@ -56,7 +56,7 @@ float atmRaySphere(float3 origin, float3 direction, float radius) {
     return discriminant > b * b ? -b + sqrt(discriminant) : -b - sqrt(discriminant);
 }
 
-AtmRaySegment atmRaySegment(float3 origin, float3 direction) {
+public AtmRaySegment atmRaySegment(float3 origin, float3 direction) {
     AtmRaySegment segment;
     segment.topDistanceKm = atmRaySphere(origin, direction, ATM_TOP_RADIUS_KM);
     segment.groundDistanceKm = atmRaySphere(origin, direction, ATM_BOTTOM_RADIUS_KM);
@@ -67,13 +67,13 @@ AtmRaySegment atmRaySegment(float3 origin, float3 direction) {
     return segment;
 }
 
-bool atmDistantDirectionVisible(float eyeRadiusKm, float3 direction) {
+public bool atmDistantDirectionVisible(float eyeRadiusKm, float3 direction) {
     float3 horizonPosition = float3(
             0.0, eyeRadiusKm - ATM_PLANET_RADIUS_OFFSET_KM, 0.0);
     return !atmRaySegment(horizonPosition, direction).hitsGround;
 }
 
-float3 atmMoveToTop(float3 position, float3 direction) {
+public float3 atmMoveToTop(float3 position, float3 direction) {
     float radius = length(position);
     if (radius <= ATM_TOP_RADIUS_KM) {
         return position;
@@ -86,19 +86,19 @@ float3 atmMoveToTop(float3 position, float3 direction) {
             - position / max(radius, 1.0e-6) * ATM_PLANET_RADIUS_OFFSET_KM;
 }
 
-float4 atmMolecularScattering(int group) {
+public float4 atmMolecularScattering(int group) {
     return group == 0
             ? float4(0.047815718, 0.03604918, 0.025453128, 0.018479607)
             : float4(0.015890262, 0.01193972, 0.009758583, 0.006705125);
 }
 
-float4 atmOzoneCrossSection(int group) {
+public float4 atmOzoneCrossSection(int group) {
     return group == 0
             ? float4(2.91e-27, 1.25e-26, 7.11e-26, 1.78e-25)
             : float4(2.88e-25, 4.55e-25, 4.54e-25, 1.67e-25);
 }
 
-float4 atmAerosolScatteringCrossSection(int group, int species) {
+public float4 atmAerosolScatteringCrossSection(int group, int species) {
     if (group == 0) {
         if (species == 0) return float4(4612.53191, 4233.58582, 3786.26357, 3386.72611);
         if (species == 1) return float4(160.827371, 163.627446, 167.190338, 170.607065);
@@ -111,7 +111,7 @@ float4 atmAerosolScatteringCrossSection(int group, int species) {
     return float4(3563.58585, 3374.33138, 3235.18858, 2972.40832);
 }
 
-float4 atmAerosolAbsorptionCrossSection(int group, int species) {
+public float4 atmAerosolAbsorptionCrossSection(int group, int species) {
     if (group == 0) {
         if (species == 0) return float4(90.1089989, 82.7180280, 74.4037326, 72.6561267);
         if (species == 1) return float4(70.7582688, 69.1931924, 67.2250799, 65.3678619);
@@ -124,21 +124,21 @@ float4 atmAerosolAbsorptionCrossSection(int group, int species) {
     return float4(1.41520976e-4, 3.04512124e-4, 4.24030002e-4, 6.10137194e-4);
 }
 
-float atmAerosolBaseDensity(int species) {
+public float atmAerosolBaseDensity(int species) {
     if (species == 0) return 1.49e-5;
     if (species == 1) return 1.01e-5;
     if (species == 2) return 5.31e-7;
     return 0.0;
 }
 
-float atmAerosolBackgroundDensity(int species) {
+public float atmAerosolBackgroundDensity(int species) {
     if (species == 0) return 4.571e-7;
     if (species == 1) return 2.291e-6;
     if (species == 2) return 1.362e-8;
     return 5.312e-7;
 }
 
-float atmAerosolDensity(int species, float altitudeKm) {
+public float atmAerosolDensity(int species, float altitudeKm) {
     float altitude = max(altitudeKm, 0.0);
     float falloff = exp(-altitude / 8.0);
     return lerp(
@@ -147,7 +147,7 @@ float atmAerosolDensity(int species, float altitudeKm) {
             smoothstep(1.0, 2.0, altitude));
 }
 
-AtmCoefficients atmCoefficients(int group, float altitudeKm) {
+public AtmCoefficients atmCoefficients(int group, float altitudeKm) {
     float altitude = max(altitudeKm, 0.0);
     float4 aerosolScattering = float4(0.0);
     float4 aerosolAbsorption = float4(0.0);
@@ -171,7 +171,7 @@ AtmCoefficients atmCoefficients(int group, float altitudeKm) {
     return result;
 }
 
-float4 atmSolarSpectrum(int group) {
+public float4 atmSolarSpectrum(int group) {
     float4 reference = group == 0
             ? float4(1.7477345, 1.7629014, 2.0566432, 1.8146111)
             : float4(1.8847016, 1.8567868, 1.7294269, 1.5365043);
@@ -180,11 +180,11 @@ float4 atmSolarSpectrum(int group) {
     return reference * (ATM_SPACE_SUN_INTENSITY / ATM_REFERENCE_SUN_INTENSITY);
 }
 
-float atmRayleighPhase(float cosine) {
+public float atmRayleighPhase(float cosine) {
     return ATM_RAYLEIGH_PHASE_SCALE * (1.0 + cosine * cosine);
 }
 
-float2 atmTransmittanceUv(float cosine, float normalizedAltitude) {
+public float2 atmTransmittanceUv(float cosine, float normalizedAltitude) {
     float radius = ATM_BOTTOM_RADIUS_KM
             + clamp(normalizedAltitude, 0.0, 1.0) * ATM_THICKNESS_KM;
     float mu = clamp(cosine, -1.0, 1.0);
@@ -202,26 +202,26 @@ float2 atmTransmittanceUv(float cosine, float normalizedAltitude) {
             clamp(rho / max(h, 1.0e-6), 0.0, 1.0));
 }
 
-float atmFromUnitToSubUv(float value, float resolution) {
+public float atmFromUnitToSubUv(float value, float resolution) {
     return (value + 0.5 / resolution) * (resolution / (resolution + 1.0));
 }
 
-float atmFromSubUvToUnit(float value, float resolution) {
+public float atmFromSubUvToUnit(float value, float resolution) {
     return (value - 0.5 / resolution) * (resolution / (resolution - 1.0));
 }
 
-float atmMultiSunMuFromU(float u) {
+public float atmMultiSunMuFromU(float u) {
     float x = clamp(u, 0.0, 1.0) * 2.0 - 1.0;
     return x * abs(x);
 }
 
-float atmMultiUFromSunMu(float sunMu) {
+public float atmMultiUFromSunMu(float sunMu) {
     float mu = clamp(sunMu, -1.0, 1.0);
     float x = sign(mu) * sqrt(abs(mu));
     return clamp(x * 0.5 + 0.5, 0.0, 1.0);
 }
 
-float atmMultiNormalizedAltitudeFromV(float v) {
+public float atmMultiNormalizedAltitudeFromV(float v) {
     float minimumAltitude = ATM_PLANET_RADIUS_OFFSET_KM;
     float maximumAltitude =
             ATM_THICKNESS_KM - ATM_PLANET_RADIUS_OFFSET_KM;
@@ -233,7 +233,7 @@ float atmMultiNormalizedAltitudeFromV(float v) {
     return clamp(altitude / ATM_THICKNESS_KM, 0.0, 1.0);
 }
 
-float atmMultiVFromNormalizedAltitude(float normalizedAltitude) {
+public float atmMultiVFromNormalizedAltitude(float normalizedAltitude) {
     float minimumAltitude = ATM_PLANET_RADIUS_OFFSET_KM;
     float maximumAltitude =
             ATM_THICKNESS_KM - ATM_PLANET_RADIUS_OFFSET_KM;
@@ -244,14 +244,14 @@ float atmMultiVFromNormalizedAltitude(float normalizedAltitude) {
     return clamp((1.0 - exp(-h / ATM_MULTI_ALTITUDE_SCALE_KM)) / cdfMaximum, 0.0, 1.0);
 }
 
-float2 atmMultiUv(float sunMu, float normalizedAltitude, float2 dimensions) {
+public float2 atmMultiUv(float sunMu, float normalizedAltitude, float2 dimensions) {
     float2 unitUv = float2(atmMultiUFromSunMu(sunMu),
             atmMultiVFromNormalizedAltitude(normalizedAltitude));
     return float2(atmFromUnitToSubUv(unitUv.x, dimensions.x),
             atmFromUnitToSubUv(unitUv.y, dimensions.y));
 }
 
-float3 atmLinearRec2020FromSpectral(float4 low, float4 high) {
+public float3 atmLinearRec2020FromSpectral(float4 low, float4 high) {
     float3x4 lowMatrix = float3x4(
             float4(2.015521915, 3.069387571, -5.484677337, -3.419542345),
             float4(-2.20749785, -3.495544704, 10.446526205, 23.113484232),
@@ -268,7 +268,7 @@ float3 atmLinearRec2020FromSpectral(float4 low, float4 high) {
     return mul(whiteBalance, rgb);
 }
 
-float3 atmRec2020Transmittance(float4 low, float4 high) {
+public float3 atmRec2020Transmittance(float4 low, float4 high) {
     float4 clearLow = atmSolarSpectrum(0);
     float4 clearHigh = atmSolarSpectrum(1);
     float3 clear = max(atmLinearRec2020FromSpectral(clearLow, clearHigh), float3(1.0e-6));
@@ -276,14 +276,14 @@ float3 atmRec2020Transmittance(float4 low, float4 high) {
     return clamp(attenuated / clear, float3(0.0), float3(1.0));
 }
 
-float2 atmSkyHorizonAngles(float viewRadiusKm) {
+public float2 atmSkyHorizonAngles(float viewRadiusKm) {
     float horizonDistance = sqrt(max(viewRadiusKm * viewRadiusKm
             - ATM_BOTTOM_RADIUS_KM * ATM_BOTTOM_RADIUS_KM, 0.0));
     float beta = acos(clamp(horizonDistance / max(viewRadiusKm, 1.0e-6), 0.0, 1.0));
     return float2(ATM_PI - beta, beta);
 }
 
-float2 atmSkyUvToParameters(float2 uvIn, float2 dimensions, float viewRadiusKm) {
+public float2 atmSkyUvToParameters(float2 uvIn, float2 dimensions, float viewRadiusKm) {
     float2 uv = clamp(float2(
             atmFromSubUvToUnit(uvIn.x, dimensions.x),
             atmFromSubUvToUnit(uvIn.y, dimensions.y)), 0.0, 1.0);
@@ -301,7 +301,7 @@ float2 atmSkyUvToParameters(float2 uvIn, float2 dimensions, float viewRadiusKm) 
     return float2(viewZenithCosine, horizontalCosine);
 }
 
-float3 atmSkyDirection(float2 parameters, float3 sunDirection) {
+public float3 atmSkyDirection(float2 parameters, float3 sunDirection) {
     float3 up = float3(0.0, 1.0, 0.0);
     float3 sunHorizontal = sunDirection - up * dot(sunDirection, up);
     float sunHorizontalLength = length(sunHorizontal);
@@ -317,7 +317,7 @@ float3 atmSkyDirection(float2 parameters, float3 sunDirection) {
             + viewSine * (forward * horizontalCosine + side * sideScale));
 }
 
-float2 atmSkyUvFromDirection(
+public float2 atmSkyUvFromDirection(
         float3 directionIn,
         float3 sunDirection,
         float2 dimensions,
@@ -349,44 +349,50 @@ float2 atmSkyUvFromDirection(
             atmFromUnitToSubUv(v, dimensions.y));
 }
 
-#define ATM_DECLARE_SAMPLE_2D(functionName, source) \
-float4 functionName(float2 uv) { \
-    uint width; uint height; source.GetDimensions(width, height); \
-    int2 dimensions = int2(width, height); \
-    float2 coordinate = clamp(uv, float2(0.0), float2(1.0)) * float2(dimensions) - float2(0.5); \
-    int2 lower = int2(floor(coordinate)); \
-    float2 fraction = frac(coordinate); \
-    int2 maximum = dimensions - int2(1); \
-    int2 p00 = clamp(lower, int2(0), maximum); \
-    int2 p10 = clamp(lower + int2(1, 0), int2(0), maximum); \
-    int2 p01 = clamp(lower + int2(0, 1), int2(0), maximum); \
-    int2 p11 = clamp(lower + int2(1), int2(0), maximum); \
-    float4 row0 = lerp(source[p00], source[p10], fraction.x); \
-    float4 row1 = lerp(source[p01], source[p11], fraction.x); \
-    return lerp(row0, row1, fraction.y); \
+public float4 atmSample2D(readonly RWTexture2D<float4> source, float2 uv) {
+    uint width;
+    uint height;
+    source.GetDimensions(width, height);
+    int2 dimensions = int2(width, height);
+    float2 coordinate = clamp(uv, float2(0.0), float2(1.0))
+            * float2(dimensions) - float2(0.5);
+    int2 lower = int2(floor(coordinate));
+    float2 fraction = frac(coordinate);
+    int2 maximum = dimensions - int2(1);
+    int2 p00 = clamp(lower, int2(0), maximum);
+    int2 p10 = clamp(lower + int2(1, 0), int2(0), maximum);
+    int2 p01 = clamp(lower + int2(0, 1), int2(0), maximum);
+    int2 p11 = clamp(lower + int2(1), int2(0), maximum);
+    float4 row0 = lerp(source[p00], source[p10], fraction.x);
+    float4 row1 = lerp(source[p01], source[p11], fraction.x);
+    return lerp(row0, row1, fraction.y);
 }
 
-#define ATM_DECLARE_SAMPLE_3D(functionName, source) \
-float4 functionName(float3 uvw) { \
-    uint width; uint height; uint depth; source.GetDimensions(width, height, depth); \
-    int3 dimensions = int3(width, height, depth); \
-    float3 coordinate = clamp(uvw, float3(0.0), float3(1.0)) * float3(dimensions) - float3(0.5); \
-    int3 lower = int3(floor(coordinate)); \
-    float3 fraction = frac(coordinate); \
-    int3 maximum = dimensions - int3(1); \
-    int3 p000 = clamp(lower, int3(0), maximum); \
-    int3 p100 = clamp(lower + int3(1, 0, 0), int3(0), maximum); \
-    int3 p010 = clamp(lower + int3(0, 1, 0), int3(0), maximum); \
-    int3 p110 = clamp(lower + int3(1, 1, 0), int3(0), maximum); \
-    int3 p001 = clamp(lower + int3(0, 0, 1), int3(0), maximum); \
-    int3 p101 = clamp(lower + int3(1, 0, 1), int3(0), maximum); \
-    int3 p011 = clamp(lower + int3(0, 1, 1), int3(0), maximum); \
-    int3 p111 = clamp(lower + int3(1), int3(0), maximum); \
-    float4 z0y0 = lerp(source[p000], source[p100], fraction.x); \
-    float4 z0y1 = lerp(source[p010], source[p110], fraction.x); \
-    float4 z1y0 = lerp(source[p001], source[p101], fraction.x); \
-    float4 z1y1 = lerp(source[p011], source[p111], fraction.x); \
-    return lerp(lerp(z0y0, z0y1, fraction.y), lerp(z1y0, z1y1, fraction.y), fraction.z); \
+public float4 atmSample3D(readonly RWTexture3D<float4> source, float3 uvw) {
+    uint width;
+    uint height;
+    uint depth;
+    source.GetDimensions(width, height, depth);
+    int3 dimensions = int3(width, height, depth);
+    float3 coordinate = clamp(uvw, float3(0.0), float3(1.0))
+            * float3(dimensions) - float3(0.5);
+    int3 lower = int3(floor(coordinate));
+    float3 fraction = frac(coordinate);
+    int3 maximum = dimensions - int3(1);
+    int3 p000 = clamp(lower, int3(0), maximum);
+    int3 p100 = clamp(lower + int3(1, 0, 0), int3(0), maximum);
+    int3 p010 = clamp(lower + int3(0, 1, 0), int3(0), maximum);
+    int3 p110 = clamp(lower + int3(1, 1, 0), int3(0), maximum);
+    int3 p001 = clamp(lower + int3(0, 0, 1), int3(0), maximum);
+    int3 p101 = clamp(lower + int3(1, 0, 1), int3(0), maximum);
+    int3 p011 = clamp(lower + int3(0, 1, 1), int3(0), maximum);
+    int3 p111 = clamp(lower + int3(1), int3(0), maximum);
+    float4 z0y0 = lerp(source[p000], source[p100], fraction.x);
+    float4 z0y1 = lerp(source[p010], source[p110], fraction.x);
+    float4 z1y0 = lerp(source[p001], source[p101], fraction.x);
+    float4 z1y1 = lerp(source[p011], source[p111], fraction.x);
+    return lerp(
+            lerp(z0y0, z0y1, fraction.y),
+            lerp(z1y0, z1y1, fraction.y),
+            fraction.z);
 }
-
-#endif

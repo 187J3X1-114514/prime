@@ -1,6 +1,6 @@
 #include "core/prime_test_abi.slang"
-#include "core/auto_exposure.slang"
-#include "post/display_transform.slang"
+import "core/auto_exposure.slang";
+import "post/display_transform.slang";
 
 static const uint PRIME_AUTO_EXPOSURE_INPUT_WORDS = 2;
 static const uint PRIME_AUTO_EXPOSURE_WITNESS_WORDS = 4;

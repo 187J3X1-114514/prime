@@ -1,6 +1,9 @@
 
 #include "core/prime_test_abi.slang"
-#include "post/fsr_input.slang"
+import "core/nrd_common.slang";
+import "material/default_material.slang";
+import "post/fsr_input.slang";
+import "prime_fsr_contract.slang";
 
 static const uint PRIME_FSR_INPUT_WORDS = 3u;
 static const uint PRIME_FSR_WITNESS_WORDS = 5u;

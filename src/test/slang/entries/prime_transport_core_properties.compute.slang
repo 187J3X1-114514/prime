@@ -1,10 +1,11 @@
 #include "core/prime_test_abi.slang"
-#include "bsdf/core/robocute_common.slang"
-#include "core/light_tree_math.slang"
+import "bsdf/core/robocute_common.slang";
+import "core/color_space.slang";
+import "core/light_tree_math.slang";
 import "core/transparent_checkerboard.slang";
 import "core/transport_math.slang";
-#include "material/transparent_material.slang"
-#include "realtime/wavefront_medium.slang"
+import "material/transparent_material.slang";
+import "realtime/wavefront_medium.slang";
 
 static const uint PRIME_TRANSPORT_INPUT_WORDS = 6;
 static const uint PRIME_TRANSPORT_WITNESS_WORDS = 10;

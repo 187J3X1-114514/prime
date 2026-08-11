@@ -1,13 +1,13 @@
-#ifndef PRIME_DISPLAY_TRANSFORM_SLANG
-#define PRIME_DISPLAY_TRANSFORM_SLANG
+#language slang 2026
+module "post/display_transform.slang";
 
-#include "prime_abi_types.slang"
+import "prime_abi_types.slang";
 import "core/color_space.slang";
 import "core/oklab.slang";
 
-static const float PRIME_OKLAB_RGB_HEADROOM = 0.99999;
+public static const float PRIME_OKLAB_RGB_HEADROOM = 0.99999;
 
-float primeOklabReciprocalPowerShoulder(float x, float curveExponent)
+public float primeOklabReciprocalPowerShoulder(float x, float curveExponent)
 {
     if (x < 0.01) {
         float nextExponent = curveExponent + 1.0;
@@ -18,7 +18,7 @@ float primeOklabReciprocalPowerShoulder(float x, float curveExponent)
     return 1.0 - pow(1.0 + x, -curveExponent);
 }
 
-float primeOklabMapLightness(
+public float primeOklabMapLightness(
         float lightness,
         float overexposure,
         float curveExponent,
@@ -31,7 +31,7 @@ float primeOklabMapLightness(
     return pow(mappedBrightness, 1.0 / 3.0);
 }
 
-float3 primeOklabRootDirection(float2 hue)
+public float3 primeOklabRootDirection(float2 hue)
 {
     return float3(
             0.3963377774 * hue.x + 0.2158037573 * hue.y,
@@ -39,7 +39,7 @@ float3 primeOklabRootDirection(float2 hue)
             -0.0894841775 * hue.x - 1.2914855480 * hue.y);
 }
 
-float primeOklabMaxSaturation(float2 hue, float3 direction)
+public float primeOklabMaxSaturation(float2 hue, float3 direction)
 {
     float k0;
     float k1;
@@ -86,7 +86,7 @@ float primeOklabMaxSaturation(float2 hue, float3 direction)
     return saturation - f * f1 / (f1 * f1 - 0.5 * f * f2);
 }
 
-float primeOklabConnectedSaturation(float2 hue, float saturation)
+public float primeOklabConnectedSaturation(float2 hue, float saturation)
 {
     const float2 blueNotchAxis = float2(-0.10362546, -0.99461639);
     float alignment = max(dot(hue, blueNotchAxis), 0.0);
@@ -101,7 +101,7 @@ float primeOklabConnectedSaturation(float2 hue, float saturation)
     return min(saturation, 0.57 + (1.0 - alignment256));
 }
 
-float primeOklabCuspLightness(float saturation, float3 direction)
+public float primeOklabCuspLightness(float saturation, float3 direction)
 {
     float3 roots = float3(1.0) + saturation * direction;
     float3 lms = roots * roots * roots;
@@ -112,7 +112,7 @@ float primeOklabCuspLightness(float saturation, float3 direction)
     return pow(1.0 / max(rgb.r, max(rgb.g, rgb.b)), 1.0 / 3.0);
 }
 
-float primeOklabRefineUpperChroma(
+public float primeOklabRefineUpperChroma(
         float chroma,
         float lightness,
         float3 direction)
@@ -143,7 +143,7 @@ float primeOklabRefineUpperChroma(
     return chroma + min(step.r, min(step.g, step.b));
 }
 
-float primeOklabSoftMin(float value, float limit, float power)
+public float primeOklabSoftMin(float value, float limit, float power)
 {
     if (value <= 0.0 || limit <= 0.0) return 0.0;
     float lower = min(value, limit);
@@ -152,7 +152,7 @@ float primeOklabSoftMin(float value, float limit, float power)
     return lower * pow(1.0 + pow(ratio, power), -1.0 / power);
 }
 
-float primeOklabSoftMin4(float value, float limit)
+public float primeOklabSoftMin4(float value, float limit)
 {
     if (value <= 0.0 || limit <= 0.0) return 0.0;
     float lower = min(value, limit);
@@ -163,7 +163,7 @@ float primeOklabSoftMin4(float value, float limit)
     return lower * rsqrt(root);
 }
 
-float primeOklabSaturationCap(
+public float primeOklabSaturationCap(
         float lightness,
         float maximumSaturation,
         float3 direction)
@@ -186,7 +186,7 @@ float primeOklabSaturationCap(
     return max(roundedChroma / lightness, 0.0);
 }
 
-float primeOklabChromaRetention(float lightness)
+public float primeOklabChromaRetention(float lightness)
 {
     float lightness2 = lightness * lightness;
     float lightness4 = lightness2 * lightness2;
@@ -194,13 +194,13 @@ float primeOklabChromaRetention(float lightness)
     return 1.0 - lightness8 * lightness4;
 }
 
-float primeOklabRoundingPower(float lightness)
+public float primeOklabRoundingPower(float lightness)
 {
     float endpointDistance = lightness * (1.0 - lightness);
     return 32.0 - 256.0 * endpointDistance * endpointDistance;
 }
 
-float3 primeOklabTonemapCurve(
+public float3 primeOklabTonemapCurve(
         float3 color,
         float overexposure,
         float curveExponent,
@@ -235,7 +235,7 @@ float3 primeOklabTonemapCurve(
             outputLightness * outputSaturation * hue));
 }
 
-float3 primeDisplayTransformToSrgb(
+public float3 primeDisplayTransformToSrgb(
         float3 hdrRec2020,
         float exposureMultiplier,
         float overexposure,
@@ -250,5 +250,3 @@ float3 primeDisplayTransformToSrgb(
             linearBt709, overexposure, curveExponent, curveCoefficient));
     return clamp(encodedSrgb, float3(0.0), float3(1.0));
 }
-
-#endif

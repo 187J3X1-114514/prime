@@ -1,32 +1,29 @@
-#include "prime_realtime_abi.slang"
-#if defined(PRIME_SHARC_QUERY)
-#include "prime_sharc_abi.slang"
-#endif
-#if defined(PRIME_ENABLE_SUBGROUP_QUEUE)
-#endif
-#if defined(PRIME_ENABLE_SER)
-#endif
-#include "core/common.slang"
-#include "core/atmosphere_rt.slang"
-#include "core/nrd_common.slang"
-#include "rt/shadow_payload.slang"
+import "prime_realtime_abi.slang";
+import "core/atmosphere_rt.slang";
+import "core/numerical_diagnostics.slang";
+import "core/nrd_common.slang";
+import "core/packed_geometry.slang";
+import "core/render_config.slang";
+import "rt/shadow_payload.slang";
 
-#include "core/sampling.slang"
+import "core/sampling.slang";
 import "core/transparent_checkerboard.slang";
 #include "bsdf/adapter/bsdf.slang"
-#include "lighting/lights.slang"
-
-#if defined(PRIME_SHARC_QUERY)
-#define SHARC_UPDATE 0
-#define SHARC_QUERY 1
-#include "lighting/sharc.slang"
-#endif
+import "lighting/lights.slang";
 
 #include "integrator/integrator.slang"
-#include "core/camera.slang"
+import "core/camera.slang";
 #include "realtime/transparent_guide_probe.slang"
 #include "realtime/wavefront_output.slang"
 #include "realtime/wavefront_state.slang"
+
+#if defined(PRIME_ENABLE_SUBGROUP_QUEUE)
+typealias PrimeWavefrontContinuationAppender =
+        PrimeSubgroupWavefrontContinuationAppender;
+#else
+typealias PrimeWavefrontContinuationAppender =
+        PrimeScalarWavefrontContinuationAppender;
+#endif
 
 struct PrimeWavefrontShaderRecord {
     uint control;
@@ -35,18 +32,22 @@ struct PrimeWavefrontShaderRecord {
 [[vk::shader_record]]
 ConstantBuffer<PrimeWavefrontShaderRecord> primeWavefrontShaderRecord;
 
-void primeInitializeTransparentWavefront(
+struct PrimeWavefrontContinuation {
+    uint pathIndex;
+    bool active;
+};
+
+PrimeWavefrontContinuation primeInitializeTransparentWavefront(
         inout PrimeIntegratorContext context,
         uint2 pixel,
         PathState path,
         PrimeRcVolumeStack volumeStack,
         IntegratorRecord integrator,
         SurfaceInteraction surface,
-        uint maximumBounces,
-        out uint queuedPathIndex,
-        out bool queueContinuation) {
-    queuedPathIndex = primeWavefrontIndex(pixel, 0u);
-    queueContinuation = false;
+        uint maximumBounces) {
+    PrimeWavefrontContinuation queued;
+    queued.pathIndex = primeWavefrontIndex(pixel, 0u);
+    queued.active = false;
     PrimeIntegrationResult initialResult = primeEmptyIntegrationResult();
     if (!primeApplySegmentMedium(context, path, surface, volumeStack)) {
         PrimeDenoiserState emptyState = primeInitialDenoiserState();
@@ -60,7 +61,7 @@ void primeInitializeTransparentWavefront(
         primeWavefrontPaths[primeWavefrontIndex(pixel, 1u)] = emptyRecord;
         primeStoreWavefrontArea(pixel, initialResult.guides);
         primeStoreWavefrontIntermediate(pixel, initialResult);
-        return;
+        return queued;
     }
 
     float3 viewDirection = -path.rayDirection;
@@ -217,7 +218,7 @@ void primeInitializeTransparentWavefront(
             }
         }
         if (hasGuide) {
-            primeSetQueuedPsrGuide(
+            branchResult.guides = primeQueuedPsrGuide(
                     branchResult.guides,
                     surface,
                     shadingNormal,
@@ -232,7 +233,7 @@ void primeInitializeTransparentWavefront(
             }
         } else if (guideEnabled && hasScatter
                 && (bsdf.eventFlags & PRIME_BSDF_EVENT_DISCRETE) != 0u) {
-            primeAppendQueuedPsrDiscrete(
+            psrState = primeAppendQueuedPsrDiscrete(
                     psrState, path.physicalOrigin, surface, bsdf);
         }
         if (transmissionBranch) {
@@ -277,12 +278,13 @@ void primeInitializeTransparentWavefront(
         uint pathIndex = primeWavefrontIndex(pixel, branch);
         primeWavefrontPaths[pathIndex] = record;
         if (continuation) {
-            queuedPathIndex = pathIndex;
-            queueContinuation = true;
+            queued.pathIndex = pathIndex;
+            queued.active = true;
         }
         primeStoreTransparentBranchIntermediate(
                 pixel, transmissionBranch, branchResult);
     }
+    return queued;
 }
 
 void primeWavefrontHead(
@@ -318,7 +320,7 @@ void primeWavefrontHead(
         float3 traceDirection = primeCameraRayDirection(pixel, traceCameraSample);
         primeSetNumericalContext(context.diagnostics, PRIME_NUMERICAL_STAGE_TRACE, 0u);
         SurfaceInteraction surface =
-                primeTraceSurface(context, primePush.cameraPosition, traceDirection);
+                primeTraceSurface(primePush.cameraPosition, traceDirection);
 
         // Build transport, medium and denoiser state only after SER has executed the primary hit.
         // This keeps the largest realtime records out of the implementation's reorder spill set.
@@ -337,17 +339,22 @@ void primeWavefrontHead(
         PrimeIntegrationResult result = primeEmptyIntegrationResult();
         if (surface.hitKind == PRIME_HIT_SURFACE
                 && primeMaterialIsTransmissive(surface.materialControl)) {
-            primeInitializeTransparentWavefront(context,
+            PrimeWavefrontContinuation transparent =
+                    primeInitializeTransparentWavefront(
+                    context,
                     pixel,
                     path,
                     volumeStack,
                     integrator,
                     surface,
-                    maximumBounces,
-                    queuedPathIndex,
-                    queueContinuation);
+                    maximumBounces);
+            queuedPathIndex = transparent.pathIndex;
+            queueContinuation = transparent.active;
         } else {
-            bool continuation = primeIntegrateWavefrontSurface(context,
+            bool continuation = primeIntegrateWavefrontSurface(
+                    PrimeImmediateSecondaryAreaNee(),
+                    PrimeNoIndirectReuse(),
+                    context,
                     path,
                     integrator,
                     volumeStack,
@@ -366,7 +373,8 @@ void primeWavefrontHead(
             primeWavefrontPaths[pathIndex] = record;
             queuedPathIndex = pathIndex;
             queueContinuation = continuation;
-            primeSetWavefrontActive(record.transport, false);
+            record.transport = primeWavefrontWithActive(
+                    record.transport, false);
             primeWavefrontPaths[primeWavefrontIndex(pixel, 1u)] = record;
             primeStoreWavefrontArea(pixel, result.guides);
             primeStoreWavefrontIntermediate(pixel, result);
@@ -374,6 +382,7 @@ void primeWavefrontHead(
     }
     // Every head invocation reaches this collective exactly once, including inactive paths.
     primeAppendWavefrontContinuation(
+            PrimeWavefrontContinuationAppender(),
             PRIME_WAVEFRONT_TRACE_QUEUE_0,
             queuedPathIndex,
             queueContinuation);
@@ -410,7 +419,8 @@ void primeWavefrontStep(
                     ? 1u
                     : 2u;
     primeSetNumericalContext(context.diagnostics, PRIME_NUMERICAL_STAGE_TRACE, bounce);
-    SurfaceInteraction surface = primeTraceSurfaceClassified(context,
+    SurfaceInteraction surface = primeTraceSurfaceClassified(
+            PrimeSurfaceTracePolicy(),
             traceOrigin, rayDirection, pathClass);
     primeStoreWavefrontSurface(recordIndex, surface);
     primeStoreWavefrontDiagnostic(recordIndex, context.diagnostics);
@@ -422,10 +432,13 @@ void primeWavefrontStep(
     }
 }
 
-void primeWavefrontShade(
+void primeWavefrontShade<IndirectReuse>(
+        IndirectReuse indirectReuse,
         inout PrimeIntegratorContext context,
         uint launchIndex,
-        uint sourceQueue) {
+        uint sourceQueue)
+    where IndirectReuse : IPrimeIndirectReuse
+{
     uint recordIndex =
             primeWavefrontQueuedPath(
                     PRIME_WAVEFRONT_SHADE_QUEUE, launchIndex);
@@ -473,7 +486,9 @@ void primeWavefrontShade(
                         & PRIME_WAVEFRONT_BYTE_MASK;
         bool directionalGuide = primeWavefrontDirectionalGuide(control);
         bool hadDirectionalGuide = directionalGuide;
-        bool continuation = primeIntegrateTransparentWavefrontSurface(context,
+        bool continuation = primeIntegrateTransparentWavefrontSurface(
+                PrimeDeferredSecondaryAreaNee(),
+                context,
                 path,
                 integrator,
                 volumeStack,
@@ -521,7 +536,10 @@ void primeWavefrontShade(
                 primeLoadWavefrontActiveIntermediate(pixel, control);
         PrimeDenoiserState denoiserState =
                 primeWavefrontDenoiserState(control, result);
-        bool continuation = primeIntegrateWavefrontSurface(context,
+        bool continuation = primeIntegrateWavefrontSurface(
+                PrimeDeferredSecondaryAreaNee(),
+                indirectReuse,
+                context,
                 path,
                 integrator,
                 volumeStack,
@@ -549,12 +567,16 @@ void primeWavefrontShade(
             ? PRIME_WAVEFRONT_TRACE_QUEUE_1
             : PRIME_WAVEFRONT_TRACE_QUEUE_0;
     primeAppendWavefrontContinuation(
+            PrimeWavefrontContinuationAppender(),
             targetQueue, recordIndex, queueContinuation);
 }
 
-#if defined(PRIME_DEFER_SECONDARY_AREA_NEE)
-void primeWavefrontArea(
-        inout PrimeIntegratorContext context, uint launchIndex) {
+void primeWavefrontArea<IndirectReuse>(
+        IndirectReuse indirectReuse,
+        inout PrimeIntegratorContext context,
+        uint launchIndex)
+    where IndirectReuse : IPrimeIndirectReuse
+{
     uint recordIndex =
             primeWavefrontQueuedPath(
                     PRIME_WAVEFRONT_AREA_QUEUE, launchIndex);
@@ -585,14 +607,12 @@ void primeWavefrontArea(
         if (guideEnabled && !hasGuide && !primeClosureIsDiscreteOnly(closureTraits)) {
             return;
         }
-#if defined(PRIME_SHARC_QUERY)
     } else {
-        float3 ignoredContribution;
-    if (primeQuerySharc(
-            context, path, surface, true, ignoredContribution)) {
+        PrimeIndirectReuseResult reuse = indirectReuse.query(
+                context, path, surface, true);
+        if (reuse.hit) {
             return;
         }
-#endif
     }
 
     PrimePreparedSampleBase preparedSample =
@@ -616,7 +636,6 @@ void primeWavefrontArea(
     }
     primeStoreWavefrontDiagnostic(recordIndex, context.diagnostics);
 }
-#endif
 
 void primeWavefrontResolve(
         inout PrimeIntegratorContext context, uint2 launchIndex) {
@@ -656,7 +675,7 @@ void primeWavefrontResolve(
             && primeTransparentGuideMode()
                     != PRIME_PATH_TRANSPARENT_GUIDE_MODE_DISABLED) {
         PathState cameraPath = primeCameraPath(pixel, 0u, cameraSample);
-        SurfaceInteraction primarySurface = primeTraceSurfaceWithoutReorder(context,
+        SurfaceInteraction primarySurface = primeTraceSurfaceWithoutReorder(
                 primePush.cameraPosition, cameraPath.rayDirection);
         if (primarySurface.hitKind == PRIME_HIT_SURFACE
                 && primeMaterialIsTransmissive(primarySurface.materialControl)) {
@@ -670,13 +689,13 @@ void primeWavefrontResolve(
                             primarySurface,
                             volumeStack,
                             primeMaximumBounces());
-            primeApplyProbeSurfaceGuide(
+            result.transmissionGuides = primeGuideWithProbeSurface(
                     result.transmissionGuides, probes.transmission);
             if (probes.transmission.primaryHitKind == PRIME_HIT_SURFACE) {
                 result.transmissionAnchorDistance =
                         probes.transmissionAnchorDistance;
             }
-            primeApplyProbeSurfaceGuide(
+            result.reflectionGuides = primeGuideWithProbeSurface(
                     result.reflectionGuides, probes.reflection);
             if (probes.reflection.primaryHitKind == PRIME_HIT_SURFACE) {
                 result.reflectionDirectionalGuide = false;

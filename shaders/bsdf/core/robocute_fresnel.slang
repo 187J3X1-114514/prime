@@ -1,12 +1,12 @@
-#ifndef PRIME_ROBOCUTE_FRESNEL_SLANG
-#define PRIME_ROBOCUTE_FRESNEL_SLANG
+#language slang 2026
+module "bsdf/core/robocute_fresnel.slang";
 
-#include "robocute_common.slang"
+import "bsdf/core/robocute_common.slang";
 
 // Mechanical Slang port of the production-reachable declaration closure from
 // robocute_bsdf_fresnel.glsl at RoboCute commit 0d982c77b3fd26c2c5a3c0852be3bd05e5860bd8.
 
-PrimeRcFloatPair primeRcDielectricRsRp(float ior, float cosineTheta) {
+public PrimeRcFloatPair primeRcDielectricRsRp(float ior, float cosineTheta) {
     float eta = ior;
     if (cosineTheta < 0.0) {
         cosineTheta = -cosineTheta;
@@ -22,19 +22,19 @@ PrimeRcFloatPair primeRcDielectricRsRp(float ior, float cosineTheta) {
     return result;
 }
 
-PrimeRcFloatPair primeRcDielectricReflectance(float ior, float cosineTheta) {
+public PrimeRcFloatPair primeRcDielectricReflectance(float ior, float cosineTheta) {
     PrimeRcFloatPair result = primeRcDielectricRsRp(ior, cosineTheta);
     result.first *= result.first;
     result.second *= result.second;
     return result;
 }
 
-float primeRcDielectricUnpolarized(float ior, float cosineTheta) {
+public float primeRcDielectricUnpolarized(float ior, float cosineTheta) {
     PrimeRcFloatPair value = primeRcDielectricReflectance(ior, cosineTheta);
     return 0.5 * (value.first + value.second);
 }
 
-PrimeRcRefractResult primeRcDielectricRefract(float ior, float3 wi, float3 normal) {
+public PrimeRcRefractResult primeRcDielectricRefract(float ior, float3 wi, float3 normal) {
     float cosineTheta = dot(normal, wi);
     float inverseEta;
     if (cosineTheta < 0.0) {
@@ -240,7 +240,7 @@ PrimeRcVecPair primeRcConductorThinFilmReflectance(
             reflectance, amplitude, primeRcF0ToIor(f0));
 }
 
-float3 primeRcSpecularFresnelUnpolarized(
+public float3 primeRcSpecularFresnelUnpolarized(
         PrimeRcSpecularFresnel fresnel,
         float3 lambdaNm,
         uint spectrumed,
@@ -263,7 +263,7 @@ float3 primeRcSpecularFresnelUnpolarized(
     return result * fresnel.color;
 }
 
-PrimeRcVecPair primeRcSpecularFresnelRt(
+public PrimeRcVecPair primeRcSpecularFresnelRt(
         PrimeRcSpecularFresnel fresnel,
         float3 lambdaNm,
         uint spectrumed,
@@ -302,12 +302,12 @@ PrimeRcVecPair primeRcSpecularFresnelRt(
     return result;
 }
 
-PrimeRcRefractResult primeRcSpecularFresnelRefract(
+public PrimeRcRefractResult primeRcSpecularFresnelRefract(
         PrimeRcSpecularFresnel fresnel, float3 wi, float3 normal) {
     return primeRcDielectricRefract(fresnel.ior, wi, normal);
 }
 
-float3 primeRcConductorFresnelUnpolarized(
+public float3 primeRcConductorFresnelUnpolarized(
         PrimeRcConductorFresnel fresnel,
         float3 lambdaNm,
         uint spectrumed,
@@ -333,5 +333,3 @@ float3 primeRcConductorFresnelUnpolarized(
     }
     return result;
 }
-
-#endif

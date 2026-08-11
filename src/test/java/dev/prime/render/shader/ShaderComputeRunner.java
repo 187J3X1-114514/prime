@@ -219,7 +219,7 @@ final class ShaderComputeRunner implements AutoCloseable {
     void loadTransmissionGgxEnergy(
             ByteBuffer pixels, int width, int height, int depth) {
         bindSampledImage(
-                2,
+                ShaderAbi.DESCRIPTOR_TRANSMISSION_GGX_ENERGY,
                 ImageDimension.THREE_D,
                 ImageFormat.R16G16B16A16_SFLOAT,
                 pixels,

@@ -1,5 +1,5 @@
 
-#include "core/atmosphere.slang"
+import "core/atmosphere.slang";
 
 
 

@@ -1,4 +1,4 @@
-#include "core/auto_exposure.slang"
+import "core/auto_exposure.slang";
 
 struct PrimeAutoExposureHistogramPushConstants
 {

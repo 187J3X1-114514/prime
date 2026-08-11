@@ -1,7 +1,9 @@
-#ifndef PRIME_WAVEFRONT_MEDIUM_SLANG
-#define PRIME_WAVEFRONT_MEDIUM_SLANG
+#language slang 2026
+module "realtime/wavefront_medium.slang";
 
-uint2 primePackWavefrontMedium(PrimeRcVolume medium) {
+import "bsdf/core/robocute_common.slang";
+
+public uint2 primePackWavefrontMedium(PrimeRcVolume medium) {
     // Queued transport currently performs absorption and dielectric boundary tracking, which
     // consume only extinction and IOR. Albedo/anisotropy belong to future volume scattering and
     // must get an ABI revision before they become queue-observable state.
@@ -9,8 +11,7 @@ uint2 primePackWavefrontMedium(PrimeRcVolume medium) {
             packHalf2x16(medium.extinction.xy),
             packHalf2x16(float2(medium.extinction.z, medium.ior)));
 }
-
-PrimeRcVolume primeUnpackWavefrontMedium(uint2 packedMedium) {
+public PrimeRcVolume primeUnpackWavefrontMedium(uint2 packedMedium) {
     float2 extinction01 = unpackHalf2x16ToFloat(packedMedium.x);
     float2 extinction2Ior = unpackHalf2x16ToFloat(packedMedium.y);
     PrimeRcVolume medium;
@@ -20,5 +21,3 @@ PrimeRcVolume primeUnpackWavefrontMedium(uint2 packedMedium) {
     medium.anisotropy = 0.0;
     return medium;
 }
-
-#endif

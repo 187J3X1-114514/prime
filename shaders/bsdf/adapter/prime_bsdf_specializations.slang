@@ -1,16 +1,23 @@
-#ifndef PRIME_BSDF_SPECIALIZATIONS_SLANG
-#define PRIME_BSDF_SPECIALIZATIONS_SLANG
+#language slang 2026
+module "bsdf/adapter/prime_bsdf_specializations.slang";
 
-#include "bsdf/core/robocute_openpbr.slang"
+import "bsdf/adapter/transmission_ggx_energy.slang";
+import "bsdf/core/robocute_closures.slang";
+import "bsdf/core/robocute_common.slang";
+import "bsdf/core/robocute_fresnel.slang";
+import "bsdf/core/robocute_microfacet.slang";
+import "bsdf/core/robocute_openpbr.slang";
 
 // Mechanical Slang port of the production-reachable declaration closure from
 // prime_bsdf_specializations.glsl at RoboCute commit 0d982c77b3fd26c2c5a3c0852be3bd05e5860bd8.
 
-PrimeRcState primeRcPrimeTransmissionInterfaceState(float3 wi, PrimeRcState state) {
+public PrimeRcState primeRcPrimeTransmissionInterfaceState(
+        float3 wi, PrimeRcState state) {
     if (state.geometryThinWalled != 0u || state.entering != 0u) {
         return state;
     }
     state.transmissionMultipleScattering = primeRcMicrofacetDielectricMsCompensation(
+            primeTransmissionGgxEnergy(),
             state.specularMicrofacet, wi.z, state.specularFresnel.ior);
     return state;
 }
@@ -33,7 +40,7 @@ float primeRcPrimeTransmissionPdf(float3 wi, float3 wo, PrimeRcState state) {
             wi, wo, primeRcPrimeTransmissionClosureState(state));
 }
 
-PrimeRcEval primeRcPrimeTransmissionEvaluate(
+public PrimeRcEval primeRcPrimeTransmissionEvaluate(
         float3 wi, float3 wo, PrimeRcState state) {
     PrimeRcEval result;
     result.throughput = primeRcPrimeTransmissionEval(wi, wo, state);
@@ -41,7 +48,7 @@ PrimeRcEval primeRcPrimeTransmissionEvaluate(
     return result;
 }
 
-PrimeRcSampleResult primeRcPrimeTransmissionSample(
+public PrimeRcSampleResult primeRcPrimeTransmissionSample(
         float3 wi,
         float3 randomValue,
         PrimeRcState state,
@@ -121,7 +128,7 @@ PrimeRcThroughput primeRcPrimeBasicGlossyEval(
             weight);
 }
 
-PrimeRcThroughput primeRcPrimeBasicMetallicEval(
+public PrimeRcThroughput primeRcPrimeBasicMetallicEval(
         float3 wi, float3 wo, PrimeRcState state) {
     float weight = state.material.weight.metalness;
     return primeRcMixEvalValues(
@@ -134,7 +141,7 @@ PrimeRcThroughput primeRcPrimeBasicMetallicEval(
             weight);
 }
 
-PrimeRcEval primeRcPrimeBasicMetallicEvaluate(
+public PrimeRcEval primeRcPrimeBasicMetallicEvaluate(
         float3 wi, float3 wo, PrimeRcState state) {
     PrimeRcEval result;
     result.throughput = primeRcPrimeBasicMetallicEval(wi, wo, state);
@@ -142,7 +149,7 @@ PrimeRcEval primeRcPrimeBasicMetallicEvaluate(
     return result;
 }
 
-PrimeRcThroughput primeRcPrimeSubsurfaceGlossyEval(
+public PrimeRcThroughput primeRcPrimeSubsurfaceGlossyEval(
         float3 wi, float3 wo, PrimeRcState state) {
     float weight = state.material.weight.specular > 0.0 ? 1.0 : 0.0;
     return primeRcLayerEvalValues(
@@ -155,7 +162,7 @@ PrimeRcThroughput primeRcPrimeSubsurfaceGlossyEval(
             weight);
 }
 
-PrimeRcEval primeRcPrimeSubsurfaceGlossyEvaluate(
+public PrimeRcEval primeRcPrimeSubsurfaceGlossyEvaluate(
         float3 wi, float3 wo, PrimeRcState state) {
     PrimeRcEval result;
     result.throughput = primeRcPrimeSubsurfaceGlossyEval(wi, wo, state);
@@ -189,7 +196,8 @@ PrimeRcThroughput primeRcPrimeDielectricBaseEval(
             weight);
 }
 
-PrimeRcThroughput primeRcPrimeThinWallEval(float3 wi, float3 wo, PrimeRcState state) {
+public PrimeRcThroughput primeRcPrimeThinWallEval(
+        float3 wi, float3 wo, PrimeRcState state) {
     float weight = state.material.weight.metalness;
     return primeRcMixEvalValues(
             weight < 1.0
@@ -201,23 +209,25 @@ PrimeRcThroughput primeRcPrimeThinWallEval(float3 wi, float3 wo, PrimeRcState st
             weight);
 }
 
-PrimeRcSampleResult primeRcPrimeThinWallSample(
+public PrimeRcSampleResult primeRcPrimeThinWallSample(
         float3 wi, float3 randomValue, PrimeRcState state, PrimeRcVolumeStack stack) {
     return primeRcBaseSubstrateSample(wi, randomValue, state, stack);
 }
 
-float primeRcPrimeThinWallPdf(float3 wi, float3 wo, PrimeRcState state) {
+public float primeRcPrimeThinWallPdf(
+        float3 wi, float3 wo, PrimeRcState state) {
     return primeRcBaseSubstratePdf(wi, wo, state);
 }
 
-PrimeRcEval primeRcPrimeThinWallEvaluate(float3 wi, float3 wo, PrimeRcState state) {
+public PrimeRcEval primeRcPrimeThinWallEvaluate(
+        float3 wi, float3 wo, PrimeRcState state) {
     PrimeRcEval result;
     result.throughput = primeRcPrimeThinWallEval(wi, wo, state);
     result.pdf = primeRcPrimeThinWallPdf(wi, wo, state);
     return result;
 }
 
-PrimeRcState primeRcPrimeThinWallStateInit(
+public PrimeRcState primeRcPrimeThinWallStateInit(
         PrimeRcMaterial material,
         float3 wi,
         float inverseOutsideIor,
@@ -227,6 +237,7 @@ PrimeRcState primeRcPrimeThinWallStateInit(
         uint detail,
         uint spectrumed) {
     PrimeRcState state = primeRcBaseState(
+            primeTransmissionGgxEnergy(),
             material, wi, inverseOutsideIor, rayT, wavelengthsNm,
             heroWavelengthIndex, detail, spectrumed, false);
 
@@ -248,14 +259,15 @@ PrimeRcState primeRcPrimeThinWallStateInit(
                     0.0, float3(0.0), float3(0.0), float3(0.0));
 
     if (state.material.weight.transmission > 0.0) {
-        state = primeRcInitializeTransmission(wi, state);
+        state = primeRcInitializeTransmission(primeTransmissionGgxEnergy(), wi, state);
     }
     state.dielectricBase = primeRcMakeMixState(
             state.material.weight.transmission,
             state.material.weight.transmission < 1.0
                     ? primeRcGlossyDiffuseEnergy(wi, state) : float3(0.0),
             state.material.weight.transmission > 0.0
-                    ? primeRcTransmissionEnergy(wi, state) : float3(0.0));
+                    ? primeRcTransmissionEnergy(primeTransmissionGgxEnergy(), wi, state)
+                    : float3(0.0));
 
     if (state.material.weight.metalness > 0.0) {
         state = primeRcInitializeConductor(wi, state);
@@ -263,10 +275,10 @@ PrimeRcState primeRcPrimeThinWallStateInit(
     state.baseSubstrate = primeRcMakeMixState(
             state.material.weight.metalness,
             state.material.weight.metalness < 1.0
-                    ? primeRcDielectricBaseEnergy(wi, state) : float3(0.0),
+                    ? primeRcDielectricBaseEnergy(
+                            primeTransmissionGgxEnergy(), wi, state)
+                    : float3(0.0),
             state.material.weight.metalness > 0.0
                     ? primeRcConductorEnergy(wi, state) : float3(0.0));
     return state;
 }
-
-#endif

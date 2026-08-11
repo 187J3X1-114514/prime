@@ -1,5 +1,5 @@
-#include "core/auto_exposure.slang"
-#include "post/display_transform.slang"
+import "core/auto_exposure.slang";
+import "post/display_transform.slang";
 
 struct PrimeFsrDisplayPushConstants
 {

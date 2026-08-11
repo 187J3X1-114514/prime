@@ -1,4 +1,4 @@
-#include "prime_abi_types.slang"
+import "prime_abi_types.slang";
 
 [[vk::binding(0, 0)]] StructuredBuffer<PrimitiveRecord> primitiveRecords;
 [[vk::binding(1, 0)]] StructuredBuffer<SectionRecord> sectionRecords;

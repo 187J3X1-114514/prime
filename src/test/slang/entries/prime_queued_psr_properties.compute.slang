@@ -27,7 +27,7 @@ void main(uint3 dispatchThreadId : SV_DispatchThreadID)
         positions[index] = asfloat(primeTestInput[inputOffset + 5 + index]).xyz;
         normals[index] = normalize(asfloat(
                 primeTestInput[inputOffset + 5 + PRIME_QUEUED_PSR_CAPACITY + index]).xyz);
-        primeAppendQueuedPsrState(
+        state = primeAppendQueuedPsrState(
                 state,
                 cameraPosition,
                 previousPosition,
@@ -37,7 +37,7 @@ void main(uint3 dispatchThreadId : SV_DispatchThreadID)
         previousPosition = positions[index];
     }
     if (forceOverflow) {
-        primeAppendQueuedPsrState(
+        state = primeAppendQueuedPsrState(
                 state,
                 cameraPosition,
                 previousPosition,

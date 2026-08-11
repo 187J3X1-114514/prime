@@ -1,8 +1,14 @@
 
 import glsl;
+import "prime_abi_types.slang";
+import "core/packed_geometry.slang";
+import "core/render_config.slang";
+import "material/default_material.slang";
+import "material/material.slang";
+import "material/transparent_material.slang";
 
-#include "rt/hit_common.slang"
-#include "rt/shadow_payload.slang"
+import "rt/hit_common.slang";
+import "rt/shadow_payload.slang";
 
 layout(location = 1) rayPayloadInEXT PrimeShadowPayload primeShadowPayload;
 

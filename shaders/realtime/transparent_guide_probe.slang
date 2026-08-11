@@ -103,8 +103,8 @@ bool primeAdvanceProbeMedium(
             && any(throughput > float3(0.0));
 }
 
-void primeSetProbeSurfaceGuide(
-        inout PrimeDenoiserGuides guides,
+PrimeDenoiserGuides primeProbeSurfaceGuide(
+        PrimeDenoiserGuides guides,
         SurfaceInteraction surface,
         float3 virtualPosition,
         float3 previousVirtualPosition,
@@ -125,13 +125,14 @@ void primeSetProbeSurfaceGuide(
     guides.primarySpecularAlbedo = primeSanitizeDenoiseAlbedo(
             throughput * albedos.specular);
     guides.primaryLinearRoughness = primeSurfaceLinearRoughness(surface);
+    return guides;
 }
 
-void primeApplyProbeSurfaceGuide(
-        inout PrimeDenoiserGuides destination,
+PrimeDenoiserGuides primeGuideWithProbeSurface(
+        PrimeDenoiserGuides destination,
         PrimeDenoiserGuides source) {
     if (source.primaryHitKind != PRIME_HIT_SURFACE) {
-        return;
+        return destination;
     }
     // Hit distances, sampled directions and primary-light moments describe the noisy radiance
     // branch. Only the reconstruction surface identity comes from the independent probe.
@@ -145,6 +146,7 @@ void primeApplyProbeSurfaceGuide(
     destination.primaryPosition = source.primaryPosition;
     destination.primaryPreviousPosition = source.primaryPreviousPosition;
     destination.primaryHasMotion = source.primaryHasMotion;
+    return destination;
 }
 
 void primeTraceDeterministicTransmissionGuide(
@@ -165,14 +167,14 @@ void primeTraceDeterministicTransmissionGuide(
     float3 primaryPreviousPosition = primeSurfacePreviousPosition(primarySurface);
     bool initialReflection =
             (initialBsdf.eventFlags & PRIME_BSDF_EVENT_REFLECTION) != 0u;
-    primeAppendQueuedPsrState(
+    currentState = primeAppendQueuedPsrState(
             currentState,
             primePush.cameraPosition,
             primePush.cameraPosition,
             primarySurface.position,
             primarySurface.geometricNormal,
             initialReflection);
-    primeAppendQueuedPsrState(
+    previousState = primeAppendQueuedPsrState(
             previousState,
             primePush.cameraPosition,
             primePush.cameraPosition,
@@ -193,7 +195,7 @@ void primeTraceDeterministicTransmissionGuide(
     [loop]
     for (uint bounce = 1u; bounce < maximumBounces; ++bounce) {
         SurfaceInteraction surface = primeTraceSurfaceWithoutReorder(
-                context, traceOrigin, direction);
+                traceOrigin, direction);
         if (!primeKnownHitKind(surface) || surface.hitKind == PRIME_HIT_NONE) {
             return;
         }
@@ -258,7 +260,7 @@ void primeTraceDeterministicTransmissionGuide(
             }
             PrimeDenoiseAlbedos albedos = primeProbeSurfaceAlbedos(
                     surface, viewDirection, volumeStack);
-            primeSetProbeSurfaceGuide(
+            result.transmission = primeProbeSurfaceGuide(
                     result.transmission,
                     surface,
                     currentVirtualPosition,
@@ -296,14 +298,14 @@ void primeTraceDeterministicTransmissionGuide(
         float3 surfacePreviousPosition = primeSurfacePreviousPosition(surface);
         bool reflection =
                 (bsdf.eventFlags & PRIME_BSDF_EVENT_REFLECTION) != 0u;
-        primeAppendQueuedPsrState(
+        currentState = primeAppendQueuedPsrState(
                 currentState,
                 primePush.cameraPosition,
                 lastPosition,
                 surface.position,
                 surface.geometricNormal,
                 reflection);
-        primeAppendQueuedPsrState(
+        previousState = primeAppendQueuedPsrState(
                 previousState,
                 primePush.cameraPosition,
                 lastPreviousPosition,
@@ -339,7 +341,6 @@ void primeTracePlanarReflectionGuide(
             primeSurfaceOutwardShadingNormal(primarySurface),
             primarySurface.geometricNormal);
     SurfaceInteraction target = primeTraceSurfaceWithoutReorder(
-            context,
             primeOffsetRayOrigin(
                     primarySurface.position,
                     primarySurface.geometricNormal,
@@ -377,7 +378,7 @@ void primeTracePlanarReflectionGuide(
             target, -bsdf.direction, initialVolumeStack);
     bool hasMotion = primeSurfaceHasMotion(primarySurface)
             || primeSurfaceHasMotion(target);
-    primeSetProbeSurfaceGuide(
+    result.reflection = primeProbeSurfaceGuide(
             result.reflection,
             target,
             currentVirtualPosition,

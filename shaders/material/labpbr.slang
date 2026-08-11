@@ -1,34 +1,34 @@
-#ifndef PRIME_LABPBR_SLANG
-#define PRIME_LABPBR_SLANG
+#language slang 2026
+module "material/labpbr.slang";
 
-#include "material/default_material.slang"
+import "material/default_material.slang";
 
-struct PrimeLabPbrSample
+public struct PrimeLabPbrSample
 {
-    float3 tangentNormal;
-    float ambientOcclusion;
-    float height;
-    float perceptualRoughness;
-    float dielectricF0;
-    uint metalId;
-    float porosity;
-    float subsurface;
-    float emission;
+    public float3 tangentNormal;
+    public float ambientOcclusion;
+    public float height;
+    public float perceptualRoughness;
+    public float dielectricF0;
+    public uint metalId;
+    public float porosity;
+    public float subsurface;
+    public float emission;
 };
 
-static const uint PRIME_RECIPE_NORMAL_TEXTURE = 1 << 5;
-static const uint PRIME_RECIPE_OPTICAL_TEXTURE = 1 << 6;
+public static const uint PRIME_RECIPE_NORMAL_TEXTURE = 1 << 5;
+public static const uint PRIME_RECIPE_OPTICAL_TEXTURE = 1 << 6;
 
-bool primeHasLabPbrNormal(uint flags) { return (flags & PRIME_RECIPE_NORMAL_TEXTURE) != 0; }
-bool primeHasLabPbrSpecular(uint flags) { return (flags & PRIME_RECIPE_OPTICAL_TEXTURE) != 0; }
+public bool primeHasLabPbrNormal(uint flags) { return (flags & PRIME_RECIPE_NORMAL_TEXTURE) != 0; }
+public bool primeHasLabPbrSpecular(uint flags) { return (flags & PRIME_RECIPE_OPTICAL_TEXTURE) != 0; }
 
-struct PrimeCanonicalOptics
+public struct PrimeCanonicalOptics
 {
-    float roughness;
-    uint opticalControl;
+    public float roughness;
+    public uint opticalControl;
 };
 
-PrimeCanonicalOptics primeAdaptLabPbrSpecular(float4 sourceSample)
+public PrimeCanonicalOptics primeAdaptLabPbrSpecular(float4 sourceSample)
 {
     uint4 bytes = uint4(round(clamp(sourceSample, 0.0, 1.0) * 255.0));
     uint fresnelCode = bytes.y < 230
@@ -46,18 +46,18 @@ PrimeCanonicalOptics primeAdaptLabPbrSpecular(float4 sourceSample)
     return result;
 }
 
-float primeDecodeLabPbrEmission(uint encoded)
+public float primeDecodeLabPbrEmission(uint encoded)
 {
     return encoded < 255 ? float(encoded) / 254.0 : 0.0;
 }
 
-float primeDecodeLabPbrEmission(float encodedUnorm)
+public float primeDecodeLabPbrEmission(float encodedUnorm)
 {
     return primeDecodeLabPbrEmission(
             uint(round(clamp(encodedUnorm, 0.0, 1.0) * 255.0)));
 }
 
-PrimeLabPbrSample primeDecodeLabPbr(uint packedNormal, uint packedSpecular, uint flags)
+public PrimeLabPbrSample primeDecodeLabPbr(uint packedNormal, uint packedSpecular, uint flags)
 {
     uint4 normalBytes = uint4(round(unpackUnorm4x8ToFloat(packedNormal) * 255.0));
     uint4 specularBytes = uint4(round(unpackUnorm4x8ToFloat(packedSpecular) * 255.0));
@@ -97,5 +97,3 @@ PrimeLabPbrSample primeDecodeLabPbr(uint packedNormal, uint packedSpecular, uint
     }
     return result;
 }
-
-#endif

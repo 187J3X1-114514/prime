@@ -1,10 +1,10 @@
-#ifndef PRIME_ATMOSPHERE_EPIPOLAR_SLANG
-#define PRIME_ATMOSPHERE_EPIPOLAR_SLANG
+#language slang 2026
+module "core/atmosphere_epipolar.slang";
 
-static const float ATM_EPIPOLAR_LIMIT = 16384.0;
-static const float ATM_EPIPOLAR_EPSILON = 1.0e-6;
+public static const float ATM_EPIPOLAR_LIMIT = 16384.0;
+public static const float ATM_EPIPOLAR_EPSILON = 1.0e-6;
 
-float4x4 atmInverse(float4x4 source) {
+public float4x4 atmInverse(float4x4 source) {
     float4x4 value = source;
     float4x4 result = float4x4(
             float4(1.0, 0.0, 0.0, 0.0),
@@ -45,21 +45,21 @@ float4x4 atmInverse(float4x4 source) {
     return result;
 }
 
-struct AtmEpipolarSegment {
-    float2 entry;
-    float2 exit;
-    bool valid;
+public struct AtmEpipolarSegment {
+    public float2 entry;
+    public float2 exit;
+    public bool valid;
 };
 
-struct AtmEpipolarRange {
-    float start;
-    float span;
-    float2 axis;
-    float extent;
-    bool parallel;
+public struct AtmEpipolarRange {
+    public float start;
+    public float span;
+    public float2 axis;
+    public float extent;
+    public bool parallel;
 };
 
-float2 atmEpipolarProjectDirection(
+public float2 atmEpipolarProjectDirection(
         float4x4 inverseViewProjection,
         float3 worldDirection) {
     float4 clip = atmInverse(inverseViewProjection)
@@ -82,7 +82,7 @@ float2 atmEpipolarProjectDirection(
             float2(ATM_EPIPOLAR_LIMIT));
 }
 
-void atmEpipolarSortPair(inout float first, inout float second) {
+public void atmEpipolarSortPair(inout float first, inout float second) {
     if (first > second) {
         float temporary = first;
         first = second;
@@ -90,7 +90,7 @@ void atmEpipolarSortPair(inout float first, inout float second) {
     }
 }
 
-AtmEpipolarRange atmEpipolarVisibleRange(float2 epipoleNdc) {
+public AtmEpipolarRange atmEpipolarVisibleRange(float2 epipoleNdc) {
     const float TWO_PI = 6.28318530717958647692;
     AtmEpipolarRange result;
     result.axis = float2(0.0);
@@ -158,7 +158,7 @@ AtmEpipolarRange atmEpipolarVisibleRange(float2 epipoleNdc) {
     return result;
 }
 
-float atmEpipolarRangeCoordinate(
+public float atmEpipolarRangeCoordinate(
         AtmEpipolarRange range,
         float2 epipoleNdc,
         float2 screenNdc) {
@@ -186,7 +186,7 @@ float atmEpipolarRangeCoordinate(
     return distanceToStart < distanceToEnd ? 0.0 : 1.0;
 }
 
-AtmEpipolarSegment atmEpipolarRaySegment(float2 origin, float2 direction) {
+public AtmEpipolarSegment atmEpipolarRaySegment(float2 origin, float2 direction) {
     float entryDistance = 0.0;
     float exitDistance = ATM_EPIPOLAR_LIMIT * 4.0;
     bool valid = dot(direction, direction)
@@ -217,7 +217,7 @@ AtmEpipolarSegment atmEpipolarRaySegment(float2 origin, float2 direction) {
     return result;
 }
 
-AtmEpipolarSegment atmEpipolarSliceSegment(
+public AtmEpipolarSegment atmEpipolarSliceSegment(
         float2 epipoleNdc,
         AtmEpipolarRange range,
         int slice,
@@ -239,7 +239,7 @@ AtmEpipolarSegment atmEpipolarSliceSegment(
             float2(cos(angle), sin(angle)));
 }
 
-float2 atmEpipolarSliceNdc(
+public float2 atmEpipolarSliceNdc(
         float2 epipoleNdc,
         int2 coordinate,
         int2 dimensions) {
@@ -256,7 +256,7 @@ float2 atmEpipolarSliceNdc(
             : float2(2.0);
 }
 
-float atmEpipolarRadialCoordinate(
+public float atmEpipolarRadialCoordinate(
         float2 screenNdc,
         AtmEpipolarSegment segment) {
     float2 extent = segment.exit - segment.entry;
@@ -269,66 +269,84 @@ float atmEpipolarRadialCoordinate(
             : 0.0;
 }
 
-#define ATM_DECLARE_SAMPLE_EPIPOLAR(functionName, source) \
-float4 functionName##Slice(float2 screenNdc, float normalizedDepth, float2 epipoleNdc, AtmEpipolarRange range, int slice) { \
-    uint width; uint height; uint depth; source.GetDimensions(width, height, depth); \
-    int3 dimensions = int3(width, height, depth); \
-    AtmEpipolarSegment segment = atmEpipolarSliceSegment( \
-            epipoleNdc, range, slice, dimensions.y); \
-    float radial = atmEpipolarRadialCoordinate(screenNdc, segment); \
-    float2 coordinate = clamp(float2(radial, normalizedDepth), float2(0.0), float2(1.0)) \
-            * float2(dimensions.x, dimensions.z) - float2(0.5); \
-    int2 lower = int2(floor(coordinate)); \
-    float2 fraction = frac(coordinate); \
-    int2 maximum = dimensions.xz - int2(1); \
-    int2 p00 = clamp(lower, int2(0), maximum); \
-    int2 p10 = clamp(lower + int2(1, 0), int2(0), maximum); \
-    int2 p01 = clamp(lower + int2(0, 1), int2(0), maximum); \
-    int2 p11 = clamp(lower + int2(1), int2(0), maximum); \
-    float4 depth0 = lerp( \
-            source[int3(p00.x, slice, p00.y)], \
-            source[int3(p10.x, slice, p10.y)], \
-            fraction.x); \
-    float4 depth1 = lerp( \
-            source[int3(p01.x, slice, p01.y)], \
-            source[int3(p11.x, slice, p11.y)], \
-            fraction.x); \
-    return lerp(depth0, depth1, fraction.y); \
-} \
-float4 functionName##WithRange( \
-        float2 screenUv, \
-        float normalizedDepth, \
-        float2 epipoleNdc, \
-        AtmEpipolarRange range) { \
-    uint width; uint height; uint depth; source.GetDimensions(width, height, depth); \
-    int3 dimensions = int3(width, height, depth); \
-    float2 screenNdc = screenUv * 2.0 - 1.0; \
-    const float twoPi = 6.28318530717958647692; \
-    float sliceCoordinate = atmEpipolarRangeCoordinate( \
-            range, epipoleNdc, screenNdc) \
-            * float(dimensions.y) - 0.5; \
-    int lowerSliceUnwrapped = int(floor(sliceCoordinate)); \
-    float sliceFraction = frac(sliceCoordinate); \
-    bool wraps = !range.parallel \
-            && range.span >= twoPi - ATM_EPIPOLAR_EPSILON; \
-    int lowerSlice = wraps \
-            ? (lowerSliceUnwrapped % dimensions.y + dimensions.y) % dimensions.y \
-            : clamp(lowerSliceUnwrapped, 0, dimensions.y - 1); \
-    int upperSlice = wraps \
-            ? (lowerSlice + 1) % dimensions.y \
-            : clamp(lowerSliceUnwrapped + 1, 0, dimensions.y - 1); \
-    float4 lower = functionName##Slice( \
-            screenNdc, normalizedDepth, epipoleNdc, range, lowerSlice); \
-    float4 upper = functionName##Slice( \
-            screenNdc, normalizedDepth, epipoleNdc, range, upperSlice); \
-    return lerp(lower, upper, sliceFraction); \
-} \
-float4 functionName(float2 screenUv, float normalizedDepth, float2 epipoleNdc) { \
-    return functionName##WithRange( \
-            screenUv, \
-            normalizedDepth, \
-            epipoleNdc, \
-            atmEpipolarVisibleRange(epipoleNdc)); \
+public float4 atmSampleEpipolarSlice(
+        readonly RWTexture3D<float4> source,
+        float2 screenNdc,
+        float normalizedDepth,
+        float2 epipoleNdc,
+        AtmEpipolarRange range,
+        int slice) {
+    uint width;
+    uint height;
+    uint depth;
+    source.GetDimensions(width, height, depth);
+    int3 dimensions = int3(width, height, depth);
+    AtmEpipolarSegment segment = atmEpipolarSliceSegment(
+            epipoleNdc, range, slice, dimensions.y);
+    float radial = atmEpipolarRadialCoordinate(screenNdc, segment);
+    float2 coordinate = clamp(
+            float2(radial, normalizedDepth), float2(0.0), float2(1.0))
+            * float2(dimensions.x, dimensions.z) - float2(0.5);
+    int2 lower = int2(floor(coordinate));
+    float2 fraction = frac(coordinate);
+    int2 maximum = dimensions.xz - int2(1);
+    int2 p00 = clamp(lower, int2(0), maximum);
+    int2 p10 = clamp(lower + int2(1, 0), int2(0), maximum);
+    int2 p01 = clamp(lower + int2(0, 1), int2(0), maximum);
+    int2 p11 = clamp(lower + int2(1), int2(0), maximum);
+    float4 depth0 = lerp(
+            source[int3(p00.x, slice, p00.y)],
+            source[int3(p10.x, slice, p10.y)],
+            fraction.x);
+    float4 depth1 = lerp(
+            source[int3(p01.x, slice, p01.y)],
+            source[int3(p11.x, slice, p11.y)],
+            fraction.x);
+    return lerp(depth0, depth1, fraction.y);
 }
 
-#endif
+public float4 atmSampleEpipolarWithRange(
+        readonly RWTexture3D<float4> source,
+        float2 screenUv,
+        float normalizedDepth,
+        float2 epipoleNdc,
+        AtmEpipolarRange range) {
+    uint width;
+    uint height;
+    uint depth;
+    source.GetDimensions(width, height, depth);
+    int3 dimensions = int3(width, height, depth);
+    float2 screenNdc = screenUv * 2.0 - 1.0;
+    const float twoPi = 6.28318530717958647692;
+    float sliceCoordinate = atmEpipolarRangeCoordinate(
+            range, epipoleNdc, screenNdc)
+            * float(dimensions.y) - 0.5;
+    int lowerSliceUnwrapped = int(floor(sliceCoordinate));
+    float sliceFraction = frac(sliceCoordinate);
+    bool wraps = !range.parallel
+            && range.span >= twoPi - ATM_EPIPOLAR_EPSILON;
+    int lowerSlice = wraps
+            ? (lowerSliceUnwrapped % dimensions.y + dimensions.y) % dimensions.y
+            : clamp(lowerSliceUnwrapped, 0, dimensions.y - 1);
+    int upperSlice = wraps
+            ? (lowerSlice + 1) % dimensions.y
+            : clamp(lowerSliceUnwrapped + 1, 0, dimensions.y - 1);
+    float4 lower = atmSampleEpipolarSlice(
+            source, screenNdc, normalizedDepth, epipoleNdc, range, lowerSlice);
+    float4 upper = atmSampleEpipolarSlice(
+            source, screenNdc, normalizedDepth, epipoleNdc, range, upperSlice);
+    return lerp(lower, upper, sliceFraction);
+}
+
+public float4 atmSampleEpipolar(
+        readonly RWTexture3D<float4> source,
+        float2 screenUv,
+        float normalizedDepth,
+        float2 epipoleNdc) {
+    return atmSampleEpipolarWithRange(
+            source,
+            screenUv,
+            normalizedDepth,
+            epipoleNdc,
+            atmEpipolarVisibleRange(epipoleNdc));
+}

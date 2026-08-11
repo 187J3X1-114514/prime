@@ -33,6 +33,32 @@ public static const uint PRIME_NUMERICAL_FIELD_UNIT = 4;
 public static const uint PRIME_NUMERICAL_FIELD_DIRECTION = 5;
 public static const uint PRIME_NUMERICAL_FIELD_OUTPUT = 6;
 
+// Adapter layers may reject or sanitize an intermediate before it becomes a transport value.
+// This small explicit observation crosses that boundary without depending on renderer resources
+// or hidden mutable shader state. UINT_MAX marks a disabled observer, so normal rendering pays
+// only the predictable early-out while raw-diagnostic mode retains the first failing field.
+public struct PrimeNumericalObservation
+{
+    public uint flags;
+    public uint firstField;
+};
+
+public PrimeNumericalObservation primeNumericalObservationCreate(bool enabled)
+{
+    PrimeNumericalObservation result;
+    result.flags = 0;
+    result.firstField = enabled ? 0 : 0xffffffffu;
+    return result;
+}
+
+public void primeObserveNumerical(
+        inout PrimeNumericalObservation observation, uint flags, uint field)
+{
+    if (flags == 0 || observation.firstField == 0xffffffffu) return;
+    if (observation.flags == 0) observation.firstField = field;
+    observation.flags |= flags;
+}
+
 public uint primeClassifyNonFinite(float value)
 {
     if (isnan(value)) return PRIME_NUMERICAL_NAN;
@@ -112,6 +138,42 @@ public uint primeClassifyOptionalDirection(float3 value)
     uint flags = primeClassifyNonFinite(value);
     if (flags != 0) return flags;
     return all(value == float3(0.0)) ? 0 : primeClassifyDirection(value);
+}
+
+public void primeObserveNonnegative(
+        inout PrimeNumericalObservation observation, float value)
+{
+    primeObserveNumerical(
+            observation,
+            primeClassifyNonnegative(value),
+            PRIME_NUMERICAL_FIELD_NONNEGATIVE);
+}
+
+public void primeObserveNonnegative(
+        inout PrimeNumericalObservation observation, float3 value)
+{
+    primeObserveNumerical(
+            observation,
+            primeClassifyNonnegative(value),
+            PRIME_NUMERICAL_FIELD_NONNEGATIVE);
+}
+
+public void primeObserveUnit(
+        inout PrimeNumericalObservation observation, float3 value)
+{
+    primeObserveNumerical(
+            observation,
+            primeClassifyUnit(value),
+            PRIME_NUMERICAL_FIELD_UNIT);
+}
+
+public void primeObserveDirection(
+        inout PrimeNumericalObservation observation, float3 value)
+{
+    primeObserveNumerical(
+            observation,
+            primeClassifyDirection(value),
+            PRIME_NUMERICAL_FIELD_DIRECTION);
 }
 
 public float3 primeRestoreFp16Direction(float3 value)

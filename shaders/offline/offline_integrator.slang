@@ -38,14 +38,21 @@ float3 primeEvaluateOfflineDirect(
             || all(lessThanEqual(radiance, float3(0.0)))) {
         return float3(0.0);
     }
+    PrimeNumericalObservation observation = primeBsdfObservationCreate();
     if (primeMaterialIsTransmissive(surface.materialControl)) {
         BsdfEvaluation evaluation = primeEvaluateOfflineMinecraftTransmission(
-                surface, viewDirection, light.direction, volumeStack);
-        return primeTripleProduct(
+                surface,
+                viewDirection,
+                light.direction,
+                volumeStack,
+                observation);
+        float3 result = primeTripleProduct(
                 radiance,
                 evaluation.response,
                 primePowerHeuristicOverPdf(
                         context.diagnostics, light.pdf, evaluation.pdf));
+        primeCommitBsdfObservation(context, observation);
+        return result;
     }
     PrimeBsdfComponents components;
     if (primeMaterialIsFoliage(surface.materialControl)) {
@@ -58,7 +65,8 @@ float3 primeEvaluateOfflineDirect(
                 viewDirection,
                 light.direction,
                 0.0,
-                volumeStack);
+                volumeStack,
+                observation);
     } else {
         components = primeEvaluateOpaqueComponents(
                 surface.baseColor,
@@ -69,14 +77,17 @@ float3 primeEvaluateOfflineDirect(
                 viewDirection,
                 light.direction,
                 0.0,
-                volumeStack);
+                volumeStack,
+                observation);
     }
     float weightedInversePdf = primePowerHeuristicOverPdf(
             context.diagnostics, light.pdf, components.pdf);
-    return primeTripleProduct(
+    float3 result = primeTripleProduct(
             radiance,
             components.diffuseResponse + components.specularResponse,
             weightedInversePdf);
+    primeCommitBsdfObservation(context, observation);
+    return result;
 }
 
 float3 primeEstimateOfflineSun(
@@ -203,12 +214,14 @@ PrimeShadowTrace primeTraceOfflineAreaShadow(
 }
 
 PrimePathScatter primeSampleOfflinePathSurface(
+        inout PrimeIntegratorContext context,
         SurfaceInteraction surface,
         float3 viewDirection,
         float3 sampleValue,
         PrimeRcVolumeStack volumeStack) {
     PrimePathScatter result;
     result.volumeStack = volumeStack;
+    PrimeNumericalObservation observation = primeBsdfObservationCreate();
     if (primeMaterialIsFoliage(surface.materialControl)) {
         PrimeRcState state = primeMinecraftFoliageState(
                 surface.baseColor,
@@ -220,7 +233,7 @@ PrimePathScatter primeSampleOfflinePathSurface(
                 surface.t,
                 volumeStack);
         result.bsdf = primeSampleMinecraftFoliageFromState(
-                state, viewDirection, sampleValue, volumeStack);
+                state, viewDirection, sampleValue, volumeStack, observation);
     } else if (primeMaterialIsTransmissive(surface.materialControl)) {
         PrimeRcState state = primeMinecraftBoundaryTransmissionState(
                 surface.baseColor,
@@ -242,7 +255,8 @@ PrimePathScatter primeSampleOfflinePathSurface(
                         surface.materialControl,
                         viewDirection,
                         sampleValue,
-                        volumeStack);
+                        volumeStack,
+                        observation);
         sampled = primeApplyAdjacentMediumTransition(
                 sampled,
                 state,
@@ -267,8 +281,14 @@ PrimePathScatter primeSampleOfflinePathSurface(
                 surface.t,
                 volumeStack);
         result.bsdf = primeSampleOpaqueFromState(
-                state, shadingNormal, viewDirection, sampleValue, volumeStack);
+                state,
+                shadingNormal,
+                viewDirection,
+                sampleValue,
+                volumeStack,
+                observation);
     }
+    primeCommitBsdfObservation(context, observation);
     return result;
 }
 
@@ -416,6 +436,7 @@ PrimeOfflineSurfaceStep primeIntegrateOfflineSurface(
     }
 
     PrimePathScatter scatter = primeSampleOfflinePathSurface(
+            context,
             surface,
             viewDirection,
             primeSobolSample3D(

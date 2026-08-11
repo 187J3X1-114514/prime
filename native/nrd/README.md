@@ -31,9 +31,12 @@ require a source modification to the pinned SDK.
 Prime builds SPIR-V only, with one NRD instance containing two
 `REBLUR_DIFFUSE_SPECULAR_SH` denoisers and one `SIGMA_SHADOW`, no NRI and no quad-intrinsics extension.
 The main REBLUR handles ordinary primary surfaces and the transmission PSR signal on transparent pixels;
-the second REBLUR handles only the fixed reflection branch. Realtime rendering normally traces one complete
-path per pixel. A first visible transparent interface fixes one conditional transmission path and one
-conditional reflection path, reusing the interface hit and material work. No extra guide ray is traced.
+the second REBLUR handles only the fixed reflection branch. Realtime rendering continues exactly one
+radiance path per pixel. At the first visible transparent interface a 50/50 spatiotemporal checkerboard
+selects one conditional transmission or reflection proposal while reusing the interface hit and material
+work. Resolve separately retraces the visible interface and launches bounded deterministic transmission
+and planar-reflection guide probes. Those probes stabilize reconstruction identity and motion; they never
+add a radiance sample or alter the selected transport path.
 The primary REBLUR uses 63 main/stabilized-history frames. The transparent-reflection REBLUR keeps
 the 63-frame main ceiling for rough reflections, caps stabilization at 10 frames, and uses NRD's
 roughness-responsive accumulation below 0.1 with a 3-frame floor for smooth water/glass. Both use

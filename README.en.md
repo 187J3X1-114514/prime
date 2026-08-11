@@ -192,11 +192,13 @@ The technical documents are currently written in Chinese.
 - [Build and validation](docs/构建与验证.md)
 - [Architecture and data flow](docs/纯函数式架构.md)
 - [Terrain cluster scene translation](docs/区块簇场景翻译架构.md)
+- [Canonical material IR and closures](docs/统一材质IR与闭包.md)
 - [Rendering implementation](docs/渲染实现.md)
 - [Offline light transport contract](docs/离线光传输契约.md)
 - [Transparency and realtime reconstruction](docs/透明渲染与实时重建.md)
 - [Shader property tests and numerical diagnostics](docs/着色器属性测试与数值诊断架构.md)
 - [RoboCute BSDF reference and transmission contract](docs/BSDF透射折射率平方缺失调查报告.md)
+- [Slang toolchain and migration record](docs/Slang迁移计划.md)
 - [TODO](docs/TODO.md)
 
 ## Related Open-Source Projects

@@ -11,7 +11,8 @@ PrimeTransmissiveBsdfSample primeSampleOfflineMinecraftTransmissionFromState(
         uint materialControl,
         float3 viewDirection,
         float3 sampleValue,
-        PrimeRcVolumeStack volumeStack) {
+        PrimeRcVolumeStack volumeStack,
+        inout PrimeNumericalObservation observation) {
     return primeSampleMinecraftTransmissionCompleteFromState(
             state,
             baseColor,
@@ -19,14 +20,36 @@ PrimeTransmissiveBsdfSample primeSampleOfflineMinecraftTransmissionFromState(
             materialControl,
             viewDirection,
             sampleValue,
-            volumeStack);
+            volumeStack,
+            observation);
+}
+
+PrimeTransmissiveBsdfSample primeSampleOfflineMinecraftTransmissionFromState(
+        PrimeRcState state,
+        float3 baseColor,
+        float opacity,
+        uint materialControl,
+        float3 viewDirection,
+        float3 sampleValue,
+        PrimeRcVolumeStack volumeStack) {
+    PrimeNumericalObservation observation = primeNumericalObservationCreate(false);
+    return primeSampleOfflineMinecraftTransmissionFromState(
+            state,
+            baseColor,
+            opacity,
+            materialControl,
+            viewDirection,
+            sampleValue,
+            volumeStack,
+            observation);
 }
 
 BsdfEvaluation primeEvaluateOfflineMinecraftTransmission(
         SurfaceInteraction surface,
         float3 viewDirection,
         float3 scatterDirection,
-        PrimeRcVolumeStack volumeStack) {
+        PrimeRcVolumeStack volumeStack,
+        inout PrimeNumericalObservation observation) {
     float3 outwardNormal = primeSurfaceOutwardShadingNormal(surface);
     PrimeRcState state = primeMinecraftBoundaryTransmissionState(
             surface.baseColor,
@@ -46,7 +69,22 @@ BsdfEvaluation primeEvaluateOfflineMinecraftTransmission(
             primeSurfaceOpacity(surface),
             surface.materialControl,
             viewDirection,
-            scatterDirection);
+            scatterDirection,
+            observation);
+}
+
+BsdfEvaluation primeEvaluateOfflineMinecraftTransmission(
+        SurfaceInteraction surface,
+        float3 viewDirection,
+        float3 scatterDirection,
+        PrimeRcVolumeStack volumeStack) {
+    PrimeNumericalObservation observation = primeNumericalObservationCreate(false);
+    return primeEvaluateOfflineMinecraftTransmission(
+            surface,
+            viewDirection,
+            scatterDirection,
+            volumeStack,
+            observation);
 }
 
 // Offline transport has one global guaranteed continuation. Interface type never grants an

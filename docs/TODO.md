@@ -12,12 +12,17 @@
 - 为纹理体素表面设计跨 cluster GPU mesh 池，复用相同纹理、UV 和朝向生成的
   BLAS、primitive 与 OMM，同时明确 resource epoch、引用所有权、compaction 注册和退休顺序；
 - 评估 TLAS refit 或更有效的批处理；新 geometry 不得在可见性结构外提前发布。
+- 评估让同一 motion/lifetime domain 内的动态表面复用静态 `SurfaceDefinition` resolver；必须
+  保持逐帧 resident 所有权、previous-position 对应和无法证明关系时的原几何回退。
 
 ## 渲染能力
 
 - 场景几何 LOD；
 - 云渲染（细节待定）；
-- 水渲染（细节待定）；
+- 将当前已读取但尚未参与着色的切线空间法线接入闭包，并为 normal-map handedness、
+  动画、relief 共存和重建 guide 建立一致契约；
+- 评估 LabPBR AO/porosity 的物理用途；不能把源格式字节直接泄漏到积分器或用环境遮蔽重复
+  压暗已经由路径追踪求出的间接光；
 - 月亮（月相）：作为夜晚的主光源；月相跟随 Minecraft 原版状态，轨迹取太阳轨迹的
   相对方向，不采用真实月球轨迹；
 - 雾和局部体积光的通用体积渲染；

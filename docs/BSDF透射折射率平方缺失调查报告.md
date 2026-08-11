@@ -1,7 +1,7 @@
 # RoboCute BSDF 参考与透射契约
 
-> 本文中的 GLSL 文件名和 `compileShaders` 任务用于记录迁移前的历史调查。生产着色器现已
-> 完全迁移到 Slang；当前保护边界见仓库根目录 `AGENTS.md`。
+> 本文已按当前 Slang 生产结构更新。历史 GLSL 端口只用于当时定位问题，不再是保护或构建
+> 边界；规范保护规则见仓库根目录 `AGENTS.md`。
 
 ## 当前状态
 
@@ -15,10 +15,13 @@ RoboCute 作者于 2026-07-24 提供的 dielectric highlight energy compensation
 
 ## Prime 适配边界
 
-`shaders/robocute_bsdf_*.glsl` 是受保护的机械移植。表达式、求值顺序、浮点运算顺序、分支、
-采样分布和中间精度必须与锁定参考一致；未经用户逐文件批准，不得修改、格式化或添加注释。
+`shaders/bsdf/core/robocute_*.slang` 中列入
+`shaders/bsdf/core/robocute_reachable_symbols.txt` 的声明构成受保护核心。保护随声明移动，不
+依赖文件名；表达式、求值顺序、分支、采样分布和中间精度只允许规定范围内的机械语言适配。
+任何语义、浮点或格式化修改都必须先获得用户对具体声明、目的和范围的明确批准。不同编译器
+或获批优化后的输出不要求逐 bit 一致，但必须满足数值、分布、能量和状态门禁。
 
-Prime 自有的材质翻译、资源绑定、状态转换和回归入口位于参考文件之外。厚介质出射时，适配层
+Prime 自有的材质翻译、资源绑定、状态转换、诊断和回归入口位于参考核心之外。厚介质出射时，适配层
 保留 RoboCute 以有符号局部半球选择相对 IOR 的契约，使 Snell 方向、TIR、Fresnel、PDF、
 `1/η²` 和返回的 `relativeEta` 使用同一个事件方向。真实 entering 状态仍由 Prime 体积栈消费。
 
@@ -35,10 +38,11 @@ Prime 自有的材质翻译、资源绑定、状态转换和回归入口位于�
 ## 自动门禁
 
 - `verifyRoboCutePort` 验证锁定 commit、overlay 路径、参考文件和 LUT 哈希；
-- `compileShaders` 使用 `glslangValidator`、`spirv-opt` 与 `spirv-val` 编译、特化并验证生产
-  Shader；
+- `compileSlangShaders` 使用固定 SDK 的 `slangc` 直接生成 SPIR-V，以 `spirv-val` 验证，并
+  由 `verifySlangRayPayloadAbi` 与生成 ABI 门禁检查跨阶段契约；
 - `shaderTest` 覆盖 slab 两界面、入射/出射、Snell、TIR、sample/eval/PDF、薄壁/厚壁和
-  eta-aware Russian roulette；
+  eta-aware Russian roulette；`PrimeBsdfDiagnosticsGpuTest` 另验证 adapter 拒绝/净化前的
+  NaN、Inf、负值和非法方向观察；
 - `verifyDistributionJar` 检查发行 JAR 中的 Shader、LUT 和许可归属。
 
 常用命令见[构建与验证](构建与验证.md)。如果参考一致性要求与 Prime 特有行为冲突，应在

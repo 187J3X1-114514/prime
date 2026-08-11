@@ -158,11 +158,13 @@ $env:Path = "$env:JAVA_HOME\bin;$env:VULKAN_SDK\Bin;$env:Path"
 - [构建与验证](docs/构建与验证.md)
 - [架构与数据流](docs/纯函数式架构.md)
 - [区块簇场景翻译架构](docs/区块簇场景翻译架构.md)
+- [统一材质 IR 与闭包](docs/统一材质IR与闭包.md)
 - [渲染实现](docs/渲染实现.md)
 - [离线光传输契约](docs/离线光传输契约.md)
 - [透明渲染与实时重建](docs/透明渲染与实时重建.md)
 - [着色器属性测试与数值诊断](docs/着色器属性测试与数值诊断架构.md)
 - [RoboCute BSDF 参考与透射契约](docs/BSDF透射折射率平方缺失调查报告.md)
+- [Slang 工具链与迁移记录](docs/Slang迁移计划.md)
 - [TODO](docs/TODO.md)
 
 ## 相关开源项目

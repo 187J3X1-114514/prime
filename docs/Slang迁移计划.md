@@ -1,12 +1,12 @@
-# Slang 迁移计划
+# Slang 迁移与现行工具链契约
 
 ## 目标与边界
 
-生产 Shader 和对应测试现已完全由 Slang 构建，生产/测试 GLSL 与过渡选择器已经移除。迁移按
-一个可验证的依赖层或 entry point 推进。机械适配是降低风险的默认手段，不是逐字符翻译规则；允许在
-保持行为和 ABI 契约的前提下重命名、重组模块，并使用 Slang 的泛型、接口、方法、属性和强类型
-聚合表达既有语义。迁移期间不同时更换算法、采样分布、队列语义或 host ABI。发现原实现问题时
-登记到 `Slang迁移问题.md`，完成全部迁移后统一处理，不在迁移提交中顺手修复。
+生产 Shader 和对应测试现已完全由 Slang 构建，生产/测试 GLSL 与过渡选择器已经移除。本文件
+保留迁移边界、现行工具链契约和完成记录，不再表示仍有语言切换阶段待执行。迁移时以可验证的
+依赖层或 entry point 推进；机械适配是降低风险的默认手段，不是逐字符翻译规则。模块已在保持
+行为和 ABI 契约的前提下采用 Slang 泛型、接口、方法、属性和强类型聚合。迁移期间发现的原实现
+问题已在 [Slang 迁移问题处理记录](Slang迁移问题.md) 中统一关闭。
 
 实现取舍依次为：运行效率、长期维护性、简洁。不能为了形式上的机械对应保留已证明会妨碍编译器
 优化或长期维护的表示，也不能以 Slang 重组为名改变算法。连续浮点求值顺序允许变化，但必须通过
@@ -50,6 +50,7 @@
 
 ```text
 shaders/
+  bsdf/
   core/
   material/
   lighting/
@@ -60,10 +61,12 @@ shaders/
   offline/
 ```
 
-所有 include/import 路径使用从 Shader 根可解析的稳定路径；include 图按真实搜索路径解析，
-不再要求不同职责目录中的基础名全局唯一。生成的 Java/Slang ABI 源码位于 `build`，生成器不再
-输出 GLSL。生产 SPIR-V 使用既有 canonical 资源名，host 无语言选择分支；wavefront 的普通、
-subgroup queue 与 SER 变体仍由同一 Slang entry point 生成。
+模块依赖默认使用从 Shader 根解析的稳定 `import`。文本 include 只保留在需要共享同一编译
+上下文的 wavefront entry 聚合、BSDF adapter 组合和外部 SHARC 头文件边界；依赖图按真实搜索
+路径同时解析两者，不再要求不同职责目录中的基础名全局唯一。生成的 Java/Slang ABI 源码位于
+`build`，生成器不再输出 GLSL。生产 SPIR-V 使用既有 canonical 资源名，host 无语言选择分支；
+wavefront 的普通、subgroup queue 与 SER 变体由同一组 Slang entry point 和 specialization
+control 生成。
 
 ## BSDF 核心保护
 
@@ -90,6 +93,8 @@ ABI 和离散语义保持精确：descriptor、push constant、结构布局、pa
   单位方向、对称性与互易性；
 - `RoboCuteClosureGpuTest` 与 `PrimeBsdfGpuTest`：所有生产可达 closure/adapter 的有限性、
   非负响应、采样/求值一致性、事件、relative eta、介质栈和极端传播距离；
+- `PrimeBsdfDiagnosticsGpuTest`：adapter 在拒绝或净化之前对 NaN/Inf、负值与非法方向的
+  显式逐 invocation 观察，以及关闭观察时的无状态边界；
 - `RoboCuteDistributionGpuTest`：采样直方图与 PDF 的统计一致性，以及 Monte Carlo 能量与
   独立求积的一致性；
 - `PrimeNumericalGpuTest`：以原始 IEEE-754 bit pattern 覆盖 NaN、±Inf、正负零、次正规数、
@@ -119,10 +124,10 @@ ABI 和离散语义保持精确：descriptor、push constant、结构布局、pa
 7. **已完成——wavefront entry points**：先 realtime、后 offline。保持当前执行模式队列、stage
    specialization、SER/subgroup 变体和调度顺序，仅替换语言实现；按 stage 单独比较 ABI、
    寄存器和图像结果。
-8. **自动部分已完成——默认切换与清理**：所有 pipeline 默认使用 Slang，完整自动 GPU 门禁通过，
-   已建立新 BSDF 核心锁并删除生产/测试 GLSL 和过渡选择器。画面、窗口/驱动稳定性和性能采样
-   仍是人工阻碍，通过后才结束迁移目标。
+8. **已完成——默认切换与清理**：所有 pipeline 使用 Slang，完整自动 GPU 门禁通过，已建立
+   新 BSDF 核心锁并删除生产/测试 GLSL 和过渡选择器。最大化窗口/驱动稳定性阻碍修复后，
+   用户确认最终构建正常呈现并通过性能回归；迁移目标已结束。
 
-每一步都同时迁移对应测试，不把正确性验证集中到最后。迁移导致的编译、ABI 或行为阻碍应在
-当前最小模块边界解决；原实现中已经存在的问题只登记，不在迁移过程中修复。完成所有生产和测试
-入口切换、删除过渡选择器并通过自动门禁后，才统一处理登记问题和人工验证清单。
+每一步都同时迁移对应测试，没有把正确性验证集中到最后。迁移导致的编译、ABI 或行为阻碍在
+当前最小模块边界解决；原实现中已经存在的问题在语言切换后单独处理。后续工具链升级、浮点模式
+调整或 Shader 架构变化继续复用本文件的 ABI、数值和人工验证契约，但不重新打开已完成的迁移阶段。

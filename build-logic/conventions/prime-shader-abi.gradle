@@ -1661,8 +1661,8 @@ def defaultSlangCompilerProcesses = providers.provider {
 			8L * gibibyte,
 			Math.min(12L * gibibyte, physicalMemory.intdiv(2L)))
 	def compilerMemory = Math.max(0L, physicalMemory - reservedMemory)
-	// Slang 2026.8 can commit roughly 12 GiB while optimizing a fully specialized wavefront
-	// entry point. This is a build-wide budget: production and test tasks share the same gate.
+	// The pinned Slang toolchain can commit roughly 12 GiB while optimizing a fully specialized
+	// wavefront entry point. This is a build-wide budget: production and test tasks share the gate.
 	def compilerProcessMemory = 12L * gibibyte
 	def memoryBound = Math.max(1, (int) compilerMemory.intdiv(compilerProcessMemory))
 	return Math.max(1, Math.min(12, Math.min(processors, memoryBound)))

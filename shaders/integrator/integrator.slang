@@ -20,19 +20,6 @@ import "core/transparent_checkerboard.slang";
 import "core/nrd_common.slang";
 import "integrator/path_contract.slang";
 
-// The BSDF adapter's internal hooks predate Slang's explicit per-invocation diagnostic object.
-// Production transport classifies every consumed adapter result at this boundary; these hooks
-// remain intentionally empty until the post-migration diagnostic redesign recorded in the issue
-// log, avoiding hidden mutable shader state in the meantime.
-void primeRecordNonFinite(float value) {}
-void primeRecordNonFinite(float3 value) {}
-void primeRecordNonnegative(float value) {}
-void primeRecordNonnegative(float3 value) {}
-void primeRecordRadiance(float3 value) {}
-void primeRecordUnit(float value) {}
-void primeRecordUnit(float3 value) {}
-void primeRecordDirection(float3 value) {}
-
 #include "bsdf/adapter/bsdf.slang"
 import "lighting/lights.slang";
 import "rt/shadow_payload.slang";
@@ -55,6 +42,29 @@ PrimeIntegratorContext primeIntegratorContextCreate() {
     PrimeIntegratorContext context;
     context.diagnostics = primeNumericalDiagnosticsCreate();
     return context;
+}
+
+PrimeNumericalObservation primeBsdfObservationCreate() {
+    return primeNumericalObservationCreate(
+            primeWritesRawNumericalDiagnostic());
+}
+
+void primeCommitBsdfObservation(
+        inout PrimeIntegratorContext context,
+        PrimeNumericalObservation observation) {
+    primeRecordNumerical(
+            context.diagnostics,
+            observation.flags,
+            observation.firstField);
+}
+
+float3 primeSanitizeObservedDenoiseAlbedo(
+        inout PrimeIntegratorContext context,
+        float3 albedo) {
+    PrimeNumericalObservation observation = primeBsdfObservationCreate();
+    float3 result = primeSanitizeDenoiseAlbedo(albedo, observation);
+    primeCommitBsdfObservation(context, observation);
+    return result;
 }
 
 RayDesc primeIntegratorRay(float3 origin, float tMin, float3 direction, float tMax) {
@@ -459,6 +469,7 @@ PrimeDirectLightingSplit primeEvaluateVisibleDirectSplit(
             || all(lightRadiance <= float3(0.0))) {
         return result;
     }
+    PrimeNumericalObservation observation = primeBsdfObservationCreate();
     if (transmissive) {
         float3 outwardNormal = primeSurfaceOutwardShadingNormal(surface);
         bool reflection = dot(outwardNormal, viewDirection)
@@ -481,7 +492,8 @@ PrimeDirectLightingSplit primeEvaluateVisibleDirectSplit(
                             0.0,
                             volumeStack,
                             surface.adjacentBaseColor,
-                            surface.adjacentInterfaceControl)
+                            surface.adjacentInterfaceControl,
+                            observation)
                     : primeEvaluateMinecraftTransparentTransmission(
                             surface.baseColor,
                             primeSurfaceOpacity(surface),
@@ -494,7 +506,8 @@ PrimeDirectLightingSplit primeEvaluateVisibleDirectSplit(
                             0.0,
                             volumeStack,
                             surface.adjacentBaseColor,
-                            surface.adjacentInterfaceControl);
+                            surface.adjacentInterfaceControl,
+                            observation);
         } else {
             PrimeRcState state = primeMinecraftBoundaryTransmissionState(
                     surface.baseColor,
@@ -514,7 +527,8 @@ PrimeDirectLightingSplit primeEvaluateVisibleDirectSplit(
                     primeSurfaceOpacity(surface),
                     surface.materialControl,
                     viewDirection,
-                    light.direction);
+                    light.direction,
+                    observation);
         }
         if (conditionalTransparentBranch) {
             // The competing continuation first selects this disjoint hemisphere with probability
@@ -530,6 +544,7 @@ PrimeDirectLightingSplit primeEvaluateVisibleDirectSplit(
         } else {
             result.diffuse = contribution;
         }
+        primeCommitBsdfObservation(context, observation);
         return result;
     }
     if (foliage) {
@@ -542,13 +557,15 @@ PrimeDirectLightingSplit primeEvaluateVisibleDirectSplit(
                 viewDirection,
                 light.direction,
                 0.0,
-                volumeStack);
+                volumeStack,
+                observation);
         float weightedInversePdf = primePowerHeuristicOverPdf(
                 context.diagnostics, light.pdf, components.pdf);
         result.diffuse = primeTripleProduct(
                 lightRadiance, components.diffuseResponse, weightedInversePdf);
         result.specular = primeTripleProduct(
                 lightRadiance, components.specularResponse, weightedInversePdf);
+        primeCommitBsdfObservation(context, observation);
         return result;
     }
     // The translation layer supplies conservative defaults when no community material data is
@@ -563,13 +580,15 @@ PrimeDirectLightingSplit primeEvaluateVisibleDirectSplit(
             viewDirection,
             light.direction,
             0.0,
-            volumeStack);
+            volumeStack,
+            observation);
     float weightedInversePdf = primePowerHeuristicOverPdf(
             context.diagnostics, light.pdf, components.pdf);
     result.diffuse = primeTripleProduct(
             lightRadiance, components.diffuseResponse, weightedInversePdf);
     result.specular = primeTripleProduct(
             lightRadiance, components.specularResponse, weightedInversePdf);
+    primeCommitBsdfObservation(context, observation);
     return result;
 }
 
@@ -970,6 +989,7 @@ struct PrimePathScatter {
 };
 
 PrimePathScatter primeSamplePathSurfaceWithMinimumRoughness(
+        inout PrimeIntegratorContext context,
         SurfaceInteraction surface,
         float3 viewDirection,
         float3 sampleValue,
@@ -977,6 +997,7 @@ PrimePathScatter primeSamplePathSurfaceWithMinimumRoughness(
         float minimumLinearRoughness) {
     PrimePathScatter result;
     result.volumeStack = volumeStack;
+    PrimeNumericalObservation observation = primeBsdfObservationCreate();
     if (primeMaterialIsFoliage(surface.materialControl)) {
         PrimeRcState state = primeMinecraftFoliageStateWithMinimumRoughness(
                 surface.baseColor,
@@ -989,7 +1010,7 @@ PrimePathScatter primeSamplePathSurfaceWithMinimumRoughness(
                 volumeStack,
                 minimumLinearRoughness);
         result.bsdf = primeSampleMinecraftFoliageFromState(
-                state, viewDirection, sampleValue, volumeStack);
+                state, viewDirection, sampleValue, volumeStack, observation);
     } else if (primeMaterialIsTransmissive(surface.materialControl)) {
         float3 outwardNormal = primeSurfaceOutwardShadingNormal(surface);
         PrimeRcState state = primeMinecraftBoundaryTransmissionStateWithMinimumRoughness(
@@ -1013,7 +1034,8 @@ PrimePathScatter primeSamplePathSurfaceWithMinimumRoughness(
                         surface.materialControl,
                         viewDirection,
                         sampleValue,
-                        volumeStack);
+                        volumeStack,
+                        observation);
         sampled = primeApplyAdjacentMediumTransition(
                 sampled,
                 state,
@@ -1043,18 +1065,21 @@ PrimePathScatter primeSamplePathSurfaceWithMinimumRoughness(
                 shadingNormal,
                 viewDirection,
                 sampleValue,
-                volumeStack);
+                volumeStack,
+                observation);
     }
+    primeCommitBsdfObservation(context, observation);
     return result;
 }
 
 PrimePathScatter primeSamplePathSurface(
+        inout PrimeIntegratorContext context,
         SurfaceInteraction surface,
         float3 viewDirection,
         float3 sampleValue,
         PrimeRcVolumeStack volumeStack) {
     return primeSamplePathSurfaceWithMinimumRoughness(
-            surface, viewDirection, sampleValue, volumeStack, 0.0);
+            context, surface, viewDirection, sampleValue, volumeStack, 0.0);
 }
 
 struct PrimeGuidedPathScatter {
@@ -1071,6 +1096,7 @@ PrimeGuidedPathScatter primeSampleGuidedPathSurface(
         uint bounce) {
     PrimeGuidedPathScatter result;
     result.scatter.volumeStack = volumeStack;
+    PrimeNumericalObservation observation = primeBsdfObservationCreate();
     primeSetNumericalContext(
             context.diagnostics, PRIME_NUMERICAL_STAGE_SURFACE, bounce);
     if (primeMaterialIsFoliage(surface.materialControl)) {
@@ -1084,11 +1110,14 @@ PrimeGuidedPathScatter primeSampleGuidedPathSurface(
                 surface.t,
                 volumeStack);
         result.albedos = primeDenoiseAlbedosFromState(
-                state, viewDirection, PRIME_DENOISE_CLOSURE_FOLIAGE);
+                state,
+                viewDirection,
+                PRIME_DENOISE_CLOSURE_FOLIAGE,
+                observation);
         primeSetNumericalContext(
                 context.diagnostics, PRIME_NUMERICAL_STAGE_BSDF_SAMPLE, bounce);
         result.scatter.bsdf = primeSampleMinecraftFoliageFromState(
-                state, viewDirection, sampleValue, volumeStack);
+                state, viewDirection, sampleValue, volumeStack, observation);
     } else if (primeMaterialIsTransmissive(surface.materialControl)) {
         float3 outwardNormal = primeSurfaceOutwardShadingNormal(surface);
         PrimeRcState state = primeMinecraftBoundaryTransmissionState(
@@ -1104,7 +1133,10 @@ PrimeGuidedPathScatter primeSampleGuidedPathSurface(
                 surface.adjacentBaseColor,
                 surface.adjacentInterfaceControl);
         result.albedos = primeDenoiseAlbedosFromState(
-                state, viewDirection, PRIME_DENOISE_CLOSURE_TRANSMISSIVE);
+                state,
+                viewDirection,
+                PRIME_DENOISE_CLOSURE_TRANSMISSIVE,
+                observation);
         primeSetNumericalContext(
                 context.diagnostics, PRIME_NUMERICAL_STAGE_BSDF_SAMPLE, bounce);
         PrimeTransmissiveBsdfSample sampled =
@@ -1115,7 +1147,8 @@ PrimeGuidedPathScatter primeSampleGuidedPathSurface(
                         surface.materialControl,
                         viewDirection,
                         sampleValue,
-                        volumeStack);
+                        volumeStack,
+                        observation);
         sampled = primeApplyAdjacentMediumTransition(
                 sampled,
                 state,
@@ -1140,7 +1173,10 @@ PrimeGuidedPathScatter primeSampleGuidedPathSurface(
                 surface.t,
                 volumeStack);
         result.albedos = primeDenoiseAlbedosFromState(
-                state, viewDirection, PRIME_DENOISE_CLOSURE_OPAQUE);
+                state,
+                viewDirection,
+                PRIME_DENOISE_CLOSURE_OPAQUE,
+                observation);
         primeSetNumericalContext(
                 context.diagnostics, PRIME_NUMERICAL_STAGE_BSDF_SAMPLE, bounce);
         result.scatter.bsdf = primeSampleOpaqueFromState(
@@ -1148,8 +1184,10 @@ PrimeGuidedPathScatter primeSampleGuidedPathSurface(
                 shadingNormal,
                 viewDirection,
                 sampleValue,
-                volumeStack);
+                volumeStack,
+                observation);
     }
+    primeCommitBsdfObservation(context, observation);
     return result;
 }
 
@@ -1516,7 +1554,7 @@ bool primeIntegrateTransparentWavefrontSurface<AreaNee>(
         primeSetNumericalContext(
                 context.diagnostics, PRIME_NUMERICAL_STAGE_BSDF_SAMPLE, path.bounce);
         scatter = primeSamplePathSurface(
-                surface, viewDirection, scatterSample, volumeStack);
+                context, surface, viewDirection, scatterSample, volumeStack);
     }
     BsdfSample bsdf = scatter.bsdf;
     if (!primeHasScatter(bsdf)) {
@@ -1758,7 +1796,7 @@ bool primeIntegrateWavefrontSurface<AreaNee, IndirectReuse>(
         primeSetNumericalContext(
                 context.diagnostics, PRIME_NUMERICAL_STAGE_BSDF_SAMPLE, path.bounce);
         scatter = primeSamplePathSurface(
-                surface, viewDirection, scatterSample, volumeStack);
+                context, surface, viewDirection, scatterSample, volumeStack);
     }
     BsdfSample bsdf = scatter.bsdf;
     volumeStack = scatter.volumeStack;
@@ -1785,14 +1823,16 @@ bool primeIntegrateWavefrontSurface<AreaNee, IndirectReuse>(
             result.guides.primaryPreviousPosition =
                     primeSurfacePreviousPosition(surface) - primePush.cameraPosition;
             result.guides.primaryHasMotion = primeSurfaceHasMotion(surface);
-            result.guides.primaryAlbedo = primeSanitizeDenoiseAlbedo(
+            result.guides.primaryAlbedo = primeSanitizeObservedDenoiseAlbedo(
+                    context,
                     denoiserState.diffuseAlbedoProduct);
             result.guides.primaryNormal =
                     primeSurfaceShadingNormal(surface, viewDirection);
             result.guides.primaryHitKind = surface.hitKind;
             result.guides.primaryMaterialFlags = primeNrdGuideControl(
                     surface.materialControl, surface.opticalControl);
-            result.guides.primarySpecularAlbedo = primeSanitizeDenoiseAlbedo(
+            result.guides.primarySpecularAlbedo = primeSanitizeObservedDenoiseAlbedo(
+                    context,
                     denoiserState.specularAlbedoProduct);
             result.guides.primaryLinearRoughness = surfaceLinearRoughness;
             if (hasScatter) {
@@ -1811,11 +1851,13 @@ bool primeIntegrateWavefrontSurface<AreaNee, IndirectReuse>(
                         surfaceAlbedos.specular + surfaceAlbedos.diffuse;
             }
             denoiserState.reachedSolidAngle = true;
-            result.guides.primarySpecularAlbedo = primeSanitizeDenoiseAlbedo(
+            result.guides.primarySpecularAlbedo = primeSanitizeObservedDenoiseAlbedo(
+                    context,
                     denoiserState.specularAlbedoProduct);
         } else if (!firstDenoiseSurface && primeIsDiscreteSample(bsdf)) {
             denoiserState.specularAlbedoProduct *= surfaceAlbedos.specular;
-            result.guides.primarySpecularAlbedo = primeSanitizeDenoiseAlbedo(
+            result.guides.primarySpecularAlbedo = primeSanitizeObservedDenoiseAlbedo(
+                    context,
                     denoiserState.specularAlbedoProduct);
         }
     }

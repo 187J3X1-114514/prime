@@ -119,6 +119,7 @@ PrimeWavefrontContinuation primeInitializeTransparentWavefront(
 
     primeSetNumericalContext(context.diagnostics,
             PRIME_NUMERICAL_STAGE_BSDF_SAMPLE, path.bounce);
+    PrimeNumericalObservation observation = primeBsdfObservationCreate();
     PrimeTransmissivePrimarySample primarySample =
             primeSampleMinecraftTransmissionPrimary(
             surface.baseColor,
@@ -135,7 +136,9 @@ PrimeWavefrontContinuation primeInitializeTransparentWavefront(
             surface.t,
             volumeStack,
             surface.adjacentBaseColor,
-            surface.adjacentInterfaceControl);
+            surface.adjacentInterfaceControl,
+            observation);
+    primeCommitBsdfObservation(context, observation);
     PrimeDenoiseAlbedos albedos = primarySample.albedos;
     float3 shadingNormal = primeSurfaceShadingNormal(surface, viewDirection);
     initialResult.guides.primaryDistance =

@@ -4,45 +4,19 @@ module "core/atmosphere_epipolar.slang";
 public static const float ATM_EPIPOLAR_LIMIT = 16384.0;
 public static const float ATM_EPIPOLAR_EPSILON = 1.0e-6;
 
-public float4x4 atmInverse(float4x4 source) {
-    float4x4 value = source;
-    float4x4 result = float4x4(
-            float4(1.0, 0.0, 0.0, 0.0),
-            float4(0.0, 1.0, 0.0, 0.0),
-            float4(0.0, 0.0, 1.0, 0.0),
-            float4(0.0, 0.0, 0.0, 1.0));
-    [unroll]
-    for (int pivot = 0; pivot < 4; ++pivot) {
-        int best = pivot;
-        float magnitude = abs(value[pivot][pivot]);
-        [unroll]
-        for (int row = pivot + 1; row < 4; ++row) {
-            float candidate = abs(value[row][pivot]);
-            if (candidate > magnitude) {
-                magnitude = candidate;
-                best = row;
-            }
-        }
-        if (best != pivot) {
-            float4 valueRow = value[pivot];
-            float4 resultRow = result[pivot];
-            value[pivot] = value[best];
-            result[pivot] = result[best];
-            value[best] = valueRow;
-            result[best] = resultRow;
-        }
-        float inversePivot = 1.0 / value[pivot][pivot];
-        value[pivot] *= inversePivot;
-        result[pivot] *= inversePivot;
-        [unroll]
-        for (int row = 0; row < 4; ++row) {
-            if (row == pivot) continue;
-            float factor = value[row][pivot];
-            value[row] -= factor * value[pivot];
-            result[row] -= factor * result[pivot];
-        }
-    }
-    return result;
+float atmDeterminant3(float3 first, float3 second, float3 third) {
+    return dot(first, cross(second, third));
+}
+
+// Returns the four cofactors whose dot product with a leading column is the corresponding
+// 4x4 determinant. Epipole projection needs only three rows of the inverse matrix; constructing
+// those rows directly avoids a branch-heavy Gauss-Jordan inverse in every output invocation.
+float4 atmColumnCofactors(float4 second, float4 third, float4 fourth) {
+    return float4(
+            atmDeterminant3(second.yzw, third.yzw, fourth.yzw),
+            -atmDeterminant3(second.xzw, third.xzw, fourth.xzw),
+            atmDeterminant3(second.xyw, third.xyw, fourth.xyw),
+            -atmDeterminant3(second.xyz, third.xyz, fourth.xyz));
 }
 
 public struct AtmEpipolarSegment {
@@ -62,8 +36,25 @@ public struct AtmEpipolarRange {
 public float2 atmEpipolarProjectDirection(
         float4x4 inverseViewProjection,
         float3 worldDirection) {
-    float4 clip = atmInverse(inverseViewProjection)
-            * float4(worldDirection, 0.0);
+    // Slang's SPIR-V matrix vector values follow the target's column convention even though
+    // Prime selects row-major source layout to preserve the existing host ABI.
+    float4 column0 = inverseViewProjection[0];
+    float4 column1 = inverseViewProjection[1];
+    float4 column2 = inverseViewProjection[2];
+    float4 column3 = inverseViewProjection[3];
+    float4 direction = float4(worldDirection, 0.0);
+    float4 firstCofactors = atmColumnCofactors(column1, column2, column3);
+    float determinant = dot(column0, firstCofactors);
+    // Cramer's rule gives the required clip x/y/w numerators. Multiplying by det's sign instead
+    // of dividing by det preserves both finite x/w ratios and the orientation at infinity.
+    float determinantSign = determinant < 0.0 ? -1.0 : 1.0;
+    float4 secondCofactors = atmColumnCofactors(column0, column2, column3);
+    float4 fourthCofactors = atmColumnCofactors(column0, column1, column2);
+    float4 clip = float4(
+            dot(direction, firstCofactors),
+            -dot(direction, secondCofactors),
+            0.0,
+            -dot(direction, fourthCofactors)) * determinantSign;
     float2 projected;
     if (abs(clip.w) > ATM_EPIPOLAR_EPSILON) {
         projected = clip.xy / clip.w;

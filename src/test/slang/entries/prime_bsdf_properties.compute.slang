@@ -6,44 +6,6 @@
 #include "core/prime_test_abi.slang"
 import "core/numerical.slang";
 
-static const uint primeAdapterDiagnosticFlags = 0u;
-
-void primeAdapterRecord(uint flags) {
-    // Public result classification below is the per-invocation Slang diagnostic gate.
-}
-
-void primeRecordNonFinite(float value) {
-    primeAdapterRecord(primeClassifyNonFinite(value));
-}
-
-void primeRecordNonFinite(float3 value) {
-    primeAdapterRecord(primeClassifyNonFinite(value));
-}
-
-void primeRecordNonnegative(float value) {
-    primeAdapterRecord(primeClassifyNonnegative(value));
-}
-
-void primeRecordNonnegative(float3 value) {
-    primeAdapterRecord(primeClassifyNonnegative(value));
-}
-
-void primeRecordRadiance(float3 value) {
-    primeAdapterRecord(primeClassifyRadiance(value));
-}
-
-void primeRecordUnit(float value) {
-    primeAdapterRecord(primeClassifyUnit(value));
-}
-
-void primeRecordUnit(float3 value) {
-    primeAdapterRecord(primeClassifyUnit(value));
-}
-
-void primeRecordDirection(float3 value) {
-    primeAdapterRecord(primeClassifyDirection(value));
-}
-
 bool primeUsesAirGap() {
     return true;
 }
@@ -1167,16 +1129,6 @@ void primeAdapterProperties(
         result.mask |= PRIME_TEST_FAILURE_RANGE;
     }
 
-    uint nonFinite = primeAdapterDiagnosticFlags
-            & (PRIME_NUMERICAL_NAN
-                    | PRIME_NUMERICAL_POSITIVE_INFINITY
-                    | PRIME_NUMERICAL_NEGATIVE_INFINITY);
-    result.mask |= nonFinite;
-    if ((primeAdapterDiagnosticFlags
-            & (PRIME_NUMERICAL_FINITE_NEGATIVE
-                    | PRIME_NUMERICAL_INVALID_DIRECTION)) != 0u) {
-        result.mask |= PRIME_TEST_FAILURE_RANGE;
-    }
 }
 
 [numthreads(64, 1, 1)]
@@ -1215,7 +1167,7 @@ void main(uint3 dispatchThreadId : SV_DispatchThreadID)
             asuint(result.probeEvaluation.response),
             asuint(result.probeEvaluation.pdf));
     primeTestOutput[outputOffset + 8u] = uint4(
-            asuint(result.albedos.diffuse), primeAdapterDiagnosticFlags);
+            asuint(result.albedos.diffuse), 0u);
     primeTestOutput[outputOffset + 9u] = uint4(
             asuint(result.albedos.specular), 0u);
     primeTestOutput[outputOffset + 10u] = encoded[0];

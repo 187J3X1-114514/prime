@@ -131,6 +131,7 @@ void main() {
         }
 
         PrimePathScatter scatter = primeSamplePathSurfaceWithMinimumRoughness(
+                context,
                 surface,
                 viewDirection,
                 primeSobolSample3D(

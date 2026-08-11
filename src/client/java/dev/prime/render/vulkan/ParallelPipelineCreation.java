@@ -14,7 +14,7 @@ import java.util.function.IntConsumer;
 
 /** Bounded, task-local host concurrency for independent Vulkan pipeline creation. */
 public final class ParallelPipelineCreation {
-    private static final int MAX_WORKERS = 8;
+    private static final int MAX_WORKERS = 16;
 
     private ParallelPipelineCreation() {
     }

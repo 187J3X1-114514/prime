@@ -903,6 +903,9 @@ abstract class CompilePrimeSlangComputeShaders extends DefaultTask {
 	@Input
 	abstract Property<String> getDebugLevel()
 
+	@Input
+	abstract Property<Integer> getMaxCompilerProcesses()
+
 	@javax.inject.Inject
 	abstract org.gradle.api.file.FileSystemOperations getFileSystemOperations()
 
@@ -1026,10 +1029,10 @@ abstract class CompilePrimeSlangComputeShaders extends DefaultTask {
 
 		def compilerCount = Math.min(
 				compilationUnits.size(),
-				// A shade or head closure can consume several GiB in slangc. Two workers overlap
-				// independent execution modes without making the compiler processes compete for
-				// enough memory to be terminated by the host.
-				Math.min(2, Runtime.runtime.availableProcessors()))
+				Math.min(maxCompilerProcesses.get(), Runtime.runtime.availableProcessors()))
+		logger.lifecycle(
+				"Compiling ${compilationUnits.size()} Slang unit(s) with "
+						+ "${compilerCount} process(es)")
 		def compilerPool = java.util.concurrent.Executors.newFixedThreadPool(compilerCount)
 		try {
 			def compilations = compilationUnits.collect { compilerPool.submit(it) }
@@ -1477,7 +1480,7 @@ def shaderIncludeReport = layout.buildDirectory.file(
 		'reports/prime-shaders/include-graph.txt')
 def verifyShaderIncludeGraph = tasks.register('verifyShaderIncludeGraph') {
 	group = 'verification'
-	description = 'Verifies that Prime production and test Slang includes are resolvable and acyclic.'
+	description = 'Verifies that Prime Slang includes and path imports are resolvable and acyclic.'
 	dependsOn generateShaderAbi
 	inputs.files(
 			fileTree('shaders'),
@@ -1503,26 +1506,26 @@ def verifyShaderIncludeGraph = tasks.register('verifyShaderIncludeGraph') {
 		}
 		def sourcePaths = sources.collect { it.canonicalFile }.toSet()
 		def graph = new TreeMap<String, Set<String>>()
-		def includePattern = java.util.regex.Pattern.compile(
-				'(?m)^\\s*#\\s*include\\s+"([^"]+)"')
+		def dependencyPattern = java.util.regex.Pattern.compile(
+				'(?m)^\\s*(?:#\\s*include\\s+"([^"]+)"|import\\s+"([^"]+)"\\s*;)')
 		sources.each { source ->
 			def sourceName = source.canonicalPath
 			def targets = graph.computeIfAbsent(sourceName) { new TreeSet<String>() }
-			def matcher = includePattern.matcher(source.getText('UTF-8'))
+			def matcher = dependencyPattern.matcher(source.getText('UTF-8'))
 			while (matcher.find()) {
-				def includeName = matcher.group(1)
-				def candidates = ([new File(source.parentFile, includeName)]
-						+ includeRoots.collect { new File(it, includeName) })
+				def dependencyName = matcher.group(1) ?: matcher.group(2)
+				def candidates = ([new File(source.parentFile, dependencyName)]
+						+ includeRoots.collect { new File(it, dependencyName) })
 						.collect { it.canonicalFile }
 						.findAll { sourcePaths.contains(it) }
 						.unique()
 				if (candidates.empty) {
 					throw new GradleException(
-							"Unresolved shader include ${includeName} from ${source}")
+							"Unresolved shader dependency ${dependencyName} from ${source}")
 				}
 				if (candidates.size() != 1) {
 					throw new GradleException(
-							"Ambiguous shader include ${includeName} from ${source}: ${candidates}")
+							"Ambiguous shader dependency ${dependencyName} from ${source}: ${candidates}")
 				}
 				targets.add(candidates.first().canonicalPath)
 			}
@@ -1536,7 +1539,7 @@ def verifyShaderIncludeGraph = tasks.register('verifyShaderIncludeGraph') {
 				int start = stack.indexOf(source)
 				def cycle = stack.subList(start, stack.size()) + source
 				throw new GradleException(
-						"Shader include cycle: ${cycle.join(' -> ')}")
+						"Shader dependency cycle: ${cycle.join(' -> ')}")
 			}
 			if (state[source] == 2) {
 				return
@@ -1559,6 +1562,32 @@ def verifyShaderIncludeGraph = tasks.register('verifyShaderIncludeGraph') {
 	}
 }
 
+def defaultSlangCompilerProcesses = providers.provider {
+	def processors = Math.max(1, Runtime.runtime.availableProcessors())
+	long gibibyte = 1024L * 1024L * 1024L
+	long physicalMemory = 16L * gibibyte
+	def operatingSystem = java.lang.management.ManagementFactory.operatingSystemMXBean
+	if (operatingSystem instanceof com.sun.management.OperatingSystemMXBean) {
+		physicalMemory = operatingSystem.totalMemorySize
+	}
+	// The largest wavefront entry points can make one slangc process consume several GiB.
+	// Keep enough host memory for Gradle and the desktop while exploiting high-memory machines.
+	def reservedMemory = Math.max(8L * gibibyte, physicalMemory.intdiv(4L))
+	def compilerMemory = Math.max(0L, physicalMemory - reservedMemory)
+	def compilerProcessMemory = (11L * gibibyte).intdiv(2L)
+	def memoryBound = Math.max(1, (int) compilerMemory.intdiv(compilerProcessMemory))
+	return Math.max(1, Math.min(12, Math.min(processors, memoryBound)))
+}
+def slangCompilerProcesses = providers.gradleProperty('primeSlangCompilerWorkers')
+		.map { value ->
+			def count = Integer.parseInt(value)
+			if (count < 1) {
+				throw new GradleException('primeSlangCompilerWorkers must be positive')
+			}
+			return count
+		}
+		.orElse(defaultSlangCompilerProcesses)
+
 def compileSlangTestShaders = tasks.register(
 		'compileSlangTestShaders', CompilePrimeSlangComputeShaders) {
 	dependsOn generateShaderAbi, verifyRoboCutePort, verifyShaderIncludeGraph, 'verifySlangToolchain'
@@ -1570,6 +1599,7 @@ def compileSlangTestShaders = tasks.register(
 			shaderAbiSlangRoot)
 	outputDirectory = compiledSlangTestShaderRoot
 	debugLevel = '-g0'
+	maxCompilerProcesses = slangCompilerProcesses
 	slangCompiler = providers.gradleProperty('primeSlangCompiler')
 			.orElse(resolveVulkanTool('slangc'))
 	spirvValidator = resolveVulkanTool('spirv-val')
@@ -1587,6 +1617,7 @@ def compileSlangShaders = tasks.register(
 	debugLevel = providers.gradleProperty('primeShaderFullDebug')
 			.map { value -> value.toBoolean() ? '-g2' : '-g1' }
 			.orElse('-g1')
+	maxCompilerProcesses = slangCompilerProcesses
 	slangCompiler = providers.gradleProperty('primeSlangCompiler')
 			.orElse(resolveVulkanTool('slangc'))
 	spirvValidator = resolveVulkanTool('spirv-val')

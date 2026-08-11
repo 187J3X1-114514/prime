@@ -3,7 +3,7 @@
 
 #include "core/celestial.slang"
 #include "core/atmosphere_rt.slang"
-#include "core/color_space.slang"
+import "core/color_space.slang";
 
 static const float PRIME_STARMAP_PI = 3.141592653589793;
 

@@ -1,5 +1,5 @@
 #include "core/prime_test_abi.slang"
-#include "core/numerical.slang"
+import "core/numerical.slang";
 
 static const uint PRIME_NUMERICAL_TEST_INPUT_WORDS = 2;
 static const uint PRIME_NUMERICAL_TEST_WITNESS_WORDS = 4;

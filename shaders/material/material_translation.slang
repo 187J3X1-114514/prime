@@ -2,7 +2,7 @@
 #define PRIME_MATERIAL_TRANSLATION_SLANG
 
 #include "material/default_material.slang"
-#include "core/color_space.slang"
+import "core/color_space.slang";
 
 struct PrimeOpticalMaterial
 {

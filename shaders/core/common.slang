@@ -2,8 +2,8 @@
 #define PRIME_COMMON_SLANG
 
 #include "prime_abi.slang"
-#include "core/numerical.slang"
-#include "core/transport_math.slang"
+import "core/numerical.slang";
+import "core/transport_math.slang";
 
 static const uint PRIME_HIT_KIND_MASK = 0xffu;
 static const uint PRIME_SURFACE_MOTION_FLAG = 0x100u;

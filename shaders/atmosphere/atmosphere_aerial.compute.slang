@@ -2,7 +2,7 @@
 #include "core/image_access.slang"
 #include "core/atmosphere_epipolar.slang"
 #include "core/atmosphere_phase.slang"
-#include "core/sun_shadow_hierarchy.slang"
+import "core/sun_shadow_hierarchy.slang";
 
 [[vk::binding(0, 0)]] [[vk::image_format("rgba16f")]] readonly RWTexture2D<float4> transmittanceLow;
 [[vk::binding(1, 0)]] [[vk::image_format("rgba16f")]] readonly RWTexture2D<float4> transmittanceHigh;

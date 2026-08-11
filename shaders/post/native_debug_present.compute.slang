@@ -1,4 +1,4 @@
-#include "core/numerical.slang"
+import "core/numerical.slang";
 
 struct PrimeNativeDebugPresentPushConstants
 {

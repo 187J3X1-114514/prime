@@ -12,7 +12,7 @@
 #include "rt/shadow_payload.slang"
 
 #include "core/sampling.slang"
-#include "core/transparent_checkerboard.slang"
+import "core/transparent_checkerboard.slang";
 #include "bsdf/adapter/bsdf.slang"
 #include "lighting/lights.slang"
 

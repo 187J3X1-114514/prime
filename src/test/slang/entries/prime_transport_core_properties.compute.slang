@@ -1,8 +1,8 @@
 #include "core/prime_test_abi.slang"
 #include "bsdf/core/robocute_common.slang"
 #include "core/light_tree_math.slang"
-#include "core/transparent_checkerboard.slang"
-#include "core/transport_math.slang"
+import "core/transparent_checkerboard.slang";
+import "core/transport_math.slang";
 #include "material/transparent_material.slang"
 #include "realtime/wavefront_medium.slang"
 

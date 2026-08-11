@@ -6,7 +6,7 @@
 #define PRIME_COLOR_DISPLAY_ENCODING_SRGB 1
 #define PRIME_COLOR_DISPLAY_SPACE_REC709_D65 1
 #include "core/prime_test_abi.slang"
-#include "core/numerical.slang"
+import "core/numerical.slang";
 
 static const uint primeAdapterDiagnosticFlags = 0u;
 

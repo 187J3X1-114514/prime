@@ -2,7 +2,7 @@
 #define PRIME_MATERIAL_SLANG
 
 
-#include "core/color_space.slang"
+import "core/color_space.slang";
 #include "material/default_material.slang"
 #include "material/labpbr.slang"
 #include "material/material_translation.slang"

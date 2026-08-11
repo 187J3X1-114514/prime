@@ -1,4 +1,4 @@
-#include "core/sun_shadow_hierarchy.slang"
+import "core/sun_shadow_hierarchy.slang";
 
 struct PrimeSunShadowLeafCase
 {

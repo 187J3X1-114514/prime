@@ -1,7 +1,7 @@
-#include "core/transport_math.slang"
-#include "core/color_space.slang"
-#include "core/oklab.slang"
-#include "core/transparent_checkerboard.slang"
+import "core/transport_math.slang";
+import "core/color_space.slang";
+import "core/oklab.slang";
+import "core/transparent_checkerboard.slang";
 
 [[vk::binding(0, 0)]] StructuredBuffer<float4> inputs;
 [[vk::binding(1, 0)]] RWStructuredBuffer<float4> outputs;

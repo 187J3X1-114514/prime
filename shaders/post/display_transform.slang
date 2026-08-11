@@ -2,8 +2,8 @@
 #define PRIME_DISPLAY_TRANSFORM_SLANG
 
 #include "prime_abi_types.slang"
-#include "core/color_space.slang"
-#include "core/oklab.slang"
+import "core/color_space.slang";
+import "core/oklab.slang";
 
 static const float PRIME_OKLAB_RGB_HEADROOM = 0.99999;
 

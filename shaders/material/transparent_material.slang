@@ -1,7 +1,7 @@
 #ifndef PRIME_TRANSPARENT_MATERIAL_SLANG
 #define PRIME_TRANSPARENT_MATERIAL_SLANG
 
-#include "core/color_space.slang"
+import "core/color_space.slang";
 
 static const float3 PRIME_PURE_WATER_ABSORPTION_M_INV =
         float3(0.2916, 0.04444, 0.010182);

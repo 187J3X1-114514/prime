@@ -15,7 +15,8 @@ final class ParallelPipelineCreationTest {
         assertEquals(0, ParallelPipelineCreation.workerCount(0, 32));
         assertEquals(1, ParallelPipelineCreation.workerCount(1, 32));
         assertEquals(2, ParallelPipelineCreation.workerCount(8, 2));
-        assertEquals(8, ParallelPipelineCreation.workerCount(32, 32));
+        assertEquals(8, ParallelPipelineCreation.workerCount(32, 8));
+        assertEquals(16, ParallelPipelineCreation.workerCount(32, 32));
         assertEquals(1, ParallelPipelineCreation.workerCount(8, 0));
         assertThrows(
                 IllegalArgumentException.class,

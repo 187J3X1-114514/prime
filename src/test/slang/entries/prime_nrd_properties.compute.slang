@@ -1,6 +1,6 @@
 
 #include "core/prime_test_abi.slang"
-#include "core/numerical.slang"
+import "core/numerical.slang";
 #include "core/nrd_common.slang"
 #include "core/nrd_sh.slang"
 

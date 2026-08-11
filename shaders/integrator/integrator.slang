@@ -5,8 +5,8 @@ import glsl;
 
 #include "core/common.slang"
 #include "core/sampling.slang"
-#include "core/queued_psr_math.slang"
-#include "core/transparent_checkerboard.slang"
+import "core/queued_psr_math.slang";
+import "core/transparent_checkerboard.slang";
 #include "core/nrd_common.slang"
 
 // The BSDF adapter's internal hooks predate Slang's explicit per-invocation diagnostic object.

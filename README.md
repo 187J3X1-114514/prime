@@ -138,16 +138,15 @@ Shader Pack 同时用于世界渲染。
 普通玩家应直接下载发行 JAR。只有需要修改代码、验证最新提交或制作自己的构建时，才需要
 下面的开发工具。
 
-构建环境需要 JDK 25、Vulkan SDK 1.4.357、Slang 2026.14.1 `slangc`，以及 SPIR-V Tools 的
-`spirv-val` 和 `spirv-dis`。
+构建环境固定使用 JDK 25 和完整的 Vulkan SDK 1.4.357.0。Slang 与 SPIR-V Tools 均使用该
+SDK 的配套版本，不需要单独安装。
 下载并解压 Prime 源码后，在源码文件夹中打开 PowerShell，按实际安装位置设置路径并运行：
 
 ```powershell
 $env:JAVA_HOME = 'C:\WorkSpace\_tools\temurin-25.0.4\jdk-25.0.4+7'
 $env:VULKAN_SDK = 'C:\VulkanSDK\1.4.357.0'
-$env:PRIME_SLANG = 'C:\WorkSpace\_tools\slang-2026.14.1'
-$env:Path = "$env:JAVA_HOME\bin;$env:VULKAN_SDK\Bin;$env:PRIME_SLANG\bin;$env:Path"
-.\gradlew.bat build -PprimeSlangCompiler="$env:PRIME_SLANG\bin\slangc.exe"
+$env:Path = "$env:JAVA_HOME\bin;$env:VULKAN_SDK\Bin;$env:Path"
+.\gradlew.bat build
 ```
 
 构建成功后，发行 JAR 位于 `build\libs`。应使用没有 `-sources` 后缀的 JAR。环境检查、测试、

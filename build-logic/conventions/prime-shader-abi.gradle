@@ -1212,6 +1212,9 @@ abstract class VerifySlangToolchain extends DefaultTask {
 	abstract Property<String> getExpectedVersion()
 
 	@Input
+	abstract Property<String> getExpectedSpirvToolsVersion()
+
+	@Input
 	abstract Property<String> getSpirvValidator()
 
 	@Input
@@ -1252,6 +1255,22 @@ abstract class VerifySlangToolchain extends DefaultTask {
 		if (!versionPattern.matcher(version).find()) {
 			throw new GradleException(
 					"Prime requires Slang ${expected}, but ${compiler} reported: ${version}")
+		}
+
+		def expectedSpirvTools = expectedSpirvToolsVersion.get()
+		def validator = spirvValidator.get()
+		def validatorVersion = runAndCapture([validator, '--version'])
+		if (!validatorVersion.contains(expectedSpirvTools)) {
+			throw new GradleException(
+					"Prime requires ${expectedSpirvTools}, but ${validator} reported: "
+							+ validatorVersion)
+		}
+		def disassembler = spirvDisassembler.get()
+		def disassemblerVersion = runAndCapture([disassembler, '--version'])
+		if (!disassemblerVersion.contains(expectedSpirvTools)) {
+			throw new GradleException(
+					"Prime requires ${expectedSpirvTools}, but ${disassembler} reported: "
+							+ disassemblerVersion)
 		}
 
 		def output = new File(temporaryDir, 'toolchain_smoke.spv')
@@ -1589,6 +1608,7 @@ def verifySlangToolchain = tasks.register('verifySlangToolchain', VerifySlangToo
 	slangCompiler = providers.gradleProperty('primeSlangCompiler')
 			.orElse(resolveVulkanTool('slangc'))
 	expectedVersion = providers.gradleProperty('primeSlangVersion')
+	expectedSpirvToolsVersion = providers.gradleProperty('primeSpirvToolsVersion')
 	spirvValidator = resolveVulkanTool('spirv-val')
 	spirvDisassembler = resolveVulkanTool('spirv-dis')
 }

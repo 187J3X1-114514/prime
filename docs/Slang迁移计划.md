@@ -21,8 +21,9 @@
 
 ## 工具链契约
 
-- 固定 Slang 2026.14.1。默认使用独立的官方 Slang 发行包，也可通过
-  `-PprimeSlangCompiler=<path>` 指定同版本编译器；Vulkan SDK 1.4.357 提供 SPIR-V Tools；
+- 固定使用完整 Vulkan SDK 1.4.357.0 的配套 Shader 工具链：Slang
+  `2026.13.1-1-g84792eb15` 与 SPIR-V Tools `v2026.3.rc1-0-gb707790a`。工具链升级必须作为
+  独立任务验证，不随普通开发改动漂移；
 - 每个 entry point 独立调用 `slangc`，目标为 `spirv`、profile 为 `glsl_460`、capability
   为 `spirv_1_5`，最终以 `spirv-val --target-env vulkan1.2` 为准；
 - 使用直接 SPIR-V 后端。迁移比较的是最终 SPIR-V ABI 和可执行行为，不把生成 GLSL 作为
@@ -36,8 +37,8 @@
 - descriptor set/binding、push constant offset、specialization constant ID、ray payload
   location 和结构 stride 继续由 SPIR-V 产物测试约束。reflection JSON 只用于诊断；
 - `verifySlangToolchain` 是 `check` 的组成部分，负责版本、编译、SPIR-V 验证和最小 ABI
-  smoke test。CI 从官方 v2026.14.1 release 下载 Linux 包并校验固定 SHA-256；生产产物门禁
-  还要求 SER 仅使用 `SPV_EXT_shader_invocation_reorder`，禁止退回 NV 方言。
+  smoke test。CI 安装完整的官方 Vulkan SDK 1.4.357.0；生产产物门禁还要求 SER 仅使用
+  `SPV_EXT_shader_invocation_reorder`，禁止退回 NV 方言。
 
 工具链依据：[Slang 编译模型](https://docs.shader-slang.org/en/stable/external/slang/docs/user-guide/08-compiling.html)、
 [GLSL 迁移指南](https://docs.shader-slang.org/en/stable/coming-from-glsl.html)、

@@ -27,29 +27,14 @@ jobs:
           cache: gradle
       - name: Make Gradle wrapper executable
         run: chmod +x ./gradlew
-      - name: Set up Vulkan shader toolchain
-        uses: humbletim/setup-vulkan-sdk@c25f41106918cde0bf347e6f201277392b3a9e9d # v1.2.1
+      - name: Set up Vulkan SDK toolchain
+        uses: jakoch/install-vulkan-sdk-action@37effcfa045411f8bfbbda26df2fd1b3bf3436fa # v1
         with:
-          vulkan-query-version: 1.4.357.0
-          vulkan-components: SPIRV-Tools
-          vulkan-use-cache: true
-      - name: Set up Slang shader compiler
-        env:
-          SLANG_VERSION: '2026.14.1'
-          SLANG_SHA256: 9e36aab4be2686885dc0cd4b740fcbab27e50047c2d8187d9403ec2ce82fd1ba
-        run: |
-          archive="$RUNNER_TEMP/slang.zip"
-          root="$RUNNER_TEMP/slang"
-          curl --fail --location --retry 3 \
-            "https://github.com/shader-slang/slang/releases/download/v${SLANG_VERSION}/slang-${SLANG_VERSION}-linux-x86_64-glibc-2.27.zip" \
-            --output "$archive"
-          echo "${SLANG_SHA256}  ${archive}" | sha256sum --check --strict
-          unzip -q "$archive" -d "$root"
-          chmod +x "$root/bin/slangc"
-          echo "$root/bin" >> "$GITHUB_PATH"
-          echo "LD_LIBRARY_PATH=$root/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" >> "$GITHUB_ENV"
+          vulkan_version: 1.4.357.0
+          install_runtime: false
+          cache: true
       - name: Report shader tool versions
-        run: spirv-val --version && slangc -version
+        run: "$VULKAN_SDK/bin/spirv-val" --version && "$VULKAN_SDK/bin/slangc" -version
       - name: Set up headless Vulkan compute
         run: |
           sudo apt-get update

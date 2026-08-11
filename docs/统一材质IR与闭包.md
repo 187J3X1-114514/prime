@@ -12,7 +12,8 @@ Minecraft 表面语义 / LabPBR / 默认值
 
 源格式只在输入适配层出现。命中 ABI、surface relation、闭包编译器和积分器只消费 Prime
 的规范语义；它们不得根据 LabPBR 字节、纹理来源或 roughness 猜测材质类别和离散事件。
-`shaders/robocute_bsdf_*.glsl` 是固定参考移植，Prime 的翻译与特化全部位于其外部。
+`shaders/bsdf/core/robocute_*.slang` 中生产可达的核心声明是固定参考移植，Prime 的翻译与特化
+全部位于其外部。
 
 ## CPU 配方与图元编码
 

@@ -63,7 +63,7 @@ final class ShaderComputeRunnerGpuTest {
             push.flip();
             ByteBuffer output = runner.dispatch(
                     Path.of(
-                            System.getProperty("prime.test.shaderDirectory"),
+                            System.getProperty("prime.test.slangShaderDirectory"),
                             "shader_compute_runner_contract.comp.spv"),
                     input,
                     4 * 4 * Float.BYTES,

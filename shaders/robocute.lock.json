@@ -19,10 +19,11 @@
     "Prime retains its bounded two-entry medium stack instead of RoboCute's nested-priority medium integrator; interface sampling, transport eta and exiting material-frame behavior follow the pinned reference."
   ],
   "files": {
-    "robocute_bsdf_closures.glsl": "7f49af6bb8864a09626f65207d49d8bf7fe083a4c458359634d83a9e14ac25b2",
-    "robocute_bsdf_common.glsl": "4476c53857644edb3407b69cd2123356a7c3f4d24507f8626c061d2b98edd2f8",
-    "robocute_bsdf_fresnel.glsl": "df94e938b3f82446222c41015025e9bc60c25a4f63dfe3b4c806a41bd489dd74",
-    "robocute_bsdf_microfacet.glsl": "7f531d1431839a27e8b2d65c3fcfbcc7178bbe2b0b858efae222ed8c4442fa15",
-    "robocute_bsdf_openpbr.glsl": "fad116cae6532909fe98f2ea8f03546e0b68ba3bde6bc9b1eeadb3127adaa812"
+    "robocute_closures.slang": "d87fc53d5e0c0380874d7c5b042c48595d91c7956a6f891261718c369d6e9131",
+    "robocute_common.slang": "b957b93d355f9d7f5cb6cce948f4ee943831b497a126ea73e7746ab6cd5d26ce",
+    "robocute_fresnel.slang": "11327ca8b155b37caa26fb6ae1bb458d8652a8d8de5668a15bc08963994a0764",
+    "robocute_microfacet.slang": "0e9e694808224bae06663a98a9a841d97a1090bddc633d2e4d445060c6c20ee8",
+    "robocute_openpbr.slang": "51407d3a9589569ceef85491e69753cb360e5d216201a9b707e94a468e6ed729",
+    "robocute_reachable_symbols.txt": "a33e42775070b1df556b4601564585ae3ba070c6ecce5a888f58ce26ff52ce04"
   }
 }

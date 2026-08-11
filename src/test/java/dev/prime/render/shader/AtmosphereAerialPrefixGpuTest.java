@@ -56,7 +56,7 @@ final class AtmosphereAerialPrefixGpuTest {
         input.flip();
 
         Path shader = Path.of(
-                System.getProperty("prime.test.shaderDirectory"),
+                System.getProperty("prime.test.slangShaderDirectory"),
                 "atmosphere_aerial_prefix.comp.spv");
         try (ShaderComputeRunner runner = opened) {
             ByteBuffer output = runner.dispatch(

@@ -1,0 +1,342 @@
+#include "core/image_access.slang"
+
+#include "material/default_material.slang"
+#include "post/fsr_input.slang"
+#include "core/nrd_common.slang"
+#include "prime_nrd_motion_contract.slang"
+
+[[vk::binding(0, 0)]] [[vk::image_format("rgba16f")]] writeonly RWTexture2D<float4> primeMotion;
+[[vk::binding(1, 0)]] [[vk::image_format("r32f")]] RWTexture2D<float4> primeViewZ;
+[[vk::binding(2, 0)]] [[vk::image_format("rgba32f")]] readonly RWTexture2D<float4> primePrimaryPosition;
+[[vk::binding(3, 0)]] [[vk::image_format("rgba16f")]] writeonly RWTexture2D<float4> primeReprojectionError;
+[[vk::binding(4, 0)]] [[vk::image_format("r32f")]] writeonly RWTexture2D<float4> primeFsrDepth;
+[[vk::binding(5, 0)]] [[vk::image_format("rgba16f")]] RWTexture2D<float4> primeNoisyDiffuse;
+[[vk::binding(6, 0)]] [[vk::image_format("rgba16f")]] RWTexture2D<float4> primeNoisySpecular;
+[[vk::binding(7, 0)]] [[vk::image_format("rgb10_a2")]] RWTexture2D<float4> primeNormalRoughness;
+[[vk::binding(8, 0)]] [[vk::image_format("rgba16f")]] RWTexture2D<float4> primeMaterial;
+[[vk::binding(9, 0)]] [[vk::image_format("rgba16f")]] RWTexture2D<float4> primeSpecularMaterial;
+[[vk::binding(10, 0)]] [[vk::image_format("rgba16f")]] RWTexture2D<float4> primeDiffuseDirection;
+[[vk::binding(11, 0)]] [[vk::image_format("rgba16f")]] RWTexture2D<float4> primeSpecularDirection;
+
+[[vk::binding(12, 0)]] [[vk::image_format("rgba16f")]] writeonly RWTexture2D<float4> primeReflectionMotion;
+[[vk::binding(13, 0)]] [[vk::image_format("r32f")]] RWTexture2D<float4> primeReflectionViewZ;
+[[vk::binding(14, 0)]] [[vk::image_format("rgba32f")]] readonly RWTexture2D<float4> primeReflectionPosition;
+[[vk::binding(15, 0)]] [[vk::image_format("rgba16f")]] RWTexture2D<float4> primeReflectionNoisyDiffuse;
+[[vk::binding(16, 0)]] [[vk::image_format("rgba16f")]] RWTexture2D<float4> primeReflectionNoisySpecular;
+[[vk::binding(17, 0)]] [[vk::image_format("rgb10_a2")]] RWTexture2D<float4> primeReflectionNormalRoughness;
+[[vk::binding(18, 0)]] [[vk::image_format("rgba16f")]] RWTexture2D<float4> primeReflectionMaterial;
+[[vk::binding(19, 0)]] [[vk::image_format("rgba16f")]] RWTexture2D<float4> primeReflectionSpecularMaterial;
+[[vk::binding(20, 0)]] [[vk::image_format("rgba16f")]] RWTexture2D<float4> primeReflectionDiffuseDirection;
+[[vk::binding(21, 0)]] [[vk::image_format("rgba16f")]] RWTexture2D<float4> primeReflectionSpecularDirection;
+[[vk::binding(22, 0)]] [[vk::image_format("rgba32f")]] readonly RWTexture2D<float4> primeDisplayPosition;
+[[vk::binding(23, 0)]] [[vk::image_format("rgba16f")]] writeonly RWTexture2D<float4> primeFsrMotion;
+
+static const float PRIME_MOTION_SKY_VIEW_Z = 65504.0;
+static const uint PRIME_DIAGNOSTIC_REPROJECTION_ERROR = 2u;
+
+float3 primeMotionRayDirection(float2 screenUv) {
+    float2 clipXY = screenUv * float2(2.0, -2.0) + float2(-1.0, 1.0);
+    float4 nearPoint = primeMotionPush.currentClipToWorld * float4(clipXY, 1.0, 1.0);
+    float4 farPoint = primeMotionPush.currentClipToWorld * float4(clipXY, 0.0, 1.0);
+    return normalize(farPoint.xyz / farPoint.w - nearPoint.xyz / nearPoint.w);
+}
+
+float2 primeMotionSampleUv(int2 pixel, int2 extent) {
+    return (float2(pixel) + float2(0.5) + primeMotionPush.currentJitterPixels)
+            / float2(extent);
+}
+
+float4 primeLoadMaterial(int2 pixel, bool reflection) {
+    return reflection
+            ? primeImageLoad(primeReflectionMaterial, pixel)
+            : primeImageLoad(primeMaterial, pixel);
+}
+
+float4 primeLoadSpecularMaterial(int2 pixel, bool reflection) {
+    return reflection
+            ? primeImageLoad(primeReflectionSpecularMaterial, pixel)
+            : primeImageLoad(primeSpecularMaterial, pixel);
+}
+
+float4 primeLoadPosition(int2 pixel, bool reflection) {
+    return reflection
+            ? primeReadonlyImageLoad(primeReflectionPosition, pixel)
+            : primeReadonlyImageLoad(primePrimaryPosition, pixel);
+}
+
+float4 primeLoadDiffuse(int2 pixel, bool reflection) {
+    return reflection
+            ? primeImageLoad(primeReflectionNoisyDiffuse, pixel)
+            : primeImageLoad(primeNoisyDiffuse, pixel);
+}
+
+float4 primeLoadSpecular(int2 pixel, bool reflection) {
+    return reflection
+            ? primeImageLoad(primeReflectionNoisySpecular, pixel)
+            : primeImageLoad(primeNoisySpecular, pixel);
+}
+
+float4 primeLoadPackedNormal(int2 pixel, bool reflection) {
+    return reflection
+            ? primeImageLoad(primeReflectionNormalRoughness, pixel)
+            : primeImageLoad(primeNormalRoughness, pixel);
+}
+
+float3 primeLoadDiffuseDirection(int2 pixel, bool reflection) {
+    return reflection
+            ? primeImageLoad(primeReflectionDiffuseDirection, pixel).xyz
+            : primeImageLoad(primeDiffuseDirection, pixel).xyz;
+}
+
+float3 primeLoadSpecularDirection(int2 pixel, bool reflection) {
+    return reflection
+            ? primeImageLoad(primeReflectionSpecularDirection, pixel).xyz
+            : primeImageLoad(primeSpecularDirection, pixel).xyz;
+}
+
+void primeStoreMotion(int2 pixel, bool reflection, float4 value) {
+    if (reflection) primeWriteImageStore(primeReflectionMotion, pixel, value);
+    else primeWriteImageStore(primeMotion, pixel, value);
+}
+
+void primeStoreViewZ(int2 pixel, bool reflection, float value) {
+    if (reflection) primeImageStore(primeReflectionViewZ, pixel, float4(value));
+    else primeImageStore(primeViewZ, pixel, float4(value));
+}
+
+void primeStoreDiffuse(int2 pixel, bool reflection, float4 value) {
+    if (reflection) primeImageStore(primeReflectionNoisyDiffuse, pixel, value);
+    else primeImageStore(primeNoisyDiffuse, pixel, value);
+}
+
+void primeStoreSpecular(int2 pixel, bool reflection, float4 value) {
+    if (reflection) primeImageStore(primeReflectionNoisySpecular, pixel, value);
+    else primeImageStore(primeNoisySpecular, pixel, value);
+}
+
+void primeStoreNormal(int2 pixel, bool reflection, float4 value) {
+    if (reflection) primeImageStore(primeReflectionNormalRoughness, pixel, value);
+    else primeImageStore(primeNormalRoughness, pixel, value);
+}
+
+void primeStoreMaterial(int2 pixel, bool reflection, float4 value) {
+    if (reflection) primeImageStore(primeReflectionMaterial, pixel, value);
+    else primeImageStore(primeMaterial, pixel, value);
+}
+
+void primeStoreSpecularMaterial(int2 pixel, bool reflection, float4 value) {
+    if (reflection) primeImageStore(primeReflectionSpecularMaterial, pixel, value);
+    else primeImageStore(primeSpecularMaterial, pixel, value);
+}
+
+void primeStoreDiffuseDirection(int2 pixel, bool reflection, float4 value) {
+    if (reflection) primeImageStore(primeReflectionDiffuseDirection, pixel, value);
+    else primeImageStore(primeDiffuseDirection, pixel, value);
+}
+
+void primeStoreSpecularDirection(int2 pixel, bool reflection, float4 value) {
+    if (reflection) primeImageStore(primeReflectionSpecularDirection, pixel, value);
+    else primeImageStore(primeSpecularDirection, pixel, value);
+}
+
+void primeClearBranch(int2 pixel, bool reflection) {
+    primeStoreDiffuse(pixel, reflection, float4(0.0));
+    primeStoreSpecular(pixel, reflection, float4(0.0));
+    primeStoreDiffuseDirection(pixel, reflection, float4(0.0));
+    primeStoreSpecularDirection(pixel, reflection, float4(0.0));
+    primeStoreNormal(pixel, reflection, float4(
+            0.5, 0.5, PRIME_DEFAULT_REFERENCE_LINEAR_ROUGHNESS * 0.5 + 0.5, 0.0));
+    primeStoreViewZ(pixel, reflection, PRIME_MOTION_SKY_VIEW_Z);
+    primeStoreMotion(pixel, reflection, float4(0.0));
+    primeStoreMaterial(pixel, reflection, float4(1.0, 1.0, 1.0, -1.0));
+    primeStoreSpecularMaterial(pixel, reflection, float4(1.0, 1.0, 1.0, 0.0));
+}
+
+void primePrepareBranch(
+        int2 pixel,
+        int2 extent,
+        float2 currentSampleUv,
+        float3 cameraForward,
+        bool reflection,
+        bool primaryHasMotion,
+        float3 primaryPreviousPosition) {
+    float4 rawMaterial = primeLoadMaterial(pixel, reflection);
+    float primaryDistance = rawMaterial.a;
+    if (!primeNrdIsFinite(primaryDistance) || primaryDistance < 0.0) {
+        primeClearBranch(pixel, reflection);
+        return;
+    }
+
+    float4 rawPosition = primeLoadPosition(pixel, reflection);
+    float3 position = rawPosition.xyz;
+    bool directional = reflection && rawPosition.w > 0.5;
+    float currentViewZ = directional
+            ? dot(primeMotionRayDirection(currentSampleUv) * primaryDistance, cameraForward)
+            : dot(position, cameraForward);
+    currentViewZ = primeNrdIsFinite(currentViewZ) && currentViewZ > 0.0
+            ? min(currentViewZ, PRIME_MOTION_SKY_VIEW_Z)
+            : PRIME_MOTION_SKY_VIEW_Z;
+
+    // Finish matrix work before loading material and lighting vectors. Position and clip
+    // temporaries then die before demodulation, keeping the two largest live ranges disjoint.
+    float3 reprojectionPosition = !reflection && primaryHasMotion
+            ? primaryPreviousPosition
+            : position;
+    float4 previousClip = primeMotionPush.previousWorldToClip
+            * float4(reprojectionPosition, directional ? 0.0 : 1.0);
+    bool validPreviousClip = abs(previousClip.w) > 1.0e-6
+            && !any(isnan(previousClip)) && !any(isinf(previousClip));
+    float2 previousUv = float2(0.0);
+    if (validPreviousClip) {
+        previousUv = previousClip.xy / previousClip.w
+                * float2(0.5, -0.5) + float2(0.5);
+        primeStoreMotion(pixel, reflection, float4(primeNrdSanitizeMotion(float3(
+                (previousUv - currentSampleUv) * float2(extent),
+                directional ? 0.0 : abs(previousClip.w) - currentViewZ)), 0.0));
+    } else {
+        primeStoreMotion(pixel, reflection, float4(0.0));
+    }
+    if (validPreviousClip
+            && !reflection
+            && primeMotionPush.diagnosticMode == PRIME_DIAGNOSTIC_REPROJECTION_ERROR) {
+        float4 exactPreviousClip = primeMotionPush.previousRenderedWorldToClip
+                * float4(reprojectionPosition, directional ? 0.0 : 1.0);
+        float3 error = float3(1.0);
+        if (abs(exactPreviousClip.w) > 1.0e-6
+                && !any(isnan(exactPreviousClip)) && !any(isinf(exactPreviousClip))) {
+            float2 exactUv = exactPreviousClip.xy / exactPreviousClip.w
+                    * float2(0.5) + float2(0.5);
+            float2 pixels = (previousUv - exactUv) * float2(extent);
+            error = float3(max(pixels.x, 0.0), max(pixels.y, 0.0), 0.0)
+                    + float3(max(-pixels.y, 0.0), max(-pixels.x, 0.0), max(-pixels.x, 0.0));
+            float depthError = directional
+                    ? 0.0
+                    : abs(abs(previousClip.w) - abs(exactPreviousClip.w));
+            error = (error + depthError) * 0.25;
+        }
+        primeWriteImageStore(primeReprojectionError, pixel, float4(clamp(error, 0.0, 1.0), 1.0));
+    }
+
+    float4 rawSpecularMaterial = primeLoadSpecularMaterial(pixel, reflection);
+    float3 normal;
+    float roughness;
+    primeNrdUnpackNormalRoughness(
+            primeLoadPackedNormal(pixel, reflection), normal, roughness);
+    // Raygen owns this private pre-NRD contract: these albedos, hit distances, packed normals and
+    // direction moments are already finite and range-limited. Revalidating them here doubles the
+    // full-screen scalar work and extends every raw vector's lifetime.
+    float3 diffuseAlbedo = rawMaterial.rgb;
+    float3 specularAlbedo = rawSpecularMaterial.rgb;
+    float4 rawDiffuse = primeLoadDiffuse(pixel, reflection);
+    float4 rawSpecular = primeLoadSpecular(pixel, reflection);
+    float diffuseHitT = rawDiffuse.a;
+    float specularHitT = rawSpecular.a;
+    float3 diffuse = primeNrdDemodulateSanitized(rawDiffuse.rgb, diffuseAlbedo);
+    float3 specular = primeNrdDemodulateSanitized(rawSpecular.rgb, specularAlbedo);
+    primeNrdClampSanitizedRadiancePair(diffuse, specular, PRIME_NRD_FP16_MAX);
+    primeStoreDiffuse(pixel, reflection, primeNrdPackSanitizedRadianceAndHitDistance(
+            diffuse,
+            diffuseHitT <= 0.0 ? 0.0
+                    : primeNrdNormalizedSanitizedHitDistance(
+                            diffuseHitT, currentViewZ, 1.0)));
+    float3 diffuseDirection = primeLoadDiffuseDirection(pixel, reflection);
+    primeStoreDiffuseDirection(pixel, reflection, float4(
+            diffuseDirection * primeNrdY(diffuse), 0.0));
+    primeStoreSpecular(pixel, reflection, primeNrdPackSanitizedRadianceAndHitDistance(
+            specular,
+            specularHitT <= 0.0 ? 0.0
+                    : primeNrdNormalizedSanitizedHitDistance(
+                            specularHitT, currentViewZ, roughness)));
+    float3 specularDirection = primeLoadSpecularDirection(pixel, reflection);
+    primeStoreSpecularDirection(pixel, reflection, float4(
+            specularDirection * primeNrdY(specular), 0.0));
+    primeStoreViewZ(pixel, reflection, currentViewZ);
+    primeStoreSpecularMaterial(
+            pixel, reflection, float4(specularAlbedo, rawSpecularMaterial.a));
+}
+
+void primePrepareFsrGuide(
+        int2 pixel,
+        int2 extent,
+        float3 currentPosition,
+        float3 previousPosition,
+        bool hasMotion,
+        float2 currentSampleUv,
+        float3 cameraForward) {
+    if (all(currentPosition == float3(0.0))) {
+        float3 rayDirection = primeMotionRayDirection(currentSampleUv);
+        float4 previousClip = primeMotionPush.previousWorldToClip * float4(rayDirection, 0.0);
+        float2 motion = float2(0.0);
+        if (abs(previousClip.w) > 1.0e-6
+                && !any(isnan(previousClip)) && !any(isinf(previousClip))) {
+            float2 previousUv = previousClip.xy / previousClip.w
+                    * float2(0.5, -0.5) + float2(0.5);
+            motion = primeFsrNormalizedMotion(previousUv, currentSampleUv);
+        }
+        primeWriteImageStore(primeFsrMotion, pixel, float4(motion, 0.0, 0.0));
+        primeWriteImageStore(primeFsrDepth, pixel, float4(0.0));
+        return;
+    }
+
+    float viewZ = primeFsrSurfaceViewZ(currentPosition, cameraForward);
+    primeWriteImageStore(primeFsrDepth, pixel, float4(primeFsrReversedInfiniteDepth(viewZ)));
+    float4 previousClip = primeMotionPush.previousWorldToClip
+            * float4(hasMotion ? previousPosition : currentPosition, 1.0);
+    float2 motion = float2(0.0);
+    if (abs(previousClip.w) > 1.0e-6
+            && !any(isnan(previousClip)) && !any(isinf(previousClip))) {
+        float2 previousUv = previousClip.xy / previousClip.w
+                * float2(0.5, -0.5) + float2(0.5);
+        motion = primeFsrNormalizedMotion(previousUv, currentSampleUv);
+    }
+    primeWriteImageStore(primeFsrMotion, pixel, float4(motion, 0.0, 0.0));
+}
+
+[numthreads(8, 8, 1)]
+void main(uint3 dispatchThreadId : SV_DispatchThreadID, uint groupIndex : SV_GroupIndex) {
+    int2 pixel = int2(dispatchThreadId.xy);
+    int2 extent = primeImageSize(primeViewZ);
+    if (any(pixel >= extent)) return;
+    if (primeMotionPush.diagnosticMode == PRIME_DIAGNOSTIC_REPROJECTION_ERROR) {
+        // Invalid or sky reprojections have no error sample. Overwrite the shared diagnostic
+        // target so switching from raw numerical views cannot expose stale metadata.
+        primeWriteImageStore(primeReprojectionError, pixel, float4(0.0, 0.0, 0.0, 1.0));
+    }
+    float2 currentSampleUv = primeMotionSampleUv(pixel, extent);
+    float4 display = primeReadonlyImageLoad(primeDisplayPosition, pixel);
+    bool displayHasMotion = (asuint(display.w)
+            & PRIME_DISPLAY_MOTION_FLAG) != 0u;
+    float3 currentDisplayPosition = displayHasMotion
+            ? primeReadonlyImageLoad(primePrimaryPosition, pixel).xyz
+            : display.xyz;
+    bool sky = all(currentDisplayPosition == float3(0.0));
+    // Surface branches and the FSR depth guide share the same center ray. Sky only needs its
+    // per-pixel direction, avoiding an otherwise unused matrix reconstruction.
+    float3 cameraForward = sky
+            ? float3(0.0, 0.0, 1.0)
+            : primeMotionRayDirection(float2(0.5));
+    primePrepareBranch(
+            pixel,
+            extent,
+            currentSampleUv,
+            cameraForward,
+            false,
+            displayHasMotion,
+            display.xyz);
+    primePrepareBranch(
+            pixel,
+            extent,
+            currentSampleUv,
+            cameraForward,
+            true,
+            false,
+            float3(0.0));
+    primePrepareFsrGuide(
+            pixel,
+            extent,
+            currentDisplayPosition,
+            display.xyz,
+            displayHasMotion,
+            currentSampleUv,
+            cameraForward);
+}

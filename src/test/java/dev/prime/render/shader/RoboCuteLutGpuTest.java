@@ -45,14 +45,13 @@ final class RoboCuteLutGpuTest {
     void gpuSamplesEveryAuthoritativeTransmissionGgxTexel() throws IOException {
         ByteBuffer input = ShaderTestBuffer.inputs(CASE_COUNT, 1);
         Path shader = Path.of(
-                System.getProperty("prime.test.shaderDirectory"),
+                System.getProperty("prime.test.slangShaderDirectory"),
                 "robocute_lut_roundtrip.comp.spv");
         ByteBuffer output = runner.dispatch(
                 shader,
                 input,
                 Math.multiplyExact(CASE_COUNT, ShaderTestBuffer.WORD_BYTES),
                 CASE_COUNT);
-
         for (int texel = 0; texel < CASE_COUNT; texel++) {
             for (int channel = 0;
                     channel < RoboCuteTestResources.GGX_LUT_CHANNELS;

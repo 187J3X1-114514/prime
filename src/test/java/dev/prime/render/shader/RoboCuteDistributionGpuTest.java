@@ -67,16 +67,18 @@ final class RoboCuteDistributionGpuTest {
     };
 
     private static ShaderComputeRunner runner;
-    private static Path shader;
+    private static Path[] shaders;
 
     @BeforeAll
     static void openRunner() throws IOException, ShaderComputeRunner.UnavailableException {
         try {
             ByteBuffer lut = RoboCuteTestResources.transmissionGgxEnergy();
             runner = RoboCuteTestResources.openRunnerWithTransmissionGgxEnergy(lut);
-            shader = Path.of(
-                    System.getProperty("prime.test.shaderDirectory"),
-                    "robocute_distribution_statistics.comp.spv");
+            shaders = new Path[] {
+                Path.of(
+                        System.getProperty("prime.test.slangShaderDirectory"),
+                        "robocute_distribution_statistics.comp.spv")
+            };
         } catch (ShaderComputeRunner.UnavailableException | LinkageError exception) {
             if (Boolean.getBoolean("prime.shaderTests.required")) {
                 throw new AssertionError(
@@ -96,15 +98,18 @@ final class RoboCuteDistributionGpuTest {
 
     @Test
     void samplingMatchesPdfAndMonteCarloEnergyMatchesQuadrature() throws IOException {
-        for (int index = 0; index < CONFIGURATIONS.length; index++) {
-            verifyConfiguration(CONFIGURATIONS[index], SEED + index * 0x9e37);
+        for (Path shader : shaders) {
+            for (int index = 0; index < CONFIGURATIONS.length; index++) {
+                verifyConfiguration(shader, CONFIGURATIONS[index], SEED + index * 0x9e37);
+            }
         }
     }
 
-    private static void verifyConfiguration(Configuration configuration, int seed)
+    private static void verifyConfiguration(
+            Path shader, Configuration configuration, int seed)
             throws IOException {
-        ByteBuffer sampled = dispatch(configuration, SAMPLE_MODE, SAMPLE_COUNT, seed);
-        ByteBuffer integrated = dispatch(configuration, INTEGRATE_MODE, GRID_COUNT, seed);
+        ByteBuffer sampled = dispatch(shader, configuration, SAMPLE_MODE, SAMPLE_COUNT, seed);
+        ByteBuffer integrated = dispatch(shader, configuration, INTEGRATE_MODE, GRID_COUNT, seed);
         double[] expectedProbability = new double[HISTOGRAM_BINS + 1];
         long[] actualCount = new long[HISTOGRAM_BINS + 1];
         double[] integratedEnergy = new double[3];
@@ -280,7 +285,11 @@ final class RoboCuteDistributionGpuTest {
     }
 
     private static ByteBuffer dispatch(
-            Configuration configuration, int mode, int invocationCount, int seed)
+            Path shader,
+            Configuration configuration,
+            int mode,
+            int invocationCount,
+            int seed)
             throws IOException {
         ByteBuffer input = ShaderTestBuffer.control(invocationCount, 3);
         ShaderTestBuffer.setOutputWords(input, OUTPUT_WORDS);

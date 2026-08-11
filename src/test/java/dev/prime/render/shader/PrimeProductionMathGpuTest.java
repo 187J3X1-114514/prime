@@ -24,6 +24,8 @@ final class PrimeProductionMathGpuTest {
     private static final long FSR_SEED = 0x4653_5203_0104_0001L;
     private static final long AUTO_EXPOSURE_SEED = 0x4558_504F_5355_5245L;
     private static final long QUEUED_PSR_SEED = 0x5053_5208_0000_0001L;
+    private static final long SAMPLING_SEED = 0x5341_4D50_4C49_4E47L;
+    private static final long BSDF_CONTRACT_SEED = 0x4253_4446_434F_5245L;
     private static final int[] SPECIAL_FLOAT_BITS = {
         0x0000_0000,
         0x0000_0001,
@@ -63,12 +65,30 @@ final class PrimeProductionMathGpuTest {
         int inputWords = 6;
         ShaderPropertyBatch.assertProperties(
                 runner,
-                shader("prime_transport_properties.comp.spv"),
+                slangShader("prime_transport_core_properties.comp.spv"),
                 transportCases(kinds, inputWords),
                 CASES_PER_KIND * kinds,
                 inputWords,
                 10,
                 TRANSPORT_SEED);
+    }
+
+    @Test
+    void bsdfAndMediumBoundaryContractsHoldAcrossTheInputDomain() throws IOException {
+        int kinds = 4;
+        int inputWords = 4;
+        int outputWords = 5;
+        int cases = CASES_PER_KIND * kinds;
+        ByteBuffer input = bsdfContractCases(kinds, inputWords);
+        ShaderPropertyBatch.assertProperties(
+                runner,
+                slangShader("prime_bsdf_contract_properties.comp.spv"),
+                input,
+                cases,
+                inputWords,
+                outputWords,
+                BSDF_CONTRACT_SEED);
+
     }
 
     @Test
@@ -78,7 +98,7 @@ final class PrimeProductionMathGpuTest {
         int inputWords = 2;
         ShaderPropertyBatch.assertProperties(
                 runner,
-                shader("prime_celestial_properties.comp.spv"),
+                slangShader("prime_celestial_properties.comp.spv"),
                 celestialCases(kinds, inputWords),
                 CASES_PER_KIND * kinds,
                 inputWords,
@@ -93,7 +113,7 @@ final class PrimeProductionMathGpuTest {
         int inputWords = 3;
         ShaderPropertyBatch.assertProperties(
                 runner,
-                shader("prime_material_properties.comp.spv"),
+                slangShader("prime_material_properties.comp.spv"),
                 materialCases(kinds, inputWords),
                 65_536 * kinds,
                 inputWords,
@@ -107,7 +127,7 @@ final class PrimeProductionMathGpuTest {
         int inputWords = 4;
         ShaderPropertyBatch.assertProperties(
                 runner,
-                shader("prime_nrd_properties.comp.spv"),
+                slangShader("prime_nrd_properties.comp.spv"),
                 nrdCases(kinds, inputWords),
                 CASES_PER_KIND * kinds,
                 inputWords,
@@ -127,7 +147,7 @@ final class PrimeProductionMathGpuTest {
         }
         ShaderPropertyBatch.assertProperties(
                 runner,
-                shader("prime_fsr_input_properties.comp.spv"),
+                slangShader("prime_fsr_input_properties.comp.spv"),
                 input,
                 cases,
                 inputWords,
@@ -142,7 +162,7 @@ final class PrimeProductionMathGpuTest {
         ByteBuffer input = fsrGuideCases(kinds, inputWords);
         ShaderPropertyBatch.assertProperties(
                 runner,
-                shader("prime_fsr_input_properties.comp.spv"),
+                slangShader("prime_fsr_input_properties.comp.spv"),
                 input,
                 CASES_PER_KIND * kinds,
                 inputWords,
@@ -155,8 +175,18 @@ final class PrimeProductionMathGpuTest {
             throws IOException {
         int kinds = 7;
         int inputWords = 2;
-        ByteBuffer input = ShaderTestBuffer.inputs(
-                CASES_PER_KIND * kinds, inputWords);
+        ShaderPropertyBatch.assertProperties(
+                runner,
+                slangShader("prime_auto_exposure_properties.comp.spv"),
+                autoExposureCases(kinds, inputWords),
+                CASES_PER_KIND * kinds,
+                inputWords,
+                4,
+                AUTO_EXPOSURE_SEED);
+    }
+
+    private static ByteBuffer autoExposureCases(int kinds, int inputWords) {
+        ByteBuffer input = ShaderTestBuffer.inputs(CASES_PER_KIND * kinds, inputWords);
         SplittableRandom random =
                 new SplittableRandom(AUTO_EXPOSURE_SEED);
         for (int kind = 0; kind < kinds; kind++) {
@@ -269,14 +299,7 @@ final class PrimeProductionMathGpuTest {
                 }
             }
         }
-        ShaderPropertyBatch.assertProperties(
-                runner,
-                shader("prime_auto_exposure_properties.comp.spv"),
-                input,
-                CASES_PER_KIND * kinds,
-                inputWords,
-                4,
-                AUTO_EXPOSURE_SEED);
+        return input;
     }
 
     @Test
@@ -284,12 +307,75 @@ final class PrimeProductionMathGpuTest {
         int inputWords = 21;
         ShaderPropertyBatch.assertProperties(
                 runner,
-                shader("prime_queued_psr_properties.comp.spv"),
+                slangShader("prime_queued_psr_properties.comp.spv"),
                 queuedPsrCases(inputWords),
                 CASES_PER_KIND,
                 inputWords,
                 6,
                 QUEUED_PSR_SEED);
+    }
+
+    private static ByteBuffer bsdfContractCases(int kinds, int words) {
+        ByteBuffer input = ShaderTestBuffer.inputs(CASES_PER_KIND * kinds, words);
+        SplittableRandom random = new SplittableRandom(BSDF_CONTRACT_SEED);
+        for (int kind = 0; kind < kinds; kind++) {
+            for (int local = 0; local < CASES_PER_KIND; local++) {
+                int index = kind * CASES_PER_KIND + local;
+                putInt(input, index, words, 0, 0, kind);
+                if (kind == 0) {
+                    putInt(input, index, words, 0, 1, random.nextInt());
+                } else if (kind == 1) {
+                    putInt(input, index, words, 0, 1, local & 7);
+                    putInt(input, index, words, 0, 2, random.nextInt());
+                } else if (kind == 2) {
+                    float first = contractFloat(random, local, 0);
+                    float second = contractFloat(random, local, 1);
+                    float third = contractFloat(random, local, 2);
+                    float pdf = contractFloat(random, local, 3);
+                    putVec4(input, index, words, 1, first, second, third, pdf);
+                } else {
+                    float[] direction = randomUnitVector(random);
+                    float red = random.nextFloat() * 8.0F;
+                    float green = random.nextFloat() * 8.0F;
+                    float blue = random.nextFloat() * 8.0F;
+                    float pdf = 0.0001F + random.nextFloat() * 8.0F;
+                    float relativeEta = 0.25F + random.nextFloat() * 3.75F;
+                    int eventFlags = 1 << (local % 5);
+                    switch (local & 7) {
+                        case 1 -> direction = new float[] {0.0F, 0.0F, 0.0F};
+                        case 2 -> direction[0] *= 2.0F;
+                        case 3 -> direction[1] = Float.NaN;
+                        case 4 -> pdf = 0.0F;
+                        case 5 -> red = -Math.nextUp(0.0F);
+                        case 6 -> relativeEta = Float.POSITIVE_INFINITY;
+                        case 7 -> eventFlags = 0;
+                        default -> {
+                        }
+                    }
+                    putInt(input, index, words, 0, 1, eventFlags);
+                    putVec4(
+                            input,
+                            index,
+                            words,
+                            1,
+                            direction[0],
+                            direction[1],
+                            direction[2],
+                            pdf);
+                    putVec4(input, index, words, 2, red, green, blue, relativeEta);
+                }
+            }
+        }
+        return input;
+    }
+
+    private static float contractFloat(
+            SplittableRandom random, int local, int component) {
+        int special = local + component * 3;
+        if (special < SPECIAL_FLOAT_BITS.length) {
+            return Float.intBitsToFloat(SPECIAL_FLOAT_BITS[special]);
+        }
+        return (random.nextFloat() * 2.0F - 0.5F) * powerOfTwo(random.nextInt(-12, 13));
     }
 
     private static ByteBuffer transportCases(int kinds, int words) {
@@ -1046,8 +1132,75 @@ final class PrimeProductionMathGpuTest {
         return input;
     }
 
-    private static Path shader(String name) {
-        return Path.of(System.getProperty("prime.test.shaderDirectory"), name);
+    @Test
+    void samplingIsDeterministicAndProducesUnitIntervalValues() throws IOException {
+        int cases = 1 << 15;
+        int inputWords = 2;
+        int outputWords = 3;
+        ByteBuffer input = ShaderTestBuffer.inputs(cases, inputWords);
+        ShaderTestBuffer.setOutputWords(input, outputWords);
+        SplittableRandom random = new SplittableRandom(SAMPLING_SEED);
+        for (int index = 0; index < cases; index++) {
+            for (int component = 0; component < 4; component++) {
+                putInt(input, index, inputWords, 0, component, random.nextInt());
+            }
+            putInt(input, index, inputWords, 1, 0, random.nextInt());
+            putInt(input, index, inputWords, 1, 1, random.nextInt());
+            putInt(input, index, inputWords, 1, 2, random.nextInt(6));
+            putInt(input, index, inputWords, 1, 3, random.nextInt(4));
+        }
+        int outputBytes = Math.multiplyExact(
+                Math.multiplyExact(cases, outputWords),
+                ShaderTestBuffer.WORD_BYTES);
+        Path shader = slangShader("prime_sampling_parity.comp.spv");
+        ByteBuffer first = runner.dispatch(
+                shader,
+                input,
+                outputBytes,
+                cases);
+        ByteBuffer second = runner.dispatch(
+                slangShader("prime_sampling_parity.comp.spv"),
+                input,
+                outputBytes,
+                cases);
+        for (int index = 0; index < cases; index++) {
+            for (int component = 0; component < 4; component++) {
+                int expected = ShaderTestBuffer.getInt(
+                        first, index, outputWords, 0, component);
+                int actual = ShaderTestBuffer.getInt(
+                        second, index, outputWords, 0, component);
+                if (actual != expected) {
+                    throw new AssertionError(
+                            "Sampling hash is not deterministic at case=" + index
+                                    + " component=" + component
+                                    + " first=0x" + Integer.toHexString(expected)
+                                    + " second=0x" + Integer.toHexString(actual));
+                }
+            }
+            for (int word = 1; word < outputWords; word++) {
+                for (int component = 0; component < 4; component++) {
+                    float expected = ShaderTestBuffer.getFloat(
+                            first, index, outputWords, word, component);
+                    float actual = ShaderTestBuffer.getFloat(
+                            second, index, outputWords, word, component);
+                    if (!Float.isFinite(actual)
+                            || actual < 0.0F
+                            || actual >= 1.0F
+                            || Math.abs(actual - expected) > 1.0e-7F) {
+                        throw new AssertionError(
+                                "Sampling value is invalid or nondeterministic at case=" + index
+                                        + " word=" + word
+                                        + " component=" + component
+                                        + " first=" + expected
+                                        + " second=" + actual);
+                    }
+                }
+            }
+        }
+    }
+
+    private static Path slangShader(String name) {
+        return Path.of(System.getProperty("prime.test.slangShaderDirectory"), name);
     }
 
     private static float positiveFloat(SplittableRandom random, int minimumExponent, int maximumExponent) {

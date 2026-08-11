@@ -93,7 +93,7 @@ final class RoboCuteCoreGpuTest {
     void commonFresnelAndMicrofacetPropertiesHoldAcrossGpuSweep() throws IOException {
         ByteBuffer input = createCases();
         Path shader = Path.of(
-                System.getProperty("prime.test.shaderDirectory"),
+                System.getProperty("prime.test.slangShaderDirectory"),
                 "robocute_core_properties.comp.spv");
         ShaderPropertyBatch.assertProperties(
                 runner,

@@ -82,7 +82,7 @@ final class RoboCuteClosureGpuTest {
             throws IOException {
         ByteBuffer input = createCases();
         Path shader = Path.of(
-                System.getProperty("prime.test.shaderDirectory"),
+                System.getProperty("prime.test.slangShaderDirectory"),
                 "robocute_closure_properties.comp.spv");
         ShaderPropertyBatch.assertProperties(
                 runner,
@@ -98,7 +98,7 @@ final class RoboCuteClosureGpuTest {
     void parallelDielectricInterfacesPreserveReciprocalEtaDirectionAndTir()
             throws IOException {
         Path shader = Path.of(
-                System.getProperty("prime.test.shaderDirectory"),
+                System.getProperty("prime.test.slangShaderDirectory"),
                 "prime_dielectric_slab_properties.comp.spv");
         ShaderPropertyBatch.assertProperties(
                 runner,

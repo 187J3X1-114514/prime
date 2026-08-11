@@ -1,5 +1,8 @@
 # RoboCute BSDF 参考与透射契约
 
+> 本文中的 GLSL 文件名和 `compileShaders` 任务用于记录迁移前的历史调查。生产着色器现已
+> 完全迁移到 Slang；当前保护边界见仓库根目录 `AGENTS.md`。
+
 ## 当前状态
 
 Prime 锁定 RoboCute commit

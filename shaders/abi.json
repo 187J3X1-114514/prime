@@ -30,7 +30,8 @@
         { "name": "opaqueMacroTriangleBase", "type": "uint", "offset": 68 },
         { "name": "cutoutMacroTriangleBase", "type": "uint", "offset": 72 },
         { "name": "transmissiveMacroTriangleBase", "type": "uint", "offset": 76 },
-        { "name": "surfaceRelationAddress", "type": "uint64_t", "offset": 80 }
+        { "name": "surfaceRelationAddress", "type": "uint64_t", "offset": 80 },
+        { "name": "reservedPadding", "type": "uvec2", "offset": 88 }
       ]
     },
     "lightNode": {

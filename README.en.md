@@ -169,15 +169,16 @@ diagnostics and a link to the GitHub repository.
 Regular players should download a release JAR. The tools below are needed only to modify the code,
 test the latest commit, or create a custom build.
 
-The build requires JDK 25, Vulkan SDK 1.4.350, and the SDK's `glslangValidator`, `spirv-opt`, and
-`spirv-val`. After downloading and extracting the Prime source, open PowerShell in the source
-directory, adjust these paths to the installed locations, and run:
+The build requires JDK 25, Vulkan SDK 1.4.357, Slang 2026.14.1 `slangc`, and the SPIR-V Tools
+`spirv-val` and `spirv-dis`. After downloading and extracting the Prime source, open PowerShell in
+the source directory, adjust these paths to the installed locations, and run:
 
 ```powershell
-$env:JAVA_HOME = 'C:\Program Files\Java\jdk-25.0.2'
-$env:VULKAN_SDK = 'C:\VulkanSDK\1.4.350.0'
-$env:Path = "$env:JAVA_HOME\bin;$env:VULKAN_SDK\Bin;$env:Path"
-.\gradlew.bat build
+$env:JAVA_HOME = 'C:\WorkSpace\_tools\temurin-25.0.4\jdk-25.0.4+7'
+$env:VULKAN_SDK = 'C:\VulkanSDK\1.4.357.0'
+$env:PRIME_SLANG = 'C:\WorkSpace\_tools\slang-2026.14.1'
+$env:Path = "$env:JAVA_HOME\bin;$env:VULKAN_SDK\Bin;$env:PRIME_SLANG\bin;$env:Path"
+.\gradlew.bat build -PprimeSlangCompiler="$env:PRIME_SLANG\bin\slangc.exe"
 ```
 
 After a successful build, the release JAR is in `build\libs`. Use the JAR without the `-sources`

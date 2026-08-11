@@ -174,7 +174,7 @@ final class EmissionDistribution {
     }
 
     static float linearSrgbToRec2020Maximum(float red, float green, float blue) {
-        // Keep these coefficients identical to primeLinearSrgbToLinearRec2020 in color_space.glsl.
+        // Keep these coefficients identical to primeLinearSrgbToLinearRec2020 in core/color_space.slang.
         float rec2020Red = 0.6274039F * red + 0.3292830F * green + 0.0433131F * blue;
         float rec2020Green = 0.0690973F * red + 0.9195404F * green + 0.0113623F * blue;
         float rec2020Blue = 0.0163914F * red + 0.0880133F * green + 0.8955953F * blue;

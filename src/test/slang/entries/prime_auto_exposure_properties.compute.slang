@@ -1,0 +1,130 @@
+#include "core/prime_test_abi.slang"
+#include "core/auto_exposure.slang"
+#include "post/display_transform.slang"
+
+static const uint PRIME_AUTO_EXPOSURE_INPUT_WORDS = 2;
+static const uint PRIME_AUTO_EXPOSURE_WITNESS_WORDS = 4;
+
+[numthreads(64, 1, 1)]
+void main(uint3 dispatchThreadId : SV_DispatchThreadID)
+{
+    uint caseIndex;
+    if (!primeTestBegin(dispatchThreadId, caseIndex)) return;
+    uint inputOffset =
+            primeTestInputOffset(caseIndex, PRIME_AUTO_EXPOSURE_INPUT_WORDS);
+    uint4 control = primeTestInput[inputOffset];
+    float4 values = asfloat(primeTestInput[inputOffset + 1]);
+    uint kind = control.x;
+    uint mask = 0;
+    float2 actual = float2(0.0);
+    float2 expected = float2(0.0);
+
+    if (kind == 0) {
+        actual.x = primeAutoExposureTargetEv(
+                values.x, values.y, values.z, values.w);
+        float range = values.z - values.y;
+        float keyBiasEv = range > 0.0
+                ? 2.0 * (2.0 * values.x - values.y - values.z) / max(range, 2.0)
+                : 0.0;
+        expected.x = values.w * clamp(
+                log2(0.16) - values.x + keyBiasEv,
+                -16.0,
+                16.0);
+        if (actual.x < -16.0 || actual.x > 16.0) {
+            mask |= PRIME_TEST_FAILURE_RANGE;
+        }
+        if (!primeTestClose(actual.x, expected.x, 1.0e-6, 1.0e-6)) {
+            mask |= PRIME_TEST_FAILURE_IDENTITY;
+        }
+    } else if (kind == 1) {
+        float t90 = values.y < values.x ? 0.5 : 2.0;
+        actual.x = primeAutoExposureAdapt(values.x, values.y, t90);
+        expected.x = values.y + (values.x - values.y) * 0.1;
+        if (!primeTestClose(actual.x, expected.x, 2.0e-6, 2.0e-6)) {
+            mask |= PRIME_TEST_FAILURE_STATE;
+        }
+    } else if (kind == 2) {
+        actual.x = primeAutoExposureAlbedoScale(float3(values.x), values.y);
+        float fullScale = 0.18 / max(clamp(values.x, 0.0, 1.0), 0.02);
+        expected.x = lerp(1.0, fullScale, clamp(values.y, 0.0, 1.0));
+        if (actual.x < 0.179999 || actual.x > 9.00001) {
+            mask |= PRIME_TEST_FAILURE_RANGE;
+        }
+        if (!primeTestClose(actual.x, expected.x, 2.0e-6, 2.0e-6)) {
+            mask |= PRIME_TEST_FAILURE_IDENTITY;
+        }
+    } else if (kind == 3) {
+        uint materialClass = uint(clamp(round(values.x), 0.0, 3.0));
+        actual.x = primeAutoExposureMaterialConfidence(materialClass, values.y);
+        bool diffuseSurface = materialClass == 0 || materialClass == 3;
+        expected.x = diffuseSurface && values.y >= 0.0 ? 1.0 : 0.0;
+        if (!primeTestClose(actual.x, expected.x, 1.0e-6, 1.0e-6)) {
+            mask |= PRIME_TEST_FAILURE_IDENTITY;
+        }
+    } else if (kind == 4) {
+        actual.x = primeAutoExposureSceneKeyBiasEv(values.x, values.y, values.z);
+        float range = values.z - values.y;
+        expected.x = range > 0.0
+                ? 2.0 * (2.0 * values.x - values.y - values.z) / max(range, 2.0)
+                : 0.0;
+        if (actual.x < -2.00001 || actual.x > 2.00001) {
+            mask |= PRIME_TEST_FAILURE_RANGE;
+        }
+        if (!primeTestClose(actual.x, expected.x, 1.0e-6, 1.0e-6)) {
+            mask |= PRIME_TEST_FAILURE_IDENTITY;
+        }
+    } else if (kind == 5) {
+        float exposure = exp2(values.w);
+        actual.x = primeAutoExposureBrightness(values.xyz);
+        actual.y = primeAutoExposureBrightness(values.xyz * exposure);
+        expected.x = actual.x * exposure;
+        expected.y = dot(
+                max(values.xyz, float3(0.0)),
+                float3(0.2627, 0.6780, 0.0593));
+        if (actual.x < 0.0 || actual.y < 0.0) {
+            mask |= PRIME_TEST_FAILURE_RANGE;
+        }
+        if (!primeTestClose(actual.x, expected.y, 2.0e-6, 2.0e-6)
+                || !primeTestClose(actual.y, expected.x, 2.0e-5, 2.0e-6)) {
+            mask |= PRIME_TEST_FAILURE_IDENTITY;
+        }
+    } else if (kind == 6) {
+        float middleGrayLightness = pow(0.18, 1.0 / 3.0);
+        actual.x = primeOklabMapLightness(
+                middleGrayLightness, values.x, values.y, values.w);
+        actual.y = primeOklabMapLightness(
+                values.z, values.x, values.y, values.w);
+        expected.x = middleGrayLightness;
+        if (!primeTestClose(actual.x, expected.x, 2.0e-5, 2.0e-5)) {
+            mask |= PRIME_TEST_FAILURE_IDENTITY;
+        }
+        if (actual.y < 0.0 || actual.y > pow(values.x, 1.0 / 3.0)) {
+            mask |= PRIME_TEST_FAILURE_RANGE;
+        }
+        if (values.y == 0.5) {
+            float scale = values.x / (values.x - 0.18);
+            float x = (scale * scale - 1.0) / 0.18
+                    * values.z * values.z * values.z;
+            float inverseRoot = rsqrt(1.0 + x);
+            expected.y = pow(
+                    values.x * x * inverseRoot * inverseRoot
+                            / (1.0 + inverseRoot),
+                    1.0 / 3.0);
+            if (!primeTestClose(actual.y, expected.y, 2.0e-5, 2.0e-5)) {
+                mask |= PRIME_TEST_FAILURE_STATE;
+            }
+        }
+    } else {
+        mask |= PRIME_TEST_FAILURE_EVENT;
+    }
+    mask |= primeTestClassify(actual);
+
+    uint outputWords = primeTestOutputWords();
+    uint outputOffset = primeTestOutputOffset(caseIndex, outputWords);
+    primeTestOutput[outputOffset] = uint4(mask, kind, caseIndex, 0);
+    if (outputWords >= PRIME_AUTO_EXPOSURE_WITNESS_WORDS) {
+        primeTestOutput[outputOffset + 1] = control;
+        primeTestOutput[outputOffset + 2] = asuint(values);
+        primeTestOutput[outputOffset + 3] = asuint(float4(actual, expected));
+    }
+}

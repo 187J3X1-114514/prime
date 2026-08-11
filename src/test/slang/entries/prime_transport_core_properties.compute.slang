@@ -1,0 +1,692 @@
+#include "core/prime_test_abi.slang"
+#include "bsdf/core/robocute_common.slang"
+#include "core/light_tree_math.slang"
+#include "core/transparent_checkerboard.slang"
+#include "core/transport_math.slang"
+#include "material/transparent_material.slang"
+#include "realtime/wavefront_medium.slang"
+
+static const uint PRIME_TRANSPORT_INPUT_WORDS = 6;
+static const uint PRIME_TRANSPORT_WITNESS_WORDS = 10;
+
+struct PrimeTransportResult
+{
+    uint mask;
+    float4 first;
+    float4 second;
+    float4 third;
+};
+
+void primeTransportClassify(inout uint mask, float value)
+{
+    mask |= primeTestClassify(value);
+}
+
+void primeTransportClassify(inout uint mask, float3 value)
+{
+    mask |= primeTestClassify(value);
+}
+
+void primeCheckProduct(
+        inout PrimeTransportResult result, float3 first, float3 second, float denominator)
+{
+    float3 value = primeProductOver(first, second, denominator);
+    float3 rescaled = primeProductOver(first, second * 2.0, denominator * 2.0);
+    float3 identity = primeProductOver(first, float3(denominator), denominator);
+    primeTransportClassify(result.mask, value);
+    if (any(value < float3(0.0))) result.mask |= PRIME_TEST_FAILURE_RANGE;
+    if (!primeTestClose(value, rescaled, 0.0, 2.0e-6)) {
+        result.mask |= PRIME_TEST_FAILURE_IDENTITY;
+    }
+    if (!primeTestClose(first, identity, 0.0, 2.0e-6)) {
+        result.mask |= PRIME_TEST_FAILURE_IDENTITY;
+    }
+    result.first = float4(value, denominator);
+    result.second = float4(rescaled, 0.0);
+    result.third = float4(identity, 0.0);
+}
+
+void primeCheckMis(
+        inout PrimeTransportResult result, float firstPdf, float secondPdf, float scale)
+{
+    float first = primePowerHeuristicValue(firstPdf, secondPdf);
+    float second = primePowerHeuristicValue(secondPdf, firstPdf);
+    float scaled = primePowerHeuristicValue(firstPdf * scale, secondPdf * scale);
+    float overPdf = primePowerHeuristicOverPdfValue(firstPdf, secondPdf);
+    primeTransportClassify(result.mask, float3(first, second, scaled));
+    primeTransportClassify(result.mask, overPdf);
+    if (first < 0.0 || first > 1.0 || second < 0.0 || second > 1.0 || overPdf < 0.0) {
+        result.mask |= PRIME_TEST_FAILURE_RANGE;
+    }
+    if (!primeTestClose(first + second, 1.0, 2.0e-6, 2.0e-6)
+            || !primeTestClose(first, scaled, 2.0e-6, 2.0e-6)
+            || !primeTestClose(first, overPdf * firstPdf, 2.0e-6, 2.0e-6)) {
+        result.mask |= PRIME_TEST_FAILURE_IDENTITY;
+    }
+    result.first = float4(first, second, scaled, overPdf);
+}
+
+void primeCheckAreaHitMis(
+        inout PrimeTransportResult result,
+        bool previousUsedAreaNee,
+        bool previousCannotUseMis,
+        float bsdfPdf,
+        float lightPdf)
+{
+    float value = primeAreaHitMisWeightValue(
+            previousUsedAreaNee, previousCannotUseMis, bsdfPdf, lightPdf);
+    float expected = previousUsedAreaNee && !previousCannotUseMis
+            ? primePowerHeuristicValue(bsdfPdf, lightPdf)
+            : 1.0;
+    primeTransportClassify(result.mask, value);
+    if (value < 0.0 || value > 1.0 || asuint(value) != asuint(expected)) {
+        result.mask |= PRIME_TEST_FAILURE_IDENTITY;
+    }
+    result.first = float4(value, expected, bsdfPdf, lightPdf);
+}
+
+void primeCheckTransmittance(
+        inout PrimeTransportResult result, float3 extinction, float distance)
+{
+    float3 full = primeSegmentTransmittance(extinction, distance);
+    float3 halfDistance = primeSegmentTransmittance(extinction, distance * 0.5);
+    float3 later = primeSegmentTransmittance(extinction, distance + 1.0);
+    float3 identity = primeSegmentTransmittance(extinction, 0.0);
+    primeTransportClassify(result.mask, full);
+    primeTransportClassify(result.mask, halfDistance);
+    if (any(full < float3(0.0)) || any(full > float3(1.0))) {
+        result.mask |= PRIME_TEST_FAILURE_RANGE;
+    }
+    if (any(later > full)
+            || !primeTestClose(identity, float3(1.0), 0.0, 0.0)
+            || !primeTestClose(full, halfDistance * halfDistance, 2.0e-6, 2.0e-5)) {
+        result.mask |= PRIME_TEST_FAILURE_IDENTITY;
+    }
+    result.first = float4(full, distance);
+    result.second = float4(halfDistance, 0.0);
+    result.third = float4(later, 0.0);
+}
+
+void primeCheckRoulette(
+        inout PrimeTransportResult result,
+        float3 throughput,
+        float etaScale,
+        float sampleValue)
+{
+    float survival = primeRussianRouletteSurvival(throughput, etaScale);
+    float expectedSurvival = min(max(
+            max(throughput.r, max(throughput.g, throughput.b)) * etaScale,
+            0.0), 1.0);
+    uint packedEtaScale = primePackWavefrontEtaScale(etaScale);
+    float queuedEtaScale = primeUnpackWavefrontEtaScale(packedEtaScale);
+    primeTransportClassify(result.mask, survival);
+    primeTransportClassify(result.mask, queuedEtaScale);
+    if (survival < 0.0 || survival > 1.0
+            || !primeTestClose(survival, expectedSurvival, 0.0, 0.0)
+            || !primeTestClose(queuedEtaScale, etaScale, 0.0, 6.0e-4)
+            || (packedEtaScale & 0xffff0000) != 0
+            || primeRussianRouletteApplies(0, 1)
+            || !primeRussianRouletteApplies(1, 1)
+            || !primeRussianRouletteApplies(2, 1)) {
+        result.mask |= PRIME_TEST_FAILURE_RANGE;
+    }
+    if (survival > 0.0) {
+        float3 reweighted = primeRussianRouletteReweight(throughput, survival);
+        primeTransportClassify(result.mask, reweighted);
+        if (any(reweighted < float3(0.0))
+                || !primeTestClose(throughput, reweighted * survival, 1.0e-7, 2.0e-6)) {
+            result.mask |= PRIME_TEST_FAILURE_IDENTITY;
+        }
+    }
+    bool survives = sampleValue < survival;
+    if (survives != (sampleValue < primeRussianRouletteSurvival(throughput, etaScale))) {
+        result.mask |= PRIME_TEST_FAILURE_EVENT;
+    }
+    result.first = float4(throughput, survival);
+    result.second = float4(etaScale, queuedEtaScale, sampleValue, expectedSurvival);
+}
+
+void primeCheckOfflineRoulette(
+        inout PrimeTransportResult result,
+        float3 throughput,
+        float etaScale,
+        float relativeEta)
+{
+    float transmittedScale = primeEtaScaleAfterScatter(etaScale, relativeEta, true);
+    float reflectedScale = primeEtaScaleAfterScatter(etaScale, relativeEta, false);
+    float restoredScale = primeEtaScaleAfterScatter(
+            transmittedScale, 1.0 / relativeEta, true);
+    float metric = primeRussianRouletteMetric(throughput, etaScale);
+    float survival = primeOfflineRussianRouletteSurvival(throughput, etaScale);
+    float expectedMetric = max(throughput.r, max(throughput.g, throughput.b)) * etaScale;
+    float expectedSurvival = min(sqrt(max(expectedMetric, 0.0)), 1.0);
+    primeTransportClassify(result.mask, float3(transmittedScale, restoredScale, survival));
+    if (survival < 0.0 || survival > 1.0
+            || transmittedScale < 0.0 || restoredScale < 0.0
+            || !primeTestClose(reflectedScale, etaScale, 0.0, 0.0)
+            || !primeTestClose(restoredScale, etaScale, 2.0e-6, 2.0e-6)
+            || !primeTestClose(metric, expectedMetric, 0.0, 0.0)
+            || !primeTestClose(survival, expectedSurvival, 0.0, 0.0)) {
+        result.mask |= PRIME_TEST_FAILURE_IDENTITY;
+    }
+    if (survival > 0.0) {
+        float3 reweighted = primeRussianRouletteReweight(throughput, survival);
+        primeTransportClassify(result.mask, reweighted);
+        if (!primeTestClose(throughput, reweighted * survival, 1.0e-7, 2.0e-6)) {
+            result.mask |= PRIME_TEST_FAILURE_IDENTITY;
+        }
+    }
+    result.first = float4(transmittedScale, restoredScale, metric, survival);
+    result.second = float4(throughput, etaScale);
+    result.third = float4(relativeEta, expectedMetric, expectedSurvival, 0.0);
+}
+
+void primeCheckAreaPdf(
+        inout PrimeTransportResult result,
+        float areaPdf,
+        float distanceSquared,
+        float cosine)
+{
+    float value = primeAreaSolidAnglePdfValue(areaPdf, distanceSquared, cosine);
+    float rescaled = primeAreaSolidAnglePdfValue(
+            areaPdf * 0.5, distanceSquared * 2.0, cosine);
+    primeTransportClassify(result.mask, value);
+    if (value < 0.0) result.mask |= PRIME_TEST_FAILURE_RANGE;
+    if (!primeTestClose(value, rescaled, 0.0, 2.0e-6)) {
+        result.mask |= PRIME_TEST_FAILURE_IDENTITY;
+    }
+    result.first = float4(value, rescaled, areaPdf, cosine);
+}
+
+void primeCheckGlassVolume(
+        inout PrimeTransportResult result, float3 baseColor, float opacity)
+{
+    float3 transmittance = primeGlassVolumeTransmittance(baseColor, opacity);
+    float3 lowCoverage = primeGlassVolumeTransmittance(baseColor, 0.0);
+    float3 fullCoverage = primeGlassVolumeTransmittance(baseColor, 1.0);
+    float3 linearSrgb = clamp(
+            primeLinearRec2020ToLinearBt709(baseColor), float3(0.0), float3(1.0));
+    float3 encodedSrgb = primeEncodeSrgb(linearSrgb);
+    float coverage = clamp(opacity, 0.0, 1.0);
+    float3 expected = clamp(
+            primeLinearSrgbToLinearRec2020(
+                    primeDecodeSrgb(lerp(float3(1.0), encodedSrgb, coverage))),
+            float3(0.0),
+            float3(1.0));
+    float3 fullExpected = clamp(
+            primeLinearSrgbToLinearRec2020(linearSrgb), float3(0.0), float3(1.0));
+    float3 extinction = primeGlassVolumeExtinction(baseColor, opacity);
+    float3 shadowExtinction = primeGlassShadowExtinction(baseColor, opacity);
+    bool stained = primeGlassReferenceIsStained(opacity);
+    bool rough = primeGlassTexelIsRough(opacity, false);
+    bool seamlessRough = primeGlassTexelIsRough(opacity, true);
+    float3 expectedShadowExtinction = stained
+            ? primeGlassVolumeExtinction(
+                    baseColor, PRIME_STAINED_GLASS_ABSORPTION_OPACITY)
+            : float3(0.0);
+    float3 oneMetre = exp(-extinction);
+    float3 twoMetres = exp(-extinction * 2.0);
+    float3 encodedRoundTrip = primeEncodeSrgb(clamp(
+            primeLinearRec2020ToLinearBt709(transmittance),
+            float3(0.0),
+            float3(1.0)));
+    primeTransportClassify(result.mask, transmittance);
+    primeTransportClassify(result.mask, extinction);
+    primeTransportClassify(result.mask, shadowExtinction);
+    primeTransportClassify(result.mask, twoMetres);
+    if (any(transmittance < float3(0.0))
+            || any(transmittance > float3(1.0))
+            || any(extinction < float3(0.0))
+            || !primeTestClose(lowCoverage, float3(1.0), 2.0e-6, 2.0e-6)
+            || !primeTestClose(fullCoverage, fullExpected, 2.0e-6, 2.0e-6)
+            || !primeTestClose(transmittance, expected, 2.0e-6, 2.0e-6)
+            || !primeTestClose(
+                    extinction,
+                    -log(max(float3(1.0e-3), transmittance)),
+                    2.0e-6,
+                    2.0e-6)
+            || !primeTestClose(shadowExtinction, expectedShadowExtinction, 0.0, 0.0)
+            || stained != (opacity >= PRIME_GLASS_STAINED_REFERENCE_THRESHOLD)
+            || rough != (opacity > PRIME_GLASS_ROUGH_OPACITY_THRESHOLD)
+            || seamlessRough
+            || !primeTestClose(oneMetre, transmittance, 2.0e-6, 2.0e-6)
+            || !primeTestClose(
+                    twoMetres, transmittance * transmittance, 2.0e-6, 2.0e-6)
+            || !primeTestClose(
+                    encodedRoundTrip,
+                    lerp(float3(1.0), encodedSrgb, coverage),
+                    3.0e-6,
+                    3.0e-6)) {
+        result.mask |= PRIME_TEST_FAILURE_IDENTITY;
+    }
+    result.first = float4(transmittance, opacity);
+    result.second = float4(extinction, 0.0);
+    result.third = float4(twoMetres, 0.0);
+}
+
+void primeCheckShadowOpticalDepth(
+        inout PrimeTransportResult result, float4 first, float4 second)
+{
+    float rayDistance = max(abs(first.x), 1.0e-6);
+    float firstHit = clamp(first.y, 0.0, rayDistance);
+    float secondHit = clamp(first.z, firstHit, rayDistance);
+    float thirdHit = clamp(first.w, secondHit, rayDistance);
+    float fourthHit = clamp(second.x, thirdHit, rayDistance);
+    float3 firstExtinction = primeShadowCanonicalExtinction(
+            PRIME_PURE_WATER_ABSORPTION_M_INV);
+    float3 secondExtinction = primeShadowCanonicalExtinction(max(second.yzw, float3(0.0)));
+
+    float3 forwardMoment = primeShadowBoundaryOpticalDepthMoment(
+            float3(0.0), firstExtinction, firstHit, true);
+    float3 forwardTerminal = primeShadowBoundaryTerminalExtinction(
+            float3(0.0), firstExtinction, true);
+    forwardMoment = primeShadowBoundaryOpticalDepthMoment(
+            forwardMoment, secondExtinction, secondHit, true);
+    forwardTerminal = primeShadowBoundaryTerminalExtinction(
+            forwardTerminal, secondExtinction, true);
+    forwardMoment = primeShadowBoundaryOpticalDepthMoment(
+            forwardMoment, secondExtinction, thirdHit, false);
+    forwardTerminal = primeShadowBoundaryTerminalExtinction(
+            forwardTerminal, secondExtinction, false);
+    forwardMoment = primeShadowBoundaryOpticalDepthMoment(
+            forwardMoment, firstExtinction, fourthHit, false);
+    forwardTerminal = primeShadowBoundaryTerminalExtinction(
+            forwardTerminal, firstExtinction, false);
+
+    float3 reverseMoment = primeShadowBoundaryOpticalDepthMoment(
+            float3(0.0), firstExtinction, fourthHit, false);
+    float3 reverseTerminal = primeShadowBoundaryTerminalExtinction(
+            float3(0.0), firstExtinction, false);
+    reverseMoment = primeShadowBoundaryOpticalDepthMoment(
+            reverseMoment, secondExtinction, thirdHit, false);
+    reverseTerminal = primeShadowBoundaryTerminalExtinction(
+            reverseTerminal, secondExtinction, false);
+    reverseMoment = primeShadowBoundaryOpticalDepthMoment(
+            reverseMoment, secondExtinction, secondHit, true);
+    reverseTerminal = primeShadowBoundaryTerminalExtinction(
+            reverseTerminal, secondExtinction, true);
+    reverseMoment = primeShadowBoundaryOpticalDepthMoment(
+            reverseMoment, firstExtinction, firstHit, true);
+    reverseTerminal = primeShadowBoundaryTerminalExtinction(
+            reverseTerminal, firstExtinction, true);
+
+    PrimeRcVolume queuedFirstMedium;
+    queuedFirstMedium.extinction = PRIME_PURE_WATER_ABSORPTION_M_INV;
+    queuedFirstMedium.ior = 1.333;
+    queuedFirstMedium.albedo = float3(0.0);
+    queuedFirstMedium.anisotropy = 0.0;
+    float3 queuedFirstExtinction = primeUnpackWavefrontMedium(
+            primePackWavefrontMedium(queuedFirstMedium)).extinction;
+    float3 nearbyBoundaryExtinction = queuedFirstExtinction
+            + float3(0.25, -0.25, 0.125) * (1.0 / 1024.0);
+    float3 insideMoment = primeShadowBoundaryOpticalDepthMoment(
+            float3(0.0), queuedFirstExtinction, firstHit, false);
+    float3 insideTerminal = float3(0.0);
+    insideMoment = primeShadowBoundaryOpticalDepthMoment(
+            insideMoment, secondExtinction, secondHit, true);
+    insideTerminal = primeShadowBoundaryTerminalExtinction(
+            insideTerminal, secondExtinction, true);
+    insideMoment = primeShadowBoundaryOpticalDepthMoment(
+            insideMoment, secondExtinction, thirdHit, false);
+    insideTerminal = primeShadowBoundaryTerminalExtinction(
+            insideTerminal, secondExtinction, false);
+
+    float thinCosine = max((secondHit - firstHit) / rayDistance, 1.0e-3);
+    float3 thin = primeShadowThinOpticalDepth(
+            float3(0.0), secondExtinction, rayDistance, thinCosine);
+    float3 forward = primeShadowOpticalDepth(
+            forwardMoment, forwardTerminal, float4(0.0), float4(0.0), 0, rayDistance);
+    float3 reverse = primeShadowOpticalDepth(
+            reverseMoment, reverseTerminal, float4(0.0), float4(0.0), 0, rayDistance);
+    float3 inside = primeShadowOpticalDepth(
+            insideMoment,
+            insideTerminal,
+            float4(queuedFirstExtinction, 0.0),
+            float4(0.0),
+            1,
+            rayDistance);
+    float3 unboundedStartingMedium = primeShadowOpticalDepth(
+            float3(0.0),
+            float3(0.0),
+            float4(queuedFirstExtinction, 1.0),
+            float4(0.0),
+            1,
+            rayDistance);
+    float3 innerCoefficient = primeShadowStartingMediumCoefficient(
+            firstExtinction, secondExtinction, 1);
+    float3 nestedMoment = primeShadowBoundaryOpticalDepthMoment(
+            float3(0.0), innerCoefficient, firstHit, false);
+    nestedMoment = primeShadowBoundaryOpticalDepthMoment(
+            nestedMoment, firstExtinction, fourthHit, false);
+    float3 nested = primeShadowOpticalDepth(
+            nestedMoment,
+            float3(0.0),
+            float4(firstExtinction, 0.0),
+            float4(secondExtinction, 0.0),
+            2,
+            rayDistance);
+    float3 unboundedNested = primeShadowOpticalDepth(
+            float3(0.0),
+            float3(0.0),
+            float4(firstExtinction, 1.0),
+            float4(secondExtinction, 1.0),
+            2,
+            rayDistance);
+
+    float3 transmittance = exp(-forward);
+    float3 expectedOutside = firstExtinction * (fourthHit - firstHit)
+            + secondExtinction * (thirdHit - secondHit);
+    float3 expectedInside = firstExtinction * firstHit
+            + secondExtinction * (thirdHit - secondHit);
+    float3 expectedNested = secondExtinction * firstHit
+            + firstExtinction * (fourthHit - firstHit);
+    float3 expectedThin = secondExtinction * min(
+            PRIME_THIN_WALLED_THICKNESS_M / thinCosine, rayDistance);
+    float distanceTolerance = 2.0e-6 + 2.0e-6 * fourthHit;
+    primeTransportClassify(result.mask, forward);
+    primeTransportClassify(result.mask, reverse);
+    primeTransportClassify(result.mask, inside);
+    primeTransportClassify(result.mask, nested);
+    primeTransportClassify(result.mask, thin);
+    primeTransportClassify(result.mask, transmittance);
+    if (!primeTestClose(forward, expectedOutside, distanceTolerance, 2.0e-6)
+            || !primeTestClose(forward, reverse, distanceTolerance, 2.0e-6)
+            || any(queuedFirstExtinction != firstExtinction)
+            || !primeShadowSameMedium(queuedFirstExtinction, nearbyBoundaryExtinction)
+            || !primeTestClose(inside, expectedInside, distanceTolerance, 2.0e-6)
+            || !primeTestClose(nested, expectedNested, distanceTolerance, 2.0e-6)
+            || !primeTestClose(
+                    unboundedNested,
+                    secondExtinction * rayDistance,
+                    distanceTolerance,
+                    2.0e-6)
+            || !primeTestClose(
+                    unboundedStartingMedium,
+                    firstExtinction * rayDistance,
+                    distanceTolerance,
+                    2.0e-6)
+            || !primeTestClose(thin, expectedThin, distanceTolerance, 2.0e-6)
+            || any(primeShadowOpticalDepth(
+                    float3(-rayDistance),
+                    float3(0.0),
+                    float4(0.0),
+                    float4(0.0),
+                    0,
+                    rayDistance) != float3(0.0))
+            || any(transmittance < float3(0.0))
+            || any(transmittance > float3(1.0))) {
+        result.mask |= PRIME_TEST_FAILURE_IDENTITY;
+    }
+    result.first = float4(forward, rayDistance);
+    result.second = float4(transmittance, 0.0);
+    result.third = float4(nested, distanceTolerance);
+}
+
+void primeCheckWavefrontMedium(
+        inout PrimeTransportResult result, float4 transport, float4 coldVolumeFields)
+{
+    PrimeRcVolume medium;
+    medium.extinction = transport.xyz;
+    medium.ior = transport.w;
+    medium.albedo = coldVolumeFields.xyz;
+    medium.anisotropy = coldVolumeFields.w;
+    uint2 packed = primePackWavefrontMedium(medium);
+    PrimeRcVolume restored = primeUnpackWavefrontMedium(packed);
+    primeTransportClassify(result.mask, restored.extinction);
+    primeTransportClassify(result.mask, restored.ior);
+    if (any(primePackWavefrontMedium(restored) != packed)
+            || any(restored.albedo != float3(0.0))
+            || restored.anisotropy != 0.0) {
+        result.mask |= PRIME_TEST_FAILURE_STATE;
+    }
+    result.first = float4(restored.extinction, restored.ior);
+    result.second = transport;
+    result.third = float4(restored.albedo, restored.anisotropy);
+}
+
+void primeCheckLightBranch(
+        inout PrimeTransportResult result,
+        float4 firstBoundsMinPower,
+        float4 firstBoundsMaxSoftening,
+        float4 secondBoundsMinPower,
+        float4 secondBoundsMaxSoftening,
+        float3 point,
+        float3 receiverNormal)
+{
+    float2 firstMetrics = primeLightNodeMetrics(
+            firstBoundsMinPower.xyz,
+            firstBoundsMaxSoftening.xyz,
+            firstBoundsMinPower.w,
+            firstBoundsMaxSoftening.w,
+            point,
+            receiverNormal,
+            0xc0000000);
+    float2 secondMetrics = primeLightNodeMetrics(
+            secondBoundsMinPower.xyz,
+            secondBoundsMaxSoftening.xyz,
+            secondBoundsMinPower.w,
+            secondBoundsMaxSoftening.w,
+            point,
+            receiverNormal,
+            0xc0000000);
+    float probability = primeLightBranchProbability(firstMetrics, secondMetrics);
+    float reverse = primeLightBranchProbability(secondMetrics, firstMetrics);
+    primeTransportClassify(result.mask, float3(probability, reverse, 0.0));
+    if (probability < -1.0
+            || probability > 1.0 + 2.0e-6
+            || any(firstMetrics < float2(0.0))
+            || any(secondMetrics < float2(0.0))
+            || (all(receiverNormal == float3(1.0, 0.0, 0.0)) && probability < 0.99)
+            || (probability >= 0.0 && reverse >= 0.0
+                    && !primeTestClose(probability + reverse, 1.0, 2.0e-7, 2.0e-6))) {
+        result.mask |= PRIME_TEST_FAILURE_IDENTITY;
+    }
+    result.first = float4(firstMetrics, secondMetrics);
+    result.second = float4(probability, reverse, 0.0, 0.0);
+    result.third = float4(receiverNormal, 0.0);
+}
+
+void primeCheckLightReceiverNormal(
+        inout PrimeTransportResult result, float3 receiverNormal)
+{
+    uint packed = primePackLightReceiverNormal(receiverNormal);
+    float3 decoded = primeUnpackLightReceiverNormal(packed);
+    float3 disabled = primeUnpackLightReceiverNormal(0);
+    primeTransportClassify(result.mask, decoded);
+    if ((packed & PRIME_LIGHT_RECEIVER_NORMAL_ACTIVE) == 0
+            || any(disabled != float3(0.0))
+            || abs(dot(decoded, decoded) - 1.0) > 2.0e-6
+            || dot(receiverNormal, decoded) < 0.998) {
+        result.mask |= PRIME_TEST_FAILURE_STATE;
+    }
+    result.first = float4(decoded, 0.0);
+    result.second = float4(receiverNormal, 0.0);
+    result.third = float4(asfloat(packed), 0.0, 0.0, 0.0);
+}
+
+void primeCheckLightEmissionBound(
+        inout PrimeTransportResult result,
+        uint packedDirection,
+        float3 boundsMin,
+        float3 boundsMax,
+        float3 point,
+        float3 lightPoint,
+        float3 normal,
+        bool twoSided)
+{
+    float3 closest = clamp(point, boundsMin, boundsMax);
+    float3 closestDelta = point - closest;
+    float bound = primeLightEmitterCosineBound(
+            boundsMin,
+            boundsMax,
+            point,
+            dot(closestDelta, closestDelta),
+            packedDirection);
+    float3 delta = point - lightPoint;
+    float actual = dot(delta, delta) > 1.0e-12 ? dot(normal, normalize(delta)) : 1.0;
+    actual = twoSided ? 0.5 * abs(actual) : max(actual, 0.0);
+    primeTransportClassify(result.mask, float3(bound, actual, 0.0));
+    if (bound < 0.0 || bound > 1.0 || bound + 2.0e-5 < actual) {
+        result.mask |= PRIME_TEST_FAILURE_RANGE;
+    }
+    result.first = float4(bound, actual, asfloat(packedDirection), 0.0);
+    result.second = float4(boundsMin, 0.0);
+    result.third = float4(boundsMax, 0.0);
+}
+
+void primeCheckPointLightNodeMetric(
+        inout PrimeTransportResult result,
+        float4 lightPositionPower,
+        float4 pointSoftening,
+        float3 receiverNormal)
+{
+    float2 metrics = primeLightNodeMetrics(
+            lightPositionPower.xyz,
+            lightPositionPower.xyz,
+            lightPositionPower.w,
+            pointSoftening.w,
+            pointSoftening.xyz,
+            receiverNormal,
+            0xc0000000);
+    float3 delta = lightPositionPower.xyz - pointSoftening.xyz;
+    float distanceSquared = dot(delta, delta);
+    float3 direction = delta * rsqrt(distanceSquared);
+    float receiverCosine = dot(receiverNormal, receiverNormal) > 0.0
+            ? max(dot(receiverNormal, direction), 0.0)
+            : 1.0;
+    float expectedImportance = PRIME_LIGHT_RECEIVER_COSINE_FLOOR
+            + (1.0 - PRIME_LIGHT_RECEIVER_COSINE_FLOOR) * receiverCosine;
+    primeTransportClassify(result.mask, float3(metrics, 0.0));
+    if (!primeTestClose(
+                    metrics.x,
+                    distanceSquared + pointSoftening.w,
+                    2.0e-6,
+                    2.0e-6)
+            || !primeTestClose(
+                    metrics.y,
+                    lightPositionPower.w * expectedImportance,
+                    6.0e-7,
+                    8.0e-6)) {
+        result.mask |= PRIME_TEST_FAILURE_IDENTITY;
+    }
+    result.first = float4(metrics, 0.0, 0.0);
+    result.second = float4(distanceSquared, expectedImportance, receiverCosine, 0.0);
+    result.third = float4(receiverNormal, 0.0);
+}
+
+void primeCheckTransparentCheckerboard(
+        inout PrimeTransportResult result,
+        uint2 pixel,
+        uint sampleIndex,
+        float conditionalPdf)
+{
+    bool selected = primeTransparentCheckerboardSamplesReflection(pixel, sampleIndex);
+    bool horizontal = primeTransparentCheckerboardSamplesReflection(
+            pixel + uint2(1, 0), sampleIndex);
+    bool vertical = primeTransparentCheckerboardSamplesReflection(
+            pixel + uint2(0, 1), sampleIndex);
+    bool nextFrame = primeTransparentCheckerboardSamplesReflection(pixel, sampleIndex + 1);
+    float pdf = primeTransparentCheckerboardPdf(conditionalPdf);
+    if (selected == horizontal || selected == vertical || selected == nextFrame) {
+        result.mask |= PRIME_TEST_FAILURE_EVENT;
+    }
+    if (!primeTestClose(pdf, conditionalPdf * 0.5, 0.0, 0.0)) {
+        result.mask |= PRIME_TEST_FAILURE_PDF;
+    }
+    result.first = float4(
+            float(selected), float(horizontal), float(vertical), float(nextFrame));
+    result.second = float4(pdf, conditionalPdf, 0.0, 0.0);
+}
+
+[numthreads(64, 1, 1)]
+void main(uint3 dispatchThreadId : SV_DispatchThreadID)
+{
+    uint caseIndex;
+    if (!primeTestBegin(dispatchThreadId, caseIndex)) return;
+    uint inputOffset = primeTestInputOffset(caseIndex, PRIME_TRANSPORT_INPUT_WORDS);
+    uint4 control = primeTestInput[inputOffset];
+    float4 first = asfloat(primeTestInput[inputOffset + 1]);
+    float4 second = asfloat(primeTestInput[inputOffset + 2]);
+    float4 third = asfloat(primeTestInput[inputOffset + 3]);
+    float4 fourth = asfloat(primeTestInput[inputOffset + 4]);
+    float4 fifth = asfloat(primeTestInput[inputOffset + 5]);
+
+    PrimeTransportResult result;
+    result.mask = 0;
+    result.first = float4(0.0);
+    result.second = float4(0.0);
+    result.third = float4(0.0);
+    uint kind = control.x;
+    if (kind == 0) {
+        primeCheckProduct(result, first.xyz, second.xyz, first.w);
+    } else if (kind == 1) {
+        primeCheckMis(result, first.x, first.y, first.z);
+    } else if (kind == 2) {
+        primeCheckTransmittance(result, first.xyz, first.w);
+    } else if (kind == 3) {
+        primeCheckRoulette(result, first.xyz, first.w, second.x);
+    } else if (kind == 4) {
+        primeCheckAreaPdf(result, first.x, first.y, first.z);
+    } else if (kind == 5) {
+        primeCheckGlassVolume(result, first.xyz, first.w);
+    } else if (kind == 6) {
+        primeCheckShadowOpticalDepth(result, first, second);
+    } else if (kind == 7) {
+        primeCheckWavefrontMedium(result, first, second);
+    } else if (kind == 8) {
+        primeCheckLightBranch(
+                result,
+                first,
+                second,
+                third,
+                fourth,
+                fifth.xyz,
+                asfloat(control.yzw));
+    } else if (kind == 9) {
+        primeCheckAreaHitMis(
+                result,
+                (caseIndex & 1) != 0,
+                (caseIndex & 2) != 0,
+                first.x,
+                first.y);
+    } else if (kind == 10) {
+        primeCheckOfflineRoulette(result, first.xyz, first.w, second.x);
+    } else if (kind == 11) {
+        primeCheckLightReceiverNormal(result, first.xyz);
+    } else if (kind == 12) {
+        primeCheckLightEmissionBound(
+                result,
+                control.y,
+                first.xyz,
+                second.xyz,
+                third.xyz,
+                fourth.xyz,
+                fifth.xyz,
+                fifth.w != 0.0);
+    } else if (kind == 13) {
+        primeCheckPointLightNodeMetric(result, first, second, third.xyz);
+    } else if (kind == 14) {
+        primeCheckTransparentCheckerboard(
+                result,
+                uint2(caseIndex, caseIndex * 0x9e3779b9),
+                caseIndex * 0x85ebca6b,
+                first.z);
+    } else {
+        result.mask |= PRIME_TEST_FAILURE_EVENT;
+    }
+
+    uint outputWords = primeTestOutputWords();
+    uint outputOffset = primeTestOutputOffset(caseIndex, outputWords);
+    primeTestOutput[outputOffset] = uint4(result.mask, kind, caseIndex, 0);
+    if (outputWords >= PRIME_TRANSPORT_WITNESS_WORDS) {
+        primeTestOutput[outputOffset + 1] = control;
+        primeTestOutput[outputOffset + 2] = asuint(first);
+        primeTestOutput[outputOffset + 3] = asuint(second);
+        primeTestOutput[outputOffset + 4] = asuint(third);
+        primeTestOutput[outputOffset + 5] = asuint(fourth);
+        primeTestOutput[outputOffset + 6] = asuint(fifth);
+        primeTestOutput[outputOffset + 7] = asuint(result.first);
+        primeTestOutput[outputOffset + 8] = asuint(result.second);
+        primeTestOutput[outputOffset + 9] = asuint(result.third);
+    }
+}

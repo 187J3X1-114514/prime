@@ -75,47 +75,31 @@ final class PrimeBsdfGpuTest {
     void publicPrimeAdaptersCanonicalizeRejectionsAndKeepAcceptedPayloadsFinite()
             throws IOException {
         ByteBuffer input = createCases(0, KIND_COUNT);
-        Path shader = Path.of(
-                System.getProperty("prime.test.shaderDirectory"),
-                "prime_bsdf_properties.comp.spv");
-        ShaderPropertyBatch.assertProperties(
-                runner,
-                shader,
-                input,
-                CASE_COUNT,
-                INPUT_WORDS,
-                WITNESS_WORDS,
-                SEED);
+        assertProperties(input, CASE_COUNT);
     }
 
     @Test
     void bilateralMediumBoundariesReplaceOnlyTheCurrentMedium() throws IOException {
         ByteBuffer input = createCases(KIND_COUNT, 1);
-        Path shader = Path.of(
-                System.getProperty("prime.test.shaderDirectory"),
-                "prime_bsdf_properties.comp.spv");
-        ShaderPropertyBatch.assertProperties(
-                runner,
-                shader,
-                input,
-                CASES_PER_KIND,
-                INPUT_WORDS,
-                WITNESS_WORDS,
-                SEED);
+        assertProperties(input, CASES_PER_KIND);
     }
 
     @Test
     void matchedSolidMediaUseStraightThroughAirGapAndSwapOnlyTheCurrentMedium()
             throws IOException {
         ByteBuffer input = createCases(KIND_COUNT + 1, 1);
+        assertProperties(input, CASES_PER_KIND);
+    }
+
+    private static void assertProperties(ByteBuffer input, int caseCount) throws IOException {
         Path shader = Path.of(
-                System.getProperty("prime.test.shaderDirectory"),
+                System.getProperty("prime.test.slangShaderDirectory"),
                 "prime_bsdf_properties.comp.spv");
         ShaderPropertyBatch.assertProperties(
                 runner,
                 shader,
                 input,
-                CASES_PER_KIND,
+                caseCount,
                 INPUT_WORDS,
                 WITNESS_WORDS,
                 SEED);

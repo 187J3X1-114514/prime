@@ -1,14 +1,14 @@
 def shaderAbiJavaRoot = layout.buildDirectory.dir('generated/sources/shaderAbi/java')
-def shaderAbiIncludeRoot = layout.buildDirectory.dir('generated/sources/shaderAbi/glsl')
-def compiledShaderRoot = layout.buildDirectory.dir('generated/resources/shaders')
-def compiledTestShaderRoot = layout.buildDirectory.dir('generated/testShaders')
+def shaderAbiSlangRoot = layout.buildDirectory.dir('generated/sources/shaderAbi/slang')
+def compiledSlangShaderRoot = layout.buildDirectory.dir('generated/resources/shaders')
+def compiledSlangTestShaderRoot = layout.buildDirectory.dir('generated/testSlangShaders')
 
 def verifyRoboCutePort = tasks.register('verifyRoboCutePort') {
 	group = 'verification'
-	description = 'Verifies the approved RoboCute port revision and protected source hashes.'
+	description = 'Verifies the approved RoboCute revision and protected reachable Slang core.'
 	def lockFile = file('shaders/robocute.lock.json')
-	def protectedFiles = fileTree('shaders') {
-		include 'robocute_bsdf_*.glsl'
+	def protectedFiles = fileTree('shaders/bsdf/core') {
+		include 'robocute_*.slang', 'robocute_reachable_symbols.txt'
 	}
 	def authorityOverlayDirectory =
 			file('third_party/robocute/author-bsdf-hotfix-2026-07-24')
@@ -49,7 +49,7 @@ def verifyRoboCutePort = tasks.register('verifyRoboCutePort') {
 		def actual = new TreeSet<String>(protectedFiles.files.collect { it.name })
 		if (actual != expected) {
 			throw new GradleException(
-					"Protected RoboCute file set changed: expected ${expected}, found ${actual}")
+					"Protected RoboCute core set changed: expected ${expected}, found ${actual}")
 		}
 		protectedFiles.files.each { source ->
 			def normalized = source.getText('UTF-8')
@@ -60,7 +60,7 @@ def verifyRoboCutePort = tasks.register('verifyRoboCutePort') {
 					.digest(normalized).encodeHex().toString()
 			if (digest != lock.files[source.name]) {
 				throw new GradleException(
-						"Protected RoboCute source changed without updating its approved lock: ${source.name}")
+						"Protected RoboCute core changed without updating its approved lock: ${source.name}")
 			}
 		}
 	}
@@ -74,7 +74,7 @@ abstract class GenerateShaderAbi extends DefaultTask {
 	abstract DirectoryProperty getJavaOutputDirectory()
 
 	@OutputDirectory
-	abstract DirectoryProperty getGlslOutputDirectory()
+	abstract DirectoryProperty getSlangOutputDirectory()
 
 	@TaskAction
 	void generate() {
@@ -306,6 +306,26 @@ abstract class GenerateShaderAbi extends DefaultTask {
 		def glslPushFields = push.fields.collect { field ->
 			"    layout(offset = ${field.offset}) ${field.type} ${field.name};"
 		}.join('\n')
+		def slangTypes = [
+			float: 'float',
+			uint: 'uint',
+			uint64_t: 'uint64_t',
+			mat4: 'float4x4',
+			vec2: 'float2',
+			vec3: 'float3',
+			vec4: 'float4',
+			uvec2: 'uint2',
+			uvec4: 'uint4'
+		]
+		def slangStructFields = { def definition ->
+			definition.fields.collect { field ->
+				def type = slangTypes[field.type]
+				if (type == null) {
+					throw new GradleException("No Slang ABI type mapping for ${field.type}")
+				}
+				return "    ${type} ${field.name};"
+			}.join('\n')
+		}
 
 		def javaPackageDir = new File(javaOutputDirectory.get().asFile, 'dev/prime/render/shader')
 		javaPackageDir.mkdirs()
@@ -485,329 +505,385 @@ ${javaOffsets}
 }
 """
 
-		def glslDir = glslOutputDirectory.get().asFile
-		glslDir.mkdirs()
-		new File(glslDir, 'prime_abi.glsl').text = """\
-#ifndef PRIME_ABI_GLSL
-#define PRIME_ABI_GLSL
 
-#extension GL_EXT_ray_tracing : require
-#extension GL_EXT_buffer_reference2 : require
-#extension GL_EXT_shader_explicit_arithmetic_types_int64 : require
+		def slangDir = slangOutputDirectory.get().asFile
+		slangDir.mkdirs()
+		new File(slangDir, 'prime_abi_types.slang').text = """\
+#ifndef PRIME_ABI_TYPES_SLANG
+#define PRIME_ABI_TYPES_SLANG
 
-#include "prime_color_contract.glsl"
+// Generated from shaders/abi.json. Do not edit by hand.
+static const uint PRIME_PRIMITIVE_RECORD_SIZE = ${primitive.size};
+static const uint PRIME_SECTION_RECORD_SIZE = ${section.size};
+static const uint PRIME_LIGHT_NODE_SIZE = ${lightNode.size};
+static const uint PRIME_LIGHT_LEAF_SIZE = ${lightLeaf.size};
+static const uint PRIME_LIGHT_LEAF_ENTRY_SIZE = ${lightLeafEntry.size};
+static const uint PRIME_LIGHT_EMITTER_SIZE = ${lightEmitter.size};
+static const uint PRIME_LIGHT_CELL_SIZE = ${lightCell.size};
+static const uint PRIME_SECTION_LIGHT_HEADER_SIZE = ${sectionLightHeader.size};
+static const uint PRIME_INTEGRATOR_RECORD_SIZE = ${integrator.size};
+static const uint PRIME_PATH_STATE_SIZE = ${pathState.size};
+static const uint PRIME_TRACE_PAYLOAD_SIZE = ${tracePayload.size};
+static const uint PRIME_SURFACE_INTERACTION_SIZE = ${surfaceInteraction.size};
+static const uint PRIME_PUSH_CONSTANT_SIZE = ${push.size};
+static const uint PRIME_NRD_MOTION_PUSH_CONSTANT_SIZE = ${nrdMotionPush.size};
+static const uint PRIME_SHARC_FRAME_CONSTANT_SIZE = ${sharcFrame.size};
+static const uint PRIME_SCENE_TEXTURE_COUNT = ${schema.sceneTextureCount};
+static const uint PRIME_DESCRIPTOR_TRANSMISSION_GGX_ENERGY = ${schema.sharedDescriptors.transmissionGgxEnergy};
+static const uint PRIME_PATH_SAMPLE_INDEX_MASK = ${schema.pathControl.sampleIndexMask};
+static const uint PRIME_PATH_SOLAR_LONGITUDE_SHIFT = ${schema.pathControl.solarLongitudeShift};
+static const uint PRIME_PATH_SOLAR_LONGITUDE_MASK = ${schema.pathControl.solarLongitudeMask};
+static const uint PRIME_PATH_SEAMLESS_GLASS_MASK = ${schema.pathControl.seamlessGlassMask};
+static const uint PRIME_PATH_AIR_GAP_MASK = ${schema.pathControl.airGapMask};
+static const uint PRIME_PATH_VANILLA_PBR_PRESETS_MASK = ${schema.pathControl.vanillaPbrPresetsMask};
+static const uint PRIME_PATH_SAMPLE_EPOCH_MASK = ${schema.pathControl.sampleEpochMask};
+static const uint PRIME_PATH_TRIANGLE_DEBUG_MASK = ${schema.pathControl.triangleDebugMask};
+static const uint PRIME_PATH_MAXIMUM_BOUNCES_MASK = ${schema.pathControl.maximumBouncesMask};
+static const uint PRIME_PATH_LATITUDE_SHIFT = ${schema.pathControl.latitudeShift};
+static const uint PRIME_PATH_LATITUDE_MASK = ${schema.pathControl.latitudeMask};
+static const int PRIME_PATH_LATITUDE_BIAS = ${schema.pathControl.latitudeBias};
+static const uint PRIME_PATH_CAMERA_IN_WATER_MASK = ${schema.pathControl.cameraInWaterMask};
+static const uint PRIME_PATH_JITTER_PHASE_MASK = ${schema.pathControl.jitterPhaseMask};
+static const uint PRIME_PATH_TRANSPARENT_GUIDE_MODE_SHIFT = ${schema.pathControl.transparentGuideModeShift};
+static const uint PRIME_PATH_TRANSPARENT_GUIDE_MODE_MASK = ${schema.pathControl.transparentGuideModeMask};
+static const uint PRIME_PATH_TRANSPARENT_GUIDE_MODE_NRD = ${schema.pathControl.transparentGuideModeNrd};
+static const uint PRIME_PATH_TRANSPARENT_GUIDE_MODE_DLSS_RR = ${schema.pathControl.transparentGuideModeDlssRr};
+static const uint PRIME_PATH_TRANSPARENT_GUIDE_MODE_DISABLED = ${schema.pathControl.transparentGuideModeDisabled};
+static const uint PRIME_PATH_SUN_EV_QUARTER_SHIFT = ${schema.pathControl.sunEvQuarterShift};
+static const uint PRIME_PATH_BLOCK_LIGHT_EV_QUARTER_SHIFT = ${schema.pathControl.blockLightEvQuarterShift};
+static const uint PRIME_PATH_EV_QUARTER_MASK = ${schema.pathControl.evQuarterMask};
+static const int PRIME_PATH_EV_QUARTER_BIAS = ${schema.pathControl.evQuarterBias};
+static const uint PRIME_PATH_MATERIAL_ROUGHNESS_SHIFT = ${schema.pathControl.materialRoughnessShift};
+static const uint PRIME_PATH_MATERIAL_ROUGHNESS_MASK = ${schema.pathControl.materialRoughnessMask};
+static const float PRIME_PATH_MATERIAL_ROUGHNESS_STEPS_PER_UNIT = ${schema.pathControl.materialRoughnessStepsPerUnit};
+static const uint PRIME_PATH_SH_INPUT_MASK = ${schema.pathControl.shInputMask};
+static const uint PRIME_PATH_RAW_NUMERICAL_MASK = ${schema.pathControl.rawNumericalMask};
+static const uint PRIME_PATH_STAR_EV_QUARTER_SHIFT = ${schema.pathControl.starEvQuarterShift};
+static const uint PRIME_PATH_STAR_EV_QUARTER_MASK = ${schema.pathControl.starEvQuarterMask};
+static const int PRIME_PATH_STAR_EV_QUARTER_BIAS = ${schema.pathControl.starEvQuarterBias};
+static const uint PRIME_MAXIMUM_BOUNCES = ${schema.pathControl.maximumBounces};
+static const uint PRIME_RUSSIAN_ROULETTE_START = ${schema.pathControl.russianRouletteStart};
+static const float PRIME_CUTOUT_ALPHA_THRESHOLD = ${schema.cutoutAlphaThreshold};
+static const float PRIME_LEVEL_15_BLOCK_INTENSITY = ${emissionContract.level15BlockIntensity};
+static const float PRIME_DISPLAY_EXPOSURE = ${colorContract.displayExposure};
+static const float PRIME_ASTRONOMY_AXIAL_TILT_RADIANS =
+        ${astronomyContract.axialTiltDegrees} * 0.017453292519943295;
+static const float PRIME_ATMOSPHERE_WORLD_TO_ATMOSPHERE_SCALE = ${atmosphereContract.worldToAtmosphereScale};
+static const float PRIME_ATMOSPHERE_BOTTOM_RADIUS_KM = ${atmosphereContract.bottomRadiusKm};
+static const float PRIME_ATMOSPHERE_TOP_RADIUS_KM = ${atmosphereContract.topRadiusKm};
+static const float PRIME_ATMOSPHERE_WORLD_SEA_LEVEL_Y = ${atmosphereContract.worldSeaLevelY};
+static const float PRIME_ATMOSPHERE_WORLD_UNIT_SCALE_KM = ${atmosphereContract.worldUnitScaleKm * atmosphereContract.worldToAtmosphereScale};
+static const float PRIME_ATMOSPHERE_SPACE_SUN_INTENSITY = ${atmosphereContract.spaceSunIntensity};
+static const float PRIME_ATMOSPHERE_SUN_ANGULAR_RADIUS_RADIANS = ${atmosphereContract.sunAngularRadiusRadians};
+static const float PRIME_ATMOSPHERE_AERIAL_MAX_DISTANCE_KM = ${atmosphereContract.aerialMaxDistanceKm * atmosphereContract.worldToAtmosphereScale};
+static const uint PRIME_ATMOSPHERE_AERIAL_WIDTH = ${atmosphereContract.aerialWidth};
+static const uint PRIME_ATMOSPHERE_AERIAL_HEIGHT = ${atmosphereContract.aerialHeight};
+static const uint PRIME_ATMOSPHERE_AERIAL_EPIPOLAR_SAMPLES = ${atmosphereContract.aerialEpipolarSamples};
+static const uint PRIME_ATMOSPHERE_AERIAL_EPIPOLAR_SLICES = ${atmosphereContract.aerialEpipolarSlices};
+static const uint PRIME_ATMOSPHERE_AERIAL_DEPTH = ${atmosphereContract.aerialDepth};
+static const uint PRIME_ATMOSPHERE_AERIAL_SEGMENT_SAMPLES = ${atmosphereContract.aerialSegmentSamples};
+static const uint PRIME_STARMAP_WIDTH = ${starmapContract.width};
+static const uint PRIME_STARMAP_HEIGHT = ${starmapContract.height};
+static const float PRIME_STARMAP_BASE_RADIANCE_SCALE = ${starmapContract.baseRadianceScale};
 
-#define PRIME_LEVEL_15_BLOCK_INTENSITY ${emissionContract.level15BlockIntensity}
-#define PRIME_PRIMITIVE_RECORD_SIZE ${primitive.size}
-#define PRIME_SECTION_RECORD_SIZE ${section.size}
-#define PRIME_LIGHT_NODE_SIZE ${lightNode.size}
-#define PRIME_LIGHT_LEAF_SIZE ${lightLeaf.size}
-#define PRIME_LIGHT_LEAF_ENTRY_SIZE ${lightLeafEntry.size}
-#define PRIME_LIGHT_EMITTER_SIZE ${lightEmitter.size}
-#define PRIME_LIGHT_CELL_SIZE ${lightCell.size}
-#define PRIME_SECTION_LIGHT_HEADER_SIZE ${sectionLightHeader.size}
-#define PRIME_INTEGRATOR_RECORD_SIZE ${integrator.size}
-#define PRIME_PATH_STATE_SIZE ${pathState.size}
-#define PRIME_TRACE_PAYLOAD_SIZE ${tracePayload.size}
-#define PRIME_SURFACE_INTERACTION_SIZE ${surfaceInteraction.size}
-#define PRIME_PUSH_CONSTANT_SIZE ${push.size}
-#define PRIME_DESCRIPTOR_TRANSMISSION_GGX_ENERGY ${schema.sharedDescriptors.transmissionGgxEnergy}
-#if defined(PRIME_OFFLINE_ABI)
-#define PRIME_RENDERER_DESCRIPTOR_SET 1
-#define PRIME_DESCRIPTOR_WAVEFRONT_PATHS ${schema.offlineDescriptors.wavefrontPaths}
-#define PRIME_DESCRIPTOR_WAVEFRONT_QUEUE ${schema.offlineDescriptors.wavefrontQueue}
-#define PRIME_WAVEFRONT_PATH_RECORD_SIZE ${offlineWavefrontContract.pathRecordSize}
-#define PRIME_WAVEFRONT_PATH_SLOTS_PER_PIXEL ${offlineWavefrontContract.pathSlotsPerPixel}u
-#define PRIME_WAVEFRONT_ROUNDS ${offlineWavefrontContract.rounds}
-#define PRIME_WAVEFRONT_AREA_RECORD_SIZE ${offlineWavefrontContract.areaRecordSize}u
-#define PRIME_WAVEFRONT_QUEUE_ENTRIES_PER_PIXEL ${offlineWavefrontContract.queueEntriesPerPixel}u
-#define PRIME_WAVEFRONT_QUEUE_COUNT ${offlineWavefrontContract.queueCount}u
-#define PRIME_WAVEFRONT_QUEUE_COMMAND_STRIDE ${offlineWavefrontContract.queueCommandStride}u
-#define PRIME_WAVEFRONT_QUEUE_INDEX_SIZE ${offlineWavefrontContract.queueIndexSize}u
-#define PRIME_WAVEFRONT_ACTIVE_MASK ${offlineWavefrontContract.activeMask}u
-#else
-#define PRIME_RENDERER_DESCRIPTOR_SET 1
-#define PRIME_DESCRIPTOR_WAVEFRONT_PATHS ${schema.realtimeDescriptors.wavefrontPaths}
-#define PRIME_DESCRIPTOR_WAVEFRONT_QUEUE ${schema.realtimeDescriptors.wavefrontQueue}
-#define PRIME_WAVEFRONT_PATH_RECORD_SIZE ${wavefrontContract.pathRecordSize}
-#define PRIME_WAVEFRONT_PATH_SLOTS_PER_PIXEL ${wavefrontContract.pathSlotsPerPixel}u
-#define PRIME_WAVEFRONT_ROUNDS ${wavefrontContract.rounds}
-#define PRIME_WAVEFRONT_AREA_RECORD_SIZE ${wavefrontContract.areaRecordSize}u
-#define PRIME_WAVEFRONT_QUEUE_ENTRIES_PER_PIXEL ${wavefrontContract.queueEntriesPerPixel}u
-#define PRIME_WAVEFRONT_QUEUE_COUNT ${wavefrontContract.queueCount}u
-#define PRIME_WAVEFRONT_TRACE_QUEUE_0 ${wavefrontContract.traceQueue0}u
-#define PRIME_WAVEFRONT_TRACE_QUEUE_1 ${wavefrontContract.traceQueue1}u
-#define PRIME_WAVEFRONT_SHADE_QUEUE ${wavefrontContract.shadeQueue}u
-#define PRIME_WAVEFRONT_AREA_QUEUE ${wavefrontContract.areaQueue}u
-#define PRIME_WAVEFRONT_QUEUE_COMMAND_STRIDE ${wavefrontContract.queueCommandStride}u
-#define PRIME_WAVEFRONT_QUEUE_INDEX_SIZE ${wavefrontContract.queueIndexSize}u
-#define PRIME_WAVEFRONT_ACTIVE_MASK ${wavefrontContract.activeMask}u
-#endif
-#define PRIME_SCENE_TEXTURE_COUNT ${schema.sceneTextureCount}u
-#define PRIME_PATH_SAMPLE_INDEX_MASK ${schema.pathControl.sampleIndexMask}u
-#define PRIME_PATH_SOLAR_LONGITUDE_SHIFT ${schema.pathControl.solarLongitudeShift}u
-#define PRIME_PATH_SOLAR_LONGITUDE_MASK ${schema.pathControl.solarLongitudeMask}u
-#define PRIME_PATH_SEAMLESS_GLASS_MASK ${schema.pathControl.seamlessGlassMask}u
-#define PRIME_PATH_AIR_GAP_MASK ${schema.pathControl.airGapMask}u
-#define PRIME_PATH_VANILLA_PBR_PRESETS_MASK ${schema.pathControl.vanillaPbrPresetsMask}u
-#define PRIME_PATH_SAMPLE_EPOCH_MASK ${schema.pathControl.sampleEpochMask}u
-#define PRIME_PATH_TRIANGLE_DEBUG_MASK ${schema.pathControl.triangleDebugMask}u
-#define PRIME_PATH_MAXIMUM_BOUNCES_MASK ${schema.pathControl.maximumBouncesMask}u
-#define PRIME_PATH_LATITUDE_SHIFT ${schema.pathControl.latitudeShift}u
-#define PRIME_PATH_LATITUDE_MASK ${schema.pathControl.latitudeMask}u
-#define PRIME_PATH_LATITUDE_BIAS ${schema.pathControl.latitudeBias}
-#define PRIME_PATH_CAMERA_IN_WATER_MASK ${schema.pathControl.cameraInWaterMask}u
-#define PRIME_PATH_JITTER_PHASE_MASK ${schema.pathControl.jitterPhaseMask}u
-#define PRIME_PATH_TRANSPARENT_GUIDE_MODE_SHIFT ${schema.pathControl.transparentGuideModeShift}u
-#define PRIME_PATH_TRANSPARENT_GUIDE_MODE_MASK ${schema.pathControl.transparentGuideModeMask}u
-#define PRIME_PATH_TRANSPARENT_GUIDE_MODE_NRD ${schema.pathControl.transparentGuideModeNrd}u
-#define PRIME_PATH_TRANSPARENT_GUIDE_MODE_DLSS_RR ${schema.pathControl.transparentGuideModeDlssRr}u
-#define PRIME_PATH_TRANSPARENT_GUIDE_MODE_DISABLED ${schema.pathControl.transparentGuideModeDisabled}u
-#define PRIME_PATH_SUN_EV_QUARTER_SHIFT ${schema.pathControl.sunEvQuarterShift}u
-#define PRIME_PATH_BLOCK_LIGHT_EV_QUARTER_SHIFT ${schema.pathControl.blockLightEvQuarterShift}u
-#define PRIME_PATH_EV_QUARTER_MASK ${schema.pathControl.evQuarterMask}u
-#define PRIME_PATH_EV_QUARTER_BIAS ${schema.pathControl.evQuarterBias}
-#define PRIME_PATH_MATERIAL_ROUGHNESS_SHIFT ${schema.pathControl.materialRoughnessShift}u
-#define PRIME_PATH_MATERIAL_ROUGHNESS_MASK ${schema.pathControl.materialRoughnessMask}u
-#define PRIME_PATH_MATERIAL_ROUGHNESS_STEPS_PER_UNIT ${schema.pathControl.materialRoughnessStepsPerUnit}.0
-#define PRIME_PATH_SH_INPUT_MASK ${schema.pathControl.shInputMask}u
-#define PRIME_PATH_RAW_NUMERICAL_MASK ${schema.pathControl.rawNumericalMask}u
-#define PRIME_PATH_STAR_EV_QUARTER_SHIFT ${schema.pathControl.starEvQuarterShift}u
-#define PRIME_PATH_STAR_EV_QUARTER_MASK ${schema.pathControl.starEvQuarterMask}u
-#define PRIME_PATH_STAR_EV_QUARTER_BIAS ${schema.pathControl.starEvQuarterBias}
-#define PRIME_ASTRONOMY_AXIAL_TILT_RADIANS (${astronomyContract.axialTiltDegrees} * 0.017453292519943295)
-#define PRIME_STARMAP_WIDTH ${starmapContract.width}
-#define PRIME_STARMAP_HEIGHT ${starmapContract.height}
-#define PRIME_STARMAP_BASE_RADIANCE_SCALE ${starmapContract.baseRadianceScale}
-#define PRIME_MAXIMUM_BOUNCES ${schema.pathControl.maximumBounces}u
-#define PRIME_RUSSIAN_ROULETTE_START ${schema.pathControl.russianRouletteStart}u
-#define PRIME_CUTOUT_ALPHA_THRESHOLD ${schema.cutoutAlphaThreshold}
-struct PrimitiveRecord {
-${glslStructFields(primitive)}
+struct PrimitiveRecord
+{
+${slangStructFields(primitive)}
 };
 
-struct SectionRecord {
-${glslStructFields(section)}
+struct SectionRecord
+{
+${slangStructFields(section)}
 };
 
-struct LightNode {
-${glslStructFields(lightNode)}
+struct LightNode
+{
+${slangStructFields(lightNode)}
 };
 
-struct LightLeaf {
-${glslStructFields(lightLeaf)}
+struct LightLeaf
+{
+${slangStructFields(lightLeaf)}
 };
 
-struct LightLeafEntry {
-${glslStructFields(lightLeafEntry)}
+struct LightLeafEntry
+{
+${slangStructFields(lightLeafEntry)}
 };
 
-struct LightEmitter {
-${glslStructFields(lightEmitter)}
+struct LightEmitter
+{
+${slangStructFields(lightEmitter)}
 };
 
-struct LightCell {
-${glslStructFields(lightCell)}
+struct LightCell
+{
+${slangStructFields(lightCell)}
 };
 
-struct SectionLightHeader {
-${glslStructFields(sectionLightHeader)}
+struct SectionLightHeader
+{
+${slangStructFields(sectionLightHeader)}
 };
 
-// These explicit records deliberately contain no execution-local state. They can be moved to
-// storage-buffer queues by a future wavefront scheduler without changing integrator semantics.
-// Every color or radiance field in these records is linear Rec.2020 D65. This is part of the
-// estimator ABI, not a presentation choice; changing it requires a coordinated ABI migration.
-struct IntegratorRecord {
-${glslStructFields(integrator)}
+struct IntegratorRecord
+{
+${slangStructFields(integrator)}
 };
 
-struct PathState {
-${glslStructFields(pathState)}
+struct PathState
+{
+${slangStructFields(pathState)}
 };
 
-struct TracePayload {
-${glslStructFields(tracePayload)}
+struct TracePayload
+{
+${slangStructFields(tracePayload)}
 };
 
-struct SurfaceInteraction {
-${glslStructFields(surfaceInteraction)}
+struct SurfaceInteraction
+{
+${slangStructFields(surfaceInteraction)}
 };
 
-layout(buffer_reference, buffer_reference_align = 8) readonly buffer PrimitiveBuffer {
-    PrimitiveRecord records[];
+struct PrimePushConstants
+{
+${slangStructFields(push)}
 };
 
-layout(buffer_reference, buffer_reference_align = 8) readonly buffer SectionTable {
-    SectionRecord sections[];
+struct NrdMotionPushConstants
+{
+${slangStructFields(nrdMotionPush)}
 };
 
-layout(buffer_reference, buffer_reference_align = 16) readonly buffer LightNodeBuffer {
-    LightNode nodes[];
+struct SharcFrameConstants
+{
+${slangStructFields(sharcFrame)}
 };
-
-layout(buffer_reference, buffer_reference_align = 4) readonly buffer LightLeafBuffer {
-    LightLeaf leaves[];
-};
-
-layout(buffer_reference, buffer_reference_align = 4) readonly buffer LightLeafEntryBuffer {
-    LightLeafEntry entries[];
-};
-
-layout(buffer_reference, buffer_reference_align = 16) readonly buffer LightEmitterBuffer {
-    LightEmitter emitters[];
-};
-
-layout(buffer_reference, buffer_reference_align = 16) readonly buffer LightCellBuffer {
-    LightCell cells[];
-};
-
-layout(buffer_reference, buffer_reference_align = 8) readonly buffer SectionLightHeaderBuffer {
-    SectionLightHeader header;
-};
-
-layout(buffer_reference, buffer_reference_align = 16) readonly buffer IntegratorBuffer {
-    IntegratorRecord record;
-};
-
-layout(push_constant) uniform PrimePushConstants {
-${glslPushFields}
-} primePush;
-
-layout(set = 0, binding = ${schema.sharedDescriptors.tlas}) uniform accelerationStructureEXT primeScene;
-layout(set = 0, binding = ${schema.sharedDescriptors.blockAtlas}) uniform sampler2D primeSceneTextures[PRIME_SCENE_TEXTURE_COUNT];
-layout(set = 0, binding = ${schema.sharedDescriptors.labPbrNormalAtlas}) uniform sampler2D primeLabPbrNormalAtlas;
-layout(set = 0, binding = ${schema.sharedDescriptors.labPbrSpecularAtlas}) uniform sampler2D primeLabPbrSpecularAtlas;
-layout(set = 0, binding = ${schema.sharedDescriptors.skyView}, rgba16f) uniform readonly image2D primeSkyView;
-layout(set = 0, binding = ${schema.sharedDescriptors.transmittanceLow}, rgba16f) uniform readonly image2D primeTransmittanceLow;
-layout(set = 0, binding = ${schema.sharedDescriptors.transmittanceHigh}, rgba16f) uniform readonly image2D primeTransmittanceHigh;
-layout(set = 0, binding = ${schema.sharedDescriptors.aerialRadiance}, rgba16f) uniform readonly image3D primeAerialRadiance;
-layout(set = 0, binding = ${schema.sharedDescriptors.aerialTransmittance}, rgba16f) uniform readonly image3D primeAerialTransmittance;
-layout(set = 0, binding = ${schema.sharedDescriptors.sunShadowDepth0}, r32f) uniform image2D primeSunShadowDepth0;
-layout(set = 0, binding = ${schema.sharedDescriptors.sunShadowDepth1}, r32f) uniform image2D primeSunShadowDepth1;
-layout(set = 0, binding = ${schema.sharedDescriptors.sunShadowDepth2}, r32f) uniform image2D primeSunShadowDepth2;
-layout(set = 0, binding = ${schema.sharedDescriptors.sunShadowDepth3}, r32f) uniform image2D primeSunShadowDepth3;
-layout(set = 0, binding = ${schema.sharedDescriptors.sunShadowDepth4}, r32f) uniform image2D primeSunShadowDepth4;
-layout(set = 0, binding = ${schema.sharedDescriptors.sunShadowDepth5}, r32f) uniform image2D primeSunShadowDepth5;
-layout(set = 0, binding = ${schema.sharedDescriptors.sunShadowDepth6}, r32f) uniform image2D primeSunShadowDepth6;
-layout(set = 0, binding = ${schema.sharedDescriptors.sunShadowDepth7}, r32f) uniform image2D primeSunShadowDepth7;
-layout(set = 0, binding = ${schema.sharedDescriptors.sunShadowDepth8}, r32f) uniform image2D primeSunShadowDepth8;
-layout(set = 0, binding = ${schema.sharedDescriptors.sunShadowDepth9}, r32f) uniform image2D primeSunShadowDepth9;
-layout(set = 0, binding = ${schema.sharedDescriptors.starmap}) uniform sampler2D primeStarmap;
-#if defined(PRIME_REALTIME_ABI)
-layout(set = 1, binding = ${schema.realtimeDescriptors.stableRadiance}, rgba32f) uniform image2D primeStableRadiance;
-// NRD is part of the integrator boundary. Raygen first writes private raw signals to a subset of
-// these images; nrd_motion.comp converts them in place to demodulated scene-linear Rec.2020
-// radiance and matching primary guides before NRD reads them. Changing the final encoding, units
-// or previous-minus-current motion sign silently invalidates reprojection and edge stopping.
-layout(set = 1, binding = ${schema.realtimeDescriptors.nrdNoisyDiffuse}, rgba16f) uniform image2D primeNrdNoisyDiffuse;
-layout(set = 1, binding = ${schema.realtimeDescriptors.nrdNoisySpecular}, rgba16f) uniform image2D primeNrdNoisySpecular;
-layout(set = 1, binding = ${schema.realtimeDescriptors.nrdNormalRoughness}, rgb10_a2) uniform image2D primeNrdNormalRoughness;
-layout(set = 1, binding = ${schema.realtimeDescriptors.nrdViewZ}, r32f) uniform image2D primeNrdViewZ;
-layout(set = 1, binding = ${schema.realtimeDescriptors.wavefrontTransportMetadata}, rgba16f) uniform image2D primeWavefrontTransportMetadata;
-layout(set = 1, binding = ${schema.realtimeDescriptors.nrdMaterial}, rgba16f) uniform image2D primeNrdMaterial;
-layout(set = 1, binding = ${schema.realtimeDescriptors.nrdSpecularMaterial}, rgba16f) uniform image2D primeNrdSpecularMaterial;
-layout(set = 1, binding = ${schema.realtimeDescriptors.nrdPrimaryPosition}, rgba32f) uniform image2D primeNrdPrimaryPosition;
-layout(set = 1, binding = ${schema.realtimeDescriptors.nrdSunLighting}, rgba16f) uniform image2D primeNrdSunLighting;
-layout(set = 1, binding = ${schema.realtimeDescriptors.nrdSunPenumbra}, r16f) uniform image2D primeNrdSunPenumbra;
-layout(set = 1, binding = ${schema.realtimeDescriptors.nrdDiffuseDirection}, rgba16f) uniform image2D primeNrdDiffuseDirection;
-layout(set = 1, binding = ${schema.realtimeDescriptors.nrdSpecularDirection}, rgba16f) uniform image2D primeNrdSpecularDirection;
-layout(set = 1, binding = ${schema.realtimeDescriptors.rawNumericalDiagnostic}, rgba16f) uniform writeonly image2D primeRawNumericalDiagnostic;
-layout(set = 1, binding = ${schema.realtimeDescriptors.nrdReflectionNoisyDiffuse}, rgba16f) uniform image2D primeNrdReflectionNoisyDiffuse;
-layout(set = 1, binding = ${schema.realtimeDescriptors.nrdReflectionNoisySpecular}, rgba16f) uniform image2D primeNrdReflectionNoisySpecular;
-layout(set = 1, binding = ${schema.realtimeDescriptors.nrdReflectionNormalRoughness}, rgb10_a2) uniform image2D primeNrdReflectionNormalRoughness;
-layout(set = 1, binding = ${schema.realtimeDescriptors.nrdReflectionMaterial}, rgba16f) uniform image2D primeNrdReflectionMaterial;
-layout(set = 1, binding = ${schema.realtimeDescriptors.nrdReflectionSpecularMaterial}, rgba16f) uniform image2D primeNrdReflectionSpecularMaterial;
-layout(set = 1, binding = ${schema.realtimeDescriptors.nrdReflectionPosition}, rgba32f) uniform image2D primeNrdReflectionPosition;
-layout(set = 1, binding = ${schema.realtimeDescriptors.nrdReflectionDiffuseDirection}, rgba16f) uniform image2D primeNrdReflectionDiffuseDirection;
-layout(set = 1, binding = ${schema.realtimeDescriptors.nrdReflectionSpecularDirection}, rgba16f) uniform image2D primeNrdReflectionSpecularDirection;
-layout(set = 1, binding = ${schema.realtimeDescriptors.nrdDisplayPosition}, rgba32f) uniform image2D primeNrdDisplayPosition;
-#if defined(PRIME_SHARC_ABI)
-layout(std140, set = 1, binding = ${schema.realtimeDescriptors.sharcFrame}) uniform PrimeSharcFrameConstants {
-${sharcFrame.fields.collect { field -> "    layout(offset = ${field.offset}) ${field.type} ${field.name};" }.join('\n')}
-} primeSharcFrame;
-#endif
-#elif defined(PRIME_OFFLINE_ABI)
-layout(set = 1, binding = ${schema.offlineDescriptors.runningMean}, rgba32f) uniform image2D primeOfflineRunningMean;
-#endif
-#endif
-"""
-		new File(glslDir, 'prime_sharc_abi.glsl').text = """\
-#ifndef PRIME_SHARC_ABI_GLSL
-#define PRIME_SHARC_ABI_GLSL
-
-#extension GL_EXT_shader_explicit_arithmetic_types_int64 : require
-
-layout(std140, set = 1, binding = ${schema.realtimeDescriptors.sharcFrame}) uniform PrimeSharcFrameConstants {
-${sharcFrame.fields.collect { field -> "    layout(offset = ${field.offset}) ${field.type} ${field.name};" }.join('\n')}
-} primeSharcFrame;
 
 #endif
 """
-		new File(glslDir, 'prime_atmosphere_contract.glsl').text = """\
-#ifndef PRIME_ATMOSPHERE_CONTRACT_GLSL
-#define PRIME_ATMOSPHERE_CONTRACT_GLSL
+		new File(slangDir, 'prime_abi.slang').text = """\
+#ifndef PRIME_ABI_SLANG
+#define PRIME_ABI_SLANG
 
-// Generated from shaders/abi.json. Atmosphere compute and ray tracing must share these values.
-#define PRIME_ATMOSPHERE_WORLD_TO_ATMOSPHERE_SCALE ${atmosphereContract.worldToAtmosphereScale}
-#define PRIME_ATMOSPHERE_BOTTOM_RADIUS_KM ${atmosphereContract.bottomRadiusKm}
-#define PRIME_ATMOSPHERE_TOP_RADIUS_KM ${atmosphereContract.topRadiusKm}
-#define PRIME_ATMOSPHERE_WORLD_SEA_LEVEL_Y ${atmosphereContract.worldSeaLevelY}
-#define PRIME_ATMOSPHERE_WORLD_UNIT_SCALE_KM ${atmosphereContract.worldUnitScaleKm * atmosphereContract.worldToAtmosphereScale}
-#define PRIME_ATMOSPHERE_SPACE_SUN_INTENSITY ${atmosphereContract.spaceSunIntensity}
-#define PRIME_ATMOSPHERE_SUN_ANGULAR_RADIUS_RADIANS ${atmosphereContract.sunAngularRadiusRadians}
-#define PRIME_ATMOSPHERE_AERIAL_MAX_DISTANCE_KM ${atmosphereContract.aerialMaxDistanceKm * atmosphereContract.worldToAtmosphereScale}
-#define PRIME_ATMOSPHERE_AERIAL_WIDTH ${atmosphereContract.aerialWidth}
-#define PRIME_ATMOSPHERE_AERIAL_HEIGHT ${atmosphereContract.aerialHeight}
-#define PRIME_ATMOSPHERE_AERIAL_EPIPOLAR_SAMPLES ${atmosphereContract.aerialEpipolarSamples}
-#define PRIME_ATMOSPHERE_AERIAL_EPIPOLAR_SLICES ${atmosphereContract.aerialEpipolarSlices}
-#define PRIME_ATMOSPHERE_AERIAL_DEPTH ${atmosphereContract.aerialDepth}
-#define PRIME_ATMOSPHERE_AERIAL_SEGMENT_SAMPLES ${atmosphereContract.aerialSegmentSamples}
+#include "prime_abi_types.slang"
+
+[[vk::push_constant]] ConstantBuffer<PrimePushConstants> primePush;
+
+[[vk::binding(${schema.sharedDescriptors.tlas}, 0)]]
+RaytracingAccelerationStructure primeScene;
+[[vk::binding(${schema.sharedDescriptors.blockAtlas}, 0)]]
+Sampler2D<float4> primeSceneTextures[PRIME_SCENE_TEXTURE_COUNT];
+[[vk::binding(${schema.sharedDescriptors.labPbrNormalAtlas}, 0)]]
+Sampler2D<float4> primeLabPbrNormalAtlas;
+[[vk::binding(${schema.sharedDescriptors.labPbrSpecularAtlas}, 0)]]
+Sampler2D<float4> primeLabPbrSpecularAtlas;
+
+[[vk::binding(${schema.sharedDescriptors.skyView}, 0)]] [[vk::image_format("rgba16f")]]
+readonly RWTexture2D<float4> primeSkyView;
+[[vk::binding(${schema.sharedDescriptors.transmittanceLow}, 0)]] [[vk::image_format("rgba16f")]]
+readonly RWTexture2D<float4> primeTransmittanceLow;
+[[vk::binding(${schema.sharedDescriptors.transmittanceHigh}, 0)]] [[vk::image_format("rgba16f")]]
+readonly RWTexture2D<float4> primeTransmittanceHigh;
+[[vk::binding(${schema.sharedDescriptors.aerialRadiance}, 0)]] [[vk::image_format("rgba16f")]]
+readonly RWTexture3D<float4> primeAerialRadiance;
+[[vk::binding(${schema.sharedDescriptors.aerialTransmittance}, 0)]] [[vk::image_format("rgba16f")]]
+readonly RWTexture3D<float4> primeAerialTransmittance;
+[[vk::binding(${schema.sharedDescriptors.sunShadowDepth0}, 0)]] [[vk::image_format("r32f")]]
+RWTexture2D<float> primeSunShadowDepth0;
+[[vk::binding(${schema.sharedDescriptors.sunShadowDepth1}, 0)]] [[vk::image_format("r32f")]]
+RWTexture2D<float> primeSunShadowDepth1;
+[[vk::binding(${schema.sharedDescriptors.sunShadowDepth2}, 0)]] [[vk::image_format("r32f")]]
+RWTexture2D<float> primeSunShadowDepth2;
+[[vk::binding(${schema.sharedDescriptors.sunShadowDepth3}, 0)]] [[vk::image_format("r32f")]]
+RWTexture2D<float> primeSunShadowDepth3;
+[[vk::binding(${schema.sharedDescriptors.sunShadowDepth4}, 0)]] [[vk::image_format("r32f")]]
+RWTexture2D<float> primeSunShadowDepth4;
+[[vk::binding(${schema.sharedDescriptors.sunShadowDepth5}, 0)]] [[vk::image_format("r32f")]]
+RWTexture2D<float> primeSunShadowDepth5;
+[[vk::binding(${schema.sharedDescriptors.sunShadowDepth6}, 0)]] [[vk::image_format("r32f")]]
+RWTexture2D<float> primeSunShadowDepth6;
+[[vk::binding(${schema.sharedDescriptors.sunShadowDepth7}, 0)]] [[vk::image_format("r32f")]]
+RWTexture2D<float> primeSunShadowDepth7;
+[[vk::binding(${schema.sharedDescriptors.sunShadowDepth8}, 0)]] [[vk::image_format("r32f")]]
+RWTexture2D<float> primeSunShadowDepth8;
+[[vk::binding(${schema.sharedDescriptors.sunShadowDepth9}, 0)]] [[vk::image_format("r32f")]]
+RWTexture2D<float> primeSunShadowDepth9;
+[[vk::binding(${schema.sharedDescriptors.starmap}, 0)]]
+Sampler2D<float4> primeStarmap;
 
 #endif
 """
-		new File(glslDir, 'prime_color_contract.glsl').text = """\
-#ifndef PRIME_COLOR_CONTRACT_GLSL
-#define PRIME_COLOR_CONTRACT_GLSL
-
-// Generated from shaders/abi.json. FSR and the display transform must share this exposure.
-#define PRIME_COLOR_WORKING_SPACE_LINEAR_REC2020_D65 1
-#define PRIME_COLOR_TEXTURE_ENCODING_SRGB 1
-#define PRIME_COLOR_DISPLAY_ENCODING_SRGB 1
-#define PRIME_COLOR_DISPLAY_SPACE_REC709_D65 1
-#define PRIME_COLOR_DISPLAY_TRANSFORM_OKLAB_DRT 1
-#define PRIME_DISPLAY_EXPOSURE ${colorContract.displayExposure}
-
-#endif
-"""
-		new File(glslDir, 'prime_fsr_contract.glsl').text = """\
-#ifndef PRIME_FSR_CONTRACT_GLSL
-#define PRIME_FSR_CONTRACT_GLSL
+		new File(slangDir, 'prime_fsr_contract.slang').text = """\
+#ifndef PRIME_FSR_CONTRACT_SLANG
+#define PRIME_FSR_CONTRACT_SLANG
 
 // Generated from shaders/abi.json. FSR host parameters and shader guides share these values.
-#define PRIME_FSR_NEAR_PLANE ${fsrContract.nearPlane}
-#define PRIME_FSR_VIEW_SPACE_TO_METERS_FACTOR ${fsrContract.viewSpaceToMetersFactor}
+static const float PRIME_FSR_NEAR_PLANE = ${fsrContract.nearPlane};
+static const float PRIME_FSR_VIEW_SPACE_TO_METERS_FACTOR = ${fsrContract.viewSpaceToMetersFactor};
 
 #endif
 """
-		def glslNrdMotionPushFields = nrdMotionPush.fields.collect { field ->
-			"    layout(offset = ${field.offset}) ${field.type} ${field.name};"
-		}.join('\n')
-		new File(glslDir, 'prime_nrd_motion_contract.glsl').text = """\
-#ifndef PRIME_NRD_MOTION_CONTRACT_GLSL
-#define PRIME_NRD_MOTION_CONTRACT_GLSL
+		new File(slangDir, 'prime_nrd_motion_contract.slang').text = """\
+#ifndef PRIME_NRD_MOTION_CONTRACT_SLANG
+#define PRIME_NRD_MOTION_CONTRACT_SLANG
+
+#include "prime_abi_types.slang"
 
 // Generated from shaders/abi.json. The Vulkan range and shader block share this layout.
-layout(push_constant) uniform PrimeMotionPushConstants {
-${glslNrdMotionPushFields}
-} primeMotionPush;
+[[vk::push_constant]] ConstantBuffer<NrdMotionPushConstants> primeMotionPush;
+
+#endif
+"""
+		new File(slangDir, 'prime_sharc_abi.slang').text = """\
+#ifndef PRIME_SHARC_ABI_SLANG
+#define PRIME_SHARC_ABI_SLANG
+
+#include "prime_abi_types.slang"
+
+[[vk::binding(${schema.realtimeDescriptors.sharcFrame}, 1)]]
+ConstantBuffer<SharcFrameConstants> primeSharcFrame;
+
+#endif
+"""
+		new File(slangDir, 'prime_realtime_abi.slang').text = """\
+#ifndef PRIME_REALTIME_ABI_SLANG
+#define PRIME_REALTIME_ABI_SLANG
+
+#include "prime_abi_types.slang"
+
+static const uint PRIME_RENDERER_DESCRIPTOR_SET = 1;
+static const uint PRIME_DESCRIPTOR_WAVEFRONT_PATHS = ${schema.realtimeDescriptors.wavefrontPaths};
+static const uint PRIME_DESCRIPTOR_WAVEFRONT_QUEUE = ${schema.realtimeDescriptors.wavefrontQueue};
+static const uint PRIME_WAVEFRONT_PATH_RECORD_SIZE = ${wavefrontContract.pathRecordSize};
+static const uint PRIME_WAVEFRONT_PATH_SLOTS_PER_PIXEL = ${wavefrontContract.pathSlotsPerPixel};
+static const uint PRIME_WAVEFRONT_ROUNDS = ${wavefrontContract.rounds};
+static const uint PRIME_WAVEFRONT_AREA_RECORD_SIZE = ${wavefrontContract.areaRecordSize};
+static const uint PRIME_WAVEFRONT_QUEUE_ENTRIES_PER_PIXEL = ${wavefrontContract.queueEntriesPerPixel};
+static const uint PRIME_WAVEFRONT_QUEUE_COUNT = ${wavefrontContract.queueCount};
+static const uint PRIME_WAVEFRONT_TRACE_QUEUE_0 = ${wavefrontContract.traceQueue0};
+static const uint PRIME_WAVEFRONT_TRACE_QUEUE_1 = ${wavefrontContract.traceQueue1};
+static const uint PRIME_WAVEFRONT_SHADE_QUEUE = ${wavefrontContract.shadeQueue};
+static const uint PRIME_WAVEFRONT_AREA_QUEUE = ${wavefrontContract.areaQueue};
+static const uint PRIME_WAVEFRONT_QUEUE_COMMAND_STRIDE = ${wavefrontContract.queueCommandStride};
+static const uint PRIME_WAVEFRONT_QUEUE_INDEX_SIZE = ${wavefrontContract.queueIndexSize};
+static const uint PRIME_WAVEFRONT_ACTIVE_MASK = ${wavefrontContract.activeMask};
+
+[[vk::binding(${schema.realtimeDescriptors.stableRadiance}, 1)]] [[vk::image_format("rgba32f")]]
+RWTexture2D<float4> primeStableRadiance;
+[[vk::binding(${schema.realtimeDescriptors.nrdNoisyDiffuse}, 1)]] [[vk::image_format("rgba16f")]]
+RWTexture2D<float4> primeNrdNoisyDiffuse;
+[[vk::binding(${schema.realtimeDescriptors.nrdNoisySpecular}, 1)]] [[vk::image_format("rgba16f")]]
+RWTexture2D<float4> primeNrdNoisySpecular;
+[[vk::binding(${schema.realtimeDescriptors.nrdNormalRoughness}, 1)]] [[vk::image_format("rgb10_a2")]]
+RWTexture2D<float4> primeNrdNormalRoughness;
+[[vk::binding(${schema.realtimeDescriptors.nrdViewZ}, 1)]] [[vk::image_format("r32f")]]
+RWTexture2D<float> primeNrdViewZ;
+[[vk::binding(${schema.realtimeDescriptors.wavefrontTransportMetadata}, 1)]] [[vk::image_format("rgba16f")]]
+RWTexture2D<float4> primeWavefrontTransportMetadata;
+[[vk::binding(${schema.realtimeDescriptors.nrdMaterial}, 1)]] [[vk::image_format("rgba16f")]]
+RWTexture2D<float4> primeNrdMaterial;
+[[vk::binding(${schema.realtimeDescriptors.nrdSpecularMaterial}, 1)]] [[vk::image_format("rgba16f")]]
+RWTexture2D<float4> primeNrdSpecularMaterial;
+[[vk::binding(${schema.realtimeDescriptors.nrdPrimaryPosition}, 1)]] [[vk::image_format("rgba32f")]]
+RWTexture2D<float4> primeNrdPrimaryPosition;
+[[vk::binding(${schema.realtimeDescriptors.nrdSunLighting}, 1)]] [[vk::image_format("rgba16f")]]
+RWTexture2D<float4> primeNrdSunLighting;
+[[vk::binding(${schema.realtimeDescriptors.nrdSunPenumbra}, 1)]] [[vk::image_format("r16f")]]
+RWTexture2D<float> primeNrdSunPenumbra;
+[[vk::binding(${schema.realtimeDescriptors.nrdDiffuseDirection}, 1)]] [[vk::image_format("rgba16f")]]
+RWTexture2D<float4> primeNrdDiffuseDirection;
+[[vk::binding(${schema.realtimeDescriptors.nrdSpecularDirection}, 1)]] [[vk::image_format("rgba16f")]]
+RWTexture2D<float4> primeNrdSpecularDirection;
+[[vk::binding(${schema.realtimeDescriptors.rawNumericalDiagnostic}, 1)]] [[vk::image_format("rgba16f")]]
+writeonly RWTexture2D<float4> primeRawNumericalDiagnostic;
+[[vk::binding(${schema.realtimeDescriptors.nrdReflectionNoisyDiffuse}, 1)]] [[vk::image_format("rgba16f")]]
+RWTexture2D<float4> primeNrdReflectionNoisyDiffuse;
+[[vk::binding(${schema.realtimeDescriptors.nrdReflectionNoisySpecular}, 1)]] [[vk::image_format("rgba16f")]]
+RWTexture2D<float4> primeNrdReflectionNoisySpecular;
+[[vk::binding(${schema.realtimeDescriptors.nrdReflectionNormalRoughness}, 1)]] [[vk::image_format("rgb10_a2")]]
+RWTexture2D<float4> primeNrdReflectionNormalRoughness;
+[[vk::binding(${schema.realtimeDescriptors.nrdReflectionMaterial}, 1)]] [[vk::image_format("rgba16f")]]
+RWTexture2D<float4> primeNrdReflectionMaterial;
+[[vk::binding(${schema.realtimeDescriptors.nrdReflectionSpecularMaterial}, 1)]] [[vk::image_format("rgba16f")]]
+RWTexture2D<float4> primeNrdReflectionSpecularMaterial;
+[[vk::binding(${schema.realtimeDescriptors.nrdReflectionPosition}, 1)]] [[vk::image_format("rgba32f")]]
+RWTexture2D<float4> primeNrdReflectionPosition;
+[[vk::binding(${schema.realtimeDescriptors.nrdReflectionDiffuseDirection}, 1)]] [[vk::image_format("rgba16f")]]
+RWTexture2D<float4> primeNrdReflectionDiffuseDirection;
+[[vk::binding(${schema.realtimeDescriptors.nrdReflectionSpecularDirection}, 1)]] [[vk::image_format("rgba16f")]]
+RWTexture2D<float4> primeNrdReflectionSpecularDirection;
+[[vk::binding(${schema.realtimeDescriptors.nrdDisplayPosition}, 1)]] [[vk::image_format("rgba32f")]]
+RWTexture2D<float4> primeNrdDisplayPosition;
+
+float4 primeImageLoad(RWTexture2D<float4> image, int2 coordinate)
+{
+    return image[coordinate];
+}
+
+float4 primeImageLoad(RWTexture2D<float> image, int2 coordinate)
+{
+    return float4(image[coordinate], 0.0, 0.0, 0.0);
+}
+
+void primeImageStore(RWTexture2D<float4> image, int2 coordinate, float4 value)
+{
+    image[coordinate] = value;
+}
+
+void primeImageStore(RWTexture2D<float> image, int2 coordinate, float4 value)
+{
+    image[coordinate] = value.x;
+}
+
+void primeImageStoreWriteOnly(
+        writeonly RWTexture2D<float4> image, int2 coordinate, float4 value)
+{
+    image[coordinate] = value;
+}
+
+#endif
+"""
+		new File(slangDir, 'prime_offline_abi.slang').text = """\
+#ifndef PRIME_OFFLINE_ABI_SLANG
+#define PRIME_OFFLINE_ABI_SLANG
+
+#include "prime_abi_types.slang"
+
+static const uint PRIME_RENDERER_DESCRIPTOR_SET = 1;
+static const uint PRIME_DESCRIPTOR_WAVEFRONT_PATHS = ${schema.offlineDescriptors.wavefrontPaths};
+static const uint PRIME_DESCRIPTOR_WAVEFRONT_QUEUE = ${schema.offlineDescriptors.wavefrontQueue};
+static const uint PRIME_WAVEFRONT_PATH_RECORD_SIZE = ${offlineWavefrontContract.pathRecordSize};
+static const uint PRIME_WAVEFRONT_PATH_SLOTS_PER_PIXEL = ${offlineWavefrontContract.pathSlotsPerPixel};
+static const uint PRIME_WAVEFRONT_ROUNDS = ${offlineWavefrontContract.rounds};
+static const uint PRIME_WAVEFRONT_AREA_RECORD_SIZE = ${offlineWavefrontContract.areaRecordSize};
+static const uint PRIME_WAVEFRONT_QUEUE_ENTRIES_PER_PIXEL = ${offlineWavefrontContract.queueEntriesPerPixel};
+static const uint PRIME_WAVEFRONT_QUEUE_COUNT = ${offlineWavefrontContract.queueCount};
+static const uint PRIME_WAVEFRONT_QUEUE_COMMAND_STRIDE = ${offlineWavefrontContract.queueCommandStride};
+static const uint PRIME_WAVEFRONT_QUEUE_INDEX_SIZE = ${offlineWavefrontContract.queueIndexSize};
+static const uint PRIME_WAVEFRONT_ACTIVE_MASK = ${offlineWavefrontContract.activeMask};
+
+[[vk::binding(${schema.offlineDescriptors.runningMean}, 1)]] [[vk::image_format("rgba32f")]]
+RWTexture2D<float4> primeOfflineRunningMean;
+
+float4 primeImageLoad(RWTexture2D<float4> image, int2 coordinate)
+{
+    return image[coordinate];
+}
+
+void primeImageStore(RWTexture2D<float4> image, int2 coordinate, float4 value)
+{
+    image[coordinate] = value;
+}
 
 #endif
 """
 	}
 }
 
-abstract class CompilePrimeShaders extends DefaultTask {
+
+abstract class CompilePrimeSlangComputeShaders extends DefaultTask {
 	@InputDirectory
 	abstract DirectoryProperty getSourceDirectory()
 
@@ -819,219 +895,141 @@ abstract class CompilePrimeShaders extends DefaultTask {
 	abstract DirectoryProperty getOutputDirectory()
 
 	@Input
-	abstract Property<String> getGlslangValidator()
+	abstract Property<String> getSlangCompiler()
 
 	@Input
 	abstract Property<String> getSpirvValidator()
 
 	@Input
-	abstract Property<String> getSpirvOptimizer()
-
-	@Input
-	abstract Property<Boolean> getDebugInfo()
+	abstract Property<String> getDebugLevel()
 
 	@javax.inject.Inject
 	abstract org.gradle.api.file.FileSystemOperations getFileSystemOperations()
 
 	private static void runCommand(List<String> arguments) {
 		def command = arguments.collect { it.toString() }
-		def process = new ProcessBuilder(command)
-				.inheritIO()
-				.start()
+		def process = new ProcessBuilder(command).inheritIO().start()
 		try {
 			def exitCode = process.waitFor()
 			if (exitCode != 0) {
 				throw new GradleException(
-						"Shader tool failed with exit code ${exitCode}: ${command[0]}")
+						"Shader tool failed with exit code ${exitCode}: ${command.join(' ')}")
 			}
 		} catch (InterruptedException exception) {
 			process.destroyForcibly()
 			Thread.currentThread().interrupt()
-			throw new GradleException("Shader tool was interrupted: ${command[0]}", exception)
+			throw new GradleException(
+					"Shader tool was interrupted: ${command.join(' ')}", exception)
 		}
 	}
 
 	@TaskAction
 	void compile() {
 		def sources = sourceDirectory.get().asFileTree.matching {
-			include '**/*.rgen', '**/*.rmiss', '**/*.rchit', '**/*.rahit', '**/*.comp'
+			include '**/*.compute.slang',
+					'**/*.raygeneration.slang',
+					'**/*.miss.slang',
+					'**/*.closesthit.slang',
+					'**/*.anyhit.slang'
 		}.files.sort { it.absolutePath }
 		if (sources.empty) {
-			throw new GradleException('No Prime Vulkan shaders were found')
+			throw new GradleException('No Prime Slang entry points were found')
 		}
 
 		def scratch = new File(temporaryDir, 'spv')
 		fileSystemOperations.delete { delete scratch }
 		scratch.mkdirs()
-		def glslang = glslangValidator.get()
-		def validator = spirvValidator.get()
-		def optimizer = spirvOptimizer.get()
 		def includes = includeDirectories.files
 				.findAll { it.isDirectory() }
 				.sort { it.absolutePath }
-				.collect { it.absolutePath }
-		def emitDebugInfo = debugInfo.get()
-		def compileShader = { File source, File output, List<String> definitions ->
-			def arguments = ['-V', '--target-env', 'vulkan1.2',
-					emitDebugInfo ? '-g' : '-g0']
-			arguments.addAll(definitions)
-			includes.each { arguments.add("-I${it}") }
-			arguments.add(source.absolutePath)
-			arguments.addAll(['-o', output.absolutePath])
-			CompilePrimeShaders.runCommand([glslang, *arguments])
-			if (!emitDebugInfo) {
-				def optimized = new File(output.parentFile, output.name + '.optimized')
-				// These passes only canonicalize SPIR-V structure and remove redundant operations.
-				// Do not add aggressive inlining here: it greatly increases driver compile time.
-				// Dead functions may be removed after glslang has compiled the complete standalone
-				// RoboCute validation module. Function-local DCE removes inactive mode branches and
-				// unconsumed aggregate fields without changing live floating-point evaluation order.
-				def optimizerArguments = [
-						'--remove-duplicates',
-						'--eliminate-local-single-block',
-						'--eliminate-local-single-store',
-						'--ssa-rewrite',
-						'--redundancy-elimination',
-						'--simplify-instructions',
-						'--eliminate-dead-branches',
-						'--eliminate-dead-code-aggressive',
-						'--eliminate-dead-inserts']
-				// Hit and miss modules are compiled independently from their raygen caller. Pruning
-				// an incoming payload member renumbers the remaining struct fields and changes the
-				// cross-stage payload ABI even though each standalone module still validates.
-				if (!(source.name.endsWith('.rmiss')
-						|| source.name.endsWith('.rchit')
-						|| source.name.endsWith('.rahit'))) {
-					optimizerArguments.add('--eliminate-dead-members')
-				}
-				optimizerArguments.addAll([
-						'--simplify-instructions',
-						'--eliminate-dead-functions',
-						'--merge-blocks',
-						'--compact-ids',
-						output.absolutePath,
-						'-o', optimized.absolutePath])
-				CompilePrimeShaders.runCommand([optimizer, *optimizerArguments])
-				java.nio.file.Files.move(
-						optimized.toPath(), output.toPath(),
-						java.nio.file.StandardCopyOption.REPLACE_EXISTING)
-			}
-			CompilePrimeShaders.runCommand(
-					[validator, '--target-env', 'vulkan1.2', output.absolutePath])
-		}
-		def specializeWavefront = { File input, File output, int stage ->
-			CompilePrimeShaders.runCommand([optimizer,
-						'--set-spec-const-default-value', "0:${stage}",
-						'--freeze-spec-const',
-						'--fold-spec-const-op-composite',
-						'--eliminate-dead-branches',
-						'--eliminate-dead-code-aggressive',
-						'--eliminate-dead-inserts',
-						'--eliminate-dead-members',
-						'--simplify-instructions',
-						'--eliminate-dead-functions',
-						'--merge-blocks',
-						'--compact-ids',
-						input.absolutePath,
-						'-o', output.absolutePath])
-			CompilePrimeShaders.runCommand(
-					[validator, '--target-env', 'vulkan1.2', output.absolutePath])
-		}
+		def compiler = slangCompiler.get()
+		def validator = spirvValidator.get()
 		def compilationUnits = []
-		def addWavefrontCompilation = {
-				File source, String genericName, String prefix, def variant,
-				List<String> definitions, List<Map<String, Object>> stages ->
-			compilationUnits.add({
-				def generic = new File(scratch, genericName)
-				compileShader(source, generic, definitions)
-				stages.each { stage ->
-					def output = new File(
-							scratch,
-							"${prefix}_${stage.name}${variant.name}.rgen.spv")
-					specializeWavefront(generic, output, stage.value as int)
-				}
-				java.nio.file.Files.delete(generic.toPath())
-				return null
-			} as java.util.concurrent.Callable<Void>)
-		}
-		def variants = [
-				[name: '', definitions: []],
-				[name: '_subgroup', definitions: [
-						'-DPRIME_ENABLE_SUBGROUP_QUEUE=1'
-				]],
-				[name: '_ser', definitions: [
-						'-DPRIME_ENABLE_SER=1',
-						'-DPRIME_ENABLE_SUBGROUP_QUEUE=1'
-				]]
-		]
 		sources.each { source ->
-			if (source.name == 'offline_wavefront.rgen') {
-				// Each transport variant retains one GLSL front end and five frozen stages.
-				variants.each { variant ->
-					addWavefrontCompilation(
-							source,
-							"offline_wavefront${variant.name}.generic.rgen.spv",
-							'offline_wavefront', variant, variant.definitions,
-							[
-									[name: 'head', value: 0],
-									[name: 'step', value: 1],
-									[name: 'area', value: 2],
-									[name: 'tail', value: 3],
-									[name: 'resolve', value: 4]
-							])
-				}
-			} else if (source.name == 'realtime_wavefront.rgen') {
-				variants.each { variant ->
-					addWavefrontCompilation(
-							source,
-							"realtime_wavefront${variant.name}.generic.rgen.spv",
-							'realtime_wavefront', variant, variant.definitions,
-							[
-									[name: 'head', value: 0],
-									[name: 'resolve', value: 3]
-							])
-					def deferredDefinitions = new ArrayList<String>(variant.definitions)
-					deferredDefinitions.add('-DPRIME_DEFER_SECONDARY_AREA_NEE=1')
-					addWavefrontCompilation(
-							source,
-							"realtime_wavefront_deferred${variant.name}.generic.rgen.spv",
-							'realtime_wavefront', variant, deferredDefinitions,
-							[
-									[name: 'step', value: 1],
-									[name: 'area', value: 4],
-									[name: 'shade', value: 2]
-							])
-					def sharcDefinitions = new ArrayList<String>(deferredDefinitions)
-					sharcDefinitions.add('-DPRIME_SHARC_QUERY=1')
-					addWavefrontCompilation(
-							source,
-							"realtime_wavefront_sharc${variant.name}.generic.rgen.spv",
-							'realtime_wavefront_sharc', variant, sharcDefinitions,
-							[
-									[name: 'area', value: 4],
-									[name: 'shade', value: 2]
-							])
-				}
-			} else {
+			def stages = [
+					'compute': [slang: 'compute', legacy: 'comp'],
+					'raygeneration': [slang: 'raygeneration', legacy: 'rgen'],
+					'miss': [slang: 'miss', legacy: 'rmiss'],
+					'closesthit': [slang: 'closesthit', legacy: 'rchit'],
+					'anyhit': [slang: 'anyhit', legacy: 'rahit']
+			]
+			def suffix = stages.keySet().find { source.name.endsWith(".${it}.slang") }
+			if (suffix == null) {
+				throw new GradleException("Unknown Slang stage suffix: ${source}")
+			}
+			def stage = stages[suffix]
+			def stem = source.name.substring(
+					0, source.name.length() - ".${suffix}.slang".length())
+			def variants = source.name.startsWith('realtime_wavefront_')
+					|| source.name.startsWith('offline_wavefront_')
+					? [
+							[name: '', definitions: []],
+							[name: '_subgroup', definitions: [
+									'-DPRIME_ENABLE_SUBGROUP_QUEUE=1'
+							]],
+							[name: '_ser', definitions: [
+									'-DPRIME_ENABLE_SER=1',
+									'-DPRIME_ENABLE_SUBGROUP_QUEUE=1'
+							]]
+					]
+					: [[name: '', definitions: []]]
+			variants.each { variant ->
+				def output = new File(
+						scratch,
+						"${stem}${variant.name}.${stage.legacy}.spv")
 				compilationUnits.add({
-					def output = new File(scratch, source.name + '.spv')
-					compileShader(source, output, [])
-					// Conformance-only shaders force otherwise dormant libraries through glslang and
-					// spirv-val, but are never loaded at runtime and must not inflate the distributable
-					// jar.
-					if (source.name.endsWith('_validation.comp')) {
-						java.nio.file.Files.delete(output.toPath())
+					def arguments = [
+					compiler,
+					source.absolutePath,
+					'-target', 'spirv',
+					'-profile', 'glsl_460',
+					'-capability', 'spirv_1_5',
+					// Physical pointers and non-uniform sampled-image arrays make Slang
+					// close the glsl_460 profile over these SPIR-V capability aliases. Naming
+					// the closure explicitly keeps warnings-as-errors useful; unused
+					// capabilities are not emitted into the resulting module.
+					'-capability', 'SPV_KHR_non_semantic_info',
+					'-capability', 'SPV_GOOGLE_user_type',
+					'-capability', 'spvSparseResidency',
+					'-capability', 'spvMinLod',
+					'-capability', 'spvFragmentFullyCoveredEXT',
+					'-capability', 'spvGroupNonUniform',
+					'-capability', 'spvGroupNonUniformBallot',
+					// The typed Slang HitObject API lowers to the vendor-neutral EXT dialect.
+					// Naming its capability keeps warnings-as-errors useful without permitting
+					// an accidental fallback to NV-suffixed GLSL intrinsics.
+					'-capability', 'spvShaderInvocationReorderEXT',
+					'-entry', 'main',
+					'-stage', stage.slang,
+					// Explicit ray-payload locations are a cross-stage Vulkan ABI contract. The
+					// Slang compatibility layer exposes location-indexed payload/hit-object
+					// intrinsics while the rest of each translation unit remains ordinary Slang.
+					'-allow-glsl',
+					'-matrix-layout-row-major',
+					'-fvk-use-gl-layout',
+					'-emit-spirv-directly',
+					'-warnings-as-errors', 'all',
+						'-O2', debugLevel.get()
+					]
+					arguments.addAll(variant.definitions)
+					includes.each { include ->
+						arguments.addAll(['-I', include.absolutePath])
 					}
+					arguments.addAll(['-o', output.absolutePath])
+					CompilePrimeSlangComputeShaders.runCommand(arguments)
+					CompilePrimeSlangComputeShaders.runCommand(
+							[validator, '--target-env', 'vulkan1.2', output.absolutePath])
 					return null
 				} as java.util.concurrent.Callable<Void>)
 			}
 		}
 
-		// The pool is task-local and bounded because each worker owns its output files but may run a
-		// memory-heavy glslang process. Wavefront variants are separate units so no source-level
-		// long tail leaves the other workers idle. Every worker is joined before publication.
-		def compilerCount = Math.min(compilationUnits.size(),
-				Math.min(8, Runtime.runtime.availableProcessors()))
+		def compilerCount = Math.min(
+				compilationUnits.size(),
+				// A shade or head closure can consume several GiB in slangc. Two workers overlap
+				// independent execution modes without making the compiler processes compete for
+				// enough memory to be terminated by the host.
+				Math.min(2, Runtime.runtime.availableProcessors()))
 		def compilerPool = java.util.concurrent.Executors.newFixedThreadPool(compilerCount)
 		try {
 			def compilations = compilationUnits.collect { compilerPool.submit(it) }
@@ -1040,13 +1038,13 @@ abstract class CompilePrimeShaders extends DefaultTask {
 					compilation.get()
 				} catch (InterruptedException exception) {
 					Thread.currentThread().interrupt()
-					throw new GradleException('Shader compilation was interrupted', exception)
+					throw new GradleException('Slang compilation was interrupted', exception)
 				} catch (java.util.concurrent.ExecutionException exception) {
 					def cause = exception.cause
 					if (cause instanceof RuntimeException) {
 						throw cause
 					}
-					throw new GradleException('Shader compilation failed', cause)
+					throw new GradleException('Slang compilation failed', cause)
 				}
 			}
 		} finally {
@@ -1057,8 +1055,379 @@ abstract class CompilePrimeShaders extends DefaultTask {
 		fileSystemOperations.delete { delete published }
 		published.mkdirs()
 		scratch.listFiles().each { source ->
-			java.nio.file.Files.move(source.toPath(), new File(published, source.name).toPath(),
+			java.nio.file.Files.move(
+					source.toPath(), new File(published, source.name).toPath(),
 					java.nio.file.StandardCopyOption.REPLACE_EXISTING)
+		}
+	}
+}
+
+
+abstract class VerifySlangRayPayloadAbi extends DefaultTask {
+	@InputDirectory
+	@PathSensitive(PathSensitivity.RELATIVE)
+	abstract DirectoryProperty getSlangDirectory()
+
+	@Input
+	abstract Property<String> getSpirvDisassembler()
+
+	private static String disassemble(String tool, File shader) {
+		def process = new ProcessBuilder(tool, shader.absolutePath)
+				.redirectErrorStream(true)
+				.start()
+		def output = process.inputStream.getText('UTF-8')
+		try {
+			def exitCode = process.waitFor()
+			if (exitCode != 0) {
+				throw new GradleException(
+						"SPIR-V disassembly failed for ${shader.name}:\n${output}")
+			}
+		} catch (InterruptedException exception) {
+			process.destroyForcibly()
+			Thread.currentThread().interrupt()
+			throw new GradleException(
+					"SPIR-V disassembly was interrupted for ${shader.name}", exception)
+		}
+		return output
+	}
+
+	private static Map<String, Integer> payloadLocations(String assembly, String storageClass) {
+		def names = [:]
+		def nameMatcher = java.util.regex.Pattern.compile(
+				'(?m)^\\s*OpName %(\\w+) "([^"]+)"\\s*$').matcher(assembly)
+		while (nameMatcher.find()) {
+			names[nameMatcher.group(1)] = nameMatcher.group(2)
+		}
+		def locations = [:]
+		def locationMatcher = java.util.regex.Pattern.compile(
+				'(?m)^\\s*OpDecorate %(\\w+) Location (\\d+)\\s*$').matcher(assembly)
+		while (locationMatcher.find()) {
+			locations[locationMatcher.group(1)] = locationMatcher.group(2) as int
+		}
+		def payloads = [:]
+		def payloadMatcher = java.util.regex.Pattern.compile(
+				'(?m)^\\s*%(\\w+) = OpVariable %\\w+ (\\w+)\\s*$')
+				.matcher(assembly)
+		while (payloadMatcher.find()) {
+			if (payloadMatcher.group(2) != storageClass) {
+				continue
+			}
+			def id = payloadMatcher.group(1)
+			def name = names[id]
+			if (name == null) {
+				throw new GradleException("${storageClass} variable %${id} has no SPIR-V name")
+			}
+			if (locations[id] == null) {
+				throw new GradleException("${storageClass} variable ${name} has no Location")
+			}
+			payloads[name] = locations[id]
+		}
+		return payloads
+	}
+
+	@TaskAction
+	void verify() {
+		def root = new File(slangDirectory.get().asFile, 'prime/shaders')
+		def shaders = (root.listFiles() ?: [] as File[])
+				.findAll { file ->
+					file.name.endsWith('.rgen.spv')
+							|| file.name.endsWith('.rmiss.spv')
+							|| file.name.endsWith('.rchit.spv')
+							|| file.name.endsWith('.rahit.spv')
+				}
+				.sort { it.name }
+		if (shaders.empty) {
+			throw new GradleException('No production Slang ray-tracing shaders were found')
+		}
+
+		def expectedOutgoing = [primeSurfacePayload: 0, primeShadowPayload: 1]
+		def extSerModules = []
+		shaders.each { shader ->
+			def assembly = VerifySlangRayPayloadAbi.disassemble(
+					spirvDisassembler.get(), shader)
+			if (shader.name.endsWith('_ser.rgen.spv')) {
+				if (assembly.contains('SPV_NV_shader_invocation_reorder')
+						|| assembly.contains('OpReorderThreadWithHitObjectNV')) {
+					throw new GradleException(
+							"SER shader ${shader.name} uses the vendor-specific NV dialect")
+				}
+				if (assembly.contains('OpReorderThreadWithHitObjectEXT')) {
+					if (!assembly.contains('SPV_EXT_shader_invocation_reorder')) {
+						throw new GradleException(
+								"SER shader ${shader.name} uses EXT reorder instructions without the EXT declaration")
+					}
+					extSerModules.add(shader.name)
+				}
+			}
+			def outgoing = VerifySlangRayPayloadAbi.payloadLocations(
+					assembly, 'RayPayloadKHR')
+			outgoing.each { name, location ->
+				if (expectedOutgoing[name] == null) {
+					throw new GradleException(
+							"Unexpected outgoing payload ${name} in ${shader.name}")
+				}
+				if (expectedOutgoing[name] != location) {
+					throw new GradleException(
+							"Outgoing payload ${name} in ${shader.name} uses location ${location}; "
+									+ "expected ${expectedOutgoing[name]}")
+				}
+			}
+
+			def incoming = VerifySlangRayPayloadAbi.payloadLocations(
+					assembly, 'IncomingRayPayloadKHR')
+			if (!incoming.isEmpty()) {
+				def expectedLocation = (shader.name.startsWith('world.')
+						|| shader.name.startsWith('world_')) ? 0
+						: (shader.name.startsWith('shadow.')
+						|| shader.name.startsWith('shadow_')) ? 1 : null
+				if (expectedLocation == null) {
+					throw new GradleException(
+							"Incoming payload stage has no declared ABI class: ${shader.name}")
+				}
+				incoming.each { name, location ->
+					if (location != expectedLocation) {
+						throw new GradleException(
+								"Incoming payload ${name} in ${shader.name} uses location ${location}; "
+										+ "expected ${expectedLocation}")
+					}
+				}
+			}
+		}
+		if (extSerModules.empty) {
+			throw new GradleException(
+					'No production SER shader emitted SPV_EXT_shader_invocation_reorder')
+		}
+	}
+}
+
+abstract class VerifySlangToolchain extends DefaultTask {
+	@InputFile
+	@PathSensitive(PathSensitivity.RELATIVE)
+	abstract RegularFileProperty getSmokeShader()
+
+	@Input
+	abstract Property<String> getSlangCompiler()
+
+	@Input
+	abstract Property<String> getExpectedVersion()
+
+	@Input
+	abstract Property<String> getSpirvValidator()
+
+	@Input
+	abstract Property<String> getSpirvDisassembler()
+
+	private static String runAndCapture(List<String> arguments) {
+		def command = arguments.collect { it.toString() }
+		def process
+		try {
+			process = new ProcessBuilder(command)
+					.redirectErrorStream(true)
+					.start()
+		} catch (IOException exception) {
+			throw new GradleException("Could not start shader tool: ${command[0]}", exception)
+		}
+		def output = process.inputStream.getText('UTF-8')
+		try {
+			def exitCode = process.waitFor()
+			if (exitCode != 0) {
+				throw new GradleException(
+						"Shader tool failed with exit code ${exitCode}: ${command[0]}\n${output}")
+			}
+		} catch (InterruptedException exception) {
+			process.destroyForcibly()
+			Thread.currentThread().interrupt()
+			throw new GradleException("Shader tool was interrupted: ${command[0]}", exception)
+		}
+		return output.trim()
+	}
+
+	@TaskAction
+	void verify() {
+		def compiler = slangCompiler.get()
+		def expected = expectedVersion.get()
+		def version = runAndCapture([compiler, '-version'])
+		def versionPattern = java.util.regex.Pattern.compile(
+				"(?m)(^|\\s)${java.util.regex.Pattern.quote(expected)}(\\s|\$)")
+		if (!versionPattern.matcher(version).find()) {
+			throw new GradleException(
+					"Prime requires Slang ${expected}, but ${compiler} reported: ${version}")
+		}
+
+		def output = new File(temporaryDir, 'toolchain_smoke.spv')
+		output.parentFile.mkdirs()
+		runAndCapture([
+				compiler,
+				smokeShader.get().asFile.absolutePath,
+				'-target', 'spirv',
+				'-profile', 'glsl_460',
+				'-capability', 'spirv_1_5',
+				'-entry', 'main',
+				'-stage', 'compute',
+				// Slang matrix terminology is inverted when lowered to SPIR-V. This emits the
+				// ColMajor decoration used by the existing GLSL ABI.
+				'-matrix-layout-row-major',
+				'-fvk-use-gl-layout',
+				'-emit-spirv-directly',
+				'-warnings-as-errors', 'all',
+				'-O0', '-g0',
+				'-o', output.absolutePath
+		])
+		runAndCapture([
+				spirvValidator.get(),
+				'--target-env', 'vulkan1.2',
+				output.absolutePath
+		])
+		def assembly = runAndCapture([spirvDisassembler.get(), output.absolutePath])
+		def abiPatterns = [
+				'(?m)OpMemberDecorate %\\w+ 0 ColMajor$',
+				'(?m)OpMemberDecorate %\\w+ 0 MatrixStride 16$',
+				'(?m)OpMemberDecorate %\\w+ 1 Offset 64$',
+				'(?m)OpDecorate %\\w+ Binding 0$',
+				'(?m)OpDecorate %\\w+ DescriptorSet 0$',
+				'(?m)OpTypePointer PushConstant '
+		]
+		def missing = abiPatterns.findAll { pattern ->
+			!java.util.regex.Pattern.compile(pattern).matcher(assembly).find()
+		}
+		if (!missing.empty) {
+			throw new GradleException(
+					"Slang smoke SPIR-V does not preserve the Prime ABI baseline: ${missing}")
+		}
+	}
+}
+
+abstract class VerifyGeneratedSlangAbi extends DefaultTask {
+	@InputFile
+	@PathSensitive(PathSensitivity.RELATIVE)
+	abstract RegularFileProperty getSchemaFile()
+
+	@InputFile
+	@PathSensitive(PathSensitivity.RELATIVE)
+	abstract RegularFileProperty getSmokeShader()
+
+	@InputDirectory
+	@PathSensitive(PathSensitivity.RELATIVE)
+	abstract DirectoryProperty getGeneratedIncludeDirectory()
+
+	@Input
+	abstract Property<String> getSlangCompiler()
+
+	@Input
+	abstract Property<String> getSpirvValidator()
+
+	@Input
+	abstract Property<String> getSpirvDisassembler()
+
+	private static String runAndCapture(List<String> arguments) {
+		def command = arguments.collect { it.toString() }
+		def process
+		try {
+			process = new ProcessBuilder(command)
+					.redirectErrorStream(true)
+					.start()
+		} catch (IOException exception) {
+			throw new GradleException("Could not start shader tool: ${command[0]}", exception)
+		}
+		def output = process.inputStream.getText('UTF-8')
+		try {
+			def exitCode = process.waitFor()
+			if (exitCode != 0) {
+				throw new GradleException(
+						"Shader tool failed with exit code ${exitCode}: ${command[0]}\n${output}")
+			}
+		} catch (InterruptedException exception) {
+			process.destroyForcibly()
+			Thread.currentThread().interrupt()
+			throw new GradleException("Shader tool was interrupted: ${command[0]}", exception)
+		}
+		return output.trim()
+	}
+
+	@TaskAction
+	void verify() {
+		def output = new File(temporaryDir, 'generated_abi_smoke.spv')
+		output.parentFile.mkdirs()
+		runAndCapture([
+				slangCompiler.get(),
+				smokeShader.get().asFile.absolutePath,
+				'-I', generatedIncludeDirectory.get().asFile.absolutePath,
+				'-target', 'spirv',
+				'-profile', 'glsl_460',
+				'-capability', 'spirv_1_5',
+				'-entry', 'main',
+				'-stage', 'compute',
+				'-matrix-layout-row-major',
+				'-fvk-use-gl-layout',
+				'-emit-spirv-directly',
+				'-warnings-as-errors', 'all',
+				'-O0', '-g0',
+				'-o', output.absolutePath
+		])
+		runAndCapture([
+				spirvValidator.get(),
+				'--target-env', 'vulkan1.2',
+				output.absolutePath
+		])
+		def assembly = runAndCapture([spirvDisassembler.get(), output.absolutePath])
+		def schema = new groovy.json.JsonSlurper().parse(schemaFile.get().asFile)
+		def structNames = [
+				primitiveRecord: 'PrimitiveRecord',
+				sectionRecord: 'SectionRecord',
+				lightNode: 'LightNode',
+				lightLeaf: 'LightLeaf',
+				lightLeafEntry: 'LightLeafEntry',
+				lightEmitter: 'LightEmitter',
+				lightCell: 'LightCell',
+				sectionLightHeader: 'SectionLightHeader',
+				integratorRecord: 'IntegratorRecord',
+				pathState: 'PathState',
+				tracePayload: 'TracePayload',
+				surfaceInteraction: 'SurfaceInteraction',
+				nrdMotionPushConstants: 'NrdMotionPushConstants',
+				sharcFrameConstants: 'SharcFrameConstants'
+		]
+		def missing = []
+		structNames.each { schemaName, slangName ->
+			def definition = schema.structs[schemaName]
+			definition.fields.eachWithIndex { field, index ->
+				def pattern = "(?m)^\\s*OpMemberDecorate %${slangName}_std430 ${index} Offset ${field.offset}\\s*\$"
+				if (!java.util.regex.Pattern.compile(pattern).matcher(assembly).find()) {
+					missing.add("${slangName}.${field.name} offset ${field.offset}")
+				}
+			}
+			def stridePattern = "(?m)^\\s*OpDecorate %_runtimearr_${slangName}_std430 ArrayStride ${definition.size}\\s*\$"
+			if (!java.util.regex.Pattern.compile(stridePattern).matcher(assembly).find()) {
+				missing.add("${slangName} stride ${definition.size}")
+			}
+		}
+		def section = schema.structs.sectionRecord
+		def physicalSectionStride =
+				"(?m)^\\s*OpDecorate %_ptr_PhysicalStorageBuffer_SectionRecord_natural ArrayStride ${section.size}\\s*\$"
+		if (!java.util.regex.Pattern.compile(physicalSectionStride).matcher(assembly).find()) {
+			missing.add("SectionRecord physical-pointer stride ${section.size}")
+		}
+		def push = schema.structs.pushConstants
+		push.fields.eachWithIndex { field, index ->
+			def pattern = "(?m)^\\s*OpMemberDecorate %PrimePushConstants_std430 ${index} Offset ${field.offset}\\s*\$"
+			if (!java.util.regex.Pattern.compile(pattern).matcher(assembly).find()) {
+				missing.add("PrimePushConstants.${field.name} offset ${field.offset}")
+			}
+		}
+		[
+				'(?m)^\\s*OpMemberDecorate %PrimePushConstants_std430 0 ColMajor\\s*$',
+				'(?m)^\\s*OpMemberDecorate %PrimePushConstants_std430 0 MatrixStride 16\\s*$',
+				'(?m)^\\s*OpDecorate %outputValues Binding 14\\s*$',
+				'(?m)^\\s*OpDecorate %outputValues DescriptorSet 0\\s*$',
+				'(?m)^\\s*%\\w+ = OpTypePointer PushConstant '
+		].each { pattern ->
+			if (!java.util.regex.Pattern.compile(pattern).matcher(assembly).find()) {
+				missing.add(pattern)
+			}
+		}
+		if (!missing.empty) {
+			throw new GradleException(
+					"Generated Slang ABI does not match shaders/abi.json: ${missing}")
 		}
 	}
 }
@@ -1082,65 +1451,61 @@ def resolveVulkanTool = { String name ->
 def generateShaderAbi = tasks.register('generateShaderAbi', GenerateShaderAbi) {
 	schemaFile = file('shaders/abi.json')
 	javaOutputDirectory = shaderAbiJavaRoot
-	glslOutputDirectory = shaderAbiIncludeRoot
+	slangOutputDirectory = shaderAbiSlangRoot
 }
 
 def shaderIncludeReport = layout.buildDirectory.file(
 		'reports/prime-shaders/include-graph.txt')
 def verifyShaderIncludeGraph = tasks.register('verifyShaderIncludeGraph') {
 	group = 'verification'
-	description = 'Verifies that Prime production and test shader includes are resolvable and acyclic.'
+	description = 'Verifies that Prime production and test Slang includes are resolvable and acyclic.'
 	dependsOn generateShaderAbi
 	inputs.files(
 			fileTree('shaders'),
-			fileTree('src/test/shaders'),
+			fileTree('src/test/slang'),
 			fileTree('third_party/sharc/include'),
-			shaderAbiIncludeRoot)
+			shaderAbiSlangRoot)
 	outputs.file(shaderIncludeReport)
 
 	doLast {
 		def sources = []
-		[
+		def includeRoots = [
 				file('shaders'),
-				file('src/test/shaders'),
+				file('src/test/slang'),
 				file('third_party/sharc/include'),
-				shaderAbiIncludeRoot.get().asFile
+				shaderAbiSlangRoot.get().asFile
 		]
-				.each { root ->
+		includeRoots.each { root ->
 			if (root.isDirectory()) {
 				sources.addAll(fileTree(root).files.findAll { source ->
-					source.name.endsWith('.glsl')
-							|| source.name.endsWith('.rgen')
-							|| source.name.endsWith('.rmiss')
-							|| source.name.endsWith('.rchit')
-							|| source.name.endsWith('.rahit')
-							|| source.name.endsWith('.comp')
-							|| source.name.endsWith('.h')
+					source.name.endsWith('.slang') || source.name.endsWith('.h')
 				})
 			}
 		}
-		def byName = new TreeMap<String, File>()
-		sources.each { source ->
-			def previous = byName.put(source.name, source)
-			if (previous != null) {
-				throw new GradleException(
-						"Shader include name is ambiguous: ${source.name}")
-			}
-		}
+		def sourcePaths = sources.collect { it.canonicalFile }.toSet()
 		def graph = new TreeMap<String, Set<String>>()
 		def includePattern = java.util.regex.Pattern.compile(
 				'(?m)^\\s*#\\s*include\\s+"([^"]+)"')
 		sources.each { source ->
-			def sourceName = source.name
+			def sourceName = source.canonicalPath
 			def targets = graph.computeIfAbsent(sourceName) { new TreeSet<String>() }
 			def matcher = includePattern.matcher(source.getText('UTF-8'))
 			while (matcher.find()) {
-				def includeName = new File(matcher.group(1)).name
-				if (!byName.containsKey(includeName)) {
+				def includeName = matcher.group(1)
+				def candidates = ([new File(source.parentFile, includeName)]
+						+ includeRoots.collect { new File(it, includeName) })
+						.collect { it.canonicalFile }
+						.findAll { sourcePaths.contains(it) }
+						.unique()
+				if (candidates.empty) {
 					throw new GradleException(
-							"Unresolved shader include ${matcher.group(1)} from ${source}")
+							"Unresolved shader include ${includeName} from ${source}")
 				}
-				targets.add(includeName)
+				if (candidates.size() != 1) {
+					throw new GradleException(
+							"Ambiguous shader include ${includeName} from ${source}: ${candidates}")
+				}
+				targets.add(candidates.first().canonicalPath)
 			}
 		}
 
@@ -1175,44 +1540,80 @@ def verifyShaderIncludeGraph = tasks.register('verifyShaderIncludeGraph') {
 	}
 }
 
-def compileShaders = tasks.register('compileShaders', CompilePrimeShaders) {
-	dependsOn generateShaderAbi, verifyRoboCutePort, verifyShaderIncludeGraph
+def compileSlangTestShaders = tasks.register(
+		'compileSlangTestShaders', CompilePrimeSlangComputeShaders) {
+	dependsOn generateShaderAbi, verifyRoboCutePort, verifyShaderIncludeGraph, 'verifySlangToolchain'
+	sourceDirectory = file('src/test/slang/entries')
+	includeDirectories.from(
+			file('src/test/slang'),
+			file('shaders'),
+			file('third_party/sharc/include'),
+			shaderAbiSlangRoot)
+	outputDirectory = compiledSlangTestShaderRoot
+	debugLevel = '-g0'
+	slangCompiler = providers.gradleProperty('primeSlangCompiler')
+			.orElse(resolveVulkanTool('slangc'))
+	spirvValidator = resolveVulkanTool('spirv-val')
+}
+
+def compileSlangShaders = tasks.register(
+		'compileSlangShaders', CompilePrimeSlangComputeShaders) {
+	dependsOn generateShaderAbi, verifyRoboCutePort, verifyShaderIncludeGraph, 'verifySlangToolchain'
 	sourceDirectory = file('shaders')
 	includeDirectories.from(
 			file('shaders'),
-			shaderAbiIncludeRoot,
-			file('third_party/sharc/include'))
-	outputDirectory = compiledShaderRoot
-	glslangValidator = resolveVulkanTool('glslangValidator')
+			file('third_party/sharc/include'),
+			shaderAbiSlangRoot)
+	outputDirectory = compiledSlangShaderRoot
+	debugLevel = providers.gradleProperty('primeShaderFullDebug')
+			.map { value -> value.toBoolean() ? '-g2' : '-g1' }
+			.orElse('-g1')
+	slangCompiler = providers.gradleProperty('primeSlangCompiler')
+			.orElse(resolveVulkanTool('slangc'))
 	spirvValidator = resolveVulkanTool('spirv-val')
-	spirvOptimizer = resolveVulkanTool('spirv-opt')
-	debugInfo = providers.gradleProperty('primeShaderDebug')
-			.map { value -> value.toBoolean() }
-			.orElse(false)
 }
 
-def compileTestShaders = tasks.register('compileTestShaders', CompilePrimeShaders) {
-	dependsOn generateShaderAbi, verifyRoboCutePort, verifyShaderIncludeGraph
-	sourceDirectory = file('src/test/shaders')
-	includeDirectories.from(
-			file('shaders'),
-			shaderAbiIncludeRoot,
-			file('third_party/sharc/include'))
-	outputDirectory = compiledTestShaderRoot
-	glslangValidator = resolveVulkanTool('glslangValidator')
+def verifySlangRayPayloadAbi = tasks.register(
+		'verifySlangRayPayloadAbi', VerifySlangRayPayloadAbi) {
+	group = 'verification'
+	description = 'Verifies explicit cross-stage ray payload locations in production Slang SPIR-V.'
+	dependsOn compileSlangShaders
+	slangDirectory = compiledSlangShaderRoot
+	spirvDisassembler = resolveVulkanTool('spirv-dis')
+}
+
+def verifySlangToolchain = tasks.register('verifySlangToolchain', VerifySlangToolchain) {
+	group = 'verification'
+	description = 'Verifies the pinned Slang compiler and its Vulkan 1.2 SPIR-V output.'
+	smokeShader = file('src/test/slang/toolchain_smoke.slang')
+	slangCompiler = providers.gradleProperty('primeSlangCompiler')
+			.orElse(resolveVulkanTool('slangc'))
+	expectedVersion = providers.gradleProperty('primeSlangVersion')
 	spirvValidator = resolveVulkanTool('spirv-val')
-	spirvOptimizer = resolveVulkanTool('spirv-opt')
-	debugInfo = false
+	spirvDisassembler = resolveVulkanTool('spirv-dis')
+}
+
+def verifyGeneratedSlangAbi = tasks.register('verifyGeneratedSlangAbi', VerifyGeneratedSlangAbi) {
+	group = 'verification'
+	description = 'Verifies generated Slang structs against shaders/abi.json in final SPIR-V.'
+	dependsOn generateShaderAbi, verifySlangToolchain
+	schemaFile = file('shaders/abi.json')
+	smokeShader = file('src/test/slang/generated_abi_smoke.slang')
+	generatedIncludeDirectory = shaderAbiSlangRoot
+	slangCompiler = providers.gradleProperty('primeSlangCompiler')
+			.orElse(resolveVulkanTool('slangc'))
+	spirvValidator = resolveVulkanTool('spirv-val')
+	spirvDisassembler = resolveVulkanTool('spirv-dis')
 }
 
 sourceSets.client.java.srcDir(files(shaderAbiJavaRoot).builtBy(generateShaderAbi))
-sourceSets.client.resources.srcDir(files(compiledShaderRoot).builtBy(compileShaders))
+sourceSets.client.resources.srcDir(files(compiledSlangShaderRoot).builtBy(compileSlangShaders))
 sourceSets.test.compileClasspath += sourceSets.client.output
 sourceSets.test.runtimeClasspath += sourceSets.client.output
 
 tasks.withType(Test).configureEach {
-	dependsOn compileTestShaders
-	inputs.dir(compiledTestShaderRoot)
+	dependsOn compileSlangTestShaders
+	inputs.dir(compiledSlangTestShaderRoot)
 	useJUnitPlatform()
 	// The NRD ABI tests intentionally load the bundled bridge through LWJGL. Declare native and
 	// LWJGL legacy-memory access explicitly on Java 25, and keep JOML on its supported safe path, so
@@ -1220,8 +1621,8 @@ tasks.withType(Test).configureEach {
 	jvmArgs '--enable-native-access=ALL-UNNAMED', '--sun-misc-unsafe-memory-access=allow'
 	systemProperty 'joml.nounsafe', 'true'
 	doFirst {
-		systemProperty 'prime.test.shaderDirectory',
-				new File(compiledTestShaderRoot.get().asFile, 'prime/shaders').absolutePath
+		systemProperty 'prime.test.slangShaderDirectory',
+				new File(compiledSlangTestShaderRoot.get().asFile, 'prime/shaders').absolutePath
 	}
 }
 
@@ -1229,6 +1630,13 @@ tasks.named('test') {
 	useJUnitPlatform {
 		excludeTags 'gpu-shader'
 	}
+}
+
+tasks.named('check') {
+	dependsOn verifySlangToolchain,
+			verifyGeneratedSlangAbi,
+			compileSlangShaders,
+			verifySlangRayPayloadAbi
 }
 
 tasks.register('shaderTest', Test) {

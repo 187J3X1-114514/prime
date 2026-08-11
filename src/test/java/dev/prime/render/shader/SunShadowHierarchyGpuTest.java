@@ -53,11 +53,10 @@ final class SunShadowHierarchyGpuTest {
                 .order(ByteOrder.LITTLE_ENDIAN)
                 .putInt(cases.length)
                 .flip();
-        Path shader = Path.of(
-                System.getProperty("prime.test.shaderDirectory"),
-                "sun_shadow_hierarchy_properties.comp.spv");
-
         try (ShaderComputeRunner runner = opened) {
+            Path shader = Path.of(
+                    System.getProperty("prime.test.slangShaderDirectory"),
+                    "sun_shadow_hierarchy_properties.comp.spv");
             ByteBuffer output = runner.dispatch(
                     shader,
                     input,
@@ -69,7 +68,7 @@ final class SunShadowHierarchyGpuTest {
                         expected[index],
                         output.getFloat(index * Float.BYTES),
                         1.0e-5F,
-                        "case " + index);
+                        shader.getFileName() + " case " + index);
             }
         }
     }

@@ -62,7 +62,7 @@ final class AtmosphereScaleGpuTest {
                 .putInt(cases.length)
                 .flip();
         Path shader = Path.of(
-                System.getProperty("prime.test.shaderDirectory"),
+                System.getProperty("prime.test.slangShaderDirectory"),
                 "atmosphere_scale_properties.comp.spv");
 
         try (ShaderComputeRunner runner = opened) {

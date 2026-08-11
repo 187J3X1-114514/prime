@@ -87,7 +87,7 @@ final class AtmosphereEpipolarShadowProfileGpuTest {
         }
         input.flip();
         Path shader = Path.of(
-                System.getProperty("prime.test.shaderDirectory"),
+                System.getProperty("prime.test.slangShaderDirectory"),
                 "atmosphere_epipolar_shadow_profile.comp.spv");
 
         try (ShaderComputeRunner runner = opened) {

@@ -30,7 +30,7 @@ public final class RealtimeRayTracingPipeline implements RealtimeIntegratorPipel
     static final int RAYGEN_GROUP_COUNT = RealtimeWavefrontGroups.GROUP_COUNT;
     static final int RAYGEN_MODULE_COUNT = RealtimeWavefrontGroups.MODULE_COUNT;
     static int dispatchCount(int rounds) {
-        return 4 * rounds + 2;
+        return 4 * rounds + 3;
     }
     static final int DESCRIPTOR_BINDING_COUNT = 26;
     private static final int STORAGE_IMAGE_DESCRIPTOR_COUNT = 23;
@@ -80,6 +80,7 @@ public final class RealtimeRayTracingPipeline implements RealtimeIntegratorPipel
             String[] raygenShaders = new String[] {
                 prefix + "head" + suffix,
                 prefix + "step" + suffix,
+                prefix + "primary" + suffix,
                 prefix + "area" + suffix,
                 prefix + "sun" + suffix,
                 prefix + "shade" + suffix,
@@ -364,42 +365,24 @@ public final class RealtimeRayTracingPipeline implements RealtimeIntegratorPipel
                     height,
                     RealtimeWavefrontGroups.HEAD);
             this.wavefrontBarrier(commandBuffer, stack);
-            int traceQueue = ShaderAbi.WAVEFRONT_TRACE_QUEUE_0;
             int dispatchCount = dispatchCount(input.wavefrontRounds());
             this.lastRecordedPassCount = dispatchCount;
+            this.traceIndirect(
+                    commandBuffer,
+                    stack,
+                    activeProgram,
+                    RealtimeWavefrontGroups.PRIMARY,
+                    commandOffset,
+                    ShaderAbi.WAVEFRONT_SHADE_QUEUE);
+            this.wavefrontBarrier(commandBuffer, stack);
+            int traceQueue = ShaderAbi.WAVEFRONT_TRACE_QUEUE_0;
             for (int round = 0; round < input.wavefrontRounds(); round++) {
-                this.traceIndirect(
+                this.recordRound(
                         commandBuffer,
                         stack,
                         activeProgram,
-                        RealtimeWavefrontGroups.step(traceQueue),
                         commandOffset,
                         traceQueue);
-                this.wavefrontBarrier(commandBuffer, stack);
-                this.traceIndirect(
-                        commandBuffer,
-                        stack,
-                        activeProgram,
-                        RealtimeWavefrontGroups.area(),
-                        commandOffset,
-                        ShaderAbi.WAVEFRONT_AREA_QUEUE);
-                this.wavefrontBarrier(commandBuffer, stack);
-                this.traceIndirect(
-                        commandBuffer,
-                        stack,
-                        activeProgram,
-                        RealtimeWavefrontGroups.shade(traceQueue),
-                        commandOffset,
-                        ShaderAbi.WAVEFRONT_SHADE_QUEUE);
-                this.wavefrontBarrier(commandBuffer, stack);
-                this.traceIndirect(
-                        commandBuffer,
-                        stack,
-                        activeProgram,
-                        RealtimeWavefrontGroups.sun(),
-                        commandOffset,
-                        ShaderAbi.WAVEFRONT_SUN_QUEUE);
-                this.wavefrontBarrier(commandBuffer, stack);
                 traceQueue = traceQueue == ShaderAbi.WAVEFRONT_TRACE_QUEUE_0
                         ? ShaderAbi.WAVEFRONT_TRACE_QUEUE_1
                         : ShaderAbi.WAVEFRONT_TRACE_QUEUE_0;
@@ -416,6 +399,46 @@ public final class RealtimeRayTracingPipeline implements RealtimeIntegratorPipel
                     ? dispatchCount
                     : dispatchCount + 2;
         }
+    }
+
+    private void recordRound(
+            VkCommandBuffer commandBuffer,
+            MemoryStack stack,
+            TraceProgram activeProgram,
+            long commandOffset,
+            int traceQueue) {
+        this.traceIndirect(
+                commandBuffer,
+                stack,
+                activeProgram,
+                RealtimeWavefrontGroups.step(traceQueue),
+                commandOffset,
+                traceQueue);
+        this.wavefrontBarrier(commandBuffer, stack);
+        this.traceIndirect(
+                commandBuffer,
+                stack,
+                activeProgram,
+                RealtimeWavefrontGroups.area(),
+                commandOffset,
+                ShaderAbi.WAVEFRONT_AREA_QUEUE);
+        this.wavefrontBarrier(commandBuffer, stack);
+        this.traceIndirect(
+                commandBuffer,
+                stack,
+                activeProgram,
+                RealtimeWavefrontGroups.shade(traceQueue),
+                commandOffset,
+                ShaderAbi.WAVEFRONT_SHADE_QUEUE);
+        this.wavefrontBarrier(commandBuffer, stack);
+        this.traceIndirect(
+                commandBuffer,
+                stack,
+                activeProgram,
+                RealtimeWavefrontGroups.sun(),
+                commandOffset,
+                ShaderAbi.WAVEFRONT_SUN_QUEUE);
+        this.wavefrontBarrier(commandBuffer, stack);
     }
 
     private void bind(

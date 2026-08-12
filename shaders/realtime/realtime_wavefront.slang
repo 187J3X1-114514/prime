@@ -330,103 +330,47 @@ PrimeWavefrontContinuation primeInitializeTransparentWavefront(
 void primeWavefrontHead(
         inout PrimeIntegratorContext context, uint2 launchIndex) {
     uint2 pixel = launchIndex;
-    uint recordIndex = primeWavefrontIndex(pixel);
-    uint queuedPathIndex = recordIndex;
-    bool queueContinuation = false;
-    uint maximumBounces = primeMaximumBounces();
     primeSetNumericalContext(context.diagnostics, PRIME_NUMERICAL_STAGE_CAMERA, 0u);
-
-    if (maximumBounces == 0u) {
-        float2 cameraSample = primeRealtimeCameraSample(pixel);
-        PathState path = primeCameraPath(pixel, 0u, cameraSample);
-        PrimeRcVolumeStack volumeStack =
-                (primePush.path.z & PRIME_PATH_CAMERA_IN_WATER_MASK) != 0u
-                ? primeCameraWaterVolumeStack()
-                : primeEmptyVolumeStack();
-        PrimeDenoiserState denoiserState = primeInitialDenoiserState();
-        PrimeIntegrationResult result = primeEmptyIntegrationResult();
-        PrimeWavefrontPathRecord record = primeMakeWavefrontRecord(context.diagnostics,
-                path,
-                volumeStack,
-                denoiserState,
-                result.guides.primaryMaterialFlags,
-                false);
-        primeWavefrontPaths[primeWavefrontIndex(pixel, 0u)] = record;
-        primeWavefrontPaths[primeWavefrontIndex(pixel, 1u)] = record;
-        primeStoreWavefrontArea(pixel, result.guides);
-        primeStoreWavefrontIntermediate(pixel, result);
-    } else {
-        float2 traceCameraSample = primeRealtimeCameraSample(pixel);
-        float3 traceDirection = primeCameraRayDirection(pixel, traceCameraSample);
-        primeSetNumericalContext(context.diagnostics, PRIME_NUMERICAL_STAGE_TRACE, 0u);
-        SurfaceInteraction surface =
-                primeTraceSurface(primePush.cameraPosition, traceDirection);
-
-        // Build transport, medium and denoiser state only after SER has executed the primary hit.
-        // This keeps the largest realtime records out of the implementation's reorder spill set.
-        float2 cameraSample = primeRealtimeCameraSample(pixel);
-        PathState path = primeCameraPath(pixel, 0u, cameraSample);
-        IntegratorRecord integrator;
-        integrator.sunDirectionIntensity = float4(
-                primePush.sunDirection,
-                ATM_SPACE_SUN_INTENSITY * primeSunRadianceMultiplier());
-        integrator.environmentRadiance = float4(0.0);
-        PrimeRcVolumeStack volumeStack =
-                (primePush.path.z & PRIME_PATH_CAMERA_IN_WATER_MASK) != 0u
-                ? primeCameraWaterVolumeStack()
-                : primeEmptyVolumeStack();
-        PrimeDenoiserState denoiserState = primeInitialDenoiserState();
-        PrimeIntegrationResult result = primeEmptyIntegrationResult();
-        if (surface.hitKind == PRIME_HIT_SURFACE
-                && primeMaterialIsTransmissive(surface.materialControl)) {
-            PrimeWavefrontContinuation transparent =
-                    primeInitializeTransparentWavefront(
-                    context,
-                    pixel,
-                    path,
-                    volumeStack,
-                    integrator,
-                    surface,
-                    maximumBounces);
-            queuedPathIndex = transparent.pathIndex;
-            queueContinuation = transparent.active;
-        } else {
-            bool continuation = primeIntegrateWavefrontSurface(
-                    PrimeImmediateSecondarySunNee(),
-                    PrimeImmediateSecondaryAreaNee(),
-                    PrimeNoIndirectReuse(),
-                    context,
-                    path,
-                    integrator,
-                    volumeStack,
-                    denoiserState,
-                    result,
-                    surface,
-                    0u);
-            continuation = continuation && path.bounce < maximumBounces;
-            PrimeWavefrontPathRecord record = primeMakeWavefrontRecord(context.diagnostics,
-                    path,
-                    volumeStack,
-                    denoiserState,
-                    result.guides.primaryMaterialFlags,
-                    continuation);
-            uint pathIndex = primeWavefrontIndex(pixel, 0u);
-            primeWavefrontPaths[pathIndex] = record;
-            queuedPathIndex = pathIndex;
-            queueContinuation = continuation;
-            record.transport = primeWavefrontWithActive(
-                    record.transport, false);
-            primeWavefrontPaths[primeWavefrontIndex(pixel, 1u)] = record;
-            primeStoreWavefrontArea(pixel, result.guides);
-            primeStoreWavefrontIntermediate(pixel, result);
-        }
+    float2 cameraSample = primeRealtimeCameraSample(pixel);
+    uint maximumBounces = primeMaximumBounces();
+    bool continuation = maximumBounces != 0u;
+    uint pathIndex = primeWavefrontIndex(pixel, 0u);
+    if (continuation) {
+        float3 traceDirection = primeCameraRayDirection(pixel, cameraSample);
+        primeSetNumericalContext(
+                context.diagnostics, PRIME_NUMERICAL_STAGE_TRACE, 0u);
+        SurfaceInteraction surface = primeTraceSurfaceClassified(
+                PrimeSurfaceTracePolicy(),
+                primePush.cameraPosition,
+                traceDirection,
+                0u);
+        primeStoreWavefrontSurface(pathIndex, surface);
     }
-    // Every head invocation reaches this collective exactly once, including inactive paths.
-    primeAppendWavefrontContinuation(
-            PrimeWavefrontContinuationAppender(),
-            PRIME_WAVEFRONT_TRACE_QUEUE_0,
-            queuedPathIndex,
-            queueContinuation);
+
+    // Build large transport records after SER so they do not enter the reorder spill set.
+    PathState path = primeCameraPath(pixel, 0u, cameraSample);
+    PrimeRcVolumeStack volumeStack =
+            (primePush.path.z & PRIME_PATH_CAMERA_IN_WATER_MASK) != 0u
+            ? primeCameraWaterVolumeStack()
+            : primeEmptyVolumeStack();
+    PrimeDenoiserState denoiserState = primeInitialDenoiserState();
+    PrimeIntegrationResult result = primeEmptyIntegrationResult();
+    PrimeWavefrontPathRecord record = primeMakeWavefrontRecord(
+            context.diagnostics,
+            path,
+            volumeStack,
+            denoiserState,
+            result.guides.primaryMaterialFlags,
+            continuation);
+    primeWavefrontPaths[pathIndex] = record;
+    record.transport = primeWavefrontWithActive(record.transport, false);
+    primeWavefrontPaths[primeWavefrontIndex(pixel, 1u)] = record;
+    primeStoreWavefrontArea(pixel, result.guides);
+    primeStoreWavefrontIntermediate(pixel, result);
+    // SER may repack invocations. Queue publication after it must not use subgroup collectives.
+    if (continuation) {
+        primeAppendWavefrontPath(PRIME_WAVEFRONT_SHADE_QUEUE, pathIndex);
+    }
 }
 
 void primeWavefrontStep(
@@ -473,6 +417,76 @@ void primeWavefrontStep(
     }
 }
 
+void primeWavefrontPrimary(
+        inout PrimeIntegratorContext context,
+        uint launchIndex) {
+    uint recordIndex = primeWavefrontQueuedPath(
+            PRIME_WAVEFRONT_SHADE_QUEUE, launchIndex);
+    uint2 pixel = primeWavefrontPixel(recordIndex);
+    PrimeWavefrontTransportRecord record =
+            primeLoadWavefrontTransportRecord(recordIndex);
+    primeRestoreWavefrontDiagnostic(record, context.diagnostics);
+    SurfaceInteraction surface = primeLoadWavefrontSurface(recordIndex);
+    PathState path = primeWavefrontPath(pixel, record);
+    PrimeRcVolumeStack volumeStack = primeWavefrontVolumeStack(record);
+    IntegratorRecord integrator;
+    integrator.sunDirectionIntensity = float4(
+            primePush.sunDirection,
+            ATM_SPACE_SUN_INTENSITY * primeSunRadianceMultiplier());
+    integrator.environmentRadiance = float4(0.0);
+    uint maximumBounces = primeMaximumBounces();
+    bool queueContinuation;
+
+    if (surface.hitKind == PRIME_HIT_SURFACE
+            && primeMaterialIsTransmissive(surface.materialControl)) {
+        PrimeWavefrontContinuation transparent =
+                primeInitializeTransparentWavefront(
+                        context,
+                        pixel,
+                        path,
+                        volumeStack,
+                        integrator,
+                        surface,
+                        maximumBounces);
+        recordIndex = transparent.pathIndex;
+        queueContinuation = transparent.active;
+    } else {
+        PrimeDenoiserState denoiserState = primeInitialDenoiserState();
+        PrimeIntegrationResult result = primeEmptyIntegrationResult();
+        bool continuation = primeIntegrateWavefrontSurface(
+                PrimeImmediateSecondarySunNee(),
+                PrimeImmediateSecondaryAreaNee(),
+                PrimeNoIndirectReuse(),
+                context,
+                path,
+                integrator,
+                volumeStack,
+                denoiserState,
+                result,
+                surface,
+                recordIndex);
+        continuation = continuation && path.bounce < maximumBounces;
+        PrimeWavefrontPathRecord updated = primeMakeWavefrontRecord(
+                context.diagnostics,
+                path,
+                volumeStack,
+                denoiserState,
+                result.guides.primaryMaterialFlags,
+                continuation);
+        primeWavefrontPaths[recordIndex] = updated;
+        updated.transport = primeWavefrontWithActive(updated.transport, false);
+        primeWavefrontPaths[primeWavefrontIndex(pixel, 1u)] = updated;
+        primeStoreWavefrontArea(pixel, result.guides);
+        primeStoreWavefrontIntermediate(pixel, result);
+        queueContinuation = continuation;
+    }
+    primeAppendWavefrontContinuation(
+            PrimeWavefrontContinuationAppender(),
+            PRIME_WAVEFRONT_TRACE_QUEUE_0,
+            recordIndex,
+            queueContinuation);
+}
+
 void primeWavefrontShade<IndirectReuse>(
         IndirectReuse indirectReuse,
         inout PrimeIntegratorContext context,
@@ -489,11 +503,6 @@ void primeWavefrontShade<IndirectReuse>(
     primeRestoreWavefrontDiagnostic(record, context.diagnostics);
     SurfaceInteraction surface = primeLoadWavefrontSurface(recordIndex);
     PathState path = primeWavefrontPath(pixel, record);
-    if (primeSurfaceEmitterIndex(surface) != PRIME_NO_LIGHT_INDEX
-            && !primePreviousCannotUseMis(path)) {
-        path.previousLightNormal =
-                primeLoadWavefrontPreviousLightNormal(recordIndex);
-    }
     PrimeRcVolumeStack volumeStack = primeWavefrontVolumeStack(record);
     uint control = asuint(record.rayDirectionAndDenoiserControl.w);
     IntegratorRecord integrator;
@@ -503,6 +512,12 @@ void primeWavefrontShade<IndirectReuse>(
     integrator.environmentRadiance = float4(0.0);
     uint maximumBounces = primeMaximumBounces();
     bool queueContinuation;
+
+    if (primeSurfaceEmitterIndex(surface) != PRIME_NO_LIGHT_INDEX
+            && !primePreviousCannotUseMis(path)) {
+        path.previousLightNormal =
+                primeLoadWavefrontPreviousLightNormal(recordIndex);
+    }
 
     if (primeWavefrontTransparentBranch(control)) {
         bool hadGuide =

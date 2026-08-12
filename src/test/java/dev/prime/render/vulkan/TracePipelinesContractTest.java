@@ -31,6 +31,10 @@ final class TracePipelinesContractTest {
     private static final int OP_VARIABLE = 59;
     private static final int OP_DECORATE = 71;
     private static final int OP_MEMBER_DECORATE = 72;
+    private static final int OP_GROUP_NON_UNIFORM_ELECT = 333;
+    private static final int OP_GROUP_NON_UNIFORM_BROADCAST_FIRST = 338;
+    private static final int OP_GROUP_NON_UNIFORM_BALLOT = 339;
+    private static final int OP_GROUP_NON_UNIFORM_BALLOT_BIT_COUNT = 342;
     private static final int DECORATION_ARRAY_STRIDE = 6;
     private static final int DECORATION_BINDING = 33;
     private static final int DECORATION_DESCRIPTOR_SET = 34;
@@ -55,27 +59,27 @@ final class TracePipelinesContractTest {
 
     @Test
     void realtimeAndOfflineHaveIndependentSchedulesAndDescriptors() {
-        assertEquals(8, RealtimeRayTracingPipeline.RAYGEN_GROUP_COUNT);
-        assertEquals(6, RealtimeRayTracingPipeline.RAYGEN_MODULE_COUNT);
-        assertEquals(50, RealtimeRayTracingPipeline.dispatchCount(12));
-        assertEquals(6, RealtimeRayTracingPipeline.dispatchCount(1));
-        assertEquals(258, RealtimeRayTracingPipeline.dispatchCount(64));
+        assertEquals(9, RealtimeRayTracingPipeline.RAYGEN_GROUP_COUNT);
+        assertEquals(7, RealtimeRayTracingPipeline.RAYGEN_MODULE_COUNT);
+        assertEquals(51, RealtimeRayTracingPipeline.dispatchCount(12));
+        assertEquals(7, RealtimeRayTracingPipeline.dispatchCount(1));
+        assertEquals(259, RealtimeRayTracingPipeline.dispatchCount(64));
         assertEquals(26, RealtimeRayTracingPipeline.DESCRIPTOR_BINDING_COUNT);
 
         assertEquals(6, OfflineRayTracingPipeline.RAYGEN_GROUP_COUNT);
         assertEquals(4, OfflineRayTracingPipeline.RAYGEN_MODULE_COUNT);
-        assertEquals(26, OfflineRayTracingPipeline.dispatchCount(12));
-        assertEquals(4, OfflineRayTracingPipeline.dispatchCount(1));
-        assertEquals(130, OfflineRayTracingPipeline.dispatchCount(64));
+        assertEquals(27, OfflineRayTracingPipeline.dispatchCount(12));
+        assertEquals(5, OfflineRayTracingPipeline.dispatchCount(1));
+        assertEquals(131, OfflineRayTracingPipeline.dispatchCount(64));
         assertEquals(3, OfflineRayTracingPipeline.DESCRIPTOR_BINDING_COUNT);
 
-        assertEquals(List.of(0, 1, 1, 2, 3, 4, 4, 5),
+        assertEquals(List.of(0, 1, 1, 2, 3, 4, 5, 5, 6),
                 java.util.stream.IntStream
                 .range(0, RealtimeRayTracingPipeline.RAYGEN_GROUP_COUNT)
                 .map(RealtimeRayTracingPipeline::raygenModule)
                 .boxed()
                 .toList());
-        assertEquals(List.of(0, 1, 257, 4, 6, 2, 258, 3),
+        assertEquals(List.of(0, 1, 257, 0, 4, 6, 2, 258, 3),
                 java.util.stream.IntStream
                 .range(0, RealtimeRayTracingPipeline.RAYGEN_GROUP_COUNT)
                 .map(RealtimeRayTracingPipeline::raygenControl)
@@ -100,7 +104,7 @@ final class TracePipelinesContractTest {
                     wavefrontShaders(
                             "realtime",
                             suffix,
-                            List.of("head", "step", "area", "shade", "resolve")),
+                            List.of("head", "step", "primary", "area", "shade", "resolve")),
                     1);
             assertTrue(realtime.contains(ShaderAbi.DESCRIPTOR_WAVEFRONT_PATHS));
             assertTrue(realtime.contains(ShaderAbi.DESCRIPTOR_WAVEFRONT_QUEUE));
@@ -157,10 +161,11 @@ final class TracePipelinesContractTest {
                     payloadShapes(shader, STORAGE_INCOMING_RAY_PAYLOAD));
         }
         for (String suffix : List.of("", "_subgroup", "_ser")) {
-            Set<String> realtimeHead = payloadShapes(
-                    wavefrontShader("realtime", "head", suffix), STORAGE_RAY_PAYLOAD);
-            assertTrue(realtimeHead.contains(tracePayload));
-            assertTrue(realtimeHead.contains(shadowPayload));
+            assertEquals(
+                    Set.of(tracePayload),
+                    payloadShapes(
+                            wavefrontShader("realtime", "head", suffix),
+                            STORAGE_RAY_PAYLOAD));
             assertEquals(
                     Set.of(tracePayload),
                     payloadShapes(
@@ -169,9 +174,19 @@ final class TracePipelinesContractTest {
             assertEquals(
                     Set.of(shadowPayload),
                     payloadShapes(
+                            wavefrontShader("realtime", "primary", suffix),
+                            STORAGE_RAY_PAYLOAD));
+            assertEquals(
+                    Set.of(shadowPayload),
+                    payloadShapes(
                             wavefrontShader("realtime", "shade", suffix),
                             STORAGE_RAY_PAYLOAD));
-            for (String stage : List.of("head", "step")) {
+            assertEquals(
+                    Set.of(tracePayload, shadowPayload),
+                    payloadShapes(
+                            wavefrontShader("offline", "head", suffix),
+                            STORAGE_RAY_PAYLOAD));
+            for (String stage : List.of("step")) {
                 Set<String> payloads = payloadShapes(
                         wavefrontShader("offline", stage, suffix),
                         STORAGE_RAY_PAYLOAD);
@@ -199,6 +214,23 @@ final class TracePipelinesContractTest {
                             wavefrontShader("realtime", "sun", suffix),
                             STORAGE_RAY_PAYLOAD));
         }
+    }
+
+    @Test
+    void serHeadPublishesWorkWithoutSubgroupCollectives() throws IOException {
+        Set<Integer> head = parse(
+                wavefrontShader("realtime", "head", "_ser")).opcodes;
+        assertFalse(head.contains(OP_GROUP_NON_UNIFORM_ELECT));
+        assertFalse(head.contains(OP_GROUP_NON_UNIFORM_BROADCAST_FIRST));
+        assertFalse(head.contains(OP_GROUP_NON_UNIFORM_BALLOT));
+        assertFalse(head.contains(OP_GROUP_NON_UNIFORM_BALLOT_BIT_COUNT));
+
+        Set<Integer> primary = parse(
+                wavefrontShader("realtime", "primary", "_ser")).opcodes;
+        assertTrue(primary.contains(OP_GROUP_NON_UNIFORM_ELECT));
+        assertTrue(primary.contains(OP_GROUP_NON_UNIFORM_BROADCAST_FIRST));
+        assertTrue(primary.contains(OP_GROUP_NON_UNIFORM_BALLOT));
+        assertTrue(primary.contains(OP_GROUP_NON_UNIFORM_BALLOT_BIT_COUNT));
     }
 
     @Test
@@ -316,6 +348,7 @@ final class TracePipelinesContractTest {
             if (wordCount <= 0 || offset + wordCount > words.length) {
                 throw new IllegalArgumentException("Malformed SPIR-V instruction");
             }
+            result.opcodes.add(opcode);
             if (opcode == OP_TYPE_INT
                     || opcode == OP_TYPE_FLOAT
                     || opcode == OP_TYPE_VECTOR
@@ -388,6 +421,7 @@ final class TracePipelinesContractTest {
         final Map<Integer, Integer> sets = new HashMap<>();
         final Map<Integer, Integer> arrayStrides = new HashMap<>();
         final List<Variable> variables = new ArrayList<>();
+        final Set<Integer> opcodes = new HashSet<>();
 
         Type requireType(int identifier) {
             Type type = this.types.get(identifier);

@@ -16,6 +16,16 @@ void primeRealtimeWavefrontStepEntry()
     primeWavefrontStep(context, launchIndex.x, sourceQueue);
 }
 
+void primeRealtimeWavefrontPrimaryEntry()
+{
+    uint2 launchIndex = DispatchRaysIndex().xy;
+    PrimeIntegratorContext context = primeIntegratorContextCreate();
+    if (launchIndex.x == 0u) {
+        primeResetWavefrontQueue(PRIME_WAVEFRONT_SHADE_QUEUE);
+    }
+    primeWavefrontPrimary(context, launchIndex.x);
+}
+
 void primeRealtimeWavefrontShadeEntry()
 {
     uint2 launchIndex = DispatchRaysIndex().xy;

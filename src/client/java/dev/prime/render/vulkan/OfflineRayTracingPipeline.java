@@ -29,7 +29,7 @@ public final class OfflineRayTracingPipeline implements Destroyable {
     static final int RAYGEN_GROUP_COUNT = WavefrontGroups.GROUP_COUNT;
     static final int RAYGEN_MODULE_COUNT = WavefrontGroups.MODULE_COUNT;
     static int dispatchCount(int rounds) {
-        return 2 * rounds + 2;
+        return 2 * rounds + 3;
     }
     static final int DESCRIPTOR_BINDING_COUNT = 3;
     private static final int[] RAYGEN_CONTROLS = {0, 1, 257, 2, 258, 4};
@@ -210,26 +210,41 @@ public final class OfflineRayTracingPipeline implements Destroyable {
             this.initializeQueues(commandBuffer, stack, commandOffset);
             this.trace(commandBuffer, stack, width, height, WavefrontGroups.HEAD);
             this.wavefrontBarrier(commandBuffer, stack);
-            int sourceQueue = 0;
+            this.traceIndirect(
+                    commandBuffer,
+                    stack,
+                    WavefrontGroups.area(0),
+                    commandOffset,
+                    0);
+            this.wavefrontBarrier(commandBuffer, stack);
+            int sourceQueue = 1;
             for (int round = 0; round < input.wavefrontRounds(); round++) {
-                this.traceIndirect(
-                        commandBuffer,
-                        stack,
-                        WavefrontGroups.step(sourceQueue),
-                        commandOffset,
-                        sourceQueue);
-                this.wavefrontBarrier(commandBuffer, stack);
-                this.traceIndirect(
-                        commandBuffer,
-                        stack,
-                        WavefrontGroups.area(sourceQueue),
-                        commandOffset,
-                        sourceQueue);
-                this.wavefrontBarrier(commandBuffer, stack);
+                this.recordRound(commandBuffer, stack, commandOffset, sourceQueue);
                 sourceQueue ^= 1;
             }
             this.trace(commandBuffer, stack, width, height, WavefrontGroups.RESOLVE);
         }
+    }
+
+    private void recordRound(
+            VkCommandBuffer commandBuffer,
+            MemoryStack stack,
+            long commandOffset,
+            int sourceQueue) {
+        this.traceIndirect(
+                commandBuffer,
+                stack,
+                WavefrontGroups.step(sourceQueue),
+                commandOffset,
+                sourceQueue);
+        this.wavefrontBarrier(commandBuffer, stack);
+        this.traceIndirect(
+                commandBuffer,
+                stack,
+                WavefrontGroups.area(sourceQueue),
+                commandOffset,
+                sourceQueue);
+        this.wavefrontBarrier(commandBuffer, stack);
     }
 
     private void bind(

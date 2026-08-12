@@ -6,6 +6,7 @@ import dev.prime.render.AstronomySettings;
 import dev.prime.render.DisplaySettings;
 import dev.prime.render.LightingSettings;
 import dev.prime.render.MaterialSettings;
+import dev.prime.render.WavefrontSettings;
 import dev.prime.client.PrimeRuntime;
 import dev.prime.render.RendererSettings;
 import dev.prime.render.fsr.FsrDebugView;
@@ -170,6 +171,9 @@ public abstract class VideoSettingsScreenMixin {
         }
         this.prime$refresh(this.prime$pathTracingEnabled, true);
         this.prime$refresh(this.prime$sharcEnabled, true);
+        this.prime$refresh(
+                this.prime$wavefrontRounds,
+                WavefrontSettings.DEFAULT_ROUNDS);
         this.prime$refresh(this.prime$voxelTextureSurfaces, false);
         this.prime$refresh(
                 this.prime$voxelTextureSurfaceStrength,

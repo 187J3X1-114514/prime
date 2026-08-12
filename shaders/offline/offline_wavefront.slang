@@ -116,7 +116,7 @@ void primeOfflineWavefrontHead(
                 primaryAlbedo,
                 primaryMaterialFlags,
                 surface,
-                false);
+                true);
         request = step.areaRequest;
         continuation = step.continuation;
         continuation = continuation && path.bounce < maximumBounces;
@@ -134,7 +134,7 @@ void primeOfflineWavefrontHead(
             PrimeOfflineContinuationAppender(),
             0u,
             pathIndex,
-            continuation);
+            request.valid || continuation);
 }
 
 void primeOfflineWavefrontStep(

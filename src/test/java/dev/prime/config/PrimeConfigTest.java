@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import dev.prime.render.AstronomySettings;
+import dev.prime.render.WavefrontSettings;
 import dev.prime.render.post.DlssRrDebugView;
 import dev.prime.render.post.PostProcessingMode;
 import dev.prime.render.post.ReconstructionQualityMode;
@@ -13,6 +14,18 @@ import java.util.Properties;
 import org.junit.jupiter.api.Test;
 
 final class PrimeConfigTest {
+    @Test
+    void restoreDefaultsIncludesWavefrontRounds() {
+        PrimeConfig.setWavefrontRounds(WavefrontSettings.MAXIMUM_ROUNDS);
+
+        PrimeConfig.restoreDefaults();
+
+        assertEquals(WavefrontSettings.DEFAULT_ROUNDS, PrimeConfig.wavefrontRounds());
+        assertEquals(
+                WavefrontSettings.DEFAULT_ROUNDS,
+                PrimeConfig.rendererSettings().wavefrontRounds());
+    }
+
     @Test
     void persistedAstronomyAcceptsOnlyIntegerDegreesInRange() {
         assertEquals(-90, PrimeConfig.parseLatitudeDegrees("-90"));

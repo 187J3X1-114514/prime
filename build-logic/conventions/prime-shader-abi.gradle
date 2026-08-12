@@ -1668,17 +1668,14 @@ def defaultSlangCompilerProcesses = providers.provider {
 	if (operatingSystem instanceof com.sun.management.OperatingSystemMXBean) {
 		physicalMemory = operatingSystem.totalMemorySize
 	}
-	// The largest wavefront entry points can make one slangc process consume several GiB.
+	// The megakernel entry points can make one slangc process consume roughly 35 GiB at -O2.
 	// Keep enough host memory for Gradle and the desktop while exploiting high-memory machines.
-	// Twelve GiB keeps the desktop and Gradle responsive while allowing four measured worst-case
-	// compiler processes; smaller machines still retain at least half their memory or 8 GiB.
 	def reservedMemory = Math.max(
 			8L * gibibyte,
 			Math.min(12L * gibibyte, physicalMemory.intdiv(2L)))
 	def compilerMemory = Math.max(0L, physicalMemory - reservedMemory)
-	// The pinned Slang toolchain can commit roughly 12 GiB while optimizing a fully specialized
-	// wavefront entry point. This is a build-wide budget: production and test tasks share the gate.
-	def compilerProcessMemory = 12L * gibibyte
+	// This is a build-wide budget: production and test tasks share the gate.
+	def compilerProcessMemory = 36L * gibibyte
 	def memoryBound = Math.max(1, (int) compilerMemory.intdiv(compilerProcessMemory))
 	return Math.max(1, Math.min(12, Math.min(processors, memoryBound)))
 }

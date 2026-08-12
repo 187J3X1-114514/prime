@@ -26,6 +26,23 @@ void primeRealtimeWavefrontPrimaryEntry()
     primeWavefrontPrimary(context, launchIndex.x);
 }
 
+void primeRealtimeWavefrontPrimaryAreaEntry()
+{
+    uint2 launchIndex = DispatchRaysIndex().xy;
+    PrimeIntegratorContext context = primeIntegratorContextCreate();
+    primeWavefrontPrimaryArea(context, launchIndex.x);
+}
+
+void primeRealtimeWavefrontPrimarySunEntry()
+{
+    uint2 launchIndex = DispatchRaysIndex().xy;
+    PrimeIntegratorContext context = primeIntegratorContextCreate();
+    if (launchIndex.x == 0u) {
+        primeResetWavefrontQueue(PRIME_WAVEFRONT_AREA_QUEUE);
+    }
+    primeWavefrontPrimarySun(context, launchIndex.x);
+}
+
 void primeRealtimeWavefrontShadeEntry()
 {
     uint2 launchIndex = DispatchRaysIndex().xy;

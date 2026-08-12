@@ -6,11 +6,13 @@ import dev.prime.render.shader.ShaderAbi;
 final class RealtimeWavefrontGroups {
     static final int HEAD = 0;
     static final int PRIMARY = 3;
-    static final int RESOLVE = 8;
-    static final int GROUP_COUNT = 9;
-    static final int MODULE_COUNT = 7;
-    static final int[] MODULES = {0, 1, 1, 2, 3, 4, 5, 5, 6};
-    static final int[] CONTROLS = {0, 1, 257, 0, 4, 6, 2, 258, 3};
+    static final int PRIMARY_AREA = 4;
+    static final int PRIMARY_SUN = 5;
+    static final int RESOLVE = 10;
+    static final int GROUP_COUNT = 11;
+    static final int MODULE_COUNT = 9;
+    static final int[] MODULES = {0, 1, 1, 2, 3, 4, 5, 6, 7, 7, 8};
+    static final int[] CONTROLS = {0, 1, 257, 0, 0, 0, 4, 6, 2, 258, 3};
 
     private RealtimeWavefrontGroups() {}
 
@@ -19,15 +21,15 @@ final class RealtimeWavefrontGroups {
     }
 
     static int area() {
-        return 4;
+        return 6;
     }
 
     static int sun() {
-        return 5;
+        return 7;
     }
 
     static int shade(int queue) {
-        return queued(queue, 6, 7);
+        return queued(queue, 8, 9);
     }
 
     private static int queued(int queue, int first, int second) {

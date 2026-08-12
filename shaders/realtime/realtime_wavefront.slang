@@ -81,11 +81,11 @@ PrimeWavefrontContinuation primeInitializeTransparentWavefront(
         PrimeRcVolumeStack volumeStack,
         IntegratorRecord integrator,
         SurfaceInteraction surface,
+        PrimeIntegrationResult initialResult,
         uint maximumBounces) {
     PrimeWavefrontContinuation queued;
     queued.pathIndex = primeWavefrontIndex(pixel, 0u);
     queued.active = false;
-    PrimeIntegrationResult initialResult = primeEmptyIntegrationResult();
     if (!primeApplySegmentMedium(context, path, surface, volumeStack)) {
         PrimeDenoiserState emptyState = primeInitialDenoiserState();
         PrimeWavefrontPathRecord emptyRecord = primeMakeWavefrontRecord(context.diagnostics,
@@ -102,58 +102,17 @@ PrimeWavefrontContinuation primeInitializeTransparentWavefront(
     }
 
     float3 viewDirection = -path.rayDirection;
+    initialResult.reflectionSpecularRadiance = initialResult.radiance.specular;
+    initialResult.radiance.specular = float3(0.0);
     primeAccumulate(context,
             initialResult.reflectionSpecularRadiance,
             primeEvaluateHitEmission(context, path, surface, false));
     float surfaceLinearRoughness = primeSurfaceLinearRoughness(surface);
     PrimeClosureTraits closureTraits = primeSurfaceClosureTraits(
             surface, viewDirection, volumeStack);
-    bool supportsSolidAngle = primeClosureSupports(
-            closureTraits, PRIME_MEASURE_SOLID_ANGLE);
     bool discreteOnlyInterface = primeClosureIsDiscreteOnly(closureTraits);
     PrimePreparedSampleBase preparedSample =
             primePrepareSampleBase(primeMakeSampleBase(path, path.bounce + 1u));
-    if (supportsSolidAngle) {
-        primeSetNumericalContext(context.diagnostics,
-                PRIME_NUMERICAL_STAGE_DIRECT_LIGHT, path.bounce);
-        PrimePrimarySunSample sun = primeEstimatePrimaryDirectSun(context,
-                integrator,
-                surface,
-                viewDirection,
-                primeSobolSample2D(
-                        preparedSample,
-                        PRIME_SAMPLE_EFFECT_DIRECT_SUN,
-                        PRIME_SAMPLE_DIMENSION_PRIMARY),
-                volumeStack,
-                true);
-        primeAccumulate(context,
-                initialResult.radiance.diffuse,
-                path.throughput * sun.lighting.diffuse * sun.visibility);
-        primeAccumulate(context,
-                initialResult.reflectionSpecularRadiance,
-                path.throughput * sun.lighting.specular * sun.visibility);
-        PrimeDirectLightingSplit nonsun = primeEstimatePrimaryNonsunDirect(context,
-                surface,
-                viewDirection,
-                preparedSample,
-                volumeStack,
-                true);
-        initialResult.guides.primaryAreaDiffuse =
-                path.throughput * nonsun.diffuse;
-        initialResult.guides.primaryAreaSpecular =
-                path.throughput * nonsun.specular;
-        primeAccumulate(context,
-                initialResult.radiance.diffuse,
-                initialResult.guides.primaryAreaDiffuse);
-        primeAccumulate(context,
-                initialResult.reflectionSpecularRadiance,
-                initialResult.guides.primaryAreaSpecular);
-        if (any(initialResult.guides.primaryAreaDiffuse > float3(0.0))
-                || any(initialResult.guides.primaryAreaSpecular > float3(0.0))) {
-            initialResult.guides.primaryAreaDirection = nonsun.direction;
-        }
-    }
-
     primeSetNumericalContext(context.diagnostics,
             PRIME_NUMERICAL_STAGE_BSDF_SAMPLE, path.bounce);
     PrimeNumericalObservation observation = primeBsdfObservationCreate();
@@ -370,7 +329,118 @@ void primeWavefrontHead(
     // SER may repack invocations. Queue publication after it must not use subgroup collectives.
     if (continuation) {
         primeAppendWavefrontPath(PRIME_WAVEFRONT_SHADE_QUEUE, pathIndex);
+        if (primeLoadWavefrontSurface(pathIndex).hitKind == PRIME_HIT_SURFACE) {
+            primeAppendWavefrontPath(PRIME_WAVEFRONT_AREA_QUEUE, pathIndex);
+        }
     }
+}
+
+void primeWavefrontPrimaryArea(
+        inout PrimeIntegratorContext context,
+        uint launchIndex) {
+    uint recordIndex = primeWavefrontQueuedPath(
+            PRIME_WAVEFRONT_AREA_QUEUE, launchIndex);
+    PrimeWavefrontTransportRecord record =
+            primeLoadWavefrontTransportRecord(recordIndex);
+    primeRestoreWavefrontDiagnostic(record, context.diagnostics);
+    SurfaceInteraction surface = primeLoadWavefrontSurface(recordIndex);
+    uint2 pixel = primeWavefrontPixel(recordIndex);
+    PathState path = primeWavefrontPath(pixel, record);
+    PrimeRcVolumeStack volumeStack = primeWavefrontVolumeStack(record);
+    if (!primeApplySegmentMedium(context, path, surface, volumeStack)) {
+        return;
+    }
+    float3 viewDirection = -path.rayDirection;
+    PrimeClosureTraits closureTraits = primeSurfaceClosureTraits(
+            surface, viewDirection, volumeStack);
+    if (!primeClosureSupports(closureTraits, PRIME_MEASURE_SOLID_ANGLE)) {
+        return;
+    }
+
+    PrimePreparedSampleBase preparedSample =
+            primePrepareSampleBase(primeMakeSampleBase(path, path.bounce + 1u));
+    primeSetNumericalContext(
+            context.diagnostics, PRIME_NUMERICAL_STAGE_DIRECT_LIGHT, path.bounce);
+    PrimeDirectLightingSplit direct = primeEstimatePrimaryNonsunDirect(
+            context,
+            surface,
+            viewDirection,
+            preparedSample,
+            volumeStack,
+            primeMaterialIsTransmissive(surface.materialControl));
+    direct.diffuse *= path.throughput;
+    direct.specular *= path.throughput;
+    primeAccumulatePrimaryDirectSplit(context, pixel, direct);
+
+    PrimeDenoiserGuides guides = primeEmptyDenoiserGuides();
+    guides.primaryAreaDiffuse = direct.diffuse;
+    guides.primaryAreaSpecular = direct.specular;
+    if (any(direct.diffuse > float3(0.0))
+            || any(direct.specular > float3(0.0))) {
+        guides.primaryAreaDirection = direct.direction;
+    }
+    primeStoreWavefrontArea(pixel, guides);
+    primeStoreWavefrontDiagnostic(recordIndex, context.diagnostics);
+}
+
+void primeWavefrontPrimarySun(
+        inout PrimeIntegratorContext context,
+        uint launchIndex) {
+    uint recordIndex = primeWavefrontQueuedPath(
+            PRIME_WAVEFRONT_AREA_QUEUE, launchIndex);
+    PrimeWavefrontTransportRecord record =
+            primeLoadWavefrontTransportRecord(recordIndex);
+    primeRestoreWavefrontDiagnostic(record, context.diagnostics);
+    SurfaceInteraction surface = primeLoadWavefrontSurface(recordIndex);
+    uint2 pixel = primeWavefrontPixel(recordIndex);
+    PathState path = primeWavefrontPath(pixel, record);
+    PrimeRcVolumeStack volumeStack = primeWavefrontVolumeStack(record);
+    if (!primeApplySegmentMedium(context, path, surface, volumeStack)) {
+        return;
+    }
+    float3 viewDirection = -path.rayDirection;
+    PrimeClosureTraits closureTraits = primeSurfaceClosureTraits(
+            surface, viewDirection, volumeStack);
+    if (!primeClosureSupports(closureTraits, PRIME_MEASURE_SOLID_ANGLE)) {
+        return;
+    }
+
+    PrimePreparedSampleBase preparedSample =
+            primePrepareSampleBase(primeMakeSampleBase(path, path.bounce + 1u));
+    primeSetNumericalContext(
+            context.diagnostics, PRIME_NUMERICAL_STAGE_DIRECT_LIGHT, path.bounce);
+    bool transparent = primeMaterialIsTransmissive(surface.materialControl);
+    IntegratorRecord integrator;
+    integrator.sunDirectionIntensity = float4(
+            primePush.sunDirection,
+            ATM_SPACE_SUN_INTENSITY * primeSunRadianceMultiplier());
+    integrator.environmentRadiance = float4(0.0);
+    PrimePrimarySunSample sun = primeEstimatePrimaryDirectSun(
+            context,
+            integrator,
+            surface,
+            viewDirection,
+            primeSobolSample2D(
+                    preparedSample,
+                    PRIME_SAMPLE_EFFECT_DIRECT_SUN,
+                    PRIME_SAMPLE_DIMENSION_PRIMARY),
+            volumeStack,
+            transparent);
+    PrimeDirectLightingSplit direct = sun.lighting;
+    direct.diffuse *= path.throughput;
+    direct.specular *= path.throughput;
+    if (transparent) {
+        direct.diffuse *= sun.visibility;
+        direct.specular *= sun.visibility;
+        primeAccumulatePrimaryDirectSplit(context, pixel, direct);
+    } else {
+        primeStoreWavefrontPrimarySun(
+                pixel,
+                direct.diffuse + direct.specular,
+                sun.visibility,
+                sun.penumbra);
+    }
+    primeStoreWavefrontDiagnostic(recordIndex, context.diagnostics);
 }
 
 void primeWavefrontStep(
@@ -439,6 +509,8 @@ void primeWavefrontPrimary(
 
     if (surface.hitKind == PRIME_HIT_SURFACE
             && primeMaterialIsTransmissive(surface.materialControl)) {
+        PrimeIntegrationResult initialResult =
+                primeLoadWavefrontIntermediate(pixel, record);
         PrimeWavefrontContinuation transparent =
                 primeInitializeTransparentWavefront(
                         context,
@@ -447,15 +519,17 @@ void primeWavefrontPrimary(
                         volumeStack,
                         integrator,
                         surface,
+                        initialResult,
                         maximumBounces);
         recordIndex = transparent.pathIndex;
         queueContinuation = transparent.active;
     } else {
         PrimeDenoiserState denoiserState = primeInitialDenoiserState();
-        PrimeIntegrationResult result = primeEmptyIntegrationResult();
+        PrimeIntegrationResult result =
+                primeLoadWavefrontIntermediate(pixel, record);
         bool continuation = primeIntegrateWavefrontSurface(
-                PrimeImmediateSecondarySunNee(),
-                PrimeImmediateSecondaryAreaNee(),
+                PrimeDeferredSecondarySunNee(),
+                PrimeDeferredSecondaryAreaNee(),
                 PrimeNoIndirectReuse(),
                 context,
                 path,

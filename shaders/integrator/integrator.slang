@@ -1823,42 +1823,7 @@ bool primeIntegrateWavefrontSurface<SunNee, AreaNee, IndirectReuse>(
     if (supportsSolidAngle) {
         primeSetNumericalContext(
                 context.diagnostics, PRIME_NUMERICAL_STAGE_DIRECT_LIGHT, path.bounce);
-        if (!denoiserState.hasPrimarySurface) {
-            PrimePrimarySunSample sun = primeEstimatePrimaryDirectSun(
-                    context,
-                    integrator,
-                    surface,
-                    viewDirection,
-                    primeSobolSample2D(
-                            preparedSample,
-                            PRIME_SAMPLE_EFFECT_DIRECT_SUN,
-                            PRIME_SAMPLE_DIMENSION_PRIMARY),
-                    volumeStack,
-                    false);
-            result.guides.sunPenumbra = sun.penumbra;
-            result.radiance.sunVisibility = sun.visibility;
-            primeAccumulate(
-                    context,
-                    result.radiance.unshadowedSun,
-                    path.throughput * (sun.lighting.diffuse + sun.lighting.specular));
-            PrimeDirectLightingSplit nonsun = primeEstimatePrimaryNonsunDirect(
-                    context,
-                    surface,
-                    viewDirection,
-                    preparedSample,
-                    volumeStack,
-                    false);
-            float3 primaryAreaDiffuse = path.throughput * nonsun.diffuse;
-            float3 primaryAreaSpecular = path.throughput * nonsun.specular;
-            primeAccumulate(context, result.radiance.diffuse, primaryAreaDiffuse);
-            primeAccumulate(context, result.radiance.specular, primaryAreaSpecular);
-            result.guides.primaryAreaDiffuse = primaryAreaDiffuse;
-            result.guides.primaryAreaSpecular = primaryAreaSpecular;
-            if (any(primaryAreaDiffuse > float3(0.0))
-                    || any(primaryAreaSpecular > float3(0.0))) {
-                result.guides.primaryAreaDirection = nonsun.direction;
-            }
-        } else {
+        if (denoiserState.hasPrimarySurface) {
             float3 direct = path.throughput * primeEstimateDirectLighting(
                     sunNee,
                     areaNee,

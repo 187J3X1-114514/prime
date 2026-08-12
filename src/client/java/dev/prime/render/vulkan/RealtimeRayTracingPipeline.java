@@ -30,7 +30,7 @@ public final class RealtimeRayTracingPipeline implements RealtimeIntegratorPipel
     static final int RAYGEN_GROUP_COUNT = RealtimeWavefrontGroups.GROUP_COUNT;
     static final int RAYGEN_MODULE_COUNT = RealtimeWavefrontGroups.MODULE_COUNT;
     static int dispatchCount(int rounds) {
-        return 4 * rounds + 3;
+        return 4 * rounds + 5;
     }
     static final int DESCRIPTOR_BINDING_COUNT = 26;
     private static final int STORAGE_IMAGE_DESCRIPTOR_COUNT = 23;
@@ -81,6 +81,8 @@ public final class RealtimeRayTracingPipeline implements RealtimeIntegratorPipel
                 prefix + "head" + suffix,
                 prefix + "step" + suffix,
                 prefix + "primary" + suffix,
+                prefix + "primary_area" + suffix,
+                prefix + "primary_sun" + suffix,
                 prefix + "area" + suffix,
                 prefix + "sun" + suffix,
                 prefix + "shade" + suffix,
@@ -367,6 +369,22 @@ public final class RealtimeRayTracingPipeline implements RealtimeIntegratorPipel
             this.wavefrontBarrier(commandBuffer, stack);
             int dispatchCount = dispatchCount(input.wavefrontRounds());
             this.lastRecordedPassCount = dispatchCount;
+            this.traceIndirect(
+                    commandBuffer,
+                    stack,
+                    activeProgram,
+                    RealtimeWavefrontGroups.PRIMARY_AREA,
+                    commandOffset,
+                    ShaderAbi.WAVEFRONT_AREA_QUEUE);
+            this.wavefrontBarrier(commandBuffer, stack);
+            this.traceIndirect(
+                    commandBuffer,
+                    stack,
+                    activeProgram,
+                    RealtimeWavefrontGroups.PRIMARY_SUN,
+                    commandOffset,
+                    ShaderAbi.WAVEFRONT_AREA_QUEUE);
+            this.wavefrontBarrier(commandBuffer, stack);
             this.traceIndirect(
                     commandBuffer,
                     stack,

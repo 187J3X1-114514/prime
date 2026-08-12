@@ -594,6 +594,39 @@ void primeAccumulateDeferredDirectLight(
     }
 }
 
+void primeAccumulatePrimaryDirectSplit(
+        inout PrimeIntegratorContext context,
+        uint2 pixel,
+        PrimeDirectLightingSplit direct) {
+    int2 coordinate = int2(pixel);
+    float4 diffuse = primeImageLoad(primeNrdNoisyDiffuse, coordinate);
+    float4 specular = primeImageLoad(primeNrdNoisySpecular, coordinate);
+    primeAccumulate(context, diffuse.rgb, direct.diffuse);
+    primeAccumulate(context, specular.rgb, direct.specular);
+    diffuse.rgb = primeNrdSanitizeRadiance(diffuse.rgb);
+    specular.rgb = primeNrdSanitizeRadiance(specular.rgb);
+    primeImageStore(primeNrdNoisyDiffuse, coordinate, diffuse);
+    primeImageStore(primeNrdNoisySpecular, coordinate, specular);
+}
+
+void primeStoreWavefrontPrimarySun(
+        uint2 pixel,
+        float3 unshadowed,
+        float visibility,
+        float penumbra) {
+    int2 coordinate = int2(pixel);
+    primeImageStore(
+            primeNrdSunLighting,
+            coordinate,
+            float4(
+                    primeNrdSanitizeRadiance(unshadowed),
+                    primeNrdSanitizeUnit(visibility, 0.0)));
+    primeImageStore(
+            primeNrdSunPenumbra,
+            coordinate,
+            float4(primeNrdSanitizeHitDistance(penumbra)));
+}
+
 void primeStoreWavefrontDiagnostic(
         uint pathIndex, PrimeNumericalDiagnostics diagnostics) {
     if (primeWritesRawNumericalDiagnostic()) {

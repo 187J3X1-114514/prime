@@ -29,7 +29,9 @@ import org.lwjgl.vulkan.VkWriteDescriptorSet;
 public final class RealtimeRayTracingPipeline implements RealtimeIntegratorPipeline {
     static final int RAYGEN_GROUP_COUNT = RealtimeWavefrontGroups.GROUP_COUNT;
     static final int RAYGEN_MODULE_COUNT = RealtimeWavefrontGroups.MODULE_COUNT;
-    static final int DISPATCH_COUNT = 4 * ShaderAbi.WAVEFRONT_ROUNDS + 3;
+    static int dispatchCount(int rounds) {
+        return 4 * rounds + 2;
+    }
     static final int DESCRIPTOR_BINDING_COUNT = 26;
     private static final int STORAGE_IMAGE_DESCRIPTOR_COUNT = 23;
     private static final WavefrontLayout WAVEFRONT_LAYOUT = new WavefrontLayout(
@@ -81,7 +83,6 @@ public final class RealtimeRayTracingPipeline implements RealtimeIntegratorPipel
                 prefix + "area" + suffix,
                 prefix + "sun" + suffix,
                 prefix + "shade" + suffix,
-                prefix + "tail" + suffix,
                 prefix + "resolve" + suffix
             };
             traceProgram = TraceProgram.create(
@@ -97,7 +98,8 @@ public final class RealtimeRayTracingPipeline implements RealtimeIntegratorPipel
             this.pipelineLayout = layout;
             this.program = traceProgram;
             this.sharcDiagnostics = diagnostics;
-            this.lastRecordedPassCount = DISPATCH_COUNT;
+            this.lastRecordedPassCount = dispatchCount(
+                    dev.prime.render.WavefrontSettings.DEFAULT_ROUNDS);
         } catch (RuntimeException exception) {
             if (diagnostics != null) {
                 diagnostics.destroy();
@@ -363,8 +365,9 @@ public final class RealtimeRayTracingPipeline implements RealtimeIntegratorPipel
                     RealtimeWavefrontGroups.HEAD);
             this.wavefrontBarrier(commandBuffer, stack);
             int traceQueue = ShaderAbi.WAVEFRONT_TRACE_QUEUE_0;
-            this.lastRecordedPassCount = DISPATCH_COUNT;
-            for (int round = 0; round < ShaderAbi.WAVEFRONT_ROUNDS; round++) {
+            int dispatchCount = dispatchCount(input.wavefrontRounds());
+            this.lastRecordedPassCount = dispatchCount;
+            for (int round = 0; round < input.wavefrontRounds(); round++) {
                 this.traceIndirect(
                         commandBuffer,
                         stack,
@@ -401,14 +404,6 @@ public final class RealtimeRayTracingPipeline implements RealtimeIntegratorPipel
                         ? ShaderAbi.WAVEFRONT_TRACE_QUEUE_1
                         : ShaderAbi.WAVEFRONT_TRACE_QUEUE_0;
             }
-            this.traceIndirect(
-                    commandBuffer,
-                    stack,
-                    activeProgram,
-                    RealtimeWavefrontGroups.tail(traceQueue),
-                    commandOffset,
-                    traceQueue);
-            this.wavefrontBarrier(commandBuffer, stack);
             this.trace(
                     commandBuffer,
                     stack,
@@ -418,8 +413,8 @@ public final class RealtimeRayTracingPipeline implements RealtimeIntegratorPipel
                     RealtimeWavefrontGroups.RESOLVE);
             this.sharcDiagnostics.finish(commandBuffer, diagnostics);
             this.lastRecordedPassCount = this.sharc == null
-                    ? DISPATCH_COUNT
-                    : DISPATCH_COUNT + 2;
+                    ? dispatchCount
+                    : dispatchCount + 2;
         }
     }
 

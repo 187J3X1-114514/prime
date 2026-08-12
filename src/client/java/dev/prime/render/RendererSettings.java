@@ -17,7 +17,27 @@ public record RendererSettings(
         LightingSettings.Snapshot lighting,
         MaterialSettings.Snapshot material,
         DisplaySettings.Snapshot display,
+        int wavefrontRounds,
         long revision) {
+    public RendererSettings(
+            boolean pathTracingEnabled,
+            boolean sharcEnabled,
+            boolean voxelTextureSurfaces,
+            int voxelTextureSurfaceStrengthSteps,
+            PostProcessingMode postProcessingMode,
+            ReconstructionQualityMode reconstructionQuality,
+            AstronomySettings astronomy,
+            LightingSettings.Snapshot lighting,
+            MaterialSettings.Snapshot material,
+            DisplaySettings.Snapshot display,
+            long revision) {
+        this(
+                pathTracingEnabled, sharcEnabled, voxelTextureSurfaces,
+                voxelTextureSurfaceStrengthSteps, postProcessingMode, reconstructionQuality,
+                astronomy, lighting, material, display, WavefrontSettings.DEFAULT_ROUNDS,
+                revision);
+    }
+
     public RendererSettings {
         postProcessingMode = Objects.requireNonNull(postProcessingMode, "postProcessingMode");
         reconstructionQuality = Objects.requireNonNull(
@@ -27,6 +47,7 @@ public record RendererSettings(
         material = Objects.requireNonNull(material, "material");
         display = Objects.requireNonNull(display, "display");
         VoxelSurfaceSettings.maximumHeight(voxelTextureSurfaceStrengthSteps);
+        WavefrontSettings.validateRounds(wavefrontRounds);
         if (revision < 0L) {
             throw new IllegalArgumentException("Renderer settings revision must not be negative");
         }

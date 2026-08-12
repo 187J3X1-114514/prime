@@ -186,6 +186,7 @@ final class OfflineRenderer implements Destroyable {
                 current.cameraInWater(),
                 current.settings().lighting(),
                 current.settings().material(),
+                current.settings().wavefrontRounds(),
                 current.sampleCount(),
                 input.display()).plan();
         this.executor.execute(

@@ -8,6 +8,7 @@ import dev.prime.render.LightingSettings;
 import dev.prime.render.MaterialSettings;
 import dev.prime.client.PrimeRuntime;
 import dev.prime.render.RendererSettings;
+import dev.prime.render.WavefrontSettings;
 import dev.prime.render.fsr.FsrDebugView;
 import dev.prime.render.post.DlssRrDebugView;
 import dev.prime.render.post.PostProcessingMode;
@@ -50,6 +51,20 @@ public final class PrimeVideoOptions {
                         Component.translatable("prime.options.sharc.tooltip")),
                 PrimeConfig.settings().sharcEnabled(),
                 PrimeConfig::setSharcEnabled);
+    }
+
+    public static OptionInstance<Integer> wavefrontRounds() {
+        return new OptionInstance<>(
+                "prime.options.wavefront_rounds",
+                OptionInstance.cachedConstantTooltip(Component.translatable(
+                        "prime.options.wavefront_rounds.tooltip")),
+                (caption, rounds) -> Options.genericValueLabel(
+                        caption, Component.literal(Integer.toString(rounds))),
+                new OptionInstance.IntRange(
+                        WavefrontSettings.MINIMUM_ROUNDS,
+                        WavefrontSettings.MAXIMUM_ROUNDS),
+                PrimeConfig.wavefrontRounds(),
+                PrimeConfig::setWavefrontRounds);
     }
 
     public static OptionInstance<Boolean> voxelTextureSurfaces() {

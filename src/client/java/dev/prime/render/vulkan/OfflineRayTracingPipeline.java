@@ -28,9 +28,11 @@ import org.lwjgl.vulkan.VkWriteDescriptorSet;
 public final class OfflineRayTracingPipeline implements Destroyable {
     static final int RAYGEN_GROUP_COUNT = WavefrontGroups.GROUP_COUNT;
     static final int RAYGEN_MODULE_COUNT = WavefrontGroups.MODULE_COUNT;
-    static final int DISPATCH_COUNT = 2 * ShaderAbi.OFFLINE_WAVEFRONT_ROUNDS + 3;
+    static int dispatchCount(int rounds) {
+        return 2 * rounds + 2;
+    }
     static final int DESCRIPTOR_BINDING_COUNT = 3;
-    private static final int[] RAYGEN_CONTROLS = {0, 1, 257, 2, 258, 3, 259, 4};
+    private static final int[] RAYGEN_CONTROLS = {0, 1, 257, 2, 258, 4};
     private static final WavefrontLayout WAVEFRONT_LAYOUT = new WavefrontLayout(
             ShaderAbi.OFFLINE_WAVEFRONT_PATH_SLOTS_PER_PIXEL,
             ShaderAbi.OFFLINE_WAVEFRONT_QUEUE_ENTRIES_PER_PIXEL,
@@ -75,7 +77,6 @@ public final class OfflineRayTracingPipeline implements Destroyable {
                         prefix + "head" + suffix,
                         prefix + "step" + suffix,
                         prefix + "area" + suffix,
-                        prefix + "tail" + suffix,
                         prefix + "resolve" + suffix
                     },
                     WavefrontGroups.MODULES,
@@ -210,7 +211,7 @@ public final class OfflineRayTracingPipeline implements Destroyable {
             this.trace(commandBuffer, stack, width, height, WavefrontGroups.HEAD);
             this.wavefrontBarrier(commandBuffer, stack);
             int sourceQueue = 0;
-            for (int round = 0; round < ShaderAbi.OFFLINE_WAVEFRONT_ROUNDS; round++) {
+            for (int round = 0; round < input.wavefrontRounds(); round++) {
                 this.traceIndirect(
                         commandBuffer,
                         stack,
@@ -227,13 +228,6 @@ public final class OfflineRayTracingPipeline implements Destroyable {
                 this.wavefrontBarrier(commandBuffer, stack);
                 sourceQueue ^= 1;
             }
-            this.traceIndirect(
-                    commandBuffer,
-                    stack,
-                    WavefrontGroups.tail(sourceQueue),
-                    commandOffset,
-                    sourceQueue);
-            this.wavefrontBarrier(commandBuffer, stack);
             this.trace(commandBuffer, stack, width, height, WavefrontGroups.RESOLVE);
         }
     }

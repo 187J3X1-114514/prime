@@ -226,55 +226,6 @@ void primeOfflineWavefrontArea(
             primeOfflineIsActive(record));
 }
 
-void primeOfflineWavefrontTail(
-        inout PrimeIntegratorContext context,
-        uint launchIndex,
-        uint sourceQueue) {
-    uint pathIndex = primeOfflineQueuedPath(sourceQueue, launchIndex);
-    PrimeOfflinePathRecord record = primeOfflinePaths[pathIndex];
-    uint2 pixel = primeOfflinePixel(pathIndex);
-    PathState path = primeOfflinePath(
-            pixel,
-            record.transport,
-            primeOfflinePreviousLightNormal(record));
-    PrimeRcVolumeStack volumeStack = primeOfflineVolumeStack(record.transport);
-    float3 radiance = record.radianceAndPrimaryDistance.xyz;
-    float primaryDistance = record.radianceAndPrimaryDistance.w;
-    float3 primaryAlbedo = record.primaryAlbedoAndMaterialFlags.xyz;
-    uint primaryMaterialFlags = asuint(
-            record.primaryAlbedoAndMaterialFlags.w);
-    [loop]
-    while (path.bounce < primeMaximumBounces()) {
-        primeSetNumericalContext(
-                context.diagnostics, PRIME_NUMERICAL_STAGE_TRACE, path.bounce);
-        SurfaceInteraction surface = primeTraceSurfaceWithoutReorder(
-                path.traceOrigin, path.rayDirection);
-        PrimeOfflineSurfaceStep step = primeIntegrateOfflineSurface(
-                context,
-                path,
-                primeOfflineIntegrator(),
-                volumeStack,
-                radiance,
-                primaryDistance,
-                primaryAlbedo,
-                primaryMaterialFlags,
-                surface,
-                false);
-        if (!step.continuation) {
-            break;
-        }
-    }
-    primeOfflinePaths[pathIndex] = primeMakeOfflineRecord(
-            path,
-            volumeStack,
-            radiance,
-            primaryDistance,
-            primaryAlbedo,
-            primaryMaterialFlags,
-            primeEmptyOfflineAreaRequest(),
-            false);
-}
-
 void primeOfflineWavefrontResolve(uint2 launchIndex) {
     uint2 pixel = launchIndex;
     primeWriteOfflineOutput(

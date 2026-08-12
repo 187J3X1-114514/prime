@@ -257,7 +257,6 @@
   },
   "sceneTextureCount": 64,
   "realtimeWavefrontContract": {
-    "rounds": 12,
     "pathRecordSize": 96,
     "pathSlotsPerPixel": 2,
     "areaRecordSize": 112,
@@ -273,7 +272,6 @@
     "activeMask": "0x1"
   },
   "offlineWavefrontContract": {
-    "rounds": 12,
     "pathRecordSize": 144,
     "pathSlotsPerPixel": 1,
     "areaRecordSize": 0,
@@ -346,7 +344,7 @@
   },
   "atmosphereContract": {
     "spectralModel": "hillaire-8wave-rec2020-d65",
-    "worldToAtmosphereScale": 2.0,
+    "worldToAtmosphereScale": 1.0,
     "bottomRadiusKm": 6360.0,
     "topRadiusKm": 6460.0,
     "worldSeaLevelY": -128.0,

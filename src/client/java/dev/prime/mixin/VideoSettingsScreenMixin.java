@@ -48,6 +48,7 @@ public abstract class VideoSettingsScreenMixin {
             Component.translatable("prime.options.header.diagnostics");
     @Unique private OptionInstance<Boolean> prime$pathTracingEnabled;
     @Unique private OptionInstance<Boolean> prime$sharcEnabled;
+    @Unique private OptionInstance<Integer> prime$wavefrontRounds;
     @Unique private OptionInstance<Boolean> prime$voxelTextureSurfaces;
     @Unique private OptionInstance<Integer> prime$voxelTextureSurfaceStrength;
     @Unique private OptionInstance<Boolean> prime$screenshotMode;
@@ -79,6 +80,7 @@ public abstract class VideoSettingsScreenMixin {
         if (list != null) {
             this.prime$pathTracingEnabled = PrimeVideoOptions.pathTracingEnabled();
             this.prime$sharcEnabled = PrimeVideoOptions.sharcEnabled();
+            this.prime$wavefrontRounds = PrimeVideoOptions.wavefrontRounds();
             this.prime$voxelTextureSurfaces = PrimeVideoOptions.voxelTextureSurfaces();
             this.prime$voxelTextureSurfaceStrength =
                     PrimeVideoOptions.voxelTextureSurfaceStrength();
@@ -113,6 +115,7 @@ public abstract class VideoSettingsScreenMixin {
             list.addHeader(PRIME$RENDERING_HEADER);
             list.addBig(this.prime$pathTracingEnabled);
             list.addBig(this.prime$sharcEnabled);
+            list.addBig(this.prime$wavefrontRounds);
             list.addSmall(
                     this.prime$voxelTextureSurfaces,
                     this.prime$voxelTextureSurfaceStrength);

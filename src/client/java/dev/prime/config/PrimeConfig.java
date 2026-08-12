@@ -6,6 +6,7 @@ import dev.prime.render.DisplaySettings;
 import dev.prime.render.LightingSettings;
 import dev.prime.render.MaterialSettings;
 import dev.prime.render.RendererSettings;
+import dev.prime.render.WavefrontSettings;
 import dev.prime.render.post.PostProcessingMode;
 import dev.prime.render.post.ReconstructionQualityMode;
 import dev.prime.render.terrain.VoxelSurfaceSettings;
@@ -25,6 +26,7 @@ import net.fabricmc.loader.api.FabricLoader;
 public final class PrimeConfig {
     private static final String PATH_TRACING_ENABLED_KEY = "renderer.path_tracing";
     private static final String SHARC_ENABLED_KEY = "renderer.sharc";
+    private static final String WAVEFRONT_ROUNDS_KEY = "renderer.wavefront_rounds";
     private static final String[] LEGACY_INTEGRATOR_KEYS = {
         "renderer.integrator",
         "renderer.performance_maximum_bounces",
@@ -63,6 +65,7 @@ public final class PrimeConfig {
     // Fabric initializes and mutates video options on the client thread. One immutable snapshot
     // keeps every renderer read coherent without a shared lock or independently mutable globals.
     private static PrimeSettings settings = PrimeSettings.defaults();
+    private static int wavefrontRounds = WavefrontSettings.DEFAULT_ROUNDS;
     private static long rendererRevision;
     private static boolean dirty;
 
@@ -73,6 +76,7 @@ public final class PrimeConfig {
         Path path = configPath();
         boolean pathTracingEnabled = true;
         boolean sharcEnabled = true;
+        int loadedWavefrontRounds = WavefrontSettings.DEFAULT_ROUNDS;
         boolean voxelTextureSurfaces = false;
         int voxelTextureSurfaceStrengthSteps = VoxelSurfaceSettings.DEFAULT_STEPS;
         PostProcessingMode postProcessingMode = PostProcessingMode.DEFAULT;
@@ -119,6 +123,20 @@ public final class PrimeConfig {
                         PrimeInfo.LOGGER.warn(
                                 "Invalid Prime SHARC switch '{}'; enabling SHARC",
                                 sharc);
+                        rewriteNeeded = true;
+                    }
+                } else {
+                    rewriteNeeded = true;
+                }
+                String rounds = properties.getProperty(WAVEFRONT_ROUNDS_KEY);
+                if (rounds != null) {
+                    try {
+                        loadedWavefrontRounds = parseWavefrontRounds(rounds);
+                    } catch (IllegalArgumentException exception) {
+                        PrimeInfo.LOGGER.warn(
+                                "Invalid Prime wavefront rounds '{}'; using {}",
+                                rounds,
+                                WavefrontSettings.DEFAULT_ROUNDS);
                         rewriteNeeded = true;
                     }
                 } else {
@@ -378,12 +396,14 @@ public final class PrimeConfig {
                 0L,
                 sharcEnabled,
                 vanillaPbrPresets);
+        wavefrontRounds = loadedWavefrontRounds;
         rendererRevision = 0L;
         dirty = rewriteNeeded;
         PrimeInfo.LOGGER.info(
-                "Prime settings: path tracing {}, SHARC {}, voxel surfaces {} at {}x, post-processing {} quality {} (NRD-FSR {}x), latitude {} degrees, solar longitude {} degrees, sun {} EV, stars {} EV, block lights {} EV, final exposure {} EV, Oklab DRT overexposure {}, curve exponent {}, auto-exposure compensation {}, default roughness {}, seamless glass {}, air gap {}, vanilla PBR presets {}",
+                "Prime settings: path tracing {}, SHARC {}, wavefront rounds {}, voxel surfaces {} at {}x, post-processing {} quality {} (NRD-FSR {}x), latitude {} degrees, solar longitude {} degrees, sun {} EV, stars {} EV, block lights {} EV, final exposure {} EV, Oklab DRT overexposure {}, curve exponent {}, auto-exposure compensation {}, default roughness {}, seamless glass {}, air gap {}, vanilla PBR presets {}",
                 pathTracingEnabled ? "enabled" : "disabled",
                 sharcEnabled ? "enabled" : "disabled",
+                loadedWavefrontRounds,
                 voxelTextureSurfaces ? "enabled" : "disabled",
                 formatVoxelSurfaceStrength(voxelTextureSurfaceStrengthSteps),
                 postProcessingMode.id(),
@@ -426,6 +446,7 @@ public final class PrimeConfig {
                 current.lighting(),
                 current.material(),
                 current.display(),
+                wavefrontRounds,
                 revision);
     }
 
@@ -435,6 +456,19 @@ public final class PrimeConfig {
 
     public static void setSharcEnabled(boolean enabled) {
         update(settings.withSharcEnabled(enabled));
+    }
+
+    public static int wavefrontRounds() {
+        return wavefrontRounds;
+    }
+
+    public static void setWavefrontRounds(int rounds) {
+        int replacement = WavefrontSettings.validateRounds(rounds);
+        if (replacement != wavefrontRounds) {
+            wavefrontRounds = replacement;
+            rendererRevision = Math.incrementExact(rendererRevision);
+            dirty = true;
+        }
     }
 
     public static void setVoxelTextureSurfaces(boolean enabled) {
@@ -507,6 +541,7 @@ public final class PrimeConfig {
 
     public static void restoreDefaults() {
         update(restoredDefaults(settings));
+        setWavefrontRounds(WavefrontSettings.DEFAULT_ROUNDS);
     }
 
     static PrimeSettings restoredDefaults(PrimeSettings current) {
@@ -586,6 +621,7 @@ public final class PrimeConfig {
         PrimeSettings current = settings;
         return PATH_TRACING_ENABLED_KEY + "=" + current.pathTracingEnabled() + "\n"
                     + SHARC_ENABLED_KEY + "=" + current.sharcEnabled() + "\n"
+                    + WAVEFRONT_ROUNDS_KEY + "=" + wavefrontRounds + "\n"
                     + VOXEL_TEXTURE_SURFACES_KEY + "="
                     + current.voxelTextureSurfaces() + "\n"
                     + VOXEL_TEXTURE_SURFACE_STRENGTH_KEY + "="
@@ -626,6 +662,14 @@ public final class PrimeConfig {
             return false;
         }
         throw new IllegalArgumentException("Boolean setting must be true or false");
+    }
+
+    static int parseWavefrontRounds(String value) {
+        try {
+            return WavefrontSettings.validateRounds(Integer.parseInt(value));
+        } catch (NumberFormatException exception) {
+            throw new IllegalArgumentException("Wavefront rounds must be an integer", exception);
+        }
     }
 
     static int parseLatitudeDegrees(String value) {

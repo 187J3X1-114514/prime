@@ -171,8 +171,7 @@ abstract class GenerateShaderAbi extends DefaultTask {
 				|| fsrContract.viewSpaceToMetersFactor != 1.0) {
 			throw new GradleException('Prime FSR signal and projection contracts changed without a coordinated migration')
 		}
-		if (wavefrontContract.rounds != 12
-				|| wavefrontContract.pathRecordSize != 96
+		if (wavefrontContract.pathRecordSize != 96
 				|| wavefrontContract.pathSlotsPerPixel != 2
 				|| wavefrontContract.areaRecordSize != 112
 				|| wavefrontContract.queueEntriesPerPixel != 1
@@ -188,8 +187,7 @@ abstract class GenerateShaderAbi extends DefaultTask {
 			throw new GradleException(
 					'Prime realtime scheduler must preserve its execution-mode queue ABI')
 		}
-		if (offlineWavefrontContract.rounds != 12
-				|| offlineWavefrontContract.pathRecordSize != 144
+		if (offlineWavefrontContract.pathRecordSize != 144
 				|| offlineWavefrontContract.pathSlotsPerPixel != 1
 				|| offlineWavefrontContract.areaRecordSize != 0
 				|| offlineWavefrontContract.queueEntriesPerPixel != 1
@@ -401,10 +399,8 @@ public final class ShaderAbi {
     public static final int DESCRIPTOR_SUN_SHADOW_DEPTH_8 = ${schema.sharedDescriptors.sunShadowDepth8};
     public static final int DESCRIPTOR_SUN_SHADOW_DEPTH_9 = ${schema.sharedDescriptors.sunShadowDepth9};
     public static final int SCENE_TEXTURE_COUNT = ${schema.sceneTextureCount};
-    public static final int WAVEFRONT_ROUNDS = ${wavefrontContract.rounds};
     public static final int WAVEFRONT_PATH_RECORD_SIZE = ${wavefrontContract.pathRecordSize};
     public static final int WAVEFRONT_PATH_SLOTS_PER_PIXEL = ${wavefrontContract.pathSlotsPerPixel};
-    public static final int OFFLINE_WAVEFRONT_ROUNDS = ${offlineWavefrontContract.rounds};
     public static final int OFFLINE_WAVEFRONT_PATH_RECORD_SIZE = ${offlineWavefrontContract.pathRecordSize};
     public static final int OFFLINE_WAVEFRONT_PATH_SLOTS_PER_PIXEL = ${offlineWavefrontContract.pathSlotsPerPixel};
     public static final int OFFLINE_WAVEFRONT_QUEUE_ENTRIES_PER_PIXEL = ${offlineWavefrontContract.queueEntriesPerPixel};
@@ -758,7 +754,6 @@ public static const uint PRIME_DESCRIPTOR_WAVEFRONT_PATHS = ${schema.realtimeDes
 public static const uint PRIME_DESCRIPTOR_WAVEFRONT_QUEUE = ${schema.realtimeDescriptors.wavefrontQueue};
 public static const uint PRIME_WAVEFRONT_PATH_RECORD_SIZE = ${wavefrontContract.pathRecordSize};
 public static const uint PRIME_WAVEFRONT_PATH_SLOTS_PER_PIXEL = ${wavefrontContract.pathSlotsPerPixel};
-public static const uint PRIME_WAVEFRONT_ROUNDS = ${wavefrontContract.rounds};
 public static const uint PRIME_WAVEFRONT_AREA_RECORD_SIZE = ${wavefrontContract.areaRecordSize};
 public static const uint PRIME_WAVEFRONT_QUEUE_ENTRIES_PER_PIXEL = ${wavefrontContract.queueEntriesPerPixel};
 public static const uint PRIME_WAVEFRONT_QUEUE_COUNT = ${wavefrontContract.queueCount};
@@ -855,7 +850,6 @@ public static const uint PRIME_DESCRIPTOR_WAVEFRONT_PATHS = ${schema.offlineDesc
 public static const uint PRIME_DESCRIPTOR_WAVEFRONT_QUEUE = ${schema.offlineDescriptors.wavefrontQueue};
 public static const uint PRIME_WAVEFRONT_PATH_RECORD_SIZE = ${offlineWavefrontContract.pathRecordSize};
 public static const uint PRIME_WAVEFRONT_PATH_SLOTS_PER_PIXEL = ${offlineWavefrontContract.pathSlotsPerPixel};
-public static const uint PRIME_WAVEFRONT_ROUNDS = ${offlineWavefrontContract.rounds};
 public static const uint PRIME_WAVEFRONT_AREA_RECORD_SIZE = ${offlineWavefrontContract.areaRecordSize};
 public static const uint PRIME_WAVEFRONT_QUEUE_ENTRIES_PER_PIXEL = ${offlineWavefrontContract.queueEntriesPerPixel};
 public static const uint PRIME_WAVEFRONT_QUEUE_COUNT = ${offlineWavefrontContract.queueCount};
@@ -1007,8 +1001,6 @@ abstract class CompilePrimeSlangComputeShaders extends DefaultTask {
 							[compile: [''], alias: ['_subgroup': '', '_ser': '']],
 					'realtime_wavefront_sun':
 							[compile: [''], alias: ['_subgroup': '', '_ser': '']],
-					'realtime_wavefront_tail':
-							[compile: [''], alias: ['_subgroup': '', '_ser': '']],
 					'realtime_wavefront_resolve':
 							[compile: [''], alias: ['_subgroup': '', '_ser': '']],
 					'realtime_wavefront_sharc_shade':
@@ -1017,16 +1009,12 @@ abstract class CompilePrimeSlangComputeShaders extends DefaultTask {
 							[compile: [''], alias: ['_subgroup': '', '_ser': '']],
 					'realtime_wavefront_sharc_sun':
 							[compile: [''], alias: ['_subgroup': '', '_ser': '']],
-					'realtime_wavefront_sharc_tail':
-							[compile: [''], alias: ['_subgroup': '', '_ser': '']],
 					'offline_wavefront_head':
 							[compile: ['', '_subgroup', '_ser'], alias: [:]],
 					'offline_wavefront_step':
 							[compile: ['', '_ser'], alias: ['_subgroup': '']],
 					'offline_wavefront_area':
 							[compile: ['', '_subgroup'], alias: ['_ser': '_subgroup']],
-					'offline_wavefront_tail':
-							[compile: [''], alias: ['_subgroup': '', '_ser': '']],
 					'offline_wavefront_resolve':
 							[compile: [''], alias: ['_subgroup': '', '_ser': '']]
 			][stem]

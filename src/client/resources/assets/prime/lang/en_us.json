@@ -9,6 +9,8 @@
   "prime.options.path_tracing.tooltip": "Enables Prime path-traced rendering. Disable it to restore vanilla rendering when you need more performance or encounter compatibility problems.",
   "prime.options.sharc": "SHARC Radiance Cache",
   "prime.options.sharc.tooltip": "Reuses indirect lighting from a 256 MiB world-space radiance cache to reduce realtime path-tracing noise and cost. Requires native FP16 storage and 64-bit buffer atomics; unsupported GPUs fall back automatically without allocating the cache.",
+  "prime.options.wavefront_rounds": "Wavefront Rounds",
+  "prime.options.wavefront_rounds.tooltip": "Sets the shared wavefront transport rounds for realtime and offline path tracing (1–64). More rounds permit longer paths at higher rendering cost.",
   "prime.options.experimental.voxel_texture_surfaces": "Texture Displacement (Experimental)",
   "prime.options.experimental.voxel_texture_surfaces.tooltip": "Turns material height information into real surface geometry for more detailed silhouettes, occlusion, and shadows. It substantially increases scene-building cost; disable it if performance or material appearance suffers.",
   "prime.options.experimental.voxel_texture_surface_strength": "Displacement Height",

@@ -11,13 +11,15 @@ public record RealtimeRenderSettings(
         ReconstructionQualityMode reconstructionQuality,
         LightingSettings.Snapshot lighting,
         MaterialSettings.Snapshot material,
-        DisplaySettings.Snapshot display) {
+        DisplaySettings.Snapshot display,
+        int wavefrontRounds) {
     public RealtimeRenderSettings {
         Objects.requireNonNull(postProcessing, "postProcessing");
         Objects.requireNonNull(reconstructionQuality, "reconstructionQuality");
         Objects.requireNonNull(lighting, "lighting");
         Objects.requireNonNull(material, "material");
         Objects.requireNonNull(display, "display");
+        WavefrontSettings.validateRounds(wavefrontRounds);
     }
 
     public static RealtimeRenderSettings capture(RendererSettings settings) {
@@ -28,6 +30,7 @@ public record RealtimeRenderSettings(
                 settings.reconstructionQuality(),
                 settings.lighting(),
                 settings.material(),
-                settings.display());
+                settings.display(),
+                settings.wavefrontRounds());
     }
 }

@@ -215,6 +215,7 @@ final class PrimeConfigTest {
         String serialized = PrimeConfig.serializedContents();
         assertTrue(serialized.contains("renderer.path_tracing=true\n"));
         assertTrue(serialized.contains("renderer.sharc=true\n"));
+        assertTrue(serialized.contains("renderer.wavefront_rounds=16\n"));
         assertTrue(PrimeSettings.defaults().sharcEnabled());
         assertFalse(serialized.contains("renderer.integrator"));
         assertFalse(serialized.contains("renderer.performance_maximum_bounces"));
@@ -247,6 +248,21 @@ final class PrimeConfigTest {
         assertFalse(PrimeConfig.hasLegacyDebugProperties(properties));
         properties.setProperty("dlss_rr.debug_view", "motion");
         assertTrue(PrimeConfig.hasLegacyDebugProperties(properties));
+    }
+
+    @Test
+    void wavefrontRoundsAcceptOnlyTheSharedRuntimeRange() {
+        assertEquals(1, PrimeConfig.parseWavefrontRounds("1"));
+        assertEquals(64, PrimeConfig.parseWavefrontRounds("64"));
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> PrimeConfig.parseWavefrontRounds("0"));
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> PrimeConfig.parseWavefrontRounds("65"));
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> PrimeConfig.parseWavefrontRounds("12.0"));
     }
 
     @Test

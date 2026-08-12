@@ -7,7 +7,8 @@ public record OfflineRenderSettings(
         LightingSettings.Snapshot lighting,
         MaterialSettings.Snapshot material,
         int maximumBounces,
-        int russianRouletteStart) {
+        int russianRouletteStart,
+        int wavefrontRounds) {
     public static final int DEFAULT_MAXIMUM_BOUNCES = 128;
     public static final int DEFAULT_RUSSIAN_ROULETTE_START = 1;
 
@@ -22,6 +23,7 @@ public record OfflineRenderSettings(
             throw new IllegalArgumentException(
                     "Offline transport begins roulette at the second scatter");
         }
+        WavefrontSettings.validateRounds(wavefrontRounds);
     }
 
     public static OfflineRenderSettings capture(RendererSettings settings) {
@@ -30,6 +32,7 @@ public record OfflineRenderSettings(
                 settings.lighting(),
                 settings.material(),
                 DEFAULT_MAXIMUM_BOUNCES,
-                DEFAULT_RUSSIAN_ROULETTE_START);
+                DEFAULT_RUSSIAN_ROULETTE_START,
+                settings.wavefrontRounds());
     }
 }

@@ -22,44 +22,13 @@ public record RealtimeFrameInput(
         PostProcessingMode postProcessingMode,
         ReconstructionQualityMode quality,
         TransparentGuideMode transparentGuideMode,
-        int maximumBounces,
-        int wavefrontRounds,
+        int scatterCount,
         LightingSettings.Snapshot lighting,
         MaterialSettings.Snapshot material,
         boolean shInput,
         boolean triangleDebug,
         DisplaySettings.Snapshot display,
         boolean forceReset) {
-    public RealtimeFrameInput(
-            FrameCamera camera,
-            long frameTimeNanos,
-            long sceneRevision,
-            long residentSceneRevision,
-            long textureRevision,
-            int width,
-            int height,
-            int displayWidth,
-            int displayHeight,
-            AstronomyState astronomy,
-            boolean cameraInWater,
-            PostProcessingMode postProcessingMode,
-            ReconstructionQualityMode quality,
-            TransparentGuideMode transparentGuideMode,
-            int maximumBounces,
-            LightingSettings.Snapshot lighting,
-            MaterialSettings.Snapshot material,
-            boolean shInput,
-            boolean triangleDebug,
-            DisplaySettings.Snapshot display,
-            boolean forceReset) {
-        this(
-                camera, frameTimeNanos, sceneRevision, residentSceneRevision, textureRevision,
-                width, height, displayWidth, displayHeight, astronomy, cameraInWater,
-                postProcessingMode, quality, transparentGuideMode, maximumBounces,
-                WavefrontSettings.DEFAULT_ROUNDS, lighting, material, shInput, triangleDebug,
-                display, forceReset);
-    }
-
     public RealtimeFrameInput {
         Objects.requireNonNull(camera, "camera");
         Objects.requireNonNull(astronomy, "astronomy");
@@ -67,12 +36,12 @@ public record RealtimeFrameInput(
         Objects.requireNonNull(quality, "quality");
         Objects.requireNonNull(transparentGuideMode, "transparentGuideMode");
         IntegratorSettings.packPathControl(
-                maximumBounces,
+                scatterCount,
                 0,
                 astronomy.settings(),
                 cameraInWater,
                 transparentGuideMode);
-        WavefrontSettings.validateRounds(wavefrontRounds);
+        ScatterSettings.validateCount(scatterCount);
         Objects.requireNonNull(lighting, "lighting");
         Objects.requireNonNull(material, "material");
         Objects.requireNonNull(display, "display");
@@ -131,8 +100,7 @@ public record RealtimeFrameInput(
                 this.height,
                 this.astronomy,
                 packedRayCone,
-                this.maximumBounces,
-                this.wavefrontRounds,
+                this.scatterCount,
                 sampleIndex,
                 sampleEpoch,
                 jitterPhase,

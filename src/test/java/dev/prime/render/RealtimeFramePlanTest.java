@@ -40,7 +40,7 @@ final class RealtimeFramePlanTest {
             assertEquals(mode, plan.integrator().postProcessingMode());
             assertEquals(input.transparentGuideMode(), plan.integrator().transparentGuideMode());
             assertEquals(PACKED_RAY_CONE, plan.integrator().packedRayCone());
-            assertEquals(input.maximumBounces(), plan.integrator().maximumBounces());
+            assertEquals(input.scatterCount(), plan.integrator().scatterCount());
             assertEquals(7, plan.integrator().jitterPhase());
             assertEquals(JITTER, plan.jitter());
             assertTrue(plan.reconstructionReset());
@@ -71,7 +71,7 @@ final class RealtimeFramePlanTest {
                 firstInput.postProcessingMode(),
                 firstInput.quality(),
                 firstInput.transparentGuideMode(),
-                firstInput.maximumBounces(),
+                firstInput.scatterCount(),
                 firstInput.lighting(),
                 firstInput.material(),
                 firstInput.shInput(),
@@ -179,7 +179,7 @@ final class RealtimeFramePlanTest {
                 mode,
                 ReconstructionQualityMode.QUALITY,
                 guide,
-                IntegratorSettings.MAXIMUM_BOUNCES,
+                ScatterSettings.MAXIMUM_COUNT,
                 new LightingSettings.Snapshot(0, 0, 0, 13L),
                 new MaterialSettings.Snapshot(90, 17L),
                 true,

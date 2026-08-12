@@ -6,7 +6,8 @@ import dev.prime.render.DisplaySettings;
 import dev.prime.render.LightingSettings;
 import dev.prime.render.MaterialSettings;
 import dev.prime.render.RendererSettings;
-import dev.prime.render.WavefrontSettings;
+import dev.prime.render.RealtimeIntegratorMode;
+import dev.prime.render.ScatterSettings;
 import dev.prime.render.post.PostProcessingMode;
 import dev.prime.render.post.ReconstructionQualityMode;
 import dev.prime.render.terrain.VoxelSurfaceSettings;
@@ -26,7 +27,9 @@ import net.fabricmc.loader.api.FabricLoader;
 public final class PrimeConfig {
     private static final String PATH_TRACING_ENABLED_KEY = "renderer.path_tracing";
     private static final String SHARC_ENABLED_KEY = "renderer.sharc";
-    private static final String WAVEFRONT_ROUNDS_KEY = "renderer.wavefront_rounds";
+    private static final String INTEGRATOR_MODE_KEY = "renderer.integrator_mode";
+    private static final String SCATTER_COUNT_KEY = "renderer.scatter_count";
+    private static final String LEGACY_WAVEFRONT_ROUNDS_KEY = "renderer.wavefront_rounds";
     private static final String[] LEGACY_INTEGRATOR_KEYS = {
         "renderer.integrator",
         "renderer.performance_maximum_bounces",
@@ -65,7 +68,8 @@ public final class PrimeConfig {
     // Fabric initializes and mutates video options on the client thread. One immutable snapshot
     // keeps every renderer read coherent without a shared lock or independently mutable globals.
     private static PrimeSettings settings = PrimeSettings.defaults();
-    private static int wavefrontRounds = WavefrontSettings.DEFAULT_ROUNDS;
+    private static RealtimeIntegratorMode integratorMode = RealtimeIntegratorMode.DEFAULT;
+    private static int scatterCount = ScatterSettings.DEFAULT_COUNT;
     private static long rendererRevision;
     private static boolean dirty;
 
@@ -76,7 +80,8 @@ public final class PrimeConfig {
         Path path = configPath();
         boolean pathTracingEnabled = true;
         boolean sharcEnabled = true;
-        int loadedWavefrontRounds = WavefrontSettings.DEFAULT_ROUNDS;
+        RealtimeIntegratorMode loadedIntegratorMode = RealtimeIntegratorMode.DEFAULT;
+        int loadedScatterCount = ScatterSettings.DEFAULT_COUNT;
         boolean voxelTextureSurfaces = false;
         int voxelTextureSurfaceStrengthSteps = VoxelSurfaceSettings.DEFAULT_STEPS;
         PostProcessingMode postProcessingMode = PostProcessingMode.DEFAULT;
@@ -128,15 +133,35 @@ public final class PrimeConfig {
                 } else {
                     rewriteNeeded = true;
                 }
-                String rounds = properties.getProperty(WAVEFRONT_ROUNDS_KEY);
-                if (rounds != null) {
+                String integrator = properties.getProperty(INTEGRATOR_MODE_KEY);
+                if (integrator != null) {
+                    RealtimeIntegratorMode parsed = RealtimeIntegratorMode.findById(integrator)
+                            .orElse(null);
+                    if (parsed == null) {
+                        PrimeInfo.LOGGER.warn(
+                                "Unknown Prime integrator mode '{}'; using {}",
+                                integrator,
+                                RealtimeIntegratorMode.DEFAULT.id());
+                        rewriteNeeded = true;
+                    } else {
+                        loadedIntegratorMode = parsed;
+                    }
+                } else {
+                    rewriteNeeded = true;
+                }
+                String count = properties.getProperty(SCATTER_COUNT_KEY);
+                if (count == null) {
+                    count = properties.getProperty(LEGACY_WAVEFRONT_ROUNDS_KEY);
+                    if (count != null) rewriteNeeded = true;
+                }
+                if (count != null) {
                     try {
-                        loadedWavefrontRounds = parseWavefrontRounds(rounds);
+                        loadedScatterCount = parseScatterCount(count);
                     } catch (IllegalArgumentException exception) {
                         PrimeInfo.LOGGER.warn(
-                                "Invalid Prime wavefront rounds '{}'; using {}",
-                                rounds,
-                                WavefrontSettings.DEFAULT_ROUNDS);
+                                "Invalid Prime scatter count '{}'; using {}",
+                                count,
+                                ScatterSettings.DEFAULT_COUNT);
                         rewriteNeeded = true;
                     }
                 } else {
@@ -396,14 +421,16 @@ public final class PrimeConfig {
                 0L,
                 sharcEnabled,
                 vanillaPbrPresets);
-        wavefrontRounds = loadedWavefrontRounds;
+        integratorMode = loadedIntegratorMode;
+        scatterCount = loadedScatterCount;
         rendererRevision = 0L;
         dirty = rewriteNeeded;
         PrimeInfo.LOGGER.info(
-                "Prime settings: path tracing {}, SHARC {}, wavefront rounds {}, voxel surfaces {} at {}x, post-processing {} quality {} (NRD-FSR {}x), latitude {} degrees, solar longitude {} degrees, sun {} EV, stars {} EV, block lights {} EV, final exposure {} EV, Oklab DRT overexposure {}, curve exponent {}, auto-exposure compensation {}, default roughness {}, seamless glass {}, air gap {}, vanilla PBR presets {}",
+                "Prime settings: path tracing {}, SHARC {}, integrator {}, scatter count {}, voxel surfaces {} at {}x, post-processing {} quality {} (NRD-FSR {}x), latitude {} degrees, solar longitude {} degrees, sun {} EV, stars {} EV, block lights {} EV, final exposure {} EV, Oklab DRT overexposure {}, curve exponent {}, auto-exposure compensation {}, default roughness {}, seamless glass {}, air gap {}, vanilla PBR presets {}",
                 pathTracingEnabled ? "enabled" : "disabled",
                 sharcEnabled ? "enabled" : "disabled",
-                loadedWavefrontRounds,
+                loadedIntegratorMode.id(),
+                loadedScatterCount,
                 voxelTextureSurfaces ? "enabled" : "disabled",
                 formatVoxelSurfaceStrength(voxelTextureSurfaceStrengthSteps),
                 postProcessingMode.id(),
@@ -438,6 +465,7 @@ public final class PrimeConfig {
         return new RendererSettings(
                 current.pathTracingEnabled(),
                 current.sharcEnabled(),
+                integratorMode,
                 current.voxelTextureSurfaces(),
                 current.voxelTextureSurfaceStrengthSteps(),
                 current.postProcessingMode(),
@@ -446,7 +474,7 @@ public final class PrimeConfig {
                 current.lighting(),
                 current.material(),
                 current.display(),
-                wavefrontRounds,
+                scatterCount,
                 revision);
     }
 
@@ -458,14 +486,27 @@ public final class PrimeConfig {
         update(settings.withSharcEnabled(enabled));
     }
 
-    public static int wavefrontRounds() {
-        return wavefrontRounds;
+    public static RealtimeIntegratorMode integratorMode() {
+        return integratorMode;
     }
 
-    public static void setWavefrontRounds(int rounds) {
-        int replacement = WavefrontSettings.validateRounds(rounds);
-        if (replacement != wavefrontRounds) {
-            wavefrontRounds = replacement;
+    public static void setIntegratorMode(RealtimeIntegratorMode mode) {
+        RealtimeIntegratorMode replacement = java.util.Objects.requireNonNull(mode, "mode");
+        if (replacement != integratorMode) {
+            integratorMode = replacement;
+            rendererRevision = Math.incrementExact(rendererRevision);
+            dirty = true;
+        }
+    }
+
+    public static int scatterCount() {
+        return scatterCount;
+    }
+
+    public static void setScatterCount(int count) {
+        int replacement = ScatterSettings.validateCount(count);
+        if (replacement != scatterCount) {
+            scatterCount = replacement;
             rendererRevision = Math.incrementExact(rendererRevision);
             dirty = true;
         }
@@ -541,7 +582,8 @@ public final class PrimeConfig {
 
     public static void restoreDefaults() {
         update(restoredDefaults(settings));
-        setWavefrontRounds(WavefrontSettings.DEFAULT_ROUNDS);
+        setIntegratorMode(RealtimeIntegratorMode.DEFAULT);
+        setScatterCount(ScatterSettings.DEFAULT_COUNT);
     }
 
     static PrimeSettings restoredDefaults(PrimeSettings current) {
@@ -621,7 +663,8 @@ public final class PrimeConfig {
         PrimeSettings current = settings;
         return PATH_TRACING_ENABLED_KEY + "=" + current.pathTracingEnabled() + "\n"
                     + SHARC_ENABLED_KEY + "=" + current.sharcEnabled() + "\n"
-                    + WAVEFRONT_ROUNDS_KEY + "=" + wavefrontRounds + "\n"
+                    + INTEGRATOR_MODE_KEY + "=" + integratorMode.id() + "\n"
+                    + SCATTER_COUNT_KEY + "=" + scatterCount + "\n"
                     + VOXEL_TEXTURE_SURFACES_KEY + "="
                     + current.voxelTextureSurfaces() + "\n"
                     + VOXEL_TEXTURE_SURFACE_STRENGTH_KEY + "="
@@ -664,11 +707,11 @@ public final class PrimeConfig {
         throw new IllegalArgumentException("Boolean setting must be true or false");
     }
 
-    static int parseWavefrontRounds(String value) {
+    static int parseScatterCount(String value) {
         try {
-            return WavefrontSettings.validateRounds(Integer.parseInt(value));
+            return ScatterSettings.validateCount(Integer.parseInt(value));
         } catch (NumberFormatException exception) {
-            throw new IllegalArgumentException("Wavefront rounds must be an integer", exception);
+            throw new IllegalArgumentException("Scatter count must be an integer", exception);
         }
     }
 

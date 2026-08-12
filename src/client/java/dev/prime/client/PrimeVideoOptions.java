@@ -8,7 +8,8 @@ import dev.prime.render.LightingSettings;
 import dev.prime.render.MaterialSettings;
 import dev.prime.client.PrimeRuntime;
 import dev.prime.render.RendererSettings;
-import dev.prime.render.WavefrontSettings;
+import dev.prime.render.RealtimeIntegratorMode;
+import dev.prime.render.ScatterSettings;
 import dev.prime.render.fsr.FsrDebugView;
 import dev.prime.render.post.DlssRrDebugView;
 import dev.prime.render.post.PostProcessingMode;
@@ -27,6 +28,8 @@ public final class PrimeVideoOptions {
             List.of(PostProcessingMode.values());
     private static final List<ReconstructionQualityMode> QUALITY_MODES =
             List.of(ReconstructionQualityMode.values());
+    private static final List<RealtimeIntegratorMode> INTEGRATOR_MODES =
+            List.of(RealtimeIntegratorMode.values());
     private static final List<DlssRrDebugView> RR_DEBUG_VIEWS = List.of(DlssRrDebugView.values());
     private static final List<FsrDebugView> FSR_DEBUG_VIEWS = List.of(FsrDebugView.values());
     private static final List<NrdDiagnostics.Mode> NRD_DEBUG_VIEWS =
@@ -53,18 +56,36 @@ public final class PrimeVideoOptions {
                 PrimeConfig::setSharcEnabled);
     }
 
-    public static OptionInstance<Integer> wavefrontRounds() {
+    public static OptionInstance<RealtimeIntegratorMode> integratorMode() {
         return new OptionInstance<>(
-                "prime.options.wavefront_rounds",
+                "prime.options.integrator_mode",
                 OptionInstance.cachedConstantTooltip(Component.translatable(
-                        "prime.options.wavefront_rounds.tooltip")),
-                (caption, rounds) -> Options.genericValueLabel(
-                        caption, Component.literal(Integer.toString(rounds))),
+                        "prime.options.integrator_mode.tooltip")),
+                (caption, mode) -> Options.genericValueLabel(
+                        caption,
+                        Component.translatable("prime.options.integrator_mode." + mode.id())),
+                new OptionInstance.Enum<>(
+                        INTEGRATOR_MODES,
+                        Codec.STRING.xmap(
+                                id -> RealtimeIntegratorMode.findById(id)
+                                        .orElse(RealtimeIntegratorMode.DEFAULT),
+                                RealtimeIntegratorMode::id)),
+                PrimeConfig.integratorMode(),
+                PrimeConfig::setIntegratorMode);
+    }
+
+    public static OptionInstance<Integer> scatterCount() {
+        return new OptionInstance<>(
+                "prime.options.scatter_count",
+                OptionInstance.cachedConstantTooltip(Component.translatable(
+                        "prime.options.scatter_count.tooltip")),
+                (caption, count) -> Options.genericValueLabel(
+                        caption, Component.literal(Integer.toString(count))),
                 new OptionInstance.IntRange(
-                        WavefrontSettings.MINIMUM_ROUNDS,
-                        WavefrontSettings.MAXIMUM_ROUNDS),
-                PrimeConfig.wavefrontRounds(),
-                PrimeConfig::setWavefrontRounds);
+                        ScatterSettings.MINIMUM_COUNT,
+                        ScatterSettings.MAXIMUM_COUNT),
+                PrimeConfig.scatterCount(),
+                PrimeConfig::setScatterCount);
     }
 
     public static OptionInstance<Boolean> voxelTextureSurfaces() {

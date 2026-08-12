@@ -28,8 +28,8 @@ import org.lwjgl.vulkan.VkWriteDescriptorSet;
 public final class OfflineRayTracingPipeline implements Destroyable {
     static final int RAYGEN_GROUP_COUNT = WavefrontGroups.GROUP_COUNT;
     static final int RAYGEN_MODULE_COUNT = WavefrontGroups.MODULE_COUNT;
-    static int dispatchCount(int rounds) {
-        return 2 * rounds + 3;
+    static int dispatchCount(int scatterCount) {
+        return 2 * Math.max(scatterCount - 1, 0) + 3;
     }
     static final int DESCRIPTOR_BINDING_COUNT = 3;
     private static final int[] RAYGEN_CONTROLS = {0, 1, 257, 2, 258, 4};
@@ -218,7 +218,7 @@ public final class OfflineRayTracingPipeline implements Destroyable {
                     0);
             this.wavefrontBarrier(commandBuffer, stack);
             int sourceQueue = 1;
-            for (int round = 0; round < input.wavefrontRounds(); round++) {
+            for (int scatter = 1; scatter < input.scatterCount(); scatter++) {
                 this.recordRound(commandBuffer, stack, commandOffset, sourceQueue);
                 sourceQueue ^= 1;
             }

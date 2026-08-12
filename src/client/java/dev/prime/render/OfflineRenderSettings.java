@@ -6,24 +6,18 @@ import java.util.Objects;
 public record OfflineRenderSettings(
         LightingSettings.Snapshot lighting,
         MaterialSettings.Snapshot material,
-        int maximumBounces,
-        int russianRouletteStart,
-        int wavefrontRounds) {
-    public static final int DEFAULT_MAXIMUM_BOUNCES = 128;
+        int scatterCount,
+        int russianRouletteStart) {
     public static final int DEFAULT_RUSSIAN_ROULETTE_START = 1;
 
     public OfflineRenderSettings {
         Objects.requireNonNull(lighting, "lighting");
         Objects.requireNonNull(material, "material");
-        if (maximumBounces != IntegratorSettings.MAXIMUM_BOUNCES) {
-            throw new IllegalArgumentException(
-                    "Offline transport must use the compiled 128-bounce limit");
-        }
+        ScatterSettings.validateCount(scatterCount);
         if (russianRouletteStart != DEFAULT_RUSSIAN_ROULETTE_START) {
             throw new IllegalArgumentException(
                     "Offline transport begins roulette at the second scatter");
         }
-        WavefrontSettings.validateRounds(wavefrontRounds);
     }
 
     public static OfflineRenderSettings capture(RendererSettings settings) {
@@ -31,8 +25,7 @@ public record OfflineRenderSettings(
         return new OfflineRenderSettings(
                 settings.lighting(),
                 settings.material(),
-                DEFAULT_MAXIMUM_BOUNCES,
-                DEFAULT_RUSSIAN_ROULETTE_START,
-                settings.wavefrontRounds());
+                settings.scatterCount(),
+                DEFAULT_RUSSIAN_ROULETTE_START);
     }
 }

@@ -6,7 +6,8 @@ import dev.prime.render.AstronomySettings;
 import dev.prime.render.DisplaySettings;
 import dev.prime.render.LightingSettings;
 import dev.prime.render.MaterialSettings;
-import dev.prime.render.WavefrontSettings;
+import dev.prime.render.RealtimeIntegratorMode;
+import dev.prime.render.ScatterSettings;
 import dev.prime.client.PrimeRuntime;
 import dev.prime.render.RendererSettings;
 import dev.prime.render.fsr.FsrDebugView;
@@ -49,7 +50,8 @@ public abstract class VideoSettingsScreenMixin {
             Component.translatable("prime.options.header.diagnostics");
     @Unique private OptionInstance<Boolean> prime$pathTracingEnabled;
     @Unique private OptionInstance<Boolean> prime$sharcEnabled;
-    @Unique private OptionInstance<Integer> prime$wavefrontRounds;
+    @Unique private OptionInstance<RealtimeIntegratorMode> prime$integratorMode;
+    @Unique private OptionInstance<Integer> prime$scatterCount;
     @Unique private OptionInstance<Boolean> prime$voxelTextureSurfaces;
     @Unique private OptionInstance<Integer> prime$voxelTextureSurfaceStrength;
     @Unique private OptionInstance<Boolean> prime$screenshotMode;
@@ -81,7 +83,8 @@ public abstract class VideoSettingsScreenMixin {
         if (list != null) {
             this.prime$pathTracingEnabled = PrimeVideoOptions.pathTracingEnabled();
             this.prime$sharcEnabled = PrimeVideoOptions.sharcEnabled();
-            this.prime$wavefrontRounds = PrimeVideoOptions.wavefrontRounds();
+            this.prime$integratorMode = PrimeVideoOptions.integratorMode();
+            this.prime$scatterCount = PrimeVideoOptions.scatterCount();
             this.prime$voxelTextureSurfaces = PrimeVideoOptions.voxelTextureSurfaces();
             this.prime$voxelTextureSurfaceStrength =
                     PrimeVideoOptions.voxelTextureSurfaceStrength();
@@ -116,7 +119,7 @@ public abstract class VideoSettingsScreenMixin {
             list.addHeader(PRIME$RENDERING_HEADER);
             list.addBig(this.prime$pathTracingEnabled);
             list.addBig(this.prime$sharcEnabled);
-            list.addBig(this.prime$wavefrontRounds);
+            list.addSmall(this.prime$integratorMode, this.prime$scatterCount);
             list.addSmall(
                     this.prime$voxelTextureSurfaces,
                     this.prime$voxelTextureSurfaceStrength);
@@ -172,8 +175,11 @@ public abstract class VideoSettingsScreenMixin {
         this.prime$refresh(this.prime$pathTracingEnabled, true);
         this.prime$refresh(this.prime$sharcEnabled, true);
         this.prime$refresh(
-                this.prime$wavefrontRounds,
-                WavefrontSettings.DEFAULT_ROUNDS);
+                this.prime$integratorMode,
+                RealtimeIntegratorMode.DEFAULT);
+        this.prime$refresh(
+                this.prime$scatterCount,
+                ScatterSettings.DEFAULT_COUNT);
         this.prime$refresh(this.prime$voxelTextureSurfaces, false);
         this.prime$refresh(
                 this.prime$voxelTextureSurfaceStrength,

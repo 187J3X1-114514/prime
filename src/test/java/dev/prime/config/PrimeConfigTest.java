@@ -6,7 +6,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import dev.prime.render.AstronomySettings;
-import dev.prime.render.WavefrontSettings;
+import dev.prime.render.RealtimeIntegratorMode;
+import dev.prime.render.ScatterSettings;
 import dev.prime.render.post.DlssRrDebugView;
 import dev.prime.render.post.PostProcessingMode;
 import dev.prime.render.post.ReconstructionQualityMode;
@@ -15,15 +16,17 @@ import org.junit.jupiter.api.Test;
 
 final class PrimeConfigTest {
     @Test
-    void restoreDefaultsIncludesWavefrontRounds() {
-        PrimeConfig.setWavefrontRounds(WavefrontSettings.MAXIMUM_ROUNDS);
+    void restoreDefaultsIncludesIntegratorAndScatterCount() {
+        PrimeConfig.setIntegratorMode(RealtimeIntegratorMode.MEGAKERNEL);
+        PrimeConfig.setScatterCount(ScatterSettings.MAXIMUM_COUNT);
 
         PrimeConfig.restoreDefaults();
 
-        assertEquals(WavefrontSettings.DEFAULT_ROUNDS, PrimeConfig.wavefrontRounds());
+        assertEquals(RealtimeIntegratorMode.DEFAULT, PrimeConfig.integratorMode());
+        assertEquals(ScatterSettings.DEFAULT_COUNT, PrimeConfig.scatterCount());
         assertEquals(
-                WavefrontSettings.DEFAULT_ROUNDS,
-                PrimeConfig.rendererSettings().wavefrontRounds());
+                ScatterSettings.DEFAULT_COUNT,
+                PrimeConfig.rendererSettings().scatterCount());
     }
 
     @Test
@@ -228,9 +231,10 @@ final class PrimeConfigTest {
         String serialized = PrimeConfig.serializedContents();
         assertTrue(serialized.contains("renderer.path_tracing=true\n"));
         assertTrue(serialized.contains("renderer.sharc=true\n"));
-        assertTrue(serialized.contains("renderer.wavefront_rounds=16\n"));
+        assertTrue(serialized.contains("renderer.integrator_mode=wavefront\n"));
+        assertTrue(serialized.contains("renderer.scatter_count=16\n"));
         assertTrue(PrimeSettings.defaults().sharcEnabled());
-        assertFalse(serialized.contains("renderer.integrator"));
+        assertFalse(serialized.contains("renderer.integrator="));
         assertFalse(serialized.contains("renderer.performance_maximum_bounces"));
         assertFalse(serialized.contains("renderer.lightweight_maximum_bounces"));
         assertTrue(serialized.contains(
@@ -264,18 +268,18 @@ final class PrimeConfigTest {
     }
 
     @Test
-    void wavefrontRoundsAcceptOnlyTheSharedRuntimeRange() {
-        assertEquals(1, PrimeConfig.parseWavefrontRounds("1"));
-        assertEquals(64, PrimeConfig.parseWavefrontRounds("64"));
+    void scatterCountAcceptsOnlyTheSharedRuntimeRange() {
+        assertEquals(1, PrimeConfig.parseScatterCount("1"));
+        assertEquals(64, PrimeConfig.parseScatterCount("64"));
         assertThrows(
                 IllegalArgumentException.class,
-                () -> PrimeConfig.parseWavefrontRounds("0"));
+                () -> PrimeConfig.parseScatterCount("0"));
         assertThrows(
                 IllegalArgumentException.class,
-                () -> PrimeConfig.parseWavefrontRounds("65"));
+                () -> PrimeConfig.parseScatterCount("65"));
         assertThrows(
                 IllegalArgumentException.class,
-                () -> PrimeConfig.parseWavefrontRounds("12.0"));
+                () -> PrimeConfig.parseScatterCount("12.0"));
     }
 
     @Test

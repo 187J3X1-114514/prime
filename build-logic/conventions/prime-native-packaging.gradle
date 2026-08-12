@@ -59,6 +59,8 @@ def verifyDistributionJar = tasks.register('verifyDistributionJar') {
 			'prime/natives/windows-x86_64/amd_fidelityfx_vk.dll',
 			'prime/natives/windows-x86_64/prime_dlss_rr.dll',
 			'prime/natives/windows-x86_64/nvngx_dlssd.dll',
+			'prime/shaders/realtime_megakernel.rgen.spv',
+			'prime/shaders/realtime_megakernel_sharc.rgen.spv',
 			'prime/shaders/realtime_wavefront_head.rgen.spv',
 			'prime/shaders/realtime_wavefront_step.rgen.spv',
 			'prime/shaders/realtime_wavefront_primary.rgen.spv',

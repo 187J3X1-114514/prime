@@ -7,30 +7,33 @@ import java.util.Objects;
 /** Immutable settings consumed only by the interactive renderer. */
 public record RealtimeRenderSettings(
         boolean sharcEnabled,
+        RealtimeIntegratorMode integratorMode,
         PostProcessingMode postProcessing,
         ReconstructionQualityMode reconstructionQuality,
         LightingSettings.Snapshot lighting,
         MaterialSettings.Snapshot material,
         DisplaySettings.Snapshot display,
-        int wavefrontRounds) {
+        int scatterCount) {
     public RealtimeRenderSettings {
         Objects.requireNonNull(postProcessing, "postProcessing");
+        Objects.requireNonNull(integratorMode, "integratorMode");
         Objects.requireNonNull(reconstructionQuality, "reconstructionQuality");
         Objects.requireNonNull(lighting, "lighting");
         Objects.requireNonNull(material, "material");
         Objects.requireNonNull(display, "display");
-        WavefrontSettings.validateRounds(wavefrontRounds);
+        ScatterSettings.validateCount(scatterCount);
     }
 
     public static RealtimeRenderSettings capture(RendererSettings settings) {
         Objects.requireNonNull(settings, "settings");
         return new RealtimeRenderSettings(
                 settings.sharcEnabled(),
+                settings.integratorMode(),
                 settings.postProcessingMode(),
                 settings.reconstructionQuality(),
                 settings.lighting(),
                 settings.material(),
                 settings.display(),
-                settings.wavefrontRounds());
+                settings.scatterCount());
     }
 }

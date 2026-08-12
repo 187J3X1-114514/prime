@@ -9,6 +9,7 @@ import java.util.Objects;
 public record RendererSettings(
         boolean pathTracingEnabled,
         boolean sharcEnabled,
+        RealtimeIntegratorMode integratorMode,
         boolean voxelTextureSurfaces,
         int voxelTextureSurfaceStrengthSteps,
         PostProcessingMode postProcessingMode,
@@ -17,7 +18,7 @@ public record RendererSettings(
         LightingSettings.Snapshot lighting,
         MaterialSettings.Snapshot material,
         DisplaySettings.Snapshot display,
-        int wavefrontRounds,
+        int scatterCount,
         long revision) {
     public RendererSettings(
             boolean pathTracingEnabled,
@@ -32,14 +33,16 @@ public record RendererSettings(
             DisplaySettings.Snapshot display,
             long revision) {
         this(
-                pathTracingEnabled, sharcEnabled, voxelTextureSurfaces,
+                pathTracingEnabled, sharcEnabled, RealtimeIntegratorMode.DEFAULT,
+                voxelTextureSurfaces,
                 voxelTextureSurfaceStrengthSteps, postProcessingMode, reconstructionQuality,
-                astronomy, lighting, material, display, WavefrontSettings.DEFAULT_ROUNDS,
+                astronomy, lighting, material, display, ScatterSettings.DEFAULT_COUNT,
                 revision);
     }
 
     public RendererSettings {
         postProcessingMode = Objects.requireNonNull(postProcessingMode, "postProcessingMode");
+        integratorMode = Objects.requireNonNull(integratorMode, "integratorMode");
         reconstructionQuality = Objects.requireNonNull(
                 reconstructionQuality, "reconstructionQuality");
         astronomy = Objects.requireNonNull(astronomy, "astronomy");
@@ -47,7 +50,7 @@ public record RendererSettings(
         material = Objects.requireNonNull(material, "material");
         display = Objects.requireNonNull(display, "display");
         VoxelSurfaceSettings.maximumHeight(voxelTextureSurfaceStrengthSteps);
-        WavefrontSettings.validateRounds(wavefrontRounds);
+        ScatterSettings.validateCount(scatterCount);
         if (revision < 0L) {
             throw new IllegalArgumentException("Renderer settings revision must not be negative");
         }

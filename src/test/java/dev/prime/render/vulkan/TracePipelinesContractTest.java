@@ -61,16 +61,16 @@ final class TracePipelinesContractTest {
     void realtimeAndOfflineHaveIndependentSchedulesAndDescriptors() {
         assertEquals(14, RealtimeRayTracingPipeline.RAYGEN_GROUP_COUNT);
         assertEquals(11, RealtimeRayTracingPipeline.RAYGEN_MODULE_COUNT);
-        assertEquals(66, RealtimeRayTracingPipeline.dispatchCount(12));
-        assertEquals(11, RealtimeRayTracingPipeline.dispatchCount(1));
-        assertEquals(326, RealtimeRayTracingPipeline.dispatchCount(64));
+        assertEquals(61, RealtimeRayTracingPipeline.dispatchCount(12));
+        assertEquals(6, RealtimeRayTracingPipeline.dispatchCount(1));
+        assertEquals(321, RealtimeRayTracingPipeline.dispatchCount(64));
         assertEquals(26, RealtimeRayTracingPipeline.DESCRIPTOR_BINDING_COUNT);
 
         assertEquals(6, OfflineRayTracingPipeline.RAYGEN_GROUP_COUNT);
         assertEquals(4, OfflineRayTracingPipeline.RAYGEN_MODULE_COUNT);
-        assertEquals(27, OfflineRayTracingPipeline.dispatchCount(12));
-        assertEquals(5, OfflineRayTracingPipeline.dispatchCount(1));
-        assertEquals(131, OfflineRayTracingPipeline.dispatchCount(64));
+        assertEquals(25, OfflineRayTracingPipeline.dispatchCount(12));
+        assertEquals(3, OfflineRayTracingPipeline.dispatchCount(1));
+        assertEquals(129, OfflineRayTracingPipeline.dispatchCount(64));
         assertEquals(3, OfflineRayTracingPipeline.DESCRIPTOR_BINDING_COUNT);
 
         assertEquals(List.of(0, 1, 1, 2, 3, 4, 5, 6, 7, 7, 8, 8, 9, 10),
@@ -145,6 +145,17 @@ final class TracePipelinesContractTest {
             assertFalse(bindings.contains(ShaderAbi.DESCRIPTOR_WAVEFRONT_PATHS));
             assertFalse(bindings.contains(ShaderAbi.DESCRIPTOR_WAVEFRONT_QUEUE));
         }
+        Set<Integer> megakernel = descriptorBindings(
+                List.of("realtime_megakernel.rgen.spv"), 1);
+        assertFalse(megakernel.contains(ShaderAbi.DESCRIPTOR_SHARC_FRAME));
+        assertFalse(megakernel.contains(ShaderAbi.DESCRIPTOR_WAVEFRONT_PATHS));
+        assertFalse(megakernel.contains(ShaderAbi.DESCRIPTOR_WAVEFRONT_QUEUE));
+
+        Set<Integer> megakernelSharc = descriptorBindings(
+                List.of("realtime_megakernel_sharc.rgen.spv"), 1);
+        assertTrue(megakernelSharc.contains(ShaderAbi.DESCRIPTOR_SHARC_FRAME));
+        assertFalse(megakernelSharc.contains(ShaderAbi.DESCRIPTOR_WAVEFRONT_PATHS));
+        assertFalse(megakernelSharc.contains(ShaderAbi.DESCRIPTOR_WAVEFRONT_QUEUE));
     }
 
     @Test
@@ -162,6 +173,12 @@ final class TracePipelinesContractTest {
             assertEquals(
                     Set.of(shadowPayload),
                     payloadShapes(shader, STORAGE_INCOMING_RAY_PAYLOAD));
+        }
+        for (String shader : List.of(
+                "realtime_megakernel.rgen.spv",
+                "realtime_megakernel_sharc.rgen.spv")) {
+            assertEquals(Set.of(tracePayload, shadowPayload),
+                    payloadShapes(shader, STORAGE_RAY_PAYLOAD));
         }
         for (String suffix : List.of("", "_subgroup", "_ser")) {
             assertEquals(

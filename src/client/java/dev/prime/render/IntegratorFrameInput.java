@@ -5,7 +5,7 @@ import dev.prime.render.post.TransparentGuideMode;
 import java.util.Objects;
 
 /**
- * Complete device-address-free semantic input of one wavefront integrator dispatch.
+ * Complete device-address-free semantic input of one path integrator dispatch.
  *
  * <p>GPU residency is bound only by the device executor. The same value can therefore be encoded,
  * persisted and rebound without allocator handles becoming part of render identity.
@@ -16,8 +16,7 @@ public record IntegratorFrameInput(
         int height,
         AstronomyState astronomy,
         int packedRayCone,
-        int maximumBounces,
-        int wavefrontRounds,
+        int scatterCount,
         int sampleIndex,
         int sampleEpoch,
         int jitterPhase,
@@ -29,31 +28,6 @@ public record IntegratorFrameInput(
         boolean shInput,
         boolean rawNumericalDiagnostic,
         boolean triangleDebug) {
-    public IntegratorFrameInput(
-            FrameCamera camera,
-            int width,
-            int height,
-            AstronomyState astronomy,
-            int packedRayCone,
-            int maximumBounces,
-            int sampleIndex,
-            int sampleEpoch,
-            int jitterPhase,
-            boolean cameraInWater,
-            PostProcessingMode postProcessingMode,
-            TransparentGuideMode transparentGuideMode,
-            LightingSettings.Snapshot lighting,
-            MaterialSettings.Snapshot material,
-            boolean shInput,
-            boolean rawNumericalDiagnostic,
-            boolean triangleDebug) {
-        this(
-                camera, width, height, astronomy, packedRayCone, maximumBounces,
-                WavefrontSettings.DEFAULT_ROUNDS, sampleIndex, sampleEpoch, jitterPhase,
-                cameraInWater, postProcessingMode, transparentGuideMode, lighting, material,
-                shInput, rawNumericalDiagnostic, triangleDebug);
-    }
-
     public IntegratorFrameInput {
         Objects.requireNonNull(camera, "camera");
         Objects.requireNonNull(astronomy, "astronomy");
@@ -90,12 +64,12 @@ public record IntegratorFrameInput(
                 material.airGap());
         IntegratorSettings.packSampleEpoch(sampleEpoch, triangleDebug);
         IntegratorSettings.packPathControl(
-                maximumBounces,
+                scatterCount,
                 jitterPhase,
                 astronomy.settings(),
                 cameraInWater,
                 transparentGuideMode);
-        WavefrontSettings.validateRounds(wavefrontRounds);
+        ScatterSettings.validateCount(scatterCount);
         IntegratorSettings.packMaterialLightingControl(
                 lighting.sunQuarterSteps(),
                 lighting.starQuarterSteps(),

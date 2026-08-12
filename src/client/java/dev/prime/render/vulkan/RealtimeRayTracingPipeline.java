@@ -29,8 +29,8 @@ import org.lwjgl.vulkan.VkWriteDescriptorSet;
 public final class RealtimeRayTracingPipeline implements RealtimeIntegratorPipeline {
     static final int RAYGEN_GROUP_COUNT = RealtimeWavefrontGroups.GROUP_COUNT;
     static final int RAYGEN_MODULE_COUNT = RealtimeWavefrontGroups.MODULE_COUNT;
-    static int dispatchCount(int rounds) {
-        return 5 * rounds + 6;
+    static int dispatchCount(int scatterCount) {
+        return 5 * Math.max(scatterCount - 1, 0) + 6;
     }
     static final int DESCRIPTOR_BINDING_COUNT = 26;
     private static final int STORAGE_IMAGE_DESCRIPTOR_COUNT = 23;
@@ -104,7 +104,7 @@ public final class RealtimeRayTracingPipeline implements RealtimeIntegratorPipel
             this.program = traceProgram;
             this.sharcDiagnostics = diagnostics;
             this.lastRecordedPassCount = dispatchCount(
-                    dev.prime.render.WavefrontSettings.DEFAULT_ROUNDS);
+                    dev.prime.render.ScatterSettings.DEFAULT_COUNT);
         } catch (RuntimeException exception) {
             if (diagnostics != null) {
                 diagnostics.destroy();
@@ -370,7 +370,7 @@ public final class RealtimeRayTracingPipeline implements RealtimeIntegratorPipel
                     RealtimeWavefrontGroups.HEAD);
             this.wavefrontResourceBarrier(
                     commandBuffer, stack, this.bindings.allImages);
-            int dispatchCount = dispatchCount(input.wavefrontRounds());
+            int dispatchCount = dispatchCount(input.scatterCount());
             this.lastRecordedPassCount = dispatchCount;
             this.traceIndirect(
                     commandBuffer,
@@ -400,7 +400,7 @@ public final class RealtimeRayTracingPipeline implements RealtimeIntegratorPipel
             this.wavefrontResourceBarrier(
                     commandBuffer, stack, this.bindings.allImages);
             int traceQueue = ShaderAbi.WAVEFRONT_TRACE_QUEUE_0;
-            for (int round = 0; round < input.wavefrontRounds(); round++) {
+            for (int scatter = 1; scatter < input.scatterCount(); scatter++) {
                 this.recordRound(
                         commandBuffer,
                         stack,

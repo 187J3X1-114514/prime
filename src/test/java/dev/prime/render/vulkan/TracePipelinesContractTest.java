@@ -57,12 +57,12 @@ final class TracePipelinesContractTest {
     void realtimeAndOfflineHaveIndependentSchedulesAndDescriptors() {
         assertEquals(10, RealtimeRayTracingPipeline.RAYGEN_GROUP_COUNT);
         assertEquals(7, RealtimeRayTracingPipeline.RAYGEN_MODULE_COUNT);
-        assertEquals(67, RealtimeRayTracingPipeline.DISPATCH_COUNT);
+        assertEquals(51, RealtimeRayTracingPipeline.DISPATCH_COUNT);
         assertEquals(26, RealtimeRayTracingPipeline.DESCRIPTOR_BINDING_COUNT);
 
         assertEquals(8, OfflineRayTracingPipeline.RAYGEN_GROUP_COUNT);
         assertEquals(5, OfflineRayTracingPipeline.RAYGEN_MODULE_COUNT);
-        assertEquals(35, OfflineRayTracingPipeline.DISPATCH_COUNT);
+        assertEquals(27, OfflineRayTracingPipeline.DISPATCH_COUNT);
         assertEquals(3, OfflineRayTracingPipeline.DESCRIPTOR_BINDING_COUNT);
 
         assertEquals(List.of(0, 1, 1, 2, 3, 4, 4, 5, 5, 6),

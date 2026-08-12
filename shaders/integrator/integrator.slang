@@ -393,6 +393,50 @@ struct PrimeShadowTrace {
     float hitDistance;
 };
 
+PrimeShadowTrace primeTracePreparedShadow(
+        inout PrimeIntegratorContext context,
+        float3 traceOrigin,
+        float3 direction,
+        float distance,
+        float3 startingExtinction0,
+        float3 startingExtinction1,
+        uint startingMediumCount) {
+    primeShadowPayload.opticalDepthMomentHitDistance = float4(0.0);
+    primeShadowPayload.terminalExtinctionRayDistance = float4(
+            float3(0.0), distance);
+    primeShadowPayload.startingExtinction0Winding = float4(
+            startingExtinction0, startingMediumCount > 0u ? 1.0 : 0.0);
+    primeShadowPayload.startingExtinction1Winding = float4(
+            startingExtinction1, startingMediumCount > 1u ? 1.0 : 0.0);
+    primeShadowPayload.startingMediumCount = startingMediumCount;
+    traceRayEXT(
+            primeScene,
+            gl_RayFlagsNoneEXT,
+            0xff,
+            3,
+            1,
+            1,
+            traceOrigin,
+            0.001,
+            direction,
+            distance,
+            1);
+    PrimeShadowTrace result;
+    result.transmittance = clamp(exp(-primeShadowOpticalDepth(
+                    primeShadowPayload.opticalDepthMomentHitDistance.xyz,
+                    primeShadowPayload.terminalExtinctionRayDistance.xyz,
+                    primeShadowPayload.startingExtinction0Winding,
+                    primeShadowPayload.startingExtinction1Winding,
+                    primeShadowPayload.startingMediumCount,
+                    primeShadowPayload.terminalExtinctionRayDistance.w)),
+            float3(0.0),
+            float3(1.0));
+    result.hitDistance = primeNrdSanitizeHitDistance(
+            primeShadowPayload.opticalDepthMomentHitDistance.w);
+    primeRecordUnit(context.diagnostics, result.transmittance);
+    return result;
+}
+
 PrimeShadowTrace primeTraceShadow(
         inout PrimeIntegratorContext context,
         float3 physicalPosition,
@@ -409,42 +453,14 @@ PrimeShadowTrace primeTraceShadow(
             ? primeShadowCanonicalExtinction(
                     volumeStack.values[1].extinction)
             : float3(0.0);
-    primeShadowPayload.opticalDepthMomentHitDistance = float4(0.0);
-    primeShadowPayload.terminalExtinctionRayDistance = float4(
-            float3(0.0),
-            light.distance);
-    primeShadowPayload.startingExtinction0Winding = float4(
-            startingExtinction0, startingMediumCount > 0u ? 1.0 : 0.0);
-    primeShadowPayload.startingExtinction1Winding = float4(
-            startingExtinction1, startingMediumCount > 1u ? 1.0 : 0.0);
-    primeShadowPayload.startingMediumCount = startingMediumCount;
     float3 traceOrigin = primeOffsetRayOrigin(physicalPosition, normal, light.direction);
-    traceRayEXT(
-            primeScene,
-            gl_RayFlagsNoneEXT,
-            0xff,
-            3,
-            1,
-            1,
+    return primeTracePreparedShadow(context,
             traceOrigin,
-            0.001,
             light.direction,
             light.distance,
-            1);
-    PrimeShadowTrace result;
-    result.transmittance = clamp(exp(-primeShadowOpticalDepth(
-                    primeShadowPayload.opticalDepthMomentHitDistance.xyz,
-                    primeShadowPayload.terminalExtinctionRayDistance.xyz,
-                    primeShadowPayload.startingExtinction0Winding,
-                    primeShadowPayload.startingExtinction1Winding,
-                    primeShadowPayload.startingMediumCount,
-                    primeShadowPayload.terminalExtinctionRayDistance.w)),
-            float3(0.0),
-            float3(1.0));
-    result.hitDistance = primeNrdSanitizeHitDistance(
-            primeShadowPayload.opticalDepthMomentHitDistance.w);
-    primeRecordUnit(context.diagnostics, result.transmittance);
-    return result;
+            startingExtinction0,
+            startingExtinction1,
+            startingMediumCount);
 }
 
 PrimeDirectLightingSplit primeEvaluateVisibleDirectSplit(
@@ -772,6 +788,46 @@ float3 primeEstimateDirectSun(
     return split.diffuse + split.specular;
 }
 
+struct PrimePreparedSunShadow {
+    LightSample light;
+    float3 contribution;
+    bool active;
+};
+
+PrimePreparedSunShadow primePrepareDirectSunShadow(
+        inout PrimeIntegratorContext context,
+        IntegratorRecord integrator,
+        SurfaceInteraction surface,
+        float3 viewDirection,
+        float2 sampleValue,
+        PrimeRcVolumeStack volumeStack) {
+    PrimePreparedSunShadow result;
+    result.light = primeSampleSun(integrator, surface.position, sampleValue);
+    result.contribution = float3(0.0);
+    result.active = false;
+    if (!primeAtmosphereDistantDirectionVisible(result.light.direction)) {
+        return result;
+    }
+    float3 shadingNormal = primeSurfaceShadingNormal(surface, viewDirection);
+    if (!primeDirectSampleEligible(surface, shadingNormal, result.light)) {
+        return result;
+    }
+    float3 radiance = primeResolveSampledSunRadiance(
+            integrator, surface.position, result.light);
+    PrimeDirectLightingSplit split = primeEvaluateVisibleDirectSplit(
+            context,
+            surface,
+            viewDirection,
+            shadingNormal,
+            result.light,
+            radiance,
+            volumeStack,
+            false);
+    result.contribution = split.diffuse + split.specular;
+    result.active = any(result.contribution > float3(0.0));
+    return result;
+}
+
 PrimeDirectLightingSplit primeEstimatePrimaryNonsunDirect(
         inout PrimeIntegratorContext context,
         SurfaceInteraction surface,
@@ -813,7 +869,9 @@ interface IPrimeSecondarySunNee {
             SurfaceInteraction surface,
             float3 viewDirection,
             PrimePreparedSampleBase preparedSample,
-            PrimeRcVolumeStack volumeStack);
+            PrimeRcVolumeStack volumeStack,
+            float3 pathThroughput,
+            uint pathIndex);
 }
 
 struct PrimeImmediateSecondarySunNee : IPrimeSecondarySunNee {
@@ -823,7 +881,9 @@ struct PrimeImmediateSecondarySunNee : IPrimeSecondarySunNee {
             SurfaceInteraction surface,
             float3 viewDirection,
             PrimePreparedSampleBase preparedSample,
-            PrimeRcVolumeStack volumeStack) {
+            PrimeRcVolumeStack volumeStack,
+            float3 pathThroughput,
+            uint pathIndex) {
         return primeEstimateDirectSun(
                 context,
                 integrator,
@@ -834,19 +894,6 @@ struct PrimeImmediateSecondarySunNee : IPrimeSecondarySunNee {
                         PRIME_SAMPLE_EFFECT_DIRECT_SUN,
                         PRIME_SAMPLE_DIMENSION_PRIMARY),
                 volumeStack);
-    }
-}
-
-struct PrimeDeferredSecondarySunNee : IPrimeSecondarySunNee {
-    float3 estimate(
-            inout PrimeIntegratorContext context,
-            IntegratorRecord integrator,
-            SurfaceInteraction surface,
-            float3 viewDirection,
-            PrimePreparedSampleBase preparedSample,
-            PrimeRcVolumeStack volumeStack) {
-        // The independent Sun stage consumes the persisted hit with this exact pre-scatter path.
-        return float3(0.0);
     }
 }
 
@@ -893,7 +940,9 @@ float3 primeEstimateDirectLighting<SunNee, AreaNee>(
         SurfaceInteraction surface,
         float3 viewDirection,
         PrimePreparedSampleBase preparedSample,
-        PrimeRcVolumeStack volumeStack)
+        PrimeRcVolumeStack volumeStack,
+        float3 pathThroughput,
+        uint pathIndex)
     where SunNee : IPrimeSecondarySunNee
     where AreaNee : IPrimeSecondaryAreaNee
 {
@@ -903,7 +952,9 @@ float3 primeEstimateDirectLighting<SunNee, AreaNee>(
             surface,
             viewDirection,
             preparedSample,
-            volumeStack);
+            volumeStack,
+            pathThroughput,
+            pathIndex);
     result += areaNee.estimate(
             context,
             surface,
@@ -1554,7 +1605,9 @@ bool primeIntegrateTransparentWavefrontSurface<SunNee, AreaNee>(
                     surface,
                     viewDirection,
                     preparedSample,
-                    volumeStack);
+                    volumeStack,
+                    path.throughput,
+                    pathIndex);
             primeAccumulateTransparentBranch(
                     context,
                     result,
@@ -1814,7 +1867,9 @@ bool primeIntegrateWavefrontSurface<SunNee, AreaNee, IndirectReuse>(
                     surface,
                     viewDirection,
                     preparedSample,
-                    volumeStack);
+                    volumeStack,
+                    path.throughput,
+                    pathIndex);
             primeAccumulateAfterPrimary(
                     context,
                     result,

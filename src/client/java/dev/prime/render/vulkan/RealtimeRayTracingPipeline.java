@@ -385,17 +385,17 @@ public final class RealtimeRayTracingPipeline implements RealtimeIntegratorPipel
                         commandBuffer,
                         stack,
                         activeProgram,
-                        RealtimeWavefrontGroups.sun(),
+                        RealtimeWavefrontGroups.shade(traceQueue),
                         commandOffset,
-                        ShaderAbi.WAVEFRONT_SUN_QUEUE);
+                        ShaderAbi.WAVEFRONT_SHADE_QUEUE);
                 this.wavefrontBarrier(commandBuffer, stack);
                 this.traceIndirect(
                         commandBuffer,
                         stack,
                         activeProgram,
-                        RealtimeWavefrontGroups.shade(traceQueue),
+                        RealtimeWavefrontGroups.sun(),
                         commandOffset,
-                        ShaderAbi.WAVEFRONT_SHADE_QUEUE);
+                        ShaderAbi.WAVEFRONT_SUN_QUEUE);
                 this.wavefrontBarrier(commandBuffer, stack);
                 traceQueue = traceQueue == ShaderAbi.WAVEFRONT_TRACE_QUEUE_0
                         ? ShaderAbi.WAVEFRONT_TRACE_QUEUE_1

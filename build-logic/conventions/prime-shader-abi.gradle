@@ -171,7 +171,7 @@ abstract class GenerateShaderAbi extends DefaultTask {
 				|| fsrContract.viewSpaceToMetersFactor != 1.0) {
 			throw new GradleException('Prime FSR signal and projection contracts changed without a coordinated migration')
 		}
-		if (wavefrontContract.rounds != 16
+		if (wavefrontContract.rounds != 12
 				|| wavefrontContract.pathRecordSize != 96
 				|| wavefrontContract.pathSlotsPerPixel != 2
 				|| wavefrontContract.areaRecordSize != 112
@@ -188,7 +188,7 @@ abstract class GenerateShaderAbi extends DefaultTask {
 			throw new GradleException(
 					'Prime realtime scheduler must preserve its execution-mode queue ABI')
 		}
-		if (offlineWavefrontContract.rounds != 16
+		if (offlineWavefrontContract.rounds != 12
 				|| offlineWavefrontContract.pathRecordSize != 144
 				|| offlineWavefrontContract.pathSlotsPerPixel != 1
 				|| offlineWavefrontContract.areaRecordSize != 0

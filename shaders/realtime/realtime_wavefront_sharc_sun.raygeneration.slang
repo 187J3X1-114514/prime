@@ -1,5 +1,4 @@
 #include "realtime/realtime_wavefront.slang"
-#include "realtime/sharc_query_policy.slang"
 
 [shader("raygeneration")]
 void main()
@@ -9,5 +8,5 @@ void main()
     if (launchIndex == 0u) {
         primeResetWavefrontQueue(PRIME_WAVEFRONT_SUN_QUEUE);
     }
-    primeWavefrontSun(PrimeSharcIndirectReuse(), context, launchIndex);
+    primeWavefrontSun(context, launchIndex);
 }

@@ -37,6 +37,43 @@ struct PrimeWavefrontContinuation {
     bool active;
 };
 
+struct PrimeDeferredSecondarySunNee : IPrimeSecondarySunNee {
+    float3 estimate(
+            inout PrimeIntegratorContext context,
+            IntegratorRecord integrator,
+            SurfaceInteraction surface,
+            float3 viewDirection,
+            PrimePreparedSampleBase preparedSample,
+            PrimeRcVolumeStack volumeStack,
+            float3 pathThroughput,
+            uint pathIndex) {
+        PrimePreparedSunShadow prepared = primePrepareDirectSunShadow(
+                context,
+                integrator,
+                surface,
+                viewDirection,
+                primeSobolSample2D(
+                        preparedSample,
+                        PRIME_SAMPLE_EFFECT_DIRECT_SUN,
+                        PRIME_SAMPLE_DIMENSION_PRIMARY),
+                volumeStack);
+        float3 contribution = pathThroughput * prepared.contribution;
+        if (prepared.active && any(contribution > float3(0.0))) {
+            uint control = asuint(primeWavefrontPaths[pathIndex]
+                    .transport.rayDirectionAndDenoiserControl.w);
+            primeStoreWavefrontSunShadowWork(
+                    pathIndex,
+                    prepared,
+                    surface,
+                    volumeStack,
+                    contribution,
+                    control);
+            primeAppendWavefrontPath(PRIME_WAVEFRONT_SUN_QUEUE, pathIndex);
+        }
+        return float3(0.0);
+    }
+};
+
 PrimeWavefrontContinuation primeInitializeTransparentWavefront(
         inout PrimeIntegratorContext context,
         uint2 pixel,
@@ -433,7 +470,6 @@ void primeWavefrontStep(
     primeAppendWavefrontPath(PRIME_WAVEFRONT_SHADE_QUEUE, recordIndex);
     if (surface.hitKind == PRIME_HIT_SURFACE) {
         primeAppendWavefrontPath(PRIME_WAVEFRONT_AREA_QUEUE, recordIndex);
-        primeAppendWavefrontPath(PRIME_WAVEFRONT_SUN_QUEUE, recordIndex);
     }
 }
 
@@ -638,78 +674,35 @@ void primeWavefrontArea<IndirectReuse>(
                     PRIME_SAMPLE_DIMENSION_SECONDARY),
             volumeStack);
     if (any(contribution > float3(0.0))) {
-        primeAccumulateDeferredAreaLight(
+        primeAccumulateDeferredDirectLight(
                 context, pixel, control, contribution);
     }
     primeStoreWavefrontDiagnostic(recordIndex, context.diagnostics);
 }
 
-void primeWavefrontSun<IndirectReuse>(
-        IndirectReuse indirectReuse,
+void primeWavefrontSun(
         inout PrimeIntegratorContext context,
-        uint launchIndex)
-    where IndirectReuse : IPrimeIndirectReuse
-{
+        uint launchIndex) {
     uint recordIndex = primeWavefrontQueuedPath(
             PRIME_WAVEFRONT_SUN_QUEUE, launchIndex);
-    PrimeWavefrontTransportRecord record =
-            primeLoadWavefrontTransportRecord(recordIndex);
+    PrimeWavefrontTransportRecord record = primeLoadWavefrontTransportRecord(recordIndex);
     primeRestoreWavefrontDiagnostic(record, context.diagnostics);
-    SurfaceInteraction surface = primeLoadWavefrontSurface(recordIndex);
-    if (surface.hitKind != PRIME_HIT_SURFACE) {
-        return;
-    }
-
+    PrimeWavefrontSunShadowWork work =
+            primeLoadWavefrontSunShadowWork(recordIndex);
     uint2 pixel = primeWavefrontPixel(recordIndex);
-    PathState path = primeWavefrontPath(pixel, record);
-    PrimeRcVolumeStack volumeStack = primeWavefrontVolumeStack(record);
-    if (!primeApplySegmentMedium(context, path, surface, volumeStack)) {
-        return;
-    }
-    uint control = asuint(record.rayDirectionAndDenoiserControl.w);
-    float3 viewDirection = -path.rayDirection;
-    PrimeClosureTraits closureTraits = primeSurfaceClosureTraits(
-            surface, viewDirection, volumeStack);
-    if (!primeClosureSupports(closureTraits, PRIME_MEASURE_SOLID_ANGLE)) {
-        return;
-    }
-    if (primeWavefrontTransparentBranch(control)) {
-        bool guideEnabled = primeWavefrontGuideEnabled(control);
-        bool hasGuide = (control & PRIME_WAVEFRONT_REACHED_SOLID_ANGLE) != 0u;
-        if (guideEnabled && !hasGuide && !primeClosureIsDiscreteOnly(closureTraits)) {
-            // Shade owns primary-replacement split lighting and its reconstruction guides.
-            return;
-        }
-    } else {
-        PrimeIndirectReuseResult reuse = indirectReuse.query(
-                context, path, surface, true);
-        if (reuse.hit) {
-            return;
-        }
-    }
-
-    IntegratorRecord integrator;
-    integrator.sunDirectionIntensity = float4(
-            primePush.sunDirection,
-            ATM_SPACE_SUN_INTENSITY * primeSunRadianceMultiplier());
-    integrator.environmentRadiance = float4(0.0);
-    PrimePreparedSampleBase preparedSample =
-            primePrepareSampleBase(primeMakeSampleBase(path, path.bounce + 1u));
-    primeSetNumericalContext(
-            context.diagnostics, PRIME_NUMERICAL_STAGE_DIRECT_LIGHT, path.bounce);
-    float3 contribution = path.throughput * primeEstimateDirectSun(
+    PrimeShadowTrace shadow = primeTracePreparedShadow(
             context,
-            integrator,
-            surface,
-            viewDirection,
-            primeSobolSample2D(
-                    preparedSample,
-                    PRIME_SAMPLE_EFFECT_DIRECT_SUN,
-                    PRIME_SAMPLE_DIMENSION_PRIMARY),
-            volumeStack);
+            work.traceOrigin,
+            work.direction,
+            work.distance,
+            work.startingExtinction0,
+            work.startingExtinction1,
+            work.startingMediumCount);
+    float visibility = float(shadow.hitDistance >= PRIME_NRD_FP16_MAX);
+    float3 contribution = work.contribution * shadow.transmittance * visibility;
     if (any(contribution > float3(0.0))) {
-        primeAccumulateDeferredAreaLight(
-                context, pixel, control, contribution);
+        primeAccumulateDeferredDirectLight(
+                context, pixel, work.control, contribution);
     }
     primeStoreWavefrontDiagnostic(recordIndex, context.diagnostics);
 }

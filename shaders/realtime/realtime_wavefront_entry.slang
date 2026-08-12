@@ -45,7 +45,7 @@ void primeRealtimeWavefrontSunEntry()
     if (launchIndex.x == 0u) {
         primeResetWavefrontQueue(PRIME_WAVEFRONT_SUN_QUEUE);
     }
-    primeWavefrontSun(PrimeNoIndirectReuse(), context, launchIndex.x);
+    primeWavefrontSun(context, launchIndex.x);
 }
 
 void primeRealtimeWavefrontResolveEntry()

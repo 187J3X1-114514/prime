@@ -31,10 +31,12 @@ jobs:
         uses: jakoch/install-vulkan-sdk-action@37effcfa045411f8bfbbda26df2fd1b3bf3436fa # v1
         with:
           vulkan_version: 1.4.357.0
-          install_runtime: false
-          cache: true
+          install_runtime: 'false'
+          cache: 'true'
       - name: Report shader tool versions
-        run: "$VULKAN_SDK/bin/spirv-val" --version && "$VULKAN_SDK/bin/slangc" -version
+        run: |
+          "$VULKAN_SDK/bin/spirv-val" --version
+          "$VULKAN_SDK/bin/slangc" -version
       - name: Set up headless Vulkan compute
         run: |
           sudo apt-get update

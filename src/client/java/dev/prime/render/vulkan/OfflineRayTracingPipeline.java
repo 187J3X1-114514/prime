@@ -314,7 +314,7 @@ public final class OfflineRayTracingPipeline implements Destroyable {
     }
 
     private void wavefrontBarrier(VkCommandBuffer commandBuffer, MemoryStack stack) {
-        WavefrontCommands.wavefrontBarrier(commandBuffer, stack);
+        WavefrontCommands.wavefrontBarrier(commandBuffer, stack, this.wavefront);
     }
 
     static long wavefrontBytes(int width, int height) {

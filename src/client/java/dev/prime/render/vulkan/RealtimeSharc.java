@@ -205,14 +205,30 @@ final class RealtimeSharc implements Destroyable {
         float previousZ = clear || reconstructionReset ? cameraZ : this.accepted.cameraZ;
 
         try (MemoryStack stack = MemoryStack.stackPush()) {
-            VulkanSync.memoryBarrier(
+            VulkanSync.bufferBarrier(
                     commandBuffer,
                     stack,
+                    this.frameConstants,
+                    KHRRayTracingPipeline.VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR
+                            | VK12.VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                    VK12.VK_ACCESS_SHADER_READ_BIT,
+                    VK12.VK_PIPELINE_STAGE_TRANSFER_BIT,
+                    VK12.VK_ACCESS_TRANSFER_WRITE_BIT);
+            VulkanSync.bufferBarriers(
+                    commandBuffer,
+                    stack,
+                    this.cacheBuffers(),
                     KHRRayTracingPipeline.VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR
                             | VK12.VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
                     VK12.VK_ACCESS_SHADER_READ_BIT | VK12.VK_ACCESS_SHADER_WRITE_BIT,
-                    VK12.VK_PIPELINE_STAGE_TRANSFER_BIT,
-                    VK12.VK_ACCESS_TRANSFER_WRITE_BIT);
+                    clear
+                            ? VK12.VK_PIPELINE_STAGE_TRANSFER_BIT
+                            : KHRRayTracingPipeline.VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR
+                                    | VK12.VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                    clear
+                            ? VK12.VK_ACCESS_TRANSFER_WRITE_BIT
+                            : VK12.VK_ACCESS_SHADER_READ_BIT
+                                    | VK12.VK_ACCESS_SHADER_WRITE_BIT);
             if (clear) {
                 VK12.vkCmdFillBuffer(
                         commandBuffer, this.hashEntries.handle(), 0L, HASH_BYTES, 0);
@@ -260,14 +276,26 @@ final class RealtimeSharc implements Destroyable {
                     diagnosticsEnabled ? 1 : 0);
             VK12.vkCmdUpdateBuffer(
                     commandBuffer, this.frameConstants.handle(), 0L, constants);
-            VulkanSync.memoryBarrier(
+            VulkanSync.bufferBarrier(
                     commandBuffer,
                     stack,
+                    this.frameConstants,
                     VK12.VK_PIPELINE_STAGE_TRANSFER_BIT,
                     VK12.VK_ACCESS_TRANSFER_WRITE_BIT,
                     KHRRayTracingPipeline.VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR
                             | VK12.VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-                    VK12.VK_ACCESS_SHADER_READ_BIT | VK12.VK_ACCESS_SHADER_WRITE_BIT);
+                    VK12.VK_ACCESS_SHADER_READ_BIT);
+            if (clear) {
+                VulkanSync.bufferBarriers(
+                        commandBuffer,
+                        stack,
+                        this.cacheBuffers(),
+                        VK12.VK_PIPELINE_STAGE_TRANSFER_BIT,
+                        VK12.VK_ACCESS_TRANSFER_WRITE_BIT,
+                        KHRRayTracingPipeline.VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR
+                                | VK12.VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                        VK12.VK_ACCESS_SHADER_READ_BIT | VK12.VK_ACCESS_SHADER_WRITE_BIT);
+            }
         }
         Accepted candidate = new Accepted(
                 cameraX,
@@ -323,9 +351,10 @@ final class RealtimeSharc implements Destroyable {
                     (height + 4) / 5,
                     0);
             diagnostics.recordUpdateEnd(commandBuffer, capture);
-            VulkanSync.memoryBarrier(
+            VulkanSync.bufferBarriers(
                     commandBuffer,
                     stack,
+                    new VulkanBuffer[] {this.hashEntries, this.accumulation},
                     KHRRayTracingPipeline.VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR,
                     VK12.VK_ACCESS_SHADER_READ_BIT | VK12.VK_ACCESS_SHADER_WRITE_BIT,
                     VK12.VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
@@ -341,14 +370,23 @@ final class RealtimeSharc implements Destroyable {
                     null);
             VK12.vkCmdDispatch(commandBuffer, (CAPACITY + 255) / 256, 1, 1);
             diagnostics.recordResolveEnd(commandBuffer, capture);
-            VulkanSync.memoryBarrier(
+            VulkanSync.bufferBarriers(
                     commandBuffer,
                     stack,
+                    new VulkanBuffer[] {this.hashEntries, this.resolved},
                     VK12.VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
                     VK12.VK_ACCESS_SHADER_WRITE_BIT,
                     KHRRayTracingPipeline.VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR,
-                    VK12.VK_ACCESS_SHADER_READ_BIT | VK12.VK_ACCESS_SHADER_WRITE_BIT);
+                    VK12.VK_ACCESS_SHADER_READ_BIT);
         }
+    }
+
+    private VulkanBuffer[] cacheBuffers() {
+        return new VulkanBuffer[] {
+            this.hashEntries,
+            this.accumulation,
+            this.resolved
+        };
     }
 
     private static void putVec3(

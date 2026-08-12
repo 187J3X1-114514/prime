@@ -65,7 +65,9 @@ final class WavefrontCommands {
             long commandOffset,
             int queueCount,
             int commandStride) {
-        wavefrontToTransferBarrier(commandBuffer, stack);
+        long commandBytes = (long) queueCount * commandStride;
+        wavefrontToTransferBarrier(
+                commandBuffer, stack, wavefront, commandOffset, commandBytes);
         ByteBuffer commands = stack.calloc(queueCount * commandStride);
         for (int queue = 0; queue < queueCount; queue++) {
             int offset = queue * commandStride;
@@ -73,13 +75,18 @@ final class WavefrontCommands {
             commands.putInt(offset + 2 * Integer.BYTES, 1);
         }
         VK12.vkCmdUpdateBuffer(commandBuffer, wavefront.handle(), commandOffset, commands);
-        transferToWavefrontBarrier(commandBuffer, stack);
+        transferToWavefrontBarrier(
+                commandBuffer, stack, wavefront, commandOffset, commandBytes);
     }
 
-    static void wavefrontBarrier(VkCommandBuffer commandBuffer, MemoryStack stack) {
-        VulkanSync.memoryBarrier(
+    static void wavefrontBarrier(
+            VkCommandBuffer commandBuffer,
+            MemoryStack stack,
+            VulkanBuffer wavefront) {
+        VulkanSync.bufferBarrier(
                 commandBuffer,
                 stack,
+                wavefront,
                 KHRRayTracingPipeline.VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR,
                 VK12.VK_ACCESS_SHADER_WRITE_BIT,
                 KHRRayTracingPipeline.VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR
@@ -114,10 +121,17 @@ final class WavefrontCommands {
     }
 
     private static void wavefrontToTransferBarrier(
-            VkCommandBuffer commandBuffer, MemoryStack stack) {
-        VulkanSync.memoryBarrier(
+            VkCommandBuffer commandBuffer,
+            MemoryStack stack,
+            VulkanBuffer wavefront,
+            long offset,
+            long size) {
+        VulkanSync.bufferBarrier(
                 commandBuffer,
                 stack,
+                wavefront.handle(),
+                offset,
+                size,
                 COMMAND_WRITE_SOURCE_STAGES,
                 COMMAND_WRITE_SOURCE_ACCESSES,
                 VK12.VK_PIPELINE_STAGE_TRANSFER_BIT,
@@ -125,10 +139,17 @@ final class WavefrontCommands {
     }
 
     private static void transferToWavefrontBarrier(
-            VkCommandBuffer commandBuffer, MemoryStack stack) {
-        VulkanSync.memoryBarrier(
+            VkCommandBuffer commandBuffer,
+            MemoryStack stack,
+            VulkanBuffer wavefront,
+            long offset,
+            long size) {
+        VulkanSync.bufferBarrier(
                 commandBuffer,
                 stack,
+                wavefront.handle(),
+                offset,
+                size,
                 VK12.VK_PIPELINE_STAGE_TRANSFER_BIT,
                 VK12.VK_ACCESS_TRANSFER_WRITE_BIT,
                 KHRRayTracingPipeline.VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR

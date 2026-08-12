@@ -175,12 +175,14 @@ abstract class GenerateShaderAbi extends DefaultTask {
 				|| wavefrontContract.pathSlotsPerPixel != 2
 				|| wavefrontContract.areaRecordSize != 112
 				|| wavefrontContract.queueEntriesPerPixel != 1
-				|| wavefrontContract.queueCount != 5
+				|| wavefrontContract.queueCount != 7
 				|| wavefrontContract.traceQueue0 != 0
 				|| wavefrontContract.traceQueue1 != 1
 				|| wavefrontContract.shadeQueue != 2
-				|| wavefrontContract.areaQueue != 3
-				|| wavefrontContract.sunQueue != 4
+				|| wavefrontContract.transparentShadeQueue != 3
+				|| wavefrontContract.areaQueue != 4
+				|| wavefrontContract.sunQueue != 5
+				|| wavefrontContract.transparentResolveQueue != 6
 				|| wavefrontContract.queueCommandStride != 16
 				|| wavefrontContract.queueIndexSize != 4
 				|| !wavefrontContract.activeMask.toString().equalsIgnoreCase('0x1')) {
@@ -413,8 +415,10 @@ public final class ShaderAbi {
     public static final int WAVEFRONT_TRACE_QUEUE_0 = ${wavefrontContract.traceQueue0};
     public static final int WAVEFRONT_TRACE_QUEUE_1 = ${wavefrontContract.traceQueue1};
     public static final int WAVEFRONT_SHADE_QUEUE = ${wavefrontContract.shadeQueue};
+    public static final int WAVEFRONT_TRANSPARENT_SHADE_QUEUE = ${wavefrontContract.transparentShadeQueue};
     public static final int WAVEFRONT_AREA_QUEUE = ${wavefrontContract.areaQueue};
     public static final int WAVEFRONT_SUN_QUEUE = ${wavefrontContract.sunQueue};
+    public static final int WAVEFRONT_TRANSPARENT_RESOLVE_QUEUE = ${wavefrontContract.transparentResolveQueue};
     public static final int WAVEFRONT_QUEUE_COMMAND_STRIDE = ${wavefrontContract.queueCommandStride};
     public static final int WAVEFRONT_QUEUE_INDEX_SIZE = ${wavefrontContract.queueIndexSize};
     public static final int WAVEFRONT_ACTIVE_MASK = ${wavefrontContract.activeMask};
@@ -760,8 +764,10 @@ public static const uint PRIME_WAVEFRONT_QUEUE_COUNT = ${wavefrontContract.queue
 public static const uint PRIME_WAVEFRONT_TRACE_QUEUE_0 = ${wavefrontContract.traceQueue0};
 public static const uint PRIME_WAVEFRONT_TRACE_QUEUE_1 = ${wavefrontContract.traceQueue1};
 public static const uint PRIME_WAVEFRONT_SHADE_QUEUE = ${wavefrontContract.shadeQueue};
+public static const uint PRIME_WAVEFRONT_TRANSPARENT_SHADE_QUEUE = ${wavefrontContract.transparentShadeQueue};
 public static const uint PRIME_WAVEFRONT_AREA_QUEUE = ${wavefrontContract.areaQueue};
 public static const uint PRIME_WAVEFRONT_SUN_QUEUE = ${wavefrontContract.sunQueue};
+public static const uint PRIME_WAVEFRONT_TRANSPARENT_RESOLVE_QUEUE = ${wavefrontContract.transparentResolveQueue};
 public static const uint PRIME_WAVEFRONT_QUEUE_COMMAND_STRIDE = ${wavefrontContract.queueCommandStride};
 public static const uint PRIME_WAVEFRONT_QUEUE_INDEX_SIZE = ${wavefrontContract.queueIndexSize};
 public static const uint PRIME_WAVEFRONT_ACTIVE_MASK = ${wavefrontContract.activeMask};
@@ -1003,11 +1009,15 @@ abstract class CompilePrimeSlangComputeShaders extends DefaultTask {
 							[compile: [''], alias: ['_subgroup': '', '_ser': '']],
 					'realtime_wavefront_shade':
 							[compile: ['', '_subgroup'], alias: ['_ser': '_subgroup']],
+					'realtime_wavefront_transparent_shade':
+							[compile: ['', '_subgroup'], alias: ['_ser': '_subgroup']],
 					'realtime_wavefront_area':
 							[compile: [''], alias: ['_subgroup': '', '_ser': '']],
 					'realtime_wavefront_sun':
 							[compile: [''], alias: ['_subgroup': '', '_ser': '']],
 					'realtime_wavefront_resolve':
+							[compile: [''], alias: ['_subgroup': '', '_ser': '']],
+					'realtime_wavefront_transparent_resolve':
 							[compile: [''], alias: ['_subgroup': '', '_ser': '']],
 					'realtime_wavefront_sharc_shade':
 							[compile: ['', '_subgroup'], alias: ['_ser': '_subgroup']],

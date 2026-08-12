@@ -30,7 +30,7 @@ public final class RealtimeRayTracingPipeline implements RealtimeIntegratorPipel
     static final int RAYGEN_GROUP_COUNT = RealtimeWavefrontGroups.GROUP_COUNT;
     static final int RAYGEN_MODULE_COUNT = RealtimeWavefrontGroups.MODULE_COUNT;
     static int dispatchCount(int rounds) {
-        return 4 * rounds + 5;
+        return 5 * rounds + 6;
     }
     static final int DESCRIPTOR_BINDING_COUNT = 26;
     private static final int STORAGE_IMAGE_DESCRIPTOR_COUNT = 23;
@@ -86,7 +86,9 @@ public final class RealtimeRayTracingPipeline implements RealtimeIntegratorPipel
                 prefix + "area" + suffix,
                 prefix + "sun" + suffix,
                 prefix + "shade" + suffix,
-                prefix + "resolve" + suffix
+                prefix + "transparent_shade" + suffix,
+                prefix + "resolve" + suffix,
+                prefix + "transparent_resolve" + suffix
             };
             traceProgram = TraceProgram.create(
                     context,
@@ -409,6 +411,13 @@ public final class RealtimeRayTracingPipeline implements RealtimeIntegratorPipel
                         ? ShaderAbi.WAVEFRONT_TRACE_QUEUE_1
                         : ShaderAbi.WAVEFRONT_TRACE_QUEUE_0;
             }
+            this.traceIndirect(
+                    commandBuffer,
+                    stack,
+                    activeProgram,
+                    RealtimeWavefrontGroups.TRANSPARENT_RESOLVE,
+                    commandOffset,
+                    ShaderAbi.WAVEFRONT_TRANSPARENT_RESOLVE_QUEUE);
             this.trace(
                     commandBuffer,
                     stack,
@@ -453,6 +462,13 @@ public final class RealtimeRayTracingPipeline implements RealtimeIntegratorPipel
                 RealtimeWavefrontGroups.shade(traceQueue),
                 commandOffset,
                 ShaderAbi.WAVEFRONT_SHADE_QUEUE);
+        this.traceIndirect(
+                commandBuffer,
+                stack,
+                activeProgram,
+                RealtimeWavefrontGroups.transparentShade(traceQueue),
+                commandOffset,
+                ShaderAbi.WAVEFRONT_TRANSPARENT_SHADE_QUEUE);
         this.wavefrontResourceBarrier(
                 commandBuffer, stack, this.bindings.allImages);
         this.traceIndirect(

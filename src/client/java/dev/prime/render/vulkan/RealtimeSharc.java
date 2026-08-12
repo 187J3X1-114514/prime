@@ -92,7 +92,9 @@ final class RealtimeSharc implements Destroyable {
                         "/prime/shaders/realtime_wavefront_sharc_area" + suffix,
                         "/prime/shaders/realtime_wavefront_sharc_sun" + suffix,
                         "/prime/shaders/realtime_wavefront_sharc_shade" + suffix,
-                        prefix + "resolve" + suffix
+                        prefix + "transparent_shade" + suffix,
+                        prefix + "resolve" + suffix,
+                        prefix + "transparent_resolve" + suffix
                     },
                     RealtimeWavefrontGroups.MODULES,
                     RealtimeWavefrontGroups.CONTROLS,

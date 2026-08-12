@@ -55,6 +55,17 @@ void primeRealtimeWavefrontShadeEntry()
             PrimeNoIndirectReuse(), context, launchIndex.x, sourceQueue);
 }
 
+void primeRealtimeWavefrontTransparentShadeEntry()
+{
+    uint launchIndex = DispatchRaysIndex().x;
+    PrimeIntegratorContext context = primeIntegratorContextCreate();
+    uint sourceQueue = (primeWavefrontShaderRecord.control >> 8u) & 1u;
+    if (launchIndex == 0u) {
+        primeResetWavefrontQueue(PRIME_WAVEFRONT_TRANSPARENT_SHADE_QUEUE);
+    }
+    primeWavefrontTransparentShade(context, launchIndex, sourceQueue);
+}
+
 void primeRealtimeWavefrontAreaEntry()
 {
     uint2 launchIndex = DispatchRaysIndex().xy;
@@ -80,4 +91,14 @@ void primeRealtimeWavefrontResolveEntry()
     uint2 launchIndex = DispatchRaysIndex().xy;
     PrimeIntegratorContext context = primeIntegratorContextCreate();
     primeWavefrontResolve(context, launchIndex);
+}
+
+void primeRealtimeWavefrontTransparentResolveEntry()
+{
+    uint launchIndex = DispatchRaysIndex().x;
+    PrimeIntegratorContext context = primeIntegratorContextCreate();
+    if (launchIndex == 0u) {
+        primeResetWavefrontQueue(PRIME_WAVEFRONT_TRANSPARENT_RESOLVE_QUEUE);
+    }
+    primeWavefrontTransparentResolve(context, launchIndex);
 }

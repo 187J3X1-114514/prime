@@ -262,11 +262,12 @@
     "pathSlotsPerPixel": 2,
     "areaRecordSize": 112,
     "queueEntriesPerPixel": 1,
-    "queueCount": 4,
+    "queueCount": 5,
     "traceQueue0": 0,
     "traceQueue1": 1,
     "shadeQueue": 2,
     "areaQueue": 3,
+    "sunQueue": 4,
     "queueCommandStride": 16,
     "queueIndexSize": 4,
     "activeMask": "0x1"

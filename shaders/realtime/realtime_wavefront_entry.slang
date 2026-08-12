@@ -38,6 +38,16 @@ void primeRealtimeWavefrontAreaEntry()
     primeWavefrontArea(PrimeNoIndirectReuse(), context, launchIndex.x);
 }
 
+void primeRealtimeWavefrontSunEntry()
+{
+    uint2 launchIndex = DispatchRaysIndex().xy;
+    PrimeIntegratorContext context = primeIntegratorContextCreate();
+    if (launchIndex.x == 0u) {
+        primeResetWavefrontQueue(PRIME_WAVEFRONT_SUN_QUEUE);
+    }
+    primeWavefrontSun(PrimeNoIndirectReuse(), context, launchIndex.x);
+}
+
 void primeRealtimeWavefrontResolveEntry()
 {
     uint2 launchIndex = DispatchRaysIndex().xy;

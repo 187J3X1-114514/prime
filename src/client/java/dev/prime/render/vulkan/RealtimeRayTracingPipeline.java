@@ -29,7 +29,7 @@ import org.lwjgl.vulkan.VkWriteDescriptorSet;
 public final class RealtimeRayTracingPipeline implements RealtimeIntegratorPipeline {
     static final int RAYGEN_GROUP_COUNT = RealtimeWavefrontGroups.GROUP_COUNT;
     static final int RAYGEN_MODULE_COUNT = RealtimeWavefrontGroups.MODULE_COUNT;
-    static final int DISPATCH_COUNT = 3 * ShaderAbi.WAVEFRONT_ROUNDS + 3;
+    static final int DISPATCH_COUNT = 4 * ShaderAbi.WAVEFRONT_ROUNDS + 3;
     static final int DESCRIPTOR_BINDING_COUNT = 26;
     private static final int STORAGE_IMAGE_DESCRIPTOR_COUNT = 23;
     private static final WavefrontLayout WAVEFRONT_LAYOUT = new WavefrontLayout(
@@ -79,6 +79,7 @@ public final class RealtimeRayTracingPipeline implements RealtimeIntegratorPipel
                 prefix + "head" + suffix,
                 prefix + "step" + suffix,
                 prefix + "area" + suffix,
+                prefix + "sun" + suffix,
                 prefix + "shade" + suffix,
                 prefix + "tail" + suffix,
                 prefix + "resolve" + suffix
@@ -379,6 +380,14 @@ public final class RealtimeRayTracingPipeline implements RealtimeIntegratorPipel
                         RealtimeWavefrontGroups.area(),
                         commandOffset,
                         ShaderAbi.WAVEFRONT_AREA_QUEUE);
+                this.wavefrontBarrier(commandBuffer, stack);
+                this.traceIndirect(
+                        commandBuffer,
+                        stack,
+                        activeProgram,
+                        RealtimeWavefrontGroups.sun(),
+                        commandOffset,
+                        ShaderAbi.WAVEFRONT_SUN_QUEUE);
                 this.wavefrontBarrier(commandBuffer, stack);
                 this.traceIndirect(
                         commandBuffer,

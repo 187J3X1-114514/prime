@@ -61,6 +61,7 @@ void primeWavefrontTail<IndirectReuse>(
                         primeLoadWavefrontPreviousLightNormal(recordIndex);
             }
             bool continuation = primeIntegrateTransparentWavefrontSurface(
+                    PrimeImmediateSecondarySunNee(),
                     PrimeImmediateSecondaryAreaNee(),
                     context,
                     path,
@@ -126,6 +127,7 @@ void primeWavefrontTail<IndirectReuse>(
                         primeLoadWavefrontPreviousLightNormal(recordIndex);
             }
             bool continuation = primeIntegrateWavefrontSurface(
+                    PrimeImmediateSecondarySunNee(),
                     PrimeImmediateSecondaryAreaNee(),
                     indirectReuse,
                     context,

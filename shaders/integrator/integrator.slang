@@ -806,6 +806,50 @@ interface IPrimeSecondaryAreaNee {
             PrimeRcVolumeStack volumeStack);
 }
 
+interface IPrimeSecondarySunNee {
+    float3 estimate(
+            inout PrimeIntegratorContext context,
+            IntegratorRecord integrator,
+            SurfaceInteraction surface,
+            float3 viewDirection,
+            PrimePreparedSampleBase preparedSample,
+            PrimeRcVolumeStack volumeStack);
+}
+
+struct PrimeImmediateSecondarySunNee : IPrimeSecondarySunNee {
+    float3 estimate(
+            inout PrimeIntegratorContext context,
+            IntegratorRecord integrator,
+            SurfaceInteraction surface,
+            float3 viewDirection,
+            PrimePreparedSampleBase preparedSample,
+            PrimeRcVolumeStack volumeStack) {
+        return primeEstimateDirectSun(
+                context,
+                integrator,
+                surface,
+                viewDirection,
+                primeSobolSample2D(
+                        preparedSample,
+                        PRIME_SAMPLE_EFFECT_DIRECT_SUN,
+                        PRIME_SAMPLE_DIMENSION_PRIMARY),
+                volumeStack);
+    }
+}
+
+struct PrimeDeferredSecondarySunNee : IPrimeSecondarySunNee {
+    float3 estimate(
+            inout PrimeIntegratorContext context,
+            IntegratorRecord integrator,
+            SurfaceInteraction surface,
+            float3 viewDirection,
+            PrimePreparedSampleBase preparedSample,
+            PrimeRcVolumeStack volumeStack) {
+        // The independent Sun stage consumes the persisted hit with this exact pre-scatter path.
+        return float3(0.0);
+    }
+}
+
 struct PrimeImmediateSecondaryAreaNee : IPrimeSecondaryAreaNee {
     float3 estimate(
             inout PrimeIntegratorContext context,
@@ -841,7 +885,8 @@ struct PrimeDeferredSecondaryAreaNee : IPrimeSecondaryAreaNee {
     }
 }
 
-float3 primeEstimateDirectLighting<AreaNee>(
+float3 primeEstimateDirectLighting<SunNee, AreaNee>(
+        SunNee sunNee,
         AreaNee areaNee,
         inout PrimeIntegratorContext context,
         IntegratorRecord integrator,
@@ -849,17 +894,15 @@ float3 primeEstimateDirectLighting<AreaNee>(
         float3 viewDirection,
         PrimePreparedSampleBase preparedSample,
         PrimeRcVolumeStack volumeStack)
+    where SunNee : IPrimeSecondarySunNee
     where AreaNee : IPrimeSecondaryAreaNee
 {
-    float3 result = primeEstimateDirectSun(
+    float3 result = sunNee.estimate(
             context,
             integrator,
             surface,
             viewDirection,
-            primeSobolSample2D(
-                    preparedSample,
-                    PRIME_SAMPLE_EFFECT_DIRECT_SUN,
-                    PRIME_SAMPLE_DIMENSION_PRIMARY),
+            preparedSample,
             volumeStack);
     result += areaNee.estimate(
             context,
@@ -1376,7 +1419,8 @@ uint primeTransparentGuideMode() {
 // Advances the checkerboard-selected primary-transparent branch by one queued vertex. Its signal
 // lane remains branch-owned while traversal/SER sorts the sole active continuation with every
 // other path.
-bool primeIntegrateTransparentWavefrontSurface<AreaNee>(
+bool primeIntegrateTransparentWavefrontSurface<SunNee, AreaNee>(
+        SunNee sunNee,
         AreaNee areaNee,
         inout PrimeIntegratorContext context,
         inout PathState path,
@@ -1392,6 +1436,7 @@ bool primeIntegrateTransparentWavefrontSurface<AreaNee>(
         bool transmissionBranch,
         bool guideEnabled,
         uint pathIndex)
+    where SunNee : IPrimeSecondarySunNee
     where AreaNee : IPrimeSecondaryAreaNee
 {
     primeSetNumericalContext(
@@ -1502,6 +1547,7 @@ bool primeIntegrateTransparentWavefrontSurface<AreaNee>(
             primeAccumulate(context, result.specularRadiance, specularDirect);
         } else {
             float3 direct = path.throughput * primeEstimateDirectLighting(
+                    sunNee,
                     areaNee,
                     context,
                     integrator,
@@ -1626,7 +1672,8 @@ PrimeDenoiserState primeInitialDenoiserState() {
 // local island because two reconstruction records share one output pixel, although only the
 // checkerboard-selected record carries transport. Every other continuation can cross this
 // boundary without carrying invocation-local BSDF state.
-bool primeIntegrateWavefrontSurface<AreaNee, IndirectReuse>(
+bool primeIntegrateWavefrontSurface<SunNee, AreaNee, IndirectReuse>(
+        SunNee sunNee,
         AreaNee areaNee,
         IndirectReuse indirectReuse,
         inout PrimeIntegratorContext context,
@@ -1637,6 +1684,7 @@ bool primeIntegrateWavefrontSurface<AreaNee, IndirectReuse>(
         inout PrimeIntegrationResult result,
         SurfaceInteraction surface,
         uint pathIndex)
+    where SunNee : IPrimeSecondarySunNee
     where AreaNee : IPrimeSecondaryAreaNee
     where IndirectReuse : IPrimeIndirectReuse
 {
@@ -1759,6 +1807,7 @@ bool primeIntegrateWavefrontSurface<AreaNee, IndirectReuse>(
             }
         } else {
             float3 direct = path.throughput * primeEstimateDirectLighting(
+                    sunNee,
                     areaNee,
                     context,
                     integrator,

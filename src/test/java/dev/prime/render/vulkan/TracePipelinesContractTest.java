@@ -55,9 +55,9 @@ final class TracePipelinesContractTest {
 
     @Test
     void realtimeAndOfflineHaveIndependentSchedulesAndDescriptors() {
-        assertEquals(9, RealtimeRayTracingPipeline.RAYGEN_GROUP_COUNT);
-        assertEquals(6, RealtimeRayTracingPipeline.RAYGEN_MODULE_COUNT);
-        assertEquals(51, RealtimeRayTracingPipeline.DISPATCH_COUNT);
+        assertEquals(10, RealtimeRayTracingPipeline.RAYGEN_GROUP_COUNT);
+        assertEquals(7, RealtimeRayTracingPipeline.RAYGEN_MODULE_COUNT);
+        assertEquals(67, RealtimeRayTracingPipeline.DISPATCH_COUNT);
         assertEquals(26, RealtimeRayTracingPipeline.DESCRIPTOR_BINDING_COUNT);
 
         assertEquals(8, OfflineRayTracingPipeline.RAYGEN_GROUP_COUNT);
@@ -65,13 +65,13 @@ final class TracePipelinesContractTest {
         assertEquals(35, OfflineRayTracingPipeline.DISPATCH_COUNT);
         assertEquals(3, OfflineRayTracingPipeline.DESCRIPTOR_BINDING_COUNT);
 
-        assertEquals(List.of(0, 1, 1, 2, 3, 3, 4, 4, 5),
+        assertEquals(List.of(0, 1, 1, 2, 3, 4, 4, 5, 5, 6),
                 java.util.stream.IntStream
                 .range(0, RealtimeRayTracingPipeline.RAYGEN_GROUP_COUNT)
                 .map(RealtimeRayTracingPipeline::raygenModule)
                 .boxed()
                 .toList());
-        assertEquals(List.of(0, 1, 257, 4, 2, 258, 5, 261, 3),
+        assertEquals(List.of(0, 1, 257, 4, 6, 2, 258, 5, 261, 3),
                 java.util.stream.IntStream
                 .range(0, RealtimeRayTracingPipeline.RAYGEN_GROUP_COUNT)
                 .map(RealtimeRayTracingPipeline::raygenControl)
@@ -190,12 +190,17 @@ final class TracePipelinesContractTest {
                     payloadShapes(
                             wavefrontShader("realtime", "area", suffix),
                             STORAGE_RAY_PAYLOAD));
+            assertEquals(
+                    Set.of(shadowPayload),
+                    payloadShapes(
+                            wavefrontShader("realtime", "sun", suffix),
+                            STORAGE_RAY_PAYLOAD));
         }
     }
 
     @Test
     void wavefrontBackingHasDeclaredFourKSize() {
-        assertEquals(2_654_208_064L,
+        assertEquals(2_687_385_680L,
                 RealtimeRayTracingPipeline.wavefrontBytes(3840, 2160));
         assertEquals(1_260_748_832L,
                 OfflineRayTracingPipeline.wavefrontBytes(3840, 2160));

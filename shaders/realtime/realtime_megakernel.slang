@@ -180,17 +180,16 @@ PrimeIntegrationResult primeMegakernelTransparent(
     bool transmissionGuide = guideMode == PRIME_PATH_TRANSPARENT_GUIDE_MODE_NRD
             || guideMode == PRIME_PATH_TRANSPARENT_GUIDE_MODE_DLSS_RR;
     bool reflectionGuide = guideMode == PRIME_PATH_TRANSPARENT_GUIDE_MODE_NRD;
-    PrimeTransmissiveBsdfSample branches[2] = PrimeTransmissiveBsdfSample[2](
-            primary.paths.transmission, primary.paths.reflection);
     bool sampleReflection = primeTransparentCheckerboardSamplesReflection(
             pixel, path.sampleIndex);
-    PrimeTransparentBranchResult results[2];
 
     for (uint branch = 0u; branch < 2u; ++branch) {
         bool transmission = branch == 0u;
         bool selected = transmission != sampleReflection;
         bool guideEnabled = transmission ? transmissionGuide : reflectionGuide;
-        PrimeTransmissiveBsdfSample choice = branches[branch];
+        PrimeTransmissiveBsdfSample choice = transmission
+                ? primary.paths.transmission
+                : primary.paths.reflection;
         BsdfSample bsdf = selected ? choice.bsdfSample : primeInvalidBsdfSample();
         if (selected) {
             bsdf.pdf = primeTransparentCheckerboardPdf(bsdf.pdf);
@@ -301,33 +300,31 @@ PrimeIntegrationResult primeMegakernelTransparent(
         }
         primeMegakernelFinalizeTransparentGuide(
                 transmission, guideEnabled, hasGuide, branchResult);
-        results[branch] = branchResult;
+        if (transmission) {
+            initialResult.radiance.diffuse = branchResult.diffuseRadiance;
+            initialResult.radiance.specular = branchResult.specularRadiance;
+            initialResult.transmissionGuides = branchResult.guides;
+            initialResult.transmissionAnchorDistance = branchResult.anchorDistance;
+            visibleGuides.diffuseHitDistance = branchResult.firstHitDistance;
+        } else {
+            initialResult.reflectionDiffuseRadiance = branchResult.diffuseRadiance;
+            initialResult.reflectionSpecularRadiance = branchResult.specularRadiance;
+            initialResult.reflectionGuides = branchResult.guides;
+            initialResult.reflectionDirectionalGuide = branchResult.directionalGuide;
+            visibleGuides.specularHitDistance = branchResult.firstHitDistance;
+        }
     }
 
-    PrimeTransparentBranchResult transmission = results[0];
-    PrimeTransparentBranchResult reflection = results[1];
-    PrimeIntegrationResult result = primeEmptyIntegrationResult();
-    result.radiance.diffuse = transmission.diffuseRadiance;
-    result.radiance.specular = transmission.specularRadiance;
-    result.guides = visibleGuides;
-    result.guides.diffuseHitDistance = transmission.firstHitDistance;
-    result.guides.specularHitDistance = reflection.firstHitDistance;
-    result.reflectionDiffuseRadiance = reflection.diffuseRadiance;
-    result.reflectionSpecularRadiance = reflection.specularRadiance;
-    result.transmissionGuides = transmission.guides;
-    result.reflectionGuides = reflection.guides;
-    result.transmissionGuides.primaryAreaDiffuse =
-            result.guides.primaryAreaDiffuse;
-    result.transmissionGuides.primaryAreaDirection =
-            result.guides.primaryAreaDirection;
-    result.reflectionGuides.primaryAreaSpecular =
-            result.guides.primaryAreaSpecular;
-    result.reflectionGuides.primaryAreaDirection =
-            result.guides.primaryAreaDirection;
-    result.transmissionAnchorDistance = transmission.anchorDistance;
-    result.reflectionDirectionalGuide = reflection.directionalGuide;
-    result.transparentPrimary = true;
-    return result;
+    initialResult.guides = visibleGuides;
+    initialResult.transmissionGuides.primaryAreaDiffuse =
+            initialResult.guides.primaryAreaDiffuse;
+    initialResult.transmissionGuides.primaryAreaDirection =
+            initialResult.guides.primaryAreaDirection;
+    initialResult.reflectionGuides.primaryAreaSpecular =
+            initialResult.guides.primaryAreaSpecular;
+    initialResult.reflectionGuides.primaryAreaDirection =
+            initialResult.guides.primaryAreaDirection;
+    return initialResult;
 }
 
 PrimeIntegrationResult primeMegakernelIntegrate<IndirectReuse>(

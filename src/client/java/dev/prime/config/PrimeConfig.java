@@ -6,7 +6,6 @@ import dev.prime.render.DisplaySettings;
 import dev.prime.render.LightingSettings;
 import dev.prime.render.MaterialSettings;
 import dev.prime.render.RendererSettings;
-import dev.prime.render.RealtimeIntegratorMode;
 import dev.prime.render.ScatterSettings;
 import dev.prime.render.post.PostProcessingMode;
 import dev.prime.render.post.ReconstructionQualityMode;
@@ -27,10 +26,10 @@ import net.fabricmc.loader.api.FabricLoader;
 public final class PrimeConfig {
     private static final String PATH_TRACING_ENABLED_KEY = "renderer.path_tracing";
     private static final String SHARC_ENABLED_KEY = "renderer.sharc";
-    private static final String INTEGRATOR_MODE_KEY = "renderer.integrator_mode";
     private static final String SCATTER_COUNT_KEY = "renderer.scatter_count";
     private static final String LEGACY_WAVEFRONT_ROUNDS_KEY = "renderer.wavefront_rounds";
     private static final String[] LEGACY_INTEGRATOR_KEYS = {
+        "renderer.integrator_mode",
         "renderer.integrator",
         "renderer.performance_maximum_bounces",
         "renderer.lightweight_maximum_bounces"
@@ -68,7 +67,6 @@ public final class PrimeConfig {
     // Fabric initializes and mutates video options on the client thread. One immutable snapshot
     // keeps every renderer read coherent without a shared lock or independently mutable globals.
     private static PrimeSettings settings = PrimeSettings.defaults();
-    private static RealtimeIntegratorMode integratorMode = RealtimeIntegratorMode.DEFAULT;
     private static int scatterCount = ScatterSettings.DEFAULT_COUNT;
     private static long rendererRevision;
     private static boolean dirty;
@@ -80,7 +78,6 @@ public final class PrimeConfig {
         Path path = configPath();
         boolean pathTracingEnabled = true;
         boolean sharcEnabled = true;
-        RealtimeIntegratorMode loadedIntegratorMode = RealtimeIntegratorMode.DEFAULT;
         int loadedScatterCount = ScatterSettings.DEFAULT_COUNT;
         boolean voxelTextureSurfaces = false;
         int voxelTextureSurfaceStrengthSteps = VoxelSurfaceSettings.DEFAULT_STEPS;
@@ -129,22 +126,6 @@ public final class PrimeConfig {
                                 "Invalid Prime SHARC switch '{}'; enabling SHARC",
                                 sharc);
                         rewriteNeeded = true;
-                    }
-                } else {
-                    rewriteNeeded = true;
-                }
-                String integrator = properties.getProperty(INTEGRATOR_MODE_KEY);
-                if (integrator != null) {
-                    RealtimeIntegratorMode parsed = RealtimeIntegratorMode.findById(integrator)
-                            .orElse(null);
-                    if (parsed == null) {
-                        PrimeInfo.LOGGER.warn(
-                                "Unknown Prime integrator mode '{}'; using {}",
-                                integrator,
-                                RealtimeIntegratorMode.DEFAULT.id());
-                        rewriteNeeded = true;
-                    } else {
-                        loadedIntegratorMode = parsed;
                     }
                 } else {
                     rewriteNeeded = true;
@@ -421,15 +402,13 @@ public final class PrimeConfig {
                 0L,
                 sharcEnabled,
                 vanillaPbrPresets);
-        integratorMode = loadedIntegratorMode;
         scatterCount = loadedScatterCount;
         rendererRevision = 0L;
         dirty = rewriteNeeded;
         PrimeInfo.LOGGER.info(
-                "Prime settings: path tracing {}, SHARC {}, integrator {}, scatter count {}, voxel surfaces {} at {}x, post-processing {} quality {} (NRD-FSR {}x), latitude {} degrees, solar longitude {} degrees, sun {} EV, stars {} EV, block lights {} EV, final exposure {} EV, Oklab DRT overexposure {}, curve exponent {}, auto-exposure compensation {}, default roughness {}, seamless glass {}, air gap {}, vanilla PBR presets {}",
+                "Prime settings: path tracing {}, SHARC {}, scatter count {}, voxel surfaces {} at {}x, post-processing {} quality {} (NRD-FSR {}x), latitude {} degrees, solar longitude {} degrees, sun {} EV, stars {} EV, block lights {} EV, final exposure {} EV, Oklab DRT overexposure {}, curve exponent {}, auto-exposure compensation {}, default roughness {}, seamless glass {}, air gap {}, vanilla PBR presets {}",
                 pathTracingEnabled ? "enabled" : "disabled",
                 sharcEnabled ? "enabled" : "disabled",
-                loadedIntegratorMode.id(),
                 loadedScatterCount,
                 voxelTextureSurfaces ? "enabled" : "disabled",
                 formatVoxelSurfaceStrength(voxelTextureSurfaceStrengthSteps),
@@ -465,7 +444,6 @@ public final class PrimeConfig {
         return new RendererSettings(
                 current.pathTracingEnabled(),
                 current.sharcEnabled(),
-                integratorMode,
                 current.voxelTextureSurfaces(),
                 current.voxelTextureSurfaceStrengthSteps(),
                 current.postProcessingMode(),
@@ -484,19 +462,6 @@ public final class PrimeConfig {
 
     public static void setSharcEnabled(boolean enabled) {
         update(settings.withSharcEnabled(enabled));
-    }
-
-    public static RealtimeIntegratorMode integratorMode() {
-        return integratorMode;
-    }
-
-    public static void setIntegratorMode(RealtimeIntegratorMode mode) {
-        RealtimeIntegratorMode replacement = java.util.Objects.requireNonNull(mode, "mode");
-        if (replacement != integratorMode) {
-            integratorMode = replacement;
-            rendererRevision = Math.incrementExact(rendererRevision);
-            dirty = true;
-        }
     }
 
     public static int scatterCount() {
@@ -582,7 +547,6 @@ public final class PrimeConfig {
 
     public static void restoreDefaults() {
         update(restoredDefaults(settings));
-        setIntegratorMode(RealtimeIntegratorMode.DEFAULT);
         setScatterCount(ScatterSettings.DEFAULT_COUNT);
     }
 
@@ -663,7 +627,6 @@ public final class PrimeConfig {
         PrimeSettings current = settings;
         return PATH_TRACING_ENABLED_KEY + "=" + current.pathTracingEnabled() + "\n"
                     + SHARC_ENABLED_KEY + "=" + current.sharcEnabled() + "\n"
-                    + INTEGRATOR_MODE_KEY + "=" + integratorMode.id() + "\n"
                     + SCATTER_COUNT_KEY + "=" + scatterCount + "\n"
                     + VOXEL_TEXTURE_SURFACES_KEY + "="
                     + current.voxelTextureSurfaces() + "\n"

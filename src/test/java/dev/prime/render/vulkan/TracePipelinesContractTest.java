@@ -145,17 +145,6 @@ final class TracePipelinesContractTest {
             assertFalse(bindings.contains(ShaderAbi.DESCRIPTOR_WAVEFRONT_PATHS));
             assertFalse(bindings.contains(ShaderAbi.DESCRIPTOR_WAVEFRONT_QUEUE));
         }
-        Set<Integer> megakernel = descriptorBindings(
-                List.of("realtime_megakernel.rgen.spv"), 1);
-        assertFalse(megakernel.contains(ShaderAbi.DESCRIPTOR_SHARC_FRAME));
-        assertFalse(megakernel.contains(ShaderAbi.DESCRIPTOR_WAVEFRONT_PATHS));
-        assertFalse(megakernel.contains(ShaderAbi.DESCRIPTOR_WAVEFRONT_QUEUE));
-
-        Set<Integer> megakernelSharc = descriptorBindings(
-                List.of("realtime_megakernel_sharc.rgen.spv"), 1);
-        assertTrue(megakernelSharc.contains(ShaderAbi.DESCRIPTOR_SHARC_FRAME));
-        assertFalse(megakernelSharc.contains(ShaderAbi.DESCRIPTOR_WAVEFRONT_PATHS));
-        assertFalse(megakernelSharc.contains(ShaderAbi.DESCRIPTOR_WAVEFRONT_QUEUE));
     }
 
     @Test
@@ -173,12 +162,6 @@ final class TracePipelinesContractTest {
             assertEquals(
                     Set.of(shadowPayload),
                     payloadShapes(shader, STORAGE_INCOMING_RAY_PAYLOAD));
-        }
-        for (String shader : List.of(
-                "realtime_megakernel.rgen.spv",
-                "realtime_megakernel_sharc.rgen.spv")) {
-            assertEquals(Set.of(tracePayload, shadowPayload),
-                    payloadShapes(shader, STORAGE_RAY_PAYLOAD));
         }
         for (String suffix : List.of("", "_subgroup", "_ser")) {
             assertEquals(

@@ -6,7 +6,6 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import dev.prime.render.AstronomySettings;
-import dev.prime.render.RealtimeIntegratorMode;
 import dev.prime.render.ScatterSettings;
 import dev.prime.render.post.DlssRrDebugView;
 import dev.prime.render.post.PostProcessingMode;
@@ -16,13 +15,11 @@ import org.junit.jupiter.api.Test;
 
 final class PrimeConfigTest {
     @Test
-    void restoreDefaultsIncludesIntegratorAndScatterCount() {
-        PrimeConfig.setIntegratorMode(RealtimeIntegratorMode.MEGAKERNEL);
+    void restoreDefaultsIncludesScatterCount() {
         PrimeConfig.setScatterCount(ScatterSettings.MAXIMUM_COUNT);
 
         PrimeConfig.restoreDefaults();
 
-        assertEquals(RealtimeIntegratorMode.DEFAULT, PrimeConfig.integratorMode());
         assertEquals(ScatterSettings.DEFAULT_COUNT, PrimeConfig.scatterCount());
         assertEquals(
                 ScatterSettings.DEFAULT_COUNT,
@@ -206,6 +203,9 @@ final class PrimeConfigTest {
     void removedIntegratorPropertiesAreRecognizedForRewrite() {
         Properties properties = new Properties();
         assertFalse(PrimeConfig.hasLegacyIntegratorProperties(properties));
+        properties.setProperty("renderer.integrator_mode", "megakernel");
+        assertTrue(PrimeConfig.hasLegacyIntegratorProperties(properties));
+        properties.clear();
         properties.setProperty("renderer.integrator", "performance");
         assertTrue(PrimeConfig.hasLegacyIntegratorProperties(properties));
         properties.clear();
@@ -231,10 +231,10 @@ final class PrimeConfigTest {
         String serialized = PrimeConfig.serializedContents();
         assertTrue(serialized.contains("renderer.path_tracing=true\n"));
         assertTrue(serialized.contains("renderer.sharc=true\n"));
-        assertTrue(serialized.contains("renderer.integrator_mode=wavefront\n"));
         assertTrue(serialized.contains("renderer.scatter_count=16\n"));
         assertTrue(PrimeSettings.defaults().sharcEnabled());
         assertFalse(serialized.contains("renderer.integrator="));
+        assertFalse(serialized.contains("renderer.integrator_mode="));
         assertFalse(serialized.contains("renderer.performance_maximum_bounces"));
         assertFalse(serialized.contains("renderer.lightweight_maximum_bounces"));
         assertTrue(serialized.contains(

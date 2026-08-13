@@ -6,7 +6,6 @@ import dev.prime.render.AstronomySettings;
 import dev.prime.render.DisplaySettings;
 import dev.prime.render.LightingSettings;
 import dev.prime.render.MaterialSettings;
-import dev.prime.render.RealtimeIntegratorMode;
 import dev.prime.render.ScatterSettings;
 import dev.prime.client.PrimeRuntime;
 import dev.prime.render.RendererSettings;
@@ -50,7 +49,6 @@ public abstract class VideoSettingsScreenMixin {
             Component.translatable("prime.options.header.diagnostics");
     @Unique private OptionInstance<Boolean> prime$pathTracingEnabled;
     @Unique private OptionInstance<Boolean> prime$sharcEnabled;
-    @Unique private OptionInstance<RealtimeIntegratorMode> prime$integratorMode;
     @Unique private OptionInstance<Integer> prime$scatterCount;
     @Unique private OptionInstance<Boolean> prime$voxelTextureSurfaces;
     @Unique private OptionInstance<Integer> prime$voxelTextureSurfaceStrength;
@@ -83,7 +81,6 @@ public abstract class VideoSettingsScreenMixin {
         if (list != null) {
             this.prime$pathTracingEnabled = PrimeVideoOptions.pathTracingEnabled();
             this.prime$sharcEnabled = PrimeVideoOptions.sharcEnabled();
-            this.prime$integratorMode = PrimeVideoOptions.integratorMode();
             this.prime$scatterCount = PrimeVideoOptions.scatterCount();
             this.prime$voxelTextureSurfaces = PrimeVideoOptions.voxelTextureSurfaces();
             this.prime$voxelTextureSurfaceStrength =
@@ -119,7 +116,7 @@ public abstract class VideoSettingsScreenMixin {
             list.addHeader(PRIME$RENDERING_HEADER);
             list.addBig(this.prime$pathTracingEnabled);
             list.addBig(this.prime$sharcEnabled);
-            list.addSmall(this.prime$integratorMode, this.prime$scatterCount);
+            list.addBig(this.prime$scatterCount);
             list.addSmall(
                     this.prime$voxelTextureSurfaces,
                     this.prime$voxelTextureSurfaceStrength);
@@ -174,9 +171,6 @@ public abstract class VideoSettingsScreenMixin {
         }
         this.prime$refresh(this.prime$pathTracingEnabled, true);
         this.prime$refresh(this.prime$sharcEnabled, true);
-        this.prime$refresh(
-                this.prime$integratorMode,
-                RealtimeIntegratorMode.DEFAULT);
         this.prime$refresh(
                 this.prime$scatterCount,
                 ScatterSettings.DEFAULT_COUNT);

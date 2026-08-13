@@ -49,20 +49,6 @@ final class RealtimeSharc implements Destroyable {
             long rayTracingPipelineLayout,
             long sharedSetLayout,
             long integratorSetLayout) {
-        this(
-                context,
-                rayTracingPipelineLayout,
-                sharedSetLayout,
-                integratorSetLayout,
-                null);
-    }
-
-    RealtimeSharc(
-            VulkanContext context,
-            long rayTracingPipelineLayout,
-            long sharedSetLayout,
-            long integratorSetLayout,
-            String megakernelQueryShader) {
         this.context = Objects.requireNonNull(context, "context");
         this.rayTracingPipelineLayout = rayTracingPipelineLayout;
         VulkanBuffer hash = null;
@@ -93,38 +79,27 @@ final class RealtimeSharc implements Destroyable {
                     new int[] {0},
                     "Prime SHARC update pipeline",
                     "Prime SHARC update shader binding table");
-            if (megakernelQueryShader == null) {
-                String prefix = "/prime/shaders/realtime_wavefront_";
-                query = TraceProgram.create(
-                        context,
-                        rayTracingPipelineLayout,
-                        new String[] {
-                            prefix + "head" + suffix,
-                            prefix + "step" + suffix,
-                            prefix + "primary" + suffix,
-                            prefix + "primary_area" + suffix,
-                            prefix + "primary_sun" + suffix,
-                            "/prime/shaders/realtime_wavefront_sharc_area" + suffix,
-                            "/prime/shaders/realtime_wavefront_sharc_sun" + suffix,
-                            "/prime/shaders/realtime_wavefront_sharc_shade" + suffix,
-                            prefix + "transparent_shade" + suffix,
-                            prefix + "resolve" + suffix,
-                            prefix + "transparent_resolve" + suffix
-                        },
-                        RealtimeWavefrontGroups.MODULES,
-                        RealtimeWavefrontGroups.CONTROLS,
-                        "Prime SHARC query pipeline",
-                        "Prime SHARC query shader binding table");
-            } else {
-                query = TraceProgram.create(
-                        context,
-                        rayTracingPipelineLayout,
-                        new String[] {megakernelQueryShader},
-                        new int[] {0},
-                        new int[] {0},
-                        "Prime megakernel SHARC query pipeline",
-                        "Prime megakernel SHARC query shader binding table");
-            }
+            String prefix = "/prime/shaders/realtime_wavefront_";
+            query = TraceProgram.create(
+                    context,
+                    rayTracingPipelineLayout,
+                    new String[] {
+                        prefix + "head" + suffix,
+                        prefix + "step" + suffix,
+                        prefix + "primary" + suffix,
+                        prefix + "primary_area" + suffix,
+                        prefix + "primary_sun" + suffix,
+                        "/prime/shaders/realtime_wavefront_sharc_area" + suffix,
+                        "/prime/shaders/realtime_wavefront_sharc_sun" + suffix,
+                        "/prime/shaders/realtime_wavefront_sharc_shade" + suffix,
+                        prefix + "transparent_shade" + suffix,
+                        prefix + "resolve" + suffix,
+                        prefix + "transparent_resolve" + suffix
+                    },
+                    RealtimeWavefrontGroups.MODULES,
+                    RealtimeWavefrontGroups.CONTROLS,
+                    "Prime SHARC query pipeline",
+                    "Prime SHARC query shader binding table");
             try (MemoryStack stack = MemoryStack.stackPush()) {
                 LongBuffer pointer = stack.mallocLong(1);
                 VulkanContext.check(

@@ -45,26 +45,8 @@ jobs:
           test -n "$lvp_icd"
           echo "VK_DRIVER_FILES=$lvp_icd" >> "$GITHUB_ENV"
           VK_DRIVER_FILES="$lvp_icd" vulkaninfo --summary
-      - name: Provide Slang compiler swap
-        run: |
-          available_kib="$(df --output=avail -k / | tail -n 1)"
-          reserve_kib=$((8 * 1024 * 1024))
-          swap_kib=$((available_kib - reserve_kib))
-          maximum_swap_kib=$((32 * 1024 * 1024))
-          if ((swap_kib > maximum_swap_kib)); then
-            swap_kib=$maximum_swap_kib
-          fi
-          if ((swap_kib < 8 * 1024 * 1024)); then
-            echo "Insufficient disk space for the Slang compiler: ${available_kib} KiB available" >&2
-            exit 1
-          fi
-          sudo fallocate -l "${swap_kib}K" /swapfile
-          sudo chmod 600 /swapfile
-          sudo mkswap /swapfile
-          sudo swapon /swapfile
-          free -h
       - name: Build and test
-        run: ./gradlew --no-daemon --stacktrace -PprimeSlangCompilerWorkers=1 clean build shaderTest
+        run: ./gradlew --no-daemon --stacktrace clean build shaderTest
       - name: Capture test reports on failure
         if: failure()
         uses: actions/upload-artifact@v7

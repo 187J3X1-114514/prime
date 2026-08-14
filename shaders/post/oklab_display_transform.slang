@@ -15,8 +15,8 @@ public PrimeOklabDrtParameters primeDefaultOklabDrtParameters()
 {
     PrimeOklabDrtParameters parameters;
     parameters.overexposure = 1.0;
-    parameters.whiteHueCompression = 0.8;
-    parameters.hueCompressionOnset = 0.4;
+    parameters.whiteHueCompression = 1.0;
+    parameters.hueCompressionOnset = 0.6;
     return parameters;
 }
 

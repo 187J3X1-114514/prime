@@ -1287,10 +1287,10 @@ public final class NrdDenoiser implements Destroyable {
                             .stage(stage)
                             .layout(pipelineLayout);
                     LongBuffer pipelinePointer = stack.mallocLong(1);
-                    VulkanContext.check(
-                            VK12.vkCreateComputePipelines(
-                                    context.vkDevice(), 0L, createInfo, null, pipelinePointer),
-                            "create Prime NRD compute pipeline " + pipelineDescription.identifier());
+                    context.createComputePipeline(
+                            createInfo,
+                            pipelinePointer,
+                            "Prime NRD " + pipelineDescription.identifier());
                     pipeline = pipelinePointer.get(0);
                 } finally {
                     VK12.vkDestroyShaderModule(context.vkDevice(), shaderModule, null);
@@ -1776,10 +1776,8 @@ public final class NrdDenoiser implements Destroyable {
                             .stage(stage)
                             .layout(pipelineLayout);
                     pointer.clear();
-                    VulkanContext.check(
-                            VK12.vkCreateComputePipelines(
-                                    context.vkDevice(), 0L, pipelineInfo, null, pointer),
-                            "create " + debugPrefix + " motion pipeline");
+                    context.createComputePipeline(
+                            pipelineInfo, pointer, debugPrefix + " motion");
                     pipeline = pointer.get(0);
                 } finally {
                     VK12.vkDestroyShaderModule(context.vkDevice(), shaderModule, null);
@@ -2019,10 +2017,8 @@ public final class NrdDenoiser implements Destroyable {
                             .stage(stage)
                             .layout(pipelineLayout);
                     pointer.clear();
-                    VulkanContext.check(
-                            VK12.vkCreateComputePipelines(
-                                    context.vkDevice(), 0L, pipelineInfo, null, pointer),
-                            "create Prime NRD composite pipeline");
+                    context.createComputePipeline(
+                            pipelineInfo, pointer, "Prime NRD composite");
                     pipeline = pointer.get(0);
                 } finally {
                     VK12.vkDestroyShaderModule(context.vkDevice(), shaderModule, null);

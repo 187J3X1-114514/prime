@@ -119,10 +119,7 @@ final class NoisyCompositePass implements Destroyable {
                         VkComputePipelineCreateInfo.calloc(1, stack);
                 createInfo.get(0).sType$Default().stage(stage).layout(pipelineLayout);
                 pointer.clear();
-                VulkanContext.check(
-                        VK12.vkCreateComputePipelines(
-                                context.vkDevice(), 0L, createInfo, null, pointer),
-                        "create noisy-composite pipeline");
+                context.createComputePipeline(createInfo, pointer, "noisy-composite");
                 pipeline = pointer.get(0);
             } finally {
                 VK12.vkDestroyShaderModule(context.vkDevice(), shader, null);

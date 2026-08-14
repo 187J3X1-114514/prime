@@ -110,10 +110,8 @@ final class NativeDebugPresentPass implements Destroyable {
                         VkComputePipelineCreateInfo.calloc(1, stack);
                 createInfo.get(0).sType$Default().stage(stage).layout(pipelineLayout);
                 pointer.clear();
-                VulkanContext.check(
-                        VK12.vkCreateComputePipelines(
-                                context.vkDevice(), 0L, createInfo, null, pointer),
-                        "create native-debug presentation pipeline");
+                context.createComputePipeline(
+                        createInfo, pointer, "native-debug presentation");
                 pipeline = pointer.get(0);
             } finally {
                 VK12.vkDestroyShaderModule(context.vkDevice(), shader, null);

@@ -877,14 +877,16 @@ public void primeImageStore(RWTexture2D<float4> image, int2 coordinate, float4 v
 }
 
 
+@org.gradle.api.tasks.CacheableTask
 abstract class CompilePrimeSlangComputeShaders extends DefaultTask {
 	private static final java.util.concurrent.ConcurrentHashMap<
 			String, java.util.concurrent.Semaphore> compilerGates =
 			new java.util.concurrent.ConcurrentHashMap<>()
 
-	@InputDirectory
+	@Internal
 	abstract DirectoryProperty getSourceDirectory()
 
+	@org.gradle.work.Incremental
 	@InputFiles
 	@PathSensitive(PathSensitivity.RELATIVE)
 	abstract ConfigurableFileCollection getIncludeDirectories()
@@ -933,8 +935,60 @@ abstract class CompilePrimeSlangComputeShaders extends DefaultTask {
 		}
 	}
 
+	private static Map<String, Set<String>> dependencyGraph(List<File> includeRoots) {
+		def sources = []
+		includeRoots.each { root ->
+			if (root.isDirectory()) {
+				root.eachFileRecurse(groovy.io.FileType.FILES) { source ->
+					if (source.name.endsWith('.slang') || source.name.endsWith('.h')) {
+						sources.add(source.canonicalFile)
+					}
+				}
+			}
+		}
+		def sourcePaths = sources.collect { it.canonicalPath }.toSet()
+		def dependencyPattern = java.util.regex.Pattern.compile(
+				'(?m)^\\s*(?:#\\s*include\\s+"([^"]+)"|import\\s+"([^"]+)"\\s*;)')
+		def graph = new HashMap<String, Set<String>>()
+		sources.each { source ->
+			def targets = graph.computeIfAbsent(source.canonicalPath) {
+				new HashSet<String>()
+			}
+			def matcher = dependencyPattern.matcher(source.getText('UTF-8'))
+			while (matcher.find()) {
+				def dependencyName = matcher.group(1) ?: matcher.group(2)
+				def candidates = ([new File(source.parentFile, dependencyName)]
+						+ includeRoots.collect { new File(it, dependencyName) })
+						.collect { it.canonicalFile }
+						.findAll { sourcePaths.contains(it.canonicalPath) }
+						.unique { it.canonicalPath }
+				if (candidates.size() != 1) {
+					throw new GradleException(
+							"Cannot resolve unique shader dependency ${dependencyName} from ${source}")
+				}
+				targets.add(candidates.first().canonicalPath)
+			}
+		}
+		return graph
+	}
+
+	private static Set<String> dependencyClosure(
+			File source, Map<String, Set<String>> graph) {
+		def result = new HashSet<String>()
+		def pending = new ArrayDeque<String>()
+		pending.add(source.canonicalPath)
+		while (!pending.empty) {
+			def current = pending.removeLast()
+			if (!result.add(current)) {
+				continue
+			}
+			(graph[current] ?: Collections.emptySet()).each { pending.add(it) }
+		}
+		return result
+	}
+
 	@TaskAction
-	void compile() {
+	void compile(org.gradle.work.InputChanges inputChanges) {
 		def sources = sourceDirectory.get().asFileTree.matching {
 			include '**/*.compute.slang',
 					'**/*.raygeneration.slang',
@@ -946,12 +1000,31 @@ abstract class CompilePrimeSlangComputeShaders extends DefaultTask {
 			throw new GradleException('No Prime Slang entry points were found')
 		}
 
-		def scratch = new File(temporaryDir, 'spv')
-		fileSystemOperations.delete { delete scratch }
-		scratch.mkdirs()
 		def includes = includeDirectories.files
 				.findAll { it.isDirectory() }
 				.sort { it.absolutePath }
+		def published = new File(outputDirectory.get().asFile, 'prime/shaders')
+		def incremental = inputChanges.incremental && published.isDirectory()
+		def changedPaths = incremental
+				? inputChanges.getFileChanges(includeDirectories).collect {
+					it.file.canonicalPath
+				}.toSet()
+				: Collections.emptySet()
+		def dependencyGraph = dependencyGraph(includes)
+		def dependencyClosures = new HashMap<String, Set<String>>()
+		Closure<Boolean> requiresCompilation = { File source, File output ->
+			if (!incremental || !output.isFile()) {
+				return true
+			}
+			def dependencies = dependencyClosures.computeIfAbsent(source.canonicalPath) {
+				dependencyClosure(source, dependencyGraph)
+			}
+			return !Collections.disjoint(dependencies, changedPaths)
+		}
+
+		def scratch = new File(temporaryDir, 'spv')
+		fileSystemOperations.delete { delete scratch }
+		scratch.mkdirs()
 		def compiler = slangCompiler.get()
 		def validator = spirvValidator.get()
 		def processLimit = maxCompilerProcesses.get()
@@ -961,6 +1034,8 @@ abstract class CompilePrimeSlangComputeShaders extends DefaultTask {
 		}
 		def compilationUnits = []
 		def aliases = []
+		def expectedOutputs = new TreeSet<String>()
+		int totalCompilationUnits = 0
 		sources.each { source ->
 			def stages = [
 					'compute': [slang: 'compute', legacy: 'comp'],
@@ -1033,15 +1108,24 @@ abstract class CompilePrimeSlangComputeShaders extends DefaultTask {
 						wavefrontVariantPlan.compile.contains(it.name)
 					}
 			wavefrontVariantPlan?.alias?.each { aliasName, compiledName ->
+				expectedOutputs.add(
+						"${stem}${aliasName}.${stage.legacy}.spv".toString())
 				aliases.add([
-						from: new File(scratch, "${stem}${compiledName}.${stage.legacy}.spv"),
-						to: new File(scratch, "${stem}${aliasName}.${stage.legacy}.spv")
+						from: "${stem}${compiledName}.${stage.legacy}.spv".toString(),
+						to: "${stem}${aliasName}.${stage.legacy}.spv".toString()
 				])
 			}
 			variants.each { variant ->
+				totalCompilationUnits++
+				def outputName =
+						"${stem}${variant.name}.${stage.legacy}.spv".toString()
+				expectedOutputs.add(outputName)
 				def output = new File(
 						scratch,
-						"${stem}${variant.name}.${stage.legacy}.spv")
+						outputName)
+				if (!requiresCompilation(source, new File(published, outputName))) {
+					return
+				}
 				compilationUnits.add({
 					def arguments = [
 					compiler,
@@ -1101,47 +1185,59 @@ abstract class CompilePrimeSlangComputeShaders extends DefaultTask {
 			}
 		}
 
-		def compilerCount = Math.min(
+		def compilerCount = compilationUnits.empty ? 0 : Math.min(
 				compilationUnits.size(),
 				Math.min(maxCompilerProcesses.get(), Runtime.runtime.availableProcessors()))
 		logger.lifecycle(
-				"Compiling ${compilationUnits.size()} Slang unit(s) with "
+				"Compiling ${compilationUnits.size()} of ${totalCompilationUnits} Slang unit(s) with "
 						+ "${compilerCount} process(es)")
-		def compilerPool = java.util.concurrent.Executors.newFixedThreadPool(compilerCount)
-		try {
-			def compilations = compilationUnits.collect { compilerPool.submit(it) }
-			compilations.each { compilation ->
-				try {
-					compilation.get()
-				} catch (InterruptedException exception) {
-					Thread.currentThread().interrupt()
-					throw new GradleException('Slang compilation was interrupted', exception)
-				} catch (java.util.concurrent.ExecutionException exception) {
-					def cause = exception.cause
-					if (cause instanceof RuntimeException) {
-						throw cause
+		if (!compilationUnits.empty) {
+			def compilerPool = java.util.concurrent.Executors.newFixedThreadPool(compilerCount)
+			try {
+				def compilations = compilationUnits.collect { compilerPool.submit(it) }
+				compilations.each { compilation ->
+					try {
+						compilation.get()
+					} catch (InterruptedException exception) {
+						Thread.currentThread().interrupt()
+						throw new GradleException('Slang compilation was interrupted', exception)
+					} catch (java.util.concurrent.ExecutionException exception) {
+						def cause = exception.cause
+						if (cause instanceof RuntimeException) {
+							throw cause
+						}
+						throw new GradleException('Slang compilation failed', cause)
 					}
-					throw new GradleException('Slang compilation failed', cause)
 				}
+			} finally {
+				compilerPool.shutdownNow()
 			}
-		} finally {
-			compilerPool.shutdownNow()
-		}
-		aliases.each { alias ->
-			java.nio.file.Files.copy(
-					alias.from.toPath(),
-					alias.to.toPath(),
-					java.nio.file.StandardCopyOption.REPLACE_EXISTING)
 		}
 
-		def published = new File(outputDirectory.get().asFile, 'prime/shaders')
-		fileSystemOperations.delete { delete published }
 		published.mkdirs()
 		scratch.listFiles().each { source ->
 			java.nio.file.Files.move(
 					source.toPath(), new File(published, source.name).toPath(),
 					java.nio.file.StandardCopyOption.REPLACE_EXISTING)
 		}
+		aliases.each { alias ->
+			java.nio.file.Files.copy(
+					new File(published, alias.from).toPath(),
+					new File(published, alias.to).toPath(),
+					java.nio.file.StandardCopyOption.REPLACE_EXISTING)
+		}
+		def manifestName = 'manifest.sha256'
+		expectedOutputs.add(manifestName)
+		published.listFiles().findAll { !expectedOutputs.contains(it.name) }.each {
+			java.nio.file.Files.delete(it.toPath())
+		}
+		def manifest = expectedOutputs.findAll { it != manifestName }.collect { name ->
+			def digest = java.security.MessageDigest.getInstance('SHA-256')
+					.digest(new File(published, name).bytes)
+					.encodeHex().toString()
+			return "${digest}  ${name}"
+		}.join(System.lineSeparator()) + System.lineSeparator()
+		new File(published, manifestName).setText(manifest, 'UTF-8')
 	}
 }
 
@@ -1760,18 +1856,12 @@ sourceSets.test.compileClasspath += sourceSets.client.output
 sourceSets.test.runtimeClasspath += sourceSets.client.output
 
 tasks.withType(Test).configureEach {
-	dependsOn compileSlangTestShaders
-	inputs.dir(compiledSlangTestShaderRoot)
 	useJUnitPlatform()
 	// The NRD ABI tests intentionally load the bundled bridge through LWJGL. Declare native and
 	// LWJGL legacy-memory access explicitly on Java 25, and keep JOML on its supported safe path, so
 	// dependency warnings do not hide actionable test failures.
 	jvmArgs '--enable-native-access=ALL-UNNAMED', '--sun-misc-unsafe-memory-access=allow'
 	systemProperty 'joml.nounsafe', 'true'
-	doFirst {
-		systemProperty 'prime.test.slangShaderDirectory',
-				new File(compiledSlangTestShaderRoot.get().asFile, 'prime/shaders').absolutePath
-	}
 }
 
 tasks.named('test') {
@@ -1790,6 +1880,8 @@ tasks.named('check') {
 tasks.register('shaderTest', Test) {
 	group = 'verification'
 	description = 'Runs GPU shader property tests and requires a usable Vulkan compute device.'
+	dependsOn compileSlangTestShaders
+	inputs.dir(compiledSlangTestShaderRoot)
 	testClassesDirs = sourceSets.test.output.classesDirs
 	classpath = sourceSets.test.runtimeClasspath
 	useJUnitPlatform {
@@ -1797,4 +1889,8 @@ tasks.register('shaderTest', Test) {
 	}
 	systemProperty 'prime.shaderTests.required', 'true'
 	outputs.upToDateWhen { false }
+	doFirst {
+		systemProperty 'prime.test.slangShaderDirectory',
+				new File(compiledSlangTestShaderRoot.get().asFile, 'prime/shaders').absolutePath
+	}
 }

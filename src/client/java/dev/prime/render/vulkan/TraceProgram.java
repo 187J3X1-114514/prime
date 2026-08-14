@@ -235,25 +235,27 @@ final class TraceProgram implements Destroyable {
                             context.vkDevice(), null, deferredPointer),
                     "create deferred " + debugName);
             deferredOperation = deferredPointer.get(0);
-            int result = KHRRayTracingPipeline.vkCreateRayTracingPipelinesKHR(
-                    context.vkDevice(),
-                    deferredOperation,
-                    0L,
-                    createInfo,
-                    null,
-                    pointer);
             int workerCount = 1;
-            if (result == KHRDeferredHostOperations.VK_OPERATION_DEFERRED_KHR) {
-                int reportedConcurrency =
-                        KHRDeferredHostOperations.vkGetDeferredOperationMaxConcurrencyKHR(
-                                context.vkDevice(), deferredOperation);
-                workerCount = deferredWorkerCount(
-                        reportedConcurrency, Runtime.getRuntime().availableProcessors());
-                workerCount = completeDeferredPipelineCreation(
-                        context, deferredOperation, workerCount);
-            } else if (result
-                    != KHRDeferredHostOperations.VK_OPERATION_NOT_DEFERRED_KHR) {
-                VulkanContext.check(result, "create " + debugName);
+            try (VulkanPipelineCache.Session cache = context.pipelineCacheSession()) {
+                int result = KHRRayTracingPipeline.vkCreateRayTracingPipelinesKHR(
+                        context.vkDevice(),
+                        deferredOperation,
+                        cache.handle(),
+                        createInfo,
+                        null,
+                        pointer);
+                if (result == KHRDeferredHostOperations.VK_OPERATION_DEFERRED_KHR) {
+                    int reportedConcurrency =
+                            KHRDeferredHostOperations.vkGetDeferredOperationMaxConcurrencyKHR(
+                                    context.vkDevice(), deferredOperation);
+                    workerCount = deferredWorkerCount(
+                            reportedConcurrency, Runtime.getRuntime().availableProcessors());
+                    workerCount = completeDeferredPipelineCreation(
+                            context, deferredOperation, workerCount);
+                } else if (result
+                        != KHRDeferredHostOperations.VK_OPERATION_NOT_DEFERRED_KHR) {
+                    VulkanContext.check(result, "create " + debugName);
+                }
             }
             long pipeline = pointer.get(0);
             context.device().instance().debug().setObjectName(

@@ -818,10 +818,7 @@ public final class AtmospherePipeline implements Destroyable {
                         .stage(stage)
                         .layout(pipelineLayout);
                 LongBuffer pointer = stack.mallocLong(1);
-                VulkanContext.check(
-                        VK12.vkCreateComputePipelines(
-                                context.vkDevice(), 0L, createInfo, null, pointer),
-                        "create " + label);
+                context.createComputePipeline(createInfo, pointer, label);
                 long pipeline = pointer.get(0);
                 context.device().instance().debug().setObjectName(
                         context.vkDevice(), VK12.VK_OBJECT_TYPE_PIPELINE, pipeline, label);

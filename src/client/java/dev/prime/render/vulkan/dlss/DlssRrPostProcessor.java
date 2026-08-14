@@ -40,7 +40,8 @@ public final class DlssRrPostProcessor implements VulkanReconstructionProcessor 
     private final DlssRrPreparePass preparePass;
     private final DlssRrNative.Feature feature;
     private final DisplayTransformPass displayTransform;
-    private final DlssRrDebugPass debugPass;
+    private final VulkanImage displayOutput;
+    private DlssRrDebugPass debugPass;
     private final Matrix4f ngxProjection = new Matrix4f();
     private final ReconstructionFrameHistory history =
             new ReconstructionFrameHistory();
@@ -58,7 +59,7 @@ public final class DlssRrPostProcessor implements VulkanReconstructionProcessor 
             DlssRrPreparePass preparePass,
             DlssRrNative.Feature feature,
             DisplayTransformPass displayTransform,
-            DlssRrDebugPass debugPass) {
+            VulkanImage displayOutput) {
         this.context = context;
         this.ngxContext = ngxContext;
         this.quality = quality;
@@ -70,7 +71,7 @@ public final class DlssRrPostProcessor implements VulkanReconstructionProcessor 
         this.preparePass = preparePass;
         this.feature = feature;
         this.displayTransform = displayTransform;
-        this.debugPass = debugPass;
+        this.displayOutput = displayOutput;
     }
 
     public static DlssRrPostProcessor create(
@@ -88,18 +89,12 @@ public final class DlssRrPostProcessor implements VulkanReconstructionProcessor 
         DlssRrPreparePass preparePass = null;
         DlssRrNative.Feature feature = null;
         DisplayTransformPass displayTransform = null;
-        DlssRrDebugPass debugPass = null;
         try {
             targets = DlssRrTargets.create(
                     context, renderWidth, renderHeight, displayWidth, displayHeight);
             preparePass = DlssRrPreparePass.create(context, targets, accumulation, atmosphere);
             displayTransform = DisplayTransformPass.createRealtime(
                     context, targets.rrOutput(), targets, displayOutput);
-            debugPass = DlssRrDebugPass.create(
-                    context,
-                    targets,
-                    displayOutput,
-                    displayTransform.exposureState());
             var encoder = context.commandEncoder();
             VkCommandBuffer commandBuffer = encoder.allocateAndBeginTransientCommandBuffer();
             feature = ngxContext.createFeature(
@@ -125,11 +120,10 @@ public final class DlssRrPostProcessor implements VulkanReconstructionProcessor 
                     preparePass,
                     feature,
                     displayTransform,
-                    debugPass);
+                    displayOutput);
         } catch (RuntimeException exception) {
             RuntimeException failure = ResourceCleanup.run(context::awaitIdle, exception);
             failure = ResourceCleanup.close(feature, failure);
-            failure = ResourceCleanup.destroy(debugPass, failure);
             failure = ResourceCleanup.destroy(displayTransform, failure);
             failure = ResourceCleanup.destroy(preparePass, failure);
             failure = ResourceCleanup.destroy(targets, failure);
@@ -263,7 +257,7 @@ public final class DlssRrPostProcessor implements VulkanReconstructionProcessor 
                 display);
         if (token.debugView != DlssRrDebugView.OFF) {
             allCommandsToCompute(commandBuffer);
-            this.debugPass.record(
+            this.debugPass().record(
                     commandBuffer,
                     token.debugView,
                     token.debugFullscreen,
@@ -297,6 +291,17 @@ public final class DlssRrPostProcessor implements VulkanReconstructionProcessor 
                 VK12.VK_ACCESS_MEMORY_WRITE_BIT,
                 VK12.VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
                 VK12.VK_ACCESS_SHADER_READ_BIT | VK12.VK_ACCESS_SHADER_WRITE_BIT);
+    }
+
+    private DlssRrDebugPass debugPass() {
+        if (this.debugPass == null) {
+            this.debugPass = DlssRrDebugPass.create(
+                    this.context,
+                    this.targets,
+                    this.displayOutput,
+                    this.displayTransform.exposureState());
+        }
+        return this.debugPass;
     }
 
     public void submitted(FrameToken token) {

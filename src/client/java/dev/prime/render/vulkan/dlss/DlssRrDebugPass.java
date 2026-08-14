@@ -127,9 +127,7 @@ final class DlssRrDebugPass implements Destroyable {
                 VkComputePipelineCreateInfo.Buffer info = VkComputePipelineCreateInfo.calloc(1, stack);
                 info.get(0).sType$Default().stage(stage).layout(pipelineLayout);
                 pointer.clear();
-                VulkanContext.check(
-                        VK12.vkCreateComputePipelines(context.vkDevice(), 0L, info, null, pointer),
-                        "create RR debug pipeline");
+                context.createComputePipeline(info, pointer, "RR debug");
                 pipeline = pointer.get(0);
             } finally {
                 VK12.vkDestroyShaderModule(context.vkDevice(), shader, null);

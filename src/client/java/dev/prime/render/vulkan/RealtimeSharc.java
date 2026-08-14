@@ -167,10 +167,7 @@ final class RealtimeSharc implements Destroyable {
                     VkComputePipelineCreateInfo.calloc(1, stack);
             info.get(0).sType$Default().stage(stage).layout(layout);
             LongBuffer pointer = stack.mallocLong(1);
-            VulkanContext.check(
-                    VK12.vkCreateComputePipelines(
-                            context.vkDevice(), 0L, info, null, pointer),
-                    "create " + label);
+            context.createComputePipeline(info, pointer, label);
             return pointer.get(0);
         } finally {
             VK12.vkDestroyShaderModule(context.vkDevice(), shader, null);

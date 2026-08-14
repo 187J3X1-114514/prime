@@ -24,6 +24,7 @@ import org.lwjgl.vulkan.VkImageMemoryBarrier2;
 
 /** Existing REBLUR/SIGMA + FidelityFX FSR 3.1.4 implementation of the shared boundary. */
 public final class NrdFsrPostProcessor implements VulkanReconstructionProcessor {
+    private final VulkanContext context;
     private final ReconstructionQualityMode quality;
     private final int renderWidth;
     private final int renderHeight;
@@ -33,10 +34,12 @@ public final class NrdFsrPostProcessor implements VulkanReconstructionProcessor 
     private final NrdDenoiser denoiser;
     private final NrdFrameHistory nrdHistory = new NrdFrameHistory();
     private final Fsr3Upscaler upscaler;
-    private final NativeDebugPresentPass nrdDebugPresent;
+    private final VulkanImage displayOutput;
+    private NativeDebugPresentPass nrdDebugPresent;
     private boolean destroyed;
 
     private NrdFsrPostProcessor(
+            VulkanContext context,
             ReconstructionQualityMode quality,
             int renderWidth,
             int renderHeight,
@@ -45,7 +48,8 @@ public final class NrdFsrPostProcessor implements VulkanReconstructionProcessor 
             VulkanImage sceneColor,
             NrdDenoiser denoiser,
             Fsr3Upscaler upscaler,
-            NativeDebugPresentPass nrdDebugPresent) {
+            VulkanImage displayOutput) {
+        this.context = context;
         this.quality = quality;
         this.renderWidth = renderWidth;
         this.renderHeight = renderHeight;
@@ -54,7 +58,7 @@ public final class NrdFsrPostProcessor implements VulkanReconstructionProcessor 
         this.sceneColor = sceneColor;
         this.denoiser = denoiser;
         this.upscaler = upscaler;
-        this.nrdDebugPresent = nrdDebugPresent;
+        this.displayOutput = displayOutput;
     }
 
     public static NrdFsrPostProcessor create(
@@ -70,7 +74,6 @@ public final class NrdFsrPostProcessor implements VulkanReconstructionProcessor 
         VulkanImage sceneColor = null;
         NrdDenoiser denoiser = null;
         Fsr3Upscaler upscaler = null;
-        NativeDebugPresentPass nrdDebugPresent = null;
         try {
             sceneColor = context.createImage2D(
                     renderWidth,
@@ -94,13 +97,8 @@ public final class NrdFsrPostProcessor implements VulkanReconstructionProcessor 
                     denoiser.fsrTransparencyCompositionMask(),
                     denoiser.rawFrame(),
                     displayOutput);
-            nrdDebugPresent = NativeDebugPresentPass.create(
-                    context,
-                    displayOutput,
-                    denoiser.validation(),
-                    denoiser.rawNumericalDiagnostic(),
-                    sceneColor);
             return new NrdFsrPostProcessor(
+                    context,
                     quality,
                     renderWidth,
                     renderHeight,
@@ -109,9 +107,8 @@ public final class NrdFsrPostProcessor implements VulkanReconstructionProcessor 
                     sceneColor,
                     denoiser,
                     upscaler,
-                    nrdDebugPresent);
+                    displayOutput);
         } catch (RuntimeException exception) {
-            ResourceCleanup.destroy(nrdDebugPresent, exception);
             ResourceCleanup.destroy(upscaler, exception);
             ResourceCleanup.destroy(denoiser, exception);
             ResourceCleanup.destroy(sceneColor, exception);
@@ -235,7 +232,7 @@ public final class NrdFsrPostProcessor implements VulkanReconstructionProcessor 
         NrdDiagnostics.Mode diagnostic =
                 token.nrdPlan.plan().input().diagnostic();
         if (diagnostic != NrdDiagnostics.Mode.OFF) {
-            this.nrdDebugPresent.record(
+            this.nrdDebugPresent().record(
                     commandBuffer,
                     diagnostic.presentSource(),
                     diagnostic.presentation());
@@ -303,6 +300,18 @@ public final class NrdFsrPostProcessor implements VulkanReconstructionProcessor 
     /** Keeps scene color in GENERAL before NRD's composite writes it. */
     public VulkanImage sceneColor() {
         return this.sceneColor;
+    }
+
+    private NativeDebugPresentPass nrdDebugPresent() {
+        if (this.nrdDebugPresent == null) {
+            this.nrdDebugPresent = NativeDebugPresentPass.create(
+                    this.context,
+                    this.displayOutput,
+                    this.denoiser.validation(),
+                    this.denoiser.rawNumericalDiagnostic(),
+                    this.sceneColor);
+        }
+        return this.nrdDebugPresent;
     }
 
     @Override

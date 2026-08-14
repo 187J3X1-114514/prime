@@ -19,6 +19,7 @@ import dev.prime.render.vulkan.StagingArena;
 import dev.prime.render.vulkan.SunShadowPipeline;
 import dev.prime.render.vulkan.TraceBackend;
 import dev.prime.render.vulkan.VulkanContext;
+import dev.prime.render.vulkan.VulkanShaderModules;
 import dev.prime.render.vulkan.dlss.DlssRrBootstrap;
 import dev.prime.render.vulkan.dlss.DlssRrNative;
 import java.util.ArrayList;
@@ -55,6 +56,7 @@ public final class VulkanRenderer implements AutoCloseable {
     // Resource-reload apply can publish this request off the render thread; all GPU mutation is
     // still consumed and owned by beginFrame on the render thread.
     private volatile boolean shaderReloadRequested;
+    private String shaderFingerprint;
     private SessionControls frameControls = SessionControls.defaults();
     private List<String> debugLines = List.of();
     private RendererModeLifecycle modeLifecycle = RendererModeLifecycle.initial();
@@ -89,6 +91,7 @@ public final class VulkanRenderer implements AutoCloseable {
             this.atmosphere = newAtmosphere;
             this.terrain = newTerrain;
             this.labPbrAtlas = newLabPbrAtlas;
+            this.shaderFingerprint = VulkanShaderModules.fingerprint();
         } catch (RuntimeException exception) {
             ResourceCleanup.destroy(newOfflineRenderer, exception);
             ResourceCleanup.destroy(newRealtimeRenderer, exception);
@@ -715,10 +718,16 @@ public final class VulkanRenderer implements AutoCloseable {
             return;
         }
         this.shaderReloadRequested = false;
+        String replacementFingerprint = VulkanShaderModules.fingerprint();
+        if (replacementFingerprint.equals(this.shaderFingerprint)) {
+            PrimeInfo.LOGGER.debug("Prime shader resources are unchanged; skipped pipeline reload");
+            return;
+        }
         boolean offlineActive = this.screenshotActive();
         AtmospherePipeline replacementAtmosphere = null;
         SunShadowPipeline replacementSunShadow = null;
         try {
+            this.context.invalidateSharedPrograms();
             replacementAtmosphere = new AtmospherePipeline(this.context);
             replacementSunShadow = this.traceBackend.prepareSunShadowReload();
             if (offlineActive) {
@@ -738,6 +747,7 @@ public final class VulkanRenderer implements AutoCloseable {
                 this.traceBackend.replaceSunShadowPipeline(replacementSunShadow);
         AtmospherePipeline previousAtmosphere = this.atmosphere;
         this.atmosphere = replacementAtmosphere;
+        this.shaderFingerprint = replacementFingerprint;
         RuntimeException retirementFailure = ResourceCleanup.run(
                 () -> this.context.defer(previousSunShadow), null);
         retirementFailure = ResourceCleanup.run(

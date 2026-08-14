@@ -139,10 +139,7 @@ final class DlssRrPreparePass implements Destroyable {
                 VkComputePipelineCreateInfo.Buffer createInfo = VkComputePipelineCreateInfo.calloc(1, stack);
                 createInfo.get(0).sType$Default().stage(stage).layout(pipelineLayout);
                 pointer.clear();
-                VulkanContext.check(
-                        VK12.vkCreateComputePipelines(
-                                context.vkDevice(), 0L, createInfo, null, pointer),
-                        "create RR prepare pipeline");
+                context.createComputePipeline(createInfo, pointer, "RR prepare");
                 pipeline = pointer.get(0);
             } finally {
                 VK12.vkDestroyShaderModule(context.vkDevice(), shader, null);

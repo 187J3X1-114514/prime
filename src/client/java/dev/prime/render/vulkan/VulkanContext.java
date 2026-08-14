@@ -3,6 +3,8 @@ package dev.prime.render.vulkan;
 import com.mojang.blaze3d.vulkan.Destroyable;
 import com.mojang.blaze3d.vulkan.VulkanCommandEncoder;
 import com.mojang.blaze3d.vulkan.VulkanDevice;
+import dev.prime.infrastructure.PrimeInfo;
+import dev.prime.render.vulkan.VulkanSharedPrograms.SharedComputeProgram;
 import java.nio.LongBuffer;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -19,6 +21,7 @@ import org.lwjgl.util.vma.VmaVulkanFunctions;
 import org.lwjgl.vulkan.VK12;
 import org.lwjgl.vulkan.VkBufferCreateInfo;
 import org.lwjgl.vulkan.VkBufferDeviceAddressInfo;
+import org.lwjgl.vulkan.VkComputePipelineCreateInfo;
 import org.lwjgl.vulkan.VkDevice;
 import org.lwjgl.vulkan.VkImageCreateInfo;
 import org.lwjgl.vulkan.VkImageViewCreateInfo;
@@ -30,6 +33,8 @@ public final class VulkanContext implements AutoCloseable {
     private final long allocator;
     private final long uniformBufferOffsetAlignment;
     private final long maxStorageBufferRange;
+    private final VulkanPipelineCache pipelineCache;
+    private final VulkanSharedPrograms sharedPrograms;
     private final Set<Destroyable> deferred = Collections.newSetFromMap(new IdentityHashMap<>());
     private boolean closed;
 
@@ -50,12 +55,19 @@ public final class VulkanContext implements AutoCloseable {
             check(Vma.vmaCreateAllocator(createInfo, pointer), "create ray tracing VMA allocator");
             this.allocator = pointer.get(0);
         }
-        try (MemoryStack stack = MemoryStack.stackPush()) {
-            VkPhysicalDeviceProperties properties = VkPhysicalDeviceProperties.calloc(stack);
-            VK12.vkGetPhysicalDeviceProperties(device.vkDevice().getPhysicalDevice(), properties);
-            this.uniformBufferOffsetAlignment = properties.limits().minUniformBufferOffsetAlignment();
-            this.maxStorageBufferRange =
-                    Integer.toUnsignedLong(properties.limits().maxStorageBufferRange());
+        try {
+            try (MemoryStack stack = MemoryStack.stackPush()) {
+                VkPhysicalDeviceProperties properties = VkPhysicalDeviceProperties.calloc(stack);
+                VK12.vkGetPhysicalDeviceProperties(device.vkDevice().getPhysicalDevice(), properties);
+                this.uniformBufferOffsetAlignment = properties.limits().minUniformBufferOffsetAlignment();
+                this.maxStorageBufferRange =
+                        Integer.toUnsignedLong(properties.limits().maxStorageBufferRange());
+                this.pipelineCache = VulkanPipelineCache.create(device.vkDevice(), properties);
+            }
+            this.sharedPrograms = new VulkanSharedPrograms(this);
+        } catch (RuntimeException exception) {
+            Vma.vmaDestroyAllocator(this.allocator);
+            throw exception;
         }
     }
 
@@ -82,6 +94,46 @@ public final class VulkanContext implements AutoCloseable {
 
     public long maxStorageBufferRange() {
         return this.maxStorageBufferRange;
+    }
+
+    VulkanPipelineCache.Session pipelineCacheSession() {
+        requireOpen();
+        return this.pipelineCache.openSession();
+    }
+
+    SharedComputeProgram acquireDisplayTransformProgram() {
+        requireOpen();
+        return this.sharedPrograms.acquireDisplayTransform();
+    }
+
+    SharedComputeProgram acquireAutoExposureProgram() {
+        requireOpen();
+        return this.sharedPrograms.acquireAutoExposure();
+    }
+
+    public void invalidateSharedPrograms() {
+        requireOpen();
+        this.sharedPrograms.invalidate();
+    }
+
+    public void createComputePipeline(
+            VkComputePipelineCreateInfo.Buffer createInfo,
+            LongBuffer pipelinePointer,
+            String label) {
+        requireOpen();
+        long started = System.nanoTime();
+        try (VulkanPipelineCache.Session cache = this.pipelineCache.openSession()) {
+            check(
+                    VK12.vkCreateComputePipelines(
+                            this.device.vkDevice(),
+                            cache.handle(),
+                            createInfo,
+                            null,
+                            pipelinePointer),
+                    "create " + label);
+        }
+        long elapsed = System.nanoTime() - started;
+        PrimeInfo.LOGGER.info("Created {} pipeline in {} us", label, elapsed / 1_000L);
     }
 
     public VulkanBuffer createBuffer(long size, int usage, boolean hostVisible, String label) {
@@ -447,6 +499,24 @@ public final class VulkanContext implements AutoCloseable {
             this.drainDeferredAfterIdle();
         } catch (RuntimeException exception) {
             failure = exception;
+        }
+        try {
+            this.sharedPrograms.close();
+        } catch (RuntimeException exception) {
+            if (failure == null) {
+                failure = exception;
+            } else {
+                failure.addSuppressed(exception);
+            }
+        }
+        try {
+            this.pipelineCache.close();
+        } catch (RuntimeException exception) {
+            if (failure == null) {
+                failure = exception;
+            } else {
+                failure.addSuppressed(exception);
+            }
         }
         Vma.vmaDestroyAllocator(this.allocator);
         this.closed = true;

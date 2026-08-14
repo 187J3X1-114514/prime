@@ -60,7 +60,7 @@ final class PrimeProductionMathGpuTest {
 
     @Test
     void integratorAndLightTransportMathKeepsItsNumericalContracts() throws IOException {
-        int kinds = 15;
+        int kinds = 16;
         int inputWords = 6;
         ShaderPropertyBatch.assertProperties(
                 runner,

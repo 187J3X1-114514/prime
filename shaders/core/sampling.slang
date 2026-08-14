@@ -9,6 +9,7 @@ public static const uint PRIME_SAMPLE_EFFECT_DIRECT_SUN = 2;
 public static const uint PRIME_SAMPLE_EFFECT_SCATTER_BSDF = 3;
 public static const uint PRIME_SAMPLE_EFFECT_RUSSIAN_ROULETTE = 4;
 public static const uint PRIME_SAMPLE_EFFECT_DIRECT_AREA_LIGHT = 5;
+public static const uint PRIME_SAMPLE_EFFECT_DIRECT_LIGHT_FAMILY = 6;
 public static const uint PRIME_SAMPLE_DIMENSION_PRIMARY = 0;
 public static const uint PRIME_SAMPLE_DIMENSION_SECONDARY = 1;
 

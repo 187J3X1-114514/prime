@@ -37,6 +37,14 @@ struct PrimeWavefrontContinuation {
     bool active;
 };
 
+bool primeSecondarySamplesAreaLight(PrimePreparedSampleBase preparedSample) {
+    return primeSobolSample1D(
+            preparedSample,
+            PRIME_SAMPLE_EFFECT_DIRECT_LIGHT_FAMILY,
+            PRIME_SAMPLE_DIMENSION_PRIMARY)
+            < PRIME_SECONDARY_LIGHT_FAMILY_PROBABILITY;
+}
+
 struct PrimeDeferredSecondarySunNee : IPrimeSecondarySunNee {
     float3 estimate(
             inout PrimeIntegratorContext context,
@@ -47,6 +55,9 @@ struct PrimeDeferredSecondarySunNee : IPrimeSecondarySunNee {
             PrimeRcVolumeStack volumeStack,
             float3 pathThroughput,
             uint pathIndex) {
+        if (primeSecondarySamplesAreaLight(preparedSample)) {
+            return float3(0.0);
+        }
         PrimePreparedSunShadow prepared = primePrepareDirectSunShadow(
                 context,
                 integrator,
@@ -56,7 +67,8 @@ struct PrimeDeferredSecondarySunNee : IPrimeSecondarySunNee {
                         preparedSample,
                         PRIME_SAMPLE_EFFECT_DIRECT_SUN,
                         PRIME_SAMPLE_DIMENSION_PRIMARY),
-                volumeStack);
+                volumeStack,
+                PRIME_SECONDARY_LIGHT_FAMILY_PROBABILITY);
         float3 contribution = pathThroughput * prepared.contribution;
         if (prepared.active && any(contribution > float3(0.0))) {
             uint control = asuint(primeWavefrontPaths[pathIndex]
@@ -757,6 +769,11 @@ void primeWavefrontArea<IndirectReuse>(
 
     uint2 pixel = primeWavefrontPixel(recordIndex);
     PathState path = primeWavefrontPath(pixel, record);
+    PrimePreparedSampleBase preparedSample =
+            primePrepareSampleBase(primeMakeSampleBase(path, path.bounce + 1u));
+    if (!primeSecondarySamplesAreaLight(preparedSample)) {
+        return;
+    }
     PrimeRcVolumeStack volumeStack = primeWavefrontVolumeStack(record);
     if (!primeApplySegmentMedium(context, path, surface, volumeStack)) {
         return;
@@ -782,8 +799,6 @@ void primeWavefrontArea<IndirectReuse>(
         }
     }
 
-    PrimePreparedSampleBase preparedSample =
-            primePrepareSampleBase(primeMakeSampleBase(path, path.bounce + 1u));
     primeSetNumericalContext(context.diagnostics, PRIME_NUMERICAL_STAGE_DIRECT_LIGHT, path.bounce);
     float3 contribution = path.throughput * primeEstimateDirectAreaLight(context,
             surface,
@@ -796,7 +811,8 @@ void primeWavefrontArea<IndirectReuse>(
                     preparedSample,
                     PRIME_SAMPLE_EFFECT_DIRECT_AREA_LIGHT,
                     PRIME_SAMPLE_DIMENSION_SECONDARY),
-            volumeStack);
+            volumeStack,
+            PRIME_SECONDARY_LIGHT_FAMILY_PROBABILITY);
     if (any(contribution > float3(0.0))) {
         primeAccumulateDeferredDirectLight(
                 context, pixel, control, contribution);

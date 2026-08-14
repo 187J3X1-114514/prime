@@ -79,6 +79,8 @@ static const uint PRIME_WAVEFRONT_BOUNCE_SHIFT = 0u;
 static const uint PRIME_WAVEFRONT_ETA_SCALE_SHIFT = 8u;
 static const uint PRIME_WAVEFRONT_ETA_SCALE_MASK = 0xffffu;
 static const uint PRIME_WAVEFRONT_PATH_FLAGS_SHIFT = 24u;
+static const uint PRIME_WAVEFRONT_PATH_FLAGS_MASK =
+        PRIME_PATH_PREVIOUS_DISCRETE | PRIME_PATH_PREVIOUS_MIXED_LIGHT_NEE;
 static const uint PRIME_WAVEFRONT_PRIMARY_BOUNCE_SHIFT = 8u;
 static const uint PRIME_WAVEFRONT_MEDIUM_COUNT_SHIFT = 16u;
 // Bits 18..31 are the complete current material-flag domain. Extending material flags beyond
@@ -425,7 +427,7 @@ uint primePackWavefrontPathControl(PathState path) {
             | ((primePackWavefrontEtaScale(path.etaScale)
                     & PRIME_WAVEFRONT_ETA_SCALE_MASK)
                     << PRIME_WAVEFRONT_ETA_SCALE_SHIFT)
-            | ((path.flags & PRIME_PATH_PREVIOUS_DISCRETE)
+            | ((path.flags & PRIME_WAVEFRONT_PATH_FLAGS_MASK)
                     << PRIME_WAVEFRONT_PATH_FLAGS_SHIFT);
 }
 
@@ -717,7 +719,7 @@ PathState primeWavefrontPath(
             : 0u;
     path.rayDirection = record.rayDirectionAndDenoiserControl.xyz;
     path.flags = (pathControl >> PRIME_WAVEFRONT_PATH_FLAGS_SHIFT)
-            & PRIME_PATH_PREVIOUS_DISCRETE;
+            & PRIME_WAVEFRONT_PATH_FLAGS_MASK;
     path.throughput = record.throughputAndNumericalFlags.xyz;
     path.previousBsdfPdf = record.physicalOriginAndPreviousBsdfPdf.w;
     path.etaScale = primeUnpackWavefrontEtaScale(

@@ -4,6 +4,7 @@ import "core/color_space.slang";
 import "core/light_tree_math.slang";
 import "core/transparent_checkerboard.slang";
 import "core/transport_math.slang";
+import "integrator/path_contract.slang";
 import "material/transparent_material.slang";
 import "realtime/wavefront_medium.slang";
 
@@ -65,6 +66,25 @@ void primeCheckMis(
         result.mask |= PRIME_TEST_FAILURE_IDENTITY;
     }
     result.first = float4(first, second, scaled, overPdf);
+}
+
+void primeCheckLightFamilyPdf(
+        inout PrimeTransportResult result, float conditionalPdf)
+{
+    float familyPdf = primeLightFamilyPdfValue(
+            conditionalPdf, PRIME_SECONDARY_LIGHT_FAMILY_PROBABILITY);
+    float reconstructed = familyPdf / PRIME_SECONDARY_LIGHT_FAMILY_PROBABILITY;
+    primeTransportClassify(result.mask, float3(familyPdf, reconstructed, 0.0));
+    if (familyPdf < 0.0
+            || !primeTestClose(
+                    familyPdf,
+                    conditionalPdf * PRIME_SECONDARY_LIGHT_FAMILY_PROBABILITY,
+                    0.0,
+                    0.0)
+            || !primeTestClose(reconstructed, conditionalPdf, 0.0, 2.0e-6)) {
+        result.mask |= PRIME_TEST_FAILURE_PDF;
+    }
+    result.first = float4(familyPdf, reconstructed, conditionalPdf, 0.0);
 }
 
 void primeCheckAreaHitMis(
@@ -672,6 +692,8 @@ void main(uint3 dispatchThreadId : SV_DispatchThreadID)
                 uint2(caseIndex, caseIndex * 0x9e3779b9),
                 caseIndex * 0x85ebca6b,
                 first.z);
+    } else if (kind == 15) {
+        primeCheckLightFamilyPdf(result, abs(first.x));
     } else {
         result.mask |= PRIME_TEST_FAILURE_EVENT;
     }

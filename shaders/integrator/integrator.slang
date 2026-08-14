@@ -724,7 +724,8 @@ float3 primeEstimateDirectAreaLight(
         float3 viewDirection,
         float2 treeSample,
         float2 positionSample,
-        PrimeRcVolumeStack volumeStack) {
+        PrimeRcVolumeStack volumeStack,
+        float lightFamilyProbability) {
     float3 shadingNormal = primeSurfaceShadingNormal(surface, viewDirection);
     AreaLightSample area = primeSampleAreaLight(
             context.diagnostics,
@@ -732,6 +733,8 @@ float3 primeEstimateDirectAreaLight(
             primeAreaLightReceiverNormal(surface, viewDirection),
             treeSample,
             positionSample);
+    area.light.pdf = primeLightFamilyPdfValue(
+            area.light.pdf, lightFamilyProbability);
     if (!primeDirectSampleEligible(surface, shadingNormal, area.light)) {
         return float3(0.0);
     }
@@ -800,9 +803,12 @@ PrimePreparedSunShadow primePrepareDirectSunShadow(
         SurfaceInteraction surface,
         float3 viewDirection,
         float2 sampleValue,
-        PrimeRcVolumeStack volumeStack) {
+        PrimeRcVolumeStack volumeStack,
+        float lightFamilyProbability) {
     PrimePreparedSunShadow result;
     result.light = primeSampleSun(integrator, surface.position, sampleValue);
+    result.light.pdf = primeLightFamilyPdfValue(
+            result.light.pdf, lightFamilyProbability);
     result.contribution = float3(0.0);
     result.active = false;
     if (!primeAtmosphereDistantDirectionVisible(result.light.direction)) {
@@ -916,7 +922,8 @@ struct PrimeImmediateSecondaryAreaNee : IPrimeSecondaryAreaNee {
                         preparedSample,
                         PRIME_SAMPLE_EFFECT_DIRECT_AREA_LIGHT,
                         PRIME_SAMPLE_DIMENSION_SECONDARY),
-                volumeStack);
+                volumeStack,
+                1.0);
     }
 }
 
@@ -1011,6 +1018,10 @@ float3 primeEvaluateEnvironmentContribution(
             integrator, path.physicalOrigin, path.rayDirection);
     LightEvaluation sun = primeEvaluateSun(
             integrator, path.physicalOrigin, path.rayDirection);
+    if ((path.flags & PRIME_PATH_PREVIOUS_MIXED_LIGHT_NEE) != 0u) {
+        sun.pdf = primeLightFamilyPdfValue(
+                sun.pdf, PRIME_SECONDARY_LIGHT_FAMILY_PROBABILITY);
+    }
     float sunWeight = primePreviousCannotUseMis(path)
             ? 1.0
             : primePowerHeuristic(
@@ -1044,6 +1055,10 @@ float3 primeEvaluateLocalHitEmission(
             path.rayDirection,
             path.previousLightNormal,
             evaluateAreaPdf);
+    if ((path.flags & PRIME_PATH_PREVIOUS_MIXED_LIGHT_NEE) != 0u) {
+        hitAreaLight.pdf = primeLightFamilyPdfValue(
+                hitAreaLight.pdf, PRIME_SECONDARY_LIGHT_FAMILY_PROBABILITY);
+    }
     float hitAreaWeight = primeAreaHitMisWeightValue(
             previousUsedAreaNee,
             !evaluateAreaPdf,
@@ -1688,6 +1703,9 @@ bool primeIntegrateTransparentWavefrontSurface<SunNee, AreaNee>(
             surfaceLinearRoughness)) {
         return false;
     }
+    if (supportsSolidAngle && !primarySurfaceReplacement) {
+        path.flags |= PRIME_PATH_PREVIOUS_MIXED_LIGHT_NEE;
+    }
     path.bounce++;
     return true;
 }
@@ -1940,6 +1958,10 @@ bool primeIntegrateWavefrontSurface<SunNee, AreaNee, IndirectReuse>(
                     discreteOnlyInterface,
                     surfaceLinearRoughness)) {
         return false;
+    }
+    if (supportsSolidAngle && denoiserState.hasPrimarySurface
+            && path.bounce != denoiserState.primaryBounce) {
+        path.flags |= PRIME_PATH_PREVIOUS_MIXED_LIGHT_NEE;
     }
     path.bounce++;
     return true;

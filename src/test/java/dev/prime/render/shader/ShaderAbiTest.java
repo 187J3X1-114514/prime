@@ -23,7 +23,7 @@ final class ShaderAbiTest {
         assertEquals(96, ShaderAbi.SURFACE_INTERACTION_SIZE);
         assertEquals(76, ShaderAbi.SURFACE_MOTION_ZFLAGS_OFFSET);
         assertEquals(128, ShaderAbi.PUSH_CONSTANT_SIZE);
-        assertEquals(96, ShaderAbi.SHARC_FRAME_CONSTANT_SIZE);
+        assertEquals(112, ShaderAbi.SHARC_FRAME_CONSTANT_SIZE);
         assertEquals(0, ShaderAbi.DESCRIPTOR_TLAS);
         assertEquals(2, ShaderAbi.DESCRIPTOR_BLOCK_ATLAS);
         assertEquals(3, ShaderAbi.DESCRIPTOR_STABLE_RADIANCE);
@@ -219,6 +219,9 @@ final class ShaderAbiTest {
         assertEquals(48, ShaderAbi.SHARC_FRAME_PREVIOUS_CAMERA_POSITION_OFFSET);
         assertEquals(72, ShaderAbi.SHARC_FRAME_CAPACITY_OFFSET);
         assertEquals(92, ShaderAbi.SHARC_FRAME_FLAGS_OFFSET);
+        assertEquals(96, ShaderAbi.SHARC_FRAME_TRAINING_EVENTS_ADDRESS_OFFSET);
+        assertEquals(104, ShaderAbi.SHARC_FRAME_TRAINING_WIDTH_OFFSET);
+        assertEquals(108, ShaderAbi.SHARC_FRAME_TRAINING_HEIGHT_OFFSET);
         assertEquals(0, ShaderAbi.TRACE_PAYLOAD_GEOMETRIC_NORMAL_OFFSET);
         assertEquals(28, ShaderAbi.TRACE_PAYLOAD_MATERIAL_CONTROL_OFFSET);
         assertEquals(32, ShaderAbi.TRACE_PAYLOAD_SECTION_INDEX_OFFSET);

@@ -37,6 +37,30 @@ struct PrimeWavefrontContinuation {
     bool active;
 };
 
+interface IPrimeWavefrontSharcTraining {
+    void recordHit(
+            inout PrimeIntegratorContext context,
+            PathState path,
+            SurfaceInteraction surface,
+            float3 direct);
+    void recordMiss(
+            inout PrimeIntegratorContext context,
+            PathState path,
+            IntegratorRecord integrator);
+}
+
+struct PrimeNoWavefrontSharcTraining : IPrimeWavefrontSharcTraining {
+    void recordHit(
+            inout PrimeIntegratorContext context,
+            PathState path,
+            SurfaceInteraction surface,
+            float3 direct) {}
+    void recordMiss(
+            inout PrimeIntegratorContext context,
+            PathState path,
+            IntegratorRecord integrator) {}
+};
+
 bool primeSecondarySamplesAreaLight(PrimePreparedSampleBase preparedSample) {
     return primeSobolSample1D(
             preparedSample,
@@ -553,12 +577,14 @@ void primeWavefrontPrimary(
             queueContinuation);
 }
 
-void primeWavefrontShade<IndirectReuse>(
+void primeWavefrontShade<IndirectReuse, SharcTraining>(
         IndirectReuse indirectReuse,
+        SharcTraining sharcTraining,
         inout PrimeIntegratorContext context,
         uint launchIndex,
         uint sourceQueue)
     where IndirectReuse : IPrimeIndirectReuse
+    where SharcTraining : IPrimeWavefrontSharcTraining
 {
     uint recordIndex =
             primeWavefrontQueuedPath(
@@ -578,6 +604,10 @@ void primeWavefrontShade<IndirectReuse>(
     integrator.environmentRadiance = float4(0.0);
     uint maximumBounces = primeMaximumBounces();
     bool queueContinuation;
+
+    if (surface.hitKind == PRIME_HIT_NONE) {
+        sharcTraining.recordMiss(context, path, integrator);
+    }
 
     if (primeSurfaceEmitterIndex(surface) != PRIME_NO_LIGHT_INDEX
             && !primePreviousCannotUseMis(path)) {
@@ -724,11 +754,13 @@ void primeWavefrontTransparentShade(
             targetQueue, recordIndex, continuation);
 }
 
-void primeWavefrontLight<IndirectReuse>(
+void primeWavefrontLight<IndirectReuse, SharcTraining>(
         IndirectReuse indirectReuse,
+        SharcTraining sharcTraining,
         inout PrimeIntegratorContext context,
         uint launchIndex)
     where IndirectReuse : IPrimeIndirectReuse
+    where SharcTraining : IPrimeWavefrontSharcTraining
 {
     uint recordIndex =
             primeWavefrontQueuedPath(
@@ -755,6 +787,10 @@ void primeWavefrontLight<IndirectReuse>(
     PrimeClosureTraits closureTraits = primeSurfaceClosureTraits(
             surface, viewDirection, volumeStack);
     if (!primeClosureSupports(closureTraits, PRIME_MEASURE_SOLID_ANGLE)) {
+        if (!primeWavefrontTransparentBranch(control)) {
+            sharcTraining.recordHit(
+                    context, path, surface, float3(0.0));
+        }
         return;
     }
     if (primeWavefrontTransparentBranch(control)) {
@@ -805,6 +841,9 @@ void primeWavefrontLight<IndirectReuse>(
                         PRIME_SAMPLE_DIMENSION_PRIMARY),
                 volumeStack,
                 PRIME_SECONDARY_LIGHT_FAMILY_PROBABILITY);
+    }
+    if (!primeWavefrontTransparentBranch(control)) {
+        sharcTraining.recordHit(context, path, surface, direct);
     }
     float3 contribution = path.throughput * direct;
     if (any(contribution > float3(0.0))) {

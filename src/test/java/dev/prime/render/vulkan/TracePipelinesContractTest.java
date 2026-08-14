@@ -139,7 +139,8 @@ final class TracePipelinesContractTest {
             assertTrue(query.contains(ShaderAbi.DESCRIPTOR_WAVEFRONT_PATHS));
             assertTrue(query.contains(ShaderAbi.DESCRIPTOR_WAVEFRONT_QUEUE));
         }
-        for (String shader : List.of("sharc_update.rgen.spv", "sharc_resolve.comp.spv")) {
+        for (String shader : List.of(
+                "sharc_integrated_update.comp.spv", "sharc_resolve.comp.spv")) {
             Set<Integer> bindings = descriptorBindings(List.of(shader), 1);
             assertTrue(bindings.contains(ShaderAbi.DESCRIPTOR_SHARC_FRAME));
             assertFalse(bindings.contains(ShaderAbi.DESCRIPTOR_WAVEFRONT_PATHS));

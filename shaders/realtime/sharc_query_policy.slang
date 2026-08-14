@@ -6,6 +6,7 @@
 #define SHARC_UPDATE 0
 #define SHARC_QUERY 1
 #include "lighting/sharc.slang"
+#include "lighting/sharc_training_events.slang"
 
 struct PrimeSharcIndirectReuse : IPrimeIndirectReuse {
     PrimeIndirectReuseResult query(
@@ -16,6 +17,10 @@ struct PrimeSharcIndirectReuse : IPrimeIndirectReuse {
         PrimeIndirectReuseResult result;
         result.contribution = float3(0.0);
         result.hit = false;
+        // Carrier paths provide the uncached target signal and must not train on their own cache.
+        if (primeSharcTrainingCarrier(path)) {
+            return result;
+        }
         bool diagnosticSample = primeSharcDiagnosticSample(path);
         primeRecordSharcDiagnostic(
                 diagnosticSample, PRIME_SHARC_DIAGNOSTIC_QUERY);

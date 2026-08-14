@@ -138,24 +138,31 @@ final class RealtimeSharcDiagnostics implements Destroyable {
                 : this.counters.deviceAddress();
     }
 
-    void recordUpdateStart(VkCommandBuffer commandBuffer, Capture capture) {
+    void recordQueryStart(VkCommandBuffer commandBuffer, Capture capture) {
         if (capture != null && capture.sharcEnabled) {
             this.writeTimestamp(
                     commandBuffer, capture, 0, VK10.VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT);
         }
     }
 
-    void recordUpdateEnd(VkCommandBuffer commandBuffer, Capture capture) {
+    void recordUpdateStart(VkCommandBuffer commandBuffer, Capture capture) {
         if (capture != null && capture.sharcEnabled) {
             this.writeTimestamp(
                     commandBuffer, capture, 1, VK10.VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT);
         }
     }
 
-    void recordResolveEnd(VkCommandBuffer commandBuffer, Capture capture) {
+    void recordUpdateEnd(VkCommandBuffer commandBuffer, Capture capture) {
         if (capture != null && capture.sharcEnabled) {
             this.writeTimestamp(
                     commandBuffer, capture, 2, VK10.VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT);
+        }
+    }
+
+    void recordResolveEnd(VkCommandBuffer commandBuffer, Capture capture) {
+        if (capture != null && capture.sharcEnabled) {
+            this.writeTimestamp(
+                    commandBuffer, capture, 3, VK10.VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT);
         }
     }
 
@@ -171,8 +178,10 @@ final class RealtimeSharcDiagnostics implements Destroyable {
         if (capture == null) {
             return;
         }
-        this.writeTimestamp(
-                commandBuffer, capture, 3, VK10.VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT);
+        if (!capture.sharcEnabled) {
+            this.writeTimestamp(
+                    commandBuffer, capture, 3, VK10.VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT);
+        }
         if (capture.sharcEnabled) {
             VulkanSync.memoryBarrier(
                     commandBuffer,
@@ -252,9 +261,9 @@ final class RealtimeSharcDiagnostics implements Destroyable {
                     .order(ByteOrder.nativeOrder());
             if (capture.sharcEnabled) {
                 if (this.timestampsSupported) {
-                    double update = milliseconds(data.getLong(0), data.getLong(8));
-                    double resolve = milliseconds(data.getLong(8), data.getLong(16));
-                    double query = milliseconds(data.getLong(16), data.getLong(24));
+                    double query = milliseconds(data.getLong(0), data.getLong(8));
+                    double update = milliseconds(data.getLong(8), data.getLong(16));
+                    double resolve = milliseconds(data.getLong(16), data.getLong(24));
                     this.updateMilliseconds = smooth(
                             this.updateMilliseconds, update, this.captureCount);
                     this.resolveMilliseconds = smooth(

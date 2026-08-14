@@ -110,7 +110,7 @@ abstract class GenerateShaderAbi extends DefaultTask {
 				|| sectionLightHeader.size != 48
 				|| integrator.size != 32 || pathState.size != 96 || tracePayload.size != 80
 				|| surfaceInteraction.size != 96 || push.size != 128
-				|| nrdMotionPush.size != 208 || sharcFrame.size != 96
+				|| nrdMotionPush.size != 208 || sharcFrame.size != 112
 				|| schema.sceneTextureCount != 64) {
 			throw new GradleException(
 					'Prime shader ABI sizes or scene texture count changed without a coordinated migration')

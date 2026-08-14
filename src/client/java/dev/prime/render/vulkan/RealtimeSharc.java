@@ -25,22 +25,28 @@ final class RealtimeSharc implements Destroyable {
     static final long ACCUMULATION_BYTES = (long) CAPACITY * 32L;
     static final long RESOLVED_BYTES = (long) CAPACITY * 24L;
     static final long CACHE_BYTES = HASH_BYTES + ACCUMULATION_BYTES + RESOLVED_BYTES;
+    static final int TRAINING_MAX_EVENTS = 4;
+    static final int TRAINING_EVENT_BYTES = 80;
     private static final int ACCUMULATION_FRAMES = 64;
     private static final int STALE_FRAMES = 128;
     private static final float LOGARITHM_BASE = 2.0F;
     private static final float SCENE_SCALE = 50.0F;
+    private static final String INTEGRATED_UPDATE_SHADER =
+            "/prime/shaders/sharc_integrated_update.comp.spv";
     private static final String RESOLVE_SHADER = "/prime/shaders/sharc_resolve.comp.spv";
 
     private final VulkanContext context;
-    private final long rayTracingPipelineLayout;
-    private final TraceProgram updateProgram;
     private final TraceProgram queryProgram;
     private final long resolvePipelineLayout;
+    private final long integratedUpdatePipeline;
     private final long resolvePipeline;
     private final VulkanBuffer hashEntries;
     private final VulkanBuffer accumulation;
     private final VulkanBuffer resolved;
     private final VulkanBuffer frameConstants;
+    private VulkanBuffer trainingEvents;
+    private int trainingWidth;
+    private int trainingHeight;
     private Accepted accepted;
     private boolean destroyed;
 
@@ -50,14 +56,13 @@ final class RealtimeSharc implements Destroyable {
             long sharedSetLayout,
             long integratorSetLayout) {
         this.context = Objects.requireNonNull(context, "context");
-        this.rayTracingPipelineLayout = rayTracingPipelineLayout;
         VulkanBuffer hash = null;
         VulkanBuffer accumulationBuffer = null;
         VulkanBuffer resolvedBuffer = null;
         VulkanBuffer constants = null;
-        TraceProgram update = null;
         TraceProgram query = null;
         long computeLayout = 0L;
+        long integratedUpdate = 0L;
         long computePipeline = 0L;
         try {
             hash = cacheBuffer(HASH_BYTES, "Prime SHARC hash entries");
@@ -71,14 +76,6 @@ final class RealtimeSharc implements Destroyable {
                     false,
                     "Prime SHARC frame constants");
             String suffix = context.capabilities().wavefrontShaderSuffix();
-            update = TraceProgram.create(
-                    context,
-                    rayTracingPipelineLayout,
-                    new String[] {"/prime/shaders/sharc_update.rgen.spv"},
-                    new int[] {0},
-                    new int[] {0},
-                    "Prime SHARC update pipeline",
-                    "Prime SHARC update shader binding table");
             String prefix = "/prime/shaders/realtime_wavefront_";
             query = TraceProgram.create(
                     context,
@@ -110,51 +107,73 @@ final class RealtimeSharc implements Destroyable {
                                                 sharedSetLayout, integratorSetLayout)),
                                 null,
                                 pointer),
-                        "create Prime SHARC resolve pipeline layout");
+                        "create Prime SHARC compute pipeline layout");
                 computeLayout = pointer.get(0);
-                long shader = VulkanShaderModules.create(context, stack, RESOLVE_SHADER);
-                try {
-                    VkPipelineShaderStageCreateInfo stage =
-                            VkPipelineShaderStageCreateInfo.calloc(stack)
-                                    .sType$Default()
-                                    .stage(VK12.VK_SHADER_STAGE_COMPUTE_BIT)
-                                    .module(shader)
-                                    .pName(stack.UTF8("main"));
-                    VkComputePipelineCreateInfo.Buffer info =
-                            VkComputePipelineCreateInfo.calloc(1, stack);
-                    info.get(0).sType$Default().stage(stage).layout(computeLayout);
-                    pointer.clear();
-                    VulkanContext.check(
-                            VK12.vkCreateComputePipelines(
-                                    context.vkDevice(), 0L, info, null, pointer),
-                            "create Prime SHARC resolve pipeline");
-                    computePipeline = pointer.get(0);
-                } finally {
-                    VK12.vkDestroyShaderModule(context.vkDevice(), shader, null);
-                }
+                integratedUpdate = createComputePipeline(
+                        context,
+                        stack,
+                        computeLayout,
+                        INTEGRATED_UPDATE_SHADER,
+                        "Prime integrated SHARC update pipeline");
+                computePipeline = createComputePipeline(
+                        context,
+                        stack,
+                        computeLayout,
+                        RESOLVE_SHADER,
+                        "Prime SHARC resolve pipeline");
             }
             this.hashEntries = hash;
             this.accumulation = accumulationBuffer;
             this.resolved = resolvedBuffer;
             this.frameConstants = constants;
-            this.updateProgram = update;
             this.queryProgram = query;
             this.resolvePipelineLayout = computeLayout;
+            this.integratedUpdatePipeline = integratedUpdate;
             this.resolvePipeline = computePipeline;
         } catch (RuntimeException exception) {
             if (computePipeline != 0L) {
                 VK12.vkDestroyPipeline(context.vkDevice(), computePipeline, null);
             }
+            if (integratedUpdate != 0L) {
+                VK12.vkDestroyPipeline(context.vkDevice(), integratedUpdate, null);
+            }
             if (computeLayout != 0L) {
                 VK12.vkDestroyPipelineLayout(context.vkDevice(), computeLayout, null);
             }
             if (query != null) query.destroy();
-            if (update != null) update.destroy();
             if (constants != null) constants.destroy();
             if (resolvedBuffer != null) resolvedBuffer.destroy();
             if (accumulationBuffer != null) accumulationBuffer.destroy();
             if (hash != null) hash.destroy();
             throw exception;
+        }
+    }
+
+    private static long createComputePipeline(
+            VulkanContext context,
+            MemoryStack stack,
+            long layout,
+            String shaderResource,
+            String label) {
+        long shader = VulkanShaderModules.create(context, stack, shaderResource);
+        try {
+            VkPipelineShaderStageCreateInfo stage =
+                    VkPipelineShaderStageCreateInfo.calloc(stack)
+                            .sType$Default()
+                            .stage(VK12.VK_SHADER_STAGE_COMPUTE_BIT)
+                            .module(shader)
+                            .pName(stack.UTF8("main"));
+            VkComputePipelineCreateInfo.Buffer info =
+                    VkComputePipelineCreateInfo.calloc(1, stack);
+            info.get(0).sType$Default().stage(stage).layout(layout);
+            LongBuffer pointer = stack.mallocLong(1);
+            VulkanContext.check(
+                    VK12.vkCreateComputePipelines(
+                            context.vkDevice(), 0L, info, null, pointer),
+                    "create " + label);
+            return pointer.get(0);
+        } finally {
+            VK12.vkDestroyShaderModule(context.vkDevice(), shader, null);
         }
     }
 
@@ -176,7 +195,52 @@ final class RealtimeSharc implements Destroyable {
     }
 
     long resourceBytes() {
-        return CACHE_BYTES + this.frameConstants.size();
+        return CACHE_BYTES
+                + this.frameConstants.size()
+                + (this.trainingEvents == null ? 0L : this.trainingEvents.size());
+    }
+
+    void ensureTrainingExtent(int width, int height) {
+        int candidateWidth = trainingWidth(width);
+        int candidateHeight = trainingHeight(height);
+        long bytes = trainingBytes(width, height);
+        VulkanBuffer current = this.trainingEvents;
+        if (current == null || current.size() != bytes) {
+            VulkanBuffer replacement = this.context.createBuffer(
+                    bytes,
+                    VK12.VK_BUFFER_USAGE_STORAGE_BUFFER_BIT
+                            | VK12.VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+                    false,
+                    "Prime integrated SHARC training events");
+            this.trainingEvents = replacement;
+            if (current != null) {
+                this.context.defer(current);
+            }
+        }
+        this.trainingWidth = candidateWidth;
+        this.trainingHeight = candidateHeight;
+    }
+
+    static long trainingBytes(int width, int height) {
+        long paths = Math.multiplyExact(
+                (long) trainingWidth(width), trainingHeight(height));
+        return Math.multiplyExact(
+                Math.multiplyExact(paths, TRAINING_MAX_EVENTS),
+                TRAINING_EVENT_BYTES);
+    }
+
+    private static int trainingWidth(int width) {
+        if (width <= 0) {
+            throw new IllegalArgumentException("SHARC width must be positive");
+        }
+        return Math.floorDiv(width - 1, 5) + 1;
+    }
+
+    private static int trainingHeight(int height) {
+        if (height <= 0) {
+            throw new IllegalArgumentException("SHARC height must be positive");
+        }
+        return Math.floorDiv(height - 1, 5) + 1;
     }
 
     Prepared prepare(
@@ -189,6 +253,11 @@ final class RealtimeSharc implements Destroyable {
             boolean diagnosticsEnabled) {
         Objects.requireNonNull(input, "input");
         Objects.requireNonNull(scene, "scene");
+        if (this.trainingEvents == null
+                || this.trainingWidth != trainingWidth(input.width())
+                || this.trainingHeight != trainingHeight(input.height())) {
+            throw new IllegalStateException("Integrated SHARC training extent mismatch");
+        }
         float cameraX = (float) (input.camera().renderX() - scene.originX());
         float cameraY = (float) (input.camera().renderY() - scene.originY());
         float cameraZ = (float) (input.camera().renderZ() - scene.originZ());
@@ -230,6 +299,21 @@ final class RealtimeSharc implements Destroyable {
                             ? VK12.VK_ACCESS_TRANSFER_WRITE_BIT
                             : VK12.VK_ACCESS_SHADER_READ_BIT
                                     | VK12.VK_ACCESS_SHADER_WRITE_BIT);
+            VulkanSync.bufferBarrier(
+                    commandBuffer,
+                    stack,
+                    this.trainingEvents,
+                    KHRRayTracingPipeline.VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR
+                            | VK12.VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                    VK12.VK_ACCESS_SHADER_READ_BIT | VK12.VK_ACCESS_SHADER_WRITE_BIT,
+                    VK12.VK_PIPELINE_STAGE_TRANSFER_BIT,
+                    VK12.VK_ACCESS_TRANSFER_WRITE_BIT);
+            VK12.vkCmdFillBuffer(
+                    commandBuffer,
+                    this.trainingEvents.handle(),
+                    0L,
+                    this.trainingEvents.size(),
+                    0);
             if (clear) {
                 VK12.vkCmdFillBuffer(
                         commandBuffer, this.hashEntries.handle(), 0L, HASH_BYTES, 0);
@@ -275,6 +359,15 @@ final class RealtimeSharc implements Destroyable {
             constants.putInt(
                     ShaderAbi.SHARC_FRAME_FLAGS_OFFSET,
                     diagnosticsEnabled ? 1 : 0);
+            constants.putLong(
+                    ShaderAbi.SHARC_FRAME_TRAINING_EVENTS_ADDRESS_OFFSET,
+                    this.trainingEvents.deviceAddress());
+            constants.putInt(
+                    ShaderAbi.SHARC_FRAME_TRAINING_WIDTH_OFFSET,
+                    this.trainingWidth);
+            constants.putInt(
+                    ShaderAbi.SHARC_FRAME_TRAINING_HEIGHT_OFFSET,
+                    this.trainingHeight);
             VK12.vkCmdUpdateBuffer(
                     commandBuffer, this.frameConstants.handle(), 0L, constants);
             VulkanSync.bufferBarrier(
@@ -297,6 +390,14 @@ final class RealtimeSharc implements Destroyable {
                                 | VK12.VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
                         VK12.VK_ACCESS_SHADER_READ_BIT | VK12.VK_ACCESS_SHADER_WRITE_BIT);
             }
+            VulkanSync.bufferBarrier(
+                    commandBuffer,
+                    stack,
+                    this.trainingEvents,
+                    VK12.VK_PIPELINE_STAGE_TRANSFER_BIT,
+                    VK12.VK_ACCESS_TRANSFER_WRITE_BIT,
+                    KHRRayTracingPipeline.VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR,
+                    VK12.VK_ACCESS_SHADER_WRITE_BIT);
         }
         Accepted candidate = new Accepted(
                 cameraX,
@@ -316,47 +417,47 @@ final class RealtimeSharc implements Destroyable {
         this.accepted = Objects.requireNonNull(prepared, "prepared").candidate;
     }
 
-    void recordUpdateAndResolve(
+    void recordIntegratedUpdateAndResolve(
             VkCommandBuffer commandBuffer,
-            long sharedDescriptorSet,
             long integratorDescriptorSet,
-            ByteBuffer pushConstants,
             int width,
             int height,
             RealtimeSharcDiagnostics diagnostics,
             RealtimeSharcDiagnostics.Capture capture) {
+        if (this.trainingEvents == null
+                || this.trainingWidth != trainingWidth(width)
+                || this.trainingHeight != trainingHeight(height)) {
+            throw new IllegalStateException("Integrated SHARC training extent mismatch");
+        }
         try (MemoryStack stack = MemoryStack.stackPush()) {
+            VulkanSync.bufferBarrier(
+                    commandBuffer,
+                    stack,
+                    this.trainingEvents,
+                    KHRRayTracingPipeline.VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR,
+                    VK12.VK_ACCESS_SHADER_WRITE_BIT,
+                    VK12.VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                    VK12.VK_ACCESS_SHADER_READ_BIT);
             diagnostics.recordUpdateStart(commandBuffer, capture);
             VK12.vkCmdBindPipeline(
                     commandBuffer,
-                    KHRRayTracingPipeline.VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR,
-                    this.updateProgram.pipeline);
+                    VK12.VK_PIPELINE_BIND_POINT_COMPUTE,
+                    this.integratedUpdatePipeline);
             VK12.vkCmdBindDescriptorSets(
                     commandBuffer,
-                    KHRRayTracingPipeline.VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR,
-                    this.rayTracingPipelineLayout,
-                    0,
-                    stack.longs(sharedDescriptorSet, integratorDescriptorSet),
+                    VK12.VK_PIPELINE_BIND_POINT_COMPUTE,
+                    this.resolvePipelineLayout,
+                    1,
+                    stack.longs(integratorDescriptorSet),
                     null);
-            VK12.vkCmdPushConstants(
-                    commandBuffer,
-                    this.rayTracingPipelineLayout,
-                    TracePipelineLayouts.ALL_RT_STAGES,
-                    0,
-                    pushConstants);
-            WavefrontCommands.trace(
-                    commandBuffer,
-                    stack,
-                    this.updateProgram,
-                    (width + 4) / 5,
-                    (height + 4) / 5,
-                    0);
+            int pathCount = Math.multiplyExact(this.trainingWidth, this.trainingHeight);
+            VK12.vkCmdDispatch(commandBuffer, Math.floorDiv(pathCount - 1, 64) + 1, 1, 1);
             diagnostics.recordUpdateEnd(commandBuffer, capture);
             VulkanSync.bufferBarriers(
                     commandBuffer,
                     stack,
                     new VulkanBuffer[] {this.hashEntries, this.accumulation},
-                    KHRRayTracingPipeline.VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR,
+                    VK12.VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
                     VK12.VK_ACCESS_SHADER_READ_BIT | VK12.VK_ACCESS_SHADER_WRITE_BIT,
                     VK12.VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
                     VK12.VK_ACCESS_SHADER_READ_BIT | VK12.VK_ACCESS_SHADER_WRITE_BIT);
@@ -436,14 +537,18 @@ final class RealtimeSharc implements Destroyable {
         if (this.destroyed) return;
         this.destroyed = true;
         this.frameConstants.destroy();
+        if (this.trainingEvents != null) {
+            this.trainingEvents.destroy();
+        }
         this.resolved.destroy();
         this.accumulation.destroy();
         this.hashEntries.destroy();
         VK12.vkDestroyPipeline(this.context.vkDevice(), this.resolvePipeline, null);
+        VK12.vkDestroyPipeline(
+                this.context.vkDevice(), this.integratedUpdatePipeline, null);
         VK12.vkDestroyPipelineLayout(
                 this.context.vkDevice(), this.resolvePipelineLayout, null);
         this.queryProgram.destroy();
-        this.updateProgram.destroy();
     }
 
     record Prepared(Accepted candidate) {

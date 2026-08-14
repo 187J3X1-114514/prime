@@ -95,7 +95,7 @@ def verifyDistributionJar = tasks.register('verifyDistributionJar') {
 			'prime/shaders/realtime_wavefront_sharc_shade_subgroup.rgen.spv',
 			'prime/shaders/realtime_wavefront_sharc_light_ser.rgen.spv',
 			'prime/shaders/realtime_wavefront_sharc_shade_ser.rgen.spv',
-			'prime/shaders/sharc_update.rgen.spv',
+			'prime/shaders/sharc_integrated_update.comp.spv',
 			'prime/shaders/sharc_resolve.comp.spv',
 			'prime/shaders/offline_wavefront_head.rgen.spv',
 			'prime/shaders/offline_wavefront_step.rgen.spv',

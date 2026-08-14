@@ -173,6 +173,9 @@ public final class RealtimeRayTracingPipeline implements RealtimeIntegratorPipel
             this.sharc = null;
             this.context.defer(previous);
         }
+        if (this.sharc != null) {
+            this.sharc.ensureTrainingExtent(width, height);
+        }
         VulkanBuffer candidate = this.wavefront;
         boolean replaces = candidate == null || candidate.size() != requiredBytes;
         if (replaces) {
@@ -343,16 +346,8 @@ public final class RealtimeRayTracingPipeline implements RealtimeIntegratorPipel
                     ? null
                     : this.pendingFrame.diagnostics;
             if (this.sharc != null) {
-                this.sharc.recordUpdateAndResolve(
-                        commandBuffer,
-                        this.backend.bindings().descriptorSet(),
-                        this.bindings.descriptorSet,
-                        pushConstants,
-                        width,
-                        height,
-                        this.sharcDiagnostics,
-                        diagnostics);
                 activeProgram = this.sharc.queryProgram();
+                this.sharcDiagnostics.recordQueryStart(commandBuffer, diagnostics);
             } else {
                 this.sharcDiagnostics.recordReferenceQueryStart(
                         commandBuffer, diagnostics);
@@ -424,6 +419,15 @@ public final class RealtimeRayTracingPipeline implements RealtimeIntegratorPipel
                     width,
                     height,
                     RealtimeWavefrontGroups.RESOLVE);
+            if (this.sharc != null) {
+                this.sharc.recordIntegratedUpdateAndResolve(
+                        commandBuffer,
+                        this.bindings.descriptorSet,
+                        width,
+                        height,
+                        this.sharcDiagnostics,
+                        diagnostics);
+            }
             this.sharcDiagnostics.finish(commandBuffer, diagnostics);
             this.lastRecordedPassCount = this.sharc == null
                     ? dispatchCount

@@ -52,7 +52,11 @@ void primeRealtimeWavefrontShadeEntry()
         primeResetWavefrontQueue(PRIME_WAVEFRONT_SHADE_QUEUE);
     }
     primeWavefrontShade(
-            PrimeNoIndirectReuse(), context, launchIndex.x, sourceQueue);
+            PrimeNoIndirectReuse(),
+            PrimeNoWavefrontSharcTraining(),
+            context,
+            launchIndex.x,
+            sourceQueue);
 }
 
 void primeRealtimeWavefrontTransparentShadeEntry()
@@ -73,7 +77,11 @@ void primeRealtimeWavefrontLightEntry()
     if (launchIndex.x == 0u) {
         primeResetWavefrontQueue(PRIME_WAVEFRONT_AREA_QUEUE);
     }
-    primeWavefrontLight(PrimeNoIndirectReuse(), context, launchIndex.x);
+    primeWavefrontLight(
+            PrimeNoIndirectReuse(),
+            PrimeNoWavefrontSharcTraining(),
+            context,
+            launchIndex.x);
 }
 
 void primeRealtimeWavefrontResolveEntry()

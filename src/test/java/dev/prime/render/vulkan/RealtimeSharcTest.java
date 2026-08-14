@@ -2,6 +2,7 @@ package dev.prime.render.vulkan;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import dev.prime.render.LightingSettings;
@@ -25,6 +26,17 @@ final class RealtimeSharcTest {
         assertEquals(
                 Integer.remainderUnsigned(-1, 25),
                 RealtimeSharc.updatePhase(-1));
+    }
+
+    @Test
+    void integratedTrainingStoresFourCompactEventsPerCarrierPath() {
+        assertEquals(4, RealtimeSharc.TRAINING_MAX_EVENTS);
+        assertEquals(80, RealtimeSharc.TRAINING_EVENT_BYTES);
+        assertEquals(26_542_080L, RealtimeSharc.trainingBytes(1920, 1080));
+        assertEquals(106_168_320L, RealtimeSharc.trainingBytes(3840, 2160));
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> RealtimeSharc.trainingBytes(0, 1080));
     }
 
     @Test

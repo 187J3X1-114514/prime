@@ -22,10 +22,10 @@ import org.lwjgl.vulkan.VkPipelineShaderStageCreateInfo;
 import org.lwjgl.vulkan.VkPushConstantRange;
 import org.lwjgl.vulkan.VkWriteDescriptorSet;
 
-/** Prime's common linear Rec.2020 HDR to Oklab DRT / sRGB Rec.709 display boundary. */
+/** Prime's common linear Rec.2020 HDR to AgX HSV / sRGB Rec.709 display boundary. */
 public final class DisplayTransformPass implements Destroyable {
     private static final int COMPUTE_STAGE = VK12.VK_SHADER_STAGE_COMPUTE_BIT;
-    private static final int PUSH_SIZE = 28;
+    private static final int PUSH_SIZE = 16;
     private static final int LOCAL_SIZE = 8;
     private static final String SHADER = "/prime/shaders/fsr_display.comp.spv";
 
@@ -291,10 +291,7 @@ public final class DisplayTransformPass implements Destroyable {
             push.putInt(0, this.width);
             push.putInt(4, this.height);
             push.putInt(8, diagnostic ? 1 : 0);
-            push.putFloat(12, display.oklabOverexposure());
-            push.putFloat(16, display.finalExposureMultiplier());
-            push.putFloat(20, display.curveExponent());
-            push.putFloat(24, display.curveCoefficient());
+            push.putFloat(12, display.finalExposureMultiplier());
             VK12.vkCmdBindPipeline(commandBuffer, VK12.VK_PIPELINE_BIND_POINT_COMPUTE, this.pipeline);
             VK12.vkCmdBindDescriptorSets(
                     commandBuffer,

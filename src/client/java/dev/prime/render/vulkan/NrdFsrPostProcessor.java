@@ -221,10 +221,7 @@ public final class NrdFsrPostProcessor implements VulkanReconstructionProcessor 
         token.nrd = this.denoiser.recordReconstruction(
                 commandBuffer,
                 token.nrdPrepared,
-                parameters.sunRadianceMultiplier(),
-                parameters.display().oklabOverexposure(),
-                parameters.display().curveExponent(),
-                parameters.display().curveCoefficient());
+                parameters.sunRadianceMultiplier());
         boolean displayDiagnostic =
                 token.nrdPlan.plan().input().diagnostic() != NrdDiagnostics.Mode.OFF
                         || token.debugSettings.fsr() != FsrDebugView.OFF;

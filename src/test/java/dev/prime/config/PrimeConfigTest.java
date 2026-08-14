@@ -96,44 +96,7 @@ final class PrimeConfigTest {
     }
 
     @Test
-    void persistedOklabOverexposureAcceptsOnlyExactHundredths() {
-        assertEquals(100, PrimeConfig.parseOverexposureSteps("1"));
-        assertEquals(103, PrimeConfig.parseOverexposureSteps("1.03"));
-        assertEquals(200, PrimeConfig.parseOverexposureSteps("2"));
-        assertEquals("1.03", PrimeConfig.formatOverexposure(103));
-        assertThrows(IllegalArgumentException.class,
-                () -> PrimeConfig.parseOverexposureSteps("1.03125"));
-        assertThrows(IllegalArgumentException.class,
-                () -> PrimeConfig.parseOverexposureSteps("2.01"));
-    }
-
-    @Test
-    void legacyThirtySecondOverexposureMigratesToTheNearestHundredth() {
-        assertEquals(100, PrimeConfig.migrateLegacyOverexposureSteps("1"));
-        assertEquals(103, PrimeConfig.migrateLegacyOverexposureSteps("1.03125"));
-        assertEquals(150, PrimeConfig.migrateLegacyOverexposureSteps("1.5"));
-        assertEquals(200, PrimeConfig.migrateLegacyOverexposureSteps("2"));
-        assertThrows(
-                IllegalArgumentException.class,
-                () -> PrimeConfig.migrateLegacyOverexposureSteps("1.03"));
-        assertThrows(
-                IllegalArgumentException.class,
-                () -> PrimeConfig.migrateLegacyOverexposureSteps("2.03125"));
-    }
-
-    @Test
-    void persistedDisplayRatiosAcceptOnlyExactHundredthsInRange() {
-        assertEquals(50, PrimeConfig.parseCurveExponentSteps("0.5"));
-        assertEquals(75, PrimeConfig.parseCurveExponentSteps("0.75"));
-        assertEquals(100, PrimeConfig.parseCurveExponentSteps("1"));
-        assertEquals("0.75", PrimeConfig.formatCurveExponent(75));
-        assertThrows(
-                IllegalArgumentException.class,
-                () -> PrimeConfig.parseCurveExponentSteps("0.755"));
-        assertThrows(
-                IllegalArgumentException.class,
-                () -> PrimeConfig.parseCurveExponentSteps("0.49"));
-
+    void persistedAutoExposureCompensationAcceptsOnlyExactHundredthsInRange() {
         assertEquals(0, PrimeConfig.parseAutoExposureCompensationSteps("0"));
         assertEquals(50, PrimeConfig.parseAutoExposureCompensationSteps("0.5"));
         assertEquals(100, PrimeConfig.parseAutoExposureCompensationSteps("1"));
@@ -251,8 +214,8 @@ final class PrimeConfigTest {
         assertTrue(serialized.contains("astronomy.solar_longitude_degrees=0\n"));
         assertTrue(serialized.contains("lighting.star_ev=0\n"));
         assertTrue(serialized.contains("display.final_exposure_ev=0\n"));
-        assertTrue(serialized.contains("display.oklab_overexposure=1\n"));
-        assertTrue(serialized.contains("display.oklab_curve_exponent=0.75\n"));
+        assertFalse(serialized.contains("display.oklab_overexposure"));
+        assertFalse(serialized.contains("display.oklab_curve_exponent"));
         assertTrue(serialized.contains("display.auto_exposure_compensation=0.5\n"));
         assertTrue(serialized.contains("material.seamless_glass=true\n"));
         assertTrue(serialized.contains("material.air_gap=true\n"));
@@ -263,8 +226,11 @@ final class PrimeConfigTest {
 
         Properties properties = new Properties();
         assertFalse(PrimeConfig.hasLegacyDebugProperties(properties));
+        assertFalse(PrimeConfig.hasLegacyDisplayTransformProperties(properties));
         properties.setProperty("dlss_rr.debug_view", "motion");
         assertTrue(PrimeConfig.hasLegacyDebugProperties(properties));
+        properties.setProperty("display.oklab_overexposure", "1");
+        assertTrue(PrimeConfig.hasLegacyDisplayTransformProperties(properties));
     }
 
     @Test

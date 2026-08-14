@@ -30,8 +30,6 @@ final class RendererSettingsMappingTest {
                 .withStarQuarterSteps(-6)
                 .withBlockLightQuarterSteps(7)
                 .withFinalExposureQuarterSteps(-3)
-                .withOklabOverexposureSteps(147)
-                .withCurveExponentSteps(83)
                 .withAutoExposureCompensationSteps(61)
                 .withDefaultRoughnessSteps(37)
                 .withSeamlessGlass(false)
@@ -74,17 +72,8 @@ final class RendererSettingsMappingTest {
                 DisplaySettings.finalExposureMultiplier(-3),
                 mapped.display().finalExposureMultiplier());
         assertRawEquals(
-                DisplaySettings.overexposure(147),
-                mapped.display().oklabOverexposure());
-        assertRawEquals(
-                DisplaySettings.curveExponent(83),
-                mapped.display().curveExponent());
-        assertRawEquals(
                 DisplaySettings.autoExposureCompensation(61),
                 mapped.display().autoExposureCompensation());
-        assertRawEquals(
-                DisplaySettings.curveCoefficient(147, 83),
-                mapped.display().curveCoefficient());
     }
 
     @Test

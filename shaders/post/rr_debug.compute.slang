@@ -22,10 +22,7 @@ struct PrimeRrDebugPushConstants {
     uint fullscreen;
     uint jitterPhase;
     uint jitterPhaseCount;
-    float oklabOverexposure;
     float finalExposureMultiplier;
-    float curveExponent;
-    float curveCoefficient;
 };
 [[vk::push_constant]] ConstantBuffer<PrimeRrDebugPushConstants> rrDebugPush;
 
@@ -76,10 +73,7 @@ float3 rrHdr(float3 radiance) {
     return primeDisplayTransformToSrgb(
             max(radiance, float3(0.0)),
             exp2(primeAutoExposureState[0].exposureEv)
-                    * rrDebugPush.finalExposureMultiplier,
-            rrDebugPush.oklabOverexposure,
-            rrDebugPush.curveExponent,
-            rrDebugPush.curveCoefficient);
+                    * rrDebugPush.finalExposureMultiplier);
 }
 
 float3 rrJitterPlot(float2 uv) {

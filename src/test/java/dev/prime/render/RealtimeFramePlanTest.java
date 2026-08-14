@@ -184,7 +184,7 @@ final class RealtimeFramePlanTest {
                 new MaterialSettings.Snapshot(90, 17L),
                 true,
                 false,
-                new DisplaySettings.Snapshot(0, 100, 75, 50),
+                new DisplaySettings.Snapshot(0, 50),
                 false);
     }
 }

@@ -8,7 +8,7 @@ import "core/nrd_common.slang";
 import "material/default_material.slang";
 import "core/nrd_sh.slang";
 
-// FSR consumes scene-referred linear Rec.2020 HDR. The Oklab display transform belongs strictly
+// FSR consumes scene-referred linear Rec.2020 HDR. The display transform belongs strictly
 // after upscaling; applying it here would make temporal interpolation operate on non-linear,
 // display-referred values and violate both the integrator and FSR signal contracts.
 [[vk::binding(0, 0)]] [[vk::image_format("rgba16f")]] writeonly RWTexture2D<float4> primeCompositeOutput;
@@ -48,10 +48,7 @@ struct PrimeCompositePushConstants {
     uint diagnosticMode;
     float sunRadianceMultiplier;
     float2 currentJitterPixels;
-    float displayOverexposure;
-    float displayCurveExponent;
     float2 epipoleNdc;
-    float displayCurveCoefficient;
 };
 [[vk::push_constant]] ConstantBuffer<PrimeCompositePushConstants> primeCompositePush;
 
@@ -413,10 +410,7 @@ float3 primeCompositeDisplayDiagnostic(float3 radiance) {
     radiance = primeNrdIsFinite(radiance) ? max(radiance, float3(0.0)) : float3(0.0);
     return primeDisplayTransformToSrgb(
             radiance,
-            1.0,
-            primeCompositePush.displayOverexposure,
-            primeCompositePush.displayCurveExponent,
-            primeCompositePush.displayCurveCoefficient);
+            1.0);
 }
 
 bool primeCompositeIsValidationSceneTile(uint2 pixel) {

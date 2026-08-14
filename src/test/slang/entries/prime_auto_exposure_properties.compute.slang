@@ -89,31 +89,54 @@ void main(uint3 dispatchThreadId : SV_DispatchThreadID)
             mask |= PRIME_TEST_FAILURE_IDENTITY;
         }
     } else if (kind == 6) {
-        float middleGrayLightness = pow(0.18, 1.0 / 3.0);
-        actual.x = primeOklabMapLightness(
-                middleGrayLightness, values.x, values.y, values.w);
-        actual.y = primeOklabMapLightness(
-                values.z, values.x, values.y, values.w);
-        expected.x = middleGrayLightness;
-        if (!primeTestClose(actual.x, expected.x, 2.0e-5, 2.0e-5)) {
+        PrimeAgxHsvParameters parameters = primeDefaultAgxHsvParameters();
+        float normalized = clamp(
+                (values.x - parameters.minimumLog2)
+                        * parameters.inverseDynamicRange,
+                0.0,
+                1.0);
+        actual.x = primeAgxCurveComponent(normalized, parameters);
+        actual.y = primeAgxCompressHsvSaturation(values.y, values.z);
+        if (values.x <= parameters.minimumLog2) {
+            expected.x = 0.0;
+        } else if (values.x >= parameters.minimumLog2
+                + 1.0 / parameters.inverseDynamicRange) {
+            expected.x = 1.0;
+        } else if (primeTestClose(
+                normalized, parameters.inputPivot, 1.0e-6, 1.0e-6)) {
+            expected.x = parameters.outputPivot;
+        } else {
+            expected.x = actual.x;
+        }
+        expected.y = values.y <= values.z
+                ? values.y
+                : values.z + (1.0 - values.z) * (values.y - values.z)
+                        / ((1.0 - values.z) + (values.y - values.z));
+        if (!primeTestClose(actual.x, expected.x, 3.0e-5, 3.0e-5)
+                || !primeTestClose(actual.y, expected.y, 2.0e-6, 2.0e-6)) {
             mask |= PRIME_TEST_FAILURE_IDENTITY;
         }
-        if (actual.y < 0.0 || actual.y > pow(values.x, 1.0 / 3.0)) {
+        float minimumSaturation = min(values.y, values.z);
+        if (actual.x < -1.0e-5 || actual.x > 1.00001
+                || actual.y < minimumSaturation - 1.0e-6
+                || actual.y > 1.00001) {
             mask |= PRIME_TEST_FAILURE_RANGE;
         }
-        if (values.y == 0.5) {
-            float scale = values.x / (values.x - 0.18);
-            float x = (scale * scale - 1.0) / 0.18
-                    * values.z * values.z * values.z;
-            float inverseRoot = rsqrt(1.0 + x);
-            expected.y = pow(
-                    values.x * x * inverseRoot * inverseRoot
-                            / (1.0 + inverseRoot),
-                    1.0 / 3.0);
-            if (!primeTestClose(actual.y, expected.y, 2.0e-5, 2.0e-5)) {
-                mask |= PRIME_TEST_FAILURE_STATE;
-            }
+    } else if (kind == 7) {
+        PrimeAgxHsvParameters parameters = primeDefaultAgxHsvParameters();
+        float3 rgb = max(values.xyz, float3(0.0));
+        float3 hsv = primeAgxRgbToHsv(rgb);
+        float3 roundTrip = primeAgxHsvToRgb(hsv);
+        float3 error = abs(roundTrip - rgb);
+        float3 mapped = primeAgxHsvTonemap(rgb, parameters);
+        actual = float2(
+                max(error.x, max(error.y, error.z)),
+                max(mapped.x, max(mapped.y, mapped.z)));
+        expected = float2(0.0, actual.y);
+        if (!primeTestClose(actual.x, 0.0, 4.0e-6, 4.0e-6)) {
+            mask |= PRIME_TEST_FAILURE_IDENTITY;
         }
+        mask |= primeTestClassify(mapped);
     } else {
         mask |= PRIME_TEST_FAILURE_EVENT;
     }

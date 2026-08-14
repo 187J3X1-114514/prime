@@ -1,6 +1,5 @@
 package dev.prime.render.shader;
 
-import dev.prime.render.DisplaySettings;
 import dev.prime.render.MaterialSettings;
 import dev.prime.render.material.BuiltinMaterialClass;
 import java.io.IOException;
@@ -173,7 +172,7 @@ final class PrimeProductionMathGpuTest {
     @Test
     void exposureAndDisplayCurvesUseTheProductionContract()
             throws IOException {
-        int kinds = 7;
+        int kinds = 8;
         int inputWords = 2;
         ShaderPropertyBatch.assertProperties(
                 runner,
@@ -267,35 +266,44 @@ final class PrimeProductionMathGpuTest {
                             green,
                             blue,
                             random.nextInt(-12, 13));
-                } else {
-                    int overexposureSteps = switch (local & 3) {
-                        case 0 -> 100;
-                        case 1 -> 200;
-                        default -> random.nextInt(100, 201);
+                } else if (kind == 6) {
+                    float logValue = switch (local & 3) {
+                        case 0 -> -12.473931F;
+                        case 1 -> -2.473931F;
+                        case 2 -> 4.026069F;
+                        default -> random.nextFloat() * 24.0F - 16.0F;
                     };
-                    int curveExponentSteps = switch ((local >> 2) & 3) {
-                        case 0 -> 50;
-                        case 1 -> 75;
-                        case 2 -> 100;
-                        default -> random.nextInt(50, 101);
-                    };
-                    float lightness = switch ((local >> 4) & 3) {
+                    float saturation = switch ((local >> 2) & 3) {
                         case 0 -> 0.0F;
-                        case 1 -> 1.0e-3F;
-                        case 2 -> (float) Math.cbrt(0.18);
-                        default -> random.nextFloat() * 8.0F;
+                        case 1 -> 0.95F;
+                        case 2 -> 1.0F;
+                        default -> random.nextFloat();
+                    };
+                    float onset = switch ((local >> 4) & 3) {
+                        case 0 -> 0.0F;
+                        case 1 -> 0.5F;
+                        case 2 -> 0.95F;
+                        default -> random.nextFloat();
                     };
                     putVec4(
                             input,
                             index,
                             inputWords,
                             1,
-                            DisplaySettings.overexposure(overexposureSteps),
-                            DisplaySettings.curveExponent(curveExponentSteps),
-                            lightness,
-                            DisplaySettings.curveCoefficient(
-                                    overexposureSteps,
-                                    curveExponentSteps));
+                            logValue,
+                            saturation,
+                            onset,
+                            0.0F);
+                } else {
+                    float red = random.nextFloat() * 4.0F;
+                    float green = random.nextFloat() * 4.0F;
+                    float blue = random.nextFloat() * 4.0F;
+                    if (local < 8) {
+                        red = (local & 1) != 0 ? 1.0F : 0.0F;
+                        green = (local & 2) != 0 ? 1.0F : 0.0F;
+                        blue = (local & 4) != 0 ? 1.0F : 0.0F;
+                    }
+                    putVec4(input, index, inputWords, 1, red, green, blue, 0.0F);
                 }
             }
         }

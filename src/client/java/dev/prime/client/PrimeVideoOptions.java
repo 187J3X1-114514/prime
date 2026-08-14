@@ -245,31 +245,6 @@ public final class PrimeVideoOptions {
                 PrimeConfig::setFinalExposureQuarterSteps);
     }
 
-    public static OptionInstance<Integer> oklabOverexposure() {
-        return new OptionInstance<>(
-                "prime.options.display.oklab_overexposure",
-                OptionInstance.cachedConstantTooltip(
-                        Component.translatable("prime.options.display.oklab_overexposure.tooltip")),
-                (caption, steps) -> Options.genericValueLabel(
-                        caption,
-                        Component.literal(formatOverexposure(steps))),
-                new OptionInstance.IntRange(
-                        DisplaySettings.MINIMUM_OVEREXPOSURE_STEPS,
-                        DisplaySettings.MAXIMUM_OVEREXPOSURE_STEPS),
-                PrimeConfig.settings().oklabOverexposureSteps(),
-                PrimeConfig::setOklabOverexposureSteps);
-    }
-
-    public static OptionInstance<Integer> curveExponent() {
-        return decimalOption(
-                "prime.options.display.oklab_curve_exponent",
-                "prime.options.display.oklab_curve_exponent.tooltip",
-                PrimeConfig.settings().curveExponentSteps(),
-                DisplaySettings.MINIMUM_CURVE_EXPONENT_STEPS,
-                DisplaySettings.MAXIMUM_CURVE_EXPONENT_STEPS,
-                PrimeConfig::setCurveExponentSteps);
-    }
-
     public static OptionInstance<Integer> autoExposureCompensation() {
         return new OptionInstance<>(
                 "prime.options.display.auto_exposure_compensation",
@@ -471,10 +446,6 @@ public final class PrimeVideoOptions {
                 degrees,
                 Component.translatable(
                         "prime.options.astronomy.season." + interval));
-    }
-
-    static String formatOverexposure(int steps) {
-        return String.format(Locale.ROOT, "%.2f×", DisplaySettings.overexposure(steps));
     }
 
     static String formatRoughness(int steps) {

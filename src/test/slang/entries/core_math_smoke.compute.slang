@@ -1,6 +1,5 @@
 import "core/transport_math.slang";
 import "core/color_space.slang";
-import "core/oklab.slang";
 import "core/transparent_checkerboard.slang";
 
 [[vk::binding(0, 0)]] StructuredBuffer<float4> inputs;
@@ -15,7 +14,6 @@ void main(uint3 dispatchThreadId : SV_DispatchThreadID)
     float3 color = primeDecodeSrgb(first.xyz);
     color = primeLinearSrgbToLinearRec2020(color);
     color = primeLinearRec2020ToLinearBt709(color);
-    color = primeOklabToLinearBt709(primeLinearBt709ToOklab(color));
     color = primeEncodeSrgb(color);
     float3 transport = primeProductOver(
             max(first.xyz, float3(1.0e-20)),

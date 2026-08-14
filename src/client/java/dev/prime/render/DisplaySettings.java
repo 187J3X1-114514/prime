@@ -2,7 +2,6 @@ package dev.prime.render;
 
 /** Runtime controls for Prime's automatic exposure and final display-referred transform. */
 public final class DisplaySettings {
-    private static final double OKLAB_MIDDLE_GRAY = 0.18;
     public static final int QUARTER_STEPS_PER_EV = 4;
     public static final int MINIMUM_FINAL_EXPOSURE_QUARTER_STEPS =
             -8 * QUARTER_STEPS_PER_EV;
@@ -10,12 +9,6 @@ public final class DisplaySettings {
             8 * QUARTER_STEPS_PER_EV;
     public static final int DEFAULT_FINAL_EXPOSURE_QUARTER_STEPS = 0;
     public static final int HUNDREDTH_STEPS_PER_UNIT = 100;
-    public static final int MINIMUM_OVEREXPOSURE_STEPS = HUNDREDTH_STEPS_PER_UNIT;
-    public static final int MAXIMUM_OVEREXPOSURE_STEPS = 2 * HUNDREDTH_STEPS_PER_UNIT;
-    public static final int DEFAULT_OVEREXPOSURE_STEPS = HUNDREDTH_STEPS_PER_UNIT;
-    public static final int MINIMUM_CURVE_EXPONENT_STEPS = 50;
-    public static final int MAXIMUM_CURVE_EXPONENT_STEPS = HUNDREDTH_STEPS_PER_UNIT;
-    public static final int DEFAULT_CURVE_EXPONENT_STEPS = 75;
     public static final int MINIMUM_AUTO_EXPOSURE_COMPENSATION_STEPS = 0;
     public static final int MAXIMUM_AUTO_EXPOSURE_COMPENSATION_STEPS = HUNDREDTH_STEPS_PER_UNIT;
     public static final int DEFAULT_AUTO_EXPOSURE_COMPENSATION_STEPS = 50;
@@ -32,20 +25,6 @@ public final class DisplaySettings {
                                 / (double) QUARTER_STEPS_PER_EV);
     }
 
-    public static float overexposure(int steps) {
-        requireValidOverexposure(steps);
-        return steps / (float) HUNDREDTH_STEPS_PER_UNIT;
-    }
-
-    public static float curveExponent(int steps) {
-        requireRange(
-                steps,
-                MINIMUM_CURVE_EXPONENT_STEPS,
-                MAXIMUM_CURVE_EXPONENT_STEPS,
-                "Oklab DRT curve exponent must be between 0.5 and 1.0");
-        return steps / (float) HUNDREDTH_STEPS_PER_UNIT;
-    }
-
     public static float autoExposureCompensation(int steps) {
         requireRange(
                 steps,
@@ -55,24 +34,10 @@ public final class DisplaySettings {
         return steps / (float) HUNDREDTH_STEPS_PER_UNIT;
     }
 
-    public static float curveCoefficient(int overexposureSteps, int curveExponentSteps) {
-        double overexposure = overexposure(overexposureSteps);
-        double curveExponent = curveExponent(curveExponentSteps);
-        double scale = overexposure / (overexposure - OKLAB_MIDDLE_GRAY);
-        return (float) ((Math.pow(scale, 1.0 / curveExponent) - 1.0)
-                / OKLAB_MIDDLE_GRAY);
-    }
-
     private static void requireValidFinalExposure(int quarterSteps) {
         if (quarterSteps < MINIMUM_FINAL_EXPOSURE_QUARTER_STEPS
                 || quarterSteps > MAXIMUM_FINAL_EXPOSURE_QUARTER_STEPS) {
             throw new IllegalArgumentException("Final exposure must be between -8 EV and +8 EV");
-        }
-    }
-
-    private static void requireValidOverexposure(int steps) {
-        if (steps < MINIMUM_OVEREXPOSURE_STEPS || steps > MAXIMUM_OVEREXPOSURE_STEPS) {
-            throw new IllegalArgumentException("Oklab DRT overexposure must be between 1.0 and 2.0");
         }
     }
 
@@ -84,13 +49,9 @@ public final class DisplaySettings {
 
     public record Snapshot(
             int finalExposureQuarterSteps,
-            int oklabOverexposureSteps,
-            int curveExponentSteps,
             int autoExposureCompensationSteps) {
         public Snapshot {
             DisplaySettings.finalExposureMultiplier(finalExposureQuarterSteps);
-            DisplaySettings.overexposure(oklabOverexposureSteps);
-            DisplaySettings.curveExponent(curveExponentSteps);
             DisplaySettings.autoExposureCompensation(autoExposureCompensationSteps);
         }
 
@@ -98,23 +59,9 @@ public final class DisplaySettings {
             return DisplaySettings.finalExposureMultiplier(this.finalExposureQuarterSteps);
         }
 
-        public float oklabOverexposure() {
-            return DisplaySettings.overexposure(this.oklabOverexposureSteps);
-        }
-
-        public float curveExponent() {
-            return DisplaySettings.curveExponent(this.curveExponentSteps);
-        }
-
         public float autoExposureCompensation() {
             return DisplaySettings.autoExposureCompensation(
                     this.autoExposureCompensationSteps);
-        }
-
-        public float curveCoefficient() {
-            return DisplaySettings.curveCoefficient(
-                    this.oklabOverexposureSteps,
-                    this.curveExponentSteps);
         }
     }
 }

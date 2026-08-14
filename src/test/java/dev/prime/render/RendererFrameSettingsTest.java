@@ -52,8 +52,6 @@ final class RendererFrameSettingsTest {
                         revision),
                 new DisplaySettings.Snapshot(
                         DisplaySettings.DEFAULT_FINAL_EXPOSURE_QUARTER_STEPS,
-                        DisplaySettings.DEFAULT_OVEREXPOSURE_STEPS,
-                        DisplaySettings.DEFAULT_CURVE_EXPONENT_STEPS,
                         DisplaySettings.DEFAULT_AUTO_EXPOSURE_COMPENSATION_STEPS),
                 revision);
     }

@@ -61,8 +61,6 @@ public abstract class VideoSettingsScreenMixin {
     @Unique private OptionInstance<Integer> prime$starExposure;
     @Unique private OptionInstance<Integer> prime$blockLightExposure;
     @Unique private OptionInstance<Integer> prime$finalExposure;
-    @Unique private OptionInstance<Integer> prime$oklabOverexposure;
-    @Unique private OptionInstance<Integer> prime$curveExponent;
     @Unique private OptionInstance<Integer> prime$autoExposureCompensation;
     @Unique private OptionInstance<Integer> prime$defaultRoughness;
     @Unique private OptionInstance<Boolean> prime$seamlessGlass;
@@ -94,8 +92,6 @@ public abstract class VideoSettingsScreenMixin {
             this.prime$starExposure = PrimeVideoOptions.starExposure();
             this.prime$blockLightExposure = PrimeVideoOptions.blockLightExposure();
             this.prime$finalExposure = PrimeVideoOptions.finalExposure();
-            this.prime$oklabOverexposure = PrimeVideoOptions.oklabOverexposure();
-            this.prime$curveExponent = PrimeVideoOptions.curveExponent();
             this.prime$autoExposureCompensation =
                     PrimeVideoOptions.autoExposureCompensation();
             this.prime$defaultRoughness = PrimeVideoOptions.defaultRoughness();
@@ -130,9 +126,6 @@ public abstract class VideoSettingsScreenMixin {
             list.addHeader(PRIME$DISPLAY_HEADER);
             list.addBig(this.prime$autoExposureCompensation);
             list.addBig(this.prime$finalExposure);
-            list.addSmall(
-                    this.prime$oklabOverexposure,
-                    this.prime$curveExponent);
             list.addHeader(PRIME$MATERIAL_HEADER);
             list.addSmall(this.prime$defaultRoughness, this.prime$seamlessGlass);
             list.addSmall(this.prime$airGap, this.prime$vanillaPbrPresets);
@@ -199,12 +192,6 @@ public abstract class VideoSettingsScreenMixin {
         this.prime$refresh(
                 this.prime$finalExposure,
                 DisplaySettings.DEFAULT_FINAL_EXPOSURE_QUARTER_STEPS);
-        this.prime$refresh(
-                this.prime$oklabOverexposure,
-                DisplaySettings.DEFAULT_OVEREXPOSURE_STEPS);
-        this.prime$refresh(
-                this.prime$curveExponent,
-                DisplaySettings.DEFAULT_CURVE_EXPONENT_STEPS);
         this.prime$refresh(
                 this.prime$autoExposureCompensation,
                 DisplaySettings.DEFAULT_AUTO_EXPOSURE_COMPENSATION_STEPS);

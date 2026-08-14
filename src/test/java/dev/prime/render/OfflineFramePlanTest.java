@@ -71,8 +71,6 @@ final class OfflineFramePlanTest {
                 initial.sampleCount(),
                 new DisplaySettings.Snapshot(
                         8,
-                        initial.display().oklabOverexposureSteps(),
-                        initial.display().curveExponentSteps(),
                         initial.display().autoExposureCompensationSteps()));
 
         assertEquals(initial.plan().integrator(), adjusted.plan().integrator());
@@ -94,6 +92,6 @@ final class OfflineFramePlanTest {
                         0, 0, 0, 1L),
                 new MaterialSettings.Snapshot(90, 1L),
                 sampleCount,
-                new DisplaySettings.Snapshot(0, 100, 75, 50));
+                new DisplaySettings.Snapshot(0, 50));
     }
 }

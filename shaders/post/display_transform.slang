@@ -3,250 +3,209 @@ module "post/display_transform.slang";
 
 import "prime_abi_types.slang";
 import "core/color_space.slang";
-import "core/oklab.slang";
 
-public static const float PRIME_OKLAB_RGB_HEADROOM = 0.99999;
-
-public float primeOklabReciprocalPowerShoulder(float x, float curveExponent)
+// Ported from C:/WorkSpace/drt/shaders/agx_hsv.slang at commit
+// ac48c20c6a2412a2fad13f53ac37bc82c3f1ac0b.
+//
+// These are derived runtime coefficients, not the authoring controls. Keeping them in one
+// structure makes future tuning explicit without adding per-frame parameters or UI surface area.
+public struct PrimeAgxHsvParameters
 {
-    if (x < 0.01) {
-        float nextExponent = curveExponent + 1.0;
-        return curveExponent * x * (
-                1.0 - 0.5 * nextExponent * x
-                        + nextExponent * (curveExponent + 2.0) * x * x / 6.0);
+    public float minimumLog2;
+    public float inverseDynamicRange;
+    public float inputPivot;
+    public float outputPivot;
+    public float pivotSlope;
+    public float toePower;
+    public float shoulderPower;
+    public float gamutCompression;
+    public float toeCoefficient;
+    public float shoulderCoefficient;
+    public float blackHueRetention;
+    public float whiteHueRetention;
+    public float blackGamutOnset;
+};
+
+public PrimeAgxHsvParameters primeDefaultAgxHsvParameters()
+{
+    PrimeAgxHsvParameters parameters;
+    // Authoring defaults: -10/+6.5 EV around 18% gray, output pivot 0.455, slope 3,
+    // toe/shoulder powers 1.5/3, gamut compression 0.05, hue retention 1/0.5.
+    parameters.minimumLog2 = -12.473931;
+    parameters.inverseDynamicRange = 1.0 / 16.5;
+    parameters.inputPivot = 10.0 / 16.5;
+    parameters.outputPivot = 0.455;
+    parameters.pivotSlope = 3.0;
+    parameters.toePower = 1.5;
+    parameters.shoulderPower = 3.0;
+    parameters.gamutCompression = 0.05;
+    parameters.toeCoefficient = 14.810842;
+    parameters.shoulderCoefficient = 150.43433;
+    parameters.blackHueRetention = 1.0;
+    parameters.whiteHueRetention = 0.5;
+    parameters.blackGamutOnset = 0.95;
+    return parameters;
+}
+
+static const float3 PRIME_AGX_NEUTRAL_WEIGHTS = float3(
+        0.2120053547549465,
+        0.3921825078090138,
+        0.3958121374360396);
+
+public float3 primeAgxRgbToHsv(float3 color)
+{
+    float maximum = max(color.x, max(color.y, color.z));
+    float minimum = min(color.x, min(color.y, color.z));
+    float chroma = maximum - minimum;
+    float hue = 0.0;
+    if (chroma > 1.0e-7)
+    {
+        if (maximum == color.x)
+        {
+            hue = (color.y - color.z) / chroma;
+        }
+        else if (maximum == color.y)
+        {
+            hue = (color.z - color.x) / chroma + 2.0;
+        }
+        else
+        {
+            hue = (color.x - color.y) / chroma + 4.0;
+        }
+        hue = frac(hue / 6.0);
     }
-    return 1.0 - pow(1.0 + x, -curveExponent);
+    float saturation = maximum > 1.0e-7 ? chroma / maximum : 0.0;
+    return float3(hue, saturation, maximum);
 }
 
-public float primeOklabMapLightness(
-        float lightness,
-        float overexposure,
-        float curveExponent,
-        float curveCoefficient)
+public float3 primeAgxHsvToRgb(float3 hsv)
 {
-    float brightness = lightness * lightness * lightness;
-    float x = curveCoefficient * brightness;
-    float mappedBrightness = overexposure
-            * primeOklabReciprocalPowerShoulder(x, curveExponent);
-    return pow(mappedBrightness, 1.0 / 3.0);
+    float3 primary = clamp(
+            abs(frac(hsv.x + float3(0.0, 2.0 / 3.0, 1.0 / 3.0)) * 6.0 - 3.0) - 1.0,
+            0.0,
+            1.0);
+    return hsv.z * lerp(1.0.xxx, primary, hsv.y);
 }
 
-public float3 primeOklabRootDirection(float2 hue)
+float3 primeAgxInset(float3 color, PrimeAgxHsvParameters parameters)
+{
+    float neutral = dot(color, PRIME_AGX_NEUTRAL_WEIGHTS);
+    return lerp(color, neutral.xxx, parameters.gamutCompression);
+}
+
+float3 primeAgxOutset(float3 color, PrimeAgxHsvParameters parameters)
+{
+    float neutral = dot(color, PRIME_AGX_NEUTRAL_WEIGHTS);
+    return (color - parameters.gamutCompression * neutral.xxx)
+            / (1.0 - parameters.gamutCompression);
+}
+
+public float primeAgxCurveComponent(float value, PrimeAgxHsvParameters parameters)
+{
+    bool toe = value <= parameters.inputPivot;
+    float power = toe ? parameters.toePower : parameters.shoulderPower;
+    float coefficient = toe
+            ? parameters.toeCoefficient
+            : parameters.shoulderCoefficient;
+    float distance = value - parameters.inputPivot;
+    return parameters.outputPivot
+            + parameters.pivotSlope * distance
+                    * pow(
+                            1.0 + coefficient * pow(abs(distance), power),
+                            -1.0 / power);
+}
+
+float3 primeAgxCurve(float3 value, PrimeAgxHsvParameters parameters)
 {
     return float3(
-            0.3963377774 * hue.x + 0.2158037573 * hue.y,
-            -0.1055613458 * hue.x - 0.0638541728 * hue.y,
-            -0.0894841775 * hue.x - 1.2914855480 * hue.y);
+            primeAgxCurveComponent(value.x, parameters),
+            primeAgxCurveComponent(value.y, parameters),
+            primeAgxCurveComponent(value.z, parameters));
 }
 
-public float primeOklabMaxSaturation(float2 hue, float3 direction)
+float3 primeAgxS2O3(float3 linearBt709, PrimeAgxHsvParameters parameters)
 {
-    float k0;
-    float k1;
-    float k2;
-    float k3;
-    float k4;
-    float3 rgbRow;
+    float3 inset = primeAgxInset(linearBt709, parameters);
+    float3 normalizedLog = clamp(
+            (log2(inset) - parameters.minimumLog2)
+                    * parameters.inverseDynamicRange,
+            0.0,
+            1.0);
+    return primeAgxOutset(primeAgxCurve(normalizedLog, parameters), parameters);
+}
 
-    if (-1.88170328 * hue.x - 0.80936493 * hue.y > 1.0) {
-        k0 = 1.19086277;
-        k1 = 1.76576728;
-        k2 = 0.59662641;
-        k3 = 0.75515197;
-        k4 = 0.56771245;
-        rgbRow = PRIME_OKLAB_RED_ROW;
-    } else if (1.81444104 * hue.x - 1.19445276 * hue.y > 1.0) {
-        k0 = 0.73956515;
-        k1 = -0.45954404;
-        k2 = 0.08285427;
-        k3 = 0.12541070;
-        k4 = 0.14503204;
-        rgbRow = PRIME_OKLAB_GREEN_ROW;
-    } else {
-        k0 = 1.35733652;
-        k1 = -0.00915799;
-        k2 = -1.15130210;
-        k3 = -0.50559606;
-        k4 = 0.00692167;
-        rgbRow = PRIME_OKLAB_BLUE_ROW;
+public float primeAgxCompressHsvSaturation(float saturation, float onset)
+{
+    if (saturation <= onset) return saturation;
+    float headroom = 1.0 - onset;
+    float excess = saturation - onset;
+    return onset + headroom * excess / (headroom + excess);
+}
+
+float3 primeAgxAdjustHsv(
+        float3 originalLinear,
+        float3 mapped,
+        PrimeAgxHsvParameters parameters)
+{
+    float3 originalDisplay = pow(originalLinear, 1.0 / 2.2);
+    float3 originalHsv = primeAgxRgbToHsv(originalDisplay);
+    float3 mappedHsv = primeAgxRgbToHsv(mapped);
+    float normalizedValue = clamp(mappedHsv.z, 0.0, 1.0);
+
+    if (originalHsv.y > 1.0e-7 && mappedHsv.y > 1.0e-7)
+    {
+        float retention = lerp(
+                parameters.blackHueRetention,
+                parameters.whiteHueRetention,
+                normalizedValue);
+        float hueOffset = originalHsv.x - mappedHsv.x;
+        hueOffset -= floor(hueOffset + 0.5);
+        mappedHsv.x = frac(mappedHsv.x + retention * hueOffset);
     }
 
-    float saturation = k0
-            + k1 * hue.x
-            + k2 * hue.y
-            + k3 * hue.x * hue.x
-            + k4 * hue.x * hue.y;
-    float3 roots = float3(1.0) + saturation * direction;
-    float3 lms = roots * roots * roots;
-    float3 firstLms = 3.0 * direction * roots * roots;
-    float3 secondLms = 6.0 * direction * direction * roots;
-    float f = dot(rgbRow, lms);
-    float f1 = dot(rgbRow, firstLms);
-    float f2 = dot(rgbRow, secondLms);
-    return saturation - f * f1 / (f1 * f1 - 0.5 * f * f2);
+    float gamutOnset = lerp(
+            parameters.blackGamutOnset,
+            1.0,
+            normalizedValue);
+    mappedHsv.y = primeAgxCompressHsvSaturation(mappedHsv.y, gamutOnset);
+    return primeAgxHsvToRgb(mappedHsv);
 }
 
-public float primeOklabConnectedSaturation(float2 hue, float saturation)
+public float3 primeAgxHsvTonemap(
+        float3 linearBt709,
+        PrimeAgxHsvParameters parameters)
 {
-    const float2 blueNotchAxis = float2(-0.10362546, -0.99461639);
-    float alignment = max(dot(hue, blueNotchAxis), 0.0);
-    float alignment2 = alignment * alignment;
-    float alignment4 = alignment2 * alignment2;
-    float alignment8 = alignment4 * alignment4;
-    float alignment16 = alignment8 * alignment8;
-    float alignment32 = alignment16 * alignment16;
-    float alignment64 = alignment32 * alignment32;
-    float alignment128 = alignment64 * alignment64;
-    float alignment256 = alignment128 * alignment128;
-    return min(saturation, 0.57 + (1.0 - alignment256));
-}
-
-public float primeOklabCuspLightness(float saturation, float3 direction)
-{
-    float3 roots = float3(1.0) + saturation * direction;
-    float3 lms = roots * roots * roots;
-    float3 rgb = float3(
-            dot(PRIME_OKLAB_RED_ROW, lms),
-            dot(PRIME_OKLAB_GREEN_ROW, lms),
-            dot(PRIME_OKLAB_BLUE_ROW, lms));
-    return pow(1.0 / max(rgb.r, max(rgb.g, rgb.b)), 1.0 / 3.0);
-}
-
-public float primeOklabRefineUpperChroma(
-        float chroma,
-        float lightness,
-        float3 direction)
-{
-    float3 roots = float3(lightness) + chroma * direction;
-    float3 lms = roots * roots * roots;
-    float3 firstLms = 3.0 * direction * roots * roots;
-    float3 secondLms = 6.0 * direction * direction * roots;
-    float3 rgb = float3(
-            dot(PRIME_OKLAB_RED_ROW, lms),
-            dot(PRIME_OKLAB_GREEN_ROW, lms),
-            dot(PRIME_OKLAB_BLUE_ROW, lms));
-    float3 firstRgb = float3(
-            dot(PRIME_OKLAB_RED_ROW, firstLms),
-            dot(PRIME_OKLAB_GREEN_ROW, firstLms),
-            dot(PRIME_OKLAB_BLUE_ROW, firstLms));
-    float3 secondRgb = float3(
-            dot(PRIME_OKLAB_RED_ROW, secondLms),
-            dot(PRIME_OKLAB_GREEN_ROW, secondLms),
-            dot(PRIME_OKLAB_BLUE_ROW, secondLms));
-    float3 f = rgb - float3(1.0);
-    float3 denominator = firstRgb * firstRgb - 0.5 * f * secondRgb;
-    float3 reciprocalStep = firstRgb / denominator;
-    float3 step = -f * reciprocalStep;
-    step.x = reciprocalStep.x >= 0.0 ? step.x : 1.0e20;
-    step.y = reciprocalStep.y >= 0.0 ? step.y : 1.0e20;
-    step.z = reciprocalStep.z >= 0.0 ? step.z : 1.0e20;
-    return chroma + min(step.r, min(step.g, step.b));
-}
-
-public float primeOklabSoftMin(float value, float limit, float power)
-{
-    if (value <= 0.0 || limit <= 0.0) return 0.0;
-    float lower = min(value, limit);
-    float higher = max(value, limit);
-    float ratio = lower / higher;
-    return lower * pow(1.0 + pow(ratio, power), -1.0 / power);
-}
-
-public float primeOklabSoftMin4(float value, float limit)
-{
-    if (value <= 0.0 || limit <= 0.0) return 0.0;
-    float lower = min(value, limit);
-    float higher = max(value, limit);
-    float ratio = lower / higher;
-    float ratio2 = ratio * ratio;
-    float root = sqrt(1.0 + ratio2 * ratio2);
-    return lower * rsqrt(root);
-}
-
-public float primeOklabSaturationCap(
-        float lightness,
-        float maximumSaturation,
-        float3 direction)
-{
-    if (lightness <= 0.0) return maximumSaturation;
-    if (lightness >= 1.0) return 0.0;
-
-    float cuspLightness = primeOklabCuspLightness(maximumSaturation, direction);
-    float blackChroma = lightness * maximumSaturation;
-    float whiteChroma = cuspLightness * maximumSaturation
-            * (1.0 - lightness) / (1.0 - cuspLightness);
-    whiteChroma = primeOklabRefineUpperChroma(whiteChroma, lightness, direction);
-
-    float t = clamp(
-            (lightness - cuspLightness) / (1.0 - cuspLightness), 0.0, 1.0);
-    float shoulder = t * (1.0 - t);
-    whiteChroma *= 1.0 - 0.0035 * 16.0 * shoulder * shoulder;
-
-    float roundedChroma = primeOklabSoftMin4(blackChroma, whiteChroma);
-    return max(roundedChroma / lightness, 0.0);
-}
-
-public float primeOklabChromaRetention(float lightness)
-{
-    float lightness2 = lightness * lightness;
-    float lightness4 = lightness2 * lightness2;
-    float lightness8 = lightness4 * lightness4;
-    return 1.0 - lightness8 * lightness4;
-}
-
-public float primeOklabRoundingPower(float lightness)
-{
-    float endpointDistance = lightness * (1.0 - lightness);
-    return 32.0 - 256.0 * endpointDistance * endpointDistance;
-}
-
-public float3 primeOklabTonemapCurve(
-        float3 color,
-        float overexposure,
-        float curveExponent,
-        float curveCoefficient)
-{
-    float3 oklab = primeLinearBt709ToOklab(color);
-    if (oklab.x <= 0.0) return float3(0.0);
-
-    float outputLightness = primeOklabMapLightness(
-            oklab.x, overexposure, curveExponent, curveCoefficient);
-    float inputChroma = length(oklab.yz);
-    if (inputChroma <= 1.0e-8) {
-        return PRIME_OKLAB_RGB_HEADROOM
-                * primeOklabToLinearBt709(float3(outputLightness, 0.0, 0.0));
-    }
-
-    float2 hue = oklab.yz / inputChroma;
-    float3 direction = primeOklabRootDirection(hue);
-    float inputSaturation = inputChroma / oklab.x;
-    float maximumSaturation = primeOklabConnectedSaturation(
-            hue, primeOklabMaxSaturation(hue, direction));
-    float desiredSaturation = inputSaturation
-            * primeOklabChromaRetention(outputLightness);
-    float saturationCap = primeOklabSaturationCap(
-            outputLightness, maximumSaturation, direction);
-    float outputSaturation = primeOklabSoftMin(
-            desiredSaturation,
-            saturationCap,
-            primeOklabRoundingPower(outputLightness));
-    return PRIME_OKLAB_RGB_HEADROOM * primeOklabToLinearBt709(float3(
-            outputLightness,
-            outputLightness * outputSaturation * hue));
+    float3 nonnegative = max(linearBt709, float3(0.0));
+    if (all(nonnegative == float3(0.0))) return float3(0.0);
+    return primeAgxAdjustHsv(
+            nonnegative,
+            primeAgxS2O3(nonnegative, parameters),
+            parameters);
 }
 
 public float3 primeDisplayTransformToSrgb(
         float3 hdrRec2020,
         float exposureMultiplier,
-        float overexposure,
-        float curveExponent,
-        float curveCoefficient)
+        PrimeAgxHsvParameters parameters)
 {
     float3 exposedRec2020 = max(hdrRec2020, float3(0.0))
             * (PRIME_DISPLAY_EXPOSURE * exposureMultiplier);
     float3 linearBt709 = max(
-            primeLinearRec2020ToLinearBt709(exposedRec2020), float3(0.0));
-    float3 encodedSrgb = primeEncodeSrgb(primeOklabTonemapCurve(
-            linearBt709, overexposure, curveExponent, curveCoefficient));
-    return clamp(encodedSrgb, float3(0.0), float3(1.0));
+            primeLinearRec2020ToLinearBt709(exposedRec2020),
+            float3(0.0));
+    // AgX-S2O3 produces a display-encoded signal; applying an sRGB OETF again is incorrect.
+    return clamp(
+            primeAgxHsvTonemap(linearBt709, parameters),
+            float3(0.0),
+            float3(1.0));
+}
+
+public float3 primeDisplayTransformToSrgb(
+        float3 hdrRec2020,
+        float exposureMultiplier)
+{
+    return primeDisplayTransformToSrgb(
+            hdrRec2020,
+            exposureMultiplier,
+            primeDefaultAgxHsvParameters());
 }

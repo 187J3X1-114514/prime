@@ -5,10 +5,7 @@ struct PrimeFsrDisplayPushConstants
 {
     uint2 outputExtent;
     uint debugView;
-    float oklabOverexposure;
     float finalExposureMultiplier;
-    float curveExponent;
-    float curveCoefficient;
 };
 
 [[vk::binding(0, 0)]] Texture2D<float4> primeFsrLinearOutput;
@@ -36,9 +33,6 @@ void main(uint3 dispatchThreadId : SV_DispatchThreadID)
                     primeDisplayTransformToSrgb(
                             max(radiance, float3(0.0)),
                             exp2(primeAutoExposureState[0].exposureEv)
-                                    * primeFsrDisplayPush.finalExposureMultiplier,
-                            primeFsrDisplayPush.oklabOverexposure,
-                            primeFsrDisplayPush.curveExponent,
-                            primeFsrDisplayPush.curveCoefficient),
+                                    * primeFsrDisplayPush.finalExposureMultiplier),
                     1.0));
 }

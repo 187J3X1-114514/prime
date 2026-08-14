@@ -32,7 +32,7 @@ import org.lwjgl.vulkan.VkWriteDescriptorSet;
 final class DlssRrDebugPass implements Destroyable {
     private static final int IMAGE_COUNT = 10;
     private static final int COMPUTE_STAGE = VK12.VK_SHADER_STAGE_COMPUTE_BIT;
-    private static final int PUSH_SIZE = 32;
+    private static final int PUSH_SIZE = 20;
     private static final int LOCAL_SIZE = 8;
     private static final String SHADER = "/prime/shaders/rr_debug.comp.spv";
 
@@ -214,10 +214,7 @@ final class DlssRrDebugPass implements Destroyable {
             push.putInt(4, fullscreen ? 1 : 0);
             push.putInt(8, Math.floorMod(frameIndex, jitterPhaseCount) + 1);
             push.putInt(12, jitterPhaseCount);
-            push.putFloat(16, display.oklabOverexposure());
-            push.putFloat(20, display.finalExposureMultiplier());
-            push.putFloat(24, display.curveExponent());
-            push.putFloat(28, display.curveCoefficient());
+            push.putFloat(16, display.finalExposureMultiplier());
             VK12.vkCmdBindPipeline(commandBuffer, VK12.VK_PIPELINE_BIND_POINT_COMPUTE, this.pipeline);
             VK12.vkCmdBindDescriptorSets(
                     commandBuffer,

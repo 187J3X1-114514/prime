@@ -21,8 +21,6 @@ public record PrimeSettings(
         int starQuarterSteps,
         int blockLightQuarterSteps,
         int finalExposureQuarterSteps,
-        int oklabOverexposureSteps,
-        int curveExponentSteps,
         int autoExposureCompensationSteps,
         int defaultRoughnessSteps,
         boolean seamlessGlass,
@@ -42,8 +40,6 @@ public record PrimeSettings(
             int starQuarterSteps,
             int blockLightQuarterSteps,
             int finalExposureQuarterSteps,
-            int oklabOverexposureSteps,
-            int curveExponentSteps,
             int autoExposureCompensationSteps,
             int defaultRoughnessSteps,
             boolean seamlessGlass,
@@ -62,8 +58,6 @@ public record PrimeSettings(
                 starQuarterSteps,
                 blockLightQuarterSteps,
                 finalExposureQuarterSteps,
-                oklabOverexposureSteps,
-                curveExponentSteps,
                 autoExposureCompensationSteps,
                 defaultRoughnessSteps,
                 seamlessGlass,
@@ -83,8 +77,6 @@ public record PrimeSettings(
         LightingSettings.starLinearMultiplier(starQuarterSteps);
         LightingSettings.linearMultiplier(blockLightQuarterSteps);
         DisplaySettings.finalExposureMultiplier(finalExposureQuarterSteps);
-        DisplaySettings.overexposure(oklabOverexposureSteps);
-        DisplaySettings.curveExponent(curveExponentSteps);
         DisplaySettings.autoExposureCompensation(autoExposureCompensationSteps);
         MaterialSettings.linearRoughness(defaultRoughnessSteps);
         VoxelSurfaceSettings.maximumHeight(voxelTextureSurfaceStrengthSteps);
@@ -105,8 +97,6 @@ public record PrimeSettings(
                 LightingSettings.DEFAULT_STAR_QUARTER_STEPS,
                 LightingSettings.DEFAULT_BLOCK_LIGHT_QUARTER_STEPS,
                 DisplaySettings.DEFAULT_FINAL_EXPOSURE_QUARTER_STEPS,
-                DisplaySettings.DEFAULT_OVEREXPOSURE_STEPS,
-                DisplaySettings.DEFAULT_CURVE_EXPONENT_STEPS,
                 DisplaySettings.DEFAULT_AUTO_EXPOSURE_COMPENSATION_STEPS,
                 MaterialSettings.DEFAULT_ROUGHNESS_STEPS,
                 MaterialSettings.DEFAULT_SEAMLESS_GLASS,
@@ -131,8 +121,6 @@ public record PrimeSettings(
                         this.starQuarterSteps,
                         this.blockLightQuarterSteps,
                         this.finalExposureQuarterSteps,
-                        this.oklabOverexposureSteps,
-                        this.curveExponentSteps,
                         this.autoExposureCompensationSteps,
                         this.defaultRoughnessSteps,
                         this.seamlessGlass,
@@ -157,8 +145,6 @@ public record PrimeSettings(
                         this.starQuarterSteps,
                         this.blockLightQuarterSteps,
                         this.finalExposureQuarterSteps,
-                        this.oklabOverexposureSteps,
-                        this.curveExponentSteps,
                         this.autoExposureCompensationSteps,
                         this.defaultRoughnessSteps,
                         this.seamlessGlass,
@@ -182,8 +168,6 @@ public record PrimeSettings(
                         this.starQuarterSteps,
                         this.blockLightQuarterSteps,
                         this.finalExposureQuarterSteps,
-                        this.oklabOverexposureSteps,
-                        this.curveExponentSteps,
                         this.autoExposureCompensationSteps,
                         this.defaultRoughnessSteps,
                         this.seamlessGlass,
@@ -209,8 +193,6 @@ public record PrimeSettings(
                         this.starQuarterSteps,
                         this.blockLightQuarterSteps,
                         this.finalExposureQuarterSteps,
-                        this.oklabOverexposureSteps,
-                        this.curveExponentSteps,
                         this.autoExposureCompensationSteps,
                         this.defaultRoughnessSteps,
                         this.seamlessGlass,
@@ -236,8 +218,6 @@ public record PrimeSettings(
                         this.starQuarterSteps,
                         this.blockLightQuarterSteps,
                         this.finalExposureQuarterSteps,
-                        this.oklabOverexposureSteps,
-                        this.curveExponentSteps,
                         this.autoExposureCompensationSteps,
                         this.defaultRoughnessSteps,
                         this.seamlessGlass,
@@ -263,8 +243,6 @@ public record PrimeSettings(
                         this.starQuarterSteps,
                         this.blockLightQuarterSteps,
                         this.finalExposureQuarterSteps,
-                        this.oklabOverexposureSteps,
-                        this.curveExponentSteps,
                         this.autoExposureCompensationSteps,
                         this.defaultRoughnessSteps,
                         this.seamlessGlass,
@@ -290,8 +268,6 @@ public record PrimeSettings(
                         this.starQuarterSteps,
                         this.blockLightQuarterSteps,
                         this.finalExposureQuarterSteps,
-                        this.oklabOverexposureSteps,
-                        this.curveExponentSteps,
                         this.autoExposureCompensationSteps,
                         this.defaultRoughnessSteps,
                         this.seamlessGlass,
@@ -318,8 +294,6 @@ public record PrimeSettings(
                         this.starQuarterSteps,
                         this.blockLightQuarterSteps,
                         this.finalExposureQuarterSteps,
-                        this.oklabOverexposureSteps,
-                        this.curveExponentSteps,
                         this.autoExposureCompensationSteps,
                         this.defaultRoughnessSteps,
                         this.seamlessGlass,
@@ -345,8 +319,6 @@ public record PrimeSettings(
                         this.starQuarterSteps,
                         this.blockLightQuarterSteps,
                         this.finalExposureQuarterSteps,
-                        this.oklabOverexposureSteps,
-                        this.curveExponentSteps,
                         this.autoExposureCompensationSteps,
                         this.defaultRoughnessSteps,
                         this.seamlessGlass,
@@ -372,8 +344,6 @@ public record PrimeSettings(
                         value,
                         this.blockLightQuarterSteps,
                         this.finalExposureQuarterSteps,
-                        this.oklabOverexposureSteps,
-                        this.curveExponentSteps,
                         this.autoExposureCompensationSteps,
                         this.defaultRoughnessSteps,
                         this.seamlessGlass,
@@ -399,8 +369,6 @@ public record PrimeSettings(
                         this.starQuarterSteps,
                         value,
                         this.finalExposureQuarterSteps,
-                        this.oklabOverexposureSteps,
-                        this.curveExponentSteps,
                         this.autoExposureCompensationSteps,
                         this.defaultRoughnessSteps,
                         this.seamlessGlass,
@@ -425,62 +393,6 @@ public record PrimeSettings(
                         this.sunQuarterSteps,
                         this.starQuarterSteps,
                         this.blockLightQuarterSteps,
-                        value,
-                        this.oklabOverexposureSteps,
-                        this.curveExponentSteps,
-                        this.autoExposureCompensationSteps,
-                        this.defaultRoughnessSteps,
-                        this.seamlessGlass,
-                        this.airGap,
-                        this.lightingRevision,
-                        this.materialRevision,
-                        this.sharcEnabled,
-                        this.vanillaPbrPresets);
-    }
-
-    public PrimeSettings withOklabOverexposureSteps(int value) {
-        DisplaySettings.overexposure(value);
-        return value == this.oklabOverexposureSteps
-                ? this
-                : new PrimeSettings(
-                        this.pathTracingEnabled,
-                        this.voxelTextureSurfaces,
-                        this.voxelTextureSurfaceStrengthSteps,
-                        this.postProcessingMode,
-                        this.reconstructionQuality,
-                        this.astronomy,
-                        this.sunQuarterSteps,
-                        this.starQuarterSteps,
-                        this.blockLightQuarterSteps,
-                        this.finalExposureQuarterSteps,
-                        value,
-                        this.curveExponentSteps,
-                        this.autoExposureCompensationSteps,
-                        this.defaultRoughnessSteps,
-                        this.seamlessGlass,
-                        this.airGap,
-                        this.lightingRevision,
-                        this.materialRevision,
-                        this.sharcEnabled,
-                        this.vanillaPbrPresets);
-    }
-
-    public PrimeSettings withCurveExponentSteps(int value) {
-        DisplaySettings.curveExponent(value);
-        return value == this.curveExponentSteps
-                ? this
-                : new PrimeSettings(
-                        this.pathTracingEnabled,
-                        this.voxelTextureSurfaces,
-                        this.voxelTextureSurfaceStrengthSteps,
-                        this.postProcessingMode,
-                        this.reconstructionQuality,
-                        this.astronomy,
-                        this.sunQuarterSteps,
-                        this.starQuarterSteps,
-                        this.blockLightQuarterSteps,
-                        this.finalExposureQuarterSteps,
-                        this.oklabOverexposureSteps,
                         value,
                         this.autoExposureCompensationSteps,
                         this.defaultRoughnessSteps,
@@ -507,8 +419,6 @@ public record PrimeSettings(
                         this.starQuarterSteps,
                         this.blockLightQuarterSteps,
                         this.finalExposureQuarterSteps,
-                        this.oklabOverexposureSteps,
-                        this.curveExponentSteps,
                         value,
                         this.defaultRoughnessSteps,
                         this.seamlessGlass,
@@ -534,8 +444,6 @@ public record PrimeSettings(
                         this.starQuarterSteps,
                         this.blockLightQuarterSteps,
                         this.finalExposureQuarterSteps,
-                        this.oklabOverexposureSteps,
-                        this.curveExponentSteps,
                         this.autoExposureCompensationSteps,
                         value,
                         this.seamlessGlass,
@@ -560,8 +468,6 @@ public record PrimeSettings(
                         this.starQuarterSteps,
                         this.blockLightQuarterSteps,
                         this.finalExposureQuarterSteps,
-                        this.oklabOverexposureSteps,
-                        this.curveExponentSteps,
                         this.autoExposureCompensationSteps,
                         this.defaultRoughnessSteps,
                         value,
@@ -586,8 +492,6 @@ public record PrimeSettings(
                         this.starQuarterSteps,
                         this.blockLightQuarterSteps,
                         this.finalExposureQuarterSteps,
-                        this.oklabOverexposureSteps,
-                        this.curveExponentSteps,
                         this.autoExposureCompensationSteps,
                         this.defaultRoughnessSteps,
                         this.seamlessGlass,
@@ -612,8 +516,6 @@ public record PrimeSettings(
                         this.starQuarterSteps,
                         this.blockLightQuarterSteps,
                         this.finalExposureQuarterSteps,
-                        this.oklabOverexposureSteps,
-                        this.curveExponentSteps,
                         this.autoExposureCompensationSteps,
                         this.defaultRoughnessSteps,
                         this.seamlessGlass,
@@ -644,8 +546,6 @@ public record PrimeSettings(
     public DisplaySettings.Snapshot display() {
         return new DisplaySettings.Snapshot(
                 this.finalExposureQuarterSteps,
-                this.oklabOverexposureSteps,
-                this.curveExponentSteps,
                 this.autoExposureCompensationSteps);
     }
 }

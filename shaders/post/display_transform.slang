@@ -3,6 +3,10 @@ module "post/display_transform.slang";
 
 import "prime_abi_types.slang";
 import "core/color_space.slang";
+import "post/oklab_display_transform.slang";
+
+public static const uint PRIME_DISPLAY_TRANSFORM_OKLAB = 0u;
+public static const uint PRIME_DISPLAY_TRANSFORM_AGX_HSV = 1u;
 
 // Ported from C:/WorkSpace/drt/shaders/agx_hsv.slang at commit
 // ac48c20c6a2412a2fad13f53ac37bc82c3f1ac0b.
@@ -186,16 +190,25 @@ public float3 primeAgxHsvTonemap(
 public float3 primeDisplayTransformToSrgb(
         float3 hdrRec2020,
         float exposureMultiplier,
-        PrimeAgxHsvParameters parameters)
+        uint displayTransformMode)
 {
     float3 exposedRec2020 = max(hdrRec2020, float3(0.0))
             * (PRIME_DISPLAY_EXPOSURE * exposureMultiplier);
     float3 linearBt709 = max(
             primeLinearRec2020ToLinearBt709(exposedRec2020),
             float3(0.0));
-    // AgX-S2O3 produces a display-encoded signal; applying an sRGB OETF again is incorrect.
+    if (displayTransformMode == PRIME_DISPLAY_TRANSFORM_AGX_HSV)
+    {
+        // AgX-S2O3 produces a display-encoded signal; applying an sRGB OETF again is incorrect.
+        return clamp(
+                primeAgxHsvTonemap(linearBt709, primeDefaultAgxHsvParameters()),
+                float3(0.0),
+                float3(1.0));
+    }
+    float3 mapped = primeOklabDrtTonemap(
+            linearBt709, primeDefaultOklabDrtParameters());
     return clamp(
-            primeAgxHsvTonemap(linearBt709, parameters),
+            primeEncodeSrgb(clamp(mapped, float3(0.0), float3(1.0))),
             float3(0.0),
             float3(1.0));
 }
@@ -207,5 +220,5 @@ public float3 primeDisplayTransformToSrgb(
     return primeDisplayTransformToSrgb(
             hdrRec2020,
             exposureMultiplier,
-            primeDefaultAgxHsvParameters());
+            PRIME_DISPLAY_TRANSFORM_OKLAB);
 }

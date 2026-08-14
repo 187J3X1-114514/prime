@@ -137,6 +137,26 @@ void main(uint3 dispatchThreadId : SV_DispatchThreadID)
             mask |= PRIME_TEST_FAILURE_IDENTITY;
         }
         mask |= primeTestClassify(mapped);
+    } else if (kind == 8) {
+        float3 hdrRec2020 = max(values.xyz, float3(0.0));
+        float3 explicitOklab = primeDisplayTransformToSrgb(
+                hdrRec2020,
+                1.0,
+                PRIME_DISPLAY_TRANSFORM_OKLAB);
+        float3 defaultOutput = primeDisplayTransformToSrgb(hdrRec2020, 1.0);
+        float3 error = abs(defaultOutput - explicitOklab);
+        actual = float2(
+                max(error.x, max(error.y, error.z)),
+                max(explicitOklab.x, max(explicitOklab.y, explicitOklab.z)));
+        expected = float2(0.0, actual.y);
+        if (!primeTestClose(actual.x, 0.0, 1.0e-7, 1.0e-7)) {
+            mask |= PRIME_TEST_FAILURE_IDENTITY;
+        }
+        if (any(explicitOklab < float3(0.0))
+                || any(explicitOklab > float3(1.0))) {
+            mask |= PRIME_TEST_FAILURE_RANGE;
+        }
+        mask |= primeTestClassify(explicitOklab);
     } else {
         mask |= PRIME_TEST_FAILURE_EVENT;
     }

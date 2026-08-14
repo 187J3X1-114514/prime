@@ -119,10 +119,10 @@ abstract class GenerateShaderAbi extends DefaultTask {
 				|| colorContract.textureEncoding != 'srgb'
 				|| colorContract.displayEncoding != 'srgb'
 				|| colorContract.displayColorSpace != 'rec709-d65'
-				|| colorContract.defaultDisplayTransform != 'agx-hsv'
+				|| colorContract.defaultDisplayTransform != 'oklab'
 				|| colorContract.displayExposure != 1.0) {
 			throw new GradleException(
-					'Prime color contract must remain sRGB input -> linear Rec.2020 D65 -> AgX HSV -> sRGB Rec.709 display')
+					'Prime color contract must remain sRGB input -> linear Rec.2020 D65 -> selectable DRT (Oklab default) -> sRGB Rec.709 display')
 		}
 		if (emissionContract.level15BlockIntensity != 1.5) {
 			throw new GradleException(

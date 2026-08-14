@@ -8,6 +8,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import dev.prime.render.AstronomySettings;
 import dev.prime.render.ScatterSettings;
 import dev.prime.render.post.DlssRrDebugView;
+import dev.prime.render.post.DisplayTransformMode;
 import dev.prime.render.post.PostProcessingMode;
 import dev.prime.render.post.ReconstructionQualityMode;
 import java.util.Properties;
@@ -160,6 +161,10 @@ final class PrimeConfigTest {
                 ReconstructionQualityMode.PERFORMANCE,
                 ReconstructionQualityMode.fromId("future_quality"));
         assertEquals(DlssRrDebugView.OFF, DlssRrDebugView.fromId("future_view"));
+        assertEquals(DisplayTransformMode.OKLAB, DisplayTransformMode.DEFAULT);
+        assertEquals(DisplayTransformMode.OKLAB, DisplayTransformMode.fromId(null));
+        assertEquals(DisplayTransformMode.OKLAB, DisplayTransformMode.fromId("future_drt"));
+        assertEquals(DisplayTransformMode.AGX_HSV, DisplayTransformMode.fromId("agx_hsv"));
     }
 
     @Test
@@ -214,6 +219,7 @@ final class PrimeConfigTest {
         assertTrue(serialized.contains("astronomy.solar_longitude_degrees=0\n"));
         assertTrue(serialized.contains("lighting.star_ev=0\n"));
         assertTrue(serialized.contains("display.final_exposure_ev=0\n"));
+        assertTrue(serialized.contains("display.transform=oklab\n"));
         assertFalse(serialized.contains("display.oklab_overexposure"));
         assertFalse(serialized.contains("display.oklab_curve_exponent"));
         assertTrue(serialized.contains("display.auto_exposure_compensation=0.5\n"));
@@ -223,6 +229,7 @@ final class PrimeConfigTest {
         assertTrue(PrimeSettings.defaults().seamlessGlass());
         assertTrue(PrimeSettings.defaults().airGap());
         assertTrue(PrimeSettings.defaults().vanillaPbrPresets());
+        assertEquals(DisplayTransformMode.OKLAB, PrimeSettings.defaults().displayTransformMode());
 
         Properties properties = new Properties();
         assertFalse(PrimeConfig.hasLegacyDebugProperties(properties));

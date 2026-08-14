@@ -11,6 +11,7 @@ import dev.prime.render.MaterialSettings;
 import dev.prime.render.RealtimeRenderSettings;
 import dev.prime.render.RendererSettings;
 import dev.prime.render.post.PostProcessingMode;
+import dev.prime.render.post.DisplayTransformMode;
 import dev.prime.render.post.ReconstructionQualityMode;
 import dev.prime.render.terrain.VoxelSurfaceSettings;
 import org.junit.jupiter.api.Test;
@@ -29,6 +30,7 @@ final class RendererSettingsMappingTest {
                 .withSunQuarterSteps(5)
                 .withStarQuarterSteps(-6)
                 .withBlockLightQuarterSteps(7)
+                .withDisplayTransformMode(DisplayTransformMode.AGX_HSV)
                 .withFinalExposureQuarterSteps(-3)
                 .withAutoExposureCompensationSteps(61)
                 .withDefaultRoughnessSteps(37)
@@ -49,6 +51,7 @@ final class RendererSettingsMappingTest {
         assertEquals(source.lighting(), mapped.lighting());
         assertEquals(source.material(), mapped.material());
         assertEquals(source.display(), mapped.display());
+        assertEquals(DisplayTransformMode.AGX_HSV, mapped.display().displayTransformMode());
         assertEquals(42L, mapped.revision());
         assertRawEquals(
                 VoxelSurfaceSettings.maximumHeight(173),
@@ -88,6 +91,7 @@ final class RendererSettingsMappingTest {
         assertTrue(mappedDefaults.material().seamlessGlass());
         assertTrue(mappedDefaults.material().airGap());
         assertTrue(mappedDefaults.material().vanillaPbrPresets());
+        assertEquals(DisplayTransformMode.OKLAB, mappedDefaults.display().displayTransformMode());
         assertEquals(0L, mappedDefaults.revision());
 
         PrimeSettings changed = defaults
@@ -96,6 +100,7 @@ final class RendererSettingsMappingTest {
                 .withVoxelTextureSurfaceStrengthSteps(150)
                 .withLatitudeDegrees(-45)
                 .withSunQuarterSteps(4)
+                .withDisplayTransformMode(DisplayTransformMode.AGX_HSV)
                 .withDefaultRoughnessSteps(25)
                 .withSeamlessGlass(false)
                 .withAirGap(false)

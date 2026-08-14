@@ -1,5 +1,8 @@
 package dev.prime.render;
 
+import dev.prime.render.post.DisplayTransformMode;
+import java.util.Objects;
+
 /** Runtime controls for Prime's automatic exposure and final display-referred transform. */
 public final class DisplaySettings {
     public static final int QUARTER_STEPS_PER_EV = 4;
@@ -48,11 +51,23 @@ public final class DisplaySettings {
     }
 
     public record Snapshot(
+            DisplayTransformMode displayTransformMode,
             int finalExposureQuarterSteps,
             int autoExposureCompensationSteps) {
         public Snapshot {
+            displayTransformMode = Objects.requireNonNull(
+                    displayTransformMode, "displayTransformMode");
             DisplaySettings.finalExposureMultiplier(finalExposureQuarterSteps);
             DisplaySettings.autoExposureCompensation(autoExposureCompensationSteps);
+        }
+
+        public Snapshot(
+                int finalExposureQuarterSteps,
+                int autoExposureCompensationSteps) {
+            this(
+                    DisplayTransformMode.DEFAULT,
+                    finalExposureQuarterSteps,
+                    autoExposureCompensationSteps);
         }
 
         public float finalExposureMultiplier() {

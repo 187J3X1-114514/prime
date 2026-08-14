@@ -172,7 +172,7 @@ final class PrimeProductionMathGpuTest {
     @Test
     void exposureAndDisplayCurvesUseTheProductionContract()
             throws IOException {
-        int kinds = 8;
+        int kinds = 9;
         int inputWords = 2;
         ShaderPropertyBatch.assertProperties(
                 runner,

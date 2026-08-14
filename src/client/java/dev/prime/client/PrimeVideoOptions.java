@@ -10,6 +10,7 @@ import dev.prime.client.PrimeRuntime;
 import dev.prime.render.RendererSettings;
 import dev.prime.render.ScatterSettings;
 import dev.prime.render.fsr.FsrDebugView;
+import dev.prime.render.post.DisplayTransformMode;
 import dev.prime.render.post.DlssRrDebugView;
 import dev.prime.render.post.PostProcessingMode;
 import dev.prime.render.post.ReconstructionQualityMode;
@@ -27,6 +28,8 @@ public final class PrimeVideoOptions {
             List.of(PostProcessingMode.values());
     private static final List<ReconstructionQualityMode> QUALITY_MODES =
             List.of(ReconstructionQualityMode.values());
+    private static final List<DisplayTransformMode> DISPLAY_TRANSFORM_MODES =
+            List.of(DisplayTransformMode.values());
     private static final List<DlssRrDebugView> RR_DEBUG_VIEWS = List.of(DlssRrDebugView.values());
     private static final List<FsrDebugView> FSR_DEBUG_VIEWS = List.of(FsrDebugView.values());
     private static final List<NrdDiagnostics.Mode> NRD_DEBUG_VIEWS =
@@ -243,6 +246,24 @@ public final class PrimeVideoOptions {
                 DisplaySettings.MINIMUM_FINAL_EXPOSURE_QUARTER_STEPS,
                 DisplaySettings.MAXIMUM_FINAL_EXPOSURE_QUARTER_STEPS,
                 PrimeConfig::setFinalExposureQuarterSteps);
+    }
+
+    public static OptionInstance<DisplayTransformMode> displayTransformMode() {
+        return new OptionInstance<>(
+                "prime.options.display.transform",
+                OptionInstance.cachedConstantTooltip(Component.translatable(
+                        "prime.options.display.transform.tooltip")),
+                (caption, mode) -> Options.genericValueLabel(
+                        caption,
+                        Component.translatable(
+                                "prime.options.display.transform." + mode.id())),
+                new OptionInstance.Enum<>(
+                        DISPLAY_TRANSFORM_MODES,
+                        Codec.STRING.xmap(
+                                DisplayTransformMode::fromId,
+                                DisplayTransformMode::id)),
+                PrimeConfig.settings().displayTransformMode(),
+                PrimeConfig::setDisplayTransformMode);
     }
 
     public static OptionInstance<Integer> autoExposureCompensation() {

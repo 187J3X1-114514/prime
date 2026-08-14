@@ -10,6 +10,7 @@ import dev.prime.render.ScatterSettings;
 import dev.prime.client.PrimeRuntime;
 import dev.prime.render.RendererSettings;
 import dev.prime.render.fsr.FsrDebugView;
+import dev.prime.render.post.DisplayTransformMode;
 import dev.prime.render.post.nrd.NrdDiagnostics;
 import dev.prime.render.post.DlssRrDebugView;
 import dev.prime.render.post.PostProcessingMode;
@@ -60,6 +61,7 @@ public abstract class VideoSettingsScreenMixin {
     @Unique private OptionInstance<Integer> prime$sunExposure;
     @Unique private OptionInstance<Integer> prime$starExposure;
     @Unique private OptionInstance<Integer> prime$blockLightExposure;
+    @Unique private OptionInstance<DisplayTransformMode> prime$displayTransformMode;
     @Unique private OptionInstance<Integer> prime$finalExposure;
     @Unique private OptionInstance<Integer> prime$autoExposureCompensation;
     @Unique private OptionInstance<Integer> prime$defaultRoughness;
@@ -91,6 +93,7 @@ public abstract class VideoSettingsScreenMixin {
             this.prime$sunExposure = PrimeVideoOptions.sunExposure();
             this.prime$starExposure = PrimeVideoOptions.starExposure();
             this.prime$blockLightExposure = PrimeVideoOptions.blockLightExposure();
+            this.prime$displayTransformMode = PrimeVideoOptions.displayTransformMode();
             this.prime$finalExposure = PrimeVideoOptions.finalExposure();
             this.prime$autoExposureCompensation =
                     PrimeVideoOptions.autoExposureCompensation();
@@ -124,6 +127,7 @@ public abstract class VideoSettingsScreenMixin {
             list.addBig(this.prime$starExposure);
             list.addBig(this.prime$blockLightExposure);
             list.addHeader(PRIME$DISPLAY_HEADER);
+            list.addBig(this.prime$displayTransformMode);
             list.addBig(this.prime$autoExposureCompensation);
             list.addBig(this.prime$finalExposure);
             list.addHeader(PRIME$MATERIAL_HEADER);
@@ -189,6 +193,9 @@ public abstract class VideoSettingsScreenMixin {
         this.prime$refresh(
                 this.prime$blockLightExposure,
                 LightingSettings.DEFAULT_BLOCK_LIGHT_QUARTER_STEPS);
+        this.prime$refresh(
+                this.prime$displayTransformMode,
+                DisplayTransformMode.DEFAULT);
         this.prime$refresh(
                 this.prime$finalExposure,
                 DisplaySettings.DEFAULT_FINAL_EXPOSURE_QUARTER_STEPS);

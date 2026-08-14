@@ -66,24 +66,14 @@ void primeRealtimeWavefrontTransparentShadeEntry()
     primeWavefrontTransparentShade(context, launchIndex, sourceQueue);
 }
 
-void primeRealtimeWavefrontAreaEntry()
+void primeRealtimeWavefrontLightEntry()
 {
     uint2 launchIndex = DispatchRaysIndex().xy;
     PrimeIntegratorContext context = primeIntegratorContextCreate();
     if (launchIndex.x == 0u) {
         primeResetWavefrontQueue(PRIME_WAVEFRONT_AREA_QUEUE);
     }
-    primeWavefrontArea(PrimeNoIndirectReuse(), context, launchIndex.x);
-}
-
-void primeRealtimeWavefrontSunEntry()
-{
-    uint2 launchIndex = DispatchRaysIndex().xy;
-    PrimeIntegratorContext context = primeIntegratorContextCreate();
-    if (launchIndex.x == 0u) {
-        primeResetWavefrontQueue(PRIME_WAVEFRONT_SUN_QUEUE);
-    }
-    primeWavefrontSun(context, launchIndex.x);
+    primeWavefrontLight(PrimeNoIndirectReuse(), context, launchIndex.x);
 }
 
 void primeRealtimeWavefrontResolveEntry()

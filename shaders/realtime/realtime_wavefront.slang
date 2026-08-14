@@ -45,7 +45,7 @@ bool primeSecondarySamplesAreaLight(PrimePreparedSampleBase preparedSample) {
             < PRIME_SECONDARY_LIGHT_FAMILY_PROBABILITY;
 }
 
-struct PrimeDeferredSecondarySunNee : IPrimeSecondarySunNee {
+struct PrimeStagedSecondarySunNee : IPrimeSecondarySunNee {
     float3 estimate(
             inout PrimeIntegratorContext context,
             IntegratorRecord integrator,
@@ -55,33 +55,7 @@ struct PrimeDeferredSecondarySunNee : IPrimeSecondarySunNee {
             PrimeRcVolumeStack volumeStack,
             float3 pathThroughput,
             uint pathIndex) {
-        if (primeSecondarySamplesAreaLight(preparedSample)) {
-            return float3(0.0);
-        }
-        PrimePreparedSunShadow prepared = primePrepareDirectSunShadow(
-                context,
-                integrator,
-                surface,
-                viewDirection,
-                primeSobolSample2D(
-                        preparedSample,
-                        PRIME_SAMPLE_EFFECT_DIRECT_SUN,
-                        PRIME_SAMPLE_DIMENSION_PRIMARY),
-                volumeStack,
-                PRIME_SECONDARY_LIGHT_FAMILY_PROBABILITY);
-        float3 contribution = pathThroughput * prepared.contribution;
-        if (prepared.active && any(contribution > float3(0.0))) {
-            uint control = asuint(primeWavefrontPaths[pathIndex]
-                    .transport.rayDirectionAndDenoiserControl.w);
-            primeStoreWavefrontSunShadowWork(
-                    pathIndex,
-                    prepared,
-                    surface,
-                    volumeStack,
-                    contribution,
-                    control);
-            primeAppendWavefrontPath(PRIME_WAVEFRONT_SUN_QUEUE, pathIndex);
-        }
+        // The merged Light stage consumes the persisted pre-scatter surface and path.
         return float3(0.0);
     }
 };
@@ -546,8 +520,8 @@ void primeWavefrontPrimary(
         PrimeIntegrationResult result =
                 primeLoadWavefrontIntermediate(pixel, record);
         bool continuation = primeIntegrateWavefrontSurface(
-                PrimeDeferredSecondarySunNee(),
-                PrimeDeferredSecondaryAreaNee(),
+                PrimeStagedSecondarySunNee(),
+                PrimeStagedSecondaryAreaNee(),
                 PrimeNoIndirectReuse(),
                 context,
                 path,
@@ -618,8 +592,8 @@ void primeWavefrontShade<IndirectReuse>(
     PrimeDenoiserState denoiserState =
             primeWavefrontDenoiserState(control, result);
     bool continuation = primeIntegrateWavefrontSurface(
-            PrimeDeferredSecondarySunNee(),
-            PrimeDeferredSecondaryAreaNee(),
+            PrimeStagedSecondarySunNee(),
+            PrimeStagedSecondaryAreaNee(),
             indirectReuse,
             context,
             path,
@@ -699,8 +673,8 @@ void primeWavefrontTransparentShade(
     bool directionalGuide = primeWavefrontDirectionalGuide(control);
     bool hadDirectionalGuide = directionalGuide;
     bool continuation = primeIntegrateTransparentWavefrontSurface(
-            PrimeDeferredSecondarySunNee(),
-            PrimeDeferredSecondaryAreaNee(),
+            PrimeStagedSecondarySunNee(),
+            PrimeStagedSecondaryAreaNee(),
             context,
             path,
             integrator,
@@ -750,7 +724,7 @@ void primeWavefrontTransparentShade(
             targetQueue, recordIndex, continuation);
 }
 
-void primeWavefrontArea<IndirectReuse>(
+void primeWavefrontLight<IndirectReuse>(
         IndirectReuse indirectReuse,
         inout PrimeIntegratorContext context,
         uint launchIndex)
@@ -771,9 +745,7 @@ void primeWavefrontArea<IndirectReuse>(
     PathState path = primeWavefrontPath(pixel, record);
     PrimePreparedSampleBase preparedSample =
             primePrepareSampleBase(primeMakeSampleBase(path, path.bounce + 1u));
-    if (!primeSecondarySamplesAreaLight(preparedSample)) {
-        return;
-    }
+    bool samplesAreaLight = primeSecondarySamplesAreaLight(preparedSample);
     PrimeRcVolumeStack volumeStack = primeWavefrontVolumeStack(record);
     if (!primeApplySegmentMedium(context, path, surface, volumeStack)) {
         return;
@@ -800,49 +772,44 @@ void primeWavefrontArea<IndirectReuse>(
     }
 
     primeSetNumericalContext(context.diagnostics, PRIME_NUMERICAL_STAGE_DIRECT_LIGHT, path.bounce);
-    float3 contribution = path.throughput * primeEstimateDirectAreaLight(context,
-            surface,
-            viewDirection,
-            primeSobolSample3D(
-                    preparedSample,
-                    PRIME_SAMPLE_EFFECT_DIRECT_AREA_LIGHT,
-                    PRIME_SAMPLE_DIMENSION_PRIMARY).xy,
-            primeSobolSample2D(
-                    preparedSample,
-                    PRIME_SAMPLE_EFFECT_DIRECT_AREA_LIGHT,
-                    PRIME_SAMPLE_DIMENSION_SECONDARY),
-            volumeStack,
-            PRIME_SECONDARY_LIGHT_FAMILY_PROBABILITY);
+    float3 direct;
+    if (samplesAreaLight) {
+        direct = primeEstimateDirectAreaLight(
+                context,
+                surface,
+                viewDirection,
+                primeSobolSample3D(
+                        preparedSample,
+                        PRIME_SAMPLE_EFFECT_DIRECT_AREA_LIGHT,
+                        PRIME_SAMPLE_DIMENSION_PRIMARY).xy,
+                primeSobolSample2D(
+                        preparedSample,
+                        PRIME_SAMPLE_EFFECT_DIRECT_AREA_LIGHT,
+                        PRIME_SAMPLE_DIMENSION_SECONDARY),
+                volumeStack,
+                PRIME_SECONDARY_LIGHT_FAMILY_PROBABILITY);
+    } else {
+        IntegratorRecord integrator;
+        integrator.sunDirectionIntensity = float4(
+                primePush.sunDirection,
+                ATM_SPACE_SUN_INTENSITY * primeSunRadianceMultiplier());
+        integrator.environmentRadiance = float4(0.0);
+        direct = primeEstimateDirectSun(
+                context,
+                integrator,
+                surface,
+                viewDirection,
+                primeSobolSample2D(
+                        preparedSample,
+                        PRIME_SAMPLE_EFFECT_DIRECT_SUN,
+                        PRIME_SAMPLE_DIMENSION_PRIMARY),
+                volumeStack,
+                PRIME_SECONDARY_LIGHT_FAMILY_PROBABILITY);
+    }
+    float3 contribution = path.throughput * direct;
     if (any(contribution > float3(0.0))) {
         primeAccumulateDeferredDirectLight(
                 context, pixel, control, contribution);
-    }
-    primeStoreWavefrontDiagnostic(recordIndex, context.diagnostics);
-}
-
-void primeWavefrontSun(
-        inout PrimeIntegratorContext context,
-        uint launchIndex) {
-    uint recordIndex = primeWavefrontQueuedPath(
-            PRIME_WAVEFRONT_SUN_QUEUE, launchIndex);
-    PrimeWavefrontTransportRecord record = primeLoadWavefrontTransportRecord(recordIndex);
-    primeRestoreWavefrontDiagnostic(record, context.diagnostics);
-    PrimeWavefrontSunShadowWork work =
-            primeLoadWavefrontSunShadowWork(recordIndex);
-    uint2 pixel = primeWavefrontPixel(recordIndex);
-    PrimeShadowTrace shadow = primeTracePreparedShadow(
-            context,
-            work.traceOrigin,
-            work.direction,
-            work.distance,
-            work.startingExtinction0,
-            work.startingExtinction1,
-            work.startingMediumCount);
-    float visibility = float(shadow.hitDistance >= PRIME_NRD_FP16_MAX);
-    float3 contribution = work.contribution * shadow.transmittance * visibility;
-    if (any(contribution > float3(0.0))) {
-        primeAccumulateDeferredDirectLight(
-                context, pixel, work.control, contribution);
     }
     primeStoreWavefrontDiagnostic(recordIndex, context.diagnostics);
 }

@@ -30,7 +30,7 @@ public final class RealtimeRayTracingPipeline implements RealtimeIntegratorPipel
     static final int RAYGEN_GROUP_COUNT = RealtimeWavefrontGroups.GROUP_COUNT;
     static final int RAYGEN_MODULE_COUNT = RealtimeWavefrontGroups.MODULE_COUNT;
     static int dispatchCount(int scatterCount) {
-        return 5 * Math.max(scatterCount - 1, 0) + 6;
+        return 4 * Math.max(scatterCount - 1, 0) + 6;
     }
     static final int DESCRIPTOR_BINDING_COUNT = 26;
     private static final int STORAGE_IMAGE_DESCRIPTOR_COUNT = 23;
@@ -83,8 +83,7 @@ public final class RealtimeRayTracingPipeline implements RealtimeIntegratorPipel
                 prefix + "primary" + suffix,
                 prefix + "primary_area" + suffix,
                 prefix + "primary_sun" + suffix,
-                prefix + "area" + suffix,
-                prefix + "sun" + suffix,
+                prefix + "light" + suffix,
                 prefix + "shade" + suffix,
                 prefix + "transparent_shade" + suffix,
                 prefix + "resolve" + suffix,
@@ -450,7 +449,7 @@ public final class RealtimeRayTracingPipeline implements RealtimeIntegratorPipel
                 commandBuffer,
                 stack,
                 activeProgram,
-                RealtimeWavefrontGroups.area(),
+                RealtimeWavefrontGroups.light(),
                 commandOffset,
                 ShaderAbi.WAVEFRONT_AREA_QUEUE);
         this.wavefrontResourceBarrier(
@@ -471,15 +470,6 @@ public final class RealtimeRayTracingPipeline implements RealtimeIntegratorPipel
                 ShaderAbi.WAVEFRONT_TRANSPARENT_SHADE_QUEUE);
         this.wavefrontResourceBarrier(
                 commandBuffer, stack, this.bindings.allImages);
-        this.traceIndirect(
-                commandBuffer,
-                stack,
-                activeProgram,
-                RealtimeWavefrontGroups.sun(),
-                commandOffset,
-                ShaderAbi.WAVEFRONT_SUN_QUEUE);
-        this.wavefrontResourceBarrier(
-                commandBuffer, stack, this.bindings.directRadianceImages);
     }
 
     private void bind(

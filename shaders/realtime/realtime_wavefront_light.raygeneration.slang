@@ -2,4 +2,4 @@
 #include "realtime/realtime_wavefront_entry.slang"
 
 [shader("raygeneration")]
-void main() { primeRealtimeWavefrontAreaEntry(); }
+void main() { primeRealtimeWavefrontLightEntry(); }

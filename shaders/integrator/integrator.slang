@@ -763,8 +763,11 @@ float3 primeEstimateDirectSun(
         SurfaceInteraction surface,
         float3 viewDirection,
         float2 sampleValue,
-        PrimeRcVolumeStack volumeStack) {
+        PrimeRcVolumeStack volumeStack,
+        float lightFamilyProbability) {
     LightSample light = primeSampleSun(integrator, surface.position, sampleValue);
+    light.pdf = primeLightFamilyPdfValue(
+            light.pdf, lightFamilyProbability);
     if (!primeAtmosphereDistantDirectionVisible(light.direction)) {
         return float3(0.0);
     }
@@ -899,7 +902,8 @@ struct PrimeImmediateSecondarySunNee : IPrimeSecondarySunNee {
                         preparedSample,
                         PRIME_SAMPLE_EFFECT_DIRECT_SUN,
                         PRIME_SAMPLE_DIMENSION_PRIMARY),
-                volumeStack);
+                volumeStack,
+                1.0);
     }
 }
 
@@ -927,14 +931,14 @@ struct PrimeImmediateSecondaryAreaNee : IPrimeSecondaryAreaNee {
     }
 }
 
-struct PrimeDeferredSecondaryAreaNee : IPrimeSecondaryAreaNee {
+struct PrimeStagedSecondaryAreaNee : IPrimeSecondaryAreaNee {
     float3 estimate(
             inout PrimeIntegratorContext context,
             SurfaceInteraction surface,
             float3 viewDirection,
             PrimePreparedSampleBase preparedSample,
             PrimeRcVolumeStack volumeStack) {
-        // The independent Area stage consumes the persisted hit with this exact pre-scatter path.
+        // The merged Light stage consumes the persisted hit with this exact pre-scatter path.
         return float3(0.0);
     }
 }

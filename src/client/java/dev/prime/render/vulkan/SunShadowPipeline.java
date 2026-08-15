@@ -52,9 +52,7 @@ public final class SunShadowPipeline implements Destroyable {
             traceProgram = TraceProgram.create(
                     context,
                     layout,
-                    new String[] {"/prime/shaders/sun_shadow.rgen.spv"},
-                    new int[] {0},
-                    new int[] {0},
+                    RaygenSchedule.single("/prime/shaders/sun_shadow.rgen.spv", 0),
                     "Prime sun-shadow ray tracing pipeline",
                     "Prime sun-shadow shader binding table");
             this.pipelineLayout = layout;

@@ -76,24 +76,10 @@ final class RealtimeSharc implements Destroyable {
                     false,
                     "Prime SHARC frame constants");
             String suffix = context.capabilities().wavefrontShaderSuffix();
-            String prefix = "/prime/shaders/realtime_wavefront_";
             query = TraceProgram.create(
                     context,
                     rayTracingPipelineLayout,
-                    new String[] {
-                        prefix + "head" + suffix,
-                        prefix + "step" + suffix,
-                        prefix + "primary" + suffix,
-                        prefix + "primary_area" + suffix,
-                        prefix + "primary_sun" + suffix,
-                        "/prime/shaders/realtime_wavefront_sharc_light" + suffix,
-                        "/prime/shaders/realtime_wavefront_sharc_shade" + suffix,
-                        prefix + "transparent_shade" + suffix,
-                        prefix + "resolve" + suffix,
-                        prefix + "transparent_resolve" + suffix
-                    },
-                    RealtimeWavefrontGroups.MODULES,
-                    RealtimeWavefrontGroups.CONTROLS,
+                    RealtimeWavefrontGroups.sharcSchedule(suffix),
                     "Prime SHARC query pipeline",
                     "Prime SHARC query shader binding table");
             try (MemoryStack stack = MemoryStack.stackPush()) {

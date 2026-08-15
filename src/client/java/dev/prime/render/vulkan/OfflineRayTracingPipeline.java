@@ -32,7 +32,6 @@ public final class OfflineRayTracingPipeline implements Destroyable {
         return 2 * Math.max(scatterCount - 1, 0) + 3;
     }
     static final int DESCRIPTOR_BINDING_COUNT = 3;
-    private static final int[] RAYGEN_CONTROLS = {0, 1, 257, 2, 258, 4};
     private static final WavefrontLayout WAVEFRONT_LAYOUT = new WavefrontLayout(
             ShaderAbi.OFFLINE_WAVEFRONT_PATH_SLOTS_PER_PIXEL,
             ShaderAbi.OFFLINE_WAVEFRONT_QUEUE_ENTRIES_PER_PIXEL,
@@ -69,18 +68,10 @@ public final class OfflineRayTracingPipeline implements Destroyable {
                         "offline");
             }
             String suffix = context.capabilities().wavefrontShaderSuffix();
-            String prefix = "/prime/shaders/offline_wavefront_";
             traceProgram = TraceProgram.create(
                     context,
                     layout,
-                    new String[] {
-                        prefix + "head" + suffix,
-                        prefix + "step" + suffix,
-                        prefix + "area" + suffix,
-                        prefix + "resolve" + suffix
-                    },
-                    WavefrontGroups.MODULES,
-                    RAYGEN_CONTROLS,
+                    WavefrontGroups.schedule(suffix),
                     "Prime offline ray tracing pipeline",
                     "Prime offline shader binding table");
             this.descriptorSetLayout = setLayout;
@@ -322,11 +313,11 @@ public final class OfflineRayTracingPipeline implements Destroyable {
     }
 
     static int raygenModule(int group) {
-        return WavefrontGroups.MODULES[group];
+        return WavefrontGroups.module(group);
     }
 
     static int raygenControl(int group) {
-        return RAYGEN_CONTROLS[group];
+        return WavefrontGroups.control(group);
     }
 
     static long queueOffset(int width, int height) {

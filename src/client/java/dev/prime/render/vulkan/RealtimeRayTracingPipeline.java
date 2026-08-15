@@ -76,25 +76,10 @@ public final class RealtimeRayTracingPipeline implements RealtimeIntegratorPipel
                         "realtime");
             }
             String suffix = context.capabilities().wavefrontShaderSuffix();
-            String prefix = "/prime/shaders/realtime_wavefront_";
-            String[] raygenShaders = new String[] {
-                prefix + "head" + suffix,
-                prefix + "step" + suffix,
-                prefix + "primary" + suffix,
-                prefix + "primary_area" + suffix,
-                prefix + "primary_sun" + suffix,
-                prefix + "light" + suffix,
-                prefix + "shade" + suffix,
-                prefix + "transparent_shade" + suffix,
-                prefix + "resolve" + suffix,
-                prefix + "transparent_resolve" + suffix
-            };
             traceProgram = TraceProgram.create(
                     context,
                     layout,
-                    raygenShaders,
-                    RealtimeWavefrontGroups.MODULES,
-                    RealtimeWavefrontGroups.CONTROLS,
+                    RealtimeWavefrontGroups.standardSchedule(suffix),
                     "Prime realtime ray tracing pipeline",
                     "Prime realtime shader binding table");
             diagnostics = new RealtimeSharcDiagnostics(context);
@@ -572,11 +557,11 @@ public final class RealtimeRayTracingPipeline implements RealtimeIntegratorPipel
     }
 
     static int raygenModule(int group) {
-        return RealtimeWavefrontGroups.MODULES[group];
+        return RealtimeWavefrontGroups.module(group);
     }
 
     static int raygenControl(int group) {
-        return RealtimeWavefrontGroups.CONTROLS[group];
+        return RealtimeWavefrontGroups.control(group);
     }
 
     static long queueOffset(int width, int height) {

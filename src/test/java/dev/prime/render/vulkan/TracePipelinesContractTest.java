@@ -98,6 +98,40 @@ final class TracePipelinesContractTest {
     }
 
     @Test
+    void realtimeAndSharcSchedulesShareEveryUnchangedModule() {
+        RaygenSchedule realtime = RealtimeWavefrontGroups.standardSchedule("_ser.rgen.spv");
+        RaygenSchedule sharc = RealtimeWavefrontGroups.sharcSchedule("_ser.rgen.spv");
+        assertEquals(RealtimeWavefrontGroups.MODULE_COUNT, realtime.moduleCount());
+        assertEquals(RealtimeWavefrontGroups.GROUP_COUNT, realtime.groupCount());
+        assertEquals(realtime.moduleCount(), sharc.moduleCount());
+        assertEquals(realtime.groupCount(), sharc.groupCount());
+        for (int module = 0; module < realtime.moduleCount(); module++) {
+            if (module != 5 && module != 6) {
+                assertEquals(realtime.moduleResource(module), sharc.moduleResource(module));
+            }
+        }
+        assertEquals(
+                "/prime/shaders/realtime_wavefront_sharc_light_ser.rgen.spv",
+                sharc.moduleResource(5));
+        assertEquals(
+                "/prime/shaders/realtime_wavefront_sharc_shade_ser.rgen.spv",
+                sharc.moduleResource(6));
+        for (int group = 0; group < realtime.groupCount(); group++) {
+            assertEquals(realtime.module(group), sharc.module(group));
+            assertEquals(realtime.control(group), sharc.control(group));
+        }
+    }
+
+    @Test
+    void raygenScheduleRejectsInvalidParallelMetadataAtItsBoundary() {
+        assertThrows(IllegalArgumentException.class, () -> RaygenSchedule.of(
+                List.of("module"), new int[] {0}, new int[0]));
+        assertThrows(IllegalArgumentException.class, () -> RaygenSchedule.of(
+                List.of("module"), new int[] {1}, new int[] {0}));
+        assertThrows(IllegalArgumentException.class, () -> RaygenSchedule.single("", 0));
+    }
+
+    @Test
     void setOneAbiDoesNotCrossRendererBoundary() throws IOException {
         for (String suffix : List.of("", "_subgroup", "_ser")) {
             Set<Integer> realtime = descriptorBindings(

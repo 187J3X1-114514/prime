@@ -60,19 +60,10 @@ final class TraceProgram implements Destroyable {
     static TraceProgram create(
             VulkanContext context,
             long pipelineLayout,
-            String[] raygenResources,
-            int[] raygenShaderStages,
-            int[] raygenRecordControls,
+            RaygenSchedule raygenSchedule,
             String pipelineName,
             String sbtName) {
-        if (raygenShaderStages.length != raygenRecordControls.length) {
-            throw new IllegalArgumentException("Raygen group metadata length mismatch");
-        }
-        for (int shaderStage : raygenShaderStages) {
-            if (shaderStage < 0 || shaderStage >= raygenResources.length) {
-                throw new IllegalArgumentException("Raygen group references an invalid module");
-            }
-        }
+        java.util.Objects.requireNonNull(raygenSchedule, "raygenSchedule");
         try (MemoryStack stack = MemoryStack.stackPush()) {
             long pipeline = 0L;
             VulkanBuffer sbt = null;
@@ -81,13 +72,12 @@ final class TraceProgram implements Destroyable {
                         context,
                         stack,
                         pipelineLayout,
-                        raygenResources,
-                        raygenShaderStages,
+                        raygenSchedule,
                         pipelineName);
                 int handleSize = context.capabilities().shaderGroupHandleSize();
                 int handleAlignment = context.capabilities().shaderGroupHandleAlignment();
                 int baseAlignment = context.capabilities().shaderGroupBaseAlignment();
-                int raygenGroups = raygenShaderStages.length;
+                int raygenGroups = raygenSchedule.groupCount();
                 long bufferSize = ShaderBindingTableLayout.minimumBufferSize(
                         handleSize,
                         handleAlignment,
@@ -121,8 +111,7 @@ final class TraceProgram implements Destroyable {
                         sbt,
                         handleSize,
                         layout,
-                        raygenGroups,
-                        raygenRecordControls);
+                        raygenSchedule);
                 return new TraceProgram(context, pipeline, sbt, raygenGroups, layout);
             } catch (RuntimeException exception) {
                 if (sbt != null) {
@@ -147,24 +136,23 @@ final class TraceProgram implements Destroyable {
             VulkanContext context,
             MemoryStack stack,
             long pipelineLayout,
-            String[] raygenResources,
-            int[] raygenShaderStages,
+            RaygenSchedule raygenSchedule,
             String debugName) {
         PrimeInfo.LOGGER.info("Compiling {}", debugName);
         long start = System.nanoTime();
-        long[] modules = new long[raygenResources.length + FIXED_MODULE_COUNT];
+        long[] modules = new long[raygenSchedule.moduleCount() + FIXED_MODULE_COUNT];
         long deferredOperation = 0L;
         try {
             ParallelPipelineCreation.run(
                     "ray tracing shader modules",
                     modules.length,
                     index -> {
-                        String resource = index < raygenResources.length
-                                ? raygenResources[index]
-                                : FIXED_RESOURCES[index - raygenResources.length];
+                        String resource = index < raygenSchedule.moduleCount()
+                                ? raygenSchedule.moduleResource(index)
+                                : FIXED_RESOURCES[index - raygenSchedule.moduleCount()];
                         modules[index] = VulkanShaderModules.create(context, resource);
                     });
-            int raygenStageCount = raygenResources.length;
+            int raygenStageCount = raygenSchedule.moduleCount();
             int missStage = raygenStageCount;
             int shadowMissStage = missStage + 1;
             int closestHitStage = missStage + 2;
@@ -192,12 +180,12 @@ final class TraceProgram implements Destroyable {
                         .module(modules[index])
                         .pName(mainName);
             }
-            int raygenGroupCount = raygenShaderStages.length;
+            int raygenGroupCount = raygenSchedule.groupCount();
             int groupCount = raygenGroupCount + MISS_GROUP_COUNT + HIT_GROUP_COUNT;
             VkRayTracingShaderGroupCreateInfoKHR.Buffer groups =
                     VkRayTracingShaderGroupCreateInfoKHR.calloc(groupCount, stack);
             for (int index = 0; index < raygenGroupCount; index++) {
-                generalGroup(groups.get(index), raygenShaderStages[index]);
+                generalGroup(groups.get(index), raygenSchedule.module(index));
             }
             generalGroup(groups.get(raygenGroupCount), missStage);
             generalGroup(groups.get(raygenGroupCount + 1), shadowMissStage);
@@ -366,8 +354,8 @@ final class TraceProgram implements Destroyable {
             VulkanBuffer sbt,
             int handleSize,
             ShaderBindingTableLayout layout,
-            int raygenGroupCount,
-            int[] controls) {
+            RaygenSchedule raygenSchedule) {
+        int raygenGroupCount = raygenSchedule.groupCount();
         int groupCount = raygenGroupCount + MISS_GROUP_COUNT + HIT_GROUP_COUNT;
         ByteBuffer handles = MemoryUtil.memAlloc(groupCount * handleSize);
         try {
@@ -381,7 +369,7 @@ final class TraceProgram implements Destroyable {
                 long record = destination + layout.raygenOffset()
                         + index * layout.raygenRecordStride();
                 MemoryUtil.memCopy(source + (long) index * handleSize, record, handleSize);
-                MemoryUtil.memPutInt(record + handleSize, controls[index]);
+                MemoryUtil.memPutInt(record + handleSize, raygenSchedule.control(index));
             }
             for (int index = 0; index < MISS_GROUP_COUNT; index++) {
                 MemoryUtil.memCopy(

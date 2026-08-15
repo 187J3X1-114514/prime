@@ -21,6 +21,17 @@ final class ShaderAbiTest {
         assertEquals(96, ShaderAbi.PATH_STATE_SIZE);
         assertEquals(80, ShaderAbi.TRACE_PAYLOAD_SIZE);
         assertEquals(96, ShaderAbi.SURFACE_INTERACTION_SIZE);
+        assertEquals(80, ShaderAbi.WAVEFRONT_SURFACE_RECORD_SIZE);
+        assertEquals(
+                0, ShaderAbi.WAVEFRONT_SURFACE_DISTANCE_GEOMETRIC_NORMAL_OFFSET);
+        assertEquals(
+                16, ShaderAbi.WAVEFRONT_SURFACE_HIT_MATERIAL_SECTION_EMITTER_OFFSET);
+        assertEquals(
+                32, ShaderAbi.WAVEFRONT_SURFACE_BASE_COLOR_TEXTURE_LOD_OFFSET);
+        assertEquals(
+                48, ShaderAbi.WAVEFRONT_SURFACE_OPACITY_SHADING_ROUGHNESS_OPTICAL_OFFSET);
+        assertEquals(
+                64, ShaderAbi.WAVEFRONT_SURFACE_ADJACENT_BASE_COLOR_INTERFACE_OFFSET);
         assertEquals(76, ShaderAbi.SURFACE_MOTION_ZFLAGS_OFFSET);
         assertEquals(128, ShaderAbi.PUSH_CONSTANT_SIZE);
         assertEquals(112, ShaderAbi.SHARC_FRAME_CONSTANT_SIZE);
@@ -52,7 +63,7 @@ final class ShaderAbiTest {
         assertEquals(47, ShaderAbi.DESCRIPTOR_SUN_SHADOW_DEPTH_9);
         assertEquals(96, ShaderAbi.WAVEFRONT_PATH_RECORD_SIZE);
         assertEquals(2, ShaderAbi.WAVEFRONT_PATH_SLOTS_PER_PIXEL);
-        assertEquals(112, ShaderAbi.WAVEFRONT_AREA_RECORD_SIZE);
+        assertEquals(96, ShaderAbi.WAVEFRONT_AREA_RECORD_SIZE);
         assertEquals(1, ShaderAbi.WAVEFRONT_QUEUE_ENTRIES_PER_PIXEL);
         assertEquals(6, ShaderAbi.WAVEFRONT_QUEUE_COUNT);
         assertEquals(0, ShaderAbi.WAVEFRONT_TRACE_QUEUE_0);

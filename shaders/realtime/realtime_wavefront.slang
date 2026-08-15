@@ -329,6 +329,7 @@ void primeWavefrontHead(
     uint maximumBounces = primeMaximumBounces();
     bool continuation = maximumBounces != 0u;
     uint pathIndex = primeWavefrontIndex(pixel, 0u);
+    uint primaryHitKind = PRIME_HIT_NONE;
     if (continuation) {
         float3 traceDirection = primeCameraRayDirection(pixel, cameraSample);
         primeSetNumericalContext(
@@ -338,6 +339,7 @@ void primeWavefrontHead(
                 primePush.cameraPosition,
                 traceDirection,
                 0u);
+        primaryHitKind = surface.hitKind;
         primeStoreWavefrontSurface(pathIndex, surface);
     }
 
@@ -364,7 +366,7 @@ void primeWavefrontHead(
     // SER may repack invocations. Queue publication after it must not use subgroup collectives.
     if (continuation) {
         primeAppendWavefrontPath(PRIME_WAVEFRONT_SHADE_QUEUE, pathIndex);
-        if (primeLoadWavefrontSurface(pathIndex).hitKind == PRIME_HIT_SURFACE) {
+        if (primaryHitKind == PRIME_HIT_SURFACE) {
             primeAppendWavefrontPath(PRIME_WAVEFRONT_AREA_QUEUE, pathIndex);
         }
     }
@@ -378,7 +380,10 @@ void primeWavefrontPrimaryArea(
     PrimeWavefrontTransportRecord record =
             primeLoadWavefrontTransportRecord(recordIndex);
     primeRestoreWavefrontDiagnostic(record, context.diagnostics);
-    SurfaceInteraction surface = primeLoadWavefrontSurface(recordIndex);
+    SurfaceInteraction surface = primeLoadWavefrontSurface(
+            recordIndex,
+            record.traceOriginAndPathControl.xyz,
+            record.rayDirectionAndDenoiserControl.xyz);
     uint2 pixel = primeWavefrontPixel(recordIndex);
     PathState path = primeWavefrontPath(pixel, record);
     PrimeOpenPbrVolumeStack volumeStack = primeWavefrontVolumeStack(record);
@@ -426,7 +431,10 @@ void primeWavefrontPrimarySun(
     PrimeWavefrontTransportRecord record =
             primeLoadWavefrontTransportRecord(recordIndex);
     primeRestoreWavefrontDiagnostic(record, context.diagnostics);
-    SurfaceInteraction surface = primeLoadWavefrontSurface(recordIndex);
+    SurfaceInteraction surface = primeLoadWavefrontSurface(
+            recordIndex,
+            record.traceOriginAndPathControl.xyz,
+            record.rayDirectionAndDenoiserControl.xyz);
     uint2 pixel = primeWavefrontPixel(recordIndex);
     PathState path = primeWavefrontPath(pixel, record);
     PrimeOpenPbrVolumeStack volumeStack = primeWavefrontVolumeStack(record);
@@ -604,7 +612,10 @@ void primeWavefrontPrimary(
     PrimeWavefrontTransportRecord record =
             primeLoadWavefrontTransportRecord(recordIndex);
     primeRestoreWavefrontDiagnostic(record, context.diagnostics);
-    SurfaceInteraction surface = primeLoadWavefrontSurface(recordIndex);
+    SurfaceInteraction surface = primeLoadWavefrontSurface(
+            recordIndex,
+            record.traceOriginAndPathControl.xyz,
+            record.rayDirectionAndDenoiserControl.xyz);
     PathState path = primeWavefrontPath(pixel, record);
     PrimeOpenPbrVolumeStack volumeStack = primeWavefrontVolumeStack(record);
     IntegratorRecord integrator;
@@ -685,7 +696,10 @@ void primeWavefrontShade<IndirectReuse, SharcTraining>(
     PrimeWavefrontTransportRecord record =
             primeLoadWavefrontTransportRecord(recordIndex);
     primeRestoreWavefrontDiagnostic(record, context.diagnostics);
-    SurfaceInteraction surface = primeLoadWavefrontSurface(recordIndex);
+    SurfaceInteraction surface = primeLoadWavefrontSurface(
+            recordIndex,
+            record.traceOriginAndPathControl.xyz,
+            record.rayDirectionAndDenoiserControl.xyz);
     PathState path = primeWavefrontPath(pixel, record);
     PrimeOpenPbrVolumeStack volumeStack = primeWavefrontVolumeStack(record);
     uint control = asuint(record.rayDirectionAndDenoiserControl.w);
@@ -758,7 +772,10 @@ void primeWavefrontTransparentShade(
     PrimeWavefrontTransportRecord record =
             primeLoadWavefrontTransportRecord(recordIndex);
     primeRestoreWavefrontDiagnostic(record, context.diagnostics);
-    SurfaceInteraction surface = primeLoadWavefrontSurface(recordIndex);
+    SurfaceInteraction surface = primeLoadWavefrontSurface(
+            recordIndex,
+            record.traceOriginAndPathControl.xyz,
+            record.rayDirectionAndDenoiserControl.xyz);
     PathState path = primeWavefrontPath(pixel, record);
     PrimeOpenPbrVolumeStack volumeStack = primeWavefrontVolumeStack(record);
     uint control = asuint(record.rayDirectionAndDenoiserControl.w);
@@ -860,7 +877,10 @@ void primeWavefrontLight<IndirectReuse, SharcTraining>(
     PrimeWavefrontTransportRecord record =
             primeLoadWavefrontTransportRecord(recordIndex);
     primeRestoreWavefrontDiagnostic(record, context.diagnostics);
-    SurfaceInteraction surface = primeLoadWavefrontSurface(recordIndex);
+    SurfaceInteraction surface = primeLoadWavefrontSurface(
+            recordIndex,
+            record.traceOriginAndPathControl.xyz,
+            record.rayDirectionAndDenoiserControl.xyz);
     if (surface.hitKind != PRIME_HIT_SURFACE) {
         return;
     }

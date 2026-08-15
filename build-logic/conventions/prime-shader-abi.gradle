@@ -69,6 +69,7 @@ abstract class GenerateShaderAbi extends DefaultTask {
 		def pathState = schema.structs.pathState
 		def tracePayload = schema.structs.tracePayload
 		def surfaceInteraction = schema.structs.surfaceInteraction
+		def wavefrontSurfaceRecord = schema.structs.wavefrontSurfaceRecord
 		def push = schema.structs.pushConstants
 		def nrdMotionPush = schema.structs.nrdMotionPushConstants
 		def sharcFrame = schema.structs.sharcFrameConstants
@@ -87,7 +88,8 @@ abstract class GenerateShaderAbi extends DefaultTask {
 				|| lightEmitter.size != 96 || lightCell.size != 12
 				|| sectionLightHeader.size != 48
 				|| integrator.size != 32 || pathState.size != 96 || tracePayload.size != 80
-				|| surfaceInteraction.size != 96 || push.size != 128
+				|| surfaceInteraction.size != 96 || wavefrontSurfaceRecord.size != 80
+				|| push.size != 128
 				|| nrdMotionPush.size != 208 || sharcFrame.size != 112
 				|| schema.sceneTextureCount != 64) {
 			throw new GradleException(
@@ -150,7 +152,8 @@ abstract class GenerateShaderAbi extends DefaultTask {
 		}
 		if (wavefrontContract.pathRecordSize != 96
 				|| wavefrontContract.pathSlotsPerPixel != 2
-				|| wavefrontContract.areaRecordSize != 112
+				|| wavefrontContract.areaRecordSize != 96
+				|| wavefrontContract.areaRecordSize != 16 + wavefrontSurfaceRecord.size
 				|| wavefrontContract.queueEntriesPerPixel != 1
 				|| wavefrontContract.queueCount != 6
 				|| wavefrontContract.traceQueue0 != 0
@@ -248,6 +251,7 @@ abstract class GenerateShaderAbi extends DefaultTask {
 		validateStruct('PathState', pathState)
 		validateStruct('TracePayload', tracePayload)
 		validateStruct('SurfaceInteraction', surfaceInteraction)
+		validateStruct('WavefrontSurfaceRecord', wavefrontSurfaceRecord)
 		validateStruct('PushConstants', push)
 		validateStruct('NrdMotionPushConstants', nrdMotionPush)
 		validateStruct('SharcFrameConstants', sharcFrame)
@@ -269,6 +273,7 @@ abstract class GenerateShaderAbi extends DefaultTask {
 			PATH_STATE: pathState,
 			TRACE_PAYLOAD: tracePayload,
 			SURFACE: surfaceInteraction,
+			WAVEFRONT_SURFACE: wavefrontSurfaceRecord,
 			PUSH: push,
 			NRD_MOTION_PUSH: nrdMotionPush,
 			SHARC_FRAME: sharcFrame
@@ -323,6 +328,7 @@ public final class ShaderAbi {
     public static final int PATH_STATE_SIZE = ${pathState.size};
     public static final int TRACE_PAYLOAD_SIZE = ${tracePayload.size};
     public static final int SURFACE_INTERACTION_SIZE = ${surfaceInteraction.size};
+    public static final int WAVEFRONT_SURFACE_RECORD_SIZE = ${wavefrontSurfaceRecord.size};
     public static final int PUSH_CONSTANT_SIZE = ${push.size};
     public static final int NRD_MOTION_PUSH_CONSTANT_SIZE = ${nrdMotionPush.size};
     public static final int SHARC_FRAME_CONSTANT_SIZE = ${sharcFrame.size};
@@ -629,6 +635,12 @@ public struct SurfaceInteraction
 ${slangStructFields(surfaceInteraction)}
 };
 
+// Physical queue lanes. Floating-point members are stored by bit representation.
+public struct WavefrontSurfaceRecord
+{
+${slangStructFields(wavefrontSurfaceRecord)}
+};
+
 public struct PrimePushConstants
 {
 ${slangStructFields(push)}
@@ -732,6 +744,7 @@ public static const uint PRIME_DESCRIPTOR_WAVEFRONT_PATHS = ${schema.realtimeDes
 public static const uint PRIME_DESCRIPTOR_WAVEFRONT_QUEUE = ${schema.realtimeDescriptors.wavefrontQueue};
 public static const uint PRIME_WAVEFRONT_PATH_RECORD_SIZE = ${wavefrontContract.pathRecordSize};
 public static const uint PRIME_WAVEFRONT_PATH_SLOTS_PER_PIXEL = ${wavefrontContract.pathSlotsPerPixel};
+public static const uint PRIME_WAVEFRONT_SURFACE_RECORD_SIZE = ${wavefrontSurfaceRecord.size};
 public static const uint PRIME_WAVEFRONT_AREA_RECORD_SIZE = ${wavefrontContract.areaRecordSize};
 public static const uint PRIME_WAVEFRONT_QUEUE_ENTRIES_PER_PIXEL = ${wavefrontContract.queueEntriesPerPixel};
 public static const uint PRIME_WAVEFRONT_QUEUE_COUNT = ${wavefrontContract.queueCount};

@@ -205,13 +205,23 @@ void primeResetSurfacePayload() {
     primeSurfacePayload.adjacentInterfaceControl = 0u;
 }
 
+float3 primeSurfacePosition(
+        float3 origin, float3 direction, float distance, uint hitKind) {
+    // Wavefront storage retains these exact trace inputs and reconstructs the same expression.
+    return hitKind == PRIME_HIT_NONE
+            ? float3(0.0)
+            : origin + direction * distance;
+}
+
 SurfaceInteraction primeSurfaceInteractionFromPayload(
         float3 origin, float3 direction) {
     SurfaceInteraction surface;
     uint packedHitKind = primeSurfacePayload.hitKind;
-    surface.position = (packedHitKind & PRIME_HIT_KIND_MASK) == PRIME_HIT_NONE
-            ? float3(0.0)
-            : origin + direction * primeSurfacePayload.t;
+    surface.position = primeSurfacePosition(
+            origin,
+            direction,
+            primeSurfacePayload.t,
+            packedHitKind & PRIME_HIT_KIND_MASK);
     surface.t = primeSurfacePayload.t;
     surface.geometricNormal = primeSurfacePayload.geometricNormal;
     surface.hitKind = packedHitKind & PRIME_HIT_KIND_MASK;

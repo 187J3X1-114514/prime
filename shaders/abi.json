@@ -154,6 +154,16 @@
         { "name": "adjacentInterfaceControl", "type": "uint", "offset": 92 }
       ]
     },
+    "wavefrontSurfaceRecord": {
+      "size": 80,
+      "fields": [
+        { "name": "distanceGeometricNormal", "type": "uvec4", "offset": 0 },
+        { "name": "hitMaterialSectionEmitter", "type": "uvec4", "offset": 16 },
+        { "name": "baseColorTextureLod", "type": "uvec4", "offset": 32 },
+        { "name": "opacityShadingRoughnessOptical", "type": "uvec4", "offset": 48 },
+        { "name": "adjacentBaseColorInterface", "type": "uvec4", "offset": 64 }
+      ]
+    },
     "pushConstants": {
       "size": 128,
       "fields": [
@@ -262,7 +272,7 @@
   "realtimeWavefrontContract": {
     "pathRecordSize": 96,
     "pathSlotsPerPixel": 2,
-    "areaRecordSize": 112,
+    "areaRecordSize": 96,
     "queueEntriesPerPixel": 1,
     "queueCount": 6,
     "traceQueue0": 0,

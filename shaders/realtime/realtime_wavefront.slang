@@ -25,6 +25,28 @@ typealias PrimeWavefrontContinuationAppender =
         PrimeScalarWavefrontContinuationAppender;
 #endif
 
+void primePublishWavefrontShadePath(uint recordIndex, bool transparentBranch) {
+#if defined(PRIME_ENABLE_SUBGROUP_QUEUE)
+    // Both calls remain subgroup-uniform. Publish before traversal so SER cannot repack the
+    // participating lanes between reservation and index storage.
+    primeAppendWavefrontContinuation(
+            PrimeWavefrontContinuationAppender(),
+            PRIME_WAVEFRONT_SHADE_QUEUE,
+            recordIndex,
+            !transparentBranch);
+    primeAppendWavefrontContinuation(
+            PrimeWavefrontContinuationAppender(),
+            PRIME_WAVEFRONT_TRANSPARENT_SHADE_QUEUE,
+            recordIndex,
+            transparentBranch);
+#else
+    uint shadeQueue = transparentBranch
+            ? PRIME_WAVEFRONT_TRANSPARENT_SHADE_QUEUE
+            : PRIME_WAVEFRONT_SHADE_QUEUE;
+    primeAppendWavefrontPath(shadeQueue, recordIndex);
+#endif
+}
+
 struct PrimeWavefrontShaderRecord {
     uint control;
 };
@@ -547,6 +569,8 @@ void primeWavefrontStep(
     uint traceControl = asuint(
             primeWavefrontPaths[recordIndex]
                     .transport.rayDirectionAndDenoiserControl.w);
+    bool transparentBranch = primeWavefrontTransparentBranch(traceControl);
+    primePublishWavefrontShadePath(recordIndex, transparentBranch);
     uint pathClass = (traceControl & PRIME_WAVEFRONT_TRANSPARENT_BRANCH) == 0u
             ? 0u
             : (traceControl & PRIME_WAVEFRONT_TRANSMISSION_BRANCH) == 0u
@@ -565,12 +589,7 @@ void primeWavefrontStep(
                 context, recordIndex, record, surface, traceControl);
     }
     primeStoreWavefrontDiagnostic(recordIndex, context.diagnostics);
-    // Trace may cross a SER invocation-repack boundary. Keep queue publication scalar until
-    // compaction moves to a separate dispatch with a well-defined subgroup population.
-    uint shadeQueue = primeWavefrontTransparentBranch(traceControl)
-            ? PRIME_WAVEFRONT_TRANSPARENT_SHADE_QUEUE
-            : PRIME_WAVEFRONT_SHADE_QUEUE;
-    primeAppendWavefrontPath(shadeQueue, recordIndex);
+    // Surface-hit compaction depends on traversal output and therefore remains scalar after SER.
     if (surface.hitKind == PRIME_HIT_SURFACE) {
         primeAppendWavefrontPath(PRIME_WAVEFRONT_AREA_QUEUE, recordIndex);
     }

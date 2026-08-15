@@ -250,6 +250,25 @@ final class TracePipelinesContractTest {
     }
 
     @Test
+    void realtimeStepUsesSubgroupShadeQueueCompactionWhenAvailable() throws IOException {
+        Set<Integer> scalar = parse(
+                wavefrontShader("realtime", "step", "")).opcodes;
+        assertFalse(scalar.contains(OP_GROUP_NON_UNIFORM_ELECT));
+        assertFalse(scalar.contains(OP_GROUP_NON_UNIFORM_BROADCAST_FIRST));
+        assertFalse(scalar.contains(OP_GROUP_NON_UNIFORM_BALLOT));
+        assertFalse(scalar.contains(OP_GROUP_NON_UNIFORM_BALLOT_BIT_COUNT));
+
+        for (String suffix : List.of("_subgroup", "_ser")) {
+            Set<Integer> step = parse(
+                    wavefrontShader("realtime", "step", suffix)).opcodes;
+            assertTrue(step.contains(OP_GROUP_NON_UNIFORM_ELECT), suffix);
+            assertTrue(step.contains(OP_GROUP_NON_UNIFORM_BROADCAST_FIRST), suffix);
+            assertTrue(step.contains(OP_GROUP_NON_UNIFORM_BALLOT), suffix);
+            assertTrue(step.contains(OP_GROUP_NON_UNIFORM_BALLOT_BIT_COUNT), suffix);
+        }
+    }
+
+    @Test
     void wavefrontBackingHasDeclaredFourKSize() {
         assertEquals(2_720_563_296L,
                 RealtimeRayTracingPipeline.wavefrontBytes(3840, 2160));

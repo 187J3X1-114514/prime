@@ -3,13 +3,11 @@ module "post/display_transform.slang";
 
 import "prime_abi_types.slang";
 import "core/color_space.slang";
-import "post/oklab_display_transform.slang";
 
-public static const uint PRIME_DISPLAY_TRANSFORM_OKLAB = 0u;
-public static const uint PRIME_DISPLAY_TRANSFORM_AGX_HSV = 1u;
-
-// Ported from C:/WorkSpace/drt/shaders/agx_hsv.slang at commit
-// ac48c20c6a2412a2fad13f53ac37bc82c3f1ac0b.
+// Ported from the C:/WorkSpace/drt working tree based on commit
+// 39871cd2b82b2456dc528c3c406eb10ef173c352. Source SHA-256 values:
+// shaders/agx_hsv.slang = bc3db7c9065de9ac1b452ca4f9d0341c29b34d96f42e38622bb0df6a4a9a1c93,
+// src/gpu.rs = f705e0a2ef0bc32fca5361081bd93e594b5cadf820f7751aa1252e9c8e472626.
 //
 // These are derived runtime coefficients, not the authoring controls. Keeping them in one
 // structure makes future tuning explicit without adding per-frame parameters or UI surface area.
@@ -27,27 +25,25 @@ public struct PrimeAgxHsvParameters
     public float shoulderCoefficient;
     public float blackHueRetention;
     public float whiteHueRetention;
-    public float blackGamutOnset;
 };
 
 public PrimeAgxHsvParameters primeDefaultAgxHsvParameters()
 {
     PrimeAgxHsvParameters parameters;
-    // Authoring defaults: -10/+6.5 EV around 18% gray, output pivot 0.455, slope 3,
-    // toe/shoulder powers 1.5/3, gamut compression 0.05, hue retention 1/0.5.
+    // The calibrated HSV preset preserves IEC sRGB 18% gray and matches the local
+    // identity slope and visible-shadow neutral ramp used by the source bench.
     parameters.minimumLog2 = -12.473931;
     parameters.inverseDynamicRange = 1.0 / 16.5;
     parameters.inputPivot = 10.0 / 16.5;
-    parameters.outputPivot = 0.455;
-    parameters.pivotSlope = 3.0;
-    parameters.toePower = 1.5;
-    parameters.shoulderPower = 3.0;
+    parameters.outputPivot = 0.46135613;
+    parameters.pivotSlope = 2.4606366;
+    parameters.toePower = 1.55;
+    parameters.shoulderPower = 5.2;
     parameters.gamutCompression = 0.05;
-    parameters.toeCoefficient = 14.810842;
-    parameters.shoulderCoefficient = 150.43433;
+    parameters.toeCoefficient = 11.219474;
+    parameters.shoulderCoefficient = 2568.7498;
     parameters.blackHueRetention = 1.0;
     parameters.whiteHueRetention = 0.5;
-    parameters.blackGamutOnset = 0.95;
     return parameters;
 }
 
@@ -129,6 +125,8 @@ float3 primeAgxCurve(float3 value, PrimeAgxHsvParameters parameters)
 
 float3 primeAgxS2O3(float3 linearBt709, PrimeAgxHsvParameters parameters)
 {
+    // A strong per-channel shoulder can band across highlight saturation transitions.
+    // The calibrated 5.2 power is the source bench's current artistic compromise.
     float3 inset = primeAgxInset(linearBt709, parameters);
     float3 normalizedLog = clamp(
             (log2(inset) - parameters.minimumLog2)
@@ -136,14 +134,6 @@ float3 primeAgxS2O3(float3 linearBt709, PrimeAgxHsvParameters parameters)
             0.0,
             1.0);
     return primeAgxOutset(primeAgxCurve(normalizedLog, parameters), parameters);
-}
-
-public float primeAgxCompressHsvSaturation(float saturation, float onset)
-{
-    if (saturation <= onset) return saturation;
-    float headroom = 1.0 - onset;
-    float excess = saturation - onset;
-    return onset + headroom * excess / (headroom + excess);
 }
 
 float3 primeAgxAdjustHsv(
@@ -167,11 +157,7 @@ float3 primeAgxAdjustHsv(
         mappedHsv.x = frac(mappedHsv.x + retention * hueOffset);
     }
 
-    float gamutOnset = lerp(
-            parameters.blackGamutOnset,
-            1.0,
-            normalizedValue);
-    mappedHsv.y = primeAgxCompressHsvSaturation(mappedHsv.y, gamutOnset);
+    mappedHsv.y = clamp(mappedHsv.y, 0.0, 1.0);
     return primeAgxHsvToRgb(mappedHsv);
 }
 
@@ -189,36 +175,16 @@ public float3 primeAgxHsvTonemap(
 
 public float3 primeDisplayTransformToSrgb(
         float3 hdrRec2020,
-        float exposureMultiplier,
-        uint displayTransformMode)
+        float exposureMultiplier)
 {
     float3 exposedRec2020 = max(hdrRec2020, float3(0.0))
             * (PRIME_DISPLAY_EXPOSURE * exposureMultiplier);
     float3 linearBt709 = max(
             primeLinearRec2020ToLinearBt709(exposedRec2020),
             float3(0.0));
-    if (displayTransformMode == PRIME_DISPLAY_TRANSFORM_AGX_HSV)
-    {
-        // AgX-S2O3 produces a display-encoded signal; applying an sRGB OETF again is incorrect.
-        return clamp(
-                primeAgxHsvTonemap(linearBt709, primeDefaultAgxHsvParameters()),
-                float3(0.0),
-                float3(1.0));
-    }
-    float3 mapped = primeOklabDrtTonemap(
-            linearBt709, primeDefaultOklabDrtParameters());
+    // AgX-S2O3 produces a display-encoded signal; applying an sRGB OETF again is incorrect.
     return clamp(
-            primeEncodeSrgb(clamp(mapped, float3(0.0), float3(1.0))),
+            primeAgxHsvTonemap(linearBt709, primeDefaultAgxHsvParameters()),
             float3(0.0),
             float3(1.0));
-}
-
-public float3 primeDisplayTransformToSrgb(
-        float3 hdrRec2020,
-        float exposureMultiplier)
-{
-    return primeDisplayTransformToSrgb(
-            hdrRec2020,
-            exposureMultiplier,
-            PRIME_DISPLAY_TRANSFORM_OKLAB);
 }

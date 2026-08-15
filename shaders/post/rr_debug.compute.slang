@@ -23,7 +23,6 @@ struct PrimeRrDebugPushConstants {
     uint jitterPhase;
     uint jitterPhaseCount;
     float finalExposureMultiplier;
-    uint displayTransformMode;
 };
 [[vk::push_constant]] ConstantBuffer<PrimeRrDebugPushConstants> rrDebugPush;
 
@@ -74,8 +73,7 @@ float3 rrHdr(float3 radiance) {
     return primeDisplayTransformToSrgb(
             max(radiance, float3(0.0)),
             exp2(primeAutoExposureState[0].exposureEv)
-                    * rrDebugPush.finalExposureMultiplier,
-            rrDebugPush.displayTransformMode);
+                    * rrDebugPush.finalExposureMultiplier);
 }
 
 float3 rrJitterPlot(float2 uv) {

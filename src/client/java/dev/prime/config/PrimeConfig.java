@@ -7,7 +7,6 @@ import dev.prime.render.LightingSettings;
 import dev.prime.render.MaterialSettings;
 import dev.prime.render.RendererSettings;
 import dev.prime.render.ScatterSettings;
-import dev.prime.render.post.DisplayTransformMode;
 import dev.prime.render.post.PostProcessingMode;
 import dev.prime.render.post.ReconstructionQualityMode;
 import dev.prime.render.terrain.VoxelSurfaceSettings;
@@ -56,8 +55,8 @@ public final class PrimeConfig {
     private static final String SOLAR_LONGITUDE_DEGREES_KEY =
             "astronomy.solar_longitude_degrees";
     private static final String FINAL_EXPOSURE_EV_KEY = "display.final_exposure_ev";
-    private static final String DISPLAY_TRANSFORM_KEY = "display.transform";
     private static final String[] LEGACY_DISPLAY_TRANSFORM_KEYS = {
+        "display.transform",
         "display.oklab_overexposure",
         "display.oklab_curve_exponent"
     };
@@ -94,7 +93,6 @@ public final class PrimeConfig {
         int blockLightQuarterSteps = LightingSettings.DEFAULT_BLOCK_LIGHT_QUARTER_STEPS;
         int finalExposureQuarterSteps =
                 DisplaySettings.DEFAULT_FINAL_EXPOSURE_QUARTER_STEPS;
-        DisplayTransformMode displayTransformMode = DisplayTransformMode.DEFAULT;
         int autoExposureCompensationSteps =
                 DisplaySettings.DEFAULT_AUTO_EXPOSURE_COMPENSATION_STEPS;
         int defaultRoughnessSteps = MaterialSettings.DEFAULT_ROUGHNESS_STEPS;
@@ -275,22 +273,6 @@ public final class PrimeConfig {
                 } else {
                     rewriteNeeded = true;
                 }
-                String displayTransformId = properties.getProperty(DISPLAY_TRANSFORM_KEY);
-                if (displayTransformId != null) {
-                    DisplayTransformMode parsed = DisplayTransformMode.findById(
-                            displayTransformId).orElse(null);
-                    if (parsed == null) {
-                        PrimeInfo.LOGGER.warn(
-                                "Unknown Prime display transform '{}'; using {}",
-                                displayTransformId,
-                                DisplayTransformMode.DEFAULT.id());
-                        rewriteNeeded = true;
-                    } else {
-                        displayTransformMode = parsed;
-                    }
-                } else {
-                    rewriteNeeded = true;
-                }
                 rewriteNeeded |= hasLegacyDisplayTransformProperties(properties);
                 String autoExposureCompensation =
                         properties.getProperty(AUTO_EXPOSURE_COMPENSATION_KEY);
@@ -386,13 +368,12 @@ public final class PrimeConfig {
                 0L,
                 0L,
                 sharcEnabled,
-                vanillaPbrPresets,
-                displayTransformMode);
+                vanillaPbrPresets);
         scatterCount = loadedScatterCount;
         rendererRevision = 0L;
         dirty = rewriteNeeded;
         PrimeInfo.LOGGER.info(
-                "Prime settings: path tracing {}, SHARC {}, scatter count {}, voxel surfaces {} at {}x, post-processing {} quality {} (NRD-FSR {}x), latitude {} degrees, solar longitude {} degrees, sun {} EV, stars {} EV, block lights {} EV, display transform {}, final exposure {} EV, auto-exposure compensation {}, default roughness {}, seamless glass {}, air gap {}, vanilla PBR presets {}",
+                "Prime settings: path tracing {}, SHARC {}, scatter count {}, voxel surfaces {} at {}x, post-processing {} quality {} (NRD-FSR {}x), latitude {} degrees, solar longitude {} degrees, sun {} EV, stars {} EV, block lights {} EV, final exposure {} EV, auto-exposure compensation {}, default roughness {}, seamless glass {}, air gap {}, vanilla PBR presets {}",
                 pathTracingEnabled ? "enabled" : "disabled",
                 sharcEnabled ? "enabled" : "disabled",
                 loadedScatterCount,
@@ -406,7 +387,6 @@ public final class PrimeConfig {
                 formatEv(sunQuarterSteps),
                 formatStarEv(starQuarterSteps),
                 formatEv(blockLightQuarterSteps),
-                displayTransformMode.id(),
                 formatFinalExposure(finalExposureQuarterSteps),
                 formatAutoExposureCompensation(autoExposureCompensationSteps),
                 formatRoughness(defaultRoughnessSteps),
@@ -502,10 +482,6 @@ public final class PrimeConfig {
         update(settings.withFinalExposureQuarterSteps(quarterSteps));
     }
 
-    public static void setDisplayTransformMode(DisplayTransformMode mode) {
-        update(settings.withDisplayTransformMode(mode));
-    }
-
     public static void setAutoExposureCompensationSteps(int steps) {
         update(settings.withAutoExposureCompensationSteps(steps));
     }
@@ -544,7 +520,6 @@ public final class PrimeConfig {
                 .withSunQuarterSteps(LightingSettings.DEFAULT_SUN_QUARTER_STEPS)
                 .withStarQuarterSteps(LightingSettings.DEFAULT_STAR_QUARTER_STEPS)
                 .withBlockLightQuarterSteps(LightingSettings.DEFAULT_BLOCK_LIGHT_QUARTER_STEPS)
-                .withDisplayTransformMode(DisplayTransformMode.DEFAULT)
                 .withFinalExposureQuarterSteps(
                         DisplaySettings.DEFAULT_FINAL_EXPOSURE_QUARTER_STEPS)
                 .withAutoExposureCompensationSteps(
@@ -630,8 +605,6 @@ public final class PrimeConfig {
                     + STAR_EV_KEY + "=" + formatStarEv(current.starQuarterSteps()) + "\n"
                     + BLOCK_LIGHT_EV_KEY + "="
                     + formatEv(current.blockLightQuarterSteps()) + "\n"
-                    + DISPLAY_TRANSFORM_KEY + "="
-                    + current.displayTransformMode().id() + "\n"
                     + FINAL_EXPOSURE_EV_KEY + "="
                     + formatFinalExposure(current.finalExposureQuarterSteps()) + "\n"
                     + AUTO_EXPOSURE_COMPENSATION_KEY + "="

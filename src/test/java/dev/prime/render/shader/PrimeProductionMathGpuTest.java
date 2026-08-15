@@ -273,26 +273,14 @@ final class PrimeProductionMathGpuTest {
                         case 2 -> 4.026069F;
                         default -> random.nextFloat() * 24.0F - 16.0F;
                     };
-                    float saturation = switch ((local >> 2) & 3) {
-                        case 0 -> 0.0F;
-                        case 1 -> 0.95F;
-                        case 2 -> 1.0F;
-                        default -> random.nextFloat();
-                    };
-                    float onset = switch ((local >> 4) & 3) {
-                        case 0 -> 0.0F;
-                        case 1 -> 0.5F;
-                        case 2 -> 0.95F;
-                        default -> random.nextFloat();
-                    };
                     putVec4(
                             input,
                             index,
                             inputWords,
                             1,
                             logValue,
-                            saturation,
-                            onset,
+                            0.0F,
+                            0.0F,
                             0.0F);
                 } else {
                     float red = random.nextFloat() * 4.0F;

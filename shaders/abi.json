@@ -340,7 +340,6 @@
     "textureEncoding": "srgb",
     "displayEncoding": "srgb",
     "displayColorSpace": "rec709-d65",
-    "defaultDisplayTransform": "oklab",
     "displayExposure": 1.0
   },
   "emissionContract": {

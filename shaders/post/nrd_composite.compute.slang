@@ -49,7 +49,6 @@ struct PrimeCompositePushConstants {
     float sunRadianceMultiplier;
     float2 currentJitterPixels;
     float2 epipoleNdc;
-    uint displayTransformMode;
 };
 [[vk::push_constant]] ConstantBuffer<PrimeCompositePushConstants> primeCompositePush;
 
@@ -409,10 +408,7 @@ float3 primeCompositeRemodulatedSpecular(
 
 float3 primeCompositeDisplayDiagnostic(float3 radiance) {
     radiance = primeNrdIsFinite(radiance) ? max(radiance, float3(0.0)) : float3(0.0);
-    return primeDisplayTransformToSrgb(
-            radiance,
-            1.0,
-            primeCompositePush.displayTransformMode);
+    return primeDisplayTransformToSrgb(radiance, 1.0);
 }
 
 bool primeCompositeIsValidationSceneTile(uint2 pixel) {

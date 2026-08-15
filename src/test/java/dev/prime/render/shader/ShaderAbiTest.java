@@ -108,7 +108,6 @@ final class ShaderAbiTest {
         assertEquals("srgb", ShaderAbi.TEXTURE_COLOR_ENCODING);
         assertEquals("srgb", ShaderAbi.DISPLAY_COLOR_ENCODING);
         assertEquals("rec709-d65", ShaderAbi.DISPLAY_COLOR_SPACE);
-        assertEquals("oklab", ShaderAbi.DEFAULT_DISPLAY_TRANSFORM);
         assertEquals(1.0F, ShaderAbi.DISPLAY_EXPOSURE);
         assertEquals("screen-pixel-2.5d", ShaderAbi.NRD_MOTION_SPACE);
         assertEquals("3.1.4", ShaderAbi.FSR_VERSION);

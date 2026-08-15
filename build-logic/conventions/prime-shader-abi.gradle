@@ -97,10 +97,9 @@ abstract class GenerateShaderAbi extends DefaultTask {
 				|| colorContract.textureEncoding != 'srgb'
 				|| colorContract.displayEncoding != 'srgb'
 				|| colorContract.displayColorSpace != 'rec709-d65'
-				|| colorContract.defaultDisplayTransform != 'oklab'
 				|| colorContract.displayExposure != 1.0) {
 			throw new GradleException(
-					'Prime color contract must remain sRGB input -> linear Rec.2020 D65 -> selectable DRT (Oklab default) -> sRGB Rec.709 display')
+					'Prime color contract must remain sRGB input -> linear Rec.2020 D65 -> AgX HSV -> sRGB Rec.709 display')
 		}
 		if (emissionContract.level15BlockIntensity != 1.5) {
 			throw new GradleException(
@@ -436,7 +435,6 @@ public final class ShaderAbi {
     public static final String TEXTURE_COLOR_ENCODING = "${colorContract.textureEncoding}";
     public static final String DISPLAY_COLOR_ENCODING = "${colorContract.displayEncoding}";
     public static final String DISPLAY_COLOR_SPACE = "${colorContract.displayColorSpace}";
-    public static final String DEFAULT_DISPLAY_TRANSFORM = "${colorContract.defaultDisplayTransform}";
     public static final float DISPLAY_EXPOSURE = ${colorContract.displayExposure}f;
     public static final float LEVEL_15_BLOCK_INTENSITY = ${emissionContract.level15BlockIntensity}f;
     public static final String NRD_VERSION = "${nrdContract.version}";

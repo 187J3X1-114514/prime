@@ -44,6 +44,7 @@ def verifyDistributionJar = tasks.register('verifyDistributionJar') {
 			'LICENSE_prime',
 			'META-INF/licenses/README.md',
 			'META-INF/licenses/APACHE-2.0.txt',
+			'META-INF/licenses/AGX-S2O3-LICENSE.txt',
 			'META-INF/licenses/FIDELITYFX-SDK-LICENSE.txt',
 			'META-INF/licenses/NRD-LICENSE.txt',
 			'META-INF/licenses/DLSS-SDK-LICENSE.txt',

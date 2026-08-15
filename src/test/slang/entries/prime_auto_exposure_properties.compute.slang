@@ -1,5 +1,6 @@
 #include "core/prime_test_abi.slang"
 import "core/auto_exposure.slang";
+import "core/color_space.slang";
 import "post/display_transform.slang";
 
 static const uint PRIME_AUTO_EXPOSURE_INPUT_WORDS = 2;
@@ -96,7 +97,15 @@ void main(uint3 dispatchThreadId : SV_DispatchThreadID)
                 0.0,
                 1.0);
         actual.x = primeAgxCurveComponent(normalized, parameters);
-        actual.y = primeAgxCompressHsvSaturation(values.y, values.z);
+        actual.y = max(
+                max(
+                        abs(parameters.outputPivot - 0.46135613),
+                        abs(parameters.pivotSlope - 2.4606366)),
+                max(
+                        max(
+                                abs(parameters.toePower - 1.55),
+                                abs(parameters.shoulderPower - 5.2)),
+                        abs(parameters.gamutCompression - 0.05)));
         if (values.x <= parameters.minimumLog2) {
             expected.x = 0.0;
         } else if (values.x >= parameters.minimumLog2
@@ -108,18 +117,16 @@ void main(uint3 dispatchThreadId : SV_DispatchThreadID)
         } else {
             expected.x = actual.x;
         }
-        expected.y = values.y <= values.z
-                ? values.y
-                : values.z + (1.0 - values.z) * (values.y - values.z)
-                        / ((1.0 - values.z) + (values.y - values.z));
+        expected.y = 0.0;
         if (!primeTestClose(actual.x, expected.x, 3.0e-5, 3.0e-5)
-                || !primeTestClose(actual.y, expected.y, 2.0e-6, 2.0e-6)) {
+                || !primeTestClose(actual.y, expected.y, 1.0e-7, 1.0e-7)
+                || !primeTestClose(
+                        parameters.toeCoefficient, 11.219474, 1.0e-5, 1.0e-6)
+                || !primeTestClose(
+                        parameters.shoulderCoefficient, 2568.7498, 2.0e-2, 1.0e-6)) {
             mask |= PRIME_TEST_FAILURE_IDENTITY;
         }
-        float minimumSaturation = min(values.y, values.z);
-        if (actual.x < -1.0e-5 || actual.x > 1.00001
-                || actual.y < minimumSaturation - 1.0e-6
-                || actual.y > 1.00001) {
+        if (actual.x < -1.0e-5 || actual.x > 1.00001) {
             mask |= PRIME_TEST_FAILURE_RANGE;
         }
     } else if (kind == 7) {
@@ -139,24 +146,27 @@ void main(uint3 dispatchThreadId : SV_DispatchThreadID)
         mask |= primeTestClassify(mapped);
     } else if (kind == 8) {
         float3 hdrRec2020 = max(values.xyz, float3(0.0));
-        float3 explicitOklab = primeDisplayTransformToSrgb(
-                hdrRec2020,
-                1.0,
-                PRIME_DISPLAY_TRANSFORM_OKLAB);
-        float3 defaultOutput = primeDisplayTransformToSrgb(hdrRec2020, 1.0);
-        float3 error = abs(defaultOutput - explicitOklab);
+        float3 expectedAgxHsv = clamp(
+                primeAgxHsvTonemap(
+                        max(
+                                primeLinearRec2020ToLinearBt709(hdrRec2020),
+                                float3(0.0)),
+                        primeDefaultAgxHsvParameters()),
+                float3(0.0),
+                float3(1.0));
+        float3 output = primeDisplayTransformToSrgb(hdrRec2020, 1.0);
+        float3 error = abs(output - expectedAgxHsv);
         actual = float2(
                 max(error.x, max(error.y, error.z)),
-                max(explicitOklab.x, max(explicitOklab.y, explicitOklab.z)));
+                max(output.x, max(output.y, output.z)));
         expected = float2(0.0, actual.y);
         if (!primeTestClose(actual.x, 0.0, 1.0e-7, 1.0e-7)) {
             mask |= PRIME_TEST_FAILURE_IDENTITY;
         }
-        if (any(explicitOklab < float3(0.0))
-                || any(explicitOklab > float3(1.0))) {
+        if (any(output < float3(0.0)) || any(output > float3(1.0))) {
             mask |= PRIME_TEST_FAILURE_RANGE;
         }
-        mask |= primeTestClassify(explicitOklab);
+        mask |= primeTestClassify(output);
     } else {
         mask |= PRIME_TEST_FAILURE_EVENT;
     }

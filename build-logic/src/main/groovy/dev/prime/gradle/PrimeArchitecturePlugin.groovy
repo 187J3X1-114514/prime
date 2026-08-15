@@ -9,6 +9,7 @@ final class PrimeArchitecturePlugin implements Plugin<Project> {
     void apply(Project project) {
         project.with {
 def architectureReport = layout.buildDirectory.dir('reports/prime-architecture')
+def architectureClasses = layout.buildDirectory.dir('classes/java/client')
 
 def normalizeClass = { String name ->
     int nested = name.indexOf('$')
@@ -134,11 +135,11 @@ def verifyArchitecture = tasks.register('verifyArchitecture') {
     group = 'verification'
     description = 'Verifies compiled Prime class dependencies and cross-layer SCCs with jdeps.'
     dependsOn tasks.named('compileClientJava')
-    inputs.dir(layout.buildDirectory.dir('classes/java/client'))
+    inputs.dir(architectureClasses)
     outputs.dir(architectureReport)
 
     doLast {
-        File classes = layout.buildDirectory.dir('classes/java/client').get().asFile
+        File classes = architectureClasses.get().asFile
         File reportDirectory = architectureReport.get().asFile
         reportDirectory.mkdirs()
         String executableName = System.getProperty('os.name').toLowerCase(Locale.ROOT).contains('win')

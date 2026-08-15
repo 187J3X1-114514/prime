@@ -9,8 +9,11 @@ def verifyRoboCuteReference = tasks.register('verifyRoboCuteReference') {
 	def lockFile = file('shaders/robocute.lock.json')
 	def authorityOverlayDirectory =
 			file('third_party/robocute/author-bsdf-hotfix-2026-07-24')
+	def authorityOverlayFiles = fileTree(authorityOverlayDirectory) {
+		include '*.hpp', '*.bytes'
+	}
 	inputs.file(lockFile)
-	inputs.dir(authorityOverlayDirectory)
+	inputs.files(authorityOverlayFiles)
 
 	doLast {
 		def lock = new groovy.json.JsonSlurper().parse(lockFile)
@@ -24,16 +27,12 @@ def verifyRoboCuteReference = tasks.register('verifyRoboCuteReference') {
 			throw new GradleException('RoboCute lock must name the approved author hotfix overlay')
 		}
 		def expectedOverlay = new TreeSet<String>(overlay.files.keySet())
-		def actualOverlay = new TreeSet<String>(fileTree(authorityOverlayDirectory) {
-			include '*.hpp', '*.bytes'
-		}.files.collect { it.name })
+		def actualOverlay = new TreeSet<String>(authorityOverlayFiles.files.collect { it.name })
 		if (actualOverlay != expectedOverlay) {
 			throw new GradleException(
 					"RoboCute author hotfix file set changed: expected ${expectedOverlay}, found ${actualOverlay}")
 		}
-		fileTree(authorityOverlayDirectory) {
-			include '*.hpp', '*.bytes'
-		}.files.each { source ->
+		authorityOverlayFiles.files.each { source ->
 			def digest = java.security.MessageDigest.getInstance('SHA-256')
 					.digest(source.bytes).encodeHex().toString()
 			if (digest != overlay.files[source.name]) {
@@ -895,6 +894,9 @@ abstract class CompilePrimeSlangComputeShaders extends DefaultTask {
 	@Input
 	abstract Property<Integer> getMaxCompilerProcesses()
 
+	@Internal
+	abstract DirectoryProperty getCompilerGateRoot()
+
 	@javax.inject.Inject
 	abstract org.gradle.api.file.FileSystemOperations getFileSystemOperations()
 
@@ -1017,7 +1019,7 @@ abstract class CompilePrimeSlangComputeShaders extends DefaultTask {
 		def compiler = slangCompiler.get()
 		def validator = spirvValidator.get()
 		def processLimit = maxCompilerProcesses.get()
-		def compilerGateKey = "${project.rootProject.projectDir.canonicalPath}|${processLimit}"
+		def compilerGateKey = "${compilerGateRoot.get().asFile.canonicalPath}|${processLimit}"
 		def compilerGate = compilerGates.computeIfAbsent(compilerGateKey) {
 			new java.util.concurrent.Semaphore(processLimit, true)
 		}
@@ -1231,6 +1233,7 @@ abstract class CompilePrimeSlangComputeShaders extends DefaultTask {
 }
 
 
+@CacheableTask
 abstract class VerifySlangRayPayloadAbi extends DefaultTask {
 	@InputDirectory
 	@PathSensitive(PathSensitivity.RELATIVE)
@@ -1238,6 +1241,9 @@ abstract class VerifySlangRayPayloadAbi extends DefaultTask {
 
 	@Input
 	abstract Property<String> getSpirvDisassembler()
+
+	@OutputFile
+	abstract RegularFileProperty getReportFile()
 
 	private static String disassemble(String tool, File shader) {
 		def process = new ProcessBuilder(tool, shader.absolutePath)
@@ -1365,6 +1371,14 @@ abstract class VerifySlangRayPayloadAbi extends DefaultTask {
 			throw new GradleException(
 					'No production SER shader emitted SPV_EXT_shader_invocation_reorder')
 		}
+
+		def report = reportFile.get().asFile
+		report.parentFile.mkdirs()
+		report.setText([
+				'payloadAbi=valid',
+				"shaderCount=${shaders.size()}",
+				"extSerModules=${extSerModules.sort().join(',')}"
+		].join(System.lineSeparator()) + System.lineSeparator(), 'UTF-8')
 	}
 }
 
@@ -1643,6 +1657,13 @@ def generateShaderAbi = tasks.register('generateShaderAbi', GenerateShaderAbi) {
 
 def shaderIncludeReport = layout.buildDirectory.file(
 		'reports/prime-shaders/include-graph.txt')
+def shaderSourceRoot = file('shaders')
+def shaderTestIncludeRoot = file('src/test/slang')
+def sharcIncludeRoot = file('third_party/sharc/include')
+def removedShaderReferencePaths = [
+		file('shaders/bsdf/core'),
+		file('shaders/bsdf/adapter/prime_bsdf_specializations.slang')
+]
 def verifyShaderIncludeGraph = tasks.register('verifyShaderIncludeGraph') {
 	group = 'verification'
 	description = 'Verifies that Prime Slang includes and path imports are resolvable and acyclic.'
@@ -1655,27 +1676,26 @@ def verifyShaderIncludeGraph = tasks.register('verifyShaderIncludeGraph') {
 	outputs.file(shaderIncludeReport)
 
 	doLast {
-		def removedReferencePaths = [
-				file('shaders/bsdf/core'),
-				file('shaders/bsdf/adapter/prime_bsdf_specializations.slang')
-		].findAll { it.exists() }
+		def removedReferencePaths = removedShaderReferencePaths.findAll { it.exists() }
 		if (!removedReferencePaths.empty) {
 			throw new GradleException(
 					"Removed local RoboCute reference code was restored: ${removedReferencePaths}")
 		}
 		def sources = []
-		def shaderRoot = file('shaders').canonicalFile
+		def shaderRoot = shaderSourceRoot.canonicalFile
 		def includeRoots = [
 				shaderRoot,
-				file('src/test/slang'),
-				file('third_party/sharc/include'),
+				shaderTestIncludeRoot,
+				sharcIncludeRoot,
 				shaderAbiSlangRoot.get().asFile
 		]
 		includeRoots.each { root ->
 			if (root.isDirectory()) {
-				sources.addAll(fileTree(root).files.findAll { source ->
-					source.name.endsWith('.slang') || source.name.endsWith('.h')
-				})
+				root.eachFileRecurse(groovy.io.FileType.FILES) { source ->
+					if (source.name.endsWith('.slang') || source.name.endsWith('.h')) {
+						sources.add(source)
+					}
+				}
 			}
 		}
 		def sourcePaths = sources.collect { it.canonicalFile }.toSet()
@@ -1791,6 +1811,7 @@ def compileSlangTestShaders = tasks.register(
 	outputDirectory = compiledSlangTestShaderRoot
 	debugLevel = '-g0'
 	maxCompilerProcesses = slangCompilerProcesses
+	compilerGateRoot = rootProject.layout.projectDirectory
 	slangCompiler = providers.gradleProperty('primeSlangCompiler')
 			.orElse(resolveVulkanTool('slangc'))
 	spirvValidator = resolveVulkanTool('spirv-val')
@@ -1809,6 +1830,7 @@ def compileSlangShaders = tasks.register(
 			.map { value -> value.toBoolean() ? '-g2' : '-g1' }
 			.orElse('-g2')
 	maxCompilerProcesses = slangCompilerProcesses
+	compilerGateRoot = rootProject.layout.projectDirectory
 	slangCompiler = providers.gradleProperty('primeSlangCompiler')
 			.orElse(resolveVulkanTool('slangc'))
 	spirvValidator = resolveVulkanTool('spirv-val')
@@ -1821,6 +1843,7 @@ def verifySlangRayPayloadAbi = tasks.register(
 	dependsOn compileSlangShaders
 	slangDirectory = compiledSlangShaderRoot
 	spirvDisassembler = resolveVulkanTool('spirv-dis')
+	reportFile = layout.buildDirectory.file('reports/prime-shaders/ray-payload-abi.txt')
 }
 
 def verifySlangToolchain = tasks.register('verifySlangToolchain', VerifySlangToolchain) {

@@ -66,10 +66,11 @@ tasks.named('compileTestJava') {
 	dependsOn tasks.named('compileClientJava')
 }
 
+def resourceVersion = project.version.toString()
 processResources {
-	inputs.property 'version', project.version
+	inputs.property 'version', resourceVersion
 	filesMatching('fabric.mod.json') {
-		expand version: inputs.properties.version
+		expand version: resourceVersion
 	}
 }
 

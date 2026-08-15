@@ -217,7 +217,7 @@ final class PrimeConfigTest {
         assertFalse(serialized.contains("display.transform="));
         assertFalse(serialized.contains("display.oklab_overexposure"));
         assertFalse(serialized.contains("display.oklab_curve_exponent"));
-        assertTrue(serialized.contains("display.auto_exposure_compensation=0.5\n"));
+        assertTrue(serialized.contains("display.auto_exposure_compensation=0.6\n"));
         assertTrue(serialized.contains("material.seamless_glass=true\n"));
         assertTrue(serialized.contains("material.air_gap=true\n"));
         assertTrue(serialized.contains("material.vanilla_pbr_presets=true\n"));

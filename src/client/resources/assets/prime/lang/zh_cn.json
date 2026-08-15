@@ -8,7 +8,7 @@
   "prime.options.path_tracing": "Prime 路径追踪",
   "prime.options.path_tracing.tooltip": "开启后使用 Prime 路径追踪渲染；关闭后恢复原版渲染。需要更高帧率或遇到兼容性问题时可以关闭。",
   "prime.options.sharc": "SHARC 辐射缓存",
-  "prime.options.sharc.tooltip": "通过 256 MiB 世界空间辐射缓存复用间接光照，降低实时路径追踪的噪点与开销。需要原生 FP16 存储和 64 位缓冲区原子；不支持的显卡会自动回退且不分配缓存。",
+  "prime.options.sharc.tooltip": "记住附近已经算过的反弹光照，并在后续画面中重复利用，让实时路径追踪通常更快、噪点更少。会额外占用约 256 MiB 显存；显卡不支持时会自动关闭。",
   "prime.options.scatter_count": "散射次数",
   "prime.options.scatter_count.tooltip": "设置所有实时与离线积分器共用的最大路径散射次数（1–64）。",
   "prime.options.experimental.voxel_texture_surfaces": "纹理几何位移（实验性）",

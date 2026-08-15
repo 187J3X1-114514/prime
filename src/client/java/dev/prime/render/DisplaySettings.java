@@ -11,7 +11,7 @@ public final class DisplaySettings {
     public static final int HUNDREDTH_STEPS_PER_UNIT = 100;
     public static final int MINIMUM_AUTO_EXPOSURE_COMPENSATION_STEPS = 0;
     public static final int MAXIMUM_AUTO_EXPOSURE_COMPENSATION_STEPS = HUNDREDTH_STEPS_PER_UNIT;
-    public static final int DEFAULT_AUTO_EXPOSURE_COMPENSATION_STEPS = 50;
+    public static final int DEFAULT_AUTO_EXPOSURE_COMPENSATION_STEPS = 60;
 
     private DisplaySettings() {
     }

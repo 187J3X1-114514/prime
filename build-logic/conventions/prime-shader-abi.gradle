@@ -1382,6 +1382,90 @@ abstract class VerifySlangRayPayloadAbi extends DefaultTask {
 	}
 }
 
+abstract class PrepareNsightCapture extends DefaultTask {
+	@InputFile
+	@PathSensitive(PathSensitivity.RELATIVE)
+	abstract RegularFileProperty getLaunchConfig()
+
+	@InputFile
+	@PathSensitive(PathSensitivity.RELATIVE)
+	abstract RegularFileProperty getArgumentFile()
+
+	@InputFile
+	@PathSensitive(PathSensitivity.RELATIVE)
+	abstract RegularFileProperty getDebugShader()
+
+	@InputFile
+	@PathSensitive(PathSensitivity.NONE)
+	abstract RegularFileProperty getJavaExecutable()
+
+	@Input
+	abstract Property<String> getWorkingDirectory()
+
+	@Input
+	abstract Property<Boolean> getFullShaderDebug()
+
+	@Input
+	abstract Property<String> getUserCountry()
+
+	@Input
+	abstract Property<String> getUserLanguage()
+
+	@Input
+	abstract Property<String> getUserVariant()
+
+	@OutputFile
+	abstract RegularFileProperty getReportFile()
+
+	@TaskAction
+	void prepare() {
+		if (!fullShaderDebug.get()) {
+			throw new GradleException(
+					'Nsight capture requires primeShaderFullDebug=true so Slang emits -g2 debug information')
+		}
+		def shaderText = new String(
+				debugShader.get().asFile.bytes,
+				java.nio.charset.StandardCharsets.ISO_8859_1)
+		if (!shaderText.contains('NonSemantic.Shader.DebugInfo.100')) {
+			throw new GradleException(
+					'Compiled production SPIR-V does not contain standard Slang debug information')
+		}
+
+		def javaPath = javaExecutable.get().asFile.absolutePath
+		def workPath = workingDirectory.get()
+		def argumentPath = argumentFile.get().asFile.absolutePath
+		def configPath = launchConfig.get().asFile.absolutePath
+		def arguments = [
+				'-Dfile.encoding=UTF-8',
+				"-Duser.country=${userCountry.get()}",
+				"-Duser.language=${userLanguage.get()}",
+				"-Duser.variant=${userVariant.get()}",
+				"\"@${argumentPath}\"",
+				"\"-Dfabric.dli.config=${configPath}\"",
+				'-Dfabric.dli.env=client',
+				'-Dfabric.dli.main=net.fabricmc.loader.impl.launch.knot.KnotClient',
+				'--sun-misc-unsafe-memory-access=allow',
+				'--enable-native-access=ALL-UNNAMED',
+				'net.fabricmc.devlaunchinjector.Main'
+		].join(' ')
+		def report = reportFile.get().asFile
+		report.parentFile.mkdirs()
+		report.setText([
+				'Nsight Graphics launch fields',
+				'',
+				'Executable:',
+				javaPath,
+				'',
+				'Working directory:',
+				workPath,
+				'',
+				'Command-line arguments:',
+				arguments
+		].join(System.lineSeparator()) + System.lineSeparator(), 'UTF-8')
+		logger.lifecycle("Nsight launch fields: ${report.absolutePath}")
+	}
+}
+
 abstract class VerifySlangToolchain extends DefaultTask {
 	@InputFile
 	@PathSensitive(PathSensitivity.RELATIVE)
@@ -1844,6 +1928,27 @@ def verifySlangRayPayloadAbi = tasks.register(
 	slangDirectory = compiledSlangShaderRoot
 	spirvDisassembler = resolveVulkanTool('spirv-dis')
 	reportFile = layout.buildDirectory.file('reports/prime-shaders/ray-payload-abi.txt')
+}
+
+def javaExecutableName = System.getProperty('os.name')
+		.toLowerCase(java.util.Locale.ROOT).contains('windows') ? 'java.exe' : 'java'
+def prepareNsightCapture = tasks.register('prepareNsightCapture', PrepareNsightCapture) {
+	group = 'development'
+	description = 'Builds -g2 shaders and writes the launch fields for an Nsight Graphics capture.'
+	dependsOn 'clientClasses', 'generateDLIConfig', 'downloadAssets', 'configureClientLaunch'
+	launchConfig = layout.projectDirectory.file('.gradle/loom-cache/launch.cfg')
+	argumentFile = layout.buildDirectory.file('loom-cache/argFiles/runClient')
+	debugShader = layout.buildDirectory.file(
+			'resources/client/prime/shaders/auto_exposure_update.comp.spv')
+	javaExecutable = file(new File(System.getProperty('java.home'), "bin/${javaExecutableName}"))
+	workingDirectory = layout.projectDirectory.dir('run').asFile.absolutePath
+	fullShaderDebug = providers.gradleProperty('primeShaderFullDebug')
+			.map { it.toBoolean() }
+			.orElse(true)
+	userCountry = providers.systemProperty('user.country').orElse('')
+	userLanguage = providers.systemProperty('user.language').orElse('')
+	userVariant = providers.systemProperty('user.variant').orElse('')
+	reportFile = layout.buildDirectory.file('reports/prime-nsight/launch.txt')
 }
 
 def verifySlangToolchain = tasks.register('verifySlangToolchain', VerifySlangToolchain) {

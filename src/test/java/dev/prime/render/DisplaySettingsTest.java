@@ -29,7 +29,7 @@ final class DisplaySettingsTest {
         assertEquals(0.0F, DisplaySettings.autoExposureCompensation(0));
         assertEquals(0.5F, DisplaySettings.autoExposureCompensation(50));
         assertEquals(1.0F, DisplaySettings.autoExposureCompensation(100));
-        assertEquals(50, DisplaySettings.DEFAULT_AUTO_EXPOSURE_COMPENSATION_STEPS);
+        assertEquals(60, DisplaySettings.DEFAULT_AUTO_EXPOSURE_COMPENSATION_STEPS);
         assertThrows(
                 IllegalArgumentException.class,
                 () -> DisplaySettings.autoExposureCompensation(-1));

@@ -45,6 +45,9 @@ tradeoffs.
   path-traced scene.
 - **Realtime denoising and reconstruction:** NVIDIA DLSS Ray Reconstruction is the primary path, with
   NRD + FSR available for other compatible GPUs.
+- **Bounced-light cache:** the optional SHARC cache remembers bounced lighting already calculated
+  nearby, usually making realtime path tracing faster and less noisy. It uses about 256 MiB of
+  additional VRAM and turns off automatically on unsupported GPUs.
 - **Offline Rendering Mode:** freezes the scene and accumulates raw, undenoised samples at native
   resolution. It preserves more detail, avoids realtime reconstruction artifacts, and targets a
   higher-quality final result, but usually looks noisier than the realtime image and needs longer
@@ -109,6 +112,10 @@ reuse the driver cache.
   NRD + FSR when it is unavailable.
 - **Reconstruction Quality Preset:** defaults to Performance. Raise it when the game is comfortably
   responsive, or lower it when frame rate is insufficient.
+- **SHARC Radiance Cache:** reuses bounced lighting already calculated nearby and should normally
+  remain enabled; disable it when video memory is limited.
+- **Auto Exposure Strength:** defaults to 60% and controls how strongly the image adapts when moving
+  between bright and dark areas.
 - **Exposure Compensation:** adjust this first when the entire image looks too bright or too dark.
 - **Offline Rendering Mode:** freezes the scene and accumulates raw samples. Press `F2` when the
   image is ready; press `Escape` or `Ctrl+Alt+F2` to exit.
@@ -197,6 +204,7 @@ The technical documents are currently written in Chinese.
 - [Offline light transport contract](docs/离线光传输契约.md)
 - [Transparency and realtime reconstruction](docs/透明渲染与实时重建.md)
 - [Shader property tests and numerical diagnostics](docs/着色器属性测试与数值诊断架构.md)
+- [Compact OpenPBR implementation](docs/OpenPBR紧凑模块.md)
 - [RoboCute BSDF reference and transmission contract](docs/BSDF透射折射率平方缺失调查报告.md)
 - [Slang toolchain and migration record](docs/Slang迁移计划.md)
 - [TODO](docs/TODO.md)

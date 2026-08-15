@@ -111,12 +111,12 @@ public abstract class VideoSettingsScreenMixin {
                     .build());
             list.addHeader(PRIME$RENDERING_HEADER);
             list.addBig(this.prime$pathTracingEnabled);
+            list.addBig(this.prime$screenshotMode);
             list.addBig(this.prime$sharcEnabled);
             list.addBig(this.prime$scatterCount);
             list.addSmall(
                     this.prime$voxelTextureSurfaces,
                     this.prime$voxelTextureSurfaceStrength);
-            list.addBig(this.prime$screenshotMode);
             list.addSmall(this.prime$postProcessingMode, this.prime$qualityMode);
             list.addHeader(PRIME$LIGHTING_HEADER);
             list.addSmall(this.prime$latitude, this.prime$season);

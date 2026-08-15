@@ -905,7 +905,10 @@ void primeAdapterProperties(
         result.first = sampled.bsdfSample;
         result.stackCounts.x = sampled.volumeStack.count;
         float expectedInterfaceIor = state.originalIor / adjacent.ior;
-        if (state.specularFresnel.ior != expectedInterfaceIor) {
+        // The state evaluates originalIor * (1 / adjacentIor). Division is mathematically
+        // equivalent but can differ in the last bit across Vulkan drivers.
+        if (!primeTestClose(
+                state.specularFresnel.ior, expectedInterfaceIor, 2.0e-7, 2.0e-7)) {
             result.mask |= PRIME_TEST_FAILURE_STATE;
         }
         if ((result.first.eventFlags & PRIME_BSDF_EVENT_TRANSMISSION) != 0u) {

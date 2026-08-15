@@ -1478,7 +1478,7 @@ abstract class VerifySlangToolchain extends DefaultTask {
 	abstract Property<String> getExpectedVersion()
 
 	@Input
-	abstract Property<String> getExpectedSpirvToolsVersion()
+	abstract Property<String> getExpectedSpirvToolsVersions()
 
 	@Input
 	abstract Property<String> getSpirvValidator()
@@ -1523,19 +1523,24 @@ abstract class VerifySlangToolchain extends DefaultTask {
 					"Prime requires Slang ${expected}, but ${compiler} reported: ${version}")
 		}
 
-		def expectedSpirvTools = expectedSpirvToolsVersion.get()
+		def expectedSpirvTools = expectedSpirvToolsVersions.get()
+				.split('\\|')
+				.collect { it.trim() }
+				.findAll { !it.empty }
 		def validator = spirvValidator.get()
 		def validatorVersion = runAndCapture([validator, '--version'])
-		if (!validatorVersion.contains(expectedSpirvTools)) {
+		def validatorReported = validatorVersion.readLines().first()
+		if (!expectedSpirvTools.contains(validatorReported)) {
 			throw new GradleException(
-					"Prime requires ${expectedSpirvTools}, but ${validator} reported: "
+					"Prime requires one of ${expectedSpirvTools}, but ${validator} reported: "
 							+ validatorVersion)
 		}
 		def disassembler = spirvDisassembler.get()
 		def disassemblerVersion = runAndCapture([disassembler, '--version'])
-		if (!disassemblerVersion.contains(expectedSpirvTools)) {
+		def disassemblerReported = disassemblerVersion.readLines().first()
+		if (!expectedSpirvTools.contains(disassemblerReported)) {
 			throw new GradleException(
-					"Prime requires ${expectedSpirvTools}, but ${disassembler} reported: "
+					"Prime requires one of ${expectedSpirvTools}, but ${disassembler} reported: "
 							+ disassemblerVersion)
 		}
 
@@ -1958,7 +1963,7 @@ def verifySlangToolchain = tasks.register('verifySlangToolchain', VerifySlangToo
 	slangCompiler = providers.gradleProperty('primeSlangCompiler')
 			.orElse(resolveVulkanTool('slangc'))
 	expectedVersion = providers.gradleProperty('primeSlangVersion')
-	expectedSpirvToolsVersion = providers.gradleProperty('primeSpirvToolsVersion')
+	expectedSpirvToolsVersions = providers.gradleProperty('primeSpirvToolsVersions')
 	spirvValidator = resolveVulkanTool('spirv-val')
 	spirvDisassembler = resolveVulkanTool('spirv-dis')
 }

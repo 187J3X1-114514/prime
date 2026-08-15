@@ -7,13 +7,13 @@ Minecraft 表面语义 / LabPBR / 默认值
   → MaterialRecipe
   → PrimeMaterialSample
   → PrimeCompiledClosure
-  → RoboCute BSDF
+  → 紧凑 OpenPBR BSDF
 ```
 
 源格式只在输入适配层出现。命中 ABI、surface relation、闭包编译器和积分器只消费 Prime
 的规范语义；它们不得根据 LabPBR 字节、纹理来源或 roughness 猜测材质类别和离散事件。
-`shaders/bsdf/core/robocute_*.slang` 中生产可达的核心声明是固定参考移植，Prime 的翻译与特化
-全部位于其外部。
+`shaders/bsdf/core/robocute_*.slang` 是固定的第三方差分参考，不进入生产依赖闭包；Prime 的
+OpenPBR ABI、公式、翻译和专用状态均位于 `shaders/bsdf/compact` 与 adapter。
 
 ## CPU 配方与图元编码
 
@@ -131,7 +131,7 @@ water/thin/decorative、Fresnel code 相同且颜色满足既有兼容条件时�
 
 ## 闭包测度
 
-Prime 在 RoboCute state 初始化后编译 `PrimeCompiledClosure`，并附带
+Prime 在紧凑 OpenPBR state 初始化后编译 `PrimeCompiledClosure`，并附带
 `PrimeClosureTraits { measureMask, eventMask }`。measure 只有：
 
 - `PRIME_MEASURE_SOLID_ANGLE`：可由有限立体角 PDF 求值并参与 NEE；
@@ -140,12 +140,12 @@ Prime 在 RoboCute state 初始化后编译 `PrimeCompiledClosure`，并附带
 因此 mixed opaque dielectric 可同时支持 diffuse solid-angle 与 discrete specular；透射闭包
 依据实际 roughness、相对 IOR 和 index matching 成为 discrete-only 或 solid-angle-only。
 NEE 查询 SOLID_ANGLE 支持，guide/deterministic 分支只判断是否 discrete-only；MIS、SHARC
-和前一路径状态只读取实际 sample 的 DISCRETE 事件。RoboCute 内部的 delta 标记保持原样，
-只在 Prime 适配边界映射为 discrete。
+和前一路径状态只读取实际 sample 的 DISCRETE 事件。紧凑模块的 delta 标记在 Prime 适配边界
+映射为 discrete；参考库中的同名事件仅用于差分验证。
 
 ## 验证门禁
 
 改动材质链时至少验证 primitive 三种模式的穷举往返、codec v9→v10、composer 的 preset 与
 LabPBR 覆盖、玻璃 alpha 阈值与空气微缝矩阵、overlay 两层独立 preset、闭包 measure/sample
 一致性、dummy image 不可观察性，以及 32/80/96 字节 ABI。最终还需运行 shader include、
-RoboCute port、production/test shader 编译、Java 测试和 Vulkan shader property tests。
+RoboCute reference、production/test shader 编译、Java 测试和 Vulkan shader property tests。

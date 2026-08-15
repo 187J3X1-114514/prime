@@ -1,15 +1,15 @@
 #language slang 2026
 module "bsdf/compact/openpbr_material.slang";
 
-import "bsdf/core/robocute_common.slang";
+import "bsdf/compact/openpbr_common.slang";
 
 // OpenPBR's default metallic material initializer and outside-medium lookup.
 // These are compact boundary utilities, not a retained generic closure graph.
 
-public PrimeRcMaterial primeCompactMaterialFromMetallic(
+public PrimeOpenPbrMaterial primeCompactMaterialFromMetallic(
         float3 baseColor, float roughness, float metalness, float3 normal) {
-    PrimeRcOnb onb = primeRcOnbFromNormal(normal);
-    PrimeRcMaterial material;
+    PrimeOpenPbrOnb onb = primeOpenPbrOnbFromNormal(normal);
+    PrimeOpenPbrMaterial material;
     material.weight.base = 1.0;
     material.weight.diffuseRoughness = 0.0;
     material.weight.specular = 1.0;
@@ -54,12 +54,12 @@ public PrimeRcMaterial primeCompactMaterialFromMetallic(
     material.diffraction.invPitch = float2(1.0 / 3.0, 0.0);
     material.diffraction.angle = 0.0;
     material.diffraction.lobeCount = 5u;
-    material.diffraction.kind = PRIME_RC_DIFFRACTION_RECTANGULAR;
+    material.diffraction.kind = PRIME_OPENPBR_DIFFRACTION_RECTANGULAR;
     return material;
 }
 
 public float primeCompactInverseOutsideIor(
-        float wiZ, PrimeRcVolumeStack volumeStack) {
+        float wiZ, PrimeOpenPbrVolumeStack volumeStack) {
     if (wiZ > 0.0) {
         if (volumeStack.count > 0u) {
             return 1.0 / volumeStack.values[volumeStack.count - 1u].ior;

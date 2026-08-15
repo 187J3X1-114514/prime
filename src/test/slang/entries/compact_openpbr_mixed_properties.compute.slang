@@ -1,8 +1,8 @@
 #include "core/prime_test_abi.slang"
 import "bsdf/adapter/transmission_ggx_energy.slang";
 import "bsdf/compact/openpbr_opaque.slang";
-import "bsdf/core/robocute_common.slang";
-import "bsdf/core/robocute_openpbr.slang";
+import "bsdf/compact/openpbr_common.slang";
+import "bsdf/compact/openpbr_material.slang";
 
 static const uint PRIME_MIXED_INPUT_WORDS = 4u;
 static const uint PRIME_MIXED_WITNESS_WORDS = 10u;
@@ -14,7 +14,7 @@ struct PrimeMixedResult {
     PrimeCompactOpaqueEvaluation sampledEvaluation;
     PrimeCompactOpaqueComponents components;
     PrimeCompactOpaqueEnergy energy;
-    PrimeRcSampleResult sample;
+    PrimeOpenPbrSampleResult sample;
 };
 
 float primeMixedParam(uint4 encoded[4], uint index) {
@@ -27,9 +27,9 @@ float3 primeMixedDirection(float cosineTheta, float phi) {
     return float3(radius * cos(phi), radius * sin(phi), cosineTheta);
 }
 
-PrimeRcVolumeStack primeMixedEmptyStack() {
-    PrimeRcVolumeStack stack;
-    PrimeRcVolume air;
+PrimeOpenPbrVolumeStack primeMixedEmptyStack() {
+    PrimeOpenPbrVolumeStack stack;
+    PrimeOpenPbrVolume air;
     air.extinction = float3(0.0);
     air.albedo = float3(0.0);
     air.anisotropy = 0.0;
@@ -78,7 +78,7 @@ PrimeMixedResult primeMixedRun(uint4 encoded[4]) {
     float anisotropy = primeMixedParam(encoded, 13u);
     float inverseOutsideIor = primeMixedParam(encoded, 14u);
 
-    PrimeRcMaterial material = primeRcMaterialFromMetallic(
+    PrimeOpenPbrMaterial material = primeCompactMaterialFromMetallic(
             color, roughness, 0.0, float3(0.0, 0.0, 1.0));
     material.specular.ior = ior;
     material.weight.subsurface = subsurfaceWeight;
@@ -88,7 +88,7 @@ PrimeMixedResult primeMixedRun(uint4 encoded[4]) {
     if (!primeCompactOpaqueSupports(material)) {
         result.mask |= PRIME_TEST_FAILURE_STATE;
     }
-    PrimeRcMaterial unsupported = material;
+    PrimeOpenPbrMaterial unsupported = material;
     unsupported.weight.diffuseRoughness = 0.5;
     if (primeCompactOpaqueSupports(unsupported)) {
         result.mask |= PRIME_TEST_FAILURE_STATE;
@@ -100,9 +100,9 @@ PrimeMixedResult primeMixedRun(uint4 encoded[4]) {
     result.components = primeCompactOpaqueEvaluateComponents(wi, wo, state);
     result.energy = primeCompactOpaqueEnergy(wi, state);
 
-    PrimeRcMaterial diffuseMaterial = material;
+    PrimeOpenPbrMaterial diffuseMaterial = material;
     diffuseMaterial.weight.subsurface = 0.0;
-    PrimeRcMaterial subsurfaceMaterial = material;
+    PrimeOpenPbrMaterial subsurfaceMaterial = material;
     subsurfaceMaterial.weight.subsurface = 1.0;
     PrimeCompactOpaqueState diffuseState = primeCompactOpaqueStateInit(
             primeTransmissionGgxEnergy(),
@@ -172,7 +172,7 @@ PrimeMixedResult primeMixedRun(uint4 encoded[4]) {
     }
     result.sample = primeCompactOpaqueSample(
             wi, randomValue, state, primeMixedEmptyStack());
-    result.sampledEvaluation.throughput = primeRcZeroThroughput();
+    result.sampledEvaluation.throughput = primeOpenPbrZeroThroughput();
     result.sampledEvaluation.pdf = 0.0;
 
     primeMixedClassify(result.mask, result.evaluation.throughput.value);
@@ -203,7 +203,7 @@ PrimeMixedResult primeMixedRun(uint4 encoded[4]) {
     }
 
     uint flags = result.sample.bsdfSample.throughput.flags;
-    if (flags != PRIME_RC_FLAG_NONE) {
+    if (flags != PRIME_OPENPBR_FLAG_NONE) {
         primeMixedClassify(result.mask, result.sample.bsdfSample.throughput.value);
         primeMixedClassify(result.mask, result.sample.bsdfSample.pdf);
         primeMixedClassify(result.mask, result.sample.bsdfSample.eta);
@@ -216,8 +216,8 @@ PrimeMixedResult primeMixedRun(uint4 encoded[4]) {
             result.mask |= PRIME_TEST_FAILURE_STATE;
         }
         bool reflected = wi.z * result.sample.bsdfSample.wo.z > 0.0;
-        if (reflected != primeRcIsReflective(flags)
-                || reflected == primeRcIsTransmissive(flags)) {
+        if (reflected != primeOpenPbrIsReflective(flags)
+                || reflected == primeOpenPbrIsTransmissive(flags)) {
             result.mask |= PRIME_TEST_FAILURE_EVENT;
         }
         result.sampledEvaluation = primeCompactOpaqueEvaluate(

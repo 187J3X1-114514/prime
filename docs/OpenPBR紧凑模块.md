@@ -2,8 +2,8 @@
 
 Prime 以 OpenPBR Surface 1.1.1 为材质语义标准，以 RoboCute
 `0d982c77b3fd26c2c5a3c0852be3bd05e5860bd8` 和锁定的 author overlay 为第三方差分参考。
-`shaders/bsdf/compact` 是新的生产目标；旧 `shaders/bsdf/core/robocute_*` 仅在迁移期提供
-差分 oracle。
+`shaders/bsdf/compact` 是生产实现；`shaders/bsdf/core/robocute_*` 是固定的第三方差分
+oracle，不进入生产依赖闭包。
 
 ## 等价性契约
 
@@ -13,7 +13,8 @@ delta/solid-angle measure、采样分布、PDF、eta 和介质状态转换必须
 精确的零/一权重、thin-walled 标志和离散材质类型，不使用 epsilon 裁剪有效 lobe。
 
 每个紧凑拓扑必须同时实现 evaluate、sample、PDF 和 directional energy。支持判断是接口契约，
-未满足判断的材质必须继续走已验证的回退，不能进入紧凑状态后静默降级。
+当前材质翻译只允许构造已覆盖拓扑；支持判断用于验证这一边界。新增 OpenPBR 能力必须先补齐
+精确拓扑和行为测试，不能回退到参考库或在紧凑状态中静默近似。
 
 ## 当前覆盖
 
@@ -51,31 +52,36 @@ specular layer 和 15% colored thin-wall transmission，以及材质编码允许
 `bsdf/compact/openpbr_material.slang` 机械承接默认 metallic 材质初始化和 outside-IOR 查询，使生产
 适配器不再仅为这两个边界函数导入完整 OpenPBR 组合模块。
 
+`bsdf/compact/openpbr_common.slang` 定义生产自有的 `PrimeOpenPbr*` 材质、采样、事件和两层体积栈
+ABI，但不定义通用组合树或完整 BSDF state。`openpbr_fresnel.slang` 只保留当前拓扑可达的
+dielectric、conductor 和 F82 tint 公式；紧凑 Fresnel state 不携带三个 thin-film 字段，因为支持
+边界精确拒绝非零 thin-film。`openpbr_microfacet.slang` 只保留可达的 GGX 分布、采样、PDF、
+directional energy 和反射基础操作，不包含依赖完整状态的通用折射入口。
+
 ## 切换策略
 
-opaque、dielectric transmission 和 foliage 生产入口均已切换到紧凑状态。生产依赖图中不再可达
-`PrimeRcState`、`prime_bsdf_specializations`、`robocute_openpbr` 或 `robocute_closures`；旧组合树
-只由差分测试显式导入。`robocute_common/fresnel/microfacet` 中的低层数学原语暂时仍由生产使用，
-将在后续批次迁入 compact 后再把 core 完全降为第三方参考。
+opaque、dielectric transmission 和 foliage 生产入口均已切换到紧凑状态。生产 ABI、Fresnel、
+microfacet、材质初始化和体积栈全部由 compact 所有；生产依赖图中不再可达任何
+`robocute_*` 模块或 `prime_bsdf_specializations`。旧组合树只由差分测试显式导入。
+`verifyShaderIncludeGraph` 会拒绝生产 Shader 直接或经 shim 导入这些 reference-only 模块。
 
 以相同默认 `-g1` 构建参数比较，最大的 transparent-shade SPIR-V 从迁移前 1,330,220 字节降至
-1,303,636 字节，减少 26,584 字节（2.00%）；函数体语义指令从 60,972 降至 59,775（1.96%），
-条件分支从 3,892 降至 3,865，Phi 从 4,419 增至 4,436。相对于只迁移 opaque 的首批产物，完整
-transmission/foliage 精确特化使该最大着色器增加 18,412 字节和 755 条语义指令；它仍小于迁移前
-产物，但这是后续需要以寄存器、占用率和指令测量继续收口的运行性能信号。`-g0` probe 只用于
-指令审查，不能与默认生产产物直接比较体积。
+1,303,804 字节，减少 26,416 字节（1.99%）；函数体语义指令从 60,972 降至 59,775（1.96%），
+条件分支从 3,892 降至 3,865，Phi 从 4,419 增至 4,436。相对上一批产物，本次独立 ABI/数学模块
+只增加 168 字节，语义指令、条件分支和 Phi 均不变，说明参考依赖移除没有扩大执行程序。
+`-g0` probe 只用于指令审查，不能与默认生产产物直接比较体积。
 
 同机以四个 Slang 进程执行 51 个生产单元的
-`compileSlangShaders --no-build-cache --rerun-tasks`，改动前隔离副本为 51 秒，只迁移 opaque 时为
-43 秒，本批为 36.8 秒；相对迁移前单次观测缩短约 27.8%，相对首批再缩短约 14.4%。该数字用于
-确认优化器负担方向，不替代多轮基准。
+`compileSlangShaders --no-build-cache --rerun-tasks`，用上一批提交 `87dfa25` 的隔离 worktree 做
+配对复测：上一批两次为 52.8/52.1 秒，本批三次为 50.7/44.5/43.6 秒；中位数由约 52.5 秒降至
+44.5 秒，约缩短 15.2%。该命令强制重新编译全部单元，但不清空操作系统文件缓存；数据用于确认
+优化器负担方向，不替代更多轮次和机器的基准。
 
 后续迁移和收口顺序：
 
-1. 把 common/fresnel/microfacet 中仍被生产调用的低层 OpenPBR 原语迁到 compact；
-2. 收缩 `PrimeRcMaterial`/volume ABI，移除只为参考组合树存在的字段；
-3. 用 Nsight 的寄存器、occupancy 和 SASS 指令确认 transmission/foliage 特化的运行成本；
-4. 在不改变公式、分布或有效 lobe 的前提下合并重复特化和公共子表达式。
+1. 用 Nsight 的寄存器、occupancy 和 SASS 指令确认 transmission/foliage 特化的运行成本；
+2. 在不改变公式、分布或有效 lobe 的前提下合并重复特化和公共子表达式；
+3. 按实际产品需求补齐 coat、fuzz 和 thin-film 的精确紧凑拓扑及测试。
 
 完整 OpenPBR 的 coat、fuzz 和 thin-film 随后作为精确拓扑补齐；RoboCute diffraction 与 coat
 roughening 是扩展状态，不混入 OpenPBR 标准核心。

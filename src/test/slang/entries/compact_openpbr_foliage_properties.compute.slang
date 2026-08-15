@@ -1,7 +1,9 @@
 #include "core/prime_test_abi.slang"
 import "bsdf/adapter/prime_bsdf_specializations.slang";
 import "bsdf/adapter/transmission_ggx_energy.slang";
+import "bsdf/compact/openpbr_common.slang";
 import "bsdf/compact/openpbr_foliage.slang";
+import "bsdf/compact/openpbr_material.slang";
 import "bsdf/core/robocute_common.slang";
 import "bsdf/core/robocute_openpbr.slang";
 
@@ -16,7 +18,7 @@ struct PrimeCompactFoliageTestResult {
     PrimeRcEval referenceEvaluation;
     PrimeCompactFoliageEvaluation compactEvaluation;
     PrimeRcSampleResult referenceSample;
-    PrimeRcSampleResult compactSample;
+    PrimeOpenPbrSampleResult compactSample;
     float3 referenceDiffuse;
     float3 compactDiffuse;
     float3 referenceSpecular;
@@ -54,6 +56,17 @@ bool primeCompactFoliageClose(float3 first, float3 second) {
 
 PrimeRcVolumeStack primeCompactFoliageEmptyStack() {
     PrimeRcVolumeStack stack;
+    stack.values[0].extinction = float3(0.0);
+    stack.values[0].albedo = float3(0.0);
+    stack.values[0].anisotropy = 0.0;
+    stack.values[0].ior = 1.0;
+    stack.values[1] = stack.values[0];
+    stack.count = 0u;
+    return stack;
+}
+
+PrimeOpenPbrVolumeStack primeCompactFoliageOpenPbrEmptyStack() {
+    PrimeOpenPbrVolumeStack stack;
     stack.values[0].extinction = float3(0.0);
     stack.values[0].albedo = float3(0.0);
     stack.values[0].anisotropy = 0.0;
@@ -205,32 +218,45 @@ PrimeCompactFoliageTestResult primeCompactFoliageRun(uint4 encoded[4]) {
     float inverseOutsideIor = primeCompactFoliageParam(encoded, 13u);
     float rayT = primeCompactFoliageParam(encoded, 14u);
 
-    PrimeRcMaterial material = primeRcMaterialFromMetallic(
+    PrimeRcMaterial referenceMaterial = primeRcMaterialFromMetallic(
+            color, roughness, conductor ? 1.0 : 0.0, float3(0.0, 0.0, 1.0));
+    PrimeOpenPbrMaterial compactMaterial = primeCompactMaterialFromMetallic(
             color, roughness, conductor ? 1.0 : 0.0, float3(0.0, 0.0, 1.0));
     if (!conductor) {
-        material.specular.ior = ior;
-        material.weight.subsurface = subsurfaceWeight;
-        material.subsurface.color = color;
+        referenceMaterial.specular.ior = ior;
+        referenceMaterial.weight.subsurface = subsurfaceWeight;
+        referenceMaterial.subsurface.color = color;
+        compactMaterial.specular.ior = ior;
+        compactMaterial.weight.subsurface = subsurfaceWeight;
+        compactMaterial.subsurface.color = color;
     }
-    material.weight.transmission = PRIME_TEST_FOLIAGE_TRANSMISSION_WEIGHT;
-    material.geometry.thinWalled = 1u;
-    material.geometry.thickness = 0.0625;
-    material.transmission.color = clamp(color, float3(0.02), float3(1.0));
-    material.transmission.depth = 0.0;
-    material.transmission.scatter = float3(0.0);
-    material.transmission.scatterAnisotropy = 0.0;
-    material.transmission.dispersionScale = 0.0;
-    if (!primeCompactFoliageSupports(material)) {
+    referenceMaterial.weight.transmission = PRIME_TEST_FOLIAGE_TRANSMISSION_WEIGHT;
+    referenceMaterial.geometry.thinWalled = 1u;
+    referenceMaterial.geometry.thickness = 0.0625;
+    referenceMaterial.transmission.color = clamp(color, float3(0.02), float3(1.0));
+    referenceMaterial.transmission.depth = 0.0;
+    referenceMaterial.transmission.scatter = float3(0.0);
+    referenceMaterial.transmission.scatterAnisotropy = 0.0;
+    referenceMaterial.transmission.dispersionScale = 0.0;
+    compactMaterial.weight.transmission = PRIME_TEST_FOLIAGE_TRANSMISSION_WEIGHT;
+    compactMaterial.geometry.thinWalled = 1u;
+    compactMaterial.geometry.thickness = 0.0625;
+    compactMaterial.transmission.color = clamp(color, float3(0.02), float3(1.0));
+    compactMaterial.transmission.depth = 0.0;
+    compactMaterial.transmission.scatter = float3(0.0);
+    compactMaterial.transmission.scatterAnisotropy = 0.0;
+    compactMaterial.transmission.dispersionScale = 0.0;
+    if (!primeCompactFoliageSupports(compactMaterial)) {
         result.mask |= PRIME_TEST_FAILURE_STATE;
     }
-    PrimeRcMaterial unsupported = material;
+    PrimeOpenPbrMaterial unsupported = compactMaterial;
     unsupported.weight.coat = 0.5;
     if (primeCompactFoliageSupports(unsupported)) {
         result.mask |= PRIME_TEST_FAILURE_STATE;
     }
 
     PrimeRcState reference = primeRcPrimeThinWallStateInit(
-            material,
+            referenceMaterial,
             wi,
             inverseOutsideIor,
             rayT,
@@ -239,7 +265,7 @@ PrimeCompactFoliageTestResult primeCompactFoliageRun(uint4 encoded[4]) {
             PRIME_RC_DETAIL_DEFAULT,
             0u);
     PrimeCompactFoliageState compact = primeCompactFoliageStateInit(
-            primeTransmissionGgxEnergy(), material, wi, inverseOutsideIor, rayT);
+            primeTransmissionGgxEnergy(), compactMaterial, wi, inverseOutsideIor, rayT);
     result.mixWeights = float4(
             reference.dielectricBase.firstSampleWeight,
             reference.dielectricBase.secondSampleWeight,
@@ -250,15 +276,16 @@ PrimeCompactFoliageTestResult primeCompactFoliageRun(uint4 encoded[4]) {
                     && abs(randomValue.z
                             - compact.dielectricMix.secondSampleWeight) > 1.0e-6)
             ? 1u : 0u;
-    PrimeRcVolumeStack stack = primeCompactFoliageEmptyStack();
+    PrimeRcVolumeStack referenceStack = primeCompactFoliageEmptyStack();
+    PrimeOpenPbrVolumeStack compactStack = primeCompactFoliageOpenPbrEmptyStack();
 
     reference.samplingFlags = PRIME_RC_FLAG_ALL;
     result.referenceEvaluation = primeRcPrimeThinWallEvaluate(wi, wo, reference);
     result.compactEvaluation = primeCompactFoliageEvaluate(wi, wo, compact);
     result.referenceSample = primeRcPrimeThinWallSample(
-            wi, randomValue, reference, stack);
+            wi, randomValue, reference, referenceStack);
     result.compactSample = primeCompactFoliageSample(
-            wi, randomValue, compact, stack);
+            wi, randomValue, compact, compactStack);
 
     PrimeRcState referenceDiffuse = reference;
     referenceDiffuse.samplingFlags = PRIME_RC_FLAG_DIFFUSE;

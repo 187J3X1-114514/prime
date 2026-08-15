@@ -40,7 +40,7 @@ IntegratorRecord primeOfflineIntegrator() {
     return integrator;
 }
 
-PrimeRcVolumeStack primeOfflineInitialVolumeStack() {
+PrimeOpenPbrVolumeStack primeOfflineInitialVolumeStack() {
     return (primePush.path.z & PRIME_PATH_CAMERA_IN_WATER_MASK) != 0u
             ? primeCameraWaterVolumeStack()
             : primeEmptyVolumeStack();
@@ -48,7 +48,7 @@ PrimeRcVolumeStack primeOfflineInitialVolumeStack() {
 
 PrimeOfflinePathRecord primeMakeOfflineRecord(
         PathState path,
-        PrimeRcVolumeStack volumeStack,
+        PrimeOpenPbrVolumeStack volumeStack,
         float3 radiance,
         float primaryDistance,
         float3 primaryAlbedo,
@@ -62,7 +62,7 @@ PrimeOfflinePathRecord primeMakeOfflineRecord(
         // Deferred Area visibility starts before the BSDF event, while transport stores the
         // post-event stack. An exiting event frees exactly the old top slot; retain its RGB
         // extinction there so Area can reconstruct the pre-event medium without growing ABI.
-        PrimeRcVolume startingMedium;
+        PrimeOpenPbrVolume startingMedium;
         startingMedium.extinction = request.startingExtinction;
         startingMedium.albedo = float3(0.0);
         startingMedium.anisotropy = 0.0;
@@ -93,7 +93,7 @@ void primeOfflineWavefrontHead(
     uint pathIndex = primeOfflineIndex(pixel);
     float2 cameraSample = primeOfflineCameraSample(launchIndex);
     PathState path = primeCameraPath(pixel, 0u, cameraSample);
-    PrimeRcVolumeStack volumeStack = primeOfflineInitialVolumeStack();
+    PrimeOpenPbrVolumeStack volumeStack = primeOfflineInitialVolumeStack();
     float3 radiance = float3(0.0);
     float primaryDistance = -1.0;
     float3 primaryAlbedo = float3(1.0);
@@ -158,7 +158,7 @@ void primeOfflineWavefrontStep(
             pixel,
             record.transport,
             primeOfflinePreviousLightNormal(record));
-    PrimeRcVolumeStack volumeStack = primeOfflineVolumeStack(record.transport);
+    PrimeOpenPbrVolumeStack volumeStack = primeOfflineVolumeStack(record.transport);
     float3 radiance = record.radianceAndPrimaryDistance.xyz;
     float primaryDistance = record.radianceAndPrimaryDistance.w;
     float3 primaryAlbedo = record.primaryAlbedoAndMaterialFlags.xyz;
@@ -202,7 +202,7 @@ void primeOfflineWavefrontArea(
         request.distance = record.areaDirectionAndDistance.w;
         request.contribution = record.areaContributionAndValid.xyz;
         request.valid = true;
-        PrimeRcVolumeStack storedMedia = primeOfflineVolumeStack(record.transport);
+        PrimeOpenPbrVolumeStack storedMedia = primeOfflineVolumeStack(record.transport);
         request.startingMediumCount = primeOfflineAreaStartingMediumCount(record);
         request.startingExtinction = request.startingMediumCount > 0u
                 ? storedMedia.values[request.startingMediumCount - 1u].extinction

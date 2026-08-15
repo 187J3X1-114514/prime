@@ -1,9 +1,9 @@
 #language slang 2026
 module "bsdf/compact/openpbr_transmission.slang";
 
-import "bsdf/core/robocute_common.slang";
-import "bsdf/core/robocute_fresnel.slang";
-import "bsdf/core/robocute_microfacet.slang";
+import "bsdf/compact/openpbr_common.slang";
+import "bsdf/compact/openpbr_fresnel.slang";
+import "bsdf/compact/openpbr_microfacet.slang";
 import "bsdf/core/transmission_ggx_energy.slang";
 
 // Exact compact specialization for Prime's dielectric transmission materials.
@@ -14,30 +14,30 @@ static const float3 PRIME_COMPACT_TRANSMISSION_WAVELENGTHS_NM =
         float3(630.0, 532.0, 467.0);
 
 public struct PrimeCompactTransmissionState {
-    public PrimeRcOnb onb;
+    public PrimeOpenPbrOnb onb;
     public uint geometryThinWalled;
     public uint entering;
     public float rayT;
     public float originalIor;
     public float3 transmissionColor;
-    public PrimeRcMicrofacet specularMicrofacet;
-    public PrimeRcSpecularFresnel specularFresnel;
-    public PrimeRcMicrofacet transmissionMicrofacet;
+    public PrimeOpenPbrMicrofacet specularMicrofacet;
+    public PrimeOpenPbrSpecularFresnel specularFresnel;
+    public PrimeOpenPbrMicrofacet transmissionMicrofacet;
     public float3 transmissionTint;
-    public PrimeRcVolume transmissionVolume;
+    public PrimeOpenPbrVolume transmissionVolume;
     public float3 transmissionMultipleScattering;
 };
 
 public struct PrimeCompactTransmissionEvaluation {
-    public PrimeRcThroughput throughput;
+    public PrimeOpenPbrThroughput throughput;
     public float pdf;
 };
 
-PrimeRcSampleResult primeCompactTransmissionZeroResult(
+PrimeOpenPbrSampleResult primeCompactTransmissionZeroResult(
         PrimeCompactTransmissionState state,
-        PrimeRcVolumeStack stack) {
-    PrimeRcSampleResult result;
-    result.bsdfSample = primeRcZeroSample();
+        PrimeOpenPbrVolumeStack stack) {
+    PrimeOpenPbrSampleResult result;
+    result.bsdfSample = primeOpenPbrZeroSample();
     result.volumeStack = stack;
     result.rayT = state.rayT;
     return result;
@@ -45,43 +45,43 @@ PrimeRcSampleResult primeCompactTransmissionZeroResult(
 
 float3 primeCompactGuardedThinWallSeriesReciprocal(float3 roundTrip) {
     return float3(1.0) / max(
-            float3(PRIME_RC_DENOM_TOLERANCE),
-            float3(1.0) - primeRcSquare(roundTrip));
+            float3(PRIME_OPENPBR_DENOM_TOLERANCE),
+            float3(1.0) - primeOpenPbrSquare(roundTrip));
 }
 
-PrimeRcVecPair primeCompactTransmissionThinWallRt(
+PrimeOpenPbrVecPair primeCompactTransmissionThinWallRt(
         float cosineTheta,
         PrimeCompactTransmissionState state) {
-    PrimeRcVecPair fresnel = primeRcSpecularFresnelRt(
+    PrimeOpenPbrVecPair fresnel = primeOpenPbrSpecularFresnelRt(
             state.specularFresnel,
             PRIME_COMPACT_TRANSMISSION_WAVELENGTHS_NM,
             0u,
             cosineTheta);
     float t0 = 1.0 - (1.0 - cosineTheta * cosineTheta)
-            / primeRcSquare(state.specularFresnel.ior);
+            / primeOpenPbrSquare(state.specularFresnel.ior);
     if (t0 <= 0.0) { return fresnel; }
     float cosineThetaI = sqrt(t0);
     float3 absorption = state.transmissionTint
             * exp(-state.transmissionVolume.extinction / cosineThetaI);
     float3 inverseSeries = primeCompactGuardedThinWallSeriesReciprocal(
             fresnel.first * absorption);
-    PrimeRcVecPair result;
+    PrimeOpenPbrVecPair result;
     result.first = fresnel.first
-            * (float3(1.0) + primeRcSquare(fresnel.second * absorption) * inverseSeries);
-    result.second = primeRcSquare(fresnel.second) * absorption * inverseSeries;
+            * (float3(1.0) + primeOpenPbrSquare(fresnel.second * absorption) * inverseSeries);
+    result.second = primeOpenPbrSquare(fresnel.second) * absorption * inverseSeries;
     return result;
 }
 
 float primeCompactMicrofacetG2r(
-        PrimeRcMicrofacet microfacet,
+        PrimeOpenPbrMicrofacet microfacet,
         float3 wi,
         float3 wo) {
     if (wi.z < 0.0) {
         wi = -wi;
         wo = -wo;
     }
-    return 1.0 / (primeRcMicrofacetLambda(microfacet, -wi)
-            + primeRcMicrofacetLambda(microfacet, wo));
+    return 1.0 / (primeOpenPbrMicrofacetLambda(microfacet, -wi)
+            + primeOpenPbrMicrofacetLambda(microfacet, wo));
 }
 
 public float3 primeCompactTransmissionMaterialFrame(
@@ -90,15 +90,15 @@ public float3 primeCompactTransmissionMaterialFrame(
     return state.entering != 0u ? w : float3(-w.x, w.y, -w.z);
 }
 
-PrimeRcThroughput primeCompactRefractiveEval(
+PrimeOpenPbrThroughput primeCompactRefractiveEval(
         float3 wi,
         float3 wo,
         PrimeCompactTransmissionState state,
         uint samplingFlags) {
-    PrimeRcThroughput result = primeRcZeroThroughput();
-    PrimeRcMicrofacet microfacet = state.specularMicrofacet;
-    PrimeRcSpecularFresnel fresnel = state.specularFresnel;
-    if (primeRcMicrofacetEffectivelySmooth(microfacet) || fresnel.ior == 1.0) {
+    PrimeOpenPbrThroughput result = primeOpenPbrZeroThroughput();
+    PrimeOpenPbrMicrofacet microfacet = state.specularMicrofacet;
+    PrimeOpenPbrSpecularFresnel fresnel = state.specularFresnel;
+    if (primeOpenPbrMicrofacetEffectivelySmooth(microfacet) || fresnel.ior == 1.0) {
         return result;
     }
     bool reflected = wi.z * wo.z > 0.0;
@@ -115,63 +115,63 @@ PrimeRcThroughput primeCompactRefractiveEval(
     if (microIncident * wi.z < 0.0 || microOutgoing * wo.z < 0.0) {
         return result;
     }
-    PrimeRcVecPair rt = primeRcSpecularFresnelRt(
+    PrimeOpenPbrVecPair rt = primeOpenPbrSpecularFresnelRt(
             fresnel,
             PRIME_COMPACT_TRANSMISSION_WAVELENGTHS_NM,
             0u,
             microIncident);
-    float distribution = primeRcMicrofacetD(microfacet, halfVector);
-    if (reflected && (samplingFlags & PRIME_RC_FLAG_SPECULAR_REFLECTION) != 0u) {
+    float distribution = primeOpenPbrMicrofacetD(microfacet, halfVector);
+    if (reflected && (samplingFlags & PRIME_OPENPBR_FLAG_SPECULAR_REFLECTION) != 0u) {
         result.value = rt.first * distribution
                 * primeCompactMicrofacetG2r(microfacet, wi, wo) / (4.0 * abs(wi.z));
-        result.flags = PRIME_RC_FLAG_SPECULAR_REFLECTION;
+        result.flags = PRIME_OPENPBR_FLAG_SPECULAR_REFLECTION;
     } else if (!reflected
-            && (samplingFlags & PRIME_RC_FLAG_SPECULAR_TRANSMISSION) != 0u) {
-        float denominator = primeRcSquare(microOutgoing + microIncident / etaPath) * wi.z;
+            && (samplingFlags & PRIME_OPENPBR_FLAG_SPECULAR_TRANSMISSION) != 0u) {
+        float denominator = primeOpenPbrSquare(microOutgoing + microIncident / etaPath) * wi.z;
         result.value = rt.second * distribution
-                * primeRcMicrofacetG2t(microfacet, wi, wo)
+                * primeOpenPbrMicrofacetG2t(microfacet, wi, wo)
                 * abs(microIncident * microOutgoing / denominator);
-        result.value *= 1.0 / primeRcSquare(etaPath);
-        result.flags = PRIME_RC_FLAG_SPECULAR_TRANSMISSION;
+        result.value *= 1.0 / primeOpenPbrSquare(etaPath);
+        result.flags = PRIME_OPENPBR_FLAG_SPECULAR_TRANSMISSION;
     }
     return result;
 }
 
-PrimeRcSample primeCompactRefractiveSample(
+PrimeOpenPbrSample primeCompactRefractiveSample(
         float3 wi,
         float3 randomValue,
         PrimeCompactTransmissionState state,
         uint samplingFlags) {
-    PrimeRcMicrofacet microfacet = state.specularMicrofacet;
-    PrimeRcSpecularFresnel fresnel = state.specularFresnel;
+    PrimeOpenPbrMicrofacet microfacet = state.specularMicrofacet;
+    PrimeOpenPbrSpecularFresnel fresnel = state.specularFresnel;
     float3 halfVector = float3(0.0, 0.0, 1.0);
     float microfacetPdf = 1.0;
     float distribution = 1.0;
-    if (!primeRcMicrofacetEffectivelySmooth(microfacet) && fresnel.ior != 1.0) {
-        if (!primeRcIsSpecular(samplingFlags)) {
-            return primeRcZeroSample();
+    if (!primeOpenPbrMicrofacetEffectivelySmooth(microfacet) && fresnel.ior != 1.0) {
+        if (!primeOpenPbrIsSpecular(samplingFlags)) {
+            return primeOpenPbrZeroSample();
         }
         float3 sampleDirection = wi.z > 0.0 ? wi : -wi;
-        halfVector = primeRcMicrofacetSample(microfacet, sampleDirection, randomValue.xy, false);
-        microfacetPdf = primeRcMicrofacetPdf(
+        halfVector = primeOpenPbrMicrofacetSample(microfacet, sampleDirection, randomValue.xy, false);
+        microfacetPdf = primeOpenPbrMicrofacetPdf(
                 microfacet, sampleDirection, halfVector, false);
-        distribution = primeRcMicrofacetD(microfacet, halfVector);
-    } else if (!primeRcIsDelta(samplingFlags)) {
-        return primeRcZeroSample();
+        distribution = primeOpenPbrMicrofacetD(microfacet, halfVector);
+    } else if (!primeOpenPbrIsDelta(samplingFlags)) {
+        return primeOpenPbrZeroSample();
     }
     float microIncident = dot(halfVector, wi);
-    PrimeRcVecPair rt = primeRcSpecularFresnelRt(
+    PrimeOpenPbrVecPair rt = primeOpenPbrSpecularFresnelRt(
             fresnel,
             PRIME_COMPACT_TRANSMISSION_WAVELENGTHS_NM,
             0u,
             microIncident);
     float3 reflection = rt.first;
     float3 transmission = rt.second;
-    float reflectionProbability = primeRcSpectrumToWeight(reflection);
-    float transmissionProbability = primeRcSpectrumToWeight(transmission);
-    if (!primeRcIsReflective(samplingFlags)) { reflectionProbability = 0.0; }
-    if (!primeRcIsTransmissive(samplingFlags)) { transmissionProbability = 0.0; }
-    PrimeRcRefractResult refracted = primeRcSpecularFresnelRefract(
+    float reflectionProbability = primeOpenPbrSpectrumToWeight(reflection);
+    float transmissionProbability = primeOpenPbrSpectrumToWeight(transmission);
+    if (!primeOpenPbrIsReflective(samplingFlags)) { reflectionProbability = 0.0; }
+    if (!primeOpenPbrIsTransmissive(samplingFlags)) { transmissionProbability = 0.0; }
+    PrimeOpenPbrRefractResult refracted = primeOpenPbrSpecularFresnelRefract(
             fresnel, -wi, halfVector);
     if (refracted.valid == 0u) {
         transmissionProbability = 0.0;
@@ -179,40 +179,40 @@ PrimeRcSample primeCompactRefractiveSample(
     }
     float probabilitySum = reflectionProbability + transmissionProbability;
     if (probabilitySum == 0.0) {
-        return primeRcZeroSample();
+        return primeOpenPbrZeroSample();
     }
-    PrimeRcSample result = primeRcZeroSample();
+    PrimeOpenPbrSample result = primeOpenPbrZeroSample();
     if (randomValue.z < transmissionProbability / probabilitySum) {
         float3 wo = refracted.wo;
-        if (wi.z * wo.z >= 0.0) { return primeRcZeroSample(); }
+        if (wi.z * wo.z >= 0.0) { return primeOpenPbrZeroSample(); }
         float etaPath = refracted.relativeIor;
         result.wo = wo;
         result.eta = etaPath;
         result.throughput.value = transmission;
-        result.throughput.flags = PRIME_RC_FLAG_DELTA_TRANSMISSION;
+        result.throughput.flags = PRIME_OPENPBR_FLAG_DELTA_TRANSMISSION;
         result.pdf = transmissionProbability / probabilitySum;
-        if (!primeRcMicrofacetEffectivelySmooth(microfacet) && fresnel.ior != 1.0) {
+        if (!primeOpenPbrMicrofacetEffectivelySmooth(microfacet) && fresnel.ior != 1.0) {
             float microOutgoing = dot(wo, halfVector);
-            float denominator = primeRcSquare(microOutgoing + microIncident / etaPath);
+            float denominator = primeOpenPbrSquare(microOutgoing + microIncident / etaPath);
             result.pdf *= microfacetPdf * abs(microOutgoing) / denominator;
             result.throughput.value = transmission * distribution
-                    * primeRcMicrofacetG2t(microfacet, wi, wo)
+                    * primeOpenPbrMicrofacetG2t(microfacet, wi, wo)
                     * abs(microIncident * microOutgoing / (wi.z * denominator));
-            result.throughput.flags = PRIME_RC_FLAG_SPECULAR_TRANSMISSION;
+            result.throughput.flags = PRIME_OPENPBR_FLAG_SPECULAR_TRANSMISSION;
         }
-        result.throughput.value *= 1.0 / primeRcSquare(etaPath);
+        result.throughput.value *= 1.0 / primeOpenPbrSquare(etaPath);
     } else {
         float3 wo = reflect(-wi, halfVector);
-        if (wi.z * wo.z < 0.0) { return primeRcZeroSample(); }
+        if (wi.z * wo.z < 0.0) { return primeOpenPbrZeroSample(); }
         result.wo = wo;
         result.throughput.value = reflection;
-        result.throughput.flags = PRIME_RC_FLAG_DELTA_REFLECTION;
+        result.throughput.flags = PRIME_OPENPBR_FLAG_DELTA_REFLECTION;
         result.pdf = reflectionProbability / probabilitySum;
-        if (!primeRcMicrofacetEffectivelySmooth(microfacet) && fresnel.ior != 1.0) {
+        if (!primeOpenPbrMicrofacetEffectivelySmooth(microfacet) && fresnel.ior != 1.0) {
             result.pdf *= microfacetPdf / (4.0 * abs(microIncident));
             result.throughput.value = reflection * distribution
                     * primeCompactMicrofacetG2r(microfacet, wi, wo) / abs(4.0 * wi.z);
-            result.throughput.flags = PRIME_RC_FLAG_SPECULAR_REFLECTION;
+            result.throughput.flags = PRIME_OPENPBR_FLAG_SPECULAR_REFLECTION;
         }
     }
     return result;
@@ -223,10 +223,10 @@ float primeCompactRefractivePdf(
         float3 wo,
         PrimeCompactTransmissionState state,
         uint samplingFlags) {
-    PrimeRcMicrofacet microfacet = state.specularMicrofacet;
-    PrimeRcSpecularFresnel fresnel = state.specularFresnel;
-    if (primeRcMicrofacetEffectivelySmooth(microfacet)
-            || fresnel.ior == 1.0 || !primeRcIsSpecular(samplingFlags)) {
+    PrimeOpenPbrMicrofacet microfacet = state.specularMicrofacet;
+    PrimeOpenPbrSpecularFresnel fresnel = state.specularFresnel;
+    if (primeOpenPbrMicrofacetEffectivelySmooth(microfacet)
+            || fresnel.ior == 1.0 || !primeOpenPbrIsSpecular(samplingFlags)) {
         return 0.0;
     }
     bool reflected = wi.z * wo.z > 0.0;
@@ -239,29 +239,29 @@ float primeCompactRefractivePdf(
     float microIncident = dot(wi, halfVector);
     float microOutgoing = dot(wo, halfVector);
     if (microIncident * wi.z < 0.0 || microOutgoing * wo.z < 0.0) { return 0.0; }
-    PrimeRcVecPair rt = primeRcSpecularFresnelRt(
+    PrimeOpenPbrVecPair rt = primeOpenPbrSpecularFresnelRt(
             fresnel,
             PRIME_COMPACT_TRANSMISSION_WAVELENGTHS_NM,
             0u,
             microIncident);
-    float reflectionProbability = primeRcSpectrumToWeight(rt.first);
-    float transmissionProbability = primeRcSpectrumToWeight(rt.second);
-    if (!primeRcIsReflective(samplingFlags)) { reflectionProbability = 0.0; }
-    if (!primeRcIsTransmissive(samplingFlags)) { transmissionProbability = 0.0; }
+    float reflectionProbability = primeOpenPbrSpectrumToWeight(rt.first);
+    float transmissionProbability = primeOpenPbrSpectrumToWeight(rt.second);
+    if (!primeOpenPbrIsReflective(samplingFlags)) { reflectionProbability = 0.0; }
+    if (!primeOpenPbrIsTransmissive(samplingFlags)) { transmissionProbability = 0.0; }
     float probabilitySum = reflectionProbability + transmissionProbability;
     if (probabilitySum == 0.0) { return 0.0; }
-    float microfacetPdf = primeRcMicrofacetPdf(
+    float microfacetPdf = primeOpenPbrMicrofacetPdf(
             microfacet, wi.z > 0.0 ? wi : -wi, halfVector, false);
     if (reflected) {
         return microfacetPdf / (4.0 * abs(microIncident))
                 * reflectionProbability / probabilitySum;
     }
-    float denominator = primeRcSquare(microOutgoing + microIncident / etaPath);
+    float denominator = primeOpenPbrSquare(microOutgoing + microIncident / etaPath);
     return microfacetPdf * abs(microOutgoing) / denominator
             * transmissionProbability / probabilitySum;
 }
 
-PrimeRcThroughput primeCompactTransmissionEvalRaw(
+PrimeOpenPbrThroughput primeCompactTransmissionEvalRaw(
         float3 wi,
         float3 inputWo,
         PrimeCompactTransmissionState state,
@@ -272,31 +272,31 @@ PrimeRcThroughput primeCompactTransmissionEvalRaw(
         if (wo.z < 0.0) {
             wo.z = -wo.z;
             transmitted = true;
-            if (!primeRcIsTransmissive(samplingFlags)) {
-                return primeRcZeroThroughput();
+            if (!primeOpenPbrIsTransmissive(samplingFlags)) {
+                return primeOpenPbrZeroThroughput();
             }
-        } else if (!primeRcIsReflective(samplingFlags)) {
-            return primeRcZeroThroughput();
+        } else if (!primeOpenPbrIsReflective(samplingFlags)) {
+            return primeOpenPbrZeroThroughput();
         }
-        PrimeRcReflectiveEvalBase base = primeRcReflectiveEvalBase(
+        PrimeOpenPbrReflectiveEvalBase base = primeOpenPbrReflectiveEvalBase(
                 wi, wo, state.transmissionMicrofacet,
-                samplingFlags, PRIME_RC_FLAG_ALL);
-        PrimeRcThroughput result;
+                samplingFlags, PRIME_OPENPBR_FLAG_ALL);
+        PrimeOpenPbrThroughput result;
         result.value = float3(base.factor);
         result.flags = base.flags;
-        if (result.flags != PRIME_RC_FLAG_NONE) {
-            PrimeRcVecPair rt = primeCompactTransmissionThinWallRt(
+        if (result.flags != PRIME_OPENPBR_FLAG_NONE) {
+            PrimeOpenPbrVecPair rt = primeCompactTransmissionThinWallRt(
                     base.microCosine, state);
             if (transmitted) {
                 result.value *= rt.second;
-                result.flags = primeRcIsDelta(result.flags)
-                        ? PRIME_RC_FLAG_DELTA_TRANSMISSION
-                        : PRIME_RC_FLAG_SPECULAR_TRANSMISSION;
+                result.flags = primeOpenPbrIsDelta(result.flags)
+                        ? PRIME_OPENPBR_FLAG_DELTA_TRANSMISSION
+                        : PRIME_OPENPBR_FLAG_SPECULAR_TRANSMISSION;
             } else {
                 result.value *= rt.first;
             }
-            if (primeRcIsNonDelta(result.flags)) {
-                result.value /= primeRcMicrofacetDirectionalAlbedoUnity(
+            if (primeOpenPbrIsNonDelta(result.flags)) {
+                result.value /= primeOpenPbrMicrofacetDirectionalAlbedoUnity(
                         state.transmissionMicrofacet, wi.z);
             }
         }
@@ -304,14 +304,14 @@ PrimeRcThroughput primeCompactTransmissionEvalRaw(
     }
     float3 materialWi = primeCompactTransmissionMaterialFrame(wi, state);
     float3 materialWo = primeCompactTransmissionMaterialFrame(inputWo, state);
-    PrimeRcThroughput result = primeCompactRefractiveEval(
+    PrimeOpenPbrThroughput result = primeCompactRefractiveEval(
             materialWi, materialWo, state, samplingFlags);
-    if (result.flags != PRIME_RC_FLAG_NONE) {
-        if (primeRcIsTransmissive(result.flags)) {
+    if (result.flags != PRIME_OPENPBR_FLAG_NONE) {
+        if (primeOpenPbrIsTransmissive(result.flags)) {
             result.value *= state.transmissionTint;
         }
-        if (primeRcIsNonDelta(result.flags)) {
-            result.value *= primeRcIsTransmissive(result.flags)
+        if (primeOpenPbrIsNonDelta(result.flags)) {
+            result.value *= primeOpenPbrIsTransmissive(result.flags)
                     ? state.transmissionMultipleScattering.y
                     : state.transmissionMultipleScattering.x;
         }
@@ -319,45 +319,45 @@ PrimeRcThroughput primeCompactTransmissionEvalRaw(
     return result;
 }
 
-PrimeRcSampleResult primeCompactTransmissionSampleRaw(
+PrimeOpenPbrSampleResult primeCompactTransmissionSampleRaw(
         float3 wi,
         float3 randomValue,
         PrimeCompactTransmissionState state,
         uint samplingFlags,
-        PrimeRcVolumeStack stack) {
-    PrimeRcSampleResult result = primeCompactTransmissionZeroResult(state, stack);
+        PrimeOpenPbrVolumeStack stack) {
+    PrimeOpenPbrSampleResult result = primeCompactTransmissionZeroResult(state, stack);
     if (state.geometryThinWalled != 0u) {
-        PrimeRcReflectiveSampleBase base = primeRcReflectiveSampleBase(
+        PrimeOpenPbrReflectiveSampleBase base = primeOpenPbrReflectiveSampleBase(
                 wi, randomValue, state.transmissionMicrofacet,
-                samplingFlags, PRIME_RC_FLAG_ALL);
+                samplingFlags, PRIME_OPENPBR_FLAG_ALL);
         result.bsdfSample = base.bsdfSample;
-        if (result.bsdfSample.throughput.flags != PRIME_RC_FLAG_NONE) {
-            PrimeRcVecPair rt = primeCompactTransmissionThinWallRt(
+        if (result.bsdfSample.throughput.flags != PRIME_OPENPBR_FLAG_NONE) {
+            PrimeOpenPbrVecPair rt = primeCompactTransmissionThinWallRt(
                     base.microCosine, state);
-            float reflectionProbability = primeRcSpectrumToWeight(rt.first);
-            float transmissionProbability = primeRcSpectrumToWeight(rt.second);
-            if (!primeRcIsReflective(samplingFlags)) { reflectionProbability = 0.0; }
-            if (!primeRcIsTransmissive(samplingFlags)) { transmissionProbability = 0.0; }
+            float reflectionProbability = primeOpenPbrSpectrumToWeight(rt.first);
+            float transmissionProbability = primeOpenPbrSpectrumToWeight(rt.second);
+            if (!primeOpenPbrIsReflective(samplingFlags)) { reflectionProbability = 0.0; }
+            if (!primeOpenPbrIsTransmissive(samplingFlags)) { transmissionProbability = 0.0; }
             float probabilitySum = reflectionProbability + transmissionProbability;
             if (probabilitySum == 0.0) {
-                result.bsdfSample = primeRcZeroSample();
+                result.bsdfSample = primeOpenPbrZeroSample();
                 return result;
             }
             if (randomValue.z < transmissionProbability / probabilitySum) {
                 result.bsdfSample.throughput.value *= rt.second;
                 result.bsdfSample.pdf *= transmissionProbability / probabilitySum;
                 result.bsdfSample.throughput.flags =
-                        primeRcIsDelta(result.bsdfSample.throughput.flags)
-                        ? PRIME_RC_FLAG_DELTA_TRANSMISSION
-                        : PRIME_RC_FLAG_SPECULAR_TRANSMISSION;
+                        primeOpenPbrIsDelta(result.bsdfSample.throughput.flags)
+                        ? PRIME_OPENPBR_FLAG_DELTA_TRANSMISSION
+                        : PRIME_OPENPBR_FLAG_SPECULAR_TRANSMISSION;
                 result.bsdfSample.wo.z = -result.bsdfSample.wo.z;
             } else {
                 result.bsdfSample.throughput.value *= rt.first;
                 result.bsdfSample.pdf *= reflectionProbability / probabilitySum;
             }
-            if (primeRcIsNonDelta(result.bsdfSample.throughput.flags)) {
+            if (primeOpenPbrIsNonDelta(result.bsdfSample.throughput.flags)) {
                 result.bsdfSample.throughput.value /=
-                        primeRcMicrofacetDirectionalAlbedoUnity(
+                        primeOpenPbrMicrofacetDirectionalAlbedoUnity(
                                 state.transmissionMicrofacet, wi.z);
             }
         }
@@ -367,15 +367,15 @@ PrimeRcSampleResult primeCompactTransmissionSampleRaw(
     float3 materialWi = primeCompactTransmissionMaterialFrame(wi, state);
     result.bsdfSample = primeCompactRefractiveSample(
             materialWi, randomValue, state, samplingFlags);
-    if (result.bsdfSample.throughput.flags == PRIME_RC_FLAG_NONE) { return result; }
+    if (result.bsdfSample.throughput.flags == PRIME_OPENPBR_FLAG_NONE) { return result; }
     result.bsdfSample.wo = primeCompactTransmissionMaterialFrame(
             result.bsdfSample.wo, state);
-    if (primeRcIsTransmissive(result.bsdfSample.throughput.flags)) {
+    if (primeOpenPbrIsTransmissive(result.bsdfSample.throughput.flags)) {
         result.bsdfSample.throughput.value *= state.transmissionTint;
     }
-    if (primeRcIsNonDelta(result.bsdfSample.throughput.flags)) {
+    if (primeOpenPbrIsNonDelta(result.bsdfSample.throughput.flags)) {
         result.bsdfSample.throughput.value *=
-                primeRcIsTransmissive(result.bsdfSample.throughput.flags)
+                primeOpenPbrIsTransmissive(result.bsdfSample.throughput.flags)
                 ? state.transmissionMultipleScattering.y
                 : state.transmissionMultipleScattering.x;
     }
@@ -395,17 +395,17 @@ float primeCompactTransmissionPdfRaw(
             transmitted = true;
         }
         float3 halfVector = normalize(wi + wo);
-        PrimeRcVecPair rt = primeCompactTransmissionThinWallRt(
+        PrimeOpenPbrVecPair rt = primeCompactTransmissionThinWallRt(
                 dot(wi, halfVector), state);
-        float reflectionProbability = primeRcSpectrumToWeight(rt.first);
-        float transmissionProbability = primeRcSpectrumToWeight(rt.second);
-        if (!primeRcIsReflective(samplingFlags)) { reflectionProbability = 0.0; }
-        if (!primeRcIsTransmissive(samplingFlags)) { transmissionProbability = 0.0; }
+        float reflectionProbability = primeOpenPbrSpectrumToWeight(rt.first);
+        float transmissionProbability = primeOpenPbrSpectrumToWeight(rt.second);
+        if (!primeOpenPbrIsReflective(samplingFlags)) { reflectionProbability = 0.0; }
+        if (!primeOpenPbrIsTransmissive(samplingFlags)) { transmissionProbability = 0.0; }
         float probabilitySum = reflectionProbability + transmissionProbability;
         if (probabilitySum == 0.0) { return 0.0; }
-        float microfacetPdf = primeRcReflectivePdf(
+        float microfacetPdf = primeOpenPbrReflectivePdf(
                 wi, wo, state.transmissionMicrofacet,
-                samplingFlags, PRIME_RC_FLAG_ALL);
+                samplingFlags, PRIME_OPENPBR_FLAG_ALL);
         return transmitted
                 ? microfacetPdf * transmissionProbability / probabilitySum
                 : microfacetPdf * reflectionProbability / probabilitySum;
@@ -425,7 +425,7 @@ PrimeCompactTransmissionState primeCompactTransmissionClosureState(
     return state;
 }
 
-public bool primeCompactTransmissionSupports(PrimeRcMaterial material) {
+public bool primeCompactTransmissionSupports(PrimeOpenPbrMaterial material) {
     return material.weight.base == 1.0
             && material.weight.diffuseRoughness == 0.0
             && material.weight.specular == 1.0
@@ -441,7 +441,7 @@ public bool primeCompactTransmissionSupports(PrimeRcMaterial material) {
 
 public PrimeCompactTransmissionState primeCompactTransmissionStateInit<TransmissionGgxEnergy>(
         TransmissionGgxEnergy transmissionGgxEnergy,
-        PrimeRcMaterial material,
+        PrimeOpenPbrMaterial material,
         float3 wi,
         float inverseOutsideIor,
         float rayT)
@@ -454,30 +454,27 @@ public PrimeCompactTransmissionState primeCompactTransmissionStateInit<Transmiss
     state.rayT = rayT;
     state.originalIor = material.specular.ior;
     state.transmissionColor = material.transmission.color;
-    state.specularMicrofacet.alpha = primeRcSpecularNdfRoughnesses(
+    state.specularMicrofacet.alpha = primeOpenPbrSpecularNdfRoughnesses(
             material.specular.roughness,
             material.specular.roughnessAnisotropy);
     state.specularFresnel.ior = material.specular.ior * inverseOutsideIor;
-    state.specularFresnel.energyIor = primeRcIorAdjustment(
+    state.specularFresnel.energyIor = primeOpenPbrIorAdjustment(
             state.specularFresnel.ior, material.weight.specular);
     state.specularFresnel.color = material.specular.color;
-    state.specularFresnel.thinFilmWeight = 0.0;
-    state.specularFresnel.thinFilmThickness = material.thinFilm.thickness;
-    state.specularFresnel.thinFilmIor = material.thinFilm.ior * inverseOutsideIor;
     state.transmissionTint = material.transmission.depth == 0.0
             ? material.transmission.color : float3(1.0);
-    state.transmissionVolume = primeRcVolumeFromTransmission(material.transmission);
+    state.transmissionVolume = primeOpenPbrVolumeFromTransmission(material.transmission);
     state.transmissionMicrofacet.alpha = float2(0.0);
     state.transmissionMultipleScattering = float3(1.0, 1.0, 0.0);
     if (state.geometryThinWalled != 0u) {
         state.transmissionMicrofacet.alpha = clamp(
                 state.specularMicrofacet.alpha
-                * primeRcThinDielectricRoughnessScaler2(state.specularFresnel.ior),
+                * primeOpenPbrThinDielectricRoughnessScaler2(state.specularFresnel.ior),
                 float2(0.0),
                 float2(1.0));
     } else {
         float3 materialWi = primeCompactTransmissionMaterialFrame(wi, state);
-        state.transmissionMultipleScattering = primeRcMicrofacetDielectricMsCompensation(
+        state.transmissionMultipleScattering = primeOpenPbrMicrofacetDielectricMsCompensation(
                 transmissionGgxEnergy,
                 state.specularMicrofacet,
                 materialWi.z,
@@ -495,7 +492,7 @@ public PrimeCompactTransmissionState primeCompactTransmissionInterfaceState<Tran
     if (state.geometryThinWalled != 0u || state.entering != 0u) {
         return state;
     }
-    state.transmissionMultipleScattering = primeRcMicrofacetDielectricMsCompensation(
+    state.transmissionMultipleScattering = primeOpenPbrMicrofacetDielectricMsCompensation(
             transmissionGgxEnergy,
             state.specularMicrofacet,
             wi.z,
@@ -517,27 +514,27 @@ public PrimeCompactTransmissionEvaluation primeCompactTransmissionEvaluate(
     return result;
 }
 
-public PrimeRcSampleResult primeCompactTransmissionSample(
+public PrimeOpenPbrSampleResult primeCompactTransmissionSample(
         float3 wi,
         float3 randomValue,
         PrimeCompactTransmissionState state,
         uint samplingFlags,
-        PrimeRcVolumeStack stack) {
-    PrimeRcSampleResult result = primeCompactTransmissionSampleRaw(
+        PrimeOpenPbrVolumeStack stack) {
+    PrimeOpenPbrSampleResult result = primeCompactTransmissionSampleRaw(
             wi,
             randomValue,
             primeCompactTransmissionClosureState(state),
             samplingFlags,
             stack);
     if (state.geometryThinWalled == 0u
-            && primeRcIsTransmissive(result.bsdfSample.throughput.flags)) {
+            && primeOpenPbrIsTransmissive(result.bsdfSample.throughput.flags)) {
         if (state.entering != 0u) {
-            PrimeRcVolume volume = state.transmissionVolume;
+            PrimeOpenPbrVolume volume = state.transmissionVolume;
             volume.ior = state.originalIor;
-            primeRcStackPush(result.volumeStack, volume);
+            primeOpenPbrStackPush(result.volumeStack, volume);
         } else if (result.volumeStack.count > 0u) {
             result.rayT = 0.0;
-            primeRcStackPop(result.volumeStack);
+            primeOpenPbrStackPop(result.volumeStack);
         }
     }
     return result;
@@ -550,21 +547,21 @@ public float3 primeCompactTransmissionEnergy<TransmissionGgxEnergy>(
         uint samplingFlags)
     where TransmissionGgxEnergy : IPrimeRcTransmissionGgxEnergy
 {
-    if (!primeRcMicrofacetEffectivelySmooth(state.specularMicrofacet)
+    if (!primeOpenPbrMicrofacetEffectivelySmooth(state.specularMicrofacet)
             && state.specularFresnel.ior != 1.0) {
-        if (!primeRcIsSpecular(samplingFlags)) { return float3(0.0); }
-    } else if (!primeRcIsDelta(samplingFlags)) {
+        if (!primeOpenPbrIsSpecular(samplingFlags)) { return float3(0.0); }
+    } else if (!primeOpenPbrIsDelta(samplingFlags)) {
         return float3(0.0);
     }
     float helperR = state.geometryThinWalled != 0u
-            ? primeRcMicrofacetDielectricMsCompensation(
+            ? primeOpenPbrMicrofacetDielectricMsCompensation(
                     transmissionGgxEnergy,
                     state.specularMicrofacet,
                     abs(wi.z),
                     state.specularFresnel.ior).z
             : state.transmissionMultipleScattering.z;
-    float reflected = primeRcIsReflective(samplingFlags) ? helperR : 0.0;
-    float transmitted = primeRcIsTransmissive(samplingFlags) ? 1.0 - helperR : 0.0;
+    float reflected = primeOpenPbrIsReflective(samplingFlags) ? helperR : 0.0;
+    float transmitted = primeOpenPbrIsTransmissive(samplingFlags) ? 1.0 - helperR : 0.0;
     return reflected * state.specularFresnel.color
             + transmitted * state.transmissionTint;
 }

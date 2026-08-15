@@ -1,6 +1,8 @@
 #include "core/prime_test_abi.slang"
 import "bsdf/adapter/prime_bsdf_specializations.slang";
 import "bsdf/adapter/transmission_ggx_energy.slang";
+import "bsdf/compact/openpbr_common.slang";
+import "bsdf/compact/openpbr_material.slang";
 import "bsdf/compact/openpbr_transmission.slang";
 import "bsdf/core/robocute_closures.slang";
 import "bsdf/core/robocute_common.slang";
@@ -17,7 +19,7 @@ struct PrimeCompactTransmissionTestResult {
     PrimeRcEval referenceEvaluation;
     PrimeCompactTransmissionEvaluation compactEvaluation;
     PrimeRcSampleResult referenceSample;
-    PrimeRcSampleResult compactSample;
+    PrimeOpenPbrSampleResult compactSample;
     float3 referenceEnergy;
     float3 compactEnergy;
 };
@@ -59,6 +61,28 @@ PrimeRcVolumeStack primeCompactTransmissionStack(
     stack.count = 0u;
     if (exiting) {
         PrimeRcVolume volume = primeRcVolumeFromTransmission(material.transmission);
+        volume.ior = material.specular.ior;
+        stack.values[0] = volume;
+        stack.count = 1u;
+    }
+    return stack;
+}
+
+PrimeOpenPbrVolumeStack primeCompactTransmissionOpenPbrStack(
+        bool exiting,
+        PrimeOpenPbrMaterial material) {
+    PrimeOpenPbrVolumeStack stack;
+    PrimeOpenPbrVolume air;
+    air.extinction = float3(0.0);
+    air.albedo = float3(0.0);
+    air.anisotropy = 0.0;
+    air.ior = 1.0;
+    stack.values[0] = air;
+    stack.values[1] = air;
+    stack.count = 0u;
+    if (exiting) {
+        PrimeOpenPbrVolume volume = primeOpenPbrVolumeFromTransmission(
+                material.transmission);
         volume.ior = material.specular.ior;
         stack.values[0] = volume;
         stack.count = 1u;
@@ -159,7 +183,7 @@ void primeCompactTransmissionCompare(
     }
     for (uint index = 0u; index < result.referenceSample.volumeStack.count; index++) {
         PrimeRcVolume referenceVolume = result.referenceSample.volumeStack.values[index];
-        PrimeRcVolume compactVolume = result.compactSample.volumeStack.values[index];
+        PrimeOpenPbrVolume compactVolume = result.compactSample.volumeStack.values[index];
         if (!primeCompactTransmissionClose(
                     referenceVolume.extinction, compactVolume.extinction)
                 || !primeCompactTransmissionClose(referenceVolume.albedo, compactVolume.albedo)
@@ -204,30 +228,44 @@ PrimeCompactTransmissionTestResult primeCompactTransmissionRun(uint4 encoded[4])
     bool thinPhysicalExit = thinWalled
             && primeCompactTransmissionParam(encoded, 14u) >= 0.5;
 
-    PrimeRcMaterial material = primeRcMaterialFromMetallic(
+    PrimeRcMaterial referenceMaterial = primeRcMaterialFromMetallic(
             float3(1.0), roughness, 0.0, float3(0.0, 0.0, 1.0));
-    material.weight.transmission = 1.0;
-    material.geometry.thinWalled = thinWalled ? 1u : 0u;
-    material.geometry.thickness = thinWalled ? 0.0625 : 1.0;
-    material.specular.ior = ior;
-    material.transmission.color = color;
-    material.transmission.depth = thinWalled ? 0.0 : 1.0;
-    material.transmission.scatter = float3(0.0);
-    material.transmission.scatterAnisotropy = 0.0;
-    material.transmission.dispersionScale = 0.0;
-    if (!primeCompactTransmissionSupports(material)) {
+    PrimeOpenPbrMaterial compactMaterial = primeCompactMaterialFromMetallic(
+            float3(1.0), roughness, 0.0, float3(0.0, 0.0, 1.0));
+    referenceMaterial.weight.transmission = 1.0;
+    referenceMaterial.geometry.thinWalled = thinWalled ? 1u : 0u;
+    referenceMaterial.geometry.thickness = thinWalled ? 0.0625 : 1.0;
+    referenceMaterial.specular.ior = ior;
+    referenceMaterial.transmission.color = color;
+    referenceMaterial.transmission.depth = thinWalled ? 0.0 : 1.0;
+    referenceMaterial.transmission.scatter = float3(0.0);
+    referenceMaterial.transmission.scatterAnisotropy = 0.0;
+    referenceMaterial.transmission.dispersionScale = 0.0;
+    compactMaterial.weight.transmission = 1.0;
+    compactMaterial.geometry.thinWalled = thinWalled ? 1u : 0u;
+    compactMaterial.geometry.thickness = thinWalled ? 0.0625 : 1.0;
+    compactMaterial.specular.ior = ior;
+    compactMaterial.transmission.color = color;
+    compactMaterial.transmission.depth = thinWalled ? 0.0 : 1.0;
+    compactMaterial.transmission.scatter = float3(0.0);
+    compactMaterial.transmission.scatterAnisotropy = 0.0;
+    compactMaterial.transmission.dispersionScale = 0.0;
+    if (!primeCompactTransmissionSupports(compactMaterial)) {
         result.mask |= PRIME_TEST_FAILURE_STATE;
     }
-    PrimeRcMaterial unsupported = material;
+    PrimeOpenPbrMaterial unsupported = compactMaterial;
     unsupported.transmission.dispersionScale = 0.5;
     if (primeCompactTransmissionSupports(unsupported)) {
         result.mask |= PRIME_TEST_FAILURE_STATE;
     }
 
-    PrimeRcVolumeStack stack = primeCompactTransmissionStack(exiting, material);
+    PrimeRcVolumeStack referenceStack = primeCompactTransmissionStack(
+            exiting, referenceMaterial);
+    PrimeOpenPbrVolumeStack compactStack = primeCompactTransmissionOpenPbrStack(
+            exiting, compactMaterial);
     PrimeRcState reference = primeRcTransmissionStateInit(
             primeTransmissionGgxEnergy(),
-            material,
+            referenceMaterial,
             wi,
             inverseOutsideIor,
             rayT,
@@ -238,7 +276,7 @@ PrimeCompactTransmissionTestResult primeCompactTransmissionRun(uint4 encoded[4])
     reference = primeRcPrimeTransmissionInterfaceState(wi, reference);
     PrimeCompactTransmissionState compact = primeCompactTransmissionStateInit(
             primeTransmissionGgxEnergy(),
-            material,
+            compactMaterial,
             wi,
             inverseOutsideIor,
             rayT);
@@ -254,9 +292,9 @@ PrimeCompactTransmissionTestResult primeCompactTransmissionRun(uint4 encoded[4])
     result.compactEvaluation = primeCompactTransmissionEvaluate(
             wi, wo, compact, samplingFlags);
     result.referenceSample = primeRcPrimeTransmissionSample(
-            wi, randomValue, reference, stack);
+            wi, randomValue, reference, referenceStack);
     result.compactSample = primeCompactTransmissionSample(
-            wi, randomValue, compact, samplingFlags, stack);
+            wi, randomValue, compact, samplingFlags, compactStack);
     result.referenceEnergy = primeRcTransmissionEnergy(
             primeTransmissionGgxEnergy(), wi, reference);
     result.compactEnergy = primeCompactTransmissionEnergy(

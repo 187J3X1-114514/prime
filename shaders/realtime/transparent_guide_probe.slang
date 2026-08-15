@@ -36,7 +36,7 @@ float3 primeMirrorDirectionAcrossPlane(float3 direction, float3 unitNormal) {
 PrimeDenoiseAlbedos primeProbeSurfaceAlbedos(
         SurfaceInteraction surface,
         float3 viewDirection,
-        PrimeRcVolumeStack volumeStack) {
+        PrimeOpenPbrVolumeStack volumeStack) {
     if (primeMaterialIsFoliage(surface.materialControl)) {
         PrimeCompactFoliageState state = primeMinecraftFoliageState(
                 surface.baseColor,
@@ -93,7 +93,7 @@ bool primeAdvanceProbeThroughput(
 bool primeAdvanceProbeMedium(
         inout float3 throughput,
         SurfaceInteraction surface,
-        PrimeRcVolumeStack volumeStack) {
+        PrimeOpenPbrVolumeStack volumeStack) {
     if (volumeStack.count > 0u) {
         throughput *= primeSegmentTransmittance(
                 volumeStack.values[volumeStack.count - 1u].extinction,
@@ -189,7 +189,7 @@ void primeTraceDeterministicTransmissionGuide(
             primarySurface.position,
             primarySurface.geometricNormal,
             direction);
-    PrimeRcVolumeStack volumeStack = initialSample.volumeStack;
+    PrimeOpenPbrVolumeStack volumeStack = initialSample.volumeStack;
     bool hasMotion = primeSurfaceHasMotion(primarySurface);
 
     [loop]
@@ -326,7 +326,7 @@ void primeTracePlanarReflectionGuide(
         inout PrimeIntegratorContext context,
         SurfaceInteraction primarySurface,
         PrimeTransmissiveBsdfSample initialSample,
-        PrimeRcVolumeStack initialVolumeStack,
+        PrimeOpenPbrVolumeStack initialVolumeStack,
         inout PrimeTransparentGuideProbeResult result) {
     BsdfSample bsdf = initialSample.bsdfSample;
     float3 throughput = float3(1.0);
@@ -398,7 +398,7 @@ PrimeTransparentGuideProbeResult primeTraceTransparentGuideProbes(
         inout PrimeIntegratorContext context,
         PathState cameraPath,
         SurfaceInteraction primarySurface,
-        PrimeRcVolumeStack volumeStack,
+        PrimeOpenPbrVolumeStack volumeStack,
         uint maximumBounces) {
     PrimeTransparentGuideProbeResult result =
             primeEmptyTransparentGuideProbeResult();

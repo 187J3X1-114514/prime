@@ -20,9 +20,9 @@ void main(uint3 dispatchThreadId : SV_DispatchThreadID)
     uint4 expected = primeTestInput[
             primeTestInputOffset(caseIndex, PRIME_BSDF_DIAGNOSTIC_INPUT_WORDS)];
 
-    PrimeRcSample sampleValue;
+    PrimeOpenPbrSample sampleValue;
     sampleValue.throughput.value = float3(1.0);
-    sampleValue.throughput.flags = PRIME_RC_FLAG_DIFFUSE;
+    sampleValue.throughput.flags = PRIME_OPENPBR_FLAG_DIFFUSE;
     sampleValue.pdf = 1.0;
     sampleValue.eta = 1.0;
     sampleValue.wo = float3(0.0, 0.0, 1.0);
@@ -48,7 +48,7 @@ void main(uint3 dispatchThreadId : SV_DispatchThreadID)
 
     PrimeNumericalObservation observation =
             primeNumericalObservationCreate(enabled);
-    bool accepted = primeRcHasSample(sampleValue, observation);
+    bool accepted = primeOpenPbrHasSample(sampleValue, observation);
     uint mask = 0u;
     if (uint(accepted) != expected.y) mask |= PRIME_TEST_FAILURE_STATE;
     if (observation.flags != expected.z) mask |= PRIME_TEST_FAILURE_VALUE;

@@ -70,9 +70,9 @@ control 生成。
 
 ## OpenPBR 紧凑迁移
 
-机械 Slang core 已完成过渡任务，现作为迁移期差分 oracle，不再是受保护的生产架构。新的
-`shaders/bsdf/compact` 按精确 OpenPBR 拓扑建立专用状态；未覆盖的拓扑继续回退到旧实现，直到
-当前生产入口的全部材质族可以一次性切换，避免新旧公式同时进入 SPIR-V。
+机械 Slang core 已完成过渡任务，现作为固定差分 oracle，不再是生产架构。新的
+`shaders/bsdf/compact` 按精确 OpenPBR 拓扑建立专用状态；当前生产入口的全部材质族已经切换，
+未覆盖的 OpenPBR 能力在材质边界拒绝，不能回退到参考库，避免新旧公式同时进入 SPIR-V。
 
 `shaders/robocute.lock.json` 只锁定第三方参考版本和 author overlay，`third_party` 文件与哈希原样
 保留。紧凑实现允许浮点舍入差异，但不得引入模型近似；详细覆盖范围、切换门槛和测试契约见

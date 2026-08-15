@@ -11,7 +11,7 @@ PrimeTransmissiveBsdfSample primeSampleOfflineMinecraftTransmissionFromState(
         uint materialControl,
         float3 viewDirection,
         float3 sampleValue,
-        PrimeRcVolumeStack volumeStack,
+        PrimeOpenPbrVolumeStack volumeStack,
         inout PrimeNumericalObservation observation) {
     return primeSampleMinecraftTransmissionCompleteFromState(
             state,
@@ -31,7 +31,7 @@ PrimeTransmissiveBsdfSample primeSampleOfflineMinecraftTransmissionFromState(
         uint materialControl,
         float3 viewDirection,
         float3 sampleValue,
-        PrimeRcVolumeStack volumeStack) {
+        PrimeOpenPbrVolumeStack volumeStack) {
     PrimeNumericalObservation observation = primeNumericalObservationCreate(false);
     return primeSampleOfflineMinecraftTransmissionFromState(
             state,
@@ -48,7 +48,7 @@ BsdfEvaluation primeEvaluateOfflineMinecraftTransmission(
         SurfaceInteraction surface,
         float3 viewDirection,
         float3 scatterDirection,
-        PrimeRcVolumeStack volumeStack,
+        PrimeOpenPbrVolumeStack volumeStack,
         inout PrimeNumericalObservation observation) {
     float3 outwardNormal = primeSurfaceOutwardShadingNormal(surface);
     PrimeCompactTransmissionState state = primeMinecraftBoundaryTransmissionState(
@@ -77,7 +77,7 @@ BsdfEvaluation primeEvaluateOfflineMinecraftTransmission(
         SurfaceInteraction surface,
         float3 viewDirection,
         float3 scatterDirection,
-        PrimeRcVolumeStack volumeStack) {
+        PrimeOpenPbrVolumeStack volumeStack) {
     PrimeNumericalObservation observation = primeNumericalObservationCreate(false);
     return primeEvaluateOfflineMinecraftTransmission(
             surface,

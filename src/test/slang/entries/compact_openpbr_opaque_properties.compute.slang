@@ -1,6 +1,8 @@
 #include "core/prime_test_abi.slang"
 import "bsdf/adapter/prime_bsdf_specializations.slang";
 import "bsdf/adapter/transmission_ggx_energy.slang";
+import "bsdf/compact/openpbr_common.slang";
+import "bsdf/compact/openpbr_material.slang";
 import "bsdf/compact/openpbr_opaque.slang";
 import "bsdf/core/robocute_closures.slang";
 import "bsdf/core/robocute_common.slang";
@@ -18,7 +20,7 @@ struct PrimeCompactTestResult {
     float3 referenceSpecular;
     PrimeCompactOpaqueComponents compactComponents;
     PrimeRcSampleResult referenceSample;
-    PrimeRcSampleResult compactSample;
+    PrimeOpenPbrSampleResult compactSample;
     float3 referenceEnergy;
     PrimeCompactOpaqueEnergy compactEnergy;
 };
@@ -36,6 +38,19 @@ float3 primeCompactDirection(float cosineTheta, float phi) {
 PrimeRcVolumeStack primeCompactEmptyStack() {
     PrimeRcVolumeStack stack;
     PrimeRcVolume air;
+    air.extinction = float3(0.0);
+    air.albedo = float3(0.0);
+    air.anisotropy = 0.0;
+    air.ior = 1.0;
+    stack.values[0] = air;
+    stack.values[1] = air;
+    stack.count = 0u;
+    return stack;
+}
+
+PrimeOpenPbrVolumeStack primeCompactOpenPbrEmptyStack() {
+    PrimeOpenPbrVolumeStack stack;
+    PrimeOpenPbrVolume air;
     air.extinction = float3(0.0);
     air.albedo = float3(0.0);
     air.anisotropy = 0.0;
@@ -219,27 +234,38 @@ PrimeCompactTestResult primeCompactRun(uint4 encoded[4]) {
     float inverseOutsideIor = primeCompactParam(encoded, 13u);
     float rayT = primeCompactParam(encoded, 14u);
 
-    PrimeRcMaterial material = primeRcMaterialFromMetallic(
+    PrimeRcMaterial referenceMaterial = primeRcMaterialFromMetallic(
             color,
             roughness,
             result.kind == PRIME_COMPACT_OPAQUE_CONDUCTOR ? 1.0 : 0.0,
             float3(0.0, 0.0, 1.0));
-    material.specular.ior = ior;
+    PrimeOpenPbrMaterial compactMaterial = primeCompactMaterialFromMetallic(
+            color,
+            roughness,
+            result.kind == PRIME_COMPACT_OPAQUE_CONDUCTOR ? 1.0 : 0.0,
+            float3(0.0, 0.0, 1.0));
+    referenceMaterial.specular.ior = ior;
+    compactMaterial.specular.ior = ior;
     if (result.kind >= PRIME_COMPACT_OPAQUE_SUBSURFACE) {
-        material.weight.subsurface = 1.0;
-        material.subsurface.color = color;
-        material.subsurface.scatterAnisotropy = anisotropy;
-        material.geometry.thinWalled = result.kind == 3u ? 1u : 0u;
+        referenceMaterial.weight.subsurface = 1.0;
+        referenceMaterial.subsurface.color = color;
+        referenceMaterial.subsurface.scatterAnisotropy = anisotropy;
+        referenceMaterial.geometry.thinWalled = result.kind == 3u ? 1u : 0u;
+        compactMaterial.weight.subsurface = 1.0;
+        compactMaterial.subsurface.color = color;
+        compactMaterial.subsurface.scatterAnisotropy = anisotropy;
+        compactMaterial.geometry.thinWalled = result.kind == 3u ? 1u : 0u;
     }
-    if (!primeCompactOpaqueSupports(material)) {
+    if (!primeCompactOpaqueSupports(compactMaterial)) {
         result.mask |= PRIME_TEST_FAILURE_STATE;
     }
 
-    PrimeRcVolumeStack stack = primeCompactEmptyStack();
+    PrimeRcVolumeStack referenceStack = primeCompactEmptyStack();
+    PrimeOpenPbrVolumeStack compactStack = primeCompactOpenPbrEmptyStack();
     PrimeRcState reference = primeCompactReferenceState(
-            result.kind, material, wi, inverseOutsideIor, rayT);
+            result.kind, referenceMaterial, wi, inverseOutsideIor, rayT);
     PrimeCompactOpaqueState compact = primeCompactOpaqueStateInit(
-            primeTransmissionGgxEnergy(), material, wi, inverseOutsideIor, rayT);
+            primeTransmissionGgxEnergy(), compactMaterial, wi, inverseOutsideIor, rayT);
     result.referenceEval = primeCompactReferenceEvaluate(result.kind, wi, wo, reference);
     result.compactEval = primeCompactOpaqueEvaluate(wi, wo, compact);
     result.referenceDiffuse = primeCompactReferenceEvalWithFlags(
@@ -252,8 +278,9 @@ PrimeCompactTestResult primeCompactRun(uint4 encoded[4]) {
             PRIME_RC_FLAG_SPECULAR | PRIME_RC_FLAG_DELTA).value;
     result.compactComponents = primeCompactOpaqueEvaluateComponents(wi, wo, compact);
     result.referenceSample = primeCompactReferenceSample(
-            result.kind, wi, randomValue, reference, stack);
-    result.compactSample = primeCompactOpaqueSample(wi, randomValue, compact, stack);
+            result.kind, wi, randomValue, reference, referenceStack);
+    result.compactSample = primeCompactOpaqueSample(
+            wi, randomValue, compact, compactStack);
     result.referenceEnergy = primeCompactReferenceEnergy(result.kind, wi, reference);
     result.compactEnergy = primeCompactOpaqueEnergy(wi, compact);
     primeCompactCompare(result);

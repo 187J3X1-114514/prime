@@ -49,7 +49,7 @@ uint primeOfflineAreaControl(
             << PRIME_OFFLINE_LIGHT_NORMAL_SHIFT;
     if (valid) {
         control |= PRIME_OFFLINE_AREA_VALID;
-        control |= min(startingMediumCount, PRIME_RC_MAX_VOLUME_STACK_SIZE)
+        control |= min(startingMediumCount, PRIME_OPENPBR_MAX_VOLUME_STACK_SIZE)
                 << PRIME_OFFLINE_AREA_MEDIUM_SHIFT;
     }
     return control;
@@ -185,7 +185,7 @@ uint primePackOfflinePathControl(PathState path) {
 
 PrimeOfflineTransportRecord primeMakeOfflineTransport(
         PathState path,
-        PrimeRcVolumeStack volumeStack,
+        PrimeOpenPbrVolumeStack volumeStack,
         bool enabled) {
     PrimeOfflineTransportRecord record;
     record.physicalOriginAndPreviousBsdfPdf =
@@ -228,8 +228,8 @@ PathState primeOfflinePath(
     return path;
 }
 
-PrimeRcVolumeStack primeOfflineVolumeStack(PrimeOfflineTransportRecord record) {
-    PrimeRcVolumeStack stack;
+PrimeOpenPbrVolumeStack primeOfflineVolumeStack(PrimeOfflineTransportRecord record) {
+    PrimeOpenPbrVolumeStack stack;
     stack.values[0] = primeUnpackWavefrontMedium(record.medium0);
     stack.values[1] = primeUnpackWavefrontMedium(record.medium1);
     uint control = asuint(record.rayDirectionAndControl.w);

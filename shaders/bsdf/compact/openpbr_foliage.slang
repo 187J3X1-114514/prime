@@ -3,7 +3,7 @@ module "bsdf/compact/openpbr_foliage.slang";
 
 import "bsdf/compact/openpbr_opaque.slang";
 import "bsdf/compact/openpbr_transmission.slang";
-import "bsdf/core/robocute_common.slang";
+import "bsdf/compact/openpbr_common.slang";
 import "bsdf/core/transmission_ggx_energy.slang";
 
 // Exact compact specialization of OpenPBR's thin-wall base substrate used by
@@ -12,14 +12,14 @@ import "bsdf/core/transmission_ggx_energy.slang";
 
 public struct PrimeCompactFoliageState {
     public PrimeCompactOpaqueState base;
-    public PrimeRcMicrofacet transmissionMicrofacet;
+    public PrimeOpenPbrMicrofacet transmissionMicrofacet;
     public float3 transmissionTint;
     public PrimeCompactMixState dielectricMix;
     public float transmissionWeight;
 };
 
 public struct PrimeCompactFoliageEvaluation {
-    public PrimeRcThroughput throughput;
+    public PrimeOpenPbrThroughput throughput;
     public float pdf;
 };
 
@@ -47,8 +47,8 @@ PrimeCompactMixState primeCompactFoliageMakeMixState(
         result.secondSampleWeight = 1.0;
         return result;
     }
-    result.firstSampleWeight = (1.0 - weight) * primeRcSpectrumToWeight(firstEnergy);
-    result.secondSampleWeight = weight * primeRcSpectrumToWeight(secondEnergy);
+    result.firstSampleWeight = (1.0 - weight) * primeOpenPbrSpectrumToWeight(firstEnergy);
+    result.secondSampleWeight = weight * primeOpenPbrSpectrumToWeight(secondEnergy);
     float sum = result.firstSampleWeight + result.secondSampleWeight;
     if (sum > 0.0) {
         result.firstSampleWeight /= sum;
@@ -78,21 +78,21 @@ PrimeCompactTransmissionState primeCompactFoliageTransmissionState(
     return result;
 }
 
-PrimeRcThroughput primeCompactFoliageMixEval(
-        PrimeRcThroughput first,
-        PrimeRcThroughput second,
+PrimeOpenPbrThroughput primeCompactFoliageMixEval(
+        PrimeOpenPbrThroughput first,
+        PrimeOpenPbrThroughput second,
         float weight) {
-    PrimeRcThroughput result = primeRcZeroThroughput();
+    PrimeOpenPbrThroughput result = primeOpenPbrZeroThroughput();
     if (weight < 1.0) { result = first; }
     if (weight > 0.0) {
-        result = primeRcThroughputScale(result, 1.0 - weight);
-        result = primeRcThroughputAdd(
-                result, primeRcThroughputScale(second, weight));
+        result = primeOpenPbrThroughputScale(result, 1.0 - weight);
+        result = primeOpenPbrThroughputAdd(
+                result, primeOpenPbrThroughputScale(second, weight));
     }
     return result;
 }
 
-public bool primeCompactFoliageSupports(PrimeRcMaterial material) {
+public bool primeCompactFoliageSupports(PrimeOpenPbrMaterial material) {
     return material.weight.base == 1.0
             && material.weight.specular == 1.0
             && (material.weight.metalness == 0.0 || material.weight.metalness == 1.0)
@@ -113,7 +113,7 @@ public bool primeCompactFoliageSupports(PrimeRcMaterial material) {
 
 public PrimeCompactFoliageState primeCompactFoliageStateInit<TransmissionGgxEnergy>(
         TransmissionGgxEnergy transmissionGgxEnergy,
-        PrimeRcMaterial material,
+        PrimeOpenPbrMaterial material,
         float3 wi,
         float inverseOutsideIor,
         float rayT)
@@ -131,7 +131,7 @@ public PrimeCompactFoliageState primeCompactFoliageStateInit<TransmissionGgxEner
     PrimeCompactOpaqueEnergy baseEnergy = primeCompactOpaqueEnergy(wi, state.base);
     float3 glossyDiffuseEnergy = baseEnergy.specular + baseEnergy.diffuse;
     float3 transmissionEnergy = primeCompactTransmissionEnergy(
-            transmissionGgxEnergy, wi, transmission, PRIME_RC_FLAG_ALL);
+            transmissionGgxEnergy, wi, transmission, PRIME_OPENPBR_FLAG_ALL);
     state.dielectricMix = primeCompactFoliageMakeMixState(
             state.transmissionWeight,
             state.transmissionWeight < 1.0 ? glossyDiffuseEnergy : float3(0.0),
@@ -152,7 +152,7 @@ public PrimeCompactFoliageEvaluation primeCompactFoliageEvaluate(
             wi,
             wo,
             primeCompactFoliageTransmissionState(state),
-            PRIME_RC_FLAG_ALL);
+            PRIME_OPENPBR_FLAG_ALL);
     result.throughput = primeCompactFoliageMixEval(
             base.throughput, transmission.throughput, state.transmissionWeight);
     if (state.dielectricMix.firstSampleWeight
@@ -182,7 +182,7 @@ public PrimeCompactFoliageComponents primeCompactFoliageEvaluateComponents(
             wi,
             wo,
             primeCompactFoliageTransmissionState(state),
-            PRIME_RC_FLAG_SPECULAR | PRIME_RC_FLAG_DELTA);
+            PRIME_OPENPBR_FLAG_SPECULAR | PRIME_OPENPBR_FLAG_DELTA);
     result.diffuse = base.diffuse * (1.0 - state.transmissionWeight);
     result.specular = base.specular * (1.0 - state.transmissionWeight)
             + transmission.throughput.value * state.transmissionWeight;
@@ -195,7 +195,7 @@ public PrimeCompactFoliageComponents primeCompactFoliageEvaluateComponents(
                         wi,
                         wo,
                         primeCompactFoliageTransmissionState(state),
-                        PRIME_RC_FLAG_ALL);
+                        PRIME_OPENPBR_FLAG_ALL);
         result.pdf = lerp(
                 base.pdf,
                 fullTransmission.pdf,
@@ -204,38 +204,38 @@ public PrimeCompactFoliageComponents primeCompactFoliageEvaluateComponents(
     return result;
 }
 
-public PrimeRcSampleResult primeCompactFoliageSample(
+public PrimeOpenPbrSampleResult primeCompactFoliageSample(
         float3 wi,
         float3 randomValue,
         PrimeCompactFoliageState state,
-        PrimeRcVolumeStack stack) {
+        PrimeOpenPbrVolumeStack stack) {
     if (state.base.kind == PRIME_COMPACT_OPAQUE_CONDUCTOR) {
         return primeCompactOpaqueSample(wi, randomValue, state.base, stack);
     }
     if (state.dielectricMix.firstSampleWeight
             + state.dielectricMix.secondSampleWeight <= 0.0) {
-        PrimeRcSampleResult result;
-        result.bsdfSample = primeRcZeroSample();
+        PrimeOpenPbrSampleResult result;
+        result.bsdfSample = primeOpenPbrZeroSample();
         result.volumeStack = stack;
         result.rayT = state.base.rayT;
         return result;
     }
     if (randomValue.z <= state.dielectricMix.secondSampleWeight
             && state.dielectricMix.secondSampleWeight > 0.0) {
-        PrimeRcSampleResult result = primeCompactTransmissionSample(
+        PrimeOpenPbrSampleResult result = primeCompactTransmissionSample(
                 wi,
                 float3(
                         randomValue.xy,
                         randomValue.z / state.dielectricMix.secondSampleWeight),
                 primeCompactFoliageTransmissionState(state),
-                PRIME_RC_FLAG_ALL,
+                PRIME_OPENPBR_FLAG_ALL,
                 stack);
-        result.bsdfSample.throughput = primeRcThroughputScale(
+        result.bsdfSample.throughput = primeOpenPbrThroughputScale(
                 result.bsdfSample.throughput, state.transmissionWeight);
         result.bsdfSample.pdf *= state.dielectricMix.secondSampleWeight;
         return result;
     }
-    PrimeRcSampleResult result = primeCompactOpaqueSampleWithEonDiffuse(
+    PrimeOpenPbrSampleResult result = primeCompactOpaqueSampleWithEonDiffuse(
             wi,
             float3(
                     randomValue.xy,
@@ -243,7 +243,7 @@ public PrimeRcSampleResult primeCompactFoliageSample(
                     / state.dielectricMix.firstSampleWeight),
             state.base,
             stack);
-    result.bsdfSample.throughput = primeRcThroughputScale(
+    result.bsdfSample.throughput = primeOpenPbrThroughputScale(
             result.bsdfSample.throughput, 1.0 - state.transmissionWeight);
     result.bsdfSample.pdf *= state.dielectricMix.firstSampleWeight;
     return result;
@@ -268,7 +268,7 @@ public PrimeCompactFoliageEnergy primeCompactFoliageEnergy<TransmissionGgxEnergy
                     transmissionGgxEnergy,
                     wi,
                     primeCompactFoliageTransmissionState(state),
-                    PRIME_RC_FLAG_SPECULAR | PRIME_RC_FLAG_DELTA)
+                    PRIME_OPENPBR_FLAG_SPECULAR | PRIME_OPENPBR_FLAG_DELTA)
                     * state.transmissionWeight;
     return result;
 }

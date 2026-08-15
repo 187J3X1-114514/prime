@@ -76,7 +76,7 @@ struct PrimeStagedSecondarySunNee : IPrimeSecondarySunNee {
             SurfaceInteraction surface,
             float3 viewDirection,
             PrimePreparedSampleBase preparedSample,
-            PrimeRcVolumeStack volumeStack,
+            PrimeOpenPbrVolumeStack volumeStack,
             float3 pathThroughput,
             uint pathIndex) {
         // The merged Light stage consumes the persisted pre-scatter surface and path.
@@ -88,7 +88,7 @@ PrimeWavefrontContinuation primeInitializeTransparentWavefront(
         inout PrimeIntegratorContext context,
         uint2 pixel,
         PathState path,
-        PrimeRcVolumeStack volumeStack,
+        PrimeOpenPbrVolumeStack volumeStack,
         IntegratorRecord integrator,
         SurfaceInteraction surface,
         PrimeIntegrationResult initialResult,
@@ -321,7 +321,7 @@ void primeWavefrontHead(
 
     // Build large transport records after SER so they do not enter the reorder spill set.
     PathState path = primeCameraPath(pixel, 0u, cameraSample);
-    PrimeRcVolumeStack volumeStack =
+    PrimeOpenPbrVolumeStack volumeStack =
             (primePush.path.z & PRIME_PATH_CAMERA_IN_WATER_MASK) != 0u
             ? primeCameraWaterVolumeStack()
             : primeEmptyVolumeStack();
@@ -359,7 +359,7 @@ void primeWavefrontPrimaryArea(
     SurfaceInteraction surface = primeLoadWavefrontSurface(recordIndex);
     uint2 pixel = primeWavefrontPixel(recordIndex);
     PathState path = primeWavefrontPath(pixel, record);
-    PrimeRcVolumeStack volumeStack = primeWavefrontVolumeStack(record);
+    PrimeOpenPbrVolumeStack volumeStack = primeWavefrontVolumeStack(record);
     if (!primeApplySegmentMedium(context, path, surface, volumeStack)) {
         return;
     }
@@ -407,7 +407,7 @@ void primeWavefrontPrimarySun(
     SurfaceInteraction surface = primeLoadWavefrontSurface(recordIndex);
     uint2 pixel = primeWavefrontPixel(recordIndex);
     PathState path = primeWavefrontPath(pixel, record);
-    PrimeRcVolumeStack volumeStack = primeWavefrontVolumeStack(record);
+    PrimeOpenPbrVolumeStack volumeStack = primeWavefrontVolumeStack(record);
     if (!primeApplySegmentMedium(context, path, surface, volumeStack)) {
         return;
     }
@@ -514,7 +514,7 @@ void primeWavefrontPrimary(
     primeRestoreWavefrontDiagnostic(record, context.diagnostics);
     SurfaceInteraction surface = primeLoadWavefrontSurface(recordIndex);
     PathState path = primeWavefrontPath(pixel, record);
-    PrimeRcVolumeStack volumeStack = primeWavefrontVolumeStack(record);
+    PrimeOpenPbrVolumeStack volumeStack = primeWavefrontVolumeStack(record);
     IntegratorRecord integrator;
     integrator.sunDirectionIntensity = float4(
             primePush.sunDirection,
@@ -595,7 +595,7 @@ void primeWavefrontShade<IndirectReuse, SharcTraining>(
     primeRestoreWavefrontDiagnostic(record, context.diagnostics);
     SurfaceInteraction surface = primeLoadWavefrontSurface(recordIndex);
     PathState path = primeWavefrontPath(pixel, record);
-    PrimeRcVolumeStack volumeStack = primeWavefrontVolumeStack(record);
+    PrimeOpenPbrVolumeStack volumeStack = primeWavefrontVolumeStack(record);
     uint control = asuint(record.rayDirectionAndDenoiserControl.w);
     IntegratorRecord integrator;
     integrator.sunDirectionIntensity = float4(
@@ -668,7 +668,7 @@ void primeWavefrontTransparentShade(
     primeRestoreWavefrontDiagnostic(record, context.diagnostics);
     SurfaceInteraction surface = primeLoadWavefrontSurface(recordIndex);
     PathState path = primeWavefrontPath(pixel, record);
-    PrimeRcVolumeStack volumeStack = primeWavefrontVolumeStack(record);
+    PrimeOpenPbrVolumeStack volumeStack = primeWavefrontVolumeStack(record);
     uint control = asuint(record.rayDirectionAndDenoiserControl.w);
     IntegratorRecord integrator;
     integrator.sunDirectionIntensity = float4(
@@ -778,7 +778,7 @@ void primeWavefrontLight<IndirectReuse, SharcTraining>(
     PrimePreparedSampleBase preparedSample =
             primePrepareSampleBase(primeMakeSampleBase(path, path.bounce + 1u));
     bool samplesAreaLight = primeSecondarySamplesAreaLight(preparedSample);
-    PrimeRcVolumeStack volumeStack = primeWavefrontVolumeStack(record);
+    PrimeOpenPbrVolumeStack volumeStack = primeWavefrontVolumeStack(record);
     if (!primeApplySegmentMedium(context, path, surface, volumeStack)) {
         return;
     }
@@ -911,7 +911,7 @@ void primeWavefrontTransparentResolve(
                 primePush.cameraPosition, cameraPath.rayDirection);
         if (primarySurface.hitKind == PRIME_HIT_SURFACE
                 && primeMaterialIsTransmissive(primarySurface.materialControl)) {
-            PrimeRcVolumeStack volumeStack =
+            PrimeOpenPbrVolumeStack volumeStack =
                     (primePush.path.z & PRIME_PATH_CAMERA_IN_WATER_MASK) != 0u
                     ? primeCameraWaterVolumeStack()
                     : primeEmptyVolumeStack();

@@ -1,5 +1,5 @@
 #include "core/prime_test_abi.slang"
-import "bsdf/core/robocute_common.slang";
+import "bsdf/compact/openpbr_common.slang";
 import "core/color_space.slang";
 import "core/light_tree_math.slang";
 import "core/transparent_checkerboard.slang";
@@ -331,7 +331,7 @@ void primeCheckShadowOpticalDepth(
     reverseTerminal = primeShadowBoundaryTerminalExtinction(
             reverseTerminal, firstExtinction, true);
 
-    PrimeRcVolume queuedFirstMedium;
+    PrimeOpenPbrVolume queuedFirstMedium;
     queuedFirstMedium.extinction = PRIME_PURE_WATER_ABSORPTION_M_INV;
     queuedFirstMedium.ior = 1.333;
     queuedFirstMedium.albedo = float3(0.0);
@@ -446,13 +446,13 @@ void primeCheckShadowOpticalDepth(
 void primeCheckWavefrontMedium(
         inout PrimeTransportResult result, float4 transport, float4 coldVolumeFields)
 {
-    PrimeRcVolume medium;
+    PrimeOpenPbrVolume medium;
     medium.extinction = transport.xyz;
     medium.ior = transport.w;
     medium.albedo = coldVolumeFields.xyz;
     medium.anisotropy = coldVolumeFields.w;
     uint2 packed = primePackWavefrontMedium(medium);
-    PrimeRcVolume restored = primeUnpackWavefrontMedium(packed);
+    PrimeOpenPbrVolume restored = primeUnpackWavefrontMedium(packed);
     primeTransportClassify(result.mask, restored.extinction);
     primeTransportClassify(result.mask, restored.ior);
     if (any(primePackWavefrontMedium(restored) != packed)

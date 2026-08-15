@@ -21,8 +21,9 @@ RoboCute 作者于 2026-07-24 提供的 dielectric highlight energy compensation
 任何语义、浮点或格式化修改都必须先获得用户对具体声明、目的和范围的明确批准。不同编译器
 或获批优化后的输出不要求逐 bit 一致，但必须满足数值、分布、能量和状态门禁。
 
-Prime 自有的材质翻译、资源绑定、状态转换、诊断和回归入口位于参考核心之外。厚介质出射时，适配层
-保留 RoboCute 以有符号局部半球选择相对 IOR 的契约，使 Snell 方向、TIR、Fresnel、PDF、
+Prime 自有的材质翻译、资源绑定、状态转换、诊断和回归入口位于参考核心之外；生产 Shader
+使用 `shaders/bsdf/compact` 中数学等价的专用 OpenPBR 状态与公式，不导入受保护核心。厚介质
+出射时，紧凑实现保留以有符号局部半球选择相对 IOR 的契约，使 Snell 方向、TIR、Fresnel、PDF、
 `1/η²` 和返回的 `relativeEta` 使用同一个事件方向。真实 entering 状态仍由 Prime 体积栈消费。
 
 `relativeEta` 的用途分为两类，不能混淆：
@@ -32,12 +33,13 @@ Prime 自有的材质翻译、资源绑定、状态转换、诊断和回归入�
 
 实时积分器在首接口以 50/50 棋盘格选择一个条件反射或条件透射事件；光滑折射由
 确定性适配显式应用与事件 `relativeEta` 一致的 `/η²`，粗糙条件透射则使用完整闭包在透射
-半球内归一化的 sample/eval/PDF。后续透明顶点与离线 renderer 使用完整 RoboCute 透射闭包
+半球内归一化的 sample/eval/PDF。后续透明顶点与离线 renderer 使用紧凑 OpenPBR 透射闭包
 的随机单分支，因此 `/η²`、事件 PDF、`relativeEta` 和介质栈契约都进入生产路径。
 
 ## 自动门禁
 
 - `verifyRoboCutePort` 验证锁定 commit、overlay 路径、参考文件和 LUT 哈希；
+- `verifyShaderIncludeGraph` 拒绝生产 Shader 导入受保护 RoboCute 模块或 reference specialization；
 - `compileSlangShaders` 使用固定 SDK 的 `slangc` 直接生成 SPIR-V，以 `spirv-val` 验证，并
   由 `verifySlangRayPayloadAbi` 与生成 ABI 门禁检查跨阶段契约；
 - `shaderTest` 覆盖 slab 两界面、入射/出射、Snell、TIR、sample/eval/PDF、薄壁/厚壁和

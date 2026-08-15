@@ -32,7 +32,7 @@ float3 primeEvaluateOfflineDirect(
         float3 viewDirection,
         LightSample light,
         float3 radiance,
-        PrimeRcVolumeStack volumeStack) {
+        PrimeOpenPbrVolumeStack volumeStack) {
     float3 shadingNormal = primeSurfaceShadingNormal(surface, viewDirection);
     if (!primeDirectSampleEligible(surface, shadingNormal, light)
             || all(lessThanEqual(radiance, float3(0.0)))) {
@@ -97,7 +97,7 @@ float3 primeEstimateOfflineSun(
         SurfaceInteraction surface,
         float3 viewDirection,
         PrimePreparedSampleBase preparedSample,
-        PrimeRcVolumeStack volumeStack) {
+        PrimeOpenPbrVolumeStack volumeStack) {
     LightSample light = primeSampleSun(
             integrator,
             surface.position,
@@ -129,7 +129,7 @@ PrimeOfflineAreaRequest primePrepareOfflineArea(
         SurfaceInteraction surface,
         float3 viewDirection,
         PrimePreparedSampleBase preparedSample,
-        PrimeRcVolumeStack volumeStack) {
+        PrimeOpenPbrVolumeStack volumeStack) {
     PrimeOfflineAreaRequest request = primeEmptyOfflineAreaRequest();
     AreaLightSample area = primeSampleAreaLight(
             context.diagnostics,
@@ -165,9 +165,9 @@ PrimeShadowTrace primeTraceOfflineAreaShadow(
         inout PrimeIntegratorContext context,
         float3 physicalPosition,
         PrimeOfflineAreaRequest request,
-        PrimeRcVolumeStack startingVolumeStack) {
+        PrimeOpenPbrVolumeStack startingVolumeStack) {
     uint startingMediumCount = min(
-            request.startingMediumCount, PRIME_RC_MAX_VOLUME_STACK_SIZE);
+            request.startingMediumCount, PRIME_OPENPBR_MAX_VOLUME_STACK_SIZE);
     float3 startingExtinction0 = startingMediumCount > 0u
             ? primeShadowCanonicalExtinction(
                     startingVolumeStack.values[0].extinction)
@@ -218,7 +218,7 @@ PrimePathScatter primeSampleOfflinePathSurface(
         SurfaceInteraction surface,
         float3 viewDirection,
         float3 sampleValue,
-        PrimeRcVolumeStack volumeStack) {
+        PrimeOpenPbrVolumeStack volumeStack) {
     PrimePathScatter result;
     result.volumeStack = volumeStack;
     PrimeNumericalObservation observation = primeBsdfObservationCreate();
@@ -343,7 +343,7 @@ PrimeOfflineSurfaceStep primeIntegrateOfflineSurface(
         inout PrimeIntegratorContext context,
         inout PathState path,
         IntegratorRecord integrator,
-        inout PrimeRcVolumeStack volumeStack,
+        inout PrimeOpenPbrVolumeStack volumeStack,
         inout float3 radiance,
         inout float primaryDistance,
         inout float3 primaryAlbedo,

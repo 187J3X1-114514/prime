@@ -1649,8 +1649,9 @@ def verifyShaderIncludeGraph = tasks.register('verifyShaderIncludeGraph') {
 
 	doLast {
 		def sources = []
+		def shaderRoot = file('shaders').canonicalFile
 		def includeRoots = [
-				file('shaders'),
+				shaderRoot,
 				file('src/test/slang'),
 				file('third_party/sharc/include'),
 				shaderAbiSlangRoot.get().asFile
@@ -1673,6 +1674,13 @@ def verifyShaderIncludeGraph = tasks.register('verifyShaderIncludeGraph') {
 				'(?m)^\\s*(?:#\\s*include\\s+"([^"]+)"|import\\s+"([^"]+)"\\s*;)')
 		sources.each { source ->
 			def sourceName = source.canonicalPath
+			def sourcePath = source.canonicalFile.toPath()
+			def sourceRelative = sourcePath.startsWith(shaderRoot.toPath())
+					? shaderRoot.toPath().relativize(sourcePath).toString().replace('\\', '/')
+					: null
+			def referenceSource = sourceRelative != null && (
+					sourceRelative.startsWith('bsdf/core/robocute_')
+					|| sourceRelative == 'bsdf/adapter/prime_bsdf_specializations.slang')
 			def targets = graph.computeIfAbsent(sourceName) { new TreeSet<String>() }
 			def matcher = dependencyPattern.matcher(source.getText('UTF-8'))
 			while (matcher.find()) {
@@ -1696,7 +1704,19 @@ def verifyShaderIncludeGraph = tasks.register('verifyShaderIncludeGraph') {
 					throw new GradleException(
 							"Explicit shader module ${dependencyName} must be imported, not included, from ${source}")
 				}
-				targets.add(candidates.first().canonicalPath)
+				def target = candidates.first()
+				def targetPath = target.toPath()
+				if (sourceRelative != null && !referenceSource
+						&& targetPath.startsWith(shaderRoot.toPath())) {
+					def targetRelative = shaderRoot.toPath().relativize(targetPath)
+							.toString().replace('\\', '/')
+					if (targetRelative.startsWith('bsdf/core/robocute_')
+							|| targetRelative == 'bsdf/adapter/prime_bsdf_specializations.slang') {
+						throw new GradleException(
+								"Production shader ${sourceRelative} depends on reference-only ${targetRelative}")
+					}
+				}
+				targets.add(target.canonicalPath)
 			}
 		}
 

@@ -67,18 +67,18 @@ float primeAdapterFloat(uint4 encoded[7], uint index) {
     return asfloat(encoded[flatIndex / 4u][flatIndex % 4u]);
 }
 
-PrimeRcVolumeStack primeAdapterStack(uint count) {
-    PrimeRcVolumeStack stack = primeEmptyVolumeStack();
-    PrimeRcVolume volume;
+PrimeOpenPbrVolumeStack primeAdapterStack(uint count) {
+    PrimeOpenPbrVolumeStack stack = primeEmptyVolumeStack();
+    PrimeOpenPbrVolume volume;
     volume.extinction = float3(0.01, 0.02, 0.04);
     volume.albedo = float3(0.0);
     volume.anisotropy = 0.0;
     volume.ior = 1.333;
-    primeRcStackPush(stack, volume);
+    primeOpenPbrStackPush(stack, volume);
     volume.extinction = float3(0.02, 0.01, 0.005);
     volume.ior = 1.5;
-    primeRcStackPush(stack, volume);
-    stack.count = min(count, PRIME_RC_MAX_VOLUME_STACK_SIZE);
+    primeOpenPbrStackPush(stack, volume);
+    stack.count = min(count, PRIME_OPENPBR_MAX_VOLUME_STACK_SIZE);
     return stack;
 }
 
@@ -103,12 +103,12 @@ bool primeAdapterSameSample(BsdfSample first, BsdfSample second) {
 }
 
 bool primeAdapterSameStack(
-        PrimeRcVolumeStack first,
-        PrimeRcVolumeStack second) {
+        PrimeOpenPbrVolumeStack first,
+        PrimeOpenPbrVolumeStack second) {
     if (first.count != second.count) return false;
     for (uint index = 0u; index < first.count; index++) {
-        PrimeRcVolume a = first.values[index];
-        PrimeRcVolume b = second.values[index];
+        PrimeOpenPbrVolume a = first.values[index];
+        PrimeOpenPbrVolume b = second.values[index];
         if (!all(equal(a.extinction, b.extinction))
                 || !all(equal(a.albedo, b.albedo))
                 || a.anisotropy != b.anisotropy
@@ -122,12 +122,12 @@ bool primeAdapterSameStack(
 uint primeAdapterExpectedTransparentStackCount(
         PrimeCompactTransmissionState state,
         uint materialControl,
-        PrimeRcVolumeStack stack) {
+        PrimeOpenPbrVolumeStack stack) {
     if (state.geometryThinWalled != 0u) {
         return stack.count;
     }
     if (state.entering != 0u) {
-        return min(stack.count + 1u, PRIME_RC_MAX_VOLUME_STACK_SIZE);
+        return min(stack.count + 1u, PRIME_OPENPBR_MAX_VOLUME_STACK_SIZE);
     }
     return stack.count > 0u ? stack.count - 1u : 0u;
 }
@@ -135,14 +135,14 @@ uint primeAdapterExpectedTransparentStackCount(
 float primeAdapterExpectedInterfaceIor(
         PrimeCompactTransmissionState state,
         uint materialControl,
-        PrimeRcVolumeStack stack) {
+        PrimeOpenPbrVolumeStack stack) {
     return state.specularFresnel.ior;
 }
 
 float primeAdapterExpectedRelativeIor(
         PrimeCompactTransmissionState state,
         uint materialControl,
-        PrimeRcVolumeStack stack) {
+        PrimeOpenPbrVolumeStack stack) {
     float interfaceIor =
             primeAdapterExpectedInterfaceIor(state, materialControl, stack);
     return state.entering != 0u ? interfaceIor : 1.0 / interfaceIor;
@@ -153,7 +153,7 @@ bool primeAdapterCanRefract(
         uint materialControl,
         float3 outwardNormal,
         float3 viewDirection,
-        PrimeRcVolumeStack stack) {
+        PrimeOpenPbrVolumeStack stack) {
     if (state.geometryThinWalled != 0u) return true;
     float relativeIor =
             primeAdapterExpectedRelativeIor(state, materialControl, stack);
@@ -167,7 +167,7 @@ float3 primeAdapterExpectedRefraction(
         uint materialControl,
         float3 outwardNormal,
         float3 viewDirection,
-        PrimeRcVolumeStack stack) {
+        PrimeOpenPbrVolumeStack stack) {
     float relativeIor =
             primeAdapterExpectedRelativeIor(state, materialControl, stack);
     float3 interfaceNormal = state.entering != 0u
@@ -220,7 +220,7 @@ void primeAdapterCheckTransmissionMaterial(
             ? float3(1.0)
             : primeGlassVolumeTransmittance(
                     baseColor, PRIME_STAINED_GLASS_ABSORPTION_OPACITY);
-    float2 expectedAlpha = primeRcSpecularNdfRoughnesses(expectedRoughness, 0.0);
+    float2 expectedAlpha = primeOpenPbrSpecularNdfRoughnesses(expectedRoughness, 0.0);
     if (state.specularMicrofacet.alpha.x != expectedAlpha.x
             || state.specularMicrofacet.alpha.y != expectedAlpha.y
             || !primeTestClose(
@@ -234,8 +234,8 @@ void primeAdapterCheckTransmissionMaterial(
 
 void primeAdapterCheckMinimumRoughness(
         inout uint mask,
-        PrimeRcMaterial original,
-        PrimeRcMaterial clamped,
+        PrimeOpenPbrMaterial original,
+        PrimeOpenPbrMaterial clamped,
         float minimumLinearRoughness) {
     float expected = max(original.specular.roughness, minimumLinearRoughness);
     if (!primeTestClose(clamped.specular.roughness, expected, 0.0, 0.0)) {
@@ -321,7 +321,7 @@ void primeAdapterProperties(
             primeAdapterFloat(encoded, 8u),
             primeAdapterFloat(encoded, 9u),
             primeAdapterFloat(encoded, 10u)));
-    uint stackCount = min(encoded[3].w, PRIME_RC_MAX_VOLUME_STACK_SIZE);
+    uint stackCount = min(encoded[3].w, PRIME_OPENPBR_MAX_VOLUME_STACK_SIZE);
     float3 firstSample = float3(
             primeAdapterFloat(encoded, 12u),
             primeAdapterFloat(encoded, 13u),
@@ -334,7 +334,7 @@ void primeAdapterProperties(
             primeAdapterFloat(encoded, 18u),
             primeAdapterFloat(encoded, 19u),
             primeAdapterFloat(encoded, 20u)));
-    PrimeRcVolumeStack stack = primeAdapterStack(stackCount);
+    PrimeOpenPbrVolumeStack stack = primeAdapterStack(stackCount);
 
     if (kind == PRIME_ADAPTER_OPAQUE) {
         result.first = primeSampleOpaque(
@@ -385,13 +385,13 @@ void primeAdapterProperties(
                 rayT,
                 stack);
         const float minimumLinearRoughness = 0.4;
-        PrimeRcMaterial opaqueMaterial = primeOpaqueMaterial(
+        PrimeOpenPbrMaterial opaqueMaterial = primeOpaqueMaterial(
                 baseColor,
                 outwardNormal,
                 roughness,
                 opticalControl,
                 materialControl);
-        PrimeRcMaterial minimumOpaqueMaterial = primeOpaqueMaterialWithMinimumRoughness(
+        PrimeOpenPbrMaterial minimumOpaqueMaterial = primeOpaqueMaterialWithMinimumRoughness(
                 baseColor,
                 outwardNormal,
                 roughness,
@@ -582,7 +582,7 @@ void primeAdapterProperties(
         float3 expectedResponse = totalInternalReflection
                 ? float3(1.0)
                 : state.transmissionTint
-                        / primeRcSquare(expectedRelativeIor);
+                        / primeOpenPbrSquare(expectedRelativeIor);
         uint expectedStackCount = totalInternalReflection
                 ? stack.count
                 : primeAdapterExpectedTransparentStackCount(
@@ -652,7 +652,7 @@ void primeAdapterProperties(
                 materialControl,
                 roughness,
                 opticalControl);
-        float3 localView = primeRcOnbToLocal(state.onb, viewDirection);
+        float3 localView = primeOpenPbrOnbToLocal(state.onb, viewDirection);
         PrimeMinecraftMirrorSplit mirror =
                 primeMinecraftMirrorSplit(state, localView);
         PrimeTransmissivePrimarySample repeated =
@@ -675,7 +675,7 @@ void primeAdapterProperties(
                 viewDirection,
                 stack);
         bool validTransmission = thinWalled || canRefract;
-        PrimeRcMicrofacet transmissionMicrofacet =
+        PrimeOpenPbrMicrofacet transmissionMicrofacet =
                 primeMinecraftTransmissionMicrofacet(state);
         bool smoothTransmission = primeMinecraftTransmissionIsDiscrete(state);
         float3 expectedDirection = thinWalled
@@ -710,24 +710,24 @@ void primeAdapterProperties(
             result.mask |= PRIME_TEST_FAILURE_IDENTITY;
         }
         if (!smoothTransmission) {
-            PrimeRcSampleResult reference = primeCompactTransmissionSample(
+            PrimeOpenPbrSampleResult reference = primeCompactTransmissionSample(
                     localView,
                     firstSample,
                     state,
-                    PRIME_RC_FLAG_TRANSMISSION,
+                    PRIME_OPENPBR_FLAG_TRANSMISSION,
                     stack);
             BsdfSample expected = primeInvalidBsdfSample();
-            if (primeRcHasSample(reference.bsdfSample)) {
-                expected.direction = primeRcOnbToWorld(
+            if (primeOpenPbrHasSample(reference.bsdfSample)) {
+                expected.direction = primeOpenPbrOnbToWorld(
                         state.onb, reference.bsdfSample.wo);
                 expected.response = reference.bsdfSample.throughput.value;
                 expected.pdf = reference.bsdfSample.pdf;
                 expected.relativeEta = reference.bsdfSample.eta;
-                expected.eventFlags = primeRcToBsdfEventFlags(
+                expected.eventFlags = primeOpenPbrToBsdfEventFlags(
                         reference.bsdfSample.throughput.flags);
                 expected = primeSanitizeBsdfSample(expected);
             }
-            PrimeRcVolumeStack expectedStack = expected.eventFlags == 0u
+            PrimeOpenPbrVolumeStack expectedStack = expected.eventFlags == 0u
                     ? stack
                     : reference.volumeStack;
             if (!primeAdapterSameSample(result.second, expected)
@@ -749,7 +749,7 @@ void primeAdapterProperties(
                                 result.second.direction,
                                 rayT,
                                 stack);
-                float3 localScatter = primeRcOnbToLocal(
+                float3 localScatter = primeOpenPbrOnbToLocal(
                         state.onb, result.second.direction);
                 bool stableReconstruction = min(
                                 transmissionMicrofacet.alpha.x,
@@ -775,7 +775,7 @@ void primeAdapterProperties(
                     | PRIME_BSDF_EVENT_DISCRETE;
             float3 expectedResponse = (float3(1.0) - mirror.reflectance)
                     * state.transmissionTint
-                    / primeRcSquare(expectedRelativeIor);
+                    / primeOpenPbrSquare(expectedRelativeIor);
             if (!primeTestClose(
                     result.second.direction, expectedDirection, 2.0e-6, 2.0e-6)) {
                 result.mask |= PRIME_TEST_FAILURE_HEMISPHERE;
@@ -830,7 +830,7 @@ void primeAdapterProperties(
                     rayT,
                     stack);
             float3 localScatter =
-                    primeRcOnbToLocal(state.onb, result.first.direction);
+                    primeOpenPbrOnbToLocal(state.onb, result.first.direction);
             bool stableReconstruction =
                     min(
                             state.specularMicrofacet.alpha.x,
@@ -875,7 +875,7 @@ void primeAdapterProperties(
                 | (opticalControl & PRIME_OPTICAL_FRESNEL_MASK)
                         << PRIME_ADJACENT_FRESNEL_SHIFT;
         float3 adjacentBaseColor = float3(0.2, 0.5, 0.8);
-        PrimeRcVolume adjacent = primeAdjacentMediumVolume(
+        PrimeOpenPbrVolume adjacent = primeAdjacentMediumVolume(
                 adjacentBaseColor, adjacentInterfaceControl);
         PrimeCompactTransmissionState state = primeMinecraftBoundaryTransmissionState(
                 baseColor,
@@ -909,16 +909,16 @@ void primeAdapterProperties(
             result.mask |= PRIME_TEST_FAILURE_STATE;
         }
         if ((result.first.eventFlags & PRIME_BSDF_EVENT_TRANSMISSION) != 0u) {
-            PrimeRcVolume target;
+            PrimeOpenPbrVolume target;
             if (state.entering != 0u) {
                 target = state.transmissionVolume;
                 target.ior = state.originalIor;
             } else {
                 target = adjacent;
             }
-            PrimeRcVolumeStack expectedStack = stack;
+            PrimeOpenPbrVolumeStack expectedStack = stack;
             if (expectedStack.count == 0u) {
-                primeRcStackPush(expectedStack, target);
+                primeOpenPbrStackPush(expectedStack, target);
             } else {
                 expectedStack.values[expectedStack.count - 1u] = target;
             }
@@ -940,9 +940,9 @@ void primeAdapterProperties(
                 | (opticalControl & PRIME_OPTICAL_FRESNEL_MASK)
                         << PRIME_ADJACENT_FRESNEL_SHIFT;
         float3 adjacentBaseColor = float3(0.2, 0.5, 0.8);
-        PrimeRcVolume surfaceMedium = primeBoundarySurfaceVolume(
+        PrimeOpenPbrVolume surfaceMedium = primeBoundarySurfaceVolume(
                 baseColor, opacity, materialControl, opticalControl);
-        PrimeRcVolume adjacent = primeAdjacentMediumVolume(
+        PrimeOpenPbrVolume adjacent = primeAdjacentMediumVolume(
                 adjacentBaseColor, adjacentInterfaceControl);
         PrimeCompactTransmissionState state = primeMinecraftBoundaryTransmissionState(
                 baseColor,
@@ -980,10 +980,10 @@ void primeAdapterProperties(
             result.mask |= PRIME_TEST_FAILURE_STATE;
         }
         if ((result.first.eventFlags & PRIME_BSDF_EVENT_TRANSMISSION) != 0u) {
-            PrimeRcVolume target = expectedEntering ? surfaceMedium : adjacent;
-            PrimeRcVolumeStack expectedStack = stack;
+            PrimeOpenPbrVolume target = expectedEntering ? surfaceMedium : adjacent;
+            PrimeOpenPbrVolumeStack expectedStack = stack;
             if (expectedStack.count == 0u) {
-                primeRcStackPush(expectedStack, target);
+                primeOpenPbrStackPush(expectedStack, target);
             } else {
                 expectedStack.values[expectedStack.count - 1u] = target;
             }
@@ -1048,21 +1048,21 @@ void primeAdapterProperties(
             result.mask |= PRIME_TEST_FAILURE_EVENT;
         }
 
-        float3 localView = primeRcOnbToLocal(state.onb, viewDirection);
-        PrimeRcSampleResult reference = primeCompactTransmissionSample(
-                localView, firstSample, state, PRIME_RC_FLAG_ALL, stack);
+        float3 localView = primeOpenPbrOnbToLocal(state.onb, viewDirection);
+        PrimeOpenPbrSampleResult reference = primeCompactTransmissionSample(
+                localView, firstSample, state, PRIME_OPENPBR_FLAG_ALL, stack);
         BsdfSample expected = primeInvalidBsdfSample();
-        if (primeRcHasSample(reference.bsdfSample)) {
-            expected.direction = primeRcOnbToWorld(
+        if (primeOpenPbrHasSample(reference.bsdfSample)) {
+            expected.direction = primeOpenPbrOnbToWorld(
                     state.onb, reference.bsdfSample.wo);
             expected.response = reference.bsdfSample.throughput.value;
             expected.pdf = reference.bsdfSample.pdf;
             expected.relativeEta = reference.bsdfSample.eta;
-            expected.eventFlags = primeRcToBsdfEventFlags(
+            expected.eventFlags = primeOpenPbrToBsdfEventFlags(
                     reference.bsdfSample.throughput.flags);
             expected = primeSanitizeBsdfSample(expected);
         }
-        PrimeRcVolumeStack expectedStack = expected.eventFlags == 0u
+        PrimeOpenPbrVolumeStack expectedStack = expected.eventFlags == 0u
                 ? stack
                 : reference.volumeStack;
         if (!primeAdapterSameSample(result.first, expected)
@@ -1094,7 +1094,7 @@ void primeAdapterProperties(
                             materialControl,
                             viewDirection,
                             result.first.direction);
-            float3 localScatter = primeRcOnbToLocal(
+            float3 localScatter = primeOpenPbrOnbToLocal(
                     state.onb, result.first.direction);
             bool stableReconstruction = min(
                     state.transmissionMicrofacet.alpha.x,
@@ -1129,7 +1129,7 @@ void primeAdapterProperties(
             || any(lessThan(result.albedos.specular, float3(0.0)))
             || any(greaterThan(result.albedos.specular, float3(1.0)))
             || any(greaterThan(
-                    result.stackCounts, uint2(PRIME_RC_MAX_VOLUME_STACK_SIZE)))) {
+                    result.stackCounts, uint2(PRIME_OPENPBR_MAX_VOLUME_STACK_SIZE)))) {
         result.mask |= PRIME_TEST_FAILURE_RANGE;
     }
 

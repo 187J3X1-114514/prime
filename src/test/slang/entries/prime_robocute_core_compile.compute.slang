@@ -4,6 +4,7 @@ void primeRecordUnit(float value) {}
 void primeRecordUnit(float3 value) {}
 void primeRecordDirection(float3 value) {}
 bool primeUsesAirGap() { return true; }
+import "bsdf/core/robocute_common.slang";
 #include "bsdf/adapter/bsdf.slang"
 #include "core/prime_test_abi.slang"
 

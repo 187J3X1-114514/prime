@@ -348,7 +348,7 @@ float primeSurfaceLinearRoughness(SurfaceInteraction surface) {
 PrimeClosureTraits primeSurfaceClosureTraits(
         SurfaceInteraction surface,
         float3 viewDirection,
-        PrimeRcVolumeStack volumeStack) {
+        PrimeOpenPbrVolumeStack volumeStack) {
     if (primeMaterialIsTransmissive(surface.materialControl)) {
         PrimeCompiledClosure closure = primeCompileMinecraftTransmissionClosure(
                 surface.baseColor,
@@ -442,9 +442,9 @@ PrimeShadowTrace primeTraceShadow(
         float3 physicalPosition,
         float3 normal,
         LightSample light,
-        PrimeRcVolumeStack volumeStack) {
+        PrimeOpenPbrVolumeStack volumeStack) {
     uint startingMediumCount = min(
-            volumeStack.count, PRIME_RC_MAX_VOLUME_STACK_SIZE);
+            volumeStack.count, PRIME_OPENPBR_MAX_VOLUME_STACK_SIZE);
     float3 startingExtinction0 = startingMediumCount > 0u
             ? primeShadowCanonicalExtinction(
                     volumeStack.values[0].extinction)
@@ -470,7 +470,7 @@ PrimeDirectLightingSplit primeEvaluateVisibleDirectSplit(
         float3 shadingNormal,
         LightSample light,
         float3 lightRadiance,
-        PrimeRcVolumeStack volumeStack,
+        PrimeOpenPbrVolumeStack volumeStack,
         bool conditionalTransparentBranch) {
     PrimeDirectLightingSplit result;
     result.diffuse = float3(0.0);
@@ -640,7 +640,7 @@ PrimePrimarySunSample primeEstimatePrimaryDirectSun(
         SurfaceInteraction surface,
         float3 viewDirection,
         float2 sampleValue,
-        PrimeRcVolumeStack volumeStack,
+        PrimeOpenPbrVolumeStack volumeStack,
         bool conditionalTransparentBranch) {
     PrimePrimarySunSample result;
     result.lighting.diffuse = float3(0.0);
@@ -680,7 +680,7 @@ PrimeDirectLightingSplit primeEstimatePrimaryDirectAreaLight(
         float3 viewDirection,
         float2 treeSample,
         float2 positionSample,
-        PrimeRcVolumeStack volumeStack,
+        PrimeOpenPbrVolumeStack volumeStack,
         bool conditionalTransparentBranch) {
     float3 shadingNormal = primeSurfaceShadingNormal(surface, viewDirection);
     AreaLightSample area = primeSampleAreaLight(
@@ -724,7 +724,7 @@ float3 primeEstimateDirectAreaLight(
         float3 viewDirection,
         float2 treeSample,
         float2 positionSample,
-        PrimeRcVolumeStack volumeStack,
+        PrimeOpenPbrVolumeStack volumeStack,
         float lightFamilyProbability) {
     float3 shadingNormal = primeSurfaceShadingNormal(surface, viewDirection);
     AreaLightSample area = primeSampleAreaLight(
@@ -763,7 +763,7 @@ float3 primeEstimateDirectSun(
         SurfaceInteraction surface,
         float3 viewDirection,
         float2 sampleValue,
-        PrimeRcVolumeStack volumeStack,
+        PrimeOpenPbrVolumeStack volumeStack,
         float lightFamilyProbability) {
     LightSample light = primeSampleSun(integrator, surface.position, sampleValue);
     light.pdf = primeLightFamilyPdfValue(
@@ -806,7 +806,7 @@ PrimePreparedSunShadow primePrepareDirectSunShadow(
         SurfaceInteraction surface,
         float3 viewDirection,
         float2 sampleValue,
-        PrimeRcVolumeStack volumeStack,
+        PrimeOpenPbrVolumeStack volumeStack,
         float lightFamilyProbability) {
     PrimePreparedSunShadow result;
     result.light = primeSampleSun(integrator, surface.position, sampleValue);
@@ -842,7 +842,7 @@ PrimeDirectLightingSplit primeEstimatePrimaryNonsunDirect(
         SurfaceInteraction surface,
         float3 viewDirection,
         PrimePreparedSampleBase preparedSample,
-        PrimeRcVolumeStack volumeStack,
+        PrimeOpenPbrVolumeStack volumeStack,
         bool conditionalTransparentBranch) {
     // Stars are evaluated only when the continuation ray misses. Primary non-sun guides therefore
     // contain only the explicitly sampled area-light family.
@@ -868,7 +868,7 @@ interface IPrimeSecondaryAreaNee {
             SurfaceInteraction surface,
             float3 viewDirection,
             PrimePreparedSampleBase preparedSample,
-            PrimeRcVolumeStack volumeStack);
+            PrimeOpenPbrVolumeStack volumeStack);
 }
 
 interface IPrimeSecondarySunNee {
@@ -878,7 +878,7 @@ interface IPrimeSecondarySunNee {
             SurfaceInteraction surface,
             float3 viewDirection,
             PrimePreparedSampleBase preparedSample,
-            PrimeRcVolumeStack volumeStack,
+            PrimeOpenPbrVolumeStack volumeStack,
             float3 pathThroughput,
             uint pathIndex);
 }
@@ -890,7 +890,7 @@ struct PrimeImmediateSecondarySunNee : IPrimeSecondarySunNee {
             SurfaceInteraction surface,
             float3 viewDirection,
             PrimePreparedSampleBase preparedSample,
-            PrimeRcVolumeStack volumeStack,
+            PrimeOpenPbrVolumeStack volumeStack,
             float3 pathThroughput,
             uint pathIndex) {
         return primeEstimateDirectSun(
@@ -913,7 +913,7 @@ struct PrimeImmediateSecondaryAreaNee : IPrimeSecondaryAreaNee {
             SurfaceInteraction surface,
             float3 viewDirection,
             PrimePreparedSampleBase preparedSample,
-            PrimeRcVolumeStack volumeStack) {
+            PrimeOpenPbrVolumeStack volumeStack) {
         return primeEstimateDirectAreaLight(
                 context,
                 surface,
@@ -937,7 +937,7 @@ struct PrimeStagedSecondaryAreaNee : IPrimeSecondaryAreaNee {
             SurfaceInteraction surface,
             float3 viewDirection,
             PrimePreparedSampleBase preparedSample,
-            PrimeRcVolumeStack volumeStack) {
+            PrimeOpenPbrVolumeStack volumeStack) {
         // The merged Light stage consumes the persisted hit with this exact pre-scatter path.
         return float3(0.0);
     }
@@ -951,7 +951,7 @@ float3 primeEstimateDirectLighting<SunNee, AreaNee>(
         SurfaceInteraction surface,
         float3 viewDirection,
         PrimePreparedSampleBase preparedSample,
-        PrimeRcVolumeStack volumeStack,
+        PrimeOpenPbrVolumeStack volumeStack,
         float3 pathThroughput,
         uint pathIndex)
     where SunNee : IPrimeSecondarySunNee
@@ -1084,13 +1084,13 @@ bool primeApplySegmentMedium(
         inout PrimeIntegratorContext context,
         inout PathState path,
         SurfaceInteraction surface,
-        PrimeRcVolumeStack volumeStack) {
+        PrimeOpenPbrVolumeStack volumeStack) {
     primeSetNumericalContext(
             context.diagnostics, PRIME_NUMERICAL_STAGE_MEDIUM, path.bounce);
     if (volumeStack.count == 0u) {
         return true;
     }
-    PrimeRcVolume medium = volumeStack.values[volumeStack.count - 1u];
+    PrimeOpenPbrVolume medium = volumeStack.values[volumeStack.count - 1u];
     path.throughput *= primeSegmentTransmittance(medium.extinction, surface.t);
     primeRecordNonnegative(context.diagnostics, path.throughput);
     return !all(path.throughput == float3(0.0));
@@ -1098,7 +1098,7 @@ bool primeApplySegmentMedium(
 
 struct PrimePathScatter {
     BsdfSample bsdf;
-    PrimeRcVolumeStack volumeStack;
+    PrimeOpenPbrVolumeStack volumeStack;
 };
 
 PrimePathScatter primeSamplePathSurfaceWithMinimumRoughness(
@@ -1106,7 +1106,7 @@ PrimePathScatter primeSamplePathSurfaceWithMinimumRoughness(
         SurfaceInteraction surface,
         float3 viewDirection,
         float3 sampleValue,
-        PrimeRcVolumeStack volumeStack,
+        PrimeOpenPbrVolumeStack volumeStack,
         float minimumLinearRoughness) {
     PrimePathScatter result;
     result.volumeStack = volumeStack;
@@ -1191,7 +1191,7 @@ PrimePathScatter primeSamplePathSurface(
         SurfaceInteraction surface,
         float3 viewDirection,
         float3 sampleValue,
-        PrimeRcVolumeStack volumeStack) {
+        PrimeOpenPbrVolumeStack volumeStack) {
     return primeSamplePathSurfaceWithMinimumRoughness(
             context, surface, viewDirection, sampleValue, volumeStack, 0.0);
 }
@@ -1206,7 +1206,7 @@ PrimeGuidedPathScatter primeSampleGuidedPathSurface(
         SurfaceInteraction surface,
         float3 viewDirection,
         float3 sampleValue,
-        PrimeRcVolumeStack volumeStack,
+        PrimeOpenPbrVolumeStack volumeStack,
         uint bounce) {
     PrimeGuidedPathScatter result;
     result.scatter.volumeStack = volumeStack;
@@ -1496,7 +1496,7 @@ bool primeIntegrateTransparentWavefrontSurface<SunNee, AreaNee>(
         inout PrimeIntegratorContext context,
         inout PathState path,
         IntegratorRecord integrator,
-        inout PrimeRcVolumeStack volumeStack,
+        inout PrimeOpenPbrVolumeStack volumeStack,
         inout PrimeTransparentBranchResult result,
         inout PrimeQueuedPsrState psrState,
         inout bool hasGuide,
@@ -1755,7 +1755,7 @@ bool primeIntegrateWavefrontSurface<SunNee, AreaNee, IndirectReuse>(
         inout PrimeIntegratorContext context,
         inout PathState path,
         IntegratorRecord integrator,
-        inout PrimeRcVolumeStack volumeStack,
+        inout PrimeOpenPbrVolumeStack volumeStack,
         inout PrimeDenoiserState denoiserState,
         inout PrimeIntegrationResult result,
         SurfaceInteraction surface,

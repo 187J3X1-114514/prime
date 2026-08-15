@@ -565,7 +565,7 @@ void primeStoreWavefrontDiagnostic(
 PrimeWavefrontTransportRecord primeMakeWavefrontTransportRecord(
         PrimeNumericalDiagnostics diagnostics,
         PathState path,
-        PrimeRcVolumeStack volumeStack,
+        PrimeOpenPbrVolumeStack volumeStack,
         PrimeDenoiserState denoiserState,
         uint primaryMaterialFlags,
         bool enabled) {
@@ -604,7 +604,7 @@ PrimeWavefrontTransportRecord primeMakeWavefrontTransportRecord(
 PrimeWavefrontPathRecord primeMakeWavefrontRecord(
         PrimeNumericalDiagnostics diagnostics,
         PathState path,
-        PrimeRcVolumeStack volumeStack,
+        PrimeOpenPbrVolumeStack volumeStack,
         PrimeDenoiserState denoiserState,
         uint primaryMaterialFlags,
         bool enabled) {
@@ -658,9 +658,9 @@ PathState primeWavefrontPath(
     return path;
 }
 
-PrimeRcVolumeStack primeWavefrontVolumeStack(
+PrimeOpenPbrVolumeStack primeWavefrontVolumeStack(
         PrimeWavefrontTransportRecord record) {
-    PrimeRcVolumeStack volumeStack;
+    PrimeOpenPbrVolumeStack volumeStack;
     volumeStack.values[0] = primeUnpackWavefrontMedium(record.medium0);
     volumeStack.values[1] = primeUnpackWavefrontMedium(record.medium1);
     uint denoiserControl =
@@ -706,7 +706,7 @@ void primeRestoreWavefrontDiagnostic(
 PrimeWavefrontTransportRecord primeMakeUpdatedWavefrontRecord(
         PrimeNumericalDiagnostics diagnostics,
         PathState path,
-        PrimeRcVolumeStack volumeStack,
+        PrimeOpenPbrVolumeStack volumeStack,
         PrimeDenoiserState denoiserState,
         uint previousDenoiserControl,
         uint psrControl,
@@ -750,7 +750,7 @@ bool primeWavefrontDirectionalGuide(uint control) {
 PrimeWavefrontPathRecord primeMakeTransparentWavefrontRecord(
         PrimeNumericalDiagnostics diagnostics,
         PathState path,
-        PrimeRcVolumeStack volumeStack,
+        PrimeOpenPbrVolumeStack volumeStack,
         PrimeTransparentBranchResult branchResult,
         PrimeQueuedPsrState psrState,
         bool transmissionBranch,
@@ -794,7 +794,7 @@ PrimeWavefrontPathRecord primeMakeTransparentWavefrontRecord(
 PrimeWavefrontTransportRecord primeMakeUpdatedTransparentWavefrontRecord(
         PrimeNumericalDiagnostics diagnostics,
         PathState path,
-        PrimeRcVolumeStack volumeStack,
+        PrimeOpenPbrVolumeStack volumeStack,
         PrimeTransparentBranchResult branchResult,
         PrimeQueuedPsrState psrState,
         bool hasGuide,

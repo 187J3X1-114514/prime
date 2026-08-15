@@ -65,7 +65,7 @@ microfacet、材质初始化和体积栈全部由 compact 所有；仓库中不�
 `verifyShaderIncludeGraph` 会拒绝恢复已删除的 `shaders/bsdf/core` 或历史 reference
 specialization，并继续检查所有现存 Slang 依赖可解析且无环。
 
-以相同默认 `-g1` 构建参数比较，最大的 transparent-shade SPIR-V 从迁移前 1,330,220 字节降至
+迁移评估以相同的 `-g1` 构建参数比较，最大的 transparent-shade SPIR-V 从迁移前 1,330,220 字节降至
 1,303,804 字节，减少 26,416 字节（1.99%）；函数体语义指令从 60,972 降至 59,775（1.96%），
 条件分支从 3,892 降至 3,865，Phi 从 4,419 增至 4,436。相对上一批产物，本次独立 ABI/数学模块
 只增加 168 字节，语义指令、条件分支和 Phi 均不变，说明参考依赖移除没有扩大执行程序。

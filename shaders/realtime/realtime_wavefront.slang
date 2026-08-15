@@ -456,6 +456,72 @@ void primeWavefrontPrimarySun(
     primeStoreWavefrontDiagnostic(recordIndex, context.diagnostics);
 }
 
+void primeWavefrontTransparentPrimaryDirect(
+        inout PrimeIntegratorContext context,
+        uint recordIndex,
+        PrimeWavefrontTransportRecord record,
+        SurfaceInteraction surface,
+        uint control) {
+    bool guideEnabled = primeWavefrontGuideEnabled(control);
+    bool hasGuide = (control & PRIME_WAVEFRONT_REACHED_SOLID_ANGLE) != 0u;
+    if (!guideEnabled || hasGuide) {
+        return;
+    }
+    uint2 pixel = primeWavefrontPixel(recordIndex);
+    PathState path = primeWavefrontPath(pixel, record);
+    PrimeOpenPbrVolumeStack volumeStack = primeWavefrontVolumeStack(record);
+    if (!primeApplySegmentMedium(context, path, surface, volumeStack)) {
+        return;
+    }
+    float3 viewDirection = -path.rayDirection;
+    PrimeClosureTraits closureTraits = primeSurfaceClosureTraits(
+            surface, viewDirection, volumeStack);
+    if (!primeClosureSupports(closureTraits, PRIME_MEASURE_SOLID_ANGLE)
+            || primeClosureIsDiscreteOnly(closureTraits)) {
+        return;
+    }
+
+    PrimePreparedSampleBase preparedSample =
+            primePrepareSampleBase(primeMakeSampleBase(path, path.bounce + 1u));
+    primeSetNumericalContext(
+            context.diagnostics, PRIME_NUMERICAL_STAGE_DIRECT_LIGHT, path.bounce);
+    IntegratorRecord integrator;
+    integrator.sunDirectionIntensity = float4(
+            primePush.sunDirection,
+            ATM_SPACE_SUN_INTENSITY * primeSunRadianceMultiplier());
+    integrator.environmentRadiance = float4(0.0);
+    PrimePrimarySunSample sun = primeEstimatePrimaryDirectSun(
+            context,
+            integrator,
+            surface,
+            viewDirection,
+            primeSobolSample2D(
+                    preparedSample,
+                    PRIME_SAMPLE_EFFECT_DIRECT_SUN,
+                    PRIME_SAMPLE_DIMENSION_PRIMARY),
+            volumeStack,
+            false);
+    PrimeDirectLightingSplit nonsun = primeEstimatePrimaryNonsunDirect(
+            context,
+            surface,
+            viewDirection,
+            preparedSample,
+            volumeStack,
+            false);
+    float3 diffuseDirect =
+            path.throughput * sun.lighting.diffuse * sun.visibility;
+    float3 specularDirect =
+            path.throughput * sun.lighting.specular * sun.visibility;
+    diffuseDirect += path.throughput * nonsun.diffuse;
+    specularDirect += path.throughput * nonsun.specular;
+    primeAccumulateTransparentPrimaryDirect(
+            context,
+            pixel,
+            primeWavefrontTransmissionBranch(control),
+            diffuseDirect,
+            specularDirect);
+}
+
 void primeWavefrontStep(
         inout PrimeIntegratorContext context,
         uint launchIndex,
@@ -491,6 +557,13 @@ void primeWavefrontStep(
             PrimeSurfaceTracePolicy(),
             traceOrigin, rayDirection, pathClass);
     primeStoreWavefrontSurface(recordIndex, surface);
+    if (surface.hitKind == PRIME_HIT_SURFACE
+            && primeWavefrontTransparentBranch(traceControl)) {
+        PrimeWavefrontTransportRecord record =
+                primeLoadWavefrontTransportRecord(recordIndex);
+        primeWavefrontTransparentPrimaryDirect(
+                context, recordIndex, record, surface, traceControl);
+    }
     primeStoreWavefrontDiagnostic(recordIndex, context.diagnostics);
     // Trace may cross a SER invocation-repack boundary. Keep queue publication scalar until
     // compaction moves to a separate dispatch with a well-defined subgroup population.

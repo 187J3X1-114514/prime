@@ -171,7 +171,7 @@ final class TracePipelinesContractTest {
                             wavefrontShader("realtime", "head", suffix),
                             STORAGE_RAY_PAYLOAD));
             assertEquals(
-                    Set.of(tracePayload),
+                    Set.of(tracePayload, shadowPayload),
                     payloadShapes(
                             wavefrontShader("realtime", "step", suffix),
                             STORAGE_RAY_PAYLOAD));
@@ -215,7 +215,7 @@ final class TracePipelinesContractTest {
                             wavefrontShader("realtime", "shade", suffix),
                             STORAGE_RAY_PAYLOAD));
             assertEquals(
-                    Set.of(shadowPayload),
+                    Set.of(),
                     payloadShapes(
                             wavefrontShader("realtime", "transparent_shade", suffix),
                             STORAGE_RAY_PAYLOAD));

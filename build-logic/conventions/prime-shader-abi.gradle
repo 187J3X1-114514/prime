@@ -1794,7 +1794,7 @@ def compileSlangShaders = tasks.register(
 	outputDirectory = compiledSlangShaderRoot
 	debugLevel = providers.gradleProperty('primeShaderFullDebug')
 			.map { value -> value.toBoolean() ? '-g2' : '-g1' }
-			.orElse('-g1')
+			.orElse('-g2')
 	maxCompilerProcesses = slangCompilerProcesses
 	slangCompiler = providers.gradleProperty('primeSlangCompiler')
 			.orElse(resolveVulkanTool('slangc'))

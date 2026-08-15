@@ -1581,59 +1581,27 @@ bool primeIntegrateTransparentWavefrontSurface<SunNee, AreaNee>(
     primeAccumulateTransparentBranch(
             context, result, contributionDiffuse, emitted);
 
-    if (supportsSolidAngle) {
+    if (supportsSolidAngle && !primarySurfaceReplacement) {
+        // Wavefront Step evaluates primary transparent direct lighting after its surface trace,
+        // keeping both shadow traces out of this register-heavy BSDF continuation.
         primeSetNumericalContext(
                 context.diagnostics, PRIME_NUMERICAL_STAGE_DIRECT_LIGHT, path.bounce);
-        if (primarySurfaceReplacement) {
-            PrimePrimarySunSample sun = primeEstimatePrimaryDirectSun(
-                    context,
-                    integrator,
-                    surface,
-                    viewDirection,
-                    primeSobolSample2D(
-                            preparedSample,
-                            PRIME_SAMPLE_EFFECT_DIRECT_SUN,
-                            PRIME_SAMPLE_DIMENSION_PRIMARY),
-                    volumeStack,
-                    false);
-            float3 diffuseDirect =
-                    path.throughput * sun.lighting.diffuse * sun.visibility;
-            float3 specularDirect =
-                    path.throughput * sun.lighting.specular * sun.visibility;
-            PrimeDirectLightingSplit nonsun = primeEstimatePrimaryNonsunDirect(
-                    context,
-                    surface,
-                    viewDirection,
-                    preparedSample,
-                    volumeStack,
-                    false);
-            diffuseDirect += path.throughput * nonsun.diffuse;
-            specularDirect += path.throughput * nonsun.specular;
-            result.guides.primaryAreaDiffuse =
-                    path.throughput * nonsun.diffuse;
-            result.guides.primaryAreaSpecular =
-                    path.throughput * nonsun.specular;
-            result.guides.primaryAreaDirection = nonsun.direction;
-            primeAccumulate(context, result.diffuseRadiance, diffuseDirect);
-            primeAccumulate(context, result.specularRadiance, specularDirect);
-        } else {
-            float3 direct = path.throughput * primeEstimateDirectLighting(
-                    sunNee,
-                    areaNee,
-                    context,
-                    integrator,
-                    surface,
-                    viewDirection,
-                    preparedSample,
-                    volumeStack,
-                    path.throughput,
-                    pathIndex);
-            primeAccumulateTransparentBranch(
-                    context,
-                    result,
-                    guideEnabled ? diffusePath : transmissionBranch,
-                    direct);
-        }
+        float3 direct = path.throughput * primeEstimateDirectLighting(
+                sunNee,
+                areaNee,
+                context,
+                integrator,
+                surface,
+                viewDirection,
+                preparedSample,
+                volumeStack,
+                path.throughput,
+                pathIndex);
+        primeAccumulateTransparentBranch(
+                context,
+                result,
+                guideEnabled ? diffusePath : transmissionBranch,
+                direct);
     }
 
     float3 scatterSample = primeSobolSample3D(

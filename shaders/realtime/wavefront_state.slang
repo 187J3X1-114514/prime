@@ -531,6 +531,33 @@ void primeAccumulatePrimaryDirectSplit(
     primeImageStore(primeNrdNoisySpecular, coordinate, specular);
 }
 
+// Primary direct light for a deferred transparent guide is accumulated before its Shade pass.
+// Keep the intermediate unsanitized so the final branch store preserves the original accumulation
+// and sanitization order apart from permitted floating-point reassociation.
+void primeAccumulateTransparentPrimaryDirect(
+        inout PrimeIntegratorContext context,
+        uint2 pixel,
+        bool transmissionBranch,
+        float3 diffuseContribution,
+        float3 specularContribution) {
+    int2 coordinate = int2(pixel);
+    float4 diffuse = transmissionBranch
+            ? primeImageLoad(primeNrdNoisyDiffuse, coordinate)
+            : primeImageLoad(primeNrdReflectionNoisyDiffuse, coordinate);
+    float4 specular = transmissionBranch
+            ? primeImageLoad(primeNrdNoisySpecular, coordinate)
+            : primeImageLoad(primeNrdReflectionNoisySpecular, coordinate);
+    primeAccumulate(context, diffuse.rgb, diffuseContribution);
+    primeAccumulate(context, specular.rgb, specularContribution);
+    if (transmissionBranch) {
+        primeImageStore(primeNrdNoisyDiffuse, coordinate, diffuse);
+        primeImageStore(primeNrdNoisySpecular, coordinate, specular);
+    } else {
+        primeImageStore(primeNrdReflectionNoisyDiffuse, coordinate, diffuse);
+        primeImageStore(primeNrdReflectionNoisySpecular, coordinate, specular);
+    }
+}
+
 void primeStoreWavefrontPrimarySun(
         uint2 pixel,
         float3 unshadowed,

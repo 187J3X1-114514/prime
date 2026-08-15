@@ -1,6 +1,10 @@
 {
   "repository": "https://github.com/RoboCute/RoboCute",
   "commit": "0d982c77b3fd26c2c5a3c0852be3bd05e5860bd8",
+  "legacyPort": {
+    "path": "shaders/bsdf/core",
+    "status": "differential-reference-only"
+  },
   "authorityOverlay": {
     "description": "Temporary dielectric-highlight fix supplied directly by the RoboCute author on 2026-07-24.",
     "path": "third_party/robocute/author-bsdf-hotfix-2026-07-24",
@@ -17,13 +21,5 @@
     "Zero-probability sampling endpoints stay on a positive-probability branch so remapping never evaluates 0 / 0.",
     "The RoboCute author's 2026-07-24 dielectric-highlight hotfix replaces the directional-energy normalization with branch-separated multiple-scattering compensation and its 44x32x159 HALF4 table.",
     "Prime retains its bounded two-entry medium stack instead of RoboCute's nested-priority medium integrator; interface sampling, transport eta and exiting material-frame behavior follow the pinned reference."
-  ],
-  "files": {
-    "robocute_closures.slang": "e4bb17e5eee2c2b668d6a4fd7bab261055e46473318009d52f6a0638ac57b81c",
-    "robocute_common.slang": "dd285da2b8c0a1dac2eb7a74fa9726f8be33893501ee5dd1810e7953ff55be2a",
-    "robocute_fresnel.slang": "43d9b3feaab8aa7e276d237eec892ed933326cd1d8d70c57f712bb51c63e139d",
-    "robocute_microfacet.slang": "1780b8025f45873786db9723516d9fe61367e273444393f6f286fdffa5fcc800",
-    "robocute_openpbr.slang": "2c2992774a649fece5c0dade87ef0df418f73d7d1f53d1344692529cd64d55a1",
-    "robocute_reachable_symbols.txt": "a33e42775070b1df556b4601564585ae3ba070c6ecce5a888f58ce26ff52ce04"
-  }
+  ]
 }

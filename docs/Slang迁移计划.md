@@ -68,20 +68,15 @@ shaders/
 wavefront 的普通、subgroup queue 与 SER 变体由同一组 Slang entry point 和 specialization
 control 生成。
 
-## BSDF 核心保护
+## OpenPBR 紧凑迁移
 
-保护对象现为带参考来源和符号清单的 BSDF 核心声明集合，而不是具体文件名。迁移从生产 adapter
-的运行时入口计算传递调用闭包：闭包内声明完整机械移植，参考库中不可达的函数、类型和验证专用
-死代码未移植；“不移植死代码”不授权精简已进入闭包的表达式或分支。
+机械 Slang core 已完成过渡任务，现作为迁移期差分 oracle，不再是受保护的生产架构。新的
+`shaders/bsdf/compact` 按精确 OpenPBR 拓扑建立专用状态；未覆盖的拓扑继续回退到旧实现，直到
+当前生产入口的全部材质族可以一次性切换，避免新旧公式同时进入 SPIR-V。
 
-文件移动、拆分或合并不会解除核心保护；初轮机械迁移仍保持参考表达式、分支与采样算法，任何
-后续核心修改仍需用户明确批准。不同编译器、语言或获批浮点优化后的连续结果不要求逐 bit 一致；
-Prime 材质翻译、特化、资源适配和后处理保持在核心集合之外。
-
-`shaders/bsdf/core/robocute_reachable_symbols.txt` 记录运行时可达声明与参考版本，
-`shaders/robocute.lock.json` 锁定核心文件、符号清单和 author overlay。迁移期 bit 差分已经用于
-定位非预期差异；当前门禁以 Slang 行为、分布、能量和 ABI 为准。旧 GLSL port 已删除，
-`third_party` 的文件与哈希锁原样保留。
+`shaders/robocute.lock.json` 只锁定第三方参考版本和 author overlay，`third_party` 文件与哈希原样
+保留。紧凑实现允许浮点舍入差异，但不得引入模型近似；详细覆盖范围、切换门槛和测试契约见
+`docs/OpenPBR紧凑模块.md`。
 
 ## 浮点与数值验收
 

@@ -66,7 +66,7 @@ PrimeDenoiseAlbedos primeProbeSurfaceAlbedos(
         return primeDenoiseAlbedosFromState(
                 state, viewDirection, PRIME_DENOISE_CLOSURE_TRANSMISSIVE);
     }
-    PrimeRcState state = primeOpaqueState(
+    PrimeCompactOpaqueState state = primeOpaqueState(
             surface.baseColor,
             primeSurfaceShadingNormal(surface, viewDirection),
             surface.roughness,

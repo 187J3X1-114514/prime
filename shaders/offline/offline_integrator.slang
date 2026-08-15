@@ -271,7 +271,7 @@ PrimePathScatter primeSampleOfflinePathSurface(
         result.volumeStack = sampled.volumeStack;
     } else {
         float3 shadingNormal = primeSurfaceShadingNormal(surface, viewDirection);
-        PrimeRcState state = primeOpaqueState(
+        PrimeCompactOpaqueState state = primeOpaqueState(
                 surface.baseColor,
                 shadingNormal,
                 surface.roughness,

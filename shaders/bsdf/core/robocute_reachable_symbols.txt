@@ -1,4 +1,4 @@
-# RoboCute production-reachable Slang core
+# Legacy RoboCute production closure retained only as a differential reference during compact migration.
 # Reference commit: 0d982c77b3fd26c2c5a3c0852be3bd05e5860bd8
 # Roots: 38; reachable functions: 162
 robocute_common.slang:PrimeRcOnb

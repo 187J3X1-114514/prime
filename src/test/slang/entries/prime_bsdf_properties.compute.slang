@@ -377,7 +377,7 @@ void primeAdapterProperties(
         result.probeEvaluation.response =
                 probe.diffuseResponse + probe.specularResponse;
         result.probeEvaluation.pdf = probe.pdf;
-        PrimeRcState state = primeOpaqueState(
+        PrimeCompactOpaqueState state = primeOpaqueState(
                 baseColor,
                 outwardNormal,
                 roughness,
@@ -387,21 +387,27 @@ void primeAdapterProperties(
                 rayT,
                 stack);
         const float minimumLinearRoughness = 0.4;
+        PrimeRcMaterial opaqueMaterial = primeOpaqueMaterial(
+                baseColor,
+                outwardNormal,
+                roughness,
+                opticalControl,
+                materialControl);
+        PrimeRcMaterial minimumOpaqueMaterial = primeOpaqueMaterialWithMinimumRoughness(
+                baseColor,
+                outwardNormal,
+                roughness,
+                opticalControl,
+                materialControl,
+                minimumLinearRoughness);
+        if (!primeCompactOpaqueSupports(opaqueMaterial)
+                || !primeCompactOpaqueSupports(minimumOpaqueMaterial)) {
+            result.mask |= PRIME_TEST_FAILURE_STATE;
+        }
         primeAdapterCheckMinimumRoughness(
                 result.mask,
-                primeOpaqueMaterial(
-                        baseColor,
-                        outwardNormal,
-                        roughness,
-                        opticalControl,
-                        materialControl),
-                primeOpaqueMaterialWithMinimumRoughness(
-                        baseColor,
-                        outwardNormal,
-                        roughness,
-                        opticalControl,
-                        materialControl,
-                        minimumLinearRoughness),
+                opaqueMaterial,
+                minimumOpaqueMaterial,
                 minimumLinearRoughness);
         result.albedos = primeDenoiseAlbedosFromState(
                 state, viewDirection, PRIME_DENOISE_CLOSURE_OPAQUE);

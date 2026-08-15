@@ -4,6 +4,7 @@
 import "bsdf/bsdf_common.slang";
 import "bsdf/adapter/prime_bsdf_specializations.slang";
 import "bsdf/adapter/transmission_ggx_energy.slang";
+import "bsdf/compact/openpbr_opaque.slang";
 import "bsdf/core/robocute_closures.slang";
 import "bsdf/core/robocute_common.slang";
 import "bsdf/core/robocute_fresnel.slang";
@@ -236,7 +237,7 @@ PrimeRcMaterial primeMinecraftTransmissionMaterial(
             packUnorm4x8(float4(0.0, 4.0 / 255.0, 0.0, 1.0)));
 }
 
-PrimeRcState primeOpaqueStateWithMinimumRoughness(
+PrimeCompactOpaqueState primeOpaqueStateWithMinimumRoughness(
         float3 baseColor,
         float3 normal,
         float roughness,
@@ -255,33 +256,17 @@ PrimeRcState primeOpaqueStateWithMinimumRoughness(
             minimumLinearRoughness);
     float3 localView = primeRcOnbToLocal(material.geometry.onb, viewDirection);
     float inverseOutsideIor = primeRcInverseOutsideIor(localView.z, volumeStack);
-    if (material.weight.subsurface > 0.0) {
-        // The conservative alpha-cut SSS translation maps exactly to RoboCute's existing
-        // SubsurfaceGlossy polymorphic specialization; it does not need the generic OpenPBR graph.
-        return primeRcSubsurfaceGlossyStateInit(
-                primeTransmissionGgxEnergy(),
-                material,
-                localView,
-                inverseOutsideIor,
-                rayT,
-                PRIME_REC2020_PRIMARY_WAVELENGTHS_NM,
-                0u,
-                PRIME_RC_DETAIL_DEFAULT,
-                0u);
-    }
-    return primeRcBasicMetallicStateInit(
+    // Material translation restricts opaque production inputs to the exact OpenPBR
+    // dielectric/conductor/subsurface submanifold accepted by the compact module.
+    return primeCompactOpaqueStateInit(
             primeTransmissionGgxEnergy(),
             material,
             localView,
             inverseOutsideIor,
-            rayT,
-            PRIME_REC2020_PRIMARY_WAVELENGTHS_NM,
-            0u,
-            PRIME_RC_DETAIL_DEFAULT,
-            0u);
+            rayT);
 }
 
-PrimeRcState primeOpaqueState(
+PrimeCompactOpaqueState primeOpaqueState(
         float3 baseColor,
         float3 normal,
         float roughness,
@@ -337,7 +322,7 @@ PrimeBsdfComponents primeEvaluateOpaqueComponents(
     result.diffuseResponse = float3(0.0);
     result.specularResponse = float3(0.0);
     result.pdf = 0.0;
-    PrimeRcState state = primeOpaqueState(
+    PrimeCompactOpaqueState state = primeOpaqueState(
             baseColor,
             normal,
             roughness,
@@ -346,25 +331,13 @@ PrimeBsdfComponents primeEvaluateOpaqueComponents(
             viewDirection,
             rayT,
             volumeStack);
-    float3 localView = primeRcOnbToLocal(state.material.geometry.onb, viewDirection);
-    float3 localScatter = primeRcOnbToLocal(state.material.geometry.onb, scatterDirection);
-    bool subsurface = state.material.weight.subsurface > 0.0;
-    PrimeRcEval full = subsurface
-            ? primeRcPrimeSubsurfaceGlossyEvaluate(localView, localScatter, state)
-            : primeRcPrimeBasicMetallicEvaluate(localView, localScatter, state);
-    result.pdf = full.pdf;
-    PrimeRcState diffuseState = state;
-    diffuseState.samplingFlags = PRIME_RC_FLAG_DIFFUSE;
-    PrimeRcThroughput diffuse = subsurface
-            ? primeRcPrimeSubsurfaceGlossyEval(localView, localScatter, diffuseState)
-            : primeRcPrimeBasicMetallicEval(localView, localScatter, diffuseState);
-    PrimeRcState specularState = state;
-    specularState.samplingFlags = PRIME_RC_FLAG_SPECULAR | PRIME_RC_FLAG_DELTA;
-    PrimeRcThroughput specular = subsurface
-            ? primeRcPrimeSubsurfaceGlossyEval(localView, localScatter, specularState)
-            : primeRcPrimeBasicMetallicEval(localView, localScatter, specularState);
-    result.diffuseResponse = diffuse.value;
-    result.specularResponse = specular.value;
+    float3 localView = primeRcOnbToLocal(state.onb, viewDirection);
+    float3 localScatter = primeRcOnbToLocal(state.onb, scatterDirection);
+    PrimeCompactOpaqueComponents compact = primeCompactOpaqueEvaluateComponents(
+            localView, localScatter, state);
+    result.diffuseResponse = compact.diffuse;
+    result.specularResponse = compact.specular;
+    result.pdf = compact.pdf;
     primeObserveNonnegative(observation, result.diffuseResponse);
     primeObserveNonnegative(observation, result.specularResponse);
     primeObserveNonnegative(observation, result.pdf);
@@ -397,22 +370,21 @@ PrimeBsdfComponents primeEvaluateOpaqueComponents(
 }
 
 BsdfSample primeSampleOpaqueFromState(
-        PrimeRcState state,
+        PrimeCompactOpaqueState state,
         float3 normal,
         float3 viewDirection,
         float3 sampleValue,
         PrimeRcVolumeStack volumeStack,
         inout PrimeNumericalObservation observation) {
     BsdfSample result = primeInvalidBsdfSample();
-    float3 localView = primeRcOnbToLocal(state.material.geometry.onb, viewDirection);
-    PrimeRcSampleResult sampled = state.material.weight.subsurface > 0.0
-            ? primeRcSubsurfaceGlossySample(localView, sampleValue, state, volumeStack)
-            : primeRcBasicMetallicSample(localView, sampleValue, state, volumeStack);
+    float3 localView = primeRcOnbToLocal(state.onb, viewDirection);
+    PrimeRcSampleResult sampled = primeCompactOpaqueSample(
+            localView, sampleValue, state, volumeStack);
     if (!primeRcHasSample(sampled.bsdfSample, observation)) {
         return result;
     }
     result.direction = primeRcOnbToWorld(
-            state.material.geometry.onb, sampled.bsdfSample.wo);
+            state.onb, sampled.bsdfSample.wo);
     if ((sampled.bsdfSample.throughput.flags & PRIME_RC_FLAG_DELTA_REFLECTION) != 0u) {
         // Avoid a local-to-world round trip exactly where the reflected direction can be only a
         // few ulps above the tangent plane. This is algebraically the same discrete direction, but
@@ -427,7 +399,7 @@ BsdfSample primeSampleOpaqueFromState(
 }
 
 BsdfSample primeSampleOpaqueFromState(
-        PrimeRcState state,
+        PrimeCompactOpaqueState state,
         float3 normal,
         float3 viewDirection,
         float3 sampleValue,
@@ -452,7 +424,7 @@ BsdfSample primeSampleOpaque(
         float3 sampleValue,
         float rayT,
         PrimeRcVolumeStack volumeStack) {
-    PrimeRcState state = primeOpaqueState(
+    PrimeCompactOpaqueState state = primeOpaqueState(
             baseColor,
             normal,
             roughness,
@@ -945,15 +917,13 @@ BsdfEvaluation primeEvaluateMinecraftTransparentReflection(
 }
 
 struct PrimeCompiledClosure {
-    PrimeRcState state;
     uint family;
     PrimeClosureTraits traits;
 };
 
-PrimeClosureTraits primeOpaqueClosureTraits(PrimeRcState state) {
-    bool conductor = state.material.weight.metalness >= 1.0;
-    bool discreteSpecular = state.material.weight.specular > 0.0
-            && primeRcMicrofacetEffectivelySmooth(state.specularMicrofacet);
+PrimeClosureTraits primeOpaqueClosureTraits(PrimeCompactOpaqueState state) {
+    bool conductor = state.kind == PRIME_COMPACT_OPAQUE_CONDUCTOR;
+    bool discreteSpecular = primeRcMicrofacetEffectivelySmooth(state.microfacet);
     PrimeClosureTraits result;
     result.measureMask = !conductor || !discreteSpecular
             ? PRIME_MEASURE_SOLID_ANGLE
@@ -979,7 +949,7 @@ PrimeCompiledClosure primeCompileOpaqueClosure(
         float rayT,
         PrimeRcVolumeStack volumeStack) {
     PrimeCompiledClosure result;
-    result.state = primeOpaqueState(
+    PrimeCompactOpaqueState state = primeOpaqueState(
             baseColor,
             normal,
             roughness,
@@ -989,7 +959,7 @@ PrimeCompiledClosure primeCompileOpaqueClosure(
             rayT,
             volumeStack);
     result.family = PRIME_MATERIAL_FAMILY_OPAQUE;
-    result.traits = primeOpaqueClosureTraits(result.state);
+    result.traits = primeOpaqueClosureTraits(state);
     return result;
 }
 
@@ -1019,7 +989,7 @@ PrimeCompiledClosure primeCompileMinecraftTransmissionClosure(
         float3 adjacentBaseColor,
         uint adjacentInterfaceControl) {
     PrimeCompiledClosure result;
-    result.state = primeMinecraftBoundaryTransmissionState(
+    PrimeRcState state = primeMinecraftBoundaryTransmissionState(
             baseColor,
             opacity,
             outwardNormal,
@@ -1032,7 +1002,7 @@ PrimeCompiledClosure primeCompileMinecraftTransmissionClosure(
             adjacentBaseColor,
             adjacentInterfaceControl);
     result.family = PRIME_MATERIAL_FAMILY_DIELECTRIC;
-    result.traits = primeMinecraftTransmissionClosureTraits(result.state);
+    result.traits = primeMinecraftTransmissionClosureTraits(state);
     return result;
 }
 
@@ -1677,7 +1647,7 @@ PrimeCompiledClosure primeCompileFoliageClosure(
         float rayT,
         PrimeRcVolumeStack volumeStack) {
     PrimeCompiledClosure result;
-    result.state = primeMinecraftFoliageState(
+    PrimeRcState state = primeMinecraftFoliageState(
             baseColor,
             outwardNormal,
             roughness,
@@ -1686,9 +1656,9 @@ PrimeCompiledClosure primeCompileFoliageClosure(
             viewDirection,
             rayT,
             volumeStack);
-    bool discreteSpecular = result.state.material.weight.specular > 0.0
+    bool discreteSpecular = state.material.weight.specular > 0.0
             && primeRcMicrofacetEffectivelySmooth(
-                    result.state.specularMicrofacet);
+                    state.specularMicrofacet);
     result.family = PRIME_MATERIAL_FAMILY_FOLIAGE;
     result.traits.measureMask = PRIME_MEASURE_SOLID_ANGLE
             | (discreteSpecular ? PRIME_MEASURE_DISCRETE : 0u);
@@ -1923,6 +1893,28 @@ float3 primeRcDenoiseClosureEnergy(
                 primeTransmissionGgxEnergy(), localView, state);
     }
     return primeRcTransmissionEnergy(primeTransmissionGgxEnergy(), localView, state);
+}
+
+PrimeDenoiseAlbedos primeDenoiseAlbedosFromState(
+        PrimeCompactOpaqueState state,
+        float3 viewDirection,
+        uint closureKind,
+        inout PrimeNumericalObservation observation) {
+    float3 localView = primeRcOnbToLocal(state.onb, viewDirection);
+    PrimeCompactOpaqueEnergy energy = primeCompactOpaqueEnergy(localView, state);
+    PrimeDenoiseAlbedos result;
+    result.diffuse = primeSanitizeDenoiseAlbedo(energy.diffuse, observation);
+    result.specular = primeSanitizeDenoiseAlbedo(energy.specular, observation);
+    return result;
+}
+
+PrimeDenoiseAlbedos primeDenoiseAlbedosFromState(
+        PrimeCompactOpaqueState state,
+        float3 viewDirection,
+        uint closureKind) {
+    PrimeNumericalObservation observation = primeNumericalObservationCreate(false);
+    return primeDenoiseAlbedosFromState(
+            state, viewDirection, closureKind, observation);
 }
 
 PrimeDenoiseAlbedos primeDenoiseAlbedosFromState(

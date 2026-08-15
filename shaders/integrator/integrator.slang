@@ -1163,7 +1163,7 @@ PrimePathScatter primeSamplePathSurfaceWithMinimumRoughness(
         result.volumeStack = sampled.volumeStack;
     } else {
         float3 shadingNormal = primeSurfaceShadingNormal(surface, viewDirection);
-        PrimeRcState state = primeOpaqueStateWithMinimumRoughness(
+        PrimeCompactOpaqueState state = primeOpaqueStateWithMinimumRoughness(
                 surface.baseColor,
                 shadingNormal,
                 surface.roughness,
@@ -1276,7 +1276,7 @@ PrimeGuidedPathScatter primeSampleGuidedPathSurface(
         result.scatter.volumeStack = sampled.volumeStack;
     } else {
         float3 shadingNormal = primeSurfaceShadingNormal(surface, viewDirection);
-        PrimeRcState state = primeOpaqueState(
+        PrimeCompactOpaqueState state = primeOpaqueState(
                 surface.baseColor,
                 shadingNormal,
                 surface.roughness,

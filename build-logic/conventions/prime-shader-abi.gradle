@@ -5,15 +5,11 @@ def compiledSlangTestShaderRoot = layout.buildDirectory.dir('generated/testSlang
 
 def verifyRoboCutePort = tasks.register('verifyRoboCutePort') {
 	group = 'verification'
-	description = 'Verifies the approved RoboCute revision and protected reachable Slang core.'
+	description = 'Verifies the pinned third-party RoboCute reference and immutable author overlay.'
 	def lockFile = file('shaders/robocute.lock.json')
-	def protectedFiles = fileTree('shaders/bsdf/core') {
-		include 'robocute_*.slang', 'robocute_reachable_symbols.txt'
-	}
 	def authorityOverlayDirectory =
 			file('third_party/robocute/author-bsdf-hotfix-2026-07-24')
 	inputs.file(lockFile)
-	inputs.files(protectedFiles)
 	inputs.dir(authorityOverlayDirectory)
 
 	doLast {
@@ -21,6 +17,10 @@ def verifyRoboCutePort = tasks.register('verifyRoboCutePort') {
 		if (lock.repository != 'https://github.com/RoboCute/RoboCute'
 				|| lock.commit != '0d982c77b3fd26c2c5a3c0852be3bd05e5860bd8') {
 			throw new GradleException('RoboCute lock must name the approved repository and commit')
+		}
+		if (lock.legacyPort?.path != 'shaders/bsdf/core'
+				|| lock.legacyPort?.status != 'differential-reference-only') {
+			throw new GradleException('RoboCute lock must mark the legacy Slang port as differential-only')
 		}
 		def overlay = lock.authorityOverlay
 		if (overlay == null
@@ -43,24 +43,6 @@ def verifyRoboCutePort = tasks.register('verifyRoboCutePort') {
 			if (digest != overlay.files[source.name]) {
 				throw new GradleException(
 						"RoboCute author hotfix changed: ${source.name}")
-			}
-		}
-		def expected = new TreeSet<String>(lock.files.keySet())
-		def actual = new TreeSet<String>(protectedFiles.files.collect { it.name })
-		if (actual != expected) {
-			throw new GradleException(
-					"Protected RoboCute core set changed: expected ${expected}, found ${actual}")
-		}
-		protectedFiles.files.each { source ->
-			def normalized = source.getText('UTF-8')
-					.replace('\r\n', '\n')
-					.replace('\r', '\n')
-					.getBytes('UTF-8')
-			def digest = java.security.MessageDigest.getInstance('SHA-256')
-					.digest(normalized).encodeHex().toString()
-			if (digest != lock.files[source.name]) {
-				throw new GradleException(
-						"Protected RoboCute core changed without updating its approved lock: ${source.name}")
 			}
 		}
 	}

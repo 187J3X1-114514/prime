@@ -158,6 +158,21 @@ def verifyDistributionJar = tasks.register('verifyDistributionJar') {
 						"Distribution jar has invalid Fabric metadata: id=${metadata.id}, "
 								+ "version=${metadata.version}, environment=${metadata.environment}")
 			}
+			def expectedFabricDependencies = [
+					'fabric-model-loading-api-v1',
+					'fabric-renderer-api-v1',
+					'fabric-renderer-indigo',
+					'fabric-rendering-v1',
+					'fabric-resource-loader-v1'
+			] as Set
+			def fabricDependencies = metadata.depends.keySet().findAll {
+				it.startsWith('fabric-')
+			} as Set
+			if (fabricDependencies != expectedFabricDependencies) {
+				throw new GradleException(
+						"Distribution jar has an invalid Fabric API module contract: "
+								+ "expected ${expectedFabricDependencies}, found ${fabricDependencies}")
+			}
 
 			def nativeInput = zip.getInputStream(zip.getEntry('prime/natives/windows-x86_64/prime_nrd.dll'))
 			def nativeHeader = nativeInput.withCloseable { it.readNBytes(2) }

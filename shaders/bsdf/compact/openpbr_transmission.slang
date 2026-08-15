@@ -4,7 +4,7 @@ module "bsdf/compact/openpbr_transmission.slang";
 import "bsdf/compact/openpbr_common.slang";
 import "bsdf/compact/openpbr_fresnel.slang";
 import "bsdf/compact/openpbr_microfacet.slang";
-import "bsdf/core/transmission_ggx_energy.slang";
+import "bsdf/compact/transmission_ggx_energy.slang";
 
 // Exact compact specialization for Prime's dielectric transmission materials.
 // The state excludes the inactive OpenPBR composition graph and keeps medium
@@ -445,7 +445,7 @@ public PrimeCompactTransmissionState primeCompactTransmissionStateInit<Transmiss
         float3 wi,
         float inverseOutsideIor,
         float rayT)
-    where TransmissionGgxEnergy : IPrimeRcTransmissionGgxEnergy
+    where TransmissionGgxEnergy : IPrimeOpenPbrTransmissionGgxEnergy
 {
     PrimeCompactTransmissionState state;
     state.onb = material.geometry.onb;
@@ -487,7 +487,7 @@ public PrimeCompactTransmissionState primeCompactTransmissionInterfaceState<Tran
         TransmissionGgxEnergy transmissionGgxEnergy,
         float3 wi,
         PrimeCompactTransmissionState state)
-    where TransmissionGgxEnergy : IPrimeRcTransmissionGgxEnergy
+    where TransmissionGgxEnergy : IPrimeOpenPbrTransmissionGgxEnergy
 {
     if (state.geometryThinWalled != 0u || state.entering != 0u) {
         return state;
@@ -545,7 +545,7 @@ public float3 primeCompactTransmissionEnergy<TransmissionGgxEnergy>(
         float3 wi,
         PrimeCompactTransmissionState state,
         uint samplingFlags)
-    where TransmissionGgxEnergy : IPrimeRcTransmissionGgxEnergy
+    where TransmissionGgxEnergy : IPrimeOpenPbrTransmissionGgxEnergy
 {
     if (!primeOpenPbrMicrofacetEffectivelySmooth(state.specularMicrofacet)
             && state.specularFresnel.ior != 1.0) {

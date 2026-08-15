@@ -3,7 +3,7 @@ def shaderAbiSlangRoot = layout.buildDirectory.dir('generated/sources/shaderAbi/
 def compiledSlangShaderRoot = layout.buildDirectory.dir('generated/resources/shaders')
 def compiledSlangTestShaderRoot = layout.buildDirectory.dir('generated/testSlangShaders')
 
-def verifyRoboCutePort = tasks.register('verifyRoboCutePort') {
+def verifyRoboCuteReference = tasks.register('verifyRoboCuteReference') {
 	group = 'verification'
 	description = 'Verifies the pinned third-party RoboCute reference and immutable author overlay.'
 	def lockFile = file('shaders/robocute.lock.json')
@@ -17,10 +17,6 @@ def verifyRoboCutePort = tasks.register('verifyRoboCutePort') {
 		if (lock.repository != 'https://github.com/RoboCute/RoboCute'
 				|| lock.commit != '0d982c77b3fd26c2c5a3c0852be3bd05e5860bd8') {
 			throw new GradleException('RoboCute lock must name the approved repository and commit')
-		}
-		if (lock.legacyPort?.path != 'shaders/bsdf/core'
-				|| lock.legacyPort?.status != 'differential-reference-only') {
-			throw new GradleException('RoboCute lock must mark the legacy Slang port as differential-only')
 		}
 		def overlay = lock.authorityOverlay
 		if (overlay == null
@@ -1648,6 +1644,14 @@ def verifyShaderIncludeGraph = tasks.register('verifyShaderIncludeGraph') {
 	outputs.file(shaderIncludeReport)
 
 	doLast {
+		def removedReferencePaths = [
+				file('shaders/bsdf/core'),
+				file('shaders/bsdf/adapter/prime_bsdf_specializations.slang')
+		].findAll { it.exists() }
+		if (!removedReferencePaths.empty) {
+			throw new GradleException(
+					"Removed local RoboCute reference code was restored: ${removedReferencePaths}")
+		}
 		def sources = []
 		def shaderRoot = file('shaders').canonicalFile
 		def includeRoots = [
@@ -1674,13 +1678,6 @@ def verifyShaderIncludeGraph = tasks.register('verifyShaderIncludeGraph') {
 				'(?m)^\\s*(?:#\\s*include\\s+"([^"]+)"|import\\s+"([^"]+)"\\s*;)')
 		sources.each { source ->
 			def sourceName = source.canonicalPath
-			def sourcePath = source.canonicalFile.toPath()
-			def sourceRelative = sourcePath.startsWith(shaderRoot.toPath())
-					? shaderRoot.toPath().relativize(sourcePath).toString().replace('\\', '/')
-					: null
-			def referenceSource = sourceRelative != null && (
-					sourceRelative.startsWith('bsdf/core/robocute_')
-					|| sourceRelative == 'bsdf/adapter/prime_bsdf_specializations.slang')
 			def targets = graph.computeIfAbsent(sourceName) { new TreeSet<String>() }
 			def matcher = dependencyPattern.matcher(source.getText('UTF-8'))
 			while (matcher.find()) {
@@ -1704,19 +1701,7 @@ def verifyShaderIncludeGraph = tasks.register('verifyShaderIncludeGraph') {
 					throw new GradleException(
 							"Explicit shader module ${dependencyName} must be imported, not included, from ${source}")
 				}
-				def target = candidates.first()
-				def targetPath = target.toPath()
-				if (sourceRelative != null && !referenceSource
-						&& targetPath.startsWith(shaderRoot.toPath())) {
-					def targetRelative = shaderRoot.toPath().relativize(targetPath)
-							.toString().replace('\\', '/')
-					if (targetRelative.startsWith('bsdf/core/robocute_')
-							|| targetRelative == 'bsdf/adapter/prime_bsdf_specializations.slang') {
-						throw new GradleException(
-								"Production shader ${sourceRelative} depends on reference-only ${targetRelative}")
-					}
-				}
-				targets.add(target.canonicalPath)
+				targets.add(candidates.first().canonicalPath)
 			}
 		}
 
@@ -1785,7 +1770,7 @@ def slangCompilerProcesses = providers.gradleProperty('primeSlangCompilerWorkers
 
 def compileSlangTestShaders = tasks.register(
 		'compileSlangTestShaders', CompilePrimeSlangComputeShaders) {
-	dependsOn generateShaderAbi, verifyRoboCutePort, verifyShaderIncludeGraph, 'verifySlangToolchain'
+	dependsOn generateShaderAbi, verifyRoboCuteReference, verifyShaderIncludeGraph, 'verifySlangToolchain'
 	sourceDirectory = file('src/test/slang/entries')
 	includeDirectories.from(
 			file('src/test/slang'),
@@ -1802,7 +1787,7 @@ def compileSlangTestShaders = tasks.register(
 
 def compileSlangShaders = tasks.register(
 		'compileSlangShaders', CompilePrimeSlangComputeShaders) {
-	dependsOn generateShaderAbi, verifyRoboCutePort, verifyShaderIncludeGraph, 'verifySlangToolchain'
+	dependsOn generateShaderAbi, verifyRoboCuteReference, verifyShaderIncludeGraph, 'verifySlangToolchain'
 	sourceDirectory = file('shaders')
 	includeDirectories.from(
 			file('shaders'),

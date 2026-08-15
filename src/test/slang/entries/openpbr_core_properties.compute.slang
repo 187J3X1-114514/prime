@@ -1,16 +1,12 @@
 
 #include "core/prime_test_abi.slang"
-import "bsdf/adapter/transmission_ggx_energy.slang";
-import "bsdf/core/robocute_closures.slang";
-import "bsdf/core/robocute_common.slang";
-import "bsdf/core/robocute_fresnel.slang";
-import "bsdf/core/robocute_microfacet.slang";
-import "bsdf/core/robocute_openpbr.slang";
+import "bsdf/compact/openpbr_common.slang";
+import "bsdf/compact/openpbr_fresnel.slang";
+import "bsdf/compact/openpbr_microfacet.slang";
 bool3 greaterThanEqual(float3 first, float3 second) { return first >= second; }
 bool3 lessThanEqual(float3 first, float3 second) { return first <= second; }
 bool2 lessThan(float2 first, float2 second) { return first < second; }
 bool3 lessThan(float3 first, float3 second) { return first < second; }
-import "bsdf/adapter/prime_bsdf_specializations.slang";
 
 static const uint PRIME_CORE_INPUT_WORDS = 4u;
 static const uint PRIME_CORE_WITNESS_WORDS = 8u;
@@ -19,7 +15,6 @@ static const uint PRIME_CORE_ONB = 0u;
 static const uint PRIME_CORE_COMMON = 1u;
 static const uint PRIME_CORE_FRESNEL = 2u;
 static const uint PRIME_CORE_REFLECTION = 3u;
-static const uint PRIME_CORE_REFRACTION = 4u;
 
 struct PrimeCoreResult {
     uint mask;
@@ -73,9 +68,9 @@ void primeCoreOnb(uint4 encoded[4], out PrimeCoreResult result) {
             primeCoreParam(encoded, 3u),
             primeCoreParam(encoded, 4u),
             primeCoreParam(encoded, 5u));
-    PrimeRcOnb onb = primeRcOnbFromNormal(normal);
-    float3 world = primeRcOnbToWorld(onb, local);
-    float3 roundTrip = primeRcOnbToLocal(onb, world);
+    PrimeOpenPbrOnb onb = primeOpenPbrOnbFromNormal(normal);
+    float3 world = primeOpenPbrOnbToWorld(onb, local);
+    float3 roundTrip = primeOpenPbrOnbToLocal(onb, world);
     float3 lengths = float3(
             length(onb.tangent),
             length(onb.bitangent),
@@ -124,12 +119,12 @@ void primeCoreCommon(uint4 encoded[4], out PrimeCoreResult result) {
     float roughness = primeCoreParam(encoded, 3u);
     float anisotropy = primeCoreParam(encoded, 4u);
 
-    float3 uniformHemisphere = primeRcUniformSampleHemisphere(sampleValue);
-    float3 cosineHemisphere = primeRcCosineSampleHemisphere(sampleValue);
+    float3 uniformHemisphere = primeOpenPbrUniformSampleHemisphere(sampleValue);
+    float3 cosineHemisphere = primeOpenPbrCosineSampleHemisphere(sampleValue);
     float3 uniformSphere = float3(0.0, 0.0, 1.0);
-    float ior = primeRcF0ToIor(f0);
-    float roundTripF0 = primeRcIorToF0(ior);
-    float2 alpha = primeRcSpecularNdfRoughnesses(roughness, anisotropy);
+    float ior = primeOpenPbrF0ToIor(f0);
+    float roundTripF0 = primeOpenPbrIorToF0(ior);
+    float2 alpha = primeOpenPbrSpecularNdfRoughnesses(roughness, anisotropy);
     float3 lengths = float3(
             length(uniformHemisphere),
             length(cosineHemisphere),
@@ -182,15 +177,15 @@ void primeCoreFresnel(uint4 encoded[4], out PrimeCoreResult result) {
             sineTheta * sin(phi),
             cosineTheta);
 
-    PrimeRcFloatPair amplitudes = primeRcDielectricRsRp(ior, cosineTheta);
-    PrimeRcFloatPair reflectance = primeRcDielectricReflectance(ior, cosineTheta);
-    float unpolarized = primeRcDielectricUnpolarized(ior, cosineTheta);
+    PrimeOpenPbrFloatPair amplitudes = primeOpenPbrDielectricRsRp(ior, cosineTheta);
+    PrimeOpenPbrFloatPair reflectance = primeOpenPbrDielectricReflectance(ior, cosineTheta);
+    float unpolarized = primeOpenPbrDielectricUnpolarized(ior, cosineTheta);
     float energy = unpolarized;
-    float reciprocal = primeRcDielectricUnpolarized(1.0 / ior, -cosineTheta);
-    float normalReflectance = primeRcDielectricUnpolarized(ior, 1.0);
-    float expectedNormalReflectance = primeRcIorToF0(ior);
+    float reciprocal = primeOpenPbrDielectricUnpolarized(1.0 / ior, -cosineTheta);
+    float normalReflectance = primeOpenPbrDielectricUnpolarized(ior, 1.0);
+    float expectedNormalReflectance = primeOpenPbrIorToF0(ior);
     float3 incidentTowardInterface = -microIncident;
-    PrimeRcRefractResult refracted = primeRcDielectricRefract(
+    PrimeOpenPbrRefractResult refracted = primeOpenPbrDielectricRefract(
             ior, incidentTowardInterface, float3(0.0, 0.0, 1.0));
     float incidentCosine = incidentTowardInterface.z;
     float inverseEta = incidentCosine < 0.0 ? 1.0 / ior : ior;
@@ -253,7 +248,7 @@ void primeCoreFresnel(uint4 encoded[4], out PrimeCoreResult result) {
 
 void primeCoreReflection(uint4 encoded[4], out PrimeCoreResult result) {
     primeCoreClear(result);
-    PrimeRcMicrofacet microfacet;
+    PrimeOpenPbrMicrofacet microfacet;
     microfacet.alpha = float2(
             primeCoreParam(encoded, 0u),
             primeCoreParam(encoded, 1u));
@@ -265,48 +260,48 @@ void primeCoreReflection(uint4 encoded[4], out PrimeCoreResult result) {
             primeCoreParam(encoded, 5u),
             primeCoreParam(encoded, 6u));
 
-    bool effectivelySmooth = primeRcMicrofacetEffectivelySmooth(microfacet);
+    bool effectivelySmooth = primeOpenPbrMicrofacetEffectivelySmooth(microfacet);
     float3 halfVector = float3(0.0, 0.0, 1.0);
     float distribution = 0.0;
     float microfacetPdf = 0.0;
     float symmetryDistribution = 0.0;
     if (!effectivelySmooth) {
-        halfVector = primeRcMicrofacetSample(microfacet, wi, randomValue, true);
-        distribution = primeRcMicrofacetD(microfacet, halfVector);
-        microfacetPdf = primeRcMicrofacetPdf(
+        halfVector = primeOpenPbrMicrofacetSample(microfacet, wi, randomValue, true);
+        distribution = primeOpenPbrMicrofacetD(microfacet, halfVector);
+        microfacetPdf = primeOpenPbrMicrofacetPdf(
                 microfacet, wi, halfVector, true);
-        PrimeRcMicrofacet swapped;
+        PrimeOpenPbrMicrofacet swapped;
         swapped.alpha = microfacet.alpha.yx;
-        symmetryDistribution = primeRcMicrofacetD(
+        symmetryDistribution = primeOpenPbrMicrofacetD(
                 swapped, halfVector.yxz);
     }
-    PrimeRcReflectiveSampleBase sampled = primeRcReflectiveSampleBase(
+    PrimeOpenPbrReflectiveSampleBase sampled = primeOpenPbrReflectiveSampleBase(
             wi,
             float3(randomValue, 0.5),
             microfacet,
-            PRIME_RC_FLAG_ALL,
-            PRIME_RC_FLAG_REFLECTION);
+            PRIME_OPENPBR_FLAG_ALL,
+            PRIME_OPENPBR_FLAG_REFLECTION);
     uint flags = sampled.bsdfSample.throughput.flags;
-    PrimeRcReflectiveEvalBase evaluated;
-    evaluated.flags = PRIME_RC_FLAG_NONE;
+    PrimeOpenPbrReflectiveEvalBase evaluated;
+    evaluated.flags = PRIME_OPENPBR_FLAG_NONE;
     evaluated.factor = 0.0;
     evaluated.microCosine = 0.0;
     float evaluatedPdf = 0.0;
-    if (flags != PRIME_RC_FLAG_NONE) {
-        evaluated = primeRcReflectiveEvalBase(
+    if (flags != PRIME_OPENPBR_FLAG_NONE) {
+        evaluated = primeOpenPbrReflectiveEvalBase(
                 wi,
                 sampled.bsdfSample.wo,
                 microfacet,
-                PRIME_RC_FLAG_ALL,
-                PRIME_RC_FLAG_REFLECTION);
-        evaluatedPdf = primeRcReflectivePdf(
+                PRIME_OPENPBR_FLAG_ALL,
+                PRIME_OPENPBR_FLAG_REFLECTION);
+        evaluatedPdf = primeOpenPbrReflectivePdf(
                 wi,
                 sampled.bsdfSample.wo,
                 microfacet,
-                PRIME_RC_FLAG_ALL,
-                PRIME_RC_FLAG_REFLECTION);
+                PRIME_OPENPBR_FLAG_ALL,
+                PRIME_OPENPBR_FLAG_REFLECTION);
     }
-    float3 directionalAlbedo = primeRcMicrofacetDirectionalAlbedoReflection(
+    float3 directionalAlbedo = primeOpenPbrMicrofacetDirectionalAlbedoReflection(
             microfacet, wi.z, float3(0.04), float3(1.0));
 
     primeCoreClassify(result.mask, halfVector);
@@ -341,7 +336,7 @@ void primeCoreReflection(uint4 encoded[4], out PrimeCoreResult result) {
         }
     }
 
-    if (flags != PRIME_RC_FLAG_NONE) {
+    if (flags != PRIME_OPENPBR_FLAG_NONE) {
         if (!primeTestClose(length(sampled.bsdfSample.wo), 1.0, 4.0e-5, 4.0e-5)) {
             result.mask |= PRIME_TEST_FAILURE_UNIT_LENGTH;
         }
@@ -349,8 +344,8 @@ void primeCoreReflection(uint4 encoded[4], out PrimeCoreResult result) {
             result.mask |= PRIME_TEST_FAILURE_HEMISPHERE;
         }
         uint expectedFlags = effectivelySmooth
-                ? PRIME_RC_FLAG_DELTA_REFLECTION
-                : PRIME_RC_FLAG_SPECULAR_REFLECTION;
+                ? PRIME_OPENPBR_FLAG_DELTA_REFLECTION
+                : PRIME_OPENPBR_FLAG_SPECULAR_REFLECTION;
         if (flags != expectedFlags) {
             result.mask |= PRIME_TEST_FAILURE_EVENT;
         }
@@ -363,12 +358,12 @@ void primeCoreReflection(uint4 encoded[4], out PrimeCoreResult result) {
                             float3(1.0),
                             0.0,
                             0.0)
-                    || evaluated.flags != PRIME_RC_FLAG_NONE
+                    || evaluated.flags != PRIME_OPENPBR_FLAG_NONE
                     || evaluatedPdf != 0.0) {
                 result.mask |= PRIME_TEST_FAILURE_IDENTITY;
             }
         } else {
-            if (evaluated.flags != PRIME_RC_FLAG_SPECULAR_REFLECTION) {
+            if (evaluated.flags != PRIME_OPENPBR_FLAG_SPECULAR_REFLECTION) {
                 result.mask |= PRIME_TEST_FAILURE_EVENT;
             }
             // Reconstructing h from nearly antipodal wi/wo is ill-conditioned.
@@ -394,14 +389,14 @@ void primeCoreReflection(uint4 encoded[4], out PrimeCoreResult result) {
                     result.mask |= PRIME_TEST_FAILURE_VALUE;
                 }
             }
-            PrimeRcReflectiveEvalBase reverse = primeRcReflectiveEvalBase(
+            PrimeOpenPbrReflectiveEvalBase reverse = primeOpenPbrReflectiveEvalBase(
                     sampled.bsdfSample.wo,
                     wi,
                     microfacet,
-                    PRIME_RC_FLAG_ALL,
-                    PRIME_RC_FLAG_REFLECTION);
+                    PRIME_OPENPBR_FLAG_ALL,
+                    PRIME_OPENPBR_FLAG_REFLECTION);
             primeCoreClassify(result.mask, reverse.factor);
-            if (reverse.flags != PRIME_RC_FLAG_SPECULAR_REFLECTION
+            if (reverse.flags != PRIME_OPENPBR_FLAG_SPECULAR_REFLECTION
                     || !primeTestClose(
                             evaluated.factor / abs(sampled.bsdfSample.wo.z),
                             reverse.factor / abs(wi.z),
@@ -410,7 +405,7 @@ void primeCoreReflection(uint4 encoded[4], out PrimeCoreResult result) {
                 result.mask |= PRIME_TEST_FAILURE_RECIPROCITY;
             }
         }
-    } else if (evaluated.flags != PRIME_RC_FLAG_NONE || evaluatedPdf != 0.0) {
+    } else if (evaluated.flags != PRIME_OPENPBR_FLAG_NONE || evaluatedPdf != 0.0) {
         result.mask |= PRIME_TEST_FAILURE_EVENT;
     }
 
@@ -426,178 +421,6 @@ void primeCoreReflection(uint4 encoded[4], out PrimeCoreResult result) {
             evaluated.factor,
             microfacetPdf,
             length(sampled.bsdfSample.wo)));
-}
-
-void primeCoreRefraction(uint4 encoded[4], out PrimeCoreResult result) {
-    primeCoreClear(result);
-    PrimeRcState state;
-    state.specularMicrofacet.alpha = float2(
-            primeCoreParam(encoded, 0u),
-            primeCoreParam(encoded, 1u));
-    float3 wi = normalize(float3(
-            primeCoreParam(encoded, 2u),
-            primeCoreParam(encoded, 3u),
-            primeCoreParam(encoded, 4u)));
-    float3 randomValue = float3(
-            primeCoreParam(encoded, 5u),
-            primeCoreParam(encoded, 6u),
-            primeCoreParam(encoded, 7u));
-    float ior = primeCoreParam(encoded, 8u);
-    state.specularFresnel.ior = ior;
-    state.specularFresnel.energyIor = ior;
-    state.specularFresnel.color = float3(1.0);
-    state.specularFresnel.thinFilmWeight = 0.0;
-    state.specularFresnel.thinFilmThickness = 0.0;
-    state.specularFresnel.thinFilmIor = 1.5;
-    state.wavelengthsNm = float3(630.0, 532.0, 467.0);
-    state.spectrumed = 0u;
-    state.samplingFlags = PRIME_RC_FLAG_ALL;
-    state.geometryThinWalled = 0u;
-
-    PrimeRcSample sampled = primeRcRefractiveSample(wi, randomValue, state);
-    uint flags = sampled.throughput.flags;
-    PrimeRcThroughput evaluated;
-    evaluated.value = float3(0.0);
-    evaluated.flags = PRIME_RC_FLAG_NONE;
-    float evaluatedPdf = 0.0;
-    if (flags != PRIME_RC_FLAG_NONE) {
-        evaluated = primeRcRefractiveEval(wi, sampled.wo, state);
-        evaluatedPdf = primeRcRefractivePdf(wi, sampled.wo, state);
-    }
-    float sampledG2 = 0.0;
-    float maximumLambda = 0.0;
-    if (sampled.throughput.flags == PRIME_RC_FLAG_SPECULAR_TRANSMISSION) {
-        float3 orientedWi = wi;
-        float3 orientedWo = sampled.wo;
-        if (orientedWi.z < 0.0) {
-            orientedWi = -orientedWi;
-            orientedWo = -orientedWo;
-        }
-        float firstLambda = primeRcMicrofacetLambda(
-                state.specularMicrofacet, -orientedWi);
-        float secondLambda = primeRcMicrofacetLambda(
-                state.specularMicrofacet, orientedWo);
-        maximumLambda = max(firstLambda, secondLambda);
-        sampledG2 = primeRcMicrofacetG2t(
-                state.specularMicrofacet, wi, sampled.wo);
-    }
-    bool effectivelySmooth = primeRcMicrofacetEffectivelySmooth(state.specularMicrofacet)
-            || ior == 1.0;
-    bool numericInterior = effectivelySmooth
-            || (min(
-                    state.specularMicrofacet.alpha.x,
-                    state.specularMicrofacet.alpha.y) >= 5.0e-3
-            && abs(wi.z) >= 1.0e-1
-            && (flags == PRIME_RC_FLAG_NONE || abs(sampled.wo.z) >= 5.0e-2)
-            && abs(ior - 1.0) >= 1.0e-2);
-
-    primeCoreClassify(result.mask, sampled.wo);
-    primeCoreClassify(result.mask, sampled.eta);
-    primeCoreClassify(result.mask, maximumLambda);
-    if (numericInterior) {
-        primeCoreClassify(result.mask, sampled.pdf);
-        primeCoreClassify(result.mask, evaluatedPdf);
-        primeCoreClassify(result.mask, sampled.throughput.value);
-        primeCoreClassify(result.mask, evaluated.value);
-        primeCoreClassify(result.mask, sampledG2);
-    }
-    if (sampled.pdf < 0.0 || evaluatedPdf < 0.0
-            || (numericInterior
-            && (any(lessThan(sampled.throughput.value, float3(0.0)))
-            || any(lessThan(evaluated.value, float3(0.0)))))) {
-        result.mask |= PRIME_TEST_FAILURE_RANGE;
-    }
-
-    if (flags != PRIME_RC_FLAG_NONE) {
-        uint allowed = PRIME_RC_FLAG_SPECULAR_REFLECTION
-                | PRIME_RC_FLAG_SPECULAR_TRANSMISSION
-                | PRIME_RC_FLAG_DELTA_REFLECTION
-                | PRIME_RC_FLAG_DELTA_TRANSMISSION;
-        if ((flags & allowed) == 0u || (flags & (flags - 1u)) != 0u) {
-            result.mask |= PRIME_TEST_FAILURE_EVENT;
-        }
-        if (!primeTestClose(length(sampled.wo), 1.0, 5.0e-5, 5.0e-5)) {
-            result.mask |= PRIME_TEST_FAILURE_UNIT_LENGTH;
-        }
-        bool reflected = (flags & PRIME_RC_FLAG_REFLECTION) != 0u;
-        float expectedEta = reflected
-                ? 1.0
-                : (wi.z > 0.0 ? ior : 1.0 / ior);
-        if (!primeTestClose(sampled.eta, expectedEta, 1.0e-7, 2.0e-6)) {
-            result.mask |= PRIME_TEST_FAILURE_STATE;
-        }
-        if ((reflected && wi.z * sampled.wo.z <= 0.0)
-                || (!reflected && wi.z * sampled.wo.z >= 0.0)) {
-            result.mask |= PRIME_TEST_FAILURE_HEMISPHERE;
-        }
-        if (effectivelySmooth) {
-            if ((flags & PRIME_RC_FLAG_DELTA) == 0u
-                    || evaluated.flags != PRIME_RC_FLAG_NONE
-                    || evaluatedPdf != 0.0) {
-                result.mask |= PRIME_TEST_FAILURE_EVENT;
-            }
-            float microIncident = wi.z;
-            PrimeRcVecPair deltaRt = primeRcSpecularFresnelRt(
-                    state.specularFresnel,
-                    state.wavelengthsNm,
-                    state.spectrumed,
-                    microIncident);
-            float3 expectedDeltaValue = (flags == PRIME_RC_FLAG_DELTA_TRANSMISSION)
-                    ? deltaRt.second * (1.0 / primeRcSquare(sampled.eta))
-                    : deltaRt.first;
-            if (!primeTestClose(
-                    sampled.throughput.value,
-                    expectedDeltaValue,
-                    3.0e-6,
-                    3.0e-5)) {
-                result.mask |= PRIME_TEST_FAILURE_VALUE;
-            }
-        } else {
-            if ((flags & PRIME_RC_FLAG_SPECULAR) == 0u) {
-                result.mask |= PRIME_TEST_FAILURE_EVENT;
-            }
-            bool reflected = (flags & PRIME_RC_FLAG_REFLECTION) != 0u;
-            float halfVectorLength = length(wi + sampled.eta * sampled.wo);
-            bool stableReconstruction = numericInterior
-                    && (reflected || abs(ior - 1.0) >= 1.0e-2)
-                    && halfVectorLength > 1.0e-3;
-            if (stableReconstruction) {
-                if (evaluated.flags != flags) {
-                    result.mask |= PRIME_TEST_FAILURE_EVENT;
-                }
-                // Refractive h reconstruction magnifies float error near grazing
-                // directions; this remains far below the eta-scale mismatch.
-                if (!primeTestClose(sampled.pdf, evaluatedPdf, 3.0e-6, 2.0e-3)) {
-                    result.mask |= PRIME_TEST_FAILURE_PDF;
-                }
-                if (!primeTestClose(
-                        sampled.throughput.value,
-                        evaluated.value,
-                        3.0e-6,
-                        2.0e-3)) {
-                    result.mask |= PRIME_TEST_FAILURE_VALUE;
-                }
-            }
-        }
-    } else if (evaluated.flags != PRIME_RC_FLAG_NONE || evaluatedPdf != 0.0) {
-        result.mask |= PRIME_TEST_FAILURE_EVENT;
-    }
-
-    result.witness[0] = uint4(
-            asuint(sampled.wo.x),
-            asuint(sampled.wo.y),
-            asuint(sampled.wo.z),
-            flags);
-    result.witness[1] = uint4(
-            asuint(sampled.pdf),
-            asuint(evaluatedPdf),
-            evaluated.flags,
-            effectivelySmooth ? 1u : 0u);
-    result.witness[2] = asuint(float4(
-            sampled.throughput.value.x,
-            evaluated.value.x,
-            sampledG2,
-            maximumLambda));
 }
 
 void primeCoreCommit(
@@ -642,8 +465,6 @@ void main(uint3 dispatchThreadId : SV_DispatchThreadID)
         primeCoreFresnel(encoded, result);
     } else if (kind == PRIME_CORE_REFLECTION) {
         primeCoreReflection(encoded, result);
-    } else if (kind == PRIME_CORE_REFRACTION) {
-        primeCoreRefraction(encoded, result);
     } else {
         primeCoreClear(result);
         result.mask = PRIME_TEST_FAILURE_STATE;

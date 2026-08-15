@@ -87,7 +87,7 @@ java {
 
 
 tasks.named('check') {
-	dependsOn 'verifyDistributionJar', 'verifyRoboCutePort'
+	dependsOn 'verifyDistributionJar', 'verifyRoboCuteReference'
 }
 
 publishing {

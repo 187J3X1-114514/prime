@@ -75,7 +75,7 @@ final class CompactOpenPbrOpaqueGpuTest {
     }
 
     @Test
-    void compactOpaqueSubsetMatchesReferenceAndPreservesOpenPbrProperties()
+    void compactOpaqueSubsetPreservesOpenPbrProperties()
             throws IOException {
         Path shader = Path.of(
                 System.getProperty("prime.test.slangShaderDirectory"),

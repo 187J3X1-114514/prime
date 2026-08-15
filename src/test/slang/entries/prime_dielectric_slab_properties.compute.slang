@@ -1,18 +1,15 @@
 
 #include "core/prime_test_abi.slang"
-import "bsdf/adapter/prime_bsdf_specializations.slang";
 import "bsdf/adapter/transmission_ggx_energy.slang";
-import "bsdf/core/robocute_closures.slang";
-import "bsdf/core/robocute_common.slang";
-import "bsdf/core/robocute_fresnel.slang";
-import "bsdf/core/robocute_microfacet.slang";
-import "bsdf/core/robocute_openpbr.slang";
+import "bsdf/compact/openpbr_common.slang";
+import "bsdf/compact/openpbr_material.slang";
+import "bsdf/compact/openpbr_transmission.slang";
 
 static const uint PRIME_SLAB_INPUT_WORDS = 1u;
 static const uint PRIME_SLAB_WITNESS_WORDS = 8u;
 
-PrimeRcVolumeStack primeSlabEmptyStack() {
-    PrimeRcVolumeStack stack;
+PrimeOpenPbrVolumeStack primeSlabEmptyStack() {
+    PrimeOpenPbrVolumeStack stack;
     stack.values[0].extinction = float3(0.0);
     stack.values[0].albedo = float3(0.0);
     stack.values[0].anisotropy = 0.0;
@@ -22,8 +19,8 @@ PrimeRcVolumeStack primeSlabEmptyStack() {
     return stack;
 }
 
-PrimeRcMaterial primeSlabMaterial(float ior) {
-    PrimeRcMaterial material = primeRcMaterialFromMetallic(
+PrimeOpenPbrMaterial primeSlabMaterial(float ior) {
+    PrimeOpenPbrMaterial material = primeCompactMaterialFromMetallic(
             float3(1.0), 0.0, 0.0, float3(0.0, 0.0, 1.0));
     material.weight.transmission = 1.0;
     material.geometry.thinWalled = 0u;
@@ -37,24 +34,20 @@ PrimeRcMaterial primeSlabMaterial(float ior) {
     return material;
 }
 
-PrimeRcState primeSlabState(
-        PrimeRcMaterial material, float3 wi, PrimeRcVolumeStack stack) {
-    PrimeRcState state = primeRcTransmissionStateInit(
+PrimeCompactTransmissionState primeSlabState(
+        PrimeOpenPbrMaterial material, float3 wi, PrimeOpenPbrVolumeStack stack) {
+    PrimeCompactTransmissionState state = primeCompactTransmissionStateInit(
             primeTransmissionGgxEnergy(),
             material,
             wi,
-            primeRcInverseOutsideIor(wi.z, stack),
-            4.0,
-            float3(630.0, 532.0, 467.0),
-            0u,
-            PRIME_RC_DETAIL_DEFAULT,
-            0u);
-    state = primeRcPrimeTransmissionInterfaceState(wi, state);
-    state.samplingFlags = PRIME_RC_FLAG_DELTA_TRANSMISSION;
+            primeCompactInverseOutsideIor(wi.z, stack),
+            4.0);
+    state = primeCompactTransmissionInterfaceState(
+            primeTransmissionGgxEnergy(), wi, state);
     return state;
 }
 
-void primeSlabClassify(inout uint mask, PrimeRcSample sampleValue) {
+void primeSlabClassify(inout uint mask, PrimeOpenPbrSample sampleValue) {
     mask |= primeTestClassify(sampleValue.wo);
     mask |= primeTestClassify(sampleValue.throughput.value);
     mask |= primeTestClassify(sampleValue.pdf);
@@ -73,17 +66,20 @@ void main(uint3 dispatchThreadId : SV_DispatchThreadID)
     float cosine = sqrt(max(0.0, 1.0 - sine * sine));
     float3 wi = float3(sine, 0.0, cosine);
     float3 randomValue = float3(0.5, 0.5, 0.0);
-    PrimeRcMaterial material = primeSlabMaterial(ior);
+    PrimeOpenPbrMaterial material = primeSlabMaterial(ior);
 
     uint mask = 0u;
-    PrimeRcVolumeStack emptyStack = primeSlabEmptyStack();
-    PrimeRcState enterState = primeSlabState(material, wi, emptyStack);
-    PrimeRcSampleResult entered = primeRcPrimeTransmissionSample(
-            wi, randomValue, enterState, emptyStack);
+    PrimeOpenPbrVolumeStack emptyStack = primeSlabEmptyStack();
+    PrimeCompactTransmissionState enterState = primeSlabState(material, wi, emptyStack);
+    PrimeOpenPbrSampleResult entered = primeCompactTransmissionSample(
+            wi, randomValue, enterState,
+            PRIME_OPENPBR_FLAG_DELTA_TRANSMISSION, emptyStack);
     float3 exitWi = entered.bsdfSample.wo;
-    PrimeRcState exitState = primeSlabState(material, exitWi, entered.volumeStack);
-    PrimeRcSampleResult exited = primeRcPrimeTransmissionSample(
-            exitWi, randomValue, exitState, entered.volumeStack);
+    PrimeCompactTransmissionState exitState = primeSlabState(
+            material, exitWi, entered.volumeStack);
+    PrimeOpenPbrSampleResult exited = primeCompactTransmissionSample(
+            exitWi, randomValue, exitState,
+            PRIME_OPENPBR_FLAG_DELTA_TRANSMISSION, entered.volumeStack);
 
     primeSlabClassify(mask, entered.bsdfSample);
     primeSlabClassify(mask, exited.bsdfSample);
@@ -92,8 +88,8 @@ void main(uint3 dispatchThreadId : SV_DispatchThreadID)
     mask |= primeTestClassify(enterState.transmissionMultipleScattering);
     mask |= primeTestClassify(exitState.transmissionMultipleScattering);
 
-    if (entered.bsdfSample.throughput.flags != PRIME_RC_FLAG_DELTA_TRANSMISSION
-            || exited.bsdfSample.throughput.flags != PRIME_RC_FLAG_DELTA_TRANSMISSION) {
+    if (entered.bsdfSample.throughput.flags != PRIME_OPENPBR_FLAG_DELTA_TRANSMISSION
+            || exited.bsdfSample.throughput.flags != PRIME_OPENPBR_FLAG_DELTA_TRANSMISSION) {
         mask |= PRIME_TEST_FAILURE_EVENT;
     }
     if (entered.volumeStack.count != 1u
@@ -114,9 +110,9 @@ void main(uint3 dispatchThreadId : SV_DispatchThreadID)
         mask |= PRIME_TEST_FAILURE_ROUND_TRIP;
     }
     float3 enterTransmission = entered.bsdfSample.throughput.value
-            * primeRcSquare(entered.bsdfSample.eta);
+            * primeOpenPbrSquare(entered.bsdfSample.eta);
     float3 exitTransmission = exited.bsdfSample.throughput.value
-            * primeRcSquare(exited.bsdfSample.eta);
+            * primeOpenPbrSquare(exited.bsdfSample.eta);
     if (!primeTestClose(enterTransmission, exitTransmission, 4.0e-6, 2.0e-5)) {
         mask |= PRIME_TEST_FAILURE_VALUE;
     }
@@ -125,11 +121,13 @@ void main(uint3 dispatchThreadId : SV_DispatchThreadID)
     float tirSine = 0.5 * (criticalSine + 1.0);
     float tirCosine = sqrt(max(0.0, 1.0 - tirSine * tirSine));
     float3 tirWi = float3(-tirSine, 0.0, -tirCosine);
-    PrimeRcState tirState = primeSlabState(material, tirWi, entered.volumeStack);
-    PrimeRcSampleResult tir = primeRcPrimeTransmissionSample(
-            tirWi, randomValue, tirState, entered.volumeStack);
+    PrimeCompactTransmissionState tirState = primeSlabState(
+            material, tirWi, entered.volumeStack);
+    PrimeOpenPbrSampleResult tir = primeCompactTransmissionSample(
+            tirWi, randomValue, tirState,
+            PRIME_OPENPBR_FLAG_DELTA_TRANSMISSION, entered.volumeStack);
     primeSlabClassify(mask, tir.bsdfSample);
-    if (tir.bsdfSample.throughput.flags != PRIME_RC_FLAG_NONE
+    if (tir.bsdfSample.throughput.flags != PRIME_OPENPBR_FLAG_NONE
             || tir.volumeStack.count != 1u
             || !primeTestClose(tirState.specularFresnel.ior, ior, 2.0e-6, 2.0e-6)) {
         mask |= PRIME_TEST_FAILURE_EVENT;

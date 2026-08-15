@@ -1,27 +1,19 @@
 #include "core/prime_test_abi.slang"
-import "bsdf/adapter/prime_bsdf_specializations.slang";
 import "bsdf/adapter/transmission_ggx_energy.slang";
 import "bsdf/compact/openpbr_common.slang";
 import "bsdf/compact/openpbr_material.slang";
 import "bsdf/compact/openpbr_transmission.slang";
-import "bsdf/core/robocute_closures.slang";
-import "bsdf/core/robocute_common.slang";
-import "bsdf/core/robocute_openpbr.slang";
 
 static const uint PRIME_COMPACT_TRANSMISSION_INPUT_WORDS = 4u;
-static const uint PRIME_COMPACT_TRANSMISSION_WITNESS_WORDS = 12u;
-static const float3 PRIME_TEST_TRANSMISSION_WAVELENGTHS_NM =
-        float3(630.0, 532.0, 467.0);
 
 struct PrimeCompactTransmissionTestResult {
     uint mask;
     uint kind;
-    PrimeRcEval referenceEvaluation;
-    PrimeCompactTransmissionEvaluation compactEvaluation;
-    PrimeRcSampleResult referenceSample;
-    PrimeOpenPbrSampleResult compactSample;
-    float3 referenceEnergy;
-    float3 compactEnergy;
+    uint samplingFlags;
+    PrimeCompactTransmissionEvaluation evaluation;
+    PrimeCompactTransmissionEvaluation sampledEvaluation;
+    PrimeOpenPbrSampleResult sample;
+    float3 energy;
 };
 
 float primeCompactTransmissionParam(uint4 encoded[4], uint index) {
@@ -34,41 +26,7 @@ float3 primeCompactTransmissionDirection(float cosineTheta, float phi) {
     return float3(radius * cos(phi), radius * sin(phi), cosineTheta);
 }
 
-bool primeCompactTransmissionClose(float first, float second) {
-    return primeTestClose(first, second, 5.0e-6, 3.0e-5);
-}
-
-bool primeCompactTransmissionClose(float2 first, float2 second) {
-    return primeTestClose(first.x, second.x, 5.0e-6, 3.0e-5)
-            && primeTestClose(first.y, second.y, 5.0e-6, 3.0e-5);
-}
-
-bool primeCompactTransmissionClose(float3 first, float3 second) {
-    return primeTestClose(first, second, 5.0e-6, 3.0e-5);
-}
-
-PrimeRcVolumeStack primeCompactTransmissionStack(
-        bool exiting,
-        PrimeRcMaterial material) {
-    PrimeRcVolumeStack stack;
-    PrimeRcVolume air;
-    air.extinction = float3(0.0);
-    air.albedo = float3(0.0);
-    air.anisotropy = 0.0;
-    air.ior = 1.0;
-    stack.values[0] = air;
-    stack.values[1] = air;
-    stack.count = 0u;
-    if (exiting) {
-        PrimeRcVolume volume = primeRcVolumeFromTransmission(material.transmission);
-        volume.ior = material.specular.ior;
-        stack.values[0] = volume;
-        stack.count = 1u;
-    }
-    return stack;
-}
-
-PrimeOpenPbrVolumeStack primeCompactTransmissionOpenPbrStack(
+PrimeOpenPbrVolumeStack primeCompactTransmissionStack(
         bool exiting,
         PrimeOpenPbrMaterial material) {
     PrimeOpenPbrVolumeStack stack;
@@ -90,109 +48,24 @@ PrimeOpenPbrVolumeStack primeCompactTransmissionOpenPbrStack(
     return stack;
 }
 
-void primeCompactTransmissionCompare(
-        inout PrimeCompactTransmissionTestResult result,
-        PrimeRcState reference,
-        PrimeCompactTransmissionState compact) {
-    result.mask |= primeTestClassify(result.referenceEvaluation.throughput.value);
-    result.mask |= primeTestClassify(result.referenceEvaluation.pdf);
-    result.mask |= primeTestClassify(result.compactEvaluation.throughput.value);
-    result.mask |= primeTestClassify(result.compactEvaluation.pdf);
-    result.mask |= primeTestClassify(result.referenceEnergy);
-    result.mask |= primeTestClassify(result.compactEnergy);
-    if (!primeCompactTransmissionClose(
-                result.referenceEvaluation.throughput.value,
-                result.compactEvaluation.throughput.value)
-            || !primeCompactTransmissionClose(
-                result.referenceEnergy, result.compactEnergy)) {
-        result.mask |= PRIME_TEST_FAILURE_VALUE;
-    }
-    if (!primeCompactTransmissionClose(
-                result.referenceEvaluation.pdf,
-                result.compactEvaluation.pdf)) {
-        result.mask |= PRIME_TEST_FAILURE_PDF;
-    }
-    if (result.referenceEvaluation.throughput.flags
-            != result.compactEvaluation.throughput.flags) {
-        result.mask |= PRIME_TEST_FAILURE_EVENT;
-    }
-    if (!primeCompactTransmissionClose(
-                reference.specularMicrofacet.alpha,
-                compact.specularMicrofacet.alpha)
-            || !primeCompactTransmissionClose(
-                reference.transmissionMicrofacet.alpha,
-                compact.transmissionMicrofacet.alpha)
-            || !primeCompactTransmissionClose(
-                reference.specularFresnel.ior,
-                compact.specularFresnel.ior)
-            || !primeCompactTransmissionClose(
-                reference.specularFresnel.energyIor,
-                compact.specularFresnel.energyIor)
-            || !primeCompactTransmissionClose(
-                reference.specularFresnel.color,
-                compact.specularFresnel.color)
-            || !primeCompactTransmissionClose(
-                reference.transmissionTint,
-                compact.transmissionTint)
-            || !primeCompactTransmissionClose(
-                reference.transmissionVolume.extinction,
-                compact.transmissionVolume.extinction)
-            || !primeCompactTransmissionClose(
-                reference.transmissionMultipleScattering,
-                compact.transmissionMultipleScattering)
-            || reference.geometryThinWalled != compact.geometryThinWalled
-            || reference.entering != compact.entering
-            || !primeCompactTransmissionClose(reference.rayT, compact.rayT)
-            || !primeCompactTransmissionClose(reference.originalIor, compact.originalIor)) {
-        result.mask |= PRIME_TEST_FAILURE_STATE;
-    }
+void primeCompactTransmissionClassify(inout uint mask, float value) {
+    mask |= primeTestClassify(value);
+}
 
-    uint referenceFlags = result.referenceSample.bsdfSample.throughput.flags;
-    uint compactFlags = result.compactSample.bsdfSample.throughput.flags;
-    if (referenceFlags != compactFlags) {
-        result.mask |= PRIME_TEST_FAILURE_EVENT;
-    }
-    if (referenceFlags != PRIME_RC_FLAG_NONE) {
-        result.mask |= primeTestClassify(result.referenceSample.bsdfSample.throughput.value);
-        result.mask |= primeTestClassify(result.referenceSample.bsdfSample.pdf);
-        result.mask |= primeTestClassify(result.referenceSample.bsdfSample.eta);
-        result.mask |= primeTestClassify(result.referenceSample.bsdfSample.wo);
-        result.mask |= primeTestClassify(result.compactSample.bsdfSample.throughput.value);
-        result.mask |= primeTestClassify(result.compactSample.bsdfSample.pdf);
-        result.mask |= primeTestClassify(result.compactSample.bsdfSample.eta);
-        result.mask |= primeTestClassify(result.compactSample.bsdfSample.wo);
-        if (!primeCompactTransmissionClose(
-                    result.referenceSample.bsdfSample.throughput.value,
-                    result.compactSample.bsdfSample.throughput.value)
-                || !primeCompactTransmissionClose(
-                    result.referenceSample.bsdfSample.pdf,
-                    result.compactSample.bsdfSample.pdf)
-                || !primeCompactTransmissionClose(
-                    result.referenceSample.bsdfSample.eta,
-                    result.compactSample.bsdfSample.eta)
-                || !primeCompactTransmissionClose(
-                    result.referenceSample.bsdfSample.wo,
-                    result.compactSample.bsdfSample.wo)) {
-            result.mask |= PRIME_TEST_FAILURE_VALUE;
-        }
-    }
-    if (result.referenceSample.volumeStack.count != result.compactSample.volumeStack.count
-            || !primeCompactTransmissionClose(
-                    result.referenceSample.rayT, result.compactSample.rayT)) {
-        result.mask |= PRIME_TEST_FAILURE_STATE;
-    }
-    for (uint index = 0u; index < result.referenceSample.volumeStack.count; index++) {
-        PrimeRcVolume referenceVolume = result.referenceSample.volumeStack.values[index];
-        PrimeOpenPbrVolume compactVolume = result.compactSample.volumeStack.values[index];
-        if (!primeCompactTransmissionClose(
-                    referenceVolume.extinction, compactVolume.extinction)
-                || !primeCompactTransmissionClose(referenceVolume.albedo, compactVolume.albedo)
-                || !primeCompactTransmissionClose(
-                    referenceVolume.anisotropy, compactVolume.anisotropy)
-                || !primeCompactTransmissionClose(referenceVolume.ior, compactVolume.ior)) {
-            result.mask |= PRIME_TEST_FAILURE_STATE;
-        }
-    }
+void primeCompactTransmissionClassify(inout uint mask, float2 value) {
+    mask |= primeTestClassify(value);
+}
+
+void primeCompactTransmissionClassify(inout uint mask, float3 value) {
+    mask |= primeTestClassify(value);
+}
+
+bool primeCompactTransmissionNonnegative(float value) {
+    return value >= 0.0 && primeTestClassify(value) == 0u;
+}
+
+bool primeCompactTransmissionNonnegative(float3 value) {
+    return all(value >= float3(0.0)) && primeTestClassify(value) == 0u;
 }
 
 PrimeCompactTransmissionTestResult primeCompactTransmissionRun(uint4 encoded[4]) {
@@ -203,9 +76,11 @@ PrimeCompactTransmissionTestResult primeCompactTransmissionRun(uint4 encoded[4])
     uint samplingMode = result.kind / 3u;
     bool thinWalled = topology == 2u;
     bool exiting = topology == 1u;
-    uint samplingFlags = samplingMode == 0u
-            ? PRIME_RC_FLAG_ALL
-            : samplingMode == 1u ? PRIME_RC_FLAG_REFLECTION : PRIME_RC_FLAG_TRANSMISSION;
+    result.samplingFlags = samplingMode == 0u
+            ? PRIME_OPENPBR_FLAG_ALL
+            : samplingMode == 1u
+                    ? PRIME_OPENPBR_FLAG_REFLECTION
+                    : PRIME_OPENPBR_FLAG_TRANSMISSION;
     float roughness = primeCompactTransmissionParam(encoded, 0u);
     float ior = primeCompactTransmissionParam(encoded, 1u);
     float wiCosine = abs(primeCompactTransmissionParam(encoded, 2u));
@@ -228,78 +103,99 @@ PrimeCompactTransmissionTestResult primeCompactTransmissionRun(uint4 encoded[4])
     bool thinPhysicalExit = thinWalled
             && primeCompactTransmissionParam(encoded, 14u) >= 0.5;
 
-    PrimeRcMaterial referenceMaterial = primeRcMaterialFromMetallic(
+    PrimeOpenPbrMaterial material = primeCompactMaterialFromMetallic(
             float3(1.0), roughness, 0.0, float3(0.0, 0.0, 1.0));
-    PrimeOpenPbrMaterial compactMaterial = primeCompactMaterialFromMetallic(
-            float3(1.0), roughness, 0.0, float3(0.0, 0.0, 1.0));
-    referenceMaterial.weight.transmission = 1.0;
-    referenceMaterial.geometry.thinWalled = thinWalled ? 1u : 0u;
-    referenceMaterial.geometry.thickness = thinWalled ? 0.0625 : 1.0;
-    referenceMaterial.specular.ior = ior;
-    referenceMaterial.transmission.color = color;
-    referenceMaterial.transmission.depth = thinWalled ? 0.0 : 1.0;
-    referenceMaterial.transmission.scatter = float3(0.0);
-    referenceMaterial.transmission.scatterAnisotropy = 0.0;
-    referenceMaterial.transmission.dispersionScale = 0.0;
-    compactMaterial.weight.transmission = 1.0;
-    compactMaterial.geometry.thinWalled = thinWalled ? 1u : 0u;
-    compactMaterial.geometry.thickness = thinWalled ? 0.0625 : 1.0;
-    compactMaterial.specular.ior = ior;
-    compactMaterial.transmission.color = color;
-    compactMaterial.transmission.depth = thinWalled ? 0.0 : 1.0;
-    compactMaterial.transmission.scatter = float3(0.0);
-    compactMaterial.transmission.scatterAnisotropy = 0.0;
-    compactMaterial.transmission.dispersionScale = 0.0;
-    if (!primeCompactTransmissionSupports(compactMaterial)) {
+    material.weight.transmission = 1.0;
+    material.geometry.thinWalled = thinWalled ? 1u : 0u;
+    material.geometry.thickness = thinWalled ? 0.0625 : 1.0;
+    material.specular.ior = ior;
+    material.transmission.color = color;
+    material.transmission.depth = thinWalled ? 0.0 : 1.0;
+    material.transmission.scatter = float3(0.0);
+    material.transmission.scatterAnisotropy = 0.0;
+    material.transmission.dispersionScale = 0.0;
+    if (!primeCompactTransmissionSupports(material)) {
         result.mask |= PRIME_TEST_FAILURE_STATE;
     }
-    PrimeOpenPbrMaterial unsupported = compactMaterial;
+    PrimeOpenPbrMaterial unsupported = material;
     unsupported.transmission.dispersionScale = 0.5;
     if (primeCompactTransmissionSupports(unsupported)) {
         result.mask |= PRIME_TEST_FAILURE_STATE;
     }
 
-    PrimeRcVolumeStack referenceStack = primeCompactTransmissionStack(
-            exiting, referenceMaterial);
-    PrimeOpenPbrVolumeStack compactStack = primeCompactTransmissionOpenPbrStack(
-            exiting, compactMaterial);
-    PrimeRcState reference = primeRcTransmissionStateInit(
-            primeTransmissionGgxEnergy(),
-            referenceMaterial,
-            wi,
-            inverseOutsideIor,
-            rayT,
-            PRIME_TEST_TRANSMISSION_WAVELENGTHS_NM,
-            0u,
-            PRIME_RC_DETAIL_DEFAULT,
-            0u);
-    reference = primeRcPrimeTransmissionInterfaceState(wi, reference);
-    PrimeCompactTransmissionState compact = primeCompactTransmissionStateInit(
-            primeTransmissionGgxEnergy(),
-            compactMaterial,
-            wi,
-            inverseOutsideIor,
-            rayT);
-    compact = primeCompactTransmissionInterfaceState(
-            primeTransmissionGgxEnergy(), wi, compact);
-    if (thinPhysicalExit) {
-        reference.entering = 0u;
-        compact.entering = 0u;
+    PrimeOpenPbrVolumeStack stack = primeCompactTransmissionStack(exiting, material);
+    uint originalStackCount = stack.count;
+    PrimeCompactTransmissionState state = primeCompactTransmissionStateInit(
+            primeTransmissionGgxEnergy(), material, wi, inverseOutsideIor, rayT);
+    state = primeCompactTransmissionInterfaceState(
+            primeTransmissionGgxEnergy(), wi, state);
+    if (thinPhysicalExit) { state.entering = 0u; }
+
+    result.evaluation = primeCompactTransmissionEvaluate(
+            wi, wo, state, result.samplingFlags);
+    result.sample = primeCompactTransmissionSample(
+            wi, randomValue, state, result.samplingFlags, stack);
+    result.energy = primeCompactTransmissionEnergy(
+            primeTransmissionGgxEnergy(), wi, state, result.samplingFlags);
+    result.sampledEvaluation.throughput = primeOpenPbrZeroThroughput();
+    result.sampledEvaluation.pdf = 0.0;
+
+    primeCompactTransmissionClassify(result.mask, state.specularMicrofacet.alpha);
+    primeCompactTransmissionClassify(result.mask, state.transmissionMicrofacet.alpha);
+    primeCompactTransmissionClassify(result.mask, state.specularFresnel.ior);
+    primeCompactTransmissionClassify(result.mask, state.specularFresnel.energyIor);
+    primeCompactTransmissionClassify(result.mask, state.transmissionMultipleScattering);
+    primeCompactTransmissionClassify(result.mask, result.evaluation.throughput.value);
+    primeCompactTransmissionClassify(result.mask, result.evaluation.pdf);
+    primeCompactTransmissionClassify(result.mask, result.energy);
+    if (!primeCompactTransmissionNonnegative(result.evaluation.throughput.value)
+            || !primeCompactTransmissionNonnegative(result.evaluation.pdf)
+            || !primeCompactTransmissionNonnegative(result.energy)
+            || any(result.energy > float3(1.0001))) {
+        result.mask |= PRIME_TEST_FAILURE_RANGE;
+    }
+    if ((result.evaluation.throughput.flags & ~result.samplingFlags) != 0u) {
+        result.mask |= PRIME_TEST_FAILURE_EVENT;
     }
 
-    reference.samplingFlags = samplingFlags;
-    result.referenceEvaluation = primeRcPrimeTransmissionEvaluate(wi, wo, reference);
-    result.compactEvaluation = primeCompactTransmissionEvaluate(
-            wi, wo, compact, samplingFlags);
-    result.referenceSample = primeRcPrimeTransmissionSample(
-            wi, randomValue, reference, referenceStack);
-    result.compactSample = primeCompactTransmissionSample(
-            wi, randomValue, compact, samplingFlags, compactStack);
-    result.referenceEnergy = primeRcTransmissionEnergy(
-            primeTransmissionGgxEnergy(), wi, reference);
-    result.compactEnergy = primeCompactTransmissionEnergy(
-            primeTransmissionGgxEnergy(), wi, compact, samplingFlags);
-    primeCompactTransmissionCompare(result, reference, compact);
+    uint flags = result.sample.bsdfSample.throughput.flags;
+    bool accepted = flags != PRIME_OPENPBR_FLAG_NONE
+            && primeTestClassify(result.sample.bsdfSample.throughput.value) == 0u
+            && primeTestClassify(result.sample.bsdfSample.pdf) == 0u
+            && primeTestClassify(result.sample.bsdfSample.eta) == 0u
+            && primeTestClassify(result.sample.bsdfSample.wo) == 0u
+            && all(result.sample.bsdfSample.throughput.value >= float3(0.0))
+            && result.sample.bsdfSample.pdf > 0.0
+            && result.sample.bsdfSample.eta > 0.0
+            && primeTestClose(
+                    length(result.sample.bsdfSample.wo), 1.0, 3.0e-5, 3.0e-5);
+    // Exact reference proposals outside this predicate are rejected by
+    // primeOpenPbrHasSample before their payload or medium state is consumed.
+    if (accepted) {
+        if ((flags & ~result.samplingFlags) != 0u) {
+            result.mask |= PRIME_TEST_FAILURE_EVENT;
+        }
+        bool reflected = wi.z * result.sample.bsdfSample.wo.z > 0.0;
+        if (reflected != primeOpenPbrIsReflective(flags)
+                || reflected == primeOpenPbrIsTransmissive(flags)) {
+            result.mask |= PRIME_TEST_FAILURE_EVENT;
+        }
+    }
+
+    bool transmitted = accepted && primeOpenPbrIsTransmissive(flags);
+    uint expectedStackCount = originalStackCount;
+    float expectedRayT = rayT;
+    if (!thinWalled && transmitted) {
+        expectedStackCount = exiting ? 0u : 1u;
+        if (exiting) { expectedRayT = 0.0; }
+    }
+    if ((accepted
+            && (result.sample.volumeStack.count != expectedStackCount
+            || !primeTestClose(result.sample.rayT, expectedRayT, 0.0, 0.0)))
+            || result.sample.volumeStack.count > 2u
+            || primeTestClassify(result.sample.rayT) != 0u) {
+        result.mask |= PRIME_TEST_FAILURE_STATE;
+    }
     return result;
 }
 
@@ -310,36 +206,30 @@ void primeCompactTransmissionWrite(
     primeTestOutput[outputOffset] = uint4(result.mask, result.kind, caseIndex, 0u);
     if (!primeTestWitnessEnabled()) { return; }
     primeTestOutput[outputOffset + 1u] = asuint(float4(
-            result.referenceEvaluation.throughput.value,
-            result.referenceEvaluation.pdf));
-    primeTestOutput[outputOffset + 2u] = asuint(float4(
-            result.compactEvaluation.throughput.value,
-            result.compactEvaluation.pdf));
+            result.evaluation.throughput.value, result.evaluation.pdf));
+    primeTestOutput[outputOffset + 2u] = asuint(float4(result.energy, 0.0));
     primeTestOutput[outputOffset + 3u] = asuint(float4(
-            result.referenceSample.bsdfSample.throughput.value,
-            result.referenceSample.bsdfSample.pdf));
+            result.sample.bsdfSample.throughput.value,
+            result.sample.bsdfSample.pdf));
     primeTestOutput[outputOffset + 4u] = asuint(float4(
-            result.compactSample.bsdfSample.throughput.value,
-            result.compactSample.bsdfSample.pdf));
+            result.sample.bsdfSample.wo,
+            result.sample.bsdfSample.eta));
     primeTestOutput[outputOffset + 5u] = asuint(float4(
-            result.referenceSample.bsdfSample.wo,
-            result.referenceSample.bsdfSample.eta));
-    primeTestOutput[outputOffset + 6u] = asuint(float4(
-            result.compactSample.bsdfSample.wo,
-            result.compactSample.bsdfSample.eta));
+            result.sampledEvaluation.throughput.value,
+            result.sampledEvaluation.pdf));
+    primeTestOutput[outputOffset + 6u] = uint4(
+            result.evaluation.throughput.flags,
+            result.sample.bsdfSample.throughput.flags,
+            result.sampledEvaluation.throughput.flags,
+            result.samplingFlags);
     primeTestOutput[outputOffset + 7u] = uint4(
-            result.referenceSample.bsdfSample.throughput.flags,
-            result.compactSample.bsdfSample.throughput.flags,
-            result.referenceSample.volumeStack.count,
-            result.compactSample.volumeStack.count);
-    primeTestOutput[outputOffset + 8u] = asuint(float4(result.referenceEnergy, 0.0));
-    primeTestOutput[outputOffset + 9u] = asuint(float4(result.compactEnergy, 0.0));
-    primeTestOutput[outputOffset + 10u] = asuint(float4(
-            result.referenceSample.rayT,
-            result.compactSample.rayT,
-            0.0,
-            0.0));
-    primeTestOutput[outputOffset + 11u] = uint4(0u);
+            result.sample.volumeStack.count,
+            asuint(result.sample.rayT),
+            0u,
+            0u);
+    for (uint index = 8u; index < 12u; index++) {
+        primeTestOutput[outputOffset + index] = uint4(0u);
+    }
 }
 
 [numthreads(64, 1, 1)]

@@ -1,9 +1,9 @@
 # OpenPBR 紧凑模块
 
 Prime 以 OpenPBR Surface 1.1.1 为材质语义标准，以 RoboCute
-`0d982c77b3fd26c2c5a3c0852be3bd05e5860bd8` 和锁定的 author overlay 为第三方差分参考。
-`shaders/bsdf/compact` 是生产实现；`shaders/bsdf/core/robocute_*` 是固定的第三方差分
-oracle，不进入生产依赖闭包。
+`0d982c77b3fd26c2c5a3c0852be3bd05e5860bd8` 和锁定的 author overlay 为第三方行为参考。
+`shaders/bsdf/compact` 是仓库内唯一实现；本地 RoboCute Slang port 已删除，参考项目不进入
+生产或测试编译闭包。
 
 ## 等价性契约
 
@@ -61,9 +61,9 @@ directional energy 和反射基础操作，不包含依赖完整状态的通用�
 ## 切换策略
 
 opaque、dielectric transmission 和 foliage 生产入口均已切换到紧凑状态。生产 ABI、Fresnel、
-microfacet、材质初始化和体积栈全部由 compact 所有；生产依赖图中不再可达任何
-`robocute_*` 模块或 `prime_bsdf_specializations`。旧组合树只由差分测试显式导入。
-`verifyShaderIncludeGraph` 会拒绝生产 Shader 直接或经 shim 导入这些 reference-only 模块。
+microfacet、材质初始化和体积栈全部由 compact 所有；仓库中不再保留第二套 RoboCute 组合树。
+`verifyShaderIncludeGraph` 会拒绝恢复已删除的 `shaders/bsdf/core` 或历史 reference
+specialization，并继续检查所有现存 Slang 依赖可解析且无环。
 
 以相同默认 `-g1` 构建参数比较，最大的 transparent-shade SPIR-V 从迁移前 1,330,220 字节降至
 1,303,804 字节，减少 26,416 字节（1.99%）；函数体语义指令从 60,972 降至 59,775（1.96%），
@@ -89,23 +89,23 @@ roughening 是扩展状态，不混入 OpenPBR 标准核心。
 ## 测试
 
 `CompactOpenPbrOpaqueGpuTest` 在 Vulkan 上执行 49,152 个用例。32,768 个端点用例扫描
-dielectric、conductor、厚表面 subsurface 和 thin-wall subsurface，每个用例同时运行参考和紧凑
-路径，并比较 eval、diffuse/specular 分量、PDF、采样事件、方向、directional energy、ray
-distance 和 volume stack。另有 16,384 个分数 subsurface 用例覆盖零附近、0.25、0.5、0.75 和
-一附近的权重、厚/薄表面、随机数边界、掠射角、IOR、各向异性和粗糙度，并检查分量求和、PDF、
-事件、能量、有效结果的有限性与非负性；其 eval、diffuse 分量和 directional energy 还必须等于
-两个精确端点按 subsurface 权重的线性组合，specular 分量必须与两个端点一致。通用 RoboCute
-组合树继续由原有 closure 属性测试独立覆盖，避免把两个大型实现塞进同一 Slang 优化单元。
+dielectric、conductor、厚表面 subsurface 和 thin-wall subsurface；另有 16,384 个分数
+subsurface 用例覆盖零附近、0.25、0.5、0.75 和一附近的权重、厚/薄表面、随机数边界、掠射角、
+IOR、各向异性和粗糙度。测试直接验证 eval 分量求和、PDF、事件、能量、有限性、非负性和
+状态不变量；分数路径还验证端点线性组合性质，不再把第二套参考实现编进同一测试单元。
 
-`CompactOpenPbrTransmissionGpuTest` 执行 36,864 个参考差分用例，覆盖厚介质进入/退出、thin-wall、
-三组 sampling flags、smooth/rough 与 index-matched 边界，并比较状态、eval、PDF、事件、方向、
-throughput、eta、directional energy、volume stack 和退出时的 ray distance。
+`CompactOpenPbrTransmissionGpuTest` 执行 36,864 个性质用例，覆盖厚介质进入/退出、thin-wall、
+三组 sampling flags、smooth/rough 与 index-matched 边界，并验证状态、eval、PDF、有效事件、
+方向、eta、directional energy、volume stack 和退出时的 ray distance。参考公式可能生成的
+无效 proposal 按生产 adapter 的接受谓词拒绝，不消费 provisional event 或介质状态。
 
-`CompactOpenPbrFoliageGpuTest` 执行 12,288 个参考差分用例，覆盖 dielectric、分数 subsurface 和
-conductor 三种拓扑，比较总 eval、diffuse/specular 分量、PDF、采样、directional energy 和紧凑
-组合状态。若随机数落在参考与紧凑权重因允许的舍入差异形成的 `1e-6` 零测度边界带内，测试仍
-比较权重、eval、PDF 和能量，但不要求两个浮点实现选择同一离散 lobe；其余用例要求采样事件、
-方向和响应一致。
+`CompactOpenPbrFoliageGpuTest` 执行 12,288 个性质用例，覆盖 dielectric、分数 subsurface 和
+conductor 三种拓扑，验证总 eval 与 diffuse/specular 分量求和、PDF、采样事件、directional
+energy 和紧凑组合状态。
+
+`OpenPbrCoreGpuTest` 验证 common、Fresnel 和反射 microfacet 的恒等式、边界与互易性质；
+`OpenPbrDistributionGpuTest` 以采样直方图对 PDF，并以 Monte Carlo 能量对独立求积；
+`OpenPbrTransmissionSlabGpuTest` 验证两界面 Snell、TIR、互反 eta、介质栈和 ray distance。
 
 被拒绝且事件为 `NONE` 的 proposal payload 沿用 adapter 现有契约：payload 未定义且不会被消费，
 测试不以其中的 NaN/Inf 判定失败；任何有效事件的 payload 仍必须完整通过数值检查。

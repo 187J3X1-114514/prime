@@ -13,7 +13,7 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 @Tag("gpu-shader")
-final class RoboCuteCoreGpuTest {
+final class OpenPbrCoreGpuTest {
     private static final long SEED = 0x5985_E989_254B_4685L;
     private static final int INPUT_WORDS = 4;
     private static final int WITNESS_WORDS = 8;
@@ -22,18 +22,15 @@ final class RoboCuteCoreGpuTest {
     private static final int COMMON_CASES = 4_096;
     private static final int FRESNEL_CASES = 8_192;
     private static final int REFLECTION_CASES = 32_768;
-    private static final int REFRACTION_CASES = 32_768;
     private static final int CASE_COUNT = ONB_CASES
             + COMMON_CASES
             + FRESNEL_CASES
-            + REFLECTION_CASES
-            + REFRACTION_CASES;
+            + REFLECTION_CASES;
 
     private static final int ONB = 0;
     private static final int COMMON = 1;
     private static final int FRESNEL = 2;
     private static final int REFLECTION = 3;
-    private static final int REFRACTION = 4;
 
     private static final float[] UNIT_BOUNDARIES = {
         0.0F, Math.nextUp(0.0F), 0.5F, Math.nextDown(1.0F)
@@ -94,7 +91,7 @@ final class RoboCuteCoreGpuTest {
         ByteBuffer input = createCases();
         Path shader = Path.of(
                 System.getProperty("prime.test.slangShaderDirectory"),
-                "robocute_core_properties.comp.spv");
+                "openpbr_core_properties.comp.spv");
         ShaderPropertyBatch.assertProperties(
                 runner,
                 shader,
@@ -113,7 +110,6 @@ final class RoboCuteCoreGpuTest {
         caseIndex = writeCommonCases(input, caseIndex, random);
         caseIndex = writeFresnelCases(input, caseIndex, random);
         caseIndex = writeReflectionCases(input, caseIndex, random);
-        caseIndex = writeRefractionCases(input, caseIndex, random);
         assertEquals(CASE_COUNT, caseIndex, "GPU property case count");
         return input;
     }
@@ -267,31 +263,6 @@ final class RoboCuteCoreGpuTest {
                     sampleY);
         }
         return firstCase + REFLECTION_CASES;
-    }
-
-    private static int writeRefractionCases(
-            ByteBuffer input, int firstCase, SplittableRandom random) {
-        for (int localCase = 0; localCase < REFRACTION_CASES; localCase++) {
-            int caseIndex = firstCase + localCase;
-            float[] alpha = alphaPair(localCase * 17 + 3);
-            float cosine = viewCosine(localCase, random, true);
-            float phi = (float) (2.0 * Math.PI * random.nextDouble());
-            float sine = (float) Math.sqrt(Math.max(0.0, 1.0 - cosine * cosine));
-            putKind(input, caseIndex, REFRACTION);
-            putParams(
-                    input,
-                    caseIndex,
-                    alpha[0],
-                    alpha[1],
-                    sine * (float) Math.cos(phi),
-                    sine * (float) Math.sin(phi),
-                    cosine,
-                    sampleValue(localCase, 0, random),
-                    sampleValue(localCase, 1, random),
-                    sampleValue(localCase, 2, random),
-                    IORS[localCase % IORS.length]);
-        }
-        return firstCase + REFRACTION_CASES;
     }
 
     private static float[] alphaPair(int caseIndex) {

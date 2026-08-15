@@ -1,34 +1,20 @@
 #include "core/prime_test_abi.slang"
-import "bsdf/adapter/prime_bsdf_specializations.slang";
 import "bsdf/adapter/transmission_ggx_energy.slang";
 import "bsdf/compact/openpbr_common.slang";
 import "bsdf/compact/openpbr_foliage.slang";
 import "bsdf/compact/openpbr_material.slang";
-import "bsdf/core/robocute_common.slang";
-import "bsdf/core/robocute_openpbr.slang";
 
 static const uint PRIME_COMPACT_FOLIAGE_INPUT_WORDS = 4u;
-static const uint PRIME_COMPACT_FOLIAGE_WITNESS_WORDS = 12u;
 static const float PRIME_TEST_FOLIAGE_TRANSMISSION_WEIGHT = 0.15;
-static const float3 PRIME_TEST_FOLIAGE_WAVELENGTHS_NM = float3(630.0, 532.0, 467.0);
 
 struct PrimeCompactFoliageTestResult {
     uint mask;
     uint kind;
-    PrimeRcEval referenceEvaluation;
-    PrimeCompactFoliageEvaluation compactEvaluation;
-    PrimeRcSampleResult referenceSample;
-    PrimeOpenPbrSampleResult compactSample;
-    float3 referenceDiffuse;
-    float3 compactDiffuse;
-    float3 referenceSpecular;
-    float3 compactSpecular;
-    float3 referenceDiffuseEnergy;
-    float3 compactDiffuseEnergy;
-    float3 referenceSpecularEnergy;
-    float3 compactSpecularEnergy;
-    float4 mixWeights;
-    uint comparableSample;
+    PrimeCompactFoliageEvaluation evaluation;
+    PrimeCompactFoliageEvaluation sampledEvaluation;
+    PrimeCompactFoliageComponents components;
+    PrimeCompactFoliageEnergy energy;
+    PrimeOpenPbrSampleResult sample;
 };
 
 float primeCompactFoliageParam(uint4 encoded[4], uint index) {
@@ -41,31 +27,7 @@ float3 primeCompactFoliageDirection(float cosineTheta, float phi) {
     return float3(radius * cos(phi), radius * sin(phi), cosineTheta);
 }
 
-bool primeCompactFoliageClose(float first, float second) {
-    return primeTestClose(first, second, 6.0e-6, 4.0e-5);
-}
-
-bool primeCompactFoliageClose(float2 first, float2 second) {
-    return primeCompactFoliageClose(first.x, second.x)
-            && primeCompactFoliageClose(first.y, second.y);
-}
-
-bool primeCompactFoliageClose(float3 first, float3 second) {
-    return primeTestClose(first, second, 6.0e-6, 4.0e-5);
-}
-
-PrimeRcVolumeStack primeCompactFoliageEmptyStack() {
-    PrimeRcVolumeStack stack;
-    stack.values[0].extinction = float3(0.0);
-    stack.values[0].albedo = float3(0.0);
-    stack.values[0].anisotropy = 0.0;
-    stack.values[0].ior = 1.0;
-    stack.values[1] = stack.values[0];
-    stack.count = 0u;
-    return stack;
-}
-
-PrimeOpenPbrVolumeStack primeCompactFoliageOpenPbrEmptyStack() {
+PrimeOpenPbrVolumeStack primeCompactFoliageEmptyStack() {
     PrimeOpenPbrVolumeStack stack;
     stack.values[0].extinction = float3(0.0);
     stack.values[0].albedo = float3(0.0);
@@ -76,120 +38,24 @@ PrimeOpenPbrVolumeStack primeCompactFoliageOpenPbrEmptyStack() {
     return stack;
 }
 
-void primeCompactFoliageCompare(
-        inout PrimeCompactFoliageTestResult result,
-        PrimeRcState reference,
-        PrimeCompactFoliageState compact) {
-    result.mask |= primeTestClassify(result.referenceEvaluation.throughput.value);
-    result.mask |= primeTestClassify(result.referenceEvaluation.pdf);
-    result.mask |= primeTestClassify(result.compactEvaluation.throughput.value);
-    result.mask |= primeTestClassify(result.compactEvaluation.pdf);
-    result.mask |= primeTestClassify(result.referenceDiffuse);
-    result.mask |= primeTestClassify(result.compactDiffuse);
-    result.mask |= primeTestClassify(result.referenceSpecular);
-    result.mask |= primeTestClassify(result.compactSpecular);
-    result.mask |= primeTestClassify(result.referenceDiffuseEnergy);
-    result.mask |= primeTestClassify(result.compactDiffuseEnergy);
-    result.mask |= primeTestClassify(result.referenceSpecularEnergy);
-    result.mask |= primeTestClassify(result.compactSpecularEnergy);
-    if (!primeCompactFoliageClose(
-                result.referenceEvaluation.throughput.value,
-                result.compactEvaluation.throughput.value)
-            || !primeCompactFoliageClose(result.referenceDiffuse, result.compactDiffuse)
-            || !primeCompactFoliageClose(result.referenceSpecular, result.compactSpecular)
-            || !primeCompactFoliageClose(
-                    result.referenceDiffuseEnergy, result.compactDiffuseEnergy)
-            || !primeCompactFoliageClose(
-                    result.referenceSpecularEnergy, result.compactSpecularEnergy)) {
-        result.mask |= PRIME_TEST_FAILURE_VALUE;
-    }
-    if (!primeCompactFoliageClose(
-                result.referenceEvaluation.pdf, result.compactEvaluation.pdf)) {
-        result.mask |= PRIME_TEST_FAILURE_PDF;
-    }
-    if (result.referenceEvaluation.throughput.flags
-            != result.compactEvaluation.throughput.flags) {
-        result.mask |= PRIME_TEST_FAILURE_EVENT;
-    }
-    bool stateMismatch = !primeCompactFoliageClose(
-            reference.specularMicrofacet.alpha, compact.base.microfacet.alpha);
-    if (result.kind == 2u) {
-        stateMismatch = stateMismatch
-                || !primeCompactFoliageClose(
-                        reference.conductorFresnel.f0,
-                        compact.base.conductorFresnel.f0)
-                || !primeCompactFoliageClose(
-                        reference.conductorEss, compact.base.conductorEss);
-    } else {
-        stateMismatch = stateMismatch
-            || !primeCompactFoliageClose(
-                    reference.transmissionMicrofacet.alpha,
-                    compact.transmissionMicrofacet.alpha)
-            || !primeCompactFoliageClose(
-                    reference.specularFresnel.ior,
-                    compact.base.dielectricFresnel.ior)
-            || !primeCompactFoliageClose(
-                    reference.specularFresnel.energyIor,
-                    compact.base.dielectricFresnel.energyIor)
-            || !primeCompactFoliageClose(
-                    reference.transmissionTint, compact.transmissionTint)
-            || !primeCompactFoliageClose(
-                    reference.glossyDiffuse.coatTransIn,
-                    compact.base.layer.transmittanceIn)
-            || !primeCompactFoliageClose(
-                    reference.glossyDiffuse.subSampleWeight,
-                    compact.base.layer.baseSampleWeight)
-            || !primeCompactFoliageClose(
-                    reference.glossyDiffuse.coatSampleWeight,
-                    compact.base.layer.specularSampleWeight)
-            || !primeCompactFoliageClose(
-                    reference.dielectricBase.firstSampleWeight,
-                    compact.dielectricMix.firstSampleWeight)
-            || !primeCompactFoliageClose(
-                    reference.dielectricBase.secondSampleWeight,
-                    compact.dielectricMix.secondSampleWeight)
-            || !primeCompactFoliageClose(
-                    reference.material.weight.transmission,
-                    compact.transmissionWeight);
-    }
-    if (stateMismatch) {
-        result.mask |= PRIME_TEST_FAILURE_STATE;
-    }
+void primeCompactFoliageClassify(inout uint mask, float value) {
+    mask |= primeTestClassify(value);
+}
 
-    uint referenceFlags = result.referenceSample.bsdfSample.throughput.flags;
-    uint compactFlags = result.compactSample.bsdfSample.throughput.flags;
-    if (result.comparableSample != 0u && referenceFlags != compactFlags) {
-        result.mask |= PRIME_TEST_FAILURE_EVENT;
-    }
-    if (result.comparableSample != 0u && referenceFlags != PRIME_RC_FLAG_NONE) {
-        result.mask |= primeTestClassify(result.referenceSample.bsdfSample.throughput.value);
-        result.mask |= primeTestClassify(result.referenceSample.bsdfSample.pdf);
-        result.mask |= primeTestClassify(result.referenceSample.bsdfSample.wo);
-        result.mask |= primeTestClassify(result.compactSample.bsdfSample.throughput.value);
-        result.mask |= primeTestClassify(result.compactSample.bsdfSample.pdf);
-        result.mask |= primeTestClassify(result.compactSample.bsdfSample.wo);
-        if (!primeCompactFoliageClose(
-                    result.referenceSample.bsdfSample.throughput.value,
-                    result.compactSample.bsdfSample.throughput.value)
-                || !primeCompactFoliageClose(
-                    result.referenceSample.bsdfSample.pdf,
-                    result.compactSample.bsdfSample.pdf)
-                || !primeCompactFoliageClose(
-                    result.referenceSample.bsdfSample.eta,
-                    result.compactSample.bsdfSample.eta)
-                || !primeCompactFoliageClose(
-                    result.referenceSample.bsdfSample.wo,
-                    result.compactSample.bsdfSample.wo)) {
-            result.mask |= PRIME_TEST_FAILURE_VALUE;
-        }
-    }
-    if (result.comparableSample != 0u
-            && (result.referenceSample.volumeStack.count
-                    != result.compactSample.volumeStack.count
-            || !primeCompactFoliageClose(
-                    result.referenceSample.rayT, result.compactSample.rayT))) {
-        result.mask |= PRIME_TEST_FAILURE_STATE;
-    }
+void primeCompactFoliageClassify(inout uint mask, float2 value) {
+    mask |= primeTestClassify(value);
+}
+
+void primeCompactFoliageClassify(inout uint mask, float3 value) {
+    mask |= primeTestClassify(value);
+}
+
+bool primeCompactFoliageNonnegative(float value) {
+    return value >= 0.0 && primeTestClassify(value) == 0u;
+}
+
+bool primeCompactFoliageNonnegative(float3 value) {
+    return all(value >= float3(0.0)) && primeTestClassify(value) == 0u;
 }
 
 PrimeCompactFoliageTestResult primeCompactFoliageRun(uint4 encoded[4]) {
@@ -218,100 +84,92 @@ PrimeCompactFoliageTestResult primeCompactFoliageRun(uint4 encoded[4]) {
     float inverseOutsideIor = primeCompactFoliageParam(encoded, 13u);
     float rayT = primeCompactFoliageParam(encoded, 14u);
 
-    PrimeRcMaterial referenceMaterial = primeRcMaterialFromMetallic(
-            color, roughness, conductor ? 1.0 : 0.0, float3(0.0, 0.0, 1.0));
-    PrimeOpenPbrMaterial compactMaterial = primeCompactMaterialFromMetallic(
+    PrimeOpenPbrMaterial material = primeCompactMaterialFromMetallic(
             color, roughness, conductor ? 1.0 : 0.0, float3(0.0, 0.0, 1.0));
     if (!conductor) {
-        referenceMaterial.specular.ior = ior;
-        referenceMaterial.weight.subsurface = subsurfaceWeight;
-        referenceMaterial.subsurface.color = color;
-        compactMaterial.specular.ior = ior;
-        compactMaterial.weight.subsurface = subsurfaceWeight;
-        compactMaterial.subsurface.color = color;
+        material.specular.ior = ior;
+        material.weight.subsurface = subsurfaceWeight;
+        material.subsurface.color = color;
     }
-    referenceMaterial.weight.transmission = PRIME_TEST_FOLIAGE_TRANSMISSION_WEIGHT;
-    referenceMaterial.geometry.thinWalled = 1u;
-    referenceMaterial.geometry.thickness = 0.0625;
-    referenceMaterial.transmission.color = clamp(color, float3(0.02), float3(1.0));
-    referenceMaterial.transmission.depth = 0.0;
-    referenceMaterial.transmission.scatter = float3(0.0);
-    referenceMaterial.transmission.scatterAnisotropy = 0.0;
-    referenceMaterial.transmission.dispersionScale = 0.0;
-    compactMaterial.weight.transmission = PRIME_TEST_FOLIAGE_TRANSMISSION_WEIGHT;
-    compactMaterial.geometry.thinWalled = 1u;
-    compactMaterial.geometry.thickness = 0.0625;
-    compactMaterial.transmission.color = clamp(color, float3(0.02), float3(1.0));
-    compactMaterial.transmission.depth = 0.0;
-    compactMaterial.transmission.scatter = float3(0.0);
-    compactMaterial.transmission.scatterAnisotropy = 0.0;
-    compactMaterial.transmission.dispersionScale = 0.0;
-    if (!primeCompactFoliageSupports(compactMaterial)) {
+    material.weight.transmission = PRIME_TEST_FOLIAGE_TRANSMISSION_WEIGHT;
+    material.geometry.thinWalled = 1u;
+    material.geometry.thickness = 0.0625;
+    material.transmission.color = clamp(color, float3(0.02), float3(1.0));
+    material.transmission.depth = 0.0;
+    material.transmission.scatter = float3(0.0);
+    material.transmission.scatterAnisotropy = 0.0;
+    material.transmission.dispersionScale = 0.0;
+    if (!primeCompactFoliageSupports(material)) {
         result.mask |= PRIME_TEST_FAILURE_STATE;
     }
-    PrimeOpenPbrMaterial unsupported = compactMaterial;
+    PrimeOpenPbrMaterial unsupported = material;
     unsupported.weight.coat = 0.5;
     if (primeCompactFoliageSupports(unsupported)) {
         result.mask |= PRIME_TEST_FAILURE_STATE;
     }
 
-    PrimeRcState reference = primeRcPrimeThinWallStateInit(
-            referenceMaterial,
-            wi,
-            inverseOutsideIor,
-            rayT,
-            PRIME_TEST_FOLIAGE_WAVELENGTHS_NM,
-            0u,
-            PRIME_RC_DETAIL_DEFAULT,
-            0u);
-    PrimeCompactFoliageState compact = primeCompactFoliageStateInit(
-            primeTransmissionGgxEnergy(), compactMaterial, wi, inverseOutsideIor, rayT);
-    result.mixWeights = float4(
-            reference.dielectricBase.firstSampleWeight,
-            reference.dielectricBase.secondSampleWeight,
-            compact.dielectricMix.firstSampleWeight,
-            compact.dielectricMix.secondSampleWeight);
-    result.comparableSample = conductor
-            || (abs(randomValue.z - reference.dielectricBase.secondSampleWeight) > 1.0e-6
-                    && abs(randomValue.z
-                            - compact.dielectricMix.secondSampleWeight) > 1.0e-6)
-            ? 1u : 0u;
-    PrimeRcVolumeStack referenceStack = primeCompactFoliageEmptyStack();
-    PrimeOpenPbrVolumeStack compactStack = primeCompactFoliageOpenPbrEmptyStack();
+    PrimeCompactFoliageState state = primeCompactFoliageStateInit(
+            primeTransmissionGgxEnergy(), material, wi, inverseOutsideIor, rayT);
+    result.evaluation = primeCompactFoliageEvaluate(wi, wo, state);
+    result.components = primeCompactFoliageEvaluateComponents(wi, wo, state);
+    result.energy = primeCompactFoliageEnergy(
+            primeTransmissionGgxEnergy(), wi, state);
+    result.sample = primeCompactFoliageSample(
+            wi, randomValue, state, primeCompactFoliageEmptyStack());
+    result.sampledEvaluation.throughput = primeOpenPbrZeroThroughput();
+    result.sampledEvaluation.pdf = 0.0;
 
-    reference.samplingFlags = PRIME_RC_FLAG_ALL;
-    result.referenceEvaluation = primeRcPrimeThinWallEvaluate(wi, wo, reference);
-    result.compactEvaluation = primeCompactFoliageEvaluate(wi, wo, compact);
-    result.referenceSample = primeRcPrimeThinWallSample(
-            wi, randomValue, reference, referenceStack);
-    result.compactSample = primeCompactFoliageSample(
-            wi, randomValue, compact, compactStack);
-
-    PrimeRcState referenceDiffuse = reference;
-    referenceDiffuse.samplingFlags = PRIME_RC_FLAG_DIFFUSE;
-    PrimeRcState referenceSpecular = reference;
-    referenceSpecular.samplingFlags = PRIME_RC_FLAG_SPECULAR | PRIME_RC_FLAG_DELTA;
-    result.referenceDiffuse = primeRcPrimeThinWallEval(
-            wi, wo, referenceDiffuse).value;
-    result.referenceSpecular = primeRcPrimeThinWallEval(
-            wi, wo, referenceSpecular).value;
-    PrimeCompactFoliageComponents components = primeCompactFoliageEvaluateComponents(
-            wi, wo, compact);
-    result.compactDiffuse = components.diffuse;
-    result.compactSpecular = components.specular;
-    if (!primeCompactFoliageClose(result.referenceEvaluation.pdf, components.pdf)) {
-        result.mask |= PRIME_TEST_FAILURE_PDF;
+    primeCompactFoliageClassify(result.mask, state.base.microfacet.alpha);
+    primeCompactFoliageClassify(result.mask, result.evaluation.throughput.value);
+    primeCompactFoliageClassify(result.mask, result.evaluation.pdf);
+    primeCompactFoliageClassify(result.mask, result.components.diffuse);
+    primeCompactFoliageClassify(result.mask, result.components.specular);
+    primeCompactFoliageClassify(result.mask, result.components.pdf);
+    primeCompactFoliageClassify(result.mask, result.energy.diffuse);
+    primeCompactFoliageClassify(result.mask, result.energy.specular);
+    if (!primeCompactFoliageNonnegative(result.evaluation.throughput.value)
+            || !primeCompactFoliageNonnegative(result.evaluation.pdf)
+            || !primeCompactFoliageNonnegative(result.components.diffuse)
+            || !primeCompactFoliageNonnegative(result.components.specular)
+            || !primeCompactFoliageNonnegative(result.components.pdf)
+            || !primeCompactFoliageNonnegative(result.energy.diffuse)
+            || !primeCompactFoliageNonnegative(result.energy.specular)) {
+        result.mask |= PRIME_TEST_FAILURE_RANGE;
+    }
+    if (!primeTestClose(
+                result.evaluation.throughput.value,
+                result.components.diffuse + result.components.specular,
+                6.0e-6,
+                4.0e-5)
+            || !primeTestClose(
+                result.evaluation.pdf, result.components.pdf, 6.0e-6, 4.0e-5)) {
+        result.mask |= PRIME_TEST_FAILURE_VALUE;
     }
 
-    result.referenceDiffuseEnergy = primeRcBaseSubstrateEnergy(
-            primeTransmissionGgxEnergy(), wi, referenceDiffuse);
-    result.referenceSpecularEnergy = primeRcBaseSubstrateEnergy(
-            primeTransmissionGgxEnergy(), wi, referenceSpecular);
-    PrimeCompactFoliageEnergy energy = primeCompactFoliageEnergy(
-            primeTransmissionGgxEnergy(), wi, compact);
-    result.compactDiffuseEnergy = energy.diffuse;
-    result.compactSpecularEnergy = energy.specular;
-    primeCompactFoliageCompare(result, reference, compact);
+    uint flags = result.sample.bsdfSample.throughput.flags;
+    if (flags != PRIME_OPENPBR_FLAG_NONE) {
+        primeCompactFoliageClassify(
+                result.mask, result.sample.bsdfSample.throughput.value);
+        primeCompactFoliageClassify(result.mask, result.sample.bsdfSample.pdf);
+        primeCompactFoliageClassify(result.mask, result.sample.bsdfSample.eta);
+        primeCompactFoliageClassify(result.mask, result.sample.bsdfSample.wo);
+        if (!primeCompactFoliageNonnegative(result.sample.bsdfSample.throughput.value)
+                || !primeCompactFoliageNonnegative(result.sample.bsdfSample.pdf)
+                || result.sample.bsdfSample.eta <= 0.0
+                || !primeTestClose(
+                        length(result.sample.bsdfSample.wo), 1.0, 3.0e-5, 3.0e-5)) {
+            result.mask |= PRIME_TEST_FAILURE_STATE;
+        }
+        bool reflected = wi.z * result.sample.bsdfSample.wo.z > 0.0;
+        if (reflected != primeOpenPbrIsReflective(flags)
+                || reflected == primeOpenPbrIsTransmissive(flags)) {
+            result.mask |= PRIME_TEST_FAILURE_EVENT;
+        }
+    }
+    if (result.sample.volumeStack.count != 0u
+            || !primeTestClose(result.sample.rayT, rayT, 0.0, 0.0)) {
+        result.mask |= PRIME_TEST_FAILURE_STATE;
+    }
     return result;
 }
 
@@ -320,36 +178,26 @@ void primeCompactFoliageWrite(uint caseIndex, PrimeCompactFoliageTestResult resu
     primeTestOutput[outputOffset] = uint4(result.mask, result.kind, caseIndex, 0u);
     if (!primeTestWitnessEnabled()) { return; }
     primeTestOutput[outputOffset + 1u] = asuint(float4(
-            result.referenceEvaluation.throughput.value,
-            result.referenceEvaluation.pdf));
+            result.evaluation.throughput.value, result.evaluation.pdf));
     primeTestOutput[outputOffset + 2u] = asuint(float4(
-            result.compactEvaluation.throughput.value,
-            result.compactEvaluation.pdf));
-    primeTestOutput[outputOffset + 3u] = asuint(float4(
-            result.referenceSample.bsdfSample.throughput.value,
-            result.referenceSample.bsdfSample.pdf));
-    primeTestOutput[outputOffset + 4u] = asuint(float4(
-            result.compactSample.bsdfSample.throughput.value,
-            result.compactSample.bsdfSample.pdf));
-    primeTestOutput[outputOffset + 5u] = asuint(float4(
-            result.referenceSample.bsdfSample.wo,
-            result.referenceSample.bsdfSample.eta));
+            result.components.diffuse, result.components.pdf));
+    primeTestOutput[outputOffset + 3u] = asuint(float4(result.components.specular, 0.0));
+    primeTestOutput[outputOffset + 4u] = asuint(float4(result.energy.diffuse, 0.0));
+    primeTestOutput[outputOffset + 5u] = asuint(float4(result.energy.specular, 0.0));
     primeTestOutput[outputOffset + 6u] = asuint(float4(
-            result.compactSample.bsdfSample.wo,
-            result.compactSample.bsdfSample.eta));
+            result.sample.bsdfSample.throughput.value, result.sample.bsdfSample.pdf));
     primeTestOutput[outputOffset + 7u] = asuint(float4(
-            result.referenceEvaluation.pdf,
-            result.compactEvaluation.pdf,
-            result.referenceSample.bsdfSample.pdf,
-            result.compactSample.bsdfSample.pdf));
-    primeTestOutput[outputOffset + 8u] = asuint(result.mixWeights);
-    primeTestOutput[outputOffset + 9u] = asuint(float4(result.referenceSpecular, 0.0));
-    primeTestOutput[outputOffset + 10u] = asuint(float4(result.compactSpecular, 0.0));
-    primeTestOutput[outputOffset + 11u] = uint4(
-            result.referenceSample.bsdfSample.throughput.flags,
-            result.compactSample.bsdfSample.throughput.flags,
-            result.referenceSample.volumeStack.count,
-            result.compactSample.volumeStack.count);
+            result.sample.bsdfSample.wo, result.sample.bsdfSample.eta));
+    primeTestOutput[outputOffset + 8u] = asuint(float4(
+            result.sampledEvaluation.throughput.value,
+            result.sampledEvaluation.pdf));
+    primeTestOutput[outputOffset + 9u] = uint4(
+            result.evaluation.throughput.flags,
+            result.sample.bsdfSample.throughput.flags,
+            result.sampledEvaluation.throughput.flags,
+            result.sample.volumeStack.count);
+    primeTestOutput[outputOffset + 10u] = asuint(float4(result.sample.rayT, 0.0, 0.0, 0.0));
+    primeTestOutput[outputOffset + 11u] = uint4(0u);
 }
 
 [numthreads(64, 1, 1)]

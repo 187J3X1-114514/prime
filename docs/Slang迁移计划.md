@@ -70,9 +70,9 @@ control 生成。
 
 ## OpenPBR 紧凑迁移
 
-机械 Slang core 已完成过渡任务，现作为固定差分 oracle，不再是生产架构。新的
-`shaders/bsdf/compact` 按精确 OpenPBR 拓扑建立专用状态；当前生产入口的全部材质族已经切换，
-未覆盖的 OpenPBR 能力在材质边界拒绝，不能回退到参考库，避免新旧公式同时进入 SPIR-V。
+机械 Slang core 已完成过渡任务并从仓库删除。`shaders/bsdf/compact` 按精确 OpenPBR 拓扑建立
+专用状态；当前生产入口的全部材质族已经切换，未覆盖的 OpenPBR 能力在材质边界拒绝，不能
+回退到参考库，避免第二套公式重新进入 SPIR-V 或测试编译单元。
 
 `shaders/robocute.lock.json` 只锁定第三方参考版本和 author overlay，`third_party` 文件与哈希原样
 保留。紧凑实现允许浮点舍入差异，但不得引入模型近似；详细覆盖范围、切换门槛和测试契约见
@@ -84,13 +84,13 @@ ABI 和离散语义保持精确：descriptor、push constant、结构布局、pa
 介质栈变化和队列状态不得产生容差差异。连续浮点结果允许因编译器和有测量依据的优化产生偏差，
 但每个迁移或浮点优化批次必须重跑以下 GPU 行为门禁：
 
-- `RoboCuteCoreGpuTest`：NaN/±Inf、边界随机数、掠射角、临界折射、各向异性粗糙度、PDF、
-  单位方向、对称性与互易性；
-- `RoboCuteClosureGpuTest` 与 `PrimeBsdfGpuTest`：所有生产可达 closure/adapter 的有限性、
-  非负响应、采样/求值一致性、事件、relative eta、介质栈和极端传播距离；
+- `OpenPbrCoreGpuTest` 与紧凑 topology 属性测试：NaN/±Inf、边界随机数、掠射角、
+  各向异性粗糙度、PDF、单位方向、对称性、互易性、事件和状态转换；
+- `PrimeBsdfGpuTest` 与 `OpenPbrTransmissionSlabGpuTest`：生产 adapter 的有限性、非负响应、
+  采样/求值一致性、relative eta、介质栈、Snell/TIR 和极端传播距离；
 - `PrimeBsdfDiagnosticsGpuTest`：adapter 在拒绝或净化之前对 NaN/Inf、负值与非法方向的
   显式逐 invocation 观察，以及关闭观察时的无状态边界；
-- `RoboCuteDistributionGpuTest`：采样直方图与 PDF 的统计一致性，以及 Monte Carlo 能量与
+- `OpenPbrDistributionGpuTest`：采样直方图与 PDF 的统计一致性，以及 Monte Carlo 能量与
   独立求积的一致性；
 - `PrimeNumericalGpuTest`：以原始 IEEE-754 bit pattern 覆盖 NaN、±Inf、正负零、次正规数、
   FP16 上界、负值、单位区间和非法方向的生产分类器；
@@ -111,9 +111,9 @@ ABI 和离散语义保持精确：descriptor、push constant、结构布局、pa
    等依赖面较小的 entry point 开始，建立 shadow artifact 和逐 pipeline host 切换方式。
 4. **已完成——场景、材质与命中契约**：迁移材质 IR、LabPBR 翻译、介质边界、hit common、ray payload
    和 world/shadow hit/miss；先锁定结构 stride、payload location 和 any-hit 行为。
-5. **已完成——BSDF 当前可达核心与 adapter**：冻结生产调用闭包，机械移植核心，再迁移 Prime BSDF
-   adapter；使用既有 GPU 性质、分布、能量和状态测试做 GLSL/Slang 行为对照，不移植闭包外
-   死代码。bit 对照只用于定位差异。
+5. **已完成——BSDF 当前可达核心与 adapter**：冻结生产调用闭包，迁移 Prime BSDF adapter，
+   再以精确紧凑 topology 取代过渡期机械移植；GPU 性质、分布、能量和状态测试接管验收，
+   本地参考 port 已在收口阶段删除。bit 对照只用于定位历史差异。
 6. **已完成——大气、灯光、积分器与 SHARC adapter**：迁移 atmosphere、light tree、lights、
    integrator、queued PSR 和 Prime 自有 SHARC 适配；`third_party/sharc` 保持不变。
 7. **已完成——wavefront entry points**：先 realtime、后 offline。保持当前执行模式队列、stage

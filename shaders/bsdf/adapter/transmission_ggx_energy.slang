@@ -2,14 +2,14 @@
 module "bsdf/adapter/transmission_ggx_energy.slang";
 
 import "prime_abi_bindings.slang";
-import "bsdf/core/transmission_ggx_energy.slang";
+import "bsdf/compact/transmission_ggx_energy.slang";
 
 [[vk::binding(PRIME_TRANSMISSION_GGX_ENERGY_BINDING, 0)]]
-Sampler3D<float4> primeRcTransmissionGgxEnergy;
+Sampler3D<float4> primeTransmissionGgxEnergyTexture;
 
-public struct PrimeTransmissionGgxEnergy : IPrimeRcTransmissionGgxEnergy {
+public struct PrimeTransmissionGgxEnergy : IPrimeOpenPbrTransmissionGgxEnergy {
     public float4 sampleLevel(float3 uvw) {
-        return primeRcTransmissionGgxEnergy.SampleLevel(uvw, 0.0);
+        return primeTransmissionGgxEnergyTexture.SampleLevel(uvw, 0.0);
     }
 };
 
@@ -18,5 +18,5 @@ public PrimeTransmissionGgxEnergy primeTransmissionGgxEnergy() {
 }
 
 public float4 primeLoadTransmissionGgxEnergyTexel(uint3 coordinate) {
-    return primeRcTransmissionGgxEnergy.Load(int4(coordinate, 0));
+    return primeTransmissionGgxEnergyTexture.Load(int4(coordinate, 0));
 }

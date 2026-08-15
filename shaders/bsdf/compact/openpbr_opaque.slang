@@ -4,12 +4,11 @@ module "bsdf/compact/openpbr_opaque.slang";
 import "bsdf/compact/openpbr_common.slang";
 import "bsdf/compact/openpbr_fresnel.slang";
 import "bsdf/compact/openpbr_microfacet.slang";
-import "bsdf/core/transmission_ggx_energy.slang";
+import "bsdf/compact/transmission_ggx_energy.slang";
 
 // Exact OpenPBR opaque specializations used by Prime today: dielectric base with
 // specular layering, conductor, and subsurface with specular layering. The compact
-// state stores only values reachable from these topologies. RoboCute remains the
-// differential reference while this module replaces the generic graph incrementally.
+// state stores only values reachable from these topologies.
 
 public static const uint PRIME_COMPACT_OPAQUE_DIELECTRIC = 0u;
 public static const uint PRIME_COMPACT_OPAQUE_CONDUCTOR = 1u;
@@ -603,7 +602,7 @@ public PrimeCompactOpaqueState primeCompactOpaqueStateInit<TransmissionGgxEnergy
         float3 wi,
         float inverseOutsideIor,
         float rayT)
-    where TransmissionGgxEnergy : IPrimeRcTransmissionGgxEnergy
+    where TransmissionGgxEnergy : IPrimeOpenPbrTransmissionGgxEnergy
 {
     PrimeCompactOpaqueState state;
     state.onb = material.geometry.onb;

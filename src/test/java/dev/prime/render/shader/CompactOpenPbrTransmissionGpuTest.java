@@ -31,8 +31,11 @@ final class CompactOpenPbrTransmissionGpuTest {
         0.5F,
         1.0F
     };
-    private static final float[] IORS = {
-        1.0F, 1.0F / 1.5F, 1.0F / 1.333F, 1.333F, 1.5F, 2.4F
+    private static final float[] MATERIAL_IORS = {
+        1.0F, 1.333F, 1.5F, 2.4F
+    };
+    private static final float[] INVERSE_OUTSIDE_IORS = {
+        1.0F, 1.0F / 1.333F, 1.0F / 1.5F, 1.0F / 2.4F
     };
     private static final float[] COSINES = {
         1.0e-6F, 1.0e-4F, 0.001F, 0.01F, 0.1F, 0.5F, 0.9F, 1.0F
@@ -66,7 +69,7 @@ final class CompactOpenPbrTransmissionGpuTest {
     }
 
     @Test
-    void compactTransmissionMatchesReferenceAcrossTopologyAndSamplingFlags()
+    void compactTransmissionPreservesPropertiesAcrossTopologyAndSamplingFlags()
             throws IOException {
         Path shader = Path.of(
                 System.getProperty("prime.test.slangShaderDirectory"),
@@ -96,7 +99,7 @@ final class CompactOpenPbrTransmissionGpuTest {
                         caseIndex,
                         kind,
                         ROUGHNESSES[localCase % ROUGHNESSES.length],
-                        IORS[(localCase * 3 + kind) % IORS.length],
+                        MATERIAL_IORS[(localCase * 3 + kind) % MATERIAL_IORS.length],
                         COSINES[localCase % COSINES.length],
                         (float) (2.0 * Math.PI * random.nextDouble()),
                         outgoingCosine,
@@ -107,7 +110,8 @@ final class CompactOpenPbrTransmissionGpuTest {
                         (float) random.nextDouble(0.001, 1.0),
                         (float) random.nextDouble(0.001, 1.0),
                         (float) random.nextDouble(0.001, 1.0),
-                        IORS[(localCase * 7 + 1) % IORS.length],
+                        INVERSE_OUTSIDE_IORS[
+                                (localCase * 7 + 1) % INVERSE_OUTSIDE_IORS.length],
                         (float) random.nextDouble(0.0, 1_000.0),
                         (localCase & 2) != 0 ? 1.0F : 0.0F);
                 caseIndex++;

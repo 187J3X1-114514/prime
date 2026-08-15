@@ -14,7 +14,7 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 @Tag("gpu-shader")
-final class RoboCuteDistributionGpuTest {
+final class OpenPbrDistributionGpuTest {
     private static final int SAMPLE_COUNT = 262_144;
     private static final int GRID_Z = 256;
     private static final int GRID_PHI = 512;
@@ -77,7 +77,7 @@ final class RoboCuteDistributionGpuTest {
             shaders = new Path[] {
                 Path.of(
                         System.getProperty("prime.test.slangShaderDirectory"),
-                        "robocute_distribution_statistics.comp.spv")
+                        "openpbr_distribution_statistics.comp.spv")
             };
         } catch (ShaderComputeRunner.UnavailableException | LinkageError exception) {
             if (Boolean.getBoolean("prime.shaderTests.required")) {

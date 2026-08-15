@@ -4,7 +4,7 @@ module "bsdf/compact/openpbr_foliage.slang";
 import "bsdf/compact/openpbr_opaque.slang";
 import "bsdf/compact/openpbr_transmission.slang";
 import "bsdf/compact/openpbr_common.slang";
-import "bsdf/core/transmission_ggx_energy.slang";
+import "bsdf/compact/transmission_ggx_energy.slang";
 
 // Exact compact specialization of OpenPBR's thin-wall base substrate used by
 // Prime foliage. The inactive coat, fuzz, thin-film and diffraction graph is
@@ -117,7 +117,7 @@ public PrimeCompactFoliageState primeCompactFoliageStateInit<TransmissionGgxEner
         float3 wi,
         float inverseOutsideIor,
         float rayT)
-    where TransmissionGgxEnergy : IPrimeRcTransmissionGgxEnergy
+    where TransmissionGgxEnergy : IPrimeOpenPbrTransmissionGgxEnergy
 {
     PrimeCompactFoliageState state;
     state.base = primeCompactOpaqueStateInit(
@@ -253,7 +253,7 @@ public PrimeCompactFoliageEnergy primeCompactFoliageEnergy<TransmissionGgxEnergy
         TransmissionGgxEnergy transmissionGgxEnergy,
         float3 wi,
         PrimeCompactFoliageState state)
-    where TransmissionGgxEnergy : IPrimeRcTransmissionGgxEnergy
+    where TransmissionGgxEnergy : IPrimeOpenPbrTransmissionGgxEnergy
 {
     PrimeCompactOpaqueEnergy base = primeCompactOpaqueEnergy(wi, state.base);
     PrimeCompactFoliageEnergy result;

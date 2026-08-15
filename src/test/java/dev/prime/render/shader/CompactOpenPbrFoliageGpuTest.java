@@ -69,7 +69,7 @@ final class CompactOpenPbrFoliageGpuTest {
     }
 
     @Test
-    void compactFoliageMatchesReferenceAcrossDielectricSubsurfaceAndConductorTopologies()
+    void compactFoliagePreservesDielectricSubsurfaceAndConductorProperties()
             throws IOException {
         Path shader = Path.of(
                 System.getProperty("prime.test.slangShaderDirectory"),

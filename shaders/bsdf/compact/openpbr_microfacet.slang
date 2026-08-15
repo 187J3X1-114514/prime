@@ -2,10 +2,10 @@
 module "bsdf/compact/openpbr_microfacet.slang";
 
 import "bsdf/compact/openpbr_common.slang";
-import "bsdf/core/transmission_ggx_energy.slang";
+import "bsdf/compact/transmission_ggx_energy.slang";
 
-// Exact production-reachable microfacet subset. Generic full-state
-// refractive entry points remain only in the RoboCute test oracle.
+// Exact production-reachable microfacet subset. Generic full-state entry points
+// outside the compact opaque and transmission topologies are intentionally absent.
 
 public bool primeOpenPbrMicrofacetEffectivelySmooth(PrimeOpenPbrMicrofacet microfacet) {
     return primeOpenPbrReduceMax(microfacet.alpha) < 1.0e-4;
@@ -135,7 +135,7 @@ public float3 primeOpenPbrMicrofacetDielectricMsCompensation<TransmissionGgxEner
         PrimeOpenPbrMicrofacet microfacet,
         float cosineTheta,
         float ior)
-    where TransmissionGgxEnergy : IPrimeRcTransmissionGgxEnergy
+    where TransmissionGgxEnergy : IPrimeOpenPbrTransmissionGgxEnergy
 {
     if (ior == 1.0) { return float3(1.0, 1.0, 0.0); }
 

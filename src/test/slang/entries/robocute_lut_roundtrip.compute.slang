@@ -1,6 +1,5 @@
 
 #include "core/prime_test_abi.slang"
-import "bsdf/core/robocute_microfacet.slang";
 import "bsdf/adapter/transmission_ggx_energy.slang";
 
 static const uint3 PRIME_TEST_GGX_SIZE = uint3(44u, 32u, 159u);

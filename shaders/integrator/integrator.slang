@@ -586,7 +586,7 @@ PrimeDirectLightingSplit primeEvaluateVisibleDirectSplit(
     }
     // The translation layer supplies conservative defaults when no community material data is
     // authored. Material provenance must not select a second BSDF: every ordinary opaque surface
-    // uses RoboCute's white-furnace-tested BasicMetallic composition.
+    // uses the compact OpenPBR white-furnace-tested BasicMetallic composition.
     PrimeBsdfComponents components = primeEvaluateOpaqueComponents(
             surface.baseColor,
             shadingNormal,

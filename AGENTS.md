@@ -4,19 +4,19 @@
 
 ## 1. OpenPBR 紧凑实现与 RoboCute 参考
 
-Prime 的生产目标是符合 OpenPBR Surface 1.1.1 的专用紧凑实现。内部状态可以按精确拓扑拆分，不需要复刻参考项目的通用对象布局。当前尚未实现的标准拓扑必须明确回退，不能静默丢弃参数或以相近拓扑代替。
+Prime 的生产目标是符合 OpenPBR Surface 1.1.1 的专用紧凑实现。内部状态可以按精确拓扑拆分，不需要复刻参考项目的通用对象布局。当前尚未实现的标准拓扑不得进入生产材质翻译；必须明确拒绝或暂不暴露，不能回退到参考代码、静默丢弃参数或以相近拓扑代替。
 
-Prime 使用以下固定 RoboCute 版本作为第三方差分参考：
+Prime 使用以下固定 RoboCute 版本作为第三方行为参考：
 
 - GitHub: <https://github.com/RoboCute/RoboCute>
 - Commit: `0d982c77b3fd26c2c5a3c0852be3bd05e5860bd8`
 - 本地参考副本：`C:\WorkSpace\_ref\RoboCute`
 
-`shaders/bsdf/compact` 是生产实现；`shaders/bsdf/core/robocute_*.slang` 是迁移期差分 oracle，可以随紧凑模块覆盖范围扩大而缩减或移除，不再作为受保护的生产模块。`third_party` 中锁定的原始参考和 author overlay 始终原样保留。
+`shaders/bsdf/compact` 是仓库内唯一的 OpenPBR BSDF 实现。本地 RoboCute Slang port 和 `shaders/bsdf/core` 已删除，不得重新引入生产或测试编译闭包。需要核对参考行为时使用上述固定外部副本以及 `third_party` 中锁定的原始参考和 author overlay；`third_party` 始终原样保留，不因紧凑实现重构而修改。
 
 紧凑实现必须在所声明的参数子集上与固定 RoboCute 参考数学等价，只允许求值顺序、公共子表达式复用和编译器降级造成的浮点舍入差异。禁止阈值裁剪非零 lobe、改变分支事件、替换采样分布、改变随机数到事件的映射，或以近似 Fresnel、漫反射、微表面和层叠模型代替参考公式。精确的零/一权重、thin-walled 标志和离散材质类型可以用于拓扑特化。
 
-每个紧凑拓扑必须同时提供 evaluate、sample、PDF 和 directional energy，并以测试证明 ABI、事件类型和状态转换精确一致；连续浮点结果以紧差分容差、有限性、非负性、PDF 合法性、采样/求值一致性、分布、能量、互易性和图像误差门限验收。任何改变浮点模式、求值或近似方式的工作都必须提供性能依据，并完整重跑 NaN/±Inf、非法方向、负值、PDF、极端参数、能量和分布测试；现有测试未覆盖实际风险时必须先补行为测试。
+每个紧凑拓扑必须同时提供 evaluate、sample、PDF 和 directional energy，并以参考导出的行为、性质和统计测试证明 ABI、事件类型和状态转换精确一致；连续浮点结果以有限性、非负性、PDF 合法性、采样/求值一致性、分布、能量、互易性和图像误差门限验收。必要的差分数据在仓库外生成，不得为差分测试恢复第二套可编译实现。任何改变浮点模式、求值或近似方式的工作都必须提供性能依据，并完整重跑 NaN/±Inf、非法方向、负值、PDF、极端参数、能量和分布测试；现有测试未覆盖实际风险时必须先补行为测试。
 
 ## 2. 实现优先级
 

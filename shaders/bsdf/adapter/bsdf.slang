@@ -20,7 +20,7 @@ bool3 lessThan(float3 first, float3 second) { return first < second; }
 bool3 lessThanEqual(float3 first, float3 second) { return first <= second; }
 
 // Minecraft's translucent render layer exposes conditional reflection/transmission proposals for
-// the first-visible checkerboard choice, then uses RoboCute's complete closure for later queued
+// the first-visible checkerboard choice, then uses the complete compact closure for later queued
 // continuation. The adapter owns the conditional primary proposals and medium handoff.
 struct PrimeTransmissiveBsdfSample {
     BsdfSample bsdfSample;
@@ -36,14 +36,13 @@ bool primeOpenPbrHasSample(
         PrimeOpenPbrSample sampleValue,
         inout PrimeNumericalObservation observation) {
     if (sampleValue.throughput.flags == PRIME_OPENPBR_FLAG_NONE) {
-        // RoboCute does not promise initialized payloads for a rejected proposal. Prime replaces
-        // it with its canonical zero-event sample, so inspecting the discarded payload only
-        // creates diagnostic false positives and says nothing about consumed transport.
+        // A rejected proposal has no consumable payload. Prime replaces it with its canonical
+        // zero-event sample, so inspecting discarded fields only creates diagnostic false positives.
         return false;
     }
     primeObserveNonnegative(observation, sampleValue.throughput.value);
     primeObserveNonnegative(observation, sampleValue.pdf);
-    // relativeEta is sanitized after the adapter has accepted the reference proposal. Observe the
+    // relativeEta is sanitized after the adapter has accepted the internal proposal. Observe the
     // raw value here so that the sanitizer cannot erase the first numerical failure.
     primeObserveNonnegative(observation, sampleValue.eta);
     primeObserveDirection(observation, sampleValue.wo);

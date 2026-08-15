@@ -1,9 +1,8 @@
 #language slang 2026
 module "bsdf/compact/openpbr_common.slang";
 
-// Production-owned OpenPBR ABI and scalar utilities. RoboCute remains the
-// differential oracle; this module contains only the subset reachable from
-// Prime's compact production topologies.
+// Production-owned OpenPBR ABI and scalar utilities. This module contains only
+// the subset reachable from Prime's compact production topologies.
 
 public static const float PRIME_OPENPBR_PI = 3.14159265358979323846;
 

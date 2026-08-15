@@ -1,10 +1,6 @@
 {
   "repository": "https://github.com/RoboCute/RoboCute",
   "commit": "0d982c77b3fd26c2c5a3c0852be3bd05e5860bd8",
-  "legacyPort": {
-    "path": "shaders/bsdf/core",
-    "status": "differential-reference-only"
-  },
   "authorityOverlay": {
     "description": "Temporary dielectric-highlight fix supplied directly by the RoboCute author on 2026-07-24.",
     "path": "third_party/robocute/author-bsdf-hotfix-2026-07-24",

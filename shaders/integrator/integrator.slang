@@ -525,7 +525,7 @@ PrimeDirectLightingSplit primeEvaluateVisibleDirectSplit(
                             surface.adjacentInterfaceControl,
                             observation);
         } else {
-            PrimeRcState state = primeMinecraftBoundaryTransmissionState(
+            PrimeCompactTransmissionState state = primeMinecraftBoundaryTransmissionState(
                     surface.baseColor,
                     primeSurfaceOpacity(surface),
                     outwardNormal,
@@ -1112,7 +1112,7 @@ PrimePathScatter primeSamplePathSurfaceWithMinimumRoughness(
     result.volumeStack = volumeStack;
     PrimeNumericalObservation observation = primeBsdfObservationCreate();
     if (primeMaterialIsFoliage(surface.materialControl)) {
-        PrimeRcState state = primeMinecraftFoliageStateWithMinimumRoughness(
+        PrimeCompactFoliageState state = primeMinecraftFoliageStateWithMinimumRoughness(
                 surface.baseColor,
                 primeSurfaceShadingNormal(surface, viewDirection),
                 surface.roughness,
@@ -1126,7 +1126,8 @@ PrimePathScatter primeSamplePathSurfaceWithMinimumRoughness(
                 state, viewDirection, sampleValue, volumeStack, observation);
     } else if (primeMaterialIsTransmissive(surface.materialControl)) {
         float3 outwardNormal = primeSurfaceOutwardShadingNormal(surface);
-        PrimeRcState state = primeMinecraftBoundaryTransmissionStateWithMinimumRoughness(
+        PrimeCompactTransmissionState state =
+                primeMinecraftBoundaryTransmissionStateWithMinimumRoughness(
                 surface.baseColor,
                 primeSurfaceOpacity(surface),
                 outwardNormal,
@@ -1213,7 +1214,7 @@ PrimeGuidedPathScatter primeSampleGuidedPathSurface(
     primeSetNumericalContext(
             context.diagnostics, PRIME_NUMERICAL_STAGE_SURFACE, bounce);
     if (primeMaterialIsFoliage(surface.materialControl)) {
-        PrimeRcState state = primeMinecraftFoliageState(
+        PrimeCompactFoliageState state = primeMinecraftFoliageState(
                 surface.baseColor,
                 primeSurfaceShadingNormal(surface, viewDirection),
                 surface.roughness,
@@ -1233,7 +1234,7 @@ PrimeGuidedPathScatter primeSampleGuidedPathSurface(
                 state, viewDirection, sampleValue, volumeStack, observation);
     } else if (primeMaterialIsTransmissive(surface.materialControl)) {
         float3 outwardNormal = primeSurfaceOutwardShadingNormal(surface);
-        PrimeRcState state = primeMinecraftBoundaryTransmissionState(
+        PrimeCompactTransmissionState state = primeMinecraftBoundaryTransmissionState(
                 surface.baseColor,
                 primeSurfaceOpacity(surface),
                 outwardNormal,

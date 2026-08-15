@@ -999,7 +999,7 @@ abstract class CompilePrimeSlangComputeShaders extends DefaultTask {
 				return true
 			}
 			def dependencies = dependencyClosures.computeIfAbsent(source.canonicalPath) {
-				dependencyClosure(source, dependencyGraph)
+				CompilePrimeSlangComputeShaders.dependencyClosure(source, dependencyGraph)
 			}
 			return !Collections.disjoint(dependencies, changedPaths)
 		}

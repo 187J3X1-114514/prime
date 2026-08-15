@@ -524,7 +524,8 @@ PrimeRcSampleResult primeCompactOpaqueLayerSample(
         float3 wi,
         float3 randomValue,
         PrimeCompactOpaqueState state,
-        PrimeRcVolumeStack stack) {
+        PrimeRcVolumeStack stack,
+        bool useEonDiffuseMapping) {
     if (state.layer.baseSampleWeight + state.layer.specularSampleWeight <= 0.0) {
         return primeCompactZeroSampleResult(state, stack);
     }
@@ -557,7 +558,17 @@ PrimeRcSampleResult primeCompactOpaqueLayerSample(
                             state,
                             PRIME_RC_FLAG_ALL,
                             stack)
-                    : primeCompactLambertSample(
+                    : useEonDiffuseMapping
+                            ? primeCompactZeroRoughnessEonSample(
+                                    wi,
+                                    float3(randomValue.xy,
+                                            (randomValue.z
+                                                    - state.layer.specularSampleWeight)
+                                            / state.layer.baseSampleWeight),
+                                    state,
+                                    PRIME_RC_FLAG_ALL,
+                                    stack)
+                            : primeCompactLambertSample(
                             wi,
                             float3(randomValue.xy,
                                     (randomValue.z - state.layer.specularSampleWeight)
@@ -705,7 +716,20 @@ public PrimeRcSampleResult primeCompactOpaqueSample(
     return state.kind == PRIME_COMPACT_OPAQUE_CONDUCTOR
             ? primeCompactConductorSample(
                     wi, randomValue, state, PRIME_RC_FLAG_ALL, stack)
-            : primeCompactOpaqueLayerSample(wi, randomValue, state, stack);
+            : primeCompactOpaqueLayerSample(
+                    wi, randomValue, state, stack, false);
+}
+
+public PrimeRcSampleResult primeCompactOpaqueSampleWithEonDiffuse(
+        float3 wi,
+        float3 randomValue,
+        PrimeCompactOpaqueState state,
+        PrimeRcVolumeStack stack) {
+    return state.kind == PRIME_COMPACT_OPAQUE_CONDUCTOR
+            ? primeCompactConductorSample(
+                    wi, randomValue, state, PRIME_RC_FLAG_ALL, stack)
+            : primeCompactOpaqueLayerSample(
+                    wi, randomValue, state, stack, true);
 }
 
 public PrimeCompactOpaqueEnergy primeCompactOpaqueEnergy(

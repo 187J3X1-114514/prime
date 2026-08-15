@@ -2,14 +2,14 @@
 #define PRIME_BSDF_SLANG
 
 import "bsdf/bsdf_common.slang";
-import "bsdf/adapter/prime_bsdf_specializations.slang";
 import "bsdf/adapter/transmission_ggx_energy.slang";
+import "bsdf/compact/openpbr_foliage.slang";
+import "bsdf/compact/openpbr_material.slang";
 import "bsdf/compact/openpbr_opaque.slang";
-import "bsdf/core/robocute_closures.slang";
+import "bsdf/compact/openpbr_transmission.slang";
 import "bsdf/core/robocute_common.slang";
 import "bsdf/core/robocute_fresnel.slang";
 import "bsdf/core/robocute_microfacet.slang";
-import "bsdf/core/robocute_openpbr.slang";
 import "core/numerical.slang";
 import "material/default_material.slang";
 import "material/material_translation.slang";
@@ -31,8 +31,6 @@ struct PrimeTransmissiveBsdfSplit {
     PrimeTransmissiveBsdfSample reflection;
     PrimeTransmissiveBsdfSample transmission;
 };
-
-static const float3 PRIME_REC2020_PRIMARY_WAVELENGTHS_NM = float3(630.0, 532.0, 467.0);
 
 bool primeRcHasSample(
         PrimeRcSample sampleValue,
@@ -96,7 +94,7 @@ PrimeRcMaterial primeMinecraftTransmissionMaterialWithMinimumRoughness(
                     ? translated.perceptualRoughness
                     : 0.0,
             minimumLinearRoughness);
-    PrimeRcMaterial material = primeRcMaterialFromMetallic(
+    PrimeRcMaterial material = primeCompactMaterialFromMetallic(
             float3(1.0), interfaceRoughness, 0.0, outwardNormal);
     material.weight.transmission = 1.0;
     material.geometry.thinWalled = thinWalled ? 1u : 0u;
@@ -191,7 +189,7 @@ PrimeRcMaterial primeOpaqueMaterialWithMinimumRoughness(
     PrimeOpticalMaterial translated = primeDecodeOpticalMaterial(
             roughness, opticalControl, flags);
     bool metal = primeOpticalMaterialIsMetal(translated);
-    PrimeRcMaterial material = primeRcMaterialFromMetallic(
+    PrimeRcMaterial material = primeCompactMaterialFromMetallic(
             baseColor,
             max(translated.perceptualRoughness, minimumLinearRoughness),
             metal ? 1.0 : 0.0,
@@ -255,7 +253,7 @@ PrimeCompactOpaqueState primeOpaqueStateWithMinimumRoughness(
             flags,
             minimumLinearRoughness);
     float3 localView = primeRcOnbToLocal(material.geometry.onb, viewDirection);
-    float inverseOutsideIor = primeRcInverseOutsideIor(localView.z, volumeStack);
+    float inverseOutsideIor = primeCompactInverseOutsideIor(localView.z, volumeStack);
     // Material translation restricts opaque production inputs to the exact OpenPBR
     // dielectric/conductor/subsurface submanifold accepted by the compact module.
     return primeCompactOpaqueStateInit(
@@ -437,7 +435,7 @@ BsdfSample primeSampleOpaque(
             state, normal, viewDirection, sampleValue, volumeStack);
 }
 
-PrimeRcState primeMinecraftTransmissionStateWithMinimumRoughness(
+PrimeCompactTransmissionState primeMinecraftTransmissionStateWithMinimumRoughness(
         float3 baseColor,
         float opacity,
         float3 outwardNormal,
@@ -461,21 +459,18 @@ PrimeRcState primeMinecraftTransmissionStateWithMinimumRoughness(
             opticalControl,
             minimumLinearRoughness);
     float3 localView = primeRcOnbToLocal(material.geometry.onb, viewDirection);
-    float inverseOutsideIor = primeRcInverseOutsideIor(localView.z, volumeStack);
-    PrimeRcState state = primeRcTransmissionStateInit(
+    float inverseOutsideIor = primeCompactInverseOutsideIor(localView.z, volumeStack);
+    PrimeCompactTransmissionState state = primeCompactTransmissionStateInit(
             primeTransmissionGgxEnergy(),
             material,
             localView,
             inverseOutsideIor,
-            rayT,
-            PRIME_REC2020_PRIMARY_WAVELENGTHS_NM,
-            0u,
-            PRIME_RC_DETAIL_DEFAULT,
-            0u);
-    return primeRcPrimeTransmissionInterfaceState(localView, state);
+            rayT);
+    return primeCompactTransmissionInterfaceState(
+            primeTransmissionGgxEnergy(), localView, state);
 }
 
-PrimeRcState primeMinecraftTransmissionState(
+PrimeCompactTransmissionState primeMinecraftTransmissionState(
         float3 baseColor,
         float opacity,
         float3 outwardNormal,
@@ -552,7 +547,7 @@ PrimeRcVolume primeBoundarySurfaceVolume(
 PrimeRcMaterial primeAirGapMaterial(
         float3 outwardNormal,
         float minimumLinearRoughness) {
-    PrimeRcMaterial material = primeRcMaterialFromMetallic(
+    PrimeRcMaterial material = primeCompactMaterialFromMetallic(
             float3(1.0), minimumLinearRoughness, 0.0, outwardNormal);
     material.weight.transmission = 1.0;
     material.geometry.thinWalled = 1u;
@@ -566,7 +561,7 @@ PrimeRcMaterial primeAirGapMaterial(
     return material;
 }
 
-PrimeRcState primeMinecraftBoundaryTransmissionStateWithMinimumRoughness(
+PrimeCompactTransmissionState primeMinecraftBoundaryTransmissionStateWithMinimumRoughness(
         float3 baseColor,
         float opacity,
         float3 outwardNormal,
@@ -613,35 +608,28 @@ PrimeRcState primeMinecraftBoundaryTransmissionStateWithMinimumRoughness(
         material = primeAirGapMaterial(
                 closureNormal, minimumLinearRoughness);
         localView = primeRcOnbToLocal(material.geometry.onb, viewDirection);
-        PrimeRcState state = primeRcTransmissionStateInit(
+        PrimeCompactTransmissionState state = primeCompactTransmissionStateInit(
                 primeTransmissionGgxEnergy(),
                 material,
                 localView,
                 1.0 / adjacent.ior,
-                rayT,
-                PRIME_REC2020_PRIMARY_WAVELENGTHS_NM,
-                0u,
-                PRIME_RC_DETAIL_DEFAULT,
-                0u);
+                rayT);
         // Thin-wall shading orients its local frame toward the incident ray. Preserve which
         // physical voxel medium lies across the authored boundary for the later stack swap.
         state.entering = enteringBoundaryMaterial ? 1u : 0u;
         return state;
     }
-    PrimeRcState state = primeRcTransmissionStateInit(
+    PrimeCompactTransmissionState state = primeCompactTransmissionStateInit(
             primeTransmissionGgxEnergy(),
             material,
             localView,
             1.0 / adjacent.ior,
-            rayT,
-            PRIME_REC2020_PRIMARY_WAVELENGTHS_NM,
-            0u,
-            PRIME_RC_DETAIL_DEFAULT,
-            0u);
-    return primeRcPrimeTransmissionInterfaceState(localView, state);
+            rayT);
+    return primeCompactTransmissionInterfaceState(
+            primeTransmissionGgxEnergy(), localView, state);
 }
 
-PrimeRcState primeMinecraftBoundaryTransmissionState(
+PrimeCompactTransmissionState primeMinecraftBoundaryTransmissionState(
         float3 baseColor,
         float opacity,
         float3 outwardNormal,
@@ -670,7 +658,7 @@ PrimeRcState primeMinecraftBoundaryTransmissionState(
 
 PrimeTransmissiveBsdfSample primeApplyAdjacentMediumTransition(
         PrimeTransmissiveBsdfSample sampled,
-        PrimeRcState state,
+        PrimeCompactTransmissionState state,
         PrimeRcVolumeStack originalStack,
         float3 baseColor,
         float opacity,
@@ -705,7 +693,8 @@ PrimeTransmissiveBsdfSample primeApplyAdjacentMediumTransition(
     return sampled;
 }
 
-PrimeRcMicrofacet primeMinecraftTransmissionMicrofacet(PrimeRcState state) {
+PrimeRcMicrofacet primeMinecraftTransmissionMicrofacet(
+        PrimeCompactTransmissionState state) {
     // RoboCute scales a thin dielectric's apparent interface roughness by its relative IOR.
     // At an index-matched boundary this can be discrete even when the authored roughness is not.
     return state.geometryThinWalled != 0u
@@ -713,7 +702,7 @@ PrimeRcMicrofacet primeMinecraftTransmissionMicrofacet(PrimeRcState state) {
             : state.specularMicrofacet;
 }
 
-bool primeMinecraftTransmissionIsDiscrete(PrimeRcState state) {
+bool primeMinecraftTransmissionIsDiscrete(PrimeCompactTransmissionState state) {
     // An index-matched dielectric has no visible rough boundary. RoboCute therefore collapses
     // transmission to straight-through discrete transport even when the authored NDF is rough.
     return state.specularFresnel.ior == 1.0
@@ -726,7 +715,7 @@ struct PrimeMinecraftMirrorSplit {
 };
 
 PrimeMinecraftMirrorSplit primeMinecraftMirrorSplit(
-        PrimeRcState state,
+        PrimeCompactTransmissionState state,
         float3 localView,
         inout PrimeNumericalObservation observation) {
     PrimeMinecraftMirrorSplit result;
@@ -751,14 +740,14 @@ PrimeMinecraftMirrorSplit primeMinecraftMirrorSplit(
 }
 
 PrimeMinecraftMirrorSplit primeMinecraftMirrorSplit(
-        PrimeRcState state,
+        PrimeCompactTransmissionState state,
         float3 localView) {
     PrimeNumericalObservation observation = primeNumericalObservationCreate(false);
     return primeMinecraftMirrorSplit(state, localView, observation);
 }
 
 PrimeRcVolumeStack primeMinecraftTransmissionStack(
-        PrimeRcState state,
+        PrimeCompactTransmissionState state,
         PrimeRcVolumeStack volumeStack) {
     if (state.geometryThinWalled != 0u) {
         return volumeStack;
@@ -774,13 +763,13 @@ PrimeRcVolumeStack primeMinecraftTransmissionStack(
 }
 
 float primeMinecraftInterfaceIor(
-        PrimeRcState state) {
+        PrimeCompactTransmissionState state) {
     // State initialization selected the medium on the other side of the boundary from the stack.
     return state.specularFresnel.ior;
 }
 
 PrimeTransmissiveBsdfSample primeSampleMinecraftRefractedTransmissionFromState(
-        PrimeRcState state,
+        PrimeCompactTransmissionState state,
         float3 outwardNormal,
         float3 viewDirection,
         float3 interfaceWeight,
@@ -853,7 +842,7 @@ BsdfEvaluation primeEvaluateMinecraftTransparentReflection(
         float3 adjacentBaseColor,
         uint adjacentInterfaceControl,
         inout PrimeNumericalObservation observation) {
-    PrimeRcState state = primeMinecraftBoundaryTransmissionState(
+    PrimeCompactTransmissionState state = primeMinecraftBoundaryTransmissionState(
             baseColor,
             opacity,
             outwardNormal,
@@ -865,16 +854,15 @@ BsdfEvaluation primeEvaluateMinecraftTransparentReflection(
             volumeStack,
             adjacentBaseColor,
             adjacentInterfaceControl);
-    float3 localView = primeRcOnbToLocal(state.material.geometry.onb, viewDirection);
-    float3 localScatter = primeRcOnbToLocal(state.material.geometry.onb, scatterDirection);
+    float3 localView = primeRcOnbToLocal(state.onb, viewDirection);
+    float3 localScatter = primeRcOnbToLocal(state.onb, scatterDirection);
     if (localView.z * localScatter.z < 0.0
             || primeMinecraftTransmissionIsDiscrete(state)) {
         // A coherent reflection has no finite solid-angle evaluation.
         return primeInvalidBsdfEvaluation();
     }
-    state.samplingFlags = PRIME_RC_FLAG_REFLECTION;
-    PrimeRcEval evaluation = primeRcPrimeTransmissionEvaluate(
-            localView, localScatter, state);
+    PrimeCompactTransmissionEvaluation evaluation = primeCompactTransmissionEvaluate(
+            localView, localScatter, state, PRIME_RC_FLAG_REFLECTION);
     BsdfEvaluation result = primeInvalidBsdfEvaluation();
     if (evaluation.throughput.flags != PRIME_RC_FLAG_NONE) {
         result.response = evaluation.throughput.value;
@@ -963,7 +951,8 @@ PrimeCompiledClosure primeCompileOpaqueClosure(
     return result;
 }
 
-PrimeClosureTraits primeMinecraftTransmissionClosureTraits(PrimeRcState state) {
+PrimeClosureTraits primeMinecraftTransmissionClosureTraits(
+        PrimeCompactTransmissionState state) {
     PrimeClosureTraits result;
     result.measureMask = primeMinecraftTransmissionIsDiscrete(state)
             ? PRIME_MEASURE_DISCRETE
@@ -989,7 +978,7 @@ PrimeCompiledClosure primeCompileMinecraftTransmissionClosure(
         float3 adjacentBaseColor,
         uint adjacentInterfaceControl) {
     PrimeCompiledClosure result;
-    PrimeRcState state = primeMinecraftBoundaryTransmissionState(
+    PrimeCompactTransmissionState state = primeMinecraftBoundaryTransmissionState(
             baseColor,
             opacity,
             outwardNormal,
@@ -1046,7 +1035,7 @@ BsdfEvaluation primeEvaluateMinecraftTransparentTransmission(
         float3 adjacentBaseColor,
         uint adjacentInterfaceControl,
         inout PrimeNumericalObservation observation) {
-    PrimeRcState state = primeMinecraftBoundaryTransmissionState(
+    PrimeCompactTransmissionState state = primeMinecraftBoundaryTransmissionState(
             baseColor,
             opacity,
             outwardNormal,
@@ -1058,15 +1047,14 @@ BsdfEvaluation primeEvaluateMinecraftTransparentTransmission(
             volumeStack,
             adjacentBaseColor,
             adjacentInterfaceControl);
-    float3 localView = primeRcOnbToLocal(state.material.geometry.onb, viewDirection);
-    float3 localScatter = primeRcOnbToLocal(state.material.geometry.onb, scatterDirection);
+    float3 localView = primeRcOnbToLocal(state.onb, viewDirection);
+    float3 localScatter = primeRcOnbToLocal(state.onb, scatterDirection);
     if (localView.z * localScatter.z >= 0.0
             || primeMinecraftTransmissionIsDiscrete(state)) {
         return primeInvalidBsdfEvaluation();
     }
-    state.samplingFlags = PRIME_RC_FLAG_TRANSMISSION;
-    PrimeRcEval evaluation = primeRcPrimeTransmissionEvaluate(
-            localView, localScatter, state);
+    PrimeCompactTransmissionEvaluation evaluation = primeCompactTransmissionEvaluate(
+            localView, localScatter, state, PRIME_RC_FLAG_TRANSMISSION);
     BsdfEvaluation result = primeInvalidBsdfEvaluation();
     if (evaluation.throughput.flags != PRIME_RC_FLAG_NONE) {
         result.response = evaluation.throughput.value;
@@ -1135,7 +1123,7 @@ BsdfEvaluation primeEvaluateMinecraftTransparentTransmission(
 }
 
 PrimeTransmissiveBsdfSample primeSampleMinecraftTransparentReflectionFromState(
-        PrimeRcState state,
+        PrimeCompactTransmissionState state,
         PrimeMinecraftMirrorSplit mirror,
         float3 outwardNormal,
         float3 viewDirection,
@@ -1145,7 +1133,7 @@ PrimeTransmissiveBsdfSample primeSampleMinecraftTransparentReflectionFromState(
         inout PrimeNumericalObservation observation);
 
 PrimeTransmissiveBsdfSample primeSampleMinecraftTransparentTransmissionFromState(
-        PrimeRcState state,
+        PrimeCompactTransmissionState state,
         PrimeMinecraftMirrorSplit mirror,
         float3 outwardNormal,
         float3 viewDirection,
@@ -1166,16 +1154,19 @@ PrimeTransmissiveBsdfSample primeSampleMinecraftTransparentTransmissionFromState
     PrimeTransmissiveBsdfSample result;
     result.bsdfSample = primeInvalidBsdfSample();
     result.volumeStack = volumeStack;
-    state.samplingFlags = PRIME_RC_FLAG_TRANSMISSION;
-    PrimeRcSampleResult sampled = primeRcPrimeTransmissionSample(
-            localView, sampleValue, state, volumeStack);
+    PrimeRcSampleResult sampled = primeCompactTransmissionSample(
+            localView,
+            sampleValue,
+            state,
+            PRIME_RC_FLAG_TRANSMISSION,
+            volumeStack);
     if (!primeRcHasSample(sampled.bsdfSample, observation)) {
         return result;
     }
     // Sampling flags normalize the proposal over transmission while the response retains the
     // complete Fresnel and rough-microfacet energy.
     result.bsdfSample.direction = primeRcOnbToWorld(
-            state.material.geometry.onb, sampled.bsdfSample.wo);
+            state.onb, sampled.bsdfSample.wo);
     result.bsdfSample.response = sampled.bsdfSample.throughput.value;
     result.bsdfSample.pdf = sampled.bsdfSample.pdf;
     result.bsdfSample.relativeEta = sampled.bsdfSample.eta;
@@ -1190,7 +1181,7 @@ PrimeTransmissiveBsdfSample primeSampleMinecraftTransparentTransmissionFromState
 }
 
 PrimeTransmissiveBsdfSample primeSampleMinecraftTransparentTransmissionFromState(
-        PrimeRcState state,
+        PrimeCompactTransmissionState state,
         PrimeMinecraftMirrorSplit mirror,
         float3 outwardNormal,
         float3 viewDirection,
@@ -1210,7 +1201,7 @@ PrimeTransmissiveBsdfSample primeSampleMinecraftTransparentTransmissionFromState
 }
 
 PrimeTransmissiveBsdfSample primeSampleMinecraftTransparentContinuationFromState(
-        PrimeRcState state,
+        PrimeCompactTransmissionState state,
         float3 baseColor,
         float opacity,
         uint materialControl,
@@ -1238,7 +1229,7 @@ PrimeTransmissiveBsdfSample primeSampleMinecraftTransparentContinuation(
         PrimeRcVolumeStack volumeStack,
         float3 adjacentBaseColor,
         uint adjacentInterfaceControl) {
-    PrimeRcState state = primeMinecraftBoundaryTransmissionState(
+    PrimeCompactTransmissionState state = primeMinecraftBoundaryTransmissionState(
             baseColor,
             opacity,
             outwardNormal,
@@ -1299,7 +1290,7 @@ PrimeTransmissiveBsdfSample primeSampleMinecraftTransparentContinuation(
 // hemisphere. The closure's reflection/transmission selection probability remains in the PDF,
 // and only a sampled transmission event may replace the medium stack.
 PrimeTransmissiveBsdfSample primeSampleMinecraftTransmissionCompleteFromState(
-        PrimeRcState state,
+        PrimeCompactTransmissionState state,
         float3 baseColor,
         float opacity,
         uint materialControl,
@@ -1310,15 +1301,14 @@ PrimeTransmissiveBsdfSample primeSampleMinecraftTransmissionCompleteFromState(
     PrimeTransmissiveBsdfSample result;
     result.bsdfSample = primeInvalidBsdfSample();
     result.volumeStack = volumeStack;
-    state.samplingFlags = PRIME_RC_FLAG_ALL;
-    float3 localView = primeRcOnbToLocal(state.material.geometry.onb, viewDirection);
-    PrimeRcSampleResult sampled = primeRcPrimeTransmissionSample(
-            localView, sampleValue, state, volumeStack);
+    float3 localView = primeRcOnbToLocal(state.onb, viewDirection);
+    PrimeRcSampleResult sampled = primeCompactTransmissionSample(
+            localView, sampleValue, state, PRIME_RC_FLAG_ALL, volumeStack);
     if (!primeRcHasSample(sampled.bsdfSample, observation)) {
         return result;
     }
     result.bsdfSample.direction = primeRcOnbToWorld(
-            state.material.geometry.onb, sampled.bsdfSample.wo);
+            state.onb, sampled.bsdfSample.wo);
     result.bsdfSample.response = sampled.bsdfSample.throughput.value;
     result.bsdfSample.pdf = sampled.bsdfSample.pdf;
     result.bsdfSample.relativeEta = sampled.bsdfSample.eta;
@@ -1333,7 +1323,7 @@ PrimeTransmissiveBsdfSample primeSampleMinecraftTransmissionCompleteFromState(
 }
 
 PrimeTransmissiveBsdfSample primeSampleMinecraftTransmissionCompleteFromState(
-        PrimeRcState state,
+        PrimeCompactTransmissionState state,
         float3 baseColor,
         float opacity,
         uint materialControl,
@@ -1353,19 +1343,18 @@ PrimeTransmissiveBsdfSample primeSampleMinecraftTransmissionCompleteFromState(
 }
 
 BsdfEvaluation primeEvaluateMinecraftTransmissionCompleteFromState(
-        PrimeRcState state,
+        PrimeCompactTransmissionState state,
         float3 baseColor,
         float opacity,
         uint materialControl,
         float3 viewDirection,
         float3 scatterDirection,
         inout PrimeNumericalObservation observation) {
-    state.samplingFlags = PRIME_RC_FLAG_ALL;
-    float3 localView = primeRcOnbToLocal(state.material.geometry.onb, viewDirection);
+    float3 localView = primeRcOnbToLocal(state.onb, viewDirection);
     float3 localScatter = primeRcOnbToLocal(
-            state.material.geometry.onb, scatterDirection);
-    PrimeRcEval evaluated = primeRcPrimeTransmissionEvaluate(
-            localView, localScatter, state);
+            state.onb, scatterDirection);
+    PrimeCompactTransmissionEvaluation evaluated = primeCompactTransmissionEvaluate(
+            localView, localScatter, state, PRIME_RC_FLAG_ALL);
     BsdfEvaluation result = primeInvalidBsdfEvaluation();
     if (evaluated.throughput.flags != PRIME_RC_FLAG_NONE) {
         result.response = evaluated.throughput.value;
@@ -1377,7 +1366,7 @@ BsdfEvaluation primeEvaluateMinecraftTransmissionCompleteFromState(
 }
 
 BsdfEvaluation primeEvaluateMinecraftTransmissionCompleteFromState(
-        PrimeRcState state,
+        PrimeCompactTransmissionState state,
         float3 baseColor,
         float opacity,
         uint materialControl,
@@ -1395,7 +1384,7 @@ BsdfEvaluation primeEvaluateMinecraftTransmissionCompleteFromState(
 }
 
 PrimeTransmissiveBsdfSplit primeSampleMinecraftTransmissionSplitFromState(
-        PrimeRcState state,
+        PrimeCompactTransmissionState state,
         float3 localView,
         PrimeMinecraftMirrorSplit mirror,
         float3 outwardNormal,
@@ -1441,7 +1430,7 @@ PrimeTransmissiveBsdfSplit primeSampleMinecraftTransmissionSplitFromState(
 }
 
 PrimeTransmissiveBsdfSample primeSampleMinecraftTransparentReflectionFromState(
-        PrimeRcState state,
+        PrimeCompactTransmissionState state,
         PrimeMinecraftMirrorSplit mirror,
         float3 outwardNormal,
         float3 viewDirection,
@@ -1469,16 +1458,19 @@ PrimeTransmissiveBsdfSample primeSampleMinecraftTransparentReflectionFromState(
         return result;
     }
 
-    state.samplingFlags = PRIME_RC_FLAG_REFLECTION;
-    PrimeRcSampleResult sampled = primeRcPrimeTransmissionSample(
-            localView, sampleValue, state, volumeStack);
+    PrimeRcSampleResult sampled = primeCompactTransmissionSample(
+            localView,
+            sampleValue,
+            state,
+            PRIME_RC_FLAG_REFLECTION,
+            volumeStack);
     if (!primeRcHasSample(sampled.bsdfSample, observation)) {
         return result;
     }
     // The conditional proposal is normalized over reflection. Its response retains the complete
     // reference Fresnel and rough-microfacet energy.
     result.bsdfSample.direction = primeRcOnbToWorld(
-            state.material.geometry.onb, sampled.bsdfSample.wo);
+            state.onb, sampled.bsdfSample.wo);
     result.bsdfSample.response = sampled.bsdfSample.throughput.value;
     result.bsdfSample.pdf = sampled.bsdfSample.pdf;
     result.bsdfSample.relativeEta = 1.0;
@@ -1493,7 +1485,7 @@ PrimeTransmissiveBsdfSample primeSampleMinecraftTransparentReflectionFromState(
 }
 
 PrimeTransmissiveBsdfSplit primeSampleMinecraftTransmissionSplitFromState(
-        PrimeRcState state,
+        PrimeCompactTransmissionState state,
         float3 localView,
         PrimeMinecraftMirrorSplit mirror,
         float3 outwardNormal,
@@ -1520,7 +1512,7 @@ PrimeTransmissiveBsdfSplit primeSampleMinecraftTransmissionSplitFromState(
 
 
 PrimeTransmissiveBsdfSample primeSampleMinecraftTransparentReflectionFromState(
-        PrimeRcState state,
+        PrimeCompactTransmissionState state,
         PrimeMinecraftMirrorSplit mirror,
         float3 outwardNormal,
         float3 viewDirection,
@@ -1583,7 +1575,7 @@ PrimeRcMaterial primeMinecraftFoliageMaterial(
             0.0);
 }
 
-PrimeRcState primeMinecraftFoliageStateWithMinimumRoughness(
+PrimeCompactFoliageState primeMinecraftFoliageStateWithMinimumRoughness(
         float3 baseColor,
         float3 outwardNormal,
         float roughness,
@@ -1604,19 +1596,16 @@ PrimeRcState primeMinecraftFoliageStateWithMinimumRoughness(
             materialControl,
             minimumLinearRoughness);
     float3 localView = primeRcOnbToLocal(material.geometry.onb, viewDirection);
-    float inverseOutsideIor = primeRcInverseOutsideIor(localView.z, volumeStack);
-    return primeRcPrimeThinWallStateInit(
+    float inverseOutsideIor = primeCompactInverseOutsideIor(localView.z, volumeStack);
+    return primeCompactFoliageStateInit(
+            primeTransmissionGgxEnergy(),
             material,
             localView,
             inverseOutsideIor,
-            rayT,
-            PRIME_REC2020_PRIMARY_WAVELENGTHS_NM,
-            0u,
-            PRIME_RC_DETAIL_DEFAULT,
-            0u);
+            rayT);
 }
 
-PrimeRcState primeMinecraftFoliageState(
+PrimeCompactFoliageState primeMinecraftFoliageState(
         float3 baseColor,
         float3 outwardNormal,
         float roughness,
@@ -1647,7 +1636,7 @@ PrimeCompiledClosure primeCompileFoliageClosure(
         float rayT,
         PrimeRcVolumeStack volumeStack) {
     PrimeCompiledClosure result;
-    PrimeRcState state = primeMinecraftFoliageState(
+    PrimeCompactFoliageState state = primeMinecraftFoliageState(
             baseColor,
             outwardNormal,
             roughness,
@@ -1656,9 +1645,8 @@ PrimeCompiledClosure primeCompileFoliageClosure(
             viewDirection,
             rayT,
             volumeStack);
-    bool discreteSpecular = state.material.weight.specular > 0.0
-            && primeRcMicrofacetEffectivelySmooth(
-                    state.specularMicrofacet);
+    bool discreteSpecular = primeRcMicrofacetEffectivelySmooth(
+            state.base.microfacet);
     result.family = PRIME_MATERIAL_FAMILY_FOLIAGE;
     result.traits.measureMask = PRIME_MEASURE_SOLID_ANGLE
             | (discreteSpecular ? PRIME_MEASURE_DISCRETE : 0u);
@@ -1682,7 +1670,7 @@ BsdfEvaluation primeEvaluateMinecraftFoliage(
         float rayT,
         PrimeRcVolumeStack volumeStack,
         inout PrimeNumericalObservation observation) {
-    PrimeRcState state = primeMinecraftFoliageState(
+    PrimeCompactFoliageState state = primeMinecraftFoliageState(
             baseColor,
             outwardNormal,
             roughness,
@@ -1691,9 +1679,10 @@ BsdfEvaluation primeEvaluateMinecraftFoliage(
             viewDirection,
             rayT,
             volumeStack);
-    float3 localView = primeRcOnbToLocal(state.material.geometry.onb, viewDirection);
-    float3 localScatter = primeRcOnbToLocal(state.material.geometry.onb, scatterDirection);
-    PrimeRcEval evaluation = primeRcPrimeThinWallEvaluate(localView, localScatter, state);
+    float3 localView = primeRcOnbToLocal(state.base.onb, viewDirection);
+    float3 localScatter = primeRcOnbToLocal(state.base.onb, scatterDirection);
+    PrimeCompactFoliageEvaluation evaluation = primeCompactFoliageEvaluate(
+            localView, localScatter, state);
     BsdfEvaluation result = primeInvalidBsdfEvaluation();
     if (evaluation.throughput.flags != PRIME_RC_FLAG_NONE) {
         result.response = evaluation.throughput.value;
@@ -1744,7 +1733,7 @@ PrimeBsdfComponents primeEvaluateMinecraftFoliageComponents(
     result.diffuseResponse = float3(0.0);
     result.specularResponse = float3(0.0);
     result.pdf = 0.0;
-    PrimeRcState state = primeMinecraftFoliageState(
+    PrimeCompactFoliageState state = primeMinecraftFoliageState(
             baseColor,
             outwardNormal,
             roughness,
@@ -1753,17 +1742,13 @@ PrimeBsdfComponents primeEvaluateMinecraftFoliageComponents(
             viewDirection,
             rayT,
             volumeStack);
-    float3 localView = primeRcOnbToLocal(state.material.geometry.onb, viewDirection);
-    float3 localScatter = primeRcOnbToLocal(state.material.geometry.onb, scatterDirection);
-    result.pdf = primeRcPrimeThinWallPdf(localView, localScatter, state);
-    PrimeRcState diffuseState = state;
-    diffuseState.samplingFlags &= PRIME_RC_FLAG_DIFFUSE;
-    PrimeRcState specularState = state;
-    specularState.samplingFlags &= PRIME_RC_FLAG_SPECULAR | PRIME_RC_FLAG_DELTA;
-    result.diffuseResponse = primeRcPrimeThinWallEval(
-            localView, localScatter, diffuseState).value;
-    result.specularResponse = primeRcPrimeThinWallEval(
-            localView, localScatter, specularState).value;
+    float3 localView = primeRcOnbToLocal(state.base.onb, viewDirection);
+    float3 localScatter = primeRcOnbToLocal(state.base.onb, scatterDirection);
+    PrimeCompactFoliageComponents components = primeCompactFoliageEvaluateComponents(
+            localView, localScatter, state);
+    result.pdf = components.pdf;
+    result.diffuseResponse = components.diffuse;
+    result.specularResponse = components.specular;
     primeObserveNonnegative(observation, result.diffuseResponse);
     primeObserveNonnegative(observation, result.specularResponse);
     primeObserveNonnegative(observation, result.pdf);
@@ -1796,20 +1781,20 @@ PrimeBsdfComponents primeEvaluateMinecraftFoliageComponents(
 }
 
 BsdfSample primeSampleMinecraftFoliageFromState(
-        PrimeRcState state,
+        PrimeCompactFoliageState state,
         float3 viewDirection,
         float3 sampleValue,
         PrimeRcVolumeStack volumeStack,
         inout PrimeNumericalObservation observation) {
     BsdfSample result = primeInvalidBsdfSample();
-    float3 localView = primeRcOnbToLocal(state.material.geometry.onb, viewDirection);
-    PrimeRcSampleResult sampled = primeRcPrimeThinWallSample(
+    float3 localView = primeRcOnbToLocal(state.base.onb, viewDirection);
+    PrimeRcSampleResult sampled = primeCompactFoliageSample(
             localView, sampleValue, state, volumeStack);
     if (!primeRcHasSample(sampled.bsdfSample, observation)) {
         return result;
     }
     result.direction = primeRcOnbToWorld(
-            state.material.geometry.onb, sampled.bsdfSample.wo);
+            state.base.onb, sampled.bsdfSample.wo);
     result.response = sampled.bsdfSample.throughput.value;
     result.pdf = sampled.bsdfSample.pdf;
     result.relativeEta = 1.0;
@@ -1818,7 +1803,7 @@ BsdfSample primeSampleMinecraftFoliageFromState(
 }
 
 BsdfSample primeSampleMinecraftFoliageFromState(
-        PrimeRcState state,
+        PrimeCompactFoliageState state,
         float3 viewDirection,
         float3 sampleValue,
         PrimeRcVolumeStack volumeStack) {
@@ -1841,7 +1826,7 @@ BsdfSample primeSampleMinecraftFoliage(
         float3 sampleValue,
         float rayT,
         PrimeRcVolumeStack volumeStack) {
-    PrimeRcState state = primeMinecraftFoliageState(
+    PrimeCompactFoliageState state = primeMinecraftFoliageState(
             baseColor,
             outwardNormal,
             roughness,
@@ -1879,22 +1864,6 @@ float3 primeSanitizeDenoiseAlbedo(float3 albedo) {
     return primeSanitizeDenoiseAlbedo(albedo, observation);
 }
 
-float3 primeRcDenoiseClosureEnergy(
-        float3 localView,
-        PrimeRcState state,
-        uint closureKind) {
-    if (closureKind == PRIME_DENOISE_CLOSURE_OPAQUE) {
-        return state.material.weight.subsurface > 0.0
-                ? primeRcSubsurfaceGlossyEnergy(localView, state)
-                : primeRcBasicMetallicEnergy(localView, state);
-    }
-    if (closureKind == PRIME_DENOISE_CLOSURE_FOLIAGE) {
-        return primeRcBaseSubstrateEnergy(
-                primeTransmissionGgxEnergy(), localView, state);
-    }
-    return primeRcTransmissionEnergy(primeTransmissionGgxEnergy(), localView, state);
-}
-
 PrimeDenoiseAlbedos primeDenoiseAlbedosFromState(
         PrimeCompactOpaqueState state,
         float3 viewDirection,
@@ -1918,41 +1887,54 @@ PrimeDenoiseAlbedos primeDenoiseAlbedosFromState(
 }
 
 PrimeDenoiseAlbedos primeDenoiseAlbedosFromState(
-        PrimeRcState state,
+        PrimeCompactFoliageState state,
         float3 viewDirection,
         uint closureKind,
         inout PrimeNumericalObservation observation) {
-    float3 localView = primeRcOnbToLocal(state.material.geometry.onb, viewDirection);
-    uint samplingFlags = state.samplingFlags;
-    state.spectrumed = 0u;
-
+    float3 localView = primeRcOnbToLocal(state.base.onb, viewDirection);
+    PrimeCompactFoliageEnergy energy = primeCompactFoliageEnergy(
+            primeTransmissionGgxEnergy(), localView, state);
     PrimeDenoiseAlbedos result;
-    if (closureKind == PRIME_DENOISE_CLOSURE_TRANSMISSIVE) {
-        // REBLUR exposes two independently filtered lanes. At a transparent primary surface they
-        // represent transmission and reflection rather than diffuse and specular BRDF classes.
-        state.samplingFlags = PRIME_RC_FLAG_TRANSMISSION;
-        result.diffuse = primeSanitizeDenoiseAlbedo(
-                primeRcDenoiseClosureEnergy(localView, state, closureKind),
-                observation);
-        state.samplingFlags = PRIME_RC_FLAG_REFLECTION;
-        result.specular = primeSanitizeDenoiseAlbedo(
-                primeRcDenoiseClosureEnergy(localView, state, closureKind),
-                observation);
-        return result;
-    }
-    state.samplingFlags = samplingFlags & PRIME_RC_FLAG_DIFFUSE;
+    result.diffuse = primeSanitizeDenoiseAlbedo(energy.diffuse, observation);
+    result.specular = primeSanitizeDenoiseAlbedo(energy.specular, observation);
+    return result;
+}
+
+PrimeDenoiseAlbedos primeDenoiseAlbedosFromState(
+        PrimeCompactFoliageState state,
+        float3 viewDirection,
+        uint closureKind) {
+    PrimeNumericalObservation observation = primeNumericalObservationCreate(false);
+    return primeDenoiseAlbedosFromState(
+            state, viewDirection, closureKind, observation);
+}
+
+PrimeDenoiseAlbedos primeDenoiseAlbedosFromState(
+        PrimeCompactTransmissionState state,
+        float3 viewDirection,
+        uint closureKind,
+        inout PrimeNumericalObservation observation) {
+    float3 localView = primeRcOnbToLocal(state.onb, viewDirection);
+    PrimeDenoiseAlbedos result;
     result.diffuse = primeSanitizeDenoiseAlbedo(
-            primeRcDenoiseClosureEnergy(localView, state, closureKind),
+            primeCompactTransmissionEnergy(
+                    primeTransmissionGgxEnergy(),
+                    localView,
+                    state,
+                    PRIME_RC_FLAG_TRANSMISSION),
             observation);
-    state.samplingFlags = samplingFlags & (PRIME_RC_FLAG_SPECULAR | PRIME_RC_FLAG_DELTA);
     result.specular = primeSanitizeDenoiseAlbedo(
-            primeRcDenoiseClosureEnergy(localView, state, closureKind),
+            primeCompactTransmissionEnergy(
+                    primeTransmissionGgxEnergy(),
+                    localView,
+                    state,
+                    PRIME_RC_FLAG_REFLECTION),
             observation);
     return result;
 }
 
 PrimeDenoiseAlbedos primeDenoiseAlbedosFromState(
-        PrimeRcState state,
+        PrimeCompactTransmissionState state,
         float3 viewDirection,
         uint closureKind) {
     PrimeNumericalObservation observation = primeNumericalObservationCreate(false);
@@ -1961,13 +1943,13 @@ PrimeDenoiseAlbedos primeDenoiseAlbedosFromState(
 }
 
 float3 primeMinecraftPrimaryTransmissionAlbedo(
-        PrimeRcState state, uint materialControl) {
+        PrimeCompactTransmissionState state, uint materialControl) {
     // A rough primary interface has no deterministic transmitted target to supply a material
     // identity. Preserve the medium's one-metre reference color in its reconstruction albedo so
     // adjacent stained glasses are demodulated to comparable illumination instead of exchanging
     // colored radiance through a shared white guide. This changes reconstruction only.
     return primeMaterialIsRoughGlass(materialControl)
-            ? state.material.transmission.color
+            ? state.transmissionColor
             : state.transmissionTint;
 }
 
@@ -1992,7 +1974,7 @@ PrimeTransmissivePrimarySample primeSampleMinecraftTransmissionPrimary(
         inout PrimeNumericalObservation observation) {
     // This is the only fixed-split entry point. Translation, closure initialization, local-view
     // conversion and guide energy are shared before reflection and refraction diverge.
-    PrimeRcState state = primeMinecraftBoundaryTransmissionState(
+    PrimeCompactTransmissionState state = primeMinecraftBoundaryTransmissionState(
             baseColor,
             opacity,
             outwardNormal,
@@ -2004,7 +1986,7 @@ PrimeTransmissivePrimarySample primeSampleMinecraftTransmissionPrimary(
             volumeStack,
             adjacentBaseColor,
             adjacentInterfaceControl);
-    float3 localView = primeRcOnbToLocal(state.material.geometry.onb, viewDirection);
+    float3 localView = primeRcOnbToLocal(state.onb, viewDirection);
     // One directional-energy lookup supplies the reflection guide and the complementary weights
     // used by the smooth conditional events. Rough event responses come from the closure itself.
     PrimeMinecraftMirrorSplit mirror = primeMinecraftMirrorSplit(
@@ -2085,7 +2067,7 @@ PrimeTransmissivePrimarySample primeSampleMinecraftTransmissionPrimary(
         inout PrimeNumericalObservation observation) {
     // Preserve the original no-boundary instruction graph: its guide values are part of the
     // deterministic primary split contract and do not need adjacent-medium specialization.
-    PrimeRcState state = primeMinecraftTransmissionState(
+    PrimeCompactTransmissionState state = primeMinecraftTransmissionState(
             baseColor,
             opacity,
             outwardNormal,
@@ -2095,8 +2077,7 @@ PrimeTransmissivePrimarySample primeSampleMinecraftTransmissionPrimary(
             viewDirection,
             rayT,
             volumeStack);
-    float3 localView = primeRcOnbToLocal(
-            state.material.geometry.onb, viewDirection);
+    float3 localView = primeRcOnbToLocal(state.onb, viewDirection);
     PrimeMinecraftMirrorSplit mirror = primeMinecraftMirrorSplit(
             state, localView, observation);
 

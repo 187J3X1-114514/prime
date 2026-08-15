@@ -120,7 +120,7 @@ bool primeAdapterSameStack(
 }
 
 uint primeAdapterExpectedTransparentStackCount(
-        PrimeRcState state,
+        PrimeCompactTransmissionState state,
         uint materialControl,
         PrimeRcVolumeStack stack) {
     if (state.geometryThinWalled != 0u) {
@@ -133,14 +133,14 @@ uint primeAdapterExpectedTransparentStackCount(
 }
 
 float primeAdapterExpectedInterfaceIor(
-        PrimeRcState state,
+        PrimeCompactTransmissionState state,
         uint materialControl,
         PrimeRcVolumeStack stack) {
     return state.specularFresnel.ior;
 }
 
 float primeAdapterExpectedRelativeIor(
-        PrimeRcState state,
+        PrimeCompactTransmissionState state,
         uint materialControl,
         PrimeRcVolumeStack stack) {
     float interfaceIor =
@@ -149,7 +149,7 @@ float primeAdapterExpectedRelativeIor(
 }
 
 bool primeAdapterCanRefract(
-        PrimeRcState state,
+        PrimeCompactTransmissionState state,
         uint materialControl,
         float3 outwardNormal,
         float3 viewDirection,
@@ -163,7 +163,7 @@ bool primeAdapterCanRefract(
 }
 
 float3 primeAdapterExpectedRefraction(
-        PrimeRcState state,
+        PrimeCompactTransmissionState state,
         uint materialControl,
         float3 outwardNormal,
         float3 viewDirection,
@@ -203,7 +203,7 @@ void primeAdapterCheckEvaluation(
 
 void primeAdapterCheckTransmissionMaterial(
         inout uint mask,
-        PrimeRcState state,
+        PrimeCompactTransmissionState state,
         float3 baseColor,
         uint materialControl,
         float roughness,
@@ -220,13 +220,11 @@ void primeAdapterCheckTransmissionMaterial(
             ? float3(1.0)
             : primeGlassVolumeTransmittance(
                     baseColor, PRIME_STAINED_GLASS_ABSORPTION_OPACITY);
-    if (!primeTestClose(
-                    state.material.specular.roughness,
-                    expectedRoughness,
-                    0.0,
-                    0.0)
+    float2 expectedAlpha = primeRcSpecularNdfRoughnesses(expectedRoughness, 0.0);
+    if (state.specularMicrofacet.alpha.x != expectedAlpha.x
+            || state.specularMicrofacet.alpha.y != expectedAlpha.y
             || !primeTestClose(
-                    state.material.transmission.color,
+                    state.transmissionColor,
                     expectedColor,
                     0.0,
                     0.0)) {
@@ -444,7 +442,7 @@ void primeAdapterProperties(
                 probeDirection,
                 rayT,
                 stack);
-        PrimeRcState state = primeMinecraftFoliageState(
+        PrimeCompactFoliageState state = primeMinecraftFoliageState(
                 baseColor,
                 outwardNormal,
                 roughness,
@@ -473,7 +471,7 @@ void primeAdapterProperties(
         result.albedos = primeDenoiseAlbedosFromState(
                 state, viewDirection, PRIME_DENOISE_CLOSURE_FOLIAGE);
     } else if (kind == PRIME_ADAPTER_TRANSMISSION) {
-        PrimeRcState state = primeMinecraftTransmissionState(
+        PrimeCompactTransmissionState state = primeMinecraftTransmissionState(
                 baseColor,
                 opacity,
                 outwardNormal,
@@ -637,7 +635,7 @@ void primeAdapterProperties(
                 sampled.paths.reflection.volumeStack.count,
                 sampled.paths.transmission.volumeStack.count);
         result.albedos = sampled.albedos;
-        PrimeRcState state = primeMinecraftTransmissionState(
+        PrimeCompactTransmissionState state = primeMinecraftTransmissionState(
                 baseColor,
                 opacity,
                 outwardNormal,
@@ -654,8 +652,7 @@ void primeAdapterProperties(
                 materialControl,
                 roughness,
                 opticalControl);
-        float3 localView =
-                primeRcOnbToLocal(state.material.geometry.onb, viewDirection);
+        float3 localView = primeRcOnbToLocal(state.onb, viewDirection);
         PrimeMinecraftMirrorSplit mirror =
                 primeMinecraftMirrorSplit(state, localView);
         PrimeTransmissivePrimarySample repeated =
@@ -713,13 +710,16 @@ void primeAdapterProperties(
             result.mask |= PRIME_TEST_FAILURE_IDENTITY;
         }
         if (!smoothTransmission) {
-            state.samplingFlags = PRIME_RC_FLAG_TRANSMISSION;
-            PrimeRcSampleResult reference = primeRcPrimeTransmissionSample(
-                    localView, firstSample, state, stack);
+            PrimeRcSampleResult reference = primeCompactTransmissionSample(
+                    localView,
+                    firstSample,
+                    state,
+                    PRIME_RC_FLAG_TRANSMISSION,
+                    stack);
             BsdfSample expected = primeInvalidBsdfSample();
             if (primeRcHasSample(reference.bsdfSample)) {
                 expected.direction = primeRcOnbToWorld(
-                        state.material.geometry.onb, reference.bsdfSample.wo);
+                        state.onb, reference.bsdfSample.wo);
                 expected.response = reference.bsdfSample.throughput.value;
                 expected.pdf = reference.bsdfSample.pdf;
                 expected.relativeEta = reference.bsdfSample.eta;
@@ -750,7 +750,7 @@ void primeAdapterProperties(
                                 rayT,
                                 stack);
                 float3 localScatter = primeRcOnbToLocal(
-                        state.material.geometry.onb, result.second.direction);
+                        state.onb, result.second.direction);
                 bool stableReconstruction = min(
                                 transmissionMicrofacet.alpha.x,
                                 transmissionMicrofacet.alpha.y) >= 5.0e-3
@@ -830,7 +830,7 @@ void primeAdapterProperties(
                     rayT,
                     stack);
             float3 localScatter =
-                    primeRcOnbToLocal(state.material.geometry.onb, result.first.direction);
+                    primeRcOnbToLocal(state.onb, result.first.direction);
             bool stableReconstruction =
                     min(
                             state.specularMicrofacet.alpha.x,
@@ -877,7 +877,7 @@ void primeAdapterProperties(
         float3 adjacentBaseColor = float3(0.2, 0.5, 0.8);
         PrimeRcVolume adjacent = primeAdjacentMediumVolume(
                 adjacentBaseColor, adjacentInterfaceControl);
-        PrimeRcState state = primeMinecraftBoundaryTransmissionState(
+        PrimeCompactTransmissionState state = primeMinecraftBoundaryTransmissionState(
                 baseColor,
                 opacity,
                 outwardNormal,
@@ -944,7 +944,7 @@ void primeAdapterProperties(
                 baseColor, opacity, materialControl, opticalControl);
         PrimeRcVolume adjacent = primeAdjacentMediumVolume(
                 adjacentBaseColor, adjacentInterfaceControl);
-        PrimeRcState state = primeMinecraftBoundaryTransmissionState(
+        PrimeCompactTransmissionState state = primeMinecraftBoundaryTransmissionState(
                 baseColor,
                 opacity,
                 outwardNormal,
@@ -1000,7 +1000,7 @@ void primeAdapterProperties(
             result.mask |= PRIME_TEST_FAILURE_STATE;
         }
     } else {
-        PrimeRcState state = primeMinecraftTransmissionState(
+        PrimeCompactTransmissionState state = primeMinecraftTransmissionState(
                 baseColor,
                 opacity,
                 outwardNormal,
@@ -1048,15 +1048,13 @@ void primeAdapterProperties(
             result.mask |= PRIME_TEST_FAILURE_EVENT;
         }
 
-        state.samplingFlags = PRIME_RC_FLAG_ALL;
-        float3 localView = primeRcOnbToLocal(
-                state.material.geometry.onb, viewDirection);
-        PrimeRcSampleResult reference = primeRcPrimeTransmissionSample(
-                localView, firstSample, state, stack);
+        float3 localView = primeRcOnbToLocal(state.onb, viewDirection);
+        PrimeRcSampleResult reference = primeCompactTransmissionSample(
+                localView, firstSample, state, PRIME_RC_FLAG_ALL, stack);
         BsdfSample expected = primeInvalidBsdfSample();
         if (primeRcHasSample(reference.bsdfSample)) {
             expected.direction = primeRcOnbToWorld(
-                    state.material.geometry.onb, reference.bsdfSample.wo);
+                    state.onb, reference.bsdfSample.wo);
             expected.response = reference.bsdfSample.throughput.value;
             expected.pdf = reference.bsdfSample.pdf;
             expected.relativeEta = reference.bsdfSample.eta;
@@ -1097,7 +1095,7 @@ void primeAdapterProperties(
                             viewDirection,
                             result.first.direction);
             float3 localScatter = primeRcOnbToLocal(
-                    state.material.geometry.onb, result.first.direction);
+                    state.onb, result.first.direction);
             bool stableReconstruction = min(
                     state.transmissionMicrofacet.alpha.x,
                     state.transmissionMicrofacet.alpha.y) >= 5.0e-3

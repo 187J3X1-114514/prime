@@ -5,7 +5,7 @@
 // the reference PDF includes reflection/transmission selection and remains directly usable by
 // throughput and MIS.
 PrimeTransmissiveBsdfSample primeSampleOfflineMinecraftTransmissionFromState(
-        PrimeRcState state,
+        PrimeCompactTransmissionState state,
         float3 baseColor,
         float opacity,
         uint materialControl,
@@ -25,7 +25,7 @@ PrimeTransmissiveBsdfSample primeSampleOfflineMinecraftTransmissionFromState(
 }
 
 PrimeTransmissiveBsdfSample primeSampleOfflineMinecraftTransmissionFromState(
-        PrimeRcState state,
+        PrimeCompactTransmissionState state,
         float3 baseColor,
         float opacity,
         uint materialControl,
@@ -51,7 +51,7 @@ BsdfEvaluation primeEvaluateOfflineMinecraftTransmission(
         PrimeRcVolumeStack volumeStack,
         inout PrimeNumericalObservation observation) {
     float3 outwardNormal = primeSurfaceOutwardShadingNormal(surface);
-    PrimeRcState state = primeMinecraftBoundaryTransmissionState(
+    PrimeCompactTransmissionState state = primeMinecraftBoundaryTransmissionState(
             surface.baseColor,
             primeSurfaceOpacity(surface),
             outwardNormal,

@@ -223,7 +223,7 @@ PrimePathScatter primeSampleOfflinePathSurface(
     result.volumeStack = volumeStack;
     PrimeNumericalObservation observation = primeBsdfObservationCreate();
     if (primeMaterialIsFoliage(surface.materialControl)) {
-        PrimeRcState state = primeMinecraftFoliageState(
+        PrimeCompactFoliageState state = primeMinecraftFoliageState(
                 surface.baseColor,
                 primeSurfaceShadingNormal(surface, viewDirection),
                 surface.roughness,
@@ -235,7 +235,7 @@ PrimePathScatter primeSampleOfflinePathSurface(
         result.bsdf = primeSampleMinecraftFoliageFromState(
                 state, viewDirection, sampleValue, volumeStack, observation);
     } else if (primeMaterialIsTransmissive(surface.materialControl)) {
-        PrimeRcState state = primeMinecraftBoundaryTransmissionState(
+        PrimeCompactTransmissionState state = primeMinecraftBoundaryTransmissionState(
                 surface.baseColor,
                 primeSurfaceOpacity(surface),
                 primeSurfaceOutwardShadingNormal(surface),

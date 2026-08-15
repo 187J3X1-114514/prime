@@ -1,5 +1,12 @@
-#include "realtime/realtime_wavefront.slang"
-#include "realtime/realtime_wavefront_entry.slang"
+#include "realtime/realtime_wavefront_transparent_resolve.slang"
 
 [shader("raygeneration")]
-void main() { primeRealtimeWavefrontTransparentResolveEntry(); }
+void main()
+{
+    uint launchIndex = DispatchRaysIndex().x;
+    PrimeIntegratorContext context = primeIntegratorContextCreate();
+    if (launchIndex == 0u) {
+        primeResetWavefrontQueue(PRIME_WAVEFRONT_TRANSPARENT_RESOLVE_QUEUE);
+    }
+    primeWavefrontTransparentResolve(context, launchIndex);
+}

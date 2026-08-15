@@ -1,4 +1,4 @@
-#include "realtime/realtime_wavefront.slang"
+#include "realtime/realtime_wavefront_light.slang"
 #include "realtime/sharc_query_policy.slang"
 #include "realtime/sharc_training_policy.slang"
 

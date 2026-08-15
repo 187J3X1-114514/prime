@@ -1,5 +1,9 @@
-#include "realtime/realtime_wavefront.slang"
-#include "realtime/realtime_wavefront_entry.slang"
+#include "realtime/realtime_wavefront_primary_area.slang"
 
 [shader("raygeneration")]
-void main() { primeRealtimeWavefrontPrimaryAreaEntry(); }
+void main()
+{
+    uint launchIndex = DispatchRaysIndex().x;
+    PrimeIntegratorContext context = primeIntegratorContextCreate();
+    primeWavefrontPrimaryArea(context, launchIndex);
+}

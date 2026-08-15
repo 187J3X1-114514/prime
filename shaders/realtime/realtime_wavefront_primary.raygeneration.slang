@@ -1,5 +1,12 @@
-#include "realtime/realtime_wavefront.slang"
-#include "realtime/realtime_wavefront_entry.slang"
+#include "realtime/realtime_wavefront_primary.slang"
 
 [shader("raygeneration")]
-void main() { primeRealtimeWavefrontPrimaryEntry(); }
+void main()
+{
+    uint launchIndex = DispatchRaysIndex().x;
+    PrimeIntegratorContext context = primeIntegratorContextCreate();
+    if (launchIndex == 0u) {
+        primeResetWavefrontQueue(PRIME_WAVEFRONT_SHADE_QUEUE);
+    }
+    primeWavefrontPrimary(context, launchIndex);
+}

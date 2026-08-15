@@ -155,8 +155,8 @@ $env:Path = "$env:JAVA_HOME\bin;$env:VULKAN_SDK\Bin;$env:Path"
 .\gradlew.bat build
 ```
 
-构建成功后，发行 JAR 位于 `build\libs`。应使用没有 `-sources` 后缀的 JAR。环境检查、测试、
-开发客户端和着色器调试见[构建与验证](docs/构建与验证.md)。
+构建成功后，唯一的发行 JAR 位于 `build\libs`。环境检查、测试、开发客户端和着色器调试
+见[构建与验证](docs/构建与验证.md)。
 
 ## 项目文档
 

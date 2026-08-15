@@ -191,8 +191,8 @@ $env:Path = "$env:JAVA_HOME\bin;$env:VULKAN_SDK\Bin;$env:Path"
 .\gradlew.bat build
 ```
 
-After a successful build, the release JAR is in `build\libs`. Use the JAR without the `-sources`
-suffix. Environment checks, tests, development runs, and shader debugging are documented in
+After a successful build, the sole release JAR is in `build\libs`. Environment checks, tests,
+development runs, and shader debugging are documented in
 [Build and Validation](docs/构建与验证.md).
 
 ## Project Documentation

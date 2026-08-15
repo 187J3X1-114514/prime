@@ -1012,10 +1012,10 @@ void primeWavefrontTransparentResolve(
     }
     context.diagnostics.flags |= secondaryFlags;
 
-    PrimeIntegrationResult result =
-            primeResolveTransparentWavefrontResult(pixel);
     float2 cameraSample = primeRealtimeCameraSample(pixel);
-    float4 reflectionPreviousVirtualPosition = float4(0.0, 0.0, 0.0, -1.0);
+    PrimeTransparentGuideProbeResult probes =
+            primeEmptyTransparentGuideProbeResult();
+    bool hasProbes = false;
     if (primeTransparentGuideMode()
             != PRIME_PATH_TRANSPARENT_GUIDE_MODE_DISABLED) {
         PathState cameraPath = primeCameraPath(pixel, 0u, cameraSample);
@@ -1027,26 +1027,34 @@ void primeWavefrontTransparentResolve(
                     (primePush.path.z & PRIME_PATH_CAMERA_IN_WATER_MASK) != 0u
                     ? primeCameraWaterVolumeStack()
                     : primeEmptyVolumeStack();
-            PrimeTransparentGuideProbeResult probes =
-                    primeTraceTransparentGuideProbes(context,
-                            cameraPath,
-                            primarySurface,
-                            volumeStack,
-                            primeMaximumBounces());
-            result.transmissionGuides = primeGuideWithProbeSurface(
-                    result.transmissionGuides, probes.transmission);
-            if (probes.transmission.primaryHitKind == PRIME_HIT_SURFACE) {
-                result.transmissionAnchorDistance =
-                        probes.transmissionAnchorDistance;
-            }
-            result.reflectionGuides = primeGuideWithProbeSurface(
-                    result.reflectionGuides, probes.reflection);
-            if (probes.reflection.primaryHitKind == PRIME_HIT_SURFACE) {
-                result.reflectionDirectionalGuide = false;
-            }
-            reflectionPreviousVirtualPosition =
-                    probes.reflectionPreviousVirtualPosition;
+            probes = primeTraceTransparentGuideProbes(context,
+                    cameraPath,
+                    primarySurface,
+                    volumeStack,
+                    primeMaximumBounces());
+            hasProbes = true;
         }
+    }
+
+    // Resolve after every probe trace so the complete radiance and guide result does not remain
+    // live across traversal. The probes are reconstruction-only and cannot affect this load.
+    PrimeIntegrationResult result =
+            primeResolveTransparentWavefrontResult(pixel);
+    float4 reflectionPreviousVirtualPosition = float4(0.0, 0.0, 0.0, -1.0);
+    if (hasProbes) {
+        result.transmissionGuides = primeGuideWithProbeSurface(
+                result.transmissionGuides, probes.transmission);
+        if (probes.transmission.primaryHitKind == PRIME_HIT_SURFACE) {
+            result.transmissionAnchorDistance =
+                    probes.transmissionAnchorDistance;
+        }
+        result.reflectionGuides = primeGuideWithProbeSurface(
+                result.reflectionGuides, probes.reflection);
+        if (probes.reflection.primaryHitKind == PRIME_HIT_SURFACE) {
+            result.reflectionDirectionalGuide = false;
+        }
+        reflectionPreviousVirtualPosition =
+                probes.reflectionPreviousVirtualPosition;
     }
     primeWriteRealtimeOutput(context.diagnostics,
             pixel,

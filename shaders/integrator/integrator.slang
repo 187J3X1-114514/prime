@@ -18,6 +18,7 @@ import "core/transport_math.slang";
 import "core/queued_psr_math.slang";
 import "core/transparent_checkerboard.slang";
 import "core/nrd_common.slang";
+import "integrator/integration_result.slang";
 import "integrator/path_contract.slang";
 
 #include "bsdf/adapter/bsdf.slang"
@@ -82,61 +83,6 @@ struct PrimeDirectLightingSplit {
     float3 direction;
 };
 
-// This is the complete Monte Carlo estimate, split only because realtime denoisers consume
-// different signal classes. Adding these mutually exclusive partitions reconstructs the beauty
-// sample exactly; no guide is allowed to feed back into these values.
-struct PrimePathRadiance {
-    float3 diffuse;
-    float3 specular;
-    float3 stable;
-    float3 unshadowedSun;
-    float sunVisibility;
-};
-
-// Auxiliary observations used by reconstruction. They describe the sampled path and primary
-// surface, but are not radiance contributions and therefore cannot change the reference estimate.
-struct PrimeDenoiserGuides {
-    float primaryDistance;
-    float specularHitDistance;
-    float diffuseHitDistance;
-    float sunPenumbra;
-    float3 primaryAlbedo;
-    uint primaryHitKind;
-    float3 primaryNormal;
-    uint primaryMaterialFlags;
-    float3 primarySpecularAlbedo;
-    float primaryLinearRoughness;
-    float3 primaryPosition;
-    float3 primaryPreviousPosition;
-    bool primaryHasMotion;
-    float3 diffuseDirection;
-    float3 specularDirection;
-    float3 primaryAreaDiffuse;
-    float3 primaryAreaSpecular;
-    float3 primaryAreaDirection;
-};
-
-struct PrimeIntegrationResult {
-    PrimePathRadiance radiance;
-    PrimeDenoiserGuides guides;
-    float3 reflectionDiffuseRadiance;
-    float3 reflectionSpecularRadiance;
-    PrimeDenoiserGuides transmissionGuides;
-    PrimeDenoiserGuides reflectionGuides;
-    float transmissionAnchorDistance;
-    bool reflectionDirectionalGuide;
-    bool transparentPrimary;
-};
-
-struct PrimeTransparentBranchResult {
-    float3 diffuseRadiance;
-    float3 specularRadiance;
-    PrimeDenoiserGuides guides;
-    float firstHitDistance;
-    float anchorDistance;
-    bool directionalGuide;
-};
-
 // Bookkeeping that maps a complete model path into the signal/guide contract. Keeping it in a
 // named state object makes the estimator loop independent of any particular NRD or NGX resource.
 struct PrimeDenoiserState {
@@ -147,38 +93,6 @@ struct PrimeDenoiserState {
     bool diffusePath;
     uint primaryBounce;
 };
-
-float3 primeResolveIntegrationRadiance(PrimeIntegrationResult result) {
-    return result.radiance.diffuse
-            + result.radiance.specular
-            + result.reflectionDiffuseRadiance
-            + result.reflectionSpecularRadiance
-            + result.radiance.stable
-            + result.radiance.unshadowedSun * result.radiance.sunVisibility;
-}
-
-PrimeDenoiserGuides primeEmptyDenoiserGuides() {
-    PrimeDenoiserGuides guides;
-    guides.primaryDistance = -1.0;
-    guides.specularHitDistance = 0.0;
-    guides.diffuseHitDistance = 0.0;
-    guides.sunPenumbra = 0.0;
-    guides.primaryAlbedo = float3(0.0);
-    guides.primaryHitKind = PRIME_HIT_NONE;
-    guides.primaryNormal = float3(0.0, 1.0, 0.0);
-    guides.primaryMaterialFlags = 0u;
-    guides.primarySpecularAlbedo = float3(0.0);
-    guides.primaryLinearRoughness = PRIME_DEFAULT_REFERENCE_LINEAR_ROUGHNESS;
-    guides.primaryPosition = float3(0.0);
-    guides.primaryPreviousPosition = float3(0.0);
-    guides.primaryHasMotion = false;
-    guides.diffuseDirection = float3(0.0);
-    guides.specularDirection = float3(0.0);
-    guides.primaryAreaDiffuse = float3(0.0);
-    guides.primaryAreaSpecular = float3(0.0);
-    guides.primaryAreaDirection = float3(0.0);
-    return guides;
-}
 
 float3 primeOffsetRayOrigin(float3 physicalPosition, float3 normal, float3 direction) {
     // The physical shading point remains unchanged for BSDF/light/PDF evaluation. Only the
@@ -1492,11 +1406,6 @@ void primeAccumulateTransparentBranch(
     }
 }
 
-uint primeTransparentGuideMode() {
-    return (primePush.path.z >> PRIME_PATH_TRANSPARENT_GUIDE_MODE_SHIFT)
-            & PRIME_PATH_TRANSPARENT_GUIDE_MODE_MASK;
-}
-
 // Advances the checkerboard-selected primary-transparent branch by one queued vertex. Its signal
 // lane remains branch-owned while traversal/SER sorts the sole active continuation with every
 // other path.
@@ -1691,24 +1600,6 @@ bool primeIntegrateTransparentWavefrontSurface<SunNee, AreaNee>(
     }
     path.bounce++;
     return true;
-}
-
-PrimeIntegrationResult primeEmptyIntegrationResult() {
-    PrimeIntegrationResult result;
-    result.radiance.diffuse = float3(0.0);
-    result.radiance.specular = float3(0.0);
-    result.radiance.stable = float3(0.0);
-    result.radiance.unshadowedSun = float3(0.0);
-    result.radiance.sunVisibility = 0.0;
-    result.guides = primeEmptyDenoiserGuides();
-    result.reflectionDiffuseRadiance = float3(0.0);
-    result.reflectionSpecularRadiance = float3(0.0);
-    result.transmissionGuides = primeEmptyDenoiserGuides();
-    result.reflectionGuides = primeEmptyDenoiserGuides();
-    result.transmissionAnchorDistance = -1.0;
-    result.reflectionDirectionalGuide = false;
-    result.transparentPrimary = false;
-    return result;
 }
 
 PrimeDenoiserState primeInitialDenoiserState() {

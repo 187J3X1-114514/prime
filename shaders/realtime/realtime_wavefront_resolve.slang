@@ -1,9 +1,21 @@
-#include "realtime/realtime_wavefront_common.slang"
+import "prime_realtime_abi.slang";
+import "prime_abi.slang";
+import "prime_abi_types.slang";
+import "core/camera.slang";
+import "core/nrd_common.slang";
+import "core/numerical.slang";
+import "core/numerical_diagnostics.slang";
+import "core/packed_geometry.slang";
+import "core/render_config.slang";
+import "integrator/integration_result.slang";
+import "integrator/path_contract.slang";
 
+#include "realtime/wavefront_storage.slang"
 #include "realtime/wavefront_output.slang"
 
 void primeWavefrontResolve(
-        inout PrimeIntegratorContext context, uint2 launchIndex) {
+        inout PrimeNumericalDiagnostics diagnostics, uint2 launchIndex) {
+    // Resolve owns reconstruction only; transport has already completed.
     uint2 pixel = launchIndex;
     if (primeWavefrontPixelTransparent(pixel)) {
         return;
@@ -12,13 +24,13 @@ void primeWavefrontResolve(
             primeWavefrontPaths[primeWavefrontIndex(pixel, 0u)].transport;
     uint primaryDiagnostic =
             asuint(primaryRecord.throughputAndNumericalFlags.w);
-    context.diagnostics.flags =
+    diagnostics.flags =
             primaryDiagnostic & PRIME_WAVEFRONT_NUMERICAL_FLAGS_MASK;
-    context.diagnostics.firstContext =
+    diagnostics.firstContext =
             (primaryDiagnostic >> PRIME_WAVEFRONT_NUMERICAL_CONTEXT_SHIFT)
                     & PRIME_WAVEFRONT_NUMERICAL_CONTEXT_MASK;
     PrimeIntegrationResult result = primeLoadWavefrontIntermediate(
             pixel, primaryRecord);
     float2 cameraSample = primeRealtimeCameraSample(pixel);
-    primeWriteRealtimeOutput(context.diagnostics, pixel, cameraSample, result);
+    primeWriteRealtimeOutput(diagnostics, pixel, cameraSample, result);
 }

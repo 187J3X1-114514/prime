@@ -4,6 +4,6 @@
 void main()
 {
     uint2 launchIndex = DispatchRaysIndex().xy;
-    PrimeIntegratorContext context = primeIntegratorContextCreate();
-    primeWavefrontResolve(context, launchIndex);
+    PrimeNumericalDiagnostics diagnostics = primeNumericalDiagnosticsCreate();
+    primeWavefrontResolve(diagnostics, launchIndex);
 }

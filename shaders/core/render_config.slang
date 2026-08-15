@@ -80,6 +80,12 @@ public bool primeWritesRawNumericalDiagnostic()
     return (primePush.path.w & PRIME_PATH_RAW_NUMERICAL_MASK) != 0u;
 }
 
+public uint primeTransparentGuideMode()
+{
+    return (primePush.path.z >> PRIME_PATH_TRANSPARENT_GUIDE_MODE_SHIFT)
+            & PRIME_PATH_TRANSPARENT_GUIDE_MODE_MASK;
+}
+
 public uint primeSampleEpoch()
 {
     return primePush.path.y & PRIME_PATH_SAMPLE_EPOCH_MASK;

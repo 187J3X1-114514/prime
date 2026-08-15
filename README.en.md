@@ -97,7 +97,9 @@ its Minecraft version is 26.2, and that Fabric API and Prime are in the same ins
 folder.
 
 If Vulkan or a required ray-tracing feature is unavailable, Prime stops taking over the world view
-and leaves vanilla rendering active. The log records why Prime could not start.
+and leaves vanilla rendering active. The log records why Prime could not start. A fatal diagnostic
+remains visible for the game session: its title includes the installed Prime version and runtime
+state, while its body is limited to four lines containing the root failure and key scene context.
 
 ### First Start
 
@@ -169,7 +171,9 @@ Please include the following in a [GitHub issue](https://github.com/bWFuanVzYWth
 
 If a problem appears only with Prime, also check whether it disappears after switching back to
 vanilla rendering. The `Prime: Diagnostics` section in Video Settings provides rendering
-diagnostics and a link to the GitHub repository.
+diagnostics and a link to the GitHub repository. If the log cannot be found, include the complete
+persistent Prime error toast in a screenshot; it carries the version and concise failure text
+directly, without an error code lookup.
 
 ## Building from Source
 

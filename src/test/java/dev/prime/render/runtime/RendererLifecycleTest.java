@@ -15,6 +15,6 @@ final class RendererLifecycleTest {
         lifecycle.fail(new IllegalStateException("host rejected frame"));
 
         assertEquals(RuntimeState.FAILED, lifecycle.state());
-        assertEquals("host rejected frame", lifecycle.failureReason());
+        assertEquals("IllegalStateException: host rejected frame", lifecycle.failureReason());
     }
 }

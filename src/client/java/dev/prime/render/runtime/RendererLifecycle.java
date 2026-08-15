@@ -80,8 +80,8 @@ public final class RendererLifecycle {
             this.failureReason = "";
             this.states.rendererReady();
         } catch (RuntimeException exception) {
-            this.failureReason = "Unable to initialize Vulkan ray tracing: "
-                    + exception.getMessage();
+            this.failureReason = RuntimeFailureSummary.describe(
+                    exception, "Vulkan initialization");
             this.states.fail();
             terrain.restore(minecraft, true);
             VulkanContext failedContext = this.context;
@@ -169,9 +169,7 @@ public final class RendererLifecycle {
 
     /** Any failure after host acceptance retires the renderer before another frame can reuse it. */
     public void fail(Throwable failure) {
-        this.failureReason = failure.getMessage() == null
-                ? failure.getClass().getSimpleName()
-                : failure.getMessage();
+        this.failureReason = RuntimeFailureSummary.describe(failure);
         this.states.fail();
         VulkanRenderer failedRenderer = this.renderer;
         this.world = null;

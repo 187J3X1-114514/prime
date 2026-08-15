@@ -4,13 +4,16 @@ import com.mojang.blaze3d.systems.RenderSystem;
 import dev.prime.infrastructure.PrimeInfo;
 import dev.prime.render.vulkan.VulkanBootstrap;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.components.toasts.SystemToast;
 import net.minecraft.network.chat.Component;
 
 /** Client boundary for runtime logs and availability toasts. */
 public final class RuntimeDiagnostics {
+    private static final int TOAST_TEXT_WIDTH = 200;
+    private static final int MAX_MESSAGE_LINES = 4;
     private static final SystemToast.SystemToastId UNAVAILABLE_TOAST =
-            new SystemToast.SystemToastId(8_000L);
+            new SystemToast.SystemToastId(Long.MAX_VALUE);
 
     private boolean notificationShown;
     private boolean unavailabilityLogged;
@@ -43,11 +46,38 @@ public final class RuntimeDiagnostics {
             return;
         }
         this.notificationShown = true;
-        SystemToast.add(
+        SystemToast.addOrUpdate(
                 minecraft.gui.toastManager(),
                 UNAVAILABLE_TOAST,
-                Component.literal("Prime ray tracing unavailable"),
-                Component.literal(failureReason));
+                fitText(minecraft.font,
+                        RuntimeFailureSummary.title(PrimeInfo.version(), state), 1),
+                fitText(minecraft.font, failureReason, MAX_MESSAGE_LINES));
     }
 
+    private static Component fitText(Font font, String value, int maximumLines) {
+        String text = RuntimeFailureSummary.clean(value);
+        Component full = Component.literal(text);
+        if (font.split(full, TOAST_TEXT_WIDTH).size() <= maximumLines) {
+            return full;
+        }
+
+        int low = 0;
+        int high = text.codePointCount(0, text.length());
+        while (low < high) {
+            int candidateLength = low + (high - low + 1) / 2;
+            String candidate = abbreviatedPrefix(text, candidateLength);
+            if (font.split(Component.literal(candidate), TOAST_TEXT_WIDTH).size()
+                    <= maximumLines) {
+                low = candidateLength;
+            } else {
+                high = candidateLength - 1;
+            }
+        }
+        return Component.literal(abbreviatedPrefix(text, low));
+    }
+
+    private static String abbreviatedPrefix(String text, int codePoints) {
+        int end = text.offsetByCodePoints(0, codePoints);
+        return text.substring(0, end).stripTrailing() + '…';
+    }
 }

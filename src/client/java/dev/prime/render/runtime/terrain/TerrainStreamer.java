@@ -540,6 +540,10 @@ public final class TerrainStreamer implements AutoCloseable {
             try {
                 this.workers.execute(() -> {
                     WorkerResult workerResult;
+                    WorkerStage workerStage = WorkerStage.SETUP;
+                    int sectionX = 0;
+                    int sectionY = 0;
+                    int sectionZ = 0;
                     ResourceEpochCoordinator.Lease workerLease =
                             TerrainStreamer.this.resourceEpoch.tryAcquire(resourceEpoch);
                     if (workerLease == null) {
@@ -550,6 +554,10 @@ public final class TerrainStreamer implements AutoCloseable {
                             CapturedCluster.Builder captured = new CapturedCluster.Builder(
                                     clusterX, clusterY, clusterZ);
                             for (VanillaSectionSnapshot snapshot : snapshots) {
+                                workerStage = WorkerStage.SECTION_COMPILATION;
+                                sectionX = snapshot.sectionX();
+                                sectionY = snapshot.sectionY();
+                                sectionZ = snapshot.sectionZ();
                                 CapturedSectionGeometry section =
                                         TerrainStreamer.this.sceneInterpreter.compileSection(
                                                 new VanillaSectionCompileInput(
@@ -565,13 +573,15 @@ public final class TerrainStreamer implements AutoCloseable {
                                         snapshot.sectionZ(),
                                         section);
                             }
+                            workerStage = WorkerStage.CLUSTER_TRANSLATION;
                             CpuClusterMesh mesh = ClusterSceneTranslator.translate(
                                     captured.build(),
                                     materialSnapshot,
                                     translationSettings);
                             workerResult = new WorkerSuccess(mesh);
                         } catch (Throwable throwable) {
-                            workerResult = new WorkerFailure(throwable);
+                            workerResult = new WorkerFailure(
+                                    throwable, workerStage, sectionX, sectionY, sectionZ);
                         }
                     }
                     CompletedCluster completedCluster = new CompletedCluster(
@@ -641,10 +651,16 @@ public final class TerrainStreamer implements AutoCloseable {
                     WorkerFailure failed = (WorkerFailure) result.result();
                     // Retrying the same immutable work cannot repair a deterministic failure.
                     // Escalate once so the runtime performs its defined vanilla fallback.
-                    String message = failed.failure() instanceof OutOfMemoryError
-                            ? "Terrain resources exhausted while extracting virtual cluster "
-                                    + result.key()
-                            : "Terrain extraction failed for virtual cluster " + result.key();
+                    String cluster = "(" + result.clusterX() + ", "
+                            + result.clusterY() + ", " + result.clusterZ() + ")";
+                    String message = switch (failed.stage()) {
+                        case SETUP -> "Terrain setup failed for cluster " + cluster;
+                        case SECTION_COMPILATION -> "Terrain section ("
+                                + failed.sectionX() + ", " + failed.sectionY() + ", "
+                                + failed.sectionZ() + ") failed in cluster " + cluster;
+                        case CLUSTER_TRANSLATION ->
+                                "Terrain translation failed for cluster " + cluster;
+                    };
                     throw new IllegalStateException(message, failed.failure());
                 }
                 case SUCCESS -> {
@@ -807,11 +823,22 @@ public final class TerrainStreamer implements AutoCloseable {
         }
     }
 
-    private record WorkerFailure(Throwable failure) implements WorkerResult {
+    private record WorkerFailure(
+            Throwable failure,
+            WorkerStage stage,
+            int sectionX,
+            int sectionY,
+            int sectionZ) implements WorkerResult {
         @Override
         public WorkerStatus status() {
             return WorkerStatus.FAILURE;
         }
+    }
+
+    private enum WorkerStage {
+        SETUP,
+        SECTION_COMPILATION,
+        CLUSTER_TRANSLATION
     }
 
     private enum WorkerCancelled implements WorkerResult {

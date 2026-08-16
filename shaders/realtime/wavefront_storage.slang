@@ -234,6 +234,7 @@ PrimeIntegrationResult primeLoadWavefrontIntermediate(
     result.transmissionAnchorDistance = -1.0;
     result.reflectionDirectionalGuide = false;
     result.transparentPrimary = false;
+    result.transparentReflectionOnly = false;
     return result;
 }
 

@@ -48,6 +48,7 @@ public struct PrimeIntegrationResult {
     public float transmissionAnchorDistance;
     public bool reflectionDirectionalGuide;
     public bool transparentPrimary;
+    public bool transparentReflectionOnly;
 };
 
 public struct PrimeTransparentBranchResult {
@@ -106,5 +107,6 @@ public PrimeIntegrationResult primeEmptyIntegrationResult() {
     result.transmissionAnchorDistance = -1.0;
     result.reflectionDirectionalGuide = false;
     result.transparentPrimary = false;
+    result.transparentReflectionOnly = false;
     return result;
 }

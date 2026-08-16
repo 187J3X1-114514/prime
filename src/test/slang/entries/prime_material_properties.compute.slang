@@ -102,6 +102,18 @@ void main(uint3 dispatchThreadId : SV_DispatchThreadID)
             || translated.thinWalled != 0) {
         mask |= PRIME_TEST_FAILURE_RANGE;
     }
+    uint smoothWater = PRIME_MATERIAL_FAMILY_DIELECTRIC
+            | PRIME_MATERIAL_MEDIUM_WATER;
+    uint smoothGlass = PRIME_MATERIAL_FAMILY_DIELECTRIC
+            | PRIME_MATERIAL_MEDIUM_COLORLESS_GLASS;
+    uint roughGlass = smoothGlass | PRIME_MATERIAL_DECORATIVE_INTERFACE;
+    if (primeMaterialEffectiveLinearRoughness(smoothWater, 0.9) != 0.0
+            || primeMaterialEffectiveLinearRoughness(smoothGlass, 0.9) != 0.0
+            || primeMaterialEffectiveLinearRoughness(roughGlass, 0.73) != 0.73
+            || primeMaterialEffectiveLinearRoughness(
+                    PRIME_MATERIAL_FAMILY_OPAQUE, 1.5) != 1.0) {
+        mask |= PRIME_TEST_FAILURE_STATE;
+    }
     uint solidTransmission = PRIME_MATERIAL_FAMILY_DIELECTRIC
             | PRIME_MATERIAL_MEDIUM_STAINED_GLASS;
     uint fresnelCode = opticalControl & PRIME_OPTICAL_FRESNEL_MASK;

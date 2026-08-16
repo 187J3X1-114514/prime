@@ -10,7 +10,26 @@ struct PrimeTransparentGuideProbeResult {
     float transmissionAnchorDistance;
     float4 reflectionCurrentVirtualPosition;
     float4 reflectionPreviousVirtualPosition;
+    bool reflectionDirectionalGuide;
+    bool reflectionHasMotion;
+    bool primaryReflectionOnly;
 };
+
+static const uint PRIME_GUIDE_PROBE_TRANSMISSION = 0u;
+static const uint PRIME_GUIDE_PROBE_REFLECTION = 1u;
+
+bool primeGuideProbePrimaryIsReflectionOnly(
+        PrimeTransmissiveBsdfSplit paths) {
+    BsdfSample transmission = paths.transmission.bsdfSample;
+    BsdfSample reflection = paths.reflection.bsdfSample;
+    return !primeHasScatter(transmission)
+            && primeHasScatter(reflection)
+            && (reflection.eventFlags
+                    & (PRIME_BSDF_EVENT_REFLECTION
+                            | PRIME_BSDF_EVENT_DISCRETE))
+                    == (PRIME_BSDF_EVENT_REFLECTION
+                            | PRIME_BSDF_EVENT_DISCRETE);
+}
 
 PrimeTransparentGuideProbeResult primeEmptyTransparentGuideProbeResult() {
     PrimeTransparentGuideProbeResult result;
@@ -21,16 +40,10 @@ PrimeTransparentGuideProbeResult primeEmptyTransparentGuideProbeResult() {
     // direction at infinity. Current geometry feeds NRD; previous geometry feeds RR motion.
     result.reflectionCurrentVirtualPosition = float4(0.0, 0.0, 0.0, -1.0);
     result.reflectionPreviousVirtualPosition = float4(0.0, 0.0, 0.0, -1.0);
+    result.reflectionDirectionalGuide = false;
+    result.reflectionHasMotion = false;
+    result.primaryReflectionOnly = false;
     return result;
-}
-
-float3 primeMirrorPointAcrossPlane(
-        float3 point, float3 planePoint, float3 unitNormal) {
-    return point - 2.0 * unitNormal * dot(point - planePoint, unitNormal);
-}
-
-float3 primeMirrorDirectionAcrossPlane(float3 direction, float3 unitNormal) {
-    return direction - 2.0 * unitNormal * dot(direction, unitNormal);
 }
 
 PrimeDenoiseAlbedos primeProbeSurfaceAlbedos(
@@ -150,139 +163,37 @@ PrimeDenoiserGuides primeGuideWithProbeSurface(
     return destination;
 }
 
-void primeTraceDeterministicTransmissionGuide(
-        inout PrimeIntegratorContext context,
-        SurfaceInteraction primarySurface,
-        PrimeTransmissiveBsdfSample initialSample,
-        float3 initialThroughput,
-        uint maximumBounces,
-        inout PrimeTransparentGuideProbeResult result) {
-    BsdfSample initialBsdf = initialSample.bsdfSample;
-    float3 throughput = initialThroughput;
-    if ((initialBsdf.eventFlags & PRIME_BSDF_EVENT_DISCRETE) == 0u
-            || !primeAdvanceProbeThroughput(throughput, initialBsdf)) {
-        return;
+float3 primeGuideProbeEventNormal(
+        SurfaceInteraction surface,
+        float3 viewDirection,
+        BsdfSample sampleValue) {
+    if ((sampleValue.eventFlags & PRIME_BSDF_EVENT_REFLECTION) == 0u) {
+        return surface.geometricNormal;
     }
+    // The sampled directions define the actual delta plane, including a smooth shading normal.
+    return primeNrdSafeNormalize(
+            viewDirection + sampleValue.direction,
+            primeSurfaceOutwardShadingNormal(surface));
+}
 
-    PrimeQueuedPsrState currentState = primeEmptyQueuedPsrState();
-    PrimeQueuedPsrState previousState = primeEmptyQueuedPsrState();
-    PrimePreviousDynamicSurface primaryPrevious = primeSurfacePrevious(
-            primarySurface, primePush.sectionTableAddress);
-    float3 primaryPreviousPosition = primaryPrevious.position;
-    bool initialReflection =
-            (initialBsdf.eventFlags & PRIME_BSDF_EVENT_REFLECTION) != 0u;
-    currentState = primeAppendQueuedPsrState(
-            currentState,
-            primePush.cameraPosition,
-            primePush.cameraPosition,
-            primarySurface.position,
-            primarySurface.geometricNormal,
-            initialReflection);
-    previousState = primeAppendQueuedPsrState(
-            previousState,
-            primePush.cameraPosition,
-            primePush.cameraPosition,
-            primaryPreviousPosition,
-            primaryPrevious.geometricNormal,
-            initialReflection);
+struct PrimeGuideProbeContinuation {
+    PrimePathScatter scatter;
+    bool unique;
+};
 
-    float3 lastPosition = primarySurface.position;
-    float3 lastPreviousPosition = primaryPreviousPosition;
-    float3 direction = initialBsdf.direction;
-    float3 traceOrigin = primeOffsetRayOrigin(
-            primarySurface.position,
-            primarySurface.geometricNormal,
-            direction);
-    PrimeOpenPbrVolumeStack volumeStack = initialSample.volumeStack;
-    bool hasMotion = primeSurfaceHasMotion(primarySurface);
-
-    [loop]
-    for (uint bounce = 1u; bounce < maximumBounces; ++bounce) {
-        SurfaceInteraction surface = primeTraceSurfaceWithoutReorder(
-                traceOrigin, direction);
-        if (!primeKnownHitKind(surface) || surface.hitKind == PRIME_HIT_NONE) {
-            return;
-        }
-        // The reconstruction probe observes the same filtered target as the radiance path.
-        // Omitting segment absorption turns medium color into apparent illumination and lets
-        // denoisers exchange complementary hues across water and stained-glass boundaries.
-        if (!primeAdvanceProbeMedium(throughput, surface, volumeStack)) {
-            return;
-        }
-        float3 viewDirection = -direction;
-        PrimeClosureTraits closureTraits = primeSurfaceClosureTraits(
-                surface, viewDirection, volumeStack);
-        bool discreteOnlyInterface = primeClosureIsDiscreteOnly(closureTraits);
-        if (!discreteOnlyInterface) {
-            float3 currentVirtualPosition;
-            float3 currentVirtualNormal;
-            if (!primeBuildQueuedPsrGuideValue(
-                    currentState,
-                    lastPosition,
-                    surface.position,
-                    primeSurfaceShadingNormal(surface, viewDirection),
-                    currentVirtualPosition,
-                    currentVirtualNormal)) {
-                return;
-            }
-
-            PrimePreviousDynamicSurface previousSurface = primeSurfacePrevious(
-                    surface, primePush.sectionTableAddress);
-            float3 surfacePreviousPosition = previousSurface.position;
-            float3 previousVirtualPosition;
-            float3 ignoredPreviousNormal;
-            bool previousValid = primeBuildQueuedPsrGuideValue(
-                    previousState,
-                    lastPreviousPosition,
-                    surfacePreviousPosition,
-                    previousSurface.geometricNormal,
-                    previousVirtualPosition,
-                    ignoredPreviousNormal);
-            float currentAnchor = primeQueuedPsrAnchorDistanceValue(
-                    currentState,
-                    primePush.cameraPosition,
-                    surface.position,
-                    surface.geometricNormal);
-            float previousAnchor = previousValid
-                    ? primeQueuedPsrAnchorDistanceValue(
-                            previousState,
-                            primePush.cameraPosition,
-                            surfacePreviousPosition,
-                            previousSurface.geometricNormal)
-                    : -1.0;
-            if (currentAnchor > 0.0) {
-                currentVirtualPosition = currentState.firstDirectionLength.xyz
-                        * currentAnchor;
-                if (previousAnchor > 0.0) {
-                    previousVirtualPosition =
-                            previousState.firstDirectionLength.xyz
-                                    * previousAnchor;
-                } else {
-                    previousValid = false;
-                }
-            }
-            if (!previousValid) {
-                previousVirtualPosition = currentVirtualPosition;
-            }
-            PrimeDenoiseAlbedos albedos = primeProbeSurfaceAlbedos(
-                    surface, viewDirection, volumeStack);
-            result.transmission = primeProbeSurfaceGuide(
-                    result.transmission,
-                    surface,
-                    currentVirtualPosition,
-                    previousVirtualPosition,
-                    currentVirtualNormal,
-                    throughput,
-                    albedos,
-                    (hasMotion || primeSurfaceHasMotion(surface))
-                            && previousValid);
-            result.transmissionAnchorDistance = currentAnchor;
-            return;
-        }
-
-        if (primeQueuedPsrCount(currentState) >= PRIME_QUEUED_PSR_CAPACITY) {
-            return;
-        }
+PrimeGuideProbeContinuation primeSampleGuideProbeContinuation(
+        inout PrimeIntegratorContext context,
+        SurfaceInteraction surface,
+        float3 viewDirection,
+        PrimeOpenPbrVolumeStack volumeStack) {
+    PrimeGuideProbeContinuation result;
+    result.scatter.bsdf = primeInvalidBsdfSample();
+    result.scatter.volumeStack = volumeStack;
+    result.unique = false;
+    if (primeMaterialIsTransmissive(surface.materialControl)) {
+        // Preserve one canonical target through paired entry/exit boundaries. A deterministic
+        // transmission continuation keeps the guide behind the glass; TIR is the sole reflected
+        // continuation because no refracted direction exists there.
         PrimeTransmissiveBsdfSample continuation =
                 primeSampleMinecraftTransparentContinuation(
                         surface.baseColor,
@@ -296,138 +207,269 @@ void primeTraceDeterministicTransmissionGuide(
                         volumeStack,
                         surface.adjacentBaseColor,
                         surface.adjacentInterfaceControl);
-        BsdfSample bsdf = continuation.bsdfSample;
+        result.scatter.bsdf = continuation.bsdfSample;
+        result.scatter.volumeStack = continuation.volumeStack;
+        result.unique = primeHasScatter(result.scatter.bsdf)
+                && (result.scatter.bsdf.eventFlags
+                        & PRIME_BSDF_EVENT_DISCRETE) != 0u;
+        return result;
+    }
+    // The only opaque discrete-only production topology is a smooth conductor. Its geometric
+    // continuation is unique, so a fixed sample cannot make the guide identity flicker.
+    result.scatter = primeSamplePathSurface(
+            context,
+            surface,
+            viewDirection,
+            float3(0.5),
+            volumeStack);
+    result.unique = primeHasScatter(result.scatter.bsdf)
+            && (result.scatter.bsdf.eventFlags
+                    & PRIME_BSDF_EVENT_DISCRETE) != 0u;
+    return result;
+}
+
+void primeStoreGuideProbeDirection(
+        uint lane,
+        PrimeQueuedPsrState currentState,
+        PrimeQueuedPsrState previousState,
+        float3 direction,
+        bool hasMotion,
+        inout PrimeTransparentGuideProbeResult result) {
+    if (lane != PRIME_GUIDE_PROBE_REFLECTION) {
+        return;
+    }
+    float3 currentVirtualDirection = primeNrdSafeNormalize(
+            primeQueuedPsrVirtualDirection(currentState, direction),
+            currentState.firstDirectionLength.xyz);
+    float3 previousVirtualDirection = hasMotion
+            ? primeNrdSafeNormalize(
+                    primeQueuedPsrVirtualDirection(previousState, direction),
+                    currentVirtualDirection)
+            : currentVirtualDirection;
+    result.reflectionCurrentVirtualPosition =
+            float4(currentVirtualDirection, 1.0);
+    result.reflectionPreviousVirtualPosition =
+            float4(previousVirtualDirection, 1.0);
+    result.reflectionDirectionalGuide = true;
+    result.reflectionHasMotion = hasMotion;
+}
+
+void primeTraceDiscreteGuideProbe(
+        inout PrimeIntegratorContext context,
+        uint lane,
+        SurfaceInteraction primarySurface,
+        PrimeTransmissiveBsdfSample initialSample,
+        float3 initialThroughput,
+        uint maximumBounces,
+        inout PrimeTransparentGuideProbeResult result) {
+    BsdfSample initialBsdf = initialSample.bsdfSample;
+    float3 throughput = initialThroughput;
+    if ((initialBsdf.eventFlags & PRIME_BSDF_EVENT_DISCRETE) == 0u
+            || !primeAdvanceProbeThroughput(throughput, initialBsdf)) {
+        return;
+    }
+
+    float3 initialViewDirection = primeNrdSafeNormalize(
+            primePush.cameraPosition - primarySurface.position,
+            -initialBsdf.direction);
+    float3 initialEventNormal = primeGuideProbeEventNormal(
+            primarySurface, initialViewDirection, initialBsdf);
+    PrimePreviousDynamicSurface primaryPrevious = primeSurfacePrevious(
+            primarySurface, primePush.sectionTableAddress);
+    float3 primaryPreviousNormal = primeSurfaceHasMotion(primarySurface)
+            ? primaryPrevious.geometricNormal
+            : initialEventNormal;
+    PrimeQueuedPsrState currentState = primeAppendQueuedPsrState(
+            primeEmptyQueuedPsrState(),
+            primePush.cameraPosition,
+            primePush.cameraPosition,
+            primarySurface.position,
+            initialEventNormal,
+            (initialBsdf.eventFlags & PRIME_BSDF_EVENT_REFLECTION) != 0u);
+    PrimeQueuedPsrState previousState = primeAppendQueuedPsrState(
+            primeEmptyQueuedPsrState(),
+            primePush.cameraPosition,
+            primePush.cameraPosition,
+            primaryPrevious.position,
+            primaryPreviousNormal,
+            (initialBsdf.eventFlags & PRIME_BSDF_EVENT_REFLECTION) != 0u);
+
+    float3 lastPreviousPosition = primaryPrevious.position;
+    float3 direction = initialBsdf.direction;
+    float3 traceOrigin = primeOffsetRayOrigin(
+            primarySurface.position,
+            primarySurface.geometricNormal,
+            direction);
+    PrimeOpenPbrVolumeStack volumeStack = initialSample.volumeStack;
+    bool hasMotion = primeSurfaceHasMotion(primarySurface);
+
+    [loop]
+    for (uint bounce = 1u; bounce < maximumBounces; ++bounce) {
+        SurfaceInteraction surface = primeTraceSurfaceWithoutReorder(
+                traceOrigin, direction);
+        if (!primeKnownHitKind(surface)) {
+            return;
+        }
+        if (surface.hitKind == PRIME_HIT_NONE) {
+            primeStoreGuideProbeDirection(
+                    lane,
+                    currentState,
+                    previousState,
+                    direction,
+                    hasMotion,
+                    result);
+            return;
+        }
+        // Reconstruction observes the same medium filtering as radiance transport.
+        if (!primeAdvanceProbeMedium(throughput, surface, volumeStack)) {
+            return;
+        }
+
+        float3 viewDirection = -direction;
+        PrimeClosureTraits closureTraits = primeSurfaceClosureTraits(
+                surface, viewDirection, volumeStack);
+        bool terminalSurface = !primeClosureIsDiscreteOnly(closureTraits);
+        PrimeGuideProbeContinuation continuation;
+        continuation.scatter.bsdf = primeInvalidBsdfSample();
+        continuation.scatter.volumeStack = volumeStack;
+        continuation.unique = false;
+        if (!terminalSurface) {
+            continuation = primeSampleGuideProbeContinuation(
+                    context, surface, viewDirection, volumeStack);
+            // An invalid or non-delta continuation cannot be collapsed into this guide identity.
+            terminalSurface = !continuation.unique;
+            if (!terminalSurface
+                    && primeQueuedPsrCount(currentState)
+                            >= PRIME_QUEUED_PSR_CAPACITY) {
+                return;
+            }
+        }
+        if (terminalSurface) {
+            float3 currentVirtualPosition;
+            float3 currentVirtualNormal;
+            // surface.t excludes the normal offset used only for self-hit protection. Summing
+            // traced segment lengths keeps a static reflected target exactly on its camera ray.
+            if (!primeBuildQueuedPsrGuideValueFromSegment(
+                    currentState,
+                    surface.t,
+                    primeSurfaceShadingNormal(surface, viewDirection),
+                    currentVirtualPosition,
+                    currentVirtualNormal)) {
+                return;
+            }
+
+            bool terminalHasMotion = hasMotion || primeSurfaceHasMotion(surface);
+            PrimePreviousDynamicSurface previousSurface = primeSurfacePrevious(
+                    surface, primePush.sectionTableAddress);
+            float3 previousVirtualPosition = currentVirtualPosition;
+            bool previousValid = true;
+            if (terminalHasMotion) {
+                float3 ignoredPreviousNormal;
+                previousValid = primeBuildQueuedPsrGuideValue(
+                        previousState,
+                        lastPreviousPosition,
+                        previousSurface.position,
+                        previousSurface.geometricNormal,
+                        previousVirtualPosition,
+                        ignoredPreviousNormal);
+            }
+
+            float anchorDistance = -1.0;
+            if (lane == PRIME_GUIDE_PROBE_TRANSMISSION) {
+                anchorDistance = primeQueuedPsrAnchorDistanceValue(
+                        currentState,
+                        primePush.cameraPosition,
+                        surface.position,
+                        surface.geometricNormal);
+                if (anchorDistance > 0.0) {
+                    currentVirtualPosition =
+                            currentState.firstDirectionLength.xyz
+                                    * anchorDistance;
+                    float previousAnchor = previousValid && terminalHasMotion
+                            ? primeQueuedPsrAnchorDistanceValue(
+                                    previousState,
+                                    primePush.cameraPosition,
+                                    previousSurface.position,
+                                    previousSurface.geometricNormal)
+                            : anchorDistance;
+                    if (previousAnchor > 0.0) {
+                        previousVirtualPosition =
+                                terminalHasMotion
+                                ? previousState.firstDirectionLength.xyz
+                                        * previousAnchor
+                                : currentVirtualPosition;
+                    } else {
+                        previousValid = false;
+                    }
+                }
+            }
+            if (!previousValid) {
+                previousVirtualPosition = currentVirtualPosition;
+            }
+
+            PrimeDenoiseAlbedos albedos = primeProbeSurfaceAlbedos(
+                    surface, viewDirection, volumeStack);
+            PrimeDenoiserGuides guide = primeProbeSurfaceGuide(
+                    primeEmptyDenoiserGuides(),
+                    surface,
+                    currentVirtualPosition,
+                    previousVirtualPosition,
+                    currentVirtualNormal,
+                    throughput,
+                    albedos,
+                    terminalHasMotion && previousValid);
+            if (lane == PRIME_GUIDE_PROBE_TRANSMISSION) {
+                result.transmission = guide;
+                result.transmissionAnchorDistance = anchorDistance;
+            } else {
+                result.reflection = guide;
+                result.reflectionCurrentVirtualPosition =
+                        float4(currentVirtualPosition, 0.0);
+                result.reflectionPreviousVirtualPosition =
+                        float4(previousVirtualPosition, 0.0);
+                result.reflectionDirectionalGuide = false;
+                result.reflectionHasMotion =
+                        terminalHasMotion && previousValid;
+            }
+            return;
+        }
+
+        BsdfSample bsdf = continuation.scatter.bsdf;
         if ((bsdf.eventFlags & PRIME_BSDF_EVENT_DISCRETE) == 0u
                 || !primeAdvanceProbeThroughput(throughput, bsdf)) {
             return;
         }
+
         PrimePreviousDynamicSurface previousSurface = primeSurfacePrevious(
                 surface, primePush.sectionTableAddress);
-        float3 surfacePreviousPosition = previousSurface.position;
+        float3 eventNormal = primeGuideProbeEventNormal(
+                surface, viewDirection, bsdf);
+        float3 previousEventNormal = primeSurfaceHasMotion(surface)
+                ? previousSurface.geometricNormal
+                : eventNormal;
         bool reflection =
                 (bsdf.eventFlags & PRIME_BSDF_EVENT_REFLECTION) != 0u;
-        currentState = primeAppendQueuedPsrState(
+        currentState = primeAppendQueuedPsrSegment(
                 currentState,
                 primePush.cameraPosition,
-                lastPosition,
                 surface.position,
-                surface.geometricNormal,
+                surface.t,
+                eventNormal,
                 reflection);
         previousState = primeAppendQueuedPsrState(
                 previousState,
                 primePush.cameraPosition,
                 lastPreviousPosition,
-                surfacePreviousPosition,
-                previousSurface.geometricNormal,
+                previousSurface.position,
+                previousEventNormal,
                 reflection);
-        lastPosition = surface.position;
-        lastPreviousPosition = surfacePreviousPosition;
+        lastPreviousPosition = previousSurface.position;
         hasMotion = hasMotion || primeSurfaceHasMotion(surface);
         direction = bsdf.direction;
         traceOrigin = primeOffsetRayOrigin(
                 surface.position, surface.geometricNormal, direction);
-        volumeStack = continuation.volumeStack;
+        volumeStack = continuation.scatter.volumeStack;
     }
-}
-
-void primeTracePlanarReflectionGuide(
-        inout PrimeIntegratorContext context,
-        SurfaceInteraction primarySurface,
-        PrimeTransmissiveBsdfSample initialSample,
-        PrimeOpenPbrVolumeStack initialVolumeStack,
-        float3 initialThroughput,
-        inout PrimeTransparentGuideProbeResult result) {
-    BsdfSample bsdf = initialSample.bsdfSample;
-    float3 throughput = initialThroughput;
-    if ((bsdf.eventFlags
-            & (PRIME_BSDF_EVENT_REFLECTION | PRIME_BSDF_EVENT_DISCRETE))
-                    != (PRIME_BSDF_EVENT_REFLECTION | PRIME_BSDF_EVENT_DISCRETE)
-            || !primeAdvanceProbeThroughput(throughput, bsdf)) {
-        return;
-    }
-
-    float3 planeNormal = primeNrdSafeNormalize(
-            primeSurfaceOutwardShadingNormal(primarySurface),
-            primarySurface.geometricNormal);
-    float3 traceOrigin = primeOffsetRayOrigin(
-            primarySurface.position,
-            primarySurface.geometricNormal,
-            bsdf.direction);
-    SurfaceInteraction target = primeTraceSurfaceWithoutReorder(
-            traceOrigin, bsdf.direction);
-    if (!primeKnownHitKind(target)) {
-        return;
-    }
-    if (target.hitKind == PRIME_HIT_NONE) {
-        float3 virtualDirection = primeNrdSafeNormalize(
-                primeMirrorDirectionAcrossPlane(bsdf.direction, planeNormal),
-                -bsdf.direction);
-        PrimePreviousDynamicSurface primaryPrevious = primeSurfacePrevious(
-                primarySurface, primePush.sectionTableAddress);
-        float3 previousPlaneNormal = primeNrdSafeNormalize(
-                primaryPrevious.geometricNormal,
-                planeNormal);
-        float3 previousVirtualDirection = primeSurfaceHasMotion(primarySurface)
-                ? primeNrdSafeNormalize(
-                        primeMirrorDirectionAcrossPlane(
-                                bsdf.direction, previousPlaneNormal),
-                        virtualDirection)
-                : virtualDirection;
-        result.reflectionCurrentVirtualPosition =
-                float4(virtualDirection, 1.0);
-        result.reflectionPreviousVirtualPosition =
-                float4(previousVirtualDirection, 1.0);
-        return;
-    }
-    if (!primeAdvanceProbeMedium(throughput, target, initialVolumeStack)) {
-        return;
-    }
-
-    PrimePreviousDynamicSurface primaryPrevious = primeSurfacePrevious(
-            primarySurface, primePush.sectionTableAddress);
-    float3 primaryPreviousPosition = primaryPrevious.position;
-    float3 previousPlaneNormal = primeNrdSafeNormalize(
-            primaryPrevious.geometricNormal,
-            planeNormal);
-    PrimePreviousDynamicSurface targetPrevious = primeSurfacePrevious(
-            target, primePush.sectionTableAddress);
-    float3 targetPreviousPosition = targetPrevious.position;
-    float3 currentVirtualPosition = primeMirrorPointAcrossPlane(
-            target.position, primarySurface.position, planeNormal)
-            - primePush.cameraPosition;
-    float3 previousVirtualPosition = primeMirrorPointAcrossPlane(
-            targetPreviousPosition, primaryPreviousPosition, previousPlaneNormal)
-            - primePush.cameraPosition;
-    // Traversal starts from a normal-shifted origin, but the virtual target must remain on the
-    // physical camera ray. Mirroring and removing that offset prevents a static smooth reflector
-    // from manufacturing motion at grazing incidence while retaining the self-hit guard.
-    float3 mirroredTraceOffset = primeMirrorDirectionAcrossPlane(
-            traceOrigin - primarySurface.position, planeNormal);
-    float3 previousMirroredTraceOffset = primeMirrorDirectionAcrossPlane(
-            traceOrigin - primarySurface.position, previousPlaneNormal);
-    currentVirtualPosition -= mirroredTraceOffset;
-    previousVirtualPosition -= previousMirroredTraceOffset;
-    float3 targetNormal = primeSurfaceShadingNormal(target, -bsdf.direction);
-    float3 virtualNormal = primeMirrorDirectionAcrossPlane(
-            targetNormal, planeNormal);
-    PrimeDenoiseAlbedos albedos = primeProbeSurfaceAlbedos(
-            target, -bsdf.direction, initialVolumeStack);
-    bool hasMotion = primeSurfaceHasMotion(primarySurface)
-            || primeSurfaceHasMotion(target);
-    result.reflection = primeProbeSurfaceGuide(
-            result.reflection,
-            target,
-            currentVirtualPosition,
-            hasMotion ? previousVirtualPosition : currentVirtualPosition,
-            virtualNormal,
-            throughput,
-            albedos,
-            hasMotion);
-    result.reflectionCurrentVirtualPosition = float4(
-            currentVirtualPosition, 0.0);
-    result.reflectionPreviousVirtualPosition = float4(
-            hasMotion ? previousVirtualPosition : currentVirtualPosition,
-            0.0);
 }
 
 PrimeTransparentGuideProbeResult primeTraceTransparentGuideProbes(
@@ -438,8 +480,7 @@ PrimeTransparentGuideProbeResult primeTraceTransparentGuideProbes(
         uint maximumBounces) {
     PrimeTransparentGuideProbeResult result =
             primeEmptyTransparentGuideProbeResult();
-    if (maximumBounces <= 1u
-            || primarySurface.hitKind != PRIME_HIT_SURFACE
+    if (primarySurface.hitKind != PRIME_HIT_SURFACE
             || !primeMaterialIsTransmissive(primarySurface.materialControl)) {
         return result;
     }
@@ -471,19 +512,25 @@ PrimeTransparentGuideProbeResult primeTraceTransparentGuideProbes(
                     volumeStack,
                     primarySurface.adjacentBaseColor,
                     primarySurface.adjacentInterfaceControl);
-    primeTraceDeterministicTransmissionGuide(
+    PrimeClosureTraits primaryClosure = primeSurfaceClosureTraits(
+            primarySurface, viewDirection, volumeStack);
+    result.primaryReflectionOnly = primeClosureIsDiscreteOnly(primaryClosure)
+            && primeGuideProbePrimaryIsReflectionOnly(primarySample.paths);
+    primeTraceDiscreteGuideProbe(
             context,
+            PRIME_GUIDE_PROBE_TRANSMISSION,
             primarySurface,
             primarySample.paths.transmission,
             initialThroughput,
             maximumBounces,
             result);
-    primeTracePlanarReflectionGuide(
+    primeTraceDiscreteGuideProbe(
             context,
+            PRIME_GUIDE_PROBE_REFLECTION,
             primarySurface,
             primarySample.paths.reflection,
-            volumeStack,
             initialThroughput,
+            maximumBounces,
             result);
     // Reconstruction probes are deliberately outside the transport diagnostic domain.
     context.diagnostics = savedDiagnostics;

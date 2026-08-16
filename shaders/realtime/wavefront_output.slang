@@ -107,6 +107,9 @@ void primeWriteRealtimeOutput(
             && (nrdShInputs || rrUsesTransmissionGuide)
             ? sampleResult.transmissionGuides
             : sampleResult.guides;
+    if (sampleResult.transparentReflectionOnly) {
+        nrdGuides.primaryAlbedo = float3(0.0);
+    }
     float3 noisyDiffuse = sampleResult.radiance.diffuse;
     float3 noisySpecular = sampleResult.radiance.specular;
     if (!nrdShInputs && sampleResult.transparentPrimary) {
@@ -272,7 +275,11 @@ void primeWriteRealtimeOutput(
                     primeNrdReflectionPosition,
                     int2(pixel),
                     float4(
-                            reflectionGuides.primaryPosition,
+                            reflectionGuides.primaryHasMotion
+                                    && primeNrdIsFinite(
+                                            reflectionGuides.primaryPreviousPosition)
+                            ? reflectionGuides.primaryPreviousPosition
+                            : reflectionGuides.primaryPosition,
                             sampleResult.reflectionDirectionalGuide ? 1.0 : 0.0));
             primeImageStore(
                     primeNrdReflectionDiffuseDirection,

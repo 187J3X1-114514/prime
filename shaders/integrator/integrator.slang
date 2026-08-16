@@ -265,7 +265,8 @@ float primeSurfaceOpacity(SurfaceInteraction surface) {
 }
 
 float primeSurfaceLinearRoughness(SurfaceInteraction surface) {
-    return clamp(surface.roughness, 0.0, 1.0);
+    return primeMaterialEffectiveLinearRoughness(
+            surface.materialControl, surface.roughness);
 }
 
 PrimeClosureTraits primeSurfaceClosureTraits(

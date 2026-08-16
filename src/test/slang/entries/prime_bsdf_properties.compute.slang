@@ -208,22 +208,23 @@ void primeAdapterCheckTransmissionMaterial(
         uint materialControl,
         float roughness,
         uint opticalControl) {
+    PrimeOpticalMaterial translated = primeDecodeOpticalMaterial(
+            roughness, opticalControl, materialControl);
+    float expectedRoughness = primeMaterialEffectiveLinearRoughness(
+            materialControl, translated.perceptualRoughness);
+    float2 expectedAlpha = primeOpenPbrSpecularNdfRoughnesses(expectedRoughness, 0.0);
+    if (state.specularMicrofacet.alpha.x != expectedAlpha.x
+            || state.specularMicrofacet.alpha.y != expectedAlpha.y) {
+        mask |= PRIME_TEST_FAILURE_STATE;
+    }
     if (primeMaterialIsWater(materialControl)) {
         return;
     }
-    PrimeOpticalMaterial translated = primeDecodeOpticalMaterial(
-            roughness, opticalControl, materialControl);
-    float expectedRoughness = primeMaterialIsRoughGlass(materialControl)
-            ? translated.perceptualRoughness
-            : 0.0;
     float3 expectedColor = primeMaterialIsColorlessGlass(materialControl)
             ? float3(1.0)
             : primeGlassVolumeTransmittance(
                     baseColor, PRIME_STAINED_GLASS_ABSORPTION_OPACITY);
-    float2 expectedAlpha = primeOpenPbrSpecularNdfRoughnesses(expectedRoughness, 0.0);
-    if (state.specularMicrofacet.alpha.x != expectedAlpha.x
-            || state.specularMicrofacet.alpha.y != expectedAlpha.y
-            || !primeTestClose(
+    if (!primeTestClose(
                     state.transmissionColor,
                     expectedColor,
                     0.0,

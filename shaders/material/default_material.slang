@@ -90,6 +90,14 @@ public bool primeMaterialIsRoughGlass(uint control)
 {
     return (control & PRIME_MATERIAL_DECORATIVE_INTERFACE) != 0;
 }
+public float primeMaterialEffectiveLinearRoughness(uint control, float roughness)
+{
+    // Smooth dielectric bodies, including water, ignore authored roughness in the compact closure.
+    // Reconstruction must use that same value or RR will reject their deterministic reflection MV.
+    return primeMaterialIsTransmissive(control) && !primeMaterialIsRoughGlass(control)
+            ? 0.0
+            : clamp(roughness, 0.0, 1.0);
+}
 public bool primeFresnelIsConductor(uint fresnelCode)
 {
     return fresnelCode >= PRIME_FRESNEL_IRON

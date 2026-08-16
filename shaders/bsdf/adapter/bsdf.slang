@@ -89,9 +89,8 @@ PrimeOpenPbrMaterial primeMinecraftTransmissionMaterialWithMinimumRoughness(
     // Alpha classifies the interface; it never scales roughness. Rough texels use authored
     // Authored roughness or the configured fallback is already resolved by the material composer.
     float interfaceRoughness = max(
-            primeMaterialIsRoughGlass(materialControl)
-                    ? translated.perceptualRoughness
-                    : 0.0,
+            primeMaterialEffectiveLinearRoughness(
+                    materialControl, translated.perceptualRoughness),
             minimumLinearRoughness);
     PrimeOpenPbrMaterial material = primeCompactMaterialFromMetallic(
             float3(1.0), interfaceRoughness, 0.0, outwardNormal);

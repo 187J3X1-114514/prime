@@ -59,16 +59,31 @@ void primeWavefrontTransparentResolve(
             primeResolveTransparentWavefrontResult(pixel);
     float4 reflectionPreviousVirtualPosition = float4(0.0, 0.0, 0.0, -1.0);
     if (hasProbes) {
-        result.transmissionGuides = primeGuideWithProbeSurface(
-                result.transmissionGuides, probes.transmission);
-        if (probes.transmission.primaryHitKind == PRIME_HIT_SURFACE) {
-            result.transmissionAnchorDistance =
-                    probes.transmissionAnchorDistance;
+        result.transparentReflectionOnly = probes.primaryReflectionOnly;
+        if (probes.primaryReflectionOnly) {
+            // The transmission identity does not exist under TIR. Keeping the visible glass
+            // albedo in this lane asks the denoiser to reconstruct a signal that is exactly zero.
+            result.transmissionGuides = primeEmptyDenoiserGuides();
+            result.transmissionAnchorDistance = -1.0;
+        } else {
+            result.transmissionGuides = primeGuideWithProbeSurface(
+                    result.transmissionGuides, probes.transmission);
+            if (probes.transmission.primaryHitKind == PRIME_HIT_SURFACE) {
+                result.transmissionAnchorDistance =
+                        probes.transmissionAnchorDistance;
+            }
         }
         result.reflectionGuides = primeGuideWithProbeSurface(
                 result.reflectionGuides, probes.reflection);
-        if (probes.reflection.primaryHitKind == PRIME_HIT_SURFACE) {
-            result.reflectionDirectionalGuide = false;
+        if (probes.reflectionCurrentVirtualPosition.w >= 0.0) {
+            result.reflectionGuides.primaryPosition =
+                    probes.reflectionCurrentVirtualPosition.xyz;
+            result.reflectionGuides.primaryPreviousPosition =
+                    probes.reflectionPreviousVirtualPosition.xyz;
+            result.reflectionGuides.primaryHasMotion =
+                    probes.reflectionHasMotion;
+            result.reflectionDirectionalGuide =
+                    probes.reflectionDirectionalGuide;
         }
         reflectionPreviousVirtualPosition =
                 probes.reflectionPreviousVirtualPosition;

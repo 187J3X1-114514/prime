@@ -170,7 +170,10 @@ void primePrepareBranch(
     float4 rawPosition = primeLoadPosition(pixel, reflection);
     float3 position = rawPosition.xyz;
     bool directional = reflection && rawPosition.w > 0.5;
-    float currentViewZ = directional
+    // A collapsed reflection target lies on the current pixel ray. Its position image carries
+    // previous virtual geometry for reprojection, so current depth must come from the independent
+    // path-distance guide instead of that previous point.
+    float currentViewZ = directional || reflection
             ? dot(primeMotionRayDirection(currentSampleUv) * primaryDistance, cameraForward)
             : dot(position, cameraForward);
     currentViewZ = primeNrdIsFinite(currentViewZ) && currentViewZ > 0.0

@@ -113,10 +113,48 @@ void main(uint3 dispatchThreadId : SV_DispatchThreadID)
             || !primeTestClose(anchor, expectedAnchor, 2.0e-5, 2.0e-5)) {
         mask |= PRIME_TEST_FAILURE_IDENTITY;
     }
+
+    // Ray traversal begins at a normal-shifted origin. The explicit segment API must preserve
+    // trace t rather than folding that offset into the virtual path length.
+    float3 offsetDirection = normalize(float3(0.3, -0.4, 0.8660254));
+    float3 offsetFirst = cameraPosition + offsetDirection * 4.0;
+    PrimeQueuedPsrState offsetState = primeAppendQueuedPsrState(
+            primeEmptyQueuedPsrState(),
+            cameraPosition,
+            cameraPosition,
+            offsetFirst,
+            float3(0.0, 1.0, 0.0),
+            false);
+    offsetState = primeAppendQueuedPsrSegment(
+            offsetState,
+            cameraPosition,
+            offsetFirst + float3(0.02, -0.01, 0.03)
+                    + offsetDirection * 6.0,
+            6.0,
+            float3(1.0, 0.0, 0.0),
+            false);
+    float3 offsetVirtualPosition;
+    float3 offsetVirtualNormal;
+    bool offsetBuilt = primeBuildQueuedPsrGuideValueFromSegment(
+            offsetState,
+            8.0,
+            targetNormal,
+            offsetVirtualPosition,
+            offsetVirtualNormal);
+    if (!offsetBuilt
+            || !primeTestClose(
+                    offsetVirtualPosition,
+                    offsetDirection * 18.0,
+                    2.0e-6,
+                    2.0e-6)) {
+        mask |= PRIME_TEST_FAILURE_IDENTITY;
+    }
     mask |= primeTestClassify(virtualDirection)
             | primeTestClassify(virtualNormal)
             | primeTestClassify(virtualPosition)
-            | primeTestClassify(anchor);
+            | primeTestClassify(anchor)
+            | primeTestClassify(offsetVirtualPosition)
+            | primeTestClassify(offsetVirtualNormal);
 
     uint outputWords = primeTestOutputWords();
     uint outputOffset = primeTestOutputOffset(caseIndex, outputWords);

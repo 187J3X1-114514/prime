@@ -54,11 +54,11 @@ float3 primeQueuedPsrQuaternionRotate(float4 quaternion, float3 direction)
             + cross(quaternion.xyz, twiceCross);
 }
 
-public PrimeQueuedPsrState primeAppendQueuedPsrState(
+public PrimeQueuedPsrState primeAppendQueuedPsrSegment(
         PrimeQueuedPsrState state,
         float3 cameraPosition,
-        float3 previousPosition,
         float3 position,
+        float segmentLength,
         float3 normal,
         bool reflection)
 {
@@ -76,7 +76,7 @@ public PrimeQueuedPsrState primeAppendQueuedPsrState(
                 firstLength > 0.0 ? firstSegment / firstLength : float3(0.0),
                 firstLength);
     } else {
-        result.firstDirectionLength.w += length(position - previousPosition);
+        result.firstDirectionLength.w += segmentLength;
     }
     if (reflection) {
         float4 halfTurn = float4(normal, 0.0);
@@ -92,12 +92,50 @@ public PrimeQueuedPsrState primeAppendQueuedPsrState(
     return result;
 }
 
+public PrimeQueuedPsrState primeAppendQueuedPsrState(
+        PrimeQueuedPsrState state,
+        float3 cameraPosition,
+        float3 previousPosition,
+        float3 position,
+        float3 normal,
+        bool reflection)
+{
+    return primeAppendQueuedPsrSegment(
+            state,
+            cameraPosition,
+            position,
+            length(position - previousPosition),
+            normal,
+            reflection);
+}
+
 public float3 primeQueuedPsrVirtualDirection(PrimeQueuedPsrState state, float3 direction)
 {
     float3 transformed = primeQueuedPsrQuaternionRotate(state.rotation, direction);
     return (primeQueuedPsrControl(state) & PRIME_QUEUED_PSR_ODD_REFLECTION) != 0
             ? -transformed
             : transformed;
+}
+
+public bool primeBuildQueuedPsrGuideValueFromSegment(
+        PrimeQueuedPsrState state,
+        float targetSegmentLength,
+        float3 targetNormal,
+        out float3 virtualPosition,
+        out float3 virtualNormal)
+{
+    // Slang requires definite assignment for out parameters. Callers use these only on success.
+    virtualPosition = float3(0.0);
+    virtualNormal = float3(0.0);
+    if (primeQueuedPsrCount(state) == 0 || primeQueuedPsrOverflowed(state)) return false;
+    float pathLength = state.firstDirectionLength.w + targetSegmentLength;
+    if (!(dot(state.firstDirectionLength.xyz, state.firstDirectionLength.xyz) > 0.0)
+            || !(pathLength > 0.0)) {
+        return false;
+    }
+    virtualPosition = state.firstDirectionLength.xyz * pathLength;
+    virtualNormal = primeQueuedPsrVirtualDirection(state, targetNormal);
+    return true;
 }
 
 public bool primeBuildQueuedPsrGuideValue(
@@ -108,18 +146,12 @@ public bool primeBuildQueuedPsrGuideValue(
         out float3 virtualPosition,
         out float3 virtualNormal)
 {
-    // Slang requires definite assignment for out parameters. Callers use these only on success.
-    virtualPosition = float3(0.0);
-    virtualNormal = float3(0.0);
-    if (primeQueuedPsrCount(state) == 0 || primeQueuedPsrOverflowed(state)) return false;
-    float pathLength = state.firstDirectionLength.w + length(target - lastPosition);
-    if (!(dot(state.firstDirectionLength.xyz, state.firstDirectionLength.xyz) > 0.0)
-            || !(pathLength > 0.0)) {
-        return false;
-    }
-    virtualPosition = state.firstDirectionLength.xyz * pathLength;
-    virtualNormal = primeQueuedPsrVirtualDirection(state, targetNormal);
-    return true;
+    return primeBuildQueuedPsrGuideValueFromSegment(
+            state,
+            length(target - lastPosition),
+            targetNormal,
+            virtualPosition,
+            virtualNormal);
 }
 
 bool primeQueuedPsrFinite(float value)

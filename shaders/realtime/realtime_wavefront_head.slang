@@ -35,7 +35,7 @@ void primeWavefrontHead(
             path,
             volumeStack,
             denoiserState,
-            result.guides.primaryMaterialFlags,
+            result.guides,
             continuation);
     primeWavefrontPaths[pathIndex] = record;
     record.transport = primeWavefrontWithActive(record.transport, false);

@@ -19,7 +19,7 @@
 
 namespace {
 
-constexpr std::uint32_t PRIME_DLSS_RR_ABI_VERSION = 4;
+constexpr std::uint32_t PRIME_DLSS_RR_ABI_VERSION = 5;
 constexpr char PROJECT_ID[] = "7bc01faf-de5e-4c7c-9936-43cb5c301232";
 constexpr std::uint32_t EXTENSION_NAME_STRIDE = 256;
 
@@ -487,7 +487,7 @@ PRIME_EXPORT int primeDlssRrEvaluate(PrimeEvaluateDescription* description) {
                     feature->renderHeight)
             && validImage(
                     description->images[SPECULAR_MOTION_VECTORS],
-                    VK_FORMAT_R16G16_SFLOAT,
+                    VK_FORMAT_R32G32_SFLOAT,
                     feature->renderWidth,
                     feature->renderHeight);
     if (!validScalars || !validImages) {

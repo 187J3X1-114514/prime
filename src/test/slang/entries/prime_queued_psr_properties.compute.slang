@@ -93,7 +93,10 @@ void main(uint3 dispatchThreadId : SV_DispatchThreadID)
     float expectedAnchor = !forceOverflow && abs(denominator) > 1.0e-4
             ? dot(target - cameraPosition, targetNormal) / denominator
             : -1.0;
-    if (!(expectedAnchor > 0.0)) expectedAnchor = -1.0;
+    if (!(expectedAnchor > 0.0)
+            || expectedAnchor > PRIME_QUEUED_PSR_MAX_ANCHOR_DISTANCE) {
+        expectedAnchor = -1.0;
+    }
 
     uint mask = 0;
     bool expectedBuilt = count > 0 && !forceOverflow;

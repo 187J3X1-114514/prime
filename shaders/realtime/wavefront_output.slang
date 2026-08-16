@@ -175,7 +175,9 @@ void primeWriteRealtimeOutput(
                                     : primaryPosition),
                     nrdShInputs
                             ? asfloat(packHalf2x16(cameraSample))
-                            : primaryDistance));
+                            : (primaryHasMotion
+                                    ? -primaryDistance - 1.0
+                                    : primaryDistance)));
     if (nrdShInputs) {
         float3 primaryAreaDiffuse = nrdGuides.primaryAreaDiffuse * rawSignalScale;
         float3 primaryAreaSpecular = nrdGuides.primaryAreaSpecular * rawSignalScale;
@@ -220,9 +222,7 @@ void primeWriteRealtimeOutput(
                             : nrdGuides.primarySpecularAlbedo),
                     nrdShInputs
                             ? float(nrdGuides.primaryMaterialFlags)
-                            : (primaryHasMotion
-                                    ? -sampleResult.guides.primaryLinearRoughness - 1.0
-                                    : sampleResult.guides.primaryLinearRoughness)));
+                            : sampleResult.guides.primaryLinearRoughness));
     if (nrdShInputs) {
         bool visibleHasMotion = sampleResult.guides.primaryHasMotion
                 && hasVisibleSurface

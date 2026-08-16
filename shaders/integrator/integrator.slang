@@ -332,6 +332,8 @@ PrimeShadowTrace primeTracePreparedShadow(
     primeShadowPayload.startingExtinction1Winding = float4(
             startingExtinction1, startingMediumCount > 1u ? 1.0 : 0.0);
     primeShadowPayload.startingMediumCount = startingMediumCount;
+    // The caller already offsets the origin. A second positive tMin would double the missing
+    // segment and erase thin occluders without adding any self-hit protection.
     traceRayEXT(
             primeScene,
             gl_RayFlagsNoneEXT,
@@ -340,7 +342,7 @@ PrimeShadowTrace primeTracePreparedShadow(
             1,
             1,
             traceOrigin,
-            0.001,
+            0.0,
             direction,
             distance,
             1);
@@ -1774,7 +1776,9 @@ bool primeIntegrateWavefrontSurface<SunNee, AreaNee, IndirectReuse>(
                     surface.position - primePush.cameraPosition);
             result.guides.primaryPosition = surface.position - primePush.cameraPosition;
             result.guides.primaryPreviousPosition =
-                    primeSurfacePreviousPosition(surface) - primePush.cameraPosition;
+                    primeSurfacePreviousPosition(
+                            surface, primePush.sectionTableAddress)
+                            - primePush.cameraPosition;
             result.guides.primaryHasMotion = primeSurfaceHasMotion(surface);
             result.guides.primaryAlbedo = primeSanitizeObservedDenoiseAlbedo(
                     context,

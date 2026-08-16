@@ -30,7 +30,7 @@ void primeWavefrontResolve(
             (primaryDiagnostic >> PRIME_WAVEFRONT_NUMERICAL_CONTEXT_SHIFT)
                     & PRIME_WAVEFRONT_NUMERICAL_CONTEXT_MASK;
     PrimeIntegrationResult result = primeLoadWavefrontIntermediate(
-            pixel, primaryRecord);
+            pixel, primeWavefrontIndex(pixel, 0u), primaryRecord);
     float2 cameraSample = primeRealtimeCameraSample(pixel);
     primeWriteRealtimeOutput(diagnostics, pixel, cameraSample, result);
 }

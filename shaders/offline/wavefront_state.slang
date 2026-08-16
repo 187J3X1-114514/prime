@@ -8,13 +8,13 @@ struct PrimeOfflineTransportRecord {
     float4 traceOriginAndPathControl;
     float4 rayDirectionAndControl;
     float4 throughput;
-    uint2 medium0;
-    uint2 medium1;
+    uint4 medium0;
+    uint4 medium1;
 };
 
-// 80 bytes of transport and two-entry medium state, 32 bytes of beauty/primary metadata, and
+// 96 bytes of transport and two-entry medium state, 32 bytes of beauty/primary metadata, and
 // one 32-byte deferred Area request whose control lane retains the previous receiver normal and
-// pre-scatter medium depth. The record is exactly 144-byte std430 ABI.
+// pre-scatter medium depth. The record is exactly 160-byte std430 ABI.
 struct PrimeOfflinePathRecord {
     PrimeOfflineTransportRecord transport;
     float4 radianceAndPrimaryDistance;

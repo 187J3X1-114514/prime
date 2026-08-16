@@ -6,8 +6,8 @@ import "core/auto_exposure.slang";
 import "post/display_transform.slang";
 
 [[vk::binding(0, 0)]] [[vk::image_format("rgba16f")]] readonly RWTexture2D<float4> rrDebugInputColor;
-[[vk::binding(1, 0)]] [[vk::image_format("rgba16f")]] readonly RWTexture2D<float4> rrDebugMotion;
-[[vk::binding(2, 0)]] [[vk::image_format("rg16f")]] readonly RWTexture2D<float4> rrDebugSpecularMotion;
+[[vk::binding(1, 0)]] [[vk::image_format("rg16f")]] readonly RWTexture2D<float4> rrDebugMotion;
+[[vk::binding(2, 0)]] [[vk::image_format("rg32f")]] readonly RWTexture2D<float4> rrDebugSpecularMotion;
 [[vk::binding(3, 0)]] [[vk::image_format("r32f")]] readonly RWTexture2D<float4> rrDebugDepth;
 [[vk::binding(4, 0)]] [[vk::image_format("rgba16f")]] readonly RWTexture2D<float4> rrDebugNormalRoughness;
 [[vk::binding(5, 0)]] [[vk::image_format("rgba16f")]] readonly RWTexture2D<float4> rrDebugDiffuseAlbedo;

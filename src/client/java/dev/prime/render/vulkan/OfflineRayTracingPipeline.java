@@ -24,7 +24,7 @@ import org.lwjgl.vulkan.VkPipelineLayoutCreateInfo;
 import org.lwjgl.vulkan.VkPushConstantRange;
 import org.lwjgl.vulkan.VkWriteDescriptorSet;
 
-/** Offline-only full-path pipeline with a single 144-byte slot per pixel. */
+/** Offline-only full-path pipeline with a single 160-byte slot per pixel. */
 public final class OfflineRayTracingPipeline implements Destroyable {
     static final int RAYGEN_GROUP_COUNT = WavefrontGroups.GROUP_COUNT;
     static final int RAYGEN_MODULE_COUNT = WavefrontGroups.MODULE_COUNT;

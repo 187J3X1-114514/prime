@@ -27,7 +27,7 @@ PrimeWavefrontContinuations primeInitializeTransparentWavefront(
                 path,
                 volumeStack,
                 emptyState,
-                initialResult.guides.primaryMaterialFlags,
+                initialResult.guides,
                 false);
         primeWavefrontPaths[primeWavefrontIndex(pixel, 0u)] = emptyRecord;
         primeWavefrontPaths[primeWavefrontIndex(pixel, 1u)] = emptyRecord;
@@ -77,12 +77,14 @@ PrimeWavefrontContinuations primeInitializeTransparentWavefront(
     initialResult.guides.primaryPosition =
             surface.position - primePush.cameraPosition;
     initialResult.guides.primaryPreviousPosition =
-            primeSurfacePreviousPosition(surface) - primePush.cameraPosition;
+            primeSurfacePreviousPosition(surface, primePush.sectionTableAddress)
+                    - primePush.cameraPosition;
     initialResult.guides.primaryHasMotion = primeSurfaceHasMotion(surface);
     initialResult.guides.primaryAlbedo = albedos.diffuse;
     initialResult.guides.primaryNormal = shadingNormal;
     initialResult.guides.primaryHitKind = surface.hitKind;
-    initialResult.guides.primaryMaterialFlags = surface.materialControl;
+    initialResult.guides.primaryMaterialFlags = primeNrdGuideControl(
+            surface.materialControl, surface.opticalControl);
     initialResult.guides.primarySpecularAlbedo = albedos.specular;
     initialResult.guides.primaryLinearRoughness = surfaceLinearRoughness;
     initialResult.transparentPrimary = true;
@@ -117,7 +119,7 @@ PrimeWavefrontContinuations primeInitializeTransparentWavefront(
                 ? initialResult.radiance.specular
                 : initialResult.reflectionSpecularRadiance;
         // Until a later solid-angle surface replaces the branch guide, the visible interface
-        // itself is the exact fallback. This removes the need for a third 96-byte guide record.
+        // itself is the exact fallback. This removes the need for a third guide path record.
         branchResult.guides = initialResult.guides;
         branchResult.firstHitDistance = 0.0;
         branchResult.anchorDistance = -1.0;
@@ -244,7 +246,7 @@ void primeWavefrontPrimary(
     if (surface.hitKind == PRIME_HIT_SURFACE
             && primeMaterialIsTransmissive(surface.materialControl)) {
         PrimeIntegrationResult initialResult =
-                primeLoadWavefrontIntermediate(pixel, record);
+                primeLoadWavefrontIntermediate(pixel, recordIndex, record);
         continuations =
                 primeInitializeTransparentWavefront(
                         context,
@@ -258,7 +260,7 @@ void primeWavefrontPrimary(
     } else {
         PrimeDenoiserState denoiserState = primeInitialDenoiserState();
         PrimeIntegrationResult result =
-                primeLoadWavefrontIntermediate(pixel, record);
+                primeLoadWavefrontIntermediate(pixel, recordIndex, record);
         bool continuation = primeIntegrateWavefrontSurface(
                 PrimeStagedSecondarySunNee(),
                 PrimeStagedSecondaryAreaNee(),
@@ -277,7 +279,7 @@ void primeWavefrontPrimary(
                 path,
                 volumeStack,
                 denoiserState,
-                result.guides.primaryMaterialFlags,
+                result.guides,
                 continuation);
         primeWavefrontPaths[recordIndex] = updated;
         updated.transport = primeWavefrontWithActive(updated.transport, false);

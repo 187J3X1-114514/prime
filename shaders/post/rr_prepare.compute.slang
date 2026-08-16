@@ -19,7 +19,7 @@ import "core/nrd_common.slang";
 [[vk::binding(11, 0)]] [[vk::image_format("rgba16f")]] writeonly RWTexture2D<float4> rrInputColor;
 [[vk::binding(12, 0)]] [[vk::image_format("rg16f")]] writeonly RWTexture2D<float4> rrMotion;
 [[vk::binding(13, 0)]] [[vk::image_format("rgba16f")]] writeonly RWTexture2D<float4> rrNormalRoughness;
-[[vk::binding(14, 0)]] [[vk::image_format("rg16f")]] writeonly RWTexture2D<float4> rrSpecularMotion;
+[[vk::binding(14, 0)]] [[vk::image_format("rg32f")]] writeonly RWTexture2D<float4> rrSpecularMotion;
 [[vk::binding(15, 0)]] [[vk::image_format("rgba32f")]] readonly RWTexture2D<float4> rrReflectionPreviousVirtualPosition;
 
 struct PrimeRrPreparePushConstants {
@@ -46,31 +46,43 @@ float3 rrRayDirection(float2 screenUv) {
     return normalize(farPoint.xyz / farPoint.w - nearPoint.xyz / nearPoint.w);
 }
 
-float2 rrPreviousMotion(
-        float2 currentSampleUv, float3 previousTarget, bool directional) {
+bool rrPreviousMotion(
+        float2 currentSampleUv,
+        float3 previousTarget,
+        bool directional,
+        out float2 motion) {
+    motion = float2(0.0);
     // The primary point was traced through pixel center + the current camera jitter. Projecting
     // that point with a non-jittered matrix therefore lands at this sample UV, not at pixel center.
     // Subtracting pixel center would leak the current Halton offset into every static motion vector.
     float4 previousClip = rrPush.previousWorldToClip
             * float4(previousTarget, directional ? 0.0 : 1.0);
-    if (!(abs(previousClip.w) > 1.0e-6)
+    if (!(previousClip.w > 1.0e-6)
             || any(isnan(previousClip))
             || any(isinf(previousClip))) {
-        return float2(0.0);
+        return false;
     }
     float2 previousNdc = previousClip.xy / previousClip.w;
     float2 previousUv = previousNdc * float2(0.5, -0.5) + float2(0.5);
     // NGX receives current-frame to previous-frame motion without jitter in normalized UV units.
     // Static geometry projects back to currentSampleUv, so its vector is zero. The bridge supplies
     // renderWidth/renderHeight as MV scales to convert actual camera motion to pixel space.
-    return previousUv - currentSampleUv;
+    motion = previousUv - currentSampleUv;
+    if (any(isnan(motion)) || any(isinf(motion))) {
+        motion = float2(0.0);
+        return false;
+    }
+    return true;
 }
 
 float2 rrMotionVector(float2 currentSampleUv, float3 position, bool sky) {
-    return rrPreviousMotion(
+    float2 motion;
+    rrPreviousMotion(
             currentSampleUv,
             sky ? rrRayDirection(currentSampleUv) : position,
-            sky);
+            sky,
+            motion);
+    return motion;
 }
 
 float3 rrApplyAerial(
@@ -154,14 +166,7 @@ void main(uint3 dispatchThreadId : SV_DispatchThreadID, uint groupIndex : SV_Gro
             primeReadonlyImageLoad(rrPackedNormalRoughness, pixel), normal, roughness);
     primeWriteImageStore(rrNormalRoughness, pixel, float4(normal, roughness));
     // The transmitted PSR and visible reflection interface can have different roughness.
-    bool primaryHasMotion = specularMaterial.a < 0.0;
-    float reflectionRoughness = primaryHasMotion
-            ? -specularMaterial.a - 1.0
-            : specularMaterial.a;
-    primeImageStore(
-            rrSpecularMaterial,
-            pixel,
-            float4(specularMaterial.rgb, reflectionRoughness));
+    float reflectionRoughness = specularMaterial.a;
     float4 noisyDiffuse = primeReadonlyImageLoad(rrNoisyDiffuse, pixel);
     float4 noisySpecular = primeReadonlyImageLoad(rrNoisySpecular, pixel);
     float4 sun = primeReadonlyImageLoad(rrSunLighting, pixel);
@@ -178,10 +183,12 @@ void main(uint3 dispatchThreadId : SV_DispatchThreadID, uint groupIndex : SV_Gro
     // The position is not needed by material decode or lighting. Loading it here keeps four
     // components out of the color/aerial live range.
     float4 primary = primeReadonlyImageLoad(rrPrimaryPosition, pixel);
+    bool primaryHasMotion = primary.w < 0.0;
+    float primaryDistance = primaryHasMotion ? -primary.w - 1.0 : primary.w;
     float2 currentSampleUv = (float2(pixel) + float2(0.5) + rrPush.currentJitterPixels)
             / float2(extent);
     float3 currentPrimaryPosition = primaryHasMotion
-            ? rrRayDirection(currentSampleUv) * primary.w
+            ? rrRayDirection(currentSampleUv) * primaryDistance
             : primary.xyz;
     float4 viewPosition = rrPush.currentWorldToView
             * float4(currentPrimaryPosition, 1.0);
@@ -203,10 +210,14 @@ void main(uint3 dispatchThreadId : SV_DispatchThreadID, uint groupIndex : SV_Gro
             && reflectionRoughness < PRIME_RR_SPECULAR_MOTION_ROUGHNESS) {
         // The raygen probe supplies the previous-frame virtual target itself. Its w lane selects
         // a finite mirrored hit (zero) or an environment direction (one).
-        specularMotion = rrPreviousMotion(
+        float2 reflectionMotion;
+        if (rrPreviousMotion(
                 currentSampleUv,
                 reflectionPreviousVirtualPosition.xyz,
-                reflectionPreviousVirtualPosition.w > 0.5);
+                reflectionPreviousVirtualPosition.w > 0.5,
+                reflectionMotion)) {
+            specularMotion = reflectionMotion;
+        }
     }
     primeWriteImageStore(rrSpecularMotion, pixel, float4(
             primeNrdSanitizeMotion(float3(specularMotion, 0.0)), 0.0));

@@ -916,7 +916,10 @@ public final class TerrainScene implements AutoCloseable {
                             compactionAddress(voxel, compactions),
                             voxel.primitives().deviceAddress(),
                             0L,
-                            cluster.lightAddress(),
+                            // Dynamic previous positions describe only the base BLAS. Publishing
+                            // that address for an instanced voxel BLAS would make its local
+                            // triangle id index unrelated storage.
+                            cluster.dynamic() ? 0L : cluster.lightAddress(),
                             worldLightAddress,
                             worldLightLeafAddress,
                             voxel.cutoutPrimitiveBase(),

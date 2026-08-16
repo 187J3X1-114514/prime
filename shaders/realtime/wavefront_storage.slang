@@ -3,19 +3,20 @@
 
 // Two signal slots belong to each realtime pixel so transparent reflection and transmission
 // keep independent reconstruction histories. The execution-local type contains six hot transport
-// lanes; storage adds one cold lane for queued PSR and the previous receiver normal. Primary
-// area-light moments are immutable pixel state and live once per pixel in the queue-buffer prefix.
+// lanes; storage adds one cold lane. Transparent paths use it for queued PSR, while ordinary paths
+// use the same mutually exclusive lane for the exact previous primary position. Primary area-light
+// moments are immutable pixel state and live once per pixel in the queue-buffer prefix.
 struct PrimeWavefrontTransportRecord {
     float4 physicalOriginAndPreviousBsdfPdf;
     float4 traceOriginAndPathControl;
     float4 rayDirectionAndDenoiserControl;
     float4 throughputAndNumericalFlags;
-    uint2 medium0;
-    uint2 medium1;
+    uint4 medium0;
+    uint4 medium1;
 };
 
-// Four f32 transport lanes, two compact medium lanes and one cold lane give this record its
-// explicit 96-byte std430 CPU/GPU ABI.
+// Four f32 transport lanes, two 16-byte medium lanes and one cold lane give this record its
+// explicit 112-byte std430 CPU/GPU ABI. Medium extinction and IOR stay f32 across dispatches.
 struct PrimeWavefrontPathRecord {
     PrimeWavefrontTransportRecord transport;
     uint4 psrPacked;
@@ -59,6 +60,7 @@ static const uint PRIME_WAVEFRONT_PSR_CONTROL_SHIFT = 25u;
 static const uint PRIME_WAVEFRONT_PSR_CONTROL_MASK = 0x3fu;
 static const uint PRIME_WAVEFRONT_LIGHT_NORMAL_SHIFT = 16u;
 static const uint PRIME_WAVEFRONT_LIGHT_NORMAL_MASK = 0xffffu;
+static const uint PRIME_WAVEFRONT_PRIMARY_MOTION = 1u;
 
 uint primeWavefrontIndex(uint2 pixel) {
     return pixel.y * primePush.outputExtent.x + pixel.x;
@@ -169,6 +171,7 @@ bool primeWavefrontPixelTransparent(uint2 pixel) {
 
 PrimeIntegrationResult primeLoadWavefrontIntermediate(
         uint2 pixel,
+        uint pathIndex,
         PrimeWavefrontTransportRecord record) {
     int2 coordinate = int2(pixel);
     float4 diffuse = primeImageLoad(primeNrdNoisyDiffuse, coordinate);
@@ -196,23 +199,21 @@ PrimeIntegrationResult primeLoadWavefrontIntermediate(
     result.guides.primaryHitKind = position.w >= 0.0
             ? PRIME_HIT_SURFACE
             : PRIME_HIT_NONE;
-    float2 packedNormalMotion = unpackHalf2x16ToFloat(asuint(
-            primeImageLoad(primeNrdViewZ, coordinate).r));
-    bool primaryHasMotion = specularMaterial.a > 2.0;
-    float primaryNormalY = specularMaterial.a
-            - (primaryHasMotion ? 4.0 : 0.0);
+    float primaryNormalX = primeImageLoad(primeNrdViewZ, coordinate).r;
     result.guides.primaryNormal = primeUnpackOctahedralNormal(
-            packSnorm2x16(float2(packedNormalMotion.x, primaryNormalY)));
+            packSnorm2x16(float2(primaryNormalX, specularMaterial.a)));
     result.guides.primaryMaterialFlags =
             (denoiserControl >> PRIME_WAVEFRONT_PRIMARY_FLAGS_SHIFT)
                     & PRIME_WAVEFRONT_PRIMARY_FLAGS_MASK;
     result.guides.primarySpecularAlbedo = specularMaterial.rgb;
     result.guides.primaryLinearRoughness = material.w;
     result.guides.primaryPosition = position.xyz;
-    float2 primaryMotionXY = unpackHalf2x16ToFloat(asuint(stable.a));
-    result.guides.primaryPreviousPosition = position.xyz
-            + float3(primaryMotionXY, packedNormalMotion.y);
-    result.guides.primaryHasMotion = primaryHasMotion;
+    uint4 previous = primeWavefrontPaths[pathIndex].psrPacked;
+    result.guides.primaryHasMotion =
+            (previous.w & PRIME_WAVEFRONT_PRIMARY_MOTION) != 0u;
+    result.guides.primaryPreviousPosition = result.guides.primaryHasMotion
+            ? asfloat(previous.xyz)
+            : position.xyz;
     if (primeWritesNrdShInputs()) {
         result.guides.diffuseDirection =
                 primeRestoreFp16Direction(

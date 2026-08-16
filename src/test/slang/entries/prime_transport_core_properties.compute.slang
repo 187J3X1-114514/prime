@@ -3,6 +3,7 @@ import "bsdf/compact/openpbr_common.slang";
 import "core/color_space.slang";
 import "core/light_tree_math.slang";
 import "core/transport_math.slang";
+import "core/packed_geometry.slang";
 import "integrator/path_contract.slang";
 import "material/transparent_material.slang";
 import "realtime/wavefront_medium.slang";
@@ -335,8 +336,9 @@ void primeCheckShadowOpticalDepth(
     queuedFirstMedium.ior = 1.333;
     queuedFirstMedium.albedo = float3(0.0);
     queuedFirstMedium.anisotropy = 0.0;
-    float3 queuedFirstExtinction = primeUnpackWavefrontMedium(
-            primePackWavefrontMedium(queuedFirstMedium)).extinction;
+    float3 queuedFirstExtinction = primeShadowCanonicalExtinction(
+            primeUnpackWavefrontMedium(
+                    primePackWavefrontMedium(queuedFirstMedium)).extinction);
     float3 nearbyBoundaryExtinction = queuedFirstExtinction
             + float3(0.25, -0.25, 0.125) * (1.0 / 1024.0);
     float3 insideMoment = primeShadowBoundaryOpticalDepthMoment(
@@ -450,18 +452,85 @@ void primeCheckWavefrontMedium(
     medium.ior = transport.w;
     medium.albedo = coldVolumeFields.xyz;
     medium.anisotropy = coldVolumeFields.w;
-    uint2 packed = primePackWavefrontMedium(medium);
+    uint4 packed = primePackWavefrontMedium(medium);
     PrimeOpenPbrVolume restored = primeUnpackWavefrontMedium(packed);
     primeTransportClassify(result.mask, restored.extinction);
     primeTransportClassify(result.mask, restored.ior);
     if (any(primePackWavefrontMedium(restored) != packed)
             || any(restored.albedo != float3(0.0))
-            || restored.anisotropy != 0.0) {
+            || restored.anisotropy != 0.0
+            || any(asuint(restored.extinction) != asuint(medium.extinction))
+            || asuint(restored.ior) != asuint(medium.ior)) {
         result.mask |= PRIME_TEST_FAILURE_STATE;
     }
     result.first = float4(restored.extinction, restored.ior);
     result.second = transport;
     result.third = float4(restored.albedo, restored.anisotropy);
+}
+
+void primeCheckPreviousDynamicSurface(
+        inout PrimeTransportResult result,
+        float4 firstTranslationX,
+        float4 secondTranslationY,
+        float4 thirdTranslationZ,
+        float2 barycentrics)
+{
+    float2 restoredBarycentrics = unpackUnorm2x16ToFloat(
+            packUnorm2x16(clamp(barycentrics, float2(0.0), float2(1.0))));
+    float3 translation = float3(
+            firstTranslationX.w,
+            secondTranslationY.w,
+            thirdTranslationZ.w);
+    PrimePreviousDynamicSurface previous = primePreviousDynamicSurfaceValue(
+            firstTranslationX.xyz,
+            secondTranslationY.xyz,
+            thirdTranslationZ.xyz,
+            translation,
+            restoredBarycentrics);
+    float3 firstEdge = secondTranslationY.xyz - firstTranslationX.xyz;
+    float3 secondEdge = thirdTranslationZ.xyz - firstTranslationX.xyz;
+    float3 crossValue = cross(firstEdge, secondEdge);
+    float crossLengthSquared = dot(crossValue, crossValue);
+    float3 expectedNormal = crossLengthSquared > 1.0e-20
+            ? crossValue * rsqrt(crossLengthSquared)
+            : float3(0.0, 1.0, 0.0);
+    float3 expectedPosition = firstTranslationX.xyz
+            + restoredBarycentrics.x * firstEdge
+            + restoredBarycentrics.y * secondEdge
+            + translation;
+    primeTransportClassify(result.mask, previous.position);
+    primeTransportClassify(result.mask, previous.geometricNormal);
+    if (!primeTestClose(previous.position, expectedPosition, 1.0e-3, 5.0e-6)
+            || !primeTestClose(previous.geometricNormal, expectedNormal, 2.0e-6, 2.0e-6)
+            || !primeTestClose(
+                    dot(previous.geometricNormal, previous.geometricNormal),
+                    1.0,
+                    2.0e-6,
+                    2.0e-6)
+            || any(abs(restoredBarycentrics - barycentrics)
+                    > float2(1.0 / 65535.0 + 1.0e-7))) {
+        result.mask |= PRIME_TEST_FAILURE_STATE;
+    }
+    result.first = float4(previous.position, restoredBarycentrics.x);
+    result.second = float4(previous.geometricNormal, restoredBarycentrics.y);
+    result.third = float4(expectedPosition, crossLengthSquared);
+}
+
+void primeCheckGlobalTriangleIndex(
+        inout PrimeTransportResult result, uint4 control, uint4 counts)
+{
+    uint index = primeGlobalTriangleIndexValue(
+            control.y,
+            control.z,
+            counts.x,
+            counts.y,
+            counts.z,
+            counts.w);
+    if (index != control.w) {
+        result.mask |= PRIME_TEST_FAILURE_INDEX;
+    }
+    result.first = float4(index, control.w, control.y, control.z);
+    result.second = asfloat(counts);
 }
 
 void primeCheckLightBranch(
@@ -663,6 +732,10 @@ void main(uint3 dispatchThreadId : SV_DispatchThreadID)
         primeCheckPointLightNodeMetric(result, first, second, third.xyz);
     } else if (kind == 14) {
         primeCheckLightFamilyPdf(result, abs(first.x));
+    } else if (kind == 15) {
+        primeCheckPreviousDynamicSurface(result, first, second, third, fourth.xy);
+    } else if (kind == 16) {
+        primeCheckGlobalTriangleIndex(result, control, asuint(first));
     } else {
         result.mask |= PRIME_TEST_FAILURE_EVENT;
     }

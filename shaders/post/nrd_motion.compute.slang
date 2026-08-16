@@ -184,15 +184,18 @@ void primePrepareBranch(
             : position;
     float4 previousClip = primeMotionPush.previousWorldToClip
             * float4(reprojectionPosition, directional ? 0.0 : 1.0);
-    bool validPreviousClip = abs(previousClip.w) > 1.0e-6
+    bool validPreviousClip = previousClip.w > 1.0e-6
             && !any(isnan(previousClip)) && !any(isinf(previousClip));
     float2 previousUv = float2(0.0);
     if (validPreviousClip) {
         previousUv = previousClip.xy / previousClip.w
                 * float2(0.5, -0.5) + float2(0.5);
+        validPreviousClip = !any(isnan(previousUv)) && !any(isinf(previousUv));
+    }
+    if (validPreviousClip) {
         primeStoreMotion(pixel, reflection, float4(primeNrdSanitizeMotion(float3(
                 (previousUv - currentSampleUv) * float2(extent),
-                directional ? 0.0 : abs(previousClip.w) - currentViewZ)), 0.0));
+                directional ? 0.0 : previousClip.w - currentViewZ)), 0.0));
     } else {
         primeStoreMotion(pixel, reflection, float4(0.0));
     }
@@ -202,17 +205,19 @@ void primePrepareBranch(
         float4 exactPreviousClip = primeMotionPush.previousRenderedWorldToClip
                 * float4(reprojectionPosition, directional ? 0.0 : 1.0);
         float3 error = float3(1.0);
-        if (abs(exactPreviousClip.w) > 1.0e-6
+        if (exactPreviousClip.w > 1.0e-6
                 && !any(isnan(exactPreviousClip)) && !any(isinf(exactPreviousClip))) {
             float2 exactUv = exactPreviousClip.xy / exactPreviousClip.w
                     * float2(0.5) + float2(0.5);
-            float2 pixels = (previousUv - exactUv) * float2(extent);
-            error = float3(max(pixels.x, 0.0), max(pixels.y, 0.0), 0.0)
-                    + float3(max(-pixels.y, 0.0), max(-pixels.x, 0.0), max(-pixels.x, 0.0));
-            float depthError = directional
-                    ? 0.0
-                    : abs(abs(previousClip.w) - abs(exactPreviousClip.w));
-            error = (error + depthError) * 0.25;
+            if (!any(isnan(exactUv)) && !any(isinf(exactUv))) {
+                float2 pixels = (previousUv - exactUv) * float2(extent);
+                error = float3(max(pixels.x, 0.0), max(pixels.y, 0.0), 0.0)
+                        + float3(max(-pixels.y, 0.0), max(-pixels.x, 0.0), max(-pixels.x, 0.0));
+                float depthError = directional
+                        ? 0.0
+                        : abs(previousClip.w - exactPreviousClip.w);
+                error = (error + depthError) * 0.25;
+            }
         }
         primeWriteImageStore(primeReprojectionError, pixel, float4(clamp(error, 0.0, 1.0), 1.0));
     }
@@ -267,11 +272,13 @@ void primePrepareFsrGuide(
         float3 rayDirection = primeMotionRayDirection(currentSampleUv);
         float4 previousClip = primeMotionPush.previousWorldToClip * float4(rayDirection, 0.0);
         float2 motion = float2(0.0);
-        if (abs(previousClip.w) > 1.0e-6
+        if (previousClip.w > 1.0e-6
                 && !any(isnan(previousClip)) && !any(isinf(previousClip))) {
             float2 previousUv = previousClip.xy / previousClip.w
                     * float2(0.5, -0.5) + float2(0.5);
-            motion = primeFsrNormalizedMotion(previousUv, currentSampleUv);
+            if (!any(isnan(previousUv)) && !any(isinf(previousUv))) {
+                motion = primeFsrNormalizedMotion(previousUv, currentSampleUv);
+            }
         }
         primeWriteImageStore(primeFsrMotion, pixel, float4(motion, 0.0, 0.0));
         primeWriteImageStore(primeFsrDepth, pixel, float4(0.0));
@@ -283,11 +290,13 @@ void primePrepareFsrGuide(
     float4 previousClip = primeMotionPush.previousWorldToClip
             * float4(hasMotion ? previousPosition : currentPosition, 1.0);
     float2 motion = float2(0.0);
-    if (abs(previousClip.w) > 1.0e-6
+    if (previousClip.w > 1.0e-6
             && !any(isnan(previousClip)) && !any(isinf(previousClip))) {
         float2 previousUv = previousClip.xy / previousClip.w
                 * float2(0.5, -0.5) + float2(0.5);
-        motion = primeFsrNormalizedMotion(previousUv, currentSampleUv);
+        if (!any(isnan(previousUv)) && !any(isinf(previousUv))) {
+            motion = primeFsrNormalizedMotion(previousUv, currentSampleUv);
+        }
     }
     primeWriteImageStore(primeFsrMotion, pixel, float4(motion, 0.0, 0.0));
 }

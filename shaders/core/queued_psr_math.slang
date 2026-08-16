@@ -127,6 +127,9 @@ bool primeQueuedPsrFinite(float value)
     return !isnan(value) && !isinf(value);
 }
 
+// Output reserves 65504 for the fp16 far/miss sentinel.
+public static const float PRIME_QUEUED_PSR_MAX_ANCHOR_DISTANCE = 65503.0;
+
 public float primeQueuedPsrAnchorDistanceValue(
         PrimeQueuedPsrState state,
         float3 cameraPosition,
@@ -145,5 +148,9 @@ public float primeQueuedPsrAnchorDistanceValue(
         return -1.0;
     }
     float distance = dot(target - cameraPosition, targetNormal) / denominator;
-    return primeQueuedPsrFinite(distance) && distance > 0.0 ? distance : -1.0;
+    return primeQueuedPsrFinite(distance)
+            && distance > 0.0
+            && distance <= PRIME_QUEUED_PSR_MAX_ANCHOR_DISTANCE
+            ? distance
+            : -1.0;
 }

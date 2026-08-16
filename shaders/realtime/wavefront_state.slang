@@ -226,8 +226,8 @@ void primeAppendWavefrontContinuation<Appender>(
 }
 
 uint primePackWavefrontPathControl(PathState path) {
-    // FP16 keeps the two 96-byte path slots unchanged. Quantization only changes the roulette
-    // probability; survivor reweighting preserves the estimator's expectation.
+    // FP16 etaScale only changes the roulette probability; survivor reweighting preserves the
+    // estimator's expectation. Medium extinction and IOR remain FP32 in the transport record.
     return (min(path.bounce, PRIME_WAVEFRONT_BYTE_MASK)
                     << PRIME_WAVEFRONT_BOUNCE_SHIFT)
             | ((primePackWavefrontEtaScale(path.etaScale)
@@ -318,6 +318,16 @@ PrimeWavefrontPathRecord primeWavefrontWithPreviousLightNormal(
     record.psrPacked.w = (record.psrPacked.w & PRIME_WAVEFRONT_LIGHT_NORMAL_MASK)
             | ((packedNormal & PRIME_WAVEFRONT_LIGHT_NORMAL_MASK)
                     << PRIME_WAVEFRONT_LIGHT_NORMAL_SHIFT);
+    return record;
+}
+
+PrimeWavefrontPathRecord primeWavefrontWithPrimaryPreviousPosition(
+        PrimeWavefrontPathRecord record, PrimeDenoiserGuides guides) {
+    record.psrPacked.xyz = asuint(guides.primaryHasMotion
+            ? guides.primaryPreviousPosition
+            : guides.primaryPosition);
+    record.psrPacked.w = (record.psrPacked.w & ~PRIME_WAVEFRONT_PRIMARY_MOTION)
+            | (guides.primaryHasMotion ? PRIME_WAVEFRONT_PRIMARY_MOTION : 0u);
     return record;
 }
 
@@ -519,7 +529,7 @@ PrimeWavefrontPathRecord primeMakeWavefrontRecord(
         PathState path,
         PrimeOpenPbrVolumeStack volumeStack,
         PrimeDenoiserState denoiserState,
-        uint primaryMaterialFlags,
+        PrimeDenoiserGuides guides,
         bool enabled) {
     PrimeWavefrontPathRecord record;
     record.transport = primeMakeWavefrontTransportRecord(
@@ -527,12 +537,13 @@ PrimeWavefrontPathRecord primeMakeWavefrontRecord(
             path,
             volumeStack,
             denoiserState,
-            primaryMaterialFlags,
+            guides.primaryMaterialFlags,
             enabled);
     record = primeWavefrontWithQueuedPsrState(
             record, primeEmptyQueuedPsrState());
     record = primeWavefrontWithPreviousLightNormal(
             record, path.previousLightNormal);
+    record = primeWavefrontWithPrimaryPreviousPosition(record, guides);
     return record;
 }
 
@@ -669,7 +680,7 @@ PrimeWavefrontPathRecord primeMakeTransparentWavefrontRecord(
             path,
             volumeStack,
             denoiserState,
-            branchResult.guides.primaryMaterialFlags,
+            branchResult.guides,
             enabled);
     uint control = asuint(
             record.transport.rayDirectionAndDenoiserControl.w)
@@ -820,17 +831,12 @@ void primeStoreWavefrontIntermediate(
             float4(
                     primeNrdSanitizeRadiance(result.radiance.specular),
                     primeNrdSanitizeHitDistance(result.guides.specularHitDistance)));
-    // Stable alpha and the pre-NRD normal scratch preserve three FP16 motion components without
-    // adding a full-resolution image; both are overwritten by final output/preparation.
-    float3 primaryMotion = result.guides.primaryHasMotion
-            ? result.guides.primaryPreviousPosition - result.guides.primaryPosition
-            : float3(0.0);
     primeImageStore(
             primeStableRadiance,
             coordinate,
             float4(
                     primeNrdSanitizeRadiance(result.radiance.stable),
-                    asfloat(packHalf2x16(primaryMotion.xy))));
+                    0.0));
     primeImageStore(
             primeNrdSunLighting,
             coordinate,
@@ -856,14 +862,11 @@ void primeStoreWavefrontIntermediate(
             coordinate,
             float4(
                     result.guides.primarySpecularAlbedo,
-                    primaryNormalOctahedral.y
-                            + (result.guides.primaryHasMotion ? 4.0 : 0.0)));
+                    primaryNormalOctahedral.y));
     primeImageStore(
             primeNrdViewZ,
             coordinate,
-            float4(asfloat(packHalf2x16(float2(
-                    primaryNormalOctahedral.x,
-                    primaryMotion.z)))));
+            float4(primaryNormalOctahedral.x));
     if (primeWritesNrdShInputs()) {
         primeImageStore(
                 primeNrdDiffuseDirection,

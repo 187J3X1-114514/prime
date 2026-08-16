@@ -149,7 +149,7 @@ abstract class GenerateShaderAbi extends DefaultTask {
 				|| fsrContract.viewSpaceToMetersFactor != 1.0) {
 			throw new GradleException('Prime FSR signal and projection contracts changed without a coordinated migration')
 		}
-		if (wavefrontContract.pathRecordSize != 96
+		if (wavefrontContract.pathRecordSize != 112
 				|| wavefrontContract.pathSlotsPerPixel != 2
 				|| wavefrontContract.areaRecordSize != 176
 				|| wavefrontContract.areaRecordSize
@@ -168,7 +168,7 @@ abstract class GenerateShaderAbi extends DefaultTask {
 			throw new GradleException(
 					'Prime realtime scheduler must preserve its execution-mode queue ABI')
 		}
-		if (offlineWavefrontContract.pathRecordSize != 144
+		if (offlineWavefrontContract.pathRecordSize != 160
 				|| offlineWavefrontContract.pathSlotsPerPixel != 1
 				|| offlineWavefrontContract.areaRecordSize != 0
 				|| offlineWavefrontContract.queueEntriesPerPixel != 1
@@ -177,7 +177,7 @@ abstract class GenerateShaderAbi extends DefaultTask {
 				|| offlineWavefrontContract.queueIndexSize != 4
 				|| !offlineWavefrontContract.activeMask.toString().equalsIgnoreCase('0x1')) {
 			throw new GradleException(
-					'Prime offline scheduler must preserve its single-slot 144-byte queue ABI')
+					'Prime offline scheduler must preserve its single-slot 160-byte queue ABI')
 		}
 		if (!schema.pathControl.sampleEpochMask.toString().equalsIgnoreCase('0x7fffffff')
 				|| !schema.pathControl.seamlessGlassMask.toString().equalsIgnoreCase('0x02000000')

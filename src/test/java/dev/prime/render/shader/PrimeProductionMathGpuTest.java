@@ -60,7 +60,7 @@ final class PrimeProductionMathGpuTest {
 
     @Test
     void integratorAndLightTransportMathKeepsItsNumericalContracts() throws IOException {
-        int kinds = 15;
+        int kinds = 17;
         int inputWords = 6;
         ShaderPropertyBatch.assertProperties(
                 runner,
@@ -594,6 +594,83 @@ final class PrimeProductionMathGpuTest {
                             receiverNormal[1],
                             receiverNormal[2],
                             0.0F);
+                } else if (kind == 15) {
+                    float[] first = local == 0
+                            ? new float[] {3.0F, -2.0F, 7.0F}
+                            : new float[] {
+                                random.nextFloat() * 8192.0F - 4096.0F,
+                                random.nextFloat() * 8192.0F - 4096.0F,
+                                random.nextFloat() * 8192.0F - 4096.0F
+                            };
+                    float[] firstEdge = local == 0
+                            ? new float[] {0.0F, 0.0F, 0.0F}
+                            : randomUnitVector(random);
+                    float[] secondEdge = local == 0
+                            ? new float[] {0.0F, 0.0F, 0.0F}
+                            : randomUnitVector(random);
+                    if (local != 0) {
+                        float projection = firstEdge[0] * secondEdge[0]
+                                + firstEdge[1] * secondEdge[1]
+                                + firstEdge[2] * secondEdge[2];
+                        secondEdge[0] -= projection * firstEdge[0];
+                        secondEdge[1] -= projection * firstEdge[1];
+                        secondEdge[2] -= projection * firstEdge[2];
+                        float inverseLength = 1.0F / (float) Math.sqrt(
+                                secondEdge[0] * secondEdge[0]
+                                        + secondEdge[1] * secondEdge[1]
+                                        + secondEdge[2] * secondEdge[2]);
+                        float firstScale = 0.01F + random.nextFloat() * 128.0F;
+                        float secondScale = 0.01F + random.nextFloat() * 128.0F;
+                        for (int component = 0; component < 3; component++) {
+                            firstEdge[component] *= firstScale;
+                            secondEdge[component] *= inverseLength * secondScale;
+                        }
+                    }
+                    float translationX = random.nextFloat() * 8192.0F - 4096.0F;
+                    float translationY = random.nextFloat() * 8192.0F - 4096.0F;
+                    float translationZ = random.nextFloat() * 8192.0F - 4096.0F;
+                    float barycentricX = random.nextFloat();
+                    float barycentricY = random.nextFloat() * (1.0F - barycentricX);
+                    putVec4(input, index, words, 1,
+                            first[0], first[1], first[2], translationX);
+                    putVec4(input, index, words, 2,
+                            first[0] + firstEdge[0],
+                            first[1] + firstEdge[1],
+                            first[2] + firstEdge[2],
+                            translationY);
+                    putVec4(input, index, words, 3,
+                            first[0] + secondEdge[0],
+                            first[1] + secondEdge[1],
+                            first[2] + secondEdge[2],
+                            translationZ);
+                    putVec4(input, index, words, 4,
+                            barycentricX, barycentricY, 0.0F, 0.0F);
+                } else if (kind == 16) {
+                    int opaquePrimitiveCount = random.nextInt(1, 257);
+                    int cutoutPrimitiveCount = random.nextInt(1, 257);
+                    int opaqueMacroBase = random.nextInt(opaquePrimitiveCount + 1);
+                    int cutoutMacroBase = random.nextInt(cutoutPrimitiveCount + 1);
+                    int geometry = local % 3;
+                    int opaqueTriangleCount = opaqueMacroBase
+                            + 2 * (opaquePrimitiveCount - opaqueMacroBase);
+                    int cutoutTriangleCount = cutoutMacroBase
+                            + 2 * (cutoutPrimitiveCount - cutoutMacroBase);
+                    int localTriangleCount = geometry == 0
+                            ? opaqueTriangleCount
+                            : geometry == 1
+                                    ? cutoutTriangleCount
+                                    : random.nextInt(1, 513);
+                    int primitiveIndex = random.nextInt(localTriangleCount);
+                    int expectedIndex = primitiveIndex
+                            + (geometry == 0 ? 0 : opaqueTriangleCount)
+                            + (geometry == 2 ? cutoutTriangleCount : 0);
+                    putInt(input, index, words, 0, 1, geometry);
+                    putInt(input, index, words, 0, 2, primitiveIndex);
+                    putInt(input, index, words, 0, 3, expectedIndex);
+                    putInt(input, index, words, 1, 0, opaquePrimitiveCount);
+                    putInt(input, index, words, 1, 1, cutoutPrimitiveCount);
+                    putInt(input, index, words, 1, 2, opaqueMacroBase);
+                    putInt(input, index, words, 1, 3, cutoutMacroBase);
                 } else {
                     putVec4(
                             input,

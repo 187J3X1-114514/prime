@@ -185,18 +185,26 @@ PrimeShadowTrace primeTraceOfflineAreaShadow(
     primeShadowPayload.startingExtinction1Winding = float4(
             startingExtinction1, startingMediumCount > 1u ? 1.0 : 0.0);
     primeShadowPayload.startingMediumCount = startingMediumCount;
-    traceRayEXT(
-            primeScene,
-            gl_RayFlagsNoneEXT,
-            0xff,
-            3,
-            1,
-            1,
-            physicalPosition + request.direction * 0.001,
-            0.001,
-            request.direction,
-            request.distance,
-            1);
+    // The direction-shifted origin already excludes the source surface. Shorten tMax by the same
+    // amount so the ray still ends at the sampled light instead of accepting an occluder behind it.
+    float traceOffset = min(0.001, request.distance);
+    float traceDistance = request.distance - traceOffset;
+    if (traceDistance > 0.0) {
+        traceRayEXT(
+                primeScene,
+                gl_RayFlagsNoneEXT,
+                0xff,
+                3,
+                1,
+                1,
+                physicalPosition + request.direction * traceOffset,
+                0.0,
+                request.direction,
+                traceDistance,
+                1);
+    } else {
+        primeShadowPayload.opticalDepthMomentHitDistance.w = PRIME_NRD_FP16_MAX;
+    }
     PrimeShadowTrace result;
     result.transmittance = clamp(exp(-primeShadowOpticalDepth(
                     primeShadowPayload.opticalDepthMomentHitDistance.xyz,

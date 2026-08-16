@@ -159,6 +159,19 @@ final class DlssRrMotionContractTest {
                 false,
                 true,
                 0.25F);
+        float storedNearThreshold = Float.float16ToFloat(
+                Float.floatToFloat16(0.2499F));
+        float oldMarkerRoundTrip = -Float.float16ToFloat(
+                Float.floatToFloat16(-0.2499F - 1.0F)) - 1.0F;
+        Vector2f nearThreshold = specularMotion(
+                current,
+                previous,
+                currentSampleUv,
+                primaryPreviousPosition,
+                previousVirtualPosition,
+                false,
+                true,
+                storedNearThreshold);
         Vector2f missingProbe = specularMotion(
                 current,
                 previous,
@@ -170,9 +183,65 @@ final class DlssRrMotionContractTest {
                 0.1F);
 
         assertVectorEquals(expectedVirtual, smooth);
+        assertVectorEquals(expectedVirtual, nearThreshold);
+        assertTrue(storedNearThreshold < 0.25F);
+        assertTrue(oldMarkerRoundTrip >= 0.25F);
         assertVectorEquals(primary, rough);
         assertVectorEquals(primary, missingProbe);
         assertTrue(new Vector2f(smooth).sub(primary).lengthSquared() > 1.0e-8F);
+    }
+
+    @Test
+    void traversalOriginOffsetCannotManufactureStaticReflectionMotion() {
+        FrameCamera camera = camera(new Matrix4f(), 0.0, 0.0, 0.0);
+        Vector2f currentSampleUv = sampleUv(DlssRrProfile.jitter(
+                ReconstructionQualityMode.QUALITY, 5));
+        Vector3f cameraRay = rayDirection(camera, currentSampleUv);
+        Vector3f primaryPosition = new Vector3f(cameraRay).mul(9.0F);
+        Vector3f planeNormal = new Vector3f(0.8F, 0.1F, 0.59F).normalize();
+        Vector3f reflectionDirection = reflect(cameraRay, planeNormal);
+        float side = planeNormal.dot(reflectionDirection) >= 0.0F ? 1.0F : -1.0F;
+        Vector3f traceOffset = new Vector3f(planeNormal).mul(side * 0.001F);
+        Vector3f tracedTarget = new Vector3f(primaryPosition)
+                .add(traceOffset)
+                .fma(31.0F, reflectionDirection);
+        Vector3f rawVirtual = mirrorPoint(
+                tracedTarget, primaryPosition, planeNormal);
+        Vector3f correctedVirtual = rawVirtual.sub(
+                reflect(traceOffset, planeNormal), new Vector3f());
+
+        Vector2f rawMotion = motion(
+                camera, camera, currentSampleUv, rawVirtual, false);
+        Vector2f correctedMotion = motion(
+                camera, camera, currentSampleUv, correctedVirtual, false);
+
+        assertTrue(rawMotion.lengthSquared() > 0.0F);
+        assertVectorEquals(new Vector2f(), correctedMotion);
+        assertTrue(new Vector3f(correctedVirtual).cross(cameraRay)
+                .lengthSquared() < 1.0e-8F);
+    }
+
+    @Test
+    void reflectionBehindPreviousCameraFallsBackToPrimaryMotion() {
+        FrameCamera camera = camera(new Matrix4f(), 0.0, 0.0, 0.0);
+        Vector2f currentSampleUv = sampleUv(DlssRrProfile.jitter(
+                ReconstructionQualityMode.BALANCED, 2));
+        Vector3f primaryPosition = rayDirection(camera, currentSampleUv).mul(12.0F);
+        Vector3f behindCamera = new Vector3f(0.0F, 0.0F, 5.0F);
+
+        Vector2f actual = specularMotion(
+                camera,
+                camera,
+                currentSampleUv,
+                primaryPosition,
+                behindCamera,
+                false,
+                true,
+                0.0F);
+
+        assertVectorEquals(
+                motion(camera, camera, currentSampleUv, primaryPosition, false),
+                actual);
     }
 
     @Test
@@ -300,9 +369,23 @@ final class DlssRrMotionContractTest {
                     primaryPreviousPosition,
                     false);
         }
-        Vector2f previousUv = directional
-                ? projectSky(current, previous, reflectionPreviousVirtualPosition)
-                : projectSurface(current, previous, reflectionPreviousVirtualPosition);
+        Vector4f clip = NrdCameraTransform.previousWorldToClip(current, previous)
+                .transform(new Vector4f(
+                        reflectionPreviousVirtualPosition,
+                        directional ? 0.0F : 1.0F));
+        if (!(clip.w > 1.0e-6F)
+                || !Float.isFinite(clip.x)
+                || !Float.isFinite(clip.y)
+                || !Float.isFinite(clip.z)
+                || !Float.isFinite(clip.w)) {
+            return motion(
+                    current,
+                    previous,
+                    currentSampleUv,
+                    primaryPreviousPosition,
+                    false);
+        }
+        Vector2f previousUv = screenUv(clip);
         return previousUv.sub(currentSampleUv, new Vector2f());
     }
 

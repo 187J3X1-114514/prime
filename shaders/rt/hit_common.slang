@@ -66,6 +66,18 @@ uint primeGlobalPrimitiveIndex(SectionRecord section) {
     return base + primeLocalPrimitiveIndex(section);
 }
 
+public uint primeGlobalTriangleIndex(SectionRecord section) {
+    uint opaquePrimitiveCount = section.cutoutBase;
+    uint cutoutPrimitiveCount = section.transmissiveBase - section.cutoutBase;
+    return primeGlobalTriangleIndexValue(
+            GeometryIndex(),
+            PrimitiveIndex(),
+            opaquePrimitiveCount,
+            cutoutPrimitiveCount,
+            section.opaqueMacroTriangleBase,
+            section.cutoutMacroTriangleBase);
+}
+
 public PrimeSurfaceRelation primeSurfaceRelation(SectionRecord section) {
     PrimeSurfaceRelation result;
     result.control = 0u;
@@ -147,29 +159,6 @@ public PrimitiveRecord primeResolveSurfacePrimitive(
 
 public PrimitiveRecord primePrimitive() {
     return primePrimitive(primeSection());
-}
-
-public float3 primePreviousDynamicPosition(SectionRecord section, float2 barycentrics) {
-    float* positions = (float*)section.lightAddress;
-    uint vertexBase = PrimitiveIndex() * 9u;
-    float3 barycentric = float3(
-            1.0 - barycentrics.x - barycentrics.y,
-            barycentrics.x,
-            barycentrics.y);
-    float3 first = float3(
-            positions[vertexBase],
-            positions[vertexBase + 1u],
-            positions[vertexBase + 2u]);
-    float3 second = float3(
-            positions[vertexBase + 3u],
-            positions[vertexBase + 4u],
-            positions[vertexBase + 5u]);
-    float3 third = float3(
-            positions[vertexBase + 6u],
-            positions[vertexBase + 7u],
-            positions[vertexBase + 8u]);
-    return first * barycentric.x + second * barycentric.y + third * barycentric.z
-            + section.translation;
 }
 
 bool primeUsesRepeatedUv(PrimitiveRecord primitive) {

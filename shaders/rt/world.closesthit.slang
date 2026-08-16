@@ -71,19 +71,19 @@ void main(
             : primitive.flagsEmitter >> 3u & 0x00ffffffu;
     if ((primitive.flagsEmitter & PRIME_DYNAMIC_TEXTURE_FLAG) != 0u
             && section.lightAddress != uint64_t(0)) {
-        float3 currentPosition = WorldRayOrigin()
-                + RayTCurrent() * WorldRayDirection();
-        float3 motion = primePreviousDynamicPosition(section, barycentrics)
-                - currentPosition;
-        primePayload.emitterIndex = packHalf2x16(motion.xy);
-        primePayload.hitKind |= PRIME_SURFACE_MOTION_FLAG
-                | (packHalf2x16(float2(0.0, motion.z)) & 0xffff0000u);
+        // Dynamic geometry cannot emit. Reuse its emitter/LOD lanes for an exact triangle id and
+        // bounded UNORM16 barycentrics; previous f32 vertices then reconstruct both position and
+        // plane orientation without the range and critical-angle failures of an FP16 motion delta.
+        primePayload.emitterIndex = primeGlobalTriangleIndex(section);
+        primePayload.hitKind |= PRIME_SURFACE_MOTION_FLAG;
+        primePayload.textureLod = asfloat(packUnorm2x16(
+                clamp(barycentrics, float2(0.0), float2(1.0))));
     } else {
         primePayload.emitterIndex = encodedEmitter == 0u
                 ? 0xffffffffu
                 : encodedEmitter - 1u;
+        primePayload.textureLod = textureLodValue;
     }
-    primePayload.textureLod = textureLodValue;
     primePayload.opacity = material.opacity;
     primePayload.shadingNormal = primePackOctahedralNormal(material.shadingNormal);
     primePayload.roughness = material.roughness;

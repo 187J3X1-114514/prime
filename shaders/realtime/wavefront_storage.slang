@@ -1,7 +1,7 @@
 #ifndef PRIME_WAVEFRONT_STORAGE_SLANG
 #define PRIME_WAVEFRONT_STORAGE_SLANG
 
-// Two signal slots belong to each quality-mode pixel so transparent reflection and transmission
+// Two signal slots belong to each realtime pixel so transparent reflection and transmission
 // keep independent reconstruction histories. The execution-local type contains six hot transport
 // lanes; storage adds one cold lane for queued PSR and the previous receiver normal. Primary
 // area-light moments are immutable pixel state and live once per pixel in the queue-buffer prefix.
@@ -94,12 +94,11 @@ uint primeWavefrontQueueWord(uint queue, uint entry) {
     return indexWords + queue * primeWavefrontQueueCapacity() + entry;
 }
 
-uint primeWavefrontAreaWord(uint2 pixel, uint component) {
-    return primeWavefrontIndex(pixel)
-            * (PRIME_WAVEFRONT_AREA_RECORD_SIZE / 4u) + component;
-}
-
 static const uint PRIME_WAVEFRONT_AREA_GUIDE_WORDS = 4u;
+
+uint primeWavefrontAreaWord(uint2 pixel, uint component) {
+    return primeWavefrontIndex(pixel) * PRIME_WAVEFRONT_AREA_GUIDE_WORDS + component;
+}
 
 uint3 primePackWavefrontPair(float3 first, float3 second) {
     return uint3(

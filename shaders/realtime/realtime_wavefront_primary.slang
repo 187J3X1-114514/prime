@@ -1,11 +1,13 @@
 #include "realtime/realtime_wavefront_common.slang"
 
-struct PrimeWavefrontContinuation {
-    uint pathIndex;
-    bool active;
+struct PrimeWavefrontContinuations {
+    uint firstPathIndex;
+    uint secondPathIndex;
+    bool firstActive;
+    bool secondActive;
 };
 
-PrimeWavefrontContinuation primeInitializeTransparentWavefront(
+PrimeWavefrontContinuations primeInitializeTransparentWavefront(
         inout PrimeIntegratorContext context,
         uint2 pixel,
         PathState path,
@@ -14,9 +16,11 @@ PrimeWavefrontContinuation primeInitializeTransparentWavefront(
         SurfaceInteraction surface,
         PrimeIntegrationResult initialResult,
         uint maximumBounces) {
-    PrimeWavefrontContinuation queued;
-    queued.pathIndex = primeWavefrontIndex(pixel, 0u);
-    queued.active = false;
+    PrimeWavefrontContinuations queued;
+    queued.firstPathIndex = primeWavefrontIndex(pixel, 0u);
+    queued.secondPathIndex = primeWavefrontIndex(pixel, 1u);
+    queued.firstActive = false;
+    queued.secondActive = false;
     if (!primeApplySegmentMedium(context, path, surface, volumeStack)) {
         PrimeDenoiserState emptyState = primeInitialDenoiserState();
         PrimeWavefrontPathRecord emptyRecord = primeMakeWavefrontRecord(context.diagnostics,
@@ -98,24 +102,13 @@ PrimeWavefrontContinuation primeInitializeTransparentWavefront(
             PrimeTransmissiveBsdfSample[2](
                     primarySample.paths.transmission,
                     primarySample.paths.reflection);
-    bool sampleReflection = primeTransparentCheckerboardSamplesReflection(
-            pixel, path.sampleIndex);
-
     for (uint branch = 0u; branch < 2u; ++branch) {
         bool transmissionBranch = branch == 0u;
-        bool selectedBranch = transmissionBranch != sampleReflection;
         bool guideEnabled = transmissionBranch
                 ? transmissionGuideEnabled
                 : reflectionGuideEnabled;
         PrimeTransmissiveBsdfSample selected = branches[branch];
-        BsdfSample bsdf = selectedBranch
-                ? selected.bsdfSample
-                : primeInvalidBsdfSample();
-        if (selectedBranch) {
-            bsdf.pdf = primeTransparentCheckerboardPdf(bsdf.pdf);
-        } else {
-            selected.volumeStack = volumeStack;
-        }
+        BsdfSample bsdf = selected.bsdfSample;
         PrimeTransparentBranchResult branchResult;
         branchResult.diffuseRadiance = transmissionBranch
                 ? initialResult.radiance.diffuse
@@ -180,7 +173,7 @@ PrimeWavefrontContinuation primeInitializeTransparentWavefront(
                 initialResult.guides.primaryAreaDirection;
 
         PathState branchPath = path;
-        branchPath.sampleDimension = 0u;
+        branchPath.sampleDimension = transmissionBranch ? 1u : 0u;
         bool branchDiscreteOnly = discreteOnlyInterface;
         bool continuation = hasScatter;
         if (continuation) {
@@ -210,9 +203,10 @@ PrimeWavefrontContinuation primeInitializeTransparentWavefront(
                 continuation);
         uint pathIndex = primeWavefrontIndex(pixel, branch);
         primeWavefrontPaths[pathIndex] = record;
-        if (continuation) {
-            queued.pathIndex = pathIndex;
-            queued.active = true;
+        if (transmissionBranch) {
+            queued.firstActive = continuation;
+        } else {
+            queued.secondActive = continuation;
         }
         primeStoreTransparentBranchIntermediate(
                 pixel, transmissionBranch, branchResult);
@@ -241,13 +235,17 @@ void primeWavefrontPrimary(
             ATM_SPACE_SUN_INTENSITY * primeSunRadianceMultiplier());
     integrator.environmentRadiance = float4(0.0);
     uint maximumBounces = primeMaximumBounces();
-    bool queueContinuation;
+    PrimeWavefrontContinuations continuations;
+    continuations.firstPathIndex = recordIndex;
+    continuations.secondPathIndex = primeWavefrontIndex(pixel, 1u);
+    continuations.firstActive = false;
+    continuations.secondActive = false;
 
     if (surface.hitKind == PRIME_HIT_SURFACE
             && primeMaterialIsTransmissive(surface.materialControl)) {
         PrimeIntegrationResult initialResult =
                 primeLoadWavefrontIntermediate(pixel, record);
-        PrimeWavefrontContinuation transparent =
+        continuations =
                 primeInitializeTransparentWavefront(
                         context,
                         pixel,
@@ -257,8 +255,6 @@ void primeWavefrontPrimary(
                         surface,
                         initialResult,
                         maximumBounces);
-        recordIndex = transparent.pathIndex;
-        queueContinuation = transparent.active;
     } else {
         PrimeDenoiserState denoiserState = primeInitialDenoiserState();
         PrimeIntegrationResult result =
@@ -288,11 +284,16 @@ void primeWavefrontPrimary(
         primeWavefrontPaths[primeWavefrontIndex(pixel, 1u)] = updated;
         primeStoreWavefrontArea(pixel, result.guides);
         primeStoreWavefrontIntermediate(pixel, result);
-        queueContinuation = continuation;
+        continuations.firstActive = continuation;
     }
     primeAppendWavefrontContinuation(
             PrimeWavefrontContinuationAppender(),
             PRIME_WAVEFRONT_TRACE_QUEUE_0,
-            recordIndex,
-            queueContinuation);
+            continuations.firstPathIndex,
+            continuations.firstActive);
+    primeAppendWavefrontContinuation(
+            PrimeWavefrontContinuationAppender(),
+            PRIME_WAVEFRONT_TRACE_QUEUE_0,
+            continuations.secondPathIndex,
+            continuations.secondActive);
 }

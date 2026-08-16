@@ -2,7 +2,6 @@
 import "bsdf/compact/openpbr_common.slang";
 import "core/color_space.slang";
 import "core/light_tree_math.slang";
-import "core/transparent_checkerboard.slang";
 import "core/transport_math.slang";
 import "integrator/path_contract.slang";
 import "material/transparent_material.slang";
@@ -595,30 +594,6 @@ void primeCheckPointLightNodeMetric(
     result.third = float4(receiverNormal, 0.0);
 }
 
-void primeCheckTransparentCheckerboard(
-        inout PrimeTransportResult result,
-        uint2 pixel,
-        uint sampleIndex,
-        float conditionalPdf)
-{
-    bool selected = primeTransparentCheckerboardSamplesReflection(pixel, sampleIndex);
-    bool horizontal = primeTransparentCheckerboardSamplesReflection(
-            pixel + uint2(1, 0), sampleIndex);
-    bool vertical = primeTransparentCheckerboardSamplesReflection(
-            pixel + uint2(0, 1), sampleIndex);
-    bool nextFrame = primeTransparentCheckerboardSamplesReflection(pixel, sampleIndex + 1);
-    float pdf = primeTransparentCheckerboardPdf(conditionalPdf);
-    if (selected == horizontal || selected == vertical || selected == nextFrame) {
-        result.mask |= PRIME_TEST_FAILURE_EVENT;
-    }
-    if (!primeTestClose(pdf, conditionalPdf * 0.5, 0.0, 0.0)) {
-        result.mask |= PRIME_TEST_FAILURE_PDF;
-    }
-    result.first = float4(
-            float(selected), float(horizontal), float(vertical), float(nextFrame));
-    result.second = float4(pdf, conditionalPdf, 0.0, 0.0);
-}
-
 [numthreads(64, 1, 1)]
 void main(uint3 dispatchThreadId : SV_DispatchThreadID)
 {
@@ -687,12 +662,6 @@ void main(uint3 dispatchThreadId : SV_DispatchThreadID)
     } else if (kind == 13) {
         primeCheckPointLightNodeMetric(result, first, second, third.xyz);
     } else if (kind == 14) {
-        primeCheckTransparentCheckerboard(
-                result,
-                uint2(caseIndex, caseIndex * 0x9e3779b9),
-                caseIndex * 0x85ebca6b,
-                first.z);
-    } else if (kind == 15) {
         primeCheckLightFamilyPdf(result, abs(first.x));
     } else {
         result.mask |= PRIME_TEST_FAILURE_EVENT;

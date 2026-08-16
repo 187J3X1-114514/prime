@@ -61,13 +61,19 @@ uint4 primeLoadWavefrontSurfaceLane(uint base, uint laneIndex) {
             primeWavefrontQueue[word + 3u]);
 }
 
-// Only the checkerboard-selected branch can be queued, so one hit record per pixel is sufficient
-// even though two reconstruction histories retain path records. The position is exactly
-// reconstructible from the matching transport record and t. hitKind occupies the low payload byte
-// while motionZFlags occupies the remaining bits, so their original packed word is also lossless.
+// Area guides and the two path-indexed hit arrays occupy separate contiguous regions. Keeping the
+// surface arrays branch-major preserves coalesced ordinary-path access while both fixed transparent
+// continuations can safely remain in flight. Position is exactly reconstructible from the matching
+// transport record and t. hitKind occupies the low payload byte while motionZFlags occupies the
+// remaining bits, so their original packed word is also lossless.
+uint primeWavefrontSurfaceWord(uint pathIndex) {
+    uint guideWords = primeWavefrontPixelCount() * PRIME_WAVEFRONT_AREA_GUIDE_WORDS;
+    return guideWords
+            + pathIndex * (PRIME_WAVEFRONT_SURFACE_RECORD_SIZE / 4u);
+}
+
 void primeStoreWavefrontSurface(uint pathIndex, SurfaceInteraction surface) {
-    uint2 pixel = primeWavefrontPixel(pathIndex);
-    uint base = primeWavefrontAreaWord(pixel, PRIME_WAVEFRONT_AREA_GUIDE_WORDS);
+    uint base = primeWavefrontSurfaceWord(pathIndex);
     primeStoreWavefrontSurfaceLane(base, 0u, uint4(
             asuint(surface.t),
             asuint(surface.geometricNormal.x),
@@ -97,8 +103,7 @@ void primeStoreWavefrontSurface(uint pathIndex, SurfaceInteraction surface) {
 
 SurfaceInteraction primeLoadWavefrontSurface(
         uint pathIndex, float3 traceOrigin, float3 rayDirection) {
-    uint2 pixel = primeWavefrontPixel(pathIndex);
-    uint base = primeWavefrontAreaWord(pixel, PRIME_WAVEFRONT_AREA_GUIDE_WORDS);
+    uint base = primeWavefrontSurfaceWord(pathIndex);
     SurfaceInteraction surface;
     uint4 lane = primeLoadWavefrontSurfaceLane(base, 0u);
     surface.t = asfloat(lane.x);

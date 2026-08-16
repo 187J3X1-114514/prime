@@ -10,7 +10,6 @@ import "core/render_config.slang";
 import "rt/shadow_payload.slang";
 
 import "core/sampling.slang";
-import "core/transparent_checkerboard.slang";
 #include "bsdf/adapter/bsdf.slang"
 import "lighting/lights.slang";
 

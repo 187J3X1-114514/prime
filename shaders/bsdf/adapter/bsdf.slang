@@ -19,8 +19,8 @@ import "material/transparent_material.slang";
 bool3 lessThan(float3 first, float3 second) { return first < second; }
 bool3 lessThanEqual(float3 first, float3 second) { return first <= second; }
 
-// Minecraft's translucent render layer exposes conditional reflection/transmission proposals for
-// the first-visible checkerboard choice, then uses the complete compact closure for later queued
+// Minecraft's translucent render layer exposes fixed conditional reflection/transmission proposals
+// for the first-visible split, then uses the complete compact closure for later queued
 // continuation. The adapter owns the conditional primary proposals and medium handoff.
 struct PrimeTransmissiveBsdfSample {
     BsdfSample bsdfSample;

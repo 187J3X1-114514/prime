@@ -304,7 +304,7 @@ final class TracePipelinesContractTest {
 
     @Test
     void wavefrontBackingHasDeclaredFourKSize() {
-        assertEquals(2_587_852_896L,
+        assertEquals(3_450_470_496L,
                 RealtimeRayTracingPipeline.wavefrontBytes(3840, 2160));
         assertEquals(1_260_748_832L,
                 OfflineRayTracingPipeline.wavefrontBytes(3840, 2160));
@@ -321,7 +321,11 @@ final class TracePipelinesContractTest {
                         Integer.MAX_VALUE, Integer.MAX_VALUE));
         RealtimeRayTracingPipeline.validateRanges(3840, 2160, 0xffff_ffffL);
         OfflineRayTracingPipeline.validateRanges(3840, 2160, 0xffff_ffffL);
-        RealtimeRayTracingPipeline.validateDispatch(3840, 2160, 3840 * 2160);
+        assertThrows(
+                IllegalStateException.class,
+                () -> RealtimeRayTracingPipeline.validateDispatch(
+                        3840, 2160, 3840 * 2160));
+        RealtimeRayTracingPipeline.validateDispatch(3840, 2160, 2 * 3840 * 2160);
         OfflineRayTracingPipeline.validateDispatch(3840, 2160, 1 << 24);
     }
 

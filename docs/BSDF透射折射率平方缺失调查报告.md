@@ -28,7 +28,7 @@ Prime 自有的材质翻译、资源绑定、状态转换、诊断和回归入�
 - 辐亮度 BSDF response 中的 `1/η²` 属于传输闭包本身；
 - path-state `etaScale` 只修正 Russian roulette 的存活度量，不写回真实 throughput。
 
-实时积分器在首接口以 50/50 棋盘格选择一个条件反射或条件透射事件；光滑折射由
+实时积分器在首接口固定同时生成条件反射和条件透射事件；光滑折射由
 确定性适配显式应用与事件 `relativeEta` 一致的 `/η²`，粗糙条件透射则使用完整闭包在透射
 半球内归一化的 sample/eval/PDF。后续透明顶点与离线 renderer 使用紧凑 OpenPBR 透射闭包
 的随机单分支，因此 `/η²`、事件 PDF、`relativeEta` 和介质栈契约都进入生产路径。

@@ -16,7 +16,6 @@ import "core/sampling.slang";
 import "core/starmap.slang";
 import "core/transport_math.slang";
 import "core/queued_psr_math.slang";
-import "core/transparent_checkerboard.slang";
 import "core/nrd_common.slang";
 import "integrator/integration_result.slang";
 import "integrator/path_contract.slang";
@@ -416,7 +415,7 @@ PrimeDirectLightingSplit primeEvaluateVisibleDirectSplit(
                 * dot(outwardNormal, light.direction) >= 0.0;
         BsdfEvaluation evaluation;
         if (conditionalTransparentBranch) {
-            // The first visible interface exposes conditional checkerboard proposals. Smooth
+            // The first visible interface exposes fixed-split conditional proposals. Smooth
             // transmission remains discrete; a rough stained-glass texel has a finite conditional
             // transmission lobe and therefore participates in NEE from the opposite hemisphere.
             evaluation = reflection
@@ -469,11 +468,6 @@ PrimeDirectLightingSplit primeEvaluateVisibleDirectSplit(
                     viewDirection,
                     light.direction,
                     observation);
-        }
-        if (conditionalTransparentBranch) {
-            // The competing continuation first selects this disjoint hemisphere with probability
-            // 1/2, then samples its conditional proposal. MIS must use that complete technique PDF.
-            evaluation.pdf = primeTransparentCheckerboardPdf(evaluation.pdf);
         }
         float weightedInversePdf = primePowerHeuristicOverPdf(
                 context.diagnostics, light.pdf, evaluation.pdf);
@@ -1406,9 +1400,8 @@ void primeAccumulateTransparentBranch(
     }
 }
 
-// Advances the checkerboard-selected primary-transparent branch by one queued vertex. Its signal
-// lane remains branch-owned while traversal/SER sorts the sole active continuation with every
-// other path.
+// Advances one fixed primary-transparent branch by one queued vertex. Its signal lane remains
+// branch-owned while traversal/SER sorts both continuations with every other path.
 bool primeIntegrateTransparentWavefrontSurface<SunNee, AreaNee>(
         SunNee sunNee,
         AreaNee areaNee,
@@ -1614,9 +1607,8 @@ PrimeDenoiserState primeInitialDenoiserState() {
 }
 
 // Processes exactly one ordinary realtime path vertex. Primary transparent interfaces remain a
-// local island because two reconstruction records share one output pixel, although only the
-// checkerboard-selected record carries transport. Every other continuation can cross this
-// boundary without carrying invocation-local BSDF state.
+// local island because two reconstruction records share one output pixel. Every other
+// continuation can cross this boundary without carrying invocation-local BSDF state.
 bool primeIntegrateWavefrontSurface<SunNee, AreaNee, IndirectReuse>(
         SunNee sunNee,
         AreaNee areaNee,

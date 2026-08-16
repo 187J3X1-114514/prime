@@ -135,9 +135,9 @@ void primeCheckRoulette(
         float sampleValue)
 {
     float survival = primeRussianRouletteSurvival(throughput, etaScale);
-    float expectedSurvival = min(max(
+    float expectedSurvival = min(sqrt(max(
             max(throughput.r, max(throughput.g, throughput.b)) * etaScale,
-            0.0), 1.0);
+            0.0)), 1.0);
     uint packedEtaScale = primePackWavefrontEtaScale(etaScale);
     float queuedEtaScale = primeUnpackWavefrontEtaScale(packedEtaScale);
     primeTransportClassify(result.mask, survival);
@@ -178,7 +178,7 @@ void primeCheckOfflineRoulette(
     float restoredScale = primeEtaScaleAfterScatter(
             transmittedScale, 1.0 / relativeEta, true);
     float metric = primeRussianRouletteMetric(throughput, etaScale);
-    float survival = primeOfflineRussianRouletteSurvival(throughput, etaScale);
+    float survival = primeRussianRouletteSurvival(throughput, etaScale);
     float expectedMetric = max(throughput.r, max(throughput.g, throughput.b)) * etaScale;
     float expectedSurvival = min(sqrt(max(expectedMetric, 0.0)), 1.0);
     primeTransportClassify(result.mask, float3(transmittedScale, restoredScale, survival));

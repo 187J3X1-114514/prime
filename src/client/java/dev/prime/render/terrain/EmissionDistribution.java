@@ -448,68 +448,18 @@ final class EmissionDistribution {
             double sumV = firstV + secondV + thirdV;
             target[0] += mass * sumU / 3.0;
             target[1] += mass * sumV / 3.0;
-            // Uniform triangle barycentrics have E[lambda_i^2] = 1/6 and
-            // E[lambda_i lambda_j] = 1/12.
-            target[2] += mass
-                    * (firstU * firstU + secondU * secondU + thirdU * thirdU
-                            + sumU * sumU)
-                    / 12.0;
-            target[3] += mass
-                    * (firstU * firstV + secondU * secondV + thirdU * thirdV
-                            + sumU * sumV)
-                    / 12.0;
-            target[4] += mass
-                    * (firstV * firstV + secondV * secondV + thirdV * thirdV
-                            + sumV * sumV)
-                    / 12.0;
         }
     }
 
     private static SpatialMoments spatialMoments(float[] probabilityMasses) {
-        double[] moments = new double[5];
+        double[] moments = new double[2];
         for (int index = 0; index < CELL_COUNT; index++) {
             cell(index).addSpatialMoments(probabilityMasses[index], moments);
         }
         return new SpatialMoments(
                 (float) moments[0],
-                (float) moments[1],
-                (float) moments[2],
-                (float) moments[3],
-                (float) moments[4]);
+                (float) moments[1]);
     }
 
-    record SpatialMoments(
-            float meanU,
-            float meanV,
-            float meanSquareU,
-            float meanProductUv,
-            float meanSquareV) {
-        float positionVariance(
-                float edgeOneX,
-                float edgeOneY,
-                float edgeOneZ,
-                float edgeTwoX,
-                float edgeTwoY,
-                float edgeTwoZ) {
-            double varianceU = Math.max(
-                    (double) this.meanSquareU - this.meanU * this.meanU, 0.0);
-            double covariance = (double) this.meanProductUv - this.meanU * this.meanV;
-            double varianceV = Math.max(
-                    (double) this.meanSquareV - this.meanV * this.meanV, 0.0);
-            double edgeOneSquared = (double) edgeOneX * edgeOneX
-                    + (double) edgeOneY * edgeOneY
-                    + (double) edgeOneZ * edgeOneZ;
-            double edgeProduct = (double) edgeOneX * edgeTwoX
-                    + (double) edgeOneY * edgeTwoY
-                    + (double) edgeOneZ * edgeTwoZ;
-            double edgeTwoSquared = (double) edgeTwoX * edgeTwoX
-                    + (double) edgeTwoY * edgeTwoY
-                    + (double) edgeTwoZ * edgeTwoZ;
-            return (float) Math.max(
-                    edgeOneSquared * varianceU
-                            + 2.0 * edgeProduct * covariance
-                            + edgeTwoSquared * varianceV,
-                    0.0);
-        }
-    }
+    record SpatialMoments(float meanU, float meanV) {}
 }

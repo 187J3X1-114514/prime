@@ -12,11 +12,6 @@ import java.util.List;
  */
 public final class CpuLightTree {
     public static final int NO_INDEX = -1;
-    // A uniformly populated AABB has spatial variance diagonal^2 / 12. These retain the
-    // previous diagonal^2 / 128 and / 64 calibration while responding to actual power spread.
-    static final float LOCAL_SOFTENING_SCALE = 3.0F / 32.0F;
-    static final float WORLD_SOFTENING_SCALE = 3.0F / 16.0F;
-    static final float MINIMUM_SOFTENING_DISTANCE_SQUARED = 0.25F;
     static final int LEAF_FLAG = Integer.MIN_VALUE;
     static final int INDEX_MASK = Integer.MAX_VALUE;
     static final int MAX_LIGHTS_PER_LEAF = 8;
@@ -31,7 +26,7 @@ public final class CpuLightTree {
     private CpuLightTree() {
     }
 
-    static Result build(List<Leaf> source, int indexCapacity, float softeningScale) {
+    static Result build(List<Leaf> source, int indexCapacity) {
         Leaves leaves = new Leaves(source.size());
         for (Leaf leaf : source) {
             leaves.add(
@@ -43,11 +38,10 @@ public final class CpuLightTree {
                     leaf.index,
                     leaf.direction);
         }
-        return buildOwned(leaves, indexCapacity, softeningScale);
+        return buildOwned(leaves, indexCapacity);
     }
 
-    static Result buildOwned(
-            Leaves leaves, int indexCapacity, float softeningScale) {
+    static Result buildOwned(Leaves leaves, int indexCapacity) {
         if (leaves.size == 0) {
             throw new IllegalArgumentException("A light tree requires at least one leaf");
         }
@@ -61,8 +55,7 @@ public final class CpuLightTree {
         Arrays.fill(leafNodes, NO_INDEX);
         Arrays.fill(leafPaths, NO_INDEX);
         Workspace workspace = new Workspace();
-        int rootNode = createNode(
-                leaves, 0, leaves.size, softeningScale, nodes);
+        int rootNode = createNode(leaves, 0, leaves.size, nodes);
         populateNode(
                 leaves,
                 0,
@@ -70,7 +63,6 @@ public final class CpuLightTree {
                 rootNode,
                 0,
                 0,
-                softeningScale,
                 nodes,
                 clusters,
                 leafNodes,
@@ -93,7 +85,6 @@ public final class CpuLightTree {
             int nodeIndex,
             int trail,
             int depth,
-            float softeningScale,
             Nodes nodes,
             LeafClusters clusters,
             int[] leafNodes,
@@ -141,10 +132,8 @@ public final class CpuLightTree {
             // its chosen split would make the existing 27-bit trail impossible to complete.
             middle = partitionByMedian(leaves, start, end, workspace.longestCentroidAxis());
         }
-        int left = createNode(
-                leaves, start, middle, softeningScale, nodes);
-        int right = createNode(
-                leaves, middle, end, softeningScale, nodes);
+        int left = createNode(leaves, start, middle, nodes);
+        int right = createNode(leaves, middle, end, nodes);
         nodes.firstChildOrLeaf[nodeIndex] = left;
         nodes.secondChild[nodeIndex] = right;
         populateNode(
@@ -154,7 +143,6 @@ public final class CpuLightTree {
                 left,
                 trail,
                 depth + 1,
-                softeningScale,
                 nodes,
                 clusters,
                 leafNodes,
@@ -167,7 +155,6 @@ public final class CpuLightTree {
                 right,
                 trail | (1 << depth),
                 depth + 1,
-                softeningScale,
                 nodes,
                 clusters,
                 leafNodes,
@@ -180,9 +167,8 @@ public final class CpuLightTree {
             Leaves leaves,
             int start,
             int end,
-            float softeningScale,
             Nodes nodes) {
-        return nodes.add(leaves, start, end, softeningScale);
+        return nodes.add(leaves, start, end);
     }
 
     private static Split chooseSplit(
@@ -381,19 +367,6 @@ public final class CpuLightTree {
         return 2.0F * (x * y + y * z + z * x);
     }
 
-    private static float uniformBoundsVariance(
-            float minX,
-            float minY,
-            float minZ,
-            float maxX,
-            float maxY,
-            float maxZ) {
-        float x = maxX - minX;
-        float y = maxY - minY;
-        float z = maxZ - minZ;
-        return (x * x + y * y + z * z) / 12.0F;
-    }
-
     private static int packHalfBounds(
             float first, boolean firstMinimum, float second, boolean secondMinimum) {
         int low = outwardHalf(first, firstMinimum) & 0xffff;
@@ -567,8 +540,7 @@ public final class CpuLightTree {
             target[cursor++] = maxYZ;
             target[cursor++] = LightDirection.pack(this.nodes.direction[node]);
             target[cursor++] = Float.floatToRawIntBits(this.nodes.power[node]);
-            target[cursor++] = Float.floatToRawIntBits(
-                    this.nodes.softeningDistanceSquared[node]);
+            target[cursor++] = 0;
             int childOrLeaf = this.nodes.firstChildOrLeaf[node];
             int secondChild = this.nodes.secondChild[node];
             if (childOrLeaf < 0) {
@@ -702,7 +674,6 @@ public final class CpuLightTree {
         private final float[] centerX;
         private final float[] centerY;
         private final float[] centerZ;
-        private final float[] spatialVariance;
         private final float[] power;
         private final int[] index;
         private final LightDirection.Bounds[] direction;
@@ -721,7 +692,6 @@ public final class CpuLightTree {
             this.centerX = new float[capacity];
             this.centerY = new float[capacity];
             this.centerZ = new float[capacity];
-            this.spatialVariance = new float[capacity];
             this.power = new float[capacity];
             this.index = new int[capacity];
             this.direction = new LightDirection.Bounds[capacity];
@@ -782,7 +752,6 @@ public final class CpuLightTree {
                     (minX + maxX) * 0.5F,
                     (minY + maxY) * 0.5F,
                     (minZ + maxZ) * 0.5F,
-                    uniformBoundsVariance(minX, minY, minZ, maxX, maxY, maxZ),
                     0.0F,
                     index,
                     LightDirection.full());
@@ -849,51 +818,6 @@ public final class CpuLightTree {
                     centerX,
                     centerY,
                     centerZ,
-                    uniformBoundsVariance(minX, minY, minZ, maxX, maxY, maxZ),
-                    power,
-                    index,
-                    direction);
-        }
-
-        void addWithSpatialVariance(
-                float minX,
-                float minY,
-                float minZ,
-                float maxX,
-                float maxY,
-                float maxZ,
-                float centerX,
-                float centerY,
-                float centerZ,
-                float spatialVariance,
-                float power,
-                int index,
-                LightDirection.Bounds direction) {
-            validateLeaf(
-                    minX,
-                    minY,
-                    minZ,
-                    maxX,
-                    maxY,
-                    maxZ,
-                    centerX,
-                    centerY,
-                    centerZ,
-                    power);
-            if (!(spatialVariance >= 0.0F) || !Float.isFinite(spatialVariance)) {
-                throw new IllegalArgumentException("Light spatial variance must be finite and nonnegative");
-            }
-            append(
-                    minX,
-                    minY,
-                    minZ,
-                    maxX,
-                    maxY,
-                    maxZ,
-                    centerX,
-                    centerY,
-                    centerZ,
-                    spatialVariance,
                     power,
                     index,
                     direction);
@@ -909,7 +833,6 @@ public final class CpuLightTree {
                 float centerX,
                 float centerY,
                 float centerZ,
-                float spatialVariance,
                 float power,
                 int index,
                 LightDirection.Bounds direction) {
@@ -926,7 +849,6 @@ public final class CpuLightTree {
             this.centerX[slot] = centerX;
             this.centerY[slot] = centerY;
             this.centerZ[slot] = centerZ;
-            this.spatialVariance[slot] = spatialVariance;
             this.power[slot] = power;
             this.index[slot] = index;
             this.direction[slot] = direction;
@@ -959,7 +881,6 @@ public final class CpuLightTree {
             swap(this.centerX, first, second);
             swap(this.centerY, first, second);
             swap(this.centerZ, first, second);
-            swap(this.spatialVariance, first, second);
             swap(this.power, first, second);
             LightDirection.Bounds direction = this.direction[first];
             this.direction[first] = this.direction[second];
@@ -1046,9 +967,7 @@ public final class CpuLightTree {
         private final float[] centerX;
         private final float[] centerY;
         private final float[] centerZ;
-        private final float[] spatialVariance;
         private final float[] power;
-        private final float[] softeningDistanceSquared;
         private final int[] firstChildOrLeaf;
         private final int[] secondChild;
         private final LightDirection.Bounds[] direction;
@@ -1064,9 +983,7 @@ public final class CpuLightTree {
             this.centerX = new float[capacity];
             this.centerY = new float[capacity];
             this.centerZ = new float[capacity];
-            this.spatialVariance = new float[capacity];
             this.power = new float[capacity];
-            this.softeningDistanceSquared = new float[capacity];
             this.firstChildOrLeaf = new int[capacity];
             this.secondChild = new int[capacity];
             this.direction = new LightDirection.Bounds[capacity];
@@ -1078,8 +995,7 @@ public final class CpuLightTree {
         private int add(
                 Leaves leaves,
                 int start,
-                int end,
-                float softeningScale) {
+                int end) {
             int index = this.size++;
             float minX = Float.POSITIVE_INFINITY;
             float minY = Float.POSITIVE_INFINITY;
@@ -1092,7 +1008,6 @@ public final class CpuLightTree {
             double meanX = 0.0;
             double meanY = 0.0;
             double meanZ = 0.0;
-            double varianceMoment = 0.0;
             for (int leaf = start; leaf < end; leaf++) {
                 float leafPower = leaves.power[leaf];
                 if (leafPower > 0.0F) {
@@ -1107,9 +1022,6 @@ public final class CpuLightTree {
                     double deltaX = leaves.centerX[leaf] - meanX;
                     double deltaY = leaves.centerY[leaf] - meanY;
                     double deltaZ = leaves.centerZ[leaf] - meanZ;
-                    varianceMoment += (double) leafPower * leaves.spatialVariance[leaf]
-                            + momentPower * leafPower / nextPower
-                                    * (deltaX * deltaX + deltaY * deltaY + deltaZ * deltaZ);
                     double centerWeight = leafPower / nextPower;
                     meanX += centerWeight * deltaX;
                     meanY += centerWeight * deltaY;
@@ -1120,7 +1032,6 @@ public final class CpuLightTree {
             float centerX;
             float centerY;
             float centerZ;
-            float spatialVariance;
             if (power == 0.0F) {
                 minX = leaves.minX[start];
                 minY = leaves.minY[start];
@@ -1131,14 +1042,12 @@ public final class CpuLightTree {
                 centerX = leaves.centerX[start];
                 centerY = leaves.centerY[start];
                 centerZ = leaves.centerZ[start];
-                spatialVariance = leaves.spatialVariance[start];
             } else if (!Float.isFinite(power)) {
                 throw new IllegalArgumentException("Aggregate light power exceeds f32 range");
             } else {
                 centerX = (float) meanX;
                 centerY = (float) meanY;
                 centerZ = (float) meanZ;
-                spatialVariance = (float) Math.max(varianceMoment / momentPower, 0.0);
             }
             setBounds(
                     index,
@@ -1151,71 +1060,8 @@ public final class CpuLightTree {
                     centerX,
                     centerY,
                     centerZ,
-                    spatialVariance,
-                    power,
-                    softeningScale);
+                    power);
             return index;
-        }
-
-        private void refit(int index, float softeningScale) {
-            int first = this.firstChildOrLeaf[index];
-            int second = this.secondChild[index];
-            float firstPower = this.power[first];
-            float secondPower = this.power[second];
-            float combinedPower = firstPower + secondPower;
-            if (!Float.isFinite(combinedPower)) {
-                throw new IllegalArgumentException("Aggregate light power exceeds f32 range");
-            }
-            if (firstPower > 0.0F && secondPower > 0.0F) {
-                double momentPower = (double) firstPower + secondPower;
-                float centerX = (float) (((double) firstPower * this.centerX[first]
-                                + (double) secondPower * this.centerX[second])
-                        / momentPower);
-                float centerY = (float) (((double) firstPower * this.centerY[first]
-                                + (double) secondPower * this.centerY[second])
-                        / momentPower);
-                float centerZ = (float) (((double) firstPower * this.centerZ[first]
-                                + (double) secondPower * this.centerZ[second])
-                        / momentPower);
-                float spatialVariance = (float) (((double) firstPower
-                                        * (this.spatialVariance[first]
-                                                + squaredDistance(first, centerX, centerY, centerZ))
-                                + (double) secondPower
-                                        * (this.spatialVariance[second]
-                                                + squaredDistance(second, centerX, centerY, centerZ)))
-                        / momentPower);
-                setBounds(
-                        index,
-                        Math.min(this.minX[first], this.minX[second]),
-                        Math.min(this.minY[first], this.minY[second]),
-                        Math.min(this.minZ[first], this.minZ[second]),
-                        Math.max(this.maxX[first], this.maxX[second]),
-                        Math.max(this.maxY[first], this.maxY[second]),
-                        Math.max(this.maxZ[first], this.maxZ[second]),
-                        centerX,
-                        centerY,
-                        centerZ,
-                        spatialVariance,
-                        combinedPower,
-                        softeningScale);
-            } else {
-                int source = firstPower > 0.0F ? first : second;
-                setBounds(
-                        index,
-                        this.minX[source],
-                        this.minY[source],
-                        this.minZ[source],
-                        this.maxX[source],
-                        this.maxY[source],
-                        this.maxZ[source],
-                        this.centerX[source],
-                        this.centerY[source],
-                        this.centerZ[source],
-                        this.spatialVariance[source],
-                        combinedPower,
-                        softeningScale);
-            }
-            refitDirection(index);
         }
 
         private void refitDirection(int index) {
@@ -1239,13 +1085,7 @@ public final class CpuLightTree {
                 float centerX,
                 float centerY,
                 float centerZ,
-                float spatialVariance,
-                float power,
-                float softeningScale) {
-            if (!(spatialVariance >= 0.0F) || !Float.isFinite(spatialVariance)) {
-                throw new IllegalArgumentException(
-                        "Aggregate light spatial variance exceeds f32 range");
-            }
+                float power) {
             this.minX[index] = minX;
             this.minY[index] = minY;
             this.minZ[index] = minZ;
@@ -1255,18 +1095,7 @@ public final class CpuLightTree {
             this.centerX[index] = centerX;
             this.centerY[index] = centerY;
             this.centerZ[index] = centerZ;
-            this.spatialVariance[index] = spatialVariance;
             this.power[index] = power;
-            this.softeningDistanceSquared[index] = Math.max(
-                    spatialVariance * softeningScale,
-                    MINIMUM_SOFTENING_DISTANCE_SQUARED);
-        }
-
-        private double squaredDistance(int index, float x, float y, float z) {
-            double deltaX = (double) this.centerX[index] - x;
-            double deltaY = (double) this.centerY[index] - y;
-            double deltaZ = (double) this.centerZ[index] - z;
-            return deltaX * deltaX + deltaY * deltaY + deltaZ * deltaZ;
         }
 
         private Bounds bounds(int index) {

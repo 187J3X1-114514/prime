@@ -165,8 +165,7 @@ final class LightDirectionTest {
                                 1.0F,
                                 1,
                                 LightDirection.fromNormal(0.0F, 1.0F, 0.0F, false))),
-                2,
-                CpuLightTree.LOCAL_SOFTENING_SCALE);
+                2);
 
         int[] nodes = tree.packNodes();
         assertEquals(tree.nodeCount() * 8, nodes.length);
@@ -192,8 +191,7 @@ final class LightDirectionTest {
                         directionalLeaf(0.0F, 4.0F, 1, negative),
                         directionalLeaf(4.0F, 0.0F, 2, positive),
                         directionalLeaf(4.0F, 4.0F, 3, negative)),
-                4,
-                CpuLightTree.LOCAL_SOFTENING_SCALE);
+                4);
 
         int[] nodes = tree.packNodes();
         int firstChild = nodes[6];
@@ -218,8 +216,7 @@ final class LightDirectionTest {
                         directionalLeaf(0.0F, 1.0F, 1, negative),
                         directionalLeaf(100.0F, 0.0F, 2, positive),
                         directionalLeaf(100.0F, 1.0F, 3, negative)),
-                4,
-                CpuLightTree.LOCAL_SOFTENING_SCALE);
+                4);
 
         int[] nodes = tree.packNodes();
         int firstChild = nodes[6];

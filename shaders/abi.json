@@ -38,7 +38,7 @@
       "size": 32,
       "fields": [
         { "name": "packedBoundsDirection", "type": "uvec4", "offset": 0 },
-        { "name": "powerSoftening", "type": "vec2", "offset": 16 },
+        { "name": "powerReserved", "type": "vec2", "offset": 16 },
         { "name": "childReserved", "type": "uvec2", "offset": 24 }
       ]
     },
@@ -306,8 +306,6 @@
     "seamlessGlassMask": "0x02000000",
     "airGapMask": "0x04000000",
     "vanillaPbrPresetsMask": "0x08000000",
-    "lightSamplingDiagnosticShift": 28,
-    "lightSamplingDiagnosticMask": "0x3",
     "primaryLightDiagnosticViewShift": 30,
     "primaryLightDiagnosticViewMask": "0x3",
     "sampleEpochMask": "0x7fffffff",

@@ -84,7 +84,6 @@ public record OfflineFrameInput(
                         false,
                         false,
                         false,
-                        LightSamplingDiagnostic.BASELINE,
                         PrimaryLightDiagnosticView.OFF));
     }
 

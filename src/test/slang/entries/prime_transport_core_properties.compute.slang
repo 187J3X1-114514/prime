@@ -553,14 +553,12 @@ void primeCheckLightBranch(
     float2 firstMetrics = primeLightNodeMetrics(
             0.5 * (firstBoundsMinPower.xyz + firstBoundsMaxSoftening.xyz),
             firstBoundsMinPower.w,
-            firstBoundsMaxSoftening.w,
             point,
             receiverNormal,
             0xc0000000);
     float2 secondMetrics = primeLightNodeMetrics(
             0.5 * (secondBoundsMinPower.xyz + secondBoundsMaxSoftening.xyz),
             secondBoundsMinPower.w,
-            secondBoundsMaxSoftening.w,
             point,
             receiverNormal,
             0xc0000000);
@@ -599,34 +597,6 @@ void primeCheckLightReceiverNormal(
     result.third = float4(asfloat(packed), 0.0, 0.0, 0.0);
 }
 
-void primeCheckLightLeafScore(
-        inout PrimeTransportResult result,
-        float2 metrics,
-        float maximumPower,
-        float minimumPositiveDistance,
-        bool hasZeroDistance)
-{
-    float score = primeLightLeafScore(
-            metrics, maximumPower, minimumPositiveDistance, hasZeroDistance);
-    float scaled = primeLightLeafScore(
-            metrics * float2(2.0, 4.0),
-            maximumPower * 4.0,
-            minimumPositiveDistance * 2.0,
-            hasZeroDistance);
-    float expected = hasZeroDistance
-            ? (metrics.x == 0.0 ? metrics.y / maximumPower : 0.0)
-            : metrics.y / maximumPower * minimumPositiveDistance / metrics.x;
-    primeTransportClassify(result.mask, float3(score, scaled, expected));
-    if (score < 0.0
-            || score > 1.0 + 2.0e-6
-            || !primeTestClose(score, expected, 2.0e-7, 2.0e-6)
-            || !primeTestClose(score, scaled, 2.0e-7, 2.0e-6)) {
-        result.mask |= PRIME_TEST_FAILURE_IDENTITY;
-    }
-    result.first = float4(metrics, maximumPower, minimumPositiveDistance);
-    result.second = float4(score, scaled, expected, hasZeroDistance ? 1.0 : 0.0);
-}
-
 void primeCheckLightEmissionBound(
         inout PrimeTransportResult result,
         uint packedDirection,
@@ -660,30 +630,27 @@ void primeCheckLightEmissionBound(
 void primeCheckPointLightNodeMetric(
         inout PrimeTransportResult result,
         float4 lightPositionPower,
-        float4 pointSoftening,
+        float4 pointData,
         float3 receiverNormal)
 {
     float2 metrics = primeLightNodeMetrics(
             lightPositionPower.xyz,
             lightPositionPower.w,
-            pointSoftening.w,
-            pointSoftening.xyz,
+            pointData.xyz,
             receiverNormal,
             0xc0000000);
-    float3 delta = lightPositionPower.xyz - pointSoftening.xyz;
+    float3 delta = lightPositionPower.xyz - pointData.xyz;
     float distanceSquared = dot(delta, delta);
     float3 direction = delta * rsqrt(distanceSquared);
     float receiverCosine = dot(receiverNormal, receiverNormal) > 0.0
             ? max(dot(receiverNormal, direction), 0.0)
             : 1.0;
-    float resolvedDirection = distanceSquared / (distanceSquared + pointSoftening.w);
-    float angularImportance = lerp(1.0, receiverCosine, resolvedDirection);
     float expectedImportance = PRIME_LIGHT_RECEIVER_COSINE_FLOOR
-            + (1.0 - PRIME_LIGHT_RECEIVER_COSINE_FLOOR) * angularImportance;
+            + (1.0 - PRIME_LIGHT_RECEIVER_COSINE_FLOOR) * receiverCosine;
     primeTransportClassify(result.mask, float3(metrics, 0.0));
     if (!primeTestClose(
                     metrics.x,
-                    distanceSquared + pointSoftening.w,
+                    distanceSquared,
                     2.0e-6,
                     2.0e-6)
             || !primeTestClose(
@@ -836,8 +803,7 @@ void main(uint3 dispatchThreadId : SV_DispatchThreadID)
         primeCheckGlobalTriangleIndex(
                 result, control, asuint(first), asuint(second.xy));
     } else if (kind == 17) {
-        primeCheckLightLeafScore(
-                result, first.xy, first.z, first.w, control.y != 0u);
+        primeCheckPointLightNodeMetric(result, first, second, third.xyz);
     } else if (kind == 18) {
         primeCheckRisPdf(
                 result, first, second, third.x, third.y);

@@ -316,7 +316,6 @@ final class RealtimeRenderer implements Destroyable {
                 settings.material(),
                 processor.rawFrame().usesShInputs(),
                 input.controls().triangleDebug(),
-                input.controls().lightSamplingDiagnostic(),
                 input.controls().primaryLightDiagnosticView(),
                 settings.display(),
                 reconfigured);

@@ -173,8 +173,7 @@ final class CompiledClusterLightsTest {
         relative[11] = 1;
         relative[15] = LightDirection.FULL;
         relative[16] = Float.floatToRawIntBits(1.0F);
-        relative[17] = Float.floatToRawIntBits(
-                CpuLightTree.MINIMUM_SOFTENING_DISTANCE_SQUARED);
+        relative[17] = 0;
         relative[18] = CpuLightTree.LEAF_FLAG;
         relative[20] = 0;
         relative[21] = 1;

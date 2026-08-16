@@ -31,27 +31,6 @@ public bool primeUsesVanillaPbrPresets()
     return (primePush.path.x & PRIME_PATH_VANILLA_PBR_PRESETS_MASK) != 0u;
 }
 
-public uint primeLightSamplingDiagnostic()
-{
-    return (primePush.path.x >> PRIME_PATH_LIGHT_SAMPLING_DIAGNOSTIC_SHIFT)
-            & PRIME_PATH_LIGHT_SAMPLING_DIAGNOSTIC_MASK;
-}
-
-public bool primeLightTreeUsesSoftening()
-{
-    return primeLightSamplingDiagnostic() != 1u;
-}
-
-public bool primeLightTreeUsesReceiverLeaves()
-{
-    return primeLightSamplingDiagnostic() == 2u;
-}
-
-public bool primeUsesFourCandidateAreaRis()
-{
-    return primeLightSamplingDiagnostic() == 3u;
-}
-
 public uint primePrimaryLightDiagnosticView()
 {
     return (primePush.path.x >> PRIME_PATH_PRIMARY_LIGHT_DIAGNOSTIC_VIEW_SHIFT)

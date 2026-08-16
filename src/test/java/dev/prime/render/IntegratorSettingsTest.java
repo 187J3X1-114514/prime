@@ -112,7 +112,7 @@ final class IntegratorSettingsTest {
     }
 
     @Test
-    void sampleControlKeepsLocalLightDiagnosticsInIndependentFields() {
+    void sampleControlKeepsPrimaryLightDiagnosticIndependent() {
         AstronomySettings astronomy = AstronomySettings.defaults();
         int packed = IntegratorSettings.packSampleControl(
                 17,
@@ -120,13 +120,7 @@ final class IntegratorSettingsTest {
                 false,
                 false,
                 true,
-                LightSamplingDiagnostic.FOUR_CANDIDATE_RIS,
                 PrimaryLightDiagnosticView.SQUARED_SAMPLE);
-
-        assertEquals(
-                LightSamplingDiagnostic.FOUR_CANDIDATE_RIS.abiValue(),
-                packed >>> ShaderAbi.PATH_LIGHT_SAMPLING_DIAGNOSTIC_SHIFT
-                        & ShaderAbi.PATH_LIGHT_SAMPLING_DIAGNOSTIC_MASK);
         assertEquals(
                 PrimaryLightDiagnosticView.SQUARED_SAMPLE.abiValue(),
                 packed >>> ShaderAbi.PATH_PRIMARY_LIGHT_DIAGNOSTIC_VIEW_SHIFT

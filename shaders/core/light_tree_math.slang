@@ -233,15 +233,13 @@ public float primeLightReceiverCosineEstimate(
 public float2 primeLightNodeMetrics(
         float3 centroid,
         float power,
-        float softening,
         float3 point,
         float3 receiverNormal,
         uint packedEmissionDirection) {
-    // Closest-AABB distance creates stable variance contours and loses all position detail inside
-    // a node. The power-moment kernel stays continuous while deeper nodes recover local detail.
+    // A sharp centroid proposal preserves important-light selection. Primary realtime NEE uses
+    // four-candidate RIS to recover emitter-level detail without imposing a spatial kernel.
     float3 delta = centroid - point;
     float distanceSquared = dot(delta, delta);
-    float regularizer = max(softening, 0.0);
     float angularImportance = 1.0;
     if (distanceSquared > 0.0) {
         float3 directionToLight = delta * rsqrt(distanceSquared);
@@ -249,16 +247,12 @@ public float2 primeLightNodeMetrics(
                 directionToLight, receiverNormal);
         float emitterEstimate = primeLightEmitterCosineEstimate(
                 -directionToLight, packedEmissionDirection);
-        float resolvedDirection = distanceSquared / (distanceSquared + regularizer);
-        angularImportance = lerp(
-                1.0,
-                clamp(receiverEstimate * emitterEstimate, 0.0, 1.0),
-                resolvedDirection);
+        angularImportance = clamp(receiverEstimate * emitterEstimate, 0.0, 1.0);
     }
     float weightedPower = max(power, 0.0)
             * (PRIME_LIGHT_RECEIVER_COSINE_FLOOR
                     + (1.0 - PRIME_LIGHT_RECEIVER_COSINE_FLOOR) * angularImportance);
-    return float2(distanceSquared + regularizer, weightedPower);
+    return float2(distanceSquared, weightedPower);
 }
 
 public float primeLightBranchProbability(float2 firstMetrics, float2 secondMetrics) {
@@ -282,23 +276,4 @@ public float primeLightBranchProbability(float2 firstMetrics, float2 secondMetri
     float secondScore = secondPowerRatio * (firstDistanceSquared / distanceScale);
     float sum = firstScore + secondScore;
     return sum > 0.0 ? firstScore / sum : -1.0;
-}
-
-// The caller derives these scales across one leaf. Ratios stay in [0, 1], avoiding the
-// power / distance overflow that a direct score would introduce near emissive geometry.
-public float primeLightLeafScore(
-        float2 metrics,
-        float maximumPower,
-        float minimumPositiveDistance,
-        bool hasZeroDistance) {
-    if (!(maximumPower > 0.0) || !(metrics.y > 0.0)) {
-        return 0.0;
-    }
-    float powerRatio = metrics.y / maximumPower;
-    if (hasZeroDistance) {
-        return metrics.x == 0.0 ? powerRatio : 0.0;
-    }
-    return metrics.x > 0.0 && minimumPositiveDistance > 0.0
-            ? powerRatio * (minimumPositiveDistance / metrics.x)
-            : 0.0;
 }

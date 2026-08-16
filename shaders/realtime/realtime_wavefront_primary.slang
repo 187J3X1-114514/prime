@@ -188,9 +188,7 @@ PrimeWavefrontContinuations primeInitializeTransparentWavefront(
                     branchDiscreteOnly,
                     surfaceLinearRoughness);
         }
-        if (continuation
-                && !discreteOnlyInterface
-                && primeUsesFourCandidateAreaRis()) {
+        if (continuation && !discreteOnlyInterface) {
             branchPath.flags |= PRIME_PATH_PREVIOUS_AREA_RIS;
         }
         if (continuation) {

@@ -119,9 +119,10 @@ IOR 1.333 和既有吸收参数。
 LabPBR 字段现分别承载 float32 roughness、canonical `opticalControl` 与
 `adjacentInterfaceControl`，offset 不变。
 
-动态几何不能作为 light-tree emitter，因此命中时复用 emitter/texture-LOD 两个槽保存
-全局 triangle id 与 UNORM16 重心坐标；上一帧位置和几何法线从既有 f32 顶点缓冲重建。静态命中
-仍保留原 emitter 与 texture LOD 语义，`TracePayload` 和 `SurfaceInteraction` 尺寸不变。动态
+动态几何不能作为 light-tree emitter，因此命中时复用 emitter/texture-LOD 两个槽逐位保存
+两项硬件 f32 重心坐标，并在 `motionZFlags` 的 31-bit identity lane 保存全局 triangle id；
+上一帧位置和几何法线从既有 f32 顶点缓冲重建。静态命中仍保留原 emitter 与 texture LOD
+语义，`TracePayload` 和 `SurfaceInteraction` 尺寸不变。动态
 cluster 中的 instanced voxel BLAS 没有对应的上一帧三角形流，因此不发布 base BLAS 的运动地址，
 而是明确回退为零物体运动，避免用不相关的局部 triangle id 越界读取。
 

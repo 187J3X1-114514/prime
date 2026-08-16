@@ -441,7 +441,7 @@ public final class CpuSectionLights {
             float centerX = cornerX + edgeOneX * moments.meanU() + edgeTwoX * moments.meanV();
             float centerY = cornerY + edgeOneY * moments.meanU() + edgeTwoY * moments.meanV();
             float centerZ = cornerZ + edgeOneZ * moments.meanU() + edgeTwoZ * moments.meanV();
-            leaves.addWithSpatialVariance(
+            leaves.add(
                     minX,
                     minY,
                     minZ,
@@ -451,13 +451,6 @@ public final class CpuSectionLights {
                     centerX,
                     centerY,
                     centerZ,
-                    moments.positionVariance(
-                            edgeOneX,
-                            edgeOneY,
-                            edgeOneZ,
-                            edgeTwoX,
-                            edgeTwoY,
-                            edgeTwoZ),
                     emitters.values[base + POWER],
                     index,
                     LightDirection.fromNormal(
@@ -468,8 +461,7 @@ public final class CpuSectionLights {
                                             & EMITTER_FLAG_TWO_SIDED)
                                     != 0));
         }
-        CpuLightTree.Result tree = CpuLightTree.buildOwned(
-                leaves, emitters.size, CpuLightTree.LOCAL_SOFTENING_SCALE);
+        CpuLightTree.Result tree = CpuLightTree.buildOwned(leaves, emitters.size);
         return new CpuSectionLights(emitters, distributions, tree);
     }
 

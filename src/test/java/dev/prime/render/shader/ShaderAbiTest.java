@@ -194,7 +194,7 @@ final class ShaderAbiTest {
         assertEquals(80, ShaderAbi.SECTION_SURFACE_RELATION_ADDRESS_OFFSET);
         assertEquals(88, ShaderAbi.SECTION_POSITION_ADDRESS_OFFSET);
         assertEquals(0, ShaderAbi.LIGHT_NODE_PACKED_BOUNDS_DIRECTION_OFFSET);
-        assertEquals(16, ShaderAbi.LIGHT_NODE_POWER_SOFTENING_OFFSET);
+        assertEquals(16, ShaderAbi.LIGHT_NODE_POWER_RESERVED_OFFSET);
         assertEquals(24, ShaderAbi.LIGHT_NODE_CHILD_RESERVED_OFFSET);
         assertEquals(0, ShaderAbi.LIGHT_LEAF_FIRST_ENTRY_OFFSET);
         assertEquals(4, ShaderAbi.LIGHT_LEAF_ENTRY_COUNT_OFFSET);

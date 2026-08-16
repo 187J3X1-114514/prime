@@ -5,7 +5,6 @@ import dev.prime.config.PrimeConfig;
 import dev.prime.render.AstronomySettings;
 import dev.prime.render.DisplaySettings;
 import dev.prime.render.LightingSettings;
-import dev.prime.render.LightSamplingDiagnostic;
 import dev.prime.render.MaterialSettings;
 import dev.prime.render.PrimaryLightDiagnosticView;
 import dev.prime.client.PrimeRuntime;
@@ -33,8 +32,6 @@ public final class PrimeVideoOptions {
     private static final List<FsrDebugView> FSR_DEBUG_VIEWS = List.of(FsrDebugView.values());
     private static final List<NrdDiagnostics.Mode> NRD_DEBUG_VIEWS =
             List.of(NrdDiagnostics.Mode.values());
-    private static final List<LightSamplingDiagnostic> LIGHT_SAMPLING_DIAGNOSTICS =
-            List.of(LightSamplingDiagnostic.values());
     private static final List<PrimaryLightDiagnosticView> PRIMARY_LIGHT_DIAGNOSTIC_VIEWS =
             List.of(PrimaryLightDiagnosticView.values());
 
@@ -139,23 +136,6 @@ public final class PrimeVideoOptions {
                         "prime.options.debug.renderer_diagnostics.tooltip")),
                 runtime.rendererDiagnostics(),
                 runtime::setRendererDiagnostics);
-    }
-
-    public static OptionInstance<LightSamplingDiagnostic> lightSamplingDiagnostic() {
-        PrimeRuntime runtime = PrimeRuntime.instance();
-        return new OptionInstance<>(
-                "prime.options.debug.light_sampling",
-                OptionInstance.cachedConstantTooltip(Component.translatable(
-                        "prime.options.debug.light_sampling.tooltip")),
-                (caption, mode) -> Component.translatable(
-                        "prime.options.debug.light_sampling." + mode.id()),
-                new OptionInstance.Enum<>(
-                        LIGHT_SAMPLING_DIAGNOSTICS,
-                        Codec.STRING.xmap(
-                                LightSamplingDiagnostic::fromId,
-                                LightSamplingDiagnostic::id)),
-                runtime.lightSamplingDiagnostic(),
-                runtime::setLightSamplingDiagnostic);
     }
 
     public static OptionInstance<PrimaryLightDiagnosticView> primaryLightDiagnosticView() {

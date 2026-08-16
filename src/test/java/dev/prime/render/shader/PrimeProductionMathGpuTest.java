@@ -556,7 +556,7 @@ final class PrimeProductionMathGpuTest {
                             0.0F);
                 } else if (kind == 12) {
                     putLightEmissionBoundCase(input, index, words, local, random);
-                } else if (kind == 13) {
+                } else if (kind == 13 || kind == 17) {
                     float[] point = {
                         random.nextFloat() * 128.0F - 64.0F,
                         random.nextFloat() * 128.0F - 64.0F,
@@ -690,26 +690,6 @@ final class PrimeProductionMathGpuTest {
                                     + (geometry == 1 ? 0 : cutoutPrimitiveCount);
                     putInt(input, index, words, 2, 0, transmissiveMacroBase);
                     putInt(input, index, words, 2, 1, expectedPrimitive);
-                } else if (kind == 17) {
-                    boolean hasZeroDistance = local % 3 != 0;
-                    float distance = hasZeroDistance && (local & 1) == 0
-                            ? 0.0F
-                            : positiveFloat(random, -20, 20);
-                    float power = positiveFloat(random, -20, 20);
-                    float maximumPower = power / (0.01F + 0.99F * random.nextFloat());
-                    float minimumDistance = hasZeroDistance
-                            ? positiveFloat(random, -20, 20)
-                            : distance * (0.01F + 0.99F * random.nextFloat());
-                    putInt(input, index, words, 0, 1, hasZeroDistance ? 1 : 0);
-                    putVec4(
-                            input,
-                            index,
-                            words,
-                            1,
-                            distance,
-                            power,
-                            maximumPower,
-                            minimumDistance);
                 } else if (kind == 18) {
                     putVec4(
                             input,

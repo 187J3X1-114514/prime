@@ -238,7 +238,7 @@ public final class CompiledClusterLights {
             float thirdY = cornerY + edgeTwoY;
             float thirdZ = cornerZ + edgeTwoZ;
             int flags = oldWords[base + 22];
-            leaves.addWithSpatialVariance(
+            leaves.add(
                     Math.min(cornerX, Math.min(secondX, thirdX)),
                     Math.min(cornerY, Math.min(secondY, thirdY)),
                     Math.min(cornerZ, Math.min(secondZ, thirdZ)),
@@ -248,13 +248,6 @@ public final class CompiledClusterLights {
                     cornerX + edgeOneX * moments.meanU() + edgeTwoX * moments.meanV(),
                     cornerY + edgeOneY * moments.meanU() + edgeTwoY * moments.meanV(),
                     cornerZ + edgeOneZ * moments.meanU() + edgeTwoZ * moments.meanV(),
-                    moments.positionVariance(
-                            edgeOneX,
-                            edgeOneY,
-                            edgeOneZ,
-                            edgeTwoX,
-                            edgeTwoY,
-                            edgeTwoZ),
                     Float.intBitsToFloat(oldWords[base + 11]),
                     emitter,
                     LightDirection.fromNormal(
@@ -263,8 +256,7 @@ public final class CompiledClusterLights {
                             Float.intBitsToFloat(oldWords[base + 14]),
                             (flags & CpuSectionLights.EMITTER_FLAG_TWO_SIDED) != 0));
         }
-        CpuLightTree.Result tree = CpuLightTree.buildOwned(
-                leaves, emitterCount, CpuLightTree.LOCAL_SOFTENING_SCALE);
+        CpuLightTree.Result tree = CpuLightTree.buildOwned(leaves, emitterCount);
         int headerWords = ShaderAbi.SECTION_LIGHT_HEADER_SIZE / Integer.BYTES;
         int nodeStart = headerWords;
         int leafStart = nodeStart

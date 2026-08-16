@@ -10,7 +10,6 @@ import dev.prime.render.AstronomyState;
 import dev.prime.render.IntegratorFrameInput;
 import dev.prime.render.IntegratorSettings;
 import dev.prime.render.LightingSettings;
-import dev.prime.render.LightSamplingDiagnostic;
 import dev.prime.render.MaterialSettings;
 import dev.prime.render.PrimaryLightDiagnosticView;
 import dev.prime.render.SunDirection;
@@ -54,7 +53,6 @@ final class RayTracingPushConstantsTest {
                         input.material().seamlessGlass(),
                         input.material().airGap(),
                         input.material().vanillaPbrPresets(),
-                        input.lightSamplingDiagnostic(),
                         input.primaryLightDiagnosticView()),
                 firstBuffer.getInt(ShaderAbi.PUSH_PATH_OFFSET));
         assertEquals(
@@ -94,7 +92,6 @@ final class RayTracingPushConstantsTest {
                         valid.shInput(),
                         valid.rawNumericalDiagnostic(),
                         valid.triangleDebug(),
-                        valid.lightSamplingDiagnostic(),
                         valid.primaryLightDiagnosticView()));
     }
 
@@ -137,7 +134,6 @@ final class RayTracingPushConstantsTest {
                 true,
                 true,
                 true,
-                LightSamplingDiagnostic.FOUR_CANDIDATE_RIS,
                 PrimaryLightDiagnosticView.SQUARED_SAMPLE);
         return new Fixture(input, scene);
     }

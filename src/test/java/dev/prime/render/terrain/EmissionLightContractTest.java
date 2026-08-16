@@ -94,21 +94,12 @@ final class EmissionLightContractTest {
     }
 
     @Test
-    void uniformTriangleDistributionHasExactPositionMoments() {
+    void uniformTriangleDistributionHasExactCentroid() {
         EmissionDistribution.SpatialMoments moments =
                 EmissionDistribution.uniform().spatialMoments();
 
         assertEquals(1.0F / 3.0F, moments.meanU(), 1.0E-6F);
         assertEquals(1.0F / 3.0F, moments.meanV(), 1.0E-6F);
-        assertEquals(1.0F / 6.0F, moments.meanSquareU(), 1.0E-6F);
-        assertEquals(1.0F / 12.0F, moments.meanProductUv(), 1.0E-6F);
-        assertEquals(1.0F / 6.0F, moments.meanSquareV(), 1.0E-6F);
-        assertEquals(
-                1.0F / 9.0F,
-                moments.positionVariance(
-                        1.0F, 0.0F, 0.0F,
-                        0.0F, 1.0F, 0.0F),
-                1.0E-6F);
     }
 
     @Test
@@ -193,8 +184,7 @@ final class EmissionLightContractTest {
                 leaf(0.0F, 1.0F, 0),
                 leaf(4.0F, 2.0F, 1),
                 leaf(8.0F, 3.0F, 2));
-        CpuLightTree.Result tree = CpuLightTree.build(
-                leaves, leaves.size(), CpuLightTree.LOCAL_SOFTENING_SCALE);
+        CpuLightTree.Result tree = CpuLightTree.build(leaves, leaves.size());
         assertEquals(6.0F, tree.power(), 1.0E-6F);
         int[] nodes = tree.packNodes();
         int[] leafDescriptors = tree.packLeaves();
@@ -244,8 +234,7 @@ final class EmissionLightContractTest {
             power *= 4.0F;
         }
 
-        CpuLightTree.Result tree = CpuLightTree.build(
-                leaves, leaves.size(), CpuLightTree.LOCAL_SOFTENING_SCALE);
+        CpuLightTree.Result tree = CpuLightTree.build(leaves, leaves.size());
         int[] nodes = tree.packNodes();
         int[] leafDescriptors = tree.packLeaves();
         int[] entries = tree.packEntries();
@@ -266,9 +255,9 @@ final class EmissionLightContractTest {
     }
 
     @Test
-    void treeMomentsTrackPowerWeightedCentroidAndSpatialVariance() {
+    void treePacksPowerWeightedCentroidAndZeroReservedWord() {
         CpuLightTree.Leaves leaves = new CpuLightTree.Leaves(2);
-        leaves.addWithSpatialVariance(
+        leaves.add(
                 0.0F,
                 0.0F,
                 0.0F,
@@ -278,11 +267,10 @@ final class EmissionLightContractTest {
                 0.0F,
                 0.0F,
                 0.0F,
-                1.0F,
                 1.0F,
                 0,
                 LightDirection.full());
-        leaves.addWithSpatialVariance(
+        leaves.add(
                 10.0F,
                 0.0F,
                 0.0F,
@@ -292,21 +280,18 @@ final class EmissionLightContractTest {
                 10.0F,
                 0.0F,
                 0.0F,
-                3.0F,
                 3.0F,
                 1,
                 LightDirection.full());
 
-        CpuLightTree.Result tree = CpuLightTree.buildOwned(
-                leaves, 2, CpuLightTree.LOCAL_SOFTENING_SCALE);
+        CpuLightTree.Result tree = CpuLightTree.buildOwned(leaves, 2);
         int[] nodes = tree.packNodes();
-        float rootSoftening = Float.intBitsToFloat(nodes[5]);
         float minimumX = Float.float16ToFloat((short) nodes[0]);
         float maximumX = Float.float16ToFloat((short) (nodes[1] >>> 16));
         float normalizedCenterX = (nodes[7] & 0x3ff) / 1023.0F;
         float centerX = minimumX + (maximumX - minimumX) * normalizedCenterX;
 
-        assertEquals(21.25F * CpuLightTree.LOCAL_SOFTENING_SCALE, rootSoftening, 1.0E-6F);
+        assertEquals(0, nodes[5]);
         assertEquals(7.5F, centerX, (maximumX - minimumX) / 1023.0F);
     }
 
@@ -350,8 +335,7 @@ final class EmissionLightContractTest {
 
         assertThrows(
                 IllegalArgumentException.class,
-                () -> CpuLightTree.build(
-                        leaves, leaves.size(), CpuLightTree.LOCAL_SOFTENING_SCALE));
+                () -> CpuLightTree.build(leaves, leaves.size()));
     }
 
     @Test

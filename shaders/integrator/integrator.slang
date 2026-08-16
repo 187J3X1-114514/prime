@@ -649,20 +649,12 @@ PrimeDirectLightingSplit primeEstimatePrimaryDirectAreaLight(
         PrimeOpenPbrVolumeStack volumeStack,
         bool conditionalTransparentBranch) {
     float3 shadingNormal = primeSurfaceShadingNormal(surface, viewDirection);
-    bool usesRis = primeUsesFourCandidateAreaRis();
-    AreaLightSample area = usesRis
-            ? primeSampleAreaLightRis4(
-                    context.diagnostics,
-                    surface.position,
-                    primeAreaLightReceiverNormal(surface, viewDirection),
-                    selectionSample,
-                    positionSample)
-            : primeSampleAreaLight(
-                    context.diagnostics,
-                    surface.position,
-                    primeAreaLightReceiverNormal(surface, viewDirection),
-                    selectionSample.xy,
-                    positionSample);
+    AreaLightSample area = primeSampleAreaLightRis4(
+            context.diagnostics,
+            surface.position,
+            primeAreaLightReceiverNormal(surface, viewDirection),
+            selectionSample,
+            positionSample);
     if (!primeDirectSampleEligible(surface, shadingNormal, area.light)) {
         PrimeDirectLightingSplit result;
         result.diffuse = float3(0.0);
@@ -694,7 +686,7 @@ PrimeDirectLightingSplit primeEstimatePrimaryDirectAreaLight(
             radiance,
             volumeStack,
             conditionalTransparentBranch,
-            !usesRis);
+            false);
 }
 
 float3 primeEstimateDirectAreaLight(
@@ -1663,7 +1655,7 @@ bool primeIntegrateTransparentWavefrontSurface<SunNee, AreaNee>(
             surfaceLinearRoughness)) {
         return false;
     }
-    if (primarySurfaceReplacement && primeUsesFourCandidateAreaRis()) {
+    if (primarySurfaceReplacement) {
         path.flags |= PRIME_PATH_PREVIOUS_AREA_RIS;
     }
     if (supportsSolidAngle && !primarySurfaceReplacement) {
@@ -1905,8 +1897,7 @@ bool primeIntegrateWavefrontSurface<SunNee, AreaNee, IndirectReuse>(
                     surfaceLinearRoughness)) {
         return false;
     }
-    if (primeUsesFourCandidateAreaRis()
-            && supportsSolidAngle
+    if (supportsSolidAngle
             && denoiserState.hasPrimarySurface
             && path.bounce == denoiserState.primaryBounce) {
         path.flags |= PRIME_PATH_PREVIOUS_AREA_RIS;

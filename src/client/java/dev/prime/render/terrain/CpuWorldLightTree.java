@@ -44,8 +44,7 @@ public final class CpuWorldLightTree {
                     LightDirection.unpack(lights.packedDirection()));
         }
 
-        CpuLightTree.Result tree = CpuLightTree.buildOwned(
-                leaves, input.clusterCount(), CpuLightTree.WORLD_SOFTENING_SCALE);
+        CpuLightTree.Result tree = CpuLightTree.buildOwned(leaves, input.clusterCount());
         Result result = Result.forTree(tree, input.clusterCount());
         for (int clusterIndex = 0; clusterIndex < input.clusterCount(); clusterIndex++) {
             result.setLightPath(clusterIndex, tree.leafPath(clusterIndex));

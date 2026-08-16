@@ -3,7 +3,6 @@ package dev.prime.client;
 import com.mojang.blaze3d.pipeline.RenderTarget;
 import com.mojang.blaze3d.platform.InputConstants;
 import dev.prime.render.RendererSettings;
-import dev.prime.render.LightSamplingDiagnostic;
 import dev.prime.render.PrimaryLightDiagnosticView;
 import dev.prime.render.runtime.RendererFrameSettings;
 import dev.prime.render.runtime.RendererLifecycle;
@@ -228,15 +227,6 @@ public final class PrimeRuntime {
 
     public void setRendererDiagnostics(boolean value) {
         this.session.setRendererDiagnostics(value);
-    }
-
-    public LightSamplingDiagnostic lightSamplingDiagnostic() {
-        return this.session.controls().lightSamplingDiagnostic();
-    }
-
-    public void setLightSamplingDiagnostic(LightSamplingDiagnostic value) {
-        this.session.setLightSamplingDiagnostic(value);
-        this.requestRealtimeReset();
     }
 
     public PrimaryLightDiagnosticView primaryLightDiagnosticView() {

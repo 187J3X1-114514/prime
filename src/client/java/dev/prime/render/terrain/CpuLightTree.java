@@ -103,8 +103,16 @@ public final class CpuLightTree {
         if (count <= 0) {
             throw new IllegalStateException("Empty light tree range");
         }
+        int remainingDepth = MAX_PATH_DEPTH - depth;
+        int capacity = MAX_LIGHTS_PER_LEAF << remainingDepth;
+        if (count > capacity) {
+            throw new IllegalStateException(
+                    "Light tree range of " + count + " exceeds packed path capacity " + capacity);
+        }
         Split split = chooseSplit(leaves, start, end, nodes, nodeIndex, workspace);
-        if (count == 1 || (count <= MAX_LIGHTS_PER_LEAF && !split.improvesCost())) {
+        if (count == 1
+                || (count <= MAX_LIGHTS_PER_LEAF
+                        && (remainingDepth == 0 || !split.improvesCost()))) {
             int leaf = clusters.add(leaves, start, end);
             nodes.firstChildOrLeaf[nodeIndex] = leaf;
             nodes.direction[nodeIndex] = aggregateDirection(leaves, start, end);
@@ -127,6 +135,12 @@ public final class CpuLightTree {
             throw new IllegalStateException("Light tree exceeds packed bit-trail depth");
         }
         int middle = partition(leaves, start, end, split, workspace);
+        int childCapacity = MAX_LIGHTS_PER_LEAF << (remainingDepth - 1);
+        if (middle - start > childCapacity || end - middle > childCapacity) {
+            // SAH may repeatedly peel off a small child. Use an exact median partition only when
+            // its chosen split would make the existing 27-bit trail impossible to complete.
+            middle = partitionByMedian(leaves, start, end, workspace.longestCentroidAxis());
+        }
         int left = createNode(
                 leaves, start, middle, softeningScale, nodes);
         int right = createNode(
@@ -267,8 +281,12 @@ public final class CpuLightTree {
             }
         }
 
-        int fallbackAxis = workspace.longestCentroidAxis();
-        sortByAxis(leaves, start, end, fallbackAxis);
+        return partitionByMedian(leaves, start, end, workspace.longestCentroidAxis());
+    }
+
+    private static int partitionByMedian(
+            Leaves leaves, int start, int end, int axis) {
+        sortByAxis(leaves, start, end, axis);
         return start + (end - start) / 2;
     }
 

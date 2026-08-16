@@ -234,6 +234,38 @@ final class EmissionLightContractTest {
     }
 
     @Test
+    void treeKeepsPathologicalSahSplitsWithinPackedDepth() {
+        ArrayList<CpuLightTree.Leaf> leaves = new ArrayList<>();
+        float x = 1.0F;
+        float power = 1.0F;
+        for (int index = 0; index < 32; index++) {
+            leaves.add(leaf(x, power, index));
+            x *= 1.4F;
+            power *= 4.0F;
+        }
+
+        CpuLightTree.Result tree = CpuLightTree.build(
+                leaves, leaves.size(), CpuLightTree.LOCAL_SOFTENING_SCALE);
+        int[] nodes = tree.packNodes();
+        int[] leafDescriptors = tree.packLeaves();
+        int[] entries = tree.packEntries();
+
+        for (int index = 0; index < leaves.size(); index++) {
+            int path = tree.leafPath(index);
+            assertTrue((path >>> CpuLightTree.MAX_PATH_DEPTH) <= CpuLightTree.MAX_PATH_DEPTH);
+            int node = terminalNode(nodes, path);
+            assertEquals(tree.leafNode(index), node);
+            int descriptor = nodes[node * 8 + 6];
+            assertNotEquals(0, descriptor & CpuLightTree.LEAF_FLAG);
+            assertLeafContains(
+                    leafDescriptors,
+                    entries,
+                    descriptor & CpuLightTree.INDEX_MASK,
+                    index);
+        }
+    }
+
+    @Test
     void treeSofteningTracksPowerWeightedSpatialVariance() {
         CpuLightTree.Leaves leaves = new CpuLightTree.Leaves(2);
         leaves.addWithSpatialVariance(

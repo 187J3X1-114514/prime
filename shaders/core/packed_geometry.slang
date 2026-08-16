@@ -5,7 +5,24 @@ import glsl;
 import "prime_abi_types.slang";
 
 public static const uint PRIME_HIT_KIND_MASK = 0xffu;
-public static const uint PRIME_SURFACE_MOTION_FLAG = 0x100u;
+public static const uint PRIME_SURFACE_TRIANGLE_MASK = 0x7fffffffu;
+public static const uint PRIME_SURFACE_MOTION_FLAG = 0x80000000u;
+
+public uint primePackSurfaceMotion(uint triangleIndex, bool hasMotion)
+{
+    return (triangleIndex & PRIME_SURFACE_TRIANGLE_MASK)
+            | (hasMotion ? PRIME_SURFACE_MOTION_FLAG : 0u);
+}
+
+public uint primePackedSurfaceTriangleIndex(uint packedHitKind)
+{
+    return packedHitKind & PRIME_SURFACE_TRIANGLE_MASK;
+}
+
+public uint primeSurfaceTriangleIndex(SurfaceInteraction surface)
+{
+    return primePackedSurfaceTriangleIndex(surface.motionZFlags);
+}
 
 public uint primeTriangleCount(uint primitiveCount, uint macroTriangleBase)
 {
@@ -30,6 +47,37 @@ public uint primeGlobalTriangleIndexValue(
                 cutoutPrimitiveCount, cutoutMacroTriangleBase);
     }
     return base + primitiveIndex;
+}
+
+public uint primeGlobalPrimitiveIndexFromTriangleValue(
+        uint triangleIndex,
+        uint opaquePrimitiveCount,
+        uint cutoutPrimitiveCount,
+        uint opaqueMacroTriangleBase,
+        uint cutoutMacroTriangleBase,
+        uint transmissiveMacroTriangleBase)
+{
+    uint opaqueTriangleCount = primeTriangleCount(
+            opaquePrimitiveCount, opaqueMacroTriangleBase);
+    uint cutoutTriangleCount = primeTriangleCount(
+            cutoutPrimitiveCount, cutoutMacroTriangleBase);
+    uint primitiveBase = 0u;
+    uint localTriangle = triangleIndex;
+    uint macroTriangleBase = opaqueMacroTriangleBase;
+    if (triangleIndex >= opaqueTriangleCount) {
+        primitiveBase = opaquePrimitiveCount;
+        localTriangle -= opaqueTriangleCount;
+        macroTriangleBase = cutoutMacroTriangleBase;
+        if (localTriangle >= cutoutTriangleCount) {
+            primitiveBase += cutoutPrimitiveCount;
+            localTriangle -= cutoutTriangleCount;
+            macroTriangleBase = transmissiveMacroTriangleBase;
+        }
+    }
+    uint localPrimitive = localTriangle < macroTriangleBase
+            ? localTriangle
+            : macroTriangleBase + ((localTriangle - macroTriangleBase) >> 1u);
+    return primitiveBase + localPrimitive;
 }
 
 public float2 primeUnpackUv(uint packedValue)
@@ -82,7 +130,7 @@ public PrimePreviousDynamicSurface primePreviousDynamicSurfaceValue(
             + translation;
     float3 normal = cross(second - first, third - first);
     float normalLengthSquared = dot(normal, normal);
-    previous.geometricNormal = normalLengthSquared > 1.0e-20
+    previous.geometricNormal = normalLengthSquared > 0.0
             ? normal * rsqrt(normalLengthSquared)
             : float3(0.0, 1.0, 0.0);
     return previous;
@@ -116,15 +164,20 @@ public PrimePreviousDynamicSurface primeSurfacePreviousDynamicSurface(
             surface.sectionIndex];
     return primePreviousDynamicSurface(
             section,
-            surface.emitterIndex,
-            unpackUnorm2x16ToFloat(asuint(surface.textureLod)));
+            primeSurfaceTriangleIndex(surface),
+            float2(asfloat(surface.emitterIndex), surface.textureLod));
 }
 
 public PrimePreviousDynamicSurface primeSurfacePrevious(
         SurfaceInteraction surface, uint64_t sectionTableAddress)
 {
     if (primeSurfaceHasMotion(surface)) {
-        return primeSurfacePreviousDynamicSurface(surface, sectionTableAddress);
+        PrimePreviousDynamicSurface previous = primeSurfacePreviousDynamicSurface(
+                surface, sectionTableAddress);
+        if (dot(previous.geometricNormal, surface.geometricNormal) < 0.0) {
+            previous.geometricNormal = -previous.geometricNormal;
+        }
+        return previous;
     }
     PrimePreviousDynamicSurface previous;
     previous.position = surface.position;

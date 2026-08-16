@@ -11,8 +11,8 @@ PrimeWavefrontTransportRecord primeLoadWavefrontTransportRecord(uint pathIndex) 
     record.physicalOriginAndPreviousBsdfPdf =
             primeWavefrontPaths[pathIndex]
                     .transport.physicalOriginAndPreviousBsdfPdf;
-    record.traceOriginAndPathControl =
-            primeWavefrontPaths[pathIndex].transport.traceOriginAndPathControl;
+    record.sourceAndPathControl =
+            primeWavefrontPaths[pathIndex].transport.sourceAndPathControl;
     record.rayDirectionAndDenoiserControl =
             primeWavefrontPaths[pathIndex]
                     .transport.rayDirectionAndDenoiserControl;
@@ -30,8 +30,8 @@ void primeStoreWavefrontTransportRecord(
     primeWavefrontPaths[pathIndex]
             .transport.physicalOriginAndPreviousBsdfPdf =
             record.physicalOriginAndPreviousBsdfPdf;
-    primeWavefrontPaths[pathIndex].transport.traceOriginAndPathControl =
-            record.traceOriginAndPathControl;
+    primeWavefrontPaths[pathIndex].transport.sourceAndPathControl =
+            record.sourceAndPathControl;
     primeWavefrontPaths[pathIndex]
             .transport.rayDirectionAndDenoiserControl =
             record.rayDirectionAndDenoiserControl;
@@ -63,9 +63,9 @@ uint4 primeLoadWavefrontSurfaceLane(uint base, uint laneIndex) {
 
 // Area guides and the two path-indexed hit arrays occupy separate contiguous regions. Keeping the
 // surface arrays branch-major preserves coalesced ordinary-path access while both fixed transparent
-// continuations can safely remain in flight. Position is exactly reconstructible from the matching
-// transport record and t. hitKind occupies the low payload byte while motionZFlags occupies the
-// remaining bits, so their original packed word is also lossless.
+// continuations can safely remain in flight. Position is retained as f32 hit output rather than
+// reconstructed from ray arithmetic. hitKind occupies the low payload byte while motionZFlags
+// occupies the remaining bits, so their original packed word is also lossless.
 uint primeWavefrontSurfaceWord(uint pathIndex) {
     uint guideWords = primeWavefrontPixelCount() * PRIME_WAVEFRONT_AREA_GUIDE_WORDS;
     return guideWords
@@ -80,7 +80,7 @@ void primeStoreWavefrontSurface(uint pathIndex, SurfaceInteraction surface) {
             asuint(surface.geometricNormal.y),
             asuint(surface.geometricNormal.z)));
     primeStoreWavefrontSurfaceLane(base, 1u, uint4(
-            surface.hitKind | surface.motionZFlags,
+            surface.hitKind,
             surface.materialControl,
             surface.sectionIndex,
             surface.emitterIndex));
@@ -99,10 +99,14 @@ void primeStoreWavefrontSurface(uint pathIndex, SurfaceInteraction surface) {
             asuint(surface.adjacentBaseColor.y),
             asuint(surface.adjacentBaseColor.z),
             surface.adjacentInterfaceControl));
+    primeStoreWavefrontSurfaceLane(base, 5u, uint4(
+            asuint(surface.position.x),
+            asuint(surface.position.y),
+            asuint(surface.position.z),
+            surface.motionZFlags));
 }
 
-SurfaceInteraction primeLoadWavefrontSurface(
-        uint pathIndex, float3 traceOrigin, float3 rayDirection) {
+SurfaceInteraction primeLoadWavefrontSurface(uint pathIndex) {
     uint base = primeWavefrontSurfaceWord(pathIndex);
     SurfaceInteraction surface;
     uint4 lane = primeLoadWavefrontSurfaceLane(base, 0u);
@@ -110,8 +114,7 @@ SurfaceInteraction primeLoadWavefrontSurface(
     surface.geometricNormal = float3(
             asfloat(lane.y), asfloat(lane.z), asfloat(lane.w));
     lane = primeLoadWavefrontSurfaceLane(base, 1u);
-    uint packedHitKind = lane.x;
-    surface.hitKind = packedHitKind & PRIME_HIT_KIND_MASK;
+    surface.hitKind = lane.x;
     surface.materialControl = lane.y;
     surface.sectionIndex = lane.z;
     surface.emitterIndex = lane.w;
@@ -124,16 +127,14 @@ SurfaceInteraction primeLoadWavefrontSurface(
     surface.shadingNormal = lane.y;
     surface.roughness = asfloat(lane.z);
     surface.opticalControl = lane.w;
-    surface.motionZFlags = packedHitKind & ~PRIME_HIT_KIND_MASK;
     lane = primeLoadWavefrontSurfaceLane(base, 4u);
     surface.adjacentBaseColor = float3(
             asfloat(lane.x), asfloat(lane.y), asfloat(lane.z));
     surface.adjacentInterfaceControl = lane.w;
-    surface.position = primeSurfacePosition(
-            traceOrigin,
-            rayDirection,
-            surface.t,
-            surface.hitKind);
+    lane = primeLoadWavefrontSurfaceLane(base, 5u);
+    surface.position = float3(
+            asfloat(lane.x), asfloat(lane.y), asfloat(lane.z));
+    surface.motionZFlags = lane.w;
     return surface;
 }
 
@@ -277,12 +278,12 @@ PrimeWavefrontTransportRecord primeWavefrontWithActive(
 PrimeWavefrontTransportRecord primeWavefrontWithQueuedPsrControl(
         PrimeWavefrontTransportRecord record,
         uint control) {
-    uint pathControl = asuint(record.traceOriginAndPathControl.w);
+    uint pathControl = record.sourceAndPathControl.w;
     pathControl &= ~(PRIME_WAVEFRONT_PSR_CONTROL_MASK
             << PRIME_WAVEFRONT_PSR_CONTROL_SHIFT);
     pathControl |= (control & PRIME_WAVEFRONT_PSR_CONTROL_MASK)
             << PRIME_WAVEFRONT_PSR_CONTROL_SHIFT;
-    record.traceOriginAndPathControl.w = asfloat(pathControl);
+    record.sourceAndPathControl.w = pathControl;
     return record;
 }
 
@@ -355,7 +356,7 @@ PrimeQueuedPsrState primeLoadWavefrontPsrState(
     state.rotation = rotationLengthSquared > 0.0
             ? state.rotation * rsqrt(rotationLengthSquared)
             : float4(0.0, 0.0, 0.0, 1.0);
-    uint pathControl = asuint(record.traceOriginAndPathControl.w);
+    uint pathControl = record.sourceAndPathControl.w;
     state.control = (pathControl >> PRIME_WAVEFRONT_PSR_CONTROL_SHIFT)
             & PRIME_WAVEFRONT_PSR_CONTROL_MASK;
     return state;
@@ -495,8 +496,10 @@ PrimeWavefrontTransportRecord primeMakeWavefrontTransportRecord(
     PrimeWavefrontTransportRecord record;
     record.physicalOriginAndPreviousBsdfPdf =
             float4(path.physicalOrigin, path.previousBsdfPdf);
-    record.traceOriginAndPathControl =
-            float4(path.traceOrigin, asfloat(primePackWavefrontPathControl(path)));
+    record.sourceAndPathControl = uint4(
+            path.sourcePrimitive,
+            path.sourceReserved,
+            primePackWavefrontPathControl(path));
     record.medium0 = primePackWavefrontMedium(volumeStack.values[0]);
     record.medium1 = primePackWavefrontMedium(volumeStack.values[1]);
     uint denoiserControl = enabled ? PRIME_WAVEFRONT_ACTIVE_MASK : 0u;
@@ -550,11 +553,12 @@ PrimeWavefrontPathRecord primeMakeWavefrontRecord(
 PathState primeWavefrontPath(
         uint2 pixel, PrimeWavefrontTransportRecord record) {
     PathState path;
-    uint pathControl = asuint(record.traceOriginAndPathControl.w);
+    uint pathControl = record.sourceAndPathControl.w;
     path.physicalOrigin = record.physicalOriginAndPreviousBsdfPdf.xyz;
     path.bounce = (pathControl >> PRIME_WAVEFRONT_BOUNCE_SHIFT)
             & PRIME_WAVEFRONT_BYTE_MASK;
-    path.traceOrigin = record.traceOriginAndPathControl.xyz;
+    path.sourcePrimitive = record.sourceAndPathControl.xy;
+    path.sourceReserved = record.sourceAndPathControl.z;
     uint denoiserControl =
             asuint(record.rayDirectionAndDenoiserControl.w);
     path.sampleDimension =

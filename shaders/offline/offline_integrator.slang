@@ -8,6 +8,7 @@ struct PrimeOfflineAreaRequest {
     bool valid;
     float3 startingExtinction;
     uint startingMediumCount;
+    uint2 targetEmitter;
 };
 
 struct PrimeOfflineSurfaceStep {
@@ -23,6 +24,7 @@ PrimeOfflineAreaRequest primeEmptyOfflineAreaRequest() {
     request.valid = false;
     request.startingExtinction = float3(0.0);
     request.startingMediumCount = 0u;
+    request.targetEmitter = uint2(PRIME_NO_PRIMITIVE_INDEX);
     return request;
 }
 
@@ -113,7 +115,7 @@ float3 primeEstimateOfflineSun(
         return float3(0.0);
     }
     PrimeShadowTrace shadow = primeTraceShadow(
-            context, surface.position, surface.geometricNormal, light, volumeStack);
+            context, surface, light, volumeStack);
     if (shadow.hitDistance < PRIME_NRD_FP16_MAX) {
         return float3(0.0);
     }
@@ -157,6 +159,7 @@ PrimeOfflineAreaRequest primePrepareOfflineArea(
                 ? volumeStack.values[volumeStack.count - 1u].extinction
                 : float3(0.0);
         request.startingMediumCount = volumeStack.count;
+        request.targetEmitter = uint2(area.sectionIndex, area.emitterIndex);
     }
     return request;
 }
@@ -164,6 +167,7 @@ PrimeOfflineAreaRequest primePrepareOfflineArea(
 PrimeShadowTrace primeTraceOfflineAreaShadow(
         inout PrimeIntegratorContext context,
         float3 physicalPosition,
+        uint2 sourcePrimitive,
         PrimeOfflineAreaRequest request,
         PrimeOpenPbrVolumeStack startingVolumeStack) {
     uint startingMediumCount = min(
@@ -176,49 +180,16 @@ PrimeShadowTrace primeTraceOfflineAreaShadow(
             ? primeShadowCanonicalExtinction(
                     startingVolumeStack.values[1].extinction)
             : float3(0.0);
-    primeShadowPayload.opticalDepthMomentHitDistance = float4(0.0);
-    primeShadowPayload.terminalExtinctionRayDistance = float4(
-            float3(0.0),
-            request.distance);
-    primeShadowPayload.startingExtinction0Winding = float4(
-            startingExtinction0, startingMediumCount > 0u ? 1.0 : 0.0);
-    primeShadowPayload.startingExtinction1Winding = float4(
-            startingExtinction1, startingMediumCount > 1u ? 1.0 : 0.0);
-    primeShadowPayload.startingMediumCount = startingMediumCount;
-    // The direction-shifted origin already excludes the source surface. Shorten tMax by the same
-    // amount so the ray still ends at the sampled light instead of accepting an occluder behind it.
-    float traceOffset = min(0.001, request.distance);
-    float traceDistance = request.distance - traceOffset;
-    if (traceDistance > 0.0) {
-        traceRayEXT(
-                primeScene,
-                gl_RayFlagsNoneEXT,
-                0xff,
-                3,
-                1,
-                1,
-                physicalPosition + request.direction * traceOffset,
-                0.0,
-                request.direction,
-                traceDistance,
-                1);
-    } else {
-        primeShadowPayload.opticalDepthMomentHitDistance.w = PRIME_NRD_FP16_MAX;
-    }
-    PrimeShadowTrace result;
-    result.transmittance = clamp(exp(-primeShadowOpticalDepth(
-                    primeShadowPayload.opticalDepthMomentHitDistance.xyz,
-                    primeShadowPayload.terminalExtinctionRayDistance.xyz,
-                    primeShadowPayload.startingExtinction0Winding,
-                    primeShadowPayload.startingExtinction1Winding,
-                    primeShadowPayload.startingMediumCount,
-                    primeShadowPayload.terminalExtinctionRayDistance.w)),
-            float3(0.0),
-            float3(1.0));
-    result.hitDistance = primeNrdSanitizeHitDistance(
-            primeShadowPayload.opticalDepthMomentHitDistance.w);
-    primeRecordUnit(context.diagnostics, result.transmittance);
-    return result;
+    return primeTracePreparedShadow(
+            context,
+            physicalPosition,
+            request.direction,
+            request.distance,
+            sourcePrimitive,
+            request.targetEmitter,
+            startingExtinction0,
+            startingExtinction1,
+            startingMediumCount);
 }
 
 PrimePathScatter primeSampleOfflinePathSurface(
@@ -320,8 +291,9 @@ bool primeAdvanceOfflinePath(
             (bsdf.eventFlags & PRIME_BSDF_EVENT_TRANSMISSION) != 0u);
     primeRecordNonnegative(context.diagnostics, path.etaScale);
     path.physicalOrigin = surface.position;
-    path.traceOrigin = primeOffsetRayOrigin(
-            path.physicalOrigin, surface.geometricNormal, bsdf.direction);
+    path.sourcePrimitive = uint2(
+            surface.sectionIndex, primeSurfaceTriangleIndex(surface));
+    path.sourceReserved = 0u;
     path.rayDirection = bsdf.direction;
     path.previousBsdfPdf = bsdf.pdf;
     path.flags = (bsdf.eventFlags & PRIME_BSDF_EVENT_DISCRETE) != 0u
@@ -425,14 +397,14 @@ PrimeOfflineSurfaceStep primeIntegrateOfflineSurface(
     if (result.areaRequest.valid && !deferArea) {
         PrimeShadowTrace shadow = primeTraceShadow(
                 context,
-                surface.position,
-                surface.geometricNormal,
+                surface,
                 LightSample(
                         result.areaRequest.direction,
                         result.areaRequest.distance,
                         float3(0.0),
                         1.0,
                         0u),
+                result.areaRequest.targetEmitter,
                 volumeStack);
         if (shadow.hitDistance >= PRIME_NRD_FP16_MAX) {
             primeAccumulate(
@@ -456,6 +428,9 @@ PrimeOfflineSurfaceStep primeIntegrateOfflineSurface(
     volumeStack = scatter.volumeStack;
     if (!primeHasScatter(bsdf)) {
         path.physicalOrigin = surface.position;
+        path.sourcePrimitive = uint2(
+                surface.sectionIndex, primeSurfaceTriangleIndex(surface));
+        path.sourceReserved = 0u;
         path.flags = usedAreaNee ? PRIME_OFFLINE_PATH_PREVIOUS_AREA_NEE : 0u;
         return result;
     }

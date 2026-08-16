@@ -475,8 +475,7 @@ void primeCheckPreviousDynamicSurface(
         float4 thirdTranslationZ,
         float2 barycentrics)
 {
-    float2 restoredBarycentrics = unpackUnorm2x16ToFloat(
-            packUnorm2x16(clamp(barycentrics, float2(0.0), float2(1.0))));
+    float2 restoredBarycentrics = barycentrics;
     float3 translation = float3(
             firstTranslationX.w,
             secondTranslationY.w,
@@ -507,8 +506,7 @@ void primeCheckPreviousDynamicSurface(
                     1.0,
                     2.0e-6,
                     2.0e-6)
-            || any(abs(restoredBarycentrics - barycentrics)
-                    > float2(1.0 / 65535.0 + 1.0e-7))) {
+            || any(asuint(restoredBarycentrics) != asuint(barycentrics))) {
         result.mask |= PRIME_TEST_FAILURE_STATE;
     }
     result.first = float4(previous.position, restoredBarycentrics.x);
@@ -517,7 +515,10 @@ void primeCheckPreviousDynamicSurface(
 }
 
 void primeCheckGlobalTriangleIndex(
-        inout PrimeTransportResult result, uint4 control, uint4 counts)
+        inout PrimeTransportResult result,
+        uint4 control,
+        uint4 counts,
+        uint2 inverseExpected)
 {
     uint index = primeGlobalTriangleIndexValue(
             control.y,
@@ -526,10 +527,17 @@ void primeCheckGlobalTriangleIndex(
             counts.y,
             counts.z,
             counts.w);
-    if (index != control.w) {
+    uint primitive = primeGlobalPrimitiveIndexFromTriangleValue(
+            index,
+            counts.x,
+            counts.y,
+            counts.z,
+            counts.w,
+            inverseExpected.x);
+    if (index != control.w || primitive != inverseExpected.y) {
         result.mask |= PRIME_TEST_FAILURE_INDEX;
     }
-    result.first = float4(index, control.w, control.y, control.z);
+    result.first = float4(index, control.w, primitive, inverseExpected.y);
     result.second = asfloat(counts);
 }
 
@@ -543,16 +551,14 @@ void primeCheckLightBranch(
         float3 receiverNormal)
 {
     float2 firstMetrics = primeLightNodeMetrics(
-            firstBoundsMinPower.xyz,
-            firstBoundsMaxSoftening.xyz,
+            0.5 * (firstBoundsMinPower.xyz + firstBoundsMaxSoftening.xyz),
             firstBoundsMinPower.w,
             firstBoundsMaxSoftening.w,
             point,
             receiverNormal,
             0xc0000000);
     float2 secondMetrics = primeLightNodeMetrics(
-            secondBoundsMinPower.xyz,
-            secondBoundsMaxSoftening.xyz,
+            0.5 * (secondBoundsMinPower.xyz + secondBoundsMaxSoftening.xyz),
             secondBoundsMinPower.w,
             secondBoundsMaxSoftening.w,
             point,
@@ -593,6 +599,34 @@ void primeCheckLightReceiverNormal(
     result.third = float4(asfloat(packed), 0.0, 0.0, 0.0);
 }
 
+void primeCheckLightLeafScore(
+        inout PrimeTransportResult result,
+        float2 metrics,
+        float maximumPower,
+        float minimumPositiveDistance,
+        bool hasZeroDistance)
+{
+    float score = primeLightLeafScore(
+            metrics, maximumPower, minimumPositiveDistance, hasZeroDistance);
+    float scaled = primeLightLeafScore(
+            metrics * float2(2.0, 4.0),
+            maximumPower * 4.0,
+            minimumPositiveDistance * 2.0,
+            hasZeroDistance);
+    float expected = hasZeroDistance
+            ? (metrics.x == 0.0 ? metrics.y / maximumPower : 0.0)
+            : metrics.y / maximumPower * minimumPositiveDistance / metrics.x;
+    primeTransportClassify(result.mask, float3(score, scaled, expected));
+    if (score < 0.0
+            || score > 1.0 + 2.0e-6
+            || !primeTestClose(score, expected, 2.0e-7, 2.0e-6)
+            || !primeTestClose(score, scaled, 2.0e-7, 2.0e-6)) {
+        result.mask |= PRIME_TEST_FAILURE_IDENTITY;
+    }
+    result.first = float4(metrics, maximumPower, minimumPositiveDistance);
+    result.second = float4(score, scaled, expected, hasZeroDistance ? 1.0 : 0.0);
+}
+
 void primeCheckLightEmissionBound(
         inout PrimeTransportResult result,
         uint packedDirection,
@@ -631,7 +665,6 @@ void primeCheckPointLightNodeMetric(
 {
     float2 metrics = primeLightNodeMetrics(
             lightPositionPower.xyz,
-            lightPositionPower.xyz,
             lightPositionPower.w,
             pointSoftening.w,
             pointSoftening.xyz,
@@ -643,8 +676,10 @@ void primeCheckPointLightNodeMetric(
     float receiverCosine = dot(receiverNormal, receiverNormal) > 0.0
             ? max(dot(receiverNormal, direction), 0.0)
             : 1.0;
+    float resolvedDirection = distanceSquared / (distanceSquared + pointSoftening.w);
+    float angularImportance = lerp(1.0, receiverCosine, resolvedDirection);
     float expectedImportance = PRIME_LIGHT_RECEIVER_COSINE_FLOOR
-            + (1.0 - PRIME_LIGHT_RECEIVER_COSINE_FLOOR) * receiverCosine;
+            + (1.0 - PRIME_LIGHT_RECEIVER_COSINE_FLOOR) * angularImportance;
     primeTransportClassify(result.mask, float3(metrics, 0.0));
     if (!primeTestClose(
                     metrics.x,
@@ -661,6 +696,69 @@ void primeCheckPointLightNodeMetric(
     result.first = float4(metrics, 0.0, 0.0);
     result.second = float4(distanceSquared, expectedImportance, receiverCosine, 0.0);
     result.third = float4(receiverNormal, 0.0);
+}
+
+void primeCheckRisPdf(
+        inout PrimeTransportResult result,
+        float4 proposalPdfs,
+        float4 targets,
+        float conditionalPdf,
+        float sampleValue)
+{
+    float minimumProposalPdf = min(
+            min(proposalPdfs.x, proposalPdfs.y),
+            min(proposalPdfs.z, proposalPdfs.w));
+    float4 scaledWeights = float4(
+            primeRisScaledWeightValue(
+                    targets.x, minimumProposalPdf, proposalPdfs.x),
+            primeRisScaledWeightValue(
+                    targets.y, minimumProposalPdf, proposalPdfs.y),
+            primeRisScaledWeightValue(
+                    targets.z, minimumProposalPdf, proposalPdfs.z),
+            primeRisScaledWeightValue(
+                    targets.w, minimumProposalPdf, proposalPdfs.w));
+    float scaledWeightSum = scaledWeights.x + scaledWeights.y
+            + scaledWeights.z + scaledWeights.w;
+    uint selectedIndex = primeRisSelectIndex(scaledWeights, sampleValue);
+    float effectivePdf = primeRisEffectivePdfValue(
+            conditionalPdf,
+            targets[selectedIndex],
+            minimumProposalPdf,
+            scaledWeightSum,
+            4u);
+    float selectionProbability = scaledWeights[selectedIndex] / scaledWeightSum;
+    float expectedRatio = 1.0
+            / (4.0 * proposalPdfs[selectedIndex] * conditionalPdf);
+    float actualRatio = selectionProbability / effectivePdf;
+
+    float4 scaledTargets = targets * 0.25;
+    float scaledSum = scaledWeightSum * 0.25;
+    float rescaledEffectivePdf = primeRisEffectivePdfValue(
+            conditionalPdf,
+            scaledTargets[selectedIndex],
+            minimumProposalPdf,
+            scaledSum,
+            4u);
+    primeTransportClassify(
+            result.mask,
+            float3(effectivePdf, selectionProbability, actualRatio));
+    if (!(effectivePdf > 0.0)
+            || selectionProbability < 0.0
+            || selectionProbability > 1.0
+            || selectedIndex > 3u
+            || !primeTestClose(actualRatio, expectedRatio, 2.0e-6, 8.0e-6)
+            || !primeTestClose(
+                    effectivePdf, rescaledEffectivePdf, 2.0e-6, 8.0e-6)) {
+        result.mask |= PRIME_TEST_FAILURE_PDF;
+    }
+    result.first = float4(
+            effectivePdf,
+            selectionProbability,
+            actualRatio,
+            expectedRatio);
+    result.second = float4(scaledWeights.xyz, scaledWeightSum);
+    result.third = float4(
+            asfloat(selectedIndex), minimumProposalPdf, conditionalPdf, sampleValue);
 }
 
 [numthreads(64, 1, 1)]
@@ -735,7 +833,14 @@ void main(uint3 dispatchThreadId : SV_DispatchThreadID)
     } else if (kind == 15) {
         primeCheckPreviousDynamicSurface(result, first, second, third, fourth.xy);
     } else if (kind == 16) {
-        primeCheckGlobalTriangleIndex(result, control, asuint(first));
+        primeCheckGlobalTriangleIndex(
+                result, control, asuint(first), asuint(second.xy));
+    } else if (kind == 17) {
+        primeCheckLightLeafScore(
+                result, first.xy, first.z, first.w, control.y != 0u);
+    } else if (kind == 18) {
+        primeCheckRisPdf(
+                result, first, second, third.x, third.y);
     } else {
         result.mask |= PRIME_TEST_FAILURE_EVENT;
     }

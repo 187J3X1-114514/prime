@@ -296,17 +296,17 @@ void primeTraceDiscreteGuideProbe(
 
     float3 lastPreviousPosition = primaryPrevious.position;
     float3 direction = initialBsdf.direction;
-    float3 traceOrigin = primeOffsetRayOrigin(
-            primarySurface.position,
-            primarySurface.geometricNormal,
-            direction);
+    float3 physicalOrigin = primarySurface.position;
+    uint2 sourcePrimitive = uint2(
+            primarySurface.sectionIndex,
+            primeSurfaceTriangleIndex(primarySurface));
     PrimeOpenPbrVolumeStack volumeStack = initialSample.volumeStack;
     bool hasMotion = primeSurfaceHasMotion(primarySurface);
 
     [loop]
     for (uint bounce = 1u; bounce < maximumBounces; ++bounce) {
         SurfaceInteraction surface = primeTraceSurfaceWithoutReorder(
-                traceOrigin, direction);
+                physicalOrigin, direction, sourcePrimitive);
         if (!primeKnownHitKind(surface)) {
             return;
         }
@@ -347,8 +347,8 @@ void primeTraceDiscreteGuideProbe(
         if (terminalSurface) {
             float3 currentVirtualPosition;
             float3 currentVirtualNormal;
-            // surface.t excludes the normal offset used only for self-hit protection. Summing
-            // traced segment lengths keeps a static reflected target exactly on its camera ray.
+            // Exact source-primitive rejection keeps the physical segment origin unchanged, so
+            // traced segment lengths remain in the same coordinate construction as the guide.
             if (!primeBuildQueuedPsrGuideValueFromSegment(
                     currentState,
                     surface.t,
@@ -466,8 +466,9 @@ void primeTraceDiscreteGuideProbe(
         lastPreviousPosition = previousSurface.position;
         hasMotion = hasMotion || primeSurfaceHasMotion(surface);
         direction = bsdf.direction;
-        traceOrigin = primeOffsetRayOrigin(
-                surface.position, surface.geometricNormal, direction);
+        physicalOrigin = surface.position;
+        sourcePrimitive = uint2(
+                surface.sectionIndex, primeSurfaceTriangleIndex(surface));
         volumeStack = continuation.scatter.volumeStack;
     }
 }

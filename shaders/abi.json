@@ -31,7 +31,7 @@
         { "name": "cutoutMacroTriangleBase", "type": "uint", "offset": 72 },
         { "name": "transmissiveMacroTriangleBase", "type": "uint", "offset": 76 },
         { "name": "surfaceRelationAddress", "type": "uint64_t", "offset": 80 },
-        { "name": "reservedPadding", "type": "uvec2", "offset": 88 }
+        { "name": "positionAddress", "type": "uint64_t", "offset": 88 }
       ]
     },
     "lightNode": {
@@ -99,7 +99,8 @@
       "fields": [
         { "name": "physicalOrigin", "type": "vec3", "offset": 0 },
         { "name": "bounce", "type": "uint", "offset": 12 },
-        { "name": "traceOrigin", "type": "vec3", "offset": 16 },
+        { "name": "sourcePrimitive", "type": "uvec2", "offset": 16 },
+        { "name": "sourceReserved", "type": "uint", "offset": 24 },
         { "name": "sampleDimension", "type": "uint", "offset": 28 },
         { "name": "rayDirection", "type": "vec3", "offset": 32 },
         { "name": "flags", "type": "uint", "offset": 44 },
@@ -115,7 +116,7 @@
       ]
     },
     "tracePayload": {
-      "size": 80,
+      "size": 96,
       "fields": [
         { "name": "geometricNormal", "type": "vec3", "offset": 0 },
         { "name": "t", "type": "float", "offset": 12 },
@@ -130,7 +131,9 @@
         { "name": "opticalControl", "type": "uint", "offset": 56 },
         { "name": "hitKind", "type": "uint", "offset": 60 },
         { "name": "adjacentBaseColor", "type": "vec3", "offset": 64 },
-        { "name": "adjacentInterfaceControl", "type": "uint", "offset": 76 }
+        { "name": "adjacentInterfaceControl", "type": "uint", "offset": 76 },
+        { "name": "position", "type": "vec3", "offset": 80 },
+        { "name": "positionReserved", "type": "uint", "offset": 92 }
       ]
     },
     "surfaceInteraction": {
@@ -155,13 +158,14 @@
       ]
     },
     "wavefrontSurfaceRecord": {
-      "size": 80,
+      "size": 96,
       "fields": [
         { "name": "distanceGeometricNormal", "type": "uvec4", "offset": 0 },
         { "name": "hitMaterialSectionEmitter", "type": "uvec4", "offset": 16 },
         { "name": "baseColorTextureLod", "type": "uvec4", "offset": 32 },
         { "name": "opacityShadingRoughnessOptical", "type": "uvec4", "offset": 48 },
-        { "name": "adjacentBaseColorInterface", "type": "uvec4", "offset": 64 }
+        { "name": "adjacentBaseColorInterface", "type": "uvec4", "offset": 64 },
+        { "name": "positionReserved", "type": "uvec4", "offset": 80 }
       ]
     },
     "pushConstants": {
@@ -272,7 +276,7 @@
   "realtimeWavefrontContract": {
     "pathRecordSize": 112,
     "pathSlotsPerPixel": 2,
-    "areaRecordSize": 176,
+    "areaRecordSize": 208,
     "queueEntriesPerPixel": 2,
     "queueCount": 6,
     "traceQueue0": 0,
@@ -286,7 +290,7 @@
     "activeMask": "0x1"
   },
   "offlineWavefrontContract": {
-    "pathRecordSize": 160,
+    "pathRecordSize": 176,
     "pathSlotsPerPixel": 1,
     "areaRecordSize": 0,
     "queueEntriesPerPixel": 1,
@@ -302,6 +306,10 @@
     "seamlessGlassMask": "0x02000000",
     "airGapMask": "0x04000000",
     "vanillaPbrPresetsMask": "0x08000000",
+    "lightSamplingDiagnosticShift": 28,
+    "lightSamplingDiagnosticMask": "0x3",
+    "primaryLightDiagnosticViewShift": 30,
+    "primaryLightDiagnosticViewMask": "0x3",
     "sampleEpochMask": "0x7fffffff",
     "triangleDebugMask": "0x80000000",
     "maximumBouncesMask": "0xff",

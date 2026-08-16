@@ -17,6 +17,7 @@ void primeWavefrontHead(
                 PrimeSurfaceTracePolicy(),
                 primePush.cameraPosition,
                 traceDirection,
+                uint2(PRIME_NO_PRIMITIVE_INDEX),
                 0u);
         primaryHitKind = surface.hitKind;
         primeStoreWavefrontSurface(pathIndex, surface);

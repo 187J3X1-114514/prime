@@ -5,7 +5,7 @@ import "realtime/wavefront_medium.slang";
 
 struct PrimeOfflineTransportRecord {
     float4 physicalOriginAndPreviousBsdfPdf;
-    float4 traceOriginAndPathControl;
+    uint4 sourceAndPathControl;
     float4 rayDirectionAndControl;
     float4 throughput;
     uint4 medium0;
@@ -14,13 +14,15 @@ struct PrimeOfflineTransportRecord {
 
 // 96 bytes of transport and two-entry medium state, 32 bytes of beauty/primary metadata, and
 // one 32-byte deferred Area request whose control lane retains the previous receiver normal and
-// pre-scatter medium depth. The record is exactly 160-byte std430 ABI.
+// pre-scatter medium depth, plus exact target-emitter identity. The record is exactly 176-byte
+// std430 ABI.
 struct PrimeOfflinePathRecord {
     PrimeOfflineTransportRecord transport;
     float4 radianceAndPrimaryDistance;
     float4 primaryAlbedoAndMaterialFlags;
     float4 areaDirectionAndDistance;
     float4 areaContributionAndValid;
+    uint4 areaTargetEmitter;
 };
 
 [[vk::binding(PRIME_DESCRIPTOR_WAVEFRONT_PATHS, PRIME_RENDERER_DESCRIPTOR_SET)]]
@@ -190,8 +192,10 @@ PrimeOfflineTransportRecord primeMakeOfflineTransport(
     PrimeOfflineTransportRecord record;
     record.physicalOriginAndPreviousBsdfPdf =
             float4(path.physicalOrigin, path.previousBsdfPdf);
-    record.traceOriginAndPathControl =
-            float4(path.traceOrigin, asfloat(primePackOfflinePathControl(path)));
+    record.sourceAndPathControl = uint4(
+            path.sourcePrimitive,
+            path.sourceReserved,
+            primePackOfflinePathControl(path));
     uint control = enabled ? PRIME_OFFLINE_CONTROL_ACTIVE : 0u;
     control |= min(volumeStack.count, 2u) << PRIME_OFFLINE_CONTROL_MEDIUM_SHIFT;
     record.rayDirectionAndControl =
@@ -207,11 +211,12 @@ PathState primeOfflinePath(
         PrimeOfflineTransportRecord record,
         uint previousLightNormal) {
     PathState path;
-    uint pathControl = asuint(record.traceOriginAndPathControl.w);
+    uint pathControl = record.sourceAndPathControl.w;
     path.physicalOrigin = record.physicalOriginAndPreviousBsdfPdf.xyz;
     path.bounce = (pathControl >> PRIME_OFFLINE_PATH_BOUNCE_SHIFT)
             & PRIME_OFFLINE_PATH_BYTE_MASK;
-    path.traceOrigin = record.traceOriginAndPathControl.xyz;
+    path.sourcePrimitive = record.sourceAndPathControl.xy;
+    path.sourceReserved = record.sourceAndPathControl.z;
     path.sampleDimension = 0u;
     path.rayDirection = record.rayDirectionAndControl.xyz;
     path.flags = (pathControl >> PRIME_OFFLINE_PATH_FLAGS_SHIFT)
@@ -253,6 +258,7 @@ PrimeOfflinePathRecord primeOfflineWithoutAreaRequest(
                     << PRIME_OFFLINE_LIGHT_NORMAL_SHIFT);
     record.areaContributionAndValid = float4(
             0.0, 0.0, 0.0, asfloat(packedNormal));
+    record.areaTargetEmitter = uint4(PRIME_NO_PRIMITIVE_INDEX);
     return record;
 }
 

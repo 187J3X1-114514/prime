@@ -192,7 +192,7 @@ public final class CompiledClusterLights {
         return upgraded;
     }
 
-    /** Rebuilds the v10 tree streams as clustered leaves while preserving emitter and cell data. */
+    /** Rebuilds legacy tree streams with current nodes while preserving emitter and cell data. */
     static int[] upgradeTreeLayout(int[] oldWords, int emitterCount) {
         Objects.requireNonNull(oldWords, "oldWords");
         if (emitterCount <= 0 || oldWords.length < HEADER_WORDS) {

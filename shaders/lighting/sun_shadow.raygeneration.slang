@@ -1,5 +1,6 @@
 
 import "prime_abi.slang";
+import "integrator/path_contract.slang";
 import "rt/shadow_payload.slang";
 
 import glsl;
@@ -64,6 +65,8 @@ void main() {
     primeShadowPayload.startingExtinction0Winding = float4(0.0);
     primeShadowPayload.startingExtinction1Winding = float4(0.0);
     primeShadowPayload.startingMediumCount = 0u;
+    primeShadowPayload.sourcePrimitive = uint2(PRIME_NO_PRIMITIVE_INDEX);
+    primeShadowPayload.targetEmitter = uint2(PRIME_NO_PRIMITIVE_INDEX);
     traceRayEXT(
             primeScene,
             gl_RayFlagsNoneEXT,
@@ -72,7 +75,7 @@ void main() {
             1,
             1,
             rayOrigin,
-            0.001,
+            0.0,
             -directionToSun,
             traceDistance,
             1);

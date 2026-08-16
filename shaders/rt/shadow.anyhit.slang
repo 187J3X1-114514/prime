@@ -65,16 +65,60 @@ void main(
         in BuiltInTriangleIntersectionAttributes attributes) {
     float2 barycentrics = attributes.barycentrics;
     SectionRecord section = primeSection();
+    uint triangleIndex = primeGlobalTriangleIndex(section);
+    bool sameSourceSection = InstanceID()
+            == primeShadowPayload.sourcePrimitive.x;
+    if (sameSourceSection
+            && (triangleIndex == primeShadowPayload.sourcePrimitive.y
+                    || primeGlobalPrimitiveIndex(section)
+                            == primeGlobalPrimitiveIndexFromTriangle(
+                                    section,
+                                    primeShadowPayload.sourcePrimitive.y))) {
+        IgnoreHit();
+        return;
+    }
     PrimitiveRecord primitive = primePrimitive(section);
+    bool targetSection = InstanceID() == primeShadowPayload.targetEmitter.x;
+    if (targetSection
+            && primePrimitiveEmitterIndex(primitive)
+                    == primeShadowPayload.targetEmitter.y) {
+        IgnoreHit();
+        return;
+    }
+    // Opaque candidates require no material work once endpoint identities have been resolved.
+    if (GeometryIndex() == 0u) {
+        return;
+    }
     PrimeSurfaceRelation relation = primeSurfaceRelation(section);
-    float3 outwardNormal = primeUnpackOctahedralNormal(primitive.normal);
-    float textureLodValue = primeRayConeTextureLod(primitive, outwardNormal);
+    float3 authoredNormal = primeUnpackOctahedralNormal(primitive.normal);
+    PrimeHitTriangle hit = primeHitTriangle(
+            section, barycentrics, authoredNormal);
+    float3 outwardNormal = hit.geometricNormal;
+    float textureLodValue = primeRayConeTextureLod(
+            primitive, outwardNormal, hit.position);
     primitive = primeResolveSurfacePrimitive(
-            section, primitive, relation, textureLodValue, barycentrics);
-    textureLodValue = primeRayConeTextureLod(primitive, outwardNormal);
+            section,
+            primitive,
+            relation,
+            textureLodValue,
+            barycentrics,
+            hit.localPosition,
+            outwardNormal);
+    if (targetSection
+            && primePrimitiveEmitterIndex(primitive)
+                    == primeShadowPayload.targetEmitter.y) {
+        IgnoreHit();
+        return;
+    }
+    textureLodValue = primeRayConeTextureLod(
+            primitive, outwardNormal, hit.position);
     uint recipeControl = primePrimitiveControl(primitive);
     float2 materialUv = primeInterpolateUv(
-            section, primitive, barycentrics);
+            section,
+            primitive,
+            barycentrics,
+            hit.localPosition,
+            outwardNormal);
     float surfaceOpacity = primeEvaluateOpacity(
             primitive, materialUv, textureLodValue);
     if ((recipeControl & PRIME_RECIPE_ALPHA_CUTOUT) != 0u

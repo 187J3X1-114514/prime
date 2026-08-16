@@ -2,6 +2,7 @@ import glsl;
 import "prime_abi_types.slang";
 import "core/packed_geometry.slang";
 import "core/render_config.slang";
+import "integrator/path_contract.slang";
 import "material/default_material.slang";
 import "material/material.slang";
 
@@ -42,46 +43,56 @@ void main(
     SectionRecord section = primeSection();
     PrimitiveRecord primitive = primePrimitive(section);
     PrimeSurfaceRelation relation = primeSurfaceRelation(section);
-    primePayload.hitKind = 1u;
-    float3 normal = primeUnpackOctahedralNormal(primitive.normal);
+    float3 authoredNormal = primeUnpackOctahedralNormal(primitive.normal);
+    PrimeHitTriangle hit = primeHitTriangle(
+            section, barycentrics, authoredNormal);
+    float3 normal = hit.geometricNormal;
+    bool dynamic = (primitive.flagsEmitter & PRIME_DYNAMIC_TEXTURE_FLAG) != 0u
+            && section.lightAddress != uint64_t(0);
+    primePayload.hitKind = PRIME_HIT_SURFACE;
     bool bakedMaterial = primeUsesBakedMaterial(primitive);
     float textureLodValue =
-            bakedMaterial ? 0.0 : primeRayConeTextureLod(primitive, normal);
+            bakedMaterial
+                    ? 0.0
+                    : primeRayConeTextureLod(primitive, normal, hit.position);
     primitive = primeResolveSurfacePrimitive(
-            section, primitive, relation, textureLodValue, barycentrics);
+            section,
+            primitive,
+            relation,
+            textureLodValue,
+            barycentrics,
+            hit.localPosition,
+            normal);
     bakedMaterial = primeUsesBakedMaterial(primitive);
     textureLodValue =
-            bakedMaterial ? 0.0 : primeRayConeTextureLod(primitive, normal);
+            bakedMaterial
+                    ? 0.0
+                    : primeRayConeTextureLod(primitive, normal, hit.position);
     float2 materialUv = bakedMaterial
             ? float2(0.0)
-            : primeInterpolateUv(section, primitive, barycentrics);
+            : primeInterpolateUv(
+                    section, primitive, barycentrics, hit.localPosition, normal);
     PrimeMaterialSample material = primeEvaluateMaterial(
             primitive, materialUv, textureLodValue, section.instanceTint);
     primePayload.t = RayTCurrent();
     // Keep the authored outward normal. Opaque shading orients it at the integrator boundary,
     // while transparent reflection and the water stack require its authored outward sign.
     primePayload.geometricNormal = normal;
+    primePayload.position = hit.position;
+    primePayload.positionReserved = primePackSurfaceMotion(
+            hit.triangleIndex, dynamic);
     primePayload.baseColor = primeVisualizesTriangles()
             ? lerp(material.baseColor, primeTriangleDebugColor(primitive), 0.5)
             : material.baseColor;
     primePayload.materialControl = material.materialControl;
     primePayload.sectionIndex = InstanceID();
-    uint encodedEmitter = primeUsesRasterComposite(primitive)
-            ? 0u
-            : primitive.flagsEmitter >> 3u & 0x00ffffffu;
-    if ((primitive.flagsEmitter & PRIME_DYNAMIC_TEXTURE_FLAG) != 0u
-            && section.lightAddress != uint64_t(0)) {
-        // Dynamic geometry cannot emit. Reuse its emitter/LOD lanes for an exact triangle id and
-        // bounded UNORM16 barycentrics; previous f32 vertices then reconstruct both position and
-        // plane orientation without the range and critical-angle failures of an FP16 motion delta.
-        primePayload.emitterIndex = primeGlobalTriangleIndex(section);
-        primePayload.hitKind |= PRIME_SURFACE_MOTION_FLAG;
-        primePayload.textureLod = asfloat(packUnorm2x16(
-                clamp(barycentrics, float2(0.0), float2(1.0))));
+    if (dynamic) {
+        // Dynamic geometry cannot emit. Preserve both hardware barycentrics as f32 in its otherwise
+        // unused emitter/LOD lanes so current and previous positions use the same interpolation.
+        primePayload.emitterIndex = asuint(barycentrics.x);
+        primePayload.textureLod = barycentrics.y;
     } else {
-        primePayload.emitterIndex = encodedEmitter == 0u
-                ? 0xffffffffu
-                : encodedEmitter - 1u;
+        primePayload.emitterIndex = primePrimitiveEmitterIndex(primitive);
         primePayload.textureLod = textureLodValue;
     }
     primePayload.opacity = material.opacity;

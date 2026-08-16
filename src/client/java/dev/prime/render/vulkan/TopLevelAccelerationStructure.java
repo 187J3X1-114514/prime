@@ -279,6 +279,7 @@ public final class TopLevelAccelerationStructure {
         public void write(
                 long blasAddress,
                 long primitiveAddress,
+                long positionAddress,
                 long lightAddress,
                 long worldLightAddress,
                 long worldLightLeafAddress,
@@ -293,6 +294,7 @@ public final class TopLevelAccelerationStructure {
             this.writeInstanced(
                     blasAddress,
                     primitiveAddress,
+                    positionAddress,
                     lightAddress,
                     worldLightAddress,
                     worldLightLeafAddress,
@@ -314,6 +316,7 @@ public final class TopLevelAccelerationStructure {
         public void writeInstanced(
                 long blasAddress,
                 long primitiveAddress,
+                long positionAddress,
                 long lightAddress,
                 long worldLightAddress,
                 long worldLightLeafAddress,
@@ -333,6 +336,7 @@ public final class TopLevelAccelerationStructure {
             this.writeInstanced(
                     blasAddress,
                     primitiveAddress,
+                    positionAddress,
                     lightAddress,
                     worldLightAddress,
                     worldLightLeafAddress,
@@ -357,6 +361,7 @@ public final class TopLevelAccelerationStructure {
         public void writeInstanced(
                 long blasAddress,
                 long primitiveAddress,
+                long positionAddress,
                 long lightAddress,
                 long worldLightAddress,
                 long worldLightLeafAddress,
@@ -379,6 +384,7 @@ public final class TopLevelAccelerationStructure {
             this.writeInstanced(
                     blasAddress,
                     primitiveAddress,
+                    positionAddress,
                     0L,
                     lightAddress,
                     worldLightAddress,
@@ -404,6 +410,7 @@ public final class TopLevelAccelerationStructure {
         public void writeInstanced(
                 long blasAddress,
                 long primitiveAddress,
+                long positionAddress,
                 long surfaceRelationAddress,
                 long lightAddress,
                 long worldLightAddress,
@@ -462,6 +469,9 @@ public final class TopLevelAccelerationStructure {
             MemoryUtil.memPutLong(
                     sectionAddress + ShaderAbi.SECTION_PRIMITIVE_ADDRESS_OFFSET,
                     primitiveAddress);
+            MemoryUtil.memPutLong(
+                    sectionAddress + ShaderAbi.SECTION_POSITION_ADDRESS_OFFSET,
+                    positionAddress);
             MemoryUtil.memPutLong(
                     sectionAddress + ShaderAbi.SECTION_LIGHT_ADDRESS_OFFSET,
                     lightAddress);

@@ -24,6 +24,7 @@ public final class PreparedBlas {
     private static final int GEOMETRY_COUNT = 3;
     private static final long MAX_TRIANGLES_PER_GEOMETRY = 0x1_0000_0000L / 3L;
     private static final long MAX_PRIMITIVE_RECORDS = 0x1_0000_0000L;
+    private static final long MAX_IDENTITY_TRIANGLES = 0x8000_0000L;
     private static final int BASE_BUILD_FLAGS =
             KHRAccelerationStructure.VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT_KHR;
 
@@ -427,6 +428,10 @@ public final class PreparedBlas {
         return this.primitives;
     }
 
+    public VulkanBuffer positions() {
+        return this.positions;
+    }
+
     public long opaqueTriangleCount() {
         return this.opaqueTriangleCount;
     }
@@ -461,19 +466,14 @@ public final class PreparedBlas {
         return this.transmissiveTriangleCount - this.transmissiveMacroTriangleCount;
     }
 
-    /** The vertex and scratch buffers are build inputs only and are retired on the real queue timeline. */
+    /** Scratch storage is build-only; positions remain shader-visible for exact hit reconstruction. */
     public void retireBuildResources() {
-        VulkanBuffer retiredPositions = this.positions;
         VulkanBuffer retiredScratch = this.scratch;
-        this.positions = null;
         this.scratch = null;
         RuntimeException failure = null;
-        if (retiredPositions != null || retiredScratch != null) {
-            failure = ResourceCleanup.run(() -> this.context.defer(() -> {
-                RuntimeException cleanupFailure = ResourceCleanup.destroy(retiredPositions, null);
-                cleanupFailure = ResourceCleanup.destroy(retiredScratch, cleanupFailure);
-                ResourceCleanup.throwIfFailed(cleanupFailure);
-            }), null);
+        if (retiredScratch != null) {
+            failure = ResourceCleanup.run(
+                    () -> this.context.defer(retiredScratch::destroy), null);
         }
         if (this.opacityMicromap != null) {
             failure = ResourceCleanup.run(
@@ -909,6 +909,10 @@ public final class PreparedBlas {
         if (total > MAX_PRIMITIVE_RECORDS) {
             throw new IllegalStateException(
                     "BLAS primitive records exceed the shader uint address space");
+        }
+        if (total >= MAX_IDENTITY_TRIANGLES) {
+            throw new IllegalStateException(
+                    "BLAS triangle identities exceed the shader 31-bit ABI");
         }
         return total;
     }

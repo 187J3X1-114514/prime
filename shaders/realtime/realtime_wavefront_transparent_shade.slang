@@ -10,10 +10,7 @@ void primeWavefrontTransparentShade(
     PrimeWavefrontTransportRecord record =
             primeLoadWavefrontTransportRecord(recordIndex);
     primeRestoreWavefrontDiagnostic(record, context.diagnostics);
-    SurfaceInteraction surface = primeLoadWavefrontSurface(
-            recordIndex,
-            record.traceOriginAndPathControl.xyz,
-            record.rayDirectionAndDenoiserControl.xyz);
+    SurfaceInteraction surface = primeLoadWavefrontSurface(recordIndex);
     PathState path = primeWavefrontPath(pixel, record);
     PrimeOpenPbrVolumeStack volumeStack = primeWavefrontVolumeStack(record);
     uint control = asuint(record.rayDirectionAndDenoiserControl.w);

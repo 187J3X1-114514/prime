@@ -60,7 +60,7 @@ final class PrimeProductionMathGpuTest {
 
     @Test
     void integratorAndLightTransportMathKeepsItsNumericalContracts() throws IOException {
-        int kinds = 17;
+        int kinds = 19;
         int inputWords = 6;
         ShaderPropertyBatch.assertProperties(
                 runner,
@@ -648,8 +648,11 @@ final class PrimeProductionMathGpuTest {
                 } else if (kind == 16) {
                     int opaquePrimitiveCount = random.nextInt(1, 257);
                     int cutoutPrimitiveCount = random.nextInt(1, 257);
+                    int transmissivePrimitiveCount = random.nextInt(1, 257);
                     int opaqueMacroBase = random.nextInt(opaquePrimitiveCount + 1);
                     int cutoutMacroBase = random.nextInt(cutoutPrimitiveCount + 1);
+                    int transmissiveMacroBase =
+                            random.nextInt(transmissivePrimitiveCount + 1);
                     int geometry = local % 3;
                     int opaqueTriangleCount = opaqueMacroBase
                             + 2 * (opaquePrimitiveCount - opaqueMacroBase);
@@ -659,7 +662,9 @@ final class PrimeProductionMathGpuTest {
                             ? opaqueTriangleCount
                             : geometry == 1
                                     ? cutoutTriangleCount
-                                    : random.nextInt(1, 513);
+                                    : transmissiveMacroBase
+                                            + 2 * (transmissivePrimitiveCount
+                                                    - transmissiveMacroBase);
                     int primitiveIndex = random.nextInt(localTriangleCount);
                     int expectedIndex = primitiveIndex
                             + (geometry == 0 ? 0 : opaqueTriangleCount)
@@ -671,6 +676,68 @@ final class PrimeProductionMathGpuTest {
                     putInt(input, index, words, 1, 1, cutoutPrimitiveCount);
                     putInt(input, index, words, 1, 2, opaqueMacroBase);
                     putInt(input, index, words, 1, 3, cutoutMacroBase);
+                    int macroBase = geometry == 0
+                            ? opaqueMacroBase
+                            : geometry == 1
+                                    ? cutoutMacroBase
+                                    : transmissiveMacroBase;
+                    int expectedPrimitive = primitiveIndex < macroBase
+                            ? primitiveIndex
+                            : macroBase + (primitiveIndex - macroBase) / 2;
+                    expectedPrimitive += geometry == 0
+                            ? 0
+                            : opaquePrimitiveCount
+                                    + (geometry == 1 ? 0 : cutoutPrimitiveCount);
+                    putInt(input, index, words, 2, 0, transmissiveMacroBase);
+                    putInt(input, index, words, 2, 1, expectedPrimitive);
+                } else if (kind == 17) {
+                    boolean hasZeroDistance = local % 3 != 0;
+                    float distance = hasZeroDistance && (local & 1) == 0
+                            ? 0.0F
+                            : positiveFloat(random, -20, 20);
+                    float power = positiveFloat(random, -20, 20);
+                    float maximumPower = power / (0.01F + 0.99F * random.nextFloat());
+                    float minimumDistance = hasZeroDistance
+                            ? positiveFloat(random, -20, 20)
+                            : distance * (0.01F + 0.99F * random.nextFloat());
+                    putInt(input, index, words, 0, 1, hasZeroDistance ? 1 : 0);
+                    putVec4(
+                            input,
+                            index,
+                            words,
+                            1,
+                            distance,
+                            power,
+                            maximumPower,
+                            minimumDistance);
+                } else if (kind == 18) {
+                    putVec4(
+                            input,
+                            index,
+                            words,
+                            1,
+                            positiveFloat(random, -10, 0),
+                            positiveFloat(random, -10, 0),
+                            positiveFloat(random, -10, 0),
+                            positiveFloat(random, -10, 0));
+                    putVec4(
+                            input,
+                            index,
+                            words,
+                            2,
+                            positiveFloat(random, -10, 0),
+                            positiveFloat(random, -10, 0),
+                            positiveFloat(random, -10, 0),
+                            positiveFloat(random, -10, 0));
+                    putVec4(
+                            input,
+                            index,
+                            words,
+                            3,
+                            positiveFloat(random, -10, 10),
+                            random.nextFloat(),
+                            0.0F,
+                            0.0F);
                 } else {
                     putVec4(
                             input,

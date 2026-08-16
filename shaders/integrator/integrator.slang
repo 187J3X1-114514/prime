@@ -93,21 +93,13 @@ struct PrimeDenoiserState {
     uint primaryBounce;
 };
 
-float3 primeOffsetRayOrigin(float3 physicalPosition, float3 normal, float3 direction) {
-    // The physical shading point remains unchanged for BSDF/light/PDF evaluation. Only the
-    // traversal origin receives this offset, preventing a geometric epsilon from changing the
-    // estimator or a future area-light solid-angle conversion.
-    float side = dot(normal, direction) >= 0.0 ? 1.0 : -1.0;
-    return physicalPosition + normal * (side * 0.001);
-}
-
-void primeResetSurfacePayload() {
+void primeResetSurfacePayload(uint2 sourcePrimitive) {
     primeSurfacePayload.t = 0.0;
     primeSurfacePayload.geometricNormal = float3(0.0, 1.0, 0.0);
     primeSurfacePayload.hitKind = PRIME_HIT_NONE;
     primeSurfacePayload.baseColor = float3(0.0);
     primeSurfacePayload.materialControl = 0u;
-    primeSurfacePayload.sectionIndex = 0u;
+    primeSurfacePayload.sectionIndex = sourcePrimitive.x;
     primeSurfacePayload.emitterIndex = PRIME_NO_LIGHT_INDEX;
     primeSurfacePayload.textureLod = 0.0;
     primeSurfacePayload.opacity = 0.0;
@@ -116,25 +108,16 @@ void primeResetSurfacePayload() {
     primeSurfacePayload.opticalControl = 0u;
     primeSurfacePayload.adjacentBaseColor = float3(0.0);
     primeSurfacePayload.adjacentInterfaceControl = 0u;
+    primeSurfacePayload.position = float3(0.0);
+    primeSurfacePayload.positionReserved = sourcePrimitive.y;
 }
 
-float3 primeSurfacePosition(
-        float3 origin, float3 direction, float distance, uint hitKind) {
-    // Wavefront storage retains these exact trace inputs and reconstructs the same expression.
-    return hitKind == PRIME_HIT_NONE
-            ? float3(0.0)
-            : origin + direction * distance;
-}
-
-SurfaceInteraction primeSurfaceInteractionFromPayload(
-        float3 origin, float3 direction) {
+SurfaceInteraction primeSurfaceInteractionFromPayload() {
     SurfaceInteraction surface;
     uint packedHitKind = primeSurfacePayload.hitKind;
-    surface.position = primeSurfacePosition(
-            origin,
-            direction,
-            primeSurfacePayload.t,
-            packedHitKind & PRIME_HIT_KIND_MASK);
+    surface.position = (packedHitKind & PRIME_HIT_KIND_MASK) == PRIME_HIT_NONE
+            ? float3(0.0)
+            : primeSurfacePayload.position;
     surface.t = primeSurfacePayload.t;
     surface.geometricNormal = primeSurfacePayload.geometricNormal;
     surface.hitKind = packedHitKind & PRIME_HIT_KIND_MASK;
@@ -147,25 +130,40 @@ SurfaceInteraction primeSurfaceInteractionFromPayload(
     surface.shadingNormal = primeSurfacePayload.shadingNormal;
     surface.roughness = primeSurfacePayload.roughness;
     surface.opticalControl = primeSurfacePayload.opticalControl;
-    surface.motionZFlags = packedHitKind & ~PRIME_HIT_KIND_MASK;
+    surface.motionZFlags = primeSurfacePayload.positionReserved;
     surface.adjacentBaseColor = primeSurfacePayload.adjacentBaseColor;
     surface.adjacentInterfaceControl = primeSurfacePayload.adjacentInterfaceControl;
     return surface;
 }
 
 interface IPrimeSurfaceTracePolicy {
-    void trace(float3 origin, float3 direction, uint pathClass);
+    void trace(
+            float3 origin,
+            float3 direction,
+            uint2 sourcePrimitive,
+            uint pathClass);
 }
 
 struct PrimeScalarSurfaceTracePolicy : IPrimeSurfaceTracePolicy {
-    void trace(float3 origin, float3 direction, uint pathClass) {
-        traceRayEXT(primeScene, gl_RayFlagsNoneEXT, 0xff, 0, 1, 0,
+    void trace(
+            float3 origin,
+            float3 direction,
+            uint2 sourcePrimitive,
+            uint pathClass) {
+        uint rayFlags = sourcePrimitive.x == PRIME_NO_PRIMITIVE_INDEX
+                ? gl_RayFlagsNoneEXT
+                : gl_RayFlagsNoOpaqueEXT;
+        traceRayEXT(primeScene, rayFlags, 0xff, 0, 1, 0,
                 origin, 0.0, direction, 1000000.0, 0);
     }
 };
 
 struct PrimeSerSurfaceTracePolicy : IPrimeSurfaceTracePolicy {
-    void trace(float3 origin, float3 direction, uint pathClass) {
+    void trace(
+            float3 origin,
+            float3 direction,
+            uint2 sourcePrimitive,
+            uint pathClass) {
         // Hit objects decouple traversal from closest-hit/miss execution. The reorder point groups
         // those continuations by shader first and by the low section-index bits second. Keep this
         // method narrow: every live value may need to survive invocation repacking.
@@ -174,7 +172,9 @@ struct PrimeSerSurfaceTracePolicy : IPrimeSurfaceTracePolicy {
         hitObjectTraceRayEXT(
                 hitObject,
                 primeScene,
-                gl_RayFlagsNoneEXT,
+                sourcePrimitive.x == PRIME_NO_PRIMITIVE_INDEX
+                        ? gl_RayFlagsNoneEXT
+                        : gl_RayFlagsNoOpaqueEXT,
                 0xff,
                 0,
                 1,
@@ -205,17 +205,28 @@ SurfaceInteraction primeTraceSurfaceClassified<TracePolicy>(
         TracePolicy policy,
         float3 origin,
         float3 direction,
+        uint2 sourcePrimitive,
         uint pathClass)
     where TracePolicy : IPrimeSurfaceTracePolicy
 {
-    primeResetSurfacePayload();
-    policy.trace(origin, direction, pathClass);
-    return primeSurfaceInteractionFromPayload(origin, direction);
+    primeResetSurfacePayload(sourcePrimitive);
+    policy.trace(origin, direction, sourcePrimitive, pathClass);
+    return primeSurfaceInteractionFromPayload();
 }
 
 SurfaceInteraction primeTraceSurface(float3 origin, float3 direction) {
     return primeTraceSurfaceClassified(
-            PrimeSurfaceTracePolicy(), origin, direction, 0u);
+            PrimeSurfaceTracePolicy(),
+            origin,
+            direction,
+            uint2(PRIME_NO_PRIMITIVE_INDEX),
+            0u);
+}
+
+SurfaceInteraction primeTraceSurface(
+        float3 origin, float3 direction, uint2 sourcePrimitive) {
+    return primeTraceSurfaceClassified(
+            PrimeSurfaceTracePolicy(), origin, direction, sourcePrimitive, 0u);
 }
 
 SurfaceInteraction primeTraceSurfaceWithoutReorder(
@@ -224,7 +235,21 @@ SurfaceInteraction primeTraceSurfaceWithoutReorder(
     // local loop. Repacking there spills more state than it recovers through coherence, so this
     // entry deliberately executes the same trace without the SER reorder point.
     return primeTraceSurfaceClassified(
-            PrimeScalarSurfaceTracePolicy(), origin, direction, 0u);
+            PrimeScalarSurfaceTracePolicy(),
+            origin,
+            direction,
+            uint2(PRIME_NO_PRIMITIVE_INDEX),
+            0u);
+}
+
+SurfaceInteraction primeTraceSurfaceWithoutReorder(
+        float3 origin, float3 direction, uint2 sourcePrimitive) {
+    return primeTraceSurfaceClassified(
+            PrimeScalarSurfaceTracePolicy(),
+            origin,
+            direction,
+            sourcePrimitive,
+            0u);
 }
 
 bool primeKnownHitKind(SurfaceInteraction surface) {
@@ -319,9 +344,11 @@ struct PrimeShadowTrace {
 
 PrimeShadowTrace primeTracePreparedShadow(
         inout PrimeIntegratorContext context,
-        float3 traceOrigin,
+        float3 physicalOrigin,
         float3 direction,
         float distance,
+        uint2 sourcePrimitive,
+        uint2 targetEmitter,
         float3 startingExtinction0,
         float3 startingExtinction1,
         uint startingMediumCount) {
@@ -333,16 +360,18 @@ PrimeShadowTrace primeTracePreparedShadow(
     primeShadowPayload.startingExtinction1Winding = float4(
             startingExtinction1, startingMediumCount > 1u ? 1.0 : 0.0);
     primeShadowPayload.startingMediumCount = startingMediumCount;
-    // The caller already offsets the origin. A second positive tMin would double the missing
-    // segment and erase thin occluders without adding any self-hit protection.
+    primeShadowPayload.sourcePrimitive = sourcePrimitive;
+    primeShadowPayload.targetEmitter = targetEmitter;
+    // Source and target geometry are rejected by exact identity in any-hit. The physical segment
+    // therefore remains open at both endpoints without deleting nearby occluders or media.
     traceRayEXT(
             primeScene,
-            gl_RayFlagsNoneEXT,
+            gl_RayFlagsNoOpaqueEXT,
             0xff,
             3,
             1,
             1,
-            traceOrigin,
+            physicalOrigin,
             0.0,
             direction,
             distance,
@@ -365,9 +394,9 @@ PrimeShadowTrace primeTracePreparedShadow(
 
 PrimeShadowTrace primeTraceShadow(
         inout PrimeIntegratorContext context,
-        float3 physicalPosition,
-        float3 normal,
+        SurfaceInteraction surface,
         LightSample light,
+        uint2 targetEmitter,
         PrimeOpenPbrVolumeStack volumeStack) {
     uint startingMediumCount = min(
             volumeStack.count, PRIME_OPENPBR_MAX_VOLUME_STACK_SIZE);
@@ -379,14 +408,28 @@ PrimeShadowTrace primeTraceShadow(
             ? primeShadowCanonicalExtinction(
                     volumeStack.values[1].extinction)
             : float3(0.0);
-    float3 traceOrigin = primeOffsetRayOrigin(physicalPosition, normal, light.direction);
     return primeTracePreparedShadow(context,
-            traceOrigin,
+            surface.position,
             light.direction,
             light.distance,
+            uint2(surface.sectionIndex, primeSurfaceTriangleIndex(surface)),
+            targetEmitter,
             startingExtinction0,
             startingExtinction1,
             startingMediumCount);
+}
+
+PrimeShadowTrace primeTraceShadow(
+        inout PrimeIntegratorContext context,
+        SurfaceInteraction surface,
+        LightSample light,
+        PrimeOpenPbrVolumeStack volumeStack) {
+    return primeTraceShadow(
+            context,
+            surface,
+            light,
+            uint2(PRIME_NO_PRIMITIVE_INDEX),
+            volumeStack);
 }
 
 PrimeDirectLightingSplit primeEvaluateVisibleDirectSplit(
@@ -397,7 +440,8 @@ PrimeDirectLightingSplit primeEvaluateVisibleDirectSplit(
         LightSample light,
         float3 lightRadiance,
         PrimeOpenPbrVolumeStack volumeStack,
-        bool conditionalTransparentBranch) {
+        bool conditionalTransparentBranch,
+        bool usesMis) {
     PrimeDirectLightingSplit result;
     result.diffuse = float3(0.0);
     result.specular = float3(0.0);
@@ -473,7 +517,7 @@ PrimeDirectLightingSplit primeEvaluateVisibleDirectSplit(
                     observation);
         }
         float weightedInversePdf = primePowerHeuristicOverPdf(
-                context.diagnostics, light.pdf, evaluation.pdf);
+                context.diagnostics, light.pdf, usesMis ? evaluation.pdf : 0.0);
         float3 contribution = primeTripleProduct(
                 lightRadiance, evaluation.response, weightedInversePdf);
         if (reflection) {
@@ -497,7 +541,7 @@ PrimeDirectLightingSplit primeEvaluateVisibleDirectSplit(
                 volumeStack,
                 observation);
         float weightedInversePdf = primePowerHeuristicOverPdf(
-                context.diagnostics, light.pdf, components.pdf);
+                context.diagnostics, light.pdf, usesMis ? components.pdf : 0.0);
         result.diffuse = primeTripleProduct(
                 lightRadiance, components.diffuseResponse, weightedInversePdf);
         result.specular = primeTripleProduct(
@@ -520,7 +564,7 @@ PrimeDirectLightingSplit primeEvaluateVisibleDirectSplit(
             volumeStack,
             observation);
     float weightedInversePdf = primePowerHeuristicOverPdf(
-            context.diagnostics, light.pdf, components.pdf);
+            context.diagnostics, light.pdf, usesMis ? components.pdf : 0.0);
     result.diffuse = primeTripleProduct(
             lightRadiance, components.diffuseResponse, weightedInversePdf);
     result.specular = primeTripleProduct(
@@ -578,7 +622,7 @@ PrimePrimarySunSample primeEstimatePrimaryDirectSun(
         return result;
     }
     PrimeShadowTrace shadow = primeTraceShadow(
-            context, surface.position, surface.geometricNormal, light, volumeStack);
+            context, surface, light, volumeStack);
     result.penumbra = primeSigmaPackDirectionalPenumbra(shadow.hitDistance);
     result.visibility = float(shadow.hitDistance >= PRIME_NRD_FP16_MAX);
     float3 radiance = primeResolveSampledSunRadiance(
@@ -591,7 +635,8 @@ PrimePrimarySunSample primeEstimatePrimaryDirectSun(
             light,
             radiance,
             volumeStack,
-            conditionalTransparentBranch);
+            conditionalTransparentBranch,
+            true);
     return result;
 }
 
@@ -599,17 +644,25 @@ PrimeDirectLightingSplit primeEstimatePrimaryDirectAreaLight(
         inout PrimeIntegratorContext context,
         SurfaceInteraction surface,
         float3 viewDirection,
-        float2 treeSample,
+        float3 selectionSample,
         float2 positionSample,
         PrimeOpenPbrVolumeStack volumeStack,
         bool conditionalTransparentBranch) {
     float3 shadingNormal = primeSurfaceShadingNormal(surface, viewDirection);
-    AreaLightSample area = primeSampleAreaLight(
-            context.diagnostics,
-            surface.position,
-            primeAreaLightReceiverNormal(surface, viewDirection),
-            treeSample,
-            positionSample);
+    bool usesRis = primeUsesFourCandidateAreaRis();
+    AreaLightSample area = usesRis
+            ? primeSampleAreaLightRis4(
+                    context.diagnostics,
+                    surface.position,
+                    primeAreaLightReceiverNormal(surface, viewDirection),
+                    selectionSample,
+                    positionSample)
+            : primeSampleAreaLight(
+                    context.diagnostics,
+                    surface.position,
+                    primeAreaLightReceiverNormal(surface, viewDirection),
+                    selectionSample.xy,
+                    positionSample);
     if (!primeDirectSampleEligible(surface, shadingNormal, area.light)) {
         PrimeDirectLightingSplit result;
         result.diffuse = float3(0.0);
@@ -618,7 +671,11 @@ PrimeDirectLightingSplit primeEstimatePrimaryDirectAreaLight(
         return result;
     }
     PrimeShadowTrace shadow = primeTraceShadow(
-            context, surface.position, surface.geometricNormal, area.light, volumeStack);
+            context,
+            surface,
+            area.light,
+            uint2(area.sectionIndex, area.emitterIndex),
+            volumeStack);
     if (shadow.hitDistance < PRIME_NRD_FP16_MAX) {
         PrimeDirectLightingSplit result;
         result.diffuse = float3(0.0);
@@ -636,7 +693,8 @@ PrimeDirectLightingSplit primeEstimatePrimaryDirectAreaLight(
             area.light,
             radiance,
             volumeStack,
-            conditionalTransparentBranch);
+            conditionalTransparentBranch,
+            !usesRis);
 }
 
 float3 primeEstimateDirectAreaLight(
@@ -660,7 +718,11 @@ float3 primeEstimateDirectAreaLight(
         return float3(0.0);
     }
     PrimeShadowTrace shadow = primeTraceShadow(
-            context, surface.position, surface.geometricNormal, area.light, volumeStack);
+            context,
+            surface,
+            area.light,
+            uint2(area.sectionIndex, area.emitterIndex),
+            volumeStack);
     if (shadow.hitDistance < PRIME_NRD_FP16_MAX) {
         return float3(0.0);
     }
@@ -674,7 +736,8 @@ float3 primeEstimateDirectAreaLight(
             area.light,
             radiance,
             volumeStack,
-            false);
+            false,
+            true);
     return split.diffuse + split.specular;
 }
 
@@ -697,7 +760,7 @@ float3 primeEstimateDirectSun(
         return float3(0.0);
     }
     PrimeShadowTrace shadow = primeTraceShadow(
-            context, surface.position, surface.geometricNormal, light, volumeStack);
+            context, surface, light, volumeStack);
     if (shadow.hitDistance < PRIME_NRD_FP16_MAX) {
         return float3(0.0);
     }
@@ -711,7 +774,8 @@ float3 primeEstimateDirectSun(
             light,
             radiance,
             volumeStack,
-            false);
+            false,
+            true);
     return split.diffuse + split.specular;
 }
 
@@ -752,7 +816,8 @@ PrimePreparedSunShadow primePrepareDirectSunShadow(
             result.light,
             radiance,
             volumeStack,
-            false);
+            false,
+            true);
     result.contribution = split.diffuse + split.specular;
     result.active = any(result.contribution > float3(0.0));
     return result;
@@ -774,7 +839,7 @@ PrimeDirectLightingSplit primeEstimatePrimaryNonsunDirect(
             primeSobolSample3D(
                     preparedSample,
                     PRIME_SAMPLE_EFFECT_DIRECT_AREA_LIGHT,
-                    PRIME_SAMPLE_DIMENSION_PRIMARY).xy,
+                    PRIME_SAMPLE_DIMENSION_PRIMARY),
             primeSobolSample2D(
                     preparedSample,
                     PRIME_SAMPLE_EFFECT_DIRECT_AREA_LIGHT,
@@ -973,6 +1038,12 @@ float3 primeEvaluateLocalHitEmission(
     // transport vertex actually had a competing Area NEE technique.
     bool evaluateAreaPdf = previousUsedAreaNee
             && !primePreviousCannotUseMis(path);
+    if (evaluateAreaPdf
+            && (path.flags & PRIME_PATH_PREVIOUS_AREA_RIS) != 0u) {
+        // RIS uses a candidate-set density and is therefore a standalone NEE estimator. The
+        // paired non-discrete BSDF emitter hit is suppressed instead of using a mismatched PDF.
+        return float3(0.0);
+    }
     LightEvaluation hitAreaLight = primeEvaluateAreaLight(
             context.diagnostics,
             surface,
@@ -1298,8 +1369,9 @@ bool primeAdvancePath(
             : primeAreaLightReceiverNormal(surface, -path.rayDirection);
     path.throughput = nextThroughput;
     path.physicalOrigin = surface.position;
-    path.traceOrigin = primeOffsetRayOrigin(
-            path.physicalOrigin, surface.geometricNormal, bsdf.direction);
+    path.sourcePrimitive = uint2(
+            surface.sectionIndex, primeSurfaceTriangleIndex(surface));
+    path.sourceReserved = 0u;
     path.rayDirection = bsdf.direction;
     path.previousBsdfPdf = bsdf.pdf;
     path.previousLightNormal = previousLightNormal;
@@ -1591,6 +1663,9 @@ bool primeIntegrateTransparentWavefrontSurface<SunNee, AreaNee>(
             surfaceLinearRoughness)) {
         return false;
     }
+    if (primarySurfaceReplacement && primeUsesFourCandidateAreaRis()) {
+        path.flags |= PRIME_PATH_PREVIOUS_AREA_RIS;
+    }
     if (supportsSolidAngle && !primarySurfaceReplacement) {
         path.flags |= PRIME_PATH_PREVIOUS_MIXED_LIGHT_NEE;
     }
@@ -1829,6 +1904,12 @@ bool primeIntegrateWavefrontSurface<SunNee, AreaNee, IndirectReuse>(
                     discreteOnlyInterface,
                     surfaceLinearRoughness)) {
         return false;
+    }
+    if (primeUsesFourCandidateAreaRis()
+            && supportsSolidAngle
+            && denoiserState.hasPrimarySurface
+            && path.bounce == denoiserState.primaryBounce) {
+        path.flags |= PRIME_PATH_PREVIOUS_AREA_RIS;
     }
     if (supportsSolidAngle && denoiserState.hasPrimarySurface
             && path.bounce != denoiserState.primaryBounce) {

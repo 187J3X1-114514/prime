@@ -316,6 +316,8 @@ final class RealtimeRenderer implements Destroyable {
                 settings.material(),
                 processor.rawFrame().usesShInputs(),
                 input.controls().triangleDebug(),
+                input.controls().lightSamplingDiagnostic(),
+                input.controls().primaryLightDiagnosticView(),
                 settings.display(),
                 reconfigured);
         RealtimeSampleState.Plan sampleFrame = this.planSample(frameInput.sampleStateInput());
@@ -378,6 +380,13 @@ final class RealtimeRenderer implements Destroyable {
                     input.scene().revision());
         }
         return debugLines;
+    }
+
+    void requestReset() {
+        this.sampleState = this.sampleState.invalidated();
+        if (this.resources != null) {
+            this.resources.requestReset();
+        }
     }
 
     private void requireRayDispatchCapacity(int width, int height) {

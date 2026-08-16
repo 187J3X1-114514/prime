@@ -28,6 +28,10 @@ final class PreparedBlasTest {
                 IllegalStateException.class,
                 () -> PreparedBlas.validateCounts(
                         0x1_0000_0000L / 3L + 1L, 0L, 0L, -1L));
+        assertThrows(
+                IllegalStateException.class,
+                () -> PreparedBlas.validateCounts(
+                        0x2aaa_aaabL, 0x2aaa_aaabL, 0x2aaa_aaabL, -1L));
     }
 
     @Test

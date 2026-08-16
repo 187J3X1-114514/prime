@@ -880,6 +880,7 @@ public final class TerrainScene implements AutoCloseable {
                 writer.writeInstanced(
                         compactionAddress(base, compactions),
                         base.primitives().deviceAddress(),
+                        base.positions().deviceAddress(),
                         cluster.surfaceRelationAddress(),
                         cluster.lightAddress(),
                         worldLightAddress,
@@ -915,6 +916,7 @@ public final class TerrainScene implements AutoCloseable {
                     writer.writeInstanced(
                             compactionAddress(voxel, compactions),
                             voxel.primitives().deviceAddress(),
+                            voxel.positions().deviceAddress(),
                             0L,
                             // Dynamic previous positions describe only the base BLAS. Publishing
                             // that address for an instanced voxel BLAS would make its local

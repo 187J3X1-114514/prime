@@ -5,6 +5,7 @@ import glsl;
 import "prime_abi.slang";
 import "prime_abi_types.slang";
 import "core/packed_geometry.slang";
+import "integrator/path_contract.slang";
 import "material/default_material.slang";
 import "material/medium_boundary.slang";
 import "material/material.slang";
@@ -59,11 +60,24 @@ public PrimitiveRecord primePrimitive(SectionRecord section) {
     return primitive;
 }
 
-uint primeGlobalPrimitiveIndex(SectionRecord section) {
+public uint primeGlobalPrimitiveIndex(SectionRecord section) {
     uint base = GeometryIndex() == 0
             ? 0u
             : (GeometryIndex() == 1 ? section.cutoutBase : section.transmissiveBase);
     return base + primeLocalPrimitiveIndex(section);
+}
+
+public uint primeGlobalPrimitiveIndexFromTriangle(
+        SectionRecord section, uint triangleIndex) {
+    uint opaquePrimitiveCount = section.cutoutBase;
+    uint cutoutPrimitiveCount = section.transmissiveBase - section.cutoutBase;
+    return primeGlobalPrimitiveIndexFromTriangleValue(
+            triangleIndex,
+            opaquePrimitiveCount,
+            cutoutPrimitiveCount,
+            section.opaqueMacroTriangleBase,
+            section.cutoutMacroTriangleBase,
+            section.transmissiveMacroTriangleBase);
 }
 
 public uint primeGlobalTriangleIndex(SectionRecord section) {
@@ -76,6 +90,62 @@ public uint primeGlobalTriangleIndex(SectionRecord section) {
             cutoutPrimitiveCount,
             section.opaqueMacroTriangleBase,
             section.cutoutMacroTriangleBase);
+}
+
+public struct PrimeHitTriangle {
+    public float3 localPosition;
+    public float3 position;
+    public float3 geometricNormal;
+    public uint triangleIndex;
+};
+
+public PrimeHitTriangle primeHitTriangle(
+        SectionRecord section,
+        float2 barycentrics,
+        float3 authoredNormal) {
+    PrimeHitTriangle result;
+    result.triangleIndex = primeGlobalTriangleIndex(section);
+    float* positions = (float*)section.positionAddress;
+    uint vertexBase = result.triangleIndex * 9u;
+    float3 first = float3(
+            positions[vertexBase],
+            positions[vertexBase + 1u],
+            positions[vertexBase + 2u]);
+    float3 edgeOne = float3(
+            positions[vertexBase + 3u],
+            positions[vertexBase + 4u],
+            positions[vertexBase + 5u]) - first;
+    float3 edgeTwo = float3(
+            positions[vertexBase + 6u],
+            positions[vertexBase + 7u],
+            positions[vertexBase + 8u]) - first;
+    // Add the base vertex last so its rounding error is not amplified by both edge terms.
+    result.localPosition = barycentrics.x * edgeOne
+            + barycentrics.y * edgeTwo
+            + first;
+    result.position = mul(
+            ObjectToWorld3x4(), float4(result.localPosition, 1.0));
+    float3 normal = cross(edgeOne, edgeTwo);
+    float normalLengthSquared = dot(normal, normal);
+    if (normalLengthSquared > 0.0) {
+        normal *= rsqrt(normalLengthSquared);
+        if (dot(normal, authoredNormal) < 0.0) {
+            normal = -normal;
+        }
+        result.geometricNormal = normal;
+    } else {
+        result.geometricNormal = authoredNormal;
+    }
+    return result;
+}
+
+public uint primePrimitiveEmitterIndex(PrimitiveRecord primitive) {
+    uint encodedEmitter = primeUsesRasterComposite(primitive)
+            ? 0u
+            : primitive.flagsEmitter >> 3u & 0x00ffffffu;
+    return encodedEmitter == 0u
+            ? PRIME_NO_PRIMITIVE_INDEX
+            : encodedEmitter - 1u;
 }
 
 public PrimeSurfaceRelation primeSurfaceRelation(SectionRecord section) {
@@ -129,14 +199,20 @@ PrimitiveRecord primePrimitiveWithMaterialRecipe(
 }
 
 public float2 primeInterpolateUv(
-        SectionRecord section, PrimitiveRecord primitive, float2 barycentrics);
+        SectionRecord section,
+        PrimitiveRecord primitive,
+        float2 barycentrics,
+        float3 localPosition,
+        float3 geometricNormal);
 
 public PrimitiveRecord primeResolveSurfacePrimitive(
         SectionRecord section,
         PrimitiveRecord primary,
         PrimeSurfaceRelation relation,
         float textureLodValue,
-        float2 barycentrics) {
+        float2 barycentrics,
+        float3 localPosition,
+        float3 geometricNormal) {
     uint kind = relation.control & PRIME_SURFACE_RELATION_KIND_MASK;
     bool backFacing = HitKind() == HIT_KIND_TRIANGLE_BACK_FACE;
     if (kind == PRIME_SURFACE_RELATION_BILATERAL && backFacing) {
@@ -150,7 +226,12 @@ public PrimitiveRecord primeResolveSurfacePrimitive(
     bool overlayCovered = !(positiveOnly && backFacing)
             && primeEvaluateOpacity(
                     primary,
-                    primeInterpolateUv(section, primary, barycentrics),
+                    primeInterpolateUv(
+                            section,
+                            primary,
+                            barycentrics,
+                            localPosition,
+                            geometricNormal),
                     textureLodValue) >= PRIME_CUTOUT_ALPHA_THRESHOLD;
     return overlayCovered
             ? primePrimitiveWithMaterialRecipe(primary, relation.control >> 8u)
@@ -173,14 +254,16 @@ bool primeUsesConstantFloatUv(PrimitiveRecord primitive) {
 }
 
 public float2 primeInterpolateUv(
-        SectionRecord section, PrimitiveRecord primitive, float2 barycentrics) {
+        SectionRecord section,
+        PrimitiveRecord primitive,
+        float2 barycentrics,
+        float3 localPosition,
+        float3 geometricNormal) {
     if (primeUsesConstantFloatUv(primitive)) {
         return float2(asfloat(primitive.uv0), asfloat(primitive.uv1));
     }
     if (primeUsesRepeatedUv(primitive)) {
-        float3 hitPosition = WorldRayOrigin() + RayTCurrent() * WorldRayDirection();
-        float3 localPosition = hitPosition - section.translation;
-        float3 normal = abs(primeUnpackOctahedralNormal(primitive.normal));
+        float3 normal = abs(geometricNormal);
         float2 projectedPosition = normal.x > normal.y && normal.x > normal.z
                 ? localPosition.yz
                 : (normal.y > normal.z ? localPosition.xz : localPosition.xy);
@@ -201,7 +284,10 @@ public float2 primeInterpolateUv(
             + primeUnpackUv(primitive.uv2) * barycentric.z;
 }
 
-public float primeRayConeTextureLod(PrimitiveRecord primitive, float3 geometricNormal) {
+public float primeRayConeTextureLod(
+        PrimitiveRecord primitive,
+        float3 geometricNormal,
+        float3 hitPosition) {
     float2 rayCone = unpackHalf2x16ToFloat(primePush.rayCone);
     float normalizedUvDensity;
     if (primeUsesRasterComposite(primitive)) {
@@ -235,7 +321,6 @@ public float primeRayConeTextureLod(PrimitiveRecord primitive, float3 geometricN
     int2 atlasExtent = primeSceneTextureExtent(textureIndex);
     float texelsPerWorldUnit = normalizedUvDensity
             * float(max(atlasExtent.x, atlasExtent.y));
-    float3 hitPosition = WorldRayOrigin() + RayTCurrent() * WorldRayDirection();
     float distanceFromCamera = length(hitPosition - primePush.cameraPosition);
     float incidence = max(abs(dot(
             normalize(geometricNormal), normalize(WorldRayDirection()))), 0.05);

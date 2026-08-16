@@ -185,8 +185,9 @@ final class TracePipelinesContractTest {
     @Test
     void optimizedModulesPreservePayloadAbi() throws IOException {
         String tracePayload = "struct(vec3(f32),f32,vec3(f32),"
-                + "u32,u32,u32,f32,f32,u32,f32,u32,u32,vec3(f32),u32)";
-        String shadowPayload = "struct(vec4(f32),vec4(f32),vec4(f32),vec4(f32),u32)";
+                + "u32,u32,u32,f32,f32,u32,f32,u32,u32,vec3(f32),u32,vec3(f32),u32)";
+        String shadowPayload = "struct(vec4(f32),vec4(f32),vec4(f32),vec4(f32),"
+                + "u32,vec2(u32),vec2(u32))";
         for (String shader : List.of("world.rmiss.spv", "world.rchit.spv")) {
             assertEquals(
                     Set.of(tracePayload),
@@ -304,12 +305,12 @@ final class TracePipelinesContractTest {
 
     @Test
     void wavefrontBackingHasDeclaredFourKSize() {
-        assertEquals(3_715_891_296L,
+        assertEquals(3_981_312_096L,
                 RealtimeRayTracingPipeline.wavefrontBytes(3840, 2160));
-        assertEquals(1_393_459_232L,
+        assertEquals(1_526_169_632L,
                 OfflineRayTracingPipeline.wavefrontBytes(3840, 2160));
         assertEquals(
-                1328.9062805175781,
+                1455.4687805175781,
                 OfflineRayTracingPipeline.wavefrontBytes(3840, 2160)
                         / (1024.0 * 1024.0));
         assertThrows(

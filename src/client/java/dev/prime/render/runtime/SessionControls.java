@@ -1,6 +1,8 @@
 package dev.prime.render.runtime;
 
 import dev.prime.render.fsr.FsrDebugView;
+import dev.prime.render.LightSamplingDiagnostic;
+import dev.prime.render.PrimaryLightDiagnosticView;
 import dev.prime.render.post.DlssRrDebugView;
 import dev.prime.render.post.nrd.NrdDiagnostics;
 import java.util.Objects;
@@ -10,12 +12,18 @@ public record SessionControls(
         boolean screenshotRequested,
         boolean triangleDebug,
         boolean rendererDiagnostics,
+        LightSamplingDiagnostic lightSamplingDiagnostic,
+        PrimaryLightDiagnosticView primaryLightDiagnosticView,
         NrdDiagnostics.Mode nrdDebugView,
         FsrDebugView fsrDebugView,
         DlssRrDebugView rrDebugView,
         boolean rrDebugFullscreen) {
     public SessionControls {
         nrdDebugView = Objects.requireNonNull(nrdDebugView, "nrdDebugView");
+        lightSamplingDiagnostic = Objects.requireNonNull(
+                lightSamplingDiagnostic, "lightSamplingDiagnostic");
+        primaryLightDiagnosticView = Objects.requireNonNull(
+                primaryLightDiagnosticView, "primaryLightDiagnosticView");
         fsrDebugView = Objects.requireNonNull(fsrDebugView, "fsrDebugView");
         rrDebugView = Objects.requireNonNull(rrDebugView, "rrDebugView");
     }
@@ -25,6 +33,8 @@ public record SessionControls(
                 false,
                 false,
                 false,
+                LightSamplingDiagnostic.BASELINE,
+                PrimaryLightDiagnosticView.OFF,
                 NrdDiagnostics.Mode.OFF,
                 FsrDebugView.OFF,
                 DlssRrDebugView.OFF,
@@ -38,6 +48,8 @@ public record SessionControls(
                         value,
                         this.triangleDebug,
                         this.rendererDiagnostics,
+                        this.lightSamplingDiagnostic,
+                        this.primaryLightDiagnosticView,
                         this.nrdDebugView,
                         this.fsrDebugView,
                         this.rrDebugView,
@@ -51,6 +63,8 @@ public record SessionControls(
                         this.screenshotRequested,
                         value,
                         this.rendererDiagnostics,
+                        this.lightSamplingDiagnostic,
+                        this.primaryLightDiagnosticView,
                         this.nrdDebugView,
                         this.fsrDebugView,
                         this.rrDebugView,
@@ -63,6 +77,40 @@ public record SessionControls(
                 : new SessionControls(
                         this.screenshotRequested,
                         this.triangleDebug,
+                        value,
+                        this.lightSamplingDiagnostic,
+                        this.primaryLightDiagnosticView,
+                        this.nrdDebugView,
+                        this.fsrDebugView,
+                        this.rrDebugView,
+                        this.rrDebugFullscreen);
+    }
+
+    public SessionControls withLightSamplingDiagnostic(LightSamplingDiagnostic value) {
+        Objects.requireNonNull(value, "value");
+        return value == this.lightSamplingDiagnostic
+                ? this
+                : new SessionControls(
+                        this.screenshotRequested,
+                        this.triangleDebug,
+                        this.rendererDiagnostics,
+                        value,
+                        this.primaryLightDiagnosticView,
+                        this.nrdDebugView,
+                        this.fsrDebugView,
+                        this.rrDebugView,
+                        this.rrDebugFullscreen);
+    }
+
+    public SessionControls withPrimaryLightDiagnosticView(PrimaryLightDiagnosticView value) {
+        Objects.requireNonNull(value, "value");
+        return value == this.primaryLightDiagnosticView
+                ? this
+                : new SessionControls(
+                        this.screenshotRequested,
+                        this.triangleDebug,
+                        this.rendererDiagnostics,
+                        this.lightSamplingDiagnostic,
                         value,
                         this.nrdDebugView,
                         this.fsrDebugView,
@@ -78,6 +126,8 @@ public record SessionControls(
                         this.screenshotRequested,
                         this.triangleDebug,
                         this.rendererDiagnostics,
+                        this.lightSamplingDiagnostic,
+                        this.primaryLightDiagnosticView,
                         value,
                         this.fsrDebugView,
                         this.rrDebugView,
@@ -92,6 +142,8 @@ public record SessionControls(
                         this.screenshotRequested,
                         this.triangleDebug,
                         this.rendererDiagnostics,
+                        this.lightSamplingDiagnostic,
+                        this.primaryLightDiagnosticView,
                         this.nrdDebugView,
                         value,
                         this.rrDebugView,
@@ -106,6 +158,8 @@ public record SessionControls(
                         this.screenshotRequested,
                         this.triangleDebug,
                         this.rendererDiagnostics,
+                        this.lightSamplingDiagnostic,
+                        this.primaryLightDiagnosticView,
                         this.nrdDebugView,
                         this.fsrDebugView,
                         value,
@@ -119,6 +173,8 @@ public record SessionControls(
                         this.screenshotRequested,
                         this.triangleDebug,
                         this.rendererDiagnostics,
+                        this.lightSamplingDiagnostic,
+                        this.primaryLightDiagnosticView,
                         this.nrdDebugView,
                         this.fsrDebugView,
                         this.rrDebugView,

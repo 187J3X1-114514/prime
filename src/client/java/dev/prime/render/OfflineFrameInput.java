@@ -83,7 +83,9 @@ public record OfflineFrameInput(
                         this.material,
                         false,
                         false,
-                        false));
+                        false,
+                        LightSamplingDiagnostic.BASELINE,
+                        PrimaryLightDiagnosticView.OFF));
     }
 
     public SunDirection sunDirection() {

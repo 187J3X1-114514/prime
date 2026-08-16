@@ -8,7 +8,7 @@
 // moments are immutable pixel state and live once per pixel in the queue-buffer prefix.
 struct PrimeWavefrontTransportRecord {
     float4 physicalOriginAndPreviousBsdfPdf;
-    float4 traceOriginAndPathControl;
+    uint4 sourceAndPathControl;
     float4 rayDirectionAndDenoiserControl;
     float4 throughputAndNumericalFlags;
     uint4 medium0;
@@ -40,7 +40,9 @@ static const uint PRIME_WAVEFRONT_ETA_SCALE_SHIFT = 8u;
 static const uint PRIME_WAVEFRONT_ETA_SCALE_MASK = 0xffffu;
 static const uint PRIME_WAVEFRONT_PATH_FLAGS_SHIFT = 24u;
 static const uint PRIME_WAVEFRONT_PATH_FLAGS_MASK =
-        PRIME_PATH_PREVIOUS_DISCRETE | PRIME_PATH_PREVIOUS_MIXED_LIGHT_NEE;
+        PRIME_PATH_PREVIOUS_DISCRETE
+        | PRIME_PATH_PREVIOUS_MIXED_LIGHT_NEE
+        | PRIME_PATH_PREVIOUS_AREA_RIS;
 static const uint PRIME_WAVEFRONT_PRIMARY_BOUNCE_SHIFT = 8u;
 static const uint PRIME_WAVEFRONT_MEDIUM_COUNT_SHIFT = 16u;
 // Bits 18..31 are the complete current material-flag domain. Extending material flags beyond

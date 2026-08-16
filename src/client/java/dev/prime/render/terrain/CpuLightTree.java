@@ -401,6 +401,29 @@ public final class CpuLightTree {
         return low | high << 16;
     }
 
+    private static int packCentroid(
+            float minX,
+            float minY,
+            float minZ,
+            float maxX,
+            float maxY,
+            float maxZ,
+            float centerX,
+            float centerY,
+            float centerZ) {
+        return packCentroidAxis(centerX, minX, maxX)
+                | packCentroidAxis(centerY, minY, maxY) << 10
+                | packCentroidAxis(centerZ, minZ, maxZ) << 20;
+    }
+
+    private static int packCentroidAxis(float center, float minimum, float maximum) {
+        if (!(maximum > minimum)) {
+            return 0;
+        }
+        float normalized = Math.max(0.0F, Math.min(1.0F, (center - minimum) / (maximum - minimum)));
+        return Math.round(normalized * 1023.0F);
+    }
+
     private static short outwardHalf(float value, boolean minimum) {
         if (!Float.isFinite(value) || Math.abs(value) > 65504.0F) {
             throw new IllegalArgumentException("Light-tree bounds exceed finite f16 range");
@@ -533,12 +556,15 @@ public final class CpuLightTree {
         }
 
         private int packNode(int[] target, int cursor, int node) {
-            target[cursor++] = packHalfBounds(
+            int minXY = packHalfBounds(
                     this.nodes.minX[node], true, this.nodes.minY[node], true);
-            target[cursor++] = packHalfBounds(
+            int minZMaxX = packHalfBounds(
                     this.nodes.minZ[node], true, this.nodes.maxX[node], false);
-            target[cursor++] = packHalfBounds(
+            int maxYZ = packHalfBounds(
                     this.nodes.maxY[node], false, this.nodes.maxZ[node], false);
+            target[cursor++] = minXY;
+            target[cursor++] = minZMaxX;
+            target[cursor++] = maxYZ;
             target[cursor++] = LightDirection.pack(this.nodes.direction[node]);
             target[cursor++] = Float.floatToRawIntBits(this.nodes.power[node]);
             target[cursor++] = Float.floatToRawIntBits(
@@ -554,7 +580,17 @@ public final class CpuLightTree {
                 throw new IllegalStateException("Light tree siblings must be consecutive");
             }
             target[cursor++] = childOrLeaf;
-            target[cursor++] = 0;
+            // Relative RGB10 preserves the 32-byte node and follows the outward-rounded GPU bounds.
+            target[cursor++] = packCentroid(
+                    Float.float16ToFloat((short) minXY),
+                    Float.float16ToFloat((short) (minXY >>> 16)),
+                    Float.float16ToFloat((short) minZMaxX),
+                    Float.float16ToFloat((short) (minZMaxX >>> 16)),
+                    Float.float16ToFloat((short) maxYZ),
+                    Float.float16ToFloat((short) (maxYZ >>> 16)),
+                    this.nodes.centerX[node],
+                    this.nodes.centerY[node],
+                    this.nodes.centerZ[node]);
             return cursor;
         }
 

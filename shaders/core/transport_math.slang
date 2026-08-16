@@ -66,6 +66,48 @@ public float primeLightFamilyPdfValue(float conditionalPdf, float familyProbabil
     return conditionalPdf * familyProbability;
 }
 
+public float primeRisScaledWeightValue(
+        float target, float minimumProposalPdf, float proposalPdf)
+{
+    return target > 0.0 && minimumProposalPdf > 0.0 && proposalPdf > 0.0
+            ? target * (minimumProposalPdf / proposalPdf)
+            : 0.0;
+}
+
+public uint primeRisSelectIndex(float4 scaledWeights, float sampleValue)
+{
+    float total = scaledWeights.x + scaledWeights.y
+            + scaledWeights.z + scaledWeights.w;
+    if (!(total > 0.0)) return 0u;
+    float threshold = min(sampleValue, asfloat(0x3f7fffffu)) * total;
+    float cumulative = scaledWeights.x;
+    if (threshold < cumulative) return 0u;
+    cumulative += scaledWeights.y;
+    if (threshold < cumulative) return 1u;
+    cumulative += scaledWeights.z;
+    return threshold < cumulative ? 2u : 3u;
+}
+
+public float primeRisEffectivePdfValue(
+        float conditionalPdf,
+        float selectedTarget,
+        float minimumProposalPdf,
+        float scaledWeightSum,
+        uint candidateCount)
+{
+    if (!(conditionalPdf > 0.0)
+            || !(selectedTarget > 0.0)
+            || !(minimumProposalPdf > 0.0)
+            || !(scaledWeightSum > 0.0)
+            || candidateCount == 0u) {
+        return 0.0;
+    }
+    return primeProductOver(
+            conditionalPdf,
+            float(candidateCount) * selectedTarget * minimumProposalPdf,
+            scaledWeightSum);
+}
+
 public float primeAreaHitMisWeightValue(
         bool previousUsedAreaNee,
         bool previousCannotUseMis,

@@ -651,6 +651,10 @@ public final class VulkanRenderer implements AutoCloseable {
         this.terrain.invalidateAll();
     }
 
+    public void requestRealtimeReset() {
+        this.realtimeRenderer.requestReset();
+    }
+
     public void requestShaderReload() {
         this.shaderReloadRequested = true;
     }

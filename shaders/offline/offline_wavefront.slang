@@ -84,6 +84,7 @@ PrimeOfflinePathRecord primeMakeOfflineRecord(
                     path.previousLightNormal,
                     request.valid,
                     request.startingMediumCount)));
+    record.areaTargetEmitter = uint4(request.targetEmitter, 0u, 0u);
     return record;
 }
 
@@ -144,13 +145,14 @@ void primeOfflineWavefrontStep(
     uint pathIndex = primeOfflineQueuedPath(sourceQueue, launchIndex);
     PrimeOfflineTransportRecord traceRecord =
             primeOfflinePaths[pathIndex].transport;
-    uint bounce = asuint(traceRecord.traceOriginAndPathControl.w)
+    uint bounce = traceRecord.sourceAndPathControl.w
             & PRIME_OFFLINE_PATH_BYTE_MASK;
     primeSetNumericalContext(
             context.diagnostics, PRIME_NUMERICAL_STAGE_TRACE, bounce);
     SurfaceInteraction surface = primeTraceSurface(
-            traceRecord.traceOriginAndPathControl.xyz,
-            traceRecord.rayDirectionAndControl.xyz);
+            traceRecord.physicalOriginAndPreviousBsdfPdf.xyz,
+            traceRecord.rayDirectionAndControl.xyz,
+            traceRecord.sourceAndPathControl.xy);
 
     PrimeOfflinePathRecord record = primeOfflinePaths[pathIndex];
     uint2 pixel = primeOfflinePixel(pathIndex);
@@ -207,9 +209,11 @@ void primeOfflineWavefrontArea(
         request.startingExtinction = request.startingMediumCount > 0u
                 ? storedMedia.values[request.startingMediumCount - 1u].extinction
                 : float3(0.0);
+        request.targetEmitter = record.areaTargetEmitter.xy;
         PrimeShadowTrace shadow = primeTraceOfflineAreaShadow(
                 context,
                 record.transport.physicalOriginAndPreviousBsdfPdf.xyz,
+                record.transport.sourceAndPathControl.xy,
                 request,
                 storedMedia);
         if (shadow.hitDistance >= PRIME_NRD_FP16_MAX) {

@@ -102,12 +102,13 @@ void primeWavefrontStep(
     context.diagnostics.firstContext =
             (packedDiagnostic >> PRIME_WAVEFRONT_NUMERICAL_CONTEXT_SHIFT)
                     & PRIME_WAVEFRONT_NUMERICAL_CONTEXT_MASK;
-    uint bounce = asuint(
-            primeWavefrontPaths[recordIndex]
-                    .transport.traceOriginAndPathControl.w)
+    uint bounce = primeWavefrontPaths[recordIndex]
+                    .transport.sourceAndPathControl.w
             & PRIME_WAVEFRONT_BYTE_MASK;
-    float3 traceOrigin = primeWavefrontPaths[recordIndex]
-            .transport.traceOriginAndPathControl.xyz;
+    float3 physicalOrigin = primeWavefrontPaths[recordIndex]
+            .transport.physicalOriginAndPreviousBsdfPdf.xyz;
+    uint2 sourcePrimitive = primeWavefrontPaths[recordIndex]
+            .transport.sourceAndPathControl.xy;
     float3 rayDirection = primeWavefrontPaths[recordIndex]
             .transport.rayDirectionAndDenoiserControl.xyz;
     uint traceControl = asuint(
@@ -123,7 +124,7 @@ void primeWavefrontStep(
     primeSetNumericalContext(context.diagnostics, PRIME_NUMERICAL_STAGE_TRACE, bounce);
     SurfaceInteraction surface = primeTraceSurfaceClassified(
             PrimeSurfaceTracePolicy(),
-            traceOrigin, rayDirection, pathClass);
+            physicalOrigin, rayDirection, sourcePrimitive, pathClass);
     primeStoreWavefrontSurface(recordIndex, surface);
     if (surface.hitKind == PRIME_HIT_SURFACE
             && primeWavefrontTransparentBranch(traceControl)) {

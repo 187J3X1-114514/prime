@@ -27,6 +27,8 @@ public record RealtimeFrameInput(
         MaterialSettings.Snapshot material,
         boolean shInput,
         boolean triangleDebug,
+        LightSamplingDiagnostic lightSamplingDiagnostic,
+        PrimaryLightDiagnosticView primaryLightDiagnosticView,
         DisplaySettings.Snapshot display,
         boolean forceReset) {
     public RealtimeFrameInput {
@@ -44,6 +46,8 @@ public record RealtimeFrameInput(
         ScatterSettings.validateCount(scatterCount);
         Objects.requireNonNull(lighting, "lighting");
         Objects.requireNonNull(material, "material");
+        Objects.requireNonNull(lightSamplingDiagnostic, "lightSamplingDiagnostic");
+        Objects.requireNonNull(primaryLightDiagnosticView, "primaryLightDiagnosticView");
         Objects.requireNonNull(display, "display");
         if (width <= 0 || height <= 0 || displayWidth <= 0 || displayHeight <= 0) {
             throw new IllegalArgumentException(
@@ -111,7 +115,9 @@ public record RealtimeFrameInput(
                 this.material,
                 this.shInput,
                 rawNumericalDiagnostic,
-                this.triangleDebug);
+                this.triangleDebug,
+                this.lightSamplingDiagnostic,
+                this.primaryLightDiagnosticView);
     }
 
     public SunDirection sunDirection() {

@@ -15,8 +15,7 @@ void main()
     shadowLight.isDelta = 0;
     PrimeShadowTrace shadow = primeTraceShadow(
             context,
-            float3(0.0),
-            float3(0.0, 1.0, 0.0),
+            surface,
             shadowLight,
             primeEmptyVolumeStack());
     if (surface.hitKind == PRIME_HIT_SURFACE)

@@ -193,14 +193,15 @@ final class TraceProgram implements Destroyable {
             triangleGroup(
                     groups.get(hitBase),
                     closestHitStage,
-                    KHRRayTracingPipeline.VK_SHADER_UNUSED_KHR);
+                    anyHitStage);
             triangleGroup(groups.get(hitBase + 1), closestHitStage, anyHitStage);
             triangleGroup(groups.get(hitBase + 2), closestHitStage, anyHitStage);
             triangleGroup(
                     groups.get(hitBase + 3),
                     shadowClosestHitStage,
-                    KHRRayTracingPipeline.VK_SHADER_UNUSED_KHR);
-            triangleGroup(groups.get(hitBase + 4), shadowClosestHitStage, anyHitStage);
+                    shadowAnyHitStage);
+            triangleGroup(
+                    groups.get(hitBase + 4), shadowClosestHitStage, shadowAnyHitStage);
             triangleGroup(
                     groups.get(hitBase + 5), shadowClosestHitStage, shadowAnyHitStage);
 

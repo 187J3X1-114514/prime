@@ -188,6 +188,11 @@ PrimeWavefrontContinuations primeInitializeTransparentWavefront(
                     branchDiscreteOnly,
                     surfaceLinearRoughness);
         }
+        if (continuation
+                && !discreteOnlyInterface
+                && primeUsesFourCandidateAreaRis()) {
+            branchPath.flags |= PRIME_PATH_PREVIOUS_AREA_RIS;
+        }
         if (continuation) {
             branchPath.bounce = path.bounce + 1u;
             continuation = branchPath.bounce < maximumBounces;
@@ -226,10 +231,7 @@ void primeWavefrontPrimary(
     PrimeWavefrontTransportRecord record =
             primeLoadWavefrontTransportRecord(recordIndex);
     primeRestoreWavefrontDiagnostic(record, context.diagnostics);
-    SurfaceInteraction surface = primeLoadWavefrontSurface(
-            recordIndex,
-            record.traceOriginAndPathControl.xyz,
-            record.rayDirectionAndDenoiserControl.xyz);
+    SurfaceInteraction surface = primeLoadWavefrontSurface(recordIndex);
     PathState path = primeWavefrontPath(pixel, record);
     PrimeOpenPbrVolumeStack volumeStack = primeWavefrontVolumeStack(record);
     IntegratorRecord integrator;

@@ -192,7 +192,7 @@ final class DlssRrMotionContractTest {
     }
 
     @Test
-    void traversalOriginOffsetCannotManufactureStaticReflectionMotion() {
+    void physicalTraversalOriginKeepsStaticReflectionOnTheCameraRay() {
         FrameCamera camera = camera(new Matrix4f(), 0.0, 0.0, 0.0);
         Vector2f currentSampleUv = sampleUv(DlssRrProfile.jitter(
                 ReconstructionQualityMode.QUALITY, 5));
@@ -200,24 +200,15 @@ final class DlssRrMotionContractTest {
         Vector3f primaryPosition = new Vector3f(cameraRay).mul(9.0F);
         Vector3f planeNormal = new Vector3f(0.8F, 0.1F, 0.59F).normalize();
         Vector3f reflectionDirection = reflect(cameraRay, planeNormal);
-        float side = planeNormal.dot(reflectionDirection) >= 0.0F ? 1.0F : -1.0F;
-        Vector3f traceOffset = new Vector3f(planeNormal).mul(side * 0.001F);
         Vector3f tracedTarget = new Vector3f(primaryPosition)
-                .add(traceOffset)
                 .fma(31.0F, reflectionDirection);
-        Vector3f rawVirtual = mirrorPoint(
+        Vector3f virtualPosition = mirrorPoint(
                 tracedTarget, primaryPosition, planeNormal);
-        Vector3f correctedVirtual = rawVirtual.sub(
-                reflect(traceOffset, planeNormal), new Vector3f());
 
-        Vector2f rawMotion = motion(
-                camera, camera, currentSampleUv, rawVirtual, false);
-        Vector2f correctedMotion = motion(
-                camera, camera, currentSampleUv, correctedVirtual, false);
-
-        assertTrue(rawMotion.lengthSquared() > 0.0F);
-        assertVectorEquals(new Vector2f(), correctedMotion);
-        assertTrue(new Vector3f(correctedVirtual).cross(cameraRay)
+        assertVectorEquals(
+                new Vector2f(),
+                motion(camera, camera, currentSampleUv, virtualPosition, false));
+        assertTrue(new Vector3f(virtualPosition).cross(cameraRay)
                 .lengthSquared() < 1.0e-8F);
     }
 

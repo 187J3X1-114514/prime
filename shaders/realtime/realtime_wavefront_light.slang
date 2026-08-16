@@ -22,10 +22,7 @@ void primeWavefrontLight<IndirectReuse, SharcTraining>(
     PrimeWavefrontTransportRecord record =
             primeLoadWavefrontTransportRecord(recordIndex);
     primeRestoreWavefrontDiagnostic(record, context.diagnostics);
-    SurfaceInteraction surface = primeLoadWavefrontSurface(
-            recordIndex,
-            record.traceOriginAndPathControl.xyz,
-            record.rayDirectionAndDenoiserControl.xyz);
+    SurfaceInteraction surface = primeLoadWavefrontSurface(recordIndex);
     if (surface.hitKind != PRIME_HIT_SURFACE) {
         return;
     }

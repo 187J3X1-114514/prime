@@ -3,6 +3,8 @@ package dev.prime.client;
 import com.mojang.blaze3d.pipeline.RenderTarget;
 import com.mojang.blaze3d.platform.InputConstants;
 import dev.prime.render.RendererSettings;
+import dev.prime.render.LightSamplingDiagnostic;
+import dev.prime.render.PrimaryLightDiagnosticView;
 import dev.prime.render.runtime.RendererFrameSettings;
 import dev.prime.render.runtime.RendererLifecycle;
 import dev.prime.render.runtime.RuntimeDiagnostics;
@@ -228,6 +230,24 @@ public final class PrimeRuntime {
         this.session.setRendererDiagnostics(value);
     }
 
+    public LightSamplingDiagnostic lightSamplingDiagnostic() {
+        return this.session.controls().lightSamplingDiagnostic();
+    }
+
+    public void setLightSamplingDiagnostic(LightSamplingDiagnostic value) {
+        this.session.setLightSamplingDiagnostic(value);
+        this.requestRealtimeReset();
+    }
+
+    public PrimaryLightDiagnosticView primaryLightDiagnosticView() {
+        return this.session.controls().primaryLightDiagnosticView();
+    }
+
+    public void setPrimaryLightDiagnosticView(PrimaryLightDiagnosticView value) {
+        this.session.setPrimaryLightDiagnosticView(value);
+        this.requestRealtimeReset();
+    }
+
     public NrdDiagnostics.Mode nrdDebugView() {
         return this.session.controls().nrdDebugView();
     }
@@ -287,6 +307,13 @@ public final class PrimeRuntime {
         VulkanRenderer activeRenderer = this.lifecycle.renderer();
         if (activeRenderer != null && this.lifecycle.state() != RuntimeState.FAILED) {
             activeRenderer.invalidateAll();
+        }
+    }
+
+    private void requestRealtimeReset() {
+        VulkanRenderer activeRenderer = this.lifecycle.renderer();
+        if (activeRenderer != null && this.lifecycle.state() != RuntimeState.FAILED) {
+            activeRenderer.requestRealtimeReset();
         }
     }
 

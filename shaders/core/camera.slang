@@ -63,7 +63,8 @@ public PathState primeCameraPath(uint2 pixel, uint pathIndex, float2 cameraSampl
     PathState path;
     path.physicalOrigin = primePush.cameraPosition;
     path.bounce = 0u;
-    path.traceOrigin = primePush.cameraPosition;
+    path.sourcePrimitive = uint2(PRIME_NO_PRIMITIVE_INDEX);
+    path.sourceReserved = 0u;
     path.sampleDimension = pathIndex;
     path.rayDirection = primeCameraRayDirection(pixel, cameraSample);
     path.flags = PRIME_PATH_PREVIOUS_DISCRETE;

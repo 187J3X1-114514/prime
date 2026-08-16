@@ -8,4 +8,6 @@ public struct PrimeShadowPayload
     public float4 startingExtinction0Winding;
     public float4 startingExtinction1Winding;
     public uint startingMediumCount;
+    public uint2 sourcePrimitive;
+    public uint2 targetEmitter;
 };

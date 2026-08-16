@@ -266,7 +266,7 @@ final class EmissionLightContractTest {
     }
 
     @Test
-    void treeSofteningTracksPowerWeightedSpatialVariance() {
+    void treeMomentsTrackPowerWeightedCentroidAndSpatialVariance() {
         CpuLightTree.Leaves leaves = new CpuLightTree.Leaves(2);
         leaves.addWithSpatialVariance(
                 0.0F,
@@ -299,9 +299,15 @@ final class EmissionLightContractTest {
 
         CpuLightTree.Result tree = CpuLightTree.buildOwned(
                 leaves, 2, CpuLightTree.LOCAL_SOFTENING_SCALE);
-        float rootSoftening = Float.intBitsToFloat(tree.packNodes()[5]);
+        int[] nodes = tree.packNodes();
+        float rootSoftening = Float.intBitsToFloat(nodes[5]);
+        float minimumX = Float.float16ToFloat((short) nodes[0]);
+        float maximumX = Float.float16ToFloat((short) (nodes[1] >>> 16));
+        float normalizedCenterX = (nodes[7] & 0x3ff) / 1023.0F;
+        float centerX = minimumX + (maximumX - minimumX) * normalizedCenterX;
 
         assertEquals(21.25F * CpuLightTree.LOCAL_SOFTENING_SCALE, rootSoftening, 1.0E-6F);
+        assertEquals(7.5F, centerX, (maximumX - minimumX) / 1023.0F);
     }
 
     @Test

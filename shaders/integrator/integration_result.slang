@@ -110,3 +110,33 @@ public PrimeIntegrationResult primeEmptyIntegrationResult() {
     result.transparentReflectionOnly = false;
     return result;
 }
+
+public bool primeRrUsesReflectionPrimaryGuide(
+        PrimeIntegrationResult result,
+        float reflectionVirtualPositionKind) {
+    // A finite PSR target turns pure TIR into an ordinary virtual primary view. Directional sky
+    // and unavailable probes remain specular signals on the visible interface.
+    return result.transparentPrimary
+            && result.transparentReflectionOnly
+            && reflectionVirtualPositionKind == 0.0
+            && result.reflectionGuides.primaryHitKind == PRIME_HIT_SURFACE;
+}
+
+public PrimeDenoiserGuides primeSelectReconstructionPrimaryGuides(
+        PrimeIntegrationResult result,
+        bool nrdShInputs,
+        bool usesTransmissionGuide,
+        bool usesReflectionGuide) {
+    if (usesReflectionGuide) {
+        return result.reflectionGuides;
+    }
+    // NRD composites its independent reflection lane only after resolving a valid primary lane.
+    // Pure TIR therefore keeps the visible interface as a zero-signal geometry sentinel instead
+    // of selecting the deliberately empty transmission identity.
+    if (result.transparentPrimary
+            && (usesTransmissionGuide
+                    || (nrdShInputs && !result.transparentReflectionOnly))) {
+        return result.transmissionGuides;
+    }
+    return result.guides;
+}

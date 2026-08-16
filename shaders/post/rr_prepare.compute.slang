@@ -21,6 +21,7 @@ import "core/nrd_common.slang";
 [[vk::binding(13, 0)]] [[vk::image_format("rgba16f")]] writeonly RWTexture2D<float4> rrNormalRoughness;
 [[vk::binding(14, 0)]] [[vk::image_format("rg32f")]] writeonly RWTexture2D<float4> rrSpecularMotion;
 [[vk::binding(15, 0)]] [[vk::image_format("rgba32f")]] readonly RWTexture2D<float4> rrReflectionPreviousVirtualPosition;
+[[vk::binding(16, 0)]] [[vk::image_format("r16f")]] writeonly RWTexture2D<float4> rrSpecularHitDistance;
 
 struct PrimeRrPreparePushConstants {
     float4x4 currentClipToWorld;
@@ -137,6 +138,9 @@ void main(uint3 dispatchThreadId : SV_DispatchThreadID, uint groupIndex : SV_Gro
 
     float4 material = primeImageLoad(rrDiffuseMaterial, pixel);
     float4 specularMaterial = primeImageLoad(rrSpecularMaterial, pixel);
+    float4 noisySpecular = primeReadonlyImageLoad(rrNoisySpecular, pixel);
+    primeWriteImageStore(rrSpecularHitDistance, pixel, float4(
+            primeNrdSanitizeHitDistance(noisySpecular.a)));
     // This pass consumes raygen's private RR scratch contract. Radiance, distances, albedos,
     // roughness and the sky marker have already been made finite and range-limited at the writer.
     bool sky = material.a < 0.0;
@@ -168,7 +172,6 @@ void main(uint3 dispatchThreadId : SV_DispatchThreadID, uint groupIndex : SV_Gro
     // The transmitted PSR and visible reflection interface can have different roughness.
     float reflectionRoughness = specularMaterial.a;
     float4 noisyDiffuse = primeReadonlyImageLoad(rrNoisyDiffuse, pixel);
-    float4 noisySpecular = primeReadonlyImageLoad(rrNoisySpecular, pixel);
     float4 sun = primeReadonlyImageLoad(rrSunLighting, pixel);
     float3 inputRadiance = noisyDiffuse.rgb
             + noisySpecular.rgb

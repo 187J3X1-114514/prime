@@ -4,6 +4,8 @@ import "core/numerical.slang";
 import "core/nrd_common.slang";
 import "material/default_material.slang";
 import "core/nrd_sh.slang";
+import "integrator/integration_result.slang";
+import "integrator/path_contract.slang";
 
 static const uint PRIME_NRD_INPUT_WORDS = 4u;
 static const uint PRIME_NRD_WITNESS_WORDS = 9u;
@@ -50,6 +52,32 @@ void main(uint3 dispatchThreadId : SV_DispatchThreadID) {
     float4 third = asfloat(primeTestInput[inputOffset + 3u]);
     uint kind = control.x;
     uint mask = 0u;
+    PrimeIntegrationResult reflectionOnly = primeEmptyIntegrationResult();
+    reflectionOnly.transparentPrimary = true;
+    reflectionOnly.transparentReflectionOnly = true;
+    reflectionOnly.reflectionGuides.primaryHitKind = PRIME_HIT_SURFACE;
+    if (!primeRrUsesReflectionPrimaryGuide(reflectionOnly, 0.0)
+            || primeRrUsesReflectionPrimaryGuide(reflectionOnly, 1.0)
+            || primeRrUsesReflectionPrimaryGuide(reflectionOnly, -1.0)) {
+        mask |= PRIME_TEST_FAILURE_STATE;
+    }
+    reflectionOnly.guides.primaryDistance = 3.0;
+    reflectionOnly.transmissionGuides.primaryDistance = -1.0;
+    reflectionOnly.reflectionGuides.primaryDistance = 7.0;
+    if (primeSelectReconstructionPrimaryGuides(
+                    reflectionOnly, true, false, false).primaryDistance != 3.0
+            || primeSelectReconstructionPrimaryGuides(
+                    reflectionOnly, false, false, true).primaryDistance != 7.0) {
+        mask |= PRIME_TEST_FAILURE_STATE;
+    }
+    reflectionOnly.transparentReflectionOnly = false;
+    if (primeRrUsesReflectionPrimaryGuide(reflectionOnly, 0.0)) {
+        mask |= PRIME_TEST_FAILURE_STATE;
+    }
+    if (primeSelectReconstructionPrimaryGuides(
+                    reflectionOnly, true, false, false).primaryDistance != -1.0) {
+        mask |= PRIME_TEST_FAILURE_STATE;
+    }
     float4 result0 = float4(0.0);
     float4 result1 = float4(0.0);
     float4 result2 = float4(0.0);

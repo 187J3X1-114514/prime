@@ -21,6 +21,7 @@ public final class DlssRrTargets implements RawWavefrontFrame, Destroyable {
     static final int LINEAR_DEPTH_FORMAT = VK12.VK_FORMAT_R32_SFLOAT;
     static final int MOTION_FORMAT = VK12.VK_FORMAT_R16G16_SFLOAT;
     static final int SPECULAR_MOTION_FORMAT = VK12.VK_FORMAT_R32G32_SFLOAT;
+    static final int SPECULAR_HIT_DISTANCE_FORMAT = VK12.VK_FORMAT_R16_SFLOAT;
     private static final int USAGE =
             VK12.VK_IMAGE_USAGE_STORAGE_BIT | VK12.VK_IMAGE_USAGE_SAMPLED_BIT;
 
@@ -37,6 +38,7 @@ public final class DlssRrTargets implements RawWavefrontFrame, Destroyable {
     private final VulkanImage inputColor;
     private final VulkanImage normalRoughness;
     private final VulkanImage specularMotion;
+    private final VulkanImage specularHitDistance;
     private final VulkanImage reflectionPosition;
     private final VulkanImage rrOutput;
     private final VulkanImage[] owned;
@@ -56,8 +58,9 @@ public final class DlssRrTargets implements RawWavefrontFrame, Destroyable {
         this.inputColor = images.get(10);
         this.normalRoughness = images.get(11);
         this.specularMotion = images.get(12);
-        this.reflectionPosition = images.get(13);
-        this.rrOutput = images.get(14);
+        this.specularHitDistance = images.get(13);
+        this.reflectionPosition = images.get(14);
+        this.rrOutput = images.get(15);
         this.owned = images.toArray(VulkanImage[]::new);
     }
 
@@ -95,6 +98,8 @@ public final class DlssRrTargets implements RawWavefrontFrame, Destroyable {
                     NORMAL_ROUGHNESS_FORMAT, "Prime RR world normal and roughness");
             add(context, images, renderWidth, renderHeight,
                     SPECULAR_MOTION_FORMAT, "Prime RR reflection motion");
+            add(context, images, renderWidth, renderHeight,
+                    SPECULAR_HIT_DISTANCE_FORMAT, "Prime RR specular hit distance");
             add(context, images, renderWidth, renderHeight,
                     VK12.VK_FORMAT_R32G32B32A32_SFLOAT,
                     "Prime RR reflection previous virtual position");
@@ -177,6 +182,7 @@ public final class DlssRrTargets implements RawWavefrontFrame, Destroyable {
     public VulkanImage motion() { return this.motion; }
     public VulkanImage rrNormalRoughness() { return this.normalRoughness; }
     public VulkanImage specularMotion() { return this.specularMotion; }
+    public VulkanImage specularHitDistance() { return this.specularHitDistance; }
     public VulkanImage rrOutput() { return this.rrOutput; }
 
     @Override

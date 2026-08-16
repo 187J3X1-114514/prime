@@ -246,7 +246,8 @@ public final class DlssRrPostProcessor implements VulkanReconstructionProcessor 
                         this.targets.rrOutput(),
                         this.targets.viewZ(),
                         this.targets.motion(),
-                        this.targets.specularMotion()));
+                        this.targets.specularMotion(),
+                        this.targets.specularHitDistance()));
         allCommandsToCompute(commandBuffer);
         this.displayTransform.record(
                 commandBuffer,

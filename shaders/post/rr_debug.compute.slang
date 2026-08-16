@@ -12,7 +12,7 @@ import "post/display_transform.slang";
 [[vk::binding(4, 0)]] [[vk::image_format("rgba16f")]] readonly RWTexture2D<float4> rrDebugNormalRoughness;
 [[vk::binding(5, 0)]] [[vk::image_format("rgba16f")]] readonly RWTexture2D<float4> rrDebugDiffuseAlbedo;
 [[vk::binding(6, 0)]] [[vk::image_format("rgba16f")]] readonly RWTexture2D<float4> rrDebugSpecularAlbedo;
-[[vk::binding(7, 0)]] [[vk::image_format("rgba16f")]] readonly RWTexture2D<float4> rrDebugNoisySpecular;
+[[vk::binding(7, 0)]] [[vk::image_format("r16f")]] readonly RWTexture2D<float4> rrDebugSpecularHitDistance;
 [[vk::binding(8, 0)]] [[vk::image_format("rgba16f")]] readonly RWTexture2D<float4> rrDebugOutput;
 [[vk::binding(9, 0)]] [[vk::image_format("rgba8")]] RWTexture2D<float4> rrDebugDisplay;
 [[vk::binding(10, 0)]] StructuredBuffer<PrimeAutoExposureState> primeAutoExposureState;
@@ -140,7 +140,8 @@ float3 rrPanel(uint panel, float2 uv) {
         return clamp(primeEncodeSrgb(primeLinearRec2020ToLinearBt709(albedo)), 0.0, 1.0);
     }
     if (panel == RR_SPECULAR_HIT_DISTANCE) {
-        float hitDistance = primeReadonlyImageLoad(rrDebugNoisySpecular, lowPixel).a;
+        float hitDistance = primeReadonlyImageLoad(
+                rrDebugSpecularHitDistance, lowPixel).r;
         if (!rrFinite(hitDistance)) return RR_INVALID;
         float mapped = clamp(log2(1.0 + max(hitDistance, 0.0)) / 16.0, 0.0, 1.0);
         return float3(mapped, mapped * mapped, 1.0 - mapped);

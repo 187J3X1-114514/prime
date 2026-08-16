@@ -25,13 +25,13 @@ import org.lwjgl.vulkan.VkCommandBuffer;
 
 /** Stable, fixed-width Java binding for Prime's private DLSS Ray Reconstruction bridge. */
 public final class DlssRrNative {
-    public static final int ABI_VERSION = 5;
+    public static final int ABI_VERSION = 6;
     static final int EXTENSION_QUERY_SIZE = 56;
     static final int INIT_DESCRIPTION_SIZE = 56;
     static final int OPTIMAL_SETTINGS_SIZE = 32;
     static final int FEATURE_DESCRIPTION_SIZE = 48;
     static final int IMAGE_SIZE = 32;
-    static final int IMAGE_COUNT = 8;
+    static final int IMAGE_COUNT = 9;
     static final int EVALUATE_DESCRIPTION_SIZE = 176 + IMAGE_COUNT * IMAGE_SIZE;
     private static final int EXTENSION_CAPACITY = 64;
     private static final int EXTENSION_NAME_STRIDE = 256;
@@ -413,6 +413,7 @@ public final class DlssRrNative {
                 putImage(description, 176 + 5 * IMAGE_SIZE, evaluation.linearDepth());
                 putImage(description, 176 + 6 * IMAGE_SIZE, evaluation.motionVectors());
                 putImage(description, 176 + 7 * IMAGE_SIZE, evaluation.specularMotionVectors());
+                putImage(description, 176 + 8 * IMAGE_SIZE, evaluation.specularHitDistance());
                 checkResult(
                         JNI.invokePI(MemoryUtil.memAddress(description), this.nativeApi.evaluateFunction),
                         "evaluate DLSS RR");
@@ -464,7 +465,8 @@ public final class DlssRrNative {
             VulkanImage outputColor,
             VulkanImage linearDepth,
             VulkanImage motionVectors,
-            VulkanImage specularMotionVectors) {
+            VulkanImage specularMotionVectors,
+            VulkanImage specularHitDistance) {
         public Evaluation {
             if (renderWidth <= 0 || renderHeight <= 0) {
                 throw new IllegalArgumentException("DLSS RR render dimensions must be positive");
@@ -501,6 +503,8 @@ public final class DlssRrNative {
                     renderWidth, renderHeight);
             requireInput(specularMotionVectors, "specular motion vectors",
                     DlssRrTargets.SPECULAR_MOTION_FORMAT, renderWidth, renderHeight);
+            requireInput(specularHitDistance, "specular hit distance",
+                    DlssRrTargets.SPECULAR_HIT_DISTANCE_FORMAT, renderWidth, renderHeight);
         }
 
         private static void requireInput(

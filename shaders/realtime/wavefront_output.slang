@@ -36,7 +36,8 @@ uint primeClassifyRawOutput(PrimeIntegrationResult result) {
                 | primeClassifyNonnegative(result.transmissionGuides.primarySpecularAlbedo);
     }
     if (result.transparentPrimary
-            && transparentGuideMode == PRIME_PATH_TRANSPARENT_GUIDE_MODE_NRD) {
+            && (transparentGuideMode == PRIME_PATH_TRANSPARENT_GUIDE_MODE_NRD
+                    || result.transparentReflectionOnly)) {
         flags |= primeClassifyNonFinite(result.reflectionGuides.primaryDistance)
                 | primeClassifyDirection(result.reflectionGuides.primaryNormal)
                 | primeClassifyNonnegative(result.reflectionGuides.primaryAlbedo)
@@ -103,19 +104,36 @@ void primeWriteRealtimeOutput(
     // the guide topology fixed: a transmitted solid-angle surface owns the primary guide
     // regardless of its current Fresnel energy.
     bool rrUsesTransmissionGuide = !nrdShInputs && usesTransmissionAnchor;
-    PrimeDenoiserGuides nrdGuides = sampleResult.transparentPrimary
-            && (nrdShInputs || rrUsesTransmissionGuide)
-            ? sampleResult.transmissionGuides
-            : sampleResult.guides;
-    if (sampleResult.transparentReflectionOnly) {
+    bool rrUsesReflectionGuide = !nrdShInputs
+            && primeRrUsesReflectionPrimaryGuide(
+                    sampleResult, reflectionPreviousVirtualPosition.w);
+    bool rrUsesVirtualPrimaryGuide =
+            rrUsesTransmissionGuide || rrUsesReflectionGuide;
+    PrimeDenoiserGuides nrdGuides = primeSelectReconstructionPrimaryGuides(
+            sampleResult,
+            nrdShInputs,
+            rrUsesTransmissionGuide,
+            rrUsesReflectionGuide);
+    if (sampleResult.transparentReflectionOnly && !rrUsesReflectionGuide) {
         nrdGuides.primaryAlbedo = float3(0.0);
+        if (nrdShInputs) {
+            nrdGuides.primarySpecularAlbedo = float3(0.0);
+        }
     }
     float3 noisyDiffuse = sampleResult.radiance.diffuse;
     float3 noisySpecular = sampleResult.radiance.specular;
     if (!nrdShInputs && sampleResult.transparentPrimary) {
-        noisyDiffuse += noisySpecular;
-        noisySpecular = sampleResult.reflectionDiffuseRadiance
-                + sampleResult.reflectionSpecularRadiance;
+        if (rrUsesReflectionGuide) {
+            // Pure TIR through a finite PSR target is a direct view of virtual geometry. Preserve
+            // the target closure's signal split so RR receives the same guide topology as a
+            // directly visible surface.
+            noisyDiffuse = sampleResult.reflectionDiffuseRadiance;
+            noisySpecular = sampleResult.reflectionSpecularRadiance;
+        } else {
+            noisyDiffuse += noisySpecular;
+            noisySpecular = sampleResult.reflectionDiffuseRadiance
+                    + sampleResult.reflectionSpecularRadiance;
+        }
     }
     bool hasPrimarySurface = nrdGuides.primaryHitKind == PRIME_HIT_SURFACE;
     float primaryDistance = primeNrdSanitizePrimaryDistance(
@@ -148,7 +166,9 @@ void primeWriteRealtimeOutput(
                 sampleResult.guides.primaryPosition, fallbackDirection);
         primaryPosition = primaryDirection * primaryDistance;
     }
-    float specularHitDistance = !nrdShInputs && sampleResult.transparentPrimary
+    float specularHitDistance = !nrdShInputs
+            && sampleResult.transparentPrimary
+            && !rrUsesReflectionGuide
             ? sampleResult.guides.specularHitDistance
             : nrdGuides.specularHitDistance;
     float rawSignalScale = primeNrdClampRadiancePair(
@@ -208,7 +228,7 @@ void primeWriteRealtimeOutput(
             int2(pixel),
             float4(
                     primeNrdSanitizeAlbedo(nrdGuides.primaryAlbedo),
-                    rrUsesTransmissionGuide ? visibleDistance : primaryDistance));
+                    rrUsesVirtualPrimaryGuide ? visibleDistance : primaryDistance));
     primeImageStore(
             primeNrdNormalRoughness,
             int2(pixel),
@@ -225,7 +245,9 @@ void primeWriteRealtimeOutput(
                             : nrdGuides.primarySpecularAlbedo),
                     nrdShInputs
                             ? float(nrdGuides.primaryMaterialFlags)
-                            : sampleResult.guides.primaryLinearRoughness));
+                            : (rrUsesReflectionGuide
+                                    ? nrdGuides.primaryLinearRoughness
+                                    : sampleResult.guides.primaryLinearRoughness)));
     if (nrdShInputs) {
         bool visibleHasMotion = sampleResult.guides.primaryHasMotion
                 && hasVisibleSurface
@@ -331,7 +353,9 @@ void primeWriteRealtimeOutput(
         primeImageStore(
                 primeNrdReflectionPosition,
                 int2(pixel),
-                reflectionPreviousVirtualPosition);
+                rrUsesReflectionGuide
+                        ? float4(0.0, 0.0, 0.0, -1.0)
+                        : reflectionPreviousVirtualPosition);
     }
     primeImageStore(
             primeNrdSunLighting,

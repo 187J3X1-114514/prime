@@ -94,7 +94,8 @@ PrimeWavefrontContinuations primeInitializeTransparentWavefront(
             guideMode == PRIME_PATH_TRANSPARENT_GUIDE_MODE_NRD
             || guideMode == PRIME_PATH_TRANSPARENT_GUIDE_MODE_DLSS_RR;
     bool reflectionGuideEnabled =
-            guideMode == PRIME_PATH_TRANSPARENT_GUIDE_MODE_NRD;
+            guideMode == PRIME_PATH_TRANSPARENT_GUIDE_MODE_NRD
+            || guideMode == PRIME_PATH_TRANSPARENT_GUIDE_MODE_DLSS_RR;
     primeStoreWavefrontVisibleScratch(pixel, initialResult.guides);
     primeStoreWavefrontArea(pixel, initialResult.guides);
     primeAppendWavefrontPath(

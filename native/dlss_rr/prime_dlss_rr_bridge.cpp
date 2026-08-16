@@ -19,7 +19,7 @@
 
 namespace {
 
-constexpr std::uint32_t PRIME_DLSS_RR_ABI_VERSION = 5;
+constexpr std::uint32_t PRIME_DLSS_RR_ABI_VERSION = 6;
 constexpr char PROJECT_ID[] = "7bc01faf-de5e-4c7c-9936-43cb5c301232";
 constexpr std::uint32_t EXTENSION_NAME_STRIDE = 256;
 
@@ -83,6 +83,7 @@ enum ImageIndex : std::size_t {
     LINEAR_DEPTH,
     MOTION_VECTORS,
     SPECULAR_MOTION_VECTORS,
+    SPECULAR_HIT_DISTANCE,
     IMAGE_COUNT
 };
 
@@ -107,7 +108,7 @@ static_assert(sizeof(PrimeInitDescription) == 56);
 static_assert(sizeof(PrimeOptimalSettings) == 32);
 static_assert(sizeof(PrimeFeatureDescription) == 48);
 static_assert(sizeof(PrimeImage) == 32);
-static_assert(sizeof(PrimeEvaluateDescription) == 432);
+static_assert(sizeof(PrimeEvaluateDescription) == 464);
 
 struct Context {
     VkDevice device{};
@@ -489,6 +490,11 @@ PRIME_EXPORT int primeDlssRrEvaluate(PrimeEvaluateDescription* description) {
                     description->images[SPECULAR_MOTION_VECTORS],
                     VK_FORMAT_R32G32_SFLOAT,
                     feature->renderWidth,
+                    feature->renderHeight)
+            && validImage(
+                    description->images[SPECULAR_HIT_DISTANCE],
+                    VK_FORMAT_R16_SFLOAT,
+                    feature->renderWidth,
                     feature->renderHeight);
     if (!validScalars || !validImages) {
         return -2;
@@ -509,9 +515,10 @@ PRIME_EXPORT int primeDlssRrEvaluate(PrimeEvaluateDescription* description) {
     evaluate.pInMotionVectors = &resources[MOTION_VECTORS];
     evaluate.pInMotionVectorsReflections = &resources[SPECULAR_MOTION_VECTORS];
     // Prime's transparent-primary split is not a raster overlay, so there is no truthful
-    // pre-transparency snapshot. Direct virtual-surface MV also supersedes hit-T reconstruction.
+    // pre-transparency snapshot. Reflection MV transports history while hit distance independently
+    // preserves spatial separation between reflected surfaces.
     evaluate.pInColorBeforeTransparency = nullptr;
-    evaluate.pInSpecularHitDistance = nullptr;
+    evaluate.pInSpecularHitDistance = &resources[SPECULAR_HIT_DISTANCE];
     evaluate.pInWorldToViewMatrix = description->worldToView;
     evaluate.pInViewToClipMatrix = description->viewToClip;
     evaluate.InJitterOffsetX = description->jitterX;

@@ -538,18 +538,34 @@ public final class RealtimeRayTracingPipeline implements RealtimeIntegratorPipel
             VkCommandBuffer commandBuffer,
             MemoryStack stack,
             long[] images) {
-        VulkanSync.resourceBarrier(
-                commandBuffer,
-                stack,
-                this.wavefront,
-                images,
-                KHRRayTracingPipeline.VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR,
-                VK12.VK_ACCESS_SHADER_WRITE_BIT,
-                KHRRayTracingPipeline.VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR
-                        | VK12.VK_PIPELINE_STAGE_DRAW_INDIRECT_BIT,
-                VK12.VK_ACCESS_SHADER_READ_BIT
-                        | VK12.VK_ACCESS_SHADER_WRITE_BIT
-                        | VK12.VK_ACCESS_INDIRECT_COMMAND_READ_BIT);
+        long sourceStage =
+                KHRRayTracingPipeline.VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR;
+        long destinationStage = sourceStage | VK12.VK_PIPELINE_STAGE_DRAW_INDIRECT_BIT;
+        long destinationAccess = VK12.VK_ACCESS_SHADER_READ_BIT
+                | VK12.VK_ACCESS_SHADER_WRITE_BIT
+                | VK12.VK_ACCESS_INDIRECT_COMMAND_READ_BIT;
+        if (this.sharc == null) {
+            VulkanSync.resourceBarrier(
+                    commandBuffer,
+                    stack,
+                    this.wavefront,
+                    images,
+                    sourceStage,
+                    VK12.VK_ACCESS_SHADER_WRITE_BIT,
+                    destinationStage,
+                    destinationAccess);
+        } else {
+            VulkanSync.resourceBarrier(
+                    commandBuffer,
+                    stack,
+                    this.wavefront,
+                    this.sharc.trainingBuffer(),
+                    images,
+                    sourceStage,
+                    VK12.VK_ACCESS_SHADER_WRITE_BIT,
+                    destinationStage,
+                    destinationAccess);
+        }
     }
 
     static long wavefrontBytes(int width, int height) {

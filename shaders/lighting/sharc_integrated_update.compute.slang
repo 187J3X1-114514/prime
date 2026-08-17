@@ -3,7 +3,7 @@
 
 import "material/material.slang";
 #include "lighting/sharc.slang"
-#include "lighting/sharc_training_events.slang"
+#include "lighting/sharc_training_records.slang"
 
 [shader("compute")]
 [numthreads(64, 1, 1)]
@@ -14,45 +14,27 @@ void main(uint3 dispatchThreadId : SV_DispatchThreadID) {
         return;
     }
 
-    SharcParameters parameters = primeSharcParameters();
+    PrimeSharcTrainingRecord record = primeLoadSharcTrainingRecord(pathIndex);
+    if (!primeSharcTrainingActive(record.control)
+            || !primeSharcTrainingComplete(record.control)) {
+        return;
+    }
     SharcState state;
     SharcInit(state);
-    float3 previousThroughput = float3(1.0);
-    bool hasVertex = false;
-    for (uint eventIndex = 0u;
-            eventIndex < PRIME_SHARC_TRAINING_MAX_EVENTS;
-            ++eventIndex) {
-        PrimeSharcTrainingEvent event = primeLoadSharcTrainingEvent(
-                pathIndex, eventIndex);
-        if (event.type == PRIME_SHARC_TRAINING_EVENT_NONE) {
-            continue;
-        }
-        if (hasVertex) {
-            SharcSetThroughput(
-                    state,
-                    primeSharcTrainingThroughputRatio(
-                            event.throughput, previousThroughput));
-            SharcSetRadianceDirectionWeight(
-                    state, event.incomingDirectionWeight);
-        }
-        if (event.type == PRIME_SHARC_TRAINING_EVENT_MISS) {
-            SharcUpdateMiss(parameters, state, event.position);
-            return;
-        }
-        if (event.type != PRIME_SHARC_TRAINING_EVENT_HIT) {
-            return;
-        }
-        SharcHitData hit = primeSharcHitData(
-                event.position,
-                event.geometricNormal,
-                event.radianceDirection,
-                event.radianceDirectionWeight,
-                event.materialDemodulation,
-                event.emissive);
-        if (!SharcUpdateHit(parameters, state, hit, event.direct, 0.0)) {
-            return;
-        }
-        previousThroughput = event.throughput;
-        hasVertex = true;
+    SharcHitData hit = primeSharcHitData(
+            record.position,
+            record.geometricNormal,
+            float3(0.0, 0.0, 1.0),
+            0.0,
+            record.materialDemodulation,
+            float3(0.0));
+    SharcParameters parameters = primeSharcParameters();
+    if (!SharcUpdateHit(parameters, state, hit, record.direct, 0.0)) {
+        return;
+    }
+    if (any(record.tail != float3(0.0))) {
+        SharcSetRadianceDirectionWeight(
+                state, record.incomingDirectionWeight);
+        SharcUpdateMiss(parameters, state, record.tail);
     }
 }

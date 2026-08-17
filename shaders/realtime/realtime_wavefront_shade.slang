@@ -57,6 +57,9 @@ void primeWavefrontShade<IndirectReuse, SharcTraining>(
             surface,
             recordIndex);
     continuation = continuation && path.bounce < maximumBounces;
+    if (!continuation) {
+        sharcTraining.finish(path);
+    }
     PrimeWavefrontTransportRecord updatedRecord =
             primeMakeUpdatedWavefrontRecord(context.diagnostics,
                     path,

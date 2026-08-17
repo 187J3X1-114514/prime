@@ -6,11 +6,12 @@
 #define SHARC_USE_FP16 1
 #define SHARC_ENABLE_FADE_ACCELERATION 1
 #define SHARC_ENABLE_RESPONSIVE_LIGHTING 0
-// Resolved-cache reuse in Update correlates samples and can form a static-view energy feedback loop.
+// Prime performs explicit previous-frame bootstrap at a later main-wavefront vertex. Keep vendor
+// Update resampling disabled so replay cannot introduce an implicit or same-root feedback edge.
 #define SHARC_ENABLE_CACHE_RESAMPLING 0
 #define SHARC_MATERIAL_DEMODULATION 1
 #define SHARC_SEPARATE_EMISSIVE 1
-#define SHARC_PROPAGATION_DEPTH 4
+#define SHARC_PROPAGATION_DEPTH 1
 #define HASH_GRID_ENABLE_64_BIT_ATOMICS 1
 #define HASH_GRID_COMPACT 0
 

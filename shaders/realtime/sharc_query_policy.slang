@@ -6,7 +6,40 @@
 #define SHARC_UPDATE 0
 #define SHARC_QUERY 1
 #include "lighting/sharc.slang"
-#include "lighting/sharc_training_events.slang"
+#include "lighting/sharc_training_records.slang"
+
+bool primeSharcCacheEligible(
+        PathState path,
+        SurfaceInteraction surface,
+        bool diagnosticSample) {
+    if (path.previousSharcEvent == PRIME_SHARC_EVENT_DISCRETE) {
+        primeRecordSharcDiagnostic(
+                diagnosticSample, PRIME_SHARC_DIAGNOSTIC_DISCRETE_SKIP);
+        return false;
+    }
+
+    float voxelSize = primeSharcVoxelSize(
+            surface.position, surface.geometricNormal);
+    const float voxelDiagonalScale = 1.7320508075688772;
+    if (surface.t <= voxelSize * voxelDiagonalScale) {
+        primeRecordSharcDiagnostic(
+                diagnosticSample, PRIME_SHARC_DIAGNOSTIC_SHORT_SKIP);
+        return false;
+    }
+    if (path.previousSharcEvent == PRIME_SHARC_EVENT_GLOSSY) {
+        float roughness = min(path.previousSharcRoughness, 0.99);
+        float alpha = roughness * roughness;
+        float alphaSquared = alpha * alpha;
+        float footprintRadius = surface.t * sqrt(
+                0.5 * alphaSquared / max(1.0 - alphaSquared, 1.0e-6));
+        if (footprintRadius <= voxelSize) {
+            primeRecordSharcDiagnostic(
+                    diagnosticSample, PRIME_SHARC_DIAGNOSTIC_GLOSSY_SKIP);
+            return false;
+        }
+    }
+    return true;
+}
 
 struct PrimeSharcIndirectReuse : IPrimeIndirectReuse {
     PrimeIndirectReuseResult query(
@@ -17,38 +50,16 @@ struct PrimeSharcIndirectReuse : IPrimeIndirectReuse {
         PrimeIndirectReuseResult result;
         result.contribution = float3(0.0);
         result.hit = false;
-        // Carrier paths provide the uncached target signal and must not train on their own cache.
-        if (primeSharcTrainingCarrier(path)) {
-            return result;
-        }
         bool diagnosticSample = primeSharcDiagnosticSample(path);
         primeRecordSharcDiagnostic(
                 diagnosticSample, PRIME_SHARC_DIAGNOSTIC_QUERY);
-        if (path.previousSharcEvent == PRIME_SHARC_EVENT_DISCRETE) {
-            primeRecordSharcDiagnostic(
-                    diagnosticSample, PRIME_SHARC_DIAGNOSTIC_DISCRETE_SKIP);
+        if (!primeSharcCacheEligible(path, surface, diagnosticSample)) {
             return result;
         }
-
-        float voxelSize = primeSharcVoxelSize(
-                surface.position, surface.geometricNormal);
-        const float voxelDiagonalScale = 1.7320508075688772;
-        if (surface.t <= voxelSize * voxelDiagonalScale) {
-            primeRecordSharcDiagnostic(
-                    diagnosticSample, PRIME_SHARC_DIAGNOSTIC_SHORT_SKIP);
+        // Anchors never query after opening their root. Bootstrap paths bypass the root itself,
+        // then terminate at the first later cache hit; cache misses continue in the main queue.
+        if (primeSharcTrainingBypassesCache(path)) {
             return result;
-        }
-        if (path.previousSharcEvent == PRIME_SHARC_EVENT_GLOSSY) {
-            float roughness = min(path.previousSharcRoughness, 0.99);
-            float alpha = roughness * roughness;
-            float alphaSquared = alpha * alpha;
-            float footprintRadius = surface.t * sqrt(
-                    0.5 * alphaSquared / max(1.0 - alphaSquared, 1.0e-6));
-            if (footprintRadius <= voxelSize) {
-                primeRecordSharcDiagnostic(
-                        diagnosticSample, PRIME_SHARC_DIAGNOSTIC_GLOSSY_SKIP);
-                return result;
-            }
         }
 
         float directionWeight = path.previousSharcEvent == PRIME_SHARC_EVENT_GLOSSY
@@ -62,6 +73,13 @@ struct PrimeSharcIndirectReuse : IPrimeIndirectReuse {
                 primeSharcMaterialDemodulation(surface),
                 primeEvaluateLocalHitEmission(
                         context, path, surface, previousUsedAreaNee));
+        HashGridKey hashKey = HashGridComputeSpatialHash(
+                hit.positionWorld,
+                hit.normalWorld,
+                primeSharcParameters().hashGridParameters);
+        if (primeSharcTrainingRejectsSelfFeedback(path, hashKey)) {
+            return result;
+        }
         float3 radiance;
         primeRecordSharcDiagnostic(
                 diagnosticSample, PRIME_SHARC_DIAGNOSTIC_LOOKUP);
@@ -71,6 +89,7 @@ struct PrimeSharcIndirectReuse : IPrimeIndirectReuse {
         }
         primeRecordSharcDiagnostic(
                 diagnosticSample, PRIME_SHARC_DIAGNOSTIC_HIT);
+        primeCompleteSharcTraining(path, radiance);
         result.contribution = path.throughput * radiance;
         result.hit = true;
         return result;

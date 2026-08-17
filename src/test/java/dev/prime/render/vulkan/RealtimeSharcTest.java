@@ -29,11 +29,10 @@ final class RealtimeSharcTest {
     }
 
     @Test
-    void integratedTrainingStoresFourCompactEventsPerCarrierPath() {
-        assertEquals(4, RealtimeSharc.TRAINING_MAX_EVENTS);
-        assertEquals(80, RealtimeSharc.TRAINING_EVENT_BYTES);
-        assertEquals(26_542_080L, RealtimeSharc.trainingBytes(1920, 1080));
-        assertEquals(106_168_320L, RealtimeSharc.trainingBytes(3840, 2160));
+    void integratedTrainingStoresOneCollapsedRootRecordPerCarrierPath() {
+        assertEquals(80, RealtimeSharc.TRAINING_RECORD_BYTES);
+        assertEquals(6_635_520L, RealtimeSharc.trainingBytes(1920, 1080));
+        assertEquals(26_542_080L, RealtimeSharc.trainingBytes(3840, 2160));
         assertThrows(
                 IllegalArgumentException.class,
                 () -> RealtimeSharc.trainingBytes(0, 1080));

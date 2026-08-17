@@ -210,7 +210,7 @@
         { "name": "staleFrames", "type": "uint", "offset": 84 },
         { "name": "updatePhase", "type": "uint", "offset": 88 },
         { "name": "flags", "type": "uint", "offset": 92 },
-        { "name": "trainingEventsAddress", "type": "uint64_t", "offset": 96 },
+        { "name": "trainingRecordsAddress", "type": "uint64_t", "offset": 96 },
         { "name": "trainingWidth", "type": "uint", "offset": 104 },
         { "name": "trainingHeight", "type": "uint", "offset": 108 }
       ]

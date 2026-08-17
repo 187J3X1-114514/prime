@@ -232,7 +232,7 @@ final class ShaderAbiTest {
         assertEquals(48, ShaderAbi.SHARC_FRAME_PREVIOUS_CAMERA_POSITION_OFFSET);
         assertEquals(72, ShaderAbi.SHARC_FRAME_CAPACITY_OFFSET);
         assertEquals(92, ShaderAbi.SHARC_FRAME_FLAGS_OFFSET);
-        assertEquals(96, ShaderAbi.SHARC_FRAME_TRAINING_EVENTS_ADDRESS_OFFSET);
+        assertEquals(96, ShaderAbi.SHARC_FRAME_TRAINING_RECORDS_ADDRESS_OFFSET);
         assertEquals(104, ShaderAbi.SHARC_FRAME_TRAINING_WIDTH_OFFSET);
         assertEquals(108, ShaderAbi.SHARC_FRAME_TRAINING_HEIGHT_OFFSET);
         assertEquals(0, ShaderAbi.TRACE_PAYLOAD_GEOMETRIC_NORMAL_OFFSET);

@@ -25,8 +25,7 @@ final class RealtimeSharc implements Destroyable {
     static final long ACCUMULATION_BYTES = (long) CAPACITY * 32L;
     static final long RESOLVED_BYTES = (long) CAPACITY * 24L;
     static final long CACHE_BYTES = HASH_BYTES + ACCUMULATION_BYTES + RESOLVED_BYTES;
-    static final int TRAINING_MAX_EVENTS = 4;
-    static final int TRAINING_EVENT_BYTES = 80;
+    static final int TRAINING_RECORD_BYTES = 80;
     private static final int ACCUMULATION_FRAMES = 64;
     private static final int STALE_FRAMES = 128;
     private static final float LOGARITHM_BASE = 2.0F;
@@ -44,7 +43,7 @@ final class RealtimeSharc implements Destroyable {
     private final VulkanBuffer accumulation;
     private final VulkanBuffer resolved;
     private final VulkanBuffer frameConstants;
-    private VulkanBuffer trainingEvents;
+    private VulkanBuffer trainingRecords;
     private int trainingWidth;
     private int trainingHeight;
     private Accepted accepted;
@@ -173,6 +172,13 @@ final class RealtimeSharc implements Destroyable {
         return this.frameConstants;
     }
 
+    VulkanBuffer trainingBuffer() {
+        if (this.trainingRecords == null) {
+            throw new IllegalStateException("SHARC training extent is not initialized");
+        }
+        return this.trainingRecords;
+    }
+
     TraceProgram queryProgram() {
         return this.queryProgram;
     }
@@ -180,22 +186,22 @@ final class RealtimeSharc implements Destroyable {
     long resourceBytes() {
         return CACHE_BYTES
                 + this.frameConstants.size()
-                + (this.trainingEvents == null ? 0L : this.trainingEvents.size());
+                + (this.trainingRecords == null ? 0L : this.trainingRecords.size());
     }
 
     void ensureTrainingExtent(int width, int height) {
         int candidateWidth = trainingWidth(width);
         int candidateHeight = trainingHeight(height);
         long bytes = trainingBytes(width, height);
-        VulkanBuffer current = this.trainingEvents;
+        VulkanBuffer current = this.trainingRecords;
         if (current == null || current.size() != bytes) {
             VulkanBuffer replacement = this.context.createBuffer(
                     bytes,
                     VK12.VK_BUFFER_USAGE_STORAGE_BUFFER_BIT
                             | VK12.VK_BUFFER_USAGE_TRANSFER_DST_BIT,
                     false,
-                    "Prime integrated SHARC training events");
-            this.trainingEvents = replacement;
+                    "Prime integrated SHARC training records");
+            this.trainingRecords = replacement;
             if (current != null) {
                 this.context.defer(current);
             }
@@ -207,9 +213,7 @@ final class RealtimeSharc implements Destroyable {
     static long trainingBytes(int width, int height) {
         long paths = Math.multiplyExact(
                 (long) trainingWidth(width), trainingHeight(height));
-        return Math.multiplyExact(
-                Math.multiplyExact(paths, TRAINING_MAX_EVENTS),
-                TRAINING_EVENT_BYTES);
+        return Math.multiplyExact(paths, TRAINING_RECORD_BYTES);
     }
 
     private static int trainingWidth(int width) {
@@ -236,7 +240,7 @@ final class RealtimeSharc implements Destroyable {
             boolean diagnosticsEnabled) {
         Objects.requireNonNull(input, "input");
         Objects.requireNonNull(scene, "scene");
-        if (this.trainingEvents == null
+        if (this.trainingRecords == null
                 || this.trainingWidth != trainingWidth(input.width())
                 || this.trainingHeight != trainingHeight(input.height())) {
             throw new IllegalStateException("Integrated SHARC training extent mismatch");
@@ -285,7 +289,7 @@ final class RealtimeSharc implements Destroyable {
             VulkanSync.bufferBarrier(
                     commandBuffer,
                     stack,
-                    this.trainingEvents,
+                    this.trainingRecords,
                     KHRRayTracingPipeline.VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR
                             | VK12.VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
                     VK12.VK_ACCESS_SHADER_READ_BIT | VK12.VK_ACCESS_SHADER_WRITE_BIT,
@@ -293,9 +297,9 @@ final class RealtimeSharc implements Destroyable {
                     VK12.VK_ACCESS_TRANSFER_WRITE_BIT);
             VK12.vkCmdFillBuffer(
                     commandBuffer,
-                    this.trainingEvents.handle(),
+                    this.trainingRecords.handle(),
                     0L,
-                    this.trainingEvents.size(),
+                    this.trainingRecords.size(),
                     0);
             if (clear) {
                 VK12.vkCmdFillBuffer(
@@ -343,8 +347,8 @@ final class RealtimeSharc implements Destroyable {
                     ShaderAbi.SHARC_FRAME_FLAGS_OFFSET,
                     diagnosticsEnabled ? 1 : 0);
             constants.putLong(
-                    ShaderAbi.SHARC_FRAME_TRAINING_EVENTS_ADDRESS_OFFSET,
-                    this.trainingEvents.deviceAddress());
+                    ShaderAbi.SHARC_FRAME_TRAINING_RECORDS_ADDRESS_OFFSET,
+                    this.trainingRecords.deviceAddress());
             constants.putInt(
                     ShaderAbi.SHARC_FRAME_TRAINING_WIDTH_OFFSET,
                     this.trainingWidth);
@@ -376,11 +380,11 @@ final class RealtimeSharc implements Destroyable {
             VulkanSync.bufferBarrier(
                     commandBuffer,
                     stack,
-                    this.trainingEvents,
+                    this.trainingRecords,
                     VK12.VK_PIPELINE_STAGE_TRANSFER_BIT,
                     VK12.VK_ACCESS_TRANSFER_WRITE_BIT,
                     KHRRayTracingPipeline.VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR,
-                    VK12.VK_ACCESS_SHADER_WRITE_BIT);
+                    VK12.VK_ACCESS_SHADER_READ_BIT | VK12.VK_ACCESS_SHADER_WRITE_BIT);
         }
         Accepted candidate = new Accepted(
                 cameraX,
@@ -407,7 +411,7 @@ final class RealtimeSharc implements Destroyable {
             int height,
             RealtimeSharcDiagnostics diagnostics,
             RealtimeSharcDiagnostics.Capture capture) {
-        if (this.trainingEvents == null
+        if (this.trainingRecords == null
                 || this.trainingWidth != trainingWidth(width)
                 || this.trainingHeight != trainingHeight(height)) {
             throw new IllegalStateException("Integrated SHARC training extent mismatch");
@@ -416,7 +420,7 @@ final class RealtimeSharc implements Destroyable {
             VulkanSync.bufferBarrier(
                     commandBuffer,
                     stack,
-                    this.trainingEvents,
+                    this.trainingRecords,
                     KHRRayTracingPipeline.VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR,
                     VK12.VK_ACCESS_SHADER_WRITE_BIT,
                     VK12.VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
@@ -520,8 +524,8 @@ final class RealtimeSharc implements Destroyable {
         if (this.destroyed) return;
         this.destroyed = true;
         this.frameConstants.destroy();
-        if (this.trainingEvents != null) {
-            this.trainingEvents.destroy();
+        if (this.trainingRecords != null) {
+            this.trainingRecords.destroy();
         }
         this.resolved.destroy();
         this.accumulation.destroy();

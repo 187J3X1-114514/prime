@@ -1,7 +1,7 @@
 #ifndef PRIME_SHARC_TRAINING_POLICY_SLANG
 #define PRIME_SHARC_TRAINING_POLICY_SLANG
 
-#include "lighting/sharc_training_events.slang"
+#include "lighting/sharc_training_records.slang"
 
 struct PrimeIntegratedSharcTraining : IPrimeWavefrontSharcTraining {
     void recordHit(
@@ -9,27 +9,38 @@ struct PrimeIntegratedSharcTraining : IPrimeWavefrontSharcTraining {
             PathState path,
             SurfaceInteraction surface,
             float3 direct) {
-        if (!primeSharcTrainingCarrier(path)) {
+        if (!primeSharcTrainingPixel(path.pixel)) {
             return;
         }
         float3 emissive = primeEvaluateLocalHitEmission(
                 context, path, surface, true);
-        primeStoreSharcTrainingHit(path, surface, direct, emissive);
+        uint control = primeSharcTrainingControl(path.pixel);
+        if (!primeSharcTrainingActive(control)) {
+            if (primeSharcCacheEligible(path, surface, false)) {
+                primeBeginSharcTraining(path, surface, direct);
+            }
+            return;
+        }
+        primeAccumulateSharcTrainingTarget(path, direct + emissive);
     }
 
     void recordMiss(
             inout PrimeIntegratorContext context,
             PathState path,
             IntegratorRecord integrator) {
-        if (!primeSharcTrainingCarrier(path)) {
+        if (!primeSharcTrainingPixel(path.pixel)) {
             return;
         }
         PathState localPath = path;
         localPath.throughput = float3(1.0);
-        primeStoreSharcTrainingMiss(
+        primeCompleteSharcTraining(
                 path,
                 primeEvaluateEnvironmentContribution(
                         context, localPath, integrator));
+    }
+
+    void finish(PathState path) {
+        primeCompleteSharcTraining(path, float3(0.0));
     }
 };
 

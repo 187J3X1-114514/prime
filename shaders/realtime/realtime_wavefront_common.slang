@@ -42,6 +42,7 @@ interface IPrimeWavefrontSharcTraining {
             inout PrimeIntegratorContext context,
             PathState path,
             IntegratorRecord integrator);
+    void finish(PathState path);
 }
 
 struct PrimeNoWavefrontSharcTraining : IPrimeWavefrontSharcTraining {
@@ -54,6 +55,7 @@ struct PrimeNoWavefrontSharcTraining : IPrimeWavefrontSharcTraining {
             inout PrimeIntegratorContext context,
             PathState path,
             IntegratorRecord integrator) {}
+    void finish(PathState path) {}
 };
 
 struct PrimeStagedSecondarySunNee : IPrimeSecondarySunNee {

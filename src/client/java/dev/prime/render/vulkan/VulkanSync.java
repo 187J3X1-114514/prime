@@ -95,11 +95,52 @@ public final class VulkanSync {
             long sourceAccess,
             long destinationStage,
             long destinationAccess) {
+        resourceBarrier(
+                commandBuffer,
+                stack,
+                buffer,
+                null,
+                images,
+                sourceStage,
+                sourceAccess,
+                destinationStage,
+                destinationAccess);
+    }
+
+    public static void resourceBarrier(
+            VkCommandBuffer commandBuffer,
+            MemoryStack stack,
+            VulkanBuffer firstBuffer,
+            VulkanBuffer secondBuffer,
+            long[] images,
+            long sourceStage,
+            long sourceAccess,
+            long destinationStage,
+            long destinationAccess) {
         try (MemoryStack frame = stack.push()) {
+            int bufferCount = secondBuffer == null ? 1 : 2;
             VkBufferMemoryBarrier2.Buffer bufferBarriers =
-                    VkBufferMemoryBarrier2.calloc(1, frame);
-            setBufferBarrier(bufferBarriers.get(0), buffer.handle(), 0L, buffer.size(),
-                    sourceStage, sourceAccess, destinationStage, destinationAccess);
+                    VkBufferMemoryBarrier2.calloc(bufferCount, frame);
+            setBufferBarrier(
+                    bufferBarriers.get(0),
+                    firstBuffer.handle(),
+                    0L,
+                    firstBuffer.size(),
+                    sourceStage,
+                    sourceAccess,
+                    destinationStage,
+                    destinationAccess);
+            if (secondBuffer != null) {
+                setBufferBarrier(
+                        bufferBarriers.get(1),
+                        secondBuffer.handle(),
+                        0L,
+                        secondBuffer.size(),
+                        sourceStage,
+                        sourceAccess,
+                        destinationStage,
+                        destinationAccess);
+            }
             VkImageMemoryBarrier2.Buffer imageBarriers =
                     VkImageMemoryBarrier2.calloc(images.length, frame);
             for (int index = 0; index < images.length; index++) {

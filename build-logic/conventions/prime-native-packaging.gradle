@@ -129,6 +129,7 @@ def verifyDistributionJar = tasks.register('verifyDistributionJar') {
 			'prime/shaders/rr_prepare.comp.spv',
 			'prime/shaders/rr_debug.comp.spv',
 			'prime/shaders/fsr_display.comp.spv',
+			'prime/shaders/hdr_present.comp.spv',
 			'prime/shaders/world.rahit.spv',
 			'prime/shaders/world.rchit.spv',
 			'prime/shaders/world.rmiss.spv'

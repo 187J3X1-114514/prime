@@ -93,7 +93,8 @@ public final class OfflineFrameExecutor {
                         commandBuffer, plan.integrator(), scene);
                 VulkanImageTransitions.prepareOfflineDisplay(
                         commandBuffer, runningMean);
-                display.recordFrozen(commandBuffer, plan.input().display());
+                display.recordFrozen(
+                        commandBuffer, plan.input().display(), this.imageInitialization);
                 VulkanImageTransitions.finishAtlasRead(
                         commandBuffer, atlasView.texture());
                 VulkanImageTransitions.finishSceneTextureReads(
@@ -132,6 +133,7 @@ public final class OfflineFrameExecutor {
                     "end Prime offline accumulation command buffer");
             encoder.execute(commandBuffer);
             hostSubmission.acceptedByMinecraftHostSubmission();
+            HdrPresentation.publish(this.context, display.hdrOutput(), displayOutput);
             // Prime histories advance only after Minecraft's open host submission accepts it.
             this.imageInitialization.submitted();
             initializationActive = false;

@@ -4,10 +4,9 @@ module "post/display_transform.slang";
 import "prime_abi_types.slang";
 import "core/color_space.slang";
 
-// Ported from the C:/WorkSpace/drt working tree based on commit
-// 39871cd2b82b2456dc528c3c406eb10ef173c352. Source SHA-256 values:
-// shaders/agx_hsv.slang = bc3db7c9065de9ac1b452ca4f9d0341c29b34d96f42e38622bb0df6a4a9a1c93,
-// src/gpu.rs = f705e0a2ef0bc32fca5361081bd93e594b5cadf820f7751aa1252e9c8e472626.
+// Ported from the C:/WorkSpace/drt working tree at commit
+// fa282723f5e1536b37217c10c74437fad054c87c. Prime keeps its Rec.2020 input
+// boundary; the source bench's ACES AP0 conversion is therefore intentionally omitted.
 //
 // These are derived runtime coefficients, not the authoring controls. Keeping them in one
 // structure makes future tuning explicit without adding per-frame parameters or UI surface area.
@@ -25,6 +24,8 @@ public struct PrimeAgxHsvParameters
     public float shoulderCoefficient;
     public float blackHueRetention;
     public float whiteHueRetention;
+    public float maximumLogCoordinate;
+    public float outputPeak;
 };
 
 public PrimeAgxHsvParameters primeDefaultAgxHsvParameters()
@@ -44,6 +45,8 @@ public PrimeAgxHsvParameters primeDefaultAgxHsvParameters()
     parameters.shoulderCoefficient = 2568.7498;
     parameters.blackHueRetention = 1.0;
     parameters.whiteHueRetention = 0.5;
+    parameters.maximumLogCoordinate = 1.0;
+    parameters.outputPeak = 1.0;
     return parameters;
 }
 
@@ -132,7 +135,7 @@ float3 primeAgxS2O3(float3 linearBt709, PrimeAgxHsvParameters parameters)
             (log2(inset) - parameters.minimumLog2)
                     * parameters.inverseDynamicRange,
             0.0,
-            1.0);
+            parameters.maximumLogCoordinate);
     return primeAgxOutset(primeAgxCurve(normalizedLog, parameters), parameters);
 }
 
@@ -144,7 +147,7 @@ float3 primeAgxAdjustHsv(
     float3 originalDisplay = pow(originalLinear, 1.0 / 2.2);
     float3 originalHsv = primeAgxRgbToHsv(originalDisplay);
     float3 mappedHsv = primeAgxRgbToHsv(mapped);
-    float normalizedValue = clamp(mappedHsv.z, 0.0, 1.0);
+    float normalizedValue = clamp(mappedHsv.z / parameters.outputPeak, 0.0, 1.0);
 
     if (originalHsv.y > 1.0e-7 && mappedHsv.y > 1.0e-7)
     {
@@ -175,7 +178,10 @@ public float3 primeAgxHsvTonemap(
 
 public float3 primeDisplayTransformToSrgb(
         float3 hdrRec2020,
-        float exposureMultiplier)
+        float exposureMultiplier,
+        float maximumLogCoordinate,
+        float outputPeak,
+        float shoulderCoefficient)
 {
     float3 exposedRec2020 = max(hdrRec2020, float3(0.0))
             * (PRIME_DISPLAY_EXPOSURE * exposureMultiplier);
@@ -183,8 +189,25 @@ public float3 primeDisplayTransformToSrgb(
             primeLinearRec2020ToLinearBt709(exposedRec2020),
             float3(0.0));
     // AgX-S2O3 produces a display-encoded signal; applying an sRGB OETF again is incorrect.
+    PrimeAgxHsvParameters parameters = primeDefaultAgxHsvParameters();
+    parameters.maximumLogCoordinate = maximumLogCoordinate;
+    parameters.outputPeak = outputPeak;
+    parameters.shoulderCoefficient = shoulderCoefficient;
     return clamp(
-            primeAgxHsvTonemap(linearBt709, primeDefaultAgxHsvParameters()),
+            primeAgxHsvTonemap(linearBt709, parameters),
             float3(0.0),
-            float3(1.0));
+            outputPeak.xxx);
+}
+
+public float3 primeDisplayTransformToSrgb(
+        float3 hdrRec2020,
+        float exposureMultiplier)
+{
+    PrimeAgxHsvParameters parameters = primeDefaultAgxHsvParameters();
+    return primeDisplayTransformToSrgb(
+            hdrRec2020,
+            exposureMultiplier,
+            parameters.maximumLogCoordinate,
+            parameters.outputPeak,
+            parameters.shoulderCoefficient);
 }

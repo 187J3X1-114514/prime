@@ -19,6 +19,7 @@ final class VulkanSharedPrograms implements AutoCloseable {
 
     private final VulkanContext context;
     private SharedComputeProgram displayTransform;
+    private SharedComputeProgram hdrPresent;
     private SharedComputeProgram autoExposure;
     private boolean closed;
 
@@ -30,8 +31,8 @@ final class VulkanSharedPrograms implements AutoCloseable {
         requireOpen();
         if (this.displayTransform == null) {
             this.displayTransform =
-                SharedComputeProgram.create(this.context, "common display-transform", 20,
-                    new int[] {SAMPLED_IMAGE, STORAGE_IMAGE, STORAGE_BUFFER},
+                SharedComputeProgram.create(this.context, "common display-transform", 28,
+                    new int[] {SAMPLED_IMAGE, STORAGE_IMAGE, STORAGE_BUFFER, STORAGE_IMAGE},
                     new String[] {"/prime/shaders/fsr_display.comp.spv"});
         }
         return this.displayTransform.retain();
@@ -49,6 +50,19 @@ final class VulkanSharedPrograms implements AutoCloseable {
         return this.autoExposure.retain();
     }
 
+    SharedComputeProgram acquireHdrPresent() {
+        requireOpen();
+        if (this.hdrPresent == null) {
+            this.hdrPresent = SharedComputeProgram.create(
+                    this.context,
+                    "HDR presentation",
+                    12,
+                    new int[] {SAMPLED_IMAGE, SAMPLED_IMAGE, SAMPLED_IMAGE, STORAGE_IMAGE},
+                    new String[] {"/prime/shaders/hdr_present.comp.spv"});
+        }
+        return this.hdrPresent.retain();
+    }
+
     void invalidate() {
         requireOpen();
         if (this.displayTransform != null) {
@@ -58,6 +72,10 @@ final class VulkanSharedPrograms implements AutoCloseable {
         if (this.autoExposure != null) {
             this.autoExposure.release();
             this.autoExposure = null;
+        }
+        if (this.hdrPresent != null) {
+            this.hdrPresent.release();
+            this.hdrPresent = null;
         }
     }
 

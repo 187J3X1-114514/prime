@@ -4,6 +4,7 @@ import dev.prime.client.PrimeVideoOptions;
 import dev.prime.config.PrimeConfig;
 import dev.prime.render.AstronomySettings;
 import dev.prime.render.DisplaySettings;
+import dev.prime.render.HdrOutput;
 import dev.prime.render.LightingSettings;
 import dev.prime.render.MaterialSettings;
 import dev.prime.render.PrimaryLightDiagnosticView;
@@ -15,6 +16,7 @@ import dev.prime.render.post.nrd.NrdDiagnostics;
 import dev.prime.render.post.DlssRrDebugView;
 import dev.prime.render.post.PostProcessingMode;
 import dev.prime.render.post.ReconstructionQualityMode;
+import dev.prime.render.terrain.TerrainWorkerSettings;
 import dev.prime.render.terrain.VoxelSurfaceSettings;
 import java.net.URI;
 import net.minecraft.client.OptionInstance;
@@ -51,6 +53,7 @@ public abstract class VideoSettingsScreenMixin {
     @Unique private OptionInstance<Boolean> prime$pathTracingEnabled;
     @Unique private OptionInstance<Boolean> prime$sharcEnabled;
     @Unique private OptionInstance<Integer> prime$scatterCount;
+    @Unique private OptionInstance<Integer> prime$terrainWorkerPercentage;
     @Unique private OptionInstance<Boolean> prime$voxelTextureSurfaces;
     @Unique private OptionInstance<Integer> prime$voxelTextureSurfaceStrength;
     @Unique private OptionInstance<Boolean> prime$screenshotMode;
@@ -63,6 +66,7 @@ public abstract class VideoSettingsScreenMixin {
     @Unique private OptionInstance<Integer> prime$blockLightExposure;
     @Unique private OptionInstance<Integer> prime$finalExposure;
     @Unique private OptionInstance<Integer> prime$autoExposureCompensation;
+    @Unique private OptionInstance<Boolean> prime$hdr;
     @Unique private OptionInstance<Integer> prime$defaultRoughness;
     @Unique private OptionInstance<Boolean> prime$seamlessGlass;
     @Unique private OptionInstance<Boolean> prime$airGap;
@@ -82,6 +86,8 @@ public abstract class VideoSettingsScreenMixin {
             this.prime$pathTracingEnabled = PrimeVideoOptions.pathTracingEnabled();
             this.prime$sharcEnabled = PrimeVideoOptions.sharcEnabled();
             this.prime$scatterCount = PrimeVideoOptions.scatterCount();
+            this.prime$terrainWorkerPercentage =
+                    PrimeVideoOptions.terrainWorkerPercentage();
             this.prime$voxelTextureSurfaces = PrimeVideoOptions.voxelTextureSurfaces();
             this.prime$voxelTextureSurfaceStrength =
                     PrimeVideoOptions.voxelTextureSurfaceStrength();
@@ -96,6 +102,7 @@ public abstract class VideoSettingsScreenMixin {
             this.prime$finalExposure = PrimeVideoOptions.finalExposure();
             this.prime$autoExposureCompensation =
                     PrimeVideoOptions.autoExposureCompensation();
+            this.prime$hdr = PrimeVideoOptions.hdr();
             this.prime$defaultRoughness = PrimeVideoOptions.defaultRoughness();
             this.prime$seamlessGlass = PrimeVideoOptions.seamlessGlass();
             this.prime$airGap = PrimeVideoOptions.airGap();
@@ -118,6 +125,7 @@ public abstract class VideoSettingsScreenMixin {
             list.addBig(this.prime$screenshotMode);
             list.addBig(this.prime$sharcEnabled);
             list.addBig(this.prime$scatterCount);
+            list.addBig(this.prime$terrainWorkerPercentage);
             list.addSmall(
                     this.prime$voxelTextureSurfaces,
                     this.prime$voxelTextureSurfaceStrength);
@@ -128,6 +136,11 @@ public abstract class VideoSettingsScreenMixin {
             list.addBig(this.prime$starExposure);
             list.addBig(this.prime$blockLightExposure);
             list.addHeader(PRIME$DISPLAY_HEADER);
+            list.addBig(this.prime$hdr);
+            AbstractWidget hdrWidget = list.findOption(this.prime$hdr);
+            if (hdrWidget != null) {
+                hdrWidget.active = HdrOutput.capability().supported();
+            }
             list.addBig(this.prime$autoExposureCompensation);
             list.addBig(this.prime$finalExposure);
             list.addHeader(PRIME$MATERIAL_HEADER);
@@ -172,6 +185,9 @@ public abstract class VideoSettingsScreenMixin {
         this.prime$refresh(
                 this.prime$scatterCount,
                 ScatterSettings.DEFAULT_COUNT);
+        this.prime$refresh(
+                this.prime$terrainWorkerPercentage,
+                TerrainWorkerSettings.DEFAULT_PERCENTAGE);
         this.prime$refresh(this.prime$voxelTextureSurfaces, false);
         this.prime$refresh(
                 this.prime$voxelTextureSurfaceStrength,
@@ -200,6 +216,12 @@ public abstract class VideoSettingsScreenMixin {
         this.prime$refresh(
                 this.prime$autoExposureCompensation,
                 DisplaySettings.DEFAULT_AUTO_EXPOSURE_COMPENSATION_STEPS);
+        this.prime$refresh(this.prime$hdr, false);
+        OptionsList list = ((OptionsSubScreenAccessor) this).prime$getList();
+        AbstractWidget hdrWidget = list.findOption(this.prime$hdr);
+        if (hdrWidget != null) {
+            hdrWidget.active = HdrOutput.capability().supported();
+        }
         this.prime$refresh(
                 this.prime$defaultRoughness,
                 MaterialSettings.DEFAULT_ROUGHNESS_STEPS);

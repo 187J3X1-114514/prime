@@ -4,6 +4,7 @@ import com.mojang.blaze3d.vulkan.VulkanDevice;
 import dev.prime.infrastructure.PrimeInfo;
 import dev.prime.render.ResourceCleanup;
 import dev.prime.render.RendererSettings;
+import dev.prime.render.vulkan.HdrPresentation;
 import dev.prime.render.vulkan.VulkanBootstrap;
 import dev.prime.render.vulkan.VulkanCapabilities;
 import dev.prime.render.vulkan.VulkanContext;
@@ -51,6 +52,36 @@ public final class RendererLifecycle {
         return this.renderer;
     }
 
+    /** Creates only the shared Vulkan boundary required by HDR presentation. */
+    public boolean tryInitializePresentation() {
+        if (this.context != null) {
+            return true;
+        }
+        if (this.shuttingDown || this.states.current() == RuntimeState.FAILED) {
+            return false;
+        }
+        VulkanBootstrap.Snapshot bootstrap = VulkanBootstrap.snapshot();
+        VulkanCapabilities capabilities = bootstrap.capabilities();
+        VulkanDevice device = bootstrap.device();
+        if (!capabilities.available() || device == null) {
+            return false;
+        }
+        VulkanContext created = null;
+        try {
+            created = new VulkanContext(device, capabilities);
+            HdrPresentation.attach(created);
+            this.context = created;
+            return true;
+        } catch (RuntimeException exception) {
+            HdrPresentation.detach(created);
+            ResourceCleanup.close(created, exception);
+            PrimeInfo.LOGGER.warn(
+                    "Prime HDR presentation initialization failed; retaining SDR output",
+                    exception);
+            return false;
+        }
+    }
+
     public void tryInitialize(Minecraft minecraft, TerrainOwnership terrain) {
         if (this.renderer != null
                 || this.retiringRenderer != null
@@ -70,6 +101,7 @@ public final class RendererLifecycle {
         try {
             if (this.context == null) {
                 this.context = new VulkanContext(device, capabilities);
+                HdrPresentation.attach(this.context);
             }
             if (minecraft.level == null || minecraft.player == null) {
                 this.states.rendererReady();
@@ -86,6 +118,7 @@ public final class RendererLifecycle {
             terrain.restore(minecraft, true);
             VulkanContext failedContext = this.context;
             this.context = null;
+            HdrPresentation.detach(failedContext);
             ResourceCleanup.close(failedContext, exception);
             PrimeInfo.LOGGER.error("Prime Vulkan initialization failed", exception);
         }
@@ -228,6 +261,7 @@ public final class RendererLifecycle {
                 }
             }
             if (activeContext != null) {
+                HdrPresentation.detach(activeContext);
                 failure = ResourceCleanup.close(activeContext, failure);
                 if (this.context == activeContext) {
                     this.context = null;

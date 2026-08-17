@@ -71,7 +71,8 @@ public final class TerrainStreamer implements AutoCloseable {
     private final int maxOpacity4StateSubdivisionLevel;
     private final int segmentTriangleTarget;
     private final Executor workers;
-    private final int maximumInFlight;
+    private final int maximumWorkerThreads;
+    private final int inFlightCapacity;
     // Workers publish one immutable result per accepted job. The render-thread-owned count is
     // never reset across worlds, so the fixed queue remains a proof-backed bound during churn.
     private final ArrayBlockingQueue<CompletedCluster> completed;
@@ -105,6 +106,7 @@ public final class TerrainStreamer implements AutoCloseable {
     private LabPbrMaterialSet labPbrMaterials = LabPbrMaterialSet.EMPTY;
     private boolean voxelTextureSurfaces;
     private int voxelSurfaceStrengthSteps = VoxelSurfaceSettings.DEFAULT_STEPS;
+    private int workerPercentage = TerrainWorkerSettings.DEFAULT_PERCENTAGE;
     private int workerJobs;
 
     public TerrainStreamer(VulkanContext context, StagingArena stagingArena) {
@@ -117,13 +119,14 @@ public final class TerrainStreamer implements AutoCloseable {
         this.segmentTriangleTarget = TerrainMemoryBudget.segmentTriangleTarget(
                 context.capabilities().maxAccelerationStructurePrimitiveCount());
         this.sceneInterpreter = new VanillaSceneInterpreter();
-        // Match vanilla section compilation: use Minecraft's shared work-stealing pool and its
-        // configured CPU limit instead of imposing a second, Prime-specific four-thread ceiling.
+        // Prime shares vanilla's work-stealing pool, but admission stays below its full configured
+        // capacity so scene translation cannot occupy every worker needed by world loading.
         this.workers = Util.backgroundExecutor();
-        this.maximumInFlight = TerrainMemoryBudget.maximumInFlight(
-                Math.max(1, Util.maxAllowedExecutorThreads()),
+        this.maximumWorkerThreads = Math.max(1, Util.maxAllowedExecutorThreads());
+        this.inFlightCapacity = TerrainMemoryBudget.maximumInFlight(
+                this.maximumWorkerThreads,
                 Runtime.getRuntime().maxMemory());
-        this.completed = new ArrayBlockingQueue<>(this.maximumInFlight);
+        this.completed = new ArrayBlockingQueue<>(this.inFlightCapacity);
     }
 
     public void update(Minecraft minecraft, double cameraX, double cameraY, double cameraZ) {
@@ -233,6 +236,10 @@ public final class TerrainStreamer implements AutoCloseable {
         if (rebuild) {
             this.invalidateAll();
         }
+    }
+
+    public void setWorkerPercentage(int percentage) {
+        this.workerPercentage = TerrainWorkerSettings.validatePercentage(percentage);
     }
 
     public boolean isNearCameraReady() {
@@ -407,8 +414,11 @@ public final class TerrainStreamer implements AutoCloseable {
             ResourceEpochCoordinator.Epoch resourceEpoch) {
         // Count every stage after snapshot capture so a temporarily busy GPU cannot turn the
         // shared executor into an unbounded producer of completed cluster payloads.
+        int workerLimit = TerrainWorkerSettings.workerLimit(
+                this.maximumWorkerThreads, this.workerPercentage);
+        int maximumInFlight = Math.min(this.inFlightCapacity, workerLimit);
         int outstanding = this.workerJobs + this.readyForUpload.size();
-        int dispatchBudget = Math.max(0, this.maximumInFlight - outstanding);
+        int dispatchBudget = Math.max(0, maximumInFlight - outstanding);
         if (dispatchBudget == 0 || this.requests.isEmpty()) {
             return;
         }

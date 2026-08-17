@@ -12,6 +12,7 @@ import dev.prime.render.RealtimeRenderSettings;
 import dev.prime.render.RendererSettings;
 import dev.prime.render.post.PostProcessingMode;
 import dev.prime.render.post.ReconstructionQualityMode;
+import dev.prime.render.terrain.TerrainWorkerSettings;
 import dev.prime.render.terrain.VoxelSurfaceSettings;
 import org.junit.jupiter.api.Test;
 
@@ -49,6 +50,9 @@ final class RendererSettingsMappingTest {
         assertEquals(source.lighting(), mapped.lighting());
         assertEquals(source.material(), mapped.material());
         assertEquals(source.display(), mapped.display());
+        assertEquals(
+                TerrainWorkerSettings.DEFAULT_PERCENTAGE,
+                mapped.terrainWorkerPercentage());
         assertEquals(42L, mapped.revision());
         assertRawEquals(
                 VoxelSurfaceSettings.maximumHeight(173),

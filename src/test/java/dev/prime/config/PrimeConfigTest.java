@@ -6,17 +6,21 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import dev.prime.render.AstronomySettings;
+import dev.prime.render.HdrOutput;
 import dev.prime.render.ScatterSettings;
 import dev.prime.render.post.DlssRrDebugView;
 import dev.prime.render.post.PostProcessingMode;
 import dev.prime.render.post.ReconstructionQualityMode;
+import dev.prime.render.terrain.TerrainWorkerSettings;
 import java.util.Properties;
 import org.junit.jupiter.api.Test;
 
 final class PrimeConfigTest {
     @Test
-    void restoreDefaultsIncludesScatterCount() {
+    void restoreDefaultsIncludesStandaloneRendererAndSchedulingSettings() {
         PrimeConfig.setScatterCount(ScatterSettings.MAXIMUM_COUNT);
+        PrimeConfig.setTerrainWorkerPercentage(TerrainWorkerSettings.MAXIMUM_PERCENTAGE);
+        PrimeConfig.setHdrEnabled(true);
 
         PrimeConfig.restoreDefaults();
 
@@ -24,6 +28,45 @@ final class PrimeConfigTest {
         assertEquals(
                 ScatterSettings.DEFAULT_COUNT,
                 PrimeConfig.rendererSettings().scatterCount());
+        assertEquals(
+                TerrainWorkerSettings.DEFAULT_PERCENTAGE,
+                PrimeConfig.terrainWorkerPercentage());
+        assertEquals(
+                TerrainWorkerSettings.DEFAULT_PERCENTAGE,
+                PrimeConfig.rendererSettings().terrainWorkerPercentage());
+        assertFalse(PrimeConfig.hdrEnabled());
+        assertFalse(HdrOutput.requested());
+    }
+
+    @Test
+    void terrainWorkerShareDoesNotInvalidateTemporalRendering() {
+        int previousPercentage = PrimeConfig.terrainWorkerPercentage();
+        long previousRevision = PrimeConfig.rendererSettings().revision();
+        int replacement = previousPercentage == TerrainWorkerSettings.MAXIMUM_PERCENTAGE
+                ? TerrainWorkerSettings.DEFAULT_PERCENTAGE
+                : TerrainWorkerSettings.MAXIMUM_PERCENTAGE;
+        try {
+            PrimeConfig.setTerrainWorkerPercentage(replacement);
+
+            assertEquals(replacement, PrimeConfig.rendererSettings().terrainWorkerPercentage());
+            assertEquals(previousRevision, PrimeConfig.rendererSettings().revision());
+        } finally {
+            PrimeConfig.setTerrainWorkerPercentage(previousPercentage);
+        }
+    }
+
+    @Test
+    void hdrSwitchDoesNotInvalidateTemporalRendering() {
+        boolean previous = PrimeConfig.hdrEnabled();
+        long previousRevision = PrimeConfig.rendererSettings().revision();
+        try {
+            PrimeConfig.setHdrEnabled(!previous);
+
+            assertEquals(previousRevision, PrimeConfig.rendererSettings().revision());
+            assertEquals(!previous, HdrOutput.requested());
+        } finally {
+            PrimeConfig.setHdrEnabled(previous);
+        }
     }
 
     @Test
@@ -195,6 +238,7 @@ final class PrimeConfigTest {
         assertTrue(serialized.contains("renderer.path_tracing=true\n"));
         assertTrue(serialized.contains("renderer.sharc=true\n"));
         assertTrue(serialized.contains("renderer.scatter_count=16\n"));
+        assertTrue(serialized.contains("terrain.worker_percentage=50\n"));
         assertTrue(PrimeSettings.defaults().sharcEnabled());
         assertFalse(serialized.contains("renderer.integrator="));
         assertFalse(serialized.contains("renderer.integrator_mode="));
@@ -214,6 +258,7 @@ final class PrimeConfigTest {
         assertTrue(serialized.contains("astronomy.solar_longitude_degrees=0\n"));
         assertTrue(serialized.contains("lighting.star_ev=0\n"));
         assertTrue(serialized.contains("display.final_exposure_ev=0\n"));
+        assertTrue(serialized.contains("display.hdr=false\n"));
         assertFalse(serialized.contains("display.transform="));
         assertFalse(serialized.contains("display.oklab_overexposure"));
         assertFalse(serialized.contains("display.oklab_curve_exponent"));
@@ -247,6 +292,22 @@ final class PrimeConfigTest {
         assertThrows(
                 IllegalArgumentException.class,
                 () -> PrimeConfig.parseScatterCount("12.0"));
+    }
+
+    @Test
+    void terrainWorkerPercentageAcceptsOnlyIntegerPercentages() {
+        assertEquals(1, PrimeConfig.parseTerrainWorkerPercentage("1"));
+        assertEquals(50, PrimeConfig.parseTerrainWorkerPercentage("50"));
+        assertEquals(100, PrimeConfig.parseTerrainWorkerPercentage("100"));
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> PrimeConfig.parseTerrainWorkerPercentage("0"));
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> PrimeConfig.parseTerrainWorkerPercentage("101"));
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> PrimeConfig.parseTerrainWorkerPercentage("50.0"));
     }
 
     @Test

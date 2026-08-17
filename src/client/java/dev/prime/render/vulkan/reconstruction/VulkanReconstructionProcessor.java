@@ -28,6 +28,8 @@ public interface VulkanReconstructionProcessor extends Destroyable {
 
     VulkanImage linearHdrOutput();
 
+    VulkanImage hdrDisplayOutput();
+
     long displayExposureStateBuffer();
 
     void requestReset();

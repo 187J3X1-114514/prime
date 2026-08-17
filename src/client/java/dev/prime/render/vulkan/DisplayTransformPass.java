@@ -1,7 +1,9 @@
 package dev.prime.render.vulkan;
 
 import com.mojang.blaze3d.vulkan.Destroyable;
+import dev.prime.render.AgxHsvOutput;
 import dev.prime.render.DisplaySettings;
+import dev.prime.render.HdrOutput;
 import dev.prime.render.ResourceCleanup;
 import dev.prime.render.vulkan.VulkanSharedPrograms.SharedComputeProgram;
 import java.nio.ByteBuffer;
@@ -20,13 +22,14 @@ import org.lwjgl.vulkan.VkWriteDescriptorSet;
 /** Prime's common linear Rec.2020 HDR to selectable sRGB Rec.709 display boundary. */
 public final class DisplayTransformPass implements Destroyable {
     private static final int COMPUTE_STAGE = VK12.VK_SHADER_STAGE_COMPUTE_BIT;
-    private static final int PUSH_SIZE = 16;
+    private static final int PUSH_SIZE = 28;
     private static final int LOCAL_SIZE = 8;
 
     private final VulkanContext context;
     private final SharedComputeProgram program;
     private final AutoExposurePass autoExposure;
     private final VulkanBuffer exposureState;
+    private final VulkanImage hdrOutput;
     private final long descriptorPool;
     private final long descriptorSet;
     private final int width;
@@ -38,6 +41,7 @@ public final class DisplayTransformPass implements Destroyable {
             SharedComputeProgram program,
             AutoExposurePass autoExposure,
             VulkanBuffer exposureState,
+            VulkanImage hdrOutput,
             long descriptorPool,
             long descriptorSet,
             int width,
@@ -46,6 +50,7 @@ public final class DisplayTransformPass implements Destroyable {
         this.program = program;
         this.autoExposure = autoExposure;
         this.exposureState = exposureState;
+        this.hdrOutput = hdrOutput;
         this.descriptorPool = descriptorPool;
         this.descriptorSet = descriptorSet;
         this.width = width;
@@ -99,6 +104,7 @@ public final class DisplayTransformPass implements Destroyable {
             throw new IllegalArgumentException("Frozen exposure state is incomplete");
         }
         long descriptorPool = 0L;
+        VulkanImage hdrOutput = null;
         AutoExposurePass autoExposure = frozenExposure == null
                 ? AutoExposurePass.create(
                         context,
@@ -112,68 +118,87 @@ public final class DisplayTransformPass implements Destroyable {
                 : frozenExposure;
         SharedComputeProgram program = null;
         try {
+            hdrOutput = context.createImage2D(
+                    displayOutput.width(),
+                    displayOutput.height(),
+                    VK12.VK_FORMAT_R16G16B16A16_SFLOAT,
+                    VK12.VK_IMAGE_USAGE_STORAGE_BIT | VK12.VK_IMAGE_USAGE_SAMPLED_BIT,
+                    "Prime HDR display output");
             program = context.acquireDisplayTransformProgram();
             try (MemoryStack stack = MemoryStack.stackPush()) {
-            LongBuffer pointer = stack.mallocLong(1);
-            VkDescriptorPoolSize.Buffer poolSizes = VkDescriptorPoolSize.calloc(3, stack);
-            poolSizes.get(0).type(VK12.VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE).descriptorCount(1);
-            poolSizes.get(1).type(VK12.VK_DESCRIPTOR_TYPE_STORAGE_IMAGE).descriptorCount(1);
-            poolSizes.get(2).type(VK12.VK_DESCRIPTOR_TYPE_STORAGE_BUFFER).descriptorCount(1);
-            pointer.clear();
-            VulkanContext.check(
-                    VK12.vkCreateDescriptorPool(
-                            context.vkDevice(),
-                            VkDescriptorPoolCreateInfo.calloc(stack)
-                                    .sType$Default().maxSets(1).pPoolSizes(poolSizes),
-                            null,
-                            pointer),
-                    "create common display-transform descriptor pool");
-            descriptorPool = pointer.get(0);
+                LongBuffer pointer = stack.mallocLong(1);
+                VkDescriptorPoolSize.Buffer poolSizes = VkDescriptorPoolSize.calloc(3, stack);
+                poolSizes.get(0).type(VK12.VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE).descriptorCount(1);
+                poolSizes.get(1).type(VK12.VK_DESCRIPTOR_TYPE_STORAGE_IMAGE).descriptorCount(2);
+                poolSizes.get(2).type(VK12.VK_DESCRIPTOR_TYPE_STORAGE_BUFFER).descriptorCount(1);
+                pointer.clear();
+                VulkanContext.check(
+                        VK12.vkCreateDescriptorPool(
+                                context.vkDevice(),
+                                VkDescriptorPoolCreateInfo.calloc(stack)
+                                        .sType$Default().maxSets(1).pPoolSizes(poolSizes),
+                                null,
+                                pointer),
+                        "create common display-transform descriptor pool");
+                descriptorPool = pointer.get(0);
 
-            pointer.clear();
-            VulkanContext.check(
-                    VK12.vkAllocateDescriptorSets(
-                            context.vkDevice(),
-                            VkDescriptorSetAllocateInfo.calloc(stack)
-                                    .sType$Default()
-                                    .descriptorPool(descriptorPool)
-                                    .pSetLayouts(stack.longs(program.descriptorSetLayout())),
-                            pointer),
-                    "allocate common display-transform descriptor set");
-            long descriptorSet = pointer.get(0);
-            VkDescriptorImageInfo.Buffer imageInfos = VkDescriptorImageInfo.calloc(2, stack);
-            imageInfos.get(0).imageView(linearInput.view()).imageLayout(VK12.VK_IMAGE_LAYOUT_GENERAL);
-            imageInfos.get(1).imageView(displayOutput.view()).imageLayout(VK12.VK_IMAGE_LAYOUT_GENERAL);
-            VkDescriptorBufferInfo.Buffer exposureInfo =
-                    VkDescriptorBufferInfo.calloc(1, stack);
-            exposureInfo.get(0)
-                    .buffer(exposureState.handle())
-                    .offset(0L)
-                    .range(AutoExposurePass.EXPOSURE_STATE_SIZE);
-            VkWriteDescriptorSet.Buffer writes = VkWriteDescriptorSet.calloc(3, stack);
-            writes.get(0).sType$Default().dstSet(descriptorSet).dstBinding(0)
-                    .descriptorCount(1).descriptorType(VK12.VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE)
-                    .pImageInfo(VkDescriptorImageInfo.create(imageInfos.get(0).address(), 1));
-            writes.get(1).sType$Default().dstSet(descriptorSet).dstBinding(1)
-                    .descriptorCount(1).descriptorType(VK12.VK_DESCRIPTOR_TYPE_STORAGE_IMAGE)
-                    .pImageInfo(VkDescriptorImageInfo.create(imageInfos.get(1).address(), 1));
-            writes.get(2).sType$Default().dstSet(descriptorSet).dstBinding(2)
-                    .descriptorCount(1).descriptorType(VK12.VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
-                    .pBufferInfo(exposureInfo);
-            VK12.vkUpdateDescriptorSets(context.vkDevice(), writes, null);
+                pointer.clear();
+                VulkanContext.check(
+                        VK12.vkAllocateDescriptorSets(
+                                context.vkDevice(),
+                                VkDescriptorSetAllocateInfo.calloc(stack)
+                                        .sType$Default()
+                                        .descriptorPool(descriptorPool)
+                                        .pSetLayouts(stack.longs(program.descriptorSetLayout())),
+                                pointer),
+                        "allocate common display-transform descriptor set");
+                long descriptorSet = pointer.get(0);
+                VkDescriptorImageInfo.Buffer imageInfos = VkDescriptorImageInfo.calloc(3, stack);
+                imageInfos.get(0).imageView(linearInput.view())
+                        .imageLayout(VK12.VK_IMAGE_LAYOUT_GENERAL);
+                imageInfos.get(1).imageView(displayOutput.view())
+                        .imageLayout(VK12.VK_IMAGE_LAYOUT_GENERAL);
+                imageInfos.get(2).imageView(hdrOutput.view())
+                        .imageLayout(VK12.VK_IMAGE_LAYOUT_GENERAL);
+                VkDescriptorBufferInfo.Buffer exposureInfo =
+                        VkDescriptorBufferInfo.calloc(1, stack);
+                exposureInfo.get(0)
+                        .buffer(exposureState.handle())
+                        .offset(0L)
+                        .range(AutoExposurePass.EXPOSURE_STATE_SIZE);
+                VkWriteDescriptorSet.Buffer writes = VkWriteDescriptorSet.calloc(4, stack);
+                writes.get(0).sType$Default().dstSet(descriptorSet).dstBinding(0)
+                        .descriptorCount(1).descriptorType(VK12.VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE)
+                        .pImageInfo(VkDescriptorImageInfo.create(imageInfos.get(0).address(), 1));
+                writes.get(1).sType$Default().dstSet(descriptorSet).dstBinding(1)
+                        .descriptorCount(1).descriptorType(VK12.VK_DESCRIPTOR_TYPE_STORAGE_IMAGE)
+                        .pImageInfo(VkDescriptorImageInfo.create(imageInfos.get(1).address(), 1));
+                writes.get(2).sType$Default().dstSet(descriptorSet).dstBinding(2)
+                        .descriptorCount(1).descriptorType(VK12.VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
+                        .pBufferInfo(exposureInfo);
+                writes.get(3).sType$Default().dstSet(descriptorSet).dstBinding(3)
+                        .descriptorCount(1).descriptorType(VK12.VK_DESCRIPTOR_TYPE_STORAGE_IMAGE)
+                        .pImageInfo(VkDescriptorImageInfo.create(imageInfos.get(2).address(), 1));
+                VK12.vkUpdateDescriptorSets(context.vkDevice(), writes, null);
                 return new DisplayTransformPass(
                         context,
                         program,
                         autoExposure,
                         exposureState,
+                        hdrOutput,
                         descriptorPool,
                         descriptorSet,
                         displayOutput.width(),
                         displayOutput.height());
             }
         } catch (RuntimeException exception) {
-            if (descriptorPool != 0L) VK12.vkDestroyDescriptorPool(context.vkDevice(), descriptorPool, null);
-            if (program != null) program.release();
+            if (descriptorPool != 0L) {
+                VK12.vkDestroyDescriptorPool(context.vkDevice(), descriptorPool, null);
+            }
+            if (program != null) {
+                program.release();
+            }
+            ResourceCleanup.destroy(hdrOutput, exception);
             ResourceCleanup.destroy(autoExposure, exception);
             throw exception;
         }
@@ -183,13 +208,18 @@ public final class DisplayTransformPass implements Destroyable {
         return this.exposureState;
     }
 
+    public VulkanImage hdrOutput() {
+        return this.hdrOutput;
+    }
+
     public void record(
             VkCommandBuffer commandBuffer,
             boolean diagnostic,
             float deltaSeconds,
             boolean reset,
             boolean instant,
-            DisplaySettings.Snapshot display) {
+            DisplaySettings.Snapshot display,
+            VulkanImageInitializationBatch initialization) {
         java.util.Objects.requireNonNull(display, "display");
         if (this.autoExposure == null) {
             throw new IllegalStateException("Frozen display transform cannot adapt exposure");
@@ -203,29 +233,38 @@ public final class DisplayTransformPass implements Destroyable {
                 instant,
                 diagnostic,
                 display.autoExposureCompensation());
-        this.recordDisplay(commandBuffer, diagnostic, display);
+        this.recordDisplay(commandBuffer, diagnostic, display, initialization);
     }
 
     public void recordFrozen(
             VkCommandBuffer commandBuffer,
-            DisplaySettings.Snapshot display) {
+            DisplaySettings.Snapshot display,
+            VulkanImageInitializationBatch initialization) {
         java.util.Objects.requireNonNull(display, "display");
         if (this.autoExposure != null) {
             throw new IllegalStateException("Adaptive display transform requires exposure update");
         }
-        this.recordDisplay(commandBuffer, false, display);
+        this.recordDisplay(commandBuffer, false, display, initialization);
     }
 
     private void recordDisplay(
             VkCommandBuffer commandBuffer,
             boolean diagnostic,
-            DisplaySettings.Snapshot display) {
+            DisplaySettings.Snapshot display,
+            VulkanImageInitializationBatch initialization) {
+        java.util.Objects.requireNonNull(initialization, "initialization");
+        VulkanImageTransitions.prepareOutputForComposite(
+                commandBuffer, initialization, this.hdrOutput);
+        AgxHsvOutput.Parameters agx = AgxHsvOutput.parameters(HdrOutput.activeHeadroom());
         try (MemoryStack stack = MemoryStack.stackPush()) {
             ByteBuffer push = stack.malloc(PUSH_SIZE).order(ByteOrder.nativeOrder());
             push.putInt(0, this.width);
             push.putInt(4, this.height);
             push.putInt(8, diagnostic ? 1 : 0);
             push.putFloat(12, display.finalExposureMultiplier());
+            push.putFloat(16, agx.maximumLogCoordinate());
+            push.putFloat(20, agx.outputPeak());
+            push.putFloat(24, agx.shoulderCoefficient());
             VK12.vkCmdBindPipeline(
                     commandBuffer,
                     VK12.VK_PIPELINE_BIND_POINT_COMPUTE,
@@ -253,6 +292,7 @@ public final class DisplayTransformPass implements Destroyable {
         this.destroyed = true;
         VK12.vkDestroyDescriptorPool(this.context.vkDevice(), this.descriptorPool, null);
         this.program.release();
+        this.hdrOutput.destroy();
         if (this.autoExposure != null) {
             this.autoExposure.destroy();
         }

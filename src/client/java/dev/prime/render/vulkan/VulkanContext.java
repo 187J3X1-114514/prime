@@ -22,6 +22,7 @@ import org.lwjgl.vulkan.VK12;
 import org.lwjgl.vulkan.VkBufferCreateInfo;
 import org.lwjgl.vulkan.VkBufferDeviceAddressInfo;
 import org.lwjgl.vulkan.VkComputePipelineCreateInfo;
+import org.lwjgl.vulkan.VkCommandBuffer;
 import org.lwjgl.vulkan.VkDevice;
 import org.lwjgl.vulkan.VkImageCreateInfo;
 import org.lwjgl.vulkan.VkImageViewCreateInfo;
@@ -35,6 +36,7 @@ public final class VulkanContext implements AutoCloseable {
     private final long maxStorageBufferRange;
     private final VulkanPipelineCache pipelineCache;
     private final VulkanSharedPrograms sharedPrograms;
+    private HdrPresentPass hdrPresentPass;
     private final Set<Destroyable> deferred = Collections.newSetFromMap(new IdentityHashMap<>());
     private boolean closed;
 
@@ -109,6 +111,36 @@ public final class VulkanContext implements AutoCloseable {
     SharedComputeProgram acquireAutoExposureProgram() {
         requireOpen();
         return this.sharedPrograms.acquireAutoExposure();
+    }
+
+    SharedComputeProgram acquireHdrPresentProgram() {
+        requireOpen();
+        return this.sharedPrograms.acquireHdrPresent();
+    }
+
+    public VulkanImage recordHdrPresentation(
+            VkCommandBuffer commandBuffer,
+            long hdrView,
+            long baselineView,
+            long uiView,
+            int width,
+            int height,
+            boolean compositePrimeHdr) {
+        requireOpen();
+        if (this.hdrPresentPass == null || !this.hdrPresentPass.matches(width, height)) {
+            if (this.hdrPresentPass != null) {
+                this.awaitIdle();
+                this.hdrPresentPass.destroy();
+            }
+            this.hdrPresentPass = HdrPresentPass.create(this, width, height);
+        }
+        this.hdrPresentPass.record(
+                commandBuffer,
+                hdrView,
+                baselineView,
+                uiView,
+                compositePrimeHdr);
+        return this.hdrPresentPass.output();
     }
 
     public void invalidateSharedPrograms() {
@@ -221,7 +253,9 @@ public final class VulkanContext implements AutoCloseable {
                 1,
                 1,
                 VK12.VK_FORMAT_R8G8B8A8_UNORM,
-                VK12.VK_IMAGE_USAGE_STORAGE_BIT | VK12.VK_IMAGE_USAGE_TRANSFER_SRC_BIT,
+                VK12.VK_IMAGE_USAGE_STORAGE_BIT
+                        | VK12.VK_IMAGE_USAGE_SAMPLED_BIT
+                        | VK12.VK_IMAGE_USAGE_TRANSFER_SRC_BIT,
                 "Prime output");
     }
 
@@ -501,6 +535,10 @@ public final class VulkanContext implements AutoCloseable {
             failure = exception;
         }
         try {
+            if (this.hdrPresentPass != null) {
+                this.hdrPresentPass.destroy();
+                this.hdrPresentPass = null;
+            }
             this.sharedPrograms.close();
         } catch (RuntimeException exception) {
             if (failure == null) {

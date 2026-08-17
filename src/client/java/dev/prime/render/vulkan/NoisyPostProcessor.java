@@ -80,6 +80,7 @@ public final class NoisyPostProcessor implements VulkanReconstructionProcessor {
     @Override public int displayHeight() { return this.height; }
     @Override public RawWavefrontFrame rawFrame() { return this.rawFrame; }
     @Override public VulkanImage linearHdrOutput() { return this.rawFrame.linearOutput(); }
+    @Override public VulkanImage hdrDisplayOutput() { return this.displayTransform.hdrOutput(); }
     @Override public long displayExposureStateBuffer() {
         return this.displayTransform.exposureState().handle();
     }
@@ -138,7 +139,8 @@ public final class NoisyPostProcessor implements VulkanReconstructionProcessor {
                 temporal.deltaMilliseconds() * 0.001F,
                 temporal.restart(),
                 false,
-                parameters.display());
+                parameters.display(),
+                initialization);
     }
 
     @Override

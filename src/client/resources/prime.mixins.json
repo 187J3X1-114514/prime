@@ -24,6 +24,7 @@
     "LevelExtractorMixin",
     "LevelRendererMixin",
     "MinecraftMixin",
+    "MinecraftAccessor",
     "ModelBlockRendererMixin",
     "OptionsMixin",
     "OptionsSubScreenAccessor",

@@ -146,6 +146,10 @@ public final class Fsr3Upscaler implements Destroyable {
         return this.linearOutput;
     }
 
+    public VulkanImage hdrDisplayOutput() {
+        return this.displayPass.hdrOutput();
+    }
+
     public long displayExposureStateBuffer() {
         return this.displayPass.exposureState().handle();
     }
@@ -238,7 +242,8 @@ public final class Fsr3Upscaler implements Destroyable {
                 temporal.deltaMilliseconds() * 0.001F,
                 temporal.restart(),
                 false,
-                display);
+                display,
+                initialization);
     }
 
     /** Must be called immediately after the command buffer containing {@code token} is submitted. */

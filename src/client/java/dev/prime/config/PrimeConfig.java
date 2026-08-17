@@ -3,12 +3,14 @@ package dev.prime.config;
 import dev.prime.infrastructure.PrimeInfo;
 import dev.prime.render.AstronomySettings;
 import dev.prime.render.DisplaySettings;
+import dev.prime.render.HdrOutput;
 import dev.prime.render.LightingSettings;
 import dev.prime.render.MaterialSettings;
 import dev.prime.render.RendererSettings;
 import dev.prime.render.ScatterSettings;
 import dev.prime.render.post.PostProcessingMode;
 import dev.prime.render.post.ReconstructionQualityMode;
+import dev.prime.render.terrain.TerrainWorkerSettings;
 import dev.prime.render.terrain.VoxelSurfaceSettings;
 import java.io.IOException;
 import java.io.Reader;
@@ -26,6 +28,8 @@ public final class PrimeConfig {
     private static final String PATH_TRACING_ENABLED_KEY = "renderer.path_tracing";
     private static final String SHARC_ENABLED_KEY = "renderer.sharc";
     private static final String SCATTER_COUNT_KEY = "renderer.scatter_count";
+    private static final String TERRAIN_WORKER_PERCENTAGE_KEY =
+            "terrain.worker_percentage";
     private static final String LEGACY_WAVEFRONT_ROUNDS_KEY = "renderer.wavefront_rounds";
     private static final String[] LEGACY_INTEGRATOR_KEYS = {
         "renderer.integrator_mode",
@@ -55,6 +59,7 @@ public final class PrimeConfig {
     private static final String SOLAR_LONGITUDE_DEGREES_KEY =
             "astronomy.solar_longitude_degrees";
     private static final String FINAL_EXPOSURE_EV_KEY = "display.final_exposure_ev";
+    private static final String HDR_ENABLED_KEY = "display.hdr";
     private static final String[] LEGACY_DISPLAY_TRANSFORM_KEYS = {
         "display.transform",
         "display.oklab_overexposure",
@@ -70,6 +75,8 @@ public final class PrimeConfig {
     // keeps every renderer read coherent without a shared lock or independently mutable globals.
     private static PrimeSettings settings = PrimeSettings.defaults();
     private static int scatterCount = ScatterSettings.DEFAULT_COUNT;
+    private static int terrainWorkerPercentage = TerrainWorkerSettings.DEFAULT_PERCENTAGE;
+    private static boolean hdrEnabled;
     private static long rendererRevision;
     private static boolean dirty;
 
@@ -81,6 +88,7 @@ public final class PrimeConfig {
         boolean pathTracingEnabled = true;
         boolean sharcEnabled = true;
         int loadedScatterCount = ScatterSettings.DEFAULT_COUNT;
+        int loadedTerrainWorkerPercentage = TerrainWorkerSettings.DEFAULT_PERCENTAGE;
         boolean voxelTextureSurfaces = false;
         int voxelTextureSurfaceStrengthSteps = VoxelSurfaceSettings.DEFAULT_STEPS;
         PostProcessingMode postProcessingMode = PostProcessingMode.DEFAULT;
@@ -93,6 +101,7 @@ public final class PrimeConfig {
         int blockLightQuarterSteps = LightingSettings.DEFAULT_BLOCK_LIGHT_QUARTER_STEPS;
         int finalExposureQuarterSteps =
                 DisplaySettings.DEFAULT_FINAL_EXPOSURE_QUARTER_STEPS;
+        boolean loadedHdrEnabled = false;
         int autoExposureCompensationSteps =
                 DisplaySettings.DEFAULT_AUTO_EXPOSURE_COMPENSATION_STEPS;
         int defaultRoughnessSteps = MaterialSettings.DEFAULT_ROUGHNESS_STEPS;
@@ -149,6 +158,22 @@ public final class PrimeConfig {
                     rewriteNeeded = true;
                 }
                 if (hasLegacyIntegratorProperties(properties)) {
+                    rewriteNeeded = true;
+                }
+                String workerPercentage = properties.getProperty(
+                        TERRAIN_WORKER_PERCENTAGE_KEY);
+                if (workerPercentage != null) {
+                    try {
+                        loadedTerrainWorkerPercentage =
+                                parseTerrainWorkerPercentage(workerPercentage);
+                    } catch (IllegalArgumentException exception) {
+                        PrimeInfo.LOGGER.warn(
+                                "Invalid Prime terrain worker percentage '{}'; using {}%",
+                                workerPercentage,
+                                TerrainWorkerSettings.DEFAULT_PERCENTAGE);
+                        rewriteNeeded = true;
+                    }
+                } else {
                     rewriteNeeded = true;
                 }
                 String voxelSurfaces = properties.getProperty(
@@ -274,6 +299,19 @@ public final class PrimeConfig {
                     rewriteNeeded = true;
                 }
                 rewriteNeeded |= hasLegacyDisplayTransformProperties(properties);
+                String hdr = properties.getProperty(HDR_ENABLED_KEY);
+                if (hdr != null) {
+                    try {
+                        loadedHdrEnabled = parseBoolean(hdr);
+                    } catch (IllegalArgumentException exception) {
+                        PrimeInfo.LOGGER.warn(
+                                "Invalid Prime HDR switch '{}'; disabling HDR",
+                                hdr);
+                        rewriteNeeded = true;
+                    }
+                } else {
+                    rewriteNeeded = true;
+                }
                 String autoExposureCompensation =
                         properties.getProperty(AUTO_EXPOSURE_COMPENSATION_KEY);
                 if (autoExposureCompensation != null) {
@@ -370,13 +408,17 @@ public final class PrimeConfig {
                 sharcEnabled,
                 vanillaPbrPresets);
         scatterCount = loadedScatterCount;
+        terrainWorkerPercentage = loadedTerrainWorkerPercentage;
+        hdrEnabled = loadedHdrEnabled;
+        HdrOutput.setRequested(loadedHdrEnabled);
         rendererRevision = 0L;
         dirty = rewriteNeeded;
         PrimeInfo.LOGGER.info(
-                "Prime settings: path tracing {}, SHARC {}, scatter count {}, voxel surfaces {} at {}x, post-processing {} quality {} (NRD-FSR {}x), latitude {} degrees, solar longitude {} degrees, sun {} EV, stars {} EV, block lights {} EV, final exposure {} EV, auto-exposure compensation {}, default roughness {}, seamless glass {}, air gap {}, vanilla PBR presets {}",
+                "Prime settings: path tracing {}, SHARC {}, scatter count {}, terrain workers {}%, voxel surfaces {} at {}x, post-processing {} quality {} (NRD-FSR {}x), latitude {} degrees, solar longitude {} degrees, sun {} EV, stars {} EV, block lights {} EV, final exposure {} EV, HDR {}, auto-exposure compensation {}, default roughness {}, seamless glass {}, air gap {}, vanilla PBR presets {}",
                 pathTracingEnabled ? "enabled" : "disabled",
                 sharcEnabled ? "enabled" : "disabled",
                 loadedScatterCount,
+                loadedTerrainWorkerPercentage,
                 voxelTextureSurfaces ? "enabled" : "disabled",
                 formatVoxelSurfaceStrength(voxelTextureSurfaceStrengthSteps),
                 postProcessingMode.id(),
@@ -388,6 +430,7 @@ public final class PrimeConfig {
                 formatStarEv(starQuarterSteps),
                 formatEv(blockLightQuarterSteps),
                 formatFinalExposure(finalExposureQuarterSteps),
+                loadedHdrEnabled ? "enabled" : "disabled",
                 formatAutoExposureCompensation(autoExposureCompensationSteps),
                 formatRoughness(defaultRoughnessSteps),
                 seamlessGlass ? "enabled" : "disabled",
@@ -418,6 +461,7 @@ public final class PrimeConfig {
                 current.material(),
                 current.display(),
                 scatterCount,
+                terrainWorkerPercentage,
                 revision);
     }
 
@@ -438,6 +482,30 @@ public final class PrimeConfig {
         if (replacement != scatterCount) {
             scatterCount = replacement;
             rendererRevision = Math.incrementExact(rendererRevision);
+            dirty = true;
+        }
+    }
+
+    public static int terrainWorkerPercentage() {
+        return terrainWorkerPercentage;
+    }
+
+    public static boolean hdrEnabled() {
+        return hdrEnabled;
+    }
+
+    public static void setHdrEnabled(boolean enabled) {
+        if (enabled != hdrEnabled) {
+            hdrEnabled = enabled;
+            HdrOutput.setRequested(enabled);
+            dirty = true;
+        }
+    }
+
+    public static void setTerrainWorkerPercentage(int percentage) {
+        int replacement = TerrainWorkerSettings.validatePercentage(percentage);
+        if (replacement != terrainWorkerPercentage) {
+            terrainWorkerPercentage = replacement;
             dirty = true;
         }
     }
@@ -505,6 +573,8 @@ public final class PrimeConfig {
     public static void restoreDefaults() {
         update(restoredDefaults(settings));
         setScatterCount(ScatterSettings.DEFAULT_COUNT);
+        setTerrainWorkerPercentage(TerrainWorkerSettings.DEFAULT_PERCENTAGE);
+        setHdrEnabled(false);
     }
 
     static PrimeSettings restoredDefaults(PrimeSettings current) {
@@ -590,6 +660,8 @@ public final class PrimeConfig {
         return PATH_TRACING_ENABLED_KEY + "=" + current.pathTracingEnabled() + "\n"
                     + SHARC_ENABLED_KEY + "=" + current.sharcEnabled() + "\n"
                     + SCATTER_COUNT_KEY + "=" + scatterCount + "\n"
+                    + TERRAIN_WORKER_PERCENTAGE_KEY + "="
+                    + terrainWorkerPercentage + "\n"
                     + VOXEL_TEXTURE_SURFACES_KEY + "="
                     + current.voxelTextureSurfaces() + "\n"
                     + VOXEL_TEXTURE_SURFACE_STRENGTH_KEY + "="
@@ -607,6 +679,7 @@ public final class PrimeConfig {
                     + formatEv(current.blockLightQuarterSteps()) + "\n"
                     + FINAL_EXPOSURE_EV_KEY + "="
                     + formatFinalExposure(current.finalExposureQuarterSteps()) + "\n"
+                    + HDR_ENABLED_KEY + "=" + hdrEnabled + "\n"
                     + AUTO_EXPOSURE_COMPENSATION_KEY + "="
                     + formatAutoExposureCompensation(
                             current.autoExposureCompensationSteps()) + "\n"
@@ -633,6 +706,15 @@ public final class PrimeConfig {
             return ScatterSettings.validateCount(Integer.parseInt(value));
         } catch (NumberFormatException exception) {
             throw new IllegalArgumentException("Scatter count must be an integer", exception);
+        }
+    }
+
+    static int parseTerrainWorkerPercentage(String value) {
+        try {
+            return TerrainWorkerSettings.validatePercentage(Integer.parseInt(value));
+        } catch (NumberFormatException exception) {
+            throw new IllegalArgumentException(
+                    "Terrain worker percentage must be an integer", exception);
         }
     }
 

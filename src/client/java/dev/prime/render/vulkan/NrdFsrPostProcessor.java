@@ -124,6 +124,7 @@ public final class NrdFsrPostProcessor implements VulkanReconstructionProcessor 
     @Override public int displayHeight() { return this.displayHeight; }
     @Override public RawWavefrontFrame rawFrame() { return this.denoiser.rawFrame(); }
     @Override public VulkanImage linearHdrOutput() { return this.upscaler.linearOutput(); }
+    @Override public VulkanImage hdrDisplayOutput() { return this.upscaler.hdrDisplayOutput(); }
     @Override public long displayExposureStateBuffer() {
         return this.upscaler.displayExposureStateBuffer();
     }

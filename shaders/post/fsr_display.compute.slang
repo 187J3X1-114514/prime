@@ -6,6 +6,9 @@ struct PrimeFsrDisplayPushConstants
     uint2 outputExtent;
     uint debugView;
     float finalExposureMultiplier;
+    float agxMaximumLogCoordinate;
+    float agxOutputPeak;
+    float agxShoulderCoefficient;
 };
 
 [[vk::binding(0, 0)]] Texture2D<float4> primeFsrLinearOutput;
@@ -13,6 +16,9 @@ struct PrimeFsrDisplayPushConstants
 [[vk::image_format("rgba8")]]
 WTexture2D<unorm float4> primeDisplayOutput;
 [[vk::binding(2, 0)]] StructuredBuffer<PrimeAutoExposureState> primeAutoExposureState;
+[[vk::binding(3, 0)]]
+[[vk::image_format("rgba16f")]]
+WTexture2D<float4> primeHdrDisplayOutput;
 [[vk::push_constant]] ConstantBuffer<PrimeFsrDisplayPushConstants> primeFsrDisplayPush;
 
 [numthreads(8, 8, 1)]
@@ -22,17 +28,28 @@ void main(uint3 dispatchThreadId : SV_DispatchThreadID)
     if (any(pixel >= primeFsrDisplayPush.outputExtent)) return;
 
     float3 radiance = primeFsrLinearOutput.Load(int3(pixel, 0)).rgb;
+    bool hdrActive = primeFsrDisplayPush.agxOutputPeak > 1.0;
     if (primeFsrDisplayPush.debugView != 0) {
-        primeDisplayOutput.Store(pixel, float4(clamp(radiance, 0.0, 1.0), 1.0));
+        float3 debugColor = clamp(radiance, 0.0, 1.0);
+        primeDisplayOutput.Store(pixel, float4(debugColor, 1.0));
         return;
     }
     if (any(isnan(radiance)) || any(isinf(radiance))) radiance = float3(0.0);
+    float exposure = exp2(primeAutoExposureState[0].exposureEv)
+            * primeFsrDisplayPush.finalExposureMultiplier;
+    float3 nonnegative = max(radiance, float3(0.0));
+    float3 sdr = primeDisplayTransformToSrgb(nonnegative, exposure);
+    if (hdrActive) {
+        float3 hdr = primeDisplayTransformToSrgb(
+                nonnegative,
+                exposure,
+                primeFsrDisplayPush.agxMaximumLogCoordinate,
+                primeFsrDisplayPush.agxOutputPeak,
+                primeFsrDisplayPush.agxShoulderCoefficient);
+        primeHdrDisplayOutput.Store(pixel, float4(hdr, 1.0));
+    }
+    // HDR presentation uses zero alpha as an exact coverage accumulator for vanilla UI.
     primeDisplayOutput.Store(
             pixel,
-            float4(
-                    primeDisplayTransformToSrgb(
-                            max(radiance, float3(0.0)),
-                            exp2(primeAutoExposureState[0].exposureEv)
-                                    * primeFsrDisplayPush.finalExposureMultiplier),
-                    1.0));
+            float4(sdr, hdrActive ? 0.0 : 1.0));
 }

@@ -2,22 +2,25 @@ package dev.prime.client;
 
 import com.mojang.serialization.Codec;
 import dev.prime.config.PrimeConfig;
+import dev.prime.mixin.MinecraftAccessor;
 import dev.prime.render.AstronomySettings;
 import dev.prime.render.DisplaySettings;
+import dev.prime.render.HdrOutput;
 import dev.prime.render.LightingSettings;
 import dev.prime.render.MaterialSettings;
 import dev.prime.render.PrimaryLightDiagnosticView;
-import dev.prime.client.PrimeRuntime;
 import dev.prime.render.RendererSettings;
 import dev.prime.render.ScatterSettings;
 import dev.prime.render.fsr.FsrDebugView;
 import dev.prime.render.post.DlssRrDebugView;
 import dev.prime.render.post.PostProcessingMode;
 import dev.prime.render.post.ReconstructionQualityMode;
-import dev.prime.render.terrain.VoxelSurfaceSettings;
 import dev.prime.render.post.nrd.NrdDiagnostics;
+import dev.prime.render.terrain.TerrainWorkerSettings;
+import dev.prime.render.terrain.VoxelSurfaceSettings;
 import java.util.List;
 import java.util.Locale;
+import net.minecraft.client.Minecraft;
 import net.minecraft.client.OptionInstance;
 import net.minecraft.client.Options;
 import net.minecraft.network.chat.Component;
@@ -68,6 +71,20 @@ public final class PrimeVideoOptions {
                         ScatterSettings.MAXIMUM_COUNT),
                 PrimeConfig.scatterCount(),
                 PrimeConfig::setScatterCount);
+    }
+
+    public static OptionInstance<Integer> terrainWorkerPercentage() {
+        return new OptionInstance<>(
+                "prime.options.terrain_worker_percentage",
+                OptionInstance.cachedConstantTooltip(Component.translatable(
+                        "prime.options.terrain_worker_percentage.tooltip")),
+                (caption, percentage) -> Options.genericValueLabel(
+                        caption, Component.literal(percentage + "%")),
+                new OptionInstance.IntRange(
+                        TerrainWorkerSettings.MINIMUM_PERCENTAGE,
+                        TerrainWorkerSettings.MAXIMUM_PERCENTAGE),
+                PrimeConfig.terrainWorkerPercentage(),
+                PrimeConfig::setTerrainWorkerPercentage);
     }
 
     public static OptionInstance<Boolean> voxelTextureSurfaces() {
@@ -470,5 +487,22 @@ public final class PrimeVideoOptions {
 
     static String formatRoughness(int steps) {
         return String.format(Locale.ROOT, "%.2f", MaterialSettings.linearRoughness(steps));
+    }
+
+    public static OptionInstance<Boolean> hdr() {
+        return OptionInstance.createBoolean(
+                "prime.options.display.hdr",
+                OptionInstance.cachedConstantTooltip(Component.translatable(
+                        HdrOutput.capability().supported()
+                                ? "prime.options.display.hdr.tooltip"
+                                : "prime.options.display.hdr.unavailable.tooltip")),
+                PrimeConfig.hdrEnabled(),
+                PrimeVideoOptions::setHdrEnabled);
+    }
+
+    private static void setHdrEnabled(boolean enabled) {
+        PrimeConfig.setHdrEnabled(enabled);
+        Minecraft minecraft = Minecraft.getInstance();
+        ((MinecraftAccessor) minecraft).prime$setWindowSurfaceNeedsReconfiguring(true);
     }
 }

@@ -2,8 +2,13 @@ package dev.prime.client;
 
 import com.mojang.blaze3d.pipeline.RenderTarget;
 import com.mojang.blaze3d.platform.InputConstants;
-import dev.prime.render.RendererSettings;
+import dev.prime.mixin.MinecraftAccessor;
+import dev.prime.render.HdrOutput;
 import dev.prime.render.PrimaryLightDiagnosticView;
+import dev.prime.render.RendererSettings;
+import dev.prime.render.fsr.FsrDebugView;
+import dev.prime.render.post.DlssRrDebugView;
+import dev.prime.render.post.nrd.NrdDiagnostics;
 import dev.prime.render.runtime.RendererFrameSettings;
 import dev.prime.render.runtime.RendererLifecycle;
 import dev.prime.render.runtime.RuntimeDiagnostics;
@@ -12,10 +17,8 @@ import dev.prime.render.runtime.SessionController;
 import dev.prime.render.runtime.SessionControls;
 import dev.prime.render.runtime.TerrainOwnership;
 import dev.prime.render.runtime.VulkanRenderer;
-import dev.prime.render.fsr.FsrDebugView;
-import dev.prime.render.post.DlssRrDebugView;
 import dev.prime.render.scene.vanilla.DynamicSceneFrame;
-import dev.prime.render.post.nrd.NrdDiagnostics;
+import dev.prime.render.vulkan.HdrPresentation;
 import java.util.List;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
@@ -66,12 +69,21 @@ public final class PrimeRuntime {
     }
 
     public void beginFrame(Minecraft minecraft, RendererSettings settings) {
+        HdrPresentation.beginFrame();
         this.frameSettings.beginFrame(settings);
         this.lifecycle.retireFailed(minecraft, this.terrain);
         if (!this.lifecycle.initialized()) {
             return;
         }
         this.updateSessionShortcuts(minecraft);
+        boolean presentationWasAvailable = HdrPresentation.available();
+        if (HdrOutput.requested()) {
+            this.lifecycle.tryInitializePresentation();
+            if (!presentationWasAvailable && HdrPresentation.available()) {
+                ((MinecraftAccessor) minecraft)
+                        .prime$setWindowSurfaceNeedsReconfiguring(true);
+            }
+        }
         if (!settings.pathTracingEnabled()) {
             this.lifecycle.disable(minecraft, this.terrain);
             return;

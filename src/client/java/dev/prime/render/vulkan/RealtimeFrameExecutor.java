@@ -146,6 +146,7 @@ public final class RealtimeFrameExecutor {
                     "end Prime realtime command buffer");
             encoder.execute(commandBuffer);
             hostSubmission.acceptedByMinecraftHostSubmission();
+            HdrPresentation.publish(this.context, processor.hdrDisplayOutput(), output);
             // A normal return transfers command/resource ownership and advances Prime histories.
             this.imageInitialization.submitted();
             initializationActive = false;

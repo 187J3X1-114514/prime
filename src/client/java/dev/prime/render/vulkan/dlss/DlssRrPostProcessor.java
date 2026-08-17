@@ -134,6 +134,7 @@ public final class DlssRrPostProcessor implements VulkanReconstructionProcessor 
     @Override public PostProcessingMode mode() { return PostProcessingMode.DLSS_RR; }
     @Override public DlssRrTargets rawFrame() { return this.targets; }
     @Override public VulkanImage linearHdrOutput() { return this.targets.rrOutput(); }
+    @Override public VulkanImage hdrDisplayOutput() { return this.displayTransform.hdrOutput(); }
     @Override public long displayExposureStateBuffer() {
         return this.displayTransform.exposureState().handle();
     }
@@ -206,7 +207,8 @@ public final class DlssRrPostProcessor implements VulkanReconstructionProcessor 
             FrameToken token,
             SunDirection sunDirection,
             float sunRadianceMultiplier,
-            DisplaySettings.Snapshot display) {
+            DisplaySettings.Snapshot display,
+            VulkanImageInitializationBatch initialization) {
         requireOpen();
         if (token.owner != this
                 || token.recorded
@@ -255,7 +257,8 @@ public final class DlssRrPostProcessor implements VulkanReconstructionProcessor 
                 temporal.deltaMilliseconds() * 0.001F,
                 temporal.restart(),
                 false,
-                display);
+                display,
+                initialization);
         if (token.debugView != DlssRrDebugView.OFF) {
             allCommandsToCompute(commandBuffer);
             this.debugPass().record(
@@ -282,7 +285,8 @@ public final class DlssRrPostProcessor implements VulkanReconstructionProcessor 
                 token,
                 parameters.sunDirection(),
                 parameters.sunRadianceMultiplier(),
-                parameters.display());
+                parameters.display(),
+                initialization);
     }
 
     private static void allCommandsToCompute(VkCommandBuffer commandBuffer) {

@@ -28,7 +28,7 @@ void main(uint3 dispatchThreadId : SV_DispatchThreadID)
     // layout. Exercise it separately so the host record stride is verified in both domains.
     value ^= uint(((SectionRecord*)primePush.sectionTableAddress)[index]
             .surfaceRelationAddress);
-    value ^= lightNodes[index].childReserved.y;
+    value ^= lightNodes[index].directionChildCentroidReserved.z;
     value ^= lightLeaves[index].entryCount;
     value ^= asuint(lightLeafEntries[index].power);
     value ^= lightEmitters[index].metadata.w;

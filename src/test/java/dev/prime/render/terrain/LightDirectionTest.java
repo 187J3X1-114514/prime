@@ -3,12 +3,17 @@ package dev.prime.render.terrain;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import dev.prime.render.shader.ShaderAbi;
 import java.util.List;
 import java.util.SplittableRandom;
 import org.junit.jupiter.api.Test;
 
 final class LightDirectionTest {
     private static final float BOUND_EPSILON = 2.0E-5F;
+    private static final int LIGHT_NODE_WORDS = ShaderAbi.LIGHT_NODE_SIZE / Integer.BYTES;
+    private static final int LIGHT_NODE_DIRECTION_WORD =
+            ShaderAbi.LIGHT_NODE_DIRECTION_CHILD_CENTROID_RESERVED_OFFSET / Integer.BYTES;
+    private static final int LIGHT_NODE_CHILD_WORD = LIGHT_NODE_DIRECTION_WORD + 1;
 
     @Test
     void arbitrarySlantedLeafConesConservativelyBoundOneAndTwoSidedEmission() {
@@ -168,14 +173,18 @@ final class LightDirectionTest {
                 2);
 
         int[] nodes = tree.packNodes();
-        assertEquals(tree.nodeCount() * 8, nodes.length);
-        assertEquals(LightDirection.MODE_LOBES, LightDirection.mode(nodes[3]));
+        assertEquals(tree.nodeCount() * LIGHT_NODE_WORDS, nodes.length);
+        assertEquals(
+                LightDirection.MODE_LOBES,
+                LightDirection.mode(nodes[LIGHT_NODE_DIRECTION_WORD]));
         assertEquals(
                 LightDirection.MODE_ONE_SIDED_CONE,
-                LightDirection.mode(nodes[tree.leafNode(0) * 8 + 3]));
+                LightDirection.mode(nodes[tree.leafNode(0) * LIGHT_NODE_WORDS
+                        + LIGHT_NODE_DIRECTION_WORD]));
         assertEquals(
                 LightDirection.MODE_ONE_SIDED_CONE,
-                LightDirection.mode(nodes[tree.leafNode(1) * 8 + 3]));
+                LightDirection.mode(nodes[tree.leafNode(1) * LIGHT_NODE_WORDS
+                        + LIGHT_NODE_DIRECTION_WORD]));
     }
 
     @Test
@@ -194,13 +203,15 @@ final class LightDirectionTest {
                 4);
 
         int[] nodes = tree.packNodes();
-        int firstChild = nodes[6];
+        int firstChild = nodes[LIGHT_NODE_CHILD_WORD];
         assertEquals(
                 LightDirection.MODE_ONE_SIDED_CONE,
-                LightDirection.mode(nodes[firstChild * 8 + 3]));
+                LightDirection.mode(nodes[firstChild * LIGHT_NODE_WORDS
+                        + LIGHT_NODE_DIRECTION_WORD]));
         assertEquals(
                 LightDirection.MODE_ONE_SIDED_CONE,
-                LightDirection.mode(nodes[(firstChild + 1) * 8 + 3]));
+                LightDirection.mode(nodes[(firstChild + 1) * LIGHT_NODE_WORDS
+                        + LIGHT_NODE_DIRECTION_WORD]));
     }
 
     @Test
@@ -219,13 +230,15 @@ final class LightDirectionTest {
                 4);
 
         int[] nodes = tree.packNodes();
-        int firstChild = nodes[6];
+        int firstChild = nodes[LIGHT_NODE_CHILD_WORD];
         assertEquals(
                 LightDirection.MODE_LOBES,
-                LightDirection.mode(nodes[firstChild * 8 + 3]));
+                LightDirection.mode(nodes[firstChild * LIGHT_NODE_WORDS
+                        + LIGHT_NODE_DIRECTION_WORD]));
         assertEquals(
                 LightDirection.MODE_LOBES,
-                LightDirection.mode(nodes[(firstChild + 1) * 8 + 3]));
+                LightDirection.mode(nodes[(firstChild + 1) * LIGHT_NODE_WORDS
+                        + LIGHT_NODE_DIRECTION_WORD]));
     }
 
     private static CpuLightTree.Leaf directionalLeaf(

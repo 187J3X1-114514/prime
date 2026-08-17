@@ -20,9 +20,12 @@ public final class CpuWorldLightTree {
                 continue;
             }
             CpuLightTree.Bounds bounds = lights.bounds();
-            float translateX = (input.clusterX(clusterIndex) << 4) - input.originX();
-            float translateY = (input.clusterY(clusterIndex) << 4) - input.originY();
-            float translateZ = (input.clusterZ(clusterIndex) << 4) - input.originZ();
+            float translateX = (float) (((long) input.clusterX(clusterIndex) << 4)
+                    - input.originX());
+            float translateY = (float) (((long) input.clusterY(clusterIndex) << 4)
+                    - input.originY());
+            float translateZ = (float) (((long) input.clusterZ(clusterIndex) << 4)
+                    - input.originZ());
             float minX = bounds.minX() + translateX;
             float minY = bounds.minY() + translateY;
             float minZ = bounds.minZ() + translateZ;

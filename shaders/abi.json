@@ -35,11 +35,11 @@
       ]
     },
     "lightNode": {
-      "size": 32,
+      "size": 48,
       "fields": [
-        { "name": "packedBoundsDirection", "type": "uvec4", "offset": 0 },
-        { "name": "powerReserved", "type": "vec2", "offset": 16 },
-        { "name": "childReserved", "type": "uvec2", "offset": 24 }
+        { "name": "boundsMinPower", "type": "vec4", "offset": 0 },
+        { "name": "boundsMaxReserved", "type": "vec4", "offset": 16 },
+        { "name": "directionChildCentroidReserved", "type": "uvec4", "offset": 32 }
       ]
     },
     "lightLeaf": {

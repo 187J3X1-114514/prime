@@ -193,7 +193,8 @@ public final class CompiledClusterLights {
     }
 
     /** Rebuilds legacy tree streams with current nodes while preserving emitter and cell data. */
-    static int[] upgradeTreeLayout(int[] oldWords, int emitterCount) {
+    static int[] upgradeTreeLayout(
+            int[] oldWords, int emitterCount, int packedDirection) {
         Objects.requireNonNull(oldWords, "oldWords");
         if (emitterCount <= 0 || oldWords.length < HEADER_WORDS) {
             throw new IllegalArgumentException("Legacy compiled light payload is inconsistent");
@@ -282,7 +283,10 @@ public final class CompiledClusterLights {
         upgraded[10] = 0;
         upgraded[11] = emitterCount;
         tree.packInto(upgraded, nodeStart, leafStart, entryStart);
-        upgraded[nodeStart + 3] = oldWords[Math.toIntExact(oldForwardStart / Integer.BYTES) + 1];
+        upgraded[nodeStart
+                        + ShaderAbi.LIGHT_NODE_DIRECTION_CHILD_CENTROID_RESERVED_OFFSET
+                                / Integer.BYTES] =
+                packedDirection;
         System.arraycopy(
                 oldWords,
                 emitterWord,
@@ -411,8 +415,7 @@ public final class CompiledClusterLights {
         }
         int rootDirectionWord = Math.toIntExact(
                 (nodeStart
-                                + ShaderAbi.LIGHT_NODE_PACKED_BOUNDS_DIRECTION_OFFSET
-                                + 3L * Integer.BYTES)
+                                + ShaderAbi.LIGHT_NODE_DIRECTION_CHILD_CENTROID_RESERVED_OFFSET)
                         / Integer.BYTES);
         if (words[rootDirectionWord] != packedDirection) {
             throw new IllegalArgumentException(
@@ -446,9 +449,37 @@ public final class CompiledClusterLights {
         int nodeWords = ShaderAbi.LIGHT_NODE_SIZE / Integer.BYTES;
         int leafWords = ShaderAbi.LIGHT_LEAF_SIZE / Integer.BYTES;
         int entryWords = ShaderAbi.LIGHT_LEAF_ENTRY_SIZE / Integer.BYTES;
-        int childOrLeafWord = ShaderAbi.LIGHT_NODE_CHILD_RESERVED_OFFSET / Integer.BYTES;
+        int minPowerWord = ShaderAbi.LIGHT_NODE_BOUNDS_MIN_POWER_OFFSET / Integer.BYTES;
+        int maxReservedWord = ShaderAbi.LIGHT_NODE_BOUNDS_MAX_RESERVED_OFFSET / Integer.BYTES;
+        int controlWord =
+                ShaderAbi.LIGHT_NODE_DIRECTION_CHILD_CENTROID_RESERVED_OFFSET / Integer.BYTES;
+        int childOrLeafWord = controlWord + 1;
         for (int node = 0; node < nodeCount; node++) {
-            int childOrLeaf = words[nodeWord + node * nodeWords + childOrLeafWord];
+            int base = nodeWord + node * nodeWords;
+            float minX = Float.intBitsToFloat(words[base + minPowerWord]);
+            float minY = Float.intBitsToFloat(words[base + minPowerWord + 1]);
+            float minZ = Float.intBitsToFloat(words[base + minPowerWord + 2]);
+            float power = Float.intBitsToFloat(words[base + minPowerWord + 3]);
+            float maxX = Float.intBitsToFloat(words[base + maxReservedWord]);
+            float maxY = Float.intBitsToFloat(words[base + maxReservedWord + 1]);
+            float maxZ = Float.intBitsToFloat(words[base + maxReservedWord + 2]);
+            if (!Float.isFinite(minX)
+                    || !Float.isFinite(minY)
+                    || !Float.isFinite(minZ)
+                    || !Float.isFinite(maxX)
+                    || !Float.isFinite(maxY)
+                    || !Float.isFinite(maxZ)
+                    || minX > maxX
+                    || minY > maxY
+                    || minZ > maxZ
+                    || !(power > 0.0F)
+                    || !Float.isFinite(power)
+                    || words[base + maxReservedWord + 3] != 0
+                    || (words[base + controlWord + 2] & 0xc000_0000) != 0
+                    || words[base + controlWord + 3] != 0) {
+                throw new IllegalArgumentException("Compiled light tree node is invalid");
+            }
+            int childOrLeaf = words[base + childOrLeafWord];
             if ((childOrLeaf & CpuLightTree.LEAF_FLAG) != 0) {
                 if ((childOrLeaf & CpuLightTree.INDEX_MASK) >= leafCount) {
                     throw new IllegalArgumentException(

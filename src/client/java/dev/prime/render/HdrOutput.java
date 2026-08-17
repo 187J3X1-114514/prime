@@ -7,7 +7,14 @@ package dev.prime.render;
  * observe one immutable capability without a lock or independently changing its fields.
  */
 public final class HdrOutput {
+    public static final int AUTOMATIC_REFERENCE_WHITE_NITS = 0;
+    public static final int MAXIMUM_REFERENCE_WHITE_NITS = 10_000;
+    // Windows advanced-color scRGB defines linear 1.0 as exactly 80 nits. This is a unit
+    // conversion, not an artistic gain, and must cover the world and every composited overlay.
+    public static final float SCRGB_NITS_PER_UNIT = 80.0F;
+
     private static volatile boolean requested;
+    private static volatile int referenceWhiteNits = AUTOMATIC_REFERENCE_WHITE_NITS;
     private static volatile Capability capability = Capability.UNSUPPORTED;
 
     private HdrOutput() {
@@ -25,44 +32,123 @@ public final class HdrOutput {
         return capability;
     }
 
-    public static void updateCapability(boolean supported, float headroom) {
+    public static int referenceWhiteNits() {
+        return referenceWhiteNits;
+    }
+
+    public static void setReferenceWhiteNits(int value) {
+        referenceWhiteNits = validateReferenceWhiteNits(value);
+    }
+
+    public static int validateReferenceWhiteNits(int value) {
+        if (value < AUTOMATIC_REFERENCE_WHITE_NITS
+                || value > MAXIMUM_REFERENCE_WHITE_NITS) {
+            throw new IllegalArgumentException(
+                    "HDR reference white must be automatic or between 1 and 10000 nits");
+        }
+        return value;
+    }
+
+    public static void updateCapability(
+            boolean supported,
+            float maximumNits,
+            float systemReferenceWhiteNits) {
         capability = supported
-                ? Capability.supported(headroom)
+                ? Capability.supported(maximumNits, systemReferenceWhiteNits)
                 : Capability.UNSUPPORTED;
     }
 
     public static float activeHeadroom() {
-        Capability current = capability;
-        return requested && current.supported()
-                ? current.headroom()
-                : AgxHsvOutput.MINIMUM_HEADROOM;
+        return activeCalibration().headroom();
     }
 
-    public record Capability(boolean supported, float headroom) {
+    public static Calibration activeCalibration() {
+        Capability current = capability;
+        if (!requested || !current.supported()) {
+            return Calibration.SDR;
+        }
+        int configuredWhite = referenceWhiteNits;
+        float white = configuredWhite == AUTOMATIC_REFERENCE_WHITE_NITS
+                ? Math.min(current.systemReferenceWhiteNits(), current.maximumNits())
+                : Math.min((float) configuredWhite, current.maximumNits());
+        float headroom = Math.clamp(
+                current.maximumNits() / white,
+                AgxHsvOutput.MINIMUM_HEADROOM,
+                AgxHsvOutput.MAXIMUM_HEADROOM);
+        return new Calibration(
+                true,
+                white,
+                current.maximumNits(),
+                headroom,
+                white / SCRGB_NITS_PER_UNIT);
+    }
+
+    public record Capability(
+            boolean supported,
+            float maximumNits,
+            float systemReferenceWhiteNits) {
         private static final Capability UNSUPPORTED =
-                new Capability(false, AgxHsvOutput.MINIMUM_HEADROOM);
+                new Capability(false, 0.0F, 0.0F);
 
         public Capability {
-            if (!Float.isFinite(headroom)
-                    || headroom < AgxHsvOutput.MINIMUM_HEADROOM
-                    || headroom > AgxHsvOutput.MAXIMUM_HEADROOM
-                    || supported && headroom <= AgxHsvOutput.MINIMUM_HEADROOM) {
+            if (!Float.isFinite(maximumNits)
+                    || !Float.isFinite(systemReferenceWhiteNits)
+                    || supported && (maximumNits <= 0.0F
+                            || systemReferenceWhiteNits <= 0.0F)
+                    || !supported && (maximumNits != 0.0F
+                            || systemReferenceWhiteNits != 0.0F)) {
                 throw new IllegalArgumentException("Invalid HDR output capability");
-            }
-            if (!supported && headroom != AgxHsvOutput.MINIMUM_HEADROOM) {
-                throw new IllegalArgumentException("Unsupported HDR output has no headroom");
             }
         }
 
-        public static Capability supported(float requestedHeadroom) {
-            if (!Float.isFinite(requestedHeadroom)) {
-                throw new IllegalArgumentException("HDR headroom must be finite");
+        public static Capability supported(
+                float maximumNits,
+                float systemReferenceWhiteNits) {
+            if (!Float.isFinite(maximumNits)
+                    || maximumNits <= 0.0F
+                    || !Float.isFinite(systemReferenceWhiteNits)
+                    || systemReferenceWhiteNits <= 0.0F) {
+                throw new IllegalArgumentException("Invalid HDR luminance measurement");
             }
-            float headroom = Math.clamp(
-                    requestedHeadroom,
-                    Math.nextUp(AgxHsvOutput.MINIMUM_HEADROOM),
-                    AgxHsvOutput.MAXIMUM_HEADROOM);
-            return new Capability(true, headroom);
+            return new Capability(true, maximumNits, systemReferenceWhiteNits);
+        }
+
+        public int maximumSelectableReferenceWhiteNits() {
+            return supported
+                    ? Math.max(
+                            1,
+                            (int) Math.min(
+                                    MAXIMUM_REFERENCE_WHITE_NITS,
+                                    Math.floor(maximumNits)))
+                    : AUTOMATIC_REFERENCE_WHITE_NITS;
+        }
+    }
+
+    public record Calibration(
+            boolean active,
+            float referenceWhiteNits,
+            float maximumNits,
+            float headroom,
+            float scRgbScale) {
+        private static final Calibration SDR = new Calibration(
+                false,
+                SCRGB_NITS_PER_UNIT,
+                SCRGB_NITS_PER_UNIT,
+                AgxHsvOutput.MINIMUM_HEADROOM,
+                1.0F);
+
+        public Calibration {
+            if (!Float.isFinite(referenceWhiteNits)
+                    || !Float.isFinite(maximumNits)
+                    || !Float.isFinite(headroom)
+                    || !Float.isFinite(scRgbScale)
+                    || referenceWhiteNits <= 0.0F
+                    || maximumNits < referenceWhiteNits
+                    || headroom < AgxHsvOutput.MINIMUM_HEADROOM
+                    || headroom > AgxHsvOutput.MAXIMUM_HEADROOM
+                    || scRgbScale <= 0.0F) {
+                throw new IllegalArgumentException("Invalid HDR output calibration");
+            }
         }
     }
 }

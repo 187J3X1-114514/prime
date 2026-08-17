@@ -5,6 +5,7 @@ struct PrimeHdrPresentPushConstants
 {
     uint2 extent;
     uint compositePrimeHdr;
+    float scRgbScale;
 };
 
 [[vk::binding(0, 0)]] Texture2D<float4> primeHdrImage;
@@ -43,7 +44,10 @@ void main(uint3 dispatchThreadId : SV_DispatchThreadID)
     {
         primeScRgbOutput.Store(
                 pixel,
-                float4(primeExtendedSrgbEotf(uiComposite.rgb), 1.0));
+                float4(
+                        primeExtendedSrgbEotf(uiComposite.rgb)
+                                * primeHdrPresentPush.scRgbScale,
+                        1.0));
         return;
     }
 
@@ -56,5 +60,10 @@ void main(uint3 dispatchThreadId : SV_DispatchThreadID)
     float3 ui = coverage > 0.0
             ? primeExtendedSrgbEotf(encodedUiPremultiplied / coverage) * coverage
             : float3(0.0);
-    primeScRgbOutput.Store(pixel, float4(ui + hdr * (1.0 - coverage), 1.0));
+    primeScRgbOutput.Store(
+            pixel,
+            float4(
+                    (ui + hdr * (1.0 - coverage))
+                            * primeHdrPresentPush.scRgbScale,
+                    1.0));
 }

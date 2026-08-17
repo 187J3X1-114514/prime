@@ -125,7 +125,8 @@ public final class VulkanContext implements AutoCloseable {
             long uiView,
             int width,
             int height,
-            boolean compositePrimeHdr) {
+            boolean compositePrimeHdr,
+            float scRgbScale) {
         requireOpen();
         if (this.hdrPresentPass == null || !this.hdrPresentPass.matches(width, height)) {
             if (this.hdrPresentPass != null) {
@@ -139,7 +140,8 @@ public final class VulkanContext implements AutoCloseable {
                 hdrView,
                 baselineView,
                 uiView,
-                compositePrimeHdr);
+                compositePrimeHdr,
+                scRgbScale);
         return this.hdrPresentPass.output();
     }
 

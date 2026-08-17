@@ -44,7 +44,7 @@ final class AgxHsvOutputTest {
                 AgxHsvOutput.parameters(-10.0F));
         assertEquals(
                 AgxHsvOutput.parameters(AgxHsvOutput.MAXIMUM_HEADROOM),
-                AgxHsvOutput.parameters(100.0F));
+                AgxHsvOutput.parameters(AgxHsvOutput.MAXIMUM_HEADROOM + 1.0F));
         AgxHsvOutput.Parameters maximum =
                 AgxHsvOutput.parameters(AgxHsvOutput.MAXIMUM_HEADROOM);
         assertTrue(Float.isFinite(maximum.maximumLogCoordinate()));

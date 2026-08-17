@@ -297,6 +297,33 @@ public final class PrimeVideoOptions {
                 PrimeConfig::setAutoExposureCompensationSteps);
     }
 
+    public static OptionInstance<Integer> referenceWhiteNits() {
+        HdrOutput.Capability capability = HdrOutput.capability();
+        int maximumNits = Math.max(
+                1,
+                capability.maximumSelectableReferenceWhiteNits());
+        int configuredNits = Math.min(PrimeConfig.referenceWhiteNits(), maximumNits);
+        Component automaticLabel = capability.supported()
+                ? Component.translatable(
+                        "prime.options.display.reference_white.auto_measured",
+                        Math.round(Math.min(
+                                capability.systemReferenceWhiteNits(),
+                                capability.maximumNits())))
+                : Component.translatable("prime.options.display.reference_white.auto");
+        return new OptionInstance<>(
+                "prime.options.display.reference_white",
+                OptionInstance.cachedConstantTooltip(Component.translatable(
+                        "prime.options.display.reference_white.tooltip")),
+                (caption, nits) -> Options.genericValueLabel(
+                        caption,
+                        nits == HdrOutput.AUTOMATIC_REFERENCE_WHITE_NITS
+                                ? automaticLabel
+                                : Component.literal(nits + " nit")),
+                new OptionInstance.IntRange(0, maximumNits),
+                configuredNits,
+                PrimeConfig::setReferenceWhiteNits);
+    }
+
     public static OptionInstance<Integer> defaultRoughness() {
         return new OptionInstance<>(
                 "prime.options.material.default_roughness",

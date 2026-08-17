@@ -56,7 +56,7 @@ final class VulkanSharedPrograms implements AutoCloseable {
             this.hdrPresent = SharedComputeProgram.create(
                     this.context,
                     "HDR presentation",
-                    12,
+                    16,
                     new int[] {SAMPLED_IMAGE, SAMPLED_IMAGE, SAMPLED_IMAGE, STORAGE_IMAGE},
                     new String[] {"/prime/shaders/hdr_present.comp.spv"});
         }

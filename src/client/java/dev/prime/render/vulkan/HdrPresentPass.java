@@ -21,7 +21,7 @@ import org.lwjgl.vulkan.VkWriteDescriptorSet;
 
 /** Composites Prime HDR and vanilla's encoded RGBA8 overlays into linear scRGB. */
 final class HdrPresentPass implements Destroyable {
-    private static final int PUSH_SIZE = 12;
+    private static final int PUSH_SIZE = 16;
     private static final int LOCAL_SIZE = 8;
 
     private final VulkanContext context;
@@ -130,12 +130,16 @@ final class HdrPresentPass implements Destroyable {
             long requestedHdrView,
             long requestedBaselineView,
             long requestedUiView,
-            boolean compositePrimeHdr) {
+            boolean compositePrimeHdr,
+            float scRgbScale) {
         this.requireOpen();
         if (requestedHdrView == 0L
                 || requestedBaselineView == 0L
                 || requestedUiView == 0L) {
             throw new IllegalArgumentException("HDR-present image views must be valid");
+        }
+        if (!Float.isFinite(scRgbScale) || scRgbScale <= 0.0F) {
+            throw new IllegalArgumentException("HDR-present scRGB scale must be positive");
         }
         this.updateDescriptors(requestedHdrView, requestedBaselineView, requestedUiView);
         this.prepareImages(commandBuffer);
@@ -144,6 +148,7 @@ final class HdrPresentPass implements Destroyable {
             push.putInt(0, this.width);
             push.putInt(4, this.height);
             push.putInt(8, compositePrimeHdr ? 1 : 0);
+            push.putFloat(12, scRgbScale);
             VK12.vkCmdBindPipeline(
                     commandBuffer,
                     VK12.VK_PIPELINE_BIND_POINT_COMPUTE,

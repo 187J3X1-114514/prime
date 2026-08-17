@@ -21,6 +21,7 @@ final class PrimeConfigTest {
         PrimeConfig.setScatterCount(ScatterSettings.MAXIMUM_COUNT);
         PrimeConfig.setTerrainWorkerPercentage(TerrainWorkerSettings.MAXIMUM_PERCENTAGE);
         PrimeConfig.setHdrEnabled(true);
+        PrimeConfig.setReferenceWhiteNits(400);
 
         PrimeConfig.restoreDefaults();
 
@@ -36,6 +37,8 @@ final class PrimeConfigTest {
                 PrimeConfig.rendererSettings().terrainWorkerPercentage());
         assertFalse(PrimeConfig.hdrEnabled());
         assertFalse(HdrOutput.requested());
+        assertEquals(0, PrimeConfig.referenceWhiteNits());
+        assertEquals(0, HdrOutput.referenceWhiteNits());
     }
 
     @Test
@@ -66,6 +69,21 @@ final class PrimeConfigTest {
             assertEquals(!previous, HdrOutput.requested());
         } finally {
             PrimeConfig.setHdrEnabled(previous);
+        }
+    }
+
+    @Test
+    void referenceWhiteDoesNotInvalidateTemporalRendering() {
+        int previous = PrimeConfig.referenceWhiteNits();
+        long previousRevision = PrimeConfig.rendererSettings().revision();
+        int replacement = previous == 400 ? 200 : 400;
+        try {
+            PrimeConfig.setReferenceWhiteNits(replacement);
+
+            assertEquals(previousRevision, PrimeConfig.rendererSettings().revision());
+            assertEquals(replacement, HdrOutput.referenceWhiteNits());
+        } finally {
+            PrimeConfig.setReferenceWhiteNits(previous);
         }
     }
 
@@ -150,6 +168,22 @@ final class PrimeConfigTest {
         assertThrows(
                 IllegalArgumentException.class,
                 () -> PrimeConfig.parseAutoExposureCompensationSteps("1.01"));
+    }
+
+    @Test
+    void persistedReferenceWhiteAcceptsAutomaticOrIntegerNits() {
+        assertEquals(0, PrimeConfig.parseReferenceWhiteNits("0"));
+        assertEquals(400, PrimeConfig.parseReferenceWhiteNits("400"));
+        assertEquals(10_000, PrimeConfig.parseReferenceWhiteNits("10000"));
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> PrimeConfig.parseReferenceWhiteNits("-1"));
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> PrimeConfig.parseReferenceWhiteNits("400.0"));
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> PrimeConfig.parseReferenceWhiteNits("10001"));
     }
 
     @Test
@@ -263,6 +297,8 @@ final class PrimeConfigTest {
         assertFalse(serialized.contains("display.oklab_overexposure"));
         assertFalse(serialized.contains("display.oklab_curve_exponent"));
         assertTrue(serialized.contains("display.auto_exposure_compensation=0.6\n"));
+        assertTrue(serialized.contains("display.reference_white_nits=0\n"));
+        assertFalse(serialized.contains("display.middle_gray="));
         assertTrue(serialized.contains("material.seamless_glass=true\n"));
         assertTrue(serialized.contains("material.air_gap=true\n"));
         assertTrue(serialized.contains("material.vanilla_pbr_presets=true\n"));

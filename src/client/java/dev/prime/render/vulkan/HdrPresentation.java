@@ -50,8 +50,9 @@ public final class HdrPresentation {
         if (hdr.width() != sdrBaseline.width() || hdr.height() != sdrBaseline.height()) {
             throw new IllegalArgumentException("HDR and SDR presentation extents differ");
         }
-        if (context == owner && HdrOutput.activeHeadroom() > 1.0F) {
-            frame = new Frame(owner, hdr, sdrBaseline);
+        HdrOutput.Calibration calibration = HdrOutput.activeCalibration();
+        if (context == owner && calibration.active()) {
+            frame = new Frame(owner, hdr, sdrBaseline, calibration.scRgbScale());
         }
     }
 
@@ -74,6 +75,9 @@ public final class HdrPresentation {
         long uiView = uiComposite.vkImageView();
         long hdrView = compositePrimeHdr ? current.hdr.view() : uiView;
         long baselineView = compositePrimeHdr ? current.sdrBaseline.view() : uiView;
+        float scRgbScale = compositePrimeHdr
+                ? current.scRgbScale
+                : HdrOutput.activeCalibration().scRgbScale();
         return activeContext.recordHdrPresentation(
                 commandBuffer,
                 hdrView,
@@ -81,9 +85,14 @@ public final class HdrPresentation {
                 uiView,
                 width,
                 height,
-                compositePrimeHdr);
+                compositePrimeHdr,
+                scRgbScale);
     }
 
-    private record Frame(VulkanContext context, VulkanImage hdr, VulkanImage sdrBaseline) {
+    private record Frame(
+            VulkanContext context,
+            VulkanImage hdr,
+            VulkanImage sdrBaseline,
+            float scRgbScale) {
     }
 }

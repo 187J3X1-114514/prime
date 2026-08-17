@@ -67,6 +67,7 @@ public final class PrimeConfig {
     };
     private static final String AUTO_EXPOSURE_COMPENSATION_KEY =
             "display.auto_exposure_compensation";
+    private static final String REFERENCE_WHITE_NITS_KEY = "display.reference_white_nits";
     private static final String DEFAULT_ROUGHNESS_KEY = "material.default_roughness";
     private static final String SEAMLESS_GLASS_KEY = "material.seamless_glass";
     private static final String AIR_GAP_KEY = "material.air_gap";
@@ -77,6 +78,7 @@ public final class PrimeConfig {
     private static int scatterCount = ScatterSettings.DEFAULT_COUNT;
     private static int terrainWorkerPercentage = TerrainWorkerSettings.DEFAULT_PERCENTAGE;
     private static boolean hdrEnabled;
+    private static int referenceWhiteNits = HdrOutput.AUTOMATIC_REFERENCE_WHITE_NITS;
     private static long rendererRevision;
     private static boolean dirty;
 
@@ -102,6 +104,7 @@ public final class PrimeConfig {
         int finalExposureQuarterSteps =
                 DisplaySettings.DEFAULT_FINAL_EXPOSURE_QUARTER_STEPS;
         boolean loadedHdrEnabled = false;
+        int loadedReferenceWhiteNits = HdrOutput.AUTOMATIC_REFERENCE_WHITE_NITS;
         int autoExposureCompensationSteps =
                 DisplaySettings.DEFAULT_AUTO_EXPOSURE_COMPENSATION_STEPS;
         int defaultRoughnessSteps = MaterialSettings.DEFAULT_ROUGHNESS_STEPS;
@@ -327,6 +330,19 @@ public final class PrimeConfig {
                 } else {
                     rewriteNeeded = true;
                 }
+                String referenceWhite = properties.getProperty(REFERENCE_WHITE_NITS_KEY);
+                if (referenceWhite != null) {
+                    try {
+                        loadedReferenceWhiteNits = parseReferenceWhiteNits(referenceWhite);
+                    } catch (IllegalArgumentException exception) {
+                        PrimeInfo.LOGGER.warn(
+                                "Invalid Prime HDR reference white '{}'; using automatic",
+                                referenceWhite);
+                        rewriteNeeded = true;
+                    }
+                } else {
+                    rewriteNeeded = true;
+                }
                 String defaultRoughness = properties.getProperty(DEFAULT_ROUGHNESS_KEY);
                 if (defaultRoughness != null) {
                     try {
@@ -411,10 +427,12 @@ public final class PrimeConfig {
         terrainWorkerPercentage = loadedTerrainWorkerPercentage;
         hdrEnabled = loadedHdrEnabled;
         HdrOutput.setRequested(loadedHdrEnabled);
+        referenceWhiteNits = loadedReferenceWhiteNits;
+        HdrOutput.setReferenceWhiteNits(loadedReferenceWhiteNits);
         rendererRevision = 0L;
         dirty = rewriteNeeded;
         PrimeInfo.LOGGER.info(
-                "Prime settings: path tracing {}, SHARC {}, scatter count {}, terrain workers {}%, voxel surfaces {} at {}x, post-processing {} quality {} (NRD-FSR {}x), latitude {} degrees, solar longitude {} degrees, sun {} EV, stars {} EV, block lights {} EV, final exposure {} EV, HDR {}, auto-exposure compensation {}, default roughness {}, seamless glass {}, air gap {}, vanilla PBR presets {}",
+                "Prime settings: path tracing {}, SHARC {}, scatter count {}, terrain workers {}%, voxel surfaces {} at {}x, post-processing {} quality {} (NRD-FSR {}x), latitude {} degrees, solar longitude {} degrees, sun {} EV, stars {} EV, block lights {} EV, final exposure {} EV, HDR {}, reference white {}, auto-exposure compensation {}, default roughness {}, seamless glass {}, air gap {}, vanilla PBR presets {}",
                 pathTracingEnabled ? "enabled" : "disabled",
                 sharcEnabled ? "enabled" : "disabled",
                 loadedScatterCount,
@@ -431,6 +449,9 @@ public final class PrimeConfig {
                 formatEv(blockLightQuarterSteps),
                 formatFinalExposure(finalExposureQuarterSteps),
                 loadedHdrEnabled ? "enabled" : "disabled",
+                loadedReferenceWhiteNits == HdrOutput.AUTOMATIC_REFERENCE_WHITE_NITS
+                        ? "automatic"
+                        : loadedReferenceWhiteNits + " nits",
                 formatAutoExposureCompensation(autoExposureCompensationSteps),
                 formatRoughness(defaultRoughnessSteps),
                 seamlessGlass ? "enabled" : "disabled",
@@ -498,6 +519,19 @@ public final class PrimeConfig {
         if (enabled != hdrEnabled) {
             hdrEnabled = enabled;
             HdrOutput.setRequested(enabled);
+            dirty = true;
+        }
+    }
+
+    public static int referenceWhiteNits() {
+        return referenceWhiteNits;
+    }
+
+    public static void setReferenceWhiteNits(int value) {
+        int replacement = HdrOutput.validateReferenceWhiteNits(value);
+        if (replacement != referenceWhiteNits) {
+            referenceWhiteNits = replacement;
+            HdrOutput.setReferenceWhiteNits(replacement);
             dirty = true;
         }
     }
@@ -575,6 +609,7 @@ public final class PrimeConfig {
         setScatterCount(ScatterSettings.DEFAULT_COUNT);
         setTerrainWorkerPercentage(TerrainWorkerSettings.DEFAULT_PERCENTAGE);
         setHdrEnabled(false);
+        setReferenceWhiteNits(HdrOutput.AUTOMATIC_REFERENCE_WHITE_NITS);
     }
 
     static PrimeSettings restoredDefaults(PrimeSettings current) {
@@ -680,6 +715,7 @@ public final class PrimeConfig {
                     + FINAL_EXPOSURE_EV_KEY + "="
                     + formatFinalExposure(current.finalExposureQuarterSteps()) + "\n"
                     + HDR_ENABLED_KEY + "=" + hdrEnabled + "\n"
+                    + REFERENCE_WHITE_NITS_KEY + "=" + referenceWhiteNits + "\n"
                     + AUTO_EXPOSURE_COMPENSATION_KEY + "="
                     + formatAutoExposureCompensation(
                             current.autoExposureCompensationSteps()) + "\n"
@@ -893,6 +929,16 @@ public final class PrimeConfig {
     static String formatAutoExposureCompensation(int steps) {
         DisplaySettings.autoExposureCompensation(steps);
         return formatHundredthSteps(steps);
+    }
+
+    static int parseReferenceWhiteNits(String value) {
+        try {
+            return HdrOutput.validateReferenceWhiteNits(Integer.parseInt(value));
+        } catch (NumberFormatException exception) {
+            throw new IllegalArgumentException(
+                    "HDR reference white must be an integer number of nits",
+                    exception);
+        }
     }
 
     private static int parseHundredthSteps(String value) {

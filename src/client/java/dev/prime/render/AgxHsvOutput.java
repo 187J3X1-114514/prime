@@ -3,7 +3,8 @@ package dev.prime.render;
 /** Exact derived output parameters for the unified SDR/HDR AgX-HSV shoulder. */
 public final class AgxHsvOutput {
     public static final float MINIMUM_HEADROOM = 1.0F;
-    public static final float MAXIMUM_HEADROOM = 64.0F;
+    // Covers a 1-nit manual reference white through the HDR absolute luminance ceiling.
+    public static final float MAXIMUM_HEADROOM = 10_000.0F;
 
     private static final double INPUT_PIVOT = 10.0 / 16.5;
     private static final double OUTPUT_PIVOT = 0.46135613;

@@ -66,6 +66,7 @@ public abstract class VideoSettingsScreenMixin {
     @Unique private OptionInstance<Integer> prime$blockLightExposure;
     @Unique private OptionInstance<Integer> prime$finalExposure;
     @Unique private OptionInstance<Integer> prime$autoExposureCompensation;
+    @Unique private OptionInstance<Integer> prime$referenceWhiteNits;
     @Unique private OptionInstance<Boolean> prime$hdr;
     @Unique private OptionInstance<Integer> prime$defaultRoughness;
     @Unique private OptionInstance<Boolean> prime$seamlessGlass;
@@ -102,6 +103,7 @@ public abstract class VideoSettingsScreenMixin {
             this.prime$finalExposure = PrimeVideoOptions.finalExposure();
             this.prime$autoExposureCompensation =
                     PrimeVideoOptions.autoExposureCompensation();
+            this.prime$referenceWhiteNits = PrimeVideoOptions.referenceWhiteNits();
             this.prime$hdr = PrimeVideoOptions.hdr();
             this.prime$defaultRoughness = PrimeVideoOptions.defaultRoughness();
             this.prime$seamlessGlass = PrimeVideoOptions.seamlessGlass();
@@ -140,6 +142,12 @@ public abstract class VideoSettingsScreenMixin {
             AbstractWidget hdrWidget = list.findOption(this.prime$hdr);
             if (hdrWidget != null) {
                 hdrWidget.active = HdrOutput.capability().supported();
+            }
+            list.addBig(this.prime$referenceWhiteNits);
+            AbstractWidget referenceWhiteWidget =
+                    list.findOption(this.prime$referenceWhiteNits);
+            if (referenceWhiteWidget != null) {
+                referenceWhiteWidget.active = HdrOutput.capability().supported();
             }
             list.addBig(this.prime$autoExposureCompensation);
             list.addBig(this.prime$finalExposure);
@@ -216,11 +224,19 @@ public abstract class VideoSettingsScreenMixin {
         this.prime$refresh(
                 this.prime$autoExposureCompensation,
                 DisplaySettings.DEFAULT_AUTO_EXPOSURE_COMPENSATION_STEPS);
+        this.prime$refresh(
+                this.prime$referenceWhiteNits,
+                HdrOutput.AUTOMATIC_REFERENCE_WHITE_NITS);
         this.prime$refresh(this.prime$hdr, false);
         OptionsList list = ((OptionsSubScreenAccessor) this).prime$getList();
         AbstractWidget hdrWidget = list.findOption(this.prime$hdr);
         if (hdrWidget != null) {
             hdrWidget.active = HdrOutput.capability().supported();
+        }
+        AbstractWidget referenceWhiteWidget =
+                list.findOption(this.prime$referenceWhiteNits);
+        if (referenceWhiteWidget != null) {
+            referenceWhiteWidget.active = HdrOutput.capability().supported();
         }
         this.prime$refresh(
                 this.prime$defaultRoughness,

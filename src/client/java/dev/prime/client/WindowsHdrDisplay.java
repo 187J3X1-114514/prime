@@ -1,7 +1,6 @@
 package dev.prime.client;
 
 import dev.prime.infrastructure.PrimeInfo;
-import dev.prime.render.AgxHsvOutput;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.IntBuffer;
@@ -243,7 +242,7 @@ public final class WindowsHdrDisplay {
             boolean hdrActive = colorSpace == DXGI_COLOR_SPACE_RGB_FULL_G10_NONE_P709
                     || colorSpace == DXGI_COLOR_SPACE_RGB_FULL_G2084_NONE_P2020;
             if (!hdrActive) {
-                return new Snapshot(true, false, AgxHsvOutput.MINIMUM_HEADROOM);
+                return new Snapshot(true, false, 0.0F, 0.0F);
             }
             float maximumNits = description.getFloat(
                     OUTPUT_DESC1_MAX_LUMINANCE_OFFSET);
@@ -254,15 +253,7 @@ public final class WindowsHdrDisplay {
                     || sdrWhiteNits <= 0.0F) {
                 return Snapshot.UNAVAILABLE;
             }
-            float headroom = maximumNits / sdrWhiteNits;
-            headroom = Math.clamp(
-                    headroom,
-                    AgxHsvOutput.MINIMUM_HEADROOM,
-                    AgxHsvOutput.MAXIMUM_HEADROOM);
-            return new Snapshot(
-                    true,
-                    headroom > AgxHsvOutput.MINIMUM_HEADROOM,
-                    headroom);
+            return new Snapshot(true, true, maximumNits, sdrWhiteNits);
         } finally {
             release(output6);
         }
@@ -413,15 +404,22 @@ public final class WindowsHdrDisplay {
         }
     }
 
-    public record Snapshot(boolean available, boolean hdrActive, float headroom) {
-        private static final Snapshot UNAVAILABLE = new Snapshot(false, false, 1.0F);
+    public record Snapshot(
+            boolean available,
+            boolean hdrActive,
+            float maximumNits,
+            float sdrWhiteNits) {
+        private static final Snapshot UNAVAILABLE =
+                new Snapshot(false, false, 0.0F, 0.0F);
 
         public Snapshot {
-            if (!Float.isFinite(headroom)
-                    || headroom < AgxHsvOutput.MINIMUM_HEADROOM
-                    || headroom > AgxHsvOutput.MAXIMUM_HEADROOM
-                    || hdrActive && headroom <= AgxHsvOutput.MINIMUM_HEADROOM
-                    || !hdrActive && headroom != AgxHsvOutput.MINIMUM_HEADROOM) {
+            if (!Float.isFinite(maximumNits)
+                    || !Float.isFinite(sdrWhiteNits)
+                    || hdrActive && (!available
+                            || maximumNits <= 0.0F
+                            || sdrWhiteNits <= 0.0F)
+                    || !hdrActive && (maximumNits != 0.0F
+                            || sdrWhiteNits != 0.0F)) {
                 throw new IllegalArgumentException("Invalid Windows HDR display snapshot");
             }
         }

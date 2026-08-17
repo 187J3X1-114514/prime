@@ -45,6 +45,9 @@ tradeoffs.
   path-traced scene.
 - **Realtime denoising and reconstruction:** NVIDIA DLSS Ray Reconstruction is the primary path, with
   NRD + FSR available for other compatible GPUs.
+- **SDR and HDR output:** both use the same AgX-HSV display transform. HDR queries the active
+  display's brightness capabilities, extends highlights through linear scRGB, and supports automatic
+  or manual reference-white calibration.
 - **Bounced-light cache:** the optional SHARC cache remembers bounced lighting already calculated
   nearby, usually making realtime path tracing faster and less noisy. It uses about 256 MiB of
   additional VRAM and turns off automatically on unsupported GPUs.
@@ -116,9 +119,15 @@ reuse the driver cache.
   responsive, or lower it when frame rate is insufficient.
 - **SHARC Radiance Cache:** reuses bounced lighting already calculated nearby and should normally
   remain enabled; disable it when video memory is limited.
+- **Terrain Worker Share:** defaults to 50% of Minecraft's maximum background workers. Lower it to
+  reduce CPU contention while chunks load, or raise it to make Prime geometry appear sooner; at
+  least one worker is always retained.
 - **Auto Exposure Strength:** defaults to 60% and controls how strongly the image adapts when moving
   between bright and dark areas.
 - **Exposure Compensation:** adjust this first when the entire image looks too bright or too dark.
+- **HDR Output and Reference White:** available only when the active display and Windows expose
+  usable HDR. Reference white uses the system-reported value by default and can be calibrated in
+  nits to keep the main image brightness consistent when switching between SDR and HDR.
 - **Offline Rendering Mode:** freezes the scene and accumulates raw samples. Press `F2` when the
   image is ready; press `Escape` or `Ctrl+Alt+F2` to exit.
 
@@ -148,8 +157,9 @@ fixes:
 - At most two non-air transparent regions can be nested reliably. Deeper nesting, open models, and
   boundaries without a meaningful inside and outside do not guarantee correct absorption or
   refraction.
-- Realtime transparent lighting uses bounded single-branch sampling and straight shadow filtering;
-  it does not fully solve arbitrary chains of refractive light transport.
+- Realtime transparent lighting uses fixed transmission and reflection branches at the first
+  interface, then bounded single-branch sampling and straight shadow filtering. It does not fully
+  solve arbitrary chains of refractive light transport.
 - Shadow rays connecting a surface to a light do not refract at transparent interfaces. They only
   accumulate absorption along the original direction.
 - Volumetric sun shadows approximate visibility from one sun direction; they do not represent sky
@@ -205,6 +215,8 @@ The technical documents are currently written in Chinese.
 - [Terrain cluster scene translation](docs/区块簇场景翻译架构.md)
 - [Canonical material IR and closures](docs/统一材质IR与闭包.md)
 - [Rendering implementation](docs/渲染实现.md)
+- [HDR output](docs/HDR输出.md)
+- [GPU geometry tracing precision contract](docs/GPU几何追踪精度契约.md)
 - [Offline light transport contract](docs/离线光传输契约.md)
 - [Transparency and realtime reconstruction](docs/透明渲染与实时重建.md)
 - [Shader property tests and numerical diagnostics](docs/着色器属性测试与数值诊断架构.md)

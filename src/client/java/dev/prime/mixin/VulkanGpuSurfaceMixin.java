@@ -139,7 +139,10 @@ public abstract class VulkanGpuSurfaceMixin {
                 boolean hdrSupported = hdr != null
                         && display.available()
                         && display.hdrActive();
-                HdrOutput.updateCapability(hdrSupported, display.headroom());
+                HdrOutput.updateCapability(
+                        hdrSupported,
+                        display.maximumNits(),
+                        display.sdrWhiteNits());
                 VkSurfaceFormatKHR selected;
                 try {
                     selected = HdrOutput.requested()

@@ -24,8 +24,8 @@ final class RuntimeFailureSummaryTest {
     @Test
     void titleCarriesInstalledVersionAndState() {
         assertEquals(
-                "Prime FAILED | 1.1.0",
-                RuntimeFailureSummary.title("1.1.0", RuntimeState.FAILED));
+                "Prime FAILED | 1.2.0",
+                RuntimeFailureSummary.title("1.2.0", RuntimeState.FAILED));
     }
 
     @Test

@@ -61,7 +61,7 @@ final class PrimeProductionMathGpuTest {
 
     @Test
     void integratorAndLightTransportMathKeepsItsNumericalContracts() throws IOException {
-        int kinds = 19;
+        int kinds = 20;
         int inputWords = 6;
         ShaderPropertyBatch.assertProperties(
                 runner,
@@ -732,6 +732,56 @@ final class PrimeProductionMathGpuTest {
                             positiveFloat(random, -10, 10),
                             random.nextFloat(),
                             0.0F,
+                            0.0F);
+                } else if (kind == 19) {
+                    float minimumX = random.nextFloat() * 64.0F - 32.0F;
+                    float minimumY = random.nextFloat() * 64.0F - 32.0F;
+                    float minimumZ = random.nextFloat() * 64.0F - 32.0F;
+                    float extentX = powerOfTwo(random.nextInt(-6, 6));
+                    float extentY = powerOfTwo(random.nextInt(-6, 6));
+                    float extentZ = powerOfTwo(random.nextInt(-6, 6));
+                    float pointX;
+                    float pointY;
+                    float pointZ;
+                    if ((local & 1) == 0) {
+                        pointX = minimumX + extentX * random.nextFloat();
+                        pointY = minimumY + extentY * random.nextFloat();
+                        pointZ = minimumZ + extentZ * random.nextFloat();
+                    } else {
+                        pointX = minimumX - extentX * (0.25F + random.nextFloat());
+                        pointY = minimumY + extentY * random.nextFloat();
+                        pointZ = minimumZ + extentZ * (1.25F + random.nextFloat());
+                    }
+                    float[] receiverNormal = local == 0
+                            ? new float[] {0.0F, 0.0F, 0.0F}
+                            : randomUnitVector(random);
+                    putVec4(
+                            input,
+                            index,
+                            words,
+                            1,
+                            minimumX,
+                            minimumY,
+                            minimumZ,
+                            positiveFloat(random, -10, 10));
+                    putVec4(
+                            input,
+                            index,
+                            words,
+                            2,
+                            minimumX + extentX,
+                            minimumY + extentY,
+                            minimumZ + extentZ,
+                            0.0F);
+                    putVec4(input, index, words, 3, pointX, pointY, pointZ, 0.0F);
+                    putVec4(
+                            input,
+                            index,
+                            words,
+                            4,
+                            receiverNormal[0],
+                            receiverNormal[1],
+                            receiverNormal[2],
                             0.0F);
                 } else {
                     putVec4(

@@ -3,6 +3,7 @@ package dev.prime.client;
 import com.mojang.serialization.Codec;
 import dev.prime.config.PrimeConfig;
 import dev.prime.mixin.MinecraftAccessor;
+import dev.prime.render.AreaLightSamplingMode;
 import dev.prime.render.AstronomySettings;
 import dev.prime.render.DisplaySettings;
 import dev.prime.render.HdrOutput;
@@ -35,6 +36,8 @@ public final class PrimeVideoOptions {
     private static final List<FsrDebugView> FSR_DEBUG_VIEWS = List.of(FsrDebugView.values());
     private static final List<NrdDiagnostics.Mode> NRD_DEBUG_VIEWS =
             List.of(NrdDiagnostics.Mode.values());
+    private static final List<AreaLightSamplingMode> AREA_LIGHT_SAMPLING_MODES =
+            List.of(AreaLightSamplingMode.values());
     private static final List<PrimaryLightDiagnosticView> PRIMARY_LIGHT_DIAGNOSTIC_VIEWS =
             List.of(PrimaryLightDiagnosticView.values());
 
@@ -153,6 +156,23 @@ public final class PrimeVideoOptions {
                         "prime.options.debug.renderer_diagnostics.tooltip")),
                 runtime.rendererDiagnostics(),
                 runtime::setRendererDiagnostics);
+    }
+
+    public static OptionInstance<AreaLightSamplingMode> areaLightSamplingMode() {
+        PrimeRuntime runtime = PrimeRuntime.instance();
+        return new OptionInstance<>(
+                "prime.options.debug.area_light_sampling",
+                OptionInstance.cachedConstantTooltip(Component.translatable(
+                        "prime.options.debug.area_light_sampling.tooltip")),
+                (caption, mode) -> Component.translatable(
+                        "prime.options.debug.area_light_sampling." + mode.id()),
+                new OptionInstance.Enum<>(
+                        AREA_LIGHT_SAMPLING_MODES,
+                        Codec.STRING.xmap(
+                                AreaLightSamplingMode::fromId,
+                                AreaLightSamplingMode::id)),
+                runtime.areaLightSamplingMode(),
+                runtime::setAreaLightSamplingMode);
     }
 
     public static OptionInstance<PrimaryLightDiagnosticView> primaryLightDiagnosticView() {

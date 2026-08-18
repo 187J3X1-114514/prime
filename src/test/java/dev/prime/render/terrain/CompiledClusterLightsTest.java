@@ -17,7 +17,7 @@ final class CompiledClusterLightsTest {
     @Test
     void relocationChangesOnlyTheFiveHeaderPointers() {
         int[] relative = validOneEmitterPayload();
-        long[] offsets = {48L, 96L, 104L, 112L, 208L};
+        long[] offsets = {48L, 96L, 104L, 128L, 224L};
         relative[44] = 0x1234_5678;
         CompiledClusterLights lights = CompiledClusterLights.fromEncoded(
                 relative,
@@ -77,7 +77,7 @@ final class CompiledClusterLightsTest {
                 new CompiledClusterLights.Summary(
                         1, 0.0F, 0.0F, 0.0F, 1.0F, 1.0F, 1.0F, 1.0F);
 
-        relative[48] = 256;
+        relative[52] = 256;
 
         assertThrows(
                 IllegalArgumentException.class,
@@ -117,8 +117,9 @@ final class CompiledClusterLightsTest {
         populateLegacyEmitter(legacy, 24);
 
         int[] directional = CompiledClusterLights.addFullDirectionStream(legacy);
-        int[] upgraded = CompiledClusterLights.upgradeTreeLayout(
+        int[] treeUpgraded = CompiledClusterLights.upgradeTreeLayout(
                 directional, 1, LightDirection.FULL);
+        int[] upgraded = CompiledClusterLights.addEmitterAliasTable(treeUpgraded, 1);
         CompiledClusterLights lights = CompiledClusterLights.fromEncoded(
                 upgraded,
                 new CompiledClusterLights.Summary(
@@ -126,7 +127,7 @@ final class CompiledClusterLightsTest {
 
         assertEquals(LightDirection.FULL, directional[21]);
         assertEquals(104L, getLong(upgraded, 4));
-        assertEquals(112L, getLong(upgraded, 6));
+        assertEquals(128L, getLong(upgraded, 6));
         assertEquals(LightDirection.FULL, upgraded[HEADER_WORDS + NODE_DIRECTION_WORD]);
         assertArrayEquals(upgraded, lights.encodedWords());
     }
@@ -139,16 +140,17 @@ final class CompiledClusterLightsTest {
         legacy[42] = PrimitivePacking.packHalf2(0.75F, 0.625F);
 
         int[] uvUpgraded = CompiledClusterLights.upgradeUvPacking(legacy, 1);
-        int[] upgraded = CompiledClusterLights.upgradeTreeLayout(
+        int[] treeUpgraded = CompiledClusterLights.upgradeTreeLayout(
                 uvUpgraded, 1, LightDirection.FULL);
+        int[] upgraded = CompiledClusterLights.addEmitterAliasTable(treeUpgraded, 1);
         CompiledClusterLights lights = CompiledClusterLights.fromEncoded(
                 upgraded,
                 new CompiledClusterLights.Summary(
                         1, 0.0F, 0.0F, 0.0F, 1.0F, 1.0F, 1.0F, 1.0F));
 
-        assertEquals(PrimitivePacking.packUv(0.75F, 0.5F), upgraded[44]);
-        assertEquals(PrimitivePacking.packUv(0.875F, 0.5F), upgraded[45]);
-        assertEquals(PrimitivePacking.packUv(0.75F, 0.625F), upgraded[46]);
+        assertEquals(PrimitivePacking.packUv(0.75F, 0.5F), upgraded[48]);
+        assertEquals(PrimitivePacking.packUv(0.875F, 0.5F), upgraded[49]);
+        assertEquals(PrimitivePacking.packUv(0.75F, 0.625F), upgraded[50]);
         assertArrayEquals(upgraded, lights.encodedWords());
     }
 
@@ -176,8 +178,9 @@ final class CompiledClusterLightsTest {
     void versionTwelveF16NodesRebuildIntoExactF32Bounds() {
         int[] versionTwelve = validVersionTwelvePayload();
 
-        int[] upgraded = CompiledClusterLights.upgradeTreeLayout(
+        int[] treeUpgraded = CompiledClusterLights.upgradeTreeLayout(
                 versionTwelve, 1, LightDirection.FULL);
+        int[] upgraded = CompiledClusterLights.addEmitterAliasTable(treeUpgraded, 1);
         CompiledClusterLights lights = CompiledClusterLights.fromEncoded(
                 upgraded,
                 new CompiledClusterLights.Summary(
@@ -212,8 +215,8 @@ final class CompiledClusterLightsTest {
     }
 
     private static int[] validOneEmitterPayload() {
-        int[] relative = new int[820];
-        long[] offsets = {48L, 96L, 104L, 112L, 208L};
+        int[] relative = new int[824];
+        long[] offsets = {48L, 96L, 104L, 128L, 224L};
         for (int pointer = 0; pointer < offsets.length; pointer++) {
             putLong(relative, pointer * 2, offsets[pointer]);
         }
@@ -228,9 +231,12 @@ final class CompiledClusterLightsTest {
         relative[25] = 1;
         relative[26] = 0;
         relative[27] = Float.floatToRawIntBits(1.0F);
-        populateLegacyEmitter(relative, 28);
-        relative[48] = 0;
-        relative[49] = 0;
+        relative[30] = Float.floatToRawIntBits(1.0F);
+        relative[31] = 0;
+        populateLegacyEmitter(relative, 32);
+        relative[47] = Float.floatToRawIntBits(1.0F);
+        relative[56] = 0;
+        relative[57] = 0;
         return relative;
     }
 

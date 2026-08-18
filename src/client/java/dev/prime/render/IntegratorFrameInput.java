@@ -28,6 +28,7 @@ public record IntegratorFrameInput(
         boolean shInput,
         boolean rawNumericalDiagnostic,
         boolean triangleDebug,
+        AreaLightSamplingMode areaLightSamplingMode,
         PrimaryLightDiagnosticView primaryLightDiagnosticView) {
     public IntegratorFrameInput {
         Objects.requireNonNull(camera, "camera");
@@ -36,6 +37,7 @@ public record IntegratorFrameInput(
         Objects.requireNonNull(transparentGuideMode, "transparentGuideMode");
         Objects.requireNonNull(lighting, "lighting");
         Objects.requireNonNull(material, "material");
+        Objects.requireNonNull(areaLightSamplingMode, "areaLightSamplingMode");
         Objects.requireNonNull(primaryLightDiagnosticView, "primaryLightDiagnosticView");
         if (width <= 0 || height <= 0) {
             throw new IllegalArgumentException(
@@ -65,6 +67,7 @@ public record IntegratorFrameInput(
                 material.seamlessGlass(),
                 material.airGap(),
                 material.vanillaPbrPresets(),
+                areaLightSamplingMode,
                 primaryLightDiagnosticView);
         IntegratorSettings.packSampleEpoch(sampleEpoch, triangleDebug);
         IntegratorSettings.packPathControl(

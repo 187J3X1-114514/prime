@@ -20,6 +20,8 @@ public final class CpuLightTree {
     private static final int PATH_TRAIL_MASK = (1 << PATH_DEPTH_SHIFT) - 1;
     private static final int SAH_BIN_COUNT = 12;
     private static final int SAH_CANDIDATE_COUNT = 3 * (SAH_BIN_COUNT - 1);
+    // Bound the local SAOH concession before using estimated traversal depth as a tie-breaker.
+    private static final double SAOH_DEPTH_QUALITY_BAND = 1.02;
     private static final int WORDS_PER_NODE = 12;
     private static final int WORDS_PER_LEAF = 2;
     private static final int WORDS_PER_ENTRY = 2;
@@ -221,11 +223,15 @@ public final class CpuLightTree {
                                 workspace.suffixPower[split + 1],
                                 workspace.suffixDirection[split + 1]);
                 cost *= maximumCentroidExtent / extent;
-                workspace.addCandidate(axis, split, cost);
+                double expectedRemainingDepth =
+                        workspace.prefixPower[split]
+                                        * balancedContinuationDepth(leftCount)
+                                + workspace.suffixPower[split + 1]
+                                        * balancedContinuationDepth(rightCount);
+                workspace.addCandidate(axis, split, cost, expectedRemainingDepth);
             }
         }
 
-        int bestCandidate = workspace.bestCandidate();
         float unsplitCost = saohCost(
                 nodes.minX[nodeIndex],
                 nodes.minY[nodeIndex],
@@ -235,6 +241,7 @@ public final class CpuLightTree {
                 nodes.maxZ[nodeIndex],
                 nodes.power[nodeIndex],
                 aggregateDirection(leaves, start, end));
+        int bestCandidate = workspace.bestCandidate(unsplitCost);
         if (bestCandidate < 0) {
             return new Split(-1, -1, Float.POSITIVE_INFINITY, unsplitCost);
         }
@@ -293,6 +300,14 @@ public final class CpuLightTree {
                 ? area
                 : (float) Math.sqrt(x * x + y * y + z * z);
         return power * spatialMeasure * (1.0F + LightDirection.spread(direction));
+    }
+
+    /** Returns the balanced binary continuation depth used as a receiver-independent estimate. */
+    private static double balancedContinuationDepth(int count) {
+        if (count <= 1) {
+            return 0.0;
+        }
+        return Math.log(count) / Math.log(2.0);
     }
 
     private static LightDirection.Bounds aggregateDirection(Leaves leaves, int start, int end) {
@@ -1134,6 +1149,7 @@ public final class CpuLightTree {
         private final int[] candidateAxis = new int[SAH_CANDIDATE_COUNT];
         private final int[] candidateSplit = new int[SAH_CANDIDATE_COUNT];
         private final float[] candidateCost = new float[SAH_CANDIDATE_COUNT];
+        private final double[] candidateExpectedDepth = new double[SAH_CANDIDATE_COUNT];
         private int candidateCount;
         private float centroidMinX;
         private float centroidMinY;
@@ -1152,7 +1168,7 @@ public final class CpuLightTree {
             this.candidateCount = 0;
         }
 
-        private void addCandidate(int axis, int split, float cost) {
+        private void addCandidate(int axis, int split, float cost, double expectedDepth) {
             if (!Float.isFinite(cost)) {
                 return;
             }
@@ -1160,15 +1176,34 @@ public final class CpuLightTree {
             this.candidateAxis[index] = axis;
             this.candidateSplit[index] = split;
             this.candidateCost[index] = cost;
+            this.candidateExpectedDepth[index] = expectedDepth;
         }
 
-        private int bestCandidate() {
+        private int bestCandidate(float unsplitCost) {
             if (this.candidateCount == 0) {
                 return -1;
             }
-            int best = 0;
+            int minimumCostCandidate = 0;
             for (int index = 1; index < this.candidateCount; index++) {
-                if (this.candidateCost[index] < this.candidateCost[best]) {
+                if (this.candidateCost[index] < this.candidateCost[minimumCostCandidate]) {
+                    minimumCostCandidate = index;
+                }
+            }
+            double qualityLimit = this.candidateCost[minimumCostCandidate]
+                    * SAOH_DEPTH_QUALITY_BAND;
+            boolean minimumImproves = this.candidateCost[minimumCostCandidate] < unsplitCost;
+            int best = minimumCostCandidate;
+            for (int index = 0; index < this.candidateCount; index++) {
+                if (this.candidateCost[index] > qualityLimit
+                        || (minimumImproves && !(this.candidateCost[index] < unsplitCost))) {
+                    continue;
+                }
+                int comparedDepth = Double.compare(
+                        this.candidateExpectedDepth[index],
+                        this.candidateExpectedDepth[best]);
+                if (comparedDepth < 0
+                        || (comparedDepth == 0
+                                && this.candidateCost[index] < this.candidateCost[best])) {
                     best = index;
                 }
             }

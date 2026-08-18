@@ -1,7 +1,8 @@
 package dev.prime.render.runtime;
 
-import dev.prime.render.fsr.FsrDebugView;
+import dev.prime.render.AreaLightSamplingMode;
 import dev.prime.render.PrimaryLightDiagnosticView;
+import dev.prime.render.fsr.FsrDebugView;
 import dev.prime.render.post.DlssRrDebugView;
 import dev.prime.render.post.nrd.NrdDiagnostics;
 import java.util.Objects;
@@ -11,12 +12,15 @@ public record SessionControls(
         boolean screenshotRequested,
         boolean triangleDebug,
         boolean rendererDiagnostics,
+        AreaLightSamplingMode areaLightSamplingMode,
         PrimaryLightDiagnosticView primaryLightDiagnosticView,
         NrdDiagnostics.Mode nrdDebugView,
         FsrDebugView fsrDebugView,
         DlssRrDebugView rrDebugView,
         boolean rrDebugFullscreen) {
     public SessionControls {
+        areaLightSamplingMode = Objects.requireNonNull(
+                areaLightSamplingMode, "areaLightSamplingMode");
         nrdDebugView = Objects.requireNonNull(nrdDebugView, "nrdDebugView");
         primaryLightDiagnosticView = Objects.requireNonNull(
                 primaryLightDiagnosticView, "primaryLightDiagnosticView");
@@ -29,6 +33,7 @@ public record SessionControls(
                 false,
                 false,
                 false,
+                AreaLightSamplingMode.DEFAULT,
                 PrimaryLightDiagnosticView.OFF,
                 NrdDiagnostics.Mode.OFF,
                 FsrDebugView.OFF,
@@ -43,6 +48,7 @@ public record SessionControls(
                         value,
                         this.triangleDebug,
                         this.rendererDiagnostics,
+                        this.areaLightSamplingMode,
                         this.primaryLightDiagnosticView,
                         this.nrdDebugView,
                         this.fsrDebugView,
@@ -57,6 +63,7 @@ public record SessionControls(
                         this.screenshotRequested,
                         value,
                         this.rendererDiagnostics,
+                        this.areaLightSamplingMode,
                         this.primaryLightDiagnosticView,
                         this.nrdDebugView,
                         this.fsrDebugView,
@@ -70,6 +77,23 @@ public record SessionControls(
                 : new SessionControls(
                         this.screenshotRequested,
                         this.triangleDebug,
+                        value,
+                        this.areaLightSamplingMode,
+                        this.primaryLightDiagnosticView,
+                        this.nrdDebugView,
+                        this.fsrDebugView,
+                        this.rrDebugView,
+                        this.rrDebugFullscreen);
+    }
+
+    public SessionControls withAreaLightSamplingMode(AreaLightSamplingMode value) {
+        Objects.requireNonNull(value, "value");
+        return value == this.areaLightSamplingMode
+                ? this
+                : new SessionControls(
+                        this.screenshotRequested,
+                        this.triangleDebug,
+                        this.rendererDiagnostics,
                         value,
                         this.primaryLightDiagnosticView,
                         this.nrdDebugView,
@@ -86,6 +110,7 @@ public record SessionControls(
                         this.screenshotRequested,
                         this.triangleDebug,
                         this.rendererDiagnostics,
+                        this.areaLightSamplingMode,
                         value,
                         this.nrdDebugView,
                         this.fsrDebugView,
@@ -101,6 +126,7 @@ public record SessionControls(
                         this.screenshotRequested,
                         this.triangleDebug,
                         this.rendererDiagnostics,
+                        this.areaLightSamplingMode,
                         this.primaryLightDiagnosticView,
                         value,
                         this.fsrDebugView,
@@ -116,6 +142,7 @@ public record SessionControls(
                         this.screenshotRequested,
                         this.triangleDebug,
                         this.rendererDiagnostics,
+                        this.areaLightSamplingMode,
                         this.primaryLightDiagnosticView,
                         this.nrdDebugView,
                         value,
@@ -131,6 +158,7 @@ public record SessionControls(
                         this.screenshotRequested,
                         this.triangleDebug,
                         this.rendererDiagnostics,
+                        this.areaLightSamplingMode,
                         this.primaryLightDiagnosticView,
                         this.nrdDebugView,
                         this.fsrDebugView,
@@ -145,6 +173,7 @@ public record SessionControls(
                         this.screenshotRequested,
                         this.triangleDebug,
                         this.rendererDiagnostics,
+                        this.areaLightSamplingMode,
                         this.primaryLightDiagnosticView,
                         this.nrdDebugView,
                         this.fsrDebugView,

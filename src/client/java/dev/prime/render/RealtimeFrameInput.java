@@ -27,6 +27,7 @@ public record RealtimeFrameInput(
         MaterialSettings.Snapshot material,
         boolean shInput,
         boolean triangleDebug,
+        AreaLightSamplingMode areaLightSamplingMode,
         PrimaryLightDiagnosticView primaryLightDiagnosticView,
         DisplaySettings.Snapshot display,
         boolean forceReset) {
@@ -45,6 +46,7 @@ public record RealtimeFrameInput(
         ScatterSettings.validateCount(scatterCount);
         Objects.requireNonNull(lighting, "lighting");
         Objects.requireNonNull(material, "material");
+        Objects.requireNonNull(areaLightSamplingMode, "areaLightSamplingMode");
         Objects.requireNonNull(primaryLightDiagnosticView, "primaryLightDiagnosticView");
         Objects.requireNonNull(display, "display");
         if (width <= 0 || height <= 0 || displayWidth <= 0 || displayHeight <= 0) {
@@ -114,6 +116,7 @@ public record RealtimeFrameInput(
                 this.shInput,
                 rawNumericalDiagnostic,
                 this.triangleDebug,
+                this.areaLightSamplingMode,
                 this.primaryLightDiagnosticView);
     }
 

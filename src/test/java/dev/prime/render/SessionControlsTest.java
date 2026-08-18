@@ -6,8 +6,9 @@ import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import dev.prime.render.fsr.FsrDebugView;
+import dev.prime.render.AreaLightSamplingMode;
 import dev.prime.render.PrimaryLightDiagnosticView;
+import dev.prime.render.fsr.FsrDebugView;
 import dev.prime.render.post.DlssRrDebugView;
 import dev.prime.render.post.nrd.NrdDiagnostics;
 import org.junit.jupiter.api.Test;
@@ -20,6 +21,7 @@ final class SessionControlsTest {
                 .withScreenshotRequested(true)
                 .withTriangleDebug(true)
                 .withRendererDiagnostics(true)
+                .withAreaLightSamplingMode(AreaLightSamplingMode.WIDE_RIS_4X4)
                 .withPrimaryLightDiagnosticView(PrimaryLightDiagnosticView.SAMPLE)
                 .withNrdDebugView(NrdDiagnostics.Mode.NATIVE_VALIDATION)
                 .withFsrDebugView(FsrDebugView.OVERVIEW)
@@ -29,6 +31,7 @@ final class SessionControlsTest {
         assertFalse(defaults.screenshotRequested());
         assertFalse(defaults.triangleDebug());
         assertFalse(defaults.rendererDiagnostics());
+        assertEquals(AreaLightSamplingMode.DEFAULT, defaults.areaLightSamplingMode());
         assertEquals(PrimaryLightDiagnosticView.OFF, defaults.primaryLightDiagnosticView());
         assertEquals(NrdDiagnostics.Mode.OFF, defaults.nrdDebugView());
         assertEquals(FsrDebugView.OFF, defaults.fsrDebugView());
@@ -37,6 +40,7 @@ final class SessionControlsTest {
         assertTrue(changed.screenshotRequested());
         assertTrue(changed.triangleDebug());
         assertTrue(changed.rendererDiagnostics());
+        assertEquals(AreaLightSamplingMode.WIDE_RIS_4X4, changed.areaLightSamplingMode());
         assertEquals(
                 PrimaryLightDiagnosticView.SAMPLE,
                 changed.primaryLightDiagnosticView());
@@ -49,5 +53,8 @@ final class SessionControlsTest {
         assertNotSame(defaults, changed);
         assertSame(changed, changed.withRrDebugFullscreen(true));
         assertSame(changed, changed.withRendererDiagnostics(true));
+        assertSame(
+                changed,
+                changed.withAreaLightSamplingMode(AreaLightSamplingMode.WIDE_RIS_4X4));
     }
 }

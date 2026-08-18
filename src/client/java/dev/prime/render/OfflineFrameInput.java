@@ -84,6 +84,7 @@ public record OfflineFrameInput(
                         false,
                         false,
                         false,
+                        AreaLightSamplingMode.DEFAULT,
                         PrimaryLightDiagnosticView.OFF));
     }
 

@@ -644,17 +644,39 @@ PrimeDirectLightingSplit primeEstimatePrimaryDirectAreaLight(
         inout PrimeIntegratorContext context,
         SurfaceInteraction surface,
         float3 viewDirection,
-        float3 selectionSample,
-        float2 positionSample,
+        PrimePreparedSampleBase preparedSample,
         PrimeOpenPbrVolumeStack volumeStack,
         bool conditionalTransparentBranch) {
     float3 shadingNormal = primeSurfaceShadingNormal(surface, viewDirection);
-    AreaLightSample area = primeSampleAreaLightRis4(
-            context.diagnostics,
-            surface.position,
-            primeAreaLightReceiverNormal(surface, viewDirection),
-            selectionSample,
-            positionSample);
+    AreaLightSample area;
+    uint samplingMode = primeAreaLightSamplingMode();
+    if (samplingMode == PRIME_PATH_AREA_LIGHT_SAMPLING_MODE_WIDE_RIS_4X4) {
+        area = primeSampleAreaLightWideRis4x4(
+                context.diagnostics,
+                surface.position,
+                primeAreaLightReceiverNormal(surface, viewDirection),
+                primeSobolSample4D(
+                        preparedSample,
+                        PRIME_SAMPLE_EFFECT_DIRECT_AREA_LIGHT,
+                        PRIME_SAMPLE_DIMENSION_PRIMARY),
+                primeSobolSample3D(
+                        preparedSample,
+                        PRIME_SAMPLE_EFFECT_DIRECT_AREA_LIGHT,
+                        PRIME_SAMPLE_DIMENSION_SECONDARY));
+    } else {
+        area = primeSampleAreaLight(
+                context.diagnostics,
+                surface.position,
+                primeAreaLightReceiverNormal(surface, viewDirection),
+                primeSobolSample2D(
+                        preparedSample,
+                        PRIME_SAMPLE_EFFECT_DIRECT_AREA_LIGHT,
+                        PRIME_SAMPLE_DIMENSION_PRIMARY),
+                primeSobolSample2D(
+                        preparedSample,
+                        PRIME_SAMPLE_EFFECT_DIRECT_AREA_LIGHT,
+                        PRIME_SAMPLE_DIMENSION_SECONDARY));
+    }
     if (!primeDirectSampleEligible(surface, shadingNormal, area.light)) {
         PrimeDirectLightingSplit result;
         result.diffuse = float3(0.0);
@@ -828,14 +850,7 @@ PrimeDirectLightingSplit primeEstimatePrimaryNonsunDirect(
             context,
             surface,
             viewDirection,
-            primeSobolSample3D(
-                    preparedSample,
-                    PRIME_SAMPLE_EFFECT_DIRECT_AREA_LIGHT,
-                    PRIME_SAMPLE_DIMENSION_PRIMARY),
-            primeSobolSample2D(
-                    preparedSample,
-                    PRIME_SAMPLE_EFFECT_DIRECT_AREA_LIGHT,
-                    PRIME_SAMPLE_DIMENSION_SECONDARY),
+            preparedSample,
             volumeStack,
             conditionalTransparentBranch);
 }
@@ -1655,7 +1670,9 @@ bool primeIntegrateTransparentWavefrontSurface<SunNee, AreaNee>(
             surfaceLinearRoughness)) {
         return false;
     }
-    if (primarySurfaceReplacement) {
+    if (primarySurfaceReplacement
+            && primeAreaLightSamplingMode()
+                    != PRIME_PATH_AREA_LIGHT_SAMPLING_MODE_PURE_LIGHT_TREE) {
         path.flags |= PRIME_PATH_PREVIOUS_AREA_RIS;
     }
     if (supportsSolidAngle && !primarySurfaceReplacement) {
@@ -1899,7 +1916,9 @@ bool primeIntegrateWavefrontSurface<SunNee, AreaNee, IndirectReuse>(
     }
     if (supportsSolidAngle
             && denoiserState.hasPrimarySurface
-            && path.bounce == denoiserState.primaryBounce) {
+            && path.bounce == denoiserState.primaryBounce
+            && primeAreaLightSamplingMode()
+                    != PRIME_PATH_AREA_LIGHT_SAMPLING_MODE_PURE_LIGHT_TREE) {
         path.flags |= PRIME_PATH_PREVIOUS_AREA_RIS;
     }
     if (supportsSolidAngle && denoiserState.hasPrimarySurface

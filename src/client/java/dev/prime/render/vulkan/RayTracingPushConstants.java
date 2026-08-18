@@ -67,6 +67,7 @@ public final class RayTracingPushConstants {
                         input.material().seamlessGlass(),
                         input.material().airGap(),
                         input.material().vanillaPbrPresets(),
+                        input.areaLightSamplingMode(),
                         input.primaryLightDiagnosticView()));
         buffer.putInt(
                 pathOffset + Integer.BYTES,

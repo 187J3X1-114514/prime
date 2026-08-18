@@ -42,6 +42,33 @@
         { "name": "directionChildCentroidReserved", "type": "uvec4", "offset": 32 }
       ]
     },
+    "worldLightHeader": {
+      "size": 48,
+      "fields": [
+        { "name": "nodeOffset", "type": "uint64_t", "offset": 0 },
+        { "name": "leafOffset", "type": "uint64_t", "offset": 8 },
+        { "name": "entryOffset", "type": "uint64_t", "offset": 16 },
+        { "name": "summaryOffset", "type": "uint64_t", "offset": 24 },
+        { "name": "aliasOffset", "type": "uint64_t", "offset": 32 },
+        { "name": "summaryCount", "type": "uint", "offset": 40 },
+        { "name": "totalPower", "type": "float", "offset": 44 }
+      ]
+    },
+    "worldLightSummary": {
+      "size": 48,
+      "fields": [
+        { "name": "boundsMinPower", "type": "vec4", "offset": 0 },
+        { "name": "boundsMaxProposalPdf", "type": "vec4", "offset": 16 },
+        { "name": "directionSectionReserved", "type": "uvec4", "offset": 32 }
+      ]
+    },
+    "lightAliasEntry": {
+      "size": 8,
+      "fields": [
+        { "name": "aliasProbability", "type": "float", "offset": 0 },
+        { "name": "aliasIndex", "type": "uint", "offset": 4 }
+      ]
+    },
     "lightLeaf": {
       "size": 8,
       "fields": [
@@ -62,7 +89,7 @@
         { "name": "cornerArea", "type": "vec4", "offset": 0 },
         { "name": "edgeOneScale", "type": "vec4", "offset": 16 },
         { "name": "edgeTwoPower", "type": "vec4", "offset": 32 },
-        { "name": "normalPadding", "type": "vec4", "offset": 48 },
+        { "name": "normalProposalPdf", "type": "vec4", "offset": 48 },
         { "name": "uvsTint", "type": "uvec4", "offset": 64 },
         { "name": "metadata", "type": "uvec4", "offset": 80 }
       ]
@@ -306,6 +333,10 @@
     "seamlessGlassMask": "0x02000000",
     "airGapMask": "0x04000000",
     "vanillaPbrPresetsMask": "0x08000000",
+    "areaLightSamplingModeShift": 28,
+    "areaLightSamplingModeMask": "0x1",
+    "areaLightSamplingModePureLightTree": 0,
+    "areaLightSamplingModeWideRis4x4": 1,
     "primaryLightDiagnosticViewShift": 30,
     "primaryLightDiagnosticViewMask": "0x3",
     "sampleEpochMask": "0x7fffffff",

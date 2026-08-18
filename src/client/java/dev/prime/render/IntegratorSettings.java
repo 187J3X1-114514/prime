@@ -46,6 +46,7 @@ public final class IntegratorSettings {
                 seamlessGlass,
                 airGap,
                 MaterialSettings.DEFAULT_VANILLA_PBR_PRESETS,
+                AreaLightSamplingMode.DEFAULT,
                 PrimaryLightDiagnosticView.OFF);
     }
 
@@ -61,6 +62,7 @@ public final class IntegratorSettings {
                 seamlessGlass,
                 airGap,
                 vanillaPbrPresets,
+                AreaLightSamplingMode.DEFAULT,
                 PrimaryLightDiagnosticView.OFF);
     }
 
@@ -70,6 +72,24 @@ public final class IntegratorSettings {
             boolean seamlessGlass,
             boolean airGap,
             boolean vanillaPbrPresets,
+            PrimaryLightDiagnosticView primaryLightDiagnosticView) {
+        return packSampleControl(
+                sampleIndex,
+                astronomy,
+                seamlessGlass,
+                airGap,
+                vanillaPbrPresets,
+                AreaLightSamplingMode.DEFAULT,
+                primaryLightDiagnosticView);
+    }
+
+    public static int packSampleControl(
+            int sampleIndex,
+            AstronomySettings astronomy,
+            boolean seamlessGlass,
+            boolean airGap,
+            boolean vanillaPbrPresets,
+            AreaLightSamplingMode areaLightSamplingMode,
             PrimaryLightDiagnosticView primaryLightDiagnosticView) {
         if (sampleIndex < 0
                 || (sampleIndex & ~ShaderAbi.PATH_SAMPLE_INDEX_MASK) != 0) {
@@ -82,6 +102,7 @@ public final class IntegratorSettings {
             throw new IllegalArgumentException(
                     "Solar longitude does not fit the path-control ABI");
         }
+        java.util.Objects.requireNonNull(areaLightSamplingMode, "areaLightSamplingMode");
         java.util.Objects.requireNonNull(primaryLightDiagnosticView, "primaryLightDiagnosticView");
         return sampleIndex
                 | solarLongitude << ShaderAbi.PATH_SOLAR_LONGITUDE_SHIFT
@@ -90,6 +111,8 @@ public final class IntegratorSettings {
                 | (vanillaPbrPresets
                         ? ShaderAbi.PATH_VANILLA_PBR_PRESETS_MASK
                         : 0)
+                | areaLightSamplingMode.abiValue()
+                        << ShaderAbi.PATH_AREA_LIGHT_SAMPLING_MODE_SHIFT
                 | primaryLightDiagnosticView.abiValue()
                         << ShaderAbi.PATH_PRIMARY_LIGHT_DIAGNOSTIC_VIEW_SHIFT;
     }

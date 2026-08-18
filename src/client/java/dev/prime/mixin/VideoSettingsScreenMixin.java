@@ -2,6 +2,7 @@ package dev.prime.mixin;
 
 import dev.prime.client.PrimeVideoOptions;
 import dev.prime.config.PrimeConfig;
+import dev.prime.render.AreaLightSamplingMode;
 import dev.prime.render.AstronomySettings;
 import dev.prime.render.DisplaySettings;
 import dev.prime.render.HdrOutput;
@@ -74,6 +75,7 @@ public abstract class VideoSettingsScreenMixin {
     @Unique private OptionInstance<Boolean> prime$vanillaPbrPresets;
     @Unique private OptionInstance<Boolean> prime$triangleDebug;
     @Unique private OptionInstance<Boolean> prime$rendererDiagnostics;
+    @Unique private OptionInstance<AreaLightSamplingMode> prime$areaLightSamplingMode;
     @Unique private OptionInstance<PrimaryLightDiagnosticView> prime$primaryLightDiagnosticView;
     @Unique private OptionInstance<NrdDiagnostics.Mode> prime$nrdDebugView;
     @Unique private OptionInstance<FsrDebugView> prime$fsrDebugView;
@@ -111,6 +113,7 @@ public abstract class VideoSettingsScreenMixin {
             this.prime$vanillaPbrPresets = PrimeVideoOptions.vanillaPbrPresets();
             this.prime$triangleDebug = PrimeVideoOptions.triangleDebug();
             this.prime$rendererDiagnostics = PrimeVideoOptions.rendererDiagnostics();
+            this.prime$areaLightSamplingMode = PrimeVideoOptions.areaLightSamplingMode();
             this.prime$primaryLightDiagnosticView =
                     PrimeVideoOptions.primaryLightDiagnosticView();
             this.prime$nrdDebugView = PrimeVideoOptions.nrdDebugView();
@@ -157,7 +160,9 @@ public abstract class VideoSettingsScreenMixin {
             list.addHeader(PRIME$DIAGNOSTICS_HEADER);
             list.addBig(this.prime$triangleDebug);
             list.addBig(this.prime$rendererDiagnostics);
-            list.addBig(this.prime$primaryLightDiagnosticView);
+            list.addSmall(
+                    this.prime$areaLightSamplingMode,
+                    this.prime$primaryLightDiagnosticView);
             list.addSmall(this.prime$nrdDebugView, this.prime$fsrDebugView);
             list.addSmall(this.prime$rrDebugView, this.prime$rrDebugFullscreen);
             list.addBig(Button.builder(
@@ -250,6 +255,9 @@ public abstract class VideoSettingsScreenMixin {
                 MaterialSettings.DEFAULT_VANILLA_PBR_PRESETS);
         this.prime$refresh(this.prime$triangleDebug, false);
         this.prime$refresh(this.prime$rendererDiagnostics, false);
+        this.prime$refresh(
+                this.prime$areaLightSamplingMode,
+                AreaLightSamplingMode.DEFAULT);
         this.prime$refresh(
                 this.prime$primaryLightDiagnosticView,
                 PrimaryLightDiagnosticView.OFF);

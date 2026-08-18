@@ -3,6 +3,7 @@ package dev.prime.client;
 import com.mojang.blaze3d.pipeline.RenderTarget;
 import com.mojang.blaze3d.platform.InputConstants;
 import dev.prime.mixin.MinecraftAccessor;
+import dev.prime.render.AreaLightSamplingMode;
 import dev.prime.render.HdrOutput;
 import dev.prime.render.PrimaryLightDiagnosticView;
 import dev.prime.render.RendererSettings;
@@ -239,6 +240,15 @@ public final class PrimeRuntime {
 
     public void setRendererDiagnostics(boolean value) {
         this.session.setRendererDiagnostics(value);
+    }
+
+    public AreaLightSamplingMode areaLightSamplingMode() {
+        return this.session.controls().areaLightSamplingMode();
+    }
+
+    public void setAreaLightSamplingMode(AreaLightSamplingMode value) {
+        this.session.setAreaLightSamplingMode(value);
+        this.requestRealtimeReset();
     }
 
     public PrimaryLightDiagnosticView primaryLightDiagnosticView() {

@@ -4,9 +4,10 @@ import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
-import dev.prime.render.FrameCamera;
+import dev.prime.render.AreaLightSamplingMode;
 import dev.prime.render.AstronomySettings;
 import dev.prime.render.AstronomyState;
+import dev.prime.render.FrameCamera;
 import dev.prime.render.IntegratorFrameInput;
 import dev.prime.render.IntegratorSettings;
 import dev.prime.render.LightingSettings;
@@ -53,6 +54,7 @@ final class RayTracingPushConstantsTest {
                         input.material().seamlessGlass(),
                         input.material().airGap(),
                         input.material().vanillaPbrPresets(),
+                        input.areaLightSamplingMode(),
                         input.primaryLightDiagnosticView()),
                 firstBuffer.getInt(ShaderAbi.PUSH_PATH_OFFSET));
         assertEquals(
@@ -92,6 +94,7 @@ final class RayTracingPushConstantsTest {
                         valid.shInput(),
                         valid.rawNumericalDiagnostic(),
                         valid.triangleDebug(),
+                        valid.areaLightSamplingMode(),
                         valid.primaryLightDiagnosticView()));
     }
 
@@ -134,6 +137,7 @@ final class RayTracingPushConstantsTest {
                 true,
                 true,
                 true,
+                AreaLightSamplingMode.DEFAULT,
                 PrimaryLightDiagnosticView.SQUARED_SAMPLE);
         return new Fixture(input, scene);
     }

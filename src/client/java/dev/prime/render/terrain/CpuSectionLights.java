@@ -40,21 +40,25 @@ public final class CpuSectionLights {
     private final Emitters emitters;
     private final List<EmissionDistribution> distributions;
     private final CpuLightTree.Result tree;
+    private final PowerAliasTable emitterAlias;
 
     private CpuSectionLights() {
         this.emitters = new Emitters(0);
         this.distributions = List.of();
         this.tree = null;
+        this.emitterAlias = null;
     }
 
     private CpuSectionLights(
             Emitters emitters,
             List<EmissionDistribution> distributions,
-            CpuLightTree.Result tree) {
+            CpuLightTree.Result tree,
+            PowerAliasTable emitterAlias) {
         // Builder ownership ends at build(); neither list is exposed or mutated afterwards.
         this.emitters = emitters;
         this.distributions = distributions;
         this.tree = tree;
+        this.emitterAlias = emitterAlias;
     }
 
     public boolean isEmpty() {
@@ -69,11 +73,13 @@ public final class CpuSectionLights {
         if (this.isEmpty()) {
             return 0L;
         }
-        long emitterOffset = alignUp(
+        long treeEnd =
                 ShaderAbi.SECTION_LIGHT_HEADER_SIZE
                         + (long) this.tree.nodeCount() * ShaderAbi.LIGHT_NODE_SIZE
                         + (long) this.tree.clusterCount() * ShaderAbi.LIGHT_LEAF_SIZE
-                        + (long) this.tree.entryCount() * ShaderAbi.LIGHT_LEAF_ENTRY_SIZE,
+                        + (long) this.tree.entryCount() * ShaderAbi.LIGHT_LEAF_ENTRY_SIZE;
+        long emitterOffset = alignUp(
+                treeEnd + (long) this.emitters.size * ShaderAbi.LIGHT_ALIAS_ENTRY_SIZE,
                 16L);
         return emitterOffset + (long) this.emitters.size * ShaderAbi.LIGHT_EMITTER_SIZE
                 + (long) this.distributions.size()
@@ -97,10 +103,13 @@ public final class CpuSectionLights {
         int nodeStart = headerWords;
         int leafStart = nodeStart + nodeWords;
         int entryStart = leafStart + leafWords;
+        int aliasWords = this.emitters.size
+                * (ShaderAbi.LIGHT_ALIAS_ENTRY_SIZE / Integer.BYTES);
         int emitterStart = (int) (alignUp(
-                        (long) (entryStart + entryWords) * Integer.BYTES,
+                        (long) (entryStart + entryWords + aliasWords) * Integer.BYTES,
                         16L)
                 / Integer.BYTES);
+        int aliasStart = emitterStart - aliasWords;
         int cellStart = emitterStart + this.emitters.size * emitterWords;
         int[] result = new int[cellStart + cellCount * cellWords];
         putLong(result, 0, bufferAddress + (long) nodeStart * Integer.BYTES);
@@ -111,6 +120,7 @@ public final class CpuSectionLights {
         result[10] = 0;
         result[11] = this.emitters.size;
         this.tree.packInto(result, nodeStart, leafStart, entryStart);
+        this.emitterAlias.packInto(result, aliasStart);
 
         for (int index = 0; index < this.emitters.size; index++) {
             int floatBase = index * EMITTER_FLOATS;
@@ -131,7 +141,7 @@ public final class CpuSectionLights {
             putFloat(result, cursor + 12, this.emitters.values[floatBase + NORMAL_X]);
             putFloat(result, cursor + 13, this.emitters.values[floatBase + NORMAL_Y]);
             putFloat(result, cursor + 14, this.emitters.values[floatBase + NORMAL_Z]);
-            result[cursor + 15] = 0;
+            putFloat(result, cursor + 15, this.emitterAlias.probabilityMass(index));
             result[cursor + 16] = this.emitters.metadata[intBase + UV_0];
             result[cursor + 17] = this.emitters.metadata[intBase + UV_1];
             result[cursor + 18] = this.emitters.metadata[intBase + UV_2];
@@ -462,7 +472,15 @@ public final class CpuSectionLights {
                                     != 0));
         }
         CpuLightTree.Result tree = CpuLightTree.buildOwned(leaves, emitters.size);
-        return new CpuSectionLights(emitters, distributions, tree);
+        float[] powers = new float[emitters.size];
+        for (int index = 0; index < emitters.size; index++) {
+            powers[index] = emitters.values[index * EMITTER_FLOATS + POWER];
+        }
+        return new CpuSectionLights(
+                emitters,
+                distributions,
+                tree,
+                PowerAliasTable.build(powers));
     }
 
     /** A white level-15 texel evaluates to the shared physical block-light ABI baseline. */

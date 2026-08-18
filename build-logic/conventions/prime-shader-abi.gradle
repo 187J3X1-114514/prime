@@ -59,6 +59,9 @@ abstract class GenerateShaderAbi extends DefaultTask {
 		def primitive = schema.structs.primitiveRecord
 		def section = schema.structs.sectionRecord
 		def lightNode = schema.structs.lightNode
+		def worldLightHeader = schema.structs.worldLightHeader
+		def worldLightSummary = schema.structs.worldLightSummary
+		def lightAliasEntry = schema.structs.lightAliasEntry
 		def lightLeaf = schema.structs.lightLeaf
 		def lightLeafEntry = schema.structs.lightLeafEntry
 		def lightEmitter = schema.structs.lightEmitter
@@ -83,6 +86,8 @@ abstract class GenerateShaderAbi extends DefaultTask {
 		def offlineWavefrontContract = schema.offlineWavefrontContract
 
 		if (primitive.size != 32 || section.size != 96 || lightNode.size != 48
+				|| worldLightHeader.size != 48 || worldLightSummary.size != 48
+				|| lightAliasEntry.size != 8
 				|| lightLeaf.size != 8 || lightLeafEntry.size != 8
 				|| lightEmitter.size != 96 || lightCell.size != 12
 				|| sectionLightHeader.size != 48
@@ -183,6 +188,10 @@ abstract class GenerateShaderAbi extends DefaultTask {
 				|| !schema.pathControl.seamlessGlassMask.toString().equalsIgnoreCase('0x02000000')
 				|| !schema.pathControl.airGapMask.toString().equalsIgnoreCase('0x04000000')
 				|| !schema.pathControl.vanillaPbrPresetsMask.toString().equalsIgnoreCase('0x08000000')
+				|| schema.pathControl.areaLightSamplingModeShift != 28
+				|| !schema.pathControl.areaLightSamplingModeMask.toString().equalsIgnoreCase('0x1')
+				|| schema.pathControl.areaLightSamplingModePureLightTree != 0
+				|| schema.pathControl.areaLightSamplingModeWideRis4x4 != 1
 				|| schema.pathControl.primaryLightDiagnosticViewShift != 30
 				|| !schema.pathControl.primaryLightDiagnosticViewMask.toString().equalsIgnoreCase('0x3')
 				|| !schema.pathControl.triangleDebugMask.toString().equalsIgnoreCase('0x80000000')
@@ -244,6 +253,9 @@ abstract class GenerateShaderAbi extends DefaultTask {
 		validateStruct('PrimitiveRecord', primitive)
 		validateStruct('SectionRecord', section)
 		validateStruct('LightNode', lightNode)
+		validateStruct('WorldLightHeader', worldLightHeader)
+		validateStruct('WorldLightSummary', worldLightSummary)
+		validateStruct('LightAliasEntry', lightAliasEntry)
 		validateStruct('LightLeaf', lightLeaf)
 		validateStruct('LightLeafEntry', lightLeafEntry)
 		validateStruct('LightEmitter', lightEmitter)
@@ -266,6 +278,9 @@ abstract class GenerateShaderAbi extends DefaultTask {
 			PRIMITIVE: primitive,
 			SECTION: section,
 			LIGHT_NODE: lightNode,
+			WORLD_LIGHT_HEADER: worldLightHeader,
+			WORLD_LIGHT_SUMMARY: worldLightSummary,
+			LIGHT_ALIAS_ENTRY: lightAliasEntry,
 			LIGHT_LEAF: lightLeaf,
 			LIGHT_LEAF_ENTRY: lightLeafEntry,
 			LIGHT_EMITTER: lightEmitter,
@@ -321,6 +336,9 @@ public final class ShaderAbi {
     public static final int PRIMITIVE_RECORD_SIZE = ${primitive.size};
     public static final int SECTION_RECORD_SIZE = ${section.size};
     public static final int LIGHT_NODE_SIZE = ${lightNode.size};
+    public static final int WORLD_LIGHT_HEADER_SIZE = ${worldLightHeader.size};
+    public static final int WORLD_LIGHT_SUMMARY_SIZE = ${worldLightSummary.size};
+    public static final int LIGHT_ALIAS_ENTRY_SIZE = ${lightAliasEntry.size};
     public static final int LIGHT_LEAF_SIZE = ${lightLeaf.size};
     public static final int LIGHT_LEAF_ENTRY_SIZE = ${lightLeafEntry.size};
     public static final int LIGHT_EMITTER_SIZE = ${lightEmitter.size};
@@ -411,6 +429,10 @@ public final class ShaderAbi {
     public static final int PATH_SEAMLESS_GLASS_MASK = ${schema.pathControl.seamlessGlassMask};
     public static final int PATH_AIR_GAP_MASK = ${schema.pathControl.airGapMask};
     public static final int PATH_VANILLA_PBR_PRESETS_MASK = ${schema.pathControl.vanillaPbrPresetsMask};
+    public static final int PATH_AREA_LIGHT_SAMPLING_MODE_SHIFT = ${schema.pathControl.areaLightSamplingModeShift};
+    public static final int PATH_AREA_LIGHT_SAMPLING_MODE_MASK = ${schema.pathControl.areaLightSamplingModeMask};
+    public static final int PATH_AREA_LIGHT_SAMPLING_MODE_PURE_LIGHT_TREE = ${schema.pathControl.areaLightSamplingModePureLightTree};
+    public static final int PATH_AREA_LIGHT_SAMPLING_MODE_WIDE_RIS_4X4 = ${schema.pathControl.areaLightSamplingModeWideRis4x4};
     public static final int PATH_PRIMARY_LIGHT_DIAGNOSTIC_VIEW_SHIFT = ${schema.pathControl.primaryLightDiagnosticViewShift};
     public static final int PATH_PRIMARY_LIGHT_DIAGNOSTIC_VIEW_MASK = ${schema.pathControl.primaryLightDiagnosticViewMask};
     public static final int PATH_SAMPLE_EPOCH_MASK = ${schema.pathControl.sampleEpochMask};
@@ -509,6 +531,9 @@ module "prime_abi_types.slang";
 static const uint PRIME_PRIMITIVE_RECORD_SIZE = ${primitive.size};
 static const uint PRIME_SECTION_RECORD_SIZE = ${section.size};
 static const uint PRIME_LIGHT_NODE_SIZE = ${lightNode.size};
+static const uint PRIME_WORLD_LIGHT_HEADER_SIZE = ${worldLightHeader.size};
+static const uint PRIME_WORLD_LIGHT_SUMMARY_SIZE = ${worldLightSummary.size};
+static const uint PRIME_LIGHT_ALIAS_ENTRY_SIZE = ${lightAliasEntry.size};
 static const uint PRIME_LIGHT_LEAF_SIZE = ${lightLeaf.size};
 static const uint PRIME_LIGHT_LEAF_ENTRY_SIZE = ${lightLeafEntry.size};
 static const uint PRIME_LIGHT_EMITTER_SIZE = ${lightEmitter.size};
@@ -529,6 +554,10 @@ static const uint PRIME_PATH_SOLAR_LONGITUDE_MASK = ${schema.pathControl.solarLo
 static const uint PRIME_PATH_SEAMLESS_GLASS_MASK = ${schema.pathControl.seamlessGlassMask};
 static const uint PRIME_PATH_AIR_GAP_MASK = ${schema.pathControl.airGapMask};
 static const uint PRIME_PATH_VANILLA_PBR_PRESETS_MASK = ${schema.pathControl.vanillaPbrPresetsMask};
+static const uint PRIME_PATH_AREA_LIGHT_SAMPLING_MODE_SHIFT = ${schema.pathControl.areaLightSamplingModeShift};
+static const uint PRIME_PATH_AREA_LIGHT_SAMPLING_MODE_MASK = ${schema.pathControl.areaLightSamplingModeMask};
+static const uint PRIME_PATH_AREA_LIGHT_SAMPLING_MODE_PURE_LIGHT_TREE = ${schema.pathControl.areaLightSamplingModePureLightTree};
+static const uint PRIME_PATH_AREA_LIGHT_SAMPLING_MODE_WIDE_RIS_4X4 = ${schema.pathControl.areaLightSamplingModeWideRis4x4};
 static const uint PRIME_PATH_PRIMARY_LIGHT_DIAGNOSTIC_VIEW_SHIFT = ${schema.pathControl.primaryLightDiagnosticViewShift};
 static const uint PRIME_PATH_PRIMARY_LIGHT_DIAGNOSTIC_VIEW_MASK = ${schema.pathControl.primaryLightDiagnosticViewMask};
 static const uint PRIME_PATH_SAMPLE_EPOCH_MASK = ${schema.pathControl.sampleEpochMask};
@@ -594,6 +623,21 @@ ${slangStructFields(section)}
 public struct LightNode
 {
 ${slangStructFields(lightNode)}
+};
+
+public struct WorldLightHeader
+{
+${slangStructFields(worldLightHeader)}
+};
+
+public struct WorldLightSummary
+{
+${slangStructFields(worldLightSummary)}
+};
+
+public struct LightAliasEntry
+{
+${slangStructFields(lightAliasEntry)}
 };
 
 public struct LightLeaf

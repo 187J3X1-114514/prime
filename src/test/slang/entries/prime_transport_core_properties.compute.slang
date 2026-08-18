@@ -665,6 +665,39 @@ void primeCheckPointLightNodeMetric(
     result.third = float4(receiverNormal, 0.0);
 }
 
+void primeCheckLightBoundsMetric(
+        inout PrimeTransportResult result,
+        float4 boundsMinPower,
+        float3 boundsMax,
+        float3 point,
+        float3 receiverNormal)
+{
+    float2 metrics = primeLightBoundsMetrics(
+            boundsMinPower.xyz,
+            boundsMax,
+            boundsMinPower.w,
+            point,
+            receiverNormal,
+            PRIME_LIGHT_DIRECTION_MODE_FULL << 30u);
+    float3 closest = clamp(point, boundsMinPower.xyz, boundsMax);
+    float3 delta = point - closest;
+    float expectedDistanceSquared = dot(delta, delta);
+    if (expectedDistanceSquared == 0.0) {
+        float3 extent = boundsMax - boundsMinPower.xyz;
+        expectedDistanceSquared = dot(extent, extent);
+    }
+    float minimumPower = boundsMinPower.w * PRIME_LIGHT_RECEIVER_COSINE_FLOOR;
+    primeTransportClassify(result.mask, float3(metrics, expectedDistanceSquared));
+    if (!primeTestClose(metrics.x, expectedDistanceSquared, 2.0e-6, 2.0e-6)
+            || metrics.y + 2.0e-6 * boundsMinPower.w < minimumPower
+            || metrics.y > boundsMinPower.w * (1.0 + 2.0e-6)) {
+        result.mask |= PRIME_TEST_FAILURE_IDENTITY;
+    }
+    result.first = float4(metrics, expectedDistanceSquared, minimumPower);
+    result.second = boundsMinPower;
+    result.third = float4(boundsMax, 0.0);
+}
+
 void primeCheckRisPdf(
         inout PrimeTransportResult result,
         float4 proposalPdfs,
@@ -807,6 +840,9 @@ void main(uint3 dispatchThreadId : SV_DispatchThreadID)
     } else if (kind == 18) {
         primeCheckRisPdf(
                 result, first, second, third.x, third.y);
+    } else if (kind == 19) {
+        primeCheckLightBoundsMetric(
+                result, first, second.xyz, third.xyz, fourth.xyz);
     } else {
         result.mask |= PRIME_TEST_FAILURE_EVENT;
     }

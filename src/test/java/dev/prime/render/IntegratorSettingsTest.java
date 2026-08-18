@@ -129,6 +129,44 @@ final class IntegratorSettingsTest {
     }
 
     @Test
+    void sampleControlStoresAreaLightSamplingModeIndependently() {
+        AstronomySettings astronomy = AstronomySettings.defaults();
+        int wide = IntegratorSettings.packSampleControl(
+                23,
+                astronomy,
+                false,
+                false,
+                true,
+                AreaLightSamplingMode.WIDE_RIS_4X4,
+                PrimaryLightDiagnosticView.OFF);
+        int pureTree = IntegratorSettings.packSampleControl(
+                23,
+                astronomy,
+                false,
+                false,
+                true,
+                AreaLightSamplingMode.PURE_LIGHT_TREE,
+                PrimaryLightDiagnosticView.OFF);
+
+        assertEquals(
+                ShaderAbi.PATH_AREA_LIGHT_SAMPLING_MODE_WIDE_RIS_4X4,
+                areaLightSamplingMode(wide));
+        assertEquals(
+                ShaderAbi.PATH_AREA_LIGHT_SAMPLING_MODE_PURE_LIGHT_TREE,
+                areaLightSamplingMode(pureTree));
+        assertEquals(
+                pureTree & ~(ShaderAbi.PATH_AREA_LIGHT_SAMPLING_MODE_MASK
+                        << ShaderAbi.PATH_AREA_LIGHT_SAMPLING_MODE_SHIFT),
+                wide & ~(ShaderAbi.PATH_AREA_LIGHT_SAMPLING_MODE_MASK
+                        << ShaderAbi.PATH_AREA_LIGHT_SAMPLING_MODE_SHIFT));
+    }
+
+    private static int areaLightSamplingMode(int packed) {
+        return packed >>> ShaderAbi.PATH_AREA_LIGHT_SAMPLING_MODE_SHIFT
+                & ShaderAbi.PATH_AREA_LIGHT_SAMPLING_MODE_MASK;
+    }
+
+    @Test
     void materialLightingControlStoresIndependentEvAndRoughnessFields() {
         int packed = IntegratorSettings.packMaterialLightingControl(
                 -16, 32, 16, 73, false, false);

@@ -31,6 +31,12 @@ public bool primeUsesVanillaPbrPresets()
     return (primePush.path.x & PRIME_PATH_VANILLA_PBR_PRESETS_MASK) != 0u;
 }
 
+public uint primeAreaLightSamplingMode()
+{
+    return (primePush.path.x >> PRIME_PATH_AREA_LIGHT_SAMPLING_MODE_SHIFT)
+            & PRIME_PATH_AREA_LIGHT_SAMPLING_MODE_MASK;
+}
+
 public uint primePrimaryLightDiagnosticView()
 {
     return (primePush.path.x >> PRIME_PATH_PRIMARY_LIGHT_DIAGNOSTIC_VIEW_SHIFT)

@@ -79,6 +79,7 @@ final class RealtimeFramePlanTest {
                 firstInput.material(),
                 firstInput.shInput(),
                 firstInput.triangleDebug(),
+                firstInput.areaLightSamplingMode(),
                 firstInput.primaryLightDiagnosticView(),
                 firstInput.display(),
                 false);
@@ -188,6 +189,7 @@ final class RealtimeFramePlanTest {
                 new MaterialSettings.Snapshot(90, 17L),
                 true,
                 false,
+                AreaLightSamplingMode.DEFAULT,
                 PrimaryLightDiagnosticView.SQUARED_SAMPLE,
                 new DisplaySettings.Snapshot(0, 50),
                 false);
